@@ -156,7 +156,7 @@ export type ThreadTurnSummary = Pick<
 
 export type ThreadSummary = Omit<
   Thread,
-  "turns" | "browser_state" | "listening_ports"
+  "turns" | "browser_state"
 > & {
   turns: ThreadTurnSummary[];
   turn_count: number;

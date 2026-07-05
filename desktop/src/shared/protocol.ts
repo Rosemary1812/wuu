@@ -856,11 +856,6 @@ export type Thread = {
   updated_at: string;
   turns: Turn[];
   child_agents?: Agent[];
-  // Latest deduped, sorted list of localhost ports the agent surfaced
-  // via the report_listening_ports tool. The first entry drives the
-  // in-app browser auto-open behaviour; the full list is rendered as
-  // clickable chips in the workspace sidebar.
-  listening_ports?: number[];
   browser_state?: ThreadBrowserState;
 };
 

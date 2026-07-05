@@ -96,7 +96,6 @@ export function useThreadBrowserPreview({
     activeThread,
     activeThread?.browser_state?.current_url,
     activeThread?.browser_state?.primary_preview_url,
-    activeThread?.listening_ports,
   ]);
 
   return {
@@ -112,8 +111,7 @@ function primaryBrowserURLForThread(thread: Thread | undefined): string | undefi
   if (browserStateURL) {
     return browserStateURL;
   }
-  const ports = thread?.listening_ports;
-  return ports && ports.length > 0 ? `http://localhost:${ports[0]}` : undefined;
+  return undefined;
 }
 
 function restoreBrowserURLForThread(

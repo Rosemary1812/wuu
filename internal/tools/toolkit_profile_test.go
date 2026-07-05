@@ -128,7 +128,6 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 		"create_goal",
 		"get_goal",
 		"update_goal",
-		"report_listening_ports",
 		"send_message",
 		"followup_task",
 		"await_agents",
@@ -270,63 +269,6 @@ func TestActiveProfileToolSearchLoadsThreadGetForSessionIDs(t *testing.T) {
 	}
 	if !containsProfileDef(kit.Definitions(), "thread_get") {
 		t.Fatalf("loaded thread_get should be visible in definitions: %v", sortedProfileDefNames(kit.Definitions()))
-	}
-}
-
-func TestActiveProfileLoadsDeferredPortReporting(t *testing.T) {
-	kit, err := New(t.TempDir())
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
-
-	if containsProfileDef(kit.Definitions(), "report_listening_ports") {
-		t.Fatal("report_listening_ports should be deferred by default")
-	}
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "report_listening_ports",
-		Arguments: `{"ports":[5173]}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "deferred") {
-		t.Fatalf("inactive report_listening_ports should ask for tool_search, got %v", err)
-	}
-
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "tool_search",
-		Arguments: `{"query":"select:report_listening_ports"}`,
-	})
-	if err != nil {
-		t.Fatalf("tool_search: %v", err)
-	}
-	var loaded struct {
-		LoadedTools []string `json:"loaded_tools"`
-	}
-	if err := json.Unmarshal([]byte(resp), &loaded); err != nil {
-		t.Fatalf("parse tool_search: %v", err)
-	}
-	if !containsString(loaded.LoadedTools, "report_listening_ports") {
-		t.Fatalf("tool_search should load report_listening_ports: %s", resp)
-	}
-	defs := kit.Definitions()
-	if !containsProfileDef(defs, "report_listening_ports") {
-		t.Fatalf("loaded report_listening_ports should be visible in definitions: %v", sortedProfileDefNames(defs))
-	}
-
-	resp, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "report_listening_ports",
-		Arguments: `{"ports":[5173]}`,
-	})
-	if err != nil {
-		t.Fatalf("loaded report_listening_ports should execute: %v", err)
-	}
-	var parsed struct {
-		Action string `json:"action"`
-	}
-	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-		t.Fatalf("parse report_listening_ports: %v", err)
-	}
-	if parsed.Action != "report_listening_ports" {
-		t.Fatalf("report_listening_ports action = %q", parsed.Action)
 	}
 }
 

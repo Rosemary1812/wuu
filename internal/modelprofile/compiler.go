@@ -457,7 +457,6 @@ func addSkillTools(b *surfaceBuilder) {
 }
 
 func addExtensionTools(b *surfaceBuilder) {
-	b.addDeferred("report_listening_ports", capability.CapabilityPorts)
 	// MCP has no stable built-in tool name because concrete MCP
 	// tools are discovered at runtime. The deferred capability says
 	// this profile may load MCP tools through tool_search; the tools
@@ -503,7 +502,7 @@ Command and process discipline:
 - Do not pipe verification commands through tail/head just to keep output short; bash already caps command output and preserves full logs when available.
 - For repository history work, inspect git status, git diff, git diff --cached when staged files exist, and recent git log before committing. Stage only intended files with explicit paths, unstage mistakes with explicit paths, create commits with explicit non-interactive messages (-m/--message or -F/--file), amend only when explicitly requested, and push only when the user explicitly requested a remote write.
 - Never use broad staging, sensitive credential paths, destructive git commands, force push, git config mutation, hook-skipping flags, or interactive/editor-driven git flows unless the user explicitly requested that exact action and the runtime permits it.
-- For long-lived dev servers, watchers, and background processes, use bash with an explicit timeout when you need bounded logs or readiness output. Do not background commands with "&". After a managed process reports a localhost port, load report_listening_ports with tool_search if needed, then call it so the desktop can preview the server.`
+- For long-lived dev servers, watchers, and background processes, use bash with an explicit timeout when you need bounded logs or readiness output. Do not background commands with "&".`
 
 func addOpenAICodexPrompt(b *surfaceBuilder) {
 	b.surface.SystemFragment = strings.TrimSpace(`

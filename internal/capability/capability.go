@@ -73,9 +73,8 @@ const (
 	// Schedule.
 	CapabilitySchedule Capability = "schedule"
 
-	// Extensions (MCP, plugins) and dev-server port reporting.
-	CapabilityMCP   Capability = "mcp"
-	CapabilityPorts Capability = "ports"
+	// Extensions (MCP, plugins).
+	CapabilityMCP Capability = "mcp"
 
 	// Discovery: tool_search and related progressive-disclosure
 	// tools. Listed under its own capability so permission routing
@@ -113,7 +112,6 @@ func All() []Capability {
 		CapabilityContextRewrite,
 		CapabilitySchedule,
 		CapabilityMCP,
-		CapabilityPorts,
 		CapabilityDiscovery,
 	}
 }

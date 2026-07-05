@@ -66,7 +66,6 @@ func (th *threadState) snapshotLocked() Thread {
 		CreatedAt:        th.CreatedAt,
 		UpdatedAt:        th.UpdatedAt,
 		Turns:            cloneTurns(th.Turns),
-		ListeningPorts:   cloneListeningPorts(th.ListeningPorts),
 		BrowserState:     cloneThreadBrowserState(th.BrowserState),
 		DMParticipantID:  th.DMParticipantID,
 		Group:            th.Group,
@@ -535,7 +534,7 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 			})
 			out = append(out, itemCompleted(th.ID, turnID, item, now))
 		}
-		if th.applyBrowserPreviewFromToolResultLocked(ev.ToolCall.Name, ev.ToolResult, now) {
+		if th.applyBrowserPreviewFromToolResultLocked(ev.ToolResult, now) {
 			out = append(out, outboundNotification{
 				method: NotificationThreadUpdated,
 				params: ThreadUpdatedNotification{Thread: th.snapshotLocked()},
@@ -1480,17 +1479,6 @@ func cloneToolCallDisplay(display *providers.ToolCallDisplay) *providers.ToolCal
 	return &clone
 }
 
-// cloneListeningPorts returns a defensive copy so the snapshot is safe to
-// hand off to the renderer without aliasing the live threadState.
-func cloneListeningPorts(ports []int) []int {
-	if len(ports) == 0 {
-		return nil
-	}
-	out := make([]int, len(ports))
-	copy(out, ports)
-	return out
-}
-
 func cloneThreadBrowserState(state ThreadBrowserState) *ThreadBrowserState {
 	if state.CurrentURL == "" && state.PrimaryPreviewURL == "" && state.LinkedProcessID == "" {
 		return nil
@@ -1500,30 +1488,18 @@ func cloneThreadBrowserState(state ThreadBrowserState) *ThreadBrowserState {
 }
 
 type browserPreviewUpdate struct {
-	PortsSet          bool
-	Ports             []int
 	PreviewURLs       []string
 	PrimaryPreviewURL string
 	ProcessID         string
 }
 
-func (th *threadState) applyBrowserPreviewFromToolResultLocked(name, raw string, now time.Time) bool {
-	update, ok := decodeBrowserPreviewResult(name, raw)
+func (th *threadState) applyBrowserPreviewFromToolResultLocked(raw string, now time.Time) bool {
+	update, ok := decodeBrowserPreviewResult(raw)
 	if !ok {
 		return false
 	}
 	changed := false
-	if update.PortsSet && !intSliceEqual(th.ListeningPorts, update.Ports) {
-		th.ListeningPorts = update.Ports
-		changed = true
-	}
-	if update.PortsSet && len(update.Ports) == 0 {
-		if th.BrowserState.PrimaryPreviewURL != "" || th.BrowserState.LinkedProcessID != "" {
-			th.BrowserState.PrimaryPreviewURL = ""
-			th.BrowserState.LinkedProcessID = ""
-			changed = true
-		}
-	} else if update.PrimaryPreviewURL != "" {
+	if update.PrimaryPreviewURL != "" {
 		if th.BrowserState.PrimaryPreviewURL != update.PrimaryPreviewURL {
 			th.BrowserState.PrimaryPreviewURL = update.PrimaryPreviewURL
 			th.BrowserState.CurrentURL = update.PrimaryPreviewURL
@@ -1540,18 +1516,7 @@ func (th *threadState) applyBrowserPreviewFromToolResultLocked(name, raw string,
 	return changed
 }
 
-// decodeListeningPortsResult parses a report_listening_ports tool result
-// (a compact JSON object) into a normalized, deduped, ordered port
-// list. Returns ok=false if the result is not a recognizable payload.
-func decodeListeningPortsResult(raw string) ([]int, bool) {
-	update, ok := decodeBrowserPreviewResult("report_listening_ports", raw)
-	if !ok || !update.PortsSet {
-		return nil, false
-	}
-	return update.Ports, true
-}
-
-func decodeBrowserPreviewResult(name, raw string) (browserPreviewUpdate, bool) {
+func decodeBrowserPreviewResult(raw string) (browserPreviewUpdate, bool) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return browserPreviewUpdate{}, false
@@ -1561,13 +1526,6 @@ func decodeBrowserPreviewResult(name, raw string) (browserPreviewUpdate, bool) {
 		return browserPreviewUpdate{}, false
 	}
 	update := browserPreviewUpdate{}
-	if rawPorts, ok := payload["ports"]; ok {
-		var ports []int
-		if err := json.Unmarshal(rawPorts, &ports); err == nil {
-			update.PortsSet = true
-			update.Ports = normalizeListeningPortsForServer(ports)
-		}
-	}
 	if rawURLs, ok := payload["preview_urls"]; ok {
 		var urls []string
 		if err := json.Unmarshal(rawURLs, &urls); err == nil {
@@ -1591,14 +1549,8 @@ func decodeBrowserPreviewResult(name, raw string) (browserPreviewUpdate, bool) {
 	} else {
 		applyProcessPreviewPayload([]byte(trimmed), &update)
 	}
-	if len(update.PreviewURLs) == 0 && len(update.Ports) > 0 {
-		update.PreviewURLs = proc.PreviewURLsFromPorts(update.Ports)
-	}
 	if update.PrimaryPreviewURL == "" && len(update.PreviewURLs) > 0 {
 		update.PrimaryPreviewURL = update.PreviewURLs[0]
-	}
-	if name == "report_listening_ports" && update.PortsSet {
-		return update, true
 	}
 	if update.PrimaryPreviewURL != "" {
 		return update, true
@@ -1624,41 +1576,4 @@ func applyProcessPreviewPayload(raw json.RawMessage, update *browserPreviewUpdat
 	if update.PrimaryPreviewURL == "" {
 		update.PrimaryPreviewURL = proc.NormalizePreviewURL(process.PrimaryPreviewURL)
 	}
-}
-
-// normalizeListeningPortsForServer mirrors the tool's own normalization:
-// drop out-of-range and dedupe while preserving order. Returning nil for an
-// empty input keeps the thread-level field unset so the JSON omits it.
-func normalizeListeningPortsForServer(in []int) []int {
-	if len(in) == 0 {
-		return nil
-	}
-	seen := make(map[int]struct{}, len(in))
-	out := make([]int, 0, len(in))
-	for _, p := range in {
-		if p < 1 || p > 65535 {
-			continue
-		}
-		if _, ok := seen[p]; ok {
-			continue
-		}
-		seen[p] = struct{}{}
-		out = append(out, p)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func intSliceEqual(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

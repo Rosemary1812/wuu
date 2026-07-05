@@ -228,7 +228,7 @@ func isRepeatablePollingTool(call providers.ToolCall) bool {
 		}
 	}
 	switch name {
-	case "await_agents", "workflow_status", "read_process_output", "list_processes", "report_listening_ports", "run_test":
+	case "await_agents", "workflow_status", "read_process_output", "list_processes", "run_test":
 		return true
 	default:
 		return false

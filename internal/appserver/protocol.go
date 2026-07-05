@@ -1554,14 +1554,8 @@ type Thread struct {
 	// Members lists the named participants belonging to this group thread
 	// (chips UI, chat avatars). Populated only for group threads from explicit
 	// thread_members rows; DM threads and work sessions leave this empty.
-	Members []participant.Summary `json:"members,omitempty"`
-	// ListeningPorts is the latest deduped, sorted list of localhost
-	// ports the agent asked the desktop to surface (via
-	// report_listening_ports). The desktop uses the first entry to
-	// auto-open the in-app browser when this thread becomes active,
-	// and renders the full list as clickable chips in the sidebar.
-	ListeningPorts []int               `json:"listening_ports,omitempty"`
-	BrowserState   *ThreadBrowserState `json:"browser_state,omitempty"`
+	Members      []participant.Summary `json:"members,omitempty"`
+	BrowserState *ThreadBrowserState   `json:"browser_state,omitempty"`
 }
 
 type WorktreeInfo struct {

@@ -255,7 +255,7 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindContext
 	case "spawn_agent", "helpme", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "agent_report", "post_message", "decline", "react", "manage_participant":
 		return ToolKindAgent
-	case "start_process", "list_processes", "stop_process", "read_process_output", "write_stdin", "report_listening_ports":
+	case "start_process", "list_processes", "stop_process", "read_process_output", "write_stdin":
 		return ToolKindProcess
 	case "schedule_cron", "cancel_cron", "list_cron":
 		return ToolKindSchedule

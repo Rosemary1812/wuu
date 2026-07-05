@@ -4484,21 +4484,6 @@ func TestToolkit_ProcessAndPortTelemetryRecordsResultActions(t *testing.T) {
 		t.Fatalf("stop_process action mismatch: %+v", stopped)
 	}
 
-	portResp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "report_listening_ports",
-		Arguments: `{"ports":[3000,8080]}`,
-	})
-	if err != nil {
-		t.Fatalf("report_listening_ports: %v", err)
-	}
-	var portParsed map[string]any
-	if err := json.Unmarshal([]byte(portResp), &portParsed); err != nil {
-		t.Fatalf("parse report_listening_ports response: %v", err)
-	}
-	if portParsed["action"] != "report_listening_ports" {
-		t.Fatalf("report_listening_ports action mismatch: %+v", portParsed)
-	}
-
 	records := kit.ToolTelemetry()
 	gotActions := make([]string, 0, len(records))
 	for _, record := range records {
@@ -4509,7 +4494,6 @@ func TestToolkit_ProcessAndPortTelemetryRecordsResultActions(t *testing.T) {
 		"list_processes:list_processes",
 		"read_process_output:read_process_output",
 		"stop_process:stop_process",
-		"report_listening_ports:report_listening_ports",
 	}
 	if !reflect.DeepEqual(gotActions, wantActions) {
 		t.Fatalf("process telemetry actions = %+v, want %+v", gotActions, wantActions)

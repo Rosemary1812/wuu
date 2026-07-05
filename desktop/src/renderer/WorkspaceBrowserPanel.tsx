@@ -340,7 +340,7 @@ export function WorkspaceBrowserPanel({
   };
 
   // Bridge for parent-level commands (currently used to auto-open the
-  // browser preview when a thread's listening ports change). When the
+  // browser preview when a thread's preview URL changes). When the
   // parent hands us a fresh URL we navigate and then notify it so the
   // command is cleared.
   useEffect(() => {
