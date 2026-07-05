@@ -298,6 +298,7 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
       webviewTag: true,
     },
   });
+  const windowID = win.webContents.id;
 
   // Commit 7 will pass the actual workdir value when wiring same-workdir
   // cascade; for now the popped-out window registers without workdir,
@@ -312,10 +313,10 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
     scheduleWindowResizeEnd();
   });
   if (params.kind === "thread") {
-    windowRegistry.setThreadWindow(params.threadID, win.webContents.id);
+    windowRegistry.setThreadWindow(params.threadID, windowID);
   }
   win.on("closed", () => {
-    windowRegistry.unregisterWindow(win.webContents.id);
+    windowRegistry.unregisterWindow(windowID);
   });
 
   if (params.kind === "thread") {
@@ -359,6 +360,7 @@ function createWindow(): void {
 
   windowRegistry.registerWindow(mainWindow, "main");
   const win = mainWindow;
+  const windowID = win.webContents.id;
 
   windowRegistry.attachResizeHandlers(win, () => {
     setWindowResizeState(true);
@@ -370,7 +372,7 @@ function createWindow(): void {
       windowResizeEndTimer = undefined;
     }
     windowResizeState = false;
-    windowRegistry.unregisterWindow(win.webContents.id);
+    windowRegistry.unregisterWindow(windowID);
     mainWindow = null;
   });
   loadRenderer(win);
@@ -475,6 +477,7 @@ app.whenReady().then(async () => {
       if (!threadID) {
         throw new Error("threadID is required");
       }
+      const existingWindowID = windowRegistry.threadHostWindowID(threadID);
       const existing = windowRegistry.popOutWindowForThread(threadID);
       if (existing && !existing.isDestroyed() && !existing.webContents.isDestroyed()) {
         if (existing.isMinimized()) {
@@ -486,7 +489,9 @@ app.whenReady().then(async () => {
       }
       if (existing) {
         windowRegistry.clearThreadWindow(threadID);
-        windowRegistry.unregisterWindow(existing.webContents.id);
+        if (existingWindowID !== undefined) {
+          windowRegistry.unregisterWindow(existingWindowID);
+        }
       }
       const win = createPopOutWindow({
         kind: "thread",
