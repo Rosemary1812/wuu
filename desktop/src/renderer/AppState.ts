@@ -1827,6 +1827,16 @@ export function chatMessagesFromTurns(
       if (item.focus_meta) {
         rows.push({ kind: "focus", id, turnID: turn.id, item });
       } else if (item.type === "user_message") {
+        // Subagent notifications / inter-agent handoffs are delivered to the
+        // resident as a self-addressed user_message (a JSON envelope wrapping
+        // a <subagent_notification> payload). They are working-transcript
+        // machinery, not chat messages — the agent-brain transcript view
+        // (ThreadItemView) collapses them to a status line, but the chat view
+        // must never surface the raw envelope as an outgoing user bubble.
+        // Drop them here, mirroring queryTextForUserItem's history filter.
+        if (isAgentHandoffText(item.text)) {
+          continue;
+        }
         if (item.envelope_meta && item.envelope_meta.length > 0) {
           const previous = rows[rows.length - 1];
           if (previous?.kind === "envelope") {

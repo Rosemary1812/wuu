@@ -2202,6 +2202,42 @@ describe("chatMessagesFromTurns", () => {
     ]);
   });
 
+  it("drops a subagent_notification handoff delivered as a self-addressed user_message", () => {
+    // The backend delivers a triggering subagent notification to the resident
+    // as a user_message whose text is an InterAgentCommunication envelope
+    // wrapping a <subagent_notification> payload. It is working-transcript
+    // machinery and must never leak into the chat stream as a raw JSON bubble.
+    const notification: ThreadItem = {
+      id: "item-1",
+      type: "user_message",
+      text: JSON.stringify({
+        author: "/root/planner",
+        recipient: "/root",
+        content: `<subagent_notification>\n${JSON.stringify({
+          agent_path: "/root/design_pop_out_session_tab",
+          status: {
+            type: "agent_result",
+            agent_id: "planner-aef57366",
+            task_name: "design_pop_out_session_tab",
+            status: "cancelled",
+          },
+        })}\n</subagent_notification>`,
+        trigger_turn: true,
+      }),
+    };
+    const realMessage: ThreadItem = {
+      id: "item-2",
+      type: "user_message",
+      text: "重跑一下",
+    };
+    const rows = chatMessagesFromTurns([
+      turn("turn-1", [notification, realMessage]),
+    ]);
+    expect(rows).toEqual([
+      { kind: "user", id: "turn-1:item-2", turnID: "turn-1", item: realMessage },
+    ]);
+  });
+
   it("maps a participant_message to a participant row", () => {
     const item: ThreadItem = {
       id: "item-1",
