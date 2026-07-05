@@ -7,7 +7,9 @@
 <meta name="description" content="wuu 是一个开源、自带 API Key 的 AI Coding Agent：Go 核心、桌面应用、可脚本化 CLI，内置多智能体编排。Open-source, BYOK AI coding agent — a Go core with a desktop app, a scriptable CLI, and built-in multi-agent orchestration.">
 <meta name="theme-color" content="#F4E9D6">
 <link rel="icon" href="assets/mascot/wuu-mascot-concept-01.png">
-<!-- system font stack (SF Pro / PingFang on Apple) — no web-font load -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
   /* warm comic palette, sampled from the mascot art */
@@ -24,9 +26,9 @@
   --leaf:      #5C9C7A;   /* success green, muted to fit the cream world */
   --shadow:    #211D18;   /* hard comic shadow */
 
-  --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
-  --display: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
-  --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, "PingFang SC", monospace;
+  --sans: "Inter", "Noto Sans SC", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --display: "Inter", "Noto Sans SC", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace;
 
   --halftone: radial-gradient(var(--ink) 1.4px, transparent 1.5px);
 }
@@ -572,14 +574,15 @@ header.hero { background-size: 200px 200px; background-image: linear-gradient(rg
 .footer-mascot .stage { background: #FBFAF8; }
 .logo .face { background-color: #FBFAF8; }
 
-/* PingFang / system type: lighter weights + relaxed tracking for a premium feel */
-.hero-copy h1 { font-weight: 500; letter-spacing: -.015em; }
-h2.title { font-weight: 600; letter-spacing: -.008em; }
-.stat .v { font-weight: 600; }
+/* web type (Inter + Noto Sans SC): light weights for a premium, uniform look */
+.hero-copy h1 { font-weight: 400; letter-spacing: -.015em; }
+h2.title { font-weight: 500; letter-spacing: -.01em; }
+.stat .v { font-weight: 500; }
 .logo { font-weight: 600; letter-spacing: -.01em; }
 .eyebrow, .kicker { font-weight: 500; }
 .btn { font-weight: 500; }
 .nav-links a { font-weight: 500; }
+.capcard h3, .surface h3, .flowstep .txt h4, .step-row h3, .faq-list summary { font-weight: 500; }
 
 </style>
 </head>
