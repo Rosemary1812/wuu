@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeContext, Thread } from "../shared/protocol";
 import {
   createDraftSessionTab,
+  createSkillsSessionTab,
   createThreadSessionTab,
   initialState,
   threadSessionTabID,
@@ -448,7 +449,7 @@ describe("SessionTabStrip right-click menu", () => {
     expect(document.body.querySelector(".thread-row-context-menu")).toBeNull();
   });
 
-  it("disables pop-out for draft tabs", () => {
+  it("calls onPopOut with a draft tab", () => {
     const context = projectContext();
     const captured = makeCaptured();
     renderWith(
@@ -457,6 +458,25 @@ describe("SessionTabStrip right-click menu", () => {
         activeContext: context,
         activeSessionTabID: "draft:test",
         sessionTabs: [createDraftSessionTab("draft:test", context)],
+      },
+      captured,
+    );
+
+    rightClickTab(0);
+    clickMenuItem("在新窗口打开");
+
+    expect(captured.poppedOut).toEqual(["draft:test"]);
+  });
+
+  it("disables pop-out for non-session tool tabs", () => {
+    const context = projectContext();
+    const captured = makeCaptured();
+    renderWith(
+      {
+        ...initialState,
+        activeContext: context,
+        activeSessionTabID: "skills:project:project-1",
+        sessionTabs: [createSkillsSessionTab(context)],
       },
       captured,
     );

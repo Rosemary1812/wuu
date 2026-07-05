@@ -587,7 +587,7 @@ function serverEventCarriesModelOutputDelta(event: ServerEvent): boolean {
 function readPopOutInit(): PopOutInitResult | null {
   try {
     const init = window.wuu.popOutInit();
-    return init.threadID && init.context ? init : null;
+    return init.kind && init.context ? init : null;
   } catch {
     return null;
   }
@@ -595,7 +595,7 @@ function readPopOutInit(): PopOutInitResult | null {
 
 export function App(): JSX.Element {
   const [popOutInit] = useState<PopOutInitResult | null>(() => readPopOutInit());
-  const poppedOutMode = Boolean(popOutInit?.threadID && popOutInit.context);
+  const poppedOutMode = Boolean(popOutInit?.kind && popOutInit.context);
   const [state, setState] = useState<AppState>(initialState);
   const [prompt, setPrompt] = useState("");
   // Bumped each time the empty-state hint chip should refocus the hero
@@ -858,6 +858,7 @@ export function App(): JSX.Element {
   const viewSwitchRequestRef = useRef(0);
   const viewSwitchDelayTimerRef = useRef<number | undefined>(undefined);
   const draftSessionTabCounterRef = useRef(0);
+  const poppingOutTabIDsRef = useRef(new Set<string>());
   // Synchronous in-flight guard for openParticipantDM. A rapid double-click
   // on the same agent row otherwise fires two startThread calls and creates
   // duplicate DM threads; the ref is checked and set before any await so
@@ -1392,7 +1393,7 @@ export function App(): JSX.Element {
 
     void (async () => {
       try {
-        if (popOutInit?.threadID && popOutInit.context) {
+        if (popOutInit?.kind && popOutInit.context) {
           const loadedState = await loadPopOutRuntime(popOutInit);
           if (!mounted) {
             return;
@@ -3863,14 +3864,26 @@ export function App(): JSX.Element {
   async function popOutSessionTab(tabID: string): Promise<void> {
     const currentState = appStateRef.current;
     const tab = currentState.sessionTabs.find((item) => item.id === tabID);
-    if (!tab || tab.kind !== "thread") {
+    if (!tab || (tab.kind !== "thread" && tab.kind !== "draft")) {
       return;
     }
+    if (poppingOutTabIDsRef.current.has(tabID)) {
+      return;
+    }
+    poppingOutTabIDsRef.current.add(tabID);
     try {
-      await window.wuu.popOutSession({
-        threadID: tab.threadID,
-        context: tab.context,
-      });
+      await window.wuu.popOutSession(
+        tab.kind === "thread"
+          ? {
+              kind: "thread",
+              threadID: tab.threadID,
+              context: tab.context,
+            }
+          : {
+              kind: "draft",
+              context: tab.context,
+            },
+      );
       await closeSessionTab(tabID);
     } catch (error) {
       setState((current) => ({
@@ -3878,6 +3891,8 @@ export function App(): JSX.Element {
         status:
           error instanceof Error ? error.message : "open detached window failed",
       }));
+    } finally {
+      poppingOutTabIDsRef.current.delete(tabID);
     }
   }
 
@@ -3980,7 +3995,35 @@ export function App(): JSX.Element {
   async function loadPopOutRuntime(
     init: PopOutInitResult,
   ): Promise<Partial<AppState>> {
-    if (!init.threadID || !init.context) {
+    if (!init.kind || !init.context) {
+      return { status: "no-runtime" };
+    }
+    if (init.kind === "draft") {
+      const [listedProjects, initialized, listed] = await Promise.all([
+        window.wuu.listProjects(),
+        window.wuu.initialize(),
+        window.wuu.listThreads(),
+      ]);
+      const listedThreads = sortThreads(listed.threads);
+      const tab = createDraftSessionTab("draft:pop-out", init.context);
+      return {
+        initialized,
+        projects: listedProjects.projects,
+        activeContext: init.context,
+        activeProjectId: activeProjectID(init.context),
+        gitStatus: undefined,
+        thread: undefined,
+        secondaryThread: undefined,
+        activePane: "primary",
+        allowThreadAutoActivation: false,
+        sessionTabs: [tab],
+        activeSessionTabID: tab.id,
+        threads: listedThreads,
+        running: false,
+        status: "ready",
+      };
+    }
+    if (!init.threadID) {
       return { status: "no-runtime" };
     }
     const [listedProjects, initialized, listed, resumed] = await Promise.all([

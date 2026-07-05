@@ -64,6 +64,7 @@ import type {
   ThreadStartParams,
   Turn,
   PopOutInitResult,
+  PopOutSessionParams,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
 import { autoInstallCli, getCliInstallStatus, installCli } from "./cliInstall";
@@ -229,11 +230,20 @@ function loadRenderer(window: BrowserWindow): void {
   }
 }
 
-function createPopOutWindow(params: {
-  threadID: string;
-  context: RuntimeContext;
-  sourceWindow?: BrowserWindow | null;
-}): BrowserWindow {
+type PopOutWindowParams =
+  | {
+      kind: "thread";
+      threadID: string;
+      context: RuntimeContext;
+      sourceWindow?: BrowserWindow | null;
+    }
+  | {
+      kind: "draft";
+      context: RuntimeContext;
+      sourceWindow?: BrowserWindow | null;
+    };
+
+function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
   // Plan §2.2 #1 (vs Reviewer S1): cursor position is read by main
   // process via `screen.getCursorScreenPoint()` so the preload bridge
   // never sees the `screen` Electron API. Combined with `getBounds()`
@@ -264,15 +274,10 @@ function createPopOutWindow(params: {
     Math.min(cursor.y - 20, workArea.y + workArea.height - winHeight),
   );
 
-  // Plan §5.2 Q5 default: window title format `wuu · {threadTitle}`.
-  // The placeholder `wuu · ${threadID.slice(0, 8)}` shows immediately so
-  // the first paint never reads "Electron" / blank; commit 5 fires an
-  // async `thread/list` lookup after the BrowserWindow is registered
-  // and upgrades the title to the real `wuu · {thread.title}` once the
-  // matching thread is found. If the lookup fails or the thread has
-  // no title, the placeholder stays (silent failure path, no UX
-  // flicker beyond the standard 100–500 ms network round-trip).
-  const placeholderTitle = `wuu · ${params.threadID.slice(0, 8)}`;
+  const placeholderTitle =
+    params.kind === "thread"
+      ? `wuu · ${params.threadID.slice(0, 8)}`
+      : "wuu · 对话";
   const win = new BrowserWindow({
     width: winWidth,
     height: winHeight,
@@ -296,39 +301,39 @@ function createPopOutWindow(params: {
   windowRegistry.registerWindow(win, "popped-out", {
     workdir: params.context.cwd,
     runtimeContext: params.context,
-    threadID: params.threadID,
+    threadID: params.kind === "thread" ? params.threadID : undefined,
   });
   windowRegistry.attachResizeHandlers(win, () => {
     setWindowResizeState(true);
     scheduleWindowResizeEnd();
   });
-  windowRegistry.setThreadWindow(params.threadID, win.webContents.id);
+  if (params.kind === "thread") {
+    windowRegistry.setThreadWindow(params.threadID, win.webContents.id);
+  }
   win.on("closed", () => {
     windowRegistry.unregisterWindow(win.webContents.id);
   });
 
-  // Async title refresh. We only need the title here; the renderer
-  // hydrates the actual thread through the window-routed app-server path.
-  // Failures are intentionally silent: the placeholder remains usable and
-  // window creation should not be blocked by a title lookup.
-  void appServerClientPool
-    .requestInContext<{ threads: Thread[] }>(params.context, "thread/list")
-    .then((result) => {
-      if (win.isDestroyed()) return;
-      const threads = Array.isArray(result?.threads) ? result.threads : [];
-      const match = threads.find((t) => t.id === params.threadID);
-      const title = typeof match?.title === "string" ? match.title : "";
-      if (title.length > 0) {
-        win.setTitle(`wuu · ${title}`);
-      }
-      // Failure path: leave the placeholder `wuu · ${threadID.slice(0, 8)}`
-      // showing. We deliberately do not surface an error — the
-      // placeholder is the agreed-on UX when the title fetch fails.
-    })
-    .catch(() => {
-      if (win.isDestroyed()) return;
-      // Same silent-fallback policy: keep the placeholder.
-    });
+  if (params.kind === "thread") {
+    // Async title refresh. We only need the title here; the renderer
+    // hydrates the actual thread through the window-routed app-server path.
+    // Failures are intentionally silent: the placeholder remains usable and
+    // window creation should not be blocked by a title lookup.
+    void appServerClientPool
+      .requestInContext<{ threads: Thread[] }>(params.context, "thread/list")
+      .then((result) => {
+        if (win.isDestroyed()) return;
+        const threads = Array.isArray(result?.threads) ? result.threads : [];
+        const match = threads.find((t) => t.id === params.threadID);
+        const title = typeof match?.title === "string" ? match.title : "";
+        if (title.length > 0) {
+          win.setTitle(`wuu · ${title}`);
+        }
+      })
+      .catch(() => {
+        if (win.isDestroyed()) return;
+      });
+  }
   loadRenderer(win);
   return win;
 }
@@ -450,7 +455,17 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     "wuu:pop-out-session",
-    (event, params: { threadID: string; context?: RuntimeContext }) => {
+    (event, params: PopOutSessionParams) => {
+      const context = params?.context ?? runtimeContextForEvent(event);
+      const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+      if (params?.kind === "draft") {
+        const win = createPopOutWindow({
+          kind: "draft",
+          context,
+          sourceWindow,
+        });
+        return { windowID: win.webContents.id };
+      }
       const threadID =
         typeof params?.threadID === "string" ? params.threadID.trim() : "";
       if (!threadID) {
@@ -469,10 +484,10 @@ app.whenReady().then(async () => {
         windowRegistry.clearThreadWindow(threadID);
         windowRegistry.unregisterWindow(existing.webContents.id);
       }
-      const sourceWindow = BrowserWindow.fromWebContents(event.sender);
       const win = createPopOutWindow({
+        kind: "thread",
         threadID,
-        context: params.context ?? runtimeContextForEvent(event),
+        context,
         sourceWindow,
       });
       return { windowID: win.webContents.id };
@@ -497,6 +512,7 @@ app.whenReady().then(async () => {
       const threadID = windowRegistry.threadForWindow(event.sender.id);
       const context = windowRegistry.runtimeContextForWindow(event.sender.id);
       event.returnValue = {
+        kind: context ? (threadID ? "thread" : "draft") : null,
         threadID: threadID ?? null,
         context: context ?? null,
       } satisfies PopOutInitResult;

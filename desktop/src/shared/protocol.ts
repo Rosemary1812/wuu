@@ -1692,13 +1692,11 @@ export type WuuDesktopApi = {
   ) => Promise<{ ok: boolean }>;
   /**
    * Pop-out session IPC (Plan §2.2 `wuu:pop-out-session`). Renderer
-   * sends the thread id and its runtime context; main opens or focuses
-   * the single BrowserWindow registered for that thread.
+   * sends either a thread tab or a draft tab plus its runtime context.
+   * Thread tabs focus the single BrowserWindow registered for that
+   * thread; draft tabs open a clean popped-out draft window.
    */
-  popOutSession: (params: {
-    threadID: string;
-    context: RuntimeContext;
-  }) => Promise<{ windowID: number }>;
+  popOutSession: (params: PopOutSessionParams) => Promise<{ windowID: number }>;
   /**
    * Optional belt-and-suspenders IPC for the popped-out window to tell
    * main it's closing (Plan §2.2 `wuu:pop-out-closed`). Main only clears
@@ -1723,11 +1721,24 @@ export type WuuDesktopApi = {
  * it carries identity, not conversation data.
  */
 export type PopOutInitResult = {
+  /** Popped-out window kind, or null when this is the main window. */
+  kind: "thread" | "draft" | null;
   /** The popped-out thread id, or null when this is the main window. */
   threadID: string | null;
   /** Runtime context pinned to the popped-out window. */
   context: RuntimeContext | null;
 };
+
+export type PopOutSessionParams =
+  | {
+      kind?: "thread";
+      threadID: string;
+      context: RuntimeContext;
+    }
+  | {
+      kind: "draft";
+      context: RuntimeContext;
+    };
 
 declare global {
   interface Window {

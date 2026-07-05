@@ -173,7 +173,11 @@ export function SessionTabStrip({
                     unread={unread}
                     label={label}
                     closeLabel={closeLabel}
-                    draggable={tab.kind === "thread" || state.sessionTabs.length > 1}
+                    draggable={
+                      tab.kind === "thread" ||
+                      tab.kind === "draft" ||
+                      state.sessionTabs.length > 1
+                    }
                     reorderable={state.sessionTabs.length > 1}
                     onSelect={() => onSelect(tab.id)}
                     onClose={() => onClose(tab.id)}
@@ -416,7 +420,8 @@ function buildTabContextMenuItems({
   return [
     {
       label: "在新窗口打开",
-      disabled: rightClickedTab?.kind !== "thread",
+      disabled:
+        rightClickedTab?.kind !== "thread" && rightClickedTab?.kind !== "draft",
       onSelect: () => onPopOut(rightClickedTabID),
     },
     { separator: true },
