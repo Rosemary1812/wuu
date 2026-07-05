@@ -173,6 +173,7 @@ export function SessionTabStrip({
                     unread={unread}
                     label={label}
                     closeLabel={closeLabel}
+                    draggable={tab.kind === "thread" || state.sessionTabs.length > 1}
                     reorderable={state.sessionTabs.length > 1}
                     onSelect={() => onSelect(tab.id)}
                     onClose={() => onClose(tab.id)}
@@ -261,6 +262,7 @@ type SortableSessionTabProps = {
   unread: boolean;
   label: string;
   closeLabel: string;
+  draggable: boolean;
   reorderable: boolean;
   onSelect: () => void;
   onClose: () => void;
@@ -277,6 +279,7 @@ function SortableSessionTab({
   unread,
   label,
   closeLabel,
+  draggable,
   reorderable,
   onSelect,
   onClose,
@@ -293,7 +296,7 @@ function SortableSessionTab({
     isDragging,
   } = useSortable({
     id,
-    disabled: !reorderable,
+    disabled: !draggable,
   });
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
