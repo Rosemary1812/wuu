@@ -221,16 +221,9 @@ function createWindow(): void {
 
   windowRegistry.registerWindow(mainWindow, "main");
 
-  mainWindow.on("will-resize", () => {
+  windowRegistry.attachResizeHandlers(mainWindow, () => {
     setWindowResizeState(true);
     scheduleWindowResizeEnd();
-  });
-  mainWindow.on("resize", () => {
-    setWindowResizeState(true);
-    scheduleWindowResizeEnd();
-  });
-  mainWindow.on("resized", () => {
-    scheduleWindowResizeEnd(40);
   });
   mainWindow.on("closed", () => {
     if (windowResizeEndTimer) {

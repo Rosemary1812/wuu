@@ -55,6 +55,14 @@ export interface WindowRegistry {
 
   /** `webContents.id` hosting `threadID`, or undefined if no mapping exists. */
   threadHostWindowID(threadID: string): number | undefined;
+
+  /**
+   * Attach the per-window resize listeners (`will-resize` / `resize` /
+   * `resized`) on `window` and run `onChange` for each event. Replaces
+   * the previous `mainWindow.on(...)` inline wiring so commit 3+ can
+   * reuse this for popped-out windows created via `createPopOutWindow`.
+   */
+  attachResizeHandlers(window: BrowserWindow, onChange: () => void): void;
 }
 
 interface WindowEntry {
@@ -109,6 +117,12 @@ class WindowRegistryImpl implements WindowRegistry {
 
   threadHostWindowID(threadID: string): number | undefined {
     return this.threadToWindowID.get(threadID);
+  }
+
+  attachResizeHandlers(window: BrowserWindow, onChange: () => void): void {
+    window.on("will-resize", () => onChange());
+    window.on("resize", () => onChange());
+    window.on("resized", () => onChange());
   }
 }
 

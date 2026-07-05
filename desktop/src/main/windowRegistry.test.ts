@@ -5,19 +5,42 @@ import {
   type WindowRegistry,
 } from "./windowRegistry";
 
+type MockListeners = {
+  fire(event: string): void;
+  listenerCount(event: string): number;
+};
+
 function makeWindow(
   id: number,
   options: { destroyed?: boolean } = {},
-): BrowserWindow {
+): BrowserWindow & MockListeners {
   const destroyed = options.destroyed ?? false;
   const webContents = {
     id,
     isDestroyed: () => destroyed,
   };
+  const listeners = new Map<string, Set<() => void>>();
+  const record = (event: string, cb: () => void): void => {
+    let set = listeners.get(event);
+    if (!set) {
+      set = new Set();
+      listeners.set(event, set);
+    }
+    set.add(cb);
+  };
   return {
     webContents,
     isDestroyed: () => destroyed,
-  } as unknown as BrowserWindow;
+    on: (event: string, cb: () => void) => {
+      record(event, cb);
+    },
+    fire: (event: string): void => {
+      const set = listeners.get(event);
+      if (set) for (const cb of set) cb();
+    },
+    listenerCount: (event: string): number =>
+      listeners.get(event)?.size ?? 0,
+  } as unknown as BrowserWindow & MockListeners;
 }
 
 describe("windowRegistry", () => {
@@ -188,4 +211,31 @@ describe("windowRegistry", () => {
       expect(returned?.isDestroyed()).toBe(true);
     });
   });
+
+  describe("attachResizeHandlers", () => {
+    it("attaches will-resize, resize, and resized listeners to a window", () => {
+      const registry = createWindowRegistry();
+      const win = makeWindow(1);
+      let calls = 0;
+      registry.attachResizeHandlers(win, () => {
+        calls++;
+      });
+      expect(win.listenerCount("will-resize")).toBe(1);
+      expect(win.listenerCount("resize")).toBe(1);
+      expect(win.listenerCount("resized")).toBe(1);
+
+      win.fire("will-resize");
+      win.fire("resize");
+      win.fire("resized");
+      expect(calls).toBe(3);
+    });
+
+    it("does not register the window with the registry", () => {
+      const registry = createWindowRegistry();
+      const win = makeWindow(1);
+      registry.attachResizeHandlers(win, () => {});
+      expect(registry.allWindows()).toEqual([]);
+    });
+  });
+
 });
