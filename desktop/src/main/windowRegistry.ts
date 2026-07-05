@@ -33,7 +33,7 @@ export type WindowRole = "main" | "popped-out";
  */
 export interface WindowRegistry {
   /** Add or replace the entry for `window.webContents.id`. */
-  registerWindow(window: BrowserWindow, role: WindowRole): void;
+  registerWindow(window: BrowserWindow, role: WindowRole, workdir?: string): void;
 
   /** Drop the entry for `windowID` and any thread mappings pointing at it. */
   unregisterWindow(windowID: number): void;
@@ -63,22 +63,36 @@ export interface WindowRegistry {
    * reuse this for popped-out windows created via `createPopOutWindow`.
    */
   attachResizeHandlers(window: BrowserWindow, onChange: () => void): void;
+
+  /**
+   * Commit 7 cascade uses this to enumerate popped-out windows in the
+   * same workdir when the source window closes. v1 returns only
+   * popped-out windows; the main window is excluded.
+   */
+  sameWorkdirPopOutWindows(workdir: string): BrowserWindow[];
 }
 
 interface WindowEntry {
   readonly window: BrowserWindow;
   readonly role: WindowRole;
+  readonly workdir?: string;
 }
 
 class WindowRegistryImpl implements WindowRegistry {
   private readonly windowsByID = new Map<number, WindowEntry>();
   private readonly threadToWindowID = new Map<string, number>();
+  private readonly resizeCleanups = new Map<number, () => void>();
 
-  registerWindow(window: BrowserWindow, role: WindowRole): void {
-    this.windowsByID.set(window.webContents.id, { window, role });
+  registerWindow(window: BrowserWindow, role: WindowRole, workdir?: string): void {
+    this.windowsByID.set(window.webContents.id, { window, role, workdir });
   }
 
   unregisterWindow(windowID: number): void {
+    const cleanup = this.resizeCleanups.get(windowID);
+    if (cleanup) {
+      cleanup();
+      this.resizeCleanups.delete(windowID);
+    }
     this.windowsByID.delete(windowID);
     for (const [threadID, hostedID] of this.threadToWindowID) {
       if (hostedID === windowID) {
@@ -119,10 +133,26 @@ class WindowRegistryImpl implements WindowRegistry {
     return this.threadToWindowID.get(threadID);
   }
 
+  sameWorkdirPopOutWindows(workdir: string): BrowserWindow[] {
+    return [...this.windowsByID.values()]
+      .filter((entry) => entry.role === "popped-out" && entry.workdir === workdir)
+      .map((entry) => entry.window);
+  }
+
   attachResizeHandlers(window: BrowserWindow, onChange: () => void): void {
-    window.on("will-resize", () => onChange());
-    window.on("resize", () => onChange());
-    window.on("resized", () => onChange());
+    const id = window.webContents.id;
+    if (this.resizeCleanups.has(id)) return;  // idempotent — already wired
+    const willResizeCb = (): void => onChange();
+    const resizeCb = (): void => onChange();
+    const resizedCb = (): void => onChange();
+    window.on("will-resize", willResizeCb);
+    window.on("resize", resizeCb);
+    window.on("resized", resizedCb);
+    this.resizeCleanups.set(id, () => {
+      window.off("will-resize", willResizeCb);
+      window.off("resize", resizeCb);
+      window.off("resized", resizedCb);
+    });
   }
 }
 

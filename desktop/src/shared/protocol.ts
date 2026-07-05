@@ -1690,6 +1690,19 @@ export type WuuDesktopApi = {
     text: string,
     threadId?: string
   ) => Promise<{ ok: boolean }>;
+  /**
+   * Pop-out session IPC (Plan §2.2 `wuu:pop-out-session`). Renderer
+   * sends `{ threadID }`; main opens a new BrowserWindow registered
+   * with the registry as "popped-out" and returns the window's
+   * webContents id.
+   */
+  popOutSession: (params: { threadID: string }) => Promise<{ windowID: number }>;
+  /**
+   * Optional belt-and-suspenders IPC for the popped-out window to tell
+   * main it's closing (Plan §2.2 `wuu:pop-out-closed`). Main clears
+   * the thread-window mapping and closes the window if still alive.
+   */
+  popOutClosed: (params: { threadID: string }) => Promise<{ ok: boolean }>;
 };
 
 declare global {

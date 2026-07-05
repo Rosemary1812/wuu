@@ -251,6 +251,10 @@ const api: WuuDesktopApi = {
     return () =>
       ipcRenderer.removeListener("wuu:window-resize-state", listener);
   },
+  popOutSession: (params) =>
+    ipcRenderer.invoke("wuu:pop-out-session", params),
+  popOutClosed: (params) =>
+    ipcRenderer.invoke("wuu:pop-out-closed", params),
 };
 
 contextBridge.exposeInMainWorld("wuu", api);

@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  screen,
   session as electronSession,
   type OpenDialogOptions,
   shell,
@@ -204,6 +205,66 @@ function scheduleWindowResizeEnd(delay = 140): void {
   }, delay);
 }
 
+function createPopOutWindow(params: { threadID: string }): BrowserWindow {
+  // Plan §2.2 #1 (vs Reviewer S1): cursor position is read by main
+  // process via `screen.getCursorScreenPoint()` so the preload bridge
+  // never sees the `screen` Electron API. Combined with `getBounds()`
+  // we compute the new window position without exposing platform APIs
+  // to the renderer.
+  // Cast: some Electron typings bundle cursor methods on the namespace
+  // value rather than the `Screen` interface; both exist at runtime.
+  const cursor = (screen as unknown as { getCursorScreenPoint(): { x: number; y: number } }).getCursorScreenPoint();
+  const display = (screen as unknown as { getDisplayNearestPoint(point: { x: number; y: number }): { workArea: { x: number; y: number; width: number; height: number } } }).getDisplayNearestPoint(cursor);
+  const workArea = display.workArea;
+  const winWidth = 800;
+  const winHeight = 600;
+  const x = Math.max(
+    workArea.x,
+    Math.min(cursor.x - winWidth / 2, workArea.x + workArea.width - winWidth),
+  );
+  const y = Math.max(
+    workArea.y,
+    Math.min(cursor.y - 20, workArea.y + workArea.height - winHeight),
+  );
+
+  // Plan §5.2 Q5 default: window title format `wuu · {threadTitle}`.
+  // For commit 3 the app-server side has no "thread/list" endpoint yet
+  // for fetching a single thread's title; we ship a placeholder
+  // (`wuu · {first 8 chars of threadID}`) and refresh in commit 5
+  // alongside the `wuu:pop-out-init` sync bootstrap, which is the
+  // natural place to introduce the server RPC + thread registry
+  // lookup that surfaces the real title. (Plan product-rec input
+  // defaults to option (iii) until commit 5.)
+  const placeholderTitle = `wuu · ${params.threadID.slice(0, 8)}`;
+  const win = new BrowserWindow({
+    width: winWidth,
+    height: winHeight,
+    x,
+    y,
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 18, y: 16 },
+    backgroundColor: "#f6f6f4",
+    title: placeholderTitle,
+    webPreferences: {
+      preload: join(__dirname, "../preload/index.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webviewTag: true,
+    },
+  });
+
+  // Commit 7 will pass the actual workdir value when wiring same-workdir
+  // cascade; for now the popped-out window registers without workdir,
+  // which `sameWorkdirPopOutWindows(workdir)` already filters out.
+  windowRegistry.registerWindow(win, "popped-out");
+  windowRegistry.attachResizeHandlers(win, () => {
+    setWindowResizeState(true);
+    scheduleWindowResizeEnd();
+  });
+  windowRegistry.setThreadWindow(params.threadID, win.webContents.id);
+  return win;
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: MAIN_WINDOW_DEFAULT_WIDTH,
@@ -333,6 +394,22 @@ app.whenReady().then(async () => {
       });
   }
 
+  ipcMain.handle(
+    "wuu:pop-out-session",
+    (_event, params: { threadID: string }) => {
+      const win = createPopOutWindow(params);
+      return { windowID: win.webContents.id };
+    },
+  );
+  ipcMain.handle(
+    "wuu:pop-out-closed",
+    (_event, params: { threadID: string }) => {
+      windowRegistry.clearThreadWindow(params.threadID);
+      const win = windowRegistry.popOutWindowForThread(params.threadID);
+      if (win && !win.isDestroyed()) win.close();
+      return { ok: true };
+    },
+  );
   ipcMain.handle("wuu:project-list", () => projectManager.list());
   ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) =>
     projectManager.select(projectIDToSelect),
