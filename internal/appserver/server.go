@@ -141,6 +141,26 @@ type Server struct {
 	residentDrainMu       sync.Mutex
 	drainingResidentAgent map[string]bool
 
+	// participantBusyMu guards participantBusy, the registry of named
+	// agents currently executing a task/workflow run (decision-five
+	// concurrency lock). A named agent is "busy" for exactly the lifetime
+	// of a live participant run: acquired when the run reports Running (or
+	// synchronously at participant/start), released when it terminates.
+	// While busy, a second task-pull is refused and an @-mention chat drain
+	// is deferred, so two callers never grab the same resident agent at
+	// once. See internal/appserver/participant_busy.go.
+	participantBusyMu sync.Mutex
+	participantBusy   map[string]participantBusyEntry
+
+	// forkMergeMu guards forkMergeLocks, the per-母体 merge-back queue
+	// (decision six). A fork's memory回流 into its母体 acquires the母体's
+	// lock so concurrent merges (母体 forked twice, both副本 retiring at once)
+	// serialize their append-merge — deterministic same-topic conflict
+	// resolution requires it (internal/memdir has no locking). See
+	// internal/appserver/participant_fork.go.
+	forkMergeMu    sync.Mutex
+	forkMergeLocks map[string]*sync.Mutex
+
 	// allChannelMu serializes ensureAllChannel so concurrent thread/list
 	// calls cannot race to create two "all" group threads.
 	allChannelMu sync.Mutex
@@ -178,6 +198,7 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		drainingQueuedTurns:          make(map[string]bool),
 		drainingGoalContinuation:     make(map[string]bool),
 		drainingResidentAgent:        make(map[string]bool),
+		participantBusy:              make(map[string]participantBusyEntry),
 		codexModelCache:              make(map[string]map[string]config.ProviderModelConfig),
 		memoryOverviewCache:          make(map[string]memoryOverviewCacheEntry),
 	}

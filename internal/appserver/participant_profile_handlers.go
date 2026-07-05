@@ -356,18 +356,19 @@ func (s *Server) participantProfile(p participant.Participant) (ParticipantProfi
 		})
 	}
 	return ParticipantProfile{
-		ID:          p.ID,
-		Kind:        string(p.Kind),
-		Name:        p.Name,
-		Role:        p.Role,
-		AvatarImage: avatarImage,
-		Tagline:     p.Tagline,
-		Workspace:   p.Workspace,
-		Model:       p.Model,
-		Memory:      memory,
-		TrackRecord: trackRecord,
-		CreatedAt:   p.CreatedAt,
-		UpdatedAt:   p.UpdatedAt,
+		ID:           p.ID,
+		Kind:         string(p.Kind),
+		Name:         p.Name,
+		Role:         p.Role,
+		AvatarImage:  avatarImage,
+		Tagline:      p.Tagline,
+		Workspace:    p.Workspace,
+		Model:        p.Model,
+		Memory:       memory,
+		ForkedFromID: p.ForkedFrom,
+		TrackRecord:  trackRecord,
+		CreatedAt:    p.CreatedAt,
+		UpdatedAt:    p.UpdatedAt,
 	}, nil
 }
 

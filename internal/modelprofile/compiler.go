@@ -42,14 +42,46 @@ const (
 	ProfileGeneric ProfileKey = "generic"
 )
 
+// SurfaceKind identifies which runtime role a tool surface is compiled for.
+// It is a closed set of three values so the compiler can key decisions off a
+// single dimension instead of an open pair of booleans (a worker that is also
+// "named" is not a valid combination). The existing main/worker orchestration
+// boundary is derived from it (main and named agents orchestrate, workers do
+// not); the named value additionally marks long-lived resident/named agents so
+// later bricks can grant them named-only capabilities without a second flag.
+type SurfaceKind int
+
+const (
+	// SurfaceWorker is a pure executor subagent surface: no task
+	// orchestration or recovery tools, only the agent_report handoff.
+	SurfaceWorker SurfaceKind = iota
+	// SurfaceMain is the ordinary project main-agent brain surface: it
+	// carries the task-orchestration suite plus helpme.
+	SurfaceMain
+	// SurfaceNamed is a long-lived resident/named agent surface. Today it
+	// compiles identically to SurfaceMain (both orchestrate); the distinct
+	// value exists so named-only capabilities can be attached later without
+	// changing the main-agent surface.
+	SurfaceNamed
+)
+
+// orchestrates reports whether a surface kind gets the main-agent
+// orchestration boundary (task suite + helpme) rather than the pure-worker
+// surface. Main and named agents orchestrate; workers do not.
+func (k SurfaceKind) orchestrates() bool {
+	return k != SurfaceWorker
+}
+
 // Compiler compiles a model profile into a tool surface. Compile is given a
-// forMainAgent flag so it can decide whether the surface should advertise,
-// hide, or omit main-agent-only orchestration and recovery tools (the
-// spawn_agent suite, helpme) and worker-only handoff tools such as
-// agent_report. The surface is therefore consistent with the runtime
-// boundary instead of being filtered downstream.
+// SurfaceKind so it can decide whether the surface should advertise, hide, or
+// omit main-agent-only orchestration and recovery tools (the spawn_agent
+// suite, helpme) and worker-only handoff tools such as agent_report. The
+// surface is therefore consistent with the runtime boundary instead of being
+// filtered downstream. The named value is a distinct dimension reserved for
+// resident/named-agent-only capabilities in later work; today it compiles the
+// same surface as SurfaceMain.
 type Compiler interface {
-	Compile(p Profile, forMainAgent bool) capability.Surface
+	Compile(p Profile, kind SurfaceKind) capability.Surface
 }
 
 // DefaultCompiler returns the built-in compiler. The compiler is
@@ -57,13 +89,13 @@ type Compiler interface {
 type DefaultCompiler struct{}
 
 // Compile implements Compiler. Both main agents and workers get the context
-// rewrite tool so each agent can compact its own local history. forMainAgent
-// controls the orchestration boundary: execution capability is equal on both
-// surfaces, but orchestration belongs to the brain (the session main agent
-// and resident named agents, which clone the main surface). Main surfaces
-// get the task-orchestration suite plus helpme; worker surfaces are pure
-// executors and keep only the agent_report handoff tool.
-func (DefaultCompiler) Compile(p Profile, forMainAgent bool) capability.Surface {
+// rewrite tool so each agent can compact its own local history. The SurfaceKind
+// controls the orchestration boundary: execution capability is equal on all
+// surfaces, but orchestration belongs to the brain (the session main agent and
+// resident named agents, which clone the main surface). Main and named
+// surfaces get the task-orchestration suite plus helpme; worker surfaces are
+// pure executors and keep only the agent_report handoff tool.
+func (DefaultCompiler) Compile(p Profile, kind SurfaceKind) capability.Surface {
 	key := ResolveProfileKey(p)
 	b := newBuilder(p, key)
 	switch key {
@@ -77,11 +109,22 @@ func (DefaultCompiler) Compile(p Profile, forMainAgent bool) capability.Surface 
 		compileGeneric(b, p)
 	}
 	addInceptionTool(b)
-	if forMainAgent {
+	if kind.orchestrates() {
 		addTaskTools(b)
 		addHelpmeTool(b)
 	} else {
 		addWorkerReportTool(b)
+	}
+	// The workflow / agent-profile suite is a named-agent-only capability:
+	// ordinary project main agents and workers do not orchestrate multi-agent
+	// workflows, only long-lived resident/named agents do. A directly compiled
+	// SurfaceNamed gets the suite here; named agents that inherit the main
+	// surface via CloneForRoot and flip to named only at turn time receive the
+	// same suite through the runtime resident-surface patch in package tools
+	// (enableResidentParticipantSurface), which consumes the same
+	// NamedWorkflowTools list so the two seams never drift.
+	if kind == SurfaceNamed {
+		addWorkflowTools(b)
 	}
 	b.sortCaps()
 	return b.surface
@@ -226,7 +269,6 @@ func compileOpenAICodex(b *surfaceBuilder, p Profile) {
 	addMemoryTools(b)
 	addSessionTools(b)
 	addPlanningTools(b)
-	addWorkflowTools(b)
 	addScheduleTools(b)
 	addSkillTools(b)
 	addExtensionTools(b)
@@ -242,7 +284,6 @@ func compileOpenAIGPT(b *surfaceBuilder, p Profile) {
 	addMemoryTools(b)
 	addSessionTools(b)
 	addPlanningTools(b)
-	addWorkflowTools(b)
 	addScheduleTools(b)
 	addSkillTools(b)
 	addExtensionTools(b)
@@ -258,7 +299,6 @@ func compileAnthropicClaude(b *surfaceBuilder, p Profile) {
 	addMemoryTools(b)
 	addSessionTools(b)
 	addPlanningTools(b)
-	addWorkflowTools(b)
 	addScheduleTools(b)
 	addSkillTools(b)
 	addExtensionTools(b)
@@ -274,7 +314,6 @@ func compileGeneric(b *surfaceBuilder, p Profile) {
 	addMemoryTools(b)
 	addSessionTools(b)
 	addPlanningTools(b)
-	addWorkflowTools(b)
 	addScheduleTools(b)
 	addSkillTools(b)
 	addExtensionTools(b)
@@ -367,17 +406,43 @@ func addPlanningTools(b *surfaceBuilder) {
 	b.addDeferred("update_goal", capability.CapabilityGoal)
 }
 
+// WorkflowTool pairs a named-only workflow tool name with its capability.
+type WorkflowTool struct {
+	Name       string
+	Capability capability.Capability
+}
+
+// NamedWorkflowTools is the canonical, ordered list of the workflow and
+// agent-profile deferred tools that belong ONLY to named (resident) agent
+// surfaces. Ordinary project main agents and pure-executor workers do not get
+// these tools. It is the single source of truth consumed by two seams that
+// must never drift: addWorkflowTools at compile time (for a directly compiled
+// SurfaceNamed) and the runtime resident-surface patch in package tools
+// (enableResidentParticipantSurface) for named agents that inherit the main
+// surface via CloneForRoot and only flip to named at turn time.
+func NamedWorkflowTools() []WorkflowTool {
+	return []WorkflowTool{
+		{"list_workflows", capability.CapabilityWorkflow},
+		{"load_workflow", capability.CapabilityWorkflow},
+		{"save_workflow", capability.CapabilityWorkflow},
+		{"list_agent_profiles", capability.CapabilityWorkflow},
+		{"create_agent_profile", capability.CapabilityWorkflow},
+		{"start_workflow", capability.CapabilityWorkflow},
+		{"run_workflow", capability.CapabilityWorkflow},
+		{"create_workflow", capability.CapabilityWorkflow},
+		{"workflow_control", capability.CapabilityWorkflow},
+		{"workflow_status", capability.CapabilityWorkflow},
+	}
+}
+
+// addWorkflowTools registers the named-agent-only workflow/agent-profile suite
+// on a compiled surface. It is invoked from DefaultCompiler.Compile only for
+// SurfaceNamed. It consumes NamedWorkflowTools so the compile seam and the
+// runtime resident-surface patch stay in lockstep.
 func addWorkflowTools(b *surfaceBuilder) {
-	b.addDeferred("list_workflows", capability.CapabilityWorkflow)
-	b.addDeferred("load_workflow", capability.CapabilityWorkflow)
-	b.addDeferred("save_workflow", capability.CapabilityWorkflow)
-	b.addDeferred("list_agent_profiles", capability.CapabilityWorkflow)
-	b.addDeferred("create_agent_profile", capability.CapabilityWorkflow)
-	b.addDeferred("start_workflow", capability.CapabilityWorkflow)
-	b.addDeferred("run_workflow", capability.CapabilityWorkflow)
-	b.addDeferred("create_workflow", capability.CapabilityWorkflow)
-	b.addDeferred("workflow_control", capability.CapabilityWorkflow)
-	b.addDeferred("workflow_status", capability.CapabilityWorkflow)
+	for _, wt := range NamedWorkflowTools() {
+		b.addDeferred(wt.Name, wt.Capability)
+	}
 }
 
 func addScheduleTools(b *surfaceBuilder) {

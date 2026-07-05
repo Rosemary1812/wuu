@@ -1,6 +1,7 @@
 package modelprofile
 
 import (
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -57,7 +58,7 @@ func TestCompilerReturnsAllFourProfiles(t *testing.T) {
 		{provider: "google", model: "gemini-2.5-pro", want: ProfileGeneric},
 	}
 	for _, tt := range cases {
-		s := c.Compile(Resolve(tt.provider, tt.model), true)
+		s := c.Compile(Resolve(tt.provider, tt.model), SurfaceMain)
 		if s.ProfileName != string(tt.want) {
 			t.Fatalf("Compile(%s, %s).ProfileName = %s, want %s", tt.provider, tt.model, s.ProfileName, tt.want)
 		}
@@ -71,7 +72,7 @@ func TestCompilerReturnsAllFourProfiles(t *testing.T) {
 }
 
 func TestOpenAICodexSurface(t *testing.T) {
-	s := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5-codex"), true)
+	s := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5-codex"), SurfaceMain)
 
 	// Editing primitive is apply_patch. edit_file and write_file
 	// must not be visible on this surface.
@@ -124,7 +125,6 @@ func TestOpenAICodexSurface(t *testing.T) {
 		"session_memory",
 		"thread_get",
 		"create_goal", "get_goal", "update_goal",
-		"list_workflows", "load_workflow", "save_workflow", "list_agent_profiles", "create_agent_profile", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status",
 		"schedule_cron", "cancel_cron", "list_cron",
 		"report_listening_ports",
 	}
@@ -134,6 +134,17 @@ func TestOpenAICodexSurface(t *testing.T) {
 		}
 		if _, ok := s.DeferredTools[name]; !ok {
 			t.Fatalf("Codex surface must defer %s, got deferred=%v", name, sortedKeys(s.DeferredTools))
+		}
+	}
+
+	// Workflow / agent-profile tools are named-agent-only: an ordinary main
+	// surface must neither advertise nor defer them.
+	for _, name := range workflowToolNames() {
+		if _, ok := s.Tools[name]; ok {
+			t.Fatalf("Codex MAIN surface must NOT advertise named-only workflow tool %s", name)
+		}
+		if _, ok := s.DeferredTools[name]; ok {
+			t.Fatalf("Codex MAIN surface must NOT defer named-only workflow tool %s, got deferred=%v", name, sortedKeys(s.DeferredTools))
 		}
 	}
 
@@ -147,7 +158,7 @@ func TestOpenAICodexSurface(t *testing.T) {
 }
 
 func TestOpenAIGPTSurfaceDefaultsToApplyPatch(t *testing.T) {
-	s := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5.5"), true)
+	s := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5.5"), SurfaceMain)
 	if tool, ok := s.ToolForCapability(capability.CapabilityFileEdit); !ok || tool != "apply_patch" {
 		t.Fatalf("GPT surface must default to apply_patch, got tool=%q ok=%v", tool, ok)
 	}
@@ -161,7 +172,7 @@ func TestOpenAIGPTSurfaceDefaultsToApplyPatch(t *testing.T) {
 
 func TestOpenAIGPTSurfaceUsesApplyPatchForAllOpenAIModels(t *testing.T) {
 	for _, model := range []string{"gpt-5.5", "gpt-4.1-mini", "openai/gpt-oss-120b"} {
-		s := DefaultCompiler{}.Compile(Resolve("openai", model), true)
+		s := DefaultCompiler{}.Compile(Resolve("openai", model), SurfaceMain)
 		tool, ok := s.ToolForCapability(capability.CapabilityFileEdit)
 		if !ok {
 			t.Fatalf("%s: expected file.edit capability to be visible", model)
@@ -179,7 +190,7 @@ func TestOpenAIGPTSurfaceUsesApplyPatchForAllOpenAIModels(t *testing.T) {
 }
 
 func TestAnthropicClaudeSurface(t *testing.T) {
-	s := DefaultCompiler{}.Compile(Resolve("anthropic", "claude-sonnet-4-5"), true)
+	s := DefaultCompiler{}.Compile(Resolve("anthropic", "claude-sonnet-4-5"), SurfaceMain)
 
 	// Editing primitive is edit_file (+ write_file as whole-file fallback).
 	// apply_patch is hidden, never visible.
@@ -248,7 +259,7 @@ func TestGenericSurfaceForOpenAISHapedBYOK(t *testing.T) {
 		{provider: "deepseek", model: "deepseek-v3.2"},
 		{provider: "dashscope", model: "qwen3-coder-plus"},
 	} {
-		s := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), true)
+		s := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), SurfaceMain)
 		if s.ProfileName != string(ProfileGeneric) {
 			t.Fatalf("%s/%s: ProfileName = %s, want generic", tt.provider, tt.model, s.ProfileName)
 		}
@@ -269,7 +280,7 @@ func TestGenericSurfaceForOpenAISHapedBYOK(t *testing.T) {
 }
 
 func TestGenericSurfaceDropsBashForLocal(t *testing.T) {
-	s := DefaultCompiler{}.Compile(Resolve("ollama", "llama-coder"), true)
+	s := DefaultCompiler{}.Compile(Resolve("ollama", "llama-coder"), SurfaceMain)
 	if s.ProfileName != string(ProfileGeneric) {
 		t.Fatalf("local profile must compile under generic, got %s", s.ProfileName)
 	}
@@ -296,7 +307,7 @@ func TestGenericSurfaceDropsBashForLocal(t *testing.T) {
 }
 
 func TestLocalNoShellFragmentDoesNotNameUnavailableTools(t *testing.T) {
-	s := DefaultCompiler{}.Compile(Resolve("ollama", "llama-coder"), true)
+	s := DefaultCompiler{}.Compile(Resolve("ollama", "llama-coder"), SurfaceMain)
 	fragment := strings.ToLower(s.SystemFragment)
 	for _, banned := range []string{
 		"bash",
@@ -317,9 +328,9 @@ func TestLocalNoShellFragmentDoesNotNameUnavailableTools(t *testing.T) {
 
 func TestCompilerEmitsStableCapabilityOrder(t *testing.T) {
 	c := DefaultCompiler{}
-	prev := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5-codex"), true)
+	prev := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5-codex"), SurfaceMain)
 	for i := 0; i < 8; i++ {
-		got := c.Compile(Resolve("openai", "gpt-5-codex"), true)
+		got := c.Compile(Resolve("openai", "gpt-5-codex"), SurfaceMain)
 		if !sameStringSlice(toCapabilityStrings(prev.Capabilities), toCapabilityStrings(got.Capabilities)) {
 			t.Fatalf("compiler must emit deterministic capability order, prev=%v got=%v", prev.Capabilities, got.Capabilities)
 		}
@@ -327,7 +338,7 @@ func TestCompilerEmitsStableCapabilityOrder(t *testing.T) {
 }
 
 func TestSummarizeIsJSONFriendlyAndOmitsRawFragmentsInTests(t *testing.T) {
-	s := DefaultCompiler{}.Compile(Resolve("anthropic", "claude-sonnet-4-5"), true)
+	s := DefaultCompiler{}.Compile(Resolve("anthropic", "claude-sonnet-4-5"), SurfaceMain)
 	summary := s.Summarize()
 	if summary.ProfileName != string(ProfileAnthropicClaude) {
 		t.Fatalf("summary ProfileName = %s, want %s", summary.ProfileName, ProfileAnthropicClaude)
@@ -350,7 +361,7 @@ func TestSummarizeIsJSONFriendlyAndOmitsRawFragmentsInTests(t *testing.T) {
 }
 
 func TestSurfaceHasCapabilityAndToolForCapability(t *testing.T) {
-	s := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5-codex"), true)
+	s := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5-codex"), SurfaceMain)
 	if !s.HasCapability(capability.CapabilityFileEdit) {
 		t.Fatal("Codex surface must have file.edit capability (via apply_patch)")
 	}
@@ -382,7 +393,7 @@ func TestNoProfileAdvertisesRunTestStartProcessOrGitAsDefault(t *testing.T) {
 		Resolve("deepseek", "deepseek-v3.2"),
 	}
 	for _, p := range cases {
-		s := c.Compile(p, true)
+		s := c.Compile(p, SurfaceMain)
 		for _, name := range []string{"run_shell", "run_test", "git", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process"} {
 			if _, visible := s.Tools[name]; visible {
 				t.Fatalf("%s/%s: surface must not advertise %s as a default tool", p.ProviderName, p.Model, name)
@@ -476,7 +487,7 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 		{"ollama", "llama-coder"},
 	}
 	for _, tt := range cases {
-		mainSurface := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), true)
+		mainSurface := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), SurfaceMain)
 		if mainSurface.Tools["helpme"] != capability.CapabilityTaskSpawn {
 			t.Errorf("%s/%s main-agent direct helpme capability = %s, want %s", tt.provider, tt.model, mainSurface.Tools["helpme"], capability.CapabilityTaskSpawn)
 		}
@@ -492,7 +503,7 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 		if _, ok := mainSurface.HiddenTools["inception"]; ok {
 			t.Errorf("%s/%s main-agent surface must not hide inception", tt.provider, tt.model)
 		}
-		workerSurface := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), false)
+		workerSurface := DefaultCompiler{}.Compile(Resolve(tt.provider, tt.model), SurfaceWorker)
 		if workerSurface.Tools["inception"] != capability.CapabilityContextRewrite {
 			t.Errorf("%s/%s worker direct inception capability = %s, want %s", tt.provider, tt.model, workerSurface.Tools["inception"], capability.CapabilityContextRewrite)
 		}
@@ -557,5 +568,129 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 		if _, ok := workerSurface.DeferredTools["manage_participant"]; ok {
 			t.Errorf("%s/%s ordinary worker surface must NOT defer manage_participant", tt.provider, tt.model)
 		}
+	}
+}
+
+// workflowToolNames returns the named-agent-only workflow/agent-profile tool
+// names from the single canonical source, for use in surface assertions.
+func workflowToolNames() []string {
+	out := make([]string, 0, len(NamedWorkflowTools()))
+	for _, wt := range NamedWorkflowTools() {
+		out = append(out, wt.Name)
+	}
+	return out
+}
+
+// TestSurfaceKindWorkflowIsNamedOnly pins the named-only workflow contract:
+// the workflow / agent-profile suite is deferred on a SurfaceNamed compile and
+// entirely absent (neither direct nor deferred) on SurfaceMain and
+// SurfaceWorker. Apart from that suite, named and main compile identically —
+// the orchestration boundary (spawn_agent/helpme vs agent_report) still tracks
+// SurfaceWorker.
+func TestSurfaceKindWorkflowIsNamedOnly(t *testing.T) {
+	cases := []struct {
+		provider string
+		model    string
+	}{
+		{"openai", "gpt-5-codex"},
+		{"openai", "gpt-5.5"},
+		{"anthropic", "claude-sonnet-4-5"},
+		{"ollama", "llama-coder"},
+	}
+	c := DefaultCompiler{}
+	for _, tt := range cases {
+		p := Resolve(tt.provider, tt.model)
+		main := c.Compile(p, SurfaceMain)
+		named := c.Compile(p, SurfaceNamed)
+		worker := c.Compile(p, SurfaceWorker)
+
+		for _, name := range workflowToolNames() {
+			// Named: deferred (never direct).
+			if _, ok := named.Tools[name]; ok {
+				t.Errorf("%s/%s: named surface must NOT directly advertise workflow tool %s", tt.provider, tt.model, name)
+			}
+			if _, ok := named.DeferredTools[name]; !ok {
+				t.Errorf("%s/%s: named surface must defer workflow tool %s", tt.provider, tt.model, name)
+			}
+			// Main and worker: absent entirely.
+			for label, s := range map[string]capability.Surface{"main": main, "worker": worker} {
+				if _, ok := s.Tools[name]; ok {
+					t.Errorf("%s/%s: %s surface must NOT advertise named-only workflow tool %s", tt.provider, tt.model, label, name)
+				}
+				if _, ok := s.DeferredTools[name]; ok {
+					t.Errorf("%s/%s: %s surface must NOT defer named-only workflow tool %s", tt.provider, tt.model, label, name)
+				}
+			}
+		}
+
+		// CapabilityWorkflow is advertised (deferred) only on the named surface.
+		if !hasCapability(named.DeferredCapabilities, capability.CapabilityWorkflow) {
+			t.Errorf("%s/%s: named surface must defer CapabilityWorkflow", tt.provider, tt.model)
+		}
+		if named.HasCapability(capability.CapabilityWorkflow) != true {
+			t.Errorf("%s/%s: named surface must know CapabilityWorkflow", tt.provider, tt.model)
+		}
+		if main.HasCapability(capability.CapabilityWorkflow) {
+			t.Errorf("%s/%s: main surface must NOT carry CapabilityWorkflow", tt.provider, tt.model)
+		}
+		if worker.HasCapability(capability.CapabilityWorkflow) {
+			t.Errorf("%s/%s: worker surface must NOT carry CapabilityWorkflow", tt.provider, tt.model)
+		}
+
+		// Named minus the workflow suite is identical to main: strip the
+		// workflow tools/capability from named and compare to main.
+		strippedNamed := stripWorkflowSuite(named)
+		if !reflect.DeepEqual(main, strippedNamed) {
+			t.Errorf("%s/%s: SurfaceNamed minus the workflow suite must equal SurfaceMain", tt.provider, tt.model)
+		}
+
+		// Orchestration boundary unchanged: main/named orchestrate, worker not.
+		for _, tool := range []string{"spawn_agent", "helpme"} {
+			if _, ok := named.Tools[tool]; !ok {
+				t.Errorf("%s/%s: named surface must expose %s", tt.provider, tt.model, tool)
+			}
+			if _, ok := worker.Tools[tool]; ok {
+				t.Errorf("%s/%s: worker surface must NOT expose %s", tt.provider, tt.model, tool)
+			}
+		}
+		if _, ok := worker.Tools["agent_report"]; !ok {
+			t.Errorf("%s/%s: worker surface must expose agent_report", tt.provider, tt.model)
+		}
+	}
+}
+
+// stripWorkflowSuite returns a deep copy of s with the named-only workflow
+// deferred tools and the deferred CapabilityWorkflow removed, so it can be
+// compared against a SurfaceMain compile.
+func stripWorkflowSuite(s capability.Surface) capability.Surface {
+	out := s
+	out.DeferredTools = map[string]capability.Capability{}
+	for name, capName := range s.DeferredTools {
+		out.DeferredTools[name] = capName
+	}
+	for _, name := range workflowToolNames() {
+		delete(out.DeferredTools, name)
+	}
+	out.DeferredCapabilities = nil
+	for _, c := range s.DeferredCapabilities {
+		if c == capability.CapabilityWorkflow {
+			continue
+		}
+		out.DeferredCapabilities = append(out.DeferredCapabilities, c)
+	}
+	return out
+}
+
+// TestSurfaceKindOrchestrates documents the derived boundary that main and
+// named agents orchestrate while workers do not.
+func TestSurfaceKindOrchestrates(t *testing.T) {
+	if !SurfaceMain.orchestrates() {
+		t.Error("SurfaceMain must orchestrate")
+	}
+	if !SurfaceNamed.orchestrates() {
+		t.Error("SurfaceNamed must orchestrate")
+	}
+	if SurfaceWorker.orchestrates() {
+		t.Error("SurfaceWorker must not orchestrate")
 	}
 }

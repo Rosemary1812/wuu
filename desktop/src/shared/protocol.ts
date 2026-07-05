@@ -582,6 +582,19 @@ export type ParticipantSummary = {
   // participant/list). Optional because synthesized fallback summaries
   // (legacy rows, ephemeral snapshots) never carry it.
   avatar_image?: string;
+  // busy reports that this named agent is currently executing a
+  // task/workflow run and cannot take a second concurrent pull
+  // (decision-five concurrency lock). The backend overlays it on group
+  // member summaries (threadWithGroupMembers); the UI shows a busy badge
+  // and can steer toward forking a copy. Optional/false when idle or not a
+  // named agent.
+  busy?: boolean;
+  // forked_from_id marks a temporary分身 (decision six): the母体's participant
+  // id this named agent was forked from, so the UI can badge it as "X 的分身".
+  // Distinct from the session/conversation fork (ThreadSummary.forked_from_id)
+  // — this is a named-agent identity copy with a memory snapshot. Absent for
+  // ordinary named agents.
+  forked_from_id?: string;
 };
 
 export type Agent = {
@@ -665,6 +678,10 @@ export type ParticipantProfile = {
   workspace?: string;
   model?: string;
   memory?: string;
+  // forked_from_id is the母体's participant id when this profile is a
+  // temporary分身 (decision six); the UI badges the copy as "X 的分身".
+  // Distinct from the session/conversation fork (ThreadSummary.forked_from_id).
+  forked_from_id?: string;
   track_record?: ParticipantRunEntry[];
   created_at?: string;
   updated_at?: string;
@@ -982,6 +999,19 @@ export type ThreadResolveSubResult = {
 // just-posted human message, so the split reply panel updates immediately (cth
 // messages carry no item/thread notification of their own).
 export type MessagePostSubthreadResult = {
+  subthread: ConversationSubthread;
+};
+
+// thread/subUpdated notification: pushed whenever a reply-subthread (cth) message
+// is stored (agent reply, human post, or task_card fold). cth traffic never
+// appends a main-stream turn, so this is the only live signal the split reply
+// panel and the reply-count badge get. thread_id is the PARENT group thread;
+// subthread_id identifies the cth; subthread carries the refreshed view (turns +
+// reply_count) so the panel patches in place without a follow-up RPC. Rides the
+// generic wuu:server-event channel — no dedicated IPC method.
+export type SubthreadUpdatedNotification = {
+  thread_id: string;
+  subthread_id: string;
   subthread: ConversationSubthread;
 };
 

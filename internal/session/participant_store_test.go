@@ -30,6 +30,42 @@ func TestParticipantCRUD(t *testing.T) {
 	}
 }
 
+// TestParticipantForkedFromRoundTrip proves the decision-six分身 marker
+// (ForkedFrom, the母体's participant id) persists through the store.
+func TestParticipantForkedFromRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	mother := participant.Participant{ID: participant.NewID(), Kind: participant.KindNamed, Name: "Rina", Role: "reviewer"}
+	if err := UpsertParticipant(dir, mother); err != nil {
+		t.Fatal(err)
+	}
+	fork := participant.Participant{
+		ID: participant.NewID(), Kind: participant.KindNamed,
+		Name: "Rina 的分身", Role: "reviewer", ForkedFrom: mother.ID,
+	}
+	if err := UpsertParticipant(dir, fork); err != nil {
+		t.Fatal(err)
+	}
+	got, err := GetParticipant(dir, fork.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ForkedFrom != mother.ID {
+		t.Fatalf("ForkedFrom round-trip = %q, want %q", got.ForkedFrom, mother.ID)
+	}
+	// The母体 carries no fork marker.
+	gotMother, err := GetParticipant(dir, mother.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotMother.ForkedFrom != "" {
+		t.Fatalf("mother ForkedFrom = %q, want empty", gotMother.ForkedFrom)
+	}
+	// Summary() surfaces the marker for the wire.
+	if got.Summary().ForkedFromID != mother.ID {
+		t.Fatalf("Summary ForkedFromID = %q, want %q", got.Summary().ForkedFromID, mother.ID)
+	}
+}
+
 func TestNamedParticipantUniqueName(t *testing.T) {
 	dir := t.TempDir()
 	a := participant.Participant{ID: participant.NewID(), Kind: participant.KindNamed, Name: "Noel", Role: "reviewer"}

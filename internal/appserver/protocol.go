@@ -126,6 +126,15 @@ const (
 	// without reloading the thread (2026-07-04-read-receipts-and-reactions.md
 	// §5).
 	NotificationMessageMark = "message/mark"
+	// NotificationSubthreadUpdated carries a refreshed reply-subthread (cth) view
+	// whenever a message is stored in that subthread (agent reply, human post, or
+	// task_card fold). cth traffic is short-circuited off the main stream and
+	// emits no turn/item/thread notification of its own, so the split reply panel
+	// and the main-stream reply-count badge would otherwise go stale. thread_id is
+	// the PARENT group thread (needed for the renderer's global-thread gate and
+	// the reply-badge reload); subthread_id identifies which cth; the embedded
+	// subthread view lets the panel patch in place without a round-trip.
+	NotificationSubthreadUpdated = "thread/subUpdated"
 )
 
 type Request struct {
@@ -890,14 +899,18 @@ type ParticipantProfile struct {
 	// (e.g. "data:image/png;base64,..."). Populated on the profile read
 	// path when the workspace contains an avatar image; omitted on the
 	// lightweight wire Summary.
-	AvatarImage string                `json:"avatar_image,omitempty"`
-	Tagline     string                `json:"tagline,omitempty"`
-	Workspace   string                `json:"workspace,omitempty"`
-	Model       string                `json:"model,omitempty"`
-	Memory      string                `json:"memory,omitempty"`
-	TrackRecord []ParticipantRunEntry `json:"track_record,omitempty"`
-	CreatedAt   time.Time             `json:"created_at,omitempty"`
-	UpdatedAt   time.Time             `json:"updated_at,omitempty"`
+	AvatarImage string `json:"avatar_image,omitempty"`
+	Tagline     string `json:"tagline,omitempty"`
+	Workspace   string `json:"workspace,omitempty"`
+	Model       string `json:"model,omitempty"`
+	Memory      string `json:"memory,omitempty"`
+	// ForkedFromID is the母体's participant id when this profile is a
+	// temporary分身 (decision six). The UI badges the copy as "X 的分身".
+	// Distinct from the session/conversation fork (ThreadSummary.forked_from_id).
+	ForkedFromID string                `json:"forked_from_id,omitempty"`
+	TrackRecord  []ParticipantRunEntry `json:"track_record,omitempty"`
+	CreatedAt    time.Time             `json:"created_at,omitempty"`
+	UpdatedAt    time.Time             `json:"updated_at,omitempty"`
 }
 
 type ParticipantRunEntry struct {
@@ -1293,6 +1306,18 @@ type ThreadResumedNotification struct {
 
 type ThreadUpdatedNotification struct {
 	Thread Thread `json:"thread"`
+}
+
+// SubthreadUpdatedNotification is pushed when a reply-subthread (cth) message is
+// stored. Because cth traffic never appends a main-stream turn, this is the only
+// live signal the split reply panel and the reply-count badge get. ThreadID is
+// the parent group thread; SubthreadID identifies the cth; Subthread carries the
+// refreshed view (turns + reply_count) so the frontend can patch without a
+// follow-up RPC.
+type SubthreadUpdatedNotification struct {
+	ThreadID    string                `json:"thread_id"`
+	SubthreadID string                `json:"subthread_id"`
+	Subthread   ConversationSubthread `json:"subthread"`
 }
 
 // ThreadRegenerateTitleParams is the input for the `thread/regenerate-title`

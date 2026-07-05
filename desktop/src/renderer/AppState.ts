@@ -1,6 +1,8 @@
 import type {
   Agent,
   AppServerNotification,
+  ConversationSubthread,
+  SubthreadUpdatedNotification,
   DesktopProject,
   GitStatusResult,
   InitializeResult,
@@ -1815,6 +1817,44 @@ export function replyCountBadge(count: number): string {
     return "99+";
   }
   return String(Math.max(0, Math.trunc(count)));
+}
+
+// The open split reply (cth) panel state. Mirrors App.tsx's local useState shape
+// so the pure patch helper below can be unit-tested without React.
+export type OpenSubthreadPanel = {
+  threadID: string;
+  subthread?: ConversationSubthread;
+  loading: boolean;
+  error?: string;
+};
+
+// applySubthreadUpdatedNotification patches an open reply (cth) panel in place
+// when a thread/subUpdated notification arrives for the subthread it is showing.
+// cth messages carry no turn/item/thread notification of their own, so this is
+// what makes an open panel stream as agents reply. Returns prev unchanged when
+// the panel is closed, the update targets a different subthread, or the payload
+// carried no view to patch with (the minimal error-fallback payload) — in that
+// last case the reply-count badge still refreshes via the separate nonce bump.
+export function applySubthreadUpdatedNotification(
+  prev: OpenSubthreadPanel | undefined,
+  note: SubthreadUpdatedNotification,
+): OpenSubthreadPanel | undefined {
+  if (!prev) {
+    return prev;
+  }
+  const subthreadID = note?.subthread_id;
+  if (!subthreadID || prev.subthread?.id !== subthreadID) {
+    return prev;
+  }
+  if (!note.subthread?.turns) {
+    return prev;
+  }
+  return {
+    ...prev,
+    subthread: note.subthread,
+    loading: false,
+    error: undefined,
+  };
 }
 
 /**

@@ -110,7 +110,7 @@ func runEval(args []string) error {
 		providerCfg.Model = *modelOverride
 	}
 
-	activeSurface := modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve(resolvedName, providerCfg.Model), true)
+	activeSurface := modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve(resolvedName, providerCfg.Model), modelprofile.SurfaceMain)
 	tasks, err := resolveEvalTasks(*taskFilter, evalVisibleToolSet(activeSurface.ToolNames()))
 	if err != nil {
 		return err

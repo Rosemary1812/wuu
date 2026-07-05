@@ -370,16 +370,59 @@ func TestManageParticipantSetAgentParticipantIDRoundTrip(t *testing.T) {
 	}
 }
 
-func TestManageParticipantToolRejectsInvalidRole(t *testing.T) {
+// Role is a free-form persona note (name is the identity axis), not a
+// worker-type registry key: an arbitrary string that is NOT a built-in
+// worker type must be accepted on save and stored verbatim.
+func TestManageParticipantToolAcceptsFreeFormRole(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.WuuHome = filepath.Join(rt.RootDir, ".wuu")
 	srv := New(rt, &lockedBuffer{})
 
-	_, err := executeManageParticipant(t, srv, "agent-1", `{"action":"save","name":"Theo","role":"not-a-real-role"}`)
-	if err == nil {
-		t.Fatalf("invalid role should error")
+	const persona = "我们的部署守护者"
+	if _, err := executeManageParticipant(t, srv, "agent-1", `{"action":"save","name":"Theo","role":"`+persona+`"}`); err != nil {
+		t.Fatalf("free-form role should be accepted, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "not-a-real-role") {
-		t.Fatalf("error should mention the invalid role, got %v", err)
+
+	all, err := session.ListParticipants(rt.SessionDir, participant.KindNamed)
+	if err != nil {
+		t.Fatalf("list named: %v", err)
+	}
+	var theo *participant.Participant
+	for i, p := range all {
+		if strings.EqualFold(p.Name, "Theo") {
+			theo = &all[i]
+			break
+		}
+	}
+	if theo == nil {
+		t.Fatalf("Theo not found in active named participants: %+v", all)
+	}
+	if theo.Role != persona {
+		t.Errorf("role = %q, want the free-form persona %q stored verbatim", theo.Role, persona)
+	}
+}
+
+// Decision-four contract: role is a persona note, not the task-dispatch
+// worker type. participant/start derives the worker type at exactly one point
+// (resolveParticipantSubagentType); it must ignore the participant's role —
+// even when the role string happens to be a real built-in worker type — so
+// every named agent runs on the shared default deck. Before the
+// deworkerization this returned the role ("reviewer") as the worker type.
+func TestResolveParticipantSubagentTypeIgnoresRole(t *testing.T) {
+	reviewer := participant.Participant{Name: "Ada", Role: "reviewer"}
+	if got := resolveParticipantSubagentType("", reviewer); got != agentcontrol.DefaultSubagentType {
+		t.Errorf("a role that is a real worker type must not select it: got %q, want %q", got, agentcontrol.DefaultSubagentType)
+	}
+	freeForm := participant.Participant{Name: "Bea", Role: "完全不同的人设"}
+	if got := resolveParticipantSubagentType("", freeForm); got != agentcontrol.DefaultSubagentType {
+		t.Errorf("a free-form role must not select a worker type: got %q, want %q", got, agentcontrol.DefaultSubagentType)
+	}
+	empty := participant.Participant{Name: "Cy"}
+	if got := resolveParticipantSubagentType("", empty); got != agentcontrol.DefaultSubagentType {
+		t.Errorf("empty role must fall to the default deck: got %q, want %q", got, agentcontrol.DefaultSubagentType)
+	}
+	// An explicit caller override still wins, regardless of role.
+	if got := resolveParticipantSubagentType("explorer", reviewer); got != "explorer" {
+		t.Errorf("explicit subagent_type must win over the default: got %q, want explorer", got)
 	}
 }

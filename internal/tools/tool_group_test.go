@@ -11,6 +11,7 @@ import (
 type fakeGroupManager struct {
 	createdTitles []string
 	added         [][2]string
+	members       map[string][]GroupMember
 }
 
 func (f *fakeGroupManager) CreateGroup(_ context.Context, title string) (string, error) {
@@ -21,6 +22,10 @@ func (f *fakeGroupManager) CreateGroup(_ context.Context, title string) (string,
 func (f *fakeGroupManager) AddGroupMember(_ context.Context, threadID, participantID string) error {
 	f.added = append(f.added, [2]string{threadID, participantID})
 	return nil
+}
+
+func (f *fakeGroupManager) ListGroupMembers(_ context.Context, threadID string) ([]GroupMember, error) {
+	return f.members[threadID], nil
 }
 
 func TestGroupToolsRequireResidentParticipantCapability(t *testing.T) {

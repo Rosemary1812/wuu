@@ -8,7 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
 const (
@@ -176,6 +178,50 @@ func (m *residentGroupManager) AddGroupMember(ctx context.Context, threadID, par
 		return fmt.Errorf("add_group_member: notify thread updated: %w", err)
 	}
 	return nil
+}
+
+// ListGroupMembers returns the named-agent members of a group thread the
+// caller belongs to. It backs the workflow named-participant pool: a workflow
+// bound to this thread may only dispatch to agents in this list. Members are
+// resolved to their display names via the participant store; non-named or
+// unresolvable members are skipped.
+func (m *residentGroupManager) ListGroupMembers(ctx context.Context, threadID string) ([]tools.GroupMember, error) {
+	_ = ctx
+	if m == nil || m.server == nil || m.server.rt == nil {
+		return nil, errors.New("list_group_members: app server not configured")
+	}
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return nil, nil
+	}
+	sessionDir := m.server.rt.SessionDir
+	meta, ok, err := session.Find(sessionDir, threadID)
+	if err != nil {
+		return nil, fmt.Errorf("list_group_members: lookup thread: %w", err)
+	}
+	if !ok || !meta.Group {
+		return nil, nil
+	}
+	memberIDs, err := session.ListThreadMembers(sessionDir, threadID)
+	if err != nil {
+		return nil, fmt.Errorf("list_group_members: list thread members: %w", err)
+	}
+	out := make([]tools.GroupMember, 0, len(memberIDs))
+	for _, id := range memberIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		p, err := session.GetParticipant(sessionDir, id)
+		if err != nil {
+			continue
+		}
+		if p.Kind != participant.KindNamed {
+			continue
+		}
+		out = append(out, tools.GroupMember{ID: p.ID, Name: p.Name, Busy: m.server.participantIsBusy(p.ID)})
+	}
+	return out, nil
 }
 
 func (l *residentGroupLimiter) reserveCreate() error {

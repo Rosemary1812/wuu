@@ -603,16 +603,22 @@ description: Legacy user audit workflow.
 	for _, def := range rt.Toolkit.Definitions() {
 		defs[def.Name] = true
 	}
+	// Workflow tools are now a named-agent-only capability (decision two). An
+	// ordinary project main-agent session still DISCOVERS workflow definitions
+	// (asserted above via rt.Workflows / rt.Toolkit.Workflows() and the prompt
+	// guidance), but it no longer exposes the workflow TOOLS: they are absent
+	// from the compiled main surface, so ToolInfo reports them Hidden and they
+	// never appear in Definitions().
 	for _, name := range []string{"list_workflows", "load_workflow", "save_workflow", "start_workflow", "workflow_status", "create_workflow", "run_workflow", "workflow_control"} {
-		if !defs[name] {
-			t.Fatalf("workflow tool %q should be visible in flat Definitions()", name)
+		if defs[name] {
+			t.Fatalf("named-only workflow tool %q must NOT be visible on a main-agent session, got Definitions()", name)
 		}
 		info, ok := rt.Toolkit.ToolInfo(name)
 		if !ok {
 			t.Fatalf("workflow tool %q missing from ToolInfo()", name)
 		}
-		if info.Exposure != tools.ToolExposureDirect {
-			t.Fatalf("workflow tool %q exposure = %s, want %s", name, info.Exposure, tools.ToolExposureDirect)
+		if info.Exposure != tools.ToolExposureHidden {
+			t.Fatalf("main-agent workflow tool %q exposure = %s, want %s (named-only)", name, info.Exposure, tools.ToolExposureHidden)
 		}
 	}
 }

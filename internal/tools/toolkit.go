@@ -724,6 +724,18 @@ func (t *Toolkit) SetGroupManager(manager GroupManager) {
 	t.env.GroupManager = manager
 }
 
+// SetWorkflowThreadID binds the toolkit to the conversation (cth) thread of the
+// current resident turn. Workflow runs started this turn record it so their
+// named-participant members report into the reply subthread and so the
+// named-participant pool is scoped to this thread's group members. Called
+// between turns alongside SetGroupManager; pass "" for non-conversation runs.
+func (t *Toolkit) SetWorkflowThreadID(threadID string) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.ThreadID = strings.TrimSpace(threadID)
+}
+
 // SetRootDir re-roots the toolkit's execution environment (bash cwd,
 // relative-path resolution, search root, display paths) without rebuilding
 // the toolkit or touching other per-session state. Used by DM threads
@@ -795,6 +807,7 @@ func (t *Toolkit) SetResidentParticipantEnabled(enabled bool) {
 		delete(t.activeSurface.Tools, "fetch_thread_messages")
 		delete(t.activeSurface.Tools, createGroupToolName)
 		delete(t.activeSurface.Tools, addGroupMemberToolName)
+		disableResidentWorkflowSurface(&t.activeSurface)
 	}
 	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
 }
@@ -834,6 +847,63 @@ func enableResidentParticipantSurface(surface *capability.Surface) {
 	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskManage) {
 		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskManage)
 	}
+	// Workflow / agent-profile orchestration is a named-agent-only capability.
+	// Residents inherit the main surface via CloneForRoot and only flip to
+	// named at turn time, so their compiled surface ran as SurfaceMain and
+	// carries no workflow tools. Patch the named-only workflow suite in here as
+	// deferred tools (the disable branch removes them). Both this seam and the
+	// compiler's SurfaceNamed branch consume modelprofile.NamedWorkflowTools so
+	// the two lists never drift.
+	if surface.DeferredTools == nil {
+		surface.DeferredTools = map[string]capability.Capability{}
+	}
+	for _, wt := range modelprofile.NamedWorkflowTools() {
+		surface.DeferredTools[wt.Name] = wt.Capability
+		if !surfaceHasCapability(surface.DeferredCapabilities, wt.Capability) {
+			surface.DeferredCapabilities = append(surface.DeferredCapabilities, wt.Capability)
+		}
+	}
+}
+
+// disableResidentWorkflowSurface removes the named-only workflow/agent-profile
+// suite from a surface when the resident/named identity is turned off, so an
+// ordinary agent that reuses the same toolkit does not retain workflow tools.
+func disableResidentWorkflowSurface(surface *capability.Surface) {
+	if surface == nil {
+		return
+	}
+	stillUsed := false
+	for _, wt := range modelprofile.NamedWorkflowTools() {
+		delete(surface.DeferredTools, wt.Name)
+	}
+	// Drop CapabilityWorkflow from the deferred capability list only if no
+	// remaining deferred tool still needs it (today it is exclusively the
+	// workflow suite, so it is always removed).
+	for name := range surface.DeferredTools {
+		if surface.DeferredTools[name] == capability.CapabilityWorkflow {
+			stillUsed = true
+			break
+		}
+	}
+	if !stillUsed {
+		surface.DeferredCapabilities = removeCapability(surface.DeferredCapabilities, capability.CapabilityWorkflow)
+	}
+}
+
+// removeCapability returns caps with every occurrence of capName removed,
+// preserving order.
+func removeCapability(caps []capability.Capability, capName capability.Capability) []capability.Capability {
+	if len(caps) == 0 {
+		return caps
+	}
+	out := caps[:0]
+	for _, c := range caps {
+		if c == capName {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 // SurfaceToolNames returns the registered built-in tools available to the
@@ -897,7 +967,22 @@ func (t *Toolkit) SetActiveProfile(p modelprofile.Profile, forMainAgent bool) {
 		t.env.ActiveSurface = capability.Surface{}
 		return
 	}
-	t.activeSurface = modelprofile.DefaultCompiler{}.Compile(p, forMainAgent)
+	// Derive the compile SurfaceKind from the public forMainAgent flag plus
+	// the runtime named-identity signal so callers keep the simple two-value
+	// boolean while the compiler gains the worker/main/named dimension. A
+	// resident/named agent turn (env.ResidentParticipantEnabled) resolves to
+	// SurfaceNamed; other orchestrating agents to SurfaceMain; workers to
+	// SurfaceWorker. Today SurfaceNamed compiles the same tools as SurfaceMain,
+	// so this is behavior-neutral; the distinction exists for later
+	// named-only capability work.
+	kind := modelprofile.SurfaceWorker
+	if forMainAgent {
+		kind = modelprofile.SurfaceMain
+	}
+	if t.env != nil && t.env.ResidentParticipantEnabled {
+		kind = modelprofile.SurfaceNamed
+	}
+	t.activeSurface = modelprofile.DefaultCompiler{}.Compile(p, kind)
 	if t.env != nil && t.env.ParticipantSpeechEnabled {
 		enableParticipantSpeechSurface(&t.activeSurface)
 	}

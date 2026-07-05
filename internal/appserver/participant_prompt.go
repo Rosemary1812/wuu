@@ -129,7 +129,14 @@ func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memor
 	b.WriteString("groups you belong to (add_group_member). Create a group only for an\n")
 	b.WriteString("ongoing purpose — a project, a standing topic — never for a one-off\n")
 	b.WriteString("question; prefer reusing an existing group. When the user asks for a\n")
-	b.WriteString("team, you may also create new named teammates with manage_participant.\n\n")
+	b.WriteString("team, you may also create new named teammates with manage_participant.\n")
+	b.WriteString("When you are short-handed, choose in this order: reuse an existing named\n")
+	b.WriteString("teammate; spawn anonymous workers for throwaway parallel grunt work; and\n")
+	b.WriteString("only when a genuine extra long-term hand is needed, create a new named\n")
+	b.WriteString("agent — or, if an experienced member is needed in two places at once or\n")
+	b.WriteString("is busy/locked, fork a temporary分身 of them (manage_participant\n")
+	b.WriteString("action=fork). A分身 starts with the母体's memory; retire it when done\n")
+	b.WriteString("and its new experience merges back into the母体.\n\n")
 	if deferredCatalog = strings.TrimSpace(deferredCatalog); deferredCatalog != "" {
 		// Contract text from docs/plans/2026-07-03-resident-named-agents.md
 		// §5 (2026-07-04 revision, consistency-repair #3①): resident brains

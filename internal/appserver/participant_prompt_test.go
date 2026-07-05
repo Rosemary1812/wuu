@@ -138,6 +138,13 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 		"ongoing purpose — a project, a standing topic — never for a one-off",
 		"question; prefer reusing an existing group. When the user asks for a",
 		"team, you may also create new named teammates with manage_participant.",
+		"When you are short-handed, choose in this order: reuse an existing named",
+		"teammate; spawn anonymous workers for throwaway parallel grunt work; and",
+		"only when a genuine extra long-term hand is needed, create a new named",
+		"agent — or, if an experienced member is needed in two places at once or",
+		"is busy/locked, fork a temporary分身 of them (manage_participant",
+		"action=fork). A分身 starts with the母体's memory; retire it when done",
+		"and its new experience merges back into the母体.",
 		"",
 		"## Your tools",
 		"You carry this session's full tool surface — the same file, search,",
@@ -214,6 +221,25 @@ func TestResidentParticipantSystemPromptOmitsEmptySections(t *testing.T) {
 	}
 	if !strings.Contains(got, "## Wrapping up discussions (only when asked)") {
 		t.Errorf("wrapping-up section is contractual and must always render:\n%s", got)
+	}
+}
+
+// Decision-four: role is now a free-form persona note. A non-worker-type
+// role must still render verbatim in the persona line (persona injection is
+// backward-compatible), and an empty role must not break the prompt.
+func TestResidentPromptRendersFreeFormAndEmptyRole(t *testing.T) {
+	free := participant.Participant{Name: "Dev", Role: "我们的部署守护者", Tagline: "keeps prod alive"}
+	got := residentParticipantSystemPrompt(free, "", "", "", "", nil)
+	if !strings.Contains(got, "Your role: 我们的部署守护者. How teammates describe you: keeps prod alive.") {
+		t.Errorf("free-form role must render in the persona line:\n%s", got)
+	}
+	empty := participant.Participant{Name: "Nix", Tagline: "no role set"}
+	got = residentParticipantSystemPrompt(empty, "", "", "", "", nil)
+	if !strings.Contains(got, "You are Nix, a resident named agent in this workspace.") {
+		t.Errorf("empty role must still produce a valid resident prompt:\n%s", got)
+	}
+	if !strings.Contains(got, "How teammates describe you: no role set.") {
+		t.Errorf("empty role must still render the tagline half of the persona line:\n%s", got)
 	}
 }
 

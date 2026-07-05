@@ -1762,5 +1762,5 @@ func workerDeferredToolCatalogPromptForToolkit(kit *tools.Toolkit, providerName,
 // the same boundary via DisallowedTools and the helpme tool's
 // Execute path check.
 func compiledSurfaceForProviderModel(providerName, model string) capability.Surface {
-	return modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve(providerName, model), false)
+	return modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve(providerName, model), modelprofile.SurfaceWorker)
 }

@@ -125,12 +125,6 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 	for _, name := range []string{
 		"session_memory",
 		"thread_get",
-		"list_workflows",
-		"load_workflow",
-		"save_workflow",
-		"start_workflow",
-		"workflow_control",
-		"workflow_status",
 		"create_goal",
 		"get_goal",
 		"update_goal",
@@ -152,12 +146,98 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, ToolExposureDeferred)
 		}
 	}
+	// Workflow / agent-profile tools are named-agent-only. On an ordinary main
+	// agent (no resident identity) they are absent from the surface entirely,
+	// so ToolInfo reports them Hidden, not Deferred.
+	for _, name := range []string{
+		"list_workflows",
+		"load_workflow",
+		"save_workflow",
+		"list_agent_profiles",
+		"create_agent_profile",
+		"start_workflow",
+		"run_workflow",
+		"create_workflow",
+		"workflow_control",
+		"workflow_status",
+	} {
+		if containsProfileDef(defs, name) {
+			t.Fatalf("named-only workflow tool %s must not be visible on a main agent, got %v", name, sortedProfileDefNames(defs))
+		}
+		info, ok := kit.ToolInfo(name)
+		if !ok {
+			t.Fatalf("ToolInfo(%q) not found", name)
+		}
+		if info.Exposure != ToolExposureHidden {
+			t.Fatalf("main-agent %s exposure = %s, want %s (named-only)", name, info.Exposure, ToolExposureHidden)
+		}
+	}
 	info, ok := kit.ToolInfo("agent_report")
 	if !ok {
 		t.Fatalf("ToolInfo(%q) not found", "agent_report")
 	}
 	if info.Exposure != ToolExposureHidden {
 		t.Fatalf("main-agent agent_report exposure = %s, want %s", info.Exposure, ToolExposureHidden)
+	}
+}
+
+// TestResidentParticipantSurfaceEnablesWorkflowTools asserts the named-only
+// contract at the runtime seam: a resident/named agent (the one that inherits
+// the main surface via CloneForRoot and flips to named at turn time via
+// SetResidentParticipantEnabled) gets the workflow/agent-profile suite as
+// deferred tools, and turning the resident identity back off removes them.
+func TestResidentParticipantSurfaceEnablesWorkflowTools(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// Compile the ordinary main surface first (as CloneForRoot would inherit).
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+
+	workflowTools := []string{
+		"list_workflows",
+		"load_workflow",
+		"save_workflow",
+		"list_agent_profiles",
+		"create_agent_profile",
+		"start_workflow",
+		"run_workflow",
+		"create_workflow",
+		"workflow_control",
+		"workflow_status",
+	}
+
+	// Before: named identity off -> workflow tools hidden.
+	for _, name := range workflowTools {
+		if info, ok := kit.ToolInfo(name); !ok {
+			t.Fatalf("ToolInfo(%q) not found", name)
+		} else if info.Exposure != ToolExposureHidden {
+			t.Fatalf("pre-resident %s exposure = %s, want Hidden", name, info.Exposure)
+		}
+	}
+
+	// Flip to a resident/named agent (the turn-time delivery seam).
+	kit.SetResidentParticipantEnabled(true)
+	for _, name := range workflowTools {
+		info, ok := kit.ToolInfo(name)
+		if !ok {
+			t.Fatalf("ToolInfo(%q) not found", name)
+		}
+		if info.Exposure != ToolExposureDeferred {
+			t.Fatalf("resident %s exposure = %s, want Deferred", name, info.Exposure)
+		}
+	}
+
+	// Turning the resident identity back off removes the suite again.
+	kit.SetResidentParticipantEnabled(false)
+	for _, name := range workflowTools {
+		info, ok := kit.ToolInfo(name)
+		if !ok {
+			t.Fatalf("ToolInfo(%q) not found", name)
+		}
+		if info.Exposure != ToolExposureHidden {
+			t.Fatalf("post-disable %s exposure = %s, want Hidden", name, info.Exposure)
+		}
 	}
 }
 
@@ -583,6 +663,9 @@ func TestActiveProfileBlocksHiddenToolExecution(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+	// run_workflow is a named-agent-only deferred tool; enable the resident
+	// (named) identity so it is present-but-deferred on this surface.
+	kit.SetResidentParticipantEnabled(true)
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "run_shell", Arguments: `{"command":"echo hi"}`})
 	if err == nil || !strings.Contains(err.Error(), "active model surface") {

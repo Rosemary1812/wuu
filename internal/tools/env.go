@@ -233,6 +233,12 @@ type Env struct {
 	// GroupManager backs the resident-only create_group / add_group_member
 	// tools. Nil means group management is unavailable in this environment.
 	GroupManager GroupManager
+	// ThreadID is the conversation (cth) thread the current resident turn runs
+	// in. Workflow runs started from this turn bind to it so named-participant
+	// team members report into the reply subthread instead of the main stream,
+	// and so the named-participant pool is scoped to this thread's group
+	// members. Empty for ordinary subagents and self-contained runs.
+	ThreadID string
 	// FileScopeRoots, when non-empty, replaces the single-RootDir file
 	// boundary with a whitelist: file tools (read/write/edit/glob/grep/…)
 	// may only touch paths inside one of these roots — the agent home,
@@ -324,6 +330,22 @@ type GroupManager interface {
 	// AddGroupMember adds a named participant to a group thread the caller
 	// belongs to. Adding an existing member is a no-op success.
 	AddGroupMember(ctx context.Context, threadID, participantID string) error
+	// ListGroupMembers returns the named-agent members of a group thread the
+	// caller belongs to. It is the participant pool a workflow bound to that
+	// thread may dispatch named_participant slots to. Non-group or unknown
+	// threads return an empty list.
+	ListGroupMembers(ctx context.Context, threadID string) ([]GroupMember, error)
+}
+
+// GroupMember is a named agent in a group thread, identified by its stable
+// participant ID and its display Name (the identity axis). Busy reports that
+// the member is currently executing another task/workflow run (decision-five
+// concurrency lock), so a workflow that tries to enlist it is told busy
+// instead of racing the same resident agent.
+type GroupMember struct {
+	ID   string
+	Name string
+	Busy bool
 }
 
 // RecordRead records a successful read_file invocation.

@@ -770,6 +770,89 @@ func TestRouteSubthreadMentionPullsGroupMemberIntoReply(t *testing.T) {
 	}
 }
 
+// TestSubthreadMessageEmitsSubthreadUpdatedNotification locks in the W1
+// realtime-refresh contract: a cth (reply-subthread) message — which is
+// short-circuited off the main stream and emits no turn/item/thread
+// notification — must still push a thread/subUpdated notification carrying the
+// parent thread id, the subthread id, and the refreshed view (turns +
+// reply_count) so the split reply panel streams and the reply badge stays fresh.
+func TestSubthreadMessageEmitsSubthreadUpdatedNotification(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	groupID := startGroupThreadForTest(t, srv)
+	for _, participantID := range []string{ada, bea} {
+		if err := session.AddThreadMember(rt.SessionDir, groupID, participantID); err != nil {
+			t.Fatalf("AddThreadMember %s: %v", participantID, err)
+		}
+	}
+	cth, err := session.CreateConversationThread(rt.SessionDir, session.ConversationThread{
+		SessionID:    groupID,
+		AnchorItemID: "seq-7",
+		CreatedBy:    ada,
+	})
+	if err != nil {
+		t.Fatalf("CreateConversationThread: %v", err)
+	}
+	if err := session.AddConversationThreadMember(rt.SessionDir, cth.ID, bea); err != nil {
+		t.Fatalf("seed cth member Bea: %v", err)
+	}
+
+	if err := srv.publishParticipantMessage(groupID, agentcontrol.ParticipantMessage{
+		AgentID:       ada,
+		ParticipantID: ada,
+		Kind:          "update",
+		Hop:           1,
+		Text:          "Streaming an update into the reply.",
+		ThreadID:      cth.ID,
+		CreatedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("publish Ada subthread message: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	var note map[string]any
+	for _, msg := range msgs {
+		if msg["method"] == NotificationSubthreadUpdated {
+			note = msg
+			break
+		}
+	}
+	if note == nil {
+		t.Fatalf("expected %s notification; output:\n%s", NotificationSubthreadUpdated, out.String())
+	}
+	// A cth message must NOT leak the main-stream turn/thread notifications the
+	// short-circuit deliberately suppresses.
+	for _, msg := range msgs {
+		if m, _ := msg["method"].(string); m == NotificationTurnStarted || m == NotificationThreadUpdated {
+			t.Fatalf("cth message leaked main-stream notification %q; output:\n%s", m, out.String())
+		}
+	}
+	params, ok := note["params"].(map[string]any)
+	if !ok {
+		t.Fatalf("notification params not an object: %+v", note)
+	}
+	if params["thread_id"] != groupID {
+		t.Fatalf("notification thread_id = %v, want parent %s", params["thread_id"], groupID)
+	}
+	if params["subthread_id"] != cth.ID {
+		t.Fatalf("notification subthread_id = %v, want %s", params["subthread_id"], cth.ID)
+	}
+	sub, ok := params["subthread"].(map[string]any)
+	if !ok {
+		t.Fatalf("notification subthread not an object: %+v", params["subthread"])
+	}
+	if replyCount, _ := sub["reply_count"].(float64); replyCount < 1 {
+		t.Fatalf("notification subthread reply_count = %v, want >= 1", sub["reply_count"])
+	}
+	if turns, _ := sub["turns"].([]any); len(turns) == 0 {
+		t.Fatalf("notification subthread carried no turns for the panel to patch: %+v", sub)
+	}
+}
+
 func containsMember(members []string, want string) bool {
 	for _, m := range members {
 		if strings.TrimSpace(m) == want {

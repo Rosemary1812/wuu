@@ -32,6 +32,14 @@ func (s *Server) forwardAgentNotifications(threadID string, control *agentcontro
 						Turn:     turn,
 					})
 				}
+				// Decision-five concurrency lock: a named agent is busy for
+				// the lifetime of its run. This is the authoritative acquire
+				// and the ONLY one for workflow-dispatched named runs, which
+				// never pass through participant/start. It is idempotent with
+				// the participant/start reservation (binds the run id).
+				if pid := strings.TrimSpace(n.Snapshot.ParticipantID); pid != "" {
+					s.markParticipantBusy(pid, "task", n.Snapshot.ID)
+				}
 			}
 			_ = s.writeNotification(NotificationAgentUpdated, AgentUpdatedNotification{
 				ThreadID: threadID,
@@ -52,6 +60,13 @@ func (s *Server) forwardAgentNotifications(threadID string, control *agentcontro
 						string(n.Status),
 						summary,
 					)
+					// Decision-five concurrency lock: release the busy lock
+					// the run held and re-kick the chat inbox so any
+					// @-mention deferred while the agent was busy now drains
+					// — the "queue" half of queue-or-tell-busy.
+					pid := strings.TrimSpace(n.Snapshot.ParticipantID)
+					s.releaseParticipantBusy(pid, n.Snapshot.ID)
+					s.kickResidentAgent(pid)
 				}
 				if n.Status == subagent.StatusCompleted &&
 					control != nil &&
@@ -179,6 +194,7 @@ func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.Par
 		// fetch_thread_messages. This replaces the old bare `return nil` that
 		// dropped all subthread routing on the floor.
 		s.routeSubthreadParticipantMessage(threadID, subthreadID, msg, name, sourceSeq)
+		s.notifySubthreadUpdated(threadID, subthreadID)
 		return nil
 	}
 
@@ -212,6 +228,40 @@ func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.Par
 	_ = s.notifyThreadUpdated(thread)
 	s.routeParticipantMessageToResidents(th, msg, name, sourceSeq)
 	return nil
+}
+
+// notifySubthreadUpdated pushes a subthread-scoped notification whenever a cth
+// (reply-subthread) message is stored. cth traffic is short-circuited off the
+// main stream and emits no turn/item/thread notification, so this is the sole
+// live signal that keeps an open split reply panel streaming and the main-stream
+// reply-count badge fresh (including agent replies, human posts, and task_card
+// folds — they all flow through publishParticipantMessage's short-circuit).
+//
+// Best-effort: on a lookup/build error we still emit a minimal payload carrying
+// only ThreadID/SubthreadID so the frontend can fall back to a nonce reload; the
+// full embedded view lets it patch in place without a round-trip. ThreadID is
+// the PARENT group thread id — the renderer's global-thread gate and reply-badge
+// reload both key off it.
+func (s *Server) notifySubthreadUpdated(parentThreadID, subthreadID string) {
+	parentThreadID = strings.TrimSpace(parentThreadID)
+	subthreadID = strings.TrimSpace(subthreadID)
+	if parentThreadID == "" || subthreadID == "" {
+		return
+	}
+	note := SubthreadUpdatedNotification{
+		ThreadID:    parentThreadID,
+		SubthreadID: subthreadID,
+	}
+	if thread, err := s.findConversationSubthread(parentThreadID, subthreadID, ""); err == nil {
+		if view, viewErr := s.conversationSubthreadView(parentThreadID, thread, true); viewErr == nil {
+			note.Subthread = view
+		} else {
+			providers.DebugLogf("build subthread view for %q/%q: %v", parentThreadID, subthreadID, viewErr)
+		}
+	} else {
+		providers.DebugLogf("find subthread %q in %q: %v", subthreadID, parentThreadID, err)
+	}
+	_ = s.writeNotification(NotificationSubthreadUpdated, note)
 }
 
 func (s *Server) isRootAgentSnapshot(control *agentcontrol.AgentControl, threadID string, snap subagent.SubAgentSnapshot) bool {

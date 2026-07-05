@@ -28,9 +28,16 @@ type Participant struct {
 	Tagline   string
 	Workspace string // persistent dir for named agents; empty otherwise
 	Model     string // pinned model; empty = follow global
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	RetiredAt *time.Time
+	// ForkedFrom is the participant ID of the母体 (mother) named agent this
+	// one was forked from — a temporary "分身" (decision six: copy a named
+	// agent with its memory snapshot, run it, then append-merge its memory
+	// back into the mother and retire). Empty for ordinary named agents.
+	// This is NOT the session/conversation fork (session.ForkedFromID) nor the
+	// spawn_agent history fork; it is a distinct named-agent identity copy.
+	ForkedFrom string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	RetiredAt  *time.Time
 }
 
 // Summary is the wire shape embedded in notifications and thread items.
@@ -47,15 +54,28 @@ type Summary struct {
 	// because summaries are duplicated into every thread item they
 	// attribute and an unbounded payload would bloat history resumes.
 	AvatarImage string `json:"avatar_image,omitempty"`
+	// Busy reports that this named agent is currently executing a
+	// task/workflow run and cannot take a second concurrent pull
+	// (decision-five concurrency lock). It is runtime state, not stored, so
+	// Participant.Summary() leaves it false — the appserver overlays it on
+	// group-member views (threadWithGroupMembers) so the UI can show a busy
+	// badge and steer the user toward forking a copy (decision six).
+	Busy bool `json:"busy,omitempty"`
+	// ForkedFromID marks a temporary分身 (decision six): the participant ID of
+	// the母体 this named agent was forked from. The UI uses it to badge the
+	// copy as "X 的分身". Distinct from the session/conversation fork
+	// (ThreadSummary.forked_from_id) — this is a named-agent identity copy.
+	ForkedFromID string `json:"forked_from_id,omitempty"`
 }
 
 // Summary returns the wire shape for a participant.
 func (p Participant) Summary() Summary {
 	return Summary{
-		ID:   p.ID,
-		Name: p.Name,
-		Kind: string(p.Kind),
-		Role: p.Role,
+		ID:           p.ID,
+		Name:         p.Name,
+		Kind:         string(p.Kind),
+		Role:         p.Role,
+		ForkedFromID: p.ForkedFrom,
 	}
 }
 

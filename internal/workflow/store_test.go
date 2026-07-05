@@ -361,6 +361,58 @@ func TestStoreRejectsInvalidTeamPlan(t *testing.T) {
 	}
 }
 
+func TestStoreSavesNamedParticipantTeamMember(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if _, err := store.CreateRun(Run{ID: "named-run", Status: RunStateRunning, ThreadID: "thr-group"}); err != nil {
+		t.Fatalf("CreateRun: %v", err)
+	}
+	if _, err := store.SaveTeamPlan(TeamPlan{
+		RunID: "named-run",
+		Members: []TeamMember{
+			{ID: "rina", Role: "Reviewer", Mode: TeamMemberNamedParticipant, ParticipantID: "prt-1", ParticipantName: "Rina", TaskName: "review"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveTeamPlan named_participant: %v", err)
+	}
+	loaded, err := store.LoadTeamPlan("named-run")
+	if err != nil {
+		t.Fatalf("LoadTeamPlan: %v", err)
+	}
+	if len(loaded.Members) != 1 {
+		t.Fatalf("member count: %+v", loaded.Members)
+	}
+	m := loaded.Members[0]
+	if m.Mode != TeamMemberNamedParticipant || m.ParticipantID != "prt-1" || m.ParticipantName != "Rina" || m.AgentProfile != "" {
+		t.Fatalf("named participant member mismatch: %+v", m)
+	}
+	// ThreadID round-trips on the run.
+	run, err := store.LoadRun("named-run")
+	if err != nil {
+		t.Fatalf("LoadRun: %v", err)
+	}
+	if run.ThreadID != "thr-group" {
+		t.Fatalf("run thread id mismatch: %q", run.ThreadID)
+	}
+}
+
+func TestStoreRejectsInvalidNamedParticipantTeamMember(t *testing.T) {
+	store := NewStore(t.TempDir())
+	// Missing participant reference.
+	if _, err := store.SaveTeamPlan(TeamPlan{
+		RunID:   "named-run",
+		Members: []TeamMember{{ID: "m", Role: "R", Mode: TeamMemberNamedParticipant}},
+	}); err == nil {
+		t.Fatal("expected named_participant without participant ref to be rejected")
+	}
+	// AgentProfile is not allowed on a named-participant slot.
+	if _, err := store.SaveTeamPlan(TeamPlan{
+		RunID:   "named-run",
+		Members: []TeamMember{{ID: "m", Role: "R", Mode: TeamMemberNamedParticipant, ParticipantID: "prt-1", AgentProfile: "qa"}},
+	}); err == nil {
+		t.Fatal("expected named_participant with agent_profile to be rejected")
+	}
+}
+
 func TestStoreRejectsUnsafeAndDuplicateIDs(t *testing.T) {
 	store := NewStore(t.TempDir())
 	if _, err := store.CreateRun(Run{ID: "../escape"}); err == nil {

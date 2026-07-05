@@ -381,6 +381,19 @@ func (s *Server) finishResidentDrain(participantID string) {
 	delete(s.drainingResidentAgent, participantID)
 }
 
+// residentDraining reports whether a chat drain is currently in flight for a
+// participant. participant/start consults it so a named agent can't be pulled
+// into a task while it is mid chat-reply (decision-five: one caller at a time).
+func (s *Server) residentDraining(participantID string) bool {
+	participantID = strings.TrimSpace(participantID)
+	if s == nil || participantID == "" {
+		return false
+	}
+	s.residentDrainMu.Lock()
+	defer s.residentDrainMu.Unlock()
+	return s.drainingResidentAgent[participantID]
+}
+
 func (s *Server) drainResidentAgent(participantID string) {
 	defer s.finishResidentDrain(participantID)
 	if s == nil || s.rt == nil {
@@ -402,6 +415,15 @@ func (s *Server) drainResidentAgent(participantID string) {
 	running := th.running
 	th.mu.Unlock()
 	if running {
+		return
+	}
+	// Decision-five concurrency lock: a named agent busy executing a
+	// task/workflow run does not drain its chat inbox concurrently. The
+	// envelopes stay pending and are re-kicked when the run completes
+	// (forwardAgentNotifications), so an @-mention arriving mid-task queues
+	// instead of racing the same resident agent.
+	if s.participantIsBusy(participantID) {
+		providers.DebugLogf("defer resident drain for busy participant %q", participantID)
 		return
 	}
 	pending, err := session.PendingResidentEnvelopes(s.rt.SessionDir, participantID, residentEnvelopeBatchLimit)
@@ -434,6 +456,7 @@ func (s *Server) drainResidentAgent(participantID string) {
 	if threadRuntime != nil && threadRuntime.Toolkit != nil {
 		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeechWithHops(participantID, residentSpeechHopsByThread(envs)))
 		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
+		threadRuntime.Toolkit.SetWorkflowThreadID(th.ID)
 		s.applyEnvelopeBatchCWD(th, threadRuntime, envs)
 	}
 	userMsg := residentEnvelopeUserMessage(envs, ids)

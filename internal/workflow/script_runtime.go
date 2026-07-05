@@ -35,6 +35,15 @@ type ScriptRuntimeOptions struct {
 	Script           string
 	MaxAgents        int
 	MaxConcurrency   int
+	// ThreadID is the conversation (cth) thread this run is bound to. It is
+	// carried on the Run and propagated to named-participant dispatch so their
+	// reports fold into the reply subthread. Empty for self-contained runs.
+	ThreadID string
+	// AllowedParticipants is the named-agent membership pool a script may
+	// dispatch named_participant slots to — the run's bound group members,
+	// resolved by the tools layer. Empty means no named-participant dispatch
+	// is permitted (every named-participant spawn is rejected).
+	AllowedParticipants []ParticipantRef
 }
 
 type ScriptRuntime struct {
@@ -55,6 +64,10 @@ type ScriptSpawnSpec struct {
 	AgentProfile    string `json:"agentProfile"`
 	Isolation       string `json:"isolation"`
 	RunInBackground bool   `json:"runInBackground"`
+	// Participant, when set, dispatches this task to an already-running named
+	// agent (a group member) instead of creating an anonymous worker. It
+	// matches an AllowedParticipants entry by id or by case-insensitive name.
+	Participant string `json:"participant"`
 }
 
 type ScriptSpawnResult struct {
@@ -342,16 +355,37 @@ func (r *ScriptRuntime) spawnAgentSpec(ctx context.Context, spec ScriptSpawnSpec
 	if err := r.ensureRunnable(ctx); err != nil {
 		return ScriptSpawnResult{}, err
 	}
-	if r.opts.AgentControl == nil {
-		return ScriptSpawnResult{}, errors.New("agent control not configured")
-	}
 	prompt := strings.TrimSpace(spec.Prompt)
 	if prompt == "" {
 		return ScriptSpawnResult{}, errors.New("spawnAgent requires prompt")
 	}
+	// A named-participant spec dispatches to an existing group member under its
+	// own durable identity instead of creating a throwaway worker. The identity
+	// is the participant (bound via ParticipantID), never an AgentProfile.
+	// Validate the spec (including the group-pool restriction) before touching
+	// AgentControl so an out-of-group reference is rejected the same way whether
+	// or not agent control is wired.
+	var participant *ParticipantRef
+	if strings.TrimSpace(spec.Participant) != "" {
+		if strings.TrimSpace(spec.AgentProfile) != "" {
+			return ScriptSpawnResult{}, errors.New("spawn participant must not also set agentProfile; a named agent runs under its own identity")
+		}
+		resolved, err := r.resolveNamedParticipant(spec.Participant)
+		if err != nil {
+			return ScriptSpawnResult{}, err
+		}
+		participant = &resolved
+	}
+	if r.opts.AgentControl == nil {
+		return ScriptSpawnResult{}, errors.New("agent control not configured")
+	}
 	taskName := strings.TrimSpace(spec.TaskName)
 	if taskName == "" {
-		taskName = r.nextSpawnTaskName(firstNonEmpty(spec.Description, prompt, spec.AgentProfile))
+		seed := firstNonEmpty(spec.Description, prompt, spec.AgentProfile)
+		if participant != nil {
+			seed = firstNonEmpty(participant.Name, participant.ID, seed)
+		}
+		taskName = r.nextSpawnTaskName(seed)
 	}
 	description := strings.TrimSpace(spec.Description)
 	if description == "" {
@@ -369,18 +403,23 @@ func (r *ScriptRuntime) spawnAgentSpec(ctx context.Context, spec ScriptSpawnSpec
 	if err := r.ensureAgentCapacity(1); err != nil {
 		return ScriptSpawnResult{}, err
 	}
+	participantID := ""
+	if participant != nil {
+		participantID = participant.ID
+	}
 	result, err := r.opts.AgentControl.Spawn(ctx, agentcontrol.SpawnRequest{
-		Type:         subagentType,
-		TaskName:     taskName,
-		AgentProfile: strings.TrimSpace(spec.AgentProfile),
-		Description:  description,
-		Prompt:       prompt,
-		ParentID:     strings.TrimSpace(r.opts.CurrentAgentID),
-		ParentPath:   r.currentAgentPath(),
-		GoalID:       r.opts.GoalID,
-		GoalDir:      r.opts.GoalDir,
-		Synchronous:  foreground,
-		Isolation:    strings.TrimSpace(spec.Isolation),
+		Type:          subagentType,
+		TaskName:      taskName,
+		ParticipantID: participantID,
+		AgentProfile:  strings.TrimSpace(spec.AgentProfile),
+		Description:   description,
+		Prompt:        prompt,
+		ParentID:      strings.TrimSpace(r.opts.CurrentAgentID),
+		ParentPath:    r.currentAgentPath(),
+		GoalID:        r.opts.GoalID,
+		GoalDir:       r.opts.GoalDir,
+		Synchronous:   foreground,
+		Isolation:     strings.TrimSpace(spec.Isolation),
 	})
 	if err != nil {
 		return ScriptSpawnResult{}, err
@@ -400,7 +439,7 @@ func (r *ScriptRuntime) spawnAgentSpec(ctx context.Context, spec ScriptSpawnSpec
 	if err := r.recordSpawnResult(out, prompt); err != nil {
 		return out, err
 	}
-	if err := r.recordWorkflowTeamMember(out, prompt); err != nil {
+	if err := r.recordWorkflowTeamMember(out, prompt, participant); err != nil {
 		return out, err
 	}
 	r.rememberSpawnedAgent(out.AgentID)
@@ -602,14 +641,26 @@ func (r *ScriptRuntime) recordAwaitResult(result agentcontrol.AwaitAgentsResult)
 	return nil
 }
 
-func (r *ScriptRuntime) recordWorkflowTeamMember(result ScriptSpawnResult, prompt string) error {
+func (r *ScriptRuntime) recordWorkflowTeamMember(result ScriptSpawnResult, prompt string, participant *ParticipantRef) error {
 	id := scriptWorkflowTeamMemberID(result)
 	if id == "" {
 		return nil
 	}
 	mode := TeamMemberEphemeral
 	agentProfile := strings.TrimSpace(result.AgentProfile)
-	if agentProfile != "" {
+	participantID := ""
+	participantName := ""
+	role := "Workflow script worker"
+	reason := "Spawned by workflow script driver."
+	switch {
+	case participant != nil:
+		mode = TeamMemberNamedParticipant
+		agentProfile = ""
+		participantID = strings.TrimSpace(participant.ID)
+		participantName = strings.TrimSpace(participant.Name)
+		role = "Workflow named participant"
+		reason = "Dispatched to an existing named group member by the workflow script driver."
+	case agentProfile != "":
 		mode = TeamMemberReuseProfile
 	}
 	taskName := strings.TrimSpace(result.TaskName)
@@ -617,14 +668,16 @@ func (r *ScriptRuntime) recordWorkflowTeamMember(result ScriptSpawnResult, promp
 		taskName = id
 	}
 	member := TeamMember{
-		ID:           id,
-		Role:         "Workflow script worker",
-		Mode:         mode,
-		AgentProfile: agentProfile,
-		TaskName:     taskName,
-		PhaseID:      strings.TrimSpace(r.currentPhaseID),
-		Prompt:       strings.TrimSpace(prompt),
-		Reason:       "Spawned by workflow script driver.",
+		ID:              id,
+		Role:            role,
+		Mode:            mode,
+		AgentProfile:    agentProfile,
+		ParticipantID:   participantID,
+		ParticipantName: participantName,
+		TaskName:        taskName,
+		PhaseID:         strings.TrimSpace(r.currentPhaseID),
+		Prompt:          strings.TrimSpace(prompt),
+		Reason:          reason,
 	}
 
 	plan, err := r.opts.Store.LoadTeamPlan(r.opts.RunID)
@@ -644,6 +697,53 @@ func (r *ScriptRuntime) recordWorkflowTeamMember(result ScriptSpawnResult, promp
 	plan.Members = append(plan.Members, member)
 	_, err = r.opts.Store.SaveTeamPlan(plan)
 	return err
+}
+
+// resolveNamedParticipant matches a spawn spec's participant reference against
+// the run's allowed membership pool (the bound group's named agents). It
+// matches by exact participant id first, then by case-insensitive name. Only
+// members of the pool may be dispatched to; an empty pool or an unknown
+// reference is rejected so a workflow can never pull in a named agent outside
+// its own group.
+func (r *ScriptRuntime) resolveNamedParticipant(ref string) (ParticipantRef, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return ParticipantRef{}, errors.New("spawn participant reference is empty")
+	}
+	if len(r.opts.AllowedParticipants) == 0 {
+		return ParticipantRef{}, fmt.Errorf("workflow run is not bound to a group; cannot dispatch to named participant %q", ref)
+	}
+	for _, member := range r.opts.AllowedParticipants {
+		if strings.TrimSpace(member.ID) == ref {
+			return acceptNamedParticipant(member)
+		}
+	}
+	for _, member := range r.opts.AllowedParticipants {
+		if strings.EqualFold(strings.TrimSpace(member.Name), ref) {
+			return acceptNamedParticipant(member)
+		}
+	}
+	return ParticipantRef{}, fmt.Errorf("named participant %q is not a member of this workflow's group", ref)
+}
+
+// acceptNamedParticipant is the final gate on a resolved pool member: a member
+// already executing another task/workflow run (decision-five concurrency lock)
+// is refused so the workflow never grabs a busy resident agent. The caller is
+// told to wait or fork a copy (decision six) when more hands are needed.
+func acceptNamedParticipant(member ParticipantRef) (ParticipantRef, error) {
+	if member.Busy {
+		return ParticipantRef{}, fmt.Errorf("named participant %q is busy running another task; wait for it to finish or fork a copy", strings.TrimSpace(firstNonEmptyRef(member.Name, member.ID)))
+	}
+	return member, nil
+}
+
+func firstNonEmptyRef(values ...string) string {
+	for _, v := range values {
+		if s := strings.TrimSpace(v); s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 func scriptWorkflowTeamMemberID(result ScriptSpawnResult) string {
@@ -922,6 +1022,7 @@ func parseScriptSpawnSpec(vm *goja.Runtime, value goja.Value) (ScriptSpawnSpec, 
 		spec.SubagentType = firstScriptString(object, spec.SubagentType, "subagentType", "subagent_type", "SubagentType")
 		spec.AgentProfile = firstScriptString(object, spec.AgentProfile, "agentProfile", "agent_profile", "AgentProfile")
 		spec.Isolation = firstScriptString(object, spec.Isolation, "isolation", "Isolation")
+		spec.Participant = firstScriptString(object, spec.Participant, "participant", "participantName", "participant_name", "participantId", "participant_id", "Participant")
 		spec.RunInBackground = firstScriptBool(object, spec.RunInBackground, "runInBackground", "run_in_background", "RunInBackground")
 	}
 	return spec, nil

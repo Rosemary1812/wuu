@@ -377,6 +377,9 @@ func TestToolkitWorkflowToolsFilterByActiveSurface(t *testing.T) {
 	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(t.TempDir())
 	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"), true)
+	// Workflow tools are a named-agent-only capability; enable the resident
+	// (named) identity so the suite is present on this surface.
+	kit.SetResidentParticipantEnabled(true)
 	kit.markDeferredToolsLoaded("list_workflows", "load_workflow", "save_workflow", "start_workflow")
 	kit.SetWorkflows([]workflow.Definition{
 		{
@@ -1517,6 +1520,119 @@ func TestWorkflowControlRecordsWorkflowTeam(t *testing.T) {
 	}
 	if strings.Contains(statusResp, `"team_plan"`) {
 		t.Fatalf("workflow_status should expose only workflow_team, got: %s", statusResp)
+	}
+}
+
+func TestWorkflowControlRecordsNamedParticipantTeam(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	loadWorkflowDriverToolsForTest(t, kit)
+	kit.SetStateDir(stateDir)
+	// Bind the toolkit to a group thread whose members are the named-participant
+	// pool. Only these agents may fill named_participant slots.
+	kit.SetWorkflowThreadID("thr-group")
+	kit.SetGroupManager(&fakeGroupManager{members: map[string][]GroupMember{
+		"thr-group": {{ID: "prt-1", Name: "Rina"}, {ID: "prt-2", Name: "Kenta"}},
+	}})
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "create_workflow",
+		Arguments: `{"run_id":"wf-named","plan":"## Phases\n\n1. Review\n","phases":[{"name":"Review"}],"initial_status":"running"}`,
+	}); err != nil {
+		t.Fatalf("create_workflow: %v", err)
+	}
+
+	recordResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_workflow_team",
+			"run_id":"wf-named",
+			"team":[
+				{"role":"Reviewer","mode":"named_participant","participant":"Rina","task_name":"review","reason":"Rina reviewed this area before."}
+			]
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("record_workflow_team named_participant: %v", err)
+	}
+	var recorded struct {
+		WorkflowTeam workflow.TeamPlan `json:"workflow_team"`
+	}
+	if err := json.Unmarshal([]byte(recordResp), &recorded); err != nil {
+		t.Fatalf("parse record response: %v", err)
+	}
+	if len(recorded.WorkflowTeam.Members) != 1 {
+		t.Fatalf("member count: %+v", recorded.WorkflowTeam.Members)
+	}
+	m := recorded.WorkflowTeam.Members[0]
+	if m.Mode != workflow.TeamMemberNamedParticipant || m.ParticipantID != "prt-1" || m.ParticipantName != "Rina" || m.AgentProfile != "" {
+		t.Fatalf("named participant member mismatch: %+v", m)
+	}
+
+	// A participant outside the group pool is rejected.
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_workflow_team",
+			"run_id":"wf-named",
+			"team":[{"role":"Reviewer","mode":"named_participant","participant":"Ghost"}]
+		}`,
+	}); err == nil || !strings.Contains(err.Error(), "not a member") {
+		t.Fatalf("expected out-of-group participant rejection, got %v", err)
+	}
+}
+
+// TestWorkflowControlRejectsBusyNamedParticipant proves the decision-five
+// concurrency lock at the agent-managed team-plan seam: a group member already
+// executing another task/workflow run is refused (told busy) rather than being
+// enlisted into a second workflow that would race the same resident agent.
+func TestWorkflowControlRejectsBusyNamedParticipant(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	loadWorkflowDriverToolsForTest(t, kit)
+	kit.SetStateDir(stateDir)
+	kit.SetWorkflowThreadID("thr-group")
+	kit.SetGroupManager(&fakeGroupManager{members: map[string][]GroupMember{
+		"thr-group": {{ID: "prt-1", Name: "Rina", Busy: true}, {ID: "prt-2", Name: "Kenta"}},
+	}})
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "create_workflow",
+		Arguments: `{"run_id":"wf-busy","plan":"## Phases\n\n1. Review\n","phases":[{"name":"Review"}],"initial_status":"running"}`,
+	}); err != nil {
+		t.Fatalf("create_workflow: %v", err)
+	}
+
+	// The busy member is refused with a busy message.
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_workflow_team",
+			"run_id":"wf-busy",
+			"team":[{"role":"Reviewer","mode":"named_participant","participant":"Rina"}]
+		}`,
+	}); err == nil || !strings.Contains(err.Error(), "busy") {
+		t.Fatalf("expected busy member rejection, got %v", err)
+	}
+
+	// An idle member of the same group is still accepted.
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "workflow_control",
+		Arguments: `{
+			"action":"record_workflow_team",
+			"run_id":"wf-busy",
+			"team":[{"role":"Reviewer","mode":"named_participant","participant":"Kenta"}]
+		}`,
+	}); err != nil {
+		t.Fatalf("idle member should be accepted, got %v", err)
 	}
 }
 

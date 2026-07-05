@@ -37,6 +37,7 @@ import { arrayMove } from "@dnd-kit/sortable";
 import type {
   Agent,
   ConversationSubthread,
+  SubthreadUpdatedNotification,
   DesktopProject,
   GitCommitResult,
   GitPullRequestResult,
@@ -145,6 +146,7 @@ import {
   activeSessionTab,
   activeThreadForState,
   activeThreadIDForState,
+  applySubthreadUpdatedNotification,
   latestContextUsageForThread,
   activeTurnIDForThread,
   activeTurnTokenSpeedSnapshot,
@@ -1362,6 +1364,31 @@ export function App(): JSX.Element {
             status: desktopApiErrorMessage(error, "无法刷新 Agents"),
           }));
         });
+      }
+      // Reply-subthread (cth) traffic never appends a main-stream turn, so the
+      // split reply panel and the reply-count badge only stay live via this
+      // subthread-scoped notification. Handled BEFORE the active/global gate
+      // because it carries the PARENT group thread id and must patch an open
+      // panel / bump the badge regardless of which context started the run.
+      if (
+        event.kind === "notification" &&
+        event.message.method === "thread/subUpdated"
+      ) {
+        const note = event.message
+          .params as unknown as SubthreadUpdatedNotification;
+        // Patch the open panel in place (streaming growth) when the update is for
+        // the subthread it is showing; a no-op otherwise.
+        setOpenSubthreadPanel((prev) =>
+          applySubthreadUpdatedNotification(prev, note),
+        );
+        // Refresh the main-stream reply-count badge for the active thread by
+        // bumping the existing subthreads reload nonce.
+        if (
+          note?.thread_id &&
+          activeThreadIDForState(appStateRef.current) === note.thread_id
+        ) {
+          setChatSubthreadsNonce((nonce) => nonce + 1);
+        }
       }
       // Workspace-scoped events (project sessions/files/terminals) stay bound
       // to the active context, but global-collaboration threads (DM/group) run

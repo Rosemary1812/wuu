@@ -24,23 +24,23 @@ func (t *ManageParticipantTool) Name() string { return "manage_participant" }
 func (t *ManageParticipantTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "manage_participant",
-		Description: "Manage the named agents roster. action=list returns active named agents (no memory). action=save creates or updates a named agent by name; memory_seed is written only when the participant is new. action=retire retires one named agent; you cannot retire yourself.",
+		Description: "Manage the named agents roster. A named agent is a long-term identity (a person with a name, a history, and an accumulating memory), NOT a disposable worker type — build people, not tools. action=list returns active named agents (no memory). action=save creates or updates a named agent by name (the identity key); memory_seed is written only when the participant is new. action=retire retires one named agent; you cannot retire yourself. action=fork makes a temporary分身 (copy) of an existing named agent that starts with the母体's memory snapshot — use it only when an experienced member is needed in two places at once or is locked/busy; the fork's memory merges back into the母体 when you retire it. When you are short-handed, prefer in this order: reuse an existing named agent, then spawn anonymous workers for throwaway parallel grunt work, and only fork or create a named agent when a genuine extra long-term hand is required.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
 				"action": map[string]any{
 					"type":        "string",
-					"enum":        []string{"list", "save", "retire"},
-					"description": "list returns the active named agents; save upserts by name; retire retires a named agent.",
+					"enum":        []string{"list", "save", "retire", "fork"},
+					"description": "list returns the active named agents; save upserts by name; retire retires a named agent (a分身's memory merges back into its母体 first); fork makes a temporary分身 of a named agent with its memory snapshot.",
 				},
 				"name": map[string]any{
 					"type":        "string",
-					"description": "Participant display name. Required for save and retire.",
+					"description": "Participant display name — the identity key. Required for save, retire, and fork. For fork it names the母体 to copy. Users always see the agent by this name.",
 				},
 				"role": map[string]any{
 					"type":        "string",
-					"description": "Worker type role (e.g. reviewer, planner, qa). Optional on save.",
+					"description": "Optional free-form persona/职责说明 note (e.g. \"我们的部署守护者\"). Purely descriptive: it flavors the agent's self-description and does NOT change its tools or capabilities — every named agent shares the same tool surface. Do not treat it as a worker type.",
 				},
 				"tagline": map[string]any{
 					"type":        "string",

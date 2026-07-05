@@ -14,11 +14,11 @@ import (
 
 const (
 	defaultSeedParticipantName = "Andy"
-	// defaultSeedParticipantRole stays a registered worker type: Role doubles
-	// as the WorkerType used by participant/start task dispatch, so the
-	// product-facing 团队组建者 identity lives in the tagline and the seeded
-	// persona notes instead.
-	defaultSeedParticipantRole    = "general-purpose"
+	// defaultSeedParticipantRole is a free-form persona note, not a worker
+	// type: role no longer selects a task-dispatch surface (named agents all
+	// run on one deck), so the product-facing 团队组建者 identity is the role
+	// itself. Name (Andy) is the identity axis users see.
+	defaultSeedParticipantRole    = "团队组建者"
 	defaultSeedParticipantTagline = "帮你把合适的 agent 拉进合适的房间"
 	// defaultAgentSeededMarkerName is the once-ever install marker written
 	// under the wuu home. Its presence means the default agent was already

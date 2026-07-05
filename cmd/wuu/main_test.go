@@ -728,7 +728,7 @@ func TestResolveEvalTasksSelectsCommaSeparatedIDs(t *testing.T) {
 }
 
 func TestResolveEvalTasksAllFiltersByActiveSurface(t *testing.T) {
-	openaiSurface := modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve("openai", "gpt-5.5"), true)
+	openaiSurface := modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve("openai", "gpt-5.5"), modelprofile.SurfaceMain)
 	openaiTasks, err := resolveEvalTasks("all", evalVisibleToolSet(openaiSurface.ToolNames()))
 	if err != nil {
 		t.Fatalf("resolveEvalTasks openai: %v", err)
@@ -745,7 +745,7 @@ func TestResolveEvalTasksAllFiltersByActiveSurface(t *testing.T) {
 		}
 	}
 
-	claudeSurface := modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve("anthropic", "claude-sonnet-4-5"), true)
+	claudeSurface := modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve("anthropic", "claude-sonnet-4-5"), modelprofile.SurfaceMain)
 	claudeTasks, err := resolveEvalTasks("all", evalVisibleToolSet(claudeSurface.ToolNames()))
 	if err != nil {
 		t.Fatalf("resolveEvalTasks claude: %v", err)
@@ -764,7 +764,7 @@ func TestResolveEvalTasksAllFiltersByActiveSurface(t *testing.T) {
 }
 
 func TestResolveEvalTasksExplicitIDBypassesSurfaceFilter(t *testing.T) {
-	openaiSurface := modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve("openai", "gpt-5.5"), true)
+	openaiSurface := modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve("openai", "gpt-5.5"), modelprofile.SurfaceMain)
 	tasks, err := resolveEvalTasks("stale_read_guard", evalVisibleToolSet(openaiSurface.ToolNames()))
 	if err != nil {
 		t.Fatalf("resolveEvalTasks explicit: %v", err)

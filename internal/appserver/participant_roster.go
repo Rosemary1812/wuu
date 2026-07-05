@@ -16,21 +16,6 @@ import (
 
 func timeNow() time.Time { return time.Now().UTC() }
 
-// lookupWorkerTypeName validates that role matches a built-in
-// agentcontrol worker type. The check is intentionally local so
-// participant_roster does not have to import agentcontrol's full
-// worker type registry.
-func lookupWorkerTypeName(role string) (string, error) {
-	role = strings.TrimSpace(role)
-	if role == "" {
-		return "", nil
-	}
-	if _, err := agentcontrol.LookupWorkerType(role); err != nil {
-		return "", err
-	}
-	return role, nil
-}
-
 // participantRosterForTool builds the manage_participant roster backed
 // by the app-server's session store. It is installed on every
 // AgentControl the server owns, including the throwaway test instances
@@ -79,12 +64,11 @@ func (r *serverParticipantRoster) Save(ctx context.Context, agentID string, req 
 	if name == "" {
 		return agentcontrol.RosterEntry{}, errors.New("manage_participant: name is required")
 	}
+	// Role is a free-form persona/职责说明 note (name is the identity axis),
+	// not a worker-type registry key: it is stored verbatim and never selects
+	// a tool surface. This matches the participant/save RPC path, which has
+	// always stored role without worker-type validation.
 	role := strings.TrimSpace(req.Role)
-	if role != "" {
-		if _, err := lookupWorkerTypeName(role); err != nil {
-			return agentcontrol.RosterEntry{}, fmt.Errorf("manage_participant: %w", err)
-		}
-	}
 	tagline := strings.TrimSpace(req.Tagline)
 	model := strings.TrimSpace(req.Model)
 
@@ -223,6 +207,48 @@ func (r *serverParticipantRoster) Retire(ctx context.Context, agentID, name stri
 		Role:    target.Role,
 		Tagline: target.Tagline,
 		Model:   target.Model,
+	}, nil
+}
+
+// Fork creates a temporary分身 of an active named participant: a copy carrying
+// the母体's memory snapshot (decision six). Prefer reusing existing named
+// members or spawning anonymous workers for grunt work first — fork is the last
+// resort for a genuinely needed extra long-term hand, and its memory回流s back
+// into the母体 on retire.
+func (r *serverParticipantRoster) Fork(ctx context.Context, agentID, name string) (agentcontrol.RosterEntry, error) {
+	_ = ctx
+	if err := r.requireSessionDir(); err != nil {
+		return agentcontrol.RosterEntry{}, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return agentcontrol.RosterEntry{}, errors.New("manage_participant: name is required")
+	}
+	mother, err := r.findActiveByName(name)
+	if err != nil {
+		return agentcontrol.RosterEntry{}, err
+	}
+	if mother == nil {
+		return agentcontrol.RosterEntry{}, fmt.Errorf("manage_participant: participant %q is not active", name)
+	}
+	fork, err := r.server.forkNamedParticipant(*mother)
+	if err != nil {
+		return agentcontrol.RosterEntry{}, err
+	}
+	if profile, err := r.server.participantProfile(fork); err == nil {
+		if err := r.server.notifyParticipantUpdated(profile); err != nil {
+			providers.DebugLogf("notify participant fork for %q: %v", fork.ID, err)
+		}
+	} else {
+		providers.DebugLogf("load participant profile for %q after fork: %v", fork.ID, err)
+	}
+	return agentcontrol.RosterEntry{
+		ID:           fork.ID,
+		Name:         fork.Name,
+		Role:         fork.Role,
+		Tagline:      fork.Tagline,
+		Model:        fork.Model,
+		ForkedFromID: fork.ForkedFrom,
 	}, nil
 }
 

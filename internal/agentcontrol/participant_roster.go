@@ -27,6 +27,12 @@ type ParticipantRoster interface {
 	// returns a non-nil error when the caller targets its own
 	// participant identity.
 	Retire(ctx context.Context, agentID string, name string) (RosterEntry, error)
+	// Fork creates a temporary分身 of the named participant identified by
+	// name: a copy that carries the母体's memory snapshot (decision six).
+	// The returned entry is the new fork identity (ForkedFromID names the
+	//母体). Retiring the fork later append-merges its memory back into the
+	// 母体. This is NOT the session or spawn_agent fork.
+	Fork(ctx context.Context, agentID string, name string) (RosterEntry, error)
 	// ResolveAgentName returns the display name of the participant
 	// identity bound to the given agent_id, or "" if the agent has
 	// no participant identity (e.g. an ephemeral worker).
@@ -34,12 +40,19 @@ type ParticipantRoster interface {
 }
 
 // RosterEntry is one named participant in a roster response.
+//
+// Name is the identity key. Role is a free-form persona/职责说明 note, not a
+// worker type: it flavors the agent's self-description and never selects a
+// tool surface (all named agents share one deck).
 type RosterEntry struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Role    string `json:"role,omitempty"`
 	Tagline string `json:"tagline,omitempty"`
 	Model   string `json:"model,omitempty"`
+	// ForkedFromID is set on fork responses (and on any entry describing a
+	// temporary分身): the母体's participant id this identity was forked from.
+	ForkedFromID string `json:"forked_from_id,omitempty"`
 	// ArchivedPredecessorID is set only on save responses that CREATED a
 	// participant whose name matches a retired predecessor; the
 	// predecessor's archived state (memory notebook included) is kept by
@@ -49,7 +62,8 @@ type RosterEntry struct {
 
 // RosterSaveRequest carries a save call from the manage_participant tool.
 // Empty fields are treated as "do not change" when the named
-// participant already exists.
+// participant already exists. Role is a free-form persona note (see
+// RosterEntry), stored verbatim; it is not validated as a worker type.
 type RosterSaveRequest struct {
 	Name       string `json:"name"`
 	Role       string `json:"role,omitempty"`
@@ -129,6 +143,7 @@ const (
 	ManageParticipantList   ManageParticipantAction = "list"
 	ManageParticipantSave   ManageParticipantAction = "save"
 	ManageParticipantRetire ManageParticipantAction = "retire"
+	ManageParticipantFork   ManageParticipantAction = "fork"
 )
 
 // ManageParticipant dispatches a single manage_participant tool
@@ -195,6 +210,16 @@ func (c *AgentControl) ManageParticipant(ctx context.Context, agentID, args stri
 			return ManageParticipantResult{}, errors.New("manage_participant: name is required for retire")
 		}
 		entry, err := roster.Retire(ctx, agentID, name)
+		if err != nil {
+			return ManageParticipantResult{}, err
+		}
+		return ManageParticipantResult{Action: action, Entries: []RosterEntry{entry}}, nil
+	case ManageParticipantFork:
+		name := strings.TrimSpace(payload.Name)
+		if name == "" {
+			return ManageParticipantResult{}, errors.New("manage_participant: name is required for fork")
+		}
+		entry, err := roster.Fork(ctx, agentID, name)
 		if err != nil {
 			return ManageParticipantResult{}, err
 		}

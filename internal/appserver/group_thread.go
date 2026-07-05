@@ -279,6 +279,10 @@ func (s *Server) threadWithGroupMembers(thread Thread) Thread {
 	members := make([]participant.Summary, 0, len(ids))
 	for _, id := range ids {
 		if summary, ok := s.resolveParticipantSummary(id); ok {
+			// Busy is live runtime state (decision-five lock), so it is
+			// overlaid here rather than baked into the cached summary,
+			// which only invalidates on profile/roster edits.
+			summary.Busy = s.participantIsBusy(id)
 			members = append(members, summary)
 		}
 	}

@@ -916,6 +916,12 @@ func migrateSchema(db *sql.DB) error {
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_session_messages_thread ON session_messages(session_id, thread_id, seq)`); err != nil {
 		return fmt.Errorf("migrate sessions database: %w", err)
 	}
+	// forked_from marks a named participant as a temporary分身 forked from
+	// another named agent (decision six): it holds the母体's participant id.
+	// Empty for ordinary participants.
+	if err := addColumnIfMissing(db, "participants", "forked_from", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	if err := addColumnIfMissing(db, "sessions", "worktree_path", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}

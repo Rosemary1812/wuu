@@ -50,6 +50,13 @@ func (s *Server) retireNamedParticipant(p participant.Participant) error {
 	if s == nil || s.rt == nil {
 		return errors.New("retire participant: server runtime is not configured")
 	}
+	// Decision six memory回流: if this is a temporary分身, append-merge its
+	// accumulated notebook back into its母体 before the workspace is archived.
+	// Best-effort and serialized per母体; a failure never blocks retirement
+	// (archival preserves the fork's memory on disk regardless).
+	if strings.TrimSpace(p.ForkedFrom) != "" {
+		s.mergeForkMemoryBack(p)
+	}
 	if err := session.RetireParticipant(s.rt.SessionDir, p.ID); err != nil {
 		return err
 	}

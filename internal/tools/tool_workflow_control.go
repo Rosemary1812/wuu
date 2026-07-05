@@ -210,8 +210,9 @@ func workflowTeamInputSchema(description string) map[string]any {
 			"properties": map[string]any{
 				"id":            map[string]any{"type": "string", "description": "Optional stable team member id."},
 				"role":          map[string]any{"type": "string", "description": "Role needed for this workflow run."},
-				"mode":          map[string]any{"type": "string", "enum": []string{"reuse_profile", "create_profile", "ephemeral"}},
-				"agent_profile": map[string]any{"type": "string", "description": "Profile name for reuse_profile/create_profile; omit for ephemeral."},
+				"mode":          map[string]any{"type": "string", "enum": []string{"reuse_profile", "create_profile", "ephemeral", "named_participant"}},
+				"agent_profile": map[string]any{"type": "string", "description": "Profile name for reuse_profile/create_profile; omit for ephemeral and named_participant."},
+				"participant":   map[string]any{"type": "string", "description": "Named group member (name or participant id) for mode named_participant. Must be a member of this workflow's group thread; the named agent runs under its own durable identity and memory."},
 				"task_name":     map[string]any{"type": "string", "description": "Suggested spawn_agent task_name."},
 				"phase_id":      map[string]any{"type": "string", "description": "Optional planned phase id for this member."},
 				"prompt":        map[string]any{"type": "string", "description": "Optional task brief to use when spawning this member. " + prompttext.AgentBriefContractSummary() + " " + prompttext.WorkflowBriefExtensionSummary()},
@@ -260,6 +261,7 @@ type workflowTeamMemberInput struct {
 	Role         string `json:"role"`
 	Mode         string `json:"mode"`
 	AgentProfile string `json:"agent_profile"`
+	Participant  string `json:"participant"`
 	TaskName     string `json:"task_name"`
 	PhaseID      string `json:"phase_id"`
 	Prompt       string `json:"prompt"`
@@ -823,6 +825,13 @@ func workflowTeamPlanFromControlArgs(env *Env, store *workflow.Store, args workf
 		return workflow.TeamPlan{}, err
 	}
 
+	// groupPool is the run's named-participant membership pool, resolved lazily
+	// (and once) the first time a named_participant member is seen. Nil until
+	// then; an explicit empty resolution is still enforced (no members = every
+	// named_participant reference rejected).
+	var groupPool []workflow.ParticipantRef
+	groupPoolResolved := false
+
 	used := make(map[string]int, len(inputs))
 	members := make([]workflow.TeamMember, 0, len(inputs))
 	for _, input := range inputs {
@@ -830,7 +839,11 @@ func workflowTeamPlanFromControlArgs(env *Env, store *workflow.Store, args workf
 		if role == "" {
 			return workflow.TeamPlan{}, errors.New("workflow_control record_workflow_team requires every team member role")
 		}
-		mode, err := parseWorkflowTeamMemberMode(input.Mode, input.AgentProfile)
+		modeRaw := input.Mode
+		if strings.TrimSpace(modeRaw) == "" && strings.TrimSpace(input.Participant) != "" {
+			modeRaw = string(workflow.TeamMemberNamedParticipant)
+		}
+		mode, err := parseWorkflowTeamMemberMode(modeRaw, input.AgentProfile)
 		if err != nil {
 			return workflow.TeamPlan{}, err
 		}
@@ -849,6 +862,18 @@ func workflowTeamPlanFromControlArgs(env *Env, store *workflow.Store, args workf
 			member.TaskName = member.ID
 		}
 		switch member.Mode {
+		case workflow.TeamMemberNamedParticipant:
+			if !groupPoolResolved {
+				groupPool = workflowRunGroupMembers(env, run)
+				groupPoolResolved = true
+			}
+			ref, err := resolveWorkflowNamedParticipant(input.Participant, groupPool)
+			if err != nil {
+				return workflow.TeamPlan{}, fmt.Errorf("team member %q: %w", member.ID, err)
+			}
+			member.AgentProfile = ""
+			member.ParticipantID = ref.ID
+			member.ParticipantName = ref.Name
 		case workflow.TeamMemberReuseProfile:
 			if member.AgentProfile == "" {
 				return workflow.TeamPlan{}, fmt.Errorf("team member %q mode reuse_profile requires agent_profile", member.ID)
@@ -885,6 +910,48 @@ func workflowTeamPlanFromControlArgs(env *Env, store *workflow.Store, args workf
 	return workflow.TeamPlan{RunID: strings.TrimSpace(args.RunID), Members: members}, nil
 }
 
+// resolveWorkflowNamedParticipant matches a team member's participant
+// reference (name or id) against the run's group membership pool. Only members
+// of the bound group thread may fill named_participant slots; an empty pool or
+// an unknown reference is rejected so a workflow can never orchestrate a named
+// agent outside its own group.
+func resolveWorkflowNamedParticipant(ref string, pool []workflow.ParticipantRef) (workflow.ParticipantRef, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return workflow.ParticipantRef{}, errors.New("mode named_participant requires participant (name or id)")
+	}
+	if len(pool) == 0 {
+		return workflow.ParticipantRef{}, fmt.Errorf("this workflow is not bound to a group thread; cannot add named participant %q", ref)
+	}
+	for _, member := range pool {
+		if strings.TrimSpace(member.ID) == ref {
+			return acceptWorkflowNamedParticipant(member)
+		}
+	}
+	for _, member := range pool {
+		if strings.EqualFold(strings.TrimSpace(member.Name), ref) {
+			return acceptWorkflowNamedParticipant(member)
+		}
+	}
+	return workflow.ParticipantRef{}, fmt.Errorf("named participant %q is not a member of this workflow's group", ref)
+}
+
+// acceptWorkflowNamedParticipant refuses a resolved member that is already
+// executing another task/workflow run (decision-five concurrency lock): a
+// group's named agent can't be enlisted into a second workflow while busy, so
+// the agent is told to wait or fork a copy (decision six) instead of two
+// callers racing the same resident identity.
+func acceptWorkflowNamedParticipant(member workflow.ParticipantRef) (workflow.ParticipantRef, error) {
+	if member.Busy {
+		name := strings.TrimSpace(member.Name)
+		if name == "" {
+			name = strings.TrimSpace(member.ID)
+		}
+		return workflow.ParticipantRef{}, fmt.Errorf("named participant %q is busy running another task; wait for it to finish or fork a copy", name)
+	}
+	return member, nil
+}
+
 func workflowTeamInputs(args workflowControlArgs) []workflowTeamMemberInput {
 	if len(args.Team) > 0 {
 		return args.Team
@@ -905,6 +972,8 @@ func parseWorkflowTeamMemberMode(raw, agentProfile string) (workflow.TeamMemberM
 		return workflow.TeamMemberCreateProfile, nil
 	case "ephemeral", "memoryless":
 		return workflow.TeamMemberEphemeral, nil
+	case "named", "named_participant", "participant":
+		return workflow.TeamMemberNamedParticipant, nil
 	default:
 		return "", fmt.Errorf("unsupported workflow team member mode %q", raw)
 	}

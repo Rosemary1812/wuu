@@ -608,6 +608,7 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 		Driver:         workflow.RunDriverScript,
 		Entrypoint:     workflow.RunEntrypointNaturalLanguageAgent,
 		Status:         status,
+		ThreadID:       strings.TrimSpace(t.env.ThreadID),
 		PauseReason:    pauseReason,
 		ResumeHint:     resumeHint,
 	}, args.GoalID, args.GoalDir)
@@ -681,21 +682,51 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 
 func newWorkflowScriptRuntime(env *Env, store *workflow.Store, run workflow.Run, script string, maxAgents, maxConcurrency int) *workflow.ScriptRuntime {
 	return workflow.NewScriptRuntime(workflow.ScriptRuntimeOptions{
-		Store:            store,
-		AgentControl:     env.AgentControl,
-		RootDir:          env.RootDir,
-		CurrentAgentID:   env.AgentID,
-		CurrentAgentPath: env.AgentPath,
-		RunID:            run.ID,
-		GoalID:           run.GoalID,
-		GoalDir:          run.GoalDir,
-		DefinitionName:   run.DefinitionName,
-		DefinitionPath:   run.DefinitionPath,
-		Arguments:        strings.TrimSpace(run.Arguments),
-		Script:           script,
-		MaxAgents:        maxAgents,
-		MaxConcurrency:   maxConcurrency,
+		Store:               store,
+		AgentControl:        env.AgentControl,
+		RootDir:             env.RootDir,
+		CurrentAgentID:      env.AgentID,
+		CurrentAgentPath:    env.AgentPath,
+		RunID:               run.ID,
+		GoalID:              run.GoalID,
+		GoalDir:             run.GoalDir,
+		DefinitionName:      run.DefinitionName,
+		DefinitionPath:      run.DefinitionPath,
+		Arguments:           strings.TrimSpace(run.Arguments),
+		Script:              script,
+		MaxAgents:           maxAgents,
+		MaxConcurrency:      maxConcurrency,
+		ThreadID:            strings.TrimSpace(run.ThreadID),
+		AllowedParticipants: workflowRunGroupMembers(env, run),
 	})
+}
+
+// workflowRunGroupMembers resolves the named-participant pool a script may
+// dispatch to: the members of the group thread the run is bound to. The pool
+// is empty (and every named-participant spawn therefore rejected) when the run
+// has no thread binding or no group manager is available — for example an
+// ordinary project agent's self-contained workflow.
+func workflowRunGroupMembers(env *Env, run workflow.Run) []workflow.ParticipantRef {
+	if env == nil || env.GroupManager == nil {
+		return nil
+	}
+	threadID := strings.TrimSpace(run.ThreadID)
+	if threadID == "" {
+		return nil
+	}
+	members, err := env.GroupManager.ListGroupMembers(context.Background(), threadID)
+	if err != nil || len(members) == 0 {
+		return nil
+	}
+	refs := make([]workflow.ParticipantRef, 0, len(members))
+	for _, member := range members {
+		id := strings.TrimSpace(member.ID)
+		if id == "" {
+			continue
+		}
+		refs = append(refs, workflow.ParticipantRef{ID: id, Name: strings.TrimSpace(member.Name), Busy: member.Busy})
+	}
+	return refs
 }
 
 func bindWorkflowRunToGoal(env *Env, run workflow.Run, goalID, goalDir string) (workflow.Run, error) {
@@ -1080,6 +1111,7 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 		Entrypoint:     workflow.RunEntrypointNaturalLanguageAgent,
 		Status:         status,
 		Phases:         phases,
+		ThreadID:       strings.TrimSpace(t.env.ThreadID),
 		PauseReason:    pauseReason,
 		ResumeHint:     resumeHint,
 	}, args.GoalID, args.GoalDir)

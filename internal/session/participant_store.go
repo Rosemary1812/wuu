@@ -44,9 +44,9 @@ func UpsertParticipant(sessDir string, p participant.Participant) error {
 	}
 	_, err = db.Exec(`
 INSERT INTO participants (
-	id, kind, name, role, avatar, tagline, workspace, model,
+	id, kind, name, role, avatar, tagline, workspace, model, forked_from,
 	created_at, updated_at, retired_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
 	kind = excluded.kind,
 	name = excluded.name,
@@ -55,9 +55,10 @@ ON CONFLICT(id) DO UPDATE SET
 	tagline = excluded.tagline,
 	workspace = excluded.workspace,
 	model = excluded.model,
+	forked_from = excluded.forked_from,
 	updated_at = excluded.updated_at,
 	retired_at = excluded.retired_at`,
-		p.ID, string(p.Kind), p.Name, p.Role, p.Avatar, p.Tagline, p.Workspace, p.Model,
+		p.ID, string(p.Kind), p.Name, p.Role, p.Avatar, p.Tagline, p.Workspace, p.Model, p.ForkedFrom,
 		timeText(p.CreatedAt), timeText(p.UpdatedAt), nullableTimeText(p.RetiredAt),
 	)
 	if err != nil {
@@ -199,7 +200,7 @@ func GetParticipant(sessDir, id string) (participant.Participant, error) {
 	defer db.Close()
 
 	row := db.QueryRow(`
-SELECT id, kind, name, role, avatar, tagline, workspace, model,
+SELECT id, kind, name, role, avatar, tagline, workspace, model, forked_from,
        created_at, updated_at, retired_at
 FROM participants
 WHERE id = ?`, strings.TrimSpace(id))
@@ -223,7 +224,7 @@ func ListParticipants(sessDir string, kind participant.Kind) ([]participant.Part
 	defer db.Close()
 
 	query := `
-SELECT id, kind, name, role, avatar, tagline, workspace, model,
+SELECT id, kind, name, role, avatar, tagline, workspace, model, forked_from,
        created_at, updated_at, retired_at
 FROM participants
 WHERE retired_at IS NULL`
@@ -357,7 +358,7 @@ func FindRetiredParticipantByName(sessDir string, kind participant.Kind, name st
 	defer db.Close()
 
 	query := `
-SELECT id, kind, name, role, avatar, tagline, workspace, model,
+SELECT id, kind, name, role, avatar, tagline, workspace, model, forked_from,
        created_at, updated_at, retired_at
 FROM participants
 WHERE retired_at IS NOT NULL`
@@ -419,7 +420,7 @@ func scanParticipant(scanner interface {
 	var kind, createdAt, updatedAt string
 	var retiredAt sql.NullString
 	if err := scanner.Scan(
-		&p.ID, &kind, &p.Name, &p.Role, &p.Avatar, &p.Tagline, &p.Workspace, &p.Model,
+		&p.ID, &kind, &p.Name, &p.Role, &p.Avatar, &p.Tagline, &p.Workspace, &p.Model, &p.ForkedFrom,
 		&createdAt, &updatedAt, &retiredAt,
 	); err != nil {
 		return participant.Participant{}, err

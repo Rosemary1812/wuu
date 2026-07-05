@@ -30,10 +30,15 @@ type Run struct {
 	FinalReportPath string    `json:"final_report_path,omitempty"`
 	GoalID          string    `json:"goal_id,omitempty"`
 	GoalDir         string    `json:"goal_dir,omitempty"`
-	PauseReason     string    `json:"pause_reason,omitempty"`
-	ResumeHint      string    `json:"resume_hint,omitempty"`
-	RollbackHint    string    `json:"rollback_hint,omitempty"`
-	Error           string    `json:"error,omitempty"`
+	// ThreadID binds a workflow run to a conversation (cth) thread. When set,
+	// named-participant team members report into this thread so their output
+	// folds into the triggering reply subthread instead of refreshing the main
+	// stream. Empty for self-contained workflows with no conversation binding.
+	ThreadID     string `json:"thread_id,omitempty"`
+	PauseReason  string `json:"pause_reason,omitempty"`
+	ResumeHint   string `json:"resume_hint,omitempty"`
+	RollbackHint string `json:"rollback_hint,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
 const (
@@ -86,7 +91,30 @@ const (
 	TeamMemberReuseProfile  TeamMemberMode = "reuse_profile"
 	TeamMemberCreateProfile TeamMemberMode = "create_profile"
 	TeamMemberEphemeral     TeamMemberMode = "ephemeral"
+	// TeamMemberNamedParticipant binds a workflow slot to an already-running
+	// named agent (a group member) instead of creating a throwaway worker.
+	// The identity is the participant, keyed by ParticipantID/ParticipantName,
+	// not an AgentProfile: the named agent runs the task under its own durable
+	// identity and memory, then reports. Only named agents in the run's bound
+	// group thread may fill these slots (enforced in the tools layer, which is
+	// the only layer with roster/group access).
+	TeamMemberNamedParticipant TeamMemberMode = "named_participant"
 )
+
+// ParticipantRef identifies a named agent that a workflow may dispatch to.
+// It is the resolved membership pool passed from the tools layer into the
+// script runtime so the engine can validate named-participant spawns without
+// importing the roster/group machinery.
+type ParticipantRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+	// Busy is transient runtime state carried on the allow-list only: it
+	// flags a member that is already executing another task/workflow run so
+	// the engine can reject enlisting it (decision-five concurrency lock)
+	// rather than racing the same resident agent. It is not meaningful when
+	// a ParticipantRef is persisted as part of a TeamMember.
+	Busy bool `json:"busy,omitempty"`
+}
 
 type TeamPlan struct {
 	RunID     string       `json:"run_id"`
@@ -96,15 +124,20 @@ type TeamPlan struct {
 }
 
 type TeamMember struct {
-	ID             string         `json:"id"`
-	Role           string         `json:"role"`
-	Mode           TeamMemberMode `json:"mode"`
-	AgentProfile   string         `json:"agent_profile,omitempty"`
-	TaskName       string         `json:"task_name,omitempty"`
-	PhaseID        string         `json:"phase_id,omitempty"`
-	Prompt         string         `json:"prompt,omitempty"`
-	Reason         string         `json:"reason,omitempty"`
-	CreatedProfile bool           `json:"created_profile,omitempty"`
+	ID           string         `json:"id"`
+	Role         string         `json:"role"`
+	Mode         TeamMemberMode `json:"mode"`
+	AgentProfile string         `json:"agent_profile,omitempty"`
+	// ParticipantID / ParticipantName identify the bound named agent for
+	// mode=named_participant. Name is the identity axis shown to users;
+	// ID is the stable participant key. Empty for the worker-flavored modes.
+	ParticipantID   string `json:"participant_id,omitempty"`
+	ParticipantName string `json:"participant_name,omitempty"`
+	TaskName        string `json:"task_name,omitempty"`
+	PhaseID         string `json:"phase_id,omitempty"`
+	Prompt          string `json:"prompt,omitempty"`
+	Reason          string `json:"reason,omitempty"`
+	CreatedProfile  bool   `json:"created_profile,omitempty"`
 }
 
 type RunStatusUpdate struct {
@@ -1262,6 +1295,16 @@ func validateTeamPlan(plan TeamPlan) error {
 		case TeamMemberEphemeral:
 			if strings.TrimSpace(member.AgentProfile) != "" {
 				return fmt.Errorf("workflow team member %q mode ephemeral must not set agent_profile", id)
+			}
+		case TeamMemberNamedParticipant:
+			// A named-participant slot is bound to an existing named agent, not
+			// a profile: it needs a participant reference and must not carry an
+			// AgentProfile (the identity is the participant, not a profile).
+			if strings.TrimSpace(member.ParticipantID) == "" && strings.TrimSpace(member.ParticipantName) == "" {
+				return fmt.Errorf("workflow team member %q mode named_participant requires participant_id or participant_name", id)
+			}
+			if strings.TrimSpace(member.AgentProfile) != "" {
+				return fmt.Errorf("workflow team member %q mode named_participant must not set agent_profile", id)
 			}
 		default:
 			return fmt.Errorf("workflow team member %q has unsupported mode %q", id, member.Mode)

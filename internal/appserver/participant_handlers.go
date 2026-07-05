@@ -149,9 +149,24 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 		if p.RetiredAt != nil {
 			return s.writeResponse(req.ID, nil, fmt.Errorf("participant %q is retired and cannot be started", firstNonEmpty(p.Name, participantID)))
 		}
-		if subagentType == "" {
-			subagentType = p.Role
+		// Decision-five concurrency lock: a named agent runs one task at a
+		// time. Refuse a second pull while it is already executing a
+		// task/workflow run or mid chat-reply, instead of spawning a
+		// concurrent run against the same resident identity. The caller is
+		// told to wait or fork a copy (decision six) when more hands are
+		// needed. This is the fast read-only reject; the lock is reserved
+		// atomically right before Spawn to close the check-then-spawn window.
+		if s.residentDraining(participantID) {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("participant %q is busy replying in chat; wait for it to finish or fork a copy", firstNonEmpty(p.Name, participantID)))
 		}
+		if s.participantIsBusy(participantID) {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("participant %q is busy running another task; wait for it to finish or fork a copy", firstNonEmpty(p.Name, participantID)))
+		}
+		// Role is a free-form persona/职责说明 note, NOT the task-dispatch
+		// worker type: named agents all run on one deck, so role never selects
+		// a tool surface. Name is the identity axis — task_name, agent_profile,
+		// and the persona prompt all key off p.Name / the persona text.
+		subagentType = resolveParticipantSubagentType(subagentType, p)
 		if taskName == "" {
 			taskName = p.Name
 		}
@@ -199,6 +214,16 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 		})
 	}
 
+	// Reserve the concurrency lock atomically just before the spawn so two
+	// near-simultaneous starts can't both pass the read-only check above.
+	// The reservation is bound to the run id on success and rolled back on
+	// spawn failure; the run's Running notification and completion drive the
+	// authoritative acquire/release (forwardAgentNotifications).
+	if participantID != "" {
+		if !s.tryAcquireParticipantBusy(participantID, "task") {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("participant %q is busy running another task; wait for it to finish or fork a copy", firstNonEmpty(taskName, participantID)))
+		}
+	}
 	spawned, err := threadRuntime.AgentControl.Spawn(ctx, agentcontrol.SpawnRequest{
 		Type:             subagentType,
 		TaskName:         taskName,
@@ -213,9 +238,13 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 		Synchronous:      false,
 	})
 	if err != nil {
+		if participantID != "" {
+			s.releaseParticipantBusy(participantID, "")
+		}
 		return s.writeResponse(req.ID, nil, err)
 	}
 	if participantID != "" {
+		s.bindParticipantBusyAgent(participantID, spawned.AgentID)
 		_ = session.UpsertParticipantRun(s.rt.SessionDir, session.ParticipantRun{
 			ID:            spawned.AgentID,
 			ParticipantID: participantID,
@@ -257,6 +286,20 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 			StartedAt:    time.Now().UTC(),
 		},
 	}, nil)
+}
+
+// resolveParticipantSubagentType picks the worker type for a participant/start
+// spawn. Decision-four (name-centric identity): a named agent's Role is a
+// persona/职责说明 note, never a worker type, so it is deliberately NOT
+// consulted here — every named agent runs on the shared default deck. Only an
+// explicit caller-supplied subagent_type overrides the default; the
+// participant is accepted so the "role is ignored" contract is explicit and
+// test-guardable at this single derivation point.
+func resolveParticipantSubagentType(explicitSubagentType string, _ participant.Participant) string {
+	if s := strings.TrimSpace(explicitSubagentType); s != "" {
+		return s
+	}
+	return agentcontrol.DefaultSubagentType
 }
 
 func participantRunSummary(values ...string) string {
