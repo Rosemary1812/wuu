@@ -1,4 +1,5 @@
 import type { BrowserWindow } from "electron";
+import type { RuntimeContext } from "../shared/protocol";
 
 /**
  * Roles a window can play in the registry. The renderer is untrusted for
@@ -50,7 +51,11 @@ export type WindowRole = "main" | "popped-out";
  */
 export interface WindowRegistry {
   /** Add or replace the entry for `window.webContents.id`. */
-  registerWindow(window: BrowserWindow, role: WindowRole, workdir?: string): void;
+  registerWindow(
+    window: BrowserWindow,
+    role: WindowRole,
+    options?: WindowRegistrationOptions,
+  ): void;
 
   /** Drop the entry for `windowID` and any thread mappings pointing at it. */
   unregisterWindow(windowID: number): void;
@@ -73,6 +78,12 @@ export interface WindowRegistry {
   /** `webContents.id` hosting `threadID`, or undefined if no mapping exists. */
   threadHostWindowID(threadID: string): number | undefined;
 
+  /** Runtime context pinned to a window, or undefined for the global main window. */
+  runtimeContextForWindow(windowID: number): RuntimeContext | undefined;
+
+  /** Popped-out thread hosted by a window, or undefined for the main window. */
+  threadForWindow(windowID: number): string | undefined;
+
   /**
    * Attach the per-window resize listeners (`will-resize` / `resize` /
    * `resized`) on `window` and run `onChange` for each event. Replaces
@@ -89,10 +100,18 @@ export interface WindowRegistry {
   sameWorkdirPopOutWindows(workdir: string): BrowserWindow[];
 }
 
+export type WindowRegistrationOptions = {
+  workdir?: string;
+  runtimeContext?: RuntimeContext;
+  threadID?: string;
+};
+
 interface WindowEntry {
   readonly window: BrowserWindow;
   readonly role: WindowRole;
   readonly workdir?: string;
+  readonly runtimeContext?: RuntimeContext;
+  readonly threadID?: string;
 }
 
 class WindowRegistryImpl implements WindowRegistry {
@@ -100,8 +119,18 @@ class WindowRegistryImpl implements WindowRegistry {
   private readonly threadToWindowID = new Map<string, number>();
   private readonly resizeCleanups = new Map<number, () => void>();
 
-  registerWindow(window: BrowserWindow, role: WindowRole, workdir?: string): void {
-    this.windowsByID.set(window.webContents.id, { window, role, workdir });
+  registerWindow(
+    window: BrowserWindow,
+    role: WindowRole,
+    options: WindowRegistrationOptions = {},
+  ): void {
+    this.windowsByID.set(window.webContents.id, {
+      window,
+      role,
+      workdir: options.workdir,
+      runtimeContext: options.runtimeContext,
+      threadID: options.threadID,
+    });
   }
 
   unregisterWindow(windowID: number): void {
@@ -148,6 +177,14 @@ class WindowRegistryImpl implements WindowRegistry {
 
   threadHostWindowID(threadID: string): number | undefined {
     return this.threadToWindowID.get(threadID);
+  }
+
+  runtimeContextForWindow(windowID: number): RuntimeContext | undefined {
+    return this.windowsByID.get(windowID)?.runtimeContext;
+  }
+
+  threadForWindow(windowID: number): string | undefined {
+    return this.windowsByID.get(windowID)?.threadID;
   }
 
   sameWorkdirPopOutWindows(workdir: string): BrowserWindow[] {

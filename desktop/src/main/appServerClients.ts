@@ -55,6 +55,14 @@ export class AppServerClientPool {
     return this.client().request<T>(method, params);
   }
 
+  requestInContext<T>(
+    context: RuntimeContext,
+    method: string,
+    params?: unknown,
+  ): Promise<T> {
+    return this.clientForContext(context).request<T>(method, params);
+  }
+
   respondToServerRequest(id: string, result: unknown): void {
     const route = this.serverRequestRoutes.get(id);
     if (!route) {
@@ -95,7 +103,10 @@ export class AppServerClientPool {
   }
 
   private client(): AppServerClient {
-    const context = this.getRuntimeContext();
+    return this.clientForContext(this.getRuntimeContext());
+  }
+
+  private clientForContext(context: RuntimeContext): AppServerClient {
     const workdir = resolve(context.cwd);
     // Only registered projects carry a stable id; the no-project (对话)
     // workspace stays path-keyed (its scratch dir never moves).

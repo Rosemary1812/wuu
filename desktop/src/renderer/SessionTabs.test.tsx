@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeContext, Thread } from "../shared/protocol";
 import {
+  createDraftSessionTab,
   createThreadSessionTab,
   initialState,
   threadSessionTabID,
@@ -99,6 +100,7 @@ function renderTabsWith(state: AppState, onClose: (tabID: string) => void): void
         onSelect={() => {}}
         onClose={onClose}
         onCloseTabs={() => {}}
+        onPopOut={() => {}}
         onNewThread={() => {}}
         onReorder={() => {}}
       />,
@@ -301,14 +303,20 @@ describe("SessionTabStrip right-click menu", () => {
   type Captured = {
     closed: string[];
     closedBatches: string[][];
+    poppedOut: string[];
   };
 
   function makeCaptured(): Captured & {
     onSelect: (id: string) => void;
     onClose: (id: string) => void;
     onCloseTabs: (ids: string[]) => void;
+    onPopOut: (id: string) => void;
   } {
-    const captured: Captured = { closed: [], closedBatches: [] };
+    const captured: Captured = {
+      closed: [],
+      closedBatches: [],
+      poppedOut: [],
+    };
     return {
       ...captured,
       onSelect: () => {},
@@ -317,6 +325,9 @@ describe("SessionTabStrip right-click menu", () => {
       },
       onCloseTabs: (ids) => {
         captured.closedBatches.push([...ids]);
+      },
+      onPopOut: (id) => {
+        captured.poppedOut.push(id);
       },
     };
   }
@@ -332,6 +343,7 @@ describe("SessionTabStrip right-click menu", () => {
           onSelect={captured.onSelect}
           onClose={captured.onClose}
           onCloseTabs={captured.onCloseTabs}
+          onPopOut={captured.onPopOut}
           onNewThread={() => {}}
           onReorder={() => {}}
         />,
@@ -401,11 +413,60 @@ describe("SessionTabStrip right-click menu", () => {
       menu?.querySelector("[role='separator']"),
     ).not.toBeNull();
     expect(getMenuItems().map((item) => item.textContent)).toEqual([
+      "在新窗口打开",
       "关闭",
       "关闭其他",
       "关闭未运行的",
       "关闭全部",
     ]);
+  });
+
+  it("calls onPopOut with the right-clicked thread tab", () => {
+    const context = projectContext();
+    const threadA = makeThread("thread-a", "A");
+    const threadB = makeThread("thread-b", "B");
+    const captured = makeCaptured();
+    renderWith(
+      {
+        ...initialState,
+        activeContext: context,
+        thread: threadA,
+        activeSessionTabID: threadSessionTabID(threadA.id),
+        sessionTabs: [
+          createThreadSessionTab(threadA, context),
+          createThreadSessionTab(threadB, context),
+        ],
+        threads: [threadA, threadB],
+      },
+      captured,
+    );
+
+    rightClickTab(1);
+    clickMenuItem("在新窗口打开");
+
+    expect(captured.poppedOut).toEqual([threadSessionTabID(threadB.id)]);
+    expect(document.body.querySelector(".thread-row-context-menu")).toBeNull();
+  });
+
+  it("disables pop-out for draft tabs", () => {
+    const context = projectContext();
+    const captured = makeCaptured();
+    renderWith(
+      {
+        ...initialState,
+        activeContext: context,
+        activeSessionTabID: "draft:test",
+        sessionTabs: [createDraftSessionTab("draft:test", context)],
+      },
+      captured,
+    );
+
+    rightClickTab(0);
+
+    const popOut = getMenuItems().find(
+      (item) => item.textContent === "在新窗口打开",
+    );
+    expect(popOut?.disabled).toBe(true);
   });
 
   it("calls onClose with the right-clicked tab for 'close'", () => {

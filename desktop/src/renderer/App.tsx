@@ -47,6 +47,7 @@ import type {
   ParticipantProfile,
   ParticipantSaveParams,
   PlanUpdate,
+  PopOutInitResult,
   ProjectListResult,
   PermissionSummary,
   RuntimeAdvancedSettingsUpdate,
@@ -583,8 +584,18 @@ function serverEventCarriesModelOutputDelta(event: ServerEvent): boolean {
   }
 }
 
+function readPopOutInit(): PopOutInitResult | null {
+  try {
+    const init = window.wuu.popOutInit();
+    return init.threadID && init.context ? init : null;
+  } catch {
+    return null;
+  }
+}
 
 export function App(): JSX.Element {
+  const [popOutInit] = useState<PopOutInitResult | null>(() => readPopOutInit());
+  const poppedOutMode = Boolean(popOutInit?.threadID && popOutInit.context);
   const [state, setState] = useState<AppState>(initialState);
   const [prompt, setPrompt] = useState("");
   // Bumped each time the empty-state hint chip should refocus the hero
@@ -1381,6 +1392,14 @@ export function App(): JSX.Element {
 
     void (async () => {
       try {
+        if (popOutInit?.threadID && popOutInit.context) {
+          const loadedState = await loadPopOutRuntime(popOutInit);
+          if (!mounted) {
+            return;
+          }
+          setState((current) => ({ ...current, ...loadedState }));
+          return;
+        }
         const listedProjects = await window.wuu.listProjects();
         const runtimeState = listedProjects.active_context
           ? listedProjects
@@ -1411,7 +1430,7 @@ export function App(): JSX.Element {
         gitRefreshTimerRef.current = undefined;
       }
     };
-  }, [refreshParticipants]);
+  }, [popOutInit, refreshParticipants]);
 
   useEffect(() => {
     if (!state.initialized || !state.activeContext) {
@@ -2063,6 +2082,7 @@ export function App(): JSX.Element {
   }, [dmThreadByParticipantID, state.lastViewedTurnByThreadID]);
   const environmentPanelCanShow = Boolean(
     state.initialized &&
+    !poppedOutMode &&
     !previewingLaunch &&
     !showingWorkspaceMode &&
     !rightPanelOpen &&
@@ -2080,8 +2100,11 @@ export function App(): JSX.Element {
   const participantPanelVisible = Boolean(participantPanel);
   const environmentPanelMotionState: EnvironmentPanelMotionState =
     environmentPanelVisible ? "open" : "closing";
-  const sessionTabsVisible = Boolean(state.initialized && !previewingLaunch);
-  const shellClassName = `app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
+  const sessionTabsVisible = Boolean(
+    state.initialized && !previewingLaunch && !poppedOutMode,
+  );
+  const sidebarVisible = !poppedOutMode;
+  const shellClassName = `app-shell${poppedOutMode ? " popped-out-shell" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${
     sidebarCollapsed && sidebarDrawerPhase === "open" ? " sidebar-drawer-open" : ""
   }${
     sidebarCollapsed && sidebarDrawerPhase === "closing"
@@ -3796,6 +3819,7 @@ export function App(): JSX.Element {
         onSelect={(tabID) => void selectSessionTab(tabID)}
         onClose={(tabID) => void closeSessionTab(tabID)}
         onCloseTabs={(tabIDs) => void closeSessionTabs(tabIDs)}
+        onPopOut={(tabID) => void popOutSessionTab(tabID)}
         onNewThread={() => void startNewThread()}
         onReorder={reorderSessionTabs}
       />
@@ -3834,6 +3858,27 @@ export function App(): JSX.Element {
         sessionTabs: arrayMove(current.sessionTabs, sourceIndex, targetIndex),
       };
     });
+  }
+
+  async function popOutSessionTab(tabID: string): Promise<void> {
+    const currentState = appStateRef.current;
+    const tab = currentState.sessionTabs.find((item) => item.id === tabID);
+    if (!tab || tab.kind !== "thread") {
+      return;
+    }
+    try {
+      await window.wuu.popOutSession({
+        threadID: tab.threadID,
+        context: tab.context,
+      });
+      await closeSessionTab(tabID);
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error ? error.message : "open detached window failed",
+      }));
+    }
   }
 
   function clearViewSwitchDelay(): void {
@@ -3927,6 +3972,42 @@ export function App(): JSX.Element {
       activePane: "primary",
       allowThreadAutoActivation: Boolean(thread),
       threads: thread ? upsertThread(listedThreads, thread) : listedThreads,
+      running: isThreadRunning(thread),
+      status: "ready",
+    };
+  }
+
+  async function loadPopOutRuntime(
+    init: PopOutInitResult,
+  ): Promise<Partial<AppState>> {
+    if (!init.threadID || !init.context) {
+      return { status: "no-runtime" };
+    }
+    const [listedProjects, initialized, listed, resumed] = await Promise.all([
+      window.wuu.listProjects(),
+      window.wuu.initialize(),
+      window.wuu.listThreads(),
+      window.wuu.resumeThread(init.threadID),
+    ]);
+    const listedThreads = sortThreads(listed.threads);
+    const thread = reconcileResumedThreadTurns(
+      requireThread(resumed, "resume did not return a thread"),
+      listedThreads.find((item) => item.id === init.threadID),
+    );
+    const tab = createThreadSessionTab(thread, init.context);
+    return {
+      initialized,
+      projects: listedProjects.projects,
+      activeContext: init.context,
+      activeProjectId: activeProjectID(init.context),
+      gitStatus: undefined,
+      thread,
+      secondaryThread: undefined,
+      activePane: "primary",
+      allowThreadAutoActivation: true,
+      sessionTabs: [tab],
+      activeSessionTabID: tab.id,
+      threads: upsertThread(listedThreads, thread),
       running: isThreadRunning(thread),
       status: "ready",
     };
@@ -7693,101 +7774,105 @@ export function App(): JSX.Element {
   return (
     <ImagePreviewProvider>
       <div ref={appShellRef} className={shellClassName} style={shellStyle}>
-      <div
-        ref={sidebarHoverZoneRef}
-        className="sidebar-hover-zone"
-        aria-hidden="true"
-        onPointerEnter={openSidebarDrawer}
-      />
-      <AppSidebar
-        state={state}
-        sidebarProjects={sidebarProjects}
-        pinnedThreads={sidebarPinnedThreads}
-        groupThreads={sidebarGroupThreads}
-        activeThreadID={activeThreadID}
-        activeDMParticipantID={activeDMParticipantID}
-        dmThreadByParticipantID={dmThreadByParticipantID}
-        unreadDMParticipantIDs={unreadDMParticipantIDs}
-        participants={participants}
-        busyParticipantIDs={busyParticipantIDs}
-        pendingThreadID={visiblePendingThreadID}
-        pendingProjectID={visiblePendingProjectID}
-        archiveConfirmThreadID={archiveConfirmThreadID}
-        collapsedProjectIDs={collapsedProjectIDs}
-        expandedProjectIDs={expandedProjectIDs}
-        collapsingProjectIDs={collapsingProjectIDs}
-        projectThreadsByProjectID={sidebarThreadsByProjectID}
-        projectMenuOpen={projectMenuOpen}
-        projectMenuRef={projectMenuRef}
-        searchOpen={conversationSearch.open}
-        debugFixturesVisible={
-          debugControlsVisible && ENABLE_CONVERSATION_FIXTURES
-        }
-        sectionOrder={sidebarSectionOrder}
-        onStartNewThread={() => void startNewThread({ resetToNoProject: true })}
-        onOpenSkillsTab={openSkillsTab}
-        onToggleConversationSearch={toggleConversationSearch}
-        onSeedConversationFixture={seedConversationFixture}
-        onSeedAgentTreeDemo={seedAgentTreeDemo}
-        onOpenChipGallery={() => setChipGalleryOpen(true)}
-        onSelectThread={(id) => void activateThread(id)}
-        onSelectParticipant={(participant) => void openParticipantDM(participant)}
-        onEditParticipant={openParticipantProfile}
-        onCreateParticipant={openNewParticipantProfile}
-        onCreateGroupThread={(title) => void createGroupThread(title)}
-        onImportParticipants={importParticipantTemplate}
-        onExportParticipants={exportParticipantTemplate}
-        onTogglePinned={(thread) => void toggleThreadPinned(thread)}
-        onArchiveThread={(thread) => void archiveThread(thread)}
-        onDeleteThread={(thread) => void deleteThread(thread)}
-        onClearArchiveConfirm={(id) =>
-          setArchiveConfirmThreadID((current) =>
-            current === id ? undefined : current,
-          )
-        }
-        onToggleProjectMenu={() => setProjectMenuOpen((open) => !open)}
-        onCreateProject={() => void createBlankProject()}
-        onOpenProjectFolder={() => void chooseProjectFolder()}
-        onToggleProjectCollapsed={toggleProjectCollapsed}
-        onStartNewThreadForProject={(id) => {
-          if (id === SCRATCH_PSEUDO_PROJECT_ID) {
-            void useNoProject(true);
-          } else {
-            void startNewThreadForProject(id);
-          }
-        }}
-        onSelectProjectThread={(projectID, threadID) =>
-          void selectProjectThread(projectID, threadID)
-        }
-        onRemoveProject={(id) => void removeProject(id)}
-        onRelocateProject={(id) => void relocateProject(id)}
-        onReorderSections={setSidebarSectionOrder}
-        onPointerEnter={openSidebarDrawer}
-        onPointerLeave={closeSidebarDrawer}
-        onOpenSettings={() => {
-          setProjectMenuOpen(false);
-          setRuntimeMenuOpen(false);
-          setCodexRuntimeMenu(null);
-          setSettingsInitialPage("providers");
-          setSettingsOpen(true);
-        }}
-      />
+      {sidebarVisible ? (
+        <>
+          <div
+            ref={sidebarHoverZoneRef}
+            className="sidebar-hover-zone"
+            aria-hidden="true"
+            onPointerEnter={openSidebarDrawer}
+          />
+          <AppSidebar
+            state={state}
+            sidebarProjects={sidebarProjects}
+            pinnedThreads={sidebarPinnedThreads}
+            groupThreads={sidebarGroupThreads}
+            activeThreadID={activeThreadID}
+            activeDMParticipantID={activeDMParticipantID}
+            dmThreadByParticipantID={dmThreadByParticipantID}
+            unreadDMParticipantIDs={unreadDMParticipantIDs}
+            participants={participants}
+            busyParticipantIDs={busyParticipantIDs}
+            pendingThreadID={visiblePendingThreadID}
+            pendingProjectID={visiblePendingProjectID}
+            archiveConfirmThreadID={archiveConfirmThreadID}
+            collapsedProjectIDs={collapsedProjectIDs}
+            expandedProjectIDs={expandedProjectIDs}
+            collapsingProjectIDs={collapsingProjectIDs}
+            projectThreadsByProjectID={sidebarThreadsByProjectID}
+            projectMenuOpen={projectMenuOpen}
+            projectMenuRef={projectMenuRef}
+            searchOpen={conversationSearch.open}
+            debugFixturesVisible={
+              debugControlsVisible && ENABLE_CONVERSATION_FIXTURES
+            }
+            sectionOrder={sidebarSectionOrder}
+            onStartNewThread={() => void startNewThread({ resetToNoProject: true })}
+            onOpenSkillsTab={openSkillsTab}
+            onToggleConversationSearch={toggleConversationSearch}
+            onSeedConversationFixture={seedConversationFixture}
+            onSeedAgentTreeDemo={seedAgentTreeDemo}
+            onOpenChipGallery={() => setChipGalleryOpen(true)}
+            onSelectThread={(id) => void activateThread(id)}
+            onSelectParticipant={(participant) => void openParticipantDM(participant)}
+            onEditParticipant={openParticipantProfile}
+            onCreateParticipant={openNewParticipantProfile}
+            onCreateGroupThread={(title) => void createGroupThread(title)}
+            onImportParticipants={importParticipantTemplate}
+            onExportParticipants={exportParticipantTemplate}
+            onTogglePinned={(thread) => void toggleThreadPinned(thread)}
+            onArchiveThread={(thread) => void archiveThread(thread)}
+            onDeleteThread={(thread) => void deleteThread(thread)}
+            onClearArchiveConfirm={(id) =>
+              setArchiveConfirmThreadID((current) =>
+                current === id ? undefined : current,
+              )
+            }
+            onToggleProjectMenu={() => setProjectMenuOpen((open) => !open)}
+            onCreateProject={() => void createBlankProject()}
+            onOpenProjectFolder={() => void chooseProjectFolder()}
+            onToggleProjectCollapsed={toggleProjectCollapsed}
+            onStartNewThreadForProject={(id) => {
+              if (id === SCRATCH_PSEUDO_PROJECT_ID) {
+                void useNoProject(true);
+              } else {
+                void startNewThreadForProject(id);
+              }
+            }}
+            onSelectProjectThread={(projectID, threadID) =>
+              void selectProjectThread(projectID, threadID)
+            }
+            onRemoveProject={(id) => void removeProject(id)}
+            onRelocateProject={(id) => void relocateProject(id)}
+            onReorderSections={setSidebarSectionOrder}
+            onPointerEnter={openSidebarDrawer}
+            onPointerLeave={closeSidebarDrawer}
+            onOpenSettings={() => {
+              setProjectMenuOpen(false);
+              setRuntimeMenuOpen(false);
+              setCodexRuntimeMenu(null);
+              setSettingsInitialPage("providers");
+              setSettingsOpen(true);
+            }}
+          />
 
-      {sidebarCollapsed ? null : (
-        <div
-          className="sidebar-resizer"
-          role="separator"
-          aria-label="调整侧边栏宽度"
-          aria-orientation="vertical"
-          aria-valuemin={SIDEBAR_MIN_WIDTH}
-          aria-valuemax={SIDEBAR_MAX_WIDTH}
-          aria-valuenow={sidebarWidth}
-          tabIndex={0}
-          onPointerDown={startSidebarResize}
-          onDoubleClick={toggleSidebar}
-          onKeyDown={handleSidebarSeparatorKey}
-        />
-      )}
+          {sidebarCollapsed ? null : (
+            <div
+              className="sidebar-resizer"
+              role="separator"
+              aria-label="调整侧边栏宽度"
+              aria-orientation="vertical"
+              aria-valuemin={SIDEBAR_MIN_WIDTH}
+              aria-valuemax={SIDEBAR_MAX_WIDTH}
+              aria-valuenow={sidebarWidth}
+              tabIndex={0}
+              onPointerDown={startSidebarResize}
+              onDoubleClick={toggleSidebar}
+              onKeyDown={handleSidebarSeparatorKey}
+            />
+          )}
+        </>
+      ) : null}
 
       <ConversationSearchOverlay
         state={conversationSearch}
@@ -7821,15 +7906,17 @@ export function App(): JSX.Element {
       >
         <header className="titlebar">
           <div className="title-block">
-            <button
-              className="icon-button side-panel-toggle-button sidebar-toggle-button"
-              type="button"
-              aria-label={sidebarCollapsed ? "展开左侧栏" : "收起左侧栏"}
-              aria-pressed={!sidebarCollapsed}
-              onClick={toggleSidebar}
-            >
-              <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
-            </button>
+            {sidebarVisible ? (
+              <button
+                className="icon-button side-panel-toggle-button sidebar-toggle-button"
+                type="button"
+                aria-label={sidebarCollapsed ? "展开左侧栏" : "收起左侧栏"}
+                aria-pressed={!sidebarCollapsed}
+                onClick={toggleSidebar}
+              >
+                <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
+              </button>
+            ) : null}
             {renderTitleContent()}
           </div>
           <div className="title-actions">
@@ -7922,33 +8009,37 @@ export function App(): JSX.Element {
               open={chipGalleryOpen}
               onClose={() => setChipGalleryOpen(false)}
             />
-            <button
-              ref={environmentToggleRef}
-              className={`icon-button environment-toggle-button${environmentPanelVisible ? " active" : ""}`}
-              type="button"
-              aria-label={
-                environmentPanelVisible
-                  ? activeThreadIsGroup
-                    ? "隐藏群聊信息"
-                    : "隐藏环境信息"
-                  : activeThreadIsGroup
-                    ? "显示群聊信息"
-                    : "显示环境信息"
-              }
-              aria-pressed={environmentPanelVisible}
-              onClick={toggleEnvironmentPanel}
-            >
-              <Info className="icon-lg" />
-            </button>
-            <button
-              className="icon-button side-panel-toggle-button"
-              type="button"
-              aria-label={rightPanelOpen ? "关闭右侧栏" : "打开右侧栏"}
-              aria-pressed={rightPanelOpen}
-              onClick={toggleRightPanel}
-            >
-              <SidePanelToggleIcon side="right" open={rightPanelOpen} />
-            </button>
+            {poppedOutMode ? null : (
+              <>
+                <button
+                  ref={environmentToggleRef}
+                  className={`icon-button environment-toggle-button${environmentPanelVisible ? " active" : ""}`}
+                  type="button"
+                  aria-label={
+                    environmentPanelVisible
+                      ? activeThreadIsGroup
+                        ? "隐藏群聊信息"
+                        : "隐藏环境信息"
+                      : activeThreadIsGroup
+                        ? "显示群聊信息"
+                        : "显示环境信息"
+                  }
+                  aria-pressed={environmentPanelVisible}
+                  onClick={toggleEnvironmentPanel}
+                >
+                  <Info className="icon-lg" />
+                </button>
+                <button
+                  className="icon-button side-panel-toggle-button"
+                  type="button"
+                  aria-label={rightPanelOpen ? "关闭右侧栏" : "打开右侧栏"}
+                  aria-pressed={rightPanelOpen}
+                  onClick={toggleRightPanel}
+                >
+                  <SidePanelToggleIcon side="right" open={rightPanelOpen} />
+                </button>
+              </>
+            )}
           </div>
         </header>
 
@@ -8244,7 +8335,7 @@ export function App(): JSX.Element {
         ) : null}
       </main>
 
-      {rightPanelOpen || rightPanelAnimating ? (
+      {!poppedOutMode && (rightPanelOpen || rightPanelAnimating) ? (
         <div
           className="workspace-right-panel-resizer"
           role="separator"
@@ -8259,26 +8350,28 @@ export function App(): JSX.Element {
           onKeyDown={handleRightPanelSeparatorKey}
         />
       ) : null}
-      <WorkspaceRightPanel
-        open={rightPanelOpen}
-        present={rightPanelOpen || rightPanelAnimating}
-        tabs={workspaceViewTabs}
-        activeTabID={workspaceActiveViewTabID}
-        activeContext={state.activeContext}
-        workspaceContext={workspaceContext}
-        gitStatus={state.gitStatus}
-        selectedFilePath={activeWorkspaceFile}
-        onSelectTab={focusWorkspaceViewTab}
-        onOpenTool={openWorkspaceTool}
-        onShowTools={showWorkspaceToolPicker}
-        onCloseTab={closeWorkspaceViewTab}
-        onReorderTabs={reorderWorkspaceViewTabs}
-        onOpenFile={openWorkspaceFile}
-        onClose={() => setRightPanelOpenWithMotion(false)}
-        pendingBrowserURL={pendingBrowserURL}
-        onBrowserURLConsumed={consumePendingBrowserURL}
-        onBrowserURLChange={rememberBrowserURLForActiveThread}
-      />
+      {poppedOutMode ? null : (
+        <WorkspaceRightPanel
+          open={rightPanelOpen}
+          present={rightPanelOpen || rightPanelAnimating}
+          tabs={workspaceViewTabs}
+          activeTabID={workspaceActiveViewTabID}
+          activeContext={state.activeContext}
+          workspaceContext={workspaceContext}
+          gitStatus={state.gitStatus}
+          selectedFilePath={activeWorkspaceFile}
+          onSelectTab={focusWorkspaceViewTab}
+          onOpenTool={openWorkspaceTool}
+          onShowTools={showWorkspaceToolPicker}
+          onCloseTab={closeWorkspaceViewTab}
+          onReorderTabs={reorderWorkspaceViewTabs}
+          onOpenFile={openWorkspaceFile}
+          onClose={() => setRightPanelOpenWithMotion(false)}
+          pendingBrowserURL={pendingBrowserURL}
+          onBrowserURLConsumed={consumePendingBrowserURL}
+          onBrowserURLChange={rememberBrowserURLForActiveThread}
+        />
+      )}
       {environmentDialog === "commit" ? (
         <CommitChangesDialog
           gitStatus={state.gitStatus}

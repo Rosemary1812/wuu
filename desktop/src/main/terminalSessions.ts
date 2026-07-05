@@ -39,7 +39,13 @@ export class TerminalSessionManager {
   ) {}
 
   start(params: TerminalSessionStartParams = {}): TerminalSessionStartResult {
-    const context = this.getRuntimeContext();
+    return this.startInContext(this.getRuntimeContext(), params);
+  }
+
+  startInContext(
+    context: RuntimeContext,
+    params: TerminalSessionStartParams = {},
+  ): TerminalSessionStartResult {
     const cwd = resolveTerminalCwd(context, params);
     const id = `term-${this.nextSessionID++}`;
     const startedAt = Date.now();

@@ -1,5 +1,6 @@
 import type { BrowserWindow } from "electron";
 import { describe, expect, it } from "vitest";
+import type { RuntimeContext } from "../shared/protocol";
 import {
   createWindowRegistry,
   type WindowRegistry,
@@ -88,6 +89,22 @@ describe("windowRegistry", () => {
       registry.registerWindow(second, "main");
       expect(registry.mainWindow()).toBe(second);
       expect(registry.allWindows()).toEqual([second]);
+    });
+
+    it("stores popped-out thread identity and runtime context", () => {
+      const registry = createWindowRegistry();
+      const win = makeWindow(2);
+      const context: RuntimeContext = {
+        kind: "project",
+        project_id: "project-1",
+        cwd: "/tmp/project",
+      };
+      registry.registerWindow(win, "popped-out", {
+        runtimeContext: context,
+        threadID: "thread-1",
+      });
+      expect(registry.runtimeContextForWindow(2)).toBe(context);
+      expect(registry.threadForWindow(2)).toBe("thread-1");
     });
   });
 

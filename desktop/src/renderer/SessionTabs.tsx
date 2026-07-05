@@ -9,7 +9,6 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import {
   horizontalListSortingStrategy,
   SortableContext,
@@ -33,6 +32,8 @@ import {
 } from "./ComposerPendingMessages";
 import { ThreadContextMenu, type ThreadContextMenuItem } from "./ThreadContextMenu";
 
+const POP_OUT_DRAG_DISTANCE_PX = 54;
+
 export function SessionTabStrip({
   state,
   pendingSwitchThreadID,
@@ -41,6 +42,7 @@ export function SessionTabStrip({
   onSelect,
   onClose,
   onCloseTabs,
+  onPopOut,
   onNewThread,
   onReorder,
 }: {
@@ -51,6 +53,7 @@ export function SessionTabStrip({
   onSelect: (tabID: string) => void;
   onClose: (tabID: string) => void;
   onCloseTabs: (tabIDs: string[]) => void;
+  onPopOut: (tabID: string) => void;
   onNewThread: () => void;
   onReorder: (activeID: string, overID: string) => void;
 }): JSX.Element {
@@ -74,6 +77,11 @@ export function SessionTabStrip({
   function endDrag(event: DragEndEvent): void {
     const activeID = String(event.active.id);
     const overID = event.over ? String(event.over.id) : undefined;
+    if (Math.abs(event.delta.y) >= POP_OUT_DRAG_DISTANCE_PX) {
+      onPopOut(activeID);
+      finishDrag();
+      return;
+    }
     if (overID && activeID !== overID) {
       onReorder(activeID, overID);
     }
@@ -114,7 +122,6 @@ export function SessionTabStrip({
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
-          modifiers={[restrictToHorizontalAxis]}
           onDragStart={startDrag}
           onDragEnd={endDrag}
           onDragCancel={cancelDrag}
@@ -236,6 +243,7 @@ export function SessionTabStrip({
             rightClickedTabID: tabContextMenu.tabID,
             onClose,
             onCloseTabs,
+            onPopOut,
           })}
           onClose={() => setTabContextMenu(undefined)}
         />
@@ -387,19 +395,28 @@ function buildTabContextMenuItems({
   rightClickedTabID,
   onClose,
   onCloseTabs,
+  onPopOut,
 }: {
   tabs: SessionTab[];
   runningTabIDs: Set<string>;
   rightClickedTabID: string;
   onClose: (tabID: string) => void;
   onCloseTabs: (tabIDs: string[]) => void;
+  onPopOut: (tabID: string) => void;
 }): ThreadContextMenuItem[] {
   const allTabIDs = tabs.map((tab) => tab.id);
+  const rightClickedTab = tabs.find((tab) => tab.id === rightClickedTabID);
   // Draft tabs have no thread and are never "running", so they count as
   // non-running here. Callers that want to preserve drafts should not pick
   // "关闭未运行的".
   const nonRunningTabIDs = allTabIDs.filter((id) => !runningTabIDs.has(id));
   return [
+    {
+      label: "在新窗口打开",
+      disabled: rightClickedTab?.kind !== "thread",
+      onSelect: () => onPopOut(rightClickedTabID),
+    },
+    { separator: true },
     {
       label: "关闭",
       onSelect: () => onClose(rightClickedTabID),

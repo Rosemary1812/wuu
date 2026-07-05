@@ -63,6 +63,19 @@
   grid-template-columns: var(--sidebar-width, 326px) minmax(0, 1fr) var(--workspace-right-panel-width, 360px);
 }
 
+.app-shell.popped-out-shell,
+.app-shell.popped-out-shell.right-panel-open {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-shell.popped-out-shell .conversation-pane {
+  grid-column: 1;
+}
+
+.app-shell.popped-out-shell .titlebar {
+  padding-left: 86px;
+}
+
 .app-shell.bottom-panel-open {
   grid-template-rows: minmax(0, 1fr) var(--workspace-bottom-panel-height, 238px);
 }

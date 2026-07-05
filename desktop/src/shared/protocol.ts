@@ -1692,59 +1692,41 @@ export type WuuDesktopApi = {
   ) => Promise<{ ok: boolean }>;
   /**
    * Pop-out session IPC (Plan §2.2 `wuu:pop-out-session`). Renderer
-   * sends `{ threadID }`; main opens a new BrowserWindow registered
-   * with the registry as "popped-out" and returns the window's
-   * webContents id.
+   * sends the thread id and its runtime context; main opens or focuses
+   * the single BrowserWindow registered for that thread.
    */
-  popOutSession: (params: { threadID: string }) => Promise<{ windowID: number }>;
+  popOutSession: (params: {
+    threadID: string;
+    context: RuntimeContext;
+  }) => Promise<{ windowID: number }>;
   /**
    * Optional belt-and-suspenders IPC for the popped-out window to tell
-   * main it's closing (Plan §2.2 `wuu:pop-out-closed`). Main clears
-   * the thread-window mapping and closes the window if still alive.
+   * main it's closing (Plan §2.2 `wuu:pop-out-closed`). Main only clears
+   * the thread-window mapping and closes the window if still alive; the
+   * backing thread and any running turn are left untouched.
    */
   popOutClosed: (params: { threadID: string }) => Promise<{ ok: boolean }>;
   /**
    * Sync bootstrap IPC for the popped-out window's renderer (Plan §3
    * commit 5 verification, M1 sync IPC parity test §7 risk #7). The
-   * popped-out window calls `window.wuu.popOutInit(threadID)` during
-   * boot, which fires `ipcRenderer.sendSync("wuu:pop-out-init", threadID)`
-   * and blocks until main returns the thread + sibling-threads + turns
-   * snapshot the renderer needs to hydrate its `state.thread` /
-   * `state.threads` / `state.turns` slices without an async flicker.
-   * The sync return is intentional — commit 3's placeholder UX
-   * (`wuu · ${threadID.slice(0, 8)}`) was deemed too cryptic for v1,
-   * but an async flicker to "wuu · {threadTitle}" would regress the
-   * first-paint experience; sync IPC gives us both.
-   *
-   * Why sync vs `wuu:pop-out-session` (async): the renderer can hold
-   * its first render until the title-bearing thread lands in
-   * `state.threads`. Async would race — the title would land AFTER
-   * React's first paint and you'd see the placeholder for one frame.
-   *
-   * Failure path: if the thread lookup fails (no such thread, server
-   * down), main returns `{ thread: null, threads: [], turns: [] }`;
-   * the renderer falls back to placeholder title and shows an empty
-   * thread body. We never block the renderer on a thrown error.
+   * popped-out window calls `window.wuu.popOutInit()` during boot. Main
+   * returns only the window-owned thread id and runtime context; the
+   * renderer then hydrates through the normal async app-server calls,
+   * routed by that window identity.
    */
-  popOutInit: (threadID: string) => PopOutInitResult;
+  popOutInit: () => PopOutInitResult;
 };
 
 /**
  * Sync return shape for `wuu:pop-out-init` (Plan §3 commit 5
- * verification). The popped-out window's renderer hydrates its
- * `state.thread` from `thread`, the sidebar list from `threads`, and
- * the conversation from `turns`. All three are loaded from the same
- * `thread/list` + `thread/resume` snapshot so the renderer never sees
- * an inconsistent mix (e.g. a thread from one workdir and turns from
- * another).
+ * verification). The snapshot is intentionally small and sync-safe:
+ * it carries identity, not conversation data.
  */
 export type PopOutInitResult = {
-  /** The popped-out thread (or null if not found). */
-  thread: Thread | null;
-  /** Sibling threads from the same workdir for sidebar sync. */
-  threads: Thread[];
-  /** The popped-out thread's turns (may be empty). */
-  turns: Turn[];
+  /** The popped-out thread id, or null when this is the main window. */
+  threadID: string | null;
+  /** Runtime context pinned to the popped-out window. */
+  context: RuntimeContext | null;
 };
 
 declare global {
