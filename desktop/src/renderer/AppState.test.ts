@@ -44,6 +44,7 @@ import {
   sortThreads,
   summarizeThreadsForSidebar,
   threadBelongsToProject,
+  threadNeedsResumeOnReselect,
   threadProjectPath,
   threadSessionTabID,
   turnStreamStatusForThread,
@@ -2936,5 +2937,40 @@ describe("reconcileResumedThreadTurns", () => {
   it("returns the resumed thread unchanged when there is no local copy", () => {
     const resumed = threadWithTurnIDs(["turn-1"]);
     expect(reconcileResumedThreadTurns(resumed, undefined)).toBe(resumed);
+  });
+});
+
+describe("threadNeedsResumeOnReselect", () => {
+  const context: RuntimeContext = {
+    kind: "no_project",
+    cwd: "/tmp/wuu-scratch",
+  };
+
+  it("asks the caller to resume when the active thread is only an empty list snapshot", () => {
+    const thread = { ...threadWithUserTexts([]), turns: [] };
+    const state: AppState = {
+      ...initialState,
+      activeContext: context,
+      thread,
+      threads: [thread],
+      sessionTabs: [createThreadSessionTab(thread, context)],
+      activeSessionTabID: threadSessionTabID(thread.id),
+    };
+
+    expect(threadNeedsResumeOnReselect(state, thread.id)).toBe(true);
+  });
+
+  it("does not re-resume an active thread that already has loaded turns", () => {
+    const thread = threadWithUserTexts(["hello"]);
+    const state: AppState = {
+      ...initialState,
+      activeContext: context,
+      thread,
+      threads: [thread],
+      sessionTabs: [createThreadSessionTab(thread, context)],
+      activeSessionTabID: threadSessionTabID(thread.id),
+    };
+
+    expect(threadNeedsResumeOnReselect(state, thread.id)).toBe(false);
   });
 });

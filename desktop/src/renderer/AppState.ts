@@ -2351,6 +2351,11 @@ function threadForTab(state: AppState, threadID: string): Thread | undefined {
   return state.threads.find((thread) => thread.id === threadID);
 }
 
+function threadNeedsResumeOnReselect(state: AppState, threadID: string): boolean {
+  const thread = threadForTab(state, threadID);
+  return !thread || thread.turns.length === 0;
+}
+
 // workspaceNameForContext resolves the display name of the workspace a tab is
 // bound to: the registered project's name for a project context, or "对话" for
 // the shared no-project workspace. A project context whose project has been
@@ -3334,6 +3339,7 @@ export {
   threadItemFromRecord,
   threadForPane,
   threadForTab,
+  threadNeedsResumeOnReselect,
   threadFromRecord,
   threadIDFromParams,
   threadMatchesActiveContext,

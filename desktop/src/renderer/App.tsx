@@ -213,6 +213,7 @@ import {
   summarizeThreadsForSidebar,
   threadBelongsToProject,
   threadForTab,
+  threadNeedsResumeOnReselect,
   threadForPane,
   threadItemFromRecord,
   threadFromRecord,
@@ -5094,11 +5095,17 @@ export function App(): JSX.Element {
 
   async function selectSessionTab(tabID: string): Promise<void> {
     const currentState = appStateRef.current;
-    if (tabID === currentState.activeSessionTabID) {
-      return;
-    }
     const tab = currentState.sessionTabs.find((item) => item.id === tabID);
     if (!tab) {
+      return;
+    }
+    if (tabID === currentState.activeSessionTabID) {
+      if (
+        tab.kind === "thread" &&
+        threadNeedsResumeOnReselect(currentState, tab.threadID)
+      ) {
+        await selectThread(tab.threadID);
+      }
       return;
     }
     setArchiveConfirmThreadID(undefined);
@@ -5668,7 +5675,10 @@ export function App(): JSX.Element {
       return;
     }
     const activeContext = state.activeContext;
-    if (threadId === activeThreadID) {
+    if (
+      threadId === activeThreadID &&
+      !threadNeedsResumeOnReselect(state, threadId)
+    ) {
       if (pendingViewSwitch) {
         cancelViewSwitch();
       }
