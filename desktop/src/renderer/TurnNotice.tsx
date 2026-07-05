@@ -167,7 +167,7 @@ function contextCompactionTitle(
     return "无需压缩";
   }
   if (isInceptionCompact(reason, normalized)) {
-    return "已续接上下文";
+    return "已压缩上下文（Inception）";
   }
   if (isHelpMeCompact(reason, normalized)) {
     return "已合并求助结果";

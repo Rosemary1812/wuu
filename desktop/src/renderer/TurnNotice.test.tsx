@@ -173,7 +173,7 @@ describe("ContextCompactionNotice", () => {
     );
   });
 
-  it("labels inception compaction as context continuation", () => {
+  it("labels inception compaction with an explicit Inception marker", () => {
     const host = mount(
       <ContextCompactionNotice
         status="completed"
@@ -183,7 +183,7 @@ describe("ContextCompactionNotice", () => {
     );
 
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
-      "已续接上下文",
+      "已压缩上下文（Inception）",
     );
     expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
       "续接摘要",

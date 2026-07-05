@@ -138,7 +138,7 @@ const GALLERY_ENTRIES: GalleryEntry[] = [
     ),
   },
   {
-    label: "已续接上下文",
+    label: "已压缩上下文（Inception）",
     kind: "context_inception · gray",
     description: "Inception 续接摘要已写入上下文",
     render: () => (
