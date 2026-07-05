@@ -79,6 +79,7 @@ import {
 import { TerminalSessionManager } from "./terminalSessions";
 import { WorkspaceFileService } from "./workspaceFiles";
 
+import { createWindowRegistry, type WindowRegistry } from "./windowRegistry";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAIN_WINDOW_DEFAULT_WIDTH = 1280;
 const MAIN_WINDOW_DEFAULT_HEIGHT = 920;
@@ -87,6 +88,7 @@ const DEV_CACHE_DIRECTORIES = ["Cache", "Code Cache", "GPUCache", "DawnCache"];
 registerRenderableFileScheme();
 
 let mainWindow: BrowserWindow | null = null;
+const windowRegistry: WindowRegistry = createWindowRegistry();
 const projectManager = new ProjectManager();
 const gitService = new GitService(() => projectManager.ensureRuntimeContext());
 const workspaceFiles = new WorkspaceFileService(() =>
@@ -151,8 +153,18 @@ function emitServerEvent(event: ServerEvent): void {
   ) {
     return;
   }
-  mainWindow.webContents.send("wuu:server-event", event);
+  broadcastToAll("wuu:server-event", event);
 }
+
+function broadcastToAll(channel: string, payload: unknown): void {
+  for (const window of windowRegistry.allWindows()) {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) {
+      continue;
+    }
+    window.webContents.send(channel, payload);
+  }
+}
+
 
 function emitTerminalEvent(
   event: Parameters<TerminalSessionManager["emit"]>[0],
@@ -164,7 +176,7 @@ function emitTerminalEvent(
   ) {
     return;
   }
-  mainWindow.webContents.send("wuu:terminal-event", event);
+  broadcastToAll("wuu:terminal-event", event);
 }
 
 function setWindowResizeState(resizing: boolean): void {
@@ -179,7 +191,7 @@ function setWindowResizeState(resizing: boolean): void {
   ) {
     return;
   }
-  mainWindow.webContents.send("wuu:window-resize-state", { resizing });
+  broadcastToAll("wuu:window-resize-state", { resizing });
 }
 
 function scheduleWindowResizeEnd(delay = 140): void {
@@ -206,6 +218,8 @@ function createWindow(): void {
       webviewTag: true,
     },
   });
+
+  windowRegistry.registerWindow(mainWindow, "main");
 
   mainWindow.on("will-resize", () => {
     setWindowResizeState(true);
