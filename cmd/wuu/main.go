@@ -71,6 +71,10 @@ func run(args []string) error {
 		return runDebug(args[1:])
 	case "app-server":
 		return runAppServer(args[1:])
+	case "relay":
+		return runRelay(args[1:])
+	case "remote":
+		return runRemote(args[1:])
 	case "version", "-v", "--version":
 		if args[0] == "version" {
 			return runVersion(args[1:])
@@ -2079,6 +2083,12 @@ Usage:
   wuu goal demo [flags]
   wuu goal status [flags]
   wuu app-server [flags]
+  wuu relay [--addr HOST:PORT] [--state FILE] [--push-webhook URL]
+  wuu remote init --relay ws://HOST:PORT/v1/connect [--name NAME]
+  wuu remote host [--workdir DIR] [--pair] [flags]
+  wuu remote devices
+  wuu remote phone pair --uri "wuu://pair?..." [--store FILE]
+  wuu remote phone status|send|watch [--store FILE] [flags]
   wuu probe-title [flags]   run the LLM title pipeline against a real provider
   wuu version [--long|--json]
 
