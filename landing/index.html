@@ -487,8 +487,9 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
 .capcard .spot { border: 1px solid var(--line-2); border-radius: 0; background-color: #fff; background-size: 74%; background-position: center 58%; }
 
 /* group-chat demo */
-.demosec { padding: 104px 0 60px; }
-.demo { max-width: 760px; margin: 44px auto 0; background: #fff; border: 1px solid var(--line-2); border-radius: 0; box-shadow: 0 28px 56px -32px rgba(0,0,0,.20), 0 2px 8px rgba(0,0,0,.04); overflow: hidden; }
+.demosec { padding: 104px 0 0; min-height: 360vh; position: relative; }
+.demo-stage { position: sticky; top: 0; height: 100vh; display: flex; align-items: center; justify-content: center; padding: 0 0 60px; }
+.demo { width: 760px; max-width: calc(100% - 40px); background: #fff; border: 1px solid var(--line-2); border-radius: 0; box-shadow: 0 28px 56px -32px rgba(0,0,0,.20), 0 2px 8px rgba(0,0,0,.04); overflow: hidden; height: 78vh; display: flex; flex-direction: column; }
 .demo-top { display: flex; align-items: center; gap: 13px; padding: 12px 18px; border-bottom: 1px solid var(--line); background: #FCFBF9; }
 .demo-top .avs { display: flex; }
 .demo-top .avs i { width: 26px; height: 26px; border-radius: 50%; background: var(--bg-soft) center 18%/210% no-repeat; margin-left: -8px; border: 1.5px solid #fff; box-shadow: 0 0 0 1px var(--line-2); }
@@ -496,8 +497,8 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
 .demo-top .rname { font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); }
 .demo-top .live { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-family: var(--display); font-weight: 600; font-size: 11.5px; color: var(--accent-press); }
 .demo-top .live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgba(255,61,0,.16); animation: pulse 2s ease-in-out infinite; }
-.demo-feed { padding: 26px 24px 24px; display: flex; flex-direction: column; gap: 20px; }
-.dmsg { display: flex; gap: 13px; opacity: 0; transform: translateY(10px); transition: opacity .55s cubic-bezier(.2,.7,.2,1), transform .55s cubic-bezier(.2,.7,.2,1); }
+.demo-feed { padding: 26px 24px 24px; display: flex; flex-direction: column; gap: 20px; flex: 1; overflow: hidden; position: relative; }
+.dmsg { display: flex; gap: 13px; opacity: 0; transform: translateY(10px); transition: opacity .55s cubic-bezier(.2,.7,.2,1), transform .55s cubic-bezier(.2,.7,.2,1); flex-shrink: 0; }
 .dmsg.on, .dmsg.typing { opacity: 1; transform: none; }
 .dmsg .av { flex: none; width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--ink); background: var(--bg-soft) center 18%/210% no-repeat; }
 .dmsg .b { min-width: 0; position: relative; }
@@ -645,6 +646,8 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
   <div class="wrap">
     <h2 class="title reveal"><span class="zh">看它们修完<span class="mark">一个 bug</span></span><span class="en">Watch them fix <span class="mark">a real bug</span></span></h2>
     <p class="lede reveal"><span class="zh">不是黑箱。每一次交接、每一行 diff，都发生在你眼前的群聊里。</span><span class="en">No black box — every hand-off and every diff happens in the group chat, right in front of you.</span></p>
+  </div>
+  <div class="demo-stage">
     <div class="demo reveal d1" id="demo">
       <div class="demo-top">
         <div class="avs">
@@ -701,6 +704,7 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
         </div>
       </div>
     </div>
+  </div>
   </div>
 </section>
 
@@ -1024,7 +1028,7 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
     });
   });
 
-  /* ---- group-chat demo: scroll-driven reveal ---- */
+  /* ---- group-chat demo: scrollytelling ---- */
   var feed = document.getElementById('demoFeed');
   if (feed) {
     var msgs = Array.prototype.slice.call(feed.querySelectorAll('.dmsg'));
@@ -1032,24 +1036,40 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
     if (isStatic) {
       msgs.forEach(function (m) { m.classList.add('on'); });
     } else {
-      var mio = new IntersectionObserver(function (entries) {
-        entries.forEach(function (e) {
-          if (!e.isIntersecting) return;
-          var m = e.target;
-          mio.unobserve(m);
-          var hasDots = m.querySelector('.dots');
-          if (hasDots) {
-            m.classList.add('typing');
-            setTimeout(function () {
-              m.classList.remove('typing');
-              m.classList.add('on');
-            }, 650);
-          } else {
-            m.classList.add('on');
+      var demosec = document.getElementById('howit');
+      var rafId = null;
+      function updateDemo() {
+        rafId = null;
+        if (!demosec) return;
+        var rect = demosec.getBoundingClientRect();
+        var vh = window.innerHeight;
+        var scrolled = -rect.top;
+        var totalScroll = Math.max(1, demosec.offsetHeight - vh);
+        var progress = Math.max(0, Math.min(1, scrolled / totalScroll));
+        var n = msgs.length;
+        var msgsToShow = Math.max(1, Math.min(n, Math.ceil(progress * n * 1.05)));
+        msgs.forEach(function (m, i) {
+          if (i < msgsToShow) {
+            if (!m.classList.contains('on') && !m.classList.contains('typing')) {
+              if (m.querySelector('.dots')) {
+                m.classList.add('typing');
+                setTimeout(function () {
+                  m.classList.remove('typing');
+                  m.classList.add('on');
+                }, 700);
+              } else {
+                m.classList.add('on');
+              }
+            }
           }
         });
-      }, { threshold: 0.35, rootMargin: '0px 0px -8% 0px' });
-      msgs.forEach(function (m) { mio.observe(m); });
+      }
+      function onScroll() {
+        if (rafId === null) rafId = requestAnimationFrame(updateDemo);
+      }
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', onScroll);
+      updateDemo();
     }
   }
 
