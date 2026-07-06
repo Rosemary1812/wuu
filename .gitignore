@@ -44,6 +44,8 @@ CLAUDE.md
 !/docs/tool-surface-assembly-zh.md
 !/docs/context-usage-and-caching-zh.md
 !/docs/2026-07-06-usage-cache-audit-zh.md
+!/docs/tool-loading-modes-zh.md
+!/docs/compaction-chains-zh.md
 !/docs/compat/
 !/docs/plans/
 /docs/plans/*
