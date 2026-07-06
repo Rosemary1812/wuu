@@ -43,7 +43,7 @@ func Run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return WithExitCode(ExitInvalidInput, err)
 	}
-	if strings.TrimSpace(opts.Prompt) == "" && attachments.Empty() {
+	if strings.TrimSpace(opts.Prompt) == "" && attachments.Empty() && len(opts.Actions) == 0 {
 		return WithExitCode(ExitInvalidInput, errors.New("prompt is required"))
 	}
 	if opts.Stdout == nil {
@@ -91,6 +91,14 @@ func Run(ctx context.Context, opts Options) error {
 		return classifyProtocolOrContextError(ctx, err)
 	}
 	emitSessionConfigured(opts, initResult)
+
+	if len(opts.Actions) > 0 {
+		return runActionSequence(ctx, controller, opts, &state)
+	}
+
+	if opts.Participant.Requested() {
+		return runParticipantTurn(ctx, controller, opts, &state)
+	}
 
 	thread, err := startOrResumeThread(ctx, controller, opts)
 	if err != nil {
