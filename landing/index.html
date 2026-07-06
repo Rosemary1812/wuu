@@ -9,7 +9,7 @@
 <link rel="icon" href="assets/mascot/wuu-mascot-concept-01.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@400..700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
   /* warm comic palette, sampled from the mascot art */
@@ -605,6 +605,19 @@ h2.title { font-weight: 500; letter-spacing: -.01em; }
 .diff .top { display: block; width: 32px; height: 3px; border-radius: 2px; background: var(--coral); margin-bottom: 18px; }
 .diff h3 { font-family: var(--display); font-weight: 600; font-size: 19px; line-height: 1.35; margin-bottom: 10px; letter-spacing: -.01em; }
 .diff p { color: var(--ink-2); font-size: 15px; line-height: 1.62; }
+
+
+/* ===== v4: editorial craft ===== */
+/* serif display type — pairs with the hand-drawn mascot art */
+:root { --serif: "Fraunces", "Noto Serif SC", "Songti SC", "SimSun", serif; }
+.hero-copy h1 { font-family: var(--serif); font-weight: 560; font-size: clamp(46px, 5.6vw, 80px); line-height: 1.08; letter-spacing: .004em; }
+h2.title { font-family: var(--serif); font-weight: 540; font-size: clamp(32px, 4.2vw, 52px); line-height: 1.16; letter-spacing: .004em; margin-bottom: 22px; }
+.footer-cta h2 { font-family: var(--serif); font-weight: 500; letter-spacing: .004em; line-height: 1.2; }
+.mark { color: var(--coral-deep); }
+.hero-copy .sub { font-size: clamp(16px, 1.5vw, 18.5px); }
+
+/* the marquee stole the nav's .logo class — restore the nav wordmark */
+nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
 
 </style>
 </head>
