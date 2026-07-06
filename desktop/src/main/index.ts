@@ -946,13 +946,14 @@ app.whenReady().then(async () => {
       event,
       threadId: string,
       subthreadId: string,
-      options?: { title?: string; createdBy?: string },
+      options?: { title?: string; createdBy?: string; leadParticipantId?: string },
     ) =>
       appServerRequest<ThreadEscalateSubResult>(event, "thread/escalateSub", {
         thread_id: threadId,
         subthread_id: subthreadId,
         title: options?.title ?? "",
         created_by: options?.createdBy ?? "",
+        lead_participant_id: options?.leadParticipantId ?? "",
       }),
   );
   ipcMain.handle(

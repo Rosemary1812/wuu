@@ -609,7 +609,7 @@ func workflowNextSteps(status workflow.RunState) []string {
 			"Spawn reuse_profile/create_profile members with spawn_agent.agent_profile set to the recorded profile; spawn ephemeral members without agent_profile. Pass the workflow's goal_id and goal_dir to spawn_agent so agent_report updates the goal state.",
 			"Require each workflow agent to call agent_report before treating its work as complete.",
 			"Create file checkpoints before risky direct edits that may need rollback.",
-			"Use await_agents when synthesis depends on agent output, then workflow_control action=record_await_results to bind results to the workflow run.",
+			"When synthesis depends on worker output, end your turn and let each worker's completion notification (the <subagent_status> reminder) resume you, then bind results with workflow_control action=record_agent_run.",
 			"Use workflow_control action=generate_final_report after all blocking phases and agent runs are complete.",
 		}
 	}
@@ -638,7 +638,7 @@ func runWorkflowNextSteps(status workflow.RunState) []string {
 		return []string{
 			"Use workflow_status to monitor phases, Agent Runs, and the event log while the script runs.",
 			"Use workflow_control action=pause_run/resume_run if the script needs to pause between orchestration steps.",
-			"Use awaitAgents in the script for fan-in and synthesize for the final report.",
+			"Use the script's awaitAgents() fan-in and synthesize() for the final report.",
 		}
 	}
 }
@@ -682,7 +682,7 @@ func workflowStatusNextSteps(run workflow.Run, agents []workflow.AgentRun, teamP
 	if len(agents) == 0 {
 		return []string{
 			"Spawn the recorded Workflow Team members with spawn_agent, setting agent_profile only for reuse_profile/create_profile members.",
-			"After workers finish, bind outputs back with workflow_control action=record_await_results.",
+			"After each worker finishes, bind its output back with workflow_control action=record_agent_run.",
 		}
 	}
 	if err := validateWorkflowReadyToComplete(run, agents); err == nil {

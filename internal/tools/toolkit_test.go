@@ -4296,7 +4296,7 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 		}
 		props, _ := d.InputSchema["properties"].(map[string]any)
 		for field, wants := range map[string][]string{
-			"subagent_type": {"general-purpose", "verification", "fork yourself"},
+			"subagent_type": {"Subagent Types", "system context", "fork yourself"},
 			"prompt":        {"Concrete task brief", "Base Agent Brief Contract", "fresh subagents", "first query", "self-contained", "forks", "incremental directive", "helpme"},
 			"agent_profile": {"Agent Profile name with saved memory", "workflow/profile policy", "ordinary temporary child tasks"},
 			"isolation":     {"worktree", "current repo"},
@@ -4313,6 +4313,42 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 		}
 		if strings.Contains(d.Description, "memoryless") || strings.Contains(d.Description, "memory-bearing") || strings.Contains(d.Description, "long-lived identity") {
 			t.Fatalf("spawn_agent description should avoid awkward memory wording: %q", d.Description)
+		}
+		return
+	}
+	t.Fatal("spawn_agent must be present in tool definitions")
+}
+
+func TestToolkit_SpawnAgentSchemaOmitsWorkerTypeList(t *testing.T) {
+	// Cache constraint: the worker-type list must stay OUT of the static
+	// spawn_agent tool schema (the prompt-cache prefix). It now lives in the
+	// base system prompt's Subagent Types section (see
+	// runtime.subagentTypesSystemSection); the schema must only point there.
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	names := agentcontrol.AvailableWorkerTypeNames()
+	if len(names) == 0 {
+		t.Fatal("expected at least one built-in worker type")
+	}
+	for _, d := range kit.Definitions() {
+		if d.Name != "spawn_agent" {
+			continue
+		}
+		props, _ := d.InputSchema["properties"].(map[string]any)
+		prop, _ := props["subagent_type"].(map[string]any)
+		desc, _ := prop["description"].(string)
+		for _, name := range names {
+			// "general-purpose" survives as static example wording elsewhere in
+			// the description; only the dynamic full list is forbidden here.
+			if name == "general-purpose" {
+				continue
+			}
+			if strings.Contains(desc, name) {
+				t.Fatalf("subagent_type schema must not bake worker type %q: %q", name, desc)
+			}
 		}
 		return
 	}

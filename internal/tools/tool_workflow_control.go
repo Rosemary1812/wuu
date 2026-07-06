@@ -33,8 +33,8 @@ func (t *WorkflowControlTool) IsConcurrencySafe() bool { return false }
 func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "workflow_control",
-		Description: "Update durable Workflow Run state after planning, spawning agents, awaiting agents, or synthesizing results. " +
-			"Use this to bind spawn_agent / await_agents outputs back to a workflow run. The runtime enforces valid run, phase, " +
+		Description: "Update durable Workflow Run state after planning, spawning agents, or synthesizing results. " +
+			"Use this to bind spawn_agent outputs back to a workflow run. The runtime enforces valid run, phase, " +
 			"and agent-run state transitions; do not invent states. Use pause_run / resume_run for blocked workflow recovery and " +
 			"retry_agent_run for bounded Agent Run retries. Before complete_run=true, mark every phase completed, failed, or skipped. " +
 			"Use create_file_checkpoint / restore_file_checkpoint for scoped file rollback.",
@@ -50,7 +50,6 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 						"set_phase_status",
 						"record_workflow_team",
 						"record_agent_run",
-						"record_await_results",
 						"retry_agent_run",
 						"write_final_report",
 						"generate_final_report",
@@ -95,11 +94,11 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 				},
 				"agent_id": map[string]any{
 					"type":        "string",
-					"description": "Agent id returned by spawn_agent / await_agents.",
+					"description": "Agent id returned by spawn_agent.",
 				},
 				"task_name": map[string]any{
 					"type":        "string",
-					"description": "Task name returned by spawn_agent / await_agents.",
+					"description": "Task name returned by spawn_agent.",
 				},
 				"agent_profile": map[string]any{
 					"type":        "string",
@@ -109,18 +108,22 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "Task prompt or brief used for the agent run.",
 				},
+				"result": map[string]any{
+					"type":        "string",
+					"description": "Agent result summary or final output to bind to the run for record_agent_run.",
+				},
 				"report_path": map[string]any{
 					"type":        "string",
-					"description": "Structured agent_report path returned by await_agents.",
+					"description": "Structured agent_report path filed by the spawned agent.",
 				},
 				"changed_files": map[string]any{
 					"type":        "array",
-					"description": "Changed files from await_agents / agent_report.",
+					"description": "Changed files from the spawned agent's agent_report.",
 					"items":       map[string]any{"type": "string"},
 				},
 				"artifacts": map[string]any{
 					"type":        "array",
-					"description": "Artifact paths from await_agents / agent_report.",
+					"description": "Artifact paths from the spawned agent's agent_report.",
 					"items":       map[string]any{"type": "string"},
 				},
 				"paths": map[string]any{
@@ -143,30 +146,6 @@ func (t *WorkflowControlTool) Definition() providers.ToolDefinition {
 				"retry_reason": map[string]any{
 					"type":        "string",
 					"description": "Structured reason for retrying an Agent Run.",
-				},
-				"await_results": map[string]any{
-					"type":        "array",
-					"description": "Raw results array returned by await_agents. Used by record_await_results to import multiple Agent Runs at once.",
-					"items": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"agent_id":       map[string]any{"type": "string"},
-							"task_name":      map[string]any{"type": "string"},
-							"agent_profile":  map[string]any{"type": "string"},
-							"agent_path":     map[string]any{"type": "string"},
-							"status":         map[string]any{"type": "string"},
-							"result":         map[string]any{"type": "string"},
-							"error":          map[string]any{"type": "string"},
-							"changed_files":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-							"report_path":    map[string]any{"type": "string"},
-							"report_missing": map[string]any{"type": "boolean"},
-							"artifacts":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-							"worktree_path":  map[string]any{"type": "string"},
-							"input_tokens":   map[string]any{"type": "integer"},
-							"output_tokens":  map[string]any{"type": "integer"},
-							"duration_ms":    map[string]any{"type": "integer"},
-						},
-					},
 				},
 				"content": map[string]any{
 					"type":        "string",
@@ -237,6 +216,7 @@ type workflowControlArgs struct {
 	TaskName     string                    `json:"task_name"`
 	AgentProfile string                    `json:"agent_profile"`
 	Prompt       string                    `json:"prompt"`
+	Result       string                    `json:"result"`
 	ReportPath   string                    `json:"report_path"`
 	ChangedFiles []string                  `json:"changed_files"`
 	Artifacts    []string                  `json:"artifacts"`
@@ -245,7 +225,6 @@ type workflowControlArgs struct {
 	RetryCount   int                       `json:"retry_count"`
 	MaxRetries   int                       `json:"max_retries"`
 	RetryReason  string                    `json:"retry_reason"`
-	AwaitResults []workflowAwaitResult     `json:"await_results"`
 	Content      string                    `json:"content"`
 	CandidateID  string                    `json:"candidate_id"`
 	Target       string                    `json:"target"`
@@ -268,24 +247,6 @@ type workflowTeamMemberInput struct {
 	Reason       string `json:"reason"`
 }
 
-type workflowAwaitResult struct {
-	AgentID       string   `json:"agent_id"`
-	TaskName      string   `json:"task_name"`
-	AgentProfile  string   `json:"agent_profile"`
-	AgentPath     string   `json:"agent_path"`
-	Status        string   `json:"status"`
-	Result        string   `json:"result"`
-	Error         string   `json:"error"`
-	ChangedFiles  []string `json:"changed_files"`
-	ReportPath    string   `json:"report_path"`
-	ReportMissing bool     `json:"report_missing"`
-	Artifacts     []string `json:"artifacts"`
-	WorktreePath  string   `json:"worktree_path"`
-	InputTokens   int      `json:"input_tokens"`
-	OutputTokens  int      `json:"output_tokens"`
-	DurationMS    int64    `json:"duration_ms"`
-}
-
 func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args workflowControlArgs
 	if err := decodeArgs(argsJSON, &args); err != nil {
@@ -301,6 +262,22 @@ func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (str
 	store, err := workflowStoreForEnv(t.env)
 	if err != nil {
 		return "", fmt.Errorf("resolve workflow store: %w", err)
+	}
+
+	// Execute-time task-lead gate: a conversation-native named agent may drive a
+	// run only while it still leads the task cth that run is bound to. Validated
+	// against the run's own binding (not merely the caller's active tasks) so a
+	// lead cannot use one task's identity to manipulate another task's run.
+	// Self-contained callers (no participant identity) skip the LoadRun and pass
+	// through unchanged.
+	if strings.TrimSpace(t.env.ParticipantID) != "" {
+		gateRun, err := store.LoadRun(args.RunID)
+		if err != nil {
+			return "", err
+		}
+		if err := requireWorkflowControlLead(t.env, gateRun); err != nil {
+			return "", err
+		}
 	}
 
 	switch action {
@@ -416,7 +393,7 @@ func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (str
 				"Include workflow run, phase, team member, and result-binding context for workflow team members.",
 				"Spawn reuse_profile and create_profile members with spawn_agent.agent_profile plus the workflow goal_id and goal_dir.",
 				"Spawn ephemeral members without agent_profile, but still pass the workflow goal_id and goal_dir.",
-				"After spawning, bind each result back with workflow_control action=record_agent_run or record_await_results.",
+				"After each worker finishes, bind its result back with workflow_control action=record_agent_run.",
 			},
 		})
 
@@ -450,57 +427,6 @@ func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (str
 		}
 		return mustJSON(map[string]any{"action": action, "run": run, "agent_run": loaded})
 
-	case "record_await_results":
-		if len(args.AwaitResults) == 0 {
-			return "", errors.New("workflow_control record_await_results requires await_results")
-		}
-		run, err := store.LoadRun(args.RunID)
-		if err != nil {
-			return "", err
-		}
-		teamPlan, err := store.LoadTeamPlan(args.RunID)
-		if err != nil {
-			return "", err
-		}
-		agentsToRecord := make([]workflow.AgentRun, 0, len(args.AwaitResults))
-		for _, result := range args.AwaitResults {
-			phaseID := strings.TrimSpace(args.PhaseID)
-			if phaseID == "" {
-				phaseID = workflowTeamPhaseForAwaitResult(teamPlan, result)
-			}
-			agent, err := workflowAgentRunFromAwaitResult(args.RunID, phaseID, result)
-			if err != nil {
-				return "", err
-			}
-			agentsToRecord = append(agentsToRecord, agent)
-		}
-		candidateIDs := make([]string, 0, len(agentsToRecord))
-		for _, agent := range agentsToRecord {
-			candidateIDs = append(candidateIDs, agent.ID)
-		}
-		if err := enforceWorkflowAgentCap(t.env, store, run, candidateIDs); err != nil {
-			return "", err
-		}
-
-		agents := make([]workflow.AgentRun, 0, len(agentsToRecord))
-		for _, agent := range agentsToRecord {
-			if err := store.UpsertAgentRun(agent); err != nil {
-				return "", err
-			}
-			if strings.TrimSpace(agent.PhaseID) != "" {
-				run, err = store.AttachAgentRunToPhase(agent.WorkflowRunID, agent.PhaseID, agent.ID)
-				if err != nil {
-					return "", err
-				}
-			}
-			loaded, err := store.LoadAgentRun(agent.WorkflowRunID, agent.ID)
-			if err != nil {
-				return "", err
-			}
-			agents = append(agents, loaded)
-		}
-		return mustJSON(map[string]any{"action": action, "run": run, "agent_runs": agents})
-
 	case "retry_agent_run":
 		agentRunID := strings.TrimSpace(args.AgentRunID)
 		if agentRunID == "" {
@@ -523,7 +449,7 @@ func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (str
 			"agent_run": agent,
 			"next_steps": []string{
 				"Spawn or message the same Agent Profile with the retry context.",
-				"After the retry finishes, use await_agents and record_await_results again.",
+				"After the retry finishes, bind its result back with workflow_control action=record_agent_run.",
 			},
 		})
 
@@ -791,6 +717,7 @@ func workflowAgentRunFromControlArgs(args workflowControlArgs) (workflow.AgentRu
 		AgentProfile:  strings.TrimSpace(args.AgentProfile),
 		Status:        status,
 		Prompt:        strings.TrimSpace(args.Prompt),
+		Result:        strings.TrimSpace(args.Result),
 		ReportPath:    strings.TrimSpace(args.ReportPath),
 		ChangedFiles:  trimWorkflowStringSlice(args.ChangedFiles),
 		Artifacts:     trimWorkflowStringSlice(args.Artifacts),
@@ -996,103 +923,6 @@ func workflowTeamMemberID(rawID, role, profile string, used map[string]int) stri
 		return base
 	}
 	return fmt.Sprintf("%s_%d", base, count+1)
-}
-
-func workflowTeamPhaseForAwaitResult(plan workflow.TeamPlan, result workflowAwaitResult) string {
-	candidates := map[string]struct{}{}
-	for _, value := range []string{
-		result.TaskName,
-		result.AgentPath,
-		workflowTaskNameFromAgentPath(result.AgentPath),
-		result.AgentID,
-	} {
-		if value = strings.TrimSpace(value); value != "" {
-			candidates[value] = struct{}{}
-		}
-	}
-	for _, member := range plan.Members {
-		phaseID := strings.TrimSpace(member.PhaseID)
-		if phaseID == "" {
-			continue
-		}
-		for _, value := range []string{member.TaskName, member.ID} {
-			if _, ok := candidates[strings.TrimSpace(value)]; ok {
-				return phaseID
-			}
-		}
-	}
-	return ""
-}
-
-func workflowTaskNameFromAgentPath(path string) string {
-	path = strings.Trim(strings.TrimSpace(path), "/")
-	if path == "" {
-		return ""
-	}
-	parts := strings.Split(path, "/")
-	return strings.TrimSpace(parts[len(parts)-1])
-}
-
-func workflowAgentRunFromAwaitResult(runID, phaseID string, result workflowAwaitResult) (workflow.AgentRun, error) {
-	agentRunID := strings.TrimSpace(result.AgentID)
-	if agentRunID == "" {
-		agentRunID = strings.TrimSpace(result.TaskName)
-	}
-	if agentRunID == "" {
-		agentRunID = slugWorkflowID(result.AgentPath)
-	}
-	if agentRunID == "" {
-		return workflow.AgentRun{}, errors.New("workflow_control record_await_results requires each result to include agent_id, task_name, or agent_path")
-	}
-	status, err := workflowStatusFromAwaitResult(result)
-	if err != nil {
-		return workflow.AgentRun{}, err
-	}
-	agent := workflow.AgentRun{
-		ID:            agentRunID,
-		WorkflowRunID: strings.TrimSpace(runID),
-		PhaseID:       strings.TrimSpace(phaseID),
-		AgentID:       strings.TrimSpace(result.AgentID),
-		AgentPath:     strings.TrimSpace(result.AgentPath),
-		TaskName:      strings.TrimSpace(result.TaskName),
-		AgentProfile:  strings.TrimSpace(result.AgentProfile),
-		Status:        status,
-		Result:        strings.TrimSpace(result.Result),
-		ReportPath:    strings.TrimSpace(result.ReportPath),
-		ReportMissing: result.ReportMissing,
-		ChangedFiles:  trimWorkflowStringSlice(result.ChangedFiles),
-		Artifacts:     trimWorkflowStringSlice(result.Artifacts),
-		WorktreePath:  strings.TrimSpace(result.WorktreePath),
-		InputTokens:   result.InputTokens,
-		OutputTokens:  result.OutputTokens,
-		DurationMS:    result.DurationMS,
-		Error:         strings.TrimSpace(result.Error),
-	}
-	if agent.AgentID == "" {
-		agent.AgentID = agent.ID
-	}
-	return agent, nil
-}
-
-func workflowStatusFromAwaitResult(result workflowAwaitResult) (workflow.AgentRunState, error) {
-	// A missing structured report is report-quality metadata (ReportMissing),
-	// not a lifecycle status: a completed loop maps to completed.
-	switch strings.ToLower(strings.TrimSpace(result.Status)) {
-	case "", "pending", "queued":
-		return workflow.AgentRunStateQueued, nil
-	case "starting":
-		return workflow.AgentRunStateStarting, nil
-	case "running":
-		return workflow.AgentRunStateRunning, nil
-	case "completed", "complete":
-		return workflow.AgentRunStateCompleted, nil
-	case "failed", "failure", "error", "stuck", "not_found":
-		return workflow.AgentRunStateFailed, nil
-	case "cancelled", "canceled":
-		return workflow.AgentRunStateCancelled, nil
-	default:
-		return "", fmt.Errorf("unsupported await agent status %q", result.Status)
-	}
 }
 
 func trimWorkflowStringSlice(values []string) []string {

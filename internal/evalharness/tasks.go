@@ -458,8 +458,8 @@ func Catalog() []Task {
 			ID:            "multi_agent_worker",
 			Name:          "Delegate work to a sub-agent",
 			Description:   "Main agent must spawn a background sub-agent and wait for it to produce a marker file.",
-			Prompt:        "Spawn a background general-purpose sub-agent with name='eval_worker', description='Write worker marker', subagent_type='general-purpose', and run_in_background=true. Ask it to write worker_result.txt containing SUBAGENT_EVAL_DONE, then call await_agents for that worker before reporting completion. Do not write worker_result.txt yourself.",
-			RequiredTools: []string{"spawn_agent", "await_agents"},
+			Prompt:        "Spawn a background general-purpose sub-agent with name='eval_worker', description='Write worker marker', subagent_type='general-purpose', and run_in_background=true. Ask it to write worker_result.txt containing SUBAGENT_EVAL_DONE. Then end your turn and let the worker's completion notification resume you before reporting completion. Do not write worker_result.txt yourself.",
+			RequiredTools: []string{"spawn_agent"},
 			Setup:         setupEmptyTask,
 			Verify:        verifySubAgentWorkerFile,
 		},
@@ -474,8 +474,8 @@ func Catalog() []Task {
 				"Spawn both workers as fresh general-purpose sub-agents with subagent_type='general-purpose' and self-contained prompts from the Base Agent Brief Contract plus workflow run, phase, team member, and result-binding context. " +
 				"The create_profile worker must use agent_profile='eval_team_marker_writer' and write team_alpha.txt containing TEAM_ALPHA_DONE. " +
 				"The ephemeral worker must omit agent_profile and write team_beta.txt containing TEAM_BETA_DONE. " +
-				"Require both workers to call agent_report. Await both with await_agents, bind the results back to the workflow using workflow_control action=record_await_results, then write a final workflow report with complete_run=true. Do not write team_alpha.txt or team_beta.txt yourself.",
-			RequiredTools:  []string{"list_agent_profiles", "start_workflow", "workflow_control", "spawn_agent", "await_agents"},
+				"Require both workers to call agent_report. Let each worker's completion notification resume you, bind each result back to the workflow using workflow_control action=record_agent_run, then write a final workflow report with complete_run=true. Do not write team_alpha.txt or team_beta.txt yourself.",
+			RequiredTools:  []string{"list_agent_profiles", "start_workflow", "workflow_control", "spawn_agent"},
 			ForbiddenTools: []string{"create_workflow", "run_workflow"},
 			IsolateWuuHome: true,
 			Setup:          setupEmptyTask,

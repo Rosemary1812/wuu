@@ -283,7 +283,7 @@ func (t *BashTool) executeRun(ctx context.Context, args bashArgs) (string, error
 		}
 	}
 
-	result, err := executeShellCommandWithCWD(ctx, t.env, command, timeout, runCWD)
+	result, err := executeShellCommandInDir(ctx, t.env, command, timeout, runCWD)
 	if err != nil {
 		return "", err
 	}

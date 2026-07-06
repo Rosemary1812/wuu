@@ -130,6 +130,43 @@ func TestWorktreeBoundShellRunsInWorktree(t *testing.T) {
 	}
 }
 
+func TestWorktreeBoundBashRunExecutesInWorktree(t *testing.T) {
+	kit, parent, worktree, ctx := newWorktreeExecFixture(t)
+
+	// Regression: BashTool.executeRun used to resolve the shell working dir
+	// twice (once in executeRun, again inside executeShellCommandWithCWD). With a
+	// worktree binding and an empty cwd the second resolve fed the already
+	// worktree-relocated absolute path back through the sandbox rel-check and
+	// falsely rejected it as escaping the workspace. Drive the full bash action
+	// dispatch (kit.Execute -> executeRun) with an empty cwd and assert it runs
+	// inside the worktree instead of erroring.
+	out := executeToolForWorktreeTest(t, kit, ctx, "bash", `{"command":"pwd"}`)
+	var result struct {
+		ExitCode int    `json:"exit_code"`
+		Output   string `json:"output"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("unmarshal bash result: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("bash run should succeed inside the worktree, got exit=%d out=%s", result.ExitCode, out)
+	}
+	resolvedWorktree, err := filepath.EvalSymlinks(worktree)
+	if err != nil {
+		resolvedWorktree = worktree
+	}
+	if !strings.Contains(result.Output, resolvedWorktree) {
+		t.Fatalf("bash run should execute inside the worktree %q, got %s", resolvedWorktree, result.Output)
+	}
+	resolvedParent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		resolvedParent = parent
+	}
+	if strings.Contains(result.Output, resolvedParent) {
+		t.Fatalf("bash run should not execute in the parent root %q, got %s", resolvedParent, result.Output)
+	}
+}
+
 func TestWorktreeBoundSearchRootsSwitch(t *testing.T) {
 	kit, parent, worktree, ctx := newWorktreeExecFixture(t)
 	if err := os.WriteFile(filepath.Join(parent, "haystack.txt"), []byte("needle-parent\n"), 0o644); err != nil {

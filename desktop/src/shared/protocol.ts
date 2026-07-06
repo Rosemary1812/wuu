@@ -967,6 +967,10 @@ export type ConversationSubthread = {
   // 收尾冒泡回主流的一句结论(同时写在 task_card 上);escalated_by 记录升级人。
   summary?: string;
   escalated_by?: string;
+  // 升级为 task 时授予编排权的唯一 named 成员(task lead)。与 escalated_by(人点击
+  // 来源)不同:lead 是人挑的 named 成员(或 named 升级者)。runtime workflow 网关按
+  // (caller == lead && status == task) 放行。未指定 lead 时为空。
+  lead_participant_id?: string;
   turns?: Turn[];
 };
 
@@ -1663,10 +1667,11 @@ export type WuuDesktopApi = {
     resolved: boolean
   ) => Promise<ThreadResolveSubResult>;
   // 把一条 reply 升级为 task(人点击):在 cth 上挂 task_card + 推进到执行态。
+  // leadParticipantId 是人挑的 task lead(唯一持编排权的 named 成员)。
   escalateConversationSubthread: (
     threadId: string,
     subthreadId: string,
-    options?: { title?: string; createdBy?: string }
+    options?: { title?: string; createdBy?: string; leadParticipantId?: string }
   ) => Promise<ThreadEscalateSubResult>;
   // 收尾:把一句结论冒泡回主流一条 participant_message + 该 cth 变 resolved+摘要。
   bubbleConversationSubthread: (

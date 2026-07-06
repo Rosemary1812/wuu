@@ -548,6 +548,14 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 		return "", err
 	}
 
+	// Execute-time task-lead gate. A conversation-native named agent may start a
+	// run only while it leads an active task; the returned cth is the reply
+	// subthread the run binds to. Self-contained callers return (nil, nil).
+	leadThread, err := requireWorkflowLead(t.env)
+	if err != nil {
+		return "", err
+	}
+
 	var def workflow.Definition
 	if strings.TrimSpace(args.DefinitionName) != "" {
 		found, ok := t.env.FindWorkflow(args.DefinitionName)
@@ -578,7 +586,6 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 	profileResolution := []workflow.ProfileResolution(nil)
 	pauseReason := ""
 	resumeHint := ""
-	var err error
 	if def.Name != "" {
 		profileResolution, err = resolveWorkflowProfilesForDefinition(def, workflow.AutoCreateProfiles(def.AllowProfileCreation))
 		if err != nil {
@@ -608,7 +615,7 @@ func (t *RunWorkflowTool) Execute(ctx context.Context, argsJSON string) (string,
 		Driver:         workflow.RunDriverScript,
 		Entrypoint:     workflow.RunEntrypointNaturalLanguageAgent,
 		Status:         status,
-		ThreadID:       strings.TrimSpace(t.env.ThreadID),
+		ThreadID:       workflowBoundThreadID(t.env, leadThread),
 		PauseReason:    pauseReason,
 		ResumeHint:     resumeHint,
 	}, args.GoalID, args.GoalDir)
@@ -701,8 +708,105 @@ func newWorkflowScriptRuntime(env *Env, store *workflow.Store, run workflow.Run,
 	})
 }
 
+// errWorkflowLeadRequired is the execute-time rejection surfaced when a
+// conversation-native named agent tries to orchestrate a workflow without
+// holding task-lead authority. The workflow orchestration tools stay statically
+// registered in every named agent's schema so the prompt-cache prefix never
+// churns; this runtime gate — not a dynamic schema edit — is what actually
+// grants (or withholds) the authority.
+var errWorkflowLeadRequired = errors.New("only the task lead can orchestrate this workflow: escalate this reply to a task with yourself as its lead first")
+
+// requireWorkflowLead is the execute-time authorization gate for creating a
+// workflow run (run_workflow / create_workflow, and start_workflow through its
+// delegation to them). A conversation-native named agent (env.ParticipantID set)
+// may orchestrate only while it leads an active task: it must be the recorded
+// LeadParticipantID of a reply subthread a human escalated to a task
+// (status == task). On success the bound task cth is returned so the new run
+// folds its named-participant team output into that reply subthread.
+//
+// Callers with no participant identity — ordinary project agents, wuu exec, CI —
+// run self-contained workflows and are allowed through (nil cth, nil error). The
+// gate never touches Definition()/InputSchema; the schema is invariant and only
+// this runtime check enforces the authority.
+func requireWorkflowLead(env *Env) (*session.ConversationThread, error) {
+	if env == nil {
+		return nil, nil
+	}
+	caller := strings.TrimSpace(env.ParticipantID)
+	if caller == "" {
+		return nil, nil
+	}
+	sessDir, err := conversationSessionDir(env)
+	if err != nil {
+		return nil, err
+	}
+	leadThreads, err := session.LeadTaskThreads(sessDir, caller)
+	if err != nil {
+		return nil, err
+	}
+	if len(leadThreads) == 0 {
+		return nil, errWorkflowLeadRequired
+	}
+	cth := leadThreads[0]
+	return &cth, nil
+}
+
+// requireWorkflowControlLead is the execute-time gate for operating on an
+// existing run (workflow_control). Unlike the creation gate it validates against
+// the run's own binding: a conversation-native named agent may drive a run only
+// while it still leads the exact task cth the run is bound to (status == task),
+// so a lead cannot use one task's identity to manipulate another task's run. A
+// resolved task (status != task) has already reclaimed its orchestration
+// authority and is refused. Self-contained callers (no participant identity)
+// pass through unchanged.
+func requireWorkflowControlLead(env *Env, run workflow.Run) error {
+	if env == nil {
+		return nil
+	}
+	caller := strings.TrimSpace(env.ParticipantID)
+	if caller == "" {
+		return nil
+	}
+	cthID := strings.TrimSpace(run.ThreadID)
+	if cthID == "" || !strings.HasPrefix(cthID, "cth-") {
+		return errWorkflowLeadRequired
+	}
+	sessDir, err := conversationSessionDir(env)
+	if err != nil {
+		return err
+	}
+	cth, err := session.FindConversationThreadByID(sessDir, cthID)
+	if err != nil {
+		if errors.Is(err, session.ErrConversationThreadNotFound) {
+			return errWorkflowLeadRequired
+		}
+		return err
+	}
+	if cth.Status != session.ConversationThreadTask || strings.TrimSpace(cth.LeadParticipantID) != caller {
+		return errWorkflowLeadRequired
+	}
+	return nil
+}
+
+// workflowBoundThreadID is the conversation thread a new run binds to. A task
+// lead binds to the reply subthread it leads (so team output folds into that
+// reply); a self-contained caller keeps whatever thread binding its env carries
+// (empty for ordinary project agents).
+func workflowBoundThreadID(env *Env, leadThread *session.ConversationThread) string {
+	if leadThread != nil {
+		return strings.TrimSpace(leadThread.ID)
+	}
+	if env == nil {
+		return ""
+	}
+	return strings.TrimSpace(env.ThreadID)
+}
+
 // workflowRunGroupMembers resolves the named-participant pool a script may
-// dispatch to: the members of the group thread the run is bound to. The pool
+// dispatch to: the members of the group thread the run is bound to. When the run
+// is bound to a reply subthread (cth-*, the task-lead binding), the pool is the
+// members of the cth's parent group thread (cth.SessionID) — the reply id is not
+// itself a group session, so it is resolved back to its parent first. The pool
 // is empty (and every named-participant spawn therefore rejected) when the run
 // has no thread binding or no group manager is available — for example an
 // ordinary project agent's self-contained workflow.
@@ -713,6 +817,20 @@ func workflowRunGroupMembers(env *Env, run workflow.Run) []workflow.ParticipantR
 	threadID := strings.TrimSpace(run.ThreadID)
 	if threadID == "" {
 		return nil
+	}
+	if strings.HasPrefix(threadID, "cth-") {
+		sessDir, err := conversationSessionDir(env)
+		if err != nil {
+			return nil
+		}
+		cth, err := session.FindConversationThreadByID(sessDir, threadID)
+		if err != nil {
+			return nil
+		}
+		threadID = strings.TrimSpace(cth.SessionID)
+		if threadID == "" {
+			return nil
+		}
 	}
 	members, err := env.GroupManager.ListGroupMembers(context.Background(), threadID)
 	if err != nil || len(members) == 0 {
@@ -1044,6 +1162,15 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
+
+	// Execute-time task-lead gate (see requireWorkflowLead). start_workflow
+	// reaches this through its delegation to create_workflow, so gating here
+	// covers the agent-managed path for both entrypoints.
+	leadThread, err := requireWorkflowLead(t.env)
+	if err != nil {
+		return "", err
+	}
+
 	status, err := parseInitialWorkflowStatus(args.InitialStatus)
 	if err != nil {
 		return "", err
@@ -1111,7 +1238,7 @@ func (t *CreateWorkflowTool) Execute(_ context.Context, argsJSON string) (string
 		Entrypoint:     workflow.RunEntrypointNaturalLanguageAgent,
 		Status:         status,
 		Phases:         phases,
-		ThreadID:       strings.TrimSpace(t.env.ThreadID),
+		ThreadID:       workflowBoundThreadID(t.env, leadThread),
 		PauseReason:    pauseReason,
 		ResumeHint:     resumeHint,
 	}, args.GoalID, args.GoalDir)

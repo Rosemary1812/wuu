@@ -17,6 +17,7 @@ import (
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
@@ -1112,7 +1113,7 @@ phase("Batch", () => {
 	}
 }
 
-func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
+func TestWorkflowControlRecordsAgentRunsAndGeneratesReport(t *testing.T) {
 	root := t.TempDir()
 	stateDir := t.TempDir()
 	kit, err := New(root)
@@ -1138,38 +1139,33 @@ func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("set phase running: %v", err)
 	}
+	// A completed worker that filed no structured report (empty report_path)
+	// must still surface as a missing-report arbitration signal.
 	awaitingResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name: "workflow_control",
 		Arguments: `{
-			"action":"record_await_results",
+			"action":"record_agent_run",
 			"run_id":"workflow-await-run",
 			"phase_id":"qa",
-			"await_results":[{
-				"agent_id":"agent-qa",
-				"task_name":"qa_check",
-				"agent_profile":"qa_reviewer",
-				"agent_path":"/qa_check",
-				"status":"completed",
-				"result":"QA finished but skipped the structured handoff.",
-				"report_missing":true,
-				"changed_files":["desktop/src/App.tsx"],
-				"input_tokens":12,
-				"output_tokens":34,
-				"duration_ms":56
-			}]
+			"agent_id":"agent-qa",
+			"task_name":"qa_check",
+			"agent_profile":"qa_reviewer",
+			"status":"completed",
+			"result":"QA finished but skipped the structured handoff.",
+			"changed_files":["desktop/src/App.tsx"]
 		}`,
 	})
 	if err != nil {
-		t.Fatalf("record_await_results awaiting: %v", err)
+		t.Fatalf("record_agent_run awaiting: %v", err)
 	}
 	var awaiting struct {
-		AgentRuns []workflow.AgentRun `json:"agent_runs"`
+		AgentRun workflow.AgentRun `json:"agent_run"`
 	}
 	if err := json.Unmarshal([]byte(awaitingResp), &awaiting); err != nil {
 		t.Fatalf("parse awaiting response: %v", err)
 	}
-	if len(awaiting.AgentRuns) != 1 || awaiting.AgentRuns[0].Status != workflow.AgentRunStateCompleted || !awaiting.AgentRuns[0].ReportMissing {
-		t.Fatalf("await result should be completed with report missing: %+v", awaiting.AgentRuns)
+	if awaiting.AgentRun.Status != workflow.AgentRunStateCompleted || strings.TrimSpace(awaiting.AgentRun.ReportPath) != "" {
+		t.Fatalf("agent run should be completed with no structured report: %+v", awaiting.AgentRun)
 	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "workflow_control",
@@ -1203,26 +1199,20 @@ func TestWorkflowControlRecordsAwaitResultsAndGeneratesReport(t *testing.T) {
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name: "workflow_control",
 		Arguments: `{
-			"action":"record_await_results",
+			"action":"record_agent_run",
 			"run_id":"workflow-await-run",
 			"phase_id":"qa",
-			"await_results":[{
-				"agent_id":"agent-qa",
-				"task_name":"qa_check",
-				"agent_profile":"qa_reviewer",
-				"agent_path":"/qa_check",
-				"status":"completed",
-				"result":"QA passed after adding the structured handoff.",
-				"report_path":"reports/agent-qa.md",
-				"changed_files":["desktop/src/App.tsx"],
-				"artifacts":["reports/agent-qa.md"],
-				"input_tokens":12,
-				"output_tokens":34,
-				"duration_ms":56
-			}]
+			"agent_id":"agent-qa",
+			"task_name":"qa_check",
+			"agent_profile":"qa_reviewer",
+			"status":"completed",
+			"result":"QA passed after adding the structured handoff.",
+			"report_path":"reports/agent-qa.md",
+			"changed_files":["desktop/src/App.tsx"],
+			"artifacts":["reports/agent-qa.md"]
 		}`,
 	}); err != nil {
-		t.Fatalf("record_await_results completed: %v", err)
+		t.Fatalf("record_agent_run completed: %v", err)
 	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "workflow_control",
@@ -1523,6 +1513,288 @@ func TestWorkflowControlRecordsWorkflowTeam(t *testing.T) {
 	}
 }
 
+// TestWorkflowOrchestrationTaskLeadGate proves the execute-time authorization
+// gate: workflow orchestration tools stay statically registered for every named
+// agent (no schema churn), and authority is enforced purely at runtime by
+// whether the caller leads an active task cth. A lead is allowed and its run
+// binds to the reply subthread (so the pool resolves from the cth's parent
+// group); a non-lead named member is rejected; a self-contained caller with no
+// participant identity is allowed unchanged; and resolving the task reclaims the
+// orchestration authority.
+func TestWorkflowOrchestrationTaskLeadGate(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	sessDir := t.TempDir()
+
+	// A group thread with a reply subthread escalated to a task led by prt-lead.
+	if _, err := session.CreateWithMetadata(sessDir, "grp-1", root); err != nil {
+		t.Fatalf("CreateWithMetadata: %v", err)
+	}
+	cth, err := session.CreateConversationThread(sessDir, session.ConversationThread{
+		SessionID: "grp-1", AnchorItemID: "item-1",
+	})
+	if err != nil {
+		t.Fatalf("CreateConversationThread: %v", err)
+	}
+	if _, err := session.EscalateConversationThread(sessDir, cth.ID, "human", "prt-lead", "Ship it"); err != nil {
+		t.Fatalf("EscalateConversationThread: %v", err)
+	}
+
+	newKit := func(participant string) *Toolkit {
+		kit, err := New(root)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		loadWorkflowDriverToolsForTest(t, kit)
+		kit.SetStateDir(stateDir)
+		kit.SetConversationSessionDir(sessDir)
+		if participant != "" {
+			kit.SetParticipantIdentity(participant)
+		}
+		kit.SetGroupManager(&fakeGroupManager{members: map[string][]GroupMember{
+			"grp-1": {{ID: "prt-lead", Name: "Lead"}, {ID: "prt-rina", Name: "Rina"}},
+		}})
+		return kit
+	}
+
+	// Lead may create a run; it binds to the task cth.
+	leadKit := newKit("prt-lead")
+	if _, err := leadKit.Execute(context.Background(), providers.ToolCall{
+		Name:      "create_workflow",
+		Arguments: `{"run_id":"wf-lead","plan":"## Phases\n\n1. Review\n","phases":[{"name":"Review"}],"initial_status":"running"}`,
+	}); err != nil {
+		t.Fatalf("lead create_workflow: %v", err)
+	}
+	leadRun, err := workflow.NewStore(stateDir).LoadRun("wf-lead")
+	if err != nil {
+		t.Fatalf("LoadRun(wf-lead): %v", err)
+	}
+	if leadRun.ThreadID != cth.ID {
+		t.Fatalf("run bound to %q, want cth %q", leadRun.ThreadID, cth.ID)
+	}
+
+	// The bound run resolves its named-participant pool from the cth's parent
+	// group, so a group member can be enlisted.
+	teamResp, err := leadKit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"record_workflow_team","run_id":"wf-lead","team":[{"role":"Reviewer","mode":"named_participant","participant":"Rina","task_name":"review"}]}`,
+	})
+	if err != nil {
+		t.Fatalf("lead record_workflow_team named_participant: %v", err)
+	}
+	var recorded struct {
+		WorkflowTeam workflow.TeamPlan `json:"workflow_team"`
+	}
+	if err := json.Unmarshal([]byte(teamResp), &recorded); err != nil {
+		t.Fatalf("parse team response: %v", err)
+	}
+	if len(recorded.WorkflowTeam.Members) != 1 || recorded.WorkflowTeam.Members[0].ParticipantID != "prt-rina" {
+		t.Fatalf("named-participant pool did not resolve from parent group: %+v", recorded.WorkflowTeam.Members)
+	}
+
+	// A named member that is not the lead is refused on every orchestration entrypoint.
+	rinaKit := newKit("prt-rina")
+	for _, call := range []providers.ToolCall{
+		{Name: "create_workflow", Arguments: `{"run_id":"wf-rina","plan":"## Phases\n\n1. Review\n","phases":[{"name":"Review"}]}`},
+		{Name: "run_workflow", Arguments: `{"run_id":"wf-rina2","script":"phase('x');"}`},
+		{Name: "start_workflow", Arguments: `{"run_id":"wf-rina3","plan":"## Phases\n\n1. Review\n","phases":[{"name":"Review"}]}`},
+	} {
+		if _, err := rinaKit.Execute(context.Background(), call); err == nil || !strings.Contains(err.Error(), "task lead") {
+			t.Fatalf("%s by non-lead = %v, want task-lead rejection", call.Name, err)
+		}
+	}
+	// A non-lead also cannot drive the lead's existing run.
+	if _, err := rinaKit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"pause_run","run_id":"wf-lead"}`,
+	}); err == nil || !strings.Contains(err.Error(), "task lead") {
+		t.Fatalf("non-lead workflow_control = %v, want task-lead rejection", err)
+	}
+
+	// A self-contained caller (no participant identity) is unaffected by the gate.
+	selfKit := newKit("")
+	if _, err := selfKit.Execute(context.Background(), providers.ToolCall{
+		Name:      "create_workflow",
+		Arguments: `{"run_id":"wf-self","plan":"## Phases\n\n1. Review\n","phases":[{"name":"Review"}]}`,
+	}); err != nil {
+		t.Fatalf("self-contained create_workflow: %v", err)
+	}
+	selfRun, err := workflow.NewStore(stateDir).LoadRun("wf-self")
+	if err != nil {
+		t.Fatalf("LoadRun(wf-self): %v", err)
+	}
+	if selfRun.ThreadID != "" {
+		t.Fatalf("self-contained run should have no thread binding, got %q", selfRun.ThreadID)
+	}
+
+	// Lead may drive its own run while the task is live.
+	if _, err := leadKit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"pause_run","run_id":"wf-lead"}`,
+	}); err != nil {
+		t.Fatalf("lead workflow_control pause_run: %v", err)
+	}
+
+	// Resolving the task reclaims authority: the former lead can no longer create
+	// new runs or drive the bound run.
+	if err := session.UpdateConversationThreadStatus(sessDir, cth.ID, session.ConversationThreadResolved); err != nil {
+		t.Fatalf("resolve task: %v", err)
+	}
+	if _, err := leadKit.Execute(context.Background(), providers.ToolCall{
+		Name:      "create_workflow",
+		Arguments: `{"run_id":"wf-lead-after","plan":"## Phases\n\n1. Review\n","phases":[{"name":"Review"}]}`,
+	}); err == nil || !strings.Contains(err.Error(), "task lead") {
+		t.Fatalf("create after resolve = %v, want task-lead rejection", err)
+	}
+	if _, err := leadKit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_control",
+		Arguments: `{"action":"resume_run","run_id":"wf-lead"}`,
+	}); err == nil || !strings.Contains(err.Error(), "task lead") {
+		t.Fatalf("workflow_control after resolve = %v, want task-lead rejection", err)
+	}
+}
+
+// TestWorkflowScriptDriverDispatchesNamedParticipantThroughCthBinding proves the
+// full ownership + named-orchestration loop end to end on the SCRIPT driver: a
+// task lead runs run_workflow, the run binds to the reply subthread it leads
+// (run.ThreadID == cth.ID), the script's named-participant pool resolves from the
+// cth's PARENT group (not the cth id itself), and a spawned named participant is
+// dispatched under its own durable identity with the result folded back into the
+// cth-bound run's team plan and agent run. This is the script-path complement to
+// TestWorkflowOrchestrationTaskLeadGate, which exercises the agent-managed
+// (record_workflow_team) seam.
+func TestWorkflowScriptDriverDispatchesNamedParticipantThroughCthBinding(t *testing.T) {
+	root := t.TempDir()
+	stateDir := t.TempDir()
+	sessDir := t.TempDir()
+
+	// A group thread with a reply subthread escalated to a task led by prt-lead.
+	if _, err := session.CreateWithMetadata(sessDir, "grp-1", root); err != nil {
+		t.Fatalf("CreateWithMetadata: %v", err)
+	}
+	cth, err := session.CreateConversationThread(sessDir, session.ConversationThread{
+		SessionID: "grp-1", AnchorItemID: "item-1",
+	})
+	if err != nil {
+		t.Fatalf("CreateConversationThread: %v", err)
+	}
+	if _, err := session.EscalateConversationThread(sessDir, cth.ID, "human", "prt-lead", "Ship it"); err != nil {
+		t.Fatalf("EscalateConversationThread: %v", err)
+	}
+
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	loadWorkflowDriverToolsForTest(t, kit)
+	kit.SetStateDir(stateDir)
+	kit.SetConversationSessionDir(sessDir)
+	kit.SetParticipantIdentity("prt-lead")
+	// The named-participant pool lives on the PARENT group thread; the cth id is
+	// never itself a group session, so the run must resolve cth -> parent group.
+	kit.SetGroupManager(&fakeGroupManager{members: map[string][]GroupMember{
+		"grp-1": {{ID: "prt-lead", Name: "Lead"}, {ID: "prt-rina", Name: "Rina"}},
+	}})
+
+	control, err := agentcontrol.New(agentcontrol.Config{
+		Client:       &workflowFakeClient{content: "review done"},
+		DefaultModel: "fake-model",
+		ParentRepo:   root,
+		WorktreeRoot: filepath.Join(root, ".wuu", "worktrees"),
+		SessionID:    "workflow-named-participant-session",
+		HistoryDir:   filepath.Join(stateDir, "workers"),
+		ThreadDir:    filepath.Join(stateDir, "threads"),
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return workflowNoopExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("AgentControl New: %v", err)
+	}
+	defer stopWorkflowAgentControl(control)
+	kit.SetAgentControl(control)
+	kit.SetAgentIdentity("root", agentthread.RootPath)
+
+	// The lead's script dispatches to the group member "Rina" by name; the pool
+	// resolution + case-insensitive match run inside the script driver.
+	script := `
+phase("Review", () => {
+  const spawned = spawn({participant: "Rina", prompt: "Review the change.", subagentType: "general-purpose"});
+  if (spawned.status !== "completed" || spawned.result !== "review done") {
+    throw new Error("named participant spawn did not complete: " + JSON.stringify(spawned));
+  }
+  synthesize("# Final\n\n" + spawned.result);
+});
+`
+	runResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name: "run_workflow",
+		Arguments: `{
+			"script":` + strconv.Quote(script) + `,
+			"run_id":"wf-named-e2e",
+			"background":false
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("run_workflow: %v", err)
+	}
+	var ran struct {
+		Status workflow.RunState `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(runResp), &ran); err != nil {
+		t.Fatalf("parse run response: %v", err)
+	}
+	if ran.Status != workflow.RunStateCompleted {
+		t.Fatalf("workflow should complete: %+v", ran)
+	}
+
+	// The run bound to the reply subthread the lead leads, not the parent group.
+	boundRun, err := workflow.NewStore(stateDir).LoadRun("wf-named-e2e")
+	if err != nil {
+		t.Fatalf("LoadRun: %v", err)
+	}
+	if boundRun.ThreadID != cth.ID {
+		t.Fatalf("run bound to %q, want cth %q", boundRun.ThreadID, cth.ID)
+	}
+
+	statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "workflow_status",
+		Arguments: `{"run_id":"wf-named-e2e"}`,
+	})
+	if err != nil {
+		t.Fatalf("workflow_status: %v", err)
+	}
+	var status struct {
+		AgentRuns    []workflow.AgentRun `json:"agent_runs"`
+		WorkflowTeam workflow.TeamPlan   `json:"workflow_team"`
+	}
+	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
+		t.Fatalf("parse status response: %v", err)
+	}
+	// The named participant was recorded as a named_participant team member bound
+	// to the resolved group identity (prt-rina), never an ephemeral/profile worker.
+	if len(status.WorkflowTeam.Members) != 1 {
+		t.Fatalf("expected one team member, got %+v", status.WorkflowTeam.Members)
+	}
+	m := status.WorkflowTeam.Members[0]
+	if m.Mode != workflow.TeamMemberNamedParticipant || m.ParticipantID != "prt-rina" || m.ParticipantName != "Rina" || m.AgentProfile != "" {
+		t.Fatalf("named participant team member mismatch: %+v", m)
+	}
+	// The agent run's result folded back into the cth-bound run.
+	if len(status.AgentRuns) != 1 || status.AgentRuns[0].Result != "review done" {
+		t.Fatalf("named participant agent run not recorded: %+v", status.AgentRuns)
+	}
+
+	// Exactly one worker was dispatched (the named participant), not an extra
+	// ephemeral fallback.
+	tasks, err := control.HarnessStore().ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("expected exactly one dispatched worker task, got %+v", tasks)
+	}
+}
+
 func TestWorkflowControlRecordsNamedParticipantTeam(t *testing.T) {
 	root := t.TempDir()
 	stateDir := t.TempDir()
@@ -1683,68 +1955,6 @@ func TestWorkflowToolDescriptionsPreferStartWorkflow(t *testing.T) {
 	statusDesc := NewWorkflowStatusTool(env).Definition().Description
 	if !strings.Contains(statusDesc, "after start_workflow") || strings.Contains(statusDesc, "after create_workflow") {
 		t.Fatalf("workflow_status description should reference start_workflow: %q", statusDesc)
-	}
-}
-
-func TestWorkflowControlInfersAwaitResultPhaseFromWorkflowTeam(t *testing.T) {
-	root := t.TempDir()
-	stateDir := t.TempDir()
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	loadWorkflowDriverToolsForTest(t, kit)
-	kit.SetStateDir(stateDir)
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name: "create_workflow",
-		Arguments: `{
-			"run_id":"workflow-team-await-phase",
-			"plan":"## Phases\n\n1. QA",
-			"phases":[{"id":"qa","name":"QA"}]
-		}`,
-	}); err != nil {
-		t.Fatalf("create_workflow: %v", err)
-	}
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name: "workflow_control",
-		Arguments: `{
-			"action":"record_workflow_team",
-			"run_id":"workflow-team-await-phase",
-			"team":[{"role":"QA reviewer","mode":"ephemeral","task_name":"qa_check","phase_id":"qa"}]
-		}`,
-	}); err != nil {
-		t.Fatalf("record_workflow_team: %v", err)
-	}
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name: "workflow_control",
-		Arguments: `{
-			"action":"record_await_results",
-			"run_id":"workflow-team-await-phase",
-			"await_results":[{"agent_id":"worker-qa","task_name":"qa_check","status":"completed","report_path":"reports/worker-qa.md"}]
-		}`,
-	}); err != nil {
-		t.Fatalf("record_await_results: %v", err)
-	}
-
-	statusResp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "workflow_status",
-		Arguments: `{"run_id":"workflow-team-await-phase"}`,
-	})
-	if err != nil {
-		t.Fatalf("workflow_status: %v", err)
-	}
-	var status struct {
-		Run       workflow.Run        `json:"run"`
-		AgentRuns []workflow.AgentRun `json:"agent_runs"`
-	}
-	if err := json.Unmarshal([]byte(statusResp), &status); err != nil {
-		t.Fatalf("parse status response: %v", err)
-	}
-	if len(status.AgentRuns) != 1 || status.AgentRuns[0].PhaseID != "qa" {
-		t.Fatalf("await result phase was not inferred from workflow team: %+v", status.AgentRuns)
-	}
-	if len(status.Run.Phases) != 1 || len(status.Run.Phases[0].AgentRunIDs) != 1 || status.Run.Phases[0].AgentRunIDs[0] != "worker-qa" {
-		t.Fatalf("inferred agent run should attach to phase: %+v", status.Run.Phases)
 	}
 }
 

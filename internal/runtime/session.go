@@ -1660,6 +1660,15 @@ func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, 
 		pb.AddToolDiscovery()
 		pb.AddSection("deferred_tool_catalog", toolSurface.DeferredToolCatalog, true)
 	}
+	// The spawn_agent worker-type roster is session-static (compile-time
+	// constant) but must not live in the spawn_agent tool schema, where a future
+	// dynamic change would churn the cached tool-schema prefix. Mirror the
+	// deferred_tool_catalog pattern: emit it as a static system-prompt section
+	// only for surfaces that actually expose spawn_agent, so the tool schema
+	// stays generic and stable.
+	if _, ok := toolSurface.Tools["spawn_agent"]; ok {
+		pb.AddSection("subagent_types", subagentTypesSystemSection(), true)
+	}
 	pb.AddSection("environment", environmentSystemPromptSection(rootDir), true)
 	if strings.TrimSpace(userPrompt) != "" {
 		pb.AddSection("user_custom_prompt", "# User Custom Instructions\n\nFollow these user-defined instructions unless they conflict with wuu's built-in behavior, safety, or tool-use discipline above.\n\n"+userPrompt, true)
@@ -1675,6 +1684,26 @@ func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, 
 		}
 	}
 	return pb.BuildWithInfo()
+}
+
+// subagentTypesSystemSection renders the static Subagent Types roster injected
+// into the base system prompt for spawn_agent-capable surfaces. It replaces the
+// worker-type list that used to be baked into the spawn_agent tool description,
+// keeping that dynamic list out of the cached tool-schema prefix while staying
+// cache-stable itself (built from the compile-time worker registry).
+func subagentTypesSystemSection() string {
+	types := agentcontrol.AvailableWorkerTypes()
+	if len(types) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("# Subagent Types\n\n")
+	b.WriteString("These are the spawn_agent subagent_type values available this session. ")
+	b.WriteString("Set subagent_type to launch a fresh specialized agent; omit it to fork yourself with full conversation context.\n\n")
+	for _, wt := range types {
+		fmt.Fprintf(&b, "- %s: %s\n", wt.Name, wt.Description)
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func environmentSystemPromptSection(rootDir string) string {

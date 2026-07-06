@@ -38,7 +38,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "spawn_agent",
 		Description: "Launch a new agent to handle a complex, multi-step task autonomously. " +
-			"Available subagent_type values: " + agentcontrol.WorkerTypeHelp() + ". " +
+			"The available subagent_type values and their descriptions are provided in the Subagent Types section of your system context. " +
 			"Specify subagent_type to launch a fresh specialized agent. Omit subagent_type to fork yourself: " +
 			"the child inherits your full conversation context and always runs in the background. For a fresh " +
 			"general-purpose agent, set subagent_type='general-purpose'. The child has its own context " +
@@ -91,7 +91,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"subagent_type": map[string]any{
 					"type":        "string",
-					"description": "Optional specialized agent type. Available values: " + strings.Join(agentcontrol.AvailableWorkerTypeNames(), ", ") + ". Omit to fork yourself with full conversation context.",
+					"description": "Optional specialized agent type. The available values are provided in the Subagent Types section of your system context. Omit to fork yourself with full conversation context.",
 				},
 				"name": map[string]any{
 					"type":        "string",

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
@@ -108,7 +109,17 @@ func (s *Server) handleThreadEscalateSub(req Request) error {
 	if _, err := s.findConversationSubthread(threadID, subthreadID, ""); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	thread, err := session.EscalateConversationThread(s.rt.SessionDir, subthreadID, params.CreatedBy, params.Title)
+	// Escalation grants both lead identity and workflow-orchestration authority in
+	// one act. The lead is the named member the human picked (LeadParticipantID),
+	// falling back to the escalator when that is itself a named agent. Escalation
+	// is a human click, so CreatedBy is normally the human/empty and the picked
+	// lead field is the load-bearing one; a non-named lead is rejected so the
+	// runtime workflow gate never authorizes a phantom identity.
+	lead, err := s.resolveTaskLead(params.LeadParticipantID, params.CreatedBy)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	thread, err := session.EscalateConversationThread(s.rt.SessionDir, subthreadID, params.CreatedBy, lead, params.Title)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -117,6 +128,41 @@ func (s *Server) handleThreadEscalateSub(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	return s.writeResponse(req.ID, ThreadEscalateSubResult{Subthread: view}, nil)
+}
+
+// resolveTaskLead determines the single named agent that becomes the task lead on
+// escalation. A picked lead (leadParticipantID) wins but must be an active named
+// participant — a human/unknown id is rejected so the runtime workflow gate cannot
+// authorize a phantom identity. When no lead is picked, the escalator (createdBy)
+// is used only if it is itself a named agent; otherwise the lead is left empty (no
+// one holds orchestration authority until a later escalation names one). Returning
+// empty is valid: it simply means the task has no workflow lead yet.
+func (s *Server) resolveTaskLead(leadParticipantID, createdBy string) (string, error) {
+	lead := strings.TrimSpace(leadParticipantID)
+	if lead != "" {
+		if !s.isNamedParticipant(lead) {
+			return "", fmt.Errorf("task lead %q is not an active named participant", lead)
+		}
+		return lead, nil
+	}
+	if candidate := strings.TrimSpace(createdBy); candidate != "" && s.isNamedParticipant(candidate) {
+		return candidate, nil
+	}
+	return "", nil
+}
+
+// isNamedParticipant reports whether id resolves to a live KindNamed participant
+// (the only kind eligible to lead a task / drive workflow orchestration).
+func (s *Server) isNamedParticipant(id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false
+	}
+	p, err := session.GetParticipant(s.rt.SessionDir, id)
+	if err != nil {
+		return false
+	}
+	return p.Kind == participant.KindNamed && p.RetiredAt == nil
 }
 
 // handleThreadBubbleSub wraps a reply/task up: it bubbles a one-line conclusion
@@ -387,6 +433,7 @@ func conversationSubthreadViewFromRecords(threadID string, thread session.Conver
 	}
 	view.Summary = thread.Summary
 	view.EscalatedBy = thread.EscalatedBy
+	view.LeadParticipantID = thread.LeadParticipantID
 	// A reply that has been escalated to a task (human click) carries a task_card:
 	// running while it executes (status task), completed once it wraps up (status
 	// resolved). A never-escalated reply leaves Task nil. EscalatedAt survives the

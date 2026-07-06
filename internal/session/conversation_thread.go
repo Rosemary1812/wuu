@@ -36,6 +36,15 @@ type ConversationThread struct {
 	EscalatedAt time.Time `json:"escalated_at,omitempty"`
 	EscalatedBy string    `json:"escalated_by,omitempty"`
 	Summary     string    `json:"summary,omitempty"`
+	// LeadParticipantID is the single named agent granted task-lead authority when
+	// this reply was escalated to a task: the workflow orchestration gate keys on
+	// (caller == LeadParticipantID && status == task). It is distinct from
+	// EscalatedBy (the human-click provenance, which is never a named agent): the
+	// lead is either the named escalator or the named member the human picked. The
+	// field survives the resolve transition — reclaim of lead authority happens via
+	// status -> resolved (the gate requires status == task), not by nulling it —
+	// and a re-escalation (resolved -> task) can reassign it.
+	LeadParticipantID string `json:"lead_participant_id,omitempty"`
 }
 
 func NewConversationThreadID() string {
@@ -115,7 +124,7 @@ func ListConversationThreads(sessDir, sessionID string) ([]ConversationThread, e
 	}
 
 	rows, err := db.Query(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id
 FROM conversation_threads
 WHERE session_id = ?
 ORDER BY created_at ASC, id ASC`, sessionID)
@@ -155,7 +164,7 @@ func FindConversationThreadByID(sessDir, id string) (ConversationThread, error) 
 	defer db.Close()
 
 	row := db.QueryRow(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id
 FROM conversation_threads
 WHERE id = ?`, id)
 	thread, err := scanConversationThread(row)
@@ -166,6 +175,49 @@ WHERE id = ?`, id)
 		return ConversationThread{}, fmt.Errorf("find conversation thread: %w", err)
 	}
 	return thread, nil
+}
+
+// LeadTaskThreads returns the active task subthreads (status == task) whose
+// LeadParticipantID is the given named agent, most-recently-escalated first. It
+// backs the execute-time workflow orchestration gate: a named agent may drive
+// workflow runs only while it holds task-lead authority on at least one active
+// task. The lookup is by lead identity alone — deliberately independent of which
+// group/DM thread the caller's turn happens to run in — because a resident named
+// agent drains its inbox in its own DM thread while the task it leads lives under
+// the parent group. Returns an empty slice when the agent leads no active task.
+func LeadTaskThreads(sessDir, leadParticipantID string) ([]ConversationThread, error) {
+	leadParticipantID = strings.TrimSpace(leadParticipantID)
+	if leadParticipantID == "" {
+		return nil, nil
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	rows, err := db.Query(`
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id
+FROM conversation_threads
+WHERE status = ? AND lead_participant_id = ?
+ORDER BY escalated_at DESC, id ASC`, string(ConversationThreadTask), leadParticipantID)
+	if err != nil {
+		return nil, fmt.Errorf("list lead task threads: %w", err)
+	}
+	defer rows.Close()
+
+	var threads []ConversationThread
+	for rows.Next() {
+		thread, err := scanConversationThread(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan lead task threads: %w", err)
+		}
+		threads = append(threads, thread)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("scan lead task threads: %w", err)
+	}
+	return threads, nil
 }
 
 func UpdateConversationThreadStatus(sessDir, id string, status ConversationThreadStatus) error {
@@ -207,6 +259,7 @@ func normalizeConversationThread(thread ConversationThread) ConversationThread {
 	thread.AnchorItemID = strings.TrimSpace(thread.AnchorItemID)
 	thread.Title = strings.TrimSpace(thread.Title)
 	thread.CreatedBy = strings.TrimSpace(thread.CreatedBy)
+	thread.LeadParticipantID = strings.TrimSpace(thread.LeadParticipantID)
 	thread.Status = normalizeConversationThreadStatus(thread.Status)
 	return thread
 }
@@ -237,14 +290,18 @@ func validateConversationThreadStatus(status ConversationThreadStatus) error {
 
 // EscalateConversationThread promotes a reply subthread to a task: it advances
 // the status from the discussion state (open) to the execution state (task) and
-// records who escalated it plus the escalation time. It is idempotent — calling
-// it on an already-escalated (task) thread just refreshes escalated_by/title and
-// leaves escalated_at pinned to the first escalation. A resolved thread is
-// re-opened into the task state so the human can re-run it. The escalation entry
-// is a client RPC (human click); agents have no tool that reaches this.
-func EscalateConversationThread(sessDir, id, escalatedBy, title string) (ConversationThread, error) {
+// records who escalated it, who leads it, plus the escalation time. It is
+// idempotent — calling it on an already-escalated (task) thread just refreshes
+// escalated_by/lead/title (each with overwrite-if-non-empty semantics) and leaves
+// escalated_at pinned to the first escalation. A resolved thread is re-opened into
+// the task state so the human can re-run it, and the lead can be reassigned then.
+// The escalation entry is a client RPC (human click); agents have no tool that
+// reaches this. escalatedBy is the human-click provenance; leadParticipantID is the
+// single named agent granted workflow-orchestration authority for this task.
+func EscalateConversationThread(sessDir, id, escalatedBy, leadParticipantID, title string) (ConversationThread, error) {
 	id = strings.TrimSpace(id)
 	escalatedBy = strings.TrimSpace(escalatedBy)
+	leadParticipantID = strings.TrimSpace(leadParticipantID)
 	title = strings.TrimSpace(title)
 	if id == "" {
 		return ConversationThread{}, fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
@@ -266,7 +323,7 @@ func EscalateConversationThread(sessDir, id, escalatedBy, title string) (Convers
 	defer tx.Rollback()
 
 	row := tx.QueryRow(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id
 FROM conversation_threads
 WHERE id = ?`, id)
 	thread, err := scanConversationThread(row)
@@ -284,15 +341,18 @@ WHERE id = ?`, id)
 	if escalatedBy != "" {
 		thread.EscalatedBy = escalatedBy
 	}
+	if leadParticipantID != "" {
+		thread.LeadParticipantID = leadParticipantID
+	}
 	if title != "" {
 		thread.Title = title
 	}
 
 	if _, err := tx.Exec(`
 UPDATE conversation_threads
-SET status = ?, title = ?, escalated_at = ?, escalated_by = ?
+SET status = ?, title = ?, escalated_at = ?, escalated_by = ?, lead_participant_id = ?
 WHERE id = ?`,
-		string(thread.Status), thread.Title, timeText(thread.EscalatedAt), thread.EscalatedBy, id,
+		string(thread.Status), thread.Title, timeText(thread.EscalatedAt), thread.EscalatedBy, thread.LeadParticipantID, id,
 	); err != nil {
 		return ConversationThread{}, fmt.Errorf("escalate conversation thread: %w", err)
 	}
@@ -345,7 +405,7 @@ func scanConversationThread(scanner interface {
 	var status, createdAt, escalatedAt string
 	if err := scanner.Scan(
 		&thread.ID, &thread.SessionID, &thread.AnchorItemID, &thread.Title, &status, &thread.CreatedBy, &createdAt,
-		&escalatedAt, &thread.EscalatedBy, &thread.Summary,
+		&escalatedAt, &thread.EscalatedBy, &thread.Summary, &thread.LeadParticipantID,
 	); err != nil {
 		return ConversationThread{}, err
 	}

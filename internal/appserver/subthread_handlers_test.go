@@ -161,6 +161,75 @@ func TestEscalateConversationSubthreadAttachesTaskCard(t *testing.T) {
 	if view.Task.Name != "Ship the fix" {
 		t.Fatalf("task_card name = %q, want Ship the fix", view.Task.Name)
 	}
+	// A human-only escalation (created_by="user", no picked lead) leaves the task
+	// with no lead — "user" is not a named agent, so no orchestration authority is
+	// granted until a named lead is picked.
+	if view.LeadParticipantID != "" {
+		t.Fatalf("lead_participant_id = %q, want empty for a human-only escalation", view.LeadParticipantID)
+	}
+}
+
+// Escalation grants task-lead authority to the picked named member. A picked lead
+// that is not an active named participant is rejected; when no lead is picked the
+// backend falls back to a named escalator.
+func TestEscalateConversationSubthreadRecordsPickedLead(t *testing.T) {
+	srv, _ := newResidentSpeechTestServer(t)
+	leadID := saveNamedParticipant(t, srv.rt, "Iris", "reviewer", "")
+	groupID := startGroupThreadForTest(t, srv)
+
+	cth, err := srv.openConversationSubthread(ThreadOpenSubParams{
+		ThreadID:     groupID,
+		AnchorItemID: "seq-3",
+		CreatedBy:    "user",
+	})
+	if err != nil {
+		t.Fatalf("openConversationSubthread: %v", err)
+	}
+
+	// A picked named lead is recorded even though the escalator (created_by) is the
+	// human.
+	raw := fmt.Sprintf(`{"id":"esc","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"title":"Ship it","created_by":"user","lead_participant_id":%q}}`, groupID, cth.ID, leadID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("thread/escalateSub: %v", err)
+	}
+	resp := responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "esc")
+	if errMsg, ok := resp["error"]; ok {
+		t.Fatalf("thread/escalateSub returned error: %v", errMsg)
+	}
+	view := remarshal[ThreadEscalateSubResult](t, resp["result"]).Subthread
+	if view.LeadParticipantID != leadID {
+		t.Fatalf("lead_participant_id = %q, want picked lead %q", view.LeadParticipantID, leadID)
+	}
+	if view.EscalatedBy != "user" {
+		t.Fatalf("escalated_by = %q, want human provenance user (kept distinct from lead)", view.EscalatedBy)
+	}
+
+	// A picked lead that is not an active named participant is rejected.
+	raw = fmt.Sprintf(`{"id":"bad","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"lead_participant_id":"prt-ghost"}}`, groupID, cth.ID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("thread/escalateSub (bad lead): %v", err)
+	}
+	resp = responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "bad")
+	if _, ok := resp["error"]; !ok {
+		t.Fatalf("escalating with a non-named lead must error, got %+v", resp)
+	}
+
+	// When no lead is picked but the escalator is itself a named agent, the lead
+	// falls back to that named agent. A distinct agent proves the fallback actually
+	// wrote a value (overwrite-if-non-empty reassigns from the prior lead).
+	fallbackID := saveNamedParticipant(t, srv.rt, "Milo", "worker", "")
+	raw = fmt.Sprintf(`{"id":"fb","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"created_by":%q}}`, groupID, cth.ID, fallbackID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("thread/escalateSub (fallback): %v", err)
+	}
+	resp = responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "fb")
+	if errMsg, ok := resp["error"]; ok {
+		t.Fatalf("thread/escalateSub (fallback) returned error: %v", errMsg)
+	}
+	view = remarshal[ThreadEscalateSubResult](t, resp["result"]).Subthread
+	if view.LeadParticipantID != fallbackID {
+		t.Fatalf("lead_participant_id = %q, want named escalator fallback %q", view.LeadParticipantID, fallbackID)
+	}
 }
 
 // Bubbling wraps the task up: it posts the one-line conclusion to the main group
@@ -182,7 +251,7 @@ func TestBubbleConversationSubthreadPostsToMainStreamAndResolves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("openConversationSubthread: %v", err)
 	}
-	if _, err := session.EscalateConversationThread(srv.rt.SessionDir, cth.ID, participantID, "Ship the fix"); err != nil {
+	if _, err := session.EscalateConversationThread(srv.rt.SessionDir, cth.ID, participantID, participantID, "Ship the fix"); err != nil {
 		t.Fatalf("EscalateConversationThread: %v", err)
 	}
 

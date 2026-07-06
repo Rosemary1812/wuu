@@ -105,6 +105,22 @@ func executeShellCommandWithCWD(ctx context.Context, env *Env, command string, t
 	if err != nil {
 		return shellExecutionResult{}, err
 	}
+	return executeShellCommandInDir(ctx, env, command, timeoutSeconds, workDir)
+}
+
+// executeShellCommandInDir runs command in an already-resolved absolute workDir
+// without re-running resolveShellWorkingDir. Callers that resolved the shell
+// working dir themselves (BashTool.executeRun resolves once so it can rewrite
+// verification commands) use this to skip a second resolve: re-resolving an
+// already worktree-relocated absolute path would push it back through the
+// sandbox rel-check and be falsely rejected as escaping the workspace.
+func executeShellCommandInDir(ctx context.Context, env *Env, command string, timeoutSeconds int, workDir string) (shellExecutionResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if env == nil {
+		env = &Env{}
+	}
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 
@@ -118,7 +134,7 @@ func executeShellCommandWithCWD(ctx context.Context, env *Env, command string, t
 	cmd.Stderr = &stderr
 
 	startedAt := time.Now()
-	err = cmd.Run()
+	err := cmd.Run()
 	durationMS := time.Since(startedAt).Milliseconds()
 	exitCode := 0
 	if err != nil {

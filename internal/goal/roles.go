@@ -31,7 +31,7 @@ func BuiltinRoles() []RoleConfig {
 			Name:         "lead",
 			Role:         "Lead / Planner",
 			ContextScope: ContextScopeFull,
-			AllowedTools: []string{"read_file", "grep", "glob", "load_skill", "list_workflows", "start_workflow", "workflow_status", "workflow_control", "spawn_agent", "await_agents", "agent_report"},
+			AllowedTools: []string{"read_file", "grep", "glob", "load_skill", "list_workflows", "start_workflow", "workflow_status", "workflow_control", "spawn_agent", "agent_report"},
 			SystemPrompt: "Own the goal, maintain durable state, split work into phases, and require reviewer or verifier evidence before completion.",
 			OutputSchema: "report: summary, decisions, assignments, blockers, verification policy, next steps",
 			SuccessCriteria: []string{

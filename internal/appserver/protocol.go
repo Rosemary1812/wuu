@@ -782,7 +782,13 @@ type ConversationSubthread struct {
 	Task        *TaskCard `json:"task,omitempty"`
 	Summary     string    `json:"summary,omitempty"`
 	EscalatedBy string    `json:"escalated_by,omitempty"`
-	Turns       []Turn    `json:"turns,omitempty"`
+	// LeadParticipantID is the single named agent granted task-lead (workflow
+	// orchestration) authority on escalation. Distinct from EscalatedBy (the
+	// human-click provenance): the lead is the named member the human picked (or
+	// the named escalator). Empty until a task names one; the runtime workflow gate
+	// keys on (caller == lead && status == task).
+	LeadParticipantID string `json:"lead_participant_id,omitempty"`
+	Turns             []Turn `json:"turns,omitempty"`
 }
 
 type ThreadOpenSubParams struct {
@@ -849,6 +855,11 @@ type ThreadEscalateSubParams struct {
 	// Title optionally (re)names the task; CreatedBy records who escalated.
 	Title     string `json:"title,omitempty"`
 	CreatedBy string `json:"created_by,omitempty"`
+	// LeadParticipantID names the single named member the human picks to lead the
+	// task (workflow-orchestration authority). Must be an active named participant;
+	// when empty the backend falls back to CreatedBy if that is itself a named
+	// agent, otherwise the task starts with no lead.
+	LeadParticipantID string `json:"lead_participant_id,omitempty"`
 }
 
 type ThreadEscalateSubResult struct {
