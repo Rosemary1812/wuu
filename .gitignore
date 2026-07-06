@@ -41,6 +41,9 @@ CLAUDE.md
 !/docs/2026-06-18-message-display-policy-zh.md
 !/docs/configuration-model-zh.md
 !/docs/goal-runtime-v2.md
+!/docs/tool-surface-assembly-zh.md
+!/docs/context-usage-and-caching-zh.md
+!/docs/2026-07-06-usage-cache-audit-zh.md
 !/docs/compat/
 !/docs/plans/
 /docs/plans/*
