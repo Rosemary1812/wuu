@@ -11,7 +11,7 @@
 
 wuu 的内部统一约定是 **exclusive**：各 provider client 负责把自家语义归一到"`TokenUsage.InputTokens` = 新鲜输入，`CacheReadTokens` = 缓存命中"，上层不再关心来源。openai client 在 `asTokenUsage` 里做 `PromptTokens - cached` 减法；anthropic client 原样透传（原生语义即 exclusive）。
 
-anthropic client 另有一个 `InputTokensIncludeCacheRead` 配置开关（`ProviderConfig`，默认 false，**只认显式配置、永不按 base_url 自动识别**——2026-07-06 重构移除了曾有的 minimaxi 子串自动识别），用于标记"声称 anthropic 兼容但 usage 报 inclusive"的端点，开启后 `normalizeInclusiveInput` 在非流式响应和流式 `message_start`/`message_delta`（仅当该事件重报 input）三个站点做减法归一。**给任何端点开这个开关前，必须先用两次相同请求实测语义**（方法见 `docs/2026-07-06-usage-cache-audit-zh.md`，那次审计实测 MiniMax 实为 exclusive）。对 exclusive 端点误开此开关会把新鲜输入减到 0，导致占用低估、压缩延迟触发。
+anthropic client 另有一个 `InputTokensIncludeCacheRead` 配置开关（`ProviderConfig`，默认 false，**只认显式配置、永不按 base_url 自动识别**），用于标记"声称 anthropic 兼容但 usage 报 inclusive"的端点，开启后 `normalizeInclusiveInput` 在非流式响应和流式 `message_start`/`message_delta`（仅当该事件重报 input）三个站点做减法归一。**给任何端点开这个开关前，必须先用两次相同请求实测语义**（判别法见文末维护提示；MiniMax 实测为 exclusive，不应开启）。对 exclusive 端点误开此开关会把新鲜输入减到 0，导致占用低估、压缩延迟触发。
 
 ## 占用公式与三个消费口径
 
@@ -63,10 +63,12 @@ loop 内压缩后由 loop 自己 `usage.Reset() + RecordPendingMessages` 重置�
 |---|---|---|---|
 | Anthropic 原生 | exclusive（三字段互斥） | — | 无需 |
 | OpenAI（Completions/Responses） | inclusive（cached 是子集） | — | wuu/pi/cc-bridge 各自减法或直接用 total |
-| MiniMax anthropic 兼容端点 | **exclusive（2026-07-06 实测）**；usage 只在 `message_delta` 报全量，`message_start` 的 input 恒为 0；`cache_creation` 恒报 0；**缓存命中是概率性的**：前缀/断点匹配语义存在（不同 user 消息命中过 system 前缀，3/8），但缓存呈节点本地 + 弱粘性路由形态——相同请求也偶发 miss（4/5），同一前缀被请求越多暖节点越多命中率越高；`x-session-affinity` 头不被识别（0/8 无改善） | — | 不应减法 |
+| MiniMax anthropic 兼容端点 | **exclusive（实测，方法见下方维护提示）**；usage 只在 `message_delta` 报全量，`message_start` 的 input 恒为 0；`cache_creation` 恒报 0 | — | 不应减法 |
 | wuu 内部 | exclusive 统一 | `Input + CacheRead + Output`（不含 CacheCreation，见上文偏差说明） | openai client 减法；anthropic client 可选开关 |
 | Claude Code | exclusive 假定，无任何归一 | `input + cache_creation + cache_read + output` | 无（OpenAI 桥未归一，桥内有重复计数缺陷） |
 | pi | Anthropic 原样、OpenAI 减法 | `totalTokens` 或四项相加 | per-API 硬编码，无 per-provider 开关 |
 | codex | inclusive 原样（纯 OpenAI 系） | `total_tokens` 直接用 | 不需要（单一语义） |
 
 维护提示：接入新的"anthropic 兼容"端点时，不要相信文档或直觉，用两次相同的带 `cache_control` 请求实测：第二次若 `input_tokens < cache_read_input_tokens`，则必为 exclusive；两次 `input + cache_read` 之和相等也指向 exclusive。同时确认流式 usage 到底在 `message_start` 还是 `message_delta` 报数——兼容端点常与原生不同。
+
+另注意兼容端点的**缓存命中可能是概率性的**（分布式节点本地缓存 + 弱粘性路由）：命中语义正确不代表命中稳定，单次实验不足以下结论。这类端点上线程内命中率高（append-only 前缀 + 高频重复），新线程首个请求大概率冷 miss——评估命中率时按线程生命周期分开看。

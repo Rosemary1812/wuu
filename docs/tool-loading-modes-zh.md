@@ -76,4 +76,4 @@ flat（显式）: 任何 provider 都全量直发
 
 ## 设计边界
 
-wire 层的默认判定仍以首方 base_url / 模型版本号为启发（auto 模式的合理缺省），但 2026-07-06 起 anthropic 与 openai responses 两个 wire 都接受统一的 per-model `options.native_tool_search` 显式覆盖——配置永远赢过 URL 启发。openai chat wire 没有原生渐进协议可开，覆盖键对它无意义，软件路径 `wuu_tool_search` 是唯一选项。
+wire 层的默认判定以首方 base_url / 模型版本号为启发（auto 模式的合理缺省），anthropic 与 openai responses 两个 wire 都接受统一的 per-model `options.native_tool_search` 显式覆盖——配置永远赢过 URL 启发。openai chat wire 没有原生渐进协议可开，覆盖键对它无意义，软件路径 `wuu_tool_search` 是唯一选项。

@@ -85,9 +85,9 @@ workflow 指引自 2026-07 起不再内嵌于 `prompts/system_main.md`，改为 
 
 参照系：Claude Code 对工具 base schema 做 session 级缓存冻结（首次计算后定格字节），pi 用静态 TypeBox schema + per-provider 包装函数，两者与 wuu 的约束一致。codex 的工具 schema 会随 feature 开关每轮重建，但它走 OpenAI Responses 的服务端自动前缀缓存，约束形态不同，不可直接类比。
 
-## 2026-07 工具面瘦身之后的形态
+## 当前工具面形态（2026-07 瘦身后）
 
-`561083c4` 把工具面从约 35 个砍到 20 个：
+一轮机械瘦身把工具面从约 35 个收敛到 20 个：
 
 - 删除死代码：`run_shell`、`start/stop/list/read/write_process`、`run_test`（bash 六 action 已覆盖）；
 - 编排精简：`await_agents` 删除（冲突检测挪到子 agent 完成唤醒路径）、`followup_task` 并入 `send_message`（`trigger_turn` 参数）、`list_agents` 降级为 `<subagent_status>` reminder；
