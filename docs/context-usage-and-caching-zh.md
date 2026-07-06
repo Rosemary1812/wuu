@@ -63,7 +63,7 @@ loop 内压缩后由 loop 自己 `usage.Reset() + RecordPendingMessages` 重置�
 |---|---|---|---|
 | Anthropic 原生 | exclusive（三字段互斥） | — | 无需 |
 | OpenAI（Completions/Responses） | inclusive（cached 是子集） | — | wuu/pi/cc-bridge 各自减法或直接用 total |
-| MiniMax anthropic 兼容端点 | **exclusive（2026-07-06 实测）**；usage 只在 `message_delta` 报全量，`message_start` 的 input 恒为 0；`cache_creation` 恒报 0 | — | 不应减法 |
+| MiniMax anthropic 兼容端点 | **exclusive（2026-07-06 实测）**；usage 只在 `message_delta` 报全量，`message_start` 的 input 恒为 0；`cache_creation` 恒报 0；**缓存只做全 prompt 精确前缀匹配，不实现断点/最长前缀语义**（同 system + 不同 user 消息 → 零复用，实测 r3 `cr=128`） | — | 不应减法 |
 | wuu 内部 | exclusive 统一 | `Input + CacheRead + Output`（不含 CacheCreation，见上文偏差说明） | openai client 减法；anthropic client 可选开关 |
 | Claude Code | exclusive 假定，无任何归一 | `input + cache_creation + cache_read + output` | 无（OpenAI 桥未归一，桥内有重复计数缺陷） |
 | pi | Anthropic 原样、OpenAI 减法 | `totalTokens` 或四项相加 | per-API 硬编码，无 per-provider 开关 |
