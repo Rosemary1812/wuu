@@ -13,17 +13,24 @@
 
 三条自动路径压缩后都同步执行 `usage.Reset() + RecordPendingMessages(messages)` 重建估算基线，下一次真实响应把基线校准回 ground truth。
 
-## 阈值推导：锚定输入上限，不是上下文窗口
+## 阈值推导：双源上下文窗口打架（2026-07-06 实测定位）
 
-默认（`compact_threshold_pct` 未设）阈值 = `MaxInputTokens − min(输出预留, 20000)`。而 `MaxInputTokens` 来自 `modelbudget.Resolve`：
+默认（`compact_threshold_pct` 未设）阈值来自 `modelbudget.Resolve`：
 
 ```
-input  = provider.Models[model].Limit.Input   （用户配置或 modelcatalog/catwalk 灌入）
+input  = provider.Models[model].Limit.Input   （M3 无此字段,走下行）
 usable = input > 0 ? input − min(output, 20000) : context − output
 CompactThresholdTokens = usable   （所以 trace 里两个字段恒相等）
 ```
 
-**这意味着压缩阈值锚定在"输入上限"而非"上下文窗口"**。实测（MiniMax-M3）：catalog 声明 context 1M、input 512k，输出预留 8k 时阈值 = 504k——只有窗口的一半。如果 catalog 的 input limit 数据保守或错误，压缩就系统性提前，且用户从"1M 窗口"的直觉出发会觉得莫名其妙。参照系全部锚定窗口：Claude Code 阈值 = 窗口 − 20k（摘要输出预留）− 13k（缓冲）；pi = 窗口 − 16384；codex = 窗口 × 90%。wuu 的 input-limit 锚定语义上也说得通（部分渠道的 prompt 上限确实低于窗口），但 catalog 数值的正确性直接决定触发点，值得在 UI/trace 里可见化。
+问题在 `context` 有**两个不一致的来源**：
+
+- 预算/阈值路径读 provider models 目录（内嵌 models.dev 快照 `internal/modelcatalog/models_dev_catalog.json` enrich 进 provider config）——MiniMax-M3 记为 **context 512k**（上线初期旧值）；
+- 显示/trace 路径读 `internal/providers/contextwindow.go` 的硬编码覆盖表——M3 = **1M**（注释：因"旧目录快照报 200k"按官方文档加的特判）。
+
+结果：UI 显示 1M 窗口，压缩阈值却按 512k − 输出预留计算（输出预留 128k 时 = 384k，8k 时 = 504k）——"1M 的模型 38-50% 就压缩"。live 仲裁（2026-07-06）：648k token 请求被 `api.minimaxi.com` 接受、约 2M 级被拒 → 现网上限已是 1M 量级，**目录的 512k 过时，压缩确实被系统性提前了约一半**。教训：窗口是随渠道、随时间变化的数据（M3 上线 512k、后升 1M），硬编码覆盖表这种特判补丁只修了显示一处，预算路径照旧读旧数据——双源必然漂移。参照系全部是"单一解析点 + 配置可覆盖 + 显示与预算同源"：cc 阈值 = 窗口 − 33k（env 可覆盖窗口）；pi = 窗口 − 16384（per-model 配置覆盖）；codex = 窗口 × 90%（provider 配置 `model_context_window`）。
+
+另有一处已观测的覆盖优先级问题：用户配置 `models.<m>.limit.context` 在 catalog enrich 后未能压过目录值（E2E 设 60000 未生效）——用户显式配置必须赢。
 
 `agent.compact_threshold_pct ∈ (0,1)` 可覆盖为百分比（乘以 min(窗口, 输入上限)）。
 
