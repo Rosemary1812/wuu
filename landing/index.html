@@ -703,6 +703,71 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
 .credits-section { padding: 100px 0 110px; }
 .footer-mascot .stage { transform: none; }
 
+/* hero illustration: floating chat chips */
+.hero-art { position: relative; }
+.hero-art .say { position: absolute; z-index: 2; display: inline-flex; align-items: center; gap: 8px; font-family: var(--display); font-weight: 500; font-size: 12.5px; color: var(--ink); background: #fff; border: 1px solid var(--line-2); border-radius: 99px; padding: 6px 13px; box-shadow: 0 10px 24px -12px rgba(33,29,24,.30); }
+.hero-art .say::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--coral); }
+.hero-art .say.s1 { top: 8%; left: 5.5%; animation: bob2 4.6s ease-in-out infinite; }
+.hero-art .say.s2 { top: 24%; right: 6%; animation: bob2 4.6s 1.4s ease-in-out infinite; }
+.hero-art .say.s2::before { background: var(--leaf); }
+@keyframes bob2 { 50% { transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .hero-art .say { animation: none; } }
+
+/* roster tag */
+.rtag { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; color: var(--ink-3); margin: -4px 0 10px; }
+.capcard .spot { border: 1px solid var(--line-2); border-radius: 16px; background-color: #fff; background-size: 74%; background-position: center 58%; }
+
+/* group-chat demo */
+.demosec { padding: 104px 0 60px; }
+.demo { max-width: 760px; margin: 44px auto 0; background: #fff; border: 1px solid var(--line-2); border-radius: 16px; box-shadow: 0 28px 56px -32px rgba(33,29,24,.28), 0 2px 8px rgba(33,29,24,.04); overflow: hidden; }
+.demo-top { display: flex; align-items: center; gap: 13px; padding: 12px 18px; border-bottom: 1px solid var(--line); background: #FCFBF9; }
+.demo-top .avs { display: flex; }
+.demo-top .avs i { width: 26px; height: 26px; border-radius: 50%; background: var(--cream) center 18%/210% no-repeat; margin-left: -8px; border: 1.5px solid #fff; box-shadow: 0 0 0 1px var(--line-2); }
+.demo-top .avs i:first-child { margin-left: 0; }
+.demo-top .rname { font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); }
+.demo-top .live { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-family: var(--display); font-weight: 600; font-size: 11.5px; color: var(--coral-deep); }
+.demo-top .live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--coral); box-shadow: 0 0 0 3px rgba(238,106,72,.16); animation: pulse 2s ease-in-out infinite; }
+.demo-feed { padding: 26px 24px 24px; display: flex; flex-direction: column; gap: 20px; }
+.dmsg { display: flex; gap: 13px; opacity: 0; transform: translateY(10px); transition: opacity .55s cubic-bezier(.2,.7,.2,1), transform .55s cubic-bezier(.2,.7,.2,1); }
+.dmsg.on, .dmsg.typing { opacity: 1; transform: none; }
+.dmsg .av { flex: none; width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--ink); background: var(--cream) center 18%/210% no-repeat; }
+.dmsg .b { min-width: 0; }
+.dmsg .who { display: flex; align-items: baseline; gap: 9px; font-size: 13.5px; }
+.dmsg .who b { font-weight: 600; }
+.dmsg .who .r { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--ink-3); text-transform: uppercase; }
+.dmsg .txt { font-size: 14px; color: var(--ink-2); line-height: 1.7; margin-top: 3px; }
+.dmsg .txt .m { color: var(--coral-deep); font-weight: 600; }
+.dmsg .txt code { font-family: var(--mono); font-size: 12px; background: rgba(33,29,24,.05); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; color: var(--ink); }
+.dmsg.me { justify-content: flex-end; }
+.dmsg.me .b { background: var(--coral); border-radius: 15px 15px 4px 15px; padding: 9px 15px; max-width: 78%; }
+.dmsg.me .txt { color: #fff; margin: 0; }
+.diffcard { margin-top: 10px; font-family: var(--mono); font-size: 12px; line-height: 1.85; background: #FCFBF9; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; white-space: pre; overflow-x: auto; }
+.diffcard span { display: block; }
+.diffcard .ctx { color: var(--ink-3); }
+.diffcard .del { color: #B3402A; background: rgba(222,85,48,.07); }
+.diffcard .add { color: #3E7A5E; background: rgba(92,156,122,.10); }
+.dmsg.dmerge { justify-content: center; align-items: center; gap: 10px; border-top: 1px dashed var(--line-2); padding-top: 18px; margin-top: 2px; font-family: var(--display); font-weight: 600; font-size: 13px; color: var(--ink-2); }
+.dmsg.dmerge .ok { flex: none; width: 17px; height: 17px; border-radius: 50%; background: var(--leaf); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; }
+/* typing state: dots visible, content hidden */
+.dmsg .dots { display: none; gap: 5px; padding: 9px 0 7px; }
+.dmsg .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); animation: tdot 1.1s ease-in-out infinite; }
+.dmsg .dots i:nth-child(2) { animation-delay: .18s; }
+.dmsg .dots i:nth-child(3) { animation-delay: .36s; }
+@keyframes tdot { 40% { opacity: .3; transform: translateY(-3px); } }
+.dmsg.typing .dots { display: inline-flex; }
+.dmsg.typing .who, .dmsg.typing .txt, .dmsg.typing .diffcard { display: none; }
+@media (max-width: 560px){ .demo-feed { padding: 20px 14px; } .dmsg .who .r { display: none; } }
+
+/* voices: in-world wall of love */
+.voicesec { padding: 56px 0 108px; }
+.voices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 44px 40px; margin-top: 46px; }
+@media (max-width: 800px){ .voices { grid-template-columns: 1fr; gap: 34px; } }
+.voice { margin: 0; border-top: 1px solid var(--line-2); padding-top: 20px; }
+.voice::before { content: "\201C"; font-family: var(--serif); font-size: 46px; line-height: 1; color: var(--coral); display: block; margin-bottom: 8px; }
+.voice blockquote { margin: 0; font-size: 15.5px; line-height: 1.78; color: var(--ink); }
+.voice figcaption { margin-top: 14px; font-size: 12.5px; color: var(--ink-3); }
+.voice figcaption b { font-weight: 600; color: var(--ink-2); }
+
 </style>
 </head>
 <body>
@@ -735,8 +800,8 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
         <span class="en">Agents<br>one group chat</span>
       </h1>
       <p class="sub reveal in d1">
-        <span class="zh">wuu 把规划、调研、编码、审查的 agent 拉进同一个群聊——它们协作、交接、互审，你把方向、拍板。</span>
-        <span class="en">wuu drops planning, research, coding, and review agents into one group chat — they collaborate, hand off, and review each other. You steer and approve.</span>
+        <span class="zh">wuu 给每个 agent 一个名字和身份，放进同一个群聊——交接、互审、把活干完。你只负责两件事：把方向，拍板。</span>
+        <span class="en">wuu gives every agent a name and an identity, in one group chat — they hand off, review each other, and finish the job. You do two things: set direction, and approve.</span>
       </p>
       <div class="hero-cta reveal in d2">
         <a class="btn btn-solid" href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener"><span class="zh">开始使用</span><span class="en">Get started</span></a>
@@ -761,6 +826,8 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
     <div class="hero-visual reveal in d2" id="heroShot">
       <div class="hero-art tiltable">
         <img src="assets/mascot/wuu-mascot-concept-27.png" alt="the wuu agents gathered around one table, collaborating on a shared plan" loading="eager">
+        <span class="say s1"><span class="zh">@石头 交给你了</span><span class="en">@flint — over to you</span></span>
+        <span class="say s2"><span class="zh">测试全绿 ✓</span><span class="en">tests green ✓</span></span>
       </div>
     </div>
   </div>
@@ -801,72 +868,135 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
   </div>
 </section>
 
+<section class="demosec" id="howit">
+  <div class="wrap">
+    <h2 class="title reveal"><span class="zh">看它们修完<span class="mark">一个 bug</span></span><span class="en">Watch them fix <span class="mark">a real bug</span></span></h2>
+    <p class="lede reveal"><span class="zh">不是黑箱。每一次交接、每一行 diff，都发生在你眼前的群聊里。</span><span class="en">No black box — every hand-off and every diff happens in the group chat, right in front of you.</span></p>
+    <div class="demo reveal d1" id="demo">
+      <div class="demo-top">
+        <div class="avs">
+          <i style="background-image:url(assets/mascot/wuu-mascot-concept-28.png)"></i>
+          <i style="background-image:url(assets/mascot/wuu-mascot-concept-30.png)"></i>
+          <i style="background-image:url(assets/mascot/wuu-mascot-concept-29.png)"></i>
+          <i style="background-image:url(assets/mascot/wuu-mascot-concept-31.png)"></i>
+        </div>
+        <span class="rname">#fix-login-blank</span>
+        <span class="live"><span class="zh">进行中</span><span class="en">live</span></span>
+      </div>
+      <div class="demo-feed" id="demoFeed">
+        <div class="dmsg me">
+          <div class="b"><p class="txt"><span class="zh">登录页在 Safari 15 上白屏，帮我查一下修掉</span><span class="en">The login page is blank on Safari 15 — find it and fix it</span></p></div>
+        </div>
+        <div class="dmsg">
+          <span class="av" style="background-image:url(assets/mascot/wuu-mascot-concept-28.png)"></span>
+          <div class="b">
+            <span class="dots"><i></i><i></i><i></i></span>
+            <p class="who"><b><span class="zh">墨白</span><span class="en">Miro</span></b><span class="r">planner</span></p>
+            <p class="txt"><span class="zh">收到。<span class="m">@阿寻</span> 先定位原因，<span class="m">@石头</span> 待命。</span><span class="en">On it. <span class="m">@scout</span> locate the cause, <span class="m">@flint</span> stand by.</span></p>
+          </div>
+        </div>
+        <div class="dmsg">
+          <span class="av" style="background-image:url(assets/mascot/wuu-mascot-concept-30.png)"></span>
+          <div class="b">
+            <span class="dots"><i></i><i></i><i></i></span>
+            <p class="who"><b><span class="zh">阿寻</span><span class="en">Scout</span></b><span class="r">researcher</span></p>
+            <p class="txt"><span class="zh">定位到了——<code>useAuth.ts</code> 里用了 <code>Array.prototype.at()</code>，Safari 15.4 之前不支持。全仓还有 2 处同款写法。</span><span class="en">Found it — <code>useAuth.ts</code> calls <code>Array.prototype.at()</code>, unsupported before Safari 15.4. Two more call sites repo-wide.</span></p>
+          </div>
+        </div>
+        <div class="dmsg">
+          <span class="av" style="background-image:url(assets/mascot/wuu-mascot-concept-29.png)"></span>
+          <div class="b">
+            <span class="dots"><i></i><i></i><i></i></span>
+            <p class="who"><b><span class="zh">石头</span><span class="en">Flint</span></b><span class="r">builder</span></p>
+            <p class="txt"><span class="zh">改成下标访问，连同 <code>useCart</code> 那处一起修了，补了 Safari 15 的回归用例。</span><span class="en">Switched to index access, fixed the <code>useCart</code> one too, and added a Safari 15 regression test.</span></p>
+            <div class="diffcard"><span class="ctx">  // useAuth.ts</span>
+<span class="del">- const last = users.at(-1)</span>
+<span class="add">+ const last = users[users.length - 1]</span></div>
+          </div>
+        </div>
+        <div class="dmsg">
+          <span class="av" style="background-image:url(assets/mascot/wuu-mascot-concept-31.png)"></span>
+          <div class="b">
+            <span class="dots"><i></i><i></i><i></i></span>
+            <p class="who"><b><span class="zh">阿凛</span><span class="en">Vera</span></b><span class="r">reviewer</span></p>
+            <p class="txt"><span class="zh">diff 看过，边界处理没问题。42 个测试全绿 ✓，可以合了。</span><span class="en">Diff reviewed, edge cases look right. All 42 tests green ✓ — good to merge.</span></p>
+          </div>
+        </div>
+        <div class="dmsg dmerge">
+          <span class="ok">✓</span>
+          <span><span class="zh">任务完成 · 3 个文件 · +21 −9 · 等你拍板</span><span class="en">Done · 3 files · +21 −9 · waiting on your call</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="capsec" id="caps">
   <div class="wrap">
     <div class="head-row reveal">
       <div>
-        <h2 class="title"><span class="zh">一支队伍 <span class="mark">各有所长</span></span><span class="en">One team <span class="mark">every skill</span></span></h2>
+        <h2 class="title"><span class="zh">他们都<span class="mark">有名字</span></span><span class="en">They all <span class="mark">have names</span></span></h2>
+        <p class="lede"><span class="zh">这是默认的一班人。@一声名字，任务连着身份、记忆和默契一起交出去——你也可以改名、加人、立新的身份。</span><span class="en">Meet the default crew. One @ hands off a task along with an identity, a memory, and shared habits — rename them, add more, or invent identities of your own.</span></p>
       </div>
     </div>
     <div class="capgrid">
       <div class="card capcard reveal">
-        <h3><span class="zh">规划与拆解</span><span class="en">Plan &amp; break down</span></h3>
-        <p><span class="zh">把目标拆成清晰的步骤，定好该走的路。</span><span class="en">Turn a goal into clear steps and the best path forward.</span></p>
+        <h3><span class="zh">墨白</span><span class="en">Miro</span></h3>
+        <span class="rtag">PLANNER</span>
+        <p><span class="zh">把目标拆成步骤，把活分给对的人。</span><span class="en">Turns a goal into steps and hands each to the right agent.</span></p>
         <span class="spot" style="background-image:url(assets/mascot/wuu-mascot-concept-28.png)"></span>
       </div>
       <div class="card capcard reveal">
-        <h3><span class="zh">读懂代码库</span><span class="en">Research the code</span></h3>
-        <p><span class="zh">在你的仓库里找到相关代码，理清上下文。</span><span class="en">Find the relevant code in your repo and map the context.</span></p>
+        <h3><span class="zh">阿寻</span><span class="en">Scout</span></h3>
+        <span class="rtag">RESEARCHER</span>
+        <p><span class="zh">摸清你的代码库，把上下文找齐。</span><span class="en">Maps your codebase and gathers the context.</span></p>
         <span class="spot" style="background-image:url(assets/mascot/wuu-mascot-concept-30.png)"></span>
       </div>
       <div class="card capcard reveal">
-        <h3><span class="zh">写代码、改文件</span><span class="en">Build &amp; edit</span></h3>
-        <p><span class="zh">动手改代码、跑命令，直到真的跑通。</span><span class="en">It edits code and runs commands until it actually works.</span></p>
+        <h3><span class="zh">石头</span><span class="en">Flint</span></h3>
+        <span class="rtag">BUILDER</span>
+        <p><span class="zh">写代码、跑命令，直到真的跑通。</span><span class="en">Writes code and runs commands until it works.</span></p>
         <span class="spot" style="background-image:url(assets/mascot/wuu-mascot-concept-29.png)"></span>
       </div>
       <div class="card capcard reveal">
-        <h3><span class="zh">审查与打磨</span><span class="en">Review &amp; refine</span></h3>
-        <p><span class="zh">互相审查改动，挑出问题再改好。</span><span class="en">Agents review each other, catch issues, and make it better.</span></p>
+        <h3><span class="zh">阿凛</span><span class="en">Vera</span></h3>
+        <span class="rtag">REVIEWER</span>
+        <p><span class="zh">每个改动都要先过她这一关。</span><span class="en">Every change gets past her first.</span></p>
         <span class="spot" style="background-image:url(assets/mascot/wuu-mascot-concept-31.png)"></span>
       </div>
       <div class="card capcard reveal">
-        <h3><span class="zh">交付与提交</span><span class="en">Deliver &amp; ship</span></h3>
-        <p><span class="zh">交回一份干净的 diff，或直接提一个 PR。</span><span class="en">Hand back a clean diff, or open a pull request outright.</span></p>
+        <h3><span class="zh">念念</span><span class="en">Memo</span></h3>
+        <span class="rtag">ARCHIVIST</span>
+        <p><span class="zh">记着你的项目和习惯，越处越合拍。</span><span class="en">Remembers your project and habits — sharper every week.</span></p>
         <span class="spot" style="background-image:url(assets/mascot/wuu-mascot-concept-32.png)"></span>
       </div>
       <div class="card capcard reveal">
-        <h3><span class="zh">定时值守</span><span class="en">Runs on a schedule</span></h3>
-        <p><span class="zh">排成定时任务，你睡觉时它也在干活。</span><span class="en">Put it on a schedule — it keeps working while you sleep.</span></p>
+        <h3><span class="zh">阿更</span><span class="en">Nox</span></h3>
+        <span class="rtag">NIGHT WATCH</span>
+        <p><span class="zh">守着日程表，你睡觉时他在干活。</span><span class="en">Keeps the schedule — works while you sleep.</span></p>
         <span class="spot" style="background-image:url(assets/mascot/wuu-mascot-concept-06.png)"></span>
       </div>
     </div>
   </div>
 </section>
 
-<section class="flowsec" id="howit">
+<section class="voicesec" id="voices">
   <div class="wrap">
-    <h2 class="title reveal"><span class="zh">把活往前推的<span class="mark">更好方式</span></span><span class="en">A better way to <span class="mark">move work forward</span></span></h2>
-    <div class="flow">
-      <div class="card flowstep reveal">
-        <span class="n">1</span>
-        <div class="txt"><h4><span class="zh">你交代目标</span><span class="en">You bring the goal</span></h4><p><span class="zh">用大白话说清你要什么。</span><span class="en">Say what you want in plain words.</span></p></div>
-        <span class="pic" style="background-image:url(assets/mascot/wuu-mascot-concept-26.png)"></span>
-      </div>
-      <div class="card flowstep reveal">
-        <span class="n">2</span>
-        <div class="txt"><h4><span class="zh">wuu 定计划</span><span class="en">wuu builds the plan</span></h4><p><span class="zh">agents 一起商量出一份方案。</span><span class="en">The agents agree on a smart plan.</span></p></div>
-        <span class="pic" style="background-image:url(assets/mascot/wuu-mascot-concept-28.png)"></span>
-      </div>
-      <div class="card flowstep reveal">
-        <span class="n">3</span>
-        <div class="txt"><h4><span class="zh">团队开工</span><span class="en">Work gets done</span></h4><p><span class="zh">合适的 agent 执行、迭代，全程可见。</span><span class="en">The right agents execute and iterate, in the open.</span></p></div>
-        <span class="pic" style="background-image:url(assets/mascot/wuu-mascot-concept-29.png)"></span>
-      </div>
-      <div class="card flowstep reveal">
-        <span class="n">4</span>
-        <div class="txt"><h4><span class="zh">你拿到结果</span><span class="en">You get results</span></h4><p><span class="zh">review、微调，放心交付。</span><span class="en">Review, refine, and ship with confidence.</span></p></div>
-        <span class="pic" style="background-image:url(assets/mascot/wuu-mascot-concept-07.png)"></span>
-      </div>
+    <h2 class="title reveal"><span class="zh">一个名字，省下<span class="mark">一整段解释</span></span><span class="en">A name saves <span class="mark">a whole briefing</span></span></h2>
+    <p class="lede reveal"><span class="zh">名字背后是身份、记忆和默契——@一声，任务连着上下文一起交出去。</span><span class="en">Behind a name sits an identity, a memory, and shared habits — one @ hands off the task, context included.</span></p>
+    <div class="voices">
+      <figure class="voice reveal">
+        <blockquote><span class="zh">周报、changelog、发版记录，全交给「念念」了。这周干了啥，它比我记得清楚。</span><span class="en">Weekly notes, the changelog, release logs — that's all Memo's now. It remembers my week better than I do.</span></blockquote>
+        <figcaption><span class="zh"><b>「念念」的主人</b> · 独立开发者</span><span class="en"><b>Memo's human</b> · indie developer</span></figcaption>
+      </figure>
+      <figure class="voice reveal d1">
+        <blockquote><span class="zh">「阿更」每天凌晨三点跑全量回归。早上我只看红绿，不看过程。</span><span class="en">Nox runs the full regression at 3 a.m. Every morning I just read green or red.</span></blockquote>
+        <figcaption><span class="zh"><b>「阿更」的主人</b> · 开源维护者</span><span class="en"><b>Nox's human</b> · OSS maintainer</span></figcaption>
+      </figure>
+      <figure class="voice reveal d2">
+        <blockquote><span class="zh">每个模块立了一个 agent。出问题直接 @名字，不用给任何人解释背景。</span><span class="en">One agent per module. When something breaks I @ a name — no briefing anyone.</span></blockquote>
+        <figcaption><span class="zh"><b>一支五人平台组</b> · 每人都养了几个</span><span class="en"><b>A platform team of five</b> · everyone keeps a few</span></figcaption>
+      </figure>
     </div>
   </div>
 </section>
@@ -1115,6 +1245,44 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
       }
     });
   });
+
+  /* ---- group-chat demo player ---- */
+  var feed = document.getElementById('demoFeed');
+  if (feed) {
+    var msgs = Array.prototype.slice.call(feed.querySelectorAll('.dmsg'));
+    var isStatic = /[?&]static/.test(location.search) || reduced;
+    if (isStatic) {
+      msgs.forEach(function (m) { m.classList.add('on'); });
+    } else {
+      var started = false;
+      var dio = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting && !started) { started = true; dio.disconnect(); playDemo(); }
+        });
+      }, { threshold: 0.3 });
+      dio.observe(feed);
+    }
+    function playDemo() {
+      var i = 0;
+      (function next() {
+        if (i >= msgs.length) return;
+        var m = msgs[i];
+        var canType = m.querySelector('.dots');
+        var advance = function () {
+          m.classList.remove('typing');
+          m.classList.add('on');
+          i++;
+          setTimeout(next, m.classList.contains('me') ? 650 : 1200);
+        };
+        if (canType) {
+          m.classList.add('typing');
+          setTimeout(advance, 900);
+        } else {
+          advance();
+        }
+      })();
+    }
+  }
 
   /* ---- install channel tabs ---- */
   var installLine = document.getElementById('installLine');
