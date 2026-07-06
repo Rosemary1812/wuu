@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>wuu — 开源 BYOK AI Coding Agent | Open-source AI coding agent</title>
 <meta name="description" content="wuu 是一个开源、自带 API Key 的 AI Coding Agent：Go 核心、桌面应用、可脚本化 CLI，内置多智能体编排。Open-source, BYOK AI coding agent — a Go core with a desktop app, a scriptable CLI, and built-in multi-agent orchestration.">
-<meta name="theme-color" content="#F4E9D6">
+<meta name="theme-color" content="#FFFFFF">
 <link rel="icon" href="assets/mascot/wuu-mascot-concept-01.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -43,6 +43,7 @@ body {
   overflow-x: hidden;
 }
 ::selection { background: var(--accent); color: #fff; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 [data-lang="zh"] .en { display: none !important; }
 [data-lang="en"] .zh { display: none !important; }
@@ -334,7 +335,11 @@ footer::before { display: none; }
 .footer-meta a:hover { color: #fff; }
 
 
-.hero-art { background: var(--bg-soft); border: 1.5px solid var(--line-2); border-radius: 18px; overflow: hidden; box-shadow: 0 34px 64px -32px rgba(0,0,0,.30), 0 3px 10px rgba(0,0,0,.05); transform: rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)); transition: transform .25s ease-out; will-change: transform; }
+.hero-art { background: var(--bg-soft); border: 1.5px solid var(--line-2); border-radius: 0; overflow: hidden; box-shadow: 0 34px 64px -32px rgba(0,0,0,.30), 0 3px 10px rgba(0,0,0,.05); transform: rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)); transition: transform .25s ease-out; will-change: transform; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-art, .tiltable { transform: none !important; transition: none !important; }
+  .hero-art { will-change: auto; }
+}
 .hero-art img { display: block; width: 100%; height: auto; }
 
 /* mature grotesk headings */
