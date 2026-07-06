@@ -176,7 +176,7 @@ header.hero { position: relative; padding: 148px 0 76px; overflow: hidden; text-
 .marquee:hover .mtrack { animation-play-state: paused; }
 @keyframes marquee { to { transform: translateX(-50%); } }
 .logo { display: inline-flex; align-items: center; gap: 15px; color: var(--ink); font-family: var(--display); font-weight: 600; font-size: 26px; white-space: nowrap; opacity: .72; transition: opacity .2s, color .2s; }
-.logo:hover { opacity: 1; color: var(--coral-deep); }
+.logo:hover { opacity: 1; color: var(--accent-press); }
 .logo svg { width: 38px; height: 38px; flex: none; }
 .logo.more { font-family: var(--sans); font-weight: 500; font-size: 18px; color: var(--ink-2); opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .mtrack { animation: none; flex-wrap: wrap; justify-content: center; } .marquee { -webkit-mask-image: none; mask-image: none; } }
@@ -301,11 +301,11 @@ nav.scrolled { background: rgba(255,255,255,.86); border-bottom-width: 1px; }
 .logo .face { border-width: 1.5px; box-shadow: none; }
 .lang-toggle { box-shadow: none; border-width: 1.5px; }
 .lang-toggle:hover { transform: none; box-shadow: none; }
-.card { border: 1.5px solid var(--line-2); border-radius: 14px; box-shadow: 0 1px 2px rgba(33,29,24,.04), 0 12px 28px -20px rgba(33,29,24,.20); }
+.card { border: 1.5px solid var(--line-2); border-radius: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 28px -20px rgba(0,0,0,.20); }
 .card::after { display: none; }
-.capcard { background: #FCFAF6; }
-.capcard:hover, .surface:hover { transform: translateY(-3px); box-shadow: 0 2px 4px rgba(33,29,24,.05), 0 18px 36px -20px rgba(33,29,24,.24); }
-.credit:hover { transform: translateY(-3px) rotate(0deg); box-shadow: 0 2px 4px rgba(33,29,24,.05), 0 18px 36px -20px rgba(33,29,24,.24); }
+.capcard { background: #fff; }
+.capcard:hover, .surface:hover { transform: translateY(-3px); box-shadow: 0 2px 4px rgba(0,0,0,.05), 0 18px 36px -20px rgba(0,0,0,.24); }
+.credit:hover { transform: translateY(-3px) rotate(0deg); box-shadow: 0 2px 4px rgba(0,0,0,.05), 0 18px 36px -20px rgba(0,0,0,.24); }
 .btn { box-shadow: none; border-width: 1.5px; border-radius: 10px; }
 .btn:hover { transform: translateY(-1px); box-shadow: none; }
 .btn:active { transform: translateY(0); box-shadow: none; }
@@ -314,8 +314,8 @@ nav.scrolled { background: rgba(255,255,255,.86); border-bottom-width: 1px; }
 .btn:not(.btn-solid) { background: #fff; border-color: var(--line-2); }
 .btn:not(.btn-solid):hover { border-color: var(--ink); }
 .mark { background: none; color: inherit; padding: 0; }
-.models { border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); background: var(--paper-2); }
-.everywhere, .faq-section { border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); background: var(--paper-2); }
+.models { border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); background: var(--bg); }
+.everywhere, .faq-section { border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); background: var(--bg-soft); }
 .everywhere::before { display: none; }
 .surface .step { border-width: 1.5px; box-shadow: none; }
 .hero-shot .frame { border-width: 1.5px; box-shadow: 0 30px 60px -30px rgba(33,29,24,.30), 0 3px 10px rgba(33,29,24,.05); }
