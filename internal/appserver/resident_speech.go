@@ -59,7 +59,7 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 		kind = "result"
 	}
 	switch kind {
-	case "result", "question", "update":
+	case "result", "question", "update", "decline":
 	default:
 		return tools.PostedMessage{}, fmt.Errorf("post_message: kind %q is not supported", kind)
 	}
@@ -74,8 +74,13 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 	if err != nil {
 		return tools.PostedMessage{}, err
 	}
-	if err := r.reservePost(targetThreadID); err != nil {
-		return tools.PostedMessage{}, err
+	// A decline is the silent alternative to a reply; it is not counted against
+	// the per-turn post budget (an agent must always be able to decline an
+	// addressed message).
+	if kind != "decline" {
+		if err := r.reservePost(targetThreadID); err != nil {
+			return tools.PostedMessage{}, err
+		}
 	}
 	now := time.Now().UTC()
 	msg := agentcontrol.ParticipantMessage{
@@ -105,32 +110,6 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 		Text:          text,
 		CreatedAt:     now,
 	}, nil
-}
-
-func (r residentParticipantSpeech) Decline(ctx context.Context, reason, targetThreadID string) error {
-	_ = ctx
-	if r.server == nil {
-		return errors.New("decline: app server not configured")
-	}
-	reason = strings.TrimSpace(reason)
-	if reason == "" {
-		return errors.New("decline: reason is required")
-	}
-	targetThreadID, subthreadID, err := r.resolveTargetThread(strings.TrimSpace(targetThreadID))
-	if err != nil {
-		return err
-	}
-	now := time.Now().UTC()
-	msg := agentcontrol.ParticipantMessage{
-		AgentID:       strings.TrimSpace(r.participantID),
-		ParticipantID: strings.TrimSpace(r.participantID),
-		Kind:          "decline",
-		Hop:           r.messageHop(targetThreadID),
-		Text:          reason,
-		ThreadID:      subthreadID,
-		CreatedAt:     now,
-	}
-	return r.server.publishParticipantMessage(targetThreadID, msg)
 }
 
 // React stamps a reaction on a specific message (targetThreadID, seq). It is

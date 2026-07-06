@@ -59,10 +59,8 @@ func (t *Toolkit) displayCapabilityForTool(call providers.ToolCall) string {
 
 func displayCapabilityForKnownToolName(name string) string {
 	switch strings.TrimSpace(name) {
-	case "run_shell", "run_test", "git":
+	case "git":
 		return "command.bash"
-	case "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process":
-		return "command.background"
 	case "read_file":
 		return "file.read"
 	case "list_files":
@@ -112,20 +110,8 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 			return toolDisplay("search", "搜索工具")
 		}
 		return toolDisplay("search", "搜索工具 "+displayTruncate(query, 90))
-	case "run_shell":
-		command := displayString(args, "command")
-		if command == "" {
-			return toolDisplay("command", "运行命令")
-		}
-		return toolDisplay("command", "运行 "+displayTruncate(command, 100))
 	case "bash":
 		return displayBashLabel(args)
-	case "run_test":
-		command := displayString(args, "command")
-		if command == "" {
-			return toolDisplay("test", "运行测试")
-		}
-		return toolDisplay("test", "验证 "+displayTruncate(command, 100))
 	case "git":
 		return toolDisplay("command", displayGitLabel(args))
 	case "web_search":
@@ -146,12 +132,15 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 			return toolDisplay("skill", "加载技能")
 		}
 		return toolDisplay("skill", "加载技能 "+displayTruncate(skill, 70))
-	case "create_goal":
-		return toolDisplay("goal", "启动 Goal "+displayTarget(displayString(args, "objective"), ""))
-	case "update_goal":
-		return toolDisplay("goal", "更新 Goal "+displayTarget(displayString(args, "status"), ""))
-	case "get_goal":
-		return toolDisplay("goal", "查看 Goal")
+	case "goal":
+		switch displayString(args, "action") {
+		case "create":
+			return toolDisplay("goal", "启动 Goal "+displayTarget(displayString(args, "objective"), ""))
+		case "update":
+			return toolDisplay("goal", "更新 Goal "+displayTarget(displayString(args, "status"), ""))
+		default:
+			return toolDisplay("goal", "查看 Goal")
+		}
 	case "list_workflows":
 		return toolDisplay("workflow", "查看工作流")
 	case "load_workflow":
@@ -204,42 +193,25 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 		return toolDisplay("context", "潜入上下文 · 植入续行摘要")
 	case "send_message":
 		return toolDisplay("agent", "发送给子任务 "+displayTarget(displayString(args, "target", "task_name"), ""))
-	case "followup_task":
-		return toolDisplay("agent", "追加子任务 "+displayTarget(displayString(args, "target", "task_name"), ""))
-	case "await_agents":
-		return toolDisplay("agent", "等待子任务")
 	case "close_agent":
 		return toolDisplay("agent", "关闭子任务 "+displayTarget(displayString(args, "target", "task_name"), ""))
-	case "list_agents":
-		return toolDisplay("agent", "查看子任务")
 	case "agent_report":
 		return toolDisplay("agent", "读取子任务报告 "+displayTarget(displayString(args, "target", "task_name"), ""))
 	case "post_message":
 		return toolDisplay("agent", "发布参与者结果")
-	case "start_process":
-		command := displayString(args, "command")
-		if command == "" {
-			return toolDisplay("command", "启动后台任务")
+	case "cron":
+		switch displayString(args, "action") {
+		case "add":
+			cron := displayString(args, "cron")
+			if cron == "" {
+				return toolDisplay("schedule", "安排定时任务")
+			}
+			return toolDisplay("schedule", "安排定时任务 "+displayTruncate(cron, 60))
+		case "remove":
+			return toolDisplay("schedule", "取消定时任务 "+displayTarget(displayString(args, "id"), ""))
+		default:
+			return toolDisplay("schedule", "查看定时任务")
 		}
-		return toolDisplay("command", "启动 "+displayTruncate(command, 100))
-	case "list_processes":
-		return toolDisplay("command", "查看后台任务")
-	case "stop_process":
-		return toolDisplay("command", "停止后台任务 "+displayTarget(displayString(args, "process_id"), ""))
-	case "read_process_output":
-		return toolDisplay("command", "读取后台输出 "+displayTarget(displayString(args, "process_id"), ""))
-	case "write_stdin":
-		return toolDisplay("command", "写入后台输入 "+displayTarget(displayString(args, "process_id"), ""))
-	case "schedule_cron":
-		cron := displayString(args, "cron")
-		if cron == "" {
-			return toolDisplay("schedule", "安排定时任务")
-		}
-		return toolDisplay("schedule", "安排定时任务 "+displayTruncate(cron, 60))
-	case "cancel_cron":
-		return toolDisplay("schedule", "取消定时任务 "+displayTarget(displayString(args, "id"), ""))
-	case "list_cron":
-		return toolDisplay("schedule", "查看定时任务")
 	default:
 		return providers.ToolCallDisplay{
 			Kind: displayKindForTool(name),

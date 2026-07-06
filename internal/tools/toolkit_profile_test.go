@@ -125,14 +125,9 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 	for _, name := range []string{
 		"session_memory",
 		"thread_get",
-		"create_goal",
-		"get_goal",
-		"update_goal",
+		"goal",
 		"send_message",
-		"followup_task",
-		"await_agents",
 		"close_agent",
-		"list_agents",
 	} {
 		if containsProfileDef(defs, name) {
 			t.Fatalf("low-frequency tool %s should stay deferred, got %v", name, sortedProfileDefNames(defs))
@@ -636,9 +631,6 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	if containsProfileDef(kit.Definitions(), "post_message") {
 		t.Fatalf("ordinary worker surface must not advertise post_message: %v", sortedProfileDefNames(kit.Definitions()))
 	}
-	if containsProfileDef(kit.Definitions(), "decline") {
-		t.Fatalf("ordinary worker surface must not advertise decline: %v", sortedProfileDefNames(kit.Definitions()))
-	}
 	if containsProfileDef(kit.Definitions(), "manage_participant") {
 		t.Fatalf("ordinary worker surface must not advertise manage_participant: %v", sortedProfileDefNames(kit.Definitions()))
 	}
@@ -649,11 +641,6 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 		t.Fatalf("ToolInfo(%q) not found", "post_message")
 	} else if info.Exposure != ToolExposureHidden {
 		t.Fatalf("ordinary worker post_message exposure = %s, want %s", info.Exposure, ToolExposureHidden)
-	}
-	if info, ok := kit.ToolInfo("decline"); !ok {
-		t.Fatalf("ToolInfo(%q) not found", "decline")
-	} else if info.Exposure != ToolExposureHidden {
-		t.Fatalf("ordinary worker decline exposure = %s, want %s", info.Exposure, ToolExposureHidden)
 	}
 	if info, ok := kit.ToolInfo("react"); !ok {
 		t.Fatalf("ToolInfo(%q) not found", "react")
@@ -673,9 +660,6 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "post_message", Arguments: `{"kind":"result","text":"hello"}`}); err == nil || !strings.Contains(err.Error(), "participant speech capability") {
 		t.Fatalf("ordinary worker post_message should be blocked by speech capability, got %v", err)
 	}
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "decline", Arguments: `{"reason":"covered"}`}); err == nil || !strings.Contains(err.Error(), "participant speech capability") {
-		t.Fatalf("ordinary worker decline should be blocked by speech capability, got %v", err)
-	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "manage_participant", Arguments: `{"action":"list"}`}); err == nil || !strings.Contains(err.Error(), "participant speech capability") {
 		t.Fatalf("ordinary worker manage_participant should be blocked by speech capability, got %v", err)
 	}
@@ -686,9 +670,6 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	kit.SetParticipantSpeechEnabled(true)
 	if !containsProfileDef(kit.Definitions(), "post_message") {
 		t.Fatalf("authorized participant surface should advertise post_message: %v", sortedProfileDefNames(kit.Definitions()))
-	}
-	if !containsProfileDef(kit.Definitions(), "decline") {
-		t.Fatalf("authorized participant surface should advertise decline: %v", sortedProfileDefNames(kit.Definitions()))
 	}
 	if !containsProfileDef(kit.Definitions(), "react") {
 		t.Fatalf("authorized participant surface should advertise react: %v", sortedProfileDefNames(kit.Definitions()))
@@ -703,11 +684,6 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 		t.Fatalf("ToolInfo(%q) not found", "post_message")
 	} else if info.Exposure != ToolExposureDirect || info.Risk != ToolRiskLow {
 		t.Fatalf("authorized post_message info = %+v, want direct low-risk", info)
-	}
-	if info, ok := kit.ToolInfo("decline"); !ok {
-		t.Fatalf("ToolInfo(%q) not found", "decline")
-	} else if info.Exposure != ToolExposureDirect || info.Risk != ToolRiskLow {
-		t.Fatalf("authorized decline info = %+v, want direct low-risk", info)
 	}
 	if info, ok := kit.ToolInfo("react"); !ok {
 		t.Fatalf("ToolInfo(%q) not found", "react")
@@ -747,9 +723,6 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	earlyAuthorized.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), false)
 	if !containsProfileDef(earlyAuthorized.Definitions(), "post_message") {
 		t.Fatalf("participant speech authorization should survive later profile setup: %v", sortedProfileDefNames(earlyAuthorized.Definitions()))
-	}
-	if !containsProfileDef(earlyAuthorized.Definitions(), "decline") {
-		t.Fatalf("participant decline authorization should survive later profile setup: %v", sortedProfileDefNames(earlyAuthorized.Definitions()))
 	}
 	if !containsProfileDef(earlyAuthorized.Definitions(), "manage_participant") {
 		t.Fatalf("participant manage_participant authorization should survive later profile setup: %v", sortedProfileDefNames(earlyAuthorized.Definitions()))
@@ -835,7 +808,7 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("deferred catalog: %v", err)
 	}
-	if !strings.Contains(catalog, "<available-deferred-tools>") || !strings.Contains(catalog, "await_agents") {
+	if !strings.Contains(catalog, "<available-deferred-tools>") || !strings.Contains(catalog, "send_message") {
 		t.Fatalf("deferred catalog missing stable names:\n%s", catalog)
 	}
 	if _, ok := kit.AvailableDeferredToolsContextBlock(); ok {
@@ -844,7 +817,7 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "tool_search",
-		Arguments: `{"query":"select:send_message followup_task await_agents close_agent list_agents","limit":5}`,
+		Arguments: `{"query":"select:send_message close_agent","limit":5}`,
 	})
 	if err != nil {
 		t.Fatalf("tool_search: %v", err)
@@ -937,9 +910,9 @@ func TestNativeSubagentBundleActivationDiscoversManagementTools(t *testing.T) {
 }
 
 func TestFallbackSubagentNextStepsTellModelToUseToolSearch(t *testing.T) {
-	steps := []string{"Use await_agents with root/worker only when the next step depends on this worker's output."}
+	steps := []string{"Use send_message with root/worker only when the next step depends on this worker's output."}
 	got := subagentNextStepsForDiscovery(&Env{ToolSearchEnabled: true}, steps)
-	if len(got) != 2 || !strings.Contains(got[1], "tool_search") || !strings.Contains(got[1], "select:await_agents") {
+	if len(got) != 2 || !strings.Contains(got[1], "tool_search") || !strings.Contains(got[1], "select:send_message") {
 		t.Fatalf("fallback next steps should mention tool_search loading, got %+v", got)
 	}
 
@@ -1032,10 +1005,10 @@ func TestActiveProfileFlatToolSurfaceHidesToolSearchAndExposesDeferredTools(t *t
 	if _, ok := kit.AvailableDeferredToolsContextBlock(); ok {
 		t.Fatal("flat surface should not emit deferred tool name context")
 	}
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "await_agents", Arguments: `{}`}); err == nil || strings.Contains(err.Error(), "deferred") {
-		t.Fatalf("flat surface should call await_agents directly and reach runtime validation, got %v", err)
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "send_message", Arguments: `{}`}); err == nil || strings.Contains(err.Error(), "deferred") {
+		t.Fatalf("flat surface should call send_message directly and reach runtime validation, got %v", err)
 	}
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "tool_search", Arguments: `{"query":"select:await_agents"}`}); err == nil || !strings.Contains(err.Error(), "active model surface") {
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "tool_search", Arguments: `{"query":"select:send_message"}`}); err == nil || !strings.Contains(err.Error(), "active model surface") {
 		t.Fatalf("flat surface should block tool_search execution, got %v", err)
 	}
 }
@@ -1216,13 +1189,11 @@ func TestDefinitionsFilterStaysWithinSurfaceAndAllowsDeferredTools(t *testing.T)
 	kit.SetMemory(provider)
 	kit.SetActiveProfile(modelprofile.Resolve("anthropic", "claude-sonnet-4-5"), true)
 	loadedDeferred := map[string]struct{}{
-		"schedule_cron":   {},
-		"cancel_cron":     {},
-		"list_cron":       {},
+		"cron":            {},
 		"run_workflow":    {},
 		"create_workflow": {},
 	}
-	kit.markDeferredToolsLoaded("schedule_cron", "cancel_cron", "list_cron", "run_workflow", "create_workflow")
+	kit.markDeferredToolsLoaded("cron", "run_workflow", "create_workflow")
 	surface := kit.ActiveSurface()
 	defs := kit.Definitions()
 	visible := make(map[string]struct{}, len(defs))

@@ -3531,8 +3531,8 @@ func TestGoalContinuationContextTrimsLongObjective(t *testing.T) {
 	for _, want := range []string{
 		strings.Repeat("a", 64),
 		strings.Repeat("z", 64),
-		"[objective trimmed; call get_goal for the full objective]",
-		"call get_goal if the missing details matter",
+		"[objective trimmed; call goal with action=get for the full objective]",
+		"call goal with action=get if the missing details matter",
 	} {
 		if !strings.Contains(msg.Content, want) {
 			t.Fatalf("continuation message missing %q:\n%s", want, msg.Content)
@@ -7173,9 +7173,6 @@ func TestParticipantStartGrantsSpeechCapabilityBeforeWorkerRequest(t *testing.T)
 	defs := toolDefinitionNames(req.Tools)
 	if !defs["post_message"] {
 		t.Fatalf("conversation-native participant request must directly include post_message, got %v", defs)
-	}
-	if !defs["decline"] {
-		t.Fatalf("conversation-native participant request must directly include decline, got %v", defs)
 	}
 	if !defs["manage_participant"] {
 		t.Fatalf("conversation-native participant request must directly include manage_participant, got %v", defs)

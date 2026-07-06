@@ -16,6 +16,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
 func TestHelpMeDefinitionDoesNotExposeMode(t *testing.T) {
@@ -30,7 +31,7 @@ func TestHelpMeDefinitionDoesNotExposeMode(t *testing.T) {
 	if _, ok := props["wait_ms"]; ok {
 		t.Fatalf("helpme schema should not ask the model to choose wait duration: %#v", def.InputSchema)
 	}
-	for _, want := range []string{"returns immediately", "await_agents", "inception", "bounded HelpMe recovery summary", "raw parent/helper transcripts"} {
+	for _, want := range []string{"returns immediately", "resumes you", "inception", "bounded HelpMe recovery summary", "raw parent/helper transcripts"} {
 		if !strings.Contains(def.Description, want) {
 			t.Fatalf("helpme description missing %q:\n%s", want, def.Description)
 		}
@@ -158,17 +159,9 @@ func TestWriteHelpMeMainTraceArchivesParentHistory(t *testing.T) {
 	if !payload.ReportMissing {
 		t.Fatal("expected missing report to be recorded")
 	}
-
-	trace, traceRef, ok := readHelpMeMainTraceForAgent(sessionDir, "helper-1")
-	if !ok {
-		t.Fatal("expected trace lookup by helper id")
-	}
-	if trace.Args.OriginalGoal != "original task" {
-		t.Fatalf("trace args not loaded: %+v", trace.Args)
-	}
-	if !strings.HasPrefix(traceRef, "$SESSION_DIR/helpme/") {
-		t.Fatalf("expected session trace ref, got %q", traceRef)
-	}
+	// The main trace is now a write-only audit artifact: the HelpMe recovery
+	// history rewrite is rebuilt from the registered recovery object on the
+	// completion-wakeup path, not by re-reading this trace.
 }
 
 // helpMeFakeStreamClient replays one canned text turn per model call so
@@ -397,25 +390,19 @@ func TestHelpMeExecuteExtractsAndAppliesParentJournal(t *testing.T) {
 		t.Fatalf("helper brief lost the history-resolved goal:\n%s", spawnPrompt)
 	}
 
-	// (c) The await-side joint compact renders the journal as primary.
+	// (c) The completion-path joint compact renders the journal as primary.
+	waitForHelperReport(t, c, response.AgentID)
 	if _, err := c.RecordAgentReport(response.AgentID, response.AgentPath, agentcontrol.AgentReportRequest{
 		Outcome: "completed",
 		Summary: "real bug was token refresh ordering",
 	}); err != nil {
 		t.Fatalf("RecordAgentReport: %v", err)
 	}
-	out, err := NewAwaitAgentsTool(env).Execute(context.Background(), `{"targets":["`+response.AgentID+`"]}`)
-	if err != nil {
-		t.Fatalf("await: %v", err)
+	rewrite := c.HelpMeCompletionRewrite(helperSnapshot(t, c, response.AgentID))
+	if rewrite == nil {
+		t.Fatalf("completion rewrite must be built for a finished helpme helper")
 	}
-	var awaited awaitAgentsToolResponse
-	if err := json.Unmarshal([]byte(out), &awaited); err != nil {
-		t.Fatalf("decode await: %v\n%s", err, out)
-	}
-	if awaited.HistoryRewrite == nil {
-		t.Fatalf("await must carry the rewrite:\n%s", out)
-	}
-	content := awaited.HistoryRewrite.Content
+	content := rewrite.Content
 	journalIdx := strings.Index(content, "## Parent execution journal (machine-extracted)")
 	supplementaryIdx := strings.Index(content, "## Parent self-reported brief (supplementary)")
 	if journalIdx < 0 || supplementaryIdx < 0 || journalIdx > supplementaryIdx {
@@ -505,12 +492,13 @@ func TestHelpMeExecuteSurvivesTraceWriteFailure(t *testing.T) {
 	}
 }
 
-// TestHelpMeAwaitRewriteIsOneShot drives the full product path: helpme spawns
-// a helpme_recovery worker, the helper completes with a structured report,
-// the first await_agents call returns the joint-compact history rewrite built
-// from the registered recovery brief, and a second await returns the result
-// again but never a second rewrite.
-func TestHelpMeAwaitRewriteIsOneShot(t *testing.T) {
+// TestHelpMeCompletionRewriteIsOneShot drives the full product path: helpme
+// spawns a helpme_recovery worker, the helper completes with a structured
+// report, the first HelpMeCompletionRewrite (fired on the subagent-completion
+// wakeup path that replaced the await_agents tool) returns the joint-compact
+// history rewrite built from the registered recovery brief, and a second call
+// never rewrites again.
+func TestHelpMeCompletionRewriteIsOneShot(t *testing.T) {
 	dir := t.TempDir()
 	sessionDir := filepath.Join(dir, "session")
 	c := newHelpMeTestControl(t, dir, sessionDir)
@@ -532,43 +520,25 @@ func TestHelpMeAwaitRewriteIsOneShot(t *testing.T) {
 		t.Fatalf("RecordAgentReport: %v", err)
 	}
 
-	await := NewAwaitAgentsTool(env)
-	firstOut, err := await.Execute(context.Background(), `{"targets":["`+response.AgentID+`"]}`)
-	if err != nil {
-		t.Fatalf("first await: %v", err)
+	snap := helperSnapshot(t, c, response.AgentID)
+	first := c.HelpMeCompletionRewrite(snap)
+	if first == nil {
+		t.Fatalf("first completion rewrite must be built for a finished helpme helper")
 	}
-	var first awaitAgentsToolResponse
-	if err := json.Unmarshal([]byte(firstOut), &first); err != nil {
-		t.Fatalf("decode first await: %v\n%s", err, firstOut)
-	}
-	if first.HistoryRewrite == nil {
-		t.Fatalf("first await must carry the HelpMe history rewrite:\n%s", firstOut)
-	}
-	if first.HistoryRewrite.Kind != compact.HelpMeHistoryRewriteKind {
-		t.Fatalf("unexpected rewrite kind %q", first.HistoryRewrite.Kind)
+	if first.Kind != compact.HelpMeHistoryRewriteKind {
+		t.Fatalf("unexpected rewrite kind %q", first.Kind)
 	}
 	// The compact is built from the resolved recovery brief, not a
 	// placeholder goal.
-	if !strings.Contains(first.HistoryRewrite.Content, "fix the login flow") {
-		t.Fatalf("rewrite lost the resolved user goal:\n%s", first.HistoryRewrite.Content)
+	if !strings.Contains(first.Content, "fix the login flow") {
+		t.Fatalf("rewrite lost the resolved user goal:\n%s", first.Content)
 	}
-	if !strings.Contains(first.HistoryRewrite.Content, "token refresh ordering") {
-		t.Fatalf("rewrite lost the helper report summary:\n%s", first.HistoryRewrite.Content)
+	if !strings.Contains(first.Content, "token refresh ordering") {
+		t.Fatalf("rewrite lost the helper report summary:\n%s", first.Content)
 	}
 
-	secondOut, err := await.Execute(context.Background(), `{"targets":["`+response.AgentID+`"]}`)
-	if err != nil {
-		t.Fatalf("second await: %v", err)
-	}
-	var second awaitAgentsToolResponse
-	if err := json.Unmarshal([]byte(secondOut), &second); err != nil {
-		t.Fatalf("decode second await: %v\n%s", err, secondOut)
-	}
-	if second.HistoryRewrite != nil {
-		t.Fatalf("second await must not rewrite history again:\n%s", secondOut)
-	}
-	if len(second.Results) != 1 || second.Results[0].AgentID != response.AgentID {
-		t.Fatalf("second await must still return the helper result: %+v", second.Results)
+	if second := c.HelpMeCompletionRewrite(snap); second != nil {
+		t.Fatalf("second completion rewrite must not fire again:\n%s", second.Content)
 	}
 	// And the recovery is now consumed for good.
 	rec, ok := c.HelpMeRecoveryForHelper(response.AgentID)
@@ -577,24 +547,31 @@ func TestHelpMeAwaitRewriteIsOneShot(t *testing.T) {
 	}
 }
 
-func TestAppendHelpMeAwaitGuidanceWarnsAgainstRawTranscriptMerge(t *testing.T) {
-	result := agentcontrol.AwaitAgentsResult{
-		Action: "await_agents",
-		Results: []agentcontrol.AwaitAgentResult{{
-			AgentID:    "helper-1",
-			TaskName:   "helpme_recovery_abc123",
-			AgentPath:  "/root/helpme_recovery_abc123",
-			Status:     "completed",
-			ReportPath: "$SESSION_DIR/harness/reports/helper-1.md",
-		}},
-	}
+func TestHelpMeCompletionRewriteSkipsUnregisteredHelper(t *testing.T) {
+	dir := t.TempDir()
+	sessionDir := filepath.Join(dir, "session")
+	c := newHelpMeTestControl(t, dir, sessionDir)
 
-	appendHelpMeAwaitGuidance(&result, nil)
-
-	joined := strings.Join(result.NextSteps, "\n")
-	for _, want := range []string{"agent_report", "main_trace_path", "do not paste or merge raw parent/helper transcripts", "inception"} {
-		if !strings.Contains(joined, want) {
-			t.Fatalf("HelpMe await guidance missing %q:\n%s", want, joined)
-		}
+	// A non-helpme completing child (no registered recovery, non-recovery
+	// path) must never trigger a history rewrite.
+	snap := subagent.SubAgentSnapshot{
+		ID:        "plain-worker",
+		TaskName:  "plain_worker_1",
+		AgentPath: "/root/plain_worker_1",
+		Status:    subagent.StatusCompleted,
 	}
+	if rewrite := c.HelpMeCompletionRewrite(snap); rewrite != nil {
+		t.Fatalf("non-helpme completion must not rewrite history:\n%s", rewrite.Content)
+	}
+}
+
+// helperSnapshot fetches the live snapshot for a spawned helper so the
+// completion-rewrite path can be driven directly in tests.
+func helperSnapshot(t *testing.T, c *agentcontrol.AgentControl, agentID string) subagent.SubAgentSnapshot {
+	t.Helper()
+	sa := c.Manager().Get(agentID)
+	if sa == nil {
+		t.Fatalf("helper %q not found in manager", agentID)
+	}
+	return sa.Snapshot()
 }

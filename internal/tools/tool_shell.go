@@ -12,119 +12,15 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
 
 const maxShellTailBytes = 8 * 1024
 
-// ShellTool executes non-interactive shell commands.
-type ShellTool struct{ env *Env }
-
-func NewShellTool(env *Env) *ShellTool { return &ShellTool{env: env} }
-
-func (t *ShellTool) Name() string            { return "run_shell" }
-func (t *ShellTool) IsReadOnly() bool        { return false }
-func (t *ShellTool) IsConcurrencySafe() bool { return false }
-
-func (t *ShellTool) Classify(argsJSON string) ToolClassification {
-	var args struct {
-		Command string `json:"command"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return ToolClassification{
-			ReadOnly:        false,
-			ConcurrencySafe: false,
-			Risk:            ToolRiskHigh,
-			Reason:          "invalid shell invocation",
-		}
-	}
-	return classifyShellCommand(args.Command)
-}
-
-func (t *ShellTool) ValidateInput(argsJSON string) error {
-	var args struct {
-		Command string `json:"command"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return err
-	}
-	if strings.TrimSpace(args.Command) == "" {
-		return errors.New("run_shell requires command")
-	}
-	return nil
-}
-
-func (t *ShellTool) Definition() providers.ToolDefinition {
-	return providers.ToolDefinition{
-		Name: "run_shell",
-		Description: "Executes a bash command in the workspace and returns its output.\n\n" +
-			"The working directory is the workspace root. Shell state does not persist between calls.\n\n" +
-			"IMPORTANT: Avoid using this tool to run `cat`, `head`, `tail`, `grep`, `find`, " +
-			"`sed`, `awk`, or `echo` when a dedicated tool exists. Use read_file instead of cat, " +
-			"grep tool instead of grep/rg, glob instead of find, edit_file instead of sed.\n\n" +
-			"Instructions:\n" +
-			"- Commands must be non-interactive; never rely on editors, pagers, or terminal prompts\n" +
-			"- Default timeout is 300s, max 3600s\n" +
-			"- Results include exit_code, duration_ms, workspace_revision, compact combined output, stdout/stderr tails, and full_log_ref when session artifacts are available\n" +
-			"- If commands are independent, make multiple tool calls in parallel\n" +
-			"- If commands depend on each other, chain them with '&&'\n" +
-			"- Git commands are supported for normal non-interactive workflows: inspect with git status/diff/log, stage explicit paths, commit with explicit non-interactive messages (-m/--message or -F/--file), and push only when the user explicitly requested a remote write.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"command": map[string]any{
-					"type":        "string",
-					"description": "Shell command to execute. Must be non-interactive; never rely on editors, pagers, or terminal prompts.",
-				},
-				"timeout_seconds": map[string]any{
-					"type":        "integer",
-					"description": "Max runtime in seconds (1-3600).",
-				},
-				"purpose": map[string]any{
-					"type":        "string",
-					"description": "Why this command is needed. Stored in redacted logs for replay and audit.",
-				},
-			},
-			"required": []string{"command"},
-		},
-	}
-}
-
-func (t *ShellTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	var args struct {
-		Command        string `json:"command"`
-		TimeoutSeconds int    `json:"timeout_seconds"`
-		Purpose        string `json:"purpose"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return "", err
-	}
-	if len(args.Command) == 0 || len(bytes.TrimSpace([]byte(args.Command))) == 0 {
-		return "", errors.New("run_shell requires command")
-	}
-	timeout := args.TimeoutSeconds
-	if timeout <= 0 {
-		timeout = defaultShellTimeoutSeconds
-	}
-	if timeout > maxShellTimeoutSeconds {
-		timeout = maxShellTimeoutSeconds
-	}
-
-	result, err := executeShellCommand(ctx, t.env, args.Command, timeout)
-	if err != nil {
-		return "", err
-	}
-	result.Purpose = t.env.RedactToolOutput(args.Purpose)
-	fullLogRef, fullLogBytes, fullLogErr := persistShellLog(t.env.SessionDir, result)
-	if fullLogRef != "" {
-		result.FullLogRef = fullLogRef
-		result.FullLogBytes = fullLogBytes
-	} else if fullLogErr != "" {
-		result.FullLogError = fullLogErr
-	}
-	return mustJSON(result)
-}
+// The shell classification and execution engine below is shared
+// infrastructure for the unified bash tool (see tool_bash.go). The former
+// standalone run_shell tool was removed; bash is the only model-facing
+// command entry point.
 
 type shellExecutionResult struct {
 	Action              string                  `json:"action"`
@@ -196,10 +92,6 @@ func buildShellLog(shellResult shellExecutionResult) string {
 		b.WriteString("\n")
 	}
 	return b.String()
-}
-
-func executeShellCommand(ctx context.Context, env *Env, command string, timeoutSeconds int) (shellExecutionResult, error) {
-	return executeShellCommandWithCWD(ctx, env, command, timeoutSeconds, "")
 }
 
 func executeShellCommandWithCWD(ctx context.Context, env *Env, command string, timeoutSeconds int, cwd string) (shellExecutionResult, error) {

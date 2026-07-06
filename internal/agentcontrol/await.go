@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -124,56 +125,90 @@ func awaitResultSuppressesCompletion(result AwaitAgentResult) bool {
 	}
 }
 
+// ActiveTaskReminder renders the per-turn <subagent_status> block injected into
+// the model request (never appended to durable history). Since the list_agents
+// tool was retired, this reminder is the sole model-facing child-agent roster:
+// it enumerates every descendant agent — running and terminal — with its type,
+// description, status, timing, and a missing-structured-report flag, replacing
+// what list_agents used to return without adding a tool to the schema.
 func (c *AgentControl) ActiveTaskReminder(currentPath string) string {
-	targets := c.activeDescendantTargets(currentPath)
-	if len(targets) == 0 {
+	list := c.ListFrom(currentPath, "")
+	if len(list) == 0 {
 		return ""
 	}
-	results := c.awaitSnapshot(targets).Results
-	if len(results) == 0 {
-		return ""
-	}
-	const maxReminderTasks = 8
+	const maxReminderTasks = 12
 	var b strings.Builder
 	b.WriteString("<subagent_status>\n")
-	b.WriteString("Child-agent tasks that are still active or missing a structured report:\n")
-	limit := len(results)
+	b.WriteString("Child agents in this session (running and finished). Read this instead of polling; finished agents resume you automatically:\n")
+	limit := len(list)
 	if limit > maxReminderTasks {
 		limit = maxReminderTasks
 	}
+	now := time.Now().UTC()
 	for i := 0; i < limit; i++ {
-		result := results[i]
-		label := result.AgentPath
+		snap := list[i]
+		label := snap.AgentPath
 		if label == "" {
-			label = result.AgentID
+			label = snap.ID
 		}
 		b.WriteString("- ")
 		b.WriteString(label)
-		if result.TaskName != "" {
+		if snap.TaskName != "" {
 			b.WriteString(" (")
-			b.WriteString(result.TaskName)
+			b.WriteString(snap.TaskName)
 			b.WriteString(")")
 		}
+		if snap.Type != "" {
+			b.WriteString(" [")
+			b.WriteString(snap.Type)
+			b.WriteString("]")
+		}
 		b.WriteString(": ")
-		b.WriteString(result.Status)
-		if result.ReportMissing {
+		b.WriteString(string(snap.Status))
+		if snap.Status == subagent.StatusCompleted && c.reportKindForTask(snap.ID) != harness.ReportKindStructured {
 			b.WriteString(", missing agent_report")
 		}
-		if result.WorktreePath != "" {
-			b.WriteString(", worktree=")
-			b.WriteString(result.WorktreePath)
+		if desc := strings.TrimSpace(snap.Description); desc != "" {
+			b.WriteString(" - ")
+			b.WriteString(desc)
+		}
+		if elapsed := activeTaskElapsed(now, snap); elapsed != "" {
+			b.WriteString(" (")
+			b.WriteString(elapsed)
+			b.WriteString(")")
 		}
 		b.WriteString("\n")
 	}
-	if len(results) > limit {
+	if len(list) > limit {
 		b.WriteString("- ... ")
-		b.WriteString(strconv.Itoa(len(results) - limit))
+		b.WriteString(strconv.Itoa(len(list) - limit))
 		b.WriteString(" more\n")
 	}
-	b.WriteString("\nUse await_agents with explicit targets when your next step depends on these outputs. ")
-	b.WriteString("A terminal task's result is yours to use - do not keep re-awaiting it.\n")
+	b.WriteString("\nA terminal agent's result is yours to use once - do not re-trigger it. Reconcile any changed_file_overlap warnings before merge.\n")
 	b.WriteString("</subagent_status>")
 	return b.String()
+}
+
+func activeTaskElapsed(now time.Time, snap subagent.SubAgentSnapshot) string {
+	if snap.StartedAt.IsZero() {
+		return ""
+	}
+	end := now
+	if !snap.CompletedAt.IsZero() {
+		end = snap.CompletedAt
+	}
+	d := end.Sub(snap.StartedAt)
+	if d < 0 {
+		return ""
+	}
+	switch {
+	case d < time.Minute:
+		return strconv.Itoa(int(d.Seconds())) + "s"
+	case d < time.Hour:
+		return strconv.Itoa(int(d.Minutes())) + "m"
+	default:
+		return strconv.Itoa(int(d.Hours())) + "h"
+	}
 }
 
 func (c *AgentControl) resolveAwaitTargets(currentPath string, targets []string) []awaitTarget {
@@ -276,7 +311,7 @@ func awaitAgentsNextSteps(result AwaitAgentsResult) []string {
 	if result.TimedOut {
 		return []string{
 			"Some child agents are still active; continue non-overlapping local work when possible.",
-			"Call await_agents again with explicit targets only when synthesis or integration is blocked on their output.",
+			"Let their completion notifications resume you when synthesis or integration is blocked on their output.",
 		}
 	}
 
@@ -285,7 +320,7 @@ func awaitAgentsNextSteps(result AwaitAgentsResult) []string {
 		steps = append(steps, "Inspect failed agent errors and artifacts, then decide whether to retry with a narrower brief, rollback, or ask the user.")
 	}
 	if len(result.Warnings) > 0 {
-		steps = append(steps, "Resolve await_agents warnings, especially overlapping changed files, before synthesis or merge decisions.")
+		steps = append(steps, "Resolve changed-file overlap warnings before synthesis or merge decisions.")
 	}
 	if len(steps) == 0 {
 		steps = append(steps, "Use agent reports, changed_files, artifacts, and results to synthesize the parent answer.")
@@ -465,6 +500,63 @@ func (c *AgentControl) awaitComplete(results []AwaitAgentResult) bool {
 		}
 	}
 	return true
+}
+
+// CompletionOverlapWarnings surfaces the changed-file conflict signal that the
+// deleted await_agents tool used to compute in awaitSnapshot. When a child
+// agent finishes, it compares that agent's changed_files against every sibling
+// descendant agent's changed_files and returns "changed_file_overlap:" lines
+// for any file both touched. The subagent-completion wakeup path appends these
+// to the handoff so the resumed parent still sees overlapping writes it must
+// reconcile before synthesis or merge — the value formerly delivered only when
+// a parent explicitly awaited multiple agents.
+func (c *AgentControl) CompletionOverlapWarnings(snap subagent.SubAgentSnapshot) []string {
+	if c == nil || c.threads == nil {
+		return nil
+	}
+	completing := c.awaitResultForTarget(awaitTarget{Meta: metadataFromSnapshot(snap), Found: true})
+	completingFiles := trimStringSlice(completing.ChangedFiles)
+	if len(completingFiles) == 0 {
+		return nil
+	}
+	completingLabel := completing.AgentPath
+	if completingLabel == "" {
+		completingLabel = completing.AgentID
+	}
+	completingSet := make(map[string]struct{}, len(completingFiles))
+	for _, file := range completingFiles {
+		completingSet[file] = struct{}{}
+	}
+
+	// file -> other-agent labels that also touched it
+	overlaps := map[string][]string{}
+	for _, meta := range c.threads.List() {
+		if meta.Path == agentthread.RootPath || meta.ID == snap.ID {
+			continue
+		}
+		report, ok := c.harnessReportDetailsForTask(meta.ID)
+		if !ok {
+			continue
+		}
+		label := meta.Path
+		if label == "" {
+			label = meta.ID
+		}
+		for _, file := range trimStringSlice(report.ChangedFiles) {
+			if _, shared := completingSet[file]; shared {
+				overlaps[file] = append(overlaps[file], label)
+			}
+		}
+	}
+	if len(overlaps) == 0 {
+		return nil
+	}
+	warnings := make([]string, 0, len(overlaps))
+	for file, labels := range overlaps {
+		warnings = append(warnings, "changed_file_overlap: "+file+" touched by "+completingLabel+", "+strings.Join(labels, ", "))
+	}
+	sort.Strings(warnings)
+	return warnings
 }
 
 func changedFileOverlapWarnings(results []AwaitAgentResult) []string {

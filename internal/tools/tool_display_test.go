@@ -38,11 +38,6 @@ func TestToolkitToolDisplayFormatsBuiltInTools(t *testing.T) {
 			want: providers.ToolCallDisplay{Kind: "command", Text: "检查 Git 状态"},
 		},
 		{
-			name: "shell",
-			call: providers.ToolCall{Name: "run_shell", Arguments: `{"command":"npm run typecheck"}`},
-			want: providers.ToolCallDisplay{Kind: "command", Text: "运行 npm run typecheck"},
-		},
-		{
 			name: "bash verification",
 			call: providers.ToolCall{Name: "bash", Arguments: `{"command":"go test ./..."}`},
 			want: providers.ToolCallDisplay{Kind: "test", Text: "验证 go test ./...", Capability: "command.bash"},
@@ -51,11 +46,6 @@ func TestToolkitToolDisplayFormatsBuiltInTools(t *testing.T) {
 			name: "bash background",
 			call: providers.ToolCall{Name: "bash", Arguments: `{"action":"start_background","command":"npm run dev"}`},
 			want: providers.ToolCallDisplay{Kind: "command", Text: "启动 npm run dev", Capability: "command.background"},
-		},
-		{
-			name: "test",
-			call: providers.ToolCall{Name: "run_test", Arguments: `{"command":"go test ./internal/tools"}`},
-			want: providers.ToolCallDisplay{Kind: "test", Text: "验证 go test ./internal/tools"},
 		},
 		{
 			name: "create workflow",
@@ -105,7 +95,7 @@ func TestToolkitToolDisplayAddsCapabilityForActiveSurface(t *testing.T) {
 	}
 	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
 
-	got, ok := kit.ToolDisplay(providers.ToolCall{Name: "run_shell", Arguments: `{"command":"npm test"}`})
+	got, ok := kit.ToolDisplay(providers.ToolCall{Name: "bash", Arguments: `{"command":"npm test"}`})
 	if !ok {
 		t.Fatal("expected display metadata")
 	}

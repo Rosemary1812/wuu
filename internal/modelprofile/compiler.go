@@ -360,10 +360,7 @@ func addWebTools(b *surfaceBuilder) {
 func addTaskTools(b *surfaceBuilder) {
 	b.addVisible("spawn_agent", capability.CapabilityTaskSpawn)
 	b.addDeferred("send_message", capability.CapabilityTaskCommunicate)
-	b.addDeferred("followup_task", capability.CapabilityTaskCommunicate)
-	b.addDeferred("await_agents", capability.CapabilityTaskManage)
 	b.addDeferred("close_agent", capability.CapabilityTaskManage)
-	b.addDeferred("list_agents", capability.CapabilityTaskManage)
 }
 
 // addHelpmeTool registers the main-agent-only HelpMe recovery tool. It
@@ -401,9 +398,7 @@ func addSessionTools(b *surfaceBuilder) {
 
 func addPlanningTools(b *surfaceBuilder) {
 	b.addVisible("update_plan", capability.CapabilityPlan)
-	b.addDeferred("create_goal", capability.CapabilityGoal)
-	b.addDeferred("get_goal", capability.CapabilityGoal)
-	b.addDeferred("update_goal", capability.CapabilityGoal)
+	b.addDeferred("goal", capability.CapabilityGoal)
 }
 
 // WorkflowTool pairs a named-only workflow tool name with its capability.
@@ -446,9 +441,7 @@ func addWorkflowTools(b *surfaceBuilder) {
 }
 
 func addScheduleTools(b *surfaceBuilder) {
-	b.addDeferred("schedule_cron", capability.CapabilitySchedule)
-	b.addDeferred("cancel_cron", capability.CapabilitySchedule)
-	b.addDeferred("list_cron", capability.CapabilitySchedule)
+	b.addDeferred("cron", capability.CapabilitySchedule)
 }
 
 func addSkillTools(b *surfaceBuilder) {

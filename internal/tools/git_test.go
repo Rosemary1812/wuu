@@ -549,11 +549,11 @@ func TestToolkit_Git_RedactsCredentialsInOutput(t *testing.T) {
 func TestToolkit_Git_NonInteractiveEnv(t *testing.T) {
 	kit, _ := setupGitRepo(t)
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"printf '%s' \"$GIT_TERMINAL_PROMPT\""}`,
 	})
 	if err != nil {
-		t.Fatalf("run_shell: %v", err)
+		t.Fatalf("bash: %v", err)
 	}
 	var p map[string]any
 	if err := json.Unmarshal([]byte(resp), &p); err != nil {

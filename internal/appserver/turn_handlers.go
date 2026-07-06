@@ -14,6 +14,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
@@ -1996,6 +1997,12 @@ func (s *Server) drainAgentCompletionTurns(threadID string) {
 		return
 	}
 
+	// Relocated from the deleted await_agents tool: when a completing child is
+	// a HelpMe recovery helper, replace the parent's polluted context with the
+	// bounded joint compact before the completion wakeup runs, so recovery no
+	// longer depends on an explicit blocking await.
+	s.applyHelpMeCompletionRewrite(threadID, th, pending)
+
 	started, err := s.startSyntheticTurn(context.Background(), threadID, combineAgentCompletionMessages(pending))
 	if err != nil {
 		providers.DebugLogf("start agent completion turn for thread %q: %v", threadID, err)
@@ -2011,6 +2018,47 @@ func (s *Server) drainAgentCompletionTurns(threadID string) {
 	s.clearAgentCompletionDrain(threadID)
 	if requeued {
 		s.kickAgentCompletionDrain(threadID)
+	}
+}
+
+// applyHelpMeCompletionRewrite replaces the parent thread's history with the
+// bounded HelpMe joint compact when one of the draining completion turns
+// belongs to a finished helpme_recovery helper. It is the completion-wakeup
+// relocation of the history rewrite the deleted await_agents tool used to
+// carry. HelpMeCompletionRewrite is one-shot (it flips the recovery to applied
+// atomically), so at most one rewrite is applied per drain.
+func (s *Server) applyHelpMeCompletionRewrite(threadID string, th *threadState, pending []agentCompletionTurn) {
+	if th == nil {
+		return
+	}
+	control := s.liveAgentControl(threadID)
+	if control == nil || control.Manager() == nil {
+		return
+	}
+	for _, turn := range pending {
+		agentID := strings.TrimSpace(turn.agentID)
+		if agentID == "" {
+			continue
+		}
+		sa := control.Manager().Get(agentID)
+		if sa == nil {
+			continue
+		}
+		rewrite := control.HelpMeCompletionRewrite(sa.Snapshot())
+		if rewrite == nil {
+			continue
+		}
+		th.mu.Lock()
+		rewritten := compact.RewriteHistoryWithHelpMeCompact(th.History, rewrite.Content)
+		th.History = rewritten
+		persist := th.PersistHistory
+		th.mu.Unlock()
+		if persist {
+			if err := rewriteChatHistory(s.rt.SessionDir, th.ID, rewritten); err != nil {
+				providers.DebugLogf("apply helpme completion rewrite for thread %q: %v", threadID, err)
+			}
+		}
+		return
 	}
 }
 
@@ -2230,7 +2278,7 @@ func (s *Server) goalContinuationInput(th *threadState, threadID string) goalrun
 const (
 	// Goal continuations are hidden request-only reminders that can repeat
 	// across many automatic turns. Keep the inline objective below a small
-	// prompt budget and require get_goal when the full objective matters.
+	// prompt budget and require goal action=get when the full objective matters.
 	goalContinuationObjectiveHeadBytes = 1200
 	goalContinuationObjectiveTailBytes = 600
 )
@@ -2273,9 +2321,9 @@ func goalContinuationObjectivePreview(objective string) (string, string) {
 		objective,
 		goalContinuationObjectiveHeadBytes,
 		goalContinuationObjectiveTailBytes,
-		"\n\n[objective trimmed; call get_goal for the full objective]\n\n",
+		"\n\n[objective trimmed; call goal with action=get for the full objective]\n\n",
 	)
-	return preview, "Full objective omitted from this continuation reminder; call get_goal if the missing details matter."
+	return preview, "Full objective omitted from this continuation reminder; call goal with action=get if the missing details matter."
 }
 
 func combineAgentCompletionMessages(turns []agentCompletionTurn) providers.ChatMessage {

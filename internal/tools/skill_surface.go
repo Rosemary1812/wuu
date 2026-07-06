@@ -66,7 +66,7 @@ func surfaceAllowsSkillTool(surface capability.Surface, name string) bool {
 	switch name {
 	case "bash":
 		return surfaceHasVisibleCapability(surface, capability.CapabilityCommandBash)
-	case "run_shell", "run_test", "git", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process":
+	case "git":
 		return false
 	default:
 		return false
@@ -77,13 +77,13 @@ func isKnownSurfaceSkillTool(name string) bool {
 	switch strings.TrimSpace(name) {
 	case "read_file", "list_files", "write_file", "edit_file", "apply_patch",
 		"grep", "glob",
-		"bash", "run_shell", "run_test", "git", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process",
-		"spawn_agent", "helpme", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "agent_report", "post_message",
+		"bash", "git",
+		"spawn_agent", "helpme", "send_message", "close_agent", "agent_report", "post_message",
 		"tool_search", "load_skill",
 		"web_fetch", "web_search",
 		"read_memory", "write_memory", "session_memory",
-		"update_plan", "create_goal", "get_goal", "update_goal",
-		"schedule_cron", "cancel_cron", "list_cron",
+		"update_plan", "goal",
+		"cron",
 		"list_workflows", "load_workflow", "save_workflow", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status",
 		"list_agent_profiles", "create_agent_profile":
 		return true

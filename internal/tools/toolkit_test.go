@@ -1655,8 +1655,8 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 	kit.SetExperimentalDeferredToolBundles(true)
 	kit.SetNativeDeferredToolDiscovery(true)
-	if def, ok := profileDefByName(kit.Definitions(), "await_agents"); !ok || !def.DeferLoading {
-		t.Fatalf("await_agents should be declared as native-deferred before spawn_agent succeeds, got %v", sortedProfileDefNames(kit.Definitions()))
+	if def, ok := profileDefByName(kit.Definitions(), "send_message"); !ok || !def.DeferLoading {
+		t.Fatalf("send_message should be declared as native-deferred before spawn_agent succeeds, got %v", sortedProfileDefNames(kit.Definitions()))
 	}
 
 	spawnCall := providers.ToolCall{
@@ -1698,7 +1698,7 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	if len(tasks) != 1 || tasks[0].GoalID != "workflow-run-1" || tasks[0].GoalDir != "/tmp/workflow-run-1-goal" {
 		t.Fatalf("spawn_agent did not pass goal binding to harness task: %+v", tasks)
 	}
-	for _, name := range []string{"await_agents", "list_agents"} {
+	for _, name := range subagentManagementTools {
 		if !containsProfileDef(kit.Definitions(), name) {
 			t.Fatalf("%s should be available after spawn_agent succeeds, got %v", name, sortedProfileDefNames(kit.Definitions()))
 		}
@@ -1717,25 +1717,22 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 		t.Fatalf("agent_report: %v", err)
 	}
 
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "await_agents",
-		Arguments: fmt.Sprintf(`{"targets":["%s"]}`, spawned.AgentID),
-	}); err != nil {
-		t.Fatalf("await_agents: %v", err)
-	}
-	listJSON, err := kit.Execute(context.Background(), providers.ToolCall{Name: "list_agents", Arguments: `{}`})
+	sendJSON, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "send_message",
+		Arguments: fmt.Sprintf(`{"target":"%s","message":"noted, thanks"}`, spawned.AgentID),
+	})
 	if err != nil {
-		t.Fatalf("list_agents: %v", err)
+		t.Fatalf("send_message: %v", err)
 	}
-	var listed struct {
-		Action string           `json:"action"`
-		Agents []map[string]any `json:"agents"`
+	var sent struct {
+		Action string `json:"action"`
+		Status string `json:"status"`
 	}
-	if err := json.Unmarshal([]byte(listJSON), &listed); err != nil {
-		t.Fatalf("decode list_agents result: %v", err)
+	if err := json.Unmarshal([]byte(sendJSON), &sent); err != nil {
+		t.Fatalf("decode send_message result: %v", err)
 	}
-	if listed.Action != "list_agents" || len(listed.Agents) != 1 {
-		t.Fatalf("unexpected list_agents result: %s", listJSON)
+	if sent.Action != "send_message" || sent.Status != "sent" {
+		t.Fatalf("unexpected send_message result: %s", sendJSON)
 	}
 
 	rootActions := map[string]string{}
@@ -1744,8 +1741,7 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	}
 	for toolName, want := range map[string]string{
 		"spawn_agent":  "spawn_agent",
-		"await_agents": "await_agents",
-		"list_agents":  "list_agents",
+		"send_message": "send_message",
 	} {
 		if rootActions[toolName] != want {
 			t.Fatalf("%s telemetry action = %q, want %q (records=%+v)", toolName, rootActions[toolName], want, kit.ToolTelemetry())
@@ -1790,8 +1786,8 @@ func TestToolkit_HelpMeDiscoversSubagentManagementTools(t *testing.T) {
 	if !containsProfileDef(kit.Definitions(), "helpme") {
 		t.Fatalf("helpme should be directly visible before recovery, got %v", sortedProfileDefNames(kit.Definitions()))
 	}
-	if def, ok := profileDefByName(kit.Definitions(), "await_agents"); !ok || !def.DeferLoading {
-		t.Fatalf("await_agents should be declared as native-deferred before helpme succeeds, got %v", sortedProfileDefNames(kit.Definitions()))
+	if def, ok := profileDefByName(kit.Definitions(), "send_message"); !ok || !def.DeferLoading {
+		t.Fatalf("send_message should be declared as native-deferred before helpme succeeds, got %v", sortedProfileDefNames(kit.Definitions()))
 	}
 
 	helpMeCall := providers.ToolCall{
@@ -1830,9 +1826,14 @@ func TestToolkit_HelpMeDiscoversSubagentManagementTools(t *testing.T) {
 			t.Fatalf("discovered tool %d = %q, want %q; all=%+v", i, discovered[i].Name, want, discovered)
 		}
 	}
-	for _, name := range []string{"await_agents", "list_agents"} {
+	for _, name := range subagentManagementTools {
 		if !containsProfileDef(kit.Definitions(), name) {
 			t.Fatalf("%s should be available after helpme succeeds, got %v", name, sortedProfileDefNames(kit.Definitions()))
+		}
+	}
+	for _, gone := range []string{"await_agents", "list_agents", "followup_task"} {
+		if containsProfileDef(kit.Definitions(), gone) {
+			t.Fatalf("retired tool %s must not appear in definitions", gone)
 		}
 	}
 }
@@ -1860,16 +1861,19 @@ func TestToolkit_TaskAddressedAgentTools_RegisteredInDefinitions(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	want := map[string]bool{
-		"send_message":  false,
-		"followup_task": false,
-		"await_agents":  false,
-		"close_agent":   false,
-		"agent_report":  false,
+		"send_message": false,
+		"close_agent":  false,
+		"agent_report": false,
 	}
+	// followup_task and await_agents were merged/retired; they must be absent.
+	absent := map[string]bool{"followup_task": true, "await_agents": true, "list_agents": true}
 	defs := kit.Definitions()
 	for _, d := range defs {
 		if d.Name == "send_message_to_agent" || d.Name == "stop_agent" {
 			t.Fatalf("legacy agent tool %s must not be registered", d.Name)
+		}
+		if absent[d.Name] {
+			t.Fatalf("retired agent tool %s must not be registered", d.Name)
 		}
 		if _, ok := want[d.Name]; ok {
 			if strings.Contains(strings.ToLower(d.Description), "currently unavailable") {
@@ -1885,7 +1889,7 @@ func TestToolkit_TaskAddressedAgentTools_RegisteredInDefinitions(t *testing.T) {
 	}
 }
 
-func TestToolkit_ListAgents_RegisteredInDefinitions(t *testing.T) {
+func TestToolkit_ListAgents_RetiredFromDefinitions(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -1893,10 +1897,9 @@ func TestToolkit_ListAgents_RegisteredInDefinitions(t *testing.T) {
 	}
 	for _, d := range kit.Definitions() {
 		if d.Name == "list_agents" {
-			return
+			t.Fatal("list_agents was downgraded to the <subagent_status> reminder and must not be a registered tool")
 		}
 	}
-	t.Fatal("list_agents must be present in tool definitions")
 }
 
 func TestToolkit_UpdatePlan_RegisteredInDefinitions(t *testing.T) {
@@ -2181,18 +2184,13 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "read_file", kind: ToolKindFile, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "tool_search", kind: ToolKindDiscovery, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
 		{name: "bash", kind: ToolKindShell, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
-		{name: "run_shell", kind: ToolKindShell, exposure: ToolExposureHidden, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
-		{name: "run_test", kind: ToolKindTest, exposure: ToolExposureHidden, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "spawn_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
-		{name: "await_agents", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskMedium, readOnly: true, concurrencySafe: true},
+		{name: "send_message", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "close_agent", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "post_message", kind: ToolKindAgent, exposure: ToolExposureHidden, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
-		{name: "write_stdin", kind: ToolKindProcess, exposure: ToolExposureHidden, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
-		{name: "schedule_cron", kind: ToolKindSchedule, exposure: ToolExposureDeferred, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
+		{name: "cron", kind: ToolKindSchedule, exposure: ToolExposureDeferred, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 		{name: "session_memory", kind: ToolKindMemory, exposure: ToolExposureDirect, risk: ToolRiskMedium, readOnly: false, concurrencySafe: false},
-		{name: "create_goal", kind: ToolKindGoal, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
-		{name: "get_goal", kind: ToolKindGoal, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
-		{name: "update_goal", kind: ToolKindGoal, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
+		{name: "goal", kind: ToolKindGoal, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
 		{name: "inception", kind: ToolKindContext, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: false},
 		{name: "list_agent_profiles", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
 		{name: "create_agent_profile", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
@@ -2375,7 +2373,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok := kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"ls -la"}`,
 	})
 	if !ok {
@@ -2386,7 +2384,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"echo hi > out.txt"}`,
 	})
 	if !ok {
@@ -2397,7 +2395,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"rm -rf tmp && echo done"}`,
 	})
 	if !ok {
@@ -2408,7 +2406,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"go test ./..."}`,
 	})
 	if !ok {
@@ -2419,7 +2417,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"nice go test ./..."}`,
 	})
 	if !ok {
@@ -2430,7 +2428,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"timeout --bogus 10 go test ./..."}`,
 	})
 	if !ok {
@@ -2444,7 +2442,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"cd pkg && go test ./..."}`,
 	})
 	if !ok {
@@ -2455,7 +2453,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"cd .. && go test ./..."}`,
 	})
 	if !ok {
@@ -2466,7 +2464,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"cat .env"}`,
 	})
 	if !ok {
@@ -2477,7 +2475,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"env | grep TOKEN"}`,
 	})
 	if !ok {
@@ -2488,7 +2486,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"git status"}`,
 	})
 	if !ok {
@@ -2499,7 +2497,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"nice git status --short"}`,
 	})
 	if !ok {
@@ -2510,7 +2508,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"cd pkg && git status"}`,
 	})
 	if !ok {
@@ -2521,7 +2519,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"git add hello.txt"}`,
 	})
 	if !ok {
@@ -2532,7 +2530,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"git commit -m \"update files\""}`,
 	})
 	if !ok {
@@ -2543,7 +2541,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"git push"}`,
 	})
 	if !ok {
@@ -2554,7 +2552,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"git reset --hard"}`,
 	})
 	if !ok {
@@ -2565,7 +2563,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"nice git reset --hard"}`,
 	})
 	if !ok {
@@ -2576,7 +2574,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"git config user.name tester"}`,
 	})
 	if !ok {
@@ -2587,7 +2585,7 @@ func TestToolkit_ToolMetadata_ClassifiesShellByInput(t *testing.T) {
 	}
 }
 
-func TestToolkit_ToolMetadata_ClassifiesStartProcessByInput(t *testing.T) {
+func TestToolkit_ToolMetadata_ClassifiesBashBackgroundByInput(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -2595,19 +2593,19 @@ func TestToolkit_ToolMetadata_ClassifiesStartProcessByInput(t *testing.T) {
 	}
 
 	meta, ok := kit.ToolMetadata(providers.ToolCall{
-		Name:      "start_process",
-		Arguments: `{"command":"npm run dev","owner_kind":"main_agent"}`,
+		Name:      "bash",
+		Arguments: `{"action":"start_background","command":"npm run dev","owner_kind":"main_agent"}`,
 	})
 	if !ok {
 		t.Fatal("start_process metadata not found")
 	}
-	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskHigh) || !strings.Contains(meta.Reason, "process command") {
-		t.Fatalf("start_process metadata = %+v, want high-risk managed process", meta)
+	if meta.ReadOnly || meta.ConcurrencySafe || meta.Risk != string(ToolRiskHigh) || !strings.Contains(meta.Reason, "background command") {
+		t.Fatalf("bash start_background metadata = %+v, want high-risk managed process", meta)
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "start_process",
-		Arguments: `{"command":"cat .env","owner_kind":"main_agent"}`,
+		Name:      "bash",
+		Arguments: `{"action":"start_background","command":"cat .env","owner_kind":"main_agent"}`,
 	})
 	if !ok {
 		t.Fatal("start_process metadata not found")
@@ -2617,8 +2615,8 @@ func TestToolkit_ToolMetadata_ClassifiesStartProcessByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "start_process",
-		Arguments: `{"command":"env | grep TOKEN","owner_kind":"main_agent"}`,
+		Name:      "bash",
+		Arguments: `{"action":"start_background","command":"env | grep TOKEN","owner_kind":"main_agent"}`,
 	})
 	if !ok {
 		t.Fatal("start_process metadata not found")
@@ -2628,8 +2626,8 @@ func TestToolkit_ToolMetadata_ClassifiesStartProcessByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "start_process",
-		Arguments: `{"command":"git status","owner_kind":"main_agent"}`,
+		Name:      "bash",
+		Arguments: `{"action":"start_background","command":"git status","owner_kind":"main_agent"}`,
 	})
 	if !ok {
 		t.Fatal("start_process metadata not found")
@@ -2639,278 +2637,14 @@ func TestToolkit_ToolMetadata_ClassifiesStartProcessByInput(t *testing.T) {
 	}
 
 	meta, ok = kit.ToolMetadata(providers.ToolCall{
-		Name:      "start_process",
-		Arguments: `{"command":"command rm -rf tmp","owner_kind":"main_agent"}`,
+		Name:      "bash",
+		Arguments: `{"action":"start_background","command":"command rm -rf tmp","owner_kind":"main_agent"}`,
 	})
 	if !ok {
 		t.Fatal("start_process metadata not found")
 	}
 	if meta.ReadOnly || !meta.Destructive || meta.Risk != string(ToolRiskHigh) || !strings.Contains(meta.Reason, "destructive shell command") {
 		t.Fatalf("destructive start_process metadata = %+v, want destructive high-risk guidance", meta)
-	}
-}
-
-func TestToolkit_RunTestToolExecutesVerificationCommand(t *testing.T) {
-	root := t.TempDir()
-	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/run-test\n\ngo 1.22\n")
-	mustWriteFile(t, filepath.Join(root, "pkg_test.go"), `package runtest
-
-import "testing"
-
-func TestOK(t *testing.T) {}
-`)
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_test",
-		Arguments: `{"command":"go test ./...","scope":"targeted","purpose":"verify test wrapper"}`,
-	})
-	if err != nil {
-		t.Fatalf("run_test: %v", err)
-	}
-	var got struct {
-		Action         string             `json:"action"`
-		Passed         bool               `json:"passed"`
-		ExitCode       int                `json:"exit_code"`
-		Scope          string             `json:"scope"`
-		Classification ToolClassification `json:"classification"`
-		FailureSummary testFailureSummary `json:"failure_summary"`
-		Suggestions    []string           `json:"next_suggestions"`
-	}
-	if err := json.Unmarshal([]byte(resp), &got); err != nil {
-		t.Fatalf("parse run_test response: %v\n%s", err, resp)
-	}
-	if got.Action != "run" || !got.Passed || got.ExitCode != 0 || got.Scope != "targeted" {
-		t.Fatalf("unexpected run_test success response: %+v", got)
-	}
-	if got.Classification.Risk != ToolRiskMedium || got.Classification.Reason != "local verification command" {
-		t.Fatalf("unexpected run_test classification: %+v", got.Classification)
-	}
-	if got.FailureSummary.Failed {
-		t.Fatalf("passing test should not report failure summary: %+v", got.FailureSummary)
-	}
-	if len(got.Suggestions) == 0 || !strings.Contains(strings.Join(got.Suggestions, " "), "final response") {
-		t.Fatalf("passing run_test response missing finish suggestion: %+v", got.Suggestions)
-	}
-	records := kit.ToolTelemetry()
-	if len(records) != 1 || records[0].ResultAction != "run" {
-		t.Fatalf("run_test telemetry missing result action: %+v", records)
-	}
-}
-
-func TestToolkit_RunTestToolExecutesDirectoryScopedVerification(t *testing.T) {
-	root := t.TempDir()
-	mustWriteFile(t, filepath.Join(root, "pkg", "go.mod"), "module example.com/pkg\n\ngo 1.22\n")
-	mustWriteFile(t, filepath.Join(root, "pkg", "pkg_test.go"), `package pkg
-
-import "testing"
-
-func TestOK(t *testing.T) {}
-`)
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_test",
-		Arguments: `{"command":"cd pkg && go test ./...","scope":"targeted"}`,
-	})
-	if err != nil {
-		t.Fatalf("run_test directory-scoped verification: %v", err)
-	}
-	var got struct {
-		Passed         bool               `json:"passed"`
-		Classification ToolClassification `json:"classification"`
-	}
-	if err := json.Unmarshal([]byte(resp), &got); err != nil {
-		t.Fatalf("parse run_test response: %v\n%s", err, resp)
-	}
-	if !got.Passed || got.Classification.Risk != ToolRiskMedium || got.Classification.Reason != "local verification command" {
-		t.Fatalf("unexpected directory-scoped run_test response: %+v", got)
-	}
-}
-
-func TestToolkit_RunTestResolvesNpxVitestToLocalRunner(t *testing.T) {
-	root := t.TempDir()
-	localVitest := filepath.Join(root, "node_modules", ".bin", "vitest")
-	mustWriteFile(t, localVitest, "#!/usr/bin/env sh\nprintf 'vitest local ok\\n'\n")
-	if err := os.Chmod(localVitest, 0o755); err != nil {
-		t.Fatalf("chmod local vitest: %v", err)
-	}
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_test",
-		Arguments: `{"command":"npx vitest --run","scope":"targeted"}`,
-	})
-	if err != nil {
-		t.Fatalf("run_test npx vitest should resolve local runner: %v", err)
-	}
-	var got struct {
-		Passed           bool               `json:"passed"`
-		Command          string             `json:"command"`
-		RequestedCommand string             `json:"requested_command"`
-		ResolvedCommand  string             `json:"resolved_command"`
-		Output           string             `json:"output"`
-		Classification   ToolClassification `json:"classification"`
-	}
-	if err := json.Unmarshal([]byte(resp), &got); err != nil {
-		t.Fatalf("parse run_test response: %v\n%s", err, resp)
-	}
-	if !got.Passed || got.RequestedCommand != "npx vitest --run" || got.ResolvedCommand != "./node_modules/.bin/vitest --run" || got.Command != got.ResolvedCommand {
-		t.Fatalf("unexpected resolved npx response: %+v", got)
-	}
-	if !strings.Contains(got.Output, "vitest local ok") {
-		t.Fatalf("run_test output missing local runner evidence: %+v", got)
-	}
-	if got.Classification.Risk != ToolRiskMedium || got.Classification.Reason != "local verification command" {
-		t.Fatalf("unexpected npx vitest classification: %+v", got.Classification)
-	}
-}
-
-func TestToolkit_RunTestResolvesDirectoryScopedNpxVitest(t *testing.T) {
-	root := t.TempDir()
-	localVitest := filepath.Join(root, "desktop", "node_modules", ".bin", "vitest")
-	mustWriteFile(t, localVitest, "#!/usr/bin/env sh\nprintf 'desktop vitest ok\\n'\n")
-	if err := os.Chmod(localVitest, 0o755); err != nil {
-		t.Fatalf("chmod local vitest: %v", err)
-	}
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_test",
-		Arguments: `{"command":"cd desktop && npx vitest","scope":"targeted"}`,
-	})
-	if err != nil {
-		t.Fatalf("run_test directory npx vitest should resolve local runner: %v", err)
-	}
-	var got struct {
-		Passed           bool   `json:"passed"`
-		Command          string `json:"command"`
-		RequestedCommand string `json:"requested_command"`
-		ResolvedCommand  string `json:"resolved_command"`
-		Output           string `json:"output"`
-	}
-	if err := json.Unmarshal([]byte(resp), &got); err != nil {
-		t.Fatalf("parse run_test response: %v\n%s", err, resp)
-	}
-	if !got.Passed || got.RequestedCommand != "cd desktop && npx vitest" || got.ResolvedCommand != "cd desktop && ./node_modules/.bin/vitest" || got.Command != got.ResolvedCommand {
-		t.Fatalf("unexpected directory resolved npx response: %+v", got)
-	}
-	if !strings.Contains(got.Output, "desktop vitest ok") {
-		t.Fatalf("run_test output missing directory runner evidence: %+v", got)
-	}
-}
-
-func TestToolkit_RunTestRejectsMissingLocalNpxRunner(t *testing.T) {
-	root := t.TempDir()
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_test",
-		Arguments: `{"command":"npx vitest","scope":"targeted"}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "error_kind=local_test_runner_missing") || !strings.Contains(err.Error(), "node_modules/.bin/vitest") {
-		t.Fatalf("expected missing local runner rejection, got %v", err)
-	}
-}
-
-func TestToolkit_RunTestToolSummarizesFailures(t *testing.T) {
-	root := t.TempDir()
-	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/run-test\n\ngo 1.22\n")
-	mustWriteFile(t, filepath.Join(root, "pkg_test.go"), `package runtest
-
-import "testing"
-
-func TestBroken(t *testing.T) {
-	t.Fatalf("expected 1 got 2 API_KEY=secret-value-1234567890")
-}
-`)
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	sessionDir := filepath.Join(t.TempDir(), "session")
-	kit.SetSessionDir(sessionDir)
-
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_test",
-		Arguments: `{"command":"go test ./...","scope":"targeted"}`,
-	})
-	if err != nil {
-		t.Fatalf("run_test should return failed test output, not tool error: %v", err)
-	}
-	var got struct {
-		Passed         bool               `json:"passed"`
-		ExitCode       int                `json:"exit_code"`
-		FailureSummary testFailureSummary `json:"failure_summary"`
-		Suggestions    []string           `json:"next_suggestions"`
-		Revision       string             `json:"workspace_revision"`
-		FullLogRef     string             `json:"full_log_ref"`
-		FullLogBytes   int                `json:"full_log_bytes"`
-	}
-	if err := json.Unmarshal([]byte(resp), &got); err != nil {
-		t.Fatalf("parse run_test response: %v\n%s", err, resp)
-	}
-	if got.Passed || got.ExitCode == 0 || !got.FailureSummary.Failed {
-		t.Fatalf("unexpected failed run_test response: %+v", got)
-	}
-	if len(got.FailureSummary.FailingTests) == 0 || got.FailureSummary.FailingTests[0] != "TestBroken" {
-		t.Fatalf("failure summary missing failing test: %+v", got.FailureSummary)
-	}
-	if len(got.FailureSummary.Locations) == 0 ||
-		got.FailureSummary.Locations[0].Path != "pkg_test.go" ||
-		got.FailureSummary.Locations[0].Line <= 0 ||
-		strings.Contains(got.FailureSummary.Locations[0].Text, "secret-value") {
-		t.Fatalf("failure summary missing redacted file location: %+v", got.FailureSummary)
-	}
-	if !strings.HasPrefix(got.Revision, "fs:worktree:") {
-		t.Fatalf("run_test response missing filesystem workspace revision: %+v", got)
-	}
-	if got.FullLogRef == "" || got.FullLogBytes <= 0 {
-		t.Fatalf("run_test response missing full log artifact: %+v", got)
-	}
-	if !strings.HasPrefix(got.FullLogRef, filepath.Join(sessionDir, "tool-results", "run-test-logs")) {
-		t.Fatalf("full log ref outside session dir: %q", got.FullLogRef)
-	}
-	logData, err := os.ReadFile(got.FullLogRef)
-	if err != nil {
-		t.Fatalf("read full log artifact: %v", err)
-	}
-	logText := string(logData)
-	if strings.Contains(logText, "secret-value") || !strings.Contains(logText, "[REDACTED]") {
-		t.Fatalf("full log artifact should be redacted:\n%s", logText)
-	}
-	if !strings.Contains(logText, "TestBroken") || !strings.Contains(logText, "exit_code: 1") {
-		t.Fatalf("full log artifact missing failure evidence:\n%s", logText)
-	}
-	records := kit.ToolTelemetry()
-	if len(records) != 1 || !containsString(records[0].ArtifactRefs, got.FullLogRef) {
-		t.Fatalf("tool telemetry missing full log artifact ref: records=%+v full_log_ref=%q", records, got.FullLogRef)
-	}
-	envelope := records[0].ResultEnvelope()
-	artifactRefs, ok := envelope.Data["artifact_refs"].([]string)
-	if !ok || !containsString(artifactRefs, got.FullLogRef) {
-		t.Fatalf("result envelope missing full log artifact ref: %+v", envelope)
-	}
-	if strings.Contains(resp, "secret-value") || !strings.Contains(resp, "[REDACTED]") {
-		t.Fatalf("run_test response should redact secret-like output: %s", resp)
-	}
-	if len(got.Suggestions) == 0 || !strings.Contains(strings.Join(got.Suggestions, " "), "hypothesis") {
-		t.Fatalf("failed run_test response missing debug suggestion: %+v", got.Suggestions)
 	}
 }
 
@@ -2991,112 +2725,15 @@ func TestBroken(t *testing.T) {
 	}
 }
 
-func TestToolkit_RunTestToolBlocksRepeatedFailuresAtSameRevision(t *testing.T) {
-	root := t.TempDir()
-	runGit := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = root
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, string(out))
-		}
-	}
-	runGit("init")
-	runGit("config", "user.email", "test@example.com")
-	runGit("config", "user.name", "Test User")
-	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/repeat-test\n\ngo 1.22\n")
-	mustWriteFile(t, filepath.Join(root, "pkg_test.go"), `package repeattest
-
-import "testing"
-
-func TestBroken(t *testing.T) {
-	t.Fatalf("expected 1 got 2")
-}
-`)
-	runGit("add", "go.mod", "pkg_test.go")
-	runGit("commit", "-m", "initial")
-
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	call := providers.ToolCall{
-		Name:      "run_test",
-		Arguments: `{"command":"go test ./...","scope":"targeted"}`,
-	}
-	for i := 0; i < maxRepeatedRunTestFailures; i++ {
-		resp, err := kit.Execute(context.Background(), call)
-		if err != nil {
-			t.Fatalf("run_test attempt %d should execute: %v", i+1, err)
-		}
-		var got struct {
-			Passed       bool               `json:"passed"`
-			RepeatGuard  map[string]any     `json:"repeat_guard"`
-			Revision     string             `json:"workspace_revision"`
-			FailureState testFailureSummary `json:"failure_summary"`
-		}
-		if err := json.Unmarshal([]byte(resp), &got); err != nil {
-			t.Fatalf("parse run_test response: %v\n%s", err, resp)
-		}
-		if got.Passed || got.Revision == "" || !got.FailureState.Failed {
-			t.Fatalf("unexpected failed run_test response: %+v", got)
-		}
-	}
-	_, err = kit.Execute(context.Background(), call)
-	if err == nil || !strings.Contains(err.Error(), "error_kind=repeated_failure_same_revision") ||
-		!strings.Contains(err.Error(), "workspace_revision=") ||
-		!strings.Contains(err.Error(), "command_hash=") ||
-		!strings.Contains(err.Error(), "safe_retry=") ||
-		!strings.Contains(err.Error(), "model_next_action=") {
-		t.Fatalf("expected repeated failure guard, got: %v", err)
-	}
-
-	mustWriteFile(t, filepath.Join(root, "pkg_test.go"), `package repeattest
-
-import "testing"
-
-func TestBroken(t *testing.T) {}
-`)
-	resp, err := kit.Execute(context.Background(), call)
-	if err != nil {
-		t.Fatalf("run_test after workspace change should execute: %v", err)
-	}
-	var got struct {
-		Passed bool `json:"passed"`
-	}
-	if err := json.Unmarshal([]byte(resp), &got); err != nil {
-		t.Fatalf("parse run_test response: %v\n%s", err, resp)
-	}
-	if !got.Passed {
-		t.Fatalf("expected passing run_test after workspace change: %s", resp)
-	}
-}
-
-func TestToolkit_RunTestToolRejectsNonVerificationCommands(t *testing.T) {
-	root := t.TempDir()
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_test",
-		Arguments: `{"command":"pwd"}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "local verification commands") {
-		t.Fatalf("expected non-verification command rejection, got %v", err)
-	}
-}
-
 func TestToolkit_ToolInfos_IncludesHiddenDisabledTools(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.DisableTools("run_shell")
+	kit.DisableTools("bash")
 
-	info, ok := kit.ToolInfo("run_shell")
+	info, ok := kit.ToolInfo("bash")
 	if !ok {
 		t.Fatal("disabled known tool should still return metadata")
 	}
@@ -3106,10 +2743,10 @@ func TestToolkit_ToolInfos_IncludesHiddenDisabledTools(t *testing.T) {
 
 	found := false
 	for _, info := range kit.ToolInfos() {
-		if info.Name == "run_shell" {
+		if info.Name == "bash" {
 			found = true
 			if info.Exposure != ToolExposureHidden {
-				t.Fatalf("ToolInfos run_shell exposure = %s, want %s", info.Exposure, ToolExposureHidden)
+				t.Fatalf("ToolInfos bash exposure = %s, want %s", info.Exposure, ToolExposureHidden)
 			}
 		}
 	}
@@ -3118,7 +2755,7 @@ func TestToolkit_ToolInfos_IncludesHiddenDisabledTools(t *testing.T) {
 	}
 
 	for _, d := range kit.Definitions() {
-		if d.Name == "run_shell" {
+		if d.Name == "bash" {
 			t.Fatal("hidden disabled tool should not appear in definitions")
 		}
 	}
@@ -3133,7 +2770,7 @@ func TestToolkit_DefersLowFrequencyAndLargeMCPToolSetsFromDefinitions(t *testing
 	registered := []Tool{
 		NewReadFileTool(kit.env),
 		NewToolSearchTool(kit),
-		NewScheduleCronTool(kit.env),
+		NewCronTool(kit.env),
 	}
 	for _, name := range []string{"mcp_docs_search", "mcp_docs_read", "mcp_docs_write", "mcp_docs_list", "mcp_docs_status"} {
 		registered = append(registered, &stubTool{
@@ -3149,7 +2786,7 @@ func TestToolkit_DefersLowFrequencyAndLargeMCPToolSetsFromDefinitions(t *testing
 			t.Fatalf("%s should be directly exposed", name)
 		}
 	}
-	for _, name := range []string{"schedule_cron", "mcp_docs_search", "mcp_docs_read", "mcp_docs_write", "mcp_docs_list", "mcp_docs_status"} {
+	for _, name := range []string{"cron", "mcp_docs_search", "mcp_docs_read", "mcp_docs_write", "mcp_docs_list", "mcp_docs_status"} {
 		if defs[name] {
 			t.Fatalf("%s should be deferred from definitions", name)
 		}
@@ -3245,16 +2882,16 @@ func TestToolkit_AppendsLoadedDeferredToolsAfterStableDefinitions(t *testing.T) 
 	}
 	kit.registry = NewRegistry(
 		NewReadFileTool(kit.env),
-		NewScheduleCronTool(kit.env),
+		NewCronTool(kit.env),
 		NewToolSearchTool(kit),
 	)
-	kit.markDeferredToolsLoaded("schedule_cron")
+	kit.markDeferredToolsLoaded("cron")
 
 	defs := kit.Definitions()
 	if len(defs) != 3 {
 		t.Fatalf("expected loaded deferred tool to be appended to definitions, got %+v", defs)
 	}
-	wantNames := []string{"read_file", "tool_search", "schedule_cron"}
+	wantNames := []string{"read_file", "tool_search", "cron"}
 	for i, want := range wantNames {
 		if defs[i].Name != want {
 			t.Fatalf("definition %d = %q, want %q; all=%+v", i, defs[i].Name, want, defs)
@@ -3266,7 +2903,7 @@ func TestToolkit_AppendsLoadedDeferredToolsAfterStableDefinitions(t *testing.T) 
 	if defs[2].CacheStable {
 		t.Fatalf("loaded deferred tool should not join cache-stable prefix: %+v", defs)
 	}
-	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "schedule_cron", Arguments: `{}`})
+	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "cron", Arguments: `{}`})
 	if err == nil || strings.Contains(err.Error(), "deferred") {
 		t.Fatalf("loaded deferred tool should reach tool validation, got %v", err)
 	}
@@ -3280,12 +2917,12 @@ func TestToolkit_CloneForRootDoesNotInheritLoadedDeferredTools(t *testing.T) {
 	}
 	kit.registry = NewRegistry(
 		NewReadFileTool(kit.env),
-		NewScheduleCronTool(kit.env),
+		NewCronTool(kit.env),
 		NewToolSearchTool(kit),
 	)
-	kit.markDeferredToolsLoaded("schedule_cron")
+	kit.markDeferredToolsLoaded("cron")
 
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "schedule_cron", Arguments: `{}`}); err == nil || strings.Contains(err.Error(), "deferred") {
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "cron", Arguments: `{}`}); err == nil || strings.Contains(err.Error(), "deferred") {
 		t.Fatalf("source loaded deferred tool should reach validation, got %v", err)
 	}
 
@@ -3293,12 +2930,12 @@ func TestToolkit_CloneForRootDoesNotInheritLoadedDeferredTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CloneForRoot: %v", err)
 	}
-	_, err = clone.Execute(context.Background(), providers.ToolCall{Name: "schedule_cron", Arguments: `{}`})
+	_, err = clone.Execute(context.Background(), providers.ToolCall{Name: "cron", Arguments: `{}`})
 	if err == nil || !strings.Contains(err.Error(), "deferred") {
 		t.Fatalf("clone should require its own tool_search load, got %v", err)
 	}
 
-	if definitionNames(clone.Definitions())["schedule_cron"] {
+	if definitionNames(clone.Definitions())["cron"] {
 		t.Fatal("clone must not expose inherited deferred tool in top-level definitions")
 	}
 }
@@ -3786,7 +3423,7 @@ func TestToolkit_ToolTelemetry_RecordsClassificationReason(t *testing.T) {
 
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		ID:        "call-shell",
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"pwd"}`,
 	}); err != nil {
 		t.Fatalf("run_shell: %v", err)
@@ -4268,8 +3905,8 @@ func TestToolkit_ReadProcessOutputWaitsFromOffset(t *testing.T) {
 	defer manager.Stop(p.ID)
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "read_process_output",
-		Arguments: `{"process_id":"` + p.ID + `","offset_bytes":0,"wait_ms":2000}`,
+		Name:      "bash",
+		Arguments: `{"action":"read_background","process_id":"` + p.ID + `","offset_bytes":0,"wait_ms":2000}`,
 	})
 	if err != nil {
 		t.Fatalf("read_process_output: %v", err)
@@ -4308,8 +3945,8 @@ func TestToolkit_StartProcessDefaultsOwnerAndReturnsInitialOutput(t *testing.T) 
 	kit.SetAgentIdentity("agent-start-process", agentthread.RootPath)
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "start_process",
-		Arguments: `{"command":"sleep 0.2; printf 'READY_FROM_START\n'; sleep 1","wait_ms":2000,"max_bytes":4096}`,
+		Name:      "bash",
+		Arguments: `{"action":"start_background","command":"sleep 0.2; printf 'READY_FROM_START\n'; sleep 1","wait_ms":2000,"max_bytes":4096}`,
 	})
 	if err != nil {
 		t.Fatalf("start_process: %v", err)
@@ -4337,30 +3974,37 @@ func TestToolkit_StartProcessDefaultsOwnerAndReturnsInitialOutput(t *testing.T) 
 	if parsed.InitialEndOffset <= 0 {
 		t.Fatalf("missing initial end offset: %+v", parsed)
 	}
-	if len(parsed.NextSuggestions) == 0 || !strings.Contains(strings.Join(parsed.NextSuggestions, " "), "read_process_output") {
+	if len(parsed.NextSuggestions) == 0 || !strings.Contains(strings.Join(parsed.NextSuggestions, " "), "read_background") {
 		t.Fatalf("missing follow-up guidance: %+v", parsed.NextSuggestions)
 	}
 }
 
-func TestToolkit_StartProcessDefinitionIsHiddenFromModelSurfaces(t *testing.T) {
+func TestToolkit_RemovedLegacyCommandToolsAreAbsent(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	// Phase 5: start_process is advanced / hidden. The model
-	// never sees it; the registry still holds it for internal
-	// callers (tool_search, replay, the bash background-mode
-	// backend).
+	// The legacy run_shell / run_test / managed-process tools were
+	// removed; bash is the only model-facing command entry point and
+	// also covers the full background-process lifecycle. The removed
+	// names must be gone from both the model surface and the registry.
+	removed := []string{"run_shell", "run_test", "start_process", "list_processes", "stop_process", "read_process_output", "write_stdin"}
 	for _, def := range kit.Definitions() {
-		if def.Name == "start_process" {
-			t.Fatalf("start_process must NOT be present in tool definitions (Phase 5: advanced/hidden), got %v", def.Name)
+		for _, name := range removed {
+			if def.Name == name {
+				t.Fatalf("removed legacy tool %q must not appear in tool definitions", name)
+			}
 		}
 	}
-	if kit.LookupTool("start_process") == nil {
-		t.Fatal("start_process must remain in the registry for internal callers")
+	for _, name := range removed {
+		if kit.LookupTool(name) != nil {
+			t.Fatalf("removed legacy tool %q must not remain in the registry", name)
+		}
 	}
-	_ = root
+	if kit.LookupTool("bash") == nil {
+		t.Fatal("bash must remain the model-facing command tool")
+	}
 }
 
 func TestToolkit_StartProcessSupportsTTY(t *testing.T) {
@@ -4376,8 +4020,8 @@ func TestToolkit_StartProcessSupportsTTY(t *testing.T) {
 	kit.SetProcessManager(manager)
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "start_process",
-		Arguments: `{"command":"if test -t 1; then echo MODE_TTY; else echo MODE_PIPE; fi; sleep 1","owner_kind":"main_agent","lifecycle":"session","tty":true}`,
+		Name:      "bash",
+		Arguments: `{"action":"start_background","command":"if test -t 1; then echo MODE_TTY; else echo MODE_PIPE; fi; sleep 1","owner_kind":"main_agent","lifecycle":"session","tty":true}`,
 	})
 	if err != nil {
 		t.Fatalf("start_process: %v", err)
@@ -4392,8 +4036,8 @@ func TestToolkit_StartProcessSupportsTTY(t *testing.T) {
 	}
 
 	outResp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "read_process_output",
-		Arguments: `{"process_id":"` + started.ID + `","offset_bytes":0,"wait_ms":2000}`,
+		Name:      "bash",
+		Arguments: `{"action":"read_background","process_id":"` + started.ID + `","offset_bytes":0,"wait_ms":2000}`,
 	})
 	if err != nil {
 		t.Fatalf("read_process_output: %v", err)
@@ -4424,8 +4068,8 @@ func TestToolkit_ProcessAndPortTelemetryRecordsResultActions(t *testing.T) {
 	kit.SetProcessManager(manager)
 
 	startResp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "start_process",
-		Arguments: `{"command":"sleep 5","owner_kind":"main_agent","lifecycle":"session"}`,
+		Name:      "bash",
+		Arguments: `{"action":"start_background","command":"sleep 5","owner_kind":"main_agent","lifecycle":"session"}`,
 	})
 	if err != nil {
 		t.Fatalf("start_process: %v", err)
@@ -4435,11 +4079,11 @@ func TestToolkit_ProcessAndPortTelemetryRecordsResultActions(t *testing.T) {
 		t.Fatalf("parse start_process response: %v", err)
 	}
 	defer manager.Stop(started.ID)
-	if started.Action != "start_process" || started.ID == "" {
+	if started.Action != "start_background" || started.ID == "" {
 		t.Fatalf("unexpected start_process response: %+v", started)
 	}
 
-	listResp, err := kit.Execute(context.Background(), providers.ToolCall{Name: "list_processes", Arguments: `{}`})
+	listResp, err := kit.Execute(context.Background(), providers.ToolCall{Name: "bash", Arguments: `{"action":"list_background"}`})
 	if err != nil {
 		t.Fatalf("list_processes: %v", err)
 	}
@@ -4450,13 +4094,13 @@ func TestToolkit_ProcessAndPortTelemetryRecordsResultActions(t *testing.T) {
 	if err := json.Unmarshal([]byte(listResp), &listed); err != nil {
 		t.Fatalf("parse list_processes response: %v", err)
 	}
-	if listed.Action != "list_processes" || len(listed.Processes) != 1 {
+	if listed.Action != "list_background" || len(listed.Processes) != 1 {
 		t.Fatalf("unexpected list_processes response: %+v", listed)
 	}
 
 	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "read_process_output",
-		Arguments: `{"process_id":"` + started.ID + `","offset_bytes":0,"wait_ms":1}`,
+		Name:      "bash",
+		Arguments: `{"action":"read_background","process_id":"` + started.ID + `","offset_bytes":0,"wait_ms":1}`,
 	})
 	if err != nil {
 		t.Fatalf("read_process_output: %v", err)
@@ -4465,13 +4109,13 @@ func TestToolkit_ProcessAndPortTelemetryRecordsResultActions(t *testing.T) {
 	if err := json.Unmarshal([]byte(readResp), &readParsed); err != nil {
 		t.Fatalf("parse read_process_output response: %v", err)
 	}
-	if readParsed["action"] != "read_process_output" {
+	if readParsed["action"] != "read_background" {
 		t.Fatalf("read_process_output action mismatch: %+v", readParsed)
 	}
 
 	stopResp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "stop_process",
-		Arguments: `{"process_id":"` + started.ID + `"}`,
+		Name:      "bash",
+		Arguments: `{"action":"stop_background","process_id":"` + started.ID + `"}`,
 	})
 	if err != nil {
 		t.Fatalf("stop_process: %v", err)
@@ -4480,7 +4124,7 @@ func TestToolkit_ProcessAndPortTelemetryRecordsResultActions(t *testing.T) {
 	if err := json.Unmarshal([]byte(stopResp), &stopped); err != nil {
 		t.Fatalf("parse stop_process response: %v", err)
 	}
-	if stopped.Action != "stop_process" {
+	if stopped.Action != "stop_background" {
 		t.Fatalf("stop_process action mismatch: %+v", stopped)
 	}
 
@@ -4490,10 +4134,10 @@ func TestToolkit_ProcessAndPortTelemetryRecordsResultActions(t *testing.T) {
 		gotActions = append(gotActions, record.Name+":"+record.ResultAction)
 	}
 	wantActions := []string{
-		"start_process:start_process",
-		"list_processes:list_processes",
-		"read_process_output:read_process_output",
-		"stop_process:stop_process",
+		"bash:start_background",
+		"bash:list_background",
+		"bash:read_background",
+		"bash:stop_background",
 	}
 	if !reflect.DeepEqual(gotActions, wantActions) {
 		t.Fatalf("process telemetry actions = %+v, want %+v", gotActions, wantActions)
@@ -4534,8 +4178,8 @@ func TestToolkit_ProcessOutputRedactsSecrets(t *testing.T) {
 	kit.SetProcessManager(manager)
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "start_process",
-		Arguments: `{"command":"printf 'API_KEY=process-secret-value-1234567890\n'; sleep 0.1","owner_kind":"main_agent","lifecycle":"session"}`,
+		Name:      "bash",
+		Arguments: `{"action":"start_background","command":"printf 'API_KEY=process-secret-value-1234567890\n'; sleep 0.1","owner_kind":"main_agent","lifecycle":"session"}`,
 	})
 	if err != nil {
 		t.Fatalf("start_process: %v", err)
@@ -4550,8 +4194,8 @@ func TestToolkit_ProcessOutputRedactsSecrets(t *testing.T) {
 	defer manager.Stop(started.ID)
 
 	outResp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "read_process_output",
-		Arguments: `{"process_id":"` + started.ID + `","offset_bytes":0,"wait_ms":2000}`,
+		Name:      "bash",
+		Arguments: `{"action":"read_background","process_id":"` + started.ID + `","offset_bytes":0,"wait_ms":2000}`,
 	})
 	if err != nil {
 		t.Fatalf("read_process_output: %v", err)
@@ -4688,29 +4332,17 @@ func TestToolkit_WaitAgentIsNotRegistered(t *testing.T) {
 	}
 }
 
-func TestToolkit_AwaitAgentsDoesNotExposeTimeout(t *testing.T) {
+func TestToolkit_AwaitAgentsRetiredFromDefinitions(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	for _, d := range kit.Definitions() {
-		if d.Name != "await_agents" {
-			continue
+		if d.Name == "await_agents" {
+			t.Fatal("await_agents was retired in favor of the subagent-completion wakeup and must not be a registered tool")
 		}
-		props, _ := d.InputSchema["properties"].(map[string]any)
-		if _, ok := props["targets"]; !ok {
-			t.Fatalf("await_agents schema must expose targets: %#v", d.InputSchema)
-		}
-		if _, ok := props["timeout_ms"]; ok {
-			t.Fatalf("await_agents schema must not ask the model to choose wait duration: %#v", d.InputSchema)
-		}
-		if !strings.Contains(d.Description, "user stops the turn") || !strings.Contains(d.Description, "session ends") {
-			t.Fatalf("await_agents description must explain runtime-owned cancellation: %q", d.Description)
-		}
-		return
 	}
-	t.Fatal("await_agents must be present in tool definitions")
 }
 
 func TestToolkit_SpawnAgent_FailsWithoutAgentControl(t *testing.T) {
@@ -4823,11 +4455,11 @@ func TestToolkit_DisableTools_HidesDefinitionsAndBlocksExecute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	kit.DisableTools("write_file", "edit_file", "run_shell")
+	kit.DisableTools("write_file", "edit_file", "bash")
 
 	defs := kit.Definitions()
 	for _, d := range defs {
-		if d.Name == "write_file" || d.Name == "edit_file" || d.Name == "run_shell" {
+		if d.Name == "write_file" || d.Name == "edit_file" || d.Name == "bash" {
 			t.Fatalf("disabled tool %q should not appear in definitions", d.Name)
 		}
 	}
@@ -4844,7 +4476,7 @@ func TestToolkit_DisableTools_HidesDefinitionsAndBlocksExecute(t *testing.T) {
 	}
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"echo hi"}`,
 	})
 	if err == nil {
@@ -4863,7 +4495,7 @@ func TestToolkit_RunShell(t *testing.T) {
 	}
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"echo hi","purpose":"confirm shell purpose metadata"}`,
 	})
 	if err != nil {
@@ -4917,7 +4549,7 @@ func TestToolkit_RunShellRedactsSensitiveOutput(t *testing.T) {
 	kit.SetSessionDir(sessionDir)
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"printf 'API_KEY=secret-value-1234567890\nAuthorization: Bearer abcdefghijklmnop\nsk-testsecret123456\n'","purpose":"diagnose TOKEN=purpose-secret-value-1234567890"}`,
 	})
 	if err != nil {
@@ -4982,7 +4614,7 @@ func TestToolkit_RunShellStructuredFailureOutput(t *testing.T) {
 	}
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"printf out; printf err >&2; exit 7"}`,
 	})
 	if err != nil {
@@ -5021,7 +4653,7 @@ func TestToolkit_RunShellSetsNonInteractiveEnv(t *testing.T) {
 	}
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"printf '%s|%s|%s|%s|%s|%s|%s|%s' \"$GIT_EDITOR\" \"$GIT_SEQUENCE_EDITOR\" \"$EDITOR\" \"$VISUAL\" \"$PAGER\" \"$GIT_PAGER\" \"$GH_PAGER\" \"$GIT_TERMINAL_PROMPT\""}`,
 	})
 	if err != nil {
@@ -5048,7 +4680,7 @@ func TestToolkit_RunShellAllowsSafeGitCommands(t *testing.T) {
 		"cd . && git status --short",
 	} {
 		resp, err := kit.Execute(context.Background(), providers.ToolCall{
-			Name:      "run_shell",
+			Name:      "bash",
 			Arguments: fmt.Sprintf(`{"command":%q,"timeout_seconds":10}`, command),
 		})
 		if err != nil {
@@ -5068,7 +4700,7 @@ func TestToolkit_RunShellAllowsSafeGitCommands(t *testing.T) {
 
 	mustWriteFile(t, filepath.Join(root, "hello.txt"), "updated\n")
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"git add hello.txt && git commit -m \"update hello\"","timeout_seconds":10}`,
 	})
 	if err != nil {
@@ -5087,7 +4719,7 @@ func TestToolkit_RunShellAllowsSafeGitCommands(t *testing.T) {
 
 	mustWriteFile(t, filepath.Join(root, "hello.txt"), "updated again\n")
 	resp, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"git add hello.txt && git commit -m \"Sweep the whole process cluster row when it's running\" -m \"Body includes \\\"still working\\\" and punctuation; still a message.\"","timeout_seconds":10}`,
 	})
 	if err != nil {
@@ -5103,7 +4735,7 @@ func TestToolkit_RunShellAllowsSafeGitCommands(t *testing.T) {
 	mustWriteFile(t, filepath.Join(root, "hello.txt"), "updated from file\n")
 	mustWriteFile(t, filepath.Join(root, "commit-message.txt"), "Message from file\n\nBody\n")
 	resp, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"git add hello.txt && git commit -F commit-message.txt","timeout_seconds":10}`,
 	})
 	if err != nil {
@@ -5117,7 +4749,7 @@ func TestToolkit_RunShellAllowsSafeGitCommands(t *testing.T) {
 	}
 
 	resp, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_shell",
+		Name:      "bash",
 		Arguments: `{"command":"git commit --amend -m \"Amended shell subject\"","timeout_seconds":10}`,
 	})
 	if err != nil {

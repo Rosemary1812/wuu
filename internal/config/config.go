@@ -774,12 +774,15 @@ func DefaultSystemPrompt() string {
 // subagents. It contains only the universal base sections; the main-only
 // orchestration map is excluded because orchestration belongs to the brain:
 // spawn_agent, helpme, and the subagent management suite (send_message,
-// followup_task, await_agents, close_agent, list_agents) are compiled out
-// of worker surfaces entirely (internal/modelprofile/compiler.go). Of the
+// close_agent) are compiled out of worker surfaces entirely
+// (internal/modelprofile/compiler.go). Of the
 // other tools the map mentions, update_plan and inception stay visible on
-// worker surfaces and create_goal/start_workflow stay deferred behind
-// tool_search — their worker-facing guidance lives in the tool descriptions
-// and the worker's deferred-tool catalog, not in the orchestration map.
+// worker surfaces and goal stays deferred behind tool_search — their
+// worker-facing guidance lives in the tool descriptions and the worker's
+// deferred-tool catalog, not in the orchestration map. The workflow path
+// (start_workflow) is no longer part of the static map at all; it is a
+// named-agent-only capability re-injected surface-gated by the prompt
+// builder, so neither the main nor the worker base prompt carries it.
 // read_memory/write_memory are retired on every surface (memory-redesign
 // §6: durable memory is a file directory written with plain file tools).
 func WorkerSystemPrompt() string {

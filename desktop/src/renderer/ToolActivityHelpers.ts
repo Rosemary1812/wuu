@@ -264,14 +264,28 @@ function readableToolActivityCommandInner(
       return "查看子任务";
     case "agent_report":
       return "读取子任务报告";
-    case "schedule_cron": {
-      const cron = stringValue(args, "cron");
-      return cron ? `安排定时任务 ${truncateText(cron, 60)}` : "安排定时任务";
-    }
-    case "cancel_cron":
-      return "取消定时任务";
-    case "list_cron":
-      return "查看定时任务";
+    case "goal":
+      switch (stringValue(args, "action")) {
+        case "create": {
+          const objective = stringValue(args, "objective");
+          return objective ? `启动 Goal ${truncateText(objective, 60)}` : "启动 Goal";
+        }
+        case "update":
+          return "更新 Goal";
+        default:
+          return "查看 Goal";
+      }
+    case "cron":
+      switch (stringValue(args, "action")) {
+        case "add": {
+          const cron = stringValue(args, "cron");
+          return cron ? `安排定时任务 ${truncateText(cron, 60)}` : "安排定时任务";
+        }
+        case "remove":
+          return "取消定时任务";
+        default:
+          return "查看定时任务";
+      }
     case "browser":
       return readableBrowserLabel(args);
     default:
@@ -366,9 +380,7 @@ function toolActivitySectionKey(item: ThreadItem): string {
       return "agent";
     case "update_plan":
       return "plan";
-    case "schedule_cron":
-    case "cancel_cron":
-    case "list_cron":
+    case "cron":
       return "schedule";
     case "browser":
       return "browser";
@@ -1042,9 +1054,7 @@ export function readableToolName(name: string | undefined): string {
       return "学习技能";
     case "update_plan":
       return "更新计划";
-    case "schedule_cron":
-    case "cancel_cron":
-    case "list_cron":
+    case "cron":
       return "定时任务";
     case "browser":
       return "浏览器";

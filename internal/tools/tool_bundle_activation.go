@@ -8,10 +8,7 @@ import (
 
 var subagentManagementTools = []string{
 	"send_message",
-	"followup_task",
-	"await_agents",
 	"close_agent",
-	"list_agents",
 }
 
 const subagentManagementBundle = "subagent_management"

@@ -96,6 +96,25 @@ func (s Surface) HasCapability(c Capability) bool {
 	return false
 }
 
+// HasAvailableCapability reports whether the model can actually reach the
+// capability on this surface, either directly in the tool list or deferred
+// behind tool_search. Unlike HasCapability it excludes hidden-only
+// capabilities, which the model can never load. Use it to gate guidance that
+// teaches a capability the model must be able to invoke.
+func (s Surface) HasAvailableCapability(c Capability) bool {
+	for _, existing := range s.Capabilities {
+		if existing == c {
+			return true
+		}
+	}
+	for _, existing := range s.DeferredCapabilities {
+		if existing == c {
+			return true
+		}
+	}
+	return false
+}
+
 // VisibleCapabilities returns the advertised capability list. It is
 // the slice to use for permission-routing checks that ask "can the
 // model see X?"; HasCapability is for "does X exist for this

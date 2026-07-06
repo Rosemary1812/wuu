@@ -1,6 +1,6 @@
 // Package agentcontrol wires the orchestration tools (spawn_agent,
-// send_message, close_agent, list_agents) to the underlying subagent
-// and worktree subsystems.
+// send_message, close_agent) to the underlying subagent and worktree
+// subsystems.
 //
 // AgentControl is the shared control plane for one root agent tree. It
 // owns the SubAgent Manager, Worktree Manager, thread registry, and
@@ -854,12 +854,12 @@ func spawnResultNextSteps(status string, synchronous bool, isolation string, age
 	case subagent.StatusQueued:
 		return []string{
 			"The worker is queued; do not spawn a duplicate for the same task unless requirements change.",
-			"Continue non-overlapping local work when available, or use await_agents with " + pathHint + " only when synthesis depends on this output.",
+			"Continue non-overlapping local work when available; " + pathHint + " will resume you with a completion notification when it finishes.",
 		}
 	case subagent.StatusRunning:
 		return []string{
 			"Continue non-overlapping local work when available; the worker will send a background completion notification when it finishes.",
-			"Use await_agents with " + pathHint + " only when the next step depends on this worker's output." + worktreeHint,
+			"When the next step depends on this worker's output, end your turn and let its completion notification resume you rather than blocking on it." + worktreeHint,
 		}
 	case subagent.StatusCompleted:
 		if synchronous {
@@ -2637,10 +2637,19 @@ func (c *AgentControl) AgentCompletionChatMessage(snap subagent.SubAgentSnapshot
 		c.agentMailboxMessageWithRefs(snap, reportPath, artifacts),
 		true,
 	)
+	content := communication.String()
+	if warnings := c.CompletionOverlapWarnings(snap); len(warnings) > 0 {
+		// The deleted await_agents tool used to surface changed-file overlaps
+		// only when a parent explicitly joined multiple agents. Relocate that
+		// value onto the completion wakeup so the resumed parent still sees
+		// sibling agents that wrote the same files before it synthesizes.
+		content = content + "\n\n<changed_file_overlap>\n" + strings.Join(warnings, "\n") +
+			"\nResolve these overlapping writes before merge or synthesis.\n</changed_file_overlap>"
+	}
 	return providers.ChatMessage{
 		Role:    "user",
 		Name:    wuucontext.AgentNotificationMessageName,
-		Content: communication.String(),
+		Content: content,
 	}
 }
 
@@ -3103,11 +3112,10 @@ When the user's intent is unclear, the task depends on requirements or tradeoffs
 ## Agent Tool
 
 - spawn_agent — launch a child agent. Pass description and prompt. Specify subagent_type for a fresh specialized agent, or omit subagent_type to fork yourself with full conversation context.
-- send_message — queue a message for an existing background agent without triggering a new turn.
-- followup_task — send a follow-up task message and trigger the target background agent's next turn.
-- await_agents — explicitly join specific child agents, or all active descendant agents, and return structured per-agent results.
+- send_message — deliver a message to an existing child agent (queue-or-resume). Leave trigger_turn unset for an interim note; set trigger_turn=true to hand off a task that drives the target's next turn and returns its snapshot.
 - close_agent — stop a running agent that is stuck or off-track.
-- list_agents — see active agents and their status.
+
+The current child-agent roster and status is injected each turn as a <subagent_status> reminder; read it there instead of polling. Background agents resume you automatically when they finish, so you do not need to block waiting on them.
 
 ## Available Subagents
 
@@ -3138,7 +3146,7 @@ Launch independent agents in parallel whenever possible. Read-only or verificati
 
 Fresh subagents run in the foreground by default so you can use their result immediately. Foreground child execution has no model-selected wait duration; it continues until the child finishes or the user/runtime cancels the turn. Set run_in_background=true only when you have genuinely independent or long-running work to do in parallel. Forks and verification agents run in the background. After spawning background agents, keep doing meaningful non-overlapping work when it exists. If there is no useful local work left, end your turn and let background completion notifications automatically resume you. Do not sleep, poll, or loop checking status.
 
-Use await_agents when synthesis or integration depends on child outputs. Prefer explicit targets. Omit targets only when you intentionally want to join all active descendant tasks.
+When synthesis or integration depends on child outputs, end your turn and let their completion notifications resume you rather than blocking. Each notification carries the child's structured result, changed_files, and changed_file_overlap warnings when a sibling wrote the same files; reconcile overlaps before you merge.
 
 ## Working with Agent Results
 
@@ -3154,7 +3162,7 @@ Fork prompts can be shorter because the child inherits your context, but they st
 
 ## Handling Worker Failures
 
-When a worker reports failure, continue the same worker with followup_task — it has the full error context. If correction still fails, try a different approach or report to the user.
+When a worker reports failure, continue the same worker with send_message using trigger_turn=true — it has the full error context. If correction still fails, try a different approach or report to the user.
 
 If a worker seems stuck, close it with close_agent and respawn with clearer instructions.
 `

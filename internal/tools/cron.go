@@ -17,75 +17,112 @@ func taskStorePath(stateDir string) string {
 	return statepath.ScheduledTasksPath(stateDir)
 }
 
-type ScheduleCronTool struct{ env *Env }
+// CronTool is the single read/write surface for scheduled tasks. action=list
+// reads all scheduled tasks, action=add creates one (prompt or saved workflow),
+// action=remove deletes one by id.
+type CronTool struct{ env *Env }
 
-func NewScheduleCronTool(env *Env) *ScheduleCronTool { return &ScheduleCronTool{env: env} }
-func (t *ScheduleCronTool) Name() string             { return "schedule_cron" }
-func (t *ScheduleCronTool) IsReadOnly() bool         { return false }
-func (t *ScheduleCronTool) IsConcurrencySafe() bool  { return false }
+func NewCronTool(env *Env) *CronTool        { return &CronTool{env: env} }
+func (t *CronTool) Name() string            { return "cron" }
+func (t *CronTool) IsReadOnly() bool        { return false }
+func (t *CronTool) IsConcurrencySafe() bool { return false }
 
-func (t *ScheduleCronTool) Definition() providers.ToolDefinition {
+func (t *CronTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
-		Name: "schedule_cron",
-		Description: "Create a scheduled task that runs a prompt or saved workflow at cron intervals. " +
-			"Pass `workflow_name` to schedule a saved workflow (use this for repeatable, multi-agent work); the task's prompt will trigger `start_workflow`. " +
-			"Otherwise pass `prompt` for an ad-hoc task. " +
-			"The task can be recurring (runs repeatedly until deleted or expired) or one-shot (runs once).",
+		Name: "cron",
+		Description: "Manage scheduled tasks that run a prompt or saved workflow at cron intervals. " +
+			"action=list returns all scheduled tasks with their IDs, schedules, and prompts. " +
+			"action=add creates a task and requires cron plus prompt or workflow_name; pass workflow_name to schedule a saved workflow (use this for repeatable, multi-agent work) and the task's prompt will trigger start_workflow, otherwise pass prompt for an ad-hoc task. A task can be recurring (runs repeatedly until removed or expired) or one-shot (runs once). " +
+			"action=remove deletes a task and requires id.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
+				"action": map[string]any{
+					"type":        "string",
+					"enum":        []string{"list", "add", "remove"},
+					"description": "Required. list reads all scheduled tasks; add creates one (requires cron and prompt or workflow_name); remove deletes one (requires id).",
+				},
 				"cron": map[string]any{
 					"type":        "string",
-					"description": "5-field cron expression in local time (min hour dom month dow). Example: */5 * * * *",
+					"description": "Used by action=add. 5-field cron expression in local time (min hour dom month dow). Example: */5 * * * *",
 				},
 				"prompt": map[string]any{
 					"type":        "string",
-					"description": "The prompt to execute each time the task fires. Required unless workflow_name is set.",
+					"description": "Used by action=add. The prompt to execute each time the task fires. Required unless workflow_name is set.",
 				},
 				"workflow_name": map[string]any{
 					"type":        "string",
-					"description": "Optional saved workflow definition name to run when the task fires.",
+					"description": "Used by action=add. Optional saved workflow definition name to run when the task fires.",
 				},
 				"workflow_arguments": map[string]any{
 					"type":        "string",
-					"description": "Arguments passed to the saved workflow when it fires.",
+					"description": "Used by action=add. Arguments passed to the saved workflow when it fires.",
 				},
 				"recurring": map[string]any{
 					"type":        "boolean",
-					"description": "If true, the task repeats until deleted or it expires (7 days). If false, it runs once.",
+					"description": "Used by action=add. If true, the task repeats until removed or it expires (7 days). If false, it runs once.",
 				},
 				"durable": map[string]any{
 					"type":        "boolean",
-					"description": "If true, persist to disk and survive restarts. If false (default), session-only.",
+					"description": "Used by action=add. If true, persist to disk and survive restarts. If false (default), session-only.",
+				},
+				"id": map[string]any{
+					"type":        "string",
+					"description": "Used by action=remove. The task ID to remove.",
 				},
 			},
-			"required": []string{"cron"},
+			"required": []string{"action"},
 		},
 	}
 }
 
-func (t *ScheduleCronTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+func (t *CronTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
+		Action            string `json:"action"`
 		Cron              string `json:"cron"`
 		Prompt            string `json:"prompt"`
 		WorkflowName      string `json:"workflow_name"`
 		WorkflowArguments string `json:"workflow_arguments"`
 		Recurring         bool   `json:"recurring"`
 		Durable           bool   `json:"durable"`
+		ID                string `json:"id"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
-	args.Cron = strings.TrimSpace(args.Cron)
-	args.Prompt = strings.TrimSpace(args.Prompt)
-	args.WorkflowName = strings.TrimSpace(args.WorkflowName)
-	args.WorkflowArguments = strings.TrimSpace(args.WorkflowArguments)
+	switch strings.TrimSpace(args.Action) {
+	case "list":
+		return t.executeList()
+	case "add":
+		return t.executeAdd(args.Cron, args.Prompt, args.WorkflowName, args.WorkflowArguments, args.Recurring, args.Durable)
+	case "remove":
+		return t.executeRemove(args.ID)
+	default:
+		return "", fmt.Errorf("cron requires action=list, add, or remove")
+	}
+}
+
+func (t *CronTool) executeAdd(cronExpr, prompt, workflowName, workflowArguments string, recurring, durable bool) (string, error) {
+	var args struct {
+		Cron              string
+		Prompt            string
+		WorkflowName      string
+		WorkflowArguments string
+		Recurring         bool
+		Durable           bool
+	}
+	args.Cron = strings.TrimSpace(cronExpr)
+	args.Prompt = strings.TrimSpace(prompt)
+	args.WorkflowName = strings.TrimSpace(workflowName)
+	args.WorkflowArguments = strings.TrimSpace(workflowArguments)
+	args.Recurring = recurring
+	args.Durable = durable
 	workflowKind := ""
 	if args.Cron == "" {
-		return "", fmt.Errorf("schedule_cron requires cron")
+		return "", fmt.Errorf("cron action=add requires cron")
 	}
 	if args.Prompt == "" && args.WorkflowName == "" {
-		return "", fmt.Errorf("schedule_cron requires prompt or workflow_name")
+		return "", fmt.Errorf("cron action=add requires prompt or workflow_name")
 	}
 	if args.WorkflowName != "" {
 		wf, ok := t.env.FindWorkflow(args.WorkflowName)
@@ -151,7 +188,7 @@ func (t *ScheduleCronTool) Execute(ctx context.Context, argsJSON string) (string
 	}
 
 	result := map[string]any{
-		"action":             "schedule_cron",
+		"action":             "cron",
 		"id":                 task.ID,
 		"schedule":           args.Cron,
 		"prompt":             args.Prompt,
@@ -197,39 +234,10 @@ func taskKind(task cron.Task) string {
 	return "prompt"
 }
 
-type CancelCronTool struct{ env *Env }
-
-func NewCancelCronTool(env *Env) *CancelCronTool  { return &CancelCronTool{env: env} }
-func (t *CancelCronTool) Name() string            { return "cancel_cron" }
-func (t *CancelCronTool) IsReadOnly() bool        { return false }
-func (t *CancelCronTool) IsConcurrencySafe() bool { return false }
-
-func (t *CancelCronTool) Definition() providers.ToolDefinition {
-	return providers.ToolDefinition{
-		Name:        "cancel_cron",
-		Description: "Cancel (delete) a scheduled task by its ID.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"id": map[string]any{
-					"type":        "string",
-					"description": "The task ID to cancel.",
-				},
-			},
-			"required": []string{"id"},
-		},
-	}
-}
-
-func (t *CancelCronTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	var args struct {
-		ID string `json:"id"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return "", err
-	}
-	if args.ID == "" {
-		return "", fmt.Errorf("cancel_cron requires id")
+func (t *CronTool) executeRemove(id string) (string, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "", fmt.Errorf("cron action=remove requires id")
 	}
 
 	stateDir, err := t.env.WorkspaceStateDir()
@@ -238,36 +246,18 @@ func (t *CancelCronTool) Execute(ctx context.Context, argsJSON string) (string, 
 	}
 	fileStore := cron.NewTaskStore(taskStorePath(stateDir))
 	sessionStore := cron.NewSessionTaskStore(stateDir)
-	if err := fileStore.Remove(args.ID); err != nil {
-		return "", fmt.Errorf("failed to cancel task: %w", err)
+	if err := fileStore.Remove(id); err != nil {
+		return "", fmt.Errorf("failed to remove task: %w", err)
 	}
-	if err := sessionStore.Remove(args.ID); err != nil {
-		return "", fmt.Errorf("failed to cancel task: %w", err)
+	if err := sessionStore.Remove(id); err != nil {
+		return "", fmt.Errorf("failed to remove task: %w", err)
 	}
 
-	result := map[string]any{"action": "cancel_cron", "cancelled": args.ID}
+	result := map[string]any{"action": "cron", "removed": id}
 	return mustJSON(result)
 }
 
-type ListCronTool struct{ env *Env }
-
-func NewListCronTool(env *Env) *ListCronTool    { return &ListCronTool{env: env} }
-func (t *ListCronTool) Name() string            { return "list_cron" }
-func (t *ListCronTool) IsReadOnly() bool        { return true }
-func (t *ListCronTool) IsConcurrencySafe() bool { return true }
-
-func (t *ListCronTool) Definition() providers.ToolDefinition {
-	return providers.ToolDefinition{
-		Name:        "list_cron",
-		Description: "List all scheduled tasks with their IDs, schedules, and prompts.",
-		InputSchema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
-		},
-	}
-}
-
-func (t *ListCronTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+func (t *CronTool) executeList() (string, error) {
 	stateDir, err := t.env.WorkspaceStateDir()
 	if err != nil {
 		return "", err
@@ -313,5 +303,5 @@ func (t *ListCronTool) Execute(ctx context.Context, argsJSON string) (string, er
 		appendTask(task, true)
 	}
 
-	return mustJSON(map[string]any{"action": "list_cron", "tasks": items, "count": len(items)})
+	return mustJSON(map[string]any{"action": "cron", "tasks": items, "count": len(items)})
 }

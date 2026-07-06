@@ -88,7 +88,7 @@ func (t *GitTool) ValidateInput(argsJSON string) error {
 func (t *GitTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "git",
-		Description: "Run structured restricted git commands in the workspace. Normal non-interactive git workflows may also use run_shell; use this tool when structured status output, explicit restricted helpers, or sensitive-path protections are more useful than plain shell output.\n\n" +
+		Description: "Run structured restricted git commands in the workspace. Normal non-interactive git workflows may also use bash; use this tool when structured status output, explicit restricted helpers, or sensitive-path protections are more useful than plain shell output.\n\n" +
 			"Supported read-only commands: log, show, diff, status, blame, branch (list only), " +
 			"tag (list only), reflog, stash list/show, ls-files, ls-remote, remote -v, " +
 			"remote show, config --get/--get-all/--list, rev-parse, rev-list, describe, " +

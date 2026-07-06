@@ -213,14 +213,10 @@ func (t *Toolkit) rebuildRegistry() {
 		// Search
 		NewGrepTool(e),
 		NewGlobTool(e),
-		// Shell
-		NewShellTool(e),
-		// Bash is the new unified command entry point emitted by the
-		// model profile compiler. The legacy run_shell tool stays
-		// registered as an internal / advanced implementation that
-		// the surface compiler can keep hidden.
+		// Bash is the unified command entry point emitted by the model
+		// profile compiler. It covers foreground commands, local
+		// verification, and the full background-process lifecycle.
 		NewBashTool(e),
-		NewRunTestTool(e),
 		// Git
 		NewGitTool(e),
 		// Web
@@ -235,13 +231,8 @@ func (t *Toolkit) rebuildRegistry() {
 		// back to the full conversation via this tool).
 		NewThreadGetTool(e),
 		NewFetchThreadMessagesTool(e),
-		// Group management (resident named agents only)
-		NewCreateGroupTool(e),
-		NewAddGroupMemberTool(e),
 		// Goals
-		NewCreateGoalTool(e),
-		NewUpdateGoalTool(e),
-		NewGetGoalTool(e),
+		NewGoalTool(e),
 		// Workflows
 		NewListWorkflowsTool(e),
 		NewLoadWorkflowTool(e),
@@ -261,25 +252,13 @@ func (t *Toolkit) rebuildRegistry() {
 		NewSpawnAgentTool(e),
 		NewHelpMeTool(e),
 		NewSendAgentMessageTool(e),
-		NewFollowupTaskTool(e),
-		NewAwaitAgentsTool(e),
 		NewCloseAgentTool(e),
-		NewListAgentsTool(e),
 		NewAgentReportTool(e),
 		NewPostMessageTool(e),
-		NewDeclineTool(e),
 		NewReactTool(e),
 		NewManageParticipantTool(e),
-		// Process management
-		NewStartProcessTool(e),
-		NewListProcessesTool(e),
-		NewStopProcessTool(e),
-		NewReadProcessOutputTool(e),
-		NewWriteStdinTool(e),
 		// Cron scheduling
-		NewScheduleCronTool(e),
-		NewCancelCronTool(e),
-		NewListCronTool(e),
+		NewCronTool(e),
 		// Deferred tool discovery
 		NewToolSearchTool(t),
 	}
@@ -690,7 +669,6 @@ func (t *Toolkit) SetParticipantSpeechEnabled(enabled bool) {
 		enableParticipantSpeechSurface(&t.activeSurface)
 	} else {
 		delete(t.activeSurface.Tools, "post_message")
-		delete(t.activeSurface.Tools, "decline")
 		delete(t.activeSurface.Tools, "react")
 		delete(t.activeSurface.Tools, "manage_participant")
 	}
@@ -705,8 +683,9 @@ func (t *Toolkit) SetParticipantSpeech(speech ParticipantSpeech) {
 }
 
 // SetGroupManager attaches the resident group-management backend used by
-// create_group / add_group_member. The tools stay unavailable until both a
-// manager is attached and resident participant capability is enabled.
+// manage_participant's create_group / add_member actions. Those actions stay
+// unavailable (execute-time error) until a manager is attached; only resident
+// runtimes receive one.
 func (t *Toolkit) SetGroupManager(manager GroupManager) {
 	if t == nil || t.env == nil {
 		return
@@ -795,8 +774,6 @@ func (t *Toolkit) SetResidentParticipantEnabled(enabled bool) {
 		enableResidentParticipantSurface(&t.activeSurface)
 	} else {
 		delete(t.activeSurface.Tools, "fetch_thread_messages")
-		delete(t.activeSurface.Tools, createGroupToolName)
-		delete(t.activeSurface.Tools, addGroupMemberToolName)
 		disableResidentWorkflowSurface(&t.activeSurface)
 	}
 	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
@@ -810,7 +787,6 @@ func enableParticipantSpeechSurface(surface *capability.Surface) {
 		surface.Tools = map[string]capability.Capability{}
 	}
 	surface.Tools["post_message"] = capability.CapabilityTaskCommunicate
-	surface.Tools["decline"] = capability.CapabilityTaskCommunicate
 	surface.Tools["react"] = capability.CapabilityTaskCommunicate
 	surface.Tools["manage_participant"] = capability.CapabilityTaskManage
 	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskCommunicate) {
@@ -829,8 +805,6 @@ func enableResidentParticipantSurface(surface *capability.Surface) {
 		surface.Tools = map[string]capability.Capability{}
 	}
 	surface.Tools["fetch_thread_messages"] = capability.CapabilityTaskCommunicate
-	surface.Tools[createGroupToolName] = capability.CapabilityTaskManage
-	surface.Tools[addGroupMemberToolName] = capability.CapabilityTaskManage
 	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskCommunicate) {
 		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskCommunicate)
 	}
@@ -1133,7 +1107,7 @@ func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
 
 func isParticipantSpeechTool(name string) bool {
 	switch name {
-	case "post_message", "decline", "react", "manage_participant":
+	case "post_message", "react", "manage_participant":
 		return true
 	default:
 		return false
@@ -1142,7 +1116,7 @@ func isParticipantSpeechTool(name string) bool {
 
 func isResidentParticipantTool(name string) bool {
 	switch name {
-	case "fetch_thread_messages", createGroupToolName, addGroupMemberToolName:
+	case "fetch_thread_messages":
 		return true
 	default:
 		return false

@@ -102,7 +102,7 @@ func NewAgentMailboxMessageWithReportAndResult(snap subagent.SubAgentSnapshot, r
 	// function, so the hint reaches every recipient the same way.
 	if isResumableMailboxStatus(snap.Status) {
 		msg.Resumable = true
-		msg.ResumeHint = "This run's full context is preserved. Send it a new message with followup_task or send_message to revive it in place with your correction; it resumes from where it stopped instead of starting over."
+		msg.ResumeHint = "This run's full context is preserved. Send it a new message with send_message (set trigger_turn=true to drive its next turn) to revive it in place with your correction; it resumes from where it stopped instead of starting over."
 	}
 	if !snap.CompletedAt.IsZero() && !snap.StartedAt.IsZero() {
 		msg.DurationMS = snap.CompletedAt.Sub(snap.StartedAt).Milliseconds()

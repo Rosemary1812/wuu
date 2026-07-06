@@ -902,8 +902,7 @@ func TestDefaultSystemPrompt_ComposeDecisionPaths(t *testing.T) {
 		"Direct:",
 		"Skill:",
 		"update_plan",
-		"create_goal",
-		"start_workflow",
+		"goal",
 		"spawn_agent",
 		"inception",
 		"explicitly requested",
@@ -911,6 +910,12 @@ func TestDefaultSystemPrompt_ComposeDecisionPaths(t *testing.T) {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must define orchestration path guidance %q: %q", want, prompt)
 		}
+	}
+	// start_workflow is a named-agent-only capability; the static main-agent
+	// map must not teach it (it is re-injected surface-gated by the prompt
+	// builder only for workflow-capable surfaces).
+	if strings.Contains(prompt, "start_workflow") {
+		t.Fatalf("default system prompt must NOT statically list start_workflow: %q", prompt)
 	}
 	for _, bad := range []string{
 		"Compose",

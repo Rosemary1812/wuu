@@ -20,16 +20,16 @@ func hasCapability(caps []capability.Capability, want capability.Capability) boo
 }
 
 // TestAdvancedToolsHiddenFromModelSurfaces verifies that the
-// legacy run_test / start_process / git / managed-process tools
-// — the ones that OpenCode and Codex-style harnesses collapse into
-// bash — stay registered in the toolkit so internal callers can
-// still reach them, but never appear on a model-visible tool
-// surface or a compiled profile hidden-tool contract.
+// structured git tool — the one that Codex-style harnesses collapse
+// into bash — stays registered in the toolkit so internal callers can
+// still reach it, but never appears on a model-visible tool surface or
+// a compiled profile hidden-tool contract.
 //
-// Phase 5 of the bash-first redesign: the model never has to guess
-// between run_test / start_process / git / list_processes. The
-// compiler omits them from profile surfaces, and toolExposure keeps
-// the registry-only implementations out of Definitions.
+// bash-first redesign: the model only ever sees bash. The former
+// run_shell / run_test / managed-process tools were removed entirely;
+// git remains registry-only. The compiler omits git from profile
+// surfaces, and toolExposure keeps the registry-only implementation
+// out of Definitions.
 func TestAdvancedToolsHiddenFromModelSurfaces(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -37,19 +37,11 @@ func TestAdvancedToolsHiddenFromModelSurfaces(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	// The full set of advanced / legacy command tools that the
-	// bash-first surface demotes to internal. The list is the
-	// authoritative source: toolExposure, the model-profile
-	// compiler, and this test must agree.
+	// The advanced command tool that the bash-first surface demotes to
+	// internal. The list is the authoritative source: toolExposure, the
+	// model-profile compiler, and this test must agree.
 	advancedTools := []string{
-		"run_shell",
-		"run_test",
 		"git",
-		"start_process",
-		"list_processes",
-		"read_process_output",
-		"write_stdin",
-		"stop_process",
 	}
 
 	// Baseline: without a profile, the legacy direct-tool surface
@@ -92,15 +84,15 @@ func TestAdvancedToolsHiddenFromModelSurfaces(t *testing.T) {
 }
 
 // TestAdvancedToolsRemainReachableViaRegistry confirms that
-// hiding the legacy tools from the model surface does not remove
-// them from the registry. Internal callers can still look them up
-// by name and execute them.
+// hiding the git tool from the model surface does not remove it
+// from the registry. Internal callers can still look it up by name
+// and execute it.
 func TestAdvancedToolsRemainReachableViaRegistry(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	for _, name := range []string{"run_test", "git", "start_process"} {
+	for _, name := range []string{"git"} {
 		tool := kit.LookupTool(name)
 		if tool == nil {
 			t.Errorf("registry must still contain %s for internal callers, got nil", name)
@@ -111,14 +103,18 @@ func TestAdvancedToolsRemainReachableViaRegistry(t *testing.T) {
 		}
 	}
 
+	// The removed legacy command tools must not resolve at all.
+	for _, name := range []string{"run_shell", "run_test", "start_process", "list_processes", "read_process_output", "write_stdin", "stop_process"} {
+		if tool := kit.LookupTool(name); tool != nil {
+			t.Errorf("removed legacy tool %s must not resolve via registry", name)
+		}
+	}
+
 	// The Execute path bypasses the model surface filter — the
 	// surface only hides tools from Definitions. Confirm the
-	// internal path at least resolves the tool and gets a
-	// non-nil response (the actual run may fail for a
-	// misconfigured workspace; we only care that the dispatcher
-	// is willing to invoke it).
-	if _, err := kit.executeByName(context.Background(), "run_test", `{"command":"echo phase5-reachability"}`); err != nil {
-		t.Logf("run_test Execute error (expected for unit test without project setup): %v", err)
+	// internal path resolves git.
+	if _, err := kit.executeByName(context.Background(), "git", `{"subcommand":"status"}`); err != nil {
+		t.Logf("git Execute error (expected for unit test without project setup): %v", err)
 	}
 }
 

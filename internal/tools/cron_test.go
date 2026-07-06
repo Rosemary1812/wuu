@@ -14,17 +14,17 @@ func TestScheduleCronTool_DefaultsToSessionOnly(t *testing.T) {
 	dir := t.TempDir()
 	stateDir := filepath.Join(dir, "state")
 	env := &Env{RootDir: dir, StateDir: stateDir}
-	tool := NewScheduleCronTool(env)
+	tool := NewCronTool(env)
 
-	result, err := tool.Execute(context.Background(), `{"cron":"*/5 * * * *","prompt":"check deploy","recurring":true}`)
+	result, err := tool.Execute(context.Background(), `{"action":"add","cron":"*/5 * * * *","prompt":"check deploy","recurring":true}`)
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 	if result == "" {
 		t.Fatal("expected non-empty result")
 	}
-	if !strings.Contains(result, `"action":"schedule_cron"`) {
-		t.Fatalf("expected schedule_cron action, got %s", result)
+	if !strings.Contains(result, `"action":"cron"`) {
+		t.Fatalf("expected cron action, got %s", result)
 	}
 
 	fileTasks, err := cron.NewTaskStore(taskStorePath(stateDir)).List()
@@ -50,17 +50,17 @@ func TestScheduleCronTool_DurablePersistsToDisk(t *testing.T) {
 	dir := t.TempDir()
 	stateDir := filepath.Join(dir, "state")
 	env := &Env{RootDir: dir, StateDir: stateDir}
-	tool := NewScheduleCronTool(env)
+	tool := NewCronTool(env)
 
-	result, err := tool.Execute(context.Background(), `{"cron":"*/5 * * * *","prompt":"check deploy","recurring":true,"durable":true}`)
+	result, err := tool.Execute(context.Background(), `{"action":"add","cron":"*/5 * * * *","prompt":"check deploy","recurring":true,"durable":true}`)
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 	if result == "" {
 		t.Fatal("expected non-empty result")
 	}
-	if !strings.Contains(result, `"action":"schedule_cron"`) {
-		t.Fatalf("expected schedule_cron action, got %s", result)
+	if !strings.Contains(result, `"action":"cron"`) {
+		t.Fatalf("expected cron action, got %s", result)
 	}
 
 	fileTasks, err := cron.NewTaskStore(taskStorePath(stateDir)).List()
@@ -84,9 +84,10 @@ func TestScheduleCronTool_SavesWorkflowTask(t *testing.T) {
 			Kind:        workflow.DefinitionKindMarkdown,
 		}},
 	}
-	tool := NewScheduleCronTool(env)
+	tool := NewCronTool(env)
 
 	result, err := tool.Execute(context.Background(), `{
+		"action":"add",
 		"cron":"*/5 * * * *",
 		"workflow_name":"weekly-qa",
 		"workflow_arguments":"settings search",
@@ -99,8 +100,8 @@ func TestScheduleCronTool_SavesWorkflowTask(t *testing.T) {
 	if !strings.Contains(result, `"kind":"workflow"`) || !strings.Contains(result, `"workflow_name":"weekly-qa"`) {
 		t.Fatalf("expected workflow result, got %s", result)
 	}
-	if !strings.Contains(result, `"action":"schedule_cron"`) {
-		t.Fatalf("expected schedule_cron action, got %s", result)
+	if !strings.Contains(result, `"action":"cron"`) {
+		t.Fatalf("expected cron action, got %s", result)
 	}
 
 	fileTasks, err := cron.NewTaskStore(taskStorePath(stateDir)).List()
@@ -146,9 +147,10 @@ func TestScheduleCronTool_SavesScriptWorkflowTaskUsesStartWorkflow(t *testing.T)
 			Kind:        workflow.DefinitionKindScript,
 		}},
 	}
-	tool := NewScheduleCronTool(env)
+	tool := NewCronTool(env)
 
 	_, err := tool.Execute(context.Background(), `{
+		"action":"add",
 		"cron":"*/5 * * * *",
 		"workflow_name":"dynamic-qa",
 		"workflow_arguments":"settings search",
@@ -189,16 +191,16 @@ func TestCancelCronTool(t *testing.T) {
 		t.Fatalf("sessionStore.Add: %v", err)
 	}
 
-	tool := NewCancelCronTool(env)
-	result, err := tool.Execute(context.Background(), `{"id":"def456"}`)
+	tool := NewCronTool(env)
+	result, err := tool.Execute(context.Background(), `{"action":"remove","id":"def456"}`)
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 	if result == "" {
 		t.Fatal("expected non-empty result")
 	}
-	if !strings.Contains(result, `"action":"cancel_cron"`) {
-		t.Fatalf("expected cancel_cron action, got %s", result)
+	if !strings.Contains(result, `"action":"cron"`) || !strings.Contains(result, `"removed":"def456"`) {
+		t.Fatalf("expected cron remove action, got %s", result)
 	}
 
 	sessionTasks, err := sessionStore.List()
@@ -223,16 +225,16 @@ func TestListCronTool(t *testing.T) {
 		t.Fatalf("sessionStore.Add: %v", err)
 	}
 
-	tool := NewListCronTool(env)
-	result, err := tool.Execute(context.Background(), `{}`)
+	tool := NewCronTool(env)
+	result, err := tool.Execute(context.Background(), `{"action":"list"}`)
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 	if result == "" {
 		t.Fatal("expected non-empty result")
 	}
-	if !strings.Contains(result, `"action":"list_cron"`) {
-		t.Fatalf("expected list_cron action, got %s", result)
+	if !strings.Contains(result, `"action":"cron"`) {
+		t.Fatalf("expected cron action, got %s", result)
 	}
 	if !strings.Contains(result, "[session-only]") {
 		t.Fatalf("expected session-only task in result, got %s", result)

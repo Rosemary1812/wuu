@@ -12,9 +12,33 @@ import (
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
+// executeGroupTool drives group management through manage_participant, into
+// which create_group / add_group_member were folded. It translates the legacy
+// tool names to the corresponding manage_participant action so the backend
+// (GroupManager) is exercised end-to-end.
 func executeGroupTool(t *testing.T, kit *tools.Toolkit, name, args string) (string, error) {
 	t.Helper()
-	return kit.Execute(context.Background(), providers.ToolCall{Name: name, Arguments: args})
+	var action string
+	switch name {
+	case "create_group":
+		action = "create_group"
+	case "add_group_member":
+		action = "add_member"
+	default:
+		return kit.Execute(context.Background(), providers.ToolCall{Name: name, Arguments: args})
+	}
+	fields := map[string]any{}
+	if strings.TrimSpace(args) != "" {
+		if err := json.Unmarshal([]byte(args), &fields); err != nil {
+			t.Fatalf("executeGroupTool: parse args %q: %v", args, err)
+		}
+	}
+	fields["action"] = action
+	merged, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("executeGroupTool: marshal args: %v", err)
+	}
+	return kit.Execute(context.Background(), providers.ToolCall{Name: "manage_participant", Arguments: string(merged)})
 }
 
 func startResidentDMWithRequestID(t *testing.T, srv *Server, participantID, requestID string) string {

@@ -116,7 +116,7 @@ var builtinWorkerTypes = map[string]WorkerType{
 		Description:     "Verification specialist. Use after non-trivial implementation work to run checks, try to break the change, and return a PASS/FAIL/PARTIAL verdict with evidence.",
 		SystemPrompt:    VerificationPreset + "\n" + reportClosingRule,
 		AllowedTools:    nil,
-		DisallowedTools: []string{"spawn_agent", "helpme", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "write_file", "edit_file", "apply_patch"},
+		DisallowedTools: []string{"spawn_agent", "helpme", "send_message", "close_agent", "write_file", "edit_file", "apply_patch"},
 		ContextScope:    "Final diff, acceptance criteria, changed files, and declared verification policy.",
 		OutputSchema:    "Structured agent_report handoff (outcome, verification, risks, blockers, evidence) — submitted at close, requested automatically if missing; final verdict must be PASS, FAIL, or PARTIAL.",
 		SuccessCriteria: []string{
@@ -325,13 +325,10 @@ func LookupWorkerType(name string) (WorkerType, error) {
 
 // alwaysBlockedTools is the set of tools that async sub-agents can never use.
 var alwaysBlockedTools = map[string]struct{}{
-	"spawn_agent":   {},
-	"helpme":        {},
-	"send_message":  {},
-	"followup_task": {},
-	"await_agents":  {},
-	"close_agent":   {},
-	"list_agents":   {},
+	"spawn_agent":  {},
+	"helpme":       {},
+	"send_message": {},
+	"close_agent":  {},
 }
 
 // FilterToolsForWorker returns the subset of fullList that this worker
@@ -353,7 +350,7 @@ func FilterToolsForWorker(wt WorkerType, fullList []string) []string {
 		if _, denied := denySet[name]; denied {
 			continue
 		}
-		if (name == "post_message" || name == "decline" || name == "manage_participant") && len(wt.AllowedTools) == 0 {
+		if (name == "post_message" || name == "manage_participant") && len(wt.AllowedTools) == 0 {
 			continue
 		}
 		if len(wt.AllowedTools) == 0 {

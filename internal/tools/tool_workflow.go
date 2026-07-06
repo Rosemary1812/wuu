@@ -335,7 +335,7 @@ func (t *SaveWorkflowTool) Execute(_ context.Context, argsJSON string) (string, 
 		"workflow": def,
 		"next_steps": []string{
 			"Use list_workflows or load_workflow to inspect the saved definition.",
-			"Use schedule_cron with workflow_name when this saved workflow should run on a schedule.",
+			"Use cron with action=add and workflow_name when this saved workflow should run on a schedule.",
 		},
 	})
 }
@@ -845,7 +845,7 @@ func initializeWorkflowGoalStatus(store *goalrunner.Store, state goalrunner.Stat
 			Summary:    message,
 			ReportPath: run.FinalReportPath,
 			CreatedAt:  createdAt,
-			NextSteps:  []string{"inspect get_goal and call update_goal with status complete only when the user-visible objective is done"},
+			NextSteps:  []string{"inspect goal with action=get and call goal with action=update status complete only when the user-visible objective is done"},
 		})
 	case workflow.RunStateCancelled:
 		if !workflowRunOwnsGoal(run, state) {

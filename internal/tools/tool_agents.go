@@ -72,9 +72,9 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"Set run_in_background=true only for independent or long-running work that can proceed while you do other work; " +
 			"background agents return quickly and send a completion notification when done. " +
 			"After spawning background agents, continue meaningful non-overlapping local work when available; otherwise end your turn " +
-			"and let the completion notification resume you. Do not sleep, poll, or loop checking status. Use await_agents only when " +
-			"the next step truly depends on child output. Spawn multiple independent agents in parallel by calling spawn_agent " +
-			"multiple times in the same response.",
+			"and let the completion notification resume you. Do not sleep, poll, or loop checking status. When the next step truly " +
+			"depends on child output, end your turn and let the child's completion notification resume you instead of blocking. " +
+			"Spawn multiple independent agents in parallel by calling spawn_agent multiple times in the same response.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -229,7 +229,7 @@ func subagentNextStepsForDiscovery(env *Env, steps []string) []string {
 		return steps
 	}
 	out := append([]string(nil), steps...)
-	out = append(out, "If a subagent management tool is not visible yet, load it first with tool_search using select:await_agents, select:send_message, select:followup_task, select:close_agent, or select:list_agents.")
+	out = append(out, "If a subagent management tool is not visible yet, load it first with tool_search using select:send_message or select:close_agent.")
 	return out
 }
 
@@ -263,7 +263,7 @@ func (t *HelpMeTool) Definition() providers.ToolDefinition {
 			"This launches a fresh general-purpose subagent with a clean context and returns immediately with its agent_id and agent_path. " +
 			"Use this instead of spawn_agent when the purpose is context rescue / second-opinion recovery, especially after user feedback like 'still wrong' or after several unsuccessful local attempts. " +
 			"Include the original goal, the current interpretation, failed attempts, constraints, and concrete evidence so the fresh helper can avoid repeating your mistakes. " +
-			"Use await_agents when your next step depends on the helper's output; when a structured HelpMe report is available, the await result can replace polluted parent context with a bounded HelpMe recovery summary. " +
+			"The helper runs in the background and resumes you with its result when it finishes; when a structured HelpMe report is available, that completion replaces polluted parent context with a bounded HelpMe recovery summary. " +
 			"If you manually use inception after HelpMe, summarize only durable facts, report/result paths, and trace references; do not paste or merge raw parent/helper transcripts.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -427,14 +427,6 @@ type helpMeMainTraceRecord struct {
 	HelperResult    *agentcontrol.SpawnResult        `json:"helper_result,omitempty"`
 	Report          *agentcontrol.AgentReportDetails `json:"report,omitempty"`
 	ReportMissing   bool                             `json:"report_missing,omitempty"`
-}
-
-type helpMeMainTraceLookup struct {
-	SchemaVersion   string                    `json:"schema_version"`
-	HelperAgentID   string                    `json:"helper_agent_id,omitempty"`
-	HelperAgentPath string                    `json:"helper_agent_path,omitempty"`
-	Args            helpMeArgs                `json:"args"`
-	HelperResult    *agentcontrol.SpawnResult `json:"helper_result,omitempty"`
 }
 
 type helpMeArgs struct {
@@ -686,67 +678,6 @@ func helpMeResultAgentPath(result *agentcontrol.SpawnResult) string {
 	return strings.TrimSpace(result.AgentPath)
 }
 
-func readHelpMeMainTraceForAgent(sessionDir, agentID string) (helpMeMainTraceLookup, string, bool) {
-	sessionDir = strings.TrimSpace(sessionDir)
-	agentID = strings.TrimSpace(agentID)
-	if sessionDir == "" || agentID == "" {
-		return helpMeMainTraceLookup{}, "", false
-	}
-	dir := filepath.Join(sessionDir, "helpme")
-	paths := helpMeTraceCandidatePaths(dir, agentID)
-	for i := len(paths) - 1; i >= 0; i-- {
-		trace, ok := readHelpMeMainTraceCandidate(paths[i], agentID)
-		if !ok {
-			continue
-		}
-		return trace, helpMeSessionRef(sessionDir, paths[i]), true
-	}
-	return helpMeMainTraceLookup{}, "", false
-}
-
-func helpMeTraceCandidatePaths(dir, agentID string) []string {
-	var paths []string
-	if safeID := safeHelpMeTraceID(agentID); safeID != "" {
-		matches, _ := filepath.Glob(filepath.Join(dir, "*-"+safeID+"-main-trace.json"))
-		paths = append(paths, matches...)
-	}
-	if len(paths) > 0 {
-		return paths
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), "-main-trace.json") {
-			continue
-		}
-		paths = append(paths, filepath.Join(dir, entry.Name()))
-	}
-	return paths
-}
-
-func readHelpMeMainTraceCandidate(path, agentID string) (helpMeMainTraceLookup, bool) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return helpMeMainTraceLookup{}, false
-	}
-	var trace helpMeMainTraceLookup
-	if err := json.Unmarshal(data, &trace); err != nil {
-		return helpMeMainTraceLookup{}, false
-	}
-	if strings.TrimSpace(trace.SchemaVersion) != "wuu/helpme-main-trace/v0.1" {
-		return helpMeMainTraceLookup{}, false
-	}
-	if strings.TrimSpace(trace.HelperAgentID) == agentID {
-		return trace, true
-	}
-	if trace.HelperResult != nil && strings.TrimSpace(trace.HelperResult.AgentID) == agentID {
-		return trace, true
-	}
-	return helpMeMainTraceLookup{}, false
-}
-
 func latestUserGoalFromHistory(history []providers.ChatMessage) string {
 	for i := len(history) - 1; i >= 0; i-- {
 		msg := history[i]
@@ -763,44 +694,6 @@ func latestUserGoalFromHistory(history []providers.ChatMessage) string {
 	return ""
 }
 
-func helpMeRisks(risks []string, reportOK bool) []string {
-	out := trimStringSlice(risks)
-	if !reportOK {
-		out = append(out, "Helper completed without a structured agent_report; rely on result_path and verify before broad follow-up.")
-	}
-	return out
-}
-
-func helpMeEvidenceStrings(evidence []agentcontrol.ReportEvidence) []string {
-	out := make([]string, 0, len(evidence))
-	for _, ref := range evidence {
-		var parts []string
-		if ref.Type != "" {
-			parts = append(parts, ref.Type)
-		}
-		if ref.Path != "" {
-			path := ref.Path
-			if ref.Line > 0 {
-				path = fmt.Sprintf("%s:%d", path, ref.Line)
-			}
-			parts = append(parts, path)
-		}
-		if ref.Command != "" {
-			parts = append(parts, ref.Command)
-		}
-		if ref.Output != "" {
-			parts = append(parts, ref.Output)
-		}
-		if ref.Note != "" {
-			parts = append(parts, ref.Note)
-		}
-		if len(parts) > 0 {
-			out = append(out, strings.Join(parts, " - "))
-		}
-	}
-	return out
-}
-
 func helpMeFirstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {
@@ -808,15 +701,6 @@ func helpMeFirstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func helpMeFirstNonEmptySlice(values ...[]string) []string {
-	for _, value := range values {
-		if trimmed := trimStringSlice(value); len(trimmed) > 0 {
-			return trimmed
-		}
-	}
-	return nil
 }
 
 func deriveAgentTaskName(description string) string {
@@ -919,273 +803,47 @@ func (t *SendAgentMessageTool) Definition() providers.ToolDefinition {
 			"message is queued and delivered before the child's next model round without " +
 			"interrupting its current step. If the target has already finished — completed, " +
 			"failed, or cancelled — it is revived in place with its full prior context plus your " +
-			"new message. send_message and followup_task now share this delivery-and-resume " +
-			"behavior; reach for followup_task when you want the message framed as a task " +
-			"hand-off that drives the target's next turn, and send_message for interim notes.",
+			"new message. Leave trigger_turn unset (or false) for an interim note that the target " +
+			"picks up on its own schedule. Set trigger_turn=true to frame the message as a task " +
+			"hand-off that drives the target's next turn immediately and returns its snapshot.",
 		InputSchema: targetMessageSchema(),
 	}
 }
 
-func (t *SendAgentMessageTool) Execute(_ context.Context, argsJSON string) (string, error) {
-	if err := executeAgentMessage(t.env, argsJSON); err != nil {
+func (t *SendAgentMessageTool) Execute(ctx context.Context, argsJSON string) (string, error) {
+	var args struct {
+		Target      string `json:"target"`
+		Message     string `json:"message"`
+		TriggerTurn bool   `json:"trigger_turn"`
+	}
+	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
 	}
-	return `{"action":"send_message","status":"sent"}`, nil
-}
-
-// ---------------------------------------------------------------------------
-// followup_task
-// ---------------------------------------------------------------------------
-
-type FollowupTaskTool struct{ env *Env }
-
-func NewFollowupTaskTool(env *Env) *FollowupTaskTool { return &FollowupTaskTool{env: env} }
-
-func (t *FollowupTaskTool) Name() string            { return "followup_task" }
-func (t *FollowupTaskTool) IsReadOnly() bool        { return false }
-func (t *FollowupTaskTool) IsConcurrencySafe() bool { return true }
-
-func (t *FollowupTaskTool) Definition() providers.ToolDefinition {
-	return providers.ToolDefinition{
-		Name: "followup_task",
-		Description: "Send a follow-up task to an existing non-root child task (queue-or-resume). " +
-			"Address the target by agent_id, agent_path, or task_name. If the target is still " +
-			"running, the message is queued and delivered before the child's next model round " +
-			"without interrupting its current step. If the target has already finished — " +
-			"completed, failed, or cancelled — it is revived in place with its full prior context " +
-			"plus your new message so it resumes from where it stopped.",
-		InputSchema: targetMessageSchema(),
+	if t.env.AgentControl == nil {
+		return "", errors.New("send_message: agent control not configured")
 	}
-}
-
-func (t *FollowupTaskTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	snap, err := executeFollowupTask(ctx, t.env, argsJSON)
+	if strings.TrimSpace(args.Target) == "" {
+		return "", errors.New("send_message: target is required")
+	}
+	if !args.TriggerTurn {
+		if err := t.env.AgentControl.SendMessageFrom(currentAgentPath(t.env), args.Target, args.Message); err != nil {
+			return "", err
+		}
+		return `{"action":"send_message","status":"sent"}`, nil
+	}
+	// trigger_turn: fold in the former followup_task behavior — revive the
+	// target and drive its next turn, returning the resumed snapshot.
+	snap, err := t.env.AgentControl.FollowupTaskFrom(currentAgentPath(t.env), ctx, args.Target, args.Message)
 	if err != nil {
 		return "", err
 	}
 	resp := snapshotForJSON(snap)
-	resp.Action = "followup_task"
+	resp.Action = "send_message"
 	out, err := json.Marshal(resp)
 	if err != nil {
 		return "", err
 	}
 	return string(out), nil
-}
-
-// ---------------------------------------------------------------------------
-// await_agents
-// ---------------------------------------------------------------------------
-
-type AwaitAgentsTool struct{ env *Env }
-
-func NewAwaitAgentsTool(env *Env) *AwaitAgentsTool { return &AwaitAgentsTool{env: env} }
-
-func (t *AwaitAgentsTool) Name() string            { return "await_agents" }
-func (t *AwaitAgentsTool) IsReadOnly() bool        { return true }
-func (t *AwaitAgentsTool) IsConcurrencySafe() bool { return true }
-
-func (t *AwaitAgentsTool) Definition() providers.ToolDefinition {
-	return providers.ToolDefinition{
-		Name: "await_agents",
-		Description: "Explicitly join one or more child agents and return their structured results. " +
-			"Use this only when the current request depends on the child output, or when synthesis / " +
-			"integration of previously spawned work is the next step. Do not call it in the same " +
-			"parallel tool-call batch as spawn_agent; wait for spawn_agent to return real IDs first. " +
-			"Pass targets to wait for specific agent_ids, task_names, or agent_paths. Omit targets " +
-			"only when you intentionally want to await all active descendant agents under the current " +
-			"agent path. This waits until the selected agents reach a final state, the user stops the turn, or the session ends. " +
-			"Each result carries the worker's final text plus report_kind: 'structured' when the worker filed " +
-			"agent_report, 'final_text' when the runtime synthesized the handoff from the final message and " +
-			"observed facts. Worker summaries are self-reports, not verified facts - when correctness matters, " +
-			"verify the handles they cite (paths, commands, IDs) or send a follow-up with send_message. " +
-			"Results also include changed_files from structured reports " +
-			"and warnings when multiple awaited agents report overlapping changed files. For HelpMe recovery, " +
-			"use the structured report, result/report paths, and original main_trace_path as bounded handoff material; " +
-			"do not paste or merge raw parent/helper transcripts into the parent context.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"targets": map[string]any{
-					"type":        "array",
-					"description": "Optional list of agent_id, task_name, or agent_path values to await. Omit only to await all active descendant agents.",
-					"items":       map[string]any{"type": "string"},
-				},
-			},
-		},
-	}
-}
-
-func (t *AwaitAgentsTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	if t.env.AgentControl == nil {
-		return "", errors.New("await_agents: agent control not configured")
-	}
-	var args struct {
-		Targets []string `json:"targets"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return "", err
-	}
-	result, err := t.env.AgentControl.AwaitFrom(currentAgentPath(t.env), ctx, args.Targets)
-	if err != nil {
-		return "", err
-	}
-	rewrite := buildHelpMeAwaitHistoryRewrite(t.env, result)
-	appendHelpMeAwaitGuidance(&result, rewrite)
-	out, err := json.Marshal(awaitAgentsToolResponse{
-		AwaitAgentsResult: result,
-		HistoryRewrite:    rewrite,
-	})
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
-}
-
-type awaitAgentsToolResponse struct {
-	agentcontrol.AwaitAgentsResult
-	HistoryRewrite *compact.HelpMeHistoryRewrite `json:"history_rewrite,omitempty"`
-}
-
-func buildHelpMeAwaitHistoryRewrite(env *Env, result agentcontrol.AwaitAgentsResult) *compact.HelpMeHistoryRewrite {
-	if env == nil || env.AgentControl == nil || currentAgentPath(env) != agentthread.RootPath {
-		return nil
-	}
-	if result.TimedOut || len(result.Results) != 1 {
-		return nil
-	}
-	agentResult := result.Results[0]
-	if !isHelpMeAwaitResult(agentResult) || strings.TrimSpace(agentResult.Status) != string(subagent.StatusCompleted) || agentResult.ReportMissing {
-		return nil
-	}
-	// One-shot gate 1: a result another delivery path already handed to the
-	// model must not trigger a second wholesale rewrite — that would wipe
-	// all progress made after the first recovery.
-	if agentResult.ResultConsumed {
-		return nil
-	}
-	report, reportOK := env.AgentControl.AgentReportDetailsForTask(agentResult.AgentID)
-	if !reportOK {
-		return nil
-	}
-	// The audit trace is best-effort: use it for the brief only when no
-	// registered recovery exists (pre-recovery sessions), and for the
-	// trace-path reference whenever it is available.
-	trace, tracePath, traceOK := readHelpMeMainTraceForAgent(env.SessionDir, agentResult.AgentID)
-	recovery, recoveryOK := env.AgentControl.HelpMeRecoveryForHelper(agentResult.AgentID)
-	// One-shot gate 2: an already-applied recovery never rewrites again.
-	if recoveryOK && recovery.Applied {
-		return nil
-	}
-	if !recoveryOK {
-		if !traceOK {
-			return nil
-		}
-		// Legacy session: migrate the trace args into a recovery object so
-		// this rescue also becomes one-shot from here on.
-		recovery = agentcontrol.HelpMeRecovery{
-			HelperID: agentResult.AgentID,
-			Brief:    helpMeRecoveryBriefFromArgs(trace.Args),
-		}
-		env.AgentControl.RegisterHelpMeRecovery(recovery)
-	}
-
-	brief := recovery.Brief
-	parentEvidence := trimStringSlice(brief.Evidence)
-	if tracePath != "" {
-		parentEvidence = append(parentEvidence, "Main pre-HelpMe trace: "+tracePath)
-	}
-	artifacts := trimStringSlice(report.Artifacts)
-	if tracePath != "" {
-		artifacts = append(artifacts, tracePath)
-	}
-	reason := strings.TrimSpace(brief.Reason)
-	if reason == "" {
-		reason = "The main agent requested a fresh-context recovery."
-	}
-	originalGoal := helpMeFirstNonEmpty(brief.OriginalGoal, "Continue the user's current coding task.")
-	ask := helpMeFirstNonEmpty(brief.Ask, originalGoal)
-	content := compact.BuildHelpMeJointCompactContent(compact.HelpMeJointCompactInput{
-		OriginalGoal:           originalGoal,
-		ParentExecutionJournal: recovery.ParentExecutionJournal,
-		CurrentUnderstanding:   brief.CurrentUnderstanding,
-		Ask:                    ask,
-		Reason:                 reason,
-		Constraints:            brief.Constraints,
-		FailedAttempts:         brief.FailedAttempts,
-		Evidence:               parentEvidence,
-		HelperStatus:           agentResult.Status,
-		HelperAgentID:          agentResult.AgentID,
-		HelperAgentPath:        agentResult.AgentPath,
-		HelperResult:           agentResult.Result,
-		HelperResultPath:       agentResult.ResultPath,
-		HelperReportPath:       report.ReportPath,
-		HelperError:            agentResult.Error,
-		ReportOutcome:          report.Outcome,
-		ReportSummary:          report.Summary,
-		ChangedFiles:           report.ChangedFiles,
-		WorkDone:               report.WorkDone,
-		Blockers:               report.Blockers,
-		Risks:                  helpMeRisks(report.Risks, reportOK),
-		Verification:           report.Verification,
-		ReportEvidence:         helpMeEvidenceStrings(report.Evidence),
-		NextSteps:              helpMeFirstNonEmptySlice(report.NextSteps, result.NextSteps),
-		Artifacts:              artifacts,
-	})
-	// Consume the recovery atomically: if another await applied it between
-	// the gate above and here, drop this rewrite instead of double-firing.
-	if !env.AgentControl.MarkHelpMeRecoveryApplied(agentResult.AgentID) {
-		return nil
-	}
-	return &compact.HelpMeHistoryRewrite{
-		Kind:         compact.HelpMeHistoryRewriteKind,
-		Content:      content,
-		AgentID:      agentResult.AgentID,
-		AgentPath:    agentResult.AgentPath,
-		ResultPath:   agentResult.ResultPath,
-		ReportPath:   report.ReportPath,
-		TraceSummary: "Main history was replaced by a bounded HelpMe compact built from the helper report, result references, and the saved main trace; raw main/helper transcripts were not merged.",
-	}
-}
-
-func helpMeRecoveryBriefFromArgs(args helpMeArgs) agentcontrol.HelpMeRecoveryBrief {
-	return agentcontrol.HelpMeRecoveryBrief{
-		OriginalGoal:         strings.TrimSpace(args.OriginalGoal),
-		Ask:                  strings.TrimSpace(args.Ask),
-		Reason:               strings.TrimSpace(args.Reason),
-		CurrentUnderstanding: strings.TrimSpace(args.CurrentUnderstanding),
-		Constraints:          trimStringSlice(args.Constraints),
-		FailedAttempts:       trimStringSlice(args.FailedAttempts),
-		Evidence:             trimStringSlice(args.Evidence),
-	}
-}
-
-func appendHelpMeAwaitGuidance(result *agentcontrol.AwaitAgentsResult, rewrite *compact.HelpMeHistoryRewrite) {
-	if result == nil || !awaitResultsIncludeHelpMe(result.Results) {
-		return
-	}
-	if rewrite != nil {
-		result.NextSteps = append(result.NextSteps, "HelpMe recovery will continue from a bounded context rewrite built from agent_report, result/report paths, and the original main_trace_path; inspect raw traces only when details are needed.")
-		return
-	}
-	result.NextSteps = append(result.NextSteps,
-		"For HelpMe recovery, synthesize from agent_report, result/report paths, and the original main_trace_path; do not paste or merge raw parent/helper transcripts.",
-		"If the parent context is polluted after consuming HelpMe, call inception with a bounded recovery summary that keeps only durable facts, rejected paths, verification, and evidence paths.",
-	)
-}
-
-func awaitResultsIncludeHelpMe(results []agentcontrol.AwaitAgentResult) bool {
-	for _, result := range results {
-		if isHelpMeAwaitResult(result) {
-			return true
-		}
-	}
-	return false
-}
-
-func isHelpMeAwaitResult(result agentcontrol.AwaitAgentResult) bool {
-	taskName := strings.TrimSpace(result.TaskName)
-	agentPath := strings.TrimSpace(result.AgentPath)
-	return strings.HasPrefix(taskName, "helpme_recovery_") || strings.Contains(agentPath, "/helpme_recovery")
 }
 
 // ---------------------------------------------------------------------------
@@ -1233,59 +891,11 @@ func (t *CloseAgentTool) Execute(_ context.Context, argsJSON string) (string, er
 	return `{"action":"close_agent","status":"closed"}`, nil
 }
 
-// ---------------------------------------------------------------------------
-// list_agents
-// ---------------------------------------------------------------------------
-
-type ListAgentsTool struct{ env *Env }
-
-func NewListAgentsTool(env *Env) *ListAgentsTool { return &ListAgentsTool{env: env} }
-
-func (t *ListAgentsTool) Name() string            { return "list_agents" }
-func (t *ListAgentsTool) IsReadOnly() bool        { return true }
-func (t *ListAgentsTool) IsConcurrencySafe() bool { return true }
-
-func (t *ListAgentsTool) Definition() providers.ToolDefinition {
-	return providers.ToolDefinition{
-		Name: "list_agents",
-		Description: "List all sub-agents in the current session with their status (running, " +
-			"completed, failed, cancelled), type, description, and timing info.",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"path_prefix": map[string]any{
-					"type":        "string",
-					"description": "Optional relative or absolute agent path prefix to list.",
-				},
-			},
-		},
-	}
-}
-
-func (t *ListAgentsTool) Execute(_ context.Context, argsJSON string) (string, error) {
-	if t.env.AgentControl == nil {
-		return "", errors.New("list_agents: agent control not configured")
-	}
-	var args struct {
-		PathPrefix string `json:"path_prefix"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return "", err
-	}
-	list := t.env.AgentControl.ListFrom(currentAgentPath(t.env), args.PathPrefix)
-	agents := make([]agentSnapshotResponse, 0, len(list))
-	for _, snap := range list {
-		agents = append(agents, snapshotForJSON(snap))
-	}
-	out, err := json.Marshal(map[string]any{
-		"action": "list_agents",
-		"agents": agents,
-	})
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
-}
+// list_agents was removed as a model-facing tool: the live child-agent roster
+// (status, type, description, timing) is now injected per turn as the
+// <subagent_status> reminder (agentcontrol.ActiveTaskReminder), keeping the
+// dynamic roster out of any static tool schema. ListFrom stays as a control
+// method for that reminder and the deferred-bundle activation gate.
 
 // ---------------------------------------------------------------------------
 // agent_report
@@ -1411,43 +1021,13 @@ func targetMessageSchema() map[string]any {
 				"type":        "string",
 				"description": "Message to deliver.",
 			},
+			"trigger_turn": map[string]any{
+				"type":        "boolean",
+				"description": "Optional. Omit or false to queue an interim note the target reads on its own schedule. Set true to hand off a task that drives the target's next turn immediately and returns its snapshot.",
+			},
 		},
 		"required": []string{"target", "message"},
 	}
-}
-
-func executeAgentMessage(env *Env, argsJSON string) error {
-	if env.AgentControl == nil {
-		return errors.New("send_message: agent control not configured")
-	}
-	var args struct {
-		Target  string `json:"target"`
-		Message string `json:"message"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return err
-	}
-	if strings.TrimSpace(args.Target) == "" {
-		return errors.New("send_message: target is required")
-	}
-	return env.AgentControl.SendMessageFrom(currentAgentPath(env), args.Target, args.Message)
-}
-
-func executeFollowupTask(ctx context.Context, env *Env, argsJSON string) (subagent.SubAgentSnapshot, error) {
-	if env.AgentControl == nil {
-		return subagent.SubAgentSnapshot{}, errors.New("followup_task: agent control not configured")
-	}
-	var args struct {
-		Target  string `json:"target"`
-		Message string `json:"message"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return subagent.SubAgentSnapshot{}, err
-	}
-	if strings.TrimSpace(args.Target) == "" {
-		return subagent.SubAgentSnapshot{}, errors.New("followup_task: target is required")
-	}
-	return env.AgentControl.FollowupTaskFrom(currentAgentPath(env), ctx, args.Target, args.Message)
 }
 
 func currentAgentPath(env *Env) string {

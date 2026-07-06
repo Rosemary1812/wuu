@@ -26,7 +26,7 @@ const (
 // unified terminal entry point for bounded commands, verification,
 // and managed background processes.
 //
-// Implementation note: short-lived commands use executeShellCommand,
+// Implementation note: short-lived commands use executeShellCommandWithCWD,
 // verification commands get result enrichment as a post-processor,
 // and long-running commands use the managed process backend.
 // Package/network commands that are covered by the default command

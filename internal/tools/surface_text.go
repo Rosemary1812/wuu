@@ -8,7 +8,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/capability"
 )
 
-var terminalPathMarkerRE = regexp.MustCompile(`(?i)(^|[^a-z0-9])(?:bash|git|run_shell|run_test|start_process|list_processes|read_process_output|write_stdin|stop_process|command\.bash|terminal|shell)([^a-z0-9]|$)`)
+var terminalPathMarkerRE = regexp.MustCompile(`(?i)(^|[^a-z0-9])(?:bash|git|command\.bash|terminal|shell)([^a-z0-9]|$)`)
 var packageCommandMarkerRE = regexp.MustCompile(`(?i)(^|[^a-z0-9])(?:npm|pnpm|yarn|bun|docker|make)[[:space:]_-]+(?:run|test|install|ci|add|exec|dlx|build|start|dev|serve|preview|compose|runner|command|script|shell)([^a-z0-9]|$)?`)
 var npxCommandMarkerRE = regexp.MustCompile(`(?i)(^|[^a-z0-9])npx[[:space:]_-]+[a-z0-9]`)
 

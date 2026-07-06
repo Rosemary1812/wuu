@@ -20,6 +20,7 @@ import (
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/memdir"
+	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/skills"
@@ -589,9 +590,16 @@ description: Legacy user audit workflow.
 	if !ok || compose.Source != "bundled" || !strings.Contains(compose.Content, "session_memory") {
 		t.Fatalf("bundled compose workflow not discovered: %+v", compose)
 	}
-	if !strings.Contains(rt.BaseSystemPrompt, "Project native feature workflow.") ||
-		!strings.Contains(rt.BaseSystemPrompt, "Workflow guidance") {
-		t.Fatalf("flat tool surface should include workflow guidance:\n%s", rt.BaseSystemPrompt)
+	// Workflow orchestration is a named-agent-only capability. An ordinary
+	// project main-agent session still DISCOVERS workflow definitions (asserted
+	// above via rt.Workflows / rt.Toolkit.Workflows()), but it must NOT receive
+	// workflow prompt guidance: the catalog and the start_workflow path bullet
+	// are surface-gated to workflow-capable surfaces, and this main surface has
+	// no workflow capability.
+	if strings.Contains(rt.BaseSystemPrompt, "Workflow guidance") ||
+		strings.Contains(rt.BaseSystemPrompt, "Project native feature workflow.") ||
+		strings.Contains(rt.BaseSystemPrompt, "# Workflow orchestration") {
+		t.Fatalf("project main-agent flat surface must NOT include workflow guidance:\n%s", rt.BaseSystemPrompt)
 	}
 	if strings.Contains(rt.BaseSystemPrompt, "# Tool Discovery") {
 		t.Fatalf("flat tool surface should not include tool discovery guidance:\n%s", rt.BaseSystemPrompt)
@@ -605,10 +613,10 @@ description: Legacy user audit workflow.
 	}
 	// Workflow tools are now a named-agent-only capability (decision two). An
 	// ordinary project main-agent session still DISCOVERS workflow definitions
-	// (asserted above via rt.Workflows / rt.Toolkit.Workflows() and the prompt
-	// guidance), but it no longer exposes the workflow TOOLS: they are absent
-	// from the compiled main surface, so ToolInfo reports them Hidden and they
-	// never appear in Definitions().
+	// (asserted above via rt.Workflows / rt.Toolkit.Workflows()), but it neither
+	// exposes the workflow TOOLS nor receives workflow prompt guidance: the
+	// tools are absent from the compiled main surface, so ToolInfo reports them
+	// Hidden and they never appear in Definitions().
 	for _, name := range []string{"list_workflows", "load_workflow", "save_workflow", "start_workflow", "workflow_status", "create_workflow", "run_workflow", "workflow_control"} {
 		if defs[name] {
 			t.Fatalf("named-only workflow tool %q must NOT be visible on a main-agent session, got Definitions()", name)
@@ -948,7 +956,7 @@ func TestNewThreadRuntimeWorkerDoesNotInheritParticipantSpeech(t *testing.T) {
 	req := client.LastRequest()
 	for _, def := range req.Tools {
 		switch def.Name {
-		case "post_message", "decline", "manage_participant":
+		case "post_message", "manage_participant":
 			t.Fatalf("ordinary worker inherited participant speech tool %q", def.Name)
 		}
 	}
@@ -1564,7 +1572,7 @@ func TestNewSessionAutoUsesNativeDeferredForFirstPartyOpenAIResponses(t *testing
 	if rt.StreamRunner == nil || !rt.StreamRunner.NativeDeferredToolDiscovery {
 		t.Fatal("first-party OpenAI Responses runner should forward native deferred loading to provider requests")
 	}
-	if def, ok := sessionToolDefByName(rt.Toolkit.Definitions(), "await_agents"); !ok || !def.DeferLoading {
+	if def, ok := sessionToolDefByName(rt.Toolkit.Definitions(), "send_message"); !ok || !def.DeferLoading {
 		t.Fatalf("first-party OpenAI Responses should declare deferred tools as native-deferred, got %+v", rt.Toolkit.Definitions())
 	}
 }
@@ -1606,7 +1614,7 @@ func TestNewSessionAutoFallsBackToWuuToolSearchForUnsupportedFirstPartyOpenAIRes
 	for _, want := range []string{
 		"# Deferred Tool Catalog",
 		"<available-deferred-tools>",
-		"await_agents",
+		"send_message",
 	} {
 		if !strings.Contains(rt.BaseSystemPrompt, want) {
 			t.Fatalf("Wuu tool_search prompt missing static catalog entry %q:\n%s", want, rt.BaseSystemPrompt)
@@ -1660,8 +1668,8 @@ func TestNewSessionAutoFlattensCompatibleOpenAIResponses(t *testing.T) {
 	if _, ok := sessionToolDefByName(defs, "tool_search"); ok {
 		t.Fatalf("compatible OpenAI Responses flat mode should hide tool_search, got %+v", defs)
 	}
-	if def, ok := sessionToolDefByName(defs, "await_agents"); !ok || def.DeferLoading {
-		t.Fatalf("compatible OpenAI Responses flat mode should expose await_agents directly, got %+v", defs)
+	if def, ok := sessionToolDefByName(defs, "send_message"); !ok || def.DeferLoading {
+		t.Fatalf("compatible OpenAI Responses flat mode should expose send_message directly, got %+v", defs)
 	}
 }
 
@@ -1816,7 +1824,7 @@ func TestNewSessionAllowsExplicitWuuToolSearchFallback(t *testing.T) {
 	if _, ok := sessionToolDefByName(defs, "tool_search"); !ok {
 		t.Fatalf("wuu_tool_search should expose tool_search, got %+v", defs)
 	}
-	if _, ok := sessionToolDefByName(defs, "await_agents"); ok {
+	if _, ok := sessionToolDefByName(defs, "send_message"); ok {
 		t.Fatalf("wuu_tool_search should keep deferred tools behind tool_search until loaded, got %+v", defs)
 	}
 }
@@ -1850,11 +1858,11 @@ func TestNewSessionFlattensToolSurfaceWhenToolLoadingFlat(t *testing.T) {
 	for _, def := range rt.Toolkit.Definitions() {
 		defs[def.Name] = true
 	}
-	for _, name := range []string{"tool_search", "await_agents"} {
+	for _, name := range []string{"tool_search", "send_message"} {
 		if name == "tool_search" && defs[name] {
 			t.Fatalf("flat surface should hide tool_search: %+v", defs)
 		}
-		if name == "await_agents" && !defs[name] {
+		if name == "send_message" && !defs[name] {
 			t.Fatalf("flat surface should expose deferred tool %s: %+v", name, defs)
 		}
 	}
@@ -2255,11 +2263,16 @@ func TestBuildBaseSystemPromptFiltersSkillsBySurface(t *testing.T) {
 }
 
 func TestBuildBaseSystemPromptFiltersWorkflowsBySurface(t *testing.T) {
+	// A workflow-capable no-shell surface: it carries the workflow capability
+	// (so the catalog is injected) but no bash, so terminal-only workflows must
+	// still be filtered out by FilterWorkflowsForSurface.
 	surface := capability.Surface{
-		ProfileName:    "portable_no_shell",
-		Tools:          map[string]capability.Capability{"read_file": capability.CapabilityFileRead},
-		Capabilities:   []capability.Capability{capability.CapabilityFileRead},
-		SystemFragment: "Portable no-shell profile.",
+		ProfileName:          "portable_no_shell",
+		Tools:                map[string]capability.Capability{"read_file": capability.CapabilityFileRead},
+		Capabilities:         []capability.Capability{capability.CapabilityFileRead},
+		DeferredTools:        map[string]capability.Capability{"start_workflow": capability.CapabilityWorkflow},
+		DeferredCapabilities: []capability.Capability{capability.CapabilityWorkflow},
+		SystemFragment:       "Portable no-shell profile.",
 	}
 	promptText := buildBaseSystemPrompt(
 		t.TempDir(),
@@ -2342,7 +2355,7 @@ func TestBuildBaseSystemPromptLocalNoShellDoesNotTeachTerminalPaths(t *testing.T
 // split between prompts.System() (base sections shared with workers) and
 // prompts.SystemMain() (the Orchestration path-selection map that lives only
 // in the main agent's prompt). The Orchestration section lists main-agent
-// planning and orchestration paths (update_plan, create_goal,
+// planning and orchestration paths (update_plan, goal,
 // start_workflow, spawn_agent, helpme, write_memory, read_memory); if it
 // leaked into a worker's system prompt the worker would receive the wrong
 // path-selection map. Inception is available to workers through the tool
@@ -2374,20 +2387,24 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 		"- helpme:",
 		"- inception:",
 		"- update_plan:",
-		"- create_goal:",
-		"- start_workflow:",
+		"- goal:",
 		"- spawn_agent:",
 	} {
 		if !strings.Contains(mainPrompt, want) {
 			t.Fatalf("main agent prompt must contain %q; got prompt:\n%s", want, mainPrompt)
 		}
 	}
+	// start_workflow is a named-agent-only capability: the ordinary project
+	// main surface (no workflow capability) must NOT be taught it.
+	if strings.Contains(mainPrompt, "- start_workflow:") {
+		t.Fatalf("project main prompt (no workflow capability) must not contain the start_workflow path bullet; got prompt:\n%s", mainPrompt)
+	}
 	for _, banned := range []string{
 		"# Orchestration",
 		"- helpme:",
 		"- inception:",
 		"- update_plan:",
-		"- create_goal:",
+		"- goal:",
 		"- start_workflow:",
 		"- spawn_agent:",
 		"- write_memory",
@@ -2396,6 +2413,28 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 		if strings.Contains(workerPrompt, banned) {
 			t.Fatalf("worker prompt must not contain main-only guidance %q; got prompt:\n%s", banned, workerPrompt)
 		}
+	}
+
+	// A named/workflow-capable surface DOES receive the surface-gated
+	// start_workflow path bullet, re-injected by the prompt builder.
+	namedSurface := modelprofile.DefaultCompiler{}.Compile(
+		modelprofile.Resolve("openai", "gpt-5"),
+		modelprofile.SurfaceNamed,
+	)
+	if !namedSurface.HasAvailableCapability(capability.CapabilityWorkflow) {
+		t.Fatalf("named surface should carry the workflow capability: %+v", namedSurface.DeferredCapabilities)
+	}
+	namedPrompt := buildBaseSystemPrompt(
+		t.TempDir(),
+		config.DefaultSystemPrompt(),
+		"",
+		"openai",
+		"gpt-5",
+		namedSurface,
+		nil, "", "", nil, nil,
+	)
+	if !strings.Contains(namedPrompt, "- start_workflow:") {
+		t.Fatalf("named/workflow-capable prompt must contain the start_workflow path bullet; got prompt:\n%s", namedPrompt)
 	}
 }
 
@@ -2565,7 +2604,7 @@ func TestWorkerDeferredToolCatalogPromptForToolkit(t *testing.T) {
 	if catalog == "" {
 		t.Fatal("worker deferred tool catalog must not be empty when tool search is enabled")
 	}
-	for _, want := range []string{"session_memory", "thread_get", "create_goal", "schedule_cron"} {
+	for _, want := range []string{"session_memory", "thread_get", "goal", "cron"} {
 		if !strings.Contains(catalog, want) {
 			t.Errorf("worker catalog must list deferred executor tool %s:\n%s", want, catalog)
 		}

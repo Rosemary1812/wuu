@@ -592,7 +592,7 @@ func (s *runState) toolOutput(itemID string) string {
 
 func isCommandTool(name string) bool {
 	switch strings.TrimSpace(name) {
-	case "bash", "run_shell", "run_test", "start_process", "stop_process", "read_process_output", "write_stdin":
+	case "bash":
 		return true
 	default:
 		return false

@@ -44,8 +44,8 @@ func TestSystemPromptPreamble_ContainsAgentToolRules(t *testing.T) {
 		"fork-self",
 		"run_in_background",
 		"send_message",
-		"followup_task",
-		"await_agents",
+		"trigger_turn",
+		"subagent_status",
 		"parallel",
 	} {
 		if !strings.Contains(preamble, want) {

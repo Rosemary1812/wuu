@@ -276,8 +276,8 @@ func TestResidentDeclineDefaultsToOwnDMThread(t *testing.T) {
 
 	kit := residentToolkitForTest(t, srv, dmID)
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "decline",
-		Arguments: `{"reason":"No useful update."}`,
+		Name:      "post_message",
+		Arguments: `{"kind":"decline","text":"No useful update."}`,
 	}); err != nil {
 		t.Fatalf("decline: %v", err)
 	}

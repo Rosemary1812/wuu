@@ -1107,7 +1107,7 @@ func TestAwaitFromTimesOutWithRunningStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
 	}
-	if !spawnStepsContain(res.NextSteps, "non-overlapping") || !spawnStepsContain(res.NextSteps, "await_agents") {
+	if !spawnStepsContain(res.NextSteps, "non-overlapping") || !spawnStepsContain(res.NextSteps, "completion notification") {
 		t.Fatalf("async spawn should guide non-blocking follow-up, got %+v", res.NextSteps)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
@@ -1119,7 +1119,7 @@ func TestAwaitFromTimesOutWithRunningStatus(t *testing.T) {
 	if !awaited.TimedOut || len(awaited.Results) != 1 || awaited.Results[0].Status != string(subagent.StatusRunning) {
 		t.Fatalf("expected timed out running result, got %+v", awaited)
 	}
-	if !spawnStepsContain(awaited.NextSteps, "non-overlapping") || !spawnStepsContain(awaited.NextSteps, "explicit targets") {
+	if !spawnStepsContain(awaited.NextSteps, "non-overlapping") || !spawnStepsContain(awaited.NextSteps, "completion notifications") {
 		t.Fatalf("timed out await should guide non-blocking follow-up, got %+v", awaited.NextSteps)
 	}
 	c.StopAll()
@@ -1152,8 +1152,11 @@ func TestActiveTaskReminderListsIncompleteChildren(t *testing.T) {
 		t.Fatalf("Spawn: %v", err)
 	}
 	reminder := c.ActiveTaskReminder(agentthread.RootPath)
-	if !strings.Contains(reminder, res.AgentPath) || !strings.Contains(reminder, "await_agents") {
-		t.Fatalf("active reminder should name the child and await tool, got %q", reminder)
+	if !strings.Contains(reminder, res.AgentPath) || !strings.Contains(reminder, "<subagent_status>") {
+		t.Fatalf("active reminder should name the child inside a subagent_status block, got %q", reminder)
+	}
+	if strings.Contains(reminder, "await_agents") {
+		t.Fatalf("active reminder must not reference the retired await_agents tool, got %q", reminder)
 	}
 	c.StopAll()
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)
@@ -2521,8 +2524,8 @@ func TestAgentMailboxMessageResumeHint(t *testing.T) {
 	if !msg.Resumable {
 		t.Fatalf("failed mailbox should be marked resumable: %+v", msg)
 	}
-	if !strings.Contains(msg.ResumeHint, "followup_task") || !strings.Contains(msg.ResumeHint, "send_message") {
-		t.Fatalf("resume hint should name the resume tools: %q", msg.ResumeHint)
+	if !strings.Contains(msg.ResumeHint, "send_message") || !strings.Contains(msg.ResumeHint, "trigger_turn") {
+		t.Fatalf("resume hint should name the resume tool and mode: %q", msg.ResumeHint)
 	}
 
 	cancelled := failed
@@ -2546,7 +2549,7 @@ func TestAgentMailboxMessageResumeHint(t *testing.T) {
 	// Root-path parity: the root completion communication for a failed run
 	// serializes the same hint field.
 	root := FormatAgentMailboxMessage(failed)
-	if !strings.Contains(root, "resume_hint") || !strings.Contains(root, "followup_task") {
+	if !strings.Contains(root, "resume_hint") || !strings.Contains(root, "send_message") {
 		t.Fatalf("root-path mailbox should include the resume hint, got %q", root)
 	}
 }

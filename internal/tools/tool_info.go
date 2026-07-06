@@ -114,14 +114,11 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if isResidentParticipantTool(name) && !t.residentParticipantEnabled() {
 		return ToolExposureHidden
 	}
-	// The bash-first surface collapses every legacy command entry
-	// point into a single "bash" tool. The model never has to guess
-	// between run_shell / run_test / start_process / git. The
-	// legacy names are kept as internal / advanced implementations
-	// for replay, progressive disclosure, and the bash result
-	// post-processor; they stay registered in the toolkit so
-	// LookupTool still finds them, but toolExposure returns Hidden
-	// for every surface so they never appear in Definitions.
+	// The bash-first surface collapses every command entry point into a
+	// single "bash" tool. The model never has to choose between bash and
+	// the structured git tool: git stays registered so LookupTool still
+	// finds it, but toolExposure returns Hidden for every surface so it
+	// never appears in Definitions.
 	if isAdvancedCommandToolHidden(name) {
 		return ToolExposureHidden
 	}
@@ -148,26 +145,14 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 }
 
 // isAdvancedCommandToolHidden reports whether the given tool name
-// belongs to the set of advanced / legacy command tools that the
-// bash-first surface demotes to internal. The model-facing command
-// surface is "bash" only; these names stay registered so the
-// internal callers (tool_search, replay, the bash result
-// post-processor that adds test summaries) can still reach them.
-//
-// The set covers the legacy run_shell, the run_test verifier, the
-// five managed-process tools (start_process / list_processes /
-// read_process_output / write_stdin / stop_process), and the
-// structured git tool.
+// belongs to the set of advanced command tools that the bash-first
+// surface demotes to internal. The model-facing command surface is
+// "bash" only; the structured git tool stays registered so internal
+// callers (tool_search, replay) can still reach it, but it is never
+// exposed in Definitions.
 func isAdvancedCommandToolHidden(name string) bool {
 	switch name {
-	case "run_shell",
-		"run_test",
-		"git",
-		"start_process",
-		"list_processes",
-		"read_process_output",
-		"write_stdin",
-		"stop_process":
+	case "git":
 		return true
 	}
 	return false
@@ -231,10 +216,8 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindSearch
 	case "tool_search":
 		return ToolKindDiscovery
-	case "run_shell", "bash":
+	case "bash":
 		return ToolKindShell
-	case "run_test":
-		return ToolKindTest
 	case "git":
 		return ToolKindGit
 	case "web_search", "web_fetch":
@@ -245,7 +228,7 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindSession
 	case "load_skill":
 		return ToolKindSkill
-	case "create_goal", "get_goal", "update_goal":
+	case "goal":
 		return ToolKindGoal
 	case "list_workflows", "load_workflow", "save_workflow", "list_agent_profiles", "create_agent_profile", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status":
 		return ToolKindWorkflow
@@ -253,11 +236,9 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindPlan
 	case "inception":
 		return ToolKindContext
-	case "spawn_agent", "helpme", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "agent_report", "post_message", "decline", "react", "manage_participant":
+	case "spawn_agent", "helpme", "send_message", "close_agent", "agent_report", "post_message", "react", "manage_participant":
 		return ToolKindAgent
-	case "start_process", "list_processes", "stop_process", "read_process_output", "write_stdin":
-		return ToolKindProcess
-	case "schedule_cron", "cancel_cron", "list_cron":
+	case "cron":
 		return ToolKindSchedule
 	default:
 		if strings.HasPrefix(name, "mcp_") {
@@ -272,7 +253,7 @@ func isDeferredByDefault(name string) bool {
 		return true
 	}
 	switch name {
-	case "schedule_cron", "cancel_cron", "list_cron", "run_workflow", "create_workflow", "thread_get":
+	case "cron", "run_workflow", "create_workflow", "thread_get":
 		return true
 	default:
 		return false

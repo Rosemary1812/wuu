@@ -1333,7 +1333,7 @@ func isInternalContextToolName(name string) bool {
 
 func threadItemTypeForTool(name string) ThreadItemType {
 	switch strings.TrimSpace(name) {
-	case "spawn_agent", "helpme", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "agent_report":
+	case "spawn_agent", "helpme", "send_message", "close_agent", "agent_report":
 		return ThreadItemCollabAgentTool
 	default:
 		return ThreadItemToolCall

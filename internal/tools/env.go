@@ -230,8 +230,9 @@ type Env struct {
 	ProcessMgr                  *proc.Manager
 	AgentControl                *agentcontrol.AgentControl
 	ParticipantSpeech           ParticipantSpeech
-	// GroupManager backs the resident-only create_group / add_group_member
-	// tools. Nil means group management is unavailable in this environment.
+	// GroupManager backs the resident-only create_group / add_member actions
+	// of manage_participant. Nil means group management is unavailable in this
+	// environment (those actions return an execute-time error).
 	GroupManager GroupManager
 	// ThreadID is the conversation (cth) thread the current resident turn runs
 	// in. Workflow runs started from this turn bind to it so named-participant
@@ -310,7 +311,6 @@ type PostedMessage struct {
 
 type ParticipantSpeech interface {
 	PostMessage(ctx context.Context, kind, text, targetThreadID string) (PostedMessage, error)
-	Decline(ctx context.Context, reason, targetThreadID string) error
 }
 
 // GroupManager lets resident named agents create group threads and add

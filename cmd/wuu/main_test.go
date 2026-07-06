@@ -831,8 +831,8 @@ func TestRunEvalLiveCodexOAuthSkipsWithoutCredentials(t *testing.T) {
 }
 
 func TestMissingRequiredTools(t *testing.T) {
-	missing := missingRequiredTools([]string{"tool_search", "list_cron"}, []string{"tool_search", "write_file"})
-	if len(missing) != 1 || missing[0] != "list_cron" {
+	missing := missingRequiredTools([]string{"tool_search", "cron"}, []string{"tool_search", "write_file"})
+	if len(missing) != 1 || missing[0] != "cron" {
 		t.Fatalf("unexpected missing tools: %+v", missing)
 	}
 	if got := missingRequiredTools([]string{"tool_search"}, []string{"tool_search"}); len(got) != 0 {

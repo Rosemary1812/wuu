@@ -28,36 +28,45 @@ func (f *fakeGroupManager) ListGroupMembers(_ context.Context, threadID string) 
 	return f.members[threadID], nil
 }
 
-func TestGroupToolsRequireResidentParticipantCapability(t *testing.T) {
+// Group management folded into manage_participant (create_group / add_member
+// actions). Resident-only-ness is now enforced at execute time by the presence
+// of an attached GroupManager: task runs get participant speech (so
+// manage_participant is on their surface) but never receive a GroupManager, so
+// the group actions fail closed.
+func TestManageParticipantGroupActionsRequireGroupManager(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("tools.New: %v", err)
 	}
-	// Task runs get participant speech but never resident capability: both
-	// group tools must stay unavailable (resident doc §6 matrix).
 	kit.SetParticipantSpeechEnabled(true)
 	kit.SetParticipantIdentity("prt-task")
-	kit.SetGroupManager(&fakeGroupManager{})
 
-	for _, name := range []string{"create_group", "add_group_member"} {
-		_, err := kit.Execute(context.Background(), providers.ToolCall{Name: name, Arguments: `{"title":"x","thread_id":"t","participant_id":"p"}`})
-		if err == nil || !strings.Contains(err.Error(), "resident participant capability") {
-			t.Fatalf("%s without resident capability should fail, got err=%v", name, err)
+	cases := []struct {
+		args string
+	}{
+		{`{"action":"create_group","title":"x"}`},
+		{`{"action":"add_member","thread_id":"t","participant_id":"p"}`},
+	}
+	for _, c := range cases {
+		_, err := kit.Execute(context.Background(), providers.ToolCall{Name: "manage_participant", Arguments: c.args})
+		if err == nil || !strings.Contains(err.Error(), "group management not configured") {
+			t.Fatalf("group action %s without a GroupManager should fail closed, got err=%v", c.args, err)
 		}
 	}
 }
 
-func TestGroupToolsExecuteThroughGroupManager(t *testing.T) {
+func TestManageParticipantGroupActionsExecuteThroughGroupManager(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("tools.New: %v", err)
 	}
 	manager := &fakeGroupManager{}
+	kit.SetParticipantSpeechEnabled(true)
 	kit.SetResidentParticipantEnabled(true)
 	kit.SetParticipantIdentity("prt-resident")
 	kit.SetGroupManager(manager)
 
-	out, err := kit.Execute(context.Background(), providers.ToolCall{Name: "create_group", Arguments: `{"title":"launch"}`})
+	out, err := kit.Execute(context.Background(), providers.ToolCall{Name: "manage_participant", Arguments: `{"action":"create_group","title":"launch"}`})
 	if err != nil {
 		t.Fatalf("create_group: %v", err)
 	}
@@ -68,23 +77,24 @@ func TestGroupToolsExecuteThroughGroupManager(t *testing.T) {
 		t.Fatalf("manager.CreateGroup calls = %+v", manager.createdTitles)
 	}
 
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "add_group_member", Arguments: `{"thread_id":"thr-created","participant_id":"prt-x"}`}); err != nil {
-		t.Fatalf("add_group_member: %v", err)
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "manage_participant", Arguments: `{"action":"add_member","thread_id":"thr-created","participant_id":"prt-x"}`}); err != nil {
+		t.Fatalf("add_member: %v", err)
 	}
 	if len(manager.added) != 1 || manager.added[0] != [2]string{"thr-created", "prt-x"} {
 		t.Fatalf("manager.AddGroupMember calls = %+v", manager.added)
 	}
 }
 
-func TestGroupToolsRequireConfiguredManager(t *testing.T) {
+func TestManageParticipantGroupActionsRequireConfiguredManager(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("tools.New: %v", err)
 	}
+	kit.SetParticipantSpeechEnabled(true)
 	kit.SetResidentParticipantEnabled(true)
 	kit.SetParticipantIdentity("prt-resident")
 
-	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "create_group", Arguments: `{"title":"x"}`}); err == nil || !strings.Contains(err.Error(), "group management not configured") {
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "manage_participant", Arguments: `{"action":"create_group","title":"x"}`}); err == nil || !strings.Contains(err.Error(), "group management not configured") {
 		t.Fatalf("create_group without a manager should fail, got err=%v", err)
 	}
 }

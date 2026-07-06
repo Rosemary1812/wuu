@@ -121,11 +121,11 @@ func TestOpenAICodexSurface(t *testing.T) {
 		}
 	}
 	mustDeferred := []string{
-		"send_message", "followup_task", "await_agents", "close_agent", "list_agents",
+		"send_message", "close_agent",
 		"session_memory",
 		"thread_get",
-		"create_goal", "get_goal", "update_goal",
-		"schedule_cron", "cancel_cron", "list_cron",
+		"goal",
+		"cron",
 	}
 	for _, name := range mustDeferred {
 		if _, ok := s.Tools[name]; ok {
@@ -232,7 +232,7 @@ func TestAnthropicClaudeSurface(t *testing.T) {
 			t.Fatalf("Claude surface must include %s, got tools=%v", name, sortedKeys(s.Tools))
 		}
 	}
-	for _, name := range []string{"session_memory", "send_message", "followup_task", "await_agents", "close_agent", "list_agents"} {
+	for _, name := range []string{"session_memory", "send_message", "close_agent"} {
 		if _, ok := s.DeferredTools[name]; !ok {
 			t.Fatalf("Claude surface must defer %s, got deferred=%v", name, sortedKeys(s.DeferredTools))
 		}
@@ -513,7 +513,7 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 			t.Errorf("%s/%s worker surface must NOT include helpme", tt.provider, tt.model)
 		}
 		// Workers are pure executors: no spawning, no subagent management.
-		for _, orchestration := range []string{"spawn_agent", "helpme", "send_message", "followup_task", "await_agents", "close_agent", "list_agents"} {
+		for _, orchestration := range []string{"spawn_agent", "helpme", "send_message", "close_agent", "followup_task", "await_agents", "list_agents"} {
 			if _, ok := workerSurface.Tools[orchestration]; ok {
 				t.Errorf("%s/%s worker surface must NOT directly include %s", tt.provider, tt.model, orchestration)
 			}
@@ -529,9 +529,18 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 		if mainSurface.Tools["spawn_agent"] != capability.CapabilityTaskSpawn {
 			t.Errorf("%s/%s main-agent direct spawn_agent capability = %s, want %s", tt.provider, tt.model, mainSurface.Tools["spawn_agent"], capability.CapabilityTaskSpawn)
 		}
-		for _, management := range []string{"send_message", "followup_task", "await_agents", "close_agent", "list_agents"} {
+		for _, management := range []string{"send_message", "close_agent"} {
 			if _, ok := mainSurface.DeferredTools[management]; !ok {
 				t.Errorf("%s/%s main-agent surface must defer %s", tt.provider, tt.model, management)
+			}
+		}
+		// The merged/retired orchestration tools must be gone from the surface.
+		for _, removed := range []string{"followup_task", "await_agents", "list_agents"} {
+			if _, ok := mainSurface.DeferredTools[removed]; ok {
+				t.Errorf("%s/%s main-agent surface must not defer retired tool %s", tt.provider, tt.model, removed)
+			}
+			if _, ok := mainSurface.Tools[removed]; ok {
+				t.Errorf("%s/%s main-agent surface must not expose retired tool %s", tt.provider, tt.model, removed)
 			}
 		}
 		if _, ok := mainSurface.Tools["agent_report"]; ok {

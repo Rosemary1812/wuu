@@ -1,243 +1,23 @@
 package tools
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
-
-	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
+// maxRepeatedRunTestFailures bounds how many times the unified bash tool will
+// re-run the same failing verification command against an unchanged workspace
+// revision before refusing (see tool_bash.go).
 const maxRepeatedRunTestFailures = 2
 
-type RunTestTool struct{ env *Env }
-
-func NewRunTestTool(env *Env) *RunTestTool { return &RunTestTool{env: env} }
-
-func (t *RunTestTool) Name() string            { return "run_test" }
-func (t *RunTestTool) IsReadOnly() bool        { return false }
-func (t *RunTestTool) IsConcurrencySafe() bool { return false }
-
-func (t *RunTestTool) Classify(argsJSON string) ToolClassification {
-	var args struct {
-		Command string `json:"command"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return ToolClassification{
-			ReadOnly:        false,
-			ConcurrencySafe: false,
-			Risk:            ToolRiskHigh,
-			Reason:          "invalid test invocation",
-		}
-	}
-	return classifyTestCommand(args.Command)
-}
-
-func (t *RunTestTool) ValidateInput(argsJSON string) error {
-	var args struct {
-		Command string `json:"command"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return err
-	}
-	if strings.TrimSpace(args.Command) == "" {
-		return errors.New("run_test requires command")
-	}
-	return nil
-}
-
-func (t *RunTestTool) Definition() providers.ToolDefinition {
-	return providers.ToolDefinition{
-		Name: "run_test",
-		Description: "Run one local verification command and return structured test/debug feedback.\n\n" +
-			"Usage:\n" +
-			"- Use for targeted, affected, or full test/build/typecheck/lint verification\n" +
-			"- The command must be a single local verification command such as go test, pytest, npm test, npm run lint, cargo test, or make test\n" +
-			"- JavaScript test-runner shims such as npx vitest are resolved to the project-local node_modules/.bin runner when it exists; run_test will not download packages\n" +
-			"- Do not use for package installation, network calls, deploys, git mutations, or arbitrary shell exploration\n" +
-			"- Commands that dump environment variables or touch sensitive credential paths are rejected\n" +
-			"- Results include exit code, duration, compact output, and failure_summary with likely failing tests or error snippets",
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"command": map[string]any{
-					"type":        "string",
-					"description": "Single non-interactive local verification command to run.",
-				},
-				"scope": map[string]any{
-					"type":        "string",
-					"enum":        []string{"targeted", "affected", "full"},
-					"description": "Verification scope. Defaults to targeted.",
-				},
-				"purpose": map[string]any{
-					"type":        "string",
-					"description": "Why this verification is needed.",
-				},
-				"timeout_seconds": map[string]any{
-					"type":        "integer",
-					"description": "Max runtime in seconds (1-3600).",
-				},
-			},
-			"required": []string{"command"},
-		},
-	}
-}
-
-func (t *RunTestTool) Execute(ctx context.Context, argsJSON string) (string, error) {
-	var args struct {
-		Command        string `json:"command"`
-		Scope          string `json:"scope"`
-		Purpose        string `json:"purpose"`
-		TimeoutSeconds int    `json:"timeout_seconds"`
-	}
-	if err := decodeArgs(argsJSON, &args); err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(args.Command) == "" {
-		return "", errors.New("run_test requires command")
-	}
-	command := strings.TrimSpace(args.Command)
-	// Worktree-bound execution: resolve project-local runners inside the
-	// checkout the command will actually run in.
-	runRoot, err := t.env.ExecRootDir(ctx)
-	if err != nil {
-		return "", err
-	}
-	resolved, err := resolveRunTestCommand(runRoot, args.Command)
-	if err != nil {
-		return "", err
-	}
-	command = resolved.Command
-	classification := classifyTestCommand(command)
-	if classification.Risk != ToolRiskMedium || classification.Reason != "local verification command" {
-		return "", errors.New("run_test only accepts local verification commands; use run_shell for other shell commands")
-	}
-	timeout := args.TimeoutSeconds
-	if timeout <= 0 {
-		timeout = defaultShellTimeoutSeconds
-	}
-	if timeout > maxShellTimeoutSeconds {
-		timeout = maxShellTimeoutSeconds
-	}
-	scope := strings.TrimSpace(args.Scope)
-	if scope == "" {
-		scope = "targeted"
-	}
-
-	revision := workspaceRevision(ctx, t.env.RevisionRoot(ctx))
-	commandHash := sha256Hex([]byte(command))
-	previousFailures := t.env.ConsecutiveTestFailures(commandHash, revision)
-	if revision != "" && previousFailures >= maxRepeatedRunTestFailures {
-		return "", repeatedRunTestFailureError{
-			PreviousFailures: previousFailures,
-			MaxFailures:      maxRepeatedRunTestFailures,
-			Revision:         revision,
-			CommandHash:      commandHash,
-		}
-	}
-
-	shellResult, err := executeShellCommand(ctx, t.env, command, timeout)
-	if err != nil {
-		return "", err
-	}
-	failureSummary := summarizeTestFailure(shellResult.Output)
-	if shellResult.ExitCode != 0 {
-		failureSummary.Failed = true
-	}
-	failed := shellResult.ExitCode != 0 || shellResult.TimedOut || failureSummary.Failed
-	fullLogRef, fullLogBytes, fullLogErr := persistRunTestLog(t.env.SessionDir, commandHash, scope, args.Purpose, shellResult)
-	t.env.RecordTestRunResult(testRunEntry{
-		CommandHash:    commandHash,
-		Revision:       revision,
-		Failed:         failed,
-		Command:        command,
-		Scope:          scope,
-		Purpose:        args.Purpose,
-		ExitCode:       shellResult.ExitCode,
-		TimedOut:       shellResult.TimedOut,
-		DurationMS:     shellResult.DurationMS,
-		FailureSummary: failureSummary,
-		FullLogRef:     fullLogRef,
-	})
-	result := map[string]any{
-		"action":             "run",
-		"command":            shellResult.Command,
-		"scope":              scope,
-		"purpose":            t.env.RedactToolOutput(args.Purpose),
-		"classification":     classification,
-		"passed":             shellResult.ExitCode == 0 && !shellResult.TimedOut,
-		"exit_code":          shellResult.ExitCode,
-		"duration_ms":        shellResult.DurationMS,
-		"timed_out":          shellResult.TimedOut,
-		"truncated":          shellResult.Truncated,
-		"output":             shellResult.Output,
-		"stdout_tail":        shellResult.StdoutTail,
-		"stderr_tail":        shellResult.StderrTail,
-		"stdout_bytes":       shellResult.StdoutBytes,
-		"stderr_bytes":       shellResult.StderrBytes,
-		"failure_summary":    failureSummary,
-		"workspace_revision": revision,
-		"repeat_guard": map[string]any{
-			"previous_failed_runs":                    previousFailures,
-			"max_failed_runs_without_revision_change": maxRepeatedRunTestFailures,
-		},
-		"next_suggestions": runTestNextSuggestions(shellResult, failureSummary),
-	}
-	if resolved.Changed {
-		result["requested_command"] = t.env.RedactToolOutput(resolved.Requested)
-		result["resolved_command"] = shellResult.Command
-	}
-	if fullLogRef != "" {
-		result["full_log_ref"] = fullLogRef
-		result["full_log_bytes"] = fullLogBytes
-	} else if fullLogErr != "" {
-		result["full_log_error"] = fullLogErr
-	}
-	return mustJSON(result)
-}
-
-func persistRunTestLog(sessionDir, commandHash, scope, purpose string, shellResult shellExecutionResult) (path string, bytes int, errSummary string) {
-	sessionDir = strings.TrimSpace(sessionDir)
-	if sessionDir == "" {
-		return "", 0, ""
-	}
-	dir := filepath.Join(sessionDir, "tool-results", "run-test-logs")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", 0, evalSafeToolError(err)
-	}
-	name := fmt.Sprintf("%s-%s.log", time.Now().UTC().Format("20060102T150405.000000000Z"), commandHashPrefix(commandHash))
-	path = filepath.Join(dir, name)
-	content := buildRunTestLog(scope, purpose, shellResult)
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return "", 0, evalSafeToolError(err)
-	}
-	return path, len(content), ""
-}
-
-type repeatedRunTestFailureError struct {
-	PreviousFailures int
-	MaxFailures      int
-	Revision         string
-	CommandHash      string
-}
-
-func (e repeatedRunTestFailureError) Error() string {
-	return fmt.Sprintf(
-		"run_test blocked repeated failing command: error_kind=repeated_failure_same_revision previous_failed_runs=%d max_failed_runs_without_revision_change=%d workspace_revision=%s command_hash=%s safe_retry=%q model_next_action=%q",
-		e.PreviousFailures,
-		e.MaxFailures,
-		e.Revision,
-		commandHashPrefix(e.CommandHash),
-		"change code, narrow the command, or inspect failure_summary/full_log_ref before rerunning",
-		"read the latest failure evidence, form a new hypothesis, patch minimally, then rerun targeted verification after the workspace revision changes",
-	)
-}
+// The verification-classification, npx-runner-resolution, and
+// failure-summary helpers below are shared infrastructure for the unified
+// bash tool (see tool_bash.go). The former standalone run_test tool was
+// removed; bash performs local verification directly.
 
 func commandHashPrefix(commandHash string) string {
 	commandHash = strings.TrimSpace(commandHash)
@@ -248,38 +28,6 @@ func commandHashPrefix(commandHash string) string {
 		return "unknown"
 	}
 	return commandHash
-}
-
-func buildRunTestLog(scope, purpose string, shellResult shellExecutionResult) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "command: %s\n", shellResult.Command)
-	fmt.Fprintf(&b, "scope: %s\n", strings.TrimSpace(scope))
-	if strings.TrimSpace(purpose) != "" {
-		fmt.Fprintf(&b, "purpose: %s\n", redactToolOutput(purpose))
-	}
-	fmt.Fprintf(&b, "exit_code: %d\n", shellResult.ExitCode)
-	fmt.Fprintf(&b, "duration_ms: %d\n", shellResult.DurationMS)
-	fmt.Fprintf(&b, "timed_out: %t\n", shellResult.TimedOut)
-	fmt.Fprintf(&b, "stdout_bytes: %d\n", shellResult.StdoutBytes)
-	fmt.Fprintf(&b, "stderr_bytes: %d\n\n", shellResult.StderrBytes)
-	b.WriteString("--- stdout (redacted) ---\n")
-	b.WriteString(shellResult.redactedStdout)
-	if !strings.HasSuffix(shellResult.redactedStdout, "\n") {
-		b.WriteString("\n")
-	}
-	b.WriteString("\n--- stderr (redacted) ---\n")
-	b.WriteString(shellResult.redactedStderr)
-	if !strings.HasSuffix(shellResult.redactedStderr, "\n") {
-		b.WriteString("\n")
-	}
-	return b.String()
-}
-
-func evalSafeToolError(err error) string {
-	if err == nil {
-		return ""
-	}
-	return redactToolOutput(err.Error())
 }
 
 func runTestNextSuggestions(shellResult shellExecutionResult, failureSummary testFailureSummary) []string {
@@ -431,28 +179,6 @@ func addTestSnippet(snippets *[]string, lines []string, idx int) {
 	if snippet != "" {
 		*snippets = append(*snippets, snippet)
 	}
-}
-
-func classifyTestCommand(command string) ToolClassification {
-	if testCommandLooksLikeLocalRunnerVerification(command) {
-		return ToolClassification{
-			ReadOnly:        false,
-			ConcurrencySafe: false,
-			Risk:            ToolRiskMedium,
-			Reason:          "local verification command",
-		}
-	}
-	classification := classifyShellCommand(command)
-	if classification.Risk == ToolRiskMedium && classification.Reason == "local verification command" {
-		return classification
-	}
-	classification.ReadOnly = false
-	classification.ConcurrencySafe = false
-	classification.Risk = ToolRiskHigh
-	if classification.Reason == "" || classification.Reason == "simple read-only shell command" {
-		classification.Reason = "run_test requires a local verification command"
-	}
-	return classification
 }
 
 type resolvedRunTestCommand struct {

@@ -22,64 +22,68 @@ func TestGoalToolsLifecycle(t *testing.T) {
 		GoalRuntime: goalruntime.NewRuntime(goalruntime.NewStore(filepath.Join(t.TempDir(), "goal_runtime.json"))),
 	}
 
-	createdRaw, err := NewCreateGoalTool(env).Execute(context.Background(), `{"objective":"Ship goal tools"}`)
+	createdRaw, err := NewGoalTool(env).Execute(context.Background(), `{"action":"create","objective":"Ship goal tools"}`)
 	if err != nil {
-		t.Fatalf("create_goal: %v", err)
+		t.Fatalf("goal create: %v", err)
 	}
 	var created struct {
 		Goal goalruntime.Goal `json:"goal"`
 	}
 	if err := json.Unmarshal([]byte(createdRaw), &created); err != nil {
-		t.Fatalf("parse create_goal: %v\n%s", err, createdRaw)
+		t.Fatalf("parse goal create: %v\n%s", err, createdRaw)
 	}
 	if !strings.HasPrefix(created.Goal.GoalID, "goal-") ||
 		created.Goal.Objective != "Ship goal tools" ||
 		created.Goal.Status != goalruntime.StatusActive {
-		t.Fatalf("unexpected create_goal result: %+v", created)
+		t.Fatalf("unexpected goal create result: %+v", created)
 	}
 	if _, err := os.Stat(filepath.Join(env.RootDir, ".goal")); !os.IsNotExist(err) {
-		t.Fatalf("create_goal should not create project .goal directory: %v", err)
+		t.Fatalf("goal create should not create project .goal directory: %v", err)
 	}
 	if entries, err := os.ReadDir(filepath.Join(env.StateDir, "goals")); err == nil && len(entries) > 0 {
-		t.Fatalf("create_goal must not create legacy goal ledger entries: %+v", entries)
+		t.Fatalf("goal create must not create legacy goal ledger entries: %+v", entries)
 	}
-	if _, err := NewCreateGoalTool(env).Execute(context.Background(), `{"objective":"Duplicate"}`); err == nil {
-		t.Fatal("create_goal should reject an unfinished runtime goal")
-	}
-
-	if _, err := NewUpdateGoalTool(env).Execute(context.Background(), `{"status":"active"}`); err == nil {
-		t.Fatal("update_goal should reject unsupported statuses")
+	if _, err := NewGoalTool(env).Execute(context.Background(), `{"action":"create","objective":"Duplicate"}`); err == nil {
+		t.Fatal("goal create should reject an unfinished runtime goal")
 	}
 
-	statusRaw, err := NewGetGoalTool(env).Execute(context.Background(), `{}`)
+	if _, err := NewGoalTool(env).Execute(context.Background(), `{"action":"update","status":"active"}`); err == nil {
+		t.Fatal("goal update should reject unsupported statuses")
+	}
+
+	if _, err := NewGoalTool(env).Execute(context.Background(), `{}`); err == nil {
+		t.Fatal("goal should reject a missing action")
+	}
+
+	statusRaw, err := NewGoalTool(env).Execute(context.Background(), `{"action":"get"}`)
 	if err != nil {
-		t.Fatalf("get_goal: %v", err)
+		t.Fatalf("goal get: %v", err)
 	}
 	var status struct {
 		Goal goalruntime.Goal `json:"goal"`
 	}
 	if err := json.Unmarshal([]byte(statusRaw), &status); err != nil {
-		t.Fatalf("parse get_goal: %v\n%s", err, statusRaw)
+		t.Fatalf("parse goal get: %v\n%s", err, statusRaw)
 	}
 	if status.Goal.GoalID != created.Goal.GoalID || status.Goal.Status != goalruntime.StatusActive {
-		t.Fatalf("unexpected get_goal result: %+v", status)
+		t.Fatalf("unexpected goal get result: %+v", status)
 	}
 
-	completeRaw, err := NewUpdateGoalTool(env).Execute(context.Background(), `{"status":"complete"}`)
+	completeRaw, err := NewGoalTool(env).Execute(context.Background(), `{"action":"update","status":"complete"}`)
 	if err != nil {
-		t.Fatalf("update_goal: %v", err)
+		t.Fatalf("goal update: %v", err)
 	}
 	var completed struct {
 		Goal goalruntime.Goal `json:"goal"`
 	}
 	if err := json.Unmarshal([]byte(completeRaw), &completed); err != nil {
-		t.Fatalf("parse complete update_goal: %v\n%s", err, completeRaw)
+		t.Fatalf("parse complete goal update: %v\n%s", err, completeRaw)
 	}
 	if completed.Goal.GoalID != created.Goal.GoalID || completed.Goal.Status != goalruntime.StatusComplete {
 		t.Fatalf("unexpected complete result: %+v", completed)
 	}
 
-	replacementRaw, err := NewCreateGoalTool(env).Execute(context.Background(), `{"objective":"Handle a blocker"}`)
+	replacementRaw, err := NewGoalTool(env).Execute(context.Background(), `{"action":"create","objective":"Handle a blocker"}`)
 	if err != nil {
 		t.Fatalf("create replacement goal: %v", err)
 	}
@@ -87,21 +91,21 @@ func TestGoalToolsLifecycle(t *testing.T) {
 		Goal goalruntime.Goal `json:"goal"`
 	}
 	if err := json.Unmarshal([]byte(replacementRaw), &replacement); err != nil {
-		t.Fatalf("parse replacement create_goal: %v\n%s", err, replacementRaw)
+		t.Fatalf("parse replacement goal create: %v\n%s", err, replacementRaw)
 	}
 	if replacement.Goal.GoalID == created.Goal.GoalID || replacement.Goal.Status != goalruntime.StatusActive {
 		t.Fatalf("unexpected replacement goal: %+v", replacement)
 	}
 
-	blockRaw, err := NewUpdateGoalTool(env).Execute(context.Background(), `{"status":"blocked"}`)
+	blockRaw, err := NewGoalTool(env).Execute(context.Background(), `{"action":"update","status":"blocked"}`)
 	if err != nil {
-		t.Fatalf("blocked update_goal: %v", err)
+		t.Fatalf("blocked goal update: %v", err)
 	}
 	var blocked struct {
 		Goal goalruntime.Goal `json:"goal"`
 	}
 	if err := json.Unmarshal([]byte(blockRaw), &blocked); err != nil {
-		t.Fatalf("parse blocked update_goal: %v\n%s", err, blockRaw)
+		t.Fatalf("parse blocked goal update: %v\n%s", err, blockRaw)
 	}
 	if blocked.Goal.GoalID != replacement.Goal.GoalID || blocked.Goal.Status != goalruntime.StatusBlocked {
 		t.Fatalf("unexpected blocked result: %+v", blocked)
@@ -110,8 +114,8 @@ func TestGoalToolsLifecycle(t *testing.T) {
 
 func TestCreateGoalRequiresRuntime(t *testing.T) {
 	env := &Env{RootDir: t.TempDir(), StateDir: filepath.Join(t.TempDir(), "state")}
-	if _, err := NewCreateGoalTool(env).Execute(context.Background(), `{"objective":"No runtime"}`); err == nil {
-		t.Fatal("create_goal should require GoalRuntime")
+	if _, err := NewGoalTool(env).Execute(context.Background(), `{"action":"create","objective":"No runtime"}`); err == nil {
+		t.Fatal("goal create should require GoalRuntime")
 	}
 }
 
@@ -121,15 +125,15 @@ func TestGetGoalWithoutRuntimeGoal(t *testing.T) {
 		StateDir:    filepath.Join(t.TempDir(), "state"),
 		GoalRuntime: goalruntime.NewRuntime(goalruntime.NewStore(filepath.Join(t.TempDir(), "goal_runtime.json"))),
 	}
-	raw, err := NewGetGoalTool(env).Execute(context.Background(), `{}`)
+	raw, err := NewGoalTool(env).Execute(context.Background(), `{"action":"get"}`)
 	if err != nil {
-		t.Fatalf("get_goal: %v", err)
+		t.Fatalf("goal get: %v", err)
 	}
 	var status struct {
 		Goal *goalruntime.Goal `json:"goal"`
 	}
 	if err := json.Unmarshal([]byte(raw), &status); err != nil {
-		t.Fatalf("parse get_goal: %v\n%s", err, raw)
+		t.Fatalf("parse goal get: %v\n%s", err, raw)
 	}
 	if status.Goal != nil {
 		t.Fatalf("expected nil goal, got %+v", status.Goal)
@@ -143,19 +147,19 @@ func TestUpdateGoalBlocksDirectly(t *testing.T) {
 		SessionID:   "thread-goal-blocked",
 		GoalRuntime: goalruntime.NewRuntime(goalruntime.NewStore(filepath.Join(t.TempDir(), "goal_runtime.json"))),
 	}
-	if _, err := NewCreateGoalTool(env).Execute(context.Background(), `{"objective":"Handle repeated blocker"}`); err != nil {
-		t.Fatalf("create_goal: %v", err)
+	if _, err := NewGoalTool(env).Execute(context.Background(), `{"action":"create","objective":"Handle repeated blocker"}`); err != nil {
+		t.Fatalf("goal create: %v", err)
 	}
 
 	var updated struct {
 		Goal goalruntime.Goal `json:"goal"`
 	}
-	raw, err := NewUpdateGoalTool(env).Execute(context.Background(), `{"status":"blocked"}`)
+	raw, err := NewGoalTool(env).Execute(context.Background(), `{"action":"update","status":"blocked"}`)
 	if err != nil {
-		t.Fatalf("update_goal blocker: %v", err)
+		t.Fatalf("goal update blocker: %v", err)
 	}
 	if err := json.Unmarshal([]byte(raw), &updated); err != nil {
-		t.Fatalf("parse update_goal: %v\n%s", err, raw)
+		t.Fatalf("parse goal update: %v\n%s", err, raw)
 	}
 	if updated.Goal.Status != goalruntime.StatusBlocked {
 		t.Fatalf("runtime goal should block directly: %+v", updated.Goal)
@@ -163,34 +167,33 @@ func TestUpdateGoalBlocksDirectly(t *testing.T) {
 }
 
 func TestGoalToolDescriptionsDefineDurableBoundary(t *testing.T) {
-	createDef := NewCreateGoalTool(&Env{}).Definition()
-	desc := createDef.Description
+	def := NewGoalTool(&Env{}).Definition()
+	desc := def.Description
 	for _, want := range []string{
+		"action=get",
+		"action=create",
+		"action=update",
 		"explicitly requested",
-		"unfinished goal exists",
-		"use update_goal only for status",
-	} {
-		if !strings.Contains(desc, want) {
-			t.Fatalf("create_goal description missing %q: %q", want, desc)
-		}
-	}
-	assertToolSchemaOmits(t, createDef, "goal", "goal_id", "task", "trigger_type", "trigger_source", "next_steps", "goal_dir", "token_budget")
-
-	updateDef := NewUpdateGoalTool(&Env{}).Definition()
-	updateDesc := updateDef.Description
-	for _, want := range []string{
+		"fails if an unfinished goal exists",
 		"status=complete",
 		"status=blocked",
 		"pause or resume",
 	} {
-		if !strings.Contains(updateDesc, want) {
-			t.Fatalf("update_goal description missing %q: %q", want, updateDesc)
+		if !strings.Contains(desc, want) {
+			t.Fatalf("goal description missing %q: %q", want, desc)
 		}
 	}
-	assertToolSchemaOmits(t, updateDef, "goal_id", "kind", "message", "summary", "final_artifact", "goal_dir", "step", "reason", "next_steps")
+	assertToolSchemaOmits(t, def, "goal_id", "task", "trigger_type", "trigger_source", "next_steps", "goal_dir", "token_budget", "kind", "message", "summary", "final_artifact", "step", "reason")
 
-	getDef := NewGetGoalTool(&Env{}).Definition()
-	assertToolSchemaOmits(t, getDef, "goal_id", "goal_dir")
+	props, ok := def.InputSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("goal schema properties have unexpected type %T", def.InputSchema["properties"])
+	}
+	for _, want := range []string{"action", "objective", "status"} {
+		if _, ok := props[want]; !ok {
+			t.Fatalf("goal schema should expose %q", want)
+		}
+	}
 }
 
 func TestStartWorkflowBindsExistingGoal(t *testing.T) {

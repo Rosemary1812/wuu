@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/capability"
@@ -22,19 +21,19 @@ func (t *PostMessageTool) Name() string { return "post_message" }
 func (t *PostMessageTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "post_message",
-		Description: "Post one signed message from this participant into a visible conversation thread. Use result only for a concise final result worth the user's attention. Use question only when blocked on the user. Use update only for important progress. Silence is valid; do not post routine status.",
+		Description: "Post one signed message from this participant into a visible conversation thread. Use result only for a concise final result worth the user's attention. Use question only when blocked on the user. Use update only for important progress. Use decline to explicitly choose silence when the right outcome is no visible answer. Silence is valid; do not post routine status.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
 				"kind": map[string]any{
 					"type":        "string",
-					"enum":        []string{"result", "question", "update"},
-					"description": "result appears as a signed result card; question asks the user for blocking input; update belongs in a task thread and requires thread_id.",
+					"enum":        []string{"result", "question", "update", "decline"},
+					"description": "result appears as a signed result card; question asks the user for blocking input; update belongs in a task thread and requires thread_id; decline records one short reason shown as muted text and is allowed even after you have completed.",
 				},
 				"text": map[string]any{
 					"type":        "string",
-					"description": "Markdown result text to show in the conversation under this participant's identity.",
+					"description": "Markdown text to show in the conversation under this participant's identity. For decline it is the one short reason shown as muted text.",
 				},
 				"thread_id": map[string]any{
 					"type":        "string",
@@ -135,15 +134,4 @@ func (s agentControlParticipantSpeech) PostMessage(ctx context.Context, kind, te
 		Text:          msg.Text,
 		CreatedAt:     msg.CreatedAt,
 	}, nil
-}
-
-func (s agentControlParticipantSpeech) Decline(ctx context.Context, reason, targetThreadID string) error {
-	if strings.TrimSpace(reason) == "" {
-		return errors.New("decline: reason is required")
-	}
-	_, err := s.PostMessage(ctx, "decline", reason, targetThreadID)
-	if err != nil {
-		return fmt.Errorf("decline: %w", err)
-	}
-	return nil
 }
