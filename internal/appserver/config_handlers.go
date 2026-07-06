@@ -992,10 +992,12 @@ func (s *Server) currentWorkerManagerOptions() subagent.ManagerOptions {
 	compactPct := 0.0
 	keepRecent := 0
 	disableCompact := false
+	temperature := 0.0
 	if s.rt.StreamRunner != nil {
 		compactPct = s.rt.StreamRunner.CompactThresholdPct
 		keepRecent = s.rt.StreamRunner.CompactKeepRecentTokens
 		disableCompact = s.rt.StreamRunner.DisableAutoCompact
+		temperature = s.rt.StreamRunner.Temperature
 	}
 	return subagent.ManagerOptions{
 		DefaultEffort:           s.rt.ModelRoles.Worker.LegacyEffort,
@@ -1003,6 +1005,8 @@ func (s *Server) currentWorkerManagerOptions() subagent.ManagerOptions {
 		ContextWindowOverride:   s.rt.WorkerModelBudget.ContextWindowTokens,
 		MaxInputTokens:          s.rt.WorkerModelBudget.InputLimitTokens,
 		OutputReserveTokens:     s.rt.WorkerModelBudget.OutputReserveTokens,
+		CompactThresholdTokens:  s.rt.WorkerModelBudget.CompactThresholdTokens,
+		Temperature:             temperature,
 		CompactThresholdPct:     compactPct,
 		CompactKeepRecentTokens: keepRecent,
 		DisableAutoCompact:      disableCompact,
