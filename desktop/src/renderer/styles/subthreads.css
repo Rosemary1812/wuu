@@ -5,12 +5,123 @@
   bottom: 0;
   z-index: 20;
   display: grid;
-  width: var(--environment-panel-reserved-width);
-  max-width: min(420px, 100vw - 48px);
+  width: var(--thread-panel-width);
+  max-width: min(var(--thread-panel-max-width), 100vw - 48px);
+  min-width: var(--thread-panel-min-width);
   grid-template-rows: 56px minmax(0, 1fr) auto;
   border-left: 1px solid var(--hairline-strong);
   background: var(--paper);
   color: var(--ink);
+}
+
+/* Left-edge resize handle: a thin grab column the human can mouse-drag or
+   keyboard-arrow to widen / narrow the panel. Lives inside the panel as the
+   first grid item so it doesn't shift the rest of the chrome. */
+.conversation-subthread-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  margin-left: -2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: ew-resize;
+  -webkit-app-region: no-drag;
+  z-index: 2;
+  /* Keep the visual hit-area small while still being clickable; expand via
+     pseudo-element so the grab column doesn't paint a visible bar. */
+}
+
+.conversation-subthread-resize-handle::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+
+.conversation-subthread-resize-handle:hover::before,
+.conversation-subthread-resize-handle:focus-visible::before {
+  background: var(--accent, var(--focus-ring, #5b8def));
+  opacity: 0.6;
+}
+
+.conversation-subthread-resize-handle:focus-visible {
+  outline: none;
+}
+
+.conversation-subthread-resize-handle:focus-visible::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 10px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--focus-ring, var(--accent, #5b8def));
+}
+
+/* Body drag-cursor override: prevents the cursor flipping to text-select
+   while the user is mid-drag. The handle owns drag start; the document
+   listens for move/up. */
+.is-resizing-thread-panel,
+.is-resizing-thread-panel * {
+  cursor: ew-resize !important;
+  user-select: none !important;
+}
+
+/* Mid-drag ghost indicator: a 1px vertical line drawn at the future panel
+   edge. Rendered as an absolutely-positioned overlay on the pane while
+   the .is-resizing-thread-panel modifier is on, anchored to the live
+   --thread-panel-width. */
+.is-resizing-thread-panel::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: var(--thread-panel-width);
+  width: 1px;
+  margin-right: -0.5px;
+  background: var(--accent, var(--focus-ring, #5b8def));
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 30;
+}
+
+/* Floating px label that surfaces the current drag width. Lives in the
+   pane, top-center, mirrors design tokens from the design system menu
+   rules. */
+.conversation-pane .conversation-subthread-resize-indicator {
+  position: absolute;
+  top: 14px;
+  right: var(--thread-panel-width);
+  transform: translateX(50%);
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--menu-bg, var(--surface-1));
+  border: 1px solid var(--menu-border, var(--hairline-strong));
+  box-shadow: 0 4px 14px rgba(20, 24, 28, 0.12);
+  color: var(--ink);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  z-index: 31;
+  -webkit-app-region: no-drag;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-subthread-resize-handle::before {
+    transition: none;
+  }
 }
 
 .conversation-pane.session-tabs-visible .conversation-subthread-panel {
@@ -187,11 +298,18 @@
   color: var(--danger);
 }
 
-/* Footer slot for the reused full conversation composer (附件/截图/命令/盾牌).
+/* Footer slot for the reused full conversation composer (附件/截图/命令).
    The composer owns its own chrome/padding, so this wrapper only draws the
-   divider and lets it span the panel width. */
+   divider, spans the panel width, and locks the shell to a min-height that
+   matches the main dock composer so the two composer shells always read
+   as the same vertical size regardless of which controls each carries. */
 .conversation-subthread-composer {
+  width: 100%;
   border-top: 1px solid var(--surface-3);
+  /* Bottom-docked in both panes; this min-height keeps the thread composer
+     from collapsing below the main dock's visible chrome when its
+     hideRuntimeControls variant drops a toolbar row. */
+  min-height: var(--conversation-composer-min-height, 88px);
 }
 
 .conversation-subthread-input {

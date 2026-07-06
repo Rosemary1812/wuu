@@ -37,6 +37,18 @@
   --environment-panel-motion-easing: cubic-bezier(0.2, 0, 0, 1);
   --environment-flow-motion-duration: 280ms;
   --environment-flow-motion-delay: 22ms;
+  /*
+   * Thread panel width is owned independently from the environment panel so
+   * dragging it doesn't shrink the conversation's right inset / sidebar
+   * alignment. Defaults match the legacy `--environment-panel-reserved-width`
+   * so the first-open experience is unchanged; the live value is rewritten by
+   * App.tsx (drag) and persisted per-account in localStorage.
+   */
+  --thread-panel-width: 372px;
+  --thread-panel-min-width: 280px;
+  --thread-panel-max-width: 560px;
+  --thread-panel-reserved-width: 0px;
+  --thread-panel-edge-gap: 0px;
   /* Conversation-only tokens. Shared session-level tokens
      (outer width, horizontal padding, composer width/radius) live in
      session.css at :root — change them there and nothing else. */
@@ -94,6 +106,14 @@
   --conversation-visible-inset-left: 0px;
   --conversation-visible-inset-right: 0px;
   --dock-composer-height: 0px;
+  /*
+   * Min-height for both composer shells (main dock + thread footer).
+   * Locked at 88px so the stripped thread composer doesn't visually
+   * collapse shorter than the main dock — keeps "horizontal height
+   * alignment" intact per Carl's QA verification point about toolbar-row
+   * mismatch after stripping controls.
+   */
+  --conversation-composer-min-height: 88px;
   grid-column: 2;
   grid-row: 1;
   display: grid;
@@ -113,6 +133,26 @@
 
 .conversation-pane.environment-panel-reserved {
   --conversation-visible-inset-right: var(--environment-panel-reserved-width);
+}
+
+/* Set on the top-level wrapper (e.g. <html> or .app-shell) when the thread
+   panel is open. Custom properties cascade to .conversation-pane so the
+   inset math below resolves correctly without each pane needing its own
+   class. env-panel's reserved var is unchanged — both rails stay
+   independent. */
+.subthread-panel-reserved {
+  --thread-panel-reserved-width: var(--thread-panel-width);
+  --thread-panel-edge-gap: 12px;
+}
+
+/* When both right-rail surfaces are open, sum them so the conversation's
+   right padding equals env + thread + edge gap, not just env. */
+.environment-panel-reserved.subthread-panel-reserved {
+  --conversation-visible-inset-right: calc(
+    var(--environment-panel-reserved-width) +
+    var(--thread-panel-reserved-width) +
+    var(--thread-panel-edge-gap)
+  );
 }
 
 .titlebar {

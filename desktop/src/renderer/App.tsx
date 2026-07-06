@@ -26,6 +26,8 @@ import {
   type CSSProperties,
   type RefObject,
   memo,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -782,6 +784,189 @@ export function App(): JSX.Element {
       }
     | undefined
   >(undefined);
+
+  // === Thread panel width: host-owned state, persisted per-account, lives
+  // independent of --environment-panel-reserved-width so dragging one rail
+  // doesn't reflow the other. Defaults match the legacy 372px so first-open
+  // is unchanged. ===
+  const THREAD_PANEL_DEFAULT_WIDTH = 372;
+  const THREAD_PANEL_MIN_WIDTH = 280;
+  const THREAD_PANEL_MAX_WIDTH = 560;
+  const THREAD_PANEL_STORAGE_KEY = "wuu.thread-panel-width";
+  const THREAD_PANEL_MAIN_MIN_WIDTH = 360; // smallest readable main content
+  const threadPanelDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const [threadPanelWidth, setThreadPanelWidth] = useState<number>(
+    THREAD_PANEL_DEFAULT_WIDTH,
+  );
+  const [threadPanelResizing, setThreadPanelResizing] = useState<boolean>(false);
+
+  // Hydrate persisted width on mount.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(THREAD_PANEL_STORAGE_KEY);
+      if (raw === null) {
+        return;
+      }
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) {
+        return;
+      }
+      const clamped = Math.min(
+        THREAD_PANEL_MAX_WIDTH,
+        Math.max(THREAD_PANEL_MIN_WIDTH, parsed),
+      );
+      setThreadPanelWidth(clamped);
+    } catch {
+      // localStorage unavailable (private mode etc.) — keep default.
+    }
+  }, []);
+
+  // Persist on every change. Cheap enough at this volume; if profiling later
+  // shows it dominates, debounce to commit-only.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        THREAD_PANEL_STORAGE_KEY,
+        String(Math.round(threadPanelWidth)),
+      );
+    } catch {
+      // ignore
+    }
+  }, [threadPanelWidth]);
+
+  // Write the live width to the CSS custom property on the document root so
+  // every consumer (panel width, ghost-line position, indicator offset)
+  // resolves from one source of truth.
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--thread-panel-width",
+      `${threadPanelWidth}px`,
+    );
+  }, [threadPanelWidth]);
+
+  // Toggle .subthread-panel-reserved on documentElement when the panel is
+  // open / closed. Setting on a high ancestor means the cascade reaches
+  // .conversation-pane without us having to thread a className prop there.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (openSubthreadPanel) {
+      root.classList.add("subthread-panel-reserved");
+    } else {
+      root.classList.remove("subthread-panel-reserved");
+    }
+    return () => {
+      root.classList.remove("subthread-panel-reserved");
+    };
+  }, [openSubthreadPanel]);
+
+  // Mid-drag visual modifier: cursor + ghost line on the pane.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (threadPanelResizing) {
+      root.classList.add("is-resizing-thread-panel");
+    } else {
+      root.classList.remove("is-resizing-thread-panel");
+    }
+    return () => {
+      root.classList.remove("is-resizing-thread-panel");
+    };
+  }, [threadPanelResizing]);
+
+  // Window-narrow auto-collapse: when the window can no longer fit
+  // sidebar + main-min + thread + env, close the thread panel rather than
+  // let the main column collapse below readable width. Per Carl's QA
+  // decision: collapse, do not shrink-to-min.
+  useEffect(() => {
+    if (!openSubthreadPanel) {
+      return;
+    }
+    function handleResize(): void {
+      const inner = window.innerWidth;
+      if (inner < threadPanelWidth + THREAD_PANEL_MAIN_MIN_WIDTH) {
+        setOpenSubthreadPanel(undefined);
+      }
+    }
+    window.addEventListener("resize", handleResize);
+    handleResize();
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [openSubthreadPanel, threadPanelWidth]);
+
+  function clampThreadPanelWidth(value: number): number {
+    return Math.min(
+      THREAD_PANEL_MAX_WIDTH,
+      Math.max(THREAD_PANEL_MIN_WIDTH, value),
+    );
+  }
+
+  function handleThreadPanelResizeStart(
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ): void {
+    event.preventDefault();
+    threadPanelDragRef.current = {
+      startX: event.clientX,
+      startWidth: threadPanelWidth,
+    };
+    setThreadPanelResizing(true);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // some test environments don't support pointer capture
+    }
+    function onPointerMove(e: PointerEvent): void {
+      const start = threadPanelDragRef.current;
+      if (!start) {
+        return;
+      }
+      // Panel is right-anchored; dragging left widens it (startX - e.clientX is
+      // positive when the cursor moves left).
+      const delta = start.startX - e.clientX;
+      const next = clampThreadPanelWidth(start.startWidth + delta);
+      setThreadPanelWidth(next);
+    }
+    function onPointerUp(): void {
+      setThreadPanelResizing(false);
+      threadPanelDragRef.current = null;
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("pointercancel", onPointerUp);
+    }
+    document.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerup", onPointerUp);
+    document.addEventListener("pointercancel", onPointerUp);
+  }
+
+  function handleThreadPanelResizeKeyDown(
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+  ): void {
+    const STEP_SMALL = 8;
+    const STEP_LARGE = 40;
+    let next: number | null = null;
+    if (event.key === "ArrowLeft") {
+      // Visual arrow on left edge: left widens the panel (intuitive mirror).
+      next = clampThreadPanelWidth(threadPanelWidth + STEP_SMALL);
+      event.preventDefault();
+    } else if (event.key === "ArrowRight") {
+      next = clampThreadPanelWidth(threadPanelWidth - STEP_SMALL);
+      event.preventDefault();
+    } else if (event.key === "PageUp") {
+      next = clampThreadPanelWidth(threadPanelWidth + STEP_LARGE);
+      event.preventDefault();
+    } else if (event.key === "PageDown") {
+      next = clampThreadPanelWidth(threadPanelWidth - STEP_LARGE);
+      event.preventDefault();
+    } else if (event.key === "Home") {
+      next = THREAD_PANEL_MAX_WIDTH;
+      event.preventDefault();
+    } else if (event.key === "End") {
+      next = THREAD_PANEL_MIN_WIDTH;
+      event.preventDefault();
+    }
+    if (next !== null) {
+      setThreadPanelWidth(next);
+    }
+  }
   // Reply subthreads (群中群) for the active chat thread, keyed by
   // anchor_item_id, feeding the chat view's reply badges / task 活动卡. Loaded
   // per active chat thread (see effect below); non-active panes never need it.
@@ -4170,17 +4355,27 @@ export function App(): JSX.Element {
     );
   }
 
-  // The split reply panel reuses the SAME full composer as the main dock
-  // conversation (附件/截图/命令菜单/盾牌), not a stripped one-line footer — one
-  // composer implementation, one experience. It is bound to a dedicated cth
-  // draft (so it does not cross-write the dock composer) and to a dedicated
-  // 盾牌 menu anchor (so the floating permission menu is not misplaced by the
-  // dock composer's). The model/context/token runtime chrome is suppressed via
-  // hideRuntimeControls — a cth owns no model turn, so those controls are
-  // meaningless here; only 附件/命令/盾牌 and the send button carry over. Send
-  // routes through message/postSubthread (thread_id=cth 折叠短路).
+  // The split reply panel reuses the SAME Composer as the main dock — one
+// composer implementation, one experience — but the runtime-control props
+// (permission-mode picker / project / branch / codex runtime model & effort
+// / settings / memory / skills / instructions launchers) are intentionally
+// wired to inert placeholders so none of those menus can open or change
+// state mid-thread. `hideRuntimeControls` covers the model/effort chrome;
+// the inert placeholders cover everything else, since Composer's prop type
+// requires them regardless. It is bound to a dedicated cth draft (so it
+// does not cross-write the dock composer). Send routes through
+// message/postSubthread (thread_id=cth 折叠短路).
   function renderSubthreadComposer(): JSX.Element {
     const resolved = openSubthreadPanel?.subthread?.status === "resolved";
+    // Stripped variant: passes the SAME Composer the main dock uses but with
+    // `hideRuntimeControls` so the runtime/menu chrome (permission-mode
+    // picker, project picker, branch picker, codex runtime model/effort
+    // menus, settings/memory/skills launchers) is not rendered. The prop
+    // bag still has to satisfy Composer's type — its runtime-control props
+    // are typed required regardless of `hideRuntimeControls`, so we pass
+    // inert placeholders that the host already uses no-op behavior for.
+    // Cleaner Composer typing (making these optional when hidden) is a
+    // separate refactor.
     return (
       <Composer
         variant="dock"
@@ -4194,7 +4389,7 @@ export function App(): JSX.Element {
         queuedMessages={[]}
         guideMessages={[]}
         running={false}
-        runtimeControlsDisabled={false}
+        runtimeControlsDisabled
         tokensPerSecond={0}
         status=""
         readOnly={Boolean(resolved)}
@@ -4203,49 +4398,33 @@ export function App(): JSX.Element {
         activeContext={state.activeContext}
         activeProject={activeProject}
         codexModels={codexModels}
-        codexRuntimeMenu={codexRuntimeMenu}
+        codexRuntimeMenu={null}
         codexRuntimeRef={codexRuntimeRef}
         menuOpen={false}
-        accessMenuOpen={subthreadAccessMenuOpen}
+        accessMenuOpen={false}
         branchMenuOpen={false}
         menuRef={runtimeMenuRef}
         accessMenuRef={subthreadAccessMenuRef}
-        projectFilter={projectFilter}
-        setProjectFilter={setProjectFilter}
+        projectFilter=""
+        setProjectFilter={() => {}}
         onToggleMenu={() => {}}
-        onToggleAccessMenu={() => {
-          setRuntimeMenuOpen(false);
-          setAccessMenuOpen(false);
-          setBranchMenuOpen(false);
-          setCodexRuntimeMenu(null);
-          setSubthreadAccessMenuOpen((open) => !open);
-        }}
+        onToggleAccessMenu={() => {}}
         onToggleBranchMenu={() => {}}
-        onToggleCodexRuntimeMenu={toggleCodexRuntimeMenu}
-        onSelectRuntimeModel={(provider, model, variant) =>
-          void selectRuntimeModel(provider, model, variant)
-        }
-        onSelectRuntimeEffort={(nextVariant) =>
-          void selectRuntimeEffort(nextVariant)
-        }
-        onSelectPermissionMode={(mode) => {
-          setSubthreadAccessMenuOpen(false);
-          void selectPermissionMode(mode);
-        }}
-        onOpenSettings={() => {
-          setSettingsInitialPage("providers");
-          setSettingsOpen(true);
-        }}
-        onOpenMemorySettings={() => openMemorySettings()}
-        onOpenSkillsCatalog={openSkillsTab}
-        onSelectProject={(id) => void selectProjectForNewThread(id)}
-        onSelectNoProject={() => void useNoProject(false)}
-        onSelectGitBranch={(branch) => void checkoutBranch(branch)}
-        onCreateProject={() => void createBlankProject()}
-        onOpenProject={() => void chooseProjectFolder()}
-        onStartNewThread={() => void startNewThread({ resetToNoProject: true })}
-        onOpenWorkspaceTool={openWorkspaceTool}
-        onOpenInstructions={openInstructions}
+        onToggleCodexRuntimeMenu={() => {}}
+        onSelectRuntimeModel={() => {}}
+        onSelectRuntimeEffort={() => {}}
+        onSelectPermissionMode={() => {}}
+        onOpenSettings={() => {}}
+        onOpenMemorySettings={() => {}}
+        onOpenSkillsCatalog={() => {}}
+        onSelectProject={() => {}}
+        onSelectNoProject={() => {}}
+        onSelectGitBranch={() => {}}
+        onCreateProject={() => {}}
+        onOpenProject={() => {}}
+        onStartNewThread={() => {}}
+        onOpenWorkspaceTool={() => {}}
+        onOpenInstructions={() => {}}
         onPasteAttachmentFiles={(files) =>
           void attachSubthreadComposerAttachmentFiles(files)
         }
@@ -8744,6 +8923,12 @@ export function App(): JSX.Element {
             resolveParticipantName={resolveParticipantName}
             busyParticipantIDs={busyParticipantIDs}
             readerCount={chatReaderCount}
+            width={threadPanelWidth}
+            minWidth={THREAD_PANEL_MIN_WIDTH}
+            maxWidth={THREAD_PANEL_MAX_WIDTH}
+            onResizeStart={handleThreadPanelResizeStart}
+            onResizeKeyDown={handleThreadPanelResizeKeyDown}
+            resizing={threadPanelResizing}
           />
         ) : null}
 

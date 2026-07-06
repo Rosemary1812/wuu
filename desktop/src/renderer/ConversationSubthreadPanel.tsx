@@ -1,5 +1,6 @@
 import {
   type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   useState,
 } from "react";
 import {
@@ -56,6 +57,12 @@ export function ConversationSubthreadPanel({
   resolveParticipantName,
   busyParticipantIDs,
   readerCount,
+  width,
+  minWidth,
+  maxWidth,
+  onResizeStart,
+  onResizeKeyDown,
+  resizing = false,
 }: {
   /** Parent group thread id — cth messages carry their seq in this thread's
    *  history, so read receipts / reactions resolve against it. */
@@ -87,6 +94,22 @@ export function ConversationSubthreadPanel({
   resolveParticipantName?: (id: string) => string;
   busyParticipantIDs?: ReadonlySet<string>;
   readerCount?: number;
+  /** Current panel width in px (host-owned state). Surfaced for the resize
+   *  handle's aria-valuenow and for the live px indicator. */
+  width?: number;
+  /** Hard lower bound for the resize handle. */
+  minWidth?: number;
+  /** Hard upper bound for the resize handle. */
+  maxWidth?: number;
+  /** Pointer-down on the resize handle. Host translates this into a drag
+   *  session (global pointermove / pointerup listeners). */
+  onResizeStart?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  /** Keyboard handler for the focused resize handle (Arrow keys, Home,
+   *  End, PageUp/PageDown). Host owns width state and applies the delta. */
+  onResizeKeyDown?: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
+  /** True while a drag is in progress. Drives the floating px indicator and
+   *  the ghost-line overlay drawn on the conversation pane. */
+  resizing?: boolean;
 }): JSX.Element {
   const turns = subthread?.turns ?? [];
   const resolved = subthread?.status === "resolved";
@@ -157,6 +180,21 @@ export function ConversationSubthreadPanel({
 
   return (
     <aside className="conversation-subthread-panel" aria-label="Thread">
+      {onResizeStart && width !== undefined && minWidth !== undefined && maxWidth !== undefined ? (
+        <button
+          type="button"
+          className="conversation-subthread-resize-handle"
+          aria-label="拖拽调节 Thread 面板宽度"
+          aria-valuenow={Math.round(width)}
+          aria-valuemin={minWidth}
+          aria-valuemax={maxWidth}
+          role="separator"
+          aria-orientation="vertical"
+          tabIndex={0}
+          onPointerDown={onResizeStart}
+          onKeyDown={onResizeKeyDown}
+        />
+      ) : null}
       <header className="conversation-subthread-header">
         <div className="conversation-subthread-title-group">
           <h2>{subthread?.title || "Thread"}</h2>
@@ -308,6 +346,11 @@ export function ConversationSubthreadPanel({
       </div>
       {subthread && !resolved && composer ? (
         <div className="conversation-subthread-composer">{composer}</div>
+      ) : null}
+      {resizing && width !== undefined ? (
+        <div className="conversation-subthread-resize-indicator" aria-hidden="true">
+          {Math.round(width)} px
+        </div>
       ) : null}
     </aside>
   );
