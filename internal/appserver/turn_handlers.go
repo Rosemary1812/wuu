@@ -17,6 +17,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
+	"github.com/blueberrycongee/wuu/internal/contextbudget"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/imageproc"
 	"github.com/blueberrycongee/wuu/internal/insight"
@@ -2052,10 +2053,33 @@ func (s *Server) applyHelpMeCompletionRewrite(threadID string, th *threadState, 
 		rewritten := compact.RewriteHistoryWithHelpMeCompact(th.History, rewrite.Content)
 		th.History = rewritten
 		persist := th.PersistHistory
+		providerName := th.ModelProvider
+		modelName := th.Model
+		var runner *agent.StreamRunner
+		if th.execRuntime != nil {
+			runner = th.execRuntime.StreamRunner
+		}
 		th.mu.Unlock()
+		// This compaction happens outside the loop, so it never runs the loop's
+		// own usage.Reset()+RecordPendingMessages. Invalidate the runner's shared
+		// cross-turn usage baseline explicitly from the compacted snapshot so the
+		// next turn (and any pre-turn EstimateCurrent read) reflects the reduced
+		// context instead of the pre-compaction value. Operate on the rewritten
+		// snapshot captured under the lock, not th.History, to avoid racing a
+		// concurrent reader.
+		if runner != nil {
+			runner.ResetConversationUsage(rewritten)
+		}
 		if persist {
 			if err := rewriteChatHistory(s.rt.SessionDir, th.ID, rewritten); err != nil {
 				providers.DebugLogf("apply helpme completion rewrite for thread %q: %v", threadID, err)
+			}
+			// Persist a fresh token_usage meta reflecting the compacted history so
+			// latestRetainedContextTokens drops immediately, without waiting for the
+			// next synthetic turn's response to land a smaller ContextTokens.
+			ctxTokens := contextbudget.EstimateMessagesTokens(rewritten)
+			if err := appendTokenUsage(s.rt.SessionDir, th.ID, providerName, modelName, providers.TokenUsage{}, ctxTokens); err != nil {
+				providers.DebugLogf("append helpme compaction token usage for thread %q: %v", threadID, err)
 			}
 		}
 		return

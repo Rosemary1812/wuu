@@ -99,4 +99,41 @@ describe("ContextCompositionCard", () => {
     expect(Number.parseFloat(segments[0]?.style.width ?? "")).toBeCloseTo(5);
     expect(Number.parseFloat(segments[1]?.style.width ?? "")).toBeCloseTo(15);
   });
+
+  it("keeps preserved cache_read as a hit and a de-inflated prompt after input normalization", () => {
+    // After A1 normalizes an inclusive-input endpoint (MiniMax), prompt_tokens
+    // is the true fresh+cached prompt (~133k) rather than a ~4x-inflated
+    // figure, and cache_read is preserved (never zeroed) so the hit readout
+    // still renders. The occupancy headline reads retained history, not the
+    // prompt size.
+    renderCard({
+      id: "entry-minimax",
+      threadID: "thread-1",
+      loading: false,
+      result: {
+        thread_id: "thread-1",
+        available: true,
+        provider: "minimax",
+        model: "minimax-m3",
+        prompt_tokens: 133_000,
+        context_window_tokens: 1_000_000,
+        retained_tokens: 88_000,
+        cache_read_tokens: 113_000,
+        categories: [
+          {
+            id: "stable_history",
+            label: "稳定历史",
+            contributes: true,
+            tokens: 133_000,
+            tone: "stable",
+          },
+        ],
+      },
+    });
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("缓存命中 113k"); // cache_read preserved, not zeroed
+    expect(text).toContain("最近请求 133k"); // prompt de-inflated
+    expect(text).toContain("88.0k / 1.0M"); // occupancy = retained history
+  });
 });

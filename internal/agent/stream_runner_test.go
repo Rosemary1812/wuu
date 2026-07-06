@@ -1681,3 +1681,70 @@ func TestStreamRunner_CancelsOrphanStreamingToolWhenNoFinalToolCalls(t *testing.
 		}
 	}
 }
+
+// TestStreamRunner_ResetConversationUsageReflectsCompaction verifies that an
+// out-of-loop history rewrite (e.g. the HelpMe joint compact) which calls
+// ResetConversationUsage drops the cross-turn usage baseline to the compacted
+// size immediately, instead of carrying the inflated pre-compaction estimate
+// until the length heuristic in prepareUsageTracker happens to fire.
+func TestStreamRunner_ResetConversationUsageReflectsCompaction(t *testing.T) {
+	r := &StreamRunner{}
+
+	preCompact := make([]providers.ChatMessage, 0, 40)
+	for i := 0; i < 40; i++ {
+		preCompact = append(preCompact, providers.ChatMessage{Role: "assistant", Content: strings.Repeat("x", 200)})
+	}
+
+	// Seed a large cross-turn baseline as if several big turns had landed.
+	big := NewUsageTracker()
+	big.RecordResponse(&providers.TokenUsage{InputTokens: 50000, OutputTokens: 2000})
+	r.commitUsageTracker(big, len(preCompact))
+
+	pre, _ := r.prepareUsageTracker(preCompact)
+	if got := pre.EstimateCurrent(); got != 52000 {
+		t.Fatalf("expected inflated pre-compaction estimate 52000, got %d", got)
+	}
+
+	// Out-of-loop compaction replaces history with a small joint summary.
+	compacted := []providers.ChatMessage{{Role: "user", Content: "bounded helpme summary"}}
+	r.ResetConversationUsage(compacted)
+
+	want := estimateMessages(compacted)
+	if want <= 0 || want >= 52000 {
+		t.Fatalf("compacted estimate sanity check failed: %d", want)
+	}
+	if got := r.conversationUsage.EstimateCurrent(); got != want {
+		t.Fatalf("baseline after reset = %d, want compacted estimate %d", got, want)
+	}
+	if got := r.conversationUsage.LastResponseTotal(); got != 0 {
+		t.Fatalf("reset must clear the inflated ground truth, got %d", got)
+	}
+
+	// The next turn over the compacted history must not resurrect the inflated
+	// estimate, and must not depend on the message-count-shrink heuristic.
+	post, tracked := r.prepareUsageTracker(compacted)
+	if got := post.EstimateCurrent(); got != want {
+		t.Fatalf("post-compaction turn estimate = %d, want %d (no inflation)", got, want)
+	}
+	if tracked != len(compacted) {
+		t.Fatalf("tracked history length = %d, want %d", tracked, len(compacted))
+	}
+}
+
+// TestStreamRunner_ResetConversationUsageNilAndEmpty guards the edge cases the
+// helpme rewrite can hit: a runner that never recorded usage, and an empty
+// compacted history.
+func TestStreamRunner_ResetConversationUsageNilAndEmpty(t *testing.T) {
+	r := &StreamRunner{}
+	// No prior usage recorded: must not panic and stays at zero.
+	r.ResetConversationUsage(nil)
+	if r.conversationUsage == nil {
+		t.Fatal("ResetConversationUsage should allocate the tracker")
+	}
+	if got := r.conversationUsage.EstimateCurrent(); got != 0 {
+		t.Fatalf("empty reset estimate = %d, want 0", got)
+	}
+	if r.trackedHistoryLen != 0 {
+		t.Fatalf("tracked history length = %d, want 0", r.trackedHistoryLen)
+	}
+}

@@ -72,6 +72,10 @@ type ClientConfig struct {
 	// CacheCreationInputTokensOmitted marks compatible endpoints that omit
 	// cache_creation_input_tokens from usage payloads.
 	CacheCreationInputTokensOmitted bool
+	// InputTokensIncludeCacheRead marks compatible endpoints whose
+	// input_tokens are inclusive of cache_read_input_tokens (e.g. MiniMax).
+	// When set, normalizeInclusiveInput subtracts cache_read from input.
+	InputTokensIncludeCacheRead bool
 }
 
 // stampCacheCreationFlag sets CacheCreationUnknown on usage when the
@@ -88,6 +92,29 @@ func (c *Client) stampCacheCreationFlag(usage *providers.TokenUsage) {
 	}
 }
 
+// normalizeInclusiveInput adjusts usage for endpoints whose input_tokens are
+// inclusive of cache_read_input_tokens (e.g. MiniMax), unlike native Anthropic
+// where input_tokens exclude cached tokens. It subtracts cache_read from input
+// (floored at 0) and preserves cache_read so hit-rate and composition displays
+// stay intact. This mirrors the OpenAI client's "fresh input = prompt_tokens -
+// cached" handling (internal/providers/openai/client.go). Equivalent occupancy
+// becomes input+output because cache_read cancels in TotalContextTokens.
+//
+// NOT idempotent: subtracting cache_read twice over-reduces input. Both call
+// sites are terminal (one per response), so a single paired call beside
+// stampCacheCreationFlag is correct. Do not re-invoke on already-normalized
+// usage. No-op when the endpoint flag is off (native Anthropic unaffected).
+func (c *Client) normalizeInclusiveInput(usage *providers.TokenUsage) {
+	if usage == nil || !c.inputTokensIncludeCacheRead {
+		return
+	}
+	fresh := usage.InputTokens - usage.CacheReadTokens
+	if fresh < 0 {
+		fresh = 0
+	}
+	usage.InputTokens = fresh
+}
+
 // Client sends tool-enabled chat requests to Anthropic APIs.
 type Client struct {
 	baseURL                         string
@@ -99,6 +126,7 @@ type Client struct {
 	retryConfig                     providers.RetryConfig
 	streamConfig                    providers.StreamTransportConfig
 	cacheCreationInputTokensOmitted bool
+	inputTokensIncludeCacheRead     bool
 }
 
 // New creates an Anthropic client.
@@ -131,6 +159,10 @@ func New(cfg ClientConfig) (*Client, error) {
 		retryConfig:                     rc,
 		streamConfig:                    streamTransportConfig(cfg.StreamConfig),
 		cacheCreationInputTokensOmitted: cfg.CacheCreationInputTokensOmitted,
+		// Explicit config or base_url auto-detect for MiniMax endpoints whose
+		// input_tokens are inclusive of cache_read.
+		inputTokensIncludeCacheRead: cfg.InputTokensIncludeCacheRead ||
+			strings.Contains(strings.ToLower(cfg.BaseURL), "minimaxi"),
 	}, nil
 }
 
@@ -232,6 +264,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 			CacheCreationTokens: parsed.Usage.CacheCreationTokens,
 			CacheReadTokens:     parsed.Usage.CacheReadTokens,
 		}
+		c.normalizeInclusiveInput(resp.Usage)
 		c.stampCacheCreationFlag(resp.Usage)
 	}
 	return resp, nil
@@ -643,6 +676,18 @@ func buildAnthropicSystem(systemTexts []string, hint *providers.CacheHint, cache
 	for _, text := range systemTexts {
 		blocks = append(blocks, anthropicSystemBlock{Type: "text", Text: text})
 	}
+	// The single breakpoint sits on the LAST system block, so Anthropic caches
+	// the entire system prefix up to and including it. wuu assembles statics
+	// plus the dynamic sections (memory / memdir index / skills) into one joined
+	// string sent as a single system message (prompt.Builder.Build ->
+	// stream_runner system message), so those dynamic segments live inside the
+	// cached prefix rather than being excluded after the breakpoint. Even if a
+	// caller ever splits system into multiple blocks, the end-of-system marker
+	// still caches all earlier blocks. This block plus the optional compact
+	// anchor and the sliding history tail stay within Anthropic's 4-breakpoint
+	// budget. Byte-stability across turns is provided upstream: the assembled
+	// system is frozen on the thread runner (recomputed only on thread rebuild /
+	// clear, not per turn), so the cached prefix bytes do not drift mid-session.
 	blocks[len(blocks)-1].CacheControl = ephemeralCacheControl(cacheTTL)
 	return blocks
 }
@@ -996,6 +1041,7 @@ func (c *Client) handleSSEEvent(
 			usage.InputTokens = p.Message.Usage.InputTokens
 			usage.CacheCreationTokens = p.Message.Usage.CacheCreationTokens
 			usage.CacheReadTokens = p.Message.Usage.CacheReadTokens
+			c.normalizeInclusiveInput(usage)
 			c.stampCacheCreationFlag(usage)
 		}
 	case "content_block_start":

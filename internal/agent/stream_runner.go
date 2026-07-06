@@ -453,6 +453,12 @@ func (r *StreamRunner) prepareUsageTracker(history []providers.ChatMessage) (*Us
 	if trackedLen < 0 {
 		trackedLen = 0
 	}
+	// Length-shrink safety net: if the tracked history got shorter than the
+	// baseline expects, the baseline is stale and is rebuilt from scratch
+	// below. Out-of-loop compaction (HelpMe) drives invalidation explicitly via
+	// ResetConversationUsage rather than relying on this heuristic, because a
+	// compaction can replace history with a summary that is byte-smaller but not
+	// necessarily message-count-smaller.
 	if trackedLen > len(history) {
 		tracker.Reset()
 		trackedLen = 0
@@ -478,6 +484,32 @@ func (r *StreamRunner) commitUsageTracker(tracker *UsageTracker, historyLen int)
 	defer r.usageMu.Unlock()
 	r.conversationUsage = tracker.Clone()
 	r.trackedHistoryLen = historyLen
+}
+
+// ResetConversationUsage discards the persistent cross-turn usage baseline and
+// re-seeds it from the supplied post-compaction history. It mirrors the
+// explicit usage.Reset()+RecordPendingMessages the loop performs after an
+// in-loop compaction (loop.go), but targets the runner-level baseline shared
+// across turns.
+//
+// It exists for out-of-loop history rewrites — notably the HelpMe joint
+// compact, which replaces the parent thread's history from a completion wakeup
+// without ever passing through the loop's own compaction path. Without this
+// explicit invalidation the runner keeps the pre-compaction (inflated) ground
+// truth until the length heuristic in prepareUsageTracker happens to fire,
+// which reports a stale, over-large context size in the window between the
+// rewrite and the next response. Seeding the pending delta from the new
+// history makes EstimateCurrent reflect the compacted size immediately rather
+// than dropping to zero.
+func (r *StreamRunner) ResetConversationUsage(history []providers.ChatMessage) {
+	r.usageMu.Lock()
+	defer r.usageMu.Unlock()
+	if r.conversationUsage == nil {
+		r.conversationUsage = NewUsageTracker()
+	}
+	r.conversationUsage.Reset()
+	r.conversationUsage.RecordPendingMessages(history)
+	r.trackedHistoryLen = len(history)
 }
 
 func isNonDurableHistoryMessage(msg providers.ChatMessage) bool {

@@ -2107,6 +2107,68 @@ func TestDiscoverMemoryHonorsLegacyOptIn(t *testing.T) {
 	}
 }
 
+func TestEnvironmentSystemPromptSectionFreezesSessionDate(t *testing.T) {
+	root := t.TempDir()
+	const frozen = "2020-01-02"
+
+	section := environmentSystemPromptSection(root, frozen)
+	if !strings.Contains(section, "- Current date: "+frozen) {
+		t.Fatalf("frozen session date not stamped into environment section:\n%s", section)
+	}
+	today := time.Now().Format("2006-01-02")
+	if today != frozen && strings.Contains(section, today) {
+		t.Fatalf("frozen environment section leaked today's date %q:\n%s", today, section)
+	}
+
+	// Standalone callers pass an empty session date and fall back to the
+	// current date rather than emitting a blank field.
+	fallback := environmentSystemPromptSection(root, "")
+	if !strings.Contains(fallback, "- Current date: "+today) {
+		t.Fatalf("empty session date should fall back to today %q:\n%s", today, fallback)
+	}
+}
+
+// TestSystemPromptForThreadRootKeepsFrozenDate proves the cache-critical
+// property: rebuilding a thread's system prompt rebases the CWD onto the thread
+// root but keeps the session-start frozen date, so the cached system prefix
+// stays byte-stable across thread rebuilds instead of churning on the wall
+// clock (e.g. a session that crosses midnight).
+func TestSystemPromptForThreadRootKeepsFrozenDate(t *testing.T) {
+	sessionRoot := t.TempDir()
+	threadRoot := t.TempDir()
+	const frozen = "2019-07-05"
+
+	base := buildBaseSystemPromptResult(
+		sessionRoot,
+		frozen,
+		"base prompt",
+		"",
+		"anthropic",
+		"claude-test",
+		capability.Surface{},
+		nil,
+		"",
+		"",
+		nil,
+		nil,
+	)
+	sections := agentPromptSections(base.Sections)
+
+	rewritten, _ := systemPromptForThreadRoot(base.Content, sections, threadRoot, frozen)
+	if !strings.Contains(rewritten, "- Current date: "+frozen) {
+		t.Fatalf("thread rebuild dropped the frozen session date:\n%s", rewritten)
+	}
+	if !strings.Contains(rewritten, "- Current working directory: "+threadRoot) {
+		t.Fatalf("thread rebuild did not rebase CWD to %q:\n%s", threadRoot, rewritten)
+	}
+
+	// A second rebuild with the same frozen date is byte-identical: no drift.
+	rewritten2, _ := systemPromptForThreadRoot(base.Content, sections, threadRoot, frozen)
+	if rewritten != rewritten2 {
+		t.Fatalf("thread system prompt drifted across identical rebuilds")
+	}
+}
+
 func TestBuildBaseSystemPromptNoToolsSkipsToolLoadedGuidance(t *testing.T) {
 	promptText := buildBaseSystemPrompt(
 		t.TempDir(),

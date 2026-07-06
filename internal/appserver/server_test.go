@@ -22,6 +22,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
+	"github.com/blueberrycongee/wuu/internal/contextbudget"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/modelbudget"
@@ -6161,6 +6162,46 @@ func TestServerThreadResumeRestoresTurnTokenUsage(t *testing.T) {
 	turn := result.Thread.Turns[0]
 	if turn.InputTokens != 19_600 || turn.CacheReadTokens != 113_000 || turn.ContextTokens != 88_000 || turn.UsageModel != rt.Model {
 		t.Fatalf("resume should restore token usage on turn: %+v", turn)
+	}
+}
+
+// TestHelpMeCompactionMetaDropsRetainedContextTokens verifies the retained
+// half of A2: after the out-of-loop HelpMe compaction lands a fresh
+// token_usage meta computed from the compacted history, latestRetainedContextTokens
+// reflects the reduced context immediately instead of returning the stale,
+// pre-compaction value.
+func TestHelpMeCompactionMetaDropsRetainedContextTokens(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	sess, err := session.CreateWithMetadata(rt.SessionDir, "20260705-000001-helpme", rt.RootDir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// Pre-compaction: a large context recorded across the conversation.
+	if err := appendTokenUsage(rt.SessionDir, sess.ID, rt.ProviderName, rt.Model, providers.TokenUsage{InputTokens: 20_000, CacheReadTokens: 110_000}, 130_000); err != nil {
+		t.Fatalf("append pre-compaction usage: %v", err)
+	}
+
+	srv := New(rt, &lockedBuffer{})
+	if got := srv.latestRetainedContextTokens(sess.ID); got != 130_000 {
+		t.Fatalf("pre-compaction retained tokens = %d, want 130000", got)
+	}
+
+	// The HelpMe joint compact replaces history with a bounded summary and lands
+	// a fresh token_usage meta from the compacted estimate (usage all-zero,
+	// ContextTokens = local estimate of the rewritten history).
+	compactedCtx := contextbudget.EstimateMessagesTokens([]providers.ChatMessage{
+		{Role: "user", Content: "bounded helpme joint summary"},
+	})
+	if compactedCtx <= 0 || compactedCtx >= 130_000 {
+		t.Fatalf("compacted estimate sanity check failed: %d", compactedCtx)
+	}
+	if err := appendTokenUsage(rt.SessionDir, sess.ID, rt.ProviderName, rt.Model, providers.TokenUsage{}, compactedCtx); err != nil {
+		t.Fatalf("append compaction usage: %v", err)
+	}
+
+	if got := srv.latestRetainedContextTokens(sess.ID); got != compactedCtx {
+		t.Fatalf("post-compaction retained tokens = %d, want %d (no inflation)", got, compactedCtx)
 	}
 }
 

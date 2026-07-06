@@ -86,18 +86,25 @@ type Session struct {
 	// MemdirEnabled reports whether the file-directory memory (user
 	// notebook teaching + index injection and file-scope whitelist) is
 	// active for this session. False when Memory.Disable is set.
-	MemdirEnabled               bool
-	DreamIntervalDays           int
-	AgentControl                *agentcontrol.AgentControl
-	ProcessManager              *process.Manager
-	Toolkit                     *tools.Toolkit
-	WorkerClient                providers.StreamClient
-	ModelRoles                  modelroles.Set
-	ModelBudget                 modelbudget.Budget
-	WorkerModelBudget           modelbudget.Budget
-	BaseSystemPrompt            string
-	BaseSystemPromptSections    []prompt.SectionInfo
-	UserSystemPrompt            string
+	MemdirEnabled            bool
+	DreamIntervalDays        int
+	AgentControl             *agentcontrol.AgentControl
+	ProcessManager           *process.Manager
+	Toolkit                  *tools.Toolkit
+	WorkerClient             providers.StreamClient
+	ModelRoles               modelroles.Set
+	ModelBudget              modelbudget.Budget
+	WorkerModelBudget        modelbudget.Budget
+	BaseSystemPrompt         string
+	BaseSystemPromptSections []prompt.SectionInfo
+	UserSystemPrompt         string
+	// SessionDate is the session-start frozen calendar date (YYYY-MM-DD)
+	// stamped into the "# Environment" system section. Freezing it here keeps
+	// the cached system prefix byte-stable across turns and thread rebuilds:
+	// a long-lived session that crosses a day boundary keeps its start date
+	// instead of churning the prompt cache. Real-time clock reads belong in the
+	// per-turn message stream, never in this cached prefix.
+	SessionDate                 string
 	WuuHome                     string
 	Permissions                 config.ResolvedPermissions
 	CoordinatorPreamble         string
@@ -271,6 +278,11 @@ func NewSession(opts Options) (*Session, error) {
 	}
 
 	memoryFiles := discoverMemory(rootDir, opts.HomeDir, cfg.Memory)
+	// Freeze the environment date once at session start. Every system-prompt
+	// build in this session (base, worker, per-thread rebuild) reuses this
+	// frozen value so the cached system prefix does not drift when threads
+	// rebuild or the wall clock crosses midnight during a long session.
+	sessionDate := wuucontext.Snapshot(rootDir).Date
 	mainSurface := activeSurface(toolkit)
 	if toolkit != nil {
 		if err := toolkit.ValidateActiveToolSurfaceForProvider(providers.ToolSurfaceValidationTarget{
@@ -286,7 +298,7 @@ func NewSession(opts Options) (*Session, error) {
 		return nil, err
 	}
 	mainSurface.DeferredToolCatalog = deferredToolCatalogPrompt
-	baseSystemPromptResult := buildBaseSystemPromptResult(rootDir, config.DefaultSystemPrompt(), userSystemPrompt, resolvedName, toolModeModel, mainSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
+	baseSystemPromptResult := buildBaseSystemPromptResult(rootDir, sessionDate, config.DefaultSystemPrompt(), userSystemPrompt, resolvedName, toolModeModel, mainSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
 	baseSystemPrompt := baseSystemPromptResult.Content
 	baseSystemPromptSections := agentPromptSections(baseSystemPromptResult.Sections)
 
@@ -318,7 +330,7 @@ func NewSession(opts Options) (*Session, error) {
 			return nil, catErr
 		}
 		workerToolSurface.DeferredToolCatalog = workerDeferredCatalog
-		workerBaseSystemPrompt := buildBaseSystemPromptContent(rootDir, config.WorkerSystemPrompt(), userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, memdirWorkerTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
+		workerBaseSystemPrompt := buildBaseSystemPromptContent(rootDir, sessionDate, config.WorkerSystemPrompt(), userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, memdirWorkerTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
 		var werr error
 		workerClient, werr = providerfactory.BuildStreamClientWithRetry(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider, &workerRetry)
 		if werr != nil {
@@ -345,7 +357,7 @@ func NewSession(opts Options) (*Session, error) {
 			ReportSink:                     loopSink,
 			WorkerSysPrompt:                workerBaseSystemPrompt,
 			WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
-				return buildWorkerBasePrompt(workerRoot, wuuHome, userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, memdirEnabled, discoveredSkills, discoveredWorkflows), nil
+				return buildWorkerBasePrompt(workerRoot, sessionDate, wuuHome, userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, memdirEnabled, discoveredSkills, discoveredWorkflows), nil
 			},
 			WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 				wkit, werr := toolkit.CloneForRoot(workerRoot)
@@ -465,6 +477,7 @@ func NewSession(opts Options) (*Session, error) {
 		BaseSystemPrompt:            baseSystemPrompt,
 		BaseSystemPromptSections:    baseSystemPromptResult.Sections,
 		UserSystemPrompt:            userSystemPrompt,
+		SessionDate:                 sessionDate,
 		WuuHome:                     wuuHome,
 		Permissions:                 permissions,
 		CoordinatorPreamble:         coordinatorPreamble,
@@ -759,6 +772,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 			// the worker base prompt reads the user notebook index fresh.
 			workerBaseSystemPrompt := buildWorkerBasePrompt(
 				threadRoot,
+				s.SessionDate,
 				wuuHome,
 				s.UserSystemPrompt,
 				workerToolProviderName,
@@ -790,7 +804,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 				ReportSink:                     loopSink,
 				WorkerSysPrompt:                workerBaseSystemPrompt,
 				WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
-					return buildWorkerBasePrompt(workerRoot, wuuHome, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, s.Memory, s.MemdirEnabled, s.Skills, s.Workflows), nil
+					return buildWorkerBasePrompt(workerRoot, s.SessionDate, wuuHome, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, s.Memory, s.MemdirEnabled, s.Skills, s.Workflows), nil
 				},
 				WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 					parentKit := kit
@@ -877,7 +891,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 	}
 
 	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
-	runner.SystemPrompt, runner.SystemPromptSections = systemPromptForThreadRoot(runner.SystemPrompt, runner.SystemPromptSections, threadRoot)
+	runner.SystemPrompt, runner.SystemPromptSections = systemPromptForThreadRoot(runner.SystemPrompt, runner.SystemPromptSections, threadRoot, s.SessionDate)
 	if s.MemdirEnabled {
 		runner.SystemPrompt, runner.SystemPromptSections = systemPromptWithFreshMemdirIndex(runner.SystemPrompt, runner.SystemPromptSections, wuuHome)
 	}
@@ -968,8 +982,8 @@ func cleanRuntimeRoot(root string) string {
 	return filepath.Clean(root)
 }
 
-func systemPromptForThreadRoot(promptText string, sections []agent.SystemPromptSectionInfo, rootDir string) (string, []agent.SystemPromptSectionInfo) {
-	envSection := environmentSystemPromptSection(rootDir)
+func systemPromptForThreadRoot(promptText string, sections []agent.SystemPromptSectionInfo, rootDir, sessionDate string) (string, []agent.SystemPromptSectionInfo) {
+	envSection := environmentSystemPromptSection(rootDir, sessionDate)
 	if strings.TrimSpace(promptText) == "" || strings.TrimSpace(envSection) == "" {
 		return promptText, append([]agent.SystemPromptSectionInfo(nil), sections...)
 	}
@@ -1550,7 +1564,7 @@ func discoverMemory(rootDir, homeDir string, cfg config.MemoryConfig) []memory.F
 // fresh here because worker/thread creation is a prompt-prefix creation
 // moment under the cache red lines — while the notebook directory stays
 // outside the worker's writable file scope.
-func buildWorkerBasePrompt(rootDir, wuuHome, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirEnabled bool, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
+func buildWorkerBasePrompt(rootDir, sessionDate, wuuHome, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirEnabled bool, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
 	var teaching, index string
 	if memdirEnabled && strings.TrimSpace(wuuHome) != "" {
 		userNotebook := memdir.UserMemdir(wuuHome)
@@ -1561,7 +1575,7 @@ func buildWorkerBasePrompt(rootDir, wuuHome, userPrompt, providerName, model str
 			providers.DebugLogf("read user memory index for worker prompt: %v", err)
 		}
 	}
-	return buildBaseSystemPromptContent(rootDir, config.WorkerSystemPrompt(), userPrompt, providerName, model, toolSurface, memoryFiles, teaching, index, discoveredSkills, discoveredWorkflows)
+	return buildBaseSystemPromptContent(rootDir, sessionDate, config.WorkerSystemPrompt(), userPrompt, providerName, model, toolSurface, memoryFiles, teaching, index, discoveredSkills, discoveredWorkflows)
 }
 
 func (s *Session) RefreshSystemPrompt(providerName, model string) string {
@@ -1582,6 +1596,7 @@ func (s *Session) RefreshSystemPrompt(providerName, model string) string {
 	}
 	baseSystemPromptResult := buildBaseSystemPromptResult(
 		s.RootDir,
+		s.SessionDate,
 		config.DefaultSystemPrompt(),
 		s.UserSystemPrompt,
 		providerName,
@@ -1636,15 +1651,18 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 	return s.RefreshSystemPrompt(s.ProviderName, apiModel)
 }
 
+// buildBaseSystemPrompt keeps the frozen-date-agnostic signature used by tests
+// and standalone callers; it passes an empty sessionDate so the environment
+// section falls back to the current date.
 func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
-	return buildBaseSystemPromptContent(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
+	return buildBaseSystemPromptContent(rootDir, "", basePrompt, userPrompt, providerName, model, toolSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
 }
 
-func buildBaseSystemPromptContent(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
-	return buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model, toolSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows).Content
+func buildBaseSystemPromptContent(rootDir, sessionDate, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
+	return buildBaseSystemPromptResult(rootDir, sessionDate, basePrompt, userPrompt, providerName, model, toolSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows).Content
 }
 
-func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) prompt.BuildResult {
+func buildBaseSystemPromptResult(rootDir, sessionDate, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) prompt.BuildResult {
 	var pb prompt.Builder
 	pb.AddSection("base", basePrompt, true)
 	// The workflow entry of the orchestration path map is named-agent-only: it
@@ -1669,7 +1687,7 @@ func buildBaseSystemPromptResult(rootDir, basePrompt, userPrompt, providerName, 
 	if _, ok := toolSurface.Tools["spawn_agent"]; ok {
 		pb.AddSection("subagent_types", subagentTypesSystemSection(), true)
 	}
-	pb.AddSection("environment", environmentSystemPromptSection(rootDir), true)
+	pb.AddSection("environment", environmentSystemPromptSection(rootDir, sessionDate), true)
 	if strings.TrimSpace(userPrompt) != "" {
 		pb.AddSection("user_custom_prompt", "# User Custom Instructions\n\nFollow these user-defined instructions unless they conflict with wuu's built-in behavior, safety, or tool-use discipline above.\n\n"+userPrompt, true)
 	}
@@ -1706,8 +1724,19 @@ func subagentTypesSystemSection() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func environmentSystemPromptSection(rootDir string) string {
+// environmentSystemPromptSection renders the static "# Environment" system
+// section. The date is the session-start frozen value (sessionDate) so the
+// cached system prefix stays byte-stable across turns and thread rebuilds; a
+// long-lived session that crosses a day boundary keeps its start date instead
+// of busting the prompt cache. Real-time clock reads belong in the per-turn
+// message stream, not this cached prefix. When sessionDate is empty (callers
+// without a frozen session, e.g. standalone worker-prompt helpers) it falls
+// back to the current date.
+func environmentSystemPromptSection(rootDir, sessionDate string) string {
 	env := wuucontext.Snapshot(rootDir)
+	if frozen := strings.TrimSpace(sessionDate); frozen != "" {
+		env.Date = frozen
+	}
 	var b strings.Builder
 	b.WriteString("# Environment\n\n")
 	if cwd := strings.TrimSpace(env.CWD); cwd != "" {

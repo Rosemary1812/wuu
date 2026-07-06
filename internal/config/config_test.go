@@ -214,6 +214,35 @@ func TestLoadFrom_ProviderCacheCreationOmittedConfig(t *testing.T) {
 	}
 }
 
+func TestLoadFrom_ProviderInputTokensIncludeCacheReadConfig(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "anthropic",
+      "base_url": "https://compatible.example.com/anthropic",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "model": "generic-coder",
+      "input_tokens_include_cache_read": true
+    }
+  }
+}`
+
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, _, err := LoadFrom(workdir, "")
+	if err != nil {
+		t.Fatalf("LoadFrom returned error: %v", err)
+	}
+	if !cfg.Providers["main"].InputTokensIncludeCacheRead {
+		t.Fatal("expected input_tokens_include_cache_read flag to parse")
+	}
+}
+
 func TestConfig_ModelRoles(t *testing.T) {
 	workdir := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")

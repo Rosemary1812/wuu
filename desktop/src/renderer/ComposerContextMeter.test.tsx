@@ -78,6 +78,33 @@ describe("ComposerContextMeter", () => {
     ).toBe("45k / 200k");
   });
 
+  it("scales to retained context, never to raw provider input", () => {
+    // MiniMax reports input_tokens inclusive of cache_read (~132.6k here);
+    // the ring must read the retained-context estimate (usage.used), not
+    // the raw input, or it would grossly over-state occupancy. usage.used
+    // already carries the server-side retained estimate (res.ContextTokens),
+    // so the raw input/cache figures below must not leak into the readout.
+    renderMeter(
+      usageWith({
+        used: 45_000,
+        window: 200_000,
+        inputTokens: 132_600,
+        cacheReadTokens: 113_000,
+      }),
+    );
+    expect(
+      container.querySelector(".composer-context-meter-label")?.textContent,
+    ).toBe("45k / 200k");
+    const aria =
+      container
+        .querySelector(".composer-context-meter")
+        ?.getAttribute("aria-label") ?? "";
+    expect(aria).toContain("已保留 45k");
+    expect(aria).toContain("23%"); // 45k / 200k, not 132.6k / 200k (66%)
+    expect(aria).not.toContain("66%");
+    expect(aria).not.toContain("133k");
+  });
+
   it("does not render any center text — the ring is the readout", () => {
     // Per the user's spec: "圆环 + hover 显明细". A small 20×20 ring
     // does not have room for legible center text, and the percentage

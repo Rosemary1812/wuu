@@ -1838,6 +1838,40 @@ describe("latestContextUsageForThread", () => {
     });
   });
 
+  it("prefers the retained estimate over inclusive raw input (A1 normalization)", () => {
+    // A live turn/usage sample from an inclusive-input endpoint (MiniMax
+    // reports input_tokens including cache_read) carries a large raw input
+    // alongside the server-side retained-context estimate. The meter must
+    // read the retained estimate (context_tokens = res.ContextTokens), never
+    // the raw input, and cache_read stays intact for the hit-rate display.
+    let state = initialState;
+    state = appendTurnTokenSample(
+      state,
+      "turn-1",
+      "thread-1",
+      132_600, // raw input_tokens (inclusive of cache_read)
+      2_000,
+      0,
+      113_000, // cache_read preserved
+      1_000,
+      1_000_000,
+      "minimax-m3",
+      88_000, // retained context estimate (res.ContextTokens)
+    );
+    const t = makeThread({
+      model: "minimax-m3",
+      turns: [{ id: "turn-1", status: "completed" }],
+    });
+    const result = latestContextUsageForThread(state, t, {
+      model: "minimax-m3",
+      contextWindowTokens: 1_000_000,
+    });
+    expect(result?.turnID).toBe("turn-1");
+    expect(result?.used).toBe(88_000);
+    expect(result?.used).not.toBe(132_600);
+    expect(result?.cacheReadTokens).toBe(113_000);
+  });
+
   it("returns real usage from the most recent turn that has one", () => {
     let state = initialState;
     state = appendTurnTokenSample(

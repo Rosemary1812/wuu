@@ -2210,6 +2210,77 @@ func TestStampCacheCreationFlag(t *testing.T) {
 	})
 }
 
+func TestNormalizeInclusiveInput(t *testing.T) {
+	t.Run("flag off leaves input unchanged (native anthropic)", func(t *testing.T) {
+		client := &Client{baseURL: "https://api.anthropic.com"}
+		usage := &providers.TokenUsage{InputTokens: 1000, CacheReadTokens: 800, OutputTokens: 50}
+		client.normalizeInclusiveInput(usage)
+		if usage.InputTokens != 1000 {
+			t.Errorf("expected input unchanged=1000, got %d", usage.InputTokens)
+		}
+		if usage.CacheReadTokens != 800 {
+			t.Errorf("expected cache_read preserved=800, got %d", usage.CacheReadTokens)
+		}
+	})
+	t.Run("flag on subtracts cache_read from input, preserves cache_read", func(t *testing.T) {
+		client := &Client{baseURL: "https://x.example.com", inputTokensIncludeCacheRead: true}
+		usage := &providers.TokenUsage{InputTokens: 1000, CacheReadTokens: 800, OutputTokens: 50}
+		client.normalizeInclusiveInput(usage)
+		if usage.InputTokens != 200 {
+			t.Errorf("expected fresh input=200, got %d", usage.InputTokens)
+		}
+		if usage.CacheReadTokens != 800 {
+			t.Errorf("expected cache_read preserved=800, got %d", usage.CacheReadTokens)
+		}
+		// TotalContextTokens must equal input+output post-normalize (cache_read cancels).
+		if got := usage.TotalContextTokens(); got != 200+800+50 {
+			t.Errorf("TotalContextTokens formula unchanged: got %d, want %d", got, 1050)
+		}
+		// Equivalent occupancy resolves to raw_input+output.
+		if usage.InputTokens+usage.OutputTokens != 250 {
+			t.Errorf("expected input+output=250 (raw_input-cache_read+output), got %d", usage.InputTokens+usage.OutputTokens)
+		}
+	})
+	t.Run("flag on floors negative fresh input at zero", func(t *testing.T) {
+		client := &Client{baseURL: "https://x.example.com", inputTokensIncludeCacheRead: true}
+		usage := &providers.TokenUsage{InputTokens: 500, CacheReadTokens: 900}
+		client.normalizeInclusiveInput(usage)
+		if usage.InputTokens != 0 {
+			t.Errorf("expected floored input=0, got %d", usage.InputTokens)
+		}
+		if usage.CacheReadTokens != 900 {
+			t.Errorf("expected cache_read preserved=900, got %d", usage.CacheReadTokens)
+		}
+	})
+	t.Run("nil usage does not panic", func(t *testing.T) {
+		client := &Client{baseURL: "https://x.example.com", inputTokensIncludeCacheRead: true}
+		client.normalizeInclusiveInput(nil)
+	})
+	t.Run("base_url minimaxi auto-detects inclusive input", func(t *testing.T) {
+		client, err := New(ClientConfig{BaseURL: "https://api.minimaxi.com/anthropic", APIKey: "k"})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if !client.inputTokensIncludeCacheRead {
+			t.Error("expected minimaxi base_url to auto-enable inclusive input normalization")
+		}
+		usage := &providers.TokenUsage{InputTokens: 1000, CacheReadTokens: 800}
+		client.normalizeInclusiveInput(usage)
+		if usage.InputTokens != 200 {
+			t.Errorf("expected fresh input=200 after auto-detect, got %d", usage.InputTokens)
+		}
+	})
+	t.Run("native anthropic base_url does not auto-enable", func(t *testing.T) {
+		client, err := New(ClientConfig{BaseURL: "https://api.anthropic.com", APIKey: "k"})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		if client.inputTokensIncludeCacheRead {
+			t.Error("expected native anthropic to keep inclusive-input normalization off")
+		}
+	})
+}
+
 // TestChat_SlidingTailMarkerOnToolLoops verifies that the sliding tail marker
 // strategy works correctly for intra-turn tool loops. Three successive requests
 // represent rounds of a single turn: each adds assistant tool_call+tool result

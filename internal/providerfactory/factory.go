@@ -212,6 +212,7 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 			RetryConfig:                     retry,
 			StreamConfig:                    providerStreamTransportConfig(provider),
 			CacheCreationInputTokensOmitted: provider.CacheCreationInputTokensOmitted,
+			InputTokensIncludeCacheRead:     provider.InputTokensIncludeCacheRead,
 		})
 		if newErr != nil {
 			return nil, newErr

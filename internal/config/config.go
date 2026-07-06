@@ -204,6 +204,13 @@ type ProviderConfig struct {
 	// Wuu reports cache creation as unknown instead of showing a misleading
 	// literal zero.
 	CacheCreationInputTokensOmitted bool `json:"cache_creation_input_tokens_omitted,omitempty"`
+	// InputTokensIncludeCacheRead marks Anthropic-compatible endpoints whose
+	// input_tokens are inclusive of cache_read_input_tokens (e.g. MiniMax),
+	// unlike native Anthropic where input_tokens exclude cached tokens. When
+	// set, Wuu subtracts cache_read from input so context occupancy is not
+	// double-counted. Orthogonal to CacheCreationInputTokensOmitted. Endpoints
+	// whose base_url contains "minimaxi" are auto-detected. Defaults to false.
+	InputTokensIncludeCacheRead bool `json:"input_tokens_include_cache_read,omitempty"`
 }
 
 // ProviderModelProviderConfig mirrors OpenCode's per-model provider override
