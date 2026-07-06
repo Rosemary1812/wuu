@@ -1748,3 +1748,49 @@ func TestStreamRunner_ResetConversationUsageNilAndEmpty(t *testing.T) {
 		t.Fatalf("tracked history length = %d, want 0", r.trackedHistoryLen)
 	}
 }
+
+// TestSeedConversationUsageBaseline locks the resume-seeding contract: a
+// rebuilt runner primes its baseline from persisted ground truth exactly once,
+// and never clobbers live tracker state.
+func TestSeedConversationUsageBaseline(t *testing.T) {
+	r := &StreamRunner{}
+	r.SeedConversationUsageBaseline(54_000, 30)
+	r.usageMu.Lock()
+	tracker := r.conversationUsage
+	trackedLen := r.trackedHistoryLen
+	r.usageMu.Unlock()
+	if tracker == nil || tracker.EstimateCurrent() != 54_000 {
+		t.Fatalf("EstimateCurrent = %d, want seeded 54000", tracker.EstimateCurrent())
+	}
+	if trackedLen != 30 {
+		t.Fatalf("trackedHistoryLen = %d, want 30", trackedLen)
+	}
+
+	// A second seed (stale persisted row) must not override live state.
+	r.SeedConversationUsageBaseline(10, 1)
+	if tracker.EstimateCurrent() != 54_000 {
+		t.Fatalf("EstimateCurrent = %d, want 54000 preserved over stale seed", tracker.EstimateCurrent())
+	}
+
+	// Live state also wins when pending estimates already accumulated.
+	fresh := &StreamRunner{}
+	fresh.usageMu.Lock()
+	fresh.conversationUsage = NewUsageTracker()
+	fresh.conversationUsage.RecordPendingMessages([]providers.ChatMessage{{Role: "user", Content: "hello there"}})
+	fresh.usageMu.Unlock()
+	before := fresh.conversationUsage.EstimateCurrent()
+	fresh.SeedConversationUsageBaseline(99_000, 5)
+	if fresh.conversationUsage.EstimateCurrent() != before {
+		t.Fatalf("EstimateCurrent = %d, want pending-estimate state %d preserved", fresh.conversationUsage.EstimateCurrent(), before)
+	}
+
+	// Zero/negative totals are ignored.
+	empty := &StreamRunner{}
+	empty.SeedConversationUsageBaseline(0, 3)
+	empty.usageMu.Lock()
+	seeded := empty.conversationUsage
+	empty.usageMu.Unlock()
+	if seeded != nil && seeded.HasGroundTruth() {
+		t.Fatal("zero total must not seed ground truth")
+	}
+}

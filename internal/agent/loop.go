@@ -566,11 +566,17 @@ func postToolRewriteCompactReason(toolMessages []providers.ChatMessage) CompactR
 // the loop should run a proactive compact pass, or 0 if proactive
 // compact is disabled (caller didn't supply a window).
 func proactiveCompactThreshold(cfg LoopConfig) int {
-	if cfg.MaxContextTokens <= 0 && cfg.MaxInputTokens <= 0 {
+	if cfg.MaxContextTokens <= 0 && cfg.MaxInputTokens <= 0 && cfg.CompactThresholdTokens <= 0 {
 		return 0
 	}
 	if cfg.CompactThresholdPct > 0 && cfg.CompactThresholdPct < 1 {
 		return proactiveCompactPercentThreshold(cfg, cfg.CompactThresholdPct)
+	}
+	// modelbudget owns the threshold formula; prefer its resolved value so
+	// the trigger, trace, and UI all read the same number. The window-based
+	// derivation below remains as a fallback for callers without a budget.
+	if cfg.CompactThresholdTokens > 0 {
+		return cfg.CompactThresholdTokens
 	}
 	return proactiveCompactUsableWindow(cfg)
 }

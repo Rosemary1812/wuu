@@ -96,7 +96,11 @@ func NewModelProfileRecordWithBudget(providerName, model, apiModel string, budge
 	contextSource := ""
 	contextKnown := false
 	if budget.ContextWindowSource != "" {
-		contextWindow, contextSourceValue := budget.EffectiveContextWindow()
+		// Assign into the outer contextWindow — a previous `:=` here shadowed
+		// it, so traces reported the profile's registry window while usable/
+		// threshold came from the budget, showing two irreconcilable numbers.
+		effectiveWindow, contextSourceValue := budget.EffectiveContextWindow()
+		contextWindow = effectiveWindow
 		contextSource = string(contextSourceValue)
 		contextKnown = contextWindow > 0 && contextSourceValue != modelbudget.SourceUnknown
 	}

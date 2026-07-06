@@ -2256,18 +2256,23 @@ func TestNormalizeInclusiveInput(t *testing.T) {
 		client := &Client{baseURL: "https://x.example.com", inputTokensIncludeCacheRead: true}
 		client.normalizeInclusiveInput(nil)
 	})
-	t.Run("base_url minimaxi auto-detects inclusive input", func(t *testing.T) {
+	t.Run("no base_url auto-detection, explicit config only", func(t *testing.T) {
+		// MiniMax's anthropic endpoint was live-probed EXCLUSIVE on
+		// 2026-07-06; the former "minimaxi" substring auto-detect would
+		// corrupt its (correct) usage by zeroing fresh input. Usage
+		// semantics are volatile vendor behavior: the flag is an explicit
+		// per-provider config decision, never inferred from the URL.
 		client, err := New(ClientConfig{BaseURL: "https://api.minimaxi.com/anthropic", APIKey: "k"})
 		if err != nil {
 			t.Fatalf("New: %v", err)
 		}
-		if !client.inputTokensIncludeCacheRead {
-			t.Error("expected minimaxi base_url to auto-enable inclusive input normalization")
+		if client.inputTokensIncludeCacheRead {
+			t.Error("base_url must not auto-enable inclusive input normalization")
 		}
 		usage := &providers.TokenUsage{InputTokens: 1000, CacheReadTokens: 800}
 		client.normalizeInclusiveInput(usage)
-		if usage.InputTokens != 200 {
-			t.Errorf("expected fresh input=200 after auto-detect, got %d", usage.InputTokens)
+		if usage.InputTokens != 1000 {
+			t.Errorf("expected exclusive input untouched=1000, got %d", usage.InputTokens)
 		}
 	})
 	t.Run("native anthropic base_url does not auto-enable", func(t *testing.T) {
@@ -2674,5 +2679,71 @@ func TestBuildAnthropicRequest_ForcedToolChoice(t *testing.T) {
 	}
 	if payload.ToolChoice != nil {
 		t.Fatalf("expected no tool_choice without tools, got %#v", payload.ToolChoice)
+	}
+}
+
+// TestStreamChat_MessageDeltaNormalizesInclusiveInput locks the streaming
+// coverage of normalizeInclusiveInput at the message_delta site. Endpoints
+// like MiniMax report the real usage only in message_delta (message_start
+// carries input_tokens=0), so a flagged inclusive endpoint must be normalized
+// exactly when the delta re-reports input_tokens — and must NOT be normalized
+// twice when a later delta updates only other fields.
+func TestStreamChat_MessageDeltaNormalizesInclusiveInput(t *testing.T) {
+	ssePayload := "event: message_start\n" +
+		"data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n" +
+		"event: content_block_start\n" +
+		"data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n" +
+		"event: content_block_delta\n" +
+		"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\n" +
+		"event: content_block_stop\n" +
+		"data: {\"type\":\"content_block_stop\",\"index\":0}\n\n" +
+		// Inclusive endpoint: input 1000 includes the 800 cache read.
+		"event: message_delta\n" +
+		"data: {\"type\":\"message_delta\",\"usage\":{\"input_tokens\":1000,\"output_tokens\":1,\"cache_read_input_tokens\":800}}\n\n" +
+		// A second delta without input_tokens must not re-subtract.
+		"event: message_delta\n" +
+		"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":2}}\n\n" +
+		"event: message_stop\n" +
+		"data: {\"type\":\"message_stop\"}\n\n"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(ssePayload))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key", InputTokensIncludeCacheRead: true})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:    "claude-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+
+	var events []providers.StreamEvent
+	for ev := range ch {
+		events = append(events, ev)
+	}
+	last := events[len(events)-1]
+	if last.Type != providers.EventDone {
+		t.Fatalf("expected EventDone last, got %s", last.Type)
+	}
+	if last.Usage == nil {
+		t.Fatal("expected usage in done event")
+	}
+	if last.Usage.InputTokens != 200 {
+		t.Fatalf("expected normalized fresh input 200 (1000-800, subtracted once), got %d", last.Usage.InputTokens)
+	}
+	if last.Usage.CacheReadTokens != 800 {
+		t.Fatalf("expected cache_read preserved 800, got %d", last.Usage.CacheReadTokens)
+	}
+	if last.Usage.OutputTokens != 2 {
+		t.Fatalf("expected output tokens 2, got %d", last.Usage.OutputTokens)
 	}
 }

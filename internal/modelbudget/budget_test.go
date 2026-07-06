@@ -62,8 +62,10 @@ func TestResolveProviderModelLimitAndOutputReserve(t *testing.T) {
 	if budget.OutputLimitTokens != 128_000 || budget.OutputReserveTokens != 128_000 {
 		t.Fatalf("unexpected output budget: %+v", budget)
 	}
-	if budget.UsableInputTokens != 880_000 {
-		t.Fatalf("UsableInputTokens = %d, want input limit minus capped 20k reserve", budget.UsableInputTokens)
+	// ceiling = min(context 1M, input cap 900k); usable subtracts the capped
+	// 20k output reserve plus the 13k compact input buffer.
+	if budget.UsableInputTokens != 867_000 {
+		t.Fatalf("UsableInputTokens = %d, want input cap minus 20k reserve minus 13k buffer", budget.UsableInputTokens)
 	}
 }
 

@@ -20,7 +20,14 @@ const (
 )
 
 // EstimateTokens provides a rough token count estimate.
-// English: ~4 chars per token. CJK: ~2 chars per token.
+// English: ~4 chars per token. CJK: ~0.7 tokens per char.
+//
+// Coefficients calibrated against real MiniMax-M3 tokenizer counts
+// (2026-07-06 probe): English log text est/real 1.06, Go code 1.11 —
+// deliberately a touch pessimistic. CJK measured ~0.61 tokens/char; the
+// former /2 (0.5 t/char) UNDER-estimated Chinese by ~20%, which delays
+// compaction — the dangerous direction, since overflow recovery only runs
+// once per turn. 0.7 keeps the slight-overcount convention.
 func EstimateTokens(text string) int {
 	if text == "" {
 		return 0
@@ -35,17 +42,20 @@ func EstimateTokens(text string) int {
 	}
 
 	nonCJK := totalChars - cjkCount
-	return (nonCJK / 4) + (cjkCount / 2) + 1
+	return (nonCJK / 4) + (cjkCount*7)/10 + 1
 }
 
-// EstimateJSONTokens estimates tokens for JSON content. JSON is denser than
-// prose because single-character structural tokens ({, }, :, ,, ") each
-// consume one token.
+// EstimateJSONTokens estimates tokens for JSON content, which tokenizes
+// denser than prose because structural characters ({, }, :, ", ,) often
+// stand alone. Measured at ~3.0 chars/token on real tool-argument payloads
+// (2026-07-06 MiniMax probe: est/real 1.51 with the former /2, 1.00 with
+// /3), so /3 keeps estimates honest without the old 1.5-2x inflation that
+// pushed tool-heavy sessions into premature compaction.
 func EstimateJSONTokens(text string) int {
 	if text == "" {
 		return 0
 	}
-	return utf8.RuneCountInString(text)/2 + 1
+	return utf8.RuneCountInString(text)/3 + 1
 }
 
 // EstimateMessagesTokens estimates total tokens for a message list.

@@ -205,11 +205,15 @@ type ProviderConfig struct {
 	// literal zero.
 	CacheCreationInputTokensOmitted bool `json:"cache_creation_input_tokens_omitted,omitempty"`
 	// InputTokensIncludeCacheRead marks Anthropic-compatible endpoints whose
-	// input_tokens are inclusive of cache_read_input_tokens (e.g. MiniMax),
-	// unlike native Anthropic where input_tokens exclude cached tokens. When
-	// set, Wuu subtracts cache_read from input so context occupancy is not
-	// double-counted. Orthogonal to CacheCreationInputTokensOmitted. Endpoints
-	// whose base_url contains "minimaxi" are auto-detected. Defaults to false.
+	// input_tokens are inclusive of cache_read_input_tokens, unlike native
+	// Anthropic where input_tokens exclude cached tokens. When set, Wuu
+	// subtracts cache_read from input so context occupancy is not
+	// double-counted. Orthogonal to CacheCreationInputTokensOmitted. Never
+	// auto-detected: verify the endpoint's semantics empirically (two
+	// identical cache_control requests; inclusive implies input >= cache_read
+	// on the warm request) before enabling. MiniMax's anthropic endpoint was
+	// live-probed EXCLUSIVE on 2026-07-06 and must not set this. Defaults to
+	// false.
 	InputTokensIncludeCacheRead bool `json:"input_tokens_include_cache_read,omitempty"`
 }
 

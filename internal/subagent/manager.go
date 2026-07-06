@@ -26,6 +26,7 @@ type Manager struct {
 	defaultContextWindow   int
 	defaultMaxInputTokens  int
 	defaultOutputReserve   int
+	defaultCompactTokens   int
 	defaultCompactPct      float64
 	defaultKeepRecent      int
 	defaultDisableCompact  bool
@@ -42,6 +43,7 @@ type ManagerOptions struct {
 	ContextWindowOverride   int
 	MaxInputTokens          int
 	OutputReserveTokens     int
+	CompactThresholdTokens  int
 	CompactThresholdPct     float64
 	CompactKeepRecentTokens int
 	DisableAutoCompact      bool
@@ -55,6 +57,7 @@ type managerDefaults struct {
 	contextWindow  int
 	maxInputTokens int
 	outputReserve  int
+	compactTokens  int
 	compactPct     float64
 	keepRecent     int
 	disableCompact bool
@@ -81,6 +84,7 @@ func NewManagerWithOptions(client providers.StreamClient, defaultModel string, o
 		defaultContextWindow:   opts.ContextWindowOverride,
 		defaultMaxInputTokens:  opts.MaxInputTokens,
 		defaultOutputReserve:   opts.OutputReserveTokens,
+		defaultCompactTokens:   opts.CompactThresholdTokens,
 		defaultCompactPct:      opts.CompactThresholdPct,
 		defaultKeepRecent:      opts.CompactKeepRecentTokens,
 		defaultDisableCompact:  opts.DisableAutoCompact,
@@ -107,6 +111,7 @@ func (m *Manager) UpdateDefaults(client providers.StreamClient, defaultModel str
 	m.defaultContextWindow = opts.ContextWindowOverride
 	m.defaultMaxInputTokens = opts.MaxInputTokens
 	m.defaultOutputReserve = opts.OutputReserveTokens
+	m.defaultCompactTokens = opts.CompactThresholdTokens
 	m.defaultCompactPct = opts.CompactThresholdPct
 	m.defaultKeepRecent = opts.CompactKeepRecentTokens
 	m.defaultDisableCompact = opts.DisableAutoCompact
@@ -123,6 +128,7 @@ func (m *Manager) defaultsSnapshot() managerDefaults {
 		contextWindow:  m.defaultContextWindow,
 		maxInputTokens: m.defaultMaxInputTokens,
 		outputReserve:  m.defaultOutputReserve,
+		compactTokens:  m.defaultCompactTokens,
 		compactPct:     m.defaultCompactPct,
 		keepRecent:     m.defaultKeepRecent,
 		disableCompact: m.defaultDisableCompact,
@@ -353,6 +359,7 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 		ContextWindowOverride:   defaults.contextWindow,
 		MaxInputTokens:          defaults.maxInputTokens,
 		OutputReserveTokens:     defaults.outputReserve,
+		CompactThresholdTokens:  defaults.compactTokens,
 		CompactThresholdPct:     defaults.compactPct,
 		CompactKeepRecentTokens: defaults.keepRecent,
 		DisableAutoCompact:      defaults.disableCompact,

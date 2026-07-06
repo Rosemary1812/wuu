@@ -73,6 +73,12 @@ func SupportsNativeToolDiscoveryByDefault(provider config.ProviderConfig, model 
 	}
 	switch profile.Wire {
 	case wireOpenAIResponses:
+		// Per-model config wins over the first-party base_url default, the
+		// same override contract the anthropic wire honors: vendor protocol
+		// support is channel data, not something to hardcode by URL.
+		if enabled, ok := nativeToolSearchOption(providerOptions); ok {
+			return enabled && openAIModelSupportsNativeToolSearch(model)
+		}
 		return openAIModelSupportsNativeToolSearch(model) &&
 			(isFirstPartyOpenAIResponsesBaseURL(provider.BaseURL) || profile.Auth == authCodexOAuth)
 	case wireAnthropicMessages:
@@ -91,12 +97,42 @@ func SupportsNativeToolDiscovery(provider config.ProviderConfig, model string, p
 	}
 	switch profile.Wire {
 	case wireOpenAIResponses:
+		if enabled, ok := nativeToolSearchOption(providerOptions); ok && !enabled {
+			return false
+		}
 		return openAIModelSupportsNativeToolSearch(model)
 	case wireAnthropicMessages:
 		return anthropic.SupportsNativeToolSearchWhenExplicitlyEnabled(model, providerOptions)
 	default:
 		return false
 	}
+}
+
+// nativeToolSearchOption reads the wire-neutral per-model override for
+// provider-native deferred tool loading from model options
+// (providers.<name>.models.<model>.options.native_tool_search).
+func nativeToolSearchOption(options map[string]any) (bool, bool) {
+	if len(options) == 0 {
+		return false, false
+	}
+	for _, key := range []string{"native_tool_search", "nativeToolSearch"} {
+		value, exists := options[key]
+		if !exists {
+			continue
+		}
+		switch v := value.(type) {
+		case bool:
+			return v, true
+		case string:
+			switch strings.ToLower(strings.TrimSpace(v)) {
+			case "true", "1", "yes", "on":
+				return true, true
+			case "false", "0", "no", "off":
+				return false, true
+			}
+		}
+	}
+	return false, false
 }
 
 func ShouldFallbackToWuuToolSearchByDefault(provider config.ProviderConfig, model string, _ map[string]any) bool {

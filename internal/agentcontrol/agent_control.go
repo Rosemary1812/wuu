@@ -168,6 +168,7 @@ type Config struct {
 	DefaultContextWindow           int
 	DefaultMaxInputTokens          int
 	DefaultOutputReserveTokens     int
+	DefaultCompactThresholdTokens  int
 	DefaultCompactThresholdPct     float64
 	DefaultCompactKeepRecentTokens int
 	DefaultDisableAutoCompact      bool
@@ -218,6 +219,7 @@ func New(cfg Config) (*AgentControl, error) {
 		ContextWindowOverride:   cfg.DefaultContextWindow,
 		MaxInputTokens:          cfg.DefaultMaxInputTokens,
 		OutputReserveTokens:     cfg.DefaultOutputReserveTokens,
+		CompactThresholdTokens:  cfg.DefaultCompactThresholdTokens,
 		CompactThresholdPct:     cfg.DefaultCompactThresholdPct,
 		CompactKeepRecentTokens: cfg.DefaultCompactKeepRecentTokens,
 		DisableAutoCompact:      cfg.DefaultDisableAutoCompact,

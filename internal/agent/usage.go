@@ -128,6 +128,23 @@ func (t *UsageTracker) PendingDelta() int {
 	return t.pendingDelta
 }
 
+// SeedGroundTruth primes the tracker with a persisted retained-context total
+// when no live state exists yet. It reports whether the seed was applied:
+// a tracker that already holds a baseline or pending estimates keeps its
+// (fresher) live state untouched.
+func (t *UsageTracker) SeedGroundTruth(total int) bool {
+	if t == nil || total <= 0 {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.lastResponseTotal > 0 || t.pendingDelta > 0 {
+		return false
+	}
+	t.lastResponseTotal = total
+	return true
+}
+
 // Reset clears all recorded state. Used after a compact pass replaces
 // the conversation history with a summary.
 func (t *UsageTracker) Reset() {

@@ -228,6 +228,11 @@ type LoopConfig struct {
 	// budgeting. It does not force the request's max_tokens; DefaultMaxTokens
 	// remains the request cap.
 	OutputReserveTokens int
+	// CompactThresholdTokens is the modelbudget-derived absolute trigger for
+	// proactive compaction. When set it takes precedence over the loop's own
+	// window-based derivation so the trigger always matches what trace/UI
+	// report. Zero falls back to the legacy derivation.
+	CompactThresholdTokens int
 	// CompactThresholdPct overrides the default usable-window trigger with a
 	// fraction of the configured input/context window. Zero means use the
 	// default usable-window calculation.

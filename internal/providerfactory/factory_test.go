@@ -414,3 +414,23 @@ func providerFactoryFakeJWT(t *testing.T, exp time.Time, accountID string) strin
 	payload := base64.RawURLEncoding.EncodeToString(data)
 	return header + "." + payload + ".sig"
 }
+
+// TestNativeToolSearchOptionOverridesResponsesWire locks the wire-neutral
+// per-model override: config decides native deferred-tool support, not the
+// base_url alone, on the OpenAI Responses wire like on the anthropic wire.
+func TestNativeToolSearchOptionOverridesResponsesWire(t *testing.T) {
+	compatible := config.ProviderConfig{Type: "openai", BaseURL: "https://proxy.example/v1", WireAPI: "responses"}
+	if SupportsNativeToolDiscoveryByDefault(compatible, "gpt-5.5", nil) {
+		t.Fatal("compatible responses endpoint must default to no native discovery")
+	}
+	if !SupportsNativeToolDiscoveryByDefault(compatible, "gpt-5.5", map[string]any{"native_tool_search": true}) {
+		t.Fatal("native_tool_search=true must enable native discovery on a compatible responses endpoint")
+	}
+	firstParty := config.ProviderConfig{Type: "openai", BaseURL: "https://api.openai.com/v1", WireAPI: "responses"}
+	if SupportsNativeToolDiscoveryByDefault(firstParty, "gpt-5.5", map[string]any{"native_tool_search": false}) {
+		t.Fatal("native_tool_search=false must disable native discovery even on first-party OpenAI")
+	}
+	if SupportsNativeToolDiscovery(firstParty, "gpt-5.5", map[string]any{"native_tool_search": false}) {
+		t.Fatal("explicit mode must honor native_tool_search=false")
+	}
+}

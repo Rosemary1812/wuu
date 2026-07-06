@@ -5,27 +5,25 @@ import (
 	"testing"
 )
 
-// TestModelUsage_NormalizedMiniMaxInputPreservesHitRate locks the A3
-// invariant that the insight readouts (occupancy + cache hit rate) resolve
-// correctly once the provider adapter has normalized an inclusive-input
-// endpoint.
+// TestModelUsage_NormalizedInclusiveInputPreservesHitRate locks the invariant
+// that the insight readouts (occupancy + cache hit rate) resolve correctly
+// once the provider adapter has normalized a genuinely inclusive-input
+// endpoint (one whose usage.input_tokens contains cache_read).
 //
-// MiniMax runs through the anthropic client but reports input_tokens
-// *inclusive* of cache_read, while cache_read itself is reported
-// cumulatively. The adapter's normalizeInclusiveInput subtracts cache_read
-// from input (floored at 0) and preserves cache_read, so the token_usage
-// meta rows that feed ModelUsage already carry the clean input. This test
-// pins the resulting behaviour: TotalContextTokens equals raw_input+output
-// (the cache_read cancels, no double count) and CacheHitRate reflects the
-// true cached share without diluting its denominator. cache_read stays
-// non-zero, so the hit-rate display is never broken.
-func TestModelUsage_NormalizedMiniMaxInputPreservesHitRate(t *testing.T) {
+// Historical note: this test was written assuming MiniMax reported inclusive
+// input. A 2026-07-06 live probe showed MiniMax's anthropic endpoint is in
+// fact EXCLUSIVE (native-Anthropic semantics; the "4x" that motivated the
+// assumption came from turn-level cross-step summation), so normalization
+// must never be enabled for it. The arithmetic locked here still holds for
+// any endpoint that truly is inclusive and is explicitly flagged via
+// input_tokens_include_cache_read.
+func TestModelUsage_NormalizedInclusiveInputPreservesHitRate(t *testing.T) {
 	const (
 		freshInput = 19_600  // real prompt tokens this round
-		cacheRead  = 113_000 // reported cumulatively by MiniMax
+		cacheRead  = 113_000
 		output     = 2_000
 	)
-	rawInput := freshInput + cacheRead // MiniMax input_tokens is inclusive
+	rawInput := freshInput + cacheRead // an inclusive endpoint's input_tokens
 
 	// Pre-normalization (buggy) view: input still carries cache_read.
 	raw := ModelUsage{InputTokens: rawInput, CacheReadTokens: cacheRead, OutputTokens: output}

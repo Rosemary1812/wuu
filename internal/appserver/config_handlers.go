@@ -332,6 +332,7 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 		s.rt.StreamRunner.ContextWindowOverride = modelBudget.ContextWindowTokens
 		s.rt.StreamRunner.MaxInputTokens = modelBudget.InputLimitTokens
 		s.rt.StreamRunner.OutputReserveTokens = modelBudget.OutputReserveTokens
+		s.rt.StreamRunner.CompactThresholdTokens = modelBudget.CompactThresholdTokens
 	}
 	s.updateRootAgentControlWorkerDefaults()
 	s.updateIdleThreadAdvancedRuntime()
@@ -618,6 +619,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		s.rt.StreamRunner.ContextWindowOverride = modelBudget.ContextWindowTokens
 		s.rt.StreamRunner.MaxInputTokens = modelBudget.InputLimitTokens
 		s.rt.StreamRunner.OutputReserveTokens = modelBudget.OutputReserveTokens
+		s.rt.StreamRunner.CompactThresholdTokens = modelBudget.CompactThresholdTokens
 	}
 	s.updateRootAgentControlWorkerDefaults()
 	s.updateThreadRuntimeForModelUpdate(resolvedName, ruleProviderName, model, apiModel, systemPrompt)
@@ -915,6 +917,7 @@ func (s *Server) applyThreadRuntimeUpdateLocked(th *threadState, update threadRu
 		th.execRuntime.StreamRunner.ContextWindowOverride = s.rt.StreamRunner.ContextWindowOverride
 		th.execRuntime.StreamRunner.MaxInputTokens = s.rt.StreamRunner.MaxInputTokens
 		th.execRuntime.StreamRunner.OutputReserveTokens = s.rt.StreamRunner.OutputReserveTokens
+		th.execRuntime.StreamRunner.CompactThresholdTokens = s.rt.StreamRunner.CompactThresholdTokens
 		th.execRuntime.StreamRunner.CompactThresholdPct = s.rt.StreamRunner.CompactThresholdPct
 		th.execRuntime.StreamRunner.CompactKeepRecentTokens = s.rt.StreamRunner.CompactKeepRecentTokens
 		th.execRuntime.StreamRunner.DisableAutoCompact = s.rt.StreamRunner.DisableAutoCompact
@@ -950,6 +953,7 @@ func (s *Server) updateIdleThreadAdvancedRuntime() {
 				th.execRuntime.StreamRunner.ContextWindowOverride = s.rt.StreamRunner.ContextWindowOverride
 				th.execRuntime.StreamRunner.MaxInputTokens = s.rt.StreamRunner.MaxInputTokens
 				th.execRuntime.StreamRunner.OutputReserveTokens = s.rt.StreamRunner.OutputReserveTokens
+				th.execRuntime.StreamRunner.CompactThresholdTokens = s.rt.StreamRunner.CompactThresholdTokens
 				th.execRuntime.StreamRunner.CompactThresholdPct = s.rt.StreamRunner.CompactThresholdPct
 				th.execRuntime.StreamRunner.CompactKeepRecentTokens = s.rt.StreamRunner.CompactKeepRecentTokens
 				th.execRuntime.StreamRunner.DisableAutoCompact = s.rt.StreamRunner.DisableAutoCompact

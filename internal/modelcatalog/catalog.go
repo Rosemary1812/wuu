@@ -425,11 +425,22 @@ func MergeModelConfig(primary, fallback config.ProviderModelConfig) config.Provi
 		}
 		out.Provider = &provider
 	}
+	// ContextWindow and Limit.Context are two config spellings of the same
+	// fact. Guard them jointly: when the user wrote either one, the catalog
+	// must not fill the other spelling, or budget lookups that prefer one
+	// field would silently shadow the user's value with catalog data.
+	userSetContext := out.ContextWindow > 0 || (out.Limit != nil && out.Limit.Context > 0)
 	if out.Limit == nil {
-		out.Limit = fallback.Limit
+		if fallback.Limit != nil {
+			limit := *fallback.Limit
+			if userSetContext {
+				limit.Context = 0
+			}
+			out.Limit = &limit
+		}
 	} else if fallback.Limit != nil {
 		limit := *out.Limit
-		if limit.Context == 0 {
+		if limit.Context == 0 && !userSetContext {
 			limit.Context = fallback.Limit.Context
 		}
 		if limit.Input == 0 {
@@ -440,7 +451,7 @@ func MergeModelConfig(primary, fallback config.ProviderModelConfig) config.Provi
 		}
 		out.Limit = &limit
 	}
-	if out.ContextWindow == 0 {
+	if out.ContextWindow == 0 && !userSetContext {
 		out.ContextWindow = fallback.ContextWindow
 	}
 	if len(out.Options) == 0 {

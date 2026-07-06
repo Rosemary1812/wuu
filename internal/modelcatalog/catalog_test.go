@@ -63,8 +63,11 @@ func TestMatchProviderTreatsTerminalV1AsOptional(t *testing.T) {
 		t.Fatalf("rule provider name = %q", ruleName)
 	}
 	model := enriched.Models["MiniMax-M3"]
-	if model.Limit == nil || model.Limit.Context != 512000 {
-		t.Fatalf("model limit context = %+v, want 512000", model.Limit)
+	// 1M live-verified 2026-07-06 (648k-token request accepted, ~2M rejected);
+	// the launch-era 512k snapshot value systematically halved the compact
+	// threshold.
+	if model.Limit == nil || model.Limit.Context != 1000000 {
+		t.Fatalf("model limit context = %+v, want 1000000", model.Limit)
 	}
 	if enriched.ContextWindow != 0 {
 		t.Fatalf("provider ContextWindow = %d, want 0 without explicit provider override", enriched.ContextWindow)
@@ -306,5 +309,39 @@ func TestMergeProviderPromotesSelectedModelProviderOverride(t *testing.T) {
 	model := enriched.Models["anthropic/claude-opus-4.7"]
 	if model.Limit == nil || model.Limit.Context != 1000000 {
 		t.Fatalf("model limit context = %+v, want 1000000", model.Limit)
+	}
+}
+
+// TestMergeModelConfigUserContextWinsOverCatalog locks the joint guard on the
+// two spellings of the context fact (ContextWindow / Limit.Context): when the
+// user wrote either one, the catalog must not fill the other spelling, or
+// budget lookups that read ContextWindow first would shadow the user's value.
+func TestMergeModelConfigUserContextWinsOverCatalog(t *testing.T) {
+	catalog := config.ProviderModelConfig{
+		ContextWindow: 1_000_000,
+		Limit:         &config.ProviderModelLimitConfig{Context: 1_000_000, Output: 128_000},
+	}
+
+	userLimit := config.ProviderModelConfig{
+		Limit: &config.ProviderModelLimitConfig{Context: 60_000},
+	}
+	merged := MergeModelConfig(userLimit, catalog)
+	if merged.Limit.Context != 60_000 {
+		t.Fatalf("Limit.Context = %d, want user 60000", merged.Limit.Context)
+	}
+	if merged.ContextWindow != 0 {
+		t.Fatalf("ContextWindow = %d, want 0 (catalog must not fill the other spelling)", merged.ContextWindow)
+	}
+	if merged.Limit.Output != 128_000 {
+		t.Fatalf("Limit.Output = %d, want catalog 128000 (independent field still merges)", merged.Limit.Output)
+	}
+
+	userWindow := config.ProviderModelConfig{ContextWindow: 60_000}
+	merged = MergeModelConfig(userWindow, catalog)
+	if merged.ContextWindow != 60_000 {
+		t.Fatalf("ContextWindow = %d, want user 60000", merged.ContextWindow)
+	}
+	if merged.Limit == nil || merged.Limit.Context != 0 {
+		t.Fatalf("Limit = %+v, want Context 0 (catalog must not fill the other spelling)", merged.Limit)
 	}
 }

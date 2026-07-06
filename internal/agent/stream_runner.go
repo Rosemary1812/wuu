@@ -61,6 +61,13 @@ type StreamRunner struct {
 	// ForceToolFirstStep pins the run's first request to the named tool via
 	// forced tool_choice. See LoopConfig.ForceToolFirstStep.
 	ForceToolFirstStep string
+	// CompactThresholdTokens is the modelbudget-derived absolute token count
+	// at which proactive compaction fires. modelbudget owns the formula
+	// (effective window minus output reserve and safety buffer); the loop
+	// consumes this value instead of re-deriving its own so trace, UI, and
+	// trigger can never disagree. Zero falls back to the loop's legacy
+	// window-based derivation.
+	CompactThresholdTokens int
 	// MaxInputTokens lets callers pass a provider/model prompt limit
 	// when it is smaller than the total context window.
 	MaxInputTokens int
@@ -223,8 +230,10 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 
 	compactContextTokens := r.ContextWindowOverride
 	maxCtx := compactContextTokens
+	compactThresholdTokens := r.CompactThresholdTokens
 	if r.DisableAutoCompact || r.proactiveCompactCircuitOpen() {
 		maxCtx = 0 // disables the proactive trigger inside RunToolLoop
+		compactThresholdTokens = 0
 	}
 	_, systemPromptSections := r.systemPromptSnapshot()
 	beforeStep := r.BeforeStep
@@ -242,6 +251,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		MaxContextTokens:        maxCtx,
 		MaxInputTokens:          r.MaxInputTokens,
 		OutputReserveTokens:     r.OutputReserveTokens,
+		CompactThresholdTokens:  compactThresholdTokens,
 		CompactThresholdPct:     r.CompactThresholdPct,
 		CompactKeepRecentTokens: r.CompactKeepRecentTokens,
 		ForceInitialCompact:     r.ForceInitialCompact,
@@ -510,6 +520,29 @@ func (r *StreamRunner) ResetConversationUsage(history []providers.ChatMessage) {
 	r.conversationUsage.Reset()
 	r.conversationUsage.RecordPendingMessages(history)
 	r.trackedHistoryLen = len(history)
+}
+
+// SeedConversationUsageBaseline primes the cross-turn usage baseline from a
+// persisted retained-context value (the ContextTokens of the thread's last
+// completed turn) when a runtime is rebuilt over existing history — process
+// restart, session resume, thread reopen. That persisted value derives from
+// real provider usage, so it beats re-estimating the whole history with the
+// pessimistic byte heuristic, which over-counts JSON-heavy histories enough
+// to risk an immediate premature compaction on the first resumed turn. No-op
+// when the tracker already holds live state (fresher than the persisted row)
+// or when total is zero.
+func (r *StreamRunner) SeedConversationUsageBaseline(total, historyLen int) {
+	if r == nil || total <= 0 {
+		return
+	}
+	r.usageMu.Lock()
+	defer r.usageMu.Unlock()
+	if r.conversationUsage == nil {
+		r.conversationUsage = NewUsageTracker()
+	}
+	if r.conversationUsage.SeedGroundTruth(total) {
+		r.trackedHistoryLen = historyLen
+	}
 }
 
 func isNonDurableHistoryMessage(msg providers.ChatMessage) bool {

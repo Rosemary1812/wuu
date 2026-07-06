@@ -80,3 +80,23 @@ func encodeBudgetTestPNG(t *testing.T, w, h int) []byte {
 	}
 	return buf.Bytes()
 }
+
+// TestEstimateTokensCalibratedCoefficients locks the 2026-07-06 calibration:
+// CJK at 0.7 tokens/char (real ~0.61, slight overcount by convention) and
+// JSON at chars/3 (real ~3.0 chars/token). The former CJK /2 under-estimated
+// Chinese by ~20% (delays compaction); the former JSON /2 over-estimated
+// tool arguments 1.5-2x (premature compaction).
+func TestEstimateTokensCalibratedCoefficients(t *testing.T) {
+	cjk := strings.Repeat("上下文压缩阈值标定", 10) // 90 CJK runes
+	if got := EstimateTokens(cjk); got != (90*7)/10+1 {
+		t.Fatalf("CJK estimate = %d, want %d", got, (90*7)/10+1)
+	}
+	ascii := strings.Repeat("abcd", 25) // 100 ASCII runes
+	if got := EstimateTokens(ascii); got != 100/4+1 {
+		t.Fatalf("ASCII estimate = %d, want %d", got, 100/4+1)
+	}
+	jsonPayload := strings.Repeat(`{"k":1}`, 30) // 210 runes
+	if got := EstimateJSONTokens(jsonPayload); got != 210/3+1 {
+		t.Fatalf("JSON estimate = %d, want %d", got, 210/3+1)
+	}
+}

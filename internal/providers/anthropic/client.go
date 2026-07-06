@@ -159,10 +159,13 @@ func New(cfg ClientConfig) (*Client, error) {
 		retryConfig:                     rc,
 		streamConfig:                    streamTransportConfig(cfg.StreamConfig),
 		cacheCreationInputTokensOmitted: cfg.CacheCreationInputTokensOmitted,
-		// Explicit config or base_url auto-detect for MiniMax endpoints whose
-		// input_tokens are inclusive of cache_read.
-		inputTokensIncludeCacheRead: cfg.InputTokensIncludeCacheRead ||
-			strings.Contains(strings.ToLower(cfg.BaseURL), "minimaxi"),
+		// Explicit config only — never base_url auto-detection. Usage
+		// semantics are vendor behavior that changes over time (MiniMax was
+		// live-probed exclusive on 2026-07-06, contradicting the assumption
+		// a former "minimaxi" substring auto-detect baked in), so the flag
+		// must stay a deliberate per-provider config decision, verified with
+		// two identical cache_control requests before enabling.
+		inputTokensIncludeCacheRead: cfg.InputTokensIncludeCacheRead,
 	}, nil
 }
 
@@ -592,7 +595,9 @@ func anthropicToolSearchOption(options map[string]any) (bool, bool) {
 	if len(options) == 0 {
 		return false, false
 	}
-	for _, key := range []string{"anthropicToolSearch", "toolSearch", "tool_search"} {
+	// native_tool_search is the wire-neutral spelling shared with the OpenAI
+	// Responses path; the anthropic-flavored aliases stay for back-compat.
+	for _, key := range []string{"native_tool_search", "nativeToolSearch", "anthropicToolSearch", "toolSearch", "tool_search"} {
 		value, exists := options[key]
 		if !exists {
 			continue
@@ -1121,6 +1126,17 @@ func (c *Client) handleSSEEvent(
 			if p.Usage.CacheReadTokens != nil {
 				usage.CacheReadTokens = *p.Usage.CacheReadTokens
 				usageUpdated = true
+			}
+			// Some compatible endpoints (MiniMax among them) report the real
+			// usage only in message_delta, overwriting whatever message_start
+			// carried. Re-normalize exactly when this event re-reported
+			// input_tokens: the overwrite above reverted InputTokens to the
+			// raw endpoint value, so one paired subtraction is correct. When
+			// the delta carries no input_tokens the previously normalized
+			// value is still in place and normalizing again would
+			// double-subtract (the helper is not idempotent).
+			if p.Usage.InputTokens != nil {
+				c.normalizeInclusiveInput(usage)
 			}
 			if usageUpdated {
 				ch <- providers.StreamEvent{Type: providers.EventUsage, Usage: &providers.TokenUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationTokens: usage.CacheCreationTokens, CacheReadTokens: usage.CacheReadTokens, CacheCreationUnknown: usage.CacheCreationUnknown}}

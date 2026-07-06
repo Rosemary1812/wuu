@@ -538,6 +538,15 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 			providers.DebugLogf("restore update_plan for thread %q: %v", th.ID, restoreErr)
 		}
 	}
+	// A rebuilt runtime over existing history (resume/reopen) starts with an
+	// empty usage tracker; seed it from the last persisted ContextTokens so
+	// the pre-first-response occupancy reads real ground truth instead of a
+	// pessimistic full-history re-estimate.
+	if threadRuntime.StreamRunner != nil && len(history) > 0 {
+		if retained := s.latestRetainedContextTokens(th.ID); retained > 0 {
+			threadRuntime.StreamRunner.SeedConversationUsageBaseline(retained, len(history))
+		}
+	}
 	sub := s.subscribeThreadRuntime(th.ID, threadRuntime)
 	if err := s.configureResidentThreadRuntime(th, threadRuntime); err != nil {
 		releaseThreadRuntimeSubscription(threadRuntime, sub)
@@ -640,6 +649,7 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 			threadRuntime.StreamRunner.ContextWindowOverride = pinnedBudget.ContextWindowTokens
 			threadRuntime.StreamRunner.MaxInputTokens = pinnedBudget.InputLimitTokens
 			threadRuntime.StreamRunner.OutputReserveTokens = pinnedBudget.OutputReserveTokens
+			threadRuntime.StreamRunner.CompactThresholdTokens = pinnedBudget.CompactThresholdTokens
 		}
 	}
 	if threadRuntime.Toolkit != nil {

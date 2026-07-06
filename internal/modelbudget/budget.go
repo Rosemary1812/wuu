@@ -19,6 +19,21 @@ const (
 
 const CodexSubscriptionGPT5InputCap = 272_000
 
+// compactOutputReserveCapTokens caps how much of the prompt ceiling is held
+// back for the response when deriving the compact threshold. Real answers and
+// compact summaries rarely exceed ~20k even when the model's output limit is
+// far larger, so reserving the full output limit (e.g. 128k of a 1M window)
+// would waste usable context. Mirrors Claude Code's effective-window rule
+// (window - min(max_output, 20k)).
+const compactOutputReserveCapTokens = 20_000
+
+// compactInputBufferTokens is the safety margin below the prompt ceiling at
+// which proactive compaction fires, so the summarize request itself (history +
+// summary output) still fits comfortably. Mirrors Claude Code's 13k autocompact
+// buffer. Scaled down to ceiling/8 for small windows so tiny local models are
+// not compacted constantly.
+const compactInputBufferTokens = 13_000
+
 type Budget struct {
 	Model                  string
 	APIModel               string
@@ -43,15 +58,25 @@ func Resolve(model string, provider config.ProviderConfig, agentOverride int) Bu
 	input := resolveInputWindow(model, apiModel, provider)
 	output := configuredModelOutputLimit(model, provider)
 	outputReserve := output
+	// The prompt ceiling is the context window, clamped by a published
+	// input cap when the channel has one (e.g. Codex subscription 272k).
+	// The input cap is a clamp, never an independent anchor: budget and
+	// display must derive from the same ceiling or they drift apart.
+	ceiling := context
+	if input > 0 && (ceiling <= 0 || input < ceiling) {
+		ceiling = input
+	}
 	usable := 0
-	if input > 0 {
+	if ceiling > 0 {
 		reserve := outputReserve
-		if reserve > 20_000 {
-			reserve = 20_000
+		if reserve > compactOutputReserveCapTokens {
+			reserve = compactOutputReserveCapTokens
 		}
-		usable = max(0, input-reserve)
-	} else if context > 0 {
-		usable = max(0, context-outputReserve)
+		buffer := compactInputBufferTokens
+		if buffer > ceiling/8 {
+			buffer = ceiling / 8
+		}
+		usable = max(0, ceiling-reserve-buffer)
 	}
 
 	return Budget{
