@@ -603,6 +603,60 @@ h2.title { font-family: var(--serif); font-weight: 540; font-size: clamp(32px, 4
 /* the marquee stole the nav's .logo class — restore the nav wordmark */
 nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
 
+/* one editorial item pattern everywhere: hairline top rule, no box */
+.capcard, .flowstep, .surface, .credit, .diff {
+  background: transparent; border: none; border-radius: 0; box-shadow: none;
+  border-top: 1px solid var(--line-2); overflow: visible;
+}
+.capcard:hover, .flowstep:hover, .surface:hover, .credit:hover {
+  transform: none; box-shadow: none;
+}
+
+/* capabilities: numbered editorial grid, mascots stay as the charm */
+.capsec { padding: 108px 0 56px; }
+.capgrid { gap: 44px 40px; }
+.capcard { padding: 20px 0 0; min-height: 208px; }
+.capgrid { counter-reset: cap; }
+.capcard::before { counter-increment: cap; content: counter(cap, decimal-leading-zero); font-family: var(--serif); font-size: 14px; color: var(--coral-deep); margin-bottom: 14px; }
+.capcard h3 { font-size: 18px; }
+.capcard .spot { width: 92px; height: 92px; margin-right: 0; }
+
+/* flow: quiet numbered steps, no boxes, no arrows */
+.flowsec { padding: 48px 0 108px; }
+.flow { gap: 40px; margin-top: 44px; }
+.flowstep { display: block; position: relative; padding: 18px 0 0; }
+.flowstep::before { display: none !important; }
+.flowstep .n { width: auto; height: auto; background: none; border: none; color: var(--coral-deep); font-family: var(--serif); font-size: 17px; display: block; margin-bottom: 12px; }
+.flowstep .txt h4 { font-size: 16.5px; margin-bottom: 5px; }
+.flowstep .txt p { font-size: 13.5px; }
+.flowstep .pic { position: absolute; top: 18px; right: 0; width: 44px; height: 44px; margin: 0; }
+@media (max-width: 860px){ .flowstep:not(:last-child)::before { display: none; } }
+
+/* control surfaces */
+.surface { padding: 20px 0 0; }
+.surface .step { width: auto; height: auto; background: none; border: none; box-shadow: none; color: var(--coral-deep); font-family: var(--serif); font-weight: 400; font-size: 14px; display: block; }
+.surface h3 { margin: 14px 0 8px; font-size: 18px; }
+.surface p { font-size: 14.5px; }
+
+/* differentiators: same rule pattern, retire the coral tick */
+.diff { padding-top: 20px; }
+.diff .top { display: none; }
+
+/* faq: hairline list instead of boxes */
+.faq-list details { background: transparent; border: none; border-radius: 0; box-shadow: none; border-bottom: 1px solid var(--line-2); margin-bottom: 0; overflow: hidden; }
+.faq-list details:first-child { border-top: 1px solid var(--line-2); }
+.faq-list summary { padding: 21px 4px; font-size: 16.5px; }
+.faq-list summary i { border: none; background: var(--cream); width: 18px; height: 18px; border-radius: 0; background: none; }
+.faq-list summary i::before { left: 1px; right: 1px; top: 8px; height: 1.5px; }
+.faq-list summary i::after { top: 1px; bottom: 1px; left: 8.25px; width: 1.5px; }
+.faq-list details[open] summary i { background: none; }
+.faq-list details p { padding: 0 4px 22px; }
+
+/* credits: hairline list items */
+.credit { padding: 18px 0 0; }
+.credit:hover .n { color: var(--coral-deep); }
+.credit .n { transition: color .2s; }
+
 </style>
 </head>
 <body>
