@@ -585,12 +585,26 @@ h2.title { font-weight: 500; letter-spacing: -.01em; }
 .capcard h3, .surface h3, .flowstep .txt h4, .step-row h3, .faq-list summary { font-weight: 500; }
 
 
+/* quick-start step 3: an app-input mockup (not a shell block) */
+.step-row .askbox { display: flex; align-items: center; gap: 12px; background: #fff; border: 1.5px solid var(--line-2); border-radius: 12px; padding: 11px 14px; font-size: 14px; color: var(--ink); }
+.step-row .askbox .send { margin-left: auto; flex: none; width: 26px; height: 26px; border-radius: 7px; background: var(--coral); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; }
+.step-row .note { margin: 10px 0 0; font-size: 12.5px; color: var(--ink-3); }
+
 /* quick-start & FAQ: centered single-column sections */
 .quickstart .wrap { text-align: center; }
 .quickstart .steps { margin-left: auto; margin-right: auto; text-align: left; }
 .faq-section .wrap { text-align: center; }
 .faq-section .faq-list { margin-left: auto; margin-right: auto; text-align: left; }
 .faq-top { justify-content: center; }
+
+
+/* what-sets-it-apart section */
+.diffsec { padding: 96px 0; background: var(--paper-2); border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); }
+.diff-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 44px; margin-top: 48px; }
+@media (max-width: 800px){ .diff-grid { grid-template-columns: 1fr; gap: 34px; } }
+.diff .top { display: block; width: 32px; height: 3px; border-radius: 2px; background: var(--coral); margin-bottom: 18px; }
+.diff h3 { font-family: var(--display); font-weight: 600; font-size: 19px; line-height: 1.35; margin-bottom: 10px; letter-spacing: -.01em; }
+.diff p { color: var(--ink-2); font-size: 15px; line-height: 1.62; }
 
 </style>
 </head>
@@ -606,7 +620,6 @@ h2.title { font-weight: 500; letter-spacing: -.01em; }
     <a href="#howit"><span class="zh">工作流程</span><span class="en">How it works</span></a>
     <a href="#everywhere"><span class="zh">用法</span><span class="en">Usage</span></a>
     <a href="#faq">FAQ</a>
-    <a href="#quickstart"><span class="zh">快速开始</span><span class="en">Quick start</span></a>
     <a href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener">GitHub</a>
     <button class="lang-toggle" id="langToggle" aria-label="Switch language">EN</button>
   </div>
@@ -625,7 +638,7 @@ h2.title { font-weight: 500; letter-spacing: -.01em; }
         <span class="en">wuu drops planning, research, coding, and review agents into one group chat — they collaborate, hand off, and review each other. You steer and approve.</span>
       </p>
       <div class="hero-cta reveal in d2">
-        <a class="btn btn-solid" href="#quickstart"><span class="zh">开始使用</span><span class="en">Get started</span></a>
+        <a class="btn btn-solid" href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener"><span class="zh">开始使用</span><span class="en">Get started</span></a>
         <a class="btn btn-ghost" href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener">GitHub</a>
       </div>
       <p class="trust reveal in d3">
@@ -796,44 +809,25 @@ h2.title { font-weight: 500; letter-spacing: -.01em; }
   </div>
 </section>
 
-<section class="quickstart" id="quickstart">
+<section class="diffsec" id="why">
   <div class="wrap">
-    <span class="kicker reveal"><span class="zh">快速开始</span><span class="en">Quick start</span></span>
-    <h2 class="title reveal">
-      <span class="zh">三分钟跑通<span class="mark">第一个任务</span></span>
-      <span class="en">Your <span class="mark">first task</span> in three minutes</span>
-    </h2>
-    <div class="steps">
-      <div class="card step-row reveal">
-        <div class="n">1</div>
-        <div>
-          <h3><span class="zh">把桌面应用跑起来</span><span class="en">Run the desktop app</span></h3>
-          <p><span class="zh">桌面应用从源码启动，几条命令的事。</span><span class="en">The desktop app runs from source — just a few commands.</span></p>
-          <div class="codeblock"><button class="copy-btn" data-copy="git clone https://github.com/blueberrycongee/wuu.git
-cd wuu/desktop
-npm install && npm run dev">copy</button><span class="dollar">$</span> git clone https://github.com/blueberrycongee/wuu.git
-<span class="dollar">$</span> cd wuu/desktop
-<span class="dollar">$</span> npm install && npm run dev</div>
-        </div>
+    <span class="kicker reveal"><span class="zh">有什么不一样</span><span class="en">What sets it apart</span></span>
+    <h2 class="title reveal"><span class="zh">不只是又一个 <span class="mark">coding agent</span></span><span class="en">Not just another <span class="mark">coding agent</span></span></h2>
+    <div class="diff-grid">
+      <div class="diff reveal">
+        <span class="top"></span>
+        <h3><span class="zh">一支能协作的队伍，不是一个 bot</span><span class="en">A team that collaborates, not one bot</span></h3>
+        <p><span class="zh">给 agent 起名、定角色，他们在同一个群聊里 @、交接、互审；你随时插话、点名，把着方向。</span><span class="en">Name your agents and give them roles. They @-mention, hand off, and review each other in one group chat — you jump in, call on anyone, and keep the direction.</span></p>
       </div>
-      <div class="card step-row reveal">
-        <div class="n">2</div>
-        <div>
-          <h3><span class="zh">接上你的 Key</span><span class="en">Connect your key</span></h3>
-          <p><span class="zh">在配置里填上你的 provider——Anthropic 或任何 OpenAI 兼容端点，API Key 走环境变量。</span><span class="en">Set your provider in the config — Anthropic or any OpenAI-compatible endpoint, with your API key in an env var.</span></p>
-          <div class="codeblock"><button class="copy-btn" data-copy="export ANTHROPIC_API_KEY=&quot;...&quot;">copy</button><span class="dollar">$</span> export ANTHROPIC_API_KEY="..."
-<span class="c"># <span class="zh">provider 配置见 ~/.wuu/config.json 或项目内 .wuu.json</span><span class="en">provider config lives in ~/.wuu/config.json or a project .wuu.json</span></span></div>
-        </div>
+      <div class="diff reveal d1">
+        <span class="top"></span>
+        <h3><span class="zh">开源 · 自带 Key · 只在你机器上跑</span><span class="en">Open source, BYOK, fully local</span></h3>
+        <p><span class="zh">MIT 开源、代码可审计；用你自己的 Key 接 Anthropic、OpenAI、开源或本地模型，代码不离开你的机器。</span><span class="en">MIT-licensed and auditable. Bring your own key for Anthropic, OpenAI, open, or local models — and your code never leaves your machine.</span></p>
       </div>
-      <div class="card step-row reveal">
-        <div class="n">3</div>
-        <div>
-          <h3><span class="zh">在窗口里交给它第一件事</span><span class="en">Hand it your first task in the window</span></h3>
-          <p><span class="zh">开个会话，像发消息一样交代：「描述这个仓库」「修一下测试」。看它跑完，逐文件确认。</span><span class="en">Open a session and just ask — "describe this repo", "fix the test". Watch it run, then review file by file.</span></p>
-          <div class="codeblock"><span class="c"># <span class="zh">在会话输入框里直接发：</span><span class="en">just type it in the session box:</span></span>
-<span class="dollar">&rsaquo;</span> <span class="zh">描述一下这个仓库</span><span class="en">describe this repo</span>
-<span class="dollar">&rsaquo;</span> <span class="zh">修一下这个失败的测试</span><span class="en">fix the failing test</span></div>
-        </div>
+      <div class="diff reveal d2">
+        <span class="top"></span>
+        <h3><span class="zh">越用越懂你</span><span class="en">It learns your way</span></h3>
+        <p><span class="zh">会话随时恢复、从检查点 fork；持久记忆 + 技能让它记住你的项目和习惯——像个越处越合拍的搭子。</span><span class="en">Sessions resume and fork from checkpoints; persistent memory and skills let it remember your project and habits — like a teammate who really gets you.</span></p>
       </div>
     </div>
   </div>
