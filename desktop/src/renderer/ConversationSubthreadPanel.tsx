@@ -8,10 +8,14 @@ import {
   CircleCheckBig,
   ListChecks,
   Loader2,
-  Send,
+  SquareArrowOutUpRight,
   X,
 } from "lucide-react";
-import type { ConversationSubthread, ThreadItem } from "../shared/protocol";
+import type {
+  ConversationSubthread,
+  ParticipantSummary,
+  ThreadItem,
+} from "../shared/protocol";
 import { ChatThreadViewContainer } from "./ChatThreadViewContainer";
 
 /**
@@ -26,8 +30,11 @@ import { ChatThreadViewContainer } from "./ChatThreadViewContainer";
  * that omission is how 一层不嵌套 is enforced at the UI level (a message already
  * inside a cth offers no further reply entry).
  *
- * A footer composer posts the human's messages back into the cth
- * (message/postSubthread → thread_id=cth participant_message), and the header
+ * The footer is the `composer` slot: the host passes in the SAME full
+ * conversation composer the main dock uses (附件/截图/命令菜单/盾牌), so a reply
+ * has the exact same send affordances as the main stream — not a stripped
+ * one-line shell. It posts the human's messages back into the cth
+ * (message/postSubthread → thread_id=cth participant_message). The header
  * carries the human-click "升级为 Task" gate. Once escalated, the same slot
  * offers a human-click "完成 Task" gate: the human writes a one-line conclusion
  * that bubbles back to the main stream (全员可见) and resolves the cth, flipping
@@ -42,8 +49,10 @@ export function ConversationSubthreadPanel({
   onResolve,
   onEscalate,
   onBubble,
-  onSend,
   onReact,
+  onPopOut,
+  leadCandidates,
+  composer,
   resolveParticipantName,
   busyParticipantIDs,
   readerCount,
@@ -56,15 +65,25 @@ export function ConversationSubthreadPanel({
   error?: string;
   onClose: () => void;
   onResolve: (resolved: boolean) => void;
-  /** Promote this reply to a task (人点击). Absent while no subthread is loaded. */
-  onEscalate?: () => void;
+  /** Promote this reply to a task (人点击), granting编排权 to the picked named
+   *  member (task lead). Absent while no subthread is loaded. */
+  onEscalate?: (leadParticipantId: string) => void;
   /** Finalize the task by bubbling a one-line conclusion to the main stream and
    *  resolving the cth (人点击). Only meaningful once escalated. */
   onBubble?: (summary: string) => void;
-  /** Post a human message into the cth. */
-  onSend?: (text: string) => void;
   /** Stamp an emoji reaction on a cth message (贴 emoji, right-click). */
   onReact?: (item: ThreadItem, reaction: string) => void;
+  /** Lift this reply subthread into its own window. Absent while no subthread is
+   *  loaded, or inside the popped-out window itself (already detached). */
+  onPopOut?: () => void;
+  /** The group's named members — the candidate pool for the human's "指定 Task
+   *  lead" pick when 升级为 Task. When empty/undefined the escalate gate falls
+   *  back to escalating without an explicit lead. */
+  leadCandidates?: ParticipantSummary[];
+  /** The reused full conversation composer (host-provided slot). Rendered where
+   *  the old stripped footer sat; absent while no subthread is loaded or once
+   *  the cth is resolved. */
+  composer?: JSX.Element;
   resolveParticipantName?: (id: string) => string;
   busyParticipantIDs?: ReadonlySet<string>;
   readerCount?: number;
@@ -76,10 +95,45 @@ export function ConversationSubthreadPanel({
   // the "完成 Task" gate takes its place.
   const alreadyTask = Boolean(subthread?.task);
   const canFinalize = Boolean(subthread) && alreadyTask && !resolved && Boolean(onBubble);
-  const [draft, setDraft] = useState("");
   // Inline "完成 Task" conclusion form, revealed by the header gate.
   const [finalizing, setFinalizing] = useState(false);
   const [summary, setSummary] = useState("");
+  // Inline "升级为 Task" lead picker, revealed by the header gate. The human
+  // must pick a named member to hold编排权 (task lead) before escalating.
+  const candidates = leadCandidates ?? [];
+  const [escalating, setEscalating] = useState(false);
+  const [selectedLeadID, setSelectedLeadID] = useState("");
+
+  // The header escalate gate: with named candidates it opens the inline lead
+  // picker (pre-selecting the first member so 人升级 always has a valid pick);
+  // with none it escalates without an explicit lead (backend allows empty).
+  function beginEscalate(): void {
+    if (!onEscalate) {
+      return;
+    }
+    if (candidates.length === 0) {
+      onEscalate("");
+      return;
+    }
+    setSelectedLeadID((prev) =>
+      prev && candidates.some((member) => member.id === prev)
+        ? prev
+        : candidates[0]!.id,
+    );
+    setEscalating(true);
+  }
+
+  function submitEscalate(): void {
+    if (!onEscalate) {
+      return;
+    }
+    const leadID = selectedLeadID || candidates[0]?.id || "";
+    if (!leadID) {
+      return;
+    }
+    onEscalate(leadID);
+    setEscalating(false);
+  }
 
   function submitSummary(): void {
     const text = summary.trim();
@@ -101,22 +155,6 @@ export function ConversationSubthreadPanel({
     }
   }
 
-  function submitDraft(): void {
-    const text = draft.trim();
-    if (!text || !onSend) {
-      return;
-    }
-    onSend(text);
-    setDraft("");
-  }
-
-  function onComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>): void {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      submitDraft();
-    }
-  }
-
   return (
     <aside className="conversation-subthread-panel" aria-label="Thread">
       <header className="conversation-subthread-header">
@@ -133,7 +171,8 @@ export function ConversationSubthreadPanel({
             <button
               type="button"
               className="conversation-subthread-escalate"
-              onClick={onEscalate}
+              aria-expanded={escalating}
+              onClick={beginEscalate}
             >
               <ListChecks aria-hidden="true" />
               升级为 Task
@@ -161,6 +200,17 @@ export function ConversationSubthreadPanel({
               {resolved ? <CheckCircle2 aria-hidden="true" /> : <Circle aria-hidden="true" />}
             </button>
           ) : null}
+          {subthread && onPopOut ? (
+            <button
+              type="button"
+              className="icon-button conversation-subthread-icon"
+              aria-label="弹出独立窗口"
+              title="弹出独立窗口"
+              onClick={onPopOut}
+            >
+              <SquareArrowOutUpRight aria-hidden="true" />
+            </button>
+          ) : null}
           <button
             type="button"
             className="icon-button conversation-subthread-icon"
@@ -173,6 +223,43 @@ export function ConversationSubthreadPanel({
         </div>
       </header>
       <div className="conversation-subthread-body">
+        {subthread &&
+        !alreadyTask &&
+        !resolved &&
+        escalating &&
+        onEscalate &&
+        candidates.length > 0 ? (
+          <div className="conversation-subthread-escalate-form">
+            <label
+              className="conversation-subthread-lead-label"
+              htmlFor="conversation-subthread-lead-select"
+            >
+              指定 Task lead
+            </label>
+            <select
+              id="conversation-subthread-lead-select"
+              className="conversation-subthread-lead-select"
+              value={selectedLeadID}
+              aria-label="Task lead"
+              onChange={(event) => setSelectedLeadID(event.target.value)}
+            >
+              {candidates.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name || member.id}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="conversation-subthread-escalate conversation-subthread-escalate-submit"
+              disabled={selectedLeadID.trim() === ""}
+              onClick={submitEscalate}
+            >
+              <ListChecks aria-hidden="true" />
+              确认升级
+            </button>
+          </div>
+        ) : null}
         {canFinalize && finalizing ? (
           <div className="conversation-subthread-finalize">
             <textarea
@@ -219,28 +306,8 @@ export function ConversationSubthreadPanel({
           />
         )}
       </div>
-      {subthread && !resolved && onSend ? (
-        <footer className="conversation-subthread-composer">
-          <textarea
-            className="conversation-subthread-input"
-            value={draft}
-            placeholder="回复这条线程…"
-            aria-label="回复这条线程"
-            rows={1}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={onComposerKeyDown}
-          />
-          <button
-            type="button"
-            className="icon-button conversation-subthread-send"
-            aria-label="发送"
-            title="发送"
-            disabled={draft.trim() === ""}
-            onClick={submitDraft}
-          >
-            <Send aria-hidden="true" />
-          </button>
-        </footer>
+      {subthread && !resolved && composer ? (
+        <div className="conversation-subthread-composer">{composer}</div>
       ) : null}
     </aside>
   );

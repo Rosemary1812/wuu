@@ -121,6 +121,47 @@
   align-self: flex-end;
 }
 
+/* "升级为 Task" lead 选择表单:人从本群 named 成员里挑一个持编排权的 lead,
+   再确认升级。与结论表单同样粘在滚动消息区顶部。 */
+.conversation-subthread-escalate-form {
+  position: sticky;
+  top: -18px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: -18px -16px 16px;
+  border-bottom: 1px solid var(--surface-3);
+  padding: 14px 16px;
+  background: var(--surface-1);
+}
+
+.conversation-subthread-lead-label {
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  line-height: var(--line-ui);
+}
+
+.conversation-subthread-lead-select {
+  padding: 8px 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--font-sm);
+  line-height: var(--line-ui);
+}
+
+.conversation-subthread-lead-select:focus {
+  border-color: var(--focus-ring, var(--accent));
+  outline: none;
+}
+
+.conversation-subthread-escalate-form .conversation-subthread-escalate {
+  align-self: flex-end;
+}
+
 .conversation-subthread-body .turn {
   margin-block: 0 18px;
 }
@@ -146,12 +187,11 @@
   color: var(--danger);
 }
 
+/* Footer slot for the reused full conversation composer (附件/截图/命令/盾牌).
+   The composer owns its own chrome/padding, so this wrapper only draws the
+   divider and lets it span the panel width. */
 .conversation-subthread-composer {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
   border-top: 1px solid var(--surface-3);
-  padding: 10px 14px;
 }
 
 .conversation-subthread-input {
@@ -172,22 +212,6 @@
 .conversation-subthread-input:focus {
   border-color: var(--focus-ring, var(--accent));
   outline: none;
-}
-
-.conversation-subthread-send {
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-}
-
-.conversation-subthread-send:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.conversation-subthread-send svg {
-  width: var(--icon-size-sm);
-  height: var(--icon-size-sm);
 }
 
 @keyframes conversation-subthread-spin {

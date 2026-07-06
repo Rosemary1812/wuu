@@ -245,6 +245,13 @@ type PopOutWindowParams =
       kind: "draft";
       context: RuntimeContext;
       sourceWindow?: BrowserWindow | null;
+    }
+  | {
+      kind: "subthread";
+      threadID: string;
+      subthreadID: string;
+      context: RuntimeContext;
+      sourceWindow?: BrowserWindow | null;
     };
 
 function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
@@ -281,7 +288,9 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
   const placeholderTitle =
     params.kind === "thread"
       ? `wuu · ${params.threadID.slice(0, 8)}`
-      : "wuu · 对话";
+      : params.kind === "subthread"
+        ? `wuu · Thread ${params.subthreadID.slice(0, 8)}`
+        : "wuu · 对话";
   const win = new BrowserWindow({
     width: winWidth,
     height: winHeight,
@@ -306,7 +315,14 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
   windowRegistry.registerWindow(win, "popped-out", {
     workdir: params.context.cwd,
     runtimeContext: params.context,
-    threadID: params.kind === "thread" ? params.threadID : undefined,
+    // A subthread window stores its PARENT threadID too so window-routed
+    // app-server calls (escalate/postSubthread/react/bubble) resolve against
+    // the right thread; the cth identity rides in subthreadID.
+    threadID:
+      params.kind === "thread" || params.kind === "subthread"
+        ? params.threadID
+        : undefined,
+    subthreadID: params.kind === "subthread" ? params.subthreadID : undefined,
   });
   windowRegistry.attachResizeHandlers(win, () => {
     setWindowResizeState(true);
@@ -314,6 +330,10 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
   });
   if (params.kind === "thread") {
     windowRegistry.setThreadWindow(params.threadID, windowID);
+  } else if (params.kind === "subthread") {
+    // NOT setThreadWindow — that would clobber the parent group thread's own
+    // pop-out dedup mapping. cth windows dedup via the separate subthread map.
+    windowRegistry.setSubthreadWindow(params.subthreadID, windowID);
   }
   win.on("closed", () => {
     windowRegistry.unregisterWindow(windowID);
@@ -472,6 +492,46 @@ app.whenReady().then(async () => {
         });
         return { windowID: win.webContents.id };
       }
+      if (params?.kind === "subthread") {
+        const parentThreadID =
+          typeof params.threadID === "string" ? params.threadID.trim() : "";
+        const subthreadID =
+          typeof params.subthreadID === "string"
+            ? params.subthreadID.trim()
+            : "";
+        if (!parentThreadID || !subthreadID) {
+          throw new Error("threadID and subthreadID are required");
+        }
+        const existingWindowID =
+          windowRegistry.subthreadHostWindowID(subthreadID);
+        const existing = windowRegistry.popOutWindowForSubthread(subthreadID);
+        if (
+          existing &&
+          !existing.isDestroyed() &&
+          !existing.webContents.isDestroyed()
+        ) {
+          if (existing.isMinimized()) {
+            existing.restore();
+          }
+          existing.show();
+          existing.focus();
+          return { windowID: existing.webContents.id };
+        }
+        if (existing) {
+          windowRegistry.clearSubthreadWindow(subthreadID);
+          if (existingWindowID !== undefined) {
+            windowRegistry.unregisterWindow(existingWindowID);
+          }
+        }
+        const win = createPopOutWindow({
+          kind: "subthread",
+          threadID: parentThreadID,
+          subthreadID,
+          context,
+          sourceWindow,
+        });
+        return { windowID: win.webContents.id };
+      }
       const threadID =
         typeof params?.threadID === "string" ? params.threadID.trim() : "";
       if (!threadID) {
@@ -519,10 +579,21 @@ app.whenReady().then(async () => {
     "wuu:pop-out-init",
     (event) => {
       const threadID = windowRegistry.threadForWindow(event.sender.id);
+      const subthreadID = windowRegistry.subthreadForWindow(event.sender.id);
       const context = windowRegistry.runtimeContextForWindow(event.sender.id);
+      // Check subthreadID BEFORE threadID: a subthread window intentionally
+      // stores the parent threadID too (for runtime routing), so ordering it
+      // first would misreport kind as "thread".
       event.returnValue = {
-        kind: context ? (threadID ? "thread" : "draft") : null,
+        kind: context
+          ? subthreadID
+            ? "subthread"
+            : threadID
+              ? "thread"
+              : "draft"
+          : null,
         threadID: threadID ?? null,
+        subthreadID: subthreadID ?? null,
         context: context ?? null,
       } satisfies PopOutInitResult;
     },
@@ -1043,7 +1114,14 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle(
     "wuu:message-post-subthread",
-    (event, threadId: string, subthreadId: string, text: string) =>
+    (
+      event,
+      threadId: string,
+      subthreadId: string,
+      text: string,
+      images?: InputImage[],
+      files?: InputFile[],
+    ) =>
       appServerRequest<MessagePostSubthreadResult>(
         event,
         "message/postSubthread",
@@ -1051,6 +1129,8 @@ app.whenReady().then(async () => {
           thread_id: threadId,
           subthread_id: subthreadId,
           text,
+          images: images ?? [],
+          files: files ?? [],
         },
       ),
   );

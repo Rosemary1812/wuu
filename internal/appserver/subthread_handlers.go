@@ -239,14 +239,18 @@ func (s *Server) handleMessagePostSubthread(req Request) error {
 	threadID := strings.TrimSpace(params.ThreadID)
 	subthreadID := strings.TrimSpace(params.SubthreadID)
 	text := strings.TrimSpace(params.Text)
+	images := participantImagesFromTurnStart(params.Images)
+	files := participantFilesFromTurnStart(params.Files)
 	if threadID == "" {
 		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
 	}
 	if subthreadID == "" {
 		return s.writeResponse(req.ID, nil, errors.New("subthread_id is required"))
 	}
-	if text == "" {
-		return s.writeResponse(req.ID, nil, errors.New("text is required"))
+	// A post needs either text or at least one attachment — the reused full
+	// composer can send a screenshot with no caption.
+	if text == "" && len(images) == 0 && len(files) == 0 {
+		return s.writeResponse(req.ID, nil, errors.New("text or attachment is required"))
 	}
 	// The subthread must belong to this parent group thread before we post to it.
 	thread, err := s.findConversationSubthread(threadID, subthreadID, "")
@@ -262,6 +266,8 @@ func (s *Server) handleMessagePostSubthread(req Request) error {
 		Text:          text,
 		ThreadID:      subthreadID,
 		CreatedAt:     time.Now().UTC(),
+		Images:        images,
+		Files:         files,
 	}); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -270,6 +276,51 @@ func (s *Server) handleMessagePostSubthread(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	return s.writeResponse(req.ID, MessagePostSubthreadResult{Subthread: view}, nil)
+}
+
+// participantImagesFromTurnStart maps the wire image payload onto the
+// attachment carrier on ParticipantMessage, skipping entries with no data.
+func participantImagesFromTurnStart(images []TurnStartImage) []agentcontrol.ParticipantImage {
+	if len(images) == 0 {
+		return nil
+	}
+	out := make([]agentcontrol.ParticipantImage, 0, len(images))
+	for _, image := range images {
+		if strings.TrimSpace(image.Data) == "" {
+			continue
+		}
+		out = append(out, agentcontrol.ParticipantImage{
+			MediaType: image.MediaType,
+			Data:      image.Data,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// participantFilesFromTurnStart maps the wire file payload onto the attachment
+// carrier on ParticipantMessage, skipping entries with no data.
+func participantFilesFromTurnStart(files []TurnStartFile) []agentcontrol.ParticipantFile {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]agentcontrol.ParticipantFile, 0, len(files))
+	for _, file := range files {
+		if strings.TrimSpace(file.Data) == "" {
+			continue
+		}
+		out = append(out, agentcontrol.ParticipantFile{
+			MediaType: file.MediaType,
+			Data:      file.Data,
+			Filename:  file.Filename,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (s *Server) openConversationSubthread(params ThreadOpenSubParams) (session.ConversationThread, error) {

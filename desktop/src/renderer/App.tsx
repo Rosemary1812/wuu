@@ -47,6 +47,7 @@ import type {
   InputImage,
   ParticipantProfile,
   ParticipantSaveParams,
+  ParticipantSummary,
   PlanUpdate,
   PopOutInitResult,
   ProjectListResult,
@@ -613,6 +614,11 @@ export function App(): JSX.Element {
   const [splitComposerDrafts, setSplitComposerDrafts] = useState<
     Record<ConversationPaneID, ComposerDraftState>
   >(initialSplitComposerDrafts);
+  // The split reply panel reuses the main conversation's full composer, so it
+  // needs its own draft — bound to the shared dock `prompt` it would collide
+  // with the dock composer as the user types in the panel.
+  const [subthreadComposerDraft, setSubthreadComposerDraft] =
+    useState<ComposerDraftState>(emptyComposerDraft);
   const [historyMessageEdit, setHistoryMessageEdit] =
     useState<HistoryMessageEditState | undefined>(undefined);
   const [, setQueuedMessageEditTarget] =
@@ -859,6 +865,11 @@ export function App(): JSX.Element {
   const runtimeMenuRef = useRef<HTMLDivElement>(null);
   const accessMenuRef = useRef<HTMLDivElement>(null);
   const codexRuntimeRef = useRef<HTMLDivElement>(null);
+  // The split reply panel mounts a second full composer alongside the dock
+  // composer, so its permission (盾牌) menu needs its own anchor + open state —
+  // sharing the dock's would misplace the floating menu and cross-toggle it.
+  const subthreadAccessMenuRef = useRef<HTMLDivElement>(null);
+  const [subthreadAccessMenuOpen, setSubthreadAccessMenuOpen] = useState(false);
   const environmentToggleRef = useRef<HTMLButtonElement>(null);
   const environmentPanelRef = useRef<HTMLDivElement>(null);
   const appStateRef = useRef<AppState>(initialState);
@@ -872,6 +883,7 @@ export function App(): JSX.Element {
   const viewSwitchDelayTimerRef = useRef<number | undefined>(undefined);
   const draftSessionTabCounterRef = useRef(0);
   const poppingOutTabIDsRef = useRef(new Set<string>());
+  const poppingOutSubthreadIDsRef = useRef(new Set<string>());
   // Synchronous in-flight guard for openParticipantDM. A rapid double-click
   // on the same agent row otherwise fires two startThread calls and creates
   // duplicate DM threads; the ref is checked and set before any await so
@@ -1442,6 +1454,20 @@ export function App(): JSX.Element {
             return;
           }
           setState((current) => ({ ...current, ...loadedState }));
+          // A subthread window resumes its PARENT thread for context/participants
+          // (loadPopOutRuntime, above) and then opens the reply panel over it —
+          // the SAME ConversationSubthreadPanel + composer the in-window split
+          // uses, so the popped cth renders identically.
+          if (
+            popOutInit.kind === "subthread" &&
+            popOutInit.threadID &&
+            popOutInit.subthreadID
+          ) {
+            openConversationSubthreadByID(
+              popOutInit.threadID,
+              popOutInit.subthreadID,
+            );
+          }
           return;
         }
         const listedProjects = await window.wuu.listProjects();
@@ -1520,6 +1546,13 @@ export function App(): JSX.Element {
         setAccessMenuOpen(false);
       }
       if (
+        subthreadAccessMenuOpen &&
+        !subthreadAccessMenuRef.current?.contains(target) &&
+        !isInsideFloatingMenu(target, "composer-access")
+      ) {
+        setSubthreadAccessMenuOpen(false);
+      }
+      if (
         codexRuntimeMenu &&
         !codexRuntimeRef.current?.contains(target) &&
         !isInsideFloatingMenu(target, "codex-runtime")
@@ -1554,7 +1587,16 @@ export function App(): JSX.Element {
     projectMenuOpen,
     runDebugOpen,
     runtimeMenuOpen,
+    subthreadAccessMenuOpen,
   ]);
+
+  // Reset the reused reply composer's draft whenever the open subthread
+  // changes (or the panel closes) so an unsent draft never bleeds from one cth
+  // into another. On send the draft is cleared inline; this handles switching.
+  const openSubthreadID = openSubthreadPanel?.subthread?.id;
+  useEffect(() => {
+    setSubthreadComposerDraft(emptyComposerDraft());
+  }, [openSubthreadID]);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -2105,6 +2147,34 @@ export function App(): JSX.Element {
       byID.get(id) ?? (id === "human" ? "你" : id);
   }, [participants]);
   const chatReaderCount = participants.length;
+  // Named members of the group thread that owns the open reply subthread — the
+  // candidate pool for the human's "指定 Task lead" pick when 升级为 Task. The
+  // lead is the sole named member granted编排权; escalation is human-click only
+  // so the human must pick one. When the reply carries a weak-isolation
+  // participant subset, scope the pool to those members (the ones actually
+  // pushed the reply's traffic), falling back to the full named roster if the
+  // intersection is empty.
+  const subthreadLeadCandidates = useMemo<ParticipantSummary[]>(() => {
+    if (!openSubthreadPanel) {
+      return [];
+    }
+    const parentID = openSubthreadPanel.threadID;
+    const parent = [state.thread, state.secondaryThread, ...state.threads].find(
+      (thread) => thread?.id === parentID,
+    );
+    const named = (parent?.members ?? []).filter(
+      (member) => member.kind === "named",
+    );
+    const subset = openSubthreadPanel.subthread?.participants;
+    if (subset && subset.length > 0) {
+      const inSubset = new Set(subset);
+      const scoped = named.filter((member) => inSubset.has(member.id));
+      if (scoped.length > 0) {
+        return scoped;
+      }
+    }
+    return named;
+  }, [openSubthreadPanel, state.thread, state.secondaryThread, state.threads]);
   // The active thread's dm_participant_id (when set) drives the highlight
   // in the agent roster. When the active thread is a DM the matching
   // participant row renders as active; for non-DM threads the highlight
@@ -2727,6 +2797,65 @@ export function App(): JSX.Element {
 
   function removeComposerFile(id: string): void {
     setComposerFiles((current) => current.filter((file) => file.id !== id));
+  }
+
+  // Attach/remove helpers for the split reply panel's reused composer. They
+  // mirror the dock composer's attach flow (optimistic placeholder → encoded
+  // swap by id) but target the dedicated subthread draft.
+  async function attachSubthreadComposerAttachmentFiles(
+    files: File[],
+  ): Promise<void> {
+    if (files.length === 0) {
+      return;
+    }
+    const imageFiles = files.filter(isComposerImageFile);
+    const pdfFiles = files.filter(isPDFFile);
+    if (imageFiles.length === 0 && pdfFiles.length === 0) {
+      setState((current) => ({ ...current, status: "仅支持图片和 PDF" }));
+      return;
+    }
+    try {
+      await buildComposerAttachments(
+        files,
+        (placeholder) =>
+          setSubthreadComposerDraft((draft) => ({
+            ...draft,
+            images: [...draft.images, placeholder],
+          })),
+        (encoded) =>
+          setSubthreadComposerDraft((draft) => ({
+            ...draft,
+            images: draft.images.map((existing) =>
+              existing.id === encoded.id ? encoded : existing,
+            ),
+          })),
+        (file) =>
+          setSubthreadComposerDraft((draft) => ({
+            ...draft,
+            files: [...draft.files, file],
+          })),
+      );
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "附件添加失败",
+      }));
+    }
+  }
+
+  function removeSubthreadComposerImage(id: string): void {
+    setSubthreadComposerDraft((draft) => {
+      const removed = draft.images.find((image) => image.id === id);
+      revokeComposerImagePreview(removed);
+      return { ...draft, images: draft.images.filter((image) => image.id !== id) };
+    });
+  }
+
+  function removeSubthreadComposerFile(id: string): void {
+    setSubthreadComposerDraft((draft) => ({
+      ...draft,
+      files: draft.files.filter((file) => file.id !== id),
+    }));
   }
 
   function updateSplitComposerDraft(
@@ -3624,6 +3753,34 @@ export function App(): JSX.Element {
     })();
   }
 
+  // Open the reply panel directly by cth id (no anchor item / create-or-find):
+  // used by the pop-out subthread window's boot, which already knows the exact
+  // cth to render over its resumed parent thread.
+  function openConversationSubthreadByID(
+    threadID: string,
+    subthreadID: string,
+  ): void {
+    setOpenSubthreadPanel({ threadID, subthread: undefined, loading: true });
+    void (async () => {
+      try {
+        const result = await window.wuu.openConversationSubthread(threadID, {
+          subthreadId: subthreadID,
+        });
+        setOpenSubthreadPanel({
+          threadID,
+          subthread: result.subthread,
+          loading: false,
+        });
+      } catch (error) {
+        setOpenSubthreadPanel({
+          threadID,
+          loading: false,
+          error: desktopApiErrorMessage(error, "无法打开 thread"),
+        });
+      }
+    })();
+  }
+
   function openConversationSubthread(thread: Thread, item: ThreadItem): void {
     const subthreadID = item.task?.subthread_id;
     setEnvironmentPanelOpen(false);
@@ -3691,28 +3848,39 @@ export function App(): JSX.Element {
     })();
   }
 
-  // Post a human message into the open reply subthread's cth (split panel
-  // composer). The message folds into the cth server-side (thread_id=cth
-  // participant_message, weak-isolation subset routing); the RPC returns the
-  // refreshed subthread view so the just-sent message shows immediately —
-  // cth messages carry no item/thread notification of their own.
-  function sendOpenConversationSubthreadMessage(text: string): void {
+  // Post a human message into the open reply subthread's cth from the reused
+  // full composer in the split panel. The message folds into the cth
+  // server-side (thread_id=cth participant_message, weak-isolation subset
+  // routing) and carries the composer's 附件/截图 the same way a main-stream
+  // send does; the RPC returns the refreshed subthread view so the just-sent
+  // message shows immediately — cth messages carry no item/thread notification
+  // of their own.
+  function sendOpenConversationSubthreadMessage(): void {
     const current = openSubthreadPanel;
     if (!current?.subthread) {
       return;
     }
-    const trimmed = text.trim();
-    if (!trimmed) {
+    const draft = subthreadComposerDraft;
+    const trimmed = draft.prompt.trim();
+    const files = inputFilesFromComposer(draft.files);
+    if (!trimmed && draft.images.length === 0 && files.length === 0) {
       return;
     }
     const threadID = current.threadID;
     const subthreadID = current.subthread.id;
+    // Clear the draft optimistically so the composer empties on send, mirroring
+    // the dock composer.
+    setSubthreadComposerDraft(emptyComposerDraft());
     void (async () => {
       try {
+        const encodedImages = await awaitComposerImages(draft.images);
+        const images = inputImagesFromComposer(encodedImages);
         const result = await window.wuu.postSubthreadMessage(
           threadID,
           subthreadID,
           trimmed,
+          images,
+          files,
         );
         setOpenSubthreadPanel((prev) =>
           prev &&
@@ -3723,6 +3891,14 @@ export function App(): JSX.Element {
         );
         setChatSubthreadsNonce((nonce) => nonce + 1);
       } catch (error) {
+        // Restore the draft so the user does not lose their unsent text/attachments.
+        setSubthreadComposerDraft((existing) =>
+          existing.prompt.trim() === "" &&
+          existing.images.length === 0 &&
+          existing.files.length === 0
+            ? draft
+            : existing,
+        );
         setOpenSubthreadPanel((prev) =>
           prev && prev.threadID === threadID
             ? { ...prev, error: desktopApiErrorMessage(error, "无法发送回复") }
@@ -3735,7 +3911,7 @@ export function App(): JSX.Element {
   // Promote the open reply to a task (人点击 gate). Escalation is a client RPC
   // only — agents can propose but never self-escalate. The refreshed view then
   // renders the task_card in both the panel header and the main-stream badge.
-  function escalateOpenConversationSubthread(): void {
+  function escalateOpenConversationSubthread(leadParticipantId: string): void {
     const current = openSubthreadPanel;
     if (!current?.subthread) {
       return;
@@ -3749,7 +3925,7 @@ export function App(): JSX.Element {
         const result = await window.wuu.escalateConversationSubthread(
           threadID,
           subthreadID,
-          { title },
+          { title, leadParticipantId: leadParticipantId || undefined },
         );
         setOpenSubthreadPanel({
           threadID,
@@ -3995,6 +4171,101 @@ export function App(): JSX.Element {
     );
   }
 
+  // The split reply panel reuses the SAME full composer as the main dock
+  // conversation (附件/截图/命令菜单/盾牌), not a stripped one-line footer — one
+  // composer implementation, one experience. It is bound to a dedicated cth
+  // draft (so it does not cross-write the dock composer) and to a dedicated
+  // 盾牌 menu anchor (so the floating permission menu is not misplaced by the
+  // dock composer's). The model/context/token runtime chrome is suppressed via
+  // hideRuntimeControls — a cth owns no model turn, so those controls are
+  // meaningless here; only 附件/命令/盾牌 and the send button carry over. Send
+  // routes through message/postSubthread (thread_id=cth 折叠短路).
+  function renderSubthreadComposer(): JSX.Element {
+    const resolved = openSubthreadPanel?.subthread?.status === "resolved";
+    return (
+      <Composer
+        variant="dock"
+        hideRuntimeControls
+        prompt={subthreadComposerDraft.prompt}
+        setPrompt={(value) =>
+          setSubthreadComposerDraft((draft) => ({ ...draft, prompt: value }))
+        }
+        files={subthreadComposerDraft.files}
+        images={subthreadComposerDraft.images}
+        queuedMessages={[]}
+        guideMessages={[]}
+        running={false}
+        runtimeControlsDisabled={false}
+        tokensPerSecond={0}
+        status=""
+        readOnly={Boolean(resolved)}
+        initialized={composerInitialized}
+        projects={state.projects}
+        activeContext={state.activeContext}
+        activeProject={activeProject}
+        codexModels={codexModels}
+        codexRuntimeMenu={codexRuntimeMenu}
+        codexRuntimeRef={codexRuntimeRef}
+        menuOpen={false}
+        accessMenuOpen={subthreadAccessMenuOpen}
+        branchMenuOpen={false}
+        menuRef={runtimeMenuRef}
+        accessMenuRef={subthreadAccessMenuRef}
+        projectFilter={projectFilter}
+        setProjectFilter={setProjectFilter}
+        onToggleMenu={() => {}}
+        onToggleAccessMenu={() => {
+          setRuntimeMenuOpen(false);
+          setAccessMenuOpen(false);
+          setBranchMenuOpen(false);
+          setCodexRuntimeMenu(null);
+          setSubthreadAccessMenuOpen((open) => !open);
+        }}
+        onToggleBranchMenu={() => {}}
+        onToggleCodexRuntimeMenu={toggleCodexRuntimeMenu}
+        onSelectRuntimeModel={(provider, model, variant) =>
+          void selectRuntimeModel(provider, model, variant)
+        }
+        onSelectRuntimeEffort={(nextVariant) =>
+          void selectRuntimeEffort(nextVariant)
+        }
+        onSelectPermissionMode={(mode) => {
+          setSubthreadAccessMenuOpen(false);
+          void selectPermissionMode(mode);
+        }}
+        onOpenSettings={() => {
+          setSettingsInitialPage("providers");
+          setSettingsOpen(true);
+        }}
+        onOpenMemorySettings={() => openMemorySettings()}
+        onOpenSkillsCatalog={openSkillsTab}
+        onSelectProject={(id) => void selectProjectForNewThread(id)}
+        onSelectNoProject={() => void useNoProject(false)}
+        onSelectGitBranch={(branch) => void checkoutBranch(branch)}
+        onCreateProject={() => void createBlankProject()}
+        onOpenProject={() => void chooseProjectFolder()}
+        onStartNewThread={() => void startNewThread({ resetToNoProject: true })}
+        onOpenWorkspaceTool={openWorkspaceTool}
+        onOpenInstructions={openInstructions}
+        onPasteAttachmentFiles={(files) =>
+          void attachSubthreadComposerAttachmentFiles(files)
+        }
+        onRemoveFile={removeSubthreadComposerFile}
+        onRemoveImage={removeSubthreadComposerImage}
+        onRemoveQueuedMessage={() => {}}
+        onRemoveGuideMessage={() => {}}
+        onGuideQueuedMessage={() => {}}
+        onEditQueuedMessage={() => {}}
+        onEditGuideMessage={() => {}}
+        onSend={() => sendOpenConversationSubthreadMessage()}
+        onInterrupt={() => {}}
+        queryHistorySessionID={openSubthreadPanel?.subthread?.id}
+        queryHistory={[]}
+        participants={participants}
+      />
+    );
+  }
+
   function renderConversationSplitPane(
     thread: Thread,
     pane: ConversationPaneID,
@@ -4144,6 +4415,41 @@ export function App(): JSX.Element {
       }));
     } finally {
       poppingOutTabIDsRef.current.delete(tabID);
+    }
+  }
+
+  // Lift the open reply subthread (cth) into its own window. threadID is the
+  // PARENT group thread (the cth's home, needed for runtime routing); the new
+  // window renders the cth via the SAME ConversationSubthreadPanel + composer
+  // the in-window split uses. On success the in-window panel closes so the cth
+  // lives in exactly one place.
+  async function popOutSubthread(
+    threadID: string,
+    subthreadID: string,
+    context: RuntimeContext,
+  ): Promise<void> {
+    if (poppingOutSubthreadIDsRef.current.has(subthreadID)) {
+      return;
+    }
+    poppingOutSubthreadIDsRef.current.add(subthreadID);
+    try {
+      await window.wuu.popOutSession({
+        kind: "subthread",
+        threadID,
+        subthreadID,
+        context,
+      });
+      setOpenSubthreadPanel((current) =>
+        current?.subthread?.id === subthreadID ? undefined : current,
+      );
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status:
+          error instanceof Error ? error.message : "open detached window failed",
+      }));
+    } finally {
+      poppingOutSubthreadIDsRef.current.delete(subthreadID);
     }
   }
 
@@ -8419,8 +8725,23 @@ export function App(): JSX.Element {
             onResolve={resolveOpenConversationSubthread}
             onEscalate={escalateOpenConversationSubthread}
             onBubble={bubbleOpenConversationSubthread}
-            onSend={sendOpenConversationSubthreadMessage}
             onReact={reactToOpenConversationSubthreadMessage}
+            onPopOut={
+              // Already-detached windows don't offer a re-detach; and a pop-out
+              // needs the loaded cth id + the runtime context to route by.
+              !poppedOutMode &&
+              openSubthreadPanel.subthread &&
+              state.activeContext
+                ? () =>
+                    void popOutSubthread(
+                      openSubthreadPanel.threadID,
+                      openSubthreadPanel.subthread!.id,
+                      state.activeContext!,
+                    )
+                : undefined
+            }
+            leadCandidates={subthreadLeadCandidates}
+            composer={renderSubthreadComposer()}
             resolveParticipantName={resolveParticipantName}
             busyParticipantIDs={busyParticipantIDs}
             readerCount={chatReaderCount}
@@ -8446,6 +8767,13 @@ export function App(): JSX.Element {
               openMemorySettings(participantID)
             }
             onRetire={handleParticipantRetire}
+            forkedFromName={
+              participantPanel.participant?.forked_from_id
+                ? resolveParticipantName(
+                    participantPanel.participant.forked_from_id,
+                  )
+                : undefined
+            }
           />
         ) : null}
 

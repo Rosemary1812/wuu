@@ -832,6 +832,10 @@ type MessagePostSubthreadParams struct {
 	ThreadID    string `json:"thread_id"`
 	SubthreadID string `json:"subthread_id"`
 	Text        string `json:"text"`
+	// Images/Files carry the reused full composer's inline attachments (pasted
+	// screenshots, PDFs). Optional — a plain text post leaves them empty.
+	Images []TurnStartImage `json:"images,omitempty"`
+	Files  []TurnStartFile  `json:"files,omitempty"`
 }
 
 // MessagePostSubthreadResult returns the refreshed subthread view (including the

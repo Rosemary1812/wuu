@@ -142,6 +142,51 @@ func (s *Server) forwardParticipantMessages(threadID string, _ *agentcontrol.Age
 	}
 }
 
+// persistedImagesFromParticipant maps a human post's inline images onto the
+// stored image shape, skipping entries with no data.
+func persistedImagesFromParticipant(images []agentcontrol.ParticipantImage) []persistedImage {
+	if len(images) == 0 {
+		return nil
+	}
+	out := make([]persistedImage, 0, len(images))
+	for _, image := range images {
+		if strings.TrimSpace(image.Data) == "" {
+			continue
+		}
+		out = append(out, persistedImage{
+			MediaType: image.MediaType,
+			Data:      image.Data,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// persistedFilesFromParticipant maps a human post's inline files onto the
+// stored file shape, skipping entries with no data.
+func persistedFilesFromParticipant(files []agentcontrol.ParticipantFile) []persistedFile {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]persistedFile, 0, len(files))
+	for _, file := range files {
+		if strings.TrimSpace(file.Data) == "" {
+			continue
+		}
+		out = append(out, persistedFile{
+			MediaType: file.MediaType,
+			Data:      file.Data,
+			Filename:  file.Filename,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.ParticipantMessage) error {
 	threadID = strings.TrimSpace(threadID)
 	if threadID == "" {
@@ -163,6 +208,8 @@ func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.Par
 		ParticipantID: msg.ParticipantID,
 		PostKind:      msg.Kind,
 		ThreadID:      msg.ThreadID,
+		Images:        persistedImagesFromParticipant(msg.Images),
+		Files:         persistedFilesFromParticipant(msg.Files),
 		At:            now,
 	}
 	var sourceSeq int
@@ -175,6 +222,8 @@ func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.Par
 			ParticipantID: rec.ParticipantID,
 			PostKind:      rec.PostKind,
 			ThreadID:      rec.ThreadID,
+			Images:        mustJSON(rec.Images),
+			Files:         mustJSON(rec.Files),
 			At:            rec.At,
 		})
 		if err != nil {

@@ -334,6 +334,18 @@
   padding: 6px 4px;
 }
 
+/* Positioned wrapper so the busy pip can sit at the avatar corner without
+   being clipped by the disc's own overflow:hidden. Occupies the 28px avatar
+   grid column of .group-info-member-row. */
+.group-info-avatar-cell {
+  position: relative;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+}
+
 .group-info-avatar {
   display: inline-flex;
   width: 28px;
@@ -353,6 +365,34 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* Busy pip for the decision-five concurrency lock (member.busy). Mirrors
+   .chat-avatar-status[data-status="busy"] so the roster reads consistently
+   with the chat avatars. */
+.group-info-avatar-busy {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--paper);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--warning) 56%, #ffd166);
+  z-index: 1;
+}
+
+/* "X 的分身" tag for a forked named agent (decision six). Sits under the
+   member name alongside the role line. */
+.group-info-fork-badge {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--info);
+  font-size: var(--font-xs);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .group-info-remove-button {

@@ -129,4 +129,27 @@ describe("ParticipantChip", () => {
     ).not.toBeNull();
     expect(chip()!.querySelector(".participant-chip-role")).toBeNull();
   });
+
+  it("badges a forked agent with a 分身 pill carrying the母体 name tooltip", () => {
+    mount({
+      participant: { ...reviewer, forked_from_id: "agent-mother" },
+      resolveName: (id) => (id === "agent-mother" ? "小青" : id),
+    });
+    const fork = chip()!.querySelector(".participant-chip-fork");
+    expect(fork).not.toBeNull();
+    expect(fork!.textContent).toBe("分身");
+    expect(fork!.getAttribute("title")).toBe("小青 的分身");
+  });
+
+  it("degrades the 分身 tooltip to the id when no resolver is supplied", () => {
+    mount({ participant: { ...reviewer, forked_from_id: "agent-mother" } });
+    const fork = chip()!.querySelector(".participant-chip-fork");
+    expect(fork).not.toBeNull();
+    expect(fork!.getAttribute("title")).toBe("agent-mother 的分身");
+  });
+
+  it("omits the 分身 pill for an ordinary named agent", () => {
+    mount({ participant: reviewer });
+    expect(chip()!.querySelector(".participant-chip-fork")).toBeNull();
+  });
 });

@@ -388,6 +388,74 @@ func TestMessagePostSubthreadFoldsIntoReplyNotMainStream(t *testing.T) {
 	}
 }
 
+// The reused full composer can attach screenshots/PDFs to a cth post; the
+// attachments ride through message/postSubthread, persist tagged with the cth,
+// and render back on the participant message item so the split panel shows them.
+func TestMessagePostSubthreadCarriesAttachments(t *testing.T) {
+	srv, rt := newResidentSpeechTestServer(t)
+	groupID := startGroupThreadForTest(t, srv)
+
+	cth, err := srv.openConversationSubthread(ThreadOpenSubParams{
+		ThreadID:     groupID,
+		AnchorItemID: "seq-3",
+		CreatedBy:    "user",
+	})
+	if err != nil {
+		t.Fatalf("openConversationSubthread: %v", err)
+	}
+
+	// Attachments-only (no caption) must be accepted — a screenshot with no text.
+	raw := fmt.Sprintf(`{"id":"post","method":"message/postSubthread","params":{"thread_id":%q,"subthread_id":%q,"text":"","images":[{"media_type":"image/png","data":"AAAB"}],"files":[{"media_type":"application/pdf","data":"JVBER","filename":"spec.pdf"}]}}`, groupID, cth.ID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("message/postSubthread: %v", err)
+	}
+	resp := responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "post")
+	if errMsg, ok := resp["error"]; ok {
+		t.Fatalf("attachments-only post returned error: %v", errMsg)
+	}
+	view := remarshal[MessagePostSubthreadResult](t, resp["result"]).Subthread
+
+	var img *ThreadItemImage
+	var file *ThreadItemFile
+	for _, turn := range view.Turns {
+		for i := range turn.Items {
+			if len(turn.Items[i].Images) > 0 {
+				img = &turn.Items[i].Images[0]
+			}
+			if len(turn.Items[i].Files) > 0 {
+				file = &turn.Items[i].Files[0]
+			}
+		}
+	}
+	if img == nil || img.Data != "AAAB" || img.MediaType != "image/png" {
+		t.Fatalf("cth post image not rendered on the item: %+v", view.Turns)
+	}
+	if file == nil || file.Data != "JVBER" || file.Filename != "spec.pdf" {
+		t.Fatalf("cth post file not rendered on the item: %+v", view.Turns)
+	}
+
+	// The attachments must persist on the cth-tagged history record.
+	history, err := session.LoadHistoryRecords(rt.sessionDir, groupID, false)
+	if err != nil {
+		t.Fatalf("LoadHistoryRecords: %v", err)
+	}
+	var posted *session.HistoryRecord
+	for i := range history {
+		if strings.TrimSpace(history[i].ThreadID) == cth.ID {
+			posted = &history[i]
+		}
+	}
+	if posted == nil {
+		t.Fatalf("cth post not persisted: %+v", history)
+	}
+	if len(posted.Images) == 0 || !strings.Contains(string(posted.Images), "AAAB") {
+		t.Fatalf("cth post images not persisted: %s", string(posted.Images))
+	}
+	if len(posted.Files) == 0 || !strings.Contains(string(posted.Files), "spec.pdf") {
+		t.Fatalf("cth post files not persisted: %s", string(posted.Files))
+	}
+}
+
 // message/postSubthread rejects a subthread that does not belong to the named
 // parent thread, and rejects an empty body.
 func TestMessagePostSubthreadRejectsBadInput(t *testing.T) {

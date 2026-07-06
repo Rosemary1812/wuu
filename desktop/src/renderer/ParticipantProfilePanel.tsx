@@ -125,9 +125,14 @@ export function ParticipantProfilePanel({
   onFeedback,
   onOpenMemoryPanel,
   onRetire,
+  forkedFromName,
 }: {
   participant?: ParticipantProfile;
   mode: "new" | "edit";
+  // forkedFromName is the母体's display name when this profile is a
+  // temporary分身 (decision six / participant.forked_from_id). The parent
+  // resolves the id to a name so the identity section can badge "X 的分身".
+  forkedFromName?: string;
   providers?: ProviderSummary[];
   loading?: boolean;
   error?: string;
@@ -388,6 +393,11 @@ export function ParticipantProfilePanel({
               aria-labelledby="participant-profile-identity"
             >
               <h3 id="participant-profile-identity">身份</h3>
+              {participant?.forked_from_id ? (
+                <p className="participant-profile-fork-badge">
+                  {forkedFromName?.trim() || participant.forked_from_id} 的分身
+                </p>
+              ) : null}
               <div className="participant-profile-avatar-row">
                 <button
                   type="button"

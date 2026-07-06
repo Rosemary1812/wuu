@@ -107,6 +107,36 @@ describe("GroupInfoPanel", () => {
     ).toBeNull();
   });
 
+  it("renders a busy pip for a member locked by the concurrency gate", () => {
+    const container = renderPanel({
+      members: [
+        { id: "participant-1", name: "小青", kind: "named", role: "评审", busy: true },
+        { id: "participant-2", name: "阿蓝", kind: "named" },
+      ],
+    });
+
+    const pips = container.querySelectorAll(".group-info-avatar-busy");
+    expect(pips).toHaveLength(1);
+    expect(pips[0]?.getAttribute("aria-label")).toBe("小青 忙碌中");
+  });
+
+  it("badges a forked member as \"X 的分身\" using the母体 name", () => {
+    const container = renderPanel({
+      members: [
+        {
+          id: "participant-4",
+          name: "小青-2",
+          kind: "named",
+          forked_from_id: "participant-1",
+        },
+        { id: "participant-2", name: "阿蓝", kind: "named" },
+      ],
+    });
+
+    const badge = container.querySelector(".group-info-fork-badge");
+    expect(badge?.textContent).toBe("小青 的分身");
+  });
+
   it("opens an add-member list and invokes onAddMember for non-members", async () => {
     const onAddMember = vi.fn().mockResolvedValue(undefined);
     const container = renderPanel({ onAddMember });

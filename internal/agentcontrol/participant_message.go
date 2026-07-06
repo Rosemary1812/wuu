@@ -25,6 +25,26 @@ type ParticipantMessage struct {
 	Hop           int
 	Text          string
 	CreatedAt     time.Time
+	// Images/Files carry inline attachments on a human-authored post (e.g. a
+	// screenshot pasted into the split reply composer). Agent posts never set
+	// these — the participant speech tools accept text only.
+	Images []ParticipantImage
+	Files  []ParticipantFile
+}
+
+// ParticipantImage is an inline image attachment on a human-authored
+// participant post.
+type ParticipantImage struct {
+	MediaType string
+	Data      string
+}
+
+// ParticipantFile is an inline file attachment (e.g. a PDF) on a human-authored
+// participant post.
+type ParticipantFile struct {
+	MediaType string
+	Data      string
+	Filename  string
 }
 
 // SubscribeParticipantMessages registers a listener for visible participant

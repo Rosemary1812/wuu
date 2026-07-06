@@ -165,6 +165,7 @@ function mount(props: {
   onSave?: (params: Parameters<typeof ParticipantProfilePanel>[0]["onSave"] extends (p: infer P) => void ? P : never) => void;
   onOpenMemoryPanel?: (id: string) => void;
   onRetire?: (id: string) => void;
+  forkedFromName?: string;
 }): void {
   if (root === null) {
     root = createRoot(container);
@@ -182,6 +183,7 @@ function mount(props: {
         onFeedback={() => {}}
         onOpenMemoryPanel={props.onOpenMemoryPanel ?? (() => {})}
         onRetire={props.onRetire ?? (() => {})}
+        forkedFromName={props.forkedFromName}
       />,
     );
   });
@@ -247,6 +249,25 @@ function changeSelect(select: HTMLSelectElement, value: string): void {
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
+
+describe("ParticipantProfilePanel — fork badge", () => {
+  it("shows \"X 的分身\" for a forked participant using the resolved母体 name", () => {
+    mount({
+      mode: "edit",
+      participant: participantFixture({ forked_from_id: "p-mother" }),
+      forkedFromName: "小青",
+    });
+    const badge = container.querySelector(".participant-profile-fork-badge");
+    expect(badge?.textContent).toBe("小青 的分身");
+  });
+
+  it("omits the fork badge for an ordinary participant", () => {
+    mount({ mode: "edit", participant: participantFixture() });
+    expect(
+      container.querySelector(".participant-profile-fork-badge"),
+    ).toBeNull();
+  });
+});
 
 describe("ParticipantProfilePanel — identity and model", () => {
   it("backfills identity fields from the participant when editing", () => {

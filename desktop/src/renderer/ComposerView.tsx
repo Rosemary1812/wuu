@@ -189,7 +189,8 @@ export function Composer({
   chatFocusValue,
   onSelectChatFocus,
   groupMembers,
-  onOpenGroupInfo
+  onOpenGroupInfo,
+  hideRuntimeControls = false
 }: {
   variant?: ComposerVariant;
   containerRef?: Ref<HTMLElement>;
@@ -276,6 +277,11 @@ export function Composer({
   onSelectChatFocus?: (value: string) => void;
   groupMembers?: ParticipantSummary[];
   onOpenGroupInfo?: () => void;
+  // Suppress the model/context/token runtime chrome on the bar's right edge.
+  // The split reply panel reuses this same composer for a cth, where the
+  // token gauge / context meter / model picker are meaningless — only the
+  // 附件/命令/盾牌 controls and the send button carry over.
+  hideRuntimeControls?: boolean;
 }): JSX.Element {
   const statusText = composerStatusText(status);
   const statusIsLiveProgress = composerStatusIsLiveProgress(statusLiveProgress);
@@ -1007,7 +1013,7 @@ export function Composer({
                 </div>
               </div>
               <div className="composer-bar-right">
-                {groupMembers ? (
+                {hideRuntimeControls ? null : groupMembers ? (
                   // Group threads have no primary agent turn, so the token
                   // gauge / context meter / model picker are meaningless
                   // noise there — the members capsule takes their place on

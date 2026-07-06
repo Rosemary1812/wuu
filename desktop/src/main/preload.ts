@@ -178,8 +178,17 @@ const api: WuuDesktopApi = {
     threadId: string,
     subthreadId: string,
     text: string,
+    images?: import("../shared/protocol").InputImage[],
+    files?: import("../shared/protocol").InputFile[],
   ): Promise<import("../shared/protocol").MessagePostSubthreadResult> =>
-    ipcRenderer.invoke("wuu:message-post-subthread", threadId, subthreadId, text),
+    ipcRenderer.invoke(
+      "wuu:message-post-subthread",
+      threadId,
+      subthreadId,
+      text,
+      images,
+      files,
+    ),
   listThreads: (cwd?: string) => ipcRenderer.invoke("wuu:thread-list", cwd),
   searchThreads: (query: string, limit?: number) =>
     ipcRenderer.invoke("wuu:thread-search", query, limit),

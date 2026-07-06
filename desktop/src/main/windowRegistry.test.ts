@@ -106,6 +106,19 @@ describe("windowRegistry", () => {
       expect(registry.runtimeContextForWindow(2)).toBe(context);
       expect(registry.threadForWindow(2)).toBe("thread-1");
     });
+
+    it("stores a subthread window's PARENT thread and cth identity together", () => {
+      const registry = createWindowRegistry();
+      const win = makeWindow(4);
+      registry.registerWindow(win, "popped-out", {
+        threadID: "parent-thread",
+        subthreadID: "cth-9",
+      });
+      // The parent thread is retained for runtime routing; the cth id is the
+      // window's own identity.
+      expect(registry.threadForWindow(4)).toBe("parent-thread");
+      expect(registry.subthreadForWindow(4)).toBe("cth-9");
+    });
   });
 
   describe("unregisterWindow", () => {
@@ -197,6 +210,64 @@ describe("windowRegistry", () => {
       registry.setThreadWindow("t-rereg", 5);
       registry.setThreadWindow("t-rereg", 5);
       expect(registry.popOutWindowForThread("t-rereg")).toBe(second);
+    });
+  });
+
+  describe("setSubthreadWindow / clearSubthreadWindow / popOutWindowForSubthread / subthreadHostWindowID", () => {
+    it("starts empty", () => {
+      const registry = createWindowRegistry();
+      expect(registry.popOutWindowForSubthread("cth-1")).toBeNull();
+      expect(registry.subthreadHostWindowID("cth-1")).toBeUndefined();
+    });
+
+    it("round-trips a subthread → window mapping", () => {
+      const registry = createWindowRegistry();
+      const win = makeWindow(7);
+      registry.registerWindow(win, "popped-out");
+      registry.setSubthreadWindow("cth-x", 7);
+      expect(registry.subthreadHostWindowID("cth-x")).toBe(7);
+      expect(registry.popOutWindowForSubthread("cth-x")).toBe(win);
+    });
+
+    it("keeps the subthread map independent of the thread map", () => {
+      // A subthread window stores a PARENT threadID for routing; that must not
+      // register the window as the host for the whole parent thread.
+      const registry = createWindowRegistry();
+      const win = makeWindow(8);
+      registry.registerWindow(win, "popped-out", {
+        threadID: "parent-thread",
+        subthreadID: "cth-8",
+      });
+      registry.setSubthreadWindow("cth-8", 8);
+      expect(registry.popOutWindowForSubthread("cth-8")).toBe(win);
+      // The parent thread was never claimed via setThreadWindow, so it stays free.
+      expect(registry.popOutWindowForThread("parent-thread")).toBeNull();
+      expect(registry.threadHostWindowID("parent-thread")).toBeUndefined();
+    });
+
+    it("clearSubthreadWindow drops the mapping without touching the window entry", () => {
+      const registry = createWindowRegistry();
+      const win = makeWindow(7);
+      registry.registerWindow(win, "popped-out");
+      registry.setSubthreadWindow("cth-x", 7);
+      registry.clearSubthreadWindow("cth-x");
+      expect(registry.subthreadHostWindowID("cth-x")).toBeUndefined();
+      expect(registry.popOutWindowForSubthread("cth-x")).toBeNull();
+      expect(registry.allWindows()).toEqual([win]);
+    });
+
+    it("unregisterWindow clears subthread mappings pointing at that window", () => {
+      const registry = createWindowRegistry();
+      const survivor = makeWindow(3);
+      registry.registerWindow(makeWindow(2), "popped-out");
+      registry.registerWindow(survivor, "popped-out");
+      registry.setSubthreadWindow("cth-victim", 2);
+      registry.setSubthreadWindow("cth-survivor", 3);
+      registry.unregisterWindow(2);
+      expect(registry.subthreadHostWindowID("cth-victim")).toBeUndefined();
+      expect(registry.popOutWindowForSubthread("cth-victim")).toBeNull();
+      expect(registry.subthreadHostWindowID("cth-survivor")).toBe(3);
+      expect(registry.popOutWindowForSubthread("cth-survivor")).toBe(survivor);
     });
   });
 

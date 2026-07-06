@@ -1260,6 +1260,41 @@ func isParticipantPersistedMessage(rec persistedMessage) bool {
 	return role == "participant" || (strings.TrimSpace(rec.ParticipantID) != "" && strings.TrimSpace(rec.PostKind) != "")
 }
 
+// inputImagesFromPersisted adapts stored participant-post images to the shared
+// providers.InputImage shape threadItemImages consumes.
+func inputImagesFromPersisted(images []persistedImage) []providers.InputImage {
+	if len(images) == 0 {
+		return nil
+	}
+	out := make([]providers.InputImage, 0, len(images))
+	for _, image := range images {
+		out = append(out, providers.InputImage{
+			MediaType: image.MediaType,
+			Data:      image.Data,
+			Width:     image.Width,
+			Height:    image.Height,
+		})
+	}
+	return out
+}
+
+// inputFilesFromPersisted adapts stored participant-post files to the shared
+// providers.InputFile shape threadItemFiles consumes.
+func inputFilesFromPersisted(files []persistedFile) []providers.InputFile {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]providers.InputFile, 0, len(files))
+	for _, file := range files {
+		out = append(out, providers.InputFile{
+			MediaType: file.MediaType,
+			Data:      file.Data,
+			Filename:  file.Filename,
+		})
+	}
+	return out
+}
+
 func participantMessageItem(id string, rec persistedMessage, resolve participantSummaryResolver) ThreadItem {
 	text := rec.DisplayContent
 	if strings.TrimSpace(text) == "" {
@@ -1279,6 +1314,8 @@ func participantMessageItem(id string, rec persistedMessage, resolve participant
 		Role:     "participant",
 		Text:     text,
 		PostKind: postKind,
+		Images:   threadItemImages(inputImagesFromPersisted(rec.Images)),
+		Files:    threadItemFiles(inputFilesFromPersisted(rec.Files)),
 	}
 	if id := strings.TrimSpace(rec.ParticipantID); id != "" {
 		if resolve != nil {

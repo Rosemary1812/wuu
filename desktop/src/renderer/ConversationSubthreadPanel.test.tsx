@@ -116,16 +116,18 @@ describe("ConversationSubthreadPanel", () => {
     );
   });
 
-  it("shows 升级为 Task and fires onEscalate when clicked", () => {
-    let escalated = 0;
+  it("escalates without a lead when the group has no named candidates", () => {
+    // No lead pool → the header gate escalates straight away (backend allows an
+    // empty lead); it does NOT open the picker.
+    let lead: string | undefined;
     const container = mount(
       createElement(ConversationSubthreadPanel, {
         threadID: "group-1",
         subthread: subthreadWith(),
         onClose: () => {},
         onResolve: () => {},
-        onEscalate: () => {
-          escalated += 1;
+        onEscalate: (leadParticipantId: string) => {
+          lead = leadParticipantId;
         },
       }),
     );
@@ -136,7 +138,62 @@ describe("ConversationSubthreadPanel", () => {
     act(() => {
       button!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(escalated).toBe(1);
+    expect(lead).toBe("");
+    // No picker was opened.
+    expect(
+      container.querySelector(".conversation-subthread-escalate-form"),
+    ).toBeNull();
+  });
+
+  it("opens the lead picker and escalates with the picked named member", () => {
+    let lead: string | undefined;
+    const candidates: ParticipantSummary[] = [
+      { id: "prt-a", name: "小青", kind: "named" },
+      { id: "prt-b", name: "小白", kind: "named" },
+    ];
+    const container = mount(
+      createElement(ConversationSubthreadPanel, {
+        threadID: "group-1",
+        subthread: subthreadWith(),
+        onClose: () => {},
+        onResolve: () => {},
+        onEscalate: (leadParticipantId: string) => {
+          lead = leadParticipantId;
+        },
+        leadCandidates: candidates,
+      }),
+    );
+    // The header gate now opens the picker rather than escalating immediately.
+    const gate = container.querySelector<HTMLButtonElement>(
+      ".conversation-subthread-escalate",
+    );
+    act(() => {
+      gate!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(lead).toBeUndefined();
+    const select = container.querySelector<HTMLSelectElement>(
+      ".conversation-subthread-lead-select",
+    );
+    expect(select).not.toBeNull();
+    // Two named candidates offered, first pre-selected.
+    expect(select!.querySelectorAll("option").length).toBe(2);
+    expect(select!.value).toBe("prt-a");
+    // Pick the second member, then confirm.
+    act(() => {
+      select!.value = "prt-b";
+      select!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const confirm = container.querySelector<HTMLButtonElement>(
+      ".conversation-subthread-escalate-submit",
+    );
+    act(() => {
+      confirm!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(lead).toBe("prt-b");
+    // Picker closes after confirming.
+    expect(
+      container.querySelector(".conversation-subthread-escalate-form"),
+    ).toBeNull();
   });
 
   it("hides 升级为 Task once the reply is already a task", () => {
@@ -157,64 +214,42 @@ describe("ConversationSubthreadPanel", () => {
     ).toBeNull();
   });
 
-  it("posts a human reply into the cth via onSend and clears the input", () => {
-    const sent: string[] = [];
+  it("renders the host-provided full composer slot in the footer (not a stripped shell)", () => {
+    // The panel no longer self-builds a one-line textarea + send arrow; the
+    // host passes in the SAME full conversation composer the main dock uses,
+    // rendered where the old stripped footer sat.
     const container = mount(
       createElement(ConversationSubthreadPanel, {
         threadID: "group-1",
         subthread: subthreadWith(),
         onClose: () => {},
         onResolve: () => {},
-        onSend: (text: string) => sent.push(text),
+        composer: createElement(
+          "div",
+          { className: "test-composer-slot" },
+          "COMPOSER",
+        ),
       }),
     );
-    const input = container.querySelector<HTMLTextAreaElement>(
-      ".conversation-subthread-input",
-    );
-    const send = container.querySelector<HTMLButtonElement>(
-      ".conversation-subthread-send",
-    );
-    expect(input).not.toBeNull();
-    // Send is disabled while the draft is empty.
-    expect(send!.disabled).toBe(true);
-    act(() => {
-      typeInto(input!, "试试重试三次");
-    });
-    expect(send!.disabled).toBe(false);
-    act(() => {
-      send!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    expect(sent).toEqual(["试试重试三次"]);
-    expect(input!.value).toBe("");
+    const footer = container.querySelector(".conversation-subthread-composer");
+    expect(footer).not.toBeNull();
+    expect(footer!.querySelector(".test-composer-slot")).not.toBeNull();
+    // The old self-built stripped footer input/send are gone.
+    expect(container.querySelector(".conversation-subthread-send")).toBeNull();
   });
 
-  it("sends on Enter (without shift)", () => {
-    const sent: string[] = [];
+  it("does not render the composer footer without a slot", () => {
     const container = mount(
       createElement(ConversationSubthreadPanel, {
         threadID: "group-1",
         subthread: subthreadWith(),
         onClose: () => {},
         onResolve: () => {},
-        onSend: (text: string) => sent.push(text),
       }),
     );
-    const input = container.querySelector<HTMLTextAreaElement>(
-      ".conversation-subthread-input",
-    )!;
-    act(() => {
-      typeInto(input, "行");
-    });
-    act(() => {
-      input.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Enter",
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    });
-    expect(sent).toEqual(["行"]);
+    expect(
+      container.querySelector(".conversation-subthread-composer"),
+    ).toBeNull();
   });
 
   it("offers only 贴 emoji on a cth message right-click (一层不嵌套)", () => {
@@ -345,14 +380,51 @@ describe("ConversationSubthreadPanel", () => {
     ).toBeNull();
   });
 
-  it("hides the composer once the reply is resolved", () => {
+  it("shows 弹出独立窗口 and fires onPopOut when clicked", () => {
+    let popped = 0;
+    const container = mount(
+      createElement(ConversationSubthreadPanel, {
+        threadID: "group-1",
+        subthread: subthreadWith(),
+        onClose: () => {},
+        onResolve: () => {},
+        onPopOut: () => {
+          popped += 1;
+        },
+      }),
+    );
+    const button = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="弹出独立窗口"]',
+    );
+    expect(button).not.toBeNull();
+    act(() => {
+      button!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(popped).toBe(1);
+  });
+
+  it("hides 弹出独立窗口 when onPopOut is absent (already detached / no handler)", () => {
+    const container = mount(
+      createElement(ConversationSubthreadPanel, {
+        threadID: "group-1",
+        subthread: subthreadWith(),
+        onClose: () => {},
+        onResolve: () => {},
+      }),
+    );
+    expect(
+      container.querySelector('button[aria-label="弹出独立窗口"]'),
+    ).toBeNull();
+  });
+
+  it("hides the composer slot once the reply is resolved", () => {
     const container = mount(
       createElement(ConversationSubthreadPanel, {
         threadID: "group-1",
         subthread: subthreadWith({ status: "resolved" }),
         onClose: () => {},
         onResolve: () => {},
-        onSend: () => {},
+        composer: createElement("div", { className: "test-composer-slot" }),
       }),
     );
     expect(container.querySelector(".conversation-subthread-composer")).toBeNull();

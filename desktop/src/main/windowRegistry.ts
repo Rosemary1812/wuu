@@ -84,6 +84,24 @@ export interface WindowRegistry {
   /** Popped-out thread hosted by a window, or undefined for the main window. */
   threadForWindow(windowID: number): string | undefined;
 
+  /** BrowserWindow currently hosting a popped-out reply subthread (cth), or null. */
+  popOutWindowForSubthread(subthreadID: string): BrowserWindow | null;
+
+  /** Associate a reply subthread (cth) id with `windowID`. Kept separate from
+   *  the thread map: a subthread window also stores its PARENT threadID for
+   *  runtime routing, so reusing setThreadWindow would clobber the parent group
+   *  thread's own pop-out dedup mapping. */
+  setSubthreadWindow(subthreadID: string, windowID: number): void;
+
+  /** Drop the `subthreadID → windowID` mapping without touching the window entry. */
+  clearSubthreadWindow(subthreadID: string): void;
+
+  /** `webContents.id` hosting a reply subthread (cth), or undefined. */
+  subthreadHostWindowID(subthreadID: string): number | undefined;
+
+  /** Popped-out reply subthread (cth) hosted by a window, or undefined. */
+  subthreadForWindow(windowID: number): string | undefined;
+
   /**
    * Attach the per-window resize listeners (`will-resize` / `resize` /
    * `resized`) on `window` and run `onChange` for each event. Replaces
@@ -104,6 +122,7 @@ export type WindowRegistrationOptions = {
   workdir?: string;
   runtimeContext?: RuntimeContext;
   threadID?: string;
+  subthreadID?: string;
 };
 
 interface WindowEntry {
@@ -112,11 +131,13 @@ interface WindowEntry {
   readonly workdir?: string;
   readonly runtimeContext?: RuntimeContext;
   readonly threadID?: string;
+  readonly subthreadID?: string;
 }
 
 class WindowRegistryImpl implements WindowRegistry {
   private readonly windowsByID = new Map<number, WindowEntry>();
   private readonly threadToWindowID = new Map<string, number>();
+  private readonly subthreadToWindowID = new Map<string, number>();
   private readonly resizeCleanups = new Map<number, () => void>();
 
   registerWindow(
@@ -130,6 +151,7 @@ class WindowRegistryImpl implements WindowRegistry {
       workdir: options.workdir,
       runtimeContext: options.runtimeContext,
       threadID: options.threadID,
+      subthreadID: options.subthreadID,
     });
   }
 
@@ -143,6 +165,11 @@ class WindowRegistryImpl implements WindowRegistry {
     for (const [threadID, hostedID] of this.threadToWindowID) {
       if (hostedID === windowID) {
         this.threadToWindowID.delete(threadID);
+      }
+    }
+    for (const [subthreadID, hostedID] of this.subthreadToWindowID) {
+      if (hostedID === windowID) {
+        this.subthreadToWindowID.delete(subthreadID);
       }
     }
   }
@@ -185,6 +212,29 @@ class WindowRegistryImpl implements WindowRegistry {
 
   threadForWindow(windowID: number): string | undefined {
     return this.windowsByID.get(windowID)?.threadID;
+  }
+
+  popOutWindowForSubthread(subthreadID: string): BrowserWindow | null {
+    const id = this.subthreadToWindowID.get(subthreadID);
+    if (id === undefined) return null;
+    const entry = this.windowsByID.get(id);
+    return entry?.window ?? null;
+  }
+
+  setSubthreadWindow(subthreadID: string, windowID: number): void {
+    this.subthreadToWindowID.set(subthreadID, windowID);
+  }
+
+  clearSubthreadWindow(subthreadID: string): void {
+    this.subthreadToWindowID.delete(subthreadID);
+  }
+
+  subthreadHostWindowID(subthreadID: string): number | undefined {
+    return this.subthreadToWindowID.get(subthreadID);
+  }
+
+  subthreadForWindow(windowID: number): string | undefined {
+    return this.windowsByID.get(windowID)?.subthreadID;
   }
 
   sameWorkdirPopOutWindows(workdir: string): BrowserWindow[] {

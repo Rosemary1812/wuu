@@ -64,6 +64,20 @@
   white-space: nowrap;
 }
 
+/* Compact "分身" tag for a forked named agent (decision six); the母体 name
+   is carried in the title/aria-label tooltip. */
+.participant-chip-fork {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--info) 16%, transparent);
+  color: var(--info);
+  font-size: var(--font-2xs, 10px);
+  font-weight: var(--weight-medium);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
 .participant-chip--pill {
   appearance: none;
   cursor: pointer;
@@ -493,6 +507,20 @@
   min-width: 0;
   align-items: center;
   gap: 10px;
+}
+
+/* "X 的分身" badge for a forked named agent (decision six /
+   participant.forked_from_id), shown under the 身份 heading. */
+.participant-profile-fork-badge {
+  align-self: flex-start;
+  margin: -2px 0 2px;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--info) 16%, transparent);
+  color: var(--info);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  line-height: var(--line-ui);
 }
 
 .participant-profile-avatar {

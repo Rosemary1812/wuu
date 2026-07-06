@@ -1685,7 +1685,10 @@ export type WuuDesktopApi = {
   postSubthreadMessage: (
     threadId: string,
     subthreadId: string,
-    text: string
+    text: string,
+    // 复用主对话完整 composer 后,分屏 reply 也能带附件/截图。可选:纯文本发送时留空。
+    images?: InputImage[],
+    files?: InputFile[]
   ) => Promise<MessagePostSubthreadResult>;
   listThreads: (cwd?: string) => Promise<{ threads: Thread[] }>;
   searchThreads: (query: string, limit?: number) => Promise<ThreadSearchResult>;
@@ -1819,9 +1822,13 @@ export type WuuDesktopApi = {
  */
 export type PopOutInitResult = {
   /** Popped-out window kind, or null when this is the main window. */
-  kind: "thread" | "draft" | null;
-  /** The popped-out thread id, or null when this is the main window. */
+  kind: "thread" | "draft" | "subthread" | null;
+  /** The popped-out thread id, or null when this is the main window. For a
+   *  subthread window this is the PARENT group thread (the cth's home). */
   threadID: string | null;
+  /** The popped-out reply subthread (cth) id, or null unless kind is
+   *  "subthread". */
+  subthreadID: string | null;
   /** Runtime context pinned to the popped-out window. */
   context: RuntimeContext | null;
 };
@@ -1834,6 +1841,16 @@ export type PopOutSessionParams =
     }
   | {
       kind: "draft";
+      context: RuntimeContext;
+    }
+  | {
+      // A reply subthread (cth) lifted into its own window. threadID is the
+      // PARENT group thread (needed for runtime routing + participants); the
+      // window renders the cth via the SAME ConversationSubthreadPanel the
+      // in-window split uses.
+      kind: "subthread";
+      threadID: string;
+      subthreadID: string;
       context: RuntimeContext;
     };
 
