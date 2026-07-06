@@ -409,14 +409,6 @@ header.hero { text-align: left; padding: 128px 0 60px; }
 .hero-team img { display: block; width: 100%; height: auto; }
 @media (max-width: 900px){ .hero .wrap { grid-template-columns: 1fr; gap: 30px; } header.hero{ text-align:center; padding-top:118px } .hero-copy{ margin:0 auto } .hero-copy .sub{ margin-left:auto; margin-right:auto } .hero .hero-cta{ justify-content:center } .hero .trust{ text-align:center } }
 
-.stats { border-bottom: 2.5px solid var(--ink); background: var(--panel); }
-.stats .wrap { display: grid; grid-template-columns: repeat(5, 1fr); }
-.stat { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 24px 12px; border-right: 2px dashed rgba(33,29,24,.14); }
-.stat:last-child { border-right: none; }
-.stat .v { font-family: var(--display); font-weight: 700; font-size: clamp(21px, 2.3vw, 29px); color: var(--coral-deep); line-height: 1; }
-.stat .l { font-family: var(--display); font-weight: 500; font-size: 12.5px; color: var(--ink-2); }
-@media (max-width: 720px){ .stats .wrap { grid-template-columns: repeat(2, 1fr); } .stat { border-bottom: 2px dashed rgba(33,29,24,.12); } .stat:nth-child(2n){ border-right:none } .stat:last-child{ grid-column: 1 / -1; } }
-
 .capsec { padding: 84px 0 40px; }
 .capsec .head-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 38px; }
 .capsec .head-row .title { margin-bottom: 0; }
@@ -502,13 +494,6 @@ header.hero::before { display: none; }
 @media (max-width: 900px){ .hero .wrap { grid-template-columns: 1fr; gap: 36px; } header.hero { padding-top: 112px; } }
 @media (max-width: 520px){ .room-body { grid-template-columns: 1fr; } .room-side { display: none; } }
 
-/* stats: restrained — ink values, hairline dividers, coral gone */
-.stats { background: var(--surface); border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); }
-.stat { border-right: 1px solid var(--line); padding: 22px 12px; }
-.stat .v { color: var(--ink); font-weight: 700; }
-.stat .l { color: var(--ink-3); }
-@media (max-width: 720px){ .stat { border-bottom: 1px solid var(--line); } }
-
 
 /* ===== v3 GLOBAL: mature everywhere ===== */
 :root { --paper: #F5F4F0; --paper-2: #FAF9F6; --panel: #FFFFFF; --cream: #F2F0EA; }
@@ -577,7 +562,6 @@ header.hero { background-size: 200px 200px; background-image: linear-gradient(rg
 /* web type (Inter + Noto Sans SC): light weights for a premium, uniform look */
 .hero-copy h1 { font-weight: 400; letter-spacing: -.015em; }
 h2.title { font-weight: 500; letter-spacing: -.01em; }
-.stat .v { font-weight: 500; }
 .logo { font-weight: 600; letter-spacing: -.01em; }
 .eyebrow, .kicker { font-weight: 500; }
 .btn { font-weight: 500; }
@@ -665,16 +649,6 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
     </div>
   </div>
 </header>
-
-<section class="stats" aria-label="Highlights">
-  <div class="wrap">
-    <div class="stat reveal"><span class="v">MIT</span><span class="l"><span class="zh">开源可审计</span><span class="en">Open source</span></span></div>
-    <div class="stat reveal d1"><span class="v">BYOK</span><span class="l"><span class="zh">自带 API Key</span><span class="en">Your own key</span></span></div>
-    <div class="stat reveal d2"><span class="v">10+</span><span class="l"><span class="zh">模型提供商</span><span class="en">Model providers</span></span></div>
-    <div class="stat reveal d3"><span class="v">100%</span><span class="l"><span class="zh">本地运行</span><span class="en">Runs on your machine</span></span></div>
-    <div class="stat reveal d3"><span class="v">&infin;</span><span class="l"><span class="zh">多智能体协作</span><span class="en">Agents, one chat</span></span></div>
-  </div>
-</section>
 
 <section class="models" id="models" aria-label="Supported models">
   <div class="wrap">
