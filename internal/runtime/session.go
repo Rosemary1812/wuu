@@ -347,6 +347,7 @@ func NewSession(opts Options) (*Session, error) {
 			DefaultMaxInputTokens:          workerModelBudget.InputLimitTokens,
 			DefaultOutputReserveTokens:     workerModelBudget.OutputReserveTokens,
 			DefaultCompactThresholdTokens:  workerModelBudget.CompactThresholdTokens,
+			DefaultTemperature:             cfg.Agent.Temperature,
 			DefaultCompactThresholdPct:     cfg.Agent.CompactThresholdPct,
 			DefaultCompactKeepRecentTokens: cfg.Agent.CompactKeepRecentTokens,
 			DefaultDisableAutoCompact:      cfg.Agent.DisableAutoCompact,

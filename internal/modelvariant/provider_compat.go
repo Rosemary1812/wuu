@@ -50,6 +50,16 @@ func BaseOptionsForProvider(providerName string, provider config.ProviderConfig,
 		result = map[string]any{}
 	}
 
+	// Per-model "temperature": false is the user-facing switch for models
+	// that reject the sampling field (OpenAI o/gpt-5 series, Claude Opus
+	// 4.7+). It travels to the wire clients as a provider option; explicit
+	// user options keep precedence.
+	if _, exists := result["temperatureSupported"]; !exists {
+		if modelCfg.Temperature != nil && !*modelCfg.Temperature {
+			result["temperatureSupported"] = false
+		}
+	}
+
 	applyCompatSamplingDefaults(result, desc)
 	if desc.APINPM == compatNPMVertexAnthropic || (desc.APINPM == compatNPMAnthropic && !strings.Contains(desc.APIID, "claude")) {
 		result["toolStreaming"] = false

@@ -169,6 +169,7 @@ type Config struct {
 	DefaultMaxInputTokens          int
 	DefaultOutputReserveTokens     int
 	DefaultCompactThresholdTokens  int
+	DefaultTemperature             float64
 	DefaultCompactThresholdPct     float64
 	DefaultCompactKeepRecentTokens int
 	DefaultDisableAutoCompact      bool
@@ -220,6 +221,7 @@ func New(cfg Config) (*AgentControl, error) {
 		MaxInputTokens:          cfg.DefaultMaxInputTokens,
 		OutputReserveTokens:     cfg.DefaultOutputReserveTokens,
 		CompactThresholdTokens:  cfg.DefaultCompactThresholdTokens,
+		Temperature:             cfg.DefaultTemperature,
 		CompactThresholdPct:     cfg.DefaultCompactThresholdPct,
 		CompactKeepRecentTokens: cfg.DefaultCompactKeepRecentTokens,
 		DisableAutoCompact:      cfg.DefaultDisableAutoCompact,

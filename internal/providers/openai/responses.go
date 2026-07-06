@@ -138,7 +138,7 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		Model:           req.Model,
 		Instructions:    instructions,
 		Input:           input,
-		Temperature:     req.Temperature,
+		Temperature:     effectiveTemperature(req),
 		MaxOutputTokens: req.MaxTokens,
 		Stream:          stream,
 		Options:         provideroptions.Clone(req.ProviderOptions),

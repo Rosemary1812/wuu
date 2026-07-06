@@ -496,7 +496,35 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 	}
 	applyAnthropicProviderOptions(&payload, req.ProviderOptions)
 
+	// Temperature gating, applied after all option sources:
+	// - models that reject the field (per-model "temperature": false, arriving
+	//   as the temperatureSupported option) never receive it — absolute;
+	// - with thinking active the global sampling default is dropped (the API
+	//   only accepts the default alongside thinking), but an explicit
+	//   per-model options.temperature is a deliberate user override and wins.
+	if !temperatureSupported(req.ProviderOptions) {
+		payload.Temperature = nil
+	} else if payload.Thinking != nil {
+		if _, explicit := providerOptionFloat(req.ProviderOptions["temperature"]); !explicit {
+			payload.Temperature = nil
+		}
+	}
+
 	return payload, nil
+}
+
+// temperatureSupported reports whether the model accepts the temperature
+// field. Defaults to true; per-model "temperature": false flips it via the
+// temperatureSupported provider option (modelvariant.BaseOptionsForProvider).
+func temperatureSupported(options map[string]any) bool {
+	for _, key := range []string{"temperatureSupported", "temperature_supported"} {
+		if value, exists := options[key]; exists {
+			if enabled, ok := providerOptionBool(value); ok {
+				return enabled
+			}
+		}
+	}
+	return true
 }
 
 func applyAnthropicProviderOptions(payload *anthropicRequest, options map[string]any) {

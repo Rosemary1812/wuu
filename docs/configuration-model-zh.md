@@ -135,7 +135,7 @@ Wuu 的读取顺序是：
 | 字段 | 填写方式 | 默认值 | UI 策略 |
 | --- | --- | --- | --- |
 | `id`、`name`、`family`、`status`、`release_date` | 字符串 metadata | 空 | 文件手动 |
-| `reasoning`、`attachment`、`tool_call`、`structured_output`、`temperature` | 布尔能力标记 | 空，表示未知 | 文件手动 |
+| `reasoning`、`attachment`、`tool_call`、`structured_output`、`temperature` | 布尔能力标记 | 空，表示未知 | 文件手动；`reasoning` 驱动 thinking 判定；**`temperature: false` 会真实拦截该模型的 temperature 发送**（两条 wire 都生效，thinking 激活时全局默认值也不发，显式 `options.temperature` 例外）；其余目前仅作展示 |
 | `reasoning_options` | 对象数组，保留上游 metadata | 空 | 文件手动 |
 | `interleaved` | 任意 JSON metadata | 空 | 文件手动 |
 | `modalities.input`、`modalities.output` | 字符串数组，例如 `["text", "image"]` | 空 | 文件手动 |

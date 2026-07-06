@@ -176,7 +176,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	payload := chatCompletionsRequest{
 		Model:           req.Model,
 		Messages:        make([]chatMessage, 0, len(req.Messages)),
-		Temperature:     req.Temperature,
+		Temperature:     effectiveTemperature(req),
 		MaxTokens:       req.MaxTokens,
 		ReasoningFormat: c.reasoningFormat,
 		Options:         provideroptions.Clone(req.ProviderOptions),
@@ -310,7 +310,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	payload := chatCompletionsRequest{
 		Model:           req.Model,
 		Messages:        make([]chatMessage, 0, len(req.Messages)),
-		Temperature:     req.Temperature,
+		Temperature:     effectiveTemperature(req),
 		MaxTokens:       req.MaxTokens,
 		Stream:          true,
 		ReasoningFormat: c.reasoningFormat,
@@ -1112,4 +1112,29 @@ func (u *chunkUsage) asTokenUsage() *providers.TokenUsage {
 		OutputTokens:    u.CompletionTokens,
 		CacheReadTokens: cached,
 	}
+}
+
+// effectiveTemperature drops the sampling temperature for models that reject
+// the field (per-model config "temperature": false arrives as the
+// temperatureSupported provider option via modelvariant). Zero is omitted on
+// the wire by omitempty, matching the "do not send" semantics.
+func effectiveTemperature(req providers.ChatRequest) float64 {
+	for _, key := range []string{"temperatureSupported", "temperature_supported"} {
+		value, exists := req.ProviderOptions[key]
+		if !exists {
+			continue
+		}
+		switch v := value.(type) {
+		case bool:
+			if !v {
+				return 0
+			}
+		case string:
+			switch strings.ToLower(strings.TrimSpace(v)) {
+			case "false", "0", "no", "off":
+				return 0
+			}
+		}
+	}
+	return req.Temperature
 }

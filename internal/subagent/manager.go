@@ -27,6 +27,7 @@ type Manager struct {
 	defaultMaxInputTokens  int
 	defaultOutputReserve   int
 	defaultCompactTokens   int
+	defaultTemperature     float64
 	defaultCompactPct      float64
 	defaultKeepRecent      int
 	defaultDisableCompact  bool
@@ -45,6 +46,7 @@ type ManagerOptions struct {
 	OutputReserveTokens     int
 	CompactThresholdTokens  int
 	CompactThresholdPct     float64
+	Temperature             float64
 	CompactKeepRecentTokens int
 	DisableAutoCompact      bool
 }
@@ -59,6 +61,7 @@ type managerDefaults struct {
 	outputReserve  int
 	compactTokens  int
 	compactPct     float64
+	temperature    float64
 	keepRecent     int
 	disableCompact bool
 }
@@ -85,6 +88,7 @@ func NewManagerWithOptions(client providers.StreamClient, defaultModel string, o
 		defaultMaxInputTokens:  opts.MaxInputTokens,
 		defaultOutputReserve:   opts.OutputReserveTokens,
 		defaultCompactTokens:   opts.CompactThresholdTokens,
+		defaultTemperature:     opts.Temperature,
 		defaultCompactPct:      opts.CompactThresholdPct,
 		defaultKeepRecent:      opts.CompactKeepRecentTokens,
 		defaultDisableCompact:  opts.DisableAutoCompact,
@@ -112,6 +116,7 @@ func (m *Manager) UpdateDefaults(client providers.StreamClient, defaultModel str
 	m.defaultMaxInputTokens = opts.MaxInputTokens
 	m.defaultOutputReserve = opts.OutputReserveTokens
 	m.defaultCompactTokens = opts.CompactThresholdTokens
+	m.defaultTemperature = opts.Temperature
 	m.defaultCompactPct = opts.CompactThresholdPct
 	m.defaultKeepRecent = opts.CompactKeepRecentTokens
 	m.defaultDisableCompact = opts.DisableAutoCompact
@@ -129,6 +134,7 @@ func (m *Manager) defaultsSnapshot() managerDefaults {
 		maxInputTokens: m.defaultMaxInputTokens,
 		outputReserve:  m.defaultOutputReserve,
 		compactTokens:  m.defaultCompactTokens,
+		temperature:    m.defaultTemperature,
 		compactPct:     m.defaultCompactPct,
 		keepRecent:     m.defaultKeepRecent,
 		disableCompact: m.defaultDisableCompact,
@@ -355,7 +361,7 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 		Model:                   sa.model,
 		SystemPrompt:            sa.systemPrompt,
 		MaxSteps:                maxSteps,
-		Temperature:             0.2,
+		Temperature:             defaults.temperature,
 		ContextWindowOverride:   defaults.contextWindow,
 		MaxInputTokens:          defaults.maxInputTokens,
 		OutputReserveTokens:     defaults.outputReserve,

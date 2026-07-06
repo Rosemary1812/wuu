@@ -2808,3 +2808,38 @@ func TestThinkingReplayModes(t *testing.T) {
 		t.Fatalf("invalid mode must fall back to full, got %v", got)
 	}
 }
+
+// TestTemperatureGating locks the per-model temperature switch and the
+// thinking mutual exclusion: "temperature": false (arriving as the
+// temperatureSupported option) or an active thinking config must drop the
+// sampling field entirely.
+func TestTemperatureGating(t *testing.T) {
+	base := providers.ChatRequest{
+		Model:       "claude-test",
+		Temperature: 0.7,
+		Messages:    []providers.ChatMessage{{Role: "user", Content: "hi"}},
+	}
+	build := func(req providers.ChatRequest) anthropicRequest {
+		out, err := buildAnthropicRequest(req, 1024, false)
+		if err != nil {
+			t.Fatalf("buildAnthropicRequest: %v", err)
+		}
+		return out
+	}
+
+	if got := build(base); got.Temperature == nil || *got.Temperature != 0.7 {
+		t.Fatalf("supported default must send temperature, got %+v", got.Temperature)
+	}
+
+	off := base
+	off.ProviderOptions = map[string]any{"temperatureSupported": false}
+	if got := build(off); got.Temperature != nil {
+		t.Fatalf("temperatureSupported=false must drop temperature, got %v", *got.Temperature)
+	}
+
+	thinking := base
+	thinking.Effort = "high" // enables adaptive thinking
+	if got := build(thinking); got.Temperature != nil {
+		t.Fatalf("active thinking must drop temperature, got %v", *got.Temperature)
+	}
+}
