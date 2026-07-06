@@ -66,7 +66,7 @@ h2.title {
 }
 .mark.full { background-size: 100% 100%; color: #fff; padding: 0 .18em; border-radius: 6px; }
 
-code.inline { font-family: var(--mono); font-size: .86em; color: var(--coral-deep); background: #fff; border: 1.5px solid var(--ink); padding: 0 6px; border-radius: 6px; }
+code.inline { font-family: var(--mono); font-size: .86em; color: var(--accent-press); background: var(--accent-soft); border: 1.5px solid var(--line-2); padding: 0 6px; border-radius: 6px; }
 
 /* reveal on scroll */
 .reveal { opacity: 0; transform: translateY(22px); transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1); }
@@ -145,13 +145,13 @@ header.hero { position: relative; padding: 148px 0 76px; overflow: hidden; text-
 .install-line {
   display: inline-flex; align-items: center; gap: 14px;
   font-family: var(--mono); font-size: 13px;
-  background: #fff; border: 2.5px solid var(--ink); border-radius: 12px;
+  background: #fff; border: 1.5px solid var(--line-2); border-radius: 10px;
   padding: 11px 16px; color: var(--ink); cursor: pointer; margin-top: 16px;
-  box-shadow: 3px 3px 0 var(--ink); transition: transform .12s, box-shadow .12s;
+  transition: transform .14s, border-color .2s;
 }
-.install-line:hover { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 var(--ink); }
-.install-line:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--ink); }
-.install-line .dollar { color: var(--coral-deep); }
+.install-line:hover { transform: translateY(-1px); border-color: var(--ink); }
+.install-line:active { transform: translateY(0); }
+.install-line .dollar { color: var(--accent); }
 .install-line .copy-hint { font-family: var(--display); font-weight: 600; font-size: 11px; letter-spacing: .06em; color: var(--ink-2); text-transform: uppercase; }
 .trust { margin-top: 18px; font-size: 13.5px; color: var(--ink-2); max-width: 34em; }
 .trust b { color: var(--ink); font-weight: 600; }
