@@ -28,6 +28,20 @@ export const WORKSPACE_RIGHT_PANEL_MAIN_MIN_WIDTH = 360;
 // window collapses min === max and the panel can't be dragged at all.
 export const WORKSPACE_RIGHT_PANEL_MIN_DRAG_RANGE = 120;
 const WORKSPACE_RIGHT_PANEL_STEP = 32;
+
+// Thread (reply subthread, cth) panel: the conversation pane's own right
+// rail. Same resize family as the sidebar / workspace right panel — one
+// clamp gate, rAF live CSS-var writes, localStorage persistence, separator
+// with keyboard + double-click-reset. The panel squeezes the conversation
+// column (grid column, not an overlay), so these bounds trade directly
+// against the readable main column width.
+export const THREAD_PANEL_DEFAULT_WIDTH = 372;
+export const THREAD_PANEL_MIN_WIDTH = 280;
+export const THREAD_PANEL_MAX_WIDTH = 560;
+export const THREAD_PANEL_MAIN_MIN_WIDTH = 360;
+export const THREAD_PANEL_MIN_DRAG_RANGE = 80;
+const THREAD_PANEL_WIDTH_KEY = "wuu.desktop.threadPanelWidth";
+const THREAD_PANEL_STEP = 32;
 const WORKSPACE_RIGHT_PANEL_WIDTH_KEY = "wuu.desktop.workspaceRightPanelWidth";
 // The fork/split view (源会话 | 分叉) is proportional rather than a fixed pixel
 // panel, so its divider is stored as the left pane's share of the container
@@ -123,6 +137,15 @@ function initialWorkspaceRightPanelWidth(): number {
   );
 }
 
+function initialThreadPanelWidth(): number {
+  return storedWidth(
+    THREAD_PANEL_WIDTH_KEY,
+    THREAD_PANEL_DEFAULT_WIDTH,
+    THREAD_PANEL_MIN_WIDTH,
+    THREAD_PANEL_MAX_WIDTH
+  );
+}
+
 function initialConversationSplitPercent(): number {
   return storedWidth(
     CONVERSATION_SPLIT_PERCENT_KEY,
@@ -152,6 +175,22 @@ export function clampWorkspaceRightPanelWidth(width: number, sidebarWidth: numbe
     WORKSPACE_RIGHT_PANEL_MAX_WIDTH
   );
   return clamp(width, WORKSPACE_RIGHT_PANEL_MIN_WIDTH, maxWidth);
+}
+
+// Same contract as clampWorkspaceRightPanelWidth, for the thread panel: the
+// window-aware ceiling keeps the main conversation column readable, and the
+// guaranteed drag range keeps the separator draggable on narrow windows.
+export function clampThreadPanelWidth(width: number, sidebarWidth: number): number {
+  const maxForWindow =
+    typeof window === "undefined"
+      ? THREAD_PANEL_MAX_WIDTH
+      : window.innerWidth - sidebarWidth - THREAD_PANEL_MAIN_MIN_WIDTH;
+  const maxWidth = clamp(
+    maxForWindow,
+    THREAD_PANEL_MIN_WIDTH + THREAD_PANEL_MIN_DRAG_RANGE,
+    THREAD_PANEL_MAX_WIDTH
+  );
+  return clamp(width, THREAD_PANEL_MIN_WIDTH, maxWidth);
 }
 
 function useWindowPointerResize<Session>({
@@ -269,6 +308,11 @@ export function useAppLayoutState({
   startRightPanelResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
   handleRightPanelSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
   resetWorkspaceRightPanelWidth: () => void;
+  clampedThreadPanelWidth: number;
+  resizingThreadPanel: boolean;
+  startThreadPanelResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  handleThreadPanelSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
+  resetThreadPanelWidth: () => void;
   toggleSidebar: () => void;
   handleSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
   handleSettingsSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
@@ -290,14 +334,21 @@ export function useAppLayoutState({
   const [rightPanelAnimating, setRightPanelAnimating] = useState(false);
   const [splitLeftPercent, setSplitLeftPercent] = useState(initialConversationSplitPercent);
   const [resizingSplit, setResizingSplit] = useState(false);
+  const [threadPanelWidth, setThreadPanelWidth] = useState(initialThreadPanelWidth);
+  const [resizingThreadPanel, setResizingThreadPanel] = useState(false);
   const resizeSessionRef = useRef<SidebarResizeSession | null>(null);
   const rightPanelResizeSessionRef = useRef<RightPanelResizeSession | null>(null);
+  const threadPanelResizeSessionRef = useRef<RightPanelResizeSession | null>(null);
   const splitResizeSessionRef = useRef<SplitResizeSession | null>(null);
   const sidebarMotionTimerRef = useRef<number | undefined>(undefined);
   const rightPanelMotionTimerRef = useRef<number | undefined>(undefined);
   const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
   const clampedWorkspaceRightPanelWidth = clampWorkspaceRightPanelWidth(
     workspaceRightPanelWidth,
+    effectiveSidebarWidth
+  );
+  const clampedThreadPanelWidth = clampThreadPanelWidth(
+    threadPanelWidth,
     effectiveSidebarWidth
   );
 
@@ -385,6 +436,18 @@ export function useAppLayoutState({
     [effectiveSidebarWidth, layoutRootRef]
   );
 
+  const writeLiveThreadPanelWidth = useCallback(
+    (nextWidth: number): void => {
+      const root = layoutRootRef?.current;
+      if (!root) {
+        return;
+      }
+      const clampedWidth = clampThreadPanelWidth(nextWidth, effectiveSidebarWidth);
+      root.style.setProperty("--thread-panel-width", `${clampedWidth}px`);
+    },
+    [effectiveSidebarWidth, layoutRootRef]
+  );
+
   const writeLiveSplitPercent = useCallback(
     (nextPercent: number): void => {
       const root = layoutRootRef?.current;
@@ -404,6 +467,7 @@ export function useAppLayoutState({
   const sidebarLive = useLiveWidthWriter(writeLiveSidebarWidth);
   const settingsSidebarLive = useLiveWidthWriter(writeLiveSettingsSidebarWidth);
   const rightPanelLive = useLiveWidthWriter(writeLiveWorkspaceRightPanelWidth);
+  const threadPanelLive = useLiveWidthWriter(writeLiveThreadPanelWidth);
   const splitLive = useLiveWidthWriter(writeLiveSplitPercent);
 
   const applySidebarWidth = useCallback(
@@ -432,6 +496,13 @@ export function useAppLayoutState({
   const applyWorkspaceRightPanelWidth = useCallback(
     (nextWidth: number): void => {
       setWorkspaceRightPanelWidth(clampWorkspaceRightPanelWidth(nextWidth, effectiveSidebarWidth));
+    },
+    [effectiveSidebarWidth]
+  );
+
+  const applyThreadPanelWidth = useCallback(
+    (nextWidth: number): void => {
+      setThreadPanelWidth(clampThreadPanelWidth(nextWidth, effectiveSidebarWidth));
     },
     [effectiveSidebarWidth]
   );
@@ -468,6 +539,10 @@ export function useAppLayoutState({
   useEffect(() => {
     window.localStorage.setItem(CONVERSATION_SPLIT_PERCENT_KEY, String(splitLeftPercent));
   }, [splitLeftPercent]);
+
+  useEffect(() => {
+    window.localStorage.setItem(THREAD_PANEL_WIDTH_KEY, String(threadPanelWidth));
+  }, [threadPanelWidth]);
 
   // This is unmount cleanup. The live writer objects are recreated during
   // render; depending on them would cancel panel motion timers mid-animation.
@@ -569,11 +644,38 @@ export function useAppLayoutState({
     setResizingRightPanel(false);
   }, [applyWorkspaceRightPanelWidth, rightPanelLive]);
 
+  const handleThreadPanelResizeMove = useCallback(
+    (event: PointerEvent, session: RightPanelResizeSession): void => {
+      // Right-anchored: dragging left widens the panel.
+      const nextWidth = session.startWidth - (event.clientX - session.startX);
+      session.currentWidth = nextWidth;
+      threadPanelLive.schedule(nextWidth);
+    },
+    [threadPanelLive]
+  );
+
+  const handleThreadPanelResizeEnd = useCallback((session: RightPanelResizeSession | null): void => {
+    if (session) {
+      threadPanelLive.flush();
+      applyThreadPanelWidth(session.currentWidth);
+    } else {
+      threadPanelLive.cancel();
+    }
+    setResizingThreadPanel(false);
+  }, [applyThreadPanelWidth, threadPanelLive]);
+
   useWindowPointerResize({
     resizing: resizingRightPanel,
     sessionRef: rightPanelResizeSessionRef,
     onMove: handleRightPanelResizeMove,
     onEnd: handleRightPanelResizeEnd,
+  });
+
+  useWindowPointerResize({
+    resizing: resizingThreadPanel,
+    sessionRef: threadPanelResizeSessionRef,
+    onMove: handleThreadPanelResizeMove,
+    onEnd: handleThreadPanelResizeEnd,
   });
 
   const handleSplitResizeMove = useCallback(
@@ -614,6 +716,9 @@ export function useAppLayoutState({
       setWorkspaceRightPanelWidth((current) =>
         clampWorkspaceRightPanelWidth(current, effectiveSidebarWidth)
       );
+      setThreadPanelWidth((current) =>
+        clampThreadPanelWidth(current, effectiveSidebarWidth)
+      );
     }
 
     window.addEventListener("resize", handleResize);
@@ -625,7 +730,7 @@ export function useAppLayoutState({
   // (ConversationScrollState, AutoFollowScroll, ConversationTurnRail) stop
   // forcing layout + scrollTop writes on every pointermove.
   useEffect(() => {
-    if (!resizingSidebar && !resizingRightPanel && !resizingSplit) {
+    if (!resizingSidebar && !resizingRightPanel && !resizingSplit && !resizingThreadPanel) {
       return undefined;
     }
     const root = document.documentElement;
@@ -633,7 +738,7 @@ export function useAppLayoutState({
     return () => {
       root.classList.remove(WINDOW_RESIZING_CLASS);
     };
-  }, [resizingSidebar, resizingRightPanel, resizingSplit]);
+  }, [resizingSidebar, resizingRightPanel, resizingSplit, resizingThreadPanel]);
 
   function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>): void {
     if (event.button !== 0) {
@@ -698,6 +803,39 @@ export function useAppLayoutState({
 
   function resetWorkspaceRightPanelWidth(): void {
     applyWorkspaceRightPanelWidth(WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH);
+  }
+
+  function startThreadPanelResize(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    threadPanelResizeSessionRef.current = {
+      startX: event.clientX,
+      startWidth: clampedThreadPanelWidth,
+      currentWidth: clampedThreadPanelWidth
+    };
+    setResizingThreadPanel(true);
+  }
+
+  function handleThreadPanelSeparatorKey(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      applyThreadPanelWidth(threadPanelWidth + THREAD_PANEL_STEP);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      applyThreadPanelWidth(threadPanelWidth - THREAD_PANEL_STEP);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      applyThreadPanelWidth(THREAD_PANEL_MAX_WIDTH);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      applyThreadPanelWidth(THREAD_PANEL_MIN_WIDTH);
+    }
+  }
+
+  function resetThreadPanelWidth(): void {
+    applyThreadPanelWidth(THREAD_PANEL_DEFAULT_WIDTH);
   }
 
   function startSplitResize(event: ReactPointerEvent<HTMLDivElement>): void {
@@ -813,6 +951,11 @@ export function useAppLayoutState({
     startRightPanelResize,
     handleRightPanelSeparatorKey,
     resetWorkspaceRightPanelWidth,
+    clampedThreadPanelWidth,
+    resizingThreadPanel,
+    startThreadPanelResize,
+    handleThreadPanelSeparatorKey,
+    resetThreadPanelWidth,
     toggleSidebar,
     handleSidebarSeparatorKey,
     handleSettingsSidebarSeparatorKey,

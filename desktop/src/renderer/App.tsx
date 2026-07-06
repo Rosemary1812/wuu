@@ -243,6 +243,8 @@ import {
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
   SIDEBAR_MOTION_MS,
+  THREAD_PANEL_MAX_WIDTH,
+  THREAD_PANEL_MIN_WIDTH,
   WORKSPACE_RIGHT_PANEL_MAX_WIDTH,
   WORKSPACE_RIGHT_PANEL_MIN_WIDTH,
   useAppLayoutState,
@@ -658,6 +660,11 @@ export function App(): JSX.Element {
     startRightPanelResize,
     handleRightPanelSeparatorKey,
     resetWorkspaceRightPanelWidth,
+    clampedThreadPanelWidth,
+    resizingThreadPanel,
+    startThreadPanelResize,
+    handleThreadPanelSeparatorKey,
+    resetThreadPanelWidth,
     toggleSidebar,
     handleSidebarSeparatorKey,
     handleSettingsSidebarSeparatorKey,
@@ -785,188 +792,6 @@ export function App(): JSX.Element {
     | undefined
   >(undefined);
 
-  // === Thread panel width: host-owned state, persisted per-account, lives
-  // independent of --environment-panel-reserved-width so dragging one rail
-  // doesn't reflow the other. Defaults match the legacy 372px so first-open
-  // is unchanged. ===
-  const THREAD_PANEL_DEFAULT_WIDTH = 372;
-  const THREAD_PANEL_MIN_WIDTH = 280;
-  const THREAD_PANEL_MAX_WIDTH = 560;
-  const THREAD_PANEL_STORAGE_KEY = "wuu.thread-panel-width";
-  const THREAD_PANEL_MAIN_MIN_WIDTH = 360; // smallest readable main content
-  const threadPanelDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  const [threadPanelWidth, setThreadPanelWidth] = useState<number>(
-    THREAD_PANEL_DEFAULT_WIDTH,
-  );
-  const [threadPanelResizing, setThreadPanelResizing] = useState<boolean>(false);
-
-  // Hydrate persisted width on mount.
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(THREAD_PANEL_STORAGE_KEY);
-      if (raw === null) {
-        return;
-      }
-      const parsed = Number(raw);
-      if (!Number.isFinite(parsed)) {
-        return;
-      }
-      const clamped = Math.min(
-        THREAD_PANEL_MAX_WIDTH,
-        Math.max(THREAD_PANEL_MIN_WIDTH, parsed),
-      );
-      setThreadPanelWidth(clamped);
-    } catch {
-      // localStorage unavailable (private mode etc.) — keep default.
-    }
-  }, []);
-
-  // Persist on every change. Cheap enough at this volume; if profiling later
-  // shows it dominates, debounce to commit-only.
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        THREAD_PANEL_STORAGE_KEY,
-        String(Math.round(threadPanelWidth)),
-      );
-    } catch {
-      // ignore
-    }
-  }, [threadPanelWidth]);
-
-  // Write the live width to the CSS custom property on the document root so
-  // every consumer (panel width, ghost-line position, indicator offset)
-  // resolves from one source of truth.
-  useEffect(() => {
-    document.documentElement.style.setProperty(
-      "--thread-panel-width",
-      `${threadPanelWidth}px`,
-    );
-  }, [threadPanelWidth]);
-
-  // Toggle .subthread-panel-reserved on documentElement when the panel is
-  // open / closed. Setting on a high ancestor means the cascade reaches
-  // .conversation-pane without us having to thread a className prop there.
-  useEffect(() => {
-    const root = document.documentElement;
-    if (openSubthreadPanel) {
-      root.classList.add("subthread-panel-reserved");
-    } else {
-      root.classList.remove("subthread-panel-reserved");
-    }
-    return () => {
-      root.classList.remove("subthread-panel-reserved");
-    };
-  }, [openSubthreadPanel]);
-
-  // Mid-drag visual modifier: cursor + ghost line on the pane.
-  useEffect(() => {
-    const root = document.documentElement;
-    if (threadPanelResizing) {
-      root.classList.add("is-resizing-thread-panel");
-    } else {
-      root.classList.remove("is-resizing-thread-panel");
-    }
-    return () => {
-      root.classList.remove("is-resizing-thread-panel");
-    };
-  }, [threadPanelResizing]);
-
-  // Window-narrow auto-collapse: when the window can no longer fit
-  // sidebar + main-min + thread + env, close the thread panel rather than
-  // let the main column collapse below readable width. Per Carl's QA
-  // decision: collapse, do not shrink-to-min.
-  useEffect(() => {
-    if (!openSubthreadPanel) {
-      return;
-    }
-    function handleResize(): void {
-      const inner = window.innerWidth;
-      if (inner < threadPanelWidth + THREAD_PANEL_MAIN_MIN_WIDTH) {
-        setOpenSubthreadPanel(undefined);
-      }
-    }
-    window.addEventListener("resize", handleResize);
-    handleResize();
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
-  }, [openSubthreadPanel, threadPanelWidth]);
-
-  function clampThreadPanelWidth(value: number): number {
-    return Math.min(
-      THREAD_PANEL_MAX_WIDTH,
-      Math.max(THREAD_PANEL_MIN_WIDTH, value),
-    );
-  }
-
-  function handleThreadPanelResizeStart(
-    event: ReactPointerEvent<HTMLButtonElement>,
-  ): void {
-    event.preventDefault();
-    threadPanelDragRef.current = {
-      startX: event.clientX,
-      startWidth: threadPanelWidth,
-    };
-    setThreadPanelResizing(true);
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // some test environments don't support pointer capture
-    }
-    function onPointerMove(e: PointerEvent): void {
-      const start = threadPanelDragRef.current;
-      if (!start) {
-        return;
-      }
-      // Panel is right-anchored; dragging left widens it (startX - e.clientX is
-      // positive when the cursor moves left).
-      const delta = start.startX - e.clientX;
-      const next = clampThreadPanelWidth(start.startWidth + delta);
-      setThreadPanelWidth(next);
-    }
-    function onPointerUp(): void {
-      setThreadPanelResizing(false);
-      threadPanelDragRef.current = null;
-      document.removeEventListener("pointermove", onPointerMove);
-      document.removeEventListener("pointerup", onPointerUp);
-      document.removeEventListener("pointercancel", onPointerUp);
-    }
-    document.addEventListener("pointermove", onPointerMove);
-    document.addEventListener("pointerup", onPointerUp);
-    document.addEventListener("pointercancel", onPointerUp);
-  }
-
-  function handleThreadPanelResizeKeyDown(
-    event: ReactKeyboardEvent<HTMLButtonElement>,
-  ): void {
-    const STEP_SMALL = 8;
-    const STEP_LARGE = 40;
-    let next: number | null = null;
-    if (event.key === "ArrowLeft") {
-      // Visual arrow on left edge: left widens the panel (intuitive mirror).
-      next = clampThreadPanelWidth(threadPanelWidth + STEP_SMALL);
-      event.preventDefault();
-    } else if (event.key === "ArrowRight") {
-      next = clampThreadPanelWidth(threadPanelWidth - STEP_SMALL);
-      event.preventDefault();
-    } else if (event.key === "PageUp") {
-      next = clampThreadPanelWidth(threadPanelWidth + STEP_LARGE);
-      event.preventDefault();
-    } else if (event.key === "PageDown") {
-      next = clampThreadPanelWidth(threadPanelWidth - STEP_LARGE);
-      event.preventDefault();
-    } else if (event.key === "Home") {
-      next = THREAD_PANEL_MAX_WIDTH;
-      event.preventDefault();
-    } else if (event.key === "End") {
-      next = THREAD_PANEL_MIN_WIDTH;
-      event.preventDefault();
-    }
-    if (next !== null) {
-      setThreadPanelWidth(next);
-    }
-  }
   // Reply subthreads (群中群) for the active chat thread, keyed by
   // anchor_item_id, feeding the chat view's reply badges / task 活动卡. Loaded
   // per active chat thread (see effect below); non-active panes never need it.
@@ -2431,13 +2256,16 @@ export function App(): JSX.Element {
     sidebarAnimating ? " sidebar-animating" : ""
   }${rightPanelAnimating ? " right-panel-animating" : ""}${resizingSidebar ? " resizing-sidebar" : ""}${
     resizingRightPanel ? " resizing-right-panel" : ""
-  }${rightPanelOpen ? " right-panel-open" : ""}${resizingSplit ? " resizing-split" : ""}`;
+  }${rightPanelOpen ? " right-panel-open" : ""}${resizingSplit ? " resizing-split" : ""}${
+    resizingThreadPanel ? " resizing-thread-panel" : ""
+  }`;
   const shellStyle = {
     "--sidebar-width": `${effectiveSidebarWidth}px`,
     "--sidebar-open-width": `${sidebarWidth}px`,
     "--sidebar-motion-duration": `${SIDEBAR_MOTION_MS}ms`,
     "--workspace-panel-motion-duration": `${RIGHT_PANEL_MOTION_MS}ms`,
     "--workspace-right-panel-width": `${clampedWorkspaceRightPanelWidth}px`,
+    "--thread-panel-width": `${clampedThreadPanelWidth}px`,
     "--conversation-split-left": `${splitLeftPercent}%`,
     "--environment-panel-width": ENVIRONMENT_PANEL_WIDTH_CSS,
     "--environment-panel-reserved-width": "372px",
@@ -8681,7 +8509,7 @@ export function App(): JSX.Element {
 
       <main
         className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}${
-          environmentPanelReserved || subthreadPanelVisible || participantPanelVisible ? " environment-panel-reserved" : ""
+          environmentPanelReserved || participantPanelVisible ? " environment-panel-reserved" : ""
         }${
           subthreadPanelVisible ? " subthread-panel-visible" : ""
         }${
@@ -8923,12 +8751,23 @@ export function App(): JSX.Element {
             resolveParticipantName={resolveParticipantName}
             busyParticipantIDs={busyParticipantIDs}
             readerCount={chatReaderCount}
-            width={threadPanelWidth}
-            minWidth={THREAD_PANEL_MIN_WIDTH}
-            maxWidth={THREAD_PANEL_MAX_WIDTH}
-            onResizeStart={handleThreadPanelResizeStart}
-            onResizeKeyDown={handleThreadPanelResizeKeyDown}
-            resizing={threadPanelResizing}
+          />
+        ) : null}
+        {openSubthreadPanel ? (
+          // Same separator family as the sidebar / workspace right panel:
+          // drag to resize, arrows/Home/End on focus, double-click resets.
+          <div
+            className="thread-panel-resizer"
+            role="separator"
+            aria-label="调整 Thread 面板宽度"
+            aria-orientation="vertical"
+            aria-valuemin={THREAD_PANEL_MIN_WIDTH}
+            aria-valuemax={THREAD_PANEL_MAX_WIDTH}
+            aria-valuenow={clampedThreadPanelWidth}
+            tabIndex={0}
+            onPointerDown={startThreadPanelResize}
+            onDoubleClick={resetThreadPanelWidth}
+            onKeyDown={handleThreadPanelSeparatorKey}
           />
         ) : null}
 

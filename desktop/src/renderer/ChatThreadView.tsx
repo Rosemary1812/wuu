@@ -626,7 +626,21 @@ function ReplyAffordance({
   onOpenSubthread?: (item: ThreadItem) => void;
 }): JSX.Element | null {
   if (!subthread) {
-    return null;
+    // No reply thread yet: a hover-revealed entry to start one. Same handler
+    // as the context menu's 回复(分屏) — one open path, no divergence; the
+    // button also reveals on keyboard focus for a11y.
+    if (!onOpenSubthread) {
+      return null;
+    }
+    return (
+      <button
+        type="button"
+        className="chat-reply-badge chat-reply-badge--button chat-reply-badge--hover"
+        onClick={() => onOpenSubthread(item)}
+      >
+        回复(分屏)
+      </button>
+    );
   }
   const open = onOpenSubthread ? () => onOpenSubthread(item) : undefined;
   if (subthread.task) {

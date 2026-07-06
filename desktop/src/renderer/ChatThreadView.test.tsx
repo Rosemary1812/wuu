@@ -427,6 +427,38 @@ describe("ChatThreadView reply / task affordances", () => {
     );
   });
 
+  it("reveals a hover 回复(分屏) entry on messages with no reply thread yet", () => {
+    const opened: ThreadItem[] = [];
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", type: "user_message", text: "改这里" },
+        ]),
+        onOpenSubthread: (item: ThreadItem) => opened.push(item),
+      }),
+    );
+    const hover = container.querySelector<HTMLButtonElement>(
+      ".chat-reply-badge--hover",
+    );
+    expect(hover).not.toBeNull();
+    expect(hover?.textContent).toBe("回复(分屏)");
+    act(() => {
+      hover!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(opened.map((item) => item.id)).toEqual(["item-1"]);
+  });
+
+  it("renders no hover reply entry when onOpenSubthread is not wired", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", type: "user_message", text: "改这里" },
+        ]),
+      }),
+    );
+    expect(container.querySelector(".chat-reply-badge--hover")).toBeNull();
+  });
+
   it("opens the reply on badge click via onOpenSubthread", () => {
     const opened: ThreadItem[] = [];
     const map = new Map<string, ConversationSubthread>([

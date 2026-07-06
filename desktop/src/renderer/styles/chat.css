@@ -401,3 +401,25 @@
 .message-reaction-picker-item:hover {
   background: var(--menu-hover);
 }
+
+/* Hover-revealed "回复(分屏)" entry on messages with no reply thread yet.
+   Invisible (and click-inert) until its chat row is hovered; keyboard focus
+   reveals it too, so the entry is reachable without a mouse. Same open
+   handler as the right-click menu item — one path into the thread panel. */
+.chat-reply-badge--hover {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.chat-row:hover .chat-reply-badge--hover,
+.chat-reply-badge--hover:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-reply-badge--hover {
+    transition: none;
+  }
+}
