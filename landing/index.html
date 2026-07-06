@@ -1024,7 +1024,7 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
     });
   });
 
-  /* ---- group-chat demo player ---- */
+  /* ---- group-chat demo: scroll-driven reveal ---- */
   var feed = document.getElementById('demoFeed');
   if (feed) {
     var msgs = Array.prototype.slice.call(feed.querySelectorAll('.dmsg'));
@@ -1032,33 +1032,24 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
     if (isStatic) {
       msgs.forEach(function (m) { m.classList.add('on'); });
     } else {
-      var started = false;
-      var dio = new IntersectionObserver(function (entries) {
+      var mio = new IntersectionObserver(function (entries) {
         entries.forEach(function (e) {
-          if (e.isIntersecting && !started) { started = true; dio.disconnect(); playDemo(); }
+          if (!e.isIntersecting) return;
+          var m = e.target;
+          mio.unobserve(m);
+          var hasDots = m.querySelector('.dots');
+          if (hasDots) {
+            m.classList.add('typing');
+            setTimeout(function () {
+              m.classList.remove('typing');
+              m.classList.add('on');
+            }, 650);
+          } else {
+            m.classList.add('on');
+          }
         });
-      }, { threshold: 0.3 });
-      dio.observe(feed);
-    }
-    function playDemo() {
-      var i = 0;
-      (function next() {
-        if (i >= msgs.length) return;
-        var m = msgs[i];
-        var canType = m.querySelector('.dots');
-        var advance = function () {
-          m.classList.remove('typing');
-          m.classList.add('on');
-          i++;
-          setTimeout(next, m.classList.contains('me') ? 650 : 1200);
-        };
-        if (canType) {
-          m.classList.add('typing');
-          setTimeout(advance, 900);
-        } else {
-          advance();
-        }
-      })();
+      }, { threshold: 0.35, rootMargin: '0px 0px -8% 0px' });
+      msgs.forEach(function (m) { mio.observe(m); });
     }
   }
 
