@@ -64,7 +64,7 @@ flat（显式）: 任何 provider 都全量直发
 }
 ```
 
-（`options` 认 `anthropicToolSearch` / `toolSearch` / `tool_search` 三个键名；**先实测端点真的支持 defer_loading 再开**，判别方法：带 `defer_loading:true` 的请求若被端点拒绝或忽略标记直接全量计费，即不支持。）
+（`options` 首选 wire 中立的 `native_tool_search` 键（openai responses wire 同样识别，可在兼容 responses 端点上开启、也可在首方 OpenAI 上显式关闭）；anthropic wire 兼容旧别名 `anthropicToolSearch` / `toolSearch` / `tool_search`。**先实测端点真的支持 defer_loading 再开**，判别方法：带 `defer_loading:true` 的请求若被端点拒绝或忽略标记直接全量计费，即不支持。）
 
 全局开关同时作用于主模型和 worker 角色（worker 用自己的 provider/model 重新过一遍同一判定）。
 
@@ -74,6 +74,6 @@ flat（显式）: 任何 provider 都全量直发
 - deferred 目录文本是会话创建时冻结的静态段，超 48KB 直接报错（不静默截断）。
 - `agent.experimental_deferred_tool_bundles`（默认 false）是正交实验功能：工具成功后连带解锁关联工具，与本文三模式无关。
 
-## 设计边界（已知待议）
+## 设计边界
 
-wire 层的能力判定目前是 factory 里的硬编码（首方 base_url 串匹配、模型版本号前缀），只有 anthropic wire 留了 per-model options 覆盖口。若后续更多国产端点部分支持原生协议，更闭环的做法是把"原生渐进加载支持"提升为 `ProviderModelConfig` 的一等配置字段（参照 pi 的 per-model `compat` 开关形态），统一三个 wire 的覆盖语义，减少 base_url 特判。
+wire 层的默认判定仍以首方 base_url / 模型版本号为启发（auto 模式的合理缺省），但 2026-07-06 起 anthropic 与 openai responses 两个 wire 都接受统一的 per-model `options.native_tool_search` 显式覆盖——配置永远赢过 URL 启发。openai chat wire 没有原生渐进协议可开，覆盖键对它无意义，软件路径 `wuu_tool_search` 是唯一选项。

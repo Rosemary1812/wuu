@@ -67,13 +67,17 @@ r2（相同请求）: input=68,   cache_read=2496   → 和 2564
 1. **流式覆盖点错位**。MiniMax 流式的 usage 全量只在 `message_delta` 报（`message_start` 的 input 恒为 0），而 `normalizeInclusiveInput` 只挂在 `Chat`（非流式）和 `message_start` 两站；`message_delta` 分支直接用原始载荷覆写 `usage.InputTokens`，归一化被覆盖丢失。GUI 主路径全部走流式——所以这个"修复"在主路径上是空转的（也正因空转，当前 MiniMax 流式数字碰巧保持正确）。
 2. **非流式路径被真实污染**。`minimaxi` 自动识别无条件生效，exclusive 语义下 `fresh = input - cache_read` 被地板到 0（实测 `76 - 2560 → 0`）。走非流式 `Chat()` 的辅助链路（compact 摘要器、memory review / memory panel、hooks、无流式 provider 适配器）的 usage 记账把新鲜输入吃掉了。
 
-### 建议
+### 建议（2026-07-06 当日已落地 1、2；见文末"后续"）
 
 1. 撤销 base_url 含 `minimaxi` 的自动识别；`InputTokensIncludeCacheRead` 开关本身可保留（未来真有 inclusive 端点时用），但默认必须 false 且只由配置显式开启。
 2. 若保留开关，把归一化补到 `message_delta` 站点（仅当该事件重报了 `input_tokens` 时执行，避免对"只更新 cache_read"的 delta 重复减）。
 3. 给任何端点打语义标记前，先跑两次相同请求实测（方法见上；`docs/context-usage-and-caching-zh.md` 附判别法）。
 4. `internal/insight/types_test.go` 的 `TestModelUsage_NormalizedMiniMaxInputPreservesHitRate` 注释把"MiniMax input inclusive"写成了事实，随修复一并更正，避免误导后人。
 5. 若想让用量页之外的地方不再出现 4 倍观感，需要的不是改 usage 语义，而是区分口径：占用类显示一律走 `ContextTokens` / `RetainedTokens`（已如此），turn 加总行只用于消耗计量。
+
+## 后续（2026-07-06 修复落地）
+
+同日完成配置模型重构，本审计的主要建议已落地：minimaxi 自动识别已删除（开关只认显式配置）、`message_delta` 站点已补归一化（带"仅当重报 input"守卫 + 流式测试）；连带完成上下文窗口双源合一（阈值 384k → 967k）、用户配置优先级修复、resume 播种改用持久化 ContextTokens、估算器系数标定。现行架构见 `docs/compaction-chains-zh.md` 与 `docs/context-usage-and-caching-zh.md`。第 4 条（insight 测试注释与命名）亦已更正。
 
 ## 顺带发现（先于本次改动，非本次引入）
 

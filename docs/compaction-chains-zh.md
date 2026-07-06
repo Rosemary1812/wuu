@@ -13,7 +13,22 @@
 
 三条自动路径压缩后都同步执行 `usage.Reset() + RecordPendingMessages(messages)` 重建估算基线，下一次真实响应把基线校准回 ground truth。
 
-## 阈值推导：双源上下文窗口打架（2026-07-06 实测定位）
+## 阈值推导：单一所有者（2026-07-06 重构后）
+
+现行为：`modelbudget.Resolve` 是有效上下文窗口与压缩阈值的唯一所有者。
+
+```
+ceiling = 有效上下文窗口（provider/model 配置 > 目录数据），
+          有独立输入上限时作为 clamp（min），不再是独立锚
+usable  = ceiling − min(输出预留, 20k) − 13k 缓冲（小窗口按 ceiling/8 缩放）
+CompactThresholdTokens = usable
+```
+
+该值经 StreamRunner/LoopConfig 直接下发给 loop（`CompactThresholdTokens`），主 agent、worker、named pinned 预算三条路径同源；trace/UI 展示 `EffectiveContextWindow()` 同一数值。配置覆盖优先级：用户 `models.<m>.limit.context`（或 `context_window`，两种拼法联合守卫）> 目录 enrich > 内置注册表 fallback。公式对齐 Claude Code（窗口 − 20k 输出预留 − 13k 缓冲）。MiniMax-M3 实测数字：窗口 1M，阈值 967k（重构前 384k，浪费近一半窗口）。
+
+以下保留重构前的问题记录，供理解历史：
+
+### 历史问题：双源上下文窗口打架（2026-07-06 实测定位，已修复）
 
 默认（`compact_threshold_pct` 未设）阈值来自 `modelbudget.Resolve`：
 
@@ -30,9 +45,9 @@ CompactThresholdTokens = usable   （所以 trace 里两个字段恒相等）
 
 结果：UI 显示 1M 窗口，压缩阈值却按 512k − 输出预留计算（输出预留 128k 时 = 384k，8k 时 = 504k）——"1M 的模型 38-50% 就压缩"。live 仲裁（2026-07-06）：648k token 请求被 `api.minimaxi.com` 接受、约 2M 级被拒 → 现网上限已是 1M 量级，**目录的 512k 过时，压缩确实被系统性提前了约一半**。教训：窗口是随渠道、随时间变化的数据（M3 上线 512k、后升 1M），硬编码覆盖表这种特判补丁只修了显示一处，预算路径照旧读旧数据——双源必然漂移。参照系全部是"单一解析点 + 配置可覆盖 + 显示与预算同源"：cc 阈值 = 窗口 − 33k（env 可覆盖窗口）；pi = 窗口 − 16384（per-model 配置覆盖）；codex = 窗口 × 90%（provider 配置 `model_context_window`）。
 
-另有一处已观测的覆盖优先级问题：用户配置 `models.<m>.limit.context` 在 catalog enrich 后未能压过目录值（E2E 设 60000 未生效）——用户显式配置必须赢。
+另有一处已观测的覆盖优先级问题：用户配置 `models.<m>.limit.context` 在 catalog enrich 后未能压过目录值（E2E 设 60000 未生效，根因是 enrich 把目录值写进 `ContextWindow` 字段、预算查找先读该字段）——已用合并时的联合守卫修复，用户写任一拼法则目录不填另一拼法。
 
-`agent.compact_threshold_pct ∈ (0,1)` 可覆盖为百分比（乘以 min(窗口, 输入上限)）。
+`agent.compact_threshold_pct ∈ (0,1)` 可覆盖为百分比（乘以 min(窗口, 输入上限)），优先级高于 budget 下发的绝对阈值。
 
 ## 摘要请求自身的爆窗保护
 
@@ -65,20 +80,20 @@ CompactThresholdTokens = usable   （所以 trace 里两个字段恒相等）
 
 稳态下占用以最新响应的 provider usage 为 ground truth，估算只覆盖"上次响应之后新增消息"的 delta，误差有界且每步归零。**估算独自扛全场的窗口只有三个**：resume 后首个响应前、压缩后到下一响应前、helpme 重写后到下一响应前。
 
-估算器（`internal/contextbudget`）实测偏差（MiniMax-M3 分词，2026-07-06 探针）：
+估算器（`internal/contextbudget`）实测偏差（MiniMax-M3 分词，2026-07-06 探针；同日已按实测标定系数）：
 
-| 内容 | 公式 | 估/真 |
-|---|---|---|
-| 英文日志 | 非 CJK 字符/4 | 1.06 |
-| Go 代码 | 同上 | 1.11 |
-| 中文散文 | CJK 字符/2 | **0.80（低估）** |
-| 工具 JSON 参数 | runes/2 | **1.51（高估）** |
+| 内容 | 标定前公式 | 估/真 | 标定后公式 |
+|---|---|---|---|
+| 英文日志 | 非 CJK 字符/4 | 1.06 | 不变 |
+| Go 代码 | 同上 | 1.11 | 不变 |
+| 中文散文 | CJK 字符/2 | **0.80（低估）** | CJK×0.7（实测 0.61 t/char，留轻微悲观） |
+| 工具 JSON 参数 | runes/2 | **1.51（高估）** | runes/3（实测 3.0 chars/token） |
 
 结构性偏置：每消息 +4、每 tool call +8、带工具整批 +500（刻意悲观）；图片按视觉 patch 估（准），非图片附件按 base64/4（高估）。
 
-方向汇总：
-- **高估（压缩提前）**：阈值锚定 input limit（最大、结构性）；工具 JSON 参数 1.5-2 倍；resume 全量悲观播种（触发闸门不检查是否有 ground truth）；大附件。
-- **低估（压缩推迟，反向风险）**：CJK 内容约 -20%——对国产模型中文负载，这个方向反而更值得警惕（延迟触发 → 靠 overflow 兜底，而 overflow 每 Run 只有一次）。
+方向汇总（2026-07-06 重构后大项均已处理）：
+- **高估（压缩提前，已修）**：阈值双源/旧目录值（重构为单一所有者 + 目录更新）；工具 JSON 参数 1.5-2 倍（系数改 /3）；resume 全量悲观播种（改为用最近持久化 ContextTokens 播种，见 `StreamRunner.SeedConversationUsageBaseline`）。仍存留：大附件按 base64/4 高估。
+- **低估（压缩推迟，已修）**：CJK 约 -20%（系数改 ×0.7）。
 - **不构成偏差**：thinking/reasoning——wuu 在 anthropic 兼容路径重发历史 thinking 块，provider 计数也保留（MiniMax 实测 E2E 验证），本地记账与真实 input 自洽；assistant 输出不被双计（只经 output_tokens 计一次）。
 
 ## 端到端观测（2026-07-06，MiniMax-M3 live）

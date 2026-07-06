@@ -11,7 +11,7 @@
 
 wuu 的内部统一约定是 **exclusive**：各 provider client 负责把自家语义归一到"`TokenUsage.InputTokens` = 新鲜输入，`CacheReadTokens` = 缓存命中"，上层不再关心来源。openai client 在 `asTokenUsage` 里做 `PromptTokens - cached` 减法；anthropic client 原样透传（原生语义即 exclusive）。
 
-anthropic client 另有一个 `InputTokensIncludeCacheRead` 配置开关（`ProviderConfig`，默认 false），用于标记"声称 anthropic 兼容但 usage 报 inclusive"的端点，开启后 `normalizeInclusiveInput` 做减法归一。**给任何端点开这个开关前，必须先用两次相同请求实测语义**（方法见 `docs/2026-07-06-usage-cache-audit-zh.md`，那次审计实测 MiniMax 实为 exclusive）。对 exclusive 端点误开此开关会把新鲜输入减到 0，导致占用低估、压缩延迟触发。
+anthropic client 另有一个 `InputTokensIncludeCacheRead` 配置开关（`ProviderConfig`，默认 false，**只认显式配置、永不按 base_url 自动识别**——2026-07-06 重构移除了曾有的 minimaxi 子串自动识别），用于标记"声称 anthropic 兼容但 usage 报 inclusive"的端点，开启后 `normalizeInclusiveInput` 在非流式响应和流式 `message_start`/`message_delta`（仅当该事件重报 input）三个站点做减法归一。**给任何端点开这个开关前，必须先用两次相同请求实测语义**（方法见 `docs/2026-07-06-usage-cache-audit-zh.md`，那次审计实测 MiniMax 实为 exclusive）。对 exclusive 端点误开此开关会把新鲜输入减到 0，导致占用低估、压缩延迟触发。
 
 ## 占用公式与三个消费口径
 
