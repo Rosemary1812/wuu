@@ -2115,14 +2115,13 @@ export function App(): JSX.Element {
     }
     return Array.from(names);
   }, [state.thread, state.secondaryThread, state.threads]);
-  // Aggregate participant IDs that are currently busy. Two sources union:
-  //   1. The participant's resident DM thread is running — a resident named
-  //      agent's DM thread is its brain, so a running turn there means the
-  //      agent is thinking (docs/plans/2026-07-03-resident-named-agents.md
-  //      §7.2).
-  //   2. A dispatched task run (child agent) owned by the participant is
-  //      running — participant/start task dispatch stays a separate entry
-  //      point (§4.8), so those runs keep lighting the busy dot too.
+  // Aggregate participant IDs that are currently busy. The only source is the
+  // participant's resident DM thread being in a running state — a resident
+  // named agent's DM thread is its brain, so a running turn there means the
+  // agent is thinking (docs/plans/2026-07-03-resident-named-agents.md §7.2).
+  // Running child agents dispatched inside some thread do NOT light their
+  // dispatcher's dot: that coupled the roster dot to whichever thread was
+  // selected (ISSUE-12). See computeBusyParticipantIDs for the full rationale.
   // Named participants not in the set render as online. This drives the
   // sidebar roster and chat-style message avatars.
   const busyParticipantIDs = useMemo(

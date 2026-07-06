@@ -1764,39 +1764,28 @@ export function busyDMParticipantIDs(
 }
 
 /**
- * Aggregate participant IDs whose busy dot should be lit. selection-agnostic:
- * busy set depends only on workspace-scope threads, not on state.thread or
- * state.secondaryThread.
+ * Aggregate participant IDs whose roster busy dot should be lit.
  *
- * Two sources union:
- *   1. busyDMParticipantIDs — resident DM threads that are running.
- *   2. Any thread's running child_agent adds its participant.id (the
- *      dispatcher, per protocol §7.2) to the busy set.
+ * A resident named agent's status dot expresses that agent's OWN stable
+ * state, so the only source is `busyDMParticipantIDs` — the agent's resident
+ * DM thread (its "brain") being in a running state (design §7.2: "busy 改为
+ * resident thread 的 running 状态"). We deliberately do NOT walk each thread's
+ * running child_agents to light the dispatcher's dot: a child agent is a
+ * per-run worker owned by whichever thread is dispatching it, so lighting the
+ * dispatcher couples the roster dot to transient, thread-scoped child-agent
+ * state. Because a thread's child_agents are only refreshed in state.threads
+ * when that thread is opened/resumed, that coupling made an agent's dot flip
+ * as the user selected or left a group chat (ISSUE-12) — a status that read as
+ * belonging to the agent but was really driven by group-chat selection.
  *
- * Source 2 behavior is "coincidentally correct via implicit contract" — the
- * `Agent.participant` field is set to dispatcher.id at dispatch wire-up.
- * Strict ownership filtering (only the dispatcher's dot lights up) is
- * deferred to an Agent-protocol follow-up issue.
- *
- * selection-agnostic: busy set depends only on workspace-scope threads,
- * not on state.thread or state.secondaryThread.
+ * selection-agnostic: the busy set depends only on the resident DM threads in
+ * workspace scope, never on state.thread, state.secondaryThread, or which
+ * group chat is currently selected.
  */
 export function computeBusyParticipantIDs(input: {
   threads: readonly Thread[];
 }): ReadonlySet<string> {
-  const ids = new Set<string>(busyDMParticipantIDs(input.threads));
-  for (const thread of input.threads) {
-    for (const agent of thread.child_agents ?? []) {
-      if (
-        agent.status === "running" ||
-        (agent.nested_running_count ?? 0) > 0
-      ) {
-        const id = agent.participant?.id;
-        if (id) ids.add(id);
-      }
-    }
-  }
-  return ids;
+  return new Set<string>(busyDMParticipantIDs(input.threads));
 }
 
 export type ChatMessageRow =

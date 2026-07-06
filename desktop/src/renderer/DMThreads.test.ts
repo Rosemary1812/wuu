@@ -403,27 +403,40 @@ function makeChildAgent(overrides: Partial<Agent> = {}): Agent {
 }
 
 describe("computeBusyParticipantIDs", () => {
-  it("lights a child agent's participant when the agent status is running", () => {
-    const thread = makeThread({
-      child_agents: [makeChildAgent({ status: "running" })],
+  it("lights a participant whose resident DM thread is running", () => {
+    const dm = makeThread({
+      id: "dm-running",
+      workspace_kind: "dm",
+      dm_participant_id: "participant-1",
+      status: "in_progress",
     });
-    expect(computeBusyParticipantIDs({ threads: [thread] })).toEqual(
-      new Set(["dispatcher-1"]),
+    expect(computeBusyParticipantIDs({ threads: [dm] })).toEqual(
+      new Set(["participant-1"]),
     );
   });
 
-  it("lights a child agent's participant when it has running nested descendants", () => {
+  // ISSUE-12: the roster status dot must express an agent's OWN stable state
+  // (its resident DM thread), never the transient child-agent activity of
+  // whichever thread happens to be selected. A running child agent used to
+  // light its dispatcher's dot, which made the dot flip as the user opened or
+  // left a group chat. It must no longer contribute to the busy set.
+  it("does NOT light a dispatcher just because a thread has a running child agent", () => {
+    const thread = makeThread({
+      child_agents: [makeChildAgent({ status: "running" })],
+    });
+    expect(computeBusyParticipantIDs({ threads: [thread] }).size).toBe(0);
+  });
+
+  it("does NOT light a dispatcher for a child agent with running nested descendants", () => {
     const thread = makeThread({
       child_agents: [
         makeChildAgent({ status: "completed", nested_running_count: 2 }),
       ],
     });
-    expect(computeBusyParticipantIDs({ threads: [thread] })).toEqual(
-      new Set(["dispatcher-1"]),
-    );
+    expect(computeBusyParticipantIDs({ threads: [thread] }).size).toBe(0);
   });
 
-  it("ignores child agents that are idle with no running descendants", () => {
+  it("ignores idle child agents", () => {
     const thread = makeThread({
       child_agents: [
         makeChildAgent({ status: "completed", nested_running_count: 0 }),
@@ -432,16 +445,7 @@ describe("computeBusyParticipantIDs", () => {
     expect(computeBusyParticipantIDs({ threads: [thread] }).size).toBe(0);
   });
 
-  it("ignores a running child agent that carries no participant id", () => {
-    const thread = makeThread({
-      child_agents: [
-        makeChildAgent({ status: "running", participant: undefined }),
-      ],
-    });
-    expect(computeBusyParticipantIDs({ threads: [thread] }).size).toBe(0);
-  });
-
-  it("unions running DM participants with running child-agent dispatchers", () => {
+  it("lights only the resident DM participant, not child-agent dispatchers, when both are present", () => {
     const dm = makeThread({
       id: "dm-running",
       workspace_kind: "dm",
@@ -454,10 +458,10 @@ describe("computeBusyParticipantIDs", () => {
     });
     expect(
       computeBusyParticipantIDs({ threads: [dm, workspaceThread] }),
-    ).toEqual(new Set(["participant-1", "dispatcher-1"]));
+    ).toEqual(new Set(["participant-1"]));
   });
 
-  it("counts a participant once when busy via both a DM and a child agent", () => {
+  it("lights a participant busy via its running DM thread regardless of child-agent activity", () => {
     const dm = makeThread({
       id: "dm-running",
       workspace_kind: "dm",
@@ -473,7 +477,7 @@ describe("computeBusyParticipantIDs", () => {
     ).toEqual(new Set(["dispatcher-1"]));
   });
 
-  it("returns an empty set when no thread is busy", () => {
+  it("returns an empty set when no resident DM thread is running", () => {
     const dm = makeThread({
       id: "dm-idle",
       workspace_kind: "dm",
