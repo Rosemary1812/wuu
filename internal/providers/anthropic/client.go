@@ -356,6 +356,32 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 		}
 	}
 
+	// thinkingReplay controls how historical assistant reasoning blocks are
+	// replayed to the endpoint (models.<m>.options.thinking_replay):
+	//   "full" (default) — replay thinking/redacted_thinking with signatures,
+	//     the native Anthropic contract (and required by it for tool loops);
+	//   "text" — degrade reasoning to a plain text block, for compatible
+	//     endpoints that reject thinking blocks or validate signatures they
+	//     did not issue (redacted blocks are dropped: their payload is opaque);
+	//   "off"  — drop historical reasoning entirely.
+	// Vendor tolerance varies and changes; this stays explicit per-model
+	// config, never URL-detected.
+	thinkingReplay := thinkingReplayFull
+	for _, key := range []string{"thinking_replay", "thinkingReplay"} {
+		val, ok := req.ProviderOptions[key].(string)
+		if !ok {
+			continue
+		}
+		switch mode := strings.TrimSpace(strings.ToLower(val)); mode {
+		case thinkingReplayFull, thinkingReplayText, thinkingReplayOff:
+			thinkingReplay = mode
+		case "":
+		default:
+			providers.DebugLogf("buildAnthropicRequest: invalid %s %q, using %q", key, val, thinkingReplayFull)
+		}
+		break
+	}
+
 	cacheTTL := ""
 	if ttlVal, ok := req.ProviderOptions["cacheTTL"].(string); ok {
 		ttlVal = strings.TrimSpace(ttlVal)
@@ -398,7 +424,7 @@ func buildAnthropicRequestWithSupport(req providers.ChatRequest, maxTokens int, 
 			continue
 		}
 
-		mapped, err := mapMessage(msg, toolSearchEnabled)
+		mapped, err := mapMessage(msg, toolSearchEnabled, thinkingReplay)
 		if err != nil {
 			return anthropicRequest{}, err
 		}
@@ -1178,7 +1204,15 @@ func (c *Client) handleSSEEvent(
 	}
 }
 
-func mapMessage(msg providers.ChatMessage, toolSearchEnabled bool) (anthropicMessage, error) {
+// Thinking replay modes for historical assistant reasoning blocks. See the
+// thinking_replay option parsing in buildAnthropicRequest.
+const (
+	thinkingReplayFull = "full"
+	thinkingReplayText = "text"
+	thinkingReplayOff  = "off"
+)
+
+func mapMessage(msg providers.ChatMessage, toolSearchEnabled bool, thinkingReplay string) (anthropicMessage, error) {
 	switch msg.Role {
 	case "user":
 		blocks := make([]anthropicBlock, 0, len(msg.Images)+len(msg.Files)+1)
@@ -1221,7 +1255,19 @@ func mapMessage(msg providers.ChatMessage, toolSearchEnabled bool) (anthropicMes
 			}}
 		}
 		blocks := make([]anthropicBlock, 0, len(reasoningBlocks)+len(msg.ToolCalls)+1)
-		blocks = append(blocks, mapReasoningBlocks(reasoningBlocks)...)
+		switch thinkingReplay {
+		case thinkingReplayOff:
+			// Historical reasoning dropped entirely.
+		case thinkingReplayText:
+			// Degrade to a plain text block for endpoints that reject
+			// thinking blocks or foreign signatures. Redacted blocks carry
+			// only an opaque payload and cannot be textified — dropped.
+			if reasoning := joinReasoningText(reasoningBlocks); reasoning != "" {
+				blocks = append(blocks, anthropicBlock{Type: "text", Text: "<thinking>\n" + reasoning + "\n</thinking>"})
+			}
+		default:
+			blocks = append(blocks, mapReasoningBlocks(reasoningBlocks)...)
+		}
 		// Assistant tool-use turns should replay provider-native
 		// thinking blocks before tool_use. Only synthesize a text
 		// block when there is visible assistant text, or when this

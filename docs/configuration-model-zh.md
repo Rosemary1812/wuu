@@ -143,6 +143,10 @@ Wuu 的读取顺序是：
 | `provider.api`、`provider.npm` | 单模型 provider override | 空 | 文件手动 |
 | `limit.context`、`limit.input`、`limit.output` | token limit | 空 | 文件手动 |
 | `options` | provider 选项对象 | 空 | 文件手动 |
+| `options.anthropicCache` | `"auto"` / `"off"`，关闭 cache_control 发送 | `"auto"` | 文件手动；端点拒绝 cache_control 时关 |
+| `options.cacheTTL` | `"5m"` / `"1h"` | `"5m"` | 文件手动 |
+| `options.native_tool_search` | `true` / `false`，覆盖原生渐进工具加载判定 | 按 wire 启发 | 文件手动；见 `docs/tool-loading-modes-zh.md` |
+| `options.thinking_replay` | `"full"` / `"text"` / `"off"`，历史 thinking 块重发档位 | `"full"` | 文件手动；端点拒收 thinking 块或校验外来签名时降 `"text"`（推理转纯文本、redacted 丢弃）或 `"off"`（全部丢弃）。anthropic wire 专用 |
 | `headers` | 单模型 header map | 空 | 文件手动 |
 | `supported_efforts` | 例如 `["low", "medium", "high"]` | 空 | 文件手动；UI 可据此渲染思考强度 |
 | `default_effort` | effort 字符串 | 空 | 文件手动 |

@@ -2747,3 +2747,64 @@ func TestStreamChat_MessageDeltaNormalizesInclusiveInput(t *testing.T) {
 		t.Fatalf("expected output tokens 2, got %d", last.Usage.OutputTokens)
 	}
 }
+
+// TestThinkingReplayModes locks the thinking_replay degradation ladder:
+// "full" (default) replays native thinking blocks with signatures, "text"
+// degrades reasoning to a plain text block (redacted dropped), "off" drops
+// historical reasoning entirely. Compatible endpoints that reject thinking
+// blocks or foreign signatures need the degraded tiers.
+func TestThinkingReplayModes(t *testing.T) {
+	history := []providers.ChatMessage{
+		{Role: "user", Content: "question"},
+		{Role: "assistant", Content: "answer", ReasoningBlocks: []providers.ReasoningBlock{
+			{Type: "thinking", Thinking: "step one", Signature: "sig-abc"},
+			{Type: "redacted_thinking", Data: "opaque"},
+		}},
+		{Role: "user", Content: "follow-up"},
+	}
+	build := func(mode string) anthropicRequest {
+		opts := map[string]any{}
+		if mode != "" {
+			opts["thinking_replay"] = mode
+		}
+		req, err := buildAnthropicRequest(providers.ChatRequest{
+			Model: "claude-test", Messages: history, ProviderOptions: opts,
+		}, 1024, false)
+		if err != nil {
+			t.Fatalf("buildAnthropicRequest(%q): %v", mode, err)
+		}
+		return req
+	}
+	kinds := func(req anthropicRequest) []string {
+		var out []string
+		for _, b := range req.Messages[1].Content {
+			out = append(out, b.Type)
+		}
+		return out
+	}
+
+	full := build("")
+	if got := kinds(full); len(got) != 3 || got[0] != "thinking" || got[1] != "redacted_thinking" || got[2] != "text" {
+		t.Fatalf("full replay blocks = %v, want [thinking redacted_thinking text]", got)
+	}
+	if full.Messages[1].Content[0].Signature != "sig-abc" {
+		t.Fatalf("full replay must preserve signature")
+	}
+
+	text := build("text")
+	if got := kinds(text); len(got) != 2 || got[0] != "text" || got[1] != "text" {
+		t.Fatalf("text replay blocks = %v, want [text text]", got)
+	}
+	if !strings.Contains(text.Messages[1].Content[0].Text, "step one") || strings.Contains(text.Messages[1].Content[0].Text, "opaque") {
+		t.Fatalf("text replay must textify thinking and drop redacted payloads: %q", text.Messages[1].Content[0].Text)
+	}
+
+	off := build("off")
+	if got := kinds(off); len(got) != 1 || got[0] != "text" {
+		t.Fatalf("off replay blocks = %v, want [text]", got)
+	}
+
+	if got := kinds(build("bogus")); got[0] != "thinking" {
+		t.Fatalf("invalid mode must fall back to full, got %v", got)
+	}
+}
