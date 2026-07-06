@@ -657,6 +657,52 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
 .credit:hover .n { color: var(--coral-deep); }
 .credit .n { transition: color .2s; }
 
+/* CJK display stays sans (weighted), serif is Latin-only — 宋体大标题易显陈旧 */
+.hero-copy h1 .zh, h2.title .zh, .footer-cta h2 .zh {
+  font-family: var(--sans); font-weight: 600; letter-spacing: .005em;
+}
+.hero-copy h1 .zh { font-size: .94em; line-height: 1.14; display: inline-block; }
+
+/* release chip */
+.release-chip { display: inline-flex; align-items: center; gap: 9px; font-family: var(--display); font-weight: 500; font-size: 12.5px; color: var(--ink-2); text-decoration: none; background: #fff; border: 1px solid var(--line-2); border-radius: 99px; padding: 4px 13px 4px 5px; margin-bottom: 26px; transition: color .2s, border-color .2s; }
+.release-chip:hover { color: var(--ink); border-color: var(--ink); }
+.release-chip .tag { font-family: var(--mono); font-size: 11px; color: #fff; background: var(--coral); border-radius: 99px; padding: 2.5px 9px; }
+.release-chip .arr { color: var(--coral-deep); font-size: 12px; }
+
+/* install command with channel tabs */
+.install { margin-top: 26px; max-width: 470px; }
+.install-tabs { display: flex; gap: 2px; margin-bottom: -1px; position: relative; z-index: 1; }
+.itab { font-family: var(--mono); font-size: 12px; color: var(--ink-3); background: none; border: none; padding: 6px 13px 8px; cursor: pointer; transition: color .15s; }
+.itab:hover { color: var(--ink); }
+.itab.active { color: var(--ink); box-shadow: inset 0 -2px 0 var(--coral); }
+.install-line { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 0; text-align: left; font-family: var(--mono); font-size: 12px; background: #fff; border: 1px solid var(--line-2); border-radius: 10px; box-shadow: none; padding: 11px 14px; color: var(--ink); cursor: pointer; transition: border-color .2s; }
+.install-line:hover { transform: none; box-shadow: none; border-color: var(--ink); }
+.install-line:active { transform: none; box-shadow: none; }
+.install-line .cmd { overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+.install-line .cmd::-webkit-scrollbar { display: none; }
+.install-line .copy-hint { margin-left: auto; flex: none; }
+@media (max-width: 900px){ .install { margin-left: auto; margin-right: auto; } }
+
+/* everywhere screenshot: crop into the app window (drops wallpaper + watermark) */
+.shot-crop { aspect-ratio: 8 / 5.6; }
+.shot-crop img { width: 128.5%; max-width: none; height: auto; max-height: none; margin: -14.1% 0 0 -14%; object-fit: unset; }
+
+/* model marquee: quiet strip, no band */
+.models { border: none; background: transparent; padding: 46px 0 6px; }
+.models-label { font-size: 13.5px; color: var(--ink-3); margin-bottom: 24px; }
+.models-label b { color: var(--ink-2); }
+.mtrack { gap: 54px; }
+.mtrack .logo { font-size: 19px; opacity: .55; gap: 10px; }
+.mtrack .logo svg { width: 26px; height: 26px; }
+.mtrack .logo.more { font-size: 15px; }
+
+/* rhythm + small polish */
+.everywhere { padding: 100px 0 110px; }
+.diffsec { padding: 100px 0; }
+.faq-section { padding: 100px 0; }
+.credits-section { padding: 100px 0 110px; }
+.footer-mascot .stage { transform: none; }
+
 </style>
 </head>
 <body>
@@ -679,6 +725,11 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
 <header class="hero" id="hero">
   <div class="wrap">
     <div class="hero-copy">
+      <a class="release-chip reveal in" href="https://github.com/blueberrycongee/wuu/releases" target="_blank" rel="noopener">
+        <span class="tag">v0.1</span>
+        <span class="zh">桌面应用 Beta 现已可用</span><span class="en">Desktop app beta is out</span>
+        <span class="arr">→</span>
+      </a>
       <h1 class="reveal in">
         <span class="zh">一群 agent<br>一个群聊</span>
         <span class="en">Agents<br>one group chat</span>
@@ -690,6 +741,17 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
       <div class="hero-cta reveal in d2">
         <a class="btn btn-solid" href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener"><span class="zh">开始使用</span><span class="en">Get started</span></a>
         <a class="btn btn-ghost" href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener">GitHub</a>
+      </div>
+      <div class="install reveal in d3">
+        <div class="install-tabs" role="tablist">
+          <button class="itab active" data-cmd="curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh | sh">curl</button>
+          <button class="itab" data-cmd="npm install -g @blueberrycongee/wuu">npm</button>
+          <button class="itab" data-cmd="brew install wuu">brew</button>
+        </div>
+        <button class="install-line" id="installLine" data-copy="curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh | sh">
+          <span class="dollar">$</span><span class="cmd" id="installCmdText">curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh | sh</span>
+          <span class="copy-hint">copy</span>
+        </button>
       </div>
       <p class="trust reveal in d3">
         <span class="zh">开源 · 自带 Key · 本地运行</span>
@@ -820,8 +882,7 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
       <span class="en">Hand off tasks, watch the whole team work, and review every change file by file — interrupt, follow up, and resume anytime.</span>
     </p>
     <div class="hero-shot reveal" style="margin-top:48px">
-      <div class="frame">
-        <div class="appbar"><i></i><i></i><i></i><span>wuu — desktop</span></div>
+      <div class="frame shot-crop">
         <img src="assets/desktop.png" alt="wuu desktop app screenshot" loading="lazy">
       </div>
     </div>
@@ -1054,6 +1115,20 @@ nav .logo { font-size: 21px; font-weight: 600; gap: 10px; opacity: 1; }
       }
     });
   });
+
+  /* ---- install channel tabs ---- */
+  var installLine = document.getElementById('installLine');
+  if (installLine) {
+    document.querySelectorAll('.itab').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        document.querySelectorAll('.itab').forEach(function (t) { t.classList.remove('active'); });
+        tab.classList.add('active');
+        var cmd = tab.getAttribute('data-cmd');
+        document.getElementById('installCmdText').textContent = cmd;
+        installLine.setAttribute('data-copy', cmd);
+      });
+    });
+  }
 
   /* chat demo removed in v2 */
 
