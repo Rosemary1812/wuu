@@ -12,25 +12,24 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@400..700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  /* warm comic palette, sampled from the mascot art */
-  --paper:     #F4E9D6;   /* main page — deep warm cream */
-  --paper-2:   #F8F0E1;   /* lighter cream band */
-  --panel:     #FDF8F3;   /* near-white — matches the mascot art ground */
-  --cream:     #F2E7D4;   /* mascot body cream, for chips */
-  --ink:       #211D18;   /* warm near-black — outlines & text */
-  --ink-2:     #6c6355;   /* muted secondary text */
-  --ink-3:     #9a9080;   /* faint */
-  --coral:     #EE6A48;   /* the flame — primary accent */
-  --coral-deep:#DE5530;   /* pressed / hover */
-  --coral-soft:#F9C9B7;   /* blush wash */
-  --leaf:      #5C9C7A;   /* success green, muted to fit the cream world */
-  --shadow:    #211D18;   /* hard comic shadow */
+  /* neutrals */
+  --bg:         #FFFFFF;            /* page background */
+  --bg-soft:    #FAFAFA;            /* faint hero ground */
+  --ink:        #0F0F0F;            /* primary text */
+  --ink-2:      #6B6B6B;            /* secondary text */
+  --ink-3:      #9A9A9A;            /* faint */
+  --line:       rgba(0,0,0,.08);    /* hairline */
+  --line-2:     rgba(0,0,0,.16);    /* card / button border */
 
+  /* accent — the only color in the system */
+  --accent:       #FF3D00;          /* pure vermillion */
+  --accent-press: #E53600;          /* hover / pressed */
+  --accent-soft:  #FFF0EB;          /* only for inline code bg */
+
+  /* typography (unchanged) */
   --sans: "Inter", "Noto Sans SC", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   --display: "Inter", "Noto Sans SC", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace;
-
-  --halftone: radial-gradient(var(--ink) 1.4px, transparent 1.5px);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { scroll-behavior: smooth; }
@@ -272,7 +271,6 @@ header.hero { text-align: left; padding: 128px 0 60px; }
 .capcard .spot { margin-top: auto; align-self: flex-end; width: 116px; height: 116px; margin-right: -8px; background: center/contain no-repeat; }
 
 /* ===== v3: mature dev-tool first screen ===== */
-:root { --surface: #F6F5F1; --line: rgba(33,29,24,.10); --line-2: rgba(33,29,24,.16); }
 nav.scrolled { border-bottom-width: 1px; background: rgba(246,245,241,.82); }
 
 header.hero { text-align: left; padding: 128px 0 78px; overflow: visible; background: var(--surface);
@@ -298,8 +296,7 @@ header.hero::before { display: none; }
 
 
 /* ===== v3 GLOBAL: mature everywhere ===== */
-:root { --paper: #F5F4F0; --paper-2: #FAF9F6; --panel: #FFFFFF; --cream: #F2F0EA; }
-body { background: var(--paper); }
+body { background: var(--bg); }
 nav.scrolled { background: rgba(245,244,240,.82); }
 .logo .face { border-width: 1.5px; box-shadow: none; }
 .lang-toggle { box-shadow: none; border-width: 1.5px; }
