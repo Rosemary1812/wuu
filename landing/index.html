@@ -136,7 +136,7 @@ header.hero { position: relative; padding: 148px 0 76px; overflow: hidden; text-
   font-family: var(--display); font-weight: 700;
   font-size: clamp(72px, 13vw, 148px); line-height: .9; letter-spacing: -.03em;
 }
-.hero-copy h1 .dot { color: var(--coral); }
+.hero-copy h1 .dot { color: var(--accent); }
 .hero-copy .sub { color: var(--ink-2); font-size: clamp(17px, 2vw, 21px); line-height: 1.6; max-width: 32em; margin: 22px auto 0; text-wrap: balance; }
 .hero-copy .sub strong { color: var(--ink); font-weight: 600; }
 .hero-cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 30px; }
@@ -250,7 +250,7 @@ header.hero { text-align: left; padding: 128px 0 60px; }
 .hero .wrap { display: grid; grid-template-columns: 1fr 1.12fr; gap: 46px; align-items: center; }
 .hero-copy { max-width: none; margin: 0; }
 .hero-copy h1 { font-size: clamp(46px, 6.4vw, 82px); line-height: 1.0; letter-spacing: -.02em; }
-.hero-copy h1 .accent { color: var(--coral); }
+.hero-copy h1 .accent { color: var(--accent); }
 .hero-copy .sub { margin: 20px 0 0; max-width: 30em; }
 .hero .hero-cta { justify-content: flex-start; }
 .hero .trust { margin: 18px 0 0; }
@@ -285,8 +285,8 @@ header.hero::before { display: none; }
 .hero .hero-cta { justify-content: flex-start; gap: 12px; margin-top: 30px; }
 .hero .btn { box-shadow: none; border-radius: 10px; border-width: 1.5px; font-size: 15px; padding: 11px 21px; transition: transform .14s, background .2s, border-color .2s; }
 .hero .btn:hover, .hero .btn:active { transform: none; box-shadow: none; }
-.hero .btn-solid { background: var(--coral); border-color: var(--coral); color: #fff; }
-.hero .btn-solid:hover { background: var(--coral-deep); border-color: var(--coral-deep); }
+.hero .btn-solid { background: var(--accent); border-color: var(--accent); color: #fff; }
+.hero .btn-solid:hover { background: var(--accent-press); border-color: var(--accent-press); }
 .hero .btn-ghost { background: #fff; border: 1.5px solid var(--line-2); color: var(--ink); }
 .hero .btn-ghost:hover { border-color: var(--ink); }
 .hero .trust { margin: 18px 0 0; font-size: 13.5px; color: var(--ink-3); }
