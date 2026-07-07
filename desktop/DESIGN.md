@@ -70,15 +70,15 @@ wuu 的菜单应该像轻量控件，而不是卡片或弹窗。它们服务于�
 
 消息流的空白是一套阶梯，一个用途一个值，值和值之间要拉开可感知的差距。空白要么小到表达"同组"，要么大到表达"分界"，不允许存在既不小也不大的死空间（历史教训：不可见但占位的 hover 操作行把 turn 边界撑到 60px，读起来就是一段无解释的空）。
 
-当前阶梯（token 声明在 `conversation-shell.css`，边界值在 `turns.css`）：
+当前阶梯（token 声明在 `conversation-shell.css`，边界值在 `turns.css`；14px 正文下实机校过一轮，更小的一版被判过密）：
 
-- 段内：行高 `1.7`（正文 prose 测度被限制在消息最大宽度内，行长短，行距不必再放）。
+- 段内：行高 `1.75`（正文 prose 测度已限制在消息最大宽度内）。
 - 工具行之间：`9px`（`--conversation-activity-gap`）；commentary 紧跟它引出的工具组时也收到 `9px`。
-- 块之间：`16px`（段落、fold 内条目、answer 内块共用 `--conversation-prose-block-gap` / `--conversation-message-element-gap`）。
-- 区之间：`20px`（process 折叠区 ↔ 最终答案，`--conversation-process-gap`）。
+- 块之间：`18px`（段落、fold 内条目、answer 内块共用 `--conversation-prose-block-gap` / `--conversation-message-element-gap`），对行内空隙约 1.7 倍——低于这个比例段落就不成块。
+- 区之间：`24px`（process 折叠区 ↔ 最终答案，`--conversation-process-gap`），块的 1.33 倍——区和块至少差三分之一才读得出层级。
 - 节标题上方：块间距 + `12px`（`.rich-heading`）。
-- 问 → 答：`24px` + 发丝线 + `16px`（发丝线负责解释这段空白）。
-- turn 边界：`36px` 干净空白（`.turn` margin-bottom），是全流最大的空白。
+- 问 → 答：`24px` + 发丝线 + `18px`（发丝线负责解释这段空白）。
+- turn 边界：`40px` 干净空白（`.turn` margin-bottom），是全流最大的空白，块的约 2.2 倍。
 
 配套规则：
 

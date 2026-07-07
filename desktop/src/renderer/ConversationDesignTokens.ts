@@ -78,7 +78,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
     max: 2.3,
     step: 0.02,
     unit: "",
-    defaultValue: 1.7,
+    defaultValue: 1.75,
   },
   {
     key: "prose-block-gap",
@@ -88,7 +88,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
     max: 48,
     step: 1,
     unit: "px",
-    defaultValue: 16,
+    defaultValue: 18,
   },
   {
     key: "meta-line-height",
@@ -115,10 +115,10 @@ export const CONVERSATION_DESIGN_TOKENS = [
     cssVar: "--conversation-process-gap",
     label: "Turn 内块间距",
     min: 2,
-    max: 24,
+    max: 32,
     step: 1,
     unit: "px",
-    defaultValue: 20,
+    defaultValue: 24,
   },
   {
     key: "message-element-gap",
@@ -128,7 +128,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
     max: 32,
     step: 1,
     unit: "px",
-    defaultValue: 16,
+    defaultValue: 18,
   },
   {
     key: "turn-gap",

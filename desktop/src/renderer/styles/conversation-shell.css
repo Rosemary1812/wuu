@@ -66,17 +66,19 @@
     "Source Han Sans SC", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
   --conversation-message-font-size: 14px;
   /*
-   * Reading rhythm: answer prose is capped at the message max-width
-   * (720px, see .agent-block), so lines are short enough for 1.7 to
-   * hold a paragraph together; 1.75/1.9 at that measure floated lines
-   * apart. Paragraph gap 16px vs ~9.8px in-paragraph leading keeps the
-   * block/line contrast above 1.6x so paragraphs read as blocks —
-   * at the previous 14px vs 10.5px the two were nearly identical and
-   * long answers dissolved into an even gray wall.
+   * Reading rhythm: 1.75 keeps mixed CJK/Latin prose comfortable at
+   * 14px (24.5px baseline pitch) now that answer prose is capped at
+   * the message max-width (720px, see .agent-block); a brief 1.7
+   * experiment read cramped on real transcripts. Paragraph gap 18px
+   * vs ~10.5px in-paragraph leading keeps the block/line contrast
+   * around 1.7x so paragraphs read as blocks — at the original
+   * 14px gap the two were nearly identical and long answers
+   * dissolved into an even gray wall; 16px was still judged too
+   * dense against 14px type on screen.
    */
-  --conversation-reading-line-height: 1.7;
-  --conversation-prose-block-gap: 16px;
-  --conversation-message-element-gap: 16px;
+  --conversation-reading-line-height: 1.75;
+  --conversation-prose-block-gap: 18px;
+  --conversation-message-element-gap: 18px;
   /*
    * Meta and control rows (process toggles, tool-call lines, previews)
    * are labels, not reading prose — they hold their line at 1.6/1.7 so
@@ -96,13 +98,15 @@
    * Grouping rhythm: tight within a group, loose between groups.
    * One spacing ladder, one value per meaning: 9px pulls consecutive
    * tool-call rows (and a narration line into the activity it
-   * introduces) together, 16px separates sibling blocks, 20px marks
+   * introduces) together, 18px separates sibling blocks, 24px marks
    * the region boundary between the muted process fold and the final
-   * answer. 18px sat too close to the 16px block gap to carry any
-   * signal, and the even-earlier uniform 12px carried none at all.
+   * answer. The region step must clear the block step by a visible
+   * margin (24 = 18 × 1.33) — the earlier 18-vs-14 and 20-vs-16
+   * pairings sat too close to carry any signal, and the even-earlier
+   * uniform 12px carried none at all.
    */
-  --conversation-process-gap: 20px;
-  --conversation-process-answer-gap: 20px;
+  --conversation-process-gap: 24px;
+  --conversation-process-answer-gap: 24px;
   --conversation-answer-action-gap: 8px;
   --conversation-activity-gap: 9px;
   --conversation-scrollbar-gutter: 12px;
