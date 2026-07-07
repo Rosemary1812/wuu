@@ -105,6 +105,15 @@ type SessionTab =
       kind: "skills";
       context: RuntimeContext;
       title: string;
+    }
+  | {
+      // 群任务看板 tab:列出一个群线程的全部 task/review 状态子线程
+      // (含无锚点的 standalone)。threadID 指向它所属的群。
+      id: string;
+      kind: "board";
+      context: RuntimeContext;
+      threadID: string;
+      title: string;
     };
 
 type AppState = {
@@ -2046,8 +2055,25 @@ function createSkillsSessionTab(context: RuntimeContext): SessionTab {
   };
 }
 
+function createBoardSessionTab(
+  thread: Thread,
+  context: RuntimeContext,
+): SessionTab {
+  return {
+    id: boardSessionTabID(thread.id),
+    kind: "board",
+    context,
+    threadID: thread.id,
+    title: threadDisplayTitle(thread),
+  };
+}
+
 function threadSessionTabID(threadID: string): string {
   return `thread:${threadID}`;
+}
+
+function boardSessionTabID(threadID: string): string {
+  return `board:${threadID}`;
 }
 
 function fileSessionTabID(context: RuntimeContext, path: string): string {
@@ -2320,7 +2346,7 @@ function sessionTabDraftForThreadID(
 }
 
 function cloneSessionTabDraft(tab: SessionTab): ComposerDraftState {
-  if (tab.kind === "file" || tab.kind === "skills") {
+  if (tab.kind === "file" || tab.kind === "skills" || tab.kind === "board") {
     return emptyComposerDraft();
   }
   return {
@@ -2374,6 +2400,15 @@ function sessionTabLabel(tab: SessionTab, state: AppState): string {
   if (tab.kind === "skills") {
     return tab.title;
   }
+  if (tab.kind === "board") {
+    // 看板 tab 跟随群名(群改名后下次渲染即更新),前缀区分于群聊 tab 本身。
+    const groupTitle = threadDisplayTitle(
+      threadForTab(state, tab.threadID),
+      state.threads,
+      tab.title || "群聊",
+    );
+    return `任务 · ${groupTitle}`;
+  }
   return threadDisplayTitle(
     threadForTab(state, tab.threadID),
     state.threads,
@@ -2403,7 +2438,7 @@ function requireThread(result: { thread?: Thread }, message: string): Thread {
 
 function activeThreadForState(state: AppState): Thread | undefined {
   const tab = activeSessionTab(state);
-  if (tab?.kind === "file" || tab?.kind === "skills") {
+  if (tab?.kind === "file" || tab?.kind === "skills" || tab?.kind === "board") {
     return undefined;
   }
   if (state.activePane === "secondary" && state.secondaryThread) {
@@ -3273,6 +3308,7 @@ export {
   conversationSearchThreadMeta,
   createDraftSessionTab,
   createFileSessionTab,
+  createBoardSessionTab,
   createSkillsSessionTab,
   createThreadSessionTab,
   draftSessionTabForContext,
@@ -3322,6 +3358,7 @@ export {
   sessionTabForLoadedRuntime,
   sessionTabLabel,
   setThreadForPane,
+  boardSessionTabID,
   skillsSessionTabID,
   sortThreads,
   summarizeThreadsForSidebar,

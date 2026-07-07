@@ -946,7 +946,9 @@ export type ThreadContextCompositionResult = {
 
 // "task" 是 reply 升级为 task 后的执行态(讨论态 open -> 执行态 task -> 收尾
 // resolved)。
-export type ConversationSubthreadStatus = "open" | "task" | "resolved";
+// "review" 是 task rail 的待验收态:owner 干完活报结果后卡在这里,等人
+// 点「完成 Task」冒泡收尾(task_review: human),或由 auto 模式直接放行。
+export type ConversationSubthreadStatus = "open" | "task" | "review" | "resolved";
 
 export type ConversationSubthread = {
   id: string;
@@ -971,6 +973,9 @@ export type ConversationSubthread = {
   // 来源)不同:lead 是人挑的 named 成员(或 named 升级者)。runtime workflow 网关按
   // (caller == lead && status == task) 放行。未指定 lead 时为空。
   lead_participant_id?: string;
+  // task rail 的认领人(claim CAS 的赢家):干活与汇报的唯一责任人。与 lead
+  // 刻意分离——owner 不带编排权(2026-07-06 agent-task-rail 设计)。空=无人认领。
+  owner_participant_id?: string;
   turns?: Turn[];
 };
 

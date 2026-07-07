@@ -165,6 +165,7 @@ import {
   conversationPaneThreadsByID,
   createDraftSessionTab,
   createFileSessionTab,
+  createBoardSessionTab,
   createSkillsSessionTab,
   createThreadSessionTab,
   emptyComposerDraft,
@@ -211,6 +212,7 @@ import {
   sessionTabForLoadedRuntime,
   sessionTabForParticipant,
   sessionTabDraftForThread,
+  sessionTabLabel,
   setThreadForPane,
   sortThreads,
   summarizeThreadsForSidebar,
@@ -278,6 +280,7 @@ import type { ComposerGoalSummary, SettingsUsageRange, SettingsUsageResponse } f
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { SessionTabStrip } from "./SessionTabs";
 import { SkillsCatalog } from "./SkillsCatalog";
+import { TaskBoardView } from "./TaskBoardView";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import {
   RunDebugPanel,
@@ -798,10 +801,17 @@ export function App(): JSX.Element {
   const [chatSubthreads, setChatSubthreads] = useState<{
     threadID: string;
     byAnchor: Map<string, ConversationSubthread>;
+    // 完整列表(含无锚点的 standalone task):任务看板入口的角标从这里数
+    // task/review,byAnchor 只服务消息行的 reply 徽标。
+    all: ConversationSubthread[];
   } | null>(null);
   // Bump to force a reload of the active thread's subthreads (e.g. right after
   // opening a reply create-or-finds a new subthread, so its badge appears).
   const [chatSubthreadsNonce, setChatSubthreadsNonce] = useState(0);
+  // Bump on every thread/subUpdated notification: an open task-board tab
+  // reloads on this tick (its thread may not be the active thread, so the
+  // chatSubthreadsNonce path alone would miss it).
+  const [boardRefreshTick, setBoardRefreshTick] = useState(0);
   const [participants, setParticipants] = useState<ParticipantProfile[]>([]);
   const [participantPanel, setParticipantPanel] = useState<
     ParticipantPanelState | undefined
@@ -1412,6 +1422,12 @@ export function App(): JSX.Element {
         ) {
           setChatSubthreadsNonce((nonce) => nonce + 1);
         }
+        // An open task-board tab may target a non-active thread; its list
+        // reloads on this unconditional tick (cheap: only a mounted board
+        // subscribes to it).
+        if (note?.thread_id) {
+          setBoardRefreshTick((tick) => tick + 1);
+        }
       }
       // Workspace-scoped events (project sessions/files/terminals) stay bound
       // to the active context, but global-collaboration threads (DM/group) run
@@ -1778,11 +1794,20 @@ export function App(): JSX.Element {
     !previewingLaunch &&
     currentSessionTab?.kind === "skills",
   );
+  const boardSessionTab =
+    state.initialized &&
+    !previewingLaunch &&
+    currentSessionTab?.kind === "board"
+      ? currentSessionTab
+      : undefined;
+  const showingTaskBoard = Boolean(boardSessionTab);
   const activeTitle = showingSkillsCatalog
     ? "Skills"
-    : workspaceMode
-      ? workspaceModeTitle(workspaceMode)
-      : activeThread?.preview || "新对话";
+    : boardSessionTab
+      ? sessionTabLabel(boardSessionTab, state)
+      : workspaceMode
+        ? workspaceModeTitle(workspaceMode)
+        : activeThread?.preview || "新对话";
   const currentHour = useCurrentHour();
   const greetingContext: GreetingContext = resolveGreetingContext({
     activeThread,
@@ -1798,6 +1823,7 @@ export function App(): JSX.Element {
     : [];
   const emptyConversation =
     !showingSkillsCatalog &&
+    !showingTaskBoard &&
     turns.length === 0 &&
     activeContextCompositionEntries.length === 0;
 
@@ -2447,13 +2473,14 @@ export function App(): JSX.Element {
         if (cancelled) {
           return;
         }
+        const all = result.subthreads ?? [];
         const byAnchor = new Map<string, ConversationSubthread>();
-        for (const sub of result.subthreads ?? []) {
+        for (const sub of all) {
           if (sub.anchor_item_id) {
             byAnchor.set(sub.anchor_item_id, sub);
           }
         }
-        setChatSubthreads({ threadID, byAnchor });
+        setChatSubthreads({ threadID, byAnchor, all });
       } catch {
         // Decorative badges — keep the previous map rather than clearing it.
       }
@@ -2472,6 +2499,12 @@ export function App(): JSX.Element {
     chatSubthreads && chatSubthreads.threadID === activeThreadID
       ? chatSubthreads.byAnchor
       : undefined;
+  // 群聊标题栏任务看板入口的角标:等人验收的任务数(task_review: human 的
+  // 人工把关队列)。数完整列表,standalone 任务也计入。
+  const activeThreadPendingReviewCount =
+    chatSubthreads && chatSubthreads.threadID === activeThreadID
+      ? chatSubthreads.all.filter((sub) => sub.status === "review").length
+      : 0;
 
   const handleCloseFilePreview = useCallback((): void => {
     setRightPanelFilePath(undefined);
@@ -3763,6 +3796,37 @@ export function App(): JSX.Element {
         }));
       }
     })();
+  }
+
+  // Open (or focus) the group's task-board tab. Deterministic tab id makes
+  // the second click a focus, not a duplicate (ensureSessionTab dedupe).
+  function openTaskBoardTab(thread: Thread): void {
+    const context = appStateRef.current.activeContext;
+    if (!context) {
+      return;
+    }
+    const tab = createBoardSessionTab(thread, context);
+    setState((current) => ({
+      ...current,
+      sessionTabs: ensureSessionTab(current.sessionTabs, tab),
+      activeSessionTabID: tab.id,
+    }));
+  }
+
+  // A board row click: land back in the group's chat tab with that task's
+  // thread panel open. Order matters — the panel auto-closes when its
+  // threadID differs from the active thread, so switch tabs first.
+  async function openTaskFromBoard(
+    threadID: string,
+    subthreadID: string,
+  ): Promise<void> {
+    const tabs = appStateRef.current.sessionTabs;
+    if (tabs.some((tab) => tab.id === threadSessionTabID(threadID))) {
+      await selectSessionTab(threadSessionTabID(threadID));
+    } else {
+      await selectThread(threadID);
+    }
+    openConversationSubthreadByID(threadID, subthreadID);
   }
 
   // Open the reply panel directly by cth id (no anchor item / create-or-find):
@@ -5474,7 +5538,9 @@ export function App(): JSX.Element {
       }
       return;
     }
-    if (tab.kind === "skills") {
+    // board tab 与 skills 同一形态:非会话视图,仅需就位 runtime context,
+    // 不涉及线程恢复与草稿。
+    if (tab.kind === "skills" || tab.kind === "board") {
       const outgoingDraft = currentPrimaryComposerDraft();
       const requestID = sameContext
         ? undefined
@@ -5694,7 +5760,7 @@ export function App(): JSX.Element {
       }
       return;
     }
-    if (fallbackTab.kind === "skills") {
+    if (fallbackTab.kind === "skills" || fallbackTab.kind === "board") {
       const sameContext = sameRuntimeContext(
         fallbackTab.context,
         currentState.activeContext,
@@ -8626,6 +8692,22 @@ export function App(): JSX.Element {
             />
             {poppedOutMode ? null : (
               <>
+                {activeThreadIsGroup && activeThread ? (
+                  <button
+                    className="icon-button task-board-toggle-button"
+                    type="button"
+                    aria-label="打开任务看板"
+                    title="任务看板"
+                    onClick={() => openTaskBoardTab(activeThread)}
+                  >
+                    <ListChecks className="icon-lg" />
+                    {activeThreadPendingReviewCount > 0 ? (
+                      <span className="task-board-toggle-badge">
+                        {activeThreadPendingReviewCount}
+                      </span>
+                    ) : null}
+                  </button>
+                ) : null}
                 <button
                   ref={environmentToggleRef}
                   className={`icon-button environment-toggle-button${environmentPanelVisible ? " active" : ""}`}
@@ -8806,7 +8888,7 @@ export function App(): JSX.Element {
           <div
             className={`scroll-region${emptyConversation && !showingWorkspaceMode ? " empty-scroll-region" : ""}${
               showingWorkspaceMode ? " workspace-scroll-region" : ""
-            }${splitConversation ? " split-scroll-region" : ""}${showingSkillsCatalog ? " skills-scroll-region" : ""}`}
+            }${splitConversation ? " split-scroll-region" : ""}${showingSkillsCatalog ? " skills-scroll-region" : ""}${showingTaskBoard ? " task-board-scroll-region" : ""}`}
             onScroll={(event) => handleConversationScroll(event.currentTarget)}
             ref={conversationScrollRef}
           >
@@ -8814,6 +8896,16 @@ export function App(): JSX.Element {
               {showingSkillsCatalog ? (
               <SkillsCatalog
                 activeContext={state.activeContext}
+              />
+            ) : boardSessionTab ? (
+              <TaskBoardView
+                threadID={boardSessionTab.threadID}
+                title={sessionTabLabel(boardSessionTab, state)}
+                refreshToken={boardRefreshTick}
+                resolveParticipantName={resolveParticipantName}
+                onOpenTask={(subthreadID) =>
+                  void openTaskFromBoard(boardSessionTab.threadID, subthreadID)
+                }
               />
             ) : workspaceMode ? (
               <WorkspaceMainPanel
@@ -8926,7 +9018,8 @@ export function App(): JSX.Element {
         !emptyConversation &&
         !showingWorkspaceMode &&
         !splitConversation &&
-        !showingSkillsCatalog
+        !showingSkillsCatalog &&
+        !showingTaskBoard
           ? renderComposer("dock")
           : null}
 
@@ -8936,6 +9029,7 @@ export function App(): JSX.Element {
         !showingWorkspaceMode &&
         !splitConversation &&
         !showingSkillsCatalog &&
+        !showingTaskBoard &&
         (userScrolledAway || activePlanVisible) ? (
           <div
             className="jump-to-latest-cluster"

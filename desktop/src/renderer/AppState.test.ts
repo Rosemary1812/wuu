@@ -129,7 +129,12 @@ function sessionTabPrompt(
   tabID: string,
 ): string | undefined {
   const tab = tabs.find((candidate) => candidate.id === tabID);
-  if (!tab || tab.kind === "file" || tab.kind === "skills") {
+  if (
+    !tab ||
+    tab.kind === "file" ||
+    tab.kind === "skills" ||
+    tab.kind === "board"
+  ) {
     return undefined;
   }
   return tab.prompt;
