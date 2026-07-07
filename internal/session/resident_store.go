@@ -17,6 +17,14 @@ type ResidentEnvelope struct {
 	EnvelopeJSON  json.RawMessage
 	CreatedAt     time.Time
 	ConsumedAt    *time.Time
+	// ExpiredAt is the issue #3 pivot's boot-settle timestamp: set by
+	// MarkPendingResidentEnvelopesExpired when a previous process died
+	// with this row still unprocessed. Pending = NULL; processed =
+	// non-NULL ConsumedAt; expired = NULL ConsumedAt AND non-NULL
+	// ExpiredAt. The pivot invariant "boot can't burn tokens" relies on
+	// the partial index idx_resident_inbox_pending excluding expired
+	// rows (see session.go for the migration).
+	ExpiredAt *time.Time
 }
 
 type sqlRowQuerier interface {
@@ -215,9 +223,9 @@ func PendingResidentEnvelopes(sessDir, participantID string, limit int) ([]Resid
 	}
 
 	query := `
-SELECT id, participant_id, envelope_json, created_at, consumed_at
+SELECT id, participant_id, envelope_json, created_at, consumed_at, expired_at
 FROM resident_inbox
-WHERE participant_id = ? AND consumed_at IS NULL
+WHERE participant_id = ? AND consumed_at IS NULL AND expired_at IS NULL
 ORDER BY created_at ASC, id ASC`
 	args := []any{participantID}
 	if limit > 0 {
@@ -361,6 +369,7 @@ SELECT DISTINCT ri.participant_id
 FROM resident_inbox ri
 JOIN participants p ON p.id = ri.participant_id
 WHERE ri.consumed_at IS NULL
+  AND ri.expired_at IS NULL
   AND p.kind = ?
   AND p.retired_at IS NULL`, string(participant.KindNamed))
 	if err != nil {
@@ -379,6 +388,120 @@ WHERE ri.consumed_at IS NULL
 		return nil, fmt.Errorf("rows pending inbox participants: %w", err)
 	}
 	return ids, nil
+}
+
+// MarkPendingResidentEnvelopesExpired is the issue #3 pivot's boot-side
+// pass 1: scan all resident_inbox rows where consumed_at IS NULL AND
+// expired_at IS NULL (i.e. the previous process died with these envelopes
+// unprocessed), set expired_at to the given timestamp, and return the
+// count of rows affected. The user spec calls these envelopes
+// "expired" — front-end distinguishes this from FAILED (system error)
+// and from a missing row (never enqueued). Expired is a terminal state:
+// no expired row is re-kicked, even when a fresh new message arrives
+// for the same participant, and the partial index
+// idx_resident_inbox_pending excludes expired rows so subsequent
+// PendingResidentEnvelopes queries do not surface them.
+func MarkPendingResidentEnvelopesExpired(sessDir string, at time.Time) (int64, error) {
+	if at.IsZero() {
+		at = time.Now().UTC()
+	} else {
+		at = at.UTC()
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+
+	res, err := db.Exec(`
+UPDATE resident_inbox
+SET expired_at = ?
+WHERE consumed_at IS NULL
+  AND expired_at IS NULL`, at.UnixMilli())
+	if err != nil {
+		return 0, fmt.Errorf("mark pending resident envelopes expired: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected (mark pending expired): %w", err)
+	}
+	return n, nil
+}
+
+// MarkStuckInProgressReadReceiptsExpired is the issue #3 pivot's boot-side
+// pass 2: scan all message_marks rows where kind='seen' AND
+// status='in_progress' (a turn started consuming a message but did not
+// finish before the process died), set status to SeenStatusExpiredUnprocessed
+// and at to the given timestamp, and return the count of rows affected.
+// The front-end sees this distinct from FAILED (system error) so the
+// user knows the message was not at fault — the system just didn't get a
+// turn before the user closed the laptop. expired_unprocessed is a
+// terminal state — no further transition out of it.
+//
+// This deliberately bypasses MarkMessageSeen's whitelist (which keeps
+// the 3 regular-session lifecycle values tight): boot is the only
+// legitimate writer of SeenStatusExpiredUnprocessed, and the whitelist
+// is a guard against regular-session writes, not boot writes.
+func MarkStuckInProgressReadReceiptsExpired(sessDir string, at time.Time) (int64, error) {
+	if at.IsZero() {
+		at = time.Now().UTC()
+	} else {
+		at = at.UTC()
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+
+	res, err := db.Exec(`
+UPDATE message_marks
+SET status = ?, at = ?
+WHERE kind = ?
+  AND status = ?`,
+		SeenStatusExpiredUnprocessed, at.UnixMilli(), MessageMarkKindSeen, SeenStatusInProgress)
+	if err != nil {
+		return 0, fmt.Errorf("mark stuck in-progress read receipts expired: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected (mark stuck in-progress expired): %w", err)
+	}
+	return n, nil
+}
+
+// MigrateResidentInboxExpiredAt is the production-schema migration
+// helper for issue #3 pivot (replay → settle/expire): the new
+// `expired_at` column is added to the CREATE TABLE IF NOT EXISTS
+// statement, but pre-existing databases created before the pivot
+// don't have the column — and the CREATE statement is a no-op for
+// existing tables. Calling this helper once at startup closes that
+// gap: it ALTERs the existing table to add the column, idempotently
+// (the "duplicate column name" error is swallowed as success, since
+// the only way to reach that error is the column already existing).
+// Settle then runs against the now-up-to-date schema. NewDBs do not
+// need this; session.go's CREATE statement already includes the
+// column from the start.
+func MigrateResidentInboxExpiredAt(sessDir string) error {
+	db, err := openStore(sessDir)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`ALTER TABLE resident_inbox ADD COLUMN expired_at INTEGER`); err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+			return nil // idempotent — column already exists
+		}
+		return fmt.Errorf("migrate resident_inbox expired_at: %w", err)
+	}
+	return nil
 }
 
 func requireActiveNamedParticipant(q sqlRowQuerier, participantID string) error {
@@ -403,8 +526,8 @@ func scanResidentEnvelope(scanner interface {
 	var env ResidentEnvelope
 	var envelopeJSON string
 	var createdAt int64
-	var consumedAt sql.NullInt64
-	if err := scanner.Scan(&env.ID, &env.ParticipantID, &envelopeJSON, &createdAt, &consumedAt); err != nil {
+	var consumedAt, expiredAt sql.NullInt64
+	if err := scanner.Scan(&env.ID, &env.ParticipantID, &envelopeJSON, &createdAt, &consumedAt, &expiredAt); err != nil {
 		return ResidentEnvelope{}, err
 	}
 	env.EnvelopeJSON = rawMessage(envelopeJSON)
@@ -412,6 +535,10 @@ func scanResidentEnvelope(scanner interface {
 	if consumedAt.Valid {
 		t := time.UnixMilli(consumedAt.Int64).UTC()
 		env.ConsumedAt = &t
+	}
+	if expiredAt.Valid {
+		t := time.UnixMilli(expiredAt.Int64).UTC()
+		env.ExpiredAt = &t
 	}
 	return env, nil
 }

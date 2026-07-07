@@ -829,15 +829,26 @@ func migrateSchema(db *sql.DB) error {
 			FOREIGN KEY(conversation_thread_id) REFERENCES conversation_threads(id) ON DELETE CASCADE,
 			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
 		)`,
+		// resident_inbox pivots for issue #3 — replay → settle/expire (user
+		// spec: "桌面应用关着即世界暂停，重启不替过去补课"). Three-state
+		// isolation is enforced at the index level: a row is in the
+		// `pending` set iff BOTH `consumed_at IS NULL` AND `expired_at IS
+		// NULL`; `processed` is `consumed_at IS NOT NULL`; `expired` is
+		// `consumed_at IS NULL AND expired_at IS NOT NULL`. The
+		// idx_resident_inbox_pending partial index MUST exclude expired
+		// rows, otherwise the existing PendingResidentEnvelopes query
+		// would surface settled-expired envelopes as "pending" and the
+		// pivot invariant "boot can't burn tokens" silently fails.
 		`CREATE TABLE IF NOT EXISTS resident_inbox (
 			id             TEXT PRIMARY KEY,
 			participant_id TEXT NOT NULL,
 			envelope_json  TEXT NOT NULL,
 			created_at     INTEGER NOT NULL,
 			consumed_at    INTEGER,
+			expired_at     INTEGER,
 			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_resident_inbox_pending ON resident_inbox(participant_id, created_at) WHERE consumed_at IS NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_resident_inbox_pending ON resident_inbox(participant_id, created_at) WHERE consumed_at IS NULL AND expired_at IS NULL`,
 		// message_marks backs read receipts + message reactions
 		// (2026-07-04-read-receipts-and-reactions.md §4): one row per
 		// (message, participant, kind). kind='seen' carries a lifecycle

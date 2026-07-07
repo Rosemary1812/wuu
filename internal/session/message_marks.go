@@ -19,9 +19,22 @@ const (
 	// turn started (envelope consumed) but has not finished; SeenStatusFailed
 	// marks a turn that started and then errored/was interrupted. There is no
 	// stored "queued" row: the absence of a seen row is "unread".
-	SeenStatusInProgress = "in_progress"
-	SeenStatusCompleted  = "completed"
-	SeenStatusFailed     = "failed"
+	//
+	// SeenStatusExpiredUnprocessed is the boot-settle terminal state for
+	// issue #3 pivot (replay → settle/expire): a row left in_progress by
+	// a turn that started but did not finish before the previous process
+	// died gets flipped to this status by settleOnBoot at startup, so the
+	// front-end can distinguish "system error" (failed) from "we just
+	// didn't get a turn before the user closed the laptop"
+	// (expired_unprocessed). It is a terminal state — no further
+	// transition out of it. Note: MarkMessageSeen (regular-session
+	// writes) does NOT accept this value — boot uses a dedicated helper
+	// that does the in_progress → expired_unprocessed flip in one
+	// direct UPDATE, not via UpsertMessageMark.
+	SeenStatusInProgress         = "in_progress"
+	SeenStatusCompleted          = "completed"
+	SeenStatusFailed             = "failed"
+	SeenStatusExpiredUnprocessed = "expired_unprocessed"
 )
 
 // MessageMark is one row of message_marks: a per-(message, participant, kind)

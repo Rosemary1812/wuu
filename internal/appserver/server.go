@@ -206,39 +206,61 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 			logDefaultParticipantSeedError(s.ensureDefaultParticipant())
 		}
 	}
-	// Boot-time drain: a previous process may have left envelopes pending
-	// in the resident inbox (issue #3). Without this, they sit there until
-	// the next fresh message happens to land — for low-traffic participants
-	// effectively "forever". kickResidentAgent is already goroutine-safe
-	// and idempotent (per-participant drainingResidentAgent lock), so one
-	// kick per pending participant here is safe even if a fresh message
-	// has already kicked the same participant concurrently.
-	s.drainPendingResidentEnvelopesOnBoot()
+	// Production-schema migration (issue #3 pivot): pre-existing
+	// databases from before the pivot don't have the `expired_at`
+	// column (CREATE TABLE IF NOT EXISTS is a no-op for existing
+	// tables). One-shot ALTER closes that gap; idempotent for
+	// newDBs (the migration helper itself swallows "duplicate
+	// column" as success). Settle then runs against the
+	// now-up-to-date schema.
+	if err := session.MigrateResidentInboxExpiredAt(s.rt.SessionDir); err != nil {
+		providers.DebugLogf("resident_inbox expired_at migration: %v", err)
+	}
+	// Boot-time settle (issue #3 pivot, user spec: "重启不替过去补课",
+	// "不起任何回合、不烧一个 token"). A previous process may have left
+	// envelopes pending in the resident inbox or read receipts in_progress
+	// when it died. settleOnBoot flips both to terminal expired states
+	// without kicking the resident or starting any turn — boot must not
+	// burn tokens for the previous process's unfinished work.
+	s.settleOnBoot()
 	return s
 }
 
-// drainPendingResidentEnvelopesOnBoot kicks every participant whose inbox
-// still has at least one un-consumed envelope (issue #3: a previous
-// process may have left messages pending in resident_inbox, and without a
-// boot-time kick those messages would sit until the next fresh message
-// happened to land — for low-traffic participants effectively "forever").
+// settleOnBoot is the issue #3 pivot's boot-time replace for the
+// previous "drain and replay" path (issue #3 round 1). The user pivot
+// was "replay → settle/expire": boot can't burn tokens for the
+// previous process's unprocessed envelopes. Two passes run, each
+// against a single SQL statement:
 //
-// The kick is delegated to kickResidentAgent so the retired / busy /
-// running / per-batch-limit invariants are unchanged. Drain runs on
-// every New() — including tests that construct a Server — so the fix
-// also serves as a self-cleanup for any pre-existing rows a test
-// fixture injected without going through the routing layer.
-func (s *Server) drainPendingResidentEnvelopesOnBoot() {
+//	pass 1: scan resident_inbox WHERE consumed_at IS NULL AND
+//	        expired_at IS NULL, set expired_at=now (terminal "expired"
+//	        state, distinguishable from "failed" by the front-end).
+//	pass 2: scan message_marks WHERE kind='seen' AND status='in_progress',
+//	        set status='expired_unprocessed' (terminal "we didn't get a
+//	        turn" state, distinguishable from "failed" by the front-end).
+//
+// ❌ Does NOT call kickResidentAgent.
+// ❌ Does NOT start any turn.
+// ❌ Does NOT burn any token.
+//
+// Errors per pass are logged + swallowed — boot settle is best-effort,
+// a transient DB error must not block New() (issue #3 spec: "settle
+// 自身失败不能阻塞 New() 返回"). Both passes use the same `now`
+// timestamp so an audit log shows the boot moment uniformly.
+func (s *Server) settleOnBoot() {
 	if s == nil || s.rt == nil {
 		return
 	}
-	participants, err := session.ParticipantsWithPendingResidentEnvelopes(s.rt.SessionDir)
-	if err != nil {
-		providers.DebugLogf("scan pending resident envelopes on boot: %v", err)
-		return
+	now := time.Now().UTC()
+	if n, err := session.MarkPendingResidentEnvelopesExpired(s.rt.SessionDir, now); err != nil {
+		providers.DebugLogf("settleOnBoot pass1 (envelope expire): %v", err)
+	} else if n > 0 {
+		providers.DebugLogf("settleOnBoot pass1: %d envelope(s) expired", n)
 	}
-	for _, id := range participants {
-		s.kickResidentAgent(id)
+	if n, err := session.MarkStuckInProgressReadReceiptsExpired(s.rt.SessionDir, now); err != nil {
+		providers.DebugLogf("settleOnBoot pass2 (receipt settle): %v", err)
+	} else if n > 0 {
+		providers.DebugLogf("settleOnBoot pass2: %d receipt(s) flipped to expired_unprocessed", n)
 	}
 }
 
