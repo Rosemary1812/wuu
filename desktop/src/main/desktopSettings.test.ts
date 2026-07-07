@@ -4,9 +4,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   getCliAutoInstallEnabled,
+  getSkinPreference,
   getThemePreference,
   readDesktopSettings,
   setCliAutoInstallEnabled,
+  setSkinPreference,
   setThemePreference,
   writeDesktopSettings,
 } from "./desktopSettings";
@@ -78,5 +80,28 @@ describe("desktopSettings", () => {
     setCliAutoInstallEnabled(false, file);
     expect(getThemePreference(file)).toBe("dark");
     expect(getCliAutoInstallEnabled(file)).toBe(false);
+  });
+
+  it("defaults the skin preference to flame", () => {
+    expect(getSkinPreference(file)).toBe("flame");
+  });
+
+  it("round-trips the skin preference", () => {
+    setSkinPreference("work", file);
+    expect(getSkinPreference(file)).toBe("work");
+    setSkinPreference("flame", file);
+    expect(getSkinPreference(file)).toBe("flame");
+  });
+
+  it("rejects unknown skin values on read", async () => {
+    await writeFile(file, JSON.stringify({ skin: "neon" }));
+    expect(getSkinPreference(file)).toBe("flame");
+  });
+
+  it("keeps the skin when toggling other settings", () => {
+    setSkinPreference("work", file);
+    setThemePreference("dark", file);
+    expect(getSkinPreference(file)).toBe("work");
+    expect(getThemePreference(file)).toBe("dark");
   });
 });

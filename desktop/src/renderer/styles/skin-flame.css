@@ -1,0 +1,152 @@
+/*
+ * Skin layer — 火苗 (flame).
+ *
+ * The app has two visual axes, both stamped on <html> by the preload
+ * script before first paint and kept current by renderer/Theme.ts:
+ *
+ *   data-theme = "light" | "dark"   (existing light/dark axis)
+ *   data-skin  = "flame" | "work"   (this file's axis)
+ *
+ * "work" is the quiet SaaS look and needs NO CSS of its own: it is the
+ * base token set (light values in base.css + component files, dark
+ * overrides in theme.css). "flame" is the default skin and matches the
+ * wuu mascot / landing page: warm cream paper, sepia ink, vermillion
+ * #ff3d00 accent.
+ *
+ * Rules of the layer:
+ * - Only redefine tokens; never restyle components here. Component CSS
+ *   stays skin-blind.
+ * - Both blocks below carry three attribute selectors' worth of
+ *   specificity, so they beat base.css `:root` and theme.css
+ *   `:root[data-theme="dark"]` regardless of import order.
+ * - Anything not redefined falls through to the work skin's value for
+ *   the same data-theme. The dark block deliberately inherits the work
+ *   dark shadows and status palette — only hue-carrying surfaces, ink,
+ *   and chrome warm up.
+ * - Colors sampled from the mascot art (cream ground #fbf3ec, ink
+ *   outlines, vermillion flame) — keep new values in that family.
+ */
+
+:root[data-theme="light"][data-skin="flame"] {
+  /* --- Ink scale: warm sepia instead of cool graphite --- */
+  --ink-strong: #211a12;
+  --ink: #2b2318;
+  --ink-soft: #6d5f4e;
+  --ink-tertiary: #7e7060;
+  --ink-muted: #98897a;
+  --ink-faint: #beb0a0;
+
+  /* --- Paper & surfaces: cream, deepening toward parchment --- */
+  --paper: #fffcf5;
+  --surface-1: #f7efe3;
+  --surface-2: #f1e7d8;
+  --surface-3: #eaddcb;
+  --surface-4: #e1d2bc;
+
+  --hairline: #e9ddc8;
+  --hairline-strong: #dbcbb0;
+  --rule: #e3d6c1;
+
+  /* Ink overlays pick up the sepia base so every derived hover/press
+     veil warms with them. */
+  --ink-overlay-4: rgba(67, 50, 32, 0.05);
+  --ink-overlay-6: rgba(67, 50, 32, 0.07);
+  --ink-overlay-8: rgba(67, 50, 32, 0.09);
+  --ink-overlay-12: rgba(67, 50, 32, 0.13);
+  --ink-overlay-18: rgba(67, 50, 32, 0.19);
+
+  --shadow-soft: 0 1px 2px rgba(87, 60, 34, 0.07);
+  --shadow-pop: 0 14px 34px rgba(87, 60, 34, 0.14),
+                0 2px 8px rgba(87, 60, 34, 0.09);
+
+  /* --- Brand: landing-page vermillion --- */
+  --wuu-accent: #ff3d00;
+  --accent-warm: #f04a10;
+
+  --menu-bg: rgba(255, 252, 245, 0.98);
+  --menu-hover: #f3e9d9;
+
+  /* Links warm up with the brand; hover leans into the accent. */
+  --rich-link-color: #c73a08;
+  --rich-link-hover-color: #ff3d00;
+
+  --sidebar-glass-bg: linear-gradient(180deg, rgba(255, 252, 245, 0.94), rgba(247, 239, 227, 0.9));
+  --sidebar-glass-border: rgba(33, 26, 18, 0.12);
+  --sidebar-glass-highlight: rgba(255, 255, 255, 0.65);
+  --sidebar-glass-hover: rgba(67, 50, 32, 0.05);
+  --sidebar-glass-active: rgba(67, 50, 32, 0.08);
+
+  --scrollbar-thumb: rgba(120, 100, 78, 0.2);
+  --scrollbar-thumb-hover: rgba(110, 88, 64, 0.32);
+  --scrollbar-thumb-active: rgba(96, 74, 50, 0.45);
+  --scrollbar-thin-thumb: rgba(96, 80, 62, 0.16);
+
+  /* --- Component tokens that carry visible surface color --- */
+  --chat-user-message-bg: #f2e7d4;
+  --user-message-bg-color: #f2e7d4;
+  --empty-home-action-border: #e6d9c2;
+  --empty-home-action-border-hover: #d7c7a9;
+  --empty-home-action-icon-color: #8b7c67;
+
+  /* --- Flame-only flourishes (consumed with a `none`/`inherit`
+     fallback where they are declared, so work stays untouched) --- */
+  --empty-home-mascot-display: block;
+  --empty-home-title-font: Georgia, "Iowan Old Style", Palatino,
+    "Songti SC", "Noto Serif SC", "Noto Serif CJK SC", serif;
+}
+
+:root[data-theme="dark"][data-skin="flame"] {
+  /* --- Ink scale: candlelight cream on ember ground --- */
+  --ink-strong: #f5eee1;
+  --ink: #e8dfd0;
+  --ink-soft: #ab9e8b;
+  --ink-tertiary: #9a8d7b;
+  --ink-muted: #857766;
+  --ink-faint: #5a5142;
+
+  --paper: #211b14;
+  --surface-1: #171310;
+  --surface-2: #1d1812;
+  --surface-3: #282017;
+  --surface-4: #322a1f;
+
+  --hairline: #332b20;
+  --hairline-strong: #423727;
+  --rule: #392f23;
+
+  --ink-overlay-4: rgba(232, 216, 192, 0.05);
+  --ink-overlay-6: rgba(232, 216, 192, 0.07);
+  --ink-overlay-8: rgba(232, 216, 192, 0.09);
+  --ink-overlay-12: rgba(232, 216, 192, 0.13);
+  --ink-overlay-18: rgba(232, 216, 192, 0.2);
+
+  /* Vermillion lifts a step so it holds against the dark ground. */
+  --wuu-accent: #ff5a26;
+
+  --menu-bg: rgba(33, 27, 20, 0.98);
+  --menu-hover: #2e261b;
+
+  --rich-link-color: #ff8a5e;
+  --rich-link-hover-color: #ffa585;
+
+  --sidebar-glass-bg: linear-gradient(180deg, rgba(30, 25, 18, 0.94), rgba(22, 18, 13, 0.9));
+  --sidebar-glass-border: rgba(235, 224, 205, 0.12);
+  --sidebar-glass-highlight: rgba(255, 248, 235, 0.06);
+  --sidebar-glass-hover: rgba(235, 224, 205, 0.05);
+  --sidebar-glass-active: rgba(235, 224, 205, 0.08);
+
+  --scrollbar-thumb: rgba(190, 172, 146, 0.22);
+  --scrollbar-thumb-hover: rgba(205, 186, 158, 0.34);
+  --scrollbar-thumb-active: rgba(205, 186, 158, 0.48);
+  --scrollbar-thin-thumb: rgba(206, 192, 168, 0.16);
+
+  --chat-user-message-bg: #322a1e;
+  --user-message-bg-color: #322a1e;
+  --empty-home-action-border: #3a3123;
+  --empty-home-action-border-hover: #483d2b;
+  --empty-home-action-icon-color: #968871;
+
+  --empty-home-mascot-display: block;
+  --empty-home-title-font: Georgia, "Iowan Old Style", Palatino,
+    "Songti SC", "Noto Serif SC", "Noto Serif CJK SC", serif;
+}

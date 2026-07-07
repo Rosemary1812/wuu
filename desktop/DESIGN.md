@@ -2,6 +2,20 @@
 
 这份文档记录桌面端已经形成共识的设计规则。只写会反复影响多个界面的规则，不写临时想法，也不把它扩成大而全的设计系统。
 
+## 主题与皮肤
+
+外观有两根正交的轴，都以属性形式打在 `<html>` 上，preload 在首帧前同步 stamp：
+
+- `data-theme="light" | "dark"`：亮暗轴，由持久化偏好（跟随系统/亮/暗）解析而来。
+- `data-skin="flame" | "work"`：风格轴。`flame`（火苗）是默认皮肤，暖奶油纸面 + 朱红 `#ff3d00`，与吉祥物、landing 页同一气质；`work` 是安静的素色界面。
+
+规则：
+
+- 所有颜色一律走 CSS custom property。亮色值写在 token 声明处（`base.css` 与各组件文件顶部），暗色覆盖只写在 `theme.css`——这两层就是 work 皮肤，work 不需要任何自己的 CSS。
+- 火苗皮肤只存在于 `styles/skin-flame.css`，且只允许覆盖 token，不允许出现组件选择器（有契约测试盯着）。两个块 `:root[data-theme="light"][data-skin="flame"]` / `:root[data-theme="dark"][data-skin="flame"]` 靠特异性压过 base 与 theme.css，与导入顺序无关。
+- 皮肤没覆盖的 token 自动落回 work 同一亮暗档的值，所以新增组件 token 时照旧只需补 `theme.css` 暗色映射；只有当该 token 承载明显的冷暖色相时才考虑进 skin-flame.css。
+- 组件要做"皮肤才有"的装饰（如空状态吉祥物），在组件 CSS 里声明一个默认关闭的 hook token（如 `--empty-home-mascot-display: none`），由皮肤翻开。组件本身保持对皮肤无感知。
+
 ## 菜单
 
 wuu 的菜单应该像轻量控件，而不是卡片或弹窗。它们服务于当前任务附近的快速选择，例如选择项目、切换模型推理档位、切换分支，或查看一句权限说明。

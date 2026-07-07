@@ -1539,6 +1539,12 @@ export type ComposerGoalSummary = {
 // light/dark setting via prefers-color-scheme.
 export type ThemePreference = "system" | "light" | "dark";
 
+// Skin (theme family) for the desktop shell — the second appearance
+// axis, orthogonal to light/dark. "flame" is the default warm mascot
+// look; "work" is the quiet SaaS look. Resolved to `data-skin` on
+// <html>; the skin token layer lives in styles/skin-flame.css.
+export type SkinPreference = "flame" | "work";
+
 export type WuuDesktopApi = {
   listProjects: () => Promise<ProjectListResult>;
   createBlankProject: () => Promise<ProjectListResult>;
@@ -1632,6 +1638,13 @@ export type WuuDesktopApi = {
   setThemePreference: (
     theme: ThemePreference,
   ) => Promise<{ ok: boolean; theme: ThemePreference }>;
+  // Skin axis, same pipeline as the theme preference: persisted in
+  // desktop-settings.json, stamped as data-skin before first paint.
+  initialSkinPreference?: SkinPreference;
+  getSkinPreference: () => Promise<SkinPreference>;
+  setSkinPreference: (
+    skin: SkinPreference,
+  ) => Promise<{ ok: boolean; skin: SkinPreference }>;
   listParticipants: () => Promise<ParticipantListResult>;
   saveParticipant: (params: ParticipantSaveParams) => Promise<ParticipantSaveResult>;
   sendParticipantFeedback: (

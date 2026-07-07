@@ -86,6 +86,10 @@
   --empty-home-action-border: #e5e5e2;
   --empty-home-action-border-hover: #d8d9d5;
   --empty-home-action-icon-color: #7c8287;
+  /* Skin hooks (skin-flame.css flips these): the work skin shows no
+     mascot and keeps the sans greeting. */
+  --empty-home-mascot-display: none;
+  --empty-home-title-font: inherit;
   --project-empty-content-color: #697075;
   --wuu-launch-exit-border: #dedfdb;
   --project-empty-actions-border: #e0e0dc;
@@ -5443,6 +5447,7 @@ pre {
   max-width: 940px;
   margin: 0;
   color: var(--ink);
+  font-family: var(--empty-home-title-font);
   font-size: clamp(28px, 2.2vw, 32px);
   font-weight: 460;
   letter-spacing: 0;
@@ -5457,6 +5462,18 @@ pre {
   row-gap: 14px;
   max-width: 940px;
   margin: 0;
+}
+
+/* The mascot greeting mark. Hidden in the work skin via
+   --empty-home-mascot-display; the flame skin shows it above the
+   greeting. Kept small and quiet — it is a wave hello, not a poster. */
+.empty-home-mascot {
+  display: var(--empty-home-mascot-display);
+  width: 72px;
+  height: 72px;
+  margin-bottom: 2px;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .empty-home-inner > .hero-composer-wrap {

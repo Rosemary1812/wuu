@@ -1,3 +1,5 @@
+import mascotFace from "./assets/mascot-face.png";
+
 export function RuntimeLoading({
   status,
   pinned = false,
@@ -62,6 +64,15 @@ export function EmptyConversationHome({
     <section className="empty-home">
       <div className="empty-home-inner session-flow">
         <div className="empty-home-header">
+          {/* Skin-gated: visible only when the flame skin sets
+              --empty-home-mascot-display (see turns.css). */}
+          <img
+            className="empty-home-mascot"
+            src={mascotFace}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+          />
           <h2>{title}</h2>
           {belowTitle ?? null}
         </div>
