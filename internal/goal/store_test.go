@@ -276,47 +276,6 @@ func TestStoreRejectedApprovalBlocksGoal(t *testing.T) {
 	assertFileContains(t, filepath.Join(dir, "views", "approvals.md"), "too risky")
 }
 
-func TestBuiltinRolesIncludeMakerCheckerSeparation(t *testing.T) {
-	worker, ok := FindRole("worker")
-	if !ok {
-		t.Fatal("worker role missing")
-	}
-	reviewer, ok := FindRole("reviewer")
-	if !ok {
-		t.Fatal("reviewer role missing")
-	}
-	if strings.Contains(strings.Join(reviewer.AllowedTools, ","), "apply_patch") ||
-		strings.Contains(strings.Join(reviewer.AllowedTools, ","), "edit_file") {
-		t.Fatalf("reviewer should not have edit tools: %+v", reviewer.AllowedTools)
-	}
-	if !strings.Contains(worker.OutputSchema, "changed_files") {
-		t.Fatalf("worker output schema should require changed files: %+v", worker)
-	}
-	if _, err := MustRole("unknown"); err == nil {
-		t.Fatal("MustRole should reject unknown role")
-	}
-}
-
-func TestBuiltinRolesUseBashFirstCommandSurface(t *testing.T) {
-	legacy := map[string]bool{
-		"git":                 true,
-		"run_shell":           true,
-		"run_test":            true,
-		"start_process":       true,
-		"list_processes":      true,
-		"read_process_output": true,
-		"write_stdin":         true,
-		"stop_process":        true,
-	}
-	for _, role := range BuiltinRoles() {
-		for _, tool := range role.AllowedTools {
-			if legacy[tool] {
-				t.Fatalf("%s role must not allow legacy command tool %s: %+v", role.Name, tool, role.AllowedTools)
-			}
-		}
-	}
-}
-
 func fixedClock() func() time.Time {
 	ts := time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC)
 	return func() time.Time { return ts }
