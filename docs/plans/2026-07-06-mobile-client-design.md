@@ -192,4 +192,9 @@ M0 全部完成,M1 前置部分完成:
   子进程、捕获配对 URI、吊销即重启)、SettingsRemotePage 组件与样式、
   设置页「远程」导航与 preload/main IPC 接线全部落地。桌面端从设置页
   即可:配中继 → 开远程访问 → 出配对二维码 → 管理/吊销已配对设备。
-- 未动:审批反向通道(§7 #2)、推送(§7 #3)——M2 内容。
+- ✅ 手机端 v1(M1 主体,2026-07-07):clients/mobile Expo 三屏纯聊天
+  客户端落地(实现规格见 2026-07-07-mobile-app-v1.md)。tsc + vitest
+  45 项 + expo export web 全绿;56-agent 对抗性审查修复 12 项确认缺陷
+  (含 thread/list 非常驻线程省略 workspace_kind、群聊禁 turn/queue
+  两个协议级问题)。待真机冒烟:relay + 桌面开远程 → 扫码 → 对话。
+- 未动:推送(§7 #3)——M2 内容;安全区 inset 精调随真机调试。
