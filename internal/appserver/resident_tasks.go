@@ -46,8 +46,15 @@ func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, a
 	if title == "" {
 		return tools.TaskView{}, errors.New("create: title is required")
 	}
-	if err := m.requireGroupMembership("create", threadID); err != nil {
+	meta, err := m.boardThreadMeta("create", threadID)
+	if err != nil {
 		return tools.TaskView{}, err
+	}
+	// DM tasks are born owned (task-rail design §7): the DM has exactly one
+	// possible executor — the resident agent itself — so the claim parameter
+	// is semantically always true and the claim race cannot exist.
+	if !meta.Group {
+		claim = true
 	}
 	sessionDir := m.server.rt.SessionDir
 
@@ -147,12 +154,16 @@ func (m *residentTaskManager) EscalateTask(ctx context.Context, subthreadID, tit
 	if err := m.ready("escalate"); err != nil {
 		return tools.TaskView{}, err
 	}
-	thread, err := m.memberTask("escalate", subthreadID)
+	thread, meta, err := m.memberTask("escalate", subthreadID)
 	if err != nil {
 		return tools.TaskView{}, err
 	}
 	if thread.Status != session.ConversationThreadOpen {
 		return tools.TaskView{}, fmt.Errorf("escalate: reply %q is %q; only an open discussion reply can be converted to a task", thread.ID, thread.Status)
+	}
+	// DM tasks are born owned (task-rail design §7) — same forcing as create.
+	if !meta.Group {
+		claim = true
 	}
 	sessionDir := m.server.rt.SessionDir
 	escalated, err := session.EscalateConversationThread(sessionDir, thread.ID, m.participantID, "", title)
@@ -182,7 +193,7 @@ func (m *residentTaskManager) ClaimTask(ctx context.Context, subthreadID string)
 	if err := m.ready("claim"); err != nil {
 		return tools.TaskView{}, false, err
 	}
-	thread, err := m.memberTask("claim", subthreadID)
+	thread, _, err := m.memberTask("claim", subthreadID)
 	if err != nil {
 		return tools.TaskView{}, false, err
 	}
@@ -205,9 +216,15 @@ func (m *residentTaskManager) UnclaimTask(ctx context.Context, subthreadID strin
 	if err := m.ready("unclaim"); err != nil {
 		return tools.TaskView{}, err
 	}
-	thread, err := m.memberTask("unclaim", subthreadID)
+	thread, meta, err := m.memberTask("unclaim", subthreadID)
 	if err != nil {
 		return tools.TaskView{}, err
+	}
+	// A DM task has exactly one possible executor, so releasing ownership is
+	// meaningless — the board would hold a task nobody else can ever claim
+	// (task-rail design §7). Refuse loudly instead of stranding it.
+	if !meta.Group {
+		return tools.TaskView{}, fmt.Errorf("unclaim: task %q lives in a DM; a DM task has exactly one possible owner and cannot be released — finish it (update_status) or leave it as is", thread.ID)
 	}
 	released, err := session.UnclaimConversationThread(m.server.rt.SessionDir, thread.ID, m.participantID)
 	if err != nil {
@@ -223,7 +240,7 @@ func (m *residentTaskManager) FileTaskReview(ctx context.Context, subthreadID, s
 	if err := m.ready("update_status"); err != nil {
 		return tools.TaskView{}, err
 	}
-	thread, err := m.memberTask("update_status", subthreadID)
+	thread, _, err := m.memberTask("update_status", subthreadID)
 	if err != nil {
 		return tools.TaskView{}, err
 	}
@@ -249,7 +266,7 @@ func (m *residentTaskManager) UnfollowTask(ctx context.Context, subthreadID stri
 	if err := m.ready("unfollow"); err != nil {
 		return err
 	}
-	thread, err := m.memberTask("unfollow", subthreadID)
+	thread, _, err := m.memberTask("unfollow", subthreadID)
 	if err != nil {
 		return err
 	}
@@ -269,7 +286,7 @@ func (m *residentTaskManager) ListTasks(ctx context.Context, threadID string) ([
 	if threadID == "" {
 		return nil, errors.New("list: thread_id is required")
 	}
-	if err := m.requireGroupMembership("list", threadID); err != nil {
+	if _, err := m.boardThreadMeta("list", threadID); err != nil {
 		return nil, err
 	}
 	threads, err := session.ListConversationThreads(m.server.rt.SessionDir, threadID)
@@ -296,46 +313,58 @@ func (m *residentTaskManager) ready(action string) error {
 	return nil
 }
 
-// memberTask loads a task subthread and verifies the caller is a member of
-// its parent group thread. Task-rail actions address the cth directly, so the
-// membership boundary is checked against the parent it hangs off of.
-func (m *residentTaskManager) memberTask(action, subthreadID string) (session.ConversationThread, error) {
+// memberTask loads a task subthread and verifies the caller may act on its
+// parent thread's board. Task-rail actions address the cth directly, so the
+// access boundary is checked against the parent it hangs off of.
+func (m *residentTaskManager) memberTask(action, subthreadID string) (session.ConversationThread, session.Session, error) {
 	subthreadID = strings.TrimSpace(subthreadID)
 	if subthreadID == "" {
-		return session.ConversationThread{}, fmt.Errorf("%s: subthread_id is required", action)
+		return session.ConversationThread{}, session.Session{}, fmt.Errorf("%s: subthread_id is required", action)
 	}
 	thread, err := session.FindConversationThreadByID(m.server.rt.SessionDir, subthreadID)
 	if err != nil {
-		return session.ConversationThread{}, fmt.Errorf("%s: %w", action, err)
+		return session.ConversationThread{}, session.Session{}, fmt.Errorf("%s: %w", action, err)
 	}
-	if err := m.requireGroupMembership(action, thread.SessionID); err != nil {
-		return session.ConversationThread{}, err
+	meta, err := m.boardThreadMeta(action, thread.SessionID)
+	if err != nil {
+		return session.ConversationThread{}, session.Session{}, err
 	}
-	return thread, nil
+	return thread, meta, nil
 }
 
-func (m *residentTaskManager) requireGroupMembership(action, threadID string) error {
+// boardThreadMeta gates task-rail access and hands back the parent thread's
+// meta so callers can branch on group vs DM semantics (task-rail design §7,
+// 2026-07-07): a group's board is open to its members; a DM's board is open
+// to exactly the DM's own resident agent. Anything else — someone else's DM,
+// a non-chat work session — is a loud refusal.
+func (m *residentTaskManager) boardThreadMeta(action, threadID string) (session.Session, error) {
 	sessionDir := m.server.rt.SessionDir
 	meta, ok, err := session.Find(sessionDir, threadID)
 	if err != nil {
-		return fmt.Errorf("%s: lookup thread: %w", action, err)
+		return session.Session{}, fmt.Errorf("%s: lookup thread: %w", action, err)
 	}
 	if !ok {
-		return fmt.Errorf("%s: %w: %q", action, session.ErrSessionNotFound, threadID)
+		return session.Session{}, fmt.Errorf("%s: %w: %q", action, session.ErrSessionNotFound, threadID)
+	}
+	if dm := strings.TrimSpace(meta.DMParticipantID); dm != "" {
+		if dm == m.participantID {
+			return meta, nil
+		}
+		return session.Session{}, fmt.Errorf("%s: thread %q is another agent's DM; only its resident agent may use this board", action, threadID)
 	}
 	if !meta.Group {
-		return fmt.Errorf("%s: thread %q is not a group thread; the task rail lives in groups", action, threadID)
+		return session.Session{}, fmt.Errorf("%s: thread %q is neither a group nor a DM chat; the task rail lives in chat threads", action, threadID)
 	}
 	members, err := session.ListThreadMembers(sessionDir, threadID)
 	if err != nil {
-		return fmt.Errorf("%s: list thread members: %w", action, err)
+		return session.Session{}, fmt.Errorf("%s: list thread members: %w", action, err)
 	}
 	for _, memberID := range members {
 		if strings.TrimSpace(memberID) == m.participantID {
-			return nil
+			return meta, nil
 		}
 	}
-	return fmt.Errorf("%s: participant %q is not a member of thread %q", action, m.participantID, threadID)
+	return session.Session{}, fmt.Errorf("%s: participant %q is not a member of thread %q", action, m.participantID, threadID)
 }
 
 func (m *residentTaskManager) taskView(thread session.ConversationThread) tools.TaskView {
@@ -373,6 +402,12 @@ func (s *Server) wakeTaskBoardForOwnerlessTask(task session.ConversationThread, 
 	}
 	threadID := strings.TrimSpace(task.SessionID)
 	if threadID == "" || strings.TrimSpace(task.OwnerParticipantID) != "" {
+		return
+	}
+	// DM tasks are born owned so this is normally unreachable for them; the
+	// explicit guard keeps the invariant local (task-rail design §7: DMs have
+	// no group members to call, the wake is a group-only mechanism).
+	if meta, ok, err := session.Find(s.rt.SessionDir, threadID); err != nil || !ok || !meta.Group {
 		return
 	}
 	actorID = strings.TrimSpace(actorID)

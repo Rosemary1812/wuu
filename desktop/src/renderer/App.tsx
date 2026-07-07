@@ -8673,7 +8673,7 @@ export function App(): JSX.Element {
             />
             {poppedOutMode ? null : (
               <>
-                {activeThreadIsGroup && activeThread ? (
+                {activeThreadIsChatStyle && activeThread ? (
                   <button
                     className="icon-button task-board-toggle-button"
                     type="button"
