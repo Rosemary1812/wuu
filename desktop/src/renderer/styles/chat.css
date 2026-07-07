@@ -176,6 +176,18 @@
   max-width: 72%;
 }
 
+/*
+ * Received bubbles run wider than sent ones. Named agents habitually
+ * answer in paragraphs while the user sends a line or two, so the
+ * uniform 72% cap folded agent prose into a tall dense column. 84%
+ * (still capped at the shared message measure) gives long replies the
+ * same reading width as the main stream; the user's own bubbles keep
+ * 72% — width follows who carries the content.
+ */
+.chat-row--participant .chat-bubble-group {
+  max-width: min(var(--conversation-message-max-width, 720px), 84%);
+}
+
 .chat-row--user .chat-bubble-group {
   align-items: flex-end;
 }

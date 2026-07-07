@@ -84,17 +84,35 @@
    * surrounding chrome can carry the bold/semibold contrast.
    *
    * Companion rule in `base.css` `.rich-content strong, .rich-content b`
-   * uses `font-weight: inherit` so `<strong>`/`<b>` keep DOM semantics
-   * (selection, a11y, copy-paste) without producing a heavier visual run.
+   * holds emphasis at `--weight-medium` (560) so `<strong>`/`<b>` stay
+   * legible anchors inside the 400 body without shouting at 700.
    */
   font-weight: 400;
   /*
    * Turn-to-turn separation must beat every within-turn gap, or the
-   * eye can't find where one exchange ends and the next begins. 20px
-   * was smaller than the question→answer distance inside a turn,
-   * which inverted the grouping.
+   * eye can't find where one exchange ends and the next begins. This
+   * is the single deliberate boundary value: 36px of clean white
+   * against 24px bubble→hairline inside the turn. The hover action
+   * bars paint INTO this band as overlays (see the containment note
+   * below) instead of reserving in-flow ghost rows — the old
+   * 28px + 32px invisible slot added up to a 60px dead zone that read
+   * as unexplained emptiness after every answer.
    */
-  margin-bottom: 28px;
+  margin-bottom: 36px;
+}
+
+/*
+ * content-visibility:auto implies paint containment, which clips any
+ * descendant painted outside the turn's border box — exactly where the
+ * hover action overlays go (user actions above the bubble, agent
+ * actions below the answer, both inside the 36px boundary band). Lift
+ * the containment precisely when those overlays can be visible: while
+ * the turn is hovered or holds focus. Off-screen turns keep the
+ * rendering shortcut.
+ */
+.turn:hover,
+.turn:focus-within {
+  content-visibility: visible;
 }
 
 .turn[data-turn-status="in_progress"] {
@@ -354,6 +372,20 @@
   min-width: 0;
   flex-direction: column;
   gap: var(--conversation-message-element-gap, 20px);
+}
+
+/*
+ * A narration line introduces the tool activity that follows it —
+ * "先看一下配置" belongs to the reads underneath, not to the previous
+ * beat. Pull that pair down to the activity rhythm (9px) while
+ * activity → next narration keeps the full block gap, so the fold
+ * reads as narrated work beats instead of an even list.
+ */
+.turn-process-entry-commentary + .turn-process-entry-activity,
+.turn-process-entry-commentary + .turn-process-entry-process_group {
+  margin-top: calc(
+    var(--conversation-activity-gap) - var(--conversation-message-element-gap)
+  );
 }
 
 .turn-process-entry {
@@ -917,11 +949,27 @@
   transform: var(--message-copy-active-transform);
 }
 
+/*
+ * Hover actions live OUTSIDE the flow: an overlay above the bubble's
+ * top-right corner, painting into the turn-boundary band (36px — the
+ * 24px row + 4px bridge fit with room to spare). Keeping them in-flow
+ * reserved a 24px invisible row under every bubble, which pushed the
+ * question 56px away from its own answer's hairline. The padding (not
+ * a gap) bridges bubble → row so the hover chain never breaks while
+ * the pointer travels up.
+ */
+.user-message-block-with-actions {
+  position: relative;
+}
+
 .user-message-actions {
-  justify-self: end;
+  position: absolute;
+  bottom: 100%;
+  right: 0;
   justify-content: flex-end;
   width: max-content;
   max-width: 100%;
+  padding-bottom: 4px;
 }
 
 .message-images {
@@ -1028,10 +1076,22 @@
 .agent-block {
   display: block;
   width: 100%;
+  /*
+   * Answer prose shares the question bubble's measure. Uncapped, the
+   * text ran the full 832px content column (~59 CJK chars per line,
+   * far past the 35–45 comfort range) while the user bubble stopped
+   * at 720px — two different measures inside one exchange. Tool rows
+   * and cards keep the full column; only running prose is capped.
+   */
+  max-width: min(var(--conversation-message-max-width, 720px), 100%);
   min-width: 0;
   color: var(--ink);
   font-size: var(--conversation-message-font-size);
   line-height: var(--conversation-reading-line-height);
+}
+
+.conversation-split-width .agent-block {
+  max-width: min(var(--conversation-split-message-max-width, 760px), 100%);
 }
 
 .context-composition-card {
@@ -1408,9 +1468,25 @@
 }
 
 .agent-block-with-action-slot {
+  position: relative;
   display: grid;
   min-width: 0;
   gap: var(--conversation-answer-action-gap);
+}
+
+/*
+ * Only the persistent bar (latest completed answer, always visible)
+ * earns in-flow space. Every other answer shows its actions on hover
+ * as an overlay hanging below the last line, inside the 36px turn
+ * boundary band — no reserved ghost row after every historical
+ * answer. padding-top (not offset) keeps the hover chain unbroken
+ * between the text and the row.
+ */
+.agent-actions-overlay > .agent-message-actions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  padding-top: 6px;
 }
 
 .message-actions {
@@ -1437,11 +1513,6 @@
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
-}
-
-.action-slot-placeholder {
-  visibility: hidden;
-  pointer-events: none;
 }
 
 .message-actions .message-action-button {
@@ -2751,22 +2822,26 @@
 }
 
 /*
- * Chat messages don't surface Markdown headings as h1-h6 — chat is a
- * linear stream, not a document. A `# foo` reads as a bold paragraph
- * that picks up the surrounding message rhythm, so the eye stays on
- * the conversation column instead of bouncing between 14px body
- * text and an 18px heading. `**bold**` still renders as true inline
- * bold for the few cases that genuinely need emphasis.
+ * Chat messages don't surface Markdown headings as h1-h6 sizes — chat
+ * is a linear stream, not a document. A `# foo` reads as a semibold
+ * paragraph that picks up the surrounding message rhythm, so the eye
+ * stays on the conversation column instead of bouncing between 14px
+ * body text and an 18px heading. An earlier iteration flattened
+ * headings all the way down to plain paragraphs; that removed every
+ * anchor from long answers and they dissolved into an even gray wall.
+ * Weight + extra top space is the whisper-level hierarchy: enough to
+ * scan by, too quiet to shout.
  */
 .rich-heading {
   /*
    * Space before > space after: a heading belongs to the content below
-   * it, so it gets extra breathing room above (flex gap + 10px) while
-   * staying tight against its own section. Uniform flex gaps alone gave
-   * the heading equal distance to both neighbours, which destroyed the
-   * grouping the bold weight is trying to signal.
+   * it, so it gets extra breathing room above (flex gap + 12px ≈ 28px,
+   * the "section" step of the spacing ladder) while staying tight
+   * against its own section. Uniform flex gaps alone gave the heading
+   * equal distance to both neighbours, which destroyed the grouping
+   * the semibold weight is trying to signal.
    */
-  margin: 10px 0 0;
+  margin: 12px 0 0;
   color: var(--ink);
   font-weight: var(--weight-semibold);
   letter-spacing: 0;
@@ -3311,6 +3386,8 @@
 
 .reasoning-block {
   display: block;
+  /* Same measure cap as .agent-block — reasoning is running prose too. */
+  max-width: min(var(--conversation-message-max-width, 720px), 100%);
   color: var(--ink-tertiary);
   font-size: var(--font-ui);
   font-weight: 500;

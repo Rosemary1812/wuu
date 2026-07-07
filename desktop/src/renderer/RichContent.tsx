@@ -324,23 +324,28 @@ function markdownComponents(
     p({ children }) {
       return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "p")}</p>;
     },
+    // Every heading level renders as the same whisper-level anchor: a
+    // same-size semibold paragraph with extra space above (.rich-heading).
+    // One tier only — the stream needs scannable section marks, not a
+    // document outline. Flattening headings to plain paragraphs (the
+    // previous iteration) left long answers with no anchors at all.
     h1({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "h1")}</p>;
+      return <p className="rich-heading">{renderMarkdownText(children, richTextOptions, "h1")}</p>;
     },
     h2({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "h2")}</p>;
+      return <p className="rich-heading">{renderMarkdownText(children, richTextOptions, "h2")}</p>;
     },
     h3({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "h3")}</p>;
+      return <p className="rich-heading">{renderMarkdownText(children, richTextOptions, "h3")}</p>;
     },
     h4({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "h4")}</p>;
+      return <p className="rich-heading">{renderMarkdownText(children, richTextOptions, "h4")}</p>;
     },
     h5({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "h5")}</p>;
+      return <p className="rich-heading">{renderMarkdownText(children, richTextOptions, "h5")}</p>;
     },
     h6({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "h6")}</p>;
+      return <p className="rich-heading">{renderMarkdownText(children, richTextOptions, "h6")}</p>;
     },
     a({ href, title, children }) {
       const inner = renderMarkdownText(children, plainTextOptions, "a");

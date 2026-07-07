@@ -84,6 +84,24 @@ describe("StreamingMarkdown", () => {
     expect(strong?.textContent).toBe("hi");
   });
 
+  it("renders markdown headings as whisper-level rich-heading anchors", async () => {
+    const key = streamTextKey("turn", "s10", "text");
+    streamTextStore.seed(key, "");
+    mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
+
+    await act(async () => {
+      streamTextStore.append(key, "## 方案\n\n正文段落");
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+
+    const surface = document.querySelector(".streaming-markdown") as HTMLElement;
+    const heading = surface.querySelector(".rich-heading");
+    expect(heading?.textContent).toBe("方案");
+    // Same tier for every level: headings are same-size semibold
+    // paragraphs, never h1-h6 elements with size jumps.
+    expect(surface.querySelector("h1, h2, h3, h4, h5, h6")).toBeNull();
+  });
+
   it("shows a 1px cursor span during streaming", async () => {
     const key = streamTextKey("turn", "s2", "text");
     streamTextStore.seed(key, "Hello world");

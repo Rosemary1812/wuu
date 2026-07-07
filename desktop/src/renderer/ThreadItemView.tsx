@@ -170,22 +170,24 @@ export function ThreadItemView({
         ? streamTextStore.get(streamKeyValue)
         : (item.text ?? "");
       const copyable = streaming || agentText.trim() !== "";
+      const isProcessText = item.phase === "commentary";
       const actionsVisible =
         turnStatus === "completed" &&
         item.id === actionableAgentMessageID &&
-        copyable;
+        copyable &&
+        !isProcessText;
       const actionsPersistent =
         actionsVisible && item.id === latestAgentMessageID;
-      const isProcessText = item.phase === "commentary";
-      const reserveActionSlot =
-        copyable &&
-        !isProcessText &&
-        (streaming || actionsVisible || item.phase === "final_answer");
+      // Only the persistent bar (latest answer, always visible) takes
+      // in-flow space; historical answers get a hover overlay so no
+      // invisible slot pads the turn boundary. Streaming answers render
+      // no bar at all — the old streaming placeholder reserved 32px of
+      // dead space under text that had nothing to offer yet.
       return (
         <article
           className={`agent-block${
-            reserveActionSlot
-              ? ` agent-block-with-action-slot${actionsVisible ? " agent-actions-available" : ""}${actionsPersistent ? " agent-actions-persistent" : ""}`
+            actionsVisible
+              ? ` agent-block-with-action-slot agent-actions-available${actionsPersistent ? " agent-actions-persistent" : " agent-actions-overlay"}`
               : ""
           }`}
         >
@@ -199,10 +201,9 @@ export function ThreadItemView({
               onStreamFrame={onStreamFrame}
             />
           </div>
-          {reserveActionSlot ? (
+          {actionsVisible ? (
             <AgentMessageActions
               getText={() => streamFieldValue(turnID, item, "text")}
-              hidden={!actionsVisible}
               onFork={
                 onForkMessage ? () => onForkMessage(turnID, item.id) : undefined
               }

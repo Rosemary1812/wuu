@@ -66,6 +66,26 @@ wuu 的菜单应该像轻量控件，而不是卡片或弹窗。它们服务于�
 4. 内容会增长时加高度上限。
 5. 只有当界面职责不同，例如 dialog、inspector 或常驻侧栏，才新建另一套视觉规格。
 
+## 消息流节奏
+
+消息流的空白是一套阶梯，一个用途一个值，值和值之间要拉开可感知的差距。空白要么小到表达"同组"，要么大到表达"分界"，不允许存在既不小也不大的死空间（历史教训：不可见但占位的 hover 操作行把 turn 边界撑到 60px，读起来就是一段无解释的空）。
+
+当前阶梯（token 声明在 `conversation-shell.css`，边界值在 `turns.css`）：
+
+- 段内：行高 `1.7`（正文 prose 测度被限制在消息最大宽度内，行长短，行距不必再放）。
+- 工具行之间：`9px`（`--conversation-activity-gap`）；commentary 紧跟它引出的工具组时也收到 `9px`。
+- 块之间：`16px`（段落、fold 内条目、answer 内块共用 `--conversation-prose-block-gap` / `--conversation-message-element-gap`）。
+- 区之间：`20px`（process 折叠区 ↔ 最终答案，`--conversation-process-gap`）。
+- 节标题上方：块间距 + `12px`（`.rich-heading`）。
+- 问 → 答：`24px` + 发丝线 + `16px`（发丝线负责解释这段空白）。
+- turn 边界：`36px` 干净空白（`.turn` margin-bottom），是全流最大的空白。
+
+配套规则：
+
+- hover 操作行一律 overlay，不占流内空间；只有最新一条答案的常驻操作行例外（真实可见才配占位）。overlay 画进 turn 边界带，`.turn:hover/:focus-within` 时解除 `content-visibility` 的 paint containment（详见 `turns.css` 注释）。
+- 正文层级停在"低语"级：标题 = 同字号 semibold + 上方额外空间（单一层级，不还原 h1-h6 字号）；`**bold**` = `--weight-medium`。要么全平（灰墙、无锚点），要么字号跳变（文档感、太吵），都被否过。
+- 答案 prose、reasoning 与用户气泡共用一把测度尺（`--conversation-message-max-width`）；工具行和卡片仍然可以占满内容列。
+
 ## 排队消息
 
 排队消息（queue）和引导消息（guide）是 composer 的内部内容，不要在外面另起卡片。

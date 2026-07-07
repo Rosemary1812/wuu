@@ -255,19 +255,16 @@ describe("ThreadItemView", () => {
     expect(secondToggle?.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("keeps the final-answer action bar mounted while it becomes visible", () => {
+  it("reserves no action bar while streaming and mounts the persistent bar on completion", () => {
     render({
       item: makeFinalAnswer("in_progress"),
       turnStatus: "in_progress",
       streaming: true,
     });
 
-    const hiddenActions = actionBar();
-    expect(hiddenActions.classList.contains("action-slot-placeholder")).toBe(
-      true,
-    );
-    expect(hiddenActions.getAttribute("aria-hidden")).toBe("true");
-    expect(hiddenActions.querySelectorAll("button")).toHaveLength(4);
+    // Streaming answers render no bar at all — the old invisible
+    // placeholder reserved 32px of dead space under live text.
+    expect(container?.querySelector(".agent-message-actions")).toBeNull();
 
     render({
       item: makeFinalAnswer("completed"),
@@ -278,11 +275,26 @@ describe("ThreadItemView", () => {
     });
 
     const visibleActions = actionBar();
-    expect(visibleActions).toBe(hiddenActions);
-    expect(visibleActions.classList.contains("action-slot-placeholder")).toBe(
-      false,
-    );
     expect(visibleActions.getAttribute("aria-label")).toBe("助手消息操作");
+    expect(visibleActions.querySelectorAll("button")).toHaveLength(4);
+    const block = container?.querySelector(".agent-block");
+    expect(block?.classList.contains("agent-actions-persistent")).toBe(true);
+    expect(block?.classList.contains("agent-actions-overlay")).toBe(false);
+  });
+
+  it("renders historical answers with a hover overlay bar instead of an in-flow slot", () => {
+    render({
+      item: makeFinalAnswer("completed"),
+      turnStatus: "completed",
+      actionableAgentMessageID: "final-1",
+      latestAgentMessageID: "final-99",
+      streaming: false,
+    });
+
+    actionBar();
+    const block = container?.querySelector(".agent-block");
+    expect(block?.classList.contains("agent-actions-overlay")).toBe(true);
+    expect(block?.classList.contains("agent-actions-persistent")).toBe(false);
   });
 
   it("releases completed stream text after the settled view keeps the final answer", async () => {

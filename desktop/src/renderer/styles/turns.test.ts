@@ -14,10 +14,18 @@ function cssRuleBody(selector: string): string {
 }
 
 describe("turns.css user message actions", () => {
-  it("keeps action buttons aligned to the user bubble edge", () => {
-    expect(turnsCss).toMatch(
-      /\.user-message-actions\s*\{[\s\S]*?justify-self:\s*end;[\s\S]*?justify-content:\s*flex-end;[\s\S]*?width:\s*max-content;/,
-    );
+  it("overlays action buttons above the bubble edge instead of reserving flow space", () => {
+    const body = cssRuleBody(".user-message-actions");
+    // Out-of-flow overlay: in-flow placement reserved an invisible
+    // 24px row under every bubble and bloated the turn boundary.
+    expect(body).toMatch(/position:\s*absolute;/);
+    expect(body).toMatch(/bottom:\s*100%;/);
+    expect(body).toMatch(/right:\s*0;/);
+    expect(body).toMatch(/justify-content:\s*flex-end;/);
+    expect(body).toMatch(/width:\s*max-content;/);
+    // The hover bridge must be padding (contiguous hit area), not offset.
+    expect(body).toMatch(/padding-bottom:/);
+    expect(body).not.toMatch(/justify-self/);
   });
 });
 

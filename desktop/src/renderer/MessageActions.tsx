@@ -7,11 +7,9 @@ import { useImagePreview } from "./ImagePreview";
 export function AgentMessageActions({
   getText,
   onFork,
-  hidden = false,
 }: {
   getText: () => string;
   onFork?: () => void;
-  hidden?: boolean;
 }): JSX.Element {
   const [feedback, setFeedback] = useState<"liked" | "disliked" | null>(null);
   // `pulse` is a transient state used to retrigger the icon bounce/shake keyframes
@@ -49,13 +47,7 @@ export function AgentMessageActions({
   }
 
   return (
-    <div
-      className={`message-actions agent-message-actions${
-        hidden ? " action-slot-placeholder" : ""
-      }`}
-      aria-hidden={hidden || undefined}
-      aria-label={hidden ? undefined : "助手消息操作"}
-    >
+    <div className="message-actions agent-message-actions" aria-label="助手消息操作">
       <MessageCopyButton getText={getText} className="message-action-button" iconSize={15} />
       <button
         className={`message-action-button message-action-button--like${

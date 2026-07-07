@@ -41,7 +41,7 @@ describe("conversation design token registry", () => {
     expect(LEGACY_CONVERSATION_DESIGN_TOKEN_STORAGE_KEYS).not.toContain(
       CONVERSATION_DESIGN_TOKEN_STORAGE_KEY,
     );
-    expect(readingToken?.defaultValue).toBe(1.75);
+    expect(readingToken?.defaultValue).toBe(1.7);
   });
 
   it("cleans stale inline variables that used to override the reading rhythm", () => {

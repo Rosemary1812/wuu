@@ -464,30 +464,17 @@ button:disabled {
 }
 
 /*
- * A message body has no bold. `**bold**`, `<strong>`, and `<b>` all
- * render at the surrounding paragraph weight, so the only path to
- * emphasis in a chat turn is structural (inline code, lists, links)
- * — never weight. This scopes strictly to agent_message, reasoning,
- * and commentary output; UI chrome (notices, buttons, labels) keeps
- * its own bold for hierarchy.
+ * Message-body emphasis is held at `--weight-medium` (560), one quiet
+ * step above the 400 body — never the full 700 the browser default
+ * would give. Two failed extremes bracket this value: 700 bold made
+ * model output read as shouting (every other phrase punched a hole in
+ * the paragraph), and the follow-up `font-weight: inherit` erased
+ * emphasis entirely, which flattened long answers into an even gray
+ * wall with no anchors to scan by. 560 keeps `**bold**` findable at a
+ * glance while staying below headings (`.rich-heading`, 620) and out
+ * of the register that UI chrome uses for hierarchy.
  */
 .rich-content strong,
 .rich-content b {
-  /*
-   * Inherit the surrounding paragraph weight rather than hardcoding
-   * `normal` (400). The turn body is `font-weight: 400`
-   * (see `turns.css` `.turn`), and the message-stream design intentionally
-   * does not escalate weight for emphasis — bold/italic come from DOM
-   * semantics (selection, a11y, copy-paste) only, not from a heavier
-   * visual run. `inherit` collapses `<strong>` into the body weight so
-   * a word marked bold does not punch a hole in the paragraph's rhythm.
-   *
-   * Note: an earlier draft used `font-weight: 480` on `.turn`. At 480,
-   * a hardcoded `normal` (400) inside `strong/b` actually rendered
-   * LIGHTER than the surrounding body — the opposite of emphasis — which
-   * is why this rule was switched to `inherit`. With the body now at 400
-   * the same `inherit` rule continues to be correct: bold stays equal to
-   * the body, never heavier.
-   */
-  font-weight: inherit;
+  font-weight: var(--weight-medium);
 }
