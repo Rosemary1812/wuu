@@ -881,6 +881,32 @@
   cursor: pointer;
 }
 
+/*
+ * Self-centered "sticky to bottom + horizontal-center" override used by
+ * JumpToLatestPill.tsx (issue #5 fix). The pill is rendered as a direct
+ * child of the scroll container (instead of a sibling of it), so
+ * `position: sticky; left: 50%; transform: translateX(-50%)` resolves
+ * against the container's visible width — no CSS variables, no
+ * conversation-pane / thread-panel-width inheritance. The previous
+ * `position: absolute` with `left: var(--conversation-visible-inset-left);
+ * right: var(--conversation-visible-inset-right); margin-inline: auto`
+ * approach bugged out when the .subthread-panel-visible class changed
+ * the conversation-pane's right inset, dragging the pill off-center.
+ *
+ * `var(--dock-composer-height, 0px)` is preserved from the old approach
+ * so the pill lifts when the composer is open (relevant for the main
+ * column path; the thread path has its own composer handling and the
+ * var is harmless there too).
+ */
+.jump-to-latest-pill-sticky-centered {
+  position: sticky;
+  bottom: calc(var(--dock-composer-height, 0px) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  margin: 0 0 12px;
+}
+
 .jump-to-latest-progress {
   flex: 0 1 auto;
   justify-content: center;

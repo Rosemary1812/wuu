@@ -1,5 +1,6 @@
 import {
   type KeyboardEvent as ReactKeyboardEvent,
+  useRef,
   useState,
 } from "react";
 import {
@@ -17,6 +18,7 @@ import type {
   ThreadItem,
 } from "../shared/protocol";
 import { ChatThreadViewContainer } from "./ChatThreadViewContainer";
+import { JumpToLatestPill } from "./JumpToLatestPill";
 import { SelectMenu } from "./SelectMenu";
 
 /**
@@ -99,6 +101,10 @@ export function ConversationSubthreadPanel({
   // Inline "完成 Task" conclusion form, revealed by the header gate.
   const [finalizing, setFinalizing] = useState(false);
   const [summary, setSummary] = useState("");
+  // The panel's own scroll container (.conversation-subthread-body): a long
+  // task/reply thread gets the same jump-to-latest pill as the main stream,
+  // scoped to this panel's scroll (issue #5 Fix 2).
+  const bodyScrollRef = useRef<HTMLDivElement | null>(null);
   // Inline "升级为 Task" lead picker, revealed by the header gate. The human
   // must pick a named member to hold编排权 (task lead) before escalating.
   const candidates = leadCandidates ?? [];
@@ -223,7 +229,7 @@ export function ConversationSubthreadPanel({
           </button>
         </div>
       </header>
-      <div className="conversation-subthread-body">
+      <div className="conversation-subthread-body" ref={bodyScrollRef}>
         {subthread &&
         !alreadyTask &&
         !resolved &&
@@ -303,6 +309,7 @@ export function ConversationSubthreadPanel({
             onReact={onReact}
           />
         )}
+        <JumpToLatestPill containerRef={bodyScrollRef} />
       </div>
       {subthread && !resolved && composer ? (
         <div className="conversation-subthread-composer">{composer}</div>

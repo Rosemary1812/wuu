@@ -278,6 +278,7 @@ import { SettingsView, type SettingsPage } from "./SettingsView";
 import type { ComposerGoalSummary, SettingsUsageRange, SettingsUsageResponse } from "../shared/protocol";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { SessionTabStrip } from "./SessionTabs";
+import { JumpToLatestPill } from "./JumpToLatestPill";
 import { SkillsCatalog } from "./SkillsCatalog";
 import { TaskBoardView } from "./TaskBoardView";
 import { StreamingMarkdown } from "./StreamingMarkdown";
@@ -8976,6 +8977,7 @@ export function App(): JSX.Element {
               </>
             )}
             </div>
+            <JumpToLatestPill containerRef={conversationScrollRef} />
           </div>
         ) : (
           <RuntimeLoading
@@ -9002,38 +9004,11 @@ export function App(): JSX.Element {
         !splitConversation &&
         !showingSkillsCatalog &&
         !showingTaskBoard &&
-        (userScrolledAway || activePlanVisible) ? (
+        activePlanVisible ? (
           <div
             className="jump-to-latest-cluster"
             aria-label="当前位置与进度"
           >
-            {userScrolledAway ? (
-              <button
-                type="button"
-                className="jump-to-latest-pill"
-                aria-label="跳到最新"
-                onClick={() =>
-                  scrollConversationToBottom({ force: true, smooth: true })
-                }
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 14 14"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M7 1V11M7 11L3 7M7 11L11 7"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <span>跳到最新</span>
-              </button>
-            ) : null}
             {activePlanVisible ? (
               <div
                 className="jump-to-latest-progress"
