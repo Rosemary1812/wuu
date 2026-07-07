@@ -313,6 +313,17 @@
   width: 100%;
 }
 
+/* In a row-control-block (input + trailing action button) the input should
+ * grow to fill the row rather than claim 100% width — that pushes the
+ * button onto its own line. Pair with `min-width: 0` so a long placeholder
+ * can still ellipsize. */
+.settings-row-control-block .settings-input,
+.settings-row-control-block .settings-select {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
 .settings-row-control-value {
   display: flex;
   align-items: center;

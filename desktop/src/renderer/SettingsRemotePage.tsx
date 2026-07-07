@@ -67,7 +67,11 @@ export function SettingsRemotePage({
               if (value !== "") onSaveRelay(value);
             }}
           >
-            <RemoteRow title="中继地址" description="ws[s]://主机:端口/v1/connect">
+            <RemoteRow
+              title="中继地址"
+              description="ws[s]://主机:端口/v1/connect"
+              block
+            >
               <input
                 className="settings-input"
                 type="text"
@@ -76,8 +80,6 @@ export function SettingsRemotePage({
                 onChange={(event) => setRelayDraft(event.target.value)}
                 disabled={busy}
               />
-            </RemoteRow>
-            <div className="settings-card-footer">
               <button
                 className="settings-button settings-button-primary"
                 type="submit"
@@ -85,7 +87,7 @@ export function SettingsRemotePage({
               >
                 保存中继
               </button>
-            </div>
+            </RemoteRow>
           </form>
           <RemoteRow
             title="远程访问"
@@ -238,10 +240,12 @@ function RemoteSection({
 function RemoteRow({
   title,
   description,
+  block = false,
   children
 }: {
   title: string;
   description?: string;
+  block?: boolean;
   children: ReactNode;
 }): JSX.Element {
   return (
@@ -250,7 +254,7 @@ function RemoteRow({
         <span className="settings-row-label-title">{title}</span>
         {description ? <span className="settings-row-label-description">{description}</span> : null}
       </div>
-      <div className="settings-row-control">{children}</div>
+      <div className={block ? "settings-row-control-block" : "settings-row-control"}>{children}</div>
     </div>
   );
 }
