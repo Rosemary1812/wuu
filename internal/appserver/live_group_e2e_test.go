@@ -317,8 +317,9 @@ func liveTruncate(s string, n int) string {
 
 // ensureNamedParticipant returns the id of a non-retired named agent with the
 // given name, reusing an existing one (e.g. the auto-seeded "Andy") or creating
-// it. Robust against the first-launch default seed and against re-runs.
-func ensureNamedParticipant(t *testing.T, rt *runtime.Session, name string) string {
+// it with the given role. Robust against the first-launch default seed and
+// against re-runs.
+func ensureNamedParticipant(t *testing.T, rt *runtime.Session, name, role string) string {
 	t.Helper()
 	existing, err := session.ListParticipants(rt.SessionDir, participant.KindNamed)
 	if err != nil {
@@ -329,24 +330,41 @@ func ensureNamedParticipant(t *testing.T, rt *runtime.Session, name string) stri
 			return p.ID
 		}
 	}
-	return saveNamedParticipant(t, rt, name, "群成员", "")
+	return saveNamedParticipant(t, rt, name, role, "")
+}
+
+type liveAgent struct {
+	name string
+	role string
 }
 
 // liveGroup wires N named agents into a fresh group and returns the group id and
 // an id->name map for readable transcripts.
-func liveGroup(t *testing.T, srv *Server, rt *runtime.Session, title string, agentNames []string) (string, map[string]string) {
+func liveGroup(t *testing.T, srv *Server, rt *runtime.Session, title string, agents []liveAgent) (string, map[string]string) {
 	t.Helper()
-	names := make(map[string]string, len(agentNames))
+	names := make(map[string]string, len(agents))
 	group := startNamedGroupThreadForTest(t, srv, title)
-	for _, n := range agentNames {
-		id := ensureNamedParticipant(t, rt, n)
-		names[id] = n
+	for _, a := range agents {
+		role := a.role
+		if strings.TrimSpace(role) == "" {
+			role = "群成员"
+		}
+		id := ensureNamedParticipant(t, rt, a.name, role)
+		names[id] = a.name
 		resp := addThreadMemberForTest(t, srv, "add-"+id, group.ID, id)
 		if errMsg, ok := resp["error"]; ok {
-			t.Fatalf("add member %s: %v", n, errMsg)
+			t.Fatalf("add member %s: %v", a.name, errMsg)
 		}
 	}
 	return group.ID, names
+}
+
+func liveAgents(names ...string) []liveAgent {
+	out := make([]liveAgent, 0, len(names))
+	for _, n := range names {
+		out = append(out, liveAgent{name: n})
+	}
+	return out
 }
 
 // TestLiveSmoke is the cheapest live check: one agent, one message, confirm a
@@ -356,7 +374,7 @@ func TestLiveSmoke(t *testing.T) {
 	requireLive(t)
 	rt := newLiveRuntime(t)
 	srv := New(rt, &lockedBuffer{})
-	groupID, names := liveGroup(t, srv, rt, "冒烟", []string{"Andy"})
+	groupID, names := liveGroup(t, srv, rt, "冒烟", liveAgents("Andy"))
 
 	liveGroupUserTurn(t, srv, groupID, "用一句话打个招呼。")
 	waitForLiveQuiesce(t, srv, rt, groupID, names, 5*time.Minute, 10*time.Second)
@@ -371,7 +389,7 @@ func TestLiveCounting(t *testing.T) {
 	requireLive(t)
 	rt := newLiveRuntime(t)
 	srv := New(rt, &lockedBuffer{})
-	groupID, names := liveGroup(t, srv, rt, "报数群", []string{"Andy", "Bella", "Carl", "Diana", "Ethan"})
+	groupID, names := liveGroup(t, srv, rt, "报数群", liveAgents("Andy", "Bella", "Carl", "Diana", "Ethan"))
 
 	// Turn-taking phrasing is what stresses the freshness check: every agent
 	// races to post the next number, and the held-draft/pull machinery is what
@@ -392,7 +410,16 @@ func TestLiveNoteAppDebate(t *testing.T) {
 	requireLive(t)
 	rt := newLiveRuntime(t)
 	srv := New(rt, &lockedBuffer{})
-	groupID, names := liveGroup(t, srv, rt, "选型讨论", []string{"Andy", "Bella", "Carl"})
+	// Distinct roles: diverse perspectives are a property of distinct
+	// identities, not of a prompt rule forcing everyone to chime in. With
+	// identical roles the agents converge and the latecomers correctly stay
+	// silent; give them genuinely different lenses and the short different-angle
+	// takes the scenario wants should emerge on their own.
+	groupID, names := liveGroup(t, srv, rt, "选型讨论", []liveAgent{
+		{name: "Andy", role: "重数据自主与隐私、偏爱本地纯文本的极简主义者"},
+		{name: "Bella", role: "重团队协作与结构化管理的项目经理"},
+		{name: "Carl", role: "重上手成本与长期维护、怕折腾的实用主义者"},
+	})
 
 	liveGroupUserTurn(t, srv, groupID, "我打算下载一个笔记软件,你们觉得 Notion 和 Obsidian 谁更好一点?")
 	waitForLiveQuiesce(t, srv, rt, groupID, names, 30*time.Minute, 15*time.Second)
