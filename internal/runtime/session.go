@@ -1300,7 +1300,7 @@ func discoverSkills(rootDir, homeDir, wuuHome string, plugins []pluginpkg.Plugin
 	// pure content and adapted into lightweight skill entries. Native skills
 	// take precedence over commands with the same name.
 	commands := skills.DiscoverCommandsSourceDirs(commandProjectDirs(rootDir), commandUserDirs(wuuHome))
-	return skills.MergeWithBundled(skills.MergeCommands(discovered, commands))
+	return skills.MergeWithBundled(skills.MergeCommands(discovered, commands), wuuHome)
 }
 
 // commandProjectDirs returns the project-chain command directories, mirroring

@@ -76,6 +76,38 @@ func TestParseSkillFile_LoopMetadata(t *testing.T) {
 	}
 }
 
+func TestParseSkillFile_YAMLBlockList(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "block.md")
+	// Block-style YAML lists are what real Claude Code / opencode skills use; the
+	// old hand-rolled parser silently dropped them.
+	content := strings.Join([]string{
+		"---",
+		"name: block",
+		"description: Uses block-style YAML lists",
+		"allowed-tools:",
+		"  - read_file",
+		"  - bash",
+		"paths:",
+		"  - \"src/**/*.ts\"",
+		"---",
+		"Body.",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	skill, err := parseSkillFile(path, "project")
+	if err != nil {
+		t.Fatalf("parseSkillFile: %v", err)
+	}
+	if got := strings.Join(skill.AllowedTools, ","); got != "read_file,bash" {
+		t.Fatalf("AllowedTools = %q, want read_file,bash (block list must parse)", got)
+	}
+	if got := strings.Join(skill.Paths, ","); got != "src/**/*.ts" {
+		t.Fatalf("Paths = %q, want src/**/*.ts", got)
+	}
+}
+
 func TestParseSkillFile_NoName(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "review.md")
@@ -164,9 +196,16 @@ func TestDiscoverDirectorySkillsValidatePortableName(t *testing.T) {
 	writeSkill("Bad_Name", "Bad_Name")
 	writeSkill("bad--hyphen", "bad--hyphen")
 
+	// Folder name is the skill name (Claude Code semantics): a name/folder
+	// mismatch keeps the skill under its folder name (wrong-dir), and only
+	// non-portable folder names (uppercase, underscores, double hyphens) drop.
 	got := Discover(projectDir, "")
-	if len(got) != 1 || got[0].Name != "good-skill" {
-		t.Fatalf("expected only good-skill, got %+v", got)
+	names := map[string]bool{}
+	for _, s := range got {
+		names[s.Name] = true
+	}
+	if len(got) != 2 || !names["good-skill"] || !names["wrong-dir"] {
+		t.Fatalf("expected good-skill and wrong-dir, got %+v", got)
 	}
 }
 
@@ -299,40 +338,9 @@ func TestDiscoverSourceDirsRecursiveFindsNestedSkillDirectories(t *testing.T) {
 	}
 }
 
-func TestRegistryRouteUsesLoopMetadata(t *testing.T) {
-	registry := NewRegistry([]Skill{
-		{
-			Name:             "codebase-research",
-			Description:      "Read code and summarize constraints",
-			TriggerCondition: "Use when asked to inspect architecture or find relevant files",
-		},
-		{
-			Name:             "electron-debug",
-			Description:      "Verify desktop runtime and IPC behavior",
-			TriggerCondition: "Use for desktop runtime smoke tests and IPC checks",
-			Paths:            []string{"desktop/**/*.tsx"},
-		},
-		{
-			Name:             "release-check",
-			Description:      "Prepare a release gate",
-			TriggerCondition: "Use before publishing builds",
-		},
-	})
-
-	routed := registry.Route("please inspect the architecture and find relevant files", []string{"internal/agent/run.go"})
-	if len(routed) == 0 || routed[0].Name != "codebase-research" {
-		t.Fatalf("unexpected route result: %+v", routed)
-	}
-
-	routed = registry.Route("run a desktop smoke test and IPC check", []string{"desktop/src/renderer/App.tsx"})
-	if len(routed) == 0 || routed[0].Name != "electron-debug" {
-		t.Fatalf("unexpected desktop route result: %+v", routed)
-	}
-}
-
 func TestBundledSkillsIncludesLoopEngineeringSkills(t *testing.T) {
 	items := BundledSkills()
-	for _, name := range []string{"codebase-research", "long-running-workflow", "diff-review"} {
+	for _, name := range []string{"commit", "long-running-workflow"} {
 		skill, ok := Find(items, name)
 		if !ok {
 			t.Fatalf("bundled skill %q not found in %+v", name, items)

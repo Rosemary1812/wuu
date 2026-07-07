@@ -3,12 +3,13 @@ package skills
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Skill represents a discovered skill definition. Wuu accepts a portable
@@ -160,23 +161,23 @@ func scanDir(dir, source string) []Skill {
 		path := filepath.Join(dir, entry.Name())
 
 		if entry.IsDir() {
-			// Directory format: <dir>/<skill-name>/SKILL.md
+			// Directory format: <dir>/<skill-name>/SKILL.md. Claude Code names a
+			// skill by its folder; the frontmatter name is advisory. Drop only
+			// when the folder name can't form a portable skill/command name — a
+			// name mismatch no longer silently discards the skill.
 			skillFile := findSkillMD(path)
 			if skillFile == "" {
+				continue
+			}
+			name := canonicalName(entry.Name())
+			if !isPortableSkillName(name) {
 				continue
 			}
 			skill, parseErr := parseSkillFile(skillFile, source)
 			if parseErr != nil {
 				continue
 			}
-			// Use directory name as canonical name if frontmatter didn't provide one.
-			if skill.Name == "" || skill.Name == strings.TrimSuffix(filepath.Base(skillFile), filepath.Ext(skillFile)) {
-				skill.Name = entry.Name()
-			}
-			skill.Name = canonicalName(skill.Name)
-			if !validDirectorySkillName(skill.Name, entry.Name()) {
-				continue
-			}
+			skill.Name = name
 			skill.Dir = path
 			skills = append(skills, skill)
 			continue
@@ -211,19 +212,16 @@ func scanRecursiveDir(root, source string) []Skill {
 		if err != nil || d.IsDir() || !strings.EqualFold(d.Name(), "SKILL.md") {
 			return nil
 		}
+		dir := filepath.Dir(path)
+		name := canonicalName(filepath.Base(dir))
+		if !isPortableSkillName(name) {
+			return nil
+		}
 		skill, parseErr := parseSkillFile(path, source)
 		if parseErr != nil {
 			return nil
 		}
-		dir := filepath.Dir(path)
-		dirName := filepath.Base(dir)
-		if skill.Name == "" || skill.Name == strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) {
-			skill.Name = dirName
-		}
-		skill.Name = canonicalName(skill.Name)
-		if !validDirectorySkillName(skill.Name, dirName) {
-			return nil
-		}
+		skill.Name = name
 		skill.Dir = dir
 		skills = append(skills, skill)
 		return nil
@@ -257,18 +255,6 @@ func canonicalName(name string) string {
 	return name
 }
 
-// validDirectorySkillName enforces opencode's portable skill-name shape for
-// directory-style skills. The frontmatter name must match the folder name so
-// moving a skill between ecosystems does not silently rename it.
-func validDirectorySkillName(name, dirName string) bool {
-	name = canonicalName(name)
-	dirName = canonicalName(dirName)
-	if !isPortableSkillName(name) || !isPortableSkillName(dirName) {
-		return false
-	}
-	return name == dirName
-}
-
 // isPortableSkillName mirrors opencode's documented skill name format:
 // lowercase alphanumeric words separated by single hyphens.
 func isPortableSkillName(name string) bool {
@@ -295,79 +281,15 @@ func isPortableSkillName(name string) bool {
 }
 
 func parseSkillFile(path, source string) (Skill, error) {
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return Skill{}, err
 	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 4096), 1024*1024)
-
-	// Check for frontmatter start.
-	if !scanner.Scan() || strings.TrimSpace(scanner.Text()) != "---" {
-		return Skill{}, fmt.Errorf("no frontmatter")
+	skill, err := parseSkill(string(data), source)
+	if err != nil {
+		return Skill{}, err
 	}
-
-	skill := Skill{
-		Source:        source,
-		Path:          path,
-		UserInvocable: true, // default true for imported skills
-	}
-
-	// Parse frontmatter as flat key:value pairs. Multi-line YAML lists are
-	// supported as comma-separated strings or bracketed inline lists.
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimSpace(line) == "---" {
-			break
-		}
-		k, v, ok := splitYAMLLine(line)
-		if !ok {
-			continue
-		}
-		switch k {
-		case "name":
-			skill.Name = v
-		case "description":
-			skill.Description = v
-		case "when-to-use", "when_to_use":
-			skill.WhenToUse = v
-		case "trigger", "trigger-condition", "trigger_condition":
-			skill.TriggerCondition = v
-		case "model":
-			skill.Model = v
-		case "context":
-			skill.Context = v
-		case "agent":
-			skill.Agent = v
-		case "allowed-tools", "allowed_tools":
-			skill.AllowedTools = parseList(v)
-		case "required-context", "required_context":
-			skill.RequiredContext = parseList(v)
-		case "examples":
-			skill.Examples = parseList(v)
-		case "verification-checklist", "verification_checklist":
-			skill.VerificationChecklist = parseList(v)
-		case "progressive-disclosure", "progressive_disclosure":
-			skill.ProgressiveDisclosure = v
-		case "user-invocable", "user_invocable":
-			skill.UserInvocable = parseBool(v, true)
-		case "disable-model-invocation", "disable_model_invocation":
-			skill.DisableModelInvoke = parseBool(v, false)
-		case "argument-hint", "argument_hint":
-			skill.ArgumentHint = v
-		case "paths":
-			skill.Paths = parseList(v)
-		case "effort":
-			skill.Effort = v
-		case "version":
-			skill.Version = v
-		case "shell":
-			skill.Shell = v
-		}
-	}
-
+	skill.Path = path
 	if skill.Name == "" {
 		base := filepath.Base(path)
 		if strings.EqualFold(base, "SKILL.md") {
@@ -376,8 +298,40 @@ func parseSkillFile(path, source string) (Skill, error) {
 			skill.Name = strings.TrimSuffix(base, filepath.Ext(base))
 		}
 	}
+	return skill, nil
+}
 
-	// Read body.
+// parseSkill splits a SKILL.md into YAML frontmatter and markdown body. The
+// frontmatter is parsed with a real YAML parser, so block lists
+// (allowed-tools:\n  - bash) work identically to inline lists ([bash]) — the
+// portable shape Claude Code and opencode skills use. Frontmatter that fails to
+// parse is tolerated (fields stay empty) rather than rejected, matching cc.
+func parseSkill(content, source string) (Skill, error) {
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	scanner.Buffer(make([]byte, 4096), 1024*1024)
+
+	if !scanner.Scan() || strings.TrimSpace(scanner.Text()) != "---" {
+		return Skill{}, fmt.Errorf("no frontmatter")
+	}
+
+	var front strings.Builder
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == "---" {
+			break
+		}
+		front.WriteString(line)
+		front.WriteString("\n")
+	}
+
+	skill := Skill{Source: source, UserInvocable: true}
+	if raw := strings.TrimSpace(front.String()); raw != "" {
+		var fm map[string]any
+		if err := yaml.Unmarshal([]byte(front.String()), &fm); err == nil {
+			assignFrontmatter(&skill, fm)
+		}
+	}
+
 	var body strings.Builder
 	for scanner.Scan() {
 		if body.Len() > 0 {
@@ -390,48 +344,108 @@ func parseSkillFile(path, source string) (Skill, error) {
 	return skill, nil
 }
 
-// splitYAMLLine parses a "key: value" YAML line, stripping quotes.
-func splitYAMLLine(line string) (key, value string, ok bool) {
-	// Skip indented lines (list items belonging to a previous key).
-	if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
-		return "", "", false
-	}
-	idx := strings.Index(line, ":")
-	if idx < 0 {
-		return "", "", false
-	}
-	key = strings.TrimSpace(line[:idx])
-	value = strings.TrimSpace(line[idx+1:])
-	value = strings.Trim(value, `"'`)
-	return key, value, key != ""
-}
-
-// parseList accepts either "[a, b, c]" or "a, b, c" and returns a slice.
-func parseList(v string) []string {
-	v = strings.TrimSpace(v)
-	v = strings.TrimPrefix(v, "[")
-	v = strings.TrimSuffix(v, "]")
-	if v == "" {
-		return nil
-	}
-	parts := strings.Split(v, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.Trim(strings.TrimSpace(p), `"'`)
-		if p != "" {
-			out = append(out, p)
+// assignFrontmatter maps parsed YAML keys onto the Skill. Keys are normalized so
+// hyphen and underscore spellings (when-to-use / when_to_use) are equivalent.
+func assignFrontmatter(skill *Skill, fm map[string]any) {
+	for key, val := range fm {
+		switch strings.ToLower(strings.ReplaceAll(strings.TrimSpace(key), "_", "-")) {
+		case "name":
+			skill.Name = scalarString(val)
+		case "description":
+			skill.Description = scalarString(val)
+		case "when-to-use":
+			skill.WhenToUse = scalarString(val)
+		case "trigger", "trigger-condition":
+			skill.TriggerCondition = scalarString(val)
+		case "model":
+			skill.Model = scalarString(val)
+		case "context":
+			skill.Context = scalarString(val)
+		case "agent":
+			skill.Agent = scalarString(val)
+		case "allowed-tools":
+			skill.AllowedTools = stringList(val)
+		case "required-context":
+			skill.RequiredContext = stringList(val)
+		case "examples":
+			skill.Examples = stringList(val)
+		case "verification-checklist":
+			skill.VerificationChecklist = stringList(val)
+		case "progressive-disclosure":
+			skill.ProgressiveDisclosure = scalarString(val)
+		case "user-invocable":
+			skill.UserInvocable = boolVal(val, true)
+		case "disable-model-invocation":
+			skill.DisableModelInvoke = boolVal(val, false)
+		case "argument-hint":
+			skill.ArgumentHint = scalarString(val)
+		case "paths":
+			skill.Paths = stringList(val)
+		case "effort":
+			skill.Effort = scalarString(val)
+		case "version":
+			skill.Version = scalarString(val)
+		case "shell":
+			skill.Shell = scalarString(val)
 		}
 	}
-	return out
 }
 
-// parseBool accepts "true"/"false"/"yes"/"no" with a default fallback.
-func parseBool(v string, def bool) bool {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "true", "yes", "1", "on":
-		return true
-	case "false", "no", "0", "off":
-		return false
+// scalarString renders a YAML scalar (string, number, bool) as a trimmed string.
+func scalarString(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(t)
+	default:
+		return strings.TrimSpace(fmt.Sprintf("%v", t))
+	}
+}
+
+// stringList accepts a YAML sequence, a single scalar, or a bare comma-separated
+// string and returns a trimmed, non-empty string slice.
+func stringList(v any) []string {
+	switch t := v.(type) {
+	case nil:
+		return nil
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, item := range t {
+			if s := scalarString(item); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case string:
+		parts := strings.Split(t, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if s := strings.Trim(strings.TrimSpace(p), `"'`); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		if s := scalarString(v); s != "" {
+			return []string{s}
+		}
+		return nil
+	}
+}
+
+// boolVal coerces a YAML bool or truthy/falsey string with a default fallback.
+func boolVal(v any, def bool) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		switch strings.ToLower(strings.TrimSpace(t)) {
+		case "true", "yes", "1", "on":
+			return true
+		case "false", "no", "0", "off":
+			return false
+		}
 	}
 	return def
 }
@@ -440,7 +454,7 @@ func parseBool(v string, def bool) bool {
 // Used by BundledSkills to parse embedded files. The filename is used as a
 // fallback name, source identifies the origin ("bundled", "mcp", etc.).
 func parseSkillContent(content, filename, source, dir string) Skill {
-	s, err := parseSkillReader(strings.NewReader(content), source)
+	s, err := parseSkill(content, source)
 	if err != nil {
 		return Skill{}
 	}
@@ -453,84 +467,6 @@ func parseSkillContent(content, filename, source, dir string) Skill {
 		s.Description = firstMarkdownLine(s.Content)
 	}
 	return s
-}
-
-// parseSkillReader is the core frontmatter+body parser, factored out of
-// parseSkillFile so it can be reused for in-memory content.
-func parseSkillReader(r io.Reader, source string) (Skill, error) {
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 4096), 1024*1024)
-
-	if !scanner.Scan() || strings.TrimSpace(scanner.Text()) != "---" {
-		return Skill{}, fmt.Errorf("no frontmatter")
-	}
-
-	skill := Skill{
-		Source:        source,
-		UserInvocable: true,
-	}
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimSpace(line) == "---" {
-			break
-		}
-		k, v, ok := splitYAMLLine(line)
-		if !ok {
-			continue
-		}
-		switch k {
-		case "name":
-			skill.Name = v
-		case "description":
-			skill.Description = v
-		case "when-to-use", "when_to_use":
-			skill.WhenToUse = v
-		case "trigger", "trigger-condition", "trigger_condition":
-			skill.TriggerCondition = v
-		case "model":
-			skill.Model = v
-		case "context":
-			skill.Context = v
-		case "agent":
-			skill.Agent = v
-		case "allowed-tools", "allowed_tools":
-			skill.AllowedTools = parseList(v)
-		case "required-context", "required_context":
-			skill.RequiredContext = parseList(v)
-		case "examples":
-			skill.Examples = parseList(v)
-		case "verification-checklist", "verification_checklist":
-			skill.VerificationChecklist = parseList(v)
-		case "progressive-disclosure", "progressive_disclosure":
-			skill.ProgressiveDisclosure = v
-		case "user-invocable", "user_invocable":
-			skill.UserInvocable = parseBool(v, true)
-		case "disable-model-invocation", "disable_model_invocation":
-			skill.DisableModelInvoke = parseBool(v, false)
-		case "argument-hint", "argument_hint":
-			skill.ArgumentHint = v
-		case "paths":
-			skill.Paths = parseList(v)
-		case "effort":
-			skill.Effort = v
-		case "version":
-			skill.Version = v
-		case "shell":
-			skill.Shell = v
-		}
-	}
-
-	var body strings.Builder
-	for scanner.Scan() {
-		if body.Len() > 0 {
-			body.WriteString("\n")
-		}
-		body.WriteString(scanner.Text())
-	}
-	skill.Content = body.String()
-
-	return skill, nil
 }
 
 // firstMarkdownLine returns the first non-empty content line from markdown,

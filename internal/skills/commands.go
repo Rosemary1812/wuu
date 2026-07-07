@@ -1,7 +1,6 @@
 package skills
 
 import (
-	"bufio"
 	"os"
 	"path/filepath"
 	"sort"
@@ -123,11 +122,10 @@ func scanCommandDir(dir, source string) []Skill {
 // (including execution-binding `allowed-tools` and `model`) is ignored. A file
 // without frontmatter is treated as a bare markdown body.
 func parseCommandFile(path, source string) (Skill, error) {
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return Skill{}, err
 	}
-	defer f.Close()
 
 	skill := Skill{
 		Name:          commandName(path),
@@ -137,43 +135,17 @@ func parseCommandFile(path, source string) (Skill, error) {
 		UserInvocable: true,
 	}
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 4096), 1024*1024)
-
-	// Peek the first line to decide whether frontmatter is present.
-	if !scanner.Scan() {
-		return skill, nil // empty file: valid but empty command
-	}
-	first := scanner.Text()
-
-	var bodyLines []string
-	if strings.TrimSpace(first) == "---" {
-		// Consume frontmatter, reading only whitelisted descriptive keys. All
-		// other keys (allowed-tools, model, name, ...) are intentionally dropped.
-		for scanner.Scan() {
-			line := scanner.Text()
-			if strings.TrimSpace(line) == "---" {
-				break
-			}
-			k, v, ok := splitYAMLLine(line)
-			if !ok {
-				continue
-			}
-			switch k {
-			case "description":
-				skill.Description = v
-			case "argument-hint", "argument_hint":
-				skill.ArgumentHint = v
-			}
-		}
+	// Commands expose only descriptive metadata: parse the file as a skill, then
+	// keep just description + argument-hint. Execution-binding keys (allowed-tools,
+	// model, name, ...) are intentionally dropped. A file without frontmatter fails
+	// to parse here and is treated as a bare markdown body.
+	if parsed, perr := parseSkill(string(data), source); perr == nil {
+		skill.Description = parsed.Description
+		skill.ArgumentHint = parsed.ArgumentHint
+		skill.Content = normalizeCommandArguments(parsed.Content)
 	} else {
-		bodyLines = append(bodyLines, first)
+		skill.Content = normalizeCommandArguments(string(data))
 	}
-
-	for scanner.Scan() {
-		bodyLines = append(bodyLines, scanner.Text())
-	}
-	skill.Content = normalizeCommandArguments(strings.Join(bodyLines, "\n"))
 	return skill, nil
 }
 
