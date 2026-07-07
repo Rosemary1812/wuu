@@ -32,40 +32,33 @@ Root causes, in order of leverage:
    is valid") demonstrably do not restrain M3.
 4. **@mention x must-answer rule = ping-pong amplifier.**
 
-## 2. Reference model: Raft (formerly Slock)
+## 2. 参照模型：一个 agent 原生协作工作区
 
-Raft runs local Claude Code/Codex as runtimes behind a CLI + wake bridge, wakes
-every channel-member agent on every message — same fanout shape as wuu — and
-still stays readable. The load-bearing differences:
+调研了一个 agent 原生协作工作区作为参照：它同样对每条消息全员扇出唤醒
+（和 wuu 一样的扇出形状），却仍然可读。承重的差异在结构，不在提示词：
 
-- **Exclusive task claim.** Actionable message → `raft task claim` (server-
-  arbitrated, one owner; losers "move on" silently). N agents never race in
-  chat because the race happens in the claim, not in replies.
-- **Task thread is the execution rail.** Every task anchors a thread; progress,
-  discussion, and results go there. Main channel shows the task card + status.
-- **Status is metadata, not messages.** todo / in_progress / in_review / done
-  live on the task card; agent busy/idle lives on a presence dot.
-- **Unfollow.** Agents auto-follow threads they touch and unfollow when their
-  part is done — they can leave a conversation.
-- **Structure changes are human-gated, execution is free.** `raft action
-  prepare` renders a card (create channel / create agent / add member) that a
-  human clicks; the resource is created under the human's identity. Claiming
-  and executing tasks needs no approval; done-after-review is the human gate.
+- **独占认领。** 可执行消息 → 服务端仲裁的认领，一个 owner；输的人安静
+  走开。N 个 agent 不在聊天里抢，因为竞争发生在认领里，不在回复里。
+- **任务线程是执行轨道。** 每个任务锚一条线程；进度、讨论、结果都进那条
+  线程。主频道只显示任务卡 + 状态。
+- **状态是元数据，不是消息。** todo/in_progress/in_review/done 活在任务卡
+  上；忙/闲活在一个在场点上。
+- **退订（unfollow）。** agent 自动关注它碰过的线程，干完自己那部分就退订
+  ——它能离开一段对话。
+- **结构变更人审、执行自由。** 建频道/建 agent/加成员这类结构操作渲染成一
+  张卡片让人点，资源以人的身份创建；认领和执行任务不需审批，「做完待验收」
+  是人的把关点。
 
-First-party confirmation (2026-07-06, conversation with Raft's onboarding
-agent "Cindy", relayed by the user): her stated echo-avoidance rules —
-addressed-first, no interjecting, no repeating or summarizing another agent's
-work, speak only to fill a concrete gap — are near-verbatim the etiquette wuu
-already ships in `participant_prompt.go`. What differs is that two of her
-rules point at mechanisms instead of restraint: "有实际工作先认领" (claim,
-and on claim failure: stop, do not duplicate) and "线程里解决细节,主频道只留
-结论和关键状态". Her own summary is the design thesis: 执行要尽快变成
-"一个 owner + 一个线程 + 一个状态".
+其自述的回音规避规则——先答被点名的、不打断、不复读或总结别人的活、只为
+填补具体缺口才发言——近乎逐字对应 wuu 已经在 `participant_prompt.go` 里
+出的礼仪。差别在于其中两条指向机制而非克制：「有实际工作先认领」（认领，
+认领失败就停、不重复）和「线程里解决细节，主频道只留结论和关键状态」。一
+句话概括就是本设计的论点：执行要尽快收敛成「一个 owner + 一个线程 + 一个
+状态」。
 
-The lesson is architectural, not prompt engineering: give coordination state
-its own primitives and chat stops carrying it. Etiquette prompts roughly
-equivalent to ours are still present in Raft, but they only have to police
-open discussion — execution traffic has somewhere else to be.
+这个教训是架构性的，不是提示词工程：给协调状态自己的原语，聊天就不再承载
+它。大致等价的礼仪提示词在那个参照系统里也在，但它们只需要管开放讨论——
+执行流量另有去处。
 
 ## 3. Design
 
@@ -103,7 +96,7 @@ reporting duty, status transitions. It does NOT touch `LeadParticipantID` and
 grants no workflow orchestration authority — the existing welded contract
 (human escalation names a lead; `requireWorkflowLead` keys on lead + status)
 is unchanged. An owner who needs teammates splits the work into subtasks that
-others claim voluntarily (the Raft model); command-style workflow
+others 自愿认领（该参照模型）；命令式 workflow
 orchestration remains the rare, human-granted path. This also positions the
 task rail as the "agent-managed main path" that lets the heavyweight dynamic
 workflow surface shrink later (2026-07 workflow simplification direction).
@@ -132,7 +125,7 @@ gate), same as post_message/react: prompt-cache prefix stays stable.
 
 Agent finishes → `update_status review` + summary draft. The resolve step —
 today's `bubbleSub` (summary posted to main stream, cth → resolved) — is the
-human approval point, matching Raft's done-after-review.
+human approval point，与该系统的 done-after-review 一致。
 
 Config knob `task_review: human | auto` (default `human`). `auto` lets the
 lead's `update_status review` immediately bubble + resolve, for the fully
@@ -142,7 +135,7 @@ per scenario.
 ### 3.4 Structure changes: keep free, prepare the card lane
 
 `manage_participant` create_group / add_member / create stays agent-free
-(status quo; more permissive than Raft). When the remote-control approval-card
+（现状；比该参照系统更宽松）。 When the remote-control approval-card
 infrastructure lands (2026-07-06 remote plan), add config
 `structure_changes: free | card` where `card` routes these three actions
 through an approval card under the approving human's identity. Not built in
@@ -182,10 +175,7 @@ Replace the accumulated etiquette rules with rail-pointing rules:
 
 ### 3.7 Exposure: native tools, not CLI+skills (adjudicated here)
 
-Raft exposes agent abilities as a CLI (`raft message send`, `raft task
-claim`, …) plus on-demand manuals, and it is tempting to copy. The reason
-Raft must do it that way: **they do not own the runtime.** Claude Code /
-Codex / Hermes are foreign harnesses; bash + CLI + injected one-liner is the
+该参照系统把 agent 能力暴露为一套 CLI 加按需手册，照抄很诱人。它必须那样做的原因：**它不拥有运行时。** 外部 agent 运行时是异己 harness; bash + CLI + injected one-liner is the
 only universal ABI they can count on, and identity has to ride on device
 tokens because nothing in-process can be trusted.
 
@@ -202,7 +192,7 @@ wuu owns its runtime, which flips every trade-off:
   parsing argv errors out of stderr.
 
 Decision: named-agent abilities stay **registered tools** — one ABI, no dual
-exposure (no-fallback principle). What we DO adopt from Raft's pattern is the
+exposure (no-fallback principle). 我们确实借鉴的是该模式里的
 progressive-disclosure half: the resident system prompt shrinks to rails and
 red lines, and detailed etiquette/how-to moves to on-demand guidance
 (`load_skill` already exists as the delivery mechanism; a follow-up can move
@@ -303,7 +293,7 @@ field alone carried coordination, an even cleaner outcome than the target.
    出过一次、一句话能救的：记录，不动手。
 4. **提示词条款有预算。** 每加一条规则都稀释其余规则的遵守度。能改写现有
    句子的不新增；界面上能看见的事不在提示词里复述。
-5. **动手前先看 cc/codex/opencode 做没做。** 他们不做的机制，原因通常是
+5. **动手前先看业界同类工具做没做。** 别人不做的机制，原因通常是
    「用户就在旁边，再说一句就解决了」。
 
 据此处置 2026-07-07 实弹暴露的三问题：动员令未跟建卡（一次、板上可见、
@@ -357,7 +347,7 @@ landing」「Waiting for M2-1/2/3 to land before starting」：**她自己知道
 
 ### 8.2 核心模型：一 task 一 thread 一队，lead 声明计划，系统执行
 
-（对标作者的 ultra/Workflow 谐振——搬的不是「lead 盯着 @」，是「lead 写
+（对标一种确定性编排范式——搬的不是「lead 盯着 @」，是「lead 写
 一次计划、系统确定性地跑」。）
 
 - **一件多步的活 = 一个 task = 一条 thread = 一张卡 = 一支队。** 卡上挂
@@ -365,32 +355,47 @@ landing」「Waiting for M2-1/2/3 to land before starting」：**她自己知道
   卡死的物理根源）。task 从「单 owner」扩展为「lead + 成员队」。
 - **lead 只做一次性 authoring：** 侦察（代码在哪、技术栈、活能切几块、谁
   依赖谁）→ 声明一个**结构化计划**（哪几块、指派给谁、依赖关系）。等价于
-  作者写一次 Workflow 脚本。lead 优先复用现成具名 agent，不新造人。
+  等于写一次确定性编排脚本。lead 优先复用现成具名 agent，不新造人。
 - **系统做机械执行：** 照计划确定性地跑——独立块并行派发、每块验证、某块
   **验证通过后自动 @下一个 dep 已满足的块**。@交接消息在 thread 里可见
   （「→ @Vera，前三块齐了，验证」），但**由系统照计划发，不靠 lead 记得**。
-  这是 ultra 的确定性控制流的搬法：lead 出了控制回路，声明的计划在。
+  这是把确定性控制流搬过来：lead 出了控制回路，声明的计划在。
 - **lead 平时撒手，只在两个时刻被叫回：**（a）某块验证失败 / 发现了该改
   计划的东西 → 系统把 lead 叫回，他调整后把剩下的重新发出；（b）全部完成
-  → 系统 ping lead，lead 向用户汇报。作者的 ultra 同构：happy path 不看，
+  → 系统 ping lead，lead 向用户汇报。同构于确定性编排：happy path 不看，
   阶段间读结果才回来。**M2 这种「后面只依赖前面做完没、不依赖发现了什么」
   的简单结构，lead 真能一次写死撒手到结尾；需要随机应变的活才走再入。**
 - **链内验收 = 机器自验 / 队内互验，不是用户逐个点「完成」。** 串行链的
-  验收门默认 auto——人精力有限，盯不了每步（就像启动 ultra 中间过程人不
+  验收门默认 auto——人精力有限，盯不了每步（就像启动一次长流程后中间过程人不
   看）。human 逐步审批只适合单个孤立任务，会把链在人身上憋死（trace 里
   task_review=human 下 M2-1/2/3 卡在待验收、Vera 等它们、死锁）。
 
-### 8.3 地基规则：谁的消息唤醒谁（语义变更，改提示词）
+### 8.3 噪音治理：全员参与不动，靠结构去噪（2026-07-07 改向）
 
-- **人的消息 = 全员唤醒**（可对整屋说话）。
-- **agent 的消息 = 必须 @**：agent 之间、及 agent 报给人，**只有被 @的
-  才收到、才醒**；agent 不能对整屋广播。
-- 一箭双雕：① a2a 刷屏从结构上消失（想惊动谁必须点名）；② lead 收口时
-  @用户一人，**不再把其他成员各跑一次多余 turn**（trace 暴露的浪费）。
-- 落点：deliverEnvelopeToMembers 对 SenderKind=="participant" 的信封只投
-  给 mentioned 集；user/system 信封仍广播。提示词「How messages reach
-  you / Whether to reply」相应改写：你的消息只到你 @的人，交接/求助必须
-  @对方；不 @则无 agent 被惊动（用户仍看得见）。
+**试过并回退的错路（记录教训）：** 先做过「agent 消息必须 @才唤醒别人、
+不 @则无人被惊动」。实弹（2026-07-07 e2e）证明它治错了轴——agent 学会
+「要够到人就 @」后每条消息都 @，噪音一点没少，还破坏了群讨论（一个 agent
+看不见队友未 @自己的发言，屋里没法自然各抒己见）。**用「限制投递」去治
+本该用「结构」治的事，是反模式。** 已回退：回到全员扇出，@ 只标「点名=
+必答义务」，不作投递开关。
+
+**正确的去噪三件，不动参与度：**
+
+1. **执行编排靠引擎（§8.2），不靠聊天。** 那跑之所以 37 回合 63 条噪音，
+   根因是没引擎、退回聊天协调。引擎让 lead 声明计划、系统派发，聊天协调
+   这一环整个消失。
+2. **发送时做新鲜度检查（held-draft）。** agent 一个回合读快照→推理→提交
+   一贴，中间屋里会动（别人已答、话题转了）。提交前比对线程当前 seq 与
+   回合起点 seq：变了就不盲发，把「你写的时候到了这些」回注给 agent，让它
+   改写/照发/沉默。直接杀「几个 agent 抢答同一句」。这是那条错路本该做的
+   事的正确形态。
+3. **干完自动退订。** 成员 piece_done 后引擎把他移出该 task 线程的推送子集
+   （既有 conversation_thread_members），后续流量不再唤醒他——这才是治
+   「lead 收口唤醒全员=浪费」的正确杠杆，不砍参与度。
+
+落点：deliverEnvelopeToMembers 回到全员投递（已回退）；held-draft 在
+参与者发言（post_message）提交路径加新鲜度检查；piece_done 引擎里加自动
+RemoveConversationThreadMember。
 
 ### 8.4 人的触点 + 产品/运行模型拆开
 

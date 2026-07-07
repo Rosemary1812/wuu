@@ -202,20 +202,9 @@ func (s *Server) deliverEnvelopeToMembers(members []string, base MessageEnvelope
 		return
 	}
 	senderID := strings.TrimSpace(base.SenderParticipantID)
-	// a2a-must-@ (task-rail design §8.3, 2026-07-07): an AGENT's chat message
-	// only wakes the members it @-mentions — an un-@'d agent message wakes no
-	// other agent (the user still sees all group traffic in the GUI). This
-	// structurally kills agent-to-agent room spam and stops a lead's wrap-up
-	// report from re-running every teammate's turn. The user's own messages
-	// (SenderKind "user") and system board wakes (SenderKind "system") still
-	// broadcast to the whole member set — only agents must target.
-	onlyMentioned := base.SenderKind == "participant"
 	for _, participantID := range members {
 		participantID = strings.TrimSpace(participantID)
 		if participantID == "" || participantID == senderID {
-			continue
-		}
-		if onlyMentioned && !mentioned[participantID] {
 			continue
 		}
 		// Membership queries already exclude retired participants; this

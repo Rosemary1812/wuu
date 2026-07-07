@@ -51,12 +51,6 @@ func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memor
 	b.WriteString("Board events (a task opened or released with no owner) arrive as\n")
 	b.WriteString("from=\"system\" envelopes. They address nobody: claim the task or end\n")
 	b.WriteString("the turn silently — never answer them with a chat message.\n")
-	b.WriteString("Reaching teammates: the user's messages reach everyone in the room, but\n")
-	b.WriteString("YOUR messages reach only the teammates you @ by name. An agent message\n")
-	b.WriteString("with no @ wakes no other agent (the user still sees it). So to hand a\n")
-	b.WriteString("task off, ask a teammate, or tell someone the coast is clear, you MUST\n")
-	b.WriteString("@ them — otherwise nobody hears it. Report a finished job to the user\n")
-	b.WriteString("by @-ing the user, which reaches them without waking teammates.\n")
 	b.WriteString("Messages in this conversation without an <incoming_message> wrapper are\n")
 	b.WriteString("the user speaking to you directly (DM). DMs are always addressed to you.\n\n")
 	// The collaboration contract below is contractual text from

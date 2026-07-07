@@ -389,8 +389,25 @@ func (m *residentTaskManager) PieceDone(ctx context.Context, subthreadID, pieceI
 	if piece.Assignee != m.participantID {
 		return tools.TaskView{}, fmt.Errorf("piece_done: piece %q is assigned to %q, not you — only its assignee may report it done", pieceID, piece.Assignee)
 	}
-	if _, err := session.MarkTaskPieceStatus(m.server.rt.SessionDir, thread.ID, pieceID, session.TaskPieceDone); err != nil {
+	updated, err := session.MarkTaskPieceStatus(m.server.rt.SessionDir, thread.ID, pieceID, session.TaskPieceDone)
+	if err != nil {
 		return tools.TaskView{}, fmt.Errorf("piece_done: %w", err)
+	}
+	// Auto-unfollow when this assignee has no remaining pieces: they are done
+	// with the task, so later traffic on it should not wake them (the correct
+	// lever for the lead's wrap-up not re-running finished teammates). Keep
+	// following if they still own an unfinished piece.
+	stillBusy := false
+	for _, p := range updated.Plan {
+		if p.Assignee == m.participantID && p.ID != pieceID && p.Status != session.TaskPieceDone {
+			stillBusy = true
+			break
+		}
+	}
+	if !stillBusy {
+		if err := session.RemoveConversationThreadMember(m.server.rt.SessionDir, thread.ID, m.participantID); err != nil {
+			providers.DebugLogf("piece_done: unfollow %q from %q: %v", m.participantID, thread.ID, err)
+		}
 	}
 	m.server.notifySubthreadUpdated(thread.SessionID, thread.ID)
 	m.server.advancePlan(thread.ID)
