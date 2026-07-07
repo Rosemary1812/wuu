@@ -148,6 +148,15 @@ type Server struct {
 	// per-key writes sequential.
 	residentTurnSpeech sync.Map
 
+	// threadPostMu serializes the freshness-check-then-publish critical section
+	// per target thread (threadID -> *sync.Mutex). The held-draft check reads
+	// the thread tail and then publishParticipantMessage appends to it as two
+	// steps; without this lock, N residents racing to post the same thing all
+	// pass the staleness read before any of them commits, then all publish
+	// duplicates (TOCTOU). Holding the per-thread lock across both makes each
+	// racer's freshness check observe the prior committed post and hold.
+	threadPostMu sync.Map
+
 	// participantBusyMu guards participantBusy, the registry of named
 	// agents currently executing a task/workflow run (decision-five
 	// concurrency lock). A named agent is "busy" for exactly the lifetime

@@ -161,7 +161,7 @@ func liveBusy(srv *Server) bool {
 // idleSettle continuously, or maxWait elapses (a spam cascade that never
 // settles is a finding — the transcript dump shows it). Progress is logged so a
 // slow live run is visibly alive.
-func waitForLiveQuiesce(t *testing.T, srv *Server, rt *runtime.Session, groupID string, maxWait, idleSettle time.Duration) {
+func waitForLiveQuiesce(t *testing.T, srv *Server, rt *runtime.Session, groupID string, names map[string]string, maxWait, idleSettle time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(maxWait)
 	idleSince := time.Time{}
@@ -178,6 +178,10 @@ func waitForLiveQuiesce(t *testing.T, srv *Server, rt *runtime.Session, groupID 
 		}
 		if n := liveMainStreamCount(rt, groupID); n != lastCount || time.Since(lastLog) > 20*time.Second {
 			t.Logf("[%s] group posts=%d busy=%v", time.Now().Format("15:04:05"), n, liveBusy(srv))
+			// Snapshot the current transcript to a stable path so a long live run
+			// can be watched from outside the test process.
+			_ = os.WriteFile(filepath.Join(liveOutDir(), t.Name()+".live.txt"),
+				[]byte(renderLiveTranscript(rt, groupID, names)), 0o644)
 			lastCount = n
 			lastLog = time.Now()
 		}
@@ -200,20 +204,27 @@ func liveMainStreamCount(rt *runtime.Session, groupID string) int {
 	return n
 }
 
-// dumpLiveTranscript prints the human-visible group transcript (final posted
-// messages in seq order) followed by a compact per-agent mechanism trace.
-func dumpLiveTranscript(t *testing.T, rt *runtime.Session, groupID string, names map[string]string) {
-	t.Helper()
+func liveOutDir() string {
+	d := filepath.Join(os.TempDir(), "wuu-live-out")
+	_ = os.MkdirAll(d, 0o755)
+	return d
+}
+
+// renderLiveTranscript builds the human-visible group transcript: the final
+// posted messages (user + participant posts) on the main stream, in seq order.
+func renderLiveTranscript(rt *runtime.Session, groupID string, names map[string]string) string {
 	recs, err := session.ChatMessagesSince(rt.SessionDir, groupID, 0)
 	if err != nil {
-		t.Fatalf("ChatMessagesSince: %v", err)
+		return fmt.Sprintf("ChatMessagesSince error: %v", err)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "\n================ HUMAN-VISIBLE GROUP TRANSCRIPT (%s) ================\n", groupID)
+	fmt.Fprintf(&b, "================ HUMAN-VISIBLE GROUP TRANSCRIPT (%s) ================\n", groupID)
+	n := 0
 	for _, r := range recs {
 		if strings.TrimSpace(r.ThreadID) != "" {
 			continue // cth/reply-subthread, not the main stream
 		}
+		n++
 		who := "User"
 		if strings.EqualFold(strings.TrimSpace(r.Role), "participant") {
 			who = firstNonEmpty(names[strings.TrimSpace(r.ParticipantID)], r.Name, r.ParticipantID)
@@ -225,16 +236,20 @@ func dumpLiveTranscript(t *testing.T, rt *runtime.Session, groupID string, names
 		}
 		fmt.Fprintf(&b, "[%3d] %-8s (%s): %s\n", r.Seq, who, kind, text)
 	}
-	fmt.Fprintf(&b, "================ %d main-stream posts ================\n", liveMainStreamCount(rt, groupID))
-	t.Log(b.String())
+	fmt.Fprintf(&b, "================ %d main-stream posts ================\n", n)
+	return b.String()
+}
 
-	// Write full transcript + mechanism trace to files for offline analysis.
-	outDir := filepath.Join(os.TempDir(), "wuu-live-out")
-	_ = os.MkdirAll(outDir, 0o755)
+// dumpLiveTranscript prints the human-visible group transcript followed by a
+// compact per-agent mechanism trace, and writes both to files.
+func dumpLiveTranscript(t *testing.T, rt *runtime.Session, groupID string, names map[string]string) {
+	t.Helper()
+	transcript := renderLiveTranscript(rt, groupID, names)
+	t.Log("\n" + transcript)
+	outDir := liveOutDir()
 	transcriptPath := filepath.Join(outDir, t.Name()+".transcript.txt")
-	_ = os.WriteFile(transcriptPath, []byte(b.String()), 0o644)
+	_ = os.WriteFile(transcriptPath, []byte(transcript), 0o644)
 	t.Logf("transcript written: %s", transcriptPath)
-
 	dumpLiveMechanismTrace(t, rt, names, outDir)
 }
 
@@ -344,7 +359,7 @@ func TestLiveSmoke(t *testing.T) {
 	groupID, names := liveGroup(t, srv, rt, "冒烟", []string{"Andy"})
 
 	liveGroupUserTurn(t, srv, groupID, "用一句话打个招呼。")
-	waitForLiveQuiesce(t, srv, rt, groupID, 5*time.Minute, 10*time.Second)
+	waitForLiveQuiesce(t, srv, rt, groupID, names, 5*time.Minute, 10*time.Second)
 	dumpLiveTranscript(t, rt, groupID, names)
 
 	if liveMainStreamCount(rt, groupID) <= 1 {
@@ -358,8 +373,11 @@ func TestLiveCounting(t *testing.T) {
 	srv := New(rt, &lockedBuffer{})
 	groupID, names := liveGroup(t, srv, rt, "报数群", []string{"Andy", "Bella", "Carl", "Diana", "Ethan"})
 
-	liveGroupUserTurn(t, srv, groupID, "请从 1 报数到 20。")
-	waitForLiveQuiesce(t, srv, rt, groupID, 30*time.Minute, 15*time.Second)
+	// Turn-taking phrasing is what stresses the freshness check: every agent
+	// races to post the next number, and the held-draft/pull machinery is what
+	// keeps them from posting the same one.
+	liveGroupUserTurn(t, srv, groupID, "我们来轮流报数,从 1 数到 20。每人一次只报一个数,接着上一个人报,不要重复、也不要一个人报完。")
+	waitForLiveQuiesce(t, srv, rt, groupID, names, 30*time.Minute, 15*time.Second)
 	dumpLiveTranscript(t, rt, groupID, names)
 
 	// Soft check: the run produced posts (assertions on exact round-robin are
@@ -377,7 +395,7 @@ func TestLiveNoteAppDebate(t *testing.T) {
 	groupID, names := liveGroup(t, srv, rt, "选型讨论", []string{"Andy", "Bella", "Carl"})
 
 	liveGroupUserTurn(t, srv, groupID, "我打算下载一个笔记软件,你们觉得 Notion 和 Obsidian 谁更好一点?")
-	waitForLiveQuiesce(t, srv, rt, groupID, 30*time.Minute, 15*time.Second)
+	waitForLiveQuiesce(t, srv, rt, groupID, names, 30*time.Minute, 15*time.Second)
 	dumpLiveTranscript(t, rt, groupID, names)
 
 	if liveMainStreamCount(rt, groupID) <= 1 {

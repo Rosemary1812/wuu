@@ -56,6 +56,20 @@ func (s *Server) residentParticipantSpeech(participantID string) tools.Participa
 	return s.residentParticipantSpeechForTurn(participantID, nil, nil)
 }
 
+// lockThreadPost acquires the per-thread post-serialization mutex and returns
+// its unlock. It makes the held-draft freshness check and the subsequent
+// publish one atomic critical section per target thread (see Server.threadPostMu).
+func (s *Server) lockThreadPost(threadID string) func() {
+	threadID = strings.TrimSpace(threadID)
+	if s == nil || threadID == "" {
+		return func() {}
+	}
+	v, _ := s.threadPostMu.LoadOrStore(threadID, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
 func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThread map[string]int, engagedThreads map[string]bool) tools.ParticipantSpeech {
 	hops := make(map[string]int, len(hopByThread))
 	for threadID, hop := range hopByThread {
@@ -115,6 +129,15 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 	if err != nil {
 		return tools.PostedMessage{}, err
 	}
+	// Serialize the freshness-check-then-publish critical section per target
+	// thread. The staleness read and the seq-assigning append are two steps;
+	// without this lock, residents racing to post the same thing all pass the
+	// read before any commits and then all publish duplicates. Under the lock,
+	// the first racer commits and every later racer's roomMovedSince sees it and
+	// holds. Scoped to the parent thread (targetThreadID), which owns the seq
+	// space for both main-stream and cth posts.
+	unlockPost := r.server.lockThreadPost(targetThreadID)
+	defer unlockPost()
 	// Freshness check (held draft): if the agent read this thread this turn
 	// (we have a seen-seq for it) and it has moved since — a teammate or the
 	// user posted while the agent was composing — hold the draft instead of
