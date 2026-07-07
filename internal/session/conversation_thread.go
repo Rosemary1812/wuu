@@ -13,8 +13,14 @@ import (
 type ConversationThreadStatus string
 
 const (
-	ConversationThreadOpen     ConversationThreadStatus = "open"
-	ConversationThreadTask     ConversationThreadStatus = "task"
+	ConversationThreadOpen ConversationThreadStatus = "open"
+	ConversationThreadTask ConversationThreadStatus = "task"
+	// ConversationThreadReview marks a task whose owner finished the work and
+	// filed a summary draft (task -> review, owner-only). The resolve step —
+	// bubbling the summary to the main stream — is the human approval click
+	// (or immediate, under task_review: auto). A task in review no longer
+	// authorizes workflow orchestration: the lead gate requires status == task.
+	ConversationThreadReview   ConversationThreadStatus = "review"
 	ConversationThreadResolved ConversationThreadStatus = "resolved"
 )
 
@@ -45,6 +51,13 @@ type ConversationThread struct {
 	// status -> resolved (the gate requires status == task), not by nulling it —
 	// and a re-escalation (resolved -> task) can reassign it.
 	LeadParticipantID string `json:"lead_participant_id,omitempty"`
+	// OwnerParticipantID is the named agent currently owning this task's work:
+	// mutual exclusion (one owner at a time, taken via ClaimConversationThread's
+	// CAS), reporting duty, and the task -> review transition. Ownership is NOT
+	// lead authority — claiming never touches LeadParticipantID and grants no
+	// workflow orchestration (2026-07-06 agent-task-rail design, user-adjudicated).
+	// Empty means unclaimed.
+	OwnerParticipantID string `json:"owner_participant_id,omitempty"`
 }
 
 func NewConversationThreadID() string {
@@ -73,7 +86,11 @@ func CreateConversationThread(sessDir string, thread ConversationThread) (Conver
 	if thread.SessionID == "" {
 		return ConversationThread{}, fmt.Errorf("%w: %q", ErrSessionNotFound, thread.SessionID)
 	}
-	if thread.AnchorItemID == "" {
+	// A discussion reply must anchor on a message; a task may be standalone
+	// (created from scratch, e.g. splitting work into several tasks — one
+	// anchor can host at most one cth, so splits cannot all anchor the same
+	// kickoff message).
+	if thread.AnchorItemID == "" && thread.Status != ConversationThreadTask {
 		return ConversationThread{}, fmt.Errorf("conversation thread anchor item is required")
 	}
 	if err := validateConversationThreadStatus(thread.Status); err != nil {
@@ -124,7 +141,7 @@ func ListConversationThreads(sessDir, sessionID string) ([]ConversationThread, e
 	}
 
 	rows, err := db.Query(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id
 FROM conversation_threads
 WHERE session_id = ?
 ORDER BY created_at ASC, id ASC`, sessionID)
@@ -164,7 +181,7 @@ func FindConversationThreadByID(sessDir, id string) (ConversationThread, error) 
 	defer db.Close()
 
 	row := db.QueryRow(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id
 FROM conversation_threads
 WHERE id = ?`, id)
 	thread, err := scanConversationThread(row)
@@ -197,7 +214,7 @@ func LeadTaskThreads(sessDir, leadParticipantID string) ([]ConversationThread, e
 	defer db.Close()
 
 	rows, err := db.Query(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id
 FROM conversation_threads
 WHERE status = ? AND lead_participant_id = ?
 ORDER BY escalated_at DESC, id ASC`, string(ConversationThreadTask), leadParticipantID)
@@ -260,6 +277,7 @@ func normalizeConversationThread(thread ConversationThread) ConversationThread {
 	thread.Title = strings.TrimSpace(thread.Title)
 	thread.CreatedBy = strings.TrimSpace(thread.CreatedBy)
 	thread.LeadParticipantID = strings.TrimSpace(thread.LeadParticipantID)
+	thread.OwnerParticipantID = strings.TrimSpace(thread.OwnerParticipantID)
 	thread.Status = normalizeConversationThreadStatus(thread.Status)
 	return thread
 }
@@ -272,6 +290,8 @@ func normalizeConversationThreadStatus(status ConversationThreadStatus) Conversa
 		return ConversationThreadOpen
 	case ConversationThreadTask:
 		return ConversationThreadTask
+	case ConversationThreadReview:
+		return ConversationThreadReview
 	case ConversationThreadResolved:
 		return ConversationThreadResolved
 	default:
@@ -281,7 +301,7 @@ func normalizeConversationThreadStatus(status ConversationThreadStatus) Conversa
 
 func validateConversationThreadStatus(status ConversationThreadStatus) error {
 	switch status {
-	case ConversationThreadOpen, ConversationThreadTask, ConversationThreadResolved:
+	case ConversationThreadOpen, ConversationThreadTask, ConversationThreadReview, ConversationThreadResolved:
 		return nil
 	default:
 		return fmt.Errorf("invalid conversation thread status %q", status)
@@ -295,8 +315,8 @@ func validateConversationThreadStatus(status ConversationThreadStatus) error {
 // escalated_by/lead/title (each with overwrite-if-non-empty semantics) and leaves
 // escalated_at pinned to the first escalation. A resolved thread is re-opened into
 // the task state so the human can re-run it, and the lead can be reassigned then.
-// The escalation entry is a client RPC (human click); agents have no tool that
-// reaches this. escalatedBy is the human-click provenance; leadParticipantID is the
+// Reached by the human-click RPC (which may grant a lead) and by manage_task
+// action=escalate (agent path, always empty lead). escalatedBy records provenance; leadParticipantID is the
 // single named agent granted workflow-orchestration authority for this task.
 func EscalateConversationThread(sessDir, id, escalatedBy, leadParticipantID, title string) (ConversationThread, error) {
 	id = strings.TrimSpace(id)
@@ -323,7 +343,7 @@ func EscalateConversationThread(sessDir, id, escalatedBy, leadParticipantID, tit
 	defer tx.Rollback()
 
 	row := tx.QueryRow(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id
 FROM conversation_threads
 WHERE id = ?`, id)
 	thread, err := scanConversationThread(row)
@@ -358,6 +378,189 @@ WHERE id = ?`,
 	}
 	if err := tx.Commit(); err != nil {
 		return ConversationThread{}, fmt.Errorf("commit conversation thread escalate: %w", err)
+	}
+	return thread, nil
+}
+
+// ClaimConversationThread atomically takes work ownership of a task subthread:
+// a single CAS that sets owner_participant_id to participantID only when the
+// task is unowned. Losing the race is a normal outcome, not an error — it
+// returns claimed=false with the current row so the caller can report who owns
+// it. Claiming is refused (as an error) when the subthread does not exist, is
+// not in the task status (discussion replies stay discussion until a human
+// escalates), or is already owned by the caller (claim is not a refresh).
+// Ownership grants no lead/workflow authority (agent-task-rail design).
+func ClaimConversationThread(sessDir, id, participantID string) (ConversationThread, bool, error) {
+	id = strings.TrimSpace(id)
+	participantID = strings.TrimSpace(participantID)
+	if id == "" {
+		return ConversationThread{}, false, fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
+	}
+	if participantID == "" {
+		return ConversationThread{}, false, errors.New("claim conversation thread: participant id is required")
+	}
+
+	db, err := openStore(sessDir)
+	if err != nil {
+		return ConversationThread{}, false, err
+	}
+	defer db.Close()
+
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+
+	res, err := db.Exec(`
+UPDATE conversation_threads
+SET owner_participant_id = ?
+WHERE id = ? AND status = ? AND owner_participant_id = ''`,
+		participantID, id, string(ConversationThreadTask))
+	if err != nil {
+		return ConversationThread{}, false, fmt.Errorf("claim conversation thread: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return ConversationThread{}, false, fmt.Errorf("claim conversation thread: %w", err)
+	}
+
+	thread, findErr := findConversationThreadByIDDB(db, id)
+	if findErr != nil {
+		return ConversationThread{}, false, findErr
+	}
+	if affected == 1 {
+		return thread, true, nil
+	}
+	// CAS lost: explain exactly why, loudly, instead of guessing.
+	switch {
+	case thread.Status != ConversationThreadTask:
+		return thread, false, fmt.Errorf("claim conversation thread %q: status is %q, only a task can be claimed", id, thread.Status)
+	case thread.OwnerParticipantID == participantID:
+		return thread, false, fmt.Errorf("claim conversation thread %q: already owned by you", id)
+	default:
+		return thread, false, nil
+	}
+}
+
+// UnclaimConversationThread releases work ownership. Only the current owner
+// can release; the status stays task so the work is immediately claimable by
+// someone else.
+func UnclaimConversationThread(sessDir, id, participantID string) (ConversationThread, error) {
+	id = strings.TrimSpace(id)
+	participantID = strings.TrimSpace(participantID)
+	if id == "" {
+		return ConversationThread{}, fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
+	}
+	if participantID == "" {
+		return ConversationThread{}, errors.New("unclaim conversation thread: participant id is required")
+	}
+
+	db, err := openStore(sessDir)
+	if err != nil {
+		return ConversationThread{}, err
+	}
+	defer db.Close()
+
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+
+	res, err := db.Exec(`
+UPDATE conversation_threads
+SET owner_participant_id = ''
+WHERE id = ? AND status = ? AND owner_participant_id = ?`,
+		id, string(ConversationThreadTask), participantID)
+	if err != nil {
+		return ConversationThread{}, fmt.Errorf("unclaim conversation thread: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return ConversationThread{}, fmt.Errorf("unclaim conversation thread: %w", err)
+	}
+	thread, findErr := findConversationThreadByIDDB(db, id)
+	if findErr != nil {
+		return ConversationThread{}, findErr
+	}
+	if affected == 0 {
+		switch {
+		case thread.Status != ConversationThreadTask:
+			return thread, fmt.Errorf("unclaim conversation thread %q: status is %q, not task", id, thread.Status)
+		case thread.OwnerParticipantID != participantID:
+			return thread, fmt.Errorf("unclaim conversation thread %q: owned by %q, not you", id, thread.OwnerParticipantID)
+		default:
+			return thread, fmt.Errorf("unclaim conversation thread %q: not owned", id)
+		}
+	}
+	return thread, nil
+}
+
+// MarkConversationThreadReview advances an owned task to the review state
+// (task -> review, owner-only) and files the owner's one-line summary draft in
+// the same transaction. The resolve step (bubbling the summary to the main
+// stream) stays a separate concern: a human click, or immediate under
+// task_review: auto.
+func MarkConversationThreadReview(sessDir, id, participantID, summary string) (ConversationThread, error) {
+	id = strings.TrimSpace(id)
+	participantID = strings.TrimSpace(participantID)
+	summary = strings.TrimSpace(summary)
+	if id == "" {
+		return ConversationThread{}, fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
+	}
+	if participantID == "" {
+		return ConversationThread{}, errors.New("mark conversation thread review: participant id is required")
+	}
+	if summary == "" {
+		return ConversationThread{}, errors.New("mark conversation thread review: summary is required")
+	}
+
+	db, err := openStore(sessDir)
+	if err != nil {
+		return ConversationThread{}, err
+	}
+	defer db.Close()
+
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+
+	res, err := db.Exec(`
+UPDATE conversation_threads
+SET status = ?, summary = ?
+WHERE id = ? AND status = ? AND owner_participant_id = ?`,
+		string(ConversationThreadReview), summary, id, string(ConversationThreadTask), participantID)
+	if err != nil {
+		return ConversationThread{}, fmt.Errorf("mark conversation thread review: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return ConversationThread{}, fmt.Errorf("mark conversation thread review: %w", err)
+	}
+	thread, findErr := findConversationThreadByIDDB(db, id)
+	if findErr != nil {
+		return ConversationThread{}, findErr
+	}
+	if affected == 0 {
+		switch {
+		case thread.Status != ConversationThreadTask:
+			return thread, fmt.Errorf("mark conversation thread review %q: status is %q, not task", id, thread.Status)
+		case thread.OwnerParticipantID != participantID:
+			return thread, fmt.Errorf("mark conversation thread review %q: owned by %q, only the owner can file for review", id, thread.OwnerParticipantID)
+		default:
+			return thread, fmt.Errorf("mark conversation thread review %q: transition refused", id)
+		}
+	}
+	return thread, nil
+}
+
+// findConversationThreadByIDDB is FindConversationThreadByID against an
+// already-open handle (for use under storeWriteMu).
+func findConversationThreadByIDDB(db *sql.DB, id string) (ConversationThread, error) {
+	row := db.QueryRow(`
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id
+FROM conversation_threads
+WHERE id = ?`, id)
+	thread, err := scanConversationThread(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ConversationThread{}, fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
+		}
+		return ConversationThread{}, fmt.Errorf("find conversation thread: %w", err)
 	}
 	return thread, nil
 }
@@ -405,7 +608,7 @@ func scanConversationThread(scanner interface {
 	var status, createdAt, escalatedAt string
 	if err := scanner.Scan(
 		&thread.ID, &thread.SessionID, &thread.AnchorItemID, &thread.Title, &status, &thread.CreatedBy, &createdAt,
-		&escalatedAt, &thread.EscalatedBy, &thread.Summary, &thread.LeadParticipantID,
+		&escalatedAt, &thread.EscalatedBy, &thread.Summary, &thread.LeadParticipantID, &thread.OwnerParticipantID,
 	); err != nil {
 		return ConversationThread{}, err
 	}

@@ -964,6 +964,12 @@ func migrateSchema(db *sql.DB) error {
 	if err := addColumnIfMissing(db, "conversation_threads", "lead_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// owner_participant_id is the task-rail work owner (claim CAS target):
+	// mutual exclusion and reporting duty, deliberately distinct from
+	// lead_participant_id (orchestration authority). Empty = unclaimed.
+	if err := addColumnIfMissing(db, "conversation_threads", "owner_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	return nil
 }
 
