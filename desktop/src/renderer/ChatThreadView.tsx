@@ -24,6 +24,7 @@ import type { QueuedComposerMessage } from "./ComposerMessages";
 import { DefaultAvatarMark } from "./DefaultAvatar";
 import { reactionArt } from "./MessageReactionArt";
 import { EnvelopeNotice } from "./EnvelopeNotice";
+import { MessageFileList, MessageImageGrid } from "./MessageActions";
 import { MessageReactions } from "./MessageReactions";
 import {
   REACTION_EMOJI,
@@ -449,20 +450,15 @@ function PendingChatRow({
 }: {
   message: QueuedComposerMessage;
 }): JSX.Element {
-  const attachmentHint = [
-    message.images.length > 0 ? `${message.images.length} 张图片` : "",
-    message.files.length > 0 ? `${message.files.length} 个文件` : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
   return (
     <div className="chat-row chat-row--user chat-row--pending">
       <div className="chat-bubble-group">
         <div className="chat-bubble chat-bubble--user chat-bubble--pending">
-          {message.text.trim() ? <RichContent text={message.text} /> : null}
-          {attachmentHint ? (
-            <div className="chat-pending-attachments">{attachmentHint}</div>
+          {message.images.length ? (
+            <MessageImageGrid images={message.images} />
           ) : null}
+          {message.files.length ? <MessageFileList files={message.files} /> : null}
+          {message.text.trim() ? <RichContent text={message.text} /> : null}
         </div>
         <div className="chat-pending-hint">发送中…</div>
       </div>
@@ -553,6 +549,12 @@ function ChatRow({
       <div className="chat-row chat-row--user">
         <div className="chat-bubble-group">
           <div className="chat-bubble chat-bubble--user">
+            {row.item.images?.length ? (
+              <MessageImageGrid images={row.item.images} />
+            ) : null}
+            {row.item.files?.length ? (
+              <MessageFileList files={row.item.files} />
+            ) : null}
             {row.item.text ? (
               <RichContent text={row.item.text} />
             ) : null}

@@ -21,6 +21,7 @@ import {
   findScrollParent,
   INITIAL_CHAT_WINDOW_ROWS,
 } from "./ChatThreadView";
+import { ImagePreviewProvider } from "./ImagePreview";
 import { aggregateMarksBySeq, REACTION_KEYS } from "./MessageMarks";
 
 let mountedRoots: Root[] = [];
@@ -31,7 +32,7 @@ function mount(element: React.ReactElement): HTMLElement {
   document.body.appendChild(container);
   const root = createRoot(container);
   act(() => {
-    root.render(element);
+    root.render(createElement(ImagePreviewProvider, null, element));
   });
   mountedRoots.push(root);
   mountedContainers.push(container);
@@ -206,6 +207,55 @@ describe("ChatThreadView", () => {
     expect(row).not.toBeNull();
     expect(row?.querySelector(".chat-avatar")).toBeNull();
     expect(row?.textContent).toContain("明天上线吗");
+  });
+
+  it("renders images attached to a sent user message bubble", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          {
+            id: "item-1",
+            type: "user_message",
+            text: "看这张图",
+            images: [{ media_type: "image/png", data: "AAAA" }],
+          },
+        ]),
+      }),
+    );
+    const image = container.querySelector<HTMLImageElement>(
+      ".chat-row--user .message-image",
+    );
+    expect(image).not.toBeNull();
+    expect(image?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
+  });
+
+  it("renders optimistic image previews while a chat message is sending", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: [],
+        pendingMessages: [
+          {
+            id: "pending-1",
+            text: "马上发",
+            images: [
+              {
+                id: "image-1",
+                media_type: "image/png",
+                data: "",
+                previewSrc: "blob:wuu-preview",
+              },
+            ],
+            files: [],
+          },
+        ],
+      }),
+    );
+    const image = container.querySelector<HTMLImageElement>(
+      ".chat-row--pending .message-image",
+    );
+    expect(image).not.toBeNull();
+    expect(image?.getAttribute("src")).toBe("blob:wuu-preview");
+    expect(container.querySelector(".chat-pending-attachments")).toBeNull();
   });
 
   it("renders envelope rows via EnvelopeNotice", () => {
@@ -807,7 +857,7 @@ describe("ChatThreadView focus divider rows", () => {
     expect(rows[1]).toBe(pendingRow);
   });
 
-  it("shows an attachment summary inside a pending bubble", () => {
+  it("renders pending image attachments inside the outgoing bubble", () => {
     const container = mount(
       createElement(ChatThreadView, {
         turns: [],
@@ -815,15 +865,17 @@ describe("ChatThreadView focus divider rows", () => {
           {
             id: "pending-1",
             text: "",
-            images: [{ id: "img-1", media_type: "image/png", data: "" }],
+            images: [{ id: "img-1", media_type: "image/png", data: "BBBB" }],
             files: [],
           },
         ],
       }),
     );
-    expect(
-      container.querySelector(".chat-pending-attachments")?.textContent,
-    ).toBe("1 张图片");
+    const image = container.querySelector<HTMLImageElement>(
+      ".chat-row--pending .message-image",
+    );
+    expect(image).not.toBeNull();
+    expect(image?.getAttribute("src")).toBe("data:image/png;base64,BBBB");
   });
 });
 
@@ -843,16 +895,20 @@ function manyUserMessages(
 function mountRoot(element: React.ReactElement): {
   container: HTMLElement;
   root: Root;
+  rerender: (next: React.ReactElement) => void;
 } {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
+  const renderWithProviders = (next: React.ReactElement): void => {
+    root.render(createElement(ImagePreviewProvider, null, next));
+  };
   act(() => {
-    root.render(element);
+    renderWithProviders(element);
   });
   mountedRoots.push(root);
   mountedContainers.push(container);
-  return { container, root };
+  return { container, root, rerender: renderWithProviders };
 }
 
 type IntersectionCallback = (
@@ -961,7 +1017,7 @@ describe("ChatThreadView windowing", () => {
 
   it("keeps the visible window intact — new messages only append at the bottom", () => {
     installIntersectionObserverStub();
-    const { container, root } = mountRoot(
+    const { container, rerender } = mountRoot(
       createElement(ChatThreadView, {
         turns: manyUserMessages(500),
       }),
@@ -969,7 +1025,7 @@ describe("ChatThreadView windowing", () => {
     expect(container.querySelectorAll(".chat-row--user").length).toBe(80);
 
     act(() => {
-      root.render(
+      rerender(
         createElement(ChatThreadView, {
           turns: manyUserMessages(501),
         }),
@@ -986,7 +1042,7 @@ describe("ChatThreadView windowing", () => {
 
   it("reopens on the latest window when rows shrink past the hidden count (history reset)", () => {
     installIntersectionObserverStub();
-    const { container, root } = mountRoot(
+    const { container, rerender } = mountRoot(
       createElement(ChatThreadView, {
         turns: manyUserMessages(500),
       }),
@@ -1001,7 +1057,7 @@ describe("ChatThreadView windowing", () => {
     expect(container.querySelectorAll(".chat-row--user").length).toBe(80);
 
     act(() => {
-      root.render(
+      rerender(
         createElement(ChatThreadView, {
           turns: manyUserMessages(100),
         }),
@@ -1017,7 +1073,7 @@ describe("ChatThreadView windowing", () => {
 
   it("resets the window when the caller remounts for a different thread (key change)", () => {
     installIntersectionObserverStub();
-    const { container, root } = mountRoot(
+    const { container, rerender } = mountRoot(
       createElement(ChatThreadView, {
         key: "thread-a",
         turns: manyUserMessages(500),
@@ -1029,7 +1085,7 @@ describe("ChatThreadView windowing", () => {
     expect(container.querySelectorAll(".chat-row--user").length).toBe(160);
 
     act(() => {
-      root.render(
+      rerender(
         createElement(ChatThreadView, {
           key: "thread-b",
           turns: manyUserMessages(500),
@@ -1078,9 +1134,13 @@ describe("ChatThreadView windowing", () => {
     const root = createRoot(mountPoint);
     act(() => {
       root.render(
-        createElement(ChatThreadView, {
-          turns: manyUserMessages(500),
-        }),
+        createElement(
+          ImagePreviewProvider,
+          null,
+          createElement(ChatThreadView, {
+            turns: manyUserMessages(500),
+          }),
+        ),
       );
     });
     mountedRoots.push(root);
