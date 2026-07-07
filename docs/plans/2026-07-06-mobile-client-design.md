@@ -178,9 +178,9 @@ M0 全部完成,M1 前置部分完成:
 - ✅ `@wuu/remote-core`(clients/core):加密层双侧实现并通过全部向量
   (双向逐字节);45 项测试覆盖行为安全与客户端语义(假中继+假主机:
   断线精确重放、spool 丢失降级、审批反向请求、累计 ack、at-most-once)。
-- ◐ 桌面配对面板(§7 #1):`remote status/devices --json` 与
+- ✅ 桌面配对面板(§7 #1):`remote status/devices --json` 与
   `devices remove` CLI、主进程 RemoteHostManager(托管 remote host
-  子进程、捕获配对 URI、吊销即重启)、SettingsRemotePage 组件与样式
-  均已落地;SettingsView 导航与 preload/main IPC 接线与在途的皮肤
-  重构同文件,待其落地后以小改动补上。
+  子进程、捕获配对 URI、吊销即重启)、SettingsRemotePage 组件与样式、
+  设置页「远程」导航与 preload/main IPC 接线全部落地。桌面端从设置页
+  即可:配中继 → 开远程访问 → 出配对二维码 → 管理/吊销已配对设备。
 - 未动:审批反向通道(§7 #2)、推送(§7 #3)——M2 内容。
