@@ -13,6 +13,13 @@ import (
 const (
 	MessageMarkKindSeen     = "seen"
 	MessageMarkKindReaction = "reaction"
+	// MessageMarkKindMention records that a message @-addressed a participant.
+	// Routing writes one per mentioned member at delivery time; the pull inbox
+	// reads them to rebuild each envelope's addressed flag (which member a
+	// message must be answered by). Under push this flag rode inside each
+	// per-member enqueued envelope; under pull the message lives once in
+	// history, so "who was addressed" is a durable side record.
+	MessageMarkKindMention = "mention"
 
 	// SeenStatus* are the lifecycle of a (message, agent) read receipt.
 	// "seen" in the product sense means SeenStatusCompleted — the turn that
@@ -69,7 +76,7 @@ func UpsertMessageMark(sessDir string, mark MessageMark) error {
 		return errors.New("participant_id is required")
 	}
 	switch mark.Kind {
-	case MessageMarkKindSeen, MessageMarkKindReaction:
+	case MessageMarkKindSeen, MessageMarkKindReaction, MessageMarkKindMention:
 	default:
 		return fmt.Errorf("unsupported message mark kind %q", mark.Kind)
 	}
@@ -175,6 +182,49 @@ WHERE session_id = ? AND participant_id = ? AND kind = ?`,
 		return 0, nil
 	}
 	return int(seq.Int64), nil
+}
+
+// MarkMessageMention records that message `seq` in a thread @-addressed
+// `participantID`. Written by routing at delivery time so the pull inbox can
+// rebuild the addressed flag. Idempotent (upsert).
+func MarkMessageMention(sessDir, sessionID string, seq int, participantID string, at time.Time) error {
+	return UpsertMessageMark(sessDir, MessageMark{
+		SessionID: sessionID, Seq: seq, ParticipantID: participantID,
+		Kind: MessageMarkKindMention, At: at,
+	})
+}
+
+// MentionedSeqs returns the set of message seqs in a thread that @-addressed
+// the given participant — the pull inbox reads it once per thread to stamp
+// each pulled message's addressed flag.
+func MentionedSeqs(sessDir, sessionID, participantID string) (map[int]bool, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	participantID = strings.TrimSpace(participantID)
+	out := map[int]bool{}
+	if sessionID == "" || participantID == "" {
+		return out, nil
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.Query(`
+SELECT seq FROM message_marks
+WHERE session_id = ? AND participant_id = ? AND kind = ?`,
+		sessionID, participantID, MessageMarkKindMention)
+	if err != nil {
+		return nil, fmt.Errorf("mentioned seqs: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var seq int
+		if err := rows.Scan(&seq); err != nil {
+			return nil, fmt.Errorf("scan mentioned seq: %w", err)
+		}
+		out[seq] = true
+	}
+	return out, rows.Err()
 }
 
 func ListMessageMarks(sessDir, sessionID string) ([]MessageMark, error) {

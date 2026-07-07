@@ -187,17 +187,28 @@ func (s *Server) routeEnvelopes(source *threadState, base MessageEnvelope, menti
 		providers.DebugLogf("list thread members for resident routing %q: %v", sourceThreadID, err)
 		return
 	}
-	s.deliverEnvelopeToMembers(members, base, mentioned)
+	// Persist who this message @-addresses so the pull inbox can rebuild the
+	// addressed flag (the message lives once in history; addressed is a durable
+	// side record, not carried per-member).
+	if base.SourceSeq > 0 {
+		for pid := range mentioned {
+			if err := session.MarkMessageMention(s.rt.SessionDir, sourceThreadID, base.SourceSeq, pid, base.CreatedAt); err != nil {
+				providers.DebugLogf("record mention %q on %s#%d: %v", pid, sourceThreadID, base.SourceSeq, err)
+			}
+		}
+	}
+	// Main-stream chat is pull: the message is already in history, members are
+	// only kicked and drain what is past their read cursor.
+	s.deliverEnvelopeToMembers(members, base, mentioned, false)
 }
 
-// deliverEnvelopeToMembers fans a base envelope out to a member set: it skips
-// the sender and retired participants, stamps each copy with a fresh id and the
-// per-member addressed flag, enqueues it, and kicks the resident to drain. Both
-// the group-wide path (routeEnvelopes, members = thread_members) and the reply
-// subthread path (routeSubthreadParticipantMessage, members = the cth's
-// weak-isolation subset) go through here so the two share exactly one delivery
-// mechanism — only the member source differs.
-func (s *Server) deliverEnvelopeToMembers(members []string, base MessageEnvelope, mentioned map[string]bool) {
+// deliverEnvelopeToMembers wakes a member set for a message. pushToInbox=false
+// is the pull path (main-stream chat): the message already lives in history, so
+// members are only KICKED and drain what is past their read cursor.
+// pushToInbox=true is the push path for content that is NOT plain main-stream
+// history: reply-subthread (cth) traffic and system directives (board/plan
+// wakes) are enqueued per member as before, then kicked.
+func (s *Server) deliverEnvelopeToMembers(members []string, base MessageEnvelope, mentioned map[string]bool, pushToInbox bool) {
 	if s == nil || s.rt == nil {
 		return
 	}
@@ -209,39 +220,31 @@ func (s *Server) deliverEnvelopeToMembers(members []string, base MessageEnvelope
 		}
 		// Membership queries already exclude retired participants; this
 		// guards the race where a member retires between the membership
-		// read and the enqueue (retire cleanup protocol).
+		// read and the kick (retire cleanup protocol).
 		if s.participantRetired(participantID) {
 			continue
 		}
-		env := base
-		env.ID = "env-" + session.NewID()
-		env.Addressed = mentioned[participantID]
-		// No hop-based delivery cutoff (2026-07-04 group-fanout amendment,
-		// resident-named-agents.md 增补四): deep agent→agent relays are
-		// delivered like any other ambient message, so a turtle-soup-style
-		// back-and-forth no longer dies the moment neither side @mentions.
-		// Whether to engage is the model's judgment (design principle 10 +
-		// the from="agent" prompt rule), not a depth counter; the only
-		// structural backstop is the parallel fan-out width, bounded by the
-		// group-size / roster cap (maxGroupMembers) for the main stream, and by
-		// the reply subthread's participant subset for weak-isolation traffic.
-		// Hop rides along as an advisory signal in the envelope prompt.
-		if env.CreatedAt.IsZero() {
-			env.CreatedAt = time.Now().UTC()
-		}
-		data, err := json.Marshal(env)
-		if err != nil {
-			providers.DebugLogf("marshal resident envelope for %q: %v", participantID, err)
-			continue
-		}
-		if _, err := session.EnqueueResidentEnvelope(s.rt.SessionDir, session.ResidentEnvelope{
-			ID:            env.ID,
-			ParticipantID: participantID,
-			EnvelopeJSON:  data,
-			CreatedAt:     env.CreatedAt,
-		}); err != nil {
-			providers.DebugLogf("enqueue resident envelope for %q: %v", participantID, err)
-			continue
+		if pushToInbox {
+			env := base
+			env.ID = "env-" + session.NewID()
+			env.Addressed = mentioned[participantID]
+			if env.CreatedAt.IsZero() {
+				env.CreatedAt = time.Now().UTC()
+			}
+			data, err := json.Marshal(env)
+			if err != nil {
+				providers.DebugLogf("marshal resident envelope for %q: %v", participantID, err)
+				continue
+			}
+			if _, err := session.EnqueueResidentEnvelope(s.rt.SessionDir, session.ResidentEnvelope{
+				ID:            env.ID,
+				ParticipantID: participantID,
+				EnvelopeJSON:  data,
+				CreatedAt:     env.CreatedAt,
+			}); err != nil {
+				providers.DebugLogf("enqueue resident envelope for %q: %v", participantID, err)
+				continue
+			}
 		}
 		s.kickResidentAgent(participantID)
 	}
@@ -313,7 +316,8 @@ func (s *Server) routeSubthreadParticipantMessage(parentThreadID, subthreadID st
 		providers.DebugLogf("list subthread members for %q: %v", subthreadID, err)
 		return
 	}
-	s.deliverEnvelopeToMembers(members, base, mentioned)
+	// Reply-subthread (cth) traffic stays on the weak-isolation push path.
+	s.deliverEnvelopeToMembers(members, base, mentioned, true)
 }
 
 // mentionSubthreadMembers resolves @mentions in a reply-subthread message to
@@ -426,12 +430,18 @@ func (s *Server) drainResidentAgent(participantID string) {
 		providers.DebugLogf("defer resident drain for busy participant %q", participantID)
 		return
 	}
+	// Pull half: main-stream chat past this resident's read cursor across every
+	// group it follows. These envelopes have no inbox row — they are acked by
+	// advancing the read cursor (recordEnvelopeReadReceipts below), not dequeued.
+	envs := s.pullResidentChatEnvelopes(participantID, th.ID)
+	// Push half: content that is not plain main-stream history — reply-subthread
+	// (cth) traffic and system directives — still lives in the per-member inbox
+	// and is consumed by id.
 	pending, err := session.PendingResidentEnvelopes(s.rt.SessionDir, participantID, residentEnvelopeBatchLimit)
 	if err != nil {
 		providers.DebugLogf("load resident inbox for %q: %v", participantID, err)
 		return
 	}
-	envs := make([]MessageEnvelope, 0, len(pending))
 	ids := make([]string, 0, len(pending))
 	for _, raw := range pending {
 		var env MessageEnvelope
@@ -481,6 +491,78 @@ func (s *Server) drainResidentAgent(participantID string) {
 		return
 	}
 	go s.runResidentEnvelopeTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history, envs)
+}
+
+// pullResidentChatEnvelopes is the pull half of delivery: instead of chat being
+// pushed into a per-member queue, main-stream chat lives once in each thread's
+// history and each agent PULLS what is past its read cursor when it runs. For
+// every group thread the participant follows (session.ThreadsForParticipant —
+// the reverse thread_members query), this reads the chat past the participant's
+// read watermark (session.ChatMessagesSince) and rebuilds envelopes. addressed
+// is rebuilt from the durable mention marks (session.MentionedSeqs).
+//
+// The participant's own DM thread is deliberately NOT a pull source: direct
+// user→resident DM turns are handled synchronously (turn_handlers, the
+// isResidentDM branch) and never advance the read cursor, so pulling the DM
+// would re-process them. dmThreadID is passed only to exclude it defensively if
+// it ever appeared as a follow. Main-stream only — reply-subthread (cth) traffic
+// and system directives ride the push path and arrive via the resident inbox.
+func (s *Server) pullResidentChatEnvelopes(participantID, dmThreadID string) []MessageEnvelope {
+	if s == nil || s.rt == nil {
+		return nil
+	}
+	participantID = strings.TrimSpace(participantID)
+	dm := strings.TrimSpace(dmThreadID)
+	groups, err := session.ThreadsForParticipant(s.rt.SessionDir, participantID)
+	if err != nil {
+		providers.DebugLogf("pull: threads for %q: %v", participantID, err)
+	}
+	var out []MessageEnvelope
+	for _, threadID := range groups {
+		threadID = strings.TrimSpace(threadID)
+		if threadID == "" || threadID == dm {
+			continue
+		}
+		watermark, err := session.ThreadReadWatermark(s.rt.SessionDir, threadID, participantID)
+		if err != nil {
+			continue
+		}
+		recs, err := session.ChatMessagesSince(s.rt.SessionDir, threadID, watermark)
+		if err != nil {
+			continue
+		}
+		mentioned, _ := session.MentionedSeqs(s.rt.SessionDir, threadID, participantID)
+		title, workspace := s.taskThreadContext(threadID)
+		for _, rec := range recs {
+			// Main-stream only (cth-tagged rides push), and never surface the
+			// agent's own posts back to itself.
+			if strings.TrimSpace(rec.ThreadID) != "" || strings.TrimSpace(rec.ParticipantID) == participantID {
+				continue
+			}
+			isUser := strings.EqualFold(strings.TrimSpace(rec.Role), "user")
+			senderKind, senderName, senderID, hop := "participant", "", strings.TrimSpace(rec.ParticipantID), 1
+			if isUser {
+				senderKind, senderName, senderID, hop = "user", "User", "", 0
+			} else if summary, ok := s.resolveParticipantSummary(senderID); ok {
+				senderName = summary.Name
+			}
+			out = append(out, MessageEnvelope{
+				ID:                  "env-" + session.NewID(),
+				SourceThreadID:      threadID,
+				SourceTitle:         title,
+				SenderKind:          senderKind,
+				SenderName:          firstNonEmpty(senderName, "Participant"),
+				SenderParticipantID: senderID,
+				Addressed:           mentioned[rec.Seq],
+				Hop:                 hop,
+				SourceSeq:           rec.Seq,
+				Text:                strings.TrimSpace(firstNonEmpty(rec.DisplayContent, rec.Content)),
+				CreatedAt:           firstNonZeroTime(rec.At, time.Now().UTC()),
+				Workspace:           workspace,
+			})
+		}
+	}
+	return out
 }
 
 func (s *Server) runResidentEnvelopeTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, turnRuntime turnRuntimeSnapshot, history []providers.ChatMessage, envs []MessageEnvelope) {

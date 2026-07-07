@@ -583,7 +583,7 @@ func (s *Server) wakePieceAssignee(task session.ConversationThread, piece sessio
 		Text:                text,
 		CreatedAt:           time.Now().UTC(),
 		Workspace:           workspace,
-	}, nil)
+	}, nil, true)
 }
 
 // wakePlanLead @-wakes the lead once every piece of the plan is done, so the
@@ -609,7 +609,7 @@ func (s *Server) wakePlanLead(task session.ConversationThread) {
 		Text:                text,
 		CreatedAt:           time.Now().UTC(),
 		Workspace:           workspace,
-	}, nil)
+	}, nil, true)
 }
 
 // taskThreadContext returns the parent thread's display title and workspace
@@ -680,7 +680,7 @@ func (s *Server) wakeTaskBoardForOwnerlessTask(task session.ConversationThread, 
 		Text:                text,
 		CreatedAt:           time.Now().UTC(),
 		Workspace:           workspace,
-	}, nil)
+	}, nil, true)
 }
 
 // mainStreamItemIDForSeq resolves a message seq (the stable per-thread address

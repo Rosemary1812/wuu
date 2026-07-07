@@ -132,9 +132,12 @@ func TestResidentRouterParticipantMessageHonorsMentionsAndRoutesDeepRelays(t *te
 		t.Fatalf("Bea envelope meta = %+v", beaMeta)
 	}
 
-	// Bea replies without @mentioning anyone, at hop=2: still delivered to every
-	// other member as an ambient (addressed=false) envelope. Convergence is the
-	// model's judgment, not a delivery cutoff.
+	// Bea replies without @mentioning anyone: still delivered to every other
+	// member as an ambient (addressed=false) envelope. Convergence is the model's
+	// judgment, not a delivery cutoff. Hop is advisory under pull — the message
+	// lives once in history, which does not store relay depth, so pull rebuilds
+	// it (user=0, participant=1); fanout is bounded by the group-size cap, not
+	// hop. The assertion that matters here is ambient (not addressed).
 	err = srv.publishParticipantMessage(groupID, agentcontrol.ParticipantMessage{
 		AgentID:       bea,
 		ParticipantID: bea,
@@ -148,8 +151,8 @@ func TestResidentRouterParticipantMessageHonorsMentionsAndRoutesDeepRelays(t *te
 	}
 	_, adaHistory := waitForResidentDMHistory(t, srv, ada, 1)
 	adaMeta := findEnvelopeMetaRecord(t, adaHistory)
-	if adaMeta.SourceThreadID != groupID || adaMeta.Addressed || adaMeta.Hop != 2 || adaMeta.SenderParticipantID != bea {
-		t.Fatalf("Ada should receive Bea's unmentioned hop=2 relay as ambient, meta = %+v", adaMeta)
+	if adaMeta.SourceThreadID != groupID || adaMeta.Addressed || adaMeta.SenderParticipantID != bea {
+		t.Fatalf("Ada should receive Bea's unmentioned relay as ambient, meta = %+v", adaMeta)
 	}
 }
 
