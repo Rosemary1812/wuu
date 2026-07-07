@@ -1508,3 +1508,54 @@
     animation: none;
   }
 }
+
+/* --- Remote control ------------------------------------------------------- */
+
+.settings-remote-pairing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 16px;
+}
+
+/* The QR carries its own white quiet zone so phones can scan it in dark
+   theme too. */
+.settings-remote-qr {
+  width: 220px;
+  height: 220px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.settings-remote-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.settings-remote-pair-hint {
+  margin: 0;
+  font-size: var(--font-sm);
+  color: var(--ink-muted);
+}
+
+.settings-remote-pair-uri {
+  max-width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: var(--font-sm);
+  color: var(--ink);
+  word-break: break-all;
+  user-select: all;
+}
+
+.settings-button-danger {
+  color: var(--danger);
+}
+
+.settings-button-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
