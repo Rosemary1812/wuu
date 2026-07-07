@@ -89,7 +89,6 @@ func TestToolkit_WriteAndReadFile(t *testing.T) {
 		t.Fatalf("unexpected read response: %s", readResp)
 	}
 	var readParsed struct {
-		FileSHA           string `json:"file_sha"`
 		WorkspaceRevision string `json:"workspace_revision"`
 		Content           string `json:"content"`
 		Range             struct {
@@ -102,16 +101,13 @@ func TestToolkit_WriteAndReadFile(t *testing.T) {
 	if err := json.Unmarshal([]byte(readResp), &readParsed); err != nil {
 		t.Fatalf("parse read response: %v", err)
 	}
-	if !strings.HasPrefix(readParsed.FileSHA, "sha256:") {
-		t.Fatalf("read_file response missing file_sha: %+v", readParsed)
-	}
 	if !strings.HasPrefix(readParsed.WorkspaceRevision, "fs:worktree:") {
 		t.Fatalf("read_file response missing filesystem workspace revision: %+v", readParsed)
 	}
 	if readParsed.Range.StartLine != 1 || readParsed.Range.EndLine != 1 || len(readParsed.OmittedRanges) != 0 {
 		t.Fatalf("unexpected read range metadata: %+v", readParsed)
 	}
-	if len(readParsed.Suggestions) == 0 || !strings.Contains(strings.Join(readParsed.Suggestions, " "), "file_sha") {
+	if len(readParsed.Suggestions) == 0 || !strings.Contains(strings.Join(readParsed.Suggestions, " "), "excerpt") {
 		t.Fatalf("read_file response missing evidence suggestion: %+v", readParsed.Suggestions)
 	}
 
@@ -123,7 +119,6 @@ func TestToolkit_WriteAndReadFile(t *testing.T) {
 		t.Fatalf("second read_file: %v", err)
 	}
 	var unchangedParsed struct {
-		FileSHA           string   `json:"file_sha"`
 		WorkspaceRevision string   `json:"workspace_revision"`
 		Unchanged         bool     `json:"unchanged"`
 		Suggestions       []string `json:"next_suggestions"`
@@ -131,7 +126,7 @@ func TestToolkit_WriteAndReadFile(t *testing.T) {
 	if err := json.Unmarshal([]byte(unchangedResp), &unchangedParsed); err != nil {
 		t.Fatalf("parse unchanged read response: %v", err)
 	}
-	if !unchangedParsed.Unchanged || unchangedParsed.FileSHA != readParsed.FileSHA || unchangedParsed.WorkspaceRevision == "" || len(unchangedParsed.Suggestions) == 0 {
+	if !unchangedParsed.Unchanged || unchangedParsed.WorkspaceRevision == "" || len(unchangedParsed.Suggestions) == 0 {
 		t.Fatalf("unexpected unchanged read metadata: %+v", unchangedParsed)
 	}
 }
@@ -185,58 +180,49 @@ func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 		Name:      "write_file",
 		Arguments: `{"path":"a.txt","content":"new\n"}`,
 	})
-	if err == nil || !strings.Contains(err.Error(), "read_file") || !strings.Contains(err.Error(), "expected_old_sha") {
+	if err == nil || !strings.Contains(err.Error(), "read_file") {
 		t.Fatalf("expected existing-file guard, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "error_kind=missing_file_baseline") || !strings.Contains(err.Error(), "safe_retry=") {
 		t.Fatalf("expected structured baseline guidance, got: %v", err)
 	}
 
-	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "read_file",
 		Arguments: `{"path":"a.txt"}`,
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("read_file: %v", err)
 	}
-	var readParsed struct {
-		FileSHA string `json:"file_sha"`
-	}
-	if err := json.Unmarshal([]byte(readResp), &readParsed); err != nil {
-		t.Fatalf("parse read response: %v", err)
-	}
-	if readParsed.FileSHA == "" {
-		t.Fatalf("read_file missing file_sha: %s", readResp)
-	}
 
+	// The read ledger is the only guard: an out-of-band change after the
+	// read must refuse the overwrite as stale.
+	mustWriteFile(t, filepath.Join(root, "a.txt"), "changed elsewhere\n")
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "write_file",
-		Arguments: `{"path":"a.txt","content":"new\n","expected_old_sha":"sha256:0000"}`,
+		Arguments: `{"path":"a.txt","content":"new\n"}`,
 	})
-	if err == nil || !strings.Contains(err.Error(), "expected_old_sha") {
-		t.Fatalf("expected expected_old_sha mismatch, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "error_kind=expected_old_sha_mismatch") || !strings.Contains(err.Error(), "current_file_sha=sha256:") {
-		t.Fatalf("expected structured expected_old_sha guidance, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "error_kind=stale_file_baseline") {
+		t.Fatalf("expected stale-baseline refusal after external change, got: %v", err)
 	}
 
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"a.txt"}`,
+	}); err != nil {
+		t.Fatalf("re-read after external change: %v", err)
+	}
 	writeResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "write_file",
-		Arguments: `{"path":"a.txt","content":"new\n","expected_old_sha":"` + readParsed.FileSHA + `"}`,
+		Arguments: `{"path":"a.txt","content":"new\n"}`,
 	})
 	if err != nil {
-		t.Fatalf("write_file with expected_old_sha: %v", err)
+		t.Fatalf("write_file after fresh read: %v", err)
 	}
 	var writeParsed struct {
-		OldFileSHA        string `json:"old_file_sha"`
-		NewFileSHA        string `json:"new_file_sha"`
 		WorkspaceRevision string `json:"workspace_revision"`
 	}
 	if err := json.Unmarshal([]byte(writeResp), &writeParsed); err != nil {
 		t.Fatalf("parse write response: %v", err)
-	}
-	if writeParsed.OldFileSHA != readParsed.FileSHA || !strings.HasPrefix(writeParsed.NewFileSHA, "sha256:") {
-		t.Fatalf("unexpected write sha metadata: %+v", writeParsed)
 	}
 	if !strings.HasPrefix(writeParsed.WorkspaceRevision, "fs:worktree:") {
 		t.Fatalf("write_file response missing filesystem workspace revision: %+v", writeParsed)
@@ -289,15 +275,10 @@ func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read large.txt: %v", err)
 	}
-	var largeRead struct {
-		FileSHA string `json:"file_sha"`
-	}
-	if err := json.Unmarshal([]byte(largeReadResp), &largeRead); err != nil {
-		t.Fatalf("parse large read response: %v", err)
-	}
+	_ = largeReadResp
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "write_file",
-		Arguments: `{"path":"large.txt","content":"replacement\n","expected_old_sha":"` + largeRead.FileSHA + `"}`,
+		Arguments: `{"path":"large.txt","content":"replacement\n"}`,
 	})
 	if err == nil ||
 		!strings.Contains(err.Error(), "error_kind=broad_overwrite") ||
@@ -310,19 +291,18 @@ func TestToolkit_WriteFileGuardsExistingFiles(t *testing.T) {
 	}
 	writeLargeResp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "write_file",
-		Arguments: `{"path":"large.txt","content":"replacement\n","expected_old_sha":"` + largeRead.FileSHA + `","overwrite_policy":"explicit_user_requested"}`,
+		Arguments: `{"path":"large.txt","content":"replacement\n","overwrite_policy":"explicit_user_requested"}`,
 	})
 	if err != nil {
 		t.Fatalf("write_file explicit broad overwrite: %v", err)
 	}
 	var writeLarge struct {
-		OldFileSHA string     `json:"old_file_sha"`
-		Diff       DiffResult `json:"diff"`
+		Diff DiffResult `json:"diff"`
 	}
 	if err := json.Unmarshal([]byte(writeLargeResp), &writeLarge); err != nil {
 		t.Fatalf("parse broad overwrite response: %v\n%s", err, writeLargeResp)
 	}
-	if writeLarge.OldFileSHA != largeRead.FileSHA || mustReadFile(t, largePath) != "replacement\n" {
+	if mustReadFile(t, largePath) != "replacement\n" {
 		t.Fatalf("explicit broad overwrite did not apply: %+v", writeLarge)
 	}
 	if !writeLarge.Diff.Truncated || writeLarge.Diff.OldLines <= 0 || writeLarge.Diff.NewLines != 1 || len(writeLarge.Diff.Hunks) != 0 {
@@ -411,9 +391,6 @@ func TestToolkit_ReadFileStreamsLargeFileRange(t *testing.T) {
 	}
 	if parsed.NumLines != 3 || parsed.StartLine != 3001 || parsed.TotalLines != 5000 || !parsed.Truncated {
 		t.Fatalf("unexpected metadata: %+v", parsed)
-	}
-	if !strings.HasPrefix(parsed.FileSHA, "sha256:") {
-		t.Fatalf("read_file response missing file_sha: %+v", parsed)
 	}
 	if parsed.Range.StartLine != 3001 || parsed.Range.EndLine != 3003 {
 		t.Fatalf("unexpected range metadata: %+v", parsed.Range)
@@ -632,7 +609,6 @@ func TestToolkit_FileToolsRejectProtectedMetadataPaths(t *testing.T) {
 	gitConfigContent := "remote = origin\n"
 	mustWriteFile(t, filepath.Join(root, ".git", "config"), gitConfigContent)
 	mustWriteFile(t, filepath.Join(root, ".wuu", "runtime", "trace.jsonl"), "{}\n")
-	gitConfigSHA := formatFileSHA(sha256Hex([]byte(gitConfigContent)))
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "read_file",
@@ -655,7 +631,7 @@ func TestToolkit_FileToolsRejectProtectedMetadataPaths(t *testing.T) {
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "edit_file",
-		Arguments: `{"path":".git/config","old_text":"remote = origin","new_text":"remote = changed","expected_old_sha":"` + gitConfigSHA + `"}`,
+		Arguments: `{"path":".git/config","old_text":"remote = origin","new_text":"remote = changed"}`,
 	})
 	if err == nil || !strings.Contains(err.Error(), "version-control metadata") {
 		t.Fatalf("expected edit_file to reject VCS metadata, got: %v", err)
@@ -753,7 +729,7 @@ func TestToolkit_EditFileRejectsStaleRead(t *testing.T) {
 	}
 }
 
-func TestToolkit_EditFileAcceptsExpectedOldSHA(t *testing.T) {
+func TestToolkit_EditFileRequiresPriorRead(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
@@ -765,32 +741,32 @@ func TestToolkit_EditFileAcceptsExpectedOldSHA(t *testing.T) {
 		Name:      "edit_file",
 		Arguments: `{"path":"a.txt","old_text":"alpha","new_text":"bravo"}`,
 	})
-	if err == nil || !strings.Contains(err.Error(), "expected_old_sha") {
-		t.Fatalf("expected edit_file to require read or expected_old_sha, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "read_file") {
+		t.Fatalf("expected edit_file to require a prior read, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "error_kind=missing_file_baseline") || !strings.Contains(err.Error(), "model_next_action=") {
 		t.Fatalf("expected structured edit baseline guidance, got: %v", err)
 	}
 
-	oldSHA := formatFileSHA(sha256Hex([]byte("alpha\n")))
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"a.txt"}`,
+	}); err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "edit_file",
-		Arguments: `{"path":"a.txt","old_text":"alpha","new_text":"bravo","expected_old_sha":"` + oldSHA + `"}`,
+		Arguments: `{"path":"a.txt","old_text":"alpha","new_text":"bravo"}`,
 	})
 	if err != nil {
-		t.Fatalf("edit_file with expected_old_sha: %v", err)
+		t.Fatalf("edit_file after read: %v", err)
 	}
 	var parsed struct {
-		OldFileSHA        string   `json:"old_file_sha"`
-		NewFileSHA        string   `json:"new_file_sha"`
 		WorkspaceRevision string   `json:"workspace_revision"`
 		Suggestions       []string `json:"next_suggestions"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
 		t.Fatalf("parse edit response: %v", err)
-	}
-	if parsed.OldFileSHA != oldSHA || !strings.HasPrefix(parsed.NewFileSHA, "sha256:") {
-		t.Fatalf("unexpected edit sha metadata: %+v", parsed)
 	}
 	if !strings.HasPrefix(parsed.WorkspaceRevision, "fs:worktree:") {
 		t.Fatalf("edit_file response missing filesystem workspace revision: %+v", parsed)
@@ -811,17 +787,6 @@ func TestToolkit_EditFileAcceptsExpectedOldSHA(t *testing.T) {
 		t.Fatalf("unexpected content after baseline-refresh edit: %q", got)
 	}
 
-	mustWriteFile(t, filepath.Join(root, "b.txt"), "one\n")
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "edit_file",
-		Arguments: `{"path":"b.txt","old_text":"one","new_text":"two","expected_old_sha":"sha256:0000"}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "expected_old_sha") {
-		t.Fatalf("expected expected_old_sha mismatch, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "error_kind=expected_old_sha_mismatch") || !strings.Contains(err.Error(), "current_file_sha=sha256:") {
-		t.Fatalf("expected structured expected_old_sha guidance, got: %v", err)
-	}
 }
 
 func TestToolkit_EditFileReportsRecoverableTextMatchErrors(t *testing.T) {
@@ -832,11 +797,16 @@ func TestToolkit_EditFileReportsRecoverableTextMatchErrors(t *testing.T) {
 	}
 	content := "alpha\nbravo\ncharlie\nbravo\n"
 	mustWriteFile(t, filepath.Join(root, "a.txt"), content)
-	oldSHA := formatFileSHA(sha256Hex([]byte(content)))
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"a.txt"}`,
+	}); err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "edit_file",
-		Arguments: `{"path":"a.txt","old_text":"bravx","new_text":"BRAVX","expected_old_sha":"` + oldSHA + `"}`,
+		Arguments: `{"path":"a.txt","old_text":"bravx","new_text":"BRAVX"}`,
 	})
 	if err == nil {
 		t.Fatal("expected old_text not found error")
@@ -850,7 +820,7 @@ func TestToolkit_EditFileReportsRecoverableTextMatchErrors(t *testing.T) {
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "edit_file",
-		Arguments: `{"path":"a.txt","old_text":"bravo","new_text":"BRAVO","expected_old_sha":"` + oldSHA + `"}`,
+		Arguments: `{"path":"a.txt","old_text":"bravo","new_text":"BRAVO"}`,
 	})
 	if err == nil {
 		t.Fatal("expected ambiguous old_text error")
@@ -874,11 +844,10 @@ func TestToolkit_EditFileRejectsSensitivePaths(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	mustWriteFile(t, filepath.Join(root, ".env"), "API_KEY=secret\n")
-	oldSHA := formatFileSHA(sha256Hex([]byte("API_KEY=secret\n")))
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "edit_file",
-		Arguments: `{"path":".env","old_text":"API_KEY=secret","new_text":"API_KEY=changed","expected_old_sha":"` + oldSHA + `"}`,
+		Arguments: `{"path":".env","old_text":"API_KEY=secret","new_text":"API_KEY=changed"}`,
 	})
 	if err == nil {
 		t.Fatal("expected sensitive path rejection")
@@ -1592,17 +1561,15 @@ func TestToolkit_FileToolTelemetryRecordsResultActions(t *testing.T) {
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "write_file", Arguments: `{"path":"new.txt","content":"new\n"}`}); err != nil {
 		t.Fatalf("write_file create: %v", err)
 	}
-	oneSHA := formatFileSHA(sha256Hex([]byte("one\n")))
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "edit_file",
-		Arguments: `{"path":"a.txt","old_text":"one","new_text":"two","expected_old_sha":"` + oneSHA + `"}`,
+		Arguments: `{"path":"a.txt","old_text":"one","new_text":"two"}`,
 	}); err != nil {
 		t.Fatalf("edit_file: %v", err)
 	}
-	twoSHA := formatFileSHA(sha256Hex([]byte("two\n")))
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "write_file",
-		Arguments: `{"path":"a.txt","content":"three\n","expected_old_sha":"` + twoSHA + `"}`,
+		Arguments: `{"path":"a.txt","content":"three\n"}`,
 	}); err != nil {
 		t.Fatalf("write_file overwrite: %v", err)
 	}

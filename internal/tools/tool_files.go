@@ -30,7 +30,7 @@ func (t *ReadFileTool) IsConcurrencySafe() bool { return true }
 func (t *ReadFileTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "read_file",
-		Description: "Read a workspace file with line numbers. Use offset/limit, range, symbol, and context_lines for focused reads. Results include file_sha, workspace_revision, omitted ranges, and follow-up suggestions. Use list_files for directories.",
+		Description: "Read a workspace file with line numbers. Use offset/limit, range, symbol, and context_lines for focused reads. Results include workspace_revision, omitted ranges, and follow-up suggestions. Use list_files for directories.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -243,7 +243,6 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 				result := map[string]any{
 					"action":             "read_unchanged",
 					"path":               displayPath,
-					"file_sha":           formatFileSHA(contentHash),
 					"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 					"range":              readFileRangeMetadata(args.Offset, len(readResult.Lines)),
 					"unchanged":          true,
@@ -278,7 +277,6 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	result := map[string]any{
 		"action":             "read",
 		"path":               displayPath,
-		"file_sha":           formatFileSHA(contentHash),
 		"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 		"content":            buf.String(),
 		"num_lines":          len(readResult.Lines),
@@ -651,7 +649,7 @@ func readFileNextSuggestions(totalLines, offset, lineCount int) []string {
 	if len(omitted) > 0 {
 		return []string{"read an omitted range or nearby surrounding lines if the current excerpt is insufficient before editing"}
 	}
-	return []string{"use this file_sha and excerpt as grounded evidence for subsequent edits or analysis"}
+	return []string{"use the excerpt as grounded evidence for subsequent edits or analysis"}
 }
 
 type readFileLineRangeResult struct {
@@ -762,7 +760,7 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 			"Usage:\n" +
 			"- Prefer edit_file for modifying existing files — it only sends the diff\n" +
 			"- Only use this tool to create new files or for complete rewrites\n" +
-			"- Existing files require expected_old_sha from read_file or a fresh prior read_file result\n" +
+			"- Existing files require a fresh prior read_file result\n" +
 			"- Existing files larger than 32KB require overwrite_policy=\"explicit_user_requested\" or generated-file policy; use the scoped file editing tool exposed in this session for ordinary source edits\n" +
 			"- Set create_only=true when the file must not already exist\n" +
 			"- Sensitive credential paths such as .env, credentials, secrets, and private keys are rejected unless full access is active\n" +
@@ -777,10 +775,6 @@ func (t *WriteFileTool) Definition() providers.ToolDefinition {
 				"content": map[string]any{
 					"type":        "string",
 					"description": "File content.",
-				},
-				"expected_old_sha": map[string]any{
-					"type":        "string",
-					"description": "Optional sha256 digest from read_file file_sha for the current existing file content.",
 				},
 				"create_only": map[string]any{
 					"type":        "boolean",
@@ -814,7 +808,6 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 	var args struct {
 		Path            string `json:"path"`
 		Content         string `json:"content"`
-		ExpectedOldSHA  string `json:"expected_old_sha"`
 		CreateOnly      bool   `json:"create_only"`
 		OverwritePolicy string `json:"overwrite_policy"`
 	}
@@ -848,7 +841,7 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 		return "", fmt.Errorf("file already exists: %s", args.Path)
 	}
 	if fileExists {
-		if err := t.validateExistingWrite(resolved, oldContent, strings.TrimSpace(args.ExpectedOldSHA)); err != nil {
+		if err := t.validateExistingWrite(resolved, oldContent); err != nil {
 			return "", err
 		}
 		if err := validateWriteFileOverwriteScope(ctx, t.env, resolved, oldContent, args.Content, args.OverwritePolicy); err != nil {
@@ -871,13 +864,11 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 		"action":             "create",
 		"path":               t.env.NormalizeDisplayPathExec(ctx, resolved),
 		"written_bytes":      len(args.Content),
-		"new_file_sha":       formatFileSHA(sha256Hex([]byte(args.Content))),
 		"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 	}
 
 	if fileExists {
 		result["action"] = "overwrite"
-		result["old_file_sha"] = formatFileSHA(sha256Hex(oldContent))
 		result["diff"] = writeFileDiffResult(oldContent, args.Content)
 	} else {
 		lineCount := strings.Count(args.Content, "\n")
@@ -912,20 +903,14 @@ func countTextLines(content string) int {
 	return lines
 }
 
-func (t *WriteFileTool) validateExistingWrite(resolved string, oldContent []byte, expectedOldSHA string) error {
+func (t *WriteFileTool) validateExistingWrite(resolved string, oldContent []byte) error {
 	currentSHA := sha256Hex(oldContent)
-	if expectedOldSHA != "" {
-		if normalizeFileSHA(expectedOldSHA) != currentSHA {
-			return fileBaselineError("expected_old_sha_mismatch", "expected_old_sha does not match current file. Use read_file again before overwriting", "write_file", currentSHA, expectedOldSHA)
-		}
-		return nil
-	}
 	readEntry, ok := t.env.GetReadEntry(resolved)
 	if !ok {
-		return fileBaselineError("missing_file_baseline", "existing file has not been read yet. Use read_file first or pass expected_old_sha from read_file before overwriting", "write_file", currentSHA, "")
+		return fileBaselineError("missing_file_baseline", "existing file has not been read yet. Use read_file first before overwriting", "write_file")
 	}
 	if readEntry.ContentSHA256 != "" && readEntry.ContentSHA256 != currentSHA {
-		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before overwriting", "write_file", currentSHA, formatFileSHA(readEntry.ContentSHA256))
+		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before overwriting", "write_file")
 	}
 	if readEntry.ContentSHA256 == "" {
 		info, err := os.Stat(resolved)
@@ -933,7 +918,7 @@ func (t *WriteFileTool) validateExistingWrite(resolved string, oldContent []byte
 			return fmt.Errorf("stat file: %w", err)
 		}
 		if !readEntryMatchesInfo(readEntry, info) {
-			return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before overwriting", "write_file", currentSHA, "")
+			return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before overwriting", "write_file")
 		}
 	}
 	return nil
@@ -1146,7 +1131,6 @@ func (t *EditFileTool) Definition() providers.ToolDefinition {
 		Description: "Performs exact string replacement in a file.\n\n" +
 			"Usage:\n" +
 			"- You must read the file before editing — edits are rejected if the file has not been read\n" +
-			"- Or pass expected_old_sha from read_file to guard the exact file version being edited\n" +
 			"- Provide old_text (must match exactly once) and new_text\n" +
 			"- Use replace_all=true to replace every occurrence instead of requiring unique match\n" +
 			"- The edit will FAIL if old_text is not unique — provide more context or use replace_all\n" +
@@ -1173,10 +1157,6 @@ func (t *EditFileTool) Definition() providers.ToolDefinition {
 				"replace_all": map[string]any{
 					"type":        "boolean",
 					"description": "Replace all occurrences. Default false (must match exactly once).",
-				},
-				"expected_old_sha": map[string]any{
-					"type":        "string",
-					"description": "Optional sha256 digest from read_file file_sha for the current existing file content.",
 				},
 			},
 			"required": []string{"path", "old_text", "new_text"},
@@ -1207,7 +1187,6 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		OldText        string `json:"old_text"`
 		NewText        string `json:"new_text"`
 		ReplaceAll     bool   `json:"replace_all"`
-		ExpectedOldSHA string `json:"expected_old_sha"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -1249,7 +1228,7 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		return "", fmt.Errorf("read file: %w", err)
 	}
 	oldSHA := sha256Hex(content)
-	if err := t.validateEditBaseline(resolved, info, oldSHA, strings.TrimSpace(args.ExpectedOldSHA)); err != nil {
+	if err := t.validateEditBaseline(resolved, info, oldSHA); err != nil {
 		return "", err
 	}
 
@@ -1290,8 +1269,6 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	result := map[string]any{
 		"action":             "edit",
 		"path":               t.env.NormalizeDisplayPathExec(ctx, resolved),
-		"old_file_sha":       formatFileSHA(oldSHA),
-		"new_file_sha":       formatFileSHA(sha256Hex([]byte(newContent))),
 		"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 		"diff":               diff,
 		"next_suggestions":   []string{"run targeted validation with command execution if that capability is exposed, otherwise inspect the resulting diff before finishing"},
@@ -1299,25 +1276,19 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	return mustJSON(result)
 }
 
-func (t *EditFileTool) validateEditBaseline(resolved string, info os.FileInfo, currentSHA, expectedOldSHA string) error {
-	if expectedOldSHA != "" {
-		if normalizeFileSHA(expectedOldSHA) != currentSHA {
-			return fileBaselineError("expected_old_sha_mismatch", "expected_old_sha does not match current file. Use read_file again before editing", "edit_file", currentSHA, expectedOldSHA)
-		}
-		return nil
-	}
+func (t *EditFileTool) validateEditBaseline(resolved string, info os.FileInfo, currentSHA string) error {
 	readEntry, ok := t.env.GetReadEntry(resolved)
 	if !ok {
-		return fileBaselineError("missing_file_baseline", "file has not been read yet. Use read_file first or pass expected_old_sha from read_file before editing", "edit_file", currentSHA, "")
+		return fileBaselineError("missing_file_baseline", "file has not been read yet. Use read_file first before editing", "edit_file")
 	}
 	if readEntry.Size != 0 && readEntry.Size != info.Size() {
-		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before editing", "edit_file", currentSHA, formatFileSHA(readEntry.ContentSHA256))
+		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before editing", "edit_file")
 	}
 	if readEntry.ContentSHA256 != "" && readEntry.ContentSHA256 != currentSHA {
-		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before editing", "edit_file", currentSHA, formatFileSHA(readEntry.ContentSHA256))
+		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before editing", "edit_file")
 	}
 	if readEntry.ContentSHA256 == "" && !readEntryMatchesInfo(readEntry, info) {
-		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before editing", "edit_file", currentSHA, "")
+		return fileBaselineError("stale_file_baseline", "file changed since last read. Use read_file again before editing", "edit_file")
 	}
 	return nil
 }
@@ -1438,15 +1409,11 @@ func lineNumberForOffset(lineStarts []int, offset int) int {
 	return line
 }
 
-func fileBaselineError(kind, message, toolName, currentSHA, expectedOldSHA string) error {
-	current := displayFileSHA(currentSHA)
-	expected := displayFileSHA(expectedOldSHA)
-	return fmt.Errorf("%s: error_kind=%s current_file_sha=%s expected_old_sha=%s safe_retry=%q model_next_action=%q",
+func fileBaselineError(kind, message, toolName string) error {
+	return fmt.Errorf("%s: error_kind=%s safe_retry=%q model_next_action=%q",
 		message,
 		kind,
-		current,
-		expected,
-		fmt.Sprintf("Run read_file on the target file and retry %s with the returned file_sha as expected_old_sha.", toolName),
+		fmt.Sprintf("Run read_file on the target file and retry %s.", toolName),
 		"Do not retry with stale file content; refresh evidence first.",
 	)
 }
