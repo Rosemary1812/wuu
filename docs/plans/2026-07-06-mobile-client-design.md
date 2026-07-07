@@ -109,17 +109,25 @@ state/       HostState / 运行中 turn / 线程缓存,事件流出口
 
 ## 4. App 信息架构(v1)
 
+**产品裁定(2026-07-07)**:手机端是**纯聊天客户端**——只做与电脑上
+DM(`workspace_kind === "dm"`)与群聊(`group === true`)线程的对话,
+**不搬项目 session**(不渲染 project/scratch 线程,不做 fork/steer/
+diff/上下文构成等会话操作)。另:wuu 的权限模型是 agent 在开启的工作区
+内全权,DM/群聊路径**没有工具审批卡**——原计划的"审批中心"与审批反向
+通道从手机路线图移除;remote-core 的反向请求 fail-closed 应答仅作保险丝
+保留,不做 UI。
+
 ```
-主机列表(多电脑支持,显示在线状态与运行中 turn 数)
- └─ 线程列表(与 desktop 同一 RPC:thread/list,含群聊线程)
-     └─ 会话视图(流式输出、发 turn、中断、审批卡内联展示)
-审批中心(跨主机聚合所有待批请求,推送落点)
 扫码配对(摄像头 + 手动粘贴 URI 兜底)
-设置(设备管理、中继地址、通知偏好、生物识别开关)
+会话列表(DM + 群聊,thread/list 过滤;头像/预览/置顶)
+ └─ 会话页(发消息、流式回复、工具调用折叠一行、@提及 agent)
+设置-lite(主机信息、断开/解除配对)
 ```
 
 状态管理与 desktop `AppState` 同构:通知流增量更新 + RPC 全量拉取兜底,
-attach 时 `resumed:false` 即触发全量重拉。
+attach 时 `resumed:false` 即触发全量重拉。DM 线程 cwd 在 per-agent
+home,appserver 已有跨 workdir resume 测试(dm_thread_test.go),远程
+链路天然支持;M1 首个冒烟点 = 远程 `thread/list` 可见 DM/群聊并 resume。
 
 ## 5. 移动端现实约束(链路已为此设计,App 层要接住)
 
@@ -157,8 +165,9 @@ attach 时 `resumed:false` 即触发全量重拉。
   实现并通过全部向量 + 双向互通测试。
 - **M1 可用**:Expo App 跑通扫码配对 → 线程列表 → 发 turn → 流式输出 → 中断;
   桌面二维码面板(前置 #1)同步落地。
-- **M2 价值闭环**:审批卡(前置 #2)+ 推送(前置 #3)+ 生物识别门。
-  此时产品故事完整:人在外面,agent 不再等你回家。
+- **M2 价值闭环**:推送(前置 #3)——"agent 回复了 / 群里 @ 你 /
+  任务完成"的聊天通知(审批卡已按 2026-07-07 产品裁定移除,见 §4)。
+  此时产品故事完整:agent 团队在电脑上干活,人在手机上跟他们聊。
 - **M3 上架与外溢**:双端商店上架;Web beta(clients/web,复用 core);
   relay 托管 Web 静态资源。
 
