@@ -93,13 +93,15 @@ func runRelay(args []string) error {
 
 func runRemote(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: wuu remote <init|host|devices|phone> ...")
+		return errors.New("usage: wuu remote <init|host|status|devices|phone> ...")
 	}
 	switch args[0] {
 	case "init":
 		return runRemoteInit(args[1:])
 	case "host":
 		return runRemoteHost(args[1:])
+	case "status":
+		return runRemoteStatus(args[1:])
 	case "devices":
 		return runRemoteDevices(args[1:])
 	case "phone":
@@ -243,9 +245,43 @@ func runRemoteHost(args []string) error {
 	return err
 }
 
-func runRemoteDevices(args []string) error {
-	fs := flag.NewFlagSet("remote devices", flag.ContinueOnError)
+// remoteDeviceJSON is the machine-readable form of one paired device, shared
+// by `remote devices --json` and `remote status --json`.
+type remoteDeviceJSON struct {
+	Pub         string `json:"pub"`
+	Fingerprint string `json:"fingerprint"`
+	Name        string `json:"name,omitempty"`
+	AddedAt     string `json:"added_at"`
+}
+
+func remoteDeviceFingerprint(pub string) string {
+	raw, err := secure.DecodeKey(pub)
+	if err != nil {
+		return pub
+	}
+	return secure.Fingerprint(raw)
+}
+
+func remoteDevicesJSON(store *host.Store) []remoteDeviceJSON {
+	devices := store.Devices()
+	out := make([]remoteDeviceJSON, 0, len(devices))
+	for _, d := range devices {
+		out = append(out, remoteDeviceJSON{
+			Pub:         d.Pub,
+			Fingerprint: remoteDeviceFingerprint(d.Pub),
+			Name:        d.Name,
+			AddedAt:     d.AddedAt.Format(time.RFC3339),
+		})
+	}
+	return out
+}
+
+// runRemoteStatus reports the host-side remote configuration in one shot;
+// --json is what shells (desktop settings panel) consume.
+func runRemoteStatus(args []string) error {
+	fs := flag.NewFlagSet("remote status", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	asJSON := fs.Bool("json", false, "machine-readable output")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -257,20 +293,115 @@ func runRemoteDevices(args []string) error {
 	if err != nil {
 		return err
 	}
+	if *asJSON {
+		out := struct {
+			Fingerprint string             `json:"fingerprint"`
+			HostName    string             `json:"host_name,omitempty"`
+			RelayURL    string             `json:"relay_url,omitempty"`
+			Store       string             `json:"store"`
+			Devices     []remoteDeviceJSON `json:"devices"`
+		}{
+			Fingerprint: secure.Fingerprint(store.Identity().Public()),
+			HostName:    store.HostName(),
+			RelayURL:    store.RelayURL(),
+			Store:       path,
+			Devices:     remoteDevicesJSON(store),
+		}
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+	fmt.Printf("remote identity: %s\n", secure.Fingerprint(store.Identity().Public()))
+	fmt.Printf("store:           %s\n", path)
+	if store.RelayURL() == "" {
+		fmt.Println("relay:           (unset; run wuu remote init --relay ws://...)")
+	} else {
+		fmt.Printf("relay:           %s\n", store.RelayURL())
+	}
+	fmt.Printf("devices:         %d paired\n", len(store.Devices()))
+	return nil
+}
+
+func runRemoteDevices(args []string) error {
+	if len(args) > 0 && args[0] == "remove" {
+		return runRemoteDevicesRemove(args[1:])
+	}
+	fs := flag.NewFlagSet("remote devices", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	asJSON := fs.Bool("json", false, "machine-readable output")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	path, err := remoteStorePath()
+	if err != nil {
+		return err
+	}
+	store, err := host.LoadOrCreateStore(path, "")
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		data, err := json.MarshalIndent(remoteDevicesJSON(store), "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	}
 	devices := store.Devices()
 	if len(devices) == 0 {
 		fmt.Println("no paired devices")
 		return nil
 	}
 	for _, d := range devices {
-		pub, err := secure.DecodeKey(d.Pub)
-		fp := d.Pub
-		if err == nil {
-			fp = secure.Fingerprint(pub)
-		}
-		fmt.Printf("%s  %s  paired %s\n", fp, d.Name, d.AddedAt.Format(time.RFC3339))
+		fmt.Printf("%s  %s  paired %s\n", remoteDeviceFingerprint(d.Pub), d.Name, d.AddedAt.Format(time.RFC3339))
 	}
 	return nil
+}
+
+// runRemoteDevicesRemove revokes a paired phone by fingerprint or full key.
+// The running host process keeps its own in-memory store: revocation takes
+// effect for new handshakes after that process reloads or restarts, which the
+// desktop shell does automatically when it manages the host.
+func runRemoteDevicesRemove(args []string) error {
+	fs := flag.NewFlagSet("remote devices remove", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("usage: wuu remote devices remove <fingerprint|pub>")
+	}
+	target := strings.TrimSpace(fs.Arg(0))
+	path, err := remoteStorePath()
+	if err != nil {
+		return err
+	}
+	store, err := host.LoadOrCreateStore(path, "")
+	if err != nil {
+		return err
+	}
+	var matches []host.StoredDevice
+	for _, d := range store.Devices() {
+		if d.Pub == target || remoteDeviceFingerprint(d.Pub) == target {
+			matches = append(matches, d)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return fmt.Errorf("no paired device matches %q", target)
+	case 1:
+		if err := store.RemoveDevice(matches[0].Pub); err != nil {
+			return err
+		}
+		fmt.Printf("removed: %s (%s)\n", matches[0].Name, remoteDeviceFingerprint(matches[0].Pub))
+		return nil
+	default:
+		return fmt.Errorf("%d devices match %q; pass the full key", len(matches), target)
+	}
 }
 
 // runRemotePhone is the development phone: it exercises the exact protocol a
