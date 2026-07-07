@@ -178,10 +178,10 @@
   box-sizing: border-box;
 }
 
-/* Text selection carries the brand vermillion. */
+/* Text selection stays stable instead of following the theme accent. */
 ::selection {
-  background: var(--wuu-accent);
-  color: #fff;
+  background: rgba(64, 133, 216, 0.3);
+  color: inherit;
 }
 
 @keyframes menu-enter {

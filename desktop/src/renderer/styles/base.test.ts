@@ -19,3 +19,13 @@ describe("resize drag over embedded frames", () => {
     );
   });
 });
+
+describe("global text selection", () => {
+  it("uses a stable neutral highlight instead of the theme accent", () => {
+    const selectionRule = baseCss.match(/::selection\s*\{[\s\S]*?\}/)?.[0] ?? "";
+
+    expect(selectionRule).not.toBe("");
+    expect(selectionRule).not.toContain("var(--wuu-accent)");
+    expect(selectionRule).toMatch(/color:\s*inherit/);
+  });
+});
