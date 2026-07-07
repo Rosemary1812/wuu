@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+  RemoteControlEvent,
   ServerEvent,
   SettingsUsageRange,
   ThemePreference,
@@ -138,6 +139,22 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:cli-install", overwrite),
   setCliAutoInstallEnabled: (enabled: boolean) =>
     ipcRenderer.invoke("wuu:cli-auto-install-set", enabled),
+  getRemoteControlSnapshot: () => ipcRenderer.invoke("wuu:remote-snapshot"),
+  setRemoteRelay: (relayUrl: string) =>
+    ipcRenderer.invoke("wuu:remote-relay-set", relayUrl),
+  setRemoteHostEnabled: (enabled: boolean) =>
+    ipcRenderer.invoke("wuu:remote-host-set", enabled),
+  startRemotePairing: () => ipcRenderer.invoke("wuu:remote-pairing-start"),
+  removeRemoteDevice: (fingerprintOrPub: string) =>
+    ipcRenderer.invoke("wuu:remote-device-remove", fingerprintOrPub),
+  onRemoteControlEvent: (handler: (event: RemoteControlEvent) => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: RemoteControlEvent,
+    ) => handler(payload);
+    ipcRenderer.on("wuu:remote-event", listener);
+    return () => ipcRenderer.removeListener("wuu:remote-event", listener);
+  },
   initialThemePreference,
   getThemePreference: () => ipcRenderer.invoke("wuu:theme-preference-get"),
   setThemePreference: (theme: ThemePreference) =>

@@ -1544,6 +1544,41 @@ export type ComposerGoalSummary = {
 // light/dark setting via prefers-color-scheme.
 export type ThemePreference = "system" | "light" | "dark";
 
+// Remote control (设置 → 远程): desktop-local surface managing the
+// machine-global `wuu remote host` daemon and phone pairing. Status comes
+// from `wuu remote status --json`; none of this goes through the app-server
+// protocol.
+export type RemoteControlDevice = {
+  pub: string;
+  fingerprint: string;
+  name?: string;
+  added_at: string;
+};
+
+export type RemoteControlStatus = {
+  fingerprint: string;
+  host_name?: string;
+  relay_url?: string;
+  store: string;
+  devices: RemoteControlDevice[];
+};
+
+// One coherent view of the remote-control state; every mutating call
+// returns a fresh snapshot so the renderer has a single refresh path.
+export type RemoteControlSnapshot = {
+  status: RemoteControlStatus | null;
+  status_error?: string;
+  host_running: boolean;
+  pair_uri: string | null;
+};
+
+// Main-process RemoteHostManager events, broadcast to all windows.
+export type RemoteControlEvent =
+  | { kind: "pair-uri"; uri: string }
+  | { kind: "paired"; detail: string }
+  | { kind: "host-log"; message: string }
+  | { kind: "host-exit"; code: number | null };
+
 export type WuuDesktopApi = {
   listProjects: () => Promise<ProjectListResult>;
   createBlankProject: () => Promise<ProjectListResult>;
@@ -1628,6 +1663,14 @@ export type WuuDesktopApi = {
   getCliInstallStatus: () => Promise<CliInstallStatus>;
   installCli: (overwrite?: boolean) => Promise<CliInstallResult>;
   setCliAutoInstallEnabled: (enabled: boolean) => Promise<{ ok: boolean; enabled: boolean }>;
+  // 远程控制（设置 → 远程）。管理机器级 remote host 守护进程与手机配对,
+  // 走主进程 RemoteHostManager 而非 app-server 协议。
+  getRemoteControlSnapshot: () => Promise<RemoteControlSnapshot>;
+  setRemoteRelay: (relayUrl: string) => Promise<RemoteControlSnapshot>;
+  setRemoteHostEnabled: (enabled: boolean) => Promise<RemoteControlSnapshot>;
+  startRemotePairing: () => Promise<RemoteControlSnapshot>;
+  removeRemoteDevice: (fingerprintOrPub: string) => Promise<RemoteControlSnapshot>;
+  onRemoteControlEvent: (handler: (event: RemoteControlEvent) => void) => () => void;
   // Appearance. The preference persists in desktop-settings.json; the
   // renderer resolves "system" against prefers-color-scheme and stamps
   // data-theme on <html>. `initialThemePreference` is read synchronously

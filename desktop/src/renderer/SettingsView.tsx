@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Settings,
   SlidersHorizontal,
+  Smartphone,
   X
 } from "lucide-react";
 import type { RuntimeAdvancedSettingsUpdate, RuntimeGeneralSettingsUpdate, SettingsUsageRange } from "../shared/protocol";
@@ -31,6 +32,7 @@ import type {
   MCPServerStatus,
   ParticipantProfile,
   ProviderSummary,
+  RemoteControlSnapshot,
   RuntimeConnectionUpdate,
   SettingsUsageDay,
   SettingsUsageResponse
@@ -38,9 +40,10 @@ import type {
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 import { CliInstallSection } from "./CliInstallSection";
 import { MemoryPanel } from "./MemoryPanel";
+import { SettingsRemotePage } from "./SettingsRemotePage";
 import { ThemePreferenceControl } from "./ThemePreferenceSection";
 
-export type SettingsPage = "providers" | "general" | "memory" | "advanced" | "usage";
+export type SettingsPage = "providers" | "general" | "memory" | "advanced" | "usage" | "remote";
 
 type CopyState = "idle" | "copying" | "copied";
 
@@ -440,6 +443,9 @@ export function SettingsView({
           <SettingsNavItem icon={<BarChart3 className="icon-lg" />} active={activePage === "usage"} onClick={() => setActivePage("usage")}>
             用量
           </SettingsNavItem>
+          <SettingsNavItem icon={<Smartphone className="icon-lg" />} active={activePage === "remote"} onClick={() => setActivePage("remote")}>
+            远程
+          </SettingsNavItem>
         </nav>
       </aside>
       <div
@@ -588,6 +594,8 @@ export function SettingsView({
                 participants={participants ?? []}
                 focusParticipantID={memoryFocusParticipantID}
               />
+            ) : activePage === "remote" ? (
+              <SettingsRemotePageContainer />
             ) : (
               <SettingsUsagePage
                 usage={usage}
@@ -1763,6 +1771,11 @@ function settingsPageMeta(
         title: "用量",
         description: ""
       };
+    case "remote":
+      return {
+        title: "远程",
+        description: "在手机上查看、驱动、批准这台电脑上的 agent。"
+      };
   }
 }
 
@@ -2218,4 +2231,60 @@ function hostFromBaseURL(baseURL?: string): string {
   } catch {
     return "";
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  远程控制                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** Data wiring for the remote-control page: pulls the snapshot from the
+ *  main-process RemoteHostManager, re-pulls on every remote event (pairing
+ *  URI shown, phone paired, host exit), and maps panel actions to IPC. */
+function SettingsRemotePageContainer(): JSX.Element {
+  const [snapshot, setSnapshot] = useState<RemoteControlSnapshot | null>(null);
+  const [actionError, setActionError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      window.wuu
+        .getRemoteControlSnapshot()
+        .then((snap) => {
+          if (!cancelled) setSnapshot(snap);
+        })
+        .catch(() => {});
+    };
+    refresh();
+    const off = window.wuu.onRemoteControlEvent(() => refresh());
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, []);
+
+  const run = (action: () => Promise<RemoteControlSnapshot>) => {
+    setBusy(true);
+    setActionError("");
+    action()
+      .then(setSnapshot)
+      .catch((err: unknown) => {
+        setActionError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <SettingsRemotePage
+      status={snapshot?.status ?? null}
+      statusError={actionError || snapshot?.status_error || ""}
+      hostRunning={snapshot?.host_running ?? false}
+      pairUri={snapshot?.pair_uri ?? null}
+      busy={busy}
+      onSaveRelay={(relayUrl) => run(() => window.wuu.setRemoteRelay(relayUrl))}
+      onToggleHost={(enabled) => run(() => window.wuu.setRemoteHostEnabled(enabled))}
+      onOpenPairing={() => run(() => window.wuu.startRemotePairing())}
+      onRemoveDevice={(device) => run(() => window.wuu.removeRemoteDevice(device.fingerprint))}
+    />
+  );
 }

@@ -55,11 +55,7 @@ export function SettingsRemotePage({
   const relayConfigured = Boolean(status?.relay_url);
 
   return (
-    <div className="settings-page" data-testid="settings-remote-page">
-      <header className="settings-page-header">
-        <h1 className="settings-page-title">远程控制</h1>
-        <p className="settings-page-description">在手机上查看、驱动、批准这台电脑上的 agent。中继只见密文,内容端到端加密。</p>
-      </header>
+    <div data-testid="settings-remote-page">
       {statusError ? <div className="settings-error">{statusError}</div> : null}
 
       <RemoteSection title="中继与开关" description="手机与电脑经由中继互联;中继可自架(wuu relay)。">

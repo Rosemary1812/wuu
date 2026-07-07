@@ -45,6 +45,8 @@ import type {
   ParticipantSaveResult,
   ParticipantStartParams,
   ParticipantStartResult,
+  RemoteControlSnapshot,
+  RemoteControlStatus,
   ServerEvent,
   RuntimeContext,
   RuntimeAdvancedSettingsUpdate,
@@ -72,6 +74,7 @@ import type {
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
 import { autoInstallCli, getCliInstallStatus, installCli } from "./cliInstall";
+import { RemoteHostManager } from "./remoteControl";
 import {
   getCliAutoInstallEnabled,
   getThemePreference,
@@ -195,6 +198,30 @@ function emitTerminalEvent(
   event: Parameters<TerminalSessionManager["emit"]>[0],
 ): void {
   broadcastToAll("wuu:terminal-event", event);
+}
+
+// Remote-control host: one machine-global daemon serving paired phones,
+// independent of the per-workdir app-server pool. Events (pairing URI,
+// paired, exit) fan out to every window; the settings panel re-pulls its
+// snapshot on each one.
+const remoteHostManager = new RemoteHostManager({
+  onEvent: (event) => broadcastToAll("wuu:remote-event", event),
+});
+
+async function remoteControlSnapshot(workdir: string): Promise<RemoteControlSnapshot> {
+  let status: RemoteControlStatus | null = null;
+  let statusError = "";
+  try {
+    status = await remoteHostManager.status(workdir);
+  } catch (err) {
+    statusError = err instanceof Error ? err.message : String(err);
+  }
+  return {
+    status,
+    status_error: statusError || undefined,
+    host_running: remoteHostManager.isRunning(),
+    pair_uri: remoteHostManager.currentPairUri(),
+  };
 }
 
 function setWindowResizeState(resizing: boolean): void {
@@ -906,6 +933,36 @@ app.whenReady().then(async () => {
     setCliAutoInstallEnabled(Boolean(enabled));
     return { ok: true, enabled: Boolean(enabled) };
   });
+  ipcMain.handle("wuu:remote-snapshot", (event) =>
+    remoteControlSnapshot(runtimeContextForEvent(event).cwd),
+  );
+  ipcMain.handle("wuu:remote-relay-set", async (event, relayUrl: string) => {
+    const workdir = runtimeContextForEvent(event).cwd;
+    await remoteHostManager.setRelay(workdir, String(relayUrl));
+    return remoteControlSnapshot(workdir);
+  });
+  ipcMain.handle("wuu:remote-host-set", async (event, enabled: boolean) => {
+    const workdir = runtimeContextForEvent(event).cwd;
+    if (enabled) {
+      remoteHostManager.startHost(workdir);
+    } else {
+      await remoteHostManager.stopHost();
+    }
+    return remoteControlSnapshot(workdir);
+  });
+  // Opening a pairing window needs a host started with --pair; restart the
+  // running one so the window applies without a manual toggle cycle.
+  ipcMain.handle("wuu:remote-pairing-start", async (event) => {
+    const workdir = runtimeContextForEvent(event).cwd;
+    await remoteHostManager.stopHost();
+    remoteHostManager.startHost(workdir, { pair: true });
+    return remoteControlSnapshot(workdir);
+  });
+  ipcMain.handle("wuu:remote-device-remove", async (event, fingerprintOrPub: string) => {
+    const workdir = runtimeContextForEvent(event).cwd;
+    await remoteHostManager.removeDevice(workdir, String(fingerprintOrPub));
+    return remoteControlSnapshot(workdir);
+  });
   ipcMain.handle("wuu:theme-preference-get", () => getThemePreference());
   // Synchronous variant used by the preload script so the first paint
   // already carries the persisted theme (no light-mode flash on boot).
@@ -1319,6 +1376,9 @@ app.whenReady().then(async () => {
 app.on("before-quit", () => {
   terminalSessionManager.cleanup();
   appServerClientPool.shutdown();
+  // SIGTERM goes out synchronously; the daemon's own signal handling shuts
+  // the relay connection down cleanly.
+  void remoteHostManager.stopHost();
 });
 
 app.on("window-all-closed", () => {
