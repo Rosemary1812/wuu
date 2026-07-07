@@ -85,12 +85,15 @@ func (s *Server) handleThreadResolveSub(req Request) error {
 	return s.writeResponse(req.ID, ThreadResolveSubResult{Subthread: view}, nil)
 }
 
-// handleThreadEscalateSub promotes a reply subthread to a task. Escalation is a
-// human click: this RPC is the gate, so agents (which only reach the server via
-// tools, never client RPCs) can propose but cannot self-escalate. It advances
-// the subthread from the discussion state (open) to the execution state (task)
-// and hangs a task_card off it; execution round-trips fold into the same cth via
-// the existing thread_id-tagged post_message path, so no new thread is spawned.
+// handleThreadEscalateSub promotes a reply subthread to a task. This RPC is
+// the HUMAN escalation path and the only one that can grant a lead (workflow
+// orchestration authority stays a human act). Agents have their own
+// conversion since 2026-07-06 — manage_task action=escalate — which performs
+// the same open -> task transition but never assigns a lead (owner != lead,
+// agent-task-rail design). It advances the subthread from the discussion
+// state (open) to the execution state (task) and hangs a task_card off it;
+// execution round-trips fold into the same cth via the existing
+// thread_id-tagged post_message path, so no new thread is spawned.
 func (s *Server) handleThreadEscalateSub(req Request) error {
 	var params ThreadEscalateSubParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -198,23 +201,10 @@ func (s *Server) handleThreadBubbleSub(req Request) error {
 	// summarized (or the escalator/opener when unspecified). ThreadID is left
 	// empty so this lands in the group's main stream, not back inside the cth.
 	author := firstNonEmpty(strings.TrimSpace(params.ParticipantID), thread.EscalatedBy, thread.CreatedBy)
-	if err := s.publishParticipantMessage(threadID, agentcontrol.ParticipantMessage{
-		ParticipantID: author,
-		Kind:          "result",
-		Text:          summary,
-	}); err != nil {
+	thread, err = s.bubbleSubthreadResolve(threadID, thread, summary, author)
+	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-
-	// Store the summary and resolve the subthread (task_card -> resolved + summary).
-	if err := session.SetConversationThreadSummary(s.rt.SessionDir, thread.ID, summary); err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	if err := session.UpdateConversationThreadStatus(s.rt.SessionDir, thread.ID, session.ConversationThreadResolved); err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	thread.Status = session.ConversationThreadResolved
-	thread.Summary = summary
 
 	view, err := s.conversationSubthreadView(threadID, thread, true)
 	if err != nil {
@@ -485,14 +475,19 @@ func conversationSubthreadViewFromRecords(threadID string, thread session.Conver
 	view.Summary = thread.Summary
 	view.EscalatedBy = thread.EscalatedBy
 	view.LeadParticipantID = thread.LeadParticipantID
+	view.OwnerParticipantID = thread.OwnerParticipantID
 	// A reply that has been escalated to a task (human click) carries a task_card:
 	// running while it executes (status task), completed once it wraps up (status
 	// resolved). A never-escalated reply leaves Task nil. EscalatedAt survives the
 	// resolve transition, so a resolved task still renders its result summary.
 	if !thread.EscalatedAt.IsZero() {
 		status := "running"
-		if thread.Status == session.ConversationThreadResolved {
+		switch thread.Status {
+		case session.ConversationThreadResolved:
 			status = "completed"
+		case session.ConversationThreadReview:
+			// Owner filed for review; awaiting the human bubble click.
+			status = "review"
 		}
 		card := &TaskCard{
 			ID:          thread.ID,

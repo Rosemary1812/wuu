@@ -456,6 +456,7 @@ func (s *Server) drainResidentAgent(participantID string) {
 	if threadRuntime != nil && threadRuntime.Toolkit != nil {
 		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeechWithHops(participantID, residentSpeechHopsByThread(envs)))
 		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
+		threadRuntime.Toolkit.SetTaskManager(s.residentTaskManager(participantID))
 		threadRuntime.Toolkit.SetWorkflowThreadID(th.ID)
 		s.applyEnvelopeBatchCWD(th, threadRuntime, envs)
 	}

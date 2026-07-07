@@ -658,6 +658,7 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 		threadRuntime.Toolkit.SetResidentParticipantEnabled(true)
 		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeech(participantID))
 		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
+		threadRuntime.Toolkit.SetTaskManager(s.residentTaskManager(participantID))
 		threadRuntime.Toolkit.SetWorkflowThreadID(th.ID)
 		// Resident file tools work inside the home + registered workspaces
 		// + temp whitelist (design doc §5.2), plus the agent's own identity

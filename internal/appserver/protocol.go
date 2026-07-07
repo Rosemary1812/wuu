@@ -788,7 +788,12 @@ type ConversationSubthread struct {
 	// the named escalator). Empty until a task names one; the runtime workflow gate
 	// keys on (caller == lead && status == task).
 	LeadParticipantID string `json:"lead_participant_id,omitempty"`
-	Turns             []Turn `json:"turns,omitempty"`
+	// OwnerParticipantID is the task-rail work owner (claim CAS): mutual
+	// exclusion and reporting duty. Deliberately distinct from
+	// LeadParticipantID — ownership grants no orchestration authority
+	// (2026-07-06 agent-task-rail design). Empty means unclaimed.
+	OwnerParticipantID string `json:"owner_participant_id,omitempty"`
+	Turns              []Turn `json:"turns,omitempty"`
 }
 
 type ThreadOpenSubParams struct {
@@ -849,10 +854,12 @@ type ThreadResolveSubResult struct {
 	Subthread ConversationSubthread `json:"subthread"`
 }
 
-// ThreadEscalateSubParams promotes a reply subthread to a task. This is a
-// client (human-click) RPC: agents have no tool that reaches it, so escalation
-// stays human-gated — an agent can only propose via post_message and wait for a
-// person to confirm. Idempotent (open -> task, or refresh an existing task).
+// ThreadEscalateSubParams promotes a reply subthread to a task. This is the
+// human-click RPC and the only escalation path that can grant a lead
+// (workflow orchestration authority stays a human act). Agents convert
+// discussion replies themselves via manage_task action=escalate, which never
+// assigns a lead (owner != lead, 2026-07-06 agent-task-rail design).
+// Idempotent (open -> task, or refresh an existing task).
 type ThreadEscalateSubParams struct {
 	ThreadID    string `json:"thread_id"`
 	SubthreadID string `json:"subthread_id"`
