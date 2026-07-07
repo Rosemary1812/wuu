@@ -342,6 +342,45 @@ WHERE id = ?`, consumedAt.UnixMilli(), id); err != nil {
 	return seq, nil
 }
 
+// ParticipantsWithPendingResidentEnvelopes returns the participant IDs of
+// every active named agent whose resident inbox still has at least one
+// un-consumed envelope. Used by the app-server boot path to drain
+// envelopes left over from a previous process (issue #3: without this,
+// pending envelopes sit until the next new message happens to land in the
+// same inbox — for low-traffic participants that effectively means
+// "forever"). The retired / non-named filter runs in SQL so callers don't
+// pay for participants that drainResidentAgent would skip anyway.
+func ParticipantsWithPendingResidentEnvelopes(sessDir string) ([]string, error) {
+	db, err := openStore(sessDir)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.Query(`
+SELECT DISTINCT ri.participant_id
+FROM resident_inbox ri
+JOIN participants p ON p.id = ri.participant_id
+WHERE ri.consumed_at IS NULL
+  AND p.kind = ?
+  AND p.retired_at IS NULL`, string(participant.KindNamed))
+	if err != nil {
+		return nil, fmt.Errorf("list pending inbox participants: %w", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan pending inbox participants: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows pending inbox participants: %w", err)
+	}
+	return ids, nil
+}
+
 func requireActiveNamedParticipant(q sqlRowQuerier, participantID string) error {
 	var kind string
 	var retiredAt sql.NullString

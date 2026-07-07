@@ -17,6 +17,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
+	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
@@ -205,7 +206,40 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 			logDefaultParticipantSeedError(s.ensureDefaultParticipant())
 		}
 	}
+	// Boot-time drain: a previous process may have left envelopes pending
+	// in the resident inbox (issue #3). Without this, they sit there until
+	// the next fresh message happens to land — for low-traffic participants
+	// effectively "forever". kickResidentAgent is already goroutine-safe
+	// and idempotent (per-participant drainingResidentAgent lock), so one
+	// kick per pending participant here is safe even if a fresh message
+	// has already kicked the same participant concurrently.
+	s.drainPendingResidentEnvelopesOnBoot()
 	return s
+}
+
+// drainPendingResidentEnvelopesOnBoot kicks every participant whose inbox
+// still has at least one un-consumed envelope (issue #3: a previous
+// process may have left messages pending in resident_inbox, and without a
+// boot-time kick those messages would sit until the next fresh message
+// happened to land — for low-traffic participants effectively "forever").
+//
+// The kick is delegated to kickResidentAgent so the retired / busy /
+// running / per-batch-limit invariants are unchanged. Drain runs on
+// every New() — including tests that construct a Server — so the fix
+// also serves as a self-cleanup for any pre-existing rows a test
+// fixture injected without going through the routing layer.
+func (s *Server) drainPendingResidentEnvelopesOnBoot() {
+	if s == nil || s.rt == nil {
+		return
+	}
+	participants, err := session.ParticipantsWithPendingResidentEnvelopes(s.rt.SessionDir)
+	if err != nil {
+		providers.DebugLogf("scan pending resident envelopes on boot: %v", err)
+		return
+	}
+	for _, id := range participants {
+		s.kickResidentAgent(id)
+	}
 }
 
 func RunStdio(ctx context.Context, rt *runtime.Session, in io.Reader, out io.Writer) error {
