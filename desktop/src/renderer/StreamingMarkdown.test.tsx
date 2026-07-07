@@ -84,6 +84,26 @@ describe("StreamingMarkdown", () => {
     expect(strong?.textContent).toBe("hi");
   });
 
+  it("keeps paragraph and its no-blank-line list as siblings inside one stable block", async () => {
+    const key = streamTextKey("turn", "s9", "text");
+    // Paragraph directly followed by a list (single newline) parses as
+    // two block siblings but lands in ONE stable block wrapper — the
+    // wrapper's own column gap (see turns.css) is what spaces them.
+    streamTextStore.seed(key, "分类如下：\n- 只读：a\n- 可编辑：b\n\n后续段落。\n\n");
+    mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+
+    const surface = document.querySelector(".streaming-markdown") as HTMLElement;
+    const wrappers = surface.querySelectorAll(".streaming-markdown-block");
+    expect(wrappers.length).toBeGreaterThanOrEqual(1);
+    const first = wrappers[0] as HTMLElement;
+    expect(first.querySelector(".rich-paragraph")).toBeTruthy();
+    expect(first.querySelector("ul")).toBeTruthy();
+  });
+
   it("renders markdown headings as whisper-level rich-heading anchors", async () => {
     const key = streamTextKey("turn", "s10", "text");
     streamTextStore.seed(key, "");

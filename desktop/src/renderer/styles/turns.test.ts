@@ -29,6 +29,17 @@ describe("turns.css user message actions", () => {
   });
 });
 
+describe("turns.css streaming block wrappers", () => {
+  it("keeps the prose block gap alive inside stable streaming blocks", () => {
+    // A stable block can hold several markdown siblings (paragraph +
+    // list with no blank line between). The wrapper must mirror the
+    // root .rich-content gap or those siblings collapse to 0px.
+    expect(turnsCss).toMatch(
+      /\.streaming-markdown-block\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;[\s\S]*?gap:\s*var\(--conversation-prose-block-gap/,
+    );
+  });
+});
+
 describe("turns.css rich links", () => {
   it("tints inline message links with the brand accent, no underlines or icon backplates", () => {
     expect(cssRuleBody(".rich-link")).toMatch(/color:\s*var\(--rich-link-color\);/);

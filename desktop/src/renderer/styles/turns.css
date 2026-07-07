@@ -1698,6 +1698,25 @@
   --stream-cursor-color: var(--stream-cursor-default-color);
 }
 
+/*
+ * Stable streaming blocks are split on BLANK lines (splitIntoStableBlocks),
+ * but one such block can still contain several markdown block elements —
+ * a paragraph directly followed by a list/heading/fence with only a
+ * single newline between them parses as two siblings. Those siblings
+ * live INSIDE the wrapper, where the root .rich-content flex gap cannot
+ * reach, so without this rule they stacked at 0px — the one spot in the
+ * stream where the prose rhythm silently vanished (live AND settled,
+ * since the settled phase keeps the same block layout to avoid the
+ * remount flick). Mirror the same gap here so wrapper-internal siblings
+ * space exactly like top-level ones.
+ */
+.streaming-markdown-block {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--conversation-prose-block-gap, 18px);
+}
+
                                                                      
                                                                 
                                                                  
