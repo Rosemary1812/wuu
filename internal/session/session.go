@@ -114,6 +114,11 @@ type HistoryRecord struct {
 	ParticipantID     string          `json:"participant_id,omitempty"`
 	PostKind          string          `json:"post_kind,omitempty"`
 	ThreadID          string          `json:"thread_id,omitempty"`
+	// BasisSeq is the message seq a participant post declared it was generated
+	// against (0 = the poster's read cursor was used / not applicable). The
+	// freshness/rebase check holds a post whose basis is stale; persisted here
+	// for audit and task trace.
+	BasisSeq int `json:"basis_seq,omitempty"`
 	EnvelopeMeta      json.RawMessage `json:"envelope_meta,omitempty"`
 	// FocusMeta is the structured {kind,name,root} metadata for a
 	// workspace-focus declaration item (2026-07-03-workspace-focus.md §3.1).
@@ -947,6 +952,9 @@ func migrateSchema(db *sql.DB) error {
 	if err := addColumnIfMissing(db, "session_messages", "thread_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	if err := addColumnIfMissing(db, "session_messages", "basis_seq", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	if err := addColumnIfMissing(db, "session_messages", "envelope_meta", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
@@ -1232,12 +1240,12 @@ func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) er
 				session_id, seq, role, content, display_content, phase, provider_item_id, provider_item_model, client_id, hidden, steered, reasoning_content,
 				reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
 				tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, context_tokens, cache_creation_tokens, cache_read_tokens,
-				provider, model, participant_id, post_kind, thread_id, envelope_meta, focus_meta
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				provider, model, participant_id, post_kind, thread_id, basis_seq, envelope_meta, focus_meta
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, seq, strings.ToLower(strings.TrimSpace(rec.Role)), rec.Content, rec.DisplayContent, strings.TrimSpace(rec.Phase), strings.TrimSpace(rec.ProviderItemID), strings.TrimSpace(rec.ProviderItemModel), rec.ClientID, boolInt(rec.Hidden), boolInt(rec.Steered), rec.ReasoningContent,
 		rawJSONText(rec.ReasoningBlocks), rawJSONText(rec.Images), rawJSONText(rec.Files), rawJSONText(rec.ToolCalls), rawJSONText(rec.DiscoveredTools),
 		rec.ToolCallID, rec.ToolResultKind, rec.Name, nullableValueTimeText(rec.At), rec.InputTokens, rec.OutputTokens, rec.ContextTokens, rec.CacheCreationTokens, rec.CacheReadTokens,
-		strings.TrimSpace(rec.Provider), strings.TrimSpace(rec.Model), strings.TrimSpace(rec.ParticipantID), strings.TrimSpace(rec.PostKind), strings.TrimSpace(rec.ThreadID), rawJSONText(rec.EnvelopeMeta), rawJSONText(rec.FocusMeta),
+		strings.TrimSpace(rec.Provider), strings.TrimSpace(rec.Model), strings.TrimSpace(rec.ParticipantID), strings.TrimSpace(rec.PostKind), strings.TrimSpace(rec.ThreadID), rec.BasisSeq, rawJSONText(rec.EnvelopeMeta), rawJSONText(rec.FocusMeta),
 	)
 	if err != nil {
 		return fmt.Errorf("insert history record: %w", err)
@@ -1251,7 +1259,7 @@ func loadHistoryRecordsDB(db *sql.DB, id string, includeMeta bool) ([]HistoryRec
 	       provider_item_id, provider_item_model,
 		       reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
 	       tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, context_tokens, cache_creation_tokens, cache_read_tokens,
-	       provider, model, participant_id, post_kind, thread_id, envelope_meta, focus_meta
+	       provider, model, participant_id, post_kind, thread_id, basis_seq, envelope_meta, focus_meta
 	FROM session_messages
 WHERE session_id = ?`
 	args := []any{id}
@@ -1278,7 +1286,7 @@ WHERE session_id = ?`
 			&rec.ProviderItemID, &rec.ProviderItemModel,
 			&reasoningBlocks, &images, &files, &toolCalls, &discoveredTools,
 			&rec.ToolCallID, &rec.ToolResultKind, &rec.Name, &at, &rec.InputTokens, &rec.OutputTokens, &rec.ContextTokens, &rec.CacheCreationTokens, &rec.CacheReadTokens,
-			&rec.Provider, &rec.Model, &rec.ParticipantID, &rec.PostKind, &rec.ThreadID, &envelopeMeta, &focusMeta,
+			&rec.Provider, &rec.Model, &rec.ParticipantID, &rec.PostKind, &rec.ThreadID, &rec.BasisSeq, &envelopeMeta, &focusMeta,
 		); err != nil {
 			return nil, fmt.Errorf("scan session history: %w", err)
 		}

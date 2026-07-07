@@ -319,13 +319,20 @@ type PostedMessage struct {
 	// silent. Never set for the fresh-post path or for a forced post.
 	Held    bool   `json:"held,omitempty"`
 	HeldNote string `json:"held_note,omitempty"`
+	// BasisSeq echoes the message seq this post declared it was generated
+	// against (0 = the agent's read cursor was used). The freshness check holds
+	// the post if any message from someone else arrived after this basis.
+	BasisSeq int `json:"basis_seq,omitempty"`
 }
 
 type ParticipantSpeech interface {
-	// PostMessage publishes a participant message. force=true skips the
-	// freshness check (see PostedMessage.Held): use it to resend a draft the
-	// agent has decided is still right even though the room moved.
-	PostMessage(ctx context.Context, kind, text, targetThreadID string, force bool) (PostedMessage, error)
+	// PostMessage publishes a participant message. basisSeq is the message seq
+	// the agent generated this post against (its view of "latest"); the system
+	// mechanically holds the post if the thread moved past that basis (a newer
+	// message from someone else). 0 means "use my read cursor as the basis".
+	// force=true skips the check (see PostedMessage.Held): use it to resend a
+	// draft the agent has decided is still right even though the room moved.
+	PostMessage(ctx context.Context, kind, text, targetThreadID string, basisSeq int, force bool) (PostedMessage, error)
 }
 
 // GroupManager lets resident named agents create group threads and add

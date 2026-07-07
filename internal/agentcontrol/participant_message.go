@@ -23,8 +23,13 @@ type ParticipantMessage struct {
 	Kind          string
 	ThreadID      string
 	Hop           int
-	Text          string
-	CreatedAt     time.Time
+	// BasisSeq is the message seq this post declared it was generated against
+	// (its view of "latest"). Persisted for audit/trace; 0 means the poster's
+	// read cursor was used as the basis. The freshness check holds the post if
+	// the thread moved past this basis.
+	BasisSeq  int
+	Text      string
+	CreatedAt time.Time
 	// Images/Files carry inline attachments on a human-authored post (e.g. a
 	// screenshot pasted into the split reply composer). Agent posts never set
 	// these — the participant speech tools accept text only.

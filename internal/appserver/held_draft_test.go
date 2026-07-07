@@ -48,24 +48,28 @@ func TestHeldDraftHoldsWhenRoomMovedAndForcePublishes(t *testing.T) {
 		t.Fatalf("Bea answers: %v", err)
 	}
 
-	// Ada's speech for this turn engaged the group; the seq it checks against is
-	// the durable read cursor (her seen receipt), not a value passed in.
+	// Ada's speech for this turn engaged the group. She posts with an explicit
+	// basis of `seq` — the message she generated her draft against.
 	speech := srv.residentParticipantSpeechForTurn(ada, nil, map[string]bool{groupID: true})
 
-	// Un-forced post: held, not published, and the note names Bea's arrival.
-	held, err := speech.PostMessage(context.Background(), "result", "我来看这个问题。", groupID, false)
+	// Un-forced post: held, not published (Bea posted after Ada's basis), and
+	// the note names Bea's arrival. The held result echoes the basis.
+	held, err := speech.PostMessage(context.Background(), "result", "我来看这个问题。", groupID, seq, false)
 	if err != nil {
 		t.Fatalf("PostMessage (held path): %v", err)
 	}
 	if !held.Held {
-		t.Fatalf("expected the draft to be held (Bea answered while composing), got %+v", held)
+		t.Fatalf("expected the draft to be held (Bea answered after Ada's basis), got %+v", held)
+	}
+	if held.BasisSeq != seq {
+		t.Fatalf("held result should echo basis %d, got %d", seq, held.BasisSeq)
 	}
 	if !strings.Contains(held.HeldNote, "Bea") {
 		t.Fatalf("held note should name what arrived, got %q", held.HeldNote)
 	}
 
-	// Forced resend: publishes despite the room having moved.
-	posted, err := speech.PostMessage(context.Background(), "result", "补一句:我也看到了。", groupID, true)
+	// Forced resend: publishes despite the room having moved past the basis.
+	posted, err := speech.PostMessage(context.Background(), "result", "补一句:我也看到了。", groupID, seq, true)
 	if err != nil {
 		t.Fatalf("PostMessage (force): %v", err)
 	}
@@ -94,11 +98,11 @@ func TestHeldDraftDoesNotHoldAFreshPost(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	speech := srv.residentParticipantSpeechForTurn(ada, nil, nil)
-	posted, err := speech.PostMessage(context.Background(), "result", "开工。", groupID, false)
+	posted, err := speech.PostMessage(context.Background(), "result", "开工。", groupID, 0, false)
 	if err != nil {
 		t.Fatalf("PostMessage: %v", err)
 	}
 	if posted.Held {
-		t.Fatalf("a fresh initiating post (no seen-seq) must not be held: %+v", posted)
+		t.Fatalf("a fresh initiating post (no basis) must not be held: %+v", posted)
 	}
 }

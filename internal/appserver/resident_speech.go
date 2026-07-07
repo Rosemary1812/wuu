@@ -100,7 +100,7 @@ func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThr
 	}
 }
 
-func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, targetThreadID string, force bool) (tools.PostedMessage, error) {
+func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, targetThreadID string, basisSeq int, force bool) (tools.PostedMessage, error) {
 	_ = ctx
 	if r.server == nil {
 		return tools.PostedMessage{}, errors.New("post_message: app server not configured")
@@ -138,14 +138,24 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 	// space for both main-stream and cth posts.
 	unlockPost := r.server.lockThreadPost(targetThreadID)
 	defer unlockPost()
-	// Freshness check (held draft): if the agent read this thread this turn
-	// (we have a seen-seq for it) and it has moved since — a teammate or the
-	// user posted while the agent was composing — hold the draft instead of
-	// posting it blind. A decline needs no check (it is already the silent
-	// choice), and force skips it (the agent has decided to send anyway).
+	// Basis: the seq the agent generated this post against. Explicit basis_seq
+	// wins; 0 falls back to the agent's durable read cursor (its "latest seen").
+	basis := basisSeq
+	if basis <= 0 {
+		if seen, err := session.ThreadReadWatermark(r.server.rt.SessionDir, targetThreadID, participantID); err == nil {
+			basis = seen
+		}
+	}
+	// Freshness check (held draft / rebase trigger): if the thread has moved
+	// past this basis — a teammate or the user posted while the agent was
+	// composing — hold the draft instead of posting it blind (core constraint:
+	// a message generated against an old environment must not land). The agent
+	// then re-reasons against what arrived (rebase, folded via inception) and
+	// posts again with an updated basis. A decline needs no check (it is already
+	// the silent choice); force skips it (the agent decided to send anyway).
 	if kind != "decline" && !force {
-		if note, held := r.roomMovedSince(targetThreadID, subthreadID); held {
-			return tools.PostedMessage{Held: true, HeldNote: note}, nil
+		if note, held := r.roomMovedSince(targetThreadID, subthreadID, basis); held {
+			return tools.PostedMessage{Held: true, HeldNote: note, BasisSeq: basis}, nil
 		}
 	}
 	// A decline is the silent alternative to a reply; it is not counted against
@@ -167,6 +177,7 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 		// publishParticipantMessage folds it into that thread instead of the main
 		// stream; empty for ordinary top-level/DM posts.
 		ThreadID:  subthreadID,
+		BasisSeq:  basis,
 		CreatedAt: now,
 	}
 	if err := r.server.publishParticipantMessage(targetThreadID, msg); err != nil {
@@ -187,30 +198,31 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 		Kind:          kind,
 		ThreadID:      reportThreadID,
 		Text:          text,
+		BasisSeq:      basis,
 		CreatedAt:     now,
 	}, nil
 }
 
 // roomMovedSince reports whether the target scope gained new visible messages
-// (from someone other than this agent) since the agent read it this turn. It
-// keys on the seen-seq the turn's envelope batch carried: no seen-seq for the
-// thread means the agent is initiating rather than replying, so a fresh post is
-// never held. Scope matters — a main-stream post is only stale if new main
-// messages arrived; a reply-subthread post only if new messages in that same
-// cth arrived. The returned note lists what arrived, for the agent to weigh.
-func (r residentParticipantSpeech) roomMovedSince(parentThreadID, subthreadID string) (string, bool) {
+// (from someone other than this agent) after the given basis seq — the seq the
+// agent generated its post against. basis<=0 means the agent has no basis in
+// this thread (it is initiating, not replying to a room it read), so a fresh
+// post is never held. Scope matters — a main-stream post is only stale if new
+// main messages arrived; a reply-subthread post only if new messages in that
+// same cth arrived. The returned note lists what arrived, for the agent to
+// re-reason against (rebase).
+func (r residentParticipantSpeech) roomMovedSince(parentThreadID, subthreadID string, basis int) (string, bool) {
 	parentThreadID = strings.TrimSpace(parentThreadID)
 	if !r.engagedThreads[parentThreadID] {
 		// The agent is initiating in a thread it was not woken from this turn,
 		// not replying to a room it read — nothing to be stale against.
 		return "", false
 	}
-	seen, err := session.ThreadReadWatermark(r.server.rt.SessionDir, parentThreadID, r.participantID)
-	if err != nil || seen <= 0 {
+	if basis <= 0 {
 		return "", false
 	}
-	// Same read as the pull-inbox: the chat messages past my read cursor.
-	records, err := session.ChatMessagesSince(r.server.rt.SessionDir, parentThreadID, seen)
+	// The chat messages past the agent's basis (same read as the pull inbox).
+	records, err := session.ChatMessagesSince(r.server.rt.SessionDir, parentThreadID, basis)
 	if err != nil {
 		return "", false
 	}

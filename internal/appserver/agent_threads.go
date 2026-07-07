@@ -222,6 +222,7 @@ func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.Par
 			ParticipantID: rec.ParticipantID,
 			PostKind:      rec.PostKind,
 			ThreadID:      rec.ThreadID,
+			BasisSeq:      msg.BasisSeq,
 			Images:        mustJSON(rec.Images),
 			Files:         mustJSON(rec.Files),
 			At:            rec.At,

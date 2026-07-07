@@ -39,9 +39,13 @@ func (t *PostMessageTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "Target conversation thread id. Resident named agents may post to threads they belong to or their own DM thread. Pass a reply subthread id (cth-…) to fold the message into that reply thread instead of the main group stream.",
 				},
+				"basis_seq": map[string]any{
+					"type":        "integer",
+					"description": "The message number (seq) you are generating this post against — your view of the latest message you have accounted for in this thread. On submit the system mechanically checks it: if the thread has NOT moved past this basis, the post lands; if someone else posted after it, the post is HELD and returned with what arrived so you can re-reason against the new state. Omit (0) to use your read cursor as the basis.",
+				},
 				"force": map[string]any{
 					"type":        "boolean",
-					"description": "Set true to publish even if the thread moved since you read it. Leave unset first: if new messages arrived while you were composing, the post is HELD (not published) and returned to you with what arrived, so you can revise, resend with force=true, or stay silent instead of posting something now redundant or stale.",
+					"description": "Set true to publish even if the thread moved past your basis. Leave unset first: if new messages arrived while you were composing, the post is HELD (not published) and returned to you with what arrived, so you can revise, resend with force=true, or stay silent instead of posting something now redundant or stale.",
 				},
 			},
 			"required": []string{"kind", "text"},
@@ -57,6 +61,7 @@ func (t *PostMessageTool) Execute(ctx context.Context, args string) (string, err
 		Kind     string `json:"kind"`
 		Text     string `json:"text"`
 		ThreadID string `json:"thread_id"`
+		BasisSeq int    `json:"basis_seq"`
 		Force    bool   `json:"force"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
@@ -70,16 +75,16 @@ func (t *PostMessageTool) Execute(ctx context.Context, args string) (string, err
 	if speech == nil {
 		return "", errors.New("post_message: participant speech not configured")
 	}
-	msg, err := speech.PostMessage(ctx, kind, params.Text, params.ThreadID, params.Force)
+	msg, err := speech.PostMessage(ctx, kind, params.Text, params.ThreadID, params.BasisSeq, params.Force)
 	if err != nil {
 		return "", err
 	}
 	if msg.Held {
 		result := map[string]any{
-			"action": "post_message",
-			"status": "held",
-			"reason": "The thread moved while you were composing — these messages arrived. Your draft was NOT posted. Revise it, resend it unchanged with force=true, or stay silent.",
-			"arrived_since_you_read": msg.HeldNote,
+			"action":                  "post_message",
+			"status":                  "held",
+			"reason":                  "The thread moved past your basis — these messages arrived while you were composing. Your draft was NOT posted. Fold them into your context (use inception to keep it clean), re-reason against the new state, then post again with an updated basis_seq — or resend unchanged with force=true, or stay silent.",
+			"arrived_since_your_basis": msg.HeldNote,
 		}
 		data, err := json.Marshal(result)
 		if err != nil {
@@ -136,9 +141,9 @@ type agentControlParticipantSpeech struct {
 	env *Env
 }
 
-func (s agentControlParticipantSpeech) PostMessage(ctx context.Context, kind, text, targetThreadID string, _ bool) (PostedMessage, error) {
+func (s agentControlParticipantSpeech) PostMessage(ctx context.Context, kind, text, targetThreadID string, _ int, _ bool) (PostedMessage, error) {
 	// The agent-control fallback (worker speech) has no room-freshness state, so
-	// force is not meaningful here — it always publishes.
+	// basis_seq/force are not meaningful here — it always publishes.
 	if s.env == nil || s.env.AgentControl == nil {
 		return PostedMessage{}, errors.New("post_message: agent control not configured")
 	}
