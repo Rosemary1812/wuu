@@ -17,6 +17,7 @@ import type {
 } from "../shared/protocol";
 import { ImagePreviewProvider } from "./ImagePreview";
 import { RichContent } from "./RichContent";
+import { SelectMenu } from "./SelectMenu";
 
 // 设置 → 记忆 面板（docs/plans/2026-07-04-memory-redesign.md §8.1）。
 //
@@ -303,21 +304,18 @@ export function MemoryPanel({
             </button>
           </div>
           {scope === "participant" && namedAgents.length > 0 ? (
-            <select
-              className="settings-select settings-memory-agent-select"
-              aria-label="选择同事"
-              data-testid="memory-agent-select"
+            <SelectMenu
+              className="settings-memory-agent-select"
+              triggerClassName="settings-select-trigger"
+              ariaLabel="选择同事"
+              dataTestid="memory-agent-select"
               value={activeParticipantID}
-              onChange={(event) =>
-                setSelectedParticipantID(event.target.value)
-              }
-            >
-              {namedAgents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
+              onChange={(next) => setSelectedParticipantID(next)}
+              options={namedAgents.map((agent) => ({
+                value: agent.id,
+                label: agent.name,
+              }))}
+            />
           ) : null}
           <div className="settings-memory-raw-toggle">
             <span className="settings-memory-raw-label">查看原文</span>

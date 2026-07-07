@@ -212,12 +212,22 @@ describe("MemoryPanel 同事 tab", () => {
       await Promise.resolve();
     });
 
-    const select = container.querySelector(
+    const trigger = container.querySelector(
       "[data-testid=\"memory-agent-select\"]",
-    ) as HTMLSelectElement | null;
-    expect(select).not.toBeNull();
-    const options = Array.from(select!.querySelectorAll("option"));
-    expect(options.map((option) => option.value)).toEqual(["p-1", "p-2"]);
+    ) as HTMLButtonElement | null;
+    expect(trigger).not.toBeNull();
+    // The SelectMenu renders its options into a floating portal on open.
+    act(() => {
+      trigger!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const options = Array.from(
+      document.querySelectorAll(".select-menu-panel .select-menu-item"),
+    );
+    expect(options.map((option) => option.getAttribute("data-value"))).toEqual([
+      "p-1",
+      "p-2",
+    ]);
+    // Human members are excluded; the closed trigger shows the active agent.
     expect(rootText()).toContain("小青");
     expect(rootText()).not.toContain("本人");
 
@@ -238,10 +248,12 @@ describe("MemoryPanel 同事 tab", () => {
       scope: "participant",
       participant_id: "p-2",
     });
-    const select = container.querySelector(
+    const trigger = container.querySelector(
       "[data-testid=\"memory-agent-select\"]",
-    ) as HTMLSelectElement | null;
-    expect(select?.value).toBe("p-2");
+    ) as HTMLButtonElement | null;
+    expect(trigger?.querySelector(".select-menu-value")?.textContent).toBe(
+      "阿蓝",
+    );
   });
 
   it("shows an empty state instead of a request when no named agent exists", async () => {
