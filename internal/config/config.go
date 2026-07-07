@@ -296,6 +296,12 @@ type AgentConfig struct {
 	AppendSystemPrompt string `json:"append_system_prompt,omitempty"`
 	// PermissionMode selects the authority boundary. Empty resolves to standard.
 	PermissionMode string `json:"permission_mode,omitempty"`
+	// TaskReview selects who resolves a task filed for review on the agent
+	// task rail (2026-07-06 agent-task-rail design): "human" (default) leaves
+	// the review -> resolved bubble to a human click; "auto" bubbles the
+	// owner's summary to the main stream immediately. Any other value fails
+	// config load — no silent fallback.
+	TaskReview string `json:"task_review,omitempty"`
 	// Effort controls reasoning depth. Valid: "low", "medium", "high",
 	// "max" (Anthropic only). Empty = API default. Aligned with Claude
 	// Code's /effort command and Codex's reasoning_effort setting.
@@ -710,7 +716,37 @@ func validatePermissionConfig(agent AgentConfig) error {
 	if err := validatePermissionMode(agent.PermissionMode); err != nil {
 		return err
 	}
+	if err := ValidateTaskReview(agent.TaskReview); err != nil {
+		return err
+	}
 	return nil
+}
+
+// Task-review modes for the agent task rail. Empty resolves to human.
+const (
+	TaskReviewHuman = "human"
+	TaskReviewAuto  = "auto"
+)
+
+// ValidateTaskReview rejects unknown agent.task_review values at load time —
+// deliberately strict (no-fallback principle in the agent-task-rail design):
+// a typo must fail the config, not silently behave like one of the modes.
+func ValidateTaskReview(mode string) error {
+	switch strings.TrimSpace(mode) {
+	case "", TaskReviewHuman, TaskReviewAuto:
+		return nil
+	default:
+		return fmt.Errorf("agent.task_review %q is invalid (valid: %q, %q)", mode, TaskReviewHuman, TaskReviewAuto)
+	}
+}
+
+// ResolveTaskReview maps the stored value to an effective mode: empty means
+// human review.
+func ResolveTaskReview(mode string) string {
+	if strings.TrimSpace(mode) == TaskReviewAuto {
+		return TaskReviewAuto
+	}
+	return TaskReviewHuman
 }
 
 func validatePermissionMode(mode string) error {
