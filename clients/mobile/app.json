@@ -14,25 +14,40 @@
     "ios": {
       "supportsTablet": false,
       "infoPlist": {
-        "NSCameraUsageDescription": "扫描电脑屏幕上的配对二维码"
-      }
+        "NSCameraUsageDescription": "扫描电脑屏幕上的配对二维码",
+        "UIBackgroundModes": ["remote-notification"]
+      },
+      "bundleIdentifier": "com.blueberrycongee.wuu"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/icon.png"
       },
-      "permissions": ["android.permission.CAMERA"],
+      "package": "com.blueberrycongee.wuu",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "scheme": ["wuu"],
     "plugins": [
       [
         "expo-camera",
         {
           "cameraPermission": "扫描电脑屏幕上的配对二维码"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#ffffff",
+          "defaultChannel": "default"
         }
       ],
       "expo-secure-store"

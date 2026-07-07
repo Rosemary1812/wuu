@@ -19,6 +19,14 @@ import type {
 import { AppStore } from "./store";
 import { mentionedParticipantIDsFromText } from "./mentions";
 import { isThreadRunning } from "./threads";
+import { parseDeepLink, type DeepLink } from "./deepLink";
+import {
+  addNotificationResponseListener,
+  addPushTokenRefreshListener,
+  fetchPushTokens,
+  requestNotificationPermission,
+  type PushTokenBundle,
+} from "./push";
 
 export interface CredentialStore {
   load(): Promise<Credentials | null>;
@@ -36,6 +44,13 @@ type ParticipantListResult = { participants: ParticipantProfile[] };
 type MarksResult = { marks: MessageMarkWire[] };
 type TurnResult = { turn: Turn };
 type QueueResult = { queued: { id: string } };
+type PushRegisterResult = { ok: boolean };
+
+/** How long a brief link drop is allowed to last before the "重连中…" strip
+ *  appears. Short enough that a real outage still surfaces within a second,
+ *  long enough that foreground-return reattaches and wifi blips stay
+ *  silent. */
+const RECONNECT_GRACE_MS = 600;
 
 export class WuuMobile {
   readonly store = new AppStore();
@@ -43,7 +58,11 @@ export class WuuMobile {
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private rosterTimer: ReturnType<typeof setTimeout> | null = null;
   private lastViewedTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private nextClientId = 0;
+  /** Listener for deep-links the controller parsed out of a notification
+   *  tap or a linking event. The App shell wires this into navigation. */
+  onDeepLink: ((link: DeepLink) => void) | null = null;
 
   constructor(private readonly credStore: CredentialStore) {
     this.store.onUnknownThread = () => this.scheduleThreadsRefresh();
@@ -100,12 +119,31 @@ export class WuuMobile {
     this.client = new RemoteClient(creds, {
       onNotification: (method, params) => this.store.applyNotification(method, params),
       onAttach: (ev) => void this.onAttach(ev.resumed),
-      onDetach: () => this.store.setPhase("reconnecting"),
+      onDetach: () => this.scheduleReconnecting(),
     });
     this.client.start();
   }
 
+  /** Defer the "重连中…" phase by a short grace window: a transport drop
+   *  that recovers within the window (foreground-return reattach, brief
+   *  wifi blip) must not flash the strip. If attach lands first, we cancel
+   *  the timer and never set the phase. */
+  private scheduleReconnecting(): void {
+    if (this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.store.setPhase("reconnecting");
+    }, RECONNECT_GRACE_MS);
+  }
+
+  private cancelReconnecting(): void {
+    if (!this.reconnectTimer) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
   private async onAttach(resumed: boolean): Promise<void> {
+    this.cancelReconnecting();
     this.store.setPhase("attached");
     try {
       if (!resumed) {
@@ -120,6 +158,12 @@ export class WuuMobile {
       const active = this.store.getSnapshot().activeThreadId;
       if (!resumed && active) {
         await this.openThread(active);
+      }
+      // Push registration piggybacks on the first attach of a session: the
+      // link is up, we have an end-to-end channel, and a fresh app-server
+      // gives the host a clean place to store the device token.
+      if (!resumed) {
+        void this.registerPush().catch(() => {});
       }
     } catch {
       // The link dropped mid-refresh; the reconnect loop will re-attach and
@@ -251,6 +295,49 @@ export class WuuMobile {
   async togglePin(thread: Thread): Promise<void> {
     await this.call("thread/pin", { thread_id: thread.id, pinned: !thread.pinned });
     await this.refreshThreads();
+  }
+
+  /** Ask the OS for push permission, fetch the device token bundle, and ship
+   *  it to the host over the existing secure relay. Best-effort: every
+   *  failure is swallowed so a push-misconfigured device still has a
+   *  working chat surface. The host re-registers on a fresh attach anyway. */
+  private async registerPush(): Promise<void> {
+    const granted = await requestNotificationPermission();
+    if (!granted) return;
+    const bundle = await fetchPushTokens();
+    if (!bundle) return;
+    await this.sendPushRegister(bundle);
+  }
+
+  private async sendPushRegister(bundle: PushTokenBundle): Promise<void> {
+    try {
+      await this.call<PushRegisterResult>("device/push_register", {
+        platform: bundle.platform,
+        expo_push_token: bundle.expoPushToken,
+        device_push_token: bundle.devicePushToken,
+      });
+    } catch {
+      // Older hosts may not implement the RPC; the device still has a
+      // valid token locally and a later host version will pick it up.
+    }
+  }
+
+  /** Wires the OS push-token rollover + tap-response listeners. Called once
+   *  at app start; the listeners live for the whole process. The App shell
+   *  uses the response listener to drive deep-link navigation. */
+  startPushListeners(): void {
+    addPushTokenRefreshListener((bundle) => {
+      // Only ship a fresh token when the link is up; a rollover during
+      // disconnect is harmless because the host re-asks on every attach.
+      if (this.store.getSnapshot().phase !== "attached") return;
+      void this.sendPushRegister(bundle).catch(() => {});
+    });
+    addNotificationResponseListener((response) => {
+      const data = response.notification.request.content.data as { url?: unknown } | undefined;
+      if (!data || typeof data.url !== "string") return;
+      const link = parseDeepLink(data.url);
+      if (link) this.onDeepLink?.(link);
+    });
   }
 
   /** Item helper for tests and the read-receipt line. */

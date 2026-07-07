@@ -4,11 +4,13 @@
 // store via useSyncExternalStore.
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { ActivityIndicator, Alert, BackHandler, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Alert, BackHandler, Linking, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 
 import { WuuMobile } from "./src/lib/connection";
 import { deviceCredentialStore } from "./src/lib/credStore";
+import { parseDeepLink } from "./src/lib/deepLink";
+import { getInitialNotificationResponse } from "./src/lib/push";
 import { threadDisplayTitle } from "./src/lib/threads";
 import { usePalette } from "./src/theme";
 import { PairScreen } from "./src/screens/PairScreen";
@@ -23,6 +25,24 @@ type Route =
   | { name: "chats" }
   | { name: "thread"; threadId: string };
 
+/** Drives navigation from a parsed deep-link. The route is the only piece of
+ *  state in the App shell, so the only thing the controller needs to tell
+ *  us is "go to this thread"; opening the chat history is then handled by
+ *  the existing controller.openThread path so the open chat refills. */
+function applyDeepLink(
+  link: ReturnType<typeof parseDeepLink>,
+  setRoute: (route: Route) => void,
+): void {
+  if (!link) return;
+  if (link.kind === "thread") {
+    setRoute({ name: "thread", threadId: link.threadId });
+    void controller.openThread(link.threadId).catch(() => {});
+  } else if (link.kind === "home") {
+    controller.closeThread();
+    setRoute({ name: "chats" });
+  }
+}
+
 export default function App(): React.JSX.Element {
   const palette = usePalette();
   const [route, setRoute] = useState<Route>({ name: "boot" });
@@ -34,6 +54,36 @@ export default function App(): React.JSX.Element {
       .startFromStoredCredentials()
       .then((hadCredentials) => setRoute(hadCredentials ? { name: "chats" } : { name: "pair" }))
       .catch(() => setRoute({ name: "pair" }));
+  }, []);
+
+  // Deep-link wiring: cold start (initial URL or initial notification
+  // response), and warm activations (Linking events + notification taps
+  // forwarded by the controller). We only honor deep-links after we have
+  // credentials, so a freshly-installed user that taps a push gets routed
+  // to pair instead of an empty thread.
+  useEffect(() => {
+    controller.onDeepLink = (link) => applyDeepLink(link, setRoute);
+    controller.startPushListeners();
+    let cancelled = false;
+    (async () => {
+      const initialUrl = await Linking.getInitialURL().catch(() => null);
+      if (cancelled) return;
+      applyDeepLink(parseDeepLink(initialUrl), setRoute);
+      const initialPush = await getInitialNotificationResponse();
+      if (cancelled || !initialPush) return;
+      const data = initialPush.notification.request.content.data as { url?: unknown } | undefined;
+      if (typeof data?.url === "string") {
+        applyDeepLink(parseDeepLink(data.url), setRoute);
+      }
+    })();
+    const sub = Linking.addEventListener("url", (event) => {
+      applyDeepLink(parseDeepLink(event.url), setRoute);
+    });
+    return () => {
+      cancelled = true;
+      controller.onDeepLink = null;
+      sub.remove();
+    };
   }, []);
 
   // Android hardware back mirrors the header back button.
