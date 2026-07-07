@@ -1,15 +1,26 @@
 import { describe, expect, it } from "vitest";
+import type { Thread, ThreadItem } from "../shared/protocol";
 import type { QueuedComposerMessage } from "./ComposerMessages";
 import {
   findPendingComposerMessage,
+  materializedComposerMessageIDs,
   pendingComposerMessageCount,
   pendingComposerMessagesForThread,
+  reconcilePendingComposerMessagesForThread,
   removePendingComposerMessagesByID,
   type PendingComposerMessagesByThread,
 } from "./ComposerPendingMessages";
 
 function message(id: string, text: string): QueuedComposerMessage {
   return { id, text, images: [], files: [] };
+}
+
+function userItem(id: string, sourceID?: string): ThreadItem {
+  return { id, type: "user_message", source_id: sourceID } as ThreadItem;
+}
+
+function threadWithItems(id: string, items: ThreadItem[]): Thread {
+  return { id, turns: [{ id: `${id}-turn-1`, items }] } as unknown as Thread;
 }
 
 describe("composer pending messages", () => {
@@ -99,5 +110,75 @@ describe("composer pending messages", () => {
     );
 
     expect(next["thread-a"]).toBeUndefined();
+  });
+});
+
+describe("reconcile pending composer messages against thread turns", () => {
+  it("collects user_message source ids that have materialized", () => {
+    const thread = threadWithItems("thread-a", [
+      userItem("thread-a-turn-1-item-1", "queue-1"),
+      { id: "thread-a-turn-1-item-2", type: "agent_message" } as ThreadItem,
+      userItem("thread-a-turn-1-item-3", "guide-1"),
+      userItem("thread-a-turn-1-item-4"), // no source_id — ignored
+    ]);
+
+    expect([...materializedComposerMessageIDs(thread)].sort()).toEqual([
+      "guide-1",
+      "queue-1",
+    ]);
+    expect(materializedComposerMessageIDs(undefined).size).toBe(0);
+  });
+
+  it("drops a queued message that already went out (missed removal notification)", () => {
+    const byThread: PendingComposerMessagesByThread = {
+      "thread-a": {
+        queued: [message("queue-sent", "已发出"), message("queue-pending", "仍排队")],
+        guides: [],
+      },
+    };
+    const thread = threadWithItems("thread-a", [
+      userItem("thread-a-turn-1-item-1", "queue-sent"),
+    ]);
+
+    const next = reconcilePendingComposerMessagesForThread(byThread, thread);
+
+    expect(next["thread-a"]?.queued.map((item) => item.id)).toEqual([
+      "queue-pending",
+    ]);
+  });
+
+  it("drops materialized guide (steer) messages too", () => {
+    const byThread: PendingComposerMessagesByThread = {
+      "thread-a": {
+        queued: [],
+        guides: [message("guide-sent", "已引导")],
+      },
+    };
+    const thread = threadWithItems("thread-a", [
+      userItem("thread-a-turn-1-item-1", "guide-sent"),
+    ]);
+
+    const next = reconcilePendingComposerMessagesForThread(byThread, thread);
+
+    expect(next["thread-a"]).toBeUndefined();
+  });
+
+  it("returns the same reference when nothing has materialized", () => {
+    const byThread: PendingComposerMessagesByThread = {
+      "thread-a": {
+        queued: [message("queue-pending", "仍排队")],
+        guides: [],
+      },
+    };
+    const thread = threadWithItems("thread-a", [
+      userItem("thread-a-turn-1-item-1", "some-other-message"),
+    ]);
+
+    expect(reconcilePendingComposerMessagesForThread(byThread, thread)).toBe(
+      byThread,
+    );
+    expect(
+      reconcilePendingComposerMessagesForThread(byThread, undefined),
+    ).toBe(byThread);
   });
 });

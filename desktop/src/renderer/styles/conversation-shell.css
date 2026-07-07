@@ -914,6 +914,21 @@
   margin: 0 0 12px;
 }
 
+/*
+ * Anchored variant (main conversation): the pill is portaled to <body> and
+ * positioned `fixed` just above the dock composer, with `left`/`bottom`
+ * supplied inline from a live measurement of the composer + scroll container
+ * (JumpToLatestPill.tsx). Fixed-to-viewport instead of sticky-to-scrollport
+ * because `.scroll-region` does not line up with the floating composer in the
+ * chat/group view. `translateX(-50%)` centers on the measured left coordinate.
+ */
+.jump-to-latest-pill-anchored {
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 30;
+  margin: 0;
+}
+
 .jump-to-latest-progress {
   flex: 0 1 auto;
   justify-content: center;

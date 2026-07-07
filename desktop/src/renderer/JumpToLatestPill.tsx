@@ -1,64 +1,82 @@
-import { type RefObject, useEffect, useState } from "react";
+import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 
 /**
  * JumpToLatestPill — self-contained "scroll to bottom" pill.
  *
  * Issue #5 desktop fix: replaces the previous position-absolute pill that
- * was centered on the wrong containing block (centering on the
- * conversation-pane grid container rather than the visible scroll area,
- * so a thread-panel-resize or .subthread-panel-visible class shift moved
- * the pill off-center). This component:
+ * was centered on the wrong containing block. This component subscribes to
+ * its own scroll listener on `containerRef.current` so `scrolledAway` is
+ * computed against the same element the click smooth-scrolls to bottom, and
+ * subscribes to a ResizeObserver so a thread-panel resize re-evaluates the
+ * threshold.
  *
- *  - Subscribes to its own scroll listener on `containerRef.current` so
- *    `userScrolledAway` is computed against the same element that the
- *    click will smooth-scroll to bottom.
- *  - Renders the pill as a direct child of the scroll container, where
- *    `position: sticky; left: 50%; transform: translateX(-50%)` centers
- *    on the container's visible width — no CSS variables, no
- *    conversation-pane / thread-panel-width inheritance.
- *  - Subscribes to ResizeObserver on the container so a thread-panel
- *    resize re-evaluates the threshold (otherwise a shrinking container
- *    could leave the pill stuck in scrolled-away state at the new bottom).
- *  - Click handler smooth-scrolls the container to its own scrollHeight
- *    — Fix 2 uses the thread panel's ref, Fix 1 uses the main ref, each
- *    scrolls its own scope (no accidental main-scope jumps).
+ * Two positioning modes:
  *
- * The component is intentionally self-contained: it does not import
- * `useConversationScrollState`. The main pill could read
- * `userScrolledAway` from that hook, but coupling them would force Fix 2
- * (thread panel) to either replicate the same logic or depend on a hook
- * the thread panel can't use. Self-contained is the cleaner contract.
+ *  - Default (no `bottomAnchorRef`): the pill renders as a direct child of
+ *    the scroll container with `position: sticky; left: 50%` — centered on
+ *    the container's visible width. Used by the reply-subthread panel, where
+ *    the scroll body's bottom edge sits exactly at the panel composer's top
+ *    (they are flex siblings), so sticky-bottom lands the pill correctly.
+ *
+ *  - Anchored (`bottomAnchorRef` given): the pill is PORTALED to
+ *    document.body and positioned `fixed`, measured to sit just above the
+ *    anchor element (the dock composer). The main conversation's scroll
+ *    container (`.scroll-region`) does NOT line up with the floating dock
+ *    composer in the chat/group view — the sticky-bottom variant pinned the
+ *    pill to the scroll container's own bottom, which floated mid-screen.
+ *    Anchoring to the composer element itself is correct by construction,
+ *    independent of the scroll container's height, `--dock-composer-height`,
+ *    or the nested chat-thread overflow. Portaling to body escapes the
+ *    scroll region's `contain: layout paint`, which would otherwise trap a
+ *    `position: fixed` child.
  */
 type JumpToLatestPillProps = {
   /**
-   * Ref to the scroll container this pill lives inside and smooth-scrolls
-   * to bottom on click. Must be set (typically the same ref that the
-   * container's outer `<div className="scroll-region">` uses). The pill
-   * renders as a descendant of this element so `position: sticky;
-   * left: 50%; transform: translateX(-50%)` resolves against it.
+   * Ref to the scroll container this pill watches and smooth-scrolls to
+   * bottom on click.
    */
   containerRef: RefObject<HTMLElement | null>;
   /**
-   * Distance (in px) from the bottom of the scroll container below
-   * which the pill is considered "scrolled away" and shown. Default 80
-   * matches the existing auto-follow threshold.
+   * Optional element the pill should float just above (the dock composer).
+   * When this prop is PRESENT the pill switches to the portaled/measured
+   * "anchored" mode (even while the element is transiently null before mount);
+   * when the prop is omitted entirely it stays an in-container sticky pill.
+   */
+  bottomAnchor?: HTMLElement | null;
+  /**
+   * Distance (in px) from the bottom of the scroll container below which the
+   * pill is considered "scrolled away" and shown. Default 80 matches the
+   * existing auto-follow threshold.
    */
   threshold?: number;
   /**
-   * Accessible label for the pill button. Default "跳到最新" matches
-   * the previous inline pill.
+   * Accessible label for the pill button. Default "跳到最新".
    */
   label?: string;
 };
 
 const DEFAULT_THRESHOLD_PX = 80;
+const PILL_BOTTOM_GAP_PX = 12;
+
+type PillPosition = { left: number; bottom: number };
 
 export function JumpToLatestPill({
   containerRef,
+  bottomAnchor,
   threshold = DEFAULT_THRESHOLD_PX,
   label = "跳到最新",
 }: JumpToLatestPillProps): React.ReactElement | null {
   const [scrolledAway, setScrolledAway] = useState(false);
+  const [position, setPosition] = useState<PillPosition | null>(null);
+  // The prop being PRESENT (even as null) selects anchored/portaled mode. The
+  // subthread panel omits it and keeps the in-container sticky pill.
+  const anchored = bottomAnchor !== undefined;
 
   useEffect(() => {
     const node = containerRef.current;
@@ -95,23 +113,80 @@ export function JumpToLatestPill({
     };
   }, [containerRef, threshold]);
 
+  const recomputePosition = useCallback((): void => {
+    const container = containerRef.current;
+    if (!container || !bottomAnchor) {
+      return;
+    }
+    const containerRect = container.getBoundingClientRect();
+    const anchorRect = bottomAnchor.getBoundingClientRect();
+    setPosition({
+      // Centered on the scroll container's visible width (issue #5 intent).
+      left: containerRect.left + containerRect.width / 2,
+      // Sit PILL_BOTTOM_GAP_PX above the composer's top edge, expressed as a
+      // CSS `bottom` (distance from the viewport bottom).
+      bottom: Math.max(
+        PILL_BOTTOM_GAP_PX,
+        window.innerHeight - anchorRect.top + PILL_BOTTOM_GAP_PX,
+      ),
+    });
+  }, [containerRef, bottomAnchor]);
+
+  // Measured positioning for the anchored (portaled) variant. Recomputes on
+  // scroll, window resize, and container/composer resize (typing grows the
+  // composer, moving its top edge).
+  useEffect(() => {
+    if (!anchored || !scrolledAway) {
+      return undefined;
+    }
+    recomputePosition();
+    let frame = 0;
+    const schedule = (): void => {
+      if (frame) {
+        return;
+      }
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        recomputePosition();
+      });
+    };
+    const container = containerRef.current;
+    container?.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(schedule)
+        : undefined;
+    if (container) {
+      resizeObserver?.observe(container);
+    }
+    if (bottomAnchor) {
+      resizeObserver?.observe(bottomAnchor);
+    }
+    return () => {
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+      container?.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      resizeObserver?.disconnect();
+    };
+  }, [anchored, bottomAnchor, scrolledAway, recomputePosition, containerRef]);
+
   if (!scrolledAway) {
     return null;
   }
 
-  return (
-    <button
-      type="button"
-      className="jump-to-latest-pill jump-to-latest-pill-sticky-centered"
-      aria-label={label}
-      onClick={() => {
-        const node = containerRef.current;
-        if (!node) {
-          return;
-        }
-        node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
-      }}
-    >
+  const scrollToBottom = (): void => {
+    const node = containerRef.current;
+    if (!node) {
+      return;
+    }
+    node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+  };
+
+  const pillBody = (
+    <>
       <svg
         width="14"
         height="14"
@@ -128,6 +203,38 @@ export function JumpToLatestPill({
         />
       </svg>
       <span>{label}</span>
+    </>
+  );
+
+  if (anchored) {
+    if (!position) {
+      return null;
+    }
+    return createPortal(
+      <button
+        type="button"
+        className="jump-to-latest-pill jump-to-latest-pill-anchored"
+        aria-label={label}
+        style={{
+          left: `${position.left}px`,
+          bottom: `${position.bottom}px`,
+        }}
+        onClick={scrollToBottom}
+      >
+        {pillBody}
+      </button>,
+      document.body,
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="jump-to-latest-pill jump-to-latest-pill-sticky-centered"
+      aria-label={label}
+      onClick={scrollToBottom}
+    >
+      {pillBody}
     </button>
   );
 }

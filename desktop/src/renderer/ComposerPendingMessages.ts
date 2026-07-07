@@ -1,3 +1,4 @@
+import type { Thread } from "../shared/protocol";
 import type { QueuedComposerMessage } from "./ComposerMessages";
 
 export type ThreadPendingComposerMessages = {
@@ -104,4 +105,76 @@ export function pendingComposerMessageCount(
   pending: ThreadPendingComposerMessages,
 ): number {
   return pending.queued.length + pending.guides.length;
+}
+
+/**
+ * Collect the ids of user messages that have already MATERIALIZED as
+ * user_message turn items in a thread. A queued/guide composer message keeps
+ * the same id (the server stamps the item's `source_id` with the queue/steer
+ * client id — see startQueuedTurn / steer), so any pending entry whose id is
+ * in this set has already been sent.
+ */
+export function materializedComposerMessageIDs(
+  thread: Thread | undefined | null,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const turn of thread?.turns ?? []) {
+    for (const item of turn.items ?? []) {
+      if (
+        item.type === "user_message" &&
+        typeof item.source_id === "string" &&
+        item.source_id
+      ) {
+        ids.add(item.source_id);
+      }
+    }
+  }
+  return ids;
+}
+
+/**
+ * Reconcile a thread's pending composer messages against its materialized
+ * turns: drop any queued/guide entry whose id already appears as a
+ * user_message `source_id` in the thread. This is the self-healing net for a
+ * missed removal notification — a queued send's `turn/started` (carrying the
+ * queue_id) or the user_message's `item/completed` can be gated out of the
+ * renderer when it arrives while the thread is backgrounded (App.tsx's
+ * active-context filter), leaving the entry stuck in the composer queue strip
+ * / chat "发送中…" bubble even though the message already went out. Keying off
+ * the authoritative thread turns guarantees a sent message never lingers as
+ * pending. Returns the same reference when nothing changes.
+ */
+export function reconcilePendingComposerMessagesForThread(
+  messagesByThread: PendingComposerMessagesByThread,
+  thread: Thread | undefined | null,
+): PendingComposerMessagesByThread {
+  const threadID = thread?.id;
+  if (!threadID) {
+    return messagesByThread;
+  }
+  const previous = messagesByThread[threadID];
+  if (!previous) {
+    return messagesByThread;
+  }
+  const materialized = materializedComposerMessageIDs(thread);
+  if (materialized.size === 0) {
+    return messagesByThread;
+  }
+  const next: ThreadPendingComposerMessages = {
+    queued: previous.queued.filter((message) => !materialized.has(message.id)),
+    guides: previous.guides.filter((message) => !materialized.has(message.id)),
+  };
+  if (
+    next.queued.length === previous.queued.length &&
+    next.guides.length === previous.guides.length
+  ) {
+    return messagesByThread;
+  }
+  const nextByThread = { ...messagesByThread };
+  if (threadPendingComposerMessagesIsEmpty(next)) {
+    delete nextByThread[threadID];
+  } else {
+    nextByThread[threadID] = next;
+  }
+  return nextByThread;
 }

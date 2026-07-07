@@ -86,6 +86,7 @@ import {
   emptyThreadPendingComposerMessages,
   findPendingComposerMessage,
   pendingComposerMessagesForThread,
+  reconcilePendingComposerMessagesForThread,
   removePendingComposerMessagesByID,
   threadPendingComposerMessagesIsEmpty,
   type PendingComposerMessageRemovalScope,
@@ -998,6 +999,32 @@ export function App(): JSX.Element {
   );
   const queuedMessages = activePendingComposerMessages.queued;
   const guideMessages = activePendingComposerMessages.guides;
+  // Self-healing reconciliation for pending composer messages: once a queued
+  // or guide send materializes as a real user_message turn item, drop it from
+  // the composer queue strip / chat "发送中…" bubble even if the live
+  // turn/started (or item/completed) removal notification was missed — e.g. it
+  // got gated out of the renderer because the thread was backgrounded when the
+  // event arrived (serverEventTargetsActiveContext filter). Keying off the
+  // authoritative thread turns means a message that already went out can never
+  // stay stuck as "排队中".
+  useEffect(() => {
+    const byThread = pendingComposerMessagesByThreadRef.current;
+    let next = byThread;
+    for (const threadID of Object.keys(byThread)) {
+      const thread = threadForTab(appStateRef.current, threadID);
+      if (thread) {
+        next = reconcilePendingComposerMessagesForThread(next, thread);
+      }
+    }
+    if (next !== byThread) {
+      setPendingComposerMessagesByThreadNow(next);
+    }
+  }, [
+    pendingComposerMessagesByThread,
+    state.thread,
+    state.secondaryThread,
+    state.threads,
+  ]);
   const refreshGoalSummary = useCallback(
     async (threadID = activeThreadID) => {
       if (!threadID) {
@@ -1876,6 +1903,7 @@ export function App(): JSX.Element {
     splitPaneRefs,
     conversationPaneRef,
     dockComposerRef,
+    dockComposerNode,
     scheduleStreamScroll,
     handleConversationScroll,
     scrollConversationToBottom,
@@ -8977,7 +9005,10 @@ export function App(): JSX.Element {
               </>
             )}
             </div>
-            <JumpToLatestPill containerRef={conversationScrollRef} />
+            <JumpToLatestPill
+              containerRef={conversationScrollRef}
+              bottomAnchor={dockComposerNode}
+            />
           </div>
         ) : (
           <RuntimeLoading

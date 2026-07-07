@@ -71,6 +71,22 @@ function scrollContainer(geometry: ScrollGeometry): {
   };
 }
 
+function stubRect(node: HTMLElement, rect: Partial<DOMRect>): void {
+  node.getBoundingClientRect = () =>
+    ({
+      left: 0,
+      top: 0,
+      right: 0,
+      bottom: 0,
+      width: 0,
+      height: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+      ...rect,
+    }) as DOMRect;
+}
+
 function mountPill(node: HTMLElement): HTMLElement {
   const host = document.createElement("div");
   node.appendChild(host);
@@ -141,6 +157,50 @@ describe("JumpToLatestPill", () => {
       node.dispatchEvent(new Event("scroll"));
     });
     expect(host.querySelector(".jump-to-latest-pill")).toBeNull();
+  });
+
+  it("anchors above the composer via a body portal when bottomAnchor is given", () => {
+    const { node } = scrollContainer({
+      scrollHeight: 1000,
+      clientHeight: 400,
+      scrollTop: 0, // scrolled away → visible
+    });
+    // scroll region occupies the top portion of the viewport; its own bottom
+    // (800) sits well ABOVE the composer — the exact case the sticky variant
+    // got wrong.
+    stubRect(node, { left: 100, top: 56, bottom: 800, width: 600, height: 744 });
+    const anchor = document.createElement("div");
+    document.body.appendChild(anchor);
+    mountedContainers.push(anchor);
+    stubRect(anchor, { left: 100, top: 700, bottom: 780, width: 600, height: 80 });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 900,
+    });
+
+    const host = document.createElement("div");
+    node.appendChild(host);
+    const root = createRoot(host);
+    act(() => {
+      root.render(
+        createElement(JumpToLatestPill, {
+          containerRef: { current: node },
+          bottomAnchor: anchor,
+        }),
+      );
+    });
+    mountedRoots.push(root);
+
+    // Portaled to <body>, NOT rendered inside the scroll container.
+    expect(host.querySelector(".jump-to-latest-pill")).toBeNull();
+    const pill = document.body.querySelector<HTMLButtonElement>(
+      ".jump-to-latest-pill-anchored",
+    );
+    expect(pill).not.toBeNull();
+    // left = container.left + container.width / 2 = 100 + 300
+    expect(pill?.style.left).toBe("400px");
+    // bottom = innerHeight - anchor.top + gap(12) = 900 - 700 + 12
+    expect(pill?.style.bottom).toBe("212px");
   });
 
   it("re-evaluates visibility on container resize (thread panel drag)", () => {

@@ -112,6 +112,12 @@ export function useConversationScrollState({
   splitPaneRefs: MutableRefObject<Record<ConversationPaneID, HTMLElement | null>>;
   conversationPaneRef: RefObject<HTMLElement | null>;
   dockComposerRef: (node: HTMLElement | null) => void;
+  /**
+   * The live dock-composer element (set by dockComposerRef). Exposed so the
+   * "跳到最新" pill can anchor itself just above the composer by direct
+   * measurement — see JumpToLatestPill's anchored mode.
+   */
+  dockComposerNode: HTMLElement | null;
   scheduleStreamScroll: () => void;
   handleConversationScroll: (scrolledNode?: HTMLElement) => void;
   scrollConversationToBottom: (options?: {
@@ -900,6 +906,7 @@ export function useConversationScrollState({
     splitPaneRefs,
     conversationPaneRef,
     dockComposerRef,
+    dockComposerNode,
     scheduleStreamScroll,
     handleConversationScroll,
     scrollConversationToBottom,
