@@ -1,6 +1,7 @@
 package session
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -146,6 +147,36 @@ func SetMessageReaction(sessDir, sessionID string, seq int, participantID, react
 
 // ListMessageMarks returns every mark in a thread (both seen and reaction
 // rows), ordered by message then time. The caller aggregates for display.
+// ThreadReadWatermark is the durable read cursor for one participant in one
+// thread: the highest message seq they have a seen receipt for. It is the
+// single source of truth for "how far has this agent read this thread",
+// shared by the held-draft freshness check (has the thread moved past what I
+// read) and, going forward, by pull-style inbox reads (give me messages past
+// my watermark). Returns 0 when the participant has read nothing in the thread.
+func ThreadReadWatermark(sessDir, sessionID, participantID string) (int, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	participantID = strings.TrimSpace(participantID)
+	if sessionID == "" || participantID == "" {
+		return 0, nil
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return 0, err
+	}
+	defer db.Close()
+	var seq sql.NullInt64
+	if err := db.QueryRow(`
+SELECT MAX(seq) FROM message_marks
+WHERE session_id = ? AND participant_id = ? AND kind = ?`,
+		sessionID, participantID, MessageMarkKindSeen).Scan(&seq); err != nil {
+		return 0, fmt.Errorf("thread read watermark: %w", err)
+	}
+	if !seq.Valid {
+		return 0, nil
+	}
+	return int(seq.Int64), nil
+}
+
 func ListMessageMarks(sessDir, sessionID string) ([]MessageMark, error) {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {

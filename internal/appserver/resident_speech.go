@@ -18,12 +18,14 @@ type residentParticipantSpeech struct {
 	participantID string
 	limiter       *residentSpeechLimiter
 	hopByThread   map[string]int
-	// seenSeqByThread records, per source thread, the highest message seq this
-	// turn's envelope batch carried — i.e. the version of the room the agent
-	// read before composing. The freshness check (held draft) compares it to
-	// the thread's current tail so a reply written against a now-stale room is
-	// held instead of posted blind.
-	seenSeqByThread map[string]int
+	// engagedThreads is the set of source threads this turn's envelope batch
+	// woke the agent from — the threads it is actively replying in. The
+	// held-draft freshness check applies only to these (an initiating post in
+	// a thread the agent was not woken from is never held). The seq it compares
+	// against is the durable read cursor (session.ThreadReadWatermark), not a
+	// value carried here — read receipts are the single source of truth for how
+	// far the agent has read a thread.
+	engagedThreads map[string]bool
 }
 
 type residentSpeechLimiter struct {
@@ -35,7 +37,7 @@ func (s *Server) residentParticipantSpeech(participantID string) tools.Participa
 	return s.residentParticipantSpeechForTurn(participantID, nil, nil)
 }
 
-func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThread, seenSeqByThread map[string]int) tools.ParticipantSpeech {
+func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThread map[string]int, engagedThreads map[string]bool) tools.ParticipantSpeech {
 	hops := make(map[string]int, len(hopByThread))
 	for threadID, hop := range hopByThread {
 		threadID = strings.TrimSpace(threadID)
@@ -43,19 +45,18 @@ func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThr
 			hops[threadID] = hop
 		}
 	}
-	seen := make(map[string]int, len(seenSeqByThread))
-	for threadID, seq := range seenSeqByThread {
-		threadID = strings.TrimSpace(threadID)
-		if threadID != "" && seq > 0 {
-			seen[threadID] = seq
+	engaged := make(map[string]bool, len(engagedThreads))
+	for threadID := range engagedThreads {
+		if threadID = strings.TrimSpace(threadID); threadID != "" {
+			engaged[threadID] = true
 		}
 	}
 	return residentParticipantSpeech{
-		server:          s,
-		participantID:   strings.TrimSpace(participantID),
-		limiter:         &residentSpeechLimiter{},
-		hopByThread:     hops,
-		seenSeqByThread: seen,
+		server:         s,
+		participantID:  strings.TrimSpace(participantID),
+		limiter:        &residentSpeechLimiter{},
+		hopByThread:    hops,
+		engagedThreads: engaged,
 	}
 }
 
@@ -144,8 +145,14 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 // messages arrived; a reply-subthread post only if new messages in that same
 // cth arrived. The returned note lists what arrived, for the agent to weigh.
 func (r residentParticipantSpeech) roomMovedSince(parentThreadID, subthreadID string) (string, bool) {
-	seen, ok := r.seenSeqByThread[strings.TrimSpace(parentThreadID)]
-	if !ok || seen <= 0 {
+	parentThreadID = strings.TrimSpace(parentThreadID)
+	if !r.engagedThreads[parentThreadID] {
+		// The agent is initiating in a thread it was not woken from this turn,
+		// not replying to a room it read — nothing to be stale against.
+		return "", false
+	}
+	seen, err := session.ThreadReadWatermark(r.server.rt.SessionDir, parentThreadID, r.participantID)
+	if err != nil || seen <= 0 {
 		return "", false
 	}
 	records, err := session.LoadHistoryRecords(r.server.rt.SessionDir, parentThreadID, false)

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
@@ -28,23 +27,30 @@ func TestHeldDraftHoldsWhenRoomMovedAndForcePublishes(t *testing.T) {
 		}
 	}
 
-	// Seed a message so the group has a tail; Ada's turn "read" up to this seq.
+	// Seed a message so the group has a tail, and record Ada's read receipt up
+	// to it — the durable cursor says she has read this far.
 	seq, err := session.AppendHistoryRecordReturningSeq(rt.SessionDir, groupID, session.HistoryRecord{
 		Role: "user", Content: "有人吗", At: time.Now().UTC(),
 	})
 	if err != nil {
 		t.Fatalf("seed message: %v", err)
 	}
-	// The room then MOVES: Bea answers before Ada commits her draft.
-	if err := srv.publishParticipantMessage(groupID, agentcontrol.ParticipantMessage{
-		AgentID: bea, ParticipantID: bea, Kind: "result", Text: "我在,我来看。", CreatedAt: time.Now().UTC(),
+	if err := session.MarkMessageSeen(rt.SessionDir, groupID, seq, ada, session.SeenStatusCompleted, time.Now().UTC()); err != nil {
+		t.Fatalf("mark Ada seen: %v", err)
+	}
+	// The room MOVES while Ada is still composing this turn: Bea's answer lands
+	// on the main stream but Ada has not consumed it yet (her read cursor is
+	// still at `seq`). Append it to history directly so it advances the tail
+	// without routing/marking it seen for Ada — the faithful mid-turn moment.
+	if _, err := session.AppendHistoryRecordReturningSeq(rt.SessionDir, groupID, session.HistoryRecord{
+		Role: "participant", ParticipantID: bea, PostKind: "result", Content: "我在,我来看。", At: time.Now().UTC(),
 	}); err != nil {
 		t.Fatalf("Bea answers: %v", err)
 	}
-	waitForResidentQuiesce(t, srv)
 
-	// Ada's speech for this turn read the group up to `seq` (before Bea's answer).
-	speech := srv.residentParticipantSpeechForTurn(ada, nil, map[string]int{groupID: seq})
+	// Ada's speech for this turn engaged the group; the seq it checks against is
+	// the durable read cursor (her seen receipt), not a value passed in.
+	speech := srv.residentParticipantSpeechForTurn(ada, nil, map[string]bool{groupID: true})
 
 	// Un-forced post: held, not published, and the note names Bea's arrival.
 	held, err := speech.PostMessage(context.Background(), "result", "我来看这个问题。", groupID, false)

@@ -454,7 +454,7 @@ func (s *Server) drainResidentAgent(participantID string) {
 		return
 	}
 	if threadRuntime != nil && threadRuntime.Toolkit != nil {
-		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeechForTurn(participantID, residentSpeechHopsByThread(envs), residentSpeechSeenSeqByThread(envs)))
+		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeechForTurn(participantID, residentSpeechHopsByThread(envs), residentSpeechEngagedThreads(envs)))
 		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
 		threadRuntime.Toolkit.SetTaskManager(s.residentTaskManager(participantID))
 		threadRuntime.Toolkit.SetWorkflowThreadID(th.ID)
@@ -607,22 +607,18 @@ func residentSpeechHopsByThread(envs []MessageEnvelope) map[string]int {
 	return hops
 }
 
-// residentSpeechSeenSeqByThread records, per source thread, the highest message
-// seq this envelope batch carried — the version of each room the agent read
-// before composing. The freshness check (held draft) uses it to detect a room
-// that moved during the turn.
-func residentSpeechSeenSeqByThread(envs []MessageEnvelope) map[string]int {
-	seen := make(map[string]int)
+// residentSpeechEngagedThreads is the set of source threads this envelope batch
+// woke the agent from — the threads it is actively replying in this turn. The
+// held-draft check applies only to these; the seq it compares against comes
+// from the durable read cursor (session.ThreadReadWatermark), not from here.
+func residentSpeechEngagedThreads(envs []MessageEnvelope) map[string]bool {
+	engaged := make(map[string]bool)
 	for _, env := range envs {
-		threadID := strings.TrimSpace(env.SourceThreadID)
-		if threadID == "" || env.SourceSeq <= 0 {
-			continue
-		}
-		if env.SourceSeq > seen[threadID] {
-			seen[threadID] = env.SourceSeq
+		if threadID := strings.TrimSpace(env.SourceThreadID); threadID != "" {
+			engaged[threadID] = true
 		}
 	}
-	return seen
+	return engaged
 }
 
 func (s *Server) mentionedMembersByName(source *threadState, text string) map[string]bool {
