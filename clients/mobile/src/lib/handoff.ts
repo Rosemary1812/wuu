@@ -20,7 +20,9 @@ function isNotificationPayload(content: string): boolean {
     return false;
   }
   const raw = content.slice(NOTIFICATION_OPEN.length, content.length - NOTIFICATION_CLOSE.length).trim();
-  return parseJSON<unknown>(raw) !== undefined;
+  // Truthiness mirrors the desktop's `payload ? ... : undefined`: a parse
+  // producing null/false/0 is not a handoff payload.
+  return Boolean(parseJSON<unknown>(raw));
 }
 
 function parseJSON<T>(text: string): T | undefined {

@@ -9,13 +9,34 @@ import type { Credentials } from "@wuu/remote-core";
 import type { CredentialStore } from "./connection";
 
 const KEY = "wuu.remote.credentials";
+const LAST_VIEWED_KEY = "wuu.remote.lastViewed";
+
+async function read(key: string): Promise<string | null> {
+  if (Platform.OS === "web") {
+    return globalThis.localStorage?.getItem(key) ?? null;
+  }
+  return SecureStore.getItemAsync(key);
+}
+
+async function write(key: string, value: string): Promise<void> {
+  if (Platform.OS === "web") {
+    globalThis.localStorage?.setItem(key, value);
+    return;
+  }
+  await SecureStore.setItemAsync(key, value);
+}
+
+async function remove(key: string): Promise<void> {
+  if (Platform.OS === "web") {
+    globalThis.localStorage?.removeItem(key);
+    return;
+  }
+  await SecureStore.deleteItemAsync(key);
+}
 
 export const deviceCredentialStore: CredentialStore = {
   async load(): Promise<Credentials | null> {
-    const raw =
-      Platform.OS === "web"
-        ? globalThis.localStorage?.getItem(KEY) ?? null
-        : await SecureStore.getItemAsync(KEY);
+    const raw = await read(KEY);
     if (!raw) return null;
     try {
       return JSON.parse(raw) as Credentials;
@@ -24,18 +45,22 @@ export const deviceCredentialStore: CredentialStore = {
     }
   },
   async save(creds: Credentials): Promise<void> {
-    const raw = JSON.stringify(creds);
-    if (Platform.OS === "web") {
-      globalThis.localStorage?.setItem(KEY, raw);
-      return;
-    }
-    await SecureStore.setItemAsync(KEY, raw);
+    await write(KEY, JSON.stringify(creds));
   },
   async clear(): Promise<void> {
-    if (Platform.OS === "web") {
-      globalThis.localStorage?.removeItem(KEY);
-      return;
+    await remove(KEY);
+    await remove(LAST_VIEWED_KEY);
+  },
+  async loadLastViewed(): Promise<Record<string, string> | null> {
+    const raw = await read(LAST_VIEWED_KEY);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as Record<string, string>;
+    } catch {
+      return null;
     }
-    await SecureStore.deleteItemAsync(KEY);
+  },
+  async saveLastViewed(lastViewed: Record<string, string>): Promise<void> {
+    await write(LAST_VIEWED_KEY, JSON.stringify(lastViewed));
   },
 };

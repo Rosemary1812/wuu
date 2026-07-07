@@ -2,7 +2,7 @@
 // decoration), scan the QR on the computer screen, manual URI paste as the
 // always-available fallback, graduate moment on success.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -42,6 +42,10 @@ export function PairScreen({
   const [phase, setPhase] = useState<Phase>({ name: "idle" });
   const [manualUri, setManualUri] = useState("");
   const [permission, requestPermission] = useCameraPermissions();
+  // The camera reports the same QR on consecutive frames; only the first
+  // fire may start a pairing exchange (a second concurrent pair() would
+  // leak a connection and race the success screen).
+  const scanConsumed = useRef(false);
 
   const startPairing = (uri: string) => {
     const trimmed = uri.trim();
@@ -59,6 +63,7 @@ export function PairScreen({
       const result = await requestPermission();
       if (!result.granted) return; // paste fallback stays available
     }
+    scanConsumed.current = false;
     setPhase({ name: "scanning" });
   };
 
@@ -135,14 +140,19 @@ export function PairScreen({
         )}
       </ScrollView>
 
-      <Modal visible={phase.name === "scanning"} animationType="slide">
+      <Modal
+        visible={phase.name === "scanning"}
+        animationType="slide"
+        onRequestClose={() => setPhase({ name: "idle" })}
+      >
         <View style={styles.scannerPage}>
           <CameraView
             style={StyleSheet.absoluteFill}
             barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
             onBarcodeScanned={(result) => {
-              if (phase.name !== "scanning") return;
+              if (scanConsumed.current) return;
               if (!result.data.startsWith("wuu://pair?")) return;
+              scanConsumed.current = true;
               startPairing(result.data);
             }}
           />

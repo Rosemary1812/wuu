@@ -5,10 +5,13 @@
 
 import type { Thread } from "@wuu/protocol";
 
-/** Strict DM predicate (mirrors findDMThread): legacy DM threads that were
- *  mis-homed into a project workspace are excluded. */
+/** List-membership predicate: dm_participant_id alone marks a DM. The
+ *  stricter workspace_kind check belongs only to the desktop's findDMThread
+ *  (reopen direction) — and thread/list entries built from the on-disk
+ *  session index omit workspace_kind entirely for non-resident threads, so
+ *  requiring it here would make idle DMs vanish from the phone. */
 export function isDMThread(t: Thread): boolean {
-  return Boolean(t.dm_participant_id) && t.workspace_kind === "dm";
+  return Boolean(t.dm_participant_id);
 }
 
 export function isGroupThread(t: Thread): boolean {

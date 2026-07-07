@@ -24,6 +24,10 @@ export interface CredentialStore {
   load(): Promise<Credentials | null>;
   save(creds: Credentials): Promise<void>;
   clear(): Promise<void>;
+  /** Unread cursors survive restarts (not secret; same storage for
+   *  simplicity). Optional: in-memory stores may omit them. */
+  loadLastViewed?(): Promise<Record<string, string> | null>;
+  saveLastViewed?(lastViewed: Record<string, string>): Promise<void>;
 }
 
 type ThreadListResult = { threads: Thread[] };
@@ -37,16 +41,38 @@ export class WuuMobile {
   readonly store = new AppStore();
   private client: RemoteClient | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private rosterTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastViewedTimer: ReturnType<typeof setTimeout> | null = null;
   private nextClientId = 0;
 
   constructor(private readonly credStore: CredentialStore) {
     this.store.onUnknownThread = () => this.scheduleThreadsRefresh();
+    // participant/updated → debounced roster re-pull (plan §3.4).
+    this.store.onParticipantsStale = () => {
+      if (this.rosterTimer) return;
+      this.rosterTimer = setTimeout(() => {
+        this.rosterTimer = null;
+        void this.refreshParticipants().catch(() => {});
+      }, 300);
+    };
+    // Unread cursors persist (debounced) so a cold start doesn't mark every
+    // conversation unread again.
+    this.store.onLastViewedChanged = (lastViewed) => {
+      if (!this.credStore.saveLastViewed) return;
+      if (this.lastViewedTimer) clearTimeout(this.lastViewedTimer);
+      this.lastViewedTimer = setTimeout(() => {
+        this.lastViewedTimer = null;
+        void this.credStore.saveLastViewed?.({ ...lastViewed }).catch(() => {});
+      }, 500);
+    };
   }
 
   /** True when stored credentials existed and the link is starting. */
   async startFromStoredCredentials(): Promise<boolean> {
     const creds = await this.credStore.load();
     if (!creds) return false;
+    const lastViewed = await this.credStore.loadLastViewed?.().catch(() => null);
+    if (lastViewed) this.store.seedLastViewed(lastViewed);
     this.start(creds);
     return true;
   }
@@ -89,16 +115,37 @@ export class WuuMobile {
       }
       await this.refreshThreads();
       await this.refreshParticipants();
+      // The thread the user is looking at lost its full history (and marks)
+      // with the reset — re-resume it in place so the open chat refills.
+      const active = this.store.getSnapshot().activeThreadId;
+      if (!resumed && active) {
+        await this.openThread(active);
+      }
     } catch {
       // The link dropped mid-refresh; the reconnect loop will re-attach and
       // land here again.
     }
   }
 
-  private call<T>(method: string, params?: unknown): Promise<T> {
+  /** RPC with a deadline: client.call waits for attach indefinitely, which
+   *  would leave UI affordances (pull-to-refresh, send) hanging forever when
+   *  the host is unreachable. */
+  private call<T>(method: string, params?: unknown, timeoutMs = 20_000): Promise<T> {
     const client = this.client;
     if (!client) return Promise.reject(new Error("未连接"));
-    return client.call<T>(method, params);
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("连接超时,请检查电脑端是否在线")), timeoutMs);
+      client.call<T>(method, params).then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (err: unknown) => {
+          clearTimeout(timer);
+          reject(err instanceof Error ? err : new Error(String(err)));
+        },
+      );
+    });
   }
 
   async refreshThreads(): Promise<void> {
@@ -154,7 +201,10 @@ export class WuuMobile {
       queued: false,
     });
     try {
-      if (isThreadRunning(thread)) {
+      // Group threads NEVER queue: the server rejects turn/queue for groups
+      // outright (every group send lands as a completed turn; routing is
+      // envelope-driven), mirroring the desktop's send policy.
+      if (isThreadRunning(thread) && !thread.group) {
         await this.call<QueueResult>("turn/queue", {
           thread_id: thread.id,
           prompt,
@@ -176,9 +226,13 @@ export class WuuMobile {
           this.store.getSnapshot().participants,
         );
         if (mentions.length > 0) params.mentions = mentions;
-        await this.call<TurnResult>("turn/start", params);
+        const result = await this.call<TurnResult>("turn/start", params);
+        // Apply the result turn before dropping the pending bubble so the
+        // sent message never flickers out while waiting for turn/started.
+        if (result?.turn) {
+          this.store.applyNotification("turn/started", { thread_id: thread.id, turn: result.turn });
+        }
         this.store.removePending(clientId);
-        this.scheduleThreadsRefresh();
       }
     } catch (err) {
       this.store.removePending(clientId);

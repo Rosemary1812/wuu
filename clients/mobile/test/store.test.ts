@@ -162,6 +162,85 @@ describe("optimistic sends", () => {
   });
 });
 
+describe("review fixes", () => {
+  it("setThreads preserves loaded turns when the list entry has none", () => {
+    const store = seeded();
+    store.applyNotification("turn/started", {
+      thread_id: "t1",
+      turn: { id: "turn-1", items: [], items_view: "full", status: "in_progress" },
+    });
+    store.setThreads([chatThread({ turns: [] })]);
+    expect(store.getSnapshot().threads[0].turns).toHaveLength(1);
+  });
+
+  it("upsertTurn uses server timestamps and only moves updated_at forward", () => {
+    const store = new AppStore();
+    store.setThreads([chatThread({ updated_at: "2026-07-07T10:00:00Z" })]);
+    // A redelivered OLD turn must not bump the thread above newer chats.
+    store.applyNotification("turn/completed", {
+      thread_id: "t1",
+      turn: {
+        id: "turn-old",
+        items: [],
+        items_view: "full",
+        status: "completed",
+        completed_at: "2026-07-01T00:00:00Z",
+      },
+    });
+    expect(store.getSnapshot().threads[0].updated_at).toBe("2026-07-07T10:00:00Z");
+    // A genuinely newer turn moves it forward to the SERVER time.
+    store.applyNotification("turn/completed", {
+      thread_id: "t1",
+      turn: {
+        id: "turn-new",
+        items: [],
+        items_view: "full",
+        status: "completed",
+        completed_at: "2026-07-07T12:00:00Z",
+      },
+    });
+    expect(store.getSnapshot().threads[0].updated_at).toBe("2026-07-07T12:00:00Z");
+  });
+
+  it("turn snapshots never drop locally-known items", () => {
+    const store = seeded();
+    store.applyNotification("item/completed", {
+      thread_id: "t1",
+      turn_id: "turn-1",
+      item: { id: "i-local", type: "participant_message", text: "先到的消息" },
+    });
+    store.applyNotification("turn/completed", {
+      thread_id: "t1",
+      turn: {
+        id: "turn-1",
+        items: [{ id: "i-snap", type: "user_message", text: "快照里的" }],
+        items_view: "full",
+        status: "completed",
+      },
+    });
+    const items = store.getSnapshot().threads[0].turns[0].items;
+    expect(items.map((i) => i.id).sort()).toEqual(["i-local", "i-snap"]);
+  });
+
+  it("participant/updated flags the roster stale", () => {
+    const store = seeded();
+    let stale = 0;
+    store.onParticipantsStale = () => stale++;
+    store.applyNotification("participant/updated", { participant_id: "p1" });
+    expect(stale).toBe(1);
+  });
+
+  it("seedLastViewed restores cursors without clobbering newer state", () => {
+    const store = new AppStore();
+    store.setThreads([
+      chatThread({ turns: [{ id: "turn-9", items: [], items_view: "full", status: "completed" }] }),
+    ]);
+    store.markViewed("t1");
+    store.seedLastViewed({ t1: "turn-1", other: "turn-2" });
+    expect(store.getSnapshot().lastViewed).toEqual({ t1: "turn-9", other: "turn-2" });
+  });
+});
+
 describe("marks", () => {
   it("upserts by (seq, participant_id, kind) — replace, never append", () => {
     const store = seeded();

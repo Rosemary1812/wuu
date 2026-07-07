@@ -55,6 +55,10 @@ export class AppStore {
   /** Thread ids referenced by notifications but unknown locally — the
    *  controller watches this to schedule a thread/list refresh. */
   onUnknownThread: ((threadId: string) => void) | null = null;
+  /** participant/updated arrived — the controller re-pulls the roster. */
+  onParticipantsStale: (() => void) | null = null;
+  /** The unread cursor moved — the controller persists it. */
+  onLastViewedChanged: ((lastViewed: Readonly<Record<string, string>>) => void) | null = null;
 
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener);
@@ -108,9 +112,19 @@ export class AppStore {
   // --- server-state ingestion --------------------------------------------------
 
   setThreads(threads: Thread[]): void {
-    this.threads.clear();
+    const previous = this.threads;
+    this.threads = new Map();
     for (const thread of threads) {
-      if (isChatThread(thread)) this.threads.set(thread.id, thread);
+      if (!isChatThread(thread)) continue;
+      // thread/list entries carry summaries with empty turns for threads the
+      // server no longer holds resident — full histories loaded via
+      // thread/resume must survive a list refresh.
+      const existing = previous.get(thread.id);
+      if (existing && (!thread.turns || thread.turns.length === 0) && (existing.turns?.length ?? 0) > 0) {
+        this.threads.set(thread.id, { ...thread, turns: existing.turns });
+      } else {
+        this.threads.set(thread.id, thread);
+      }
     }
     this.bump();
   }
@@ -131,6 +145,13 @@ export class AppStore {
     this.bump();
   }
 
+  /** Seeds persisted unread cursors on startup (never overwrites newer
+   *  in-memory state — call before the first markViewed). */
+  seedLastViewed(lastViewed: Record<string, string>): void {
+    this.lastViewed = { ...lastViewed, ...this.lastViewed };
+    this.bump();
+  }
+
   /** Advance the local unread cursor to the thread's newest completed turn. */
   markViewed(threadId: string): void {
     const thread = this.threads.get(threadId);
@@ -140,6 +161,7 @@ export class AppStore {
       if (turns[i].status !== "in_progress") {
         if (this.lastViewed[threadId] !== turns[i].id) {
           this.lastViewed = { ...this.lastViewed, [threadId]: turns[i].id };
+          this.onLastViewedChanged?.(this.lastViewed);
           this.bump();
         }
         return;
@@ -234,6 +256,9 @@ export class AppStore {
         }
         return;
       }
+      case "participant/updated":
+        this.onParticipantsStale?.();
+        return;
       default:
         return; // everything else is safely ignorable on mobile
     }
@@ -264,21 +289,23 @@ export class AppStore {
     const turns = [...(thread.turns ?? [])];
     const index = turns.findIndex((t) => t.id === turn.id);
     if (index >= 0) {
-      // Preserve item text that already streamed in (the turn snapshot in
-      // turn/completed can lag behind delta traffic).
-      const mergedItems = turn.items?.length
-        ? turn.items.map((item) => this.mergeItem(turns[index].items?.find((i) => i.id === item.id), item))
-        : turns[index].items;
-      turns[index] = { ...turn, items: mergedItems ?? [] };
+      turns[index] = this.mergeTurn(turns[index], turn);
     } else {
       turns.push(turn);
     }
     const running = turns.some((t) => t.status === "in_progress");
+    // Never stamp updated_at with the phone's clock: use the turn's own
+    // server timestamps, and only move forward (a redelivered old turn must
+    // not reorder the list).
+    const turnStamp = turn.completed_at ?? turn.started_at ?? undefined;
+    const existingStamp = thread.updated_at ?? thread.created_at;
+    const updatedAt =
+      turnStamp && Date.parse(turnStamp) > (Date.parse(existingStamp) || 0) ? turnStamp : existingStamp;
     this.threads.set(threadId, {
       ...thread,
       turns,
       status: running ? "in_progress" : "idle",
-      updated_at: new Date().toISOString(),
+      updated_at: updatedAt,
     });
     this.bump();
   }
@@ -306,6 +333,23 @@ export class AppStore {
     turns[index] = { ...turn, items };
     this.threads.set(threadId, { ...thread, turns });
     this.bump();
+  }
+
+  /** Turn snapshot merge: item-level text preservation, plus locally-known
+   *  items missing from the snapshot survive (an item that arrived via
+   *  item/completed must not vanish because a later turn snapshot lags). */
+  private mergeTurn(existing: Turn, incoming: Turn): Turn {
+    if (!incoming.items?.length) {
+      return { ...incoming, items: existing.items ?? [] };
+    }
+    const merged = incoming.items.map((item) =>
+      this.mergeItem(existing.items?.find((i) => i.id === item.id), item),
+    );
+    const seen = new Set(merged.map((i) => i.id));
+    for (const item of existing.items ?? []) {
+      if (!seen.has(item.id)) merged.push(item);
+    }
+    return { ...incoming, items: merged };
   }
 
   /** Snapshot upsert that never lets a shorter completed snapshot truncate

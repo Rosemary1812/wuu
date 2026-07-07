@@ -288,9 +288,11 @@ function Entry({
     }
     case "participant": {
       if (isDeclineRow(row.item)) {
+        const reason = row.item.text?.trim();
         return (
           <Text style={[styles.declineLine, { color: palette.inkMuted }]}>
-            {row.item.participant?.name ?? "对方"} 认为无需回应：{row.item.text ?? ""}
+            {row.item.participant?.name ?? "对方"} 认为无需回应
+            {reason ? `：${reason}` : ""}
           </Text>
         );
       }

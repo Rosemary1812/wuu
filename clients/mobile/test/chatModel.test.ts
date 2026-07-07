@@ -108,9 +108,18 @@ describe("chatRowsFromTurns", () => {
     expect(isDeclineRow(decline.item)).toBe(true);
   });
 
-  it("maps task status labels", () => {
-    expect(taskStatusLabel("in_progress")).toBe("进行中");
+  it("maps task status labels with the server's vocabulary", () => {
+    expect(taskStatusLabel("running")).toBe("进行中");
+    expect(taskStatusLabel("awaiting_report")).toBe("待报告");
     expect(taskStatusLabel("completed")).toBe("已完成");
-    expect(taskStatusLabel("banana")).toBe("未知");
+    expect(taskStatusLabel("canceled")).toBe("已取消");
+    // Unknown statuses surface verbatim (mirrors desktop), empty → 未知.
+    expect(taskStatusLabel("banana")).toBe("banana");
+    expect(taskStatusLabel("")).toBe("未知");
+  });
+
+  it("treats falsy handoff payloads as ordinary messages", () => {
+    expect(isAgentHandoffText("<subagent_notification>null</subagent_notification>")).toBe(false);
+    expect(isAgentHandoffText("<subagent_notification>0</subagent_notification>")).toBe(false);
   });
 });

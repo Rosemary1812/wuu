@@ -50,12 +50,13 @@ export function chatRowsFromTurns(
   return rows;
 }
 
-/** Divider label for a focus row: ⌂ 个人 / ⬒ 工作区名 / ⬒ 全部工作区. */
+/** Divider label for a focus row (mirrors desktop focusDividerLabel):
+ *  ⌂ 个人 / ⬒ 工作区名(root 兜底)/ ⬒ 全部工作区. */
 export function focusRowLabel(item: ThreadItem): string {
   const meta = item.focus_meta;
   if (!meta) return "";
   if (meta.kind === "home") return "⌂ 个人";
-  if (meta.kind === "workspace") return `⬒ ${meta.name?.trim() || "工作区"}`;
+  if (meta.kind === "workspace") return `⬒ ${meta.name?.trim() || meta.root?.trim() || "工作区"}`;
   return "⬒ 全部工作区";
 }
 
@@ -81,24 +82,26 @@ export function isDeclineRow(item: ThreadItem): boolean {
   return item.type === "participant_message" && item.post_kind === "decline";
 }
 
-/** Task-card status labels (mirrors desktop TaskCardItem). */
+/** Task-card status labels — the exact vocabulary desktop ThreadItemView
+ *  maps (the server sends "running"/"awaiting_report", not "in_progress"). */
 export function taskStatusLabel(status: string): string {
   switch (status) {
     case "pending":
       return "待开始";
     case "queued":
       return "排队中";
-    case "in_progress":
+    case "running":
       return "进行中";
-    case "reporting":
+    case "awaiting_report":
       return "待报告";
     case "completed":
       return "已完成";
     case "failed":
       return "失败";
     case "cancelled":
+    case "canceled":
       return "已取消";
     default:
-      return "未知";
+      return status || "未知";
   }
 }

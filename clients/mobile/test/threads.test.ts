@@ -31,10 +31,12 @@ function thread(partial: Partial<Thread>): Thread {
 }
 
 describe("predicates", () => {
-  it("strict DM: dm_participant_id AND workspace_kind dm", () => {
+  it("DM membership keys on dm_participant_id alone", () => {
     expect(isDMThread(thread({ dm_participant_id: "p1", workspace_kind: "dm" }))).toBe(true);
-    // Legacy mis-homed DM threads are excluded.
-    expect(isDMThread(thread({ dm_participant_id: "p1", workspace_kind: "project" }))).toBe(false);
+    // thread/list entries for non-resident threads omit workspace_kind
+    // entirely — the DM must still show up on the phone.
+    expect(isDMThread(thread({ dm_participant_id: "p1" }))).toBe(true);
+    expect(isDMThread(thread({ dm_participant_id: "p1", workspace_kind: "project" }))).toBe(true);
     expect(isDMThread(thread({ workspace_kind: "dm" }))).toBe(false);
   });
 
