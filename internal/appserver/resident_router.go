@@ -203,25 +203,32 @@ func (s *Server) routeEnvelopes(source *threadState, base MessageEnvelope, menti
 	s.deliverEnvelopeToMembers(members, base, mentioned, false)
 }
 
-// deliverEnvelopeToMembers wakes a member set for a message. Delivery is per
-// member, one of two modes:
+// deliverEnvelopeToMembers delivers a message to a member set. It decides two
+// things per member, independently: whether to PUSH a durable envelope copy,
+// and whether to WAKE (kick) the member now.
 //
-//   - PUSH (enqueue a durable envelope, then kick): used when the message must
-//     reach this member directly and immediately — pushToInbox=true (content
-//     that is not plain main-stream history: reply-subthread (cth) traffic and
-//     system directives), an @mention (an addressed must-answer wakes now, it
-//     does not wait to be pulled), or a sole-member group (one agent, no
-//     contention — deliver like a DM, no pull/watermark bookkeeping).
-//   - PULL (kick only): multi-agent ambient main-stream chat. The message
-//     already lives once in history; the member is only woken and drains what is
-//     past its read cursor (pullResidentChatEnvelopes). The drain de-dupes a
-//     seq that also arrived via push this batch, so pushing an @mention never
-//     double-delivers.
+// PUSH (enqueue a durable envelope): used when the message must reach the member
+// directly rather than as ambient history — pushToInbox=true (content that is
+// not plain main-stream history: reply-subthread cth traffic and system/handoff
+// directives), an @mention (an addressed must-answer), or a sole-member group
+// (a DM in disguise). Ambient main-stream chat is NOT pushed: it lives once in
+// history and members pull what is past their read cursor.
+//
+// WAKE gating (讨论层的核心): a normal ambient message from another AGENT does
+// NOT wake the other members. Today's models answer the instant "new message"
+// enters their context, so auto-waking every agent on every peer post produces a
+// thundering herd (the reason group counting/debate degraded). Instead an
+// ambient agent post just becomes unread in the ledger; the member sees it the
+// next time it is woken for a real reason and pulls its unread. A member is
+// woken only when: it is pushed to (an @mention, a handoff, a system directive,
+// or a sole-member DM), OR the sender is the HUMAN (a person addressing the room
+// is a genuine call to answer — all members wake and draft in parallel).
 func (s *Server) deliverEnvelopeToMembers(members []string, base MessageEnvelope, mentioned map[string]bool, pushToInbox bool) {
 	if s == nil || s.rt == nil {
 		return
 	}
 	senderID := strings.TrimSpace(base.SenderParticipantID)
+	senderIsHuman := strings.EqualFold(strings.TrimSpace(base.SenderKind), "user")
 	// A group with a single member has no ambient contention: its one agent
 	// gets every message pushed directly, like a DM, never through the pull
 	// path (per design: 单人群不走拉/书签).
@@ -237,7 +244,8 @@ func (s *Server) deliverEnvelopeToMembers(members []string, base MessageEnvelope
 		if s.participantRetired(participantID) {
 			continue
 		}
-		if pushToInbox || mentioned[participantID] || soleMember {
+		pushed := pushToInbox || mentioned[participantID] || soleMember
+		if pushed {
 			env := base
 			env.ID = "env-" + session.NewID()
 			// A sole-member group is a DM in disguise: its one agent is the
@@ -264,7 +272,11 @@ func (s *Server) deliverEnvelopeToMembers(members []string, base MessageEnvelope
 				continue
 			}
 		}
-		s.kickResidentAgent(participantID)
+		// Wake only on a directed push or a human addressing the room. An
+		// ambient agent post leaves the member unread-but-not-woken.
+		if pushed || senderIsHuman {
+			s.kickResidentAgent(participantID)
+		}
 	}
 }
 

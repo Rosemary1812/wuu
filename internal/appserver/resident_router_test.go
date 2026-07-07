@@ -99,10 +99,9 @@ func TestResidentRouterUserMessageFansOutToThreadMembers(t *testing.T) {
 }
 
 func TestResidentRouterParticipantMessageHonorsMentionsAndRoutesDeepRelays(t *testing.T) {
-	// Every group member is woken by every message; @mention marks an envelope
-	// as addressed (must-answer) but does not gate delivery. A deep agent→agent
-	// relay with no @mention is still delivered as an ambient (addressed=false)
-	// envelope so an agent can notice a conversation it was not named in.
+	// Wake gating (讨论层): an @mention wakes the addressed member now; an
+	// ambient agent post does NOT wake other members — it becomes unread in the
+	// ledger and is pulled the next time that member is woken for a real reason.
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
 	srv := New(rt, &lockedBuffer{})
 	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
@@ -115,6 +114,7 @@ func TestResidentRouterParticipantMessageHonorsMentionsAndRoutesDeepRelays(t *te
 		}
 	}
 
+	// Ada @-mentions Bea: Bea is pushed and woken (addressed must-answer).
 	err := srv.publishParticipantMessage(groupID, agentcontrol.ParticipantMessage{
 		AgentID:       ada,
 		ParticipantID: ada,
@@ -128,16 +128,14 @@ func TestResidentRouterParticipantMessageHonorsMentionsAndRoutesDeepRelays(t *te
 	}
 	_, beaHistory := waitForResidentDMHistory(t, srv, bea, 1)
 	beaMeta := findEnvelopeMetaRecord(t, beaHistory)
-	if beaMeta.SourceThreadID != groupID || !beaMeta.Addressed || beaMeta.Hop != 1 || beaMeta.SenderParticipantID != ada {
+	if beaMeta.SourceThreadID != groupID || !beaMeta.Addressed || beaMeta.SenderParticipantID != ada {
 		t.Fatalf("Bea envelope meta = %+v", beaMeta)
 	}
 
-	// Bea replies without @mentioning anyone: still delivered to every other
-	// member as an ambient (addressed=false) envelope. Convergence is the model's
-	// judgment, not a delivery cutoff. Hop is advisory under pull — the message
-	// lives once in history, which does not store relay depth, so pull rebuilds
-	// it (user=0, participant=1); fanout is bounded by the group-size cap, not
-	// hop. The assertion that matters here is ambient (not addressed).
+	// Bea replies without @mentioning anyone: an ambient agent post. It must NOT
+	// wake Ada — Ada gets no DM turn. The message still lives in the group
+	// ledger; Ada would pull it when next woken for a real reason. Asserting the
+	// absence: Ada's DM history stays empty after the quiesce settles.
 	err = srv.publishParticipantMessage(groupID, agentcontrol.ParticipantMessage{
 		AgentID:       bea,
 		ParticipantID: bea,
@@ -149,10 +147,15 @@ func TestResidentRouterParticipantMessageHonorsMentionsAndRoutesDeepRelays(t *te
 	if err != nil {
 		t.Fatalf("publish Bea message: %v", err)
 	}
-	_, adaHistory := waitForResidentDMHistory(t, srv, ada, 1)
-	adaMeta := findEnvelopeMetaRecord(t, adaHistory)
-	if adaMeta.SourceThreadID != groupID || adaMeta.Addressed || adaMeta.SenderParticipantID != bea {
-		t.Fatalf("Ada should receive Bea's unmentioned relay as ambient, meta = %+v", adaMeta)
+	waitForResidentQuiesce(t, srv)
+	if _, adaHistory := findDMHistoryIfExists(t, srv, ada); len(adaHistory) != 0 {
+		t.Fatalf("ambient agent post must not wake Ada, got DM history %+v", adaHistory)
+	}
+	// The ledger still holds Bea's post as unread for Ada (pullable on next wake).
+	if pending, err := session.ChatMessagesSince(rt.SessionDir, groupID, 0); err != nil {
+		t.Fatalf("ChatMessagesSince: %v", err)
+	} else if len(pending) < 2 {
+		t.Fatalf("group ledger should hold both posts, got %d", len(pending))
 	}
 }
 
