@@ -239,14 +239,43 @@ function changeInput(input: HTMLInputElement | HTMLTextAreaElement, value: strin
   });
 }
 
-function changeSelect(select: HTMLSelectElement, value: string): void {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLSelectElement.prototype,
-    "value",
-  )?.set;
-  setter?.call(select, value);
+// SelectMenu replaces the native <select>: read the current selection from
+// the trigger's visible label, and drive changes by opening the menu (the
+// option panel portals to document.body) and clicking an option.
+function selectMenuValue(field: string): string {
+  const trigger = container.querySelector<HTMLButtonElement>(
+    `button[data-field='${field}']`,
+  );
+  return trigger?.querySelector(".select-menu-value")?.textContent ?? "";
+}
+
+function openSelectMenu(field: string): void {
+  const trigger = container.querySelector<HTMLButtonElement>(
+    `button[data-field='${field}']`,
+  )!;
   act(() => {
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+}
+
+function selectMenuItems(): HTMLButtonElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLButtonElement>(
+      ".select-menu-panel .select-menu-item",
+    ),
+  );
+}
+
+function chooseSelectMenuOption(field: string, value: string): void {
+  openSelectMenu(field);
+  const item = selectMenuItems().find(
+    (button) => button.getAttribute("data-value") === value,
+  );
+  if (!item) {
+    throw new Error(`SelectMenu option "${value}" not found for ${field}`);
+  }
+  act(() => {
+    item.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
 }
 
@@ -287,36 +316,40 @@ describe("ParticipantProfilePanel — identity and model", () => {
     const taglineInput = container.querySelector<HTMLInputElement>(
       "input[data-field='tagline']",
     );
-    const roleSelect = container.querySelector<HTMLSelectElement>(
-      "select[data-field='role']",
-    );
-    const modelSelect = container.querySelector<HTMLSelectElement>(
-      "select[data-field='model']",
-    );
 
     expect(nameInput?.value).toBe("Mira");
     expect(taglineInput?.value).toBe("Catches typos");
-    expect(roleSelect?.value).toBe("reviewer");
-    expect(modelSelect?.value).toBe("anthropic:claude-sonnet-4-7");
+    expect(selectMenuValue("role")).toBe("reviewer");
+    // The model trigger shows the model's display name, not the wire value.
+    expect(selectMenuValue("model")).toBe("Claude Sonnet 4.7");
     // 旧 Memory 编辑框已随扁平记忆退役，不再渲染。
     expect(
       container.querySelector("textarea[data-field='memory']"),
     ).toBeNull();
 
-    // The model <select> must have a "follow global" first option and an
-    // <optgroup> per provider.
-    const firstOption = modelSelect?.options.item(0);
-    expect(firstOption?.value).toBe("");
-    expect(firstOption?.text).toBe("跟随全局");
-    const optgroups = Array.from(
-      modelSelect?.querySelectorAll("optgroup") ?? [],
+    // The model menu must lead with a "follow global" option and carry one
+    // labeled group per provider.
+    openSelectMenu("model");
+    const items = selectMenuItems();
+    expect(items[0]?.getAttribute("data-value")).toBe("");
+    expect(items[0]?.textContent).toBe("跟随全局");
+    const groupLabels = Array.from(
+      document.querySelectorAll(".select-menu-panel .select-menu-group-label"),
+    ).map((label) => label.textContent);
+    expect(groupLabels).toEqual(["anthropic", "openai"]);
+    // The anthropic group offers its single configured model.
+    const groups = Array.from(
+      document.querySelectorAll(".select-menu-panel .select-menu-group"),
     );
-    expect(optgroups).toHaveLength(2);
-    expect(optgroups[0]?.label).toBe("anthropic");
+    const anthropicGroup = groups.find(
+      (group) =>
+        group.querySelector(".select-menu-group-label")?.textContent ===
+        "anthropic",
+    );
     expect(
-      Array.from(optgroups[0]?.querySelectorAll("option") ?? []).map(
-        (option) => (option as HTMLOptionElement).value,
-      ),
+      Array.from(
+        anthropicGroup?.querySelectorAll(".select-menu-item") ?? [],
+      ).map((item) => item.getAttribute("data-value")),
     ).toEqual(["anthropic:claude-sonnet-4-7"]);
   });
 
@@ -329,10 +362,7 @@ describe("ParticipantProfilePanel — identity and model", () => {
       onSave,
     });
 
-    changeSelect(
-      container.querySelector<HTMLSelectElement>("select[data-field='model']")!,
-      "openai:gpt-4o",
-    );
+    chooseSelectMenuOption("model", "openai:gpt-4o");
     changeInput(
       container.querySelector<HTMLInputElement>("input[data-field='name']")!,
       "  Mira O  ",
@@ -386,10 +416,7 @@ describe("ParticipantProfilePanel — identity and model", () => {
       onSave,
     });
 
-    changeSelect(
-      container.querySelector<HTMLSelectElement>("select[data-field='model']")!,
-      "",
-    );
+    chooseSelectMenuOption("model", "");
 
     const saveButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "保存",
@@ -415,19 +442,27 @@ describe("ParticipantProfilePanel — identity and model", () => {
       onSave,
     });
 
-    const modelSelect = container.querySelector<HTMLSelectElement>(
-      "select[data-field='model']",
-    )!;
     // The orphan pin must remain the selected value rather than silently
-    // collapsing to "follow global".
-    expect(modelSelect.value).toBe("missing:gone");
-    const fallbackOption = Array.from(modelSelect.options).find(
-      (option) => option.value === "missing:gone",
+    // collapsing to "follow global"; the trigger shows its fallback label.
+    expect(selectMenuValue("model")).toBe("missing:gone（不可用）");
+    openSelectMenu("model");
+    const fallbackOption = selectMenuItems().find(
+      (item) => item.getAttribute("data-value") === "missing:gone",
     );
     expect(fallbackOption).toBeDefined();
-    expect(fallbackOption?.disabled).toBe(false);
-    expect(fallbackOption?.text).toContain("missing:gone");
-    expect(fallbackOption?.text).toContain("不可用");
+    expect((fallbackOption as HTMLButtonElement | undefined)?.disabled).toBe(
+      false,
+    );
+    expect(fallbackOption?.textContent).toContain("missing:gone");
+    expect(fallbackOption?.textContent).toContain("不可用");
+    // Close the menu again so the pending save click lands on the panel.
+    act(() => {
+      (
+        container.querySelector<HTMLButtonElement>(
+          "button[data-field='model']",
+        ) as HTMLButtonElement
+      ).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
 
     const saveButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "保存",

@@ -15,7 +15,8 @@ export type FloatingMenuOwner =
   | "composer-context-meter"
   | "composer-focus"
   | "codex-runtime"
-  | "composer-query-history";
+  | "composer-query-history"
+  | "select-menu";
 export type FloatingMenuPlacement = "above" | "below" | "middle";
 export type FloatingMenuAlign = "left" | "right";
 export type PermissionMode =

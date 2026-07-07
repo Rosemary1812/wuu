@@ -19,6 +19,7 @@ import type {
 import { ImagePreviewProvider } from "./ImagePreview";
 import { Modal } from "./Modal";
 import { RichContent } from "./RichContent";
+import { SelectMenu, type SelectMenuGroup } from "./SelectMenu";
 
 export const PARTICIPANT_ROLES = [
   "general-purpose",
@@ -228,6 +229,26 @@ export function ParticipantProfilePanel({
     }
     return { value: form.model, label: `${form.model}（不可用）` };
   }, [form.model, providerOptions]);
+
+  // Grouped model options for the SelectMenu: a leading "跟随全局" (follow
+  // the global default), one labeled group per provider, then the orphan
+  // pin fallback (if the pinned model is no longer offered).
+  const modelGroups = useMemo<SelectMenuGroup[]>(() => {
+    const groups: SelectMenuGroup[] = [
+      { options: [{ value: "", label: "跟随全局" }] },
+      ...providerOptions.map((provider) => ({
+        label: provider.name,
+        options: provider.models.map((model) => ({
+          value: `${provider.name}:${model.id}`,
+          label: model.display_name ?? model.id
+        }))
+      }))
+    ];
+    if (orphanModelOption) {
+      groups.push({ options: [orphanModelOption] });
+    }
+    return groups;
+  }, [providerOptions, orphanModelOption]);
 
   const trackRecord = participant?.track_record ?? [];
   const panelTitle =
@@ -484,51 +505,29 @@ export function ParticipantProfilePanel({
               aria-labelledby="participant-profile-config"
             >
               <h3 id="participant-profile-config">配置</h3>
-              <label className="participant-profile-field">
+              <div className="participant-profile-field">
                 <span>角色</span>
-                <select
-                  data-field="role"
+                <SelectMenu
+                  ariaLabel="角色"
+                  dataField="role"
                   value={form.role}
-                  onChange={(event) =>
-                    updateField("role", event.currentTarget.value)
-                  }
-                >
-                  {PARTICIPANT_ROLES.map((role) => (
-                    <option key={role} value={role}>
-                      {role}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="participant-profile-field">
+                  onChange={(next) => updateField("role", next)}
+                  options={PARTICIPANT_ROLES.map((role) => ({
+                    value: role,
+                    label: role
+                  }))}
+                />
+              </div>
+              <div className="participant-profile-field">
                 <span>模型</span>
-                <select
-                  data-field="model"
+                <SelectMenu
+                  ariaLabel="模型"
+                  dataField="model"
                   value={form.model}
-                  onChange={(event) =>
-                    updateField("model", event.currentTarget.value)
-                  }
-                >
-                  <option value="">跟随全局</option>
-                  {providerOptions.map((provider) => (
-                    <optgroup key={provider.name} label={provider.name}>
-                      {provider.models.map((model) => (
-                        <option
-                          key={`${provider.name}:${model.id}`}
-                          value={`${provider.name}:${model.id}`}
-                        >
-                          {model.display_name ?? model.id}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                  {orphanModelOption ? (
-                    <option value={orphanModelOption.value}>
-                      {orphanModelOption.label}
-                    </option>
-                  ) : null}
-                </select>
-              </label>
+                  onChange={(next) => updateField("model", next)}
+                  groups={modelGroups}
+                />
+              </div>
             </section>
 
             {mode === "edit" && participantID ? (
