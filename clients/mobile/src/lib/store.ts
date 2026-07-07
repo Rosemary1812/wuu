@@ -1,0 +1,353 @@
+// The app's single state store: a notification reducer over the app-server
+// stream plus purely-local UI state (unread cursors, optimistic sends).
+// Reducer semantics mirror the desktop AppState:
+//   - thread/* notifications upsert whole threads, but an update with empty
+//     turns must not wipe locally-known turns;
+//   - item snapshots upsert by id, and a completed snapshot must never
+//     truncate longer text that already streamed in via deltas;
+//   - marks upsert by (seq, participant_id, kind) — replace, never append.
+// Pure TS (no react-native imports) so the whole reducer is vitest-able.
+
+import type {
+  MessageMarkWire,
+  ParticipantProfile,
+  Thread,
+  ThreadItem,
+  Turn,
+} from "@wuu/protocol";
+
+import { isChatThread } from "./threads";
+
+export type ConnectionPhase = "idle" | "connecting" | "attached" | "reconnecting";
+
+export type PendingSend = {
+  clientId: string;
+  threadId: string;
+  text: string;
+  atMs: number;
+  queued: boolean; // true once turn/queue acked it server-side
+};
+
+export type AppSnapshot = {
+  phase: ConnectionPhase;
+  hostName: string;
+  threads: Thread[]; // chat threads only (DM + group), unsorted
+  participants: ParticipantProfile[];
+  marks: Readonly<Record<string, MessageMarkWire[]>>;
+  lastViewed: Readonly<Record<string, string>>;
+  pending: PendingSend[];
+  activeThreadId: string | null;
+};
+
+type Listener = () => void;
+
+export class AppStore {
+  private threads = new Map<string, Thread>();
+  private participants: ParticipantProfile[] = [];
+  private marks = new Map<string, MessageMarkWire[]>();
+  private lastViewed: Record<string, string> = {};
+  private pending: PendingSend[] = [];
+  private phase: ConnectionPhase = "idle";
+  private hostName = "";
+  private activeThreadId: string | null = null;
+  private listeners = new Set<Listener>();
+  private snapshot: AppSnapshot | null = null;
+  /** Thread ids referenced by notifications but unknown locally — the
+   *  controller watches this to schedule a thread/list refresh. */
+  onUnknownThread: ((threadId: string) => void) | null = null;
+
+  subscribe = (listener: Listener): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  getSnapshot = (): AppSnapshot => {
+    if (!this.snapshot) {
+      this.snapshot = {
+        phase: this.phase,
+        hostName: this.hostName,
+        threads: [...this.threads.values()],
+        participants: this.participants,
+        marks: Object.fromEntries(this.marks),
+        lastViewed: { ...this.lastViewed },
+        pending: [...this.pending],
+        activeThreadId: this.activeThreadId,
+      };
+    }
+    return this.snapshot;
+  };
+
+  private bump(): void {
+    this.snapshot = null;
+    for (const listener of this.listeners) listener();
+  }
+
+  // --- connection ------------------------------------------------------------
+
+  setPhase(phase: ConnectionPhase): void {
+    if (this.phase === phase) return;
+    this.phase = phase;
+    this.bump();
+  }
+
+  setHostName(name: string): void {
+    if (this.hostName === name) return;
+    this.hostName = name;
+    this.bump();
+  }
+
+  /** Fresh app-server connection (attach resumed=false): every in-memory
+   *  mirror of server state is stale; local-only state survives. */
+  resetServerState(): void {
+    this.threads.clear();
+    this.marks.clear();
+    this.pending = [];
+    this.bump();
+  }
+
+  // --- server-state ingestion --------------------------------------------------
+
+  setThreads(threads: Thread[]): void {
+    this.threads.clear();
+    for (const thread of threads) {
+      if (isChatThread(thread)) this.threads.set(thread.id, thread);
+    }
+    this.bump();
+  }
+
+  setParticipants(participants: ParticipantProfile[]): void {
+    this.participants = participants;
+    this.bump();
+  }
+
+  setThreadMarks(threadId: string, marks: MessageMarkWire[]): void {
+    this.marks.set(threadId, marks);
+    this.bump();
+  }
+
+  setActiveThread(threadId: string | null): void {
+    this.activeThreadId = threadId;
+    if (threadId) this.markViewed(threadId);
+    this.bump();
+  }
+
+  /** Advance the local unread cursor to the thread's newest completed turn. */
+  markViewed(threadId: string): void {
+    const thread = this.threads.get(threadId);
+    if (!thread) return;
+    const turns = thread.turns ?? [];
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (turns[i].status !== "in_progress") {
+        if (this.lastViewed[threadId] !== turns[i].id) {
+          this.lastViewed = { ...this.lastViewed, [threadId]: turns[i].id };
+          this.bump();
+        }
+        return;
+      }
+    }
+  }
+
+  // --- optimistic sends ----------------------------------------------------------
+
+  addPending(send: PendingSend): void {
+    this.pending = [...this.pending, send];
+    this.bump();
+  }
+
+  markPendingQueued(clientId: string): void {
+    this.pending = this.pending.map((p) => (p.clientId === clientId ? { ...p, queued: true } : p));
+    this.bump();
+  }
+
+  removePending(clientId: string): void {
+    const next = this.pending.filter((p) => p.clientId !== clientId);
+    if (next.length !== this.pending.length) {
+      this.pending = next;
+      this.bump();
+    }
+  }
+
+  // --- notification reducer ---------------------------------------------------
+
+  applyNotification(method: string, params: unknown): void {
+    const p = (params ?? {}) as Record<string, unknown>;
+    switch (method) {
+      case "thread/started":
+      case "thread/resumed":
+      case "thread/updated": {
+        const thread = p.thread as Thread | undefined;
+        if (thread) this.upsertThread(thread);
+        return;
+      }
+      case "turn/started": {
+        const threadId = p.thread_id as string;
+        const turn = p.turn as Turn | undefined;
+        if (turn) this.upsertTurn(threadId, turn);
+        const queueId = p.queue_id as string | undefined;
+        if (queueId) this.removePending(queueId);
+        return;
+      }
+      case "turn/completed":
+      case "turn/error": {
+        const threadId = p.thread_id as string;
+        const turn = p.turn as Turn | undefined;
+        if (turn) this.upsertTurn(threadId, turn);
+        return;
+      }
+      case "turn/dequeued": {
+        const queueId = p.queue_id as string | undefined;
+        if (queueId) this.removePending(queueId);
+        return;
+      }
+      case "item/started":
+      case "item/completed": {
+        const item = p.item as ThreadItem | undefined;
+        if (item) {
+          this.upsertItem(p.thread_id as string, p.turn_id as string, item);
+          // A queued send has landed once its user_message echoes back with
+          // our client id as source_id.
+          if (method === "item/completed" && item.type === "user_message" && item.source_id) {
+            this.removePending(item.source_id);
+          }
+        }
+        return;
+      }
+      case "item/agentMessage/delta":
+      case "item/reasoning/delta":
+        this.patchItemText(p.thread_id as string, p.turn_id as string, p.item_id as string, (old) =>
+          (old ?? "") + String(p.delta ?? ""),
+        );
+        return;
+      case "item/agentMessage/replace":
+      case "item/reasoning/replace":
+        this.patchItemText(
+          p.thread_id as string,
+          p.turn_id as string,
+          p.item_id as string,
+          () => String(p.text ?? ""),
+        );
+        return;
+      case "message/mark": {
+        const threadId = p.thread_id as string;
+        if (typeof p.seq === "number" && typeof p.participant_id === "string") {
+          this.applyMark(threadId, p as unknown as MessageMarkWire);
+        }
+        return;
+      }
+      default:
+        return; // everything else is safely ignorable on mobile
+    }
+  }
+
+  private upsertThread(incoming: Thread): void {
+    if (!isChatThread(incoming)) {
+      // A chat thread may transition out of visibility (archived): drop it.
+      if (this.threads.delete(incoming.id)) this.bump();
+      return;
+    }
+    const existing = this.threads.get(incoming.id);
+    const merged: Thread = { ...incoming };
+    // thread/updated may carry an empty turns array — keep local history.
+    if (existing && (!incoming.turns || incoming.turns.length === 0)) {
+      merged.turns = existing.turns;
+    }
+    this.threads.set(incoming.id, merged);
+    this.bump();
+  }
+
+  private upsertTurn(threadId: string, turn: Turn): void {
+    const thread = this.threads.get(threadId);
+    if (!thread) {
+      this.onUnknownThread?.(threadId);
+      return;
+    }
+    const turns = [...(thread.turns ?? [])];
+    const index = turns.findIndex((t) => t.id === turn.id);
+    if (index >= 0) {
+      // Preserve item text that already streamed in (the turn snapshot in
+      // turn/completed can lag behind delta traffic).
+      const mergedItems = turn.items?.length
+        ? turn.items.map((item) => this.mergeItem(turns[index].items?.find((i) => i.id === item.id), item))
+        : turns[index].items;
+      turns[index] = { ...turn, items: mergedItems ?? [] };
+    } else {
+      turns.push(turn);
+    }
+    const running = turns.some((t) => t.status === "in_progress");
+    this.threads.set(threadId, {
+      ...thread,
+      turns,
+      status: running ? "in_progress" : "idle",
+      updated_at: new Date().toISOString(),
+    });
+    this.bump();
+  }
+
+  private upsertItem(threadId: string, turnId: string, item: ThreadItem): void {
+    const thread = this.threads.get(threadId);
+    if (!thread) {
+      this.onUnknownThread?.(threadId);
+      return;
+    }
+    const turns = [...(thread.turns ?? [])];
+    let index = turns.findIndex((t) => t.id === turnId);
+    if (index < 0) {
+      turns.push({ id: turnId, items: [], items_view: "full", status: "in_progress" });
+      index = turns.length - 1;
+    }
+    const turn = turns[index];
+    const items = [...(turn.items ?? [])];
+    const itemIndex = items.findIndex((i) => i.id === item.id);
+    if (itemIndex >= 0) {
+      items[itemIndex] = this.mergeItem(items[itemIndex], item);
+    } else {
+      items.push(item);
+    }
+    turns[index] = { ...turn, items };
+    this.threads.set(threadId, { ...thread, turns });
+    this.bump();
+  }
+
+  /** Snapshot upsert that never lets a shorter completed snapshot truncate
+   *  text that already streamed in. */
+  private mergeItem(existing: ThreadItem | undefined, incoming: ThreadItem): ThreadItem {
+    if (!existing) return incoming;
+    const keepLonger =
+      existing.text !== undefined &&
+      incoming.text !== undefined &&
+      incoming.text.length < existing.text.length;
+    return { ...existing, ...incoming, text: keepLonger ? existing.text : incoming.text };
+  }
+
+  private patchItemText(
+    threadId: string,
+    turnId: string,
+    itemId: string,
+    update: (old: string | undefined) => string,
+  ): void {
+    const thread = this.threads.get(threadId);
+    if (!thread) return;
+    const turns = [...(thread.turns ?? [])];
+    const index = turns.findIndex((t) => t.id === turnId);
+    if (index < 0) return;
+    const items = [...(turns[index].items ?? [])];
+    const itemIndex = items.findIndex((i) => i.id === itemId);
+    if (itemIndex < 0) return;
+    items[itemIndex] = { ...items[itemIndex], text: update(items[itemIndex].text) };
+    turns[index] = { ...turns[index], items };
+    this.threads.set(threadId, { ...thread, turns });
+    this.bump();
+  }
+
+  /** Upsert by (seq, participant_id, kind): replace, never append. */
+  applyMark(threadId: string, mark: MessageMarkWire): void {
+    const marks = [...(this.marks.get(threadId) ?? [])];
+    const index = marks.findIndex(
+      (m) => m.seq === mark.seq && m.participant_id === mark.participant_id && m.kind === mark.kind,
+    );
+    if (index >= 0) marks[index] = mark;
+    else marks.push(mark);
+    this.marks.set(threadId, marks);
+    this.bump();
+  }
+}
