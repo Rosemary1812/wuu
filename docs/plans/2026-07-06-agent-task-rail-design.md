@@ -289,3 +289,30 @@ field alone carried coordination, an even cleaner outcome than the target.
 不做的：cron 式无主任务巡检提醒（备选修法）暂缓——出生/释放时刻的唤醒已
 覆盖观察到的失败模式；巡检等有新证据（唤醒后仍长期无人认领）再上，避免
 半死路径（no-fallback 原则的推论：一个失败模式一个机制）。
+
+## 7. 修订（2026-07-07）：DM 任务——同一模型，减去多人机制
+
+动机（用户裁定 2026-07-07）：DM 里的工作请求今天要么在对话回合里直接做、
+要么走 participant/start 的一次性活动卡，均无状态机、验收门与板；而
+manage_task 又被群门禁挡死。「活动卡」与「任务板」两套任务概念并存是
+模型裂缝。裁定：DM 任务直接用 task rail 这一套，不给活动卡另配状态机。
+
+规格——「消息 → thread → task」在 DM 与群同构，砍掉仅对多人有意义的半套：
+
+- **准入**：manage_task 门禁从「群」放开为「群成员，或 DM 的对方 agent」。
+  list 在 DM 返回该 DM 线程的 task/review 列表。人工「升级为 Task」在
+  DM 同样可用（lead 选择器退化为唯一候选或省略）。
+- **出生即有主**：DM 任务的 owner 自动为 DM 对方 agent，无认领竞争。
+  create 的 claim 参数在 DM 语义为恒真；unclaim 拒绝并报明确错误
+  （DM 任务只有一个可能的执行者，释放无意义）。
+- **无广播**：不发无主唤醒信封（没有群成员可喊）。任务创建对 owner 的
+  告知走既有的 DM 消息/回合语境本身。
+- **保留全部单人语义**：状态机 task→review→resolved、task_review
+  human/auto 验收门、过程折叠进任务 thread、看板 tab（前端入口从
+  仅群放开为群+DM 聊天线程）。
+- **远期（本期不做）**：participant/start 活动卡与任务板合流。
+
+落点提示：requireGroupMembership → 改为「群成员 or DM 对方」的准入判定；
+CreateTask 在 DM 强制 born-owned；wakeTaskBoardForOwnerlessTask 在 DM
+路径不触发（owner 恒非空，天然 no-op）；前端 task-board 入口的
+activeThreadIsGroup 门放宽为 chat-style 线程。
