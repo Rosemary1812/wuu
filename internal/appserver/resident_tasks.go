@@ -9,6 +9,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
@@ -99,6 +100,7 @@ func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, a
 		thread = claimed
 	}
 	m.server.notifySubthreadUpdated(threadID, thread.ID)
+	m.server.wakeTaskBoardForOwnerlessTask(thread, m.participantID, "opened on the board")
 	return m.taskView(thread), nil
 }
 
@@ -138,6 +140,7 @@ func (m *residentTaskManager) EscalateTask(ctx context.Context, subthreadID, tit
 		escalated = claimed
 	}
 	m.server.notifySubthreadUpdated(escalated.SessionID, escalated.ID)
+	m.server.wakeTaskBoardForOwnerlessTask(escalated, m.participantID, "opened on the board")
 	return m.taskView(escalated), nil
 }
 
@@ -178,6 +181,7 @@ func (m *residentTaskManager) UnclaimTask(ctx context.Context, subthreadID strin
 		return tools.TaskView{}, err
 	}
 	m.server.notifySubthreadUpdated(released.SessionID, released.ID)
+	m.server.wakeTaskBoardForOwnerlessTask(released, m.participantID, "released back to the board")
 	return m.taskView(released), nil
 }
 
@@ -318,6 +322,58 @@ func (m *residentTaskManager) taskView(thread session.ConversationThread) tools.
 		}
 	}
 	return view
+}
+
+// wakeTaskBoardForOwnerlessTask fans a lightweight from="system" envelope to
+// the group's members (minus the acting participant) whenever a task lands on
+// the board with no owner — born-open create, born-open escalate, unclaim
+// (task-rail design §6: 无主任务唤醒). Without it, task mutations only touch
+// the store and the GUI panel: a task put on the board while no resident is
+// mid-turn would sit unclaimed forever. The envelope carries no seq (no read
+// receipt — it is a board event, not a chat message) and is never addressed,
+// so the contract's claim-or-silence rule governs the woken members. A task
+// that is born owned (claim=true) wakes nobody: there is nothing for the
+// others to do. Callers pass the task unconditionally; owned tasks no-op here.
+func (s *Server) wakeTaskBoardForOwnerlessTask(task session.ConversationThread, actorID, event string) {
+	if s == nil || s.rt == nil {
+		return
+	}
+	threadID := strings.TrimSpace(task.SessionID)
+	if threadID == "" || strings.TrimSpace(task.OwnerParticipantID) != "" {
+		return
+	}
+	actorID = strings.TrimSpace(actorID)
+	actorName := actorID
+	if summary, ok := s.resolveParticipantSummary(actorID); ok && strings.TrimSpace(summary.Name) != "" {
+		actorName = summary.Name
+	}
+	title, workspace := threadID, ""
+	if th := s.thread(threadID); th != nil {
+		th.mu.Lock()
+		title = residentEnvelopeSourceTitleLocked(th)
+		workspace = th.FocusWorkspace
+		th.mu.Unlock()
+	}
+	members, err := session.ListThreadMembers(s.rt.SessionDir, threadID)
+	if err != nil {
+		providers.DebugLogf("list thread members for task-board wake %q: %v", threadID, err)
+		return
+	}
+	text := fmt.Sprintf(
+		"Task %q was %s by %s and has no owner. If this work is yours to take, claim it now (manage_task action=claim subthread_id=%q); otherwise — or if the claim fails — end your turn without posting.",
+		firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), event, actorName, task.ID,
+	)
+	s.deliverEnvelopeToMembers(members, MessageEnvelope{
+		SourceThreadID:      threadID,
+		SourceSubthreadID:   task.ID,
+		SourceTitle:         title,
+		SenderKind:          "system",
+		SenderName:          "task board",
+		SenderParticipantID: actorID,
+		Text:                text,
+		CreatedAt:           time.Now().UTC(),
+		Workspace:           workspace,
+	}, nil)
 }
 
 // mainStreamItemIDForSeq resolves a message seq (the stable per-thread address

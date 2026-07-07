@@ -47,12 +47,14 @@ CLAUDE.md
 !/docs/tool-loading-modes-zh.md
 !/docs/compaction-chains-zh.md
 !/docs/remote-control-zh.md
+!/docs/group-chat-and-task-rail-zh.md
 !/docs/compat/
 !/docs/plans/
 /docs/plans/*
 !/docs/plans/2026-07-03-resident-named-agents.md
 !/docs/plans/2026-07-04-memory-redesign.md
 !/docs/plans/2026-07-04-consistency-repair-plan.md
+!/docs/plans/2026-07-06-agent-task-rail-design.md
 
 # Worktrees
 .worktrees/

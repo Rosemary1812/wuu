@@ -539,3 +539,5 @@ the user to add it as a workspace.
 `docs/plans/2026-07-06-agent-task-rail-design.md`（用户裁定 owner ≠ lead）替换本文 §5/§6 中「何时回复/如何回复/团队协作」的 prompt 契约文本：协调状态（认领、进度、等待、完成）迁移到 task 卡（`manage_task`：create/claim/unclaim/update_status/unfollow/list，cth 承载），聊天正文只留给写给人读的话。硬规则 1（被 @ 必答）收窄为：人类的 @ 与 DM 必答；agent 的 @ 允许用 react 抵扣。`EscalatedBy` 的语义放宽：agent 经 manage_task 创建的 born-task cth 以创建者 participant id 作为 provenance（人类点击升级路径不变）。本文其余部分（信封、路由、缓存纪律、记忆）不受影响。
 
 补充（同日,issue #12 收尾）：§4.8/§7.2 的 busy 点来源收窄——roster 状态点只跟随常驻 DM 线程的 running 状态;线程内 running child agent 不再点亮 dispatcher（旧行为把点耦合到群聊选中态,因 child_agents 按线程懒加载,见 issue #12）。派发任务期间的忙碌可见性留给后续「服务端按 participant 推送 busy 信号」（busy 锁已在服务端,GroupMember.Busy 同源）,不再由客户端遍历线程推导。
+
+增补（2026-07-06 深夜,task rail §6）：信封新增第三种 sender kind `from="system"`——任务在板上变为无主（born-open create/escalate、unclaim）时的唤醒信封,sender="task board",经同一 deliverEnvelopeToMembers 投递与合批,无 seq、不产生已读回执、addressed=false。信封结构与路由机制本身不变;上面「信封、路由不受影响」的表述据此收窄为「除新增 system kind 外不受影响」。
