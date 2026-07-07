@@ -98,22 +98,25 @@ func TestResidentRouterUserMessageFansOutToThreadMembers(t *testing.T) {
 	}
 }
 
-func TestResidentRouterParticipantMessageHonorsMentionsAndRoutesDeepRelays(t *testing.T) {
-	// Empty provider response so a woken resident produces no final answer,
-	// which keeps the fallback-reply path from cascading extra group posts
-	// and lets the test observe only the two messages it publishes directly.
+func TestResidentRouterAgentMessageOnlyWakesMentioned(t *testing.T) {
+	// a2a-must-@ (task-rail design §8.3, 2026-07-07): an agent's group message
+	// wakes only the teammates it @-mentions; an un-@'d agent message wakes no
+	// other agent. Empty provider response so a woken resident produces no
+	// final answer and the test observes only the routing it triggers.
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
 	srv := New(rt, &lockedBuffer{})
 	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
 	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	cid := saveNamedParticipant(t, rt, "Cid", "reviewer", "")
 	groupID := startGroupThreadForTest(t, srv)
-	for _, participantID := range []string{ada, bea} {
+	for _, participantID := range []string{ada, bea, cid} {
 		if err := session.AddThreadMember(rt.SessionDir, groupID, participantID); err != nil {
 			t.Fatalf("AddThreadMember %s: %v", participantID, err)
 		}
 	}
 
+	// Ada @Bea only: Bea wakes (addressed), Cid does NOT (not @'d).
 	err := srv.publishParticipantMessage(groupID, agentcontrol.ParticipantMessage{
 		AgentID:       ada,
 		ParticipantID: ada,
@@ -127,15 +130,19 @@ func TestResidentRouterParticipantMessageHonorsMentionsAndRoutesDeepRelays(t *te
 	}
 	_, beaHistory := waitForResidentDMHistory(t, srv, bea, 1)
 	beaMeta := findEnvelopeMetaRecord(t, beaHistory)
-	if beaMeta.SourceThreadID != groupID || !beaMeta.Addressed || beaMeta.Hop != 1 || beaMeta.SenderParticipantID != ada {
-		t.Fatalf("Bea envelope meta = %+v", beaMeta)
+	if beaMeta.SourceThreadID != groupID || !beaMeta.Addressed || beaMeta.SenderParticipantID != ada {
+		t.Fatalf("Bea (mentioned) envelope meta = %+v", beaMeta)
+	}
+	// Cid was a group member but not @'d — routing enqueues synchronously, so
+	// an empty inbox now proves the agent message did not wake the whole room.
+	if pending, err := session.PendingResidentEnvelopes(rt.SessionDir, cid, 0); err != nil {
+		t.Fatalf("PendingResidentEnvelopes Cid: %v", err)
+	} else if len(pending) != 0 {
+		t.Fatalf("un-@'d group member Cid was woken by an agent message: %d pending", len(pending))
 	}
 
-	// Bea replies without @mentioning anyone, at hop=2. Before the
-	// 2026-07-04 group-fanout amendment this was silently dropped (hop budget);
-	// now a deep agent→agent relay is delivered to every other member as an
-	// ambient (addressed=false) envelope, so a turtle-soup back-and-forth can
-	// continue. Convergence is the model's judgment, not a depth cutoff.
+	// Bea replies with NO @mention: reaches nobody now (was ambient-to-all
+	// before the §8.3 change). Neither Ada nor Cid gains an envelope.
 	err = srv.publishParticipantMessage(groupID, agentcontrol.ParticipantMessage{
 		AgentID:       bea,
 		ParticipantID: bea,
@@ -147,10 +154,40 @@ func TestResidentRouterParticipantMessageHonorsMentionsAndRoutesDeepRelays(t *te
 	if err != nil {
 		t.Fatalf("publish Bea message: %v", err)
 	}
-	_, adaHistory := waitForResidentDMHistory(t, srv, ada, 1)
-	adaMeta := findEnvelopeMetaRecord(t, adaHistory)
-	if adaMeta.SourceThreadID != groupID || adaMeta.Addressed || adaMeta.Hop != 2 || adaMeta.SenderParticipantID != bea {
-		t.Fatalf("Ada should receive Bea's unmentioned hop=2 relay as ambient, meta = %+v", adaMeta)
+	waitForResidentQuiesce(t, srv)
+	for name, id := range map[string]string{"Ada": ada, "Cid": cid} {
+		if pending, err := session.PendingResidentEnvelopes(rt.SessionDir, id, 0); err != nil {
+			t.Fatalf("PendingResidentEnvelopes %s: %v", name, err)
+		} else if len(pending) != 0 {
+			t.Fatalf("un-@'d agent message woke %s: %d pending (a2a must @)", name, len(pending))
+		}
+	}
+}
+
+func TestResidentRouterUserMessageStillBroadcasts(t *testing.T) {
+	// The a2a-@ restriction is agents-only: the user's own group message still
+	// reaches every member (task-rail design §8.3). Ada and Bea both wake from
+	// a plain user post that @-mentions neither.
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
+	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	groupID := startGroupThreadForTest(t, srv)
+	for _, participantID := range []string{ada, bea} {
+		if err := session.AddThreadMember(rt.SessionDir, groupID, participantID); err != nil {
+			t.Fatalf("AddThreadMember %s: %v", participantID, err)
+		}
+	}
+	raw := fmt.Sprintf(`{"id":"turn","method":"turn/start","params":{"thread_id":%q,"prompt":"hello team"}}`, groupID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	for name, id := range map[string]string{"Ada": ada, "Bea": bea} {
+		_, hist := waitForResidentDMHistory(t, srv, id, 1)
+		if m := findEnvelopeMetaRecord(t, hist); m.SourceThreadID != groupID {
+			t.Fatalf("%s did not receive the broadcast user message: %+v", name, m)
+		}
 	}
 }
 
@@ -665,28 +702,30 @@ func TestRouteSubthreadFansOutToParticipantSubsetOnly(t *testing.T) {
 		t.Fatalf("seed cth member Bea: %v", err)
 	}
 
-	// Ada posts into the reply subthread (thread_id=cth). This hits the
-	// publishParticipantMessage short-circuit and routes only to the cth subset.
+	// Ada posts into the reply subthread (thread_id=cth), @-mentioning Bea.
+	// This hits the publishParticipantMessage short-circuit and routes only to
+	// the cth subset; a2a-must-@ (§8.3) applies inside the task thread too, so
+	// the message must @ the teammate it is meant to wake.
 	if err := srv.publishParticipantMessage(groupID, agentcontrol.ParticipantMessage{
 		AgentID:       ada,
 		ParticipantID: ada,
 		Kind:          "update",
 		Hop:           1,
-		Text:          "Digging into the failing test.",
+		Text:          "@Bea digging into the failing test.",
 		ThreadID:      cth.ID,
 		CreatedAt:     time.Now().UTC(),
 	}); err != nil {
 		t.Fatalf("publish Ada subthread message: %v", err)
 	}
 
-	// Bea (a reply participant) is pushed the message, tagged with the subthread.
+	// Bea (a reply participant, @'d) is pushed the message, tagged with the subthread.
 	_, beaHistory := waitForResidentDMHistory(t, srv, bea, 1)
 	beaMeta := findEnvelopeMetaRecord(t, beaHistory)
 	if beaMeta.SourceThreadID != groupID || beaMeta.SourceSubthreadID != cth.ID {
 		t.Fatalf("Bea envelope meta = %+v, want source=%s subthread=%s", beaMeta, groupID, cth.ID)
 	}
-	if beaMeta.SenderParticipantID != ada || beaMeta.Addressed {
-		t.Fatalf("Bea envelope meta sender/addressed = %+v", beaMeta)
+	if beaMeta.SenderParticipantID != ada || !beaMeta.Addressed {
+		t.Fatalf("Bea envelope meta sender/addressed = %+v (want addressed, she was @'d)", beaMeta)
 	}
 
 	// Cid (a group member but NOT a reply participant) is never woken: routing
