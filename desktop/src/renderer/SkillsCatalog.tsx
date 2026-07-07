@@ -118,7 +118,14 @@ export function SkillsCatalog({
               <Wrench className="icon" />
             </span>
             <span className="skill-row-copy">
-              <h2>{skill.name}</h2>
+              <span className="skill-row-titlebar">
+                <h2>{skill.name}</h2>
+                {isBundledSkill(skill.source) ? (
+                  <span className="skill-row-tag" title="随 Wuu 内置分发的官方技能">
+                    官方
+                  </span>
+                ) : null}
+              </span>
               <p>{skill.description || skill.when_to_use || "无描述"}</p>
             </span>
             <Check className="skill-row-check" aria-hidden="true" />
@@ -135,6 +142,12 @@ export function SkillsCatalog({
       ) : null}
     </section>
   );
+}
+
+// Skills compiled into the Wuu binary carry source "bundled"; these are the
+// first-party skills we ship and curate, so the catalog flags them.
+function isBundledSkill(source: string): boolean {
+  return source === "bundled";
 }
 
 function compareSkills(left: SkillSummary, right: SkillSummary): number {

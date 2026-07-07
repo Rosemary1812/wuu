@@ -151,6 +151,8 @@
   --review-overlay-bg: rgba(18, 20, 22, 0.92);
   --provider-pill-bg: #24282c;
   --provider-pill-text: #aab0b5;
+  --skill-tag-bundled-bg: rgba(255, 90, 38, 0.16);
+  --skill-tag-bundled-fg: #ff9166;
   --codex-runtime-effort-text: #8f959a;
   --codex-runtime-trigger-icon: #8f959a;
   --codex-menu-label-text: #757b80;

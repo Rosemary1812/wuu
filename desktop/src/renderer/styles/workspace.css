@@ -68,6 +68,8 @@
   --review-overlay-bg: rgba(251, 251, 250, 0.92);
   --provider-pill-bg: #f2f2ef;
   --provider-pill-text: #555a5f;
+  --skill-tag-bundled-bg: rgba(255, 90, 38, 0.12);
+  --skill-tag-bundled-fg: #c14a13;
   --codex-runtime-effort-text: #74797d;
   --codex-runtime-trigger-icon: #707579;
   --codex-menu-label-text: #9a9ea2;
@@ -1377,6 +1379,13 @@
   gap: 4px;
 }
 
+.skill-row-titlebar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
 .skill-row h2 {
   min-width: 0;
   overflow: hidden;
@@ -1388,6 +1397,22 @@
   margin: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Lightly flags first-party skills shipped with Wuu (source "bundled")
+   so they read apart from user- or project-installed skills. */
+.skill-row-tag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+  background: var(--skill-tag-bundled-bg);
+  color: var(--skill-tag-bundled-fg);
 }
 
 .skill-row p {
