@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -202,17 +203,29 @@ func (s *Server) routeEnvelopes(source *threadState, base MessageEnvelope, menti
 	s.deliverEnvelopeToMembers(members, base, mentioned, false)
 }
 
-// deliverEnvelopeToMembers wakes a member set for a message. pushToInbox=false
-// is the pull path (main-stream chat): the message already lives in history, so
-// members are only KICKED and drain what is past their read cursor.
-// pushToInbox=true is the push path for content that is NOT plain main-stream
-// history: reply-subthread (cth) traffic and system directives (board/plan
-// wakes) are enqueued per member as before, then kicked.
+// deliverEnvelopeToMembers wakes a member set for a message. Delivery is per
+// member, one of two modes:
+//
+//   - PUSH (enqueue a durable envelope, then kick): used when the message must
+//     reach this member directly and immediately — pushToInbox=true (content
+//     that is not plain main-stream history: reply-subthread (cth) traffic and
+//     system directives), an @mention (an addressed must-answer wakes now, it
+//     does not wait to be pulled), or a sole-member group (one agent, no
+//     contention — deliver like a DM, no pull/watermark bookkeeping).
+//   - PULL (kick only): multi-agent ambient main-stream chat. The message
+//     already lives once in history; the member is only woken and drains what is
+//     past its read cursor (pullResidentChatEnvelopes). The drain de-dupes a
+//     seq that also arrived via push this batch, so pushing an @mention never
+//     double-delivers.
 func (s *Server) deliverEnvelopeToMembers(members []string, base MessageEnvelope, mentioned map[string]bool, pushToInbox bool) {
 	if s == nil || s.rt == nil {
 		return
 	}
 	senderID := strings.TrimSpace(base.SenderParticipantID)
+	// A group with a single member has no ambient contention: its one agent
+	// gets every message pushed directly, like a DM, never through the pull
+	// path (per design: 单人群不走拉/书签).
+	soleMember := len(members) == 1
 	for _, participantID := range members {
 		participantID = strings.TrimSpace(participantID)
 		if participantID == "" || participantID == senderID {
@@ -224,7 +237,7 @@ func (s *Server) deliverEnvelopeToMembers(members []string, base MessageEnvelope
 		if s.participantRetired(participantID) {
 			continue
 		}
-		if pushToInbox {
+		if pushToInbox || mentioned[participantID] || soleMember {
 			env := base
 			env.ID = "env-" + session.NewID()
 			env.Addressed = mentioned[participantID]
@@ -430,19 +443,18 @@ func (s *Server) drainResidentAgent(participantID string) {
 		providers.DebugLogf("defer resident drain for busy participant %q", participantID)
 		return
 	}
-	// Pull half: main-stream chat past this resident's read cursor across every
-	// group it follows. These envelopes have no inbox row — they are acked by
-	// advancing the read cursor (recordEnvelopeReadReceipts below), not dequeued.
-	envs := s.pullResidentChatEnvelopes(participantID, th.ID)
-	// Push half: content that is not plain main-stream history — reply-subthread
-	// (cth) traffic and system directives — still lives in the per-member inbox
-	// and is consumed by id.
+	// Push half first: content delivered as a durable per-member envelope —
+	// reply-subthread (cth) traffic, system directives, @mentions, and
+	// sole-member group posts. Consumed by id. Record which (thread, seq) each
+	// carries so the pull half does not also surface the same message.
 	pending, err := session.PendingResidentEnvelopes(s.rt.SessionDir, participantID, residentEnvelopeBatchLimit)
 	if err != nil {
 		providers.DebugLogf("load resident inbox for %q: %v", participantID, err)
 		return
 	}
+	inbox := make([]MessageEnvelope, 0, len(pending))
 	ids := make([]string, 0, len(pending))
+	pushed := make(map[string]bool, len(pending))
 	for _, raw := range pending {
 		var env MessageEnvelope
 		if err := json.Unmarshal(raw.EnvelopeJSON, &env); err != nil {
@@ -452,12 +464,32 @@ func (s *Server) drainResidentAgent(participantID string) {
 		if strings.TrimSpace(env.ID) == "" {
 			env.ID = raw.ID
 		}
-		envs = append(envs, env)
+		inbox = append(inbox, env)
 		ids = append(ids, raw.ID)
+		if env.SourceSeq > 0 && strings.TrimSpace(env.SourceThreadID) != "" {
+			pushed[env.SourceThreadID+"#"+strconv.Itoa(env.SourceSeq)] = true
+		}
 	}
+	// Pull half: multi-agent ambient main-stream chat past this resident's read
+	// cursor, minus anything already delivered via push this batch (an @mention
+	// or sole-member post rides push; it must not double-deliver here). Pulled
+	// envelopes have no inbox row — they are acked by advancing the read cursor
+	// (recordEnvelopeReadReceipts below), not dequeued.
+	envs := make([]MessageEnvelope, 0, len(inbox))
+	for _, env := range s.pullResidentChatEnvelopes(participantID, th.ID) {
+		if env.SourceSeq > 0 && pushed[env.SourceThreadID+"#"+strconv.Itoa(env.SourceSeq)] {
+			continue
+		}
+		envs = append(envs, env)
+	}
+	envs = append(envs, inbox...)
 	if len(envs) == 0 {
 		return
 	}
+	// One chronological batch: pull (older backlog) and push (the message that
+	// woke the agent) are interleaved by arrival time so the model reads them in
+	// order rather than pull-then-push.
+	sort.SliceStable(envs, func(i, j int) bool { return envs[i].CreatedAt.Before(envs[j].CreatedAt) })
 	threadRuntime, err := s.ensureThreadRuntime(th)
 	if err != nil {
 		providers.DebugLogf("ensure resident runtime for %q: %v", participantID, err)
