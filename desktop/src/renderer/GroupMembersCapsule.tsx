@@ -65,7 +65,7 @@ function GroupMemberAvatar({
       {image ? (
         <img src={image} alt="" />
       ) : (
-        <DefaultAvatarMark seed={member.id || name} />
+        <DefaultAvatarMark seed={member.id || name} kind={member.kind} />
       )}
     </span>
   );

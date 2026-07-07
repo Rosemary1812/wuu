@@ -2,19 +2,23 @@
 
 这份文档记录桌面端已经形成共识的设计规则。只写会反复影响多个界面的规则，不写临时想法，也不把它扩成大而全的设计系统。
 
-## 主题与皮肤
+## 主题与品牌气质
 
-外观有两根正交的轴，都以属性形式打在 `<html>` 上，preload 在首帧前同步 stamp：
+外观只有一根轴：`data-theme="light" | "dark"`，由持久化偏好（跟随系统/亮/暗）解析，preload 在首帧前同步 stamp 到 `<html>`。**没有第二根皮肤轴**——曾短暂存在 `data-skin`（火苗/工作双皮肤），后来判断"两者只差几个颜色时刻，不值得机制成本"，把火苗直接焊进底盘、拆掉整套 skin 机制。所以现在只有一套外观，不可选。
 
-- `data-theme="light" | "dark"`：亮暗轴，由持久化偏好（跟随系统/亮/暗）解析而来。
-- `data-skin="flame" | "work"`：风格轴。`flame`（火苗）是默认皮肤，暖奶油纸面 + 朱红 `#ff3d00`，与吉祥物、landing 页同一气质；`work` 是安静的素色界面。
+火苗（这套气质）的设计哲学：**底盘极素，识别度只来自少数署名时刻**。背景是中性白/黑，墨阶、发丝线、投影、几何都不带风格；不加描边、不加偏移投影、不换底色——装饰读起来是"用力"，克制读起来才是"品质"（此前的奶油底、新粗野硬影、全局墨线描边三版都因此被否）。署名时刻只有四个：
+
+1. 空状态问候——吉祥物 + 衬线标题（`turns.css` `.empty-home-mascot` / `--empty-home-title-font`）；
+2. 一个饱和 accent——landing 朱红 `--wuu-accent`（亮 `#ff3d00` / 暗 `#ff5a26`），承载发送键、侧栏活性标记、焦点环、`::selection`、链接；
+3. 用户气泡的小尾角——形状细节（`.user-message` / `.chat-bubble--user` 的非对称 border-radius），不是描边；
+4. 侧栏 hover/active 的一层极淡火苗 tint（`--sidebar-glass-hover/active`）。
+
+超出这四个时刻的风格规则视为 bug。要加第五个时刻需先回答：它的完成度能不能配得上前四个。
 
 规则：
 
-- 所有颜色一律走 CSS custom property。亮色值写在 token 声明处（`base.css` 与各组件文件顶部），暗色覆盖只写在 `theme.css`——这两层就是 work 皮肤，work 不需要任何自己的 CSS。
-- 火苗皮肤只存在于 `styles/skin-flame.css`，且只允许覆盖 token，不允许出现组件选择器（有契约测试盯着）。两个块 `:root[data-theme="light"][data-skin="flame"]` / `:root[data-theme="dark"][data-skin="flame"]` 靠特异性压过 base 与 theme.css，与导入顺序无关。
-- 皮肤没覆盖的 token 自动落回 work 同一亮暗档的值，所以新增组件 token 时照旧只需补 `theme.css` 暗色映射；只有当该 token 承载明显的冷暖色相时才考虑进 skin-flame.css。
-- 组件要做"皮肤才有"的装饰（如空状态吉祥物），在组件 CSS 里声明一个默认关闭的 hook token（如 `--empty-home-mascot-display: none`），由皮肤翻开。组件本身保持对皮肤无感知。
+- 所有颜色一律走 CSS custom property。亮色值写在 token 声明处（`base.css` 与各组件文件顶部），暗色覆盖只写在 `theme.css`。这两层就是全部——没有独立的 skin 文件。
+- 上面四个署名时刻的值就直接住在 base/theme 与对应组件 CSS 里（accent 与 tint 是 base/theme 的 token；气泡尾角在 `turns.css`/`chat.css`；发送键朱红在 `composer.css`；`::selection` 在 `base.css`）。新增组件 token 照旧只需补 `theme.css` 暗色映射。
 
 ## 菜单
 

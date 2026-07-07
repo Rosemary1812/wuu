@@ -58,14 +58,19 @@
   --info: #58a6ff;
   --accent-warm: #ff7a3d;
 
+  /* Brand vermillion lifts a step to hold against the dark ground.
+     --sidebar-accent inherits var(--wuu-accent) from base. */
+  --wuu-accent: #ff5a26;
+  --wuu-accent-press: #ff6d3f;
+
   --menu-bg: rgba(30, 33, 37, 0.98);
   --menu-hover: #2b2f34;
 
   --sidebar-glass-bg: linear-gradient(180deg, rgba(26, 29, 32, 0.94), rgba(20, 22, 24, 0.9));
   --sidebar-glass-border: rgba(228, 232, 235, 0.12);
   --sidebar-glass-highlight: rgba(255, 255, 255, 0.06);
-  --sidebar-glass-hover: rgba(228, 232, 235, 0.05);
-  --sidebar-glass-active: rgba(228, 232, 235, 0.08);
+  --sidebar-glass-hover: rgba(255, 90, 38, 0.07);
+  --sidebar-glass-active: rgba(255, 90, 38, 0.11);
 
   --scrollbar-thumb: rgba(170, 178, 186, 0.22);
   --scrollbar-thumb-hover: rgba(170, 190, 210, 0.34);
@@ -165,7 +170,6 @@
   --composer-collapsed-prompt-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   --composer-textarea-placeholder: #6d7378;
   --composer-textarea-disabled: #757b78;
-  --composer-send-button-hover-bg: #f5f6f7;
   --composer-send-button-disabled-text: rgba(20, 23, 26, 0.7);
   --composer-slash-menu-bg: rgba(30, 33, 37, 0.98);
   --composer-slash-menu-shadow: 0 14px 38px rgba(0, 0, 0, 0.5), 0 1px 4px rgba(0, 0, 0, 0.4);
@@ -287,10 +291,7 @@
   --sidebar-thread-child-agent-cancelled-status: #bd9a82;
   --sidebar-settings-button-hover-ring: rgba(255, 255, 255, 0.08);
 
-  /* turns.css — conversation body, process fold, waiting animation.
-     The pixel-art battle/era scene palette (battle-*, era-*) is muted
-     earth tones that already read fine on dark paper, so only its
-     white-based glints are dimmed. */
+  /* turns.css — conversation body, process fold, waiting animation. */
   --turn-collapsed-focus-ring: rgba(228, 232, 235, 0.25);
   --user-message-bg-color: #2a2e33;
   --user-message-jump-flash-bg: #3a3527;
@@ -308,18 +309,7 @@
   --turn-progress-detail-color: #7d8388;
   --turn-progress-sweep-highlight: #dfe6e2;
   --turn-progress-sweep-base: #79837e;
-  --era-fortress-prop-highlight: rgba(255, 255, 255, 0.14);
   --turn-progress-failed-rule-bg: #4a2b26;
-  --turn-progress-preview-backdrop-bg: rgba(8, 10, 12, 0.5);
-  --turn-progress-preview-border: rgba(228, 232, 235, 0.13);
-  --turn-progress-preview-bg: rgba(26, 29, 32, 0.97);
-  --turn-progress-preview-shadow: rgba(0, 0, 0, 0.5);
-  --turn-progress-preview-inset-highlight: rgba(255, 255, 255, 0.06);
-  --turn-progress-preview-desc-color: #9aa0a5;
-  --turn-progress-preview-desc-strong-color: #93b0a6;
-  --turn-progress-preview-rule-color: #33383d;
-  --turn-progress-preview-track-bg: #2b3034;
-  --turn-progress-preview-track-fill: #6f9583;
   --turn-process-group-color: #8f9498;
   --turn-process-checkpoint-color: #b3b9be;
   --turn-process-entry-color: #9aa0a5;
@@ -335,8 +325,8 @@
   --diff-insert-color: #3fb970;
   --diff-delete-color: #ef6a5e;
   --live-gray-shimmer-edge: rgba(255, 255, 255, 0.35);
-  --rich-link-color: #58a6ff;
-  --rich-link-hover-color: #79b8ff;
+  --rich-link-color: #ff8a5e;
+  --rich-link-hover-color: #ffa585;
   --rich-code-surface-bg: #26292d;
   --fork-worktree-copy-bg: rgba(38, 42, 46, 0.9);
   --fork-worktree-focus-ring: rgba(88, 166, 255, 0.3);

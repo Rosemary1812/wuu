@@ -4,11 +4,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   getCliAutoInstallEnabled,
-  getSkinPreference,
   getThemePreference,
   readDesktopSettings,
   setCliAutoInstallEnabled,
-  setSkinPreference,
   setThemePreference,
   writeDesktopSettings,
 } from "./desktopSettings";
@@ -82,26 +80,11 @@ describe("desktopSettings", () => {
     expect(getCliAutoInstallEnabled(file)).toBe(false);
   });
 
-  it("defaults the skin preference to flame", () => {
-    expect(getSkinPreference(file)).toBe("flame");
-  });
-
-  it("round-trips the skin preference", () => {
-    setSkinPreference("work", file);
-    expect(getSkinPreference(file)).toBe("work");
-    setSkinPreference("flame", file);
-    expect(getSkinPreference(file)).toBe("flame");
-  });
-
-  it("rejects unknown skin values on read", async () => {
-    await writeFile(file, JSON.stringify({ skin: "neon" }));
-    expect(getSkinPreference(file)).toBe("flame");
-  });
-
-  it("keeps the skin when toggling other settings", () => {
-    setSkinPreference("work", file);
-    setThemePreference("dark", file);
-    expect(getSkinPreference(file)).toBe("work");
+  it("ignores a legacy skin field left in the settings file", async () => {
+    // Older builds persisted a `skin` preference; after the skin axis was
+    // removed the reader must simply drop the unknown field, not choke.
+    await writeFile(file, JSON.stringify({ theme: "dark", skin: "work" }));
+    expect(readDesktopSettings(file)).toEqual({ theme: "dark" });
     expect(getThemePreference(file)).toBe("dark");
   });
 });

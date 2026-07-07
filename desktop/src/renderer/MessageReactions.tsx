@@ -1,10 +1,13 @@
 import type { JSX } from "react";
 import type { ReactionAggregate } from "./MessageMarks";
+import { REACTION_LABEL } from "./MessageMarks";
+import { reactionArt } from "./MessageReactionArt";
 
 // Reaction chips stamped on a message bubble. Same reaction from multiple
 // members aggregates into one chip with a count; hover names who. The glyph is
-// an emoji placeholder today (swappable for custom art later — the model only
-// ever sends the reaction key). 2026-07-04-read-receipts-and-reactions.md §6.
+// the mascot sticker for the reaction key (MessageReactionArt), falling back
+// to the emoji placeholder for keys without art — the model only ever sends
+// the reaction key. 2026-07-04-read-receipts-and-reactions.md §6.
 export function MessageReactions({
   reactions,
   resolveName,
@@ -19,14 +22,25 @@ export function MessageReactions({
     <div className="chat-reactions">
       {reactions.map((r) => {
         const who = r.participantIds.map((id) => resolveName?.(id) ?? id).join("、");
+        const label = REACTION_LABEL[r.key] ?? r.key;
+        const art = reactionArt(r.key);
         return (
           <span
             key={r.key}
             className="chat-reaction-chip"
-            title={who}
+            title={`${label} · ${who}`}
             data-reaction={r.key}
           >
-            <span className="chat-reaction-glyph">{r.glyph}</span>
+            {art ? (
+              <img
+                className="chat-reaction-glyph"
+                src={art}
+                alt={label}
+                draggable={false}
+              />
+            ) : (
+              <span className="chat-reaction-glyph">{r.glyph}</span>
+            )}
             {r.participantIds.length > 1 ? (
               <span className="chat-reaction-count">{r.participantIds.length}</span>
             ) : null}

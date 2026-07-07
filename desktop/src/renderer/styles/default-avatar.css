@@ -1,12 +1,13 @@
 /*
  * Default participant avatars.
  *
- * A fixed set of 12 geometric emblems (see DefaultAvatar.tsx) shown when
- * a participant has no uploaded avatar_image. Each index gets a muted
- * hue pair: a soft tinted background and a deeper mark. Light values
- * live here; theme.css carries the dark redefinitions under
- * :root[data-theme="dark"]. Palette is deliberately low-saturation to
- * sit inside the paper-ink system rather than shout over it.
+ * A fixed cast of 12 mascot characters (see DefaultAvatar.tsx) shown
+ * when a participant has no uploaded avatar_image, each on one of 12
+ * muted background tints. Light tint values live here; theme.css
+ * carries the dark redefinitions under :root[data-theme="dark"].
+ * Palette is deliberately low-saturation to sit inside the paper-ink
+ * system rather than shout over it. (--avatar-N-fg is kept for the
+ * few surfaces that color text/marks by participant index.)
  */
 
 :root {
@@ -40,7 +41,18 @@
   display: block;
   width: 100%;
   height: 100%;
-  /* Motif shapes inherit fill from --da-fg; cut-outs paint --da-bg.
-     Both are wired to the per-index tokens by DefaultAvatar.tsx. */
-  fill: var(--da-fg);
+  /* Background tint is wired per index by DefaultAvatar.tsx. */
+}
+
+.default-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* The die-cut character keeps a little air inside the circle so hat
+     tips and feet survive the caller's circular clip. */
+  padding: 5%;
+  box-sizing: border-box;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
 }

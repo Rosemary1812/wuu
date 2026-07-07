@@ -2,7 +2,6 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   ServerEvent,
   SettingsUsageRange,
-  SkinPreference,
   ThemePreference,
   ThreadStartParams,
   WindowResizeState,
@@ -33,20 +32,8 @@ function resolveTheme(preference: ThemePreference): "light" | "dark" {
   return preference;
 }
 
-// Same synchronous read for the skin axis, so the first paint carries
-// both data-theme and data-skin.
-const initialSkinPreference = ((): SkinPreference => {
-  try {
-    const value = ipcRenderer.sendSync("wuu:skin-preference-get-sync") as unknown;
-    return value === "flame" || value === "work" ? value : "flame";
-  } catch {
-    return "flame";
-  }
-})();
-
 try {
   document.documentElement.dataset.theme = resolveTheme(initialThemePreference);
-  document.documentElement.dataset.skin = initialSkinPreference;
 } catch {
   // The renderer's theme controller re-applies on boot; losing the
   // preload stamp only costs a one-frame flash.
@@ -155,10 +142,6 @@ const api: WuuDesktopApi = {
   getThemePreference: () => ipcRenderer.invoke("wuu:theme-preference-get"),
   setThemePreference: (theme: ThemePreference) =>
     ipcRenderer.invoke("wuu:theme-preference-set", theme),
-  initialSkinPreference,
-  getSkinPreference: () => ipcRenderer.invoke("wuu:skin-preference-get"),
-  setSkinPreference: (skin: SkinPreference) =>
-    ipcRenderer.invoke("wuu:skin-preference-set", skin),
   listParticipants: () => ipcRenderer.invoke("wuu:participant-list"),
   saveParticipant: (params) => ipcRenderer.invoke("wuu:participant-save", params),
   sendParticipantFeedback: (participantId, text, taskId, messageId) =>

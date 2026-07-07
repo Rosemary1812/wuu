@@ -38,7 +38,7 @@ import type {
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 import { CliInstallSection } from "./CliInstallSection";
 import { MemoryPanel } from "./MemoryPanel";
-import { SkinPreferenceControl, ThemePreferenceControl } from "./ThemePreferenceSection";
+import { ThemePreferenceControl } from "./ThemePreferenceSection";
 
 export type SettingsPage = "providers" | "general" | "memory" | "advanced" | "usage";
 
@@ -1280,13 +1280,10 @@ function SettingsGeneralPage({
     <>
       <SettingsSection
         title="外观"
-        description="选择界面风格与主题。跟随系统会随操作系统的亮暗设置自动切换。"
+        description="选择界面主题。跟随系统会随操作系统的亮暗设置自动切换。"
         testID="settings-appearance"
       >
         <SettingsCard>
-          <SettingsRow title="风格" description="火苗是 wuu 的默认气质；工作是更安静的素色界面">
-            <SkinPreferenceControl />
-          </SettingsRow>
           <SettingsRow title="主题" description="立即生效，无需保存">
             <ThemePreferenceControl />
           </SettingsRow>

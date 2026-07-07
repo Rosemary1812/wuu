@@ -62,7 +62,7 @@ export function ParticipantChip({
         {avatarImage ? (
           <img src={avatarImage} alt="" />
         ) : (
-          <DefaultAvatarMark seed={participant?.id || name} />
+          <DefaultAvatarMark seed={participant?.id || name} kind={participant?.kind} />
         )}
       </span>
       <span className="participant-chip-name">{name}</span>

@@ -83,9 +83,11 @@ describe("MessageReactions", () => {
     const chips = el.querySelectorAll(".chat-reaction-chip");
     expect(chips).toHaveLength(2);
     const shrug = el.querySelector('[data-reaction="shrug"]')!;
-    expect(shrug.querySelector(".chat-reaction-glyph")!.textContent).toBe("🤷");
+    const shrugGlyph = shrug.querySelector("img.chat-reaction-glyph")!;
+    expect(shrugGlyph.getAttribute("src")).toBeTruthy();
+    expect(shrugGlyph.getAttribute("alt")).toBe("无所谓");
     expect(shrug.querySelector(".chat-reaction-count")!.textContent).toBe("2");
-    expect(shrug.getAttribute("title")).toBe("Andy、le");
+    expect(shrug.getAttribute("title")).toBe("无所谓 · Andy、le");
     // A single reactor shows no count.
     const smug = el.querySelector('[data-reaction="smug"]')!;
     expect(smug.querySelector(".chat-reaction-count")).toBeNull();

@@ -1,4 +1,4 @@
-import type { SkinPreference, ThemePreference } from "../shared/protocol";
+import type { ThemePreference } from "../shared/protocol";
 
 /**
  * Renderer-side theme controller.
@@ -58,16 +58,4 @@ export function applyThemePreference(preference: ThemePreference): void {
   };
   query.addEventListener("change", onChange);
   systemListenerCleanup = () => query.removeEventListener("change", onChange);
-}
-
-export function appliedSkin(): string | undefined {
-  return document.documentElement.dataset.skin;
-}
-
-/**
- * Stamp the skin (theme family) on <html>. No resolution step — the
- * skin has no "system" source, it is a direct two-value choice.
- */
-export function applySkinPreference(skin: SkinPreference): void {
-  document.documentElement.dataset.skin = skin;
 }

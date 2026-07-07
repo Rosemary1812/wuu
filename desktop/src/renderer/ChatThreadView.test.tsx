@@ -129,8 +129,10 @@ describe("ChatThreadView", () => {
         ]),
       }),
     );
-    expect(container.querySelector(".chat-avatar .default-avatar")).not.toBeNull();
-    expect(container.querySelector(".chat-avatar img")).toBeNull();
+    // No uploaded image (a direct <img> child of the face); the mascot
+    // art inside .default-avatar is the generated fallback.
+    expect(container.querySelector(".chat-avatar .default-avatar img")).not.toBeNull();
+    expect(container.querySelector(".chat-avatar-face > img")).toBeNull();
   });
 
   it("renders an <img> when avatar_image is a data URL", () => {
@@ -548,7 +550,7 @@ describe("ChatThreadView message hover toolbar", () => {
     );
   }
 
-  it("renders a 贴表情 row + 回复 button (no ⋯) on a user bubble when both wired", () => {
+  it("renders a 贴表情 trigger + 回复 button (no ⋯) on a user bubble when both wired", () => {
     const container = mount(
       createElement(ChatThreadView, {
         turns: turns([{ id: "item-1", type: "user_message", text: "改这里" }]),
@@ -558,17 +560,29 @@ describe("ChatThreadView message hover toolbar", () => {
     );
     const bar = toolbar(container);
     expect(bar).not.toBeNull();
-    // One button per reaction key, plus the reply button — and nothing else.
-    expect(bar!.querySelectorAll(".chat-bubble-toolbar-reaction").length).toBe(
-      REACTION_KEYS.length,
-    );
+    // A single picker trigger plus the reply button — and nothing else.
+    const trigger = bar!.querySelector<HTMLButtonElement>(".chat-bubble-toolbar-react");
+    expect(trigger).not.toBeNull();
+    expect(trigger!.getAttribute("aria-expanded")).toBe("false");
     expect(bar!.querySelector(".chat-bubble-toolbar-reply")).not.toBeNull();
     // The ⋯ overflow was intentionally dropped: the two affordances are the
     // whole toolbar.
     expect(bar!.querySelector(".chat-bubble-toolbar-more")).toBeNull();
+
+    // Opening the picker shows every reaction key, large + labelled.
+    act(() => {
+      trigger!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(trigger!.getAttribute("aria-expanded")).toBe("true");
+    const options = bar!.querySelectorAll(".chat-reaction-picker-option");
+    expect(options.length).toBe(REACTION_KEYS.length);
+    expect(
+      bar!.querySelector('.chat-reaction-picker-option[data-reaction="nice"] .chat-reaction-picker-label')
+        ?.textContent,
+    ).toBe("赞同");
   });
 
-  it("stamps a one-click reaction via onReact with the key + clicked message", () => {
+  it("stamps a reaction via the picker with the key + clicked message, then closes", () => {
     const reacted: Array<{ id?: string; reaction: string }> = [];
     const container = mount(
       createElement(ChatThreadView, {
@@ -580,14 +594,22 @@ describe("ChatThreadView message hover toolbar", () => {
           reacted.push({ id: item.id, reaction }),
       }),
     );
-    const nice = toolbar(container)!.querySelector<HTMLButtonElement>(
-      '.chat-bubble-toolbar-reaction[data-reaction="nice"]',
+    const bar = toolbar(container)!;
+    act(() => {
+      bar
+        .querySelector<HTMLButtonElement>(".chat-bubble-toolbar-react")!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const nice = bar.querySelector<HTMLButtonElement>(
+      '.chat-reaction-picker-option[data-reaction="nice"]',
     );
     expect(nice).not.toBeNull();
     act(() => {
       nice!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(reacted).toEqual([{ id: "item-1", reaction: "nice" }]);
+    // Picking closes the panel.
+    expect(bar.querySelector(".chat-reaction-picker")).toBeNull();
   });
 
   it("opens the reply subthread via onOpenSubthread on the clicked participant message", () => {
@@ -630,9 +652,7 @@ describe("ChatThreadView message hover toolbar", () => {
     );
     const bar = toolbar(container);
     expect(bar).not.toBeNull();
-    expect(bar!.querySelectorAll(".chat-bubble-toolbar-reaction").length).toBe(
-      REACTION_KEYS.length,
-    );
+    expect(bar!.querySelector(".chat-bubble-toolbar-react")).not.toBeNull();
     expect(bar!.querySelector(".chat-bubble-toolbar-reply")).toBeNull();
   });
 

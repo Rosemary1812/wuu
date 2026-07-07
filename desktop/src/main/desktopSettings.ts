@@ -7,9 +7,9 @@ import { wuuHomePath } from "./projects";
 // startup). Persistence mirrors projects.ts: a small JSON file under the wuu
 // home directory (~/.wuu), written synchronously on change.
 
-import type { SkinPreference, ThemePreference } from "../shared/protocol";
+import type { ThemePreference } from "../shared/protocol";
 
-export type { SkinPreference, ThemePreference };
+export type { ThemePreference };
 
 export type DesktopSettings = {
   // Auto-install the wuu CLI into ~/.local/bin at app startup. Defaults to
@@ -19,13 +19,9 @@ export type DesktopSettings = {
   // Appearance. "system" follows the OS light/dark preference; the
   // renderer resolves it to a concrete data-theme on <html>.
   theme?: ThemePreference;
-  // Skin (theme family). "flame" is the default mascot-warm look;
-  // "work" keeps the quiet SaaS look. Stamped as data-skin on <html>.
-  skin?: SkinPreference;
 };
 
 const THEME_PREFERENCES: readonly ThemePreference[] = ["system", "light", "dark"];
-const SKIN_PREFERENCES: readonly SkinPreference[] = ["flame", "work"];
 
 export function desktopSettingsPath(): string {
   return join(wuuHomePath(), "desktop-settings.json");
@@ -44,9 +40,6 @@ export function readDesktopSettings(filePath: string = desktopSettingsPath()): D
     }
     if (THEME_PREFERENCES.includes(record.theme as ThemePreference)) {
       settings.theme = record.theme as ThemePreference;
-    }
-    if (SKIN_PREFERENCES.includes(record.skin as SkinPreference)) {
-      settings.skin = record.skin as SkinPreference;
     }
     return settings;
   } catch {
@@ -79,13 +72,4 @@ export function getThemePreference(filePath?: string): ThemePreference {
 export function setThemePreference(theme: ThemePreference, filePath?: string): void {
   const settings = readDesktopSettings(filePath);
   writeDesktopSettings({ ...settings, theme }, filePath);
-}
-
-export function getSkinPreference(filePath?: string): SkinPreference {
-  return readDesktopSettings(filePath).skin ?? "flame";
-}
-
-export function setSkinPreference(skin: SkinPreference, filePath?: string): void {
-  const settings = readDesktopSettings(filePath);
-  writeDesktopSettings({ ...settings, skin }, filePath);
 }

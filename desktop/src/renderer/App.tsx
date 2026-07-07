@@ -3,7 +3,6 @@
 import {
   Bug,
   ChevronRight,
-  Film,
   Folder,
   FolderX,
   GitBranch,
@@ -296,11 +295,6 @@ import {
   stringValue,
 } from "./ToolActivity";
 import {
-  TurnProgressCampaignScene,
-  TurnProgressPreviewOverlay,
-  turnProgressCampaign,
-} from "./TurnProgress";
-import {
   mergeTurnItemsInOrder,
   orderedTurnItems,
   upsertTurnItemInOrder,
@@ -403,7 +397,6 @@ const ENABLE_RUN_DEBUG_PANEL = Boolean(
 );
 const ENABLE_CONVERSATION_FIXTURES = Boolean(RENDERER_ENV?.DEV);
 const ENABLE_PLAN_PANEL_DEBUG = Boolean(RENDERER_ENV?.DEV);
-const ENABLE_TURN_PROGRESS_EXPERIMENT = false;
 
 function useStableCallback<T extends (...args: any[]) => any>(callback: T): T {
   const callbackRef = useRef(callback);
@@ -738,7 +731,6 @@ export function App(): JSX.Element {
   >(undefined);
   const [projectFilter, setProjectFilter] = useState("");
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
-  const [turnProgressPreviewOpen, setTurnProgressPreviewOpen] = useState(false);
   const {
     workspaceViewTabs,
     workspaceActiveViewTabID,
@@ -844,7 +836,6 @@ export function App(): JSX.Element {
   >(undefined);
   const hideDebugControls = useCallback(() => {
     setLaunchPreviewPinned(false);
-    setTurnProgressPreviewOpen(false);
   }, []);
   const {
     debugControlsEnabled,
@@ -8612,17 +8603,6 @@ export function App(): JSX.Element {
                 <span>启动动画</span>
               </button>
             ) : null}
-            {debugControlsVisible && ENABLE_TURN_PROGRESS_EXPERIMENT ? (
-              <button
-                className={`launch-preview-button turn-progress-preview-button${turnProgressPreviewOpen ? " active" : ""}`}
-                type="button"
-                aria-pressed={turnProgressPreviewOpen}
-                onClick={() => setTurnProgressPreviewOpen(true)}
-              >
-                <Film className="icon" />
-                <span>完整预览</span>
-              </button>
-            ) : null}
             {debugControlsVisible && ENABLE_PLAN_PANEL_DEBUG ? (
               <button
                 className="launch-preview-button plan-panel-debug-button"
@@ -8749,14 +8729,6 @@ export function App(): JSX.Element {
           onDragScrollAway={disableConversationAutoFollow}
           onSelectQueryHistory={handleQueryHistorySelect}
         />
-
-        {debugControlsVisible &&
-        ENABLE_TURN_PROGRESS_EXPERIMENT &&
-        turnProgressPreviewOpen ? (
-          <TurnProgressPreviewOverlay
-            onClose={() => setTurnProgressPreviewOpen(false)}
-          />
-        ) : null}
 
         <EnvironmentSideStack
           visible={environmentPanelVisible}

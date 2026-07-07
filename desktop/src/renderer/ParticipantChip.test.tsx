@@ -84,9 +84,11 @@ describe("ParticipantChip", () => {
 
   it("falls back to a generated default avatar when there is no avatar image", () => {
     mount({ participant: reviewer });
-    expect(chip()!.querySelector(".participant-chip-avatar img")).toBeNull();
+    // No uploaded image (a direct <img> child); the mascot art inside
+    // .default-avatar is the generated fallback.
+    expect(chip()!.querySelector(".participant-chip-avatar > img")).toBeNull();
     expect(
-      chip()!.querySelector(".participant-chip-avatar .default-avatar"),
+      chip()!.querySelector(".participant-chip-avatar .default-avatar img"),
     ).not.toBeNull();
   });
 
@@ -107,7 +109,7 @@ describe("ParticipantChip", () => {
 
   it("falls back to the task name and type when participant is missing", () => {
     mount({ fallbackType: "explore", fallbackTaskName: "检查左侧树" });
-    expect(chip()!.querySelector(".participant-chip-avatar img")).toBeNull();
+    expect(chip()!.querySelector(".participant-chip-avatar > img")).toBeNull();
     expect(
       chip()!.querySelector(".participant-chip-avatar .default-avatar"),
     ).not.toBeNull();

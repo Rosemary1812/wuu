@@ -281,9 +281,17 @@ describe("ConversationSubthreadPanel", () => {
       .querySelector<HTMLElement>('[data-testid="chat-bubble-toolbar"]');
     expect(toolbar).not.toBeNull();
     // A reply panel never offers a nested 回复 — the toolbar shows only the
-    // reaction row, never a reply button.
+    // 贴表情 trigger (whose picker carries every reaction key), never a
+    // reply button.
+    const trigger = toolbar!.querySelector<HTMLButtonElement>(
+      ".chat-bubble-toolbar-react",
+    );
+    expect(trigger).not.toBeNull();
+    act(() => {
+      trigger!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
     expect(
-      toolbar!.querySelectorAll(".chat-bubble-toolbar-reaction").length,
+      toolbar!.querySelectorAll(".chat-reaction-picker-option").length,
     ).toBe(REACTION_KEYS.length);
     expect(toolbar!.querySelector(".chat-bubble-toolbar-reply")).toBeNull();
   });

@@ -64,8 +64,7 @@ export function EmptyConversationHome({
     <section className="empty-home">
       <div className="empty-home-inner session-flow">
         <div className="empty-home-header">
-          {/* Skin-gated: visible only when the flame skin sets
-              --empty-home-mascot-display (see turns.css). */}
+          {/* The mascot greeting; see .empty-home-mascot in turns.css. */}
           <img
             className="empty-home-mascot"
             src={mascotFace}

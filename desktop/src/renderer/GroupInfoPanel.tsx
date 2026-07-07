@@ -208,7 +208,7 @@ function ParticipantAvatar({
         {image ? (
           <img src={image} alt="" />
         ) : (
-          <DefaultAvatarMark seed={participant.id || name} />
+          <DefaultAvatarMark seed={participant.id || name} kind={participant.kind} />
         )}
       </span>
       {busy ? (

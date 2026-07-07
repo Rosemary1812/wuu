@@ -198,6 +198,9 @@
 
 .chat-bubble--user {
   background: var(--chat-user-message-bg);
+  /* Tail corner (bottom-right) marks the outgoing bubble as the user's
+     own — the group-chat echo of .user-message in the main stream. */
+  border-radius: 12px 12px 3px 12px;
 }
 
 /* A sent-but-not-yet-delivered message (chat send semantics, issue #10):
@@ -330,6 +333,15 @@
 .chat-reaction-glyph {
   font-size: 12px;
 }
+
+/* Mascot sticker form of the glyph (MessageReactionArt). Slightly
+   larger than the emoji line-height since the art carries detail. */
+img.chat-reaction-glyph {
+  width: 18px;
+  height: 18px;
+  display: block;
+  -webkit-user-drag: none;
+}
 .chat-reaction-count {
   color: var(--ink-muted);
   font-variant-numeric: tabular-nums;
@@ -439,8 +451,74 @@
 .chat-bubble-toolbar button:active {
   transform: scale(0.92);
 }
-.chat-bubble-toolbar-reaction {
-  font-size: 16px;
+/* While the sticker picker is open the toolbar pins itself visible —
+   the hover-driven reveal alone would drop it the moment the pointer
+   crosses the panel gap. */
+.chat-bubble-toolbar.picker-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+/* The sticker picker panel (微信式): each reaction shown large with its
+   label, because the mascot faces are indistinguishable at glyph size.
+   Menu tokens + enter animation follow the shared menu rules. */
+.chat-reaction-picker {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 6px;
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-radius);
+  box-shadow: var(--menu-shadow);
+  white-space: normal;
+  transform-origin: top center;
+  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing);
+}
+.chat-row--participant .chat-reaction-picker {
+  left: 0;
+}
+.chat-row--user .chat-reaction-picker {
+  right: 0;
+}
+
+/* Options override the toolbar's inherited compact button metrics. */
+.chat-bubble-toolbar .chat-reaction-picker-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: auto;
+  min-width: 0;
+  width: 64px;
+  padding: 8px 4px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+}
+.chat-bubble-toolbar .chat-reaction-picker-option:hover,
+.chat-bubble-toolbar .chat-reaction-picker-option:focus-visible {
+  background: var(--menu-hover);
+  color: var(--ink);
+}
+.chat-bubble-toolbar .chat-reaction-picker-option:active {
+  transform: scale(0.95);
+}
+.chat-reaction-picker-option img {
+  width: 40px;
+  height: 40px;
+  display: block;
+  -webkit-user-drag: none;
+}
+.chat-reaction-picker-glyph {
+  font-size: 30px;
+  line-height: 40px;
+}
+.chat-reaction-picker-label {
+  font-size: var(--font-xs);
   line-height: 1;
 }
 .chat-bubble-toolbar-reply {
@@ -458,5 +536,9 @@
   .chat-bubble-toolbar {
     transition: none;
     transform: none;
+  }
+
+  .chat-reaction-picker {
+    animation: none;
   }
 }

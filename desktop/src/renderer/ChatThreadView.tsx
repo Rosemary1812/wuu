@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Reply } from "lucide-react";
+import { Reply, SmilePlus } from "lucide-react";
 import type {
   ConversationSubthread,
   EnvelopeMeta,
@@ -22,6 +22,7 @@ import {
 } from "./AppState";
 import type { QueuedComposerMessage } from "./ComposerMessages";
 import { DefaultAvatarMark } from "./DefaultAvatar";
+import { reactionArt } from "./MessageReactionArt";
 import { EnvelopeNotice } from "./EnvelopeNotice";
 import { MessageReactions } from "./MessageReactions";
 import {
@@ -318,16 +319,19 @@ export function ChatThreadView({
 
 /**
  * Hover toolbar floating above a chat bubble (Slack/Discord 式). 贴表情 is a
- * one-click emoji row (left) and 回复 a one-click button (next to it) — both
- * surfaced on hover, and the reply button is the sole entry into a reply
- * subthread on the main stream. There is deliberately no ⋯ overflow: the two
- * affordances are the whole toolbar. Renders nothing when neither reaction nor
- * reply is wired (a read-only reuse of this view, e.g. inside a cth reply panel
- * that omits onOpenSubthread — 一层不嵌套).
+ * single trigger that opens the sticker picker panel (the mascot faces are
+ * near-identical at toolbar size, so picking happens in a panel that shows
+ * each sticker large with its label — 微信式); 回复 is a one-click button
+ * next to it and the sole entry into a reply subthread on the main stream.
+ * There is deliberately no ⋯ overflow: the two affordances are the whole
+ * toolbar. Renders nothing when neither reaction nor reply is wired (a
+ * read-only reuse of this view, e.g. inside a cth reply panel that omits
+ * onOpenSubthread — 一层不嵌套).
  *
  * The reveal is CSS-driven off `.chat-bubble:hover/:focus-within` (chat.css);
  * this component only renders the buttons, always present in the DOM so
  * keyboard focus can reach them and the reveal is purely presentational.
+ * While the picker is open the toolbar pins itself visible (.picker-open).
  */
 function ChatBubbleToolbar({
   item,
@@ -338,33 +342,82 @@ function ChatBubbleToolbar({
   onReact?: (item: ThreadItem, reaction: string) => void;
   onReply?: (item: ThreadItem) => void;
 }): JSX.Element | null {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!pickerOpen) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent): void => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setPickerOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        setPickerOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [pickerOpen]);
+
   if (!onReact && !onReply) {
     return null;
   }
   return (
     <div
-      className="chat-bubble-toolbar"
+      ref={rootRef}
+      className={`chat-bubble-toolbar${pickerOpen ? " picker-open" : ""}`}
       role="toolbar"
       aria-label="消息操作"
       data-testid="chat-bubble-toolbar"
     >
-      {onReact
-        ? REACTION_KEYS.map((key) => (
+      {onReact ? (
+        <button
+          type="button"
+          className="chat-bubble-toolbar-btn chat-bubble-toolbar-react"
+          aria-label="贴表情"
+          title="贴表情"
+          aria-haspopup="true"
+          aria-expanded={pickerOpen}
+          onClick={() => setPickerOpen((open) => !open)}
+        >
+          <SmilePlus size={15} aria-hidden="true" />
+        </button>
+      ) : null}
+      {onReact && pickerOpen ? (
+        <div className="chat-reaction-picker" role="group" aria-label="选择表情">
+          {REACTION_KEYS.map((key) => (
             <button
               key={key}
               type="button"
-              className="chat-bubble-toolbar-reaction"
+              className="chat-reaction-picker-option"
               data-reaction={key}
-              aria-label={REACTION_LABEL[key] ?? key}
-              title={REACTION_LABEL[key] ?? key}
-              onClick={() => onReact(item, key)}
+              onClick={() => {
+                onReact(item, key);
+                setPickerOpen(false);
+              }}
             >
-              <span aria-hidden="true">
-                {REACTION_EMOJI[key] ?? reactionGlyph(key)}
+              {reactionArt(key) ? (
+                <img src={reactionArt(key)} alt="" draggable={false} />
+              ) : (
+                <span className="chat-reaction-picker-glyph" aria-hidden="true">
+                  {REACTION_EMOJI[key] ?? reactionGlyph(key)}
+                </span>
+              )}
+              <span className="chat-reaction-picker-label">
+                {REACTION_LABEL[key] ?? key}
               </span>
             </button>
-          ))
-        : null}
+          ))}
+        </div>
+      ) : null}
       {onReact && onReply ? (
         <span className="chat-bubble-toolbar-divider" aria-hidden="true" />
       ) : null}
@@ -674,7 +727,7 @@ function ChatAvatar({
         {avatarImage ? (
           <img src={avatarImage} alt="" />
         ) : (
-          <DefaultAvatarMark seed={participant?.id || name} />
+          <DefaultAvatarMark seed={participant?.id || name} kind={participant?.kind} />
         )}
       </span>
       {status ? (

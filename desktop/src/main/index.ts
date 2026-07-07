@@ -74,12 +74,9 @@ import { AppServerClientPool } from "./appServerClients";
 import { autoInstallCli, getCliInstallStatus, installCli } from "./cliInstall";
 import {
   getCliAutoInstallEnabled,
-  getSkinPreference,
   getThemePreference,
   setCliAutoInstallEnabled,
-  setSkinPreference,
   setThemePreference,
-  type SkinPreference,
   type ThemePreference,
 } from "./desktopSettings";
 import { GitService } from "./gitService";
@@ -920,18 +917,6 @@ app.whenReady().then(async () => {
     const next = valid.includes(theme) ? theme : "system";
     setThemePreference(next);
     return { ok: true, theme: next };
-  });
-  ipcMain.handle("wuu:skin-preference-get", () => getSkinPreference());
-  // Synchronous variant used by the preload script so the first paint
-  // already carries the persisted skin (no work-skin flash on boot).
-  ipcMain.on("wuu:skin-preference-get-sync", (event) => {
-    event.returnValue = getSkinPreference();
-  });
-  ipcMain.handle("wuu:skin-preference-set", (_event, skin: SkinPreference) => {
-    const valid: SkinPreference[] = ["flame", "work"];
-    const next = valid.includes(skin) ? skin : "flame";
-    setSkinPreference(next);
-    return { ok: true, skin: next };
   });
   ipcMain.handle("wuu:participant-list", (event) =>
     appServerRequest<ParticipantListResult>(event, "participant/list"),

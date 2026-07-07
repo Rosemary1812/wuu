@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  appliedSkin,
-  applySkinPreference,
-  applyThemePreference,
-  resolveThemePreference,
-} from "./Theme";
+import { applyThemePreference, resolveThemePreference } from "./Theme";
 
 type MediaListener = (event: { matches: boolean }) => void;
 
@@ -42,7 +37,6 @@ function stubMatchMedia(initialMatches: boolean): {
 afterEach(() => {
   vi.unstubAllGlobals();
   delete document.documentElement.dataset.theme;
-  delete document.documentElement.dataset.skin;
 });
 
 describe("resolveThemePreference", () => {
@@ -90,19 +84,5 @@ describe("applyThemePreference", () => {
 
     media.fire(true);
     expect(document.documentElement.dataset.theme).toBe("light");
-  });
-});
-
-describe("applySkinPreference", () => {
-  it("stamps the skin without touching the theme", () => {
-    stubMatchMedia(false);
-    applyThemePreference("dark");
-    applySkinPreference("flame");
-    expect(appliedSkin()).toBe("flame");
-    expect(document.documentElement.dataset.theme).toBe("dark");
-
-    applySkinPreference("work");
-    expect(appliedSkin()).toBe("work");
-    expect(document.documentElement.dataset.theme).toBe("dark");
   });
 });

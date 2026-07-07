@@ -536,7 +536,6 @@
 }
 
 .launch-preview-button.active,
-.turn-progress-preview-button[aria-pressed="true"],
 .conversation-grid-button[aria-pressed="true"] {
   background: var(--surface-4);
   color: var(--ink);
