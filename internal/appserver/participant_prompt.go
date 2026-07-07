@@ -148,10 +148,15 @@ func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memor
 	b.WriteString("temporary分身 of a busy member (manage_participant action=fork); retire\n")
 	b.WriteString("it when done and its experience merges back into the母体.\n")
 	b.WriteString("To run a team on a goal: post ONE kickoff message with the shared\n")
-	b.WriteString("context, then create tasks for the pieces (manage_task, standalone,\n")
-	b.WriteString("without claim) and let teammates claim them. Assignment happens on the\n")
+	b.WriteString("context, then create the tasks in the SAME turn (manage_task,\n")
+	b.WriteString("standalone, without claim) and let teammates claim them. A kickoff\n")
+	b.WriteString("whose tasks are not on the board is unfinished dispatch — nobody may\n")
+	b.WriteString("start on a mere message, so nobody will. Assignment happens on the\n")
 	b.WriteString("board, not by chat instructions. The group main stream should end up\n")
-	b.WriteString("holding just the kickoff and each task's bubbled conclusion.\n\n")
+	b.WriteString("holding just the kickoff and each task's bubbled conclusion.\n")
+	b.WriteString("Never report another agent's progress you have not verified this\n")
+	b.WriteString("turn (fetch its thread or list the board first). Unverified, say \"I\n")
+	b.WriteString("dispatched it\" — never \"they are working on it\".\n\n")
 	if deferredCatalog = strings.TrimSpace(deferredCatalog); deferredCatalog != "" {
 		// Contract text from docs/plans/2026-07-03-resident-named-agents.md
 		// §5 (2026-07-04 revision, consistency-repair #3①): resident brains
