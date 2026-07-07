@@ -30,4 +30,16 @@ describe("conversation shell visible center", () => {
       /right:\s*var\(--conversation-visible-inset-right\);/,
     );
   });
+
+  it("does not redeclare --thread-panel-width on the pane so it inherits the live drag value", () => {
+    // Regression (2026-07-06): a local `--thread-panel-width` on
+    // .conversation-pane shadowed the value App.tsx live-writes to .app-shell
+    // during a separator drag, pinning the grid column at 372px so the panel
+    // never resized. The pane must INHERIT it — never declare it locally.
+    expect(cssRuleBody(".conversation-pane")).not.toMatch(/--thread-panel-width\s*:/);
+    // The panel column still reads it, with a first-open fallback of 372px.
+    expect(cssRuleBody(".conversation-pane.subthread-panel-visible")).toMatch(
+      /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*var\(--thread-panel-width,\s*372px\);/,
+    );
+  });
 });

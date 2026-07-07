@@ -248,7 +248,6 @@
    as the same vertical size regardless of which controls each carries. */
 .conversation-subthread-composer {
   width: 100%;
-  border-top: 1px solid var(--surface-3);
   /* Bottom-docked in both panes; this min-height keeps the thread composer
      from collapsing below the main dock's visible chrome when its
      hideRuntimeControls variant drops a toolbar row. */

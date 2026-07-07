@@ -38,15 +38,17 @@
   --environment-flow-motion-duration: 280ms;
   --environment-flow-motion-delay: 22ms;
   /*
-   * Thread panel width is owned independently from the environment panel so
-   * dragging it doesn't shrink the conversation's right inset / sidebar
-   * alignment. Defaults match the legacy `--environment-panel-reserved-width`
-   * so the first-open experience is unchanged; the live value is rewritten by
-   * App.tsx (drag) and persisted per-account in localStorage.
+   * Thread (reply) panel width is deliberately NOT declared here. It is owned by
+   * useAppLayoutState and written to `.app-shell` — statically via shellStyle and
+   * live (per animation frame) during a drag — and `.conversation-pane` INHERITS
+   * it. Redeclaring `--thread-panel-width` on the pane would shadow that inherited
+   * value and pin the grid column at the local number: dragging the separator
+   * updated the app-shell var every frame while the pane stayed put and never
+   * resized (regression fixed 2026-07-06). The `var(--thread-panel-width, 372px)`
+   * readers below fall back to 372px for the first-open frame before app-shell
+   * sets it. Min/max live only in AppLayoutState.ts (clampThreadPanelWidth); no
+   * CSS reads them, so they are not mirrored here.
    */
-  --thread-panel-width: 372px;
-  --thread-panel-min-width: 280px;
-  --thread-panel-max-width: 560px;
   /* Conversation-only tokens. Shared session-level tokens
      (outer width, horizontal padding, composer width/radius) live in
      session.css at :root — change them there and nothing else. */
