@@ -159,6 +159,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		AgentControl:                t.env.AgentControl,
 		ParticipantSpeech:           t.env.ParticipantSpeech,
 		GroupManager:                t.env.GroupManager,
+		TaskManager:                 t.env.TaskManager,
 		FileScopeRoots:              append([]string(nil), t.env.FileScopeRoots...),
 		Skills:                      t.env.Skills,
 		Workflows:                   t.env.Workflows,
@@ -257,6 +258,7 @@ func (t *Toolkit) rebuildRegistry() {
 		NewPostMessageTool(e),
 		NewReactTool(e),
 		NewManageParticipantTool(e),
+		NewManageTaskTool(e),
 		// Cron scheduling
 		NewCronTool(e),
 		// Deferred tool discovery
@@ -671,6 +673,7 @@ func (t *Toolkit) SetParticipantSpeechEnabled(enabled bool) {
 		delete(t.activeSurface.Tools, "post_message")
 		delete(t.activeSurface.Tools, "react")
 		delete(t.activeSurface.Tools, "manage_participant")
+		delete(t.activeSurface.Tools, "manage_task")
 	}
 	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
 }
@@ -691,6 +694,16 @@ func (t *Toolkit) SetGroupManager(manager GroupManager) {
 		return
 	}
 	t.env.GroupManager = manager
+}
+
+// SetTaskManager attaches the resident task-rail backend used by manage_task.
+// The tool stays unavailable (execute-time error) until a manager is
+// attached; only resident runtimes receive one.
+func (t *Toolkit) SetTaskManager(manager TaskManager) {
+	if t == nil || t.env == nil {
+		return
+	}
+	t.env.TaskManager = manager
 }
 
 // SetWorkflowThreadID binds the toolkit to the conversation (cth) thread of the
@@ -789,6 +802,7 @@ func enableParticipantSpeechSurface(surface *capability.Surface) {
 	surface.Tools["post_message"] = capability.CapabilityTaskCommunicate
 	surface.Tools["react"] = capability.CapabilityTaskCommunicate
 	surface.Tools["manage_participant"] = capability.CapabilityTaskManage
+	surface.Tools["manage_task"] = capability.CapabilityTaskManage
 	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskCommunicate) {
 		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskCommunicate)
 	}
@@ -1107,7 +1121,7 @@ func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
 
 func isParticipantSpeechTool(name string) bool {
 	switch name {
-	case "post_message", "react", "manage_participant":
+	case "post_message", "react", "manage_participant", "manage_task":
 		return true
 	default:
 		return false

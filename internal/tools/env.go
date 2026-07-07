@@ -234,6 +234,10 @@ type Env struct {
 	// of manage_participant. Nil means group management is unavailable in this
 	// environment (those actions return an execute-time error).
 	GroupManager GroupManager
+	// TaskManager backs the resident-only manage_task tool (agent task rail,
+	// 2026-07-06 design). Nil means the task rail is unavailable in this
+	// environment (every action returns an execute-time error).
+	TaskManager TaskManager
 	// ThreadID is the conversation (cth) thread the current resident turn runs
 	// in. Workflow runs started from this turn bind to it so named-participant
 	// team members report into the reply subthread instead of the main stream,
@@ -341,6 +345,53 @@ type GroupMember struct {
 	ID   string
 	Name string
 	Busy bool
+}
+
+// TaskView is the tool-facing snapshot of one task on the agent task rail (a
+// cth in task/review status). Owner is work ownership (mutual exclusion,
+// reporting duty) — never lead/orchestration authority.
+type TaskView struct {
+	ID           string `json:"id"`
+	ThreadID     string `json:"thread_id"`
+	AnchorItemID string `json:"anchor_item_id,omitempty"`
+	Title        string `json:"title,omitempty"`
+	Status       string `json:"status"`
+	Owner        string `json:"owner,omitempty"`
+	OwnerName    string `json:"owner_name,omitempty"`
+	CreatedBy    string `json:"created_by,omitempty"`
+	Summary      string `json:"summary,omitempty"`
+}
+
+// TaskManager lets resident named agents run the task rail: create tasks,
+// claim/release work ownership, file for review, unfollow, and list the
+// board. The app server injects an implementation per resident runtime; task
+// runs and ordinary subagents never receive one. Claim mutual exclusion is a
+// store-level CAS: losing the race is a normal result (claimed=false), not an
+// error.
+type TaskManager interface {
+	// CreateTask opens a born-task cth in a group thread the caller belongs
+	// to. anchorSeq > 0 anchors it on that main-stream message (at most one
+	// cth per anchor); 0 creates a standalone task. claim self-owns it
+	// atomically in the same call.
+	CreateTask(ctx context.Context, threadID string, anchorSeq int, title string, claim bool) (TaskView, error)
+	// EscalateTask converts an open discussion reply the caller belongs to
+	// into a board task (open -> task). It grants no lead/orchestration
+	// authority; claim self-owns it in the same call.
+	EscalateTask(ctx context.Context, subthreadID, title string, claim bool) (TaskView, error)
+	// ClaimTask takes work ownership via CAS. claimed=false with a nil error
+	// means someone else owns it (see the returned view's Owner).
+	ClaimTask(ctx context.Context, subthreadID string) (TaskView, bool, error)
+	// UnclaimTask releases ownership (owner-only); the task becomes claimable.
+	UnclaimTask(ctx context.Context, subthreadID string) (TaskView, error)
+	// FileTaskReview advances an owned task to review with the one-line
+	// summary draft (owner-only). Under task_review: auto the summary bubbles
+	// to the main stream and the task resolves immediately.
+	FileTaskReview(ctx context.Context, subthreadID, summary string) (TaskView, error)
+	// UnfollowTask removes the caller from the task's push subset; the task
+	// stays readable via fetch_thread_messages.
+	UnfollowTask(ctx context.Context, subthreadID string) error
+	// ListTasks returns the group's task board (task and review statuses).
+	ListTasks(ctx context.Context, threadID string) ([]TaskView, error)
 }
 
 // RecordRead records a successful read_file invocation.
