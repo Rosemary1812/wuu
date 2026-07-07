@@ -664,6 +664,35 @@ func LoadHistoryRecords(sessDir, id string, includeMeta bool) ([]HistoryRecord, 
 	return loadHistoryRecordsDB(db, id, includeMeta)
 }
 
+// ChatMessagesSince returns the visible chat messages in a thread with seq
+// strictly greater than afterSeq, oldest first: user messages, and participant
+// posts (a participant record carries a post kind; participant records with no
+// post kind are telemetry/meta, not speech). It is the pull-inbox read — "the
+// messages in this thread I have not read yet" — and the shared body of the
+// held-draft freshness check. Non-chat roles (system/assistant/tool/meta) are
+// excluded.
+func ChatMessagesSince(sessDir, id string, afterSeq int) ([]HistoryRecord, error) {
+	all, err := LoadHistoryRecords(sessDir, id, false)
+	if err != nil {
+		return nil, err
+	}
+	var out []HistoryRecord
+	for _, rec := range all {
+		if rec.Seq <= afterSeq {
+			continue
+		}
+		role := strings.ToLower(strings.TrimSpace(rec.Role))
+		if role == "user" {
+			out = append(out, rec)
+			continue
+		}
+		if role == "participant" && strings.TrimSpace(rec.PostKind) != "" {
+			out = append(out, rec)
+		}
+	}
+	return out, nil
+}
+
 func openStore(sessDir string) (*sql.DB, error) {
 	if err := os.MkdirAll(sessDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create sessions dir: %w", err)

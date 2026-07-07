@@ -155,32 +155,24 @@ func (r residentParticipantSpeech) roomMovedSince(parentThreadID, subthreadID st
 	if err != nil || seen <= 0 {
 		return "", false
 	}
-	records, err := session.LoadHistoryRecords(r.server.rt.SessionDir, parentThreadID, false)
+	// Same read as the pull-inbox: the chat messages past my read cursor.
+	records, err := session.ChatMessagesSince(r.server.rt.SessionDir, parentThreadID, seen)
 	if err != nil {
 		return "", false
 	}
+	subthreadID = strings.TrimSpace(subthreadID)
 	var arrived []string
 	for _, rec := range records {
-		if rec.Seq <= seen {
-			continue
-		}
-		role := strings.ToLower(strings.TrimSpace(rec.Role))
-		if role != "participant" && role != "user" {
-			continue
-		}
-		// A participant record with no post kind is a non-message row (e.g.
-		// telemetry meta) — it is not the room speaking.
-		if role == "participant" && strings.TrimSpace(rec.PostKind) == "" {
-			continue
-		}
-		if strings.TrimSpace(rec.ThreadID) != strings.TrimSpace(subthreadID) {
+		// Scope: a main-stream draft is stale only against new main messages; a
+		// reply-subthread draft only against new messages in that same cth.
+		if strings.TrimSpace(rec.ThreadID) != subthreadID {
 			continue
 		}
 		if strings.TrimSpace(rec.ParticipantID) == r.participantID {
 			continue
 		}
 		who := strings.TrimSpace(rec.ParticipantID)
-		if role == "user" || who == "" {
+		if strings.EqualFold(strings.TrimSpace(rec.Role), "user") || who == "" {
 			who = "the user"
 		} else if summary, ok := r.server.resolveParticipantSummary(who); ok && strings.TrimSpace(summary.Name) != "" {
 			who = summary.Name

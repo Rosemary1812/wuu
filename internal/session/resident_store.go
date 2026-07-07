@@ -158,6 +158,40 @@ ORDER BY tm.joined_at ASC, tm.participant_id ASC`, sessionID, string(participant
 	return members, nil
 }
 
+// ThreadsForParticipant returns the group threads this participant follows
+// (thread_members rows) — the reverse of ListThreadMembers. It is the follow
+// set the pull-inbox scans: "which threads might hold messages past my read
+// cursor". DM and reply-subthread (cth) follows are tracked separately; this
+// covers the top-level group/DM sessions the participant is a member of.
+func ThreadsForParticipant(sessDir, participantID string) ([]string, error) {
+	participantID = strings.TrimSpace(participantID)
+	if participantID == "" {
+		return nil, nil
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	rows, err := db.Query(`
+SELECT session_id FROM thread_members
+WHERE participant_id = ?
+ORDER BY joined_at ASC, session_id ASC`, participantID)
+	if err != nil {
+		return nil, fmt.Errorf("threads for participant: %w", err)
+	}
+	defer rows.Close()
+	var threads []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan threads for participant: %w", err)
+		}
+		threads = append(threads, id)
+	}
+	return threads, rows.Err()
+}
+
 func EnqueueResidentEnvelope(sessDir string, env ResidentEnvelope) (ResidentEnvelope, error) {
 	env.ID = strings.TrimSpace(env.ID)
 	env.ParticipantID = strings.TrimSpace(env.ParticipantID)
