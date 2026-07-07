@@ -981,6 +981,11 @@ func migrateSchema(db *sql.DB) error {
 	if err := addColumnIfMissing(db, "conversation_threads", "owner_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// plan holds the lead's declared work breakdown (JSON array of TaskPiece)
+	// for a team task (task-rail design §8). Empty string for a plain task.
+	if err := addColumnIfMissing(db, "conversation_threads", "plan", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -58,7 +59,32 @@ type ConversationThread struct {
 	// workflow orchestration (2026-07-06 agent-task-rail design, user-adjudicated).
 	// Empty means unclaimed.
 	OwnerParticipantID string `json:"owner_participant_id,omitempty"`
+	// Plan is the lead's declared work breakdown for a team task (task-rail
+	// design §8, 2026-07-07): one task, one thread, a team, executed as a small
+	// dependency graph. Each piece is assigned to a member and may depend on
+	// other pieces; the engine (advancePlan) dispatches pieces whose deps are
+	// done by @-waking the assignee, and wakes the lead when all are done. A
+	// piece is medium-agnostic — "assignee does X, reports done" — so code,
+	// research, and document work all ride the same engine. Empty for a plain
+	// single-owner task.
+	Plan []TaskPiece `json:"plan,omitempty"`
 }
+
+// TaskPiece is one unit of a team task's plan. Status moves pending -> active
+// (deps satisfied, assignee woken) -> done (assignee reported it complete).
+type TaskPiece struct {
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	Assignee  string   `json:"assignee"`
+	DependsOn []string `json:"depends_on,omitempty"`
+	Status    string   `json:"status"`
+}
+
+const (
+	TaskPiecePending = "pending"
+	TaskPieceActive  = "active"
+	TaskPieceDone    = "done"
+)
 
 func NewConversationThreadID() string {
 	b := make([]byte, 8)
@@ -141,7 +167,7 @@ func ListConversationThreads(sessDir, sessionID string) ([]ConversationThread, e
 	}
 
 	rows, err := db.Query(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan
 FROM conversation_threads
 WHERE session_id = ?
 ORDER BY created_at ASC, id ASC`, sessionID)
@@ -181,7 +207,7 @@ func FindConversationThreadByID(sessDir, id string) (ConversationThread, error) 
 	defer db.Close()
 
 	row := db.QueryRow(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan
 FROM conversation_threads
 WHERE id = ?`, id)
 	thread, err := scanConversationThread(row)
@@ -214,7 +240,7 @@ func LeadTaskThreads(sessDir, leadParticipantID string) ([]ConversationThread, e
 	defer db.Close()
 
 	rows, err := db.Query(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan
 FROM conversation_threads
 WHERE status = ? AND lead_participant_id = ?
 ORDER BY escalated_at DESC, id ASC`, string(ConversationThreadTask), leadParticipantID)
@@ -343,7 +369,7 @@ func EscalateConversationThread(sessDir, id, escalatedBy, leadParticipantID, tit
 	defer tx.Rollback()
 
 	row := tx.QueryRow(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan
 FROM conversation_threads
 WHERE id = ?`, id)
 	thread, err := scanConversationThread(row)
@@ -552,7 +578,7 @@ WHERE id = ? AND status = ? AND owner_participant_id = ?`,
 // already-open handle (for use under storeWriteMu).
 func findConversationThreadByIDDB(db *sql.DB, id string) (ConversationThread, error) {
 	row := db.QueryRow(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan
 FROM conversation_threads
 WHERE id = ?`, id)
 	thread, err := scanConversationThread(row)
@@ -605,15 +631,87 @@ func scanConversationThread(scanner interface {
 	Scan(dest ...any) error
 }) (ConversationThread, error) {
 	var thread ConversationThread
-	var status, createdAt, escalatedAt string
+	var status, createdAt, escalatedAt, planJSON string
 	if err := scanner.Scan(
 		&thread.ID, &thread.SessionID, &thread.AnchorItemID, &thread.Title, &status, &thread.CreatedBy, &createdAt,
-		&escalatedAt, &thread.EscalatedBy, &thread.Summary, &thread.LeadParticipantID, &thread.OwnerParticipantID,
+		&escalatedAt, &thread.EscalatedBy, &thread.Summary, &thread.LeadParticipantID, &thread.OwnerParticipantID, &planJSON,
 	); err != nil {
 		return ConversationThread{}, err
 	}
 	thread.Status = ConversationThreadStatus(status)
 	thread.CreatedAt = parseTime(createdAt)
 	thread.EscalatedAt = parseTime(escalatedAt)
+	if strings.TrimSpace(planJSON) != "" {
+		if err := json.Unmarshal([]byte(planJSON), &thread.Plan); err != nil {
+			return ConversationThread{}, fmt.Errorf("decode task plan for %q: %w", thread.ID, err)
+		}
+	}
+	return thread, nil
+}
+
+// SetConversationThreadPlan replaces the task's declared plan (task-rail
+// design §8). Any piece with no explicit status defaults to pending. The
+// caller (the lead's set_plan action) owns validation of assignees/deps; this
+// just persists the breakdown so the engine can advance it.
+func SetConversationThreadPlan(sessDir, id string, plan []TaskPiece) (ConversationThread, error) {
+	id = strings.TrimSpace(id)
+	for i := range plan {
+		if strings.TrimSpace(plan[i].Status) == "" {
+			plan[i].Status = TaskPiecePending
+		}
+	}
+	data, err := json.Marshal(plan)
+	if err != nil {
+		return ConversationThread{}, fmt.Errorf("encode task plan: %w", err)
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return ConversationThread{}, err
+	}
+	defer db.Close()
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+	if _, err := db.Exec(`UPDATE conversation_threads SET plan = ? WHERE id = ?`, string(data), id); err != nil {
+		return ConversationThread{}, fmt.Errorf("set task plan: %w", err)
+	}
+	return findConversationThreadByIDDB(db, id)
+}
+
+// MarkTaskPieceStatus sets one piece's status (pending/active/done) inside the
+// task's plan and returns the updated thread. Used by the engine (active on
+// dispatch) and by the assignee's piece_done action. Errors if the piece id is
+// not in the plan.
+func MarkTaskPieceStatus(sessDir, id, pieceID, status string) (ConversationThread, error) {
+	id = strings.TrimSpace(id)
+	pieceID = strings.TrimSpace(pieceID)
+	db, err := openStore(sessDir)
+	if err != nil {
+		return ConversationThread{}, err
+	}
+	defer db.Close()
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+	thread, err := findConversationThreadByIDDB(db, id)
+	if err != nil {
+		return ConversationThread{}, err
+	}
+	found := false
+	for i := range thread.Plan {
+		if thread.Plan[i].ID == pieceID {
+			thread.Plan[i].Status = status
+			found = true
+			break
+		}
+	}
+	if !found {
+		return ConversationThread{}, fmt.Errorf("task %q has no piece %q", id, pieceID)
+	}
+	data, err := json.Marshal(thread.Plan)
+	if err != nil {
+		return ConversationThread{}, fmt.Errorf("encode task plan: %w", err)
+	}
+	if _, err := db.Exec(`UPDATE conversation_threads SET plan = ? WHERE id = ?`, string(data), id); err != nil {
+		return ConversationThread{}, fmt.Errorf("update task piece: %w", err)
+	}
 	return thread, nil
 }

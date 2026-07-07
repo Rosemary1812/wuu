@@ -303,6 +303,104 @@ func (m *residentTaskManager) ListTasks(ctx context.Context, threadID string) ([
 	return views, nil
 }
 
+// SetPlan declares the lead's team work breakdown on a task and immediately
+// advances the plan (task-rail design §8). Assignees are pulled into the task
+// thread's team so they follow it. The plan is the durable declaration the
+// engine executes — the lead authors it once, then steps out of the loop.
+func (m *residentTaskManager) SetPlan(ctx context.Context, subthreadID string, pieces []tools.TaskPiece) (tools.TaskView, error) {
+	_ = ctx
+	if err := m.ready("set_plan"); err != nil {
+		return tools.TaskView{}, err
+	}
+	thread, _, err := m.memberTask("set_plan", subthreadID)
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	if len(pieces) == 0 {
+		return tools.TaskView{}, errors.New("set_plan: plan is required")
+	}
+	ids := map[string]bool{}
+	sessionPieces := make([]session.TaskPiece, 0, len(pieces))
+	for _, p := range pieces {
+		id := strings.TrimSpace(p.ID)
+		if id == "" || strings.TrimSpace(p.Title) == "" || strings.TrimSpace(p.Assignee) == "" {
+			return tools.TaskView{}, errors.New("set_plan: every piece needs id, title, and assignee")
+		}
+		if ids[id] {
+			return tools.TaskView{}, fmt.Errorf("set_plan: duplicate piece id %q", id)
+		}
+		ids[id] = true
+		sessionPieces = append(sessionPieces, session.TaskPiece{
+			ID: id, Title: strings.TrimSpace(p.Title), Assignee: strings.TrimSpace(p.Assignee),
+			DependsOn: p.DependsOn, Status: session.TaskPiecePending,
+		})
+	}
+	// Every dependency must reference a real piece in this plan.
+	for _, p := range sessionPieces {
+		for _, dep := range p.DependsOn {
+			if !ids[strings.TrimSpace(dep)] {
+				return tools.TaskView{}, fmt.Errorf("set_plan: piece %q depends on unknown piece %q", p.ID, dep)
+			}
+		}
+	}
+	// Pull assignees onto the task thread's team so the board card shows them
+	// and they follow the task's traffic.
+	for _, p := range sessionPieces {
+		if err := session.AddConversationThreadMember(m.server.rt.SessionDir, thread.ID, p.Assignee); err != nil {
+			providers.DebugLogf("set_plan: add assignee %q to task %q: %v", p.Assignee, thread.ID, err)
+		}
+	}
+	updated, err := session.SetConversationThreadPlan(m.server.rt.SessionDir, thread.ID, sessionPieces)
+	if err != nil {
+		return tools.TaskView{}, fmt.Errorf("set_plan: %w", err)
+	}
+	m.server.notifySubthreadUpdated(updated.SessionID, updated.ID)
+	m.server.advancePlan(updated.ID)
+	final, err := session.FindConversationThreadByID(m.server.rt.SessionDir, thread.ID)
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	return m.taskView(final), nil
+}
+
+// PieceDone marks the caller's plan piece complete and advances the plan.
+// Only the piece's assignee may report it done — the durable plan, not chat
+// chatter, is what the engine reads to decide who runs next.
+func (m *residentTaskManager) PieceDone(ctx context.Context, subthreadID, pieceID string) (tools.TaskView, error) {
+	_ = ctx
+	if err := m.ready("piece_done"); err != nil {
+		return tools.TaskView{}, err
+	}
+	thread, _, err := m.memberTask("piece_done", subthreadID)
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	pieceID = strings.TrimSpace(pieceID)
+	var piece *session.TaskPiece
+	for i := range thread.Plan {
+		if thread.Plan[i].ID == pieceID {
+			piece = &thread.Plan[i]
+			break
+		}
+	}
+	if piece == nil {
+		return tools.TaskView{}, fmt.Errorf("piece_done: task %q has no piece %q", thread.ID, pieceID)
+	}
+	if piece.Assignee != m.participantID {
+		return tools.TaskView{}, fmt.Errorf("piece_done: piece %q is assigned to %q, not you — only its assignee may report it done", pieceID, piece.Assignee)
+	}
+	if _, err := session.MarkTaskPieceStatus(m.server.rt.SessionDir, thread.ID, pieceID, session.TaskPieceDone); err != nil {
+		return tools.TaskView{}, fmt.Errorf("piece_done: %w", err)
+	}
+	m.server.notifySubthreadUpdated(thread.SessionID, thread.ID)
+	m.server.advancePlan(thread.ID)
+	final, err := session.FindConversationThreadByID(m.server.rt.SessionDir, thread.ID)
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	return m.taskView(final), nil
+}
+
 func (m *residentTaskManager) ready(action string) error {
 	if m == nil || m.server == nil || m.server.rt == nil {
 		return fmt.Errorf("%s: app server not configured", action)
@@ -383,7 +481,131 @@ func (m *residentTaskManager) taskView(thread session.ConversationThread) tools.
 			view.OwnerName = summary.Name
 		}
 	}
+	for _, p := range thread.Plan {
+		view.Plan = append(view.Plan, tools.TaskPiece{
+			ID: p.ID, Title: p.Title, Assignee: p.Assignee, DependsOn: p.DependsOn, Status: p.Status,
+		})
+	}
 	return view
+}
+
+// advancePlan is the team-task execution engine (task-rail design §8.2). It
+// reads a task's declared plan and moves it forward one step: every piece
+// whose dependencies are all done and is still pending gets dispatched — marked
+// active and its assignee @-woken into the task thread with a directive. When
+// every piece is done, the lead is @-woken to wrap up and report. The engine is
+// medium-agnostic: a piece is just "assignee does X, reports done", so code,
+// research, and document work ride the same path. It is called after set_plan
+// and after each piece_done, and is safe to call repeatedly (dispatch only
+// touches pending pieces; a piece already active or done is skipped).
+func (s *Server) advancePlan(taskID string) {
+	if s == nil || s.rt == nil {
+		return
+	}
+	task, err := session.FindConversationThreadByID(s.rt.SessionDir, taskID)
+	if err != nil {
+		providers.DebugLogf("advancePlan load task %q: %v", taskID, err)
+		return
+	}
+	if len(task.Plan) == 0 {
+		return
+	}
+	done := map[string]bool{}
+	allDone := true
+	for _, p := range task.Plan {
+		if p.Status == session.TaskPieceDone {
+			done[p.ID] = true
+		} else {
+			allDone = false
+		}
+	}
+	if allDone {
+		s.wakePlanLead(task)
+		return
+	}
+	for _, p := range task.Plan {
+		if p.Status != session.TaskPiecePending {
+			continue
+		}
+		ready := true
+		for _, dep := range p.DependsOn {
+			if !done[strings.TrimSpace(dep)] {
+				ready = false
+				break
+			}
+		}
+		if !ready {
+			continue
+		}
+		if _, err := session.MarkTaskPieceStatus(s.rt.SessionDir, taskID, p.ID, session.TaskPieceActive); err != nil {
+			providers.DebugLogf("advancePlan activate piece %q: %v", p.ID, err)
+			continue
+		}
+		s.wakePieceAssignee(task, p)
+	}
+	s.notifySubthreadUpdated(task.SessionID, task.ID)
+}
+
+// wakePieceAssignee @-wakes one assignee into the task thread to start a piece
+// whose dependencies are satisfied. The directive is medium-agnostic — it names
+// the piece, not a code action — so the same wake serves research, documents,
+// and code.
+func (s *Server) wakePieceAssignee(task session.ConversationThread, piece session.TaskPiece) {
+	title, workspace := s.taskThreadContext(task.SessionID)
+	text := fmt.Sprintf(
+		"Your piece of task %q is ready to start: %q. Its prerequisites are done. Do it, working in this task thread (thread_id=%q); when finished, file it with manage_task action=piece_done piece_id=%q. Post here only what a teammate needs — @ them if you need something.",
+		firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), piece.Title, task.ID, piece.ID,
+	)
+	s.deliverEnvelopeToMembers([]string{piece.Assignee}, MessageEnvelope{
+		SourceThreadID:      task.SessionID,
+		SourceSubthreadID:   task.ID,
+		SourceTitle:         title,
+		SenderKind:          "system",
+		SenderName:          "task plan",
+		SenderParticipantID: "",
+		Text:                text,
+		CreatedAt:           time.Now().UTC(),
+		Workspace:           workspace,
+	}, nil)
+}
+
+// wakePlanLead @-wakes the lead once every piece of the plan is done, so the
+// lead wraps the task up and reports to the user. The lead is the declared
+// LeadParticipantID, falling back to the task's creator.
+func (s *Server) wakePlanLead(task session.ConversationThread) {
+	lead := firstNonEmpty(strings.TrimSpace(task.LeadParticipantID), strings.TrimSpace(task.CreatedBy))
+	if lead == "" {
+		return
+	}
+	title, workspace := s.taskThreadContext(task.SessionID)
+	text := fmt.Sprintf(
+		"Every piece of task %q is done. Wrap it up: file the task's conclusion (manage_task action=update_status subthread_id=%q), then report the result to the user (@ the user so teammates are not re-woken).",
+		firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), task.ID,
+	)
+	s.deliverEnvelopeToMembers([]string{lead}, MessageEnvelope{
+		SourceThreadID:      task.SessionID,
+		SourceSubthreadID:   task.ID,
+		SourceTitle:         title,
+		SenderKind:          "system",
+		SenderName:          "task plan",
+		SenderParticipantID: "",
+		Text:                text,
+		CreatedAt:           time.Now().UTC(),
+		Workspace:           workspace,
+	}, nil)
+}
+
+// taskThreadContext returns the parent thread's display title and workspace
+// focus for building a plan-engine wake envelope.
+func (s *Server) taskThreadContext(parentThreadID string) (title, workspace string) {
+	title = parentThreadID
+	if th := s.thread(parentThreadID); th != nil {
+		th.mu.Lock()
+		title = residentEnvelopeSourceTitleLocked(th)
+		workspace = th.FocusWorkspace
+		th.mu.Unlock()
+	}
+	return title, workspace
 }
 
 // wakeTaskBoardForOwnerlessTask fans a lightweight from="system" envelope to

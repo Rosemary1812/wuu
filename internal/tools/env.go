@@ -360,6 +360,19 @@ type TaskView struct {
 	OwnerName    string `json:"owner_name,omitempty"`
 	CreatedBy    string `json:"created_by,omitempty"`
 	Summary      string `json:"summary,omitempty"`
+	// Plan is the team task's declared work breakdown (task-rail design §8),
+	// present only for team tasks the lead has planned. Empty for plain tasks.
+	Plan []TaskPiece `json:"plan,omitempty"`
+}
+
+// TaskPiece is one unit of a team task's plan as it crosses the tool boundary
+// (mirrors session.TaskPiece). Status: pending -> active -> done.
+type TaskPiece struct {
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	Assignee  string   `json:"assignee"`
+	DependsOn []string `json:"depends_on,omitempty"`
+	Status    string   `json:"status,omitempty"`
 }
 
 // TaskManager lets resident named agents run the task rail: create tasks,
@@ -398,6 +411,16 @@ type TaskManager interface {
 	UnfollowTask(ctx context.Context, subthreadID string) error
 	// ListTasks returns the group's task board (task and review statuses).
 	ListTasks(ctx context.Context, threadID string) ([]TaskView, error)
+	// SetPlan declares the lead's work breakdown for a team task (task-rail
+	// design §8): pieces with assignees and dependencies. The engine then
+	// dispatches every piece whose dependencies are already satisfied by
+	// @-waking its assignee into the task thread. The caller must belong to
+	// the task's thread; assignees must be members.
+	SetPlan(ctx context.Context, subthreadID string, pieces []TaskPiece) (TaskView, error)
+	// PieceDone marks one plan piece complete (called by its assignee). The
+	// engine then dispatches any piece whose dependencies are now satisfied,
+	// or — when every piece is done — wakes the lead to wrap up and report.
+	PieceDone(ctx context.Context, subthreadID, pieceID string) (TaskView, error)
 }
 
 // RecordRead records a successful read_file invocation.

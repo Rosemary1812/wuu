@@ -34,8 +34,8 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 			"properties": map[string]any{
 				"action": map[string]any{
 					"type":        "string",
-					"enum":        []string{"create", "escalate", "claim", "unclaim", "update_status", "unfollow", "list"},
-					"description": "create opens a task (group members only); escalate converts a converged open discussion reply into a task; claim/unclaim take/release work ownership; update_status files an owned task for review; unfollow leaves the task's push subset; list shows the board.",
+					"enum":        []string{"create", "escalate", "claim", "unclaim", "update_status", "unfollow", "list", "set_plan", "piece_done"},
+					"description": "create opens a task (group members only); escalate converts a converged open discussion reply into a task; claim/unclaim take/release work ownership; update_status files an owned task for review; unfollow leaves the task's push subset; list shows the board. As a task LEAD: set_plan declares a team plan (pieces with assignees + dependencies) on a task and the engine dispatches the ready pieces by @-waking their assignees; as an ASSIGNEE: piece_done marks your plan piece complete and the engine advances the plan (wakes the next dependents, or wakes the lead when all pieces are done).",
 				},
 				"thread_id": map[string]any{
 					"type":        "string",
@@ -65,6 +65,25 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "With create on a standalone task (anchor_seq omitted): STRICT id-match escape hatch for the same-group same-title collision check (issue #4 v3). When the same title already exists in the thread as an unfinished task, pass the exact existing task id (from the conflict error message) to persist a same-titled duplicate (work-splitting case). Any other value — empty string, wrong id, made-up value — keeps the dedup hard-block. Usually you should claim the existing task (manage_task action=claim) or pick a distinguishing title instead.",
 				},
+				"plan": map[string]any{
+					"type":        "array",
+					"description": "With set_plan: the team work breakdown. Each item is a piece {id, title, assignee, depends_on}. id is a short label unique within the plan (e.g. \"p1\"); assignee is a teammate's participant id (prefer existing members); depends_on lists the piece ids that must finish before this one starts (omit or [] for a piece that can start immediately). Declare the whole plan at once; the engine dispatches every piece with no unmet dependency and @-wakes the rest as their dependencies complete.",
+					"items": map[string]any{
+						"type":                 "object",
+						"additionalProperties": false,
+						"properties": map[string]any{
+							"id":         map[string]any{"type": "string"},
+							"title":      map[string]any{"type": "string"},
+							"assignee":   map[string]any{"type": "string"},
+							"depends_on": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						},
+						"required": []string{"id", "title", "assignee"},
+					},
+				},
+				"piece_id": map[string]any{
+					"type":        "string",
+					"description": "With piece_done: the id of your plan piece (as declared in set_plan) that you have finished.",
+				},
 			},
 			"required": []string{"action"},
 		},
@@ -83,14 +102,16 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 		return "", errors.New("manage_task: participant identity is required")
 	}
 	var params struct {
-		Action          string `json:"action"`
-		ThreadID        string `json:"thread_id"`
-		SubthreadID     string `json:"subthread_id"`
-		Title           string `json:"title"`
-		AnchorSeq       int    `json:"anchor_seq"`
-		Claim           bool   `json:"claim"`
-		AckCollisionID  string `json:"ack_collision_id"`
-		Summary         string `json:"summary"`
+		Action         string      `json:"action"`
+		ThreadID       string      `json:"thread_id"`
+		SubthreadID    string      `json:"subthread_id"`
+		Title          string      `json:"title"`
+		AnchorSeq      int         `json:"anchor_seq"`
+		Claim          bool        `json:"claim"`
+		AckCollisionID string      `json:"ack_collision_id"`
+		Summary        string      `json:"summary"`
+		Plan           []TaskPiece `json:"plan"`
+		PieceID        string      `json:"piece_id"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
 		return "", fmt.Errorf("manage_task: parse args: %w", err)
@@ -172,6 +193,30 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 			return "", err
 		}
 		return marshalTaskResult("list", map[string]any{"tasks": views})
+	case "set_plan":
+		if strings.TrimSpace(params.SubthreadID) == "" {
+			return "", errors.New("set_plan: subthread_id is required")
+		}
+		if len(params.Plan) == 0 {
+			return "", errors.New("set_plan: plan is required (one or more pieces)")
+		}
+		view, err := manager.SetPlan(ctx, params.SubthreadID, params.Plan)
+		if err != nil {
+			return "", err
+		}
+		return marshalTaskResult("set_plan", map[string]any{"task": view})
+	case "piece_done":
+		if strings.TrimSpace(params.SubthreadID) == "" {
+			return "", errors.New("piece_done: subthread_id is required")
+		}
+		if strings.TrimSpace(params.PieceID) == "" {
+			return "", errors.New("piece_done: piece_id is required")
+		}
+		view, err := manager.PieceDone(ctx, params.SubthreadID, params.PieceID)
+		if err != nil {
+			return "", err
+		}
+		return marshalTaskResult("piece_done", map[string]any{"task": view})
 	default:
 		return "", fmt.Errorf("manage_task: unknown action %q", params.Action)
 	}
