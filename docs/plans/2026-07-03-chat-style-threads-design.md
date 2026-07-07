@@ -116,3 +116,16 @@ for work sessions.
   new-group creation, group chat rendering, member typing indicators.
   The UI is written but gated on data: with no `group` threads present
   the section shows only a disabled `# all` placeholder.
+
+---
+
+## 修订（2026-07-06）：agent 轨迹入口（process view 红线收窄）
+
+「No process view, no escape hatch」维持对**聊天视图本身**成立：DM/群聊渲染的永远只有 tool-posted 消息。但 task rail 落地后主流安静了（A/B: 29 条→5 条），长任务需要一个「深看」入口对冲过程盲区：
+
+- **新入口**：agent 列表/详情面板 →「查看轨迹」，把该 named agent 的常驻大脑 thread 用**现有工作会话 transcript 视图**只读打开——流式 tool call、reasoning、commentary、final text，与项目 session 同一渲染组件。任务卡上的 owner 也可跳转。
+- **只读**：轨迹视图不带 composer。引导/纠偏仍走 DM 或群聊 @（被 @ 必答），不在 transcript 里插话。
+- **后端零改动**（2026-07-06 已验证）：大脑 thread 的 `thread/resume` 返回完整 turns（tool_call/reasoning/agent_message 全量），live turn/event 已随流；这纯粹是前端入口 + 渲染模式选择。
+- v2 顺延：轨迹面板列出该 agent 的 participant task runs（`ListParticipantRuns` 已有）供回看历史执行路径。
+
+观测模型定型为三层：任务板（一眼扫）→ 群/任务线程（结论与讨论）→ 轨迹视图（全过程钻取）。
