@@ -256,9 +256,9 @@ type pairAnswerWire struct {
 // PhonePairing is the phone-side state between sealing the offer and opening
 // the answer.
 type PhonePairing struct {
-	link      PairLink
-	ephPub    []byte
-	shared    []byte
+	link       PairLink
+	ephPub     []byte
+	shared     []byte
 	transcript [32]byte
 }
 
@@ -271,6 +271,17 @@ func SealPairOffer(link PairLink, offer PairOffer) ([]byte, *PhonePairing, error
 	if err != nil {
 		return nil, nil, err
 	}
+	nonce, err := randomNonce()
+	if err != nil {
+		return nil, nil, err
+	}
+	return sealPairOffer(link, offer, ephPriv, nonce)
+}
+
+// sealPairOffer is the deterministic core of SealPairOffer: the caller
+// supplies the ephemeral key and AEAD nonce, so conformance tests can pin
+// every byte of the exchange.
+func sealPairOffer(link PairLink, offer PairOffer, ephPriv *ecdh.PrivateKey, nonce []byte) ([]byte, *PhonePairing, error) {
 	hostEph, err := ecdh.X25519().NewPublicKey(link.EphPub)
 	if err != nil {
 		return nil, nil, fmt.Errorf("host pairing key: %w", err)
@@ -294,7 +305,7 @@ func SealPairOffer(link PairLink, offer PairOffer) ([]byte, *PhonePairing, error
 	if err != nil {
 		return nil, nil, err
 	}
-	sealed, err := aeadSealRandomNonce(pp.shared, pp.transcript, infoPairOffer, plain)
+	sealed, err := aeadSealWithNonce(pp.shared, pp.transcript, infoPairOffer, nonce, plain)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -319,7 +330,7 @@ func (p *Pairing) OpenPairOffer(payload []byte) (PairOffer, *HostPairing, error)
 		return PairOffer{}, nil, fmt.Errorf("pairing ecdh: %w", err)
 	}
 	transcript := pairTranscript(p.priv.PublicKey().Bytes(), phoneEphBytes, p.ID)
-	plain, err := aeadOpenRandomNonce(shared, transcript, infoPairOffer, payload[x25519KeyLen:])
+	plain, err := aeadOpen(shared, transcript, infoPairOffer, payload[x25519KeyLen:])
 	if err != nil {
 		return PairOffer{}, nil, fmt.Errorf("open pairing offer: %w", err)
 	}
@@ -346,6 +357,15 @@ type HostPairing struct {
 // SealPairAnswer builds the host's encrypted confirmation for a device it has
 // just registered.
 func (hp *HostPairing) SealPairAnswer(host *Identity, hostName string, devicePub []byte) ([]byte, error) {
+	nonce, err := randomNonce()
+	if err != nil {
+		return nil, err
+	}
+	return hp.sealPairAnswer(host, hostName, devicePub, nonce)
+}
+
+// sealPairAnswer is the deterministic core of SealPairAnswer.
+func (hp *HostPairing) sealPairAnswer(host *Identity, hostName string, devicePub, nonce []byte) ([]byte, error) {
 	sig := host.sign(labelPairConfirm, hp.transcript[:], devicePub)
 	plain, err := json.Marshal(pairAnswerWire{
 		HostPub:  b64.EncodeToString(host.Public()),
@@ -355,14 +375,14 @@ func (hp *HostPairing) SealPairAnswer(host *Identity, hostName string, devicePub
 	if err != nil {
 		return nil, err
 	}
-	return aeadSealRandomNonce(hp.shared, hp.transcript, infoPairAnswer, plain)
+	return aeadSealWithNonce(hp.shared, hp.transcript, infoPairAnswer, nonce, plain)
 }
 
 // OpenPairAnswer decrypts and verifies the host's confirmation on the phone.
 // It enforces that the confirming identity matches the key pinned from the QR
 // and that the signature covers this phone's device key.
 func (pp *PhonePairing) OpenPairAnswer(payload, devicePub []byte) (PairAnswer, error) {
-	plain, err := aeadOpenRandomNonce(pp.shared, pp.transcript, infoPairAnswer, payload)
+	plain, err := aeadOpen(pp.shared, pp.transcript, infoPairAnswer, payload)
 	if err != nil {
 		return PairAnswer{}, fmt.Errorf("open pairing answer: %w", err)
 	}
@@ -418,10 +438,10 @@ type HS2 struct {
 
 // Handshake is the phone-side in-flight handshake state.
 type Handshake struct {
-	phone    *Identity
-	hostPub  []byte
-	ephPriv  *ecdh.PrivateKey
-	nonce    []byte
+	phone   *Identity
+	hostPub []byte
+	ephPriv *ecdh.PrivateKey
+	nonce   []byte
 }
 
 // NewHandshake starts a connection handshake from the phone toward its paired
@@ -437,6 +457,11 @@ func NewHandshake(phone *Identity, hostPub []byte) (*Handshake, HS1, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, HS1{}, err
 	}
+	return newHandshake(phone, hostPub, ephPriv, nonce)
+}
+
+// newHandshake is the deterministic core of NewHandshake.
+func newHandshake(phone *Identity, hostPub []byte, ephPriv *ecdh.PrivateKey, nonce []byte) (*Handshake, HS1, error) {
 	ephPub := ephPriv.PublicKey().Bytes()
 	sig := phone.sign(labelHS1, hostPub, phone.Public(), ephPub, nonce)
 	hs1 := HS1{
@@ -452,6 +477,19 @@ func NewHandshake(phone *Identity, hostPub []byte) (*Handshake, HS1, error) {
 // device keys are allowed; the returned channel is ready as soon as HS2 has
 // been delivered to the phone.
 func AcceptHandshake(host *Identity, hs1 HS1, isPaired func(devicePub []byte) bool) (*Channel, HS2, error) {
+	ephPriv, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, HS2{}, err
+	}
+	hostNonce := make([]byte, 16)
+	if _, err := rand.Read(hostNonce); err != nil {
+		return nil, HS2{}, err
+	}
+	return acceptHandshake(host, hs1, isPaired, ephPriv, hostNonce)
+}
+
+// acceptHandshake is the deterministic core of AcceptHandshake.
+func acceptHandshake(host *Identity, hs1 HS1, isPaired func(devicePub []byte) bool, ephPriv *ecdh.PrivateKey, hostNonce []byte) (*Channel, HS2, error) {
 	devPub, err := DecodeKey(hs1.DevicePub)
 	if err != nil {
 		return nil, HS2{}, fmt.Errorf("hs1 device key: %w", err)
@@ -475,14 +513,6 @@ func AcceptHandshake(host *Identity, hs1 HS1, isPaired func(devicePub []byte) bo
 		return nil, HS2{}, errors.New("hs1 signature invalid")
 	}
 
-	ephPriv, err := ecdh.X25519().GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, HS2{}, err
-	}
-	hostNonce := make([]byte, 16)
-	if _, err := rand.Read(hostNonce); err != nil {
-		return nil, HS2{}, err
-	}
 	phoneEph, err := ecdh.X25519().NewPublicKey(phoneEphBytes)
 	if err != nil {
 		return nil, HS2{}, fmt.Errorf("hs1 ephemeral key: %w", err)
@@ -632,10 +662,11 @@ func newAEAD(key []byte) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-// aeadSealRandomNonce derives a one-shot key via HKDF and seals plaintext with
-// a random nonce (nonce || ciphertext). Used by the pairing exchange, where
-// each key encrypts exactly one message.
-func aeadSealRandomNonce(shared []byte, transcript [32]byte, info string, plaintext []byte) ([]byte, error) {
+// aeadSealWithNonce derives a one-shot key via HKDF and seals plaintext under
+// the caller's nonce (nonce || ciphertext). Used by the pairing exchange,
+// where each key encrypts exactly one message; production callers pass a
+// fresh randomNonce, conformance tests pin the nonce explicitly.
+func aeadSealWithNonce(shared []byte, transcript [32]byte, info string, nonce, plaintext []byte) ([]byte, error) {
 	key, err := hkdf.Key(sha256.New, shared, transcript[:], info, 32)
 	if err != nil {
 		return nil, err
@@ -644,14 +675,18 @@ func aeadSealRandomNonce(shared []byte, transcript [32]byte, info string, plaint
 	if err != nil {
 		return nil, err
 	}
+	return aead.Seal(append([]byte(nil), nonce...), nonce, plaintext, transcript[:]), nil
+}
+
+func randomNonce() ([]byte, error) {
 	nonce := make([]byte, gcmNonceLen)
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
-	return aead.Seal(nonce, nonce, plaintext, transcript[:]), nil
+	return nonce, nil
 }
 
-func aeadOpenRandomNonce(shared []byte, transcript [32]byte, info string, payload []byte) ([]byte, error) {
+func aeadOpen(shared []byte, transcript [32]byte, info string, payload []byte) ([]byte, error) {
 	if len(payload) < gcmNonceLen {
 		return nil, errors.New("sealed payload too short")
 	}
