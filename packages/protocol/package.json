@@ -1,0 +1,10 @@
+{
+  "name": "@wuu/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Wuu app-server protocol types — single source of truth for all clients",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

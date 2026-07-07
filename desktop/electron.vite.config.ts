@@ -49,6 +49,13 @@ export default defineConfig({
     resolve: {
       dedupe: ["react", "react-dom"],
     },
+    server: {
+      fs: {
+        // Protocol types are imported from packages/protocol at the repo
+        // root, outside the renderer root — allow the dev server to serve it.
+        allow: [resolve(__dirname, "..")],
+      },
+    },
     build: {
       rollupOptions: {
         input: {
