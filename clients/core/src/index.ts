@@ -5,9 +5,9 @@
 // here is pinned byte-for-byte by internal/remote/secure/testdata/vectors.json;
 // see test/vectors.test.ts.
 
-export * from "./b64.js";
-export * from "./bytes.js";
-export * from "./secure.js";
-export * from "./wire.js";
-export * from "./rpc.js";
-export * from "./client.js";
+export * from "./b64";
+export * from "./bytes";
+export * from "./secure";
+export * from "./wire";
+export * from "./rpc";
+export * from "./client";

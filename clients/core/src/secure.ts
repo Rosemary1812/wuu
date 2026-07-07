@@ -14,7 +14,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { gcm } from "@noble/ciphers/aes.js";
 
-import { b64decode, b64encode } from "./b64.js";
+import { b64decode, b64encode } from "./b64";
 import {
   bytesEqual,
   concatBytes,
@@ -25,7 +25,7 @@ import {
   u32be,
   utf8Decode,
   utf8Encode,
-} from "./bytes.js";
+} from "./bytes";
 
 export const PAIR_URI_SCHEME = "wuu";
 

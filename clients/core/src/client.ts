@@ -8,8 +8,8 @@
 // missed lines (resumed) or hands out a fresh app-server connection the
 // caller re-initializes against (not resumed; watch onAttach).
 
-import { b64decode, b64encode } from "./b64.js";
-import { utf8Decode, utf8Encode } from "./bytes.js";
+import { b64decode, b64encode } from "./b64";
+import { utf8Decode, utf8Encode } from "./bytes";
 import {
   Channel,
   Handshake,
@@ -19,7 +19,7 @@ import {
   newHandshake,
   parsePairURI,
   sealPairOffer,
-} from "./secure.js";
+} from "./secure";
 import {
   E2E_ACK,
   E2E_ATTACH,
@@ -51,8 +51,8 @@ import {
   TYPE_PRESENCE,
   splitPayload,
   wrapPayload,
-} from "./wire.js";
-import { ProtocolClient, ProtocolEnvelope, ServerRequestHandler } from "./rpc.js";
+} from "./wire";
+import { ProtocolClient, ProtocolEnvelope, ServerRequestHandler } from "./rpc";
 
 // --- Transport injection -------------------------------------------------------
 
@@ -269,6 +269,10 @@ export interface RemoteClientOptions {
   onServerRequest?: ServerRequestHandler;
   onState?: (state: HostState) => void;
   onAttach?: (ev: AttachEvent) => void;
+  /** Fires when an established attach is lost (transport drop, host
+   *  offline, bye). The client keeps reconnecting on its own; this is for
+   *  connection-state UI. */
+  onDetach?: () => void;
 }
 
 /** Keeps one phone connected to its paired host. */
@@ -399,7 +403,7 @@ export class RemoteClient {
       if (this.sock === sock) this.sock = null;
       this.channel = null;
       this.pendingHS = null;
-      this.attached = false;
+      this.setDetached();
       sock.close();
     }
   }
@@ -458,7 +462,7 @@ export class RemoteClient {
     }
     this.pendingHS = hs.handshake;
     this.channel = null;
-    this.attached = false;
+    this.setDetached();
     const body = utf8Encode(
       JSON.stringify({
         t: E2E_HS1,
@@ -537,7 +541,7 @@ export class RemoteClient {
         return;
       case E2E_BYE:
         this.channel = null;
-        this.attached = false;
+        this.setDetached();
         return;
       default:
         return;
@@ -568,7 +572,15 @@ export class RemoteClient {
 
   private markDetached(): void {
     this.channel = null;
+    this.setDetached();
+  }
+
+  /** Collapses every attached→detached transition into one place so the
+   *  onDetach callback fires exactly once per established attach. */
+  private setDetached(): void {
+    const wasAttached = this.attached;
     this.attached = false;
+    if (wasAttached) this.opts.onDetach?.();
   }
 
   private startLoops(): void {
@@ -601,7 +613,7 @@ export class RemoteClient {
       this.sendFrame(wrapPayload(KIND_SEALED, sealed));
     } catch {
       this.channel = null;
-      this.attached = false;
+      this.setDetached();
     }
   }
 

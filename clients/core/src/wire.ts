@@ -9,7 +9,7 @@
 //
 // A relay frame payload is a byte slice with a one-byte kind prefix.
 
-import { concatBytes } from "./bytes.js";
+import { concatBytes } from "./bytes";
 
 export const PROTO_VERSION = 1;
 

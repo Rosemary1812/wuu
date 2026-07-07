@@ -353,7 +353,8 @@ describe("RemoteClient", () => {
 
   it("resumes after a transport drop with exact replay and no duplicates", async () => {
     const fake = new FakeHost();
-    const { client, notifications, attaches } = makeClient(fake);
+    let detaches = 0;
+    const { client, notifications, attaches } = makeClient(fake, { onDetach: () => detaches++ });
     client.start();
     try {
       await client.waitAttached(3000);
@@ -377,6 +378,8 @@ describe("RemoteClient", () => {
       // Same app-server connection: the protocol client survived the resume.
       expect(client.rpc()).toBe(proto);
       expect(proto!.isClosed()).toBe(false);
+      // Exactly one detach fired for the transport drop.
+      expect(detaches).toBe(1);
     } finally {
       await client.stop();
     }
