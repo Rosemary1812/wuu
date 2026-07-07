@@ -11,6 +11,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/prompts"
 )
 
 type InceptionTool struct{ env *Env }
@@ -35,7 +36,7 @@ func (t *InceptionTool) IsConcurrencySafe() bool { return false }
 func (t *InceptionTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: compact.InceptionToolName,
-		Description: "Compress the useful semantics from a noisy suffix of conversation history and replace that suffix with a concise continuation summary. Use it when recent reads, searches, command output, failed attempts, or debugging chatter have become low-value context, but the durable facts extracted from them are still useful. " +
+		Description: "Compress the useful semantics from a noisy suffix of conversation history and replace that suffix with a concise continuation summary. This is your primary, everyday tool for keeping your own context clean: " + prompts.InceptionTimingBrief() + ". Use it when recent reads, searches, command output, failed attempts, or debugging chatter have become low-value context, but the durable facts extracted from them are still useful. " +
 			"You will see checkpoint IDs in `user` messages with content like <system>CHECKPOINT {id}</system>. Pass the checkpoint just before the low-value suffix as anchor_id. The system keeps all history before that checkpoint and replaces everything after it with your summary. " +
 			"Default to the closest checkpoint before the noise. Choosing an earlier checkpoint is riskier because your summary must preserve more facts and invalidates more cache; do it only when your summary preserves every durable fact needed to continue from the current external state. " +
 			"The summary is a structured object, not a transcript and not a user-facing report. Fill delivered_to_user, progress, state, next_action, and open_questions so the next step can distinguish work already shown to the user from work still pending. Preserve uncertainty, open questions, and pending user confirmation as pending. Do not claim the user approved, authorized, or requested execution unless visible user history explicitly says so. Omit raw logs, tool-call IDs, detours, commentary about compression, and anything that does not help future reasoning. " +

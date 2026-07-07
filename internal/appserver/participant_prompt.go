@@ -9,6 +9,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/workspaces"
+	"github.com/blueberrycongee/wuu/prompts"
 )
 
 // residentParticipantSystemPrompt renders the resident persona prompt.
@@ -186,6 +187,9 @@ func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memor
 	b.WriteString("- Your context may be compacted over time. Anything worth keeping —\n")
 	b.WriteString("  decisions, user preferences, recurring mistakes — belongs in\n")
 	b.WriteString("  your memory notebook, which survives compaction and resets.\n")
+	b.WriteString("- inception is your primary tool for keeping this context clean — ")
+	b.WriteString(prompts.InceptionTimingBrief())
+	b.WriteString(". It rewrites only your own conversation history; it never touches files, processes, or other external state.\n")
 	if memoryDir != "" {
 		b.WriteString("\n")
 		b.WriteString(memdir.ResidentTeaching(memoryDir))

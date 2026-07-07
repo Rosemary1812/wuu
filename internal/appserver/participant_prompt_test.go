@@ -10,6 +10,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/workspaces"
+	"github.com/blueberrycongee/wuu/prompts"
 )
 
 func TestResidentParticipantSystemPromptFull(t *testing.T) {
@@ -194,6 +195,7 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 		"- Your context may be compacted over time. Anything worth keeping —",
 		"  decisions, user preferences, recurring mistakes — belongs in",
 		"  your memory notebook, which survives compaction and resets.",
+		"- inception is your primary tool for keeping this context clean — " + prompts.InceptionTimingBrief() + ". It rewrites only your own conversation history; it never touches files, processes, or other external state.",
 		"",
 		"## Memory notebook",
 		"Your durable memory is a file-based notebook at `" + notebook + "` — your identity across days and tasks: lessons learned, feedback received, decisions and their reasons. This directory already exists — write to it directly with the file tools (do not run mkdir or check for its existence).",

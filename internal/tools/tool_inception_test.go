@@ -171,6 +171,8 @@ func TestInceptionToolDescriptionTeachesTriggers(t *testing.T) {
 	desc := NewInceptionTool(&Env{AgentPath: agentthread.RootPath}).Definition().Description
 	for _, want := range []string{
 		"Compress the useful semantics",
+		"keeping your own context clean",
+		"do not wait until context is near full",
 		"<system>CHECKPOINT {id}</system>",
 		"low-value suffix",
 		"not a transcript",

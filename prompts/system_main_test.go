@@ -9,6 +9,8 @@ func TestSystemMainTeachesInceptionTriggers(t *testing.T) {
 	prompt := SystemMain()
 	for _, want := range []string{
 		"Use it proactively during the work",
+		"keeps its working context clean",
+		"not a last resort",
 		"<system>CHECKPOINT N</system>",
 		"available in the current tool list",
 		"large file",
