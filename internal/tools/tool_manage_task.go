@@ -61,6 +61,10 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "With update_status: the one-line conclusion draft — the result and how it was verified. Required.",
 				},
+				"ack_collision_id": map[string]any{
+					"type":        "string",
+					"description": "With create on a standalone task (anchor_seq omitted): STRICT id-match escape hatch for the same-group same-title collision check (issue #4 v3). When the same title already exists in the thread as an unfinished task, pass the exact existing task id (from the conflict error message) to persist a same-titled duplicate (work-splitting case). Any other value — empty string, wrong id, made-up value — keeps the dedup hard-block. Usually you should claim the existing task (manage_task action=claim) or pick a distinguishing title instead.",
+				},
 			},
 			"required": []string{"action"},
 		},
@@ -79,13 +83,14 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 		return "", errors.New("manage_task: participant identity is required")
 	}
 	var params struct {
-		Action      string `json:"action"`
-		ThreadID    string `json:"thread_id"`
-		SubthreadID string `json:"subthread_id"`
-		Title       string `json:"title"`
-		AnchorSeq   int    `json:"anchor_seq"`
-		Claim       bool   `json:"claim"`
-		Summary     string `json:"summary"`
+		Action          string `json:"action"`
+		ThreadID        string `json:"thread_id"`
+		SubthreadID     string `json:"subthread_id"`
+		Title           string `json:"title"`
+		AnchorSeq       int    `json:"anchor_seq"`
+		Claim           bool   `json:"claim"`
+		AckCollisionID  string `json:"ack_collision_id"`
+		Summary         string `json:"summary"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
 		return "", fmt.Errorf("manage_task: parse args: %w", err)
@@ -99,7 +104,7 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 		if strings.TrimSpace(params.Title) == "" {
 			return "", errors.New("create: title is required")
 		}
-		view, err := manager.CreateTask(ctx, params.ThreadID, params.AnchorSeq, params.Title, params.Claim)
+		view, err := manager.CreateTask(ctx, params.ThreadID, params.AnchorSeq, params.Title, params.Claim, params.AckCollisionID)
 		if err != nil {
 			return "", err
 		}

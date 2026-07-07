@@ -33,7 +33,7 @@ func (s *Server) residentTaskManager(participantID string) *residentTaskManager 
 	}
 }
 
-func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, anchorSeq int, title string, claim bool) (tools.TaskView, error) {
+func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, anchorSeq int, title string, claim bool, ackCollisionID string) (tools.TaskView, error) {
 	_ = ctx
 	if err := m.ready("create"); err != nil {
 		return tools.TaskView{}, err
@@ -64,6 +64,39 @@ func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, a
 			return tools.TaskView{}, fmt.Errorf("create: message seq %d already hosts reply/task %q; create a standalone task instead (omit anchor_seq)", anchorSeq, existing.ID)
 		} else if !errors.Is(err, session.ErrConversationThreadNotFound) {
 			return tools.TaskView{}, fmt.Errorf("create: %w", err)
+		}
+	}
+
+	// Standalone collision check (issue #4 v3): when anchorSeq == 0 (no
+	// message to anchor the dedup on), a same-titled unfinished task in the
+	// same thread would silently spawn a duplicate card. The user spec
+	// calls for a hard-block that lets the creator decide (claim it OR
+	// persist with ack_collision_id citing the existing task id).
+	//
+	// ack_collision_id is a STRICT id-match escape hatch — it must equal
+	// the existing task's id, NOT a generic ack or a made-up value. The
+	// strict-matching rule is the 5th-test red line (`TestStandaloneCreateAckCollisionMismatchRefuses`
+	// in standalone_create_dedup_test.go): "ack" cannot degrade into a
+	// generic force bypass, because that would defeat the dedup entirely.
+	// Anchored tasks skip this check entirely — one anchor, one cth,
+	// period.
+	//
+	// The collision set is deliberately narrowed to status == task: that is
+	// the only state that means "unfinished and claimable". A same-titled
+	// task in review has been delivered (awaiting the human gate) and a
+	// resolved one is history — re-creating either title is a legitimate
+	// redo, not a duplicate. Open discussion replies never collide (they are
+	// not tasks yet). Anchored cths that escalated to task carry the same
+	// status and are caught by the same filter, so the dedup surface covers
+	// anchored and standalone same-title collisions alike.
+	if anchorSeq == 0 {
+		if existing := findUnfinishedTaskByNormalizedTitle(m.server.rt.SessionDir, threadID, normalizeTitleForDedup(title)); existing != nil {
+			if ackCollisionID != existing.ID {
+				return tools.TaskView{}, fmt.Errorf("create: title %q already in use by open task %q in this group; claim it with manage_task action=claim, or pass ack_collision_id=%q to create a duplicate", title, existing.ID, existing.ID)
+			}
+			// ack_collision_id matched the existing task's id: caller has
+			// explicitly ack'd this collision. Fall through to write the
+			// duplicate cth (work-splitting same-topic case).
 		}
 	}
 
@@ -423,4 +456,49 @@ func (s *Server) bubbleSubthreadResolve(threadID string, thread session.Conversa
 	thread.Status = session.ConversationThreadResolved
 	thread.Summary = summary
 	return thread, nil
+}
+
+// normalizeTitleForDedup trims, collapses whitespace runs, and lowercases
+// so that titles like "Fix  Login Flake" and "fix login flake" collide on
+// issue #4's check. SQLite's default collation is BINARY, so this is the
+// layer that resolves case-insensitive matching — the SQL filter alone
+// would miss it. Used by findUnfinishedTaskByNormalizedTitle below; callers
+// should normalize once per request and reuse the result.
+func normalizeTitleForDedup(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(s)), " "))
+}
+
+// findUnfinishedTaskByNormalizedTitle scans the thread's cth rows via
+// session.ListConversationThreads and returns the first row whose title
+// (after normalizeTitleForDedup) equals target and whose status is
+// ConversationThreadTask. Returns nil when nothing matches.
+//
+// Why Task-status only: status == task is the only "unfinished and
+// claimable" state, which is what a duplicate would pollute. A standalone
+// task is BORN as task (conversation_thread.go creation constraint) but
+// still flows to review/resolved like any other; those states mean the
+// work was delivered or closed, so re-creating the title is a legitimate
+// redo and must not be blocked. Open discussion replies are not tasks and
+// never collide.
+//
+// Implemented as a one-thread in-Go scan rather than a new session
+// helper because per-thread cth counts stay small (< ~100), and this
+// matches the anchor dedup pattern at L54-68 in spirit: "no new SQL
+// helper for the symmetric case".
+func findUnfinishedTaskByNormalizedTitle(sessDir, threadID, normalizedTitle string) *session.ConversationThread {
+	threads, err := session.ListConversationThreads(sessDir, threadID)
+	if err != nil {
+		providers.DebugLogf("list conversation threads for standalone dedup %q: %v", threadID, err)
+		return nil
+	}
+	for i, t := range threads {
+		// Status filter narrowed to ConversationThreadTask only (issue #4
+		// v3): see the dedup block comment in CreateTask for the
+		// rationale (L89-93 standalone constraint pins this single value).
+		if t.Status == session.ConversationThreadTask &&
+			normalizeTitleForDedup(t.Title) == normalizedTitle {
+			return &threads[i]
+		}
+	}
+	return nil
 }

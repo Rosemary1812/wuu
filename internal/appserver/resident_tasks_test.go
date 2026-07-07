@@ -35,7 +35,7 @@ func newTaskWakeFixture(t *testing.T) (srv *Server, groupID, ada, bea string) {
 func TestTaskBoardWakeOnBornOpenCreate(t *testing.T) {
 	srv, groupID, ada, bea := newTaskWakeFixture(t)
 
-	view, err := srv.residentTaskManager(ada).CreateTask(context.Background(), groupID, 0, "fix login flake", false)
+	view, err := srv.residentTaskManager(ada).CreateTask(context.Background(), groupID, 0, "fix login flake", false, "")
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestTaskBoardWakeSkippedWhenBornOwnedThenFiresOnUnclaim(t *testing.T) {
 	srv, groupID, ada, bea := newTaskWakeFixture(t)
 	manager := srv.residentTaskManager(ada)
 
-	view, err := manager.CreateTask(context.Background(), groupID, 0, "self-owned refactor", true)
+	view, err := manager.CreateTask(context.Background(), groupID, 0, "self-owned refactor", true, "")
 	if err != nil {
 		t.Fatalf("CreateTask claim=true: %v", err)
 	}

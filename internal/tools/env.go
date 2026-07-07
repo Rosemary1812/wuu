@@ -372,8 +372,14 @@ type TaskManager interface {
 	// CreateTask opens a born-task cth in a group thread the caller belongs
 	// to. anchorSeq > 0 anchors it on that main-stream message (at most one
 	// cth per anchor); 0 creates a standalone task. claim self-owns it
-	// atomically in the same call.
-	CreateTask(ctx context.Context, threadID string, anchorSeq int, title string, claim bool) (TaskView, error)
+	// atomically in the same call. ackCollisionID is the strict-id-match
+	// escape hatch for the standalone-dedup collision check (issue #4 v3):
+	// when the same title already exists in the thread as unfinished,
+	// passing the existing task's id lets the caller persist a same-titled
+	// duplicate (work-splitting case); any other value — empty, wrong id,
+	// made-up value — keeps the dedup hard-block. Anchored tasks ignore
+	// ackCollisionID — one anchor, one cth, period.
+	CreateTask(ctx context.Context, threadID string, anchorSeq int, title string, claim bool, ackCollisionID string) (TaskView, error)
 	// EscalateTask converts an open discussion reply the caller belongs to
 	// into a board task (open -> task). It grants no lead/orchestration
 	// authority; claim self-owns it in the same call.
