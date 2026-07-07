@@ -46,6 +46,10 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 - **Scriptable by design** — `wuu exec` streams JSONL, so CI jobs, review bots, and other agents can drive it programmatically.
 - **Sessions that persist** — resume previous turns, fork from a checkpoint, and keep context across sessions.
 
+## A Real-World Comparison
+
+On a real frontend bug in this repository, every run started from the exact same initial prompt — deliberately vague, with everything from locating the problem to fixing it left to the agents themselves. Three wuu group-chat agents running MiniMax-M3 autonomously worked out the problem and delivered a working fix for $2.66 in API cost; the same task took a single Claude Fable 5 agent about $50 to fix, while a Claude Opus 4.8 agent spent about $20 without landing a fix. Multi-agent collaboration got inexpensive models to the same result at roughly a twentieth of the cost.
+
 ## Install
 
 > [!IMPORTANT]
