@@ -240,7 +240,12 @@ func (s *Server) deliverEnvelopeToMembers(members []string, base MessageEnvelope
 		if pushToInbox || mentioned[participantID] || soleMember {
 			env := base
 			env.ID = "env-" + session.NewID()
-			env.Addressed = mentioned[participantID]
+			// A sole-member group is a DM in disguise: its one agent is the
+			// user's only interlocutor, so a main-stream post there is a
+			// must-answer (addressed), exactly like a DM. cth/system directives
+			// (pushToInbox) keep their own addressed semantics — a system wake
+			// addresses nobody even in a one-member group.
+			env.Addressed = mentioned[participantID] || (soleMember && !pushToInbox)
 			if env.CreatedAt.IsZero() {
 				env.CreatedAt = time.Now().UTC()
 			}
@@ -794,7 +799,18 @@ func (s *Server) afterResidentTurn(th *threadState, participantID string, envs [
 		}
 		s.recordEnvelopeReadReceipts(participantID, envs, status, firstNonZeroTime(completedAt, time.Now().UTC()))
 	}
-	s.fallbackDMReplyFromFinalAnswer(th, participantID, envs, turn, completedAt)
+	// Whether the resident already spoke through the tool channel this turn. A
+	// group post lives in the group thread, not this DM turn's Items, so the
+	// fallback cannot see it there; this per-turn flag is the reliable signal.
+	spoke := false
+	if v, ok := s.residentTurnSpeech.LoadAndDelete(participantID); ok {
+		if lim, ok := v.(*residentSpeechLimiter); ok {
+			spoke = lim.didSpeak()
+		}
+	}
+	if !spoke {
+		s.fallbackDMReplyFromFinalAnswer(th, participantID, envs, turn, completedAt)
+	}
 	if len(envs) > 0 {
 		s.recordUnansweredAddressedEnvelopes(th, participantID, envs, turn, completedAt)
 	}

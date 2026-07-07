@@ -31,6 +31,25 @@ type residentParticipantSpeech struct {
 type residentSpeechLimiter struct {
 	mu            sync.Mutex
 	postsByThread map[string]int
+	// spoke is set once the resident publishes any post_message/decline this
+	// turn (to any thread). afterResidentTurn reads it to decide whether the
+	// plain-text fallback should fire: a resident that already spoke through the
+	// tool channel must not have its trailing assistant text ("no reply needed",
+	// wrap-up notes) republished as a second, spam post. The DM turn's own Items
+	// cannot answer this — a group post lives in the group thread, not the DM.
+	spoke bool
+}
+
+func (l *residentSpeechLimiter) markSpoke() {
+	l.mu.Lock()
+	l.spoke = true
+	l.mu.Unlock()
+}
+
+func (l *residentSpeechLimiter) didSpeak() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.spoke
 }
 
 func (s *Server) residentParticipantSpeech(participantID string) tools.ParticipantSpeech {
@@ -51,10 +70,17 @@ func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThr
 			engaged[threadID] = true
 		}
 	}
+	limiter := &residentSpeechLimiter{}
+	pid := strings.TrimSpace(participantID)
+	if s != nil && pid != "" {
+		// Stash this turn's limiter so afterResidentTurn can tell whether the
+		// resident spoke through the tool channel before deciding the fallback.
+		s.residentTurnSpeech.Store(pid, limiter)
+	}
 	return residentParticipantSpeech{
 		server:         s,
-		participantID:  strings.TrimSpace(participantID),
-		limiter:        &residentSpeechLimiter{},
+		participantID:  pid,
+		limiter:        limiter,
 		hopByThread:    hops,
 		engagedThreads: engaged,
 	}
@@ -122,6 +148,11 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 	}
 	if err := r.server.publishParticipantMessage(targetThreadID, msg); err != nil {
 		return tools.PostedMessage{}, err
+	}
+	// The resident has now spoken through the tool channel this turn — suppress
+	// the plain-text fallback so trailing wrap-up text is not republished.
+	if r.limiter != nil {
+		r.limiter.markSpoke()
 	}
 	reportThreadID := targetThreadID
 	if subthreadID != "" {

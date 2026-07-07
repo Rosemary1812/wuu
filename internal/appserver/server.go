@@ -1,7 +1,6 @@
 package appserver
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -115,6 +114,12 @@ type Server struct {
 	out     io.Writer
 	writeMu sync.Mutex
 
+	// pushRegistrar is the host-side hook invoked by the device/push_*
+	// methods. The desktop main pipeline leaves it nil so the methods
+	// respond with "remote-only" errors; the remote-host package binds
+	// a per-device registrar via WithPushRegistrar in RunStdioForDevice.
+	pushRegistrar PushRegistrar
+
 	mu      sync.Mutex
 	threads map[string]*threadState
 
@@ -135,6 +140,13 @@ type Server struct {
 
 	residentDrainMu       sync.Mutex
 	drainingResidentAgent map[string]bool
+
+	// residentTurnSpeech maps a participant id to its current turn's speech
+	// limiter, so afterResidentTurn can tell whether the resident already spoke
+	// through post_message/decline before deciding to fire the plain-text
+	// fallback. One resident turn at a time (drain lock + th.running) keeps the
+	// per-key writes sequential.
+	residentTurnSpeech sync.Map
 
 	// participantBusyMu guards participantBusy, the registry of named
 	// agents currently executing a task/workflow run (decision-five
@@ -269,24 +281,7 @@ func RunStdio(ctx context.Context, rt *runtime.Session, in io.Reader, out io.Wri
 		return errors.New("runtime session is required")
 	}
 	s := New(rt, out)
-	scanner := bufio.NewScanner(in)
-	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		if err := s.handleLine(ctx, []byte(line)); err != nil {
-			if errors.Is(err, errShutdown) {
-				return nil
-			}
-			return err
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("read app-server input: %w", err)
-	}
-	return nil
+	return runStdioScanner(ctx, s, in)
 }
 
 func (s *Server) handleLine(ctx context.Context, raw []byte) error {
@@ -437,6 +432,10 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return errShutdown
 	case MethodSettingsUsage:
 		return s.handleSettingsUsage(req)
+	case MethodDevicePushRegister:
+		return s.handleDevicePushRegister(req)
+	case MethodDevicePushUnregister:
+		return s.handleDevicePushUnregister(req)
 	default:
 		return s.writeResponse(req.ID, nil, fmt.Errorf("unknown method %q", req.Method))
 	}
