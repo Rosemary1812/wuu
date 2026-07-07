@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -139,6 +140,8 @@ func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, a
 		}
 		thread = claimed
 	}
+	m.server.recordTaskEventFor(thread, "", session.TaskEventTaskCreated, m.participantID,
+		fmt.Sprintf("task created: %q", firstNonEmpty(title, "untitled")), "")
 	m.server.notifySubthreadUpdated(threadID, thread.ID)
 	m.server.wakeTaskBoardForOwnerlessTask(thread, m.participantID, "opened on the board")
 	return m.taskView(thread), nil
@@ -354,6 +357,8 @@ func (m *residentTaskManager) SetPlan(ctx context.Context, subthreadID string, p
 	if err != nil {
 		return tools.TaskView{}, fmt.Errorf("set_plan: %w", err)
 	}
+	m.server.recordTaskEventFor(updated, "", session.TaskEventWorkflowPlanned, m.participantID,
+		fmt.Sprintf("lead declared a %d-piece workflow plan", len(sessionPieces)), planTracePayload(sessionPieces))
 	m.server.notifySubthreadUpdated(updated.SessionID, updated.ID)
 	m.server.advancePlan(updated.ID)
 	final, err := session.FindConversationThreadByID(m.server.rt.SessionDir, thread.ID)
@@ -393,6 +398,8 @@ func (m *residentTaskManager) PieceDone(ctx context.Context, subthreadID, pieceI
 	if err != nil {
 		return tools.TaskView{}, fmt.Errorf("piece_done: %w", err)
 	}
+	m.server.recordTaskEventFor(updated, pieceID, session.TaskEventNodeSucceeded, m.participantID,
+		fmt.Sprintf("piece %q reported done", piece.Title), "")
 	// Auto-unfollow when this assignee has no remaining pieces: they are done
 	// with the task, so later traffic on it should not wake them (the correct
 	// lever for the lead's wrap-up not re-running finished teammates). Keep
@@ -563,6 +570,37 @@ func (s *Server) advancePlan(taskID string) {
 	s.notifySubthreadUpdated(task.SessionID, task.ID)
 }
 
+// planTracePayload serializes a plan's pieces for the workflow_planned trace
+// event, so the lead can later see the exact breakdown it authored.
+func planTracePayload(pieces []session.TaskPiece) string {
+	data, err := json.Marshal(pieces)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// recordTaskEventFor appends one event to a task's durable execution trace.
+// Observability only: failures are logged, never propagated onto the task's
+// critical path. task carries the ids so callers with the thread in hand avoid
+// an extra lookup.
+func (s *Server) recordTaskEventFor(task session.ConversationThread, nodeID, kind, actor, summary, payload string) {
+	if s == nil || s.rt == nil || strings.TrimSpace(task.ID) == "" {
+		return
+	}
+	if _, err := session.AppendTaskEvent(s.rt.SessionDir, session.TaskEvent{
+		SessionID: task.SessionID,
+		TaskID:    task.ID,
+		NodeID:    nodeID,
+		Kind:      kind,
+		Actor:     actor,
+		Summary:   summary,
+		Payload:   payload,
+	}); err != nil {
+		providers.DebugLogf("record task event %s/%s: %v", task.ID, kind, err)
+	}
+}
+
 // wakePieceAssignee @-wakes one assignee into the task thread to start a piece
 // whose dependencies are satisfied. The directive is medium-agnostic — it names
 // the piece, not a code action — so the same wake serves research, documents,
@@ -573,6 +611,8 @@ func (s *Server) wakePieceAssignee(task session.ConversationThread, piece sessio
 		"Your piece of task %q is ready to start: %q. Its prerequisites are done. Do it, working in this task thread (thread_id=%q); when finished, file it with manage_task action=piece_done piece_id=%q. Post here only what a teammate needs — @ them if you need something.",
 		firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), piece.Title, task.ID, piece.ID,
 	)
+	s.recordTaskEventFor(task, piece.ID, session.TaskEventNodeStarted, piece.Assignee,
+		fmt.Sprintf("node started: %q", piece.Title), "")
 	s.deliverEnvelopeToMembers([]string{piece.Assignee}, MessageEnvelope{
 		SourceThreadID:      task.SessionID,
 		SourceSubthreadID:   task.ID,
@@ -595,6 +635,8 @@ func (s *Server) wakePlanLead(task session.ConversationThread) {
 		return
 	}
 	title, workspace := s.taskThreadContext(task.SessionID)
+	s.recordTaskEventFor(task, "", session.TaskEventLeadInvoked, lead,
+		"all pieces done — lead woken to wrap up", "")
 	text := fmt.Sprintf(
 		"Every piece of task %q is done. Wrap it up: file the task's conclusion (manage_task action=update_status subthread_id=%q), then report the result to the user (@ the user so teammates are not re-woken).",
 		firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), task.ID,

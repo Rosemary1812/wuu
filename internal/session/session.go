@@ -901,6 +901,26 @@ func migrateSchema(db *sql.DB) error {
 			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_message_marks_message ON message_marks(session_id, seq)`,
+		// task_events is the durable, append-only execution trace for a task
+		// (one conversation_thread upgraded to a task). It is the record the
+		// system, the lead/supervisor, and humans read to understand what
+		// happened — especially on failure. task_id is the cth id; node_id is a
+		// plan piece id (empty for task-level events). seq is a per-task
+		// monotonic order key. Never overwritten: state transitions are new
+		// rows, so history is preserved (unlike the plan JSON column).
+		`CREATE TABLE IF NOT EXISTS task_events (
+			id         TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL,
+			task_id    TEXT NOT NULL,
+			node_id    TEXT NOT NULL DEFAULT '',
+			seq        INTEGER NOT NULL,
+			kind       TEXT NOT NULL,
+			actor      TEXT NOT NULL DEFAULT '',
+			summary    TEXT NOT NULL DEFAULT '',
+			payload    TEXT NOT NULL DEFAULT '',
+			at         INTEGER NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, seq)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
