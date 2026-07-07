@@ -454,7 +454,7 @@ func (s *Server) drainResidentAgent(participantID string) {
 		return
 	}
 	if threadRuntime != nil && threadRuntime.Toolkit != nil {
-		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeechWithHops(participantID, residentSpeechHopsByThread(envs)))
+		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeechForTurn(participantID, residentSpeechHopsByThread(envs), residentSpeechSeenSeqByThread(envs)))
 		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
 		threadRuntime.Toolkit.SetTaskManager(s.residentTaskManager(participantID))
 		threadRuntime.Toolkit.SetWorkflowThreadID(th.ID)
@@ -605,6 +605,24 @@ func residentSpeechHopsByThread(envs []MessageEnvelope) map[string]int {
 		}
 	}
 	return hops
+}
+
+// residentSpeechSeenSeqByThread records, per source thread, the highest message
+// seq this envelope batch carried — the version of each room the agent read
+// before composing. The freshness check (held draft) uses it to detect a room
+// that moved during the turn.
+func residentSpeechSeenSeqByThread(envs []MessageEnvelope) map[string]int {
+	seen := make(map[string]int)
+	for _, env := range envs {
+		threadID := strings.TrimSpace(env.SourceThreadID)
+		if threadID == "" || env.SourceSeq <= 0 {
+			continue
+		}
+		if env.SourceSeq > seen[threadID] {
+			seen[threadID] = env.SourceSeq
+		}
+	}
+	return seen
 }
 
 func (s *Server) mentionedMembersByName(source *threadState, text string) map[string]bool {

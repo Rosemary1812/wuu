@@ -311,10 +311,21 @@ type PostedMessage struct {
 	ThreadID      string    `json:"thread_id"`
 	Text          string    `json:"text,omitempty"`
 	CreatedAt     time.Time `json:"created_at,omitempty"`
+	// Held is set when the post was NOT published because the thread moved
+	// since this turn read it: newer messages arrived while the agent was
+	// composing, so the draft may now be redundant or out of date. HeldNote
+	// carries what arrived. The agent decides its next move: revise (post a
+	// new draft), resend unchanged (post again with force=true), or stay
+	// silent. Never set for the fresh-post path or for a forced post.
+	Held    bool   `json:"held,omitempty"`
+	HeldNote string `json:"held_note,omitempty"`
 }
 
 type ParticipantSpeech interface {
-	PostMessage(ctx context.Context, kind, text, targetThreadID string) (PostedMessage, error)
+	// PostMessage publishes a participant message. force=true skips the
+	// freshness check (see PostedMessage.Held): use it to resend a draft the
+	// agent has decided is still right even though the room moved.
+	PostMessage(ctx context.Context, kind, text, targetThreadID string, force bool) (PostedMessage, error)
 }
 
 // GroupManager lets resident named agents create group threads and add

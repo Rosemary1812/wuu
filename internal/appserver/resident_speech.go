@@ -18,6 +18,12 @@ type residentParticipantSpeech struct {
 	participantID string
 	limiter       *residentSpeechLimiter
 	hopByThread   map[string]int
+	// seenSeqByThread records, per source thread, the highest message seq this
+	// turn's envelope batch carried — i.e. the version of the room the agent
+	// read before composing. The freshness check (held draft) compares it to
+	// the thread's current tail so a reply written against a now-stale room is
+	// held instead of posted blind.
+	seenSeqByThread map[string]int
 }
 
 type residentSpeechLimiter struct {
@@ -26,10 +32,10 @@ type residentSpeechLimiter struct {
 }
 
 func (s *Server) residentParticipantSpeech(participantID string) tools.ParticipantSpeech {
-	return s.residentParticipantSpeechWithHops(participantID, nil)
+	return s.residentParticipantSpeechForTurn(participantID, nil, nil)
 }
 
-func (s *Server) residentParticipantSpeechWithHops(participantID string, hopByThread map[string]int) tools.ParticipantSpeech {
+func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThread, seenSeqByThread map[string]int) tools.ParticipantSpeech {
 	hops := make(map[string]int, len(hopByThread))
 	for threadID, hop := range hopByThread {
 		threadID = strings.TrimSpace(threadID)
@@ -37,15 +43,23 @@ func (s *Server) residentParticipantSpeechWithHops(participantID string, hopByTh
 			hops[threadID] = hop
 		}
 	}
+	seen := make(map[string]int, len(seenSeqByThread))
+	for threadID, seq := range seenSeqByThread {
+		threadID = strings.TrimSpace(threadID)
+		if threadID != "" && seq > 0 {
+			seen[threadID] = seq
+		}
+	}
 	return residentParticipantSpeech{
-		server:        s,
-		participantID: strings.TrimSpace(participantID),
-		limiter:       &residentSpeechLimiter{},
-		hopByThread:   hops,
+		server:          s,
+		participantID:   strings.TrimSpace(participantID),
+		limiter:         &residentSpeechLimiter{},
+		hopByThread:     hops,
+		seenSeqByThread: seen,
 	}
 }
 
-func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, targetThreadID string) (tools.PostedMessage, error) {
+func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, targetThreadID string, force bool) (tools.PostedMessage, error) {
 	_ = ctx
 	if r.server == nil {
 		return tools.PostedMessage{}, errors.New("post_message: app server not configured")
@@ -73,6 +87,16 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 	targetThreadID, subthreadID, err := r.resolveTargetThread(strings.TrimSpace(targetThreadID))
 	if err != nil {
 		return tools.PostedMessage{}, err
+	}
+	// Freshness check (held draft): if the agent read this thread this turn
+	// (we have a seen-seq for it) and it has moved since — a teammate or the
+	// user posted while the agent was composing — hold the draft instead of
+	// posting it blind. A decline needs no check (it is already the silent
+	// choice), and force skips it (the agent has decided to send anyway).
+	if kind != "decline" && !force {
+		if note, held := r.roomMovedSince(targetThreadID, subthreadID); held {
+			return tools.PostedMessage{Held: true, HeldNote: note}, nil
+		}
 	}
 	// A decline is the silent alternative to a reply; it is not counted against
 	// the per-turn post budget (an agent must always be able to decline an
@@ -110,6 +134,61 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 		Text:          text,
 		CreatedAt:     now,
 	}, nil
+}
+
+// roomMovedSince reports whether the target scope gained new visible messages
+// (from someone other than this agent) since the agent read it this turn. It
+// keys on the seen-seq the turn's envelope batch carried: no seen-seq for the
+// thread means the agent is initiating rather than replying, so a fresh post is
+// never held. Scope matters — a main-stream post is only stale if new main
+// messages arrived; a reply-subthread post only if new messages in that same
+// cth arrived. The returned note lists what arrived, for the agent to weigh.
+func (r residentParticipantSpeech) roomMovedSince(parentThreadID, subthreadID string) (string, bool) {
+	seen, ok := r.seenSeqByThread[strings.TrimSpace(parentThreadID)]
+	if !ok || seen <= 0 {
+		return "", false
+	}
+	records, err := session.LoadHistoryRecords(r.server.rt.SessionDir, parentThreadID, false)
+	if err != nil {
+		return "", false
+	}
+	var arrived []string
+	for _, rec := range records {
+		if rec.Seq <= seen {
+			continue
+		}
+		role := strings.ToLower(strings.TrimSpace(rec.Role))
+		if role != "participant" && role != "user" {
+			continue
+		}
+		// A participant record with no post kind is a non-message row (e.g.
+		// telemetry meta) — it is not the room speaking.
+		if role == "participant" && strings.TrimSpace(rec.PostKind) == "" {
+			continue
+		}
+		if strings.TrimSpace(rec.ThreadID) != strings.TrimSpace(subthreadID) {
+			continue
+		}
+		if strings.TrimSpace(rec.ParticipantID) == r.participantID {
+			continue
+		}
+		who := strings.TrimSpace(rec.ParticipantID)
+		if role == "user" || who == "" {
+			who = "the user"
+		} else if summary, ok := r.server.resolveParticipantSummary(who); ok && strings.TrimSpace(summary.Name) != "" {
+			who = summary.Name
+		}
+		body := firstNonEmpty(strings.TrimSpace(rec.DisplayContent), strings.TrimSpace(rec.Content))
+		body = strings.Join(strings.Fields(body), " ")
+		if len(body) > 160 {
+			body = body[:160] + "…"
+		}
+		arrived = append(arrived, fmt.Sprintf("- %s: %s", who, body))
+	}
+	if len(arrived) == 0 {
+		return "", false
+	}
+	return strings.Join(arrived, "\n"), true
 }
 
 // React stamps a reaction on a specific message (targetThreadID, seq). It is
