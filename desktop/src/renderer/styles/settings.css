@@ -16,7 +16,6 @@
  *   .settings-section-header         section title + description
  *   .settings-card                   bordered surface holding rows
  *   .settings-row                    one label/control pair inside a card
- *   .settings-card-footer            action bar at the bottom of a card
  *   .settings-input / .settings-select   shared form controls
  *   .settings-switch                 boolean toggle
  *   .settings-status-pill            semantic status badge
@@ -539,21 +538,7 @@
   transform: translateX(18px);
 }
 
-/* --- Card footer --------------------------------------------------------- */
 
-.settings-card-footer {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border-top: 1px solid var(--hairline-soft);
-  background: var(--surface-1);
-  padding: 14px 24px;
-  min-height: 56px;
-}
-
-.settings-card-footer .settings-button {
-  margin-left: auto;
-}
 
 .settings-error,
 .settings-saved {

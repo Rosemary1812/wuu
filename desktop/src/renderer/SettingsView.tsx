@@ -686,30 +686,7 @@ function SettingsRow({
   );
 }
 
-function SettingsCardFooter({
-  error,
-  saved,
-  submitLabel,
-  disabled,
-  children
-}: {
-  error: string;
-  saved: boolean;
-  submitLabel: string;
-  disabled: boolean;
-  children?: ReactNode;
-}): JSX.Element {
-  return (
-    <div className="settings-card-footer">
-      {error ? <div className="settings-error">{error}</div> : null}
-      {saved && !error ? <div className="settings-saved">已保存</div> : null}
-      {children}
-      <button className="settings-button settings-button-primary" type="submit" disabled={disabled}>
-        {submitLabel}
-      </button>
-    </div>
-  );
-}
+
 
 /* -------------------------------------------------------------------------- */
 /*  Providers page                                                             */
@@ -1014,13 +991,16 @@ function SettingsProvidersPage({
             onChange={(event) => onAPIKeyDraftChange(event.target.value)}
             disabled={running || connectionLocked}
           />
+          {error ? <div className="settings-error">{error}</div> : null}
+          {saved && !error ? <div className="settings-saved">已保存</div> : null}
+          <button
+            className="settings-button settings-button-primary"
+            type="submit"
+            disabled={disabled}
+          >
+            {addingProvider ? "添加服务" : "保存配置"}
+          </button>
         </SettingsRow>
-        <SettingsCardFooter
-          error={error}
-          saved={saved}
-          submitLabel={addingProvider ? "添加服务" : "保存配置"}
-          disabled={disabled}
-        />
       </form>
     </SettingsSection>
   );
@@ -1182,13 +1162,16 @@ function SettingsAdvancedPage({
             onChange={(event) => onTemperatureChange(event.target.value)}
             disabled={running || !initialized}
           />
+          {error ? <div className="settings-error">{error}</div> : null}
+          {saved && !error ? <div className="settings-saved">已保存</div> : null}
+          <button
+            className="settings-button settings-button-primary"
+            type="submit"
+            disabled={running || !initialized}
+          >
+            保存高级设置
+          </button>
         </SettingsRow>
-        <SettingsCardFooter
-          error={error}
-          saved={saved}
-          submitLabel="保存高级设置"
-          disabled={running || !initialized}
-        />
       </form>
     </SettingsSection>
   );
@@ -1320,6 +1303,15 @@ function SettingsGeneralPage({
               }}
               disabled={running || !initialized}
             />
+            {generalError ? <div className="settings-error">{generalError}</div> : null}
+            {generalSaved && !generalError ? <div className="settings-saved">已保存</div> : null}
+            <button
+              className="settings-button settings-button-primary"
+              type="submit"
+              disabled={running || !initialized}
+            >
+              保存常规设置
+            </button>
           </SettingsRow>
           <SettingsRow
             title="记忆"
@@ -1340,12 +1332,6 @@ function SettingsGeneralPage({
               <span className="sr-only">{memoryDisabledDraft ? "打开记忆" : "关闭记忆"}</span>
             </button>
           </SettingsRow>
-          <SettingsCardFooter
-            error={generalError}
-            saved={generalSaved}
-            submitLabel="保存常规设置"
-            disabled={running || !initialized}
-          />
         </form>
       </SettingsSection>
 
