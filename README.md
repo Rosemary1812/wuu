@@ -127,7 +127,7 @@ wuu session list --json
 - **Sessions** — resume previous turns, list history, and fork from a checkpoint
 
 **Agent orchestration**
-- **Subagents** — delegate to specialized agents (planner, worker, reviewer, debugger, QA, and more) for parallel or isolated work
+- **Subagents** — delegate to child agents (fresh general-purpose context, worktree-isolated workers, or context-inheriting forks) for parallel or isolated work
 - **Workflows** — durable multi-step runs with phases, worker spawns, and recovery
 - **Skills** — task-specific instruction sets for focused work like planning, reviewing, or frontend design
 - **Persistent memory** — agent profiles that remember preferences and context across sessions

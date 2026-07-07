@@ -5,33 +5,8 @@ import (
 	"testing"
 )
 
-// The presets are constants meant to be pasted into worker prompts
-// verbatim. These tests pin the load-bearing lines so a casual edit
-// can't accidentally weaken the failure-mode-specific guarantees
-// the prompts encode (see presets.go for the rationale on each).
-
-func TestVerificationPreset_HasFrameInversion(t *testing.T) {
-	if !strings.Contains(VerificationPreset, "not just confirm") {
-		t.Error("VerificationPreset is missing the frame-inversion line")
-	}
-	if !strings.Contains(VerificationPreset, "try to break it") {
-		t.Error("VerificationPreset is missing the break-it directive")
-	}
-}
-
-func TestVerificationPreset_RequiresEvidence(t *testing.T) {
-	if !strings.Contains(VerificationPreset, "Never write") && !strings.Contains(VerificationPreset, "PASS") {
-		t.Error("VerificationPreset must require evidence for PASS verdicts")
-	}
-}
-
-func TestVerificationPreset_VerdictFormat(t *testing.T) {
-	for _, want := range []string{"VERDICT: PASS", "VERDICT: FAIL", "VERDICT: PARTIAL"} {
-		if !strings.Contains(VerificationPreset, want) {
-			t.Errorf("VerificationPreset missing verdict literal %q", want)
-		}
-	}
-}
+// These tests pin the load-bearing lines of the model-facing prompt
+// constants so a casual edit can't accidentally weaken them.
 
 func TestSystemPromptPreamble_ContainsAgentToolRules(t *testing.T) {
 	preamble := SystemPromptPreamble()
@@ -40,7 +15,6 @@ func TestSystemPromptPreamble_ContainsAgentToolRules(t *testing.T) {
 		"main agent owns the user conversation",
 		"subagent_type",
 		"general-purpose",
-		"verification",
 		"fork-self",
 		"run_in_background",
 		"send_message",

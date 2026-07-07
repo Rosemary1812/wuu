@@ -44,21 +44,33 @@ func TestGeneralPurposePromptUsesAgentReportNotParsedFinalFormat(t *testing.T) {
 }
 
 func TestLookupWorkerType_RemovedTypesRejected(t *testing.T) {
-	for _, name := range []string{"research", "explorer", "verifier"} {
+	for _, name := range []string{
+		"research", "explorer", "verifier",
+		"verification", "planner", "researcher", "reviewer", "qa", "debugger", "integrator",
+	} {
 		if _, err := LookupWorkerType(name); err == nil {
-			t.Errorf("LookupWorkerType(%q) should error after aligning to subagent_type definitions", name)
+			t.Errorf("LookupWorkerType(%q) should error after trimming the built-in registry", name)
 		}
 	}
 }
 
-func TestLookupWorkerType_LoopRoles(t *testing.T) {
-	for _, name := range []string{"planner", "researcher", "worker", "reviewer", "qa", "debugger", "integrator"} {
-		wt, err := LookupWorkerType(name)
-		if err != nil {
-			t.Fatalf("LookupWorkerType(%q): %v", name, err)
+func TestBuiltinWorkerTypes_ExactRoster(t *testing.T) {
+	want := []string{DefaultSubagentType, HelpMeRecoveryWorkerType, "worker"}
+	got := AvailableWorkerTypeNames()
+	if len(got) != len(want) {
+		t.Fatalf("built-in roster must stay minimal, got %v", got)
+	}
+	for _, name := range want {
+		if !containsString(got, name) {
+			t.Fatalf("built-in roster missing %q: %v", name, got)
 		}
+	}
+}
+
+func TestBuiltinWorkerTypes_RoleContracts(t *testing.T) {
+	for _, wt := range AvailableWorkerTypes() {
 		if wt.Role == "" || wt.ContextScope == "" || wt.OutputSchema == "" || len(wt.SuccessCriteria) == 0 {
-			t.Fatalf("%s missing role contract: %+v", name, wt)
+			t.Fatalf("%s missing role contract: %+v", wt.Name, wt)
 		}
 	}
 }
@@ -94,10 +106,10 @@ func TestFilterToolsForWorker_BlocksRecursiveAgentControls(t *testing.T) {
 	}
 }
 
-func TestFilterToolsForWorker_VerificationDisallowsProjectWrites(t *testing.T) {
-	wt, _ := LookupWorkerType("verification")
-	if !wt.Background {
-		t.Fatal("verification agent should run in the background")
+func TestFilterToolsForWorker_DisallowedToolsRespected(t *testing.T) {
+	wt := WorkerType{
+		Name:            "restricted",
+		DisallowedTools: []string{"write_file", "edit_file", "apply_patch"},
 	}
 	full := []string{"read_file", "write_file", "edit_file", "apply_patch", "bash", "agent_report", "post_message"}
 	filtered := FilterToolsForWorker(wt, full)
@@ -107,41 +119,37 @@ func TestFilterToolsForWorker_VerificationDisallowsProjectWrites(t *testing.T) {
 	}
 	for _, blocked := range []string{"write_file", "edit_file", "apply_patch"} {
 		if allowed[blocked] {
-			t.Errorf("verification agent should not receive write tool %s", blocked)
+			t.Errorf("restricted worker should not receive denied tool %s", blocked)
 		}
 	}
 	for _, expected := range []string{"read_file", "bash", "agent_report"} {
 		if !allowed[expected] {
-			t.Errorf("verification agent missing %s", expected)
+			t.Errorf("restricted worker missing %s", expected)
 		}
 	}
 	if allowed["post_message"] {
-		t.Error("verification agent should not receive participant speech tool")
+		t.Error("worker without an allowlist should not receive participant speech tool")
 	}
 }
 
-func TestFilterToolsForWorker_CheckerRolesDisallowProjectWrites(t *testing.T) {
+func TestFilterToolsForWorker_AllowlistRespected(t *testing.T) {
+	wt := WorkerType{
+		Name:         "readonly",
+		AllowedTools: []string{"read_file", "grep", "glob", "bash", "inception", "agent_report"},
+	}
 	full := []string{"read_file", "write_file", "edit_file", "apply_patch", "bash", "grep", "glob", "agent_report"}
-	for _, name := range []string{"planner", "researcher", "reviewer", "qa", "debugger", "integrator"} {
-		t.Run(name, func(t *testing.T) {
-			wt, err := LookupWorkerType(name)
-			if err != nil {
-				t.Fatal(err)
-			}
-			filtered := FilterToolsForWorker(wt, full)
-			allowed := map[string]bool{}
-			for _, n := range filtered {
-				allowed[n] = true
-			}
-			for _, blocked := range []string{"write_file", "edit_file", "apply_patch"} {
-				if allowed[blocked] {
-					t.Errorf("%s should not receive write tool %s", name, blocked)
-				}
-			}
-			if !allowed["read_file"] || !allowed["bash"] || !allowed["agent_report"] {
-				t.Errorf("%s missing expected read/report tools: %v", name, filtered)
-			}
-		})
+	filtered := FilterToolsForWorker(wt, full)
+	allowed := map[string]bool{}
+	for _, n := range filtered {
+		allowed[n] = true
+	}
+	for _, blocked := range []string{"write_file", "edit_file", "apply_patch"} {
+		if allowed[blocked] {
+			t.Errorf("allowlisted worker should not receive write tool %s", blocked)
+		}
+	}
+	if !allowed["read_file"] || !allowed["bash"] || !allowed["agent_report"] {
+		t.Errorf("allowlisted worker missing expected read/report tools: %v", filtered)
 	}
 }
 

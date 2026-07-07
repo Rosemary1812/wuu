@@ -110,61 +110,11 @@ var builtinWorkerTypes = map[string]WorkerType{
 		SystemPrompt:   generalPurposeSystemPrompt + "\n" + reportClosingRule,
 		RequiresReport: true,
 	},
-	"verification": {
-		Name:            "verification",
-		Role:            "Verifier",
-		Description:     "Verification specialist. Use after non-trivial implementation work to run checks, try to break the change, and return a PASS/FAIL/PARTIAL verdict with evidence.",
-		SystemPrompt:    VerificationPreset + "\n" + reportClosingRule,
-		AllowedTools:    nil,
-		DisallowedTools: []string{"spawn_agent", "helpme", "send_message", "close_agent", "write_file", "edit_file", "apply_patch"},
-		ContextScope:    "Final diff, acceptance criteria, changed files, and declared verification policy.",
-		OutputSchema:    "Structured agent_report handoff (outcome, verification, risks, blockers, evidence) — submitted at close, requested automatically if missing; final verdict must be PASS, FAIL, or PARTIAL.",
-		SuccessCriteria: []string{
-			"Verification commands or manual checks are recorded.",
-			"Failures include exact evidence and next debugging step.",
-		},
-		OneShot:          true,
-		Background:       true,
-		DefaultIsolation: IsolationInplace,
-		RequiresReport:   true,
-	},
-	"planner": {
-		Name:         "planner",
-		Role:         "Lead / Planner",
-		Description:  "Break a goal into phases, artifacts, verification gates, and escalation points before implementation.",
-		SystemPrompt: rolePrompt("Lead / Planner", "Understand the goal, define phases, keep scope tight, and produce an execution plan. Do not edit project files."),
-		AllowedTools: readOnlyPlanningTools(),
-		ContextScope: "Task goal, current durable state, project rules, known blockers, and research summaries.",
-		OutputSchema: "Plan artifact with phases, owners, verification policy, risks, and next action.",
-		SuccessCriteria: []string{
-			"Plan has ordered steps with verification gates.",
-			"Large edits are blocked until research and plan artifacts exist.",
-		},
-		OneShot:          true,
-		Background:       false,
-		DefaultIsolation: IsolationInplace,
-	},
-	"researcher": {
-		Name:         "researcher",
-		Role:         "Researcher",
-		Description:  "Read code, locate relevant files, summarize current behavior, and identify constraints without editing.",
-		SystemPrompt: rolePrompt("Researcher", "Inspect the codebase and explain the existing system. Do not edit files."),
-		AllowedTools: readOnlyPlanningTools(),
-		ContextScope: "Repository rules, task goal, targeted symbols, relevant files, and nearby tests.",
-		OutputSchema: "Research report with files read, current behavior, constraints, risks, and recommended next step.",
-		SuccessCriteria: []string{
-			"Relevant files are cited.",
-			"Facts are separated from assumptions.",
-		},
-		OneShot:          true,
-		Background:       false,
-		DefaultIsolation: IsolationInplace,
-	},
 	"worker": {
 		Name:         "worker",
 		Role:         "Worker",
 		Description:  "Implement a scoped code change in an isolated worktree when edits are required.",
-		SystemPrompt: rolePrompt("Worker", "Implement only the assigned change. Preserve unrelated user work and verify locally before reporting."),
+		SystemPrompt: workerSystemPrompt,
 		AllowedTools: nil,
 		ContextScope: "Concrete task brief, plan step, allowed write set, current worktree status, and verification command.",
 		OutputSchema: "Implementation report with changed files, commands run, blockers, risks, and evidence.",
@@ -176,91 +126,16 @@ var builtinWorkerTypes = map[string]WorkerType{
 		Background:       false,
 		DefaultIsolation: IsolationWorktree,
 	},
-	"reviewer": {
-		Name:         "reviewer",
-		Role:         "Reviewer",
-		Description:  "Review diffs for real bugs, regressions, missing tests, and unsafe behavior without editing.",
-		SystemPrompt: rolePrompt("Reviewer", "Review the diff as an independent checker. Report only real bugs, security issues, logic errors, or missing verification.") + reportClosingRule,
-		AllowedTools: readOnlyVerificationTools(),
-		ContextScope: "Final diff, changed files, acceptance criteria, and verification evidence.",
-		OutputSchema: "Review report with findings ordered by severity, open questions, and verification gaps.",
-		SuccessCriteria: []string{
-			"Findings are actionable and evidence-backed.",
-			"Style-only nits and speculative issues are omitted.",
-		},
-		OneShot:          true,
-		Background:       true,
-		DefaultIsolation: IsolationInplace,
-		RequiresReport:   true,
-	},
-	"qa": {
-		Name:         "qa",
-		Role:         "QA / Verifier",
-		Description:  "Run product-facing verification, smoke tests, browser checks, and regression checks without editing.",
-		SystemPrompt: rolePrompt("QA / Verifier", "Verify the behavior from the user's point of view. Run checks and capture evidence. Do not edit files.") + reportClosingRule,
-		AllowedTools: readOnlyVerificationTools(),
-		ContextScope: "Expected behavior, target route or command, verification policy, changed files, and failure history.",
-		OutputSchema: "QA report with checks run, PASS/FAIL/PARTIAL verdict, failures, screenshots or command evidence when available.",
-		SuccessCriteria: []string{
-			"Declared verification policy is executed or explicitly blocked.",
-			"Failures are reproducible from the report.",
-		},
-		OneShot:          true,
-		Background:       true,
-		DefaultIsolation: IsolationInplace,
-		RequiresReport:   true,
-	},
-	"debugger": {
-		Name:         "debugger",
-		Role:         "Debugger",
-		Description:  "Analyze failure logs, reproduce narrow failures, and propose a root-cause fix without editing.",
-		SystemPrompt: rolePrompt("Debugger", "Start from failure evidence, reproduce narrowly, identify root cause, and recommend the smallest fix. Do not edit files."),
-		AllowedTools: readOnlyVerificationTools(),
-		ContextScope: "Failure log, failing command, stack trace, recent diff, and implicated files.",
-		OutputSchema: "Debug report with reproduction command, root cause, implicated files, and proposed fix.",
-		SuccessCriteria: []string{
-			"Root cause is tied to evidence.",
-			"Next fix step is concrete and testable.",
-		},
-		OneShot:          true,
-		Background:       false,
-		DefaultIsolation: IsolationInplace,
-	},
-	"integrator": {
-		Name:         "integrator",
-		Role:         "Integrator",
-		Description:  "Combine worker outputs, verification evidence, and review feedback into a final integration report without editing.",
-		SystemPrompt: rolePrompt("Integrator", "Synthesize worker, reviewer, and verifier outputs. Check consistency and produce the final handoff. Do not edit files."),
-		AllowedTools: readOnlyVerificationTools(),
-		ContextScope: "Approved worker reports, review report, verification results, worktree review, and durable state.",
-		OutputSchema: "Integration report with accepted changes, rejected changes, final verification, limits, and next steps.",
-		SuccessCriteria: []string{
-			"Maker and checker outputs are both represented.",
-			"Final status is supported by evidence.",
-		},
-		OneShot:          true,
-		Background:       false,
-		DefaultIsolation: IsolationInplace,
-	},
 }
 
-func readOnlyPlanningTools() []string {
-	return []string{"read_file", "grep", "glob", "bash", "inception", "agent_report"}
-}
+const workerSystemPrompt = `You are the Worker sub-agent. Implement only the assigned change. Preserve unrelated user work and verify locally before reporting.
 
-func readOnlyVerificationTools() []string {
-	return []string{"read_file", "grep", "glob", "bash", "inception", "agent_report"}
-}
-
-func rolePrompt(role, instruction string) string {
-	return "You are the " + role + " sub-agent in a goal-driven agent team.\n\n" +
-		instruction + "\n\n" +
-		"Rules:\n" +
-		"- Stay inside the assigned scope.\n" +
-		"- Preserve unrelated user work.\n" +
-		"- Report blockers with exact evidence.\n" +
-		"- Your final message is the deliverable: outcome, what changed, and a verifiable handle for every claim.\n"
-}
+Rules:
+- Stay inside the assigned scope.
+- Preserve unrelated user work.
+- Report blockers with exact evidence.
+- Your final message is the deliverable: outcome, what changed, and a verifiable handle for every claim.
+`
 
 // reportClosingRule is appended to requires_report worker prompts. The
 // obligation is phrased as a property of the close ("you will be asked"),

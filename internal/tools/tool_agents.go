@@ -916,8 +916,8 @@ func (t *AgentReportTool) Definition() providers.ToolDefinition {
 			"Your final message is always the deliverable; filing this report additionally gives parent " +
 			"and later agents a durable structured summary with constraints, work done, blockers, evidence " +
 			"references, and artifact paths. Not filing it never blocks completion — the runtime synthesizes " +
-			"a final_text handoff from your final message and observed facts. Verdict-class workers " +
-			"(verification, reviewer, qa) are asked to file it at close automatically. " +
+			"a final_text handoff from your final message and observed facts. Workers whose type " +
+			"requires a structured report are asked to file it at close automatically. " +
 			"Do not use this for casual messages; use send_message for interim communication.",
 		InputSchema: map[string]any{
 			"type": "object",

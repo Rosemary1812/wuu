@@ -375,7 +375,7 @@ func TestAwaitWaitsOutRequiresReportClosingTurn(t *testing.T) {
 	})
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type:     "reviewer",
+		Type:     HelpMeRecoveryWorkerType,
 		TaskName: "review_settle",
 		Prompt:   "review this diff",
 	})
@@ -474,7 +474,7 @@ func TestAwaitSettlesRehydratedRunKilledMidClosingTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := first.Spawn(context.Background(), SpawnRequest{
-		Type:     "reviewer",
+		Type:     HelpMeRecoveryWorkerType,
 		TaskName: "review_crash",
 		Prompt:   "review this diff",
 	})

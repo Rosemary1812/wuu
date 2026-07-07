@@ -269,7 +269,7 @@ func TestPostParticipantMessagePublishesOncePerAgent(t *testing.T) {
 	_, err = c.manager.Spawn(context.Background(), subagent.SpawnOptions{
 		ID:            "agent-1",
 		ParticipantID: "prt-1",
-		Type:          "reviewer",
+		Type:          DefaultSubagentType,
 		TaskName:      "diff-review",
 		AgentPath:     "root/agent-1",
 		ParentID:      c.SessionID(),
@@ -349,7 +349,7 @@ func TestSpawnInternalSpeechCapabilityMarksAgentBeforeWorkerFactory(t *testing.T
 	}
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type:             "reviewer",
+		Type:             DefaultSubagentType,
 		TaskName:         "review_result",
 		Description:      "review",
 		Prompt:           "review",
@@ -3098,7 +3098,7 @@ func TestRequiresReportWorkerGetsOneClosingNudge(t *testing.T) {
 	}
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
-		Type:        "reviewer",
+		Type:        HelpMeRecoveryWorkerType,
 		TaskName:    "review_diff",
 		Description: "review the diff",
 		Prompt:      "review this diff",

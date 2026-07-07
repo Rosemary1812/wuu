@@ -2620,9 +2620,9 @@ func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.
 	}
 	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", false)
 	kit.SetAgentIdentity("worker-1", string(agentthread.RootPath)+"/worker-1")
-	wt, err := agentcontrol.LookupWorkerType("verification")
-	if err != nil {
-		t.Fatalf("agent type: %v", err)
+	wt := agentcontrol.WorkerType{
+		Name:         "restricted",
+		AllowedTools: []string{"read_file", "grep", "glob", "bash", "inception", "agent_report"},
 	}
 
 	applyWorkerToolFilter(kit, wt)
@@ -2633,15 +2633,15 @@ func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.
 	}
 	for _, allowed := range []string{"read_file", "grep", "glob", "bash", "agent_report"} {
 		if !defs[allowed] {
-			t.Fatalf("verification worker toolkit should keep %s; defs=%v", allowed, defs)
+			t.Fatalf("restricted worker toolkit should keep %s; defs=%v", allowed, defs)
 		}
 	}
 	if defs["post_message"] {
-		t.Fatalf("verification worker toolkit should not expose participant speech tool; defs=%v", defs)
+		t.Fatalf("restricted worker toolkit should not expose participant speech tool; defs=%v", defs)
 	}
 	for _, hidden := range []string{"run_shell", "run_test", "start_process", "git", "apply_patch", "edit_file", "write_file"} {
 		if defs[hidden] {
-			t.Fatalf("verification worker toolkit should not expose %s; defs=%v", hidden, defs)
+			t.Fatalf("restricted worker toolkit should not expose %s; defs=%v", hidden, defs)
 		}
 	}
 }
