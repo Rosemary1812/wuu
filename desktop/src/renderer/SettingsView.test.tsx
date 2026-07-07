@@ -291,11 +291,15 @@ describe("SettingsView provider configuration", () => {
       addButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    const providerTypeSelect = container.querySelector("[data-testid=\"settings-provider-type-select\"]") as HTMLSelectElement;
-    const selectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set;
+    const providerTypeTrigger = container.querySelector("[data-testid=\"settings-provider-type-select\"]") as HTMLButtonElement;
     await act(async () => {
-      selectSetter?.call(providerTypeSelect, "anthropic");
-      providerTypeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      providerTypeTrigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const anthropicOption = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".select-menu-panel .select-menu-item"),
+    ).find((item) => item.getAttribute("data-value") === "anthropic");
+    await act(async () => {
+      anthropicOption?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     const inputs = Array.from(container.querySelectorAll("input"));

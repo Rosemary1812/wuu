@@ -17,6 +17,7 @@ import type {
   ThreadItem,
 } from "../shared/protocol";
 import { ChatThreadViewContainer } from "./ChatThreadViewContainer";
+import { SelectMenu } from "./SelectMenu";
 
 /**
  * The split reply panel (群中群) for a message's reply subthread (cth). It renders
@@ -236,19 +237,16 @@ export function ConversationSubthreadPanel({
             >
               指定 Task lead
             </label>
-            <select
+            <SelectMenu
               id="conversation-subthread-lead-select"
-              className="conversation-subthread-lead-select"
+              ariaLabel="Task lead"
               value={selectedLeadID}
-              aria-label="Task lead"
-              onChange={(event) => setSelectedLeadID(event.target.value)}
-            >
-              {candidates.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name || member.id}
-                </option>
-              ))}
-            </select>
+              onChange={(next) => setSelectedLeadID(next)}
+              options={candidates.map((member) => ({
+                value: member.id,
+                label: member.name || member.id,
+              }))}
+            />
             <button
               type="button"
               className="conversation-subthread-escalate conversation-subthread-escalate-submit"

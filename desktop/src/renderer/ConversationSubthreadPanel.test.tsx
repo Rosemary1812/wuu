@@ -172,17 +172,30 @@ describe("ConversationSubthreadPanel", () => {
       gate!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(lead).toBeUndefined();
-    const select = container.querySelector<HTMLSelectElement>(
-      ".conversation-subthread-lead-select",
+    const leadTrigger = container.querySelector<HTMLButtonElement>(
+      "#conversation-subthread-lead-select",
     );
-    expect(select).not.toBeNull();
-    // Two named candidates offered, first pre-selected.
-    expect(select!.querySelectorAll("option").length).toBe(2);
-    expect(select!.value).toBe("prt-a");
-    // Pick the second member, then confirm.
+    expect(leadTrigger).not.toBeNull();
+    // First named candidate pre-selected — the trigger shows their name.
+    expect(leadTrigger!.querySelector(".select-menu-value")?.textContent).toBe(
+      "小青",
+    );
+    // Open the dropdown; the two candidate options render into the portal.
     act(() => {
-      select!.value = "prt-b";
-      select!.dispatchEvent(new Event("change", { bubbles: true }));
+      leadTrigger!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const options = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        ".select-menu-panel .select-menu-item",
+      ),
+    );
+    expect(options.length).toBe(2);
+    // Pick the second member, then confirm.
+    const second = options.find(
+      (option) => option.getAttribute("data-value") === "prt-b",
+    )!;
+    act(() => {
+      second.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     const confirm = container.querySelector<HTMLButtonElement>(
       ".conversation-subthread-escalate-submit",

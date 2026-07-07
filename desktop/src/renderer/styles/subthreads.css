@@ -196,22 +196,6 @@
   line-height: var(--line-ui);
 }
 
-.conversation-subthread-lead-select {
-  padding: 8px 10px;
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface-1);
-  color: var(--ink);
-  font: inherit;
-  font-size: var(--font-sm);
-  line-height: var(--line-ui);
-}
-
-.conversation-subthread-lead-select:focus {
-  border-color: var(--focus-ring, var(--accent));
-  outline: none;
-}
-
 .conversation-subthread-escalate-form .conversation-subthread-escalate {
   align-self: flex-end;
 }

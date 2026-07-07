@@ -24,6 +24,7 @@ import {
   useRef,
   useState
 } from "react";
+import { SelectMenu } from "./SelectMenu";
 import type {
   DesktopBuildInfo,
   InitializeResult,
@@ -855,18 +856,17 @@ function SettingsProvidersPage({
             {addingProvider ? (
               <span className="settings-inline-flag">新的模型服务</span>
             ) : providers.length > 0 ? (
-              <select
-                className="settings-select"
+              <SelectMenu
+                triggerClassName="settings-select-trigger"
+                ariaLabel="选择当前会话使用的服务"
                 value={providerDraft}
-                onChange={(event) => onProviderChange(event.target.value)}
+                onChange={onProviderChange}
                 disabled={running}
-              >
-                {providers.map((provider) => (
-                  <option key={provider.name} value={provider.name}>
-                    {providerLabels.get(provider.name) ?? provider.name}
-                  </option>
-                ))}
-              </select>
+                options={providers.map((provider) => ({
+                  value: provider.name,
+                  label: providerLabels.get(provider.name) ?? provider.name
+                }))}
+              />
             ) : (
               <span className="settings-inline-flag">暂无模型服务</span>
             )}
@@ -895,16 +895,18 @@ function SettingsProvidersPage({
             title="服务类型"
             description="选择协议,后续的请求会按这个协议走。"
           >
-            <select
-              className="settings-select"
+            <SelectMenu
+              triggerClassName="settings-select-trigger"
+              ariaLabel="服务类型"
+              dataTestid="settings-provider-type-select"
               value={providerTypeDraft}
-              onChange={(event) => onProviderTypeDraftChange(event.target.value)}
+              onChange={onProviderTypeDraftChange}
               disabled={running}
-              data-testid="settings-provider-type-select"
-            >
-              <option value="openai-compatible">OpenAI 兼容</option>
-              <option value="anthropic">Anthropic 兼容</option>
-            </select>
+              options={[
+                { value: "openai-compatible", label: "OpenAI 兼容" },
+                { value: "anthropic", label: "Anthropic 兼容" }
+              ]}
+            />
           </SettingsRow>
         ) : null}
         {addingProvider ? (
@@ -947,18 +949,17 @@ function SettingsProvidersPage({
           }
           block
         >
-          <select
-            className="settings-select"
+          <SelectMenu
+            triggerClassName="settings-select-trigger"
+            ariaLabel="思考强度"
             value={variantDraft}
-            onChange={(event) => onVariantDraftChange(event.target.value)}
+            onChange={onVariantDraftChange}
             disabled={running || reasoningMode === "off"}
-          >
-            {variantOptions.map((variant) => (
-              <option key={variant || "auto"} value={variant}>
-                {variantLabel(variant)}
-              </option>
-            ))}
-          </select>
+            options={variantOptions.map((variant) => ({
+              value: variant,
+              label: variantLabel(variant)
+            }))}
+          />
         </SettingsRow>
         <SettingsRow
           title="Base URL"
