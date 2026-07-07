@@ -15,6 +15,7 @@ import type {
   ThreadItem,
 } from "../shared/protocol";
 import { ConversationSubthreadPanel } from "./ConversationSubthreadPanel";
+import { REACTION_KEYS } from "./MessageMarks";
 
 let mountedRoots: Root[] = [];
 let mountedContainers: HTMLElement[] = [];
@@ -252,7 +253,7 @@ describe("ConversationSubthreadPanel", () => {
     ).toBeNull();
   });
 
-  it("offers only 贴 emoji on a cth message right-click (一层不嵌套)", () => {
+  it("offers only 贴表情 on a cth message hover toolbar (一层不嵌套)", () => {
     const container = mount(
       createElement(ConversationSubthreadPanel, {
         threadID: "group-1",
@@ -262,24 +263,16 @@ describe("ConversationSubthreadPanel", () => {
         onReact: (_item: ThreadItem, _reaction: string) => {},
       }),
     );
-    const bubble = container.querySelector(
-      ".chat-row--participant .chat-bubble",
-    )!;
-    act(() => {
-      bubble.dispatchEvent(
-        new MouseEvent("contextmenu", { bubbles: true, clientX: 4, clientY: 8 }),
-      );
-    });
-    const menu = document.querySelector(
-      '[data-testid="thread-row-context-menu"]',
-    );
-    const labels = menu
-      ? Array.from(
-          menu.querySelectorAll(".thread-row-context-menu-item"),
-        ).map((el) => el.textContent)
-      : [];
-    // A reply panel never offers a nested "回复(分屏)" — only 贴 emoji.
-    expect(labels).toEqual(["贴 emoji"]);
+    const toolbar = container
+      .querySelector(".chat-row--participant .chat-bubble")!
+      .querySelector<HTMLElement>('[data-testid="chat-bubble-toolbar"]');
+    expect(toolbar).not.toBeNull();
+    // A reply panel never offers a nested 回复 — the toolbar shows only the
+    // reaction row, never a reply button.
+    expect(
+      toolbar!.querySelectorAll(".chat-bubble-toolbar-reaction").length,
+    ).toBe(REACTION_KEYS.length);
+    expect(toolbar!.querySelector(".chat-bubble-toolbar-reply")).toBeNull();
   });
 
   it("offers 完成 Task only once escalated and bubbles the typed conclusion", () => {

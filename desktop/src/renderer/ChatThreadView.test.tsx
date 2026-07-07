@@ -21,7 +21,7 @@ import {
   findScrollParent,
   INITIAL_CHAT_WINDOW_ROWS,
 } from "./ChatThreadView";
-import { aggregateMarksBySeq } from "./MessageMarks";
+import { aggregateMarksBySeq, REACTION_KEYS } from "./MessageMarks";
 
 let mountedRoots: Root[] = [];
 let mountedContainers: HTMLElement[] = [];
@@ -427,7 +427,7 @@ describe("ChatThreadView reply / task affordances", () => {
     );
   });
 
-  it("reveals a hover 回复(分屏) entry on messages with no reply thread yet", () => {
+  it("reveals a hover 回复 entry (toolbar) on messages with no reply thread yet", () => {
     const opened: ThreadItem[] = [];
     const container = mount(
       createElement(ChatThreadView, {
@@ -437,26 +437,27 @@ describe("ChatThreadView reply / task affordances", () => {
         onOpenSubthread: (item: ThreadItem) => opened.push(item),
       }),
     );
-    const hover = container.querySelector<HTMLButtonElement>(
-      ".chat-reply-badge--hover",
+    const reply = container.querySelector<HTMLButtonElement>(
+      ".chat-bubble-toolbar-reply",
     );
-    expect(hover).not.toBeNull();
-    expect(hover?.textContent).toBe("回复(分屏)");
+    expect(reply).not.toBeNull();
+    expect(reply?.textContent).toContain("回复");
     act(() => {
-      hover!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      reply!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(opened.map((item) => item.id)).toEqual(["item-1"]);
   });
 
-  it("renders no hover reply entry when onOpenSubthread is not wired", () => {
+  it("renders no toolbar reply entry when onOpenSubthread is not wired", () => {
     const container = mount(
       createElement(ChatThreadView, {
         turns: turns([
           { id: "item-1", type: "user_message", text: "改这里" },
         ]),
+        onReact: () => {},
       }),
     );
-    expect(container.querySelector(".chat-reply-badge--hover")).toBeNull();
+    expect(container.querySelector(".chat-bubble-toolbar-reply")).toBeNull();
   });
 
   it("opens the reply on badge click via onOpenSubthread", () => {
@@ -534,33 +535,20 @@ describe("ChatThreadView reply / task affordances", () => {
   });
 });
 
-describe("ChatThreadView message right-click menu", () => {
-  function openMenu(bubble: Element): void {
-    act(() => {
-      bubble.dispatchEvent(
-        new MouseEvent("contextmenu", {
-          bubbles: true,
-          clientX: 12,
-          clientY: 34,
-        }),
-      );
-    });
-  }
-
-  function menuItems(): HTMLButtonElement[] {
-    const menu = document.querySelector(
-      '[data-testid="thread-row-context-menu"]',
+describe("ChatThreadView message hover toolbar", () => {
+  function toolbar(
+    container: Element,
+    selector = ".chat-bubble--user",
+  ): HTMLElement | null {
+    return (
+      container
+        .querySelector(selector)
+        ?.querySelector<HTMLElement>('[data-testid="chat-bubble-toolbar"]') ??
+      null
     );
-    return menu
-      ? Array.from(menu.querySelectorAll<HTMLButtonElement>(".thread-row-context-menu-item"))
-      : [];
   }
 
-  function itemByLabel(label: string): HTMLButtonElement | undefined {
-    return menuItems().find((el) => el.textContent === label);
-  }
-
-  it("opens 回复(分屏) + 贴 emoji on a user bubble right-click", () => {
+  it("renders a 贴表情 row + 回复 button (no ⋯) on a user bubble when both wired", () => {
     const container = mount(
       createElement(ChatThreadView, {
         turns: turns([{ id: "item-1", type: "user_message", text: "改这里" }]),
@@ -568,12 +556,41 @@ describe("ChatThreadView message right-click menu", () => {
         onReact: () => {},
       }),
     );
-    openMenu(container.querySelector(".chat-bubble--user")!);
-    const labels = menuItems().map((el) => el.textContent);
-    expect(labels).toEqual(["回复(分屏)", "贴 emoji"]);
+    const bar = toolbar(container);
+    expect(bar).not.toBeNull();
+    // One button per reaction key, plus the reply button — and nothing else.
+    expect(bar!.querySelectorAll(".chat-bubble-toolbar-reaction").length).toBe(
+      REACTION_KEYS.length,
+    );
+    expect(bar!.querySelector(".chat-bubble-toolbar-reply")).not.toBeNull();
+    // The ⋯ overflow was intentionally dropped: the two affordances are the
+    // whole toolbar.
+    expect(bar!.querySelector(".chat-bubble-toolbar-more")).toBeNull();
   });
 
-  it("reply entry opens the subthread via onOpenSubthread on the clicked message", () => {
+  it("stamps a one-click reaction via onReact with the key + clicked message", () => {
+    const reacted: Array<{ id?: string; reaction: string }> = [];
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", seq: 5, type: "user_message", text: "改这里" },
+        ]),
+        onOpenSubthread: () => {},
+        onReact: (item: ThreadItem, reaction: string) =>
+          reacted.push({ id: item.id, reaction }),
+      }),
+    );
+    const nice = toolbar(container)!.querySelector<HTMLButtonElement>(
+      '.chat-bubble-toolbar-reaction[data-reaction="nice"]',
+    );
+    expect(nice).not.toBeNull();
+    act(() => {
+      nice!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(reacted).toEqual([{ id: "item-1", reaction: "nice" }]);
+  });
+
+  it("opens the reply subthread via onOpenSubthread on the clicked participant message", () => {
     const opened: ThreadItem[] = [];
     const container = mount(
       createElement(ChatThreadView, {
@@ -590,78 +607,42 @@ describe("ChatThreadView message right-click menu", () => {
         onReact: () => {},
       }),
     );
-    openMenu(container.querySelector(".chat-row--participant .chat-bubble")!);
+    const reply = toolbar(
+      container,
+      ".chat-row--participant .chat-bubble",
+    )!.querySelector<HTMLButtonElement>(".chat-bubble-toolbar-reply");
+    expect(reply).not.toBeNull();
     act(() => {
-      itemByLabel("回复(分屏)")!.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      reply!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(opened).toHaveLength(1);
     expect(opened[0]?.id).toBe("item-9");
-    // Menu closes after selection.
-    expect(
-      document.querySelector('[data-testid="thread-row-context-menu"]'),
-    ).toBeNull();
   });
 
-  it("贴 emoji opens the reaction picker and picking calls onReact with the key", () => {
-    const reacted: Array<{ id?: string; reaction: string }> = [];
-    const container = mount(
-      createElement(ChatThreadView, {
-        turns: turns([{ id: "item-1", seq: 5, type: "user_message", text: "改这里" }]),
-        onOpenSubthread: () => {},
-        onReact: (item: ThreadItem, reaction: string) =>
-          reacted.push({ id: item.id, reaction }),
-      }),
-    );
-    openMenu(container.querySelector(".chat-bubble--user")!);
-    act(() => {
-      itemByLabel("贴 emoji")!.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
-    });
-    const picker = document.querySelector(
-      '[data-testid="message-reaction-picker"]',
-    );
-    expect(picker).not.toBeNull();
-    const nice = picker!.querySelector<HTMLButtonElement>(
-      '.message-reaction-picker-item[data-reaction="nice"]',
-    );
-    expect(nice).not.toBeNull();
-    act(() => {
-      nice!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    expect(reacted).toEqual([{ id: "item-1", reaction: "nice" }]);
-    // Picker closes after picking.
-    expect(
-      document.querySelector('[data-testid="message-reaction-picker"]'),
-    ).toBeNull();
-  });
-
-  it("omits 回复(分屏) when replies are disabled (一层不嵌套: inside a cth)", () => {
+  it("omits 回复 when replies are disabled (一层不嵌套: inside a cth), keeps 贴表情", () => {
     // A reply-panel reuse of this view passes no onOpenSubthread, so a message
-    // already inside a cth offers only 贴 emoji — never a nested reply.
+    // already inside a cth offers only the reaction row — never a nested reply.
     const container = mount(
       createElement(ChatThreadView, {
         turns: turns([{ id: "item-1", type: "user_message", text: "回复线内" }]),
         onReact: () => {},
       }),
     );
-    openMenu(container.querySelector(".chat-bubble--user")!);
-    const labels = menuItems().map((el) => el.textContent);
-    expect(labels).toEqual(["贴 emoji"]);
+    const bar = toolbar(container);
+    expect(bar).not.toBeNull();
+    expect(bar!.querySelectorAll(".chat-bubble-toolbar-reaction").length).toBe(
+      REACTION_KEYS.length,
+    );
+    expect(bar!.querySelector(".chat-bubble-toolbar-reply")).toBeNull();
   });
 
-  it("opens no menu when neither reply nor react is wired", () => {
+  it("renders no toolbar when neither reply nor react is wired", () => {
     const container = mount(
       createElement(ChatThreadView, {
         turns: turns([{ id: "item-1", type: "user_message", text: "只读" }]),
       }),
     );
-    openMenu(container.querySelector(".chat-bubble--user")!);
-    expect(
-      document.querySelector('[data-testid="thread-row-context-menu"]'),
-    ).toBeNull();
+    expect(toolbar(container)).toBeNull();
   });
 });
 

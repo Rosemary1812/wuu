@@ -1,5 +1,4 @@
 import {
-  type MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -7,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Reply } from "lucide-react";
 import type {
   ConversationSubthread,
   EnvelopeMeta,
@@ -24,12 +24,14 @@ import type { QueuedComposerMessage } from "./ComposerMessages";
 import { DefaultAvatarMark } from "./DefaultAvatar";
 import { EnvelopeNotice } from "./EnvelopeNotice";
 import { MessageReactions } from "./MessageReactions";
-import { MessageReactionPicker } from "./MessageReactionPicker";
-import { ringModel, type MessageMarksView } from "./MessageMarks";
 import {
-  ThreadContextMenu,
-  type ThreadContextMenuItem,
-} from "./ThreadContextMenu";
+  REACTION_EMOJI,
+  REACTION_KEYS,
+  REACTION_LABEL,
+  reactionGlyph,
+  ringModel,
+  type MessageMarksView,
+} from "./MessageMarks";
 import { ReadReceiptRing } from "./ReadReceiptRing";
 import { RichContent } from "./RichContent";
 import { TaskCardItem } from "./ThreadItemView";
@@ -145,49 +147,19 @@ export function ChatThreadView({
    */
   onOpenSubthread?: (item: ThreadItem) => void;
   /**
-   * Stamp an emoji reaction on a message (人点击, from the bubble's right-click
-   * menu). Wired to the message/react RPC. Optional: when absent the "贴 emoji"
-   * entry is omitted from the context menu.
+   * Stamp an emoji reaction on a message (人点击, one-click from the bubble's
+   * hover toolbar). Wired to the message/react RPC. Optional: when absent the
+   * 贴表情 reaction row is omitted from the toolbar.
    */
   onReact?: (item: ThreadItem, reaction: string) => void;
 }): JSX.Element {
   const rows = useMemo(() => chatMessagesFromTurns(turns), [turns]);
-  // Right-click affordances (回复分屏 / 贴 emoji) live at the view's top level,
-  // not inside ChatRow: ChatRow is rendered inside the windowed .map, so its
-  // open/close state must be hoisted here to a single instance. `menu` holds the
-  // context menu; `reactionPicker` holds the emoji picker opened from it. Both
-  // carry the anchored message + the click coords.
-  const [menu, setMenu] = useState<{
-    x: number;
-    y: number;
-    item: ThreadItem;
-  } | null>(null);
-  const [reactionPicker, setReactionPicker] = useState<{
-    x: number;
-    y: number;
-    item: ThreadItem;
-  } | null>(null);
-
-  // A message can be replied to only when a reply handler is wired. The main
-  // stream passes one; a reply panel that reuses this view omits it, which is
-  // how "一层不嵌套" — no reply on a message already inside a cth — is enforced
-  // at the view level (the reply-panel caller never offers the entry).
-  const canReply = Boolean(onOpenSubthread);
-  const canReact = Boolean(onReact);
-
-  const handleBubbleContextMenu = useCallback(
-    (event: ReactMouseEvent, item: ThreadItem) => {
-      if (!canReply && !canReact) {
-        return;
-      }
-      event.preventDefault();
-      setReactionPicker(null);
-      setMenu({ x: event.clientX, y: event.clientY, item });
-    },
-    [canReply, canReact],
-  );
-
-  const onBubbleContextMenu = canReply || canReact ? handleBubbleContextMenu : undefined;
+  // 贴表情 and 回复 are both one-click affordances on each bubble's hover toolbar
+  // (ChatBubbleToolbar) — no right-click menu, no hoisted popup state. A bubble
+  // inside a cth reply panel receives onReact but not onOpenSubthread, so its
+  // toolbar shows only the reaction row: "一层不嵌套" — no reply on a message
+  // already inside a cth — is enforced at the view level (the reply-panel caller
+  // never wires the reply handler).
   const containerRef = useRef<HTMLDivElement | null>(null);
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
   const rowCount = rows.length + pendingMessages.length;
@@ -334,74 +306,82 @@ export function ChatThreadView({
               : undefined
           }
           onOpenSubthread={onOpenSubthread}
-          onContextMenu={onBubbleContextMenu}
+          onReact={onReact}
         />
       ))}
       {pendingMessages.map((message) => (
         <PendingChatRow key={`pending-${message.id}`} message={message} />
       ))}
-      {menu ? (
-        <ThreadContextMenu
-          x={menu.x}
-          y={menu.y}
-          onClose={() => setMenu(null)}
-          items={buildMessageMenuItems({
-            item: menu.item,
-            x: menu.x,
-            y: menu.y,
-            canReply,
-            canReact,
-            onReply: onOpenSubthread,
-            openReactionPicker: setReactionPicker,
-          })}
-        />
-      ) : null}
-      {reactionPicker ? (
-        <MessageReactionPicker
-          x={reactionPicker.x}
-          y={reactionPicker.y}
-          onPick={(reaction) => onReact?.(reactionPicker.item, reaction)}
-          onClose={() => setReactionPicker(null)}
-        />
-      ) : null}
     </div>
   );
 }
 
-// buildMessageMenuItems assembles the right-click menu for a chat bubble:
-// "回复(分屏)" (only when replies are allowed — omitted inside a cth to keep
-// 一层不嵌套) and "贴 emoji" (opens the reaction picker at the same coords).
-function buildMessageMenuItems({
+/**
+ * Hover toolbar floating above a chat bubble (Slack/Discord 式). 贴表情 is a
+ * one-click emoji row (left) and 回复 a one-click button (next to it) — both
+ * surfaced on hover, and the reply button is the sole entry into a reply
+ * subthread on the main stream. There is deliberately no ⋯ overflow: the two
+ * affordances are the whole toolbar. Renders nothing when neither reaction nor
+ * reply is wired (a read-only reuse of this view, e.g. inside a cth reply panel
+ * that omits onOpenSubthread — 一层不嵌套).
+ *
+ * The reveal is CSS-driven off `.chat-bubble:hover/:focus-within` (chat.css);
+ * this component only renders the buttons, always present in the DOM so
+ * keyboard focus can reach them and the reveal is purely presentational.
+ */
+function ChatBubbleToolbar({
   item,
-  x,
-  y,
-  canReply,
-  canReact,
+  onReact,
   onReply,
-  openReactionPicker,
 }: {
   item: ThreadItem;
-  x: number;
-  y: number;
-  canReply: boolean;
-  canReact: boolean;
+  onReact?: (item: ThreadItem, reaction: string) => void;
   onReply?: (item: ThreadItem) => void;
-  openReactionPicker: (state: { x: number; y: number; item: ThreadItem }) => void;
-}): ThreadContextMenuItem[] {
-  const items: ThreadContextMenuItem[] = [];
-  if (canReply) {
-    items.push({
-      label: "回复(分屏)",
-      onSelect: () => onReply?.(item),
-    });
+}): JSX.Element | null {
+  if (!onReact && !onReply) {
+    return null;
   }
-  if (canReact) {
-    items.push({
-      label: "贴 emoji",
-      onSelect: () => openReactionPicker({ x, y, item }),
-    });
-  }
-  return items;
+  return (
+    <div
+      className="chat-bubble-toolbar"
+      role="toolbar"
+      aria-label="消息操作"
+      data-testid="chat-bubble-toolbar"
+    >
+      {onReact
+        ? REACTION_KEYS.map((key) => (
+            <button
+              key={key}
+              type="button"
+              className="chat-bubble-toolbar-reaction"
+              data-reaction={key}
+              aria-label={REACTION_LABEL[key] ?? key}
+              title={REACTION_LABEL[key] ?? key}
+              onClick={() => onReact(item, key)}
+            >
+              <span aria-hidden="true">
+                {REACTION_EMOJI[key] ?? reactionGlyph(key)}
+              </span>
+            </button>
+          ))
+        : null}
+      {onReact && onReply ? (
+        <span className="chat-bubble-toolbar-divider" aria-hidden="true" />
+      ) : null}
+      {onReply ? (
+        <button
+          type="button"
+          className="chat-bubble-toolbar-btn chat-bubble-toolbar-reply"
+          aria-label="回复"
+          title="回复"
+          onClick={() => onReply(item)}
+        >
+          <Reply size={14} aria-hidden="true" />
+          <span>回复</span>
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 /**
@@ -461,7 +441,7 @@ function ChatRow({
   resolveParticipantName,
   subthread,
   onOpenSubthread,
-  onContextMenu,
+  onReact,
 }: {
   row: ChatMessageRow;
   busyParticipantIDs?: ReadonlySet<string>;
@@ -470,11 +450,8 @@ function ChatRow({
   resolveParticipantName?: (id: string) => string;
   subthread?: ConversationSubthread;
   onOpenSubthread?: (item: ThreadItem) => void;
-  /**
-   * Open the bubble's right-click menu (回复分屏 / 贴 emoji). Attached to the
-   * user/participant bubbles only. Absent = no menu (e.g. no actions wired).
-   */
-  onContextMenu?: (event: ReactMouseEvent, item: ThreadItem) => void;
+  /** Stamp a one-click reaction from the bubble's hover toolbar. Absent = no reactions. */
+  onReact?: (item: ThreadItem, reaction: string) => void;
 }): JSX.Element {
   if (row.kind === "task") {
     // task_card 折叠卡:复用 agent-brain 转录里的 TaskCardItem(进行中显示活动
@@ -522,17 +499,15 @@ function ChatRow({
     return (
       <div className="chat-row chat-row--user">
         <div className="chat-bubble-group">
-          <div
-            className="chat-bubble chat-bubble--user"
-            onContextMenu={
-              onContextMenu
-                ? (event) => onContextMenu(event, row.item)
-                : undefined
-            }
-          >
+          <div className="chat-bubble chat-bubble--user">
             {row.item.text ? (
               <RichContent text={row.item.text} />
             ) : null}
+            <ChatBubbleToolbar
+              item={row.item}
+              onReact={onReact}
+              onReply={onOpenSubthread}
+            />
           </div>
           {marks ? (
             <div className="chat-bubble-marks chat-bubble-marks--user">
@@ -580,15 +555,13 @@ function ChatRow({
       <ChatAvatar participant={participant} status={participantStatus} />
       <div className="chat-bubble-group">
         <div className="chat-sender-name">{name}</div>
-        <div
-          className="chat-bubble"
-          onContextMenu={
-            onContextMenu
-              ? (event) => onContextMenu(event, row.item)
-              : undefined
-          }
-        >
+        <div className="chat-bubble">
           {row.item.text ? <RichContent text={row.item.text} /> : null}
+          <ChatBubbleToolbar
+            item={row.item}
+            onReact={onReact}
+            onReply={onOpenSubthread}
+          />
         </div>
         {marks && marks.reactions.length > 0 ? (
           <div className="chat-bubble-marks">
@@ -626,21 +599,10 @@ function ReplyAffordance({
   onOpenSubthread?: (item: ThreadItem) => void;
 }): JSX.Element | null {
   if (!subthread) {
-    // No reply thread yet: a hover-revealed entry to start one. Same handler
-    // as the context menu's 回复(分屏) — one open path, no divergence; the
-    // button also reveals on keyboard focus for a11y.
-    if (!onOpenSubthread) {
-      return null;
-    }
-    return (
-      <button
-        type="button"
-        className="chat-reply-badge chat-reply-badge--button chat-reply-badge--hover"
-        onClick={() => onOpenSubthread(item)}
-      >
-        回复(分屏)
-      </button>
-    );
+    // No reply thread yet: nothing hangs under the bubble. Starting a reply is
+    // the hover toolbar's 回复 button (ChatBubbleToolbar) — one entry, no
+    // divergence. This slot only ever shows an *existing* subthread's 折叠卡.
+    return null;
   }
   const open = onOpenSubthread ? () => onOpenSubthread(item) : undefined;
   if (subthread.task) {

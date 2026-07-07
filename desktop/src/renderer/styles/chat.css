@@ -187,6 +187,7 @@
 }
 
 .chat-bubble {
+  position: relative;
   border-radius: var(--radius-md);
   padding: 8px 12px;
   background: var(--ink-overlay-4);
@@ -370,56 +371,92 @@
   justify-content: flex-start;
 }
 
-/* Emoji reaction picker opened from a chat bubble's right-click menu (贴 emoji).
-   A compact floating row of the shared reaction emojis; reuses the same fixed
-   positioning + surface tokens as the thread context menu. */
-.message-reaction-picker {
-  position: fixed;
-  z-index: 2147482001;
+/* Hover toolbar floating just above a chat bubble (贴表情 + 回复). Reuses the
+   menu surface tokens so it reads as part of the same app. Positioned with
+   `bottom: calc(100% - 4px)` so it sits just above the bubble, overlapping the
+   top padding by 4px — enough that the hover region is continuous (no dead gap
+   to cross) without covering any message text. */
+.chat-bubble-toolbar {
+  position: absolute;
+  bottom: calc(100% - 4px);
+  z-index: 5;
   display: flex;
-  gap: 2px;
+  align-items: center;
+  gap: 1px;
+  padding: 3px;
   border: 1px solid var(--menu-border);
   border-radius: var(--radius-pill);
   background: var(--menu-bg);
   box-shadow: var(--menu-shadow);
-  padding: 4px;
   backdrop-filter: blur(16px);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition:
+    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 170ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-.message-reaction-picker-item {
+/* Anchor to the bubble's "empty" side so short bubbles don't push the toolbar
+   off toward the avatar / screen edge: participant bubbles (left-aligned)
+   extend right, user bubbles (right-aligned) extend left. */
+.chat-row--participant .chat-bubble-toolbar {
+  left: 6px;
+}
+.chat-row--user .chat-bubble-toolbar {
+  right: 6px;
+}
+.chat-bubble:hover > .chat-bubble-toolbar,
+.chat-bubble:focus-within > .chat-bubble-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.chat-bubble-toolbar button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  height: 26px;
+  min-width: 26px;
+  padding: 0 5px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
-  font-size: 17px;
-  line-height: 1;
+  color: var(--ink-muted);
   cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    transform 120ms ease;
 }
-.message-reaction-picker-item:hover {
+.chat-bubble-toolbar button:hover,
+.chat-bubble-toolbar button:focus-visible {
+  outline: 0;
   background: var(--menu-hover);
+  color: var(--ink);
 }
-
-/* Hover-revealed "回复(分屏)" entry on messages with no reply thread yet.
-   Invisible (and click-inert) until its chat row is hovered; keyboard focus
-   reveals it too, so the entry is reachable without a mouse. Same open
-   handler as the right-click menu item — one path into the thread panel. */
-.chat-reply-badge--hover {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease;
+.chat-bubble-toolbar button:active {
+  transform: scale(0.92);
 }
-
-.chat-row:hover .chat-reply-badge--hover,
-.chat-reply-badge--hover:focus-visible {
-  opacity: 1;
-  pointer-events: auto;
+.chat-bubble-toolbar-reaction {
+  font-size: 16px;
+  line-height: 1;
+}
+.chat-bubble-toolbar-reply {
+  gap: 4px;
+  font-size: var(--font-xs);
+}
+.chat-bubble-toolbar-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--menu-border);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-reply-badge--hover {
+  .chat-bubble-toolbar {
     transition: none;
+    transform: none;
   }
 }

@@ -31,6 +31,18 @@ export function reactionGlyph(key: string): string {
   return REACTION_EMOJI[key] ?? "•";
 }
 
+// Human-readable labels (a11y name + tooltip) for the hover toolbar's one-click
+// reaction buttons. Keys mirror the backend vocabulary; the glyph (REACTION_EMOJI)
+// is the swappable skin.
+export const REACTION_LABEL: Record<string, string> = {
+  eyes: "看到了",
+  nice: "赞同",
+  shrug: "无所谓",
+  sideeye: "存疑",
+  smug: "得意",
+  whoa: "惊讶",
+};
+
 // The reaction keys a human may stamp from the chat UI, in display order. Kept
 // in lockstep with the backend vocabulary (reactionKeys in tool_participant_react.go)
 // so the picker never offers a key the server would reject.
