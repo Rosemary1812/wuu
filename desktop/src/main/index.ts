@@ -26,6 +26,7 @@ import type {
   InputFile,
   CliAutoInstallResult,
   CliInstallStatus,
+  CodexPetSettingsUpdate,
   InputImage,
   InitializeResult,
   InstructionsListResult,
@@ -76,10 +77,13 @@ import type {
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
 import { autoInstallCli, getCliInstallStatus, installCli } from "./cliInstall";
+import { loadCodexPetsSnapshot } from "./codexPets";
 import { RemoteHostManager } from "./remoteControl";
 import {
+  getCodexPetSettings,
   getCliAutoInstallEnabled,
   getThemePreference,
+  setCodexPetSettings,
   setCliAutoInstallEnabled,
   setThemePreference,
   type ThemePreference,
@@ -172,6 +176,24 @@ function appServerRequest<T>(
   return context
     ? appServerClientPool.requestInContext<T>(context, method, params)
     : appServerClientPool.request<T>(method, params);
+}
+
+function codexPetsSnapshot() {
+  return loadCodexPetsSnapshot({ settings: getCodexPetSettings() });
+}
+
+function updateCodexPetSettings(update: CodexPetSettingsUpdate) {
+  const current = getCodexPetSettings();
+  const requested = {
+    enabled: update.enabled ?? current.enabled,
+    selected_id: update.selected_id ?? current.selected_id,
+  };
+  const snapshot = loadCodexPetsSnapshot({ settings: requested });
+  setCodexPetSettings({
+    enabled: snapshot.enabled,
+    selected_id: snapshot.selected_id,
+  });
+  return snapshot;
 }
 
 function gitServiceForEvent(event: IpcMainInvokeEvent): GitService {
@@ -858,6 +880,12 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:skill-list", (event) =>
     appServerRequest(event, "skill/list"),
   );
+  ipcMain.handle("wuu:codex-pets-list", () => codexPetsSnapshot());
+  ipcMain.handle(
+    "wuu:codex-pets-update",
+    (_event, settings: CodexPetSettingsUpdate) =>
+      updateCodexPetSettings(settings ?? {}),
+  );
   ipcMain.handle(
     "wuu:settings-usage",
     (event, range?: SettingsUsageRange) =>
@@ -1220,6 +1248,18 @@ app.whenReady().then(async () => {
     // the user can inspect the database.
     return shell.openPath(join(wuuHomePath(), "sessions"));
   });
+  ipcMain.handle(
+    "wuu:file-show-in-folder",
+    (_event, path: string) => {
+      // The path comes from `listWorkspaceDirectory`, so it's already a
+      // workspace item the renderer is allowed to know about. We hand
+      // it straight to the OS file browser — Finder highlights the row,
+      // Explorer opens its parent, file managers open the folder — so
+      // the user can do anything with the item beyond the in-app tree.
+      // `showItemInFolder` returns void; we run it for its side effect.
+      shell.showItemInFolder(path);
+    },
+  );
   ipcMain.handle(
     "wuu:turn-start",
     (

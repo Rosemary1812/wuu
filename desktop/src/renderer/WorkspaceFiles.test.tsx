@@ -71,6 +71,8 @@ let root: Root | null = null;
 let listWorkspaceDirectory: ReturnType<typeof vi.fn>;
 let readWorkspaceFile: ReturnType<typeof vi.fn>;
 let writeWorkspaceFile: ReturnType<typeof vi.fn>;
+let revealWorkspaceItem: ReturnType<typeof vi.fn>;
+let writeClipboard: ReturnType<typeof vi.fn>;
 let scrollIntoView: ReturnType<typeof vi.fn>;
 
 const activeContext: RuntimeContext = {
@@ -134,13 +136,20 @@ beforeEach(() => {
     Promise.resolve(workspaceFile({ path, absolute_path: `/repo/${path}` })),
   );
   writeWorkspaceFile = vi.fn();
+  revealWorkspaceItem = vi.fn().mockResolvedValue(undefined);
+  writeClipboard = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(window, "wuu", {
     configurable: true,
     value: {
       listWorkspaceDirectory,
       readWorkspaceFile,
       writeWorkspaceFile,
+      revealWorkspaceItem,
     },
+  });
+  Object.defineProperty(globalThis.navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: writeClipboard },
   });
   scrollIntoView = vi.fn();
   Element.prototype.scrollIntoView = scrollIntoView;
@@ -152,6 +161,12 @@ afterEach(() => {
   });
   root = null;
   container.remove();
+  // Reset the navigator.clipboard definition we installed so the next
+  // test starts from a clean slate.
+  Object.defineProperty(globalThis.navigator, "clipboard", {
+    configurable: true,
+    value: undefined,
+  });
   vi.restoreAllMocks();
 });
 
@@ -190,6 +205,67 @@ async function clickButtonByText(text: string): Promise<void> {
   }
   await act(async () => {
     button.click();
+    await Promise.resolve();
+  });
+}
+
+// Helpers for the file-tree context-menu tests below. Right-click events
+// reach the row's onContextMenu handler, which sets React state; menu
+// listeners attach via setTimeout(0) inside useEffect, so tests must flush
+// a real macrotask before dispatching outside pointerdown / Escape events.
+function rowButtonByTitle(title: string): HTMLButtonElement {
+  // Test titles are simple strings (e.g., "README.md", "/repo/src/page.tsx") —
+  // the slash and dot are valid in an attribute selector value unescaped, and
+  // we never work with titles that contain `"` or `\` here. Avoid CSS.escape
+  // since JSDOM doesn't expose it in every version and we don't need it.
+  const row = container.querySelector<HTMLButtonElement>(
+    `.workspace-file-tree-row[title="${title}"]`,
+  );
+  if (!row) {
+    throw new Error(`missing tree row with title ${title}`);
+  }
+  return row;
+}
+
+async function dispatchContextMenu(
+  element: HTMLElement,
+  clientX: number,
+  clientY: number,
+): Promise<void> {
+  await act(async () => {
+    element.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX,
+        clientY,
+        button: 2,
+      }),
+    );
+    await Promise.resolve();
+  });
+}
+
+async function flushMacrotask(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
+async function clickMenuItem(text: string): Promise<void> {
+  const menu = container.querySelector(".workspace-tree-context-menu");
+  if (!menu) {
+    throw new Error("menu not visible");
+  }
+  const items = [
+    ...menu.querySelectorAll<HTMLButtonElement>("button[role='menuitem']"),
+  ];
+  const item = items.find((b) => b.textContent?.trim() === text);
+  if (!item) {
+    throw new Error(`menu item ${text} not found`);
+  }
+  await act(async () => {
+    item.click();
     await Promise.resolve();
   });
 }
@@ -641,5 +717,172 @@ describe("WorkspaceFileTree", () => {
       "/repo",
     );
     expect(container.textContent).toContain("已保存");
+  });
+
+  // Right-click context menu on file-tree rows. Lives inside WorkspaceFileTree
+  // via WorkspaceTreeContextMenu; uses navigator.clipboard.writeText for the
+  // three copy actions and the new window.wuu.revealWorkspaceItem IPC for
+  // "show in folder". The menu is also exercised by right-clicking either a
+  // file or a directory row — both branches share the same component.
+  it("right-clicking a row opens the menu with four menu items", async () => {
+    await render(
+      <WorkspaceFileTree activeContext={activeContext} open onOpenFile={() => {}} />,
+    );
+    await settleDirectoryLoads();
+
+    expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
+
+    const row = rowButtonByTitle("README.md");
+    await dispatchContextMenu(row, 120, 240);
+    await flushMacrotask();
+
+    const menu = container.querySelector(".workspace-tree-context-menu");
+    expect(menu).toBeTruthy();
+    expect(menu?.textContent).toContain("复制路径");
+    expect(menu?.textContent).toContain("复制相对路径");
+    expect(menu?.textContent).toContain("复制文件名");
+    expect(menu?.textContent).toContain("在文件管理器中显示");
+  });
+
+  it("复制路径 writes the absolute path to clipboard and closes the menu", async () => {
+    // Override the root mock so entry.path is absolute — lets the assertions
+    // distinguish "the raw entry path" from "the workspace-root-stripped
+    // variant" in the next two tests.
+    listWorkspaceDirectory.mockImplementation((path?: string) =>
+      Promise.resolve({
+        root: "/repo",
+        path: path ?? "",
+        entries:
+          path === ""
+            ? [{ kind: "file", name: "page.tsx", path: "/repo/src/page.tsx" }]
+            : [],
+        truncated: false,
+      }),
+    );
+
+    await render(
+      <WorkspaceFileTree activeContext={activeContext} open onOpenFile={() => {}} />,
+    );
+    await settleDirectoryLoads();
+
+    const row = rowButtonByTitle("/repo/src/page.tsx");
+    await dispatchContextMenu(row, 120, 240);
+    await flushMacrotask();
+
+    await clickMenuItem("复制路径");
+
+    expect(writeClipboard).toHaveBeenCalledWith("/repo/src/page.tsx");
+    expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
+  });
+
+  it("复制相对路径 strips the workspace-root prefix and closes the menu", async () => {
+    listWorkspaceDirectory.mockImplementation((path?: string) =>
+      Promise.resolve({
+        root: "/repo",
+        path: path ?? "",
+        entries:
+          path === ""
+            ? [{ kind: "file", name: "page.tsx", path: "/repo/src/page.tsx" }]
+            : [],
+        truncated: false,
+      }),
+    );
+
+    await render(
+      <WorkspaceFileTree activeContext={activeContext} open onOpenFile={() => {}} />,
+    );
+    await settleDirectoryLoads();
+
+    const row = rowButtonByTitle("/repo/src/page.tsx");
+    await dispatchContextMenu(row, 120, 240);
+    await flushMacrotask();
+
+    await clickMenuItem("复制相对路径");
+
+    expect(writeClipboard).toHaveBeenCalledWith("src/page.tsx");
+    expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
+  });
+
+  it("复制文件名 writes the entry name and closes the menu", async () => {
+    await render(
+      <WorkspaceFileTree activeContext={activeContext} open onOpenFile={() => {}} />,
+    );
+    await settleDirectoryLoads();
+
+    const row = rowButtonByTitle("README.md");
+    await dispatchContextMenu(row, 120, 240);
+    await flushMacrotask();
+
+    await clickMenuItem("复制文件名");
+
+    expect(writeClipboard).toHaveBeenCalledWith("README.md");
+    expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
+  });
+
+  it("在文件管理器中显示 invokes the reveal IPC with the entry path and closes the menu", async () => {
+    await render(
+      <WorkspaceFileTree activeContext={activeContext} open onOpenFile={() => {}} />,
+    );
+    await settleDirectoryLoads();
+
+    const row = rowButtonByTitle("README.md");
+    await dispatchContextMenu(row, 120, 240);
+    await flushMacrotask();
+
+    await clickMenuItem("在文件管理器中显示");
+
+    expect(revealWorkspaceItem).toHaveBeenCalledWith("README.md");
+    expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
+  });
+
+  it("Escape dismisses the menu", async () => {
+    await render(
+      <WorkspaceFileTree activeContext={activeContext} open onOpenFile={() => {}} />,
+    );
+    await settleDirectoryLoads();
+
+    const row = rowButtonByTitle("README.md");
+    await dispatchContextMenu(row, 120, 240);
+    await flushMacrotask();
+
+    expect(container.querySelector(".workspace-tree-context-menu")).toBeTruthy();
+
+    await act(async () => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
+  });
+
+  it("an outside pointerdown dismisses the menu", async () => {
+    await render(
+      <WorkspaceFileTree activeContext={activeContext} open onOpenFile={() => {}} />,
+    );
+    await settleDirectoryLoads();
+
+    const row = rowButtonByTitle("README.md");
+    await dispatchContextMenu(row, 120, 240);
+    await flushMacrotask();
+
+    expect(container.querySelector(".workspace-tree-context-menu")).toBeTruthy();
+
+    await act(async () => {
+      // PointerEvent isn't exposed in every JSDOM version; MouseEvent with the
+      // same event.type reaches the same `pointerdown` listener since addEventListener
+      // matches by event type, not event class.
+      document.dispatchEvent(
+        new MouseEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
   });
 });

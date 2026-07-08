@@ -16,7 +16,7 @@ import {
   Terminal,
   type LucideIcon
 } from "lucide-react";
-import { type CSSProperties, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   RuntimeContext,
   WorkspaceDirectoryListResult,
@@ -59,6 +59,11 @@ export function WorkspaceFileTree({
   const [directories, setDirectories] = useState<DirectoryLoadMap>({});
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    entry: WorkspaceFileTreeEntry;
+  } | null>(null);
   const directoriesRef = useRef(directories);
   const workspaceRootRef = useRef<string | undefined>(undefined);
   const workspaceRoot = activeContext?.cwd;
@@ -121,12 +126,14 @@ export function WorkspaceFileTree({
       setDirectories({});
       setExpandedPaths(new Set());
       setSearch("");
+      setContextMenu(null);
       return;
     }
 
     setDirectories({});
     setExpandedPaths(new Set());
     setSearch("");
+    setContextMenu(null);
     loadDirectory("");
   }, [loadDirectory, open, workspaceRoot]);
 
@@ -182,6 +189,19 @@ export function WorkspaceFileTree({
     [loadDirectory]
   );
 
+  // Right-click on any row lands here. Suppress the browser's native menu
+  // and stash the mouse position + the entry, so the menu component below
+  // can position itself at the cursor.
+  const handleContextMenu = useCallback(
+    (entry: WorkspaceFileTreeEntry, x: number, y: number) => {
+      setContextMenu({ x, y, entry });
+    },
+    [],
+  );
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
   if (!workspaceRoot) {
     return <WorkspacePanelEmpty title="没有项目" description="先选择一个项目。这个面板会显示它的文件。" />;
   }
@@ -215,8 +235,18 @@ export function WorkspaceFileTree({
         onSearchChange={setSearch}
         onToggleDirectory={toggleDirectory}
         onOpenFile={onOpenFile}
+        onContextMenu={handleContextMenu}
         onRetryDirectory={loadDirectory}
       />
+      {contextMenu ? (
+        <WorkspaceTreeContextMenu
+          entry={contextMenu.entry}
+          workspaceRoot={rootDirectory.root ?? workspaceRoot ?? ""}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={closeContextMenu}
+        />
+      ) : null}
     </div>
   );
 }
@@ -230,6 +260,7 @@ function WorkspaceFileTreeView({
   onSearchChange,
   onToggleDirectory,
   onOpenFile,
+  onContextMenu,
   onRetryDirectory
 }: {
   directories: DirectoryLoadMap;
@@ -240,6 +271,7 @@ function WorkspaceFileTreeView({
   onSearchChange: (value: string) => void;
   onToggleDirectory: (path: string) => void;
   onOpenFile: (path: string) => void;
+  onContextMenu: (entry: WorkspaceFileTreeEntry, x: number, y: number) => void;
   onRetryDirectory: (path: string) => void;
 }): JSX.Element {
   const query = search.trim().toLowerCase();
@@ -277,6 +309,7 @@ function WorkspaceFileTreeView({
               depth={0}
               onToggleDirectory={onToggleDirectory}
               onOpenFile={onOpenFile}
+              onContextMenu={onContextMenu}
               onRetryDirectory={onRetryDirectory}
             />
           ) : (
@@ -298,6 +331,7 @@ function WorkspaceFileTreeRows({
   depth,
   onToggleDirectory,
   onOpenFile,
+  onContextMenu,
   onRetryDirectory
 }: {
   directories: DirectoryLoadMap;
@@ -309,6 +343,7 @@ function WorkspaceFileTreeRows({
   depth: number;
   onToggleDirectory: (path: string) => void;
   onOpenFile: (path: string) => void;
+  onContextMenu: (entry: WorkspaceFileTreeEntry, x: number, y: number) => void;
   onRetryDirectory: (path: string) => void;
 }): JSX.Element {
   return (
@@ -325,6 +360,7 @@ function WorkspaceFileTreeRows({
           depth={depth}
           onToggleDirectory={onToggleDirectory}
           onOpenFile={onOpenFile}
+          onContextMenu={onContextMenu}
           onRetryDirectory={onRetryDirectory}
         />
       ))}
@@ -342,6 +378,7 @@ function WorkspaceFileTreeNode({
   depth,
   onToggleDirectory,
   onOpenFile,
+  onContextMenu,
   onRetryDirectory
 }: {
   directories: DirectoryLoadMap;
@@ -353,6 +390,7 @@ function WorkspaceFileTreeNode({
   depth: number;
   onToggleDirectory: (path: string) => void;
   onOpenFile: (path: string) => void;
+  onContextMenu: (entry: WorkspaceFileTreeEntry, x: number, y: number) => void;
   onRetryDirectory: (path: string) => void;
 }): JSX.Element | null {
   if (!shouldShowFileTreeEntry(entry, query, directories)) {
@@ -379,6 +417,10 @@ function WorkspaceFileTreeNode({
         role="treeitem"
         title={entry.path}
         onClick={() => onOpenFile(entry.path)}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onContextMenu(entry, event.clientX, event.clientY);
+        }}
       >
         <span className="workspace-file-tree-toggle-spacer" />
         <fileIcon.Icon className={`icon workspace-file-tree-icon ${fileIcon.tone}`} />
@@ -397,6 +439,10 @@ function WorkspaceFileTreeNode({
         aria-expanded={isExpanded}
         title={entry.path}
         onClick={() => onToggleDirectory(directoryPath)}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onContextMenu(entry, event.clientX, event.clientY);
+        }}
       >
         <span className="workspace-file-tree-toggle">
           {isExpanded ? <ChevronDown className="icon" /> : <ChevronRight className="icon" />}
@@ -430,6 +476,7 @@ function WorkspaceFileTreeNode({
           depth={depth + 1}
           onToggleDirectory={onToggleDirectory}
           onOpenFile={onOpenFile}
+          onContextMenu={onContextMenu}
           onRetryDirectory={onRetryDirectory}
         />
       ) : null}
@@ -439,6 +486,162 @@ function WorkspaceFileTreeNode({
         </div>
       ) : null}
     </>
+  );
+}
+
+function WorkspaceTreeContextMenu({
+  entry,
+  workspaceRoot,
+  x,
+  y,
+  onClose
+}: {
+  entry: WorkspaceFileTreeEntry;
+  workspaceRoot: string;
+  x: number;
+  y: number;
+  onClose: () => void;
+}): JSX.Element {
+  const ref = useRef<HTMLDivElement | null>(null);
+  // The menu mounts at the cursor, but until React commits the first
+  // paint its own size isn't known — measure on the layout effect that
+  // runs just before paint, clamp to viewport so the user never sees
+  // it spilling off-screen.
+  const [position, setPosition] = useState({ x, y });
+  useLayoutEffect(() => {
+    const menuElement = ref.current;
+    if (!menuElement) {
+      return;
+    }
+    const rect = menuElement.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const margin = 8;
+    const clampedX = Math.max(
+      margin,
+      Math.min(viewportWidth - rect.width - margin, x),
+    );
+    const clampedY = Math.max(
+      margin,
+      Math.min(viewportHeight - rect.height - margin, y),
+    );
+    if (clampedX !== x || clampedY !== y) {
+      setPosition({ x: clampedX, y: clampedY });
+    }
+  }, [x, y]);
+
+  // Outside click + Escape dismiss. Listener attach is deferred to a
+  // setTimeout(0) so the original `contextmenu` event's pointerdown
+  // burst doesn't fire dismiss on the same gesture that opened us.
+  // Only left clicks dismiss — right clicks land on tree rows whose
+  // own `onContextMenu` handler re-opens / re-anchors the menu at the
+  // new cursor position; dismissing on right-click would race with
+  // that re-open and kill the menu instead of repositioning it.
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) {
+        return;
+      }
+      const menuElement = ref.current;
+      if (!menuElement) {
+        return;
+      }
+      if (event.target instanceof Node && menuElement.contains(event.target)) {
+        return;
+      }
+      onClose();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    let active = true;
+    const id = window.setTimeout(() => {
+      if (!active) {
+        return;
+      }
+      document.addEventListener("pointerdown", handlePointerDown);
+      document.addEventListener("keydown", handleKeyDown);
+    }, 0);
+    return () => {
+      active = false;
+      window.clearTimeout(id);
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  // `entry.path` is absolute — it comes from the same main-process dir
+  // listing the tree itself renders against. Strip the workspace-root
+  // prefix so users get a repo-relative path for tools that take one
+  // (CLI flags, CI scripts, commit messages).
+  const absolutePath = entry.path;
+  const relativePath = useMemo(() => {
+    const normalizedRoot = workspaceRoot.replace(/\\/g, "/").replace(/\/$/, "");
+    const normalizedPath = absolutePath.replace(/\\/g, "/");
+    return normalizedPath.startsWith(`${normalizedRoot}/`)
+      ? normalizedPath.slice(normalizedRoot.length + 1)
+      : absolutePath;
+  }, [absolutePath, workspaceRoot]);
+
+  // Silent failures only — the user already saw the menu close, and a
+  // notification toast for a clipboard / reveal failure would be louder
+  // than the action they tried. Both outcomes dismiss the menu.
+  const copyToClipboard = (value: string) => () => {
+    void navigator.clipboard.writeText(value).then(
+      () => onClose(),
+      () => onClose(),
+    );
+  };
+  const revealInFolder = () => {
+    void window.wuu.revealWorkspaceItem(absolutePath).then(
+      () => onClose(),
+      () => onClose(),
+    );
+  };
+
+  return (
+    <div
+      ref={ref}
+      className="workspace-tree-context-menu"
+      role="menu"
+      style={{ left: position.x, top: position.y }}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        className="workspace-tree-context-menu-item"
+        onClick={copyToClipboard(absolutePath)}
+      >
+        复制路径
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="workspace-tree-context-menu-item"
+        onClick={copyToClipboard(relativePath)}
+      >
+        复制相对路径
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="workspace-tree-context-menu-item"
+        onClick={copyToClipboard(entry.name)}
+      >
+        复制文件名
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className="workspace-tree-context-menu-item"
+        onClick={revealInFolder}
+      >
+        在文件管理器中显示
+      </button>
+    </div>
   );
 }
 

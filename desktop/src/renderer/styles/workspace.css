@@ -833,6 +833,57 @@
   color: var(--ink);
 }
 
+/* Right-click menu on file-tree rows. The component (WorkspaceTreeContextMenu
+   in WorkspaceFiles.tsx) positions the menu in viewport coordinates and
+   clamps it to the right/bottom edge of the viewport; this CSS only gives
+   it shape so it stays in keeping with the rest of the panel — flat
+   surface, soft drop shadow, no native chrome. */
+.workspace-tree-context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 168px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--ink-overlay-12);
+  border-radius: var(--radius-sm);
+  box-shadow:
+    0 12px 32px var(--ink-overlay-8),
+    0 2px 6px var(--ink-overlay-6);
+  font-family: var(--font-ui, var(--font-body));
+  animation: workspace-tree-context-menu-in 0.1s ease-out;
+}
+
+.workspace-tree-context-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 12px;
+  font-family: inherit;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  cursor: default;
+}
+
+.workspace-tree-context-menu-item:hover,
+.workspace-tree-context-menu-item:focus-visible {
+  background: var(--ink-overlay-4);
+  outline: none;
+}
+
+@keyframes workspace-tree-context-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .workspace-panel-empty {
   display: grid;
   height: 100%;

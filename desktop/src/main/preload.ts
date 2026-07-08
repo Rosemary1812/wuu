@@ -120,6 +120,9 @@ const api: WuuDesktopApi = {
   disconnectMCPServer: (name: string) =>
     ipcRenderer.invoke("wuu:mcp-disconnect", name),
   refreshMCPServer: (name: string) => ipcRenderer.invoke("wuu:mcp-refresh", name),
+  listCodexPets: () => ipcRenderer.invoke("wuu:codex-pets-list"),
+  updateCodexPetSettings: (settings) =>
+    ipcRenderer.invoke("wuu:codex-pets-update", settings),
   startThread: (params?: ThreadStartParams) =>
     ipcRenderer.invoke("wuu:thread-start", params),
   resumeThread: (sessionId?: string) =>
@@ -239,6 +242,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-rename", threadId, title),
   revealSession: (threadId: string) =>
     ipcRenderer.invoke("wuu:reveal-session", threadId),
+  revealWorkspaceItem: (path: string) =>
+    ipcRenderer.invoke("wuu:file-show-in-folder", path),
   openExternal: (url: string) =>
     ipcRenderer.invoke("wuu:open-external", url),
   startTurn: (threadId: string, prompt: string, images, files, permissionMode, mentions, focusWorkspace) =>

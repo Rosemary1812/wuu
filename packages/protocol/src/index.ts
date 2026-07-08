@@ -1610,6 +1610,46 @@ export type ComposerGoalSummary = {
 // light/dark setting via prefers-color-scheme.
 export type ThemePreference = "system" | "light" | "dark";
 
+export type CodexPetStateID =
+  | "idle"
+  | "running-right"
+  | "running-left"
+  | "waving"
+  | "jumping"
+  | "failed"
+  | "waiting"
+  | "running"
+  | "review";
+
+export type CodexPetState = {
+  id: CodexPetStateID;
+  label: string;
+  row: number;
+  frames: number;
+};
+
+export type CodexPet = {
+  id: string;
+  display_name: string;
+  description: string;
+  manifest_path: string;
+  spritesheet_path: string;
+  spritesheet_url: string;
+};
+
+export type CodexPetSettings = {
+  enabled: boolean;
+  selected_id: string;
+};
+
+export type CodexPetsSnapshot = CodexPetSettings & {
+  home: string;
+  pets: CodexPet[];
+  errors: string[];
+};
+
+export type CodexPetSettingsUpdate = Partial<CodexPetSettings>;
+
 // Remote control (设置 → 远程): desktop-local surface managing the
 // machine-global `wuu remote host` daemon and phone pairing. Status comes
 // from `wuu remote status --json`; none of this goes through the app-server
@@ -1747,6 +1787,10 @@ export type WuuDesktopApi = {
   setThemePreference: (
     theme: ThemePreference,
   ) => Promise<{ ok: boolean; theme: ThemePreference }>;
+  listCodexPets: () => Promise<CodexPetsSnapshot>;
+  updateCodexPetSettings: (
+    settings: CodexPetSettingsUpdate,
+  ) => Promise<CodexPetsSnapshot>;
   listParticipants: () => Promise<ParticipantListResult>;
   saveParticipant: (params: ParticipantSaveParams) => Promise<ParticipantSaveResult>;
   sendParticipantFeedback: (
@@ -1891,6 +1935,13 @@ export type WuuDesktopApi = {
   onWindowResizeState: (handler: (state: WindowResizeState) => void) => () => void;
   renameThread: (threadId: string, title: string) => Promise<{ thread: Thread }>;
   revealSession: (threadId: string) => Promise<void>;
+  // Reveal a workspace file or folder in the OS file browser (Finder /
+  // Explorer / file manager) with the item highlighted. Mirrors
+  // `wuu:reveal-session` semantics for in-workspace items: the path
+  // comes from `listWorkspaceDirectory`, so it's already known to the
+  // renderer via the same channel and we trust it without an extra
+  // project-root check (the dir listing itself is what gates that).
+  revealWorkspaceItem: (path: string) => Promise<void>;
   // Open an external URL via the OS default browser. Used by the
   // assistant turn's 来源 pill to send the user to the page the agent
   // actually consulted (web_search hit / web_fetch target) instead of
