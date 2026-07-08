@@ -4,7 +4,7 @@ import type { DesktopProject } from "../shared/protocol";
 import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
 import { SidebarSection } from "./SidebarSection";
 import { baseThreadTitle, threadShowsForkMarker } from "./ThreadTitles";
-import { isThreadUnread, threadProjectPath, type ThreadSummary } from "./AppState";
+import { isThreadRunning, isThreadUnread, threadProjectPath, type ThreadSummary } from "./AppState";
 
 function threadsForProjectPath(
   threads: ThreadSummary[],
@@ -498,12 +498,8 @@ function importantThreadVisible(
   return (
     thread.id === activeID ||
     thread.id === pendingThreadID ||
-    threadRunning(thread)
+    isThreadRunning(thread)
   );
-}
-
-function threadRunning(thread: ThreadSummary): boolean {
-  return thread.status === "in_progress" || thread.turns.some((turn) => turn.status === "in_progress");
 }
 
 function projectThreadUnread(
@@ -513,7 +509,7 @@ function projectThreadUnread(
   lastViewedTurnByThreadID: Record<string, string>,
 ): boolean {
   return (
-    !threadRunning(thread) &&
+    !isThreadRunning(thread) &&
     thread.id !== activeID &&
     thread.id !== pendingThreadID &&
     isThreadUnread(thread, lastViewedTurnByThreadID[thread.id])
@@ -564,7 +560,7 @@ function ThreadRows({
       {threads.map((thread) => {
         const archiveConfirming = archiveConfirmThreadID === thread.id;
         const pendingSwitch = pendingThreadID === thread.id;
-        const running = threadRunning(thread);
+        const running = isThreadRunning(thread);
         const title = baseThreadTitle(thread, threads);
         const forkMarker = threadShowsForkMarker(thread, threads);
         const unread =
@@ -673,7 +669,7 @@ function ThreadRows({
               // A running thread cannot be deleted (the server also rejects
               // it); disable the entry so the confirm dialog never promises
               // a deletion that will fail.
-              disabled: threadRunning(contextMenu.thread),
+              disabled: isThreadRunning(contextMenu.thread),
               onSelect: () => {
                 if (!window.confirm("删除后不可恢复，对话与工件将被清除")) {
                   return;

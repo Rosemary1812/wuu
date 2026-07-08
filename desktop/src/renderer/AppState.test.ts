@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  Agent,
   DesktopProject,
   RuntimeContext,
   Thread,
@@ -31,6 +32,7 @@ import {
   isThreadUnread,
   latestCompletedTurnID,
   latestContextUsageForThread,
+  mergeListedThreads,
   markThreadTurnsViewed,
   mentionedParticipantIDsFromText,
   openForkThreadAsPrimary,
@@ -1557,6 +1559,9 @@ describe("AppState sortThreads (sidebar order)", () => {
     updatedAt: string;
     status?: "idle" | "in_progress";
     turns?: Array<{ id: string; status: "completed" | "in_progress" | "failed" | "interrupted" }>;
+    childAgents?: Agent[];
+    members?: Thread["members"];
+    group?: boolean;
     archived?: boolean;
     readOnly?: boolean;
   }): Thread {
@@ -1571,6 +1576,9 @@ describe("AppState sortThreads (sidebar order)", () => {
       updated_at: args.updatedAt,
       archived: args.archived,
       read_only: args.readOnly,
+      child_agents: args.childAgents,
+      members: args.members,
+      group: args.group,
       turns: (args.turns ?? []).map((turn) => ({
         id: turn.id,
         items: [],
@@ -1695,6 +1703,62 @@ describe("AppState sortThreads (sidebar order)", () => {
     ]);
   });
 
+  it("treats a direct running child agent as active sidebar work", () => {
+    const groupWithRunningAgent = makeSortableThread({
+      id: "group-with-agent",
+      createdAt: "2026-06-18T00:00:00Z",
+      updatedAt: "2026-06-18T00:00:00Z",
+      group: true,
+      childAgents: [
+        {
+          id: "agent-running",
+          parent_id: "group-with-agent",
+          status: "running",
+          task_name: "review",
+        },
+      ],
+    });
+    const settledRecent = makeSortableThread({
+      id: "thread-settled-recent",
+      createdAt: "2026-06-17T00:00:00Z",
+      updatedAt: "2099-01-01T00:00:00Z",
+    });
+
+    const sorted = sortThreads([settledRecent, groupWithRunningAgent]);
+    expect(sorted.map((thread) => thread.id)).toEqual([
+      "group-with-agent",
+      "thread-settled-recent",
+    ]);
+    expect(isThreadUnread(groupWithRunningAgent, undefined)).toBe(false);
+  });
+
+  it("treats a busy group member as active sidebar work", () => {
+    const groupWithBusyMember = makeSortableThread({
+      id: "group-with-busy-member",
+      createdAt: "2026-06-18T00:00:00Z",
+      updatedAt: "2026-06-18T00:00:00Z",
+      group: true,
+      members: [
+        {
+          id: "participant-running",
+          name: "Runner",
+          kind: "named",
+          busy: true,
+        },
+      ],
+    });
+    const settledRecent = makeSortableThread({
+      id: "thread-settled-recent",
+      createdAt: "2026-06-17T00:00:00Z",
+      updatedAt: "2099-01-01T00:00:00Z",
+    });
+
+    expect(sortThreads([settledRecent, groupWithBusyMember]).map((thread) => thread.id)).toEqual([
+      "group-with-busy-member",
+      "thread-settled-recent",
+    ]);
+  });
+
   it("drops archived and read-only threads from the sortable list", () => {
     const archived = makeSortableThread({
       id: "thread-archived",
@@ -1737,6 +1801,36 @@ describe("AppState sortThreads (sidebar order)", () => {
 
     expect(sidebarThreads.map((thread) => thread.id)).toEqual(["thread-normal"]);
     expect(renderableThreads.get("child-running")?.turns).toHaveLength(1);
+  });
+});
+
+describe("mergeListedThreads", () => {
+  it("does not clear known child-agent state when a listed snapshot omits it", () => {
+    const current: Thread = {
+      ...threadWithUserTexts(["group work"]),
+      id: "group-1",
+      group: true,
+      child_agents: [
+        {
+          id: "agent-running",
+          parent_id: "group-1",
+          status: "running",
+          task_name: "review",
+        },
+      ],
+    };
+    const listed: Thread = {
+      ...current,
+      turns: [],
+      child_agents: undefined,
+      updated_at: "2026-01-02T00:00:00Z",
+    };
+
+    const [merged] = mergeListedThreads([current], [listed]);
+
+    expect(merged.child_agents?.[0]?.id).toBe("agent-running");
+    expect(merged.child_agents?.[0]?.status).toBe("running");
+    expect(isThreadUnread(merged, undefined)).toBe(false);
   });
 });
 

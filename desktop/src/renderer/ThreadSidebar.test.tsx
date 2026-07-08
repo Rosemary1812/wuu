@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ThreadContextMenu } from "./ThreadContextMenu";
-import { ProjectGroup, ProjectList, ThreadRowTitle } from "./ThreadSidebar";
+import { PinnedThreadList, ProjectGroup, ProjectList, ThreadRowTitle } from "./ThreadSidebar";
 import type { DesktopProject, Thread } from "../shared/protocol";
 import { SCRATCH_PSEUDO_PROJECT_ID, summarizeThreadsForSidebar } from "./AppState";
 
@@ -290,6 +290,113 @@ describe("ProjectList", () => {
     expect(container.textContent).toContain("Wuu session");
     expect(container.textContent).toContain("Interview session");
     expect(container.textContent).not.toContain("Wrong duplicate");
+  });
+
+  it("shows a running spinner while a direct child agent is still active", () => {
+    const [thread] = summarizeThreadsForSidebar([
+      makeProjectThread("group-1", "/repo/wuu", "Group work", [], {
+        group: true,
+        child_agents: [
+          {
+            id: "agent-running",
+            parent_id: "group-1",
+            status: "running",
+            task_name: "review",
+          },
+        ],
+      }),
+    ]);
+
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <PinnedThreadList
+          threads={[thread]}
+          activeID={undefined}
+          pendingThreadID={undefined}
+          archiveConfirmThreadID={undefined}
+          lastViewedTurnByThreadID={{}}
+          onSelect={() => {}}
+          onTogglePinned={() => {}}
+          onArchive={() => {}}
+          onDelete={() => {}}
+          onClearArchiveConfirm={() => {}}
+        />,
+      );
+    });
+
+    const row = container.querySelector(".thread-row");
+    expect(row?.classList.contains("running")).toBe(true);
+    expect(row?.querySelector(".thread-row-spinner")).not.toBeNull();
+    expect(
+      row?.querySelector(".thread-row-main")?.getAttribute("aria-label"),
+    ).toContain("响应中");
+  });
+
+  it("routes context-menu renames through the sidebar owner", () => {
+    const [thread] = summarizeThreadsForSidebar([
+      makeProjectThread("thread-rename", "/repo/wuu", "Old title"),
+    ]);
+    const onRename = vi.fn();
+    const originalPrompt = window.prompt;
+    const originalWuu = window.wuu;
+    window.prompt = vi.fn().mockReturnValue("New title");
+    window.wuu = {
+      ...originalWuu,
+      renameThread: vi.fn().mockResolvedValue({
+        thread: { ...thread, title: "New title" },
+      }),
+    } as typeof window.wuu;
+
+    try {
+      act(() => {
+        root = createRoot(container);
+        root.render(
+          <PinnedThreadList
+            threads={[thread]}
+            activeID={undefined}
+            pendingThreadID={undefined}
+            archiveConfirmThreadID={undefined}
+            lastViewedTurnByThreadID={{}}
+            onSelect={() => {}}
+            onTogglePinned={() => {}}
+            onArchive={() => {}}
+            onDelete={() => {}}
+            onRename={onRename}
+            onClearArchiveConfirm={() => {}}
+          />,
+        );
+      });
+
+      const row = container.querySelector(".thread-row");
+      expect(row).not.toBeNull();
+      act(() => {
+        row?.dispatchEvent(
+          new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            clientX: 10,
+            clientY: 10,
+          }),
+        );
+      });
+
+      const item = Array.from(
+        document.body.querySelectorAll(".thread-row-context-menu-item"),
+      ).find((el) => el.textContent === "重命名对话");
+      expect(item).not.toBeUndefined();
+      act(() => {
+        item?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, cancelable: true }),
+        );
+      });
+
+      expect(onRename).toHaveBeenCalledWith(thread, "New title");
+      expect(window.wuu.renameThread).not.toHaveBeenCalled();
+    } finally {
+      window.prompt = originalPrompt;
+      window.wuu = originalWuu;
+    }
   });
 
   it("keeps pinned sessions out of project lists", () => {

@@ -171,6 +171,13 @@ export type ThreadSummary = Omit<
   turn_count: number;
 };
 
+type ThreadRunningCandidate = {
+  status: Thread["status"];
+  turns?: Array<Pick<Turn, "status">>;
+  child_agents?: Array<Pick<Agent, "status" | "nested_running_count">>;
+  members?: Array<Pick<ParticipantSummary, "busy">>;
+};
+
 type TurnTokenSample = {
   tokens: number;
   at: number;
@@ -1349,12 +1356,30 @@ function mergeListedThreads(current: Thread[], listed: Thread[]): Thread[] {
   return sortThreads(
     listed.map((thread) => {
       const existing = currentByID.get(thread.id);
-      if (!existing || thread.turns.length > 0 || existing.turns.length === 0) {
+      if (!existing) {
         return thread;
       }
-      return { ...thread, turns: existing.turns };
+      return mergeListedThread(existing, thread);
     }),
   );
+}
+
+function mergeListedThread(existing: Thread, listed: Thread): Thread {
+  return {
+    ...listed,
+    turns:
+      listed.turns.length > 0 || existing.turns.length === 0
+        ? listed.turns
+        : existing.turns,
+    child_agents:
+      listed.child_agents !== undefined
+        ? listed.child_agents
+        : existing.child_agents,
+    members:
+      listed.members !== undefined
+        ? listed.members
+        : existing.members,
+  };
 }
 
 function conversationSearchThreadMeta(thread: Thread): string {
@@ -1747,8 +1772,9 @@ export function sessionTabForParticipant(
 /**
  * Collect participant IDs whose resident DM thread is currently running.
  * A resident named agent's DM thread IS the agent's brain, so the roster's
- * busy dot follows the thread's running state rather than per-run child
- * agent events (see docs/plans/2026-07-03-resident-named-agents.md §7.2).
+ * busy dot follows that thread's live work state (turns and still-running
+ * child agents), not child agents from unrelated workspace/group threads
+ * (see docs/plans/2026-07-03-resident-named-agents.md §7.2).
  * Applies the same qualification as findDMThread: non-archived,
  * workspace_kind "dm" — legacy mis-homed strays never drive the busy dot.
  */
@@ -1778,10 +1804,10 @@ export function busyDMParticipantIDs(
  * A resident named agent's status dot expresses that agent's OWN stable
  * state, so the only source is `busyDMParticipantIDs` — the agent's resident
  * DM thread (its "brain") being in a running state (design §7.2: "busy 改为
- * resident thread 的 running 状态"). We deliberately do NOT walk each thread's
- * running child_agents to light the dispatcher's dot: a child agent is a
- * per-run worker owned by whichever thread is dispatching it, so lighting the
- * dispatcher couples the roster dot to transient, thread-scoped child-agent
+ * resident thread 的 running 状态"). We deliberately do NOT walk unrelated
+ * threads' running child_agents to light the dispatcher's dot: a child agent
+ * is a per-run worker owned by whichever thread is dispatching it, so lighting
+ * the dispatcher couples the roster dot to transient, thread-scoped child-agent
  * state. Because a thread's child_agents are only refreshed in state.threads
  * when that thread is opened/resumed, that coupling made an agent's dot flip
  * as the user selected or left a group chat (ISSUE-12) — a status that read as
@@ -2634,17 +2660,30 @@ function isThread(value: unknown): value is Thread {
 }
 
 function isThreadRunning(
-  thread:
-    | {
-        status: Thread["status"];
-        turns: Array<Pick<Turn, "status">>;
-      }
-    | undefined,
+  thread: ThreadRunningCandidate | undefined,
 ): boolean {
   return Boolean(
     thread?.status === "in_progress" ||
-    thread?.turns.some((turn) => turn.status === "in_progress"),
+    thread?.turns?.some((turn) => turn.status === "in_progress") ||
+    thread?.child_agents?.some(agentRunning) ||
+    thread?.members?.some((member) => member.busy === true),
   );
+}
+
+function agentRunning(
+  agent: Pick<Agent, "status" | "nested_running_count">,
+): boolean {
+  if ((agent.nested_running_count ?? 0) > 0) {
+    return true;
+  }
+  switch (agent.status.trim().toLowerCase()) {
+    case "pending":
+    case "queued":
+    case "running":
+      return true;
+    default:
+      return false;
+  }
 }
 
 function latestCompletedTurnID(thread: {
@@ -2665,10 +2704,9 @@ function latestCompletedTurnID(thread: {
 
 function isThreadUnread(
   thread:
-    | {
-        status: Thread["status"];
+    | (ThreadRunningCandidate & {
         turns: Array<Pick<Turn, "id" | "status">>;
-      }
+      })
     | undefined,
   lastViewedTurnID: string | undefined,
 ): boolean {
