@@ -38,34 +38,6 @@ vi.mock("./WorkspaceMonacoEditor", () => ({
   ),
 }));
 
-vi.mock("./WorkspaceMarkdownEditor", () => ({
-  WorkspaceMarkdownEditor: ({
-    markdown,
-    readOnly,
-    onChange,
-    onSave,
-  }: {
-    markdown: string;
-    readOnly?: boolean;
-    onChange?: (value: string) => void;
-    onSave?: () => void;
-  }) => (
-    <div
-      className="workspace-markdown-wysiwyg"
-      data-readonly={readOnly ? "true" : "false"}
-      data-text={markdown}
-    >
-      <pre>{markdown}</pre>
-      <button type="button" className="mock-markdown-edit" disabled={readOnly} onClick={() => onChange?.("# Edited notes\n")}>
-        mock markdown edit
-      </button>
-      <button type="button" className="mock-markdown-save" disabled={readOnly} onClick={() => onSave?.()}>
-        mock markdown save
-      </button>
-    </div>
-  ),
-}));
-
 let container: HTMLDivElement;
 let root: Root | null = null;
 let listWorkspaceDirectory: ReturnType<typeof vi.fn>;
@@ -634,14 +606,14 @@ describe("WorkspaceFileTree", () => {
     await settleDirectoryLoads();
 
     expect(container.textContent).toContain("阅读");
-    expect(container.textContent).toContain("编辑");
+    expect(container.textContent).not.toContain("编辑");
     expect(container.textContent).toContain("源码");
     expect(container.querySelector(".workspace-markdown-reading")).not.toBeNull();
     expect(container.querySelector(".workspace-markdown-reading .rich-heading")?.textContent).toContain("Project Notes");
     expect(container.querySelector(".workspace-monaco-editor")).toBeNull();
   });
 
-  it("switches Markdown files between WYSIWYG and Monaco source modes", async () => {
+  it("switches Markdown files between reading and Monaco source modes", async () => {
     readWorkspaceFile.mockResolvedValueOnce(workspaceFile({
       path: "README.md",
       absolute_path: "/repo/README.md",
@@ -657,18 +629,21 @@ describe("WorkspaceFileTree", () => {
     );
 
     await settleDirectoryLoads();
-    await clickButtonByText("编辑");
-
-    expect(container.querySelector<HTMLElement>(".workspace-markdown-wysiwyg")?.dataset.text).toBe("# Project Notes\n");
+    expect(container.querySelector(".workspace-markdown-reading")).not.toBeNull();
     expect(container.querySelector(".workspace-monaco-editor")).toBeNull();
 
     await clickButtonByText("源码");
 
     expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.path).toBe("README.md");
     expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.text).toBe("# Project Notes\n");
+    expect(container.querySelector(".workspace-markdown-reading")).toBeNull();
+
+    await clickButtonByText("阅读");
+    expect(container.querySelector(".workspace-markdown-reading")).not.toBeNull();
+    expect(container.querySelector(".workspace-monaco-editor")).toBeNull();
   });
 
-  it("shares dirty Markdown content across WYSIWYG, reading, source, and save", async () => {
+  it("shares dirty Markdown content from Monaco source into reading view and save", async () => {
     readWorkspaceFile.mockResolvedValueOnce(workspaceFile({
       path: "README.md",
       absolute_path: "/repo/README.md",
@@ -694,23 +669,23 @@ describe("WorkspaceFileTree", () => {
     );
 
     await settleDirectoryLoads();
-    await clickButtonByText("编辑");
-    await click(".mock-markdown-edit");
+    await clickButtonByText("源码");
+    await click(".mock-editor-edit");
 
     expect(container.textContent).toContain("已修改");
 
     await clickButtonByText("阅读");
-    expect(container.querySelector(".workspace-markdown-reading")?.textContent).toContain("Edited notes");
+    expect(container.querySelector(".workspace-markdown-reading")?.textContent).toContain("edited code");
 
     await clickButtonByText("源码");
-    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.text).toBe("# Edited notes\n");
+    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.text).toBe("edited code\n");
 
     await click(".mock-editor-save");
 
     expect(writeWorkspaceFile).toHaveBeenCalledWith(
       {
         path: "README.md",
-        text: "# Edited notes\n",
+        text: "edited code\n",
         base_mtime_ms: 1000,
         base_sha256: "a".repeat(64),
       },

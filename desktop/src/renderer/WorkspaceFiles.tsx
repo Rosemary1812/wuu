@@ -24,7 +24,6 @@ import type {
   WorkspaceFileTreeEntry
 } from "../shared/protocol";
 import { RichContent } from "./RichContent";
-import { WorkspaceMarkdownEditor } from "./WorkspaceMarkdownEditor";
 import { WorkspaceMonacoEditor } from "./WorkspaceMonacoEditor";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
@@ -37,7 +36,7 @@ type DirectoryLoadState = {
 };
 
 type DirectoryLoadMap = Record<string, DirectoryLoadState>;
-type MarkdownMode = "reading" | "edit" | "source";
+type MarkdownMode = "reading" | "source";
 
 export type WorkspaceFileDirtyState = {
   root?: string;
@@ -1023,7 +1022,7 @@ export function WorkspaceFilePreview({
           </div>
           {isMarkdown ? (
             <div className="workspace-markdown-mode-switch" role="tablist" aria-label="Markdown 模式">
-              {(["reading", "edit", "source"] as const).map((mode) => (
+              {(["reading", "source"] as const).map((mode) => (
                 <button
                   key={mode}
                   type="button"
@@ -1053,14 +1052,6 @@ export function WorkspaceFilePreview({
           <div className="workspace-markdown-reading">
             <RichContent text={draftText} cwd={activeContext.cwd} />
           </div>
-        ) : isMarkdown && markdownMode === "edit" ? (
-          <WorkspaceMarkdownEditor
-            path={file.path}
-            markdown={draftText}
-            readOnly={readOnly}
-            onChange={handleEditorChange}
-            onSave={handleSave}
-          />
         ) : (
           <WorkspaceMonacoEditor
             path={file.path}
@@ -1082,9 +1073,6 @@ function isMarkdownPath(path: string): boolean {
 function markdownModeLabel(mode: MarkdownMode): string {
   if (mode === "reading") {
     return "阅读";
-  }
-  if (mode === "edit") {
-    return "编辑";
   }
   return "源码";
 }

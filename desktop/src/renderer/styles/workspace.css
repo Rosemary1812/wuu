@@ -1789,8 +1789,7 @@
   background: var(--paper);
 }
 
-.workspace-file-editor-scroll.markdown-reading,
-.workspace-file-editor-scroll.markdown-edit {
+.workspace-file-editor-scroll.markdown-reading {
   overflow: auto;
 }
 
@@ -1844,29 +1843,6 @@
   font-size: 19px;
   font-weight: var(--weight-semibold);
   line-height: 1.35;
-}
-
-.workspace-markdown-wysiwyg-frame,
-.workspace-markdown-wysiwyg {
-  min-height: 100%;
-}
-
-.workspace-markdown-wysiwyg {
-  width: min(100%, 820px);
-  margin: 0 auto;
-  padding: 22px clamp(18px, 4vw, 44px) 56px;
-}
-
-.workspace-markdown-wysiwyg-content {
-  min-height: calc(100vh - 220px);
-  outline: 0;
-  color: var(--ink);
-  font-size: 15px;
-  line-height: 1.68;
-}
-
-.workspace-markdown-wysiwyg-content [contenteditable="true"] {
-  outline: 0;
 }
 
 .workspace-monaco-editor {
