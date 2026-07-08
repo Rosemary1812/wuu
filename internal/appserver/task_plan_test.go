@@ -164,3 +164,45 @@ func TestTaskPlanPieceDoneOnlyByAssignee(t *testing.T) {
 		t.Fatal("set_plan must reject a dependency on an unknown piece")
 	}
 }
+
+// Backward-only dependencies make a cycle, a self-loop, and a forward reference
+// all unrepresentable: a piece may name only pieces listed before it, so the
+// plan order is a topological order and the engine never needs cycle detection.
+func TestSetPlanRejectsCyclesSelfAndForwardDeps(t *testing.T) {
+	srv, groupID, andy, mia, han, _ := planFixture(t)
+	lead := srv.residentTaskManager(andy)
+	task, err := lead.CreateTask(context.Background(), groupID, 0, "dep 校验", true, "")
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	bad := []struct {
+		name string
+		plan []tools.TaskPiece
+	}{
+		{"two-cycle", []tools.TaskPiece{
+			{ID: "a", Title: "A", Assignee: han, DependsOn: []string{"b"}},
+			{ID: "b", Title: "B", Assignee: mia, DependsOn: []string{"a"}},
+		}},
+		{"self-loop", []tools.TaskPiece{
+			{ID: "a", Title: "A", Assignee: han, DependsOn: []string{"a"}},
+		}},
+		{"forward-ref", []tools.TaskPiece{
+			{ID: "a", Title: "A", Assignee: han, DependsOn: []string{"b"}},
+			{ID: "b", Title: "B", Assignee: mia},
+		}},
+	}
+	for _, tc := range bad {
+		if _, err := lead.SetPlan(context.Background(), task.ID, tc.plan); err == nil {
+			t.Fatalf("SetPlan(%s): expected rejection, got nil error", tc.name)
+		}
+	}
+
+	// A backward-only plan — b depends on the earlier a — is accepted.
+	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
+		{ID: "a", Title: "A", Assignee: han},
+		{ID: "b", Title: "B", Assignee: mia, DependsOn: []string{"a"}},
+	}); err != nil {
+		t.Fatalf("SetPlan(backward-only): unexpected error: %v", err)
+	}
+}

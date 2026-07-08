@@ -71,7 +71,7 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 				},
 				"plan": map[string]any{
 					"type":        "array",
-					"description": "With set_plan: the team work breakdown. Each item is a piece {id, title, assignee, prompt, depends_on}. id is a short label unique within the plan (e.g. \"p1\"); assignee is a teammate's participant id (prefer existing members); prompt is the briefing the assignee is woken with — write it so they can start without asking; depends_on lists the piece ids that must finish before this one starts (omit or [] for a piece that can start immediately). Declare the whole plan at once; the engine dispatches every piece with no unmet dependency and @-wakes the rest as their dependencies complete.",
+					"description": "With set_plan: the team work breakdown. Each item is a piece {id, title, assignee, prompt, depends_on}. id is a short label unique within the plan (e.g. \"p1\"); assignee is a teammate's participant id (prefer existing members); prompt is the briefing the assignee is woken with — write it so they can start without asking; depends_on lists the piece ids that must finish before this one starts — each must be a piece listed EARLIER in the plan (omit or [] for a piece that can start immediately), which keeps dependency cycles impossible by construction. Declare the whole plan at once; the engine dispatches every piece with no unmet dependency and @-wakes the rest as their dependencies complete.",
 					"items": map[string]any{
 						"type":                 "object",
 						"additionalProperties": false,

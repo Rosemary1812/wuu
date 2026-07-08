@@ -540,6 +540,21 @@ func (m *residentTaskManager) SetPlan(ctx context.Context, subthreadID string, p
 		if ids[id] {
 			return tools.TaskView{}, fmt.Errorf("set_plan: duplicate piece id %q", id)
 		}
+		// Backward-only dependencies: a piece may depend only on pieces declared
+		// EARLIER in the plan (already in ids). The plan's own order is then a
+		// topological order by construction, so a dependency cycle, a self-loop,
+		// or a forward/unknown reference cannot be expressed at all — the engine
+		// never has to detect a cycle because a cycle cannot be named. This mirrors
+		// how, in a program, control-flow order IS the dependency.
+		for _, dep := range p.DependsOn {
+			d := strings.TrimSpace(dep)
+			if d == id {
+				return tools.TaskView{}, fmt.Errorf("set_plan: piece %q cannot depend on itself", id)
+			}
+			if !ids[d] {
+				return tools.TaskView{}, fmt.Errorf("set_plan: piece %q depends on %q, which is not declared before it; a piece may depend only on pieces listed earlier in the plan", id, d)
+			}
+		}
 		ids[id] = true
 		// Prompt is the one node field the lead authors here; handoff,
 		// attempts, and retry budget stay engine-owned.
@@ -548,14 +563,6 @@ func (m *residentTaskManager) SetPlan(ctx context.Context, subthreadID string, p
 			DependsOn: p.DependsOn, Status: session.TaskPiecePending,
 			Prompt: strings.TrimSpace(p.Prompt),
 		})
-	}
-	// Every dependency must reference a real piece in this plan.
-	for _, p := range sessionPieces {
-		for _, dep := range p.DependsOn {
-			if !ids[strings.TrimSpace(dep)] {
-				return tools.TaskView{}, fmt.Errorf("set_plan: piece %q depends on unknown piece %q", p.ID, dep)
-			}
-		}
 	}
 	// Pull assignees onto the task thread's team so the board card shows them
 	// and they follow the task's traffic.
