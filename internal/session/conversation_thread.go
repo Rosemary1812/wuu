@@ -70,21 +70,56 @@ type ConversationThread struct {
 	Plan []TaskPiece `json:"plan,omitempty"`
 }
 
-// TaskPiece is one unit of a team task's plan. Status moves pending -> active
-// (deps satisfied, assignee woken) -> done (assignee reported it complete).
+// TaskPiece is one unit of a team task's plan — an executable node in the
+// lead's dependency graph. Status moves pending -> active (deps satisfied,
+// assignee woken); from active it lands in done (assignee reported it
+// complete), blocked (assignee cannot proceed without lead input), failed
+// (the last attempt died with no retry budget left), or retrying (a failed
+// attempt is being re-dispatched against the remaining budget, then back to
+// active).
 type TaskPiece struct {
 	ID        string   `json:"id"`
 	Title     string   `json:"title"`
 	Assignee  string   `json:"assignee"`
 	DependsOn []string `json:"depends_on,omitempty"`
 	Status    string   `json:"status"`
+	// Prompt is the lead-authored first-step briefing for this node — what
+	// the assignee is woken with when the engine dispatches the piece.
+	Prompt string `json:"prompt,omitempty"`
+	// Handoff is the structured handoff payload JSON the upstream node handed
+	// to this one. The store persists it verbatim; its shape belongs to the
+	// handoff writer, not the plan.
+	Handoff string `json:"handoff,omitempty"`
+	// RetryBudget is how many attempts this node gets before failed becomes
+	// terminal. Zero means unset: reads and writes normalize it to the
+	// default (TaskPieceDefaultRetryBudget), so plans stored before nodes
+	// carried a budget come back with 3. Attempts counts attempts made so far.
+	RetryBudget int `json:"retry_budget,omitempty"`
+	Attempts    int `json:"attempts,omitempty"`
+	// FailureReason is the most recent failure, kept for the lead's
+	// post-mortem when it is woken on failure.
+	FailureReason string `json:"failure_reason,omitempty"`
+	// LastActivityAt / LastProgressAt are the node's liveness signals:
+	// activity is any observable action by the assignee, progress is a
+	// declared step forward. Stall detection compares the two relative to
+	// each other instead of a fixed lease deadline.
+	LastActivityAt time.Time `json:"last_activity_at,omitzero"`
+	LastProgressAt time.Time `json:"last_progress_at,omitzero"`
 }
 
 const (
-	TaskPiecePending = "pending"
-	TaskPieceActive  = "active"
-	TaskPieceDone    = "done"
+	TaskPiecePending  = "pending"
+	TaskPieceActive   = "active"
+	TaskPieceDone     = "done"
+	TaskPieceBlocked  = "blocked"
+	TaskPieceFailed   = "failed"
+	TaskPieceRetrying = "retrying"
 )
+
+// TaskPieceDefaultRetryBudget is the retry budget a plan node gets when the
+// lead did not declare one (and what a plan stored before nodes carried a
+// budget reads back with).
+const TaskPieceDefaultRetryBudget = 3
 
 func NewConversationThreadID() string {
 	b := make([]byte, 8)
@@ -645,21 +680,35 @@ func scanConversationThread(scanner interface {
 		if err := json.Unmarshal([]byte(planJSON), &thread.Plan); err != nil {
 			return ConversationThread{}, fmt.Errorf("decode task plan for %q: %w", thread.ID, err)
 		}
+		normalizeTaskPieces(thread.Plan)
 	}
 	return thread, nil
 }
 
-// SetConversationThreadPlan replaces the task's declared plan (task-rail
-// design §8). Any piece with no explicit status defaults to pending. The
-// caller (the lead's set_plan action) owns validation of assignees/deps; this
-// just persists the breakdown so the engine can advance it.
-func SetConversationThreadPlan(sessDir, id string, plan []TaskPiece) (ConversationThread, error) {
-	id = strings.TrimSpace(id)
+// normalizeTaskPieces is the one place plan-node defaults live: an empty
+// Status becomes pending, and a zero RetryBudget (a plan stored before nodes
+// carried a budget, or a lead that left it unset) becomes the default. It runs
+// on every read (scanConversationThread) so legacy rows come back normalized,
+// and on the write path so newly stored plans carry the values explicitly.
+func normalizeTaskPieces(plan []TaskPiece) {
 	for i := range plan {
 		if strings.TrimSpace(plan[i].Status) == "" {
 			plan[i].Status = TaskPiecePending
 		}
+		if plan[i].RetryBudget == 0 {
+			plan[i].RetryBudget = TaskPieceDefaultRetryBudget
+		}
 	}
+}
+
+// SetConversationThreadPlan replaces the task's declared plan (task-rail
+// design §8). Pieces are normalized before storage (empty status -> pending,
+// zero retry budget -> default), so persisted plans carry explicit values. The
+// caller (the lead's set_plan action) owns validation of assignees/deps; this
+// just persists the breakdown so the engine can advance it.
+func SetConversationThreadPlan(sessDir, id string, plan []TaskPiece) (ConversationThread, error) {
+	id = strings.TrimSpace(id)
+	normalizeTaskPieces(plan)
 	data, err := json.Marshal(plan)
 	if err != nil {
 		return ConversationThread{}, fmt.Errorf("encode task plan: %w", err)
@@ -677,11 +726,22 @@ func SetConversationThreadPlan(sessDir, id string, plan []TaskPiece) (Conversati
 	return findConversationThreadByIDDB(db, id)
 }
 
-// MarkTaskPieceStatus sets one piece's status (pending/active/done) inside the
-// task's plan and returns the updated thread. Used by the engine (active on
-// dispatch) and by the assignee's piece_done action. Errors if the piece id is
-// not in the plan.
+// MarkTaskPieceStatus sets one piece's status inside the task's plan and
+// returns the updated thread. Used by the engine (active on dispatch) and by
+// the assignee's piece_done action. Errors if the piece id is not in the plan.
 func MarkTaskPieceStatus(sessDir, id, pieceID, status string) (ConversationThread, error) {
+	return UpdateTaskPiece(sessDir, id, pieceID, func(piece *TaskPiece) {
+		piece.Status = status
+	})
+}
+
+// UpdateTaskPiece loads the task's plan, applies mutate to the piece with the
+// given id, persists the updated plan, and returns the updated thread. It is
+// the engine's single write path for node execution state — status, attempts,
+// handoff, failure reason, activity/progress timestamps — so every node
+// mutation rides the same read-mutate-persist cycle under the store write
+// lock. Errors if the piece id is not in the plan.
+func UpdateTaskPiece(sessDir, id, pieceID string, mutate func(*TaskPiece)) (ConversationThread, error) {
 	id = strings.TrimSpace(id)
 	pieceID = strings.TrimSpace(pieceID)
 	db, err := openStore(sessDir)
@@ -698,7 +758,7 @@ func MarkTaskPieceStatus(sessDir, id, pieceID, status string) (ConversationThrea
 	found := false
 	for i := range thread.Plan {
 		if thread.Plan[i].ID == pieceID {
-			thread.Plan[i].Status = status
+			mutate(&thread.Plan[i])
 			found = true
 			break
 		}
