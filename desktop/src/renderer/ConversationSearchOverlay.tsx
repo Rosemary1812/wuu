@@ -354,11 +354,15 @@ function PreviewTurn({ turn, query }: { turn: Turn; query: string }): JSX.Elemen
 function previewTurnRole(
   turn: Turn,
 ): "user" | "assistant" | "system" {
-  // Scan every item rather than only items[0]: an assistant turn can
-  // open with a tool_call (the agent decided to run a shell command or
-  // a search before emitting any text), and inspecting only the first
-  // item then classified such turns as "system" — `previewTurnText`
-  // returned "" and the entire reply row went blank in the preview.
+  // In this codebase a "turn" is a full conversation round: a
+  // user_message opens it, then the agent's agent_message / reasoning /
+  // tool_calls all hang off the same Turn (see
+  // turnsFromPersistedHistoryInScope in appserver/model.go). When we
+  // return "user" for a turn that has both, the row echoes the user's
+  // query back and the agent's final answer never shows in the preview.
+  // Prefer "assistant" whenever the agent emitted anything; fall back
+  // to "user" for turns where the user is still waiting (or where the
+  // turn only carries tool_calls / errors).
   let hasUser = false;
   let hasAgent = false;
   for (const item of turn.items) {
@@ -368,8 +372,8 @@ function previewTurnRole(
       hasAgent = true;
     }
   }
-  if (hasUser) return "user";
   if (hasAgent) return "assistant";
+  if (hasUser) return "user";
   return "system";
 }
 
