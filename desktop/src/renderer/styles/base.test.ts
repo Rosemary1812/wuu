@@ -18,6 +18,12 @@ describe("resize drag over embedded frames", () => {
       /\.window-resizing\s+iframe[\s\S]*?\{[\s\S]*?pointer-events:\s*none/,
     );
   });
+
+  it("keeps the sidebar auto-collapse grid transition enabled during window resize", () => {
+    expect(baseCss).toMatch(
+      /\.window-resizing\s+\.app-shell\.sidebar-animating\s*\{[\s\S]*?transition:\s*grid-template-columns\s+var\(--sidebar-motion-duration,\s*340ms\)\s+var\(--sidebar-motion-ease\)\s*!important;/,
+    );
+  });
 });
 
 describe("global text selection", () => {

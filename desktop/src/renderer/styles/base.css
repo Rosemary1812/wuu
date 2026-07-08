@@ -378,6 +378,13 @@ code,
   animation-play-state: paused !important;
 }
 
+/* Auto-collapsing the sidebar is itself a resize response. Keep that single
+   grid transition visible while the broader window-resize optimization
+   suppresses incidental layout transitions. */
+.window-resizing .app-shell.sidebar-animating {
+  transition: grid-template-columns var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease) !important;
+}
+
 .resizing-review-split,
 .resizing-right-panel,
 .resizing-review-split *,
