@@ -12,7 +12,12 @@ import {
   Smartphone,
   X
 } from "lucide-react";
-import type { RuntimeAdvancedSettingsUpdate, RuntimeGeneralSettingsUpdate, SettingsUsageRange } from "../shared/protocol";
+import type {
+  CodexPetSettingsUpdate,
+  RuntimeAdvancedSettingsUpdate,
+  RuntimeGeneralSettingsUpdate,
+  SettingsUsageRange,
+} from "../shared/protocol";
 import {
   type CSSProperties,
   type FormEvent as ReactFormEvent,
@@ -27,6 +32,7 @@ import {
 } from "react";
 import { SelectMenu } from "./SelectMenu";
 import type {
+  CodexPetsSnapshot,
   DesktopBuildInfo,
   InitializeResult,
   MCPServerStatus,
@@ -59,6 +65,9 @@ export function SettingsView({
   participants,
   showDebugControlsSetting,
   debugControlsEnabled,
+  codexPets,
+  codexPetsLoading,
+  codexPetsError,
   sidebarWidth,
   sidebarMinWidth,
   sidebarMaxWidth,
@@ -69,6 +78,8 @@ export function SettingsView({
   onRemoveProvider,
   onAdvancedSave,
   onGeneralSave,
+  onCodexPetsRefresh,
+  onCodexPetsUpdate,
   onDebugControlsChange,
   onSidebarResizeStart,
   onSidebarSeparatorKey,
@@ -90,6 +101,9 @@ export function SettingsView({
   setUsageRange: (range: SettingsUsageRange) => void;
   showDebugControlsSetting: boolean;
   debugControlsEnabled: boolean;
+  codexPets?: CodexPetsSnapshot;
+  codexPetsLoading: boolean;
+  codexPetsError: string;
   sidebarWidth: number;
   sidebarMinWidth: number;
   sidebarMaxWidth: number;
@@ -100,6 +114,8 @@ export function SettingsView({
   onRemoveProvider: (provider: string) => Promise<void>;
   onAdvancedSave: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
   onGeneralSave: (settings: RuntimeGeneralSettingsUpdate) => Promise<void>;
+  onCodexPetsRefresh: () => Promise<CodexPetsSnapshot>;
+  onCodexPetsUpdate: (settings: CodexPetSettingsUpdate) => Promise<CodexPetsSnapshot>;
   onDebugControlsChange: (enabled: boolean) => void;
   onSidebarResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
@@ -583,9 +599,14 @@ export function SettingsView({
                 mcpLoading={mcpLoading}
                 mcpError={mcpError}
                 mcpBusyServer={mcpBusyServer}
+                codexPets={codexPets}
+                codexPetsLoading={codexPetsLoading}
+                codexPetsError={codexPetsError}
                 onDebugControlsChange={onDebugControlsChange}
                 onGeneralSave={onGeneralSave}
                 onMCPAction={runMCPAction}
+                onCodexPetsRefresh={onCodexPetsRefresh}
+                onCodexPetsUpdate={onCodexPetsUpdate}
                 copyState={copyState}
                 onCopyVersion={copyVersionInfo}
               />
@@ -1191,9 +1212,14 @@ function SettingsGeneralPage({
   mcpLoading,
   mcpError,
   mcpBusyServer,
+  codexPets,
+  codexPetsLoading,
+  codexPetsError,
   onDebugControlsChange,
   onGeneralSave,
   onMCPAction,
+  onCodexPetsRefresh,
+  onCodexPetsUpdate,
   copyState,
   onCopyVersion
 }: {
@@ -1206,9 +1232,14 @@ function SettingsGeneralPage({
   mcpLoading: boolean;
   mcpError: string;
   mcpBusyServer: string;
+  codexPets: CodexPetsSnapshot | undefined;
+  codexPetsLoading: boolean;
+  codexPetsError: string;
   onDebugControlsChange: (enabled: boolean) => void;
   onGeneralSave: (settings: RuntimeGeneralSettingsUpdate) => Promise<void>;
   onMCPAction: (name: string, action: "connect" | "disconnect" | "refresh") => Promise<void>;
+  onCodexPetsRefresh: () => Promise<CodexPetsSnapshot>;
+  onCodexPetsUpdate: (settings: CodexPetSettingsUpdate) => Promise<CodexPetsSnapshot>;
   copyState: CopyState;
   onCopyVersion: () => Promise<void>;
 }): JSX.Element {
@@ -1220,6 +1251,8 @@ function SettingsGeneralPage({
   const [mcpEnabledDraft, setMCPEnabledDraft] = useState<Record<string, boolean>>(() => ({ ...configuredMCPEnabled }));
   const [mcpToggleBusy, setMCPToggleBusy] = useState("");
   const [mcpToggleError, setMCPToggleError] = useState("");
+  const [codexPetBusy, setCodexPetBusy] = useState(false);
+  const [codexPetLocalError, setCodexPetLocalError] = useState("");
   const [generalError, setGeneralError] = useState("");
   const [generalSaved, setGeneralSaved] = useState(false);
 
@@ -1266,6 +1299,34 @@ function SettingsGeneralPage({
   const mcpRowNames = Array.from(
     new Set([...mcpServers.map((server) => server.name), ...Object.keys(mcpEnabledDraft)]),
   ).sort((a, b) => a.localeCompare(b));
+  const codexPetOptions = codexPets?.pets ?? [];
+  const codexPetSelectedID = codexPets?.selected_id ?? "";
+  const codexPetEnabled = Boolean(codexPets?.enabled);
+  const codexPetStatus = codexPetLocalError || codexPetsError;
+
+  async function refreshCodexPets(): Promise<void> {
+    setCodexPetBusy(true);
+    setCodexPetLocalError("");
+    try {
+      await onCodexPetsRefresh();
+    } catch (error) {
+      setCodexPetLocalError(error instanceof Error ? error.message : "刷新失败");
+    } finally {
+      setCodexPetBusy(false);
+    }
+  }
+
+  async function updateCodexPets(settings: CodexPetSettingsUpdate): Promise<void> {
+    setCodexPetBusy(true);
+    setCodexPetLocalError("");
+    try {
+      await onCodexPetsUpdate(settings);
+    } catch (error) {
+      setCodexPetLocalError(error instanceof Error ? error.message : "保存失败");
+    } finally {
+      setCodexPetBusy(false);
+    }
+  }
 
   return (
     <>
@@ -1277,6 +1338,66 @@ function SettingsGeneralPage({
         <SettingsCard>
           <SettingsRow title="主题" description="立即生效，无需保存">
             <ThemePreferenceControl />
+          </SettingsRow>
+          <SettingsRow
+            title="Codex Pet"
+            description={codexPets?.home ? `读取 ${codexPets.home}` : "读取 ~/.codex/pets"}
+            block
+          >
+            <div className="settings-codex-pets-controls">
+              <button
+                className="settings-switch"
+                type="button"
+                role="switch"
+                aria-checked={codexPetEnabled}
+                data-testid="settings-codex-pet-enabled"
+                disabled={codexPetsLoading || codexPetBusy || codexPetOptions.length === 0}
+                onClick={() => void updateCodexPets({ enabled: !codexPetEnabled })}
+              >
+                <span className="settings-switch-thumb" aria-hidden="true" />
+                <span className="sr-only">{codexPetEnabled ? "关闭 Codex Pet" : "打开 Codex Pet"}</span>
+              </button>
+              <select
+                className="settings-select settings-codex-pet-select"
+                aria-label="选择 Codex Pet"
+                data-testid="settings-codex-pet-select"
+                value={codexPetSelectedID}
+                disabled={codexPetsLoading || codexPetBusy || codexPetOptions.length === 0}
+                onChange={(event) => void updateCodexPets({ selected_id: event.currentTarget.value })}
+              >
+                {codexPetOptions.length === 0 ? (
+                  <option value="">暂无本地宠物</option>
+                ) : (
+                  codexPetOptions.map((pet) => (
+                    <option key={pet.id} value={pet.id}>
+                      {pet.display_name}
+                    </option>
+                  ))
+                )}
+              </select>
+              <button
+                className="settings-button settings-icon-button"
+                type="button"
+                title="刷新本地 Codex Pets"
+                aria-label="刷新本地 Codex Pets"
+                disabled={codexPetsLoading || codexPetBusy}
+                onClick={() => void refreshCodexPets()}
+              >
+                <RefreshCw size={15} aria-hidden="true" />
+              </button>
+            </div>
+            {codexPetsLoading ? <small className="settings-muted-line">正在读取本地宠物…</small> : null}
+            {!codexPetsLoading && codexPetOptions.length === 0 ? (
+              <small className="settings-muted-line">
+                可用 codex-pets.net 的安装命令添加到 ~/.codex/pets。
+              </small>
+            ) : null}
+            {codexPets?.errors.length ? (
+              <small className="settings-muted-line settings-error">
+                {codexPets.errors[0]}
+              </small>
+            ) : null}
+            {codexPetStatus ? <small className="settings-muted-line settings-error">{codexPetStatus}</small> : null}
           </SettingsRow>
         </SettingsCard>
       </SettingsSection>

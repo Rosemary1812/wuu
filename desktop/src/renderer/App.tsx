@@ -37,6 +37,8 @@ import {
 import { arrayMove } from "@dnd-kit/sortable";
 import type {
   Agent,
+  CodexPetSettingsUpdate,
+  CodexPetsSnapshot,
   ConversationSubthread,
   SubthreadUpdatedNotification,
   DesktopProject,
@@ -126,6 +128,7 @@ import { useConversationScrollState } from "./ConversationScrollState";
 import { useConversationSearch } from "./ConversationSearchState";
 import { ConversationTurnList } from "./ConversationTurnList";
 import { ChatThreadViewContainer } from "./ChatThreadViewContainer";
+import { CodexPetLayer } from "./CodexPetLayer";
 import { useThreadMarkList } from "./useThreadMarks";
 import { ConversationSubthreadPanel } from "./ConversationSubthreadPanel";
 import { ParticipantProfilePanel } from "./ParticipantProfilePanel";
@@ -746,10 +749,92 @@ export function App(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialPage, setSettingsInitialPage] =
     useState<SettingsPage>("providers");
+  const [codexPets, setCodexPets] = useState<CodexPetsSnapshot | undefined>();
+  const [codexPetsLoading, setCodexPetsLoading] = useState(true);
+  const [codexPetsError, setCodexPetsError] = useState("");
   // 设置 → 记忆 打开时预选的同事笔记本（档案面板「在记忆面板中管理」）。
   const [settingsMemoryFocusID, setSettingsMemoryFocusID] = useState<
     string | undefined
   >(undefined);
+  const refreshCodexPets = useCallback(async (): Promise<CodexPetsSnapshot> => {
+    const api = window.wuu as Partial<typeof window.wuu>;
+    if (typeof api.listCodexPets !== "function") {
+      const message = "当前桌面进程不支持 Codex Pets，请重启应用";
+      setCodexPetsError(message);
+      setCodexPetsLoading(false);
+      throw new Error(message);
+    }
+    setCodexPetsLoading(true);
+    setCodexPetsError("");
+    try {
+      const snapshot = await api.listCodexPets();
+      setCodexPets(snapshot);
+      return snapshot;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "无法读取 Codex Pets";
+      setCodexPetsError(message);
+      throw error;
+    } finally {
+      setCodexPetsLoading(false);
+    }
+  }, []);
+  const updateCodexPets = useCallback(async (
+    settings: CodexPetSettingsUpdate,
+  ): Promise<CodexPetsSnapshot> => {
+    const api = window.wuu as Partial<typeof window.wuu>;
+    if (typeof api.updateCodexPetSettings !== "function") {
+      const message = "当前桌面进程不支持 Codex Pets，请重启应用";
+      setCodexPetsError(message);
+      setCodexPetsLoading(false);
+      throw new Error(message);
+    }
+    setCodexPetsLoading(true);
+    setCodexPetsError("");
+    try {
+      const snapshot = await api.updateCodexPetSettings(settings);
+      setCodexPets(snapshot);
+      return snapshot;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "无法保存 Codex Pet";
+      setCodexPetsError(message);
+      throw error;
+    } finally {
+      setCodexPetsLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const api = window.wuu as Partial<typeof window.wuu>;
+    if (typeof api.listCodexPets !== "function") {
+      setCodexPetsLoading(false);
+      setCodexPetsError("当前桌面进程不支持 Codex Pets，请重启应用");
+      return () => {
+        cancelled = true;
+      };
+    }
+    setCodexPetsLoading(true);
+    setCodexPetsError("");
+    void api
+      .listCodexPets()
+      .then((snapshot) => {
+        if (!cancelled) {
+          setCodexPets(snapshot);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setCodexPetsError(error instanceof Error ? error.message : "无法读取 Codex Pets");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setCodexPetsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [projectFilter, setProjectFilter] = useState("");
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
   const {
@@ -8880,6 +8965,9 @@ export function App(): JSX.Element {
         usage={settingsUsage}
         usageRange={usageRange}
         setUsageRange={setUsageRange}
+        codexPets={codexPets}
+        codexPetsLoading={codexPetsLoading}
+        codexPetsError={codexPetsError}
         showDebugControlsSetting={ENABLE_DEBUG_CONTROL_SETTING}
         debugControlsEnabled={debugControlsEnabled}
         sidebarWidth={settingsSidebarWidth}
@@ -8895,6 +8983,8 @@ export function App(): JSX.Element {
         onRemoveProvider={removeProvider}
         onAdvancedSave={updateAdvancedSettings}
         onGeneralSave={updateGeneralSettings}
+        onCodexPetsRefresh={refreshCodexPets}
+        onCodexPetsUpdate={updateCodexPets}
         onDebugControlsChange={setDebugControlsEnabled}
         onSidebarResizeStart={startSettingsSidebarResize}
         onSidebarSeparatorKey={handleSettingsSidebarSeparatorKey}
@@ -9566,6 +9656,11 @@ export function App(): JSX.Element {
           </div>
         </FloatingMenuPortal>
       ) : null}
+      <CodexPetLayer
+        snapshot={codexPets}
+        running={anyThreadIsRunning}
+        status={state.status}
+      />
       </div>
     </ImagePreviewProvider>
   );

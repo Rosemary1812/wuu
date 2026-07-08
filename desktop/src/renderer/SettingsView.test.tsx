@@ -4,8 +4,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { SettingsView, type SettingsPage } from "./SettingsView";
 import type {
   BuildInfoResult,
+  CodexPetsSnapshot,
   InitializeResult,
   RuntimeAdvancedSettingsUpdate,
+  CodexPetSettingsUpdate,
   RuntimeConnectionUpdate,
   RuntimeGeneralSettingsUpdate,
   SettingsUsageRange,
@@ -44,6 +46,8 @@ function installBuildInfoStub(info: BuildInfoResult): void {
     connectMCPServer: vi.fn(),
     disconnectMCPServer: vi.fn(),
     refreshMCPServer: vi.fn(),
+    listCodexPets: vi.fn().mockResolvedValue(emptyCodexPetsSnapshot()),
+    updateCodexPetSettings: vi.fn().mockResolvedValue(emptyCodexPetsSnapshot()),
   };
   (globalThis as { wuu?: WuuDesktopApi }).wuu = stub as WuuDesktopApi;
   (window as unknown as GlobalWindow).wuu = stub as WuuDesktopApi;
@@ -68,12 +72,27 @@ function baseInitialized(overrides: Partial<InitializeResult> = {}): InitializeR
   };
 }
 
+function emptyCodexPetsSnapshot(overrides: Partial<CodexPetsSnapshot> = {}): CodexPetsSnapshot {
+  return {
+    home: "/Users/test/.codex/pets",
+    enabled: false,
+    selected_id: "",
+    pets: [],
+    errors: [],
+    ...overrides,
+  };
+}
+
 function renderSettings(props: {
   initialized: InitializeResult | undefined;
   usage?: SettingsUsageResponse;
   usageRange?: SettingsUsageRange;
   initialPage?: SettingsPage;
   runningProviderNames?: string[];
+  codexPets?: CodexPetsSnapshot;
+  codexPetsLoading?: boolean;
+  codexPetsError?: string;
+  onCodexPetsUpdate?: (settings: CodexPetSettingsUpdate) => Promise<CodexPetsSnapshot>;
   onSave?: (provider: string, model: string, effort?: string, connection?: RuntimeConnectionUpdate, variant?: string) => Promise<void>;
   onRemoveProvider?: (provider: string) => Promise<void>;
   onAdvancedSave?: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
@@ -92,6 +111,11 @@ function renderSettings(props: {
         usageRange={usageRange}
         setUsageRange={setUsageRange}
         runningProviderNames={props.runningProviderNames}
+        codexPets={props.codexPets ?? emptyCodexPetsSnapshot()}
+        codexPetsLoading={props.codexPetsLoading ?? false}
+        codexPetsError={props.codexPetsError ?? ""}
+        onCodexPetsRefresh={async () => props.codexPets ?? emptyCodexPetsSnapshot()}
+        onCodexPetsUpdate={props.onCodexPetsUpdate ?? (async () => props.codexPets ?? emptyCodexPetsSnapshot())}
         showDebugControlsSetting={false}
         debugControlsEnabled={false}
         sidebarWidth={320}
@@ -516,6 +540,85 @@ describe("SettingsView general settings", () => {
       append_system_prompt: "默认用中文回答。",
       memory_disable: true,
     });
+  });
+
+  it("renders Codex Pets controls and saves pet selection", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const onCodexPetsUpdate = vi.fn().mockImplementation(async (settings: CodexPetSettingsUpdate) =>
+      emptyCodexPetsSnapshot({
+        enabled: settings.enabled ?? true,
+        selected_id: settings.selected_id ?? "alpha",
+        pets: [
+          {
+            id: "alpha",
+            display_name: "Alpha Pet",
+            description: "",
+            manifest_path: "/Users/test/.codex/pets/alpha/pet.json",
+            spritesheet_path: "/Users/test/.codex/pets/alpha/spritesheet.webp",
+            spritesheet_url: "wuu-file://local/alpha",
+          },
+          {
+            id: "beta",
+            display_name: "Beta Pet",
+            description: "",
+            manifest_path: "/Users/test/.codex/pets/beta/pet.json",
+            spritesheet_path: "/Users/test/.codex/pets/beta/spritesheet.webp",
+            spritesheet_url: "wuu-file://local/beta",
+          },
+        ],
+      }),
+    );
+    const { rootText } = renderSettings({
+      initialPage: "general",
+      initialized: baseInitialized(),
+      codexPets: emptyCodexPetsSnapshot({
+        enabled: false,
+        selected_id: "alpha",
+        pets: [
+          {
+            id: "alpha",
+            display_name: "Alpha Pet",
+            description: "",
+            manifest_path: "/Users/test/.codex/pets/alpha/pet.json",
+            spritesheet_path: "/Users/test/.codex/pets/alpha/spritesheet.webp",
+            spritesheet_url: "wuu-file://local/alpha",
+          },
+          {
+            id: "beta",
+            display_name: "Beta Pet",
+            description: "",
+            manifest_path: "/Users/test/.codex/pets/beta/pet.json",
+            spritesheet_path: "/Users/test/.codex/pets/beta/spritesheet.webp",
+            spritesheet_url: "wuu-file://local/beta",
+          },
+        ],
+      }),
+      onCodexPetsUpdate,
+    });
+
+    expect(rootText()).toContain("Codex Pet");
+    expect(rootText()).toContain("Alpha Pet");
+    expect(rootText()).toContain("Beta Pet");
+
+    const petSwitch = container.querySelector("[data-testid=\"settings-codex-pet-enabled\"]") as HTMLButtonElement | null;
+    expect(petSwitch).not.toBeNull();
+    await act(async () => {
+      petSwitch?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(onCodexPetsUpdate).toHaveBeenCalledWith({ enabled: true });
+
+    const select = container.querySelector("[data-testid=\"settings-codex-pet-select\"]") as HTMLSelectElement | null;
+    expect(select).not.toBeNull();
+    await act(async () => {
+      select!.value = "beta";
+      select?.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(onCodexPetsUpdate).toHaveBeenCalledWith({ selected_id: "beta" });
   });
 });
 

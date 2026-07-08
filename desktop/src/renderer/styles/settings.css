@@ -790,6 +790,28 @@
   padding: 20px 24px;
 }
 
+.settings-codex-pets-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-codex-pet-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-muted-line {
+  display: block;
+  margin-top: 8px;
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  line-height: 1.45;
+}
+
 /* --- Usage page layout --------------------------------------------------- */
 
 .settings-usage-page {

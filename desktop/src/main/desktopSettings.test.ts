@@ -3,9 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  getCodexPetSettings,
   getCliAutoInstallEnabled,
   getThemePreference,
   readDesktopSettings,
+  setCodexPetSettings,
   setCliAutoInstallEnabled,
   setThemePreference,
   writeDesktopSettings,
@@ -78,6 +80,21 @@ describe("desktopSettings", () => {
     setCliAutoInstallEnabled(false, file);
     expect(getThemePreference(file)).toBe("dark");
     expect(getCliAutoInstallEnabled(file)).toBe(false);
+  });
+
+  it("defaults codex pets to disabled with no selected pet", () => {
+    expect(getCodexPetSettings(file)).toEqual({ enabled: false, selected_id: "" });
+  });
+
+  it("round-trips codex pet settings while preserving other desktop settings", () => {
+    setThemePreference("dark", file);
+    setCodexPetSettings({ enabled: true, selected_id: "pixel-duck" }, file);
+    expect(getCodexPetSettings(file)).toEqual({ enabled: true, selected_id: "pixel-duck" });
+    expect(getThemePreference(file)).toBe("dark");
+
+    setCodexPetSettings({ enabled: false, selected_id: "" }, file);
+    expect(getCodexPetSettings(file)).toEqual({ enabled: false, selected_id: "" });
+    expect(getThemePreference(file)).toBe("dark");
   });
 
   it("ignores a legacy skin field left in the settings file", async () => {

@@ -7,7 +7,7 @@ import { wuuHomePath } from "./projects";
 // startup). Persistence mirrors projects.ts: a small JSON file under the wuu
 // home directory (~/.wuu), written synchronously on change.
 
-import type { ThemePreference } from "../shared/protocol";
+import type { CodexPetSettings, ThemePreference } from "../shared/protocol";
 
 export type { ThemePreference };
 
@@ -19,6 +19,9 @@ export type DesktopSettings = {
   // Appearance. "system" follows the OS light/dark preference; the
   // renderer resolves it to a concrete data-theme on <html>.
   theme?: ThemePreference;
+  // Codex Pets compatibility. The desktop reads local pets from
+  // ~/.codex/pets and keeps only the UI enablement + selected pet here.
+  codex_pet?: CodexPetSettings;
 };
 
 const THEME_PREFERENCES: readonly ThemePreference[] = ["system", "light", "dark"];
@@ -40,6 +43,13 @@ export function readDesktopSettings(filePath: string = desktopSettingsPath()): D
     }
     if (THEME_PREFERENCES.includes(record.theme as ThemePreference)) {
       settings.theme = record.theme as ThemePreference;
+    }
+    if (typeof record.codex_pet === "object" && record.codex_pet !== null && !Array.isArray(record.codex_pet)) {
+      const codexPet = record.codex_pet as Record<string, unknown>;
+      settings.codex_pet = {
+        enabled: codexPet.enabled === true,
+        selected_id: typeof codexPet.selected_id === "string" ? codexPet.selected_id.trim() : "",
+      };
     }
     return settings;
   } catch {
@@ -72,4 +82,19 @@ export function getThemePreference(filePath?: string): ThemePreference {
 export function setThemePreference(theme: ThemePreference, filePath?: string): void {
   const settings = readDesktopSettings(filePath);
   writeDesktopSettings({ ...settings, theme }, filePath);
+}
+
+export function getCodexPetSettings(filePath?: string): CodexPetSettings {
+  return readDesktopSettings(filePath).codex_pet ?? { enabled: false, selected_id: "" };
+}
+
+export function setCodexPetSettings(next: CodexPetSettings, filePath?: string): void {
+  const settings = readDesktopSettings(filePath);
+  writeDesktopSettings({
+    ...settings,
+    codex_pet: {
+      enabled: next.enabled,
+      selected_id: next.selected_id.trim(),
+    },
+  }, filePath);
 }
