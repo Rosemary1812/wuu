@@ -423,6 +423,51 @@ describe("WorkspaceFileTree", () => {
     expect(container.querySelector<HTMLButtonElement>(".workspace-file-save-button")?.disabled).toBe(false);
   });
 
+  it("reports the active file dirty state to the shell", async () => {
+    const onDirtyChange = vi.fn();
+    writeWorkspaceFile.mockResolvedValueOnce({
+      status: "saved",
+      file: workspaceFile({
+        text: "edited code\n",
+        mtime_ms: 2000,
+        sha256: "b".repeat(64),
+      }),
+    });
+
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/src/index.ts"
+        onOpenRightPanel={() => {}}
+        onDirtyChange={onDirtyChange}
+      />,
+    );
+
+    await settleDirectoryLoads();
+
+    expect(onDirtyChange).toHaveBeenLastCalledWith({
+      root: "/repo",
+      path: "src/index.ts",
+      dirty: false,
+    });
+
+    await click(".mock-editor-edit");
+
+    expect(onDirtyChange).toHaveBeenLastCalledWith({
+      root: "/repo",
+      path: "src/index.ts",
+      dirty: true,
+    });
+
+    await click(".mock-editor-save");
+
+    expect(onDirtyChange).toHaveBeenLastCalledWith({
+      root: "/repo",
+      path: "src/index.ts",
+      dirty: false,
+    });
+  });
+
   it("keeps truncated text files readonly", async () => {
     readWorkspaceFile.mockResolvedValueOnce(workspaceFile({
       path: "large.log",

@@ -39,6 +39,12 @@ type DirectoryLoadState = {
 type DirectoryLoadMap = Record<string, DirectoryLoadState>;
 type MarkdownMode = "reading" | "edit" | "source";
 
+export type WorkspaceFileDirtyState = {
+  root?: string;
+  path?: string;
+  dirty: boolean;
+};
+
 export function WorkspaceFileTree({
   activeContext,
   open,
@@ -550,11 +556,13 @@ export function formatWorkspaceRoot(root: string): string {
 export function WorkspaceFilePreview({
   activeContext,
   selectedFilePath,
-  onOpenRightPanel
+  onOpenRightPanel,
+  onDirtyChange
 }: {
   activeContext?: RuntimeContext;
   selectedFilePath?: string;
   onOpenRightPanel: () => void;
+  onDirtyChange?: (state: WorkspaceFileDirtyState) => void;
 }): JSX.Element {
   const [file, setFile] = useState<WorkspaceFileReadResult | undefined>(undefined);
   const [draftText, setDraftText] = useState("");
@@ -630,6 +638,25 @@ export function WorkspaceFilePreview({
   const isMarkdown = Boolean(file && isMarkdownPath(file.path));
   const readOnly = Boolean(file?.binary || file?.truncated || file?.text === undefined);
   const dirty = draftText !== baseText;
+  const dirtyStatePath = file?.path ?? selectedWorkspaceFilePath;
+
+  useEffect(() => {
+    onDirtyChange?.({
+      root: activeContext?.cwd,
+      path: dirtyStatePath,
+      dirty,
+    });
+  }, [activeContext?.cwd, dirty, dirtyStatePath, onDirtyChange]);
+
+  useEffect(() => {
+    return () => {
+      onDirtyChange?.({
+        root: activeContext?.cwd,
+        path: dirtyStatePath,
+        dirty: false,
+      });
+    };
+  }, [activeContext?.cwd, dirtyStatePath, onDirtyChange]);
 
   const handleEditorChange = useCallback((nextText: string) => {
     setDraftText(nextText);

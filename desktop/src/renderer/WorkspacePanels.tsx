@@ -17,7 +17,7 @@ import { FileDiff, FolderOpen, Globe, Plus, ShieldCheck, Terminal, X } from "luc
 import type { GitStatusResult, RuntimeContext } from "../shared/protocol";
 import { TurnFileDiffPanel } from "./TurnFileDiffPanel";
 import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
-import { WorkspaceFilePreview, WorkspaceFileTree } from "./WorkspaceFiles";
+import { WorkspaceFilePreview, WorkspaceFileTree, type WorkspaceFileDirtyState } from "./WorkspaceFiles";
 import { WorkspaceDiffReview, WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
 import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
 import type { WorkspaceViewTab } from "./WorkspaceViewTabs";
@@ -30,7 +30,8 @@ export function WorkspaceMainPanel({
   workspaceContext,
   gitStatus,
   selectedFilePath,
-  onOpenRightPanel
+  onOpenRightPanel,
+  onFileDirtyChange
 }: {
   view: WorkspacePanelView;
   // activeContext is the pinned project/no_project context — used only by
@@ -42,6 +43,7 @@ export function WorkspaceMainPanel({
   gitStatus?: GitStatusResult;
   selectedFilePath?: string;
   onOpenRightPanel: () => void;
+  onFileDirtyChange?: (state: WorkspaceFileDirtyState) => void;
 }): JSX.Element | null {
   if (view === "files") {
     return (
@@ -49,6 +51,7 @@ export function WorkspaceMainPanel({
         activeContext={workspaceContext}
         selectedFilePath={selectedFilePath}
         onOpenRightPanel={onOpenRightPanel}
+        onDirtyChange={onFileDirtyChange}
       />
     );
   }

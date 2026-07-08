@@ -321,6 +321,7 @@ import {
   workspaceModeTitle,
   type WorkspacePanelView,
 } from "./WorkspacePanels";
+import type { WorkspaceFileDirtyState } from "./WorkspaceFiles";
 import { useWorkspaceToolState } from "./WorkspaceToolState";
 import type { WorkspaceViewTab } from "./WorkspaceViewTabs";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
@@ -410,6 +411,15 @@ function useStableCallback<T extends (...args: any[]) => any>(callback: T): T {
     ((...args: Parameters<T>): ReturnType<T> => callbackRef.current(...args)) as T,
     [],
   );
+}
+
+function normalizeWorkspaceFileSwitchPath(path: string, root?: string): string {
+  const normalizedPath = path.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  const normalizedRoot = root?.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  if (normalizedRoot && normalizedPath.startsWith(`${normalizedRoot}/`)) {
+    return normalizedPath.slice(normalizedRoot.length + 1);
+  }
+  return normalizedPath.replace(/^\/+/, "");
 }
 
 type HistoryMessageEditState = {
@@ -888,6 +898,7 @@ export function App(): JSX.Element {
   const environmentToggleRef = useRef<HTMLButtonElement>(null);
   const environmentPanelRef = useRef<HTMLDivElement>(null);
   const appStateRef = useRef<AppState>(initialState);
+  const workspaceEditorDirtyRef = useRef<WorkspaceFileDirtyState>({ dirty: false });
   const queuedMessageEditTargetRef =
     useRef<QueuedMessageEditTarget | undefined>(undefined);
   const pendingComposerMessagesByThreadRef =
@@ -906,6 +917,21 @@ export function App(): JSX.Element {
   // finally block of openParticipantDM regardless of the resolution path.
   const openingDMParticipantIDRef = useRef<string | undefined>(undefined);
   const currentSessionTab = activeSessionTab(state);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent): void => {
+      if (!workspaceEditorDirtyRef.current.dirty) {
+        return;
+      }
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
+
   // Workspace panel (file tree / file preview / terminal) root: follows the
   // active thread's own cwd when it differs from state.activeContext — the
   // main remaining case is a worktree-fork thread, whose cwd is a git
@@ -2014,6 +2040,24 @@ export function App(): JSX.Element {
       openTurnFileDiffPanel(thread.id, selection);
     },
   );
+  const rememberWorkspaceFileDirtyState = useStableCallback(
+    (dirtyState: WorkspaceFileDirtyState) => {
+      workspaceEditorDirtyRef.current = dirtyState;
+    },
+  );
+  const confirmWorkspaceFileSwitch = useStableCallback(
+    (context: RuntimeContext, nextPath: string): boolean => {
+      const dirtyState = workspaceEditorDirtyRef.current;
+      if (!dirtyState.dirty) {
+        return true;
+      }
+      const nextRelativePath = normalizeWorkspaceFileSwitchPath(nextPath, context.cwd);
+      if (dirtyState.root === context.cwd && dirtyState.path === nextRelativePath) {
+        return true;
+      }
+      return window.confirm("当前文件有未保存修改，切换文件会丢失这些修改。仍要打开其他文件吗？");
+    },
+  );
   const openWorkspaceFile = useStableCallback((path: string): void => {
     // Stamp the same derived context the workspace panel's file tree/preview
     // are rooted at (workspacePanelContext), not the raw activeContext — for
@@ -2025,6 +2069,9 @@ export function App(): JSX.Element {
       appStateRef.current.thread,
     );
     if (!context) {
+      return;
+    }
+    if (!confirmWorkspaceFileSwitch(context, path)) {
       return;
     }
     const fileTab = createFileSessionTab(context, path);
@@ -8993,6 +9040,7 @@ export function App(): JSX.Element {
                 workspaceContext={workspaceContext}
                 gitStatus={state.gitStatus}
                 selectedFilePath={activeWorkspaceFile}
+                onFileDirtyChange={rememberWorkspaceFileDirtyState}
                 onOpenRightPanel={() => {
                   ensureWorkspaceToolTab(workspaceMode);
                   activateWorkspaceTool(workspaceMode);
