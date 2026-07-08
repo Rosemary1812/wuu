@@ -206,7 +206,7 @@ header.hero .col-line { position: absolute; top: 0; bottom: 0; width: 1px; backg
 .mtrack .logo.more { font-family: var(--sans); font-weight: 500; font-size: 15px; color: var(--ink-2); opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .mtrack { animation: none; flex-wrap: wrap; justify-content: center; } .marquee { -webkit-mask-image: none; mask-image: none; } }
 
-/* card primitive — flat hairline on top, used by capcard/surface/credit */
+/* card primitive — flat hairline on top, used by surface/credit */
 .card, .diff {
   position: relative; background: transparent;
   border: none; border-radius: 0; box-shadow: none;
@@ -255,19 +255,86 @@ header.hero .col-line { position: absolute; top: 0; bottom: 0; width: 1px; backg
 @keyframes pulse { 50% { opacity: .35; } }
 @media (max-width: 560px){ .demo-feed { padding: 20px 14px; } .dmsg .who .r { display: none; } }
 
-/* capabilities — named roster, numbered editorial cards */
-.capsec { padding: 108px 0 56px; }
+/* capabilities — named roster, horizontal marquee */
+.capsec { padding: 108px 0 36px; }
 .capsec .head-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 38px; }
 .capsec .head-row .title { margin-bottom: 0; }
-.capgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 44px 40px; counter-reset: cap; }
-@media (max-width: 900px){ .capgrid { grid-template-columns: repeat(2,1fr); } }
-@media (max-width: 560px){ .capgrid { grid-template-columns: 1fr; } }
-.capcard { display: flex; flex-direction: column; padding: 20px 0 0; min-height: 208px; }
-.capcard::before { counter-increment: cap; content: counter(cap, decimal-leading-zero); font-family: var(--serif); font-size: 14px; color: var(--accent-press); margin-bottom: 14px; }
-.capcard h3 { font-family: var(--display); font-weight: 500; font-size: 18px; margin-bottom: 8px; }
-.capcard p { color: var(--ink-2); font-size: 14.5px; max-width: 19em; }
-.capcard .spot { margin-top: auto; align-self: flex-end; width: 92px; height: 92px; background-color: #fff; border: 1px solid var(--line-2); border-radius: 0; background-size: 74%; background-position: center 58%; }
-.rtag { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; color: var(--ink-3); text-transform: uppercase; margin: -4px 0 10px; }
+.cap-marquee { padding: 8px 0 16px; }
+.cap-track { gap: 0; animation-duration: 62s; }
+.cap-track > .cap-set { display: flex; gap: 18px; }
+.cap-item {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 16px;
+  align-items: start;
+  padding: 22px 26px;
+  min-width: 304px;
+  flex: none;
+  background: var(--bg-soft);
+  border: 1px solid var(--line-2);
+  transition: border-color .2s;
+}
+.cap-item:hover { border-color: var(--ink); }
+.cap-face {
+  display: block;
+  width: 64px;
+  height: 64px;
+  background-color: #fff;
+  border: 1px solid var(--line-2);
+  background-size: 78%;
+  background-position: center 56%;
+  background-repeat: no-repeat;
+  flex: none;
+}
+.cap-text { display: flex; flex-direction: column; min-width: 0; }
+.cap-name {
+  display: block;
+  font-family: var(--serif);
+  font-weight: 540;
+  font-size: 20px;
+  line-height: 1.18;
+  color: var(--ink);
+  letter-spacing: -.005em;
+  transition: color .2s;
+}
+.cap-item:hover .cap-name { color: var(--accent-press); }
+.cap-role {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .16em;
+  color: var(--accent-press);
+  text-transform: uppercase;
+  margin-top: 8px;
+}
+.cap-mem {
+  display: block;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  margin-top: 8px;
+}
+.cap-stat {
+  text-align: center;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink-3);
+  letter-spacing: .04em;
+  margin-top: 28px;
+}
+.cap-stat .en { font-family: var(--sans); font-weight: 500; }
+@media (max-width: 760px) {
+  .cap-item { min-width: 264px; padding: 18px 20px; gap: 12px; }
+  .cap-face { width: 54px; height: 54px; }
+  .cap-name { font-size: 18px; }
+  .cap-mem { font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cap-track { animation: none; flex-wrap: wrap; justify-content: center; }
+  .cap-track > .cap-set { display: contents; }
+  .cap-marquee { -webkit-mask-image: none; mask-image: none; }
+}
 
 /* usage / control surfaces */
 .everywhere { padding: 100px 0 110px; background: var(--bg-soft); border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); }
@@ -523,48 +590,115 @@ footer { background: var(--bg); color: var(--ink-2); padding: 32px 0 40px; borde
     <div class="head-row reveal">
       <div>
         <h2 class="title"><span class="zh">他们都<span class="mark">有名字</span></span><span class="en">They all <span class="mark">have names</span></span></h2>
-        <p class="lede"><span class="zh">这是默认的一班人。@一声名字，任务连着身份、记忆和默契一起交出去——你也可以改名、加人、立新的身份。</span><span class="en">Meet the default crew. One @ hands off a task along with an identity, a memory, and shared habits — rename them, add more, or invent identities of your own.</span></p>
-      </div>
-    </div>
-    <div class="capgrid">
-      <div class="card capcard reveal">
-        <h3><span class="zh">墨白</span><span class="en">Miro</span></h3>
-        <span class="rtag">PLANNER</span>
-        <p><span class="zh">把目标拆成步骤，把活分给对的人。</span><span class="en">Turns a goal into steps and hands each to the right agent.</span></p>
-        <span class="spot" style="background-image:url(assets/mascot/wuu-mascot-concept-28.png)"></span>
-      </div>
-      <div class="card capcard reveal">
-        <h3><span class="zh">阿寻</span><span class="en">Scout</span></h3>
-        <span class="rtag">RESEARCHER</span>
-        <p><span class="zh">摸清你的代码库，把上下文找齐。</span><span class="en">Maps your codebase and gathers the context.</span></p>
-        <span class="spot" style="background-image:url(assets/mascot/wuu-mascot-concept-30.png)"></span>
-      </div>
-      <div class="card capcard reveal">
-        <h3><span class="zh">石头</span><span class="en">Flint</span></h3>
-        <span class="rtag">BUILDER</span>
-        <p><span class="zh">写代码、跑命令，直到真的跑通。</span><span class="en">Writes code and runs commands until it works.</span></p>
-        <span class="spot" style="background-image:url(assets/mascot/wuu-mascot-concept-29.png)"></span>
-      </div>
-      <div class="card capcard reveal">
-        <h3><span class="zh">阿凛</span><span class="en">Vera</span></h3>
-        <span class="rtag">REVIEWER</span>
-        <p><span class="zh">每个改动都要先过她这一关。</span><span class="en">Every change gets past her first.</span></p>
-        <span class="spot" style="background-image:url(assets/mascot/wuu-mascot-concept-31.png)"></span>
-      </div>
-      <div class="card capcard reveal">
-        <h3><span class="zh">念念</span><span class="en">Memo</span></h3>
-        <span class="rtag">ARCHIVIST</span>
-        <p><span class="zh">记着你的项目和习惯，越处越合拍。</span><span class="en">Remembers your project and habits — sharper every week.</span></p>
-        <span class="spot" style="background-image:url(assets/mascot/wuu-mascot-concept-32.png)"></span>
-      </div>
-      <div class="card capcard reveal">
-        <h3><span class="zh">阿更</span><span class="en">Nox</span></h3>
-        <span class="rtag">NIGHT WATCH</span>
-        <p><span class="zh">守着日程表，你睡觉时他在干活。</span><span class="en">Keeps the schedule — works while you sleep.</span></p>
-        <span class="spot" style="background-image:url(assets/mascot/wuu-mascot-concept-06.png)"></span>
+        <p class="lede"><span class="zh">见一次就记住你的项目 → 第二天不用复述 → 第三周主动提醒你 → 用得越久越合拍。</span><span class="en">Day one, learns your project. Day two, no recap. Week three, they remind you first.</span></p>
       </div>
     </div>
   </div>
+  <div class="marquee cap-marquee" aria-label="agent roster">
+    <div class="mtrack cap-track">
+      <div class="cap-set">
+        <article class="cap-item">
+        <span class="cap-face" style="background-image:url(assets/mascot/wuu-mascot-concept-28.png)"></span>
+        <span class="cap-text">
+          <span class="cap-name"><span class="zh">墨白</span><span class="en">Miro</span></span>
+          <span class="cap-role">PLANNER</span>
+          <span class="cap-mem"><span class="zh">记得你的发版节奏（周五不发）</span><span class="en">Knows your release rhythm (no Friday deploys)</span></span>
+        </span>
+      </article>
+      <article class="cap-item">
+        <span class="cap-face" style="background-image:url(assets/mascot/wuu-mascot-concept-30.png)"></span>
+        <span class="cap-text">
+          <span class="cap-name"><span class="zh">阿寻</span><span class="en">Scout</span></span>
+          <span class="cap-role">RESEARCHER</span>
+          <span class="cap-mem"><span class="zh">仓库 12 个模块的边界</span><span class="en">Knows all twelve module boundaries</span></span>
+        </span>
+      </article>
+      <article class="cap-item">
+        <span class="cap-face" style="background-image:url(assets/mascot/wuu-mascot-concept-29.png)"></span>
+        <span class="cap-text">
+          <span class="cap-name"><span class="zh">石头</span><span class="en">Flint</span></span>
+          <span class="cap-role">BUILDER</span>
+          <span class="cap-mem"><span class="zh">测试命令 + lint 规则</span><span class="en">Your test commands + lint rules</span></span>
+        </span>
+      </article>
+      <article class="cap-item">
+        <span class="cap-face" style="background-image:url(assets/mascot/wuu-mascot-concept-31.png)"></span>
+        <span class="cap-text">
+          <span class="cap-name"><span class="zh">阿凛</span><span class="en">Vera</span></span>
+          <span class="cap-role">REVIEWER</span>
+          <span class="cap-mem"><span class="zh">你拒绝过的 8 种 diff 模式</span><span class="en">Eight diff patterns you've rejected</span></span>
+        </span>
+      </article>
+      <article class="cap-item">
+        <span class="cap-face" style="background-image:url(assets/mascot/wuu-mascot-concept-32.png)"></span>
+        <span class="cap-text">
+          <span class="cap-name"><span class="zh">念念</span><span class="en">Memo</span></span>
+          <span class="cap-role">ARCHIVIST</span>
+          <span class="cap-mem"><span class="zh">你的 CHANGELOG 模板</span><span class="en">Your CHANGELOG template</span></span>
+        </span>
+      </article>
+      <article class="cap-item">
+        <span class="cap-face" style="background-image:url(assets/mascot/wuu-mascot-concept-06.png)"></span>
+        <span class="cap-text">
+          <span class="cap-name"><span class="zh">阿更</span><span class="en">Nox</span></span>
+          <span class="cap-role">NIGHT WATCH</span>
+          <span class="cap-mem"><span class="zh">全量回归 22 分 31 秒</span><span class="en">Full regression — 22 min 31 sec</span></span>
+        </span>
+      </article>
+      </div>
+      <div class="cap-set" aria-hidden="true">
+      <article class="cap-item">
+        <span class="cap-face" style="background-image:url(assets/mascot/wuu-mascot-concept-28.png)"></span>
+        <span class="cap-text">
+          <span class="cap-name"><span class="zh">墨白</span><span class="en">Miro</span></span>
+          <span class="cap-role">PLANNER</span>
+          <span class="cap-mem"><span class="zh">记得你的发版节奏（周五不发）</span><span class="en">Knows your release rhythm (no Friday deploys)</span></span>
+        </span>
+      </article>
+      <article class="cap-item">
+        <span class="cap-face" style="background-image:url(assets/mascot/wuu-mascot-concept-30.png)"></span>
+        <span class="cap-text">
+          <span class="cap-name"><span class="zh">阿寻</span><span class="en">Scout</span></span>
+          <span class="cap-role">RESEARCHER</span>
+          <span class="cap-mem"><span class="zh">仓库 12 个模块的边界</span><span class="en">Knows all twelve module boundaries</span></span>
+        </span>
+      </article>
+      <article class="cap-item">
+        <span class="cap-face" style="background-image:url(assets/mascot/wuu-mascot-concept-29.png)"></span>
+        <span class="cap-text">
+          <span class="cap-name"><span class="zh">石头</span><span class="en">Flint</span></span>
+          <span class="cap-role">BUILDER</span>
+          <span class="cap-mem"><span class="zh">测试命令 + lint 规则</span><span class="en">Your test commands + lint rules</span></span>
+        </span>
+      </article>
+      <article class="cap-item">
+        <span class="cap-face" style="background-image:url(assets/mascot/wuu-mascot-concept-31.png)"></span>
+        <span class="cap-text">
+          <span class="cap-name"><span class="zh">阿凛</span><span class="en">Vera</span></span>
+          <span class="cap-role">REVIEWER</span>
+          <span class="cap-mem"><span class="zh">你拒绝过的 8 种 diff 模式</span><span class="en">Eight diff patterns you've rejected</span></span>
+        </span>
+      </article>
+      <article class="cap-item">
+        <span class="cap-face" style="background-image:url(assets/mascot/wuu-mascot-concept-32.png)"></span>
+        <span class="cap-text">
+          <span class="cap-name"><span class="zh">念念</span><span class="en">Memo</span></span>
+          <span class="cap-role">ARCHIVIST</span>
+          <span class="cap-mem"><span class="zh">你的 CHANGELOG 模板</span><span class="en">Your CHANGELOG template</span></span>
+        </span>
+      </article>
+      <article class="cap-item">
+        <span class="cap-face" style="background-image:url(assets/mascot/wuu-mascot-concept-06.png)"></span>
+        <span class="cap-text">
+          <span class="cap-name"><span class="zh">阿更</span><span class="en">Nox</span></span>
+          <span class="cap-role">NIGHT WATCH</span>
+          <span class="cap-mem"><span class="zh">全量回归 22 分 31 秒</span><span class="en">Full regression — 22 min 31 sec</span></span>
+        </span>
+      </article>
+      </div>
+    </div>
+  </div>
+  <div class="wrap"><p class="cap-stat reveal"><span class="zh">每个都有名字</span><span class="en">Each has a name</span></p></div>
 </section>
 
 <section class="voicesec" id="voices">
