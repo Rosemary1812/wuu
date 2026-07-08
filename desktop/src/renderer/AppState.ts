@@ -1178,8 +1178,8 @@ function updateThread(
 }
 
 /**
- * Salvage locally-known tail turns when a thread resume returns a snapshot
- * that lags behind what the client already holds.
+ * Salvage locally-known tail turns/items when a thread resume returns a
+ * snapshot that lags behind what the client already holds.
  *
  * Switching session tabs re-resumes the target thread and would otherwise
  * replace its turns wholesale with the server snapshot (selectThread in
@@ -1190,28 +1190,61 @@ function updateThread(
  * disappears on return.
  *
  * We only salvage when the resumed turns are a strict prefix of the turns the
- * client already holds — the unambiguous "client is ahead" signature. Any
+ * client already holds — either by whole turns or by extra items at the end of
+ * an existing turn. That is the unambiguous "client is ahead" signature. Any
  * other divergence (an edit/fork that truncated history, or a server snapshot
  * that is genuinely ahead of the client) breaks the prefix match, and we defer
  * to the resumed snapshot as authoritative. The overlapping prefix always uses
- * the server's (fresher) turn objects; only the client's extra tail carries
- * over.
+ * the server's (fresher) turn/item objects; only the client's extra tail
+ * carries over.
  */
 export function reconcileResumedThreadTurns(
   resumed: Thread,
   local: Thread | undefined,
 ): Thread {
   const localTurns = local?.turns;
-  if (!localTurns || localTurns.length <= resumed.turns.length) {
+  if (!localTurns || localTurns.length < resumed.turns.length) {
     return resumed;
   }
   for (let index = 0; index < resumed.turns.length; index += 1) {
     if (resumed.turns[index].id !== localTurns[index].id) {
       return resumed;
     }
+    if (!turnItemsArePrefix(resumed.turns[index], localTurns[index])) {
+      return resumed;
+    }
   }
+  let changed = false;
+  const mergedTurns = resumed.turns.map((turn, index) => {
+    const localTurn = localTurns[index];
+    if (localTurn.items.length <= turn.items.length) {
+      return turn;
+    }
+    changed = true;
+    return {
+      ...turn,
+      items: [...turn.items, ...localTurn.items.slice(turn.items.length)],
+    };
+  });
   const salvagedTail = localTurns.slice(resumed.turns.length);
-  return { ...resumed, turns: [...resumed.turns, ...salvagedTail] };
+  if (salvagedTail.length > 0) {
+    changed = true;
+  }
+  return changed
+    ? { ...resumed, turns: [...mergedTurns, ...salvagedTail] }
+    : resumed;
+}
+
+function turnItemsArePrefix(resumed: Turn, local: Turn): boolean {
+  if (resumed.items.length > local.items.length) {
+    return false;
+  }
+  for (let index = 0; index < resumed.items.length; index += 1) {
+    if (resumed.items[index].id !== local.items[index].id) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function upsertThread(threads: Thread[], thread: Thread | undefined): Thread[] {

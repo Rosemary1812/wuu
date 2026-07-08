@@ -3050,6 +3050,42 @@ describe("reconcileResumedThreadTurns", () => {
     expect(merged.turns[2]).toBe(local.turns[2]);
   });
 
+  it("salvages client tail items when a resumed turn snapshot lags behind live participant messages", () => {
+    const resumed = threadWithTurnIDs(["turn-1", "turn-2"]);
+    const local = threadWithTurnIDs(["turn-1", "turn-2"]);
+    const liveParticipant: ThreadItem = {
+      id: "turn-2-participant",
+      seq: 8,
+      type: "participant_message",
+      status: "completed",
+      role: "participant",
+      post_kind: "result",
+      text: "我已经回复了",
+      participant: {
+        id: "prt-andy",
+        kind: "named",
+        name: "Andy",
+      },
+    };
+    local.turns[1] = {
+      ...local.turns[1],
+      items: [...local.turns[1].items, liveParticipant],
+    };
+
+    const merged = reconcileResumedThreadTurns(resumed, local);
+
+    expect(merged.turns).toHaveLength(2);
+    expect(merged.turns[1].items).toEqual([
+      resumed.turns[1].items[0],
+      liveParticipant,
+    ]);
+    expect(chatMessagesFromTurns(merged.turns).map((row) => row.kind)).toEqual([
+      "user",
+      "user",
+      "participant",
+    ]);
+  });
+
   it("trusts the resumed snapshot when history diverges (edit/fork truncated the tail)", () => {
     // An edit/fork replaces turn-2 with a new turn id and truncates what
     // followed. That is a genuine server-side truncation, not lag, so we must

@@ -6569,20 +6569,26 @@ export function App(): JSX.Element {
       setSplitComposerDrafts(initialSplitComposerDrafts());
       setState((current) => {
         const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+        const localThread = conversationPaneThreadsByID(
+          current.threads,
+          current.thread,
+          current.secondaryThread,
+        ).get(thread.id);
+        const reconciled = reconcileResumedThreadTurns(thread, localThread);
         const next = { ...withDraft, ...loadedState };
         return {
           ...next,
-          thread,
+          thread: reconciled,
           secondaryThread: undefined,
           activePane: "primary",
           allowThreadAutoActivation: true,
           sessionTabs: ensureSessionTab(
             next.sessionTabs,
-            createThreadSessionTab(thread, targetContext, targetDraft),
+            createThreadSessionTab(reconciled, targetContext, targetDraft),
           ),
-          activeSessionTabID: threadSessionTabID(thread.id),
-          threads: upsertThread(next.threads, thread),
-          running: isThreadRunning(thread),
+          activeSessionTabID: threadSessionTabID(reconciled.id),
+          threads: upsertThread(next.threads, reconciled),
+          running: isThreadRunning(reconciled),
           status: "ready",
         };
       });
