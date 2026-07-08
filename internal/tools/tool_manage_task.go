@@ -35,7 +35,7 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 				"action": map[string]any{
 					"type":        "string",
 					"enum":        []string{"create", "escalate", "claim", "unclaim", "update_status", "need_human", "need_upstream", "unfollow", "list", "set_plan", "piece_done"},
-					"description": "create opens a task (group members only); escalate converts a converged open discussion reply into a task; claim/unclaim take/release work ownership; update_status files the conclusion and completes the task; need_human flags the task for a decision only the human can make; unfollow leaves the task's push subset; list shows the board. As a task LEAD: set_plan declares a team plan (pieces with assignees + dependencies + per-piece prompt) on a task and the engine dispatches the ready pieces by @-waking their assignees; as an ASSIGNEE: piece_done reports your piece done and hands the structured result to the downstream node(s) — that handoff is what wakes the next agent — then the engine advances the plan (dispatches the next dependents, or wakes the lead when all pieces are done). need_upstream bounces your piece (piece_id) back to its upstream node(s) when the handoff you were given is insufficient (reason names what is missing) — the engine re-runs the upstream and re-dispatches you with its fresh handoff; use it instead of silently working around a bad handoff.",
+					"description": "create opens a task (group members only); escalate converts a converged open discussion reply into a task; claim/unclaim take/release work ownership; update_status files the conclusion and completes the task; need_human flags the task for a decision only the human can make; unfollow leaves the task's push subset; list shows the board. As a task LEAD: set_plan declares a team plan (pieces with assignees + dependencies + per-piece prompt) on a task and the engine dispatches the ready pieces by @-waking their assignees; as an ASSIGNEE: piece_done reports your piece done and hands the structured result to the downstream node(s) — that handoff is what wakes the next agent — then the engine advances the plan (dispatches the next dependents, or wakes the lead when all pieces are done). If your piece requires a visible post_message, call post_message alone first and wait for status=\"posted\" before piece_done; if it is held, re-reason instead of reporting done. Never call post_message and piece_done in the same assistant tool-call batch. need_upstream bounces your piece (piece_id) back to its upstream node(s) when the handoff you were given is insufficient (reason names what is missing) — the engine re-runs the upstream and re-dispatches you with its fresh handoff; use it instead of silently working around a bad handoff.",
 				},
 				"thread_id": map[string]any{
 					"type":        "string",
@@ -90,7 +90,7 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 				},
 				"piece_id": map[string]any{
 					"type":        "string",
-					"description": "The id of your plan piece (as declared in set_plan). Required for piece_done (the piece you finished) and need_upstream (the piece whose upstream handoff was insufficient).",
+					"description": "The id of your plan piece (as declared in set_plan). Required for piece_done (the piece you finished) and need_upstream (the piece whose upstream handoff was insufficient). If the piece required a visible post_message, only file piece_done after that post_message returned status=\"posted\".",
 				},
 				"handoff": map[string]any{
 					"type":        "object",

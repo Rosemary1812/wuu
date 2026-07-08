@@ -261,6 +261,67 @@ func TestTurnToolRuntimeExecutesBarrierToolWhenCalledAlone(t *testing.T) {
 	}
 }
 
+func TestTurnToolRuntimeRejectsPostMessageWithPieceDoneBatchBeforeExecuting(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	tools := &runtimeTestTools{}
+	runtime := NewTurnToolRuntime(tools)
+	var seen []providers.ToolCall
+	var rejections []ToolBatchRejectionInfo
+
+	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
+		{ID: "call_post", Name: "post_message", Arguments: `{"kind":"result","text":"19-24","thread_id":"group"}`},
+		{ID: "call_done", Name: "manage_task", Arguments: `{"action":"piece_done","subthread_id":"cth-task","piece_id":"p4"}`},
+	}, func(call providers.ToolCall, _ string) {
+		seen = append(seen, call)
+	}, func(info ToolBatchRejectionInfo) {
+		rejections = append(rejections, info)
+	})
+
+	if calls := tools.recordedCalls(); len(calls) != 0 {
+		t.Fatalf("post_message + piece_done preflight must reject before executing tools, got calls %+v", calls)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected paired results for every tool call, got %+v", msgs)
+	}
+	if msgs[0].ToolCallID != "call_post" || !strings.Contains(msgs[0].Content, "post_message was not executed") {
+		t.Fatalf("unexpected post_message rejection result: %+v", msgs[0])
+	}
+	if msgs[1].ToolCallID != "call_done" || !strings.Contains(msgs[1].Content, "piece_done must not be called") {
+		t.Fatalf("unexpected piece_done rejection result: %+v", msgs[1])
+	}
+	if len(seen) != 2 || seen[0].ID != "call_post" || seen[1].ID != "call_done" {
+		t.Fatalf("OnToolResult should receive synthetic results in order, got %+v", seen)
+	}
+	if len(rejections) != 1 ||
+		rejections[0].BarrierTool != "post_message+piece_done" ||
+		rejections[0].ToolCallCount != 2 {
+		t.Fatalf("unexpected rejection metadata: %+v", rejections)
+	}
+}
+
+func TestTurnToolRuntimeAllowsPostMessageWithNonCompletionManageTask(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	tools := &runtimeTestTools{}
+	runtime := NewTurnToolRuntime(tools)
+
+	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
+		{ID: "call_post", Name: "post_message", Arguments: `{"kind":"result","text":"ok","thread_id":"group"}`},
+		{ID: "call_claim", Name: "manage_task", Arguments: `{"action":"claim","subthread_id":"cth-task"}`},
+	}, nil)
+
+	calls := tools.recordedCalls()
+	if len(calls) != 2 {
+		t.Fatalf("expected non-completion manage_task batch to execute, got %+v", calls)
+	}
+	if len(msgs) != 2 || msgs[0].ToolCallID != "call_post" || msgs[1].ToolCallID != "call_claim" {
+		t.Fatalf("unexpected tool messages: %+v", msgs)
+	}
+}
+
 func TestTurnToolRuntime_ReusesStreamingStartedConcurrentRuns(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
