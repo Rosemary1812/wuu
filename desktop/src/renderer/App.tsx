@@ -649,6 +649,10 @@ export function App(): JSX.Element {
   const sidebarDrawerCloseTimerRef = useRef<number | undefined>(undefined);
   const sidebarHoverZoneRef = useRef<HTMLDivElement>(null);
   const sidebarHoverZoneActiveRef = useRef(false);
+  const sidebarPointerPositionRef = useRef<{ x: number; y: number } | null>(
+    null,
+  );
+  const sidebarDrawerSyncedSessionRef = useRef<string | undefined>(undefined);
   // Set while a sidebar drag is in flight and kept set after a drag that ends
   // collapsed, until the pointer moves off the hover zone. Without it, the
   // hover zone can appear under the pointer after a drag-collapse and
@@ -2399,6 +2403,33 @@ export function App(): JSX.Element {
     clearSidebarDrawerOpenTimer();
   }, [clearSidebarDrawerOpenTimer]);
 
+  const rememberSidebarPointerPosition = useCallback((event: Event): void => {
+    if (!(event instanceof MouseEvent)) {
+      return;
+    }
+    sidebarPointerPositionRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+    };
+  }, []);
+
+  const sidebarDrawerPointerHovered = useCallback((): boolean | undefined => {
+    const point = sidebarPointerPositionRef.current;
+    if (!point || typeof document.elementFromPoint !== "function") {
+      return undefined;
+    }
+    const target = document.elementFromPoint(point.x, point.y);
+    if (!target) {
+      return undefined;
+    }
+    const sidebar = appShellRef.current?.querySelector(".sidebar");
+    const hoverZone = sidebarHoverZoneRef.current;
+    return Boolean(
+      (sidebar && sidebar.contains(target)) ||
+        (hoverZone && hoverZone.contains(target)),
+    );
+  }, []);
+
   const openSidebarDrawer = useCallback((): void => {
     if (resizingSidebar || sidebarDrawerSuppressedRef.current) {
       return;
@@ -2470,6 +2501,39 @@ export function App(): JSX.Element {
     resizingSidebar,
     sidebarCollapsed,
   ]);
+
+  const syncSidebarDrawerHover = useCallback((): void => {
+    if (!sidebarCollapsed || sidebarDrawerPhase !== "open") {
+      return;
+    }
+    // Pointerleave can be missed when the drawer rerenders during navigation;
+    // resample the current hit target so drawer state follows real hover.
+    if (sidebarDrawerPointerHovered() === false) {
+      closeSidebarDrawer();
+    }
+  }, [
+    closeSidebarDrawer,
+    sidebarCollapsed,
+    sidebarDrawerPhase,
+    sidebarDrawerPointerHovered,
+  ]);
+
+  useEffect(() => {
+    function handlePointerEvent(event: Event): void {
+      rememberSidebarPointerPosition(event);
+      syncSidebarDrawerHover();
+    }
+    window.addEventListener("pointermove", handlePointerEvent, true);
+    window.addEventListener("pointerdown", handlePointerEvent, true);
+    window.addEventListener("mousemove", handlePointerEvent, true);
+    window.addEventListener("mousedown", handlePointerEvent, true);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerEvent, true);
+      window.removeEventListener("pointerdown", handlePointerEvent, true);
+      window.removeEventListener("mousemove", handlePointerEvent, true);
+      window.removeEventListener("mousedown", handlePointerEvent, true);
+    };
+  }, [rememberSidebarPointerPosition, syncSidebarDrawerHover]);
 
   useLayoutEffect(() => {
     if (!sidebarCollapsed && sidebarDrawerPhase !== "closed") {
@@ -2569,17 +2633,25 @@ export function App(): JSX.Element {
     }
   }, [resizingSidebar, sidebarCollapsed]);
 
-  const closeSidebarDrawerAfterNavigation = useCallback((): void => {
-    if (sidebarCollapsed && sidebarDrawerPhase === "open") {
-      closeSidebarDrawer();
+  useEffect(() => {
+    const sessionID = state.activeSessionTabID;
+    if (!sidebarCollapsed || sidebarDrawerPhase !== "open") {
+      sidebarDrawerSyncedSessionRef.current = sessionID;
       return;
     }
-    cancelSidebarDrawerOpen();
+    if (sidebarDrawerSyncedSessionRef.current === sessionID) {
+      return;
+    }
+    sidebarDrawerSyncedSessionRef.current = sessionID;
+    if (sidebarDrawerPointerHovered() === false) {
+      closeSidebarDrawer();
+    }
   }, [
-    cancelSidebarDrawerOpen,
     closeSidebarDrawer,
     sidebarCollapsed,
     sidebarDrawerPhase,
+    sidebarDrawerPointerHovered,
+    state.activeSessionTabID,
   ]);
 
   useEffect(
@@ -8724,10 +8796,7 @@ export function App(): JSX.Element {
             onSeedConversationFixture={seedConversationFixture}
             onSeedAgentTreeDemo={seedAgentTreeDemo}
             onOpenChipGallery={() => setChipGalleryOpen(true)}
-            onSelectThread={(id) => {
-              closeSidebarDrawerAfterNavigation();
-              void activateThread(id);
-            }}
+            onSelectThread={(id) => void activateThread(id)}
             onSelectParticipant={(participant) => void openParticipantDM(participant)}
             onEditParticipant={openParticipantProfile}
             onCreateParticipant={openNewParticipantProfile}
@@ -8754,10 +8823,9 @@ export function App(): JSX.Element {
                 void startNewThreadForProject(id);
               }
             }}
-            onSelectProjectThread={(projectID, threadID) => {
-              closeSidebarDrawerAfterNavigation();
-              void selectProjectThread(projectID, threadID);
-            }}
+            onSelectProjectThread={(projectID, threadID) =>
+              void selectProjectThread(projectID, threadID)
+            }
             onRemoveProject={(id) => void removeProject(id)}
             onRelocateProject={(id) => void relocateProject(id)}
             onReorderSections={setSidebarSectionOrder}

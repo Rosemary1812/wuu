@@ -45,6 +45,7 @@ import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
 let container: HTMLDivElement;
 let root: Root | null = null;
 let serverEventHandlers: Array<(event: ServerEvent) => void> = [];
+let elementFromPointTarget: Element | null = null;
 
 const workspace = "/tmp/wuu-drawer-test";
 
@@ -109,6 +110,10 @@ function installWindowStubs(): void {
       removeListener: vi.fn(),
       dispatchEvent: vi.fn(),
     })),
+  });
+  Object.defineProperty(document, "elementFromPoint", {
+    configurable: true,
+    value: vi.fn(() => elementFromPointTarget),
   });
 }
 
@@ -179,13 +184,46 @@ async function renderCollapsedApp(): Promise<void> {
   expect(appShell()?.classList.contains("sidebar-collapsed")).toBe(true);
 }
 
-async function clickSidebarSession(label: string): Promise<void> {
+async function clickSidebarSession(
+  label: string,
+  options: { pointerTarget?: Element | null } = {},
+): Promise<void> {
   const sessionButton = container.querySelector<HTMLButtonElement>(
     `.thread-row-main[aria-label^="${label}"]`,
   );
   expect(sessionButton).not.toBeNull();
+  elementFromPointTarget =
+    "pointerTarget" in options ? (options.pointerTarget ?? null) : sessionButton;
   await act(async () => {
-    sessionButton?.click();
+    sessionButton?.dispatchEvent(
+      new MouseEvent("mousedown", {
+        bubbles: true,
+        clientX: 32,
+        clientY: 48,
+      }),
+    );
+    sessionButton?.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        clientX: 32,
+        clientY: 48,
+      }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+async function movePointerOver(target: Element | null): Promise<void> {
+  elementFromPointTarget = target;
+  await act(async () => {
+    window.dispatchEvent(
+      new MouseEvent("pointermove", {
+        bubbles: true,
+        clientX: 320,
+        clientY: 80,
+      }),
+    );
     await Promise.resolve();
   });
 }
@@ -212,6 +250,7 @@ describe("collapsed sidebar hover drawer", () => {
     vi.useFakeTimers();
     installWindowStubs();
     serverEventHandlers = [];
+    elementFromPointTarget = null;
     container = document.createElement("div");
     document.body.appendChild(container);
     window.localStorage.clear();
@@ -360,6 +399,18 @@ describe("collapsed sidebar hover drawer", () => {
     expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(true);
   });
 
+  it("closes the drawer when pointer movement shows it is no longer hovered", async () => {
+    await renderCollapsedApp();
+    await openDrawerViaHoverZone();
+
+    await movePointerOver(document.body);
+
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
+      true,
+    );
+  });
+
   it("closes the drawer when the window loses focus", async () => {
     await renderCollapsedApp();
     await openDrawerViaHoverZone();
@@ -374,7 +425,7 @@ describe("collapsed sidebar hover drawer", () => {
     );
   });
 
-  it("closes the drawer after selecting a sidebar session", async () => {
+  it("keeps the drawer open after selecting a sidebar session while still hovering it", async () => {
     installWuuApi([
       threadFixture(
         "thread-active",
@@ -391,6 +442,32 @@ describe("collapsed sidebar hover drawer", () => {
     await openDrawerViaHoverZone();
 
     await clickSidebarSession("Session from hover drawer");
+
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(true);
+    expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
+      false,
+    );
+  });
+
+  it("closes the drawer after a session switch when the pointer no longer hovers it", async () => {
+    installWuuApi([
+      threadFixture(
+        "thread-active",
+        "Already open session",
+        "2026-01-02T00:00:00Z",
+      ),
+      threadFixture(
+        "thread-target",
+        "Session from hover drawer",
+        "2026-01-01T00:00:00Z",
+      ),
+    ]);
+    await renderCollapsedApp();
+    await openDrawerViaHoverZone();
+
+    await clickSidebarSession("Session from hover drawer", {
+      pointerTarget: document.body,
+    });
 
     expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
     expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
