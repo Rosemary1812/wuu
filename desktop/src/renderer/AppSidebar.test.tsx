@@ -161,6 +161,9 @@ describe("AppSidebar layout", () => {
   it("defines a hover edge drawer for the collapsed sidebar", () => {
     expect(sidebarCSS).toContain(".sidebar-hover-zone");
     expect(sidebarCSS).toMatch(/\.sidebar-hover-zone\s*\{[\s\S]*width:\s*10px;/);
+    expect(sidebarCSS).not.toMatch(
+      /\.sidebar-collapsed\s+\.sidebar-hover-zone:hover[\s\S]*background:/,
+    );
     expect(sidebarCSS).toContain("--sidebar-motion-ease: cubic-bezier(0.25, 1, 0.5, 1)");
     expect(sidebarCSS).toContain("var(--sidebar-motion-ease)");
     expect(sidebarCSS).toContain(
