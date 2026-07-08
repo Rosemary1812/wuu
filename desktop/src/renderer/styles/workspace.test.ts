@@ -55,12 +55,28 @@ describe("workspace review diff layout", () => {
     const code = cssRuleBody(".workspace-diff-code");
     expect(code).toMatch(/width:\s*100%;/);
     expect(code).toMatch(/min-width:\s*0;/);
-    expect(code).toMatch(/white-space:\s*pre-wrap;/);
+    expect(code).toMatch(/white-space:\s*normal;/);
     expect(code).not.toMatch(/min-width:\s*max-content;/);
 
+    const line = cssRuleBody(".workspace-diff-line");
+    expect(line).toMatch(/display:\s*block;/);
+    expect(line).toMatch(/position:\s*relative;/);
+    expect(line).toMatch(/min-width:\s*0;/);
+    expect(line).toMatch(/padding:\s*0\s+18px\s+0\s+104px;/);
+    expect(line).not.toMatch(/grid-template-columns:/);
+
+    const lineNumber = cssRuleBody(".workspace-diff-line-number");
+    expect(lineNumber).toMatch(/position:\s*absolute;/);
+    expect(lineNumber).toMatch(/width:\s*52px;/);
+    expect(cssRuleBody(".workspace-diff-line-number:first-child")).toMatch(/left:\s*0;/);
+    expect(cssRuleBody(".workspace-diff-line-number:nth-child(2)")).toMatch(/left:\s*52px;/);
+
     const lineCode = cssRuleBody(".workspace-diff-line-code");
+    expect(lineCode).toMatch(/display:\s*block;/);
+    expect(lineCode).toMatch(/min-width:\s*0;/);
     expect(lineCode).toMatch(/white-space:\s*pre-wrap;/);
     expect(lineCode).toMatch(/overflow-wrap:\s*anywhere;/);
+    expect(lineCode).toMatch(/word-break:\s*break-word;/);
   });
 
   it("lets a single-file review use the full panel width", () => {

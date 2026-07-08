@@ -2024,6 +2024,7 @@
   width: 100%;
   min-width: 0;
   min-height: 100%;
+  box-sizing: border-box;
   border: 0;
   border-radius: 0;
   background: var(--paper);
@@ -2033,14 +2034,16 @@
   line-height: 1.58;
   margin: 0;
   padding: 12px 0 40px;
-  white-space: pre-wrap;
+  white-space: normal;
 }
 
 .workspace-diff-line {
-  display: grid;
+  display: block;
+  position: relative;
+  min-width: 0;
   min-height: 19px;
-  grid-template-columns: 52px 52px minmax(0, 1fr);
-  padding: 0 18px 0 0;
+  box-sizing: border-box;
+  padding: 0 18px 0 104px;
 }
 
 .workspace-diff-line.meta {
@@ -2064,7 +2067,11 @@
 }
 
 .workspace-diff-line-number {
-  min-width: 0;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 52px;
+  box-sizing: border-box;
   border-right: 1px solid var(--ink-overlay-6);
   color: var(--diff-line-number-text);
   padding: 0 10px;
@@ -2072,11 +2079,21 @@
   user-select: none;
 }
 
+.workspace-diff-line-number:first-child {
+  left: 0;
+}
+
+.workspace-diff-line-number:nth-child(2) {
+  left: 52px;
+}
+
 .workspace-diff-line-code {
+  display: block;
   min-width: 0;
   overflow-wrap: anywhere;
   padding-left: 14px;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .workspace-diff-tree {
