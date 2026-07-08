@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   RIGHT_PANEL_MOTION_MS,
+  SIDEBAR_AUTO_COLLAPSE_WINDOW_WIDTH,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MIN_WIDTH,
   SIDEBAR_MOTION_MS,
@@ -28,6 +29,9 @@ interface Harness {
 let container: HTMLDivElement;
 let root: Root | null = null;
 let latest: Harness | null = null;
+const originalInnerWidth = window.innerWidth;
+const narrowWindowWidth = SIDEBAR_AUTO_COLLAPSE_WINDOW_WIDTH - 1;
+const roomyWindowWidth = SIDEBAR_AUTO_COLLAPSE_WINDOW_WIDTH + 120;
 
 function makePointerDownEvent(clientX: number): React.PointerEvent<HTMLDivElement> {
   // The hook only reads `button`, `clientX`, and `preventDefault`, so a plain
@@ -62,6 +66,10 @@ function renderHookHarness(): void {
   });
 }
 
+function setInnerWidth(value: number): void {
+  window.innerWidth = value;
+}
+
 beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -75,6 +83,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setInnerWidth(originalInnerWidth);
   document.documentElement.classList.remove(WINDOW_RESIZING_CLASS);
   act(() => {
     root?.unmount();
@@ -178,6 +187,29 @@ describe("useAppLayoutState initial widths", () => {
     window.localStorage.setItem("wuu.desktop.sidebarWidth", "420");
     renderHookHarness();
     expect(latest!.sidebarWidth).toBe(420);
+  });
+
+  it("starts with the sidebar collapsed when the window is too narrow", () => {
+    setInnerWidth(narrowWindowWidth);
+
+    renderHookHarness();
+
+    expect(latest!.sidebarCollapsed).toBe(true);
+    expect(latest!.sidebarWidth).toBe(SIDEBAR_DEFAULT_WIDTH);
+  });
+
+  it("auto-collapses an open sidebar when the window becomes too narrow", () => {
+    setInnerWidth(roomyWindowWidth);
+    renderHookHarness();
+    expect(latest!.sidebarCollapsed).toBe(false);
+
+    act(() => {
+      setInnerWidth(narrowWindowWidth);
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    expect(latest!.sidebarCollapsed).toBe(true);
+    expect(latest!.sidebarWidth).toBe(SIDEBAR_DEFAULT_WIDTH);
   });
 
   it("holds at the minimum width before the collapse intent threshold", () => {

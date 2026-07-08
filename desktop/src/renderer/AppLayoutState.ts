@@ -15,6 +15,7 @@ export const RIGHT_PANEL_MOTION_MS = 280;
 export const SIDEBAR_DEFAULT_WIDTH = 326;
 export const SIDEBAR_MIN_WIDTH = 200;
 export const SIDEBAR_MAX_WIDTH = 520;
+export const SIDEBAR_AUTO_COLLAPSE_WINDOW_WIDTH = 900;
 // Keep a small pull-past-minimum dead zone so resizing to the minimum width
 // does not collapse the sidebar by accident.
 const SIDEBAR_COLLAPSE_INTENT_PX = 32;
@@ -104,6 +105,10 @@ function sidebarShouldCollapse(width: number): boolean {
   return width <= SIDEBAR_COLLAPSE_WIDTH;
 }
 
+function sidebarShouldAutoCollapseForWindow(width: number): boolean {
+  return width < SIDEBAR_AUTO_COLLAPSE_WINDOW_WIDTH;
+}
+
 // Number(null) is 0, not NaN, so a missing key must be checked explicitly —
 // otherwise a fresh profile boots with every panel clamped to its minimum.
 function storedWidth(key: string, fallback: number, min: number, max: number): number {
@@ -123,7 +128,10 @@ function initialSidebarWidth(): number {
 }
 
 function initialSidebarCollapsed(): boolean {
-  return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+  return (
+    window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true" ||
+    sidebarShouldAutoCollapseForWindow(window.innerWidth)
+  );
 }
 
 function initialSettingsSidebarWidth(): number {
@@ -725,17 +733,39 @@ export function useAppLayoutState({
 
   useEffect(() => {
     function handleResize(): void {
+      const autoCollapseSidebar =
+        !resizingSidebar &&
+        sidebarShouldAutoCollapseForWindow(window.innerWidth);
+      const nextEffectiveSidebarWidth = autoCollapseSidebar
+        ? 0
+        : effectiveSidebarWidth;
+      if (autoCollapseSidebar) {
+        if (!sidebarCollapsed) {
+          startSidebarMotion();
+          onCloseProjectMenu();
+        }
+        setSidebarCollapsed(true);
+        setSidebarWidth((width) =>
+          width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width
+        );
+      }
       setWorkspaceRightPanelWidth((current) =>
-        clampWorkspaceRightPanelWidth(current, effectiveSidebarWidth)
+        clampWorkspaceRightPanelWidth(current, nextEffectiveSidebarWidth)
       );
       setThreadPanelWidth((current) =>
-        clampThreadPanelWidth(current, effectiveSidebarWidth)
+        clampThreadPanelWidth(current, nextEffectiveSidebarWidth)
       );
     }
 
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [effectiveSidebarWidth]);
+  }, [
+    effectiveSidebarWidth,
+    onCloseProjectMenu,
+    resizingSidebar,
+    sidebarCollapsed,
+    startSidebarMotion,
+  ]);
 
   // Sidebar / right-panel drags resize the conversation viewport every frame.
   // Reuse the window-resize deferred-scroll path so ResizeObserver consumers
