@@ -271,6 +271,19 @@ describe("SessionTabStrip layout styles", () => {
     expect(closeRule).toContain("flex: 0 0 auto;");
   });
 
+  it("keeps titlebar controls outside the draggable window region", () => {
+    expect(cssRule(".titlebar button")).toContain(
+      "-webkit-app-region: no-drag;",
+    );
+    expect(cssRule(".titlebar button *")).toContain(
+      "-webkit-app-region: no-drag;",
+    );
+
+    const sidebarToggleRule = cssRule(".sidebar-toggle-button");
+    expect(sidebarToggleRule).toMatch(/width:\s*44px;/);
+    expect(sidebarToggleRule).toMatch(/height:\s*44px;/);
+  });
+
   it("keeps drag internals inside the tab list column", () => {
     const context: RuntimeContext = {
       kind: "project",

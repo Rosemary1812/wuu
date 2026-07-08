@@ -473,6 +473,20 @@
   -webkit-app-region: no-drag;
 }
 
+.titlebar button {
+  -webkit-app-region: no-drag;
+}
+
+.titlebar button * {
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-toggle-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+}
+
 .icon-button:hover {
   background: var(--surface-3);
   color: var(--ink);
