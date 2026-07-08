@@ -2434,6 +2434,9 @@ export function App(): JSX.Element {
     if (resizingSidebar || sidebarDrawerSuppressedRef.current) {
       return;
     }
+    if (sidebarCollapsed && sidebarDrawerPointerHovered() === false) {
+      return;
+    }
     clearSidebarDrawerOpenTimer();
     clearSidebarDrawerCloseTimer();
     if (sidebarCollapsed) {
@@ -2444,6 +2447,7 @@ export function App(): JSX.Element {
     clearSidebarDrawerOpenTimer,
     resizingSidebar,
     sidebarCollapsed,
+    sidebarDrawerPointerHovered,
   ]);
 
   const scheduleSidebarDrawerOpen = useCallback((): void => {
@@ -2464,7 +2468,8 @@ export function App(): JSX.Element {
       if (
         !sidebarHoverZoneActiveRef.current ||
         resizingSidebar ||
-        sidebarDrawerSuppressedRef.current
+        sidebarDrawerSuppressedRef.current ||
+        sidebarDrawerPointerHovered() === false
       ) {
         return;
       }
@@ -2476,6 +2481,7 @@ export function App(): JSX.Element {
     clearSidebarDrawerOpenTimer,
     resizingSidebar,
     sidebarCollapsed,
+    sidebarDrawerPointerHovered,
   ]);
 
   const closeSidebarDrawer = useCallback((): void => {
@@ -2524,13 +2530,17 @@ export function App(): JSX.Element {
       syncSidebarDrawerHover();
     }
     window.addEventListener("pointermove", handlePointerEvent, true);
+    window.addEventListener("pointerover", handlePointerEvent, true);
     window.addEventListener("pointerdown", handlePointerEvent, true);
     window.addEventListener("mousemove", handlePointerEvent, true);
+    window.addEventListener("mouseover", handlePointerEvent, true);
     window.addEventListener("mousedown", handlePointerEvent, true);
     return () => {
       window.removeEventListener("pointermove", handlePointerEvent, true);
+      window.removeEventListener("pointerover", handlePointerEvent, true);
       window.removeEventListener("pointerdown", handlePointerEvent, true);
       window.removeEventListener("mousemove", handlePointerEvent, true);
+      window.removeEventListener("mouseover", handlePointerEvent, true);
       window.removeEventListener("mousedown", handlePointerEvent, true);
     };
   }, [rememberSidebarPointerPosition, syncSidebarDrawerHover]);

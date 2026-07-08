@@ -313,6 +313,33 @@ describe("collapsed sidebar hover drawer", () => {
     );
   });
 
+  it("does not open when hover intent expires after the pointer has already left", async () => {
+    await renderCollapsedApp();
+    const zone = container.querySelector<HTMLElement>(".sidebar-hover-zone");
+    expect(zone).not.toBeNull();
+
+    await act(async () => {
+      elementFromPointTarget = zone;
+      zone?.dispatchEvent(
+        new MouseEvent("pointerover", {
+          bubbles: true,
+          clientX: 4,
+          clientY: 80,
+          relatedTarget: null,
+        }),
+      );
+    });
+    await movePointerOver(document.body);
+    await act(async () => {
+      vi.advanceTimersByTime(SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS);
+    });
+
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
+      false,
+    );
+  });
+
   it("opens the drawer while the window is resizing", async () => {
     await renderCollapsedApp();
     const zone = container.querySelector<HTMLElement>(".sidebar-hover-zone");
@@ -404,6 +431,35 @@ describe("collapsed sidebar hover drawer", () => {
     await openDrawerViaHoverZone();
 
     await movePointerOver(document.body);
+
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
+      true,
+    );
+  });
+
+  it("does not reopen from a stale sidebar pointerenter while the pointer is outside", async () => {
+    await renderCollapsedApp();
+    await openDrawerViaHoverZone();
+    const sidebar = container.querySelector<HTMLElement>(".sidebar");
+    expect(sidebar).not.toBeNull();
+
+    await movePointerOver(document.body);
+    expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
+      true,
+    );
+
+    await act(async () => {
+      sidebar?.dispatchEvent(
+        new MouseEvent("pointerover", {
+          bubbles: true,
+          clientX: 320,
+          clientY: 80,
+          relatedTarget: document.body,
+        }),
+      );
+      await Promise.resolve();
+    });
 
     expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
     expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
