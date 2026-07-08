@@ -706,7 +706,12 @@
   overflow: auto;
 }
 
-.window-resizing .workspace-file-tree-frame,
+.window-resizing .workspace-file-tree-frame {
+  pointer-events: none;
+  transform: none;
+  will-change: auto;
+}
+
 .window-resizing .workspace-file-tree-scroll {
   pointer-events: none;
 }
