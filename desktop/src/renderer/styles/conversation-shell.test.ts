@@ -43,3 +43,21 @@ describe("conversation shell visible center", () => {
     );
   });
 });
+
+describe("conversation shell message typography tokens", () => {
+  it("keeps message and process typography on the Codex-style two-token scale", () => {
+    const body = cssRuleBody(".conversation-pane");
+
+    expect(body).toMatch(/"SF Pro Text"/);
+    expect(body).toMatch(/--conversation-message-font-size:\s*14px;/);
+    expect(body).toMatch(/--conversation-message-font-weight:\s*445;/);
+    expect(body).toMatch(
+      /--conversation-process-font-size:\s*var\(--conversation-message-font-size\);/,
+    );
+    expect(body).toMatch(
+      /--conversation-process-font-weight:\s*var\(--conversation-message-font-weight\);/,
+    );
+    expect(body).toMatch(/--conversation-process-line-height:\s*20px;/);
+    expect(body).toMatch(/--conversation-process-answer-gap:\s*25px;/);
+  });
+});

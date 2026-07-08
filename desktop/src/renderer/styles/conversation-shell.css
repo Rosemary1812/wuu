@@ -61,10 +61,12 @@
   --conversation-split-message-max-width: 760px;
   --conversation-split-message-max-inline: 86%;
   --conversation-message-font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", "Microsoft YaHei UI",
-    "Source Han Sans SC", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Microsoft YaHei UI", "Source Han Sans SC", "Noto Sans CJK SC",
+    "Noto Sans SC", sans-serif;
   --conversation-message-font-size: 14px;
+  --conversation-message-font-weight: 445;
   /*
    * Reading rhythm: 1.75 keeps mixed CJK/Latin prose comfortable at
    * 14px (24.5px baseline pitch) now that answer prose is capped at
@@ -79,13 +81,11 @@
   --conversation-reading-line-height: 1.75;
   --conversation-prose-block-gap: 18px;
   --conversation-message-element-gap: 18px;
-  /*
-   * Meta and control rows (process toggles, tool-call lines, previews)
-   * are labels, not reading prose — they hold their line at 1.6/1.7 so
-   * activity blocks stay compact and visually subordinate to the 1.75
-   * body text. The earlier 1.8/2.0 values made the muted tool rows
-   * float apart and occupy more vertical space than the answer itself.
-   */
+  /* Process rows share the message size and weight; color and spacing,
+     not a smaller/heavier type style, make them read as secondary. */
+  --conversation-process-font-size: var(--conversation-message-font-size);
+  --conversation-process-font-weight: var(--conversation-message-font-weight);
+  --conversation-process-line-height: 20px;
   --conversation-meta-line-height: 1.6;
   --conversation-control-line-height: 1.7;
   --conversation-process-control-color: var(--shell-process-control-color);
@@ -97,16 +97,11 @@
   /*
    * Grouping rhythm: tight within a group, loose between groups.
    * One spacing ladder, one value per meaning: 9px pulls consecutive
-   * tool-call rows (and a narration line into the activity it
-   * introduces) together, 18px separates sibling blocks, 24px marks
-   * the region boundary between the muted process fold and the final
-   * answer. The region step must clear the block step by a visible
-   * margin (24 = 18 × 1.33) — the earlier 18-vs-14 and 20-vs-16
-   * pairings sat too close to carry any signal, and the even-earlier
-   * uniform 12px carried none at all.
+   * tool-call rows together, 18px separates sibling blocks, 25px matches
+   * the measured Codex process-row -> commentary boundary.
    */
-  --conversation-process-gap: 24px;
-  --conversation-process-answer-gap: 24px;
+  --conversation-process-gap: 18px;
+  --conversation-process-answer-gap: 25px;
   --conversation-answer-action-gap: 8px;
   --conversation-activity-gap: 9px;
   --conversation-scrollbar-gutter: 12px;

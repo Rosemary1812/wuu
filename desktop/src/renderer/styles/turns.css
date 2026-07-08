@@ -75,19 +75,7 @@
   flex-direction: column;
   gap: var(--conversation-turn-gap);
   font-family: var(--conversation-message-font-family);
-  /*
-   * Body weight is the regular 400 axis of the variable font. Earlier drafts
-   * used 480 to give the message stream a faintly heavier "presence", but
-   * for long-form reading 480 reads as too dense and competes with the UI
-   * chrome (chips, buttons, labels) that legitimately needs more weight to
-   * hold hierarchy. 400 keeps the message stream visually quiet so the
-   * surrounding chrome can carry the bold/semibold contrast.
-   *
-   * Companion rule in `base.css` `.rich-content strong, .rich-content b`
-   * holds emphasis at `--weight-medium` (560) so `<strong>`/`<b>` stay
-   * legible anchors inside the 400 body without shouting at 700.
-   */
-  font-weight: 400;
+  font-weight: var(--conversation-message-font-weight);
   /*
    * Turn-to-turn separation must beat every within-turn gap, or the
    * eye can't find where one exchange ends and the next begins. This
@@ -216,7 +204,7 @@
   width: 100%;
   min-width: 0;
   flex-direction: column;
-  gap: var(--conversation-process-gap);
+  gap: var(--conversation-process-answer-gap);
 }
 
 .conversation-split-width .assistant-turn-shell {
@@ -256,8 +244,9 @@
   cursor: pointer;
   text-align: left;
   list-style: none;
-  font-size: var(--font-ui);
-  line-height: var(--conversation-meta-line-height);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
 }
 
 .turn-process-fold > .turn-process-toggle::-webkit-details-marker {
@@ -279,8 +268,9 @@
   width: 100%;
   padding: 0;
   color: var(--wuu-ink-soft);
-  font-size: var(--font-ui);
-  line-height: var(--conversation-meta-line-height);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
 }
 
                                                                    
@@ -307,8 +297,8 @@
 }
 
 .turn-process-title {
-  font-size: var(--font-ui);
-  font-weight: var(--weight-semibold);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
                                                                 
                                                               
   color: var(--wuu-ink-soft);
@@ -316,8 +306,9 @@
 
 .turn-process-meta {
   color: var(--wuu-ink-soft);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
 }
 
 .turn-process-preview {
@@ -327,8 +318,9 @@
   min-width: 0;
   max-width: 60%;
   flex: 0 1 auto;
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
   color: var(--wuu-ink-soft);
   white-space: nowrap;
   overflow: hidden;
@@ -398,8 +390,7 @@
 .turn-process-entry-commentary {
   color: var(--ink);
   font-size: var(--conversation-message-font-size);
-  /* inherit from .turn so commentary tracks the message weight tuning */
-  font-weight: inherit;
+  font-weight: var(--conversation-message-font-weight);
   line-height: var(--conversation-reading-line-height);
 }
 
@@ -1784,9 +1775,9 @@
   max-width: 100%;
   margin: 6px 0 -2px;
   color: var(--ink-muted);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
-  line-height: var(--conversation-meta-line-height);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
 }
 
 .turn-progress-header {
@@ -1803,9 +1794,9 @@
   align-items: flex-start;
   gap: 8px;
   color: var(--turn-progress-label-color);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
-  line-height: var(--conversation-meta-line-height);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
 }
 
 .turn-progress-label svg {
@@ -1833,8 +1824,9 @@
 .turn-progress-detail {
   overflow-wrap: anywhere;
   color: var(--turn-progress-detail-color);
-  font-size: var(--font-ui);
-  font-weight: 500;
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
 }
 
 .turn-progress-rule {
@@ -1867,7 +1859,9 @@
   width: 100%;
   min-width: 0;
   color: var(--turn-process-group-color);
-  font-size: var(--font-ui);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
 }
 
 .turn-process-topline {
@@ -1890,8 +1884,8 @@
   color: inherit;
   cursor: pointer;
   font: inherit;
-  font-weight: var(--weight-medium);
-  line-height: var(--conversation-meta-line-height);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
   padding: 0;
   text-align: left;
 }
@@ -1939,7 +1933,7 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0 8px;
-  line-height: var(--conversation-meta-line-height);
+  line-height: var(--conversation-process-line-height);
 }
 
 .turn-process-title {
@@ -1953,8 +1947,9 @@
                                                               
                                                                 
                                           
-  font-size: var(--font-body);
-  line-height: var(--conversation-meta-line-height);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
 }
 
                                                                
@@ -2014,9 +2009,9 @@
   max-width: 100%;
   overflow: hidden;
   color: var(--turn-process-checkpoint-color);
-  font-size: var(--font-ui);
-  font-weight: 500;
-  line-height: var(--conversation-meta-line-height);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
   overflow-wrap: anywhere;
   white-space: normal;
 }
@@ -2053,8 +2048,9 @@
 
 .turn-process-meta {
   color: var(--ink-muted);
-  font-size: var(--font-body);
-  line-height: var(--conversation-meta-line-height);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
 }
 
                                                              
@@ -2067,8 +2063,9 @@
   min-width: 0;
   align-items: center;
   color: var(--ink-muted);
-  font-size: var(--font-body);
-  line-height: var(--conversation-meta-line-height);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
 }
 
 .turn-process-preview-text {
@@ -2176,11 +2173,9 @@
   display: block;
   min-width: 0;
   color: var(--turn-process-entry-color);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
-  /* Reasoning narration is still running text — 1.48 wrapped multi-line
-     thoughts too tightly against the 1.75 prose next to it. */
-  line-height: 1.58;
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
 }
 
 .turn-process-entry::before {
@@ -2190,8 +2185,7 @@
 .turn-process-entry-commentary {
   color: var(--ink);
   font-size: var(--conversation-message-font-size);
-  /* inherit from .turn so commentary tracks the message weight tuning */
-  font-weight: inherit;
+  font-weight: var(--conversation-message-font-weight);
   line-height: var(--conversation-reading-line-height);
 }
 
@@ -2264,9 +2258,9 @@
   min-width: 0;
   border-left: 2px solid var(--turn-process-checkpoint-line-border);
   color: var(--ink-tertiary);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
-  line-height: 1.42;
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
   padding: 1px 0 1px 10px;
 }
 
@@ -2319,15 +2313,9 @@
   align-items: center;
   gap: 6px;
   color: var(--conversation-process-control-color, var(--process-control-color-fallback));
-  /*
-   * Tool-call rows are meta information, so they sit one size below the
-   * 14px prose. They previously used --font-body, which made the muted
-   * activity lines physically larger than the 13px process narration
-   * they accompany — an inverted hierarchy.
-   */
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
-  line-height: var(--conversation-control-line-height);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
   padding: 0;
   margin: 0;
 }
@@ -2448,11 +2436,10 @@
 .activity-command {
   display: inline;
   color: var(--ink-faint);
-  /* Monospace runs visually larger than the UI face at equal px, so
-     the 13px meta size already reads on par with 14px prose. */
-  font-size: var(--font-ui);
+  /* Monospace runs visually larger than the UI face at equal px. */
+  font-size: var(--font-sm);
   line-height: var(--conversation-control-line-height);
-  font-weight: var(--weight-medium);
+  font-weight: 400;
   font-family: "SFMono-Regular", Consolas, monospace;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -2492,8 +2479,9 @@
   flex: 0 0 auto;
   margin-top: 0;
   color: var(--ink-faint);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
 }
 
 .activity-status.completed {
@@ -2640,9 +2628,9 @@
   background: transparent;
   color: var(--conversation-process-control-color, var(--process-control-color-fallback));
   cursor: default;
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
-  line-height: var(--conversation-control-line-height);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
   list-style: none;
 }
 
@@ -3410,9 +3398,9 @@
   /* Same measure cap as .agent-block — reasoning is running prose too. */
   max-width: min(var(--conversation-message-max-width, 720px), 100%);
   color: var(--ink-tertiary);
-  font-size: var(--font-ui);
-  font-weight: 500;
-  line-height: var(--conversation-meta-line-height);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -3464,9 +3452,9 @@
   cursor: pointer;
   list-style: none;
   color: var(--conversation-process-control-color, var(--process-control-color-fallback));
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
-  line-height: var(--conversation-meta-line-height);
+  font-size: var(--conversation-process-font-size);
+  font-weight: var(--conversation-process-font-weight);
+  line-height: var(--conversation-process-line-height);
   user-select: none;
 }
 

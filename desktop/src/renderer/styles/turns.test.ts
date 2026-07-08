@@ -13,6 +13,19 @@ function cssRuleBody(selector: string): string {
   return match[1];
 }
 
+function lastCssRuleBody(selector: string): string {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const matches = [
+    ...turnsCss.matchAll(
+      new RegExp(`(?:^|\\})\\s*${escapedSelector}\\s*\\{([\\s\\S]*?)\\}`, "g"),
+    ),
+  ];
+  if (matches.length === 0) {
+    throw new Error(`missing CSS rule for ${selector}`);
+  }
+  return matches[matches.length - 1][1];
+}
+
 describe("turns.css user message actions", () => {
   it("overlays action buttons above the bubble edge instead of reserving flow space", () => {
     const body = cssRuleBody(".user-message-actions");
@@ -85,5 +98,38 @@ describe("turns.css turn notice positioning", () => {
     expect(cssRuleBody(".turn-notice.error .turn-event-content")).not.toMatch(/\bbackground\s*:/);
     // The machine-code suffix stays in the neutral gray family.
     expect(cssRuleBody(".turn-event-code")).toMatch(/color:\s*var\(--ink-muted\);/);
+  });
+});
+
+describe("turns.css message-flow typography", () => {
+  it("uses the same process token for status headers, tool rows, and reasoning summaries", () => {
+    for (const selector of [
+      ".turn-process-title",
+      ".turn-process-meta",
+      ".turn-process-preview",
+      ".activity-row",
+      ".process-surface-row",
+      ".turn-reasoning-summary",
+    ]) {
+      const body = lastCssRuleBody(selector);
+      expect(body).toMatch(/font-size:\s*var\(--conversation-process-font-size\);/);
+      expect(body).toMatch(/font-weight:\s*var\(--conversation-process-font-weight\);/);
+      expect(body).toMatch(/line-height:\s*var\(--conversation-process-line-height\);/);
+    }
+  });
+
+  it("uses the measured process-to-answer gap instead of the generic process gap", () => {
+    expect(lastCssRuleBody(".assistant-turn-shell")).toMatch(
+      /gap:\s*var\(--conversation-process-answer-gap\);/,
+    );
+  });
+
+  it("keeps answer and commentary prose on the shared message weight", () => {
+    expect(lastCssRuleBody(".turn")).toMatch(
+      /font-weight:\s*var\(--conversation-message-font-weight\);/,
+    );
+    expect(lastCssRuleBody(".turn-process-entry-commentary")).toMatch(
+      /font-weight:\s*var\(--conversation-message-font-weight\);/,
+    );
   });
 });
