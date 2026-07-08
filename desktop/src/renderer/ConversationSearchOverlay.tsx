@@ -354,17 +354,23 @@ function PreviewTurn({ turn, query }: { turn: Turn; query: string }): JSX.Elemen
 function previewTurnRole(
   turn: Turn,
 ): "user" | "assistant" | "system" {
-  const first = turn.items[0];
-  if (!first) return "system";
-  switch (first.type) {
-    case "user_message":
-      return "user";
-    case "agent_message":
-    case "reasoning":
-      return "assistant";
-    default:
-      return "system";
+  // Scan every item rather than only items[0]: an assistant turn can
+  // open with a tool_call (the agent decided to run a shell command or
+  // a search before emitting any text), and inspecting only the first
+  // item then classified such turns as "system" — `previewTurnText`
+  // returned "" and the entire reply row went blank in the preview.
+  let hasUser = false;
+  let hasAgent = false;
+  for (const item of turn.items) {
+    if (item.type === "user_message") {
+      hasUser = true;
+    } else if (item.type === "agent_message" || item.type === "reasoning") {
+      hasAgent = true;
+    }
   }
+  if (hasUser) return "user";
+  if (hasAgent) return "assistant";
+  return "system";
 }
 
 function previewTurnRoleLabel(
