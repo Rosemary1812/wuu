@@ -106,6 +106,62 @@ func chooseIdleUnreadCandidate(candidates []idleUnreadCandidate, rng *rand.Rand)
 	return best[rng.Intn(len(best))], true
 }
 
+func (s *Server) idleUnreadCandidates(threadID, lastSpeakerID string) []idleUnreadCandidate {
+	if s == nil || s.rt == nil {
+		return nil
+	}
+	threadID = strings.TrimSpace(threadID)
+	lastSpeakerID = strings.TrimSpace(lastSpeakerID)
+	if threadID == "" {
+		return nil
+	}
+	members, err := session.ListThreadMembers(s.rt.SessionDir, threadID)
+	if err != nil {
+		providers.DebugLogf("idle unread wake: list thread members %q: %v", threadID, err)
+		return nil
+	}
+	candidates := make([]idleUnreadCandidate, 0, len(members))
+	for _, participantID := range members {
+		participantID = strings.TrimSpace(participantID)
+		if participantID == "" {
+			continue
+		}
+		candidate := idleUnreadCandidate{
+			ParticipantID: participantID,
+			Busy:          s.participantIsBusy(participantID),
+			Draining:      s.residentDraining(participantID),
+			Retired:       s.participantRetired(participantID),
+			LastSpeaker:   participantID == lastSpeakerID,
+		}
+		if candidate.Busy || candidate.Draining || candidate.Retired || candidate.LastSpeaker {
+			continue
+		}
+		watermark, err := session.ThreadReadWatermark(s.rt.SessionDir, threadID, participantID)
+		if err != nil {
+			providers.DebugLogf("idle unread wake: read watermark for %q in %q: %v", participantID, threadID, err)
+			continue
+		}
+		records, err := session.ChatMessagesSince(s.rt.SessionDir, threadID, watermark)
+		if err != nil {
+			providers.DebugLogf("idle unread wake: chat messages since %d in %q: %v", watermark, threadID, err)
+			continue
+		}
+		for _, rec := range records {
+			if strings.TrimSpace(rec.ThreadID) != "" {
+				continue
+			}
+			if strings.TrimSpace(rec.ParticipantID) == participantID {
+				continue
+			}
+			candidate.UnreadCount++
+		}
+		if candidate.UnreadCount > 0 {
+			candidates = append(candidates, candidate)
+		}
+	}
+	return candidates
+}
+
 type envelopeMetaRecord struct {
 	ID                string `json:"id,omitempty"`
 	SourceThreadID    string `json:"source_thread_id"`

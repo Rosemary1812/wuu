@@ -45,6 +45,74 @@ func TestIdleUnreadWakeCandidateRandomizesTies(t *testing.T) {
 	}
 }
 
+func TestIdleUnreadWakeCandidatesUseReadWatermarks(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
+	srv := New(rt, &lockedBuffer{})
+	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	cyd := saveNamedParticipant(t, rt, "Cyd", "reviewer", "")
+	groupID := startGroupThreadForTest(t, srv)
+	for _, id := range []string{ada, bea, cyd} {
+		if err := session.AddThreadMember(rt.SessionDir, groupID, id); err != nil {
+			t.Fatalf("AddThreadMember: %v", err)
+		}
+	}
+	s1 := appendMainChatForIdleWakeTest(t, rt.SessionDir, groupID, "participant", ada, "1")
+	_ = appendMainChatForIdleWakeTest(t, rt.SessionDir, groupID, "participant", bea, "2")
+	_ = appendSubthreadChatForIdleWakeTest(t, rt.SessionDir, groupID, "cth-x", ada, "hidden from main")
+	if err := session.MarkMessageSeen(rt.SessionDir, groupID, s1, cyd, session.SeenStatusCompleted, "", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	candidates := srv.idleUnreadCandidates(groupID, bea)
+	got := idleCandidateCounts(candidates)
+	if got[ada] != 1 || got[cyd] != 1 {
+		t.Fatalf("counts = %v, want Ada=1 Cyd=1", got)
+	}
+	if _, ok := got[bea]; ok {
+		t.Fatalf("last speaker Bea should be skipped: %v", got)
+	}
+}
+
+func appendMainChatForIdleWakeTest(t *testing.T, sessionDir, threadID, role, participantID, text string) int {
+	t.Helper()
+	seq, err := session.AppendHistoryRecordReturningSeq(sessionDir, threadID, session.HistoryRecord{
+		Role:          role,
+		ParticipantID: participantID,
+		PostKind:      "result",
+		Content:       text,
+		At:            time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("append main chat: %v", err)
+	}
+	return seq
+}
+
+func appendSubthreadChatForIdleWakeTest(t *testing.T, sessionDir, threadID, subthreadID, participantID, text string) int {
+	t.Helper()
+	seq, err := session.AppendHistoryRecordReturningSeq(sessionDir, threadID, session.HistoryRecord{
+		Role:          "participant",
+		ParticipantID: participantID,
+		PostKind:      "result",
+		ThreadID:      subthreadID,
+		Content:       text,
+		At:            time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("append subthread chat: %v", err)
+	}
+	return seq
+}
+
+func idleCandidateCounts(candidates []idleUnreadCandidate) map[string]int {
+	out := make(map[string]int, len(candidates))
+	for _, c := range candidates {
+		out[c.ParticipantID] = c.UnreadCount
+	}
+	return out
+}
+
 func waitForResidentDMHistory(t *testing.T, srv *Server, participantID string, wantUserRecords int) (string, []session.HistoryRecord) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
