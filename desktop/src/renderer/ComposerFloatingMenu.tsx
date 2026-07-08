@@ -22,12 +22,13 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-// Minimum visible height before a flip is preferred. 240px fits ~6
-// 36px menu items — anything tighter than this on the requested side
-// means the panel would scroll immediately, so flipping to the
-// opposite side (when that side has more room) keeps the list
-// readable.
-const FLIP_MIN_HEIGHT = 240;
+// Initial flip-threshold estimate used before the panel has been measured.
+// Matches the panel's CSS max-height fallback so the first flip decision is
+// a conservative "assume the worst case" guess; a follow-up measurement in
+// rAF refines the decision with the real panel height. Without this seed,
+// a panel below the threshold could be flipped unnecessarily on first
+// render and then unflipped on second — a visible flicker.
+const PANEL_HEIGHT_ESTIMATE = 320;
 
 export function FloatingMenuPortal({
   anchorRef,
@@ -64,6 +65,13 @@ export function FloatingMenuPortal({
     position: "fixed",
     visibility: "hidden"
   });
+  // Real panel height once the panel has mounted and rendered. Until then
+  // we use PANEL_HEIGHT_ESTIMATE. Stored in state (not a ref) so that the
+  // first measurement triggers a fresh useLayoutEffect → re-position with
+  // the corrected height.
+  const [measuredPanelHeight, setMeasuredPanelHeight] = useState<
+    number | null
+  >(null);
   const layerRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -78,24 +86,24 @@ export function FloatingMenuPortal({
       const maxLeft = Math.max(viewportMargin, window.innerWidth - width - viewportMargin);
       const left = clamp(baseLeft + crossAxisOffset, viewportMargin, maxLeft);
 
-      // Auto-flip: if the requested side has less than FLIP_MIN_HEIGHT
-      // pixels free AND the opposite side has more room, prefer the
-      // opposite side. This keeps dropdowns readable when the trigger
-      // is near a viewport edge (e.g. the last field of a centered
-      // modal whose list is taller than the space below).
+      // Auto-flip: if the requested side has less than the panel's actual
+      // height free AND the opposite side has more room, prefer the
+      // opposite side. Before the panel has been measured we fall back to
+      // PANEL_HEIGHT_ESTIMATE (matches the panel's CSS max-height cap).
+      const flipThreshold = measuredPanelHeight ?? PANEL_HEIGHT_ESTIMATE;
       let actualPlacement: FloatingMenuPlacement = placement;
       if (flip && (placement === "above" || placement === "below")) {
         const spaceBelow = window.innerHeight - rect.bottom - offset;
         const spaceAbove = rect.top - offset;
         if (
           placement === "below" &&
-          spaceBelow < FLIP_MIN_HEIGHT &&
+          spaceBelow < flipThreshold &&
           spaceAbove > spaceBelow
         ) {
           actualPlacement = "above";
         } else if (
           placement === "above" &&
-          spaceAbove < FLIP_MIN_HEIGHT &&
+          spaceAbove < flipThreshold &&
           spaceBelow > spaceAbove
         ) {
           actualPlacement = "below";
@@ -123,6 +131,11 @@ export function FloatingMenuPortal({
       // chosen side. This is the proportional-scaling half of the
       // fix: when the list is taller than the side can show, the
       // panel scrolls internally instead of overflowing the viewport.
+      // The cap is pushed down as a CSS variable instead of an inline
+      // `maxHeight` because the panel sits inside the layer with
+      // `position: static` — percentage / inherit heights don't reach
+      // it, so the variable is the bridge from layer budget to panel
+      // box. (See select-menu.css `.select-menu-panel`.)
       let availableHeight: number;
       if (actualPlacement === "above") {
         nextStyle.bottom = Math.max(
@@ -148,12 +161,44 @@ export function FloatingMenuPortal({
           Math.min(window.innerHeight - 2 * viewportMargin, 420)
         );
       }
-      nextStyle.maxHeight = `${availableHeight}px`;
+      // CSS custom property — React's CSSProperties type doesn't allow
+      // arbitrary `--*` keys, so the cast is the standard escape hatch.
+      (nextStyle as Record<string, string>)["--select-menu-max-height"] =
+        `${availableHeight}px`;
 
       setStyle(nextStyle);
     }
 
+    function measurePanel(): void {
+      if (measuredPanelHeight !== null) {
+        return;
+      }
+      const panel = layerRef.current?.querySelector(
+        ".select-menu-panel"
+      ) as HTMLElement | null;
+      if (!panel) {
+        return;
+      }
+      const h = panel.offsetHeight;
+      if (h > 0) {
+        setMeasuredPanelHeight(h);
+      }
+    }
+
     updatePosition();
+
+    // After the first paint, measure the real panel height and let
+    // React re-run useLayoutEffect so the flip decision can be refined
+    // against the actual box (not the 320px estimate). The rAF guarantees
+    // the panel has been laid out at least once.
+    if (measuredPanelHeight === null) {
+      const raf = requestAnimationFrame(measurePanel);
+      // Defensive cleanup in case the effect tears down before rAF fires.
+      // (No listener needs to be removed; the rAF callback is a no-op once
+      // measuredPanelHeight is no longer null, so a stale fire is harmless.)
+      void raf;
+    }
+
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
     return () => {
@@ -165,6 +210,7 @@ export function FloatingMenuPortal({
     anchorRef,
     crossAxisOffset,
     flip,
+    measuredPanelHeight,
     offset,
     placement,
     resolvedPlacement,
