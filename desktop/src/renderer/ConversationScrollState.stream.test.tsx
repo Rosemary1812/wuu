@@ -838,12 +838,11 @@ describe("useConversationScrollState — high-frequency stream", () => {
     expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
-  it("pins the visual bottom via transform during live window resize, then commits the real scrollTop when the resize settles", () => {
-    // User parked at the bottom of a tall conversation. We want the
-    // visual to keep tracking the new bottom while the window is being
-    // dragged (no scrollTop writes — those would re-trigger layout) and
-    // then to commit the real scrollTop in a single paint once the
-    // drag settles.
+  it("does not transform the conversation during live window resize, then commits the real scrollTop when the resize settles", () => {
+    // User parked at the bottom of a tall conversation. During live
+    // window resize we keep the message container in normal flow and
+    // avoid scrollTop writes; once the drag settles we commit the real
+    // scroll position in one step.
     mount({ scrollHeight: 2200, clientHeight: 600 });
     if (!layout || !handle || !node) throw new Error("not mounted");
     flushScheduledScroll();
@@ -870,12 +869,10 @@ describe("useConversationScrollState — high-frequency stream", () => {
       flushResizeObservers();
     });
 
-    // The wrapper now carries a composited translateY that pins the
-    // visual bottom of the content to the new bottom of the smaller
-    // viewport. 600 - 400 = 200, so the content moves up by 200px.
-    // The real scrollTop is untouched, so no layout / paint round-trip
-    // fires during the drag.
-    expect(contentNode.style.transform).toBe("translateY(-200px)");
+    // The real scrollTop is untouched during the drag and the message
+    // container stays in normal flow, so text does not move through a
+    // temporary transform while the user is resizing the window.
+    expect(contentNode.style.transform).toBe("");
     expect(layout.scrollTop).toBe(1600);
     // The user is still considered "following" — the pill stays hidden
     // and the next stream tick would happily stick to the new bottom.
@@ -893,11 +890,79 @@ describe("useConversationScrollState — high-frequency stream", () => {
     expect(layout.scrollTop).toBe(2200 - 400);
   });
 
-  it("keeps the visual pinned as the user keeps dragging past the initial viewport size", () => {
-    // A second live-resize fire after a partial settle. The transform
-    // should re-anchor against the original clientHeight captured at
-    // the start of the drag, not the last seen clientHeight, so the
-    // math doesn't drift if the user briefly lets go mid-drag.
+  it("does not transform a short conversation if the turn snapshot updates during window resize", () => {
+    mount({ scrollHeight: 500, clientHeight: 600 });
+    if (!layout || !node) throw new Error("not mounted");
+    layout.scrollTop = 0;
+    flushScheduledScroll();
+    flushResizeObservers();
+    expect(layout.scrollTop).toBe(0);
+
+    const contentNode = container.querySelector(
+      "[data-testid='scroll-content']",
+    ) as HTMLDivElement | null;
+    if (!contentNode) throw new Error("scroll-content not rendered");
+
+    act(() => {
+      document.documentElement.classList.add(WINDOW_RESIZING_CLASS);
+      rerenderTurns(makeLongTurnsSnapshot(2));
+      layout!.clientHeight = 620;
+      flushResizeObservers();
+      layout!.clientHeight = 700;
+      flushResizeObservers();
+    });
+
+    expect(contentNode.style.transform).toBe("");
+    expect(layout.scrollTop).toBe(0);
+
+    act(() => {
+      document.documentElement.classList.remove(WINDOW_RESIZING_CLASS);
+      flushResizeObservers();
+    });
+  });
+
+  it("does not read scroll metrics when a layout scroll event fires during live window resize", () => {
+    mount({ scrollHeight: 2000, clientHeight: 600 });
+    if (!layout || !node) throw new Error("not mounted");
+    flushScheduledScroll();
+
+    let liveResizeMetricReads = 0;
+    Object.defineProperty(node, "scrollHeight", {
+      configurable: true,
+      get: () => {
+        if (document.documentElement.classList.contains(WINDOW_RESIZING_CLASS)) {
+          liveResizeMetricReads += 1;
+        }
+        return layout!.scrollHeight;
+      },
+    });
+    Object.defineProperty(node, "clientHeight", {
+      configurable: true,
+      get: () => {
+        if (document.documentElement.classList.contains(WINDOW_RESIZING_CLASS)) {
+          liveResizeMetricReads += 1;
+        }
+        return layout!.clientHeight;
+      },
+    });
+
+    act(() => {
+      document.documentElement.classList.add(WINDOW_RESIZING_CLASS);
+      node!.dispatchEvent(new Event("scroll", { bubbles: false }));
+    });
+
+    expect(liveResizeMetricReads).toBe(0);
+
+    act(() => {
+      document.documentElement.classList.remove(WINDOW_RESIZING_CLASS);
+    });
+  });
+
+  it("keeps the conversation in normal flow as the user keeps dragging past the initial viewport size", () => {
+    // A second live-resize fire after a partial settle should still avoid
+    // transient transforms. The real scroll position is committed after
+    // the drag settles, preserving the no-scrollTop-writes-during-resize
+    // performance invariant without moving text through a composited layer.
     mount({ scrollHeight: 2200, clientHeight: 600 });
     if (!layout || !handle || !node) throw new Error("not mounted");
     flushScheduledScroll();
@@ -915,15 +980,13 @@ describe("useConversationScrollState — high-frequency stream", () => {
       layout!.clientHeight = 500;
       flushResizeObservers();
     });
-    expect(contentNode.style.transform).toBe("translateY(-100px)");
+    expect(contentNode.style.transform).toBe("");
 
     act(() => {
       layout!.clientHeight = 350;
       flushResizeObservers();
     });
-    // Still 600 - 350 = 250, not 500 - 350 = 150. We never reset the
-    // initial baseline mid-drag.
-    expect(contentNode.style.transform).toBe("translateY(-250px)");
+    expect(contentNode.style.transform).toBe("");
 
     act(() => {
       document.documentElement.classList.remove(WINDOW_RESIZING_CLASS);

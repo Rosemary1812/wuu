@@ -10,9 +10,14 @@ import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { JumpToLatestPill } from "./JumpToLatestPill";
+import {
+  WINDOW_RESIZE_SETTLE_DELAY_MS,
+  WINDOW_RESIZING_CLASS,
+} from "./WindowResizeState";
 
 let mountedRoots: Root[] = [];
 let mountedContainers: HTMLElement[] = [];
+let restoreResizeObserver: (() => void) | undefined;
 
 afterEach(() => {
   for (const root of mountedRoots) {
@@ -25,6 +30,10 @@ afterEach(() => {
   }
   mountedRoots = [];
   mountedContainers = [];
+  restoreResizeObserver?.();
+  restoreResizeObserver = undefined;
+  document.documentElement.classList.remove(WINDOW_RESIZING_CLASS);
+  vi.useRealTimers();
 });
 
 type ScrollGeometry = {
@@ -98,6 +107,69 @@ function mountPill(node: HTMLElement): HTMLElement {
   });
   mountedRoots.push(root);
   return host;
+}
+
+type MockResizeObserverRecord = {
+  callback: ResizeObserverCallback;
+  observed: Set<Element>;
+};
+
+function installMockResizeObserver(): MockResizeObserverRecord[] {
+  const records: MockResizeObserverRecord[] = [];
+  const globalWithResizeObserver = globalThis as typeof globalThis & {
+    ResizeObserver?: typeof ResizeObserver;
+  };
+  const realResizeObserver = globalWithResizeObserver.ResizeObserver;
+  class MockResizeObserver {
+    private readonly record: MockResizeObserverRecord;
+
+    constructor(callback: ResizeObserverCallback) {
+      this.record = { callback, observed: new Set() };
+      records.push(this.record);
+    }
+
+    observe(target: Element): void {
+      this.record.observed.add(target);
+    }
+
+    unobserve(target: Element): void {
+      this.record.observed.delete(target);
+    }
+
+    disconnect(): void {
+      this.record.observed.clear();
+    }
+  }
+  globalWithResizeObserver.ResizeObserver =
+    MockResizeObserver as typeof ResizeObserver;
+  restoreResizeObserver = () => {
+    if (realResizeObserver) {
+      globalWithResizeObserver.ResizeObserver = realResizeObserver;
+    } else {
+      Reflect.deleteProperty(globalWithResizeObserver, "ResizeObserver");
+    }
+  };
+  return records;
+}
+
+function flushResizeObservers(records: MockResizeObserverRecord[]): void {
+  for (const record of records) {
+    const entries = Array.from(record.observed).map((target) => ({
+      target,
+      contentRect: {
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: 0,
+        height: 0,
+        toJSON: () => ({}),
+      },
+    })) as ResizeObserverEntry[];
+    record.callback(entries, {} as ResizeObserver);
+  }
 }
 
 describe("JumpToLatestPill", () => {
@@ -227,6 +299,54 @@ describe("JumpToLatestPill", () => {
     act(() => {
       node.dispatchEvent(new Event("scroll"));
     });
+    expect(host.querySelector(".jump-to-latest-pill")).toBeNull();
+  });
+
+  it("defers container resize measurement while the window is resizing", () => {
+    vi.useFakeTimers();
+    const resizeObservers = installMockResizeObserver();
+    let clientHeight = 100;
+    let liveResizeMetricReads = 0;
+    const { node } = scrollContainer({
+      scrollHeight: 1000,
+      clientHeight,
+      scrollTop: 0,
+    });
+    Object.defineProperty(node, "scrollHeight", {
+      configurable: true,
+      get: () => {
+        if (document.documentElement.classList.contains(WINDOW_RESIZING_CLASS)) {
+          liveResizeMetricReads += 1;
+        }
+        return 1000;
+      },
+    });
+    Object.defineProperty(node, "clientHeight", {
+      configurable: true,
+      get: () => {
+        if (document.documentElement.classList.contains(WINDOW_RESIZING_CLASS)) {
+          liveResizeMetricReads += 1;
+        }
+        return clientHeight;
+      },
+    });
+    const host = mountPill(node);
+    expect(host.querySelector(".jump-to-latest-pill")).not.toBeNull();
+
+    act(() => {
+      document.documentElement.classList.add(WINDOW_RESIZING_CLASS);
+      clientHeight = 1000;
+      flushResizeObservers(resizeObservers);
+    });
+
+    expect(liveResizeMetricReads).toBe(0);
+    expect(host.querySelector(".jump-to-latest-pill")).not.toBeNull();
+
+    act(() => {
+      document.documentElement.classList.remove(WINDOW_RESIZING_CLASS);
+      vi.advanceTimersByTime(WINDOW_RESIZE_SETTLE_DELAY_MS + 1);
+    });
+
     expect(host.querySelector(".jump-to-latest-pill")).toBeNull();
   });
 });

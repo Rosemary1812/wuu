@@ -5,6 +5,10 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import {
+  createWindowResizeSettleScheduler,
+  isWindowResizing,
+} from "./WindowResizeState";
 
 /**
  * JumpToLatestPill — self-contained "scroll to bottom" pill.
@@ -89,12 +93,20 @@ export function JumpToLatestPill({
         node.scrollHeight - node.scrollTop - node.clientHeight;
       setScrolledAway(distanceFromBottom > threshold);
     };
+    const resizeSettleUpdate = createWindowResizeSettleScheduler(update);
+    const scheduleUpdate = (): void => {
+      if (isWindowResizing()) {
+        resizeSettleUpdate.schedule();
+        return;
+      }
+      update();
+    };
 
     // Initial sync after mount (covers the case where the container is
     // already scrolled up at the time the pill mounts, e.g., when the
     // user navigated away and then re-entered the conversation).
-    update();
-    node.addEventListener("scroll", update, { passive: true });
+    scheduleUpdate();
+    node.addEventListener("scroll", scheduleUpdate, { passive: true });
 
     // Re-evaluate on container resize. A thread-panel drag mutates the
     // scroll container's `clientHeight`; without this listener the
@@ -103,12 +115,13 @@ export function JumpToLatestPill({
     // pill degrades gracefully to scroll-event-only updates without it.
     const resizeObserver =
       typeof ResizeObserver !== "undefined"
-        ? new ResizeObserver(update)
+        ? new ResizeObserver(scheduleUpdate)
         : undefined;
     resizeObserver?.observe(node);
 
     return () => {
-      node.removeEventListener("scroll", update);
+      resizeSettleUpdate.cancel();
+      node.removeEventListener("scroll", scheduleUpdate);
       resizeObserver?.disconnect();
     };
   }, [containerRef, threshold]);
@@ -139,15 +152,28 @@ export function JumpToLatestPill({
     if (!anchored || !scrolledAway) {
       return undefined;
     }
-    recomputePosition();
+    const resizeSettleRecompute =
+      createWindowResizeSettleScheduler(recomputePosition);
+    const recomputeWhenStable = (): void => {
+      if (isWindowResizing()) {
+        resizeSettleRecompute.schedule();
+        return;
+      }
+      recomputePosition();
+    };
+    recomputeWhenStable();
     let frame = 0;
     const schedule = (): void => {
+      if (isWindowResizing()) {
+        resizeSettleRecompute.schedule();
+        return;
+      }
       if (frame) {
         return;
       }
       frame = window.requestAnimationFrame(() => {
         frame = 0;
-        recomputePosition();
+        recomputeWhenStable();
       });
     };
     const container = containerRef.current;
@@ -164,6 +190,7 @@ export function JumpToLatestPill({
       resizeObserver?.observe(bottomAnchor);
     }
     return () => {
+      resizeSettleRecompute.cancel();
       if (frame) {
         window.cancelAnimationFrame(frame);
       }

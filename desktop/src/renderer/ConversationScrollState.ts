@@ -53,27 +53,6 @@ function dockComposerVisualHeight(node: HTMLElement): number {
   return layoutHeight + expandedOffset;
 }
 
-function resizeEntryBlockSize(
-  entry: ResizeObserverEntry | undefined,
-  fallback: () => number,
-): number {
-  const borderBox = entry?.borderBoxSize;
-  const firstBox = Array.isArray(borderBox) ? borderBox[0] : borderBox;
-  const blockSize = firstBox?.blockSize;
-  if (Number.isFinite(blockSize) && blockSize > 0) {
-    return blockSize;
-  }
-  const contentHeight = entry?.contentRect?.height;
-  if (
-    typeof contentHeight === "number" &&
-    Number.isFinite(contentHeight) &&
-    contentHeight > 0
-  ) {
-    return contentHeight;
-  }
-  return fallback();
-}
-
 type ConversationScrollSnapshot = {
   scrollTop: number;
   autoFollow: boolean;
@@ -101,13 +80,7 @@ export function useConversationScrollState({
   initialized: boolean;
 }): {
   conversationScrollRef: RefObject<HTMLDivElement | null>;
-  /**
-   * Wrapper inside the conversation viewport whose `transform: translateY(...)`
-   * we drive during live window resize to keep the bottom visually pinned
-   * without writing `scrollTop` (which would re-trigger layout and cause
-   * jank during the drag). The wrapper is cleared and the real scrollTop
-   * is restored once the resize settles.
-   */
+  /** Wrapper inside the conversation viewport. */
   scrollContentRef: RefObject<HTMLDivElement | null>;
   splitPaneRefs: MutableRefObject<Record<ConversationPaneID, HTMLElement | null>>;
   conversationPaneRef: RefObject<HTMLElement | null>;
@@ -183,20 +156,7 @@ export function useConversationScrollState({
     typeof createWindowResizeSettleScheduler
   > | null>(null);
   const conversationScrollbarHideTimerRef = useRef<number | undefined>(undefined);
-  // Live-resize visual pinning. While the window is being dragged, we shift
-  // the content via a `transform: translateY(...)` on the wrapper returned by
-  // `scrollContentRef` instead of writing `scrollTop`. The transform is purely
-  // composited (no layout, no paint), so it stays jank-free even at 60fps.
-  // The transform is cleared and the real scrollTop is committed once the
-  // resize settles, so the scrollbar and any "jump to latest" anchor line up
-  // with the user's intent.
   const scrollContentRef = useRef<HTMLDivElement | null>(null);
-  const liveResizeShiftRef = useRef(0);
-  const liveResizeOverflowingRef = useRef(false);
-  // Resting viewport height before a live resize starts. The live resize
-  // callback consumes the height already carried by ResizeObserver entries
-  // instead of rereading scroll metrics on every drag frame.
-  const liveResizeBaselineClientHeightRef = useRef<number | null>(null);
 
   function conversationViewport(): HTMLElement | undefined {
     if (splitConversation) {
@@ -401,6 +361,12 @@ export function useConversationScrollState({
   function handleConversationScroll(scrolledNode?: HTMLElement): void {
     const node = scrolledNode ?? conversationViewport();
     if (!node) {
+      return;
+    }
+    if (isWindowResizing()) {
+      if (conversationAutoFollowRef.current) {
+        scheduleStreamScroll();
+      }
       return;
     }
     showConversationScrollbar(node);
@@ -700,114 +666,31 @@ export function useConversationScrollState({
     };
   });
 
-  // Pin the conversation content to the new bottom while the window is
-  // being dragged. We only shift the content if the user is following the
-  // bottom (autoFollow) and the content actually overflows the viewport;
-  // otherwise the math is meaningless and the transform would be a no-op.
-  // The shift is `newH - liveResizeBaselineClientHeightRef.current`:
-  // positive when the viewport grew and negative when it shrank. The
-  // baseline is the clientHeight captured on the first ResizeObserver
-  // fire after this effect mounted — which always pre-dates the current
-  // resize, since the first fire is either a layout-stable observation
-  // (no resize yet) or the first observation of a content change while
-  // the window is already being dragged.
-  function rememberLiveResizeRestingMetrics(
-    node: HTMLElement,
-    clientHeight: number,
-  ): void {
-    liveResizeBaselineClientHeightRef.current = clientHeight;
-    liveResizeOverflowingRef.current = node.scrollHeight > clientHeight;
-  }
-
-  function applyLiveResizeShift(clientHeight: number): void {
-    if (
-      !conversationAutoFollowRef.current ||
-      !liveResizeOverflowingRef.current
-    ) {
-      return;
-    }
-    const content = scrollContentRef.current;
-    if (!content) {
-      return;
-    }
-    const baseline = liveResizeBaselineClientHeightRef.current;
-    if (baseline === null) {
-      return;
-    }
-    const shiftY = clientHeight - baseline;
-    liveResizeShiftRef.current = shiftY;
-    content.style.transform = `translateY(${shiftY}px)`;
-  }
-
-  function clearLiveResizeShift(): void {
-    if (liveResizeShiftRef.current !== 0) {
-      const content = scrollContentRef.current;
-      if (content) {
-        content.style.transform = "";
-      }
-    }
-    liveResizeShiftRef.current = 0;
-  }
-
   useLayoutEffect(() => {
     const node = conversationViewport();
     if (!node || typeof ResizeObserver === "undefined") {
       return undefined;
     }
-    // Clear any stale transform and reset the baseline from a previous
-    // mount or effect run. Capture the resting metrics before the drag so
-    // live resize does not need to read scrollHeight/clientHeight on every
-    // ResizeObserver tick.
-    clearLiveResizeShift();
-    if (isWindowResizing()) {
-      liveResizeBaselineClientHeightRef.current = null;
-      liveResizeOverflowingRef.current = true;
-    } else {
-      rememberLiveResizeRestingMetrics(node, node.clientHeight);
-    }
+    scrollContentRef.current?.style.removeProperty("transform");
     const windowResizeScroll = createWindowResizeSettleScheduler(() => {
-      // The resize has settled. Drop the visual pin and commit the real
-      // scrollTop so the scrollbar position, the "jump to latest" pill,
-      // and the turn-rail anchor all line up with the new viewport in a
-      // single paint (no flicker between the two states).
-      clearLiveResizeShift();
+      // The resize has settled. Commit the real scrollTop so the scrollbar
+      // position, the "jump to latest" pill, and the turn-rail anchor line
+      // up with the new viewport without moving text during the live drag.
       scrollConversationToBottom();
     });
-    const resizeObserver = new ResizeObserver((entries) => {
-      const isResizing = isWindowResizing();
-      const newH = resizeEntryBlockSize(
-        entries[0],
-        () => liveResizeBaselineClientHeightRef.current ?? node.clientHeight,
-      );
-
-      // Normally the baseline is captured while the window is not resizing.
-      // If this effect is remounted mid-drag, the first observer entry is
-      // still the best available baseline until the resize settles.
-      if (liveResizeBaselineClientHeightRef.current === null) {
-        liveResizeBaselineClientHeightRef.current = newH;
-      }
-
-      if (isResizing) {
-        // Live drag: pin the visual to the new bottom via a composited
-        // transform instead of writing scrollTop. The scheduler is set
-        // so the real scroll commits once the drag has settled.
-        applyLiveResizeShift(newH);
+    const resizeObserver = new ResizeObserver(() => {
+      if (isWindowResizing()) {
         windowResizeScroll.schedule();
         return;
       }
-      // The window-resizing class is gone (or never went on for a
-      // non-window resize like a fold collapsing). Refresh the baseline
-      // so the next resize session measures from the current viewport,
-      // clear the pin, and commit the real scrollTop in a single paint.
-      rememberLiveResizeRestingMetrics(node, newH);
-      clearLiveResizeShift();
+      scrollContentRef.current?.style.removeProperty("transform");
       scrollConversationToBottom();
     });
     observeAutoFollowResizeTargets(node, resizeObserver);
     return () => {
       windowResizeScroll.cancel();
       resizeObserver.disconnect();
-      clearLiveResizeShift();
+      scrollContentRef.current?.style.removeProperty("transform");
     };
   }, [
     activePane,
