@@ -72,23 +72,24 @@
   font-family: var(--conversation-message-font-family);
   font-weight: var(--conversation-message-font-weight);
   /*
-   * Turn-to-turn separation must beat every within-turn gap, or the
-   * eye can't find where one exchange ends and the next begins. This
-   * is the single deliberate boundary value: 40px of clean white
-   * (block gap × 2.2) against 24px bubble→hairline inside the turn.
-   * The hover action bars paint INTO this band as overlays (see the
-   * containment note below) instead of reserving in-flow ghost rows —
-   * the old 28px + 32px invisible slot added up to a 60px dead zone
-   * that read as unexplained emptiness after every answer.
+   * Turn-to-turn separation is the single deliberate boundary value:
+   * 24px of clean white matching the 24px bubble→hairline inside the
+   * turn (1.0× instead of the old 2.2× overshoot). The hover action
+   * bars paint INTO this band as overlays (see the containment note
+   * below) instead of reserving in-flow ghost rows — the old
+   * 28px + 32px invisible slot added up to a 60px dead zone that
+   * read as unexplained emptiness after every answer. Note: dropping
+   * below the 2.2× ratio means the boundary no longer beats every
+   * within-turn gap; revisit if turns start blending together.
    */
-  margin-bottom: 40px;
+  margin-bottom: 24px;
 }
 
 /*
  * content-visibility:auto implies paint containment, which clips any
  * descendant painted outside the turn's border box — exactly where the
  * hover action overlays go (user actions above the bubble, agent
- * actions below the answer, both inside the 40px boundary band). Lift
+ * actions below the answer, both inside the 24px boundary band). Lift
  * the containment precisely when those overlays can be visible: while
  * the turn is hovered or holds focus. Off-screen turns keep the
  * rendering shortcut.
@@ -1276,7 +1277,7 @@
 /*
  * Only the persistent bar (latest completed answer, always visible)
  * earns in-flow space. Every other answer shows its actions on hover
- * as an overlay hanging below the last line, inside the 40px turn
+ * as an overlay hanging below the last line, inside the 24px turn
  * boundary band — no reserved ghost row after every historical
  * answer. padding-top (not offset) keeps the hover chain unbroken
  * between the text and the row.
