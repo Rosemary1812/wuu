@@ -160,7 +160,7 @@ function renderSidebar({
 describe("AppSidebar layout", () => {
   it("defines a hover edge drawer for the collapsed sidebar", () => {
     expect(sidebarCSS).toContain(".sidebar-hover-zone");
-    expect(sidebarCSS).toMatch(/\.sidebar-hover-zone\s*\{[\s\S]*width:\s*10px;/);
+    expect(sidebarCSS).toMatch(/\.sidebar-hover-zone\s*\{[\s\S]*width:\s*14px;/);
     expect(sidebarCSS).not.toMatch(
       /\.sidebar-collapsed\s+\.sidebar-hover-zone:hover[\s\S]*background:/,
     );
