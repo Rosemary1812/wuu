@@ -391,24 +391,24 @@ describe("ProjectList", () => {
     });
 
     const overlay = document.body.querySelector(
-      ".conversation-search-overlay.thread-rename-overlay",
+      ".conversation-search-overlay.sidebar-name-dialog-overlay",
     );
     expect(overlay).not.toBeNull();
-    expect(container.querySelector(".thread-rename-dialog")).toBeNull();
-    const dialog = document.body.querySelector(".thread-rename-dialog");
+    expect(container.querySelector(".sidebar-name-dialog")).toBeNull();
+    const dialog = document.body.querySelector(".sidebar-name-dialog");
     expect(dialog?.getAttribute("role")).toBe("dialog");
-    expect(dialog?.firstElementChild?.classList.contains("thread-rename-header")).toBe(true);
-    expect(dialog?.querySelector(".thread-rename-title")?.textContent).toBe("重命名对话");
+    expect(dialog?.firstElementChild?.classList.contains("sidebar-name-dialog-header")).toBe(true);
+    expect(dialog?.querySelector(".sidebar-name-dialog-title")?.textContent).toBe("重命名对话");
 
     const input = document.body.querySelector<HTMLInputElement>(
-      ".thread-rename-input",
+      ".sidebar-name-dialog-input",
     );
     expect(input?.value).toBe("Old title");
-    const field = dialog?.querySelector(".thread-rename-field");
-    expect(field?.querySelector(".thread-rename-label")?.textContent).toBe("会话标题");
+    const field = dialog?.querySelector(".sidebar-name-dialog-field");
+    expect(field?.querySelector(".sidebar-name-dialog-label")?.textContent).toBe("会话标题");
     expect(field?.contains(input)).toBe(true);
     const actions = dialog?.lastElementChild;
-    expect(actions?.classList.contains("thread-rename-actions")).toBe(true);
+    expect(actions?.classList.contains("sidebar-name-dialog-actions")).toBe(true);
     expect(actions?.classList.contains("conversation-search-status")).toBe(false);
     expect(actions?.textContent?.replace(/\s/g, "")).toBe("取消保存");
 
@@ -424,7 +424,7 @@ describe("ProjectList", () => {
     });
 
     expect(onRename).toHaveBeenCalledWith(thread, "New title");
-    expect(document.body.querySelector(".thread-rename-dialog")).toBeNull();
+    expect(document.body.querySelector(".sidebar-name-dialog")).toBeNull();
   });
 
   it("opens the same rename dialog from the context menu instead of window.prompt", () => {
@@ -479,14 +479,14 @@ describe("ProjectList", () => {
       });
 
       const overlay = document.body.querySelector(
-        ".conversation-search-overlay.thread-rename-overlay",
+        ".conversation-search-overlay.sidebar-name-dialog-overlay",
       );
       expect(overlay).not.toBeNull();
-      expect(container.querySelector(".thread-rename-dialog")).toBeNull();
-      const dialog = document.body.querySelector(".thread-rename-dialog");
+      expect(container.querySelector(".sidebar-name-dialog")).toBeNull();
+      const dialog = document.body.querySelector(".sidebar-name-dialog");
       expect(dialog?.getAttribute("role")).toBe("dialog");
       const input = document.body.querySelector<HTMLInputElement>(
-        ".thread-rename-input",
+        ".sidebar-name-dialog-input",
       );
       expect(input?.value).toBe("Old title");
       act(() => {
@@ -507,12 +507,12 @@ describe("ProjectList", () => {
   });
 
   it("centers the rename dialog while reusing the search overlay shell", () => {
-    const overlayRule = cssRule(".thread-rename-overlay");
+    const overlayRule = cssRule(".sidebar-name-dialog-overlay");
     expect(overlayRule).toMatch(/align-items:\s*center;/);
     expect(overlayRule).toMatch(/padding:\s*24px;/);
     expect(overlayRule).not.toMatch(/padding-top:/);
 
-    const dialogRule = cssRule(".thread-rename-dialog");
+    const dialogRule = cssRule(".sidebar-name-dialog");
     expect(dialogRule).toMatch(/transform-origin:\s*center;/);
   });
 

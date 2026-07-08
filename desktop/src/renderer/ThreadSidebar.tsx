@@ -1,6 +1,6 @@
 import { Archive, Folder, FolderOpen, GitFork, MessageSquare, MessageSquarePlus, MessagesSquare, Pin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { SidebarNameDialog } from "./SidebarNameDialog";
 import type { DesktopProject } from "../shared/protocol";
 import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
 import { SidebarSection } from "./SidebarSection";
@@ -717,91 +717,22 @@ function ThreadRows({
           onClose={() => setContextMenu(null)}
         />
       ) : null}
-      {renameDialog ? (
-        <ThreadRenameDialog
-          title={renameTitle}
-          onTitleChange={setRenameTitle}
-          onClose={closeRenameDialog}
-          onSubmit={submitRenameDialog}
-        />
-      ) : null}
+      <SidebarNameDialog
+        open={renameDialog !== null}
+        title={renameTitle}
+        onTitleChange={setRenameTitle}
+        onSubmit={submitRenameDialog}
+        onClose={closeRenameDialog}
+        dialogTitle="重命名对话"
+        dialogTitleId="thread-rename-title"
+        fieldLabel="会话标题"
+        fieldAriaLabel="会话标题"
+        placeholder="会话标题"
+        icon={MessageSquare}
+        submitLabel="保存"
+        cancelLabel="取消"
+      />
     </>
-  );
-}
-
-function ThreadRenameDialog({
-  title,
-  onTitleChange,
-  onClose,
-  onSubmit,
-}: {
-  title: string;
-  onTitleChange: (title: string) => void;
-  onClose: () => void;
-  onSubmit: () => void;
-}): JSX.Element {
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent): void {
-      if (event.key !== "Escape") {
-        return;
-      }
-      event.preventDefault();
-      onClose();
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  return createPortal(
-    <div
-      className="conversation-search-overlay thread-rename-overlay"
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <form
-        className="conversation-search-dialog thread-rename-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="thread-rename-title"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSubmit();
-        }}
-      >
-        <div className="thread-rename-header">
-          <span className="thread-rename-icon" aria-hidden="true">
-            <MessageSquare className="icon-lg" />
-          </span>
-          <h2 id="thread-rename-title" className="thread-rename-title">
-            重命名对话
-          </h2>
-        </div>
-        <label className="thread-rename-field">
-          <span className="thread-rename-label">会话标题</span>
-          <input
-            className="thread-rename-input"
-            value={title}
-            aria-label="会话标题"
-            placeholder="会话标题"
-            autoFocus
-            onChange={(event) => onTitleChange(event.currentTarget.value)}
-            onFocus={(event) => event.currentTarget.select()}
-          />
-        </label>
-        <div className="thread-rename-actions">
-          <button type="button" onClick={onClose}>
-            取消
-          </button>
-          <button type="submit" disabled={title.trim().length === 0}>
-            保存
-          </button>
-        </div>
-      </form>
-    </div>,
-    document.body,
   );
 }
 

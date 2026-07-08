@@ -1491,12 +1491,15 @@
   gap: 10px;
 }
 
-.thread-rename-overlay {
+/* Shared floating name dialog used by rename conversation and create new
+   group chat. Sits on top of .conversation-search-overlay/-dialog so the
+   motion and panel shell stay consistent with other sidebar modals. */
+.sidebar-name-dialog-overlay {
   align-items: center;
   padding: 24px;
 }
 
-.thread-rename-dialog {
+.sidebar-name-dialog {
   width: min(520px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
   grid-template-rows: auto auto auto;
@@ -1505,7 +1508,7 @@
   transform-origin: center;
 }
 
-.thread-rename-header {
+.sidebar-name-dialog-header {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   align-items: center;
@@ -1513,7 +1516,7 @@
   padding: 2px 2px 0;
 }
 
-.thread-rename-icon {
+.sidebar-name-dialog-icon {
   display: grid;
   width: 34px;
   height: 34px;
@@ -1523,7 +1526,7 @@
   color: var(--ink);
 }
 
-.thread-rename-title {
+.sidebar-name-dialog-title {
   min-width: 0;
   margin: 0;
   color: var(--ink);
@@ -1533,18 +1536,18 @@
   overflow-wrap: anywhere;
 }
 
-.thread-rename-field {
+.sidebar-name-dialog-field {
   display: grid;
   gap: 8px;
 }
 
-.thread-rename-label {
+.sidebar-name-dialog-label {
   color: var(--ink-tertiary);
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
 }
 
-.thread-rename-input {
+.sidebar-name-dialog-input {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
@@ -1560,16 +1563,16 @@
   padding: 0 12px;
 }
 
-.thread-rename-input::placeholder {
+.sidebar-name-dialog-input::placeholder {
   color: var(--env-search-input-placeholder);
 }
 
-.thread-rename-input:focus {
+.sidebar-name-dialog-input:focus {
   border-color: var(--ink-overlay-12);
   box-shadow: inset 0 0 0 1px var(--ink-overlay-12);
 }
 
-.thread-rename-actions {
+.sidebar-name-dialog-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -1577,7 +1580,7 @@
   padding-top: 2px;
 }
 
-.thread-rename-actions button {
+.sidebar-name-dialog-actions button {
   min-width: 72px;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -1591,24 +1594,24 @@
     transform 180ms var(--search-motion-easing);
 }
 
-.thread-rename-actions button:hover,
-.thread-rename-actions button:focus-visible {
+.sidebar-name-dialog-actions button:hover,
+.sidebar-name-dialog-actions button:focus-visible {
   outline: 0;
   background: var(--surface-2);
   transform: translate3d(0, -1px, 0);
 }
 
-.thread-rename-actions button[type="submit"] {
+.sidebar-name-dialog-actions button[type="submit"] {
   background: var(--ink);
   color: var(--paper);
 }
 
-.thread-rename-actions button[type="submit"]:hover,
-.thread-rename-actions button[type="submit"]:focus-visible {
+.sidebar-name-dialog-actions button[type="submit"]:hover,
+.sidebar-name-dialog-actions button[type="submit"]:focus-visible {
   background: var(--ink);
 }
 
-.thread-rename-actions button:disabled {
+.sidebar-name-dialog-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
   transform: none;
