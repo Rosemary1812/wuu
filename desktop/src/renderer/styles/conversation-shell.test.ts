@@ -58,6 +58,12 @@ describe("conversation shell message typography tokens", () => {
       /--conversation-process-font-weight:\s*var\(--conversation-message-font-weight\);/,
     );
     expect(body).toMatch(/--conversation-process-line-height:\s*20px;/);
+    expect(body).toMatch(/--conversation-user-rule-gap:\s*24px;/);
+    expect(body).toMatch(/--conversation-user-message-trailing-gap:\s*8px;/);
+    expect(body).toMatch(/--conversation-rule-process-gap:\s*18px;/);
+    expect(body).toMatch(/--conversation-process-detail-gap:\s*18px;/);
     expect(body).toMatch(/--conversation-process-answer-gap:\s*25px;/);
+    expect(body).toMatch(/--conversation-answer-action-gap:\s*8px;/);
+    expect(body).toMatch(/--conversation-answer-hover-action-gap:\s*6px;/);
   });
 });

@@ -26,6 +26,15 @@ function lastCssRuleBody(selector: string): string {
   return matches[matches.length - 1][1];
 }
 
+function cssRuleCount(selector: string): number {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return [
+    ...turnsCss.matchAll(
+      new RegExp(`(?:^|\\})\\s*${escapedSelector}\\s*\\{`, "g"),
+    ),
+  ].length;
+}
+
 describe("turns.css user message actions", () => {
   it("overlays action buttons above the bubble edge instead of reserving flow space", () => {
     const body = cssRuleBody(".user-message-actions");
@@ -102,6 +111,51 @@ describe("turns.css turn notice positioning", () => {
 });
 
 describe("turns.css message-flow typography", () => {
+  it("keeps the process fold selectors in one source-of-truth block", () => {
+    for (const selector of [
+      ".turn-process-title",
+      ".turn-process-meta",
+      ".turn-process-preview",
+      ".turn-process-entry",
+      ".turn-process-entry-commentary",
+    ]) {
+      expect(cssRuleCount(selector)).toBe(1);
+    }
+  });
+
+  it("names every message-flow spacing landmark with a dedicated token", () => {
+    expect(lastCssRuleBody(".turn > .assistant-turn-shell")).toMatch(
+      /margin-top:\s*calc\(\s*var\(--conversation-user-rule-gap\)\s*-\s*var\(--conversation-turn-gap\)\s*-\s*var\(--conversation-user-message-trailing-gap\)\s*\);/,
+    );
+    expect(lastCssRuleBody(".turn > .assistant-turn-shell")).toMatch(
+      /padding-top:\s*var\(--conversation-rule-process-gap\);/,
+    );
+    expect(lastCssRuleBody(".user-message-block")).toMatch(
+      /margin-bottom:\s*var\(--conversation-user-message-trailing-gap\);/,
+    );
+    expect(lastCssRuleBody(".turn-process-fold-body")).toMatch(
+      /padding:\s*var\(--conversation-process-detail-gap\)\s*0\s*0\s*0;/,
+    );
+    expect(lastCssRuleBody(".turn-process-fold-body-inner")).toMatch(
+      /gap:\s*var\(--conversation-process-detail-gap\);/,
+    );
+    expect(lastCssRuleBody(".assistant-turn-shell")).toMatch(
+      /gap:\s*var\(--conversation-process-answer-gap\);/,
+    );
+    expect(lastCssRuleBody(".agent-block-with-action-slot")).toMatch(
+      /gap:\s*var\(--conversation-answer-action-gap\);/,
+    );
+    expect(turnsCss).toMatch(
+      /\.agent-actions-overlay\s*>\s*\.agent-message-actions\s*\{[\s\S]*?padding-top:\s*var\(--conversation-answer-hover-action-gap\);/,
+    );
+  });
+
+  it("uses the activity rhythm when commentary introduces the next tool row", () => {
+    expect(turnsCss).toMatch(
+      /\.turn-process-entry-commentary\s*\+\s*\.turn-process-entry-activity,\s*\.turn-process-entry-commentary\s*\+\s*\.turn-process-entry-process_group\s*\{[\s\S]*?margin-top:\s*calc\(\s*var\(--conversation-activity-gap\)\s*-\s*var\(--conversation-process-detail-gap\)\s*\);/,
+    );
+  });
+
   it("uses the same process token for status headers, tool rows, and reasoning summaries", () => {
     for (const selector of [
       ".turn-process-title",

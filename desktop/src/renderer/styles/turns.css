@@ -21,15 +21,10 @@
   --turn-progress-sweep-highlight: #202724;
   --turn-progress-sweep-base: #7b8580;
   --turn-progress-failed-rule-bg: #f2d3cf;
-  --turn-process-group-color: #8f9498;
-  --turn-process-checkpoint-color: #5a6064;
   --turn-process-entry-color: #73787c;
-  --turn-process-entry-commentary-marker: #bcc3bc;
-  --turn-process-entry-activity-marker: #d4d7d1;
   --process-control-color-fallback: #A4A4A5;
   --activity-toggle-hover-color: #5f6569;
   --activity-toggle-hover-svg-color: #7b8084;
-  --turn-process-checkpoint-line-border: #e2e4df;
   --activity-toggle-hover-color-alt: #6a6f74;
   --activity-detail-color: #767b80;
   --activity-detail-error-border: #e89088;
@@ -193,10 +188,11 @@
                 
 .turn > .assistant-turn-shell {
   border-top: 1px solid var(--wuu-hairline);
-  /* Hairline → first content sits on the block step of the ladder so
-     the fold header keeps the same breathing room as sibling blocks. */
-  padding-top: 18px;
-  margin-top: 8px;
+  padding-top: var(--conversation-rule-process-gap);
+  margin-top: calc(
+    var(--conversation-user-rule-gap) - var(--conversation-turn-gap) -
+      var(--conversation-user-message-trailing-gap)
+  );
 }
 
 .assistant-turn-shell {
@@ -223,197 +219,6 @@
                                                                     
                                                                   
                                                                  
-.turn-process-fold {
-                                                                     
-                                                                     
-  min-width: 0;
-}
-
-.turn-process-fold > .turn-process-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-                                                                   
-                                                               
-                                             
-  padding: 0;
-  background: transparent;
-  border: 0;
-  color: var(--wuu-ink-soft);
-  cursor: pointer;
-  text-align: left;
-  list-style: none;
-  font-size: var(--conversation-process-font-size);
-  font-weight: var(--conversation-process-font-weight);
-  line-height: var(--conversation-process-line-height);
-}
-
-.turn-process-fold > .turn-process-toggle::-webkit-details-marker {
-  display: none;
-}
-
-.turn-process-fold.has-preview > .turn-process-toggle {
-  align-items: flex-start;
-}
-
-.turn-process-fold.no-details > .turn-process-toggle {
-  cursor: default;
-}
-
-.turn-process-toggle-static {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 0;
-  color: var(--wuu-ink-soft);
-  font-size: var(--conversation-process-font-size);
-  font-weight: var(--conversation-process-font-weight);
-  line-height: var(--conversation-process-line-height);
-}
-
-                                                                   
-                                                                 
-.turn-process-toggle:hover:not(.turn-process-toggle-static),
-.turn-process-toggle:focus-visible:not(.turn-process-toggle-static) {
-  text-decoration: underline;
-  text-decoration-color: var(--ink-overlay-18);
-  text-underline-offset: 3px;
-}
-
-.turn-process-toggle .turn-process-glyph {
-  flex: 0 0 auto;
-  color: var(--wuu-ink-soft);
-}
-
-.turn-process-header {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  flex: 1 1 auto;
-  min-width: 0;
-  flex-wrap: wrap;
-}
-
-.turn-process-title {
-  font-size: var(--conversation-process-font-size);
-  font-weight: var(--conversation-process-font-weight);
-                                                                
-                                                              
-  color: var(--wuu-ink-soft);
-}
-
-.turn-process-meta {
-  color: var(--wuu-ink-soft);
-  font-size: var(--conversation-process-font-size);
-  font-weight: var(--conversation-process-font-weight);
-  line-height: var(--conversation-process-line-height);
-}
-
-.turn-process-preview {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  max-width: 60%;
-  flex: 0 1 auto;
-  font-size: var(--conversation-process-font-size);
-  font-weight: var(--conversation-process-font-weight);
-  line-height: var(--conversation-process-line-height);
-  color: var(--wuu-ink-soft);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.turn-process-preview .turn-process-preview-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.turn-process-preview .turn-process-live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: currentColor;
-  animation: process-pulse 1.4s ease-in-out infinite;
-  flex: 0 0 auto;
-}
-
-                                                                      
-                                                                    
-                                                                   
-                                                                     
-                                                               
-                                                                 
-                                                                    
-                                               
-.turn-process-fold.expanded .turn-process-preview {
-  display: none;
-}
-
-.turn-process-fold-body {
-  /* Match --conversation-message-element-gap used by the inner flex
-     container so the first entry sits the same distance from the
-     toggle header as subsequent entries do from each other. */
-  padding: var(--conversation-message-element-gap, 20px) 0 0 0;
-}
-
-.turn-process-fold-body-inner {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: var(--conversation-message-element-gap, 20px);
-}
-
-/*
- * A narration line introduces the tool activity that follows it —
- * "先看一下配置" belongs to the reads underneath, not to the previous
- * beat. Pull that pair down to the activity rhythm (9px) while
- * activity → next narration keeps the full block gap, so the fold
- * reads as narrated work beats instead of an even list.
- */
-.turn-process-entry-commentary + .turn-process-entry-activity,
-.turn-process-entry-commentary + .turn-process-entry-process_group {
-  margin-top: calc(
-    var(--conversation-activity-gap) - var(--conversation-message-element-gap)
-  );
-}
-
-.turn-process-entry {
-  display: block;
-  min-width: 0;
-}
-
-.turn-process-entry-commentary {
-  color: var(--ink);
-  font-size: var(--conversation-message-font-size);
-  font-weight: var(--conversation-message-font-weight);
-  line-height: var(--conversation-reading-line-height);
-}
-
-.turn-process-entry-commentary .agent-text,
-.turn-process-entry-commentary .rich-content {
-  color: inherit;
-  font-size: inherit;
-  line-height: inherit;
-}
-
-.turn-process-entry-commentary .agent-block,
-.turn-process-entry-commentary .reasoning-block {
-  color: inherit;
-  font-size: inherit;
-  font-weight: inherit;
-  line-height: inherit;
-}
-
-                                                                     
-                                                                   
-                                                                 
-                                                                    
-                                                              
 .turn-answer-body {
   display: flex;
   flex-direction: column;
@@ -464,7 +269,7 @@
   gap: 8px;
   /* The question belongs to its answer — keep them close so the big
      break lands between turns, not inside one. */
-  margin-bottom: 8px;
+  margin-bottom: var(--conversation-user-message-trailing-gap);
   border-radius: var(--radius-lg);
                                                                         
                                                      
@@ -1479,7 +1284,7 @@
   position: absolute;
   top: 100%;
   left: 0;
-  padding-top: 6px;
+  padding-top: var(--conversation-answer-hover-action-gap);
 }
 
 .message-actions {
@@ -1854,14 +1659,8 @@
   background: var(--turn-progress-failed-rule-bg);
 }
 
-.turn-process-group {
-  display: block;
-  width: 100%;
+.turn-process-fold {
   min-width: 0;
-  color: var(--turn-process-group-color);
-  font-size: var(--conversation-process-font-size);
-  font-weight: var(--conversation-process-font-weight);
-  line-height: var(--conversation-process-line-height);
 }
 
 .turn-process-topline {
@@ -1902,29 +1701,9 @@
   outline: 0;
 }
 
-.turn-process-toggle-static {
-  cursor: default;
-}
-
-.turn-process-toggle-static:hover {
-  color: inherit;
-}
-
 .turn-process-toggle svg {
   flex: 0 0 auto;
   color: currentColor;
-}
-
-                                                                  
-                                                                
-                                                                  
-                                                              
-.turn-process-avatar {
-  display: none !important;
-}
-
-.turn-process-avatar-secondary {
-  display: none !important;
 }
 
 .turn-process-header {
@@ -2003,49 +1782,6 @@
   }
 }
 
-.turn-process-checkpoint {
-  display: block;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--turn-process-checkpoint-color);
-  font-size: var(--conversation-process-font-size);
-  font-weight: var(--conversation-process-font-weight);
-  line-height: var(--conversation-process-line-height);
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-
-.turn-process-checkpoint-spacer {
-  display: none;
-}
-
-.turn-process-checkpoint-line {
-  display: inline;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.turn-process-checkpoint-text {
-  color: inherit;
-}
-
-.turn-process-checkpoint-cursor {
-  display: inline-block;
-  width: 1px;
-  height: 1em;
-  margin-left: 1px;
-  vertical-align: text-bottom;
-  background: currentColor;
-  opacity: 0.6;
-  pointer-events: none;
-}
-
-.turn-process-checkpoint[data-live="false"] {
-                                                                          
-  color: var(--ink-muted);
-}
-
 .turn-process-meta {
   color: var(--ink-muted);
   font-size: var(--conversation-process-font-size);
@@ -2087,15 +1823,6 @@
                                                              
                                                                
                                                                 
-.turn-process-chevron {
-  display: none;
-}
-
-.turn-process-group.expanded .turn-process-chevron,
-.activity-group.expanded .activity-chevron {
-  display: none;
-}
-
 .collapsible-details {
   /* Drive the fold body height directly with height: 0 / auto.
      interpolate-size: allow-keywords lets the browser transition
@@ -2122,50 +1849,15 @@
   overflow: hidden;
 }
 
-.activity-details {
-  display: none;
+.turn-process-fold-body {
+  padding: var(--conversation-process-detail-gap) 0 0 0;
 }
 
-                                                                  
-                                                                    
-                                                                        
-                                                                       
-                                                                      
-                                                                     
-                                                                    
-                                                                      
-                                                                   
-                                     
-                      
-                
-                          
-             
-                                                        
-             
-                                                                                     
-                                                  
-                                                                            
-                                                      
- 
-
-                                            
-                          
-             
-                           
-    
-
-.turn-process-stack {
-  position: static;
-  display: block;
-  min-height: 0;
-  overflow: visible;
-  gap: 0;
-  margin-left: 0;
-  padding: 0;
-}
-
-.turn-process-stack::before {
-  display: none;
+.turn-process-fold-body-inner {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--conversation-process-detail-gap);
 }
 
 .turn-process-entry {
@@ -2178,10 +1870,6 @@
   line-height: var(--conversation-process-line-height);
 }
 
-.turn-process-entry::before {
-  display: none;
-}
-
 .turn-process-entry-commentary {
   color: var(--ink);
   font-size: var(--conversation-message-font-size);
@@ -2189,12 +1877,16 @@
   line-height: var(--conversation-reading-line-height);
 }
 
-.turn-process-entry-commentary::before {
-  background: var(--turn-process-entry-commentary-marker);
-}
-
-.turn-process-entry-activity::before {
-  background: var(--turn-process-entry-activity-marker);
+/*
+ * Commentary introduces the tool activity that follows it. Pull that
+ * pair down to the activity rhythm while activity -> next commentary
+ * keeps the full process-detail gap.
+ */
+.turn-process-entry-commentary + .turn-process-entry-activity,
+.turn-process-entry-commentary + .turn-process-entry-process_group {
+  margin-top: calc(
+    var(--conversation-activity-gap) - var(--conversation-process-detail-gap)
+  );
 }
 
 .turn-process-entry .agent-block,
@@ -2241,33 +1933,6 @@
 
 .turn-process-entry .activity-row svg {
   color: currentColor;
-}
-
-.turn-process-entry .activity-toggle:hover,
-.turn-process-entry .activity-toggle:focus-visible {
-  color: var(--activity-toggle-hover-color);
-  outline: 0;
-}
-
-.turn-process-entry .activity-toggle:hover svg,
-.turn-process-entry .activity-toggle:focus-visible svg {
-  color: var(--activity-toggle-hover-svg-color);
-}
-
-.turn-process-checkpoint-line {
-  min-width: 0;
-  border-left: 2px solid var(--turn-process-checkpoint-line-border);
-  color: var(--ink-tertiary);
-  font-size: var(--conversation-process-font-size);
-  font-weight: var(--conversation-process-font-weight);
-  line-height: var(--conversation-process-line-height);
-  padding: 1px 0 1px 10px;
-}
-
-.turn-process-checkpoint-line span {
-  display: block;
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 .activity-timeline {

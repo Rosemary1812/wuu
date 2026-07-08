@@ -96,13 +96,19 @@
   --wuu-ink-soft: var(--ink-tertiary);
   /*
    * Grouping rhythm: tight within a group, loose between groups.
-   * One spacing ladder, one value per meaning: 9px pulls consecutive
-   * tool-call rows together, 18px separates sibling blocks, 25px matches
-   * the measured Codex process-row -> commentary boundary.
+   * One spacing ladder, one value per meaning. These landmarks match
+   * the visible message flow from top to bottom: user query -> rule,
+   * rule -> process header, process header -> expanded tools, process
+   * header -> final answer, final answer -> action row.
    */
+  --conversation-user-rule-gap: 24px;
+  --conversation-user-message-trailing-gap: 8px;
+  --conversation-rule-process-gap: 18px;
   --conversation-process-gap: 18px;
+  --conversation-process-detail-gap: 18px;
   --conversation-process-answer-gap: 25px;
   --conversation-answer-action-gap: 8px;
+  --conversation-answer-hover-action-gap: 6px;
   --conversation-activity-gap: 9px;
   --conversation-scrollbar-gutter: 12px;
   --conversation-visible-inset-left: 0px;
