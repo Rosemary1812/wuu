@@ -99,7 +99,11 @@ export function ConversationSearchOverlay({
             >
               <X className="icon" />
             </button>
-          ) : null}
+          ) : (
+            <kbd className="conversation-search-shortcut-hint" aria-hidden="true">
+              ⌘P
+            </kbd>
+          )}
         </div>
         <div
           className={`conversation-search-status${state.loading ? " loading" : ""}`}

@@ -1141,6 +1141,22 @@
   transform: scale(0.96);
 }
 
+.conversation-search-shortcut-hint {
+  display: inline-grid;
+  place-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  background: var(--env-search-result-shortcut-bg);
+  color: var(--env-search-result-shortcut-text);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .conversation-search-status {
   display: flex;
   min-height: 34px;

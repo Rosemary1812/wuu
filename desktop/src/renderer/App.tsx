@@ -1285,6 +1285,30 @@ export function App(): JSX.Element {
     onSelectThread: (threadID) => void activateThread(threadID),
   });
 
+  // Cmd/Ctrl+P toggles the conversation search overlay. Mirrors the
+  // "Quick Open / Go to file" convention from VS Code, Sublime, and
+  // JetBrains — semantically "navigate to a thing by name" rather than
+  // Cmd+F's "find text in current view". preventDefault stops the
+  // browser's Print dialog. Works from anywhere in the app, including
+  // while typing in the chat composer.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === "p"
+      ) {
+        event.preventDefault();
+        toggleConversationSearch();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [toggleConversationSearch]);
+
   function openEnvironmentDialog(dialog: EnvironmentDialog): void {
     closeConversationSearch({ immediate: true });
     setPendingFork(undefined);
