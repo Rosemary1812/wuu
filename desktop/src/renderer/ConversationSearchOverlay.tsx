@@ -320,7 +320,7 @@ function ConversationSearchPreview({
           {hasTurns ? (
             <div className="conversation-search-preview-turns">
               {turnsForSelection.map((turn) => (
-                <PreviewTurn key={turn.id} turn={turn} query={query} />
+                <PreviewTurnGroup key={turn.id} turn={turn} query={query} />
               ))}
             </div>
           ) : null}
@@ -330,13 +330,54 @@ function ConversationSearchPreview({
   );
 }
 
-function PreviewTurn({ turn, query }: { turn: Turn; query: string }): JSX.Element {
-  const role = previewTurnRole(turn);
-  const text = previewTurnText(turn, role);
+// A turn in this codebase bundles the user's opening message with every
+// agent_message / reasoning / tool_call that followed it (see
+// turnsFromPersistedHistoryInScope in appserver/model.go). Rendering one
+// row per turn with a single role hides half the conversation: labelling
+// the row "助手" when the agent replied swallows the user's query, while
+// labelling it "你" hides the agent's final answer. Either way the right
+// pane shows a misleading timeline that drops every other user query.
+// Emit up to two rows per turn — a "你" row for the user_message and an
+// "助手" row for the agent_message — so both sides appear in the order
+// they actually happened.
+export function PreviewTurnGroup({ turn, query }: { turn: Turn; query: string }): JSX.Element {
+  const userText = pickUserText(turn);
+  const assistantText = pickAssistantText(turn);
+  return (
+    <>
+      {userText ? (
+        <PreviewRow
+          key={`${turn.id}:user`}
+          role="user"
+          text={userText}
+          query={query}
+        />
+      ) : null}
+      {assistantText ? (
+        <PreviewRow
+          key={`${turn.id}:assistant`}
+          role="assistant"
+          text={assistantText}
+          query={query}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function PreviewRow({
+  role,
+  text,
+  query,
+}: {
+  role: "user" | "assistant";
+  text: string;
+  query: string;
+}): JSX.Element {
   const oneLineText = oneLinePreviewText(text, query);
-  // Render role + final-text on a single row. `title` exposes the full
-  // untruncated text so users can still read longer turns via tooltip when
-  // the inline ellipsis hides the match context.
+  // `title` exposes the full untruncated text so users can still read
+  // longer rows via tooltip when the inline ellipsis hides the match
+  // context.
   return (
     <article
       className={`conversation-search-preview-turn role-${role}`}
@@ -346,81 +387,41 @@ function PreviewTurn({ turn, query }: { turn: Turn; query: string }): JSX.Elemen
       <span className="conversation-search-preview-role">
         {previewTurnRoleLabel(role)}
       </span>
-      <span className="conversation-search-preview-text">{oneLineText}</span>
+      <span className="conversation-search-preview-text">
+        {oneLineText}
+      </span>
     </article>
   );
 }
 
-function previewTurnRole(
-  turn: Turn,
-): "user" | "assistant" | "system" {
-  // In this codebase a "turn" is a full conversation round: a
-  // user_message opens it, then the agent's agent_message / reasoning /
-  // tool_calls all hang off the same Turn (see
-  // turnsFromPersistedHistoryInScope in appserver/model.go). When we
-  // return "user" for a turn that has both, the row echoes the user's
-  // query back and the agent's final answer never shows in the preview.
-  // Prefer "assistant" whenever the agent emitted anything; fall back
-  // to "user" for turns where the user is still waiting (or where the
-  // turn only carries tool_calls / errors).
-  let hasUser = false;
-  let hasAgent = false;
+// Last non-empty user_message text in the turn. Each user_message opens
+// its own row in the right pane, mirroring the live conversation surface
+// where every user query gets its own bubble.
+function pickUserText(turn: Turn): string {
+  let final = "";
   for (const item of turn.items) {
-    if (item.type === "user_message") {
-      hasUser = true;
-    } else if (item.type === "agent_message" || item.type === "reasoning") {
-      hasAgent = true;
-    }
+    if (item.type !== "user_message") continue;
+    const text = (item.text ?? "").trim();
+    if (text) final = text;
   }
-  if (hasAgent) return "assistant";
-  if (hasUser) return "user";
-  return "system";
+  return final;
 }
 
-function previewTurnRoleLabel(
-  role: "user" | "assistant" | "system",
-): string {
-  switch (role) {
-    case "user":
-      return "你";
-    case "assistant":
-      return "助手";
-    default:
-      return "系统";
-  }
-}
-
-// Returns the turn's user-visible text, the way the main chat surface reads
-// it. For user turns, the last non-empty user_message item.
-//
-// For assistant turns, prefer the last non-empty agent_message tagged
+// Last non-empty agent_message text in the turn, preferring items tagged
 // `phase: "final_answer"` — the same rule
 // TurnViewHelpers.explicitFinalAgentMessageItemID uses to identify the
 // rendered answer region in the live turn view. An assistant turn can
-// carry commentary + final_answer passes interleaved with tool calls, and
-// showing the commentary would mislead the search-preview pane. When no
-// final_answer item exists yet (streaming in progress, legacy items
-// without a phase), fall back to the last non-empty agent_message so the
-// preview still surfaces something readable.
+// carry commentary + final_answer passes interleaved with tool calls,
+// and showing the commentary would mislead the search-preview pane.
+// When no final_answer item exists yet (streaming in progress, legacy
+// items without a phase) fall back to the last non-empty agent_message
+// so the preview still surfaces something readable.
 //
 // Go-side `finalAgentMessageText` (appserver/resident_turn_failure.go)
 // intentionally does not filter by phase because the turn-failure path
 // only runs once the agent has stopped emitting; the preview can fire
 // mid-stream and benefits from a phase-aware fallback.
-function previewTurnText(
-  turn: Turn,
-  role: "user" | "assistant" | "system",
-): string {
-  if (role === "system") return "";
-  if (role === "user") {
-    let final = "";
-    for (const item of turn.items) {
-      if (item.type !== "user_message") continue;
-      const text = (item.text ?? "").trim();
-      if (text) final = text;
-    }
-    return final;
-  }
+function pickAssistantText(turn: Turn): string {
   let finalAnswer = "";
   let lastAgentMessage = "";
   for (const item of turn.items) {
@@ -431,6 +432,15 @@ function previewTurnText(
     if (item.phase === "final_answer") finalAnswer = text;
   }
   return finalAnswer || lastAgentMessage;
+}
+
+function previewTurnRoleLabel(role: "user" | "assistant"): string {
+  switch (role) {
+    case "user":
+      return "你";
+    case "assistant":
+      return "助手";
+  }
 }
 
 // Pick a single-line window of the turn text that keeps the query match
