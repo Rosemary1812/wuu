@@ -206,6 +206,8 @@ const api: WuuDesktopApi = {
       images,
       files,
     ),
+  taskEvents: (threadId: string, subthreadId: string) =>
+    ipcRenderer.invoke("wuu:thread-task-events", threadId, subthreadId),
   listThreads: (cwd?: string) => ipcRenderer.invoke("wuu:thread-list", cwd),
   searchThreads: (query: string, limit?: number) =>
     ipcRenderer.invoke("wuu:thread-search", query, limit),

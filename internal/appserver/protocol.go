@@ -49,6 +49,7 @@ const (
 	MethodThreadResolveSub         = "thread/resolveSub"
 	MethodThreadEscalateSub        = "thread/escalateSub"
 	MethodThreadBubbleSub          = "thread/bubbleSub"
+	MethodThreadTaskEvents         = "thread/taskEvents"
 	MethodThreadList               = "thread/list"
 	MethodThreadSearch             = "thread/search"
 	MethodThreadPin                = "thread/pin"
@@ -797,7 +798,36 @@ type ConversationSubthread struct {
 	// Status: planning/executing/blocked/needs_human/completed/failed. Empty
 	// when the subthread never entered execution (a plain reply).
 	ExecState string `json:"exec_state,omitempty"`
-	Turns     []Turn `json:"turns,omitempty"`
+	// Plan is the lead's declared work breakdown projected onto the wire so the
+	// Task panel can render the progress layer (plan §T11): one row per node with
+	// its derived display state and its two liveness timestamps. Empty for a
+	// plain (unplanned) reply or task.
+	Plan  []TaskPieceView `json:"plan,omitempty"`
+	Turns []Turn          `json:"turns,omitempty"`
+}
+
+// TaskPieceView is one plan node projected onto the wire for the Task panel
+// (plan §T11). It carries the node identity, its dependency edges, the raw
+// Status (pending/active/done/blocked/failed/retrying), the display State label
+// derived from that Status (deriveNodeState — done -> completed, etc.), the
+// retry budget/attempts counters, the most recent FailureReason (for the lead's
+// post-mortem), and the two liveness timestamps. The timestamps are surfaced
+// raw on purpose: the soft "stalled / slow" cue the panel shows is a
+// DISPLAY-ONLY relative judgement the frontend computes by comparing
+// LastActivityAt / LastProgressAt to each other and to now — never a backend
+// state, and never a fixed lease deadline (red line §4.7).
+type TaskPieceView struct {
+	ID             string    `json:"id"`
+	Title          string    `json:"title"`
+	Assignee       string    `json:"assignee,omitempty"`
+	DependsOn      []string  `json:"depends_on,omitempty"`
+	Status         string    `json:"status"`
+	State          string    `json:"state,omitempty"`
+	Attempts       int       `json:"attempts,omitempty"`
+	RetryBudget    int       `json:"retry_budget,omitempty"`
+	FailureReason  string    `json:"failure_reason,omitempty"`
+	LastActivityAt time.Time `json:"last_activity_at,omitzero"`
+	LastProgressAt time.Time `json:"last_progress_at,omitzero"`
 }
 
 type ThreadOpenSubParams struct {
@@ -879,6 +909,36 @@ type ThreadEscalateSubParams struct {
 
 type ThreadEscalateSubResult struct {
 	Subthread ConversationSubthread `json:"subthread"`
+}
+
+// ThreadTaskEventsParams reads the trace timeline of an escalated subthread
+// (plan §T11): the ordered task_events recorded while the task ran, so the
+// panel can render the "轨迹" timeline. subthread_id is the task cth id;
+// thread_id is its parent group thread, verified for ownership (like the other
+// subthread RPCs) before the read. Read-only.
+type ThreadTaskEventsParams struct {
+	ThreadID    string `json:"thread_id"`
+	SubthreadID string `json:"subthread_id"`
+}
+
+// TaskEventView is one trace event on the wire: the per-task monotonic Seq (the
+// stable timeline order), the plan node it belongs to (NodeID, empty for
+// task-level events), the event Kind (task_created / node_started /
+// node_progress / handoff_created / node_failed / ...), the Actor participant
+// id, a short human Summary, an optional structured Payload (handoff / error
+// JSON), and the wall-clock time.
+type TaskEventView struct {
+	Seq     int       `json:"seq"`
+	NodeID  string    `json:"node_id,omitempty"`
+	Kind    string    `json:"kind"`
+	Actor   string    `json:"actor,omitempty"`
+	Summary string    `json:"summary,omitempty"`
+	Payload string    `json:"payload,omitempty"`
+	At      time.Time `json:"at"`
+}
+
+type ThreadTaskEventsResult struct {
+	Events []TaskEventView `json:"events"`
 }
 
 // ThreadBubbleSubParams wraps a reply/task up: it bubbles a one-line conclusion

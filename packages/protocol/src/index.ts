@@ -978,7 +978,30 @@ export type ConversationSubthread = {
   // 执行轴(与审批轴 status 分离):planning / executing / blocked /
   // needs_human / completed / failed;空 = 尚未进入执行(普通 reply)。
   exec_state?: string;
+  // lead 声明的工作分解投到线上,供 Task 面板渲染进展层(plan §T11):一行一个节点,
+  // 带 Status 派生的展示态与两个 liveness 时间戳。普通(未编排)reply/task 为空。
+  plan?: TaskPieceView[];
   turns?: Turn[];
+};
+
+// TaskPieceView 是一个 plan 节点在线上的投影(plan §T11):节点身份、依赖边、原始
+// status(pending/active/done/blocked/failed/retrying)、由 status 派生的展示 state
+// 标签(done -> completed 等)、重试预算/尝试计数、最近失败原因,以及两个 liveness
+// 时间戳。时间戳原样下发:面板显示的「疑似失联 / 慢」是前端拿 last_activity_at /
+// last_progress_at 互比且比 now 得出的展示级相对判断——绝不是后端状态,也没有固定
+// 租约期限(红线 §4.7)。
+export type TaskPieceView = {
+  id: string;
+  title: string;
+  assignee?: string;
+  depends_on?: string[];
+  status: string;
+  state?: string;
+  attempts?: number;
+  retry_budget?: number;
+  failure_reason?: string;
+  last_activity_at?: string;
+  last_progress_at?: string;
 };
 
 export type ThreadOpenSubResult = {
@@ -1006,6 +1029,32 @@ export type ThreadResolveSubResult = {
 // messages carry no item/thread notification of their own).
 export type MessagePostSubthreadResult = {
   subthread: ConversationSubthread;
+};
+
+// thread/taskEvents params: read the trace timeline of an escalated subthread
+// (task) for the「轨迹」panel (plan §T11). subthread_id 是 task cth id;thread_id
+// 是它所属的父群线程,读之前按归属校验(同其它 subthread RPC)。只读。
+export type ThreadTaskEventsParams = {
+  thread_id: string;
+  subthread_id: string;
+};
+
+// TaskEventView 是线上一条 trace 事件:per-task 单调 seq(时间线顺序)、所属 plan
+// 节点(node_id,task 级事件为空)、事件 kind(task_created / node_started /
+// node_progress / handoff_created / node_failed / ...)、actor participant id、
+// 一句人读 summary、可选的结构化 payload(handoff / error JSON),以及墙钟时间。
+export type TaskEventView = {
+  seq: number;
+  node_id?: string;
+  kind: string;
+  actor?: string;
+  summary?: string;
+  payload?: string;
+  at: string;
+};
+
+export type ThreadTaskEventsResult = {
+  events: TaskEventView[];
 };
 
 // thread/subUpdated notification: pushed whenever a reply-subthread (cth) message
@@ -1740,6 +1789,12 @@ export type WuuDesktopApi = {
     images?: InputImage[],
     files?: InputFile[]
   ) => Promise<MessagePostSubthreadResult>;
+  // 读一个已升级 subthread(task)的 trace 时间线,供 Task 面板的「轨迹」懒加载
+  // (plan §T11)。只读。
+  taskEvents: (
+    threadId: string,
+    subthreadId: string
+  ) => Promise<ThreadTaskEventsResult>;
   listThreads: (cwd?: string) => Promise<{ threads: Thread[] }>;
   searchThreads: (query: string, limit?: number) => Promise<ThreadSearchResult>;
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;

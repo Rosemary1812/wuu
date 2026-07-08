@@ -241,6 +241,47 @@ func (s *Server) handleThreadBubbleSub(req Request) error {
 	return s.writeResponse(req.ID, ThreadBubbleSubResult{Subthread: view}, nil)
 }
 
+// handleThreadTaskEvents returns the trace timeline of an escalated subthread
+// (plan §T11): the ordered task_events recorded while the task ran, so the
+// panel can render the "轨迹" timeline. It is read-only. Like the other
+// subthread handlers it first confirms the subthread belongs to the named
+// parent thread (ownership check) before reading its trace, then maps the
+// events onto the wire in their per-task seq order.
+func (s *Server) handleThreadTaskEvents(req Request) error {
+	var params ThreadTaskEventsParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	threadID := strings.TrimSpace(params.ThreadID)
+	subthreadID := strings.TrimSpace(params.SubthreadID)
+	if threadID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
+	}
+	if subthreadID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("subthread_id is required"))
+	}
+	if _, err := s.findConversationSubthread(threadID, subthreadID, ""); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	events, err := session.TaskEvents(s.rt.SessionDir, subthreadID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	views := make([]TaskEventView, 0, len(events))
+	for _, ev := range events {
+		views = append(views, TaskEventView{
+			Seq:     ev.Seq,
+			NodeID:  ev.NodeID,
+			Kind:    ev.Kind,
+			Actor:   ev.Actor,
+			Summary: ev.Summary,
+			Payload: ev.Payload,
+			At:      ev.At,
+		})
+	}
+	return s.writeResponse(req.ID, ThreadTaskEventsResult{Events: views}, nil)
+}
+
 // handleMessagePostSubthread posts a human-authored message into a reply
 // subthread (群中群). The message folds into the cth via publishParticipantMessage's
 // thread_id-tagged short-circuit: stored in the parent group's history tagged
@@ -523,6 +564,27 @@ func conversationSubthreadViewFromRecords(threadID string, thread session.Conver
 	view.LeadParticipantID = thread.LeadParticipantID
 	view.OwnerParticipantID = thread.OwnerParticipantID
 	view.ExecState = thread.ExecState
+	// Project the plan onto the wire so the Task panel can render the progress
+	// layer (plan §T11): one row per node with its Status-derived display State
+	// and its two liveness timestamps. deriveNodeState is the same
+	// status->label mapping the tool surface uses, so the panel and the agent
+	// see the same node vocabulary. The timestamps ride raw: the "stalled/slow"
+	// cue is a display-only relative judgement the frontend makes (§4.7).
+	for _, p := range thread.Plan {
+		view.Plan = append(view.Plan, TaskPieceView{
+			ID:             p.ID,
+			Title:          p.Title,
+			Assignee:       p.Assignee,
+			DependsOn:      p.DependsOn,
+			Status:         p.Status,
+			State:          deriveNodeState(p.Status),
+			Attempts:       p.Attempts,
+			RetryBudget:    p.RetryBudget,
+			FailureReason:  p.FailureReason,
+			LastActivityAt: p.LastActivityAt,
+			LastProgressAt: p.LastProgressAt,
+		})
+	}
 	// A reply that has been escalated to a task carries a task_card: running
 	// while it executes (status task), completed once it wraps up (status
 	// resolved). A never-escalated reply leaves Task nil. EscalatedAt survives

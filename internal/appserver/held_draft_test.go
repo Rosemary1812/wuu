@@ -164,6 +164,124 @@ func TestHeldDraftCthAndMainStreamScopesAreIsolated(t *testing.T) {
 	}
 }
 
+// §6.1 (full-scenario checklist): three named agents answer the SAME user
+// question concurrently, each against the question as its basis. One lands
+// first; the other two, whose basis is now stale (the room moved when the first
+// answer published), are HELD — exactly the wake-gating + basis/rebase contract
+// that turns a parallel burst into "one lands, the rest revise or fall silent".
+// A held agent then rebases (consumes the landed answer, re-bases its cursor)
+// and its next post publishes cleanly — the natural convergence.
+func TestHeldDraftThreePartyConcurrentAnswersHoldStaleBases(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
+	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	cyd := saveNamedParticipant(t, rt, "Cyd", "reviewer", "")
+	groupID := startNamedGroupThreadForTest(t, srv, "trio").ID
+	for _, id := range []string{ada, bea, cyd} {
+		if err := session.AddThreadMember(rt.SessionDir, groupID, id); err != nil {
+			t.Fatalf("AddThreadMember: %v", err)
+		}
+	}
+
+	// The user asks. All three agents read it — this seq is the shared basis they
+	// each generate their answer against (the "concurrent" moment: nobody has
+	// posted yet, everyone is composing off the same question).
+	question, err := session.AppendHistoryRecordReturningSeq(rt.SessionDir, groupID, session.HistoryRecord{
+		Role: "user", Content: "选方案甲还是方案乙?", At: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("seed question: %v", err)
+	}
+	for _, id := range []string{ada, bea, cyd} {
+		if err := session.MarkMessageSeen(rt.SessionDir, groupID, question, id, session.SeenStatusCompleted, "", time.Now().UTC()); err != nil {
+			t.Fatalf("mark %s seen: %v", id, err)
+		}
+	}
+
+	speech := func(pid string) tools.ParticipantSpeech {
+		return srv.residentParticipantSpeechForTurn(pid, nil, map[string]bool{groupID: true})
+	}
+	tailSeq := func() int {
+		recs, err := session.ChatMessagesSince(rt.SessionDir, groupID, 0)
+		if err != nil {
+			t.Fatalf("ChatMessagesSince: %v", err)
+		}
+		max := 0
+		for _, r := range recs {
+			if r.Seq > max {
+				max = r.Seq
+			}
+		}
+		return max
+	}
+
+	// Ada answers first, against the question. Nothing landed after her basis, so
+	// she publishes and takes the floor.
+	adaPost, err := speech(ada).PostMessage(context.Background(), "result", "我选方案甲:本地优先。", groupID, question, false)
+	if err != nil {
+		t.Fatalf("Ada PostMessage: %v", err)
+	}
+	if adaPost.Held {
+		t.Fatalf("the first answer must publish, not hold: %+v", adaPost)
+	}
+	adaLanded := tailSeq()
+	if adaLanded <= question {
+		t.Fatalf("Ada's answer should have landed past the question (%d), tail=%d", question, adaLanded)
+	}
+
+	// Bea and Cyd were composing against the SAME question basis. Ada landed
+	// first, so the room moved past their basis — both are held, and the held
+	// note names what arrived (Ada's answer).
+	beaHeld, err := speech(bea).PostMessage(context.Background(), "result", "我选方案乙:协作强。", groupID, question, false)
+	if err != nil {
+		t.Fatalf("Bea PostMessage: %v", err)
+	}
+	if !beaHeld.Held {
+		t.Fatalf("Bea's stale-basis answer must be held after Ada landed: %+v", beaHeld)
+	}
+	if !strings.Contains(beaHeld.HeldNote, "Ada") {
+		t.Fatalf("Bea's held note should name what arrived (Ada), got %q", beaHeld.HeldNote)
+	}
+	cydHeld, err := speech(cyd).PostMessage(context.Background(), "result", "两个都行,看团队。", groupID, question, false)
+	if err != nil {
+		t.Fatalf("Cyd PostMessage: %v", err)
+	}
+	if !cydHeld.Held {
+		t.Fatalf("Cyd's stale-basis answer must be held after Ada landed: %+v", cydHeld)
+	}
+	if !strings.Contains(cydHeld.HeldNote, "Ada") {
+		t.Fatalf("Cyd's held note should name what arrived (Ada), got %q", cydHeld.HeldNote)
+	}
+
+	// Only Ada's answer is on the stream — the two held drafts never published.
+	visible, err := session.ChatMessagesSince(rt.SessionDir, groupID, question)
+	if err != nil {
+		t.Fatalf("ChatMessagesSince(question): %v", err)
+	}
+	if len(visible) != 1 || visible[0].ParticipantID != ada {
+		t.Fatalf("only Ada's answer should be on the stream after the burst, got %d records: %+v", len(visible), visible)
+	}
+
+	// Bea rebases: she consumes Ada's landed answer (advances her read cursor)
+	// and re-posts a genuinely different angle against the new basis. Nothing
+	// arrived after Ada's answer, so the rebase publishes cleanly.
+	if err := session.MarkMessageSeen(rt.SessionDir, groupID, adaLanded, bea, session.SeenStatusCompleted, "", time.Now().UTC()); err != nil {
+		t.Fatalf("Bea rebase mark seen: %v", err)
+	}
+	rebased, err := speech(bea).PostMessage(context.Background(), "result", "补 Ada:要多人协作再看方案乙。", groupID, adaLanded, false)
+	if err != nil {
+		t.Fatalf("Bea rebased PostMessage: %v", err)
+	}
+	if rebased.Held {
+		t.Fatalf("a rebased post against the current tail must publish, not hold: %+v", rebased)
+	}
+	if rebased.ThreadID != groupID || rebased.Text == "" {
+		t.Fatalf("Bea's rebased post did not publish correctly: %+v", rebased)
+	}
+}
+
 func TestHeldDraftDoesNotHoldAFreshPost(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
 	srv := New(rt, &lockedBuffer{})

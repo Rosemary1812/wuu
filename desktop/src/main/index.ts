@@ -67,6 +67,7 @@ import type {
   MessagePostSubthreadResult,
   ThreadOpenSubResult,
   ThreadResolveSubResult,
+  ThreadTaskEventsResult,
   ThreadStartParams,
   Turn,
   PopOutInitResult,
@@ -1098,6 +1099,14 @@ app.whenReady().then(async () => {
         subthread_id: subthreadId,
         summary,
         participant_id: options?.participantId ?? "",
+      }),
+  );
+  ipcMain.handle(
+    "wuu:thread-task-events",
+    (event, threadId: string, subthreadId: string) =>
+      appServerRequest<ThreadTaskEventsResult>(event, "thread/taskEvents", {
+        thread_id: threadId,
+        subthread_id: subthreadId,
       }),
   );
   ipcMain.handle("wuu:thread-list", (event, cwd?: string) =>

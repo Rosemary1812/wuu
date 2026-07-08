@@ -1,10 +1,12 @@
 import {
   type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
   useRef,
   useState,
 } from "react";
 import {
   CheckCircle2,
+  ChevronDown,
   Circle,
   CircleCheckBig,
   ListChecks,
@@ -15,6 +17,8 @@ import {
 import type {
   ConversationSubthread,
   ParticipantSummary,
+  TaskEventView,
+  TaskPieceView,
   ThreadItem,
 } from "../shared/protocol";
 import { ChatThreadViewContainer } from "./ChatThreadViewContainer";
@@ -42,7 +46,121 @@ import { SelectMenu } from "./SelectMenu";
  * offers a human-click "完成 Task" gate: the human writes a one-line conclusion
  * that bubbles back to the main stream (全员可见) and resolves the cth, flipping
  * its main-stream task 活动卡 to a result 摘要卡.
+ *
+ * Once escalated it also renders the PROGRESS LAYER (plan §T11): a compact node
+ * board (one row per plan piece with its assignee, a Status-derived state badge,
+ * and a relative activity/progress hint) plus a collapsible "轨迹" timeline that
+ * lazy-loads the task's trace on expand. The "疑似失联 / 进展慢" cue on a node is
+ * a DISPLAY-ONLY relative judgement computed here in the renderer — never a
+ * backend state and never a fixed lease (§4.7).
  */
+
+// Compact relative-time label ("刚刚" / "N秒前" / "N分钟前" / "N小时前" / "N天前")
+// for the node board's activity/progress hints and the trace timeline.
+function relativeTimeShort(iso: string | undefined, nowMs = Date.now()): string {
+  if (!iso) {
+    return "";
+  }
+  const atMs = Date.parse(iso);
+  if (Number.isNaN(atMs)) {
+    return "";
+  }
+  const elapsed = Math.max(0, nowMs - atMs);
+  if (elapsed < 10_000) {
+    return "刚刚";
+  }
+  if (elapsed < 60_000) {
+    return `${Math.floor(elapsed / 1000)}秒前`;
+  }
+  if (elapsed < 60 * 60_000) {
+    return `${Math.floor(elapsed / 60_000)}分钟前`;
+  }
+  if (elapsed < 24 * 60 * 60_000) {
+    return `${Math.floor(elapsed / (60 * 60_000))}小时前`;
+  }
+  return `${Math.floor(elapsed / (24 * 60 * 60_000))}天前`;
+}
+
+// The node state badge label + CSS modifier, keyed on the backend-derived
+// display state (piece.state; falls back to the raw status). done -> completed
+// upstream, so the panel never depends on the internal status vocabulary.
+const NODE_STATE_META: Record<string, { label: string; cls: string }> = {
+  completed: { label: "完成", cls: "done" },
+  done: { label: "完成", cls: "done" },
+  active: { label: "进行中", cls: "active" },
+  pending: { label: "待命", cls: "pending" },
+  blocked: { label: "阻塞", cls: "blocked" },
+  failed: { label: "失败", cls: "failed" },
+  retrying: { label: "重试中", cls: "retrying" },
+};
+
+function nodeStateMeta(
+  state: string | undefined,
+  status: string | undefined,
+): { label: string; cls: string } {
+  const key = (state || status || "").trim();
+  return NODE_STATE_META[key] ?? { label: key || "未知", cls: "pending" };
+}
+
+// A DISPLAY-ONLY, relative liveness cue (plan §T9 / red line §4.7): computed
+// here in the renderer by comparing the node's two liveness timestamps to each
+// other and to now. It is NEVER a backend state and NEVER a fixed lease — only
+// a soft hint for a node that is currently running (active / retrying). No
+// observable action for a relatively long stretch reads as 疑似失联; activity
+// that keeps landing while progress lags well behind reads as 进展慢.
+function softLivenessCue(
+  piece: TaskPieceView,
+  nowMs = Date.now(),
+): string | undefined {
+  const state = (piece.state || piece.status || "").trim();
+  if (state !== "active" && state !== "retrying") {
+    return undefined;
+  }
+  const activityMs = piece.last_activity_at
+    ? Date.parse(piece.last_activity_at)
+    : NaN;
+  if (Number.isNaN(activityMs)) {
+    return undefined;
+  }
+  const sinceActivity = Math.max(0, nowMs - activityMs);
+  if (sinceActivity > 120_000) {
+    return "疑似失联";
+  }
+  const progressMs = piece.last_progress_at
+    ? Date.parse(piece.last_progress_at)
+    : NaN;
+  const sinceProgress = Number.isNaN(progressMs)
+    ? Number.POSITIVE_INFINITY
+    : Math.max(0, nowMs - progressMs);
+  if (sinceProgress > 60_000 && sinceProgress > sinceActivity * 3) {
+    return "进展慢";
+  }
+  return undefined;
+}
+
+// Short human labels for the trace event kinds shown in the "轨迹" timeline. An
+// unknown kind falls through to its raw name (forward-compatible).
+const TRACE_KIND_LABEL: Record<string, string> = {
+  task_created: "任务创建",
+  workflow_planned: "编排计划",
+  node_started: "节点开始",
+  commentary: "说明",
+  tool_call: "工具调用",
+  tool_result: "工具结果",
+  node_progress: "进展",
+  handoff_created: "交接",
+  node_succeeded: "节点完成",
+  node_failed: "节点失败",
+  retrying: "重试",
+  blocked: "阻塞",
+  lead_invoked: "唤醒 lead",
+  task_completed: "任务完成",
+};
+
+function traceKindLabel(kind: string): string {
+  return TRACE_KIND_LABEL[kind] ?? kind;
+}
+
 export function ConversationSubthreadPanel({
   threadID,
   subthread,
@@ -110,6 +228,52 @@ export function ConversationSubthreadPanel({
   const candidates = leadCandidates ?? [];
   const [escalating, setEscalating] = useState(false);
   const [selectedLeadID, setSelectedLeadID] = useState("");
+  // The progress layer (plan §T11): the plan node board is prop-driven (from
+  // subthread.plan), but the "轨迹" trace timeline is lazy — it fetches the
+  // task's events only when the human expands it, and resets whenever the panel
+  // switches to a different subthread.
+  const plan = subthread?.plan ?? [];
+  const [traceOpen, setTraceOpen] = useState(false);
+  const [traceEvents, setTraceEvents] = useState<TaskEventView[] | undefined>(
+    undefined,
+  );
+  const [traceLoading, setTraceLoading] = useState(false);
+  const [traceError, setTraceError] = useState<string | undefined>(undefined);
+  const subthreadID = subthread?.id;
+  useEffect(() => {
+    setTraceOpen(false);
+    setTraceEvents(undefined);
+    setTraceLoading(false);
+    setTraceError(undefined);
+  }, [subthreadID]);
+
+  // Toggle the trace timeline; fetch once, on first expand, via the taskEvents
+  // RPC (window.wuu). Null-safe: a missing api (e.g. a pop-out shell that never
+  // wired it) just leaves the timeline empty rather than throwing.
+  async function loadTrace(): Promise<void> {
+    const next = !traceOpen;
+    setTraceOpen(next);
+    if (!next || traceEvents !== undefined || traceLoading || !subthread) {
+      return;
+    }
+    const api = window.wuu?.taskEvents;
+    if (typeof api !== "function") {
+      setTraceEvents([]);
+      return;
+    }
+    setTraceLoading(true);
+    setTraceError(undefined);
+    try {
+      const parentID = threadID ?? subthread.thread_id ?? subthread.id;
+      const result = await api(parentID, subthread.id);
+      setTraceEvents(result?.events ?? []);
+    } catch (err) {
+      setTraceError(err instanceof Error ? err.message : String(err));
+      setTraceEvents([]);
+    } finally {
+      setTraceLoading(false);
+    }
+  }
 
   // The header escalate gate: with named candidates it opens the inline lead
   // picker (pre-selecting the first member so 人升级 always has a valid pick);
@@ -286,6 +450,113 @@ export function ConversationSubthreadPanel({
               冒泡并完成
             </button>
           </div>
+        ) : null}
+        {subthread && alreadyTask && plan.length > 0 ? (
+          <section className="conversation-subthread-board" aria-label="Task 进展">
+            {plan.map((piece) => {
+              const meta = nodeStateMeta(piece.state, piece.status);
+              const cue = softLivenessCue(piece);
+              const progressHint = piece.last_progress_at
+                ? `进展 ${relativeTimeShort(piece.last_progress_at)}`
+                : piece.last_activity_at
+                  ? `活动 ${relativeTimeShort(piece.last_activity_at)}`
+                  : "";
+              const assigneeName = piece.assignee
+                ? resolveParticipantName
+                  ? resolveParticipantName(piece.assignee)
+                  : piece.assignee
+                : "";
+              return (
+                <div className="conversation-subthread-node" key={piece.id}>
+                  <div className="conversation-subthread-node-head">
+                    <span className="conversation-subthread-node-title">
+                      {piece.title || piece.id}
+                    </span>
+                    <span
+                      className={`conversation-subthread-node-state is-${meta.cls}`}
+                    >
+                      {meta.label}
+                    </span>
+                  </div>
+                  {assigneeName || progressHint || cue ? (
+                    <div className="conversation-subthread-node-meta">
+                      {assigneeName ? (
+                        <span className="conversation-subthread-node-assignee">
+                          {assigneeName}
+                        </span>
+                      ) : null}
+                      {progressHint ? (
+                        <span className="conversation-subthread-node-time">
+                          {progressHint}
+                        </span>
+                      ) : null}
+                      {cue ? (
+                        <span className="conversation-subthread-node-cue">
+                          {cue}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </section>
+        ) : null}
+        {subthread && alreadyTask ? (
+          <section className="conversation-subthread-trace">
+            <button
+              type="button"
+              className="conversation-subthread-trace-toggle"
+              aria-expanded={traceOpen}
+              onClick={() => {
+                void loadTrace();
+              }}
+            >
+              <ChevronDown
+                aria-hidden="true"
+                className={traceOpen ? "is-open" : undefined}
+              />
+              轨迹
+            </button>
+            {traceOpen ? (
+              <div className="conversation-subthread-trace-body">
+                {traceLoading ? (
+                  <div className="conversation-subthread-trace-state">
+                    加载轨迹…
+                  </div>
+                ) : traceError ? (
+                  <div className="conversation-subthread-trace-state error">
+                    {traceError}
+                  </div>
+                ) : (traceEvents?.length ?? 0) === 0 ? (
+                  <div className="conversation-subthread-trace-state">
+                    暂无轨迹
+                  </div>
+                ) : (
+                  <ol className="conversation-subthread-trace-list">
+                    {traceEvents!.map((ev) => (
+                      <li
+                        className="conversation-subthread-trace-item"
+                        key={ev.seq}
+                      >
+                        <span className="conversation-subthread-trace-kind">
+                          {traceKindLabel(ev.kind)}
+                        </span>
+                        {ev.summary ? (
+                          <span className="conversation-subthread-trace-summary">
+                            {ev.summary}
+                          </span>
+                        ) : null}
+                        <span className="conversation-subthread-trace-time">
+                          {relativeTimeShort(ev.at)}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            ) : null}
+          </section>
         ) : null}
         {loading ? (
           <div className="conversation-subthread-state" role="status">
