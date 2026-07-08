@@ -421,7 +421,7 @@ func TestLiveNoteAppDebate(t *testing.T) {
 		{name: "Carl", role: "重上手成本与长期维护、怕折腾的实用主义者"},
 	})
 
-	liveGroupUserTurn(t, srv, groupID, "我打算下载一个笔记软件,你们觉得 Notion 和 Obsidian 谁更好一点?")
+	liveGroupUserTurn(t, srv, groupID, "我打算下载一个笔记软件,你们觉得云端协作型的和本地纯文本型的,谁更适合我一点?")
 	waitForLiveQuiesce(t, srv, rt, groupID, names, 30*time.Minute, 15*time.Second)
 	dumpLiveTranscript(t, rt, groupID, names)
 
