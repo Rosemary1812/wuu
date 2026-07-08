@@ -60,6 +60,7 @@ import { PinnedThreadList, ProjectGroup } from "./ThreadSidebar";
 import { baseThreadTitle } from "./ThreadTitles";
 import { SidebarSection, SidebarSectionDragHandleContext } from "./SidebarSection";
 import { ThreadContextMenu } from "./ThreadContextMenu";
+import { SidebarNameDialog } from "./SidebarNameDialog";
 
 /**
  * Stable section identity keys for the new sidebar tree.
@@ -445,11 +446,13 @@ export function AppSidebar({
   const participantTemplateInputRef = useRef<HTMLInputElement>(null);
   const rosterMenuRef = useRef<HTMLDivElement>(null);
   const [rosterMenuOpen, setRosterMenuOpen] = useState(false);
-  // Inline creator for the 群聊 section: the + button reveals a name
-  // input that submits on Enter and cancels on Escape. Uncontrolled
-  // (ref-read on submit) — the value only matters at commit time.
+  // Floating create-group dialog for the 群聊 section: the + button opens a
+  // shared overlay (same shell as the rename-conversation dialog) that
+  // submits on Enter and dismisses on Escape / overlay click. Controlled
+  // title state keeps the input value available to both the form and the
+  // commit handler.
   const [creatingGroupThread, setCreatingGroupThread] = useState(false);
-  const groupNameInputRef = useRef<HTMLInputElement>(null);
+  const [groupNameDraft, setGroupNameDraft] = useState("");
   // Right-click menu on an individual agent row. The menu hosts the
   // profile-editing entry plus a pin/unpin DM affordance that drives off
   // the latest DM thread for that participant. The roster header's own
@@ -732,14 +735,6 @@ export function AppSidebar({
                 ...thread,
                 title: `#${baseThreadTitle(thread, groupThreads)}`,
               }));
-              const commitGroupName = (): void => {
-                const title = groupNameInputRef.current?.value.trim() ?? "";
-                if (title === "") {
-                  return;
-                }
-                setCreatingGroupThread(false);
-                onCreateGroupThread?.(title);
-              };
               const groupActions = (
                 <div className="sidebar-section-actions group-thread-actions">
                   <button
@@ -748,7 +743,10 @@ export function AppSidebar({
                     aria-label="新建群聊"
                     title="新建群聊"
                     disabled={!state.initialized}
-                    onClick={() => setCreatingGroupThread(true)}
+                    onClick={() => {
+                      setGroupNameDraft("");
+                      setCreatingGroupThread(true);
+                    }}
                   >
                     <Plus aria-hidden="true" />
                   </button>
@@ -782,46 +780,20 @@ export function AppSidebar({
                     actions={groupActions}
                     emptyNote="还没有群聊"
                   >
-                    {creatingGroupThread || groupRows.length > 0 ? (
-                      <>
-                        {creatingGroupThread ? (
-                          <div className="group-thread-name-editor">
-                            <input
-                              ref={groupNameInputRef}
-                              className="group-thread-name-input"
-                              type="text"
-                              placeholder="群聊名称"
-                              aria-label="群聊名称"
-                              autoFocus
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") {
-                                  event.preventDefault();
-                                  commitGroupName();
-                                } else if (event.key === "Escape") {
-                                  event.preventDefault();
-                                  setCreatingGroupThread(false);
-                                }
-                              }}
-                              onBlur={() => setCreatingGroupThread(false)}
-                            />
-                          </div>
-                        ) : null}
-                        {groupRows.length > 0 ? (
-                          <PinnedThreadList
-                            threads={groupRows}
-                            activeID={activeThreadID}
-                            pendingThreadID={pendingThreadID}
-                            archiveConfirmThreadID={archiveConfirmThreadID}
-                            lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
-                            onSelect={onSelectThread}
-                            onTogglePinned={onTogglePinned}
-                            onArchive={onArchiveThread}
-                            onDelete={onDeleteThread}
-                            onRename={onRenameThread}
-                            onClearArchiveConfirm={onClearArchiveConfirm}
-                          />
-                        ) : null}
-                      </>
+                    {groupRows.length > 0 ? (
+                      <PinnedThreadList
+                        threads={groupRows}
+                        activeID={activeThreadID}
+                        pendingThreadID={pendingThreadID}
+                        archiveConfirmThreadID={archiveConfirmThreadID}
+                        lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
+                        onSelect={onSelectThread}
+                        onTogglePinned={onTogglePinned}
+                        onArchive={onArchiveThread}
+                        onDelete={onDeleteThread}
+                        onRename={onRenameThread}
+                        onClearArchiveConfirm={onClearArchiveConfirm}
+                      />
                     ) : null}
                   </SidebarSection>
                 </SortableSection>
@@ -1174,6 +1146,32 @@ export function AppSidebar({
           </button>
         </div>
       </div>
+      <SidebarNameDialog
+        open={creatingGroupThread}
+        title={groupNameDraft}
+        onTitleChange={setGroupNameDraft}
+        onSubmit={() => {
+          const nextTitle = groupNameDraft.trim();
+          if (nextTitle === "") {
+            return;
+          }
+          setCreatingGroupThread(false);
+          setGroupNameDraft("");
+          onCreateGroupThread?.(nextTitle);
+        }}
+        onClose={() => {
+          setCreatingGroupThread(false);
+          setGroupNameDraft("");
+        }}
+        dialogTitle="新建群聊"
+        dialogTitleId="group-thread-create-title"
+        fieldLabel="群聊名称"
+        fieldAriaLabel="群聊名称"
+        placeholder="群聊名称"
+        icon={Hash}
+        submitLabel="创建"
+        cancelLabel="取消"
+      />
     </aside>
   );
 }

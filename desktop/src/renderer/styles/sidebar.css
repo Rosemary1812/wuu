@@ -1642,25 +1642,6 @@
     0 9px 24px var(--ink-overlay-12);
 }
 
-/* 群聊 section (sidebar-groups-andy-workspaces.md §2). The inline name
-   editor appears from the header's 新建群聊 button and commits on Enter /
-   cancels on Escape. */
-.group-thread-name-editor {
-  padding: var(--sidebar-list-pad-y) var(--sidebar-row-pad-x);
-}
-
-.group-thread-name-input {
-  width: 100%;
-  border: 1px solid var(--ink-overlay-12);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: 13px;
-  padding: 4px 8px;
-}
-
-.group-thread-name-input:focus {
-  outline: none;
-  border-color: var(--ink-overlay-18);
-}
+/* 群聊 section (sidebar-groups-andy-workspaces.md §2). The create dialog
+   reuses the shared .sidebar-name-dialog shell — its styles live next to
+   .thread-rename-overlay / .thread-rename-dialog in environment.css. */

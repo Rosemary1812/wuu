@@ -27,6 +27,18 @@ const participantsCSS = readFileSync(
   "utf8",
 );
 
+// Drives React's controlled onChange handler: setting `input.value` directly
+// is a no-op for the component state, so the dialog's submit button stays
+// disabled. Mirrors the changeInput helper in ThreadSidebar.test.tsx.
+function setControlledInputValue(input: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -1141,11 +1153,11 @@ describe("sidebar section spacing rhythm", () => {
     expect(participantsCSS).toMatch(
       /\.participant-roster-list \{[^}]*gap: var\(--sidebar-row-gap\)/,
     );
-    // The 群聊 inline name editor indents with the shared row padding,
-    // not a hardcoded pixel value.
-    expect(sidebarCSS).toMatch(
-      /\.group-thread-name-editor \{[^}]*var\(--sidebar-row-pad-x\)/,
-    );
+    // The .sidebar-name-dialog-overlay selector lives in environment.css
+    // alongside the rename-dialog shell — already asserted by
+    // ThreadSidebar.test.tsx "centers the rename dialog while reusing the
+    // search overlay shell". No standalone rule needs to ship from
+    // sidebar.css.
   });
 
   it("pinned list shares the .thread-list rhythm (row-gap + list-pad tokens)", () => {
@@ -1348,7 +1360,7 @@ describe("group chat section", () => {
     );
   });
 
-  it("reveals an inline name input from the 新建群聊 button and submits on Enter", () => {
+  it("opens the 新建群聊 floating dialog and submits on Enter", () => {
     const created: string[] = [];
     renderSidebar({
       sectionOrder: order,
@@ -1358,29 +1370,43 @@ describe("group chat section", () => {
       'button[aria-label="新建群聊"]',
     );
     expect(addButton).not.toBeNull();
-    expect(groupSection()?.querySelector(".group-thread-name-input")).toBeNull();
+    // The + button no longer renders an inline input next to itself; it
+    // opens the shared floating sidebar-name-dialog via portal.
+    expect(groupSection()?.querySelector(".sidebar-name-dialog")).toBeNull();
+    expect(document.body.querySelector(".sidebar-name-dialog")).toBeNull();
     act(() => {
       addButton?.click();
     });
-    const input = groupSection()?.querySelector<HTMLInputElement>(
-      ".group-thread-name-input",
+    const dialog = document.body.querySelector(".sidebar-name-dialog");
+    expect(dialog).not.toBeNull();
+    expect(dialog?.querySelector(".sidebar-name-dialog-title")?.textContent).toBe(
+      "新建群聊",
+    );
+    const input = dialog?.querySelector<HTMLInputElement>(
+      ".sidebar-name-dialog-input",
     );
     expect(input).not.toBeNull();
     expect(input?.getAttribute("placeholder")).toBe("群聊名称");
+    expect(input?.getAttribute("aria-label")).toBe("群聊名称");
     if (input) {
-      input.value = "  发布协调  ";
+      setControlledInputValue(input, "  发布协调  ");
     }
+    // The shared dialog's submit button is enabled once the controlled
+    // title is non-blank; click it to commit (matches the rename-dialog
+    // test's pattern of clicking 保存 instead of relying on jsdom's
+    // implicit form submission via Enter keydown).
+    const createButton = Array.from(
+      dialog?.querySelectorAll("button") ?? [],
+    ).find((el) => el.textContent === "创建");
+    expect(createButton).not.toBeUndefined();
+    expect((createButton as HTMLButtonElement | undefined)?.disabled).toBe(
+      false,
+    );
     act(() => {
-      input?.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Enter",
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
+      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(created).toEqual(["发布协调"]);
-    expect(groupSection()?.querySelector(".group-thread-name-input")).toBeNull();
+    expect(document.body.querySelector(".sidebar-name-dialog")).toBeNull();
   });
 
   it("does not create a group for a blank title", () => {
@@ -1394,25 +1420,25 @@ describe("group chat section", () => {
         ?.querySelector<HTMLButtonElement>('button[aria-label="新建群聊"]')
         ?.click();
     });
-    const input = groupSection()?.querySelector<HTMLInputElement>(
-      ".group-thread-name-input",
+    const dialog = document.body.querySelector(".sidebar-name-dialog");
+    expect(dialog).not.toBeNull();
+    // Submit is disabled while the title is blank, so clicking the button
+    // is a no-op — keeps the form from committing whitespace.
+    const submitButton = Array.from(dialog?.querySelectorAll("button") ?? []).find(
+      (el) => el.textContent === "创建",
     );
-    if (input) {
-      input.value = "   ";
-    }
+    expect(submitButton).not.toBeUndefined();
+    expect((submitButton as HTMLButtonElement | undefined)?.disabled).toBe(true);
     act(() => {
-      input?.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Enter",
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
+      submitButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(created).toEqual([]);
+    // Dialog stays open so the user can correct the title without
+    // re-opening it from the sidebar.
+    expect(document.body.querySelector(".sidebar-name-dialog")).not.toBeNull();
   });
 
-  it("cancels the inline name input on Escape without creating", () => {
+  it("cancels the 新建群聊 floating dialog on Escape without creating", () => {
     const created: string[] = [];
     renderSidebar({
       sectionOrder: order,
@@ -1423,15 +1449,16 @@ describe("group chat section", () => {
         ?.querySelector<HTMLButtonElement>('button[aria-label="新建群聊"]')
         ?.click();
     });
-    const input = groupSection()?.querySelector<HTMLInputElement>(
-      ".group-thread-name-input",
+    const dialog = document.body.querySelector(".sidebar-name-dialog");
+    expect(dialog).not.toBeNull();
+    const input = dialog?.querySelector<HTMLInputElement>(
+      ".sidebar-name-dialog-input",
     );
-    expect(input).not.toBeNull();
     if (input) {
-      input.value = "半途而废";
+      setControlledInputValue(input, "半途而废");
     }
     act(() => {
-      input?.dispatchEvent(
+      window.dispatchEvent(
         new KeyboardEvent("keydown", {
           key: "Escape",
           bubbles: true,
@@ -1440,7 +1467,7 @@ describe("group chat section", () => {
       );
     });
     expect(created).toEqual([]);
-    expect(groupSection()?.querySelector(".group-thread-name-input")).toBeNull();
+    expect(document.body.querySelector(".sidebar-name-dialog")).toBeNull();
   });
 
   it("keeps the # identity prefix when a pinned group thread moves under 置顶", () => {
