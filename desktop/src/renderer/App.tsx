@@ -4833,6 +4833,14 @@ export function App(): JSX.Element {
     return requestID;
   }
 
+  function beginInstantThreadSwitch(): number {
+    const requestID = viewSwitchRequestRef.current + 1;
+    viewSwitchRequestRef.current = requestID;
+    clearViewSwitchDelay();
+    setPendingViewSwitch(undefined);
+    return requestID;
+  }
+
   function finishViewSwitch(requestID: number): boolean {
     if (viewSwitchRequestRef.current !== requestID) {
       return false;
@@ -6364,6 +6372,106 @@ export function App(): JSX.Element {
       return;
     }
     const sourceContext = state.activeContext;
+    const localThread = threadForTab(appStateRef.current, threadId);
+    const localThreadContext = localThread
+      ? resolveThreadRuntimeContext(localThread, appStateRef.current.projects)
+      : undefined;
+    if (
+      localThread &&
+      localThread.turns.length > 0 &&
+      localThreadContext &&
+      sameRuntimeContext(localThreadContext, sourceContext)
+    ) {
+      const requestID = beginInstantThreadSwitch();
+      restorePrimaryComposerDraft(targetDraft);
+      setSplitComposerDrafts(initialSplitComposerDrafts());
+      setState((current) => {
+        const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+        const optimisticThread =
+          threadForTab(withDraft, threadId) ?? localThread;
+        return {
+          ...withDraft,
+          thread: optimisticThread,
+          secondaryThread: undefined,
+          activePane: "primary",
+          allowThreadAutoActivation: true,
+          sessionTabs: ensureSessionTab(
+            withDraft.sessionTabs,
+            createThreadSessionTab(
+              optimisticThread,
+              sourceContext,
+              targetDraft,
+            ),
+          ),
+          activeSessionTabID: threadSessionTabID(optimisticThread.id),
+          threads: upsertThread(withDraft.threads, optimisticThread),
+          running: isThreadRunning(optimisticThread),
+          status: "ready",
+        };
+      });
+      void (async () => {
+        try {
+          const resumedThread = requireThread(
+            await window.wuu.resumeThread(threadId),
+            "resume did not return a thread",
+          );
+          if (
+            viewSwitchRequestRef.current !== requestID ||
+            appStateRef.current.thread?.id !== threadId ||
+            !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)
+          ) {
+            return;
+          }
+          setState((current) => {
+            if (current.thread?.id !== threadId) {
+              return current;
+            }
+            const localThreadForReconcile =
+              current.thread?.id === resumedThread.id
+                ? current.thread
+                : current.threads.find((item) => item.id === resumedThread.id);
+            const reconciled = reconcileResumedThreadTurns(
+              resumedThread,
+              localThreadForReconcile,
+            );
+            return {
+              ...current,
+              thread: reconciled,
+              sessionTabs: ensureSessionTab(
+                current.sessionTabs,
+                createThreadSessionTab(
+                  reconciled,
+                  sourceContext,
+                  sessionTabDraftForThread(current, reconciled.id),
+                ),
+              ),
+              activeSessionTabID: threadSessionTabID(reconciled.id),
+              threads: upsertThread(current.threads, reconciled),
+              running: isThreadRunning(reconciled),
+              status: "ready",
+            };
+          });
+        } catch (error) {
+          if (
+            viewSwitchRequestRef.current !== requestID ||
+            appStateRef.current.thread?.id !== threadId ||
+            !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)
+          ) {
+            return;
+          }
+          setState((current) =>
+            current.thread?.id === threadId
+              ? {
+                  ...current,
+                  status:
+                    error instanceof Error ? error.message : "load failed",
+                }
+              : current,
+          );
+        }
+      })();
+      return;
+    }
     const requestID = beginViewSwitch("thread", threadId);
     try {
       const thread = requireThread(
