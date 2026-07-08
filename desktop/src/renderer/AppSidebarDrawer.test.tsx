@@ -31,7 +31,8 @@ vi.mock("@xterm/addon-fit", () => ({
   FitAddon: vi.fn().mockImplementation(() => ({ fit: vi.fn() })),
 }));
 
-import { App } from "./App";
+import { App, SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./App";
+import { SIDEBAR_MOTION_MS } from "./AppLayoutState";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -155,11 +156,16 @@ async function openDrawerViaHoverZone(): Promise<void> {
       new MouseEvent("pointerover", { bubbles: true, relatedTarget: null }),
     );
   });
+  expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+  await act(async () => {
+    vi.advanceTimersByTime(SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS);
+  });
   expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(true);
 }
 
 describe("collapsed sidebar hover drawer", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     installWindowStubs();
     serverEventHandlers = [];
     container = document.createElement("div");
@@ -192,6 +198,69 @@ describe("collapsed sidebar hover drawer", () => {
     expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
     expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
       true,
+    );
+  });
+
+  it("does not open the drawer when the pointer only sweeps across the edge", async () => {
+    await renderCollapsedApp();
+    const zone = container.querySelector<HTMLElement>(".sidebar-hover-zone");
+    expect(zone).not.toBeNull();
+
+    await act(async () => {
+      zone?.dispatchEvent(
+        new MouseEvent("pointerover", { bubbles: true, relatedTarget: null }),
+      );
+      zone?.dispatchEvent(
+        new MouseEvent("pointerout", {
+          bubbles: true,
+          relatedTarget: document.body,
+        }),
+      );
+      vi.advanceTimersByTime(SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS);
+    });
+
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
+      false,
+    );
+  });
+
+  it("finishes closing when a pending edge hover is cancelled mid-close", async () => {
+    await renderCollapsedApp();
+    await openDrawerViaHoverZone();
+    const sidebar = container.querySelector<HTMLElement>(".sidebar");
+    const zone = container.querySelector<HTMLElement>(".sidebar-hover-zone");
+    expect(sidebar).not.toBeNull();
+    expect(zone).not.toBeNull();
+
+    await act(async () => {
+      sidebar?.dispatchEvent(
+        new MouseEvent("pointerout", {
+          bubbles: true,
+          relatedTarget: document.body,
+        }),
+      );
+    });
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(true);
+
+    await act(async () => {
+      zone?.dispatchEvent(
+        new MouseEvent("pointerover", { bubbles: true, relatedTarget: null }),
+      );
+      vi.advanceTimersByTime(SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS - 1);
+      zone?.dispatchEvent(
+        new MouseEvent("pointerout", {
+          bubbles: true,
+          relatedTarget: document.body,
+        }),
+      );
+      vi.advanceTimersByTime(SIDEBAR_MOTION_MS);
+    });
+
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
+      false,
     );
   });
 

@@ -346,6 +346,7 @@ function initializedForSelectedPermissionMode(
 
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
 const PROJECT_THREAD_COLLAPSE_MS = 190;
+export const SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS = 180;
 const ENVIRONMENT_PANEL_MOTION_MS = 260;
 const ENVIRONMENT_PANEL_WIDTH_PX = 328;
 const ENVIRONMENT_PANEL_WIDTH_CSS = `${ENVIRONMENT_PANEL_WIDTH_PX}px`;
@@ -634,8 +635,10 @@ export function App(): JSX.Element {
   const [sidebarDrawerPhase, setSidebarDrawerPhase] = useState<
     "closed" | "open" | "closing"
   >("closed");
+  const sidebarDrawerOpenTimerRef = useRef<number | undefined>(undefined);
   const sidebarDrawerCloseTimerRef = useRef<number | undefined>(undefined);
   const sidebarHoverZoneRef = useRef<HTMLDivElement>(null);
+  const sidebarHoverZoneActiveRef = useRef(false);
   // Set while a sidebar drag is in flight and kept set after a drag that ends
   // collapsed, until the pointer moves off the hover zone. Without it, the
   // hover zone appears under the pointer the instant the drag crosses the
@@ -2329,17 +2332,64 @@ export function App(): JSX.Element {
     }
   }, []);
 
+  const clearSidebarDrawerOpenTimer = useCallback((): void => {
+    if (sidebarDrawerOpenTimerRef.current !== undefined) {
+      window.clearTimeout(sidebarDrawerOpenTimerRef.current);
+      sidebarDrawerOpenTimerRef.current = undefined;
+    }
+  }, []);
+
+  const cancelSidebarDrawerOpen = useCallback((): void => {
+    sidebarHoverZoneActiveRef.current = false;
+    clearSidebarDrawerOpenTimer();
+  }, [clearSidebarDrawerOpenTimer]);
+
   const openSidebarDrawer = useCallback((): void => {
     if (resizingSidebar || sidebarDrawerSuppressedRef.current) {
       return;
     }
+    clearSidebarDrawerOpenTimer();
     clearSidebarDrawerCloseTimer();
     if (sidebarCollapsed) {
       setSidebarDrawerPhase("open");
     }
-  }, [clearSidebarDrawerCloseTimer, resizingSidebar, sidebarCollapsed]);
+  }, [
+    clearSidebarDrawerCloseTimer,
+    clearSidebarDrawerOpenTimer,
+    resizingSidebar,
+    sidebarCollapsed,
+  ]);
+
+  const scheduleSidebarDrawerOpen = useCallback((): void => {
+    sidebarHoverZoneActiveRef.current = true;
+    if (resizingSidebar || sidebarDrawerSuppressedRef.current || !sidebarCollapsed) {
+      return;
+    }
+    clearSidebarDrawerOpenTimer();
+    // Edge hover is easy to hit accidentally; require a short dwell before
+    // opening, while the sidebar body itself still keeps the drawer open
+    // immediately once the user is inside it.
+    sidebarDrawerOpenTimerRef.current = window.setTimeout(() => {
+      sidebarDrawerOpenTimerRef.current = undefined;
+      if (
+        !sidebarHoverZoneActiveRef.current ||
+        resizingSidebar ||
+        sidebarDrawerSuppressedRef.current
+      ) {
+        return;
+      }
+      clearSidebarDrawerCloseTimer();
+      setSidebarDrawerPhase("open");
+    }, SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS);
+  }, [
+    clearSidebarDrawerCloseTimer,
+    clearSidebarDrawerOpenTimer,
+    resizingSidebar,
+    sidebarCollapsed,
+  ]);
 
   const closeSidebarDrawer = useCallback((): void => {
+    cancelSidebarDrawerOpen();
     clearSidebarDrawerCloseTimer();
     if (!sidebarCollapsed || resizingSidebar) {
       // No closing animation mid-drag: collapsing unmounts the resizer, the
@@ -2355,14 +2405,31 @@ export function App(): JSX.Element {
       sidebarDrawerCloseTimerRef.current = undefined;
       setSidebarDrawerPhase("closed");
     }, SIDEBAR_MOTION_MS);
-  }, [clearSidebarDrawerCloseTimer, resizingSidebar, sidebarCollapsed]);
+  }, [
+    cancelSidebarDrawerOpen,
+    clearSidebarDrawerCloseTimer,
+    resizingSidebar,
+    sidebarCollapsed,
+  ]);
 
   useLayoutEffect(() => {
     if (!sidebarCollapsed && sidebarDrawerPhase !== "closed") {
+      cancelSidebarDrawerOpen();
       clearSidebarDrawerCloseTimer();
       setSidebarDrawerPhase("closed");
     }
-  }, [clearSidebarDrawerCloseTimer, sidebarCollapsed, sidebarDrawerPhase]);
+  }, [
+    cancelSidebarDrawerOpen,
+    clearSidebarDrawerCloseTimer,
+    sidebarCollapsed,
+    sidebarDrawerPhase,
+  ]);
+
+  useEffect(() => {
+    if (!sidebarCollapsed || resizingSidebar) {
+      cancelSidebarDrawerOpen();
+    }
+  }, [cancelSidebarDrawerOpen, resizingSidebar, sidebarCollapsed]);
 
   useEffect(() => {
     if (!sidebarCollapsed || sidebarDrawerPhase !== "open") {
@@ -2384,6 +2451,23 @@ export function App(): JSX.Element {
       window.removeEventListener("blur", closeSidebarDrawer);
     };
   }, [closeSidebarDrawer, sidebarCollapsed, sidebarDrawerPhase]);
+
+  useEffect(() => {
+    if (!sidebarCollapsed) {
+      return undefined;
+    }
+    function handleWindowMouseOut(event: MouseEvent): void {
+      if (event.relatedTarget === null) {
+        cancelSidebarDrawerOpen();
+      }
+    }
+    window.addEventListener("mouseout", handleWindowMouseOut);
+    window.addEventListener("blur", cancelSidebarDrawerOpen);
+    return () => {
+      window.removeEventListener("mouseout", handleWindowMouseOut);
+      window.removeEventListener("blur", cancelSidebarDrawerOpen);
+    };
+  }, [cancelSidebarDrawerOpen, sidebarCollapsed]);
 
   useEffect(() => {
     if (resizingSidebar) {
@@ -2426,7 +2510,13 @@ export function App(): JSX.Element {
     }
   }, [resizingSidebar, sidebarCollapsed]);
 
-  useEffect(() => clearSidebarDrawerCloseTimer, [clearSidebarDrawerCloseTimer]);
+  useEffect(
+    () => () => {
+      clearSidebarDrawerOpenTimer();
+      clearSidebarDrawerCloseTimer();
+    },
+    [clearSidebarDrawerCloseTimer, clearSidebarDrawerOpenTimer],
+  );
 
   useLayoutEffect(() => {
     if (environmentPanelVisible) {
@@ -8473,7 +8563,8 @@ export function App(): JSX.Element {
             ref={sidebarHoverZoneRef}
             className="sidebar-hover-zone"
             aria-hidden="true"
-            onPointerEnter={openSidebarDrawer}
+            onPointerEnter={scheduleSidebarDrawerOpen}
+            onPointerLeave={cancelSidebarDrawerOpen}
           />
           <AppSidebar
             state={state}
