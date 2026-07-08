@@ -91,3 +91,36 @@ describe("workspace review diff layout", () => {
     ).toMatch(/display:\s*none;/);
   });
 });
+
+describe("turn file diff panel layout", () => {
+  it("wraps turn diff lines inside the panel width instead of keeping a horizontal code width", () => {
+    const body = cssRuleBody(".turn-file-diff-body");
+    expect(body).toMatch(/overflow-y:\s*auto;/);
+    expect(body).toMatch(/overflow-x:\s*hidden;/);
+
+    const hunk = cssRuleBody(".turn-file-diff-body .tool-diff-hunk");
+    expect(hunk).toMatch(/min-width:\s*0;/);
+    expect(hunk).toMatch(/width:\s*100%;/);
+    expect(hunk).not.toMatch(/min-width:\s*max-content;/);
+
+    const line = cssRuleBody(".turn-file-diff-body .tool-diff-line");
+    expect(line).toMatch(/display:\s*block;/);
+    expect(line).toMatch(/position:\s*relative;/);
+    expect(line).toMatch(/min-width:\s*0;/);
+    expect(line).toMatch(/padding:\s*0\s+0\s+0\s+104px;/);
+    expect(line).not.toMatch(/max-content/);
+
+    const lineNumber = cssRuleBody(".turn-file-diff-body .tool-diff-line-number");
+    expect(lineNumber).toMatch(/position:\s*absolute;/);
+    expect(lineNumber).toMatch(/width:\s*52px;/);
+    expect(cssRuleBody(".turn-file-diff-body .tool-diff-line-number-old")).toMatch(/left:\s*0;/);
+    expect(cssRuleBody(".turn-file-diff-body .tool-diff-line-number-new")).toMatch(/left:\s*52px;/);
+
+    const lineContent = cssRuleBody(".turn-file-diff-body .tool-diff-line-content");
+    expect(lineContent).toMatch(/display:\s*block;/);
+    expect(lineContent).toMatch(/min-width:\s*0;/);
+    expect(lineContent).toMatch(/white-space:\s*pre-wrap;/);
+    expect(lineContent).toMatch(/overflow-wrap:\s*anywhere;/);
+    expect(lineContent).toMatch(/word-break:\s*break-word;/);
+  });
+});
