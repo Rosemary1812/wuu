@@ -23,6 +23,8 @@ import type {
   WorkspaceFileReadResult,
   WorkspaceFileTreeEntry
 } from "../shared/protocol";
+import { RichContent } from "./RichContent";
+import { WorkspaceMarkdownEditor } from "./WorkspaceMarkdownEditor";
 import { WorkspaceMonacoEditor } from "./WorkspaceMonacoEditor";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
@@ -35,6 +37,7 @@ type DirectoryLoadState = {
 };
 
 type DirectoryLoadMap = Record<string, DirectoryLoadState>;
+type MarkdownMode = "reading" | "edit" | "source";
 
 export function WorkspaceFileTree({
   activeContext,
@@ -561,6 +564,7 @@ export function WorkspaceFilePreview({
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "conflict" | "error">("idle");
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
+  const [markdownMode, setMarkdownMode] = useState<MarkdownMode>("reading");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const selectedWorkspaceFilePath = useMemo(
@@ -578,6 +582,7 @@ export function WorkspaceFilePreview({
       setSaving(false);
       setSaveStatus("idle");
       setSaveError(undefined);
+      setMarkdownMode("reading");
       setError(undefined);
       setLoading(false);
       return;
@@ -592,6 +597,7 @@ export function WorkspaceFilePreview({
     setSaving(false);
     setSaveStatus("idle");
     setSaveError(undefined);
+    setMarkdownMode("reading");
     setLoading(true);
     setError(undefined);
     void window.wuu
@@ -621,6 +627,7 @@ export function WorkspaceFilePreview({
     };
   }, [activeContext?.cwd, selectedWorkspaceFilePath]);
 
+  const isMarkdown = Boolean(file && isMarkdownPath(file.path));
   const readOnly = Boolean(file?.binary || file?.truncated || file?.text === undefined);
   const dirty = draftText !== baseText;
 
@@ -750,18 +757,37 @@ export function WorkspaceFilePreview({
       : dirty
         ? "dirty"
         : "clean";
+  const editorModeClass = isMarkdown ? `markdown-${markdownMode}` : "code";
 
   return (
     <article className="workspace-file-preview">
       <div className="workspace-file-editor-toolbar">
-        <div className="workspace-file-editor-status">
-          <span className={`workspace-file-editor-dot ${statusTone}`} aria-hidden="true" />
-          <span>{statusLabel}</span>
-          {file.truncated ? <span className="workspace-file-editor-hint">文件较大，已截断</span> : null}
-          {saveError ? (
-            <span className="workspace-file-editor-error" role="alert">
-              {saveError}
-            </span>
+        <div className="workspace-file-editor-left">
+          <div className="workspace-file-editor-status">
+            <span className={`workspace-file-editor-dot ${statusTone}`} aria-hidden="true" />
+            <span>{statusLabel}</span>
+            {file.truncated ? <span className="workspace-file-editor-hint">文件较大，已截断</span> : null}
+            {saveError ? (
+              <span className="workspace-file-editor-error" role="alert">
+                {saveError}
+              </span>
+            ) : null}
+          </div>
+          {isMarkdown ? (
+            <div className="workspace-markdown-mode-switch" role="tablist" aria-label="Markdown 模式">
+              {(["reading", "edit", "source"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={markdownMode === mode ? "selected" : ""}
+                  aria-selected={markdownMode === mode}
+                  role="tab"
+                  onClick={() => setMarkdownMode(mode)}
+                >
+                  {markdownModeLabel(mode)}
+                </button>
+              ))}
+            </div>
           ) : null}
         </div>
         <button
@@ -774,15 +800,43 @@ export function WorkspaceFilePreview({
           <span>保存</span>
         </button>
       </div>
-      <div className="workspace-file-editor-scroll">
-        <WorkspaceMonacoEditor
-          path={file.path}
-          text={draftText}
-          readOnly={readOnly}
-          onChange={handleEditorChange}
-          onSave={handleSave}
-        />
+      <div className={`workspace-file-editor-scroll ${editorModeClass}`}>
+        {isMarkdown && markdownMode === "reading" ? (
+          <div className="workspace-markdown-reading">
+            <RichContent text={draftText} cwd={activeContext.cwd} />
+          </div>
+        ) : isMarkdown && markdownMode === "edit" ? (
+          <WorkspaceMarkdownEditor
+            path={file.path}
+            markdown={draftText}
+            readOnly={readOnly}
+            onChange={handleEditorChange}
+            onSave={handleSave}
+          />
+        ) : (
+          <WorkspaceMonacoEditor
+            path={file.path}
+            text={draftText}
+            readOnly={readOnly}
+            onChange={handleEditorChange}
+            onSave={handleSave}
+          />
+        )}
       </div>
     </article>
   );
+}
+
+function isMarkdownPath(path: string): boolean {
+  return /\.mdx?$/i.test(path);
+}
+
+function markdownModeLabel(mode: MarkdownMode): string {
+  if (mode === "reading") {
+    return "阅读";
+  }
+  if (mode === "edit") {
+    return "编辑";
+  }
+  return "源码";
 }

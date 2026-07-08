@@ -38,6 +38,34 @@ vi.mock("./WorkspaceMonacoEditor", () => ({
   ),
 }));
 
+vi.mock("./WorkspaceMarkdownEditor", () => ({
+  WorkspaceMarkdownEditor: ({
+    markdown,
+    readOnly,
+    onChange,
+    onSave,
+  }: {
+    markdown: string;
+    readOnly?: boolean;
+    onChange?: (value: string) => void;
+    onSave?: () => void;
+  }) => (
+    <div
+      className="workspace-markdown-wysiwyg"
+      data-readonly={readOnly ? "true" : "false"}
+      data-text={markdown}
+    >
+      <pre>{markdown}</pre>
+      <button type="button" className="mock-markdown-edit" disabled={readOnly} onClick={() => onChange?.("# Edited notes\n")}>
+        mock markdown edit
+      </button>
+      <button type="button" className="mock-markdown-save" disabled={readOnly} onClick={() => onSave?.()}>
+        mock markdown save
+      </button>
+    </div>
+  ),
+}));
+
 let container: HTMLDivElement;
 let root: Root | null = null;
 let listWorkspaceDirectory: ReturnType<typeof vi.fn>;
@@ -153,6 +181,19 @@ async function click(selector: string): Promise<void> {
   });
 }
 
+async function clickButtonByText(text: string): Promise<void> {
+  const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (candidate) => candidate.textContent?.trim() === text,
+  );
+  if (!button) {
+    throw new Error(`missing button ${text}`);
+  }
+  await act(async () => {
+    button.click();
+    await Promise.resolve();
+  });
+}
+
 describe("WorkspaceFileTree", () => {
   it("expands and scrolls to the selected workspace file path", async () => {
     await render(
@@ -223,11 +264,11 @@ describe("WorkspaceFileTree", () => {
     expect(container.textContent).toContain("button code");
   });
 
-  it("opens selected text files in the center Monaco editor surface", async () => {
+  it("opens selected non-Markdown text files in the center Monaco editor surface", async () => {
     readWorkspaceFile.mockResolvedValueOnce({
       root: "/repo",
-      path: "AGENTS.md",
-      absolute_path: "/repo/AGENTS.md",
+      path: "AGENTS.txt",
+      absolute_path: "/repo/AGENTS.txt",
       size_bytes: 35,
       mtime_ms: 1000,
       sha256: "b".repeat(64),
@@ -239,14 +280,14 @@ describe("WorkspaceFileTree", () => {
     await render(
       <WorkspaceFilePreview
         activeContext={activeContext}
-        selectedFilePath="/repo/AGENTS.md"
+        selectedFilePath="/repo/AGENTS.txt"
         onOpenRightPanel={() => {}}
       />,
     );
 
     await settleDirectoryLoads();
 
-    expect(readWorkspaceFile).toHaveBeenCalledWith("AGENTS.md", "/repo");
+    expect(readWorkspaceFile).toHaveBeenCalledWith("AGENTS.txt", "/repo");
     expect(container.querySelector(".workspace-monaco-editor")).not.toBeNull();
     expect(container.querySelector(".workspace-file-preview-header")).toBeNull();
     expect(container.textContent).toContain("Execution Autonomy");
@@ -426,5 +467,108 @@ describe("WorkspaceFileTree", () => {
 
     expect(container.textContent).toContain("二进制文件");
     expect(container.querySelector(".workspace-monaco-editor")).toBeNull();
+  });
+
+  it("opens Markdown files in reading mode by default", async () => {
+    readWorkspaceFile.mockResolvedValueOnce(workspaceFile({
+      path: "README.md",
+      absolute_path: "/repo/README.md",
+      text: "# Project Notes\n\n- review changes\n",
+    }));
+
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/README.md"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+
+    expect(container.textContent).toContain("阅读");
+    expect(container.textContent).toContain("编辑");
+    expect(container.textContent).toContain("源码");
+    expect(container.querySelector(".workspace-markdown-reading")).not.toBeNull();
+    expect(container.querySelector(".workspace-markdown-reading .rich-heading")?.textContent).toContain("Project Notes");
+    expect(container.querySelector(".workspace-monaco-editor")).toBeNull();
+  });
+
+  it("switches Markdown files between WYSIWYG and Monaco source modes", async () => {
+    readWorkspaceFile.mockResolvedValueOnce(workspaceFile({
+      path: "README.md",
+      absolute_path: "/repo/README.md",
+      text: "# Project Notes\n",
+    }));
+
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/README.md"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+    await clickButtonByText("编辑");
+
+    expect(container.querySelector<HTMLElement>(".workspace-markdown-wysiwyg")?.dataset.text).toBe("# Project Notes\n");
+    expect(container.querySelector(".workspace-monaco-editor")).toBeNull();
+
+    await clickButtonByText("源码");
+
+    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.path).toBe("README.md");
+    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.text).toBe("# Project Notes\n");
+  });
+
+  it("shares dirty Markdown content across WYSIWYG, reading, source, and save", async () => {
+    readWorkspaceFile.mockResolvedValueOnce(workspaceFile({
+      path: "README.md",
+      absolute_path: "/repo/README.md",
+      text: "# Project Notes\n",
+    }));
+    writeWorkspaceFile.mockResolvedValueOnce({
+      status: "saved",
+      file: workspaceFile({
+        path: "README.md",
+        absolute_path: "/repo/README.md",
+        text: "# Edited notes\n",
+        mtime_ms: 2000,
+        sha256: "e".repeat(64),
+      }),
+    });
+
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/README.md"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+    await clickButtonByText("编辑");
+    await click(".mock-markdown-edit");
+
+    expect(container.textContent).toContain("已修改");
+
+    await clickButtonByText("阅读");
+    expect(container.querySelector(".workspace-markdown-reading")?.textContent).toContain("Edited notes");
+
+    await clickButtonByText("源码");
+    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.text).toBe("# Edited notes\n");
+
+    await click(".mock-editor-save");
+
+    expect(writeWorkspaceFile).toHaveBeenCalledWith(
+      {
+        path: "README.md",
+        text: "# Edited notes\n",
+        base_mtime_ms: 1000,
+        base_sha256: "a".repeat(64),
+      },
+      "/repo",
+    );
+    expect(container.textContent).toContain("已保存");
   });
 });

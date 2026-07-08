@@ -1533,6 +1533,13 @@
   padding: 7px 12px;
 }
 
+.workspace-file-editor-left {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+}
+
 .workspace-file-editor-status {
   display: flex;
   min-width: 0;
@@ -1612,6 +1619,35 @@
   height: 14px;
 }
 
+.workspace-markdown-mode-switch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--surface-3);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  padding: 2px;
+}
+
+.workspace-markdown-mode-switch button {
+  height: 24px;
+  border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  padding: 0 8px;
+}
+
+.workspace-markdown-mode-switch button:hover {
+  color: var(--ink);
+}
+
+.workspace-markdown-mode-switch button.selected {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
 .workspace-file-preview-header {
   display: flex;
   min-width: 0;
@@ -1658,6 +1694,55 @@
   min-height: 0;
   overflow: hidden;
   background: var(--paper);
+}
+
+.workspace-file-editor-scroll.markdown-reading,
+.workspace-file-editor-scroll.markdown-edit {
+  overflow: auto;
+}
+
+.workspace-markdown-reading {
+  width: min(100%, 820px);
+  min-height: 100%;
+  color: var(--ink);
+  margin: 0 auto;
+  padding: 26px clamp(18px, 4vw, 44px) 56px;
+}
+
+.workspace-markdown-reading .rich-content {
+  gap: 13px;
+  font-size: 15px;
+  line-height: 1.68;
+}
+
+.workspace-markdown-reading .rich-heading {
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: var(--weight-semibold);
+  line-height: 1.35;
+}
+
+.workspace-markdown-wysiwyg-frame,
+.workspace-markdown-wysiwyg {
+  min-height: 100%;
+}
+
+.workspace-markdown-wysiwyg {
+  width: min(100%, 820px);
+  margin: 0 auto;
+  padding: 22px clamp(18px, 4vw, 44px) 56px;
+}
+
+.workspace-markdown-wysiwyg-content {
+  min-height: calc(100vh - 220px);
+  outline: 0;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.68;
+}
+
+.workspace-markdown-wysiwyg-content [contenteditable="true"] {
+  outline: 0;
 }
 
 .workspace-code-editor,
