@@ -143,6 +143,69 @@ const (
 // budget reads back with).
 const TaskPieceDefaultRetryBudget = 3
 
+// TaskHandoff is the structured result one node hands to the next — the ONLY
+// thing that wakes a downstream node. It is deliberately distinct from a
+// public_thread_message (a post_message kind=update posted to the task thread,
+// which is user-visible progress that wakes no teammate): the handoff is the
+// machine-carried input to the next node, the public update is prose for the
+// human. Never mix them. The upstream assignee fills it when reporting a piece
+// done; the engine writes it onto the downstream node's TaskPiece.Handoff and
+// renders it into that node's wake envelope.
+type TaskHandoff struct {
+	Done       string   `json:"done,omitempty"`
+	Findings   string   `json:"findings,omitempty"`
+	Artifacts  []string `json:"artifacts,omitempty"`
+	Limits     string   `json:"limits,omitempty"`
+	NextGoal   string   `json:"next_goal,omitempty"`
+	Acceptance string   `json:"acceptance,omitempty"`
+	Notes      string   `json:"notes,omitempty"`
+}
+
+// MarshalTaskHandoff serializes a handoff to the JSON stored verbatim in the
+// downstream node's TaskPiece.Handoff (and recorded as the handoff_created
+// trace payload).
+func MarshalTaskHandoff(h TaskHandoff) (string, error) {
+	data, err := json.Marshal(h)
+	if err != nil {
+		return "", fmt.Errorf("marshal task handoff: %w", err)
+	}
+	return string(data), nil
+}
+
+// RenderHandoffForWake renders a handoff as a compact, human-readable block for
+// the downstream node's wake envelope — the input handed to this node. Empty
+// fields (and empty artifact entries) are skipped, so a sparse handoff produces
+// a short block.
+func RenderHandoffForWake(h TaskHandoff) string {
+	var b strings.Builder
+	writeLine := func(label, value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(label)
+		b.WriteString(": ")
+		b.WriteString(value)
+	}
+	writeLine("Done", h.Done)
+	writeLine("Findings", h.Findings)
+	artifacts := make([]string, 0, len(h.Artifacts))
+	for _, a := range h.Artifacts {
+		if a = strings.TrimSpace(a); a != "" {
+			artifacts = append(artifacts, a)
+		}
+	}
+	writeLine("Artifacts", strings.Join(artifacts, ", "))
+	writeLine("Limits", h.Limits)
+	writeLine("Goal for you", h.NextGoal)
+	writeLine("Acceptance", h.Acceptance)
+	writeLine("Notes", h.Notes)
+	return b.String()
+}
+
 func NewConversationThreadID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)

@@ -317,7 +317,7 @@ type PostedMessage struct {
 	// carries what arrived. The agent decides its next move: revise (post a
 	// new draft), resend unchanged (post again with force=true), or stay
 	// silent. Never set for the fresh-post path or for a forced post.
-	Held    bool   `json:"held,omitempty"`
+	Held     bool   `json:"held,omitempty"`
 	HeldNote string `json:"held_note,omitempty"`
 	// BasisSeq echoes the message seq this post declared it was generated
 	// against (0 = the agent's read cursor was used). The freshness check holds
@@ -402,6 +402,21 @@ type TaskPiece struct {
 	Prompt string `json:"prompt,omitempty"`
 }
 
+// TaskHandoff is the structured result a node hands to its downstream as it
+// crosses the tool boundary (mirrors session.TaskHandoff). An assignee attaches
+// it to manage_task action=piece_done; the engine writes it onto the downstream
+// node and renders it into that node's wake. It is what wakes the next agent —
+// deliberately distinct from a public post_message update, which wakes no one.
+type TaskHandoff struct {
+	Done       string   `json:"done,omitempty"`
+	Findings   string   `json:"findings,omitempty"`
+	Artifacts  []string `json:"artifacts,omitempty"`
+	Limits     string   `json:"limits,omitempty"`
+	NextGoal   string   `json:"next_goal,omitempty"`
+	Acceptance string   `json:"acceptance,omitempty"`
+	Notes      string   `json:"notes,omitempty"`
+}
+
 // TaskManager lets resident named agents run the task rail: create tasks,
 // claim/release work ownership, file the conclusion, unfollow, and list the
 // board. The app server injects an implementation per resident runtime; task
@@ -450,10 +465,15 @@ type TaskManager interface {
 	// @-waking its assignee into the task thread. The caller must belong to
 	// the task's thread; assignees must be members.
 	SetPlan(ctx context.Context, subthreadID string, pieces []TaskPiece) (TaskView, error)
-	// PieceDone marks one plan piece complete (called by its assignee). The
-	// engine then dispatches any piece whose dependencies are now satisfied,
-	// or — when every piece is done — wakes the lead to wrap up and report.
-	PieceDone(ctx context.Context, subthreadID, pieceID string) (TaskView, error)
+	// PieceDone marks one plan piece complete (called by its assignee) and
+	// hands the structured result to the downstream node(s). The engine writes
+	// handoff onto every piece that depends on this one — or, for a terminal
+	// piece, onto the piece itself — then dispatches any piece whose
+	// dependencies are now satisfied (carrying the handoff into its wake), or —
+	// when every piece is done — wakes the lead to wrap up and report. handoff
+	// is nil when the assignee reported no structured result. The handoff, not
+	// a public thread update, is what wakes the next agent.
+	PieceDone(ctx context.Context, subthreadID, pieceID string, handoff *TaskHandoff) (TaskView, error)
 }
 
 // RecordRead records a successful read_file invocation.

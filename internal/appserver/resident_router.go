@@ -346,8 +346,25 @@ func (s *Server) routeSubthreadParticipantMessage(parentThreadID, subthreadID st
 		providers.DebugLogf("list subthread members for %q: %v", subthreadID, err)
 		return
 	}
-	// Reply-subthread (cth) traffic stays on the weak-isolation push path.
-	s.deliverEnvelopeToMembers(members, base, mentioned, true)
+	// Reply-subthread (cth) traffic stays on the weak-isolation push path: a
+	// post pushes+wakes the reply's participant subset. Task threads are the
+	// exception. Under the task rail's two-channel contract (plan §T7, red line
+	// §4.5) every plain participant post inside a task — progress updates,
+	// results, questions to the room — is PUBLIC PROGRESS for the human to read
+	// and must NOT wake the working teammates. The only things that wake a node
+	// are a handoff (piece_done → the engine's system wake), an @mention, or a
+	// system directive. A public post still lands in history and refreshes the
+	// task panel (notifySubthreadUpdated, fired by the caller), and an explicit
+	// @mention inside it still wakes the mentioned member (the mentioned set
+	// forces a push even off this path). This is a mechanical status check, not a
+	// semantic judgement — a discussion reply (status open) keeps waking its
+	// participants on every post, so the weak-isolation contract is unchanged
+	// there.
+	pushToInbox := true
+	if thread, findErr := session.FindConversationThreadByID(s.rt.SessionDir, subthreadID); findErr == nil && thread.Status == session.ConversationThreadTask {
+		pushToInbox = false
+	}
+	s.deliverEnvelopeToMembers(members, base, mentioned, pushToInbox)
 }
 
 // mentionSubthreadMembers resolves @mentions in a reply-subthread message to

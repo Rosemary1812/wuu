@@ -84,10 +84,10 @@ func TestTaskPlanFanInDispatchAndHandoff(t *testing.T) {
 	}
 
 	// Han finishes p1, Mia finishes p2. p4 still gated (p3 not done).
-	if _, err := srv.residentTaskManager(han).PieceDone(context.Background(), task.ID, "p1"); err != nil {
+	if _, err := srv.residentTaskManager(han).PieceDone(context.Background(), task.ID, "p1", nil); err != nil {
 		t.Fatalf("Han piece_done p1: %v", err)
 	}
-	if _, err := srv.residentTaskManager(mia).PieceDone(context.Background(), task.ID, "p2"); err != nil {
+	if _, err := srv.residentTaskManager(mia).PieceDone(context.Background(), task.ID, "p2", nil); err != nil {
 		t.Fatalf("Mia piece_done p2: %v", err)
 	}
 	// Drain any wake side effects, then confirm Vera still not woken.
@@ -100,7 +100,7 @@ func TestTaskPlanFanInDispatchAndHandoff(t *testing.T) {
 
 	// Mia finishes the last dependency p3 → the engine now dispatches p4 and
 	// wakes Vera automatically (the handoff Vera never got under the flat model).
-	afterP3, err := srv.residentTaskManager(mia).PieceDone(context.Background(), task.ID, "p3")
+	afterP3, err := srv.residentTaskManager(mia).PieceDone(context.Background(), task.ID, "p3", nil)
 	if err != nil {
 		t.Fatalf("Mia piece_done p3: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestTaskPlanWakesLeadWhenAllDone(t *testing.T) {
 	}
 	waitForResidentDMHistoryContains(t, srv, mia, "写调研报告")
 	// Mia finishes the only piece → the lead (Andy) is woken to wrap up.
-	if _, err := srv.residentTaskManager(mia).PieceDone(context.Background(), task.ID, "only"); err != nil {
+	if _, err := srv.residentTaskManager(mia).PieceDone(context.Background(), task.ID, "only", nil); err != nil {
 		t.Fatalf("piece_done: %v", err)
 	}
 	hist := waitForResidentDMHistoryContains(t, srv, andy, "Every piece of task")
@@ -150,7 +150,7 @@ func TestTaskPlanPieceDoneOnlyByAssignee(t *testing.T) {
 		t.Fatalf("SetPlan: %v", err)
 	}
 	// Han is not the assignee — he cannot report Mia's piece done.
-	if _, err := srv.residentTaskManager(han).PieceDone(context.Background(), task.ID, "p1"); err == nil {
+	if _, err := srv.residentTaskManager(han).PieceDone(context.Background(), task.ID, "p1", nil); err == nil {
 		t.Fatal("non-assignee must not mark a piece done")
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{

@@ -463,10 +463,14 @@ func (m *residentTaskManager) SetPlan(ctx context.Context, subthreadID string, p
 	return m.taskView(final), nil
 }
 
-// PieceDone marks the caller's plan piece complete and advances the plan.
-// Only the piece's assignee may report it done — the durable plan, not chat
-// chatter, is what the engine reads to decide who runs next.
-func (m *residentTaskManager) PieceDone(ctx context.Context, subthreadID, pieceID string) (tools.TaskView, error) {
+// PieceDone marks the caller's plan piece complete, records the structured
+// handoff it produced, and advances the plan. Only the piece's assignee may
+// report it done — the durable plan, not chat chatter, is what the engine reads
+// to decide who runs next. The handoff is the ONLY thing that carries this
+// node's result to the next one and wakes it; a public post_message update to
+// the task thread is user-visible progress that wakes no teammate and is never
+// a downstream node's input.
+func (m *residentTaskManager) PieceDone(ctx context.Context, subthreadID, pieceID string, handoff *tools.TaskHandoff) (tools.TaskView, error) {
 	_ = ctx
 	if err := m.ready("piece_done"); err != nil {
 		return tools.TaskView{}, err
@@ -495,6 +499,13 @@ func (m *residentTaskManager) PieceDone(ctx context.Context, subthreadID, pieceI
 	}
 	m.server.recordTaskEventFor(updated, pieceID, session.TaskEventNodeSucceeded, m.participantID,
 		fmt.Sprintf("piece %q reported done", piece.Title), "")
+	// Carry the handoff forward before advancing, so a downstream node that
+	// becomes ready in the same advancePlan already has its input attached.
+	if handoff != nil {
+		if err := m.recordPieceHandoff(updated, pieceID, *handoff); err != nil {
+			return tools.TaskView{}, err
+		}
+	}
 	// Auto-unfollow when this assignee has no remaining pieces: they are done
 	// with the task, so later traffic on it should not wake them (the correct
 	// lever for the lead's wrap-up not re-running finished teammates). Keep
@@ -518,6 +529,60 @@ func (m *residentTaskManager) PieceDone(ctx context.Context, subthreadID, pieceI
 		return tools.TaskView{}, err
 	}
 	return m.taskView(final), nil
+}
+
+// recordPieceHandoff marshals the finished piece's handoff and writes it onto
+// the node(s) that consume it, then records the handoff_created trace. A node P
+// consumes this piece iff P.DependsOn contains pieceID; the handoff lands on
+// every such downstream node's Handoff field so the engine renders it into that
+// node's wake (the sole trigger that wakes the downstream). A terminal piece
+// (nothing depends on it) stores the handoff on itself, for the lead's final
+// wrap-up and the trace. When a node has several upstreams that each hand it a
+// payload, the last writer to that Handoff field wins for the wake text — a
+// known limitation; the trace keeps every handoff_created event, so the full
+// set is always recoverable. task is the plan snapshot taken right after this
+// piece was marked done (its DependsOn edges are immutable, so it is the
+// authoritative view of who is downstream).
+func (m *residentTaskManager) recordPieceHandoff(task session.ConversationThread, pieceID string, handoff tools.TaskHandoff) error {
+	payload := session.TaskHandoff{
+		Done:       handoff.Done,
+		Findings:   handoff.Findings,
+		Artifacts:  handoff.Artifacts,
+		Limits:     handoff.Limits,
+		NextGoal:   handoff.NextGoal,
+		Acceptance: handoff.Acceptance,
+		Notes:      handoff.Notes,
+	}
+	marshaled, err := session.MarshalTaskHandoff(payload)
+	if err != nil {
+		return fmt.Errorf("piece_done: %w", err)
+	}
+	var downstream []string
+	for _, p := range task.Plan {
+		for _, dep := range p.DependsOn {
+			if strings.TrimSpace(dep) == pieceID {
+				downstream = append(downstream, p.ID)
+				break
+			}
+		}
+	}
+	targets := downstream
+	if len(targets) == 0 {
+		// Terminal node: keep the handoff on the piece itself so the lead's
+		// wrap-up (and the trace) can still read the final result.
+		targets = []string{pieceID}
+	}
+	for _, target := range targets {
+		if _, err := session.UpdateTaskPiece(m.server.rt.SessionDir, task.ID, target, func(p *session.TaskPiece) {
+			p.Handoff = marshaled
+		}); err != nil {
+			return fmt.Errorf("piece_done: attach handoff to piece %q: %w", target, err)
+		}
+	}
+	summary := firstNonEmpty(strings.TrimSpace(payload.NextGoal), strings.TrimSpace(payload.Done), "handoff")
+	m.server.recordTaskEventFor(task, pieceID, session.TaskEventHandoffCreated, m.participantID,
+		"handoff: "+truncate(summary, 80), marshaled)
+	return nil
 }
 
 func (m *residentTaskManager) ready(action string) error {
@@ -703,16 +768,47 @@ func (s *Server) recordTaskEventFor(task session.ConversationThread, nodeID, kin
 	}
 }
 
+// wakePieceText builds the wake envelope for a dispatched piece from the two
+// inputs a node runs on: the lead's per-node Prompt (the briefing authored in
+// set_plan) and, when an upstream handed this node a payload, the rendered
+// handoff (this node's real input). The handoff-carrying wake is the ONLY thing
+// that wakes the downstream — a public thread update never is. If several
+// upstreams wrote a handoff onto this node, the last writer's payload is what
+// piece.Handoff holds here (last-writer-wins for the wake text); the trace
+// retains every handoff_created event.
+func wakePieceText(task session.ConversationThread, piece session.TaskPiece) string {
+	var b strings.Builder
+	fmt.Fprintf(&b,
+		"Your piece of task %q is ready to start: %q. Its prerequisites are done.",
+		firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), piece.Title,
+	)
+	if prompt := strings.TrimSpace(piece.Prompt); prompt != "" {
+		b.WriteString("\n\nYour briefing:\n")
+		b.WriteString(prompt)
+	}
+	if raw := strings.TrimSpace(piece.Handoff); raw != "" {
+		var upstream session.TaskHandoff
+		if err := json.Unmarshal([]byte(raw), &upstream); err != nil {
+			providers.DebugLogf("wakePieceAssignee decode handoff for %q/%q: %v", task.ID, piece.ID, err)
+		} else if rendered := session.RenderHandoffForWake(upstream); rendered != "" {
+			b.WriteString("\n\nThe upstream node handed you this input (your real input — not the public thread):\n")
+			b.WriteString(rendered)
+		}
+	}
+	fmt.Fprintf(&b,
+		"\n\nDo it, working in this task thread (thread_id=%q); when finished, file it with manage_task action=piece_done piece_id=%q and hand your result to the next node in the handoff. Post here only what a teammate needs — @ them if you need something.",
+		task.ID, piece.ID,
+	)
+	return b.String()
+}
+
 // wakePieceAssignee @-wakes one assignee into the task thread to start a piece
 // whose dependencies are satisfied. The directive is medium-agnostic — it names
 // the piece, not a code action — so the same wake serves research, documents,
 // and code.
 func (s *Server) wakePieceAssignee(task session.ConversationThread, piece session.TaskPiece) {
 	title, workspace := s.taskThreadContext(task.SessionID)
-	text := fmt.Sprintf(
-		"Your piece of task %q is ready to start: %q. Its prerequisites are done. Do it, working in this task thread (thread_id=%q); when finished, file it with manage_task action=piece_done piece_id=%q. Post here only what a teammate needs — @ them if you need something.",
-		firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), piece.Title, task.ID, piece.ID,
-	)
+	text := wakePieceText(task, piece)
 	s.recordTaskEventFor(task, piece.ID, session.TaskEventNodeStarted, piece.Assignee,
 		fmt.Sprintf("node started: %q", piece.Title), "")
 	s.deliverEnvelopeToMembers([]string{piece.Assignee}, MessageEnvelope{

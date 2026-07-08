@@ -202,7 +202,7 @@ func TestAllPiecesDoneCompletesExecution(t *testing.T) {
 		t.Fatalf("SetPlan: %v", err)
 	}
 
-	mid, err := srv.residentTaskManager(mia).PieceDone(context.Background(), task.ID, "p1")
+	mid, err := srv.residentTaskManager(mia).PieceDone(context.Background(), task.ID, "p1", nil)
 	if err != nil {
 		t.Fatalf("piece_done p1: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestAllPiecesDoneCompletesExecution(t *testing.T) {
 		t.Fatalf("mid-plan task = status %q exec %q, want task/executing", mid.Status, mid.ExecState)
 	}
 
-	final, err := srv.residentTaskManager(han).PieceDone(context.Background(), task.ID, "p2")
+	final, err := srv.residentTaskManager(han).PieceDone(context.Background(), task.ID, "p2", nil)
 	if err != nil {
 		t.Fatalf("piece_done p2: %v", err)
 	}

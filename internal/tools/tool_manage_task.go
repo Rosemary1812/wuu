@@ -35,7 +35,7 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 				"action": map[string]any{
 					"type":        "string",
 					"enum":        []string{"create", "escalate", "claim", "unclaim", "update_status", "need_human", "unfollow", "list", "set_plan", "piece_done"},
-					"description": "create opens a task (group members only); escalate converts a converged open discussion reply into a task; claim/unclaim take/release work ownership; update_status files the conclusion and completes the task; need_human flags the task for a decision only the human can make; unfollow leaves the task's push subset; list shows the board. As a task LEAD: set_plan declares a team plan (pieces with assignees + dependencies + per-piece prompt) on a task and the engine dispatches the ready pieces by @-waking their assignees; as an ASSIGNEE: piece_done marks your plan piece complete and the engine advances the plan (wakes the next dependents, or wakes the lead when all pieces are done).",
+					"description": "create opens a task (group members only); escalate converts a converged open discussion reply into a task; claim/unclaim take/release work ownership; update_status files the conclusion and completes the task; need_human flags the task for a decision only the human can make; unfollow leaves the task's push subset; list shows the board. As a task LEAD: set_plan declares a team plan (pieces with assignees + dependencies + per-piece prompt) on a task and the engine dispatches the ready pieces by @-waking their assignees; as an ASSIGNEE: piece_done reports your piece done and hands the structured result to the downstream node(s) — that handoff is what wakes the next agent — then the engine advances the plan (dispatches the next dependents, or wakes the lead when all pieces are done).",
 				},
 				"thread_id": map[string]any{
 					"type":        "string",
@@ -92,6 +92,20 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "With piece_done: the id of your plan piece (as declared in set_plan) that you have finished.",
 				},
+				"handoff": map[string]any{
+					"type":        "object",
+					"description": "With piece_done: the structured result you hand to the downstream node(s) — the ONLY thing that wakes the next agent. Put the next node's real input here, never in a public post_message update (that update is progress for the human and wakes no teammate). Omit entirely if you produced nothing for a next node.",
+					"properties": map[string]any{
+						"done":       map[string]any{"type": "string", "description": "What you completed."},
+						"findings":   map[string]any{"type": "string", "description": "What you learned that the next node needs."},
+						"artifacts":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Paths / ids of concrete outputs (files, patches, docs)."},
+						"limits":     map[string]any{"type": "string", "description": "What you did NOT do, and known gaps or caveats."},
+						"next_goal":  map[string]any{"type": "string", "description": "The goal you are handing to the next node."},
+						"acceptance": map[string]any{"type": "string", "description": "How the next node should judge its own result done."},
+						"notes":      map[string]any{"type": "string", "description": "Anything else the next node should know."},
+					},
+					"additionalProperties": false,
+				},
 			},
 			"required": []string{"action"},
 		},
@@ -110,17 +124,18 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 		return "", errors.New("manage_task: participant identity is required")
 	}
 	var params struct {
-		Action         string      `json:"action"`
-		ThreadID       string      `json:"thread_id"`
-		SubthreadID    string      `json:"subthread_id"`
-		Title          string      `json:"title"`
-		AnchorSeq      int         `json:"anchor_seq"`
-		Claim          bool        `json:"claim"`
-		AckCollisionID string      `json:"ack_collision_id"`
-		Summary        string      `json:"summary"`
-		Reason         string      `json:"reason"`
-		Plan           []TaskPiece `json:"plan"`
-		PieceID        string      `json:"piece_id"`
+		Action         string       `json:"action"`
+		ThreadID       string       `json:"thread_id"`
+		SubthreadID    string       `json:"subthread_id"`
+		Title          string       `json:"title"`
+		AnchorSeq      int          `json:"anchor_seq"`
+		Claim          bool         `json:"claim"`
+		AckCollisionID string       `json:"ack_collision_id"`
+		Summary        string       `json:"summary"`
+		Reason         string       `json:"reason"`
+		Plan           []TaskPiece  `json:"plan"`
+		PieceID        string       `json:"piece_id"`
+		Handoff        *TaskHandoff `json:"handoff"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
 		return "", fmt.Errorf("manage_task: parse args: %w", err)
@@ -233,7 +248,7 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 		if strings.TrimSpace(params.PieceID) == "" {
 			return "", errors.New("piece_done: piece_id is required")
 		}
-		view, err := manager.PieceDone(ctx, params.SubthreadID, params.PieceID)
+		view, err := manager.PieceDone(ctx, params.SubthreadID, params.PieceID, params.Handoff)
 		if err != nil {
 			return "", err
 		}
