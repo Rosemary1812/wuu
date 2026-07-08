@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -8,6 +10,10 @@ import { SCRATCH_PSEUDO_PROJECT_ID, summarizeThreadsForSidebar } from "./AppStat
 
 let container: HTMLDivElement;
 let root: Root | null = null;
+const environmentCSS = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/environment.css"),
+  "utf8",
+);
 
 beforeEach(() => {
   container = document.createElement("div");
@@ -44,6 +50,17 @@ function changeInput(input: HTMLInputElement, value: string): void {
   )?.set;
   setter?.call(input, value);
   input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function cssRule(selector: string): string {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const matches = Array.from(
+    environmentCSS.matchAll(
+      new RegExp(`^${escapedSelector}\\s*\\{([\\s\\S]*?)\\n\\}`, "gm"),
+    ),
+  );
+  expect(matches).not.toHaveLength(0);
+  return matches.at(-1)?.[1] ?? "";
 }
 
 describe("ThreadRowTitle", () => {
@@ -380,12 +397,20 @@ describe("ProjectList", () => {
     expect(container.querySelector(".thread-rename-dialog")).toBeNull();
     const dialog = document.body.querySelector(".thread-rename-dialog");
     expect(dialog?.getAttribute("role")).toBe("dialog");
-    expect(dialog?.textContent).toContain("重命名对话");
+    expect(dialog?.firstElementChild?.classList.contains("thread-rename-header")).toBe(true);
+    expect(dialog?.querySelector(".thread-rename-title")?.textContent).toBe("重命名对话");
 
     const input = document.body.querySelector<HTMLInputElement>(
       ".thread-rename-input",
     );
     expect(input?.value).toBe("Old title");
+    const field = dialog?.querySelector(".thread-rename-field");
+    expect(field?.querySelector(".thread-rename-label")?.textContent).toBe("会话标题");
+    expect(field?.contains(input)).toBe(true);
+    const actions = dialog?.lastElementChild;
+    expect(actions?.classList.contains("thread-rename-actions")).toBe(true);
+    expect(actions?.classList.contains("conversation-search-status")).toBe(false);
+    expect(actions?.textContent?.replace(/\s/g, "")).toBe("取消保存");
 
     act(() => {
       changeInput(input!, "New title");
@@ -479,6 +504,16 @@ describe("ProjectList", () => {
     } finally {
       window.prompt = originalPrompt;
     }
+  });
+
+  it("centers the rename dialog while reusing the search overlay shell", () => {
+    const overlayRule = cssRule(".thread-rename-overlay");
+    expect(overlayRule).toMatch(/align-items:\s*center;/);
+    expect(overlayRule).toMatch(/padding:\s*24px;/);
+    expect(overlayRule).not.toMatch(/padding-top:/);
+
+    const dialogRule = cssRule(".thread-rename-dialog");
+    expect(dialogRule).toMatch(/transform-origin:\s*center;/);
   });
 
   it("keeps pinned sessions out of project lists", () => {
