@@ -216,6 +216,11 @@ const api: WuuDesktopApi = {
   listThreads: (cwd?: string) => ipcRenderer.invoke("wuu:thread-list", cwd),
   searchThreads: (query: string, limit?: number) =>
     ipcRenderer.invoke("wuu:thread-search", query, limit),
+  getThreadPreview: (
+    threadId: string,
+    limit?: number,
+  ): Promise<import("../shared/protocol").ThreadPreviewResult> =>
+    ipcRenderer.invoke("wuu:thread-preview", threadId, limit),
   pinThread: (threadId: string, pinned: boolean) =>
     ipcRenderer.invoke("wuu:thread-pin", threadId, pinned),
   addThreadMember: (threadId: string, participantId: string) =>

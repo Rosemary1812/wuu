@@ -899,6 +899,10 @@ export type ThreadSearchResult = {
   results: ThreadSearchResultItem[];
 };
 
+export type ThreadPreviewResult = {
+  turns: Turn[];
+};
+
 export type ThreadEditDraft = {
   prompt: string;
   images?: InputImage[];
@@ -1857,6 +1861,10 @@ export type WuuDesktopApi = {
   ) => Promise<ThreadTaskEventsResult>;
   listThreads: (cwd?: string) => Promise<{ threads: Thread[] }>;
   searchThreads: (query: string, limit?: number) => Promise<ThreadSearchResult>;
+  getThreadPreview: (
+    threadId: string,
+    limit?: number
+  ) => Promise<ThreadPreviewResult>;
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;
   addThreadMember: (
     threadId: string,

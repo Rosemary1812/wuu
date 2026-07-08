@@ -1068,13 +1068,12 @@
 
 .conversation-search-dialog {
   display: grid;
-  /* Default 50vw keeps the dialog proportionate to typical desktop windows
-     (640px @ 1280, 720px @ 1440) instead of always pegging at the 760px cap.
-     The 760px ceiling matches the previous max — hit only on displays ≥
-     1520px wide — and the 480px floor prevents the dialog from collapsing
-     below usable width on small windows; the (max-width: 720px) media query
-     below still overrides this for phone-sized viewports. */
-  width: clamp(480px, 50vw, 760px);
+  /* Wider default — the dialog now hosts a two-pane layout (result list +
+     preview pane). 60vw keeps it proportionate at common desktop widths
+     (768px @ 1280, 864px @ 1440) and the 880px cap is generous enough for
+     both panes without crowding. The (max-width: 720px) media query below
+     overrides this for phone-sized viewports. */
+  width: clamp(640px, 60vw, 880px);
   max-height: min(680px, calc(100vh - 96px));
   grid-template-rows: auto auto auto minmax(0, 1fr);
   overflow: hidden;
@@ -1338,6 +1337,156 @@
   font-size: var(--font-body);
   font-weight: var(--weight-medium);
   animation: menu-enter 180ms var(--search-motion-easing) both;
+}
+
+/* Two-pane body — result list on the left, preview pane on the right. The
+ * list keeps its own vertical scroll (long result lists); the preview pane
+ * scrolls independently so a long conversation does not push the list off
+ * screen. */
+.conversation-search-body {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 1.4fr);
+  gap: 8px;
+}
+
+/* Preview pane (right column). Reads as a slightly recessed panel so the
+ * user's eye treats it as "inspect this candidate" rather than primary
+ * content — the list stays the navigational surface. */
+.conversation-search-preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: 10px;
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  padding: 12px 14px;
+  overflow-y: auto;
+}
+
+.conversation-search-preview[data-state="empty"],
+.conversation-search-preview[data-state="no-turns"] {
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+.conversation-search-preview-header {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 4px;
+}
+
+.conversation-search-preview-title {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--font-body);
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.conversation-search-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.conversation-search-preview-context,
+.conversation-search-preview-time {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-search-preview-sep {
+  color: var(--ink-overlay-8);
+}
+
+.conversation-search-preview-snippet {
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  line-height: 1.5;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 8px 10px;
+  word-break: break-word;
+}
+
+.conversation-search-preview-loading,
+.conversation-search-preview-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.conversation-search-preview-error {
+  border-radius: var(--radius-sm);
+  background: var(--env-search-error-bg, var(--surface-2));
+  color: var(--env-search-error-text, var(--ink));
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  padding: 8px 10px;
+}
+
+.conversation-search-preview-turns {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 8px;
+}
+
+.conversation-search-preview-turn {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 8px 10px;
+}
+
+.conversation-search-preview-turn.role-user {
+  /* User messages get no extra visual treatment — their text already says
+   * what the user typed. The role label distinguishes them at a glance. */
+}
+
+.conversation-search-preview-turn.role-assistant {
+  /* Subtle differentiation from user turns: keep both readable, just mark
+   * who is talking. */
+}
+
+.conversation-search-preview-role {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.conversation-search-preview-text {
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 @media (max-width: 720px) {

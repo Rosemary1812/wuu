@@ -1174,6 +1174,14 @@ app.whenReady().then(async () => {
     }),
   );
   ipcMain.handle(
+    "wuu:thread-preview",
+    (event, threadId: string, limit?: number) =>
+      appServerRequest(event, "thread/preview", {
+        thread_id: threadId,
+        limit: typeof limit === "number" ? limit : undefined,
+      }),
+  );
+  ipcMain.handle(
     "wuu:thread-pin",
     (event, threadId: string, pinned: boolean) =>
       appServerRequest<{ thread: Thread }>(event, "thread/pin", {

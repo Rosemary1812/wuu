@@ -52,6 +52,7 @@ const (
 	MethodThreadTaskEvents         = "thread/taskEvents"
 	MethodThreadList               = "thread/list"
 	MethodThreadSearch             = "thread/search"
+	MethodThreadPreview            = "thread/preview"
 	MethodThreadPin                = "thread/pin"
 	MethodThreadArchive            = "thread/archive"
 	MethodThreadCompactStart       = "thread/compact/start"
@@ -1122,6 +1123,23 @@ type ThreadSearchResult struct {
 type ThreadSearchResultItem struct {
 	Thread  Thread `json:"thread"`
 	Snippet string `json:"snippet,omitempty"`
+}
+
+// ThreadPreviewParams asks the server to materialize the first N turns of a
+// thread for the conversation-search preview pane. The renderer fetches this
+// lazily when a search result is selected; the search response itself stays
+// light (title + snippet only).
+type ThreadPreviewParams struct {
+	ThreadID string `json:"thread_id"`
+	Limit    int    `json:"limit,omitempty"`
+}
+
+// ThreadPreviewResult carries the rendered preview turns. Empty (non-nil)
+// slice means "thread exists but has no persisted turns yet"; a nil slice is
+// reserved for the "thread not found / history missing" path so callers can
+// tell the two apart if they care.
+type ThreadPreviewResult struct {
+	Turns []Turn `json:"turns"`
 }
 
 type ThreadPinParams struct {

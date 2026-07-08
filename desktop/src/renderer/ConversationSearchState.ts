@@ -7,6 +7,7 @@ import {
 import type {
   RuntimeContext,
   ThreadSearchResultItem,
+  Turn,
 } from "../shared/protocol";
 import {
   mergeListedThreads,
@@ -16,6 +17,7 @@ import {
 
 const CONVERSATION_SEARCH_EXIT_MS = 180;
 const CONVERSATION_SEARCH_RESULT_LIMIT = 40;
+const CONVERSATION_SEARCH_PREVIEW_LIMIT = 4;
 
 export type CloseConversationSearchOptions = {
   immediate?: boolean;
@@ -29,6 +31,14 @@ export type ConversationSearchState = {
   error: string;
   results: ThreadSearchResultItem[];
   selectedIndex: number;
+  // Preview pane (right column). previewedThreadID is the cache key —
+  // when selection points at the same thread we already have turns for, we
+  // skip the network round-trip. previewedTurns is the loaded content;
+  // previewLoading/Error are the transient UI flags.
+  previewedThreadID: string;
+  previewedTurns: Turn[];
+  previewLoading: boolean;
+  previewError: string;
 };
 
 const initialConversationSearch: ConversationSearchState = {
@@ -39,6 +49,10 @@ const initialConversationSearch: ConversationSearchState = {
   error: "",
   results: [],
   selectedIndex: 0,
+  previewedThreadID: "",
+  previewedTurns: [],
+  previewLoading: false,
+  previewError: "",
 };
 
 export function useConversationSearch({
@@ -74,6 +88,7 @@ export function useConversationSearch({
   const conversationSearchRef = useRef<HTMLDivElement>(null);
   const conversationSearchInputRef = useRef<HTMLInputElement>(null);
   const conversationSearchRequestRef = useRef(0);
+  const conversationSearchPreviewRequestRef = useRef(0);
   const conversationSearchCloseTimerRef = useRef<number | undefined>(
     undefined,
   );
@@ -103,6 +118,72 @@ export function useConversationSearch({
     conversationSearch.query,
   ]);
 
+  // Preview pane: when the selected search result points at a thread we have
+  // not yet previewed, fetch the first few turns lazily. previewedThreadID
+  // is the cache key, so re-selecting the same thread (e.g. mouse hover off
+  // and back on) is instant. Stale responses are discarded via the request
+  // counter so fast keyboard navigation never paints the wrong thread's
+  // content into the preview pane.
+  useEffect(() => {
+    if (!conversationSearch.open || conversationSearch.closing) {
+      return;
+    }
+    const target = currentSelectedSearchThreadID(conversationSearch);
+    if (!target) return;
+    if (target === conversationSearch.previewedThreadID) return;
+
+    const requestID = conversationSearchPreviewRequestRef.current + 1;
+    conversationSearchPreviewRequestRef.current = requestID;
+    setConversationSearch((current) => ({
+      ...current,
+      previewedThreadID: target,
+      previewedTurns: [],
+      previewLoading: true,
+      previewError: "",
+    }));
+
+    void window.wuu
+      .getThreadPreview(target, CONVERSATION_SEARCH_PREVIEW_LIMIT)
+      .then((result) => {
+        if (requestID !== conversationSearchPreviewRequestRef.current) {
+          return;
+        }
+        setConversationSearch((current) => {
+          if (currentSelectedSearchThreadID(current) !== target) {
+            return current;
+          }
+          return {
+            ...current,
+            previewedThreadID: target,
+            previewedTurns: result.turns,
+            previewLoading: false,
+            previewError: "",
+          };
+        });
+      })
+      .catch((error: unknown) => {
+        if (requestID !== conversationSearchPreviewRequestRef.current) {
+          return;
+        }
+        setConversationSearch((current) => {
+          if (currentSelectedSearchThreadID(current) !== target) {
+            return current;
+          }
+          return {
+            ...current,
+            previewLoading: false,
+            previewError:
+              error instanceof Error ? error.message : "加载预览失败",
+          };
+        });
+      });
+  }, [
+    conversationSearch.open,
+    conversationSearch.closing,
+    conversationSearch.results,
+    conversationSearch.selectedIndex,
+  ]);
+
   function toggleConversationSearch(): void {
     if (conversationSearch.open) {
       closeConversationSearch();
@@ -127,6 +208,13 @@ export function useConversationSearch({
       loading: true,
       error: "",
       selectedIndex: 0,
+      // Reset preview so the effect kicks off a fresh fetch on the first
+      // selection — a stale preview from the previous session would be
+      // misleading.
+      previewedThreadID: "",
+      previewedTurns: [],
+      previewLoading: false,
+      previewError: "",
     }));
     window.requestAnimationFrame(() =>
       conversationSearchInputRef.current?.focus(),
@@ -151,7 +239,12 @@ export function useConversationSearch({
       closing: !closeImmediately,
       loading: false,
       error: "",
+      previewedThreadID: "",
+      previewedTurns: [],
+      previewLoading: false,
+      previewError: "",
     }));
+    conversationSearchPreviewRequestRef.current += 1;
     if (closeImmediately) {
       return;
     }
@@ -308,6 +401,12 @@ export function useConversationSearch({
     clearConversationSearchQuery,
     setConversationSearchSelectedIndex,
   };
+}
+
+function currentSelectedSearchThreadID(state: ConversationSearchState): string {
+  if (state.results.length === 0) return "";
+  const idx = Math.max(0, Math.min(state.selectedIndex, state.results.length - 1));
+  return state.results[idx]?.thread.id ?? "";
 }
 
 function prefersReducedMotion(): boolean {
