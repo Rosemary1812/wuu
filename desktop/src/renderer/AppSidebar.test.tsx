@@ -3,7 +3,11 @@ import { resolve } from "node:path";
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { InitializeResult, ParticipantProfile } from "../shared/protocol";
+import type {
+  InitializeResult,
+  ParticipantProfile,
+  ParticipantSaveParams,
+} from "../shared/protocol";
 import { AppSidebar, SIDEBAR_SECTION_AGENTS } from "./AppSidebar";
 import { initialState, SCRATCH_PSEUDO_PROJECT_ID, type AppState, type ThreadSummary } from "./AppState";
 
@@ -82,7 +86,7 @@ function renderSidebar({
   onImportParticipants = () => {},
   onExportParticipants = () => {},
   onSelectParticipant = () => {},
-  onCreateParticipant = (_name: string) => {},
+  onCreateParticipant = async () => null as never,
   onStartNewThread = () => {},
 }: {
   projectMenuOpen?: boolean;
@@ -93,7 +97,9 @@ function renderSidebar({
   onImportParticipants?: (file: File) => void;
   onExportParticipants?: () => void;
   onSelectParticipant?: (participant: ParticipantProfile) => void;
-  onCreateParticipant?: (name: string) => void;
+  onCreateParticipant?: (
+    params: ParticipantSaveParams,
+  ) => Promise<ParticipantProfile>;
   onStartNewThread?: () => void;
 } = {}): void {
   const state: AppState = {
@@ -417,15 +423,30 @@ describe("AppSidebar participant roster", () => {
     expect(statusByName.get("Bare Agent")).toBe("online");
   });
 
-  it("renders the empty-state CTA when there are no participants", () => {
-    // The empty-state row now opens the shared SidebarNameDialog first
-    // (matching rename-conversation / new-group), so the test asserts:
+  it("renders the empty-state CTA when there are no participants", async () => {
+    // The empty-state row opens the NewParticipantDialog — a self-contained
+    // popup that collects every field (name + role + tagline + model +
+    // avatar) and calls onCreateParticipant with full save params. The
+    // test asserts:
     //   1. clicking the row reveals the floating dialog
-    //   2. submitting the dialog forwards the trimmed name to onCreateParticipant
-    const created: string[] = [];
+    //   2. filling the name field enables submit
+    //   3. submitting the dialog forwards the trimmed name to
+    //      onCreateParticipant and closes (awaited — the dialog only
+    //      closes once the parent's save promise resolves)
+    const created: ParticipantSaveParams[] = [];
     renderSidebar({
-      onCreateParticipant: (name) => {
-        created.push(name);
+      onCreateParticipant: async (params) => {
+        created.push(params);
+        // The dialog treats any truthy return as a successful save and
+        // closes itself. Return a minimal saved-profile stub.
+        return {
+          id: `p-${params.name}`,
+          kind: "named",
+          name: params.name,
+          role: params.role,
+          tagline: params.tagline,
+          model: params.model,
+        };
       },
     });
 
@@ -434,31 +455,33 @@ describe("AppSidebar participant roster", () => {
     );
     expect(empty).not.toBeNull();
     expect(empty?.textContent).toContain("添加 Agent");
-    expect(document.body.querySelector(".sidebar-name-dialog")).toBeNull();
+    expect(document.body.querySelector(".new-participant-dialog")).toBeNull();
     act(() => {
       empty?.click();
     });
 
-    const dialog = document.body.querySelector(".sidebar-name-dialog");
+    const dialog = document.body.querySelector(".new-participant-dialog");
     expect(dialog).not.toBeNull();
-    expect(dialog?.querySelector(".sidebar-name-dialog-title")?.textContent).toBe(
-      "新建 Agent",
-    );
+    expect(
+      dialog?.querySelector(".new-participant-title")?.textContent,
+    ).toBe("新建 Agent");
     const input = dialog?.querySelector<HTMLInputElement>(
-      ".sidebar-name-dialog-input",
+      'input[data-field="name"]',
     );
     expect(input).not.toBeNull();
     expect(input?.getAttribute("placeholder")).toBe("例如 Noel");
-    expect(input?.getAttribute("aria-label")).toBe("Agent 名字");
     setControlledInputValue(input!, "  Noel  ");
-    const nextButton = Array.from(
-      dialog?.querySelectorAll("button") ?? [],
-    ).find((el) => el.textContent === "下一步");
-    expect(nextButton).not.toBeUndefined();
-    act(() => {
-      nextButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const submitButton = Array.from(
+      dialog?.querySelectorAll("button[type=submit]") ?? [],
+    ).find((el) => /\u521b\u5efa/.test(el.textContent ?? ""));
+    expect(submitButton).not.toBeUndefined();
+    await act(async () => {
+      submitButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      // Let the parent's save promise resolve so the dialog's onClose
+      // fires and the portal node unmounts before the final assertion.
+      await Promise.resolve();
     });
-    expect(created).toEqual(["Noel"]);
-    expect(document.body.querySelector(".sidebar-name-dialog")).toBeNull();
+    expect(created.map((c) => c.name)).toEqual(["Noel"]);
+    expect(document.body.querySelector(".new-participant-dialog")).toBeNull();
   });
 });

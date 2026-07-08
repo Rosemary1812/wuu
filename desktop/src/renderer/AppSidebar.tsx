@@ -52,7 +52,12 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { DesktopProject, ParticipantProfile } from "../shared/protocol";
+import type {
+  DesktopProject,
+  ParticipantProfile,
+  ParticipantSaveParams,
+  ProviderSummary,
+} from "../shared/protocol";
 import type { AppState, ThreadSummary } from "./AppState";
 import type { ConversationFixtureKind } from "./ConversationFixtures";
 import { isGroupThread, SCRATCH_PSEUDO_PROJECT_ID } from "./AppState";
@@ -61,6 +66,7 @@ import { baseThreadTitle } from "./ThreadTitles";
 import { SidebarSection, SidebarSectionDragHandleContext } from "./SidebarSection";
 import { ThreadContextMenu } from "./ThreadContextMenu";
 import { SidebarNameDialog } from "./SidebarNameDialog";
+import { NewParticipantDialog } from "./NewParticipantDialog";
 
 /**
  * Stable section identity keys for the new sidebar tree.
@@ -345,6 +351,7 @@ export function AppSidebar({
   onPointerEnter,
   onPointerLeave,
   onOpenSettings,
+  providers,
 }: {
   state: AppState;
   // The sidebar renders scratch conversations through the same ProjectList
@@ -410,13 +417,17 @@ export function AppSidebar({
   // right-click menu. Opens the profile editing side panel.
   onEditParticipant: (participant: ParticipantProfile) => void;
   // Fires when the user clicks the Agents section's + button (or the
-  // empty-list "添加 Agent" row). The sidebar collects the agent name
-  // through the shared SidebarNameDialog first, then calls this with
-  // the chosen name. App.tsx opens the participant profile editor in
-  // "new" mode and pre-fills the form with `name`. Optional so test
-  // harnesses can render the sidebar without wiring participant
-  // creation.
-  onCreateParticipant?: (name: string) => void;
+  // empty-list "添加 Agent" row) and submits the NewParticipantDialog.
+  // App.tsx saves the new agent via window.wuu.saveParticipant, refreshes
+  // the participants list, returns the saved participant, and does NOT
+  // open the right-side profile panel (the new-agent flow is fully
+  // handled inside the dialog). Optional so test harnesses can render
+  // the sidebar without wiring participant creation.
+  onCreateParticipant?: (params: ParticipantSaveParams) => Promise<ParticipantProfile>;
+  // Provider summaries from the runtime, used to populate the model
+  // SelectMenu in the NewParticipantDialog. Optional so the dialog can
+  // still render with just the "跟随全局" fallback.
+  providers?: ProviderSummary[];
   // Fires when the user submits a name in the 群聊 section's inline
   // creator. App.tsx starts the group thread via
   // startThread({ group: true, title }) and selects it. Optional so test
@@ -460,13 +471,14 @@ export function AppSidebar({
   // commit handler.
   const [creatingGroupThread, setCreatingGroupThread] = useState(false);
   const [groupNameDraft, setGroupNameDraft] = useState("");
-  // Floating create-agent dialog for the Agents section: matches the
-  // rename-conversation / new-group pattern (shared SidebarNameDialog).
-  // The + button and the empty-list "添加 Agent" row both open this
-  // dialog; on submit the chosen name is forwarded to onCreateParticipant,
-  // which opens the profile editor pre-filled.
+  // Floating create-agent dialog for the Agents section. The + button and
+  // the empty-list "添加 Agent" row both open the NewParticipantDialog,
+  // which is fully self-contained: it collects every field (name, role,
+  // tagline, model, avatar) and saves directly via the parent's
+  // `onParticipantCreated` callback. The right-side ParticipantProfilePanel
+  // stays in place only for editing existing agents via the right-click
+  // menu (onEditParticipant).
   const [creatingParticipant, setCreatingParticipant] = useState(false);
-  const [participantNameDraft, setParticipantNameDraft] = useState("");
   // Right-click menu on an individual agent row. The menu hosts the
   // profile-editing entry plus a pin/unpin DM affordance that drives off
   // the latest DM thread for that participant. The roster header's own
@@ -920,7 +932,6 @@ export function AppSidebar({
                     title="新建 Agent"
                     disabled={!state.initialized}
                     onClick={() => {
-                      setParticipantNameDraft("");
                       setCreatingParticipant(true);
                     }}
                   >
@@ -962,7 +973,6 @@ export function AppSidebar({
                           className="participant-roster-row empty"
                           disabled={!state.initialized}
                           onClick={() => {
-                            setParticipantNameDraft("");
                             setCreatingParticipant(true);
                           }}
                         >
@@ -1192,31 +1202,28 @@ export function AppSidebar({
         submitLabel="创建"
         cancelLabel="取消"
       />
-      <SidebarNameDialog
+      <NewParticipantDialog
         open={creatingParticipant}
-        title={participantNameDraft}
-        onTitleChange={setParticipantNameDraft}
-        onSubmit={() => {
-          const nextName = participantNameDraft.trim();
-          if (nextName === "") {
-            return;
+        providers={providers}
+        onSubmit={async (params) => {
+          // The dialog owns its own saving/error UI; the sidebar is just the
+          // messenger. App.tsx's onCreateParticipant handler is responsible
+          // for calling saveParticipant, updating the participants list, and
+          // returning the saved participant so the dialog can close on
+          // success. Errors thrown here surface inline inside the dialog.
+          if (!onCreateParticipant) {
+            throw new Error("onCreateParticipant handler is not wired");
           }
-          setCreatingParticipant(false);
-          setParticipantNameDraft("");
-          onCreateParticipant?.(nextName);
+          return onCreateParticipant(params);
+        }}
+        onCreated={() => {
+          // No-op: closing is driven by the dialog itself on success. Kept
+          // for symmetry with the prop signature and to give App.tsx a
+          // hook for future side effects (e.g. focus a thread).
         }}
         onClose={() => {
           setCreatingParticipant(false);
-          setParticipantNameDraft("");
         }}
-        dialogTitle="新建 Agent"
-        dialogTitleId="participant-create-title"
-        fieldLabel="Agent 名字"
-        fieldAriaLabel="Agent 名字"
-        placeholder="例如 Noel"
-        icon={UserRound}
-        submitLabel="下一步"
-        cancelLabel="取消"
       />
     </aside>
   );

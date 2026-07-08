@@ -190,7 +190,15 @@ function renderSidebar(options: RenderOptions): void {
         onSelectParticipant={onSelectParticipant}
         onCreateGroupThread={onCreateGroupThread}
         onEditParticipant={onEditParticipant}
-        onCreateParticipant={() => {}}
+        onCreateParticipant={async () =>
+          ({
+            id: "",
+            kind: "named",
+            name: "",
+            role: "",
+            tagline: "",
+            model: "",
+          }) as ParticipantProfile}
         onImportParticipants={() => {}}
         onExportParticipants={() => {}}
         onTogglePinned={onTogglePinned}
@@ -946,7 +954,15 @@ describe("AppSidebar drag-to-reorder wiring (T7)", () => {
             onSelectThread: () => {},
             onSelectParticipant: () => {},
             onEditParticipant: () => {},
-            onCreateParticipant: () => {},
+            onCreateParticipant: async () =>
+          ({
+            id: "",
+            kind: "named",
+            name: "",
+            role: "",
+            tagline: "",
+            model: "",
+          }) as ParticipantProfile,
             onImportParticipants: () => {},
             onExportParticipants: () => {},
             onTogglePinned: () => {},

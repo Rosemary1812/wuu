@@ -3834,16 +3834,25 @@ export function App(): JSX.Element {
     });
   }
 
-  function openNewParticipantProfile(initialName?: string): void {
-    closeConversationSearch({ immediate: true });
-    closeEnvironmentPanel({ dismissed: true });
-    setOpenSubthreadPanel(undefined);
-    setRightPanelOpenWithMotion(false);
-    setParticipantPanel({
-      mode: "new",
-      initialName: initialName?.trim() || undefined,
-      loading: false,
+  // Create a new agent from inside the NewParticipantDialog (sidebar +
+// button or empty-list CTA). The dialog collects every field and calls
+// this handler on submit. We save the new participant, merge it into the
+// roster, and return the saved profile so the dialog can close on
+// success. Unlike the right-side ParticipantProfilePanel, this flow
+// does NOT open any edit panel after save — the popup is the whole
+// experience.
+  async function handleNewParticipantCreate(
+    params: ParticipantSaveParams,
+  ): Promise<ParticipantProfile> {
+    const result = await window.wuu.saveParticipant(params);
+    setParticipants((current) =>
+      replaceParticipantProfile(current, result.participant),
+    );
+    void refreshParticipants().catch(() => {
+      // Best-effort roster refresh; the local upsert above is already
+      // authoritative for this turn.
     });
+    return result.participant;
   }
 
   /**
@@ -9070,7 +9079,8 @@ export function App(): JSX.Element {
             onSelectThread={(id) => void activateThread(id)}
             onSelectParticipant={(participant) => void openParticipantDM(participant)}
             onEditParticipant={openParticipantProfile}
-            onCreateParticipant={openNewParticipantProfile}
+            onCreateParticipant={handleNewParticipantCreate}
+            providers={state.initialized?.providers}
             onCreateGroupThread={(title) => void createGroupThread(title)}
             onImportParticipants={importParticipantTemplate}
             onExportParticipants={exportParticipantTemplate}
