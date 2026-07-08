@@ -108,8 +108,13 @@
   -webkit-app-region: drag;
 }
 
-.app-shell.sidebar-collapsed.right-panel-open .workspace-panel-tabbar {
-  padding-left: 86px;
+.app-shell.sidebar-collapsed.right-panel-open:not(.right-panel-globalized) .workspace-panel-tabbar {
+  /* Expand only when the right panel's left edge enters the traffic-light zone. */
+  padding-left: clamp(
+    10px,
+    calc(86px - (100vw - var(--workspace-right-panel-width, 360px))),
+    86px
+  );
 }
 
 .app-shell.right-panel-globalized .workspace-panel-tabbar > button,
