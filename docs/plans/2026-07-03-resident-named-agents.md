@@ -18,6 +18,7 @@
 - **2026-07-04 增补五（#all 扇出＝roster，named agent 数量同受 `maxGroupMembers` 限制，已实施）**：#all 频道成员是**隐式的整个 named roster**（§3.2 语义），它的广播扇出就是活跃 named agent 的数量——这是"没人显式创建、却会自己长大的群"，是增补四"群规模上限"的唯一漏口。故创建新 named agent 的两个入口（`manage_participant` 工具、`participant/save` RPC）在活跃 roster 达到 `maxNamedParticipants` 时拒绝并解释；retired 不计数（退休即释放名额）。`maxNamedParticipants = maxGroupMembers`，刻意同一个数字，因为二者是同一件事。上线值 = 8。
 - **2026-07-04 增补六（"内心独白"泄漏：只在提示词层堵，不做服务端内容过滤，已实施提示词部分）**：审计（`.wuu/tmp/all-channel-debug-20260704-*`）发现 agent 会把"我决定保持沉默/没什么要回/系统遥测无新消息"这类**内心独白**用 `post_message`（`post_kind=result`）当正文发进群，在聊天里渲染成真气泡（自相矛盾：内容写着"保持沉默"却被发出来）。诊断：这不是路由 bug，是**工具误用**——模型想给"我看到了但这轮不接话"的轻信号，却选了大喇叭而非 `decline`/静默结束；`PostMessage`（resident_speech.go）对内容零校验。**裁决**：**不**加服务端硬编码过滤（不同模型花样不同，且会误杀正文本就是括号的正常消息），只在 §5 提示词"How to reply"里点名这个反模式并给例子（"(staying silent)"/"(nothing new, waiting)" 这类整条即矛盾，应改为 decline 或不 post）。模型意图本身（给"路过"一个轻反馈）是合理的，见下条未决项。
 - **2026-07-04 增补七（"路过"反馈形态定案 → 已阅回执 + 表情反应）**：增补六留的待议项已定案，完整设计见 `docs/plans/2026-07-04-read-receipts-and-reactions.md`。结论：引入**三级参与度**（已阅 seen / 表情 reaction / 回复 reply，全部可见）。自动**已阅回执**接管"路过反馈"职责——静默不再零反馈，故泄漏的"内心独白"消息连借口都没了；**表情**降级为纯可选调味（emoji 占位，后续换自绘资产）。二者共用一条脊椎：消息级寻址 `(thread_id, seq)` + `message_marks` 表 + 细粒度通知。硬不变量沿用增补四：已阅/表情**不生成信封、不唤醒 agent**；addressed 仍须回复或 decline。§5 提示词据此收紧（你从不需要宣告"看过/在沉默"，已阅替你说）。**不**做服务端正文内容过滤（保留增补六裁决）。
+- **2026-07-08 增补八（idle unread wake，已实施）**：群聊改为 history-first 路由。可见主流消息先写一次 history；用户发言仍立即 wake 成员；@、单人成员群、reply subthread、task handoff、system wake 等定向事件仍 push durable envelope 并 kick；普通 agent 主流发言不再立即全员唤醒，而是成为每个成员 read cursor 之后的 ambient unread。房间静默后，idle unread wake 从有主流未读的成员里选一个（跳过最后发言者、busy、draining、retired；优先未读最多，并列随机）走现有 resident drain/pull。它不生成 synthetic cron 消息，不绕过 `basis_seq`/read cursor/held draft；连续自动 wake 的 delay 递增，用户发言重置。提示词只建议模型在 delayed batch/held draft 变厚时考虑 inception，runtime 不强制调用。
 
 ---
 
@@ -27,12 +28,12 @@
 
 1. **一个 named agent = 一个连续的 actor。** 只有一个"大脑"（一份持续演进的上下文 + 一个持久家目录）。它不是"每条消息孵化一个新实例"——那是现状的 bug，不是特性。名字之所以值钱，是因为它压缩了时间线（《Agents Need Names》）；每次都是新实例的话，名字只是装饰。
 2. **DM 和群聊只是两个消息入口，不是两个 agent。** 用户在 DM 里说的话和在群聊里 @它 的话，进入**同一份上下文**。它在 DM 里"知道"群里发生的事，这是特性不是泄漏。
-3. **收件是 inbox 语义，不是中断语义。** 消息以紧凑信封（envelope）进入 agent 的收件箱；agent 忙时信封排队，下个 turn 合并消费。不把整个房间的历史推进 context——"Signals it doesn't pull don't enter the working context; they stay queryable"（Raft 工程博客）。细节由 agent 用工具主动拉取。
-4. **群内每条消息都唤醒每个成员 agent 推理一次。** 这是刻意的（对齐 Raft 的实际行为）：agent 要能"注意到"没点名它的问题。成本由信封紧凑性、合批、**群规模上限**（并行扇出宽度＝成员数，见"频率与预算"）控制，不由"不唤醒"控制，也不由 hop 深度丢弃控制（见修订记录增补四）。
+3. **收件是 inbox + pull 语义，不是中断语义。** 可见主流消息写进群 history，agent 被唤醒时从自己的 read cursor 拉取未读；定向事件（@、cth、system/task wake 等）才进入 durable envelope inbox。agent 忙时，push 信封排队，主流未读留在 history，下个 turn 合并消费。不把整个房间的历史推进 context——"Signals it doesn't pull don't enter the working context; they stay queryable"（Raft 工程博客）。细节由 agent 用工具主动拉取。
+4. **用户房间发言立即唤醒；普通 agent 发言延迟补读。** 用户对群说话是对房间的真实召唤，写入 history 后立即 wake 成员。agent 的未点名主流发言只成为 ambient unread；房间静默后 idle unread wake 最多踢醒一个合适成员补读，避免全员同时被 agent chatter 打断。成本由 history pull、合批、idle wake 单人选择、**群规模上限**（见"频率与预算"）共同控制，不由 hop 深度丢弃控制（见修订记录增补四）。
 5. **回复是带目标的显式动作。** 在哪回复、要不要回复，由 agent 自己判断并用工具显式表达（`post_message` 带目标 thread）。回不回、回在哪，不由"孵化它的那条消息在哪"被动决定。
 6. **两条硬规则，其余自由裁量。** (a) 被 DM 或被 @mention（addressed）：**应当回应**——要么实质回复，要么 `decline` 给一行理由。这是提示词层的强约束，**runtime 不代答**：不注入 synthetic decline，不伪造 agent 没有说过的话；runtime 只把"addressed 未回应"记为内部 telemetry 事件，供我们调优提示词和路由，不做成用户可见指标（§4.5）。(b) 未被点名的群聊消息，**按发送者（信封 `from`）分两类**：**用户对房间发话**（`from=user`，即便没 @ 你）——用户是在跟整个房间说话而非被你旁听到，直接的问候/提问（"有人吗""你们好""谁能看下…"）**理应有人应**，即使没被 @ 也别让用户对着空房间说话；简短回应即可，队友已答过的简单问题不必复读。**其他 agent 未点名你的转发**（`from=agent`）——视为 ambient 信息，**只在真有增量价值时发言**，静默是默认，禁止附和、复读、"+1"。（"用户对房间发话"**欢迎多人各自发声**——多方视角正是价值，见公理 10；不做"只留一个回答"的抑制机制。）
-7. **agent↔agent 消息走同一机制。** A 在群里发的 `post_message` 对其他成员 agent 生成同样的信封，无特权通道。防 ping-pong 靠**群规模上限**（把并行扇出宽度按住）+ 提示词约束（§6 静默默认、禁附和/复读）+ `hop` 作参考信号；不再用 hop 计数做投递硬限制（修订记录增补四：那与 §10 冲突且会静默丢消息）。
-8. **上下文膨胀的治理组合拳**：紧凑信封（只含单条新消息）+ 忙时合批 + `fetch_thread_messages` 按需拉取 + 常驻 thread 复用现有 compaction（`internal/compact`）+ `MEMORY.md` 作为跨 compaction 的持久层。不发明新的上下文管理机制。
+7. **agent↔agent 消息走同一历史与唤醒机制。** A 在群里发的 `post_message` 不是特权通道：主流消息写入群 history，@/cth/system/task 等定向情形 push envelope 并 kick，普通 ambient agent 消息走 idle unread wake。防 ping-pong 靠 idle wake 单人延迟、**群规模上限**、提示词约束（§6 静默默认、禁附和/复读）和 `hop` 参考信号；不再用 hop 计数做投递硬限制（修订记录增补四：那与 §10 冲突且会静默丢消息）。
+8. **上下文膨胀的治理组合拳**：history pull + 紧凑 envelope（定向事件只含单条新消息）+ 忙时合批 + delayed unread 时建议考虑 inception + `fetch_thread_messages` 按需拉取 + 常驻 thread 复用现有 compaction（`internal/compact`）+ `MEMORY.md` 作为跨 compaction 的持久层。不发明新的上下文管理机制。
 9. **不新建平行宇宙。** agent 的大脑就是它的 DM thread（复用全部现有 turn/history/compaction/fork/检视机制）；群聊就是现有 conversation thread + 成员关系。发现自己在写一个平行的 session 系统，就是走错了。
 10. **多方协商靠方法论，不靠机制。** 用户把问题/观点/决策抛进房间时，价值在于**不同成员给出不同角度**，帮用户快速收敛。信任模型天生的理解力，只用一小段提示把职责轻轻划清：各出自己的角度、别附和/"+1"、有分歧就摊开署名；需要牵头时**谁合适谁牵头**（拉人、按 fit 委派、综合），领导力**涌现**而非硬指派。不造锁/选举/回合/预设辩证角色——模型同一底座 + persona + 任务类型已足够分化。避免回音壁是这套方法论（尤其领导者主动求异见）的职责，不是某个机制的职责。
 
@@ -70,8 +71,9 @@ Named participant "Noel" (prt-noel)
     ├── History：多轮、持久化、可 compaction —— 这就是它唯一的大脑
     ├── 输入通道：
     │     a) 用户 DM（直接 turn/start，addressed=true）
-    │     b) 群聊信封（来自任何它是成员的 thread；@它 → addressed=true）
-    │     c) 其他 agent 的 post_message 产生的信封（hop+1）
+    │     b) 群聊主流未读（来自任何它是成员的 thread；从 read cursor 拉取）
+    │     c) 定向信封（@它、reply subthread、system/task wake → addressed 或系统事件）
+    │     d) 其他 agent 的普通 post_message（写入 history，静默后 idle unread wake 补读）
     └── 输出通道：
           a) post_message（缺省 thread_id = 本 DM）= DM 回复（聊天视图只渲染工具消息；
              assistant 正文是工作过程，不对用户渲染）
@@ -80,9 +82,9 @@ Named participant "Noel" (prt-noel)
           d) 静默结束 turn（仅当本批信封全部 addressed=false 时合法）
 ```
 
-**群聊 = 现有 conversation thread + 成员表。** 一个 thread 的成员是若干 named participants；用户消息与成员 agent 的发言都会向**其余**成员派发信封。primary agent 行为不变（它仍然直接回复用户的每个 turn，它不是"成员"，不走信封）。
+**群聊 = 现有 conversation thread + 成员表。** 一个 thread 的成员是若干 named participants；用户消息写入 history 后立即 wake 成员；成员 agent 的普通主流发言写入 history 后成为其他成员的 ambient unread，等 idle unread wake 补读；@、cth、system/task 等定向流量才进入 durable envelope inbox。primary agent 行为不变（它仍然直接回复用户的每个 turn，它不是"成员"，不走信封）。
 
-**串行化**：一个大脑 = 一个 thread 的 turn 串行。忙时信封入队（持久化），turn 结束自动排空为下一个合批 turn。这符合直觉：真人同时收到十条消息也是一口气读完再回。
+**串行化**：一个大脑 = 一个 thread 的 turn 串行。忙时 push 信封入队（持久化），主流未读停在 history/read cursor 之后；turn 结束或 idle wake 时自动排空为下一个合批 turn。这符合直觉：真人同时看到十条新消息也是一口气读完再回。
 
 ---
 
@@ -193,51 +195,43 @@ func (e MessageEnvelope) Prompt() string {
 
 ### 4.2 路由器（`internal/appserver/resident_router.go`）
 
-```go
-// routeEnvelopes fans a new visible message out to every resident
-// member of the source thread except the sender. It never routes to
-// the primary agent (primary replies through its own turn) and never
-// routes back into the source agent's own inbox.
-func (s *Server) routeEnvelopes(source *threadState, env MessageEnvelope, mentioned map[string]bool) {
-    members := session.ListThreadMembers(s.rt.SessionDir, source.ID) // named only
-    for _, pid := range members {
-        if pid == env.SenderParticipantID {
-            continue
-        }
-        e := env
-        e.ID = "env-" + session.NewID()
-        e.Addressed = mentioned[pid]
-        // 无 hop 深度丢弃（增补四）：深度 agent↔agent 中继照常投递，
-        // 是否参与交给模型判断；扇出宽度由群规模上限约束。hop 仅随
-        // 信封渲染作参考信号。
-        _ = session.EnqueueEnvelope(s.rt.SessionDir, pid, e)
-        s.kickResidentAgent(pid) // start or coalesce, §4.3
-    }
-}
-```
+当前路由是 **history-first + push/pull 分层**：
+
+1. 可见主流消息只在群 history 里写一次。成员的普通阅读由 `ThreadReadWatermark`
+   与 `ChatMessagesSince` 重建，不为每个成员复制一份主流信封。
+2. durable envelope 只用于必须点对点送达的内容：@mention、单人成员群、
+   reply subthread、system/task wake 等。它们会入 `resident_inbox` 并 kick 目标。
+3. wake 分两类：
+   - 用户对群发言：写 history 后立即 kick 成员，让他们从 read cursor 拉未读；
+   - 普通 agent 主流发言：不立即 kick 其他成员，只安排 idle unread wake。静默后
+     选一个有主流未读的成员补读，跳过最后发言者、busy、draining、retired。
+
+这保留了“发进群 = 成员可见/可拉取”的心智模型，同时避免 agent↔agent 普通闲聊
+触发全员即时推理。
 
 **触发点（都在消息成为"可见对话消息"的那一刻）：**
 
-1. `handleTurnStart`（turn_handlers.go）：源 thread 有成员时，用户消息 → `routeEnvelopes(hop=0, sender=user)`。`TurnStartParams` 增加 `Mentions []string`（participant_id，前端 composer 的 @ 补全已能提供）。mentioned 里出现非成员 → 先 `AddThreadMember` 再路由（自动入群）。
-2. participant message 落库处（现有 `SubscribeParticipantMessages` 的 appserver 消费者）：agent 发言 → `routeEnvelopes(hop=parent.Hop+1, sender=participant)`。@ 解析：对 text 做 roster 名字的 `@Name` 匹配（大小写不敏感、全词）。
+1. `handleGroupTurnStart`（group_thread.go）：用户消息先 append history，再 `routeUserMessageToResidents`。它同时 reset 该群的 idle unread wave，因为人的发言是新的活跃窗口，并且已经立即 wake 成员。`TurnStartParams` 增加 `Mentions []string`（participant_id，前端 composer 的 @ 补全已能提供）。mentioned 里出现非成员 → 先 `AddThreadMember` 再路由（自动入群）。
+2. `publishParticipantMessage`（agent_threads.go）：agent 发言先 append history。主流消息进入 `routeParticipantMessageToResidents`：@ 解析后，对 mentioned/单人成员等 directed 情形 push+kicks；普通主流消息只安排 `scheduleIdleUnreadWake`。reply subthread message 走 `routeSubthreadParticipantMessage`，只推给该 cth 成员子集。
 3. 用户 DM：**不走信封**。DM 消息直接就是 resident thread 的 turn（§4.3），天然 addressed。
 
 ### 4.3 常驻 turn 机制（`internal/appserver/resident_agent.go`）
 
 ```go
-// kickResidentAgent drains the pending inbox into one coalesced turn
-// on the participant's resident thread. If a turn is already running,
-// it does nothing — the turn-completion hook re-invokes kick, which
-// picks up everything that queued meanwhile (the subagent.Manager
-// Followup pendingMessages pattern, done at thread level).
+// kickResidentAgent drains push envelopes plus pullable main-stream
+// unread into one coalesced turn on the participant's resident thread.
+// If a turn is already running, it does nothing — the turn-completion
+// hook re-invokes kick, which picks up everything that queued meanwhile.
 func (s *Server) kickResidentAgent(participantID string) {
     th, err := s.ensureResidentDMThread(participantID) // find-or-create, reuses handleThreadStart's dm path
     if err != nil { ... notify error ...; return }
     th.mu.Lock()
     if th.running { th.mu.Unlock(); return }
-    envs, err := session.DequeueEnvelopes(s.rt.SessionDir, participantID) // marks consumed in same tx as message append
+    inbox, err := session.PendingResidentEnvelopes(...)
+    pulled := s.pullResidentChatEnvelopes(participantID, th.ID)
+    envs := chronologicalMerge(pulled, inbox)
     if len(envs) == 0 { th.mu.Unlock(); return }
-    userMsg := coalesceEnvelopes(envs) // §4.1; sets envelope_meta on the record
+    userMsg := coalesceEnvelopes(envs) // §4.1; sets envelope_meta/read receipt source
     th.mu.Unlock()
     s.startResidentTurn(th, userMsg, envs) // normal turn machinery, participant system prompt
 }
@@ -246,7 +240,7 @@ func (s *Server) kickResidentAgent(participantID string) {
 关键点：
 
 - `ensureResidentDMThread`：按 `dm_participant_id` 查已有 DM thread；没有则用 thread_handlers.go:56-119 的现有 DM 创建路径静默创建（不要求用户先打开过 DM）。
-- `startResidentTurn` 复用 `handleTurnStart` 的内核（抽出共用函数，禁止复制粘贴一份平行实现）。差异只有两点：(a) system prompt 用 §5 的常驻模板；(b) turn 完成钩子追加：addressed 回应情况的 telemetry 记录（§4.5）+ 再次 `kickResidentAgent`（排空积压）。
+- `startResidentTurn` 复用普通 thread runtime 机制，输入是合批后的 `<incoming_message>`。差异只有两点：(a) system prompt 用 §5 的常驻模板；(b) turn 完成钩子追加：addressed 回应情况的 telemetry 记录（§4.5）+ 再次 `kickResidentAgent`（排空积压）。
 - **模型 pin**：`ensureThreadRuntime` 处，若 thread 是 resident（`DMParticipantID != ""`），调用现有 `resolveParticipantModelOverride` 把 pin 的 model/client 装进该 runtime。`participant/start` 里的这段逻辑搬走后删除。
 - DM 用户消息路径：`handleTurnStart` 检测 `th.DMParticipantID != ""` 时同样走 `startResidentTurn`（addressed 语义由"这是 DM"隐含，无需信封包装，用户消息原样进 history——保持 DM 阅读体验干净）。
 
@@ -351,6 +345,11 @@ were directly addressed (addressed="true" means a DM or an @mention),
 and a hop count (how many agent-to-agent relays preceded it). Several
 blocks may arrive in one batch if they came in while you were working —
 read the whole batch before responding to any of it.
+Delayed unread messages are a chance to catch up, not a summons.
+Read the full delayed batch before deciding whether to reply.
+If a delayed batch contains several messages or changes your view of the room, consider inception
+to fold the new room state into your working context before posting;
+silence may still be right. The runtime does not force inception.
 Messages in this conversation without an <incoming_message> wrapper are
 the user speaking to you directly (DM). DMs are always addressed to you.
 
@@ -378,9 +377,8 @@ the user speaking to you directly (DM). DMs are always addressed to you.
   loop — no ping-pong, no thanks-exchanges.
 - If you genuinely need another agent to respond — especially in a group
   thread — @mention them by name (e.g. @Reviewer). Un-mentioned messages
-  are treated as ambient information: other agents may read them and stay
-  silent, and relayed agent-to-agent messages only reach agents who are
-  explicitly @mentioned. Do not @mention someone just to be polite; an
+  are treated as ambient information: other agents may later be woken to
+  catch up, read them, and stay silent. Do not @mention someone just to be polite; an
   @mention is a request for their time.
 
 ## Wrapping up discussions (only when asked)
@@ -456,9 +454,10 @@ the user to add it as a workspace.
 频率与预算（runtime 强制，不依赖提示词）：
 
 - `post_message` 沿用现有速率限制；每 turn 对同一 thread 最多 2 条。
-- **无 hop 深度丢弃**（增补四）：任意 hop 的信封都投递给全部成员，深度 agent↔agent 接力照常进行；是否参与由模型判断，`hop` 只作参考信号。
-- 单批合并信封上限 20 条，超出留在 inbox 下一批（防单 turn 上下文爆炸）。
-- **群成员数上限 `maxGroupMembers` = 8**（唯一的结构性扇出兜底；超过时工具与 UI 均拒绝添加并解释）。#all 的成员＝整个 named roster，故 named agent 数量同受此上限约束（`maxNamedParticipants = maxGroupMembers`，见增补五），退休不计数。
+- **无 hop 深度丢弃**（增补四）：任意 hop 的主流消息都保留在 history，深度 agent↔agent 接力照常可见；是否参与由模型判断，`hop` 只作参考信号。
+- 普通 agent 主流消息不即时全员 kick；idle unread wake 在静默后最多唤醒一个有未读成员，连续自动 wake 的 delay 递增，用户发言重置。
+- 单批合并 envelope/pull 未读上限 20 条，超出留到下一批（防单 turn 上下文爆炸）。
+- **群成员数上限 `maxGroupMembers` = 8**（结构性兜底；超过时工具与 UI 均拒绝添加并解释）。#all 的成员＝整个 named roster，故 named agent 数量同受此上限约束（`maxNamedParticipants = maxGroupMembers`，见增补五），退休不计数。
 
 ---
 
@@ -512,8 +511,8 @@ the user to add it as a workspace.
 | T3 | resident turn 内核：`ensureResidentDMThread` + `startResidentTurn`（抽 `handleTurnStart` 内核）+ 常驻 system prompt（§5 全文）+ 模型 pin 迁移 | appserver、turn_handlers 重构 | DM 两条消息后第二 turn 的 provider request 含第一轮完整对话；pin 生效 |
 | T4 | DM 前端切换：删 spawn 分支、走 turn/start；busy/未读重接 | App.tsx、AppSidebar | DM 多轮可用、附件可发、状态点正确 |
 | T5 | 发言路由重构：`ParticipantSpeech` 接口 + thread_id 任意成员目标 + `decline(thread_id)` | tools、agentcontrol、appserver | resident turn 内 post_message 到群 thread 产生署名卡 |
-| T6 | 群聊路由：成员表接入 `handleTurnStart`（Mentions 参数、自动入群）+ `routeEnvelopes` + `kickResidentAgent` + 合批排空 | appserver、protocol、前端 mentions 传参 | 群发一条消息，全部成员各起一次推理；@者 addressed=true |
-| T7 | agent↔agent：participant message 落库处路由 + @解析（无 hop 丢弃，增补四） | appserver | A @B 后 B 收 addressed 信封；B 未点名回帖也会作为 ambient 信封（addressed=false）投递给 A，收敛靠 §6 判断 + 群规模上限，不靠 hop 丢弃 |
+| T6 | 群聊路由：成员表接入 `handleGroupTurnStart`（Mentions 参数、自动入群）+ history pull + directed envelope + `kickResidentAgent` + 合批排空 | appserver、protocol、前端 mentions 传参 | 用户群发先落 history 再立即 wake 成员；@者 addressed=true |
+| T7 | agent↔agent：participant message 落库处路由 + @解析 + idle unread wake（无 hop 丢弃，增补四/八） | appserver | A @B 后 B 收 addressed 信封；B 未点名回帖写入 history，静默后最多一个有未读成员被 idle wake 补读，收敛靠 §6 判断 + idle wake + 群规模上限，不靠 hop 丢弃 |
 | T8 | 未回应 telemetry 记录 + 单批/频率预算 | appserver | @后静默 → telemetry 事件落库，群聊/DM 无任何代答消息 |
 | T9 | `fetch_thread_messages` 工具 | tools、appserver | 成员可拉、非成员报错、截断生效 |
 | T10 | DM 信封折叠渲染 + 成员 chips UI | 前端 | 视觉过 2026-07-02 §7.8 自查 |
@@ -524,7 +523,7 @@ the user to add it as a workspace.
 
 ## 10. 刻意不做（本期）
 
-- Raft 的 held draft / freshness check：推迟。理由修正（2026-07-03）：串行的只是单个 agent 自己的 turn，房间在其分钟级长 turn 期间照样移动，"回复已过时的消息"场景**存在**；推迟是因为单用户下频率未知，先观察。低成本中间态备选：turn 结束要发言前，若收件箱已有同源 thread 的新信封，先注入本 turn 再发言。
+- Raft 的 held draft / freshness check：已在后续实现落地；此条不再是不做项。保留本文原判断作为理由：串行的只是单个 agent 自己的 turn，房间在其分钟级长 turn 期间照样移动，"回复已过时的消息"场景**存在**。当前实现通过 `basis_seq`/read cursor 持有 stale draft，并把新到消息返回给模型重想。
 - 未点名信封的低挡位推理（effort tiering：按信封类别降 effort / 换挡）：搁置。默认用户使用前沿模型，先靠 §5 的缓存纪律控制成本，观察实际账单后再评估。
 - 群级 facilitator 角色（主动收敛的发起权 + 对硬规则 2 的显式豁免）：v2 占位，见 §5.1。v1 收敛只由用户 @ 触发。
 - agent 私聊 agent 的独立 DM 通道：v1 一律经群 thread（信封已覆盖 agent↔agent），有真实需求再加。
@@ -541,3 +540,5 @@ the user to add it as a workspace.
 补充（同日,issue #12 收尾）：§4.8/§7.2 的 busy 点来源收窄——roster 状态点只跟随常驻 DM 线程的 running 状态;线程内 running child agent 不再点亮 dispatcher（旧行为把点耦合到群聊选中态,因 child_agents 按线程懒加载,见 issue #12）。派发任务期间的忙碌可见性留给后续「服务端按 participant 推送 busy 信号」（busy 锁已在服务端,GroupMember.Busy 同源）,不再由客户端遍历线程推导。
 
 增补（2026-07-06 深夜,task rail §6）：信封新增第三种 sender kind `from="system"`——任务在板上变为无主（born-open create/escalate、unclaim）时的唤醒信封,sender="task board",经同一 deliverEnvelopeToMembers 投递与合批,无 seq、不产生已读回执、addressed=false。信封结构与路由机制本身不变;上面「信封、路由不受影响」的表述据此收窄为「除新增 system kind 外不受影响」。
+
+增补（2026-07-08,idle unread wake）：普通 agent 主流消息不再即时全员唤醒。它们先写入群 history，成为其他成员 read cursor 之后的 ambient unread；房间静默后，idle unread wake 按“未读最多优先、并列随机、跳过最后发言者/忙碌/正在 drain/退休”选择至多一个成员，调用现有 `kickResidentAgent` 让它 pull 正常历史。用户发言仍是先写 history 再立即 wake，且会重置 idle wave；@/cth/task/system 等 directed 路径仍 push durable envelope 并 kick。该机制不生成 synthetic cron 消息，不绕过 held draft；提示词只要求模型在 delayed batch 或 held draft 使上下文变厚时考虑 inception，runtime 不强制。
