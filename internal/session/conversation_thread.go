@@ -154,11 +154,11 @@ const (
 // budget reads back with).
 const TaskPieceDefaultRetryBudget = 3
 
-// TaskHandoff is the structured result one node hands to the next — the ONLY
-// thing that wakes a downstream node. It is deliberately distinct from a
-// public_thread_message (a post_message kind=update posted to the task thread,
-// which is user-visible progress that wakes no teammate): the handoff is the
-// machine-carried input to the next node, the public update is prose for the
+// TaskHandoff is the structured result one node hands to the next — the input
+// the engine carries into a downstream node's wake. It is deliberately distinct
+// from a public_thread_message (a post_message kind=update posted to the task
+// thread, which is user-visible progress that wakes no teammate): the handoff is
+// the machine-carried input to the next node, the public update is prose for the
 // human. Never mix them. The upstream assignee fills it when reporting a piece
 // done; the engine writes it onto the downstream node's TaskPiece.Handoff and
 // renders it into that node's wake envelope.

@@ -38,11 +38,34 @@ type residentSpeechLimiter struct {
 	// wrap-up notes) republished as a second, spam post. The DM turn's own Items
 	// cannot answer this — a group post lives in the group thread, not the DM.
 	spoke bool
+	// askedQuestion is set when the resident posts a kind=question this turn —
+	// its explicit "I am blocked, waiting on an answer" signal. Turn-end
+	// completion capture reads it: a plan-dispatch turn that asked a question is
+	// waiting, not finished, so its node is NOT auto-completed (it stays open and
+	// is re-woken when the answer arrives). It is turn-wide on purpose — a
+	// question about one node suppresses auto-complete of every node this turn
+	// dispatched, the conservative choice (a running node is left running, never
+	// frozen).
+	askedQuestion bool
+	// dispatchedNodes is the per-turn snapshot of the pieces this turn was
+	// dispatched to run: for each task the consumed batch dispatched, the
+	// assignee's Active/Retrying piece ids, captured before the turn ran and only
+	// for tasks in ExecState executing. Turn-end completion capture completes only
+	// these (still-unfinished) pieces, so a node a mid-turn action activated for a
+	// LATER turn (a piece_done downstream, a need_upstream upstream, a set_plan
+	// re-dispatch) is never mistaken for one this turn ran.
+	dispatchedNodes map[string]map[string]bool // taskID -> pieceID set
 }
 
-func (l *residentSpeechLimiter) markSpoke() {
+// markSpoke records that the resident published a post this turn (any kind), so
+// the plain-text fallback is suppressed. A kind=question additionally sets
+// askedQuestion — the blocked/waiting signal turn-end completion capture honors.
+func (l *residentSpeechLimiter) markSpoke(kind string) {
 	l.mu.Lock()
 	l.spoke = true
+	if strings.EqualFold(strings.TrimSpace(kind), "question") {
+		l.askedQuestion = true
+	}
 	l.mu.Unlock()
 }
 
@@ -52,8 +75,20 @@ func (l *residentSpeechLimiter) didSpeak() bool {
 	return l.spoke
 }
 
+func (l *residentSpeechLimiter) askedAQuestion() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.askedQuestion
+}
+
+func (l *residentSpeechLimiter) dispatchedNodesSnapshot() map[string]map[string]bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.dispatchedNodes
+}
+
 func (s *Server) residentParticipantSpeech(participantID string) tools.ParticipantSpeech {
-	return s.residentParticipantSpeechForTurn(participantID, nil, nil)
+	return s.residentParticipantSpeechForTurn(participantID, nil, nil, nil)
 }
 
 // lockThreadPost acquires the per-thread post-serialization mutex and returns
@@ -70,7 +105,7 @@ func (s *Server) lockThreadPost(threadID string) func() {
 	return mu.Unlock
 }
 
-func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThread map[string]int, engagedThreads map[string]bool) tools.ParticipantSpeech {
+func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThread map[string]int, engagedThreads map[string]bool, dispatchedNodes map[string]map[string]bool) tools.ParticipantSpeech {
 	hops := make(map[string]int, len(hopByThread))
 	for threadID, hop := range hopByThread {
 		threadID = strings.TrimSpace(threadID)
@@ -84,7 +119,7 @@ func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThr
 			engaged[threadID] = true
 		}
 	}
-	limiter := &residentSpeechLimiter{}
+	limiter := &residentSpeechLimiter{dispatchedNodes: dispatchedNodes}
 	pid := strings.TrimSpace(participantID)
 	if s != nil && pid != "" {
 		// Stash this turn's limiter so afterResidentTurn can tell whether the
@@ -195,9 +230,11 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 		return tools.PostedMessage{}, err
 	}
 	// The resident has now spoken through the tool channel this turn — suppress
-	// the plain-text fallback so trailing wrap-up text is not republished.
+	// the plain-text fallback so trailing wrap-up text is not republished. A
+	// kind=question also records the blocked/waiting signal (askedQuestion) that
+	// turn-end completion capture reads.
 	if r.limiter != nil {
-		r.limiter.markSpoke()
+		r.limiter.markSpoke(kind)
 	}
 	reportThreadID := targetThreadID
 	if subthreadID != "" {

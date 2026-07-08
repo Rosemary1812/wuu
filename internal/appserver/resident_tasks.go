@@ -588,10 +588,13 @@ func (m *residentTaskManager) SetPlan(ctx context.Context, subthreadID string, p
 // PieceDone marks the caller's plan piece complete, records the structured
 // handoff it produced, and advances the plan. Only the piece's assignee may
 // report it done — the durable plan, not chat chatter, is what the engine reads
-// to decide who runs next. The handoff is the ONLY thing that carries this
-// node's result to the next one and wakes it; a public post_message update to
-// the task thread is user-visible progress that wakes no teammate and is never
-// a downstream node's input.
+// to decide who runs next. It is the EARLY / RICH completion path: a node also
+// completes when its dispatched turn ends (autoCompleteTaskNodesAfterTurn), so
+// piece_done is how an assignee finishes ahead of turn end, or hands a structured
+// handoff to the next node. The handoff is the input that node runs on; a public
+// post_message update to the task thread is user-visible progress that wakes no
+// teammate and is never a downstream node's input. The completion itself runs
+// through completePieceAndAdvance, the path shared with turn-end capture.
 func (m *residentTaskManager) PieceDone(ctx context.Context, subthreadID, pieceID string, handoff *tools.TaskHandoff) (tools.TaskView, error) {
 	_ = ctx
 	if err := m.ready("piece_done"); err != nil {
@@ -615,42 +618,21 @@ func (m *residentTaskManager) PieceDone(ctx context.Context, subthreadID, pieceI
 	if piece.Assignee != m.participantID {
 		return tools.TaskView{}, fmt.Errorf("piece_done: piece %q is assigned to %q, not you — only its assignee may report it done", pieceID, piece.Assignee)
 	}
-	updated, err := session.MarkTaskPieceStatus(m.server.rt.SessionDir, thread.ID, pieceID, session.TaskPieceDone)
-	if err != nil {
-		return tools.TaskView{}, fmt.Errorf("piece_done: %w", err)
-	}
-	m.server.recordTaskEventFor(updated, pieceID, session.TaskEventNodeSucceeded, m.participantID,
-		fmt.Sprintf("piece %q reported done", piece.Title), "")
-	// Carry the handoff forward before advancing, so a downstream node that
-	// becomes ready in the same advancePlan already has its input attached.
+	var sessionHandoff *session.TaskHandoff
 	if handoff != nil {
-		if err := m.recordPieceHandoff(updated, pieceID, *handoff); err != nil {
-			return tools.TaskView{}, err
+		sessionHandoff = &session.TaskHandoff{
+			Done:       handoff.Done,
+			Findings:   handoff.Findings,
+			Artifacts:  handoff.Artifacts,
+			Limits:     handoff.Limits,
+			NextGoal:   handoff.NextGoal,
+			Acceptance: handoff.Acceptance,
+			Notes:      handoff.Notes,
 		}
 	}
-	// Reporting a piece done — the handoff it produced — is real headway, not
-	// mere activity: refresh the completing node's progress signal (plan §T9)
-	// before the engine advances.
-	m.server.noteNodeProgress(updated, pieceID, session.TaskEventNodeProgress,
-		fmt.Sprintf("piece %q completed", piece.Title))
-	// Auto-unfollow when this assignee has no remaining pieces: they are done
-	// with the task, so later traffic on it should not wake them (the correct
-	// lever for the lead's wrap-up not re-running finished teammates). Keep
-	// following if they still own an unfinished piece.
-	stillBusy := false
-	for _, p := range updated.Plan {
-		if p.Assignee == m.participantID && p.ID != pieceID && p.Status != session.TaskPieceDone {
-			stillBusy = true
-			break
-		}
+	if err := m.server.completePieceAndAdvance(thread, *piece, sessionHandoff, m.participantID); err != nil {
+		return tools.TaskView{}, err
 	}
-	if !stillBusy {
-		if err := session.RemoveConversationThreadMember(m.server.rt.SessionDir, thread.ID, m.participantID); err != nil {
-			providers.DebugLogf("piece_done: unfollow %q from %q: %v", m.participantID, thread.ID, err)
-		}
-	}
-	m.server.notifySubthreadUpdated(thread.SessionID, thread.ID)
-	m.server.advancePlan(thread.ID)
 	final, err := session.FindConversationThreadByID(m.server.rt.SessionDir, thread.ID)
 	if err != nil {
 		return tools.TaskView{}, err
@@ -658,29 +640,71 @@ func (m *residentTaskManager) PieceDone(ctx context.Context, subthreadID, pieceI
 	return m.taskView(final), nil
 }
 
+// completePieceAndAdvance is the shared node-completion path: it marks one plan
+// piece done, records its handoff onto the downstream node(s), notes the node's
+// progress, auto-unfollows the assignee when it has no more pieces, and advances
+// the plan. Both ways a node completes route through here — an explicit
+// manage_task piece_done (a rich, early handoff — PieceDone delegates after its
+// assignee/authorization checks) and turn-end completion capture (a Done-only or
+// nil handoff synthesized from the turn's final output). handoff is nil when the
+// completing node produced no structured result for a downstream; the downstream
+// then wakes on its briefing alone. task is the plan snapshot from before the
+// piece is marked done; actorID is the completing assignee (the trace/unfollow
+// identity).
+func (s *Server) completePieceAndAdvance(task session.ConversationThread, piece session.TaskPiece, handoff *session.TaskHandoff, actorID string) error {
+	updated, err := session.MarkTaskPieceStatus(s.rt.SessionDir, task.ID, piece.ID, session.TaskPieceDone)
+	if err != nil {
+		return fmt.Errorf("piece_done: %w", err)
+	}
+	s.recordTaskEventFor(updated, piece.ID, session.TaskEventNodeSucceeded, actorID,
+		fmt.Sprintf("piece %q reported done", piece.Title), "")
+	// Carry the handoff forward before advancing, so a downstream node that
+	// becomes ready in the same advancePlan already has its input attached.
+	if handoff != nil {
+		if err := s.recordPieceHandoff(updated, piece.ID, *handoff, actorID); err != nil {
+			return err
+		}
+	}
+	// Completing a piece — the handoff it produced — is real headway, not mere
+	// activity: refresh the completing node's progress signal (plan §T9) before
+	// the engine advances.
+	s.noteNodeProgress(updated, piece.ID, session.TaskEventNodeProgress,
+		fmt.Sprintf("piece %q completed", piece.Title))
+	// Auto-unfollow when this assignee has no remaining pieces: they are done
+	// with the task, so later traffic on it should not wake them (the correct
+	// lever for the lead's wrap-up not re-running finished teammates). Keep
+	// following if they still own an unfinished piece.
+	stillBusy := false
+	for _, p := range updated.Plan {
+		if p.Assignee == actorID && p.ID != piece.ID && p.Status != session.TaskPieceDone {
+			stillBusy = true
+			break
+		}
+	}
+	if !stillBusy {
+		if err := session.RemoveConversationThreadMember(s.rt.SessionDir, task.ID, actorID); err != nil {
+			providers.DebugLogf("piece_done: unfollow %q from %q: %v", actorID, task.ID, err)
+		}
+	}
+	s.notifySubthreadUpdated(task.SessionID, task.ID)
+	s.advancePlan(task.ID)
+	return nil
+}
+
 // recordPieceHandoff marshals the finished piece's handoff and writes it onto
 // the node(s) that consume it, then records the handoff_created trace. A node P
 // consumes this piece iff P.DependsOn contains pieceID; the handoff lands on
 // every such downstream node's Handoff field so the engine renders it into that
-// node's wake (the sole trigger that wakes the downstream). A terminal piece
+// node's wake (the wake that carries the downstream its input). A terminal piece
 // (nothing depends on it) stores the handoff on itself, for the lead's final
 // wrap-up and the trace. When a node has several upstreams that each hand it a
 // payload, the last writer to that Handoff field wins for the wake text — a
 // known limitation; the trace keeps every handoff_created event, so the full
 // set is always recoverable. task is the plan snapshot taken right after this
 // piece was marked done (its DependsOn edges are immutable, so it is the
-// authoritative view of who is downstream).
-func (m *residentTaskManager) recordPieceHandoff(task session.ConversationThread, pieceID string, handoff tools.TaskHandoff) error {
-	payload := session.TaskHandoff{
-		Done:       handoff.Done,
-		Findings:   handoff.Findings,
-		Artifacts:  handoff.Artifacts,
-		Limits:     handoff.Limits,
-		NextGoal:   handoff.NextGoal,
-		Acceptance: handoff.Acceptance,
-		Notes:      handoff.Notes,
-	}
-	marshaled, err := session.MarshalTaskHandoff(payload)
+// authoritative view of who is downstream); actorID is the completing assignee.
+func (s *Server) recordPieceHandoff(task session.ConversationThread, pieceID string, handoff session.TaskHandoff, actorID string) error {
+	marshaled, err := session.MarshalTaskHandoff(handoff)
 	if err != nil {
 		return fmt.Errorf("piece_done: %w", err)
 	}
@@ -700,14 +724,14 @@ func (m *residentTaskManager) recordPieceHandoff(task session.ConversationThread
 		targets = []string{pieceID}
 	}
 	for _, target := range targets {
-		if _, err := session.UpdateTaskPiece(m.server.rt.SessionDir, task.ID, target, func(p *session.TaskPiece) {
+		if _, err := session.UpdateTaskPiece(s.rt.SessionDir, task.ID, target, func(p *session.TaskPiece) {
 			p.Handoff = marshaled
 		}); err != nil {
 			return fmt.Errorf("piece_done: attach handoff to piece %q: %w", target, err)
 		}
 	}
-	summary := firstNonEmpty(strings.TrimSpace(payload.NextGoal), strings.TrimSpace(payload.Done), "handoff")
-	m.server.recordTaskEventFor(task, pieceID, session.TaskEventHandoffCreated, m.participantID,
+	summary := firstNonEmpty(strings.TrimSpace(handoff.NextGoal), strings.TrimSpace(handoff.Done), "handoff")
+	s.recordTaskEventFor(task, pieceID, session.TaskEventHandoffCreated, actorID,
 		"handoff: "+truncate(summary, 80), marshaled)
 	return nil
 }
@@ -1062,7 +1086,7 @@ func wakePieceText(task session.ConversationThread, piece session.TaskPiece) str
 		}
 	}
 	fmt.Fprintf(&b,
-		"\n\nDo it, working in this task thread (thread_id=%q); when finished, file it with manage_task action=piece_done piece_id=%q and hand your result to the next node in the handoff. Post here only what a teammate needs — @ them if you need something.",
+		"\n\nDo it, working in this task thread (thread_id=%q). Your node completes when your turn ends, so you do not need piece_done to finish it — use manage_task action=piece_done piece_id=%q to finish early or to hand a structured result to the next node in the handoff. If you are blocked, say so before ending (post a kind=question, or need_human / need_upstream). Post here only what a teammate needs — @ them if you need something.",
 		task.ID, piece.ID,
 	)
 	return b.String()
@@ -1209,7 +1233,7 @@ func (s *Server) wakeUpstreamForFallback(task session.ConversationThread, upstre
 		b.WriteString(prompt)
 	}
 	fmt.Fprintf(&b,
-		"\n\nWork in this task thread (thread_id=%q); when finished, file it with manage_task action=piece_done piece_id=%q and hand your revised result in the handoff.",
+		"\n\nWork in this task thread (thread_id=%q); hand your revised result to the downstream with manage_task action=piece_done piece_id=%q; your node also completes when your turn ends.",
 		task.ID, upstream.ID,
 	)
 	s.deliverEnvelopeToMembers([]string{upstream.Assignee}, MessageEnvelope{

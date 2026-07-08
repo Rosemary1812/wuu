@@ -557,8 +557,9 @@ func (s *Server) routeSubthreadParticipantMessage(parentThreadID, subthreadID st
 	// §4.5) every plain participant post inside a task — progress updates,
 	// results, questions to the room — is PUBLIC PROGRESS for the human to read
 	// and must NOT wake the working teammates. The only things that wake a node
-	// are a handoff (piece_done → the engine's system wake), an @mention, or a
-	// system directive. A public post still lands in history and refreshes the
+	// are the engine's plan-advance wake (a node completing — via piece_done or at
+	// turn end — dispatches the next), an @mention, or a system directive. A
+	// public post still lands in history and refreshes the
 	// task panel (notifySubthreadUpdated, fired by the caller), and an explicit
 	// @mention inside it still wakes the mentioned member (the mentioned set
 	// forces a push even off this path). This is a mechanical status check, not a
@@ -747,7 +748,9 @@ func (s *Server) drainResidentAgent(participantID string) {
 		return
 	}
 	if threadRuntime != nil && threadRuntime.Toolkit != nil {
-		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeechForTurn(participantID, residentSpeechHopsByThread(envs), residentSpeechEngagedThreads(envs)))
+		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeechForTurn(
+			participantID, residentSpeechHopsByThread(envs), residentSpeechEngagedThreads(envs),
+			s.dispatchedNodesForTurn(participantID, envs)))
 		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
 		threadRuntime.Toolkit.SetTaskManager(s.residentTaskManager(participantID))
 		threadRuntime.Toolkit.SetWorkflowThreadID(th.ID)
@@ -1045,13 +1048,18 @@ func (s *Server) afterResidentTurn(th *threadState, participantID string, envs [
 		}
 		s.recordEnvelopeReadReceipts(participantID, envs, status, firstNonZeroTime(completedAt, time.Now().UTC()))
 	}
-	// Whether the resident already spoke through the tool channel this turn. A
-	// group post lives in the group thread, not this DM turn's Items, so the
-	// fallback cannot see it there; this per-turn flag is the reliable signal.
-	spoke := false
+	// This turn's per-turn speech record: whether the resident already spoke
+	// through the tool channel (a group post lives in the group thread, not this
+	// DM turn's Items, so the fallback cannot see it there — this flag is the
+	// reliable signal), whether it asked a question (the blocked/waiting signal),
+	// and the snapshot of which plan nodes this turn was dispatched to run.
+	spoke, askedQuestion := false, false
+	var dispatched map[string]map[string]bool
 	if v, ok := s.residentTurnSpeech.LoadAndDelete(participantID); ok {
 		if lim, ok := v.(*residentSpeechLimiter); ok {
 			spoke = lim.didSpeak()
+			askedQuestion = lim.askedAQuestion()
+			dispatched = lim.dispatchedNodesSnapshot()
 		}
 	}
 	if !spoke {
@@ -1064,6 +1072,13 @@ func (s *Server) afterResidentTurn(th *threadState, participantID string, envs [
 	// or fail the node and wake the lead (plan §T8). No-op unless this batch
 	// was a plan dispatch and the turn is a retryable/hard failure.
 	s.retryOrFailTaskNodesAfterTurn(participantID, envs, turn)
+	// Turn-end completion capture (the flip side of the failure hook): a COMPLETED
+	// plan-dispatch turn advances the plan even without piece_done — the node it
+	// was dispatched for completes now, unless the agent gave an explicit blocked
+	// signal this turn (a kind=question here, or need_human/need_upstream, which
+	// move the node/task out of the completing snapshot). No-op unless this batch
+	// was a plan dispatch.
+	s.autoCompleteTaskNodesAfterTurn(participantID, envs, turn, askedQuestion, dispatched)
 	s.kickResidentAgent(participantID)
 }
 

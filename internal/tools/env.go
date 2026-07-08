@@ -418,8 +418,9 @@ type TaskPiece struct {
 // TaskHandoff is the structured result a node hands to its downstream as it
 // crosses the tool boundary (mirrors session.TaskHandoff). An assignee attaches
 // it to manage_task action=piece_done; the engine writes it onto the downstream
-// node and renders it into that node's wake. It is what wakes the next agent —
-// deliberately distinct from a public post_message update, which wakes no one.
+// node and renders it into that node's wake. It is the next node's real input —
+// deliberately distinct from a public post_message update, which is prose for the
+// human and is never a node's input.
 type TaskHandoff struct {
 	Done       string   `json:"done,omitempty"`
 	Findings   string   `json:"findings,omitempty"`
@@ -493,8 +494,10 @@ type TaskManager interface {
 	// piece, onto the piece itself — then dispatches any piece whose
 	// dependencies are now satisfied (carrying the handoff into its wake), or —
 	// when every piece is done — wakes the lead to wrap up and report. handoff
-	// is nil when the assignee reported no structured result. The handoff, not
-	// a public thread update, is what wakes the next agent.
+	// is nil when the assignee reported no structured result; the handoff is the
+	// downstream's input, not a public thread update. It is the early / rich
+	// completion path: a node also completes when its dispatched turn ends, so
+	// piece_done is how an assignee finishes early or hands a structured result.
 	PieceDone(ctx context.Context, subthreadID, pieceID string, handoff *TaskHandoff) (TaskView, error)
 }
 

@@ -90,6 +90,50 @@ func (s *Server) resolveExecutingNode(participantID string, envs []MessageEnvelo
 	return "", "", false
 }
 
+// dispatchedNodesForTurn snapshots, before a turn runs, the pieces it is being
+// dispatched to run: for each task its consumed batch dispatched (planDispatchTaskIDs),
+// the assignee's Active/Retrying piece ids — but only for a task in ExecState
+// executing, so a lead-management wake (a planning/blocked/completed task carries
+// the same "task plan" envelope) contributes nothing. Turn-end completion capture
+// completes only these, never a node activated mid-turn for a later turn.
+func (s *Server) dispatchedNodesForTurn(participantID string, envs []MessageEnvelope) map[string]map[string]bool {
+	if s == nil || s.rt == nil {
+		return nil
+	}
+	participantID = strings.TrimSpace(participantID)
+	if participantID == "" {
+		return nil
+	}
+	taskIDs := planDispatchTaskIDs(envs)
+	if len(taskIDs) == 0 {
+		return nil
+	}
+	out := map[string]map[string]bool{}
+	for id := range taskIDs {
+		task, err := session.FindConversationThreadByID(s.rt.SessionDir, id)
+		if err != nil {
+			providers.DebugLogf("dispatchedNodesForTurn load task %q: %v", id, err)
+			continue
+		}
+		if task.ExecState != session.ExecStateExecuting {
+			continue
+		}
+		for _, p := range task.Plan {
+			if p.Assignee != participantID {
+				continue
+			}
+			if p.Status != session.TaskPieceActive && p.Status != session.TaskPieceRetrying {
+				continue
+			}
+			if out[task.ID] == nil {
+				out[task.ID] = map[string]bool{}
+			}
+			out[task.ID][p.ID] = true
+		}
+	}
+	return out
+}
+
 // retryOrFailTaskNodesAfterTurn reacts to a resident turn that was executing a
 // plan node (plan §T8). It runs from afterResidentTurn after read receipts and
 // before the final re-kick. The guard is mechanical: it does nothing unless the
@@ -106,8 +150,9 @@ func (s *Server) resolveExecutingNode(participantID string, envs []MessageEnvelo
 //   - a cancelled turn (user interrupt) → leave the node untouched: the user
 //     chose to stop, so no budget is spent, no trace is written, nobody is
 //     woken;
-//   - a completed turn → nothing (the node advances through piece_done, not
-//     here).
+//   - a completed turn → not handled here: turn-end completion capture
+//     (autoCompleteTaskNodesAfterTurn) advances the plan for a completed
+//     dispatch turn, whether or not the agent filed piece_done.
 func (s *Server) retryOrFailTaskNodesAfterTurn(participantID string, envs []MessageEnvelope, turn Turn) {
 	if s == nil || s.rt == nil {
 		return
@@ -139,7 +184,9 @@ func (s *Server) retryOrFailTaskNodesAfterTurn(participantID string, envs []Mess
 			hardFailure = true
 		}
 	}
-	// A completed turn, or a cancelled one, leaves every node as-is.
+	// This hook owns only failures. A cancelled turn leaves every node as-is
+	// here; a completed turn is likewise not this hook's concern — turn-end
+	// completion capture (autoCompleteTaskNodesAfterTurn) advances it.
 	if !retryable && !hardFailure {
 		return
 	}
@@ -225,4 +272,104 @@ func (s *Server) handleNodeTurnFailure(task session.ConversationThread, piece se
 		fresh = &piece
 	}
 	s.wakePlanLeadOnFailure(updated, *fresh, reason)
+}
+
+// autoCompleteTaskNodesAfterTurn captures a plan node's completion at turn end,
+// the way a deterministic workflow captures an agent's final output as its return
+// value: a COMPLETED plan-dispatch turn advances the plan even when the agent did
+// not file piece_done, so a node can never freeze on a completed turn that simply
+// forgot to report done. It is the completed-turn counterpart of
+// retryOrFailTaskNodesAfterTurn (which owns the failure/cancel cases) and runs
+// right after it in afterResidentTurn.
+//
+// It completes ONLY the pieces this turn was dispatched to run — the turn-start
+// snapshot (dispatchedNodesForTurn) — and only those still Active/Retrying at turn
+// end. That is the whole safety story: a node the turn neither ran nor was woken
+// for is never in the snapshot, and a node the turn resolved another way falls out
+// of it. Specifically it does nothing when:
+//
+//   - the turn is not completed (a failure/cancel is retryOrFail's, not ours);
+//   - the batch is not a plan dispatch (planDispatchTaskIDs empty) — an ordinary
+//     DM/chat turn completes no node;
+//   - the agent asked a question this turn (askedQuestion) — an explicit "blocked,
+//     waiting on an answer" signal: the node stays open, re-woken on the answer;
+//   - the task is no longer executing (need_human → needs_human, a conclude →
+//     completed): its nodes are not this turn's to complete;
+//   - a snapshot piece is no longer Active/Retrying: it either finished
+//     (piece_done → done) or bounced (need_upstream → pending) mid-turn, both of
+//     which already ran their own handler.
+//
+// When it does complete a node and the agent filed no handoff, it synthesizes a
+// minimal one (Done = the turn's final visible output) so the downstream is not
+// left empty-handed, then completes + advances exactly as piece_done would. So
+// piece_done is no longer REQUIRED to complete a node — it is how a node completes
+// EARLY, or with a rich structured handoff.
+func (s *Server) autoCompleteTaskNodesAfterTurn(participantID string, envs []MessageEnvelope, turn Turn, askedQuestion bool, dispatched map[string]map[string]bool) {
+	if s == nil || s.rt == nil {
+		return
+	}
+	participantID = strings.TrimSpace(participantID)
+	if participantID == "" || turn.Status != TurnStatusCompleted {
+		return
+	}
+	taskIDs := planDispatchTaskIDs(envs)
+	if len(taskIDs) == 0 || askedQuestion {
+		return
+	}
+	finalAnswer := finalAgentMessageText(turn)
+	for taskID := range taskIDs {
+		nodes := dispatched[taskID]
+		if len(nodes) == 0 {
+			continue // not a node dispatch to this assignee (lead wake, or nothing to capture)
+		}
+		task, err := session.FindConversationThreadByID(s.rt.SessionDir, taskID)
+		if err != nil {
+			providers.DebugLogf("autoCompleteTaskNodesAfterTurn load task %q: %v", taskID, err)
+			continue
+		}
+		// A node runs only while the task is executing. If the turn moved it out
+		// of executing (need_human -> needs_human, conclude -> completed) or it was
+		// never executing, its nodes are not this turn's to complete.
+		if task.ExecState != session.ExecStateExecuting {
+			continue
+		}
+		for _, piece := range task.Plan {
+			if !nodes[piece.ID] || piece.Assignee != participantID {
+				continue
+			}
+			// Still Active/Retrying at turn end = the dispatched node the turn
+			// neither finished (piece_done -> done) nor bounced (need_upstream ->
+			// pending). done/pending fall through untouched.
+			if piece.Status != session.TaskPieceActive && piece.Status != session.TaskPieceRetrying {
+				continue
+			}
+			var handoff *session.TaskHandoff
+			if finalAnswer != "" {
+				handoff = &session.TaskHandoff{Done: finalAnswer}
+			}
+			if err := s.completePieceAndAdvance(task, piece, handoff, participantID); err != nil {
+				providers.DebugLogf("auto-complete node %q/%q: %v", task.ID, piece.ID, err)
+			}
+		}
+	}
+}
+
+// finalAgentMessageText returns the turn's final visible assistant output — the
+// last non-empty agent_message item's text — the raw material for a turn-end
+// completion capture's synthesized handoff (Done = this text). It reads the same
+// ThreadItemAgentMessage channel fallbackDMReplyFromFinalAnswer does; a result
+// the assignee published only through post_message (a participant item) is
+// deliberately NOT captured — a public post is user-visible progress, never a
+// downstream node's input (the task rail's two-channel contract), so a turn that
+// spoke only through the tool channel yields "" and a nil (input-less) handoff.
+func finalAgentMessageText(turn Turn) string {
+	finalAnswer := ""
+	for _, item := range turn.Items {
+		if item.Type == ThreadItemAgentMessage {
+			if text := strings.TrimSpace(item.Text); text != "" {
+				finalAnswer = text
+			}
+		}
+	}
+	return finalAnswer
 }

@@ -51,7 +51,7 @@ func TestHeldDraftHoldsWhenRoomMovedAndForcePublishes(t *testing.T) {
 
 	// Ada's speech for this turn engaged the group. She posts with an explicit
 	// basis of `seq` — the message she generated her draft against.
-	speech := srv.residentParticipantSpeechForTurn(ada, nil, map[string]bool{groupID: true})
+	speech := srv.residentParticipantSpeechForTurn(ada, nil, map[string]bool{groupID: true}, nil)
 
 	// Un-forced post: held, not published (Bea posted after Ada's basis), and
 	// the note names Bea's arrival. The held result echoes the basis.
@@ -101,7 +101,7 @@ func TestIdleWokenReplyStillUsesHeldDraftFreshness(t *testing.T) {
 	}
 	_ = appendMainChatForIdleWakeTest(t, rt.SessionDir, groupID, "participant", cyd, "6")
 
-	posted, err := srv.residentParticipantSpeechForTurn(bea, nil, map[string]bool{groupID: true}).
+	posted, err := srv.residentParticipantSpeechForTurn(bea, nil, map[string]bool{groupID: true}, nil).
 		PostMessage(context.Background(), "result", "6", groupID, 0, false)
 	if err != nil {
 		t.Fatal(err)
@@ -160,7 +160,7 @@ func TestHeldDraftCthAndMainStreamScopesAreIsolated(t *testing.T) {
 	}
 	// A fresh turn's speech (Bea engaged the group), so the held check applies.
 	post := func(target, text string) tools.PostedMessage {
-		posted, err := srv.residentParticipantSpeechForTurn(bea, nil, map[string]bool{groupID: true}).
+		posted, err := srv.residentParticipantSpeechForTurn(bea, nil, map[string]bool{groupID: true}, nil).
 			PostMessage(context.Background(), "result", text, target, 0, false)
 		if err != nil {
 			t.Fatalf("PostMessage to %q: %v", target, err)
@@ -233,7 +233,7 @@ func TestHeldDraftThreePartyConcurrentAnswersHoldStaleBases(t *testing.T) {
 	}
 
 	speech := func(pid string) tools.ParticipantSpeech {
-		return srv.residentParticipantSpeechForTurn(pid, nil, map[string]bool{groupID: true})
+		return srv.residentParticipantSpeechForTurn(pid, nil, map[string]bool{groupID: true}, nil)
 	}
 	tailSeq := func() int {
 		recs, err := session.ChatMessagesSince(rt.SessionDir, groupID, 0)
@@ -330,7 +330,7 @@ func TestHeldDraftDoesNotHoldAFreshPost(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	speech := srv.residentParticipantSpeechForTurn(ada, nil, nil)
+	speech := srv.residentParticipantSpeechForTurn(ada, nil, nil, nil)
 	posted, err := speech.PostMessage(context.Background(), "result", "开工。", groupID, 0, false)
 	if err != nil {
 		t.Fatalf("PostMessage: %v", err)
