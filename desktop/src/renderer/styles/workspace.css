@@ -2021,7 +2021,8 @@
 }
 
 .workspace-diff-code {
-  min-width: max-content;
+  width: 100%;
+  min-width: 0;
   min-height: 100%;
   border: 0;
   border-radius: 0;
@@ -2032,7 +2033,7 @@
   line-height: 1.58;
   margin: 0;
   padding: 12px 0 40px;
-  white-space: pre;
+  white-space: pre-wrap;
 }
 
 .workspace-diff-line {
@@ -2073,7 +2074,9 @@
 
 .workspace-diff-line-code {
   min-width: 0;
+  overflow-wrap: anywhere;
   padding-left: 14px;
+  white-space: pre-wrap;
 }
 
 .workspace-diff-tree {
@@ -2260,7 +2263,19 @@
   grid-template-columns:
     minmax(0, 1fr)
     8px
-    minmax(240px, min(var(--workspace-review-tree-width), calc(100% - 148px)));
+    minmax(220px, min(var(--workspace-review-tree-width), calc(100% - 420px)));
+}
+
+.workspace-review-panel.single-file.has-diff {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace-review-panel.single-file .workspace-review-tree-pane {
+  display: none;
+}
+
+.workspace-review-panel.single-file .workspace-review-resizer {
+  display: none;
 }
 
 .workspace-review-resizer {

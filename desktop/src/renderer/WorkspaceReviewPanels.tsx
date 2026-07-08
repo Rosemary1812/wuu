@@ -38,9 +38,9 @@ import {
 } from "./WorkspaceReviewHelpers";
 
 const WORKSPACE_REVIEW_TREE_DEFAULT_WIDTH = 280;
-const WORKSPACE_REVIEW_TREE_MIN_WIDTH = 240;
-const WORKSPACE_REVIEW_TREE_MAX_WIDTH = 520;
-const WORKSPACE_REVIEW_DIFF_MIN_WIDTH = 140;
+const WORKSPACE_REVIEW_TREE_MIN_WIDTH = 220;
+const WORKSPACE_REVIEW_TREE_MAX_WIDTH = 360;
+const WORKSPACE_REVIEW_DIFF_MIN_WIDTH = 420;
 const WORKSPACE_REVIEW_TREE_STEP = 24;
 const WORKSPACE_REVIEW_TREE_WIDTH_KEY = "wuu.desktop.reviewTreeWidth";
 
@@ -84,6 +84,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
   const filteredFiles = useMemo(() => filterGitChangeFiles(files, treeQuery), [files, treeQuery]);
   const treeNodes = useMemo(() => buildGitChangeTree(filteredFiles), [filteredFiles]);
   const selectedFile = files.find((file) => file.path === selectedPath);
+  const singleFileReview = Boolean(selectedFile && files.length === 1);
   const panelStyle = {
     "--workspace-review-tree-width": `${treePaneWidth}px`
   } as CSSProperties;
@@ -304,6 +305,8 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
   return (
     <div
       className={`workspace-review-panel${selectedFile ? " has-diff" : ""}${
+        singleFileReview ? " single-file" : ""
+      }${
         resizingSplit ? " resizing-split" : ""
       }`}
       aria-label="审查变更"
@@ -319,7 +322,7 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
           branch={gitStatus?.branch}
         />
       ) : null}
-      {selectedFile ? (
+      {selectedFile && !singleFileReview ? (
         <div
           className="workspace-review-resizer"
           role="separator"
@@ -333,19 +336,21 @@ export function WorkspaceReviewPanel({ gitStatus }: { gitStatus?: GitStatusResul
           onKeyDown={handleReviewSplitKeyDown}
         />
       ) : null}
-      <div className="workspace-review-tree-pane">
-        <GitChangeTreePanel
-          files={filteredFiles}
-          nodes={treeNodes}
-          selectedPath={selectedPath}
-          expandedPaths={expandedPaths}
-          query={treeQuery}
-          onQueryChange={setTreeQuery}
-          onSelectFile={setSelectedPath}
-          onTogglePath={toggleTreePath}
-        />
-        {error && !selectedFile ? <div className="workspace-review-overlay error">{error}</div> : null}
-      </div>
+      {!singleFileReview ? (
+        <div className="workspace-review-tree-pane">
+          <GitChangeTreePanel
+            files={filteredFiles}
+            nodes={treeNodes}
+            selectedPath={selectedPath}
+            expandedPaths={expandedPaths}
+            query={treeQuery}
+            onQueryChange={setTreeQuery}
+            onSelectFile={setSelectedPath}
+            onTogglePath={toggleTreePath}
+          />
+          {error && !selectedFile ? <div className="workspace-review-overlay error">{error}</div> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -45,3 +45,33 @@ describe("workspace file preview layout", () => {
     );
   });
 });
+
+describe("workspace review diff layout", () => {
+  it("keeps the diff pane primary and wraps long lines inside the available width", () => {
+    expect(cssRuleBody(".workspace-review-panel.has-diff")).toMatch(
+      /minmax\(0,\s*1fr\)[\s\S]*minmax\(220px,\s*min\(var\(--workspace-review-tree-width\),\s*calc\(100%\s*-\s*420px\)\)\)/,
+    );
+
+    const code = cssRuleBody(".workspace-diff-code");
+    expect(code).toMatch(/width:\s*100%;/);
+    expect(code).toMatch(/min-width:\s*0;/);
+    expect(code).toMatch(/white-space:\s*pre-wrap;/);
+    expect(code).not.toMatch(/min-width:\s*max-content;/);
+
+    const lineCode = cssRuleBody(".workspace-diff-line-code");
+    expect(lineCode).toMatch(/white-space:\s*pre-wrap;/);
+    expect(lineCode).toMatch(/overflow-wrap:\s*anywhere;/);
+  });
+
+  it("lets a single-file review use the full panel width", () => {
+    expect(cssRuleBody(".workspace-review-panel.single-file.has-diff")).toMatch(
+      /grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+    );
+    expect(
+      cssRuleBody(".workspace-review-panel.single-file .workspace-review-tree-pane"),
+    ).toMatch(/display:\s*none;/);
+    expect(
+      cssRuleBody(".workspace-review-panel.single-file .workspace-review-resizer"),
+    ).toMatch(/display:\s*none;/);
+  });
+});
