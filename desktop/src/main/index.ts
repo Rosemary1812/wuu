@@ -72,6 +72,7 @@ import type {
   Turn,
   PopOutInitResult,
   PopOutSessionParams,
+  WorkspaceFileSaveParams,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
 import { autoInstallCli, getCliInstallStatus, installCli } from "./cliInstall";
@@ -686,6 +687,11 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("wuu:file-read", (event, path: string, root?: string) =>
     workspaceFilesForEvent(event).readFile(path, root),
+  );
+  ipcMain.handle(
+    "wuu:file-write",
+    (event, params: WorkspaceFileSaveParams, root?: string) =>
+      workspaceFilesForEvent(event).writeFile(params, root),
   );
   ipcMain.handle(
     "wuu:file-reference-resolve",

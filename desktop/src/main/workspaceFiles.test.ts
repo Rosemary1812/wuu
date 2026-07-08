@@ -7,6 +7,7 @@ import {
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -29,10 +30,10 @@ function createWorkspace(): string {
   return workspace;
 }
 
-function writeWorkspaceFile(root: string, path: string): void {
+function writeWorkspaceFile(root: string, path: string, text = "ok\n"): void {
   const absolutePath = join(root, path);
   mkdirSync(dirname(absolutePath), { recursive: true });
-  writeFileSync(absolutePath, "ok\n");
+  writeFileSync(absolutePath, text);
 }
 
 function createService(root: string): WorkspaceFileService {
@@ -197,5 +198,95 @@ describe("WorkspaceFileService root override", () => {
 
     expect(result.root).toBe(defaultRoot);
     expect(result.entries.map((entry) => entry.name)).toEqual(["default-only.txt"]);
+  });
+});
+
+describe("WorkspaceFileService file save", () => {
+  it("returns save metadata when reading a text file", () => {
+    const root = createWorkspace();
+    writeWorkspaceFile(root, "settings.json", "{\"enabled\":true}\n");
+
+    const result = createService(root).readFile("settings.json");
+
+    expect(result.text).toBe("{\"enabled\":true}\n");
+    expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.mtime_ms).toBeGreaterThan(0);
+  });
+
+  it("writes a text file when the base metadata still matches", () => {
+    const root = createWorkspace();
+    writeWorkspaceFile(root, "settings.json", "{\"enabled\":true}\n");
+    const service = createService(root);
+    const base = service.readFile("settings.json");
+
+    const result = service.writeFile({
+      path: "settings.json",
+      text: "{\"enabled\":false}\n",
+      base_sha256: base.sha256,
+      base_mtime_ms: base.mtime_ms,
+    });
+
+    expect(result.status).toBe("saved");
+    expect(result.file.text).toBe("{\"enabled\":false}\n");
+    expect(readFileSync(join(root, "settings.json"), "utf8")).toBe("{\"enabled\":false}\n");
+    expect(result.file.sha256).not.toBe(base.sha256);
+  });
+
+  it("reports a conflict without overwriting when the file changed after read", () => {
+    const root = createWorkspace();
+    writeWorkspaceFile(root, "settings.json", "{\"enabled\":true}\n");
+    const service = createService(root);
+    const base = service.readFile("settings.json");
+    writeWorkspaceFile(root, "settings.json", "{\"external\":true}\n");
+
+    const result = service.writeFile({
+      path: "settings.json",
+      text: "{\"enabled\":false}\n",
+      base_sha256: base.sha256,
+      base_mtime_ms: base.mtime_ms,
+    });
+
+    expect(result.status).toBe("conflict");
+    expect(result.file.text).toBe("{\"external\":true}\n");
+    expect(readFileSync(join(root, "settings.json"), "utf8")).toBe("{\"external\":true}\n");
+  });
+
+  it("rejects writes outside the workspace root", () => {
+    const root = createWorkspace();
+    const service = createService(root);
+
+    expect(() =>
+      service.writeFile({
+        path: "../escape.txt",
+        text: "no\n",
+        base_sha256: "0".repeat(64),
+        base_mtime_ms: 1,
+      }),
+    ).toThrow(/outside workspace/i);
+  });
+
+  it("rejects writes to binary and truncated files", () => {
+    const root = createWorkspace();
+    writeWorkspaceFile(root, "binary.dat", "hello\0world");
+    writeWorkspaceFile(root, "large.txt", "x".repeat(520 * 1024));
+    const service = createService(root);
+
+    expect(() =>
+      service.writeFile({
+        path: "binary.dat",
+        text: "no\n",
+        base_sha256: "0".repeat(64),
+        base_mtime_ms: 1,
+      }),
+    ).toThrow(/binary/i);
+
+    expect(() =>
+      service.writeFile({
+        path: "large.txt",
+        text: "no\n",
+        base_sha256: "0".repeat(64),
+        base_mtime_ms: 1,
+      }),
+    ).toThrow(/truncated/i);
   });
 });

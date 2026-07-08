@@ -5,8 +5,10 @@ import {
   readSync,
   realpathSync,
   statSync,
+  writeFileSync,
   type Dirent,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import type {
@@ -15,6 +17,8 @@ import type {
   WorkspaceDirectoryListResult,
   WorkspaceFileReferenceResolveResult,
   WorkspaceFileReadResult,
+  WorkspaceFileSaveParams,
+  WorkspaceFileSaveResult,
 } from "../shared/protocol";
 
 const FILE_TREE_MAX_PATHS = 4000;
@@ -60,6 +64,13 @@ export class WorkspaceFileService {
 
   readFile(path: string, root?: string): WorkspaceFileReadResult {
     return readWorkspaceFileResult(this.resolveContext(root), path);
+  }
+
+  writeFile(
+    params: WorkspaceFileSaveParams,
+    root?: string,
+  ): WorkspaceFileSaveResult {
+    return writeWorkspaceFileResult(this.resolveContext(root), params);
   }
 
   resolveFileReference(
@@ -179,9 +190,46 @@ function readWorkspaceFileResult(
     path: relativeFilePath,
     absolute_path: absolutePath,
     size_bytes: stats.size,
+    mtime_ms: stats.mtimeMs,
+    sha256: sha256Hex(previewBuffer),
     binary,
     truncated,
     text: binary ? undefined : previewBuffer.toString("utf8"),
+  };
+}
+
+function writeWorkspaceFileResult(
+  context: RuntimeContext,
+  params: WorkspaceFileSaveParams,
+): WorkspaceFileSaveResult {
+  if (!params || typeof params !== "object") {
+    throw new Error("missing file save parameters");
+  }
+  if (params.path.split(/[\\/]/).some((segment) => segment === "..")) {
+    throw new Error("file is outside workspace");
+  }
+  if (typeof params.text !== "string") {
+    throw new Error("file text must be a string");
+  }
+
+  const current = readWorkspaceFileResult(context, params.path);
+  if (current.binary) {
+    throw new Error("cannot save binary workspace file");
+  }
+  if (current.truncated) {
+    throw new Error("cannot save truncated workspace file");
+  }
+  if (
+    current.sha256 !== params.base_sha256 ||
+    current.mtime_ms !== params.base_mtime_ms
+  ) {
+    return { status: "conflict", file: current };
+  }
+
+  writeFileSync(current.absolute_path, params.text, "utf8");
+  return {
+    status: "saved",
+    file: readWorkspaceFileResult(context, current.path),
   };
 }
 
@@ -366,6 +414,10 @@ function isPathInsideRoot(path: string, root: string): boolean {
 
 function toWorkspaceSlash(path: string): string {
   return path.replace(/\\/g, "/");
+}
+
+function sha256Hex(buffer: Buffer): string {
+  return createHash("sha256").update(buffer).digest("hex");
 }
 
 function normalizeWorkspaceRelativePath(path: string): string {

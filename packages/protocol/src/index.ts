@@ -479,9 +479,23 @@ export type WorkspaceFileReadResult = {
   path: string;
   absolute_path: string;
   size_bytes: number;
+  mtime_ms: number;
+  sha256: string;
   binary: boolean;
   truncated: boolean;
   text?: string;
+};
+
+export type WorkspaceFileSaveParams = {
+  path: string;
+  text: string;
+  base_mtime_ms: number;
+  base_sha256: string;
+};
+
+export type WorkspaceFileSaveResult = {
+  status: "saved" | "conflict";
+  file: WorkspaceFileReadResult;
 };
 
 export type WorkspaceFileReferenceResolveResult = {
@@ -1661,6 +1675,7 @@ export type WuuDesktopApi = {
   listWorkspaceFiles: (root?: string) => Promise<FileTreeListResult>;
   listWorkspaceDirectory: (path?: string, root?: string) => Promise<WorkspaceDirectoryListResult>;
   readWorkspaceFile: (path: string, root?: string) => Promise<WorkspaceFileReadResult>;
+  writeWorkspaceFile: (params: WorkspaceFileSaveParams, root?: string) => Promise<WorkspaceFileSaveResult>;
   resolveWorkspaceFileReference: (reference: string, root?: string) => Promise<WorkspaceFileReferenceResolveResult>;
   startTerminalSession: (params?: TerminalSessionStartParams) => Promise<TerminalSessionStartResult>;
   writeTerminalSession: (id: string, data: string) => Promise<TerminalSessionActionResult>;

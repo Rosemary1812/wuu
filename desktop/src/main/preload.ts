@@ -71,6 +71,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:file-directory-list", path, root),
   readWorkspaceFile: (path: string, root?: string) =>
     ipcRenderer.invoke("wuu:file-read", path, root),
+  writeWorkspaceFile: (params, root?: string) =>
+    ipcRenderer.invoke("wuu:file-write", params, root),
   resolveWorkspaceFileReference: (reference: string, root?: string) =>
     ipcRenderer.invoke("wuu:file-reference-resolve", reference, root),
   startTerminalSession: (params) =>
