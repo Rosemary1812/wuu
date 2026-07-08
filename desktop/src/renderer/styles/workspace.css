@@ -1714,19 +1714,21 @@
   flex: 0 0 auto;
   align-items: center;
   gap: 2px;
-  border: 1px solid var(--surface-3);
   border-radius: var(--radius-sm);
-  background: var(--paper);
+  background: var(--surface-2);
   padding: 2px;
 }
 
 .workspace-markdown-mode-switch button {
   height: 24px;
+  border: 0;
+  background: transparent;
   border-radius: calc(var(--radius-sm) - 2px);
-  color: var(--ink-muted);
+  color: var(--ink-soft);
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
-  padding: 0 8px;
+  padding: 0 10px;
+  cursor: pointer;
 }
 
 .workspace-markdown-mode-switch button:hover {
@@ -1734,8 +1736,9 @@
 }
 
 .workspace-markdown-mode-switch button.selected {
-  background: var(--surface-3);
+  background: var(--paper);
   color: var(--ink);
+  box-shadow: var(--shadow-soft);
 }
 
 .workspace-file-preview-header {
