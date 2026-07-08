@@ -7012,6 +7012,61 @@ export function App(): JSX.Element {
     }
   }
 
+  async function renameThread(
+    thread: ThreadSummary,
+    title: string,
+  ): Promise<void> {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      return;
+    }
+    const localDemoThread = localDemoThreadsRef.current.get(thread.id);
+    if (localDemoThread) {
+      const nextThread = { ...localDemoThread, title: trimmed };
+      localDemoThreadsRef.current = new Map([
+        ...localDemoThreadsRef.current,
+        [thread.id, nextThread],
+      ]);
+      setState((current) => ({
+        ...current,
+        thread: current.thread?.id === thread.id ? nextThread : current.thread,
+        secondaryThread:
+          current.secondaryThread?.id === thread.id
+            ? nextThread
+            : current.secondaryThread,
+        threads: upsertThread(current.threads, nextThread),
+        status: current.status === "ready" ? "ready" : current.status,
+      }));
+      return;
+    }
+    try {
+      const result = await window.wuu.renameThread(thread.id, trimmed);
+      updateCachedSidebarThread(result.thread);
+      setState((current) => ({
+        ...current,
+        thread:
+          current.thread?.id === thread.id ? result.thread : current.thread,
+        secondaryThread:
+          current.secondaryThread?.id === thread.id
+            ? result.thread
+            : current.secondaryThread,
+        threads:
+          current.threads.some((item) => item.id === result.thread.id) ||
+          current.activeContext?.cwd === result.thread.cwd ||
+          isDMThread(result.thread) ||
+          isGroupThread(result.thread)
+            ? upsertThread(current.threads, result.thread)
+            : current.threads,
+        status: current.status === "ready" ? "ready" : current.status,
+      }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: desktopApiErrorMessage(error, "重命名对话失败"),
+      }));
+    }
+  }
+
   async function removeThreadMemberByID(
     threadID: string,
     participantID: string,
@@ -8654,6 +8709,7 @@ export function App(): JSX.Element {
             onTogglePinned={(thread) => void toggleThreadPinned(thread)}
             onArchiveThread={(thread) => void archiveThread(thread)}
             onDeleteThread={(thread) => void deleteThread(thread)}
+            onRenameThread={(thread, title) => void renameThread(thread, title)}
             onClearArchiveConfirm={(id) =>
               setArchiveConfirmThreadID((current) =>
                 current === id ? undefined : current,

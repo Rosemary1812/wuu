@@ -330,6 +330,7 @@ export function AppSidebar({
   onTogglePinned,
   onArchiveThread,
   onDeleteThread,
+  onRenameThread,
   onClearArchiveConfirm,
   onToggleProjectMenu,
   onCreateProject,
@@ -418,6 +419,7 @@ export function AppSidebar({
   onTogglePinned: (thread: ThreadSummary) => void;
   onArchiveThread: (thread: ThreadSummary) => void;
   onDeleteThread: (thread: ThreadSummary) => void;
+  onRenameThread: (thread: ThreadSummary, title: string) => void;
   onClearArchiveConfirm: (threadID: string) => void;
   onToggleProjectMenu: () => void;
   onCreateProject: () => void;
@@ -695,6 +697,7 @@ export function AppSidebar({
                       onTogglePinned={onTogglePinned}
                       onArchive={onArchiveThread}
                       onDelete={onDeleteThread}
+                      onRename={onRenameThread}
                       onClearArchiveConfirm={onClearArchiveConfirm}
                     />
                   )}
@@ -814,6 +817,7 @@ export function AppSidebar({
                             onTogglePinned={onTogglePinned}
                             onArchive={onArchiveThread}
                             onDelete={onDeleteThread}
+                            onRename={onRenameThread}
                             onClearArchiveConfirm={onClearArchiveConfirm}
                           />
                         ) : null}
@@ -1136,6 +1140,7 @@ export function AppSidebar({
                   onToggleThreadPinned={onTogglePinned}
                   onArchiveThread={onArchiveThread}
                   onDeleteThread={onDeleteThread}
+                  onRenameThread={onRenameThread}
                   onClearArchiveConfirm={onClearArchiveConfirm}
                   onRemoveProject={onRemoveProject}
                   onRelocateProject={onRelocateProject}

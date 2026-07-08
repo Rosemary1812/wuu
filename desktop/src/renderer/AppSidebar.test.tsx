@@ -142,6 +142,7 @@ function renderSidebar({
         onTogglePinned={onTogglePinned}
         onArchiveThread={() => {}}
         onDeleteThread={() => {}}
+        onRenameThread={() => {}}
         onClearArchiveConfirm={() => {}}
         onToggleProjectMenu={() => {}}
         onCreateProject={() => {}}

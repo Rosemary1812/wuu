@@ -805,7 +805,10 @@ func (s *Server) handleThreadRename(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	return s.writeResponse(req.ID, ThreadRenameResult{Thread: thread}, nil)
+	if err := s.writeResponse(req.ID, ThreadRenameResult{Thread: thread}, nil); err != nil {
+		return err
+	}
+	return s.notifyThreadUpdated(thread)
 }
 
 type threadListEntry struct {

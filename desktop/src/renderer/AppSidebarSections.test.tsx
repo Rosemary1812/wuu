@@ -184,6 +184,7 @@ function renderSidebar(options: RenderOptions): void {
         onTogglePinned={onTogglePinned}
         onArchiveThread={onArchiveThread}
         onDeleteThread={() => {}}
+        onRenameThread={() => {}}
         onClearArchiveConfirm={() => {}}
         onToggleProjectMenu={() => {}}
         onCreateProject={() => {}}
@@ -939,6 +940,7 @@ describe("AppSidebar drag-to-reorder wiring (T7)", () => {
             onTogglePinned: () => {},
             onArchiveThread: () => {},
             onDeleteThread: () => {},
+            onRenameThread: () => {},
             onClearArchiveConfirm: () => {},
             onToggleProjectMenu: () => {},
             onCreateProject: () => {},

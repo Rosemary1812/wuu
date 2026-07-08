@@ -5702,6 +5702,43 @@ func TestServerThreadPinAndArchive(t *testing.T) {
 	}
 }
 
+func TestServerThreadRenameNotifiesUpdatedThread(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+
+	renamePayload, err := json.Marshal(map[string]any{
+		"id":     "2",
+		"method": MethodThreadRename,
+		"params": ThreadRenameParams{ThreadID: threadID, Title: "Closed loop title"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.handleLine(context.Background(), renamePayload); err != nil {
+		t.Fatalf("thread/rename: %v", err)
+	}
+
+	messages := parseOutput(t, out.String())
+	renameResult := remarshal[ThreadRenameResult](t, responseByID(t, messages, "2")["result"])
+	if renameResult.Thread.ID != threadID || renameResult.Thread.Title != "Closed loop title" {
+		t.Fatalf("unexpected rename result: %+v", renameResult)
+	}
+	updated := notificationsByMethod(messages, NotificationThreadUpdated)
+	if len(updated) == 0 {
+		t.Fatalf("expected thread/updated notification after rename, got %+v", messages)
+	}
+	params := remarshal[ThreadUpdatedNotification](t, updated[len(updated)-1]["params"])
+	if params.Thread.ID != threadID || params.Thread.Title != "Closed loop title" {
+		t.Fatalf("unexpected thread/updated notification: %+v", params)
+	}
+}
+
 func TestServerRejectsUnknownTurnParams(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	out := &lockedBuffer{}
