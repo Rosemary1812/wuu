@@ -93,7 +93,9 @@ const (
 	// MethodSettingsUsage returns the aggregated per-provider/model token
 	// usage snapshot for the desktop settings page. Range filter selects
 	// the time window ("all", "7d", "30d", "90d"); empty defaults to "all".
-	MethodSettingsUsage = "settings/usage"
+	MethodSettingsUsage        = "settings/usage"
+	MethodDevicePushRegister   = "device/push_register"
+	MethodDevicePushUnregister = "device/push_unregister"
 
 	NotificationThreadStarted      = "thread/started"
 	NotificationThreadResumed      = "thread/resumed"
