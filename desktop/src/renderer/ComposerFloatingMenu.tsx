@@ -60,7 +60,14 @@ export function FloatingMenuPortal({
         left,
         position: "fixed",
         visibility: "visible",
-        zIndex: 80
+        // Sit above any modal overlay the floating menu might be opened
+        // from. The new-participant dialog (and the shared sidebar-name
+        // dialog + conversation-search dialog it reuses) is portaled to
+        // body at z-index: 200, so a SelectMenu dropdown portaled from
+        // inside that dialog needs to be > 200 to remain visible. 220
+        // clears the modal band while staying below anything an app
+        // surface might intentionally pin above.
+        zIndex: 220,
       };
       if (placement === "above") {
         nextStyle.bottom = Math.max(viewportMargin, window.innerHeight - rect.top + offset);
