@@ -1831,8 +1831,14 @@
   width: min(620px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
   grid-template-rows: auto 1fr auto;
-  gap: 16px;
-  padding: 22px;
+  /* Proportional scaling: tighter padding/gaps than the shared
+     sidebar-name-dialog shell because this form hosts several fields
+     and a 56px avatar. The compactness pushes the lower fields (role,
+     model) up by ~30px, which combined with FloatingMenuPortal's auto-
+     flip keeps the model dropdown's tail visible inside the viewport
+     even when the list has 6+ providers. */
+  gap: 12px;
+  padding: 18px;
   transform-origin: center;
   overflow: hidden;
 }
@@ -1883,7 +1889,7 @@
 
 .new-participant-body {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   padding: 4px 2px;
   overflow-y: auto;
   /* Keep action buttons + title visible when the form is taller than the
@@ -1902,15 +1908,15 @@
 
 .new-participant-avatar-row {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr);
   align-items: center;
-  gap: 14px;
-  padding: 4px 0;
+  gap: 12px;
+  padding: 2px 0;
 }
 
 .new-participant-avatar {
-  width: 56px;
-  height: 56px;
+  width: 44px;
+  height: 44px;
   border: 1px dashed var(--ink-overlay-12);
   border-radius: 50%;
   background: var(--surface-2);

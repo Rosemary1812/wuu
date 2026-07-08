@@ -46,7 +46,14 @@ export function SelectMenu({
   dataTestid,
   dataField,
   placement = "below",
-  align = "left"
+  align = "left",
+  // When true, the floating menu flips to the opposite side of the
+  // trigger if the requested placement doesn't have enough viewport
+  // room (e.g. the model picker in the new-participant dialog, where
+  // the list of providers × models can easily exceed the space below
+  // the trigger inside a centered modal). See FloatingMenuPortal for
+  // the actual flip heuristic.
+  flip = false
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -63,6 +70,7 @@ export function SelectMenu({
   dataField?: string;
   placement?: FloatingMenuPlacement;
   align?: FloatingMenuAlign;
+  flip?: boolean;
 }): JSX.Element {
   const anchorRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -233,6 +241,7 @@ export function SelectMenu({
           placement={placement}
           align={align}
           width={menuWidth}
+          flip={flip}
         >
           <div
             className="select-menu-panel"

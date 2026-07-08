@@ -390,6 +390,7 @@ export function NewParticipantDialog({
                 value: role,
                 label: role,
               }))}
+              flip
             />
           </div>
           <div className="new-participant-field">
@@ -400,6 +401,7 @@ export function NewParticipantDialog({
               value={form.model}
               onChange={(next) => updateField("model", next)}
               groups={modelGroups}
+              flip
             />
           </div>
         </div>
