@@ -3,6 +3,7 @@ package appserver
 import (
 	"context"
 	"encoding/json"
+	"math/rand"
 	"regexp"
 	"sort"
 	"strconv"
@@ -71,6 +72,39 @@ func (s *Server) recordParticipantReaction(threadID string, seq int, participant
 }
 
 const residentEnvelopeBatchLimit = 20
+
+type idleUnreadCandidate struct {
+	ParticipantID string
+	UnreadCount   int
+	Busy          bool
+	Draining      bool
+	Retired       bool
+	LastSpeaker   bool
+}
+
+func chooseIdleUnreadCandidate(candidates []idleUnreadCandidate, rng *rand.Rand) (idleUnreadCandidate, bool) {
+	var best []idleUnreadCandidate
+	maxUnread := 0
+	for _, c := range candidates {
+		if strings.TrimSpace(c.ParticipantID) == "" || c.UnreadCount <= 0 || c.Busy || c.Draining || c.Retired || c.LastSpeaker {
+			continue
+		}
+		if c.UnreadCount > maxUnread {
+			maxUnread = c.UnreadCount
+			best = best[:0]
+		}
+		if c.UnreadCount == maxUnread {
+			best = append(best, c)
+		}
+	}
+	if len(best) == 0 {
+		return idleUnreadCandidate{}, false
+	}
+	if rng == nil {
+		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	return best[rng.Intn(len(best))], true
+}
 
 type envelopeMetaRecord struct {
 	ID                string `json:"id,omitempty"`

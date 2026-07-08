@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,37 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
+
+func TestIdleUnreadWakeCandidatePrefersMostUnreadAndSkipsIneligible(t *testing.T) {
+	candidates := []idleUnreadCandidate{
+		{ParticipantID: "ada", UnreadCount: 2},
+		{ParticipantID: "bea", UnreadCount: 5},
+		{ParticipantID: "cyd", UnreadCount: 9, Busy: true},
+		{ParticipantID: "dan", UnreadCount: 7, LastSpeaker: true},
+	}
+	got, ok := chooseIdleUnreadCandidate(candidates, rand.New(rand.NewSource(1)))
+	if !ok || got.ParticipantID != "bea" {
+		t.Fatalf("candidate = %+v, %v; want bea", got, ok)
+	}
+}
+
+func TestIdleUnreadWakeCandidateRandomizesTies(t *testing.T) {
+	candidates := []idleUnreadCandidate{
+		{ParticipantID: "ada", UnreadCount: 3},
+		{ParticipantID: "bea", UnreadCount: 3},
+	}
+	seen := map[string]bool{}
+	for seed := int64(1); seed <= 20; seed++ {
+		got, ok := chooseIdleUnreadCandidate(candidates, rand.New(rand.NewSource(seed)))
+		if !ok {
+			t.Fatal("expected a candidate")
+		}
+		seen[got.ParticipantID] = true
+	}
+	if !seen["ada"] || !seen["bea"] {
+		t.Fatalf("tie did not randomize across seeds: %v", seen)
+	}
+}
 
 func waitForResidentDMHistory(t *testing.T, srv *Server, participantID string, wantUserRecords int) (string, []session.HistoryRecord) {
 	t.Helper()
