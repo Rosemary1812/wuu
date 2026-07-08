@@ -68,9 +68,16 @@ function isMemoryBackendMissing(error: unknown): boolean {
 
 function formFromParticipant(
   participant?: ParticipantProfile,
+  initialName?: string,
 ): ParticipantProfileForm {
+  // In "new" mode the Agents sidebar collects the agent name through a
+  // SidebarNameDialog first and passes it down so the profile editor
+  // opens pre-filled. Falls back to "" when the dialog is dismissed /
+  // bypassed so the form still respects the canSave guard.
+  const seedName =
+    participant?.name ?? (participant === undefined ? initialName ?? "" : "");
   return {
-    name: participant?.name ?? "",
+    name: seedName,
     role: participant?.role ?? "reviewer",
     tagline: participant?.tagline ?? "",
     model: participant?.model ?? "",
@@ -127,6 +134,7 @@ export function ParticipantProfilePanel({
   onOpenMemoryPanel,
   onRetire,
   forkedFromName,
+  initialName,
 }: {
   participant?: ParticipantProfile;
   mode: "new" | "edit";
@@ -134,6 +142,12 @@ export function ParticipantProfilePanel({
   // temporary分身 (decision six / participant.forked_from_id). The parent
   // resolves the id to a name so the identity section can badge "X 的分身".
   forkedFromName?: string;
+  // initialName seeds the form's name field in "new" mode so the
+  // profile editor opens with the name the user just typed into the
+  // SidebarNameDialog (matching rename-conversation / new-group). The
+  // value is read once on mount and again whenever `mode` flips to
+  // "new"; for "edit" mode it has no effect.
+  initialName?: string;
   providers?: ProviderSummary[];
   loading?: boolean;
   error?: string;
@@ -154,7 +168,7 @@ export function ParticipantProfilePanel({
   onRetire: (participantId: string) => void;
 }): JSX.Element {
   const [form, setForm] = useState<ParticipantProfileForm>(() =>
-    formFromParticipant(participant),
+    formFromParticipant(participant, initialName),
   );
   const [feedback, setFeedback] = useState("");
   const [avatarError, setAvatarError] = useState<string | undefined>(undefined);
@@ -169,11 +183,11 @@ export function ParticipantProfilePanel({
   const participantID = participant?.id ?? "";
 
   useEffect(() => {
-    setForm(formFromParticipant(participant));
+    setForm(formFromParticipant(participant, initialName));
     setFeedback("");
     setAvatarError(undefined);
     setArchiveConfirmOpen(false);
-  }, [participant?.id, mode]);
+  }, [participant?.id, mode, initialName]);
 
   useEffect(() => {
     if (mode !== "edit" || !participantID) {

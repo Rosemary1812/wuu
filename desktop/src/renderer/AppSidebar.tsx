@@ -409,7 +409,14 @@ export function AppSidebar({
   // Fires when the user picks the "编辑设定" entry in the agent row's
   // right-click menu. Opens the profile editing side panel.
   onEditParticipant: (participant: ParticipantProfile) => void;
-  onCreateParticipant: () => void;
+  // Fires when the user clicks the Agents section's + button (or the
+  // empty-list "添加 Agent" row). The sidebar collects the agent name
+  // through the shared SidebarNameDialog first, then calls this with
+  // the chosen name. App.tsx opens the participant profile editor in
+  // "new" mode and pre-fills the form with `name`. Optional so test
+  // harnesses can render the sidebar without wiring participant
+  // creation.
+  onCreateParticipant?: (name: string) => void;
   // Fires when the user submits a name in the 群聊 section's inline
   // creator. App.tsx starts the group thread via
   // startThread({ group: true, title }) and selects it. Optional so test
@@ -453,6 +460,13 @@ export function AppSidebar({
   // commit handler.
   const [creatingGroupThread, setCreatingGroupThread] = useState(false);
   const [groupNameDraft, setGroupNameDraft] = useState("");
+  // Floating create-agent dialog for the Agents section: matches the
+  // rename-conversation / new-group pattern (shared SidebarNameDialog).
+  // The + button and the empty-list "添加 Agent" row both open this
+  // dialog; on submit the chosen name is forwarded to onCreateParticipant,
+  // which opens the profile editor pre-filled.
+  const [creatingParticipant, setCreatingParticipant] = useState(false);
+  const [participantNameDraft, setParticipantNameDraft] = useState("");
   // Right-click menu on an individual agent row. The menu hosts the
   // profile-editing entry plus a pin/unpin DM affordance that drives off
   // the latest DM thread for that participant. The roster header's own
@@ -905,7 +919,10 @@ export function AppSidebar({
                     aria-label="新建 Agent"
                     title="新建 Agent"
                     disabled={!state.initialized}
-                    onClick={onCreateParticipant}
+                    onClick={() => {
+                      setParticipantNameDraft("");
+                      setCreatingParticipant(true);
+                    }}
                   >
                     <Plus aria-hidden="true" />
                   </button>
@@ -944,7 +961,10 @@ export function AppSidebar({
                           type="button"
                           className="participant-roster-row empty"
                           disabled={!state.initialized}
-                          onClick={onCreateParticipant}
+                          onClick={() => {
+                            setParticipantNameDraft("");
+                            setCreatingParticipant(true);
+                          }}
                         >
                           <span
                             className="participant-roster-status"
@@ -1170,6 +1190,32 @@ export function AppSidebar({
         placeholder="群聊名称"
         icon={Hash}
         submitLabel="创建"
+        cancelLabel="取消"
+      />
+      <SidebarNameDialog
+        open={creatingParticipant}
+        title={participantNameDraft}
+        onTitleChange={setParticipantNameDraft}
+        onSubmit={() => {
+          const nextName = participantNameDraft.trim();
+          if (nextName === "") {
+            return;
+          }
+          setCreatingParticipant(false);
+          setParticipantNameDraft("");
+          onCreateParticipant?.(nextName);
+        }}
+        onClose={() => {
+          setCreatingParticipant(false);
+          setParticipantNameDraft("");
+        }}
+        dialogTitle="新建 Agent"
+        dialogTitleId="participant-create-title"
+        fieldLabel="Agent 名字"
+        fieldAriaLabel="Agent 名字"
+        placeholder="例如 Noel"
+        icon={UserRound}
+        submitLabel="下一步"
         cancelLabel="取消"
       />
     </aside>

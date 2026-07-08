@@ -438,6 +438,12 @@ type HistoryMessageEditState = {
 type ParticipantPanelState = {
   mode: "new" | "edit";
   participant?: ParticipantProfile;
+  // initialName seeds the form's name field when the panel opens in
+  // "new" mode. The Agents sidebar's + button first asks for a name via
+  // SidebarNameDialog, then transitions here with the chosen name so the
+  // user doesn't have to retype it before continuing into the profile
+  // editor (matches the rename-conversation / new-group dialog pattern).
+  initialName?: string;
   loading?: boolean;
   error?: string;
   saving?: boolean;
@@ -3804,13 +3810,14 @@ export function App(): JSX.Element {
     });
   }
 
-  function openNewParticipantProfile(): void {
+  function openNewParticipantProfile(initialName?: string): void {
     closeConversationSearch({ immediate: true });
     closeEnvironmentPanel({ dismissed: true });
     setOpenSubthreadPanel(undefined);
     setRightPanelOpenWithMotion(false);
     setParticipantPanel({
       mode: "new",
+      initialName: initialName?.trim() || undefined,
       loading: false,
     });
   }
@@ -9376,6 +9383,11 @@ export function App(): JSX.Element {
           <ParticipantProfilePanel
             mode={participantPanel.mode}
             participant={participantPanel.participant}
+            initialName={
+              participantPanel.mode === "new"
+                ? participantPanel.initialName
+                : undefined
+            }
             providers={state.initialized?.providers}
             loading={participantPanel.loading}
             error={participantPanel.error}

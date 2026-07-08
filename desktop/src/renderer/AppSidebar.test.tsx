@@ -60,6 +60,19 @@ function makeThreadSummary(
   };
 }
 
+// Drives React's controlled onChange handler for the SidebarNameDialog
+// input: setting `input.value` directly bypasses the controlled state
+// and the dialog's submit button stays disabled. Mirrors the helper in
+// AppSidebarSections.test.tsx.
+function setControlledInputValue(input: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function renderSidebar({
   projectMenuOpen = false,
   pinnedThreads = [],
@@ -69,7 +82,7 @@ function renderSidebar({
   onImportParticipants = () => {},
   onExportParticipants = () => {},
   onSelectParticipant = () => {},
-  onCreateParticipant = () => {},
+  onCreateParticipant = (_name: string) => {},
   onStartNewThread = () => {},
 }: {
   projectMenuOpen?: boolean;
@@ -80,7 +93,7 @@ function renderSidebar({
   onImportParticipants?: (file: File) => void;
   onExportParticipants?: () => void;
   onSelectParticipant?: (participant: ParticipantProfile) => void;
-  onCreateParticipant?: () => void;
+  onCreateParticipant?: (name: string) => void;
   onStartNewThread?: () => void;
 } = {}): void {
   const state: AppState = {
@@ -405,17 +418,47 @@ describe("AppSidebar participant roster", () => {
   });
 
   it("renders the empty-state CTA when there are no participants", () => {
-    let created = 0;
-    renderSidebar({ onCreateParticipant: () => { created += 1; } });
+    // The empty-state row now opens the shared SidebarNameDialog first
+    // (matching rename-conversation / new-group), so the test asserts:
+    //   1. clicking the row reveals the floating dialog
+    //   2. submitting the dialog forwards the trimmed name to onCreateParticipant
+    const created: string[] = [];
+    renderSidebar({
+      onCreateParticipant: (name) => {
+        created.push(name);
+      },
+    });
 
     const empty = container.querySelector<HTMLButtonElement>(
       ".participant-roster-row.empty",
     );
     expect(empty).not.toBeNull();
     expect(empty?.textContent).toContain("添加 Agent");
+    expect(document.body.querySelector(".sidebar-name-dialog")).toBeNull();
     act(() => {
       empty?.click();
     });
-    expect(created).toBe(1);
+
+    const dialog = document.body.querySelector(".sidebar-name-dialog");
+    expect(dialog).not.toBeNull();
+    expect(dialog?.querySelector(".sidebar-name-dialog-title")?.textContent).toBe(
+      "新建 Agent",
+    );
+    const input = dialog?.querySelector<HTMLInputElement>(
+      ".sidebar-name-dialog-input",
+    );
+    expect(input).not.toBeNull();
+    expect(input?.getAttribute("placeholder")).toBe("例如 Noel");
+    expect(input?.getAttribute("aria-label")).toBe("Agent 名字");
+    setControlledInputValue(input!, "  Noel  ");
+    const nextButton = Array.from(
+      dialog?.querySelectorAll("button") ?? [],
+    ).find((el) => el.textContent === "下一步");
+    expect(nextButton).not.toBeUndefined();
+    act(() => {
+      nextButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(created).toEqual(["Noel"]);
+    expect(document.body.querySelector(".sidebar-name-dialog")).toBeNull();
   });
 });

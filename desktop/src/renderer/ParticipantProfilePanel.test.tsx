@@ -166,6 +166,10 @@ function mount(props: {
   onOpenMemoryPanel?: (id: string) => void;
   onRetire?: (id: string) => void;
   forkedFromName?: string;
+  // initialName seeds the form's name field in "new" mode. The
+  // Agents sidebar collects the agent name through SidebarNameDialog
+  // first and passes it down so the profile editor opens pre-filled.
+  initialName?: string;
 }): void {
   if (root === null) {
     root = createRoot(container);
@@ -184,10 +188,50 @@ function mount(props: {
         onOpenMemoryPanel={props.onOpenMemoryPanel ?? (() => {})}
         onRetire={props.onRetire ?? (() => {})}
         forkedFromName={props.forkedFromName}
+        initialName={props.initialName}
       />,
     );
   });
 }
+
+describe("ParticipantProfilePanel — initialName pre-fill", () => {
+  it("seeds the form's name input with initialName in new mode", () => {
+    // The Agents sidebar opens SidebarNameDialog first, then transitions
+    // here with the chosen name. The panel must read it on mount so the
+    // user can keep editing instead of retyping the same name.
+    mount({ mode: "new", initialName: "Noel" });
+    const nameInput = container.querySelector<HTMLInputElement>(
+      "input[data-field='name']",
+    );
+    expect(nameInput?.value).toBe("Noel");
+    // The other fields fall back to the new-mode defaults so the user
+    // can move on to role / model without filling the whole identity
+    // section from scratch.
+    expect(selectMenuValue("role")).toBe("reviewer");
+  });
+
+  it("leaves the name input blank when no initialName is provided", () => {
+    mount({ mode: "new" });
+    const nameInput = container.querySelector<HTMLInputElement>(
+      "input[data-field='name']",
+    );
+    expect(nameInput?.value).toBe("");
+  });
+
+  it("ignores initialName in edit mode (participant name wins)", () => {
+    // Edit mode always reflects the existing participant; initialName is
+    // a new-mode concern only and must not overwrite the saved name.
+    mount({
+      mode: "edit",
+      initialName: "Should not apply",
+      participant: participantFixture({ name: "Existing" }),
+    });
+    const nameInput = container.querySelector<HTMLInputElement>(
+      "input[data-field='name']",
+    );
+    expect(nameInput?.value).toBe("Existing");
+  });
+});
 
 function participantFixture(overrides: Partial<ParticipantProfile> = {}): ParticipantProfile {
   return {
