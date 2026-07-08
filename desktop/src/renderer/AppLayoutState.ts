@@ -10,11 +10,15 @@ import {
 } from "react";
 import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
 
-export const SIDEBAR_MOTION_MS = 280;
+export const SIDEBAR_MOTION_MS = 340;
 export const RIGHT_PANEL_MOTION_MS = 280;
 export const SIDEBAR_DEFAULT_WIDTH = 326;
 export const SIDEBAR_MIN_WIDTH = 200;
 export const SIDEBAR_MAX_WIDTH = 520;
+// Keep a small pull-past-minimum dead zone so resizing to the minimum width
+// does not collapse the sidebar by accident.
+const SIDEBAR_COLLAPSE_INTENT_PX = 32;
+const SIDEBAR_COLLAPSE_WIDTH = SIDEBAR_MIN_WIDTH - SIDEBAR_COLLAPSE_INTENT_PX;
 const SIDEBAR_STEP = 24;
 const SIDEBAR_WIDTH_KEY = "wuu.desktop.sidebarWidth";
 const SIDEBAR_COLLAPSED_KEY = "wuu.desktop.sidebarCollapsed";
@@ -61,8 +65,8 @@ type SidebarResizeSession = {
   // collapses.
   target: "app" | "settings";
   // Tracks whether the sidebar collapsed during the current drag (either at
-  // pointerdown or by crossing below SIDEBAR_MIN_WIDTH mid-drag). When true
-  // and the user drags back above the threshold without releasing, the move
+  // pointerdown or by crossing the collapse-intent width mid-drag). When true
+  // and the user drags back above that width without releasing, the move
   // handler must route through applySidebarWidth so the collapsed React state
   // is cleared; otherwise applyLiveSidebarWidth would only mutate the
   // --sidebar-width inline style while the .sidebar-collapsed class stays on
@@ -96,9 +100,12 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function sidebarShouldCollapse(width: number): boolean {
+  return width <= SIDEBAR_COLLAPSE_WIDTH;
+}
+
 // Number(null) is 0, not NaN, so a missing key must be checked explicitly —
-// otherwise a fresh profile boots with every panel clamped to its minimum
-// (the sidebar lands exactly on the collapse threshold).
+// otherwise a fresh profile boots with every panel clamped to its minimum.
 function storedWidth(key: string, fallback: number, min: number, max: number): number {
   const raw = window.localStorage.getItem(key);
   if (raw === null) {
@@ -472,7 +479,7 @@ export function useAppLayoutState({
 
   const applySidebarWidth = useCallback(
     (nextWidth: number): void => {
-      if (nextWidth <= SIDEBAR_MIN_WIDTH) {
+      if (sidebarShouldCollapse(nextWidth)) {
         if (!sidebarCollapsed && !resizingSidebar) {
           startSidebarMotion();
         }
@@ -569,20 +576,25 @@ export function useAppLayoutState({
         settingsSidebarLive.schedule(nextWidth);
         return;
       }
-      if (nextWidth <= SIDEBAR_MIN_WIDTH) {
+      if (sidebarShouldCollapse(nextWidth)) {
         sidebarLive.cancel();
         applySidebarWidth(nextWidth);
         session.collapsedDuringDrag = true;
         return;
       }
       if (session.collapsedDuringDrag) {
-        // We crossed below SIDEBAR_MIN_WIDTH earlier in this drag and never
+        // We crossed the collapse-intent width earlier in this drag and never
         // released. Route through applySidebarWidth so setSidebarCollapsed
         // (false) clears the .sidebar-collapsed class; otherwise the live
         // inline --sidebar-width would expand the sidebar while its content
         // stayed opacity: 0, leaving a white glass slab.
         applySidebarWidth(nextWidth);
         session.collapsedDuringDrag = false;
+        return;
+      }
+      if (nextWidth <= SIDEBAR_MIN_WIDTH) {
+        sidebarLive.cancel();
+        applySidebarWidth(nextWidth);
         return;
       }
       sidebarLive.schedule(nextWidth);
@@ -596,7 +608,7 @@ export function useAppLayoutState({
         settingsSidebarLive.cancel();
         applySettingsSidebarWidth(session.currentWidth);
       } else if (session) {
-        if (session.currentWidth > SIDEBAR_MIN_WIDTH) {
+        if (session.currentWidth > SIDEBAR_COLLAPSE_WIDTH) {
           sidebarLive.flush();
         } else {
           sidebarLive.cancel();

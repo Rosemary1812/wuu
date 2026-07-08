@@ -37,6 +37,7 @@
   --sidebar-thread-child-agent-completed-status: #68716c;
   --sidebar-thread-child-agent-cancelled-status: #94745f;
   --sidebar-settings-button-hover-ring: rgba(255, 255, 255, 0.42);
+  --sidebar-motion-ease: cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .app-shell {
@@ -52,7 +53,7 @@
 }
 
 .app-shell.sidebar-animating {
-  transition: grid-template-columns var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
+  transition: grid-template-columns var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
 }
 
 .app-shell.right-panel-animating {
@@ -104,9 +105,9 @@
   backdrop-filter: blur(26px) saturate(1.45);
   -webkit-backdrop-filter: blur(26px) saturate(1.45);
   transition:
-    border-color var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1),
-    background-color var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1),
-    box-shadow var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
+    border-color var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
+    background-color var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
+    box-shadow var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
 }
 
 .sidebar-animating .sidebar,
@@ -160,8 +161,8 @@
   transform-origin: left center;
   opacity: 1;
   transition:
-    opacity var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1),
-    transform var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
+    opacity var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
+    transform var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
   will-change: opacity, transform;
 }
 
@@ -185,9 +186,9 @@
   display: block;
 }
 
-/* While a sidebar drag is in flight the pointer sits exactly where the hover
-   zone appears at the collapse threshold; hide the zone so it cannot steal
-   the pointer or trigger the drawer mid-drag. */
+/* While a sidebar drag is in flight the pointer can sit exactly where the
+   collapsed-hover zone appears; hide the zone so it cannot steal the pointer
+   or trigger the drawer mid-drag. */
 .resizing-sidebar .sidebar-hover-zone {
   display: none;
 }
@@ -197,9 +198,9 @@
   background: linear-gradient(90deg, var(--sidebar-drawer-hover-gradient), transparent);
 }
 
-/* :focus-within is excluded while resizing: a drag that crosses the collapse
-   threshold would otherwise pin the sidebar open as an overlay because the
-   last-clicked sidebar control still holds focus. */
+/* :focus-within is excluded while resizing: a drag that collapses the sidebar
+   would otherwise pin it open as an overlay because the last-clicked sidebar
+   control still holds focus. */
 .sidebar-collapsed.sidebar-drawer-open .sidebar,
 .sidebar-collapsed.sidebar-drawer-closing .sidebar,
 .sidebar-collapsed:not(.resizing-sidebar) .sidebar:focus-within {
@@ -229,7 +230,7 @@
    already invisible. */
 .sidebar-collapsed.sidebar-drawer-closing .sidebar {
   opacity: 0;
-  transition: opacity var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
+  transition: opacity var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
 }
 
 .sidebar-resizer {

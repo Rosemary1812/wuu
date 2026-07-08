@@ -641,8 +641,8 @@ export function App(): JSX.Element {
   const sidebarHoverZoneActiveRef = useRef(false);
   // Set while a sidebar drag is in flight and kept set after a drag that ends
   // collapsed, until the pointer moves off the hover zone. Without it, the
-  // hover zone appears under the pointer the instant the drag crosses the
-  // collapse threshold and pointerenter immediately pops the drawer back open.
+  // hover zone can appear under the pointer after a drag-collapse and
+  // pointerenter immediately pops the drawer back open.
   const sidebarDrawerSuppressedRef = useRef(false);
   const {
     sidebarWidth,

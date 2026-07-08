@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   RIGHT_PANEL_MOTION_MS,
   SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_MOTION_MS,
   WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH,
   useAppLayoutState
 } from "./AppLayoutState";
@@ -136,6 +138,11 @@ describe("useAppLayoutState window-resizing class", () => {
     expect(latest!.rightPanelAnimating).toBe(false);
   });
 
+  it("paces sidebar layout motion as a drawer transition", () => {
+    expect(SIDEBAR_MOTION_MS).toBeGreaterThanOrEqual(320);
+    expect(SIDEBAR_MOTION_MS).toBeLessThanOrEqual(400);
+  });
+
   it("does not add the class for non-primary-button pointerdowns on the sidebar", () => {
     renderHookHarness();
     expect(latest).not.toBeNull();
@@ -173,18 +180,45 @@ describe("useAppLayoutState initial widths", () => {
     expect(latest!.sidebarWidth).toBe(420);
   });
 
-  it("collapses mid-drag once the pointer crosses the threshold", () => {
-    window.localStorage.setItem("wuu.desktop.sidebarWidth", "200");
+  it("holds at the minimum width before the collapse intent threshold", () => {
+    window.localStorage.setItem("wuu.desktop.sidebarWidth", "220");
     renderHookHarness();
-    expect(latest!.sidebarWidth).toBe(200);
+    expect(latest!.sidebarWidth).toBe(220);
     expect(latest!.sidebarCollapsed).toBe(false);
 
     act(() => {
-      latest!.startSidebarResize(makePointerDownEvent(200));
+      latest!.startSidebarResize(makePointerDownEvent(220));
     });
     act(() => {
       window.dispatchEvent(
-        Object.assign(new Event("pointermove"), { clientX: 190 })
+        Object.assign(new Event("pointermove"), {
+          clientX: SIDEBAR_MIN_WIDTH - 12,
+        })
+      );
+    });
+    expect(latest!.sidebarCollapsed).toBe(false);
+
+    act(() => {
+      window.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    });
+    expect(latest!.sidebarCollapsed).toBe(false);
+    expect(latest!.sidebarWidth).toBe(SIDEBAR_MIN_WIDTH);
+  });
+
+  it("collapses mid-drag once the pointer crosses the collapse intent threshold", () => {
+    window.localStorage.setItem("wuu.desktop.sidebarWidth", "220");
+    renderHookHarness();
+    expect(latest!.sidebarWidth).toBe(220);
+    expect(latest!.sidebarCollapsed).toBe(false);
+
+    act(() => {
+      latest!.startSidebarResize(makePointerDownEvent(220));
+    });
+    act(() => {
+      window.dispatchEvent(
+        Object.assign(new Event("pointermove"), {
+          clientX: SIDEBAR_MIN_WIDTH - 40,
+        })
       );
     });
     expect(latest!.sidebarCollapsed).toBe(true);
@@ -193,9 +227,6 @@ describe("useAppLayoutState initial widths", () => {
       window.dispatchEvent(new Event("pointerup", { bubbles: true }));
     });
     expect(latest!.sidebarCollapsed).toBe(true);
-    // Collapsing with a minimum remembered width heals it to the default so
-    // the hover drawer / reopened sidebar are not cramped at 200px — the
-    // same rule toggleSidebar applies.
-    expect(latest!.sidebarWidth).toBe(SIDEBAR_DEFAULT_WIDTH);
+    expect(latest!.sidebarWidth).toBe(220);
   });
 });
