@@ -1,4 +1,4 @@
-import { ChevronRight, Play } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import {
   type SyntheticEvent,
   useCallback,
@@ -233,10 +233,6 @@ function TurnProcessFold({
   const previousExpanded = useRef(expanded);
   const detailsID = `${turn.id}-process-fold`;
 
-  const processCount = entries.reduce(
-    (total, entry) => total + (entry.count ?? 1),
-    0,
-  );
   const completedDuration =
     typeof turn.duration_ms === "number" ? turn.duration_ms : undefined;
   const startedAt = parseTurnTimestampMs(turn.started_at);
@@ -247,12 +243,12 @@ function TurnProcessFold({
   const liveNow = useLiveNow(liveDuration);
   const elapsedMs =
     completedDuration ?? (liveDuration ? Math.max(0, liveNow - startedAt) : 0);
-  const processLabel = turnProgressContent(
+  const processLabel = turnProcessTitle(
     turn,
     elapsedMs,
     turnHasAssistantOutput(turn),
-  ).label;
-  const metaParts = turnProcessMetaParts(turn, processCount, elapsedMs);
+  );
+  const metaParts = turnProcessMetaParts(turn, elapsedMs);
 
   // Two-stage auto-collapse on turn completion. The fold's "settle"
   // (label / timer / preview update) and "collapse" (body shrinks)
@@ -327,11 +323,6 @@ function TurnProcessFold({
 
   const toggleContent = (
     <>
-      <Play
-        className="turn-process-glyph icon-xs"
-        aria-hidden
-        fill="currentColor"
-      />
       <span className="turn-process-header">
         <span className="turn-process-title">{processLabel}</span>
         {metaParts.map((part) => (
@@ -667,21 +658,25 @@ function ReasoningFold({
   );
 }
 
-function turnProcessMetaParts(
+function turnProcessTitle(
   turn: Turn,
-  processCount: number,
   elapsedMs: number,
-): string[] {
+  hasFinalText: boolean,
+): string {
+  if (turn.status === "completed") {
+    return taskFinishedLabel(elapsedMs);
+  }
+  return turnProgressContent(turn, elapsedMs, hasFinalText).label;
+}
+
+function taskFinishedLabel(elapsedMs: number): string {
+  return `任务在 ${formatDuration(elapsedMs)} 结束了`;
+}
+
+function turnProcessMetaParts(turn: Turn, elapsedMs: number): string[] {
   const parts: string[] = [];
   if (turn.status === "in_progress") {
     parts.push(formatDuration(elapsedMs));
-    return parts;
-  }
-  if (processCount > 0) {
-    parts.push(`${processCount} 项`);
-  }
-  if (typeof turn.duration_ms === "number") {
-    parts.push(formatDuration(turn.duration_ms));
   }
   return parts;
 }

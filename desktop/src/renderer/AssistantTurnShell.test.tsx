@@ -447,6 +447,21 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("summarizes a completed process as one sentence without count metadata or a leading glyph", () => {
+    const turn = makeTurn(
+      "completed",
+      [makeCommentary("checking"), makeFinalAnswer("done")],
+      3000,
+    );
+    const { container } = renderShell(turn);
+
+    expect(container.querySelector(".turn-process-title")?.textContent).toBe(
+      "任务在 3s 结束了",
+    );
+    expect(container.querySelector(".turn-process-meta")).toBeNull();
+    expect(container.querySelector(".turn-process-glyph")).toBeNull();
+  });
+
   it("does not collapse the fold for an in-flight unknown-phase agent message (rule 7)", () => {
     // The most important regression guard: an empty-phase in-progress
     // agent_message used to be promoted to "answer candidate" so the
