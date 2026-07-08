@@ -332,6 +332,15 @@
   -webkit-backdrop-filter: none;
 }
 
+.app-shell.resizing-sidebar.right-panel-open .workspace-right-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--workspace-right-panel-width, 360px);
+  transition: none;
+}
+
 .workspace-right-panel-resizer {
   position: absolute;
   top: 0;

@@ -57,4 +57,17 @@ describe("globalized right panel chrome", () => {
     );
     expect(body).not.toMatch(/padding-left:\s*86px;/);
   });
+
+  it("pins the right panel out of the sidebar resize grid path", () => {
+    const body = cssRule(
+      ".app-shell.resizing-sidebar.right-panel-open .workspace-right-panel",
+    );
+
+    expect(body).toMatch(/position:\s*absolute;/);
+    expect(body).toMatch(/top:\s*0;/);
+    expect(body).toMatch(/right:\s*0;/);
+    expect(body).toMatch(/bottom:\s*0;/);
+    expect(body).toMatch(/width:\s*var\(--workspace-right-panel-width,\s*360px\);/);
+    expect(body).toMatch(/transition:\s*none;/);
+  });
 });
