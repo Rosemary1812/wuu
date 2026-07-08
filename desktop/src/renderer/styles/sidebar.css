@@ -70,6 +70,11 @@
 
 .app-shell.popped-out-shell .conversation-pane {
   grid-column: 1;
+  /* Match the non-popped-out titlebar height (48px when session-tabs-visible)
+   * so the title text vertically centers with the macOS traffic lights at
+   * trafficLightPosition (18, 16). The default 56px row pushes the text 6px
+   * below the lights. */
+  grid-template-rows: 48px minmax(0, 1fr);
 }
 
 .app-shell.popped-out-shell .titlebar {
