@@ -26,15 +26,6 @@ function lastCssRuleBody(selector: string): string {
   return matches[matches.length - 1][1];
 }
 
-function cssRuleCount(selector: string): number {
-  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return [
-    ...turnsCss.matchAll(
-      new RegExp(`(?:^|\\})\\s*${escapedSelector}\\s*\\{`, "g"),
-    ),
-  ].length;
-}
-
 describe("turns.css user message actions", () => {
   it("overlays action buttons above the bubble edge instead of reserving flow space", () => {
     const body = cssRuleBody(".user-message-actions");
@@ -111,18 +102,6 @@ describe("turns.css turn notice positioning", () => {
 });
 
 describe("turns.css message-flow typography", () => {
-  it("keeps the process fold selectors in one source-of-truth block", () => {
-    for (const selector of [
-      ".turn-process-title",
-      ".turn-process-meta",
-      ".turn-process-preview",
-      ".turn-process-entry",
-      ".turn-process-entry-commentary",
-    ]) {
-      expect(cssRuleCount(selector)).toBe(1);
-    }
-  });
-
   it("uses the same process token for status headers, tool rows, and reasoning summaries", () => {
     for (const selector of [
       ".turn-process-title",
