@@ -377,31 +377,46 @@ function previewTurnRoleLabel(
 }
 
 // Returns the turn's user-visible text, the way the main chat surface reads
-// it: for user turns, the user_message item; for assistant turns, the LAST
-// non-empty agent_message item — not all of them concatenated. A single
-// assistant turn can carry streaming chunks, reasoning echoes, or a
-// commentary pass before a final answer, and showing any of those would
-// give the search-preview pane a misleading "this thread was about X"
-// signal. The Go side uses the same rule in
-// finalAgentMessageText (appserver/resident_turn_failure.go).
+// it. For user turns, the last non-empty user_message item.
+//
+// For assistant turns, prefer the last non-empty agent_message tagged
+// `phase: "final_answer"` — the same rule
+// TurnViewHelpers.explicitFinalAgentMessageItemID uses to identify the
+// rendered answer region in the live turn view. An assistant turn can
+// carry commentary + final_answer passes interleaved with tool calls, and
+// showing the commentary would mislead the search-preview pane. When no
+// final_answer item exists yet (streaming in progress, legacy items
+// without a phase), fall back to the last non-empty agent_message so the
+// preview still surfaces something readable.
+//
+// Go-side `finalAgentMessageText` (appserver/resident_turn_failure.go)
+// intentionally does not filter by phase because the turn-failure path
+// only runs once the agent has stopped emitting; the preview can fire
+// mid-stream and benefits from a phase-aware fallback.
 function previewTurnText(
   turn: Turn,
   role: "user" | "assistant" | "system",
 ): string {
-  const targetType =
-    role === "user"
-      ? "user_message"
-      : role === "assistant"
-        ? "agent_message"
-        : null;
-  if (!targetType) return "";
-  let final = "";
-  for (const item of turn.items) {
-    if (item.type !== targetType) continue;
-    const text = (item.text ?? "").trim();
-    if (text) final = text;
+  if (role === "system") return "";
+  if (role === "user") {
+    let final = "";
+    for (const item of turn.items) {
+      if (item.type !== "user_message") continue;
+      const text = (item.text ?? "").trim();
+      if (text) final = text;
+    }
+    return final;
   }
-  return final;
+  let finalAnswer = "";
+  let lastAgentMessage = "";
+  for (const item of turn.items) {
+    if (item.type !== "agent_message") continue;
+    const text = (item.text ?? "").trim();
+    if (!text) continue;
+    lastAgentMessage = text;
+    if (item.phase === "final_answer") finalAnswer = text;
+  }
+  return finalAnswer || lastAgentMessage;
 }
 
 // Pick a single-line window of the turn text that keeps the query match
