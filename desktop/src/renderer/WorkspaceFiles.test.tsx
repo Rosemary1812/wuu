@@ -168,7 +168,33 @@ describe("WorkspaceFileTree", () => {
     expect(container.textContent).toContain("button code");
   });
 
-  it("renders code files with syntax highlighted tokens", async () => {
+  it("opens selected text files in the center CodeMirror editor surface", async () => {
+    readWorkspaceFile.mockResolvedValueOnce({
+      root: "/repo",
+      path: "AGENTS.md",
+      absolute_path: "/repo/AGENTS.md",
+      size_bytes: 35,
+      binary: false,
+      truncated: false,
+      text: "## Execution Autonomy\n\n- Keep going.\n",
+    });
+
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/AGENTS.md"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+
+    expect(readWorkspaceFile).toHaveBeenCalledWith("AGENTS.md", "/repo");
+    expect(container.querySelector(".workspace-code-editor .cm-editor")).not.toBeNull();
+    expect(container.textContent).toContain("Execution Autonomy");
+  });
+
+  it("renders code files in CodeMirror without treating source as HTML", async () => {
     readWorkspaceFile.mockResolvedValueOnce({
       root: "/repo",
       path: "src/index.ts",
@@ -189,14 +215,8 @@ describe("WorkspaceFileTree", () => {
 
     await settleDirectoryLoads();
 
-    const code = container.querySelector<HTMLElement>(".workspace-file-code code");
-    expect(code?.textContent).toContain('console.log("<tag>", answer);');
-    expect(code?.innerHTML).not.toContain("<tag>");
-    expect(container.querySelector(".workspace-file-code .hljs-keyword")?.textContent).toBe(
-      "const",
-    );
-    expect(container.querySelector(".workspace-file-code .hljs-number")?.textContent).toBe(
-      "42",
-    );
+    const content = container.querySelector<HTMLElement>(".workspace-code-editor .cm-content");
+    expect(content?.textContent).toContain('console.log("<tag>", answer);');
+    expect(content?.innerHTML).not.toContain("<tag>");
   });
 });

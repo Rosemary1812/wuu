@@ -22,7 +22,7 @@ import type {
   WorkspaceFileReadResult,
   WorkspaceFileTreeEntry
 } from "../shared/protocol";
-import { highlightWorkspaceCode } from "./WorkspaceCodeHighlight";
+import { WorkspaceCodeEditor } from "./WorkspaceCodeEditor";
 import { desktopApiErrorMessage, formatBytes } from "./WorkspaceReviewHelpers";
 
 type DirectoryLoadState = {
@@ -658,8 +658,6 @@ export function WorkspaceFilePreview({
     );
   }
 
-  const highlightedCode = highlightWorkspaceCode(file.path, file.text ?? "");
-
   return (
     <article className="workspace-file-preview">
       <header className="workspace-file-preview-header">
@@ -671,13 +669,8 @@ export function WorkspaceFilePreview({
           </span>
         </div>
       </header>
-      <div className="workspace-file-code-scroll">
-        <pre className="workspace-file-code">
-          <code
-            className={`language-${highlightedCode.language}`}
-            dangerouslySetInnerHTML={{ __html: highlightedCode.html }}
-          />
-        </pre>
+      <div className="workspace-file-editor-scroll">
+        <WorkspaceCodeEditor path={file.path} text={file.text ?? ""} />
       </div>
     </article>
   );

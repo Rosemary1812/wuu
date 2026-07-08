@@ -16,7 +16,7 @@ function cssRuleBody(selector: string): string {
 }
 
 describe("workspace file preview layout", () => {
-  it("lets the file preview fill the workspace viewport with its own code scroller", () => {
+  it("lets the file preview fill the workspace viewport with its own editor scroller", () => {
     expect(cssRuleBody(".workspace-scroll-region")).toMatch(/overflow:\s*hidden;/);
     expect(cssRuleBody(".workspace-scroll-region .scroll-region-content")).toMatch(
       /height:\s*100%;/,
@@ -26,7 +26,9 @@ describe("workspace file preview layout", () => {
     );
     expect(cssRuleBody(".workspace-file-preview")).toMatch(/height:\s*100%;/);
     expect(cssRuleBody(".workspace-file-preview")).toMatch(/min-height:\s*0;/);
-    expect(cssRuleBody(".workspace-file-code-scroll")).toMatch(/overflow:\s*auto;/);
+    expect(cssRuleBody(".workspace-file-editor-scroll")).toMatch(/overflow:\s*hidden;/);
+    expect(cssRuleBody(".workspace-code-editor")).toMatch(/height:\s*100%;/);
+    expect(cssRuleBody(".workspace-code-editor .cm-scroller")).toMatch(/overflow:\s*auto;/);
   });
 
   it("adds a restrained syntax palette for highlighted code tokens", () => {
