@@ -99,14 +99,17 @@
 /* In globalized mode the right panel fills column 1 starting at x=0; reserve
  * room on the left of its tabbar so the macOS traffic lights
  * (trafficLightPosition 18, 16) don't sit on top of the tabs. Mirrors the
- * popped-out titlebar reservation. */
+ * popped-out titlebar reservation. The main titlebar (which normally
+ * provides the window drag region) lives inside the now-hidden
+ * conversation-pane, so the tabbar itself takes over as the drag handle.
+ * Buttons + tabs opt back out below so they stay clickable. */
 .app-shell.right-panel-globalized .workspace-panel-tabbar {
   padding-left: 86px;
-  /* The main titlebar (which normally provides the window drag region) lives
-   * inside the now-hidden conversation-pane, so the right panel's tabbar
-   * takes over as the drag handle when globalized. Buttons + tabs opt
-   * back out below so they stay clickable. */
   -webkit-app-region: drag;
+}
+
+.app-shell.sidebar-collapsed.right-panel-open .workspace-panel-tabbar {
+  padding-left: 86px;
 }
 
 .app-shell.right-panel-globalized .workspace-panel-tabbar > button,

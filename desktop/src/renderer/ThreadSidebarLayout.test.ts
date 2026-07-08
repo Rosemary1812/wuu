@@ -46,4 +46,12 @@ describe("globalized right panel chrome", () => {
     expect(body).toMatch(/display:\s*none;/);
     expect(body).toMatch(/pointer-events:\s*none;/);
   });
+
+  it("keeps right panel tabs clear of the macOS traffic lights when the sidebar is collapsed", () => {
+    const body = cssRule(
+      ".app-shell.sidebar-collapsed.right-panel-open .workspace-panel-tabbar",
+    );
+
+    expect(body).toMatch(/padding-left:\s*86px;/);
+  });
 });
