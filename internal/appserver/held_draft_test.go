@@ -82,6 +82,38 @@ func TestHeldDraftHoldsWhenRoomMovedAndForcePublishes(t *testing.T) {
 	}
 }
 
+func TestIdleWokenReplyStillUsesHeldDraftFreshness(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
+	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	cyd := saveNamedParticipant(t, rt, "Cyd", "reviewer", "")
+	groupID := startNamedGroupThreadForTest(t, srv, "idle-held").ID
+	for _, id := range []string{ada, bea, cyd} {
+		if err := session.AddThreadMember(rt.SessionDir, groupID, id); err != nil {
+			t.Fatalf("AddThreadMember: %v", err)
+		}
+	}
+	s5 := appendMainChatForIdleWakeTest(t, rt.SessionDir, groupID, "participant", ada, "5")
+	if err := session.MarkMessageSeen(rt.SessionDir, groupID, s5, bea, session.SeenStatusCompleted, "", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	_ = appendMainChatForIdleWakeTest(t, rt.SessionDir, groupID, "participant", cyd, "6")
+
+	posted, err := srv.residentParticipantSpeechForTurn(bea, nil, map[string]bool{groupID: true}).
+		PostMessage(context.Background(), "result", "6", groupID, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !posted.Held {
+		t.Fatalf("expected stale idle-woken draft to be held, got %+v", posted)
+	}
+	if posted.BasisSeq != s5 {
+		t.Fatalf("idle-woken draft should fall back to read cursor basis %d, got %d", s5, posted.BasisSeq)
+	}
+}
+
 // A reply subthread carries its own freshness scope (T3): a cth draft is held
 // only against new messages in the SAME cth, and a main-stream draft only
 // against new main messages. The two scopes never cross — a main post cannot
