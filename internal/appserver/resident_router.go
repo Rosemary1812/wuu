@@ -363,6 +363,18 @@ func (s *Server) routeSubthreadParticipantMessage(parentThreadID, subthreadID st
 	pushToInbox := true
 	if thread, findErr := session.FindConversationThreadByID(s.rt.SessionDir, subthreadID); findErr == nil && thread.Status == session.ConversationThreadTask {
 		pushToInbox = false
+		// A public kind=update the poster files into a task thread is
+		// user-visible progress (plan §T9) — real headway, not just activity.
+		// Refresh the poster's OWN active/retrying node's LastProgressAt so the
+		// panel's headway signal advances. Only the poster's own running node
+		// moves (a bystander posting here holds no active piece), and it wakes no
+		// teammate: pushToInbox=false above already holds the T7 invariant.
+		if strings.EqualFold(strings.TrimSpace(msg.Kind), "update") && senderID != "" {
+			if piece := activePieceForAssignee(thread.Plan, senderID); piece != nil {
+				s.noteNodeProgress(thread, piece.ID, session.TaskEventNodeProgress,
+					"public update: "+truncate(text, 80))
+			}
+		}
 	}
 	s.deliverEnvelopeToMembers(members, base, mentioned, pushToInbox)
 }

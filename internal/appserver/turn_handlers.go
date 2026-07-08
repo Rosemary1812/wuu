@@ -1226,6 +1226,17 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		runner.OnUsage = baseOnUsage
 		runner.OnTokenUsage = baseOnTokenUsage
 	}()
+	// Node liveness wiring (plan §T9): if this resident turn was dispatched to
+	// run a plan node, resolve that node ONCE now (not per stream event). A tool
+	// call during the turn then refreshes the node's LastActivityAt (activity =
+	// "still alive"), kept strictly distinct from progress ("real headway").
+	// resolveExecutingNode returns ok=false for any non-node turn (ordinary
+	// DM/chat, a lead's planning/wrap-up wake), so the activity hook below no-ops
+	// there.
+	nodeTaskID, nodePieceID, nodeExecuting := "", "", false
+	if residentParticipantID != "" && len(residentEnvelopes) > 0 {
+		nodeTaskID, nodePieceID, nodeExecuting = s.resolveExecutingNode(residentParticipantID, residentEnvelopes)
+	}
 	res, err := runner.RunWithCallback(ctx, history, func(ev providers.StreamEvent) {
 		if ev.Type == providers.EventUsage && ev.Usage != nil {
 			usagePushMu.Lock()
@@ -1240,6 +1251,37 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		th.mu.Lock()
 		batch := th.applyStreamEventLocked(turnID, ev, time.Now().UTC())
 		th.mu.Unlock()
+		// Node liveness (plan §T9): every observable action by the assignee is an
+		// activity ("still alive") signal that refreshes the executing node's
+		// LastActivityAt — a tool call, its result, and assistant commentary —
+		// each kept strictly apart from progress ("real headway", noteNodeProgress).
+		// This runtime fuses a tool call and its result into one EventToolUseEnd
+		// (the call plus ev.ToolResult), and streams commentary as content deltas
+		// plus a per-message EventMessage; we take the per-message event as the
+		// commentary signal so the trace is one entry per narration, not one per
+		// delta. Do the store writes AFTER releasing th.mu — noteNodeActivity
+		// acquires the store write lock, which must never nest under th.mu. The
+		// guard no-ops on empty ids, so an ordinary DM/chat turn (which resolves no
+		// executing node) is untouched.
+		if nodeExecuting {
+			switch ev.Type {
+			case providers.EventToolUseEnd:
+				if ev.ToolCall != nil {
+					s.noteNodeActivity(nodeTaskID, nodePieceID, session.TaskEventToolCall, strings.TrimSpace(ev.ToolCall.Name))
+				}
+				if strings.TrimSpace(ev.ToolResult) != "" {
+					toolName := ""
+					if ev.ToolCall != nil {
+						toolName = strings.TrimSpace(ev.ToolCall.Name)
+					}
+					s.noteNodeActivity(nodeTaskID, nodePieceID, session.TaskEventToolResult, toolName)
+				}
+			case providers.EventMessage:
+				if ev.Message != nil && ev.Message.Role == "assistant" && strings.TrimSpace(ev.Message.Content) != "" {
+					s.noteNodeActivity(nodeTaskID, nodePieceID, session.TaskEventCommentary, commentaryTraceSummary(ev.Message.Content))
+				}
+			}
+		}
 		notifyBatch(batch)
 		notify(NotificationTurnEvent, TurnEventNotification{
 			ThreadID: th.ID,

@@ -606,6 +606,11 @@ func (m *residentTaskManager) PieceDone(ctx context.Context, subthreadID, pieceI
 			return tools.TaskView{}, err
 		}
 	}
+	// Reporting a piece done — the handoff it produced — is real headway, not
+	// mere activity: refresh the completing node's progress signal (plan §T9)
+	// before the engine advances.
+	m.server.noteNodeProgress(updated, pieceID, session.TaskEventNodeProgress,
+		fmt.Sprintf("piece %q completed", piece.Title))
 	// Auto-unfollow when this assignee has no remaining pieces: they are done
 	// with the task, so later traffic on it should not wake them (the correct
 	// lever for the lead's wrap-up not re-running finished teammates). Keep
@@ -769,10 +774,58 @@ func (m *residentTaskManager) taskView(thread session.ConversationThread) tools.
 	for _, p := range thread.Plan {
 		view.Plan = append(view.Plan, tools.TaskPiece{
 			ID: p.ID, Title: p.Title, Assignee: p.Assignee, DependsOn: p.DependsOn, Status: p.Status,
-			Prompt: p.Prompt,
+			Prompt:         p.Prompt,
+			State:          deriveNodeState(p.Status),
+			LastActivityAt: p.LastActivityAt,
+			LastProgressAt: p.LastProgressAt,
 		})
 	}
 	return view
+}
+
+// deriveNodeState maps a plan piece's Status to the stable display label the
+// task panel renders (plan §T9). It is PURELY status-derived: done -> completed,
+// every other status passes through by its own name. It deliberately does NOT
+// compute a time-based "stalled" or "lost" label from the activity/progress
+// timestamps: that soft staleness cue is a display-only, relative judgement the
+// frontend makes by comparing LastActivityAt/LastProgressAt to each other and to
+// now (T11) — never a backend transition, and never against a fixed lease
+// deadline (red line §4.7).
+func deriveNodeState(status string) string {
+	switch strings.TrimSpace(status) {
+	case session.TaskPieceDone:
+		return "completed"
+	case session.TaskPieceFailed:
+		return "failed"
+	case session.TaskPieceBlocked:
+		return "blocked"
+	case session.TaskPieceRetrying:
+		return "retrying"
+	case session.TaskPieceActive:
+		return "active"
+	case session.TaskPiecePending:
+		return "pending"
+	default:
+		return strings.TrimSpace(status)
+	}
+}
+
+// activePieceForAssignee returns the assignee's currently-running node (active
+// or retrying) in a plan, or nil. It attributes a public progress update to the
+// exact node the poster is working on (plan §T9): a bystander posting into the
+// task thread holds no active piece here and so moves no node's progress signal.
+func activePieceForAssignee(plan []session.TaskPiece, assignee string) *session.TaskPiece {
+	assignee = strings.TrimSpace(assignee)
+	if assignee == "" {
+		return nil
+	}
+	for i := range plan {
+		if plan[i].Assignee == assignee &&
+			(plan[i].Status == session.TaskPieceActive || plan[i].Status == session.TaskPieceRetrying) {
+			return &plan[i]
+		}
+	}
+	return nil
 }
 
 // advancePlan is the team-task execution engine (task-rail design §8.2). It
@@ -876,6 +929,87 @@ func (s *Server) recordTaskEventFor(task session.ConversationThread, nodeID, kin
 	}); err != nil {
 		providers.DebugLogf("record task event %s/%s: %v", task.ID, kind, err)
 	}
+}
+
+// noteNodeActivity refreshes a plan node's liveness — LastActivityAt ONLY, never
+// LastProgressAt (plan §T9). Activity ("still alive") is any observable action by
+// the assignee: a tool call, its result, or assistant commentary. Progress ("real
+// headway") is the stronger, separate signal (noteNodeProgress). Keeping the two
+// apart is the whole point — stall/liveness is judged from the two timestamps
+// RELATIVE to each other, never a fixed lease (red line §4.7). This is the hook
+// the per-turn stream fires on: a bare timestamp bump plus one trace event
+// (kind = tool_call / tool_result / commentary), so it stays cheap even when
+// fired once per stream event. It no-ops on an empty taskID/pieceID, so an
+// ordinary DM/chat turn (which resolves no executing node) is untouched.
+// commentaryTraceSummary condenses assistant narration into a single short line
+// for the activity trace. The raw message can be long and multi-line; the trace
+// only needs a human-scannable hint of what the node said, so we keep the first
+// line and cap it by rune count (never bytes — the text is often CJK).
+func commentaryTraceSummary(text string) string {
+	text = strings.TrimSpace(text)
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		text = strings.TrimSpace(text[:i])
+	}
+	const maxRunes = 120
+	if r := []rune(text); len(r) > maxRunes {
+		return string(r[:maxRunes]) + "…"
+	}
+	return text
+}
+
+func (s *Server) noteNodeActivity(taskID, pieceID, kind, summary string) {
+	if s == nil || s.rt == nil {
+		return
+	}
+	taskID = strings.TrimSpace(taskID)
+	pieceID = strings.TrimSpace(pieceID)
+	if taskID == "" || pieceID == "" {
+		return
+	}
+	updated, err := session.UpdateTaskPiece(s.rt.SessionDir, taskID, pieceID, func(p *session.TaskPiece) {
+		p.LastActivityAt = time.Now().UTC()
+	})
+	if err != nil {
+		providers.DebugLogf("noteNodeActivity %q/%q: %v", taskID, pieceID, err)
+		return
+	}
+	actor := ""
+	if p := findPieceByID(updated.Plan, pieceID); p != nil {
+		actor = p.Assignee
+	}
+	s.recordTaskEventFor(updated, pieceID, kind, actor, summary, "")
+}
+
+// noteNodeProgress refreshes a plan node's real-headway signal — LastProgressAt
+// AND LastActivityAt (progress implies the node is also alive), the stronger of
+// the two liveness signals (plan §T9). Progress is a declared step forward: a
+// handoff filed on piece_done, a public kind=update posted into the task thread.
+// It records one trace event (kind, e.g. node_progress). The caller passes the
+// task it already loaded; it no-ops on an empty pieceID. Artifact-write progress
+// is deliberately OUT OF SCOPE here — it crosses the tools/appserver boundary —
+// so this covers task-update and handoff progress only.
+func (s *Server) noteNodeProgress(task session.ConversationThread, pieceID, kind, summary string) {
+	if s == nil || s.rt == nil {
+		return
+	}
+	pieceID = strings.TrimSpace(pieceID)
+	if strings.TrimSpace(task.ID) == "" || pieceID == "" {
+		return
+	}
+	now := time.Now().UTC()
+	updated, err := session.UpdateTaskPiece(s.rt.SessionDir, task.ID, pieceID, func(p *session.TaskPiece) {
+		p.LastProgressAt = now
+		p.LastActivityAt = now
+	})
+	if err != nil {
+		providers.DebugLogf("noteNodeProgress %q/%q: %v", task.ID, pieceID, err)
+		return
+	}
+	actor := ""
+	if p := findPieceByID(updated.Plan, pieceID); p != nil {
+		actor = p.Assignee
+	}
+	s.recordTaskEventFor(updated, pieceID, kind, actor, summary, "")
 }
 
 // wakePieceText builds the wake envelope for a dispatched piece from the two

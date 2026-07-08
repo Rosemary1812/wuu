@@ -400,6 +400,19 @@ type TaskPiece struct {
 	// Prompt is the lead-authored briefing the assignee is woken with when
 	// the engine dispatches the piece.
 	Prompt string `json:"prompt,omitempty"`
+	// State is the display label the task panel renders, derived purely from
+	// Status (completed/failed/blocked/retrying/active/pending) so the panel
+	// never depends on the internal status vocabulary (plan §T9).
+	State string `json:"state,omitempty"`
+	// LastActivityAt / LastProgressAt are the node's two liveness timestamps,
+	// exposed raw: activity is any observable action by the assignee (a tool
+	// call), progress is a declared step forward (a filed handoff, a public
+	// task-thread update). They are surfaced as-is on purpose — the soft
+	// "stalled / lost" cue is a DISPLAY-ONLY relative judgement the frontend
+	// computes by comparing these two (and to now), never a backend state
+	// transition, and there is no fixed lease deadline (red line §4.7).
+	LastActivityAt time.Time `json:"last_activity_at,omitzero"`
+	LastProgressAt time.Time `json:"last_progress_at,omitzero"`
 }
 
 // TaskHandoff is the structured result a node hands to its downstream as it

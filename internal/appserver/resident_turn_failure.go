@@ -31,6 +31,65 @@ func isRetryableTurnFailure(turn Turn) bool {
 	}
 }
 
+// planDispatchTaskIDs returns the distinct task cth ids a consumed envelope batch
+// dispatched — the mechanical guard for "this turn was executing a plan node". A
+// plan dispatch is a system envelope from "task plan" naming a task cth
+// (SourceSubthreadID); anything else (a human DM, an @mention, a board wake whose
+// sender is "task board") is not a node execution. It is the shared guard for
+// both the failure hook (T8, retryOrFailTaskNodesAfterTurn) and the activity
+// resolver (resolveExecutingNode, plan §T9) so the two never drift.
+func planDispatchTaskIDs(envs []MessageEnvelope) map[string]bool {
+	taskIDs := map[string]bool{}
+	for _, env := range envs {
+		if !strings.EqualFold(strings.TrimSpace(env.SenderKind), "system") {
+			continue
+		}
+		if strings.TrimSpace(env.SenderName) != "task plan" {
+			continue
+		}
+		if id := strings.TrimSpace(env.SourceSubthreadID); id != "" {
+			taskIDs[id] = true
+		}
+	}
+	return taskIDs
+}
+
+// resolveExecutingNode returns the task id and piece id of the plan node a
+// resident turn is executing — the participant's active/retrying piece in a task
+// its consumed batch dispatched (see planDispatchTaskIDs for the mechanical
+// guard). It is resolved ONCE per turn (not per stream event) to drive the
+// activity/progress liveness wiring (plan §T9). ok is false for any turn that is
+// not executing a node: an ordinary DM/chat turn (no plan dispatch in the batch),
+// a lead's planning or wrap-up wake (the lead holds no active piece), a board
+// wake (a different sender). When several dispatched tasks each carry an active
+// piece for this participant, the first found is returned — the liveness signal
+// is a bare timestamp refresh, so attributing a shared turn to one of its nodes
+// is sufficient.
+func (s *Server) resolveExecutingNode(participantID string, envs []MessageEnvelope) (taskID, pieceID string, ok bool) {
+	if s == nil || s.rt == nil {
+		return "", "", false
+	}
+	participantID = strings.TrimSpace(participantID)
+	if participantID == "" {
+		return "", "", false
+	}
+	taskIDs := planDispatchTaskIDs(envs)
+	if len(taskIDs) == 0 {
+		return "", "", false
+	}
+	for id := range taskIDs {
+		task, err := session.FindConversationThreadByID(s.rt.SessionDir, id)
+		if err != nil {
+			providers.DebugLogf("resolveExecutingNode load task %q: %v", id, err)
+			continue
+		}
+		if piece := activePieceForAssignee(task.Plan, participantID); piece != nil {
+			return task.ID, piece.ID, true
+		}
+	}
+	return "", "", false
+}
+
 // retryOrFailTaskNodesAfterTurn reacts to a resident turn that was executing a
 // plan node (plan §T8). It runs from afterResidentTurn after read receipts and
 // before the final re-kick. The guard is mechanical: it does nothing unless the
@@ -58,19 +117,8 @@ func (s *Server) retryOrFailTaskNodesAfterTurn(participantID string, envs []Mess
 		return
 	}
 	// Guard: only a plan-dispatch batch (system "task plan" envelope carrying a
-	// task id) is a node execution turn. Collect the distinct task ids.
-	taskIDs := map[string]bool{}
-	for _, env := range envs {
-		if !strings.EqualFold(strings.TrimSpace(env.SenderKind), "system") {
-			continue
-		}
-		if strings.TrimSpace(env.SenderName) != "task plan" {
-			continue
-		}
-		if id := strings.TrimSpace(env.SourceSubthreadID); id != "" {
-			taskIDs[id] = true
-		}
-	}
+	// task id) is a node execution turn.
+	taskIDs := planDispatchTaskIDs(envs)
 	if len(taskIDs) == 0 {
 		return
 	}
