@@ -307,7 +307,7 @@
 }
 
 .participant-roster-status[data-status="online"] {
-  background: var(--success);
+  background: var(--sidebar-thread-row-dot-default);
 }
 
 /* Busy DM counterpart reuses the running-session spinner instead of a
