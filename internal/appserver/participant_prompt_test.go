@@ -123,6 +123,10 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 		"",
 		"## Messages are written for humans — red lines",
 		"Every post_message text is read by people in a chat UI. Hard rules:",
+		"Group replies are visible only through post_message.",
+		"If you decide to speak in response to a group <incoming_message>, call post_message",
+		"with thread_id set to that incoming_message's source thread_id.",
+		"Plain assistant text is private working transcript and never reaches the group.",
 		"- ONE post per turn, maximum. After you post once, end the turn — the",
 		"  next post is the start of spam. Filing update_status is not a post",
 		"  and needs no accompanying message.",
@@ -290,6 +294,25 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 	}, "\n")
 	if got != want {
 		t.Errorf("prompt mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestResidentParticipantSystemPromptRequiresGroupReplyPostMessage(t *testing.T) {
+	got := residentParticipantSystemPrompt(participant.Participant{
+		Name:    "Ari",
+		Role:    "teammate",
+		Tagline: "helps in group chat",
+	}, "", "", "", "", nil)
+
+	for _, want := range []string{
+		"Group replies are visible only through post_message.",
+		"If you decide to speak in response to a group <incoming_message>, call post_message",
+		"with thread_id set to that incoming_message's source thread_id.",
+		"Plain assistant text is private working transcript and never reaches the group.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("resident prompt missing group reply contract %q:\n%s", want, got)
+		}
 	}
 }
 

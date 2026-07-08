@@ -32,3 +32,33 @@ func TestPostMessageHeldResultSuggestsConsideringInception(t *testing.T) {
 		t.Fatalf("held reason missing inception guidance:\n%s", reason)
 	}
 }
+
+func TestPostMessageToolDescriptionTeachesGroupThreadID(t *testing.T) {
+	def := NewPostMessageTool(&Env{}).Definition()
+	for _, want := range []string{
+		"For group chat replies, set thread_id to the source thread_id from the incoming_message.",
+		"Plain assistant text is private and is not posted to the group.",
+	} {
+		if !strings.Contains(def.Description, want) {
+			t.Fatalf("post_message description missing %q:\n%s", want, def.Description)
+		}
+	}
+
+	properties, ok := def.InputSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("post_message schema missing properties: %+v", def.InputSchema)
+	}
+	threadID, ok := properties["thread_id"].(map[string]any)
+	if !ok {
+		t.Fatalf("post_message schema missing thread_id property: %+v", properties)
+	}
+	description, _ := threadID["description"].(string)
+	for _, want := range []string{
+		"For group replies, use the incoming_message thread_id.",
+		"Leaving thread_id empty posts to your own DM.",
+	} {
+		if !strings.Contains(description, want) {
+			t.Fatalf("thread_id description missing %q:\n%s", want, description)
+		}
+	}
+}

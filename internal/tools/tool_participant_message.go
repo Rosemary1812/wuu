@@ -21,7 +21,7 @@ func (t *PostMessageTool) Name() string { return "post_message" }
 func (t *PostMessageTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "post_message",
-		Description: "Post one signed message from this participant into a visible conversation thread. Use result only for a concise final result worth the user's attention. Use question only when blocked on the user. Use update only for important progress. Use decline to explicitly choose silence when the right outcome is no visible answer. Silence is valid; do not post routine status.",
+		Description: "Post one signed message from this participant into a visible conversation thread. For group chat replies, set thread_id to the source thread_id from the incoming_message. Plain assistant text is private and is not posted to the group. Use result only for a concise final result worth the user's attention. Use question only when blocked on the user. Use update only for important progress. Use decline to explicitly choose silence when the right outcome is no visible answer. Silence is valid; do not post routine status.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -37,7 +37,7 @@ func (t *PostMessageTool) Definition() providers.ToolDefinition {
 				},
 				"thread_id": map[string]any{
 					"type":        "string",
-					"description": "Target conversation thread id. Resident named agents may post to threads they belong to or their own DM thread. Pass a reply subthread id (cth-…) to fold the message into that reply thread instead of the main group stream.",
+					"description": "Target conversation thread id. For group replies, use the incoming_message thread_id. Leaving thread_id empty posts to your own DM. Resident named agents may post to threads they belong to or their own DM thread. Pass a reply subthread id (cth-…) to fold the message into that reply thread instead of the main group stream.",
 				},
 				"basis_seq": map[string]any{
 					"type":        "integer",
