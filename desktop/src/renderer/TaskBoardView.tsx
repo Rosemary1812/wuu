@@ -5,11 +5,11 @@ import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
 /**
  * TaskBoardView 是一个群线程的任务看板 tab(kind: "board"):列出该群全部
- * task/review 状态的子线程——包括无锚点消息的 standalone 任务,它们在聊天
- * 视图里没有任何挂靠点,这里是人能看到它们的唯一入口(task rail GUI 断点一)。
- * 待验收(review)置顶并标出:task_review: human 模式下那是在等人点「完成
- * Task」的队列(断点二);每行渲染认领人(断点三)。看板是观测面,不是操作面:
- * 状态流转仍走 agent 工具与 thread 面板,点行即跳回群聊 tab 打开该 thread。
+ * task 状态的子线程——包括无锚点消息的 standalone 任务,它们在聊天视图里
+ * 没有任何挂靠点,这里是人能看到它们的唯一入口(task rail GUI 断点一)。
+ * 每行渲染认领人。看板是观测面,不是操作面:状态流转仍走 agent 工具与
+ * thread 面板,点行即跳回群聊 tab 打开该 thread。agent 提交结论即完成任务
+ * (没有待验收队列);历史库残留的未知状态行按进行中展示。
  */
 
 type TaskBoardViewProps = {
@@ -23,25 +23,20 @@ type TaskBoardViewProps = {
 };
 
 type BoardData = {
-  review: ConversationSubthread[];
   active: ConversationSubthread[];
 };
 
 function splitBoard(subthreads: ConversationSubthread[]): BoardData {
-  const review: ConversationSubthread[] = [];
   const active: ConversationSubthread[] = [];
   for (const sub of subthreads) {
-    if (sub.status === "review") {
-      review.push(sub);
-    } else if (sub.status === "task") {
+    if (sub.status === "task") {
       active.push(sub);
     }
   }
   const byCreatedAt = (a: ConversationSubthread, b: ConversationSubthread) =>
     Date.parse(a.created_at) - Date.parse(b.created_at);
-  review.sort(byCreatedAt);
   active.sort(byCreatedAt);
-  return { review, active };
+  return { active };
 }
 
 export function TaskBoardView({
@@ -105,24 +100,15 @@ export function TaskBoardView({
               {sub.title?.trim() || "未命名任务"}
             </span>
             <span className="task-board-row-meta">
-              {sub.status === "review"
-                ? `待验收 · ${owner ?? "无人认领"}`
-                : owner
-                  ? `${owner} 认领`
-                  : "无人认领"}
+              {owner ? `${owner} 认领` : "无人认领"}
             </span>
           </span>
-          {sub.status === "review" ? (
-            <span className="task-board-row-chip task-board-row-chip--review">
-              待验收
-            </span>
-          ) : null}
         </button>
       </li>
     );
   };
 
-  const empty = board && board.review.length === 0 && board.active.length === 0;
+  const empty = board && board.active.length === 0;
 
   return (
     <div className="task-board" aria-label="任务看板">
@@ -130,9 +116,7 @@ export function TaskBoardView({
         <h2>{title?.trim() || threadID}</h2>
         {board ? (
           <span className="task-board-header-meta">
-            {board.review.length > 0
-              ? `${board.review.length} 待验收 · ${board.active.length} 进行中`
-              : `${board.active.length} 进行中`}
+            {`${board.active.length} 进行中`}
           </span>
         ) : null}
       </header>
@@ -142,12 +126,6 @@ export function TaskBoardView({
           板上没有任务。让群里的 agent 拆活,或在消息的 thread 里「升级为
           Task」,任务就会出现在这里。
         </div>
-      ) : null}
-      {board && board.review.length > 0 ? (
-        <section className="task-board-section">
-          <h3>待验收</h3>
-          <ul className="task-board-list">{board.review.map(renderRow)}</ul>
-        </section>
       ) : null}
       {board && board.active.length > 0 ? (
         <section className="task-board-section">

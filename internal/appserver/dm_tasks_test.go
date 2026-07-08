@@ -74,13 +74,20 @@ func TestDMTaskBornOwnedFullChain(t *testing.T) {
 		t.Fatalf("unclaim refusal should say why (DM), got: %v", err)
 	}
 
-	// update_status files it for review, same state machine as groups.
-	reviewed, err := manager.FileTaskReview(context.Background(), view.ID, "文档整理完,已核对接口清单")
+	// update_status files the conclusion and completes the task immediately —
+	// no review gate, same state machine as groups.
+	concluded, err := manager.ConcludeTask(context.Background(), view.ID, "文档整理完,已核对接口清单")
 	if err != nil {
-		t.Fatalf("FileTaskReview in DM: %v", err)
+		t.Fatalf("ConcludeTask in DM: %v", err)
 	}
-	if reviewed.Status != string(session.ConversationThreadReview) {
-		t.Fatalf("DM task after update_status = %q, want review", reviewed.Status)
+	if concluded.Status != string(session.ConversationThreadResolved) {
+		t.Fatalf("DM task after update_status = %q, want resolved (filing IS completion)", concluded.Status)
+	}
+	if concluded.ExecState != session.ExecStateCompleted {
+		t.Fatalf("DM task exec state after conclude = %q, want completed", concluded.ExecState)
+	}
+	if concluded.Summary != "文档整理完,已核对接口清单" {
+		t.Fatalf("DM task summary = %q, want the filed conclusion", concluded.Summary)
 	}
 }
 

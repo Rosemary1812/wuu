@@ -86,10 +86,7 @@ type Session struct {
 	// MemdirEnabled reports whether the file-directory memory (user
 	// notebook teaching + index injection and file-scope whitelist) is
 	// active for this session. False when Memory.Disable is set.
-	MemdirEnabled bool
-	// TaskReviewMode is the resolved agent.task_review config ("human" or
-	// "auto"): who resolves a task filed for review on the agent task rail.
-	TaskReviewMode           string
+	MemdirEnabled            bool
 	DreamIntervalDays        int
 	AgentControl             *agentcontrol.AgentControl
 	ProcessManager           *process.Manager
@@ -472,7 +469,6 @@ func NewSession(opts Options) (*Session, error) {
 		Plugins:                     discoveredPlugins,
 		Memory:                      memoryFiles,
 		MemdirEnabled:               memdirEnabled,
-		TaskReviewMode:              config.ResolveTaskReview(cfg.Agent.TaskReview),
 		DreamIntervalDays:           dreamIntervalDays,
 		AgentControl:                agentControl,
 		ProcessManager:              processMgr,

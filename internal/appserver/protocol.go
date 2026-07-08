@@ -793,7 +793,11 @@ type ConversationSubthread struct {
 	// LeadParticipantID — ownership grants no orchestration authority
 	// (2026-07-06 agent-task-rail design). Empty means unclaimed.
 	OwnerParticipantID string `json:"owner_participant_id,omitempty"`
-	Turns              []Turn `json:"turns,omitempty"`
+	// ExecState is the task's execution axis, separate from the approval
+	// Status: planning/executing/blocked/needs_human/completed/failed. Empty
+	// when the subthread never entered execution (a plain reply).
+	ExecState string `json:"exec_state,omitempty"`
+	Turns     []Turn `json:"turns,omitempty"`
 }
 
 type ThreadOpenSubParams struct {

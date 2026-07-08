@@ -1,10 +1,11 @@
 /**
  * Tests for TaskBoardView — the per-group task-board tab. The board is the
- * only place anchorless (standalone) tasks are visible in the GUI, pins
- * review-status tasks (waiting for the human's 完成 Task click), and renders
- * each task's owner. Render-harness pattern mirroring
- * ConversationSubthreadPanel.test.tsx, plus a window.wuu stub for
- * listConversationSubthreads (SettingsView.test.tsx pattern).
+ * only place anchorless (standalone) tasks are visible in the GUI and renders
+ * each task's owner; only status "task" rows appear (an agent's conclusion
+ * filing completes the task, so there is no acceptance queue).
+ * Render-harness pattern mirroring ConversationSubthreadPanel.test.tsx, plus
+ * a window.wuu stub for listConversationSubthreads (SettingsView.test.tsx
+ * pattern).
  */
 import { act } from "react";
 import { createElement } from "react";
@@ -65,7 +66,7 @@ function stubListSubthreads(subthreads: ConversationSubthread[]): void {
 }
 
 describe("TaskBoardView", () => {
-  it("renders anchorless standalone tasks with owner and pins review on top", async () => {
+  it("renders anchorless standalone tasks with owner", async () => {
     stubListSubthreads([
       // Standalone (no anchor message) — invisible in the chat view; the
       // board is its only GUI surface.
@@ -76,12 +77,10 @@ describe("TaskBoardView", () => {
         owner_participant_id: "prt-ada",
         created_at: "2026-07-06T11:00:00Z",
       }),
-      // Review-status task waits for the human gate and must be pinned
-      // above active tasks regardless of creation order.
       subthread({
-        id: "cth-review",
+        id: "cth-second",
         title: "修复登录抖动",
-        status: "review",
+        status: "task",
         owner_participant_id: "prt-bea",
         anchor_item_id: "item-9",
         created_at: "2026-07-06T12:00:00Z",
@@ -105,13 +104,11 @@ describe("TaskBoardView", () => {
       container.querySelectorAll<HTMLButtonElement>(".task-board-row"),
     );
     expect(rows.map((row) => row.textContent)).toHaveLength(2);
-    // Review section renders before 进行中, so the review task is first.
-    expect(rows[0]?.textContent).toContain("修复登录抖动");
-    expect(rows[0]?.textContent).toContain("待验收");
-    expect(rows[0]?.textContent).toContain("Bea");
-    expect(rows[1]?.textContent).toContain("整理演练记录");
-    expect(rows[1]?.textContent).toContain("Ada 认领");
-    expect(container.textContent).toContain("1 待验收 · 1 进行中");
+    expect(rows[0]?.textContent).toContain("整理演练记录");
+    expect(rows[0]?.textContent).toContain("Ada 认领");
+    expect(rows[1]?.textContent).toContain("修复登录抖动");
+    expect(rows[1]?.textContent).toContain("Bea 认领");
+    expect(container.textContent).toContain("2 进行中");
     expect(container.textContent).not.toContain("旧任务");
     expect(container.textContent).not.toContain("闲聊讨论");
   });

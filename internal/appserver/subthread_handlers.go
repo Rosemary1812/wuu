@@ -8,6 +8,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/participant"
+	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
@@ -94,6 +95,9 @@ func (s *Server) handleThreadResolveSub(req Request) error {
 // state (open) to the execution state (task) and hangs a task_card off it;
 // execution round-trips fold into the same cth via the existing
 // thread_id-tagged post_message path, so no new thread is spawned.
+// Escalation IS the start of execution: the task enters exec state planning
+// and the lead is woken to author the workflow plan right away — no further
+// human approval sits between this click and the work.
 func (s *Server) handleThreadEscalateSub(req Request) error {
 	var params ThreadEscalateSubParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -126,6 +130,21 @@ func (s *Server) handleThreadEscalateSub(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	if err := session.SetConversationThreadExecState(s.rt.SessionDir, thread.ID, session.ExecStatePlanning); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	thread.ExecState = session.ExecStatePlanning
+	s.recordTaskEventFor(thread, "", session.TaskEventTaskCreated, params.CreatedBy,
+		fmt.Sprintf("reply escalated to task: %q", firstNonEmpty(strings.TrimSpace(thread.Title), "untitled")), "")
+	// The lead follows the task it now orchestrates (best-effort, same as
+	// set_plan does for assignees).
+	if lead != "" {
+		if err := session.AddConversationThreadMember(s.rt.SessionDir, thread.ID, lead); err != nil {
+			providers.DebugLogf("escalate: add lead %q to task %q: %v", lead, thread.ID, err)
+		}
+	}
+	s.notifySubthreadUpdated(threadID, thread.ID)
+	s.wakePlanLeadForPlanning(thread)
 	view, err := s.conversationSubthreadView(threadID, thread, true)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -476,18 +495,18 @@ func conversationSubthreadViewFromRecords(threadID string, thread session.Conver
 	view.EscalatedBy = thread.EscalatedBy
 	view.LeadParticipantID = thread.LeadParticipantID
 	view.OwnerParticipantID = thread.OwnerParticipantID
-	// A reply that has been escalated to a task (human click) carries a task_card:
-	// running while it executes (status task), completed once it wraps up (status
-	// resolved). A never-escalated reply leaves Task nil. EscalatedAt survives the
-	// resolve transition, so a resolved task still renders its result summary.
+	view.ExecState = thread.ExecState
+	// A reply that has been escalated to a task carries a task_card: running
+	// while it executes (status task), completed once it wraps up (status
+	// resolved). A never-escalated reply leaves Task nil. EscalatedAt survives
+	// the resolve transition, so a resolved task still renders its result
+	// summary. Rows persisted by the deleted review gate (status "review") are
+	// deliberately NOT migrated: the raw status string passes through and any
+	// unknown status renders as running here.
 	if !thread.EscalatedAt.IsZero() {
 		status := "running"
-		switch thread.Status {
-		case session.ConversationThreadResolved:
+		if thread.Status == session.ConversationThreadResolved {
 			status = "completed"
-		case session.ConversationThreadReview:
-			// Owner filed for review; awaiting the human bubble click.
-			status = "review"
 		}
 		card := &TaskCard{
 			ID:          thread.ID,

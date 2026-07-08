@@ -174,6 +174,9 @@ func TestEscalateConversationSubthreadAttachesTaskCard(t *testing.T) {
 // backend falls back to a named escalator.
 func TestEscalateConversationSubthreadRecordsPickedLead(t *testing.T) {
 	srv, _ := newResidentSpeechTestServer(t)
+	// Escalation now wakes the picked lead for planning; drain that resident
+	// turn before the temp dir is torn down.
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 	leadID := saveNamedParticipant(t, srv.rt, "Iris", "reviewer", "")
 	groupID := startGroupThreadForTest(t, srv)
 

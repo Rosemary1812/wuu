@@ -366,35 +366,44 @@ type GroupMember struct {
 }
 
 // TaskView is the tool-facing snapshot of one task on the agent task rail (a
-// cth in task/review status). Owner is work ownership (mutual exclusion,
-// reporting duty) — never lead/orchestration authority.
+// cth in task status). Owner is work ownership (mutual exclusion, reporting
+// duty) — never lead/orchestration authority.
 type TaskView struct {
 	ID           string `json:"id"`
 	ThreadID     string `json:"thread_id"`
 	AnchorItemID string `json:"anchor_item_id,omitempty"`
 	Title        string `json:"title,omitempty"`
 	Status       string `json:"status"`
-	Owner        string `json:"owner,omitempty"`
-	OwnerName    string `json:"owner_name,omitempty"`
-	CreatedBy    string `json:"created_by,omitempty"`
-	Summary      string `json:"summary,omitempty"`
+	// ExecState is the task's execution axis, separate from the approval
+	// Status: planning/executing/blocked/needs_human/completed/failed; empty
+	// when the task never entered execution.
+	ExecState string `json:"exec_state,omitempty"`
+	Owner     string `json:"owner,omitempty"`
+	OwnerName string `json:"owner_name,omitempty"`
+	CreatedBy string `json:"created_by,omitempty"`
+	Summary   string `json:"summary,omitempty"`
 	// Plan is the team task's declared work breakdown (task-rail design §8),
 	// present only for team tasks the lead has planned. Empty for plain tasks.
 	Plan []TaskPiece `json:"plan,omitempty"`
 }
 
 // TaskPiece is one unit of a team task's plan as it crosses the tool boundary
-// (mirrors session.TaskPiece). Status: pending -> active -> done.
+// (mirrors session.TaskPiece). Status: pending -> active -> done. Prompt is
+// the only node field the lead authors through set_plan — handoff, attempts,
+// and retry budget are engine-owned and never settable from the tool surface.
 type TaskPiece struct {
 	ID        string   `json:"id"`
 	Title     string   `json:"title"`
 	Assignee  string   `json:"assignee"`
 	DependsOn []string `json:"depends_on,omitempty"`
 	Status    string   `json:"status,omitempty"`
+	// Prompt is the lead-authored briefing the assignee is woken with when
+	// the engine dispatches the piece.
+	Prompt string `json:"prompt,omitempty"`
 }
 
 // TaskManager lets resident named agents run the task rail: create tasks,
-// claim/release work ownership, file for review, unfollow, and list the
+// claim/release work ownership, file the conclusion, unfollow, and list the
 // board. The app server injects an implementation per resident runtime; task
 // runs and ordinary subagents never receive one. Claim mutual exclusion is a
 // store-level CAS: losing the race is a normal result (claimed=false), not an
@@ -420,14 +429,20 @@ type TaskManager interface {
 	ClaimTask(ctx context.Context, subthreadID string) (TaskView, bool, error)
 	// UnclaimTask releases ownership (owner-only); the task becomes claimable.
 	UnclaimTask(ctx context.Context, subthreadID string) (TaskView, error)
-	// FileTaskReview advances an owned task to review with the one-line
-	// summary draft (owner-only). Under task_review: auto the summary bubbles
-	// to the main stream and the task resolves immediately.
-	FileTaskReview(ctx context.Context, subthreadID, summary string) (TaskView, error)
+	// ConcludeTask files the task's conclusion and completes it in one act:
+	// the summary bubbles to the parent main stream under the caller's
+	// identity and the task resolves immediately — no review gate. The
+	// owner or the lead may conclude (an unclaimed plan-task is concluded
+	// by its lead).
+	ConcludeTask(ctx context.Context, subthreadID, summary string) (TaskView, error)
+	// NeedHuman flags the task as waiting on a decision that genuinely
+	// belongs to the human (exec state needs_human + a blocked trace event
+	// with the reason). It wakes nobody — the human decides from the board.
+	NeedHuman(ctx context.Context, subthreadID, reason string) (TaskView, error)
 	// UnfollowTask removes the caller from the task's push subset; the task
 	// stays readable via fetch_thread_messages.
 	UnfollowTask(ctx context.Context, subthreadID string) error
-	// ListTasks returns the group's task board (task and review statuses).
+	// ListTasks returns the group's task board (task status).
 	ListTasks(ctx context.Context, threadID string) ([]TaskView, error)
 	// SetPlan declares the lead's work breakdown for a team task (task-rail
 	// design §8): pieces with assignees and dependencies. The engine then

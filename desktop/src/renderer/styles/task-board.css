@@ -117,38 +117,3 @@
   font-size: var(--font-xs);
   color: var(--ink-muted);
 }
-
-.task-board-row-chip {
-  flex: none;
-  padding: 2px 10px;
-  border-radius: var(--radius-pill);
-  font-size: var(--font-xs);
-  border: 1px solid var(--hairline);
-}
-
-.task-board-row-chip--review {
-  color: var(--accent-warm);
-  border-color: currentColor;
-  font-weight: 600;
-}
-
-/* 群聊标题栏的看板入口:图标按钮右上角的待验收计数角标。 */
-.task-board-toggle-button {
-  position: relative;
-}
-
-.task-board-toggle-badge {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: var(--radius-pill);
-  background: var(--accent-warm);
-  color: var(--paper);
-  font-size: 10px;
-  line-height: 14px;
-  text-align: center;
-  font-weight: 700;
-}

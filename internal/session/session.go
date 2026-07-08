@@ -1043,6 +1043,12 @@ func migrateSchema(db *sql.DB) error {
 	if err := addColumnIfMissing(db, "conversation_threads", "plan", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// exec_state is the execution axis of a task cth (planning/executing/
+	// blocked/needs_human/completed/failed), deliberately separate from the
+	// approval status column. Empty = never entered execution.
+	if err := addColumnIfMissing(db, "conversation_threads", "exec_state", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	return nil
 }
 

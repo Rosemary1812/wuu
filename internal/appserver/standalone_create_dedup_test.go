@@ -138,15 +138,14 @@ func TestStandaloneCreateDifferentTitleStillSucceeds(t *testing.T) {
 // "resolved" cth in a thread is, by construction, anchored — not
 // unfinished — and must NOT trigger the dedup. The test seeds an
 // anchored+resolved cth (the canonical full-lifecycle shape: anchor →
-// task → review → resolved), then creates a new standalone with the
-// same title, expecting success.
+// task → resolved), then creates a new standalone with the same title,
+// expecting success.
 //
 // Two invariants pinned:
 //
 //	A. The dedup's status filter is correctly narrow
-//	   (ConversationThreadTask only); if someone widens it to
-//	   "task + review" or adds resolved, this test catches the
-//	   over-broad filter.
+//	   (ConversationThreadTask only); if someone widens it to include
+//	   resolved, this test catches the over-broad filter.
 //	B. The L89-93 standalone constraint (AnchorItemID == "" is only
 //	   allowed when Status == ConversationThreadTask) is upheld. If a
 //	   refactor relaxes L89-93, the seed path here would need adjustment

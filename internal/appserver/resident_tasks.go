@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
-	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/tools"
@@ -90,13 +89,12 @@ func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, a
 	// period.
 	//
 	// The collision set is deliberately narrowed to status == task: that is
-	// the only state that means "unfinished and claimable". A same-titled
-	// task in review has been delivered (awaiting the human gate) and a
-	// resolved one is history — re-creating either title is a legitimate
-	// redo, not a duplicate. Open discussion replies never collide (they are
-	// not tasks yet). Anchored cths that escalated to task carry the same
-	// status and are caught by the same filter, so the dedup surface covers
-	// anchored and standalone same-title collisions alike.
+	// the only state that means "unfinished and claimable". A resolved task
+	// is history — re-creating its title is a legitimate redo, not a
+	// duplicate. Open discussion replies never collide (they are not tasks
+	// yet). Anchored cths that escalated to task carry the same status and
+	// are caught by the same filter, so the dedup surface covers anchored
+	// and standalone same-title collisions alike.
 	if anchorSeq == 0 {
 		if existing := findUnfinishedTaskByNormalizedTitle(m.server.rt.SessionDir, threadID, normalizeTitleForDedup(title)); existing != nil {
 			if ackCollisionID != existing.ID {
@@ -152,6 +150,10 @@ func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, a
 // lead: EscalateConversationThread is called with an empty lead id, so the
 // human-escalation contract (lead = orchestration authority, human-granted)
 // is untouched; provenance (EscalatedBy) records the converting agent.
+// Escalation IS the start of execution — no human approval step follows: the
+// task enters exec state planning immediately (with an empty lead the
+// planning wake no-ops until someone takes the lead; the ownerless board
+// wake below still calls the group).
 func (m *residentTaskManager) EscalateTask(ctx context.Context, subthreadID, title string, claim bool) (tools.TaskView, error) {
 	_ = ctx
 	if err := m.ready("escalate"); err != nil {
@@ -186,8 +188,15 @@ func (m *residentTaskManager) EscalateTask(ctx context.Context, subthreadID, tit
 		}
 		escalated = claimed
 	}
+	if err := session.SetConversationThreadExecState(sessionDir, escalated.ID, session.ExecStatePlanning); err != nil {
+		return tools.TaskView{}, fmt.Errorf("escalate: enter planning: %w", err)
+	}
+	escalated.ExecState = session.ExecStatePlanning
+	m.server.recordTaskEventFor(escalated, "", session.TaskEventTaskCreated, m.participantID,
+		fmt.Sprintf("reply escalated to task: %q", firstNonEmpty(strings.TrimSpace(escalated.Title), "untitled")), "")
 	m.server.notifySubthreadUpdated(escalated.SessionID, escalated.ID)
 	m.server.wakeTaskBoardForOwnerlessTask(escalated, m.participantID, "opened on the board")
+	m.server.wakePlanLeadForPlanning(escalated)
 	return m.taskView(escalated), nil
 }
 
@@ -238,7 +247,13 @@ func (m *residentTaskManager) UnclaimTask(ctx context.Context, subthreadID strin
 	return m.taskView(released), nil
 }
 
-func (m *residentTaskManager) FileTaskReview(ctx context.Context, subthreadID, summary string) (tools.TaskView, error) {
+// ConcludeTask files the task's conclusion and completes it in one act (the
+// manage_task update_status action): a single store CAS resolves the task —
+// owner OR lead may conclude, so an unclaimed plan-task is concluded by its
+// lead — then the summary bubbles to the parent main stream under the
+// caller's identity. Filing IS the completion report; there is no review
+// gate and no human approval step.
+func (m *residentTaskManager) ConcludeTask(ctx context.Context, subthreadID, summary string) (tools.TaskView, error) {
 	_ = ctx
 	if err := m.ready("update_status"); err != nil {
 		return tools.TaskView{}, err
@@ -247,21 +262,62 @@ func (m *residentTaskManager) FileTaskReview(ctx context.Context, subthreadID, s
 	if err != nil {
 		return tools.TaskView{}, err
 	}
-	reviewed, err := session.MarkConversationThreadReview(m.server.rt.SessionDir, thread.ID, m.participantID, summary)
+	concluded, err := session.ConcludeConversationThread(m.server.rt.SessionDir, thread.ID, m.participantID, summary)
 	if err != nil {
 		return tools.TaskView{}, err
 	}
-	// task_review: auto resolves immediately — the owner's summary bubbles to
-	// the main stream under the owner's identity, same as the human click.
-	if m.server.rt.TaskReviewMode == config.TaskReviewAuto {
-		resolved, err := m.server.bubbleSubthreadResolve(reviewed.SessionID, reviewed, reviewed.Summary, m.participantID)
-		if err != nil {
-			return tools.TaskView{}, fmt.Errorf("update_status: auto-resolve bubble: %w", err)
-		}
-		reviewed = resolved
+	// The conclusion posts to the parent's main stream (empty ThreadID =
+	// full-roster visible), same publish path the human bubble click uses.
+	if err := m.server.publishParticipantMessage(concluded.SessionID, agentcontrol.ParticipantMessage{
+		ParticipantID: m.participantID,
+		Kind:          "result",
+		Text:          concluded.Summary,
+	}); err != nil {
+		return tools.TaskView{}, fmt.Errorf("update_status: bubble conclusion: %w", err)
 	}
-	m.server.notifySubthreadUpdated(reviewed.SessionID, reviewed.ID)
-	return m.taskView(reviewed), nil
+	// Execution is over. Best-effort: the resolved status is the durable
+	// completion signal; a failed exec-state write must not undo it.
+	if err := session.SetConversationThreadExecState(m.server.rt.SessionDir, concluded.ID, session.ExecStateCompleted); err != nil {
+		providers.DebugLogf("update_status: mark exec completed %q: %v", concluded.ID, err)
+	} else {
+		concluded.ExecState = session.ExecStateCompleted
+	}
+	m.server.recordTaskEventFor(concluded, "", session.TaskEventTaskCompleted, m.participantID,
+		concluded.Summary, "")
+	m.server.notifySubthreadUpdated(concluded.SessionID, concluded.ID)
+	return m.taskView(concluded), nil
+}
+
+// NeedHuman flags a task as waiting on a decision that genuinely belongs to
+// the human. It is the explicit human-decision point of the execution state
+// machine — never a default gate: exec state needs_human plus a blocked
+// trace event carrying the reason. It wakes nobody; the human decides from
+// the board.
+func (m *residentTaskManager) NeedHuman(ctx context.Context, subthreadID, reason string) (tools.TaskView, error) {
+	_ = ctx
+	if err := m.ready("need_human"); err != nil {
+		return tools.TaskView{}, err
+	}
+	thread, _, err := m.memberTask("need_human", subthreadID)
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return tools.TaskView{}, errors.New("need_human: reason is required")
+	}
+	if err := session.SetConversationThreadExecState(m.server.rt.SessionDir, thread.ID, session.ExecStateNeedsHuman); err != nil {
+		return tools.TaskView{}, fmt.Errorf("need_human: %w", err)
+	}
+	thread.ExecState = session.ExecStateNeedsHuman
+	payload, err := json.Marshal(map[string]string{"reason": reason})
+	if err != nil {
+		payload = nil
+	}
+	m.server.recordTaskEventFor(thread, "", session.TaskEventBlocked, m.participantID,
+		fmt.Sprintf("flagged for the human: %s", reason), string(payload))
+	m.server.notifySubthreadUpdated(thread.SessionID, thread.ID)
+	return m.taskView(thread), nil
 }
 
 func (m *residentTaskManager) UnfollowTask(ctx context.Context, subthreadID string) error {
@@ -298,8 +354,7 @@ func (m *residentTaskManager) ListTasks(ctx context.Context, threadID string) ([
 	}
 	views := make([]tools.TaskView, 0, len(threads))
 	for _, thread := range threads {
-		switch thread.Status {
-		case session.ConversationThreadTask, session.ConversationThreadReview:
+		if thread.Status == session.ConversationThreadTask {
 			views = append(views, m.taskView(thread))
 		}
 	}
@@ -333,9 +388,12 @@ func (m *residentTaskManager) SetPlan(ctx context.Context, subthreadID string, p
 			return tools.TaskView{}, fmt.Errorf("set_plan: duplicate piece id %q", id)
 		}
 		ids[id] = true
+		// Prompt is the one node field the lead authors here; handoff,
+		// attempts, and retry budget stay engine-owned.
 		sessionPieces = append(sessionPieces, session.TaskPiece{
 			ID: id, Title: strings.TrimSpace(p.Title), Assignee: strings.TrimSpace(p.Assignee),
 			DependsOn: p.DependsOn, Status: session.TaskPiecePending,
+			Prompt: strings.TrimSpace(p.Prompt),
 		})
 	}
 	// Every dependency must reference a real piece in this plan.
@@ -357,6 +415,12 @@ func (m *residentTaskManager) SetPlan(ctx context.Context, subthreadID string, p
 	if err != nil {
 		return tools.TaskView{}, fmt.Errorf("set_plan: %w", err)
 	}
+	// The declared plan starts running now — planning is over, no approval
+	// step sits between the plan and its first dispatch.
+	if err := session.SetConversationThreadExecState(m.server.rt.SessionDir, updated.ID, session.ExecStateExecuting); err != nil {
+		return tools.TaskView{}, fmt.Errorf("set_plan: enter executing: %w", err)
+	}
+	updated.ExecState = session.ExecStateExecuting
 	m.server.recordTaskEventFor(updated, "", session.TaskEventWorkflowPlanned, m.participantID,
 		fmt.Sprintf("lead declared a %d-piece workflow plan", len(sessionPieces)), planTracePayload(sessionPieces))
 	m.server.notifySubthreadUpdated(updated.SessionID, updated.ID)
@@ -496,6 +560,7 @@ func (m *residentTaskManager) taskView(thread session.ConversationThread) tools.
 		AnchorItemID: thread.AnchorItemID,
 		Title:        thread.Title,
 		Status:       string(thread.Status),
+		ExecState:    thread.ExecState,
 		Owner:        thread.OwnerParticipantID,
 		CreatedBy:    thread.CreatedBy,
 		Summary:      thread.Summary,
@@ -508,6 +573,7 @@ func (m *residentTaskManager) taskView(thread session.ConversationThread) tools.
 	for _, p := range thread.Plan {
 		view.Plan = append(view.Plan, tools.TaskPiece{
 			ID: p.ID, Title: p.Title, Assignee: p.Assignee, DependsOn: p.DependsOn, Status: p.Status,
+			Prompt: p.Prompt,
 		})
 	}
 	return view
@@ -544,6 +610,11 @@ func (s *Server) advancePlan(taskID string) {
 		}
 	}
 	if allDone {
+		// Execution is finished the moment the last piece lands — the lead's
+		// wrap-up (conclude + report) happens after completed, not before it.
+		if err := session.SetConversationThreadExecState(s.rt.SessionDir, task.ID, session.ExecStateCompleted); err != nil {
+			providers.DebugLogf("advancePlan mark completed %q: %v", task.ID, err)
+		}
 		s.wakePlanLead(task)
 		return
 	}
@@ -654,6 +725,38 @@ func (s *Server) wakePlanLead(task session.ConversationThread) {
 	}, nil, true)
 }
 
+// wakePlanLeadForPlanning @-wakes the task's lead immediately after
+// escalation with the directive to author the workflow plan. Escalation is
+// the start of execution — no human approval step sits between the upgrade
+// and the plan. Only the declared lead is woken (no creator fallback: an
+// unled task has nobody with orchestration authority to plan it), and an
+// empty lead is a loudly-logged no-op rather than a silent skip.
+func (s *Server) wakePlanLeadForPlanning(task session.ConversationThread) {
+	lead := strings.TrimSpace(task.LeadParticipantID)
+	if lead == "" {
+		providers.DebugLogf("wakePlanLeadForPlanning: task %q has no lead — nobody to wake for planning", task.ID)
+		return
+	}
+	title, workspace := s.taskThreadContext(task.SessionID)
+	s.recordTaskEventFor(task, "", session.TaskEventLeadInvoked, lead,
+		"lead woken to plan", "")
+	text := fmt.Sprintf(
+		"You lead task %q. Author its workflow plan NOW: manage_task action=set_plan subthread_id=%q with pieces {id, title, assignee, prompt, depends_on}. Each piece's prompt is the briefing its assignee starts from — write it so they can begin without asking. Assign pieces to existing teammates; a task you can do alone is a one-piece plan assigned to yourself.",
+		firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), task.ID,
+	)
+	s.deliverEnvelopeToMembers([]string{lead}, MessageEnvelope{
+		SourceThreadID:      task.SessionID,
+		SourceSubthreadID:   task.ID,
+		SourceTitle:         title,
+		SenderKind:          "system",
+		SenderName:          "task plan",
+		SenderParticipantID: "",
+		Text:                text,
+		CreatedAt:           time.Now().UTC(),
+		Workspace:           workspace,
+	}, nil, true)
+}
+
 // taskThreadContext returns the parent thread's display title and workspace
 // focus for building a plan-engine wake envelope.
 func (s *Server) taskThreadContext(parentThreadID string) (title, workspace string) {
@@ -747,10 +850,11 @@ func (s *Server) mainStreamItemIDForSeq(threadID string, seq int) (string, error
 	return "", fmt.Errorf("no visible main-stream message with seq %d in thread %q", seq, threadID)
 }
 
-// bubbleSubthreadResolve wraps a task up: the summary posts to the parent's
-// main stream under author's identity and the subthread resolves with that
-// summary stored. Shared by the human bubble click (handleThreadBubbleSub) and
-// the task_review: auto path.
+// bubbleSubthreadResolve wraps a subthread up: the summary posts to the
+// parent's main stream under author's identity and the subthread resolves
+// with that summary stored. Serves the human bubble RPC
+// (handleThreadBubbleSub) and plain-reply wrap-ups; agents conclude tasks
+// through ConcludeTask instead.
 func (s *Server) bubbleSubthreadResolve(threadID string, thread session.ConversationThread, summary, author string) (session.ConversationThread, error) {
 	summary = strings.TrimSpace(summary)
 	if summary == "" {
@@ -792,10 +896,9 @@ func normalizeTitleForDedup(s string) string {
 // Why Task-status only: status == task is the only "unfinished and
 // claimable" state, which is what a duplicate would pollute. A standalone
 // task is BORN as task (conversation_thread.go creation constraint) but
-// still flows to review/resolved like any other; those states mean the
-// work was delivered or closed, so re-creating the title is a legitimate
-// redo and must not be blocked. Open discussion replies are not tasks and
-// never collide.
+// still flows to resolved like any other; a resolved task means the work
+// was delivered, so re-creating the title is a legitimate redo and must
+// not be blocked. Open discussion replies are not tasks and never collide.
 //
 // Implemented as a one-thread in-Go scan rather than a new session
 // helper because per-thread cth counts stay small (< ~100), and this

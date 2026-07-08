@@ -27,15 +27,15 @@ func (t *ManageTaskTool) Name() string { return "manage_task" }
 func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "manage_task",
-		Description: "Run the task board of a group thread or of your own DM. A task is trackable work with one owner at a time; claiming it is how work is divided — never coordinate by chat message. In your DM the board is yours alone: tasks are born owned by you (claim is implied) and unclaim is refused. action=create opens a task in the thread (anchor_seq anchors it on a main-stream message; omit for a standalone task, e.g. when splitting work; claim=true takes ownership in the same call). action=escalate converts an open discussion reply (subthread_id) you belong to into a board task once the discussion has converged — e.g. the user says it is ready; claim=true self-owns it. action=claim takes ownership of an unclaimed task — if someone else already owns it, you lost the race: move on silently, never duplicate their work. action=unclaim releases ownership. action=update_status files an owned task for review with a summary (the one-line conclusion; result + how it was verified). action=unfollow stops receiving this task thread's traffic once your part is done. action=list shows the group's board. Ownership is work responsibility only — it grants no authority over other agents.",
+		Description: "Run the task board of a group thread or of your own DM. A task is trackable work with one owner at a time; claiming it is how work is divided — never coordinate by chat message. In your DM the board is yours alone: tasks are born owned by you (claim is implied) and unclaim is refused. action=create opens a task in the thread (anchor_seq anchors it on a main-stream message; omit for a standalone task, e.g. when splitting work; claim=true takes ownership in the same call). action=escalate converts an open discussion reply (subthread_id) you belong to into a board task once the discussion has converged — e.g. the user says it is ready; claim=true self-owns it. action=claim takes ownership of an unclaimed task — if someone else already owns it, you lost the race: move on silently, never duplicate their work. action=unclaim releases ownership. action=update_status files the task's conclusion with a summary (the one-line conclusion; result + how it was verified) and COMPLETES the task — that filing is the completion report, no review step follows. action=need_human flags the task for a decision that genuinely belongs to the human (subthread_id + reason); it halts nothing mechanically and wakes nobody — use it ONLY for decisions you truly cannot make. action=unfollow stops receiving this task thread's traffic once your part is done. action=list shows the group's board. Ownership is work responsibility only — it grants no authority over other agents.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
 				"action": map[string]any{
 					"type":        "string",
-					"enum":        []string{"create", "escalate", "claim", "unclaim", "update_status", "unfollow", "list", "set_plan", "piece_done"},
-					"description": "create opens a task (group members only); escalate converts a converged open discussion reply into a task; claim/unclaim take/release work ownership; update_status files an owned task for review; unfollow leaves the task's push subset; list shows the board. As a task LEAD: set_plan declares a team plan (pieces with assignees + dependencies) on a task and the engine dispatches the ready pieces by @-waking their assignees; as an ASSIGNEE: piece_done marks your plan piece complete and the engine advances the plan (wakes the next dependents, or wakes the lead when all pieces are done).",
+					"enum":        []string{"create", "escalate", "claim", "unclaim", "update_status", "need_human", "unfollow", "list", "set_plan", "piece_done"},
+					"description": "create opens a task (group members only); escalate converts a converged open discussion reply into a task; claim/unclaim take/release work ownership; update_status files the conclusion and completes the task; need_human flags the task for a decision only the human can make; unfollow leaves the task's push subset; list shows the board. As a task LEAD: set_plan declares a team plan (pieces with assignees + dependencies + per-piece prompt) on a task and the engine dispatches the ready pieces by @-waking their assignees; as an ASSIGNEE: piece_done marks your plan piece complete and the engine advances the plan (wakes the next dependents, or wakes the lead when all pieces are done).",
 				},
 				"thread_id": map[string]any{
 					"type":        "string",
@@ -43,7 +43,7 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 				},
 				"subthread_id": map[string]any{
 					"type":        "string",
-					"description": "Task id (cth-…). Required for claim, unclaim, update_status, and unfollow.",
+					"description": "Task id (cth-…). Required for claim, unclaim, update_status, need_human, and unfollow.",
 				},
 				"title": map[string]any{
 					"type":        "string",
@@ -59,7 +59,11 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 				},
 				"summary": map[string]any{
 					"type":        "string",
-					"description": "With update_status: the one-line conclusion draft — the result and how it was verified. Required.",
+					"description": "With update_status: the one-line conclusion — the result and how it was verified. Filing it completes the task. Required.",
+				},
+				"reason": map[string]any{
+					"type":        "string",
+					"description": "With need_human: why this decision belongs to the human. Required.",
 				},
 				"ack_collision_id": map[string]any{
 					"type":        "string",
@@ -67,14 +71,18 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 				},
 				"plan": map[string]any{
 					"type":        "array",
-					"description": "With set_plan: the team work breakdown. Each item is a piece {id, title, assignee, depends_on}. id is a short label unique within the plan (e.g. \"p1\"); assignee is a teammate's participant id (prefer existing members); depends_on lists the piece ids that must finish before this one starts (omit or [] for a piece that can start immediately). Declare the whole plan at once; the engine dispatches every piece with no unmet dependency and @-wakes the rest as their dependencies complete.",
+					"description": "With set_plan: the team work breakdown. Each item is a piece {id, title, assignee, prompt, depends_on}. id is a short label unique within the plan (e.g. \"p1\"); assignee is a teammate's participant id (prefer existing members); prompt is the briefing the assignee is woken with — write it so they can start without asking; depends_on lists the piece ids that must finish before this one starts (omit or [] for a piece that can start immediately). Declare the whole plan at once; the engine dispatches every piece with no unmet dependency and @-wakes the rest as their dependencies complete.",
 					"items": map[string]any{
 						"type":                 "object",
 						"additionalProperties": false,
 						"properties": map[string]any{
-							"id":         map[string]any{"type": "string"},
-							"title":      map[string]any{"type": "string"},
-							"assignee":   map[string]any{"type": "string"},
+							"id":       map[string]any{"type": "string"},
+							"title":    map[string]any{"type": "string"},
+							"assignee": map[string]any{"type": "string"},
+							"prompt": map[string]any{
+								"type":        "string",
+								"description": "The briefing the assignee is woken with.",
+							},
 							"depends_on": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 						},
 						"required": []string{"id", "title", "assignee"},
@@ -110,6 +118,7 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 		Claim          bool        `json:"claim"`
 		AckCollisionID string      `json:"ack_collision_id"`
 		Summary        string      `json:"summary"`
+		Reason         string      `json:"reason"`
 		Plan           []TaskPiece `json:"plan"`
 		PieceID        string      `json:"piece_id"`
 	}
@@ -169,13 +178,25 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 			return "", errors.New("update_status: subthread_id is required")
 		}
 		if strings.TrimSpace(params.Summary) == "" {
-			return "", errors.New("update_status: summary is required (the one-line conclusion draft)")
+			return "", errors.New("update_status: summary is required (the one-line conclusion)")
 		}
-		view, err := manager.FileTaskReview(ctx, params.SubthreadID, params.Summary)
+		view, err := manager.ConcludeTask(ctx, params.SubthreadID, params.Summary)
 		if err != nil {
 			return "", err
 		}
 		return marshalTaskResult("update_status", map[string]any{"task": view})
+	case "need_human":
+		if strings.TrimSpace(params.SubthreadID) == "" {
+			return "", errors.New("need_human: subthread_id is required")
+		}
+		if strings.TrimSpace(params.Reason) == "" {
+			return "", errors.New("need_human: reason is required (why this decision belongs to the human)")
+		}
+		view, err := manager.NeedHuman(ctx, params.SubthreadID, params.Reason)
+		if err != nil {
+			return "", err
+		}
+		return marshalTaskResult("need_human", map[string]any{"task": view})
 	case "unfollow":
 		if strings.TrimSpace(params.SubthreadID) == "" {
 			return "", errors.New("unfollow: subthread_id is required")

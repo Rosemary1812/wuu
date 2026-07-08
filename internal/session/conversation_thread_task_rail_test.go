@@ -150,48 +150,105 @@ func TestUnclaimConversationThread(t *testing.T) {
 	}
 }
 
-func TestMarkConversationThreadReview(t *testing.T) {
+func TestConcludeConversationThreadByOwner(t *testing.T) {
 	dir := t.TempDir()
 	created := seedTaskThread(t, dir)
 	if _, ok, err := ClaimConversationThread(dir, created.ID, "prt-bella"); err != nil || !ok {
 		t.Fatalf("claim: ok=%v err=%v", ok, err)
 	}
 
-	// Non-owner cannot file for review.
-	if _, err := MarkConversationThreadReview(dir, created.ID, "prt-carl", "done"); err == nil {
-		t.Fatal("non-owner review should error")
+	// A caller that is neither owner nor lead cannot conclude.
+	if _, err := ConcludeConversationThread(dir, created.ID, "prt-carl", "done"); err == nil {
+		t.Fatal("non-owner non-lead conclude should error")
+	} else if !strings.Contains(err.Error(), "only the owner or the lead") {
+		t.Fatalf("refusal should diagnose the caller, got %v", err)
 	}
 	// Summary is required.
-	if _, err := MarkConversationThreadReview(dir, created.ID, "prt-bella", "  "); err == nil {
+	if _, err := ConcludeConversationThread(dir, created.ID, "prt-bella", "  "); err == nil {
 		t.Fatal("empty summary should error")
 	}
 
-	reviewed, err := MarkConversationThreadReview(dir, created.ID, "prt-bella", "fixed and verified")
+	// Filing the conclusion resolves the task in one step — no review gate.
+	concluded, err := ConcludeConversationThread(dir, created.ID, "prt-bella", "fixed and verified")
 	if err != nil {
-		t.Fatalf("owner review: %v", err)
+		t.Fatalf("owner conclude: %v", err)
 	}
-	if reviewed.Status != ConversationThreadReview {
-		t.Fatalf("status = %q, want review", reviewed.Status)
+	if concluded.Status != ConversationThreadResolved {
+		t.Fatalf("status = %q, want resolved (filing IS completion)", concluded.Status)
 	}
-	if reviewed.Summary != "fixed and verified" {
-		t.Fatalf("summary = %q", reviewed.Summary)
+	if concluded.Summary != "fixed and verified" {
+		t.Fatalf("summary = %q", concluded.Summary)
 	}
 
-	// A task in review is no longer claimable and cannot re-file.
+	// A resolved task is no longer claimable and cannot be re-concluded.
 	if _, _, err := ClaimConversationThread(dir, created.ID, "prt-carl"); err == nil {
-		t.Fatal("claiming a review-status task should error")
+		t.Fatal("claiming a resolved task should error")
 	}
-	if _, err := MarkConversationThreadReview(dir, created.ID, "prt-bella", "again"); err == nil {
-		t.Fatal("double review should error")
+	if _, err := ConcludeConversationThread(dir, created.ID, "prt-bella", "again"); err == nil {
+		t.Fatal("double conclude should error")
+	} else if !strings.Contains(err.Error(), `status is "resolved"`) {
+		t.Fatalf("refusal should diagnose the status, got %v", err)
+	}
+}
+
+func TestConcludeConversationThreadByLeadOfUnclaimedTask(t *testing.T) {
+	dir := t.TempDir()
+	created := seedTaskThread(t, dir)
+	// Grant a lead and leave the task unclaimed (plan-task shape: the lead
+	// orchestrates; no single owner ever claims it).
+	if _, err := EscalateConversationThread(dir, created.ID, "user", "prt-lead", ""); err != nil {
+		t.Fatalf("escalate: %v", err)
 	}
 
-	// And it no longer counts as an active lead task for the workflow gate
-	// even if a lead was somehow set: status must be task.
-	leads, err := LeadTaskThreads(dir, "prt-bella")
+	concluded, err := ConcludeConversationThread(dir, created.ID, "prt-lead", "all pieces landed")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("lead conclude of unclaimed task: %v", err)
 	}
-	if len(leads) != 0 {
-		t.Fatalf("review task must not appear as active lead task: %v", leads)
+	if concluded.Status != ConversationThreadResolved {
+		t.Fatalf("status = %q, want resolved", concluded.Status)
+	}
+	if concluded.Summary != "all pieces landed" {
+		t.Fatalf("summary = %q", concluded.Summary)
+	}
+}
+
+func TestSetConversationThreadExecState(t *testing.T) {
+	dir := t.TempDir()
+	created := seedTaskThread(t, dir)
+
+	// The pre-execution zero value reads back empty.
+	if created.ExecState != "" {
+		t.Fatalf("fresh cth exec state = %q, want empty", created.ExecState)
+	}
+
+	// Every vocabulary member round-trips.
+	for _, state := range []string{
+		ExecStatePlanning, ExecStateExecuting, ExecStateBlocked,
+		ExecStateNeedsHuman, ExecStateCompleted, ExecStateFailed,
+	} {
+		if err := SetConversationThreadExecState(dir, created.ID, state); err != nil {
+			t.Fatalf("set exec state %q: %v", state, err)
+		}
+		got, err := FindConversationThreadByID(dir, created.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.ExecState != state {
+			t.Fatalf("exec state = %q, want %q", got.ExecState, state)
+		}
+	}
+
+	// The vocabulary is closed: unknown values and the empty string are loud
+	// errors, never stored.
+	if err := SetConversationThreadExecState(dir, created.ID, "reviewing"); err == nil {
+		t.Fatal("unknown exec state should error")
+	} else if !strings.Contains(err.Error(), "invalid conversation thread exec state") {
+		t.Fatalf("unknown exec state should be diagnosed, got %v", err)
+	}
+	if err := SetConversationThreadExecState(dir, created.ID, ""); err == nil {
+		t.Fatal("empty exec state should error (zero value is never set explicitly)")
+	}
+	if err := SetConversationThreadExecState(dir, "cth-missing", ExecStatePlanning); err == nil {
+		t.Fatal("missing thread should error")
 	}
 }

@@ -16,13 +16,28 @@ type ConversationThreadStatus string
 const (
 	ConversationThreadOpen ConversationThreadStatus = "open"
 	ConversationThreadTask ConversationThreadStatus = "task"
-	// ConversationThreadReview marks a task whose owner finished the work and
-	// filed a summary draft (task -> review, owner-only). The resolve step —
-	// bubbling the summary to the main stream — is the human approval click
-	// (or immediate, under task_review: auto). A task in review no longer
-	// authorizes workflow orchestration: the lead gate requires status == task.
-	ConversationThreadReview   ConversationThreadStatus = "review"
+	// ConversationThreadResolved is the terminal state: a discussion reply
+	// closed by a human, or a task whose conclusion was filed
+	// (ConcludeConversationThread). There is no intermediate approval state
+	// between task and resolved — filing the conclusion IS the completion.
 	ConversationThreadResolved ConversationThreadStatus = "resolved"
+)
+
+// Execution states of a task cth (the ExecState column) — a separate axis
+// from the approval Status above. Status says what the thread is (open
+// discussion / board task / resolved); ExecState says where the execution
+// engine stands on the work: escalation enters planning, the lead's set_plan
+// enters executing, the engine lands completed when every piece is done.
+// blocked / needs_human / failed are the exception states. The empty string
+// is the pre-execution zero value and is never explicitly set: a thread that
+// never entered execution (a plain reply) simply stays empty.
+const (
+	ExecStatePlanning   = "planning"
+	ExecStateExecuting  = "executing"
+	ExecStateBlocked    = "blocked"
+	ExecStateNeedsHuman = "needs_human"
+	ExecStateCompleted  = "completed"
+	ExecStateFailed     = "failed"
 )
 
 var ErrConversationThreadNotFound = errors.New("conversation thread not found")
@@ -54,7 +69,7 @@ type ConversationThread struct {
 	LeadParticipantID string `json:"lead_participant_id,omitempty"`
 	// OwnerParticipantID is the named agent currently owning this task's work:
 	// mutual exclusion (one owner at a time, taken via ClaimConversationThread's
-	// CAS), reporting duty, and the task -> review transition. Ownership is NOT
+	// CAS), reporting duty, and the right to conclude the task. Ownership is NOT
 	// lead authority — claiming never touches LeadParticipantID and grants no
 	// workflow orchestration (2026-07-06 agent-task-rail design, user-adjudicated).
 	// Empty means unclaimed.
@@ -68,6 +83,13 @@ type ConversationThread struct {
 	// research, and document work all ride the same engine. Empty for a plain
 	// single-owner task.
 	Plan []TaskPiece `json:"plan,omitempty"`
+	// ExecState is the execution axis of a task, deliberately separate from
+	// the approval axis (Status): planning -> executing -> completed on the
+	// normal path, with blocked / needs_human / failed as exception states
+	// (see the ExecState* constants). Empty is the pre-execution zero value —
+	// a thread that never entered execution. Written only through
+	// SetConversationThreadExecState.
+	ExecState string `json:"exec_state,omitempty"`
 }
 
 // TaskPiece is one unit of a team task's plan — an executable node in the
@@ -202,7 +224,7 @@ func ListConversationThreads(sessDir, sessionID string) ([]ConversationThread, e
 	}
 
 	rows, err := db.Query(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state
 FROM conversation_threads
 WHERE session_id = ?
 ORDER BY created_at ASC, id ASC`, sessionID)
@@ -242,7 +264,7 @@ func FindConversationThreadByID(sessDir, id string) (ConversationThread, error) 
 	defer db.Close()
 
 	row := db.QueryRow(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state
 FROM conversation_threads
 WHERE id = ?`, id)
 	thread, err := scanConversationThread(row)
@@ -275,7 +297,7 @@ func LeadTaskThreads(sessDir, leadParticipantID string) ([]ConversationThread, e
 	defer db.Close()
 
 	rows, err := db.Query(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state
 FROM conversation_threads
 WHERE status = ? AND lead_participant_id = ?
 ORDER BY escalated_at DESC, id ASC`, string(ConversationThreadTask), leadParticipantID)
@@ -351,8 +373,6 @@ func normalizeConversationThreadStatus(status ConversationThreadStatus) Conversa
 		return ConversationThreadOpen
 	case ConversationThreadTask:
 		return ConversationThreadTask
-	case ConversationThreadReview:
-		return ConversationThreadReview
 	case ConversationThreadResolved:
 		return ConversationThreadResolved
 	default:
@@ -362,7 +382,7 @@ func normalizeConversationThreadStatus(status ConversationThreadStatus) Conversa
 
 func validateConversationThreadStatus(status ConversationThreadStatus) error {
 	switch status {
-	case ConversationThreadOpen, ConversationThreadTask, ConversationThreadReview, ConversationThreadResolved:
+	case ConversationThreadOpen, ConversationThreadTask, ConversationThreadResolved:
 		return nil
 	default:
 		return fmt.Errorf("invalid conversation thread status %q", status)
@@ -404,7 +424,7 @@ func EscalateConversationThread(sessDir, id, escalatedBy, leadParticipantID, tit
 	defer tx.Rollback()
 
 	row := tx.QueryRow(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state
 FROM conversation_threads
 WHERE id = ?`, id)
 	thread, err := scanConversationThread(row)
@@ -552,12 +572,13 @@ WHERE id = ? AND status = ? AND owner_participant_id = ?`,
 	return thread, nil
 }
 
-// MarkConversationThreadReview advances an owned task to the review state
-// (task -> review, owner-only) and files the owner's one-line summary draft in
-// the same transaction. The resolve step (bubbling the summary to the main
-// stream) stays a separate concern: a human click, or immediate under
-// task_review: auto.
-func MarkConversationThreadReview(sessDir, id, participantID, summary string) (ConversationThread, error) {
+// ConcludeConversationThread files a task's conclusion and resolves it in one
+// CAS: status task -> resolved with the summary stored. Filing the conclusion
+// IS the completion — there is no review gate waiting for a human click. The
+// owner OR the lead may conclude (an unclaimed plan-task is concluded by its
+// lead; a plain owned task by its owner). CAS loss is diagnosed loudly: the
+// status was not task, or the caller is neither owner nor lead.
+func ConcludeConversationThread(sessDir, id, participantID, summary string) (ConversationThread, error) {
 	id = strings.TrimSpace(id)
 	participantID = strings.TrimSpace(participantID)
 	summary = strings.TrimSpace(summary)
@@ -565,10 +586,10 @@ func MarkConversationThreadReview(sessDir, id, participantID, summary string) (C
 		return ConversationThread{}, fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
 	}
 	if participantID == "" {
-		return ConversationThread{}, errors.New("mark conversation thread review: participant id is required")
+		return ConversationThread{}, errors.New("conclude conversation thread: participant id is required")
 	}
 	if summary == "" {
-		return ConversationThread{}, errors.New("mark conversation thread review: summary is required")
+		return ConversationThread{}, errors.New("conclude conversation thread: summary is required")
 	}
 
 	db, err := openStore(sessDir)
@@ -583,14 +604,14 @@ func MarkConversationThreadReview(sessDir, id, participantID, summary string) (C
 	res, err := db.Exec(`
 UPDATE conversation_threads
 SET status = ?, summary = ?
-WHERE id = ? AND status = ? AND owner_participant_id = ?`,
-		string(ConversationThreadReview), summary, id, string(ConversationThreadTask), participantID)
+WHERE id = ? AND status = ? AND (owner_participant_id = ? OR lead_participant_id = ?)`,
+		string(ConversationThreadResolved), summary, id, string(ConversationThreadTask), participantID, participantID)
 	if err != nil {
-		return ConversationThread{}, fmt.Errorf("mark conversation thread review: %w", err)
+		return ConversationThread{}, fmt.Errorf("conclude conversation thread: %w", err)
 	}
 	affected, err := res.RowsAffected()
 	if err != nil {
-		return ConversationThread{}, fmt.Errorf("mark conversation thread review: %w", err)
+		return ConversationThread{}, fmt.Errorf("conclude conversation thread: %w", err)
 	}
 	thread, findErr := findConversationThreadByIDDB(db, id)
 	if findErr != nil {
@@ -599,21 +620,64 @@ WHERE id = ? AND status = ? AND owner_participant_id = ?`,
 	if affected == 0 {
 		switch {
 		case thread.Status != ConversationThreadTask:
-			return thread, fmt.Errorf("mark conversation thread review %q: status is %q, not task", id, thread.Status)
-		case thread.OwnerParticipantID != participantID:
-			return thread, fmt.Errorf("mark conversation thread review %q: owned by %q, only the owner can file for review", id, thread.OwnerParticipantID)
+			return thread, fmt.Errorf("conclude conversation thread %q: status is %q, not task", id, thread.Status)
+		case thread.OwnerParticipantID != participantID && thread.LeadParticipantID != participantID:
+			return thread, fmt.Errorf("conclude conversation thread %q: owner is %q and lead is %q — only the owner or the lead may file the conclusion", id, thread.OwnerParticipantID, thread.LeadParticipantID)
 		default:
-			return thread, fmt.Errorf("mark conversation thread review %q: transition refused", id)
+			return thread, fmt.Errorf("conclude conversation thread %q: transition refused", id)
 		}
 	}
 	return thread, nil
+}
+
+// SetConversationThreadExecState writes the task's execution state (the
+// ExecState axis — see the ExecState* constants). The vocabulary is closed:
+// an unknown state is a loud error, never silently stored. The empty string
+// is not settable — it is the pre-execution zero value only.
+func SetConversationThreadExecState(sessDir, id, state string) error {
+	id = strings.TrimSpace(id)
+	state = strings.TrimSpace(state)
+	if id == "" {
+		return fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
+	}
+	switch state {
+	case ExecStatePlanning, ExecStateExecuting, ExecStateBlocked, ExecStateNeedsHuman, ExecStateCompleted, ExecStateFailed:
+	default:
+		return fmt.Errorf("invalid conversation thread exec state %q (valid: %s, %s, %s, %s, %s, %s)",
+			state, ExecStatePlanning, ExecStateExecuting, ExecStateBlocked, ExecStateNeedsHuman, ExecStateCompleted, ExecStateFailed)
+	}
+
+	db, err := openStore(sessDir)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+
+	res, err := db.Exec(`
+UPDATE conversation_threads
+SET exec_state = ?
+WHERE id = ?`, state, id)
+	if err != nil {
+		return fmt.Errorf("set conversation thread exec state: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set conversation thread exec state: %w", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
+	}
+	return nil
 }
 
 // findConversationThreadByIDDB is FindConversationThreadByID against an
 // already-open handle (for use under storeWriteMu).
 func findConversationThreadByIDDB(db *sql.DB, id string) (ConversationThread, error) {
 	row := db.QueryRow(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state
 FROM conversation_threads
 WHERE id = ?`, id)
 	thread, err := scanConversationThread(row)
@@ -670,6 +734,7 @@ func scanConversationThread(scanner interface {
 	if err := scanner.Scan(
 		&thread.ID, &thread.SessionID, &thread.AnchorItemID, &thread.Title, &status, &thread.CreatedBy, &createdAt,
 		&escalatedAt, &thread.EscalatedBy, &thread.Summary, &thread.LeadParticipantID, &thread.OwnerParticipantID, &planJSON,
+		&thread.ExecState,
 	); err != nil {
 		return ConversationThread{}, err
 	}

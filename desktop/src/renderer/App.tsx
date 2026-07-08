@@ -794,10 +794,9 @@ export function App(): JSX.Element {
   // per active chat thread (see effect below); non-active panes never need it.
   const [chatSubthreads, setChatSubthreads] = useState<{
     threadID: string;
+    // byAnchor 服务消息行的 reply 徽标;standalone task 没有锚点,由任务
+    // 看板 tab 自己拉取列表展示。
     byAnchor: Map<string, ConversationSubthread>;
-    // 完整列表(含无锚点的 standalone task):任务看板入口的角标从这里数
-    // task/review,byAnchor 只服务消息行的 reply 徽标。
-    all: ConversationSubthread[];
   } | null>(null);
   // Bump to force a reload of the active thread's subthreads (e.g. right after
   // opening a reply create-or-finds a new subthread, so its badge appears).
@@ -2493,14 +2492,13 @@ export function App(): JSX.Element {
         if (cancelled) {
           return;
         }
-        const all = result.subthreads ?? [];
         const byAnchor = new Map<string, ConversationSubthread>();
-        for (const sub of all) {
+        for (const sub of result.subthreads ?? []) {
           if (sub.anchor_item_id) {
             byAnchor.set(sub.anchor_item_id, sub);
           }
         }
-        setChatSubthreads({ threadID, byAnchor, all });
+        setChatSubthreads({ threadID, byAnchor });
       } catch {
         // Decorative badges — keep the previous map rather than clearing it.
       }
@@ -2519,12 +2517,6 @@ export function App(): JSX.Element {
     chatSubthreads && chatSubthreads.threadID === activeThreadID
       ? chatSubthreads.byAnchor
       : undefined;
-  // 群聊标题栏任务看板入口的角标:等人验收的任务数(task_review: human 的
-  // 人工把关队列)。数完整列表,standalone 任务也计入。
-  const activeThreadPendingReviewCount =
-    chatSubthreads && chatSubthreads.threadID === activeThreadID
-      ? chatSubthreads.all.filter((sub) => sub.status === "review").length
-      : 0;
 
   const handleCloseFilePreview = useCallback((): void => {
     setRightPanelFilePath(undefined);
@@ -8703,18 +8695,13 @@ export function App(): JSX.Element {
               <>
                 {activeThreadIsChatStyle && activeThread ? (
                   <button
-                    className="icon-button task-board-toggle-button"
+                    className="icon-button"
                     type="button"
                     aria-label="打开任务看板"
                     title="任务看板"
                     onClick={() => openTaskBoardTab(activeThread)}
                   >
                     <ListChecks className="icon-lg" />
-                    {activeThreadPendingReviewCount > 0 ? (
-                      <span className="task-board-toggle-badge">
-                        {activeThreadPendingReviewCount}
-                      </span>
-                    ) : null}
                   </button>
                 ) : null}
                 <button
