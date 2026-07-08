@@ -2557,6 +2557,19 @@ export function App(): JSX.Element {
     }
   }, [resizingSidebar, sidebarCollapsed]);
 
+  const closeSidebarDrawerAfterNavigation = useCallback((): void => {
+    if (sidebarCollapsed && sidebarDrawerPhase === "open") {
+      closeSidebarDrawer();
+      return;
+    }
+    cancelSidebarDrawerOpen();
+  }, [
+    cancelSidebarDrawerOpen,
+    closeSidebarDrawer,
+    sidebarCollapsed,
+    sidebarDrawerPhase,
+  ]);
+
   useEffect(
     () => () => {
       clearSidebarDrawerOpenTimer();
@@ -8699,7 +8712,10 @@ export function App(): JSX.Element {
             onSeedConversationFixture={seedConversationFixture}
             onSeedAgentTreeDemo={seedAgentTreeDemo}
             onOpenChipGallery={() => setChipGalleryOpen(true)}
-            onSelectThread={(id) => void activateThread(id)}
+            onSelectThread={(id) => {
+              closeSidebarDrawerAfterNavigation();
+              void activateThread(id);
+            }}
             onSelectParticipant={(participant) => void openParticipantDM(participant)}
             onEditParticipant={openParticipantProfile}
             onCreateParticipant={openNewParticipantProfile}
@@ -8726,9 +8742,10 @@ export function App(): JSX.Element {
                 void startNewThreadForProject(id);
               }
             }}
-            onSelectProjectThread={(projectID, threadID) =>
-              void selectProjectThread(projectID, threadID)
-            }
+            onSelectProjectThread={(projectID, threadID) => {
+              closeSidebarDrawerAfterNavigation();
+              void selectProjectThread(projectID, threadID);
+            }}
             onRemoveProject={(id) => void removeProject(id)}
             onRelocateProject={(id) => void relocateProject(id)}
             onReorderSections={setSidebarSectionOrder}

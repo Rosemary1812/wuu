@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   InitializeResult,
   ServerEvent,
+  Thread,
   WuuDesktopApi,
 } from "../shared/protocol";
 
@@ -31,6 +32,12 @@ vi.mock("@xterm/addon-fit", () => ({
   FitAddon: vi.fn().mockImplementation(() => ({ fit: vi.fn() })),
 }));
 
+vi.mock("./WorkspaceMonacoEditor", () => ({
+  WorkspaceMonacoEditor: () => (
+    <div className="workspace-monaco-editor" data-testid="mock-monaco-editor" />
+  ),
+}));
+
 import { App, SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./App";
 import { SIDEBAR_MOTION_MS } from "./AppLayoutState";
 
@@ -39,6 +46,28 @@ let root: Root | null = null;
 let serverEventHandlers: Array<(event: ServerEvent) => void> = [];
 
 const workspace = "/tmp/wuu-drawer-test";
+
+function threadFixture(
+  id: string,
+  title: string,
+  updatedAt: string,
+): Thread {
+  return {
+    id,
+    preview: title,
+    title,
+    model_provider: "fake",
+    model: "fake-model",
+    cwd: workspace,
+    workspace_kind: "scratch",
+    status: "idle",
+    pinned: false,
+    archived: false,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: updatedAt,
+    turns: [],
+  };
+}
 
 function initialized(): InitializeResult {
   return {
@@ -82,7 +111,7 @@ function installWindowStubs(): void {
   });
 }
 
-function installWuuApi(): void {
+function installWuuApi(threads: Thread[] = []): void {
   const projectState = (): {
     projects: never[];
     active_context: { kind: "no_project"; cwd: string };
@@ -98,8 +127,11 @@ function installWuuApi(): void {
       .fn()
       .mockImplementation(() => Promise.resolve(projectState())),
     initialize: vi.fn().mockResolvedValue(initialized()),
-    listThreads: vi.fn().mockResolvedValue({ threads: [] }),
-    resumeThread: vi.fn().mockResolvedValue({ thread: undefined }),
+    listThreads: vi.fn().mockResolvedValue({ threads }),
+    resumeThread: vi.fn().mockImplementation((threadID?: string) => {
+      const thread = threads.find((item) => item.id === threadID) ?? threads[0];
+      return Promise.resolve({ thread });
+    }),
     getActiveGoalSummary: vi.fn().mockResolvedValue(null),
     gitStatus: vi.fn().mockResolvedValue({
       is_repo: false,
@@ -144,6 +176,17 @@ async function renderCollapsedApp(): Promise<void> {
   });
   await flushAsync();
   expect(appShell()?.classList.contains("sidebar-collapsed")).toBe(true);
+}
+
+async function clickSidebarSession(label: string): Promise<void> {
+  const sessionButton = container.querySelector<HTMLButtonElement>(
+    `.thread-row-main[aria-label^="${label}"]`,
+  );
+  expect(sessionButton).not.toBeNull();
+  await act(async () => {
+    sessionButton?.click();
+    await Promise.resolve();
+  });
 }
 
 async function openDrawerViaHoverZone(): Promise<void> {
@@ -289,6 +332,30 @@ describe("collapsed sidebar hover drawer", () => {
     await act(async () => {
       window.dispatchEvent(new Event("blur"));
     });
+
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
+      true,
+    );
+  });
+
+  it("closes the drawer after selecting a sidebar session", async () => {
+    installWuuApi([
+      threadFixture(
+        "thread-active",
+        "Already open session",
+        "2026-01-02T00:00:00Z",
+      ),
+      threadFixture(
+        "thread-target",
+        "Session from hover drawer",
+        "2026-01-01T00:00:00Z",
+      ),
+    ]);
+    await renderCollapsedApp();
+    await openDrawerViaHoverZone();
+
+    await clickSidebarSession("Session from hover drawer");
 
     expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
     expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
