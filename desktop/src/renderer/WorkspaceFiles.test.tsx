@@ -191,6 +191,7 @@ describe("WorkspaceFileTree", () => {
 
     expect(readWorkspaceFile).toHaveBeenCalledWith("AGENTS.md", "/repo");
     expect(container.querySelector(".workspace-code-editor .cm-editor")).not.toBeNull();
+    expect(container.querySelector(".workspace-file-preview-header")).toBeNull();
     expect(container.textContent).toContain("Execution Autonomy");
   });
 

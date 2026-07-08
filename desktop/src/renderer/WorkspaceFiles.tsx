@@ -23,7 +23,7 @@ import type {
   WorkspaceFileTreeEntry
 } from "../shared/protocol";
 import { WorkspaceCodeEditor } from "./WorkspaceCodeEditor";
-import { desktopApiErrorMessage, formatBytes } from "./WorkspaceReviewHelpers";
+import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
 type DirectoryLoadState = {
   entries?: WorkspaceFileTreeEntry[];
@@ -659,16 +659,7 @@ export function WorkspaceFilePreview({
   }
 
   return (
-    <article className="workspace-file-preview">
-      <header className="workspace-file-preview-header">
-        <div>
-          <strong>{file.path}</strong>
-          <span>
-            {formatBytes(file.size_bytes)}
-            {file.truncated ? " · 仅显示前 512 KB" : ""}
-          </span>
-        </div>
-      </header>
+    <article className="workspace-file-preview editor-only">
       <div className="workspace-file-editor-scroll">
         <WorkspaceCodeEditor path={file.path} text={file.text ?? ""} />
       </div>

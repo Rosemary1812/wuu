@@ -26,6 +26,9 @@ describe("workspace file preview layout", () => {
     );
     expect(cssRuleBody(".workspace-file-preview")).toMatch(/height:\s*100%;/);
     expect(cssRuleBody(".workspace-file-preview")).toMatch(/min-height:\s*0;/);
+    expect(cssRuleBody(".workspace-file-preview.editor-only")).toMatch(
+      /grid-template-rows:\s*minmax\(0,\s*1fr\);/,
+    );
     expect(cssRuleBody(".workspace-file-editor-scroll")).toMatch(/overflow:\s*hidden;/);
     expect(cssRuleBody(".workspace-code-editor")).toMatch(/height:\s*100%;/);
     expect(cssRuleBody(".workspace-code-editor .cm-scroller")).toMatch(/overflow:\s*auto;/);
