@@ -16,6 +16,16 @@ function cssRuleBody(selector: string): string {
 }
 
 describe("workspace right panel chrome", () => {
+  it("matches the visible session titlebar height so the pane headers align", () => {
+    expect(cssRuleBody(".workspace-right-panel")).toMatch(
+      /grid-template-rows:\s*48px\s+minmax\(0,\s*1fr\);/,
+    );
+    expect(cssRuleBody(".workspace-right-panel.detail")).toMatch(
+      /grid-template-rows:\s*48px\s+minmax\(0,\s*1fr\);/,
+    );
+    expect(cssRuleBody(".workspace-panel-tabbar")).toMatch(/height:\s*48px;/);
+  });
+
   it("lets the docked panel tabbar drag the window while controls stay clickable", () => {
     expect(cssRuleBody(".workspace-panel-tabbar")).toMatch(
       /-webkit-app-region:\s*drag;/,

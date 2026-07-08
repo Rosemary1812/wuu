@@ -97,7 +97,7 @@
   min-height: 0;
   width: auto;
   contain: strict;
-  grid-template-rows: 46px minmax(0, 1fr);
+  grid-template-rows: 48px minmax(0, 1fr);
   overflow: hidden;
   border-left: 1px solid transparent;
   background: var(--surface-1);
@@ -113,7 +113,7 @@
 }
 
 .workspace-right-panel.detail {
-  grid-template-rows: 46px minmax(0, 1fr);
+  grid-template-rows: 48px minmax(0, 1fr);
 }
 
 .bottom-panel-open .workspace-right-panel {
@@ -135,7 +135,7 @@
 .workspace-panel-tabbar {
   display: flex;
   min-width: 0;
-  height: 46px;
+  height: 48px;
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid var(--surface-3);
