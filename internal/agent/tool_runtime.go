@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -281,9 +280,6 @@ func (r *TurnToolRuntime) ExecuteFinalCalls(
 	if r == nil {
 		r = NewTurnToolRuntime(nil)
 	}
-	if msgs, rejected := r.rejectPostMessagePieceDoneBatch(calls, onResult, firstToolBatchRejectionCallback(onRejected)); rejected {
-		return msgs
-	}
 	if msgs, rejected := r.rejectBarrierToolBatch(calls, onResult, firstToolBatchRejectionCallback(onRejected)); rejected {
 		return msgs
 	}
@@ -296,71 +292,6 @@ func (r *TurnToolRuntime) ExecuteFinalCalls(
 		r.requestContext = append(r.requestContext, batchResult.requestContext...)
 	}
 	return toolMessages
-}
-
-func (r *TurnToolRuntime) rejectPostMessagePieceDoneBatch(
-	calls []providers.ToolCall,
-	onResult func(providers.ToolCall, string),
-	onRejected func(ToolBatchRejectionInfo),
-) ([]providers.ChatMessage, bool) {
-	if len(calls) <= 1 {
-		return nil, false
-	}
-	hasPostMessage := false
-	hasPieceDone := false
-	for _, call := range calls {
-		if strings.EqualFold(strings.TrimSpace(call.Name), "post_message") {
-			hasPostMessage = true
-		}
-		if isManageTaskPieceDoneCall(call) {
-			hasPieceDone = true
-		}
-	}
-	if !hasPostMessage || !hasPieceDone {
-		return nil, false
-	}
-	r.Cancel()
-	const barrierName = "post_message+piece_done"
-	if onRejected != nil {
-		onRejected(ToolBatchRejectionInfo{
-			StepIndex:     r.currentStepIndex(),
-			BarrierTool:   barrierName,
-			SiblingTools:  siblingToolNames(calls, barrierName),
-			ToolCallCount: len(calls),
-		})
-	}
-	msgs := make([]providers.ChatMessage, 0, len(calls))
-	for _, call := range calls {
-		result := postMessagePieceDoneBatchRejectionResult(call)
-		if onResult != nil {
-			onResult(call, result)
-		}
-		msgs = append(msgs, toolResultMessage(call, result, nil, false))
-	}
-	return msgs, true
-}
-
-func isManageTaskPieceDoneCall(call providers.ToolCall) bool {
-	if !strings.EqualFold(strings.TrimSpace(call.Name), "manage_task") {
-		return false
-	}
-	var params struct {
-		Action string `json:"action"`
-	}
-	if err := json.Unmarshal([]byte(call.Arguments), &params); err != nil {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(params.Action), "piece_done")
-}
-
-func postMessagePieceDoneBatchRejectionResult(call providers.ToolCall) string {
-	if strings.EqualFold(strings.TrimSpace(call.Name), "post_message") {
-		return errorJSON(errors.New("post_message was not executed because manage_task action=piece_done was called in the same assistant message; first publish visible work by calling post_message alone, wait for status=\"posted\", then call manage_task action=piece_done in the next step"))
-	}
-	if isManageTaskPieceDoneCall(call) {
-		return errorJSON(errors.New("manage_task action=piece_done must not be called in the same assistant message as post_message; first publish visible work by calling post_message alone, wait for status=\"posted\", then report piece_done in the next step"))
-	}
-	return errorJSON(errors.New("not executed because post_message and manage_task action=piece_done must be split into separate assistant messages"))
 }
 
 func (r *TurnToolRuntime) rejectBarrierToolBatch(

@@ -38,8 +38,6 @@ func TestPostMessageToolDescriptionTeachesGroupThreadID(t *testing.T) {
 	for _, want := range []string{
 		"For group chat replies, set thread_id to the source thread_id from the incoming_message.",
 		"Plain assistant text is private and is not posted to the group.",
-		"call post_message alone first and wait for status=\"posted\"",
-		"never call post_message and piece_done in the same assistant tool-call batch",
 	} {
 		if !strings.Contains(def.Description, want) {
 			t.Fatalf("post_message description missing %q:\n%s", want, def.Description)
