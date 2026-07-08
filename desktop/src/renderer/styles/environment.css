@@ -1491,31 +1491,48 @@
   gap: 10px;
 }
 
+.thread-rename-overlay {
+  padding-top: min(176px, 18vh);
+}
+
 .thread-rename-dialog {
-  --environment-dialog-max-width: 520px;
-  gap: 12px;
+  width: clamp(420px, 42vw, 560px);
+  grid-template-rows: auto auto;
+  max-height: none;
 }
 
-.thread-rename-dialog .environment-dialog-icon {
-  background: var(--surface-1);
+.thread-rename-input-wrap {
+  grid-template-columns: 24px minmax(0, 1fr) 1px;
 }
 
-.thread-rename-field {
+.thread-rename-input-wrap .thread-rename-input {
+  font-size: 18px;
+}
+
+.thread-rename-actions {
+  padding-top: 8px;
+}
+
+.thread-rename-buttons {
+  display: inline-flex;
   gap: 8px;
 }
 
-.thread-rename-input {
-  height: 42px;
-  font-size: var(--font-ui-lg);
+.thread-rename-buttons button {
+  min-width: 72px;
+  border-radius: var(--radius-sm);
+  font-weight: var(--weight-semibold);
+  padding: 7px 12px;
 }
 
-.thread-rename-dialog .environment-dialog-footer {
-  padding-top: 4px;
+.thread-rename-buttons button[type="submit"] {
+  background: var(--ink);
+  color: var(--paper);
 }
 
-.thread-rename-dialog .primary-button,
-.thread-rename-dialog .secondary-button {
-  min-width: 86px;
+.thread-rename-buttons button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 /* Fork-from-earlier picker. Reuses the .environment-dialog shell so the

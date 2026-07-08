@@ -1,8 +1,8 @@
 import { Archive, Folder, FolderOpen, GitFork, MessageSquare, MessageSquarePlus, MessagesSquare, Pin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { DesktopProject } from "../shared/protocol";
 import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
-import { Modal } from "./Modal";
 import { SidebarSection } from "./SidebarSection";
 import { baseThreadTitle, threadShowsForkMarker } from "./ThreadTitles";
 import { isThreadRunning, isThreadUnread, threadProjectPath, type ThreadSummary } from "./AppState";
@@ -718,44 +718,88 @@ function ThreadRows({
         />
       ) : null}
       {renameDialog ? (
-        <Modal
-          ariaLabel="重命名对话"
-          icon={<MessageSquare className="icon" />}
-          title="重命名对话"
-          subtitle="保持简短好认"
+        <ThreadRenameDialog
+          title={renameTitle}
+          onTitleChange={setRenameTitle}
           onClose={closeRenameDialog}
-          panelClassName="thread-rename-dialog"
-          asForm
           onSubmit={submitRenameDialog}
-          footer={
-            <>
-              <button className="secondary-button" type="button" onClick={closeRenameDialog}>
-                取消
-              </button>
-              <button
-                className="primary-button"
-                type="submit"
-                disabled={renameTitle.trim().length === 0}
-              >
-                保存
-              </button>
-            </>
-          }
-        >
-          <label className="environment-field thread-rename-field">
-            <span>标题</span>
-            <input
-              className="thread-rename-input"
-              type="text"
-              value={renameTitle}
-              aria-label="对话标题"
-              onChange={(event) => setRenameTitle(event.currentTarget.value)}
-              onFocus={(event) => event.currentTarget.select()}
-            />
-          </label>
-        </Modal>
+        />
       ) : null}
     </>
+  );
+}
+
+function ThreadRenameDialog({
+  title,
+  onTitleChange,
+  onClose,
+  onSubmit,
+}: {
+  title: string;
+  onTitleChange: (title: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}): JSX.Element {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      className="conversation-search-overlay thread-rename-overlay"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <form
+        className="conversation-search-dialog thread-rename-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="重命名对话"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+      >
+        <div className="conversation-search-input-wrap thread-rename-input-wrap">
+          <MessageSquare className="icon-lg" aria-hidden="true" />
+          <input
+            className="thread-rename-input"
+            value={title}
+            aria-label="对话标题"
+            placeholder="对话标题"
+            autoFocus
+            onChange={(event) => onTitleChange(event.currentTarget.value)}
+            onFocus={(event) => event.currentTarget.select()}
+          />
+          <span aria-hidden="true" />
+        </div>
+        <div className="conversation-search-status thread-rename-actions">
+          <span className="conversation-search-status-text">
+            重命名对话
+          </span>
+          <span className="thread-rename-buttons">
+            <button type="button" onClick={onClose}>
+              取消
+            </button>
+            <button type="submit" disabled={title.trim().length === 0}>
+              保存
+            </button>
+          </span>
+        </div>
+      </form>
+    </div>,
+    document.body,
   );
 }
 

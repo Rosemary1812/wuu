@@ -373,11 +373,16 @@ describe("ProjectList", () => {
       button?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     });
 
-    const dialog = container.querySelector(".thread-rename-dialog");
+    const overlay = document.body.querySelector(
+      ".conversation-search-overlay.thread-rename-overlay",
+    );
+    expect(overlay).not.toBeNull();
+    expect(container.querySelector(".thread-rename-dialog")).toBeNull();
+    const dialog = document.body.querySelector(".thread-rename-dialog");
     expect(dialog?.getAttribute("role")).toBe("dialog");
     expect(dialog?.textContent).toContain("重命名对话");
 
-    const input = container.querySelector<HTMLInputElement>(
+    const input = document.body.querySelector<HTMLInputElement>(
       ".thread-rename-input",
     );
     expect(input?.value).toBe("Old title");
@@ -385,7 +390,7 @@ describe("ProjectList", () => {
     act(() => {
       changeInput(input!, "New title");
     });
-    const save = Array.from(container.querySelectorAll("button")).find(
+    const save = Array.from(document.body.querySelectorAll("button")).find(
       (el) => el.textContent === "保存",
     );
     expect(save).not.toBeUndefined();
@@ -394,7 +399,7 @@ describe("ProjectList", () => {
     });
 
     expect(onRename).toHaveBeenCalledWith(thread, "New title");
-    expect(container.querySelector(".thread-rename-dialog")).toBeNull();
+    expect(document.body.querySelector(".thread-rename-dialog")).toBeNull();
   });
 
   it("opens the same rename dialog from the context menu instead of window.prompt", () => {
@@ -448,16 +453,21 @@ describe("ProjectList", () => {
         );
       });
 
-      const dialog = container.querySelector(".thread-rename-dialog");
+      const overlay = document.body.querySelector(
+        ".conversation-search-overlay.thread-rename-overlay",
+      );
+      expect(overlay).not.toBeNull();
+      expect(container.querySelector(".thread-rename-dialog")).toBeNull();
+      const dialog = document.body.querySelector(".thread-rename-dialog");
       expect(dialog?.getAttribute("role")).toBe("dialog");
-      const input = container.querySelector<HTMLInputElement>(
+      const input = document.body.querySelector<HTMLInputElement>(
         ".thread-rename-input",
       );
       expect(input?.value).toBe("Old title");
       act(() => {
         changeInput(input!, "New title");
       });
-      const save = Array.from(container.querySelectorAll("button")).find(
+      const save = Array.from(document.body.querySelectorAll("button")).find(
         (el) => el.textContent === "保存",
       );
       act(() => {
