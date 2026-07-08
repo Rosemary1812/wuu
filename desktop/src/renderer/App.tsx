@@ -2391,8 +2391,19 @@ export function App(): JSX.Element {
     clearSidebarDrawerOpenTimer();
   }, [clearSidebarDrawerOpenTimer]);
 
+  const windowResizeActive = useCallback(
+    (): boolean =>
+      windowResizingRef.current ||
+      document.documentElement.classList.contains(WINDOW_RESIZING_CLASS),
+    [],
+  );
+
   const openSidebarDrawer = useCallback((): void => {
-    if (resizingSidebar || sidebarDrawerSuppressedRef.current) {
+    if (
+      resizingSidebar ||
+      windowResizeActive() ||
+      sidebarDrawerSuppressedRef.current
+    ) {
       return;
     }
     clearSidebarDrawerOpenTimer();
@@ -2405,11 +2416,17 @@ export function App(): JSX.Element {
     clearSidebarDrawerOpenTimer,
     resizingSidebar,
     sidebarCollapsed,
+    windowResizeActive,
   ]);
 
   const scheduleSidebarDrawerOpen = useCallback((): void => {
     sidebarHoverZoneActiveRef.current = true;
-    if (resizingSidebar || sidebarDrawerSuppressedRef.current || !sidebarCollapsed) {
+    if (
+      resizingSidebar ||
+      windowResizeActive() ||
+      sidebarDrawerSuppressedRef.current ||
+      !sidebarCollapsed
+    ) {
       return;
     }
     clearSidebarDrawerOpenTimer();
@@ -2421,6 +2438,7 @@ export function App(): JSX.Element {
       if (
         !sidebarHoverZoneActiveRef.current ||
         resizingSidebar ||
+        windowResizeActive() ||
         sidebarDrawerSuppressedRef.current
       ) {
         return;
@@ -2433,6 +2451,7 @@ export function App(): JSX.Element {
     clearSidebarDrawerOpenTimer,
     resizingSidebar,
     sidebarCollapsed,
+    windowResizeActive,
   ]);
 
   const closeSidebarDrawer = useCallback((): void => {
@@ -2477,6 +2496,22 @@ export function App(): JSX.Element {
       cancelSidebarDrawerOpen();
     }
   }, [cancelSidebarDrawerOpen, resizingSidebar, sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!sidebarCollapsed) {
+      return undefined;
+    }
+    function handleWindowResizeForSidebarDrawer(): void {
+      cancelSidebarDrawerOpen();
+      clearSidebarDrawerCloseTimer();
+      setSidebarDrawerPhase((current) =>
+        current === "closed" ? current : "closed",
+      );
+    }
+    window.addEventListener("resize", handleWindowResizeForSidebarDrawer);
+    return () =>
+      window.removeEventListener("resize", handleWindowResizeForSidebarDrawer);
+  }, [cancelSidebarDrawerOpen, clearSidebarDrawerCloseTimer, sidebarCollapsed]);
 
   useEffect(() => {
     if (!sidebarCollapsed || sidebarDrawerPhase !== "open") {

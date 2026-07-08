@@ -40,6 +40,7 @@ vi.mock("./WorkspaceMonacoEditor", () => ({
 
 import { App, SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./App";
 import { SIDEBAR_MOTION_MS } from "./AppLayoutState";
+import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -223,6 +224,7 @@ describe("collapsed sidebar hover drawer", () => {
     });
     root = null;
     container.remove();
+    document.documentElement.classList.remove(WINDOW_RESIZING_CLASS);
     Reflect.deleteProperty(globalThis, "ResizeObserver");
     delete (globalThis as { wuu?: WuuDesktopApi }).wuu;
   });
@@ -264,6 +266,39 @@ describe("collapsed sidebar hover drawer", () => {
         }),
       );
       vi.advanceTimersByTime(SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS);
+    });
+
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
+      false,
+    );
+  });
+
+  it("does not open the drawer while the window is resizing", async () => {
+    await renderCollapsedApp();
+    const zone = container.querySelector<HTMLElement>(".sidebar-hover-zone");
+    expect(zone).not.toBeNull();
+
+    await act(async () => {
+      document.documentElement.classList.add(WINDOW_RESIZING_CLASS);
+      zone?.dispatchEvent(
+        new MouseEvent("pointerover", { bubbles: true, relatedTarget: null }),
+      );
+      vi.advanceTimersByTime(SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS);
+    });
+
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
+      false,
+    );
+  });
+
+  it("closes an open drawer immediately when window resize starts", async () => {
+    await renderCollapsedApp();
+    await openDrawerViaHoverZone();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("resize"));
     });
 
     expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
