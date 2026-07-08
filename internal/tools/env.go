@@ -454,6 +454,15 @@ type TaskManager interface {
 	// belongs to the human (exec state needs_human + a blocked trace event
 	// with the reason). It wakes nobody — the human decides from the board.
 	NeedHuman(ctx context.Context, subthreadID, reason string) (TaskView, error)
+	// NeedUpstream is the assignee's fallback when the handoff its upstream
+	// gave it is insufficient (plan §T8): it bounces the work back instead of
+	// working around a bad input or rewriting the plan. The caller must be the
+	// piece's assignee, actively running it, and the piece must depend on an
+	// upstream. The downstream node is parked to pending and each upstream is
+	// re-dispatched with a directive naming what was missing; when an upstream
+	// re-files piece_done the engine re-runs the downstream with its fresh
+	// handoff.
+	NeedUpstream(ctx context.Context, subthreadID, pieceID, reason string) (TaskView, error)
 	// UnfollowTask removes the caller from the task's push subset; the task
 	// stays readable via fetch_thread_messages.
 	UnfollowTask(ctx context.Context, subthreadID string) error

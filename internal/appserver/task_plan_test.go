@@ -18,7 +18,12 @@ import (
 
 func planFixture(t *testing.T) (srv *Server, groupID, andy, mia, han, vera string) {
 	t.Helper()
-	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
+	// A woken plan assignee must COMPLETE its turn: an empty model answer with
+	// no stop reason classifies as a retryable runtime failure (agentcontrol),
+	// which the plan engine now (plan §T8) retries. A benign non-empty answer
+	// completes the turn so the dispatch is a clean no-op — plan wakes are
+	// never addressed, so a completed turn posts no fallback either.
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("ok")})
 	srv = New(rt, &lockedBuffer{})
 	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 	andy = saveNamedParticipant(t, rt, "Andy", "lead", "")

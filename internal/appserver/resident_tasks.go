@@ -320,6 +320,106 @@ func (m *residentTaskManager) NeedHuman(ctx context.Context, subthreadID, reason
 	return m.taskView(thread), nil
 }
 
+// NeedUpstream is the assignee-driven fallback (plan §T8): a node discovers the
+// handoff its upstream gave it is insufficient and bounces the work back rather
+// than silently working around a bad input or rewriting the plan (that is the
+// lead's alone). The caller must be the downstream piece's assignee and be
+// actively running it; the piece must actually depend on an upstream to fall
+// back to. The downstream node is parked back to pending (it re-runs once the
+// refreshed upstream re-files), every upstream is re-activated and its assignee
+// woken with a targeted directive naming what was missing, and the fallback is
+// traced (a blocked event on the downstream, a retrying event on each upstream).
+// The engine is not advanced here — the downstream waits on the upstream's fresh
+// piece_done, which advancePlan then acts on.
+func (m *residentTaskManager) NeedUpstream(ctx context.Context, subthreadID, pieceID, reason string) (tools.TaskView, error) {
+	_ = ctx
+	if err := m.ready("need_upstream"); err != nil {
+		return tools.TaskView{}, err
+	}
+	thread, _, err := m.memberTask("need_upstream", subthreadID)
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	pieceID = strings.TrimSpace(pieceID)
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return tools.TaskView{}, errors.New("need_upstream: reason is required (what the upstream handoff is missing)")
+	}
+	var piece *session.TaskPiece
+	for i := range thread.Plan {
+		if thread.Plan[i].ID == pieceID {
+			piece = &thread.Plan[i]
+			break
+		}
+	}
+	if piece == nil {
+		return tools.TaskView{}, fmt.Errorf("need_upstream: task %q has no piece %q", thread.ID, pieceID)
+	}
+	if piece.Assignee != m.participantID {
+		return tools.TaskView{}, fmt.Errorf("need_upstream: piece %q is assigned to %q, not you — only its assignee may bounce work back to the upstream", pieceID, piece.Assignee)
+	}
+	if piece.Status != session.TaskPieceActive && piece.Status != session.TaskPieceRetrying {
+		return tools.TaskView{}, fmt.Errorf("need_upstream: piece %q is %q, not active — only a node you are actively running can report its upstream insufficient", pieceID, piece.Status)
+	}
+	if len(piece.DependsOn) == 0 {
+		return tools.TaskView{}, fmt.Errorf("need_upstream: piece %q depends on nothing — there is no upstream node to fall back to", pieceID)
+	}
+	downstreamTitle := piece.Title
+	upstreamIDs := make([]string, 0, len(piece.DependsOn))
+	for _, dep := range piece.DependsOn {
+		if dep = strings.TrimSpace(dep); dep != "" {
+			upstreamIDs = append(upstreamIDs, dep)
+		}
+	}
+	// Park the downstream back to pending: it re-runs once a refreshed upstream
+	// re-files piece_done, which advancePlan will act on.
+	if _, err := session.UpdateTaskPiece(m.server.rt.SessionDir, thread.ID, pieceID, func(p *session.TaskPiece) {
+		p.Status = session.TaskPiecePending
+		p.FailureReason = reason
+		p.LastActivityAt = time.Now().UTC()
+	}); err != nil {
+		return tools.TaskView{}, fmt.Errorf("need_upstream: park downstream: %w", err)
+	}
+	payload, err := json.Marshal(map[string]any{"reason": reason, "upstreams": upstreamIDs})
+	if err != nil {
+		payload = nil
+	}
+	m.server.recordTaskEventFor(thread, pieceID, session.TaskEventBlocked, m.participantID,
+		fmt.Sprintf("bounced to upstream: %s", truncate(reason, 80)), string(payload))
+	// Re-activate every upstream and wake its assignee with targeted feedback.
+	for _, upID := range upstreamIDs {
+		reactivated, err := session.UpdateTaskPiece(m.server.rt.SessionDir, thread.ID, upID, func(p *session.TaskPiece) {
+			p.Status = session.TaskPieceActive
+			if p.Attempts < 1 {
+				p.Attempts = 1
+			}
+			p.LastActivityAt = time.Now().UTC()
+		})
+		if err != nil {
+			providers.DebugLogf("need_upstream reactivate %q/%q: %v", thread.ID, upID, err)
+			continue
+		}
+		up := findPieceByID(reactivated.Plan, upID)
+		if up == nil {
+			continue
+		}
+		// The upstream re-follows the task so it sees the wrap-up traffic again
+		// (piece_done auto-unfollowed it when it first finished).
+		if err := session.AddConversationThreadMember(m.server.rt.SessionDir, thread.ID, up.Assignee); err != nil {
+			providers.DebugLogf("need_upstream re-follow %q to %q: %v", up.Assignee, thread.ID, err)
+		}
+		m.server.recordTaskEventFor(reactivated, upID, session.TaskEventRetrying, up.Assignee,
+			fmt.Sprintf("re-opened to fix handoff for %q", downstreamTitle), "")
+		m.server.wakeUpstreamForFallback(reactivated, *up, downstreamTitle, reason)
+	}
+	m.server.notifySubthreadUpdated(thread.SessionID, thread.ID)
+	final, err := session.FindConversationThreadByID(m.server.rt.SessionDir, thread.ID)
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	return m.taskView(final), nil
+}
+
 func (m *residentTaskManager) UnfollowTask(ctx context.Context, subthreadID string) error {
 	_ = ctx
 	if err := m.ready("unfollow"); err != nil {
@@ -728,7 +828,17 @@ func (s *Server) advancePlan(taskID string) {
 		if !ready {
 			continue
 		}
-		if _, err := session.MarkTaskPieceStatus(s.rt.SessionDir, taskID, p.ID, session.TaskPieceActive); err != nil {
+		// Activation is also the first attempt: stamp Attempts to 1 the moment
+		// the node is dispatched (retry accounting, plan §T8) and refresh its
+		// activity signal. max(Attempts,1) keeps an already-counted node (a
+		// fallback re-open that pre-set Attempts) from being reset.
+		if _, err := session.UpdateTaskPiece(s.rt.SessionDir, taskID, p.ID, func(pc *session.TaskPiece) {
+			pc.Status = session.TaskPieceActive
+			if pc.Attempts < 1 {
+				pc.Attempts = 1
+			}
+			pc.LastActivityAt = time.Now().UTC()
+		}); err != nil {
 			providers.DebugLogf("advancePlan activate piece %q: %v", p.ID, err)
 			continue
 		}
@@ -882,6 +992,95 @@ func (s *Server) wakePlanLeadForPlanning(task session.ConversationThread) {
 		CreatedAt:           time.Now().UTC(),
 		Workspace:           workspace,
 	}, nil, true)
+}
+
+// wakePlanLeadOnFailure @-wakes the task's lead after a node has failed
+// terminally (its retries are spent, or it hit a failure retrying cannot fix).
+// This is the plan §T6 failure wake: the successful path never wakes the lead
+// mid-run, but a dead node pauses the task (ExecState blocked) pending the
+// lead's decision. The lead falls back to LeadParticipantID then CreatedBy; a
+// leadless task is a loudly-logged no-op (nobody holds orchestration authority
+// to recover it). The wake names the failed node and its reason and points the
+// lead at the three recovery levers — revise the plan (set_plan re-dispatches),
+// flag the human (need_human), or wrap it up (update_status) — after reading
+// the task's trace to see what happened.
+func (s *Server) wakePlanLeadOnFailure(task session.ConversationThread, piece session.TaskPiece, reason string) {
+	lead := firstNonEmpty(strings.TrimSpace(task.LeadParticipantID), strings.TrimSpace(task.CreatedBy))
+	if lead == "" {
+		providers.DebugLogf("wakePlanLeadOnFailure: task %q has no lead to wake on node %q failure", task.ID, piece.ID)
+		return
+	}
+	pieceLabel := firstNonEmpty(strings.TrimSpace(piece.Title), piece.ID)
+	title, workspace := s.taskThreadContext(task.SessionID)
+	s.recordTaskEventFor(task, "", session.TaskEventLeadInvoked, lead,
+		fmt.Sprintf("lead woken on node failure: %s", pieceLabel), "")
+	text := fmt.Sprintf(
+		"Node %q of task %q failed and its retries are spent: %s. The task is paused (blocked) pending your decision. Read its trace to see what happened, then recover: revise the plan (manage_task action=set_plan — reassign or resequence; that re-dispatches), flag it for the human (manage_task action=need_human subthread_id=%q), or wrap it up (manage_task action=update_status subthread_id=%q).",
+		pieceLabel, firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), reason, task.ID, task.ID,
+	)
+	s.deliverEnvelopeToMembers([]string{lead}, MessageEnvelope{
+		SourceThreadID:      task.SessionID,
+		SourceSubthreadID:   task.ID,
+		SourceTitle:         title,
+		SenderKind:          "system",
+		SenderName:          "task plan",
+		SenderParticipantID: "",
+		Text:                text,
+		CreatedAt:           time.Now().UTC(),
+		Workspace:           workspace,
+	}, nil, true)
+}
+
+// wakeUpstreamForFallback re-dispatches an upstream node whose handoff a
+// downstream node reported insufficient (the need_upstream fallback, plan §T8).
+// It is a plain plan-engine dispatch (same system "task plan" envelope shape as
+// wakePieceAssignee) carrying the upstream's original briefing plus a labeled
+// block naming the downstream node and exactly what it found missing, so the
+// upstream can revise its work and re-file piece_done with an updated handoff.
+func (s *Server) wakeUpstreamForFallback(task session.ConversationThread, upstream session.TaskPiece, downstreamTitle, reason string) {
+	title, workspace := s.taskThreadContext(task.SessionID)
+	var b strings.Builder
+	fmt.Fprintf(&b,
+		"A downstream node (%q) reports your handoff was insufficient: %s. Revise your work and re-file piece_done with an updated handoff.",
+		downstreamTitle, reason,
+	)
+	fmt.Fprintf(&b,
+		"\n\nRe-open your piece of task %q: %q.",
+		firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), upstream.Title,
+	)
+	if prompt := strings.TrimSpace(upstream.Prompt); prompt != "" {
+		b.WriteString("\n\nYour original briefing:\n")
+		b.WriteString(prompt)
+	}
+	fmt.Fprintf(&b,
+		"\n\nWork in this task thread (thread_id=%q); when finished, file it with manage_task action=piece_done piece_id=%q and hand your revised result in the handoff.",
+		task.ID, upstream.ID,
+	)
+	s.deliverEnvelopeToMembers([]string{upstream.Assignee}, MessageEnvelope{
+		SourceThreadID:      task.SessionID,
+		SourceSubthreadID:   task.ID,
+		SourceTitle:         title,
+		SenderKind:          "system",
+		SenderName:          "task plan",
+		SenderParticipantID: "",
+		Text:                b.String(),
+		CreatedAt:           time.Now().UTC(),
+		Workspace:           workspace,
+	}, nil, true)
+}
+
+// findPieceByID returns a pointer to the plan piece with the given id, or nil.
+// Used to re-read a piece out of the thread returned by UpdateTaskPiece (which
+// already carries the just-applied mutation) so a follow-up wake dispatches the
+// fresh node state.
+func findPieceByID(plan []session.TaskPiece, id string) *session.TaskPiece {
+	id = strings.TrimSpace(id)
+	for i := range plan {
+		if plan[i].ID == id {
+			return &plan[i]
+		}
+	}
+	return nil
 }
 
 // taskThreadContext returns the parent thread's display title and workspace

@@ -843,6 +843,10 @@ func (s *Server) afterResidentTurn(th *threadState, participantID string, envs [
 	if len(envs) > 0 {
 		s.recordUnansweredAddressedEnvelopes(th, participantID, envs, turn, completedAt)
 	}
+	// React to a plan node whose executing turn failed: retry against budget,
+	// or fail the node and wake the lead (plan §T8). No-op unless this batch
+	// was a plan dispatch and the turn is a retryable/hard failure.
+	s.retryOrFailTaskNodesAfterTurn(participantID, envs, turn)
 	s.kickResidentAgent(participantID)
 }
 
