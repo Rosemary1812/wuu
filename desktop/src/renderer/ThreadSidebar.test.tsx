@@ -37,6 +37,15 @@ function render(props: { title: string }): { span: HTMLSpanElement | null; getKe
   };
 }
 
+function changeInput(input: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 describe("ThreadRowTitle", () => {
   it("renders the title text", () => {
     const { span } = render({ title: "Fix login crash" });
@@ -333,20 +342,68 @@ describe("ProjectList", () => {
     ).toContain("响应中");
   });
 
-  it("routes context-menu renames through the sidebar owner", () => {
+  it("opens the rename dialog from a double-click and saves through the sidebar owner", () => {
+    const [thread] = summarizeThreadsForSidebar([
+      makeProjectThread("thread-rename", "/repo/wuu", "Old title"),
+    ]);
+    const onRename = vi.fn();
+
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <PinnedThreadList
+          threads={[thread]}
+          activeID={undefined}
+          pendingThreadID={undefined}
+          archiveConfirmThreadID={undefined}
+          lastViewedTurnByThreadID={{}}
+          onSelect={() => {}}
+          onTogglePinned={() => {}}
+          onArchive={() => {}}
+          onDelete={() => {}}
+          onRename={onRename}
+          onClearArchiveConfirm={() => {}}
+        />,
+      );
+    });
+
+    const button = container.querySelector(".thread-row-main");
+    expect(button).not.toBeNull();
+    act(() => {
+      button?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    });
+
+    const dialog = container.querySelector(".thread-rename-dialog");
+    expect(dialog?.getAttribute("role")).toBe("dialog");
+    expect(dialog?.textContent).toContain("重命名对话");
+
+    const input = container.querySelector<HTMLInputElement>(
+      ".thread-rename-input",
+    );
+    expect(input?.value).toBe("Old title");
+
+    act(() => {
+      changeInput(input!, "New title");
+    });
+    const save = Array.from(container.querySelectorAll("button")).find(
+      (el) => el.textContent === "保存",
+    );
+    expect(save).not.toBeUndefined();
+    act(() => {
+      save?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(onRename).toHaveBeenCalledWith(thread, "New title");
+    expect(container.querySelector(".thread-rename-dialog")).toBeNull();
+  });
+
+  it("opens the same rename dialog from the context menu instead of window.prompt", () => {
     const [thread] = summarizeThreadsForSidebar([
       makeProjectThread("thread-rename", "/repo/wuu", "Old title"),
     ]);
     const onRename = vi.fn();
     const originalPrompt = window.prompt;
-    const originalWuu = window.wuu;
-    window.prompt = vi.fn().mockReturnValue("New title");
-    window.wuu = {
-      ...originalWuu,
-      renameThread: vi.fn().mockResolvedValue({
-        thread: { ...thread, title: "New title" },
-      }),
-    } as typeof window.wuu;
+    window.prompt = vi.fn();
 
     try {
       act(() => {
@@ -391,11 +448,26 @@ describe("ProjectList", () => {
         );
       });
 
+      const dialog = container.querySelector(".thread-rename-dialog");
+      expect(dialog?.getAttribute("role")).toBe("dialog");
+      const input = container.querySelector<HTMLInputElement>(
+        ".thread-rename-input",
+      );
+      expect(input?.value).toBe("Old title");
+      act(() => {
+        changeInput(input!, "New title");
+      });
+      const save = Array.from(container.querySelectorAll("button")).find(
+        (el) => el.textContent === "保存",
+      );
+      act(() => {
+        save?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+
       expect(onRename).toHaveBeenCalledWith(thread, "New title");
-      expect(window.wuu.renameThread).not.toHaveBeenCalled();
+      expect(window.prompt).not.toHaveBeenCalled();
     } finally {
       window.prompt = originalPrompt;
-      window.wuu = originalWuu;
     }
   });
 

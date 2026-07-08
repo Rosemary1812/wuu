@@ -2,6 +2,7 @@ import { Archive, Folder, FolderOpen, GitFork, MessageSquare, MessageSquarePlus,
 import { useEffect, useRef, useState } from "react";
 import type { DesktopProject } from "../shared/protocol";
 import { copyToClipboard, ThreadContextMenu } from "./ThreadContextMenu";
+import { Modal } from "./Modal";
 import { SidebarSection } from "./SidebarSection";
 import { baseThreadTitle, threadShowsForkMarker } from "./ThreadTitles";
 import { isThreadRunning, isThreadUnread, threadProjectPath, type ThreadSummary } from "./AppState";
@@ -557,6 +558,11 @@ function ThreadRows({
   onSidebarThreadHover?: (threadID: string | undefined) => void;
 }): JSX.Element {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; thread: ThreadSummary } | null>(null);
+  const [renameDialog, setRenameDialog] = useState<{
+    thread: ThreadSummary;
+    initialTitle: string;
+  } | null>(null);
+  const [renameTitle, setRenameTitle] = useState("");
 
   function handleContextMenu(
     targetThread: ThreadSummary,
@@ -564,6 +570,36 @@ function ThreadRows({
   ): void {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, thread: targetThread });
+  }
+
+  function editableThreadTitle(thread: ThreadSummary): string {
+    return thread.title?.trim() || thread.preview?.trim() || "";
+  }
+
+  function openRenameDialog(thread: ThreadSummary): void {
+    if (!onRename) {
+      return;
+    }
+    const title = editableThreadTitle(thread);
+    setContextMenu(null);
+    setRenameTitle(title);
+    setRenameDialog({ thread, initialTitle: title });
+  }
+
+  function closeRenameDialog(): void {
+    setRenameDialog(null);
+    setRenameTitle("");
+  }
+
+  function submitRenameDialog(): void {
+    if (!renameDialog) {
+      return;
+    }
+    const trimmed = renameTitle.trim();
+    if (trimmed && trimmed !== renameDialog.initialTitle.trim()) {
+      onRename?.(renameDialog.thread, trimmed);
+    }
+    closeRenameDialog();
   }
 
   return (
@@ -598,6 +634,7 @@ function ThreadRows({
                 aria-busy={pendingSwitch || running}
                 aria-label={`${title}${forkMarker ? "，分叉自其他会话" : ""}，${running ? "响应中" : "已完成"}`}
                 onClick={() => onSelect(thread.id)}
+                onDoubleClick={() => openRenameDialog(thread)}
               >
                 <ThreadRowTitle title={title} />
               </button>
@@ -641,17 +678,8 @@ function ThreadRows({
             },
             {
               label: "重命名对话",
-              onSelect: () => {
-                const current =
-                  contextMenu.thread.title?.trim() ||
-                  contextMenu.thread.preview?.trim() ||
-                  "";
-                const next = window.prompt("新标题", current);
-                if (next === null) return; // user cancelled
-                const trimmed = next.trim();
-                if (!trimmed || trimmed === current) return;
-                onRename?.(contextMenu.thread, trimmed);
-              },
+              disabled: !onRename,
+              onSelect: () => openRenameDialog(contextMenu.thread),
             },
             {
               label: "复制工作目录",
@@ -688,6 +716,44 @@ function ThreadRows({
           ]}
           onClose={() => setContextMenu(null)}
         />
+      ) : null}
+      {renameDialog ? (
+        <Modal
+          ariaLabel="重命名对话"
+          icon={<MessageSquare className="icon" />}
+          title="重命名对话"
+          subtitle="保持简短好认"
+          onClose={closeRenameDialog}
+          panelClassName="thread-rename-dialog"
+          asForm
+          onSubmit={submitRenameDialog}
+          footer={
+            <>
+              <button className="secondary-button" type="button" onClick={closeRenameDialog}>
+                取消
+              </button>
+              <button
+                className="primary-button"
+                type="submit"
+                disabled={renameTitle.trim().length === 0}
+              >
+                保存
+              </button>
+            </>
+          }
+        >
+          <label className="environment-field thread-rename-field">
+            <span>标题</span>
+            <input
+              className="thread-rename-input"
+              type="text"
+              value={renameTitle}
+              aria-label="对话标题"
+              onChange={(event) => setRenameTitle(event.currentTarget.value)}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          </label>
+        </Modal>
       ) : null}
     </>
   );

@@ -1491,6 +1491,33 @@
   gap: 10px;
 }
 
+.thread-rename-dialog {
+  --environment-dialog-max-width: 520px;
+  gap: 12px;
+}
+
+.thread-rename-dialog .environment-dialog-icon {
+  background: var(--surface-1);
+}
+
+.thread-rename-field {
+  gap: 8px;
+}
+
+.thread-rename-input {
+  height: 42px;
+  font-size: var(--font-ui-lg);
+}
+
+.thread-rename-dialog .environment-dialog-footer {
+  padding-top: 4px;
+}
+
+.thread-rename-dialog .primary-button,
+.thread-rename-dialog .secondary-button {
+  min-width: 86px;
+}
+
 /* Fork-from-earlier picker. Reuses the .environment-dialog shell so the
    modal look-and-feel stays consistent with the GitHub and Approval
    dialogs; only the body content swaps to a stacked list of option
