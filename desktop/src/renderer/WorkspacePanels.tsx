@@ -13,7 +13,7 @@ import {
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { FileDiff, FolderOpen, Globe, Plus, ShieldCheck, Terminal, X } from "lucide-react";
+import { FileDiff, FolderOpen, Globe, Maximize2, Minimize2, Plus, ShieldCheck, Terminal, X } from "lucide-react";
 import type { GitStatusResult, RuntimeContext } from "../shared/protocol";
 import { TurnFileDiffPanel } from "./TurnFileDiffPanel";
 import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
@@ -94,6 +94,8 @@ export function WorkspaceRightPanel({
   onReorderTabs,
   onOpenFile,
   onClose,
+  globalized,
+  onToggleGlobalize,
   pendingBrowserURL,
   onBrowserURLConsumed,
   onBrowserURLChange
@@ -118,6 +120,8 @@ export function WorkspaceRightPanel({
   onReorderTabs: (activeID: string, overID: string) => void;
   onOpenFile: (path: string) => void;
   onClose: () => void;
+  globalized: boolean;
+  onToggleGlobalize: () => void;
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
   onBrowserURLChange?: (url: string) => void;
@@ -204,6 +208,16 @@ export function WorkspaceRightPanel({
           onClick={onShowTools}
         >
           <Plus className="icon-lg" />
+        </button>
+        <button
+          className={`icon-button workspace-panel-globalize${globalized ? " active" : ""}`}
+          type="button"
+          aria-label={globalized ? "退出全局化" : "全局化右侧栏"}
+          aria-pressed={globalized}
+          disabled={!open}
+          onClick={onToggleGlobalize}
+        >
+          {globalized ? <Minimize2 className="icon" /> : <Maximize2 className="icon" />}
         </button>
         <button
           className="icon-button workspace-panel-close"

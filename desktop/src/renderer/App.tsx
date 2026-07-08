@@ -784,6 +784,14 @@ export function App(): JSX.Element {
   const [rightPanelFilePath, setRightPanelFilePath] = useState<
     string | undefined
   >(undefined);
+  // In-window "globalize" toggle: collapse sidebar + conversation so the user
+  // can dedicate the window to browsing the right panel. Reset on close.
+  const [rightPanelGlobalized, setRightPanelGlobalized] = useState(false);
+  useEffect(() => {
+    if (!rightPanelOpen) {
+      setRightPanelGlobalized(false);
+    }
+  }, [rightPanelOpen]);
   const [environmentDialog, setEnvironmentDialog] =
     useState<EnvironmentDialog | null>(null);
   const [contextCompositionEntries, setContextCompositionEntries] = useState<
@@ -2351,7 +2359,7 @@ export function App(): JSX.Element {
     sidebarAnimating ? " sidebar-animating" : ""
   }${rightPanelAnimating ? " right-panel-animating" : ""}${resizingSidebar ? " resizing-sidebar" : ""}${
     resizingRightPanel ? " resizing-right-panel" : ""
-  }${rightPanelOpen ? " right-panel-open" : ""}${resizingSplit ? " resizing-split" : ""}${
+  }${rightPanelOpen ? " right-panel-open" : ""}${rightPanelGlobalized && rightPanelOpen ? " right-panel-globalized" : ""}${resizingSplit ? " resizing-split" : ""}${
     resizingThreadPanel ? " resizing-thread-panel" : ""
   }`;
   const shellStyle = {
@@ -9327,6 +9335,8 @@ export function App(): JSX.Element {
           onReorderTabs={reorderWorkspaceViewTabs}
           onOpenFile={openWorkspaceFile}
           onClose={() => setRightPanelOpenWithMotion(false)}
+          globalized={rightPanelGlobalized}
+          onToggleGlobalize={() => setRightPanelGlobalized((g) => !g)}
           pendingBrowserURL={pendingBrowserURL}
           onBrowserURLConsumed={consumePendingBrowserURL}
           onBrowserURLChange={rememberBrowserURLForActiveThread}

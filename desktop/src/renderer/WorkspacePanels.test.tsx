@@ -78,6 +78,8 @@ function baseProps(): Parameters<typeof WorkspaceRightPanel>[0] {
     onReorderTabs: () => {},
     onOpenFile: () => {},
     onClose: () => {},
+    globalized: false,
+    onToggleGlobalize: () => {},
   };
 }
 

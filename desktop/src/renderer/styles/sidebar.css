@@ -81,6 +81,21 @@
   padding-left: 86px;
 }
 
+/* Right-panel "globalized" focus mode: collapse sidebar + conversation so the
+ * window is dedicated to the right panel content. Toggled from a button in
+ * the right panel header. The 0/0/1fr columns match the existing 3-column
+ * shell grid, so the right panel keeps its column-3 placement and the
+ * default grid-template-columns transition animates the squeeze. */
+.app-shell.right-panel-globalized {
+  grid-template-columns: 0 0 minmax(0, 1fr);
+}
+
+.app-shell.right-panel-globalized .sidebar,
+.app-shell.right-panel-globalized .conversation-pane {
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .app-shell.bottom-panel-open {
   grid-template-rows: minmax(0, 1fr) var(--workspace-bottom-panel-height, 238px);
 }
