@@ -1905,6 +1905,14 @@ export function App(): JSX.Element {
   }, [turns]);
   const showingWorkspaceMode =
     state.initialized && !previewingLaunch && workspaceMode !== undefined;
+  const mainConversationDockVisible =
+    Boolean(state.initialized) &&
+    !previewingLaunch &&
+    !emptyConversation &&
+    !showingWorkspaceMode &&
+    !splitConversation &&
+    !showingSkillsCatalog &&
+    !showingTaskBoard;
 
   useEffect(() => {
     // Diff tabs are scoped to the thread whose turn they came from: they
@@ -9412,10 +9420,12 @@ export function App(): JSX.Element {
               </>
             )}
             </div>
-            <JumpToLatestPill
-              containerRef={conversationScrollRef}
-              bottomAnchor={dockComposerNode}
-            />
+            {mainConversationDockVisible ? (
+              <JumpToLatestPill
+                containerRef={conversationScrollRef}
+                bottomAnchor={dockComposerNode}
+              />
+            ) : null}
           </div>
         ) : (
           <RuntimeLoading
@@ -9425,24 +9435,9 @@ export function App(): JSX.Element {
           />
         )}
 
-        {state.initialized &&
-        !previewingLaunch &&
-        !emptyConversation &&
-        !showingWorkspaceMode &&
-        !splitConversation &&
-        !showingSkillsCatalog &&
-        !showingTaskBoard
-          ? renderComposer("dock")
-          : null}
+        {mainConversationDockVisible ? renderComposer("dock") : null}
 
-        {state.initialized &&
-        !previewingLaunch &&
-        !emptyConversation &&
-        !showingWorkspaceMode &&
-        !splitConversation &&
-        !showingSkillsCatalog &&
-        !showingTaskBoard &&
-        activePlanVisible ? (
+        {mainConversationDockVisible && activePlanVisible ? (
           <div
             className="jump-to-latest-cluster"
             aria-label="当前位置与进度"
