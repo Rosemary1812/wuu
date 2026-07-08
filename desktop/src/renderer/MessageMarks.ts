@@ -98,7 +98,7 @@ export function aggregateMarksBySeq(
   };
 
   for (const mark of marks) {
-    if (!mark || typeof mark.seq !== "number" || mark.seq <= 0) {
+    if (!mark || typeof mark.seq !== "number" || mark.seq < 0) {
       continue;
     }
     const view = viewFor(mark.seq);

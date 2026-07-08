@@ -34,9 +34,20 @@ describe("aggregateMarksBySeq", () => {
 
   it("ignores marks with no/invalid seq", () => {
     const marks = [
-      { seq: 0, participant_id: "a", kind: "seen", status: "completed" },
+      { seq: -1, participant_id: "a", kind: "seen", status: "completed" },
     ] as MessageMark[];
     expect(aggregateMarksBySeq(marks).size).toBe(0);
+  });
+
+  it("keeps reactions on the first persisted message (seq 0)", () => {
+    const marks: MessageMark[] = [
+      { seq: 0, participant_id: "a", kind: "reaction", reaction: "shrug" },
+      { seq: 0, participant_id: "b", kind: "reaction", reaction: "shrug" },
+    ];
+    const view = aggregateMarksBySeq(marks).get(0);
+    expect(view).toBeDefined();
+    const shrug = view!.reactions.find((r) => r.key === "shrug")!;
+    expect(shrug.participantIds).toEqual(["a", "b"]);
   });
 });
 

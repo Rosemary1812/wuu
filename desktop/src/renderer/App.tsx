@@ -2053,7 +2053,7 @@ export function App(): JSX.Element {
       // via the message/mark notification the RPC triggers, so no optimistic
       // patch is needed here.
       const seq = item.seq;
-      if (typeof seq !== "number" || seq <= 0) {
+      if (typeof seq !== "number" || seq < 0) {
         return;
       }
       void window.wuu.reactToMessage(thread.id, seq, reaction).catch((error) => {
@@ -4352,7 +4352,7 @@ export function App(): JSX.Element {
       return;
     }
     const seq = item.seq;
-    if (typeof seq !== "number" || seq <= 0) {
+    if (typeof seq !== "number" || seq < 0) {
       return;
     }
     void window.wuu

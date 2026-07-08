@@ -296,7 +296,7 @@ export function ChatThreadView({
           row={row}
           busyParticipantIDs={busyParticipantIDs}
           marks={
-            row.kind !== "envelope" && row.item.seq
+            row.kind !== "envelope" && typeof row.item.seq === "number"
               ? marksBySeq?.get(row.item.seq)
               : undefined
           }
