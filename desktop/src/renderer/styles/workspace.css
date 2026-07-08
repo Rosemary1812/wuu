@@ -1522,6 +1522,96 @@
   grid-template-rows: minmax(0, 1fr);
 }
 
+.workspace-file-editor-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--surface-3);
+  background: var(--surface-1);
+  padding: 7px 12px;
+}
+
+.workspace-file-editor-status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+}
+
+.workspace-file-editor-status > span:not(.workspace-file-editor-dot) {
+  min-width: 0;
+}
+
+.workspace-file-editor-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  background: var(--ink-tertiary);
+}
+
+.workspace-file-editor-dot.clean {
+  background: var(--success);
+}
+
+.workspace-file-editor-dot.dirty {
+  background: var(--warning);
+}
+
+.workspace-file-editor-dot.error {
+  background: var(--danger);
+}
+
+.workspace-file-editor-dot.readonly {
+  background: var(--ink-tertiary);
+}
+
+.workspace-file-editor-hint {
+  color: var(--ink-tertiary);
+}
+
+.workspace-file-editor-error {
+  overflow: hidden;
+  color: var(--danger);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-file-save-button {
+  display: inline-flex;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  color: var(--ink);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  padding: 0 9px;
+}
+
+.workspace-file-save-button:hover:not(:disabled) {
+  background: var(--surface-4);
+}
+
+.workspace-file-save-button:disabled {
+  color: var(--ink-tertiary);
+  cursor: default;
+  opacity: 0.72;
+}
+
+.workspace-file-save-button svg {
+  width: 14px;
+  height: 14px;
+}
+
 .workspace-file-preview-header {
   display: flex;
   min-width: 0;

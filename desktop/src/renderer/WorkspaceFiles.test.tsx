@@ -1,19 +1,39 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RuntimeContext, WorkspaceDirectoryListResult } from "../shared/protocol";
+import type { RuntimeContext, WorkspaceDirectoryListResult, WorkspaceFileReadResult } from "../shared/protocol";
 import { WorkspaceFilePreview, WorkspaceFileTree } from "./WorkspaceFiles";
 
 vi.mock("./WorkspaceMonacoEditor", () => ({
   WorkspaceMonacoEditor: ({
     path,
     text,
+    readOnly,
+    onChange,
+    onSave,
   }: {
     path: string;
     text: string;
+    readOnly?: boolean;
+    onChange?: (value: string) => void;
+    onSave?: () => void;
   }) => (
-    <div className="workspace-monaco-editor" data-path={path}>
-      {text}
+    <div
+      className="workspace-monaco-editor"
+      data-path={path}
+      data-readonly={readOnly ? "true" : "false"}
+      data-text={text}
+    >
+      <pre>{text}</pre>
+      <button type="button" className="mock-editor-edit" disabled={readOnly} onClick={() => onChange?.("edited code\n")}>
+        mock edit
+      </button>
+      <button type="button" className="mock-editor-edit-second" disabled={readOnly} onClick={() => onChange?.("second edit\n")}>
+        mock edit second
+      </button>
+      <button type="button" className="mock-editor-save" disabled={readOnly} onClick={() => onSave?.()}>
+        mock save
+      </button>
     </div>
   ),
 }));
@@ -30,6 +50,21 @@ const activeContext: RuntimeContext = {
   project_id: "project-1",
   cwd: "/repo",
 };
+
+function workspaceFile(overrides: Partial<WorkspaceFileReadResult> = {}): WorkspaceFileReadResult {
+  return {
+    root: "/repo",
+    path: "src/index.ts",
+    absolute_path: "/repo/src/index.ts",
+    size_bytes: 12,
+    mtime_ms: 1000,
+    sha256: "a".repeat(64),
+    binary: false,
+    truncated: false,
+    text: "button code",
+    ...overrides,
+  };
+}
 
 const directoryResults: Record<string, WorkspaceDirectoryListResult> = {
   "": {
@@ -68,17 +103,7 @@ beforeEach(() => {
     Promise.resolve(directoryResults[path ?? ""]),
   );
   readWorkspaceFile = vi.fn((path: string) =>
-    Promise.resolve({
-      root: "/repo",
-      path,
-      absolute_path: `/repo/${path}`,
-      size_bytes: 12,
-      mtime_ms: 1000,
-      sha256: "a".repeat(64),
-      binary: false,
-      truncated: false,
-      text: "button code",
-    }),
+    Promise.resolve(workspaceFile({ path, absolute_path: `/repo/${path}` })),
   );
   writeWorkspaceFile = vi.fn();
   Object.defineProperty(window, "wuu", {
@@ -115,6 +140,17 @@ async function settleDirectoryLoads(): Promise<void> {
       await Promise.resolve();
     });
   }
+}
+
+async function click(selector: string): Promise<void> {
+  const element = container.querySelector<HTMLButtonElement>(selector);
+  if (!element) {
+    throw new Error(`missing button ${selector}`);
+  }
+  await act(async () => {
+    element.click();
+    await Promise.resolve();
+  });
 }
 
 describe("WorkspaceFileTree", () => {
@@ -242,5 +278,153 @@ describe("WorkspaceFileTree", () => {
     const content = container.querySelector<HTMLElement>(".workspace-monaco-editor");
     expect(content?.textContent).toContain('console.log("<tag>", answer);');
     expect(content?.innerHTML).not.toContain("<tag>");
+  });
+
+  it("marks an editable file dirty when the Monaco text changes", async () => {
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/src/index.ts"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+    await click(".mock-editor-edit");
+
+    expect(container.textContent).toContain("已修改");
+    expect(container.querySelector<HTMLButtonElement>(".workspace-file-save-button")?.disabled).toBe(false);
+  });
+
+  it("saves dirty Monaco content with the latest base metadata and clears the dirty state", async () => {
+    writeWorkspaceFile
+      .mockResolvedValueOnce({
+        status: "saved",
+        file: workspaceFile({
+          text: "edited code\n",
+          mtime_ms: 2000,
+          sha256: "b".repeat(64),
+        }),
+      })
+      .mockResolvedValueOnce({
+        status: "saved",
+        file: workspaceFile({
+          text: "second edit\n",
+          mtime_ms: 3000,
+          sha256: "c".repeat(64),
+        }),
+      });
+
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/src/index.ts"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+    await click(".mock-editor-edit");
+    await click(".mock-editor-save");
+
+    expect(writeWorkspaceFile).toHaveBeenNthCalledWith(
+      1,
+      {
+        path: "src/index.ts",
+        text: "edited code\n",
+        base_mtime_ms: 1000,
+        base_sha256: "a".repeat(64),
+      },
+      "/repo",
+    );
+    expect(container.textContent).toContain("已保存");
+    expect(container.querySelector<HTMLButtonElement>(".workspace-file-save-button")?.disabled).toBe(true);
+
+    await click(".mock-editor-edit-second");
+    await click(".mock-editor-save");
+
+    expect(writeWorkspaceFile).toHaveBeenNthCalledWith(
+      2,
+      {
+        path: "src/index.ts",
+        text: "second edit\n",
+        base_mtime_ms: 2000,
+        base_sha256: "b".repeat(64),
+      },
+      "/repo",
+    );
+  });
+
+  it("keeps dirty editor text visible and reports a conflict when the file changed on disk", async () => {
+    writeWorkspaceFile.mockResolvedValueOnce({
+      status: "conflict",
+      file: workspaceFile({
+        text: "external edit\n",
+        mtime_ms: 2000,
+        sha256: "d".repeat(64),
+      }),
+    });
+
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/src/index.ts"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+    await click(".mock-editor-edit");
+    await click(".mock-editor-save");
+
+    expect(container.textContent).toContain("文件已在外部修改");
+    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.text).toBe("edited code\n");
+    expect(container.querySelector<HTMLButtonElement>(".workspace-file-save-button")?.disabled).toBe(false);
+  });
+
+  it("keeps truncated text files readonly", async () => {
+    readWorkspaceFile.mockResolvedValueOnce(workspaceFile({
+      path: "large.log",
+      absolute_path: "/repo/large.log",
+      truncated: true,
+      text: "partial log\n",
+    }));
+
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/large.log"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+
+    expect(container.textContent).toContain("只读");
+    expect(container.textContent).toContain("文件较大，已截断");
+    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.readonly).toBe("true");
+    expect(container.querySelector<HTMLButtonElement>(".workspace-file-save-button")?.disabled).toBe(true);
+  });
+
+  it("keeps binary files out of the editor surface", async () => {
+    readWorkspaceFile.mockResolvedValueOnce(workspaceFile({
+      path: "image.png",
+      absolute_path: "/repo/image.png",
+      binary: true,
+      text: undefined,
+    }));
+
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/image.png"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+
+    expect(container.textContent).toContain("二进制文件");
+    expect(container.querySelector(".workspace-monaco-editor")).toBeNull();
   });
 });

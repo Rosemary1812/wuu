@@ -12,6 +12,7 @@ import {
   FolderOpen,
   FolderX,
   ScrollText,
+  Save,
   Terminal,
   type LucideIcon
 } from "lucide-react";
@@ -553,6 +554,13 @@ export function WorkspaceFilePreview({
   onOpenRightPanel: () => void;
 }): JSX.Element {
   const [file, setFile] = useState<WorkspaceFileReadResult | undefined>(undefined);
+  const [draftText, setDraftText] = useState("");
+  const [baseText, setBaseText] = useState("");
+  const [baseMtimeMs, setBaseMtimeMs] = useState<number | undefined>(undefined);
+  const [baseSha256, setBaseSha256] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "conflict" | "error">("idle");
+  const [saveError, setSaveError] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const selectedWorkspaceFilePath = useMemo(
@@ -563,6 +571,13 @@ export function WorkspaceFilePreview({
   useEffect(() => {
     if (!selectedWorkspaceFilePath) {
       setFile(undefined);
+      setDraftText("");
+      setBaseText("");
+      setBaseMtimeMs(undefined);
+      setBaseSha256("");
+      setSaving(false);
+      setSaveStatus("idle");
+      setSaveError(undefined);
       setError(undefined);
       setLoading(false);
       return;
@@ -570,6 +585,13 @@ export function WorkspaceFilePreview({
 
     let cancelled = false;
     setFile(undefined);
+    setDraftText("");
+    setBaseText("");
+    setBaseMtimeMs(undefined);
+    setBaseSha256("");
+    setSaving(false);
+    setSaveStatus("idle");
+    setSaveError(undefined);
     setLoading(true);
     setError(undefined);
     void window.wuu
@@ -577,6 +599,10 @@ export function WorkspaceFilePreview({
       .then((result) => {
         if (!cancelled) {
           setFile(result);
+          setDraftText(result.text ?? "");
+          setBaseText(result.text ?? "");
+          setBaseMtimeMs(result.mtime_ms);
+          setBaseSha256(result.sha256);
         }
       })
       .catch((nextError) => {
@@ -594,6 +620,56 @@ export function WorkspaceFilePreview({
       cancelled = true;
     };
   }, [activeContext?.cwd, selectedWorkspaceFilePath]);
+
+  const readOnly = Boolean(file?.binary || file?.truncated || file?.text === undefined);
+  const dirty = draftText !== baseText;
+
+  const handleEditorChange = useCallback((nextText: string) => {
+    setDraftText(nextText);
+    setSaveStatus("idle");
+    setSaveError(undefined);
+  }, []);
+
+  const handleSave = useCallback(() => {
+    if (!file || readOnly || !dirty || saving || baseMtimeMs === undefined || !baseSha256) {
+      return;
+    }
+
+    setSaving(true);
+    setSaveError(undefined);
+    void window.wuu
+      .writeWorkspaceFile(
+        {
+          path: file.path,
+          text: draftText,
+          base_mtime_ms: baseMtimeMs,
+          base_sha256: baseSha256,
+        },
+        activeContext?.cwd,
+      )
+      .then((result) => {
+        const nextBaseText = result.file.text ?? "";
+        setFile(result.file);
+        setBaseText(nextBaseText);
+        setBaseMtimeMs(result.file.mtime_ms);
+        setBaseSha256(result.file.sha256);
+        if (result.status === "saved") {
+          setDraftText(nextBaseText);
+          setSaveStatus("saved");
+          setSaveError(undefined);
+          return;
+        }
+        setSaveStatus("conflict");
+        setSaveError("文件已在外部修改。请检查当前编辑内容后再次保存。");
+      })
+      .catch((nextError) => {
+        setSaveStatus("error");
+        setSaveError(desktopApiErrorMessage(nextError, "保存失败"));
+      })
+      .finally(() => {
+        setSaving(false);
+      });
+  }, [activeContext?.cwd, baseMtimeMs, baseSha256, dirty, draftText, file, readOnly, saving]);
 
   if (!activeContext) {
     return (
@@ -658,10 +734,54 @@ export function WorkspaceFilePreview({
     );
   }
 
+  const statusLabel = readOnly
+    ? "只读"
+    : saving
+      ? "保存中"
+      : dirty
+        ? "已修改"
+        : saveStatus === "saved"
+          ? "已保存"
+          : "未修改";
+  const statusTone = readOnly
+    ? "readonly"
+    : saveStatus === "conflict" || saveStatus === "error"
+      ? "error"
+      : dirty
+        ? "dirty"
+        : "clean";
+
   return (
-    <article className="workspace-file-preview editor-only">
+    <article className="workspace-file-preview">
+      <div className="workspace-file-editor-toolbar">
+        <div className="workspace-file-editor-status">
+          <span className={`workspace-file-editor-dot ${statusTone}`} aria-hidden="true" />
+          <span>{statusLabel}</span>
+          {file.truncated ? <span className="workspace-file-editor-hint">文件较大，已截断</span> : null}
+          {saveError ? (
+            <span className="workspace-file-editor-error" role="alert">
+              {saveError}
+            </span>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="workspace-file-save-button"
+          disabled={readOnly || saving || !dirty}
+          onClick={handleSave}
+        >
+          <Save className="icon" />
+          <span>保存</span>
+        </button>
+      </div>
       <div className="workspace-file-editor-scroll">
-        <WorkspaceMonacoEditor path={file.path} text={file.text ?? ""} />
+        <WorkspaceMonacoEditor
+          path={file.path}
+          text={draftText}
+          readOnly={readOnly}
+          onChange={handleEditorChange}
+          onSave={handleSave}
+        />
       </div>
     </article>
   );
