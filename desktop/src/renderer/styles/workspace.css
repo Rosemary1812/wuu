@@ -1518,10 +1518,6 @@
   grid-template-rows: auto minmax(0, 1fr);
 }
 
-.workspace-file-preview.editor-only {
-  grid-template-rows: minmax(0, 1fr);
-}
-
 .workspace-file-editor-toolbar {
   display: flex;
   min-width: 0;
@@ -1745,19 +1741,10 @@
   outline: 0;
 }
 
-.workspace-code-editor,
 .workspace-monaco-editor {
   height: 100%;
   min-width: 0;
   min-height: 0;
-}
-
-.workspace-code-editor .cm-editor {
-  height: 100%;
-}
-
-.workspace-code-editor .cm-scroller {
-  overflow: auto;
 }
 
 .workspace-file-code {
