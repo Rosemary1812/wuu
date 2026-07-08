@@ -1341,7 +1341,7 @@ function SettingsGeneralPage({
           </SettingsRow>
           <SettingsRow
             title="Codex Pet"
-            description={codexPets?.home ? `读取 ${codexPets.home}` : "读取 ~/.codex/pets"}
+            description={codexPets?.home ? `读取 ${codexPets.home}` : "读取 ~/.wuu/pets"}
             block
           >
             <div className="settings-codex-pets-controls">
@@ -1389,7 +1389,7 @@ function SettingsGeneralPage({
             {codexPetsLoading ? <small className="settings-muted-line">正在读取本地宠物…</small> : null}
             {!codexPetsLoading && codexPetOptions.length === 0 ? (
               <small className="settings-muted-line">
-                可用 codex-pets.net 的安装命令添加到 ~/.codex/pets。
+                把 pet.json 和 spritesheet.webp 放到上面的 Wuu 目录；也兼容 codex-pets.net 安装到 ~/.codex/pets。
               </small>
             ) : null}
             {codexPets?.errors.length ? (

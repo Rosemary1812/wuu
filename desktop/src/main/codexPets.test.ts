@@ -1,7 +1,9 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,6 +13,8 @@ import {
   CODEX_PET_CELL_HEIGHT,
   CODEX_PET_CELL_WIDTH,
   CODEX_PET_STATES,
+  defaultCodexPetsDir,
+  ensureCodexPetsDir,
   loadCodexPetsSnapshot,
 } from "./codexPets";
 
@@ -58,6 +62,22 @@ function writePet(
 }
 
 describe("loadCodexPetsSnapshot", () => {
+  it("defaults to Wuu's own pets directory", () => {
+    const wuuHome = createPetsRoot();
+
+    expect(defaultCodexPetsDir(wuuHome)).toBe(join(wuuHome, "pets"));
+  });
+
+  it("creates the Wuu pets directory on demand", () => {
+    const root = createPetsRoot();
+    const petsDir = join(root, "pets");
+
+    expect(existsSync(petsDir)).toBe(false);
+    ensureCodexPetsDir(petsDir);
+
+    expect(statSync(petsDir).isDirectory()).toBe(true);
+  });
+
   it("uses the Codex Pets atlas constants", () => {
     expect(CODEX_PET_CELL_WIDTH).toBe(192);
     expect(CODEX_PET_CELL_HEIGHT).toBe(208);
@@ -100,6 +120,30 @@ describe("loadCodexPetsSnapshot", () => {
     expect(snapshot.errors).toEqual([
       "broken: pet.json must be valid JSON",
     ]);
+  });
+
+  it("merges Wuu and Codex pet directories with Wuu pets taking precedence", () => {
+    const wuuPetsRoot = createPetsRoot();
+    const codexPetsRoot = createPetsRoot();
+    writePet(wuuPetsRoot, "shared", { displayName: "Wuu Shared Pet" });
+    writePet(wuuPetsRoot, "wuu-only", { displayName: "Wuu Only Pet" });
+    writePet(codexPetsRoot, "shared", { displayName: "Codex Shared Pet" });
+    writePet(codexPetsRoot, "codex-only", { displayName: "Codex Only Pet" });
+
+    const snapshot = loadCodexPetsSnapshot({
+      petsDirs: [wuuPetsRoot, codexPetsRoot],
+      settings: { enabled: true, selected_id: "shared" },
+    });
+
+    expect(snapshot.home).toBe(wuuPetsRoot);
+    expect(snapshot.selected_id).toBe("shared");
+    expect(snapshot.enabled).toBe(true);
+    expect(snapshot.pets.map((pet) => pet.id).sort()).toEqual([
+      "codex-only",
+      "shared",
+      "wuu-only",
+    ]);
+    expect(snapshot.pets.find((pet) => pet.id === "shared")?.display_name).toBe("Wuu Shared Pet");
   });
 
   it("falls back to the first available pet when the stored selection is gone", () => {

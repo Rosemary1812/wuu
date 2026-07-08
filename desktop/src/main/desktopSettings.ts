@@ -19,8 +19,9 @@ export type DesktopSettings = {
   // Appearance. "system" follows the OS light/dark preference; the
   // renderer resolves it to a concrete data-theme on <html>.
   theme?: ThemePreference;
-  // Codex Pets compatibility. The desktop reads local pets from
-  // ~/.codex/pets and keeps only the UI enablement + selected pet here.
+  // Codex Pets compatibility. The desktop reads local pets from Wuu's own
+  // pets directory, with ~/.codex/pets as a compatibility source, and keeps
+  // only the UI enablement + selected pet here.
   codex_pet?: CodexPetSettings;
 };
 

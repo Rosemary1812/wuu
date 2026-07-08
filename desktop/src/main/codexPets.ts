@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, normalize, relative } from "node:path";
+import { isAbsolute, join, normalize, relative, resolve } from "node:path";
 import type {
   CodexPet,
   CodexPetSettings,
@@ -33,32 +33,62 @@ type CodexPetManifest = {
 
 type LoadCodexPetsSnapshotOptions = {
   petsDir?: string;
+  petsDirs?: string[];
   settings?: CodexPetSettings;
 };
 
-export function defaultCodexPetsDir(homeDir: string = homedir()): string {
+function defaultWuuHomeDir(homeDir: string = homedir()): string {
+  const override = process.env.WUU_HOME?.trim();
+  if (override) {
+    return resolve(override);
+  }
+  return join(homeDir, ".wuu");
+}
+
+export function defaultCodexPetsDir(wuuHome: string = defaultWuuHomeDir()): string {
+  return join(wuuHome, "pets");
+}
+
+export function legacyCodexPetsDir(homeDir: string = homedir()): string {
   return join(homeDir, ".codex", "pets");
 }
 
+export function defaultCodexPetsDirs(): string[] {
+  const primary = defaultCodexPetsDir();
+  const legacy = legacyCodexPetsDir();
+  return primary === legacy ? [primary] : [primary, legacy];
+}
+
+export function ensureCodexPetsDir(petsDir: string = defaultCodexPetsDir()): void {
+  mkdirSync(petsDir, { recursive: true });
+}
+
 export function loadCodexPetsSnapshot({
-  petsDir = defaultCodexPetsDir(),
+  petsDir,
+  petsDirs,
   settings = { enabled: false, selected_id: "" },
 }: LoadCodexPetsSnapshotOptions = {}): CodexPetsSnapshot {
-  const pets: CodexPet[] = [];
+  const roots = normalizePetsDirs(petsDirs ?? (petsDir ? [petsDir] : defaultCodexPetsDirs()));
+  const home = roots[0] ?? defaultCodexPetsDir();
+  const petsByID = new Map<string, CodexPet>();
   const errors: string[] = [];
 
-  if (existsSync(petsDir)) {
-    for (const entry of readdirSync(petsDir, { withFileTypes: true })) {
+  for (const root of roots) {
+    if (!existsSync(root)) {
+      continue;
+    }
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
       if (!entry.isDirectory()) {
         continue;
       }
-      const pet = readCodexPet(join(petsDir, entry.name), entry.name, errors);
-      if (pet) {
-        pets.push(pet);
+      const pet = readCodexPet(join(root, entry.name), entry.name, errors);
+      if (pet && !petsByID.has(pet.id)) {
+        petsByID.set(pet.id, pet);
       }
     }
   }
 
+  const pets = Array.from(petsByID.values());
   pets.sort((left, right) =>
     left.display_name.localeCompare(right.display_name) || left.id.localeCompare(right.id),
   );
@@ -68,12 +98,30 @@ export function loadCodexPetsSnapshot({
   const selectedID = selectedPet?.id ?? "";
 
   return {
-    home: petsDir,
+    home,
     pets,
     errors,
     enabled: settings.enabled && selectedID !== "",
     selected_id: selectedID,
   };
+}
+
+function normalizePetsDirs(petsDirs: string[]): string[] {
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const dir of petsDirs) {
+    const trimmed = dir.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const resolved = resolve(trimmed);
+    if (seen.has(resolved)) {
+      continue;
+    }
+    seen.add(resolved);
+    normalized.push(resolved);
+  }
+  return normalized;
 }
 
 function readCodexPet(petDir: string, dirName: string, errors: string[]): CodexPet | undefined {

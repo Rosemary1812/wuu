@@ -77,7 +77,12 @@ import type {
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
 import { autoInstallCli, getCliInstallStatus, installCli } from "./cliInstall";
-import { loadCodexPetsSnapshot } from "./codexPets";
+import {
+  defaultCodexPetsDir,
+  ensureCodexPetsDir,
+  legacyCodexPetsDir,
+  loadCodexPetsSnapshot,
+} from "./codexPets";
 import { RemoteHostManager } from "./remoteControl";
 import {
   getCodexPetSettings,
@@ -178,8 +183,17 @@ function appServerRequest<T>(
     : appServerClientPool.request<T>(method, params);
 }
 
+function codexPetDirs(): string[] {
+  const primaryPetsDir = defaultCodexPetsDir(wuuHomePath());
+  ensureCodexPetsDir(primaryPetsDir);
+  return [primaryPetsDir, legacyCodexPetsDir()];
+}
+
 function codexPetsSnapshot() {
-  return loadCodexPetsSnapshot({ settings: getCodexPetSettings() });
+  return loadCodexPetsSnapshot({
+    petsDirs: codexPetDirs(),
+    settings: getCodexPetSettings(),
+  });
 }
 
 function updateCodexPetSettings(update: CodexPetSettingsUpdate) {
@@ -188,7 +202,10 @@ function updateCodexPetSettings(update: CodexPetSettingsUpdate) {
     enabled: update.enabled ?? current.enabled,
     selected_id: update.selected_id ?? current.selected_id,
   };
-  const snapshot = loadCodexPetsSnapshot({ settings: requested });
+  const snapshot = loadCodexPetsSnapshot({
+    petsDirs: codexPetDirs(),
+    settings: requested,
+  });
   setCodexPetSettings({
     enabled: snapshot.enabled,
     selected_id: snapshot.selected_id,
