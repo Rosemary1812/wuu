@@ -315,7 +315,7 @@ func TestChat_FiltersUnsupportedProviderOptions(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		for _, key := range []string{"include", "toolStreaming", "thinkingConfig", "reasoningConfig", "modelParams", "gateway"} {
+		for _, key := range []string{"include", "toolStreaming", "thinkingConfig", "reasoningConfig", "modelParams", "gateway", "temperatureSupported", "temperature_supported"} {
 			if _, exists := body[key]; exists {
 				t.Fatalf("chat payload should filter %s: %#v", key, body)
 			}
@@ -344,6 +344,8 @@ func TestChat_FiltersUnsupportedProviderOptions(t *testing.T) {
 			"reasoningConfig": map[string]any{"type": "enabled"},
 			"modelParams":     map[string]any{"reasoning_effort": "high"},
 			"gateway":         map[string]any{"caching": "auto"},
+			"temperatureSupported":   false,
+			"temperature_supported":  false,
 			"metadata":        map[string]any{"eval": "provider-options"},
 		},
 	})
@@ -2267,7 +2269,7 @@ func TestResponsesChat_FiltersUnsupportedProviderOptions(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		for _, key := range []string{"toolStreaming", "thinkingConfig", "reasoningConfig", "modelParams", "gateway", "usage", "chat_template_args", "enable_thinking", "thinking"} {
+		for _, key := range []string{"toolStreaming", "thinkingConfig", "reasoningConfig", "modelParams", "gateway", "usage", "chat_template_args", "enable_thinking", "thinking", "temperatureSupported", "temperature_supported"} {
 			if _, exists := body[key]; exists {
 				t.Fatalf("responses payload should filter %s: %#v", key, body)
 			}
@@ -2303,6 +2305,8 @@ func TestResponsesChat_FiltersUnsupportedProviderOptions(t *testing.T) {
 			"chat_template_args": map[string]any{"enable_thinking": true},
 			"enable_thinking":    true,
 			"thinking":           map[string]any{"type": "enabled"},
+			"temperatureSupported":  false,
+			"temperature_supported": false,
 			"metadata":           map[string]any{"eval": "provider-options"},
 		},
 	})

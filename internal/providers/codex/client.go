@@ -177,6 +177,8 @@ func codexRequest(req providers.ChatRequest) providers.ChatRequest {
 	}
 	delete(req.ProviderOptions, "maxOutputTokens")
 	delete(req.ProviderOptions, "max_output_tokens")
+	delete(req.ProviderOptions, "temperatureSupported")
+	delete(req.ProviderOptions, "temperature_supported")
 	if _, ok := req.ProviderOptions["include"]; !ok {
 		req.ProviderOptions["include"] = []string{"reasoning.encrypted_content"}
 	}

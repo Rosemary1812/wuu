@@ -941,7 +941,8 @@ func mergeChatProviderOptions(object map[string]any, options map[string]any, for
 
 func chatProviderOptionIsAISDKOnly(key string) bool {
 	switch key {
-	case "toolStreaming", "thinkingConfig", "reasoningConfig", "modelParams", "gateway":
+	case "toolStreaming", "thinkingConfig", "reasoningConfig", "modelParams", "gateway",
+		"temperatureSupported", "temperature_supported":
 		return true
 	default:
 		return false

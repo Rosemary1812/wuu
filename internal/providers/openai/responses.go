@@ -255,7 +255,8 @@ func mergeResponsesProviderOptions(object map[string]any, options map[string]any
 func responsesProviderOptionUnsupported(key string) bool {
 	switch key {
 	case "toolStreaming", "thinkingConfig", "reasoningConfig", "modelParams", "gateway",
-		"usage", "chat_template_args", "enable_thinking", "thinking":
+		"usage", "chat_template_args", "enable_thinking", "thinking",
+		"temperatureSupported", "temperature_supported":
 		return true
 	default:
 		return false

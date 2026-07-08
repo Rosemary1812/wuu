@@ -447,7 +447,11 @@ func TestCodexRequestAppliesDefaultsButAllowsOverride(t *testing.T) {
 		t.Fatalf("textVerbosity override lost: %#v", custom.ProviderOptions["textVerbosity"])
 	}
 
-	options := map[string]any{"maxOutputTokens": 999}
+	options := map[string]any{
+		"maxOutputTokens":    999,
+		"temperatureSupported": false,
+		"temperature_supported": false,
+	}
 	capped := codexRequest(providers.ChatRequest{MaxTokens: 123, ProviderOptions: options})
 	if capped.MaxTokens != 0 {
 		t.Fatalf("Codex request must clear MaxTokens, got %d", capped.MaxTokens)
@@ -455,7 +459,16 @@ func TestCodexRequestAppliesDefaultsButAllowsOverride(t *testing.T) {
 	if _, ok := capped.ProviderOptions["maxOutputTokens"]; ok {
 		t.Fatalf("Codex request must strip maxOutputTokens option: %#v", capped.ProviderOptions)
 	}
+	if _, ok := capped.ProviderOptions["temperatureSupported"]; ok {
+		t.Fatalf("Codex request must strip temperatureSupported option: %#v", capped.ProviderOptions)
+	}
+	if _, ok := capped.ProviderOptions["temperature_supported"]; ok {
+		t.Fatalf("Codex request must strip temperature_supported option: %#v", capped.ProviderOptions)
+	}
 	if _, ok := options["maxOutputTokens"]; !ok {
+		t.Fatalf("codexRequest should not mutate caller provider options")
+	}
+	if _, ok := options["temperatureSupported"]; !ok {
 		t.Fatalf("codexRequest should not mutate caller provider options")
 	}
 }
