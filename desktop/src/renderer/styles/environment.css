@@ -1243,7 +1243,15 @@
   will-change: opacity, transform;
 }
 
-.conversation-search-result:hover,
+.conversation-search-result:hover {
+  /* No hover treatment on purpose: hover and selected previously shared
+   * the same background (they were a single combined rule), so the row
+   * you were about to click and the row that was actually selected
+   * looked identical. The cursor: pointer on the row above is enough
+   * to signal clickability; the persistent .selected state below is
+   * the only row-level highlight. */
+}
+
 .conversation-search-result.selected {
   background: var(--env-search-result-hover-bg);
   transform: translate3d(0, -1px, 0);
