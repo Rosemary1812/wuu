@@ -375,18 +375,17 @@ function PreviewRow({
   query: string;
 }): JSX.Element {
   const oneLineText = oneLinePreviewText(text, query);
-  // `title` exposes the full untruncated text so users can still read
-  // longer rows via tooltip when the inline ellipsis hides the match
-  // context.
+  // The row's chrome (right-aligned bubble for user, flush-left plain
+  // text for assistant) lives in CSS so this component stays a pure
+  // function of (role, text, query). `title` exposes the full
+  // untruncated text so users can still read longer rows via tooltip
+  // when the inline ellipsis hides the match context.
   return (
     <article
       className={`conversation-search-preview-turn role-${role}`}
       data-role={role}
       title={text || undefined}
     >
-      <span className="conversation-search-preview-role">
-        {previewTurnRoleLabel(role)}
-      </span>
       <span className="conversation-search-preview-text">
         {oneLineText}
       </span>
@@ -432,15 +431,6 @@ function pickAssistantText(turn: Turn): string {
     if (item.phase === "final_answer") finalAnswer = text;
   }
   return finalAnswer || lastAgentMessage;
-}
-
-function previewTurnRoleLabel(role: "user" | "assistant"): string {
-  switch (role) {
-    case "user":
-      return "你";
-    case "assistant":
-      return "助手";
-  }
 }
 
 // Pick a single-line window of the turn text that keeps the query match

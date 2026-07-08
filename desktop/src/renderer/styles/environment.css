@@ -1478,29 +1478,24 @@
   flex-direction: row;
   align-items: baseline;
   min-width: 0;
-  gap: 8px;
   padding: 2px 0;
 }
 
 .conversation-search-preview-turn.role-user {
-  /* User and assistant turns share the same chrome — role label alone
-   * distinguishes them. No card background so the preview pane does
-   * not compete with the selected result's hover treatment on the left. */
+  /* Mirror the chat surface: user bubbles align right with the same
+   * warm-grey background, hugging the text instead of stretching
+   * across the preview pane. The text span's nowrap + ellipsis keeps
+   * the bubble one row tall even when the underlying message wraps. */
+  justify-content: flex-end;
 }
 
 .conversation-search-preview-turn.role-assistant {
-}
-
-.conversation-search-preview-role {
-  flex: 0 0 auto;
-  color: var(--ink-muted);
-  font-size: 11px;
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.02em;
+  /* Assistant text reads flush left, no background — same as the live
+   * chat stream where participant messages fill the row. */
+  justify-content: flex-start;
 }
 
 .conversation-search-preview-text {
-  flex: 1 1 auto;
   min-width: 0;
   color: var(--ink);
   font-size: var(--font-sm);
@@ -1511,6 +1506,23 @@
   text-overflow: ellipsis;
   user-select: text;
   -webkit-user-select: text;
+}
+
+.conversation-search-preview-turn.role-user .conversation-search-preview-text {
+  /* Hug the text so short queries stay compact; cap at 85% so very
+   * long messages get ellipsis-truncated instead of stretching the
+   * pane edge-to-edge. */
+  flex: 0 1 auto;
+  max-width: 85%;
+  background: var(--chat-user-message-bg);
+  border-radius: 6px;
+  padding: 1px 8px;
+}
+
+.conversation-search-preview-turn.role-assistant .conversation-search-preview-text {
+  /* Assistant fills the row, just like a participant's message in the
+   * live chat. nowrap + ellipsis keep it one line tall. */
+  flex: 1 1 auto;
 }
 
 @media (max-width: 720px) {
@@ -1788,6 +1800,271 @@
   cursor: not-allowed;
   opacity: 0.45;
   transform: none;
+}
+
+/* New-agent dialog (sidebar-andy-workspaces.md new-agent flow). Wider than
+   the rename-conversation / new-group sidebar-name-dialog because it has
+   to host the full identity + configuration form (avatar, name, tagline,
+   role, model) without spilling into the right-side profile panel.
+   Reuses the shared .conversation-search-overlay / -dialog shell so the
+   modal motion and panel chrome stay consistent with other sidebar
+   modals. */
+.new-participant-overlay {
+  align-items: center;
+  padding: 24px;
+}
+
+.new-participant-dialog {
+  width: min(620px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  grid-template-rows: auto 1fr auto;
+  gap: 16px;
+  padding: 22px;
+  transform-origin: center;
+  overflow: hidden;
+}
+
+.new-participant-header {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-areas:
+    "icon title"
+    "icon subtitle";
+  column-gap: 12px;
+  row-gap: 2px;
+  align-items: center;
+  padding: 2px 2px 0;
+}
+
+.new-participant-icon {
+  grid-area: icon;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.new-participant-title {
+  grid-area: title;
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--font-heading);
+  font-weight: var(--weight-semibold);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.new-participant-subtitle {
+  grid-area: subtitle;
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.new-participant-body {
+  display: grid;
+  gap: 12px;
+  padding: 4px 2px;
+  overflow-y: auto;
+  /* Keep action buttons + title visible when the form is taller than the
+     dialog — the body scrolls while the header and footer stay pinned. */
+  min-height: 0;
+}
+
+.new-participant-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--danger, #c44);
+  font-size: var(--font-sm);
+}
+
+.new-participant-avatar-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 4px 0;
+}
+
+.new-participant-avatar {
+  width: 56px;
+  height: 56px;
+  border: 1px dashed var(--ink-overlay-12);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--ink-tertiary);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 0;
+}
+
+.new-participant-avatar:hover,
+.new-participant-avatar:focus-visible {
+  outline: 0;
+  border-color: var(--ink-overlay-20);
+}
+
+.new-participant-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.new-participant-avatar-placeholder {
+  width: 22px;
+  height: 22px;
+}
+
+.new-participant-file-input {
+  display: none;
+}
+
+.new-participant-avatar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.new-participant-text-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.new-participant-text-action:hover,
+.new-participant-text-action:focus-visible {
+  outline: 0;
+  background: var(--surface-2);
+}
+
+.new-participant-text-action.danger {
+  color: var(--danger, #c44);
+}
+
+.new-participant-field {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.new-participant-field > span {
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.new-participant-field input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  outline: 0;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--font-base);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0;
+  padding: 0 10px;
+}
+
+.new-participant-field input::placeholder {
+  color: var(--env-search-input-placeholder);
+}
+
+.new-participant-field input:focus {
+  border-color: var(--ink-overlay-12);
+  box-shadow: inset 0 0 0 1px var(--ink-overlay-12);
+}
+
+.new-participant-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.new-participant-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 72px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  padding: 7px 12px;
+  transition:
+    opacity 160ms ease,
+    transform 180ms var(--search-motion-easing);
+}
+
+.new-participant-actions button:hover,
+.new-participant-actions button:focus-visible {
+  outline: 0;
+  background: var(--surface-2);
+  transform: translate3d(0, -1px, 0);
+}
+
+.new-participant-actions button[type="submit"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.new-participant-actions button[type="submit"]:hover,
+.new-participant-actions button[type="submit"]:focus-visible {
+  background: var(--ink);
+}
+
+.new-participant-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+}
+
+.new-participant-spinner {
+  animation: new-participant-spin 0.9s linear infinite;
+}
+
+@keyframes new-participant-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Stack the form rows when the dialog is narrow (mobile / small desktop
+   window) so the long input doesn't squash the labels. */
+@media (max-width: 520px) {
+  .new-participant-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
 }
 
 /* Fork-from-earlier picker. Reuses the .environment-dialog shell so the

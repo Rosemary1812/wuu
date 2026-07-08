@@ -7,10 +7,12 @@
  * (see `turnsFromPersistedHistoryInScope` in `internal/appserver/model.go`).
  * The preview used to render the whole turn as one row with a single role,
  * which hid either the user query or the assistant's reply depending on
- * who spoke last — every "你" row was getting swallowed by a "助手" row.
- * The renderer now emits up to two rows per turn (a "你" row for the
- * `user_message` and an "助手" row for the `agent_message`) so the visible
- * timeline matches the actual conversation.
+ * who spoke last. The renderer now emits up to two rows per turn (one
+ * per non-empty `user_message` / `agent_message`) so the visible timeline
+ * matches the actual conversation. Role distinction lives in CSS — the
+ * user row is right-aligned with a chat-bubble background and the
+ * assistant row reads flush left — and `nowrap` + `ellipsis` keeps every
+ * row exactly one line tall.
  *
  * Real React via `react-dom/client` + `act`, no `@testing-library/react`
  * dependency — matches the TurnSourcesRow / AssistantTurnShell pattern.
