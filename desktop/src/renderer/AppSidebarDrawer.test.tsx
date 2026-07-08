@@ -187,22 +187,25 @@ async function renderCollapsedApp(): Promise<void> {
 async function clickSidebarSession(
   label: string,
   options: { pointerTarget?: Element | null } = {},
-): Promise<void> {
+): Promise<HTMLButtonElement> {
   const sessionButton = container.querySelector<HTMLButtonElement>(
     `.thread-row-main[aria-label^="${label}"]`,
   );
   expect(sessionButton).not.toBeNull();
+  if (!sessionButton) {
+    throw new Error(`Missing sidebar session button: ${label}`);
+  }
   elementFromPointTarget =
     "pointerTarget" in options ? (options.pointerTarget ?? null) : sessionButton;
   await act(async () => {
-    sessionButton?.dispatchEvent(
+    sessionButton.dispatchEvent(
       new MouseEvent("mousedown", {
         bubbles: true,
         clientX: 32,
         clientY: 48,
       }),
     );
-    sessionButton?.dispatchEvent(
+    sessionButton.dispatchEvent(
       new MouseEvent("click", {
         bubbles: true,
         clientX: 32,
@@ -212,6 +215,7 @@ async function clickSidebarSession(
     await Promise.resolve();
     await Promise.resolve();
   });
+  return sessionButton;
 }
 
 async function movePointerOver(target: Element | null): Promise<void> {
@@ -243,6 +247,14 @@ async function openDrawerViaHoverZone(): Promise<void> {
     vi.advanceTimersByTime(SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS);
   });
   expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(true);
+}
+
+function sidebarContainsFocus(): boolean {
+  const sidebar = container.querySelector<HTMLElement>(".sidebar");
+  const active = document.activeElement;
+  return Boolean(
+    sidebar && active instanceof HTMLElement && sidebar.contains(active),
+  );
 }
 
 describe("collapsed sidebar hover drawer", () => {
@@ -529,5 +541,39 @@ describe("collapsed sidebar hover drawer", () => {
     expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
       true,
     );
+  });
+
+  it("clears mouse-click focus when a session switch drawer closes after pointer exit", async () => {
+    installWuuApi([
+      threadFixture(
+        "thread-active",
+        "Already open session",
+        "2026-01-02T00:00:00Z",
+      ),
+      threadFixture(
+        "thread-target",
+        "Session from hover drawer",
+        "2026-01-01T00:00:00Z",
+      ),
+    ]);
+    await renderCollapsedApp();
+    await openDrawerViaHoverZone();
+
+    const selectedButton = await clickSidebarSession(
+      "Session from hover drawer",
+    );
+    selectedButton.focus();
+    expect(sidebarContainsFocus()).toBe(true);
+
+    await movePointerOver(document.body);
+    await act(async () => {
+      vi.advanceTimersByTime(SIDEBAR_MOTION_MS);
+    });
+
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
+      false,
+    );
+    expect(sidebarContainsFocus()).toBe(false);
   });
 });

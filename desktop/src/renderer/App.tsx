@@ -2430,6 +2430,14 @@ export function App(): JSX.Element {
     );
   }, []);
 
+  const blurSidebarFocus = useCallback((): void => {
+    const sidebar = appShellRef.current?.querySelector(".sidebar");
+    const active = document.activeElement;
+    if (sidebar && active instanceof HTMLElement && sidebar.contains(active)) {
+      active.blur();
+    }
+  }, []);
+
   const openSidebarDrawer = useCallback((): void => {
     if (resizingSidebar || sidebarDrawerSuppressedRef.current) {
       return;
@@ -2487,6 +2495,7 @@ export function App(): JSX.Element {
   const closeSidebarDrawer = useCallback((): void => {
     cancelSidebarDrawerOpen();
     clearSidebarDrawerCloseTimer();
+    blurSidebarFocus();
     if (!sidebarCollapsed || resizingSidebar) {
       // No closing animation mid-drag: collapsing unmounts the resizer, the
       // pointer falls through onto sidebar content, and the resulting
@@ -2502,6 +2511,7 @@ export function App(): JSX.Element {
       setSidebarDrawerPhase("closed");
     }, SIDEBAR_MOTION_MS);
   }, [
+    blurSidebarFocus,
     cancelSidebarDrawerOpen,
     clearSidebarDrawerCloseTimer,
     resizingSidebar,
