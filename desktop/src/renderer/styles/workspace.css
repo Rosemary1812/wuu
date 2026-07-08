@@ -140,6 +140,15 @@
   gap: 8px;
   border-bottom: 1px solid var(--surface-3);
   padding: 0 10px;
+  -webkit-app-region: drag;
+}
+
+.workspace-panel-tabbar button {
+  -webkit-app-region: no-drag;
+}
+
+.workspace-panel-tabbar button * {
+  -webkit-app-region: no-drag;
 }
 
 .turn-file-diff-panel {
@@ -306,6 +315,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
+  -webkit-app-region: no-drag;
 }
 
 .workspace-panel-tabs::-webkit-scrollbar {
@@ -325,6 +335,7 @@
   background: var(--surface-2);
   color: var(--workspace-tool-tab-text);
   overflow: hidden;
+  -webkit-app-region: no-drag;
   transition:
     background-color 140ms ease,
     border-color 140ms ease,

@@ -15,6 +15,26 @@ function cssRuleBody(selector: string): string {
   return match[1];
 }
 
+describe("workspace right panel chrome", () => {
+  it("lets the docked panel tabbar drag the window while controls stay clickable", () => {
+    expect(cssRuleBody(".workspace-panel-tabbar")).toMatch(
+      /-webkit-app-region:\s*drag;/,
+    );
+    expect(cssRuleBody(".workspace-panel-tabbar button")).toMatch(
+      /-webkit-app-region:\s*no-drag;/,
+    );
+    expect(cssRuleBody(".workspace-panel-tabbar button *")).toMatch(
+      /-webkit-app-region:\s*no-drag;/,
+    );
+    expect(cssRuleBody(".workspace-tool-tab")).toMatch(
+      /-webkit-app-region:\s*no-drag;/,
+    );
+    expect(cssRuleBody(".workspace-panel-tabs")).toMatch(
+      /-webkit-app-region:\s*no-drag;/,
+    );
+  });
+});
+
 describe("workspace file preview layout", () => {
   it("lets the file preview fill the workspace viewport with its own editor scroller", () => {
     expect(cssRuleBody(".workspace-scroll-region")).toMatch(/overflow:\s*hidden;/);
