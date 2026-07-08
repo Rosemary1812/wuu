@@ -200,6 +200,13 @@ type Env struct {
 	// Default false means file tools stay inside FileScopeRoots/RootDir.
 	Unconfined bool
 
+	// AllowMutations mirrors WorkspaceBoundary.AllowMutations for the active
+	// runtime. Set by Toolkit.SetBoundary. False in read-only mode even when
+	// Unconfined is also false; tools use it to allow per-path exemptions
+	// (such as the agent's own runtime metadata directory) without
+	// re-deriving the boundary state.
+	AllowMutations bool
+
 	// Optional dependencies — nil means the feature is unavailable.
 	// Tools check for nil and return a clear error rather than panic.
 	SessionID   string
@@ -614,6 +621,13 @@ func (e *Env) ResolvePath(input string) (string, error) {
 		return "", fmt.Errorf("resolve path: %w", err)
 	}
 	if e.BypassToolHardProtections() {
+		return resolved, nil
+	}
+	// Agent's own runtime metadata (statepath.Home) is allowed when the
+	// boundary permits mutations. Read-only mode keeps the gate; tools
+	// that go through this path without AllowMutations still see a denial
+	// for paths under the agent's runtime directory.
+	if e.AllowMutations && isAgentRuntimeMetadataPath(resolved) {
 		return resolved, nil
 	}
 	if len(e.FileScopeRoots) > 0 {

@@ -491,7 +491,8 @@ func (t *Toolkit) MCPManager() *mcp.Manager {
 }
 
 // SetBoundary installs the single authority gate for this runtime. It also
-// wires Env.Unconfined so path confinement in ResolvePath tracks the boundary.
+// wires Env.Unconfined (path confinement) and Env.AllowMutations (per-path
+// mutation exemptions) so they both track the boundary.
 func (t *Toolkit) SetBoundary(boundary WorkspaceBoundary) {
 	if t == nil {
 		return
@@ -499,6 +500,7 @@ func (t *Toolkit) SetBoundary(boundary WorkspaceBoundary) {
 	t.boundary = boundary
 	if t.env != nil {
 		t.env.Unconfined = !boundary.Enforce
+		t.env.AllowMutations = boundary.AllowMutations
 	}
 }
 
