@@ -274,7 +274,7 @@ describe("collapsed sidebar hover drawer", () => {
     );
   });
 
-  it("does not open the drawer while the window is resizing", async () => {
+  it("opens the drawer while the window is resizing", async () => {
     await renderCollapsedApp();
     const zone = container.querySelector<HTMLElement>(".sidebar-hover-zone");
     expect(zone).not.toBeNull();
@@ -287,13 +287,13 @@ describe("collapsed sidebar hover drawer", () => {
       vi.advanceTimersByTime(SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS);
     });
 
-    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(true);
     expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
       false,
     );
   });
 
-  it("closes an open drawer immediately when window resize starts", async () => {
+  it("keeps an open drawer visible when window resize starts", async () => {
     await renderCollapsedApp();
     await openDrawerViaHoverZone();
 
@@ -301,7 +301,7 @@ describe("collapsed sidebar hover drawer", () => {
       window.dispatchEvent(new Event("resize"));
     });
 
-    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(true);
     expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
       false,
     );

@@ -96,6 +96,14 @@
   pointer-events: none;
 }
 
+/* In globalized mode the right panel fills column 1 starting at x=0; reserve
+ * room on the left of its tabbar so the macOS traffic lights
+ * (trafficLightPosition 18, 16) don't sit on top of the tabs. Mirrors the
+ * popped-out titlebar reservation. */
+.app-shell.right-panel-globalized .workspace-panel-tabbar {
+  padding-left: 86px;
+}
+
 .app-shell.bottom-panel-open {
   grid-template-rows: minmax(0, 1fr) var(--workspace-bottom-panel-height, 238px);
 }
@@ -208,8 +216,7 @@
 /* While a sidebar drag is in flight the pointer can sit exactly where the
    collapsed-hover zone appears; hide the zone so it cannot steal the pointer
    or trigger the drawer mid-drag. */
-.resizing-sidebar .sidebar-hover-zone,
-.window-resizing .sidebar-hover-zone {
+.resizing-sidebar .sidebar-hover-zone {
   display: none;
 }
 
