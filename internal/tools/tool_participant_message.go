@@ -81,9 +81,9 @@ func (t *PostMessageTool) Execute(ctx context.Context, args string) (string, err
 	}
 	if msg.Held {
 		result := map[string]any{
-			"action":                  "post_message",
-			"status":                  "held",
-			"reason":                  "The thread moved past your basis — these messages arrived while you were composing. Your draft was NOT posted. Fold them into your context (use inception to keep it clean), re-reason against the new state, then post again with an updated basis_seq — or resend unchanged with force=true, or stay silent.",
+			"action":                   "post_message",
+			"status":                   "held",
+			"reason":                   "The thread moved past your basis — these messages arrived while you were composing. Your draft was NOT posted. If the arrivals change your view of the room or would otherwise bloat this resident context, consider inception before deciding whether to revise, resend with force=true, or stay silent. Post again with an updated basis_seq only if a visible reply is still needed.",
 			"arrived_since_your_basis": msg.HeldNote,
 		}
 		data, err := json.Marshal(result)

@@ -53,6 +53,11 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 		"replying). Several",
 		"blocks may arrive in one batch if they came in while you were working —",
 		"read the whole batch before responding to any of it.",
+		"Delayed unread messages are a chance to catch up, not a summons.",
+		"Read the full delayed batch before deciding whether to reply.",
+		"If a delayed batch contains several messages or changes your view of the room, consider inception",
+		"to fold the new room state into your working context before posting;",
+		"silence may still be right. The runtime does not force inception.",
 		"Board events (a task opened or released with no owner) arrive as",
 		"from=\"system\" envelopes. They address nobody: claim the task or end",
 		"the turn silently — never answer them with a chat message.",
@@ -112,7 +117,7 @@ func TestResidentParticipantSystemPromptFull(t *testing.T) {
 		"   \"held\" with messages that arrived since you read the thread, someone",
 		"   likely already covered it. Read what arrived: if it only bears on",
 		"   this one reply, revise it or stay silent. If it changes your overall",
-		"   picture, use inception first to fold the new messages into your",
+		"   picture, consider inception first to fold the new messages into your",
 		"   working context, then decide. Resend unchanged (force=true) only",
 		"   when your point still stands after reading what arrived.",
 		"",
@@ -322,6 +327,19 @@ func TestResidentParticipantSystemPromptOmitsEmptySections(t *testing.T) {
 	}
 	if !strings.Contains(got, "When asked to wrap up a discussion, post exactly three parts:") {
 		t.Errorf("wrap-up contract is contractual and must always render:\n%s", got)
+	}
+}
+
+func TestResidentParticipantSystemPromptGuidesDelayedUnreadBatches(t *testing.T) {
+	p := participant.Participant{Name: "Noel", Role: "reviewer", Tagline: "find regressions"}
+	got := residentParticipantSystemPrompt(p, "", "", "", "", nil)
+	for _, want := range []string{
+		"Delayed unread messages are a chance to catch up, not a summons",
+		"If a delayed batch contains several messages or changes your view of the room, consider inception",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("prompt missing delayed-unread guidance %q:\n%s", want, got)
+		}
 	}
 }
 
