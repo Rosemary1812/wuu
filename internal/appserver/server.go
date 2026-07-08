@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -141,6 +142,13 @@ type Server struct {
 	residentDrainMu       sync.Mutex
 	drainingResidentAgent map[string]bool
 
+	idleUnreadWakeMu           sync.Mutex
+	idleUnreadWakeTimers       map[string]*time.Timer
+	idleUnreadWakeWaveByThread map[string]int
+	idleUnreadWakeLastSpeaker  map[string]string
+	idleUnreadWakeDelayForTest func(wave int) time.Duration
+	idleUnreadWakeRand         *rand.Rand
+
 	// residentTurnSpeech maps a participant id to its current turn's speech
 	// limiter, so afterResidentTurn can tell whether the resident already spoke
 	// through post_message/decline before deciding to fire the plain-text
@@ -214,6 +222,10 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		drainingQueuedTurns:          make(map[string]bool),
 		drainingGoalContinuation:     make(map[string]bool),
 		drainingResidentAgent:        make(map[string]bool),
+		idleUnreadWakeTimers:         make(map[string]*time.Timer),
+		idleUnreadWakeWaveByThread:   make(map[string]int),
+		idleUnreadWakeLastSpeaker:    make(map[string]string),
+		idleUnreadWakeRand:           rand.New(rand.NewSource(time.Now().UnixNano())),
 		participantBusy:              make(map[string]participantBusyEntry),
 		codexModelCache:              make(map[string]map[string]config.ProviderModelConfig),
 		memoryOverviewCache:          make(map[string]memoryOverviewCacheEntry),

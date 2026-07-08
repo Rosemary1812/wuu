@@ -259,6 +259,37 @@ func TestResidentRouterParticipantMessageHonorsMentionsAndRoutesDeepRelays(t *te
 	}
 }
 
+func TestAmbientAgentMessageSchedulesIdleUnreadWake(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
+	srv := New(rt, &lockedBuffer{})
+	srv.idleUnreadWakeDelayForTest = func(int) time.Duration { return 10 * time.Millisecond }
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	groupID := startGroupThreadForTest(t, srv)
+	for _, participantID := range []string{ada, bea} {
+		if err := session.AddThreadMember(rt.SessionDir, groupID, participantID); err != nil {
+			t.Fatalf("AddThreadMember %s: %v", participantID, err)
+		}
+	}
+
+	if err := srv.publishParticipantMessage(groupID, agentcontrol.ParticipantMessage{
+		AgentID:       ada,
+		ParticipantID: ada,
+		Kind:          "result",
+		Text:          "1",
+		CreatedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, history := waitForResidentDMHistory(t, srv, bea, 1)
+	meta := findEnvelopeMetaRecord(t, history)
+	if meta.SourceThreadID != groupID || meta.SenderParticipantID != ada {
+		t.Fatalf("idle wake meta = %+v", meta)
+	}
+}
+
 func TestResidentRouterRecordsUnansweredAddressedTelemetry(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
 	out := &lockedBuffer{}

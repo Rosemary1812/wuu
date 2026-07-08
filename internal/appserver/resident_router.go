@@ -71,7 +71,11 @@ func (s *Server) recordParticipantReaction(threadID string, seq int, participant
 	return nil
 }
 
-const residentEnvelopeBatchLimit = 20
+const (
+	residentEnvelopeBatchLimit = 20
+	idleUnreadWakeBaseDelay    = 30 * time.Second
+	idleUnreadWakeMaxDelay     = 5 * time.Minute
+)
 
 type idleUnreadCandidate struct {
 	ParticipantID string
@@ -104,6 +108,23 @@ func chooseIdleUnreadCandidate(candidates []idleUnreadCandidate, rng *rand.Rand)
 		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 	}
 	return best[rng.Intn(len(best))], true
+}
+
+func (s *Server) idleUnreadWakeDelay(wave int) time.Duration {
+	if s != nil && s.idleUnreadWakeDelayForTest != nil {
+		return s.idleUnreadWakeDelayForTest(wave)
+	}
+	if wave < 0 {
+		wave = 0
+	}
+	delay := idleUnreadWakeBaseDelay
+	for i := 0; i < wave; i++ {
+		delay *= 2
+		if delay >= idleUnreadWakeMaxDelay {
+			return idleUnreadWakeMaxDelay
+		}
+	}
+	return delay
 }
 
 func (s *Server) idleUnreadCandidates(threadID, lastSpeakerID string) []idleUnreadCandidate {
@@ -160,6 +181,89 @@ func (s *Server) idleUnreadCandidates(threadID, lastSpeakerID string) []idleUnre
 		}
 	}
 	return candidates
+}
+
+func (s *Server) scheduleIdleUnreadWake(threadID, lastSpeakerID string) {
+	if s == nil {
+		return
+	}
+	threadID = strings.TrimSpace(threadID)
+	lastSpeakerID = strings.TrimSpace(lastSpeakerID)
+	if threadID == "" {
+		return
+	}
+	s.idleUnreadWakeMu.Lock()
+	defer s.idleUnreadWakeMu.Unlock()
+	if s.idleUnreadWakeTimers == nil {
+		s.idleUnreadWakeTimers = make(map[string]*time.Timer)
+	}
+	if s.idleUnreadWakeWaveByThread == nil {
+		s.idleUnreadWakeWaveByThread = make(map[string]int)
+	}
+	if s.idleUnreadWakeLastSpeaker == nil {
+		s.idleUnreadWakeLastSpeaker = make(map[string]string)
+	}
+	if existing := s.idleUnreadWakeTimers[threadID]; existing != nil {
+		existing.Stop()
+	}
+	s.idleUnreadWakeLastSpeaker[threadID] = lastSpeakerID
+	delay := s.idleUnreadWakeDelay(s.idleUnreadWakeWaveByThread[threadID])
+	s.idleUnreadWakeTimers[threadID] = time.AfterFunc(delay, func() {
+		s.runIdleUnreadWake(threadID)
+	})
+}
+
+func (s *Server) resetIdleUnreadWake(threadID string) {
+	if s == nil {
+		return
+	}
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return
+	}
+	s.idleUnreadWakeMu.Lock()
+	defer s.idleUnreadWakeMu.Unlock()
+	if timer := s.idleUnreadWakeTimers[threadID]; timer != nil {
+		timer.Stop()
+	}
+	delete(s.idleUnreadWakeTimers, threadID)
+	delete(s.idleUnreadWakeWaveByThread, threadID)
+	delete(s.idleUnreadWakeLastSpeaker, threadID)
+}
+
+func (s *Server) runIdleUnreadWake(threadID string) {
+	if s == nil {
+		return
+	}
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return
+	}
+	s.idleUnreadWakeMu.Lock()
+	lastSpeakerID := s.idleUnreadWakeLastSpeaker[threadID]
+	delete(s.idleUnreadWakeTimers, threadID)
+	s.idleUnreadWakeMu.Unlock()
+
+	candidates := s.idleUnreadCandidates(threadID, lastSpeakerID)
+
+	s.idleUnreadWakeMu.Lock()
+	if s.idleUnreadWakeRand == nil {
+		s.idleUnreadWakeRand = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	candidate, ok := chooseIdleUnreadCandidate(candidates, s.idleUnreadWakeRand)
+	if !ok {
+		delete(s.idleUnreadWakeWaveByThread, threadID)
+		delete(s.idleUnreadWakeLastSpeaker, threadID)
+		s.idleUnreadWakeMu.Unlock()
+		return
+	}
+	if s.idleUnreadWakeWaveByThread == nil {
+		s.idleUnreadWakeWaveByThread = make(map[string]int)
+	}
+	s.idleUnreadWakeWaveByThread[threadID]++
+	s.idleUnreadWakeMu.Unlock()
+
+	s.kickResidentAgent(candidate.ParticipantID)
 }
 
 type envelopeMetaRecord struct {
@@ -235,6 +339,7 @@ func (s *Server) routeUserMessageToResidents(source *threadState, msg providers.
 		Workspace:      source.FocusWorkspace,
 	}
 	source.mu.Unlock()
+	s.resetIdleUnreadWake(env.SourceThreadID)
 	s.routeEnvelopes(source, env, mentioned)
 }
 
@@ -243,6 +348,7 @@ func (s *Server) routeParticipantMessageToResidents(source *threadState, msg age
 		return
 	}
 	source.mu.Lock()
+	sourceIsDM := strings.TrimSpace(source.DMParticipantID) != ""
 	env := MessageEnvelope{
 		SourceThreadID:      source.ID,
 		SourceTitle:         residentEnvelopeSourceTitleLocked(source),
@@ -261,6 +367,9 @@ func (s *Server) routeParticipantMessageToResidents(source *threadState, msg age
 	}
 	mentioned := s.mentionedMembersByName(source, env.Text)
 	s.routeEnvelopes(source, env, mentioned)
+	if !sourceIsDM {
+		s.scheduleIdleUnreadWake(env.SourceThreadID, env.SenderParticipantID)
+	}
 }
 
 func (s *Server) routeEnvelopes(source *threadState, base MessageEnvelope, mentioned map[string]bool) {
@@ -310,14 +419,15 @@ func (s *Server) routeEnvelopes(source *threadState, base MessageEnvelope, menti
 // history and members pull what is past their read cursor.
 //
 // WAKE gating (讨论层的核心): a normal ambient message from another AGENT does
-// NOT wake the other members. Today's models answer the instant "new message"
-// enters their context, so auto-waking every agent on every peer post produces a
-// thundering herd (the reason group counting/debate degraded). Instead an
-// ambient agent post just becomes unread in the ledger; the member sees it the
-// next time it is woken for a real reason and pulls its unread. A member is
-// woken only when: it is pushed to (an @mention, a handoff, a system directive,
-// or a sole-member DM), OR the sender is the HUMAN (a person addressing the room
-// is a genuine call to answer — all members wake and draft in parallel).
+// NOT wake the other members immediately. Today's models answer the instant
+// "new message" enters their context, so auto-waking every agent on every peer
+// post produces a thundering herd (the reason group counting/debate degraded).
+// Instead an ambient agent post becomes unread in the ledger; after the room is
+// quiet, idle-unread wake may kick one eligible reader to pull normal history.
+// A member is woken immediately only when: it is pushed to (an @mention, a
+// handoff, a system directive, or a sole-member DM), OR the sender is the HUMAN
+// (a person addressing the room is a genuine call to answer — all members wake
+// and draft in parallel).
 func (s *Server) deliverEnvelopeToMembers(members []string, base MessageEnvelope, mentioned map[string]bool, pushToInbox bool) {
 	if s == nil || s.rt == nil {
 		return
