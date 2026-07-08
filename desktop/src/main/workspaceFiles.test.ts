@@ -213,6 +213,21 @@ describe("WorkspaceFileService file save", () => {
     expect(result.mtime_ms).toBeGreaterThan(0);
   });
 
+  it("returns a renderable URL when reading an image file", () => {
+    const root = createWorkspace();
+    const imagePath = join(root, "assets", "mascot", "wuu-mascot-concept-01.png");
+    mkdirSync(dirname(imagePath), { recursive: true });
+    writeFileSync(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]));
+
+    const result = createService(root).readFile("assets/mascot/wuu-mascot-concept-01.png");
+
+    expect(result.binary).toBe(true);
+    expect(result.text).toBeUndefined();
+    expect(result.renderable_url).toBe(
+      `wuu-file://local/${Buffer.from(imagePath, "utf8").toString("base64url")}`,
+    );
+  });
+
   it("writes a text file when the base metadata still matches", () => {
     const root = createWorkspace();
     writeWorkspaceFile(root, "settings.json", "{\"enabled\":true}\n");

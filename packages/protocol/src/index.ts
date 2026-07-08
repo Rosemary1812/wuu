@@ -484,6 +484,7 @@ export type WorkspaceFileReadResult = {
   binary: boolean;
   truncated: boolean;
   text?: string;
+  renderable_url?: string;
 };
 
 export type WorkspaceFileSaveParams = {

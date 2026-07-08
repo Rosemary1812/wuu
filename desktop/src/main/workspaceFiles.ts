@@ -20,6 +20,10 @@ import type {
   WorkspaceFileSaveParams,
   WorkspaceFileSaveResult,
 } from "../shared/protocol";
+import {
+  isRenderableImageFile,
+  renderableFileURL,
+} from "./renderableFileURLs";
 
 const FILE_TREE_MAX_PATHS = 4000;
 const FILE_PREVIEW_MAX_BYTES = 512 * 1024;
@@ -195,6 +199,9 @@ function readWorkspaceFileResult(
     binary,
     truncated,
     text: binary ? undefined : previewBuffer.toString("utf8"),
+    renderable_url: isRenderableImageFile(absolutePath)
+      ? renderableFileURL(absolutePath)
+      : undefined,
   };
 }
 

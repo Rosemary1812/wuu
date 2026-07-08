@@ -758,6 +758,24 @@ export function WorkspaceFilePreview({
     );
   }
 
+  if (file.renderable_url) {
+    return (
+      <article className="workspace-file-preview">
+        <div className="workspace-file-editor-toolbar">
+          <div className="workspace-file-editor-left">
+            <div className="workspace-file-editor-status">
+              <span className="workspace-file-editor-dot readonly" aria-hidden="true" />
+              <span>只读</span>
+            </div>
+          </div>
+        </div>
+        <div className="workspace-file-image-preview">
+          <img src={file.renderable_url} alt={file.path} />
+        </div>
+      </article>
+    );
+  }
+
   if (file.binary) {
     return (
       <div className="workspace-main-empty">

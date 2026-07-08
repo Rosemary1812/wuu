@@ -494,8 +494,8 @@ describe("WorkspaceFileTree", () => {
 
   it("keeps binary files out of the editor surface", async () => {
     readWorkspaceFile.mockResolvedValueOnce(workspaceFile({
-      path: "image.png",
-      absolute_path: "/repo/image.png",
+      path: "archive.dat",
+      absolute_path: "/repo/archive.dat",
       binary: true,
       text: undefined,
     }));
@@ -503,7 +503,7 @@ describe("WorkspaceFileTree", () => {
     await render(
       <WorkspaceFilePreview
         activeContext={activeContext}
-        selectedFilePath="/repo/image.png"
+        selectedFilePath="/repo/archive.dat"
         onOpenRightPanel={() => {}}
       />,
     );
@@ -511,6 +511,32 @@ describe("WorkspaceFileTree", () => {
     await settleDirectoryLoads();
 
     expect(container.textContent).toContain("二进制文件");
+    expect(container.querySelector(".workspace-monaco-editor")).toBeNull();
+  });
+
+  it("renders image files with a renderable file URL", async () => {
+    readWorkspaceFile.mockResolvedValueOnce(workspaceFile({
+      path: "assets/mascot/wuu-mascot-concept-01.png",
+      absolute_path: "/repo/assets/mascot/wuu-mascot-concept-01.png",
+      binary: true,
+      text: undefined,
+      renderable_url: "wuu-file://local/encoded-image",
+    }));
+
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/assets/mascot/wuu-mascot-concept-01.png"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+
+    const image = container.querySelector<HTMLImageElement>(".workspace-file-image-preview img");
+    expect(image?.getAttribute("src")).toBe("wuu-file://local/encoded-image");
+    expect(image?.getAttribute("alt")).toBe("assets/mascot/wuu-mascot-concept-01.png");
+    expect(container.textContent).not.toContain("二进制文件");
     expect(container.querySelector(".workspace-monaco-editor")).toBeNull();
   });
 
