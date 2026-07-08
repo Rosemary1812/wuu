@@ -316,7 +316,7 @@ function ConversationSearchPreview({
           {hasTurns ? (
             <div className="conversation-search-preview-turns">
               {turnsForSelection.map((turn) => (
-                <PreviewTurn key={turn.id} turn={turn} />
+                <PreviewTurn key={turn.id} turn={turn} query={query} />
               ))}
             </div>
           ) : null}
@@ -326,20 +326,23 @@ function ConversationSearchPreview({
   );
 }
 
-function PreviewTurn({ turn }: { turn: Turn }): JSX.Element {
+function PreviewTurn({ turn, query }: { turn: Turn; query: string }): JSX.Element {
   const role = previewTurnRole(turn);
-  const text = previewTurnText(turn);
+  const text = previewTurnText(turn, role);
+  const oneLineText = oneLinePreviewText(text, query);
+  // Render role + final-text on a single row. `title` exposes the full
+  // untruncated text so users can still read longer turns via tooltip when
+  // the inline ellipsis hides the match context.
   return (
     <article
       className={`conversation-search-preview-turn role-${role}`}
       data-role={role}
+      title={text || undefined}
     >
-      <div className="conversation-search-preview-role">
+      <span className="conversation-search-preview-role">
         {previewTurnRoleLabel(role)}
-      </div>
-      <div className="conversation-search-preview-text">
-        {truncatePreviewText(text)}
-      </div>
+      </span>
+      <span className="conversation-search-preview-text">{oneLineText}</span>
     </article>
   );
 }
@@ -373,19 +376,57 @@ function previewTurnRoleLabel(
   }
 }
 
-function previewTurnText(turn: Turn): string {
-  const parts: string[] = [];
+// Returns the turn's user-visible text, the way the main chat surface reads
+// it: for user turns, the user_message item; for assistant turns, the LAST
+// non-empty agent_message item — not all of them concatenated. A single
+// assistant turn can carry streaming chunks, reasoning echoes, or a
+// commentary pass before a final answer, and showing any of those would
+// give the search-preview pane a misleading "this thread was about X"
+// signal. The Go side uses the same rule in
+// finalAgentMessageText (appserver/resident_turn_failure.go).
+function previewTurnText(
+  turn: Turn,
+  role: "user" | "assistant" | "system",
+): string {
+  const targetType =
+    role === "user"
+      ? "user_message"
+      : role === "assistant"
+        ? "agent_message"
+        : null;
+  if (!targetType) return "";
+  let final = "";
   for (const item of turn.items) {
+    if (item.type !== targetType) continue;
     const text = (item.text ?? "").trim();
-    if (text) parts.push(text);
+    if (text) final = text;
   }
-  return parts.join("\n\n");
+  return final;
 }
 
-// Truncate long turns so a single chatty assistant reply does not push the
-// other turns off the visible pane. The limit is generous enough to keep a
-// real "what was this thread about" answer readable.
-function truncatePreviewText(text: string, limit = 400): string {
-  if (text.length <= limit) return text;
-  return text.slice(0, limit).trimEnd() + "…";
+// Pick a single-line window of the turn text that keeps the query match
+// visible. A naive "first N chars" slice (the previous behavior) hides the
+// match whenever it sits past position N — the exact disambiguation
+// problem this pane exists to solve. Falls back to the leading window when
+// the turn does not contain the query (e.g. surrounding context turns).
+function oneLinePreviewText(
+  text: string,
+  query: string,
+  halfWindow = 110,
+): string {
+  if (!text) return "";
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) return leadingWindow(text, halfWindow * 2);
+  const idx = text.toLowerCase().indexOf(trimmedQuery.toLowerCase());
+  if (idx < 0) return leadingWindow(text, halfWindow * 2);
+  const start = Math.max(0, idx - halfWindow);
+  const end = Math.min(text.length, idx + trimmedQuery.length + halfWindow);
+  const prefix = start > 0 ? "…" : "";
+  const suffix = end < text.length ? "…" : "";
+  return prefix + text.slice(start, end).trim() + suffix;
+}
+
+function leadingWindow(text: string, length: number): string {
+  if (text.length <= length) return text;
+  return text.slice(0, length).trimEnd() + "…";
 }

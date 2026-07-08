@@ -1451,12 +1451,13 @@
 
 .conversation-search-preview-turn {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: baseline;
   min-width: 0;
-  gap: 4px;
+  gap: 8px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
-  padding: 8px 10px;
+  padding: 6px 10px;
 }
 
 .conversation-search-preview-turn.role-user {
@@ -1470,6 +1471,7 @@
 }
 
 .conversation-search-preview-role {
+  flex: 0 0 auto;
   color: var(--ink-muted);
   font-size: 11px;
   font-weight: var(--weight-semibold);
@@ -1478,13 +1480,15 @@
 }
 
 .conversation-search-preview-text {
+  flex: 1 1 auto;
   min-width: 0;
   color: var(--ink);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   user-select: text;
   -webkit-user-select: text;
 }
