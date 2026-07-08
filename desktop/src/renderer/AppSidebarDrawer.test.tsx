@@ -184,6 +184,10 @@ describe("collapsed sidebar hover drawer", () => {
     delete (globalThis as { wuu?: WuuDesktopApi }).wuu;
   });
 
+  it("uses a 240ms edge hover intent delay", () => {
+    expect(SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS).toBe(240);
+  });
+
   it("closes the drawer when the pointer leaves the window", async () => {
     await renderCollapsedApp();
     await openDrawerViaHoverZone();
