@@ -30,8 +30,7 @@ describe("workspace file preview layout", () => {
       /grid-template-rows:\s*minmax\(0,\s*1fr\);/,
     );
     expect(cssRuleBody(".workspace-file-editor-scroll")).toMatch(/overflow:\s*hidden;/);
-    expect(cssRuleBody(".workspace-code-editor")).toMatch(/height:\s*100%;/);
-    expect(cssRuleBody(".workspace-code-editor .cm-scroller")).toMatch(/overflow:\s*auto;/);
+    expect(cssRuleBody(".workspace-code-editor,\n.workspace-monaco-editor")).toMatch(/height:\s*100%;/);
   });
 
   it("adds a restrained syntax palette for highlighted code tokens", () => {

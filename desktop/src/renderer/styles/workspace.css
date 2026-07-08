@@ -1570,7 +1570,8 @@
   background: var(--paper);
 }
 
-.workspace-code-editor {
+.workspace-code-editor,
+.workspace-monaco-editor {
   height: 100%;
   min-width: 0;
   min-height: 0;

@@ -4,10 +4,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeContext, WorkspaceDirectoryListResult } from "../shared/protocol";
 import { WorkspaceFilePreview, WorkspaceFileTree } from "./WorkspaceFiles";
 
+vi.mock("./WorkspaceMonacoEditor", () => ({
+  WorkspaceMonacoEditor: ({
+    path,
+    text,
+  }: {
+    path: string;
+    text: string;
+  }) => (
+    <div className="workspace-monaco-editor" data-path={path}>
+      {text}
+    </div>
+  ),
+}));
+
 let container: HTMLDivElement;
 let root: Root | null = null;
 let listWorkspaceDirectory: ReturnType<typeof vi.fn>;
 let readWorkspaceFile: ReturnType<typeof vi.fn>;
+let writeWorkspaceFile: ReturnType<typeof vi.fn>;
 let scrollIntoView: ReturnType<typeof vi.fn>;
 
 const activeContext: RuntimeContext = {
@@ -58,16 +73,20 @@ beforeEach(() => {
       path,
       absolute_path: `/repo/${path}`,
       size_bytes: 12,
+      mtime_ms: 1000,
+      sha256: "a".repeat(64),
       binary: false,
       truncated: false,
       text: "button code",
     }),
   );
+  writeWorkspaceFile = vi.fn();
   Object.defineProperty(window, "wuu", {
     configurable: true,
     value: {
       listWorkspaceDirectory,
       readWorkspaceFile,
+      writeWorkspaceFile,
     },
   });
   scrollIntoView = vi.fn();
@@ -168,12 +187,14 @@ describe("WorkspaceFileTree", () => {
     expect(container.textContent).toContain("button code");
   });
 
-  it("opens selected text files in the center CodeMirror editor surface", async () => {
+  it("opens selected text files in the center Monaco editor surface", async () => {
     readWorkspaceFile.mockResolvedValueOnce({
       root: "/repo",
       path: "AGENTS.md",
       absolute_path: "/repo/AGENTS.md",
       size_bytes: 35,
+      mtime_ms: 1000,
+      sha256: "b".repeat(64),
       binary: false,
       truncated: false,
       text: "## Execution Autonomy\n\n- Keep going.\n",
@@ -190,17 +211,19 @@ describe("WorkspaceFileTree", () => {
     await settleDirectoryLoads();
 
     expect(readWorkspaceFile).toHaveBeenCalledWith("AGENTS.md", "/repo");
-    expect(container.querySelector(".workspace-code-editor .cm-editor")).not.toBeNull();
+    expect(container.querySelector(".workspace-monaco-editor")).not.toBeNull();
     expect(container.querySelector(".workspace-file-preview-header")).toBeNull();
     expect(container.textContent).toContain("Execution Autonomy");
   });
 
-  it("renders code files in CodeMirror without treating source as HTML", async () => {
+  it("renders code files in Monaco without treating source as HTML", async () => {
     readWorkspaceFile.mockResolvedValueOnce({
       root: "/repo",
       path: "src/index.ts",
       absolute_path: "/repo/src/index.ts",
       size_bytes: 44,
+      mtime_ms: 1000,
+      sha256: "c".repeat(64),
       binary: false,
       truncated: false,
       text: 'const answer = 42;\nconsole.log("<tag>", answer);\n',
@@ -216,7 +239,7 @@ describe("WorkspaceFileTree", () => {
 
     await settleDirectoryLoads();
 
-    const content = container.querySelector<HTMLElement>(".workspace-code-editor .cm-content");
+    const content = container.querySelector<HTMLElement>(".workspace-monaco-editor");
     expect(content?.textContent).toContain('console.log("<tag>", answer);');
     expect(content?.innerHTML).not.toContain("<tag>");
   });

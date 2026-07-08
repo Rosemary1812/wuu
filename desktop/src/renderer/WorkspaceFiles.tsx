@@ -22,7 +22,7 @@ import type {
   WorkspaceFileReadResult,
   WorkspaceFileTreeEntry
 } from "../shared/protocol";
-import { WorkspaceCodeEditor } from "./WorkspaceCodeEditor";
+import { WorkspaceMonacoEditor } from "./WorkspaceMonacoEditor";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
 type DirectoryLoadState = {
@@ -661,7 +661,7 @@ export function WorkspaceFilePreview({
   return (
     <article className="workspace-file-preview editor-only">
       <div className="workspace-file-editor-scroll">
-        <WorkspaceCodeEditor path={file.path} text={file.text ?? ""} />
+        <WorkspaceMonacoEditor path={file.path} text={file.text ?? ""} />
       </div>
     </article>
   );
