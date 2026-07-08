@@ -374,6 +374,37 @@ func (m *residentTaskManager) SetPlan(ctx context.Context, subthreadID string, p
 	if err != nil {
 		return tools.TaskView{}, err
 	}
+	// Planning is only for a live task: a resolved task whose lead survived the
+	// resolve must not be silently re-planned and re-executed — that needs a
+	// fresh escalation (status back to task), not a stray set_plan.
+	if thread.Status != session.ConversationThreadTask {
+		return tools.TaskView{}, fmt.Errorf("set_plan: task %q is %q, not an active task; only a live task can be planned", thread.ID, thread.Status)
+	}
+	// Plan authority = the lead's orchestration right (plan §T6): the lead is
+	// the single orchestrator, and only the lead may declare or revise the plan
+	// (a replan is just another set_plan). A human-escalated task is born with
+	// its lead; an agent-created standalone task is born leadless, so the first
+	// board member to plan it atomically takes the lead here (CAS). This gate
+	// runs before any validation or write so a non-lead's set_plan cannot even
+	// touch the plan.
+	lead := strings.TrimSpace(thread.LeadParticipantID)
+	if lead == "" {
+		claimed, becameLead, err := session.SetConversationThreadLeadIfEmpty(m.server.rt.SessionDir, thread.ID, m.participantID)
+		if err != nil {
+			return tools.TaskView{}, fmt.Errorf("set_plan: claim orchestration lead: %w", err)
+		}
+		thread = claimed
+		lead = strings.TrimSpace(claimed.LeadParticipantID)
+		if becameLead {
+			m.server.recordTaskEventFor(claimed, "", session.TaskEventLeadInvoked, m.participantID,
+				"claimed orchestration lead", "")
+		}
+		// If becameLead is false someone raced in first; lead now holds their
+		// id and the ownership check below refuses this caller.
+	}
+	if m.participantID != lead {
+		return tools.TaskView{}, fmt.Errorf("set_plan: task %q is led by %q; only its lead may declare or revise the plan", thread.ID, lead)
+	}
 	if len(pieces) == 0 {
 		return tools.TaskView{}, errors.New("set_plan: plan is required")
 	}

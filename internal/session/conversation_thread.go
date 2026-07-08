@@ -521,6 +521,67 @@ WHERE id = ? AND status = ? AND owner_participant_id = ''`,
 	}
 }
 
+// SetConversationThreadLeadIfEmpty atomically claims task-lead (orchestration)
+// authority on a task subthread: a single CAS that sets lead_participant_id to
+// participantID only when the task currently has no lead. becameLead reports
+// whether this call won the claim (rows affected == 1). Losing the CAS is a
+// normal outcome, not an error — it returns the current thread with
+// becameLead=false so the caller can read who already leads and defer to them.
+// It is the atomic counterpart to a human-granted lead: an agent-created
+// standalone task is born leadless, and the first board member to plan it takes
+// the lead here. Claiming is refused (as a loud error) only when the subthread
+// does not exist or is not in the task status — only a live task has an
+// orchestration lead to hold. Lead authority, unlike ownership, is not released
+// while the task runs.
+func SetConversationThreadLeadIfEmpty(sessDir, id, participantID string) (ConversationThread, bool, error) {
+	id = strings.TrimSpace(id)
+	participantID = strings.TrimSpace(participantID)
+	if id == "" {
+		return ConversationThread{}, false, fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
+	}
+	if participantID == "" {
+		return ConversationThread{}, false, errors.New("set conversation thread lead: participant id is required")
+	}
+
+	db, err := openStore(sessDir)
+	if err != nil {
+		return ConversationThread{}, false, err
+	}
+	defer db.Close()
+
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+
+	res, err := db.Exec(`
+UPDATE conversation_threads
+SET lead_participant_id = ?
+WHERE id = ? AND status = ? AND lead_participant_id = ''`,
+		participantID, id, string(ConversationThreadTask))
+	if err != nil {
+		return ConversationThread{}, false, fmt.Errorf("set conversation thread lead: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return ConversationThread{}, false, fmt.Errorf("set conversation thread lead: %w", err)
+	}
+
+	thread, findErr := findConversationThreadByIDDB(db, id)
+	if findErr != nil {
+		return ConversationThread{}, false, findErr
+	}
+	if affected == 1 {
+		return thread, true, nil
+	}
+	// CAS lost. A non-task status is a loud error (a discussion reply or a
+	// resolved task has no orchestration lead to claim); a task that already
+	// carries a lead is a normal race loss — return it so the caller reads who
+	// leads and refuses accordingly.
+	if thread.Status != ConversationThreadTask {
+		return thread, false, fmt.Errorf("set conversation thread lead %q: status is %q, only a task has an orchestration lead", id, thread.Status)
+	}
+	return thread, false, nil
+}
+
 // UnclaimConversationThread releases work ownership. Only the current owner
 // can release; the status stays task so the work is immediately claimable by
 // someone else.

@@ -150,6 +150,70 @@ func TestUnclaimConversationThread(t *testing.T) {
 	}
 }
 
+func TestSetConversationThreadLeadIfEmptyCAS(t *testing.T) {
+	dir := t.TempDir()
+	created := seedTaskThread(t, dir)
+	if created.LeadParticipantID != "" {
+		t.Fatalf("born-task cth must start leadless, got %q", created.LeadParticipantID)
+	}
+
+	// First claimer wins: lead is stamped, becameLead true.
+	claimed, became, err := SetConversationThreadLeadIfEmpty(dir, created.ID, "prt-andy")
+	if err != nil || !became {
+		t.Fatalf("first lead claim: became=%v err=%v", became, err)
+	}
+	if claimed.LeadParticipantID != "prt-andy" {
+		t.Fatalf("lead = %q, want prt-andy", claimed.LeadParticipantID)
+	}
+	// Claiming the lead does not touch work ownership.
+	if claimed.OwnerParticipantID != "" {
+		t.Fatalf("lead claim must not set an owner, got %q", claimed.OwnerParticipantID)
+	}
+
+	// A second, different claimer loses the CAS: no error, becameLead false,
+	// and the returned thread reports who already leads.
+	current, became, err := SetConversationThreadLeadIfEmpty(dir, created.ID, "prt-bella")
+	if err != nil {
+		t.Fatalf("losing lead claim should not error: %v", err)
+	}
+	if became {
+		t.Fatal("second lead claim should lose the CAS")
+	}
+	if current.LeadParticipantID != "prt-andy" {
+		t.Fatalf("loser sees lead %q, want prt-andy", current.LeadParticipantID)
+	}
+
+	// The existing lead re-claiming is also a (harmless) CAS loss, not a
+	// refresh: lead_participant_id is already non-empty.
+	if _, became, err := SetConversationThreadLeadIfEmpty(dir, created.ID, "prt-andy"); err != nil || became {
+		t.Fatalf("lead self re-claim: became=%v err=%v (want false, nil)", became, err)
+	}
+}
+
+func TestSetConversationThreadLeadIfEmptyRejectsNonTask(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {
+		t.Fatal(err)
+	}
+	// An open discussion reply has no orchestration lead to claim.
+	reply, err := CreateConversationThread(dir, ConversationThread{
+		SessionID:    "thread-1",
+		AnchorItemID: "seq-2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := SetConversationThreadLeadIfEmpty(dir, reply.ID, "prt-andy"); err == nil ||
+		!strings.Contains(err.Error(), "only a task has an orchestration lead") {
+		t.Fatalf("claiming lead on an open reply should be refused, got %v", err)
+	}
+
+	// A missing subthread is a loud not-found, not a silent no-op.
+	if _, _, err := SetConversationThreadLeadIfEmpty(dir, "cth-nope", "prt-andy"); err == nil {
+		t.Fatal("claiming lead on a missing subthread should error")
+	}
+}
+
 func TestConcludeConversationThreadByOwner(t *testing.T) {
 	dir := t.TempDir()
 	created := seedTaskThread(t, dir)
