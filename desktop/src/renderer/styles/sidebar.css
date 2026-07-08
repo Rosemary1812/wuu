@@ -102,6 +102,17 @@
  * popped-out titlebar reservation. */
 .app-shell.right-panel-globalized .workspace-panel-tabbar {
   padding-left: 86px;
+  /* The main titlebar (which normally provides the window drag region) lives
+   * inside the now-hidden conversation-pane, so the right panel's tabbar
+   * takes over as the drag handle when globalized. Buttons + tabs opt
+   * back out below so they stay clickable. */
+  -webkit-app-region: drag;
+}
+
+.app-shell.right-panel-globalized .workspace-panel-tabbar > button,
+.app-shell.right-panel-globalized .workspace-panel-tabbar .workspace-tool-tab,
+.app-shell.right-panel-globalized .workspace-panel-tabbar .workspace-panel-tabs {
+  -webkit-app-region: no-drag;
 }
 
 .app-shell.bottom-panel-open {
