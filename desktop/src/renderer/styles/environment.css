@@ -1410,6 +1410,16 @@
   font-weight: var(--weight-semibold);
   line-height: 1.4;
   word-break: break-word;
+  /* The thread title can be a long markdown query (the user's first
+   * turn when they paste a doc into the composer) — without a height
+   * cap it wraps into a multi-paragraph block and pushes the per-turn
+   * preview rows below the header out of view. Cap to one line + an
+   * ellipsis here; the `title` attribute on the <h2> (added in the
+   * ConversationSearchOverlay.tsx side of this fix) still exposes
+   * the full text on hover so the information is not lost. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .conversation-search-preview-meta {

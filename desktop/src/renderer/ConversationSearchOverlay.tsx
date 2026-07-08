@@ -288,7 +288,9 @@ function ConversationSearchPreview({
       ) : (
         <>
           <header className="conversation-search-preview-header">
-            <h2 className="conversation-search-preview-title">{title}</h2>
+            <h2 className="conversation-search-preview-title" title={title}>
+              {title}
+            </h2>
             <div className="conversation-search-preview-meta">
               <span className="conversation-search-preview-context">
                 {contextLabel}
