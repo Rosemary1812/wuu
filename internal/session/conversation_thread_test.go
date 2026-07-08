@@ -62,6 +62,42 @@ func TestConversationThreadCRUD(t *testing.T) {
 	}
 }
 
+// A reply subthread created from a parent message persists that binding: its
+// seq and author survive a create -> find -> list round trip (T3).
+func TestConversationThreadParentBindingPersists(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "grp", "/tmp/project"); err != nil {
+		t.Fatal(err)
+	}
+	created, err := CreateConversationThread(dir, ConversationThread{
+		SessionID:                 "grp",
+		AnchorItemID:              "grp-turn-0001-item-1",
+		Title:                     "converge",
+		ParentSeq:                 7,
+		ParentAuthorParticipantID: " prt-ada ",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if created.ParentSeq != 7 || created.ParentAuthorParticipantID != "prt-ada" {
+		t.Fatalf("create returned parent binding %d/%q, want 7/prt-ada", created.ParentSeq, created.ParentAuthorParticipantID)
+	}
+	got, err := FindConversationThreadByID(dir, created.ID)
+	if err != nil {
+		t.Fatalf("find: %v", err)
+	}
+	if got.ParentSeq != 7 || got.ParentAuthorParticipantID != "prt-ada" {
+		t.Fatalf("persisted parent binding = %d/%q, want 7/prt-ada", got.ParentSeq, got.ParentAuthorParticipantID)
+	}
+	list, err := ListConversationThreads(dir, "grp")
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(list) != 1 || list[0].ParentSeq != 7 || list[0].ParentAuthorParticipantID != "prt-ada" {
+		t.Fatalf("listed parent binding = %+v", list)
+	}
+}
+
 func TestFindConversationThreadByID(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {

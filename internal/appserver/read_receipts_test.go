@@ -55,7 +55,7 @@ func TestThreadMarksRPCReturnsSeenAndReactions(t *testing.T) {
 		t.Fatalf("AddThreadMember: %v", err)
 	}
 	now := time.Now().UTC()
-	if err := session.MarkMessageSeen(rt.SessionDir, groupID, 2, andy, session.SeenStatusCompleted, now); err != nil {
+	if err := session.MarkMessageSeen(rt.SessionDir, groupID, 2, andy, session.SeenStatusCompleted, "", now); err != nil {
 		t.Fatal(err)
 	}
 	if err := session.SetMessageReaction(rt.SessionDir, groupID, 2, andy, "smug", now); err != nil {

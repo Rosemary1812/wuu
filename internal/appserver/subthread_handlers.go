@@ -113,16 +113,24 @@ func (s *Server) handleThreadEscalateSub(req Request) error {
 	}
 
 	// Confirm the subthread belongs to this parent thread before mutating it.
-	if _, err := s.findConversationSubthread(threadID, subthreadID, ""); err != nil {
+	parent, err := s.findConversationSubthread(threadID, subthreadID, "")
+	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
+	}
+	// A reply cannot be escalated by the author of the message it hangs off of —
+	// you do not converge a task on your own message (T3). Defensive on this
+	// human path (the escalator is normally the human, not the parent author),
+	// but enforced regardless.
+	if initiator := strings.TrimSpace(params.CreatedBy); initiator != "" && parent.ParentAuthorParticipantID != "" && initiator == parent.ParentAuthorParticipantID {
+		return s.writeResponse(req.ID, nil, errors.New("cannot open a reply thread on your own message"))
 	}
 	// Escalation grants both lead identity and workflow-orchestration authority in
 	// one act. The lead is the named member the human picked (LeadParticipantID),
-	// falling back to the escalator when that is itself a named agent. Escalation
-	// is a human click, so CreatedBy is normally the human/empty and the picked
-	// lead field is the load-bearing one; a non-named lead is rejected so the
-	// runtime workflow gate never authorizes a phantom identity.
-	lead, err := s.resolveTaskLead(params.LeadParticipantID, params.CreatedBy)
+	// falling back to the reply's parent message author (T3) when that is itself a
+	// named agent. Escalation is a human click, so the picked lead field is the
+	// load-bearing one; a non-named lead is rejected so the runtime workflow gate
+	// never authorizes a phantom identity.
+	lead, err := s.resolveTaskLead(params.LeadParticipantID, parent.ParentAuthorParticipantID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -155,11 +163,12 @@ func (s *Server) handleThreadEscalateSub(req Request) error {
 // resolveTaskLead determines the single named agent that becomes the task lead on
 // escalation. A picked lead (leadParticipantID) wins but must be an active named
 // participant — a human/unknown id is rejected so the runtime workflow gate cannot
-// authorize a phantom identity. When no lead is picked, the escalator (createdBy)
-// is used only if it is itself a named agent; otherwise the lead is left empty (no
-// one holds orchestration authority until a later escalation names one). Returning
-// empty is valid: it simply means the task has no workflow lead yet.
-func (s *Server) resolveTaskLead(leadParticipantID, createdBy string) (string, error) {
+// authorize a phantom identity. When no lead is picked, the fallback (the reply's
+// parent message author, T3) is used only if it is itself a named agent; otherwise
+// the lead is left empty (no one holds orchestration authority until a planner
+// claims it — T6). Returning empty is valid: it simply means the task has no
+// workflow lead yet.
+func (s *Server) resolveTaskLead(leadParticipantID, fallback string) (string, error) {
 	lead := strings.TrimSpace(leadParticipantID)
 	if lead != "" {
 		if !s.isNamedParticipant(lead) {
@@ -167,7 +176,7 @@ func (s *Server) resolveTaskLead(leadParticipantID, createdBy string) (string, e
 		}
 		return lead, nil
 	}
-	if candidate := strings.TrimSpace(createdBy); candidate != "" && s.isNamedParticipant(candidate) {
+	if candidate := strings.TrimSpace(fallback); candidate != "" && s.isNamedParticipant(candidate) {
 		return candidate, nil
 	}
 	return "", nil
@@ -354,11 +363,29 @@ func (s *Server) openConversationSubthread(params ThreadOpenSubParams) (session.
 	} else if nested {
 		return session.ConversationThread{}, fmt.Errorf("cannot open a reply on a message already inside reply thread %q", parentSub)
 	}
+	// Bind the reply to its parent message (T3): resolve the anchor to its seq
+	// and author. Best-effort — a synthetic/forged anchor matching no rendered
+	// main-stream item leaves the binding empty rather than failing the open.
+	parentSeq, parentAuthor, _ := s.mainStreamAnchorBinding(threadID, anchorItemID)
+	// You cannot open a reply thread on your own message. openConversationSubthread
+	// is the human's action (the desktop viewer is the sole caller of this RPC),
+	// and a Thread converges on someone else's message — never your own; a
+	// user/thread-owner anchor (parent author == "human") is exactly that case.
+	// The frontend hides the entry on the human's own bubbles; the backend
+	// refuses regardless so a forged anchor can't get through. (The createdBy
+	// param is the anchor author the frontend seeds membership from, not the
+	// opener's identity, so it is deliberately not compared here — the agent
+	// reply-on-own-message case is enforced on the escalation path instead.)
+	if parentAuthor == humanReactionParticipantID {
+		return session.ConversationThread{}, errors.New("cannot open a reply thread on your own message")
+	}
 	thread, err := session.CreateConversationThread(s.rt.SessionDir, session.ConversationThread{
-		SessionID:    threadID,
-		AnchorItemID: anchorItemID,
-		Title:        params.Title,
-		CreatedBy:    params.CreatedBy,
+		SessionID:                 threadID,
+		AnchorItemID:              anchorItemID,
+		Title:                     params.Title,
+		CreatedBy:                 params.CreatedBy,
+		ParentSeq:                 parentSeq,
+		ParentAuthorParticipantID: parentAuthor,
 	})
 	if err != nil {
 		return session.ConversationThread{}, err

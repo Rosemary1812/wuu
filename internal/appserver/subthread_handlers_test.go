@@ -171,7 +171,8 @@ func TestEscalateConversationSubthreadAttachesTaskCard(t *testing.T) {
 
 // Escalation grants task-lead authority to the picked named member. A picked lead
 // that is not an active named participant is rejected; when no lead is picked the
-// backend falls back to a named escalator.
+// backend falls back to the reply's parent message author (T3), NOT whoever
+// clicked escalate — so a named created_by no longer reassigns the lead.
 func TestEscalateConversationSubthreadRecordsPickedLead(t *testing.T) {
 	srv, _ := newResidentSpeechTestServer(t)
 	// Escalation now wakes the picked lead for planning; drain that resident
@@ -217,21 +218,23 @@ func TestEscalateConversationSubthreadRecordsPickedLead(t *testing.T) {
 		t.Fatalf("escalating with a non-named lead must error, got %+v", resp)
 	}
 
-	// When no lead is picked but the escalator is itself a named agent, the lead
-	// falls back to that named agent. A distinct agent proves the fallback actually
-	// wrote a value (overwrite-if-non-empty reassigns from the prior lead).
-	fallbackID := saveNamedParticipant(t, srv.rt, "Milo", "worker", "")
-	raw = fmt.Sprintf(`{"id":"fb","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"created_by":%q}}`, groupID, cth.ID, fallbackID)
+	// When no lead is picked, created_by is NO LONGER the fallback (T3): the lead
+	// defaults to the reply's parent message author, not whoever clicked escalate.
+	// This cth has no bound parent author (synthetic anchor), so a leadless
+	// re-escalation naming a named created_by leaves the previously-recorded lead
+	// in place rather than reassigning it to created_by.
+	otherNamed := saveNamedParticipant(t, srv.rt, "Milo", "worker", "")
+	raw = fmt.Sprintf(`{"id":"fb","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"created_by":%q}}`, groupID, cth.ID, otherNamed)
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
-		t.Fatalf("thread/escalateSub (fallback): %v", err)
+		t.Fatalf("thread/escalateSub (no picked lead): %v", err)
 	}
 	resp = responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "fb")
 	if errMsg, ok := resp["error"]; ok {
-		t.Fatalf("thread/escalateSub (fallback) returned error: %v", errMsg)
+		t.Fatalf("thread/escalateSub (no picked lead) returned error: %v", errMsg)
 	}
 	view = remarshal[ThreadEscalateSubResult](t, resp["result"]).Subthread
-	if view.LeadParticipantID != fallbackID {
-		t.Fatalf("lead_participant_id = %q, want named escalator fallback %q", view.LeadParticipantID, fallbackID)
+	if view.LeadParticipantID != leadID {
+		t.Fatalf("lead_participant_id = %q, want the prior picked lead %q kept — created_by is no longer the fallback (T3: parent author is)", view.LeadParticipantID, leadID)
 	}
 }
 

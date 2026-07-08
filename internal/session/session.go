@@ -1014,6 +1014,17 @@ func migrateSchema(db *sql.DB) error {
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_workspace_id ON sessions(workspace_id)`); err != nil {
 		return fmt.Errorf("migrate sessions database: %w", err)
 	}
+	// thread_id tags a read receipt / mention mark with the reply subthread the
+	// marked message belongs to ('' = main stream, cth-* = a reply subthread).
+	// It is a redundant descriptor of the message that seq addresses (a given seq
+	// carries one consistent tag), added so per-cth read cursors can be computed
+	// without joining session_messages: ThreadReadWatermarkScoped filters seen
+	// rows by this tag so a cth read never advances the main-stream cursor and
+	// vice versa (T3 independent per-cth cursor). Legacy rows default '' — they
+	// are historical main-stream marks, no data migration needed.
+	if err := addColumnIfMissing(db, "message_marks", "thread_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	// Task-escalation columns on conversation_threads: escalated_at/escalated_by
 	// mark a reply promoted to a task (survives resolve); summary holds the
 	// one-line conclusion bubbled back to the main stream on wrap-up.
@@ -1047,6 +1058,19 @@ func migrateSchema(db *sql.DB) error {
 	// blocked/needs_human/completed/failed), deliberately separate from the
 	// approval status column. Empty = never entered execution.
 	if err := addColumnIfMissing(db, "conversation_threads", "exec_state", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// parent_seq / parent_author_participant_id bind a reply subthread to the
+	// exact main-stream message it was opened from (T3 Thread-first-class): the
+	// message's seq and its author's participant id ("human" for a user/thread-
+	// owner message). AnchorItemID stays for GUI rendering; these two are the
+	// durable, seq-addressable binding the escalation lead default and the
+	// reply-to-your-own-message refusal key on. Zero/empty when a task was born
+	// standalone (no anchor) or the anchor could not be resolved to a message.
+	if err := addColumnIfMissing(db, "conversation_threads", "parent_seq", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "conversation_threads", "parent_author_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	return nil

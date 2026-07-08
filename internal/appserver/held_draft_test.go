@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
 // Held draft (task-rail design §8.3): when a resident composes a reply against
@@ -35,7 +36,7 @@ func TestHeldDraftHoldsWhenRoomMovedAndForcePublishes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed message: %v", err)
 	}
-	if err := session.MarkMessageSeen(rt.SessionDir, groupID, seq, ada, session.SeenStatusCompleted, time.Now().UTC()); err != nil {
+	if err := session.MarkMessageSeen(rt.SessionDir, groupID, seq, ada, session.SeenStatusCompleted, "", time.Now().UTC()); err != nil {
 		t.Fatalf("mark Ada seen: %v", err)
 	}
 	// The room MOVES while Ada is still composing this turn: Bea's answer lands
@@ -78,6 +79,88 @@ func TestHeldDraftHoldsWhenRoomMovedAndForcePublishes(t *testing.T) {
 	}
 	if posted.Text == "" || posted.ThreadID != groupID {
 		t.Fatalf("forced post not published correctly: %+v", posted)
+	}
+}
+
+// A reply subthread carries its own freshness scope (T3): a cth draft is held
+// only against new messages in the SAME cth, and a main-stream draft only
+// against new main messages. The two scopes never cross — a main post cannot
+// hold a cth draft, and a cth post cannot hold a main draft. Uses the scoped
+// per-cth basis (the cth's own read watermark) exactly as PostMessage does.
+func TestHeldDraftCthAndMainStreamScopesAreIsolated(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
+	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	ada := saveNamedParticipant(t, rt, "Ada", "reviewer", "")
+	bea := saveNamedParticipant(t, rt, "Bea", "reviewer", "")
+	groupID := startNamedGroupThreadForTest(t, srv, "scope").ID
+	for _, id := range []string{ada, bea} {
+		if err := session.AddThreadMember(rt.SessionDir, groupID, id); err != nil {
+			t.Fatalf("AddThreadMember: %v", err)
+		}
+	}
+	cthHeld, err := session.CreateConversationThread(rt.SessionDir, session.ConversationThread{
+		SessionID: groupID, AnchorItemID: "anchor-held", Status: session.ConversationThreadOpen,
+	})
+	if err != nil {
+		t.Fatalf("create cthHeld: %v", err)
+	}
+	cthClean, err := session.CreateConversationThread(rt.SessionDir, session.ConversationThread{
+		SessionID: groupID, AnchorItemID: "anchor-clean", Status: session.ConversationThreadOpen,
+	})
+	if err != nil {
+		t.Fatalf("create cthClean: %v", err)
+	}
+
+	appendMsg := func(threadTag, pid, text string) int {
+		seq, err := session.AppendHistoryRecordReturningSeq(rt.SessionDir, groupID, session.HistoryRecord{
+			Role: "participant", ParticipantID: pid, PostKind: "result", ThreadID: threadTag, Content: text, At: time.Now().UTC(),
+		})
+		if err != nil {
+			t.Fatalf("append message: %v", err)
+		}
+		return seq
+	}
+	markSeen := func(seq int, threadTag string) {
+		if err := session.MarkMessageSeen(rt.SessionDir, groupID, seq, bea, session.SeenStatusCompleted, threadTag, time.Now().UTC()); err != nil {
+			t.Fatalf("mark Bea seen: %v", err)
+		}
+	}
+	// A fresh turn's speech (Bea engaged the group), so the held check applies.
+	post := func(target, text string) tools.PostedMessage {
+		posted, err := srv.residentParticipantSpeechForTurn(bea, nil, map[string]bool{groupID: true}).
+			PostMessage(context.Background(), "result", text, target, 0, false)
+		if err != nil {
+			t.Fatalf("PostMessage to %q: %v", target, err)
+		}
+		return posted
+	}
+
+	// (1) cth-internal freshness: Bea read cthHeld up to s0; Ada posts again in
+	// the SAME cth. Bea's cth-scoped basis is now stale -> held.
+	s0 := appendMsg(cthHeld.ID, ada, "cth kickoff Bea reads")
+	markSeen(s0, cthHeld.ID)
+	_ = appendMsg(cthHeld.ID, ada, "Ada moves the cth")
+	if held := post(cthHeld.ID, "我在这个 thread 里补一句"); !held.Held {
+		t.Fatalf("a cth draft on a stale cth basis must be held, got %+v", held)
+	}
+
+	// (2) a new MAIN message must NOT hold a cth draft. Bea's cthClean cursor is
+	// current; a main post is a different scope.
+	sClean := appendMsg(cthClean.ID, ada, "clean cth kickoff")
+	markSeen(sClean, cthClean.ID)
+	_ = appendMsg("", ada, "unrelated main-stream chatter")
+	if posted := post(cthClean.ID, "clean cth 里我先发"); posted.Held {
+		t.Fatalf("a new main-stream message must not hold a cth draft (scope isolation), got %+v", posted)
+	}
+
+	// (3) a new CTH message must NOT hold a MAIN draft. Bea's main cursor is
+	// current; a cth post is a different scope.
+	sMain := appendMsg("", ada, "main kickoff Bea reads")
+	markSeen(sMain, "")
+	_ = appendMsg(cthHeld.ID, ada, "more cth traffic")
+	if posted := post(groupID, "主流我说一句"); posted.Held {
+		t.Fatalf("a new cth message must not hold a main-stream draft (scope isolation), got %+v", posted)
 	}
 }
 

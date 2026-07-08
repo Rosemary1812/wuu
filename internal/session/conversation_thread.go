@@ -90,6 +90,17 @@ type ConversationThread struct {
 	// a thread that never entered execution. Written only through
 	// SetConversationThreadExecState.
 	ExecState string `json:"exec_state,omitempty"`
+	// ParentSeq / ParentAuthorParticipantID bind a reply subthread to the exact
+	// main-stream message it was opened from (T3 Thread-first-class): the
+	// message's seq (its stable per-thread address in the parent's seq space)
+	// and its author's participant id ("human" for a user / thread-owner
+	// message). Distinct from AnchorItemID (a rendered GUI item id): these are
+	// the durable binding the escalation lead default (lead = parent author) and
+	// the reply-to-your-own-message refusal (initiator == parent author) key on.
+	// Zero/empty for a standalone task (no anchor) or an anchor that resolved to
+	// no message. Persisted at create time by CreateConversationThread.
+	ParentSeq                 int    `json:"parent_seq,omitempty"`
+	ParentAuthorParticipantID string `json:"parent_author_participant_id,omitempty"`
 }
 
 // TaskPiece is one unit of a team task's plan — an executable node in the
@@ -258,9 +269,9 @@ func CreateConversationThread(sessDir string, thread ConversationThread) (Conver
 
 	if _, err := tx.Exec(`
 INSERT INTO conversation_threads (
-	id, session_id, anchor_item_id, title, status, created_by, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		thread.ID, thread.SessionID, thread.AnchorItemID, thread.Title, string(thread.Status), thread.CreatedBy, timeText(thread.CreatedAt),
+	id, session_id, anchor_item_id, title, status, created_by, created_at, parent_seq, parent_author_participant_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		thread.ID, thread.SessionID, thread.AnchorItemID, thread.Title, string(thread.Status), thread.CreatedBy, timeText(thread.CreatedAt), thread.ParentSeq, thread.ParentAuthorParticipantID,
 	); err != nil {
 		return ConversationThread{}, fmt.Errorf("create conversation thread: %w", err)
 	}
@@ -287,7 +298,7 @@ func ListConversationThreads(sessDir, sessionID string) ([]ConversationThread, e
 	}
 
 	rows, err := db.Query(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state, parent_seq, parent_author_participant_id
 FROM conversation_threads
 WHERE session_id = ?
 ORDER BY created_at ASC, id ASC`, sessionID)
@@ -327,7 +338,7 @@ func FindConversationThreadByID(sessDir, id string) (ConversationThread, error) 
 	defer db.Close()
 
 	row := db.QueryRow(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state, parent_seq, parent_author_participant_id
 FROM conversation_threads
 WHERE id = ?`, id)
 	thread, err := scanConversationThread(row)
@@ -360,7 +371,7 @@ func LeadTaskThreads(sessDir, leadParticipantID string) ([]ConversationThread, e
 	defer db.Close()
 
 	rows, err := db.Query(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state, parent_seq, parent_author_participant_id
 FROM conversation_threads
 WHERE status = ? AND lead_participant_id = ?
 ORDER BY escalated_at DESC, id ASC`, string(ConversationThreadTask), leadParticipantID)
@@ -424,6 +435,7 @@ func normalizeConversationThread(thread ConversationThread) ConversationThread {
 	thread.CreatedBy = strings.TrimSpace(thread.CreatedBy)
 	thread.LeadParticipantID = strings.TrimSpace(thread.LeadParticipantID)
 	thread.OwnerParticipantID = strings.TrimSpace(thread.OwnerParticipantID)
+	thread.ParentAuthorParticipantID = strings.TrimSpace(thread.ParentAuthorParticipantID)
 	thread.Status = normalizeConversationThreadStatus(thread.Status)
 	return thread
 }
@@ -487,7 +499,7 @@ func EscalateConversationThread(sessDir, id, escalatedBy, leadParticipantID, tit
 	defer tx.Rollback()
 
 	row := tx.QueryRow(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state, parent_seq, parent_author_participant_id
 FROM conversation_threads
 WHERE id = ?`, id)
 	thread, err := scanConversationThread(row)
@@ -801,7 +813,7 @@ WHERE id = ?`, state, id)
 // already-open handle (for use under storeWriteMu).
 func findConversationThreadByIDDB(db *sql.DB, id string) (ConversationThread, error) {
 	row := db.QueryRow(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, escalated_at, escalated_by, summary, lead_participant_id, owner_participant_id, plan, exec_state, parent_seq, parent_author_participant_id
 FROM conversation_threads
 WHERE id = ?`, id)
 	thread, err := scanConversationThread(row)
@@ -858,7 +870,7 @@ func scanConversationThread(scanner interface {
 	if err := scanner.Scan(
 		&thread.ID, &thread.SessionID, &thread.AnchorItemID, &thread.Title, &status, &thread.CreatedBy, &createdAt,
 		&escalatedAt, &thread.EscalatedBy, &thread.Summary, &thread.LeadParticipantID, &thread.OwnerParticipantID, &planJSON,
-		&thread.ExecState,
+		&thread.ExecState, &thread.ParentSeq, &thread.ParentAuthorParticipantID,
 	); err != nil {
 		return ConversationThread{}, err
 	}

@@ -43,7 +43,10 @@ func (s *Server) recordEnvelopeReadReceipts(participantID string, envs []Message
 			continue
 		}
 		done[key] = true
-		if err := session.MarkMessageSeen(s.rt.SessionDir, threadID, env.SourceSeq, participantID, status, at); err != nil {
+		// Tag the receipt with the source scope (the cth for reply-subthread
+		// traffic, '' for main stream) so a cth read advances only the cth's
+		// read cursor, never the main-stream one (T3 per-cth cursor).
+		if err := session.MarkMessageSeen(s.rt.SessionDir, threadID, env.SourceSeq, participantID, status, strings.TrimSpace(env.SourceSubthreadID), at); err != nil {
 			providers.DebugLogf("record read receipt (%s) for %q on %s#%d: %v", status, participantID, threadID, env.SourceSeq, err)
 			continue
 		}
@@ -192,8 +195,10 @@ func (s *Server) routeEnvelopes(source *threadState, base MessageEnvelope, menti
 	// addressed flag (the message lives once in history; addressed is a durable
 	// side record, not carried per-member).
 	if base.SourceSeq > 0 {
+		// routeEnvelopes fans out the main stream, so mentions are tagged with
+		// the main scope (''); a reply-subthread mention would carry its cth tag.
 		for pid := range mentioned {
-			if err := session.MarkMessageMention(s.rt.SessionDir, sourceThreadID, base.SourceSeq, pid, base.CreatedAt); err != nil {
+			if err := session.MarkMessageMention(s.rt.SessionDir, sourceThreadID, base.SourceSeq, pid, strings.TrimSpace(base.SourceSubthreadID), base.CreatedAt); err != nil {
 				providers.DebugLogf("record mention %q on %s#%d: %v", pid, sourceThreadID, base.SourceSeq, err)
 			}
 		}

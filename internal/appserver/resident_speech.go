@@ -140,9 +140,20 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 	defer unlockPost()
 	// Basis: the seq the agent generated this post against. Explicit basis_seq
 	// wins; 0 falls back to the agent's durable read cursor (its "latest seen").
+	// The cursor is scoped to where the post lands: a cth post falls back to the
+	// cth's own read watermark, a main-stream post to the main watermark, so a
+	// cth draft is measured for staleness only against new cth messages and a
+	// main draft only against new main messages (T3 per-cth basis isolation).
 	basis := basisSeq
 	if basis <= 0 {
-		if seen, err := session.ThreadReadWatermark(r.server.rt.SessionDir, targetThreadID, participantID); err == nil {
+		var seen int
+		var err error
+		if subthreadID != "" {
+			seen, err = session.ThreadReadWatermarkScoped(r.server.rt.SessionDir, targetThreadID, participantID, subthreadID)
+		} else {
+			seen, err = session.ThreadReadWatermark(r.server.rt.SessionDir, targetThreadID, participantID)
+		}
+		if err == nil {
 			basis = seen
 		}
 	}

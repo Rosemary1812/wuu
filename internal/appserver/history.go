@@ -411,6 +411,11 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 
 func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persistedMessage, error) {
 	out := persistedMessage{
+		// Seq is the message's stable per-thread address; carrying it through the
+		// reconstruction is what lets a rendered item be resolved back to its seq
+		// (mainStreamItemForSeq / mainStreamAnchorBinding) and lets reply/receipt
+		// keying work on reconstructed (subthread) turns.
+		Seq:                 rec.Seq,
 		Role:                rec.Role,
 		Content:             rec.Content,
 		DisplayContent:      rec.DisplayContent,

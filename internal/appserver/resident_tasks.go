@@ -59,12 +59,19 @@ func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, a
 	sessionDir := m.server.rt.SessionDir
 
 	anchorItemID := ""
+	parentSeq := 0
+	parentAuthor := ""
 	if anchorSeq > 0 {
-		resolved, err := m.server.mainStreamItemIDForSeq(threadID, anchorSeq)
+		anchorItem, err := m.server.mainStreamItemForSeq(threadID, anchorSeq)
 		if err != nil {
 			return tools.TaskView{}, fmt.Errorf("create: %w", err)
 		}
-		anchorItemID = resolved
+		anchorItemID = anchorItem.ID
+		// Bind the task to the message it was created from: its seq and author
+		// (T3). The seq is the anchor seq the caller passed; the author is read
+		// off the resolved item.
+		parentSeq = anchorSeq
+		parentAuthor = parentAuthorParticipantID(anchorItem)
 		// One anchor hosts at most one cth (open-reply dedupe invariant) — a
 		// second task on the same message must be standalone instead.
 		if existing, err := m.server.findConversationSubthread(threadID, "", anchorItemID); err == nil {
@@ -107,11 +114,13 @@ func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, a
 	}
 
 	thread, err := session.CreateConversationThread(sessionDir, session.ConversationThread{
-		SessionID:    threadID,
-		AnchorItemID: anchorItemID,
-		Title:        title,
-		Status:       session.ConversationThreadTask,
-		CreatedBy:    m.participantID,
+		SessionID:                 threadID,
+		AnchorItemID:              anchorItemID,
+		Title:                     title,
+		Status:                    session.ConversationThreadTask,
+		CreatedBy:                 m.participantID,
+		ParentSeq:                 parentSeq,
+		ParentAuthorParticipantID: parentAuthor,
 	})
 	if err != nil {
 		return tools.TaskView{}, fmt.Errorf("create: %w", err)
@@ -146,14 +155,14 @@ func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, a
 }
 
 // EscalateTask promotes an open discussion reply to a board task once the
-// conversation in it has converged. The agent path deliberately grants no
-// lead: EscalateConversationThread is called with an empty lead id, so the
-// human-escalation contract (lead = orchestration authority, human-granted)
-// is untouched; provenance (EscalatedBy) records the converting agent.
-// Escalation IS the start of execution — no human approval step follows: the
-// task enters exec state planning immediately (with an empty lead the
-// planning wake no-ops until someone takes the lead; the ownerless board
-// wake below still calls the group).
+// conversation in it has converged. The lead defaults to the reply's parent
+// message author (T3) — the person whose message spawned the discussion leads
+// the task it became — when that author is a named agent; a human/unknown
+// parent author leaves the lead empty for the first planner to claim (T6).
+// Provenance (EscalatedBy) still records the converting agent. Escalating a
+// reply on your own message is refused. Escalation IS the start of execution —
+// no human approval step follows: the task enters exec state planning
+// immediately, and the lead (when one is bound) is woken to author the plan.
 func (m *residentTaskManager) EscalateTask(ctx context.Context, subthreadID, title string, claim bool) (tools.TaskView, error) {
 	_ = ctx
 	if err := m.ready("escalate"); err != nil {
@@ -166,12 +175,25 @@ func (m *residentTaskManager) EscalateTask(ctx context.Context, subthreadID, tit
 	if thread.Status != session.ConversationThreadOpen {
 		return tools.TaskView{}, fmt.Errorf("escalate: reply %q is %q; only an open discussion reply can be converted to a task", thread.ID, thread.Status)
 	}
+	// You cannot converge a task on your own message: escalating a reply whose
+	// parent message you authored would make you both the subject and the lead
+	// of the work (T3). Refuse loudly.
+	parentAuthor := strings.TrimSpace(thread.ParentAuthorParticipantID)
+	if parentAuthor != "" && parentAuthor == m.participantID {
+		return tools.TaskView{}, fmt.Errorf("escalate: cannot open a reply thread on your own message (reply %q anchors your message)", thread.ID)
+	}
 	// DM tasks are born owned (task-rail design §7) — same forcing as create.
 	if !meta.Group {
 		claim = true
 	}
 	sessionDir := m.server.rt.SessionDir
-	escalated, err := session.EscalateConversationThread(sessionDir, thread.ID, m.participantID, "", title)
+	// Lead defaults to the parent message's author (T3): the person whose
+	// message spawned the discussion leads the task it converged into, when they
+	// are a named agent. A human/unknown parent author leaves the lead empty —
+	// the first planner claims it (T6). resolveTaskLead never errors on an empty
+	// picked lead, so the fallback is safe to swallow.
+	lead, _ := m.server.resolveTaskLead("", parentAuthor)
+	escalated, err := session.EscalateConversationThread(sessionDir, thread.ID, m.participantID, lead, title)
 	if err != nil {
 		return tools.TaskView{}, fmt.Errorf("escalate: %w", err)
 	}
@@ -1295,19 +1317,72 @@ func (s *Server) wakeTaskBoardForOwnerlessTask(task session.ConversationThread, 
 // item; a seq that is hidden, folded into a subthread, or nonexistent is an
 // error rather than a blind write.
 func (s *Server) mainStreamItemIDForSeq(threadID string, seq int) (string, error) {
+	item, err := s.mainStreamItemForSeq(threadID, seq)
+	if err != nil {
+		return "", err
+	}
+	return item.ID, nil
+}
+
+// mainStreamItemForSeq is mainStreamItemIDForSeq's core: the reconstructed
+// main-stream ThreadItem addressed by seq. It backs both the seq->item-id map
+// and the parent-message binding (seq + author) a task records when created
+// from an anchor.
+func (s *Server) mainStreamItemForSeq(threadID string, seq int) (ThreadItem, error) {
 	records, err := loadPersistedMessages(s.rt.SessionDir, threadID, false)
 	if err != nil {
-		return "", fmt.Errorf("load thread history: %w", err)
+		return ThreadItem{}, fmt.Errorf("load thread history: %w", err)
 	}
 	turns := turnsFromPersistedHistoryInScope(threadID, "", records, time.Now().UTC(), s.resolveParticipantSummary)
 	for _, turn := range turns {
 		for _, item := range turn.Items {
 			if item.Seq == seq {
-				return item.ID, nil
+				return item, nil
 			}
 		}
 	}
-	return "", fmt.Errorf("no visible main-stream message with seq %d in thread %q", seq, threadID)
+	return ThreadItem{}, fmt.Errorf("no visible main-stream message with seq %d in thread %q", seq, threadID)
+}
+
+// mainStreamAnchorBinding resolves a main-stream anchor item id (a rendered GUI
+// item id, the inverse of mainStreamItemIDForSeq) to the parent-message binding
+// a reply subthread records: the message's seq and its author's participant id.
+// It is best-effort — an anchor that matches no rendered main-stream item (a
+// synthetic/forged id, or a not-yet-persisted anchor) yields (0, "", false) so
+// the caller can proceed with an unbound reply rather than fail; a matched item
+// yields (seq, author, true).
+func (s *Server) mainStreamAnchorBinding(threadID, anchorItemID string) (seq int, author string, ok bool) {
+	anchorItemID = strings.TrimSpace(anchorItemID)
+	if anchorItemID == "" {
+		return 0, "", false
+	}
+	records, err := loadPersistedMessages(s.rt.SessionDir, threadID, false)
+	if err != nil {
+		providers.DebugLogf("mainStreamAnchorBinding load %q: %v", threadID, err)
+		return 0, "", false
+	}
+	turns := turnsFromPersistedHistoryInScope(threadID, "", records, time.Now().UTC(), s.resolveParticipantSummary)
+	for _, turn := range turns {
+		for _, item := range turn.Items {
+			if item.ID == anchorItemID {
+				return item.Seq, parentAuthorParticipantID(item), true
+			}
+		}
+	}
+	return 0, "", false
+}
+
+// parentAuthorParticipantID is the participant id credited as a main-stream
+// item's author for parent-message binding: the item's participant id when it
+// is agent-originated, else the stable "human" identity (a nil participant is
+// the thread owner — the human user posting a top-level message).
+func parentAuthorParticipantID(item ThreadItem) string {
+	if item.Participant != nil {
+		if id := strings.TrimSpace(item.Participant.ID); id != "" {
+			return id
+		}
+	}
+	return humanReactionParticipantID
 }
 
 // bubbleSubthreadResolve wraps a subthread up: the summary posts to the

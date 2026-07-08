@@ -58,7 +58,7 @@ func TestPullInboxBasePrimitives(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := MarkMessageSeen(dir, "grp-a", seqs[1], ada.ID, SeenStatusCompleted, time.Now().UTC()); err != nil {
+	if err := MarkMessageSeen(dir, "grp-a", seqs[1], ada.ID, SeenStatusCompleted, "", time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 

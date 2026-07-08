@@ -54,7 +54,13 @@ type MessageMark struct {
 	Kind          string
 	Status        string // seen: in_progress|completed|failed; reaction: ""
 	Payload       string // reaction: reaction key; seen: ""
-	At            time.Time
+	// ThreadID is the reply subthread the marked message belongs to ('' = main
+	// stream, cth-* = a reply subthread). It is a redundant descriptor of the
+	// message that Seq addresses, so a given seq always carries one consistent
+	// tag; it is what ThreadReadWatermarkScoped filters on to keep per-cth read
+	// cursors independent of the main-stream cursor.
+	ThreadID string
+	At       time.Time
 }
 
 // UpsertMessageMark writes (or replaces) one mark. The primary key is
@@ -66,6 +72,7 @@ func UpsertMessageMark(sessDir string, mark MessageMark) error {
 	mark.SessionID = strings.TrimSpace(mark.SessionID)
 	mark.ParticipantID = strings.TrimSpace(mark.ParticipantID)
 	mark.Kind = strings.TrimSpace(mark.Kind)
+	mark.ThreadID = strings.TrimSpace(mark.ThreadID)
 	if mark.SessionID == "" {
 		return errors.New("session_id is required")
 	}
@@ -106,11 +113,11 @@ func UpsertMessageMark(sessDir string, mark MessageMark) error {
 		return fmt.Errorf("%w: %q", ErrSessionNotFound, mark.SessionID)
 	}
 	if _, err := tx.Exec(`
-INSERT INTO message_marks (session_id, seq, participant_id, kind, status, payload, at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO message_marks (session_id, seq, participant_id, kind, status, payload, thread_id, at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(session_id, seq, participant_id, kind)
-DO UPDATE SET status = excluded.status, payload = excluded.payload, at = excluded.at`,
-		mark.SessionID, mark.Seq, mark.ParticipantID, mark.Kind, mark.Status, mark.Payload, mark.At.UnixMilli(),
+DO UPDATE SET status = excluded.status, payload = excluded.payload, thread_id = excluded.thread_id, at = excluded.at`,
+		mark.SessionID, mark.Seq, mark.ParticipantID, mark.Kind, mark.Status, mark.Payload, mark.ThreadID, mark.At.UnixMilli(),
 	); err != nil {
 		return fmt.Errorf("upsert message mark: %w", err)
 	}
@@ -121,7 +128,10 @@ DO UPDATE SET status = excluded.status, payload = excluded.payload, at = exclude
 }
 
 // MarkMessageSeen records/advances a read receipt for one (message, agent).
-func MarkMessageSeen(sessDir, sessionID string, seq int, participantID, status string, at time.Time) error {
+// threadTag is the reply subthread the seen message belongs to ('' for main
+// stream, cth-* for a reply subthread), so per-cth read cursors stay separable
+// from the main-stream cursor.
+func MarkMessageSeen(sessDir, sessionID string, seq int, participantID, status, threadTag string, at time.Time) error {
 	switch status {
 	case SeenStatusInProgress, SeenStatusCompleted, SeenStatusFailed:
 	default:
@@ -133,6 +143,7 @@ func MarkMessageSeen(sessDir, sessionID string, seq int, participantID, status s
 		ParticipantID: participantID,
 		Kind:          MessageMarkKindSeen,
 		Status:        status,
+		ThreadID:      threadTag,
 		At:            at,
 	})
 }
@@ -154,15 +165,30 @@ func SetMessageReaction(sessDir, sessionID string, seq int, participantID, react
 
 // ListMessageMarks returns every mark in a thread (both seen and reaction
 // rows), ordered by message then time. The caller aggregates for display.
-// ThreadReadWatermark is the durable read cursor for one participant in one
-// thread: the highest message seq they have a seen receipt for. It is the
-// single source of truth for "how far has this agent read this thread",
-// shared by the held-draft freshness check (has the thread moved past what I
-// read) and, going forward, by pull-style inbox reads (give me messages past
-// my watermark). Returns 0 when the participant has read nothing in the thread.
+// ThreadReadWatermark is the durable read cursor for one participant in the
+// MAIN stream of one thread: the highest main-stream (thread_id = '') message
+// seq they have a seen receipt for. It is the single source of truth for "how
+// far has this agent read this thread's main stream", shared by the held-draft
+// freshness check (has the main stream moved past what I read) and pull-style
+// inbox reads (give me main-stream messages past my watermark). Scoped to the
+// main stream so reading a reply-subthread (cth) message never advances the
+// main cursor — cth cursors live behind ThreadReadWatermarkScoped. Returns 0
+// when the participant has read no main-stream message in the thread.
 func ThreadReadWatermark(sessDir, sessionID, participantID string) (int, error) {
+	return ThreadReadWatermarkScoped(sessDir, sessionID, participantID, "")
+}
+
+// ThreadReadWatermarkScoped is the durable read cursor for one participant
+// within a single scope of a thread: the highest seq of a seen message whose
+// thread_id tag equals threadTag ('' = main stream, cth-* = one reply
+// subthread). It gives every reply subthread its own cursor sharing the
+// parent's seq space: a cth read advances only the cth's watermark, a main read
+// only the main watermark, so the two never interfere. Returns 0 when the
+// participant has read nothing in that scope.
+func ThreadReadWatermarkScoped(sessDir, sessionID, participantID, threadTag string) (int, error) {
 	sessionID = strings.TrimSpace(sessionID)
 	participantID = strings.TrimSpace(participantID)
+	threadTag = strings.TrimSpace(threadTag)
 	if sessionID == "" || participantID == "" {
 		return 0, nil
 	}
@@ -174,8 +200,8 @@ func ThreadReadWatermark(sessDir, sessionID, participantID string) (int, error) 
 	var seq sql.NullInt64
 	if err := db.QueryRow(`
 SELECT MAX(seq) FROM message_marks
-WHERE session_id = ? AND participant_id = ? AND kind = ?`,
-		sessionID, participantID, MessageMarkKindSeen).Scan(&seq); err != nil {
+WHERE session_id = ? AND participant_id = ? AND kind = ? AND thread_id = ?`,
+		sessionID, participantID, MessageMarkKindSeen, threadTag).Scan(&seq); err != nil {
 		return 0, fmt.Errorf("thread read watermark: %w", err)
 	}
 	if !seq.Valid {
@@ -186,11 +212,13 @@ WHERE session_id = ? AND participant_id = ? AND kind = ?`,
 
 // MarkMessageMention records that message `seq` in a thread @-addressed
 // `participantID`. Written by routing at delivery time so the pull inbox can
-// rebuild the addressed flag. Idempotent (upsert).
-func MarkMessageMention(sessDir, sessionID string, seq int, participantID string, at time.Time) error {
+// rebuild the addressed flag. threadTag is the scope the mention was routed in
+// ('' for main stream, cth-* for a reply subthread), carried on the row for the
+// same reason seen marks carry it. Idempotent (upsert).
+func MarkMessageMention(sessDir, sessionID string, seq int, participantID, threadTag string, at time.Time) error {
 	return UpsertMessageMark(sessDir, MessageMark{
 		SessionID: sessionID, Seq: seq, ParticipantID: participantID,
-		Kind: MessageMarkKindMention, At: at,
+		Kind: MessageMarkKindMention, ThreadID: threadTag, At: at,
 	})
 }
 
@@ -244,7 +272,7 @@ func ListMessageMarks(sessDir, sessionID string) ([]MessageMark, error) {
 	}
 
 	rows, err := db.Query(`
-SELECT session_id, seq, participant_id, kind, status, payload, at
+SELECT session_id, seq, participant_id, kind, status, payload, thread_id, at
 FROM message_marks
 WHERE session_id = ?
 ORDER BY seq ASC, at ASC, participant_id ASC`, sessionID)
@@ -257,7 +285,7 @@ ORDER BY seq ASC, at ASC, participant_id ASC`, sessionID)
 	for rows.Next() {
 		var mark MessageMark
 		var at int64
-		if err := rows.Scan(&mark.SessionID, &mark.Seq, &mark.ParticipantID, &mark.Kind, &mark.Status, &mark.Payload, &at); err != nil {
+		if err := rows.Scan(&mark.SessionID, &mark.Seq, &mark.ParticipantID, &mark.Kind, &mark.Status, &mark.Payload, &mark.ThreadID, &at); err != nil {
 			return nil, fmt.Errorf("scan message marks: %w", err)
 		}
 		mark.At = time.UnixMilli(at).UTC()

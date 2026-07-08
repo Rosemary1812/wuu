@@ -38,10 +38,10 @@ func TestMessageMarksSeenLifecycle(t *testing.T) {
 	now := time.Now().UTC()
 
 	// in_progress -> completed advances the SAME row (no duplicate).
-	if err := MarkMessageSeen(dir, thread, 3, "prt-andy", SeenStatusInProgress, now); err != nil {
+	if err := MarkMessageSeen(dir, thread, 3, "prt-andy", SeenStatusInProgress, "", now); err != nil {
 		t.Fatalf("mark in_progress: %v", err)
 	}
-	if err := MarkMessageSeen(dir, thread, 3, "prt-andy", SeenStatusCompleted, now.Add(time.Second)); err != nil {
+	if err := MarkMessageSeen(dir, thread, 3, "prt-andy", SeenStatusCompleted, "", now.Add(time.Second)); err != nil {
 		t.Fatalf("mark completed: %v", err)
 	}
 	marks, err := ListMessageMarks(dir, thread)
@@ -64,7 +64,7 @@ func TestMessageMarksSeenLifecycle(t *testing.T) {
 
 	// A later turn can fail (e.g. retry after a network drop) — status must
 	// reflect the failure, not stay stuck at completed's predecessor.
-	if err := MarkMessageSeen(dir, thread, 3, "prt-andy", SeenStatusFailed, now.Add(2*time.Second)); err != nil {
+	if err := MarkMessageSeen(dir, thread, 3, "prt-andy", SeenStatusFailed, "", now.Add(2*time.Second)); err != nil {
 		t.Fatalf("mark failed: %v", err)
 	}
 	marks, _ = ListMessageMarks(dir, thread)
@@ -72,8 +72,57 @@ func TestMessageMarksSeenLifecycle(t *testing.T) {
 		t.Fatalf("seen status = %q, want failed", m.Status)
 	}
 
-	if err := MarkMessageSeen(dir, thread, 3, "prt-andy", "bogus", now); err == nil {
+	if err := MarkMessageSeen(dir, thread, 3, "prt-andy", "bogus", "", now); err == nil {
 		t.Fatal("expected error for unsupported seen status")
+	}
+}
+
+// A reply subthread (cth) shares the parent's seq space but keeps its own read
+// cursor: a seen mark carries the scope it was read in (thread_id), so
+// ThreadReadWatermark (main stream) and ThreadReadWatermarkScoped(cth) advance
+// independently — reading a cth message never drags the main cursor forward and
+// vice versa (T3 per-cth cursor).
+func TestThreadReadWatermarkScopedPerCth(t *testing.T) {
+	dir, thread := messageMarksTestSetup(t)
+	now := time.Now().UTC()
+	const cth = "cth-abc"
+
+	// Main-stream read at seq 4; a cth read at seq 9 (a higher seq in the shared
+	// space). The two cursors must not interfere.
+	if err := MarkMessageSeen(dir, thread, 4, "prt-andy", SeenStatusCompleted, "", now); err != nil {
+		t.Fatalf("mark main seen: %v", err)
+	}
+	if err := MarkMessageSeen(dir, thread, 9, "prt-andy", SeenStatusCompleted, cth, now); err != nil {
+		t.Fatalf("mark cth seen: %v", err)
+	}
+
+	main, err := ThreadReadWatermark(dir, thread, "prt-andy")
+	if err != nil {
+		t.Fatalf("main watermark: %v", err)
+	}
+	if main != 4 {
+		t.Fatalf("main watermark = %d, want 4 (the cth read at seq 9 must not advance it)", main)
+	}
+	scoped, err := ThreadReadWatermarkScoped(dir, thread, "prt-andy", cth)
+	if err != nil {
+		t.Fatalf("cth watermark: %v", err)
+	}
+	if scoped != 9 {
+		t.Fatalf("cth watermark = %d, want 9", scoped)
+	}
+	// Reading further in the main stream advances only the main cursor.
+	if err := MarkMessageSeen(dir, thread, 12, "prt-andy", SeenStatusCompleted, "", now.Add(time.Second)); err != nil {
+		t.Fatalf("mark main seen 12: %v", err)
+	}
+	if main, _ := ThreadReadWatermark(dir, thread, "prt-andy"); main != 12 {
+		t.Fatalf("main watermark after further main read = %d, want 12", main)
+	}
+	if scoped, _ := ThreadReadWatermarkScoped(dir, thread, "prt-andy", cth); scoped != 9 {
+		t.Fatalf("cth watermark after a main read = %d, want it unchanged at 9", scoped)
+	}
+	// An unrelated cth has its own (empty) cursor.
+	if other, _ := ThreadReadWatermarkScoped(dir, thread, "prt-andy", "cth-other"); other != 0 {
+		t.Fatalf("unrelated cth watermark = %d, want 0", other)
 	}
 }
 
@@ -114,7 +163,7 @@ func TestMessageMarksSeenAndReactionCoexist(t *testing.T) {
 
 	// The same (message, participant) may carry both a seen row and a
 	// reaction row — different kinds, different PK.
-	if err := MarkMessageSeen(dir, thread, 7, "prt-andy", SeenStatusCompleted, now); err != nil {
+	if err := MarkMessageSeen(dir, thread, 7, "prt-andy", SeenStatusCompleted, "", now); err != nil {
 		t.Fatal(err)
 	}
 	if err := SetMessageReaction(dir, thread, 7, "prt-andy", "smug", now); err != nil {

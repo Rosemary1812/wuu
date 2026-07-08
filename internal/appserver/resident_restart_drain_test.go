@@ -74,7 +74,7 @@ func TestResidentInboxExpiredOnRestart(t *testing.T) {
 
 	// Seed: 1 in_progress receipt (pre-restart turn started, process died).
 	// Pivot should flip this to expired_unprocessed on boot settle.
-	if err := session.MarkMessageSeen(rt.SessionDir, group.ID, 1, participantID, session.SeenStatusInProgress, time.Now().UTC()); err != nil {
+	if err := session.MarkMessageSeen(rt.SessionDir, group.ID, 1, participantID, session.SeenStatusInProgress, "", time.Now().UTC()); err != nil {
 		t.Fatalf("seed in_progress receipt: %v", err)
 	}
 

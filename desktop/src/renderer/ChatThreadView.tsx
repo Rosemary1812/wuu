@@ -558,11 +558,12 @@ function ChatRow({
             {row.item.text ? (
               <RichContent text={row.item.text} />
             ) : null}
-            <ChatBubbleToolbar
-              item={row.item}
-              onReact={onReact}
-              onReply={onOpenSubthread}
-            />
+            {/* No 回复 entry on the viewer's own (user) bubbles: a Thread
+                converges on someone else's message, never your own (T3). The
+                backend refuses opening a reply thread on a user/thread-owner
+                message; hiding the entry keeps the client in step. Reactions
+                stay available. */}
+            <ChatBubbleToolbar item={row.item} onReact={onReact} />
           </div>
           {marks ? (
             <div className="chat-bubble-marks chat-bubble-marks--user">
