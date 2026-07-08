@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceFileReferenceResolveResult } from "../shared/protocol";
-import { RichContent } from "./RichContent";
+import { RichContent, __resetRichFileReferenceResolutionCacheForTests } from "./RichContent";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -39,6 +39,7 @@ afterEach(() => {
   root = null;
   container.remove();
   delete (window as { wuu?: unknown }).wuu;
+  __resetRichFileReferenceResolutionCacheForTests();
 });
 
 function render(element: JSX.Element): void {
@@ -99,13 +100,32 @@ describe("RichContent code block", () => {
     expect(openFile).toHaveBeenCalledWith("README_zh.md");
   });
 
-  it("does not turn unresolved bare filenames into file links", async () => {
-    render(<RichContent text={"The likely tool file is tool_search.go."} cwd="/Users/zzzz/wuu" onOpenFile={vi.fn()} />);
+  it("still renders a red link for unresolved bare filenames (visual consistency)", async () => {
+    // Even when the IPC says the file does not exist, the link is still
+    // rendered. A list of "改动文件" should not mix highlighted and plain
+    // entries just because one of the files was deleted; the file viewer
+    // surfaces its own "not found" feedback on click.
+    const openFile = vi.fn();
+    render(
+      <RichContent
+        text={"The likely tool file is tool_search.go."}
+        cwd="/Users/zzzz/wuu"
+        onOpenFile={openFile}
+      />
+    );
     await settleFileReferenceResolution();
 
-    expect(container.querySelector(".rich-file-link")).toBeNull();
-    expect(container.textContent).toContain("tool_search.go");
+    const link = container.querySelector("button.rich-file-link") as HTMLButtonElement | null;
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toContain("tool_search.go");
     expect(resolveWorkspaceFileReferenceMock).toHaveBeenCalledWith("tool_search.go");
+
+    // Click hands the display string back to the caller; the workspace
+    // panel is responsible for telling the user the file is gone.
+    await act(async () => {
+      link?.click();
+    });
+    expect(openFile).toHaveBeenCalledWith("tool_search.go");
   });
 
   it("turns qualified workspace file paths into clickable inline links", async () => {
@@ -217,5 +237,150 @@ describe("RichContent code block", () => {
     // is why the previous test did not catch this regression.)
     const style = window.getComputedStyle(copyButton as HTMLElement);
     expect(style.pointerEvents).not.toBe("none");
+  });
+
+  it("renders a link-shaped pending placeholder while the file reference IPC is in flight", async () => {
+    // Block IPC resolution until we have asserted the pending state.
+    let resolveIpc: (result: WorkspaceFileReferenceResolveResult) => void = () => undefined;
+    resolveWorkspaceFileReferenceMock.mockImplementationOnce(
+      (_reference: string) =>
+        new Promise<WorkspaceFileReferenceResolveResult>((resolve) => {
+          resolveIpc = resolve;
+        })
+    );
+
+    render(
+      <RichContent
+        text={"Open pending-link-test.ts here."}
+        cwd="/Users/zzzz/wuu"
+        onOpenFile={vi.fn()}
+      />
+    );
+
+    // First render: the link-shaped placeholder is shown, NOT plain text and
+    // NOT a clickable <button> link. This is what kills the plain-text -> red
+    // link flip when switching back to a previously visited session/tab.
+    const pending = container.querySelector(".rich-file-link--pending");
+    expect(pending).not.toBeNull();
+    expect(pending?.textContent).toContain("pending-link-test.ts");
+    expect(pending?.getAttribute("aria-busy")).toBe("true");
+    expect(container.querySelector("button.rich-file-link")).toBeNull();
+    expect(resolveWorkspaceFileReferenceMock).toHaveBeenCalledTimes(1);
+
+    // Resolve the IPC and let React flush. The placeholder should be
+    // replaced by the real clickable link.
+    await act(async () => {
+      resolveIpc(
+        resolvedFileReference("pending-link-test.ts", "pending-link-test.ts")
+      );
+    });
+    await settleFileReferenceResolution();
+
+    expect(container.querySelector(".rich-file-link--pending")).toBeNull();
+    const link = container.querySelector(
+      "button.rich-file-link"
+    ) as HTMLButtonElement | null;
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toContain("pending-link-test.ts");
+  });
+
+  it("reuses the cached resolution when the same file reference is re-mounted", async () => {
+    const openFile = vi.fn();
+    resolveWorkspaceFileReferenceMock.mockResolvedValueOnce(
+      resolvedFileReference(
+        "internal/cache-test.ts",
+        "internal/cache-test.ts"
+      )
+    );
+
+    // First mount — should resolve the reference and populate the cache.
+    render(
+      <RichContent
+        text={"Open internal/cache-test.ts now."}
+        cwd="/Users/zzzz/wuu"
+        onOpenFile={openFile}
+      />
+    );
+    await settleFileReferenceResolution();
+    expect(container.querySelector("button.rich-file-link")).not.toBeNull();
+    expect(resolveWorkspaceFileReferenceMock).toHaveBeenCalledTimes(1);
+
+    // Simulate switching away from the session: unmount and clear the DOM.
+    act(() => {
+      root?.unmount();
+    });
+    root = null;
+    container.innerHTML = "";
+
+    // Re-mount with a different surrounding text but the same file reference
+    // and cwd. The link should render synchronously on the first render
+    // (no plain text, no pending placeholder) and IPC should NOT be called
+    // a second time, because the resolution is cached.
+    render(
+      <RichContent
+        text={"Open internal/cache-test.ts again."}
+        cwd="/Users/zzzz/wuu"
+        onOpenFile={openFile}
+      />
+    );
+
+    const link = container.querySelector(
+      "button.rich-file-link"
+    ) as HTMLButtonElement | null;
+    expect(link).not.toBeNull();
+    expect(container.querySelector(".rich-file-link--pending")).toBeNull();
+    expect(link?.textContent).toContain("internal/cache-test.ts");
+    expect(resolveWorkspaceFileReferenceMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("replaces the pending placeholder with a red link even when the IPC reports the file does not exist", async () => {
+    // Visual consistency: a list of files (e.g. "段二改了 → a.ts, b.ts")
+    // should highlight every entry. The pending placeholder is only the
+    // brief moment before the IPC roundtrip completes; once it does, the
+    // link stays red even for files that no longer exist on disk.
+    const openFile = vi.fn();
+    let resolveIpc: (result: WorkspaceFileReferenceResolveResult) => void = () => undefined;
+    resolveWorkspaceFileReferenceMock.mockImplementationOnce(
+      (_reference: string) =>
+        new Promise<WorkspaceFileReferenceResolveResult>((resolve) => {
+          resolveIpc = resolve;
+        })
+    );
+
+    render(
+      <RichContent
+        text={"Open never-resolves.ts here."}
+        cwd="/Users/zzzz/wuu"
+        onOpenFile={openFile}
+      />
+    );
+
+    // While in flight, the pending placeholder is shown.
+    expect(container.querySelector(".rich-file-link--pending")).not.toBeNull();
+
+    // Resolve with a "missing" result.
+    await act(async () => {
+      resolveIpc({
+        root: "/Users/zzzz/wuu",
+        reference: "never-resolves.ts",
+        status: "missing",
+      });
+    });
+    await settleFileReferenceResolution();
+
+    // The pending placeholder is gone, but the red link stays. Clicking
+    // hands the display string back to the caller, so the workspace
+    // panel can show "file not found" feedback on its own.
+    expect(container.querySelector(".rich-file-link--pending")).toBeNull();
+    const link = container.querySelector(
+      "button.rich-file-link"
+    ) as HTMLButtonElement | null;
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toContain("never-resolves.ts");
+
+    await act(async () => {
+      link?.click();
+    });
+    expect(openFile).toHaveBeenCalledWith("never-resolves.ts");
   });
 });

@@ -509,6 +509,69 @@ function renderRichText(
   return output;
 }
 
+// Resolved file references are cached at the module level so that switching
+// sessions or tabs does not force every previously-rendered file reference to
+// re-issue an IPC roundtrip and visually flip from plain text to the red link.
+// The cache is keyed by (display, cwd) so different worktrees stay separate.
+type ResolvedFileReference =
+  | { status: "resolved"; path: string }
+  | { status: "unresolved" };
+
+const fileReferenceResolutionCache = new Map<string, ResolvedFileReference>();
+const fileReferenceResolutionInflight = new Map<string, Promise<ResolvedFileReference>>();
+
+function fileReferenceCacheKey(display: string, cwd: string | undefined): string {
+  return `${cwd ?? ""}::${display}`;
+}
+
+function lookupCachedFileReference(
+  display: string,
+  cwd: string | undefined
+): ResolvedFileReference | undefined {
+  return fileReferenceResolutionCache.get(fileReferenceCacheKey(display, cwd));
+}
+
+function subscribeToFileReferenceResolution(
+  display: string,
+  cwd: string | undefined,
+  onResolved: (result: ResolvedFileReference) => void
+): void {
+  const key = fileReferenceCacheKey(display, cwd);
+  const cached = fileReferenceResolutionCache.get(key);
+  if (cached) {
+    onResolved(cached);
+    return;
+  }
+
+  const resolver = window.wuu?.resolveWorkspaceFileReference;
+  if (!resolver) {
+    const result: ResolvedFileReference = { status: "unresolved" };
+    fileReferenceResolutionCache.set(key, result);
+    onResolved(result);
+    return;
+  }
+
+  let inflight = fileReferenceResolutionInflight.get(key);
+  if (!inflight) {
+    inflight = resolver(display)
+      .then(
+        (result): ResolvedFileReference =>
+          result.status === "resolved" && result.path
+            ? { status: "resolved", path: result.path }
+            : { status: "unresolved" }
+      )
+      .catch((): ResolvedFileReference => ({ status: "unresolved" }));
+    fileReferenceResolutionInflight.set(key, inflight);
+    void inflight.then((result) => {
+      fileReferenceResolutionCache.set(key, result);
+      fileReferenceResolutionInflight.delete(key);
+    });
+  }
+  void inflight.then((result) => {
+    onResolved(result);
+  });
+}
+
 function RichResolvedFileReference({
   display,
   cwd,
@@ -518,30 +581,58 @@ function RichResolvedFileReference({
   cwd: string | undefined;
   onOpenFile: (path: string) => void;
 }): JSX.Element {
-  const [resolvedPath, setResolvedPath] = useState<string | undefined>(undefined);
+  const [resolved, setResolved] = useState<ResolvedFileReference | undefined>(
+    () => lookupCachedFileReference(display, cwd)
+  );
 
   useEffect(() => {
     let cancelled = false;
-    setResolvedPath(undefined);
-    void resolveWorkspaceFileReference(display, cwd).then((result) => {
+    setResolved(lookupCachedFileReference(display, cwd));
+    subscribeToFileReferenceResolution(display, cwd, (result) => {
       if (cancelled) {
         return;
       }
-      setResolvedPath(result.status === "resolved" ? result.path : undefined);
+      setResolved(result);
     });
     return () => {
       cancelled = true;
     };
   }, [cwd, display]);
 
-  if (!resolvedPath) {
-    return <>{display}</>;
+  if (resolved === undefined) {
+    // First render for a reference we have not resolved yet. Render a
+    // link-shaped placeholder so the visual layout is stable; the real
+    // link replaces it once the IPC roundtrip completes.
+    return (
+      <span
+        className="rich-link rich-file-link rich-file-link--pending"
+        aria-busy="true"
+        data-pending-file-reference={display}
+      >
+        <span className="rich-link-content">
+          <span className="rich-link-icon" aria-hidden="true">
+            <FileText className="icon-xs" />
+          </span>
+          <span className="rich-link-label">{display}</span>
+        </span>
+      </span>
+    );
   }
 
+  // Any reference that survived the candidate check (extension whitelist,
+  // not a URL) is rendered as a red link for visual consistency, even if
+  // the workspace does not actually contain the file. Otherwise a list
+  // like "段二改了 → a.ts, b.ts, c.ts" would mix highlighted and plain
+  // entries whenever one of the files has been deleted or is ambiguous,
+  // which is the exact UX regression the user reported. When the IPC
+  // reports missing/ambiguous/invalid, the link still points at the
+  // display string and the file viewer surfaces its own "not found"
+  // feedback on click.
+  const linkPath = resolved.status === "resolved" ? resolved.path : display;
   return (
     <RichFileLink
       display={display}
-      path={resolvedPath}
+      path={linkPath}
       onOpenFile={onOpenFile}
     />
   );
@@ -565,6 +656,12 @@ function resolveWorkspaceFileReference(
     reference,
     status: "invalid" as const,
   }));
+}
+
+// Exposed for tests so the module-level cache does not leak between cases.
+export function __resetRichFileReferenceResolutionCacheForTests(): void {
+  fileReferenceResolutionCache.clear();
+  fileReferenceResolutionInflight.clear();
 }
 
 function RichFileLink({

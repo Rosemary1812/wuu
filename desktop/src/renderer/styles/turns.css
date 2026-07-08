@@ -2646,6 +2646,26 @@
   outline-offset: 2px;
 }
 
+/*
+ * Pending state: shown on the first render for a workspace file reference
+ * before the IPC roundtrip that confirms the file exists completes. It keeps
+ * the same red link color so the visual layout is stable — the user never
+ * sees a flash of plain text that flips to a red link. The placeholder is a
+ * <span>, not a <button>, so it is not clickable and the cursor stays
+ * neutral.
+ */
+.rich-file-link--pending {
+  cursor: default;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.rich-file-link--pending:hover,
+.rich-file-link--pending:focus-visible {
+  color: var(--rich-link-color);
+  background: transparent;
+}
+
 .rich-content :not(pre) > code {
                                                               
                                                               
