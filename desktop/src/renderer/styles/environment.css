@@ -1444,6 +1444,15 @@
   background: var(--surface-2);
   padding: 8px 10px;
   word-break: break-word;
+  /* Cap the snippet's height so a long markdown agent reply (the kind
+   * that easily blows past 30 lines once code blocks, headers and
+   * bullet lists are counted) cannot push the per-turn preview rows
+   * below it out of view. The snippet's job is "where did the query
+   * match" — a handful of lines is plenty; the full conversation lives
+   * in the user/assistant rows beneath it. overflow-y keeps the rest
+   * reachable when the match context really is longer than the cap. */
+  max-height: 140px;
+  overflow-y: auto;
 }
 
 .conversation-search-preview-loading,
