@@ -747,27 +747,28 @@
   transform: var(--message-copy-active-transform);
 }
 
-/*
- * Hover actions live OUTSIDE the flow: an overlay above the bubble's
- * top-right corner, painting into the turn-boundary band (40px — the
- * 24px row + 4px bridge fit with room to spare). Keeping them in-flow
- * reserved a 24px invisible row under every bubble, which pushed the
- * question 56px away from its own answer's hairline. The padding (not
- * a gap) bridges bubble → row so the hover chain never breaks while
- * the pointer travels up.
- */
+/* Hover actions live outside the flow but below the query bubble. The
+ * 2px padding is the hover bridge; the 20px controls leave 2px before
+ * the divider while staying inside the 24px query -> rule gap. */
 .user-message-block-with-actions {
   position: relative;
 }
 
-.user-message-actions {
+.message-actions.user-message-actions {
   position: absolute;
-  bottom: 100%;
+  top: 100%;
+  bottom: auto;
   right: 0;
   justify-content: flex-end;
+  min-height: 20px;
   width: max-content;
   max-width: 100%;
-  padding-bottom: 4px;
+  padding-top: 2px;
+}
+
+.message-actions.user-message-actions .message-action-button {
+  width: 20px;
+  height: 20px;
 }
 
 .message-images {

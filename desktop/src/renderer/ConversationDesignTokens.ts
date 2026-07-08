@@ -118,7 +118,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
     max: 32,
     step: 1,
     unit: "px",
-    defaultValue: 24,
+    defaultValue: 16,
   },
   {
     key: "message-element-gap",

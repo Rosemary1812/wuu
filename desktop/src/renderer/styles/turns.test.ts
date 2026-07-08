@@ -36,18 +36,25 @@ function cssRuleCount(selector: string): number {
 }
 
 describe("turns.css user message actions", () => {
-  it("overlays action buttons above the bubble edge instead of reserving flow space", () => {
-    const body = cssRuleBody(".user-message-actions");
-    // Out-of-flow overlay: in-flow placement reserved an invisible
-    // 24px row under every bubble and bloated the turn boundary.
+  it("overlays action buttons below the bubble inside the query-to-rule gap", () => {
+    const body = cssRuleBody(".message-actions.user-message-actions");
+    // Out-of-flow overlay: the buttons belong below the query, but
+    // cannot reserve flow space or the user query -> rule gap stops
+    // matching the 24px message-flow token.
     expect(body).toMatch(/position:\s*absolute;/);
-    expect(body).toMatch(/bottom:\s*100%;/);
+    expect(body).toMatch(/top:\s*100%;/);
+    expect(body).toMatch(/bottom:\s*auto;/);
     expect(body).toMatch(/right:\s*0;/);
     expect(body).toMatch(/justify-content:\s*flex-end;/);
     expect(body).toMatch(/width:\s*max-content;/);
     // The hover bridge must be padding (contiguous hit area), not offset.
-    expect(body).toMatch(/padding-bottom:/);
+    expect(body).toMatch(/padding-top:/);
+    expect(body).not.toMatch(/padding-bottom/);
     expect(body).not.toMatch(/justify-self/);
+
+    const button = cssRuleBody(".message-actions.user-message-actions .message-action-button");
+    expect(button).toMatch(/width:\s*20px;/);
+    expect(button).toMatch(/height:\s*20px;/);
   });
 });
 
