@@ -348,6 +348,11 @@
   pointer-events: auto;
 }
 
+.app-shell.right-panel-globalized .workspace-right-panel-resizer {
+  display: none;
+  pointer-events: none;
+}
+
 .right-panel-animating .workspace-right-panel-resizer {
   pointer-events: none;
 }

@@ -36,3 +36,14 @@ describe("project sidebar row layout", () => {
     expect(cssRule(".thread-list-collapse-btn")).toMatch(/padding:\s*0 var\(--sidebar-row-control-pad-x\)/);
   });
 });
+
+describe("globalized right panel chrome", () => {
+  it("hides the docked right-panel resizer while the panel fills the window", () => {
+    const body = cssRule(
+      ".app-shell.right-panel-globalized .workspace-right-panel-resizer",
+    );
+
+    expect(body).toMatch(/display:\s*none;/);
+    expect(body).toMatch(/pointer-events:\s*none;/);
+  });
+});
