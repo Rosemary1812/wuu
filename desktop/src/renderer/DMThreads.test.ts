@@ -415,6 +415,38 @@ describe("computeBusyParticipantIDs", () => {
     );
   });
 
+  it("lights every participant currently processing a group message mark", () => {
+    const group = makeThread({
+      id: "group",
+      group: true,
+    });
+    expect(
+      computeBusyParticipantIDs({
+        threads: [group],
+        marks: [
+          {
+            seq: 1,
+            participant_id: "participant-andy",
+            kind: "seen",
+            status: "in_progress",
+          },
+          {
+            seq: 1,
+            participant_id: "participant-sage",
+            kind: "seen",
+            status: "in_progress",
+          },
+          {
+            seq: 1,
+            participant_id: "participant-mia",
+            kind: "seen",
+            status: "completed",
+          },
+        ],
+      }),
+    ).toEqual(new Set(["participant-andy", "participant-sage"]));
+  });
+
   // ISSUE-12: the roster status dot must express an agent's OWN stable state
   // (its resident DM thread), never the transient child-agent activity of
   // whichever thread happens to be selected. A running child agent used to

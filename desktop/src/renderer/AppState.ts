@@ -6,6 +6,7 @@ import type {
   DesktopProject,
   GitStatusResult,
   InitializeResult,
+  MessageMarkWire,
   ParticipantSummary,
   PlanUpdate,
   RuntimeContext,
@@ -1831,29 +1832,57 @@ export function busyDMParticipantIDs(
   return ids;
 }
 
+type BusyMessageMarkCandidate = Pick<
+  MessageMarkWire,
+  "seq" | "participant_id" | "kind" | "status"
+>;
+
+export function busyMessageMarkParticipantIDs(
+  marks: readonly BusyMessageMarkCandidate[] | undefined,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const mark of marks ?? []) {
+    if (mark.kind !== "seen" || mark.status !== "in_progress") {
+      continue;
+    }
+    const participantID = mark.participant_id?.trim();
+    if (!participantID) {
+      continue;
+    }
+    ids.add(participantID);
+  }
+  return ids;
+}
+
 /**
  * Aggregate participant IDs whose roster busy dot should be lit.
  *
  * A resident named agent's status dot expresses that agent's OWN stable
- * state, so the only source is `busyDMParticipantIDs` — the agent's resident
- * DM thread (its "brain") being in a running state (design §7.2: "busy 改为
- * resident thread 的 running 状态"). We deliberately do NOT walk unrelated
- * threads' running child_agents to light the dispatcher's dot: a child agent
- * is a per-run worker owned by whichever thread is dispatching it, so lighting
- * the dispatcher couples the roster dot to transient, thread-scoped child-agent
- * state. Because a thread's child_agents are only refreshed in state.threads
- * when that thread is opened/resumed, that coupling made an agent's dot flip
- * as the user selected or left a group chat (ISSUE-12) — a status that read as
- * belonging to the agent but was really driven by group-chat selection.
+ * state, so the baseline source is `busyDMParticipantIDs` — the agent's
+ * resident DM thread (its "brain") being in a running state (design §7.2:
+ * "busy 改为 resident thread 的 running 状态"). Chat read receipts add a second
+ * explicit source: a participant with a `seen: in_progress` mark is currently
+ * processing that visible group/DM message, so the roster should match the
+ * bubble's "处理中" hover.
  *
- * selection-agnostic: the busy set depends only on the resident DM threads in
- * workspace scope, never on state.thread, state.secondaryThread, or which
- * group chat is currently selected.
+ * We deliberately do NOT walk unrelated threads' running child_agents to light
+ * the dispatcher's dot: a child agent is a per-run worker owned by whichever
+ * thread is dispatching it, so lighting the dispatcher couples the roster dot
+ * to transient, thread-scoped child-agent state. Because a thread's child_agents
+ * are only refreshed in state.threads when that thread is opened/resumed, that
+ * coupling made an agent's dot flip as the user selected or left a group chat
+ * (ISSUE-12) — a status that read as belonging to the agent but was really
+ * driven by group-chat selection.
  */
 export function computeBusyParticipantIDs(input: {
   threads: readonly Thread[];
+  marks?: readonly BusyMessageMarkCandidate[];
 }): ReadonlySet<string> {
-  return new Set<string>(busyDMParticipantIDs(input.threads));
+  const ids = new Set<string>(busyDMParticipantIDs(input.threads));
+  for (const participantID of busyMessageMarkParticipantIDs(input.marks)) {
+    ids.add(participantID);
+  }
+  return ids;
 }
 
 export type ChatMessageRow =

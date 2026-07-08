@@ -46,6 +46,7 @@ import type {
   InitializeResult,
   InputFile,
   InputImage,
+  MessageMarkWire,
   ParticipantProfile,
   ParticipantSaveParams,
   ParticipantSummary,
@@ -125,6 +126,7 @@ import { useConversationScrollState } from "./ConversationScrollState";
 import { useConversationSearch } from "./ConversationSearchState";
 import { ConversationTurnList } from "./ConversationTurnList";
 import { ChatThreadViewContainer } from "./ChatThreadViewContainer";
+import { useThreadMarkList } from "./useThreadMarks";
 import { ConversationSubthreadPanel } from "./ConversationSubthreadPanel";
 import { ParticipantProfilePanel } from "./ParticipantProfilePanel";
 import { ConversationForkDialog, type ForkMode } from "./ConversationForkDialog";
@@ -967,6 +969,10 @@ export function App(): JSX.Element {
   // button; a send always reads as "message sent" in the transcript.
   const activeThreadIsChatStyle = Boolean(
     activeThread && (isDMThread(activeThread) || isGroupThread(activeThread)),
+  );
+  const activeThreadMarks = useThreadMarkList(
+    activeThreadID,
+    activeThreadIsChatStyle,
   );
   // Reload trigger for subthread badges: new main-stream messages can anchor
   // new replies. (cth reply traffic itself is short-circuited off the main
@@ -2240,18 +2246,20 @@ export function App(): JSX.Element {
     }
     return Array.from(names);
   }, [state.thread, state.secondaryThread, state.threads]);
-  // Aggregate participant IDs that are currently busy. The only source is the
-  // participant's resident DM thread being in a running state — a resident
-  // named agent's DM thread is its brain, so a running turn there means the
-  // agent is thinking (docs/plans/2026-07-03-resident-named-agents.md §7.2).
-  // Running child agents dispatched inside some thread do NOT light their
-  // dispatcher's dot: that coupled the roster dot to whichever thread was
-  // selected (ISSUE-12). See computeBusyParticipantIDs for the full rationale.
-  // Named participants not in the set render as online. This drives the
-  // sidebar roster and chat-style message avatars.
+  // Aggregate participant IDs that are currently busy. Resident DM running
+  // state is the baseline; active chat read receipts add participants that
+  // are explicitly marked `seen: in_progress` for the visible message. Running
+  // child agents dispatched inside some thread still do NOT light their
+  // dispatcher's dot (ISSUE-12). See computeBusyParticipantIDs for the full
+  // rationale. Named participants not in the set render as online. This drives
+  // the sidebar roster and chat-style message avatars.
   const busyParticipantIDs = useMemo(
-    () => computeBusyParticipantIDs({ threads: state.threads }),
-    [state.threads],
+    () =>
+      computeBusyParticipantIDs({
+        threads: state.threads,
+        marks: activeThreadMarks,
+      }),
+    [activeThreadMarks, state.threads],
   );
   // Chat read receipts + reactions render participant ids; resolve them to
   // names for the ring/chip hovers. chatReaderCount is the ring denominator —
@@ -9414,6 +9422,7 @@ export function App(): JSX.Element {
                 onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
                 onNoticeAction={handleCachedPaneNoticeAction}
                 busyParticipantIDs={busyParticipantIDs}
+                activeThreadMarks={activeThreadMarks}
                 resolveParticipantName={resolveParticipantName}
                 chatReaderCount={chatReaderCount}
                 subthreadsByAnchor={activeChatSubthreadsByAnchor}
@@ -9595,6 +9604,7 @@ type CachedConversationPanesProps = {
   onOpenFileDiff: (thread: Thread, selection: TurnFileDiffSelection) => void;
   turnStreamStatus: Record<string, TurnStreamStatus>;
   busyParticipantIDs: ReadonlySet<string>;
+  activeThreadMarks: readonly MessageMarkWire[];
   resolveParticipantName: (id: string) => string;
   chatReaderCount: number;
   /**
@@ -9640,6 +9650,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
   onOpenFileDiff,
   turnStreamStatus,
   busyParticipantIDs,
+  activeThreadMarks,
   resolveParticipantName,
   chatReaderCount,
   subthreadsByAnchor,
@@ -9717,6 +9728,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                   key={threadID}
                   threadID={threadID}
                   turns={threadTurns}
+                  marks={isActive ? activeThreadMarks : undefined}
                   busyParticipantIDs={busyParticipantIDs}
                   resolveParticipantName={resolveParticipantName}
                   readerCount={chatReaderCount}

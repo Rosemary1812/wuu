@@ -29,10 +29,10 @@ export function upsertMark(
 // live: it fetches thread/marks when the thread (re)activates, then applies
 // message/mark notifications incrementally. It no-ops when disabled or when the
 // Electron bridge is absent (unit tests), so it is safe to mount unconditionally.
-export function useThreadMarks(
+export function useThreadMarkList(
   threadID: string | undefined,
   enabled: boolean,
-): ReadonlyMap<number, MessageMarksView> {
+): readonly MessageMarkWire[] {
   const [marks, setMarks] = useState<readonly MessageMarkWire[]>([]);
 
   useEffect(() => {
@@ -74,5 +74,13 @@ export function useThreadMarks(
     };
   }, [threadID, enabled]);
 
+  return marks;
+}
+
+export function useThreadMarks(
+  threadID: string | undefined,
+  enabled: boolean,
+): ReadonlyMap<number, MessageMarksView> {
+  const marks = useThreadMarkList(threadID, enabled);
   return useMemo(() => aggregateMarksBySeq(marks), [marks]);
 }

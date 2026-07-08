@@ -1,11 +1,13 @@
-import type { JSX } from "react";
+import { useMemo, type JSX } from "react";
 import type {
   ConversationSubthread,
+  MessageMarkWire,
   ThreadItem,
   Turn,
 } from "../shared/protocol";
 import { ChatThreadView } from "./ChatThreadView";
 import type { QueuedComposerMessage } from "./ComposerMessages";
+import { aggregateMarksBySeq } from "./MessageMarks";
 import { useThreadMarks } from "./useThreadMarks";
 
 // Feeds ChatThreadView its live read receipts + reactions. Split out because
@@ -15,6 +17,7 @@ import { useThreadMarks } from "./useThreadMarks";
 export function ChatThreadViewContainer({
   threadID,
   turns,
+  marks,
   pendingMessages,
   busyParticipantIDs,
   readerCount,
@@ -25,6 +28,7 @@ export function ChatThreadViewContainer({
 }: {
   threadID: string;
   turns: ReadonlyArray<Pick<Turn, "id" | "items">>;
+  marks?: readonly MessageMarkWire[];
   pendingMessages?: ReadonlyArray<QueuedComposerMessage>;
   busyParticipantIDs?: ReadonlySet<string>;
   readerCount?: number;
@@ -33,7 +37,12 @@ export function ChatThreadViewContainer({
   onOpenSubthread?: (item: ThreadItem) => void;
   onReact?: (item: ThreadItem, reaction: string) => void;
 }): JSX.Element {
-  const marksBySeq = useThreadMarks(threadID, true);
+  const loadedMarksBySeq = useThreadMarks(threadID, marks === undefined);
+  const providedMarksBySeq = useMemo(
+    () => (marks ? aggregateMarksBySeq(marks) : undefined),
+    [marks],
+  );
+  const marksBySeq = providedMarksBySeq ?? loadedMarksBySeq;
   return (
     <ChatThreadView
       turns={turns}
