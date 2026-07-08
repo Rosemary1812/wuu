@@ -3,10 +3,11 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const chatCss = readFileSync(resolve(__dirname, "chat.css"), "utf-8");
+const chatCssRules = chatCss.replace(/\/\*[\s\S]*?\*\//g, "");
 
 function cssRuleBody(selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = chatCss.match(
+  const match = chatCssRules.match(
     new RegExp(`(?:^|\\})\\s*${escapedSelector}\\s*\\{([\\s\\S]*?)\\}`),
   );
   if (!match) {
@@ -39,5 +40,29 @@ describe("chat.css inline divider", () => {
     expect(chatCss).toMatch(
       /\.chat-inline-divider::before,\s*\.chat-inline-divider::after\s*\{[\s\S]*flex:\s*1 1 auto;[\s\S]*height:\s*1px;/,
     );
+  });
+});
+
+describe("chat.css reaction picker", () => {
+  it("opens downward from the first visible bubble so the picker is not clipped", () => {
+    const toolbar = cssRuleBody(".chat-row--top-bubble .chat-bubble-toolbar");
+    expect(toolbar).toMatch(/bottom:\s*auto;/);
+    expect(toolbar).toMatch(/top:\s*calc\(100%\s*-\s*4px\);/);
+
+    const picker = cssRuleBody(".chat-row--top-bubble .chat-reaction-picker");
+    expect(picker).toMatch(/top:\s*calc\(100%\s*\+\s*6px\);/);
+    expect(picker).toMatch(/bottom:\s*auto;/);
+    expect(picker).not.toMatch(/bottom:\s*calc/);
+  });
+
+  it("does not draw a gray rounded hover backplate inside sticker art", () => {
+    const option = cssRuleBody(".chat-bubble-toolbar .chat-reaction-picker-option");
+    expect(option).toMatch(/background:\s*transparent;/);
+
+    const hover = cssRuleBody(
+      ".chat-bubble-toolbar .chat-reaction-picker-option:hover,\n.chat-bubble-toolbar .chat-reaction-picker-option:focus-visible",
+    );
+    expect(hover).toMatch(/background:\s*transparent;/);
+    expect(hover).not.toMatch(/var\(--menu-hover\)/);
   });
 });

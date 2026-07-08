@@ -429,6 +429,14 @@ img.chat-reaction-glyph {
 }
 .chat-row--user .chat-bubble-toolbar {
   right: 6px;
+  /* No backdrop-filter on user bubbles: the toolbar's 4px overlap into the
+     bubble lands on the solid `--chat-user-message-bg` (#e8e8e4 light /
+     #2a2e33 dark) and the blur against that solid colour reads as a
+     "frosted edge" against the toolbar's own box-shadow. Drop the blur
+     here for a clean float over the user bubble. The same toolbar still
+     blurs the chat-thread behind it on participant bubbles, where the
+     semi-transparent `--ink-overlay-4` hides the effect. */
+  backdrop-filter: none;
 }
 .chat-bubble:hover > .chat-bubble-toolbar,
 .chat-bubble:focus-within > .chat-bubble-toolbar {
@@ -472,6 +480,18 @@ img.chat-reaction-glyph {
   transform: translateY(0);
 }
 
+/* The first visible bubble can sit flush against the chat-thread's top
+   padding even when focus/envelope rows render before it. Open its toolbar
+   and sticker picker downward so the scroll container does not clip them. */
+.chat-row--top-bubble .chat-bubble-toolbar {
+  bottom: auto;
+  top: calc(100% - 4px);
+}
+.chat-row--top-bubble .chat-reaction-picker {
+  top: calc(100% + 6px);
+  bottom: auto;
+}
+
 /* The sticker picker panel (微信式): each reaction shown large with its
    label, because the mascot faces are indistinguishable at glyph size.
    Menu tokens + enter animation follow the shared menu rules. */
@@ -509,11 +529,12 @@ img.chat-reaction-glyph {
   width: 64px;
   padding: 8px 4px 6px;
   border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--ink-soft);
 }
 .chat-bubble-toolbar .chat-reaction-picker-option:hover,
 .chat-bubble-toolbar .chat-reaction-picker-option:focus-visible {
-  background: var(--menu-hover);
+  background: transparent;
   color: var(--ink);
 }
 .chat-bubble-toolbar .chat-reaction-picker-option:active {
@@ -524,6 +545,14 @@ img.chat-reaction-glyph {
   height: 40px;
   display: block;
   -webkit-user-drag: none;
+  transition:
+    filter 140ms ease,
+    transform 140ms ease;
+}
+.chat-bubble-toolbar .chat-reaction-picker-option:hover img,
+.chat-bubble-toolbar .chat-reaction-picker-option:focus-visible img {
+  filter: drop-shadow(0 3px 5px var(--ink-overlay-16));
+  transform: translateY(-1px) scale(1.04);
 }
 .chat-reaction-picker-glyph {
   font-size: 30px;

@@ -280,6 +280,11 @@ export function ChatThreadView({
   }, [rowCount]);
 
   const visibleRows = hiddenOlderCount > 0 ? rows.slice(hiddenOlderCount) : rows;
+  const firstVisibleBubbleRowID = visibleRows.find(
+    (row) =>
+      row.kind === "user" ||
+      (row.kind === "participant" && (row.item.post_kind ?? "result") !== "decline"),
+  )?.id;
 
   return (
     <div className="chat-thread" ref={containerRef}>
@@ -293,6 +298,7 @@ export function ChatThreadView({
       {visibleRows.map((row) => (
         <ChatRow
           key={row.id}
+          isTopBubble={row.id === firstVisibleBubbleRowID}
           row={row}
           busyParticipantIDs={busyParticipantIDs}
           marks={
@@ -483,6 +489,7 @@ function focusDividerLabel(meta: FocusMeta): string {
 }
 
 function ChatRow({
+  isTopBubble,
   row,
   busyParticipantIDs,
   marks,
@@ -492,6 +499,7 @@ function ChatRow({
   onOpenSubthread,
   onReact,
 }: {
+  isTopBubble?: boolean;
   row: ChatMessageRow;
   busyParticipantIDs?: ReadonlySet<string>;
   marks?: MessageMarksView;
@@ -502,11 +510,12 @@ function ChatRow({
   /** Stamp a one-click reaction from the bubble's hover toolbar. Absent = no reactions. */
   onReact?: (item: ThreadItem, reaction: string) => void;
 }): JSX.Element {
+  const topBubbleClass = isTopBubble ? " chat-row--top-bubble" : "";
   if (row.kind === "task") {
     // task_card 折叠卡:复用 agent-brain 转录里的 TaskCardItem(进行中显示活动
     // 状态,完成后显示 result 摘要)。「查看过程」仅在 task 绑了 subthread 时可点。
     return (
-      <div className="chat-row chat-row--task">
+      <div className={`chat-row chat-row--task${topBubbleClass}`}>
         <TaskCardItem
           item={row.item}
           onOpenSubthread={
@@ -522,7 +531,7 @@ function ChatRow({
     const meta = row.item.focus_meta;
     const label = meta ? focusDividerLabel(meta) : "⬒ 全部工作区";
     return (
-      <div className="chat-row chat-row--focus">
+      <div className={`chat-row chat-row--focus${topBubbleClass}`}>
         <div
           className="chat-inline-divider chat-focus-divider"
           role="separator"
@@ -539,14 +548,14 @@ function ChatRow({
     const meta = envelopeRowMeta(row);
     const text = envelopeRowText(row);
     return (
-      <div className="chat-row chat-row--envelope">
+      <div className={`chat-row chat-row--envelope${topBubbleClass}`}>
         <EnvelopeNotice meta={meta} text={text} />
       </div>
     );
   }
   if (row.kind === "user") {
     return (
-      <div className="chat-row chat-row--user">
+      <div className={`chat-row chat-row--user${topBubbleClass}`}>
         <div className="chat-bubble-group">
           <div className="chat-bubble chat-bubble--user">
             {row.item.images?.length ? (
@@ -599,7 +608,7 @@ function ChatRow({
   if (postKind === "decline") {
     const text = (row.item.text ?? "").trim();
     return (
-      <div className="chat-row chat-row--decline">
+      <div className={`chat-row chat-row--decline${topBubbleClass}`}>
         <div className="chat-decline-line">
           {name} 认为无需回应{text ? `：${text}` : ""}
         </div>
@@ -607,7 +616,7 @@ function ChatRow({
     );
   }
   return (
-    <div className="chat-row chat-row--participant">
+    <div className={`chat-row chat-row--participant${topBubbleClass}`}>
       <ChatAvatar participant={participant} status={participantStatus} />
       <div className="chat-bubble-group">
         <div className="chat-sender-name">{name}</div>

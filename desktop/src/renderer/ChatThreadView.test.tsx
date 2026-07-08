@@ -632,6 +632,29 @@ describe("ChatThreadView message hover toolbar", () => {
     ).toBe("赞同");
   });
 
+  it("treats the first rendered bubble as top-aligned even after a focus divider", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          {
+            id: "focus-1",
+            type: "user_message",
+            focus_meta: { kind: "all" },
+          },
+          { id: "item-1", type: "user_message", text: "组建一个团队" },
+        ]),
+        onReact: () => {},
+      }),
+    );
+
+    const focusRow = container.querySelector(".chat-row--focus");
+    const userRow = container.querySelector(".chat-row--user");
+    expect(focusRow).not.toBeNull();
+    expect(userRow).not.toBeNull();
+    expect(focusRow!.classList.contains("chat-row--top-bubble")).toBe(false);
+    expect(userRow!.classList.contains("chat-row--top-bubble")).toBe(true);
+  });
+
   it("stamps a reaction via the picker with the key + clicked message, then closes", () => {
     const reacted: Array<{ id?: string; reaction: string }> = [];
     const container = mount(
