@@ -340,7 +340,7 @@ func TestDiscoverSourceDirsRecursiveFindsNestedSkillDirectories(t *testing.T) {
 
 func TestBundledSkillsIncludesLoopEngineeringSkills(t *testing.T) {
 	items := BundledSkills()
-	for _, name := range []string{"commit", "long-running-workflow"} {
+	for _, name := range []string{"commit", "long-running-goal"} {
 		skill, ok := Find(items, name)
 		if !ok {
 			t.Fatalf("bundled skill %q not found in %+v", name, items)

@@ -1,5 +1,5 @@
 ---
-name: long-running-workflow
+name: long-running-goal
 description: Run durable multi-phase work without relying on one context window.
 trigger-condition: Use for large tasks that need research, plan, execution, verification, review, and resumability.
 allowed-tools: [read_file, apply_patch, bash, spawn_agent]
