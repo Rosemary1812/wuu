@@ -53,8 +53,8 @@ export const CHAT_WINDOW_ROW_BATCH = 80;
  * Walk up from `start` to find the nearest scrollable ancestor — the
  * first element whose computed `overflow-y` is `auto`/`scroll` and whose
  * content actually overflows (`scrollHeight > clientHeight`). The chat
- * view's own `.chat-thread` container sets `overflow-y: auto` but is
- * never height-constrained (it grows with its content); the real scroll
+ * view's own `.chat-thread` container is deliberately not a scroll
+ * container (it grows with its content); the real scroll
  * surface is an ancestor — `.scroll-region` in the single-pane layout,
  * a split-pane body in split mode. Returns null when nothing scrolls,
  * which is always the case in jsdom (no layout, so every scrollHeight/
