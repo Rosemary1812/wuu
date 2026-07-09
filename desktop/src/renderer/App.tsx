@@ -1,22 +1,17 @@
 /// <reference path="../shared/jsx-compat.d.ts" />
 
 import {
-  Bug,
   ChevronRight,
   Folder,
   FolderX,
   GitBranch,
-  Grid3X3,
   Image as ImageIcon,
-  Info,
   Laptop,
-  ListChecks,
   MoreHorizontal,
   Pencil,
   Pin,
   Plus,
   Send,
-  Terminal,
   Trash2,
   Wrench,
   X,
@@ -88,14 +83,11 @@ import {
 } from "./QueryHistoryPopover";
 import { QueryHistoryRail } from "./QueryHistoryRail";
 import { ConversationSearchOverlay } from "./ConversationSearchOverlay";
-import { ConversationSplitPane } from "./ConversationSplitPane";
 import { useConversationScrollState } from "./ConversationScrollState";
 import { useConversationSearch } from "./ConversationSearchState";
 import { useConversationSubthreadState } from "./ConversationSubthreadState";
 import { CodexPetLayer } from "./CodexPetLayer";
 import { useThreadMarkList } from "./useThreadMarks";
-import { ConversationSubthreadPanel } from "./ConversationSubthreadPanel";
-import { ParticipantProfilePanel } from "./ParticipantProfilePanel";
 import { useParticipantState } from "./ParticipantState";
 import { ConversationForkDialog } from "./ConversationForkDialog";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
@@ -107,7 +99,6 @@ import {
   type EnvironmentPanelMotionState,
 } from "./EnvironmentPanel";
 import { createEnvironmentActions } from "./EnvironmentActions";
-import { EnvironmentSideStack } from "./EnvironmentSideStack";
 import {
   activePlanUpdateForThread,
   activeSessionTab,
@@ -189,14 +180,10 @@ import {
   type TurnStreamStatus,
 } from "./AppState";
 import {
-  CONVERSATION_SPLIT_MAX_PERCENT,
-  CONVERSATION_SPLIT_MIN_PERCENT,
   RIGHT_PANEL_MOTION_MS,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
   SIDEBAR_MOTION_MS,
-  THREAD_PANEL_MAX_WIDTH,
-  THREAD_PANEL_MIN_WIDTH,
   WORKSPACE_RIGHT_PANEL_MAX_WIDTH,
   WORKSPACE_RIGHT_PANEL_MIN_WIDTH,
   useAppLayoutState,
@@ -213,23 +200,17 @@ import {
 import {
   EmptyConversationHome,
   RuntimeLoading,
-  ViewSwitchLoading,
 } from "./LoadingViews";
 import { pullRequestUnavailableReason } from "./RuntimeHelpers";
-import { SettingsView, type SettingsPage } from "./SettingsView";
+import type { SettingsPage } from "./SettingsView";
 import type { ComposerGoalSummary } from "../shared/protocol";
 import { useSettingsRuntimeState } from "./SettingsRuntimeState";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
-import { SessionTabStrip } from "./SessionTabs";
 import { JumpToLatestPill } from "./JumpToLatestPill";
 import { SkillsCatalog } from "./SkillsCatalog";
 import { TaskBoardView } from "./TaskBoardView";
 import { StreamingMarkdown } from "./StreamingMarkdown";
-import {
-  RunDebugPanel,
-  runDebugPhaseForState,
-} from "./RunDebugPanel";
-import { ChipGalleryPanel } from "./ChipGalleryPanel";
+import { runDebugPhaseForState } from "./RunDebugPanel";
 import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
 import { threadDisplayTitle } from "./ThreadTitles";
 import {
@@ -256,7 +237,6 @@ import { ConversationTurnRail } from "./ConversationTurnRail";
 import {
   WorkspaceMainPanel,
   WorkspaceRightPanel,
-  WorkspaceToolIcon,
   workspaceModeTitle,
   type WorkspacePanelView,
 } from "./WorkspacePanels";
@@ -295,6 +275,13 @@ import {
   type PendingForkState,
 } from "./ConversationHistoryActions";
 import { CachedConversationPanes } from "./CachedConversationPanes";
+import {
+  ConversationSidePanels,
+  ConversationSplitLayoutRenderer,
+  ConversationTitleActions,
+  ConversationTitleContent,
+  SettingsShellRenderer,
+} from "./ConversationShellRenderers";
 export { SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./SidebarDrawerState";
 
 function permissionSummaryForMode(mode: PermissionMode): PermissionSummary {
@@ -2273,194 +2260,6 @@ export function App(): JSX.Element {
     );
   }
 
-  // The split reply panel reuses the SAME Composer as the main dock — one
-// composer implementation, one experience — but the runtime-control props
-// (permission-mode picker / project / branch / codex runtime model & effort
-// / settings / memory / skills / instructions launchers) are intentionally
-// wired to inert placeholders so none of those menus can open or change
-// state mid-thread. `hideRuntimeControls` covers the model/effort chrome;
-// the inert placeholders cover everything else, since Composer's prop type
-// requires them regardless. It is bound to a dedicated cth draft (so it
-// does not cross-write the dock composer). Send routes through
-// message/postSubthread (thread_id=cth 折叠短路).
-  function renderSubthreadComposer(): JSX.Element {
-    const resolved = openSubthreadPanel?.subthread?.status === "resolved";
-    // Stripped variant: passes the SAME Composer the main dock uses but with
-    // `hideRuntimeControls` so the runtime/menu chrome (permission-mode
-    // picker, project picker, branch picker, codex runtime model/effort
-    // menus, settings/memory/skills launchers) is not rendered. The prop
-    // bag still has to satisfy Composer's type — its runtime-control props
-    // are typed required regardless of `hideRuntimeControls`, so we pass
-    // inert placeholders that the host already uses no-op behavior for.
-    // Cleaner Composer typing (making these optional when hidden) is a
-    // separate refactor.
-    return (
-      <Composer
-        variant="dock"
-        hideRuntimeControls
-        prompt={subthreadComposerDraft.prompt}
-        setPrompt={(value) =>
-          setSubthreadComposerDraft((draft) => ({ ...draft, prompt: value }))
-        }
-        files={subthreadComposerDraft.files}
-        images={subthreadComposerDraft.images}
-        queuedMessages={[]}
-        guideMessages={[]}
-        running={false}
-        runtimeControlsDisabled
-        tokensPerSecond={0}
-        status=""
-        readOnly={Boolean(resolved)}
-        initialized={composerInitialized}
-        projects={state.projects}
-        activeContext={state.activeContext}
-        activeProject={activeProject}
-        codexModels={codexModels}
-        codexRuntimeMenu={null}
-        codexRuntimeRef={codexRuntimeRef}
-        menuOpen={false}
-        accessMenuOpen={false}
-        branchMenuOpen={false}
-        menuRef={runtimeMenuRef}
-        accessMenuRef={subthreadAccessMenuRef}
-        projectFilter=""
-        setProjectFilter={() => {}}
-        onToggleMenu={() => {}}
-        onToggleAccessMenu={() => {}}
-        onToggleBranchMenu={() => {}}
-        onToggleCodexRuntimeMenu={() => {}}
-        onSelectRuntimeModel={() => {}}
-        onSelectRuntimeEffort={() => {}}
-        onSelectPermissionMode={() => {}}
-        onOpenSettings={() => {}}
-        onOpenMemorySettings={() => {}}
-        onOpenSkillsCatalog={() => {}}
-        onSelectProject={() => {}}
-        onSelectNoProject={() => {}}
-        onSelectGitBranch={() => {}}
-        onCreateProject={() => {}}
-        onOpenProject={() => {}}
-        onStartNewThread={() => {}}
-        onOpenWorkspaceTool={() => {}}
-        onOpenInstructions={() => {}}
-        onPasteAttachmentFiles={(files) =>
-          void attachSubthreadComposerAttachmentFiles(files)
-        }
-        onRemoveFile={removeSubthreadComposerFile}
-        onRemoveImage={removeSubthreadComposerImage}
-        onRemoveQueuedMessage={() => {}}
-        onRemoveGuideMessage={() => {}}
-        onGuideQueuedMessage={() => {}}
-        onEditQueuedMessage={() => {}}
-        onEditGuideMessage={() => {}}
-        onSend={() => sendOpenConversationSubthreadMessage()}
-        onInterrupt={() => {}}
-        queryHistorySessionID={openSubthreadPanel?.subthread?.id}
-        queryHistory={[]}
-        participants={participants}
-      />
-    );
-  }
-
-  function renderConversationSplitPane(
-    thread: Thread,
-    pane: ConversationPaneID,
-  ): JSX.Element {
-    return (
-      <ConversationSplitPane
-        pane={pane}
-        thread={thread}
-        threads={state.threads}
-        active={state.activePane === pane}
-        activeContextCwd={state.activeContext?.cwd}
-        appStatus={state.status}
-        streamStatus={turnStreamStatusForThread(state, thread)}
-        draft={splitComposerDrafts[pane] ?? emptyComposerDraft()}
-        viewSwitchPending={viewContextSwitchPending}
-        queryHistory={queryTextsForThread(thread)}
-        editingMessage={
-          historyMessageEdit?.threadID === thread.id
-            ? historyMessageEdit
-            : undefined
-        }
-        onActivate={() => activateConversationPane(pane)}
-        onClose={() => closeConversationPane(pane)}
-        onBodyRef={(node) => {
-          splitPaneRefs.current[pane] = node;
-        }}
-        onScroll={handleConversationScroll}
-        onSetPrompt={(value) => setSplitComposerPrompt(pane, value)}
-        onPasteAttachmentFiles={(files) =>
-          void attachSplitComposerAttachmentFiles(pane, files)
-        }
-        onRemoveFile={(id) => removeSplitComposerFile(pane, id)}
-        onRemoveImage={(id) => removeSplitComposerImage(pane, id)}
-        onSend={() => void sendPromptForPane(pane)}
-        onInterrupt={() => void interruptPane(pane)}
-        onForkMessage={(turnID, itemID) =>
-          void forkThreadFromMessage(thread, turnID, itemID)
-        }
-        onOpenFile={openWorkspaceFile}
-        onOpenAgent={(agentID) => {
-          const agent = thread.child_agents?.find(
-            (candidate) => candidate.id === agentID,
-          );
-          if (agent) {
-            void selectChildAgent(agent);
-          }
-        }}
-        onEditMessage={
-          canShowHistoryEditButton(thread)
-            ? (turnID, item) =>
-                startEditingThreadMessageFromHistory(thread, turnID, item, pane)
-            : undefined
-        }
-        onCancelEditMessage={cancelEditingThreadMessage}
-        onSubmitEditMessage={(turnID, item, text, images, files) =>
-          void submitEditedThreadMessageFromHistory(thread, turnID, item, text, images, files, pane)
-        }
-        onStreamFrame={scheduleStreamScroll}
-        onNoticeAction={handleNoticeAction}
-        onOpenFileDiff={(selection) =>
-          openTurnFileDiffPanel(thread.id, selection)
-        }
-      />
-    );
-  }
-
-  function renderSessionTabs(): JSX.Element {
-    return (
-      <SessionTabStrip
-        state={state}
-        pendingSwitchThreadID={visiblePendingThreadID}
-        pendingComposerMessagesByThread={pendingComposerMessagesByThread}
-        canStartNewThread={Boolean(state.activeContext)}
-        onSelect={(tabID) => void selectSessionTab(tabID)}
-        onClose={(tabID) => void closeSessionTab(tabID)}
-        onCloseTabs={(tabIDs) => void closeSessionTabs(tabIDs)}
-        onPopOut={(tabID) => void popOutSessionTab(tabID)}
-        onNewThread={() => void startNewThread()}
-        onReorder={reorderSessionTabs}
-      />
-    );
-  }
-
-  function renderTitleContent(): JSX.Element {
-    if (sessionTabsVisible) {
-      return renderSessionTabs();
-    }
-    return (
-      <>
-        {workspaceMode ? (
-          <span className="workspace-title-icon" aria-hidden="true">
-            <WorkspaceToolIcon view={workspaceMode} className="icon-lg" />
-          </span>
-        ) : null}
-        <h1>{activeTitle}</h1>
-      </>
-    );
-  }
-
   // Lift the open reply subthread (cth) into its own window. threadID is the
   // PARENT group thread (the cth's home, needed for runtime routing); the new
   // window renders the cth via the SAME ConversationSubthreadPanel + composer
@@ -3680,7 +3479,7 @@ export function App(): JSX.Element {
 
   if (settingsOpen) {
     return (
-      <SettingsView
+      <SettingsShellRenderer
         initialized={state.initialized}
         initialPage={settingsInitialPage}
         memoryFocusParticipantID={settingsMemoryFocusID}
@@ -3696,8 +3495,6 @@ export function App(): JSX.Element {
         showDebugControlsSetting={ENABLE_DEBUG_CONTROL_SETTING}
         debugControlsEnabled={debugControlsEnabled}
         sidebarWidth={settingsSidebarWidth}
-        sidebarMinWidth={SIDEBAR_MIN_WIDTH}
-        sidebarMaxWidth={SIDEBAR_MAX_WIDTH}
         resizingSidebar={resizingSidebar}
         shellRef={settingsShellRef}
         onBack={() => {
@@ -3867,130 +3664,70 @@ export function App(): JSX.Element {
                 <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
               </button>
             ) : null}
-            {renderTitleContent()}
-          </div>
-          <div className="title-actions">
-            {debugControlsVisible && ENABLE_LAUNCH_PREVIEW ? (
-              <button
-                className="launch-preview-button"
-                type="button"
-                disabled={previewingLaunch}
-                onClick={() => setLaunchPreviewPinned(true)}
-              >
-                <Terminal className="icon" />
-                <span>启动动画</span>
-              </button>
-            ) : null}
-            {debugControlsVisible && ENABLE_PLAN_PANEL_DEBUG ? (
-              <button
-                className="launch-preview-button plan-panel-debug-button"
-                type="button"
-                disabled={!state.activeContext || !state.initialized}
-                onClick={seedPlanPanelDebug}
-              >
-                <ListChecks className="icon" />
-                <span>计划面板</span>
-              </button>
-            ) : null}
-            {debugControlsVisible ? (
-              <button
-                className={`launch-preview-button conversation-grid-button${conversationGridVisible ? " active" : ""}`}
-                type="button"
-                aria-label={conversationGridVisible ? "隐藏对话网格" : "显示对话网格"}
-                aria-pressed={conversationGridVisible}
-                title="按 G 切换对话网格"
-                onClick={() => setConversationGridVisible((visible) => !visible)}
-              >
-                <Grid3X3 className="icon" />
-                <span>网格</span>
-              </button>
-            ) : null}
-            {debugControlsVisible && ENABLE_RUN_DEBUG_PANEL ? (
-              <div className="run-debug-anchor" ref={runDebugRef}>
-                <button
-                  className={`launch-preview-button run-debug-button${runDebugOpen ? " active" : ""}`}
-                  type="button"
-                  aria-label={runDebugOpen ? "隐藏调试信息" : "显示调试信息"}
-                  aria-expanded={runDebugOpen}
-                  onClick={() => {
-                    closeEnvironmentPanel();
-                    setRunDebugOpen((open) => !open);
-                  }}
-                >
-                  <Bug className="icon" />
-                  <span>调试</span>
-                </button>
-                {runDebugOpen ? (
-                  <RunDebugPanel
-                    state={state}
-                    phase={runDebugPhase}
-                    events={runDebugEvents}
-                    queuedMessages={queuedMessages}
-                    guideMessages={guideMessages}
-                    composerImages={composerImages}
-                    composerFiles={composerFiles}
-                    copied={runDebugCopied}
-                    onCopy={() =>
-                      void copyRunDebugInfo({
-                        state,
-                        queuedMessages,
-                        guideMessages,
-                        composerImages,
-                        composerFiles,
-                      })
-                    }
-                    onClose={() => setRunDebugOpen(false)}
-                  />
-                ) : null}
-              </div>
-            ) : null}
-            <ChipGalleryPanel
-              open={chipGalleryOpen}
-              onClose={() => setChipGalleryOpen(false)}
+            <ConversationTitleContent
+              state={state}
+              sessionTabsVisible={sessionTabsVisible}
+              pendingSwitchThreadID={visiblePendingThreadID}
+              pendingComposerMessagesByThread={pendingComposerMessagesByThread}
+              workspaceMode={workspaceMode}
+              activeTitle={activeTitle}
+              onSelectSessionTab={(tabID) => void selectSessionTab(tabID)}
+              onCloseSessionTab={(tabID) => void closeSessionTab(tabID)}
+              onCloseSessionTabs={(tabIDs) => void closeSessionTabs(tabIDs)}
+              onPopOutSessionTab={(tabID) => void popOutSessionTab(tabID)}
+              onStartNewThread={() => void startNewThread()}
+              onReorderSessionTabs={reorderSessionTabs}
             />
-            {poppedOutMode ? null : (
-              <>
-                {activeThreadIsChatStyle && activeThread ? (
-                  <button
-                    className="icon-button"
-                    type="button"
-                    aria-label="打开任务看板"
-                    title="任务看板"
-                    onClick={() => openTaskBoardTab(activeThread)}
-                  >
-                    <ListChecks className="icon-lg" />
-                  </button>
-                ) : null}
-                <button
-                  ref={environmentToggleRef}
-                  className={`icon-button environment-toggle-button${environmentPanelVisible ? " active" : ""}`}
-                  type="button"
-                  aria-label={
-                    environmentPanelVisible
-                      ? activeThreadIsGroup
-                        ? "隐藏群聊信息"
-                        : "隐藏环境信息"
-                      : activeThreadIsGroup
-                        ? "显示群聊信息"
-                        : "显示环境信息"
-                  }
-                  aria-pressed={environmentPanelVisible}
-                  onClick={toggleEnvironmentPanel}
-                >
-                  <Info className="icon-lg" />
-                </button>
-                <button
-                  className="icon-button side-panel-toggle-button"
-                  type="button"
-                  aria-label={rightPanelOpen ? "关闭右侧栏" : "打开右侧栏"}
-                  aria-pressed={rightPanelOpen}
-                  onClick={toggleRightPanel}
-                >
-                  <SidePanelToggleIcon side="right" open={rightPanelOpen} />
-                </button>
-              </>
-            )}
           </div>
+          <ConversationTitleActions
+            state={state}
+            debugControlsVisible={debugControlsVisible}
+            enableLaunchPreview={ENABLE_LAUNCH_PREVIEW}
+            previewingLaunch={previewingLaunch}
+            onPinLaunchPreview={() => setLaunchPreviewPinned(true)}
+            enablePlanPanelDebug={ENABLE_PLAN_PANEL_DEBUG}
+            onSeedPlanPanelDebug={seedPlanPanelDebug}
+            conversationGridVisible={conversationGridVisible}
+            onToggleConversationGrid={() =>
+              setConversationGridVisible((visible) => !visible)
+            }
+            enableRunDebugPanel={ENABLE_RUN_DEBUG_PANEL}
+            runDebugRef={runDebugRef}
+            runDebugOpen={runDebugOpen}
+            onToggleRunDebug={() => {
+              closeEnvironmentPanel();
+              setRunDebugOpen((open) => !open);
+            }}
+            runDebugPhase={runDebugPhase}
+            runDebugEvents={runDebugEvents}
+            queuedMessages={queuedMessages}
+            guideMessages={guideMessages}
+            composerImages={composerImages}
+            composerFiles={composerFiles}
+            runDebugCopied={runDebugCopied}
+            onCopyRunDebug={() =>
+              void copyRunDebugInfo({
+                state,
+                queuedMessages,
+                guideMessages,
+                composerImages,
+                composerFiles,
+              })
+            }
+            onCloseRunDebug={() => setRunDebugOpen(false)}
+            chipGalleryOpen={chipGalleryOpen}
+            onCloseChipGallery={() => setChipGalleryOpen(false)}
+            poppedOutMode={poppedOutMode}
+            activeThreadIsChatStyle={activeThreadIsChatStyle}
+            activeThread={activeThread}
+            onOpenTaskBoard={openTaskBoardTab}
+            environmentToggleRef={environmentToggleRef}
+            environmentPanelVisible={environmentPanelVisible}
+            activeThreadIsGroup={activeThreadIsGroup}
+            onToggleEnvironmentPanel={toggleEnvironmentPanel}
+            rightPanelOpen={rightPanelOpen}
+            onToggleRightPanel={toggleRightPanel}
+          />
         </header>
 
         <ConversationTurnRail
@@ -4003,19 +3740,21 @@ export function App(): JSX.Element {
           onSelectQueryHistory={handleQueryHistorySelect}
         />
 
-        <EnvironmentSideStack
-          visible={environmentPanelVisible}
-          mounted={environmentPanelMounted}
+        <ConversationSidePanels
           state={state}
-          panelRef={environmentPanelRef}
-          closing={environmentPanelClosing}
-          motionState={environmentPanelMotionState}
-          planUpdate={activePlanUpdate}
-          activeMenu={environmentPanelMenu}
-          running={anyThreadIsRunning}
+          environmentPanelVisible={environmentPanelVisible}
+          environmentPanelMounted={environmentPanelMounted}
+          environmentPanelRef={environmentPanelRef}
+          environmentPanelClosing={environmentPanelClosing}
+          environmentPanelMotionState={environmentPanelMotionState}
+          activePlanUpdate={activePlanUpdate}
+          environmentPanelMenu={environmentPanelMenu}
+          anyThreadIsRunning={anyThreadIsRunning}
           pullRequestDisabledReason={pullRequestDisabledReason}
-          onSetActiveMenu={setEnvironmentPanelMenu}
-          onClose={() => closeEnvironmentPanel({ dismissed: true })}
+          onSetEnvironmentPanelMenu={setEnvironmentPanelMenu}
+          onCloseEnvironmentPanel={() =>
+            closeEnvironmentPanel({ dismissed: true })
+          }
           onSelectBranch={(branch) => void checkoutBranch(branch)}
           onCreateBranch={(branch) => createAndCheckoutBranch(branch)}
           onOpenReview={() => {
@@ -4027,13 +3766,13 @@ export function App(): JSX.Element {
           onOpenPullRequest={() => openEnvironmentDialog("pull-request")}
           rightPanelFilePath={rightPanelFilePath}
           onCloseFilePreview={handleCloseFilePreview}
-          subagentSessions={activeThread?.child_agents}
+          activeThread={activeThread}
           archiveConfirmSubagentID={archiveConfirmSubagentID}
-          onSelectSubagent={(agent) => void selectChildAgent(agent as Agent)}
+          onSelectChildAgent={(agent) => void selectChildAgent(agent)}
           onToggleSubagentPinned={(agent) =>
-            void toggleSubagentPinned(agent as Agent)
+            void toggleSubagentPinned(agent)
           }
-          onArchiveSubagent={(agent) => void archiveSubagent(agent as Agent)}
+          onArchiveSubagent={(agent) => void archiveSubagent(agent)}
           onClearSubagentArchiveConfirm={(id) =>
             setArchiveConfirmSubagentID((current) =>
               current === id ? undefined : current,
@@ -4046,93 +3785,53 @@ export function App(): JSX.Element {
           onRemoveThreadMember={(threadID, participantID) =>
             removeThreadMemberByID(threadID, participantID)
           }
+          openSubthreadPanel={openSubthreadPanel}
+          onCloseSubthreadPanel={() => setOpenSubthreadPanel(undefined)}
+          onResolveSubthread={resolveOpenConversationSubthread}
+          onEscalateSubthread={escalateOpenConversationSubthread}
+          onBubbleSubthread={bubbleOpenConversationSubthread}
+          onReactSubthread={reactToOpenConversationSubthreadMessage}
+          poppedOutMode={poppedOutMode}
+          activeContext={state.activeContext}
+          onPopOutSubthread={(threadID, subthreadID, context) =>
+            void popOutSubthread(threadID, subthreadID, context)
+          }
+          subthreadLeadCandidates={subthreadLeadCandidates}
+          subthreadComposer={{
+            draft: subthreadComposerDraft,
+            setDraft: setSubthreadComposerDraft,
+            initialized: composerInitialized,
+            projects: state.projects,
+            activeContext: state.activeContext,
+            activeProject,
+            codexModels,
+            codexRuntimeRef,
+            runtimeMenuRef,
+            accessMenuRef: subthreadAccessMenuRef,
+            participants,
+            onPasteAttachmentFiles: (files) =>
+              void attachSubthreadComposerAttachmentFiles(files),
+            onRemoveFile: removeSubthreadComposerFile,
+            onRemoveImage: removeSubthreadComposerImage,
+            onSend: () => void sendOpenConversationSubthreadMessage(),
+          }}
+          resolveParticipantName={resolveParticipantName}
+          busyParticipantIDs={busyParticipantIDs}
+          chatReaderCount={chatReaderCount}
+          clampedThreadPanelWidth={clampedThreadPanelWidth}
+          onThreadPanelResizeStart={startThreadPanelResize}
+          onThreadPanelReset={resetThreadPanelWidth}
+          onThreadPanelSeparatorKey={handleThreadPanelSeparatorKey}
+          participantPanel={participantPanel}
+          onCloseParticipantPanel={() => setParticipantPanel(undefined)}
+          onSaveParticipant={handleParticipantSave}
+          onFeedbackParticipant={handleParticipantFeedback}
+          onOpenMemoryPanel={(participantID) =>
+            openMemorySettings(participantID)
+          }
+          onRetireParticipant={handleParticipantRetire}
+          viewContextSwitchPending={viewContextSwitchPending}
         />
-
-        {openSubthreadPanel ? (
-          <ConversationSubthreadPanel
-            threadID={openSubthreadPanel.threadID}
-            subthread={openSubthreadPanel.subthread}
-            loading={openSubthreadPanel.loading}
-            error={openSubthreadPanel.error}
-            onClose={() => setOpenSubthreadPanel(undefined)}
-            onResolve={resolveOpenConversationSubthread}
-            onEscalate={escalateOpenConversationSubthread}
-            onBubble={bubbleOpenConversationSubthread}
-            onReact={reactToOpenConversationSubthreadMessage}
-            onPopOut={
-              // Already-detached windows don't offer a re-detach; and a pop-out
-              // needs the loaded cth id + the runtime context to route by.
-              !poppedOutMode &&
-              openSubthreadPanel.subthread &&
-              state.activeContext
-                ? () =>
-                    void popOutSubthread(
-                      openSubthreadPanel.threadID,
-                      openSubthreadPanel.subthread!.id,
-                      state.activeContext!,
-                    )
-                : undefined
-            }
-            leadCandidates={subthreadLeadCandidates}
-            composer={renderSubthreadComposer()}
-            resolveParticipantName={resolveParticipantName}
-            busyParticipantIDs={busyParticipantIDs}
-            readerCount={chatReaderCount}
-          />
-        ) : null}
-        {openSubthreadPanel ? (
-          // Same separator family as the sidebar / workspace right panel:
-          // drag to resize, arrows/Home/End on focus, double-click resets.
-          <div
-            className="thread-panel-resizer"
-            role="separator"
-            aria-label="调整 Thread 面板宽度"
-            aria-orientation="vertical"
-            aria-valuemin={THREAD_PANEL_MIN_WIDTH}
-            aria-valuemax={THREAD_PANEL_MAX_WIDTH}
-            aria-valuenow={clampedThreadPanelWidth}
-            tabIndex={0}
-            onPointerDown={startThreadPanelResize}
-            onDoubleClick={resetThreadPanelWidth}
-            onKeyDown={handleThreadPanelSeparatorKey}
-          />
-        ) : null}
-
-        {participantPanel ? (
-          <ParticipantProfilePanel
-            mode={participantPanel.mode}
-            participant={participantPanel.participant}
-            initialName={
-              participantPanel.mode === "new"
-                ? participantPanel.initialName
-                : undefined
-            }
-            providers={state.initialized?.providers}
-            loading={participantPanel.loading}
-            error={participantPanel.error}
-            saving={participantPanel.saving}
-            feedbackSubmitting={participantPanel.feedbackSubmitting}
-            feedbackReply={participantPanel.feedbackReply}
-            retiring={participantPanel.retiring}
-            archived={participantPanel.archived}
-            onClose={() => setParticipantPanel(undefined)}
-            onSave={handleParticipantSave}
-            onFeedback={handleParticipantFeedback}
-            onOpenMemoryPanel={(participantID) =>
-              openMemorySettings(participantID)
-            }
-            onRetire={handleParticipantRetire}
-            forkedFromName={
-              participantPanel.participant?.forked_from_id
-                ? resolveParticipantName(
-                    participantPanel.participant.forked_from_id,
-                  )
-                : undefined
-            }
-          />
-        ) : null}
-
-        {viewContextSwitchPending ? <ViewSwitchLoading /> : null}
 
         {state.initialized && !previewingLaunch ? (
           <div
@@ -4184,26 +3883,60 @@ export function App(): JSX.Element {
                   />
                 ) : null}
                 {splitConversation && state.thread && state.secondaryThread ? (
-                  <div className="conversation-split">
-                    {renderConversationSplitPane(state.thread, "primary")}
-                    <div
-                      className="conversation-split-resizer"
-                      role="separator"
-                      aria-orientation="vertical"
-                      aria-label="调整左右对话宽度"
-                      aria-valuemin={CONVERSATION_SPLIT_MIN_PERCENT}
-                      aria-valuemax={CONVERSATION_SPLIT_MAX_PERCENT}
-                      aria-valuenow={Math.round(splitLeftPercent)}
-                      tabIndex={0}
-                      onPointerDown={startSplitResize}
-                      onDoubleClick={resetSplitPercent}
-                      onKeyDown={handleSplitSeparatorKey}
-                    />
-                    {renderConversationSplitPane(
-                      state.secondaryThread,
-                      "secondary",
-                    )}
-                  </div>
+                  <ConversationSplitLayoutRenderer
+                    state={state}
+                    primaryThread={state.thread}
+                    secondaryThread={state.secondaryThread}
+                    splitLeftPercent={splitLeftPercent}
+                    splitComposerDrafts={splitComposerDrafts}
+                    splitPaneRefs={splitPaneRefs}
+                    viewSwitchPending={viewContextSwitchPending}
+                    historyMessageEdit={historyMessageEdit}
+                    onSplitResizeStart={startSplitResize}
+                    onSplitSeparatorDoubleClick={resetSplitPercent}
+                    onSplitSeparatorKey={handleSplitSeparatorKey}
+                    onActivatePane={activateConversationPane}
+                    onClosePane={closeConversationPane}
+                    onConversationScroll={handleConversationScroll}
+                    onSetPrompt={setSplitComposerPrompt}
+                    onPasteAttachmentFiles={(pane, files) =>
+                      void attachSplitComposerAttachmentFiles(pane, files)
+                    }
+                    onRemoveFile={removeSplitComposerFile}
+                    onRemoveImage={removeSplitComposerImage}
+                    onSend={(pane) => void sendPromptForPane(pane)}
+                    onInterrupt={(pane) => void interruptPane(pane)}
+                    onForkMessage={(thread, turnID, itemID) =>
+                      void forkThreadFromMessage(thread, turnID, itemID)
+                    }
+                    onOpenFile={openWorkspaceFile}
+                    onOpenAgent={(agent) => void selectChildAgent(agent)}
+                    canEditThreadMessage={canShowHistoryEditButton}
+                    onEditMessage={startEditingThreadMessageFromHistory}
+                    onCancelEditMessage={cancelEditingThreadMessage}
+                    onSubmitEditMessage={(
+                      thread,
+                      turnID,
+                      item,
+                      text,
+                      images,
+                      files,
+                      pane,
+                    ) =>
+                      void submitEditedThreadMessageFromHistory(
+                        thread,
+                        turnID,
+                        item,
+                        text,
+                        images,
+                        files,
+                        pane,
+                      )
+                    }
+                    onStreamFrame={scheduleStreamScroll}
+                    onNoticeAction={handleNoticeAction}
+                    onOpenFileDiff={openTurnFileDiffPanel}
+                  />
                 ) : emptyConversation ? (
               <EmptyConversationHome
                 title={emptyThreadTitle}
