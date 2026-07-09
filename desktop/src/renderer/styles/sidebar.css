@@ -196,6 +196,7 @@
   --sidebar-section-body-gap: 5px;
   --sidebar-row-gap: 3px;
   --sidebar-list-pad-y: 2px;
+  --sidebar-child-indent: 12px;
   display: flex;
   width: var(--sidebar-open-width, 326px);
   min-width: var(--sidebar-open-width, 326px);
@@ -1014,15 +1015,17 @@
 }
 
 .thread-row {
-  height: 32px;
+  height: 30px;
   min-width: 0;
   border-radius: var(--radius-sm);
   column-gap: var(--sidebar-nav-column-gap);
   color: var(--ink-tertiary);
-  font-size: var(--font-body);
+  font-size: var(--font-ui);
+  font-weight: 500;
   grid-template-columns:
     var(--sidebar-nav-icon-col)
     minmax(0, 1fr);
+  padding-left: calc(var(--sidebar-row-pad-x) + var(--sidebar-child-indent));
 }
 
 .thread-row::before {
