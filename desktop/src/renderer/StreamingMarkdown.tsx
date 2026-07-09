@@ -398,6 +398,27 @@ export function containsMermaidFence(text: string): boolean {
 }
 
 /**
+ * Returns true when the substring of `text` from `start` to the next newline
+ * (or end of text) is empty or contains only spaces and tabs. Used by
+ * `splitIntoStableBlocks` to decide whether a backtick line that we already
+ * saw while `inFence` is true qualifies as a valid closer per CommonMark —
+ * a closer must be just backticks and trailing whitespace, never an info
+ * string or other body content.
+ */
+function isFenceCloserLine(text: string, start: number): boolean {
+  for (let j = start; j < text.length; j += 1) {
+    const cj = text.charCodeAt(j);
+    if (cj === 10 /* \n */) {
+      return true;
+    }
+    if (cj !== 32 /* space */ && cj !== 9 /* tab */) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Split `text` into a sequence of "stable" markdown blocks plus an
  * open tail. A block is everything between two blank-line boundaries
  * (`\n\n`). Blocks inside an unclosed fenced code section are deferred
@@ -437,6 +458,14 @@ export function splitIntoStableBlocks(
       text.charCodeAt(i + 1) === 96 &&
       text.charCodeAt(i + 2) === 96
     ) {
+      // When already inside a fence, only a line consisting of backticks
+      // and trailing spaces is a valid closer per CommonMark. Lines like
+      // ```other or ```ts are part of the fence body — toggling inFence
+      // on them would let a subsequent blank line split the fence into
+      // two stable blocks and orphan the real closer.
+      if (inFence && !isFenceCloserLine(text, i + 3)) {
+        continue;
+      }
       inFence = !inFence;
       i += 2;
     }

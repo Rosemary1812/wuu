@@ -363,4 +363,25 @@ describe("splitIntoStableBlocks", () => {
     const result = splitIntoStableBlocks(text);
     expect(result.blocks.join("") + result.tail).toBe(text);
   });
+
+  it("does not split a fence when a body line starts with 3 backticks followed by other text", () => {
+    // Per CommonMark a closing code fence is just backticks and trailing
+    // whitespace. A line like ```other inside an already-open fence is
+    // body content, not a closer — treating it as one would flip
+    // inFence to false and let a later blank line split the fence in two.
+    const text = "```ts\n```other\n\ncode\n```";
+    const result = splitIntoStableBlocks(text);
+    expect(result.blocks).toEqual([]);
+    expect(result.tail).toBe(text);
+  });
+
+  it("does treat a bare ``` line as a closer when no content follows the backticks", () => {
+    // Sanity check that the closer-validation guard above does not
+    // regress the standard case: a fence followed by a line of just
+    // three backticks must still close.
+    const text = "```ts\ncode\n```\n\nafter";
+    const result = splitIntoStableBlocks(text);
+    expect(result.blocks).toEqual(["```ts\ncode\n```\n\n"]);
+    expect(result.tail).toBe("after");
+  });
 });
