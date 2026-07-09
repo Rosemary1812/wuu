@@ -40,8 +40,6 @@ import type {
   ConversationSubthread,
   SubthreadUpdatedNotification,
   DesktopProject,
-  GitCommitResult,
-  GitPullRequestResult,
   GitStatusResult,
   InitializeResult,
   InputFile,
@@ -128,6 +126,7 @@ import {
   type EnvironmentPanelMenu,
   type EnvironmentPanelMotionState,
 } from "./EnvironmentPanel";
+import { createEnvironmentActions } from "./EnvironmentActions";
 import { EnvironmentSideStack } from "./EnvironmentSideStack";
 import {
   activePlanUpdateForThread,
@@ -2991,171 +2990,44 @@ export function App(): JSX.Element {
     setProjectFilter("");
   }
 
-  async function checkoutBranch(branch: string): Promise<void> {
-    if (!branch || anyThreadIsRunning) {
-      return;
-    }
-    closeProjectMenus();
-    try {
-      const gitStatus = await window.wuu.checkoutGitBranch(branch);
-      setState((current) => ({
-        ...current,
-        gitStatus,
-        status: current.status === "ready" ? "ready" : current.status,
-      }));
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error ? error.message : "checkout branch failed",
-      }));
-    }
-  }
-
-  async function refreshGitStatus(): Promise<void> {
-    const context = appStateRef.current.activeContext;
-    if (!context) {
-      return;
-    }
-    if (gitRefreshInFlightRef.current) {
-      gitRefreshQueuedRef.current = true;
-      return;
-    }
-    gitRefreshInFlightRef.current = true;
-    try {
-      const gitStatus = await window.wuu.gitStatus();
-      if (!sameRuntimeContext(appStateRef.current.activeContext, context)) {
-        return;
-      }
-      setState((current) => ({
-        ...current,
-        gitStatus,
-        status: current.status === "ready" ? "ready" : current.status,
-      }));
-    } catch (error) {
-      if (!sameRuntimeContext(appStateRef.current.activeContext, context)) {
-        return;
-      }
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error ? error.message : "refresh git status failed",
-      }));
-    } finally {
-      gitRefreshInFlightRef.current = false;
-      if (gitRefreshQueuedRef.current) {
-        gitRefreshQueuedRef.current = false;
-        scheduleGitStatusRefresh(150);
-      }
-    }
-  }
-
-  function scheduleGitStatusRefresh(delayMs: number): void {
-    if (!appStateRef.current.activeContext) {
-      return;
-    }
-    if (gitRefreshTimerRef.current !== undefined) {
-      window.clearTimeout(gitRefreshTimerRef.current);
-    }
-    gitRefreshTimerRef.current = window.setTimeout(() => {
-      gitRefreshTimerRef.current = undefined;
-      void refreshGitStatus();
-    }, delayMs);
-  }
-
-  async function createAndCheckoutBranch(branch: string): Promise<void> {
-    if (!branch || anyThreadIsRunning) {
-      return;
-    }
-    try {
-      const result = await window.wuu.createCheckoutGitBranch(branch);
-      setState((current) => ({
-        ...current,
-        gitStatus: result.status,
-        status: current.status === "ready" ? "ready" : current.status,
-      }));
-      setEnvironmentPanelMenu(null);
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "create branch failed",
-      }));
-      throw error;
-    }
-  }
-
-  async function commitEnvironmentChanges(params: {
-    message: string;
-    includeUnstaged: boolean;
-  }): Promise<GitCommitResult> {
-    const result = await window.wuu.commitGitChanges({
-      message: params.message,
-      include_unstaged: params.includeUnstaged,
-    });
-    setState((current) => ({
-      ...current,
-      gitStatus: result.status,
-      status: `已提交 ${result.commit}`,
-    }));
-    return result;
-  }
-
-  async function createEnvironmentPullRequest(params: {
-    title: string;
-    body: string;
-    draft: boolean;
-  }): Promise<GitPullRequestResult> {
-    const result = await window.wuu.createPullRequest({
-      title: params.title,
-      body: params.body,
-      draft: params.draft,
-    });
-    setState((current) => ({
-      ...current,
-      gitStatus: result.status,
-      status: result.already_exists ? "已有拉取请求" : "已创建拉取请求",
-    }));
-    return result;
-  }
-
-  function toggleEnvironmentPanel(): void {
-    const visible = environmentPanelVisible;
-    if (visible) {
-      closeEnvironmentPanel({ dismissed: true });
-      return;
-    }
-    openEnvironmentPanel();
-  }
-
-  function openEnvironmentPanel(): void {
-    setEnvironmentPanelOpen(true);
-    setEnvironmentPanelDismissed(false);
-    setRuntimeMenuOpen(false);
-    setAccessMenuOpen(false);
-    setBranchMenuOpen(false);
-    setCodexRuntimeMenu(null);
-  }
-
-  function closeEnvironmentPanel({
-    dismissed = false,
-  }: { dismissed?: boolean } = {}): void {
-    restoreEnvironmentPanelFocus();
-    setEnvironmentPanelOpen(false);
-    if (dismissed) {
-      setEnvironmentPanelDismissed(true);
-    }
-    setEnvironmentPanelMenu(null);
-  }
-
-  function restoreEnvironmentPanelFocus(): void {
-    const activeElement = document.activeElement;
-    if (
-      activeElement instanceof HTMLElement &&
-      environmentPanelRef.current?.contains(activeElement)
-    ) {
-      environmentToggleRef.current?.focus({ preventScroll: true });
-    }
-  }
+  const {
+    checkoutBranch,
+    refreshGitStatus,
+    scheduleGitStatusRefresh,
+    createAndCheckoutBranch,
+    commitEnvironmentChanges,
+    createEnvironmentPullRequest,
+    toggleEnvironmentPanel,
+    openEnvironmentPanel,
+    closeEnvironmentPanel,
+  } = createEnvironmentActions({
+    getAppState: () => appStateRef.current,
+    setAppState: setState,
+    getAnyThreadIsRunning: () => anyThreadIsRunning,
+    closeProjectMenus,
+    setEnvironmentPanelOpen,
+    setEnvironmentPanelDismissed,
+    setEnvironmentPanelMenu,
+    closeRuntimeMenus: () => {
+      setRuntimeMenuOpen(false);
+      setAccessMenuOpen(false);
+      setBranchMenuOpen(false);
+      setCodexRuntimeMenu(null);
+    },
+    getEnvironmentPanelVisible: () => environmentPanelVisible,
+    environmentPanelContainsActiveElement: () => {
+      const activeElement = document.activeElement;
+      return (
+        activeElement instanceof HTMLElement &&
+        environmentPanelRef.current?.contains(activeElement) === true
+      );
+    },
+    focusEnvironmentToggle: () =>
+      environmentToggleRef.current?.focus({ preventScroll: true }),
+    gitRefreshTimerRef,
+    gitRefreshInFlightRef,
+    gitRefreshQueuedRef,
+  });
 
   function canShowHistoryEditButton(thread: Thread): boolean {
     return (
