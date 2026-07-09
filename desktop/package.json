@@ -1,12 +1,18 @@
 {
   "name": "@blueberrycongee/wuu-desktop",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Desktop app for the Wuu AI coding agent",
+  "author": "Andy wu <lpageo@163.com>",
   "private": true,
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
+    "build:core": "node scripts/build-core.cjs",
     "build": "electron-vite build",
+    "pack:mac": "npm run build:core && npm run build && electron-builder --mac dir --publish=never",
+    "dist:mac": "npm run build:core && npm run build && electron-builder --mac dmg zip --publish=never",
+    "release:desktop": "npm run dist:mac",
     "test": "tsc --noEmit && vitest run",
     "test:watch": "vitest",
     "test:e2e:permission-mode": "npm run build && electron scripts/permission-mode-e2e.cjs",
@@ -34,6 +40,41 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },
+  "build": {
+    "appId": "com.blueberrycongee.wuu",
+    "productName": "wuu",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    }
+  },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@types/qrcode": "^1.5.6",
@@ -41,6 +82,7 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^42.2.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^2.3.0",
     "jsdom": "^25.0.0",
     "typescript": "^5.7.2",

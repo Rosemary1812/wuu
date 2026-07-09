@@ -243,7 +243,12 @@ export class RemoteHostManager {
     if (this.opts.resolveCommand) {
       return this.opts.resolveCommand(workdir);
     }
-    return resolveWuuCommand(this.env(), workdir, this.env().WUU_SOURCE_ROOT);
+    return resolveWuuCommand(
+      this.env(),
+      workdir,
+      this.env().WUU_SOURCE_ROOT,
+      (process as { resourcesPath?: string }).resourcesPath,
+    );
   }
 
   private env(): NodeJS.ProcessEnv {

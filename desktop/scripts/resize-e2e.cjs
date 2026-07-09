@@ -59,7 +59,7 @@ async function run() {
   await waitFor(
     win,
     () => {
-      const button = document.querySelector(".settings-button");
+      const button = document.querySelector(".sidebar-settings-button");
       if (!(button instanceof HTMLButtonElement) || button.disabled) {
         return null;
       }

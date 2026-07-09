@@ -284,6 +284,7 @@ class AppServerClient {
       process.env,
       this.workdir,
       wuuSourceRoot(),
+      (process as { resourcesPath?: string }).resourcesPath,
     );
     const appServerArgs = [
       ...command.args,

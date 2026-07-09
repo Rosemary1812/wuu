@@ -10,6 +10,10 @@ dist/
 node_modules/
 .vite/
 desktop/out/
+# Desktop release packaging writes the generated Go core and installer
+# artifacts under tracked icon resources.
+desktop/build/bin/
+desktop/release/
 # electron-vite writes a timestamp marker when it re-syncs node_modules;
 # keep it out of git.
 desktop/.node_modules.synced

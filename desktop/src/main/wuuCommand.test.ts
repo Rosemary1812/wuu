@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { resolveWuuCommand } from "./wuuCommand";
 
 describe("resolveWuuCommand (issue #8: never run a workspace-local core)", () => {
@@ -39,6 +42,18 @@ describe("resolveWuuCommand (issue #8: never run a workspace-local core)", () =>
     expect(
       resolveWuuCommand({ WUU_DESKTOP_USE_GO_RUN: "1" }, "/repo/wuu", undefined),
     ).toEqual({ command: "wuu", args: [], cwd: "/repo/wuu" });
+  });
+
+  it("prefers the packaged app-owned binary over PATH", () => {
+    const resourcesPath = mkdtempSync(join(tmpdir(), "wuu-resources-"));
+    const binary = join(resourcesPath, "bin", "wuu");
+    mkdirSync(join(resourcesPath, "bin"), { recursive: true });
+    writeFileSync(binary, "#!/bin/sh\n");
+    expect(resolveWuuCommand({}, "/repo/wuu", undefined, resourcesPath)).toEqual({
+      command: binary,
+      args: [],
+      cwd: "/repo/wuu",
+    });
   });
 
   it("prefers WUU_BIN over go run", () => {
