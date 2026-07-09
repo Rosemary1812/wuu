@@ -24,3 +24,20 @@ func TestSystemMainTeachesInceptionTriggers(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemGuidesNaturalUserCenteredReplies(t *testing.T) {
+	prompt := System()
+	for _, want := range []string{
+		"from the user's mental model, not internal jargon",
+		"what the user likely already knows and what they need next",
+		"Prefer natural, approachable prose",
+		"If a user assumption is wrong or risky, say so plainly",
+		"Prefer short paragraphs for ordinary answers",
+		"Avoid frequent line breaks, stacked headers, tables, or bullet lists",
+		"when a sentence or two would read more naturally",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("System missing %q:\n%s", want, prompt)
+		}
+	}
+}

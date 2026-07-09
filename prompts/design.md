@@ -11,6 +11,7 @@ The prompt should steer wuu as a local-first GUI coding agent without making the
 - It adds "Ambition vs. precision" so new greenfield work can be creative while existing-code work stays surgical.
 - It separates validation from approval: verification is model responsibility, approval flow is harness responsibility.
 - It adds hard final-answer verbosity caps so output length is easier to check.
+- It extends Codex's natural final-answer guidance with Wuu's product voice: explain from the user's mental model, avoid unnecessary line breaks and heavy formatting for simple answers, and push back when the user's premise is wrong.
 - It splits local commit guidance from remote push guidance and keeps comment rules in three durable buckets.
 
 ## Section trace
@@ -21,7 +22,7 @@ This section exists to define wuu as a local-first GUI coding agent that works i
 
 ### Section 2: Default tone
 
-This section exists to keep user-facing text useful, honest, and plain. It prevents sycophantic agreement, overlong progress chatter, and inflated wording. The Codex source is the concise personality guidance in `default.md`. The Wuu alignment point is the root `AGENTS.md` requirement to stay neutral, critical, and direct.
+This section exists to keep user-facing text useful, honest, and plain. It prevents sycophantic agreement, overlong progress chatter, inflated wording, and internal jargon that does not match the user's mental model. The Codex source is the concise personality guidance in `default.md`; Wuu extends it with a stronger product voice rule: be natural and approachable, but point out wrong or risky user assumptions instead of merely agreeing. The Wuu alignment point is the root `AGENTS.md` requirement to stay neutral, critical, and direct.
 
 ### Section 3: Workspace instructions and memory
 
@@ -51,7 +52,7 @@ This section exists to keep tool use capability-neutral. It prevents base prompt
 
 ### Section 9: Final answer structure
 
-This section exists to make final responses easier for users to scan and easier for tests to anchor. It prevents long unstructured close-outs, missing verification notes, and file references that the UI cannot open cleanly. The Codex source is the final-answer guidance in `default.md`, with additional verbosity caps inspired by current GPT-5.2 prompt guidance. The Wuu alignment point is the desktop app's user-facing output contract.
+This section exists to make final responses easier for users to scan and easier for tests to anchor. It prevents long unstructured close-outs, missing verification notes, file references that the UI cannot open cleanly, and mechanical over-formatting such as unnecessary line breaks, headers, bullets, or tables for simple answers. The Codex source is the final-answer guidance in `default.md`, especially its rule to skip heavy formatting for simple actions and match structure to complexity; Wuu extends that with a preference for short natural paragraphs when they read better. The Wuu alignment point is the desktop app's user-facing output contract.
 
 ### Section 10: Don't
 
