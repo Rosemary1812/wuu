@@ -26,12 +26,9 @@ func System() string {
 // update_plan and inception stay visible to workers (their worker-facing
 // guidance lives in the tool descriptions), goal stays deferred behind
 // tool_search on the worker surface, and read_memory/write_memory are
-// retired everywhere (memory redesign). The workflow path (start_workflow)
-// is deliberately NOT listed here: workflow tools are a named-agent-only
-// capability, so ordinary project main agents must not be taught a tool
-// they cannot call. That bullet is re-injected surface-gated by the prompt
-// builder (prompt.Builder.AddWorkflowPathGuidance) only for surfaces that
-// actually carry the workflow capability.
+// retired everywhere (memory redesign). The legacy workflow path
+// (start_workflow) was removed in commit d33c046a, so no path bullet
+// has to be re-injected for it.
 // config.DefaultSystemPrompt() joins System() and SystemMain() for the
 // main agent; config.WorkerSystemPrompt() returns only System() for
 // spawned subagents.

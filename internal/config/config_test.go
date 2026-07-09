@@ -962,7 +962,7 @@ func TestDefaultSystemPrompt_GoalWorkflowAgentClosure(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	for _, want := range []string{
 		"Before claiming durable work is complete",
-		"durable state such as a goal, workflow, or delegated worker result",
+		"durable state such as a goal, a plan, or a delegated worker result",
 		"A completed child task is evidence for the broader objective",
 	} {
 		if !strings.Contains(prompt, want) {
