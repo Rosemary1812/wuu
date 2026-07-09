@@ -22,7 +22,11 @@ import { LightweightStreamingText } from "./LightweightStreamingText";
 import { TurnEventNotice } from "./TurnNotice";
 import { turnEventForItem } from "./TurnEvents";
 import { parseTurnTimestampMs } from "./RunDebugPanel";
-import { formatDuration, useLiveNow } from "./TurnProgress";
+import {
+  formatChineseDuration,
+  formatDuration,
+  useLiveNow,
+} from "./TurnProgress";
 import { ProcessSurface } from "./ProcessSurface";
 import {
   turnHasAssistantOutput,
@@ -670,7 +674,8 @@ function turnProcessTitle(
 }
 
 function taskFinishedLabel(elapsedMs: number): string {
-  return `任务在 ${formatDuration(elapsedMs)} 结束了`;
+  if (elapsedMs < 1000) return "用时不到 1 秒";
+  return `用时 ${formatChineseDuration(elapsedMs)}`;
 }
 
 function turnProcessMetaParts(turn: Turn, elapsedMs: number): string[] {

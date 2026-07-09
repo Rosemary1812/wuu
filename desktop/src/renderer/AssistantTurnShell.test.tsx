@@ -456,7 +456,7 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     const { container } = renderShell(turn);
 
     expect(container.querySelector(".turn-process-title")?.textContent).toBe(
-      "任务在 3s 结束了",
+      "用时 3 秒",
     );
     expect(container.querySelector(".turn-process-meta")).toBeNull();
     expect(container.querySelector(".turn-process-glyph")).toBeNull();

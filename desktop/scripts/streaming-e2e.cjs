@@ -316,7 +316,7 @@ async function run() {
     },
     3000
   );
-  assert.match(collapsedProcess.text, /任务在 .* 结束了/, "Completed process records should be summarized behind a compact toggle.");
+  assert.match(collapsedProcess.text, /用时 .+/, "Completed process records should be summarized behind a compact toggle.");
   assert.equal(collapsedProcess.activityExpanded, false, "Completed tool activity details should be folded by default.");
 
   const expandedProcess = await waitFor(
