@@ -98,6 +98,30 @@ func TestCatalogMatchesOpenCodeDefaultVisibility(t *testing.T) {
 	}
 }
 
+func TestCatalogCarriesGPT56FamilyMetadata(t *testing.T) {
+	provider, ok := MatchProvider("openai", config.ProviderConfig{Type: "openai"})
+	if !ok {
+		t.Fatal("expected OpenAI provider match")
+	}
+
+	models := make(map[string]Model, len(provider.Models))
+	for _, model := range provider.Models {
+		models[model.ID] = model
+	}
+	for _, id := range []string{"gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"} {
+		model, ok := models[id]
+		if !ok {
+			t.Fatalf("missing %s from OpenAI catalog", id)
+		}
+		if model.Limit == nil || model.Limit.Context != 1_050_000 || model.Limit.Output != 128_000 {
+			t.Fatalf("unexpected %s limits: %+v", id, model.Limit)
+		}
+		if got := reasoningEfforts(model); !equalStrings(got, []string{"none", "low", "medium", "high", "xhigh", "max"}) {
+			t.Fatalf("unexpected %s efforts: %v", id, got)
+		}
+	}
+}
+
 func TestCatalogSnapshotMatchesOpenCodeDefaultVisibleCounts(t *testing.T) {
 	providers, err := Providers()
 	if err != nil {
@@ -123,9 +147,38 @@ func TestCatalogSnapshotMatchesOpenCodeDefaultVisibleCounts(t *testing.T) {
 			}
 		}
 	}
-	if modelCount != 5199 {
-		t.Fatalf("model count = %d, want 5199", modelCount)
+	if modelCount != 5211 {
+		t.Fatalf("model count = %d, want 5211", modelCount)
 	}
+}
+
+func reasoningEfforts(model Model) []string {
+	for _, option := range model.ReasoningOptions {
+		if option["type"] != "effort" {
+			continue
+		}
+		values, _ := option["values"].([]any)
+		out := make([]string, 0, len(values))
+		for _, value := range values {
+			if effort, ok := value.(string); ok {
+				out = append(out, effort)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+func equalStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestModelConfigCarriesCapabilityMetadata(t *testing.T) {
