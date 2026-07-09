@@ -8,6 +8,8 @@
  *   - "来源" vs "来源 N" label
  *   - single source → entire pill is a button; click anywhere opens the URL
  *   - multi source → each icon is its own button with the host URL
+ *   - more than VISIBLE_SOURCE_LIMIT hosts → "+N" overflow badge
+ *     with the rest of the URLs behind it
  *   - explicit `onOpen` prop is the default click handler
  *   - falling back to `window.wuu.openExternal` when no prop is set
  *   - onError swaps the favicon for a first-letter avatar
@@ -277,5 +279,204 @@ describe("TurnSourcesRow", () => {
     const container = mountInto(<TurnSourcesRow sources={sampleSources} />);
     expect(container.textContent).not.toMatch(/web_search/);
     expect(container.textContent).not.toMatch(/web_fetch/);
+  });
+
+  describe("overflow badge", () => {
+    function makeManySources(n: number): TurnSource[] {
+      // Distinct hosts across the public web so each becomes its own
+      // dedup slot. The host list doesn't need to resolve — the test
+      // only cares about how many icons are visible vs hidden.
+      const tlds = ["com", "io", "dev", "co", "ai", "app"];
+      return Array.from({ length: n }, (_, index) => {
+        const tld = tlds[index % tlds.length];
+        const slug = `site-${index}`;
+        return {
+          url: `https://${slug}.example.${tld}/page-${index}`,
+          host: `${slug}.example.${tld}`,
+          title: `Page ${index}`,
+          origin: "web_search",
+        } as TurnSource;
+      });
+    }
+
+    it("renders an overflow badge when there are more than the visible limit", () => {
+      const sources = makeManySources(10);
+      const container = mountInto(<TurnSourcesRow sources={sources} />);
+      // Six host icons are visible; the rest hide behind a "+4" badge.
+      const icons = container.querySelectorAll("button.turn-source-icon");
+      const realIcons = container.querySelectorAll(
+        "button.turn-source-icon:not(.turn-source-overflow-badge)",
+      );
+      expect(realIcons.length).toBe(6);
+      const badge = container.querySelector(
+        "button.turn-source-overflow-badge",
+      );
+      expect(badge).not.toBeNull();
+      expect(badge?.textContent).toBe("+4");
+      expect(badge?.getAttribute("aria-label")).toBe("查看另外 4 个来源");
+      expect(badge?.getAttribute("aria-expanded")).toBe("false");
+      expect(badge?.getAttribute("aria-haspopup")).toBe("menu");
+      // The pill label still reflects the total so the user knows the
+      // full count even when the icon stack is capped.
+      expect(container.querySelector(".turn-sources-label")?.textContent).toBe(
+        "来源 10",
+      );
+      // Sanity: 6 real icons + 1 badge = 7 turn-source-icon buttons.
+      expect(icons.length).toBe(7);
+    });
+
+    it("does not render an overflow badge when sources fit in the visible limit", () => {
+      const sources = makeManySources(6);
+      const container = mountInto(<TurnSourcesRow sources={sources} />);
+      expect(
+        container.querySelector("button.turn-source-overflow-badge"),
+      ).toBeNull();
+      // Label still says "来源 6" — the cap is a layout concern, not a
+      // truncation of the displayed total.
+      expect(container.querySelector(".turn-sources-label")?.textContent).toBe(
+        "来源 6",
+      );
+    });
+
+    it("opens a popover listing the overflow sources when the badge is clicked", () => {
+      const sources = makeManySources(8);
+      const container = mountInto(<TurnSourcesRow sources={sources} />);
+      const badge = container.querySelector<HTMLButtonElement>(
+        "button.turn-source-overflow-badge",
+      );
+      expect(badge?.getAttribute("aria-expanded")).toBe("false");
+      act(() => {
+        badge?.click();
+      });
+      expect(badge?.getAttribute("aria-expanded")).toBe("true");
+      const menu = container.querySelector(
+        "ul.turn-source-overflow-list[role=\"menu\"]",
+      );
+      expect(menu).not.toBeNull();
+      // Only the 2 overflow sources land in the menu — the visible 6
+      // icons are already in the pill itself, no need to repeat them.
+      const items = menu?.querySelectorAll(
+        "button.turn-source-overflow-item",
+      );
+      expect(items?.length).toBe(2);
+      // TLD cycle in makeManySources: index 6 picks tlds[6 % 6] = "com",
+      // index 7 picks tlds[7 % 6] = "io". The test only needs to prove
+      // the menu shows the right URLs and titles in first-seen order;
+      // the TLD itself is incidental.
+      expect(items?.[0].getAttribute("aria-label")).toBe(
+        "打开 Page 6 — https://site-6.example.com/page-6",
+      );
+      expect(items?.[0].getAttribute("title")).toBe(
+        "Page 6 — https://site-6.example.com/page-6",
+      );
+      expect(items?.[1].getAttribute("aria-label")).toBe(
+        "打开 Page 7 — https://site-7.example.io/page-7",
+      );
+      // Host appears as a secondary line so users see which domain
+      // the entry belongs to without parsing the URL.
+      expect(items?.[0].textContent).toContain("site-6.example.com");
+    });
+
+    it("routes an overflow item click through the caller-supplied onOpen and closes the popover", () => {
+      const onOpen = vi.fn();
+      const sources = makeManySources(7);
+      const container = mountInto(
+        <TurnSourcesRow sources={sources} onOpen={onOpen} />,
+      );
+      const badge = container.querySelector<HTMLButtonElement>(
+        "button.turn-source-overflow-badge",
+      );
+      act(() => {
+        badge?.click();
+      });
+      const overflowItem = container.querySelector<HTMLButtonElement>(
+        "button.turn-source-overflow-item",
+      );
+      act(() => {
+        overflowItem?.click();
+      });
+      expect(onOpen).toHaveBeenCalledTimes(1);
+      expect(onOpen).toHaveBeenCalledWith(
+        "https://site-6.example.com/page-6",
+      );
+      // Popover closed itself after the click — leaving it open would
+      // hide the user's view of the conversation they came from.
+      expect(
+        container.querySelector("ul.turn-source-overflow-list"),
+      ).toBeNull();
+      expect(badge?.getAttribute("aria-expanded")).toBe("false");
+    });
+
+    it("falls back to window.wuu.openExternal for an overflow item when no onOpen is set", () => {
+      const openExternal = vi.fn().mockResolvedValue(undefined);
+      (
+        window as unknown as { wuu: { openExternal: typeof openExternal } }
+      ).wuu = { openExternal };
+      const sources = makeManySources(7);
+      const container = mountInto(<TurnSourcesRow sources={sources} />);
+      act(() => {
+        container
+          .querySelector<HTMLButtonElement>(
+            "button.turn-source-overflow-badge",
+          )
+          ?.click();
+      });
+      act(() => {
+        container
+          .querySelector<HTMLButtonElement>(
+            "button.turn-source-overflow-item",
+          )
+          ?.click();
+      });
+      expect(openExternal).toHaveBeenCalledWith(
+        "https://site-6.example.com/page-6",
+      );
+    });
+
+    it("closes the popover when the user clicks outside", () => {
+      const sources = makeManySources(7);
+      const container = mountInto(<TurnSourcesRow sources={sources} />);
+      act(() => {
+        container
+          .querySelector<HTMLButtonElement>(
+            "button.turn-source-overflow-badge",
+          )
+          ?.click();
+      });
+      expect(
+        container.querySelector("ul.turn-source-overflow-list"),
+      ).not.toBeNull();
+      // mousedown on something outside the overflow wrapper — document
+      // body is the natural "outside" target in jsdom.
+      act(() => {
+        document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      });
+      expect(
+        container.querySelector("ul.turn-source-overflow-list"),
+      ).toBeNull();
+    });
+
+    it("closes the popover when the user presses Escape", () => {
+      const sources = makeManySources(7);
+      const container = mountInto(<TurnSourcesRow sources={sources} />);
+      act(() => {
+        container
+          .querySelector<HTMLButtonElement>(
+            "button.turn-source-overflow-badge",
+          )
+          ?.click();
+      });
+      expect(
+        container.querySelector("ul.turn-source-overflow-list"),
+      ).not.toBeNull();
+      act(() => {
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        );
+      });
+      expect(
+        container.querySelector("ul.turn-source-overflow-list"),
+      ).toBeNull();
+    });
   });
 });

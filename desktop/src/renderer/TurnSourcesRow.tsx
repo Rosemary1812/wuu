@@ -1,5 +1,21 @@
-import { useState, type MouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import type { TurnSource } from "./ToolActivityHelpers";
+
+/**
+ * How many host icons we render inside the pill before collapsing the
+ * rest into an "+N" overflow badge. Six keeps the pill readable while
+ * staying narrow enough to leave room for the toggle label on the left
+ * (`flex: 1 1 auto` on the toggle row would otherwise be squashed at
+ * 20+ unique hosts). The remainder is exposed via the overflow badge
+ * rather than clipped, so the user can always see exactly which
+ * domains the turn consulted.
+ */
+const VISIBLE_SOURCE_LIMIT = 6;
 
 /**
  * "来源 N" pill rendered beside an assistant turn's process header.
@@ -21,6 +37,13 @@ import type { TurnSource } from "./ToolActivityHelpers";
  * label anywhere opens the page. The icon stack is still the same
  * visual, just rendered as an inert avatar inside the button instead
  * of a nested click target.
+ *
+ * Multi-source overflow: when there are more than
+ * `VISIBLE_SOURCE_LIMIT` unique hosts, the pill shows the first
+ * `VISIBLE_SOURCE_LIMIT` icons plus a "+N" badge that opens a
+ * dropdown listing the remaining URLs. Without this cap a long search
+ * run across many distinct sites would overflow the process header row
+ * and squeeze the "查看思考过程" toggle to zero width.
  *
  * The component never decides policy on its own. `sources` is fed by
  * `collectTurnSources` and the open-URL responsibility belongs to the
@@ -45,7 +68,7 @@ export function TurnSourcesRow({
   if (sources.length === 1) {
     const source = sources[0];
     const tooltip = sourceTooltip(source);
-    const handleClick = (event: MouseEvent<HTMLButtonElement>): void => {
+    const handleClick = (event: ReactMouseEvent<HTMLButtonElement>): void => {
       event.preventDefault();
       openSource(source, onOpen);
     };
@@ -65,12 +88,24 @@ export function TurnSourcesRow({
 
   // Multi-source → the pill is a passive group; each host keeps its own
   // button so users can pick which URL to open without ambiguity.
+  // First VISIBLE_SOURCE_LIMIT icons render in-line; the rest are
+  // collapsed into the overflow badge so the row can't grow without
+  // bound as the agent fans out to more distinct domains.
+  const visibleSources = sources.slice(0, VISIBLE_SOURCE_LIMIT);
+  const overflowSources = sources.slice(VISIBLE_SOURCE_LIMIT);
   return (
     <div className="turn-sources-pill" role="group" aria-label={label}>
       <div className="turn-sources-icons">
-        {sources.map((source) => (
+        {visibleSources.map((source) => (
           <SourceIcon key={source.host} source={source} onOpen={onOpen} />
         ))}
+        {overflowSources.length > 0 ? (
+          <OverflowBadge
+            count={overflowSources.length}
+            sources={overflowSources}
+            onOpen={onOpen}
+          />
+        ) : null}
       </div>
       <span className="turn-sources-label">{label}</span>
     </div>
@@ -106,7 +141,7 @@ function SourceIcon({
   onOpen?: (url: string) => void;
 }): JSX.Element {
   const tooltip = sourceTooltip(source);
-  const handleClick = (event: MouseEvent<HTMLButtonElement>): void => {
+  const handleClick = (event: ReactMouseEvent<HTMLButtonElement>): void => {
     event.preventDefault();
     openSource(source, onOpen);
   };
@@ -149,5 +184,115 @@ function SourceAvatar({ source }: { source: TurnSource }): JSX.Element {
         />
       )}
     </span>
+  );
+}
+
+function OverflowBadge({
+  count,
+  sources,
+  onOpen,
+}: {
+  count: number;
+  sources: TurnSource[];
+  onOpen?: (url: string) => void;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  // Anchors the document-level listeners used to dismiss the popover.
+  // The popover itself renders inside this wrapper so a click on a menu
+  // item still counts as "inside" and doesn't trigger the close path
+  // before the URL handler runs.
+  const rootRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent): void => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    // mousedown fires before click, so dismissing on mousedown avoids
+    // a frame where the badge's own click toggles `open` back to true
+    // and then the document click closes it again.
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  const toggle = (event: ReactMouseEvent<HTMLButtonElement>): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen((current) => !current);
+  };
+  return (
+    <span ref={rootRef} className="turn-source-overflow">
+      <button
+        type="button"
+        className="turn-source-icon turn-source-overflow-badge"
+        aria-label={`查看另外 ${count} 个来源`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={`还有 ${count} 个来源`}
+        onClick={toggle}
+      >
+        +{count}
+      </button>
+      {open ? (
+        <OverflowList
+          sources={sources}
+          onOpen={onOpen}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </span>
+  );
+}
+
+function OverflowList({
+  sources,
+  onOpen,
+  onClose,
+}: {
+  sources: TurnSource[];
+  onOpen?: (url: string) => void;
+  onClose: () => void;
+}): JSX.Element {
+  return (
+    <ul className="turn-source-overflow-list" role="menu">
+      {sources.map((source) => {
+        const tooltip = sourceTooltip(source);
+        const handleClick = (
+          event: ReactMouseEvent<HTMLButtonElement>,
+        ): void => {
+          event.preventDefault();
+          openSource(source, onOpen);
+          onClose();
+        };
+        return (
+          <li key={source.host} role="none">
+            <button
+              type="button"
+              role="menuitem"
+              className="turn-source-overflow-item"
+              aria-label={`打开 ${tooltip}`}
+              title={tooltip}
+              onClick={handleClick}
+            >
+              <span className="turn-source-overflow-item-title">
+                {source.title ?? source.url}
+              </span>
+              <span className="turn-source-overflow-item-host">
+                {source.host}
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

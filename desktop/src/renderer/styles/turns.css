@@ -4506,6 +4506,89 @@ button.turn-sources-pill:focus-visible {
   white-space: nowrap;
 }
 
+/* Overflow indicator. Anchors an absolutely-positioned dropdown menu
+ * under the badge so the menu doesn't displace the pill itself.
+ * The wrapper keeps the document-level "click outside to close"
+ * logic scoped: anything inside this span — the badge OR the menu —
+ * is "inside", so an item click opens the URL without immediately
+ * re-closing the menu via the outside-click handler. */
+.turn-source-overflow {
+  position: relative;
+  display: inline-flex;
+}
+
+.turn-source-overflow-badge {
+  /* Reads as part of the icon stack but visually distinct from real
+   * favicons so users see it as a count, not a host. The "+N" label
+   * is set on the button itself so screen readers and copy/paste
+   * both get the number. */
+  background: var(--bg, var(--turn-sources-pill-bg-fallback));
+  color: var(--ink-muted, var(--turn-source-icon-color-fallback));
+  font-size: 10px;
+  font-weight: var(--weight-semibold, 600);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.turn-source-overflow-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  /* Sit above any in-conversation card the user might be hovering.
+   * The process fold below could grow into this z-band, so leave
+   * a comfortable gap. */
+  z-index: 50;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 240px;
+  max-width: 320px;
+  max-height: 280px;
+  overflow-y: auto;
+  border-radius: 10px;
+  background: var(--bg-elevated, var(--paper));
+  border: 1px solid var(--border, var(--turn-sources-pill-border-fallback));
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+}
+
+.turn-source-overflow-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--ink, var(--turn-source-icon-color-fallback));
+  font: inherit;
+}
+
+.turn-source-overflow-item:hover,
+.turn-source-overflow-item:focus-visible {
+  background: var(--bg-soft, var(--turn-sources-pill-bg-fallback));
+}
+
+.turn-source-overflow-item-title {
+  display: block;
+  font-size: 13px;
+  line-height: 1.3;
+  font-weight: var(--weight-medium, 500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.turn-source-overflow-item-host {
+  display: block;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--ink-muted, var(--turn-sources-pill-color-fallback));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Honor the OS-level "reduce motion" preference — the hover lift
  * transitions from `transition: transform` are motion rather than
  * decorative; users who opted out shouldn't see them. */
