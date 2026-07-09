@@ -36,6 +36,7 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 
 ## News
 
+- **First desktop package** — the first packaged release is a macOS Electron app on GitHub Releases. CLI installs remain source-based for now.
 - **2026-07-01** Tagged **v0.1.0** — the first versioned milestone: MIT license, contribution guidelines, security policy, and open-source governance in place. See the [CHANGELOG](CHANGELOG.md) for details.
 
 ## Why wuu
@@ -53,43 +54,11 @@ On a real frontend bug in this repository, every run started from the exact same
 ## Install
 
 > [!IMPORTANT]
-> wuu is pre-1.0. CLI binaries are attached to tagged GitHub Releases when published, and installing from source with `go install` remains the most reliable path. macOS desktop DMG/ZIP assets are currently unsigned preview builds, so macOS may block them until you remove quarantine for a trusted download.
+> wuu is pre-1.0. The first packaged release is the macOS Electron desktop app on GitHub Releases. CLI installs remain source-based for now. macOS desktop DMG/ZIP assets are currently unsigned preview builds, so macOS may block them until you remove quarantine for a trusted download.
 
 Pick **one** install method:
 
-**Install from source with Go**
-
-```bash
-go install github.com/blueberrycongee/wuu/cmd/wuu@latest
-```
-
-**One-command installer** (downloads a release binary)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh | sh
-```
-
-The installer downloads to `~/.local/bin` by default. To use a different directory:
-
-```bash
-INSTALL_DIR=/usr/local/bin sh install.sh
-```
-
-**Run from a checkout**
-
-```bash
-git clone https://github.com/blueberrycongee/wuu.git
-cd wuu
-go run ./cmd/wuu --version
-```
-
-Verify the install:
-
-```bash
-wuu --version
-```
-
-**macOS desktop preview** (unsigned)
+**macOS desktop package** (unsigned)
 
 Download `wuu-<version>-mac-arm64.dmg` or `wuu-<version>-mac-arm64.zip`
 from [GitHub Releases](https://github.com/blueberrycongee/wuu/releases).
@@ -101,29 +70,55 @@ run this command:
 xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.app
 ```
 
+**Install the CLI from source with Go**
+
+```bash
+go install github.com/blueberrycongee/wuu/cmd/wuu@latest
+```
+
+Verify the install:
+
+```bash
+wuu --version
+```
+
+**Run from a checkout**
+
+```bash
+git clone https://github.com/blueberrycongee/wuu.git
+cd wuu
+go run ./cmd/wuu --version
+```
+
 ## Quick Start
 
-**1. Initialize**
+**Desktop**
+
+Open `wuu.app`, choose a local project folder, and start a thread from the composer.
+
+**CLI and automation**
+
+Initialize once:
 
 ```bash
 wuu init
 ```
 
-**2. Run your first tasks**
+Run your first tasks:
 
 ```bash
 wuu exec "describe this repo"
 wuu exec "fix the failing test"
 ```
 
-**3. Attach local files when they are part of the task**
+Attach local files when they are part of the task:
 
 ```bash
 wuu exec --file report.pdf "summarize this PDF"
 wuu exec --image screenshot.png "find the UI issue"
 ```
 
-**4. Resume or inspect sessions**
+Resume or inspect sessions:
 
 ```bash
 wuu exec resume --last "continue"
@@ -148,7 +143,7 @@ wuu session list --json
 **Providers and integration**
 - **BYOK / multi-provider** — bring your own API key; works with Anthropic and OpenAI-compatible gateways (OpenAI, OpenRouter, one-api, local)
 - **JSONL output** — scriptable, streamable output for CI and other agents
-- **Desktop app** — source-built UI for interactive use alongside the CLI
+- **Desktop app** — packaged macOS Electron app, or source-built UI for interactive use alongside the CLI
 
 ## Architecture
 
@@ -163,8 +158,8 @@ Wuu is split into a reusable **Go core** and a thin **shell**:
 
 ## Desktop App
 
-Packaged macOS preview builds are available from [GitHub Releases](https://github.com/blueberrycongee/wuu/releases).
-They are currently unsigned; see the install section for the Gatekeeper
+The first packaged desktop release is a macOS Electron app on [GitHub Releases](https://github.com/blueberrycongee/wuu/releases).
+The DMG/ZIP assets are currently unsigned; see the install section for the Gatekeeper
 quarantine workaround.
 
 The desktop app is developed in `desktop/`. Run it from a source checkout:

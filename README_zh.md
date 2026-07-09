@@ -36,6 +36,7 @@
 
 ## 动态
 
+- **第一版桌面安装包** —— 第一版打包发布会在 GitHub Releases 提供 macOS Electron 应用；CLI 目前仍以源码安装为主。
 - **2026-07-01** 发布 **v0.1.0** —— 第一个版本化里程碑：MIT 许可证、贡献指南、安全策略和开源治理文件全部就位。详见 [CHANGELOG](CHANGELOG.md)。
 
 ## 为什么选 wuu
@@ -53,43 +54,11 @@
 ## 安装
 
 > [!IMPORTANT]
-> wuu 还未到 1.0。CLI 二进制包会随 tagged GitHub Release 发布；当前用 `go install` 从源码安装仍是最稳妥的方式。macOS 桌面端 DMG/ZIP 目前是未签名预览包，macOS 可能会拦截，确认信任下载来源后需要手动移除 quarantine 标记。
+> wuu 还未到 1.0。第一版打包发布是 GitHub Releases 上的 macOS Electron 桌面应用；CLI 目前仍以源码安装为主。macOS 桌面端 DMG/ZIP 目前仍是未签名预览包，macOS 可能会拦截，确认信任下载来源后需要手动移除 quarantine 标记。
 
 选择**一种**安装方式：
 
-**用 Go 从源码安装**
-
-```bash
-go install github.com/blueberrycongee/wuu/cmd/wuu@latest
-```
-
-**一键安装脚本**（下载 release 二进制包）
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh | sh
-```
-
-安装脚本默认下载到 `~/.local/bin`。如需自定义安装路径：
-
-```bash
-INSTALL_DIR=/usr/local/bin sh install.sh
-```
-
-**从本地 checkout 直接运行**
-
-```bash
-git clone https://github.com/blueberrycongee/wuu.git
-cd wuu
-go run ./cmd/wuu --version
-```
-
-验证安装：
-
-```bash
-wuu --version
-```
-
-**macOS 桌面端预览包**（未签名）
+**macOS 桌面安装包**（未签名）
 
 从 [GitHub Releases](https://github.com/blueberrycongee/wuu/releases)
 下载 `wuu-<version>-mac-arm64.dmg` 或 `wuu-<version>-mac-arm64.zip`。
@@ -100,29 +69,55 @@ wuu --version
 xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.app
 ```
 
+**用 Go 从源码安装 CLI**
+
+```bash
+go install github.com/blueberrycongee/wuu/cmd/wuu@latest
+```
+
+验证安装：
+
+```bash
+wuu --version
+```
+
+**从本地 checkout 直接运行**
+
+```bash
+git clone https://github.com/blueberrycongee/wuu.git
+cd wuu
+go run ./cmd/wuu --version
+```
+
 ## 快速开始
 
-**1. 初始化**
+**桌面端**
+
+打开 `wuu.app`，选择一个本地项目文件夹，然后在输入框里开始任务。
+
+**CLI 和自动化**
+
+先初始化一次：
 
 ```bash
 wuu init
 ```
 
-**2. 运行第一个任务**
+运行第一个任务：
 
 ```bash
 wuu exec "描述一下这个仓库"
 wuu exec "修复失败的测试"
 ```
 
-**3. 任务需要本地文件时，作为附件传入**
+任务需要本地文件时，作为附件传入：
 
 ```bash
 wuu exec --file report.pdf "总结这个 PDF"
 wuu exec --image screenshot.png "找出这个界面的问题"
 ```
 
-**4. 恢复或查看会话**
+恢复或查看会话：
 
 ```bash
 wuu exec resume --last "继续"
@@ -147,7 +142,7 @@ wuu session list --json
 **提供商与集成**
 - **BYOK / 多提供商** — 自带 API Key；支持 Anthropic 和 OpenAI 兼容网关（OpenAI、OpenRouter、one-api、本地等）
 - **JSONL 输出** — 可脚本化、可流式的输出，适合 CI 和其他 agent
-- **桌面应用** — 源码运行的 UI，与 CLI 配合使用
+- **桌面应用** — 打包好的 macOS Electron 应用，也可以从源码运行，与 CLI 配合使用
 
 ## 架构
 
@@ -162,7 +157,7 @@ Wuu 分为可复用的 **Go 核心** 和轻量的 **Shell**：
 
 ## 桌面应用
 
-打包好的 macOS 预览版会放在 [GitHub Releases](https://github.com/blueberrycongee/wuu/releases)。
+第一版桌面安装包是 [GitHub Releases](https://github.com/blueberrycongee/wuu/releases) 上的 macOS Electron 应用。
 它目前是未签名版本；Gatekeeper 的 quarantine 处理方式见安装章节。
 
 桌面端代码在 `desktop/`。从源码启动：
