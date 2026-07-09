@@ -319,6 +319,7 @@ import {
   threadsForDesktopProject,
   useSidebarProjectState,
 } from "./SidebarProjectState";
+import { useViewSwitchState } from "./ViewSwitchState";
 export { SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./SidebarDrawerState";
 
 function permissionSummaryForMode(mode: PermissionMode): PermissionSummary {
@@ -338,7 +339,6 @@ function initializedForSelectedPermissionMode(
   };
 }
 
-const VIEW_SWITCH_LOADING_DELAY_MS = 180;
 const PROJECT_THREAD_COLLAPSE_MS = 190;
 const ENVIRONMENT_PANEL_MOTION_MS = 260;
 const ENVIRONMENT_PANEL_WIDTH_PX = 328;
@@ -354,14 +354,6 @@ const QUERY_HISTORY_RAIL_MAX_BARS = 20;
 // full TurnView DOM trees, making long sessions heavier after each tab switch.
 const CACHED_THREAD_PANE_LIMIT = 1;
 type EnvironmentDialog = "commit" | "pull-request" | null;
-type PendingViewSwitchKind = "thread" | "project" | "runtime";
-
-type PendingViewSwitch = {
-  kind: PendingViewSwitchKind;
-  targetID: string;
-  visible: boolean;
-};
-
 function createContextCompositionEntryID(): string {
   return `context-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -713,9 +705,18 @@ export function App(): JSX.Element {
       }
     | undefined
   >(undefined);
-  const [pendingViewSwitch, setPendingViewSwitch] = useState<
-    PendingViewSwitch | undefined
-  >(undefined);
+  const {
+    pendingViewSwitch,
+    visiblePendingThreadID,
+    visiblePendingProjectID,
+    viewSwitchPending,
+    viewContextSwitchPending,
+    beginViewSwitch,
+    beginInstantThreadSwitch,
+    finishViewSwitch,
+    cancelViewSwitch,
+    isCurrentViewSwitchRequest,
+  } = useViewSwitchState();
   const hideDebugControls = useCallback(() => {
     setLaunchPreviewPinned(false);
   }, []);
@@ -794,8 +795,6 @@ export function App(): JSX.Element {
   });
   const localDemoThreadsRef = useRef(new Map<string, Thread>());
   const cachedThreadPaneHistoryRef = useRef<string[]>([]);
-  const viewSwitchRequestRef = useRef(0);
-  const viewSwitchDelayTimerRef = useRef<number | undefined>(undefined);
   const draftSessionTabCounterRef = useRef(0);
   const poppingOutTabIDsRef = useRef(new Set<string>());
   const poppingOutSubthreadIDsRef = useRef(new Set<string>());
@@ -1164,12 +1163,6 @@ export function App(): JSX.Element {
   useEffect(() => {
     return () => {
       cancelQueryHistoryClose();
-    };
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      clearViewSwitchDelay();
     };
   }, []);
 
@@ -1917,25 +1910,8 @@ export function App(): JSX.Element {
     }),
     [sidebarScratchThreads, sidebarProjectThreadSummariesByProjectID],
   );
-  const visiblePendingThreadID =
-    pendingViewSwitch?.visible && pendingViewSwitch.kind === "thread"
-      ? pendingViewSwitch.targetID
-      : undefined;
-  const visiblePendingProjectID =
-    pendingViewSwitch?.visible && pendingViewSwitch.kind === "project"
-      ? pendingViewSwitch.targetID
-      : undefined;
   const activeThreadReadOnly = Boolean(activeThread?.read_only);
   const activeThreadIsRunning = isStateActiveThreadRunning(state);
-  const viewSwitchPending = pendingViewSwitch !== undefined;
-  // A "context" switch means a project or runtime-context change that
-  // genuinely has to load remote resources. Only those should trip the
-  // full-screen loading shimmer, the composer "running" lock, or the
-  // environment side stack's "anything is in flight" indicator. Thread
-  // switches resolve from local data and stay instant.
-  const viewContextSwitchPending =
-    pendingViewSwitch?.visible === true &&
-    pendingViewSwitch.kind !== "thread";
   const anyThreadIsRunning = isAnyThreadRunning(state) || viewContextSwitchPending;
   const runningProviderNames = useMemo(() => {
     const names = new Set<string>();
@@ -2981,73 +2957,6 @@ export function App(): JSX.Element {
     } finally {
       poppingOutSubthreadIDsRef.current.delete(subthreadID);
     }
-  }
-
-  function clearViewSwitchDelay(): void {
-    if (viewSwitchDelayTimerRef.current === undefined) {
-      return;
-    }
-    window.clearTimeout(viewSwitchDelayTimerRef.current);
-    viewSwitchDelayTimerRef.current = undefined;
-  }
-
-  function beginViewSwitch(
-    kind: PendingViewSwitchKind,
-    targetID: string,
-  ): number {
-    const requestID = viewSwitchRequestRef.current + 1;
-    viewSwitchRequestRef.current = requestID;
-    clearViewSwitchDelay();
-    // Thread switches resolve from in-memory thread data plus a single
-    // resume round-trip. The IPC completes in tens of milliseconds and
-    // the user already has the thread loaded, so the switch should feel
-    // instant. Showing a delayed loading shimmer here flashes the
-    // conversation area, pollutes the composer's "running" indicator,
-    // and adds an "in-flight" guard window for a transition that the
-    // user perceives as a local tab change — so we mark the switch
-    // visible from the start. Project and runtime-context switches
-    // genuinely need to load remote resources, so they keep the
-    // deferred-visible shimmer.
-    if (kind === "thread") {
-      setPendingViewSwitch({ kind, targetID, visible: true });
-      return requestID;
-    }
-    setPendingViewSwitch({ kind, targetID, visible: false });
-    viewSwitchDelayTimerRef.current = window.setTimeout(() => {
-      viewSwitchDelayTimerRef.current = undefined;
-      if (viewSwitchRequestRef.current !== requestID) {
-        return;
-      }
-      setPendingViewSwitch((current) =>
-        current?.kind === kind && current.targetID === targetID
-          ? { ...current, visible: true }
-          : current,
-      );
-    }, VIEW_SWITCH_LOADING_DELAY_MS);
-    return requestID;
-  }
-
-  function beginInstantThreadSwitch(): number {
-    const requestID = viewSwitchRequestRef.current + 1;
-    viewSwitchRequestRef.current = requestID;
-    clearViewSwitchDelay();
-    setPendingViewSwitch(undefined);
-    return requestID;
-  }
-
-  function finishViewSwitch(requestID: number): boolean {
-    if (viewSwitchRequestRef.current !== requestID) {
-      return false;
-    }
-    clearViewSwitchDelay();
-    setPendingViewSwitch(undefined);
-    return true;
-  }
-
-  function cancelViewSwitch(): void {
-    viewSwitchRequestRef.current += 1;
-    clearViewSwitchDelay();
-    setPendingViewSwitch(undefined);
   }
 
   async function loadRuntime(
@@ -4582,7 +4491,7 @@ export function App(): JSX.Element {
             "resume did not return a thread",
           );
           if (
-            viewSwitchRequestRef.current !== requestID ||
+            !isCurrentViewSwitchRequest(requestID) ||
             appStateRef.current.thread?.id !== threadId ||
             !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)
           ) {
@@ -4619,7 +4528,7 @@ export function App(): JSX.Element {
           });
         } catch (error) {
           if (
-            viewSwitchRequestRef.current !== requestID ||
+            !isCurrentViewSwitchRequest(requestID) ||
             appStateRef.current.thread?.id !== threadId ||
             !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)
           ) {
