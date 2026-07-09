@@ -37,7 +37,7 @@
 ## 动态
 
 - **第一版桌面安装包** —— 第一版打包发布会在 GitHub Releases 提供 macOS Electron 应用；CLI 目前仍以源码安装为主。
-- **2026-07-01** 发布 **v0.1.0** —— 第一个版本化里程碑：MIT 许可证、贡献指南、安全策略和开源治理文件全部就位。详见 [CHANGELOG](CHANGELOG.md)。
+- **2026-07-10** 发布 **v0.1.0** —— 第一个打包桌面端里程碑：GitHub Releases 提供未签名 macOS Electron 预览包，同时开源治理文件就位。详见 [CHANGELOG](CHANGELOG.md)。
 
 ## 为什么选 wuu
 

@@ -13,10 +13,10 @@ version do not match.
 
 ## GitHub Secrets
 
-The CLI release still uses GoReleaser and requires:
+The current release workflow only publishes the macOS Electron desktop preview
+package to GitHub Releases. It requires:
 
 - `GITHUB_TOKEN` (provided by GitHub Actions)
-- `HOMEBREW_TAP_TOKEN`
 
 The current desktop macOS job does not require Apple signing or notarization
 secrets. It builds unsigned arm64 preview artifacts because the project does
@@ -57,15 +57,14 @@ Do not ask users to run this for builds from untrusted sources.
 ## Output
 
 The macOS desktop job builds and verifies the unsigned arm64 desktop preview
-app before the CLI release job runs. If the desktop job fails, the GitHub
-Release is not published.
+app before publishing the GitHub Release. If the desktop job fails, the GitHub
+Release is not created.
 
 The workflow verifies that the packaged core version is clean and that the DMG
 and ZIP are structurally valid.
 
 The final GitHub Release contains:
 
-- GoReleaser CLI archives and checksums
 - `wuu-<version>-mac-arm64.dmg`
 - `wuu-<version>-mac-arm64.zip`
 - matching `.blockmap` files

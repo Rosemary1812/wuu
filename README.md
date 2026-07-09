@@ -37,7 +37,7 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 ## News
 
 - **First desktop package** — the first packaged release is a macOS Electron app on GitHub Releases. CLI installs remain source-based for now.
-- **2026-07-01** Tagged **v0.1.0** — the first versioned milestone: MIT license, contribution guidelines, security policy, and open-source governance in place. See the [CHANGELOG](CHANGELOG.md) for details.
+- **2026-07-10** Tagged **v0.1.0** — the first packaged desktop milestone: unsigned macOS Electron preview builds on GitHub Releases, plus open-source governance in place. See the [CHANGELOG](CHANGELOG.md) for details.
 
 ## Why wuu
 

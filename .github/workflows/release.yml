@@ -80,7 +80,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: CLI and GitHub Release
+    name: GitHub Release
     needs: desktop-macos
     runs-on: ubuntu-latest
     steps:
@@ -88,24 +88,32 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
       - uses: actions/download-artifact@v4
         with:
           name: desktop-macos-arm64
           path: desktop-release
 
-      - uses: goreleaser/goreleaser-action@v6
-        with:
-          version: "~> v2"
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-
-      - name: Upload desktop assets
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$GITHUB_REF_NAME" desktop-release/* --clobber
+        run: |
+          cat > release-notes.md <<'EOF'
+          # wuu macOS desktop preview
+
+          This is the first packaged wuu desktop release. It contains unsigned macOS arm64 preview builds:
+
+          - `wuu-<version>-mac-arm64.dmg`
+          - `wuu-<version>-mac-arm64.zip`
+
+          The app is not signed or notarized yet. After moving `wuu.app` to `/Applications`, macOS may block it. For a release asset you trust, remove the quarantine attribute:
+
+          ```bash
+          xattr -dr com.apple.quarantine /Applications/wuu.app
+          open /Applications/wuu.app
+          ```
+          EOF
+
+          gh release create "$GITHUB_REF_NAME" desktop-release/* \
+            --verify-tag \
+            --title "wuu ${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md

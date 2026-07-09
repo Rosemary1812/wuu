@@ -7,10 +7,12 @@ and this project aims to adhere to [Semantic Versioning](https://semver.org/spec
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-07-01
+## [0.1.0] - 2026-07-10
 
 ### Added
 
+- Unsigned macOS arm64 Electron desktop preview DMG/ZIP artifacts on GitHub
+  Releases
 - `LICENSE` (MIT) so the project is unambiguously open source
 - `CONTRIBUTING.md`, `SECURITY.md`, and `CODE_OF_CONDUCT.md` for open-source
   governance
