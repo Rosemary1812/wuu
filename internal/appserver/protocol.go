@@ -6,7 +6,6 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/capability"
-	"github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/insight"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/participant"
@@ -24,12 +23,6 @@ const (
 	MethodConfigCodexModels    = "config/codex/models"
 	MethodConfigProviderRemove = "config/provider/remove"
 	MethodSkillList            = "skill/list"
-	MethodGoalSnapshot         = "goal/snapshot"
-	MethodGoalWorktreeReview   = "goal/worktree/review"
-	MethodGoalWorktreeCleanup  = "goal/worktree/cleanup"
-	MethodGoalWorktreeRollback = "goal/worktree/rollback"
-	MethodGoalWorktreeMerge    = "goal/worktree/merge"
-	MethodGoalApprovalResolve  = "goal/approval/resolve"
 	// MethodGoalActiveSummary returns the lightweight composer-banner view
 	// of the most-recently-updated non-terminal goal in the requested thread
 	// scope. The mutation methods are user-owned controls for the active
@@ -438,14 +431,6 @@ type SkillListResult struct {
 	Skills []SkillSummary `json:"skills"`
 }
 
-type GoalSnapshotParams struct {
-	ThreadID string `json:"thread_id,omitempty"`
-}
-
-type GoalSnapshotResult struct {
-	Snapshot goal.SystemSnapshot `json:"snapshot"`
-}
-
 // GoalActiveSummary is the composer-banner view of the most recently
 // updated non-terminal goal in one thread/session orchestration scope.
 // The handler filters terminal statuses
@@ -525,61 +510,6 @@ type GoalClearResult struct {
 
 type GoalUpdateTextResult struct {
 	OK bool `json:"ok"`
-}
-
-type GoalWorktreeReviewParams struct {
-	WorktreePath string `json:"worktree_path"`
-	MaxDiffBytes int    `json:"max_diff_bytes,omitempty"`
-}
-
-type GoalWorktreeReviewResult struct {
-	Review goal.WorktreeReview `json:"review"`
-}
-
-type GoalWorktreeCleanupParams struct {
-	WorktreePath               string `json:"worktree_path"`
-	ConfirmUserApproved        bool   `json:"confirm_user_approved,omitempty"`
-	ConfirmRemoveCleanWorktree bool   `json:"confirm_remove_clean_worktree,omitempty"`
-}
-
-type GoalWorktreeCleanupResult struct {
-	Cleanup goal.WorktreeCleanupResult `json:"cleanup"`
-}
-
-type GoalWorktreeRollbackParams struct {
-	WorktreePath                  string `json:"worktree_path"`
-	ConfirmUserApproved           bool   `json:"confirm_user_approved,omitempty"`
-	ConfirmDiscardWorktreeChanges bool   `json:"confirm_discard_worktree_changes,omitempty"`
-}
-
-type GoalWorktreeRollbackResult struct {
-	Rollback goal.WorktreeRollbackResult `json:"rollback"`
-}
-
-type GoalWorktreeMergeParams struct {
-	WorktreePath              string `json:"worktree_path"`
-	ConfirmUserApproved       bool   `json:"confirm_user_approved,omitempty"`
-	ConfirmApplyWorktreeDiff  bool   `json:"confirm_apply_worktree_diff,omitempty"`
-	ConfirmTargetRepoMutation bool   `json:"confirm_target_repo_mutation,omitempty"`
-}
-
-type GoalWorktreeMergeResult struct {
-	Merge goal.WorktreeMergeResult `json:"merge"`
-}
-
-type GoalApprovalResolveParams struct {
-	GoalID              string `json:"goal_id"`
-	ThreadID            string `json:"thread_id,omitempty"`
-	ApprovalID          string `json:"approval_id"`
-	Approved            bool   `json:"approved,omitempty"`
-	Rejected            bool   `json:"rejected,omitempty"`
-	ResolvedBy          string `json:"resolved_by,omitempty"`
-	Resolution          string `json:"resolution,omitempty"`
-	ConfirmUserApproved bool   `json:"confirm_user_approved,omitempty"`
-}
-
-type GoalApprovalResolveResult struct {
-	Approval goal.ApprovalRequest `json:"approval"`
 }
 
 type ManagedProcessSummary struct {

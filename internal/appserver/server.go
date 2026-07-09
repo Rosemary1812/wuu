@@ -330,18 +330,6 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleConfigProviderRemove(req)
 	case MethodSkillList:
 		return s.handleSkillList(req)
-	case MethodGoalSnapshot:
-		return s.handleGoalSnapshot(req)
-	case MethodGoalWorktreeReview:
-		return s.handleGoalWorktreeReview(req)
-	case MethodGoalWorktreeCleanup:
-		return s.handleGoalWorktreeCleanup(req)
-	case MethodGoalWorktreeRollback:
-		return s.handleGoalWorktreeRollback(req)
-	case MethodGoalWorktreeMerge:
-		return s.handleGoalWorktreeMerge(req)
-	case MethodGoalApprovalResolve:
-		return s.handleGoalApprovalResolve(req)
 	case MethodGoalActiveSummary:
 		return s.handleGoalActiveSummary(req)
 	case MethodGoalPause:
