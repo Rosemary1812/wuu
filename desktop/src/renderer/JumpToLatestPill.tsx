@@ -1,5 +1,4 @@
 import {
-  type PointerEvent as ReactPointerEvent,
   type RefObject,
   useCallback,
   useEffect,
@@ -146,25 +145,6 @@ export function JumpToLatestPill({
     });
   }, [containerRef, bottomAnchor]);
 
-  // Pointer-follow shimmer: write --shimmer-x / --shimmer-y as percentages
-  // of the pill's box so the CSS radial-gradient on the ::after pseudo
-  // follows the cursor. The CSS owns the visual (gradient stops + opacity
-  // fade-in on :hover); this handler only updates the origin.
-  const handleShimmerMove = useCallback(
-    (event: ReactPointerEvent<HTMLElement>) => {
-      const target = event.currentTarget;
-      const rect = target.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) {
-        return;
-      }
-      const x = ((event.clientX - rect.left) / rect.width) * 100;
-      const y = ((event.clientY - rect.top) / rect.height) * 100;
-      target.style.setProperty("--shimmer-x", `${x}%`);
-      target.style.setProperty("--shimmer-y", `${y}%`);
-    },
-    [],
-  );
-
   // Measured positioning for the anchored (portaled) variant. Recomputes on
   // scroll, window resize, and container/composer resize (typing grows the
   // composer, moving its top edge).
@@ -267,7 +247,6 @@ export function JumpToLatestPill({
           bottom: `${position.bottom}px`,
         }}
         onClick={scrollToBottom}
-        onPointerMove={handleShimmerMove}
       >
         {pillBody}
       </button>,
@@ -281,7 +260,6 @@ export function JumpToLatestPill({
       className="jump-to-latest-pill jump-to-latest-pill-sticky-centered"
       aria-label={label}
       onClick={scrollToBottom}
-      onPointerMove={handleShimmerMove}
     >
       {pillBody}
     </button>

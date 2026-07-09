@@ -33,12 +33,6 @@
   --shell-jump-pill-focus-shadow-2: rgba(20, 24, 28, 0.12);
   --shell-jump-progress-step-bg: rgba(17, 19, 21, 0.05);
   --shell-jump-progress-step-in-progress-bg: rgba(17, 19, 21, 0.20);
-  /* Pointer-follow shimmer: three soft chromatic stops the ::after
-     pseudo paints at var(--shimmer-x) var(--shimmer-y). Kept low-alpha
-     so the read is iridescent not loud. */
-  --shell-jump-shimmer-1: rgba(120, 170, 255, 0.22);
-  --shell-jump-shimmer-2: rgba(180, 130, 240, 0.16);
-  --shell-jump-shimmer-3: rgba(255, 170, 210, 0.10);
   --shell-turn-rail-bar-bg: rgba(60, 60, 67, 0.4);
 }
 
@@ -968,7 +962,6 @@
 }
 
 .jump-to-latest-progress {
-  position: relative;
   flex: 0 1 auto;
   justify-content: center;
   gap: 0;
@@ -1052,50 +1045,6 @@
      own border + backdrop-filter + shadow stack makes it read as a
      second overlapping capsule instead of a child badge. Keep this
      rule plain: solid bg + ink, no glass surface. */
-}
-
-/*
- * Pointer-follow iridescent shimmer. A pseudo sits on top of the pill
- * surface with a soft chromatic radial gradient whose origin is driven
- * by --shimmer-x / --shimmer-y, written from a pointermove handler in
- * JSX. The three stops give a "cool blue → purple → pink → fade" sweep
- * that follows the cursor; low alpha keeps it iridescent, not loud.
- *
- * No mix-blend-mode: at the chosen alpha the additive light read is
- * barely distinguishable from a plain tint, and skipping the blend
- * mode avoids brightening the pill's text when the spotlight passes
- * over it.
- */
-.jump-to-latest-pill::after,
-.jump-to-latest-progress::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 240ms ease;
-  background: radial-gradient(
-    180px circle at
-      var(--shimmer-x, 50%) var(--shimmer-y, 50%),
-    var(--shell-jump-shimmer-1) 0%,
-    var(--shell-jump-shimmer-2) 32%,
-    var(--shell-jump-shimmer-3) 58%,
-    transparent 78%
-  );
-}
-
-.jump-to-latest-pill:hover::after,
-.jump-to-latest-progress:hover::after,
-.jump-to-latest-pill:focus-visible::after {
-  opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .jump-to-latest-pill::after,
-  .jump-to-latest-progress::after {
-    transition: none;
-  }
 }
 
 @keyframes jump-to-latest-enter {
