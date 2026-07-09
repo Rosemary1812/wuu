@@ -15,16 +15,26 @@
   --shell-run-debug-panel-shadow-2: rgba(20, 24, 28, 0.08);
   --shell-run-debug-phase-running-color: #486f61;
   --shell-run-debug-empty-border: #e0e1dc;
-  --shell-jump-pill-border: rgba(17, 19, 21, 0.10);
-  --shell-jump-pill-bg: rgba(255, 255, 255, 0.96);
-  --shell-jump-pill-shadow: rgba(20, 24, 28, 0.08);
-  --shell-jump-pill-hover-bg: rgba(255, 255, 255, 1);
-  --shell-jump-pill-hover-border: rgba(17, 19, 21, 0.18);
-  --shell-jump-pill-hover-shadow: rgba(20, 24, 28, 0.12);
-  --shell-jump-pill-focus-shadow-1: rgba(17, 19, 21, 0.18);
+  /* Liquid-glass tokens for the jump-to-latest pill + plan-progress pill.
+     The background sits at low alpha so backdrop-filter can pull colors
+     through; the top-highlight + bottom-shade sit as 1px inset rings in
+     box-shadow to fake a refractive edge. */
+  --shell-jump-pill-bg: rgba(255, 255, 255, 0.55);
+  --shell-jump-pill-border: rgba(255, 255, 255, 0.85);
+  --shell-jump-pill-top-highlight: rgba(255, 255, 255, 0.55);
+  --shell-jump-pill-bottom-shade: rgba(17, 19, 21, 0.05);
+  --shell-jump-pill-shadow: rgba(20, 24, 28, 0.12);
+  --shell-jump-pill-contact-shadow: rgba(20, 24, 28, 0.06);
+  --shell-jump-pill-hover-bg: rgba(255, 255, 255, 0.7);
+  --shell-jump-pill-hover-border: rgba(255, 255, 255, 1);
+  --shell-jump-pill-hover-top-highlight: rgba(255, 255, 255, 0.7);
+  --shell-jump-pill-hover-shadow: rgba(20, 24, 28, 0.16);
+  --shell-jump-pill-focus-shadow-1: rgba(20, 24, 28, 0.2);
   --shell-jump-pill-focus-shadow-2: rgba(20, 24, 28, 0.12);
-  --shell-jump-progress-step-bg: rgba(17, 19, 21, 0.06);
-  --shell-jump-progress-step-in-progress-bg: rgba(17, 19, 21, 0.08);
+  --shell-jump-progress-step-bg: rgba(17, 19, 21, 0.05);
+  --shell-jump-progress-step-in-progress-bg: rgba(17, 19, 21, 0.10);
+  --shell-jump-progress-step-in-progress-top-highlight: rgba(255, 255, 255, 0.5);
+  --shell-jump-progress-step-in-progress-bottom-shade: rgba(17, 19, 21, 0.18);
   --shell-turn-rail-bar-bg: rgba(60, 60, 67, 0.4);
 }
 
@@ -880,8 +890,17 @@
   border-radius: var(--radius-pill);
   border: 1px solid var(--shell-jump-pill-border);
   background: var(--shell-jump-pill-bg);
-  box-shadow: 0 4px 14px var(--shell-jump-pill-shadow);
-  backdrop-filter: blur(8px);
+  /* Liquid-glass stack: 1px inner top highlight + 1px inner bottom shade +
+     tight contact shadow + ambient drop shadow. The two inset layers fake
+     a refractive edge so the pill reads as curved glass rather than a flat
+     translucent rectangle. */
+  box-shadow:
+    inset 0 1px 0 0 var(--shell-jump-pill-top-highlight),
+    inset 0 -1px 0 0 var(--shell-jump-pill-bottom-shade),
+    0 1px 2px var(--shell-jump-pill-contact-shadow),
+    0 8px 24px var(--shell-jump-pill-shadow);
+  backdrop-filter: blur(22px) saturate(1.6);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
 
   color: var(--ink);
   font-size: var(--font-ui);
@@ -962,14 +981,20 @@
 .jump-to-latest-progress:focus-within {
   background: var(--shell-jump-pill-hover-bg);
   border-color: var(--shell-jump-pill-hover-border);
-  box-shadow: 0 6px 20px var(--shell-jump-pill-hover-shadow);
+  box-shadow:
+    inset 0 1px 0 0 var(--shell-jump-pill-hover-top-highlight),
+    inset 0 -1px 0 0 var(--shell-jump-pill-bottom-shade),
+    0 1px 3px var(--shell-jump-pill-contact-shadow),
+    0 10px 30px var(--shell-jump-pill-hover-shadow);
 }
 
 .jump-to-latest-pill:focus-visible {
   outline: 0;
   box-shadow:
+    inset 0 1px 0 0 var(--shell-jump-pill-hover-top-highlight),
+    inset 0 -1px 0 0 var(--shell-jump-pill-bottom-shade),
     0 0 0 2px var(--shell-jump-pill-focus-shadow-1),
-    0 6px 20px var(--shell-jump-pill-focus-shadow-2);
+    0 10px 30px var(--shell-jump-pill-focus-shadow-2);
 }
 
 .jump-to-latest-pill svg {
@@ -1016,6 +1041,16 @@
 .jump-to-latest-progress-step.in_progress {
   background: var(--shell-jump-progress-step-in-progress-bg);
   color: var(--ink);
+  /* Inner liquid-glass pill: same edge + shadow language as the outer
+     pill, but stronger because the step is denser and benefits from
+     reading as a distinct layer sitting inside the outer pill. */
+  border: 1px solid var(--shell-jump-pill-border);
+  box-shadow:
+    inset 0 1px 0 0 var(--shell-jump-progress-step-in-progress-top-highlight),
+    inset 0 -1px 0 0 var(--shell-jump-progress-step-in-progress-bottom-shade),
+    0 1px 2px var(--shell-jump-pill-contact-shadow);
+  backdrop-filter: blur(18px) saturate(1.6);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
 }
 
 @keyframes jump-to-latest-enter {
