@@ -94,20 +94,12 @@ wuu --version
 Download `wuu-<version>-mac-arm64.dmg` or `wuu-<version>-mac-arm64.zip`
 from [GitHub Releases](https://github.com/blueberrycongee/wuu/releases).
 After moving `wuu.app` to `/Applications`, macOS may block it because the app
-is not signed or notarized. This can show up as "developer cannot be verified",
-"app is damaged", or "app cannot be opened".
-
-For a release asset you trust, use `xattr` to remove macOS's download
-quarantine flag:
+is not signed or notarized. If macOS says the app cannot be opened, copy and
+run this command:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/wuu.app
-open /Applications/wuu.app
+xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.app
 ```
-
-`xattr` edits macOS extended attributes. Here, `-d` deletes the quarantine
-attribute and `-r` applies it recursively to the app bundle. If you installed
-the app somewhere else, replace `/Applications/wuu.app` with the actual path.
 
 ## Quick Start
 

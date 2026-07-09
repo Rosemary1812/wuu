@@ -94,18 +94,11 @@ wuu --version
 从 [GitHub Releases](https://github.com/blueberrycongee/wuu/releases)
 下载 `wuu-<version>-mac-arm64.dmg` 或 `wuu-<version>-mac-arm64.zip`。
 把 `wuu.app` 放到 `/Applications` 后，macOS 可能因为应用未签名、未公证而阻止打开。
-常见提示包括“无法验证开发者”、“应用已损坏”或“无法打开”。
-
-确认这是你信任的 Release 资产后，用 `xattr` 移除 macOS 的下载隔离标记：
+如果 macOS 提示应用无法打开，复制运行这条命令：
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/wuu.app
-open /Applications/wuu.app
+xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.app
 ```
-
-`xattr` 是 macOS 管理扩展属性的命令。这里的 `-d` 表示删除 quarantine
-属性，`-r` 表示递归处理整个 app 包。如果你把应用放在别的位置，把
-`/Applications/wuu.app` 换成实际路径即可。
 
 ## 快速开始
 
