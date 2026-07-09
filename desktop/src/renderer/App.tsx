@@ -45,7 +45,6 @@ import type {
   InputFile,
   InputImage,
   MessageMarkWire,
-  ParticipantProfile,
   PlanUpdate,
   PopOutInitResult,
   PermissionSummary,
@@ -145,8 +144,6 @@ import {
   conversationPaneThreadsByID,
   createDraftSessionTab,
   createFileSessionTab,
-  createBoardSessionTab,
-  createSkillsSessionTab,
   createThreadSessionTab,
   emptyComposerDraft,
   ensureSessionTab,
@@ -186,8 +183,6 @@ import {
   serverEventTargetsGlobalThread,
   shouldResetToNoProjectForNewThread,
   sessionTabForLoadedRuntime,
-  sessionTabForParticipant,
-  sessionTabDraftForThread,
   sessionTabLabel,
   setThreadForPane,
   sortThreads,
@@ -317,6 +312,7 @@ import { createSessionTabActions } from "./SessionTabActions";
 import { createThreadActivationActions } from "./ThreadActivationActions";
 import { createThreadMutationActions } from "./ThreadMutationActions";
 import { createRuntimeSettingsActions } from "./RuntimeSettingsActions";
+import { createCollaborationActions } from "./CollaborationActions";
 export { SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./SidebarDrawerState";
 
 function permissionSummaryForMode(mode: PermissionMode): PermissionSummary {
@@ -351,14 +347,6 @@ const QUERY_HISTORY_RAIL_MAX_BARS = 20;
 // full TurnView DOM trees, making long sessions heavier after each tab switch.
 const CACHED_THREAD_PANE_LIMIT = 1;
 type EnvironmentDialog = "commit" | "pull-request" | null;
-function createContextCompositionEntryID(): string {
-  return `context-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function createInstructionFilesEntryID(): string {
-  return `instructions-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 type TurnProgressContent = {
   label: string;
   detail?: string;
@@ -2151,340 +2139,6 @@ export function App(): JSX.Element {
     });
   }, [state.activeSessionTabID, state.thread, state.threads]);
 
-  function openSkillsTab(): void {
-    if (!state.activeContext) {
-      return;
-    }
-    const tab = createSkillsSessionTab(state.activeContext);
-    setArchiveConfirmThreadID(undefined);
-    setWorkspaceMode(undefined);
-    setSplitComposerDrafts(initialSplitComposerDrafts());
-    setState((current) => ({
-      ...persistActiveSessionTabDraft(current, currentPrimaryComposerDraft()),
-      secondaryThread: undefined,
-      activePane: "primary",
-      sessionTabs: ensureSessionTab(current.sessionTabs, tab),
-      activeSessionTabID: tab.id,
-      allowThreadAutoActivation: false,
-      running: false,
-      status: "ready",
-    }));
-  }
-
-  function dismissContextCompositionEntry(id: string): void {
-    setContextCompositionEntries((entries) =>
-      entries.filter((entry) => entry.id !== id),
-    );
-  }
-
-  function dismissInstructionFilesEntry(id: string): void {
-    setInstructionFilesEntries((entries) =>
-      entries.filter((entry) => entry.id !== id),
-    );
-  }
-
-  function openInstructions(): void {
-    if (!activeThread) {
-      setState((current) => ({
-        ...current,
-        status: "没有当前对话",
-      }));
-      return;
-    }
-    const threadID = activeThread.id;
-    const title = activeThread.preview || activeTitle;
-    const entryID = createInstructionFilesEntryID();
-    setInstructionFilesEntries((entries) => [
-      ...entries,
-      {
-        id: entryID,
-        threadID,
-        title,
-        loading: true,
-      },
-    ]);
-    scheduleStreamScroll();
-    void (async () => {
-      try {
-        const result = await window.wuu.listInstructionFiles();
-        setInstructionFilesEntries((entries) =>
-          entries.map((entry) =>
-            entry.id === entryID
-              ? { ...entry, loading: false, result, error: undefined }
-              : entry,
-          ),
-        );
-        scheduleStreamScroll();
-      } catch (error) {
-        setInstructionFilesEntries((entries) =>
-          entries.map((entry) =>
-            entry.id === entryID
-              ? {
-                  ...entry,
-                  loading: false,
-                  error: desktopApiErrorMessage(error, "无法读取指令文件"),
-                }
-              : entry,
-          ),
-        );
-      }
-    })();
-  }
-
-  function openContextComposition(): void {
-    if (!activeThread) {
-      setState((current) => ({
-        ...current,
-        status: "没有当前对话",
-      }));
-      return;
-    }
-    const threadID = activeThread.id;
-    const title = activeThread.preview || activeTitle;
-    const entryID = createContextCompositionEntryID();
-    const afterTurnID = activeThread.turns.at(-1)?.id;
-    setContextCompositionEntries((entries) => [
-      ...entries,
-      {
-        id: entryID,
-        threadID,
-        afterTurnID,
-        title,
-        loading: true,
-      },
-    ]);
-    scheduleStreamScroll();
-    void (async () => {
-      try {
-        const result = await window.wuu.getThreadContextComposition(threadID);
-        setContextCompositionEntries((entries) =>
-          entries.map((entry) =>
-            entry.id === entryID
-              ? {
-                  ...entry,
-                  loading: false,
-                  result,
-                  error: undefined,
-                }
-              : entry,
-          ),
-        );
-        scheduleStreamScroll();
-      } catch (error) {
-        setContextCompositionEntries((entries) =>
-          entries.map((entry) =>
-            entry.id === entryID
-              ? {
-                  ...entry,
-                  loading: false,
-                  error: desktopApiErrorMessage(error, "无法读取上下文组成"),
-                }
-              : entry,
-          ),
-        );
-      }
-    })();
-  }
-
-  function openParticipantProfile(participant: ParticipantProfile): void {
-    closeConversationSearch({ immediate: true });
-    closeEnvironmentPanel({ dismissed: true });
-    setOpenSubthreadPanel(undefined);
-    setRightPanelOpenWithMotion(false);
-    openParticipantProfilePanel(participant);
-  }
-
-  /**
-   * Open (or create) the DM conversation with the given named participant
-   * and surface it as the active thread. The picker prefers the latest live
-   * (non-archived) DM thread tagged with `participant.id` so a returning
-   * user lands in their previous conversation. When no DM exists yet we
-   * start a fresh thread tagged with `dm_participant_id` on the server and
-   * mirror the seed-fixture state-merge so the new thread is selected,
-   * upserted into `state.threads`, and bound to a session tab.
-   */
-  async function openParticipantDM(
-    participant: ParticipantProfile,
-  ): Promise<void> {
-    const currentState = appStateRef.current;
-    if (!currentState.activeContext || !currentState.initialized) {
-      return;
-    }
-    // Synchronous in-flight guard: a rapid double-click on the same agent
-    // row must not produce two concurrent startThread calls. The ref is
-    // set before any await so the second invocation short-circuits
-    // immediately, and cleared in the finally block below regardless of
-    // which branch (existing-DM or freshly-started) resolved.
-    if (openingDMParticipantIDRef.current === participant.id) {
-      return;
-    }
-    openingDMParticipantIDRef.current = participant.id;
-    try {
-      cancelViewSwitch();
-      setArchiveConfirmThreadID(undefined);
-      setWorkspaceMode(undefined);
-      setPrompt("");
-      setComposerImages([]);
-      setComposerFiles([]);
-      const existing = findDMThread(currentState.threads, participant.id);
-      if (existing) {
-        await activateThread(existing.id);
-        return;
-      }
-      // Defense against issue #3: a stale threads cache can miss a DM
-      // thread the server already knows about, but if a session tab for
-      // this participant is already open locally, focus it directly
-      // instead of asking the server to start (what used to always be) a
-      // brand new, indistinguishable thread.
-      const existingTab = sessionTabForParticipant(
-        currentState.sessionTabs,
-        currentState.threads,
-        participant.id,
-      );
-      if (existingTab) {
-        await activateThread(existingTab.threadID);
-        return;
-      }
-      try {
-        const { thread } = await window.wuu.startThread({
-          dm_participant_id: participant.id,
-        });
-        if (
-          !sameRuntimeContext(appStateRef.current.activeContext, currentState.activeContext)
-        ) {
-          return;
-        }
-        const activeContext = appStateRef.current.activeContext;
-        if (!activeContext) {
-          return;
-        }
-        const targetDraft = sessionTabDraftForThread(appStateRef.current, thread.id);
-        setSplitComposerDrafts(initialSplitComposerDrafts());
-        setState((current) => {
-          const withDraft = persistActiveSessionTabDraft(
-            current,
-            currentPrimaryComposerDraft(),
-          );
-          return {
-            ...withDraft,
-            thread,
-            secondaryThread: undefined,
-            activePane: "primary",
-            allowThreadAutoActivation: true,
-            sessionTabs: ensureSessionTab(
-              withDraft.sessionTabs,
-              createThreadSessionTab(thread, activeContext, targetDraft),
-            ),
-            activeSessionTabID: threadSessionTabID(thread.id),
-            threads: upsertThread(current.threads, thread),
-            running: isThreadRunning(thread),
-            status: "ready",
-          };
-        });
-      } catch (error) {
-        setState((current) => ({
-          ...current,
-          status: error instanceof Error ? error.message : "无法创建 Agent 对话",
-        }));
-      }
-    } finally {
-      openingDMParticipantIDRef.current = undefined;
-    }
-  }
-
-  /**
-   * Create a chat-style group thread (chat-style-threads-design.md §3)
-   * from the sidebar's 群聊 inline creator and select it. Mirrors the
-   * fresh-thread branch of openParticipantDM: the created thread is
-   * upserted into state, bound to a session tab, and made primary.
-   */
-  async function createGroupThread(title: string): Promise<void> {
-    const currentState = appStateRef.current;
-    if (!currentState.activeContext || !currentState.initialized) {
-      return;
-    }
-    cancelViewSwitch();
-    setArchiveConfirmThreadID(undefined);
-    setWorkspaceMode(undefined);
-    setPrompt("");
-    setComposerImages([]);
-    setComposerFiles([]);
-    try {
-      const { thread } = await window.wuu.startThread({ group: true, title });
-      if (
-        !sameRuntimeContext(
-          appStateRef.current.activeContext,
-          currentState.activeContext,
-        )
-      ) {
-        return;
-      }
-      const activeContext = appStateRef.current.activeContext;
-      if (!activeContext) {
-        return;
-      }
-      const targetDraft = sessionTabDraftForThread(appStateRef.current, thread.id);
-      setSplitComposerDrafts(initialSplitComposerDrafts());
-      setState((current) => {
-        const withDraft = persistActiveSessionTabDraft(
-          current,
-          currentPrimaryComposerDraft(),
-        );
-        return {
-          ...withDraft,
-          thread,
-          secondaryThread: undefined,
-          activePane: "primary",
-          allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(
-            withDraft.sessionTabs,
-            createThreadSessionTab(thread, activeContext, targetDraft),
-          ),
-          activeSessionTabID: threadSessionTabID(thread.id),
-          threads: upsertThread(current.threads, thread),
-          running: isThreadRunning(thread),
-          status: "ready",
-        };
-      });
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "无法创建群聊",
-      }));
-    }
-  }
-
-  // Open (or focus) the group's task-board tab. Deterministic tab id makes
-  // the second click a focus, not a duplicate (ensureSessionTab dedupe).
-  function openTaskBoardTab(thread: Thread): void {
-    const context = appStateRef.current.activeContext;
-    if (!context) {
-      return;
-    }
-    const tab = createBoardSessionTab(thread, context);
-    setState((current) => ({
-      ...current,
-      sessionTabs: ensureSessionTab(current.sessionTabs, tab),
-      activeSessionTabID: tab.id,
-    }));
-  }
-
-  // A board row click: land back in the group's chat tab with that task's
-  // thread panel open. Order matters — the panel auto-closes when its
-  // threadID differs from the active thread, so switch tabs first.
-  async function openTaskFromBoard(
-    threadID: string,
-    subthreadID: string,
-  ): Promise<void> {
-    const tabs = appStateRef.current.sessionTabs;
-    if (tabs.some((tab) => tab.id === threadSessionTabID(threadID))) {
-      await selectSessionTab(threadSessionTabID(threadID));
-    } else {
-      await selectThread(threadID);
-    }
-    openConversationSubthreadByID(threadID, subthreadID);
-  }
-
   function renderComposer(variant: ComposerVariant): JSX.Element {
     const tokenSpeed = activeTurnTokenSpeedSnapshot(
       state,
@@ -2936,14 +2590,6 @@ export function App(): JSX.Element {
     }
   }
 
-  // 打开 设置 → 记忆；带 participantID 时预选该同事的身份笔记本。
-  function openMemorySettings(participantID?: string): void {
-    closeProjectMenus();
-    setSettingsMemoryFocusID(participantID);
-    setSettingsInitialPage("memory");
-    setSettingsOpen(true);
-  }
-
   function closeProjectMenus(): void {
     setProjectMenuOpen(false);
     setRuntimeMenuOpen(false);
@@ -3179,6 +2825,49 @@ export function App(): JSX.Element {
     setSettingsOpen,
     clearThreadPendingComposerMessages,
     writeClipboardText: (text) => navigator.clipboard.writeText(text),
+  });
+
+  const {
+    openSkillsTab,
+    dismissContextCompositionEntry,
+    dismissInstructionFilesEntry,
+    openInstructions,
+    openContextComposition,
+    openParticipantProfile,
+    openParticipantDM,
+    createGroupThread,
+    openTaskBoardTab,
+    openTaskFromBoard,
+    openMemorySettings,
+  } = createCollaborationActions({
+    getAppState: () => appStateRef.current,
+    setAppState: setState,
+    getActiveTitle: () => activeTitle,
+    getPrimaryComposerDraft: currentPrimaryComposerDraft,
+    setSplitComposerDrafts,
+    setPrompt,
+    setComposerImages,
+    setComposerFiles,
+    setArchiveConfirmThreadID,
+    setWorkspaceMode,
+    cancelViewSwitch,
+    activateThread,
+    selectThread,
+    selectSessionTab,
+    closeConversationSearch,
+    closeEnvironmentPanel,
+    setOpenSubthreadPanel,
+    setRightPanelOpenWithMotion,
+    openParticipantProfilePanel,
+    setContextCompositionEntries,
+    setInstructionFilesEntries,
+    scheduleStreamScroll,
+    openingDMParticipantIDRef,
+    openConversationSubthreadByID,
+    closeProjectMenus,
+    setSettingsMemoryFocusID,
+    setSettingsInitialPage,
+    setSettingsOpen,
   });
 
   function seedAgentTreeDemo(): void {
