@@ -24,7 +24,6 @@ import {
 import {
   type CSSProperties,
   type RefObject,
-  memo,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -44,7 +43,6 @@ import type {
   InitializeResult,
   InputFile,
   InputImage,
-  MessageMarkWire,
   PlanUpdate,
   PopOutInitResult,
   PermissionSummary,
@@ -69,10 +67,6 @@ import {
   type ComposerImage,
   type QueuedComposerMessage,
 } from "./ComposerMessages";
-import {
-  pendingComposerMessagesForThread as pendingComposerMessagesForThreadSnapshot,
-  type PendingComposerMessagesByThread,
-} from "./ComposerPendingMessages";
 import {
   greetingFor,
   resolveGreetingContext,
@@ -99,15 +93,12 @@ import { ConversationSplitPane } from "./ConversationSplitPane";
 import { useConversationScrollState } from "./ConversationScrollState";
 import { useConversationSearch } from "./ConversationSearchState";
 import { useConversationSubthreadState } from "./ConversationSubthreadState";
-import { ConversationTurnList } from "./ConversationTurnList";
-import { ChatThreadViewContainer } from "./ChatThreadViewContainer";
 import { CodexPetLayer } from "./CodexPetLayer";
 import { useThreadMarkList } from "./useThreadMarks";
 import { ConversationSubthreadPanel } from "./ConversationSubthreadPanel";
 import { ParticipantProfilePanel } from "./ParticipantProfilePanel";
 import { useParticipantState } from "./ParticipantState";
 import { ConversationForkDialog } from "./ConversationForkDialog";
-import { ForkWorktreeNotice } from "./ForkWorktreeNotice";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import {
   AppSidebar,
@@ -212,14 +203,8 @@ import {
   useAppLayoutState,
 } from "./AppLayoutState";
 import { CommitChangesDialog, PullRequestDialog } from "./GitDialogs";
-import {
-  ContextCompositionCard,
-  type ContextCompositionEntry,
-} from "./ContextCompositionCard";
-import {
-  InstructionFilesCard,
-  type InstructionFilesEntry,
-} from "./InstructionFilesCard";
+import type { ContextCompositionEntry } from "./ContextCompositionCard";
+import type { InstructionFilesEntry } from "./InstructionFilesCard";
 import { DesignTokensPanel } from "./DesignTokensPanel";
 import { useAppDebugState } from "./AppDebugState";
 import {
@@ -265,7 +250,6 @@ import {
   type UserFacingErrorAction,
 } from "./UserFacingErrors";
 import {
-  TurnView,
   latestAgentMessageItemID,
   scrollToUserMessage,
 } from "./TurnView";
@@ -311,6 +295,7 @@ import {
   type HistoryMessageEditState,
   type PendingForkState,
 } from "./ConversationHistoryActions";
+import { CachedConversationPanes } from "./CachedConversationPanes";
 export { SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./SidebarDrawerState";
 
 function permissionSummaryForMode(mode: PermissionMode): PermissionSummary {
@@ -334,7 +319,6 @@ const PROJECT_THREAD_COLLAPSE_MS = 190;
 const ENVIRONMENT_PANEL_MOTION_MS = 260;
 const ENVIRONMENT_PANEL_WIDTH_PX = 328;
 const ENVIRONMENT_PANEL_WIDTH_CSS = `${ENVIRONMENT_PANEL_WIDTH_PX}px`;
-const CONVERSATION_GRID_COLUMNS = 12;
 const WORKTREE_FORK_NON_GIT_REASON =
   "当前工作目录不是 git 仓库，不能创建 git worktree";
 // Cap on the number of bars rendered in the always-visible rail. The
@@ -4461,285 +4445,5 @@ export function App(): JSX.Element {
       />
       </div>
     </ImagePreviewProvider>
-  );
-}
-
-type CachedConversationPanesProps = {
-  threadIDs: string[];
-  threadsByID: ReadonlyMap<string, Thread>;
-  activeThreadID?: string;
-  activeContextCwd?: string;
-  conversationGridVisible: boolean;
-  contextCompositionEntries: ContextCompositionEntry[];
-  instructionFilesEntries: InstructionFilesEntry[];
-  historyMessageEdit?: HistoryMessageEditState;
-  onStreamFrame: () => void;
-  onCollapseComplete: () => void;
-  onDismissContextComposition: (id: string) => void;
-  onDismissInstructions: (id: string) => void;
-  canEditThreadMessage: (thread: Thread) => boolean;
-  onForkMessage: (thread: Thread, turnID: string, itemID: string) => void;
-  onOpenFile?: (path: string) => void;
-  onOpenAgent: (agent: Agent) => void;
-  onOpenSubthread: (thread: Thread, item: ThreadItem) => void;
-  onReact: (thread: Thread, item: ThreadItem, reaction: string) => void;
-  onEditMessage: (thread: Thread, turnID: string, item: ThreadItem) => void;
-  onCancelEditMessage: () => void;
-  onSubmitEditMessage: (
-    thread: Thread,
-    turnID: string,
-    item: ThreadItem,
-    text: string,
-    images: InputImage[],
-    files: InputFile[],
-  ) => void;
-  onNoticeAction: (action: UserFacingErrorAction) => void;
-  onOpenFileDiff: (thread: Thread, selection: TurnFileDiffSelection) => void;
-  turnStreamStatus: Record<string, TurnStreamStatus>;
-  busyParticipantIDs: ReadonlySet<string>;
-  activeThreadMarks: readonly MessageMarkWire[];
-  resolveParticipantName: (id: string) => string;
-  chatReaderCount: number;
-  /**
-   * Reply subthreads (群中群) for the active chat thread, keyed by
-   * anchor_item_id. Only the pane whose threadID === subthreadsThreadID
-   * receives it (inactive panes are display:none, so we avoid loading and
-   * threading a map for every cached thread).
-   */
-  subthreadsByAnchor?: ReadonlyMap<string, ConversationSubthread>;
-  subthreadsThreadID?: string;
-  /**
-   * Per-thread composer messages queued while the agent is mid-turn.
-   * Chat-style panes render the thread's `queued` entries as in-transcript
-   * "发送中" bubbles (chat send semantics, issue #10); work-thread panes
-   * ignore this — their queue renders in the composer strip instead.
-   */
-  pendingChatMessagesByThread: PendingComposerMessagesByThread;
-};
-
-const CachedConversationPanes = memo(function CachedConversationPanes({
-  threadIDs,
-  threadsByID,
-  activeThreadID,
-  activeContextCwd,
-  conversationGridVisible,
-  contextCompositionEntries,
-  instructionFilesEntries,
-  historyMessageEdit,
-  onStreamFrame,
-  onCollapseComplete,
-  onDismissContextComposition,
-  onDismissInstructions,
-  canEditThreadMessage,
-  onForkMessage,
-  onOpenFile,
-  onOpenAgent,
-  onOpenSubthread,
-  onReact,
-  onEditMessage,
-  onCancelEditMessage,
-  onSubmitEditMessage,
-  onNoticeAction,
-  onOpenFileDiff,
-  turnStreamStatus,
-  busyParticipantIDs,
-  activeThreadMarks,
-  resolveParticipantName,
-  chatReaderCount,
-  subthreadsByAnchor,
-  subthreadsThreadID,
-  pendingChatMessagesByThread,
-}: CachedConversationPanesProps): JSX.Element {
-  return (
-    <div className="cached-conversation-panes">
-      {threadIDs.map((threadID) => {
-        const thread = threadsByID.get(threadID);
-        if (!thread) return null;
-        const isActive = threadID === activeThreadID;
-        const threadTurns = thread.turns ?? [];
-        const threadLatestAgentMessageID = latestAgentMessageItemID(threadTurns);
-        const threadContextEntries = contextCompositionEntries.filter(
-          (entry) => entry.threadID === threadID,
-        );
-        const turnIDs = new Set(threadTurns.map((turn) => turn.id));
-        const entriesBeforeTurns = threadContextEntries.filter(
-          (entry) => !entry.afterTurnID,
-        );
-        const entriesAfterMissingTurn = threadContextEntries.filter(
-          (entry) => entry.afterTurnID && !turnIDs.has(entry.afterTurnID),
-        );
-        const entriesByAfterTurnID = new Map<string, ContextCompositionEntry[]>();
-        for (const entry of threadContextEntries) {
-          if (!entry.afterTurnID || !turnIDs.has(entry.afterTurnID)) {
-            continue;
-          }
-          const existing = entriesByAfterTurnID.get(entry.afterTurnID) ?? [];
-          existing.push(entry);
-          entriesByAfterTurnID.set(entry.afterTurnID, existing);
-        }
-        const renderContextEntry = (entry: ContextCompositionEntry) => (
-          <ContextCompositionCard
-            entry={entry}
-            key={entry.id}
-            onDismiss={onDismissContextComposition}
-          />
-        );
-        const threadInstructionCards = instructionFilesEntries
-          .filter((entry) => entry.threadID === threadID)
-          .map((entry) => (
-            <InstructionFilesCard
-              entry={entry}
-              key={entry.id}
-              onDismiss={onDismissInstructions}
-            />
-          ));
-        const forkWorktreeNotice =
-          thread.worktree && thread.forked_from_id ? (
-            <ForkWorktreeNotice thread={thread} />
-          ) : null;
-        const isChatStyleThread = isDMThread(thread) || isGroupThread(thread);
-        return (
-          <div
-            key={threadID}
-            className="cached-conversation-pane"
-            data-active={isActive}
-            style={isActive ? undefined : { display: "none" }}
-          >
-            <div className="conversation-width session-flow">
-              {isActive && conversationGridVisible ? (
-                <ConversationGridGuides />
-              ) : null}
-              {isChatStyleThread ? (
-                <ChatThreadViewContainer
-                  // Give the chat-style windowing its own reveal state per
-                  // thread (ChatThreadView.tsx's hiddenOlderCount) instead
-                  // of carrying over whatever the previously active thread
-                  // had scrolled open. In practice this pane is already
-                  // dedicated to `threadID` for as long as it stays in the
-                  // cache, so this mostly documents the intent and guards
-                  // the eviction/recreate path explicitly.
-                  key={threadID}
-                  threadID={threadID}
-                  turns={threadTurns}
-                  marks={isActive ? activeThreadMarks : undefined}
-                  busyParticipantIDs={busyParticipantIDs}
-                  resolveParticipantName={resolveParticipantName}
-                  readerCount={chatReaderCount}
-                  subthreadsByAnchor={
-                    threadID === subthreadsThreadID
-                      ? subthreadsByAnchor
-                      : undefined
-                  }
-                  onOpenSubthread={(item) => onOpenSubthread(thread, item)}
-                  onReact={(item, reaction) => onReact(thread, item, reaction)}
-                  // Sends queued while the agent is mid-turn render as
-                  // in-transcript "发送中" bubbles instead of the composer
-                  // queue strip (chat send semantics, issue #10).
-                  pendingMessages={
-                    pendingComposerMessagesForThreadSnapshot(
-                      pendingChatMessagesByThread,
-                      threadID,
-                    ).queued
-                  }
-                />
-              ) : (
-              <ConversationTurnList
-                threadID={thread.id}
-                turns={threadTurns}
-                renderBeforeTurns={[
-                  ...threadInstructionCards,
-                  ...entriesBeforeTurns.map(renderContextEntry),
-                ]}
-                renderAfterMissingTurn={
-                  <>
-                    {entriesAfterMissingTurn.map(renderContextEntry)}
-                    {forkWorktreeNotice}
-                  </>
-                }
-                renderAfterTurn={(turn) =>
-                  (entriesByAfterTurnID.get(turn.id) ?? []).map(renderContextEntry)
-                }
-                forcedFullTurnIDs={
-                  historyMessageEdit?.threadID === thread.id
-                    ? [historyMessageEdit.turnID]
-                    : undefined
-                }
-                renderTurn={(turn) => (
-                  <TurnView
-                    turn={turn}
-                    cwd={thread.cwd ?? activeContextCwd}
-                    onOpenFile={onOpenFile}
-                    onOpenAgent={(agentID) => {
-                      const agent = thread.child_agents?.find(
-                        (candidate) => candidate.id === agentID,
-                      );
-                      if (agent) {
-                        void onOpenAgent(agent);
-                      }
-                    }}
-                    onOpenSubthread={(item) => onOpenSubthread(thread, item)}
-                    latestAgentMessageID={threadLatestAgentMessageID}
-                    isLatestTurn={
-                      thread.turns[thread.turns.length - 1]?.id === turn.id
-                    }
-                    onStreamFrame={onStreamFrame}
-                    onCollapseComplete={onCollapseComplete}
-                    onForkMessage={(turnID, itemID) =>
-                      onForkMessage(thread, turnID, itemID)
-                    }
-                    onEditMessage={
-                      canEditThreadMessage(thread)
-                        ? (turnID, item) => onEditMessage(thread, turnID, item)
-                        : undefined
-                    }
-                    editingMessage={
-                      historyMessageEdit?.threadID === thread.id
-                        ? historyMessageEdit
-                        : undefined
-                    }
-                    onCancelEditMessage={onCancelEditMessage}
-                    onSubmitEditMessage={(turnID, item, text, images, files) =>
-                      onSubmitEditMessage(
-                        thread,
-                        turnID,
-                        item,
-                        text,
-                        images,
-                        files,
-                      )
-                    }
-                    onNoticeAction={onNoticeAction}
-                    onOpenFileDiff={(selection) =>
-                      onOpenFileDiff(thread, selection)
-                    }
-                    streamStatus={
-                      thread.turns[thread.turns.length - 1]?.id === turn.id
-                        ? turnStreamStatus[turn.id]
-                        : undefined
-                    }
-                  />
-                )}
-              />
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-});
-
-function ConversationGridGuides(): JSX.Element {
-  return (
-    <div className="conversation-grid-guides" aria-hidden="true">
-      <div className="conversation-grid-cols">
-        {Array.from({ length: CONVERSATION_GRID_COLUMNS }, (_, index) => (
-          <div className="conversation-grid-col" key={index}>
-            <span>{index + 1}</span>
-          </div>
-        ))}
-      </div>
-      <div className="conversation-grid-rows" />
-    </div>
   );
 }
