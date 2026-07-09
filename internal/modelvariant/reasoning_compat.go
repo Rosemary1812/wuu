@@ -114,6 +114,9 @@ func compatVersionedGPT5ReasoningEfforts(apiID string) ([]string, bool) {
 	if version == 1 {
 		return []string{"none", "low", "medium", "high"}, true
 	}
+	if version >= 6 {
+		return []string{"none", "low", "medium", "high", "xhigh", "max"}, true
+	}
 	return []string{"none", "low", "medium", "high", "xhigh"}, true
 }
 
@@ -122,6 +125,9 @@ func compatGPT5CodexReasoningEfforts(apiID string) ([]string, bool) {
 		return nil, false
 	}
 	version := compatGPT5Version(apiID)
+	if version >= 6 {
+		return []string{"none", "low", "medium", "high", "xhigh", "max"}, true
+	}
 	if version >= 3 {
 		return []string{"none", "low", "medium", "high", "xhigh"}, true
 	}

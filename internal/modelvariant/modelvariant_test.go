@@ -96,6 +96,22 @@ func TestSummariesMatchProviderCompatForOpenAIProvider(t *testing.T) {
 	}
 }
 
+func TestSummariesIncludeMaxForGPT56OpenAIModels(t *testing.T) {
+	for _, model := range []string{"gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"} {
+		t.Run(model, func(t *testing.T) {
+			provider := config.ProviderConfig{Type: "openai", Model: model}
+			variants := Summaries(provider, model)
+			if got := strings.Join(variantIDs(variants), ","); got != "none,low,medium,high,xhigh,max" {
+				t.Fatalf("variants = %q", got)
+			}
+			options, ok := Options(provider, model, "max")
+			if !ok || options["reasoningEffort"] != "max" {
+				t.Fatalf("max options = %#v, ok=%v", options, ok)
+			}
+		})
+	}
+}
+
 func TestSummariesMatchProviderCompatForBedrockMantle(t *testing.T) {
 	reasoning := true
 	provider := config.ProviderConfig{

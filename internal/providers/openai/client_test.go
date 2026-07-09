@@ -2437,7 +2437,7 @@ func TestResponsesChat_SendsProviderOptions(t *testing.T) {
 			t.Fatalf("decode request body: %v", err)
 		}
 		reasoning, ok := body["reasoning"].(map[string]any)
-		if !ok || reasoning["effort"] != "high" || reasoning["summary"] != "auto" {
+		if !ok || reasoning["effort"] != "max" || reasoning["summary"] != "auto" {
 			t.Fatalf("unexpected reasoning payload: %#v", body["reasoning"])
 		}
 		text, ok := body["text"].(map[string]any)
@@ -2468,7 +2468,7 @@ func TestResponsesChat_SendsProviderOptions(t *testing.T) {
 		Model:    "gpt-test",
 		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
 		ProviderOptions: map[string]any{
-			"reasoningEffort":  "high",
+			"reasoningEffort":  "max",
 			"reasoningSummary": "auto",
 			"textVerbosity":    "low",
 			"maxOutputTokens":  777,
