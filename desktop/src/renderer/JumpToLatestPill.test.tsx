@@ -275,6 +275,44 @@ describe("JumpToLatestPill", () => {
     expect(pill?.style.bottom).toBe("212px");
   });
 
+  it("adds anchored bottomOffset so sibling floaters do not overlap", () => {
+    const { node } = scrollContainer({
+      scrollHeight: 1000,
+      clientHeight: 400,
+      scrollTop: 0,
+    });
+    stubRect(node, { left: 100, top: 56, bottom: 800, width: 600, height: 744 });
+    const anchor = document.createElement("div");
+    document.body.appendChild(anchor);
+    mountedContainers.push(anchor);
+    stubRect(anchor, { left: 100, top: 700, bottom: 780, width: 600, height: 80 });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 900,
+    });
+
+    const host = document.createElement("div");
+    node.appendChild(host);
+    const root = createRoot(host);
+    act(() => {
+      root.render(
+        createElement(JumpToLatestPill, {
+          containerRef: { current: node },
+          bottomAnchor: anchor,
+          bottomOffset: 46,
+        }),
+      );
+    });
+    mountedRoots.push(root);
+
+    const pill = document.body.querySelector<HTMLButtonElement>(
+      ".jump-to-latest-pill-anchored",
+    );
+    // Base anchored bottom is 212px; the active-plan progress pill consumes
+    // that default line, so callers can add one pill-height + gap (46px).
+    expect(pill?.style.bottom).toBe("258px");
+  });
+
   it("re-evaluates visibility on container resize (thread panel drag)", () => {
     // F1 resize: when the thread panel is dragged, the scroll container's
     // clientHeight changes. The pill must re-evaluate its scrolled-away

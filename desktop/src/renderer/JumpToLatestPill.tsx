@@ -54,6 +54,11 @@ type JumpToLatestPillProps = {
    */
   bottomAnchor?: HTMLElement | null;
   /**
+   * Extra viewport-bottom offset in px for the anchored variant. Used when a
+   * sibling floating pill already occupies the default composer-adjacent line.
+   */
+  bottomOffset?: number;
+  /**
    * Distance (in px) from the bottom of the scroll container below which the
    * pill is considered "scrolled away" and shown. Default 80 matches the
    * existing auto-follow threshold.
@@ -73,6 +78,7 @@ type PillPosition = { left: number; bottom: number };
 export function JumpToLatestPill({
   containerRef,
   bottomAnchor,
+  bottomOffset = 0,
   threshold = DEFAULT_THRESHOLD_PX,
   label = "跳到最新",
 }: JumpToLatestPillProps): React.ReactElement | null {
@@ -141,9 +147,9 @@ export function JumpToLatestPill({
       bottom: Math.max(
         PILL_BOTTOM_GAP_PX,
         window.innerHeight - anchorRect.top + PILL_BOTTOM_GAP_PX,
-      ),
+      ) + bottomOffset,
     });
-  }, [containerRef, bottomAnchor]);
+  }, [containerRef, bottomAnchor, bottomOffset]);
 
   // Measured positioning for the anchored (portaled) variant. Recomputes on
   // scroll, window resize, and container/composer resize (typing grows the
