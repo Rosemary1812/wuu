@@ -47,15 +47,15 @@ async function run() {
   await waitFor(win, () => Boolean(document.querySelector(".permission-chip")), 5000);
 
   const initial = await waitFor(win, permissionState, 3000);
-  assert.equal(initial.chipText, "默认", "Initial agent permission mode should render as the default permission mode.");
+  assert.equal(initial.chipText, "标准", "Initial agent permission mode should render as the standard permission mode.");
   assert.equal(initial.chipDisabled, false, "Permission mode chip should be clickable when no turn is running.");
   await capture(win, "permission-mode-initial.png");
 
   await openPermissionMenu(win);
   const openState = await waitFor(win, permissionStateWithOpenMenu, 3000);
-  assert.equal(openState.optionLabels.length, 4, "Permission menu should expose four permission modes.");
-  assert.deepEqual(openState.optionLabels, ["只读", "默认", "替我审批", "完全访问"]);
-  assert.equal(openState.checkedLabels.join(","), "默认", "Default mode should be marked as the current mode.");
+  assert.equal(openState.optionLabels.length, 3, "Permission menu should expose the three current permission modes.");
+  assert.deepEqual(openState.optionLabels, ["工作区内完全信任", "只读", "无边界"]);
+  assert.equal(openState.checkedLabels.join(","), "工作区内完全信任", "Standard mode should be marked as the current mode.");
   assert.ok(
     openState.menuRect.width >= 170 && openState.menuRect.width <= 180,
     `Permission menu should keep the compact preset width. Width=${openState.menuRect.width}`
@@ -74,17 +74,16 @@ async function run() {
   );
   await capture(win, "permission-mode-menu-open.png");
 
-  await chooseMode(win, "只读", "read_only", "只读");
-  await chooseMode(win, "替我审批", "auto_review", "替我审批");
-  await chooseMode(win, "完全访问", "full_access", "完全访问");
-  await chooseMode(win, "默认", "agent", "默认");
+  await chooseMode(win, "只读", "只读");
+  await chooseMode(win, "无边界", "无边界");
+  await chooseMode(win, "工作区内完全信任", "标准");
 
   const finalState = await waitFor(win, permissionState, 3000);
-  assert.equal(finalState.chipText, "默认", "Returning to default mode should update the chip label.");
+  assert.equal(finalState.chipText, "标准", "Returning to standard mode should update the chip label.");
   assert.deepEqual(
     finalState.updatePermissionModes,
-    ["read_only", "auto_review", "full_access", "agent"],
-    "Each visible preset should be sent through the runtime settings update API."
+    [],
+    "Visible permission preset changes should stay local until the next send."
   );
   assert.equal(finalState.menuOpen, false, "Permission menu should close after selection.");
   await capture(win, "permission-mode-final.png");
@@ -110,7 +109,7 @@ async function openPermissionMenu(win) {
   await waitFor(win, permissionStateWithOpenMenu, 3000);
 }
 
-async function chooseMode(win, label, expectedPermissionMode, expectedChipText) {
+async function chooseMode(win, label, expectedChipText) {
   await openPermissionMenu(win);
   await evaluate(
     win,
@@ -129,13 +128,12 @@ async function chooseMode(win, label, expectedPermissionMode, expectedChipText) 
     () => {
       const state = window.permissionE2E.state();
       const chipText = document.querySelector(".permission-chip span")?.textContent?.trim() ?? "";
-      const lastCall = state.updateCalls[state.updateCalls.length - 1] ?? {};
-      return chipText === window.__EXPECTED_CHIP__ && lastCall.permissionMode === window.__EXPECTED_PERMISSION_MODE__
+      return chipText === window.__EXPECTED_CHIP__ && state.updateCalls.length === 0
         ? permissionState()
         : null;
     },
     3000,
-    { expectedChipText, expectedPermissionMode }
+    { expectedChipText }
   );
   assert.equal(updated.chipText, expectedChipText, `${label} mode should update the visible chip.`);
 }
