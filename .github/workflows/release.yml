@@ -9,7 +9,123 @@ permissions:
   contents: write
 
 jobs:
+  desktop-macos:
+    name: Desktop macOS
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Check release version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          desktop_version="$(node -p "require('./package.json').version")"
+          core_version="$(cat ../VERSION)"
+          if [ "$desktop_version" != "$tag_version" ]; then
+            echo "::error::desktop/package.json version ${desktop_version} does not match tag ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          if [ "$core_version" != "$tag_version" ]; then
+            echo "::error::VERSION ${core_version} does not match tag ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
+      - name: Check macOS signing and notarization secrets
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=0
+          if [ -z "$MAC_CSC_LINK" ] || [ -z "$MAC_CSC_KEY_PASSWORD" ]; then
+            echo "::error::Set MAC_CSC_LINK and MAC_CSC_KEY_PASSWORD repository secrets for macOS code signing."
+            missing=1
+          fi
+
+          has_api_key=0
+          if [ -n "$APPLE_API_KEY" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ]; then
+            has_api_key=1
+          fi
+
+          has_apple_id=0
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            has_apple_id=1
+          fi
+
+          if [ "$has_api_key" -ne 1 ] && [ "$has_apple_id" -ne 1 ]; then
+            echo "::error::Set either APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER or APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID for notarization."
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build desktop release
+        run: npm run release:desktop
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Verify packaged app
+        run: |
+          version_output="$(release/mac-arm64/wuu.app/Contents/Resources/bin/wuu --version)"
+          echo "$version_output"
+          if echo "$version_output" | grep -q dirty; then
+            echo "::error::Packaged core was built from a dirty worktree."
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=2 release/mac-arm64/wuu.app
+          spctl --assess --type execute --verbose=4 release/mac-arm64/wuu.app
+
+          hdiutil verify release/wuu-*-mac-arm64.dmg
+          unzip -t release/wuu-*-mac-arm64.zip >/tmp/wuu-desktop-zip-test.txt
+
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos-arm64
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+            desktop/release/*.blockmap
+          if-no-files-found: error
+
   release:
+    name: CLI and GitHub Release
+    needs: desktop-macos
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,6 +136,11 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-macos-arm64
+          path: desktop-release
+
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
@@ -27,3 +148,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Upload desktop assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" desktop-release/* --clobber
