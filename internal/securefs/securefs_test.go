@@ -85,6 +85,60 @@ func TestMkdir_0o700(t *testing.T) {
 	}
 }
 
+func TestOpenFile_0o600Honored(t *testing.T) {
+	skipIfNotUnix(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sub", "explicit-mode")
+	f, err := OpenFile(path, os.O_CREATE|os.O_RDWR, FileMode)
+	if err != nil {
+		t.Fatalf("OpenFile: %v", err)
+	}
+	defer f.Close()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != FileMode {
+		t.Fatalf("file mode = %s, want %s", ModeString(info.Mode()), ModeString(FileMode))
+	}
+}
+
+func TestOpenFile_ParentDirCreated(t *testing.T) {
+	skipIfNotUnix(t)
+	dir := t.TempDir()
+	deep := filepath.Join(dir, "a", "b", "c", "out")
+	f, err := OpenFile(deep, os.O_CREATE|os.O_WRONLY, FileMode)
+	if err != nil {
+		t.Fatalf("OpenFile: %v", err)
+	}
+	defer f.Close()
+	parentInfo, err := os.Stat(filepath.Dir(deep))
+	if err != nil {
+		t.Fatalf("stat parent: %v", err)
+	}
+	if got := parentInfo.Mode().Perm(); got != DirMode {
+		t.Fatalf("parent dir mode = %s, want %s", ModeString(parentInfo.Mode()), ModeString(DirMode))
+	}
+}
+
+func TestOpenFile_ExistingFileNotChmoded(t *testing.T) {
+	skipIfNotUnix(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "preexisting")
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	f, err := OpenFile(path, os.O_RDWR, FileMode)
+	if err != nil {
+		t.Fatalf("OpenFile existing: %v", err)
+	}
+	defer f.Close()
+	info, _ := os.Stat(path)
+	if got := info.Mode().Perm(); got != 0o644 {
+		t.Fatalf("existing file mode = %s, want 0o644 (unchanged)", ModeString(info.Mode()))
+	}
+}
+
 func TestMkdir_Idempotent(t *testing.T) {
 	skipIfNotUnix(t)
 	dir := filepath.Join(t.TempDir(), "x")

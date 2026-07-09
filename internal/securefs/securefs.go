@@ -98,6 +98,30 @@ func OpenAppend(path string) (*os.File, error) {
 	return f, nil
 }
 
+// OpenFile is a thin wrapper over os.OpenFile for callers that need
+// both the file handle and an explicit perm (sqlite precreate, custom
+// log rotation, etc.). The parent directory is created at DirMode
+// first so callers don't need to remember Mkdir-before-open.
+//
+// The wrapper does NOT force a particular mode on the file — that is
+// the caller's responsibility. Pair it with FileMode for any
+// credential-bearing file. The daemon also calls syscall.Umask(0o077)
+// at startup (see cmd/wuu/main.go), which means even accidentally-
+// passed 0o644 perms land as 0o600 after the umask is applied; the
+// wrapper just makes the intent explicit. Existing files are not
+// chmod'd — that mirrors os.OpenFile semantics and avoids silently
+// re-tightening a file the caller deliberately set wider.
+func OpenFile(path string, flag int, perm os.FileMode) (*os.File, error) {
+	if err := Mkdir(filepath.Dir(path)); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(path, flag, perm)
+	if err != nil {
+		return nil, fmt.Errorf("securefs: open %s: %w", path, err)
+	}
+	return f, nil
+}
+
 // Mkdir creates dir at DirMode (0o700), including parents. Returns nil
 // if dir already exists with any mode — callers shouldn't fail on a
 // pre-existing directory; TightenRecursive (called once at startup)
