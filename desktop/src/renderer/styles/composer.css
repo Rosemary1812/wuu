@@ -69,7 +69,7 @@
 }
 
 .composer-stack {
-  --composer-collapsed-min-height: 128px;
+  --composer-collapsed-min-height: 96px;
   --composer-expanded-min-height: clamp(240px, 44vh, 420px);
   --composer-expanded-delta: calc(var(--composer-expanded-min-height) - var(--composer-collapsed-min-height));
   display: flex;
@@ -132,7 +132,7 @@
    empty-home-inner's outer padding), which is the price of matching
    the dock composer exactly. */
 .hero-composer-wrap .composer-stack {
-  --composer-collapsed-min-height: 136px;
+  --composer-collapsed-min-height: 102px;
   width: var(--session-composer-width);
 }
 
@@ -631,7 +631,7 @@
 
 .composer textarea {
   width: 100%;
-  min-height: 80px;
+  min-height: 60px;
   resize: none;
   border: 0;
   outline: 0;
@@ -643,7 +643,7 @@
 }
 
 .hero-composer-wrap .composer textarea {
-  min-height: 88px;
+  min-height: 66px;
   padding: 24px 52px 8px var(--composer-text-start);
 }
 

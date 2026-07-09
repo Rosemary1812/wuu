@@ -1637,16 +1637,16 @@ describe("Composer expand button", () => {
   it("uses anchored flex layouts so the bottom toolbar stays pinned when expanded", () => {
     expect(composerCSS).toContain(".composer-stack.is-expanded");
     expect(composerCSS).toContain("min-height: clamp(180px, 34vh, 320px)");
-    expect(composerCSS).toContain("--composer-collapsed-min-height: 128px");
+    expect(composerCSS).toContain("--composer-collapsed-min-height: 96px");
     expect(composerCSS).toContain("--composer-expanded-min-height: clamp(240px, 44vh, 420px)");
     expect(composerCSS).toMatch(
-      /\.hero-composer-wrap\s+\.composer-stack\s*\{[^}]*--composer-collapsed-min-height:\s*136px/,
+      /\.hero-composer-wrap\s+\.composer-stack\s*\{[^}]*--composer-collapsed-min-height:\s*102px/,
     );
     expect(composerCSS).toMatch(
       /\.dock-composer-wrap\s*\{[^}]*align-self:\s*end/,
     );
     expect(turnsCSS).toMatch(
-      /\.empty-home-inner\s*>\s*\.hero-composer-wrap\s*\{[^}]*height:\s*136px[^}]*align-items:\s*flex-end/,
+      /\.empty-home-inner\s*>\s*\.hero-composer-wrap\s*\{[^}]*height:\s*102px[^}]*align-items:\s*flex-end/,
     );
     expect(composerCSS).toMatch(
       /\.composer-frame\s*\{[^}]*contain:\s*layout paint/,
