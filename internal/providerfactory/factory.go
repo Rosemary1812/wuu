@@ -51,6 +51,27 @@ func BuildStreamClient(provider config.ProviderConfig, providerName string) (pro
 	return BuildStreamClientWithRetry(provider, providerName, nil)
 }
 
+func BuildRuntimeStreamClient(provider config.ProviderConfig, providerName string) (providers.StreamClient, error) {
+	client, err := BuildStreamClient(provider, providerName)
+	if err == nil {
+		return client, nil
+	}
+	if IsCredentialError(err) {
+		return &providers.UnavailableClient{Reason: err.Error()}, err
+	}
+	return nil, err
+}
+
+func IsCredentialError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "no api key found") ||
+		strings.Contains(message, "no codex oauth credentials") ||
+		strings.Contains(message, "no wuu codex oauth credentials")
+}
+
 // BuildStreamClientWithRetry is like BuildStreamClient but lets the
 // caller pin a specific HTTP retry policy. Use this for long-running
 // stream consumers (e.g. sub-agents that may run for many minutes and

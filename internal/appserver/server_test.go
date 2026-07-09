@@ -255,6 +255,21 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	}
 }
 
+func TestServerInitializeReportsCredentialSetupWithoutExiting(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.ReadinessIssues = []runtime.ReadinessIssue{{Code: "credential_missing", Provider: "fake-provider", Message: "missing credential"}}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	result := remarshal[InitializeResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if result.Status != "needs_setup" || len(result.Issues) != 1 || result.Issues[0].Code != "credential_missing" {
+		t.Fatalf("unexpected readiness result: %+v", result)
+	}
+}
+
 func TestServerInitializeDoesNotExposeToolPolicySummary(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	out := &lockedBuffer{}

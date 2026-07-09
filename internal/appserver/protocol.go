@@ -180,6 +180,8 @@ type CoreBuildInfo struct {
 }
 
 type InitializeResult struct {
+	Status           string                  `json:"status"`
+	Issues           []RuntimeIssue          `json:"issues,omitempty"`
 	ProtocolVersion  string                  `json:"protocol_version"`
 	Core             CoreBuildInfo           `json:"core"`
 	Provider         string                  `json:"provider"`
@@ -195,6 +197,12 @@ type InitializeResult struct {
 	Providers        []ProviderSummary       `json:"providers,omitempty"`
 	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
 	GeneralSettings  GeneralSettingsSummary  `json:"general_settings"`
+}
+
+type RuntimeIssue struct {
+	Code     string `json:"code"`
+	Provider string `json:"provider,omitempty"`
+	Message  string `json:"message"`
 }
 
 type ModelProfileSummary struct {

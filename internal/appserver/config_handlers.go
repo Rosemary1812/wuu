@@ -29,7 +29,15 @@ import (
 func (s *Server) handleInitialize(req Request) error {
 	core := version.Info()
 	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
+	status := "ready"
+	issues := make([]RuntimeIssue, 0, len(s.rt.ReadinessIssues))
+	for _, issue := range s.rt.ReadinessIssues {
+		status = "needs_setup"
+		issues = append(issues, RuntimeIssue{Code: issue.Code, Provider: issue.Provider, Message: issue.Message})
+	}
 	return s.writeResponse(req.ID, InitializeResult{
+		Status:          status,
+		Issues:          issues,
 		ProtocolVersion: ProtocolVersion,
 		Core: CoreBuildInfo{
 			Version: core.Version,
@@ -577,6 +585,9 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	previousRuntimeProvider := s.rt.ProviderName
 	s.rt.ProviderName = resolvedName
 	s.rt.Model = model
+	if client != nil || len(s.rt.ReadinessIssues) == 0 {
+		s.rt.ReadinessIssues = nil
+	}
 	roleSelections, err := modelroles.Resolve(cfg, modelroles.ResolveOptions{
 		ProviderName:   resolvedName,
 		ProviderConfig: providerCfg,

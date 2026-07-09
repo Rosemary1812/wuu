@@ -115,6 +115,13 @@ type Session struct {
 	DeferredToolCatalogPrompt   string
 	CronScheduler               *cron.Scheduler
 	CronLock                    *cron.Lock
+	ReadinessIssues             []ReadinessIssue
+}
+
+type ReadinessIssue struct {
+	Code     string
+	Provider string
+	Message  string
 }
 
 // ThreadRuntime owns the mutable execution state for one app-server
@@ -182,15 +189,23 @@ func NewSession(opts Options) (*Session, error) {
 	ruleProviderName, ruleProviderCfg := mainRole.RuleProvider, mainRole.RuleProviderConfig
 	toolModeModel := mainRole.APIModel
 
-	client, err := providerfactory.BuildStreamClient(ruleProviderCfg, resolvedName)
-	if err != nil {
-		return nil, err
+	client, clientErr := providerfactory.BuildRuntimeStreamClient(ruleProviderCfg, resolvedName)
+	if client == nil {
+		return nil, clientErr
+	}
+	var readinessIssues []ReadinessIssue
+	if clientErr != nil {
+		readinessIssues = append(readinessIssues, ReadinessIssue{Code: "credential_missing", Provider: resolvedName, Message: clientErr.Error()})
 	}
 	titleClient := providers.Client(client)
 	if !roleSelections.Title.Inherited {
 		roleClient, roleErr := providerfactory.BuildStreamClient(roleSelections.Title.RuleProviderConfig, roleSelections.Title.Provider)
 		if roleErr != nil {
-			return nil, fmt.Errorf("build title client: %w", roleErr)
+			if providerfactory.IsCredentialError(roleErr) {
+				roleClient = client
+			} else {
+				return nil, fmt.Errorf("build title client: %w", roleErr)
+			}
 		}
 		titleClient = roleClient
 	}
@@ -330,7 +345,11 @@ func NewSession(opts Options) (*Session, error) {
 		var werr error
 		workerClient, werr = providerfactory.BuildStreamClientWithRetry(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider, &workerRetry)
 		if werr != nil {
-			return nil, fmt.Errorf("build worker client: %w", werr)
+			if providerfactory.IsCredentialError(werr) {
+				workerClient = client
+			} else {
+				return nil, fmt.Errorf("build worker client: %w", werr)
+			}
 		}
 
 		c, cerr := agentcontrol.New(agentcontrol.Config{
@@ -482,6 +501,7 @@ func NewSession(opts Options) (*Session, error) {
 		NativeDeferredToolDiscovery: nativeDeferredDiscovery,
 		ExperimentalDeferredBundles: experimentalDeferredBundles,
 		DeferredToolCatalogPrompt:   deferredToolCatalogPrompt,
+		ReadinessIssues:             readinessIssues,
 	}, nil
 }
 
