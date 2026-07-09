@@ -49,9 +49,6 @@ import type {
   PlanUpdate,
   PopOutInitResult,
   PermissionSummary,
-  RuntimeAdvancedSettingsUpdate,
-  RuntimeGeneralSettingsUpdate,
-  RuntimeConnectionUpdate,
   RuntimeContext,
   ServerEvent,
   Thread,
@@ -247,10 +244,7 @@ import {
   RuntimeLoading,
   ViewSwitchLoading,
 } from "./LoadingViews";
-import {
-  isCodexProvider,
-  pullRequestUnavailableReason,
-} from "./RuntimeHelpers";
+import { pullRequestUnavailableReason } from "./RuntimeHelpers";
 import { SettingsView, type SettingsPage } from "./SettingsView";
 import type { ComposerGoalSummary } from "../shared/protocol";
 import { useSettingsRuntimeState } from "./SettingsRuntimeState";
@@ -322,6 +316,7 @@ import { createProjectRuntimeActions } from "./ProjectRuntimeActions";
 import { createSessionTabActions } from "./SessionTabActions";
 import { createThreadActivationActions } from "./ThreadActivationActions";
 import { createThreadMutationActions } from "./ThreadMutationActions";
+import { createRuntimeSettingsActions } from "./RuntimeSettingsActions";
 export { SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./SidebarDrawerState";
 
 function permissionSummaryForMode(mode: PermissionMode): PermissionSummary {
@@ -3157,6 +3152,35 @@ export function App(): JSX.Element {
     clearThreadPendingComposerMessages,
   });
 
+  const {
+    updateRuntimeSettings,
+    updateAdvancedSettings,
+    updateGeneralSettings,
+    removeProvider,
+    toggleCodexRuntimeMenu,
+    selectRuntimeModel,
+    selectRuntimeEffort,
+    selectPermissionMode,
+    interrupt,
+    handleNoticeAction,
+    interruptPane,
+  } = createRuntimeSettingsActions({
+    getAppState: () => appStateRef.current,
+    setAppState: setState,
+    getViewContextSwitchPending: () => viewContextSwitchPending,
+    getCodexModels: () => codexModels,
+    setCodexModels,
+    setRuntimeMenuOpen,
+    setAccessMenuOpen,
+    setBranchMenuOpen,
+    setCodexRuntimeMenu,
+    setSelectedPermissionMode,
+    setSettingsInitialPage,
+    setSettingsOpen,
+    clearThreadPendingComposerMessages,
+    writeClipboardText: (text) => navigator.clipboard.writeText(text),
+  });
+
   function seedAgentTreeDemo(): void {
     if (!state.activeContext || !state.initialized) {
       return;
@@ -4473,389 +4497,6 @@ export function App(): JSX.Element {
     return true;
   }
 
-  async function updateRuntimeSettings(
-    provider: string,
-    model: string,
-    effort?: string,
-    connection?: RuntimeConnectionUpdate,
-    variant?: string,
-    permissionMode?: string,
-  ): Promise<void> {
-    const nextProvider = provider.trim();
-    const nextModel = model.trim();
-    const nextEffort = effort === undefined ? undefined : effort.trim();
-    const nextVariant = variant === undefined ? undefined : variant.trim();
-    const nextPermissionMode =
-      permissionMode === undefined ? undefined : permissionMode.trim();
-    const nextConnection =
-      connection === undefined
-        ? undefined
-        : {
-            ...(connection.base_url === undefined
-              ? {}
-              : { base_url: connection.base_url.trim() }),
-            ...(connection.api_key === undefined
-              ? {}
-              : { api_key: connection.api_key.trim() }),
-            ...(connection.auth_token === undefined
-              ? {}
-              : { auth_token: connection.auth_token.trim() }),
-            ...(connection.type !== undefined && connection.type !== ""
-              ? { type: connection.type }
-              : {}),
-            ...(connection.create_provider ? { create_provider: true } : {}),
-          };
-    const currentProvider = state.initialized?.providers?.find(
-      (item) => item.name === nextProvider,
-    );
-    const connectionChanged =
-      Boolean(nextConnection?.create_provider) ||
-      Boolean(nextConnection?.api_key) ||
-      Boolean(nextConnection?.auth_token) ||
-      (nextConnection?.base_url !== undefined &&
-        nextConnection.base_url !== (currentProvider?.base_url ?? ""));
-    const currentPermissionMode =
-      state.initialized?.permissions?.mode ?? "";
-    const permissionModeChanged =
-      nextPermissionMode !== undefined &&
-      nextPermissionMode !== currentPermissionMode;
-    if (
-      !nextProvider ||
-      !nextModel ||
-      !state.initialized ||
-      (nextProvider === state.initialized.provider &&
-        nextModel === state.initialized.model &&
-        (nextEffort === undefined ||
-          nextEffort === (state.initialized.effort ?? "")) &&
-        (nextVariant === undefined ||
-          nextVariant === (state.initialized.variant ?? "")) &&
-        !connectionChanged &&
-        !permissionModeChanged)
-    ) {
-      return;
-    }
-    try {
-      const updated = await window.wuu.updateRuntimeSettings(
-        nextProvider,
-        nextModel,
-        nextEffort,
-        nextConnection,
-        nextVariant,
-        nextPermissionMode,
-      );
-      setState((current) => {
-        const initialized = current.initialized
-          ? {
-              ...current.initialized,
-              provider: updated.provider,
-              model: updated.model,
-              effort: updated.effort ?? "",
-              variant: updated.variant ?? "",
-              permissions: updated.permissions ?? current.initialized.permissions,
-              extension_trust: updated.extension_trust ?? current.initialized.extension_trust,
-              providers: updated.providers ?? current.initialized.providers,
-              advanced_settings: updated.advanced_settings ?? current.initialized.advanced_settings,
-            }
-          : current.initialized;
-        return {
-          ...current,
-          initialized,
-          status: current.status === "ready" ? current.status : "ready",
-        };
-      });
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error
-            ? error.message
-            : "update runtime settings failed",
-      }));
-      throw error;
-    }
-  }
-
-  async function updateAdvancedSettings(
-    settings: RuntimeAdvancedSettingsUpdate,
-  ): Promise<void> {
-    if (!state.initialized || viewContextSwitchPending) {
-      return;
-    }
-    try {
-      const updated = await window.wuu.updateAdvancedSettings(settings);
-      setState((current) => {
-        const initialized = current.initialized
-          ? {
-              ...current.initialized,
-              advanced_settings: updated.advanced_settings,
-              providers: updated.providers ?? current.initialized.providers,
-            }
-          : current.initialized;
-        return {
-          ...current,
-          initialized,
-          status: current.status === "ready" ? current.status : "ready",
-        };
-      });
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error
-            ? error.message
-            : "update advanced settings failed",
-      }));
-      throw error;
-    }
-  }
-
-  async function updateGeneralSettings(
-    settings: RuntimeGeneralSettingsUpdate,
-  ): Promise<void> {
-    if (!state.initialized || viewContextSwitchPending) {
-      return;
-    }
-    try {
-      const updated = await window.wuu.updateGeneralSettings(settings);
-      setState((current) => {
-        const initialized = current.initialized
-          ? {
-              ...current.initialized,
-              general_settings: updated.general_settings,
-            }
-          : current.initialized;
-        return {
-          ...current,
-          initialized,
-          status: current.status === "ready" ? current.status : "ready",
-        };
-      });
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error
-            ? error.message
-            : "update general settings failed",
-      }));
-      throw error;
-    }
-  }
-
-  async function removeProvider(
-    provider: string,
-    options?: { fallbackProvider?: string; fallbackModel?: string },
-  ): Promise<void> {
-    if (!state.initialized || viewContextSwitchPending) {
-      return;
-    }
-    const target = provider.trim();
-    if (!target) {
-      return;
-    }
-    try {
-      const updated = await window.wuu.removeProvider(target, options);
-      setState((current) => {
-        const initialized = current.initialized
-          ? {
-              ...current.initialized,
-              provider: updated.provider ?? current.initialized.provider,
-              model: updated.model ?? current.initialized.model,
-              effort: updated.effort ?? current.initialized.effort,
-              variant: updated.variant ?? current.initialized.variant,
-              permissions:
-                updated.permissions ?? current.initialized.permissions,
-              extension_trust:
-                updated.extension_trust ?? current.initialized.extension_trust,
-              providers: updated.providers ?? current.initialized.providers,
-              advanced_settings:
-                updated.advanced_settings ?? current.initialized.advanced_settings,
-            }
-          : current.initialized;
-        return {
-          ...current,
-          initialized,
-          status: current.status === "ready" ? current.status : "ready",
-        };
-      });
-      if (state.initialized) {
-        void loadCodexModelsForProvider(updated.provider);
-      }
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error
-            ? error.message
-            : "remove provider failed",
-      }));
-      throw error;
-    }
-  }
-
-  function toggleCodexRuntimeMenu(menu: Exclude<CodexRuntimeMenu, null>): void {
-    if (!state.initialized || viewContextSwitchPending) {
-      return;
-    }
-    setRuntimeMenuOpen(false);
-    setAccessMenuOpen(false);
-    setBranchMenuOpen(false);
-    setCodexRuntimeMenu((current) => (current === menu ? null : menu));
-    if (isCodexProvider(state.initialized)) {
-      void loadCodexModelsForProvider(state.initialized.provider);
-    }
-  }
-
-  async function loadCodexModelsForProvider(provider: string): Promise<void> {
-    if (!provider) {
-      return;
-    }
-    if (
-      codexModels.provider === provider &&
-      (codexModels.loading || codexModels.models.length > 0)
-    ) {
-      return;
-    }
-    setCodexModels({ provider, loading: true, error: "", models: [] });
-    try {
-      const result = await window.wuu.loadCodexModels(provider);
-      setCodexModels({
-        provider: result.provider,
-        loading: false,
-        error: "",
-        models: result.models,
-      });
-      setState((current) => {
-        if (
-          !current.initialized ||
-          current.initialized.provider !== result.provider
-        ) {
-          return current;
-        }
-        return {
-          ...current,
-          initialized: {
-            ...current.initialized,
-            model: result.model,
-            effort: result.effort ?? "",
-            variant: result.variant ?? "",
-          },
-        };
-      });
-    } catch (error) {
-      setCodexModels({
-        provider,
-        loading: false,
-        error: error instanceof Error ? error.message : "无法加载 Codex 模型",
-        models: [],
-      });
-    }
-  }
-
-  async function selectRuntimeModel(
-    provider: string,
-    model: string,
-    variant?: string,
-  ): Promise<void> {
-    if (!state.initialized || viewContextSwitchPending) {
-      return;
-    }
-    await updateRuntimeSettings(provider, model, undefined, undefined, variant);
-    setCodexRuntimeMenu(null);
-  }
-
-  async function selectRuntimeEffort(nextVariant: string): Promise<void> {
-    if (!state.initialized || viewContextSwitchPending) {
-      return;
-    }
-    await updateRuntimeSettings(
-      state.initialized.provider,
-      state.initialized.model,
-      undefined,
-      undefined,
-      nextVariant,
-    );
-    setCodexRuntimeMenu(null);
-  }
-
-  async function selectPermissionMode(
-    mode: PermissionMode,
-  ): Promise<void> {
-    if (!state.initialized || viewContextSwitchPending) {
-      return;
-    }
-    setSelectedPermissionMode(mode);
-    setAccessMenuOpen(false);
-  }
-
-  async function interrupt(): Promise<void> {
-    const thread = activeThreadForState(appStateRef.current);
-    if (!thread) {
-      return;
-    }
-    await window.wuu.interruptTurn(thread.id);
-    clearThreadPendingComposerMessages(thread.id);
-  }
-
-  /**
-   * Dispatch for UserFacingError recommended actions. The data layer
-   * (UserFacingErrors.ts) only declares what an action IS — this is
-   * where we decide what each one DOES. New action kinds go here; the
-   * data layer does not need to know.
-   *
-   * Only actions with an existing, real UI path should be emitted by
-   * UserFacingErrors.ts. Future actions still route through this table
-   * when their corresponding UI surfaces land.
-   */
-  function handleNoticeAction(action: UserFacingErrorAction): void {
-    switch (action.kind) {
-      case "openSettings": {
-        setSettingsInitialPage(settingsPageFromNoticeFocus(action.payload?.focus));
-        setSettingsOpen(true);
-        return;
-      }
-      case "copyDebug": {
-        const current = appStateRef.current;
-        const thread = activeThreadForState(current);
-        const snapshot = JSON.stringify(
-          {
-            kind: "wuu-notice-debug",
-            notice: action.payload ?? {},
-            at: new Date().toISOString(),
-            status: current.status,
-            running: current.running,
-            thread_id: thread?.id,
-            provider: thread?.model_provider,
-            model: thread?.model,
-          },
-          null,
-          2,
-        );
-        void navigator.clipboard.writeText(snapshot).catch(() => {
-          /* clipboard unavailable — best-effort */
-        });
-        return;
-      }
-      case "retry":
-      case "switchModel":
-      case "compactContext":
-      case "reauth":
-      case "submitFeedback":
-        return;
-      default:
-        return;
-    }
-  }
-
-  async function interruptPane(pane: ConversationPaneID): Promise<void> {
-    const thread = threadForPane(appStateRef.current, pane);
-    if (!thread) {
-      return;
-    }
-    await window.wuu.interruptTurn(thread.id);
-    clearThreadPendingComposerMessages(thread.id);
-  }
-
   if (settingsOpen) {
     return (
       <SettingsView
@@ -5839,13 +5480,6 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
     </div>
   );
 });
-
-function settingsPageFromNoticeFocus(focus: unknown): SettingsPage {
-  if (focus === "providers") {
-    return "providers";
-  }
-  return "general";
-}
 
 function ConversationGridGuides(): JSX.Element {
   return (
