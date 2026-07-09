@@ -152,7 +152,7 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 		}
 		// Decision-five concurrency lock: a named agent runs one task at a
 		// time. Refuse a second pull while it is already executing a
-		// task/workflow run or mid chat-reply, instead of spawning a
+		// task run or mid chat-reply, instead of spawning a
 		// concurrent run against the same resident identity. The caller is
 		// told to wait or fork a copy (decision six) when more hands are
 		// needed. This is the fast read-only reject; the lock is reserved

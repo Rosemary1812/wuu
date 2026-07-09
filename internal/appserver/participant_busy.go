@@ -6,11 +6,10 @@ import (
 )
 
 // participantBusyEntry records that a named agent is currently executing a
-// task/workflow run. Reason is a short label for display/telemetry ("task"
-// today; participant/start and workflow-dispatched runs both use it). AgentID
-// is the live run holding the lock — it is empty only during the brief window
-// between a synchronous participant/start reservation and the spawn returning
-// the run id. Since marks when the lock was taken.
+// task run. Reason is a short label for display/telemetry; participant/start
+// sets it. AgentID is the live run holding the lock — it is empty only
+// during the brief window between a synchronous participant/start reservation
+// and the spawn returning the run id. Since marks when the lock was taken.
 type participantBusyEntry struct {
 	Reason  string
 	AgentID string
@@ -121,7 +120,7 @@ func (s *Server) participantBusyInfo(participantID string) (participantBusyEntry
 }
 
 // participantIsBusy reports whether a named agent is currently executing a
-// task/workflow run.
+// task run.
 func (s *Server) participantIsBusy(participantID string) bool {
 	_, ok := s.participantBusyInfo(participantID)
 	return ok

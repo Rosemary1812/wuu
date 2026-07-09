@@ -687,7 +687,7 @@ func (s *Server) drainResidentAgent(participantID string) {
 		return
 	}
 	// Decision-five concurrency lock: a named agent busy executing a
-	// task/workflow run does not drain its chat inbox concurrently. The
+	// task run does not drain its chat inbox concurrently. The
 	// envelopes stay pending and are re-kicked when the run completes
 	// (forwardAgentNotifications), so an @-mention arriving mid-task queues
 	// instead of racing the same resident agent.

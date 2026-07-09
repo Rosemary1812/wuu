@@ -166,7 +166,7 @@ type Server struct {
 	threadPostMu sync.Map
 
 	// participantBusyMu guards participantBusy, the registry of named
-	// agents currently executing a task/workflow run (decision-five
+	// agents currently executing a task run (decision-five
 	// concurrency lock). A named agent is "busy" for exactly the lifetime
 	// of a live participant run: acquired when the run reports Running (or
 	// synchronously at participant/start), released when it terminates.

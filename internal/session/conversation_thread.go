@@ -353,8 +353,8 @@ WHERE id = ?`, id)
 
 // LeadTaskThreads returns the active task subthreads (status == task) whose
 // LeadParticipantID is the given named agent, most-recently-escalated first. It
-// backs the execute-time workflow orchestration gate: a named agent may drive
-// workflow runs only while it holds task-lead authority on at least one active
+// backs the execute-time task-orchestration gate: a named agent may drive
+// task work only while it holds task-lead authority on at least one active
 // task. The lookup is by lead identity alone — deliberately independent of which
 // group/DM thread the caller's turn happens to run in — because a resident named
 // agent drains its inbox in its own DM thread while the task it leads lives under

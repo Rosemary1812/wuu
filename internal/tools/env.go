@@ -354,8 +354,8 @@ type GroupManager interface {
 
 // GroupMember is a named agent in a group thread, identified by its stable
 // participant ID and its display Name (the identity axis). Busy reports that
-// the member is currently executing another task/workflow run (decision-five
-// concurrency lock), so a workflow that tries to enlist it is told busy
+// the member is currently executing another task run (decision-five
+// concurrency lock), so another caller trying to enlist it is told busy
 // instead of racing the same resident agent.
 type GroupMember struct {
 	ID   string

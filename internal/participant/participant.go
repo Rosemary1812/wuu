@@ -55,7 +55,7 @@ type Summary struct {
 	// attribute and an unbounded payload would bloat history resumes.
 	AvatarImage string `json:"avatar_image,omitempty"`
 	// Busy reports that this named agent is currently executing a
-	// task/workflow run and cannot take a second concurrent pull
+	// task run and cannot take a second concurrent pull
 	// (decision-five concurrency lock). It is runtime state, not stored, so
 	// Participant.Summary() leaves it false — the appserver overlays it on
 	// group-member views (threadWithGroupMembers) so the UI can show a busy
