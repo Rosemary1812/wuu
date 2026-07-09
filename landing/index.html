@@ -84,6 +84,86 @@ code.inline { font-family: var(--mono); font-size: .86em; color: var(--accent-pr
   html { scroll-behavior: auto; }
 }
 
+/* page intro — full-screen colored overlay with bordered brand pill (matvoyce-style) */
+.page-intro {
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--accent); /* wuu orange — bold statement color */
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .95s cubic-bezier(.76, 0, .24, 1);
+  will-change: transform;
+}
+.page-intro-pill {
+  background: #fff;
+  border: clamp(4px, .8vw, 9px) solid var(--ink);
+  border-radius: 999px;
+  padding: clamp(16px, 2.4vw, 32px) clamp(36px, 6vw, 80px);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(64px, 13vw, 168px);
+  letter-spacing: -.035em;
+  color: var(--ink);
+  line-height: .85;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: intro-in .8s cubic-bezier(.2, .7, .2, 1) .15s forwards;
+}
+.page-intro-pill em { font-style: normal; color: var(--accent); }
+.page-intro-bar {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--ink);
+  transform-origin: left;
+  transform: scaleX(0);
+  animation: intro-bar 1.1s cubic-bezier(.76, 0, .24, 1) .15s forwards;
+}
+body.is-loaded .page-intro { transform: translateY(-100%); }
+@keyframes intro-in {
+  to { opacity: 1; transform: none; }
+}
+@keyframes intro-bar {
+  0%   { transform: scaleX(0); transform-origin: left; }
+  55%  { transform: scaleX(1); transform-origin: left; }
+  100% { transform: scaleX(0); transform-origin: right; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-intro { display: none; }
+}
+
+/* hero choreography — mask + fade reveal sequence, fires after intro overlay */
+header.hero .release-chip,
+header.hero h1,
+header.hero .sub,
+header.hero .hero-cta,
+header.hero .install { opacity: 0; }
+header.hero h1 { overflow: hidden; padding-bottom: .18em; margin-bottom: -.18em; }
+header.hero h1 > .zh,
+header.hero h1 > .en { display: block; transform: translateY(112%); }
+
+body.is-loaded header.hero .release-chip { animation: hero-in .85s cubic-bezier(.2, .7, .2, 1) 1.05s forwards; }
+body.is-loaded header.hero h1 > .zh    { animation: hero-rise 1.1s cubic-bezier(.2, .7, .2, 1) 1.35s forwards; }
+body.is-loaded header.hero h1 > .en    { animation: hero-rise 1.1s cubic-bezier(.2, .7, .2, 1) 1.55s forwards; }
+body.is-loaded header.hero .sub        { animation: hero-in .9s cubic-bezier(.2, .7, .2, 1) 1.75s forwards; }
+body.is-loaded header.hero .hero-cta   { animation: hero-in .9s cubic-bezier(.2, .7, .2, 1) 1.95s forwards; }
+body.is-loaded header.hero .install    { animation: hero-in .9s cubic-bezier(.2, .7, .2, 1) 2.15s forwards; }
+
+@keyframes hero-rise { to { transform: translateY(0); } }
+@keyframes hero-in   { to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  header.hero .release-chip,
+  header.hero h1,
+  header.hero .sub,
+  header.hero .hero-cta,
+  header.hero .install { opacity: 1 !important; }
+  header.hero h1 > .zh,
+  header.hero h1 > .en { transform: none !important; animation: none !important; }
+  body.is-loaded header.hero .release-chip,
+  body.is-loaded header.hero .sub,
+  body.is-loaded header.hero .hero-cta,
+  body.is-loaded header.hero .install { animation: none !important; }
+}
+
 /* nav */
 nav {
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;
@@ -519,6 +599,11 @@ footer { background: var(--bg); color: var(--ink-2); padding: 32px 0 40px; borde
 </head>
 <body>
 
+<div class="page-intro" aria-hidden="true">
+  <span class="page-intro-pill">wuu<em>.</em></span>
+  <span class="page-intro-bar"></span>
+</div>
+
 <nav id="nav">
   <a class="logo" href="#">
     <span class="face" style="background-image:url(assets/mascot/wuu-mascot-concept-25.png);background-size:165%;background-position:center 46%"></span>
@@ -541,24 +626,24 @@ footer { background: var(--bg); color: var(--ink-2); padding: 32px 0 40px; borde
     <span class="col-line" style="left: 47%"></span>
     <span class="col-line" style="left: 100%"></span>
     <div class="hero-copy">
-      <a class="release-chip reveal in" href="https://github.com/blueberrycongee/wuu/releases" target="_blank" rel="noopener">
+      <a class="release-chip" href="https://github.com/blueberrycongee/wuu/releases" target="_blank" rel="noopener">
         <span class="tag">v0.1</span>
         <span class="zh">桌面应用 Beta 现已可用</span><span class="en">Desktop app beta is out</span>
         <span class="arr">→</span>
       </a>
-      <h1 class="reveal in">
+      <h1>
         <span class="zh">一群 agent<br>一个群聊</span>
         <span class="en">Agents<br>one group chat</span>
       </h1>
-      <p class="sub reveal in d1">
+      <p class="sub">
         <span class="zh">wuu 给每个 agent 一个名字和身份，放进同一个群聊——交接、互审、把活干完。你只负责两件事：把方向，拍板。</span>
         <span class="en">wuu gives every agent a name and an identity, in one group chat — they hand off, review each other, and finish the job. You do two things: set direction, and approve.</span>
       </p>
-      <div class="hero-cta reveal in d2">
+      <div class="hero-cta">
         <a class="btn btn-solid" href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener"><span class="zh">开始使用</span><span class="en">Get started</span></a>
         <a class="btn btn-ghost" href="https://github.com/blueberrycongee/wuu" target="_blank" rel="noopener">GitHub</a>
       </div>
-      <div class="install reveal in d3">
+      <div class="install">
         <div class="install-tabs" role="tablist">
           <button class="itab active" data-cmd="curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh | sh">curl</button>
           <button class="itab" data-cmd="npm install -g @blueberrycongee/wuu">npm</button>
@@ -1112,6 +1197,26 @@ footer { background: var(--bg); color: var(--ink-2); padding: 32px 0 40px; borde
   }
 
   /* chat demo removed in v2 */
+
+  /* ---- page intro: slide overlay up after fonts load ---- */
+  var intro = document.querySelector('.page-intro');
+  if (intro) {
+    if (reduced || /[?&]static/.test(location.search)) {
+      intro.remove();
+    } else {
+      var triggerIntro = function () {
+        setTimeout(function () {
+          document.body.classList.add('is-loaded');
+          setTimeout(function () { if (intro.parentNode) intro.remove(); }, 1100);
+        }, 480);
+      };
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(triggerIntro);
+      } else {
+        setTimeout(triggerIntro, 200);
+      }
+    }
+  }
 
 })();
 </script>
