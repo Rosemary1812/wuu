@@ -24,7 +24,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 const (
@@ -162,7 +161,6 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		TaskManager:                 t.env.TaskManager,
 		FileScopeRoots:              append([]string(nil), t.env.FileScopeRoots...),
 		Skills:                      t.env.Skills,
-		Workflows:                   t.env.Workflows,
 		OnFileChanged:               t.env.OnFileChanged,
 		OnPlanUpdated:               t.env.OnPlanUpdated,
 		Memory:                      t.env.Memory,
@@ -334,19 +332,9 @@ func (t *Toolkit) SetSkills(s []skills.Skill) {
 	t.env.Skills = s
 }
 
-// SetWorkflows attaches the discovered workflow definitions.
-func (t *Toolkit) SetWorkflows(w []workflow.Definition) {
-	t.env.Workflows = w
-}
-
 // Skills returns the currently registered skills (read-only).
 func (t *Toolkit) Skills() []skills.Skill {
 	return t.env.Skills
-}
-
-// Workflows returns the currently registered workflow definitions (read-only).
-func (t *Toolkit) Workflows() []workflow.Definition {
-	return t.env.Workflows
 }
 
 // SetMemory attaches the GLOBAL memory store provider (the cross-workspace
@@ -698,18 +686,6 @@ func (t *Toolkit) SetTaskManager(manager TaskManager) {
 		return
 	}
 	t.env.TaskManager = manager
-}
-
-// SetWorkflowThreadID binds the toolkit to the conversation (cth) thread of the
-// current resident turn. Workflow runs started this turn record it so their
-// named-participant members report into the reply subthread and so the
-// named-participant pool is scoped to this thread's group members. Called
-// between turns alongside SetGroupManager; pass "" for non-conversation runs.
-func (t *Toolkit) SetWorkflowThreadID(threadID string) {
-	if t == nil || t.env == nil {
-		return
-	}
-	t.env.ThreadID = strings.TrimSpace(threadID)
 }
 
 // SetRootDir re-roots the toolkit's execution environment (bash cwd,

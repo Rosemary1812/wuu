@@ -32,7 +32,6 @@ type TraceTask struct {
 	MissingToolCalls     []string               `json:"missing_tool_calls,omitempty"`
 	MissingToolSeq       []string               `json:"missing_tool_sequence,omitempty"`
 	MissingErrors        []string               `json:"missing_errors,omitempty"`
-	WorkflowIssues       []string               `json:"workflow_issues,omitempty"`
 	InputTokens          int                    `json:"input_tokens"`
 	OutputTokens         int                    `json:"output_tokens"`
 	CacheCreationTokens  int                    `json:"cache_creation_tokens,omitempty"`
@@ -50,7 +49,6 @@ type TraceObservability struct {
 	SessionDir      string   `json:"session_dir,omitempty"`
 	TracePath       string   `json:"trace_path,omitempty"`
 	HarnessDir      string   `json:"harness_dir,omitempty"`
-	WorkflowDir     string   `json:"workflow_dir,omitempty"`
 	TaskWorkdir     string   `json:"task_workdir,omitempty"`
 	TaskWorkdirKept bool     `json:"task_workdir_kept,omitempty"`
 	Warnings        []string `json:"warnings,omitempty"`
@@ -71,8 +69,6 @@ type TraceReplaySummary struct {
 	ToolNames                   []string                     `json:"tool_names,omitempty"`
 	ToolSummary                 *ToolReplaySummary           `json:"tool_summary,omitempty"`
 	ModelProfileRecommendations []ModelProfileRecommendation `json:"model_profile_recommendations,omitempty"`
-	WorkflowRuns                []WorkflowRunObservation     `json:"workflow_runs,omitempty"`
-	WorkflowRunIDs              []string                     `json:"workflow_run_ids,omitempty"`
 	GoalAttention               []GoalAttentionObservation   `json:"goal_attention,omitempty"`
 	HarnessTaskIDs              []string                     `json:"harness_task_ids,omitempty"`
 	HarnessReportIDs            []string                     `json:"harness_report_ids,omitempty"`
@@ -179,7 +175,6 @@ func TraceEvents(result Result, createdAt time.Time) []TraceEvent {
 			MissingToolCalls:     append([]string(nil), result.MissingToolCalls...),
 			MissingToolSeq:       append([]string(nil), result.MissingToolSeq...),
 			MissingErrors:        append([]string(nil), result.MissingErrors...),
-			WorkflowIssues:       append([]string(nil), result.WorkflowIssues...),
 			InputTokens:          result.InputTokens,
 			OutputTokens:         result.OutputTokens,
 			CacheCreationTokens:  result.CacheCreationTokens,
@@ -201,7 +196,6 @@ func TraceEvents(result Result, createdAt time.Time) []TraceEvent {
 		SessionDir:      obs.SessionDir,
 		TracePath:       obs.TracePath,
 		HarnessDir:      obs.HarnessDir,
-		WorkflowDir:     obs.WorkflowDir,
 		TaskWorkdir:     obs.TaskWorkdir,
 		TaskWorkdirKept: obs.TaskWorkdirKept,
 		Warnings:        append([]string(nil), obs.Warnings...),
@@ -223,9 +217,6 @@ func TraceEvents(result Result, createdAt time.Time) []TraceEvent {
 	}
 	if len(obs.GoalAttention) > 0 {
 		events = append(events, TraceEvent{Type: "goal_attention", TaskID: taskID, CreatedAt: createdAt, Data: obs.GoalAttention})
-	}
-	if len(obs.WorkflowRuns) > 0 {
-		events = append(events, TraceEvent{Type: "workflow_runs", TaskID: taskID, CreatedAt: createdAt, Data: obs.WorkflowRuns})
 	}
 	if len(obs.HarnessTasks) > 0 {
 		events = append(events, TraceEvent{Type: "harness_tasks", TaskID: taskID, CreatedAt: createdAt, Data: obs.HarnessTasks})
@@ -275,7 +266,6 @@ func BuildValidationSummary(result Result) *ValidationReplaySummary {
 			MissingToolCalls:     append([]string(nil), result.MissingToolCalls...),
 			MissingToolSeq:       append([]string(nil), result.MissingToolSeq...),
 			MissingErrors:        append([]string(nil), result.MissingErrors...),
-			WorkflowIssues:       append([]string(nil), result.WorkflowIssues...),
 			VerificationReason:   result.VerificationReason,
 			VerificationEvidence: append([]VerificationEvidence(nil), result.VerificationEvidence...),
 			Error:                result.Error,
@@ -288,6 +278,7 @@ func BuildValidationSummary(result Result) *ValidationReplaySummary {
 		},
 	}
 	if result.Observability != nil {
+		summary.GoalAttention = append(summary.GoalAttention, result.Observability.GoalAttention...)
 		for _, record := range result.Observability.ToolRecords {
 			summary.addValidationToolObservation(record)
 		}
@@ -403,17 +394,6 @@ func replayTraceEvent(summary *TraceReplaySummary, eventType string, data json.R
 			return err
 		}
 		summary.GoalAttention = append(summary.GoalAttention, attention...)
-	case "workflow_runs":
-		var runs []WorkflowRunObservation
-		if err := json.Unmarshal(data, &runs); err != nil {
-			return err
-		}
-		summary.WorkflowRuns = append(summary.WorkflowRuns, runs...)
-		for _, run := range runs {
-			if run.ID != "" {
-				summary.WorkflowRunIDs = append(summary.WorkflowRunIDs, run.ID)
-			}
-		}
 	case "harness_tasks":
 		var tasks []HarnessTaskObservation
 		if err := json.Unmarshal(data, &tasks); err != nil {
@@ -633,8 +613,8 @@ func (summary *TraceReplaySummary) finalizeValidationSummary() {
 		missing = appendPrefixedTraceStrings(missing, "missing_tool_call", summary.Task.MissingToolCalls)
 		missing = appendPrefixedTraceStrings(missing, "missing_tool_sequence", summary.Task.MissingToolSeq)
 		missing = appendPrefixedTraceStrings(missing, "missing_error", summary.Task.MissingErrors)
-		missing = appendPrefixedTraceStrings(missing, "workflow_issue", summary.Task.WorkflowIssues)
 	}
+	missing = appendPrefixedTraceStrings(missing, "attention_issue", GoalAttentionValidationIssues(summary.GoalAttention))
 	var failures []string
 	for _, item := range evidence {
 		if item.Passed {
@@ -715,61 +695,10 @@ func validationNextActions(validation *ValidationReplaySummary) []string {
 	}
 }
 
-func GoalValidationIssues(attention []GoalAttentionObservation, runs []WorkflowRunObservation) []string {
-	issues := GoalAttentionValidationIssues(attention)
-	for _, issue := range WorkflowValidationIssues(runs) {
-		issues = appendUniqueTraceString(issues, issue)
-	}
-	sort.Strings(issues)
-	return issues
-}
-
 func GoalAttentionValidationIssues(items []GoalAttentionObservation) []string {
 	var issues []string
 	for _, item := range items {
-		source := strings.TrimSpace(item.Source)
-		id := strings.TrimSpace(item.ID)
-		status := strings.TrimSpace(item.Status)
-		switch source {
-		case "workflow":
-			runID := id
-			if runID == "" {
-				runID = "workflow"
-			}
-			if status != "" {
-				issues = appendUniqueTraceString(issues, runID+":status="+status)
-			}
-		case "workflow_agent":
-			runID := workflowRunIDFromAttention(item)
-			if runID == "" {
-				runID = "workflow"
-			}
-			switch status {
-			case "missing_report":
-				issues = appendUniqueTraceString(issues, runID+":missing_reports="+id)
-			case "failed":
-				issues = appendUniqueTraceString(issues, runID+":failed="+id)
-			default:
-				issues = appendUniqueTraceString(issues, goalAttentionIssueLabel(item))
-			}
-		case "workflow_conflict":
-			runID := id
-			if runID == "" {
-				runID = "workflow"
-			}
-			file := strings.TrimSpace(item.Path)
-			if file == "" {
-				file = "unknown"
-			}
-			label := runID + ":overlap=" + file
-			agents := strings.Join(trimmedTraceStrings(strings.Split(item.Message, ",")), "+")
-			if agents != "" {
-				label += "=" + agents
-			}
-			issues = appendUniqueTraceString(issues, label)
-		default:
-			issues = appendUniqueTraceString(issues, goalAttentionIssueLabel(item))
-		}
+		issues = appendUniqueTraceString(issues, goalAttentionIssueLabel(item))
 	}
 	sort.Strings(issues)
 	return issues
@@ -789,16 +718,6 @@ func goalAttentionIssueLabel(item GoalAttentionObservation) string {
 	return strings.Join(parts, ":")
 }
 
-func workflowRunIDFromAttention(item GoalAttentionObservation) string {
-	words := strings.Fields(item.Message)
-	for i := 0; i+2 < len(words); i++ {
-		if words[i] == "workflow" && words[i+1] == "run" {
-			return strings.Trim(words[i+2], `"'.,;:`)
-		}
-	}
-	return ""
-}
-
 func firstNonEmptyTraceString(values ...string) string {
 	for _, value := range values {
 		if text := strings.TrimSpace(value); text != "" {
@@ -806,58 +725,6 @@ func firstNonEmptyTraceString(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func WorkflowValidationIssues(runs []WorkflowRunObservation) []string {
-	var issues []string
-	for _, run := range runs {
-		runID := strings.TrimSpace(run.ID)
-		if runID == "" {
-			runID = "workflow"
-		}
-		if status := strings.TrimSpace(run.Status); status != "" && status != "completed" {
-			issues = appendUniqueTraceString(issues, runID+":status="+status)
-		}
-		arbitration := run.TeamArbitration
-		if status := strings.TrimSpace(arbitration.Status); status != "" && status != "clear" {
-			issues = appendUniqueTraceString(issues, runID+":arbitration="+status)
-		}
-		issues = appendWorkflowIssueValues(issues, runID, "open", arbitration.OpenAgentRuns)
-		issues = appendWorkflowIssueValues(issues, runID, "missing_reports", arbitration.MissingReports)
-		issues = appendWorkflowIssueValues(issues, runID, "failed", arbitration.FailedAgentRuns)
-		for _, overlap := range arbitration.ChangedFileOverlaps {
-			file := strings.TrimSpace(overlap.File)
-			if file == "" {
-				continue
-			}
-			agents := strings.Join(trimmedTraceStrings(overlap.AgentRunIDs), "+")
-			label := runID + ":overlap=" + file
-			if agents != "" {
-				label += "=" + agents
-			}
-			issues = appendUniqueTraceString(issues, label)
-		}
-	}
-	sort.Strings(issues)
-	return issues
-}
-
-func appendWorkflowIssueValues(dst []string, runID, label string, values []string) []string {
-	for _, value := range trimmedTraceStrings(values) {
-		dst = appendUniqueTraceString(dst, runID+":"+label+"="+value)
-	}
-	return dst
-}
-
-func trimmedTraceStrings(values []string) []string {
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		if value = strings.TrimSpace(value); value != "" {
-			out = append(out, value)
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 func (summary *TraceReplaySummary) addPatchRiskObservation(risk PatchRiskObservation) {

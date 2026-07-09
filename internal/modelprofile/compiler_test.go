@@ -627,16 +627,6 @@ func TestSurfaceKindWorkflowToolsAreHidden(t *testing.T) {
 			}
 		}
 
-		if main.HasCapability(capability.CapabilityWorkflow) {
-			t.Errorf("%s/%s: main surface must NOT carry CapabilityWorkflow", tt.provider, tt.model)
-		}
-		if named.HasCapability(capability.CapabilityWorkflow) {
-			t.Errorf("%s/%s: named surface must NOT carry CapabilityWorkflow", tt.provider, tt.model)
-		}
-		if worker.HasCapability(capability.CapabilityWorkflow) {
-			t.Errorf("%s/%s: worker surface must NOT carry CapabilityWorkflow", tt.provider, tt.model)
-		}
-
 		// Orchestration boundary unchanged: main/named orchestrate, worker not.
 		for _, tool := range []string{"spawn_agent", "helpme"} {
 			if _, ok := named.Tools[tool]; !ok {

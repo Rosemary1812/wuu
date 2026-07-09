@@ -11,14 +11,12 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/capability"
-	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/memory/store"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 // ReadFileEntry tracks a successful read_file invocation for dedup
@@ -245,12 +243,6 @@ type Env struct {
 	// 2026-07-06 design). Nil means the task rail is unavailable in this
 	// environment (every action returns an execute-time error).
 	TaskManager TaskManager
-	// ThreadID is the conversation (cth) thread the current resident turn runs
-	// in. Workflow runs started from this turn bind to it so named-participant
-	// team members report into the reply subthread instead of the main stream,
-	// and so the named-participant pool is scoped to this thread's group
-	// members. Empty for ordinary subagents and self-contained runs.
-	ThreadID string
 	// FileScopeRoots, when non-empty, replaces the single-RootDir file
 	// boundary with a whitelist: file tools (read/write/edit/glob/grep/…)
 	// may only touch paths inside one of these roots — the agent home,
@@ -261,7 +253,6 @@ type Env struct {
 	// (2026-07-03-sidebar-groups-andy-workspaces.md §5.2).
 	FileScopeRoots []string
 	Skills         []skills.Skill
-	Workflows      []workflow.Definition
 	// ActiveSurface is the compiled model profile surface currently
 	// governing this tool environment. Tools with secondary catalogs
 	// such as load_skill use it to avoid exposing instructions that
@@ -981,43 +972,10 @@ func (e *Env) ProcessSkillBody(ctx context.Context, skill skills.Skill, argument
 	})
 }
 
-// FindWorkflow looks up a workflow definition by name.
-func (e *Env) FindWorkflow(name string) (workflow.Definition, bool) {
-	return workflow.Find(e.VisibleWorkflows(), name)
-}
-
-// WorkflowNames returns all available workflow definition names.
-func (e *Env) WorkflowNames() []string {
-	visible := e.VisibleWorkflows()
-	out := make([]string, 0, len(visible))
-	for _, wf := range visible {
-		out = append(out, wf.Name)
-	}
-	return out
-}
-
-// VisibleWorkflows returns workflow definitions allowed by the active surface.
-func (e *Env) VisibleWorkflows() []workflow.Definition {
-	if e == nil {
-		return nil
-	}
-	return FilterWorkflowsForSurface(e.Workflows, e.ActiveSurface)
-}
-
-// ProcessWorkflowBody performs workflow-safe variable substitution. Workflow
-// definitions do not execute inline shell; they produce orchestration plans.
-func (e *Env) ProcessWorkflowBody(def workflow.Definition, arguments string) string {
-	return workflow.ProcessBody(def.Content, workflow.ProcessOptions{
-		Arguments:   arguments,
-		WorkflowDir: def.Dir,
-		SessionID:   e.SessionID,
-	})
-}
-
 // OrchestrationStateDir returns the state root for user-visible orchestration
-// artifacts. Interactive turns bind tools to a SessionID, so their Goals and
-// Workflow Runs live with that conversation. Headless or workspace-level tools
-// without a SessionID keep using workspace state.
+// artifacts. Interactive turns bind tools to a SessionID, so their Goals live
+// with that conversation. Headless or workspace-level tools without a SessionID
+// keep using workspace state.
 func (e *Env) OrchestrationStateDir() (string, error) {
 	if e == nil {
 		return "", fmt.Errorf("tool environment is required")
@@ -1033,26 +991,4 @@ func (e *Env) OrchestrationStateDir() (string, error) {
 		return statepath.SessionArtifactDir(stateDir, sessionID), nil
 	}
 	return e.WorkspaceStateDir()
-}
-
-// WorkflowStore returns a durable workflow store rooted in the current
-// orchestration scope.
-func (e *Env) WorkflowStore() (*workflow.Store, error) {
-	stateDir, err := e.OrchestrationStateDir()
-	if err != nil {
-		return nil, err
-	}
-	store := workflow.NewStore(stateDir)
-	store.SetArtifactSink(goalrunner.NewWorkflowArtifactSink(nil))
-	return store, nil
-}
-
-// WorkflowGoalStore returns the goal store bound to one Workflow Run. Workflow
-// goals live in the same orchestration scope as the run they summarize.
-func (e *Env) WorkflowGoalStore(runID string) (*goalrunner.Store, error) {
-	stateDir, err := e.OrchestrationStateDir()
-	if err != nil {
-		return nil, err
-	}
-	return goalrunner.NewStore(statepath.GoalDir(stateDir, strings.TrimSpace(runID))), nil
 }

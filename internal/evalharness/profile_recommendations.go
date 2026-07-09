@@ -17,7 +17,7 @@ func BuildModelProfileRecommendations(summary TraceReplaySummary) []ModelProfile
 			out = append(out, ModelProfileRecommendation{
 				ProviderName:     profile.ProviderName,
 				Model:            profile.Model,
-				Field:            "workflow.allow_parallel_read_only",
+				Field:            "execution.allow_parallel_read_only",
 				CurrentValue:     strconv.FormatBool(profile.AllowParallelReadOnly),
 				RecommendedValue: "true",
 				Reason:           "eval trace observed overlapping successful read-only tool calls marked concurrency-safe",

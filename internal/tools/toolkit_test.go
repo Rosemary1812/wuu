@@ -4266,7 +4266,7 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 		for field, wants := range map[string][]string{
 			"subagent_type": {"Subagent Types", "system context", "fork yourself"},
 			"prompt":        {"Concrete task brief", "Base Agent Brief Contract", "fresh subagents", "first query", "self-contained", "forks", "incremental directive", "helpme"},
-			"agent_profile": {"Agent Profile name with saved memory", "workflow/profile policy", "ordinary temporary child tasks"},
+			"agent_profile": {"Agent Profile name with saved memory", "agent-profile policy", "ordinary temporary child tasks"},
 			"isolation":     {"worktree", "current repo"},
 		} {
 			prop, _ := props[field].(map[string]any)

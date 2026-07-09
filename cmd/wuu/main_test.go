@@ -20,7 +20,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
 	wuuexec "github.com/blueberrycongee/wuu/internal/exec"
-	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -28,7 +27,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/sessiontrace"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 func writeTestPNG(t *testing.T, path string) {
@@ -848,8 +846,8 @@ func TestMissingRequiredTools(t *testing.T) {
 		t.Fatalf("expected no missing tools, got %+v", got)
 	}
 
-	forbidden := forbiddenToolsUsed([]string{"create_workflow", "run_workflow"}, []string{"start_workflow", "create_workflow", "create_workflow"})
-	if len(forbidden) != 1 || forbidden[0] != "create_workflow" {
+	forbidden := forbiddenToolsUsed([]string{"deprecated_tool", "unsafe_tool"}, []string{"start_tool", "deprecated_tool", "deprecated_tool"})
+	if len(forbidden) != 1 || forbidden[0] != "deprecated_tool" {
 		t.Fatalf("unexpected forbidden tools: %+v", forbidden)
 	}
 }
@@ -1159,70 +1157,6 @@ func TestEvalContextBlockObservationsSummarizeRuntimeBlocks(t *testing.T) {
 	}
 }
 
-func TestEvalWorkflowObservationsIncludeTeamArbitration(t *testing.T) {
-	store := workflow.NewStore(t.TempDir())
-	if _, err := store.CreateRun(workflow.Run{
-		ID:         "team-run",
-		Driver:     workflow.RunDriverAgentManaged,
-		Entrypoint: workflow.RunEntrypointNaturalLanguageAgent,
-		Status:     workflow.RunStateRunning,
-	}); err != nil {
-		t.Fatalf("CreateRun: %v", err)
-	}
-	for _, agent := range []workflow.AgentRun{
-		{
-			ID:            "agent-a",
-			WorkflowRunID: "team-run",
-			Status:        workflow.AgentRunStateCompleted,
-			ReportMissing: true,
-			ChangedFiles:  []string{"shared.go"},
-		},
-		{
-			ID:            "agent-b",
-			WorkflowRunID: "team-run",
-			Status:        workflow.AgentRunStateFailed,
-			ChangedFiles:  []string{"shared.go"},
-		},
-	} {
-		if err := store.UpsertAgentRun(agent); err != nil {
-			t.Fatalf("UpsertAgentRun(%s): %v", agent.ID, err)
-		}
-	}
-
-	snapshot := goalrunner.SnapshotSystem(goalrunner.SnapshotOptions{WorkflowStore: store})
-	if len(snapshot.Warnings) > 0 {
-		t.Fatalf("unexpected warnings: %+v", snapshot.Warnings)
-	}
-	attention := evalGoalAttentionObservations(snapshot.Attention)
-	if len(attention) == 0 {
-		t.Fatalf("goal attention should capture workflow arbitration issues: %+v", snapshot.Attention)
-	}
-	got := evalWorkflowObservations(snapshot.Workflows)
-	if len(got) != 1 {
-		t.Fatalf("expected one workflow observation, got %+v", got)
-	}
-	if got[0].Driver != workflow.RunDriverAgentManaged || got[0].Entrypoint != workflow.RunEntrypointNaturalLanguageAgent {
-		t.Fatalf("workflow observation missing driver fields: %+v", got[0])
-	}
-	wantRunDir := filepath.Join(store.Dir(), "workflows", "team-run")
-	if got[0].RunDir != wantRunDir || got[0].EventLogPath != filepath.Join(wantRunDir, "events.jsonl") {
-		t.Fatalf("workflow observation missing artifact paths: %+v", got[0])
-	}
-	arbitration := got[0].TeamArbitration
-	if arbitration.Status != "attention_required" {
-		t.Fatalf("unexpected arbitration status: %+v", arbitration)
-	}
-	if len(arbitration.MissingReports) != 1 || arbitration.MissingReports[0] != "agent-a" {
-		t.Fatalf("missing reports not preserved: %+v", arbitration)
-	}
-	if len(arbitration.FailedAgentRuns) != 1 || arbitration.FailedAgentRuns[0] != "agent-b" {
-		t.Fatalf("failed runs not preserved: %+v", arbitration)
-	}
-	if len(arbitration.ChangedFileOverlaps) != 1 || arbitration.ChangedFileOverlaps[0].File != "shared.go" {
-		t.Fatalf("changed-file overlap not preserved: %+v", arbitration)
-	}
-}
-
 func TestPersistEvalTraceWritesSessionArtifact(t *testing.T) {
 	sessionDir := t.TempDir()
 	result := evalharness.Result{
@@ -1327,8 +1261,7 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 		TaskID:             "task-1",
 		TaskName:           "Task One",
 		Success:            true,
-		ForbiddenToolsUsed: []string{"create_workflow"},
-		WorkflowIssues:     []string{"run-1:missing_reports=beta-writer"},
+		ForbiddenToolsUsed: []string{"deprecated_tool"},
 		VerificationEvidence: []evalharness.VerificationEvidence{{
 			Check:   "go tests",
 			Passed:  true,
@@ -1353,41 +1286,11 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 				Success:         false,
 			}},
 			GoalAttention: []evalharness.GoalAttentionObservation{{
-				Source:  "workflow_agent",
-				ID:      "beta-writer",
-				Status:  "missing_report",
-				Message: "workflow run run-1 is missing agent report",
-			}},
-			WorkflowRuns: []evalharness.WorkflowRunObservation{{
-				ID:           "run-1",
-				RunDir:       "/tmp/wuu/workflows/run-1",
-				EventLogPath: "/tmp/wuu/workflows/run-1/events.jsonl",
-				Driver:       "agent_managed",
-				Status:       "completed",
-				AgentRuns: []evalharness.WorkflowAgentRunObservation{{
-					ID:           "alpha-writer",
-					TaskName:     "write alpha marker",
-					AgentProfile: "marker-writer",
-					Status:       "completed",
-					ReportPath:   "/tmp/wuu/workflows/run-1/agents/alpha/report.md",
-					WorktreePath: "/tmp/wuu/worktrees/alpha",
-					ChangedFiles: []string{"team_alpha.txt"},
-				}, {
-					ID:            "beta-writer",
-					TaskName:      "write beta marker",
-					Status:        "awaiting_report",
-					ReportMissing: true,
-					ChangedFiles:  []string{"team_alpha.txt", "team_beta.txt"},
-				}},
-				TeamArbitration: evalharness.WorkflowTeamArbitration{
-					Status:         "awaiting_reports",
-					MissingReports: []string{"beta-writer"},
-					ChangedFileOverlaps: []evalharness.WorkflowChangedFileOverlapObservation{{
-						File:        "team_alpha.txt",
-						AgentRunIDs: []string{"alpha-writer", "beta-writer"},
-					}},
-					NextActions: []string{"await_reports"},
-				},
+				Source:  "harness_report",
+				ID:      "report-1",
+				Status:  "partial",
+				Message: "tests failed",
+				Path:    "/tmp/wuu/harness/report-1.md",
 			}},
 		},
 	}); err != nil {
@@ -1403,26 +1306,11 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 	if !strings.Contains(output, "policy_blocks: bash:deny:boundary_denied:call_id=call-process") {
 		t.Fatalf("replay text output missing policy blocks:\n%s", output)
 	}
-	if !strings.Contains(output, "workflow_runs: run-1:driver=agent_managed:status=completed:event_log=/tmp/wuu/workflows/run-1/events.jsonl:run_dir=/tmp/wuu/workflows/run-1") {
-		t.Fatalf("replay text output missing workflow artifact paths:\n%s", output)
-	}
-	if !strings.Contains(output, "goal_attention: workflow_agent:id=beta-writer:status=missing_report:message=workflow run run-1 is missing agent report") {
+	if !strings.Contains(output, "goal_attention: harness_report:id=report-1:status=partial:path=/tmp/wuu/harness/report-1.md:message=tests failed") {
 		t.Fatalf("replay text output missing goal attention:\n%s", output)
 	}
-	if !strings.Contains(output, "workflow_agents: run-1/alpha-writer:task=write alpha marker:profile=marker-writer:status=completed:report=/tmp/wuu/workflows/run-1/agents/alpha/report.md:worktree=/tmp/wuu/worktrees/alpha:changed=team_alpha.txt") {
-		t.Fatalf("replay text output missing workflow agent report paths:\n%s", output)
-	}
-	if !strings.Contains(output, "run-1/beta-writer:task=write beta marker:status=awaiting_report:report_missing=true:changed=team_alpha.txt|team_beta.txt") {
-		t.Fatalf("replay text output missing workflow agent missing-report state:\n%s", output)
-	}
-	if !strings.Contains(output, "workflow_arbitration: run-1:status=awaiting_reports:missing_reports=beta-writer:overlaps=team_alpha.txt=alpha-writer+beta-writer:next=await_reports") {
-		t.Fatalf("replay text output missing workflow arbitration summary:\n%s", output)
-	}
-	if !strings.Contains(output, "forbidden_tools: create_workflow") {
+	if !strings.Contains(output, "forbidden_tools: deprecated_tool") {
 		t.Fatalf("replay text output missing forbidden tools:\n%s", output)
-	}
-	if !strings.Contains(output, "workflow_issues: run-1:missing_reports=beta-writer") {
-		t.Fatalf("replay text output missing workflow issues:\n%s", output)
 	}
 	if !strings.Contains(output, "validation: status=incomplete tools=1 evidence=1 missing=2 failures=0") {
 		t.Fatalf("replay text output missing validation summary:\n%s", output)
@@ -1430,75 +1318,35 @@ func TestRunEvalReplayTraceTextPrintsPolicyBlocks(t *testing.T) {
 	if !strings.Contains(output, "validation_evidence: go tests:passed:command=go test ./...") {
 		t.Fatalf("replay text output missing validation evidence:\n%s", output)
 	}
-	if !strings.Contains(output, "validation_missing: forbidden_tool:create_workflow") {
+	if !strings.Contains(output, "validation_missing: forbidden_tool:deprecated_tool") {
 		t.Fatalf("replay text output missing validation missing requirements:\n%s", output)
 	}
-	if !strings.Contains(output, "workflow_issue:run-1:missing_reports=beta-writer") {
-		t.Fatalf("replay text output missing workflow validation issue:\n%s", output)
+	if !strings.Contains(output, "attention_issue:harness_report:report-1:status=partial:path=/tmp/wuu/harness/report-1.md") {
+		t.Fatalf("replay text output missing attention validation issue:\n%s", output)
 	}
 	if strings.Contains(output, strings.Repeat("e", 64)) {
 		t.Fatalf("replay text output should not print argument fingerprints by default:\n%s", output)
 	}
 }
 
-func TestApplyEvalWorkflowIssuesFailsResult(t *testing.T) {
-	result := evalharness.Result{
-		TaskID:  "task-1",
-		Success: true,
-		Observability: &evalharness.Observability{
-			WorkflowRuns: []evalharness.WorkflowRunObservation{{
-				ID:     "run-1",
-				Status: "completed",
-				TeamArbitration: evalharness.WorkflowTeamArbitration{
-					Status:         "attention_required",
-					MissingReports: []string{"worker-1"},
-				},
-			}},
-		},
-	}
-
-	applyEvalWorkflowIssues(&result)
-
-	if result.Success {
-		t.Fatalf("workflow issues should fail eval result: %+v", result)
-	}
-	if len(result.WorkflowIssues) != 2 ||
-		result.WorkflowIssues[0] != "run-1:arbitration=attention_required" ||
-		result.WorkflowIssues[1] != "run-1:missing_reports=worker-1" {
-		t.Fatalf("workflow issues not summarized: %+v", result.WorkflowIssues)
-	}
-}
-
-func TestApplyEvalWorkflowIssuesPrefersGoalAttention(t *testing.T) {
+func TestApplyEvalAttentionIssuesFailsResult(t *testing.T) {
 	result := evalharness.Result{
 		TaskID:  "task-1",
 		Success: true,
 		Observability: &evalharness.Observability{
 			GoalAttention: []evalharness.GoalAttentionObservation{{
-				Source:  "workflow_agent",
-				ID:      "worker-1",
-				Status:  "missing_report",
-				Message: "workflow run run-1 is missing agent report",
-			}, {
-				Source: "harness",
-				ID:     "task-1",
-				Status: "failed",
-			}},
-			WorkflowRuns: []evalharness.WorkflowRunObservation{{
-				ID:     "run-1",
-				Status: "completed",
+				Source:  "harness_report",
+				ID:      "report-1",
+				Status:  "partial",
+				Message: "tests failed",
 			}},
 		},
 	}
 
-	applyEvalWorkflowIssues(&result)
+	applyEvalAttentionIssues(&result)
 
 	if result.Success {
-		t.Fatalf("goal attention issues should fail eval result: %+v", result)
-	}
-	want := []string{"harness:task-1:status=failed", "run-1:missing_reports=worker-1"}
-	if strings.Join(result.WorkflowIssues, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("goal attention issues not summarized: %+v", result.WorkflowIssues)
+		t.Fatalf("goal/harness attention should fail eval result: %+v", result)
 	}
 }
 

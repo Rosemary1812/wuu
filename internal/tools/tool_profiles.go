@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/agentprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/statepath"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 type ListAgentProfilesTool struct{ env *Env }
@@ -47,7 +47,7 @@ func (t *ListAgentProfilesTool) Execute(ctx context.Context, argsJSON string) (s
 	if err != nil {
 		return "", err
 	}
-	profiles, err := workflow.ListProfiles(wuuHome)
+	profiles, err := agentprofile.List(wuuHome)
 	if err != nil {
 		return "", err
 	}
@@ -107,10 +107,9 @@ func (t *CreateAgentProfileTool) Execute(ctx context.Context, argsJSON string) (
 	if err != nil {
 		return "", err
 	}
-	profile, created, err := workflow.EnsureProfile(workflow.ProfileEnsureOptions{
+	profile, created, err := agentprofile.Ensure(agentprofile.EnsureOptions{
 		WuuHome:     wuuHome,
 		Name:        name,
-		Source:      "agent",
 		Role:        args.Role,
 		Description: args.Description,
 	})
@@ -128,7 +127,7 @@ func (t *CreateAgentProfileTool) Execute(ctx context.Context, argsJSON string) (
 	})
 }
 
-func agentProfileToolViews(profiles []workflow.ProfileSummary) []agentProfileToolView {
+func agentProfileToolViews(profiles []agentprofile.Summary) []agentProfileToolView {
 	out := make([]agentProfileToolView, 0, len(profiles))
 	for _, profile := range profiles {
 		out = append(out, agentProfileToolViewFromSummary(profile))
@@ -136,7 +135,7 @@ func agentProfileToolViews(profiles []workflow.ProfileSummary) []agentProfileToo
 	return out
 }
 
-func agentProfileToolViewFromSummary(profile workflow.ProfileSummary) agentProfileToolView {
+func agentProfileToolViewFromSummary(profile agentprofile.Summary) agentProfileToolView {
 	return agentProfileToolView{
 		Name:           profile.Name,
 		Role:           profile.Role,

@@ -19,7 +19,6 @@ type Manifest struct {
 	Description string                            `json:"description,omitempty"`
 	Version     string                            `json:"version,omitempty"`
 	Skills      []string                          `json:"skills,omitempty"`
-	Workflows   []string                          `json:"workflows,omitempty"`
 	Hooks       map[string][]config.HookEntry     `json:"hooks,omitempty"`
 	MCPServers  map[string]config.MCPServerConfig `json:"mcp_servers,omitempty"`
 }
@@ -81,10 +80,6 @@ func LoadManifest(path, source string) (Plugin, error) {
 
 func (p Plugin) SkillDirs() []string {
 	return p.resolveDirs(p.Skills, "skills")
-}
-
-func (p Plugin) WorkflowDirs() []string {
-	return p.resolveDirs(p.Workflows, "workflows")
 }
 
 func (p Plugin) SourceLabel() string {

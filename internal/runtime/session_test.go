@@ -26,7 +26,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 type sessionRecordingClient struct {
@@ -502,133 +501,7 @@ func TestApplyGeneralConfigRefreshesPromptAndMemory(t *testing.T) {
 	}
 }
 
-func TestNewSessionDiscoversWorkflowDefinitions(t *testing.T) {
-	root := t.TempDir()
-	home := t.TempDir()
-	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
-	t.Setenv("TEST_WUU_KEY", "abc")
-
-	writeSessionTestFile(t, filepath.Join(home, ".claude", "workflows", "feature-delivery", "WORKFLOW.md"), `---
-name: feature-delivery
-description: User legacy feature workflow.
----
-
-## Phases
-
-1. User phase
-`)
-	writeSessionTestFile(t, filepath.Join(root, ".claude", "workflows", "feature-delivery", "WORKFLOW.md"), `---
-name: feature-delivery
-description: Project legacy feature workflow.
----
-
-## Phases
-
-1. Project legacy phase
-`)
-	writeSessionTestFile(t, filepath.Join(root, ".wuu", "workflows", "feature-delivery", "WORKFLOW.md"), `---
-name: feature-delivery
-description: Project native feature workflow.
----
-
-## Phases
-
-1. Project phase
-`)
-	writeSessionTestFile(t, filepath.Join(home, "state", "workflows", "weekly-qa", "WORKFLOW.md"), `---
-name: weekly-qa
-description: Native user weekly QA sweep.
----
-
-## Phases
-
-1. Inspect
-`)
-	writeSessionTestFile(t, filepath.Join(home, ".claude", "workflows", "legacy-audit", "WORKFLOW.md"), `---
-name: legacy-audit
-description: Legacy user audit workflow.
----
-
-## Phases
-
-1. Audit
-`)
-
-	rt, err := NewSession(Options{
-		RootDir:    root,
-		HomeDir:    home,
-		ConfigPath: filepath.Join(root, ".wuu.json"),
-		Config: config.Config{
-			DefaultProvider: "test",
-			Providers: map[string]config.ProviderConfig{
-				"test": {
-					Type:      "openai-compatible",
-					BaseURL:   "https://example.test/v1",
-					APIKeyEnv: "TEST_WUU_KEY",
-					Model:     "gpt-test",
-				},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
-	if len(rt.Workflows) != 4 {
-		t.Fatalf("Workflows = %+v", rt.Workflows)
-	}
-	feature, ok := workflow.Find(rt.Workflows, "feature-delivery")
-	if !ok {
-		t.Fatal("feature-delivery workflow not found")
-	}
-	if feature.Source != "project" || feature.Description != "Project native feature workflow." || !strings.Contains(feature.Path, filepath.Join(".wuu", "workflows")) {
-		t.Fatalf("native project workflow should override legacy/user workflow: %+v", feature)
-	}
-	if _, ok := workflow.Find(rt.Workflows, "weekly-qa"); !ok {
-		t.Fatalf("native user workflow not discovered: %+v", rt.Workflows)
-	}
-	if _, ok := workflow.Find(rt.Workflows, "legacy-audit"); !ok {
-		t.Fatalf("legacy user workflow not discovered: %+v", rt.Workflows)
-	}
-	compose, ok := workflow.Find(rt.Workflows, "compose")
-	if !ok || compose.Source != "bundled" || !strings.Contains(compose.Content, "session_memory") {
-		t.Fatalf("bundled compose workflow not discovered: %+v", compose)
-	}
-	// Workflow orchestration is a named-agent-only capability. An ordinary
-	// project main-agent session still DISCOVERS workflow definitions (asserted
-	// above via rt.Workflows / rt.Toolkit.Workflows()), but it must NOT receive
-	// workflow prompt guidance: the catalog and the start_workflow path bullet
-	// are surface-gated to workflow-capable surfaces, and this main surface has
-	// no workflow capability.
-	if strings.Contains(rt.BaseSystemPrompt, "Workflow guidance") ||
-		strings.Contains(rt.BaseSystemPrompt, "Project native feature workflow.") ||
-		strings.Contains(rt.BaseSystemPrompt, "# Workflow orchestration") {
-		t.Fatalf("project main-agent flat surface must NOT include workflow guidance:\n%s", rt.BaseSystemPrompt)
-	}
-	if strings.Contains(rt.BaseSystemPrompt, "# Tool Discovery") {
-		t.Fatalf("flat tool surface should not include tool discovery guidance:\n%s", rt.BaseSystemPrompt)
-	}
-	if rt.Toolkit == nil || len(rt.Toolkit.Workflows()) != 4 {
-		t.Fatalf("toolkit workflows not wired: %+v", rt.Toolkit)
-	}
-	defs := map[string]bool{}
-	for _, def := range rt.Toolkit.Definitions() {
-		defs[def.Name] = true
-	}
-	// Legacy workflow tools have been removed from the toolkit entirely. An
-	// ordinary project main-agent session may still discover workflow
-	// definitions as inert data for migration, but the old tool suite is not
-	// known, visible, or advertised in prompts.
-	for _, name := range []string{"list_workflows", "load_workflow", "save_workflow", "start_workflow", "workflow_status", "create_workflow", "run_workflow", "workflow_control"} {
-		if defs[name] {
-			t.Fatalf("named-only workflow tool %q must NOT be visible on a main-agent session, got Definitions()", name)
-		}
-		if info, ok := rt.Toolkit.ToolInfo(name); ok {
-			t.Fatalf("legacy workflow tool %q should be removed from ToolInfo(), got %+v", name, info)
-		}
-	}
-}
-
-func TestNewSessionDiscoversPluginSkillsAndWorkflows(t *testing.T) {
+func TestNewSessionDiscoversPluginSkills(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
@@ -638,8 +511,7 @@ func TestNewSessionDiscoversPluginSkillsAndWorkflows(t *testing.T) {
 	writeSessionTestFile(t, filepath.Join(pluginRoot, "plugin.json"), `{
   "id": "compose-kit",
   "description": "Compose plugin assets",
-  "skills": ["skills"],
-  "workflows": ["workflows"]
+  "skills": ["skills"]
 }`)
 	writeSessionTestFile(t, filepath.Join(pluginRoot, "skills", "brainstorm.md"), `---
 name: brainstorm
@@ -647,13 +519,6 @@ description: Explore product options.
 ---
 Brainstorm options.
 `)
-	writeSessionTestFile(t, filepath.Join(pluginRoot, "workflows", "release", "WORKFLOW.md"), `---
-name: release-compose
-description: Compose release workflow.
----
-Release body.
-`)
-
 	rt, err := NewSession(Options{
 		RootDir:    root,
 		HomeDir:    home,
@@ -679,10 +544,6 @@ Release body.
 	skill, ok := skills.Find(rt.Skills, "brainstorm")
 	if !ok || skill.Source != "plugin:compose-kit" {
 		t.Fatalf("plugin skill not discovered with source: %+v", skill)
-	}
-	wf, ok := workflow.Find(rt.Workflows, "release-compose")
-	if !ok || wf.Source != "plugin:compose-kit" {
-		t.Fatalf("plugin workflow not discovered with source: %+v", wf)
 	}
 }
 
@@ -2160,7 +2021,6 @@ func TestSystemPromptForThreadRootKeepsFrozenDate(t *testing.T) {
 		"",
 		"",
 		nil,
-		nil,
 	)
 	sections := agentPromptSections(base.Sections)
 
@@ -2191,7 +2051,6 @@ func TestBuildBaseSystemPromptNoToolsSkipsToolLoadedGuidance(t *testing.T) {
 		"",
 		"",
 		[]skills.Skill{{Name: "commit", Description: "Create a commit."}},
-		[]workflow.Definition{{Name: "release", Description: "Release workflow."}},
 	)
 
 	for _, bad := range []string{
@@ -2223,7 +2082,6 @@ func TestBuildBaseSystemPromptAddsToolDiscoveryForToolSearchSurface(t *testing.T
 		"",
 		"",
 		nil,
-		nil,
 	)
 
 	for _, want := range []string{
@@ -2249,46 +2107,6 @@ func TestBuildBaseSystemPromptAddsToolDiscoveryForToolSearchSurface(t *testing.T
 	} {
 		if strings.Contains(promptText, bad) {
 			t.Fatalf("main prompt should not include generic workflow guidance %q:\n%s", bad, promptText)
-		}
-	}
-}
-
-func TestBuildBaseSystemPromptDefersWorkflowCatalogForToolSearchSurface(t *testing.T) {
-	surface := compiledSurfaceForProviderModel("openai", "gpt-5-codex")
-	promptText := buildBaseSystemPrompt(
-		t.TempDir(),
-		"base prompt",
-		"",
-		"openai",
-		"gpt-5-codex",
-		surface,
-		nil,
-		"",
-		"",
-		nil,
-		[]workflow.Definition{{Name: "release", Description: "Release workflow."}},
-	)
-
-	for _, want := range []string{
-		"# Tool Discovery",
-		"`tool_search`",
-	} {
-		if !strings.Contains(promptText, want) {
-			t.Fatalf("tool-search workflow prompt missing %q:\n%s", want, promptText)
-		}
-	}
-	for _, bad := range []string{
-		"Workflow guidance",
-		"Release workflow",
-		"especially MCP tools, workflows",
-		"workflows, scheduling",
-		"task-handling options inside wuu",
-		"direct work, subagents, or workflows",
-		"workflows only when",
-		"matching saved workflow",
-	} {
-		if strings.Contains(promptText, bad) {
-			t.Fatalf("tool-search workflow prompt should defer catalog %q:\n%s", bad, promptText)
 		}
 	}
 }
@@ -2335,7 +2153,6 @@ func TestBuildBaseSystemPromptFiltersSkillsBySurface(t *testing.T) {
 				AllowedTools: []string{"read_file", "grep", "glob"},
 			},
 		},
-		nil,
 	)
 
 	if strings.Contains(promptText, "Create a commit") ||
@@ -2351,18 +2168,12 @@ func TestBuildBaseSystemPromptFiltersSkillsBySurface(t *testing.T) {
 	}
 }
 
-func TestBuildBaseSystemPromptDoesNotInjectWorkflowGuidanceForWorkflowSurface(t *testing.T) {
-	// Even if an older or hand-built surface still carries workflow capability,
-	// named agents now coordinate through task rail/runtime goal, not the legacy
-	// workflow suite. The base prompt must not inject workflow path guidance or
-	// a workflow catalog.
+func TestBuildBaseSystemPromptDoesNotInjectLegacyWorkflowGuidance(t *testing.T) {
 	surface := capability.Surface{
-		ProfileName:          "portable_no_shell",
-		Tools:                map[string]capability.Capability{"read_file": capability.CapabilityFileRead},
-		Capabilities:         []capability.Capability{capability.CapabilityFileRead},
-		DeferredTools:        map[string]capability.Capability{"start_workflow": capability.CapabilityWorkflow},
-		DeferredCapabilities: []capability.Capability{capability.CapabilityWorkflow},
-		SystemFragment:       "Portable no-shell profile.",
+		ProfileName:    "portable_no_shell",
+		Tools:          map[string]capability.Capability{"read_file": capability.CapabilityFileRead},
+		Capabilities:   []capability.Capability{capability.CapabilityFileRead},
+		SystemFragment: "Portable no-shell profile.",
 	}
 	promptText := buildBaseSystemPrompt(
 		t.TempDir(),
@@ -2375,20 +2186,6 @@ func TestBuildBaseSystemPromptDoesNotInjectWorkflowGuidanceForWorkflowSurface(t 
 		"",
 		"",
 		nil,
-		[]workflow.Definition{
-			{
-				Name:        "terminal-release",
-				Description: "Git: release workflow.",
-				WhenToUse:   "Use when a release needs command checks.",
-				Content:     "Run bash, git-status, git_status, and package checks before release.",
-			},
-			{
-				Name:        "portable-plan",
-				Description: "Plan a portable change.",
-				WhenToUse:   "Use for planning.",
-				Content:     "Create a scoped implementation plan.",
-			},
-		},
 	)
 
 	for _, bad := range []string{
@@ -2421,7 +2218,6 @@ func TestBuildBaseSystemPromptLocalNoShellDoesNotTeachTerminalPaths(t *testing.T
 		nil,
 		"",
 		"",
-		nil,
 		nil,
 	)
 
@@ -2466,7 +2262,7 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 		"openai",
 		"gpt-5",
 		surface,
-		nil, "", "", nil, nil,
+		nil, "", "", nil,
 	)
 	workerPrompt := buildBaseSystemPrompt(
 		t.TempDir(),
@@ -2475,7 +2271,7 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 		"openai",
 		"gpt-5",
 		surface,
-		nil, "", "", nil, nil,
+		nil, "", "", nil,
 	)
 
 	for _, want := range []string{
@@ -2518,9 +2314,6 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 		modelprofile.Resolve("openai", "gpt-5"),
 		modelprofile.SurfaceNamed,
 	)
-	if namedSurface.HasCapability(capability.CapabilityWorkflow) {
-		t.Fatalf("named surface must not carry the workflow capability: direct=%+v deferred=%+v hidden=%+v", namedSurface.Capabilities, namedSurface.DeferredCapabilities, namedSurface.HiddenCapabilities)
-	}
 	namedPrompt := buildBaseSystemPrompt(
 		t.TempDir(),
 		config.DefaultSystemPrompt(),
@@ -2529,7 +2322,6 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 		"gpt-5",
 		namedSurface,
 		nil, "", "", nil,
-		[]workflow.Definition{{Name: "named-release", Description: "Named release workflow."}},
 	)
 	for _, bad := range []string{
 		"- start_workflow:",

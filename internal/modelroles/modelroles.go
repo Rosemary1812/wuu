@@ -384,7 +384,7 @@ func behaviorFromProfile(profile modelprofile.Profile) Behavior {
 	jsonReliability := jsonReliabilityFor(profile)
 	return Behavior{
 		Family:                    string(profile.Family),
-		DefaultWriteMode:          string(profile.Workflow.DefaultWriteMode),
+		DefaultWriteMode:          string(profile.Execution.DefaultWriteMode),
 		PreferredEditPrimitive:    string(profile.Code.PreferredEditPrimitive),
 		PreferredPatchGrammar:     profile.Code.PreferredPatchGrammar,
 		PatchReliability:          profile.Code.PatchReliability,
@@ -392,11 +392,11 @@ func behaviorFromProfile(profile modelprofile.Profile) Behavior {
 		WholeFileReliability:      profile.Code.WholeFileReliability,
 		JSONReliability:           jsonReliability,
 		LongHorizonScore:          profile.Reasoning.LongHorizonScore,
-		DefaultMaxAutonomousSteps: profile.Workflow.DefaultMaxAutonomousSteps,
-		DefaultSearchBudget:       profile.Workflow.DefaultSearchBudget,
-		NeedsReadBeforeWrite:      profile.Workflow.NeedsReadBeforeWrite,
-		AllowParallelReadOnly:     profile.Workflow.AllowParallelReadOnly,
-		AllowDirectShell:          profile.Workflow.AllowDirectShell,
+		DefaultMaxAutonomousSteps: profile.Execution.DefaultMaxAutonomousSteps,
+		DefaultSearchBudget:       profile.Execution.DefaultSearchBudget,
+		NeedsReadBeforeWrite:      profile.Execution.NeedsReadBeforeWrite,
+		AllowParallelReadOnly:     profile.Execution.AllowParallelReadOnly,
+		AllowDirectShell:          profile.Execution.AllowDirectShell,
 		Latency:                   string(profile.Economics.Latency),
 		Suitable:                  suitabilityFor(profile, jsonReliability),
 	}
@@ -422,7 +422,7 @@ func suitabilityFor(profile modelprofile.Profile, jsonReliability int) Suitabili
 		Compact:  profile.Context.WindowTokens >= 32_000 || profile.Family != modelprofile.FamilyLocal,
 		Title:    true,
 		Memory:   jsonReliability >= 3,
-		Worker:   profile.Workflow.DefaultMaxAutonomousSteps >= 10,
+		Worker:   profile.Execution.DefaultMaxAutonomousSteps >= 10,
 		Fallback: true,
 	}
 }

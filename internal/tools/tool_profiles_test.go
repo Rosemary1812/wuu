@@ -3,12 +3,13 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
-	"github.com/blueberrycongee/wuu/internal/workflow"
+	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
 func TestAgentProfileToolsCreateAndListProfiles(t *testing.T) {
@@ -83,15 +84,25 @@ func TestAgentProfileToolsHideLegacyWorkflowMetadata(t *testing.T) {
 	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
 	t.Setenv("WUU_HOME", wuuHome)
 
-	if _, _, err := workflow.EnsureProfile(workflow.ProfileEnsureOptions{
-		WuuHome:      wuuHome,
-		Name:         "legacy_qa",
-		Source:       "workflow",
-		WorkflowName: "release-qa",
-		Role:         "QA reviewer",
-		Description:  "Legacy workflow-created profile.",
-	}); err != nil {
-		t.Fatalf("EnsureProfile: %v", err)
+	profileDir, err := statepath.ProfileDir(wuuHome, "legacy_qa")
+	if err != nil {
+		t.Fatalf("ProfileDir: %v", err)
+	}
+	if err := os.MkdirAll(profileDir, 0o755); err != nil {
+		t.Fatalf("mkdir profile dir: %v", err)
+	}
+	legacyMetadata := `{
+  "name": "legacy_qa",
+  "source": "workflow",
+  "workflow_name": "release-qa",
+  "role": "QA reviewer",
+  "description": "Legacy workflow-created profile.",
+  "created_at": "2026-01-02T03:04:05Z",
+  "last_resolved_at": "2026-01-02T03:04:05Z"
+}
+`
+	if err := os.WriteFile(filepath.Join(profileDir, "profile.json"), []byte(legacyMetadata), 0o644); err != nil {
+		t.Fatalf("write legacy profile metadata: %v", err)
 	}
 
 	kit, err := New(root)

@@ -324,7 +324,7 @@ func addSearchTools(b *surfaceBuilder) {
 }
 
 func addBashFirstTools(b *surfaceBuilder, p Profile) {
-	if p.Workflow.AllowDirectShell {
+	if p.Execution.AllowDirectShell {
 		b.addVisible("bash", capability.CapabilityCommandBash)
 		b.addVisibleCapability(capability.CapabilityCommandBackground)
 	}
@@ -474,7 +474,7 @@ Terminal work goes through the bash tool.
 }
 
 func addGenericPrompt(b *surfaceBuilder, p Profile) {
-	if p.Family == FamilyLocal || !p.Workflow.AllowDirectShell {
+	if p.Family == FamilyLocal || !p.Execution.AllowDirectShell {
 		b.surface.SystemFragment = strings.TrimSpace(`
 [Tool surface: generic (no command execution)]
 You are running under a generic BYOK profile. File work uses read_file, edit_file (with exact old_string match — call read_file first to anchor it), and write_file for whole-file replacement.

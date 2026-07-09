@@ -38,7 +38,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/tools"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 	"github.com/coder/websocket"
 )
 
@@ -282,13 +281,11 @@ func TestServerInitializeExposesExtensionTrustSummary(t *testing.T) {
 	}
 	rt.Toolkit = kit
 	rt.Skills = []skills.Skill{{Name: "docs", Description: "Docs"}}
-	rt.Workflows = []workflow.Definition{{Name: "ship", Description: "Ship"}}
 	rt.Plugins = []pluginpkg.Plugin{{Manifest: pluginpkg.Manifest{ID: "compose-kit"}}}
 	rt.HookDispatcher = hooks.NewDispatcher(hooks.NewRegistry(map[hooks.Event][]hooks.HookConfig{
 		hooks.PreToolUse: {{Command: "true"}},
 	}))
 	kit.SetSkills(rt.Skills)
-	kit.SetWorkflows(rt.Workflows)
 
 	out := &lockedBuffer{}
 	srv := New(rt, out)
@@ -302,7 +299,7 @@ func TestServerInitializeExposesExtensionTrustSummary(t *testing.T) {
 	if !main.Skills.Allowed || !main.Skills.Active || main.Skills.Count != 1 || main.Skills.KnownTools == 0 {
 		t.Fatalf("unexpected skills trust summary: %+v", main.Skills)
 	}
-	if !main.Workflows.Allowed || !main.Workflows.Active || main.Workflows.Count != 1 || main.Workflows.KnownTools == 0 {
+	if main.Workflows.Allowed || main.Workflows.Active || main.Workflows.Count != 0 || main.Workflows.KnownTools != 0 {
 		t.Fatalf("unexpected workflow trust summary: %+v", main.Workflows)
 	}
 	if !main.Hooks.Allowed || !main.Hooks.Active {

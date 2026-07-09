@@ -73,7 +73,6 @@ type Result struct {
 	MissingToolCalls     []string                 `json:"missing_tool_calls,omitempty"`
 	MissingToolSeq       []string                 `json:"missing_tool_sequence,omitempty"`
 	MissingErrors        []string                 `json:"missing_errors,omitempty"`
-	WorkflowIssues       []string                 `json:"workflow_issues,omitempty"`
 	InputTokens          int                      `json:"input_tokens"`
 	OutputTokens         int                      `json:"output_tokens"`
 	CacheCreationTokens  int                      `json:"cache_creation_tokens,omitempty"`
@@ -101,7 +100,6 @@ type Observability struct {
 	SessionDir         string                      `json:"session_dir,omitempty"`
 	TracePath          string                      `json:"trace_path,omitempty"`
 	HarnessDir         string                      `json:"harness_dir,omitempty"`
-	WorkflowDir        string                      `json:"workflow_dir,omitempty"`
 	TaskWorkdir        string                      `json:"task_workdir,omitempty"`
 	TaskWorkdirKept    bool                        `json:"task_workdir_kept,omitempty"`
 	FinalAnswerPreview string                      `json:"final_answer_preview,omitempty"`
@@ -111,7 +109,6 @@ type Observability struct {
 	ToolInventory      []ToolInventoryObservation  `json:"tool_inventory,omitempty"`
 	ToolRecords        []ToolObservation           `json:"tool_records,omitempty"`
 	GoalAttention      []GoalAttentionObservation  `json:"goal_attention,omitempty"`
-	WorkflowRuns       []WorkflowRunObservation    `json:"workflow_runs,omitempty"`
 	HarnessTasks       []HarnessTaskObservation    `json:"harness_tasks,omitempty"`
 	HarnessReports     []HarnessReportObservation  `json:"harness_reports,omitempty"`
 	Warnings           []string                    `json:"warnings,omitempty"`
@@ -248,83 +245,6 @@ type GoalAttentionObservation struct {
 	Status  string `json:"status,omitempty"`
 	Message string `json:"message,omitempty"`
 	Path    string `json:"path,omitempty"`
-}
-
-type WorkflowRunObservation struct {
-	ID              string                        `json:"id"`
-	RunDir          string                        `json:"run_dir,omitempty"`
-	EventLogPath    string                        `json:"event_log_path,omitempty"`
-	DefinitionName  string                        `json:"definition_name,omitempty"`
-	Driver          string                        `json:"driver,omitempty"`
-	Entrypoint      string                        `json:"entrypoint,omitempty"`
-	Status          string                        `json:"status"`
-	Error           string                        `json:"error,omitempty"`
-	ScriptPath      string                        `json:"script_path,omitempty"`
-	FinalReportPath string                        `json:"final_report_path,omitempty"`
-	GoalID          string                        `json:"goal_id,omitempty"`
-	GoalDir         string                        `json:"goal_dir,omitempty"`
-	WorkflowTeam    *WorkflowTeamObservation      `json:"workflow_team,omitempty"`
-	TeamArbitration WorkflowTeamArbitration       `json:"team_arbitration,omitempty"`
-	Phases          []WorkflowPhaseObservation    `json:"phases,omitempty"`
-	AgentRuns       []WorkflowAgentRunObservation `json:"agent_runs,omitempty"`
-	EventCount      int                           `json:"event_count,omitempty"`
-}
-
-type WorkflowTeamObservation struct {
-	Members   []WorkflowTeamMemberObservation `json:"members,omitempty"`
-	CreatedAt time.Time                       `json:"created_at,omitempty"`
-	UpdatedAt time.Time                       `json:"updated_at,omitempty"`
-}
-
-type WorkflowTeamMemberObservation struct {
-	ID             string `json:"id,omitempty"`
-	Role           string `json:"role,omitempty"`
-	Mode           string `json:"mode,omitempty"`
-	AgentProfile   string `json:"agent_profile,omitempty"`
-	TaskName       string `json:"task_name,omitempty"`
-	PhaseID        string `json:"phase_id,omitempty"`
-	CreatedProfile bool   `json:"created_profile,omitempty"`
-}
-
-type WorkflowTeamArbitration struct {
-	Status              string                                  `json:"status,omitempty"`
-	OpenAgentRuns       []string                                `json:"open_agent_runs,omitempty"`
-	MissingReports      []string                                `json:"missing_reports,omitempty"`
-	FailedAgentRuns     []string                                `json:"failed_agent_runs,omitempty"`
-	ChangedFileOverlaps []WorkflowChangedFileOverlapObservation `json:"changed_file_overlaps,omitempty"`
-	NextActions         []string                                `json:"next_actions,omitempty"`
-}
-
-type WorkflowChangedFileOverlapObservation struct {
-	File        string   `json:"file"`
-	AgentRunIDs []string `json:"agent_run_ids"`
-}
-
-type WorkflowPhaseObservation struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name,omitempty"`
-	Status      string   `json:"status"`
-	Error       string   `json:"error,omitempty"`
-	AgentRunIDs []string `json:"agent_run_ids,omitempty"`
-}
-
-type WorkflowAgentRunObservation struct {
-	ID            string   `json:"id"`
-	PhaseID       string   `json:"phase_id,omitempty"`
-	AgentID       string   `json:"agent_id,omitempty"`
-	AgentPath     string   `json:"agent_path,omitempty"`
-	TaskName      string   `json:"task_name,omitempty"`
-	AgentProfile  string   `json:"agent_profile,omitempty"`
-	Status        string   `json:"status"`
-	ReportPath    string   `json:"report_path,omitempty"`
-	ReportMissing bool     `json:"report_missing,omitempty"`
-	ChangedFiles  []string `json:"changed_files,omitempty"`
-	Artifacts     []string `json:"artifacts,omitempty"`
-	WorktreePath  string   `json:"worktree_path,omitempty"`
-	InputTokens   int      `json:"input_tokens,omitempty"`
-	OutputTokens  int      `json:"output_tokens,omitempty"`
-	DurationMS    int64    `json:"duration_ms,omitempty"`
-	Error         string   `json:"error,omitempty"`
 }
 
 type HarnessTaskObservation struct {

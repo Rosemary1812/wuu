@@ -120,12 +120,12 @@ func NewModelProfileRecordWithBudget(providerName, model, apiModel string, budge
 		OutputReserveTokens:       budget.OutputReserveTokens,
 		UsableInputTokens:         budget.UsableInputTokens,
 		CompactThresholdTokens:    budget.CompactThresholdTokens,
-		DefaultWriteMode:          string(profile.Workflow.DefaultWriteMode),
-		DefaultSearchBudget:       profile.Workflow.DefaultSearchBudget,
-		DefaultMaxAutonomousSteps: profile.Workflow.DefaultMaxAutonomousSteps,
-		NeedsReadBeforeWrite:      profile.Workflow.NeedsReadBeforeWrite,
-		AllowParallelReadOnly:     profile.Workflow.AllowParallelReadOnly,
-		AllowDirectShell:          profile.Workflow.AllowDirectShell,
+		DefaultWriteMode:          string(profile.Execution.DefaultWriteMode),
+		DefaultSearchBudget:       profile.Execution.DefaultSearchBudget,
+		DefaultMaxAutonomousSteps: profile.Execution.DefaultMaxAutonomousSteps,
+		NeedsReadBeforeWrite:      profile.Execution.NeedsReadBeforeWrite,
+		AllowParallelReadOnly:     profile.Execution.AllowParallelReadOnly,
+		AllowDirectShell:          profile.Execution.AllowDirectShell,
 	}
 }
 

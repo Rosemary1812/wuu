@@ -46,7 +46,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 			"Use a child only when delegation materially improves the task: independent investigation, " +
 			"parallel implementation slices, risky verification, or work that benefits from a separate context. " +
 			"Ordinary child agents are temporary and do not use saved profile memory. Set agent_profile only when the user asks to use a named " +
-			"Agent Profile with saved memory, or when a workflow/profile policy requires one; the profile name selects the saved memory to reuse. " +
+			"Agent Profile with saved memory, or when an agent-profile policy requires one; the profile name selects the saved memory to reuse. " +
 			"Do not set agent_profile for routine one-off delegation. " +
 			"Keep work local when the next step is tightly coupled, on the critical path, or simpler to do directly. " +
 			"Write a concrete brief using the shared Base Agent Brief Contract. " +
@@ -99,7 +99,7 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"agent_profile": map[string]any{
 					"type":        "string",
-					"description": "Optional Agent Profile name with saved memory. Use only when the user explicitly wants that profile or a workflow/profile policy requires one; omit for ordinary temporary child tasks.",
+					"description": "Optional Agent Profile name with saved memory. Use only when the user explicitly wants that profile or an agent-profile policy requires one; omit for ordinary temporary child tasks.",
 				},
 				"run_in_background": map[string]any{
 					"type":        "boolean",

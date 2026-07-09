@@ -213,7 +213,6 @@ func (s *Server) currentExtensionTrustSummary() ExtensionTrustSummary {
 		}
 		main.MCP = extensionSurfaceSummary(mcpKnownTools > 0, mcpKnownTools)
 		main.Skills = extensionSurfaceSummary(len(s.rt.Skills) > 0, len(s.rt.Skills))
-		main.Workflows = extensionSurfaceSummary(len(s.rt.Workflows) > 0, len(s.rt.Workflows))
 		main.Hooks = ExtensionSurfaceTrustSummary{Allowed: s.rt.HookDispatcher != nil, Active: hookDispatcherHasAny(s.rt.HookDispatcher)}
 		main.Plugins = ExtensionSurfaceTrustSummary{Allowed: true, Active: len(s.rt.Plugins) > 0, Count: len(s.rt.Plugins)}
 		main.ExternalTools = main.MCP
