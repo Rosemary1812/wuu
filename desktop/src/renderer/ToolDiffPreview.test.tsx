@@ -35,9 +35,33 @@ function buildEditItem(result: string): ThreadItem {
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
-function mount(item: ThreadItem): void {
+function rect(overrides: Partial<DOMRect>): DOMRect {
+  return {
+    x: overrides.x ?? overrides.left ?? 0,
+    y: overrides.y ?? overrides.top ?? 0,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: 0,
+    height: 0,
+    ...overrides,
+    toJSON() {
+      return this;
+    },
+  } as DOMRect;
+}
+
+function mount(
+  item: ThreadItem,
+  options: { conversationPaneRect?: DOMRect } = {},
+): void {
   if (container) unmount();
   container = document.createElement("div");
+  if (options.conversationPaneRect) {
+    container.className = "conversation-pane";
+    container.getBoundingClientRect = () => options.conversationPaneRect!;
+  }
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
@@ -71,7 +95,7 @@ describe("ToolDiffPreview", () => {
   it("renders children when no diff is present", () => {
     mount(buildEditItem('{"path": "/tmp/a.txt"}'));
     expect(container?.textContent).toContain("已编辑 .zshrc");
-    expect(container?.querySelector('.tool-diff-preview-card')).toBeFalsy();
+    expect(container?.querySelector(".tool-diff-preview-card")).toBeFalsy();
   });
 
   it("keeps the scrollable diff preview open when moving from trigger into the preview", () => {
@@ -119,5 +143,56 @@ describe("ToolDiffPreview", () => {
     });
 
     expect(document.body.querySelector(".tool-diff-preview-card")).toBeTruthy();
+  });
+
+  it("keeps the portaled preview inside the conversation pane", () => {
+    vi.useFakeTimers();
+    mount(
+      buildEditItem(
+        JSON.stringify({
+          path: "/tmp/a.txt",
+          diff: {
+            hunks: [
+              {
+                old_start: 1,
+                new_start: 1,
+                lines: [{ op: "insert", content: "line 1" }],
+              },
+            ],
+          },
+        }),
+      ),
+      {
+        conversationPaneRect: rect({
+          left: 320,
+          right: window.innerWidth,
+          width: window.innerWidth - 320,
+        }),
+      },
+    );
+
+    const trigger = container?.querySelector<HTMLElement>(
+      ".tool-diff-preview-trigger",
+    );
+    expect(trigger).toBeTruthy();
+    trigger!.getBoundingClientRect = () =>
+      rect({
+        left: 260,
+        right: 300,
+        top: 500,
+        bottom: 520,
+        width: 40,
+        height: 20,
+      });
+
+    act(() => {
+      trigger!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      vi.advanceTimersByTime(300);
+    });
+
+    const card = document.body.querySelector<HTMLElement>(
+      ".tool-diff-preview-card",
+    );
+    expect(card?.style.left).toBe("344px");
   });
 });

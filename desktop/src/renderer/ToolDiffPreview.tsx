@@ -17,6 +17,13 @@ function useTriggerPosition() {
   return { triggerRef, rect, measure, clear };
 }
 
+function previewBoundsForTrigger(
+  trigger: HTMLElement | null,
+): DOMRect | undefined {
+  const pane = trigger?.closest(".conversation-pane");
+  return pane instanceof HTMLElement ? pane.getBoundingClientRect() : undefined;
+}
+
 type DiffLineOp = "equal" | "insert" | "delete";
 
 type DiffLine = {
@@ -264,10 +271,7 @@ function DiffSummaryView({ diff }: { diff: FileDiff }): JSX.Element {
     );
   } else if (diff.summary) {
     parts.push(diff.summary);
-  } else if (
-    diff.oldLines !== undefined ||
-    diff.newLines !== undefined
-  ) {
+  } else if (diff.oldLines !== undefined || diff.newLines !== undefined) {
     parts.push(
       `旧文件 ${diff.oldLines ?? 0} 行，新文件 ${diff.newLines ?? 0} 行`,
     );
@@ -331,10 +335,23 @@ export function ToolDiffPreview({
 
   const cardStyle: React.CSSProperties = rect
     ? (() => {
-        const cardWidth = Math.min(640, window.innerWidth - 48);
+        const horizontalGutter = 24;
+        const bounds = previewBoundsForTrigger(triggerRef.current);
+        const boundLeft = bounds ? Math.max(0, bounds.left) : 0;
+        const boundRight = bounds
+          ? Math.min(window.innerWidth, bounds.right)
+          : window.innerWidth;
+        const minLeft = boundLeft + horizontalGutter;
+        const maxRight = boundRight - horizontalGutter;
+        const availableWidth = Math.max(240, maxRight - minLeft);
+        const cardWidth = Math.min(
+          640,
+          Math.max(240, window.innerWidth - horizontalGutter * 2),
+          availableWidth,
+        );
         const left = Math.max(
-          24,
-          Math.min(rect.left, window.innerWidth - cardWidth - 24),
+          minLeft,
+          Math.min(rect.left, maxRight - cardWidth),
         );
         // Show above the trigger by default, but if there is not enough room
         // above the viewport top edge, show it below instead.
