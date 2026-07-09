@@ -1,5 +1,10 @@
 export type JsonValue =
-  null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+  | null
+  | boolean
+  | number
+  | string
+  | JsonValue[]
+  | { [key: string]: JsonValue };
 
 export type AppServerRequest<T = unknown> = {
   id?: string;
@@ -402,14 +407,7 @@ export type GitDiffStats = {
   deletions: number;
 };
 
-export type GitChangeStatus =
-  | "modified"
-  | "added"
-  | "deleted"
-  | "renamed"
-  | "copied"
-  | "untracked"
-  | "unknown";
+export type GitChangeStatus = "modified" | "added" | "deleted" | "renamed" | "copied" | "untracked" | "unknown";
 
 export type GitChangeFile = {
   path: string;
@@ -1045,10 +1043,6 @@ export type ThreadEscalateSubResult = {
   subthread: ConversationSubthread;
 };
 
-export type ThreadBubbleSubResult = {
-  subthread: ConversationSubthread;
-};
-
 export type ThreadResolveSubResult = {
   subthread: ConversationSubthread;
 };
@@ -1247,7 +1241,13 @@ export type TurnError = {
 // reasons and translates from these wire values when the action
 // surfaces in the chip.
 export type TurnErrorCategory =
-  "cancelled" | "network" | "auth" | "provider" | "tool" | "local" | "internal";
+  | "cancelled"
+  | "network"
+  | "auth"
+  | "provider"
+  | "tool"
+  | "local"
+  | "internal";
 
 // Structured next-step the Go core wants the user to see. Mirrors
 // opencode's Retryable.action shape. The `reason` is a stable enum
@@ -1309,7 +1309,10 @@ export type TurnUsageNotification = {
 };
 
 export type StreamLifecyclePhase =
-  "connecting" | "connected" | "reconnecting" | "failed";
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "failed";
 
 export type StreamLifecyclePayload = {
   phase: StreamLifecyclePhase | string;
@@ -1704,58 +1707,28 @@ export type WuuDesktopApi = {
   cleanupProjectState: (
     projectId: string,
     projectPath: string,
-  ) => Promise<{
-    state_dir: string;
-    removed: boolean;
-    memory_archived: boolean;
-  }>;
+  ) => Promise<{ state_dir: string; removed: boolean; memory_archived: boolean }>;
   relocateProject: (projectId: string) => Promise<ProjectListResult>;
-  selectNoProject: (
-    fresh?: boolean,
-    cwd?: string,
-  ) => Promise<ProjectListResult>;
+  selectNoProject: (fresh?: boolean, cwd?: string) => Promise<ProjectListResult>;
   gitStatus: () => Promise<GitStatusResult>;
   listGitChanges: () => Promise<GitChangesResult>;
   readGitFileDiff: (path: string) => Promise<GitFileDiffResult>;
   checkoutGitBranch: (branch: string) => Promise<GitStatusResult>;
   createCheckoutGitBranch: (branch: string) => Promise<GitCreateBranchResult>;
   commitGitChanges: (params: GitCommitParams) => Promise<GitCommitResult>;
-  createPullRequest: (
-    params: GitPullRequestParams,
-  ) => Promise<GitPullRequestResult>;
+  createPullRequest: (params: GitPullRequestParams) => Promise<GitPullRequestResult>;
   // root is an optional absolute directory override, used to root the
   // workspace file tree / preview at the active thread's own cwd (e.g. a
   // worktree fork) instead of the active project's cwd. See
   // workspacePanelContext in AppState.ts.
   listWorkspaceFiles: (root?: string) => Promise<FileTreeListResult>;
-  listWorkspaceDirectory: (
-    path?: string,
-    root?: string,
-  ) => Promise<WorkspaceDirectoryListResult>;
-  readWorkspaceFile: (
-    path: string,
-    root?: string,
-  ) => Promise<WorkspaceFileReadResult>;
-  writeWorkspaceFile: (
-    params: WorkspaceFileSaveParams,
-    root?: string,
-  ) => Promise<WorkspaceFileSaveResult>;
-  resolveWorkspaceFileReference: (
-    reference: string,
-    root?: string,
-  ) => Promise<WorkspaceFileReferenceResolveResult>;
-  startTerminalSession: (
-    params?: TerminalSessionStartParams,
-  ) => Promise<TerminalSessionStartResult>;
-  writeTerminalSession: (
-    id: string,
-    data: string,
-  ) => Promise<TerminalSessionActionResult>;
-  resizeTerminalSession: (
-    id: string,
-    cols: number,
-    rows: number,
-  ) => Promise<TerminalSessionActionResult>;
+  listWorkspaceDirectory: (path?: string, root?: string) => Promise<WorkspaceDirectoryListResult>;
+  readWorkspaceFile: (path: string, root?: string) => Promise<WorkspaceFileReadResult>;
+  writeWorkspaceFile: (params: WorkspaceFileSaveParams, root?: string) => Promise<WorkspaceFileSaveResult>;
+  resolveWorkspaceFileReference: (reference: string, root?: string) => Promise<WorkspaceFileReferenceResolveResult>;
+  startTerminalSession: (params?: TerminalSessionStartParams) => Promise<TerminalSessionStartResult>;
+  writeTerminalSession: (id: string, data: string) => Promise<TerminalSessionActionResult>;
+  resizeTerminalSession: (id: string, cols: number, rows: number) => Promise<TerminalSessionActionResult>;
   stopTerminalSession: (id: string) => Promise<TerminalSessionActionResult>;
   initialize: () => Promise<InitializeResult>;
   getBuildInfo: () => Promise<BuildInfoResult>;
@@ -1766,17 +1739,17 @@ export type WuuDesktopApi = {
     effort?: string,
     connection?: RuntimeConnectionUpdate,
     variant?: string,
-    permissionMode?: string,
+    permissionMode?: string
   ) => Promise<ConfigModelUpdateResult>;
   removeProvider: (
     provider: string,
-    options?: { fallbackProvider?: string; fallbackModel?: string },
+    options?: { fallbackProvider?: string; fallbackModel?: string }
   ) => Promise<ConfigModelUpdateResult>;
   updateAdvancedSettings: (
-    settings: RuntimeAdvancedSettingsUpdate,
+    settings: RuntimeAdvancedSettingsUpdate
   ) => Promise<ConfigAdvancedUpdateResult>;
   updateGeneralSettings: (
-    settings: RuntimeGeneralSettingsUpdate,
+    settings: RuntimeGeneralSettingsUpdate
   ) => Promise<ConfigGeneralUpdateResult>;
   listMCPServers: () => Promise<MCPListResult>;
   connectMCPServer: (name: string) => Promise<MCPServerActionResult>;
@@ -1785,23 +1758,15 @@ export type WuuDesktopApi = {
   listSkills: () => Promise<SkillListResult>;
   startThread: (params?: ThreadStartParams) => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
-  startParticipant: (
-    params: ParticipantStartParams,
-  ) => Promise<ParticipantStartResult>;
+  startParticipant: (params: ParticipantStartParams) => Promise<ParticipantStartResult>;
   forkThread: (
     threadId: string,
     turnId?: string,
     itemId?: string,
     mode?: "local" | "worktree",
   ) => Promise<ThreadForkResult>;
-  editThreadMessage: (
-    threadId: string,
-    turnId: string,
-    itemId: string,
-  ) => Promise<ThreadEditMessageResult>;
-  getThreadContextComposition: (
-    threadId: string,
-  ) => Promise<ThreadContextCompositionResult>;
+  editThreadMessage: (threadId: string, turnId: string, itemId: string) => Promise<ThreadEditMessageResult>;
+  getThreadContextComposition: (threadId: string) => Promise<ThreadContextCompositionResult>;
   // Instruction files (AGENTS.md / CLAUDE.md, ...) loaded into the base
   // system prompt at session start. Read-only; used by the session view's
   // 指令文件 block to mirror Claude Code's /memory visibility.
@@ -1812,21 +1777,15 @@ export type WuuDesktopApi = {
   // install); the toggle below persists whether that auto pass is enabled.
   getCliInstallStatus: () => Promise<CliInstallStatus>;
   installCli: (overwrite?: boolean) => Promise<CliInstallResult>;
-  setCliAutoInstallEnabled: (
-    enabled: boolean,
-  ) => Promise<{ ok: boolean; enabled: boolean }>;
+  setCliAutoInstallEnabled: (enabled: boolean) => Promise<{ ok: boolean; enabled: boolean }>;
   // 远程控制（设置 → 远程）。管理机器级 remote host 守护进程与手机配对,
   // 走主进程 RemoteHostManager 而非 app-server 协议。
   getRemoteControlSnapshot: () => Promise<RemoteControlSnapshot>;
   setRemoteRelay: (relayUrl: string) => Promise<RemoteControlSnapshot>;
   setRemoteHostEnabled: (enabled: boolean) => Promise<RemoteControlSnapshot>;
   startRemotePairing: () => Promise<RemoteControlSnapshot>;
-  removeRemoteDevice: (
-    fingerprintOrPub: string,
-  ) => Promise<RemoteControlSnapshot>;
-  onRemoteControlEvent: (
-    handler: (event: RemoteControlEvent) => void,
-  ) => () => void;
+  removeRemoteDevice: (fingerprintOrPub: string) => Promise<RemoteControlSnapshot>;
+  onRemoteControlEvent: (handler: (event: RemoteControlEvent) => void) => () => void;
   // Appearance. The preference persists in desktop-settings.json; the
   // renderer resolves "system" against prefers-color-scheme and stamps
   // data-theme on <html>. `initialThemePreference` is read synchronously
@@ -1841,32 +1800,24 @@ export type WuuDesktopApi = {
     settings: CodexPetSettingsUpdate,
   ) => Promise<CodexPetsSnapshot>;
   listParticipants: () => Promise<ParticipantListResult>;
-  saveParticipant: (
-    params: ParticipantSaveParams,
-  ) => Promise<ParticipantSaveResult>;
+  saveParticipant: (params: ParticipantSaveParams) => Promise<ParticipantSaveResult>;
   sendParticipantFeedback: (
     participantId: string,
     text: string,
     taskId?: string,
-    messageId?: string,
+    messageId?: string
   ) => Promise<ParticipantFeedbackResult>;
   resetParticipant: (
     participantId: string,
-    scope: "restart" | "session" | "full",
+    scope: "restart" | "session" | "full"
   ) => Promise<ParticipantResetResult>;
-  retireParticipant: (
-    participantId: string,
-  ) => Promise<ParticipantRetireResult>;
+  retireParticipant: (participantId: string) => Promise<ParticipantRetireResult>;
   // 记忆面板（设置 → 记忆）。契约见 memory-redesign.md §8.2；后端 M2
   // 未落地时三个方法都会以 unknown method 错误拒绝，面板渲染占位态。
-  getMemoryOverview: (
-    params: MemoryOverviewParams,
-  ) => Promise<MemoryOverviewResult>;
+  getMemoryOverview: (params: MemoryOverviewParams) => Promise<MemoryOverviewResult>;
   sendMemoryChat: (params: MemoryChatParams) => Promise<MemoryChatResult>;
   readMemoryRaw: (params: MemoryReadParams) => Promise<MemoryReadResult>;
-  listConversationSubthreads: (
-    threadId: string,
-  ) => Promise<ThreadListSubResult>;
+  listConversationSubthreads: (threadId: string) => Promise<ThreadListSubResult>;
   openConversationSubthread: (
     threadId: string,
     options: {
@@ -1875,31 +1826,21 @@ export type WuuDesktopApi = {
       title?: string;
       createdBy?: string;
       participants?: string[];
-    },
+      threadOwnerParticipantId?: string;
+    }
   ) => Promise<ThreadOpenSubResult>;
   resolveConversationSubthread: (
     threadId: string,
     subthreadId: string,
-    resolved: boolean,
+    resolved: boolean
   ) => Promise<ThreadResolveSubResult>;
-  // 把一条 reply 升级为 task(人点击):在 cth 上挂 task_card + 推进到执行态。
-  // leadParticipantId 是人挑的 task lead(唯一持编排权的 named 成员)。
+  // 把一条 Thread 升级为 Task:在同一个 cth 上挂 task_card + 推进到执行态。
+  // Task lead 由 Thread owner 派生,桌面不允许在升级时重新选人。
   escalateConversationSubthread: (
     threadId: string,
     subthreadId: string,
-    options?: {
-      title?: string;
-      createdBy?: string;
-      leadParticipantId?: string;
-    },
+    options?: { title?: string; createdBy?: string }
   ) => Promise<ThreadEscalateSubResult>;
-  // 收尾:把一句结论冒泡回主流一条 participant_message + 该 cth 变 resolved+摘要。
-  bubbleConversationSubthread: (
-    threadId: string,
-    subthreadId: string,
-    summary: string,
-    options?: { participantId?: string },
-  ) => Promise<ThreadBubbleSubResult>;
   // 在分屏 reply 面板里以「你」的身份往 cth 发一条消息:折进 cth(thread_id=cth,
   // 不进主流,只推 cth 参与者子集),回执带刷新后的 subthread 视图。
   postSubthreadMessage: (
@@ -1908,19 +1849,19 @@ export type WuuDesktopApi = {
     text: string,
     // 复用主对话完整 composer 后,分屏 reply 也能带附件/截图。可选:纯文本发送时留空。
     images?: InputImage[],
-    files?: InputFile[],
+    files?: InputFile[]
   ) => Promise<MessagePostSubthreadResult>;
   // 读一个已升级 subthread(task)的 trace 时间线,供 Task 面板的「轨迹」懒加载
   // (plan §T11)。只读。
   taskEvents: (
     threadId: string,
-    subthreadId: string,
+    subthreadId: string
   ) => Promise<ThreadTaskEventsResult>;
   listThreads: (cwd?: string) => Promise<{ threads: Thread[] }>;
   searchThreads: (query: string, limit?: number) => Promise<ThreadSearchResult>;
   getThreadPreview: (
     threadId: string,
-    limit?: number,
+    limit?: number
   ) => Promise<ThreadPreviewResult>;
   pinThread: (threadId: string, pinned: boolean) => Promise<{ thread: Thread }>;
   addThreadMember: (
@@ -1942,10 +1883,7 @@ export type WuuDesktopApi = {
     seq: number,
     reaction: string,
   ) => Promise<MessageReactResult>;
-  archiveThread: (
-    threadId: string,
-    archived: boolean,
-  ) => Promise<{ thread: Thread }>;
+  archiveThread: (threadId: string, archived: boolean) => Promise<{ thread: Thread }>;
   // Permanently deletes a conversation (history, artifacts, and any fork
   // worktree). Mirrors the `thread/delete` RPC; running threads are rejected
   // server-side.
@@ -1999,16 +1937,9 @@ export type WuuDesktopApi = {
   respondToServerRequest: (id: string, result: unknown) => Promise<void>;
   rejectServerRequest: (id: string, message: string) => Promise<void>;
   onServerEvent: (handler: (event: ServerEvent) => void) => () => void;
-  onTerminalEvent: (
-    handler: (event: TerminalSessionEvent) => void,
-  ) => () => void;
-  onWindowResizeState: (
-    handler: (state: WindowResizeState) => void,
-  ) => () => void;
-  renameThread: (
-    threadId: string,
-    title: string,
-  ) => Promise<{ thread: Thread }>;
+  onTerminalEvent: (handler: (event: TerminalSessionEvent) => void) => () => void;
+  onWindowResizeState: (handler: (state: WindowResizeState) => void) => () => void;
+  renameThread: (threadId: string, title: string) => Promise<{ thread: Thread }>;
   revealSession: (threadId: string) => Promise<void>;
   // Reveal a workspace file or folder in the OS file browser (Finder /
   // Explorer / file manager) with the item highlighted. Mirrors
@@ -2024,22 +1955,18 @@ export type WuuDesktopApi = {
   // URL is http(s) lives in the main-process handler so the renderer
   // can't escalate arbitrary schemes via this channel.
   openExternal: (url: string) => Promise<void>;
-  getSettingsUsage: (
-    range?: SettingsUsageRange,
-  ) => Promise<SettingsUsageResponse>;
+  getSettingsUsage: (range?: SettingsUsageRange) => Promise<SettingsUsageResponse>;
   // Composer goal banner surface. The renderer only needs a lightweight
   // summary plus explicit runtime controls; the full GoalSnapshot and
   // workflow/agent run detail stay on the agent tool loop.
-  getActiveGoalSummary: (
-    threadId?: string,
-  ) => Promise<ComposerGoalSummary | null>;
+  getActiveGoalSummary: (threadId?: string) => Promise<ComposerGoalSummary | null>;
   pauseGoal: (goalId: string, threadId?: string) => Promise<{ ok: boolean }>;
   resumeGoal: (goalId: string, threadId?: string) => Promise<{ ok: boolean }>;
   clearGoal: (goalId: string, threadId?: string) => Promise<{ ok: boolean }>;
   updateGoalText: (
     goalId: string,
     text: string,
-    threadId?: string,
+    threadId?: string
   ) => Promise<{ ok: boolean }>;
   /**
    * Pop-out session IPC (Plan §2.2 `wuu:pop-out-session`). Renderer
