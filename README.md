@@ -21,7 +21,7 @@
 
 **wuu** is an open-source AI coding agent that works in your local repository. It reads and edits files, runs commands, reviews changes, and resumes sessions — all through a BYOK model that works with Anthropic and any OpenAI-compatible provider.
 
-Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized subagents, run durable workflows, apply task-specific skills, and remember context across sessions. Use the desktop app for interactive work, or reach for `wuu exec` from scripts, CI, and other agents.
+Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized subagents, apply task-specific skills, and remember context across sessions. Use the desktop app for interactive work, or reach for `wuu exec` from scripts, CI, and other agents.
 
 ## Start Here
 
@@ -42,7 +42,7 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 
 - **BYOK, no lock-in** — bring your own API key; works with Anthropic and any OpenAI-compatible endpoint, including local gateways.
 - **One core, many shells** — the Go core speaks JSON-RPC via `wuu app-server`; the desktop app is the first shell, and editor plugins can reuse the same core without forking it.
-- **Orchestration built in** — subagents, durable workflows, skills, persistent memory, and scheduled tasks are part of the runtime, not bolted on.
+- **Orchestration built in** — subagents, durable goals, skills, persistent memory, and scheduled tasks are part of the runtime, not bolted on.
 - **Scriptable by design** — `wuu exec` streams JSONL, so CI jobs, review bots, and other agents can drive it programmatically.
 - **Sessions that persist** — resume previous turns, fork from a checkpoint, and keep context across sessions.
 
@@ -128,10 +128,10 @@ wuu session list --json
 
 **Agent orchestration**
 - **Subagents** — delegate to child agents (fresh general-purpose context, worktree-isolated workers, or context-inheriting forks) for parallel or isolated work
-- **Workflows** — durable multi-step runs with phases, worker spawns, and recovery
+- **Durable goals** — long-running objectives that survive context loss and resume across sessions
 - **Skills** — task-specific instruction sets for focused work like planning, reviewing, or frontend design
 - **Persistent memory** — agent profiles that remember preferences and context across sessions
-- **Scheduled tasks** — run prompts or workflows on cron schedules
+- **Scheduled tasks** — run prompts on cron schedules
 
 **Providers and integration**
 - **BYOK / multi-provider** — bring your own API key; works with Anthropic and OpenAI-compatible gateways (OpenAI, OpenRouter, one-api, local)
