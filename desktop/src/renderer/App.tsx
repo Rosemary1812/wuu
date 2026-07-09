@@ -94,11 +94,6 @@ import {
   type QueryHistoryEntry,
 } from "./QueryHistoryPopover";
 import { QueryHistoryRail } from "./QueryHistoryRail";
-import {
-  createAgentTreeDemo,
-  createConversationFixture,
-  type ConversationFixtureKind,
-} from "./ConversationFixtures";
 import { ConversationSearchOverlay } from "./ConversationSearchOverlay";
 import { ConversationSplitPane } from "./ConversationSplitPane";
 import { useConversationScrollState } from "./ConversationScrollState";
@@ -313,6 +308,7 @@ import { createThreadActivationActions } from "./ThreadActivationActions";
 import { createThreadMutationActions } from "./ThreadMutationActions";
 import { createRuntimeSettingsActions } from "./RuntimeSettingsActions";
 import { createCollaborationActions } from "./CollaborationActions";
+import { createConversationDemoPaneActions } from "./ConversationDemoPaneActions";
 export { SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./SidebarDrawerState";
 
 function permissionSummaryForMode(mode: PermissionMode): PermissionSummary {
@@ -2870,152 +2866,29 @@ export function App(): JSX.Element {
     setSettingsOpen,
   });
 
-  function seedAgentTreeDemo(): void {
-    if (!state.activeContext || !state.initialized) {
-      return;
-    }
-    const activeContext = state.activeContext;
-    cancelViewSwitch();
-    setArchiveConfirmThreadID(undefined);
-    setWorkspaceMode(undefined);
-    setPrompt("");
-    setComposerImages([]);
-    setComposerFiles([]);
-    const demo = createAgentTreeDemo(activeContext.cwd, state.initialized);
-    const demoThreads = [demo.parent, ...demo.children];
-    localDemoThreadsRef.current = new Map([
-      ...localDemoThreadsRef.current,
-      ...demoThreads.map((thread): [string, Thread] => [thread.id, thread]),
-    ]);
-    setState((current) => ({
-      ...current,
-      thread: demo.parent,
-      secondaryThread: undefined,
-      activePane: "primary",
-      allowThreadAutoActivation: true,
-      sessionTabs: ensureSessionTab(
-        current.sessionTabs,
-        createThreadSessionTab(demo.parent, activeContext),
-      ),
-      activeSessionTabID: threadSessionTabID(demo.parent.id),
-      threads: upsertThread(current.threads, demo.parent),
-      running: false,
-      status: "ready",
-    }));
-  }
-
-  function seedConversationFixture(kind: ConversationFixtureKind): void {
-    if (!state.activeContext || !state.initialized) {
-      return;
-    }
-    const activeContext = state.activeContext;
-    cancelViewSwitch();
-    setArchiveConfirmThreadID(undefined);
-    setWorkspaceMode(undefined);
-    setPrompt("");
-    setComposerImages([]);
-    setComposerFiles([]);
-    const thread = createConversationFixture(
-      kind,
-      activeContext.cwd,
-      state.initialized,
-    );
-    localDemoThreadsRef.current = new Map([
-      ...localDemoThreadsRef.current,
-      [thread.id, thread],
-    ]);
-    setState((current) => ({
-      ...current,
-      thread,
-      secondaryThread: undefined,
-      activePane: "primary",
-      allowThreadAutoActivation: true,
-      sessionTabs: ensureSessionTab(
-        current.sessionTabs,
-        createThreadSessionTab(thread, activeContext),
-      ),
-      activeSessionTabID: threadSessionTabID(thread.id),
-      threads: upsertThread(current.threads, thread),
-      running: isThreadRunning(thread),
-      status: "ready",
-    }));
-  }
-
-  function seedPlanPanelDebug(): void {
-    if (!state.activeContext || !state.initialized) {
-      return;
-    }
-    seedConversationFixture("plan");
-    setRunDebugOpen(false);
-    setEnvironmentPanelOpen(true);
-    setEnvironmentPanelDismissed(false);
-    setEnvironmentPanelMenu(null);
-  }
-
-  function activateConversationPane(pane: ConversationPaneID): void {
-    setState((current) => {
-      if (pane === "secondary" && !current.secondaryThread) {
-        return current;
-      }
-      const thread =
-        pane === "secondary" ? current.secondaryThread : current.thread;
-      return {
-        ...current,
-        activePane: pane,
-        activeSessionTabID: thread
-          ? threadSessionTabID(thread.id)
-          : current.activeSessionTabID,
-        running: isThreadRunning(thread),
-      };
-    });
-  }
-
-  function closeConversationPane(pane: ConversationPaneID): void {
-    moveSplitDraftToGlobalComposer(
-      pane === "secondary" ? "primary" : "secondary",
-    );
-    setState((current) => {
-      if (pane === "secondary") {
-        return {
-          ...current,
-          secondaryThread: undefined,
-          activePane: "primary",
-          activeSessionTabID: current.thread
-            ? threadSessionTabID(current.thread.id)
-            : current.activeSessionTabID,
-          running: isThreadRunning(current.thread),
-          status: "ready",
-        };
-      }
-      if (current.secondaryThread) {
-        return {
-          ...current,
-          thread: current.secondaryThread,
-          secondaryThread: undefined,
-          activePane: "primary",
-          activeSessionTabID: threadSessionTabID(current.secondaryThread.id),
-          running: isThreadRunning(current.secondaryThread),
-          status: "ready",
-        };
-      }
-      if (!current.activeContext) {
-        return current;
-      }
-      const nextTab = createDraftSessionTab(
-        `draft:closed:${Date.now()}`,
-        current.activeContext,
-      );
-      return {
-        ...current,
-        thread: undefined,
-        activePane: "primary",
-        sessionTabs: ensureSessionTab(current.sessionTabs, nextTab),
-        activeSessionTabID: nextTab.id,
-        running: false,
-        status: "ready",
-      };
-    });
-  }
+  const {
+    seedAgentTreeDemo,
+    seedConversationFixture,
+    seedPlanPanelDebug,
+    activateConversationPane,
+    closeConversationPane,
+  } = createConversationDemoPaneActions({
+    getAppState: () => appStateRef.current,
+    setAppState: setState,
+    localDemoThreadsRef,
+    cancelViewSwitch,
+    setArchiveConfirmThreadID,
+    setWorkspaceMode,
+    setPrompt,
+    setComposerImages,
+    setComposerFiles,
+    setSplitComposerDrafts,
+    moveSplitDraftToGlobalComposer,
+    setRunDebugOpen,
+    setEnvironmentPanelOpen,
+    setEnvironmentPanelDismissed,
+    setEnvironmentPanelMenu,
+  });
 
   // True when the (turnID, itemID) pair points at the most recent user
   // message in `sourceThread`. Used to decide whether the fork button
