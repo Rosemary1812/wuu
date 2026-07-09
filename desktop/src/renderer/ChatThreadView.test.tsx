@@ -479,12 +479,18 @@ describe("ChatThreadView reply / task affordances", () => {
     );
   });
 
-  it("reveals a hover 回复 entry (toolbar) on messages with no reply thread yet", () => {
+  it("reveals a hover 回复 entry (toolbar) on participant messages with no reply thread yet", () => {
     const opened: ThreadItem[] = [];
     const container = mount(
       createElement(ChatThreadView, {
         turns: turns([
-          { id: "item-1", type: "user_message", text: "改这里" },
+          {
+            id: "item-1",
+            type: "participant_message",
+            text: "改这里",
+            post_kind: "result",
+            participant: noel,
+          },
         ]),
         onOpenSubthread: (item: ThreadItem) => opened.push(item),
       }),
@@ -600,15 +606,23 @@ describe("ChatThreadView message hover toolbar", () => {
     );
   }
 
-  it("renders a 贴表情 trigger + 回复 button (no ⋯) on a user bubble when both wired", () => {
+  it("renders a 贴表情 trigger + 回复 button (no ⋯) on a participant bubble when both wired", () => {
     const container = mount(
       createElement(ChatThreadView, {
-        turns: turns([{ id: "item-1", type: "user_message", text: "改这里" }]),
+        turns: turns([
+          {
+            id: "item-1",
+            type: "participant_message",
+            text: "改这里",
+            post_kind: "result",
+            participant: noel,
+          },
+        ]),
         onOpenSubthread: () => {},
         onReact: () => {},
       }),
     );
-    const bar = toolbar(container);
+    const bar = toolbar(container, ".chat-row--participant .chat-bubble");
     expect(bar).not.toBeNull();
     // A single picker trigger plus the reply button — and nothing else.
     const trigger = bar!.querySelector<HTMLButtonElement>(".chat-bubble-toolbar-react");
