@@ -2786,6 +2786,30 @@
   overflow: hidden;
 }
 
+/* No-language variant: the header row is gone (see RichCodeBlock in
+ * RichContent.tsx) and the copy button floats over the top-right
+ * of the <pre> instead. The container becomes the positioning
+ * anchor so the button stays put as the code scrolls horizontally,
+ * and the <pre> grows right padding so single-line blocks like
+ * `git push` output don't slide under the button. The button keeps
+ * the same always-visible opacity behaviour from `.rich-code-copy`
+ * below — no separate hover-reveal rule needed. */
+.rich-code-block--no-header {
+  position: relative;
+}
+
+.rich-code-block--no-header > .rich-code {
+  padding-right: 40px;
+}
+
+.rich-code-block--no-header .rich-code-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  margin-left: 0;
+  z-index: 1;
+}
+
 .rich-code-block > .rich-code {
   margin: 0;
   border: 0;

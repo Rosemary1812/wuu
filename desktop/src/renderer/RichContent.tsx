@@ -461,28 +461,50 @@ function RichCodeBlock({
   language: string;
   children: ReactNode;
 }): JSX.Element {
-  // The header (language label + copy button) lives in its own row so the
-  // scrolling code area is not visually coupled to a floating overlay. With
-  // the previous single-container layout the absolute-positioned header sat
-  // on top of a pre that used padding-top to leave room, which meant long
-  // code blocks had the header painted into the same overflow:hidden box as
-  // the scrollable content.
-  return (
-    <div className="rich-code-block">
-      <div className="rich-code-header">
-        {language ? <span className="rich-code-language">{language}</span> : null}
-        <MessageCopyButton
-          getText={() => code}
-          className="rich-code-copy"
-          iconSize={13}
-          idleLabel="复制代码"
-          copiedLabel="已复制代码"
-          failedLabel="复制失败"
-        />
+  // Two layouts:
+  //   - With a language tag, the header row carries the language label
+  //     and the copy button on the same baseline. Keeps the chrome
+  //     out of the code surface so long blocks don't paint the header
+  //     into a scrollable overflow box.
+  //   - Without a language tag (anonymous fenced block like ```` ``` ````),
+  //     there is no header row at all. The copy button floats over the
+  //     top-right of the <pre> instead — same `RichCodeBlock` styling,
+  //     same always-visible opacity behaviour, just anchored to the code
+  //     surface instead of a sibling row. The <pre> gets extra right
+  //     padding (see CSS) so short lines don't slide under the button.
+  if (language) {
+    return (
+      <div className="rich-code-block">
+        <div className="rich-code-header">
+          <span className="rich-code-language">{language}</span>
+          <MessageCopyButton
+            getText={() => code}
+            className="rich-code-copy"
+            iconSize={13}
+            idleLabel="复制代码"
+            copiedLabel="已复制代码"
+            failedLabel="复制失败"
+          />
+        </div>
+        <pre className="rich-code">
+          {children}
+        </pre>
       </div>
+    );
+  }
+  return (
+    <div className="rich-code-block rich-code-block--no-header">
       <pre className="rich-code">
         {children}
       </pre>
+      <MessageCopyButton
+        getText={() => code}
+        className="rich-code-copy"
+        iconSize={13}
+        idleLabel="复制代码"
+        copiedLabel="已复制代码"
+        failedLabel="复制失败"
+      />
     </div>
   );
 }
