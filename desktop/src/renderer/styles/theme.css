@@ -262,6 +262,7 @@
   --sidebar-glass-overlay-light: rgba(255, 255, 255, 0.02);
   --sidebar-glass-overlay-accent: rgba(209, 220, 211, 0.03);
   --sidebar-glass-overlay-highlight-strong: rgba(255, 255, 255, 0.05);
+  --sidebar-drawer-bg: rgba(26, 29, 32, 0.82);
   --sidebar-resizer-hover-bg: rgba(228, 232, 235, 0.2);
   --sidebar-resizer-hover-ring: rgba(0, 0, 0, 0.4);
   --sidebar-dev-fixture-nav-border: rgba(228, 232, 235, 0.1);

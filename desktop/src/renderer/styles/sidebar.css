@@ -7,6 +7,7 @@
   --sidebar-glass-overlay-light: rgba(255, 255, 255, 0.14);
   --sidebar-glass-overlay-accent: rgba(209, 220, 211, 0.12);
   --sidebar-glass-overlay-highlight-strong: rgba(255, 255, 255, 0.44);
+  --sidebar-drawer-bg: rgba(255, 255, 255, 0.72);
   --sidebar-resizer-hover-bg: rgba(45, 50, 54, 0.24);
   --sidebar-resizer-hover-ring: rgba(255, 255, 255, 0.4);
   --sidebar-dev-fixture-nav-border: rgba(68, 76, 70, 0.1);
@@ -260,7 +261,7 @@
   width: var(--sidebar-open-width, 326px);
   min-width: var(--sidebar-open-width, 326px);
   border-right-color: rgba(255, 255, 255, 0.42);
-  background: rgba(255, 255, 255, 0.26);
+  background: var(--sidebar-drawer-bg);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.24),
     10px 0 24px var(--ink-overlay-8);

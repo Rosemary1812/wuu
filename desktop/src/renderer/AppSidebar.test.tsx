@@ -184,6 +184,10 @@ describe("AppSidebar layout", () => {
     expect(sidebarCSS).not.toMatch(
       /\.sidebar-collapsed\s+\.sidebar-hover-zone:hover[\s\S]*background:/,
     );
+    expect(sidebarCSS).toContain("--sidebar-drawer-bg: rgba(255, 255, 255, 0.72)");
+    expect(sidebarCSS).toMatch(
+      /\.sidebar-collapsed\.sidebar-drawer-open \.sidebar,[\s\S]*background:\s*var\(--sidebar-drawer-bg\);/,
+    );
     expect(sidebarCSS).toContain("--sidebar-motion-ease: cubic-bezier(0.25, 1, 0.5, 1)");
     expect(sidebarCSS).toContain("var(--sidebar-motion-ease)");
     expect(sidebarCSS).toContain(
