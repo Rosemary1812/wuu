@@ -89,6 +89,13 @@ describe("turns.css rich links", () => {
   });
 });
 
+describe("turns.css rich tables", () => {
+  it("does not tint message table rows on hover", () => {
+    expect(turnsCss).not.toMatch(/\.rich-table-wrap\s+tbody\s+tr:hover/);
+    expect(turnsCss).not.toMatch(/\.rich-table-wrap\s+tbody\s+tr\s*\{[\s\S]*transition:\s*background-color/);
+  });
+});
+
 describe("turns.css turn notice positioning", () => {
   it("renders notices as a centered broken divider with side hairlines", () => {
     const body = cssRuleBody(".turn-notice");

@@ -2994,7 +2994,6 @@
  * slightly stronger bottom hairline and a muted text color so it
  * reads as a label without relying on font weight (chat messages
  * strip weight emphasis — see base.css `.rich-content strong`).
- * A soft row hover tint helps scanning long tables.
  */
 .rich-table-wrap {
   max-width: 100%;
@@ -3027,15 +3026,6 @@
 /* Drop the bottom border on the final row so the table breathes. */
 .rich-table-wrap tbody tr:last-child td {
   border-bottom: 0;
-}
-
-/* Soft row hover for scanning long tables. */
-.rich-table-wrap tbody tr {
-  transition: background-color 120ms ease;
-}
-
-.rich-table-wrap tbody tr:hover td {
-  background: var(--surface-1);
 }
 
 .rich-blockquote {
