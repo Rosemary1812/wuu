@@ -94,6 +94,22 @@ func TestRunTUICommandIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRunGoalCommandIsRemoved(t *testing.T) {
+	err := run([]string{"goal"})
+	if err == nil || !strings.Contains(err.Error(), `unknown command "goal"`) {
+		t.Fatalf("expected unknown goal command error, got %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run(nil); err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	})
+	if strings.Contains(output, "wuu goal") || strings.Contains(output, "Goal flags:") {
+		t.Fatalf("usage should not include legacy goal CLI, got %q", output)
+	}
+}
+
 func TestRunExecJSONUsesControllerPath(t *testing.T) {
 	controller := newCLIExecFakeController(
 		cliExecNotification(appserver.NotificationAgentMessageDelta, appserver.AgentMessageDeltaNotification{ThreadID: "thread-1", TurnID: "turn-1", Delta: "ok"}),
@@ -623,117 +639,6 @@ func TestRunInitWritesDefaultConfig(t *testing.T) {
 	if cfg.DefaultProvider == "" || len(cfg.Providers) == 0 {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
-}
-
-func TestRunGoalDemoWritesDurableState(t *testing.T) {
-	workdir := t.TempDir()
-	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
-	t.Setenv("WUU_HOME", wuuHome)
-	if err := os.WriteFile(filepath.Join(workdir, "marker.txt"), []byte("ok"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	output := captureStdout(t, func() {
-		if err := run([]string{
-			"goal", "demo",
-			"--workdir", workdir,
-			"--id", "goal-test",
-			"--goal", "prove durable goal",
-			"--verify-command", "test -f marker.txt",
-		}); err != nil {
-			t.Fatalf("run goal demo: %v", err)
-		}
-	})
-	if !strings.Contains(output, "status: completed") {
-		t.Fatalf("expected completed summary, got %q", output)
-	}
-	goalDir := cliGoalDir(t, wuuHome, workdir, "goal-test")
-	for _, rel := range []string{
-		"state.json",
-		"events.jsonl",
-		"views/progress.md",
-		"views/decisions.md",
-		"views/failures.md",
-		"views/approvals.md",
-		"artifacts/research.md",
-		"artifacts/plan.md",
-		"artifacts/todo.md",
-		"artifacts/verification.md",
-		"artifacts/review.md",
-		"artifacts/integration.md",
-		"artifacts/final.md",
-	} {
-		if _, err := os.Stat(filepath.Join(goalDir, rel)); err != nil {
-			t.Fatalf("expected %s: %v", rel, err)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(workdir, ".goal")); !os.IsNotExist(err) {
-		t.Fatalf("project root .goal should not be created, stat err=%v", err)
-	}
-
-	status := captureStdout(t, func() {
-		if err := run([]string{"goal", "status", "--workdir", workdir, "--id", "goal-test", "--json"}); err != nil {
-			t.Fatalf("run goal status: %v", err)
-		}
-	})
-	var state struct {
-		ID          string `json:"id"`
-		Status      string `json:"status"`
-		Final       string `json:"final_artifact"`
-		TestResults []struct {
-			Passed bool `json:"passed"`
-		} `json:"test_results"`
-	}
-	if err := json.Unmarshal([]byte(status), &state); err != nil {
-		t.Fatalf("parse goal status JSON: %v\n%s", err, status)
-	}
-	if state.ID != "goal-test" || state.Status != "completed" || state.Final == "" {
-		t.Fatalf("unexpected goal state: %+v", state)
-	}
-	if len(state.TestResults) != 1 || !state.TestResults[0].Passed {
-		t.Fatalf("expected one passing test result, got %+v", state.TestResults)
-	}
-}
-
-func TestRunGoalDemoRecordsVerificationFailure(t *testing.T) {
-	workdir := t.TempDir()
-	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
-	t.Setenv("WUU_HOME", wuuHome)
-
-	output := captureStdout(t, func() {
-		if err := run([]string{
-			"goal", "demo",
-			"--workdir", workdir,
-			"--id", "goal-fail",
-			"--goal", "capture failure",
-			"--verify-command", "test -f missing.txt",
-		}); err != nil {
-			t.Fatalf("run goal demo: %v", err)
-		}
-	})
-	if !strings.Contains(output, "status: needs_human") {
-		t.Fatalf("expected needs_human summary, got %q", output)
-	}
-	goalDir := cliGoalDir(t, wuuHome, workdir, "goal-fail")
-	failures, err := os.ReadFile(filepath.Join(goalDir, "views", "failures.md"))
-	if err != nil {
-		t.Fatalf("read failures: %v", err)
-	}
-	if !strings.Contains(string(failures), "verification_command_failed") {
-		t.Fatalf("expected verification failure, got %s", failures)
-	}
-	if _, err := os.Stat(filepath.Join(workdir, ".goal")); !os.IsNotExist(err) {
-		t.Fatalf("project root .goal should not be created, stat err=%v", err)
-	}
-}
-
-func cliGoalDir(t *testing.T, wuuHome, workdir, goalID string) string {
-	t.Helper()
-	workspaceStateDir, err := statepath.WorkspaceDir(wuuHome, workdir)
-	if err != nil {
-		t.Fatalf("WorkspaceDir: %v", err)
-	}
-	return statepath.GoalDir(workspaceStateDir, goalID)
 }
 
 func TestLoadOrCreateAppServerConfigCreatesStarterConfig(t *testing.T) {
