@@ -31,8 +31,8 @@
   --diff-insert-color: #12a150;
   --diff-delete-color: #cf2e2e;
   --live-gray-shimmer-edge: rgba(255, 255, 255, 0.5);
-  --rich-link-color: #c73a08;
-  --rich-link-hover-color: #ff3d00;
+  --rich-link-color: #60a5fa;
+  --rich-link-hover-color: #3b82f6;
   --rich-code-surface-bg: #e9eaea;
   --fork-worktree-copy-bg: rgba(255, 255, 255, 0.84);
   --fork-worktree-focus-ring: rgba(9, 105, 218, 0.22);
@@ -2725,11 +2725,18 @@
   margin-top: 14px;
 }
 
+.rich-image-block--auto {
+  width: fit-content;
+  max-width: 100%;
+}
+
 .rich-image-caption {
+  display: block;
+  max-width: 100%;
   margin-top: 6px;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.4;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.35;
   overflow-wrap: anywhere;
 }
 

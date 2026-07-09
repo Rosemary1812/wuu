@@ -322,8 +322,8 @@
   --diff-insert-color: #3fb970;
   --diff-delete-color: #ef6a5e;
   --live-gray-shimmer-edge: rgba(255, 255, 255, 0.35);
-  --rich-link-color: #ff8a5e;
-  --rich-link-hover-color: #ffa585;
+  --rich-link-color: #60a5fa;
+  --rich-link-hover-color: #3b82f6;
   --rich-code-surface-bg: #26292d;
   --fork-worktree-copy-bg: rgba(38, 42, 46, 0.9);
   --fork-worktree-focus-ring: rgba(88, 166, 255, 0.3);

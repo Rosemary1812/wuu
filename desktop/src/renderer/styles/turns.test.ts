@@ -72,7 +72,7 @@ describe("turns.css streaming block wrappers", () => {
 describe("turns.css rich links", () => {
   it("tints inline message links with the brand accent, no underlines or icon backplates", () => {
     expect(cssRuleBody(".rich-link")).toMatch(/color:\s*var\(--rich-link-color\);/);
-    expect(turnsCss).toMatch(/--rich-link-color:\s*#c73a08;/);
+    expect(turnsCss).toMatch(/--rich-link-color:\s*#60a5fa;/);
     expect(cssRuleBody(".rich-link")).toMatch(/text-decoration-line:\s*none;/);
     expect(cssRuleBody(".rich-link-favicon-frame")).not.toMatch(/\bbackground\s*:/);
     expect(cssRuleBody(".rich-link-favicon")).not.toMatch(/\bbackground\s*:/);
