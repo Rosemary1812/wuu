@@ -89,13 +89,10 @@ func TestLegacyPathsIgnoreWuuHomeOverride(t *testing.T) {
 	if got, want := LegacyConfigPath(home), filepath.Join(home, ".config", "wuu", "config.json"); got != want {
 		t.Fatalf("LegacyConfigPath() = %q, want %q", got, want)
 	}
-	if got, want := LegacyAuthPath(home), filepath.Join(home, ".config", "wuu", "auth.json"); got != want {
-		t.Fatalf("LegacyAuthPath() = %q, want %q", got, want)
-	}
 	if got, want := LegacyGlobalDir(home), filepath.Join(home, ".config", "wuu"); got != want {
 		t.Fatalf("LegacyGlobalDir() = %q, want %q", got, want)
 	}
-	if LegacyConfigPath("") != "" || LegacyAuthPath("") != "" || LegacyGlobalDir("") != "" {
+	if LegacyConfigPath("") != "" || LegacyGlobalDir("") != "" {
 		t.Fatal("legacy paths must be empty when home is empty")
 	}
 }

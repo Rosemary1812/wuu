@@ -10,8 +10,7 @@ import (
 )
 
 // migrateLegacyGlobalStore performs a one-time, non-destructive copy of the
-// user's pre-unification global files ($HOME/.config/wuu/{config.json,
-// auth.json}) into the unified wuu home (~/.wuu, or WUU_HOME when set). It is
+// user's pre-unification global config into the unified wuu home. It is
 // idempotent and best-effort: if the new file already exists nothing happens,
 // and any failure leaves the legacy file in place so callers can still fall
 // back to the legacy read path. The legacy files are never deleted.
@@ -21,9 +20,6 @@ func migrateLegacyGlobalStore(home string) {
 	}
 	if newPath, err := statepath.ConfigPath(home); err == nil {
 		migrateGlobalFile(newPath, statepath.LegacyConfigPath(home), 0o644, "config.json")
-	}
-	if newPath, err := statepath.AuthPath(home); err == nil {
-		migrateGlobalFile(newPath, statepath.LegacyAuthPath(home), 0o600, "auth.json")
 	}
 }
 

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blueberrycongee/wuu/internal/authstorage"
 	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/securefs"
 	"github.com/blueberrycongee/wuu/internal/statepath"
@@ -180,14 +179,6 @@ type ProviderConfig struct {
 	APIKeyEnv    string                         `json:"api_key_env,omitempty"`
 	AuthToken    string                         `json:"auth_token,omitempty"`
 	AuthTokenEnv string                         `json:"auth_token_env,omitempty"`
-	// HasCredential is the public marker for "this provider has
-	// credentials stored in ~/.wuu/auth.json". config.json never holds
-	// the actual key / token values — those live in auth.json behind
-	// internal/authstorage. HasCredential is set to true by the
-	// migration step in LoadFrom when an old config.json had inline
-	// credentials, and by UI save paths that write a new credential
-	// through AuthStore.Save.
-	HasCredential bool `json:"has_credential,omitempty"`
 	Model        string                         `json:"model"`
 	Models       map[string]ProviderModelConfig `json:"models,omitempty"`
 	Headers      map[string]string              `json:"headers,omitempty"`
@@ -430,32 +421,6 @@ func LoadFrom(workdir, home string) (Config, string, error) {
 			cfg, readErr := readConfig(candidate)
 			if readErr != nil {
 				return Config{}, "", readErr
-			}
-			// Stage 2: one-shot credential migration. Old config.json
-			// files may carry inline api_key / auth_token under any
-			// provider; pull them out to ~/.wuu/auth.json, mark the
-			// affected providers with HasCredential, and rewrite the
-			// config without the plaintext fields. The migration is
-			// idempotent: once the fields are gone from config.json,
-			// future loads are no-ops.
-			if home != "" {
-				if authPath, err := statepath.AuthPath(home); err == nil && authPath != "" {
-					if migrated, err := authstorage.MigrateFromConfig(candidate, authPath); err != nil {
-						fmt.Fprintf(os.Stderr, "config: auth migration from %s: %v\n", candidate, err)
-					} else if migrated.Migrated {
-						for _, id := range migrated.Providers {
-							if p, ok := cfg.Providers[id]; ok {
-								p.HasCredential = true
-								p.APIKey = ""
-								p.AuthToken = ""
-								cfg.Providers[id] = p
-							}
-						}
-						if err := saveConfigFile(candidate, cfg); err != nil {
-							fmt.Fprintf(os.Stderr, "config: rewrite after migration %s: %v\n", candidate, err)
-						}
-					}
-				}
 			}
 			// Overlay the project-scoped settings layers (if any) on top of
 			// the selected base config. projectRoot is workdir, the same

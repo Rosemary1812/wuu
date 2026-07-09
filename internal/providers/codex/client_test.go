@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/authstorage"
 	"github.com/blueberrycongee/wuu/internal/compact"
-	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -128,7 +128,11 @@ func TestClientUsesCodexCLIAuthReadOnlyWhenEnabled(t *testing.T) {
 	if resp.Content != "ok" {
 		t.Fatalf("content = %q", resp.Content)
 	}
-	if _, err := config.LoadCodexOAuth(home); err == nil {
+	store, err := authstorage.ForHome(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Get("openai-codex"); err == nil {
 		t.Fatal("Codex CLI read-only fallback should not write wuu auth state")
 	}
 }
@@ -171,12 +175,11 @@ func TestLocalOAuthStatusUsesCodexCLIAuth(t *testing.T) {
 func TestLocalOAuthStatusUsesRefreshableWuuAuth(t *testing.T) {
 	home := t.TempDir()
 	stale := fakeJWT(t, time.Now().Add(-time.Hour), "acct_status_wuu")
-	if err := config.SaveCodexOAuth(home, config.CodexOAuthState{
-		Tokens: config.CodexOAuthTokens{
-			AccessToken:  stale,
-			RefreshToken: "refresh-token",
-		},
-	}); err != nil {
+	store, err := authstorage.ForHome(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("openai-codex", authstorage.Credentials{Type: "oauth", AccessToken: stale, RefreshToken: "refresh-token"}); err != nil {
 		t.Fatalf("SaveCodexOAuth: %v", err)
 	}
 
@@ -206,14 +209,11 @@ func TestClientRefreshesStoredWuuCodexOAuth(t *testing.T) {
 	home := t.TempDir()
 	stale := fakeJWT(t, time.Now().Add(-time.Hour), "acct_old")
 	fresh := fakeJWT(t, time.Now().Add(time.Hour), "acct_new")
-	if err := config.SaveCodexOAuth(home, config.CodexOAuthState{
-		Tokens: config.CodexOAuthTokens{
-			AccessToken:  stale,
-			RefreshToken: "refresh-old",
-		},
-		AuthMode: "chatgpt",
-		Source:   "test",
-	}); err != nil {
+	store, err := authstorage.ForHome(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("openai-codex", authstorage.Credentials{Type: "oauth", AccessToken: stale, RefreshToken: "refresh-old", AuthMode: "chatgpt", Source: "test"}); err != nil {
 		t.Fatalf("SaveCodexOAuth: %v", err)
 	}
 
@@ -268,12 +268,12 @@ func TestClientRefreshesStoredWuuCodexOAuth(t *testing.T) {
 	if resp.Content != "refreshed" {
 		t.Fatalf("content = %q", resp.Content)
 	}
-	state, err := config.LoadCodexOAuth(home)
+	state, err := store.Get("openai-codex")
 	if err != nil {
 		t.Fatalf("LoadCodexOAuth: %v", err)
 	}
-	if state.Tokens.AccessToken != fresh || state.Tokens.RefreshToken != "refresh-new" {
-		t.Fatalf("unexpected stored tokens: %#v", state.Tokens)
+	if state.AccessToken != fresh || state.RefreshToken != "refresh-new" {
+		t.Fatalf("unexpected stored tokens: %#v", state)
 	}
 }
 
@@ -448,8 +448,8 @@ func TestCodexRequestAppliesDefaultsButAllowsOverride(t *testing.T) {
 	}
 
 	options := map[string]any{
-		"maxOutputTokens":    999,
-		"temperatureSupported": false,
+		"maxOutputTokens":       999,
+		"temperatureSupported":  false,
 		"temperature_supported": false,
 	}
 	capped := codexRequest(providers.ChatRequest{MaxTokens: 123, ProviderOptions: options})

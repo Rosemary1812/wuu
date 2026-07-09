@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/blueberrycongee/wuu/internal/authstorage"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/modelbudget"
@@ -539,12 +540,28 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		}
 	}
 	if authKeyForStore != "" {
-		if err := config.SaveAuthKey(os.Getenv("HOME"), resolvedName, authKeyForStore); err != nil {
+		store, storeErr := authstorage.ForHome(os.Getenv("HOME"))
+		if storeErr != nil {
+			return s.writeResponse(req.ID, nil, storeErr)
+		}
+		if err := store.Update(resolvedName, func(credentials *authstorage.Credentials) {
+			credentials.Type = "api_key"
+			credentials.APIKey = authKeyForStore
+			credentials.AuthToken = ""
+		}); err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
 	}
 	if authTokenForStore != "" {
-		if err := config.SaveAuthToken(os.Getenv("HOME"), resolvedName, authTokenForStore); err != nil {
+		store, storeErr := authstorage.ForHome(os.Getenv("HOME"))
+		if storeErr != nil {
+			return s.writeResponse(req.ID, nil, storeErr)
+		}
+		if err := store.Update(resolvedName, func(credentials *authstorage.Credentials) {
+			credentials.Type = "auth_token"
+			credentials.AuthToken = authTokenForStore
+			credentials.APIKey = ""
+		}); err != nil {
 			return s.writeResponse(req.ID, nil, err)
 		}
 	}
@@ -1096,12 +1113,13 @@ func providerHasAuth(name string, provider config.ProviderConfig, home string) b
 	if isCodexProviderType(provider.Type) && provider.ReuseCodexCredentials {
 		return true
 	}
-	key, err := config.LoadAuthKey(home, name)
-	if err == nil && strings.TrimSpace(key) != "" {
-		return true
+	store, err := authstorage.ForHome(home)
+	if err != nil {
+		return false
 	}
-	token, err := config.LoadAuthToken(home, name)
-	return err == nil && strings.TrimSpace(token) != ""
+	credentials, err := store.Get(name)
+	return err == nil && (strings.TrimSpace(credentials.APIKey) != "" ||
+		strings.TrimSpace(credentials.AuthToken) != "" || strings.TrimSpace(credentials.AccessToken) != "")
 }
 
 func providerModelSummaries(providerName string, provider config.ProviderConfig) []ProviderModelSummary {

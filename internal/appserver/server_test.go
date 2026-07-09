@@ -19,6 +19,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
+	"github.com/blueberrycongee/wuu/internal/authstorage"
 	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
@@ -1369,9 +1370,13 @@ func TestServerConfigModelUpdatePersistsProviderConnection(t *testing.T) {
 		!strings.Contains(string(data), `"model": "new-model"`) {
 		t.Fatalf("provider connection was not persisted: %s", data)
 	}
-	key, err := config.LoadAuthKey(os.Getenv("HOME"), "fake-provider")
-	if err != nil || key != "new-key" {
-		t.Fatalf("provider key was not saved to auth store: key=%q err=%v", key, err)
+	store, err := authstorage.ForHome(os.Getenv("HOME"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials, err := store.Get("fake-provider")
+	if err != nil || credentials.APIKey != "new-key" {
+		t.Fatalf("provider key was not saved to auth store: credentials=%+v err=%v", credentials, err)
 	}
 }
 
@@ -1433,9 +1438,13 @@ func TestServerConfigModelUpdateCreatesProvider(t *testing.T) {
 		!strings.Contains(string(data), `"default_provider": "custom-1"`) {
 		t.Fatalf("new provider was not persisted: %s", data)
 	}
-	key, err := config.LoadAuthKey(os.Getenv("HOME"), "custom-1")
-	if err != nil || key != "new-key" {
-		t.Fatalf("provider key was not saved to auth store: key=%q err=%v", key, err)
+	store, err := authstorage.ForHome(os.Getenv("HOME"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials, err := store.Get("custom-1")
+	if err != nil || credentials.APIKey != "new-key" {
+		t.Fatalf("provider key was not saved to auth store: credentials=%+v err=%v", credentials, err)
 	}
 }
 
@@ -1489,9 +1498,13 @@ func TestServerConfigModelUpdateCreatesAnthropicProviderWithAuthToken(t *testing
 		strings.Contains(string(data), `"api_key": "sk-token"`) {
 		t.Fatalf("anthropic provider was not persisted safely: %s", data)
 	}
-	token, err := config.LoadAuthToken(os.Getenv("HOME"), "anthropic-gateway")
-	if err != nil || token != "sk-token" {
-		t.Fatalf("provider auth token was not saved to auth store: token=%q err=%v", token, err)
+	store, err := authstorage.ForHome(os.Getenv("HOME"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials, err := store.Get("anthropic-gateway")
+	if err != nil || credentials.AuthToken != "sk-token" {
+		t.Fatalf("provider auth token was not saved to auth store: credentials=%+v err=%v", credentials, err)
 	}
 }
 

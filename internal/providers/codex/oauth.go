@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/authstorage"
 )
 
 const (
@@ -83,35 +83,40 @@ func (s *OAuthSource) Credentials(ctx context.Context, forceRefresh bool) (crede
 		return credentials{}, errors.New("home directory is required for Codex OAuth")
 	}
 
-	state, err := config.LoadCodexOAuth(s.home)
+	store, err := authstorage.ForHome(s.home)
+	if err != nil {
+		return credentials{}, err
+	}
+	state, err := store.Get("openai-codex")
 	if err == nil {
 		creds := credentials{
-			accessToken:  strings.TrimSpace(state.Tokens.AccessToken),
-			refreshToken: strings.TrimSpace(state.Tokens.RefreshToken),
-			accountID:    firstNonEmpty(state.Tokens.AccountID, accountIDFromToken(state.Tokens.AccessToken)),
+			accessToken:  strings.TrimSpace(state.AccessToken),
+			refreshToken: strings.TrimSpace(state.RefreshToken),
+			accountID:    firstNonEmpty(state.AccountID, accountIDFromToken(state.AccessToken)),
 			source:       "wuu-auth-store",
-			refreshable:  strings.TrimSpace(state.Tokens.RefreshToken) != "",
+			refreshable:  strings.TrimSpace(state.RefreshToken) != "",
 		}
 		if forceRefresh || tokenExpiring(creds.accessToken, refreshSkew) {
 			refreshed, refreshErr := refresh(ctx, s.httpClient, creds.refreshToken)
 			if refreshErr != nil {
 				return credentials{}, refreshErr
 			}
-			state.Tokens.AccessToken = refreshed.accessToken
-			state.Tokens.RefreshToken = firstNonEmpty(refreshed.refreshToken, state.Tokens.RefreshToken)
-			state.Tokens.AccountID = firstNonEmpty(accountIDFromToken(refreshed.accessToken), state.Tokens.AccountID)
+			state.AccessToken = refreshed.accessToken
+			state.RefreshToken = firstNonEmpty(refreshed.refreshToken, state.RefreshToken)
+			state.AccountID = firstNonEmpty(accountIDFromToken(refreshed.accessToken), state.AccountID)
 			state.LastRefresh = time.Now().UTC().Format(time.RFC3339)
 			state.AuthMode = "chatgpt"
+			state.Type = "oauth"
 			if state.Source == "" {
 				state.Source = "wuu"
 			}
 			state.BaseURL = s.baseURL
-			if saveErr := config.SaveCodexOAuth(s.home, state); saveErr != nil {
+			if saveErr := store.Set("openai-codex", state); saveErr != nil {
 				return credentials{}, saveErr
 			}
-			creds.accessToken = state.Tokens.AccessToken
-			creds.refreshToken = state.Tokens.RefreshToken
-			creds.accountID = firstNonEmpty(state.Tokens.AccountID, accountIDFromToken(state.Tokens.AccessToken))
+			creds.accessToken = state.AccessToken
+			creds.refreshToken = state.RefreshToken
+			creds.accountID = firstNonEmpty(state.AccountID, accountIDFromToken(state.AccessToken))
 		}
 		return creds, nil
 	}
@@ -124,13 +129,13 @@ func (s *OAuthSource) Credentials(ctx context.Context, forceRefresh bool) (crede
 	if cliErr != nil {
 		return credentials{}, fmt.Errorf("no Codex OAuth credentials found; run `codex` to sign in or import credentials into wuu: %w", cliErr)
 	}
-	if tokenExpiring(cliState.Tokens.AccessToken, 0) {
+	if tokenExpiring(cliState.AccessToken, 0) {
 		return credentials{}, errors.New("Codex CLI credentials are expired; run `codex` to refresh them before using openai-codex")
 	}
 	return credentials{
-		accessToken:  strings.TrimSpace(cliState.Tokens.AccessToken),
-		refreshToken: strings.TrimSpace(cliState.Tokens.RefreshToken),
-		accountID:    firstNonEmpty(cliState.Tokens.AccountID, accountIDFromToken(cliState.Tokens.AccessToken)),
+		accessToken:  strings.TrimSpace(cliState.AccessToken),
+		refreshToken: strings.TrimSpace(cliState.RefreshToken),
+		accountID:    firstNonEmpty(cliState.AccountID, accountIDFromToken(cliState.AccessToken)),
 		source:       "codex-cli-readonly",
 		refreshable:  false,
 	}, nil
@@ -146,9 +151,9 @@ func LocalOAuthStatus(home string) (string, error) {
 	if home == "" {
 		return "", errors.New("home directory is required for Codex OAuth")
 	}
-	if state, err := config.LoadCodexOAuth(home); err == nil {
-		if strings.TrimSpace(state.Tokens.AccessToken) != "" &&
-			(!tokenExpiring(state.Tokens.AccessToken, 0) || strings.TrimSpace(state.Tokens.RefreshToken) != "") {
+	if store, err := authstorage.ForHome(home); err == nil {
+		if state, err := store.Get("openai-codex"); err == nil && strings.TrimSpace(state.AccessToken) != "" &&
+			(!tokenExpiring(state.AccessToken, 0) || strings.TrimSpace(state.RefreshToken) != "") {
 			return "wuu-auth-store", nil
 		}
 	}
@@ -156,7 +161,7 @@ func LocalOAuthStatus(home string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("Codex CLI OAuth credentials not found: %w", err)
 	}
-	if tokenExpiring(cliState.Tokens.AccessToken, 0) {
+	if tokenExpiring(cliState.AccessToken, 0) {
 		return "", errors.New("Codex CLI OAuth credentials are expired; run `codex` to refresh them")
 	}
 	return "codex-cli", nil
@@ -223,7 +228,7 @@ func refreshTokenURL() string {
 	return tokenURL
 }
 
-func loadCodexCLIAuth(home string) (config.CodexOAuthState, error) {
+func loadCodexCLIAuth(home string) (authstorage.Credentials, error) {
 	codexHome := strings.TrimSpace(os.Getenv("CODEX_HOME"))
 	if codexHome == "" {
 		codexHome = filepath.Join(home, ".codex")
@@ -231,21 +236,30 @@ func loadCodexCLIAuth(home string) (config.CodexOAuthState, error) {
 	path := filepath.Join(codexHome, "auth.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return config.CodexOAuthState{}, err
+		return authstorage.Credentials{}, err
 	}
 	var raw struct {
-		Tokens config.CodexOAuthTokens `json:"tokens"`
+		Tokens struct {
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+			IDToken      string `json:"id_token"`
+			AccountID    string `json:"account_id"`
+		} `json:"tokens"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return config.CodexOAuthState{}, err
+		return authstorage.Credentials{}, err
 	}
 	if strings.TrimSpace(raw.Tokens.AccessToken) == "" {
-		return config.CodexOAuthState{}, errors.New("Codex CLI auth is missing access_token")
+		return authstorage.Credentials{}, errors.New("Codex CLI auth is missing access_token")
 	}
-	return config.CodexOAuthState{
-		Tokens:   raw.Tokens,
-		AuthMode: "chatgpt",
-		Source:   "codex-cli",
+	return authstorage.Credentials{
+		Type:         "oauth",
+		AccessToken:  raw.Tokens.AccessToken,
+		RefreshToken: raw.Tokens.RefreshToken,
+		IDToken:      raw.Tokens.IDToken,
+		AccountID:    raw.Tokens.AccountID,
+		AuthMode:     "chatgpt",
+		Source:       "codex-cli",
 	}, nil
 }
 

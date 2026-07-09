@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/authstorage"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -23,7 +24,7 @@ func TestBuildClient_OpenAICompatible(t *testing.T) {
 		BaseURL:   "https://example.com/v1",
 		APIKeyEnv: "TEST_WUU_KEY",
 		Model:     "gpt-test",
-	}, "test")
+	}, "missing-test")
 	if err != nil {
 		t.Fatalf("BuildClient returned error: %v", err)
 	}
@@ -101,7 +102,7 @@ func TestBuildClient_Anthropic(t *testing.T) {
 		BaseURL:   "https://api.anthropic.com",
 		APIKeyEnv: "TEST_ANTHROPIC_KEY",
 		Model:     "claude-test",
-	}, "test")
+	}, "missing-provider")
 	if err != nil {
 		t.Fatalf("BuildClient returned error: %v", err)
 	}
@@ -316,7 +317,11 @@ func TestResolveAPIKey_AuthStoreFallback(t *testing.T) {
 
 	home := t.TempDir()
 	// Save key to auth store.
-	if err := config.SaveAuthKey(home, "myapi", "sk-from-auth-store"); err != nil {
+	store, err := authstorage.ForHome(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("myapi", authstorage.Credentials{Type: "api_key", APIKey: "sk-from-auth-store"}); err != nil {
 		t.Fatalf("save auth key: %v", err)
 	}
 
@@ -375,7 +380,7 @@ func TestBuildClient_MissingAPIKey(t *testing.T) {
 		BaseURL:   "https://example.com/v1",
 		APIKeyEnv: "MISSING_WUU_KEY",
 		Model:     "gpt-test",
-	}, "test")
+	}, "missing-provider")
 	if err == nil {
 		t.Fatal("expected error")
 	}

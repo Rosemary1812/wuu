@@ -101,16 +101,6 @@ func LegacyConfigPath(homeDir string) string {
 	return filepath.Join(dir, configFileName)
 }
 
-// LegacyAuthPath returns the pre-unification auth.json location
-// ($HOME/.config/wuu/auth.json), or "" when homeDir is empty.
-func LegacyAuthPath(homeDir string) string {
-	dir := LegacyGlobalDir(homeDir)
-	if dir == "" {
-		return ""
-	}
-	return filepath.Join(dir, authFileName)
-}
-
 // UserInstructionDirs returns the ordered directories scanned for user-level
 // instruction files: the canonical unified home first, then the legacy
 // $HOME/.config/wuu directory for backward compatibility. Missing pieces are

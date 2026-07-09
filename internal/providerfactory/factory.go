@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/authstorage"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/providers/anthropic"
@@ -305,9 +306,10 @@ func ResolveAPIKeyWithHome(provider config.ProviderConfig, providerName, home st
 
 	// 3. Global auth store.
 	if home != "" && providerName != "" {
-		key, err := config.LoadAuthKey(home, providerName)
-		if err == nil && key != "" {
-			return key, nil
+		if store, err := authstorage.ForHome(home); err == nil {
+			if credentials, err := store.Get(providerName); err == nil && strings.TrimSpace(credentials.APIKey) != "" {
+				return strings.TrimSpace(credentials.APIKey), nil
+			}
 		}
 	}
 
@@ -346,9 +348,10 @@ func resolveAuthToken(provider config.ProviderConfig, providerName string) strin
 		return token
 	}
 	if providerName != "" {
-		token, err := config.LoadAuthToken(os.Getenv("HOME"), providerName)
-		if err == nil && strings.TrimSpace(token) != "" {
-			return strings.TrimSpace(token)
+		if store, err := authstorage.ForHome(os.Getenv("HOME")); err == nil {
+			if credentials, err := store.Get(providerName); err == nil && strings.TrimSpace(credentials.AuthToken) != "" {
+				return strings.TrimSpace(credentials.AuthToken)
+			}
 		}
 	}
 	return ""
