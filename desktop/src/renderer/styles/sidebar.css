@@ -1025,7 +1025,7 @@
   grid-template-columns:
     var(--sidebar-nav-icon-col)
     minmax(0, 1fr);
-  padding-left: calc(var(--sidebar-row-pad-x) + var(--sidebar-child-indent));
+  padding-left: var(--sidebar-row-pad-x);
 }
 
 .thread-row::before {
@@ -1035,7 +1035,7 @@
   height: 5px;
   flex: 0 0 auto;
   border-radius: var(--radius-pill);
-  background: var(--sidebar-thread-row-dot-default);
+  background: transparent;
   content: "";
   transform: scale(0.75);
   transition:
@@ -1045,8 +1045,8 @@
 }
 
 .thread-row:hover::before {
-  background: var(--sidebar-thread-row-dot-hover);
-  transform: scale(1);
+  background: transparent;
+  transform: scale(0.75);
 }
 
 .thread-row.active,
@@ -1057,8 +1057,8 @@
 }
 
 .thread-row.active::before {
-  background: var(--sidebar-thread-row-dot-active);
-  transform: scale(1);
+  background: transparent;
+  transform: scale(0.75);
 }
 
 .thread-row.running::before {
