@@ -181,7 +181,6 @@ import {
   scratchThreadSummaries,
   queryTextsForThread,
   reduceServerEvent,
-  removeSessionTab,
   requireThread,
   runtimeContextKey,
   sameRuntimeContext,
@@ -322,6 +321,7 @@ import {
 import { createProjectRuntimeActions } from "./ProjectRuntimeActions";
 import { createSessionTabActions } from "./SessionTabActions";
 import { createThreadActivationActions } from "./ThreadActivationActions";
+import { createThreadMutationActions } from "./ThreadMutationActions";
 export { SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./SidebarDrawerState";
 
 function permissionSummaryForMode(mode: PermissionMode): PermissionSummary {
@@ -2156,34 +2156,6 @@ export function App(): JSX.Element {
     });
   }, [state.activeSessionTabID, state.thread, state.threads]);
 
-  /**
-   * Returns a new thread with the matching child agent patched, or the
-   * original reference when no match exists. Used by the subagent
-   * pin/archive handlers so they can update `child_agents` in state
-   * without a full thread list round-trip; the spread identity in
-   * `setState` calls is intentional — `undefined` here would erase
-   * existing thread data.
-   */
-  function patchChildAgentInThread(
-    thread: Thread | undefined,
-    agentID: string,
-    patch: Partial<Agent>,
-  ): Thread | undefined {
-    if (!thread || !thread.child_agents) {
-      return thread;
-    }
-    const index = thread.child_agents.findIndex((a) => a.id === agentID);
-    if (index === -1) {
-      return thread;
-    }
-    return {
-      ...thread,
-      child_agents: thread.child_agents.map((agent, i) =>
-        i === index ? { ...agent, ...patch } : agent,
-      ),
-    };
-  }
-
   function openSkillsTab(): void {
     if (!state.activeContext) {
       return;
@@ -3157,6 +3129,34 @@ export function App(): JSX.Element {
     selectRuntimeContext,
   });
 
+  const {
+    toggleThreadPinned,
+    renameThread,
+    removeThreadMemberByID,
+    addThreadMemberByID,
+    archiveThread,
+    deleteThread,
+    toggleSubagentPinned,
+    archiveSubagent,
+  } = createThreadMutationActions({
+    getAppState: () => appStateRef.current,
+    setAppState: setState,
+    getActiveThreadID: () => activeThreadID,
+    getArchiveConfirmThreadID: () => archiveConfirmThreadID,
+    getArchiveConfirmSubagentID: () => archiveConfirmSubagentID,
+    setArchiveConfirmThreadID,
+    setArchiveConfirmSubagentID,
+    localDemoThreadsRef,
+    nextDraftSessionTab,
+    clearPrimaryComposerDraft: () =>
+      restorePrimaryComposerDraft(emptyComposerDraft()),
+    resetSplitComposerDrafts: () =>
+      setSplitComposerDrafts(initialSplitComposerDrafts()),
+    updateCachedSidebarThread,
+    removeCachedSidebarThread,
+    clearThreadPendingComposerMessages,
+  });
+
   function seedAgentTreeDemo(): void {
     if (!state.activeContext || !state.initialized) {
       return;
@@ -3635,455 +3635,6 @@ export function App(): JSX.Element {
       setState((current) => ({
         ...current,
         status: desktopApiErrorMessage(error, "编辑历史消息失败"),
-      }));
-    }
-  }
-
-  async function toggleThreadPinned(thread: ThreadSummary): Promise<void> {
-    if (!state.activeContext) {
-      return;
-    }
-    setArchiveConfirmThreadID(undefined);
-    const localDemoThread = localDemoThreadsRef.current.get(thread.id);
-    if (localDemoThread) {
-      const nextThread = { ...localDemoThread, pinned: !thread.pinned };
-      localDemoThreadsRef.current = new Map([
-        ...localDemoThreadsRef.current,
-        [thread.id, nextThread],
-      ]);
-      setState((current) => ({
-        ...current,
-        thread: current.thread?.id === thread.id ? nextThread : current.thread,
-        secondaryThread:
-          current.secondaryThread?.id === thread.id
-            ? nextThread
-            : current.secondaryThread,
-        threads: upsertThread(current.threads, nextThread),
-        status: current.status === "ready" ? "ready" : current.status,
-      }));
-      return;
-    }
-    try {
-      const result = await window.wuu.pinThread(thread.id, !thread.pinned);
-      updateCachedSidebarThread(result.thread);
-      setState((current) => ({
-        ...current,
-        thread:
-          current.thread?.id === thread.id ? result.thread : current.thread,
-        secondaryThread:
-          current.secondaryThread?.id === thread.id
-            ? result.thread
-            : current.secondaryThread,
-        // Mirror the server's thread/list visibility rule: DM and group
-        // threads are listed for every cwd, so they always live in
-        // state.threads and must be updated there too — otherwise the
-        // stale copy wins the sidebar merge and the pin appears to do
-        // nothing. Context-scoped threads keep the cwd guard so a pin
-        // from 置顶 can't inject a foreign-context thread.
-        threads:
-          current.activeContext?.cwd === result.thread.cwd ||
-          isDMThread(result.thread) ||
-          isGroupThread(result.thread)
-            ? upsertThread(current.threads, result.thread)
-            : current.threads,
-        status: current.status === "ready" ? "ready" : current.status,
-      }));
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "pin thread failed",
-      }));
-    }
-  }
-
-  async function renameThread(
-    thread: ThreadSummary,
-    title: string,
-  ): Promise<void> {
-    const trimmed = title.trim();
-    if (!trimmed) {
-      return;
-    }
-    const localDemoThread = localDemoThreadsRef.current.get(thread.id);
-    if (localDemoThread) {
-      const nextThread = { ...localDemoThread, title: trimmed };
-      localDemoThreadsRef.current = new Map([
-        ...localDemoThreadsRef.current,
-        [thread.id, nextThread],
-      ]);
-      setState((current) => ({
-        ...current,
-        thread: current.thread?.id === thread.id ? nextThread : current.thread,
-        secondaryThread:
-          current.secondaryThread?.id === thread.id
-            ? nextThread
-            : current.secondaryThread,
-        threads: upsertThread(current.threads, nextThread),
-        status: current.status === "ready" ? "ready" : current.status,
-      }));
-      return;
-    }
-    try {
-      const result = await window.wuu.renameThread(thread.id, trimmed);
-      updateCachedSidebarThread(result.thread);
-      setState((current) => ({
-        ...current,
-        thread:
-          current.thread?.id === thread.id ? result.thread : current.thread,
-        secondaryThread:
-          current.secondaryThread?.id === thread.id
-            ? result.thread
-            : current.secondaryThread,
-        threads:
-          current.threads.some((item) => item.id === result.thread.id) ||
-          current.activeContext?.cwd === result.thread.cwd ||
-          isDMThread(result.thread) ||
-          isGroupThread(result.thread)
-            ? upsertThread(current.threads, result.thread)
-            : current.threads,
-        status: current.status === "ready" ? "ready" : current.status,
-      }));
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: desktopApiErrorMessage(error, "重命名对话失败"),
-      }));
-    }
-  }
-
-  async function removeThreadMemberByID(
-    threadID: string,
-    participantID: string,
-  ): Promise<void> {
-    try {
-      const result = await window.wuu.removeThreadMember(threadID, participantID);
-      updateCachedSidebarThread(result.thread);
-      setState((current) => ({
-        ...current,
-        thread: current.thread?.id === threadID ? result.thread : current.thread,
-        secondaryThread:
-          current.secondaryThread?.id === threadID
-            ? result.thread
-            : current.secondaryThread,
-        threads: upsertThread(current.threads, result.thread),
-        status: current.status === "ready" ? "ready" : current.status,
-      }));
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error ? error.message : "remove thread member failed",
-      }));
-    }
-  }
-
-  async function addThreadMemberByID(
-    threadID: string,
-    participantID: string,
-  ): Promise<void> {
-    try {
-      const result = await window.wuu.addThreadMember(threadID, participantID);
-      updateCachedSidebarThread(result.thread);
-      setState((current) => ({
-        ...current,
-        thread: current.thread?.id === threadID ? result.thread : current.thread,
-        secondaryThread:
-          current.secondaryThread?.id === threadID
-            ? result.thread
-            : current.secondaryThread,
-        threads: upsertThread(current.threads, result.thread),
-        status: current.status === "ready" ? "ready" : current.status,
-      }));
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error ? error.message : "add thread member failed",
-      }));
-    }
-  }
-
-  async function archiveThread(thread: ThreadSummary): Promise<void> {
-    const isLocalDemoThread = localDemoThreadsRef.current.has(thread.id);
-    if (
-      !state.activeContext ||
-      (!isLocalDemoThread && isThreadRunning(thread))
-    ) {
-      return;
-    }
-    if (archiveConfirmThreadID !== thread.id) {
-      setArchiveConfirmThreadID(thread.id);
-      return;
-    }
-    clearThreadPendingComposerMessages(thread.id);
-    const archivedActiveThread = thread.id === activeThreadID;
-    const fallbackDraft = archivedActiveThread
-      ? nextDraftSessionTab(state.activeContext)
-      : undefined;
-    if (archivedActiveThread) {
-      setPrompt("");
-      setComposerImages([]);
-      setComposerFiles([]);
-      setSplitComposerDrafts(initialSplitComposerDrafts());
-    }
-    if (isLocalDemoThread) {
-      localDemoThreadsRef.current = new Map(
-        [...localDemoThreadsRef.current].filter(
-          ([threadID]) => threadID !== thread.id,
-        ),
-      );
-      setArchiveConfirmThreadID(undefined);
-      setState((current) => {
-        const nextTabs = removeSessionTab(
-          current.sessionTabs,
-          threadSessionTabID(thread.id),
-        );
-        return {
-          ...current,
-          thread: current.thread?.id === thread.id ? undefined : current.thread,
-          secondaryThread:
-            current.secondaryThread?.id === thread.id
-              ? undefined
-              : current.secondaryThread,
-          activePane:
-            current.activePane === "secondary" &&
-            current.secondaryThread?.id === thread.id
-              ? "primary"
-              : current.activePane,
-          sessionTabs: fallbackDraft
-            ? ensureSessionTab(nextTabs, fallbackDraft)
-            : nextTabs,
-          activeSessionTabID:
-            current.activeSessionTabID === threadSessionTabID(thread.id) &&
-            fallbackDraft
-              ? fallbackDraft.id
-              : current.activeSessionTabID,
-          threads: current.threads.filter(
-            (candidate) => candidate.id !== thread.id,
-          ),
-          running:
-            activeThreadIDForState(current) === thread.id
-              ? false
-              : current.running,
-          status: "ready",
-        };
-      });
-      return;
-    }
-    try {
-      const result = await window.wuu.archiveThread(thread.id, true);
-      updateCachedSidebarThread(result.thread);
-      setArchiveConfirmThreadID(undefined);
-      setState((current) => {
-        const nextTabs = removeSessionTab(
-          current.sessionTabs,
-          threadSessionTabID(thread.id),
-        );
-        return {
-          ...current,
-          thread: current.thread?.id === thread.id ? undefined : current.thread,
-          secondaryThread:
-            current.secondaryThread?.id === thread.id
-              ? undefined
-              : current.secondaryThread,
-          activePane:
-            current.activePane === "secondary" &&
-            current.secondaryThread?.id === thread.id
-              ? "primary"
-              : current.activePane,
-          sessionTabs: fallbackDraft
-            ? ensureSessionTab(nextTabs, fallbackDraft)
-            : nextTabs,
-          activeSessionTabID:
-            current.activeSessionTabID === threadSessionTabID(thread.id) &&
-            fallbackDraft
-              ? fallbackDraft.id
-              : current.activeSessionTabID,
-          // Removing by id is a no-op when the thread isn't in the list,
-          // so no cwd guard is needed — and DM/group threads (listed for
-          // every cwd, see thread/list) would otherwise survive here as
-          // stale copies that keep the archived thread in the sidebar.
-          threads: current.threads.filter(
-            (candidate) => candidate.id !== result.thread.id,
-          ),
-          running:
-            activeThreadIDForState(current) === thread.id
-              ? false
-              : current.running,
-          status: "ready",
-        };
-      });
-    } catch (error) {
-      setArchiveConfirmThreadID(undefined);
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error ? error.message : "archive thread failed",
-      }));
-    }
-  }
-
-  /**
-   * Permanently delete a conversation via `thread/delete`. The context
-   * menu item already asked the user to confirm, so no press-again state
-   * is involved here; the server rejects running threads as a backstop.
-   * Removal mirrors the archive tab/state cleanup, but the thread is
-   * also dropped from the sidebar caches because no server-side snapshot
-   * exists anymore.
-   */
-  async function deleteThread(thread: ThreadSummary): Promise<void> {
-    const isLocalDemoThread = localDemoThreadsRef.current.has(thread.id);
-    if (
-      !state.activeContext ||
-      (!isLocalDemoThread && isThreadRunning(thread))
-    ) {
-      return;
-    }
-    clearThreadPendingComposerMessages(thread.id);
-    const deletedActiveThread = thread.id === activeThreadID;
-    const fallbackDraft = deletedActiveThread
-      ? nextDraftSessionTab(state.activeContext)
-      : undefined;
-    if (deletedActiveThread) {
-      setPrompt("");
-      setComposerImages([]);
-      setComposerFiles([]);
-      setSplitComposerDrafts(initialSplitComposerDrafts());
-    }
-    try {
-      if (isLocalDemoThread) {
-        localDemoThreadsRef.current = new Map(
-          [...localDemoThreadsRef.current].filter(
-            ([threadID]) => threadID !== thread.id,
-          ),
-        );
-      } else {
-        await window.wuu.deleteThread(thread.id);
-      }
-      removeCachedSidebarThread(thread.id);
-      setArchiveConfirmThreadID((current) =>
-        current === thread.id ? undefined : current,
-      );
-      setState((current) => {
-        const nextTabs = removeSessionTab(
-          current.sessionTabs,
-          threadSessionTabID(thread.id),
-        );
-        return {
-          ...current,
-          thread: current.thread?.id === thread.id ? undefined : current.thread,
-          secondaryThread:
-            current.secondaryThread?.id === thread.id
-              ? undefined
-              : current.secondaryThread,
-          activePane:
-            current.activePane === "secondary" &&
-            current.secondaryThread?.id === thread.id
-              ? "primary"
-              : current.activePane,
-          sessionTabs: fallbackDraft
-            ? ensureSessionTab(nextTabs, fallbackDraft)
-            : nextTabs,
-          activeSessionTabID:
-            current.activeSessionTabID === threadSessionTabID(thread.id) &&
-            fallbackDraft
-              ? fallbackDraft.id
-              : current.activeSessionTabID,
-          threads: current.threads.filter(
-            (candidate) => candidate.id !== thread.id,
-          ),
-          running:
-            activeThreadIDForState(current) === thread.id
-              ? false
-              : current.running,
-          status: "ready",
-        };
-      });
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error ? error.message : "delete thread failed",
-      }));
-    }
-  }
-
-  /**
-   * Pin a subagent's own session. Mirrors `toggleThreadPinned` but the
-   * API call goes to the underlying session id (the agent id) and the
-   * result is patched back into the active thread's `child_agents` list
-   * so the info panel row reflects the new state without an extra
-   * thread list round-trip.
-   */
-  async function toggleSubagentPinned(agent: Agent): Promise<void> {
-    if (!state.activeContext) {
-      return;
-    }
-    setArchiveConfirmSubagentID(undefined);
-    try {
-      const result = await window.wuu.pinThread(agent.id, !agent.pinned);
-      setState((current) => ({
-        ...current,
-        thread: patchChildAgentInThread(current.thread, agent.id, {
-          pinned: result.thread.pinned,
-        }),
-        secondaryThread: patchChildAgentInThread(
-          current.secondaryThread,
-          agent.id,
-          { pinned: result.thread.pinned },
-        ),
-        threads: current.threads.map((thread) =>
-          patchChildAgentInThread(thread, agent.id, {
-            pinned: result.thread.pinned,
-          }) ?? thread,
-        ),
-        status: current.status === "ready" ? "ready" : current.status,
-      }));
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error ? error.message : "pin subagent failed",
-      }));
-    }
-  }
-
-  /**
-   * Archive a subagent's own session. Re-uses the press-again-to-confirm
-   * pattern that the sidebar uses for top-level threads, but never
-   * touches the active thread's tab because the subagent is not the
-   * primary session. The archived subagent remains visible in the info
-   * panel so the user can see the action was applied.
-   */
-  async function archiveSubagent(agent: Agent): Promise<void> {
-    if (archiveConfirmSubagentID !== agent.id) {
-      setArchiveConfirmSubagentID(agent.id);
-      return;
-    }
-    setArchiveConfirmSubagentID(undefined);
-    try {
-      await window.wuu.archiveThread(agent.id, true);
-      setState((current) => ({
-        ...current,
-        thread: patchChildAgentInThread(current.thread, agent.id, {
-          archived: true,
-        }),
-        secondaryThread: patchChildAgentInThread(
-          current.secondaryThread,
-          agent.id,
-          { archived: true },
-        ),
-        threads: current.threads.map((thread) =>
-          patchChildAgentInThread(thread, agent.id, { archived: true }) ??
-            thread,
-        ),
-        status: current.status === "ready" ? "ready" : current.status,
-      }));
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error ? error.message : "archive subagent failed",
       }));
     }
   }
