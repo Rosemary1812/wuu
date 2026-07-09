@@ -2337,11 +2337,11 @@ describe("chatMessagesFromTurns", () => {
     ]);
   });
 
-  it("drops a subagent_notification handoff delivered as a self-addressed user_message", () => {
+  it("maps a subagent_notification handoff to a system event row", () => {
     // The backend delivers a triggering subagent notification to the resident
     // as a user_message whose text is an InterAgentCommunication envelope
-    // wrapping a <subagent_notification> payload. It is working-transcript
-    // machinery and must never leak into the chat stream as a raw JSON bubble.
+    // wrapping a <subagent_notification> payload. The chat stream renders the
+    // lifecycle fact as a system divider, never as a raw JSON bubble.
     const notification: ThreadItem = {
       id: "item-1",
       type: "user_message",
@@ -2369,6 +2369,13 @@ describe("chatMessagesFromTurns", () => {
       turn("turn-1", [notification, realMessage]),
     ]);
     expect(rows).toEqual([
+      {
+        kind: "system",
+        id: "turn-1:item-1",
+        turnID: "turn-1",
+        text: "subagent 任务已取消",
+        item: notification,
+      },
       { kind: "user", id: "turn-1:item-2", turnID: "turn-1", item: realMessage },
     ]);
   });
@@ -2411,16 +2418,14 @@ describe("chatMessagesFromTurns", () => {
     expect(rows).toEqual([]);
   });
 
-  it("maps a task_card to a task row (subagent / 升级后的 task 折叠卡)", () => {
+  it("drops top-level task_card items from chat rows", () => {
     const item: ThreadItem = {
       id: "item-1",
       type: "task_card",
       task: { id: "task-1", name: "跑测试", status: "running", reply_count: 3 },
     };
     const rows = chatMessagesFromTurns([turn("turn-1", [item])]);
-    expect(rows).toEqual([
-      { kind: "task", id: "turn-1:item-1", turnID: "turn-1", item },
-    ]);
+    expect(rows).toEqual([]);
   });
 
   it("uses stable `${turn.id}:${item.id}` row ids across multiple turns", () => {

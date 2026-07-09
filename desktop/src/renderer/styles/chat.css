@@ -37,6 +37,7 @@
 }
 
 .chat-row--focus,
+.chat-row--system,
 .chat-row--envelope {
   grid-template-columns: 1fr;
   padding: 2px 0;
@@ -390,11 +391,6 @@ img.chat-reaction-glyph {
   align-self: stretch;
   min-width: 0;
 }
-.chat-row--task {
-  display: flex;
-  justify-content: flex-start;
-}
-
 /* Hover toolbar floating just above a chat bubble (贴表情 + 回复). Reuses the
    menu surface tokens so it reads as part of the same app. Positioned with
    `bottom: calc(100% - 4px)` so it sits just above the bubble, overlapping the

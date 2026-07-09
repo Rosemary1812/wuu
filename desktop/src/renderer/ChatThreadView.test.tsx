@@ -415,28 +415,37 @@ describe("ChatThreadView reply / task affordances", () => {
     };
   }
 
-  it("renders an in-stream task_card as a task card (进行中/条数)", () => {
+  it("renders a system event row as an inline divider", () => {
     const container = mount(
       createElement(ChatThreadView, {
         turns: turns([
           {
             id: "item-1",
-            type: "task_card",
-            task: {
-              id: "task-1",
-              name: "跑测试",
-              status: "running",
-              reply_count: 3,
-            },
+            type: "user_message",
+            text: JSON.stringify({
+              author: "/root/explore",
+              recipient: "/root",
+              content: `<subagent_notification>\n${JSON.stringify({
+                agent_path: "/root/explore",
+                status: {
+                  type: "agent_result",
+                  agent_id: "worker-1",
+                  task_name: "explore",
+                  status: "completed",
+                },
+              })}\n</subagent_notification>`,
+              trigger_turn: true,
+            }),
           },
         ]),
       }),
     );
-    const card = container.querySelector(".chat-row--task .task-card");
-    expect(card).not.toBeNull();
-    expect(container.querySelector(".task-card-title")?.textContent).toBe("跑测试");
-    expect(container.textContent).toContain("进行中");
-    expect(container.textContent).toContain("3 条回复");
+    const divider = container.querySelector(".chat-system-divider");
+    expect(divider).not.toBeNull();
+    expect(divider?.classList.contains("chat-inline-divider")).toBe(true);
+    expect(container.querySelector(".chat-system-divider-label")?.textContent).toBe(
+      "subagent 完成了任务",
+    );
   });
 
   it("hangs a 'N 条回复' badge under a message that anchors a plain reply", () => {

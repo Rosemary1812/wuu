@@ -2022,9 +2022,7 @@ export function App(): JSX.Element {
 
   // Load the active chat thread's reply subthreads for the chat view's reply
   // badges / task 活动卡. Best-effort and decorative: any failure leaves the
-  // last-known map untouched and never disrupts the message stream. Subagent
-  // task-card subthreads are also returned here but anchor on synthetic
-  // task-card-<id> ids that no chat message matches, so they render nothing.
+  // last-known map untouched and never disrupts the message stream.
   useEffect(() => {
     if (!activeThreadID || !activeThreadIsChatStyle) {
       setChatSubthreads(null);

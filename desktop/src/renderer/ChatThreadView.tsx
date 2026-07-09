@@ -511,19 +511,18 @@ function ChatRow({
   onReact?: (item: ThreadItem, reaction: string) => void;
 }): JSX.Element {
   const topBubbleClass = isTopBubble ? " chat-row--top-bubble" : "";
-  if (row.kind === "task") {
-    // task_card 折叠卡:复用 agent-brain 转录里的 TaskCardItem(进行中显示活动
-    // 状态,完成后显示 result 摘要)。「查看过程」仅在 task 绑了 subthread 时可点。
+  if (row.kind === "system") {
     return (
-      <div className={`chat-row chat-row--task${topBubbleClass}`}>
-        <TaskCardItem
-          item={row.item}
-          onOpenSubthread={
-            row.item.task?.subthread_id
-              ? () => onOpenSubthread?.(row.item)
-              : undefined
-          }
-        />
+      <div className={`chat-row chat-row--system${topBubbleClass}`}>
+        <div
+          className="chat-inline-divider chat-system-divider"
+          role="status"
+          aria-label={row.text}
+        >
+          <span className="chat-inline-divider-label chat-system-divider-label">
+            {row.text}
+          </span>
+        </div>
       </div>
     );
   }

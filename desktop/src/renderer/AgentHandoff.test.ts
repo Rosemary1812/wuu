@@ -20,9 +20,24 @@ function handoffText(status = "completed"): string {
 }
 
 describe("agentHandoffDisplay", () => {
-  it("summarizes completed subagent handoffs for the transcript", () => {
+  it("renders completed subagent handoffs as a system event", () => {
     expect(agentHandoffDisplay(handoffText())?.label).toBe(
-      "子 agent explore_current_directory 已完成，主 agent 正在整合结果"
+      "subagent 完成了任务"
+    );
+  });
+
+  it("uses short system-event labels for terminal and active statuses", () => {
+    expect(agentHandoffDisplay(handoffText("failed"))?.label).toBe(
+      "subagent 任务失败"
+    );
+    expect(agentHandoffDisplay(handoffText("cancelled"))?.label).toBe(
+      "subagent 任务已取消"
+    );
+    expect(agentHandoffDisplay(handoffText("running"))?.label).toBe(
+      "subagent 正在执行任务"
+    );
+    expect(agentHandoffDisplay(handoffText("queued"))?.label).toBe(
+      "subagent 等待执行任务"
     );
   });
 

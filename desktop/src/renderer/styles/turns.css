@@ -587,14 +587,9 @@
   opacity: 0.45;
 }
 
-.agent-handoff-line {
-  align-self: center;
+.agent-handoff-divider {
   max-width: min(760px, 88%);
   margin: 2px auto 18px;
-  color: var(--ink-muted);
-  font-size: var(--font-sm);
-  line-height: 1.45;
-  text-align: center;
 }
 
 /* Envelope-routed messages in a resident agent's DM thread render as a

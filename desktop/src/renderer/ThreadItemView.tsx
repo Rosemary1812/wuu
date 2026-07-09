@@ -104,8 +104,14 @@ export function ThreadItemView({
       const handoff = agentHandoffDisplay(text);
       if (handoff) {
         return (
-          <div className="agent-handoff-line" role="status">
-            {handoff.label}
+          <div
+            className="chat-inline-divider agent-handoff-divider"
+            role="status"
+            aria-label={handoff.label}
+          >
+            <span className="chat-inline-divider-label agent-handoff-divider-label">
+              {handoff.label}
+            </span>
           </div>
         );
       }

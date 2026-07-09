@@ -5423,19 +5423,15 @@ func TestServerThreadListIncludesDirectChildAgents(t *testing.T) {
 	if agents[0].ID != "worker-1" || agents[0].TaskName != "inspect" || agents[0].NestedCount != 1 || agents[0].NestedRunningCount != 1 {
 		t.Fatalf("unexpected child agent summary: %+v", agents[0])
 	}
-	if len(thread.Turns) == 0 || len(thread.Turns[0].Items) != 1 {
-		t.Fatalf("expected synthesized task card turn, got %+v", thread.Turns)
-	}
-	card := thread.Turns[0].Items[0]
-	if card.Type != ThreadItemTaskCard || card.Task == nil || card.Task.ID != "worker-1" || card.Task.SubthreadID == "" {
-		t.Fatalf("unexpected task card item: %+v", card)
+	if len(thread.Turns) != 0 {
+		t.Fatalf("thread/list must not synthesize subagent task-card turns, got %+v", thread.Turns)
 	}
 	subthreads, err := session.ListConversationThreads(rt.SessionDir, thread.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(subthreads) != 1 || subthreads[0].AnchorItemID != "task-card-worker-1" {
-		t.Fatalf("expected task card subthread anchor, got %+v", subthreads)
+	if len(subthreads) != 0 {
+		t.Fatalf("thread/list must not create task-card subthreads, got %+v", subthreads)
 	}
 }
 

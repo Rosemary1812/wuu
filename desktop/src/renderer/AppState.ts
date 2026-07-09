@@ -16,7 +16,7 @@ import type {
   Turn,
 } from "../shared/protocol";
 import type { ComposerFile, ComposerImage } from "./ComposerMessages";
-import { isAgentHandoffText } from "./AgentHandoff";
+import { agentHandoffDisplay, isAgentHandoffText } from "./AgentHandoff";
 import { threadDisplayTitle } from "./ThreadTitles";
 import { sortChildAgents } from "./ThreadAgents";
 import {
@@ -1889,7 +1889,7 @@ export type ChatMessageRow =
   | { kind: "user"; id: string; turnID: string; item: ThreadItem }
   | { kind: "envelope"; id: string; turnID: string; items: ThreadItem[] }
   | { kind: "participant"; id: string; turnID: string; item: ThreadItem }
-  | { kind: "task"; id: string; turnID: string; item: ThreadItem }
+  | { kind: "system"; id: string; turnID: string; text: string; item: ThreadItem }
   | { kind: "focus"; id: string; turnID: string; item: ThreadItem };
 
 /**
@@ -1957,10 +1957,9 @@ export function applySubthreadUpdatedNotification(
  * becomes a "focus" row regardless of what type the backend tags it
  * with.
  *
- * task_card items (spawned subagent 折叠卡 / 升级后的 task 活动卡) are now
- * whitelisted too: they collapse into a single "task" row rendered by the
- * shared TaskCardItem (进行中显示活动状态,完成后显示 result 摘要)。此前它们
- * 被 chat 白名单静默丢弃,导致群聊里看不到 task 折叠。
+ * Subagent completion handoffs are internal user_message envelopes. The raw
+ * JSON never reaches the chat DOM; trigger-turn handoffs become system event
+ * divider rows and non-trigger mailbox records stay hidden.
  */
 export function chatMessagesFromTurns(
   turns: ReadonlyArray<Pick<Turn, "id" | "items">>,
@@ -1975,10 +1974,19 @@ export function chatMessagesFromTurns(
         // Subagent notifications / inter-agent handoffs are delivered to the
         // resident as a self-addressed user_message (a JSON envelope wrapping
         // a <subagent_notification> payload). They are working-transcript
-        // machinery, not chat messages — the agent-brain transcript view
-        // (ThreadItemView) collapses them to a status line, but the chat view
-        // must never surface the raw envelope as an outgoing user bubble.
-        // Drop them here, mirroring queryTextForUserItem's history filter.
+        // machinery, not user-authored chat. Trigger-turn handoffs become a
+        // neutral system divider; stored mailbox payloads are still hidden.
+        const handoff = agentHandoffDisplay(item.text);
+        if (handoff) {
+          rows.push({
+            kind: "system",
+            id,
+            turnID: turn.id,
+            text: handoff.label,
+            item,
+          });
+          continue;
+        }
         if (isAgentHandoffText(item.text)) {
           continue;
         }
@@ -1994,8 +2002,6 @@ export function chatMessagesFromTurns(
         }
       } else if (item.type === "participant_message") {
         rows.push({ kind: "participant", id, turnID: turn.id, item });
-      } else if (item.type === "task_card") {
-        rows.push({ kind: "task", id, turnID: turn.id, item });
       }
     }
   }

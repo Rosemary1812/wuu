@@ -30,14 +30,8 @@ export function agentHandoffDisplay(text: string | undefined): AgentHandoffDispl
   }
 
   const { payload } = handoff;
-
-  const name = compactAgentName(
-    stringValue(payload.status?.task_name) ||
-      lastPathSegment(stringValue(payload.agent_path)) ||
-      stringValue(payload.status?.agent_id)
-  );
   const status = stringValue(payload.status?.status);
-  return { label: handoffStatusLabel(name, status) };
+  return { label: handoffStatusLabel(status) };
 }
 
 function parseAgentHandoff(
@@ -71,35 +65,22 @@ function parseNotificationPayload(content: string): AgentNotificationPayload | u
   return parseJSON<AgentNotificationPayload>(raw);
 }
 
-function handoffStatusLabel(name: string, status: string): string {
-  const subject = name ? `子 agent ${name}` : "子 agent";
+function handoffStatusLabel(status: string): string {
   switch (status) {
+    case "pending":
+    case "queued":
+      return "subagent 等待执行任务";
+    case "running":
+      return "subagent 正在执行任务";
     case "completed":
-      return `${subject} 已完成，主 agent 正在整合结果`;
+      return "subagent 完成了任务";
     case "failed":
-      return `${subject} 失败，主 agent 正在处理结果`;
+      return "subagent 任务失败";
     case "cancelled":
-      return `${subject} 已取消，主 agent 正在处理结果`;
+      return "subagent 任务已取消";
     default:
-      return `${subject} 已更新，主 agent 正在处理结果`;
+      return "subagent 更新了任务状态";
   }
-}
-
-function compactAgentName(name: string): string {
-  const normalized = name.trim().replace(/\s+/g, " ");
-  if (normalized.length <= 56) {
-    return normalized;
-  }
-  return `${normalized.slice(0, 53)}...`;
-}
-
-function lastPathSegment(path: string): string {
-  const trimmed = path.trim();
-  if (!trimmed) {
-    return "";
-  }
-  const parts = trimmed.split("/").filter(Boolean);
-  return parts.at(-1) ?? "";
 }
 
 function stringValue(value: unknown): string {
