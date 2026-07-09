@@ -244,9 +244,11 @@
  * cell holding the main select button; hover pin/archive actions overlay
  * on the right, mirroring .thread-row / .thread-row-main. */
 .participant-roster-row {
+  height: 30px;
   min-width: 0;
   border: 0;
   grid-template-columns: minmax(0, 1fr);
+  padding-left: calc(var(--sidebar-row-pad-x) + var(--sidebar-child-indent));
 }
 
 /* Identity columns (status dot + name, plus an avatar column only when
