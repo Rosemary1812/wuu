@@ -79,15 +79,8 @@ import {
   type QueuedComposerMessage,
 } from "./ComposerMessages";
 import {
-  emptyThreadPendingComposerMessages,
-  findPendingComposerMessage,
-  pendingComposerMessagesForThread,
-  reconcilePendingComposerMessagesForThread,
-  removePendingComposerMessagesByID,
-  threadPendingComposerMessagesIsEmpty,
-  type PendingComposerMessageRemovalScope,
+  pendingComposerMessagesForThread as pendingComposerMessagesForThreadSnapshot,
   type PendingComposerMessagesByThread,
-  type ThreadPendingComposerMessages,
 } from "./ComposerPendingMessages";
 import {
   greetingFor,
@@ -218,7 +211,6 @@ import {
   threadForTab,
   threadNeedsResumeOnReselect,
   threadForPane,
-  threadItemFromRecord,
   threadFromRecord,
   threadIDFromParams,
   threadSessionTabID,
@@ -292,8 +284,6 @@ import { threadDisplayTitle } from "./ThreadTitles";
 import {
   isRecord,
   numberValue,
-  recordValue,
-  stringValue,
 } from "./ToolActivity";
 import {
   mergeTurnItemsInOrder,
@@ -327,6 +317,10 @@ import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 import { ImagePreviewProvider } from "./ImagePreview";
 import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
 import { useComposerDraftState } from "./ComposerDraftState";
+import {
+  useComposerPendingState,
+  type QueuedMessageEditTarget,
+} from "./ComposerPendingState";
 
 function permissionSummaryForMode(mode: PermissionMode): PermissionSummary {
   return { mode };
@@ -502,11 +496,6 @@ function participantTemplateEntries(value: unknown): ParticipantSaveParams[] {
   });
 }
 
-type QueuedMessageEditTarget = {
-  threadID: string;
-  queueID: string;
-};
-
 function storedProjectIDSet(key: string): Set<string> {
   try {
     const stored = window.localStorage.getItem(key);
@@ -661,10 +650,6 @@ export function App(): JSX.Element {
   });
   const [historyMessageEdit, setHistoryMessageEdit] =
     useState<HistoryMessageEditState | undefined>(undefined);
-  const [, setQueuedMessageEditTarget] =
-    useState<QueuedMessageEditTarget | undefined>(undefined);
-  const [pendingComposerMessagesByThread, setPendingComposerMessagesByThread] =
-    useState<PendingComposerMessagesByThread>({});
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
   const appShellRef = useRef<HTMLDivElement>(null);
@@ -948,10 +933,33 @@ export function App(): JSX.Element {
   const environmentPanelRef = useRef<HTMLDivElement>(null);
   const appStateRef = useRef<AppState>(initialState);
   const workspaceEditorDirtyRef = useRef<WorkspaceFileDirtyState>({ dirty: false });
-  const queuedMessageEditTargetRef =
-    useRef<QueuedMessageEditTarget | undefined>(undefined);
-  const pendingComposerMessagesByThreadRef =
-    useRef<PendingComposerMessagesByThread>({});
+  const {
+    pendingComposerMessagesByThread,
+    queuedMessageEditTargetRef,
+    setQueuedMessageEditTargetNow,
+    pendingComposerMessagesForThread: pendingComposerMessagesForActiveThread,
+    updateThreadPendingComposerMessages,
+    clearThreadPendingComposerMessages,
+    syncPendingComposerMessagesFromServerEvent,
+    reconcilePendingComposerMessagesForState,
+    enqueueComposerMessage,
+    removeQueuedMessage,
+    removeGuideMessage,
+    editQueuedMessage,
+    editGuideMessage,
+    guideQueuedMessage,
+    threadHasPendingComposerMessages,
+  } = useComposerPendingState({
+    getAppState: () => appStateRef.current,
+    getPrimaryComposerDraft: currentPrimaryComposerDraft,
+    restorePrimaryComposerDraft,
+    setStatus: (status) =>
+      setState((current) => ({
+        ...current,
+        status,
+      })),
+    sendComposerMessageToThread,
+  });
   const localDemoThreadsRef = useRef(new Map<string, Thread>());
   const cachedThreadPaneHistoryRef = useRef<string[]>([]);
   const viewSwitchRequestRef = useRef(0);
@@ -1074,8 +1082,7 @@ export function App(): JSX.Element {
       closeEnvironmentPanel({ dismissed: true });
     },
   );
-  const activePendingComposerMessages = pendingComposerMessagesForThread(
-    pendingComposerMessagesByThread,
+  const activePendingComposerMessages = pendingComposerMessagesForActiveThread(
     activeThreadID,
   );
   const queuedMessages = activePendingComposerMessages.queued;
@@ -1089,17 +1096,7 @@ export function App(): JSX.Element {
   // authoritative thread turns means a message that already went out can never
   // stay stuck as "排队中".
   useEffect(() => {
-    const byThread = pendingComposerMessagesByThreadRef.current;
-    let next = byThread;
-    for (const threadID of Object.keys(byThread)) {
-      const thread = threadForTab(appStateRef.current, threadID);
-      if (thread) {
-        next = reconcilePendingComposerMessagesForThread(next, thread);
-      }
-    }
-    if (next !== byThread) {
-      setPendingComposerMessagesByThreadNow(next);
-    }
+    reconcilePendingComposerMessagesForState(appStateRef.current);
   }, [
     pendingComposerMessagesByThread,
     state.thread,
@@ -3066,315 +3063,6 @@ export function App(): JSX.Element {
       running: false,
       status: "ready",
     }));
-  }
-
-  function setPendingComposerMessagesByThreadNow(
-    messagesByThread: PendingComposerMessagesByThread,
-  ): void {
-    pendingComposerMessagesByThreadRef.current = messagesByThread;
-    setPendingComposerMessagesByThread(messagesByThread);
-  }
-
-  function setQueuedMessageEditTargetNow(
-    target: QueuedMessageEditTarget | undefined,
-  ): void {
-    queuedMessageEditTargetRef.current = target;
-    setQueuedMessageEditTarget(target);
-  }
-
-  function updateThreadPendingComposerMessages(
-    threadID: string,
-    update: (
-      previous: ThreadPendingComposerMessages,
-    ) => ThreadPendingComposerMessages,
-  ): void {
-    const previousByThread = pendingComposerMessagesByThreadRef.current;
-    const previous =
-      previousByThread[threadID] ?? emptyThreadPendingComposerMessages();
-    const nextForThread = update(previous);
-    const nextByThread = { ...previousByThread };
-    if (threadPendingComposerMessagesIsEmpty(nextForThread)) {
-      delete nextByThread[threadID];
-    } else {
-      nextByThread[threadID] = nextForThread;
-    }
-    setPendingComposerMessagesByThreadNow(nextByThread);
-  }
-
-  function clearThreadPendingComposerMessages(threadID: string): void {
-    const previousByThread = pendingComposerMessagesByThreadRef.current;
-    if (!previousByThread[threadID]) {
-      return;
-    }
-    const nextByThread = { ...previousByThread };
-    delete nextByThread[threadID];
-    setPendingComposerMessagesByThreadNow(nextByThread);
-  }
-
-  function removePendingComposerMessageByID(
-    threadID: string | undefined,
-    id: string,
-    scope: PendingComposerMessageRemovalScope = "all",
-  ): void {
-    setPendingComposerMessagesByThreadNow(
-      removePendingComposerMessagesByID(
-        pendingComposerMessagesByThreadRef.current,
-        threadID,
-        id,
-        scope,
-      ),
-    );
-  }
-
-  function syncPendingComposerMessagesFromServerEvent(event: ServerEvent): void {
-    if (event.kind !== "notification") {
-      return;
-    }
-    const params = isRecord(event.message.params)
-      ? event.message.params
-      : undefined;
-    if (!params) {
-      return;
-    }
-    const threadID = stringValue(params, "thread_id");
-    if (event.message.method === "turn/started") {
-      const queueID = stringValue(params, "queue_id");
-      if (queueID) {
-        removePendingComposerMessageByID(threadID, queueID, "queue");
-      }
-      return;
-    }
-    if (event.message.method === "turn/dequeued") {
-      const queueID = stringValue(params, "queue_id");
-      if (queueID) {
-        removePendingComposerMessageByID(threadID, queueID, "queue");
-      }
-      return;
-    }
-    if (event.message.method === "item/completed") {
-      const item = threadItemFromRecord(recordValue(params, "item"));
-      if (item?.type === "user_message" && item.source_id) {
-        removePendingComposerMessageByID(threadID, item.source_id);
-      }
-    }
-  }
-
-  function enqueueComposerMessage(
-    threadID: string,
-    message: QueuedComposerMessage,
-  ): void {
-    updateThreadPendingComposerMessages(threadID, (previous) => ({
-      ...previous,
-      queued: [...previous.queued, message],
-    }));
-  }
-
-  async function removeQueuedMessage(id: string): Promise<boolean> {
-    const target = findPendingComposerMessage(
-      pendingComposerMessagesByThreadRef.current,
-      id,
-      "queue",
-      activeThreadIDForState(appStateRef.current),
-    );
-    if (!target) {
-      return false;
-    }
-    if (queuedMessageEditTargetRef.current?.queueID === id) {
-      setQueuedMessageEditTargetNow(undefined);
-    }
-    updateThreadPendingComposerMessages(target.threadID, (previous) => ({
-      ...previous,
-      queued: previous.queued.filter((message) => message.id !== id),
-    }));
-    try {
-      const result = await window.wuu.dequeueTurn(target.threadID, id);
-      if (!result.ok) {
-        setState((current) => ({
-          ...current,
-          status: "排队消息已被处理，无法取消",
-        }));
-        return false;
-      }
-      return true;
-    } catch (error) {
-      updateThreadPendingComposerMessages(target.threadID, (previous) => {
-        if (previous.queued.some((message) => message.id === id)) {
-          return previous;
-        }
-        const insertAt = Math.min(target.index, previous.queued.length);
-        return {
-          ...previous,
-          queued: [
-            ...previous.queued.slice(0, insertAt),
-            target.message,
-            ...previous.queued.slice(insertAt),
-          ],
-        };
-      });
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "取消排队失败",
-      }));
-      return false;
-    }
-  }
-
-  async function removeGuideMessage(id: string): Promise<boolean> {
-    const target = findPendingComposerMessage(
-      pendingComposerMessagesByThreadRef.current,
-      id,
-      "guide",
-      activeThreadIDForState(appStateRef.current),
-    );
-    if (!target) {
-      return false;
-    }
-    updateThreadPendingComposerMessages(target.threadID, (previous) => ({
-      ...previous,
-      guides: previous.guides.filter((message) => message.id !== id),
-    }));
-    try {
-      const result = await window.wuu.unsteerTurn(target.threadID, id);
-      if (!result.ok) {
-        setState((current) => ({
-          ...current,
-          status: "引导消息已被处理，无法取消",
-        }));
-        return false;
-      }
-      return true;
-    } catch (error) {
-      updateThreadPendingComposerMessages(target.threadID, (previous) => {
-        if (previous.guides.some((message) => message.id === id)) {
-          return previous;
-        }
-        const insertAt = Math.min(target.index, previous.guides.length);
-        return {
-          ...previous,
-          guides: [
-            ...previous.guides.slice(0, insertAt),
-            target.message,
-            ...previous.guides.slice(insertAt),
-          ],
-        };
-      });
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "取消引导失败",
-      }));
-      return false;
-    }
-  }
-
-  function restorePendingComposerMessage(message: QueuedComposerMessage): void {
-    setPrompt(message.text);
-    setComposerImages(message.images.map((image) => ({ ...image })));
-    setComposerFiles(message.files.map((file) => ({ ...file })));
-  }
-
-  function canRestorePendingComposerMessage(): boolean {
-    if (
-      prompt.trim().length === 0 &&
-      composerImages.length === 0 &&
-      composerFiles.length === 0
-    ) {
-      return true;
-    }
-    setState((current) => ({
-      ...current,
-      status: "先发送或清空当前输入，再编辑排队消息",
-    }));
-    return false;
-  }
-
-  async function editQueuedMessage(id: string): Promise<void> {
-    const target = findPendingComposerMessage(
-      pendingComposerMessagesByThreadRef.current,
-      id,
-      "queue",
-      activeThreadIDForState(appStateRef.current),
-    );
-    if (!target || !canRestorePendingComposerMessage()) {
-      return;
-    }
-    restorePendingComposerMessage(target.message);
-    setQueuedMessageEditTargetNow({
-      threadID: target.threadID,
-      queueID: target.message.id,
-    });
-    setState((current) => ({
-      ...current,
-      status: `正在编辑第 ${target.index + 1} 条排队消息，发送后会保存到原位置`,
-    }));
-  }
-
-  async function editGuideMessage(id: string): Promise<void> {
-    const target = findPendingComposerMessage(
-      pendingComposerMessagesByThreadRef.current,
-      id,
-      "guide",
-      activeThreadIDForState(appStateRef.current),
-    );
-    if (!target || !canRestorePendingComposerMessage()) {
-      return;
-    }
-    setQueuedMessageEditTargetNow(undefined);
-    if (await removeGuideMessage(id)) {
-      restorePendingComposerMessage(target.message);
-    }
-  }
-
-  async function guideQueuedMessage(id: string): Promise<void> {
-    const target = findPendingComposerMessage(
-      pendingComposerMessagesByThreadRef.current,
-      id,
-      "queue",
-      activeThreadIDForState(appStateRef.current),
-    );
-    if (!target) {
-      return;
-    }
-    const currentState = appStateRef.current;
-    const targetThread = threadForTab(currentState, target.threadID);
-    if (!targetThread) {
-      return;
-    }
-    if (!isThreadRunning(targetThread)) {
-      updateThreadPendingComposerMessages(target.threadID, (previous) => ({
-        ...previous,
-        queued: previous.queued.filter((message) => message.id !== id),
-      }));
-      void sendComposerMessageToThread(target.message, targetThread);
-      return;
-    }
-    const turnID = activeTurnIDForThread(targetThread);
-    if (!turnID) {
-      setState((current) => ({
-        ...current,
-        status: "没有可引导的任务",
-      }));
-      return;
-    }
-    try {
-      const files = inputFilesFromComposer(target.message.files);
-      await window.wuu.steerTurn(
-        targetThread.id,
-        turnID,
-        target.message.text.trim(),
-        inputImagesFromComposer(target.message.images),
-        target.message.id,
-        files,
-      );
-      updateThreadPendingComposerMessages(target.threadID, (previous) => ({
-        queued: previous.queued.filter((message) => message.id !== id),
-        guides: [...previous.guides, target.message],
-      }));
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "引导失败",
-      }));
-    }
   }
 
   function dismissContextCompositionEntry(id: string): void {
@@ -5478,26 +5166,12 @@ export function App(): JSX.Element {
     }
   }
 
-  function threadHasPendingComposerMessages(threadID: string): boolean {
-    return !threadPendingComposerMessagesIsEmpty(
-      pendingComposerMessagesForThread(
-        pendingComposerMessagesByThreadRef.current,
-        threadID,
-      ),
-    );
-  }
-
   function canShowHistoryEditButton(thread: Thread): boolean {
     return (
       !thread.read_only &&
       !isThreadRunning(thread) &&
       !localDemoThreadsRef.current.has(thread.id) &&
-      threadPendingComposerMessagesIsEmpty(
-        pendingComposerMessagesForThread(
-          pendingComposerMessagesByThread,
-          thread.id,
-        ),
-      )
+      !threadHasPendingComposerMessages(thread.id)
     );
   }
 
@@ -9540,7 +9214,7 @@ const CachedConversationPanes = memo(function CachedConversationPanes({
                   // in-transcript "发送中" bubbles instead of the composer
                   // queue strip (chat send semantics, issue #10).
                   pendingMessages={
-                    pendingComposerMessagesForThread(
+                    pendingComposerMessagesForThreadSnapshot(
                       pendingChatMessagesByThread,
                       threadID,
                     ).queued
