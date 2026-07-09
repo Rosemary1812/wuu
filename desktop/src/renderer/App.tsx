@@ -181,10 +181,8 @@ import {
   scratchThreadSummaries,
   queryTextsForThread,
   reduceServerEvent,
-  reconcileResumedThreadTurns,
   removeSessionTab,
   requireThread,
-  resolveThreadRuntimeContext,
   runtimeContextKey,
   sameRuntimeContext,
   serverEventShouldRefreshGit,
@@ -199,7 +197,6 @@ import {
   sortThreads,
   summarizeThreadsForSidebar,
   threadForTab,
-  threadNeedsResumeOnReselect,
   threadForPane,
   threadFromRecord,
   threadIDFromParams,
@@ -324,6 +321,7 @@ import {
 } from "./RuntimeLoadState";
 import { createProjectRuntimeActions } from "./ProjectRuntimeActions";
 import { createSessionTabActions } from "./SessionTabActions";
+import { createThreadActivationActions } from "./ThreadActivationActions";
 export { SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./SidebarDrawerState";
 
 function permissionSummaryForMode(mode: PermissionMode): PermissionSummary {
@@ -3104,6 +3102,36 @@ export function App(): JSX.Element {
   });
 
   const {
+    selectThread,
+    selectProjectThread,
+    activateThread,
+    selectProjectChildAgent,
+    selectChildAgent,
+  } = createThreadActivationActions({
+    getAppState: () => appStateRef.current,
+    setAppState: setState,
+    getActiveThreadID: () => activeThreadID,
+    getPendingViewSwitch: () => pendingViewSwitch,
+    getPrimaryComposerDraft: currentPrimaryComposerDraft,
+    restorePrimaryComposerDraft,
+    resetSplitComposerDrafts: () =>
+      setSplitComposerDrafts(initialSplitComposerDrafts()),
+    getLocalDemoThread: (threadID) => localDemoThreadsRef.current.get(threadID),
+    getSidebarThreads: () => sidebarThreads,
+    getSidebarProjectThreadsByProjectID: () =>
+      sidebarProjectThreadsByProjectID,
+    setArchiveConfirmThreadID,
+    setWorkspaceMode,
+    beginViewSwitch,
+    beginInstantThreadSwitch,
+    finishViewSwitch,
+    cancelViewSwitch,
+    isCurrentViewSwitchRequest,
+    loadRuntime,
+    selectRuntimeContext,
+  });
+
+  const {
     selectSessionTab,
     closeSessionTab,
     closeSessionTabs,
@@ -3209,470 +3237,6 @@ export function App(): JSX.Element {
     setEnvironmentPanelOpen(true);
     setEnvironmentPanelDismissed(false);
     setEnvironmentPanelMenu(null);
-  }
-
-  async function selectThread(threadId: string): Promise<void> {
-    if (!state.activeContext) {
-      return;
-    }
-    const activeContext = state.activeContext;
-    if (
-      threadId === activeThreadID &&
-      !threadNeedsResumeOnReselect(state, threadId)
-    ) {
-      if (pendingViewSwitch) {
-        cancelViewSwitch();
-      }
-      return;
-    }
-    if (
-      pendingViewSwitch?.kind === "thread" &&
-      pendingViewSwitch.targetID === threadId
-    ) {
-      return;
-    }
-    setArchiveConfirmThreadID(undefined);
-    setWorkspaceMode(undefined);
-    const outgoingDraft = currentPrimaryComposerDraft();
-    const targetDraft = sessionTabDraftForThread(state, threadId);
-    const demoThread = localDemoThreadsRef.current.get(threadId);
-    if (demoThread) {
-      cancelViewSwitch();
-      restorePrimaryComposerDraft(targetDraft);
-      setSplitComposerDrafts(initialSplitComposerDrafts());
-      setState((current) => {
-        const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
-        return {
-          ...withDraft,
-          thread: demoThread,
-          secondaryThread: undefined,
-          activePane: "primary",
-          allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(
-            withDraft.sessionTabs,
-            createThreadSessionTab(demoThread, activeContext, targetDraft),
-          ),
-          activeSessionTabID: threadSessionTabID(demoThread.id),
-          threads: upsertThread(current.threads, demoThread),
-          running: isThreadRunning(demoThread),
-          status: "ready",
-        };
-      });
-      return;
-    }
-    const sourceContext = state.activeContext;
-    const localThread = threadForTab(appStateRef.current, threadId);
-    const localThreadContext = localThread
-      ? resolveThreadRuntimeContext(localThread, appStateRef.current.projects)
-      : undefined;
-    if (
-      localThread &&
-      localThread.turns.length > 0 &&
-      localThreadContext &&
-      sameRuntimeContext(localThreadContext, sourceContext)
-    ) {
-      const requestID = beginInstantThreadSwitch();
-      restorePrimaryComposerDraft(targetDraft);
-      setSplitComposerDrafts(initialSplitComposerDrafts());
-      setState((current) => {
-        const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
-        const optimisticThread =
-          threadForTab(withDraft, threadId) ?? localThread;
-        return {
-          ...withDraft,
-          thread: optimisticThread,
-          secondaryThread: undefined,
-          activePane: "primary",
-          allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(
-            withDraft.sessionTabs,
-            createThreadSessionTab(
-              optimisticThread,
-              sourceContext,
-              targetDraft,
-            ),
-          ),
-          activeSessionTabID: threadSessionTabID(optimisticThread.id),
-          threads: upsertThread(withDraft.threads, optimisticThread),
-          running: isThreadRunning(optimisticThread),
-          status: "ready",
-        };
-      });
-      void (async () => {
-        try {
-          const resumedThread = requireThread(
-            await window.wuu.resumeThread(threadId),
-            "resume did not return a thread",
-          );
-          if (
-            !isCurrentViewSwitchRequest(requestID) ||
-            appStateRef.current.thread?.id !== threadId ||
-            !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)
-          ) {
-            return;
-          }
-          setState((current) => {
-            if (current.thread?.id !== threadId) {
-              return current;
-            }
-            const localThreadForReconcile =
-              current.thread?.id === resumedThread.id
-                ? current.thread
-                : current.threads.find((item) => item.id === resumedThread.id);
-            const reconciled = reconcileResumedThreadTurns(
-              resumedThread,
-              localThreadForReconcile,
-            );
-            return {
-              ...current,
-              thread: reconciled,
-              sessionTabs: ensureSessionTab(
-                current.sessionTabs,
-                createThreadSessionTab(
-                  reconciled,
-                  sourceContext,
-                  sessionTabDraftForThread(current, reconciled.id),
-                ),
-              ),
-              activeSessionTabID: threadSessionTabID(reconciled.id),
-              threads: upsertThread(current.threads, reconciled),
-              running: isThreadRunning(reconciled),
-              status: "ready",
-            };
-          });
-        } catch (error) {
-          if (
-            !isCurrentViewSwitchRequest(requestID) ||
-            appStateRef.current.thread?.id !== threadId ||
-            !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)
-          ) {
-            return;
-          }
-          setState((current) =>
-            current.thread?.id === threadId
-              ? {
-                  ...current,
-                  status:
-                    error instanceof Error ? error.message : "load failed",
-                }
-              : current,
-          );
-        }
-      })();
-      return;
-    }
-    const requestID = beginViewSwitch("thread", threadId);
-    try {
-      const thread = requireThread(
-        await window.wuu.resumeThread(threadId),
-        "resume did not return a thread",
-      );
-      if (
-        !finishViewSwitch(requestID) ||
-        !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)
-      ) {
-        return;
-      }
-      restorePrimaryComposerDraft(targetDraft);
-      setSplitComposerDrafts(initialSplitComposerDrafts());
-      setState((current) => {
-        const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
-        // The resume snapshot can lag the client when the user just sent a
-        // message and immediately switched tabs and back: the just-sent turn
-        // still lives only in our in-memory copy. Salvage that tail so the
-        // wholesale replace below does not drop it (message-loss-on-tab-switch).
-        const reconciled = reconcileResumedThreadTurns(
-          thread,
-          current.threads.find((item) => item.id === thread.id),
-        );
-        return {
-          ...withDraft,
-          thread: reconciled,
-          secondaryThread: undefined,
-          activePane: "primary",
-          allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(
-            withDraft.sessionTabs,
-            createThreadSessionTab(reconciled, sourceContext, targetDraft),
-          ),
-          activeSessionTabID: threadSessionTabID(reconciled.id),
-          threads: upsertThread(current.threads, reconciled),
-          running: isThreadRunning(reconciled),
-          status: "ready",
-        };
-      });
-    } catch (error) {
-      if (
-        !finishViewSwitch(requestID) ||
-        !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)
-      ) {
-        return;
-      }
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "load failed",
-      }));
-    }
-  }
-
-  // Shared "switch runtime context, then resume this thread" flow. Used
-  // whenever opening a thread requires activeContext (and therefore the
-  // workspace panel's file tree / terminal / git) to move to a different
-  // project or no_project cwd than the one currently active — e.g. opening
-  // a 对话 (scratch) thread from inside a project, or opening a 置顶/群聊/DM
-  // thread whose own workspace lives elsewhere. The app-server will resume
-  // any persisted session regardless of the active workdir, so the context
-  // switch has to be driven from here rather than relying on the resume
-  // call itself to move it.
-  async function switchContextAndResumeThread(
-    targetContext: RuntimeContext,
-    threadID: string,
-  ): Promise<void> {
-    const currentState = appStateRef.current;
-    setArchiveConfirmThreadID(undefined);
-    setWorkspaceMode(undefined);
-    const outgoingDraft = currentPrimaryComposerDraft();
-    const targetDraft = sessionTabDraftForThread(currentState, threadID);
-    const requestID = beginViewSwitch("thread", threadID);
-    try {
-      const projectState = await selectRuntimeContext(targetContext);
-      const loadedState = await loadRuntime(projectState, {
-        resumeLatestThread: false,
-      });
-      const thread = requireThread(
-        await window.wuu.resumeThread(threadID),
-        "resume did not return a thread",
-      );
-      if (!finishViewSwitch(requestID)) {
-        return;
-      }
-      restorePrimaryComposerDraft(targetDraft);
-      setSplitComposerDrafts(initialSplitComposerDrafts());
-      setState((current) => {
-        const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
-        const localThread = conversationPaneThreadsByID(
-          current.threads,
-          current.thread,
-          current.secondaryThread,
-        ).get(thread.id);
-        const reconciled = reconcileResumedThreadTurns(thread, localThread);
-        const next = { ...withDraft, ...loadedState };
-        return {
-          ...next,
-          thread: reconciled,
-          secondaryThread: undefined,
-          activePane: "primary",
-          allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(
-            next.sessionTabs,
-            createThreadSessionTab(reconciled, targetContext, targetDraft),
-          ),
-          activeSessionTabID: threadSessionTabID(reconciled.id),
-          threads: upsertThread(next.threads, reconciled),
-          running: isThreadRunning(reconciled),
-          status: "ready",
-        };
-      });
-    } catch (error) {
-      if (!finishViewSwitch(requestID)) {
-        return;
-      }
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "load failed",
-      }));
-    }
-  }
-
-  // Look up a thread object by id across every cache the sidebar draws
-  // from (对话 scratch threads, every project's own list, and the
-  // currently loaded state.threads). Sidebar click sites only know a
-  // thread's id, not its cwd/workspace_kind, so this is how
-  // resolveThreadRuntimeContext gets something to work with.
-  function findKnownThread(threadID: string): Thread | undefined {
-    return sidebarThreads.find((thread) => thread.id === threadID);
-  }
-
-  async function selectProjectThread(
-    projectID: string,
-    threadID: string,
-  ): Promise<void> {
-    const currentState = appStateRef.current;
-    if (
-      projectID === currentState.activeProjectId &&
-      currentState.activeContext?.kind === "project"
-    ) {
-      await selectThread(threadID);
-      return;
-    }
-    if (
-      pendingViewSwitch?.kind === "thread" &&
-      pendingViewSwitch.targetID === threadID
-    ) {
-      return;
-    }
-    if (projectID === SCRATCH_PSEUDO_PROJECT_ID) {
-      // The 对话 pseudo-project is synthetic and never appears in
-      // state.projects, so it can't be resolved to a {kind:"project"}
-      // context the way real projects are below. Resolve the thread's OWN
-      // context instead — a scratch thread's cwd almost never matches the
-      // currently active context.
-      const thread = findKnownThread(threadID);
-      if (!thread) {
-        return;
-      }
-      const targetContext = resolveThreadRuntimeContext(
-        thread,
-        currentState.projects,
-      );
-      if (sameRuntimeContext(targetContext, currentState.activeContext)) {
-        await selectThread(threadID);
-        return;
-      }
-      await switchContextAndResumeThread(targetContext, threadID);
-      return;
-    }
-    const project = currentState.projects.find(
-      (candidate) => candidate.id === projectID,
-    );
-    if (!project) {
-      return;
-    }
-    const targetContext: RuntimeContext = {
-      kind: "project",
-      project_id: project.id,
-      cwd: project.path,
-    };
-    await switchContextAndResumeThread(targetContext, threadID);
-  }
-
-  async function activateThread(threadID: string): Promise<void> {
-    const currentState = appStateRef.current;
-    const project = currentState.projects.find((candidate) =>
-      sidebarProjectThreadsByProjectID[candidate.id]?.some(
-        (thread) => thread.id === threadID,
-      ),
-    );
-    if (
-      project &&
-      (project.id !== currentState.activeProjectId ||
-        currentState.activeContext?.kind !== "project")
-    ) {
-      await selectProjectThread(project.id, threadID);
-      return;
-    }
-    if (!project) {
-      // Not in any real project's loaded thread list: a pinned scratch
-      // thread opened via 置顶, a DM, a group thread, or anything else
-      // opened straight from 群聊/the agent roster. selectThread alone
-      // would resume it under the CURRENT activeContext — resolve the
-      // thread's own context first so the workspace panel actually
-      // follows it there.
-      const thread = findKnownThread(threadID);
-      const targetContext = thread
-        ? resolveThreadRuntimeContext(thread, currentState.projects)
-        : undefined;
-      if (
-        targetContext &&
-        !sameRuntimeContext(targetContext, currentState.activeContext)
-      ) {
-        await switchContextAndResumeThread(targetContext, threadID);
-        return;
-      }
-    }
-    await selectThread(threadID);
-  }
-
-  async function selectProjectChildAgent(
-    projectID: string,
-    agent: Agent,
-  ): Promise<void> {
-    if (
-      projectID === appStateRef.current.activeProjectId &&
-      appStateRef.current.activeContext?.kind === "project"
-    ) {
-      await selectChildAgent(agent);
-      return;
-    }
-    await selectProjectThread(projectID, agent.id);
-  }
-
-  async function selectChildAgent(agent: Agent): Promise<void> {
-    if (!state.activeContext) {
-      return;
-    }
-    if (agent.id === activeThreadID) {
-      if (pendingViewSwitch) {
-        cancelViewSwitch();
-      }
-      return;
-    }
-    if (
-      pendingViewSwitch?.kind === "thread" &&
-      pendingViewSwitch.targetID === agent.id
-    ) {
-      return;
-    }
-    setArchiveConfirmThreadID(undefined);
-    setWorkspaceMode(undefined);
-    const outgoingDraft = currentPrimaryComposerDraft();
-    const targetDraft = sessionTabDraftForThread(state, agent.id);
-    const sourceContext = state.activeContext;
-    const requestID = beginViewSwitch("thread", agent.id);
-    try {
-      const thread =
-        localDemoThreadsRef.current.get(agent.id) ??
-        requireThread(
-          await window.wuu.resumeThread(agent.id),
-          "resume did not return a child agent thread",
-        );
-      if (
-        !finishViewSwitch(requestID) ||
-        !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)
-      ) {
-        return;
-      }
-      restorePrimaryComposerDraft(targetDraft);
-      setSplitComposerDrafts(initialSplitComposerDrafts());
-      setState((current) => {
-        const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
-        // The resume snapshot can lag the client when the user just sent a
-        // message and immediately switched tabs and back: the just-sent turn
-        // still lives only in our in-memory copy. Salvage that tail so the
-        // wholesale replace below does not drop it (message-loss-on-tab-switch).
-        const reconciled = reconcileResumedThreadTurns(
-          thread,
-          current.threads.find((item) => item.id === thread.id),
-        );
-        return {
-          ...withDraft,
-          thread: reconciled,
-          secondaryThread: undefined,
-          activePane: "primary",
-          allowThreadAutoActivation: true,
-          sessionTabs: ensureSessionTab(
-            withDraft.sessionTabs,
-            createThreadSessionTab(reconciled, sourceContext, targetDraft),
-          ),
-          activeSessionTabID: threadSessionTabID(reconciled.id),
-          threads: upsertThread(current.threads, reconciled),
-          running: isThreadRunning(reconciled),
-          status: "ready",
-        };
-      });
-    } catch (error) {
-      if (
-        !finishViewSwitch(requestID) ||
-        !sameRuntimeContext(appStateRef.current.activeContext, sourceContext)
-      ) {
-        return;
-      }
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error ? error.message : "load child agent failed",
-      }));
-    }
   }
 
   function activateConversationPane(pane: ConversationPaneID): void {
