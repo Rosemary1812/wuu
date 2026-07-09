@@ -176,6 +176,7 @@ export const CachedConversationPanes = memo(function CachedConversationPanes({
                   key={threadID}
                   threadID={threadID}
                   turns={threadTurns}
+                  cwd={thread.cwd ?? activeContextCwd}
                   marks={isActive ? activeThreadMarks : undefined}
                   busyParticipantIDs={busyParticipantIDs}
                   resolveParticipantName={resolveParticipantName}

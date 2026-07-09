@@ -767,6 +767,7 @@ export function ConversationSidePanels({
       {openSubthreadPanel ? (
         <ConversationSubthreadPanel
           threadID={openSubthreadPanel.threadID}
+          cwd={activeThread?.cwd ?? activeContext?.cwd}
           subthread={openSubthreadPanel.subthread}
           loading={openSubthreadPanel.loading}
           error={openSubthreadPanel.error}

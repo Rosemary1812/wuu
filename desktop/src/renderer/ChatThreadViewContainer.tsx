@@ -17,6 +17,7 @@ import { useThreadMarks } from "./useThreadMarks";
 export function ChatThreadViewContainer({
   threadID,
   turns,
+  cwd,
   marks,
   pendingMessages,
   busyParticipantIDs,
@@ -28,6 +29,7 @@ export function ChatThreadViewContainer({
 }: {
   threadID: string;
   turns: ReadonlyArray<Pick<Turn, "id" | "items">>;
+  cwd?: string;
   marks?: readonly MessageMarkWire[];
   pendingMessages?: ReadonlyArray<QueuedComposerMessage>;
   busyParticipantIDs?: ReadonlySet<string>;
@@ -46,6 +48,7 @@ export function ChatThreadViewContainer({
   return (
     <ChatThreadView
       turns={turns}
+      cwd={cwd}
       pendingMessages={pendingMessages}
       busyParticipantIDs={busyParticipantIDs}
       marksBySeq={marksBySeq}

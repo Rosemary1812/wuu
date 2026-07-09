@@ -104,6 +104,7 @@ export function findScrollParent(start: Element | null): HTMLElement | null {
  */
 export function ChatThreadView({
   turns,
+  cwd,
   pendingMessages = [],
   busyParticipantIDs,
   marksBySeq,
@@ -114,6 +115,7 @@ export function ChatThreadView({
   onReact,
 }: {
   turns: ReadonlyArray<Pick<Turn, "id" | "items">>;
+  cwd?: string;
   /**
    * Messages the user has sent that have not yet landed in the thread's
    * turn history — turn/queue entries awaiting drain while the agent is
@@ -300,6 +302,7 @@ export function ChatThreadView({
           key={row.id}
           isTopBubble={row.id === firstVisibleBubbleRowID}
           row={row}
+          cwd={cwd}
           busyParticipantIDs={busyParticipantIDs}
           marks={
             row.kind !== "envelope" && typeof row.item.seq === "number"
@@ -318,7 +321,7 @@ export function ChatThreadView({
         />
       ))}
       {pendingMessages.map((message) => (
-        <PendingChatRow key={`pending-${message.id}`} message={message} />
+        <PendingChatRow key={`pending-${message.id}`} message={message} cwd={cwd} />
       ))}
     </div>
   );
@@ -453,8 +456,10 @@ function ChatBubbleToolbar({
  */
 function PendingChatRow({
   message,
+  cwd,
 }: {
   message: QueuedComposerMessage;
+  cwd?: string;
 }): JSX.Element {
   return (
     <div className="chat-row chat-row--user chat-row--pending">
@@ -464,7 +469,7 @@ function PendingChatRow({
             <MessageImageGrid images={message.images} />
           ) : null}
           {message.files.length ? <MessageFileList files={message.files} /> : null}
-          {message.text.trim() ? <RichContent text={message.text} /> : null}
+          {message.text.trim() ? <RichContent text={message.text} cwd={cwd} /> : null}
         </div>
         <div className="chat-pending-hint">发送中…</div>
       </div>
@@ -491,6 +496,7 @@ function focusDividerLabel(meta: FocusMeta): string {
 function ChatRow({
   isTopBubble,
   row,
+  cwd,
   busyParticipantIDs,
   marks,
   readerCount = 0,
@@ -501,6 +507,7 @@ function ChatRow({
 }: {
   isTopBubble?: boolean;
   row: ChatMessageRow;
+  cwd?: string;
   busyParticipantIDs?: ReadonlySet<string>;
   marks?: MessageMarksView;
   readerCount?: number;
@@ -564,7 +571,7 @@ function ChatRow({
               <MessageFileList files={row.item.files} />
             ) : null}
             {row.item.text ? (
-              <RichContent text={row.item.text} />
+              <RichContent text={row.item.text} cwd={cwd} />
             ) : null}
             {/* No 回复 entry on the viewer's own (user) bubbles: a Thread
                 converges on someone else's message, never your own (T3). The
@@ -620,7 +627,7 @@ function ChatRow({
       <div className="chat-bubble-group">
         <div className="chat-sender-name">{name}</div>
         <div className="chat-bubble">
-          {row.item.text ? <RichContent text={row.item.text} /> : null}
+          {row.item.text ? <RichContent text={row.item.text} cwd={cwd} /> : null}
           <ChatBubbleToolbar
             item={row.item}
             onReact={onReact}

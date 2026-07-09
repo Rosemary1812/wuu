@@ -899,9 +899,14 @@ function autoImageReferencesFromMarkdownChildren(
         collectAutoImageReferences(String(child), addReference);
         continue;
       }
+      type MarkdownElementProps = {
+        children?: ReactNode;
+        className?: string;
+        node?: { tagName?: string };
+      };
       if (
         directTextOnly ||
-        !isValidElement<{ children?: ReactNode }>(child) ||
+        !isValidElement<MarkdownElementProps>(child) ||
         child.props.children === undefined ||
         skipsAutoImageReferenceScan(child)
       ) {
@@ -927,8 +932,19 @@ function collectAutoImageReferences(text: string, addReference: (reference: stri
   }
 }
 
-function skipsAutoImageReferenceScan(element: { type: unknown }): boolean {
-  return element.type === "a" || element.type === "code" || element.type === "img";
+function skipsAutoImageReferenceScan(element: {
+  type: unknown;
+  props?: { className?: string; node?: { tagName?: string } };
+}): boolean {
+  const tagName = element.props?.node?.tagName;
+  return (
+    element.type === "a" ||
+    element.type === "code" ||
+    element.type === "img" ||
+    tagName === "a" ||
+    tagName === "code" ||
+    tagName === "img"
+  );
 }
 
 function fileExtension(path: string): string {
@@ -1037,7 +1053,10 @@ function RichImage({
     return <span className="rich-image-block inline">{image}</span>;
   }
   return (
-    <figure className={autoPreview ? "rich-image-block rich-image-block--auto" : "rich-image-block"}>
+    <figure
+      className={autoPreview ? "rich-image-block rich-image-block--auto rich-auto-image-reference" : "rich-image-block"}
+      data-auto-image-reference={autoPreview ? alt : undefined}
+    >
       {image}
       {caption ? <figcaption className="rich-image-caption">{caption}</figcaption> : null}
     </figure>

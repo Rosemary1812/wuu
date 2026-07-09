@@ -163,6 +163,7 @@ function traceKindLabel(kind: string): string {
 
 export function ConversationSubthreadPanel({
   threadID,
+  cwd,
   subthread,
   loading,
   error,
@@ -181,6 +182,7 @@ export function ConversationSubthreadPanel({
   /** Parent group thread id — cth messages carry their seq in this thread's
    *  history, so read receipts / reactions resolve against it. */
   threadID?: string;
+  cwd?: string;
   subthread?: ConversationSubthread;
   loading?: boolean;
   error?: string;
@@ -574,6 +576,7 @@ export function ConversationSubthreadPanel({
             key={subthread?.id ?? "subthread"}
             threadID={threadID ?? subthread?.thread_id ?? subthread?.id ?? "subthread"}
             turns={turns}
+            cwd={cwd}
             resolveParticipantName={resolveParticipantName}
             busyParticipantIDs={busyParticipantIDs}
             readerCount={readerCount}

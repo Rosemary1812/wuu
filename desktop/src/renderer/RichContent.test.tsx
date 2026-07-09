@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceFileReferenceResolveResult } from "../shared/protocol";
+import { ImagePreviewProvider } from "./ImagePreview";
 import { RichContent, __resetRichFileReferenceResolutionCacheForTests } from "./RichContent";
 
 let container: HTMLDivElement;
@@ -49,6 +50,10 @@ function render(element: JSX.Element): void {
     }
     root.render(element);
   });
+}
+
+function renderWithImagePreview(element: JSX.Element): void {
+  render(<ImagePreviewProvider>{element}</ImagePreviewProvider>);
 }
 
 async function settleFileReferenceResolution(): Promise<void> {
@@ -124,6 +129,52 @@ describe("RichContent code block", () => {
     );
 
     expect(container.querySelector(".rich-file-link")).toBeNull();
+    expect(resolveWorkspaceFileReferenceMock).not.toHaveBeenCalled();
+  });
+
+  it("renders a resolved bare image path as a preview without turning it into a file link", async () => {
+    const reference = "clients/mobile/assets/icon.png";
+    resolveWorkspaceFileReferenceMock.mockImplementation(async (candidate: string) =>
+      candidate === reference
+        ? resolvedFileReference(reference, reference)
+        : { root: "/Users/zzzz/wuu", reference: candidate, status: "missing" },
+    );
+
+    renderWithImagePreview(
+      <RichContent
+        text={`已生成 ${reference}，可以先看这张。`}
+        cwd="/Users/zzzz/wuu"
+        onOpenFile={vi.fn()}
+      />,
+    );
+    await settleFileReferenceResolution();
+
+    const image = container.querySelector(".rich-auto-image-reference img.rich-image") as HTMLImageElement | null;
+    expect(image).not.toBeNull();
+    expect(image?.getAttribute("src")).toMatch(/^wuu-file:\/\/local\//);
+    expect(container.querySelector(".rich-file-link")).toBeNull();
+    expect(container.querySelector(".rich-image-caption")?.textContent).toBe(reference);
+    expect(container.textContent).toContain(reference);
+    expect(resolveWorkspaceFileReferenceMock).toHaveBeenCalledWith(reference, "/Users/zzzz/wuu");
+  });
+
+  it("keeps missing bare image paths as text only", async () => {
+    renderWithImagePreview(
+      <RichContent text="还没生成 missing-icon.png。" cwd="/Users/zzzz/wuu" />,
+    );
+    await settleFileReferenceResolution();
+
+    expect(container.querySelector(".rich-auto-image-reference")).toBeNull();
+    expect(container.textContent).toContain("missing-icon.png");
+  });
+
+  it("does not preview image paths inside inline code", async () => {
+    renderWithImagePreview(
+      <RichContent text="Keep `icon.png` literal here." cwd="/Users/zzzz/wuu" />,
+    );
+    await settleFileReferenceResolution();
+
+    expect(container.querySelector(".rich-auto-image-reference")).toBeNull();
     expect(resolveWorkspaceFileReferenceMock).not.toHaveBeenCalled();
   });
 
