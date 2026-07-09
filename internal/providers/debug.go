@@ -4,11 +4,47 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/securefs"
 )
+
+// WireEnvVar is the environment switch that opts into raw wire dumps in
+// the debug log. Off by default — debug.log carries metadata only
+// (event name, provider, latency, status, token counts). Setting
+// WUU_DEBUG_WIRE=1 (or true) re-enables the full request / response
+// payloads and SSE lines. Read on every WireEnabled call (not cached)
+// so tests can flip the switch via t.Setenv and observe both states in
+// the same binary.
+const WireEnvVar = "WUU_DEBUG_WIRE"
+
+// WireEnabled reports whether raw wire dumps are allowed in this
+// process. Callers that gate raw data on this switch must use
+// DebugLogfWire (which internally calls WireEnabled and short-circuits)
+// rather than checking the flag inline — that way a future refactor
+// can move the env read without breaking every call site.
+func WireEnabled() bool {
+	v := os.Getenv(WireEnvVar)
+	if v == "" {
+		return false
+	}
+	return v == "1" || strings.EqualFold(v, "true")
+}
+
+// DebugLogfWire writes a formatted line to the debug log only when
+// WireEnabled is true. Use this for any line that includes raw
+// request bodies, response bodies, SSE event data, or anything else a
+// user wouldn't want sitting in a 0o600 debug.log by default. The
+// underlying DebugLogf already no-ops when the log file hasn't been
+// initialized, so this layer only adds the wire opt-in gate.
+func DebugLogfWire(format string, args ...any) {
+	if !WireEnabled() {
+		return
+	}
+	DebugLogf(format, args...)
+}
 
 var (
 	debugLog  *os.File

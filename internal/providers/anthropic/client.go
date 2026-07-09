@@ -1215,7 +1215,7 @@ func (c *Client) handleSSEEvent(
 		if sawStreamError != nil {
 			*sawStreamError = true
 		}
-		providers.DebugLogf("readSSEStream: error event: %s", raw.Data)
+		providers.DebugLogfWire("readSSEStream: error event: %s", raw.Data)
 		var p anthropicErrorPayload
 		if err := json.Unmarshal([]byte(raw.Data), &p); err == nil {
 			providers.DebugLogf("readSSEStream: error code=%s msg=%s", p.Error.Code, p.Error.Message)

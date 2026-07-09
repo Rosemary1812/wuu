@@ -689,7 +689,7 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 	for scanner.Scan() {
 		resetIdle()
 		line := scanner.Text()
-		providers.DebugLogf("Responses SSE raw: %s", line)
+		providers.DebugLogfWire("Responses SSE raw: %s", line)
 		if line == "" || strings.HasPrefix(line, "event:") {
 			continue
 		}
@@ -705,7 +705,7 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 
 		var event responsesStreamEvent
 		if err := json.Unmarshal([]byte(data), &event); err != nil {
-			providers.DebugLogf("Responses SSE parse error: %v, data: %s", err, data)
+			providers.DebugLogfWire("Responses SSE parse error: %v, data: %s", err, data)
 			ch <- providers.StreamEvent{Type: providers.EventError, Error: fmt.Errorf("parse chunk: %w", err)}
 			return
 		}
