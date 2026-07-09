@@ -1012,6 +1012,7 @@ export function AppSidebar({
                           ) : null;
                           const className = [
                             "participant-roster-row",
+                            "sidebar-session-row",
                             isActiveDM ? "active" : "",
                             isUnread ? "has-unread" : "",
                           ]

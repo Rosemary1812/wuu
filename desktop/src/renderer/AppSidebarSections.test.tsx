@@ -1268,6 +1268,16 @@ describe("unified DM/thread row spec (S1)", () => {
     );
   });
 
+  it("session rows share an explicit status-slot model", () => {
+    expect(sidebarCSS).toMatch(/\.sidebar-session-row \{/);
+    expect(sidebarCSS).toMatch(
+      /--sidebar-session-status-bg: transparent;/,
+    );
+    expect(sidebarCSS).toMatch(
+      /--sidebar-session-status-unread-bg: var\(--info\);/,
+    );
+  });
+
   it("participant rows share hover and focus states with thread rows", () => {
     expect(sidebarCSS).toMatch(
       /\.thread-row:hover,\s*\.participant-roster-row:hover \{/,
@@ -1285,7 +1295,10 @@ describe("unified DM/thread row spec (S1)", () => {
 
   it("unread rows share one badge language: info dot plus semibold title", () => {
     expect(sidebarCSS).toMatch(
-      /\.participant-roster-row\.has-unread \.participant-roster-status \{[^}]*var\(--info\)/,
+      /\.thread-row\.has-unread::before \{[^}]*var\(--sidebar-session-status-unread-bg\)/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.participant-roster-row\.has-unread \.participant-roster-status \{[^}]*var\(--sidebar-session-status-unread-bg\)/,
     );
     expect(sidebarCSS).toMatch(
       /\.thread-row\.has-unread \.thread-row-title,\s*\.participant-roster-row\.has-unread \.participant-roster-name \{/,
@@ -1296,6 +1309,12 @@ describe("unified DM/thread row spec (S1)", () => {
     expect(participantsCSS).not.toMatch(/\.participant-roster-row:hover/);
     expect(participantsCSS).not.toMatch(
       /\.participant-roster-row \{[^}]*padding: 5px/,
+    );
+    expect(participantsCSS).not.toMatch(
+      /\.participant-roster-row \{[^}]*height: 30px/,
+    );
+    expect(participantsCSS).not.toMatch(
+      /\.participant-roster-row \{[^}]*padding-left:/,
     );
   });
 
@@ -1313,14 +1332,14 @@ describe("unified DM/thread row spec (S1)", () => {
     // identity grid lives on the inner main button (mirroring
     // .thread-row-main) so the row itself can overlay hover actions.
     expect(sidebarCSS).toMatch(
-      /\.thread-row \{[^}]*var\(--sidebar-nav-icon-col\)/,
+      /\.thread-row \{[^}]*var\(--sidebar-session-status-col\)/,
     );
     const rosterMainRule = participantsCSS.match(
       /\.participant-roster-main \{[^}]*\}/,
     )?.[0];
     expect(rosterMainRule).toBeTruthy();
     expect(rosterMainRule).toMatch(
-      /grid-template-columns: var\(--sidebar-nav-icon-col\)/,
+      /grid-template-columns: var\(--sidebar-session-status-col\)/,
     );
     expect(rosterMainRule).toMatch(
       /column-gap: var\(--sidebar-nav-column-gap\)/,
@@ -1329,6 +1348,15 @@ describe("unified DM/thread row spec (S1)", () => {
     // ::before dot's justify-self: center.
     expect(participantsCSS).toMatch(
       /\.participant-roster-status \{[^}]*justify-self: center/,
+    );
+  });
+
+  it("normal session rows keep the status slot but hide the default dot", () => {
+    expect(sidebarCSS).toMatch(
+      /\.thread-row::before \{[^}]*background: var\(--sidebar-session-status-bg\)/,
+    );
+    expect(participantsCSS).toMatch(
+      /\.participant-roster-status \{[^}]*background: var\(--sidebar-session-status-bg\)/,
     );
   });
 

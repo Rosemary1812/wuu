@@ -244,11 +244,9 @@
  * cell holding the main select button; hover pin/archive actions overlay
  * on the right, mirroring .thread-row / .thread-row-main. */
 .participant-roster-row {
-  height: 30px;
   min-width: 0;
   border: 0;
   grid-template-columns: minmax(0, 1fr);
-  padding-left: calc(var(--sidebar-row-pad-x) + var(--sidebar-child-indent));
 }
 
 /* Identity columns (status dot + name, plus an avatar column only when
@@ -262,7 +260,7 @@
   min-width: 0;
   align-items: center;
   column-gap: var(--sidebar-nav-column-gap);
-  grid-template-columns: var(--sidebar-nav-icon-col) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-session-status-col) minmax(0, 1fr);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -277,7 +275,7 @@
 }
 
 .participant-roster-main:has(.participant-roster-avatar) {
-  grid-template-columns: var(--sidebar-nav-icon-col) var(--sidebar-tree-icon-col) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-session-status-col) var(--sidebar-tree-icon-col) minmax(0, 1fr);
 }
 
 /* Focus ring lives on the row (same inset ring as the shared sidebar
@@ -301,15 +299,20 @@
 }
 
 .participant-roster-status {
-  width: 6px;
-  height: 6px;
+  width: var(--sidebar-session-status-dot-size);
+  height: var(--sidebar-session-status-dot-size);
   justify-self: center;
   border-radius: var(--radius-pill);
-  background: var(--ink-faint);
+  background: var(--sidebar-session-status-bg);
+  transform: scale(var(--sidebar-session-status-scale));
+  transition:
+    background-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .participant-roster-status[data-status="online"] {
-  background: var(--sidebar-thread-row-dot-default);
+  background: var(--sidebar-session-status-bg);
 }
 
 /* Busy DM counterpart reuses the running-session spinner instead of a
@@ -322,12 +325,14 @@
  * than showing the unread fill, matching `.thread-row.running`, which
  * hides its unread dot while the spinner runs. */
 .participant-roster-row .participant-roster-main .participant-roster-status[data-status="busy"] {
-  width: 9px;
-  height: 9px;
+  width: var(--sidebar-session-spinner-size);
+  height: var(--sidebar-session-spinner-size);
   background: transparent;
-  border: 1.5px solid color-mix(in srgb, var(--sidebar-accent) 65%, transparent);
+  border: var(--sidebar-session-spinner-border-width) solid
+    color-mix(in srgb, var(--sidebar-accent) 65%, transparent);
   border-top-color: var(--sidebar-thread-spinner-notch);
   box-sizing: border-box;
+  transform: none;
   animation: session-loading-spin var(--session-loading-spin-duration) linear infinite;
 }
 

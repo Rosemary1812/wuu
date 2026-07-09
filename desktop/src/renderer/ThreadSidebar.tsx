@@ -619,7 +619,7 @@ function ThreadRows({
         return (
           <div
             key={thread.id}
-            className={`thread-row ${thread.id === activeID ? "active" : ""}${running ? " running" : ""}${
+            className={`thread-row sidebar-session-row ${thread.id === activeID ? "active" : ""}${running ? " running" : ""}${
               pendingSwitch ? " pending-switch" : ""
             }${unread ? " has-unread" : ""}`}
             aria-current={thread.id === activeID ? "page" : undefined}

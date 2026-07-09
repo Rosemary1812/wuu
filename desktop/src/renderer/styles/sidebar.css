@@ -197,6 +197,14 @@
   --sidebar-row-gap: 3px;
   --sidebar-list-pad-y: 2px;
   --sidebar-child-indent: 12px;
+  --sidebar-session-status-col: var(--sidebar-nav-icon-col);
+  --sidebar-session-status-dot-size: 5px;
+  --sidebar-session-status-bg: transparent;
+  --sidebar-session-status-scale: 0.75;
+  --sidebar-session-status-unread-bg: var(--info);
+  --sidebar-session-status-unread-scale: 1;
+  --sidebar-session-spinner-size: 9px;
+  --sidebar-session-spinner-border-width: 1.5px;
   display: flex;
   width: var(--sidebar-open-width, 326px);
   min-width: var(--sidebar-open-width, 326px);
@@ -1014,7 +1022,7 @@
   color: var(--ink);
 }
 
-.thread-row {
+.sidebar-session-row {
   height: 30px;
   min-width: 0;
   border-radius: var(--radius-sm);
@@ -1022,22 +1030,25 @@
   color: var(--ink-tertiary);
   font-size: var(--font-ui);
   font-weight: 500;
-  grid-template-columns:
-    var(--sidebar-nav-icon-col)
-    minmax(0, 1fr);
   padding-left: var(--sidebar-row-pad-x);
+}
+
+.thread-row {
+  grid-template-columns:
+    var(--sidebar-session-status-col)
+    minmax(0, 1fr);
 }
 
 .thread-row::before {
   grid-column: 1;
   justify-self: center;
-  width: 5px;
-  height: 5px;
+  width: var(--sidebar-session-status-dot-size);
+  height: var(--sidebar-session-status-dot-size);
   flex: 0 0 auto;
   border-radius: var(--radius-pill);
-  background: transparent;
+  background: var(--sidebar-session-status-bg);
   content: "";
-  transform: scale(0.75);
+  transform: scale(var(--sidebar-session-status-scale));
   transition:
     background-color 140ms ease,
     box-shadow 140ms ease,
@@ -1045,8 +1056,8 @@
 }
 
 .thread-row:hover::before {
-  background: transparent;
-  transform: scale(0.75);
+  background: var(--sidebar-session-status-bg);
+  transform: scale(var(--sidebar-session-status-scale));
 }
 
 .thread-row.active,
@@ -1057,8 +1068,8 @@
 }
 
 .thread-row.active::before {
-  background: transparent;
-  transform: scale(0.75);
+  background: var(--sidebar-session-status-bg);
+  transform: scale(var(--sidebar-session-status-scale));
 }
 
 .thread-row.running::before {
@@ -1068,32 +1079,34 @@
 .thread-row-spinner {
   grid-column: 1;
   justify-self: center;
-  width: 9px;
-  height: 9px;
+  width: var(--sidebar-session-spinner-size);
+  height: var(--sidebar-session-spinner-size);
   flex: 0 0 auto;
   /*
-   * Thread-row running-state spinner. Same inverted "light notch on a
+   * Session-row running-state spinner. Same inverted "light notch on a
    * dark ring" treatment as `.session-tab.running .session-tab-status`
    * and `.project-row .project-row-loading` — heavy dark mass anchors
    * the rotation at this 9px size. 65% of `--sidebar-accent` for the
    * ring keeps it from going inky against the sidebar surface.
    */
-  border: 1.5px solid color-mix(in srgb, var(--sidebar-accent) 65%, transparent);
+  border: var(--sidebar-session-spinner-border-width) solid
+    color-mix(in srgb, var(--sidebar-accent) 65%, transparent);
   border-top-color: var(--sidebar-thread-spinner-notch);
   border-radius: var(--radius-pill);
   animation: session-loading-spin var(--session-loading-spin-duration) linear infinite;
 }
 
 .thread-row.has-unread::before {
-  background: var(--info);
-  transform: scale(1);
+  background: var(--sidebar-session-status-unread-bg);
+  transform: scale(var(--sidebar-session-status-unread-scale));
 }
 
 /* Unread badge language shared across both row families (§1.1): the
  * leading dot turns --info and the title bumps to semibold. Thread rows
  * use their ::before dot; DM rows reuse their status dot column. */
 .participant-roster-row.has-unread .participant-roster-status {
-  background: var(--info);
+  background: var(--sidebar-session-status-unread-bg);
+  transform: scale(var(--sidebar-session-status-unread-scale));
 }
 
 .thread-row.has-unread .thread-row-title,
