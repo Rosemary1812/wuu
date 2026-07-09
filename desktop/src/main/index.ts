@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  type BrowserWindowConstructorOptions,
   dialog,
   ipcMain,
   type IpcMainInvokeEvent,
@@ -108,6 +109,7 @@ const MAIN_WINDOW_DEFAULT_WIDTH = 1280;
 const MAIN_WINDOW_DEFAULT_HEIGHT = 920;
 const DEV_CACHE_CLEANUP_THRESHOLD_BYTES = 512 * 1024 * 1024;
 const DEV_CACHE_DIRECTORIES = ["Cache", "Code Cache", "GPUCache", "DawnCache"];
+const DEFAULT_WINDOW_BACKGROUND = "#f6f6f4";
 registerRenderableFileScheme();
 
 let mainWindow: BrowserWindow | null = null;
@@ -302,6 +304,21 @@ function loadRenderer(window: BrowserWindow): void {
   }
 }
 
+function mainWindowMaterialOptions(): Pick<
+  BrowserWindowConstructorOptions,
+  "backgroundColor" | "transparent" | "vibrancy" | "visualEffectState"
+> {
+  if (process.platform !== "darwin") {
+    return { backgroundColor: DEFAULT_WINDOW_BACKGROUND };
+  }
+  return {
+    backgroundColor: "#00000000",
+    transparent: true,
+    vibrancy: "under-window",
+    visualEffectState: "active",
+  };
+}
+
 type PopOutWindowParams =
   | {
       kind: "thread";
@@ -366,7 +383,7 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
     y,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 18, y: 16 },
-    backgroundColor: "#f6f6f4",
+    backgroundColor: DEFAULT_WINDOW_BACKGROUND,
     title: placeholderTitle,
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
@@ -437,7 +454,7 @@ function createWindow(): void {
     height: MAIN_WINDOW_DEFAULT_HEIGHT,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 18, y: 16 },
-    backgroundColor: "#f6f6f4",
+    ...mainWindowMaterialOptions(),
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,

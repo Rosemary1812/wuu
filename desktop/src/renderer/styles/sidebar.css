@@ -48,7 +48,7 @@
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--surface-1);
+  background: transparent;
 }
 
 .app-shell.sidebar-animating {
@@ -143,13 +143,13 @@
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  border-right: 1px solid var(--sidebar-glass-border);
-  background: var(--sidebar-glass-bg);
+  border-right: 1px solid rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.2);
   box-shadow:
-    inset -1px 0 0 var(--sidebar-glass-highlight),
-    1px 0 18px var(--sidebar-glass-shadow-ambient);
-  backdrop-filter: blur(26px) saturate(1.45);
-  -webkit-backdrop-filter: blur(26px) saturate(1.45);
+    inset -1px 0 0 rgba(255, 255, 255, 0.22),
+    1px 0 12px rgba(20, 24, 28, 0.035);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   transition:
     border-color var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
     background-color var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
@@ -166,10 +166,10 @@
   inset: 0;
   z-index: -1;
   background:
-    linear-gradient(105deg, var(--sidebar-glass-overlay-bright), var(--sidebar-glass-overlay-light) 36%, var(--sidebar-glass-overlay-accent) 100%),
-    linear-gradient(180deg, var(--sidebar-glass-overlay-highlight-strong), rgba(255, 255, 255, 0) 28%);
+    linear-gradient(112deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.08) 42%, transparent 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3), transparent 26%);
   content: "";
-  opacity: 0.72;
+  opacity: 0.62;
   pointer-events: none;
 }
 
@@ -250,10 +250,11 @@
   z-index: 140;
   width: var(--sidebar-open-width, 326px);
   min-width: var(--sidebar-open-width, 326px);
-  border-right-color: var(--sidebar-glass-border);
+  border-right-color: rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.26);
   box-shadow:
-    inset -1px 0 0 var(--sidebar-glass-highlight),
-    16px 0 42px var(--sidebar-glass-shadow-elevated);
+    inset -1px 0 0 rgba(255, 255, 255, 0.24),
+    10px 0 24px var(--ink-overlay-8);
   overflow: visible;
   pointer-events: auto;
 }
