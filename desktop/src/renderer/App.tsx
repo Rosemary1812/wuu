@@ -1044,7 +1044,13 @@ export function App(): JSX.Element {
   const activePlanTotal = activePlanPillUpdate?.plan.length ?? 0;
   const activePlanCompleted =
     activePlanPillUpdate?.plan.filter((item) => item.status === "completed").length ?? 0;
-  const activePlanVisible = Boolean(activePlanPillUpdate && activePlanTotal > 0);
+  // Hide the pill once the active plan is fully done; it will reappear when
+  // the next plan arrives with pending work (or more steps are appended).
+  const activePlanVisible = Boolean(
+    activePlanPillUpdate &&
+      activePlanTotal > 0 &&
+      activePlanCompleted < activePlanTotal,
+  );
   const activePlanCurrentItem = activePlanPillUpdate?.plan.find(
     (item) => item.status === "in_progress",
   );
