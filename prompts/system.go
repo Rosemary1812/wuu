@@ -13,8 +13,8 @@ var systemMain string
 
 // System returns the wuu base system prompt sections that apply to both
 // the main agent and spawned subagents: identity, tone, workspace rules,
-// task discipline, validation, tool use, final-answer shape, and
-// anti-patterns.
+// map vs territory reasoning, task discipline, validation, tool use,
+// final-answer shape, and anti-patterns.
 func System() string {
 	return strings.TrimSpace(system)
 }
