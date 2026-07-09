@@ -1,4 +1,4 @@
-import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from "react";
+import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { FileText, Github, Globe2, Mail } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -38,6 +38,7 @@ type MermaidState =
 
 const IMAGE_MARKDOWN_PATTERN = /!\[([^\]\n]*)\]\(([^)\n]+)\)/g;
 const IMAGE_FILE_PATTERN = /\.(apng|avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i;
+const AUTO_IMAGE_REFERENCE_LIMIT = 12;
 const AUTO_FILE_REFERENCE_PREFIX_SOURCE = String.raw`(^|[\s([{"'])`;
 const AUTO_FILE_PATH_SOURCE = String.raw`(?:(?:~|\.{1,2})\/|\/)?(?:[A-Za-z0-9_@+.-]+\/)*[A-Za-z0-9_@+.-]+\.[A-Za-z0-9][A-Za-z0-9_-]{0,15}`;
 const AUTO_FILE_LINE_RANGE_SEPARATOR_SOURCE = String.raw`[-:\u2013\u2014]`;
@@ -337,7 +338,13 @@ function markdownComponents(
   };
   return {
     p({ children }) {
-      return <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "p")}</p>;
+      const autoImageReferences = autoImageReferencesFromMarkdownChildren(children);
+      return (
+        <>
+          <p className="rich-paragraph">{renderMarkdownText(children, richTextOptions, "p")}</p>
+          <RichAutoImageReferences references={autoImageReferences} cwd={cwd} keyPrefix="p" />
+        </>
+      );
     },
     // Every heading level renders as the same whisper-level anchor: a
     // same-size semibold paragraph with extra space above (.rich-heading).
@@ -413,7 +420,15 @@ function markdownComponents(
       return <code className={className}>{renderMarkdownText(children, plainTextOptions, "code")}</code>;
     },
     li({ children }) {
-      return <li>{renderMarkdownText(children, richTextOptions, "li")}</li>;
+      const autoImageReferences = autoImageReferencesFromMarkdownChildren(children, {
+        directTextOnly: true
+      });
+      return (
+        <li>
+          {renderMarkdownText(children, richTextOptions, "li")}
+          <RichAutoImageReferences references={autoImageReferences} cwd={cwd} keyPrefix="li" />
+        </li>
+      );
     },
     table({ children }) {
       return (
@@ -546,7 +561,7 @@ function renderRichText(
 // re-issue an IPC roundtrip and visually flip from plain text to the red link.
 // The cache is keyed by (display, cwd) so different worktrees stay separate.
 type ResolvedFileReference =
-  | { status: "resolved"; path: string }
+  | { status: "resolved"; path: string; absolutePath?: string }
   | { status: "unresolved" };
 
 const fileReferenceResolutionCache = new Map<string, ResolvedFileReference>();
@@ -585,11 +600,11 @@ function subscribeToFileReferenceResolution(
 
   let inflight = fileReferenceResolutionInflight.get(key);
   if (!inflight) {
-    inflight = resolver(display)
+    inflight = resolveWorkspaceFileReference(display, cwd)
       .then(
         (result): ResolvedFileReference =>
           result.status === "resolved" && result.path
-            ? { status: "resolved", path: result.path }
+            ? { status: "resolved", path: result.path, absolutePath: result.absolute_path }
             : { status: "unresolved" }
       )
       .catch((): ResolvedFileReference => ({ status: "unresolved" }));
@@ -670,6 +685,73 @@ function RichResolvedFileReference({
   );
 }
 
+function RichAutoImageReferences({
+  references,
+  cwd,
+  keyPrefix
+}: {
+  references: readonly string[];
+  cwd: string | undefined;
+  keyPrefix: string;
+}): JSX.Element | null {
+  if (!cwd || references.length === 0) {
+    return null;
+  }
+
+  return (
+    <>
+      {references.map((reference, index) => (
+        <RichResolvedImageReference
+          key={`${keyPrefix}-auto-image-${index}-${reference}`}
+          reference={reference}
+          cwd={cwd}
+        />
+      ))}
+    </>
+  );
+}
+
+function RichResolvedImageReference({
+  reference,
+  cwd,
+}: {
+  reference: string;
+  cwd: string;
+}): JSX.Element | null {
+  const [resolved, setResolved] = useState<ResolvedFileReference | undefined>(
+    () => lookupCachedFileReference(reference, cwd)
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    setResolved(lookupCachedFileReference(reference, cwd));
+    subscribeToFileReferenceResolution(reference, cwd, (result) => {
+      if (cancelled) {
+        return;
+      }
+      setResolved(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [cwd, reference]);
+
+  if (resolved?.status !== "resolved") {
+    return null;
+  }
+
+  const source = resolved.absolutePath ?? resolved.path;
+  return (
+    <RichImage
+      source={source}
+      alt={reference}
+      cwd={resolved.absolutePath ? undefined : cwd}
+      caption={resolved.path}
+      autoPreview
+    />
+  );
+}
+
 function resolveWorkspaceFileReference(
   reference: string,
   cwd: string | undefined,
@@ -683,7 +765,7 @@ function resolveWorkspaceFileReference(
     });
   }
 
-  return resolver(reference).catch(() => ({
+  return resolver(reference, cwd).catch(() => ({
     root: cwd ?? "",
     reference,
     status: "invalid" as const,
@@ -792,6 +874,63 @@ function isFileReferenceCandidate(path: string | undefined): boolean {
   return AUTO_LINK_FILE_EXTENSIONS.has(fileExtension(normalizedPath));
 }
 
+function isImageReferenceCandidate(path: string | undefined): boolean {
+  const normalizedPath = path?.trim() ?? "";
+  return Boolean(normalizedPath) && IMAGE_FILE_PATTERN.test(normalizedPath);
+}
+
+function autoImageReferencesFromMarkdownChildren(
+  children: ReactNode,
+  { directTextOnly = false }: { directTextOnly?: boolean } = {},
+): string[] {
+  const references: string[] = [];
+  const seen = new Set<string>();
+  const addReference = (reference: string): void => {
+    if (references.length >= AUTO_IMAGE_REFERENCE_LIMIT || seen.has(reference)) {
+      return;
+    }
+    seen.add(reference);
+    references.push(reference);
+  };
+
+  const visit = (node: ReactNode): void => {
+    for (const child of Children.toArray(node)) {
+      if (typeof child === "string" || typeof child === "number") {
+        collectAutoImageReferences(String(child), addReference);
+        continue;
+      }
+      if (
+        directTextOnly ||
+        !isValidElement<{ children?: ReactNode }>(child) ||
+        child.props.children === undefined ||
+        skipsAutoImageReferenceScan(child)
+      ) {
+        continue;
+      }
+      visit(child.props.children);
+    }
+  };
+
+  visit(children);
+  return references;
+}
+
+function collectAutoImageReferences(text: string, addReference: (reference: string) => void): void {
+  let match: RegExpExecArray | null;
+  AUTO_FILE_REFERENCE_PATTERN.lastIndex = 0;
+  while ((match = AUTO_FILE_REFERENCE_PATTERN.exec(text))) {
+    const prefixLength = match[1].length;
+    const reference = match[0].slice(prefixLength);
+    if (isImageReferenceCandidate(filePathFromReference(reference))) {
+      addReference(reference);
+    }
+  }
+}
+
+function skipsAutoImageReferenceScan(element: { type: unknown }): boolean {
+  return element.type === "a" || element.type === "code" || element.type === "img";
+}
+
 function fileExtension(path: string): string {
   const fileName = path.split("/").pop() ?? "";
   const dotIndex = fileName.lastIndexOf(".");
@@ -857,16 +996,20 @@ function RichImage({
   source,
   alt,
   cwd,
-  inline = false
+  inline = false,
+  caption,
+  autoPreview = false,
 }: {
   source: string;
   alt: string;
   cwd: string | undefined;
   inline?: boolean;
+  caption?: string;
+  autoPreview?: boolean;
 }): JSX.Element {
   const resolvedSource = resolveImageSource(source, cwd);
   const { openPreview } = useImagePreview();
-  const titleText = imageTarget(source);
+  const titleText = caption ?? imageTarget(source);
   const handleActivate = (): void => {
     openPreview({ src: resolvedSource, alt, title: titleText });
   };
@@ -890,7 +1033,15 @@ function RichImage({
       onKeyDown={handleKeyDown}
     />
   );
-  return inline ? <span className="rich-image-block inline">{image}</span> : <figure className="rich-image-block">{image}</figure>;
+  if (inline) {
+    return <span className="rich-image-block inline">{image}</span>;
+  }
+  return (
+    <figure className={autoPreview ? "rich-image-block rich-image-block--auto" : "rich-image-block"}>
+      {image}
+      {caption ? <figcaption className="rich-image-caption">{caption}</figcaption> : null}
+    </figure>
+  );
 }
 
 function bareImageSource(line: string): string | undefined {

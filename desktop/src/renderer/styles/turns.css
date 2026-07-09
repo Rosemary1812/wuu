@@ -2725,6 +2725,14 @@
   margin-top: 14px;
 }
 
+.rich-image-caption {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .rich-image {
   display: block;
   max-width: 100%;
