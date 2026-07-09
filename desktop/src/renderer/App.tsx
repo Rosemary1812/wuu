@@ -321,6 +321,8 @@ import {
   useComposerPendingState,
   type QueuedMessageEditTarget,
 } from "./ComposerPendingState";
+import { useSidebarDrawerState } from "./SidebarDrawerState";
+export { SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS } from "./SidebarDrawerState";
 
 function permissionSummaryForMode(mode: PermissionMode): PermissionSummary {
   return { mode };
@@ -341,7 +343,6 @@ function initializedForSelectedPermissionMode(
 
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
 const PROJECT_THREAD_COLLAPSE_MS = 190;
-export const SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS = 240;
 const ENVIRONMENT_PANEL_MOTION_MS = 260;
 const ENVIRONMENT_PANEL_WIDTH_PX = 328;
 const ENVIRONMENT_PANEL_WIDTH_CSS = `${ENVIRONMENT_PANEL_WIDTH_PX}px`;
@@ -654,22 +655,6 @@ export function App(): JSX.Element {
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
   const appShellRef = useRef<HTMLDivElement>(null);
   const settingsShellRef = useRef<HTMLDivElement>(null);
-  const [sidebarDrawerPhase, setSidebarDrawerPhase] = useState<
-    "closed" | "open" | "closing"
-  >("closed");
-  const sidebarDrawerOpenTimerRef = useRef<number | undefined>(undefined);
-  const sidebarDrawerCloseTimerRef = useRef<number | undefined>(undefined);
-  const sidebarHoverZoneRef = useRef<HTMLDivElement>(null);
-  const sidebarHoverZoneActiveRef = useRef(false);
-  const sidebarPointerPositionRef = useRef<{ x: number; y: number } | null>(
-    null,
-  );
-  const sidebarDrawerSyncedSessionRef = useRef<string | undefined>(undefined);
-  // Set while a sidebar drag is in flight and kept set after a drag that ends
-  // collapsed, until the pointer moves off the hover zone. Without it, the
-  // hover zone can appear under the pointer after a drag-collapse and
-  // pointerenter immediately pops the drawer back open.
-  const sidebarDrawerSuppressedRef = useRef(false);
   const {
     sidebarWidth,
     settingsSidebarWidth,
@@ -705,6 +690,20 @@ export function App(): JSX.Element {
     layoutRootRef: appShellRef,
     settingsLayoutRootRef: settingsShellRef,
     onCloseProjectMenu: closeProjectMenu,
+  });
+  const {
+    sidebarDrawerPhase,
+    sidebarHoverZoneRef,
+    cancelSidebarDrawerOpen,
+    openSidebarDrawer,
+    scheduleSidebarDrawerOpen,
+    closeSidebarDrawer,
+  } = useSidebarDrawerState({
+    appShellRef,
+    sidebarCollapsed,
+    resizingSidebar,
+    activeSessionTabID: state.activeSessionTabID,
+    motionMs: SIDEBAR_MOTION_MS,
   });
   const [collapsedProjectIDs, setCollapsedProjectIDs] = useState<Set<string>>(
     initialCollapsedProjectIDs,
@@ -2427,304 +2426,6 @@ export function App(): JSX.Element {
     state.gitStatus,
   );
   const runDebugPhase = runDebugPhaseForState(state);
-
-  const clearSidebarDrawerCloseTimer = useCallback((): void => {
-    if (sidebarDrawerCloseTimerRef.current !== undefined) {
-      window.clearTimeout(sidebarDrawerCloseTimerRef.current);
-      sidebarDrawerCloseTimerRef.current = undefined;
-    }
-  }, []);
-
-  const clearSidebarDrawerOpenTimer = useCallback((): void => {
-    if (sidebarDrawerOpenTimerRef.current !== undefined) {
-      window.clearTimeout(sidebarDrawerOpenTimerRef.current);
-      sidebarDrawerOpenTimerRef.current = undefined;
-    }
-  }, []);
-
-  const cancelSidebarDrawerOpen = useCallback((): void => {
-    sidebarHoverZoneActiveRef.current = false;
-    clearSidebarDrawerOpenTimer();
-  }, [clearSidebarDrawerOpenTimer]);
-
-  const rememberSidebarPointerPosition = useCallback((event: Event): void => {
-    if (!(event instanceof MouseEvent)) {
-      return;
-    }
-    sidebarPointerPositionRef.current = {
-      x: event.clientX,
-      y: event.clientY,
-    };
-  }, []);
-
-  const sidebarDrawerPointerHovered = useCallback((): boolean | undefined => {
-    const point = sidebarPointerPositionRef.current;
-    if (!point || typeof document.elementFromPoint !== "function") {
-      return undefined;
-    }
-    const target = document.elementFromPoint(point.x, point.y);
-    if (!target) {
-      return undefined;
-    }
-    const sidebar = appShellRef.current?.querySelector(".sidebar");
-    const hoverZone = sidebarHoverZoneRef.current;
-    return Boolean(
-      (sidebar && sidebar.contains(target)) ||
-        (hoverZone && hoverZone.contains(target)),
-    );
-  }, []);
-
-  const blurSidebarFocus = useCallback((): void => {
-    const sidebar = appShellRef.current?.querySelector(".sidebar");
-    const active = document.activeElement;
-    if (sidebar && active instanceof HTMLElement && sidebar.contains(active)) {
-      active.blur();
-    }
-  }, []);
-
-  const openSidebarDrawer = useCallback((): void => {
-    if (resizingSidebar || sidebarDrawerSuppressedRef.current) {
-      return;
-    }
-    if (sidebarCollapsed && sidebarDrawerPointerHovered() === false) {
-      return;
-    }
-    clearSidebarDrawerOpenTimer();
-    clearSidebarDrawerCloseTimer();
-    if (sidebarCollapsed) {
-      setSidebarDrawerPhase("open");
-    }
-  }, [
-    clearSidebarDrawerCloseTimer,
-    clearSidebarDrawerOpenTimer,
-    resizingSidebar,
-    sidebarCollapsed,
-    sidebarDrawerPointerHovered,
-  ]);
-
-  const scheduleSidebarDrawerOpen = useCallback((): void => {
-    sidebarHoverZoneActiveRef.current = true;
-    if (
-      resizingSidebar ||
-      sidebarDrawerSuppressedRef.current ||
-      !sidebarCollapsed
-    ) {
-      return;
-    }
-    clearSidebarDrawerOpenTimer();
-    // Edge hover is easy to hit accidentally; require a short dwell before
-    // opening, while the sidebar body itself still keeps the drawer open
-    // immediately once the user is inside it.
-    sidebarDrawerOpenTimerRef.current = window.setTimeout(() => {
-      sidebarDrawerOpenTimerRef.current = undefined;
-      if (
-        !sidebarHoverZoneActiveRef.current ||
-        resizingSidebar ||
-        sidebarDrawerSuppressedRef.current ||
-        sidebarDrawerPointerHovered() === false
-      ) {
-        return;
-      }
-      clearSidebarDrawerCloseTimer();
-      setSidebarDrawerPhase("open");
-    }, SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS);
-  }, [
-    clearSidebarDrawerCloseTimer,
-    clearSidebarDrawerOpenTimer,
-    resizingSidebar,
-    sidebarCollapsed,
-    sidebarDrawerPointerHovered,
-  ]);
-
-  const closeSidebarDrawer = useCallback((): void => {
-    cancelSidebarDrawerOpen();
-    clearSidebarDrawerCloseTimer();
-    blurSidebarFocus();
-    if (!sidebarCollapsed || resizingSidebar) {
-      // No closing animation mid-drag: collapsing unmounts the resizer, the
-      // pointer falls through onto sidebar content, and the resulting
-      // pointerleave would put the shell in .sidebar-drawer-closing — which
-      // pins the sidebar as a full-height overlay while the user is still
-      // dragging.
-      setSidebarDrawerPhase("closed");
-      return;
-    }
-    setSidebarDrawerPhase("closing");
-    sidebarDrawerCloseTimerRef.current = window.setTimeout(() => {
-      sidebarDrawerCloseTimerRef.current = undefined;
-      setSidebarDrawerPhase("closed");
-    }, SIDEBAR_MOTION_MS);
-  }, [
-    blurSidebarFocus,
-    cancelSidebarDrawerOpen,
-    clearSidebarDrawerCloseTimer,
-    resizingSidebar,
-    sidebarCollapsed,
-  ]);
-
-  const syncSidebarDrawerHover = useCallback((): void => {
-    if (!sidebarCollapsed || sidebarDrawerPhase !== "open") {
-      return;
-    }
-    // Pointerleave can be missed when the drawer rerenders during navigation;
-    // resample the current hit target so drawer state follows real hover.
-    if (sidebarDrawerPointerHovered() === false) {
-      closeSidebarDrawer();
-    }
-  }, [
-    closeSidebarDrawer,
-    sidebarCollapsed,
-    sidebarDrawerPhase,
-    sidebarDrawerPointerHovered,
-  ]);
-
-  useEffect(() => {
-    function handlePointerEvent(event: Event): void {
-      rememberSidebarPointerPosition(event);
-      syncSidebarDrawerHover();
-    }
-    window.addEventListener("pointermove", handlePointerEvent, true);
-    window.addEventListener("pointerover", handlePointerEvent, true);
-    window.addEventListener("pointerdown", handlePointerEvent, true);
-    window.addEventListener("mousemove", handlePointerEvent, true);
-    window.addEventListener("mouseover", handlePointerEvent, true);
-    window.addEventListener("mousedown", handlePointerEvent, true);
-    return () => {
-      window.removeEventListener("pointermove", handlePointerEvent, true);
-      window.removeEventListener("pointerover", handlePointerEvent, true);
-      window.removeEventListener("pointerdown", handlePointerEvent, true);
-      window.removeEventListener("mousemove", handlePointerEvent, true);
-      window.removeEventListener("mouseover", handlePointerEvent, true);
-      window.removeEventListener("mousedown", handlePointerEvent, true);
-    };
-  }, [rememberSidebarPointerPosition, syncSidebarDrawerHover]);
-
-  useLayoutEffect(() => {
-    if (!sidebarCollapsed && sidebarDrawerPhase !== "closed") {
-      cancelSidebarDrawerOpen();
-      clearSidebarDrawerCloseTimer();
-      setSidebarDrawerPhase("closed");
-    }
-  }, [
-    cancelSidebarDrawerOpen,
-    clearSidebarDrawerCloseTimer,
-    sidebarCollapsed,
-    sidebarDrawerPhase,
-  ]);
-
-  useEffect(() => {
-    if (!sidebarCollapsed || resizingSidebar) {
-      cancelSidebarDrawerOpen();
-    }
-  }, [cancelSidebarDrawerOpen, resizingSidebar, sidebarCollapsed]);
-
-  useEffect(() => {
-    if (!sidebarCollapsed || sidebarDrawerPhase !== "open") {
-      return undefined;
-    }
-    // The drawer normally closes via the sidebar's pointerleave, but Chromium
-    // skips that event when the pointer exits the window fast or focus jumps
-    // to another app, leaving the drawer stranded open. Close it whenever the
-    // pointer leaves the window or the app loses focus.
-    function handleWindowMouseOut(event: MouseEvent): void {
-      if (event.relatedTarget === null) {
-        closeSidebarDrawer();
-      }
-    }
-    window.addEventListener("mouseout", handleWindowMouseOut);
-    window.addEventListener("blur", closeSidebarDrawer);
-    return () => {
-      window.removeEventListener("mouseout", handleWindowMouseOut);
-      window.removeEventListener("blur", closeSidebarDrawer);
-    };
-  }, [closeSidebarDrawer, sidebarCollapsed, sidebarDrawerPhase]);
-
-  useEffect(() => {
-    if (!sidebarCollapsed) {
-      return undefined;
-    }
-    function handleWindowMouseOut(event: MouseEvent): void {
-      if (event.relatedTarget === null) {
-        cancelSidebarDrawerOpen();
-      }
-    }
-    window.addEventListener("mouseout", handleWindowMouseOut);
-    window.addEventListener("blur", cancelSidebarDrawerOpen);
-    return () => {
-      window.removeEventListener("mouseout", handleWindowMouseOut);
-      window.removeEventListener("blur", cancelSidebarDrawerOpen);
-    };
-  }, [cancelSidebarDrawerOpen, sidebarCollapsed]);
-
-  useEffect(() => {
-    if (resizingSidebar) {
-      sidebarDrawerSuppressedRef.current = true;
-      return undefined;
-    }
-    if (!sidebarDrawerSuppressedRef.current) {
-      return undefined;
-    }
-    if (!sidebarCollapsed) {
-      sidebarDrawerSuppressedRef.current = false;
-      return undefined;
-    }
-    // The drag ended collapsed with the pointer likely still on the hover
-    // zone. Keep the drawer suppressed until the pointer moves off the zone
-    // so the sidebar doesn't reopen in place right after being dragged shut.
-    function handlePointerMove(event: PointerEvent): void {
-      const zone = sidebarHoverZoneRef.current?.getBoundingClientRect();
-      if (!zone || event.clientX > zone.right || event.clientX < zone.left) {
-        sidebarDrawerSuppressedRef.current = false;
-        window.removeEventListener("pointermove", handlePointerMove);
-      }
-    }
-    window.addEventListener("pointermove", handlePointerMove);
-    return () => window.removeEventListener("pointermove", handlePointerMove);
-  }, [resizingSidebar, sidebarCollapsed]);
-
-  useEffect(() => {
-    if (!resizingSidebar || !sidebarCollapsed) {
-      return;
-    }
-    // Collapsing via drag leaves focus on whatever sidebar control was last
-    // clicked; `.sidebar-collapsed .sidebar:focus-within` would then pin the
-    // sidebar open as a drawer overlay at the clamped minimum width. Drop
-    // that focus so the sidebar actually closes.
-    const sidebar = appShellRef.current?.querySelector(".sidebar");
-    const active = document.activeElement;
-    if (sidebar && active instanceof HTMLElement && sidebar.contains(active)) {
-      active.blur();
-    }
-  }, [resizingSidebar, sidebarCollapsed]);
-
-  useEffect(() => {
-    const sessionID = state.activeSessionTabID;
-    if (!sidebarCollapsed || sidebarDrawerPhase !== "open") {
-      sidebarDrawerSyncedSessionRef.current = sessionID;
-      return;
-    }
-    if (sidebarDrawerSyncedSessionRef.current === sessionID) {
-      return;
-    }
-    sidebarDrawerSyncedSessionRef.current = sessionID;
-    if (sidebarDrawerPointerHovered() === false) {
-      closeSidebarDrawer();
-    }
-  }, [
-    closeSidebarDrawer,
-    sidebarCollapsed,
-    sidebarDrawerPhase,
-    sidebarDrawerPointerHovered,
-    state.activeSessionTabID,
-  ]);
-
-  useEffect(
-    () => () => {
-      clearSidebarDrawerOpenTimer();
-      clearSidebarDrawerCloseTimer();
-    },
-    [clearSidebarDrawerCloseTimer, clearSidebarDrawerOpenTimer],
-  );
 
   useLayoutEffect(() => {
     if (environmentPanelVisible) {
