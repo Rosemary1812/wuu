@@ -37,8 +37,6 @@ import {
 import { arrayMove } from "@dnd-kit/sortable";
 import type {
   Agent,
-  CodexPetSettingsUpdate,
-  CodexPetsSnapshot,
   ConversationSubthread,
   SubthreadUpdatedNotification,
   DesktopProject,
@@ -281,7 +279,8 @@ import {
   pullRequestUnavailableReason,
 } from "./RuntimeHelpers";
 import { SettingsView, type SettingsPage } from "./SettingsView";
-import type { ComposerGoalSummary, SettingsUsageRange, SettingsUsageResponse } from "../shared/protocol";
+import type { ComposerGoalSummary } from "../shared/protocol";
+import { useSettingsRuntimeState } from "./SettingsRuntimeState";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { SessionTabStrip } from "./SessionTabs";
 import { JumpToLatestPill } from "./JumpToLatestPill";
@@ -755,92 +754,20 @@ export function App(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialPage, setSettingsInitialPage] =
     useState<SettingsPage>("providers");
-  const [codexPets, setCodexPets] = useState<CodexPetsSnapshot | undefined>();
-  const [codexPetsLoading, setCodexPetsLoading] = useState(true);
-  const [codexPetsError, setCodexPetsError] = useState("");
   // 设置 → 记忆 打开时预选的同事笔记本（档案面板「在记忆面板中管理」）。
   const [settingsMemoryFocusID, setSettingsMemoryFocusID] = useState<
     string | undefined
   >(undefined);
-  const refreshCodexPets = useCallback(async (): Promise<CodexPetsSnapshot> => {
-    const api = window.wuu as Partial<typeof window.wuu>;
-    if (typeof api.listCodexPets !== "function") {
-      const message = "当前桌面进程不支持 Codex Pets，请重启应用";
-      setCodexPetsError(message);
-      setCodexPetsLoading(false);
-      throw new Error(message);
-    }
-    setCodexPetsLoading(true);
-    setCodexPetsError("");
-    try {
-      const snapshot = await api.listCodexPets();
-      setCodexPets(snapshot);
-      return snapshot;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "无法读取 Codex Pets";
-      setCodexPetsError(message);
-      throw error;
-    } finally {
-      setCodexPetsLoading(false);
-    }
-  }, []);
-  const updateCodexPets = useCallback(async (
-    settings: CodexPetSettingsUpdate,
-  ): Promise<CodexPetsSnapshot> => {
-    const api = window.wuu as Partial<typeof window.wuu>;
-    if (typeof api.updateCodexPetSettings !== "function") {
-      const message = "当前桌面进程不支持 Codex Pets，请重启应用";
-      setCodexPetsError(message);
-      setCodexPetsLoading(false);
-      throw new Error(message);
-    }
-    setCodexPetsLoading(true);
-    setCodexPetsError("");
-    try {
-      const snapshot = await api.updateCodexPetSettings(settings);
-      setCodexPets(snapshot);
-      return snapshot;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "无法保存 Codex Pet";
-      setCodexPetsError(message);
-      throw error;
-    } finally {
-      setCodexPetsLoading(false);
-    }
-  }, []);
-  useEffect(() => {
-    let cancelled = false;
-    const api = window.wuu as Partial<typeof window.wuu>;
-    if (typeof api.listCodexPets !== "function") {
-      setCodexPetsLoading(false);
-      setCodexPetsError("当前桌面进程不支持 Codex Pets，请重启应用");
-      return () => {
-        cancelled = true;
-      };
-    }
-    setCodexPetsLoading(true);
-    setCodexPetsError("");
-    void api
-      .listCodexPets()
-      .then((snapshot) => {
-        if (!cancelled) {
-          setCodexPets(snapshot);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setCodexPetsError(error instanceof Error ? error.message : "无法读取 Codex Pets");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setCodexPetsLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const {
+    usageRange,
+    setUsageRange,
+    settingsUsage,
+    codexPets,
+    codexPetsLoading,
+    codexPetsError,
+    refreshCodexPets,
+    updateCodexPets,
+  } = useSettingsRuntimeState({ settingsOpen });
   const [projectFilter, setProjectFilter] = useState("");
   const [launchPreviewPinned, setLaunchPreviewPinned] = useState(false);
   const {
@@ -1228,34 +1155,6 @@ export function App(): JSX.Element {
     await window.wuu.clearGoal(goalSummary.id, threadID);
     await refreshGoalSummary(threadID);
   }, [activeThreadID, goalSummary, refreshGoalSummary]);
-  const [usageRange, setUsageRange] = useState<SettingsUsageRange>("all");
-  const [settingsUsage, setSettingsUsage] = useState<SettingsUsageResponse | undefined>(
-    undefined,
-  );
-  useEffect(() => {
-    if (!settingsOpen) {
-      setSettingsUsage(undefined);
-      return;
-    }
-    let cancelled = false;
-    void window.wuu
-      .getSettingsUsage(usageRange)
-      .then((response) => {
-        if (cancelled) {
-          return;
-        }
-        setSettingsUsage(response);
-      })
-      .catch(() => {
-        if (cancelled) {
-          return;
-        }
-        setSettingsUsage(undefined);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [settingsOpen, usageRange]);
   const {
     conversationSearch,
     conversationSearchResults,
