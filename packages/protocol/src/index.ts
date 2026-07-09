@@ -1492,7 +1492,7 @@ export type ServerEvent = {
   | { kind: "notification"; message: AppServerNotification }
   | { kind: "server-request"; message: Required<AppServerRequest> }
   | { kind: "server-error"; message: string }
-  | { kind: "server-exit"; code: number | null }
+  | { kind: "server-exit"; code: number | null; message: string }
 );
 
 export type WindowResizeState = {

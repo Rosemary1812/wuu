@@ -754,6 +754,13 @@ func (s *Server) handleConfigProviderRemove(req Request) error {
 	if removeErr != nil {
 		return s.writeResponse(req.ID, nil, removeErr)
 	}
+	authStore, authErr := authstorage.ForHome(os.Getenv("HOME"))
+	if authErr != nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("provider removed but credential cleanup failed: %w", authErr))
+	}
+	if authErr := authStore.DeleteProvider(resolvedName); authErr != nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("provider removed but credential cleanup failed: %w", authErr))
+	}
 	if !removedWasDefault {
 		// Removed an inactive provider; nothing in the runtime needs
 		// reconfiguring because the active selection is unchanged.

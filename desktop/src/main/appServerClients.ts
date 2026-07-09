@@ -29,7 +29,7 @@ type AppServerClientEvent =
   | { kind: "notification"; message: AppServerNotification }
   | { kind: "server-request"; message: Required<AppServerRequest> }
   | { kind: "server-error"; message: string }
-  | { kind: "server-exit"; code: number | null };
+  | { kind: "server-exit"; code: number | null; message: string };
 
 type ServerRequestRoute = {
   client: AppServerClient;
@@ -319,7 +319,7 @@ class AppServerClient {
       this.pending.clear();
       this.runningThreadIDs.clear();
       if (!this.disposing) {
-        this.emit(this, { kind: "server-exit", code });
+        this.emit(this, { kind: "server-exit", code, message });
       }
       this.onStateChange();
       this.child = null;

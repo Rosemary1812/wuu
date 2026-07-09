@@ -305,7 +305,7 @@ function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
       return {
         ...state,
         running: false,
-        status: "wuu 内部错误",
+        status: event.message.trim() || "wuu core 已退出",
       };
   }
 }

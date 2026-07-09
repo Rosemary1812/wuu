@@ -199,13 +199,12 @@ func NewSession(opts Options) (*Session, error) {
 	}
 	titleClient := providers.Client(client)
 	if !roleSelections.Title.Inherited {
-		roleClient, roleErr := providerfactory.BuildStreamClient(roleSelections.Title.RuleProviderConfig, roleSelections.Title.Provider)
+		roleClient, roleErr := providerfactory.BuildRuntimeStreamClient(roleSelections.Title.RuleProviderConfig, roleSelections.Title.Provider)
+		if roleClient == nil {
+			return nil, fmt.Errorf("build title client: %w", roleErr)
+		}
 		if roleErr != nil {
-			if providerfactory.IsCredentialError(roleErr) {
-				roleClient = client
-			} else {
-				return nil, fmt.Errorf("build title client: %w", roleErr)
-			}
+			readinessIssues = append(readinessIssues, ReadinessIssue{Code: "credential_missing", Provider: roleSelections.Title.Provider, Message: roleErr.Error()})
 		}
 		titleClient = roleClient
 	}
@@ -346,7 +345,8 @@ func NewSession(opts Options) (*Session, error) {
 		workerClient, werr = providerfactory.BuildStreamClientWithRetry(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider, &workerRetry)
 		if werr != nil {
 			if providerfactory.IsCredentialError(werr) {
-				workerClient = client
+				workerClient = &providers.UnavailableClient{Reason: werr.Error()}
+				readinessIssues = append(readinessIssues, ReadinessIssue{Code: "credential_missing", Provider: roleSelections.Worker.Provider, Message: werr.Error()})
 			} else {
 				return nil, fmt.Errorf("build worker client: %w", werr)
 			}

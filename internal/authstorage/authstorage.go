@@ -92,6 +92,11 @@ func (s *Store) loadLocked() (File, error) {
 func (s *Store) Save(file File) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := lockFile(s.path + ".lock")
+	if err != nil {
+		return err
+	}
+	defer release()
 	return s.writeLocked(file)
 }
 
@@ -125,6 +130,11 @@ func (s *Store) Get(providerID string) (Credentials, error) {
 func (s *Store) Set(providerID string, credentials Credentials) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := lockFile(s.path + ".lock")
+	if err != nil {
+		return err
+	}
+	defer release()
 	file, err := s.loadLocked()
 	if errors.Is(err, ErrNotFound) {
 		file = emptyFile()
@@ -138,6 +148,11 @@ func (s *Store) Set(providerID string, credentials Credentials) error {
 func (s *Store) Update(providerID string, update func(*Credentials)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := lockFile(s.path + ".lock")
+	if err != nil {
+		return err
+	}
+	defer release()
 	file, err := s.loadLocked()
 	if errors.Is(err, ErrNotFound) {
 		file = emptyFile()
@@ -153,6 +168,11 @@ func (s *Store) Update(providerID string, update func(*Credentials)) error {
 func (s *Store) DeleteProvider(providerID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := lockFile(s.path + ".lock")
+	if err != nil {
+		return err
+	}
+	defer release()
 	file, err := s.loadLocked()
 	if errors.Is(err, ErrNotFound) {
 		return nil

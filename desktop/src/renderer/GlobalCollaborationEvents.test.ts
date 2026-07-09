@@ -173,6 +173,22 @@ describe("serverEventTargetsGlobalThread", () => {
 });
 
 describe("reducer bypass for global-collaboration threads", () => {
+  it("keeps the core exit reason after stderr", () => {
+    const state = stateWith([]);
+    const withError = reduceServerEvent(state, {
+      kind: "server-error",
+      workdir: AGENT_HOME,
+      message: "parse config failed",
+    });
+    const exited = reduceServerEvent(withError, {
+      kind: "server-exit",
+      workdir: AGENT_HOME,
+      code: 1,
+      message: "wuu core exited (code 1): parse config failed",
+    });
+    expect(exited.status).toContain("parse config failed");
+  });
+
   it("applies thread/updated for a DM thread whose cwd != active context", () => {
     const state = stateWith([dmThread({ status: "idle" })]);
     const updated = dmThread({ status: "in_progress" });

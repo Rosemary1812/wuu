@@ -1798,6 +1798,13 @@ func TestServerConfigCodexModels(t *testing.T) {
 
 func TestServerConfigProviderRemoveInactive(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
+	store, err := authstorage.ForHome(os.Getenv("HOME"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("drop", authstorage.Credentials{Type: "api_key", APIKey: "drop-key"}); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(rt.ConfigPath, []byte(`{
   "default_provider": "keep",
   "providers": {
@@ -1843,6 +1850,9 @@ func TestServerConfigProviderRemoveInactive(t *testing.T) {
 	}
 	if rt.ProviderName != "fake-provider" || rt.Model != "fake-model" {
 		t.Fatalf("runtime selection changed for inactive removal: provider=%q model=%q", rt.ProviderName, rt.Model)
+	}
+	if _, err := store.Get("drop"); err == nil {
+		t.Fatal("removed provider credential still exists")
 	}
 }
 

@@ -1,7 +1,9 @@
 package authstorage
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -28,6 +30,39 @@ func TestStoreRoundTripAllCredentialKinds(t *testing.T) {
 	}
 	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode: %v %v", info, err)
+	}
+}
+
+func TestStoreSerializesAcrossProcesses(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.json")
+	commands := make([]*exec.Cmd, 8)
+	for i := range commands {
+		commands[i] = exec.Command(os.Args[0], "-test.run=TestStoreProcessHelper")
+		commands[i].Env = append(os.Environ(), "WUU_AUTH_HELPER=1", "WUU_AUTH_PATH="+path, fmt.Sprintf("WUU_AUTH_PROVIDER=p%d", i))
+		if err := commands[i].Start(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, command := range commands {
+		if err := command.Wait(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file, err := New(path).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Providers) != len(commands) {
+		t.Fatalf("providers = %d, want %d", len(file.Providers), len(commands))
+	}
+}
+
+func TestStoreProcessHelper(t *testing.T) {
+	if os.Getenv("WUU_AUTH_HELPER") != "1" {
+		return
+	}
+	if err := New(os.Getenv("WUU_AUTH_PATH")).Set(os.Getenv("WUU_AUTH_PROVIDER"), Credentials{Type: "api_key", APIKey: "x"}); err != nil {
+		t.Fatal(err)
 	}
 }
 
