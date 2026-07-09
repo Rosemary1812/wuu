@@ -197,6 +197,7 @@
   --sidebar-row-gap: 3px;
   --sidebar-list-pad-y: 2px;
   --sidebar-child-indent: 12px;
+  --sidebar-child-guide-line: rgba(17, 19, 21, 0.08);
   display: flex;
   width: var(--sidebar-open-width, 326px);
   min-width: var(--sidebar-open-width, 326px);
@@ -911,6 +912,7 @@
 }
 
 .thread-list-collapse-inner {
+  position: relative;
   min-height: 0;
   opacity: 1;
   transform: translate3d(0, 0, 0);
@@ -918,6 +920,26 @@
     opacity var(--section-fold-fade-ms) ease-out,
     transform var(--section-fold-ms) var(--section-fold-ease);
   will-change: opacity, transform;
+}
+
+.thread-list-collapse-inner::before {
+  position: absolute;
+  top: calc(var(--sidebar-list-pad-y) + 4px);
+  bottom: calc(var(--sidebar-list-pad-y) + 4px);
+  left: calc(
+    var(--sidebar-row-pad-x) + var(--sidebar-child-indent) +
+      (var(--sidebar-nav-icon-col) / 2)
+  );
+  width: 1px;
+  border-radius: var(--radius-pill);
+  background: var(--sidebar-child-guide-line);
+  content: "";
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.thread-list-collapse-inner:has(> .sidebar-section-empty-note)::before {
+  display: none;
 }
 
 .thread-list-collapse[data-state="opening"] {
