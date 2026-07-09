@@ -96,6 +96,19 @@ describe("RichContent code block", () => {
     expect(resolveWorkspaceFileReferenceMock).not.toHaveBeenCalled();
   });
 
+  it("keeps explicit markdown-link file references as plain text when no file opener is wired", () => {
+    render(
+      <RichContent
+        text={"See [README_zh.md (line 19)](README_zh.md) before editing."}
+        cwd="/Users/zzzz/wuu"
+      />,
+    );
+
+    expect(container.querySelector(".rich-file-link")).toBeNull();
+    expect(container.textContent).toContain("README_zh.md (line 19)");
+    expect(resolveWorkspaceFileReferenceMock).not.toHaveBeenCalled();
+  });
+
   it("does not auto-link bare workspace file paths in prose", () => {
     // Only `[label](path)` markdown links route to a file reference; bare
     // paths in prose stay plain text. A list like "see X, then Y, then Z"

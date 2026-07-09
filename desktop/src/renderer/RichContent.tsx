@@ -373,6 +373,9 @@ function markdownComponents(
       // Targets without a scheme are workspace file references: render them
       // as RichFileLink so the click hands the path to `onOpenFile`.
       if (!/^[a-z][a-z0-9+.-]*:/i.test(safeHref)) {
+        if (!onOpenFile) {
+          return <span>{inner}</span>;
+        }
         return (
           <RichFileLink
             key={`a-${safeHref}`}
