@@ -32,9 +32,7 @@
   --shell-jump-pill-focus-shadow-1: rgba(20, 24, 28, 0.2);
   --shell-jump-pill-focus-shadow-2: rgba(20, 24, 28, 0.12);
   --shell-jump-progress-step-bg: rgba(17, 19, 21, 0.05);
-  --shell-jump-progress-step-in-progress-bg: rgba(17, 19, 21, 0.10);
-  --shell-jump-progress-step-in-progress-top-highlight: rgba(255, 255, 255, 0.5);
-  --shell-jump-progress-step-in-progress-bottom-shade: rgba(17, 19, 21, 0.18);
+  --shell-jump-progress-step-in-progress-bg: rgba(17, 19, 21, 0.20);
   --shell-turn-rail-bar-bg: rgba(60, 60, 67, 0.4);
 }
 
@@ -1041,16 +1039,12 @@
 .jump-to-latest-progress-step.in_progress {
   background: var(--shell-jump-progress-step-in-progress-bg);
   color: var(--ink);
-  /* Inner liquid-glass pill: same edge + shadow language as the outer
-     pill, but stronger because the step is denser and benefits from
-     reading as a distinct layer sitting inside the outer pill. */
-  border: 1px solid var(--shell-jump-pill-border);
-  box-shadow:
-    inset 0 1px 0 0 var(--shell-jump-progress-step-in-progress-top-highlight),
-    inset 0 -1px 0 0 var(--shell-jump-progress-step-in-progress-bottom-shade),
-    0 1px 2px var(--shell-jump-pill-contact-shadow);
-  backdrop-filter: blur(18px) saturate(1.6);
-  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  /* The in_progress step is intentionally a SOLID darker badge that sits
+     inside the outer glass pill — not its own glass layer. The outer
+     pill carries the liquid-glass language; giving the inner step its
+     own border + backdrop-filter + shadow stack makes it read as a
+     second overlapping capsule instead of a child badge. Keep this
+     rule plain: solid bg + ink, no glass surface. */
 }
 
 @keyframes jump-to-latest-enter {

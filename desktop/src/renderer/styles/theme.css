@@ -374,9 +374,7 @@
   --shell-jump-pill-focus-shadow-1: rgba(255, 255, 255, 0.22);
   --shell-jump-pill-focus-shadow-2: rgba(0, 0, 0, 0.5);
   --shell-jump-progress-step-bg: rgba(228, 232, 235, 0.06);
-  --shell-jump-progress-step-in-progress-bg: rgba(228, 232, 235, 0.12);
-  --shell-jump-progress-step-in-progress-top-highlight: rgba(255, 255, 255, 0.14);
-  --shell-jump-progress-step-in-progress-bottom-shade: rgba(0, 0, 0, 0.28);
+  --shell-jump-progress-step-in-progress-bg: rgba(228, 232, 235, 0.22);
   --shell-turn-rail-bar-bg: rgba(174, 178, 186, 0.4);
 
   color-scheme: dark;
