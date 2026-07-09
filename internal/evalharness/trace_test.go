@@ -514,7 +514,7 @@ func TestReplayTraceSummarizesValidationLedger(t *testing.T) {
 	if summary.Validation == nil {
 		t.Fatal("replay missing validation ledger")
 	}
-	if summary.Validation.Status != "passed" || len(summary.Validation.Evidence) != 1 || len(summary.Validation.ToolCalls) != 2 {
+	if summary.Validation.Status != "passed" || len(summary.Validation.Evidence) != 1 || len(summary.Validation.ToolCalls) != 1 {
 		t.Fatalf("unexpected validation ledger: %+v", summary.Validation)
 	}
 	if summary.Validation.Evidence[0].Command != "go test ./..." {
@@ -526,6 +526,9 @@ func TestReplayTraceSummarizesValidationLedger(t *testing.T) {
 		t.Fatalf("validation tool call missing metadata: %+v", summary.Validation.ToolCalls)
 	}
 	for _, call := range summary.Validation.ToolCalls {
+		if call.CallID == "call-workflow" {
+			t.Fatalf("legacy workflow_status should not be treated as validation: %+v", summary.Validation.ToolCalls)
+		}
 		if call.CallID == "call-shell" {
 			t.Fatalf("generic bash should not be treated as validation without structured validation metadata: %+v", summary.Validation.ToolCalls)
 		}

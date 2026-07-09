@@ -19,7 +19,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/memory"
 	"github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/skills"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 const (
@@ -221,88 +220,6 @@ func (b *Builder) AddToolDiscovery() {
 		"- Do not use `tool_search` for visible core tools already listed in this session, such as file reading, file editing, grep/glob search, patching, planning, or skill loading.",
 		"- Do not call MCP list/resource tools only to discover available tools; use `tool_search` for tool discovery.",
 	}, "\n"), true)
-}
-
-// AddWorkflowPathGuidance adds the legacy workflow path-selection entry. It is
-// retained while workflow tooling is being retired from model-facing surfaces;
-// current named/resident agents use runtime goals and the task rail instead.
-func (b *Builder) AddWorkflowPathGuidance() {
-	b.AddSection("workflow_path", strings.Join([]string{
-		"# Workflow orchestration",
-		"",
-		"- start_workflow: use for repeatable, scheduled, long-running, or multi-phase work that needs durable run state.",
-	}, "\n"), true)
-}
-
-// AddWorkflows adds legacy reusable workflow definitions to session guidance.
-// The current base prompt assembly no longer calls this for named/resident
-// model surfaces.
-func (b *Builder) AddWorkflows(workflows []workflow.Definition) {
-	visible := make([]workflow.Definition, 0, len(workflows))
-	for _, wf := range workflows {
-		if wf.DisableModelInvoke {
-			continue
-		}
-		visible = append(visible, wf)
-	}
-	if len(visible) == 0 {
-		return
-	}
-
-	var sb strings.Builder
-	sb.WriteString("# Workflow guidance\n\n")
-	sb.WriteString("## Workflows\n\n")
-	sb.WriteString("The following workflows are available in this session. A workflow records a multi-step run with durable state for phases, workers, reports, and recovery. ")
-	sb.WriteString("Use workflows when durable state, scheduled execution, repeatability, or multiple phases/workers matter; otherwise work directly. Background script workflows may still need an active runtime to keep executing.\n\n")
-	sb.WriteString("**Decision rules:**\n")
-	sb.WriteString("- Use the lightest durable boundary. If one workflow run is the user-visible objective, call `start_workflow` directly; it creates or binds the Goal state for that run.\n")
-	sb.WriteString("- Call `goal` with `action=create` when the user-visible objective needs an active runtime Goal that can keep pushing after an individual model turn stops, or when it is broader than one workflow run or child task, such as a program of work with multiple workflows, approvals, retries, or later resumption. Runtime Goals own continuation; workflow and subagent reports are evidence.\n")
-	sb.WriteString("- Use `goal` with `action=get` to inspect the current Goal. Use `goal` with `action=update` only to mark the Goal `complete` or `blocked`; do not use it for progress notes, decisions, pause, cancel, edit, or limit states.\n")
-	sb.WriteString("- A completed workflow is evidence for a broader Goal, not automatic completion of that Goal. Use `goal` with `action=get` before `goal` with `action=update` and status `complete`.\n")
-	sb.WriteString("- For delegated or multi-agent Goals, completion needs independent workflow, subagent, or reviewer evidence. Do not self-certify completion from the lead agent's own claim.\n\n")
-	sb.WriteString("**Entry point:**\n")
-	sb.WriteString("- Workflow tools may be deferred to keep the default tool list small. If a workflow tool named below is not visible in the current tool list, call `tool_search` with `select:<tool_name>` first, then call the loaded tool.\n")
-	sb.WriteString("- Match the user's intent against the workflow catalog below. When a workflow applies, call `load_workflow` with its name and user arguments before starting it.\n")
-	sb.WriteString("- Start new workflow work with `start_workflow`. The `driver` argument defaults to `auto`; use `driver=\"auto\"` unless the user, workflow, or recovery path explicitly requires an override.\n")
-	sb.WriteString("- Use the returned `driver`, tool descriptions, tool result `next_steps`, `workflow_status`, and workflow evidence `goal_id`/`goal_dir` as the source of truth for the exact next action. Use `workflow_control` only after a Workflow Run exists and the run state needs to record planning, worker output, recovery, or final synthesis.\n")
-	sb.WriteString("- Use `save_workflow` when an ad hoc script or plan should become reusable. Use `cron` with `action=add` and workflow_name when a saved workflow should run on a schedule.\n\n")
-	sb.WriteString("**Workflow catalog:**\n\n")
-	for _, wf := range visible {
-		desc := wf.Description
-		if desc == "" {
-			desc = "(no description)"
-		}
-		fmt.Fprintf(&sb, "- **%s**: %s", wf.Name, desc)
-		if wf.WhenToUse != "" {
-			fmt.Fprintf(&sb, "\n  _When to use:_ %s", wf.WhenToUse)
-		}
-		if wf.ArgumentHint != "" {
-			fmt.Fprintf(&sb, "\n  _Arguments:_ `%s`", wf.ArgumentHint)
-		}
-		if wf.Kind != "" {
-			fmt.Fprintf(&sb, "\n  _Kind:_ %s", wf.Kind)
-		}
-		if len(wf.Profiles) > 0 {
-			fmt.Fprintf(&sb, "\n  _Profiles:_ %s", workflowProfileNames(wf.Profiles))
-		}
-		sb.WriteString("\n")
-	}
-	b.AddSection("workflows", strings.TrimRight(sb.String(), "\n"), false)
-}
-
-func workflowProfileNames(profiles []workflow.ProfileRef) string {
-	names := make([]string, 0, len(profiles))
-	for _, profile := range profiles {
-		name := strings.TrimSpace(profile.Name)
-		if name == "" {
-			continue
-		}
-		if profile.Required {
-			name += " (required)"
-		}
-		names = append(names, name)
-	}
-	return strings.Join(names, ", ")
 }
 
 // Build returns the assembled system prompt. Static sections appear first

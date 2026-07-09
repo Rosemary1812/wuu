@@ -861,7 +861,7 @@ func spawnResultNextSteps(status string, synchronous bool, isolation string, age
 		if synchronous {
 			return []string{
 				"Inspect the worker result and any agent_report artifacts before relying on the handoff.",
-				"Use workflow_control when this result must be bound into a larger workflow record." + worktreeHint,
+				"Use manage_task or a thread reply when this result must be bound into a larger group task." + worktreeHint,
 			}
 		}
 		return []string{

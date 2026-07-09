@@ -234,17 +234,9 @@ func (t *Toolkit) rebuildRegistry() {
 		NewFetchThreadMessagesTool(e),
 		// Goals
 		NewGoalTool(e),
-		// Workflows
-		NewListWorkflowsTool(e),
-		NewLoadWorkflowTool(e),
-		NewSaveWorkflowTool(e),
+		// Recurring agent profiles
 		NewListAgentProfilesTool(e),
 		NewCreateAgentProfileTool(e),
-		NewStartWorkflowTool(e),
-		NewRunWorkflowTool(e),
-		NewCreateWorkflowTool(e),
-		NewWorkflowControlTool(e),
-		NewWorkflowStatusTool(e),
 		// Planning
 		NewUpdatePlanTool(e),
 		// Internal context rewrite

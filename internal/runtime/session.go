@@ -596,29 +596,16 @@ func (s *Session) startScheduledGoal(task cron.Task, prompt string) *goalrunner.
 	}
 	goalID := scheduledCronSessionID("cron-goal", task.ID)
 	store := goalrunner.NewStore(filepath.Join(stateDir, "goals", goalID))
-	kind := strings.TrimSpace(task.Metadata["kind"])
-	if kind == "" {
-		kind = "prompt"
-	}
-	goal := "Scheduled prompt task"
-	if task.Metadata["workflow_name"] != "" {
-		goal = "Scheduled workflow " + task.Metadata["workflow_name"]
-	}
 	triggerPayload := map[string]string{
 		"task_id":   strings.TrimSpace(task.ID),
 		"cron":      strings.TrimSpace(task.Cron),
-		"kind":      kind,
+		"kind":      "prompt",
 		"recurring": fmt.Sprintf("%t", task.Recurring),
-	}
-	for _, key := range []string{"workflow_name", "workflow_arguments", "workflow_kind"} {
-		if value := strings.TrimSpace(task.Metadata[key]); value != "" {
-			triggerPayload[key] = value
-		}
 	}
 	runner := goalrunner.Runner{Store: store}
 	if _, err := runner.Init(context.Background(), goalrunner.Spec{
 		ID:            goalID,
-		Goal:          goal,
+		Goal:          "Scheduled prompt task",
 		Task:          strings.TrimSpace(prompt),
 		AssignedAgent: "cron-scheduler",
 		Trigger: goalrunner.Trigger{
@@ -646,18 +633,7 @@ func renderScheduledGoalTrigger(task cron.Task, prompt string) string {
 	fmt.Fprintf(&b, "- Task: %s\n", strings.TrimSpace(task.ID))
 	fmt.Fprintf(&b, "- Cron: %s\n", strings.TrimSpace(task.Cron))
 	fmt.Fprintf(&b, "- Recurring: %t\n", task.Recurring)
-	if kind := strings.TrimSpace(task.Metadata["kind"]); kind != "" {
-		fmt.Fprintf(&b, "- Kind: %s\n", kind)
-	}
-	if name := strings.TrimSpace(task.Metadata["workflow_name"]); name != "" {
-		fmt.Fprintf(&b, "- Workflow: %s\n", name)
-	}
-	if workflowKind := strings.TrimSpace(task.Metadata["workflow_kind"]); workflowKind != "" {
-		fmt.Fprintf(&b, "- Workflow kind: %s\n", workflowKind)
-	}
-	if arguments := strings.TrimSpace(task.Metadata["workflow_arguments"]); arguments != "" {
-		fmt.Fprintf(&b, "\n## Workflow Arguments\n\n%s\n", arguments)
-	}
+	fmt.Fprintf(&b, "- Kind: prompt\n")
 	fmt.Fprintf(&b, "\n## Prompt\n\n%s\n", strings.TrimSpace(prompt))
 	return b.String()
 }

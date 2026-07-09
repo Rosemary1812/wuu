@@ -176,12 +176,12 @@ func TestCronSchedulerRunsScheduledPrompt(t *testing.T) {
 	t.Setenv("WUU_HOME", filepath.Join(t.TempDir(), "wuu-home"))
 
 	taskStore := cron.NewTaskStore(statepath.ScheduledTasksPath(stateDir))
-	prompt := "Run workflow weekly-qa with arguments: settings search"
+	prompt := "Run weekly QA with arguments: settings search"
 	if err := taskStore.Add(cron.Task{
 		ID:        "prompt-1",
 		Cron:      "* * * * *",
 		Prompt:    prompt,
-		Metadata:  map[string]string{"kind": "workflow", "workflow_name": "weekly-qa"},
+		Metadata:  map[string]string{"kind": "workflow", "workflow_name": "weekly-qa", "workflow_arguments": "settings search"},
 		CreatedAt: time.Now().Add(-2 * time.Minute).UnixMilli(),
 		Recurring: false,
 	}); err != nil {
@@ -229,7 +229,7 @@ func TestCronSchedulerRunsScheduledPrompt(t *testing.T) {
 		t.Fatalf("taskStore.List: %v", err)
 	}
 	if len(tasks) != 0 {
-		t.Fatalf("one-shot workflow task should be removed after firing, got %+v", tasks)
+		t.Fatalf("one-shot prompt task should be removed after firing, got %+v", tasks)
 	}
 
 	goalState := waitForScheduledGoalState(t, stateDir, "prompt-1")
@@ -239,8 +239,11 @@ func TestCronSchedulerRunsScheduledPrompt(t *testing.T) {
 	if goalState.Trigger.Type != "scheduled" || goalState.Trigger.Source != "cron" {
 		t.Fatalf("scheduled goal trigger not recorded: %+v", goalState.Trigger)
 	}
-	if goalState.Trigger.Payload["workflow_name"] != "weekly-qa" || goalState.Trigger.Payload["kind"] != "workflow" {
-		t.Fatalf("scheduled goal missing workflow metadata: %+v", goalState.Trigger.Payload)
+	if goalState.Trigger.Payload["kind"] != "prompt" {
+		t.Fatalf("scheduled goal should record prompt kind, got metadata: %+v", goalState.Trigger.Payload)
+	}
+	if _, ok := goalState.Trigger.Payload["workflow_name"]; ok {
+		t.Fatalf("scheduled goal should ignore legacy workflow metadata: %+v", goalState.Trigger.Payload)
 	}
 	if goalState.AssignedAgent != "cron-scheduler" {
 		t.Fatalf("scheduled goal assigned agent = %q", goalState.AssignedAgent)
@@ -611,22 +614,16 @@ description: Legacy user audit workflow.
 	for _, def := range rt.Toolkit.Definitions() {
 		defs[def.Name] = true
 	}
-	// Workflow tools are now a named-agent-only capability (decision two). An
-	// ordinary project main-agent session still DISCOVERS workflow definitions
-	// (asserted above via rt.Workflows / rt.Toolkit.Workflows()), but it neither
-	// exposes the workflow TOOLS nor receives workflow prompt guidance: the
-	// tools are absent from the compiled main surface, so ToolInfo reports them
-	// Hidden and they never appear in Definitions().
+	// Legacy workflow tools have been removed from the toolkit entirely. An
+	// ordinary project main-agent session may still discover workflow
+	// definitions as inert data for migration, but the old tool suite is not
+	// known, visible, or advertised in prompts.
 	for _, name := range []string{"list_workflows", "load_workflow", "save_workflow", "start_workflow", "workflow_status", "create_workflow", "run_workflow", "workflow_control"} {
 		if defs[name] {
 			t.Fatalf("named-only workflow tool %q must NOT be visible on a main-agent session, got Definitions()", name)
 		}
-		info, ok := rt.Toolkit.ToolInfo(name)
-		if !ok {
-			t.Fatalf("workflow tool %q missing from ToolInfo()", name)
-		}
-		if info.Exposure != tools.ToolExposureHidden {
-			t.Fatalf("main-agent workflow tool %q exposure = %s, want %s (named-only)", name, info.Exposure, tools.ToolExposureHidden)
+		if info, ok := rt.Toolkit.ToolInfo(name); ok {
+			t.Fatalf("legacy workflow tool %q should be removed from ToolInfo(), got %+v", name, info)
 		}
 	}
 }

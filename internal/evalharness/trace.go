@@ -606,8 +606,6 @@ func isValidationToolObservation(record ToolObservation) bool {
 	switch strings.TrimSpace(record.Name) {
 	case "bash":
 		return strings.TrimSpace(record.ClassificationReason) == "local verification command"
-	case "workflow_status":
-		return true
 	default:
 		return false
 	}

@@ -8,7 +8,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/memory"
 	"github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/skills"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 func TestBuilder_StaticBeforeDynamic(t *testing.T) {
@@ -180,82 +179,6 @@ func TestBuilder_AddToolDiscovery(t *testing.T) {
 	}
 }
 
-func TestBuilder_AddWorkflows(t *testing.T) {
-	workflows := []workflow.Definition{
-		{
-			Name:         "feature-delivery",
-			Description:  "Deliver a feature",
-			WhenToUse:    "When feature work spans implementation and QA",
-			ArgumentHint: "<feature request>",
-			Profiles:     []workflow.ProfileRef{{Name: "frontend_owner"}, {Name: "qa_reviewer", Required: true}},
-		},
-		{Name: "hidden", Description: "Hidden workflow", DisableModelInvoke: true},
-	}
-
-	var b Builder
-	b.AddWorkflows(workflows)
-	result := b.Build()
-
-	for _, want := range []string{
-		"feature-delivery",
-		"multi-step run",
-		"durable state",
-		"Decision rules",
-		"lightest durable boundary",
-		"`goal`",
-		"active runtime Goal",
-		"broader than one workflow run",
-		"Runtime Goals own continuation",
-		"`action=update`",
-		"`action=get`",
-		"mark the Goal `complete` or `blocked`",
-		"progress notes, decisions, pause, cancel, edit, or limit states",
-		"`goal_id`",
-		"status `complete`",
-		"independent workflow, subagent, or reviewer evidence",
-		"Do not self-certify",
-		"Entry point",
-		"`start_workflow`",
-		"defaults to `auto`",
-		"`driver`",
-		"`workflow_control`",
-		"`workflow_status`",
-		"tool descriptions",
-		"tool result `next_steps`",
-		"after a Workflow Run exists",
-		"`save_workflow`",
-		"`cron`",
-		"frontend_owner",
-		"qa_reviewer (required)",
-	} {
-		if !strings.Contains(result, want) {
-			t.Fatalf("workflow prompt missing %q:\n%s", want, result)
-		}
-	}
-	for _, bad := range []string{
-		"lower-level driver override",
-		"user-facing entry point",
-		"internal drivers",
-		"unified workflow entry point",
-		"Workflow Context Extension",
-		"Workflow context",
-		"`spawn(...)`",
-		"phase(",
-		"`spawnBatch([...])`",
-		"spawnBatch",
-		"Base Agent Brief Contract",
-		"record_workflow_team",
-		"list_agent_profiles",
-	} {
-		if strings.Contains(result, bad) {
-			t.Fatalf("workflow prompt should avoid awkward wording %q:\n%s", bad, result)
-		}
-	}
-	if strings.Contains(result, "hidden") {
-		t.Fatal("DisableModelInvoke workflows should be excluded")
-	}
-}
-
 func TestBuilder_AddMemdirWithIndexContent(t *testing.T) {
 	var b Builder
 	b.AddMemdir("# Memory directory\nTeaching text here.", "- [User role](user_role.md) — data scientist")
@@ -387,9 +310,6 @@ func TestBuilder_FullAssembly(t *testing.T) {
 	b.AddSkills([]skills.Skill{
 		{Name: "test", Description: "Run tests"},
 	})
-	b.AddWorkflows([]workflow.Definition{
-		{Name: "feature", Description: "Feature workflow"},
-	})
 
 	result := b.Build()
 
@@ -401,7 +321,7 @@ func TestBuilder_FullAssembly(t *testing.T) {
 	}
 
 	// All sections present.
-	for _, want := range []string{"coding agent", "Coordinator", "project rules", "test", "feature"} {
+	for _, want := range []string{"coding agent", "Coordinator", "project rules", "test"} {
 		if !strings.Contains(result, want) {
 			t.Errorf("missing %q in output", want)
 		}

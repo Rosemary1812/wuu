@@ -227,12 +227,7 @@ func isRepeatablePollingTool(call providers.ToolCall) bool {
 			}
 		}
 	}
-	switch name {
-	case "workflow_status":
-		return true
-	default:
-		return false
-	}
+	return false
 }
 
 func (t *Toolkit) recordToolExecution(

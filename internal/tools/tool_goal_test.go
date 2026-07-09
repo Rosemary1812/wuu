@@ -8,10 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/providers"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 func TestGoalToolsLifecycle(t *testing.T) {
@@ -196,133 +194,6 @@ func TestGoalToolDescriptionsDefineDurableBoundary(t *testing.T) {
 	}
 }
 
-func TestStartWorkflowBindsExistingGoal(t *testing.T) {
-	env := &Env{RootDir: t.TempDir(), StateDir: filepath.Join(t.TempDir(), "state")}
-
-	goalID, goalDir := createLegacyGoalForWorkflow(t, env, "goal-workflow", "Coordinate workflow")
-
-	workflowArgs, err := mustJSON(map[string]any{
-		"driver":   "agent_managed",
-		"plan":     "Implement the goal tooling.",
-		"goal_id":  goalID,
-		"goal_dir": goalDir,
-		"phases": []map[string]string{{
-			"name": "Implement",
-		}},
-	})
-	if err != nil {
-		t.Fatalf("workflow args: %v", err)
-	}
-	workflowRaw, err := NewStartWorkflowTool(env).Execute(context.Background(), workflowArgs)
-	if err != nil {
-		t.Fatalf("start_workflow: %v", err)
-	}
-	var workflowResult struct {
-		RunID   string `json:"run_id"`
-		GoalID  string `json:"goal_id"`
-		GoalDir string `json:"goal_dir"`
-	}
-	if err := json.Unmarshal([]byte(workflowRaw), &workflowResult); err != nil {
-		t.Fatalf("parse start_workflow: %v\n%s", err, workflowRaw)
-	}
-	if workflowResult.RunID == "" || workflowResult.GoalID != goalID || workflowResult.GoalDir != goalDir {
-		t.Fatalf("workflow did not bind existing goal: %+v goal_id=%q goal_dir=%q", workflowResult, goalID, goalDir)
-	}
-
-	entries, err := os.ReadDir(filepath.Join(env.StateDir, "goals"))
-	if err != nil {
-		t.Fatalf("read goals dir: %v", err)
-	}
-	if len(entries) != 1 || entries[0].Name() != "goal-workflow" {
-		t.Fatalf("workflow should not create a second goal, got %+v", entries)
-	}
-}
-
-func TestWorkflowCompletionDoesNotCompleteBroaderGoal(t *testing.T) {
-	env := &Env{RootDir: t.TempDir(), StateDir: filepath.Join(t.TempDir(), "state")}
-
-	goalID, goalDir := createLegacyGoalForWorkflow(t, env, "broader-goal", "Coordinate multiple workflows")
-
-	workflowRaw, err := NewStartWorkflowTool(env).Execute(context.Background(), `{
-		"driver":"agent_managed",
-		"run_id":"child-workflow",
-		"goal_id":"broader-goal",
-		"goal_dir":`+quoteGoalToolJSON(goalDir)+`,
-		"plan":"Run one slice of the broader goal.",
-		"phases":[{"id":"slice","name":"Slice"}]
-	}`)
-	if err != nil {
-		t.Fatalf("start_workflow: %v", err)
-	}
-	var workflowResult struct {
-		GoalID string `json:"goal_id"`
-	}
-	if err := json.Unmarshal([]byte(workflowRaw), &workflowResult); err != nil {
-		t.Fatalf("parse start_workflow: %v\n%s", err, workflowRaw)
-	}
-	if workflowResult.GoalID != goalID {
-		t.Fatalf("workflow should bind broader goal: %+v", workflowResult)
-	}
-	if _, err := NewWorkflowControlTool(env).Execute(context.Background(), `{"action":"set_phase_status","run_id":"child-workflow","phase_id":"slice","status":"completed"}`); err != nil {
-		t.Fatalf("complete phase: %v", err)
-	}
-	finalRaw, err := NewWorkflowControlTool(env).Execute(context.Background(), `{"action":"write_final_report","run_id":"child-workflow","content":"# Final\n\nSlice done.","complete_run":true}`)
-	if err != nil {
-		t.Fatalf("write final report: %v", err)
-	}
-	var final struct {
-		Run        workflow.Run `json:"run"`
-		GoalStatus struct {
-			GoalID string            `json:"goal_id"`
-			Status goalrunner.Status `json:"status"`
-		} `json:"goal_status"`
-	}
-	if err := json.Unmarshal([]byte(finalRaw), &final); err != nil {
-		t.Fatalf("parse final report: %v\n%s", err, finalRaw)
-	}
-	if final.Run.Status != workflow.RunStateCompleted {
-		t.Fatalf("workflow run should complete: %+v", final.Run)
-	}
-	if final.GoalStatus.GoalID != goalID || final.GoalStatus.Status == goalrunner.StatusCompleted {
-		t.Fatalf("broader goal should not be auto-completed by child workflow: %+v", final.GoalStatus)
-	}
-	state, err := goalrunner.NewStore(goalDir).LoadState()
-	if err != nil {
-		t.Fatalf("load broader goal: %v", err)
-	}
-	if state.Status == goalrunner.StatusCompleted {
-		t.Fatalf("broader goal was auto-completed: %+v", state)
-	}
-	if !goalProgressContains(state, "workflow", "child-workflow:completed") {
-		t.Fatalf("broader goal should record workflow completion evidence: %+v", state.Progress)
-	}
-}
-
-func quoteGoalToolJSON(value string) string {
-	raw, _ := json.Marshal(value)
-	return string(raw)
-}
-
-func createLegacyGoalForWorkflow(t *testing.T, env *Env, goalID, goalText string) (string, string) {
-	t.Helper()
-	store, err := env.GoalStore(goalID)
-	if err != nil {
-		t.Fatalf("goal store: %v", err)
-	}
-	state, err := store.Init(goalrunner.Spec{
-		ID:            goalID,
-		Goal:          goalText,
-		AssignedAgent: "workflow",
-	})
-	if err != nil {
-		t.Fatalf("init goal: %v", err)
-	}
-	if _, err := store.SetStatus(goalrunner.StatusRunning, goalrunner.StepInit, "Goal started."); err != nil {
-		t.Fatalf("mark goal running: %v", err)
-	}
-	return state.ID, store.Dir()
-}
-
 func assertToolSchemaOmits(t *testing.T, def providers.ToolDefinition, names ...string) {
 	t.Helper()
 	schema := def.InputSchema
@@ -335,13 +206,4 @@ func assertToolSchemaOmits(t *testing.T, def providers.ToolDefinition, names ...
 			t.Fatalf("%s schema should not expose %q", def.Name, name)
 		}
 	}
-}
-
-func goalProgressContains(state goalrunner.State, source, sourceID string) bool {
-	for _, entry := range state.Progress {
-		if entry.Source == source && entry.SourceID == sourceID {
-			return true
-		}
-	}
-	return false
 }

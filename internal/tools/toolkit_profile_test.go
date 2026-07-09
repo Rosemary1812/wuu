@@ -140,23 +140,14 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 			t.Fatalf("%s exposure = %s, want %s", name, info.Exposure, ToolExposureDeferred)
 		}
 	}
-	// Workflow / agent-profile tools are named-agent-only. On an ordinary main
-	// agent (no resident identity) they are absent from the surface entirely,
-	// so ToolInfo reports them Hidden, not Deferred.
+	// Agent-profile tools are not part of the ordinary main-agent surface, so
+	// ToolInfo reports them Hidden, not Deferred.
 	for _, name := range []string{
-		"list_workflows",
-		"load_workflow",
-		"save_workflow",
 		"list_agent_profiles",
 		"create_agent_profile",
-		"start_workflow",
-		"run_workflow",
-		"create_workflow",
-		"workflow_control",
-		"workflow_status",
 	} {
 		if containsProfileDef(defs, name) {
-			t.Fatalf("named-only workflow tool %s must not be visible on a main agent, got %v", name, sortedProfileDefNames(defs))
+			t.Fatalf("agent-profile tool %s must not be visible on a main agent, got %v", name, sortedProfileDefNames(defs))
 		}
 		info, ok := kit.ToolInfo(name)
 		if !ok {
@@ -175,11 +166,7 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 	}
 }
 
-// TestResidentParticipantSurfaceHidesWorkflowTools asserts the named-agent
-// contract at the runtime seam: a resident/named agent still receives the
-// conversation task rail, but the legacy workflow/agent-profile suite stays
-// hidden instead of becoming deferred.
-func TestResidentParticipantSurfaceHidesWorkflowTools(t *testing.T) {
+func TestResidentParticipantSurfaceHidesAgentProfileTools(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -187,21 +174,13 @@ func TestResidentParticipantSurfaceHidesWorkflowTools(t *testing.T) {
 	// Compile the ordinary main surface first (as CloneForRoot would inherit).
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 
-	workflowTools := []string{
-		"list_workflows",
-		"load_workflow",
-		"save_workflow",
+	agentProfileTools := []string{
 		"list_agent_profiles",
 		"create_agent_profile",
-		"start_workflow",
-		"run_workflow",
-		"create_workflow",
-		"workflow_control",
-		"workflow_status",
 	}
 
-	// Before: named identity off -> workflow tools hidden.
-	for _, name := range workflowTools {
+	// Before: named identity off -> agent-profile tools hidden.
+	for _, name := range agentProfileTools {
 		if info, ok := kit.ToolInfo(name); !ok {
 			t.Fatalf("ToolInfo(%q) not found", name)
 		} else if info.Exposure != ToolExposureHidden {
@@ -209,12 +188,12 @@ func TestResidentParticipantSurfaceHidesWorkflowTools(t *testing.T) {
 		}
 	}
 
-	// Flip to a resident/named agent (the turn-time delivery seam). Workflow
+	// Flip to a resident/named agent (the turn-time delivery seam). Agent-profile
 	// tools remain hidden; resident task-reading and participant speech tools
 	// are the named-agent coordination path.
 	kit.SetResidentParticipantEnabled(true)
 	kit.SetParticipantSpeechEnabled(true)
-	for _, name := range workflowTools {
+	for _, name := range agentProfileTools {
 		info, ok := kit.ToolInfo(name)
 		if !ok {
 			t.Fatalf("ToolInfo(%q) not found", name)
@@ -223,7 +202,7 @@ func TestResidentParticipantSurfaceHidesWorkflowTools(t *testing.T) {
 			t.Fatalf("resident %s exposure = %s, want Hidden", name, info.Exposure)
 		}
 		if containsProfileDef(kit.Definitions(), name) {
-			t.Fatalf("resident workflow tool %s must not be visible, got %v", name, sortedProfileDefNames(kit.Definitions()))
+			t.Fatalf("resident agent-profile tool %s must not be visible, got %v", name, sortedProfileDefNames(kit.Definitions()))
 		}
 	}
 	for _, tt := range []struct {
@@ -247,7 +226,7 @@ func TestResidentParticipantSurfaceHidesWorkflowTools(t *testing.T) {
 
 	// Turning the resident identity back off removes the suite again.
 	kit.SetResidentParticipantEnabled(false)
-	for _, name := range workflowTools {
+	for _, name := range agentProfileTools {
 		info, ok := kit.ToolInfo(name)
 		if !ok {
 			t.Fatalf("ToolInfo(%q) not found", name)
@@ -623,23 +602,11 @@ func TestActiveProfileBlocksHiddenToolExecution(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
-	// run_workflow is a retired legacy workflow entrypoint for resident/named
-	// agents too: even a resident identity must not make it deferred-loadable.
 	kit.SetResidentParticipantEnabled(true)
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "run_shell", Arguments: `{"command":"echo hi"}`})
 	if err == nil || !strings.Contains(err.Error(), "active model surface") {
 		t.Fatalf("hidden run_shell should be blocked by active surface, got %v", err)
-	}
-
-	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "run_workflow", Arguments: `{}`})
-	if err == nil || !strings.Contains(err.Error(), "active model surface") {
-		t.Fatalf("resident run_workflow should be blocked by the active surface, got %v", err)
-	}
-	kit.markDeferredToolsLoaded("run_workflow")
-	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "run_workflow", Arguments: `{}`})
-	if err == nil || !strings.Contains(err.Error(), "active model surface") {
-		t.Fatalf("loaded legacy run_workflow should still be blocked by the active surface, got %v", err)
 	}
 }
 
@@ -1237,11 +1204,9 @@ func TestDefinitionsFilterStaysWithinSurfaceAndAllowsDeferredTools(t *testing.T)
 	kit.SetMemory(provider)
 	kit.SetActiveProfile(modelprofile.Resolve("anthropic", "claude-sonnet-4-5"), true)
 	loadedDeferred := map[string]struct{}{
-		"cron":            {},
-		"run_workflow":    {},
-		"create_workflow": {},
+		"cron": {},
 	}
-	kit.markDeferredToolsLoaded("cron", "run_workflow", "create_workflow")
+	kit.markDeferredToolsLoaded("cron")
 	surface := kit.ActiveSurface()
 	defs := kit.Definitions()
 	visible := make(map[string]struct{}, len(defs))

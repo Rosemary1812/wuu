@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 func TestAgentProfileToolsCreateAndListProfiles(t *testing.T) {
@@ -25,8 +26,7 @@ func TestAgentProfileToolsCreateAndListProfiles(t *testing.T) {
 		Arguments: `{
 			"name":"qa_laowang",
 			"role":"QA reviewer",
-			"description":"Remembers recurring QA checks.",
-			"workflow_name":"release-qa"
+			"description":"Remembers recurring QA checks."
 		}`,
 	})
 	if err != nil {
@@ -36,10 +36,9 @@ func TestAgentProfileToolsCreateAndListProfiles(t *testing.T) {
 		Action  string `json:"action"`
 		Created bool   `json:"created"`
 		Profile struct {
-			Name         string `json:"name"`
-			Role         string `json:"role"`
-			Description  string `json:"description"`
-			WorkflowName string `json:"workflow_name"`
+			Name        string `json:"name"`
+			Role        string `json:"role"`
+			Description string `json:"description"`
 		} `json:"profile"`
 	}
 	if err := json.Unmarshal([]byte(createResp), &created); err != nil {
@@ -48,7 +47,7 @@ func TestAgentProfileToolsCreateAndListProfiles(t *testing.T) {
 	if created.Action != "create_agent_profile" {
 		t.Fatalf("create action = %q, want create_agent_profile", created.Action)
 	}
-	if !created.Created || created.Profile.Name != "qa_laowang" || created.Profile.Role != "QA reviewer" || created.Profile.WorkflowName != "release-qa" {
+	if !created.Created || created.Profile.Name != "qa_laowang" || created.Profile.Role != "QA reviewer" {
 		t.Fatalf("unexpected create response: %+v", created)
 	}
 
@@ -76,6 +75,41 @@ func TestAgentProfileToolsCreateAndListProfiles(t *testing.T) {
 	records := kit.ToolTelemetry()
 	if len(records) != 2 || records[0].ResultAction != "create_agent_profile" || records[1].ResultAction != "list_agent_profiles" {
 		t.Fatalf("profile telemetry actions mismatch: %+v", records)
+	}
+}
+
+func TestAgentProfileToolsHideLegacyWorkflowMetadata(t *testing.T) {
+	root := t.TempDir()
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+
+	if _, _, err := workflow.EnsureProfile(workflow.ProfileEnsureOptions{
+		WuuHome:      wuuHome,
+		Name:         "legacy_qa",
+		Source:       "workflow",
+		WorkflowName: "release-qa",
+		Role:         "QA reviewer",
+		Description:  "Legacy workflow-created profile.",
+	}); err != nil {
+		t.Fatalf("EnsureProfile: %v", err)
+	}
+
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	listResp, err := kit.Execute(context.Background(), providers.ToolCall{Name: "list_agent_profiles", Arguments: `{}`})
+	if err != nil {
+		t.Fatalf("list_agent_profiles: %v", err)
+	}
+	for _, bad := range []string{`"workflow_name"`, `"source":"workflow"`, "release-qa"} {
+		if strings.Contains(listResp, bad) {
+			t.Fatalf("list_agent_profiles should hide legacy workflow metadata %q: %s", bad, listResp)
+		}
+	}
+	if !strings.Contains(listResp, `"name":"legacy_qa"`) || !strings.Contains(listResp, `"role":"QA reviewer"`) {
+		t.Fatalf("list_agent_profiles should keep neutral profile facts: %s", listResp)
 	}
 }
 

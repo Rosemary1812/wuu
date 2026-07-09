@@ -26,7 +26,10 @@ type ToolPolicyDecision struct {
 	Reason string           `json:"reason,omitempty"`
 }
 
-func classifyToolRisk(_ string, kind ToolKind, readOnly bool) ToolRisk {
+func classifyToolRisk(name string, kind ToolKind, readOnly bool) ToolRisk {
+	if name == "list_agent_profiles" {
+		return ToolRiskLow
+	}
 	switch kind {
 	case ToolKindShell, ToolKindGit:
 		return ToolRiskHigh
@@ -51,11 +54,6 @@ func classifyToolRisk(_ string, kind ToolKind, readOnly bool) ToolRisk {
 		return ToolRiskMedium
 	case ToolKindGoal:
 		return ToolRiskLow
-	case ToolKindWorkflow:
-		if readOnly {
-			return ToolRiskLow
-		}
-		return ToolRiskHigh
 	case ToolKindDiscovery, ToolKindSkill, ToolKindPlan, ToolKindContext, ToolKindSearch:
 		return ToolRiskLow
 	default:

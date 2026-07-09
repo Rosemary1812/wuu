@@ -31,7 +31,6 @@ const (
 	ToolKindSession   ToolKind = "session"
 	ToolKindSkill     ToolKind = "skill"
 	ToolKindGoal      ToolKind = "goal"
-	ToolKindWorkflow  ToolKind = "workflow"
 	ToolKindPlan      ToolKind = "plan"
 	ToolKindContext   ToolKind = "context"
 	ToolKindAgent     ToolKind = "agent"
@@ -230,13 +229,11 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindSkill
 	case "goal":
 		return ToolKindGoal
-	case "list_workflows", "load_workflow", "save_workflow", "list_agent_profiles", "create_agent_profile", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status":
-		return ToolKindWorkflow
 	case "update_plan":
 		return ToolKindPlan
 	case "inception":
 		return ToolKindContext
-	case "spawn_agent", "helpme", "send_message", "close_agent", "agent_report", "post_message", "react", "manage_participant":
+	case "spawn_agent", "helpme", "send_message", "close_agent", "agent_report", "post_message", "react", "manage_participant", "list_agent_profiles", "create_agent_profile":
 		return ToolKindAgent
 	case "cron":
 		return ToolKindSchedule
@@ -253,7 +250,7 @@ func isDeferredByDefault(name string) bool {
 		return true
 	}
 	switch name {
-	case "cron", "run_workflow", "create_workflow", "thread_get":
+	case "cron", "thread_get":
 		return true
 	default:
 		return false
