@@ -790,10 +790,9 @@ func DefaultSystemPrompt() string {
 // other tools the map mentions, update_plan and inception stay visible on
 // worker surfaces and goal stays deferred behind tool_search — their
 // worker-facing guidance lives in the tool descriptions and the worker's
-// deferred-tool catalog, not in the orchestration map. The workflow path
-// (start_workflow) is no longer part of the static map at all; it is a
-// named-agent-only capability re-injected surface-gated by the prompt
-// builder, so neither the main nor the worker base prompt carries it.
+// deferred-tool catalog, not in the orchestration map. The legacy
+// workflow path (start_workflow) was removed in commit d33c046a, so no
+// path bullet has to be re-injected for it.
 // read_memory/write_memory are retired on every surface (memory-redesign
 // §6: durable memory is a file directory written with plain file tools).
 func WorkerSystemPrompt() string {
