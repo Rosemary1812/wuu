@@ -273,9 +273,9 @@ describe("ProjectList", () => {
           projects={projects}
           activeID="project-1"
           pendingProjectID={undefined}
-          collapsedProjectIDs={new Set()}
-          expandedProjectIDs={new Set(["project-2"])}
-          collapsingProjectIDs={new Set()}
+          collapsedSidebarSectionIDs={new Set()}
+          expandedSidebarSectionIDs={new Set(["project-2"])}
+          collapsingSidebarSectionIDs={new Set()}
           threadsByProjectID={{
             "project-1": summarizeThreadsForSidebar([
               makeProjectThread("thread-wuu", "/repo/wuu", "Wuu session"),
@@ -299,7 +299,7 @@ describe("ProjectList", () => {
           lastViewedTurnByThreadID={{}}
           scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
           scratchPseudoActive={false}
-          onToggleProjectCollapsed={() => {}}
+          onToggleSidebarSectionCollapsed={() => {}}
           onStartNewThread={() => {}}
           onSelectThread={() => {}}
           onToggleThreadPinned={() => {}}
@@ -525,9 +525,9 @@ describe("ProjectList", () => {
           projects={projects}
           activeID="project-1"
           pendingProjectID={undefined}
-          collapsedProjectIDs={new Set()}
-          expandedProjectIDs={new Set()}
-          collapsingProjectIDs={new Set()}
+          collapsedSidebarSectionIDs={new Set()}
+          expandedSidebarSectionIDs={new Set()}
+          collapsingSidebarSectionIDs={new Set()}
           threadsByProjectID={{
             "project-1": summarizeThreadsForSidebar([
               makeProjectThread("thread-pinned", "/repo/wuu", "Pinned session", [], {
@@ -542,7 +542,7 @@ describe("ProjectList", () => {
           lastViewedTurnByThreadID={{}}
           scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
           scratchPseudoActive={false}
-          onToggleProjectCollapsed={() => {}}
+          onToggleSidebarSectionCollapsed={() => {}}
           onStartNewThread={() => {}}
           onSelectThread={() => {}}
           onToggleThreadPinned={() => {}}
@@ -570,9 +570,9 @@ describe("ProjectList", () => {
           projects={projects}
           activeID="project-1"
           pendingProjectID={undefined}
-          collapsedProjectIDs={new Set([SCRATCH_PSEUDO_PROJECT_ID])}
-          expandedProjectIDs={new Set()}
-          collapsingProjectIDs={new Set()}
+          collapsedSidebarSectionIDs={new Set([SCRATCH_PSEUDO_PROJECT_ID])}
+          expandedSidebarSectionIDs={new Set()}
+          collapsingSidebarSectionIDs={new Set()}
           threadsByProjectID={{
             [SCRATCH_PSEUDO_PROJECT_ID]: [],
             "project-1": summarizeThreadsForSidebar([
@@ -585,7 +585,7 @@ describe("ProjectList", () => {
           lastViewedTurnByThreadID={{}}
           scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
           scratchPseudoActive={false}
-          onToggleProjectCollapsed={() => {}}
+          onToggleSidebarSectionCollapsed={() => {}}
           onStartNewThread={() => {}}
           onSelectThread={() => {}}
           onToggleThreadPinned={() => {}}
@@ -635,9 +635,9 @@ describe("ProjectList", () => {
           projects={projects}
           activeID={undefined}
           pendingProjectID={undefined}
-          collapsedProjectIDs={new Set()}
-          expandedProjectIDs={new Set()}
-          collapsingProjectIDs={new Set()}
+          collapsedSidebarSectionIDs={new Set()}
+          expandedSidebarSectionIDs={new Set()}
+          collapsingSidebarSectionIDs={new Set()}
           threadsByProjectID={{
             "project-1": summarizeThreadsForSidebar([
               makeProjectThread("thread-unread", "/repo/wuu", "Unread session", [
@@ -651,7 +651,7 @@ describe("ProjectList", () => {
           lastViewedTurnByThreadID={{}}
           scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
           scratchPseudoActive={false}
-          onToggleProjectCollapsed={() => {}}
+          onToggleSidebarSectionCollapsed={() => {}}
           onStartNewThread={() => {}}
           onSelectThread={() => {}}
           onToggleThreadPinned={() => {}}
@@ -693,9 +693,9 @@ describe("ProjectList", () => {
           projects={projects}
           activeID="project-1"
           pendingProjectID={undefined}
-          collapsedProjectIDs={new Set()}
-          expandedProjectIDs={new Set()}
-          collapsingProjectIDs={new Set()}
+          collapsedSidebarSectionIDs={new Set()}
+          expandedSidebarSectionIDs={new Set()}
+          collapsingSidebarSectionIDs={new Set()}
           threadsByProjectID={{
             "project-1": summarizeThreadsForSidebar([
               rootThread,
@@ -709,7 +709,7 @@ describe("ProjectList", () => {
           lastViewedTurnByThreadID={{}}
           scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
           scratchPseudoActive={false}
-          onToggleProjectCollapsed={() => {}}
+          onToggleSidebarSectionCollapsed={() => {}}
           onStartNewThread={() => {}}
           onSelectThread={() => {}}
           onToggleThreadPinned={() => {}}
@@ -746,9 +746,9 @@ describe("ProjectGroup remove workspace", () => {
   const baseProps = {
     activeID: undefined,
     pendingProjectID: undefined,
-    collapsedProjectIDs: new Set<string>(),
-    expandedProjectIDs: new Set<string>(),
-    collapsingProjectIDs: new Set<string>(),
+    collapsedSidebarSectionIDs: new Set<string>(),
+    expandedSidebarSectionIDs: new Set<string>(),
+    collapsingSidebarSectionIDs: new Set<string>(),
     threadsByProjectID: {},
     activeThreadID: undefined,
     pendingThreadID: undefined,
@@ -756,7 +756,7 @@ describe("ProjectGroup remove workspace", () => {
     lastViewedTurnByThreadID: {},
     scratchPseudoProjectID: SCRATCH_PSEUDO_PROJECT_ID,
     scratchPseudoActive: false,
-    onToggleProjectCollapsed: () => {},
+    onToggleSidebarSectionCollapsed: () => {},
     onStartNewThread: () => {},
     onSelectThread: () => {},
     onToggleThreadPinned: () => {},
@@ -856,9 +856,9 @@ describe("ProjectGroup missing workspace", () => {
   const baseProps = {
     activeID: undefined,
     pendingProjectID: undefined,
-    collapsedProjectIDs: new Set<string>(),
-    expandedProjectIDs: new Set<string>(),
-    collapsingProjectIDs: new Set<string>(),
+    collapsedSidebarSectionIDs: new Set<string>(),
+    expandedSidebarSectionIDs: new Set<string>(),
+    collapsingSidebarSectionIDs: new Set<string>(),
     threadsByProjectID: {},
     activeThreadID: undefined,
     pendingThreadID: undefined,
@@ -866,7 +866,7 @@ describe("ProjectGroup missing workspace", () => {
     lastViewedTurnByThreadID: {},
     scratchPseudoProjectID: SCRATCH_PSEUDO_PROJECT_ID,
     scratchPseudoActive: false,
-    onToggleProjectCollapsed: () => {},
+    onToggleSidebarSectionCollapsed: () => {},
     onStartNewThread: () => {},
     onSelectThread: () => {},
     onToggleThreadPinned: () => {},

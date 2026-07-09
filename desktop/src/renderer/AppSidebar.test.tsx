@@ -137,9 +137,9 @@ function renderSidebar({
         pendingThreadID={undefined}
         pendingProjectID={undefined}
         archiveConfirmThreadID={undefined}
-        collapsedProjectIDs={new Set()}
-        expandedProjectIDs={new Set()}
-        collapsingProjectIDs={new Set()}
+        collapsedSidebarSectionIDs={new Set()}
+        expandedSidebarSectionIDs={new Set()}
+        collapsingSidebarSectionIDs={new Set()}
         projectThreadsByProjectID={{}}
         projectMenuOpen={projectMenuOpen}
         projectMenuRef={createRef<HTMLDivElement>()}
@@ -166,7 +166,7 @@ function renderSidebar({
         onToggleProjectMenu={() => {}}
         onCreateProject={() => {}}
         onOpenProjectFolder={() => {}}
-        onToggleProjectCollapsed={() => {}}
+        onToggleSidebarSectionCollapsed={() => {}}
         onStartNewThreadForProject={() => {}}
         onSelectProjectThread={() => {}}
         onRemoveProject={() => {}}

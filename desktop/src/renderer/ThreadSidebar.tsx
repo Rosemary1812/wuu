@@ -37,9 +37,9 @@ export function ProjectList({
   projects,
   activeID,
   pendingProjectID,
-  collapsedProjectIDs,
-  expandedProjectIDs,
-  collapsingProjectIDs,
+  collapsedSidebarSectionIDs,
+  expandedSidebarSectionIDs,
+  collapsingSidebarSectionIDs,
   threadsByProjectID,
   activeThreadID,
   pendingThreadID,
@@ -47,7 +47,7 @@ export function ProjectList({
   lastViewedTurnByThreadID,
   scratchPseudoProjectID,
   scratchPseudoActive,
-  onToggleProjectCollapsed,
+  onToggleSidebarSectionCollapsed,
   onStartNewThread,
   onSelectThread,
   onToggleThreadPinned,
@@ -59,9 +59,9 @@ export function ProjectList({
   projects: DesktopProject[];
   activeID?: string;
   pendingProjectID?: string;
-  collapsedProjectIDs: Set<string>;
-  expandedProjectIDs: Set<string>;
-  collapsingProjectIDs: Set<string>;
+  collapsedSidebarSectionIDs: Set<string>;
+  expandedSidebarSectionIDs: Set<string>;
+  collapsingSidebarSectionIDs: Set<string>;
   threadsByProjectID: Record<string, ThreadSummary[]>;
   activeThreadID?: string;
   pendingThreadID?: string;
@@ -76,7 +76,7 @@ export function ProjectList({
   // (no_project), which is not represented in DesktopProject itself.
   scratchPseudoProjectID: string;
   scratchPseudoActive: boolean;
-  onToggleProjectCollapsed: (id: string) => void;
+  onToggleSidebarSectionCollapsed: (id: string) => void;
   onStartNewThread: (id: string) => void;
   onSelectThread: (projectID: string, threadID: string) => void;
   onToggleThreadPinned: (thread: ThreadSummary) => void;
@@ -93,9 +93,9 @@ export function ProjectList({
           project={project}
           activeID={activeID}
           pendingProjectID={pendingProjectID}
-          collapsedProjectIDs={collapsedProjectIDs}
-          expandedProjectIDs={expandedProjectIDs}
-          collapsingProjectIDs={collapsingProjectIDs}
+          collapsedSidebarSectionIDs={collapsedSidebarSectionIDs}
+          expandedSidebarSectionIDs={expandedSidebarSectionIDs}
+          collapsingSidebarSectionIDs={collapsingSidebarSectionIDs}
           threadsByProjectID={threadsByProjectID}
           activeThreadID={activeThreadID}
           pendingThreadID={pendingThreadID}
@@ -103,7 +103,7 @@ export function ProjectList({
           lastViewedTurnByThreadID={lastViewedTurnByThreadID}
           scratchPseudoProjectID={scratchPseudoProjectID}
           scratchPseudoActive={scratchPseudoActive}
-          onToggleProjectCollapsed={onToggleProjectCollapsed}
+          onToggleSidebarSectionCollapsed={onToggleSidebarSectionCollapsed}
           onStartNewThread={onStartNewThread}
           onSelectThread={onSelectThread}
           onToggleThreadPinned={onToggleThreadPinned}
@@ -127,9 +127,9 @@ export function ProjectGroup({
   project,
   activeID,
   pendingProjectID,
-  collapsedProjectIDs,
-  expandedProjectIDs,
-  collapsingProjectIDs,
+  collapsedSidebarSectionIDs,
+  expandedSidebarSectionIDs,
+  collapsingSidebarSectionIDs,
   threadsByProjectID,
   activeThreadID,
   pendingThreadID,
@@ -137,7 +137,7 @@ export function ProjectGroup({
   lastViewedTurnByThreadID,
   scratchPseudoProjectID,
   scratchPseudoActive,
-  onToggleProjectCollapsed,
+  onToggleSidebarSectionCollapsed,
   onStartNewThread,
   onSelectThread,
   onToggleThreadPinned,
@@ -151,9 +151,9 @@ export function ProjectGroup({
   project: DesktopProject;
   activeID?: string;
   pendingProjectID?: string;
-  collapsedProjectIDs: ReadonlySet<string>;
-  expandedProjectIDs: ReadonlySet<string>;
-  collapsingProjectIDs: ReadonlySet<string>;
+  collapsedSidebarSectionIDs: ReadonlySet<string>;
+  expandedSidebarSectionIDs: ReadonlySet<string>;
+  collapsingSidebarSectionIDs: ReadonlySet<string>;
   threadsByProjectID: Record<string, ThreadSummary[]>;
   activeThreadID?: string;
   pendingThreadID?: string;
@@ -161,7 +161,7 @@ export function ProjectGroup({
   lastViewedTurnByThreadID: Record<string, string>;
   scratchPseudoProjectID: string;
   scratchPseudoActive: boolean;
-  onToggleProjectCollapsed: (id: string) => void;
+  onToggleSidebarSectionCollapsed: (id: string) => void;
   onStartNewThread: (id: string) => void;
   onSelectThread: (projectID: string, threadID: string) => void;
   onToggleThreadPinned: (thread: ThreadSummary) => void;
@@ -203,10 +203,11 @@ export function ProjectGroup({
   const activeProject = isScratchPseudo
     ? scratchPseudoActive
     : project.id === activeID;
-  const collapsed = collapsedProjectIDs.has(project.id);
-  const collapsing = collapsingProjectIDs.has(project.id);
+  const collapsed = collapsedSidebarSectionIDs.has(project.id);
+  const collapsing = collapsingSidebarSectionIDs.has(project.id);
   const expanded =
-    (expandedProjectIDs.has(project.id) || (activeProject && !collapsed)) &&
+    (expandedSidebarSectionIDs.has(project.id) ||
+      (activeProject && !collapsed)) &&
     !collapsing;
   // The scratch pseudo project trusts the threadsByProjectID entry
   // directly: App.tsx already filtered scratch threads. Real
@@ -250,7 +251,7 @@ export function ProjectGroup({
         pending={pendingProject}
         unread={projectHasUnread}
         loading={pendingProject}
-        onToggle={() => onToggleProjectCollapsed(project.id)}
+        onToggle={() => onToggleSidebarSectionCollapsed(project.id)}
         onContextMenu={
           isScratchPseudo || (!onRemoveProject && !onRelocateProject)
             ? undefined

@@ -48,6 +48,12 @@ vi.mock("@xterm/addon-fit", () => ({
   FitAddon: vi.fn().mockImplementation(() => ({ fit: vi.fn() })),
 }));
 
+vi.mock("./WorkspaceMonacoEditor", () => ({
+  WorkspaceMonacoEditor: (): JSX.Element => (
+    <div className="workspace-monaco-editor" data-testid="mock-monaco-editor" />
+  ),
+}));
+
 import { App } from "./App";
 
 let container: HTMLDivElement;
@@ -214,7 +220,7 @@ describe("sidebar click latency", () => {
     const baseline = turnListProbe.renders;
 
     // A pure sidebar interaction: collapse + expand the 置顶 section.
-    // This flips App-local state (collapsedProjectIDs) and must not
+    // This flips App-local state (collapsedSidebarSectionIDs) and must not
     // cascade into the memoized conversation pane.
     const pinnedHeader = container.querySelector<HTMLButtonElement>(
       'section[aria-label="置顶"] .sidebar-section-row',

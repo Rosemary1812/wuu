@@ -99,7 +99,7 @@ function makeProject(id: string, name: string, path: string): DesktopProject {
 
 interface RenderOptions {
   sectionOrder: string[];
-  collapsedProjectIDs?: Set<string>;
+  collapsedSidebarSectionIDs?: Set<string>;
   participants?: ParticipantProfile[];
   pinnedThreads?: ThreadSummary[];
   groupThreads?: ThreadSummary[];
@@ -121,7 +121,7 @@ interface RenderOptions {
 function renderSidebar(options: RenderOptions): void {
   const {
     sectionOrder,
-    collapsedProjectIDs = new Set<string>(),
+    collapsedSidebarSectionIDs = new Set<string>(),
     participants = [],
     pinnedThreads = [],
     groupThreads = [],
@@ -171,9 +171,9 @@ function renderSidebar(options: RenderOptions): void {
         pendingThreadID={undefined}
         pendingProjectID={undefined}
         archiveConfirmThreadID={archiveConfirmThreadID}
-        collapsedProjectIDs={collapsedProjectIDs}
-        expandedProjectIDs={new Set()}
-        collapsingProjectIDs={new Set()}
+        collapsedSidebarSectionIDs={collapsedSidebarSectionIDs}
+        expandedSidebarSectionIDs={new Set()}
+        collapsingSidebarSectionIDs={new Set()}
         projectThreadsByProjectID={{}}
         projectMenuRef={createRef<HTMLDivElement>()}
         projectMenuOpen={false}
@@ -209,7 +209,7 @@ function renderSidebar(options: RenderOptions): void {
         onToggleProjectMenu={() => {}}
         onCreateProject={() => {}}
         onOpenProjectFolder={() => {}}
-        onToggleProjectCollapsed={() => {}}
+        onToggleSidebarSectionCollapsed={() => {}}
         onStartNewThreadForProject={onStartNewThreadForProject}
         onSelectProjectThread={() => {}}
         onRemoveProject={() => {}}
@@ -398,7 +398,7 @@ describe("AppSidebar sections", () => {
     renderSidebar({
       sectionOrder: [SIDEBAR_SECTION_AGENTS],
       participants,
-      collapsedProjectIDs: new Set([SIDEBAR_SECTION_AGENTS]),
+      collapsedSidebarSectionIDs: new Set([SIDEBAR_SECTION_AGENTS]),
     });
     expect(
       container.querySelectorAll(".participant-roster-row").length,
@@ -936,9 +936,9 @@ describe("AppSidebar drag-to-reorder wiring (T7)", () => {
             pendingThreadID: undefined,
             pendingProjectID: undefined,
             archiveConfirmThreadID: undefined,
-            collapsedProjectIDs: new Set(),
-            expandedProjectIDs: new Set(),
-            collapsingProjectIDs: new Set(),
+            collapsedSidebarSectionIDs: new Set(),
+            expandedSidebarSectionIDs: new Set(),
+            collapsingSidebarSectionIDs: new Set(),
             projectThreadsByProjectID: {},
             projectMenuRef: createRef<HTMLDivElement>(),
             projectMenuOpen: false,
@@ -973,7 +973,7 @@ describe("AppSidebar drag-to-reorder wiring (T7)", () => {
             onToggleProjectMenu: () => {},
             onCreateProject: () => {},
             onOpenProjectFolder: () => {},
-            onToggleProjectCollapsed: () => {},
+            onToggleSidebarSectionCollapsed: () => {},
             onStartNewThreadForProject: () => {},
             onSelectProjectThread: () => {},
             onRemoveProject: () => {},

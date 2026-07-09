@@ -42,6 +42,12 @@ vi.mock("@xterm/addon-fit", () => ({
   FitAddon: vi.fn().mockImplementation(() => ({ fit: vi.fn() })),
 }));
 
+vi.mock("./WorkspaceMonacoEditor", () => ({
+  WorkspaceMonacoEditor: (): JSX.Element => (
+    <div className="workspace-monaco-editor" data-testid="mock-monaco-editor" />
+  ),
+}));
+
 import { App } from "./App";
 
 let container: HTMLDivElement;

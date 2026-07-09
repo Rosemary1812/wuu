@@ -312,9 +312,9 @@ export function AppSidebar({
   pendingThreadID,
   pendingProjectID,
   archiveConfirmThreadID,
-  collapsedProjectIDs,
-  expandedProjectIDs,
-  collapsingProjectIDs,
+  collapsedSidebarSectionIDs,
+  expandedSidebarSectionIDs,
+  collapsingSidebarSectionIDs,
   projectThreadsByProjectID,
   projectMenuOpen,
   projectMenuRef,
@@ -342,7 +342,7 @@ export function AppSidebar({
   onToggleProjectMenu,
   onCreateProject,
   onOpenProjectFolder,
-  onToggleProjectCollapsed,
+  onToggleSidebarSectionCollapsed,
   onStartNewThreadForProject,
   onSelectProjectThread,
   onRemoveProject,
@@ -388,9 +388,9 @@ export function AppSidebar({
   pendingThreadID?: string;
   pendingProjectID?: string;
   archiveConfirmThreadID?: string;
-  collapsedProjectIDs: Set<string>;
-  expandedProjectIDs: Set<string>;
-  collapsingProjectIDs: Set<string>;
+  collapsedSidebarSectionIDs: Set<string>;
+  expandedSidebarSectionIDs: Set<string>;
+  collapsingSidebarSectionIDs: Set<string>;
   projectThreadsByProjectID: Record<string, ThreadSummary[]>;
   projectMenuOpen: boolean;
   projectMenuRef: RefObject<HTMLDivElement | null>;
@@ -443,7 +443,7 @@ export function AppSidebar({
   onToggleProjectMenu: () => void;
   onCreateProject: () => void;
   onOpenProjectFolder: () => void;
-  onToggleProjectCollapsed: (id: string) => void;
+  onToggleSidebarSectionCollapsed: (id: string) => void;
   onStartNewThreadForProject: (id: string) => void;
   onSelectProjectThread: (projectID: string, threadID: string) => void;
   onRemoveProject: (id: string) => void;
@@ -687,7 +687,7 @@ export function AppSidebar({
             // alongside Agents / 对话 / projects. An empty body
             // surfaces a muted 还没有会话 placeholder row so the
             // collapse animation has real height to animate.
-            const pinnedCollapsed = collapsedProjectIDs.has(
+            const pinnedCollapsed = collapsedSidebarSectionIDs.has(
               SIDEBAR_SECTION_PINNED,
             );
             // Pinned group threads keep their # channel identity after
@@ -711,7 +711,7 @@ export function AppSidebar({
                   ariaLabel={`${pinnedCollapsed ? "展开" : "收起"}置顶`}
                   title={pinnedCollapsed ? "展开置顶" : "收起置顶"}
                   onToggle={() =>
-                    onToggleProjectCollapsed(SIDEBAR_SECTION_PINNED)
+                    onToggleSidebarSectionCollapsed(SIDEBAR_SECTION_PINNED)
                   }
                   emptyNote="还没有会话"
                 >
@@ -754,7 +754,7 @@ export function AppSidebar({
               // guarantees the # all channel exists once the roster is
               // non-empty, so an empty list just shows the empty note —
               // no placeholder row.
-              const groupCollapsed = collapsedProjectIDs.has(
+              const groupCollapsed = collapsedSidebarSectionIDs.has(
                 SIDEBAR_SECTION_GROUP,
               );
               const groupRows: ThreadSummary[] = groupThreads.map((thread) => ({
@@ -801,7 +801,7 @@ export function AppSidebar({
                     ariaLabel={`${groupCollapsed ? "展开" : "收起"}群聊`}
                     title={groupCollapsed ? "展开群聊" : "收起群聊"}
                     onToggle={() =>
-                      onToggleProjectCollapsed(SIDEBAR_SECTION_GROUP)
+                      onToggleSidebarSectionCollapsed(SIDEBAR_SECTION_GROUP)
                     }
                     actions={groupActions}
                     emptyNote="还没有群聊"
@@ -826,7 +826,9 @@ export function AppSidebar({
               );
             }
             if (key === SIDEBAR_SECTION_AGENTS) {
-              const collapsed = collapsedProjectIDs.has(SIDEBAR_SECTION_AGENTS);
+              const collapsed = collapsedSidebarSectionIDs.has(
+                SIDEBAR_SECTION_AGENTS,
+              );
               // Pinning MOVES a conversation under 置顶 — same semantics as
               // the 对话 and 群聊 lists. A participant whose DM is pinned is
               // represented by its pinned thread row, so its roster row is
@@ -962,7 +964,7 @@ export function AppSidebar({
                     ariaLabel={`${collapsed ? "展开" : "收起"} Agents`}
                     title={collapsed ? "展开 Agents" : "收起 Agents"}
                     onToggle={() =>
-                      onToggleProjectCollapsed(SIDEBAR_SECTION_AGENTS)
+                      onToggleSidebarSectionCollapsed(SIDEBAR_SECTION_AGENTS)
                     }
                     actions={rosterActions}
                   >
@@ -1126,9 +1128,9 @@ export function AppSidebar({
                   project={project}
                   activeID={state.activeProjectId}
                   pendingProjectID={pendingProjectID}
-                  collapsedProjectIDs={collapsedProjectIDs}
-                  expandedProjectIDs={expandedProjectIDs}
-                  collapsingProjectIDs={collapsingProjectIDs}
+                  collapsedSidebarSectionIDs={collapsedSidebarSectionIDs}
+                  expandedSidebarSectionIDs={expandedSidebarSectionIDs}
+                  collapsingSidebarSectionIDs={collapsingSidebarSectionIDs}
                   threadsByProjectID={projectThreadsByProjectID}
                   activeThreadID={activeThreadID}
                   pendingThreadID={pendingThreadID}
@@ -1136,7 +1138,9 @@ export function AppSidebar({
                   lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
                   scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
                   scratchPseudoActive={sidebarScratchPseudoActive}
-                  onToggleProjectCollapsed={onToggleProjectCollapsed}
+                  onToggleSidebarSectionCollapsed={
+                    onToggleSidebarSectionCollapsed
+                  }
                   onStartNewThread={onStartNewThreadForProject}
                   onSelectThread={onSelectProjectThread}
                   onToggleThreadPinned={onTogglePinned}

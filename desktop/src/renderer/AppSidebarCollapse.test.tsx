@@ -3,11 +3,11 @@
  *
  * User report: collapsing 置顶, then interacting with a project, made
  * 置顶 passively expand. Root cause: the App effect that prunes
- * collapsedProjectIDs against state.projects stripped every
+ * collapsedSidebarSectionIDs against state.projects stripped every
  * pseudo-section key (置顶 / Agents / 群聊 / 对话) whenever the project
  * list got a fresh array identity (any runtime reload), silently
  * re-expanding those sections. A second bug in the same model:
- * toggleProjectCollapsed had no pseudo-section branch for 群聊, so its
+ * toggleSidebarSectionCollapsed had no pseudo-section branch for 群聊, so its
  * header click ran the project expand/collapse state machine whose
  * semantics don't match the group section's collapsed-set-only render
  * (the first click was a visual no-op).
@@ -34,6 +34,12 @@ vi.mock("@xterm/xterm", () => ({
 
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: vi.fn().mockImplementation(() => ({ fit: vi.fn() })),
+}));
+
+vi.mock("./WorkspaceMonacoEditor", () => ({
+  WorkspaceMonacoEditor: (): JSX.Element => (
+    <div className="workspace-monaco-editor" data-testid="mock-monaco-editor" />
+  ),
 }));
 
 import { App } from "./App";
@@ -142,8 +148,23 @@ function sectionHeader(label: string): HTMLButtonElement | null {
   );
 }
 
+function conversationSectionHeader(): HTMLButtonElement | null {
+  return container.querySelector<HTMLButtonElement>(
+    'button[aria-label="收起 对话 的会话"], button[aria-label="展开 对话 的会话"]',
+  );
+}
+
 async function clickHeader(label: string): Promise<void> {
   const header = sectionHeader(label);
+  expect(header).not.toBeNull();
+  await act(async () => {
+    header?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+  await flushAsync();
+}
+
+async function clickConversationHeader(): Promise<void> {
+  const header = conversationSectionHeader();
   expect(header).not.toBeNull();
   await act(async () => {
     header?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -207,5 +228,28 @@ describe("sidebar collapse-state independence", () => {
     await clickHeader("群聊");
     expect(sectionHeader("群聊")?.getAttribute("aria-expanded")).toBe("true");
     expect(sectionHeader("置顶")?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("collapses the active 对话 section on the first header click", async () => {
+    installWuuApi();
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flushAsync();
+
+    expect(conversationSectionHeader()?.getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+
+    await clickConversationHeader();
+    expect(conversationSectionHeader()?.getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+
+    await clickConversationHeader();
+    expect(conversationSectionHeader()?.getAttribute("aria-expanded")).toBe(
+      "true",
+    );
   });
 });

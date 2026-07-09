@@ -351,7 +351,7 @@ function initializedForSelectedPermissionMode(
 }
 
 const VIEW_SWITCH_LOADING_DELAY_MS = 180;
-const PROJECT_THREAD_COLLAPSE_MS = 190;
+const SIDEBAR_SESSION_SECTION_COLLAPSE_MS = 190;
 export const SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS = 240;
 const ENVIRONMENT_PANEL_MOTION_MS = 260;
 const ENVIRONMENT_PANEL_WIDTH_PX = 328;
@@ -388,8 +388,12 @@ type TurnProgressContent = {
   detail?: string;
 };
 
-const PROJECT_COLLAPSED_IDS_KEY = "wuu.desktop.collapsedProjectIDs";
-const PROJECT_EXPANDED_IDS_KEY = "wuu.desktop.expandedProjectIDs";
+const SIDEBAR_COLLAPSED_SECTION_IDS_KEY =
+  "wuu.desktop.collapsedSidebarSectionIDs";
+const SIDEBAR_EXPANDED_SECTION_IDS_KEY =
+  "wuu.desktop.expandedSidebarSectionIDs";
+const LEGACY_PROJECT_COLLAPSED_IDS_KEY = "wuu.desktop.collapsedProjectIDs";
+const LEGACY_PROJECT_EXPANDED_IDS_KEY = "wuu.desktop.expandedProjectIDs";
 const SIDEBAR_SECTION_ORDER_KEY = "wuu.desktop.sidebarSectionOrder";
 const RENDERER_ENV = (
   import.meta as ImportMeta & {
@@ -512,9 +516,14 @@ type QueuedMessageEditTarget = {
   queueID: string;
 };
 
-function storedProjectIDSet(key: string): Set<string> {
+function storedSidebarSectionIDSet(
+  key: string,
+  legacyKey?: string,
+): Set<string> {
   try {
-    const stored = window.localStorage.getItem(key);
+    const stored =
+      window.localStorage.getItem(key) ??
+      (legacyKey ? window.localStorage.getItem(legacyKey) : null);
     const parsed: unknown = stored ? JSON.parse(stored) : [];
     if (!Array.isArray(parsed)) {
       return new Set();
@@ -543,23 +552,39 @@ function storedSidebarSectionOrder(): string[] | undefined {
   }
 }
 
-function initialCollapsedProjectIDs(): Set<string> {
-  return storedProjectIDSet(PROJECT_COLLAPSED_IDS_KEY);
+function initialCollapsedSidebarSectionIDs(): Set<string> {
+  return storedSidebarSectionIDSet(
+    SIDEBAR_COLLAPSED_SECTION_IDS_KEY,
+    LEGACY_PROJECT_COLLAPSED_IDS_KEY,
+  );
 }
 
-function initialExpandedProjectIDs(): Set<string> {
-  return storedProjectIDSet(PROJECT_EXPANDED_IDS_KEY);
+function initialExpandedSidebarSectionIDs(): Set<string> {
+  return storedSidebarSectionIDSet(
+    SIDEBAR_EXPANDED_SECTION_IDS_KEY,
+    LEGACY_PROJECT_EXPANDED_IDS_KEY,
+  );
 }
 
-function projectExpanded(
-  projectID: string,
+function activeSidebarSectionID(
+  activeContext: RuntimeContext | undefined,
   activeProjectID: string | undefined,
-  expandedProjectIDs: ReadonlySet<string>,
-  collapsedProjectIDs: ReadonlySet<string>,
+): string | undefined {
+  return activeContext?.kind === "no_project"
+    ? SCRATCH_PSEUDO_PROJECT_ID
+    : activeProjectID;
+}
+
+function sessionTreeSectionExpanded(
+  sectionID: string,
+  activeSectionID: string | undefined,
+  expandedSidebarSectionIDs: ReadonlySet<string>,
+  collapsedSidebarSectionIDs: ReadonlySet<string>,
 ): boolean {
   return (
-    expandedProjectIDs.has(projectID) ||
-    (projectID === activeProjectID && !collapsedProjectIDs.has(projectID))
+    expandedSidebarSectionIDs.has(sectionID) ||
+    (sectionID === activeSectionID &&
+      !collapsedSidebarSectionIDs.has(sectionID))
   );
 }
 
@@ -705,15 +730,14 @@ export function App(): JSX.Element {
     settingsLayoutRootRef: settingsShellRef,
     onCloseProjectMenu: closeProjectMenu,
   });
-  const [collapsedProjectIDs, setCollapsedProjectIDs] = useState<Set<string>>(
-    initialCollapsedProjectIDs,
-  );
-  const [expandedProjectIDs, setExpandedProjectIDs] = useState<Set<string>>(
-    initialExpandedProjectIDs,
-  );
-  const [collapsingProjectIDs, setCollapsingProjectIDs] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [collapsedSidebarSectionIDs, setCollapsedSidebarSectionIDs] = useState<
+    Set<string>
+  >(initialCollapsedSidebarSectionIDs);
+  const [expandedSidebarSectionIDs, setExpandedSidebarSectionIDs] = useState<
+    Set<string>
+  >(initialExpandedSidebarSectionIDs);
+  const [collapsingSidebarSectionIDs, setCollapsingSidebarSectionIDs] =
+    useState<Set<string>>(() => new Set());
   const [projectThreadsByProjectID, setProjectThreadsByProjectID] = useState<
     Record<string, Thread[]>
   >({});
@@ -979,7 +1003,7 @@ export function App(): JSX.Element {
     onHideDebugControls: hideDebugControls,
   });
   const queryHistoryRailRef = useRef<HTMLDivElement | null>(null);
-  const projectCollapseTimersRef = useRef(new Map<string, number>());
+  const sidebarSectionCollapseTimersRef = useRef(new Map<string, number>());
   const loadingProjectThreadIDsRef = useRef(new Set<string>());
   const [queryHistoryOpen, setQueryHistoryOpen] = useState(false);
   const queryHistoryCloseTimerRef = useRef<number | undefined>(undefined);
@@ -1421,10 +1445,10 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     return () => {
-      for (const timer of projectCollapseTimersRef.current.values()) {
+      for (const timer of sidebarSectionCollapseTimersRef.current.values()) {
         window.clearTimeout(timer);
       }
-      projectCollapseTimersRef.current.clear();
+      sidebarSectionCollapseTimersRef.current.clear();
       clearViewSwitchDelay();
     };
   }, []);
@@ -1806,17 +1830,17 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     window.localStorage.setItem(
-      PROJECT_COLLAPSED_IDS_KEY,
-      JSON.stringify([...collapsedProjectIDs]),
+      SIDEBAR_COLLAPSED_SECTION_IDS_KEY,
+      JSON.stringify([...collapsedSidebarSectionIDs]),
     );
-  }, [collapsedProjectIDs]);
+  }, [collapsedSidebarSectionIDs]);
 
   useEffect(() => {
     window.localStorage.setItem(
-      PROJECT_EXPANDED_IDS_KEY,
-      JSON.stringify([...expandedProjectIDs]),
+      SIDEBAR_EXPANDED_SECTION_IDS_KEY,
+      JSON.stringify([...expandedSidebarSectionIDs]),
     );
-  }, [expandedProjectIDs]);
+  }, [expandedSidebarSectionIDs]);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -1835,7 +1859,7 @@ export function App(): JSX.Element {
   useEffect(() => {
     // Prune collapse/expand state for projects that no longer exist —
     // but never the pseudo-section keys (置顶 / Agents / 群聊 / 对话).
-    // They are legitimate members of collapsedProjectIDs and are not
+    // They are legitimate members of collapsedSidebarSectionIDs and are not
     // project ids, so pruning them here silently re-expanded those
     // sections on every project-state reload (fresh state.projects
     // identity), which users saw as 置顶 "passively expanding".
@@ -1849,10 +1873,10 @@ export function App(): JSX.Element {
       SIDEBAR_SECTION_GROUP,
       SCRATCH_PSEUDO_PROJECT_ID,
     ]);
-    setCollapsedProjectIDs((current) =>
+    setCollapsedSidebarSectionIDs((current) =>
       removeMissingIDs(current, validSectionIDs),
     );
-    setExpandedProjectIDs((current) =>
+    setExpandedSidebarSectionIDs((current) =>
       removeMissingIDs(current, validSectionIDs),
     );
     setProjectThreadsByProjectID((current) => {
@@ -1890,13 +1914,13 @@ export function App(): JSX.Element {
       }
       return { ...current, [projectID]: activeProjectThreads };
     });
-    if (!collapsedProjectIDs.has(projectID)) {
-      setExpandedProjectIDs((current) =>
+    if (!collapsedSidebarSectionIDs.has(projectID)) {
+      setExpandedSidebarSectionIDs((current) =>
         current.has(projectID) ? current : new Set(current).add(projectID),
       );
     }
   }, [
-    collapsedProjectIDs,
+    collapsedSidebarSectionIDs,
     state.activeContext?.kind,
     state.activeProjectId,
     state.projects,
@@ -1918,13 +1942,17 @@ export function App(): JSX.Element {
   }, [state.activeContext?.kind, state.projects, state.threads]);
 
   useEffect(() => {
+    const activeSectionID = activeSidebarSectionID(
+      state.activeContext,
+      state.activeProjectId,
+    );
     for (const project of state.projects) {
       if (
-        !projectExpanded(
+        !sessionTreeSectionExpanded(
           project.id,
-          state.activeProjectId,
-          expandedProjectIDs,
-          collapsedProjectIDs,
+          activeSectionID,
+          expandedSidebarSectionIDs,
+          collapsedSidebarSectionIDs,
         )
       ) {
         continue;
@@ -1932,15 +1960,21 @@ export function App(): JSX.Element {
       if (project.id === state.activeProjectId) {
         continue;
       }
-      if (Object.prototype.hasOwnProperty.call(projectThreadsByProjectID, project.id)) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          projectThreadsByProjectID,
+          project.id,
+        )
+      ) {
         continue;
       }
       void loadProjectThreads(project);
     }
   }, [
-    collapsedProjectIDs,
-    expandedProjectIDs,
+    collapsedSidebarSectionIDs,
+    expandedSidebarSectionIDs,
     projectThreadsByProjectID,
+    state.activeContext,
     state.activeProjectId,
     state.projects,
   ]);
@@ -2928,13 +2962,13 @@ export function App(): JSX.Element {
     });
   }, [state.activeSessionTabID, state.thread, state.threads]);
 
-  function clearProjectCollapseTimer(projectID: string): void {
-    const timer = projectCollapseTimersRef.current.get(projectID);
+  function clearSidebarSectionCollapseTimer(sectionID: string): void {
+    const timer = sidebarSectionCollapseTimersRef.current.get(sectionID);
     if (timer === undefined) {
       return;
     }
     window.clearTimeout(timer);
-    projectCollapseTimersRef.current.delete(projectID);
+    sidebarSectionCollapseTimersRef.current.delete(sectionID);
   }
 
   async function loadProjectThreads(project: DesktopProject): Promise<void> {
@@ -3038,64 +3072,66 @@ export function App(): JSX.Element {
     };
   }
 
-  function toggleProjectCollapsed(projectID: string): void {
-    // The pinned/Agents pseudo section ids use collapsed-set-only
-    // semantics: expanded ⇔ !collapsedProjectIDs.has(id). Skip the active
-    // project auto-expand branch and the collapsing-project timer
-    // animation entirely so a click is one synchronous state flip with
-    // no thread-loading side effect (there are no threads to load for
-    // these sections).
+  function toggleSidebarSectionCollapsed(sectionID: string): void {
+    // Pinned / Agents / 群聊 sections are pure manual sidebar sections:
+    // expanded ⇔ !collapsedSidebarSectionIDs.has(id). The 对话 / project
+    // tree sections below also account for the currently active sidebar
+    // section and keep the delayed body-collapse behavior.
     if (
-      projectID === SIDEBAR_SECTION_PINNED ||
-      projectID === SIDEBAR_SECTION_AGENTS ||
-      projectID === SIDEBAR_SECTION_GROUP
+      sectionID === SIDEBAR_SECTION_PINNED ||
+      sectionID === SIDEBAR_SECTION_AGENTS ||
+      sectionID === SIDEBAR_SECTION_GROUP
     ) {
-      setCollapsedProjectIDs((current) => {
-        if (!current.has(projectID)) {
-          return new Set(current).add(projectID);
+      setCollapsedSidebarSectionIDs((current) => {
+        if (!current.has(sectionID)) {
+          return new Set(current).add(sectionID);
         }
         const next = new Set(current);
-        next.delete(projectID);
+        next.delete(sectionID);
         return next;
       });
       return;
     }
+    const currentState = appStateRef.current;
     const expanded =
-      projectExpanded(
-        projectID,
-        appStateRef.current.activeProjectId,
-        expandedProjectIDs,
-        collapsedProjectIDs,
-      ) || collapsingProjectIDs.has(projectID);
-    if (!expanded || collapsingProjectIDs.has(projectID)) {
-      clearProjectCollapseTimer(projectID);
-      setCollapsedProjectIDs((current) => {
-        if (!current.has(projectID)) {
+      sessionTreeSectionExpanded(
+        sectionID,
+        activeSidebarSectionID(
+          currentState.activeContext,
+          currentState.activeProjectId,
+        ),
+        expandedSidebarSectionIDs,
+        collapsedSidebarSectionIDs,
+      ) || collapsingSidebarSectionIDs.has(sectionID);
+    if (!expanded || collapsingSidebarSectionIDs.has(sectionID)) {
+      clearSidebarSectionCollapseTimer(sectionID);
+      setCollapsedSidebarSectionIDs((current) => {
+        if (!current.has(sectionID)) {
           return current;
         }
         const next = new Set(current);
-        next.delete(projectID);
+        next.delete(sectionID);
         return next;
       });
-      setCollapsingProjectIDs((current) => {
-        if (!current.has(projectID)) {
+      setCollapsingSidebarSectionIDs((current) => {
+        if (!current.has(sectionID)) {
           return current;
         }
         const next = new Set(current);
-        next.delete(projectID);
+        next.delete(sectionID);
         return next;
       });
-      setExpandedProjectIDs((current) =>
-        current.has(projectID) ? current : new Set(current).add(projectID),
+      setExpandedSidebarSectionIDs((current) =>
+        current.has(sectionID) ? current : new Set(current).add(sectionID),
       );
-      const project = appStateRef.current.projects.find(
-        (candidate) => candidate.id === projectID,
+      const project = currentState.projects.find(
+        (candidate) => candidate.id === sectionID,
       );
       if (
         project &&
         !Object.prototype.hasOwnProperty.call(
           projectThreadsByProjectID,
-          projectID,
+          sectionID,
         )
       ) {
         void loadProjectThreads(project);
@@ -3103,33 +3139,33 @@ export function App(): JSX.Element {
       return;
     }
 
-    setCollapsingProjectIDs((current) =>
-      current.has(projectID) ? current : new Set(current).add(projectID),
+    setCollapsingSidebarSectionIDs((current) =>
+      current.has(sectionID) ? current : new Set(current).add(sectionID),
     );
-    clearProjectCollapseTimer(projectID);
+    clearSidebarSectionCollapseTimer(sectionID);
     const timer = window.setTimeout(() => {
-      projectCollapseTimersRef.current.delete(projectID);
-      setCollapsedProjectIDs((current) =>
-        current.has(projectID) ? current : new Set(current).add(projectID),
+      sidebarSectionCollapseTimersRef.current.delete(sectionID);
+      setCollapsedSidebarSectionIDs((current) =>
+        current.has(sectionID) ? current : new Set(current).add(sectionID),
       );
-      setExpandedProjectIDs((current) => {
-        if (!current.has(projectID)) {
+      setExpandedSidebarSectionIDs((current) => {
+        if (!current.has(sectionID)) {
           return current;
         }
         const next = new Set(current);
-        next.delete(projectID);
+        next.delete(sectionID);
         return next;
       });
-      setCollapsingProjectIDs((current) => {
-        if (!current.has(projectID)) {
+      setCollapsingSidebarSectionIDs((current) => {
+        if (!current.has(sectionID)) {
           return current;
         }
         const next = new Set(current);
-        next.delete(projectID);
+        next.delete(sectionID);
         return next;
       });
-    }, PROJECT_THREAD_COLLAPSE_MS);
-    projectCollapseTimersRef.current.set(projectID, timer);
+    }, SIDEBAR_SESSION_SECTION_COLLAPSE_MS);
+    sidebarSectionCollapseTimersRef.current.set(sectionID, timer);
   }
 
   function openSkillsTab(): void {
@@ -9059,9 +9095,9 @@ export function App(): JSX.Element {
             pendingThreadID={visiblePendingThreadID}
             pendingProjectID={visiblePendingProjectID}
             archiveConfirmThreadID={archiveConfirmThreadID}
-            collapsedProjectIDs={collapsedProjectIDs}
-            expandedProjectIDs={expandedProjectIDs}
-            collapsingProjectIDs={collapsingProjectIDs}
+            collapsedSidebarSectionIDs={collapsedSidebarSectionIDs}
+            expandedSidebarSectionIDs={expandedSidebarSectionIDs}
+            collapsingSidebarSectionIDs={collapsingSidebarSectionIDs}
             projectThreadsByProjectID={sidebarThreadsByProjectID}
             projectMenuOpen={projectMenuOpen}
             projectMenuRef={projectMenuRef}
@@ -9096,7 +9132,7 @@ export function App(): JSX.Element {
             onToggleProjectMenu={() => setProjectMenuOpen((open) => !open)}
             onCreateProject={() => void createBlankProject()}
             onOpenProjectFolder={() => void chooseProjectFolder()}
-            onToggleProjectCollapsed={toggleProjectCollapsed}
+            onToggleSidebarSectionCollapsed={toggleSidebarSectionCollapsed}
             onStartNewThreadForProject={(id) => {
               if (id === SCRATCH_PSEUDO_PROJECT_ID) {
                 void useNoProject(true);
