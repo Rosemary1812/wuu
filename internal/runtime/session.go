@@ -337,7 +337,6 @@ func NewSession(opts Options) (*Session, error) {
 			return nil, fmt.Errorf("build worker client: %w", werr)
 		}
 
-		loopSink := goalrunner.NewAgentControlFailureSink(nil)
 		c, cerr := agentcontrol.New(agentcontrol.Config{
 			Client:                         workerClient,
 			DefaultModel:                   roleSelections.Worker.APIModel,
@@ -355,8 +354,6 @@ func NewSession(opts Options) (*Session, error) {
 			WorktreeRoot:                   statepath.WorktreeRoot(workspaceStateDir),
 			SessionID:                      "session-pending",
 			HistoryDir:                     "",
-			FailureSink:                    loopSink,
-			ReportSink:                     loopSink,
 			WorkerSysPrompt:                workerBaseSystemPrompt,
 			WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
 				return buildWorkerBasePrompt(workerRoot, sessionDate, wuuHome, userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, memdirEnabled, discoveredSkills, discoveredWorkflows), nil
@@ -754,7 +751,6 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		}
 		if workerClient != nil {
 			var control *agentcontrol.AgentControl
-			loopSink := goalrunner.NewAgentControlFailureSink(nil)
 			workerModel := s.Model
 			if roleModel := strings.TrimSpace(s.ModelRoles.Worker.APIModel); roleModel != "" {
 				workerModel = roleModel
@@ -804,8 +800,6 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 				HistoryDir:                     filepath.Join(artifactDir, "workers"),
 				ThreadDir:                      filepath.Join(artifactDir, "threads"),
 				HarnessDir:                     filepath.Join(artifactDir, "harness"),
-				FailureSink:                    loopSink,
-				ReportSink:                     loopSink,
 				WorkerSysPrompt:                workerBaseSystemPrompt,
 				WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
 					return buildWorkerBasePrompt(workerRoot, s.SessionDate, wuuHome, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, s.Memory, s.MemdirEnabled, s.Skills, s.Workflows), nil

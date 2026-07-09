@@ -802,7 +802,7 @@ func TestRecordAgentReportRejectsMissingArtifact(t *testing.T) {
 	}
 }
 
-func TestRecordAgentReportSyncsReportSinkWithGoalBinding(t *testing.T) {
+func TestRecordAgentReportSyncsReportSinkWithoutGoalBinding(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 	reportSink := &captureReportSink{}
@@ -826,8 +826,6 @@ func TestRecordAgentReportSyncsReportSinkWithGoalBinding(t *testing.T) {
 		Type:        DefaultSubagentType,
 		TaskName:    "structured_report_goal",
 		Prompt:      "inspect code",
-		GoalID:      "workflow-run-1",
-		GoalDir:     filepath.Join(dir, ".wuu", "state", "goals", "workflow-run-1"),
 		Synchronous: true,
 	})
 	if err != nil {
@@ -837,8 +835,8 @@ func TestRecordAgentReportSyncsReportSinkWithGoalBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
-	if len(tasks) != 1 || tasks[0].GoalID != "workflow-run-1" || tasks[0].GoalDir == "" {
-		t.Fatalf("harness task missing goal binding: %+v", tasks)
+	if len(tasks) != 1 || tasks[0].GoalID != "" || tasks[0].GoalDir != "" {
+		t.Fatalf("agentcontrol spawn should not bind harness task to legacy goal state: %+v", tasks)
 	}
 	artifactPath := filepath.Join(tasks[0].Workspace.Root, "reports", "worker.patch")
 	if err := os.MkdirAll(filepath.Dir(artifactPath), 0o755); err != nil {
@@ -864,8 +862,8 @@ func TestRecordAgentReportSyncsReportSinkWithGoalBinding(t *testing.T) {
 		t.Fatalf("expected one synced report, got %+v", reports)
 	}
 	got := reports[0]
-	if got.GoalID != "workflow-run-1" || got.GoalDir == "" || got.ReportPath != sessionRefPath(t, c, report.ReportPath) {
-		t.Fatalf("synced report missing goal/report binding: %+v", got)
+	if got.ReportPath != sessionRefPath(t, c, report.ReportPath) {
+		t.Fatalf("synced report missing report path: %+v", got)
 	}
 	if len(got.ChangedFiles) != 1 || got.ChangedFiles[0] != "internal/agentcontrol/report.go" || len(got.Verification) != 1 || len(got.Artifacts) != 1 {
 		t.Fatalf("synced report missing handoff facts: %+v", got)
@@ -1853,12 +1851,14 @@ func TestNewRestoresQueuedSpawnPayload(t *testing.T) {
 			EdgeStatus:     agentthread.EdgeOpen,
 		},
 	}
-	payload, err := json.Marshal(queuedSpawnPayload{
-		WorkerID:   meta.ID,
-		WorkerType: DefaultSubagentType,
-		ThreadMeta: meta,
-		Prompt:     "resume queued task",
-		Isolation:  "inplace",
+	payload, err := json.Marshal(map[string]any{
+		"worker_id":   meta.ID,
+		"worker_type": DefaultSubagentType,
+		"thread_meta": meta,
+		"prompt":      "resume queued task",
+		"isolation":   "inplace",
+		"goal_id":     "legacy-goal",
+		"goal_dir":    filepath.Join(dir, ".wuu", "state", "goals", "legacy-goal"),
 	})
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
@@ -1922,6 +1922,13 @@ func TestNewRestoresQueuedSpawnPayload(t *testing.T) {
 	}
 	if len(items) != 0 {
 		t.Fatalf("queue item should be deleted after start, got %+v", items)
+	}
+	tasks, err := c.HarnessStore().ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].GoalID != "" || tasks[0].GoalDir != "" {
+		t.Fatalf("restored queued spawn should ignore legacy goal binding fields, got %+v", tasks)
 	}
 	c.StopAll()
 	waitForRunningWorkersToStop(t, c.Manager(), time.Second)

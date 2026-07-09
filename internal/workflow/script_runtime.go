@@ -416,8 +416,6 @@ func (r *ScriptRuntime) spawnAgentSpec(ctx context.Context, spec ScriptSpawnSpec
 		Prompt:        prompt,
 		ParentID:      strings.TrimSpace(r.opts.CurrentAgentID),
 		ParentPath:    r.currentAgentPath(),
-		GoalID:        r.opts.GoalID,
-		GoalDir:       r.opts.GoalDir,
 		Synchronous:   foreground,
 		Isolation:     strings.TrimSpace(spec.Isolation),
 	})

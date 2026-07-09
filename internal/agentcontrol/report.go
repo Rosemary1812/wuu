@@ -151,7 +151,6 @@ func (c *AgentControl) RecordAgentReport(agentID, agentPath string, req AgentRep
 	if err != nil {
 		return AgentReportResult{}, err
 	}
-	task, _ := c.harnessTask(id)
 	// The report is durable metadata on the run, not a lifecycle verdict. The
 	// self-reported outcome is archived below as the agent's claim, but it does
 	// not adjudicate the task status; runtime facts own the lifecycle.
@@ -161,8 +160,6 @@ func (c *AgentControl) RecordAgentReport(agentID, agentPath string, req AgentRep
 		RunID:        report.RunID,
 		AgentID:      id,
 		AgentPath:    path,
-		GoalID:       task.GoalID,
-		GoalDir:      task.GoalDir,
 		Outcome:      outcome,
 		Summary:      report.Summary,
 		ReportPath:   report.ReportPath,
@@ -182,8 +179,6 @@ func (c *AgentControl) RecordAgentReport(agentID, agentPath string, req AgentRep
 			RunID:        report.RunID,
 			AgentID:      id,
 			AgentPath:    path,
-			GoalID:       task.GoalID,
-			GoalDir:      task.GoalDir,
 			Outcome:      outcome,
 			Message:      strings.Join(trimStringSlice(report.Blockers), "; "),
 			ReportPath:   report.ReportPath,

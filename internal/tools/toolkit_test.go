@@ -1662,8 +1662,8 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
-	if len(tasks) != 1 || tasks[0].GoalID != "workflow-run-1" || tasks[0].GoalDir != "/tmp/workflow-run-1-goal" {
-		t.Fatalf("spawn_agent did not pass goal binding to harness task: %+v", tasks)
+	if len(tasks) != 1 || tasks[0].GoalID != "" || tasks[0].GoalDir != "" {
+		t.Fatalf("spawn_agent should ignore legacy goal binding fields, got harness task: %+v", tasks)
 	}
 	for _, name := range subagentManagementTools {
 		if !containsProfileDef(kit.Definitions(), name) {
@@ -4207,12 +4207,12 @@ func TestToolkit_SpawnAgentDefinitionUsesCCAgentSchema(t *testing.T) {
 			continue
 		}
 		props, _ := d.InputSchema["properties"].(map[string]any)
-		for _, field := range []string{"description", "prompt", "subagent_type", "name", "run_in_background", "isolation", "goal_id", "goal_dir"} {
+		for _, field := range []string{"description", "prompt", "subagent_type", "name", "run_in_background", "isolation"} {
 			if _, ok := props[field]; !ok {
 				t.Fatalf("spawn_agent schema must expose %s: %#v", field, d.InputSchema)
 			}
 		}
-		for _, old := range []string{"task_name", "message", "agent_type", "synchronous", "fork_turns", "base_repo", "can_post", "speech_capability"} {
+		for _, old := range []string{"task_name", "message", "agent_type", "synchronous", "fork_turns", "base_repo", "can_post", "speech_capability", "goal_id", "goal_dir"} {
 			if _, ok := props[old]; ok {
 				t.Fatalf("spawn_agent schema should not expose old field %s: %#v", old, d.InputSchema)
 			}
@@ -4291,8 +4291,6 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 			"prompt":        {"Concrete task brief", "Base Agent Brief Contract", "fresh subagents", "first query", "self-contained", "forks", "incremental directive", "helpme"},
 			"agent_profile": {"Agent Profile name with saved memory", "workflow/profile policy", "ordinary temporary child tasks"},
 			"isolation":     {"worktree", "current repo"},
-			"goal_id":       {"workflow evidence Goal id", "start_workflow", "run_workflow"},
-			"goal_dir":      {"workflow evidence Goal directory", "start_workflow", "run_workflow"},
 		} {
 			prop, _ := props[field].(map[string]any)
 			desc, _ := prop["description"].(string)

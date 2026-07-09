@@ -391,8 +391,7 @@ func (t *WorkflowControlTool) Execute(ctx context.Context, argsJSON string) (str
 			"next_steps": []string{
 				"Write each spawn_agent.prompt from the Base Agent Brief Contract, adding only the small context extension that applies.",
 				"Include workflow run, phase, team member, and result-binding context for workflow team members.",
-				"Spawn reuse_profile and create_profile members with spawn_agent.agent_profile plus the workflow goal_id and goal_dir.",
-				"Spawn ephemeral members without agent_profile, but still pass the workflow goal_id and goal_dir.",
+				"Spawn reuse_profile and create_profile members with spawn_agent.agent_profile; spawn ephemeral members without agent_profile.",
 				"After each worker finishes, bind its result back with workflow_control action=record_agent_run.",
 			},
 		})

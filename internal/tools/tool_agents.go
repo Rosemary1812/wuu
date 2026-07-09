@@ -110,14 +110,6 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 					"enum":        []string{"worktree"},
 					"description": "Optional. 'worktree' creates a fresh isolated workspace for sandboxed edits. Omit to run in the current repo.",
 				},
-				"goal_id": map[string]any{
-					"type":        "string",
-					"description": "Optional workflow evidence Goal id returned by start_workflow or run_workflow. Pass it with goal_dir so agent_report can update that workflow evidence state.",
-				},
-				"goal_dir": map[string]any{
-					"type":        "string",
-					"description": "Optional workflow evidence Goal directory returned by start_workflow or run_workflow. Use with goal_id for workflow-bound spawned agents.",
-				},
 			},
 			"required": []string{"description", "prompt"},
 		},
@@ -136,8 +128,6 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		AgentProfile    string `json:"agent_profile"`
 		RunInBackground bool   `json:"run_in_background"`
 		Isolation       string `json:"isolation"`
-		GoalID          string `json:"goal_id"`
-		GoalDir         string `json:"goal_dir"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err
@@ -208,8 +198,6 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		Prompt:       prompt,
 		ParentID:     strings.TrimSpace(t.env.AgentID),
 		ParentPath:   currentAgentPath(t.env),
-		GoalID:       strings.TrimSpace(args.GoalID),
-		GoalDir:      strings.TrimSpace(args.GoalDir),
 		Isolation:    isolation,
 		Synchronous:  !args.RunInBackground && !wt.Background,
 	})

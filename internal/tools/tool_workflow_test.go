@@ -938,8 +938,8 @@ phase("Workers", () => {
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
-	if len(tasks) != 1 || tasks[0].GoalID != ran.GoalID || tasks[0].GoalDir != ran.GoalDir {
-		t.Fatalf("workflow-spawned harness task missing goal binding: %+v", tasks)
+	if len(tasks) != 1 || tasks[0].GoalID != "" || tasks[0].GoalDir != "" {
+		t.Fatalf("workflow-spawned harness task should not bind legacy goal state: %+v", tasks)
 	}
 }
 
