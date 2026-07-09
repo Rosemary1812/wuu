@@ -348,8 +348,7 @@ and assert it without the GUI. A scripted `actions` array in the `--input-json`
 payload runs an ordered sequence of steps against the app server: each step is
 either a human/orchestrator RPC (build a group, add members, open a reply,
 escalate to a task) or a turn run AS a named participant (the only path that
-mounts the group-chat tool surface — `post_message`, `manage_participant`,
-`start_workflow`).
+mounts the group-chat tool surface — `post_message`, `manage_participant`).
 
 Every step emits `action_started` and `action_completed` (or `action_failed`)
 JSONL events; a named turn additionally emits its `participant_turn_started`
@@ -412,9 +411,9 @@ Actions split by how they reach the app server:
 - Named turns (`post_message` / `participant_turn`, run with `as` set to a named
   participant id): run a turn AS that participant so its deterministic provider
   can invoke the resident tools. `post_message` is the speak-in-a-group case;
-  `participant_turn` is the general label used when the turn is meant to
-  orchestrate a workflow or fork a copy. Which tool the turn actually invokes is
-  decided by the agent, not by the action name.
+  `participant_turn` is the general label for any other turn AS that
+  participant, including forking a copy via `manage_participant`. Which tool the
+  turn actually invokes is decided by the agent, not by the action name.
 
 Notes for scripting named turns:
 
@@ -424,9 +423,8 @@ Notes for scripting named turns:
   underscores) so their agent paths do not collide.
 - Escalation and reply/subthread posting are human-side RPCs by design; agents
   only reach a reply by posting into it from a named turn. `escalate_task`
-  records the task lead, which is the exact ownership the workflow-orchestration
-  gate enforces at run time: only the lead of an escalated task may start a
-  workflow over the group's members.
+  records the task lead; named turns on the escalated task can read the lead
+  via `subthread.lead_participant_id` to identify who owns the task.
 
 The full lifecycle above — build group, pull named members, named response,
 open reply, weak-isolation round trip, escalate to a task with a lead, and fork —
