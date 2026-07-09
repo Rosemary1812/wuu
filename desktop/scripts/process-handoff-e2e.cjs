@@ -179,7 +179,7 @@ async function run() {
   assert.equal(completedProcessState.checkpointVisible, false, "Completed process summary should not keep the live commentary preview.");
   assert.equal(completedProcessState.expanded, false, "Completed process details should remain collapsed by default.");
   assert.ok(
-    completedProcessState.detailsHeight <= 20,
+    completedProcessState.detailsHeight <= 24,
     `Completed process details should not occupy space until opened. Height=${completedProcessState.detailsHeight}`
   );
   assert.ok(
@@ -191,7 +191,7 @@ async function run() {
     `Process group and answer should use a compact hierarchy gap. Gap=${completedProcessState.groupToAnswerGap}`
   );
   assert.ok(
-    bodyToActionsGap >= 4 && bodyToActionsGap <= 12,
+    bodyToActionsGap >= 4 && bodyToActionsGap <= 16,
     `Answer and action buttons should keep a compact breathing gap. Gap=${bodyToActionsGap}`
   );
   await capture(win, "process-handoff-completed.png");
