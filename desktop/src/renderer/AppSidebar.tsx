@@ -314,7 +314,6 @@ export function AppSidebar({
   archiveConfirmThreadID,
   collapsedSidebarSectionIDs,
   expandedSidebarSectionIDs,
-  collapsingSidebarSectionIDs,
   projectThreadsByProjectID,
   projectMenuOpen,
   projectMenuRef,
@@ -376,9 +375,9 @@ export function AppSidebar({
   // App.tsx. Drives the context menu's pin/unpin DM affordance and any
   // future per-row DM metadata.
   dmThreadByParticipantID: Map<string, ThreadSummary>;
-  // Participants whose DM thread has an unseen completed turn. Drives the
-  // `.has-unread` indicator on the roster row so the user can spot new
-  // messages at a glance without opening the conversation.
+  // Participants whose DM thread holds an unseen actual chat message.
+  // Drives the `.has-unread` indicator on the roster row so the user can
+  // spot new messages at a glance without opening the conversation.
   unreadDMParticipantIDs: Set<string>;
   participants: ParticipantProfile[];
   // Set of participant IDs with at least one running run. Drives the busy
@@ -390,7 +389,6 @@ export function AppSidebar({
   archiveConfirmThreadID?: string;
   collapsedSidebarSectionIDs: Set<string>;
   expandedSidebarSectionIDs: Set<string>;
-  collapsingSidebarSectionIDs: Set<string>;
   projectThreadsByProjectID: Record<string, ThreadSummary[]>;
   projectMenuOpen: boolean;
   projectMenuRef: RefObject<HTMLDivElement | null>;
@@ -722,6 +720,7 @@ export function AppSidebar({
                       pendingThreadID={pendingThreadID}
                       archiveConfirmThreadID={archiveConfirmThreadID}
                       lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
+                      lastViewedMessageSeqByThreadID={state.lastViewedMessageSeqByThreadID}
                       onSelect={onSelectThread}
                       onTogglePinned={onTogglePinned}
                       onArchive={onArchiveThread}
@@ -813,6 +812,7 @@ export function AppSidebar({
                         pendingThreadID={pendingThreadID}
                         archiveConfirmThreadID={archiveConfirmThreadID}
                         lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
+                        lastViewedMessageSeqByThreadID={state.lastViewedMessageSeqByThreadID}
                         onSelect={onSelectThread}
                         onTogglePinned={onTogglePinned}
                         onArchive={onArchiveThread}
@@ -1129,14 +1129,13 @@ export function AppSidebar({
                   project={project}
                   activeID={state.activeProjectId}
                   pendingProjectID={pendingProjectID}
-                  collapsedSidebarSectionIDs={collapsedSidebarSectionIDs}
                   expandedSidebarSectionIDs={expandedSidebarSectionIDs}
-                  collapsingSidebarSectionIDs={collapsingSidebarSectionIDs}
                   threadsByProjectID={projectThreadsByProjectID}
                   activeThreadID={activeThreadID}
                   pendingThreadID={pendingThreadID}
                   archiveConfirmThreadID={archiveConfirmThreadID}
                   lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
+                  lastViewedMessageSeqByThreadID={state.lastViewedMessageSeqByThreadID}
                   scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
                   scratchPseudoActive={sidebarScratchPseudoActive}
                   onToggleSidebarSectionCollapsed={

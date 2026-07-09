@@ -16,6 +16,7 @@ import {
   appendTurnTokenSample,
   chatFocusValueForThread,
   chatMessagesFromTurns,
+  chatReaderCountForThread,
   composerDraftHasContent,
   conversationPaneThreadsByID,
   conversationSearchContextLabel,
@@ -29,8 +30,11 @@ import {
   initialState,
   isGroupThread,
   isScratchThread,
+  isThreadRunning,
   isThreadUnread,
   latestCompletedTurnID,
+  latestIncomingChatMessageSeq,
+  overlayMemberBusy,
   latestContextUsageForThread,
   mergeListedThreads,
   markThreadTurnsViewed,
@@ -241,6 +245,49 @@ describe("summarizeThreadsForSidebar", () => {
     expect(threadProjectPath(summary)).toBe("/repo/project");
     expect(threadBelongsToProject(summary, project)).toBe(true);
     expect(isScratchThread(summary, [project])).toBe(false);
+  });
+});
+
+describe("overlayMemberBusy", () => {
+  function groupSummary(
+    members: Array<{ id: string; busy?: boolean }>,
+  ): ReturnType<typeof summarizeThreadsForSidebar>[number] {
+    const [summary] = summarizeThreadsForSidebar([
+      {
+        ...threadWithUserTexts(["group hello"]),
+        group: true,
+        members: members.map((member) => ({
+          id: member.id,
+          name: member.id,
+          busy: member.busy,
+        })),
+      } as unknown as Thread,
+    ]);
+    return summary;
+  }
+
+  it("lights a member the live busy set says is running", () => {
+    const summary = groupSummary([{ id: "andy", busy: false }]);
+    const next = overlayMemberBusy(summary, new Set(["andy"]));
+    expect(next.members?.[0]?.busy).toBe(true);
+    expect(isThreadRunning(next)).toBe(true);
+  });
+
+  it("clears a stale busy=true once the member's turn settled", () => {
+    const summary = groupSummary([{ id: "andy", busy: true }]);
+    const next = overlayMemberBusy(summary, new Set());
+    expect(next.members?.[0]?.busy).toBe(false);
+    expect(isThreadRunning(next)).toBe(false);
+  });
+
+  it("returns the same reference when nothing changes", () => {
+    const summary = groupSummary([
+      { id: "andy", busy: true },
+      { id: "bob", busy: false },
+    ]);
+    expect(overlayMemberBusy(summary, new Set(["andy"]))).toBe(summary);
+    const memberless = groupSummary([]);
+    expect(overlayMemberBusy(memberless, new Set(["andy"]))).toBe(memberless);
   });
 });
 
@@ -1549,6 +1596,119 @@ describe("AppState unread tracking", () => {
       threads: [thread],
     };
     expect(markThreadTurnsViewed(state, "thread-1")).toBe(state);
+  });
+
+  function makeGroupThreadWithMessages(
+    threadID: string,
+    items: Array<{
+      type: "user_message" | "participant_message";
+      seq?: number;
+    }>,
+  ): Thread {
+    const base = makeThreadWithTurns(threadID, [
+      { id: "turn-1", status: "completed" },
+    ]);
+    return {
+      ...base,
+      group: true,
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full" as const,
+          status: "completed" as const,
+          items: items.map((item, index) => ({
+            id: `item-${index + 1}`,
+            type: item.type,
+            text: `message ${index + 1}`,
+            seq: item.seq,
+            ...(item.type === "participant_message"
+              ? { participant: { id: "andy", name: "Andy", kind: "agent" } }
+              : {}),
+          })),
+        },
+      ],
+    };
+  }
+
+  it("chat-style unread requires an actual incoming message, not a settled turn", () => {
+    // A group turn that completed WITHOUT any participant post (e.g. the
+    // model settled without using send_message) must not flag unread.
+    const silent = makeGroupThreadWithMessages("group-1", [
+      { type: "user_message", seq: 1 },
+    ]);
+    expect(isThreadUnread(silent, undefined)).toBe(false);
+
+    const spoke = makeGroupThreadWithMessages("group-2", [
+      { type: "user_message", seq: 1 },
+      { type: "participant_message", seq: 2 },
+    ]);
+    expect(isThreadUnread(spoke, undefined)).toBe(true);
+    expect(isThreadUnread(spoke, undefined, 2)).toBe(false);
+    expect(isThreadUnread(spoke, undefined, 1)).toBe(true);
+  });
+
+  it("chat-style unread flows through ThreadSummary.last_incoming_message_seq", () => {
+    const spoke = makeGroupThreadWithMessages("group-1", [
+      { type: "participant_message", seq: 5 },
+    ]);
+    const [summary] = summarizeThreadsForSidebar([spoke]);
+    expect(summary.last_incoming_message_seq).toBe(5);
+    expect(isThreadUnread(summary, undefined)).toBe(true);
+    expect(isThreadUnread(summary, undefined, 5)).toBe(false);
+  });
+
+  it("the user's own post never flags a chat thread unread", () => {
+    const thread = makeGroupThreadWithMessages("group-1", [
+      { type: "participant_message", seq: 3 },
+      { type: "user_message", seq: 4 },
+    ]);
+    // Viewed up to the agent's message (3); the trailing message is the
+    // user's own — nothing incoming is pending.
+    expect(isThreadUnread(thread, undefined, 3)).toBe(false);
+  });
+
+  it("markThreadTurnsViewed advances the chat message offset to the latest post", () => {
+    const thread = makeGroupThreadWithMessages("group-1", [
+      { type: "participant_message", seq: 3 },
+      { type: "user_message", seq: 4 },
+    ]);
+    const state = {
+      ...initialState,
+      thread,
+      threads: [thread],
+    };
+    const next = markThreadTurnsViewed(state, "group-1");
+    expect(next.lastViewedMessageSeqByThreadID["group-1"]).toBe(4);
+    expect(isThreadUnread(thread, undefined, 4)).toBe(false);
+  });
+
+  it("latestIncomingChatMessageSeq ignores unpersisted items without seq", () => {
+    const thread = makeGroupThreadWithMessages("group-1", [
+      { type: "participant_message", seq: 2 },
+      { type: "participant_message" },
+    ]);
+    expect(latestIncomingChatMessageSeq(thread)).toBe(2);
+  });
+});
+
+describe("chatReaderCountForThread", () => {
+  const member = (id: string) => ({ id, name: id, kind: "agent" });
+
+  it("uses the group's own member roster, not the global roster", () => {
+    const group = {
+      group: true,
+      members: [member("andy"), member("bob")],
+    };
+    expect(chatReaderCountForThread(group, 3)).toBe(2);
+  });
+
+  it("counts a DM as exactly one reader", () => {
+    expect(chatReaderCountForThread({ dm_participant_id: "andy" }, 3)).toBe(1);
+  });
+
+  it("falls back to the roster while a group's members snapshot is missing", () => {
+    expect(chatReaderCountForThread({ group: true }, 3)).toBe(3);
+    expect(chatReaderCountForThread(undefined, 3)).toBe(3);
   });
 });
 

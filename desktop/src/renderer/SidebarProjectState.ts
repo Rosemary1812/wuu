@@ -37,7 +37,6 @@ const SIDEBAR_SECTION_ORDER_KEY = "wuu.desktop.sidebarSectionOrder";
 export type SidebarProjectStateController = {
   collapsedSidebarSectionIDs: Set<string>;
   expandedSidebarSectionIDs: Set<string>;
-  collapsingSidebarSectionIDs: Set<string>;
   projectThreadsByProjectID: Record<string, Thread[]>;
   cachedScratchThreads: Thread[];
   sidebarSectionOrder: string[];
@@ -92,32 +91,33 @@ function initialCollapsedSidebarSectionIDs(): Set<string> {
 }
 
 function initialExpandedSidebarSectionIDs(): Set<string> {
-  return storedSidebarSectionIDSet(
+  const expanded = storedSidebarSectionIDSet(
     SIDEBAR_EXPANDED_SECTION_IDS_KEY,
     LEGACY_PROJECT_EXPANDED_IDS_KEY,
   );
+  // 对话 defaults to expanded. Older builds auto-expanded it whenever the
+  // no_project context was active without ever persisting that into the
+  // expanded set, so a stored state without an explicit collapse marker
+  // means "open". A user collapse writes the marker and wins from then on.
+  if (!initialCollapsedSidebarSectionIDs().has(SCRATCH_PSEUDO_PROJECT_ID)) {
+    expanded.add(SCRATCH_PSEUDO_PROJECT_ID);
+  }
+  return expanded;
 }
 
-export function activeSidebarSectionID(
-  activeContext: RuntimeContext | undefined,
-  activeProjectID: string | undefined,
-): string | undefined {
-  return activeContext?.kind === "no_project"
-    ? SCRATCH_PSEUDO_PROJECT_ID
-    : activeProjectID;
-}
-
+/**
+ * Session-tree (对话 / project) sections expand ONLY via their own header
+ * toggle: expanded ⇔ the id is in the persisted expanded set. Selecting a
+ * session, switching the active project/context, or opening a pinned
+ * session must never change any section's expand state — the sidebar's
+ * expand/collapse is purely manual (user mental model: clicking a session
+ * opens its tab; clicking a header toggles that header's section).
+ */
 export function sessionTreeSectionExpanded(
   sectionID: string,
-  activeSectionID: string | undefined,
   expandedSidebarSectionIDs: ReadonlySet<string>,
-  collapsedSidebarSectionIDs: ReadonlySet<string>,
 ): boolean {
-  return (
-    expandedSidebarSectionIDs.has(sectionID) ||
-    (sectionID === activeSectionID &&
-      !collapsedSidebarSectionIDs.has(sectionID))
-  );
+  return expandedSidebarSectionIDs.has(sectionID);
 }
 
 function removeMissingIDs(
@@ -167,21 +167,17 @@ export function useSidebarProjectState({
   activeContext,
   activeProjectID,
   setStatus,
-  collapseMs,
 }: {
   projects: DesktopProject[];
   threads: Thread[];
   activeContext?: RuntimeContext;
   activeProjectID?: string;
   setStatus: (status: string) => void;
-  collapseMs: number;
 }): SidebarProjectStateController {
   const [collapsedSidebarSectionIDs, setCollapsedSidebarSectionIDs] =
     useState<Set<string>>(initialCollapsedSidebarSectionIDs);
   const [expandedSidebarSectionIDs, setExpandedSidebarSectionIDs] =
     useState<Set<string>>(initialExpandedSidebarSectionIDs);
-  const [collapsingSidebarSectionIDs, setCollapsingSidebarSectionIDs] =
-    useState<Set<string>>(() => new Set());
   const [projectThreadsByProjectID, setProjectThreadsByProjectID] = useState<
     Record<string, Thread[]>
   >({});
@@ -195,7 +191,6 @@ export function useSidebarProjectState({
         [],
       ),
   );
-  const sidebarSectionCollapseTimersRef = useRef(new Map<string, number>());
   const loadingProjectThreadIDsRef = useRef(new Set<string>());
   const projectsByID = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
@@ -274,20 +269,7 @@ export function useSidebarProjectState({
       }
       return { ...current, [activeProjectID]: activeProjectThreads };
     });
-    if (!collapsedSidebarSectionIDs.has(activeProjectID)) {
-      setExpandedSidebarSectionIDs((current) =>
-        current.has(activeProjectID)
-          ? current
-          : new Set(current).add(activeProjectID),
-      );
-    }
-  }, [
-    activeContext?.kind,
-    activeProjectID,
-    collapsedSidebarSectionIDs,
-    projectsByID,
-    threads,
-  ]);
+  }, [activeContext?.kind, activeProjectID, projectsByID, threads]);
 
   useEffect(() => {
     if (activeContext?.kind !== "no_project") {
@@ -304,19 +286,8 @@ export function useSidebarProjectState({
   }, [activeContext?.kind, projects, threads]);
 
   useEffect(() => {
-    const activeSectionID = activeSidebarSectionID(
-      activeContext,
-      activeProjectID,
-    );
     for (const project of projects) {
-      if (
-        !sessionTreeSectionExpanded(
-          project.id,
-          activeSectionID,
-          expandedSidebarSectionIDs,
-          collapsedSidebarSectionIDs,
-        )
-      ) {
+      if (!sessionTreeSectionExpanded(project.id, expandedSidebarSectionIDs)) {
         continue;
       }
       if (project.id === activeProjectID) {
@@ -328,32 +299,11 @@ export function useSidebarProjectState({
       void loadProjectThreads(project);
     }
   }, [
-    activeContext,
     activeProjectID,
-    collapsedSidebarSectionIDs,
     expandedSidebarSectionIDs,
     projectThreadsByProjectID,
     projects,
   ]);
-
-  useEffect(
-    () => () => {
-      for (const timer of sidebarSectionCollapseTimersRef.current.values()) {
-        window.clearTimeout(timer);
-      }
-      sidebarSectionCollapseTimersRef.current.clear();
-    },
-    [],
-  );
-
-  function clearSidebarSectionCollapseTimer(sectionID: string): void {
-    const timer = sidebarSectionCollapseTimersRef.current.get(sectionID);
-    if (timer === undefined) {
-      return;
-    }
-    window.clearTimeout(timer);
-    sidebarSectionCollapseTimersRef.current.delete(sectionID);
-  }
 
   async function loadProjectThreads(project: DesktopProject): Promise<void> {
     if (loadingProjectThreadIDsRef.current.has(project.id)) {
@@ -420,9 +370,7 @@ export function useSidebarProjectState({
 
   function toggleSidebarSectionCollapsed(sectionID: string): void {
     // Pinned / Agents / 群聊 sections are pure manual sidebar sections:
-    // expanded ⇔ !collapsedSidebarSectionIDs.has(id). The 对话 / project
-    // tree sections below also account for the currently active sidebar
-    // section and keep the delayed body-collapse behavior.
+    // expanded ⇔ !collapsedSidebarSectionIDs.has(id).
     if (
       sectionID === SIDEBAR_SECTION_PINNED ||
       sectionID === SIDEBAR_SECTION_AGENTS ||
@@ -438,28 +386,15 @@ export function useSidebarProjectState({
       });
       return;
     }
-    const activeSectionID = activeSidebarSectionID(
-      activeContext,
-      activeProjectID,
+    // 对话 / project tree sections: expanded ⇔ the id is in the expanded
+    // set. The collapse motion lives inside SidebarSection (it keeps the
+    // body mounted while animating), so the state flip is immediate here.
+    const expanded = sessionTreeSectionExpanded(
+      sectionID,
+      expandedSidebarSectionIDs,
     );
-    const expanded =
-      sessionTreeSectionExpanded(
-        sectionID,
-        activeSectionID,
-        expandedSidebarSectionIDs,
-        collapsedSidebarSectionIDs,
-      ) || collapsingSidebarSectionIDs.has(sectionID);
-    if (!expanded || collapsingSidebarSectionIDs.has(sectionID)) {
-      clearSidebarSectionCollapseTimer(sectionID);
+    if (!expanded) {
       setCollapsedSidebarSectionIDs((current) => {
-        if (!current.has(sectionID)) {
-          return current;
-        }
-        const next = new Set(current);
-        next.delete(sectionID);
-        return next;
-      });
-      setCollapsingSidebarSectionIDs((current) => {
         if (!current.has(sectionID)) {
           return current;
         }
@@ -482,40 +417,22 @@ export function useSidebarProjectState({
       }
       return;
     }
-
-    setCollapsingSidebarSectionIDs((current) =>
+    setCollapsedSidebarSectionIDs((current) =>
       current.has(sectionID) ? current : new Set(current).add(sectionID),
     );
-    clearSidebarSectionCollapseTimer(sectionID);
-    const timer = window.setTimeout(() => {
-      sidebarSectionCollapseTimersRef.current.delete(sectionID);
-      setCollapsedSidebarSectionIDs((current) =>
-        current.has(sectionID) ? current : new Set(current).add(sectionID),
-      );
-      setExpandedSidebarSectionIDs((current) => {
-        if (!current.has(sectionID)) {
-          return current;
-        }
-        const next = new Set(current);
-        next.delete(sectionID);
-        return next;
-      });
-      setCollapsingSidebarSectionIDs((current) => {
-        if (!current.has(sectionID)) {
-          return current;
-        }
-        const next = new Set(current);
-        next.delete(sectionID);
-        return next;
-      });
-    }, collapseMs);
-    sidebarSectionCollapseTimersRef.current.set(sectionID, timer);
+    setExpandedSidebarSectionIDs((current) => {
+      if (!current.has(sectionID)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(sectionID);
+      return next;
+    });
   }
 
   return {
     collapsedSidebarSectionIDs,
     expandedSidebarSectionIDs,
-    collapsingSidebarSectionIDs,
     projectThreadsByProjectID,
     cachedScratchThreads,
     sidebarSectionOrder,

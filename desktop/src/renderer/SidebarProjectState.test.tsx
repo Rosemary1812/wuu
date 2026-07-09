@@ -85,7 +85,6 @@ async function renderSidebarProjectState({
       activeContext: nextProps.activeContext,
       activeProjectID: nextProps.activeProjectID,
       setStatus: vi.fn(),
-      collapseMs: 25,
     });
     return null;
   }

@@ -141,6 +141,7 @@ import {
   markThreadTurnsViewed,
   mentionedParticipantIDsFromText,
   notificationTargetsActiveThread,
+  overlayMemberBusy,
   persistActiveSessionTabDraft,
   pinnedThreadSummaries,
   queryTextForUserItem,
@@ -301,7 +302,6 @@ function initializedForSelectedPermissionMode(
   };
 }
 
-const SIDEBAR_SESSION_SECTION_COLLAPSE_MS = 190;
 const ENVIRONMENT_PANEL_MOTION_MS = 260;
 const ENVIRONMENT_PANEL_WIDTH_PX = 328;
 const ENVIRONMENT_PANEL_WIDTH_CSS = `${ENVIRONMENT_PANEL_WIDTH_PX}px`;
@@ -486,7 +486,6 @@ export function App(): JSX.Element {
   const {
     collapsedSidebarSectionIDs,
     expandedSidebarSectionIDs,
-    collapsingSidebarSectionIDs,
     projectThreadsByProjectID,
     cachedScratchThreads,
     sidebarSectionOrder,
@@ -504,7 +503,6 @@ export function App(): JSX.Element {
         ...current,
         status,
       })),
-    collapseMs: SIDEBAR_SESSION_SECTION_COLLAPSE_MS,
   });
   const [runtimeMenuOpen, setRuntimeMenuOpen] = useState(false);
   const [accessMenuOpen, setAccessMenuOpen] = useState(false);
@@ -1814,9 +1812,31 @@ export function App(): JSX.Element {
     }
     return next;
   }, [sidebarProjectThreadsByProjectID]);
+  // Aggregate participant IDs that are currently busy. Resident DM running
+  // state is the baseline; active chat read receipts add participants that
+  // are explicitly marked `seen: in_progress` for the visible message. Running
+  // child agents dispatched inside some thread still do NOT light their
+  // dispatcher's dot (ISSUE-12). See computeBusyParticipantIDs for the full
+  // rationale. Named participants not in the set render as online. This drives
+  // the sidebar roster, chat-style message avatars, and — via the
+  // overlayMemberBusy pass below — the group-thread rows' running spinner.
+  const busyParticipantIDs = useMemo(
+    () =>
+      computeBusyParticipantIDs({
+        threads: state.threads,
+        marks: activeThreadMarks,
+      }),
+    [activeThreadMarks, state.threads],
+  );
+  // Server-sent members[].busy is a pull-time snapshot that is never pushed
+  // on busy flips; rewrite it from the live busy set so group rows spin
+  // exactly while a member's turn is running (see overlayMemberBusy).
   const sidebarThreadSummaries = useMemo(
-    () => summarizeThreadsForSidebar(sidebarThreads),
-    [sidebarThreads],
+    () =>
+      summarizeThreadsForSidebar(sidebarThreads).map((thread) =>
+        overlayMemberBusy(thread, busyParticipantIDs),
+      ),
+    [busyParticipantIDs, sidebarThreads],
   );
   const sidebarPinnedThreads = useMemo(
     () => pinnedThreadSummaries(sidebarThreadSummaries),
@@ -1873,25 +1893,11 @@ export function App(): JSX.Element {
     }
     return Array.from(names);
   }, [state.thread, state.secondaryThread, state.threads]);
-  // Aggregate participant IDs that are currently busy. Resident DM running
-  // state is the baseline; active chat read receipts add participants that
-  // are explicitly marked `seen: in_progress` for the visible message. Running
-  // child agents dispatched inside some thread still do NOT light their
-  // dispatcher's dot (ISSUE-12). See computeBusyParticipantIDs for the full
-  // rationale. Named participants not in the set render as online. This drives
-  // the sidebar roster and chat-style message avatars.
-  const busyParticipantIDs = useMemo(
-    () =>
-      computeBusyParticipantIDs({
-        threads: state.threads,
-        marks: activeThreadMarks,
-      }),
-    [activeThreadMarks, state.threads],
-  );
   // Chat read receipts + reactions render participant ids; resolve them to
-  // names for the ring/chip hovers. chatReaderCount is the ring denominator —
-  // the named roster (exact for #all; a slight overestimate for sub-groups,
-  // whose ring may then not reach 100%). Both feed ChatThreadViewContainer.
+  // names for the ring/chip hovers. chatReaderCount is only the FALLBACK
+  // ring denominator (full named roster); the actual denominator is derived
+  // per thread via chatReaderCountForThread — a 2-member group reads x/2,
+  // a DM reads x/1 — so sub-group rings can reach 100%.
   const resolveParticipantName = useMemo(() => {
     const byID = new Map<string, string>();
     for (const participant of participants) {
@@ -1931,19 +1937,30 @@ export function App(): JSX.Element {
     }
     return map;
   }, [participants, state.threads]);
-  // Participants whose DM thread has a turn that the user has not yet
-  // seen. Mirrors the `.has-unread` treatment used by thread rows so the
-  // roster row gives the same visual cue without re-implementing the
-  // helper.
+  // Participants whose DM thread holds an actual chat message the user has
+  // not yet seen (message-seq based — a turn that settles without sending
+  // a message never flags the row). Mirrors the `.has-unread` treatment
+  // used by thread rows so the roster row gives the same visual cue
+  // without re-implementing the helper.
   const unreadDMParticipantIDs = useMemo(() => {
     const ids = new Set<string>();
     for (const [participantID, thread] of dmThreadByParticipantID) {
-      if (isThreadUnread(thread, state.lastViewedTurnByThreadID[thread.id])) {
+      if (
+        isThreadUnread(
+          thread,
+          state.lastViewedTurnByThreadID[thread.id],
+          state.lastViewedMessageSeqByThreadID[thread.id],
+        )
+      ) {
         ids.add(participantID);
       }
     }
     return ids;
-  }, [dmThreadByParticipantID, state.lastViewedTurnByThreadID]);
+  }, [
+    dmThreadByParticipantID,
+    state.lastViewedTurnByThreadID,
+    state.lastViewedMessageSeqByThreadID,
+  ]);
   const environmentPanelCanShow = Boolean(
     state.initialized &&
     !poppedOutMode &&
@@ -3552,7 +3569,6 @@ export function App(): JSX.Element {
             archiveConfirmThreadID={archiveConfirmThreadID}
             collapsedSidebarSectionIDs={collapsedSidebarSectionIDs}
             expandedSidebarSectionIDs={expandedSidebarSectionIDs}
-            collapsingSidebarSectionIDs={collapsingSidebarSectionIDs}
             projectThreadsByProjectID={sidebarThreadsByProjectID}
             projectMenuOpen={projectMenuOpen}
             projectMenuRef={projectMenuRef}
@@ -3676,6 +3692,7 @@ export function App(): JSX.Element {
             <ConversationTitleContent
               state={state}
               sessionTabsVisible={sessionTabsVisible}
+              busyParticipantIDs={busyParticipantIDs}
               pendingSwitchThreadID={visiblePendingThreadID}
               pendingComposerMessagesByThread={pendingComposerMessagesByThread}
               workspaceMode={workspaceMode}

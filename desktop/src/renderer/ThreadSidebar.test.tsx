@@ -273,9 +273,7 @@ describe("ProjectList", () => {
           projects={projects}
           activeID="project-1"
           pendingProjectID={undefined}
-          collapsedSidebarSectionIDs={new Set()}
-          expandedSidebarSectionIDs={new Set(["project-2"])}
-          collapsingSidebarSectionIDs={new Set()}
+          expandedSidebarSectionIDs={new Set(["project-1", "project-2"])}
           threadsByProjectID={{
             "project-1": summarizeThreadsForSidebar([
               makeProjectThread("thread-wuu", "/repo/wuu", "Wuu session"),
@@ -516,6 +514,55 @@ describe("ProjectList", () => {
     expect(dialogRule).toMatch(/transform-origin:\s*center;/);
   });
 
+  it("never auto-expands the active section — expansion is header-toggle only", () => {
+    // Mental model regression: selecting a session (which makes its project
+    // or the 对话 pseudo section "active") must not expand anything. Both
+    // sections here are active yet absent from the expanded set, so both
+    // render collapsed.
+    const projects = [
+      makeProject(SCRATCH_PSEUDO_PROJECT_ID, "对话", ""),
+      makeProject("project-1", "wuu", "/repo/wuu"),
+    ];
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <ProjectList
+          projects={projects}
+          activeID="project-1"
+          pendingProjectID={undefined}
+          expandedSidebarSectionIDs={new Set()}
+          threadsByProjectID={{
+            [SCRATCH_PSEUDO_PROJECT_ID]: summarizeThreadsForSidebar([
+              makeProjectThread("thread-scratch", "/tmp/scratch", "Scratch talk"),
+            ]),
+            "project-1": summarizeThreadsForSidebar([
+              makeProjectThread("thread-wuu", "/repo/wuu", "Wuu session"),
+            ]),
+          }}
+          activeThreadID="thread-wuu"
+          pendingThreadID={undefined}
+          archiveConfirmThreadID={undefined}
+          lastViewedTurnByThreadID={{}}
+          scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
+          scratchPseudoActive={true}
+          onToggleSidebarSectionCollapsed={() => {}}
+          onStartNewThread={() => {}}
+          onSelectThread={() => {}}
+          onToggleThreadPinned={() => {}}
+          onArchiveThread={() => {}}
+          onDeleteThread={() => {}}
+          onClearArchiveConfirm={() => {}}
+        />,
+      );
+    });
+
+    for (const row of Array.from(container.querySelectorAll(".project-row"))) {
+      expect(row.getAttribute("aria-expanded")).toBe("false");
+    }
+    expect(container.textContent).not.toContain("Wuu session");
+    expect(container.textContent).not.toContain("Scratch talk");
+  });
+
   it("keeps pinned sessions out of project lists", () => {
     const projects = [makeProject("project-1", "wuu", "/repo/wuu")];
     act(() => {
@@ -525,9 +572,7 @@ describe("ProjectList", () => {
           projects={projects}
           activeID="project-1"
           pendingProjectID={undefined}
-          collapsedSidebarSectionIDs={new Set()}
-          expandedSidebarSectionIDs={new Set()}
-          collapsingSidebarSectionIDs={new Set()}
+          expandedSidebarSectionIDs={new Set(["project-1"])}
           threadsByProjectID={{
             "project-1": summarizeThreadsForSidebar([
               makeProjectThread("thread-pinned", "/repo/wuu", "Pinned session", [], {
@@ -570,9 +615,7 @@ describe("ProjectList", () => {
           projects={projects}
           activeID="project-1"
           pendingProjectID={undefined}
-          collapsedSidebarSectionIDs={new Set([SCRATCH_PSEUDO_PROJECT_ID])}
-          expandedSidebarSectionIDs={new Set()}
-          collapsingSidebarSectionIDs={new Set()}
+          expandedSidebarSectionIDs={new Set(["project-1"])}
           threadsByProjectID={{
             [SCRATCH_PSEUDO_PROJECT_ID]: [],
             "project-1": summarizeThreadsForSidebar([
@@ -635,9 +678,7 @@ describe("ProjectList", () => {
           projects={projects}
           activeID={undefined}
           pendingProjectID={undefined}
-          collapsedSidebarSectionIDs={new Set()}
           expandedSidebarSectionIDs={new Set()}
-          collapsingSidebarSectionIDs={new Set()}
           threadsByProjectID={{
             "project-1": summarizeThreadsForSidebar([
               makeProjectThread("thread-unread", "/repo/wuu", "Unread session", [
@@ -693,9 +734,7 @@ describe("ProjectList", () => {
           projects={projects}
           activeID="project-1"
           pendingProjectID={undefined}
-          collapsedSidebarSectionIDs={new Set()}
-          expandedSidebarSectionIDs={new Set()}
-          collapsingSidebarSectionIDs={new Set()}
+          expandedSidebarSectionIDs={new Set(["project-1"])}
           threadsByProjectID={{
             "project-1": summarizeThreadsForSidebar([
               rootThread,
@@ -746,9 +785,7 @@ describe("ProjectGroup remove workspace", () => {
   const baseProps = {
     activeID: undefined,
     pendingProjectID: undefined,
-    collapsedSidebarSectionIDs: new Set<string>(),
     expandedSidebarSectionIDs: new Set<string>(),
-    collapsingSidebarSectionIDs: new Set<string>(),
     threadsByProjectID: {},
     activeThreadID: undefined,
     pendingThreadID: undefined,
@@ -856,9 +893,7 @@ describe("ProjectGroup missing workspace", () => {
   const baseProps = {
     activeID: undefined,
     pendingProjectID: undefined,
-    collapsedSidebarSectionIDs: new Set<string>(),
     expandedSidebarSectionIDs: new Set<string>(),
-    collapsingSidebarSectionIDs: new Set<string>(),
     threadsByProjectID: {},
     activeThreadID: undefined,
     pendingThreadID: undefined,

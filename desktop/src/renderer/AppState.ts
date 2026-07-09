@@ -152,11 +152,17 @@ type AppState = {
   turnStreamTransport: Record<string, string>;
   // lastViewedTurnByThreadID remembers the most recent turn that the user
   // has actually been on the thread for. It is the source of truth for the
-  // sidebar / session-tab "has-unread" indicator — a thread is unread when
-  // its latest completed turn ID is not in this map (or the entry is older).
-  // Active-tab tracking is what advances this map; running threads are never
-  // flagged unread because they have not finished yet.
+  // sidebar / session-tab "has-unread" indicator on work sessions — a thread
+  // is unread when its latest completed turn ID is not in this map (or the
+  // entry is older). Active-tab tracking is what advances this map; running
+  // threads are never flagged unread because they have not finished yet.
   lastViewedTurnByThreadID: Record<string, string>;
+  // lastViewedMessageSeqByThreadID is the chat-style counterpart: the
+  // highest actual chat-message seq the user has been on the thread for.
+  // DM/group unread compares the thread's latest message seq against this
+  // offset, so a turn that settles without sending a message never flags a
+  // chat thread unread. Advanced by the same active-tab tracking.
+  lastViewedMessageSeqByThreadID: Record<string, number>;
 };
 
 export type ThreadTurnSummary = Pick<
@@ -170,6 +176,12 @@ export type ThreadSummary = Omit<
 > & {
   turns: ThreadTurnSummary[];
   turn_count: number;
+  // Latest incoming chat-message seq (session_messages offset of the newest
+  // participant post) in the thread's main stream, computed from the full
+  // thread's items before they are stripped from the summary. Chat-style
+  // (DM/group) unread derives from this — turn settlement without a
+  // message, or the user's own posts, never flag unread there.
+  last_incoming_message_seq?: number;
 };
 
 type ThreadRunningCandidate = {
@@ -270,6 +282,7 @@ const initialState: AppState = {
   turnStreamStatus: {},
   turnStreamTransport: {},
   lastViewedTurnByThreadID: {},
+  lastViewedMessageSeqByThreadID: {},
 };
 
 function reduceServerEvent(state: AppState, event: ServerEvent): AppState {
@@ -1356,6 +1369,9 @@ function summarizeThreadForSidebar(thread: Thread): ThreadSummary {
     updated_at: thread.updated_at,
     turns: thread.turns.map(summarizeTurnForSidebar),
     turn_count: thread.turns.length,
+    last_incoming_message_seq: isChatStyleThread(thread)
+      ? latestIncomingChatMessageSeq(thread)
+      : undefined,
     child_agents: thread.child_agents?.map(summarizeAgentForSidebar),
   };
 }
@@ -1662,6 +1678,49 @@ export function isGroupThread(thread: { group?: boolean }): boolean {
 }
 
 /**
+ * Chat-style threads (DM + group) render as a message stream and follow
+ * chat semantics throughout: send is fire-and-forget, and unread means
+ * "there is an actual message you have not seen" (see isThreadUnread) —
+ * not "a turn settled". Matches App.tsx's activeThreadIsChatStyle.
+ */
+export function isChatStyleThread(thread: {
+  dm_participant_id?: string;
+  group?: boolean;
+}): boolean {
+  return isDMThread(thread) || isGroupThread(thread);
+}
+
+/**
+ * Read-receipt ring denominator for a chat-style thread: how many named
+ * readers CAN mark a message seen there. A group counts its own member
+ * roster (a 2-member group reads x/2, regardless of how many agents exist
+ * globally); a DM has exactly one reader. `rosterCount` (the full named
+ * roster) is only the fallback for group threads whose members snapshot
+ * has not arrived yet.
+ */
+export function chatReaderCountForThread(
+  thread:
+    | {
+        dm_participant_id?: string;
+        group?: boolean;
+        members?: ParticipantSummary[];
+      }
+    | undefined,
+  rosterCount: number,
+): number {
+  if (!thread) {
+    return rosterCount;
+  }
+  if (isDMThread(thread)) {
+    return 1;
+  }
+  if (isGroupThread(thread) && (thread.members?.length ?? 0) > 0) {
+    return thread.members?.length ?? rosterCount;
+  }
+  return rosterCount;
+}
+
+/**
  * Threads that belong to the global collaboration layer rather than to a
  * single project/workspace: DM conversations with a named participant and
  * chat-style group channels. Unlike project sessions these are homed off
@@ -1885,6 +1944,43 @@ export function computeBusyParticipantIDs(input: {
   return ids;
 }
 
+/**
+ * Overlay the live busy set onto a sidebar thread summary's group members.
+ *
+ * `Thread.members[].busy` is a pull-time overlay on the server: it is
+ * accurate at fetch time but the server pushes no thread/updated when a
+ * member's busy flips (busy is in-memory state, only re-read on the next
+ * snapshot). Left as-is, a group row's spinner freezes on whatever the last
+ * snapshot said — it misses a member that started running and, worse, keeps
+ * spinning after the turn ended.
+ *
+ * The roster dot already solves this with computeBusyParticipantIDs: the
+ * resident agent's DM thread is its brain, its turn lifecycle events are
+ * pushed globally, so that set tracks the actual turn (start → settle,
+ * output or not). Rewriting members[].busy from the same set keeps the
+ * group spinner and the roster dot on one source of truth, and because
+ * isThreadRunning already consults members[].busy, the spinner, sorting,
+ * and unread suppression all pick it up without further special-casing.
+ */
+export function overlayMemberBusy<
+  T extends { members?: ParticipantSummary[] },
+>(thread: T, busyParticipantIDs: ReadonlySet<string>): T {
+  const members = thread.members;
+  if (!members || members.length === 0) {
+    return thread;
+  }
+  let changed = false;
+  const next = members.map((member) => {
+    const busy = busyParticipantIDs.has(member.id);
+    if ((member.busy === true) === busy) {
+      return member;
+    }
+    changed = true;
+    return { ...member, busy };
+  });
+  return changed ? { ...thread, members: next } : thread;
+}
+
 export type ChatMessageRow =
   | { kind: "user"; id: string; turnID: string; item: ThreadItem }
   | { kind: "envelope"; id: string; turnID: string; items: ThreadItem[] }
@@ -1962,7 +2058,7 @@ export function applySubthreadUpdatedNotification(
  * divider rows and non-trigger mailbox records stay hidden.
  */
 export function chatMessagesFromTurns(
-  turns: ReadonlyArray<Pick<Turn, "id" | "items">>,
+  turns: ReadonlyArray<Pick<Turn, "id"> & Partial<Pick<Turn, "items">>>,
 ): ChatMessageRow[] {
   const rows: ChatMessageRow[] = [];
   for (const turn of turns) {
@@ -2006,6 +2102,73 @@ export function chatMessagesFromTurns(
     }
   }
   return rows;
+}
+
+function latestChatMessageSeqOfKinds(
+  turns: ReadonlyArray<Pick<Turn, "id"> & Partial<Pick<Turn, "items">>>,
+  kinds: ReadonlySet<ChatMessageRow["kind"]>,
+): number | undefined {
+  let latest: number | undefined;
+  for (const row of chatMessagesFromTurns(turns)) {
+    if (!kinds.has(row.kind)) {
+      continue;
+    }
+    const seq = "item" in row ? row.item.seq : undefined;
+    if (typeof seq === "number" && (latest === undefined || seq > latest)) {
+      latest = seq;
+    }
+  }
+  return latest;
+}
+
+/**
+ * Latest actual chat-message seq in a thread's main stream (user posts and
+ * participant send_message posts alike), or undefined when the thread has
+ * none. Envelope machinery, focus dividers, handoff notices, reasoning, and
+ * tool traffic never count — chatMessagesFromTurns already encodes that
+ * classification. This is the VIEWED offset: being on the thread advances
+ * the user's read position to it.
+ */
+export function latestChatMessageSeq(
+  thread: { turns?: Array<Pick<Turn, "id"> & Partial<Pick<Turn, "items">>> } | undefined,
+): number | undefined {
+  if (!thread) {
+    return undefined;
+  }
+  return latestChatMessageSeqOfKinds(
+    thread.turns ?? [],
+    new Set(["user", "participant"]),
+  );
+}
+
+/**
+ * Latest INCOMING chat-message seq — participant (send_message tool) posts
+ * only. This is the unread trigger: the user's own posts never flag their
+ * own thread unread, and a turn that settles without any participant post
+ * leaves the thread read.
+ *
+ * ThreadSummary strips turn items, so summaries carry the value in
+ * last_incoming_message_seq (filled by summarizeThreadForSidebar); that
+ * field wins when present so both shapes flow through the same check.
+ */
+export function latestIncomingChatMessageSeq(
+  thread:
+    | {
+        last_incoming_message_seq?: number;
+        turns?: Array<Pick<Turn, "id"> & Partial<Pick<Turn, "items">>>;
+      }
+    | undefined,
+): number | undefined {
+  if (!thread) {
+    return undefined;
+  }
+  if (typeof thread.last_incoming_message_seq === "number") {
+    return thread.last_incoming_message_seq;
+  }
+  return latestChatMessageSeqOfKinds(
+    thread.turns ?? [],
+    new Set(["participant"]),
+  );
 }
 
 /**
@@ -2770,16 +2933,42 @@ function latestCompletedTurnID(thread: {
   return undefined;
 }
 
+/**
+ * Whether a thread should carry the unread dot. Two regimes, matching the
+ * user mental model:
+ *
+ *   - Chat-style (DM / group): unread ⇔ the thread holds an actual chat
+ *     message (user post or send_message tool post, i.e. something with a
+ *     session_messages seq) newer than the last one the user was on the
+ *     thread for. A turn that settles WITHOUT sending a message — however
+ *     it ended — never lights the dot.
+ *   - Work sessions (project / 对话): unread ⇔ the latest completed turn
+ *     (final text produced or the turn otherwise ended) is not the one the
+ *     user last viewed.
+ *
+ * Running threads are never unread — the spinner owns that state until the
+ * turn settles.
+ */
 function isThreadUnread(
   thread:
     | (ThreadRunningCandidate & {
-        turns: Array<Pick<Turn, "id" | "status">>;
+        turns: Array<Pick<Turn, "id" | "status"> & Partial<Pick<Turn, "items">>>;
+        dm_participant_id?: string;
+        group?: boolean;
+        last_incoming_message_seq?: number;
       })
     | undefined,
   lastViewedTurnID: string | undefined,
+  lastViewedMessageSeq?: number,
 ): boolean {
   if (!thread) return false;
   if (isThreadRunning(thread)) return false;
+  if (isChatStyleThread(thread)) {
+    const latestSeq = latestIncomingChatMessageSeq(thread);
+    if (latestSeq === undefined) return false;
+    if (lastViewedMessageSeq === undefined) return true;
+    return latestSeq > lastViewedMessageSeq;
+  }
   const lastTurnID = latestCompletedTurnID(thread);
   if (!lastTurnID) return false;
   if (!lastViewedTurnID) return true;
@@ -2792,16 +2981,33 @@ function markThreadTurnsViewed(
 ): AppState {
   const thread = threadForTab(state, threadID);
   if (!thread) return state;
+  let next = state;
   const lastTurnID = latestCompletedTurnID(thread);
-  if (!lastTurnID) return state;
-  if (state.lastViewedTurnByThreadID[threadID] === lastTurnID) return state;
-  return {
-    ...state,
-    lastViewedTurnByThreadID: {
-      ...state.lastViewedTurnByThreadID,
-      [threadID]: lastTurnID,
-    },
-  };
+  if (lastTurnID && next.lastViewedTurnByThreadID[threadID] !== lastTurnID) {
+    next = {
+      ...next,
+      lastViewedTurnByThreadID: {
+        ...next.lastViewedTurnByThreadID,
+        [threadID]: lastTurnID,
+      },
+    };
+  }
+  const latestSeq = isChatStyleThread(thread)
+    ? latestChatMessageSeq(thread)
+    : undefined;
+  if (
+    latestSeq !== undefined &&
+    next.lastViewedMessageSeqByThreadID[threadID] !== latestSeq
+  ) {
+    next = {
+      ...next,
+      lastViewedMessageSeqByThreadID: {
+        ...next.lastViewedMessageSeqByThreadID,
+        [threadID]: latestSeq,
+      },
+    };
+  }
+  return next;
 }
 
 function activeTurnIDForThread(thread: Thread | undefined): string | undefined {

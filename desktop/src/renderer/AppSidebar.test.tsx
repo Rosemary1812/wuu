@@ -139,7 +139,6 @@ function renderSidebar({
         archiveConfirmThreadID={undefined}
         collapsedSidebarSectionIDs={new Set()}
         expandedSidebarSectionIDs={new Set()}
-        collapsingSidebarSectionIDs={new Set()}
         projectThreadsByProjectID={{}}
         projectMenuOpen={projectMenuOpen}
         projectMenuRef={createRef<HTMLDivElement>()}

@@ -23,6 +23,7 @@ import type {
   ThreadItem,
 } from "../shared/protocol";
 import {
+  chatReaderCountForThread,
   emptyComposerDraft,
   queryTextsForThread,
   turnStreamStatusForThread,
@@ -358,6 +359,10 @@ export function ConversationSplitLayoutRenderer({
 export type ConversationTitleContentProps = {
   state: AppState;
   sessionTabsVisible: boolean;
+  // Live busy set (computeBusyParticipantIDs) forwarded to the tab strip so
+  // group-thread tabs spin off the member's actual turn lifecycle instead of
+  // the server's stale members[].busy snapshot.
+  busyParticipantIDs?: ReadonlySet<string>;
   pendingSwitchThreadID?: string;
   pendingComposerMessagesByThread: PendingComposerMessagesByThread;
   workspaceMode?: WorkspacePanelView;
@@ -373,6 +378,7 @@ export type ConversationTitleContentProps = {
 export function ConversationTitleContent({
   state,
   sessionTabsVisible,
+  busyParticipantIDs,
   pendingSwitchThreadID,
   pendingComposerMessagesByThread,
   workspaceMode,
@@ -388,6 +394,7 @@ export function ConversationTitleContent({
     return (
       <SessionTabStrip
         state={state}
+        busyParticipantIDs={busyParticipantIDs}
         pendingSwitchThreadID={pendingSwitchThreadID}
         pendingComposerMessagesByThread={pendingComposerMessagesByThread}
         canStartNewThread={Boolean(state.activeContext)}
@@ -796,7 +803,19 @@ export function ConversationSidePanels({
           }
           resolveParticipantName={resolveParticipantName}
           busyParticipantIDs={busyParticipantIDs}
-          readerCount={chatReaderCount}
+          readerCount={
+            // A weak-isolation reply subthread routes only to its
+            // participant subset, so that subset is the ring denominator.
+            // Otherwise fall back to the parent thread's own reader count
+            // (group members / DM peer), then the full roster.
+            openSubthreadPanel.subthread?.participants?.length ||
+            chatReaderCountForThread(
+              activeThread?.id === openSubthreadPanel.threadID
+                ? activeThread
+                : undefined,
+              chatReaderCount,
+            )
+          }
         />
       ) : null}
       {openSubthreadPanel ? (

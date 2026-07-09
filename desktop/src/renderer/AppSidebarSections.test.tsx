@@ -173,7 +173,6 @@ function renderSidebar(options: RenderOptions): void {
         archiveConfirmThreadID={archiveConfirmThreadID}
         collapsedSidebarSectionIDs={collapsedSidebarSectionIDs}
         expandedSidebarSectionIDs={new Set()}
-        collapsingSidebarSectionIDs={new Set()}
         projectThreadsByProjectID={{}}
         projectMenuRef={createRef<HTMLDivElement>()}
         projectMenuOpen={false}
@@ -938,7 +937,6 @@ describe("AppSidebar drag-to-reorder wiring (T7)", () => {
             archiveConfirmThreadID: undefined,
             collapsedSidebarSectionIDs: new Set(),
             expandedSidebarSectionIDs: new Set(),
-            collapsingSidebarSectionIDs: new Set(),
             projectThreadsByProjectID: {},
             projectMenuRef: createRef<HTMLDivElement>(),
             projectMenuOpen: false,

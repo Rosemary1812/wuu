@@ -20,6 +20,7 @@ import { type CSSProperties, type MouseEvent as ReactMouseEvent, useState } from
 import {
   isThreadRunning,
   isThreadUnread,
+  overlayMemberBusy,
   sessionTabLabel,
   threadForTab,
   type AppState,
@@ -36,6 +37,7 @@ const POP_OUT_DRAG_DISTANCE_PX = 54;
 
 export function SessionTabStrip({
   state,
+  busyParticipantIDs,
   pendingSwitchThreadID,
   pendingComposerMessagesByThread,
   canStartNewThread,
@@ -47,6 +49,13 @@ export function SessionTabStrip({
   onReorder,
 }: {
   state: AppState;
+  // Live busy set from computeBusyParticipantIDs. Server-sent
+  // members[].busy is a pull-time snapshot that is never pushed on busy
+  // flips, so group-thread tabs overlay it with this set — the same
+  // source the sidebar rows and roster dots use — to keep the tab
+  // spinner bound to the member's actual turn lifecycle. Optional so
+  // test harnesses can omit it.
+  busyParticipantIDs?: ReadonlySet<string>;
   pendingSwitchThreadID?: string;
   pendingComposerMessagesByThread: PendingComposerMessagesByThread;
   canStartNewThread: boolean;
@@ -68,6 +77,14 @@ export function SessionTabStrip({
   const draggingTab = draggingTabID
     ? state.sessionTabs.find((tab) => tab.id === draggingTabID)
     : undefined;
+
+  function liveThreadForTab(threadID: string) {
+    const thread = threadForTab(state, threadID);
+    if (!thread || !busyParticipantIDs) {
+      return thread;
+    }
+    return overlayMemberBusy(thread, busyParticipantIDs);
+  }
 
   function startDrag(event: DragStartEvent): void {
     setDraggingTabID(String(event.active.id));
@@ -110,7 +127,7 @@ export function SessionTabStrip({
   for (const tab of state.sessionTabs) {
     if (
       tab.kind === "thread" &&
-      isThreadRunning(threadForTab(state, tab.threadID))
+      isThreadRunning(liveThreadForTab(tab.threadID))
     ) {
       runningTabIDs.add(tab.id);
     }
@@ -135,7 +152,7 @@ export function SessionTabStrip({
                 const active = tab.id === state.activeSessionTabID;
                 const tabThread =
                   tab.kind === "thread"
-                    ? threadForTab(state, tab.threadID)
+                    ? liveThreadForTab(tab.threadID)
                     : undefined;
                 const running = isThreadRunning(tabThread);
                 const pendingSwitch =
@@ -158,6 +175,9 @@ export function SessionTabStrip({
                   isThreadUnread(
                     tabThread,
                     tabThread ? state.lastViewedTurnByThreadID[tabThread.id] : undefined,
+                    tabThread
+                      ? state.lastViewedMessageSeqByThreadID[tabThread.id]
+                      : undefined,
                   );
                 const label = sessionTabLabel(tab, state);
                 const closeLabel =
@@ -210,16 +230,17 @@ export function SessionTabStrip({
                 }
                 running={
                   draggingTab.kind === "thread"
-                    ? isThreadRunning(threadForTab(state, draggingTab.threadID))
+                    ? isThreadRunning(liveThreadForTab(draggingTab.threadID))
                     : false
                 }
                 unread={
                   draggingTab.id !== state.activeSessionTabID &&
                   draggingTab.kind === "thread" &&
-                  !isThreadRunning(threadForTab(state, draggingTab.threadID)) &&
+                  !isThreadRunning(liveThreadForTab(draggingTab.threadID)) &&
                   isThreadUnread(
-                    threadForTab(state, draggingTab.threadID),
+                    liveThreadForTab(draggingTab.threadID),
                     state.lastViewedTurnByThreadID[draggingTab.threadID],
+                    state.lastViewedMessageSeqByThreadID[draggingTab.threadID],
                   )
                 }
                 width={draggingTabWidth}

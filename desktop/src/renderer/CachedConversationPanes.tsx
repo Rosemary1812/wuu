@@ -9,6 +9,7 @@ import type {
   ThreadItem,
 } from "../shared/protocol";
 import {
+  chatReaderCountForThread,
   isDMThread,
   isGroupThread,
   type TurnStreamStatus,
@@ -180,7 +181,7 @@ export const CachedConversationPanes = memo(function CachedConversationPanes({
                   marks={isActive ? activeThreadMarks : undefined}
                   busyParticipantIDs={busyParticipantIDs}
                   resolveParticipantName={resolveParticipantName}
-                  readerCount={chatReaderCount}
+                  readerCount={chatReaderCountForThread(thread, chatReaderCount)}
                   subthreadsByAnchor={
                     threadID === subthreadsThreadID
                       ? subthreadsByAnchor
