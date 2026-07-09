@@ -65,8 +65,6 @@ import type {
 } from "../shared/protocol";
 import {
   awaitComposerImages,
-  composerFileFromFile,
-  composerImagePlaceholder,
   createComposerMessage,
   createOptimisticCompactTurn,
   createOptimisticTurn,
@@ -75,10 +73,7 @@ import {
   failOptimisticCompactTurn,
   inputFilesFromComposer,
   inputImagesFromComposer,
-  isComposerImageFile,
-  isPDFFile,
   replaceOptimisticTurn,
-  revokeComposerImagePreview,
   type ComposerFile,
   type ComposerImage,
   type QueuedComposerMessage,
@@ -331,6 +326,7 @@ import type { WorkspaceViewTab } from "./WorkspaceViewTabs";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 import { ImagePreviewProvider } from "./ImagePreview";
 import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
+import { useComposerDraftState } from "./ComposerDraftState";
 
 function permissionSummaryForMode(mode: PermissionMode): PermissionSummary {
   return { mode };
@@ -624,24 +620,45 @@ export function App(): JSX.Element {
   const [popOutInit] = useState<PopOutInitResult | null>(() => readPopOutInit());
   const poppedOutMode = Boolean(popOutInit?.kind && popOutInit.context);
   const [state, setState] = useState<AppState>(initialState);
-  const [prompt, setPrompt] = useState("");
   // Bumped each time the empty-state hint chip should refocus the hero
   // composer. A counter (not a boolean) so re-clicking the same chip
   // still fires the focus effect on the next render.
   const [heroComposerFocusTick, setHeroComposerFocusTick] = useState(0);
-  const [composerImages, setComposerImages] = useState<ComposerImage[]>([]);
-  const [composerFiles, setComposerFiles] = useState<ComposerFile[]>([]);
   const [goalSummary, setGoalSummary] = useState<ComposerGoalSummary | null>(
     null
   );
-  const [splitComposerDrafts, setSplitComposerDrafts] = useState<
-    Record<ConversationPaneID, ComposerDraftState>
-  >(initialSplitComposerDrafts);
-  // The split reply panel reuses the main conversation's full composer, so it
-  // needs its own draft — bound to the shared dock `prompt` it would collide
-  // with the dock composer as the user types in the panel.
-  const [subthreadComposerDraft, setSubthreadComposerDraft] =
-    useState<ComposerDraftState>(emptyComposerDraft);
+  const {
+    prompt,
+    setPrompt,
+    composerImages,
+    setComposerImages,
+    composerFiles,
+    setComposerFiles,
+    splitComposerDrafts,
+    setSplitComposerDrafts,
+    subthreadComposerDraft,
+    setSubthreadComposerDraft,
+    attachComposerAttachmentFiles,
+    removeComposerImage,
+    removeComposerFile,
+    attachSubthreadComposerAttachmentFiles,
+    removeSubthreadComposerImage,
+    removeSubthreadComposerFile,
+    updateSplitComposerDraft,
+    setSplitComposerPrompt,
+    attachSplitComposerAttachmentFiles,
+    removeSplitComposerImage,
+    removeSplitComposerFile,
+    moveSplitDraftToGlobalComposer,
+    currentPrimaryComposerDraft,
+    restorePrimaryComposerDraft,
+  } = useComposerDraftState({
+    setStatus: (status) =>
+      setState((current) => ({
+        ...current,
+        status,
+      })),
+  });
   const [historyMessageEdit, setHistoryMessageEdit] =
     useState<HistoryMessageEditState | undefined>(undefined);
   const [, setQueuedMessageEditTarget] =
@@ -3049,252 +3066,6 @@ export function App(): JSX.Element {
       running: false,
       status: "ready",
     }));
-  }
-
-  // Encode each image attachment in parallel and stream both the
-  // optimistic placeholder and its resolved encoded payload back to the
-  // caller. The split into two callbacks is what makes the strip show the
-  // image the instant the user pastes: the placeholder fires synchronously
-  // with the raw File's blob URL, and the encoded callback replaces the
-  // placeholder in place once `normalizeImageFileForPrompt` finishes. PDF
-  // attachments stay synchronous (no useful preview, fast encode).
-  //
-  // Callers should *not* await this promise to drive a "load indicator"
-  // — they only await it so any error from the encode can still surface in
-  // the existing status/error paths. The visible feedback lives in the
-  // `onImagePlaceholder` callback landing immediately on the first image.
-  async function buildComposerAttachments(
-    files: File[],
-    onImagePlaceholder: (placeholder: ComposerImage) => void,
-    onImageEncoded: (encoded: ComposerImage) => void,
-    onFile: (file: ComposerFile) => void,
-  ): Promise<void> {
-    const imageFiles = files.filter(isComposerImageFile);
-    const pdfFiles = files.filter(isPDFFile);
-    await Promise.all([
-      ...imageFiles.map(async (file) => {
-        const placeholder = composerImagePlaceholder(file);
-        onImagePlaceholder(placeholder);
-        const encoded = await placeholder.encodePromise;
-        if (encoded) {
-          onImageEncoded(encoded);
-        }
-      }),
-      ...pdfFiles.map(async (file) => {
-        const pdf = await composerFileFromFile(file);
-        onFile(pdf);
-      }),
-    ]);
-  }
-
-  async function attachComposerAttachmentFiles(files: File[]): Promise<void> {
-    if (files.length === 0) {
-      return;
-    }
-    const imageFiles = files.filter(isComposerImageFile);
-    const pdfFiles = files.filter(isPDFFile);
-    if (imageFiles.length === 0 && pdfFiles.length === 0) {
-      setState((current) => ({
-        ...current,
-        status: "仅支持图片和 PDF",
-      }));
-      return;
-    }
-    try {
-      await buildComposerAttachments(
-        files,
-        // Synchronous: drop the placeholder into state so the attachment
-        // strip renders the raw file as a preview the moment paste lands,
-        // instead of waiting for the image encode + base64 conversion to
-        // finish in the background.
-        (placeholder) => setComposerImages((current) => [...current, placeholder]),
-        // Fires later (per image, in parallel): replace the placeholder in
-        // place by id. Same `id` is preserved by composerImagePlaceholder
-        // so the swap is invisible to React's keying.
-        (encoded) =>
-          setComposerImages((current) =>
-            current.map((existing) => (existing.id === encoded.id ? encoded : existing)),
-          ),
-        (file) => setComposerFiles((current) => [...current, file]),
-      );
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "附件添加失败",
-      }));
-    }
-  }
-
-  function removeComposerImage(id: string): void {
-    setComposerImages((current) => {
-      const removed = current.find((image) => image.id === id);
-      // Free the blob URL for any optimistic placeholder we're dropping.
-      // Encoded entries have no previewSrc and the helper is a no-op for
-      // them.
-      revokeComposerImagePreview(removed);
-      return current.filter((image) => image.id !== id);
-    });
-  }
-
-  function removeComposerFile(id: string): void {
-    setComposerFiles((current) => current.filter((file) => file.id !== id));
-  }
-
-  // Attach/remove helpers for the split reply panel's reused composer. They
-  // mirror the dock composer's attach flow (optimistic placeholder → encoded
-  // swap by id) but target the dedicated subthread draft.
-  async function attachSubthreadComposerAttachmentFiles(
-    files: File[],
-  ): Promise<void> {
-    if (files.length === 0) {
-      return;
-    }
-    const imageFiles = files.filter(isComposerImageFile);
-    const pdfFiles = files.filter(isPDFFile);
-    if (imageFiles.length === 0 && pdfFiles.length === 0) {
-      setState((current) => ({ ...current, status: "仅支持图片和 PDF" }));
-      return;
-    }
-    try {
-      await buildComposerAttachments(
-        files,
-        (placeholder) =>
-          setSubthreadComposerDraft((draft) => ({
-            ...draft,
-            images: [...draft.images, placeholder],
-          })),
-        (encoded) =>
-          setSubthreadComposerDraft((draft) => ({
-            ...draft,
-            images: draft.images.map((existing) =>
-              existing.id === encoded.id ? encoded : existing,
-            ),
-          })),
-        (file) =>
-          setSubthreadComposerDraft((draft) => ({
-            ...draft,
-            files: [...draft.files, file],
-          })),
-      );
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "附件添加失败",
-      }));
-    }
-  }
-
-  function removeSubthreadComposerImage(id: string): void {
-    setSubthreadComposerDraft((draft) => {
-      const removed = draft.images.find((image) => image.id === id);
-      revokeComposerImagePreview(removed);
-      return { ...draft, images: draft.images.filter((image) => image.id !== id) };
-    });
-  }
-
-  function removeSubthreadComposerFile(id: string): void {
-    setSubthreadComposerDraft((draft) => ({
-      ...draft,
-      files: draft.files.filter((file) => file.id !== id),
-    }));
-  }
-
-  function updateSplitComposerDraft(
-    pane: ConversationPaneID,
-    update: (draft: ComposerDraftState) => ComposerDraftState,
-  ): void {
-    setSplitComposerDrafts((current) => {
-      const draft = current[pane] ?? emptyComposerDraft();
-      return {
-        ...current,
-        [pane]: update(draft),
-      };
-    });
-  }
-
-  function setSplitComposerPrompt(
-    pane: ConversationPaneID,
-    value: string,
-  ): void {
-    updateSplitComposerDraft(pane, (draft) => ({ ...draft, prompt: value }));
-  }
-
-  async function attachSplitComposerAttachmentFiles(
-    pane: ConversationPaneID,
-    files: File[],
-  ): Promise<void> {
-    if (files.length === 0) {
-      return;
-    }
-    const imageFiles = files.filter(isComposerImageFile);
-    const pdfFiles = files.filter(isPDFFile);
-    if (imageFiles.length === 0 && pdfFiles.length === 0) {
-      setState((current) => ({
-        ...current,
-        status: "仅支持图片和 PDF",
-      }));
-      return;
-    }
-    try {
-      await buildComposerAttachments(
-        files,
-        (placeholder) =>
-          updateSplitComposerDraft(pane, (draft) => ({
-            ...draft,
-            images: [...draft.images, placeholder],
-          })),
-        // Replace the placeholder by id once the encode resolves so the
-        // strip transitions from the raw file preview to the encoded data:
-        // URL without disturbing ordering.
-        (encoded) =>
-          updateSplitComposerDraft(pane, (draft) => ({
-            ...draft,
-            images: draft.images.map((existing) =>
-              existing.id === encoded.id ? encoded : existing,
-            ),
-          })),
-        (file) =>
-          updateSplitComposerDraft(pane, (draft) => ({
-            ...draft,
-            files: [...draft.files, file],
-          })),
-      );
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "附件添加失败",
-      }));
-    }
-  }
-
-  function removeSplitComposerImage(
-    pane: ConversationPaneID,
-    id: string,
-  ): void {
-    updateSplitComposerDraft(pane, (draft) => {
-      const removed = draft.images.find((image) => image.id === id);
-      // Release the blob URL of any optimistic placeholder being dropped.
-      revokeComposerImagePreview(removed);
-      return {
-        ...draft,
-        images: draft.images.filter((image) => image.id !== id),
-      };
-    });
-  }
-
-  function removeSplitComposerFile(pane: ConversationPaneID, id: string): void {
-    updateSplitComposerDraft(pane, (draft) => ({
-      ...draft,
-      files: draft.files.filter((file) => file.id !== id),
-    }));
-  }
-
-  function moveSplitDraftToGlobalComposer(pane: ConversationPaneID): void {
-    const draft = splitComposerDrafts[pane] ?? emptyComposerDraft();
-    setPrompt(draft.prompt);
-    setComposerImages(draft.images.map((image) => ({ ...image })));
-    setComposerFiles(draft.files.map((file) => ({ ...file })));
-    setSplitComposerDrafts(initialSplitComposerDrafts());
   }
 
   function setPendingComposerMessagesByThreadNow(
@@ -5705,20 +5476,6 @@ export function App(): JSX.Element {
     ) {
       environmentToggleRef.current?.focus({ preventScroll: true });
     }
-  }
-
-  function currentPrimaryComposerDraft(): ComposerDraftState {
-    return {
-      prompt,
-      images: composerImages.map((image) => ({ ...image })),
-      files: composerFiles.map((file) => ({ ...file })),
-    };
-  }
-
-  function restorePrimaryComposerDraft(draft: ComposerDraftState): void {
-    setPrompt(draft.prompt);
-    setComposerImages(draft.images.map((image) => ({ ...image })));
-    setComposerFiles(draft.files.map((file) => ({ ...file })));
   }
 
   function threadHasPendingComposerMessages(threadID: string): boolean {
