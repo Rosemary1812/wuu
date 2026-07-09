@@ -48,7 +48,6 @@ import type {
   InputImage,
   MessageMarkWire,
   ParticipantProfile,
-  ParticipantSaveParams,
   PlanUpdate,
   PopOutInitResult,
   ProjectListResult,
@@ -118,6 +117,7 @@ import { CodexPetLayer } from "./CodexPetLayer";
 import { useThreadMarkList } from "./useThreadMarks";
 import { ConversationSubthreadPanel } from "./ConversationSubthreadPanel";
 import { ParticipantProfilePanel } from "./ParticipantProfilePanel";
+import { useParticipantState } from "./ParticipantState";
 import { ConversationForkDialog, type ForkMode } from "./ConversationForkDialog";
 import { ForkWorktreeNotice } from "./ForkWorktreeNotice";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
@@ -419,78 +419,6 @@ type HistoryMessageEditState = {
   submitting: boolean;
 };
 
-type ParticipantPanelState = {
-  mode: "new" | "edit";
-  participant?: ParticipantProfile;
-  // initialName seeds the form's name field when the panel opens in
-  // "new" mode. The Agents sidebar's + button first asks for a name via
-  // SidebarNameDialog, then transitions here with the chosen name so the
-  // user doesn't have to retype it before continuing into the profile
-  // editor (matches the rename-conversation / new-group dialog pattern).
-  initialName?: string;
-  loading?: boolean;
-  error?: string;
-  saving?: boolean;
-  feedbackSubmitting?: boolean;
-  // feedbackReply mirrors the memory manager agent's reply_md for the last
-  // feedback submission (memory/chat, participant scope).
-  feedbackReply?: string;
-  retiring?: boolean;
-  // archived marks a successful archive; the panel shows the "已归档"
-  // receipt until the scheduled close below clears it.
-  archived?: boolean;
-};
-
-// How long the "已归档" receipt stays visible before the panel closes.
-const PARTICIPANT_ARCHIVED_NOTICE_MS = 1_500;
-
-type ParticipantTeamTemplate = {
-  version: 1;
-  participants: ParticipantSaveParams[];
-};
-
-function replaceParticipantProfile(
-  participants: ParticipantProfile[],
-  participant: ParticipantProfile,
-): ParticipantProfile[] {
-  const index = participants.findIndex((item) => item.id === participant.id);
-  if (index === -1) {
-    return [...participants, participant].sort((a, b) =>
-      a.name.localeCompare(b.name),
-    );
-  }
-  const next = [...participants];
-  next[index] = participant;
-  return next;
-}
-
-function participantTemplateEntries(value: unknown): ParticipantSaveParams[] {
-  if (!value || typeof value !== "object" || !("participants" in value)) {
-    throw new Error("template is missing participants");
-  }
-  const participantsValue = (value as { participants?: unknown }).participants;
-  if (!Array.isArray(participantsValue)) {
-    throw new Error("template participants must be an array");
-  }
-  return participantsValue.map((entry) => {
-    if (!entry || typeof entry !== "object") {
-      throw new Error("template participant must be an object");
-    }
-    const record = entry as Record<string, unknown>;
-    const name = typeof record.name === "string" ? record.name.trim() : "";
-    if (name === "") {
-      throw new Error("template participant name is required");
-    }
-    return {
-      name,
-      role: typeof record.role === "string" ? record.role : undefined,
-      tagline: typeof record.tagline === "string" ? record.tagline : undefined,
-      model: typeof record.model === "string" ? record.model : undefined,
-      memory: typeof record.memory === "string" ? record.memory : undefined,
-    };
-  });
-}
-
 function serverEventCarriesModelOutputDelta(event: ServerEvent): boolean {
   if (event.kind !== "notification") {
     return false;
@@ -741,10 +669,27 @@ export function App(): JSX.Element {
   // reloads on this tick (its thread may not be the active thread, so the
   // chatSubthreadsNonce path alone would miss it).
   const [boardRefreshTick, setBoardRefreshTick] = useState(0);
-  const [participants, setParticipants] = useState<ParticipantProfile[]>([]);
-  const [participantPanel, setParticipantPanel] = useState<
-    ParticipantPanelState | undefined
-  >(undefined);
+  const {
+    participants,
+    setParticipants,
+    participantPanel,
+    setParticipantPanel,
+    refreshParticipants,
+    openParticipantProfile: openParticipantProfilePanel,
+    handleNewParticipantCreate,
+    handleParticipantSave,
+    handleParticipantFeedback,
+    handleParticipantRetire,
+    exportParticipantTemplate,
+    importParticipantTemplate,
+  } = useParticipantState({
+    initialized: Boolean(state.initialized),
+    setStatus: (status) =>
+      setState((current) => ({
+        ...current,
+        status,
+      })),
+  });
   const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<
     string | undefined
   >(undefined);
@@ -1158,27 +1103,6 @@ export function App(): JSX.Element {
   const activeContextKey = state.activeContext
     ? runtimeContextKey(state.activeContext)
     : "";
-  const refreshParticipants = useStableCallback(async (): Promise<
-    ParticipantProfile[]
-  > => {
-    if (!appStateRef.current.initialized) {
-      setParticipants([]);
-      return [];
-    }
-    const result = await window.wuu.listParticipants();
-    const nextParticipants = result.participants ?? [];
-    setParticipants(nextParticipants);
-    setParticipantPanel((current) => {
-      if (!current?.participant?.id) {
-        return current;
-      }
-      const fresh = nextParticipants.find(
-        (participant) => participant.id === current.participant?.id,
-      );
-      return fresh ? { ...current, participant: fresh } : current;
-    });
-    return nextParticipants;
-  });
   const activePlanTotal = activePlanPillUpdate?.plan.length ?? 0;
   const activePlanCompleted =
     activePlanPillUpdate?.plan.filter((item) => item.status === "completed").length ?? 0;
@@ -2422,32 +2346,7 @@ export function App(): JSX.Element {
     closeEnvironmentPanel({ dismissed: true });
     setOpenSubthreadPanel(undefined);
     setRightPanelOpenWithMotion(false);
-    setParticipantPanel({
-      mode: "edit",
-      participant,
-      loading: false,
-    });
-  }
-
-  // Create a new agent from inside the NewParticipantDialog (sidebar +
-// button or empty-list CTA). The dialog collects every field and calls
-// this handler on submit. We save the new participant, merge it into the
-// roster, and return the saved profile so the dialog can close on
-// success. Unlike the right-side ParticipantProfilePanel, this flow
-// does NOT open any edit panel after save — the popup is the whole
-// experience.
-  async function handleNewParticipantCreate(
-    params: ParticipantSaveParams,
-  ): Promise<ParticipantProfile> {
-    const result = await window.wuu.saveParticipant(params);
-    setParticipants((current) =>
-      replaceParticipantProfile(current, result.participant),
-    );
-    void refreshParticipants().catch(() => {
-      // Best-effort roster refresh; the local upsert above is already
-      // authoritative for this turn.
-    });
-    return result.participant;
+    openParticipantProfilePanel(participant);
   }
 
   /**
@@ -2608,196 +2507,6 @@ export function App(): JSX.Element {
         status: error instanceof Error ? error.message : "无法创建群聊",
       }));
     }
-  }
-
-  function handleParticipantSave(params: ParticipantSaveParams): void {
-    setParticipantPanel((current) =>
-      current
-        ? {
-            ...current,
-            saving: true,
-            error: undefined,
-          }
-        : current,
-    );
-    void (async () => {
-      try {
-        const result = await window.wuu.saveParticipant(params);
-        setParticipants((current) =>
-          replaceParticipantProfile(current, result.participant),
-        );
-        setParticipantPanel({
-          mode: "edit",
-          participant: result.participant,
-          loading: false,
-        });
-      } catch (error) {
-        setParticipantPanel((current) =>
-          current
-            ? {
-                ...current,
-                saving: false,
-                error: desktopApiErrorMessage(error, "无法保存 Agent"),
-              }
-            : current,
-        );
-      }
-    })();
-  }
-
-  // 反馈直接写进该同事的身份笔记本：memory/chat（participant scope），
-  // 由管理 agent 落盘并返回一句话回执（memory-redesign.md §8.2）。
-  function handleParticipantFeedback(text: string): void {
-    const participant = participantPanel?.participant;
-    if (!participant) {
-      return;
-    }
-    setParticipantPanel((current) =>
-      current
-        ? {
-            ...current,
-            feedbackSubmitting: true,
-            feedbackReply: undefined,
-            error: undefined,
-          }
-        : current,
-    );
-    void (async () => {
-      try {
-        const result = await window.wuu.sendMemoryChat({
-          scope: "participant",
-          participant_id: participant.id,
-          message: `用户反馈：${text}`,
-        });
-        setParticipantPanel((current) =>
-          current
-            ? {
-                ...current,
-                feedbackSubmitting: false,
-                feedbackReply: result.reply_md,
-              }
-            : current,
-        );
-      } catch (error) {
-        setParticipantPanel((current) =>
-          current
-            ? {
-                ...current,
-                feedbackSubmitting: false,
-                error: desktopApiErrorMessage(error, "无法写入反馈"),
-              }
-            : current,
-        );
-      }
-    })();
-  }
-
-  function handleParticipantRetire(participantID: string): void {
-    setParticipantPanel((current) =>
-      current
-        ? {
-            ...current,
-            retiring: true,
-            error: undefined,
-          }
-        : current,
-    );
-    void (async () => {
-      try {
-        await window.wuu.retireParticipant(participantID);
-        setParticipants((current) =>
-          current.filter((entry) => entry.id !== participantID),
-        );
-        // Keep the panel open briefly with the "已归档" receipt, then close.
-        setParticipantPanel((current) =>
-          current ? { ...current, retiring: false, archived: true } : current,
-        );
-        void refreshParticipants();
-        window.setTimeout(() => {
-          setParticipantPanel((current) =>
-            current?.archived ? undefined : current,
-          );
-        }, PARTICIPANT_ARCHIVED_NOTICE_MS);
-      } catch (error) {
-        setParticipantPanel((current) =>
-          current
-            ? {
-                ...current,
-                retiring: false,
-                error: desktopApiErrorMessage(error, "无法归档 Agent"),
-              }
-            : current,
-        );
-      }
-    })();
-  }
-
-  function exportParticipantTemplate(): void {
-    if (participants.length === 0) {
-      return;
-    }
-    const template: ParticipantTeamTemplate = {
-      version: 1,
-      participants: participants.map((participant) => ({
-        name: participant.name,
-        role: participant.role,
-        tagline: participant.tagline,
-        model: participant.model,
-        memory: participant.memory,
-      })),
-    };
-    const blob = new Blob([JSON.stringify(template, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "wuu-team-template.json";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  function importParticipantTemplate(file: File): void {
-    void (async () => {
-      try {
-        const parsed = JSON.parse(await file.text()) as unknown;
-        const entries = participantTemplateEntries(parsed);
-        const existingByName = new Map(
-          participants.map((participant) => [
-            participant.name.trim().toLowerCase(),
-            participant,
-          ]),
-        );
-        const saved: ParticipantProfile[] = [];
-        for (const entry of entries) {
-          const existing = existingByName.get(entry.name.trim().toLowerCase());
-          const result = await window.wuu.saveParticipant({
-            ...entry,
-            id: existing?.id,
-          });
-          saved.push(result.participant);
-          existingByName.set(
-            result.participant.name.trim().toLowerCase(),
-            result.participant,
-          );
-        }
-        setParticipants((current) =>
-          saved.reduce(replaceParticipantProfile, current),
-        );
-        setState((current) => ({
-          ...current,
-          status: `已导入 ${saved.length} 个 Agent`,
-        }));
-      } catch (error) {
-        setState((current) => ({
-          ...current,
-          status:
-            error instanceof Error ? error.message : "导入团队模板失败",
-        }));
-      }
-    })();
   }
 
   // Open (or focus) the group's task-board tab. Deterministic tab id makes
