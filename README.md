@@ -53,7 +53,7 @@ On a real frontend bug in this repository, every run started from the exact same
 ## Install
 
 > [!IMPORTANT]
-> wuu is pre-1.0 and release binaries are not published yet — installing from source with `go install` is the reliable path today. The installer script fetches the latest tagged GitHub release and will work once releases are published. Interfaces, configuration, and desktop behavior may still change.
+> wuu is pre-1.0. CLI binaries are attached to tagged GitHub Releases when published, and installing from source with `go install` remains the most reliable path. macOS desktop DMG/ZIP assets are currently unsigned preview builds, so macOS may block them until you remove quarantine for a trusted download.
 
 Pick **one** install method:
 
@@ -87,6 +87,18 @@ Verify the install:
 
 ```bash
 wuu --version
+```
+
+**macOS desktop preview** (unsigned)
+
+Download `wuu-<version>-mac-arm64.dmg` or `wuu-<version>-mac-arm64.zip`
+from [GitHub Releases](https://github.com/blueberrycongee/wuu/releases).
+After moving `wuu.app` to `/Applications`, macOS may block it because the app
+is not signed or notarized. For a release asset you trust:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/wuu.app
+open /Applications/wuu.app
 ```
 
 ## Quick Start
@@ -150,6 +162,10 @@ Wuu is split into a reusable **Go core** and a thin **shell**:
 > Building a new shell or integration? Start with the [`app-server` protocol](docs/app-server-protocol.md) — it documents the full JSON-RPC interface the desktop app uses.
 
 ## Desktop App
+
+Packaged macOS preview builds are available from [GitHub Releases](https://github.com/blueberrycongee/wuu/releases).
+They are currently unsigned; see the install section for the Gatekeeper
+quarantine workaround.
 
 The desktop app is developed in `desktop/`. Run it from a source checkout:
 

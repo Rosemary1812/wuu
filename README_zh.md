@@ -53,7 +53,7 @@
 ## 安装
 
 > [!IMPORTANT]
-> wuu 还未到 1.0，Release 二进制包尚未发布——目前用 `go install` 从源码安装是最可靠的方式。安装脚本会拉取 GitHub 上最新的 tagged release，等 release 发布后即可使用。接口、配置和桌面端行为都可能继续调整。
+> wuu 还未到 1.0。CLI 二进制包会随 tagged GitHub Release 发布；当前用 `go install` 从源码安装仍是最稳妥的方式。macOS 桌面端 DMG/ZIP 目前是未签名预览包，macOS 可能会拦截，确认信任下载来源后需要手动移除 quarantine 标记。
 
 选择**一种**安装方式：
 
@@ -87,6 +87,18 @@ go run ./cmd/wuu --version
 
 ```bash
 wuu --version
+```
+
+**macOS 桌面端预览包**（未签名）
+
+从 [GitHub Releases](https://github.com/blueberrycongee/wuu/releases)
+下载 `wuu-<version>-mac-arm64.dmg` 或 `wuu-<version>-mac-arm64.zip`。
+把 `wuu.app` 放到 `/Applications` 后，macOS 可能因为应用未签名、未公证而阻止打开。
+确认这是你信任的 Release 资产后：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/wuu.app
+open /Applications/wuu.app
 ```
 
 ## 快速开始
@@ -150,6 +162,9 @@ Wuu 分为可复用的 **Go 核心** 和轻量的 **Shell**：
 > 想构建新的 Shell 或集成？从 [`app-server` 协议](docs/app-server-protocol.md) 开始——它完整记录了桌面应用所使用的 JSON-RPC 接口。
 
 ## 桌面应用
+
+打包好的 macOS 预览版会放在 [GitHub Releases](https://github.com/blueberrycongee/wuu/releases)。
+它目前是未签名版本；Gatekeeper 的 quarantine 处理方式见安装章节。
 
 桌面端代码在 `desktop/`。从源码启动：
 
