@@ -60,8 +60,16 @@ describe("TurnSourcesRow server-render preview", () => {
     expect(html).toContain("turn-sources-pill");
     expect(html).toContain("turn-sources-icons");
     expect(html).toContain("来源 4");
-    expect(html).toContain("aria-label=\"打开 Claude Opus 4.7 迁移指南 · anthropic.com\"");
-    expect(html).toContain("aria-label=\"打开 huggingface.co\"");
+    // The accessible name carries the full URL, not just the host.
+    // Title (when present) reads as the human-readable label and the
+    // URL is the unambiguous link target — the favicon lookup dedupes
+    // on host, but `docs.anthropic.com` and `www.anthropic.com` are
+    // both "anthropic.com" to the favicon service and only the URL
+    // tells them apart.
+    expect(html).toContain(
+      'aria-label="打开 Claude Opus 4.7 迁移指南 — https://www.anthropic.com/news/claude-opus-4-7"',
+    );
+    expect(html).toContain('aria-label="打开 https://huggingface.co/docs/transformers/index"');
     // The favicon URL is the only thing the component knows about
     // the host; the actual pixel rendering is the OS default browser
     // (or the fallback first-letter avatar) and lives outside this

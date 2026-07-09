@@ -6,10 +6,12 @@
  *   - empty list returns null
  *   - one button per host, favicon URL scoped per host
  *   - "来源" vs "来源 N" label
+ *   - single source → entire pill is a button; click anywhere opens the URL
+ *   - multi source → each icon is its own button with the host URL
  *   - explicit `onOpen` prop is the default click handler
  *   - falling back to `window.wuu.openExternal` when no prop is set
- *   - onError swaps the <img> for a first-letter avatar
- *   - accessible name + tooltip carry title when available
+ *   - onError swaps the favicon for a first-letter avatar
+ *   - accessible name + tooltip carry the full URL (not just host)
  */
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -114,6 +116,45 @@ describe("TurnSourcesRow", () => {
     );
   });
 
+  it("renders the whole single-source pill as a button so clicking anywhere opens the URL", () => {
+    // Single source case: the icon and the label both belong to the
+    // same <button>, so a hover-anywhere / click-anywhere affordance
+    // is what makes "来源" actually behave like a source link rather
+    // than just a passive count.
+    const onOpen = vi.fn();
+    const container = mountInto(
+      <TurnSourcesRow
+        sources={[
+          {
+            url: "https://example.com/article",
+            host: "example.com",
+            title: "Example article",
+            origin: "web_search",
+          },
+        ]}
+        onOpen={onOpen}
+      />,
+    );
+    const pillButton = container.querySelector<HTMLButtonElement>(
+      "button.turn-sources-pill.turn-sources-pill-single",
+    );
+    expect(pillButton).not.toBeNull();
+    // No inner icon-button — nesting <button> in <button> would be
+    // invalid HTML and the click would still work but the visual
+    // affordance would be wrong.
+    expect(container.querySelector("button.turn-source-icon")).toBeNull();
+    expect(pillButton?.getAttribute("aria-label")).toBe(
+      "打开 Example article — https://example.com/article",
+    );
+    expect(pillButton?.getAttribute("title")).toBe(
+      "Example article — https://example.com/article",
+    );
+    act(() => {
+      pillButton?.click();
+    });
+    expect(onOpen).toHaveBeenCalledWith("https://example.com/article");
+  });
+
   it("routes the click through the caller-supplied onOpen when provided", () => {
     const onOpen = vi.fn();
     const container = mountInto(
@@ -129,7 +170,7 @@ describe("TurnSourcesRow", () => {
     expect(onOpen).toHaveBeenCalledWith("https://platform.openai.com/docs/models");
   });
 
-  it("falls back to window.wuu.openExternal when no onOpen prop is set", () => {
+  it("falls back to window.wuu.openExternal from a single-source pill click", () => {
     const openExternal = vi.fn().mockResolvedValue(undefined);
     (window as unknown as { wuu: { openExternal: typeof openExternal } }).wuu = {
       openExternal,
@@ -141,13 +182,30 @@ describe("TurnSourcesRow", () => {
         ]}
       />,
     );
+    const pillButton = container.querySelector<HTMLButtonElement>(
+      "button.turn-sources-pill",
+    );
+    act(() => {
+      pillButton?.click();
+    });
+    expect(openExternal).toHaveBeenCalledWith("https://example.com/x");
+  });
+
+  it("falls back to window.wuu.openExternal from an icon click when no onOpen prop is set", () => {
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    (window as unknown as { wuu: { openExternal: typeof openExternal } }).wuu = {
+      openExternal,
+    };
+    const container = mountInto(<TurnSourcesRow sources={sampleSources} />);
     const button = container.querySelector<HTMLButtonElement>(
       "button.turn-source-icon",
     );
     act(() => {
       button?.click();
     });
-    expect(openExternal).toHaveBeenCalledWith("https://example.com/x");
+    expect(openExternal).toHaveBeenCalledWith(
+      "https://www.anthropic.com/news/claude-opus-4-7",
+    );
   });
 
   it("falls back to a first-letter avatar when the favicon fails to load", () => {
@@ -173,7 +231,7 @@ describe("TurnSourcesRow", () => {
     expect(container.querySelector("img")).toBeNull();
   });
 
-  it("exposes the title + host in aria-label and tooltip when title is present", () => {
+  it("exposes the full URL plus title in aria-label and tooltip when title is present", () => {
     const container = mountInto(
       <TurnSourcesRow
         sources={[
@@ -186,14 +244,17 @@ describe("TurnSourcesRow", () => {
         ]}
       />,
     );
-    const button = container.querySelector("button.turn-source-icon");
-    expect(button?.getAttribute("aria-label")).toBe(
-      "打开 Claude Opus 4.7 · anthropic.com",
+    // Single source → the pill itself carries the accessible name.
+    const pill = container.querySelector("button.turn-sources-pill");
+    expect(pill?.getAttribute("aria-label")).toBe(
+      "打开 Claude Opus 4.7 — https://www.anthropic.com/news",
     );
-    expect(button?.getAttribute("title")).toBe("Claude Opus 4.7 · anthropic.com");
+    expect(pill?.getAttribute("title")).toBe(
+      "Claude Opus 4.7 — https://www.anthropic.com/news",
+    );
   });
 
-  it("shows only the host in aria-label when no title is available", () => {
+  it("exposes only the URL in aria-label when no title is available", () => {
     const container = mountInto(
       <TurnSourcesRow
         sources={[
@@ -205,9 +266,9 @@ describe("TurnSourcesRow", () => {
         ]}
       />,
     );
-    const button = container.querySelector("button.turn-source-icon");
-    expect(button?.getAttribute("aria-label")).toBe("打开 openai.com");
-    expect(button?.getAttribute("title")).toBe("openai.com");
+    const pill = container.querySelector("button.turn-sources-pill");
+    expect(pill?.getAttribute("aria-label")).toBe("打开 https://openai.com/c");
+    expect(pill?.getAttribute("title")).toBe("https://openai.com/c");
   });
 
   it("does not leak the origin field as user-facing text", () => {

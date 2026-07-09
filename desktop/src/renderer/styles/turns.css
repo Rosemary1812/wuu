@@ -4409,6 +4409,26 @@ pre {
   align-self: flex-start;
 }
 
+/* Single-source variant: the whole pill is a <button>, so the user
+ * agent default styles (font, line-height, padding inheritance) need to
+ * be reset and we need an explicit pointer cursor + hover affordance.
+ * The icon and label stay inside the button, so the click target spans
+ * the entire pill — no dead zone where hover shows the URL but click
+ * does nothing. */
+button.turn-sources-pill {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+button.turn-sources-pill:hover,
+button.turn-sources-pill:focus-visible {
+  background: var(--bg, var(--turn-sources-pill-bg-fallback));
+  border-color: var(--border, var(--turn-sources-pill-border-fallback));
+  color: var(--ink, var(--turn-sources-pill-color-fallback));
+}
+
 .turn-process-topline .turn-sources-pill {
   margin-top: -2px;
 }
@@ -4416,6 +4436,18 @@ pre {
 .turn-sources-icons {
   display: inline-flex;
   align-items: center;
+}
+
+/* Avatar wrapper holds the favicon image (or the first-letter fallback
+ * when the favicon 404s). It carries no chrome of its own — that
+ * belongs to whichever parent wraps it (.turn-source-icon for the
+ * multi-source stack, the pill itself for the single-source pill). */
+.turn-source-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 
 /* Negative margin pulls adjacent icons into the overlap; the

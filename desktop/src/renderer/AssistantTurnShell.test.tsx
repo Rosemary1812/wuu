@@ -1166,19 +1166,19 @@ describe("AssistantTurnShell — turn sources pill end-to-end", () => {
 
     const pill = container.querySelector(".turn-sources-pill");
     expect(pill).not.toBeNull();
-    // Single source → singular "来源" (ToolActivityHelpers.ts →
-    // collectTurnSources dedupes by host). Confirm via the
-    // role="group" + aria-label so the assertion is on the rendered
-    // contract, not the localized string the user sees.
-    expect(pill?.getAttribute("aria-label")).toBe("来源");
-    const icons = container.querySelectorAll("button.turn-source-icon");
-    expect(icons.length).toBe(1);
-    expect(icons[0].getAttribute("aria-label")).toBe("打开 docs.anthropic.com");
-    // Favicon URL must be the Google favicon service hit for the
-    // canonical host (the host comes from `addSource(byHost, ...)`
-    // after `normalizeHost` strips `www.`).
-    const img = icons[0].querySelector("img");
-    expect(img?.getAttribute("src")).toContain(
+    // Single source → the entire pill is a <button>; the accessible
+    // name carries the full URL (not just "来源" or the host) so users
+    // and screen readers know which page on the host was consulted.
+    expect(pill?.getAttribute("aria-label")).toBe(
+      "打开 https://docs.anthropic.com/api",
+    );
+    // No nested icon button — the single-source pill is the click
+    // target on its own. Nesting <button> in <button> would be invalid
+    // HTML and would double-fire the click handler.
+    expect(container.querySelectorAll("button.turn-source-icon").length).toBe(0);
+    // The favicon still renders inside the pill button as a visual.
+    const pillImage = pill?.querySelector("img");
+    expect(pillImage?.getAttribute("src")).toContain(
       "google.com/s2/favicons?domain=docs.anthropic.com",
     );
     // Pill sits in the process header line, before the answer body — not
@@ -1204,7 +1204,13 @@ describe("AssistantTurnShell — turn sources pill end-to-end", () => {
     const { container } = renderShell(turn);
 
     expect(container.querySelector(".turn-sources-pill")).not.toBeNull();
-    expect(container.querySelectorAll("button.turn-source-icon").length).toBe(1);
+    // Three URLs all dedupe to a single source, so the pill itself
+    // becomes the click target — no nested icon button. The favicon
+    // renders inside the pill button as the visual.
+    expect(container.querySelectorAll("button.turn-source-icon").length).toBe(0);
+    expect(
+      container.querySelectorAll("button.turn-sources-pill").length,
+    ).toBe(1);
   });
 
   it("stacks one icon per unique host and labels the pill with the host count", () => {
@@ -1246,11 +1252,11 @@ describe("AssistantTurnShell — turn sources pill end-to-end", () => {
     expect(container.querySelector(".turn-sources-pill")).toBeNull();
   });
 
-  it("clicking a favicon hands the URL to window.wuu.openExternal", () => {
-    // End-to-end: shell mounts → pill renders → user clicks →
-    // handleOpenSource fires → window.wuu.openExternal called with
-    // the exact URL. This is the path Electron takes when the user
-    // actually taps a source.
+  it("clicking the sources pill hands the URL to window.wuu.openExternal", () => {
+    // End-to-end: shell mounts → pill renders → user clicks → handleOpenSource
+    // fires → window.wuu.openExternal called with the exact URL. This is the
+    // path Electron takes when the user actually taps a source. Single-source
+    // case: the click target is the pill itself, not a nested icon button.
     const openExternal = vi.fn().mockResolvedValue(undefined);
     (
       window as unknown as { wuu: { openExternal: typeof openExternal } }
@@ -1263,7 +1269,7 @@ describe("AssistantTurnShell — turn sources pill end-to-end", () => {
     const { container } = renderShell(turn);
 
     const button = container.querySelector<HTMLButtonElement>(
-      "button.turn-source-icon",
+      "button.turn-sources-pill",
     );
     act(() => {
       button?.click();
