@@ -2693,7 +2693,26 @@
   padding: 2px 6px;
   line-height: 1.45;
   white-space: break-spaces;
-  vertical-align: 1px;
+  vertical-align: -0.1em;
+}
+
+/*
+ * Inline code rendered inside a rich link (markdown `[`text`](url)` shape
+ * that resolves to <a><code>...</code></a>) gets the gray pill from the rule
+ * above, which visually clashes with the link's leading file/web icon and
+ * makes the link read as "icon + pill" instead of "icon + blue text".
+ * Drop the pill here so a backticked link label sits flush with the rest of
+ * the link family (icon + plain blue text), matching un-backticked links
+ * like `d33c046a`. Selector specificity is one class higher than the base
+ * rule on purpose so the override wins regardless of stylesheet order.
+ */
+.rich-content .rich-link :not(pre) > code {
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 0;
+  vertical-align: baseline;
 }
 
 .rich-image-block {
