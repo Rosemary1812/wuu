@@ -184,7 +184,8 @@ describe("AppSidebar layout", () => {
     expect(sidebarCSS).not.toMatch(
       /\.sidebar-collapsed\s+\.sidebar-hover-zone:hover[\s\S]*background:/,
     );
-    expect(sidebarCSS).toContain("--sidebar-drawer-bg: rgba(255, 255, 255, 0.72)");
+    expect(sidebarCSS).toContain("--sidebar-drawer-bg: #ffffff");
+    expect(sidebarCSS).not.toMatch(/--sidebar-drawer-bg:\s*rgba\(/);
     expect(sidebarCSS).toMatch(
       /\.sidebar-collapsed\.sidebar-drawer-open \.sidebar,[\s\S]*background:\s*var\(--sidebar-drawer-bg\);/,
     );

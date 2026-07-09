@@ -7,7 +7,7 @@
   --sidebar-glass-overlay-light: rgba(255, 255, 255, 0.14);
   --sidebar-glass-overlay-accent: rgba(209, 220, 211, 0.12);
   --sidebar-glass-overlay-highlight-strong: rgba(255, 255, 255, 0.44);
-  --sidebar-drawer-bg: rgba(255, 255, 255, 0.72);
+  --sidebar-drawer-bg: #ffffff;
   --sidebar-resizer-hover-bg: rgba(45, 50, 54, 0.24);
   --sidebar-resizer-hover-ring: rgba(255, 255, 255, 0.4);
   --sidebar-dev-fixture-nav-border: rgba(68, 76, 70, 0.1);
