@@ -7,6 +7,9 @@ node_modules/
 desktop/dist/
 desktop/node_modules/
 desktop/out/
+# electron-vite writes a timestamp marker when it re-syncs node_modules;
+# keep it out of git.
+desktop/.node_modules.synced
 npm/bin/
 __pycache__/
 *.pyc
