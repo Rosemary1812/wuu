@@ -38,9 +38,7 @@ function thread(id: string, overrides: Partial<Thread> = {}): Thread {
   } as Thread;
 }
 
-function projectList(
-  activeContext?: RuntimeContext,
-): ProjectListResult {
+function projectList(activeContext?: RuntimeContext): ProjectListResult {
   return {
     projects: [],
     active_context: activeContext,
@@ -68,8 +66,12 @@ describe("runtime load helpers", () => {
       kind: "no_project",
       cwd: "/tmp/scratch",
     };
-    const selectProject = vi.fn().mockResolvedValue(projectList(projectContext));
-    const selectNoProject = vi.fn().mockResolvedValue(projectList(noProjectContext));
+    const selectProject = vi
+      .fn()
+      .mockResolvedValue(projectList(projectContext));
+    const selectNoProject = vi
+      .fn()
+      .mockResolvedValue(projectList(noProjectContext));
     installWuuStub({ selectProject, selectNoProject });
 
     await selectRuntimeContext(projectContext);
@@ -114,5 +116,27 @@ describe("runtime load helpers", () => {
     expect(state.activeContext).toEqual(activeContext);
     expect(state.running).toBe(true);
     expect(state.threads?.some((item) => item.id === "latest")).toBe(true);
+  });
+
+  it("keeps the runtime available when credentials need setup", async () => {
+    const activeContext: RuntimeContext = {
+      kind: "no_project",
+      cwd: "/tmp/wuu",
+    };
+    installWuuStub({
+      initialize: vi
+        .fn()
+        .mockResolvedValue({
+          status: "needs_setup",
+          model: "gpt-test",
+          issues: [{ code: "credential_missing", message: "请配置模型凭据" }],
+        }),
+      listThreads: vi.fn().mockResolvedValue({ threads: [] }),
+    });
+
+    const state = await loadRuntime(projectList(activeContext));
+
+    expect(state.status).toBe("请配置模型凭据");
+    expect(state.activeContext).toEqual(activeContext);
   });
 });

@@ -27,8 +27,7 @@ export async function loadRuntime(
   const listed = await window.wuu.listThreads();
   const listedThreads = sortThreads(listed.threads);
   const defaultThread = resumeLatestThread
-    ? (listedThreads.find((candidate) => !candidate.pinned) ??
-      listedThreads[0])
+    ? (listedThreads.find((candidate) => !candidate.pinned) ?? listedThreads[0])
     : undefined;
   const thread = defaultThread
     ? requireThread(
@@ -48,7 +47,10 @@ export async function loadRuntime(
     allowThreadAutoActivation: Boolean(thread),
     threads: thread ? upsertThread(listedThreads, thread) : listedThreads,
     running: isThreadRunning(thread),
-    status: "ready",
+    status:
+      initialized.status === "needs_setup"
+        ? (initialized.issues?.[0]?.message ?? "请在设置中配置模型凭据")
+        : "ready",
   };
 }
 

@@ -110,8 +110,7 @@ export class AppServerClientPool {
     const workdir = resolve(context.cwd);
     // Only registered projects carry a stable id; the no-project (对话)
     // workspace stays path-keyed (its scratch dir never moves).
-    const workspaceId =
-      context.kind === "project" ? context.project_id : "";
+    const workspaceId = context.kind === "project" ? context.project_id : "";
     let client = this.clients.get(workdir);
     if (!client) {
       client = new AppServerClient(
@@ -195,6 +194,7 @@ class AppServerClient {
   private stdoutBuffer = "";
   private disposing = false;
   private lastUsedAt = Date.now();
+  private lastStderr = "";
 
   constructor(
     readonly workdir: string,
@@ -307,12 +307,14 @@ class AppServerClient {
     this.child.stderr.on("data", (chunk: string) => {
       const message = chunk.trim();
       if (message) {
+        this.lastStderr = `${this.lastStderr}\n${message}`.trim().slice(-4000);
         this.emit(this, { kind: "server-error", message });
       }
     });
     this.child.on("exit", (code) => {
+      const message = appServerExitMessage(code, this.lastStderr);
       for (const pending of this.pending.values()) {
-        pending.reject(new Error("app-server exited"));
+        pending.reject(new Error(message));
       }
       this.pending.clear();
       this.runningThreadIDs.clear();
@@ -321,6 +323,7 @@ class AppServerClient {
       }
       this.onStateChange();
       this.child = null;
+      this.lastStderr = "";
     });
   }
 
@@ -348,9 +351,7 @@ class AppServerClient {
 
   private handleLine(line: string): void {
     let message:
-      | AppServerResponse
-      | AppServerNotification
-      | Required<AppServerRequest>;
+      AppServerResponse | AppServerNotification | Required<AppServerRequest>;
     try {
       message = JSON.parse(line);
     } catch {
@@ -465,6 +466,15 @@ class AppServerClient {
       this.runningThreadIDs.delete(value.id);
     }
   }
+}
+
+export function appServerExitMessage(
+  code: number | null,
+  stderr: string,
+): string {
+  const detail = stderr.trim();
+  const prefix = `wuu core exited${code === null ? "" : ` (code ${code})`}`;
+  return detail ? `${prefix}: ${detail}` : prefix;
 }
 
 function wuuSourceRoot(): string | undefined {
