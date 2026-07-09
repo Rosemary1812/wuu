@@ -1,0 +1,258 @@
+package securefs
+
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"testing"
+)
+
+func skipIfNotUnix(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("mode bits not honored on windows")
+	}
+}
+
+func TestWriteFileAtomic_0o600(t *testing.T) {
+	skipIfNotUnix(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sub", "secret.json")
+	if err := WriteFileAtomic(path, []byte(`{"k":"v"}`)); err != nil {
+		t.Fatalf("WriteFileAtomic: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != FileMode {
+		t.Fatalf("file mode = %s, want %s", ModeString(info.Mode()), ModeString(FileMode))
+	}
+}
+
+func TestWriteFileAtomic_OverwriteReassertsMode(t *testing.T) {
+	skipIfNotUnix(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "secret.json")
+	if err := WriteFileAtomic(path, []byte("first")); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	// Widen the mode manually, then re-write — the atomic write should
+	// re-tighten even if rename preserved the wider mode (which POSIX
+	// shouldn't do, but belt-and-suspenders).
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("widen: %v", err)
+	}
+	if err := WriteFileAtomic(path, []byte("second")); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+	info, _ := os.Stat(path)
+	if got := info.Mode().Perm(); got != FileMode {
+		t.Fatalf("file mode after overwrite = %s, want %s", ModeString(info.Mode()), ModeString(FileMode))
+	}
+}
+
+func TestWriteFileAtomic_TempNotLeftBehind(t *testing.T) {
+	skipIfNotUnix(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "secret.json")
+	if err := WriteFileAtomic(path, []byte("payload")); err != nil {
+		t.Fatalf("WriteFileAtomic: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) == ".tmp" {
+			t.Fatalf("temp file left behind: %s", e.Name())
+		}
+	}
+}
+
+func TestMkdir_0o700(t *testing.T) {
+	skipIfNotUnix(t)
+	dir := filepath.Join(t.TempDir(), "a", "b", "c")
+	if err := Mkdir(dir); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != DirMode {
+		t.Fatalf("dir mode = %s, want %s", ModeString(info.Mode()), ModeString(DirMode))
+	}
+}
+
+func TestMkdir_Idempotent(t *testing.T) {
+	skipIfNotUnix(t)
+	dir := filepath.Join(t.TempDir(), "x")
+	if err := Mkdir(dir); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if err := Mkdir(dir); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+}
+
+func TestOpenAppend_0o600(t *testing.T) {
+	skipIfNotUnix(t)
+	path := filepath.Join(t.TempDir(), "debug.log")
+	f, err := OpenAppend(path)
+	if err != nil {
+		t.Fatalf("OpenAppend: %v", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString("hello\n"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	info, _ := os.Stat(path)
+	if got := info.Mode().Perm(); got != FileMode {
+		t.Fatalf("file mode = %s, want %s", ModeString(info.Mode()), ModeString(FileMode))
+	}
+}
+
+func TestPreCreateFile_NewFile(t *testing.T) {
+	skipIfNotUnix(t)
+	path := filepath.Join(t.TempDir(), "sessions.db")
+	if err := PreCreateFile(path); err != nil {
+		t.Fatalf("PreCreateFile: %v", err)
+	}
+	info, _ := os.Stat(path)
+	if got := info.Mode().Perm(); got != FileMode {
+		t.Fatalf("file mode = %s, want %s", ModeString(info.Mode()), ModeString(FileMode))
+	}
+	if info.Size() != 0 {
+		t.Fatalf("precreated file should be empty, got size %d", info.Size())
+	}
+}
+
+func TestPreCreateFile_ReassertsMode(t *testing.T) {
+	skipIfNotUnix(t)
+	path := filepath.Join(t.TempDir(), "sessions.db")
+	if err := PreCreateFile(path); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatalf("widen: %v", err)
+	}
+	if err := PreCreateFile(path); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	info, _ := os.Stat(path)
+	if got := info.Mode().Perm(); got != FileMode {
+		t.Fatalf("file mode after re-tighten = %s, want %s", ModeString(info.Mode()), ModeString(FileMode))
+	}
+}
+
+func TestTightenRecursive_TightensFiles(t *testing.T) {
+	skipIfNotUnix(t)
+	root := t.TempDir()
+	dir := filepath.Join(root, "sub")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	file := filepath.Join(dir, "secret.json")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatalf("writefile: %v", err)
+	}
+	if err := TightenRecursive(root); err != nil {
+		t.Fatalf("TightenRecursive: %v", err)
+	}
+	dirInfo, _ := os.Stat(dir)
+	if got := dirInfo.Mode().Perm(); got != DirMode {
+		t.Fatalf("dir mode = %s, want %s", ModeString(dirInfo.Mode()), ModeString(DirMode))
+	}
+	fileInfo, _ := os.Stat(file)
+	if got := fileInfo.Mode().Perm(); got != FileMode {
+		t.Fatalf("file mode = %s, want %s", ModeString(fileInfo.Mode()), ModeString(FileMode))
+	}
+}
+
+func TestTightenRecursive_LeavesMoreRestrictiveAlone(t *testing.T) {
+	skipIfNotUnix(t)
+	root := t.TempDir()
+	dir := filepath.Join(root, "sub")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Tighten down to 0o500 (no group/other bits, no user write). This
+	// is more restrictive than the canonical 0o700 target, so
+	// TightenRecursive should leave it alone.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	if err := TightenRecursive(root); err != nil {
+		t.Fatalf("TightenRecursive: %v", err)
+	}
+	info, _ := os.Stat(dir)
+	if got := info.Mode().Perm(); got != 0o500 {
+		t.Fatalf("dir mode = %s, want %s (unchanged)", ModeString(info.Mode()), "0o500")
+	}
+}
+
+func TestTightenRecursive_HandlesMissingRoot(t *testing.T) {
+	skipIfNotUnix(t)
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	if err := TightenRecursive(missing); err == nil {
+		t.Fatalf("expected error on missing root, got nil")
+	}
+}
+
+func TestModeString(t *testing.T) {
+	cases := []struct {
+		m    os.FileMode
+		want string
+	}{
+		{FileMode, "0600"},
+		{DirMode, "0700"},
+		{0o644, "0644"},
+		{0o755, "0755"},
+	}
+	for _, c := range cases {
+		if got := ModeString(c.m); got != c.want {
+			t.Errorf("ModeString(%s) = %q, want %q", ModeString(c.m), got, c.want)
+		}
+	}
+}
+
+func TestSafeToPrint(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"/home/u/.wuu/notes.txt", true},
+		{"/home/u/.wuu/auth.json", false},
+		{"/home/u/.wuu/config.json", false},
+		{"/home/u/.wuu/sessions/foo.db", false},
+		{"/home/u/.wuu/SessionBackup/db", false},
+		{"/home/u/.wuu/private.key", false},
+	}
+	for _, c := range cases {
+		if got := SafeToPrint(c.path); got != c.want {
+			t.Errorf("SafeToPrint(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+// TestRefusesReadOnlyDir — POSIX guarantee that 0o600 write to a file
+// in a 0o400 directory fails. Locks down the security claim that
+// tightening can't be bypassed by a hostile parent directory owner.
+func TestRefusesReadOnlyDir(t *testing.T) {
+	skipIfNotUnix(t)
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "ro")
+	if err := os.Mkdir(sub, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Make the directory read-only; subsequent writes should fail.
+	if err := os.Chmod(sub, 0o500); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	defer os.Chmod(sub, 0o700)
+	err := WriteFileAtomic(filepath.Join(sub, "x.json"), []byte("y"))
+	if err == nil {
+		t.Fatalf("expected error writing to read-only dir, got nil")
+	}
+}

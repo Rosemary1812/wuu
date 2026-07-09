@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/securefs"
 )
 
 var (
@@ -16,7 +18,12 @@ var (
 // InitDebugLog opens a debug log file in the given user-level log directory.
 func InitDebugLog(logDir string) {
 	debugOnce.Do(func() {
-		os.MkdirAll(logDir, 0o755)
+		// Directory at 0o700, file at 0o600 — the debug log captures raw
+		// request / response metadata and provider latency, both of which
+		// are credential-adjacent even when the body itself is opt-in.
+		if err := securefs.Mkdir(logDir); err != nil {
+			return
+		}
 		path := filepath.Join(logDir, "debug.log")
 		// Rotate if the log exceeds 2 MB to prevent unbounded growth.
 		if info, err := os.Stat(path); err == nil && info.Size() > 2*1024*1024 {
@@ -24,7 +31,7 @@ func InitDebugLog(logDir string) {
 			os.Remove(prev)
 			os.Rename(path, prev)
 		}
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		f, err := securefs.OpenAppend(path)
 		if err != nil {
 			return
 		}

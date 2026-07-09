@@ -19,6 +19,7 @@ import (
 	wuuexec "github.com/blueberrycongee/wuu/internal/exec"
 	"github.com/blueberrycongee/wuu/internal/providers/codex"
 	"github.com/blueberrycongee/wuu/internal/runtime"
+	"github.com/blueberrycongee/wuu/internal/securefs"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/sessiontrace"
 	"github.com/blueberrycongee/wuu/internal/statepath"
@@ -36,6 +37,17 @@ func run(args []string) error {
 	if len(args) == 0 {
 		printUsage()
 		return nil
+	}
+
+	// Tighten permissions on the wuu home before any other command runs.
+	// Pre-launch installs left credential-bearing files at 0o644 / 0o755;
+	// this normalizes them at every daemon startup. Best-effort: a
+	// failure here never blocks startup — securefs helpers will write new
+	// files at the correct mode regardless of how old files are set.
+	if home, err := statepath.Home(""); err == nil {
+		if err := securefs.TightenRecursive(home); err != nil {
+			fmt.Fprintf(os.Stderr, "wuu: tighten %s: %v\n", home, err)
+		}
 	}
 
 	// Handle top-level -c and -r flags as shortcuts to wuu exec

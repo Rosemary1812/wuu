@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/capability"
+	"github.com/blueberrycongee/wuu/internal/securefs"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/prompts"
 )
@@ -912,7 +913,7 @@ func UpdateProviderModel(configPath, providerName, newModel string) error {
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	return os.WriteFile(configPath, append(out, '\n'), 0644)
+	return securefs.WriteFileAtomic(configPath, append(out, '\n'))
 }
 
 // UpdateProviderSelection changes the default provider and the selected
@@ -1030,7 +1031,7 @@ func RemoveProvider(configPath, providerName, fallbackName, fallbackModel string
 	if err != nil {
 		return "", fmt.Errorf("marshal config: %w", err)
 	}
-	if err := os.WriteFile(configPath, append(out, '\n'), 0644); err != nil {
+	if err := securefs.WriteFileAtomic(configPath, append(out, '\n')); err != nil {
 		return "", err
 	}
 	return newDefault, nil
@@ -1095,7 +1096,7 @@ func UpdateAdvancedRuntime(configPath, providerName string, update AdvancedRunti
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	return os.WriteFile(configPath, append(out, '\n'), 0644)
+	return securefs.WriteFileAtomic(configPath, append(out, '\n'))
 }
 
 func UpdateGeneralSettings(configPath string, update GeneralSettingsUpdate) error {
@@ -1171,7 +1172,7 @@ func UpdateGeneralSettings(configPath string, update GeneralSettingsUpdate) erro
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	return os.WriteFile(configPath, append(out, '\n'), 0644)
+	return securefs.WriteFileAtomic(configPath, append(out, '\n'))
 }
 
 func setOptionalString(target map[string]any, key string, value *string) {
@@ -1336,7 +1337,7 @@ func updateProviderSelection(configPath, providerName, newModel string, baseURL,
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	return os.WriteFile(configPath, append(out, '\n'), 0644)
+	return securefs.WriteFileAtomic(configPath, append(out, '\n'))
 }
 
 func applyDefaults(cfg *Config) {

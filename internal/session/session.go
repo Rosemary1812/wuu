@@ -8,13 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/securefs"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	_ "modernc.org/sqlite"
 )
@@ -699,10 +699,20 @@ func ChatMessagesSince(sessDir, id string, afterSeq int) ([]HistoryRecord, error
 }
 
 func openStore(sessDir string) (*sql.DB, error) {
-	if err := os.MkdirAll(sessDir, 0o755); err != nil {
+	// Directory at 0o700, file at 0o600. modernc.org/sqlite ignores
+	// mode arguments in its DSN parser and falls back to the umask when
+	// creating the DB file, so we pre-create the file at the right mode
+	// before handing it to the driver. The driver re-uses an existing
+	// file instead of recreating it, so the mode set here is what the
+	// file ends up with on disk.
+	if err := securefs.Mkdir(sessDir); err != nil {
 		return nil, fmt.Errorf("create sessions dir: %w", err)
 	}
-	db, err := sql.Open("sqlite", sqliteDSN(DBPath(sessDir)))
+	dbPath := DBPath(sessDir)
+	if err := securefs.PreCreateFile(dbPath); err != nil {
+		return nil, fmt.Errorf("precreate sessions db: %w", err)
+	}
+	db, err := sql.Open("sqlite", sqliteDSN(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open sessions database: %w", err)
 	}
