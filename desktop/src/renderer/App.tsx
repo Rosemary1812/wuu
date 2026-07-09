@@ -4019,6 +4019,19 @@ export function App(): JSX.Element {
               <div
                 className="jump-to-latest-progress"
                 aria-label={`当前计划已完成 ${activePlanCompleted} 项，共 ${activePlanTotal} 项`}
+                onPointerMove={(event) => {
+                  // Drive the CSS shimmer radial-gradient origin from the
+                  // pointer position. The CSS owns the visual; we only
+                  // write the two percentage vars here. Guard against
+                  // transient 0×0 rects during mount/measurement.
+                  const target = event.currentTarget;
+                  const rect = target.getBoundingClientRect();
+                  if (rect.width === 0 || rect.height === 0) return;
+                  const x = ((event.clientX - rect.left) / rect.width) * 100;
+                  const y = ((event.clientY - rect.top) / rect.height) * 100;
+                  target.style.setProperty("--shimmer-x", `${x}%`);
+                  target.style.setProperty("--shimmer-y", `${y}%`);
+                }}
               >
                 进度 {activePlanCompleted}/{activePlanTotal}
                 {activePlanDetailItems.length > 0 ? (
