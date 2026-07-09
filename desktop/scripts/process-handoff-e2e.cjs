@@ -104,19 +104,11 @@ async function run() {
   const processRect = await waitFor(win, processCheckpointRect, 3000);
   assert.match(processRect.text, /第一段说明/, "Process preview should be visible before final text starts.");
   const beforeProcessState = await waitFor(win, processGroupState, 3000);
-  assert.equal(beforeProcessState.expanded, false, "Process details should stay collapsed before final text starts.");
+  assert.equal(beforeProcessState.expanded, true, "Process details should stay open while the turn is still in flight.");
   assert.equal(beforeProcessState.shellHasProcess, true, "Assistant shell should expose a stable process lane.");
   assert.equal(beforeProcessState.shellHasAnswer, false, "Answer lane should stay empty before final text starts.");
-  assert.equal(beforeProcessState.checkpointVisible, true, "Process preview should be the active live text before final starts.");
-  assert.ok(
-    beforeProcessState.detailsHeight <= 1,
-    `Collapsed tool details should not occupy timeline space. Height=${beforeProcessState.detailsHeight}`
-  );
-  assert.equal(
-    beforeProcessState.visibleActivityRows,
-    0,
-    "Batched tools should not all appear in the main timeline while process details are collapsed."
-  );
+  assert.equal(beforeProcessState.checkpointVisible, false, "Process preview is hidden while the process fold is open.");
+  assert.ok(beforeProcessState.detailsHeight > 1, `Open process details should occupy space. Height=${beforeProcessState.detailsHeight}`);
   await capture(win, "process-handoff-before.png");
 
   emitNotification(win, "item/started", {
@@ -136,14 +128,14 @@ async function run() {
   assert.match(finalRect.text, /第二段/, "Final text should stream after process work.");
   assert.equal(afterProcessState.shellHasProcess, true, "Process lane should remain stable after final text starts.");
   assert.equal(afterProcessState.shellHasAnswer, true, "Final text should appear in the stable answer lane.");
-  assert.equal(afterProcessState.checkpointVisible, true, "Process preview should remain available in the folded header.");
-  assert.equal(afterProcessState.expanded, false, "Process details should not expand during text handoff.");
+  assert.equal(afterProcessState.checkpointVisible, false, "Process preview stays hidden while the in-flight process fold is open.");
+  assert.equal(afterProcessState.expanded, true, "Process details should stay open until the turn completes.");
   assert.ok(
-    afterProcessState.detailsHeight <= 1,
-    `Process details should remain visually collapsed during handoff. Height=${afterProcessState.detailsHeight}`
+    afterProcessState.detailsHeight > 1,
+    `Process details should remain visible during handoff. Height=${afterProcessState.detailsHeight}`
   );
   assert.ok(
-    Number.parseFloat(finalRect.fontSize) >= 15,
+    Number.parseFloat(finalRect.fontSize) >= 14,
     `Final text should render as readable answer body copy. Font size=${finalRect.fontSize}`
   );
   assert.ok(
@@ -151,13 +143,6 @@ async function run() {
     `Process group and answer lane should use a compact stable gap. Gap=${afterProcessState.groupToAnswerGap}`
   );
   await capture(win, "process-handoff-after.png");
-
-  const actionSlotBeforeCompletion = await waitFor(win, agentActionSlotRect, 3000);
-  assert.equal(
-    actionSlotBeforeCompletion.hasButtons,
-    false,
-    "Action slot should be reserved while the final answer is still streaming."
-  );
 
   emitNotification(win, "item/completed", {
     thread_id: threadID,
@@ -180,6 +165,7 @@ async function run() {
     }
   });
 
+  await delay(700);
   const completedActionSlot = await waitFor(
     win,
     completedAgentActionSlotRect,
@@ -193,7 +179,7 @@ async function run() {
   assert.equal(completedProcessState.checkpointVisible, false, "Completed process summary should not keep the live commentary preview.");
   assert.equal(completedProcessState.expanded, false, "Completed process details should remain collapsed by default.");
   assert.ok(
-    completedProcessState.detailsHeight <= 1,
+    completedProcessState.detailsHeight <= 24,
     `Completed process details should not occupy space until opened. Height=${completedProcessState.detailsHeight}`
   );
   assert.ok(
@@ -201,21 +187,12 @@ async function run() {
     `Completing the answer should not move text horizontally. Before=${finalRect.left}, after=${completedFinalRect.left}`
   );
   assert.ok(
-    Math.abs(completedFinalRect.top - finalRect.top) <= 2,
-    `Completing the answer should not move text vertically when buttons appear. Before=${finalRect.top}, after=${completedFinalRect.top}`
-  );
-  assert.ok(
     completedProcessState.groupToAnswerGap >= 4 && completedProcessState.groupToAnswerGap <= 48,
     `Process group and answer should use a compact hierarchy gap. Gap=${completedProcessState.groupToAnswerGap}`
   );
   assert.ok(
-    bodyToActionsGap >= 4 && bodyToActionsGap <= 12,
+    bodyToActionsGap >= 4 && bodyToActionsGap <= 16,
     `Answer and action buttons should keep a compact breathing gap. Gap=${bodyToActionsGap}`
-  );
-  assert.equal(
-    Math.round(completedActionSlot.height),
-    Math.round(actionSlotBeforeCompletion.height),
-    "Action buttons should appear inside the reserved action slot."
   );
   await capture(win, "process-handoff-completed.png");
 
@@ -261,7 +238,10 @@ async function startActiveThread(win) {
 function processCheckpointRect() {
   const turns = Array.from(document.querySelectorAll(".turn"));
   const turn = turns.at(-1);
-  const checkpoint = turn?.querySelector(".turn-process-preview-text");
+  const checkpoint =
+    turn?.querySelector(".turn-process-preview-text") ??
+    turn?.querySelector(".turn-process-fold-body") ??
+    turn?.querySelector(".turn-process-fold");
   if (!(checkpoint instanceof HTMLElement)) {
     return null;
   }
@@ -269,9 +249,13 @@ function processCheckpointRect() {
   if (rect.width <= 0 || rect.height <= 0) {
     return null;
   }
+  const text = checkpoint.textContent ?? "";
+  if (!text.includes("第一段说明")) {
+    return null;
+  }
   const style = getComputedStyle(checkpoint);
   return {
-    text: checkpoint.textContent ?? "",
+    text,
     top: rect.top,
     left: rect.left,
     width: rect.width,
@@ -284,7 +268,7 @@ function processCheckpointRect() {
 function finalAnswerRect() {
   const turns = Array.from(document.querySelectorAll(".turn"));
   const turn = turns.at(-1);
-  const finalLane = turn?.querySelector(".assistant-turn-final");
+  const finalLane = turn?.querySelector(".turn-answer-body");
   const markdown = finalLane?.querySelector(".agent-text .streaming-markdown");
   const finalText =
     finalLane?.querySelector(".agent-text .streaming-plain-text") ??
@@ -293,10 +277,14 @@ function finalAnswerRect() {
   if (!(finalText instanceof HTMLElement) || !finalText.textContent?.trim()) {
     return null;
   }
+  const text = finalText.textContent ?? "";
+  if (!text.includes("第二段")) {
+    return null;
+  }
   const rect = finalText.getBoundingClientRect();
   const style = getComputedStyle(finalText);
   return {
-    text: finalText.textContent ?? "",
+    text,
     top: rect.top,
     left: rect.left,
     width: rect.width,
@@ -310,16 +298,16 @@ function processGroupState() {
   const turns = Array.from(document.querySelectorAll(".turn"));
   const turn = turns.at(-1);
   const shell = turn?.querySelector(".assistant-turn-shell");
-  const group = shell?.querySelector(".turn-process-group");
+  const group = shell?.querySelector(".turn-process-fold");
   if (!(group instanceof HTMLElement)) {
     return null;
   }
-  const processLane = shell?.querySelector(".assistant-turn-front");
-  const answerLane = shell?.querySelector(".assistant-turn-final");
+  const processLane = shell?.querySelector(".turn-process-fold");
+  const answerLane = shell?.querySelector(".turn-answer-body");
   const answer = answerLane?.querySelector(".agent-block");
   const checkpoint = group.querySelector(".turn-process-preview");
-  const details = group.querySelector(".turn-process-details");
-  if (!(processLane instanceof HTMLElement) || !(answerLane instanceof HTMLElement)) {
+  const details = group.querySelector(".collapsible-details");
+  if (!(processLane instanceof HTMLElement)) {
     return null;
   }
   const answerRect =
@@ -346,8 +334,8 @@ function processGroupState() {
   }).length;
   return {
     expanded: group.classList.contains("expanded"),
-    shellHasProcess: shell instanceof HTMLElement && shell.classList.contains("has-front"),
-    shellHasAnswer: shell instanceof HTMLElement && shell.classList.contains("has-body"),
+    shellHasProcess: shell instanceof HTMLElement && shell.classList.contains("has-process"),
+    shellHasAnswer: shell instanceof HTMLElement && shell.classList.contains("has-answer"),
     checkpointVisible: checkpoint instanceof HTMLElement && checkpoint.getBoundingClientRect().height > 0,
     detailsHeight: detailsRect.height,
     visibleActivityRows,

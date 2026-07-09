@@ -24,7 +24,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 const (
@@ -162,7 +161,6 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		TaskManager:                 t.env.TaskManager,
 		FileScopeRoots:              append([]string(nil), t.env.FileScopeRoots...),
 		Skills:                      t.env.Skills,
-		Workflows:                   t.env.Workflows,
 		OnFileChanged:               t.env.OnFileChanged,
 		OnPlanUpdated:               t.env.OnPlanUpdated,
 		Memory:                      t.env.Memory,
@@ -234,17 +232,9 @@ func (t *Toolkit) rebuildRegistry() {
 		NewFetchThreadMessagesTool(e),
 		// Goals
 		NewGoalTool(e),
-		// Workflows
-		NewListWorkflowsTool(e),
-		NewLoadWorkflowTool(e),
-		NewSaveWorkflowTool(e),
+		// Recurring agent profiles
 		NewListAgentProfilesTool(e),
 		NewCreateAgentProfileTool(e),
-		NewStartWorkflowTool(e),
-		NewRunWorkflowTool(e),
-		NewCreateWorkflowTool(e),
-		NewWorkflowControlTool(e),
-		NewWorkflowStatusTool(e),
 		// Planning
 		NewUpdatePlanTool(e),
 		// Internal context rewrite
@@ -342,19 +332,9 @@ func (t *Toolkit) SetSkills(s []skills.Skill) {
 	t.env.Skills = s
 }
 
-// SetWorkflows attaches the discovered workflow definitions.
-func (t *Toolkit) SetWorkflows(w []workflow.Definition) {
-	t.env.Workflows = w
-}
-
 // Skills returns the currently registered skills (read-only).
 func (t *Toolkit) Skills() []skills.Skill {
 	return t.env.Skills
-}
-
-// Workflows returns the currently registered workflow definitions (read-only).
-func (t *Toolkit) Workflows() []workflow.Definition {
-	return t.env.Workflows
 }
 
 // SetMemory attaches the GLOBAL memory store provider (the cross-workspace
@@ -708,18 +688,6 @@ func (t *Toolkit) SetTaskManager(manager TaskManager) {
 	t.env.TaskManager = manager
 }
 
-// SetWorkflowThreadID binds the toolkit to the conversation (cth) thread of the
-// current resident turn. Workflow runs started this turn record it so their
-// named-participant members report into the reply subthread and so the
-// named-participant pool is scoped to this thread's group members. Called
-// between turns alongside SetGroupManager; pass "" for non-conversation runs.
-func (t *Toolkit) SetWorkflowThreadID(threadID string) {
-	if t == nil || t.env == nil {
-		return
-	}
-	t.env.ThreadID = strings.TrimSpace(threadID)
-}
-
 // SetRootDir re-roots the toolkit's execution environment (bash cwd,
 // relative-path resolution, search root, display paths) without rebuilding
 // the toolkit or touching other per-session state. Used by DM threads
@@ -789,7 +757,6 @@ func (t *Toolkit) SetResidentParticipantEnabled(enabled bool) {
 		enableResidentParticipantSurface(&t.activeSurface)
 	} else {
 		delete(t.activeSurface.Tools, "fetch_thread_messages")
-		disableResidentWorkflowSurface(&t.activeSurface)
 	}
 	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
 }
@@ -827,63 +794,6 @@ func enableResidentParticipantSurface(surface *capability.Surface) {
 	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskManage) {
 		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskManage)
 	}
-	// Workflow / agent-profile orchestration is a named-agent-only capability.
-	// Residents inherit the main surface via CloneForRoot and only flip to
-	// named at turn time, so their compiled surface ran as SurfaceMain and
-	// carries no workflow tools. Patch the named-only workflow suite in here as
-	// deferred tools (the disable branch removes them). Both this seam and the
-	// compiler's SurfaceNamed branch consume modelprofile.NamedWorkflowTools so
-	// the two lists never drift.
-	if surface.DeferredTools == nil {
-		surface.DeferredTools = map[string]capability.Capability{}
-	}
-	for _, wt := range modelprofile.NamedWorkflowTools() {
-		surface.DeferredTools[wt.Name] = wt.Capability
-		if !surfaceHasCapability(surface.DeferredCapabilities, wt.Capability) {
-			surface.DeferredCapabilities = append(surface.DeferredCapabilities, wt.Capability)
-		}
-	}
-}
-
-// disableResidentWorkflowSurface removes the named-only workflow/agent-profile
-// suite from a surface when the resident/named identity is turned off, so an
-// ordinary agent that reuses the same toolkit does not retain workflow tools.
-func disableResidentWorkflowSurface(surface *capability.Surface) {
-	if surface == nil {
-		return
-	}
-	stillUsed := false
-	for _, wt := range modelprofile.NamedWorkflowTools() {
-		delete(surface.DeferredTools, wt.Name)
-	}
-	// Drop CapabilityWorkflow from the deferred capability list only if no
-	// remaining deferred tool still needs it (today it is exclusively the
-	// workflow suite, so it is always removed).
-	for name := range surface.DeferredTools {
-		if surface.DeferredTools[name] == capability.CapabilityWorkflow {
-			stillUsed = true
-			break
-		}
-	}
-	if !stillUsed {
-		surface.DeferredCapabilities = removeCapability(surface.DeferredCapabilities, capability.CapabilityWorkflow)
-	}
-}
-
-// removeCapability returns caps with every occurrence of capName removed,
-// preserving order.
-func removeCapability(caps []capability.Capability, capName capability.Capability) []capability.Capability {
-	if len(caps) == 0 {
-		return caps
-	}
-	out := caps[:0]
-	for _, c := range caps {
-		if c == capName {
-			continue
-		}
-		out = append(out, c)
-	}
-	return out
 }
 
 // SurfaceToolNames returns the registered built-in tools available to the

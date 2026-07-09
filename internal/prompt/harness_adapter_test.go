@@ -19,8 +19,10 @@ func TestHarnessAdapterTextUsesProviderAgnosticGuidance(t *testing.T) {
 			"# Harness Adapter",
 			"same product regardless of provider, model family, or BYOK backend",
 			"Keep the same task behavior across providers",
-			"task-handling options inside wuu",
-			"Do not choose direct work, subagents, or workflows based on provider/model family or brand.",
+			"runtime goals, task rail, and subagents are wuu coordination primitives",
+			"Do not choose direct local work, runtime goals, task-rail delegation, or subagents based on provider/model family or brand.",
+			"Use a runtime goal when the user-visible objective needs continuation across turns",
+			"task rail or subagents for delegated or independent parallel work",
 			"Choose execution shape from the user's task",
 			"Treat provider/model differences as compatibility details only",
 		} {
@@ -39,10 +41,17 @@ func TestHarnessAdapterTextUsesProviderAgnosticGuidance(t *testing.T) {
 			"Follow the model-family guidance",
 			"natural-language agent loop as the unified entry point",
 			"provider-branded product modes",
+			"task-handling options inside wuu",
+			"direct work, subagents, or workflows",
+			"workflows only when",
+			"matching saved workflow",
 		} {
 			if strings.Contains(text, forbidden) {
 				t.Fatalf("%s adapter should not include family-specific guidance %q:\n%s", name, forbidden, text)
 			}
+		}
+		if strings.Contains(strings.ToLower(text), "workflow") {
+			t.Fatalf("%s adapter should not mention workflows as a task path:\n%s", name, text)
 		}
 	}
 }

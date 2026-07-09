@@ -119,7 +119,7 @@ async function run() {
     return true;
   });
   assert.equal(resetStarted, true, "New conversation button should be available after title update.");
-  await waitFor(win, () => window.e2eActiveTitleText() === "新对话", 3000);
+  await waitFor(win, () => window.e2eActiveTitleText() === "对话", 3000);
 
   const streamingThreadStarted = await waitFor(
     win,
@@ -298,7 +298,8 @@ async function run() {
   const collapsedProcess = await waitFor(
     win,
     () => {
-      const group = document.querySelector(".turn-process-fold");
+      const turn = Array.from(document.querySelectorAll(".turn")).at(-1);
+      const group = turn?.querySelector(".turn-process-fold");
       const toggle = group?.querySelector(".turn-process-toggle");
       const details = group?.querySelector(".collapsible-details");
       const activity = group?.querySelector(".activity-group");
@@ -315,13 +316,14 @@ async function run() {
     },
     3000
   );
-  assert.match(collapsedProcess.text, /过程记录/, "Completed process records should be summarized behind a compact toggle.");
+  assert.match(collapsedProcess.text, /任务在 .* 结束了/, "Completed process records should be summarized behind a compact toggle.");
   assert.equal(collapsedProcess.activityExpanded, false, "Completed tool activity details should be folded by default.");
 
   const expandedProcess = await waitFor(
     win,
     () => {
-      const button = document.querySelector(".turn-process-toggle");
+      const turn = Array.from(document.querySelectorAll(".turn")).at(-1);
+      const button = turn?.querySelector(".turn-process-toggle");
       if (!(button instanceof HTMLElement)) {
         return null;
       }
@@ -329,7 +331,7 @@ async function run() {
         button.click();
         return null;
       }
-      const group = document.querySelector(".turn-process-fold");
+      const group = turn?.querySelector(".turn-process-fold");
       const details = group?.querySelector(".collapsible-details");
       return {
         expanded: button.getAttribute("aria-expanded"),
@@ -524,8 +526,10 @@ async function evaluate(win, fn, options = {}) {
       return document.querySelector(".session-tab.active .session-tab-title")?.textContent?.trim() ?? "";
     };
     window.streamingSnapshot = () => {
-      const streaming = document.querySelector(".agent-text .streaming-markdown");
-      const staticFallback = document.querySelector(".agent-text > .rich-content:not(.streaming-markdown)");
+      const turn = Array.from(document.querySelectorAll(".turn")).at(-1);
+      const streaming = turn?.querySelector(".turn-answer-body .agent-text .streaming-markdown") ??
+        turn?.querySelector(".agent-text .streaming-markdown");
+      const staticFallback = turn?.querySelector(".agent-text > .rich-content:not(.streaming-markdown)");
       const text = streaming?.textContent ?? "";
       const animatedWords = streaming
         ? Array.from(streaming.querySelectorAll(".stream-word")).filter(
@@ -533,7 +537,7 @@ async function evaluate(win, fn, options = {}) {
           ).length
         : 0;
       const headingText = streaming
-        ? Array.from(streaming.querySelectorAll("h1, h2, h3, .rich-paragraph"))
+        ? Array.from(streaming.querySelectorAll("h1, h2, h3, .rich-heading, .rich-paragraph"))
             .map((node) => node.textContent?.trim() ?? "")
             .find((value) => value === "Streaming markdown") ?? ""
         : "";

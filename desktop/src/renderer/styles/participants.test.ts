@@ -16,10 +16,10 @@ function cssRuleBody(selector: string): string {
 }
 
 describe("participants.css roster status", () => {
-  it("uses the same neutral idle dot as session rows for online agents", () => {
+  it("uses the shared hidden idle status slot for online agents", () => {
     const online = cssRuleBody('.participant-roster-status[data-status="online"]');
 
-    expect(online).toMatch(/background:\s*var\(--sidebar-thread-row-dot-default\)/);
+    expect(online).toMatch(/background:\s*var\(--sidebar-session-status-bg\)/);
     expect(online).not.toMatch(/var\(--success\)/);
   });
 });

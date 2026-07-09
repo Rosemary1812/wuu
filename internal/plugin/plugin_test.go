@@ -12,14 +12,12 @@ func TestDiscoverProjectOverridesUserAndResolvesAssetDirs(t *testing.T) {
 	writePlugin(t, filepath.Join(wuuHome, "plugins", "compose"), `{
   "id": "compose",
   "description": "user compose",
-  "skills": ["skills"],
-  "workflows": ["workflows"]
+  "skills": ["skills"]
 }`)
 	writePlugin(t, filepath.Join(root, ".wuu", "plugins", "compose"), `{
   "id": "compose",
   "description": "project compose",
-  "skills": ["skills", "../escape", "/tmp/absolute"],
-  "workflows": ["workflows"]
+  "skills": ["skills", "../escape", "/tmp/absolute"]
 }`)
 
 	plugins := Discover(root, wuuHome)
@@ -37,10 +35,6 @@ func TestDiscoverProjectOverridesUserAndResolvesAssetDirs(t *testing.T) {
 	if len(skillDirs) != 1 || skillDirs[0] != filepath.Join(got.Root, "skills") {
 		t.Fatalf("SkillDirs = %+v", skillDirs)
 	}
-	workflowDirs := got.WorkflowDirs()
-	if len(workflowDirs) != 1 || workflowDirs[0] != filepath.Join(got.Root, "workflows") {
-		t.Fatalf("WorkflowDirs = %+v", workflowDirs)
-	}
 }
 
 func TestDiscoverUsesDefaultAssetDirsWhenManifestOmitsThem(t *testing.T) {
@@ -52,8 +46,8 @@ func TestDiscoverUsesDefaultAssetDirsWhenManifestOmitsThem(t *testing.T) {
 	if len(plugins) != 1 {
 		t.Fatalf("plugins = %+v", plugins)
 	}
-	if len(plugins[0].SkillDirs()) != 1 || len(plugins[0].WorkflowDirs()) != 1 {
-		t.Fatalf("default asset dirs not discovered: skills=%+v workflows=%+v", plugins[0].SkillDirs(), plugins[0].WorkflowDirs())
+	if len(plugins[0].SkillDirs()) != 1 {
+		t.Fatalf("default skill dirs not discovered: skills=%+v", plugins[0].SkillDirs())
 	}
 }
 
@@ -72,9 +66,6 @@ func writePlugin(t *testing.T, dir, manifest string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(dir, "skills"), 0o755); err != nil {
 		t.Fatalf("mkdir skills: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(dir, "workflows"), 0o755); err != nil {
-		t.Fatalf("mkdir workflows: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, ManifestFilename), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)

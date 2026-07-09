@@ -6,10 +6,9 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/harness"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
-func TestSnapshotSystemProjectsWorkflowAndHarnessAttention(t *testing.T) {
+func TestSnapshotSystemProjectsGoalAndHarnessAttention(t *testing.T) {
 	root := t.TempDir()
 	goalRoot := filepath.Join(root, "state", "goals")
 	goalStore := NewStore(filepath.Join(goalRoot, "goal-approval"))
@@ -24,43 +23,6 @@ func TestSnapshotSystemProjectsWorkflowAndHarnessAttention(t *testing.T) {
 		SourceID:        "worker-1",
 	}); err != nil {
 		t.Fatalf("RequestApproval: %v", err)
-	}
-
-	workflowStore := workflow.NewStore(filepath.Join(root, "state"))
-	run, err := workflowStore.CreateRun(workflow.Run{
-		ID:             "wf-1",
-		DefinitionName: "feature-delivery",
-		Status:         workflow.RunStateRunning,
-		Phases: []workflow.Phase{{
-			ID:     "implementation",
-			Name:   "Implementation",
-			Status: workflow.PhaseStateRunning,
-		}},
-	})
-	if err != nil {
-		t.Fatalf("CreateRun: %v", err)
-	}
-	for _, agent := range []workflow.AgentRun{
-		{
-			ID:            "worker-1",
-			WorkflowRunID: run.ID,
-			PhaseID:       "implementation",
-			Status:        workflow.AgentRunStateCompleted,
-			ReportPath:    "worker-1.md",
-			ChangedFiles:  []string{"app.go"},
-		},
-		{
-			ID:            "worker-2",
-			WorkflowRunID: run.ID,
-			PhaseID:       "implementation",
-			Status:        workflow.AgentRunStateCompleted,
-			ReportMissing: true,
-			ChangedFiles:  []string{"app.go"},
-		},
-	} {
-		if err := workflowStore.UpsertAgentRun(agent); err != nil {
-			t.Fatalf("UpsertAgentRun(%s): %v", agent.ID, err)
-		}
 	}
 
 	harnessStore := harness.NewStore(filepath.Join(root, "harness"))
@@ -85,31 +47,15 @@ func TestSnapshotSystemProjectsWorkflowAndHarnessAttention(t *testing.T) {
 	}
 
 	snapshot := SnapshotSystem(SnapshotOptions{
-		GoalRoot:      goalRoot,
-		WorkflowStore: workflowStore,
-		HarnessStore:  harnessStore,
-		Now:           fixedClock(),
+		GoalRoot:     goalRoot,
+		HarnessStore: harnessStore,
+		Now:          fixedClock(),
 	})
 	if len(snapshot.Goals) != 1 || len(snapshot.Approvals) != 1 {
 		t.Fatalf("goal approvals missing from snapshot: %+v", snapshot)
 	}
-	if len(snapshot.Workflows) != 1 {
-		t.Fatalf("Workflows = %+v", snapshot.Workflows)
-	}
-	if len(snapshot.Workflows[0].AgentRuns) != 2 {
-		t.Fatalf("AgentRuns = %+v", snapshot.Workflows[0].AgentRuns)
-	}
-	if snapshot.Workflows[0].Arbitration.Status == "" {
-		t.Fatalf("missing arbitration: %+v", snapshot.Workflows[0].Arbitration)
-	}
 	if len(snapshot.Harness.Tasks) != 1 || len(snapshot.Harness.Reports) != 1 {
 		t.Fatalf("Harness snapshot = %+v", snapshot.Harness)
-	}
-	if !attentionContains(snapshot.Attention, "workflow_agent", "missing_report") {
-		t.Fatalf("missing workflow missing-report attention: %+v", snapshot.Attention)
-	}
-	if !attentionContains(snapshot.Attention, "workflow_conflict", "changed_file_overlap") {
-		t.Fatalf("missing workflow conflict attention: %+v", snapshot.Attention)
 	}
 	if !attentionContains(snapshot.Attention, "harness", string(harness.TaskStatusFailed)) {
 		t.Fatalf("missing harness failure attention: %+v", snapshot.Attention)

@@ -59,7 +59,6 @@ const (
 	BlockSystemContract    BlockKind = "SYSTEM_CONTRACT"
 	BlockProjectRules      BlockKind = "PROJECT_RULES"
 	BlockTaskState         BlockKind = "TASK_STATE"
-	BlockWorkflowState     BlockKind = "WORKFLOW_STATE"
 	BlockGoalContinuation  BlockKind = "GOAL_CONTINUATION"
 	BlockRepoMap           BlockKind = "REPO_MAP"
 	BlockActiveFiles       BlockKind = "ACTIVE_FILES"

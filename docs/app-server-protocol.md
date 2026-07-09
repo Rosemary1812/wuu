@@ -59,7 +59,7 @@ method table lives in `internal/appserver/protocol.go` (every method constant in
 the `Method*` block at the top of that file is a valid JSON-RPC method, with
 siblings like `config/read`, `config/model/update`, `config/general/update`,
 `config/advanced/update`, `config/codex-models`, `config/provider/remove`,
-`skill/list`, all the `goal/*` control and snapshot methods, the rest of the
+`skill/list`, runtime `goal/*` controls and active summary, the rest of the
 `thread/*` methods (`thread/list`, `thread/search`, `thread/pin`,
 `thread/archive`, `thread/edit-message`, `thread/context-composition`,
 `thread/regenerate-title`, `thread/rename`), all the `turn/*` methods

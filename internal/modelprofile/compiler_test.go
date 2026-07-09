@@ -1,7 +1,6 @@
 package modelprofile
 
 import (
-	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -579,23 +578,28 @@ func TestCompile_MainOnlyTools(t *testing.T) {
 	}
 }
 
-// workflowToolNames returns the named-agent-only workflow/agent-profile tool
-// names from the single canonical source, for use in surface assertions.
+// workflowToolNames returns the legacy workflow/agent-profile tool names that
+// must stay hidden from compiled model surfaces.
 func workflowToolNames() []string {
-	out := make([]string, 0, len(NamedWorkflowTools()))
-	for _, wt := range NamedWorkflowTools() {
-		out = append(out, wt.Name)
+	return []string{
+		"list_workflows",
+		"load_workflow",
+		"save_workflow",
+		"list_agent_profiles",
+		"create_agent_profile",
+		"start_workflow",
+		"run_workflow",
+		"create_workflow",
+		"workflow_control",
+		"workflow_status",
 	}
-	return out
 }
 
-// TestSurfaceKindWorkflowIsNamedOnly pins the named-only workflow contract:
-// the workflow / agent-profile suite is deferred on a SurfaceNamed compile and
-// entirely absent (neither direct nor deferred) on SurfaceMain and
-// SurfaceWorker. Apart from that suite, named and main compile identically —
-// the orchestration boundary (spawn_agent/helpme vs agent_report) still tracks
-// SurfaceWorker.
-func TestSurfaceKindWorkflowIsNamedOnly(t *testing.T) {
+// TestSurfaceKindWorkflowToolsAreHidden pins the runtime-goal/task-rail
+// contract: named agents coordinate through task rail and their own runtime
+// goal, so the legacy workflow / agent-profile suite is absent from every
+// compiled model surface rather than deferred on SurfaceNamed.
+func TestSurfaceKindWorkflowToolsAreHidden(t *testing.T) {
 	cases := []struct {
 		provider string
 		model    string
@@ -613,43 +617,14 @@ func TestSurfaceKindWorkflowIsNamedOnly(t *testing.T) {
 		worker := c.Compile(p, SurfaceWorker)
 
 		for _, name := range workflowToolNames() {
-			// Named: deferred (never direct).
-			if _, ok := named.Tools[name]; ok {
-				t.Errorf("%s/%s: named surface must NOT directly advertise workflow tool %s", tt.provider, tt.model, name)
-			}
-			if _, ok := named.DeferredTools[name]; !ok {
-				t.Errorf("%s/%s: named surface must defer workflow tool %s", tt.provider, tt.model, name)
-			}
-			// Main and worker: absent entirely.
-			for label, s := range map[string]capability.Surface{"main": main, "worker": worker} {
+			for label, s := range map[string]capability.Surface{"main": main, "named": named, "worker": worker} {
 				if _, ok := s.Tools[name]; ok {
-					t.Errorf("%s/%s: %s surface must NOT advertise named-only workflow tool %s", tt.provider, tt.model, label, name)
+					t.Errorf("%s/%s: %s surface must NOT advertise legacy workflow tool %s", tt.provider, tt.model, label, name)
 				}
 				if _, ok := s.DeferredTools[name]; ok {
-					t.Errorf("%s/%s: %s surface must NOT defer named-only workflow tool %s", tt.provider, tt.model, label, name)
+					t.Errorf("%s/%s: %s surface must NOT defer legacy workflow tool %s", tt.provider, tt.model, label, name)
 				}
 			}
-		}
-
-		// CapabilityWorkflow is advertised (deferred) only on the named surface.
-		if !hasCapability(named.DeferredCapabilities, capability.CapabilityWorkflow) {
-			t.Errorf("%s/%s: named surface must defer CapabilityWorkflow", tt.provider, tt.model)
-		}
-		if named.HasCapability(capability.CapabilityWorkflow) != true {
-			t.Errorf("%s/%s: named surface must know CapabilityWorkflow", tt.provider, tt.model)
-		}
-		if main.HasCapability(capability.CapabilityWorkflow) {
-			t.Errorf("%s/%s: main surface must NOT carry CapabilityWorkflow", tt.provider, tt.model)
-		}
-		if worker.HasCapability(capability.CapabilityWorkflow) {
-			t.Errorf("%s/%s: worker surface must NOT carry CapabilityWorkflow", tt.provider, tt.model)
-		}
-
-		// Named minus the workflow suite is identical to main: strip the
-		// workflow tools/capability from named and compare to main.
-		strippedNamed := stripWorkflowSuite(named)
-		if !reflect.DeepEqual(main, strippedNamed) {
-			t.Errorf("%s/%s: SurfaceNamed minus the workflow suite must equal SurfaceMain", tt.provider, tt.model)
 		}
 
 		// Orchestration boundary unchanged: main/named orchestrate, worker not.
@@ -665,28 +640,6 @@ func TestSurfaceKindWorkflowIsNamedOnly(t *testing.T) {
 			t.Errorf("%s/%s: worker surface must expose agent_report", tt.provider, tt.model)
 		}
 	}
-}
-
-// stripWorkflowSuite returns a deep copy of s with the named-only workflow
-// deferred tools and the deferred CapabilityWorkflow removed, so it can be
-// compared against a SurfaceMain compile.
-func stripWorkflowSuite(s capability.Surface) capability.Surface {
-	out := s
-	out.DeferredTools = map[string]capability.Capability{}
-	for name, capName := range s.DeferredTools {
-		out.DeferredTools[name] = capName
-	}
-	for _, name := range workflowToolNames() {
-		delete(out.DeferredTools, name)
-	}
-	out.DeferredCapabilities = nil
-	for _, c := range s.DeferredCapabilities {
-		if c == capability.CapabilityWorkflow {
-			continue
-		}
-		out.DeferredCapabilities = append(out.DeferredCapabilities, c)
-	}
-	return out
 }
 
 // TestSurfaceKindOrchestrates documents the derived boundary that main and

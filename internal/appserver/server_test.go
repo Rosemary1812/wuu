@@ -38,7 +38,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/tools"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 	"github.com/coder/websocket"
 )
 
@@ -282,13 +281,11 @@ func TestServerInitializeExposesExtensionTrustSummary(t *testing.T) {
 	}
 	rt.Toolkit = kit
 	rt.Skills = []skills.Skill{{Name: "docs", Description: "Docs"}}
-	rt.Workflows = []workflow.Definition{{Name: "ship", Description: "Ship"}}
 	rt.Plugins = []pluginpkg.Plugin{{Manifest: pluginpkg.Manifest{ID: "compose-kit"}}}
 	rt.HookDispatcher = hooks.NewDispatcher(hooks.NewRegistry(map[hooks.Event][]hooks.HookConfig{
 		hooks.PreToolUse: {{Command: "true"}},
 	}))
 	kit.SetSkills(rt.Skills)
-	kit.SetWorkflows(rt.Workflows)
 
 	out := &lockedBuffer{}
 	srv := New(rt, out)
@@ -302,7 +299,7 @@ func TestServerInitializeExposesExtensionTrustSummary(t *testing.T) {
 	if !main.Skills.Allowed || !main.Skills.Active || main.Skills.Count != 1 || main.Skills.KnownTools == 0 {
 		t.Fatalf("unexpected skills trust summary: %+v", main.Skills)
 	}
-	if !main.Workflows.Allowed || !main.Workflows.Active || main.Workflows.Count != 1 || main.Workflows.KnownTools == 0 {
+	if main.Workflows.Allowed || main.Workflows.Active || main.Workflows.Count != 0 || main.Workflows.KnownTools != 0 {
 		t.Fatalf("unexpected workflow trust summary: %+v", main.Workflows)
 	}
 	if !main.Hooks.Allowed || !main.Hooks.Active {
@@ -7226,11 +7223,15 @@ func TestParticipantStartGrantsSpeechCapabilityBeforeWorkerRequest(t *testing.T)
 	}
 	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "thread")["result"]).Thread.ID
 
-	raw := fmt.Sprintf(`{"id":"participant","method":"participant/start","params":{"thread_id":%q,"task_name":"reviewer_card","description":"Review auth changes","prompt":"Post a concise result for the auth review.","subagent_type":"reviewer"}}`, threadID)
+	raw := fmt.Sprintf(`{"id":"participant","method":"participant/start","params":{"thread_id":%q,"task_name":"reviewer_card","description":"Review auth changes","prompt":"Post a concise result for the auth review."}}`, threadID)
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
 		t.Fatalf("participant/start: %v", err)
 	}
-	result := remarshal[ParticipantStartResult](t, responseByID(t, parseOutput(t, out.String()), "participant")["result"])
+	resp := responseByID(t, parseOutput(t, out.String()), "participant")
+	if got := resp["error"]; got != nil {
+		t.Fatalf("participant/start returned error: %v; output:\n%s", got, out.String())
+	}
+	result := remarshal[ParticipantStartResult](t, resp["result"])
 	if result.Agent.ID == "" || result.Agent.Participant == nil {
 		t.Fatalf("expected started participant agent with identity, got %+v", result.Agent)
 	}
@@ -7380,8 +7381,8 @@ func TestServerParticipantProfileLifecycle(t *testing.T) {
 
 func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 	t.Helper()
-	root := t.TempDir()
-	t.Setenv("HOME", t.TempDir())
+	root := retryingTempDir(t)
+	t.Setenv("HOME", retryingTempDir(t))
 	environmentSection := "# Environment\n\n- Current working directory: " + root + "\n- Current date: 2026-01-01"
 	systemPrompt := "system prompt\n\n" + environmentSection
 	return &runtime.Session{
@@ -7401,6 +7402,26 @@ func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 			},
 		},
 	}
+}
+
+func retryingTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "wuu-appserver-test-*")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+	t.Cleanup(func() {
+		var removeErr error
+		for attempt := 0; attempt < 20; attempt++ {
+			removeErr = os.RemoveAll(dir)
+			if removeErr == nil {
+				return
+			}
+			time.Sleep(time.Duration(attempt+1) * 10 * time.Millisecond)
+		}
+		t.Fatalf("remove temp dir %s: %v", dir, removeErr)
+	})
+	return dir
 }
 
 func initAppserverGitRepo(t *testing.T, dir string) {

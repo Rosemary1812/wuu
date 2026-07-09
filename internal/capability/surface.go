@@ -274,7 +274,7 @@ func (s Surface) Summarize() Summary {
 // editPrimitive returns a short, stable string describing the
 // editing primitive this surface advertises. It is informational
 // and surfaces in the debug UI; the toolkit still consults
-// CapabilityFileEdit + the profile.Workflow.DefaultWriteMode to
+// CapabilityFileEdit + the model execution default write mode to
 // route edits to the right tool.
 func (s Surface) editPrimitive() string {
 	if patch, ok := s.ToolForCapability(CapabilityFileEdit); ok {

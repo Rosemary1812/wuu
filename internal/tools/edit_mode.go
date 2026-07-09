@@ -21,7 +21,7 @@ func EditToolModeForProviderModel(providerName, model string) EditToolMode {
 }
 
 func EditToolModeForProfile(profile modelprofile.Profile) EditToolMode {
-	if profile.Workflow.DefaultWriteMode == modelprofile.WriteModePatch {
+	if profile.Execution.DefaultWriteMode == modelprofile.WriteModePatch {
 		return EditToolModePatch
 	}
 	return EditToolModeText

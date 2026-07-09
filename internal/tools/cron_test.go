@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/cron"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 func TestScheduleCronTool_DefaultsToSessionOnly(t *testing.T) {
@@ -69,112 +68,6 @@ func TestScheduleCronTool_DurablePersistsToDisk(t *testing.T) {
 	}
 	if len(fileTasks) != 1 {
 		t.Fatalf("expected 1 durable task, got %d", len(fileTasks))
-	}
-}
-
-func TestScheduleCronTool_SavesWorkflowTask(t *testing.T) {
-	dir := t.TempDir()
-	stateDir := filepath.Join(dir, "state")
-	env := &Env{
-		RootDir:  dir,
-		StateDir: stateDir,
-		Workflows: []workflow.Definition{{
-			Name:        "weekly-qa",
-			Description: "Run weekly QA.",
-			Kind:        workflow.DefinitionKindMarkdown,
-		}},
-	}
-	tool := NewCronTool(env)
-
-	result, err := tool.Execute(context.Background(), `{
-		"action":"add",
-		"cron":"*/5 * * * *",
-		"workflow_name":"weekly-qa",
-		"workflow_arguments":"settings search",
-		"recurring":true,
-		"durable":true
-	}`)
-	if err != nil {
-		t.Fatalf("Execute error: %v", err)
-	}
-	if !strings.Contains(result, `"kind":"workflow"`) || !strings.Contains(result, `"workflow_name":"weekly-qa"`) {
-		t.Fatalf("expected workflow result, got %s", result)
-	}
-	if !strings.Contains(result, `"action":"cron"`) {
-		t.Fatalf("expected cron action, got %s", result)
-	}
-
-	fileTasks, err := cron.NewTaskStore(taskStorePath(stateDir)).List()
-	if err != nil {
-		t.Fatalf("file store list: %v", err)
-	}
-	if len(fileTasks) != 1 || fileTasks[0].Metadata["kind"] != "workflow" {
-		t.Fatalf("expected one workflow task, got %+v", fileTasks)
-	}
-	if fileTasks[0].Metadata["workflow_kind"] != workflow.DefinitionKindMarkdown {
-		t.Fatalf("expected markdown workflow kind metadata, got %+v", fileTasks[0].Metadata)
-	}
-	if fileTasks[0].Metadata["workflow_arguments"] != "settings search" || fileTasks[0].Prompt == "" {
-		t.Fatalf("workflow task metadata missing: %+v", fileTasks[0])
-	}
-	if !strings.Contains(fileTasks[0].Prompt, `Start the saved workflow "weekly-qa"`) {
-		t.Fatalf("workflow task prompt missing workflow instruction: %q", fileTasks[0].Prompt)
-	}
-	if !strings.Contains(fileTasks[0].Prompt, "record the Workflow Team") {
-		t.Fatalf("workflow task prompt missing team planning instruction: %q", fileTasks[0].Prompt)
-	}
-	if !strings.Contains(fileTasks[0].Prompt, "start_workflow") || !strings.Contains(fileTasks[0].Prompt, "driver=auto") {
-		t.Fatalf("agent-managed workflow task prompt should use start_workflow: %q", fileTasks[0].Prompt)
-	}
-	if !strings.Contains(fileTasks[0].Prompt, "Base Agent Brief Contract") ||
-		!strings.Contains(fileTasks[0].Prompt, "workflow run, phase, team member, and result-binding context") {
-		t.Fatalf("workflow task prompt missing shared brief contract: %q", fileTasks[0].Prompt)
-	}
-	if strings.Contains(fileTasks[0].Prompt, "Workflow Context Extension") || strings.Contains(fileTasks[0].Prompt, "unified workflow entry point") {
-		t.Fatalf("workflow task prompt should avoid awkward workflow wording: %q", fileTasks[0].Prompt)
-	}
-}
-
-func TestScheduleCronTool_SavesScriptWorkflowTaskUsesStartWorkflow(t *testing.T) {
-	dir := t.TempDir()
-	stateDir := filepath.Join(dir, "state")
-	env := &Env{
-		RootDir:  dir,
-		StateDir: stateDir,
-		Workflows: []workflow.Definition{{
-			Name:        "dynamic-qa",
-			Description: "Run dynamic QA.",
-			Kind:        workflow.DefinitionKindScript,
-		}},
-	}
-	tool := NewCronTool(env)
-
-	_, err := tool.Execute(context.Background(), `{
-		"action":"add",
-		"cron":"*/5 * * * *",
-		"workflow_name":"dynamic-qa",
-		"workflow_arguments":"settings search",
-		"recurring":true,
-		"durable":true
-	}`)
-	if err != nil {
-		t.Fatalf("Execute error: %v", err)
-	}
-
-	fileTasks, err := cron.NewTaskStore(taskStorePath(stateDir)).List()
-	if err != nil {
-		t.Fatalf("file store list: %v", err)
-	}
-	if len(fileTasks) != 1 || fileTasks[0].Metadata["workflow_kind"] != workflow.DefinitionKindScript {
-		t.Fatalf("expected one script workflow task, got %+v", fileTasks)
-	}
-	for _, want := range []string{"load_workflow", "start_workflow", "definition_name", "driver=auto", "script driver"} {
-		if !strings.Contains(fileTasks[0].Prompt, want) {
-			t.Fatalf("script workflow prompt missing %q: %q", want, fileTasks[0].Prompt)
-		}
-	}
-	if strings.Contains(fileTasks[0].Prompt, "record the Workflow Team") || strings.Contains(fileTasks[0].Prompt, "call create_workflow") {
-		t.Fatalf("script workflow prompt should not use agent-managed workflow path: %q", fileTasks[0].Prompt)
 	}
 }
 

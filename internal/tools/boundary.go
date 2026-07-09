@@ -69,7 +69,7 @@ func mutates(info ToolInfo) bool {
 	}
 	switch info.Kind {
 	case ToolKindFile, ToolKindShell, ToolKindTest, ToolKindGit, ToolKindMemory,
-		ToolKindWorkflow, ToolKindAgent, ToolKindProcess, ToolKindSchedule,
+		ToolKindAgent, ToolKindProcess, ToolKindSchedule,
 		ToolKindMCP:
 		return true
 	default:

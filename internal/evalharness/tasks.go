@@ -73,7 +73,6 @@ type Result struct {
 	MissingToolCalls     []string                 `json:"missing_tool_calls,omitempty"`
 	MissingToolSeq       []string                 `json:"missing_tool_sequence,omitempty"`
 	MissingErrors        []string                 `json:"missing_errors,omitempty"`
-	WorkflowIssues       []string                 `json:"workflow_issues,omitempty"`
 	InputTokens          int                      `json:"input_tokens"`
 	OutputTokens         int                      `json:"output_tokens"`
 	CacheCreationTokens  int                      `json:"cache_creation_tokens,omitempty"`
@@ -101,7 +100,6 @@ type Observability struct {
 	SessionDir         string                      `json:"session_dir,omitempty"`
 	TracePath          string                      `json:"trace_path,omitempty"`
 	HarnessDir         string                      `json:"harness_dir,omitempty"`
-	WorkflowDir        string                      `json:"workflow_dir,omitempty"`
 	TaskWorkdir        string                      `json:"task_workdir,omitempty"`
 	TaskWorkdirKept    bool                        `json:"task_workdir_kept,omitempty"`
 	FinalAnswerPreview string                      `json:"final_answer_preview,omitempty"`
@@ -111,7 +109,6 @@ type Observability struct {
 	ToolInventory      []ToolInventoryObservation  `json:"tool_inventory,omitempty"`
 	ToolRecords        []ToolObservation           `json:"tool_records,omitempty"`
 	GoalAttention      []GoalAttentionObservation  `json:"goal_attention,omitempty"`
-	WorkflowRuns       []WorkflowRunObservation    `json:"workflow_runs,omitempty"`
 	HarnessTasks       []HarnessTaskObservation    `json:"harness_tasks,omitempty"`
 	HarnessReports     []HarnessReportObservation  `json:"harness_reports,omitempty"`
 	Warnings           []string                    `json:"warnings,omitempty"`
@@ -250,83 +247,6 @@ type GoalAttentionObservation struct {
 	Path    string `json:"path,omitempty"`
 }
 
-type WorkflowRunObservation struct {
-	ID              string                        `json:"id"`
-	RunDir          string                        `json:"run_dir,omitempty"`
-	EventLogPath    string                        `json:"event_log_path,omitempty"`
-	DefinitionName  string                        `json:"definition_name,omitempty"`
-	Driver          string                        `json:"driver,omitempty"`
-	Entrypoint      string                        `json:"entrypoint,omitempty"`
-	Status          string                        `json:"status"`
-	Error           string                        `json:"error,omitempty"`
-	ScriptPath      string                        `json:"script_path,omitempty"`
-	FinalReportPath string                        `json:"final_report_path,omitempty"`
-	GoalID          string                        `json:"goal_id,omitempty"`
-	GoalDir         string                        `json:"goal_dir,omitempty"`
-	WorkflowTeam    *WorkflowTeamObservation      `json:"workflow_team,omitempty"`
-	TeamArbitration WorkflowTeamArbitration       `json:"team_arbitration,omitempty"`
-	Phases          []WorkflowPhaseObservation    `json:"phases,omitempty"`
-	AgentRuns       []WorkflowAgentRunObservation `json:"agent_runs,omitempty"`
-	EventCount      int                           `json:"event_count,omitempty"`
-}
-
-type WorkflowTeamObservation struct {
-	Members   []WorkflowTeamMemberObservation `json:"members,omitempty"`
-	CreatedAt time.Time                       `json:"created_at,omitempty"`
-	UpdatedAt time.Time                       `json:"updated_at,omitempty"`
-}
-
-type WorkflowTeamMemberObservation struct {
-	ID             string `json:"id,omitempty"`
-	Role           string `json:"role,omitempty"`
-	Mode           string `json:"mode,omitempty"`
-	AgentProfile   string `json:"agent_profile,omitempty"`
-	TaskName       string `json:"task_name,omitempty"`
-	PhaseID        string `json:"phase_id,omitempty"`
-	CreatedProfile bool   `json:"created_profile,omitempty"`
-}
-
-type WorkflowTeamArbitration struct {
-	Status              string                                  `json:"status,omitempty"`
-	OpenAgentRuns       []string                                `json:"open_agent_runs,omitempty"`
-	MissingReports      []string                                `json:"missing_reports,omitempty"`
-	FailedAgentRuns     []string                                `json:"failed_agent_runs,omitempty"`
-	ChangedFileOverlaps []WorkflowChangedFileOverlapObservation `json:"changed_file_overlaps,omitempty"`
-	NextActions         []string                                `json:"next_actions,omitempty"`
-}
-
-type WorkflowChangedFileOverlapObservation struct {
-	File        string   `json:"file"`
-	AgentRunIDs []string `json:"agent_run_ids"`
-}
-
-type WorkflowPhaseObservation struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name,omitempty"`
-	Status      string   `json:"status"`
-	Error       string   `json:"error,omitempty"`
-	AgentRunIDs []string `json:"agent_run_ids,omitempty"`
-}
-
-type WorkflowAgentRunObservation struct {
-	ID            string   `json:"id"`
-	PhaseID       string   `json:"phase_id,omitempty"`
-	AgentID       string   `json:"agent_id,omitempty"`
-	AgentPath     string   `json:"agent_path,omitempty"`
-	TaskName      string   `json:"task_name,omitempty"`
-	AgentProfile  string   `json:"agent_profile,omitempty"`
-	Status        string   `json:"status"`
-	ReportPath    string   `json:"report_path,omitempty"`
-	ReportMissing bool     `json:"report_missing,omitempty"`
-	ChangedFiles  []string `json:"changed_files,omitempty"`
-	Artifacts     []string `json:"artifacts,omitempty"`
-	WorktreePath  string   `json:"worktree_path,omitempty"`
-	InputTokens   int      `json:"input_tokens,omitempty"`
-	OutputTokens  int      `json:"output_tokens,omitempty"`
-	DurationMS    int64    `json:"duration_ms,omitempty"`
-	Error         string   `json:"error,omitempty"`
-}
-
 type HarnessTaskObservation struct {
 	ID            string   `json:"id"`
 	ParentID      string   `json:"parent_id,omitempty"`
@@ -462,24 +382,6 @@ func Catalog() []Task {
 			RequiredTools: []string{"spawn_agent"},
 			Setup:         setupEmptyTask,
 			Verify:        verifySubAgentWorkerFile,
-		},
-		{
-			ID:          "agent_led_workflow_team",
-			Name:        "Run an agent-led workflow team",
-			Description: "Main agent must record a Workflow Team, create a saved-profile member, spawn workers, await them, and complete the run.",
-			Prompt: "Start an agent-managed workflow run with start_workflow using driver='agent_managed', run_id='eval_agent_led_team', and one phase id='team_work'. " +
-				"First call list_agent_profiles. Then call start_workflow for the run, not create_workflow directly. Next, record a Workflow Team with workflow_control action=record_workflow_team containing exactly two members in the team field: " +
-				"one create_profile member with role='Marker writer', agent_profile='eval_team_marker_writer', task_name='alpha_writer', phase_id='team_work'; " +
-				"and one ephemeral member with role='Independent verifier', task_name='beta_writer', phase_id='team_work'. " +
-				"Spawn both workers as fresh general-purpose sub-agents with subagent_type='general-purpose' and self-contained prompts from the Base Agent Brief Contract plus workflow run, phase, team member, and result-binding context. " +
-				"The create_profile worker must use agent_profile='eval_team_marker_writer' and write team_alpha.txt containing TEAM_ALPHA_DONE. " +
-				"The ephemeral worker must omit agent_profile and write team_beta.txt containing TEAM_BETA_DONE. " +
-				"Require both workers to call agent_report. Let each worker's completion notification resume you, bind each result back to the workflow using workflow_control action=record_agent_run, then write a final workflow report with complete_run=true. Do not write team_alpha.txt or team_beta.txt yourself.",
-			RequiredTools:  []string{"list_agent_profiles", "start_workflow", "workflow_control", "spawn_agent"},
-			ForbiddenTools: []string{"create_workflow", "run_workflow"},
-			IsolateWuuHome: true,
-			Setup:          setupEmptyTask,
-			Verify:         verifyDynamicWorkflowTeam,
 		},
 	}
 }
@@ -966,35 +868,6 @@ func verifySubAgentWorkerFile(_ context.Context, root, _ string) (Verification, 
 	evidence.Passed = true
 	evidence.Summary = "observed sub-agent worker marker"
 	return passVerification("observed sub-agent worker marker", evidence), nil
-}
-
-func verifyDynamicWorkflowTeam(_ context.Context, root, _ string) (Verification, error) {
-	required := map[string]string{
-		"team_alpha.txt": "TEAM_ALPHA_DONE",
-		"team_beta.txt":  "TEAM_BETA_DONE",
-	}
-	evidence := make([]VerificationEvidence, 0, len(required))
-	for name, marker := range required {
-		data, err := os.ReadFile(filepath.Join(root, name))
-		item := VerificationEvidence{Check: "workflow team marker", Path: name, Expected: "contains " + marker}
-		if err != nil {
-			item.Passed = false
-			item.Summary = name + " was not written"
-			evidence = append(evidence, item)
-			return failVerification(name+" was not written", evidence...), nil
-		}
-		item.Observed = verificationObserved(string(data))
-		if !strings.Contains(string(data), marker) {
-			item.Passed = false
-			item.Summary = name + " missing marker"
-			evidence = append(evidence, item)
-			return failVerification(name+" does not contain "+marker, evidence...), nil
-		}
-		item.Passed = true
-		item.Summary = name + " contains marker"
-		evidence = append(evidence, item)
-	}
-	return passVerification("observed agent-led workflow team markers", evidence...), nil
 }
 
 func writeFiles(root string, files map[string]string) error {

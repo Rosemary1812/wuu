@@ -450,8 +450,6 @@ type SpawnRequest struct {
 	Prompt        string
 	ParentID      string
 	ParentPath    string
-	GoalID        string
-	GoalDir       string
 	BaseRepo      string // optional: chain off another worktree (worktree mode only)
 	Synchronous   bool
 	Timeout       time.Duration
@@ -491,6 +489,7 @@ type SpawnResult struct {
 	Action          string   `json:"action"`
 	ResultID        string   `json:"result_id,omitempty"`
 	AgentID         string   `json:"agent_id"`
+	ParticipantID   string   `json:"-"`
 	TaskName        string   `json:"task_name,omitempty"`
 	AgentProfile    string   `json:"agent_profile,omitempty"`
 	AgentPath       string   `json:"agent_path,omitempty"`
@@ -515,8 +514,6 @@ type preparedSpawn struct {
 	ThreadMeta       agentthread.Metadata
 	Description      string
 	Prompt           string
-	GoalID           string
-	GoalDir          string
 	Isolation        IsolationMode
 	SpeechCapability bool
 	BaseRepo         string
@@ -547,8 +544,6 @@ type queuedSpawnPayload struct {
 	ThreadMeta       agentthread.Metadata    `json:"thread_meta"`
 	Description      string                  `json:"description,omitempty"`
 	Prompt           string                  `json:"prompt"`
-	GoalID           string                  `json:"goal_id,omitempty"`
-	GoalDir          string                  `json:"goal_dir,omitempty"`
 	Isolation        string                  `json:"isolation"`
 	SpeechCapability bool                    `json:"speech_capability,omitempty"`
 	BaseRepo         string                  `json:"base_repo,omitempty"`
@@ -622,8 +617,6 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 			ThreadMeta:       threadMeta,
 			Description:      req.Description,
 			Prompt:           req.Prompt,
-			GoalID:           strings.TrimSpace(req.GoalID),
-			GoalDir:          strings.TrimSpace(req.GoalDir),
 			Isolation:        isolation,
 			SpeechCapability: req.SpeechCapability,
 			BaseRepo:         req.BaseRepo,
@@ -631,20 +624,21 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 			ClientOverride:   req.ClientOverride,
 			ModelPin:         strings.TrimSpace(req.ModelPin),
 		}
-		c.recordHarnessTaskQueued(threadMeta, wtype, req.Prompt, isolation, req.BaseRepo, req.GoalID, req.GoalDir)
+		c.recordHarnessTaskQueued(threadMeta, wtype, req.Prompt, isolation, req.BaseRepo)
 		if err := c.enqueuePreparedSpawn(prepared); err != nil {
 			c.recordHarnessTaskFailure(workerID, err)
 			return nil, err
 		}
 		return &SpawnResult{
-			Action:       "spawn_agent",
-			AgentID:      workerID,
-			TaskName:     threadMeta.TaskName,
-			AgentProfile: threadMeta.AgentProfile,
-			AgentPath:    threadMeta.Path,
-			Status:       "queued",
-			Isolation:    string(isolation),
-			NextSteps:    spawnResultNextSteps("queued", false, string(isolation), threadMeta.Path),
+			Action:        "spawn_agent",
+			AgentID:       workerID,
+			ParticipantID: participantID,
+			TaskName:      threadMeta.TaskName,
+			AgentProfile:  threadMeta.AgentProfile,
+			AgentPath:     threadMeta.Path,
+			Status:        "queued",
+			Isolation:     string(isolation),
+			NextSteps:     spawnResultNextSteps("queued", false, string(isolation), threadMeta.Path),
 		}, nil
 	}
 
@@ -677,7 +671,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		}
 		return nil, err
 	}
-	c.recordHarnessTaskStart(threadMeta, wtype, req.Prompt, workerRoot, isolation, req.BaseRepo, req.GoalID, req.GoalDir)
+	c.recordHarnessTaskStart(threadMeta, wtype, req.Prompt, workerRoot, isolation, req.BaseRepo)
 
 	// Create the worker's conversation participant identity. Failure to
 	// persist never blocks the spawn.
@@ -769,13 +763,14 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 	}
 
 	result := &SpawnResult{
-		Action:       "spawn_agent",
-		AgentID:      sa.ID,
-		TaskName:     threadMeta.TaskName,
-		AgentProfile: threadMeta.AgentProfile,
-		AgentPath:    threadMeta.Path,
-		Status:       string(sa.Status),
-		Isolation:    string(isolation),
+		Action:        "spawn_agent",
+		AgentID:       sa.ID,
+		ParticipantID: participantID,
+		TaskName:      threadMeta.TaskName,
+		AgentProfile:  threadMeta.AgentProfile,
+		AgentPath:     threadMeta.Path,
+		Status:        string(sa.Status),
+		Isolation:     string(isolation),
 	}
 	result.NextSteps = spawnResultNextSteps(result.Status, req.Synchronous, result.Isolation, result.AgentPath)
 	if worktreeRef != nil {
@@ -869,7 +864,7 @@ func spawnResultNextSteps(status string, synchronous bool, isolation string, age
 		if synchronous {
 			return []string{
 				"Inspect the worker result and any agent_report artifacts before relying on the handoff.",
-				"Use workflow_control when this result must be bound into a larger workflow record." + worktreeHint,
+				"Use manage_task or a thread reply when this result must be bound into a larger group task." + worktreeHint,
 			}
 		}
 		return []string{
@@ -968,7 +963,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 			ForkMode:      req.ForkMode,
 			ParentHistory: providers.CloneChatMessages(parentHistory),
 		}
-		c.recordHarnessTaskQueued(threadMeta, wt.Name, req.Prompt, isolation, req.BaseRepo, "", "")
+		c.recordHarnessTaskQueued(threadMeta, wt.Name, req.Prompt, isolation, req.BaseRepo)
 		if err := c.enqueuePreparedSpawn(prepared); err != nil {
 			c.recordHarnessTaskFailure(workerID, err)
 			return nil, err
@@ -1014,7 +1009,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		}
 		return nil, err
 	}
-	c.recordHarnessTaskStart(threadMeta, wt.Name, req.Prompt, workerRoot, isolation, req.BaseRepo, "", "")
+	c.recordHarnessTaskStart(threadMeta, wt.Name, req.Prompt, workerRoot, isolation, req.BaseRepo)
 
 	// Create the worker's conversation participant identity. Failure to
 	// persist never blocks the spawn.
@@ -1594,7 +1589,7 @@ func (c *AgentControl) registerChildThreadWithStatus(id, taskName, agentProfile,
 	return meta, nil
 }
 
-func (c *AgentControl) recordHarnessTaskStart(meta agentthread.Metadata, role, intent, workerRoot string, isolation IsolationMode, baseRepo, goalID, goalDir string) {
+func (c *AgentControl) recordHarnessTaskStart(meta agentthread.Metadata, role, intent, workerRoot string, isolation IsolationMode, baseRepo string) {
 	if c == nil || c.harnessStore == nil {
 		return
 	}
@@ -1614,8 +1609,6 @@ func (c *AgentControl) recordHarnessTaskStart(meta agentthread.Metadata, role, i
 		Name:       meta.TaskName,
 		Role:       role,
 		Intent:     intent,
-		GoalID:     strings.TrimSpace(goalID),
-		GoalDir:    strings.TrimSpace(goalDir),
 		Workspace: harness.WorkspaceLease{
 			Mode:      workspaceMode,
 			Root:      workerRoot,
@@ -1675,7 +1668,7 @@ func (c *AgentControl) recordHarnessTaskStart(meta agentthread.Metadata, role, i
 	})
 }
 
-func (c *AgentControl) recordHarnessTaskQueued(meta agentthread.Metadata, role, intent string, isolation IsolationMode, baseRepo, goalID, goalDir string) {
+func (c *AgentControl) recordHarnessTaskQueued(meta agentthread.Metadata, role, intent string, isolation IsolationMode, baseRepo string) {
 	if c == nil || c.harnessStore == nil {
 		return
 	}
@@ -1694,8 +1687,6 @@ func (c *AgentControl) recordHarnessTaskQueued(meta agentthread.Metadata, role, 
 		Name:       meta.TaskName,
 		Role:       role,
 		Intent:     intent,
-		GoalID:     strings.TrimSpace(goalID),
-		GoalDir:    strings.TrimSpace(goalDir),
 		Workspace: harness.WorkspaceLease{
 			Mode:     workspaceMode,
 			BaseRepo: strings.TrimSpace(baseRepo),
@@ -1813,8 +1804,6 @@ func queuedSpawnPayloadFromPrepared(prepared preparedSpawn) queuedSpawnPayload {
 		ThreadMeta:       prepared.ThreadMeta,
 		Description:      prepared.Description,
 		Prompt:           prepared.Prompt,
-		GoalID:           prepared.GoalID,
-		GoalDir:          prepared.GoalDir,
 		Isolation:        string(prepared.Isolation),
 		SpeechCapability: prepared.SpeechCapability,
 		BaseRepo:         prepared.BaseRepo,
@@ -1852,8 +1841,6 @@ func preparedSpawnFromQueuedPayload(payload queuedSpawnPayload) (preparedSpawn, 
 		ThreadMeta:       payload.ThreadMeta,
 		Description:      payload.Description,
 		Prompt:           payload.Prompt,
-		GoalID:           payload.GoalID,
-		GoalDir:          payload.GoalDir,
 		Isolation:        isolation,
 		SpeechCapability: payload.SpeechCapability,
 		BaseRepo:         payload.BaseRepo,
@@ -1949,7 +1936,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	if running, ok := c.threads.UpdateStatus(prepared.WorkerID, agentthread.StatusRunning, time.Now().UTC()); ok {
 		_ = c.threadStore.RecordStatus(running)
 	}
-	c.recordHarnessTaskStart(prepared.ThreadMeta, prepared.WorkerType.Name, prepared.Prompt, workerRoot, prepared.Isolation, prepared.BaseRepo, prepared.GoalID, prepared.GoalDir)
+	c.recordHarnessTaskStart(prepared.ThreadMeta, prepared.WorkerType.Name, prepared.Prompt, workerRoot, prepared.Isolation, prepared.BaseRepo)
 	if prepared.SpeechCapability {
 		c.EnableParticipantSpeech(prepared.WorkerID)
 	}
@@ -2041,7 +2028,6 @@ func (c *AgentControl) recordHarnessTaskFailure(taskID string, err error) {
 	}
 	now := time.Now().UTC()
 	runID := harnessRunID(taskID)
-	task, _ := c.harnessTask(taskID)
 	_, _ = c.harnessStore.UpdateTaskStatus(taskID, harness.TaskStatusFailed, now, 0, 0, errText)
 	_, _ = c.harnessStore.UpdateRunStatus(runID, harness.TaskStatusFailed, now, 0, 0, errText)
 	_ = c.harnessStore.AppendEvent(harness.Event{
@@ -2067,8 +2053,6 @@ func (c *AgentControl) recordHarnessTaskFailure(taskID string, err error) {
 		TaskID:    taskID,
 		RunID:     runID,
 		AgentID:   taskID,
-		GoalID:    task.GoalID,
-		GoalDir:   task.GoalDir,
 		Outcome:   string(harness.TaskStatusFailed),
 		Message:   errText,
 		CreatedAt: now,
@@ -2232,17 +2216,21 @@ func (c *AgentControl) harnessReportForTask(taskID string) (string, []string) {
 	report, ok, err := c.harnessStore.ReportForTask(taskID)
 	if err == nil && ok {
 		paths := append([]string(nil), report.Artifacts...)
-		if report.ReportPath != "" && !stringSliceContains(paths, report.ReportPath) {
-			paths = append(paths, report.ReportPath)
-		}
+		reportPath := strings.TrimSpace(report.ReportPath)
 		for _, path := range taskArtifactPaths {
 			if path != "" && !stringSliceContains(paths, path) {
 				paths = append(paths, path)
 			}
 		}
-		return report.ReportPath, paths
+		if reportPath == "" {
+			reportPath = resultArtifactPath(paths)
+		}
+		if reportPath != "" && !stringSliceContains(paths, reportPath) {
+			paths = append(paths, reportPath)
+		}
+		return reportPath, paths
 	}
-	return "", taskArtifactPaths
+	return resultArtifactPath(taskArtifactPaths), taskArtifactPaths
 }
 
 func (c *AgentControl) recordWorktreeArtifacts(snap subagent.SubAgentSnapshot) {
@@ -3092,6 +3080,15 @@ func stringSliceContains(values []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func resultArtifactPath(paths []string) string {
+	for _, path := range paths {
+		if filepath.Base(path) == "result.md" {
+			return path
+		}
+	}
+	return ""
 }
 
 // SystemPromptPreamble returns the instructions prepended to the

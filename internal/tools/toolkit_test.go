@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
@@ -49,6 +50,40 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+type toolkitFakeClient struct {
+	content string
+}
+
+func (f *toolkitFakeClient) Chat(context.Context, providers.ChatRequest) (providers.ChatResponse, error) {
+	return providers.ChatResponse{Content: f.content}, nil
+}
+
+func (f *toolkitFakeClient) StreamChat(context.Context, providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	ch := make(chan providers.StreamEvent, 2)
+	if f.content != "" {
+		ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: f.content}
+	}
+	ch <- providers.StreamEvent{Type: providers.EventDone}
+	close(ch)
+	return ch, nil
+}
+
+type toolkitNoopExecutor struct{}
+
+func (toolkitNoopExecutor) Definitions() []providers.ToolDefinition { return nil }
+
+func (toolkitNoopExecutor) Execute(context.Context, providers.ToolCall) (string, error) {
+	return "", nil
+}
+
+func stopToolkitAgentControl(control *agentcontrol.AgentControl) {
+	if control == nil {
+		return
+	}
+	control.StopAll()
+	time.Sleep(100 * time.Millisecond)
 }
 
 func TestToolkit_WriteAndReadFile(t *testing.T) {
@@ -1601,7 +1636,7 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	control, err := agentcontrol.New(agentcontrol.Config{
-		Client:       &workflowFakeClient{content: "agent done"},
+		Client:       &toolkitFakeClient{content: "agent done"},
 		DefaultModel: "fake-model",
 		ParentRepo:   root,
 		WorktreeRoot: filepath.Join(root, ".wuu", "worktrees"),
@@ -1610,13 +1645,13 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 		ThreadDir:    filepath.Join(root, ".wuu-state", "sessions", "agent-telemetry-session", "threads"),
 		HarnessDir:   filepath.Join(root, ".wuu-state", "sessions", "agent-telemetry-session", "harness"),
 		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
-			return workflowNoopExecutor{}, nil
+			return toolkitNoopExecutor{}, nil
 		},
 	})
 	if err != nil {
 		t.Fatalf("AgentControl New: %v", err)
 	}
-	defer stopWorkflowAgentControl(control)
+	defer stopToolkitAgentControl(control)
 	kit.SetAgentControl(control)
 	kit.SetAgentIdentity("root", agentthread.RootPath)
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
@@ -1662,8 +1697,8 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
-	if len(tasks) != 1 || tasks[0].GoalID != "workflow-run-1" || tasks[0].GoalDir != "/tmp/workflow-run-1-goal" {
-		t.Fatalf("spawn_agent did not pass goal binding to harness task: %+v", tasks)
+	if len(tasks) != 1 || tasks[0].GoalID != "" || tasks[0].GoalDir != "" {
+		t.Fatalf("spawn_agent should ignore legacy goal binding fields, got harness task: %+v", tasks)
 	}
 	for _, name := range subagentManagementTools {
 		if !containsProfileDef(kit.Definitions(), name) {
@@ -1728,7 +1763,7 @@ func TestToolkit_HelpMeDiscoversSubagentManagementTools(t *testing.T) {
 	}
 	sessionDir := filepath.Join(root, ".wuu-state", "sessions", "helpme-session")
 	control, err := agentcontrol.New(agentcontrol.Config{
-		Client:       &workflowFakeClient{content: "helper done"},
+		Client:       &toolkitFakeClient{content: "helper done"},
 		DefaultModel: "fake-model",
 		ParentRepo:   root,
 		WorktreeRoot: filepath.Join(root, ".wuu", "worktrees"),
@@ -1737,13 +1772,13 @@ func TestToolkit_HelpMeDiscoversSubagentManagementTools(t *testing.T) {
 		ThreadDir:    filepath.Join(sessionDir, "threads"),
 		HarnessDir:   filepath.Join(sessionDir, "harness"),
 		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
-			return workflowNoopExecutor{}, nil
+			return toolkitNoopExecutor{}, nil
 		},
 	})
 	if err != nil {
 		t.Fatalf("AgentControl New: %v", err)
 	}
-	defer stopWorkflowAgentControl(control)
+	defer stopToolkitAgentControl(control)
 	kit.SetAgentControl(control)
 	kit.SetAgentIdentity("root", agentthread.RootPath)
 	kit.SetSessionDir(sessionDir)
@@ -2159,14 +2194,8 @@ func TestToolkit_ToolInfo_ClassifiesBuiltIns(t *testing.T) {
 		{name: "session_memory", kind: ToolKindMemory, exposure: ToolExposureDirect, risk: ToolRiskMedium, readOnly: false, concurrencySafe: false},
 		{name: "goal", kind: ToolKindGoal, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
 		{name: "inception", kind: ToolKindContext, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: false},
-		{name: "list_agent_profiles", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
-		{name: "create_agent_profile", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
-		{name: "start_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
-		{name: "create_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDeferred, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
-		{name: "run_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDeferred, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
-		{name: "save_workflow", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
-		{name: "workflow_control", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
-		{name: "workflow_status", kind: ToolKindWorkflow, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
+		{name: "list_agent_profiles", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: true, concurrencySafe: true},
+		{name: "create_agent_profile", kind: ToolKindAgent, exposure: ToolExposureDirect, risk: ToolRiskHigh, readOnly: false, concurrencySafe: true},
 		{name: "update_plan", kind: ToolKindPlan, exposure: ToolExposureDirect, risk: ToolRiskLow, readOnly: false, concurrencySafe: false},
 		{name: "apply_patch", kind: ToolKindFile, exposure: ToolExposureHidden, risk: ToolRiskHigh, readOnly: false, concurrencySafe: false},
 	}
@@ -3046,6 +3075,30 @@ func TestToolkit_ToolSearchLoadsDeferredTool(t *testing.T) {
 	}
 }
 
+func TestToolSearchDefinitionDoesNotAdvertiseWorkflowPath(t *testing.T) {
+	def := NewToolSearchTool(nil).Definition()
+	for _, want := range []string{
+		"Search deferred tools",
+		"MCP tools",
+		"scheduling",
+		"memory",
+		"select:<tool_name>",
+	} {
+		if !strings.Contains(def.Description, want) {
+			t.Fatalf("tool_search description missing %q:\n%s", want, def.Description)
+		}
+	}
+	for _, bad := range []string{
+		"especially MCP tools, workflows",
+		"workflows, scheduling",
+		"matching saved workflow",
+	} {
+		if strings.Contains(def.Description, bad) {
+			t.Fatalf("tool_search description should not include generic workflow guidance %q:\n%s", bad, def.Description)
+		}
+	}
+}
+
 func TestToolkit_DeferredToolCatalogUsesStaticTrustedMetadata(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
@@ -3102,59 +3155,6 @@ func TestToolkit_DeferredToolCatalogUsesStaticTrustedMetadata(t *testing.T) {
 	}
 	if !strings.Contains(afterLoadCatalog, "mcp_docs_search: MCP extension tool") {
 		t.Fatalf("catalog should keep loaded deferred tools listed:\n%s", afterLoadCatalog)
-	}
-}
-
-func TestToolkit_ToolSearchLoadsWorkflowDriverOverride(t *testing.T) {
-	root := t.TempDir()
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	if definitionNames(kit.Definitions())["run_workflow"] {
-		t.Fatal("run_workflow should start deferred")
-	}
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_workflow",
-		Arguments: `{}`,
-	})
-	if err == nil || !strings.Contains(err.Error(), "deferred") {
-		t.Fatalf("expected deferred execution error, got %v", err)
-	}
-
-	resp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "tool_search",
-		Arguments: `{"query":"script workflow driver override"}`,
-	})
-	if err != nil {
-		t.Fatalf("tool_search: %v", err)
-	}
-	var parsed struct {
-		LoadedTools []string `json:"loaded_tools"`
-	}
-	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
-		t.Fatalf("parse tool_search response: %v", err)
-	}
-	if !containsString(parsed.LoadedTools, "run_workflow") {
-		t.Fatalf("tool_search did not load run_workflow: %s", resp)
-	}
-	if !definitionNames(kit.Definitions())["run_workflow"] {
-		t.Fatal("run_workflow should be visible in definitions after tool_search")
-	}
-	info, ok := kit.ToolInfo("run_workflow")
-	if !ok {
-		t.Fatal("ToolInfo(run_workflow) not found")
-	}
-	if info.Exposure != ToolExposureDeferred {
-		t.Fatalf("run_workflow exposure = %s, want %s", info.Exposure, ToolExposureDeferred)
-	}
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "run_workflow",
-		Arguments: `{}`,
-	})
-	if err == nil || strings.Contains(err.Error(), "deferred") {
-		t.Fatalf("expected argument validation after loading, got %v", err)
 	}
 }
 
@@ -3368,16 +3368,17 @@ func TestToolkit_RepeatedToolInputGuardExemptsPollingTools(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	revision := workspaceRevision(context.Background(), kit.env.RootDir)
-	hash := toolArgumentsSHA256(`{"run_id":"run-1"}`)
-	kit.env.toolTelemetry.record(ToolExecutionRecord{Name: "workflow_status", ArgumentsSHA256: hash, RevisionBefore: revision})
-	kit.env.toolTelemetry.record(ToolExecutionRecord{Name: "workflow_status", ArgumentsSHA256: hash, RevisionBefore: revision})
+	args := `{"action":"list_background"}`
+	hash := toolArgumentsSHA256(args)
+	kit.env.toolTelemetry.record(ToolExecutionRecord{Name: "bash", ArgumentsSHA256: hash, RevisionBefore: revision})
+	kit.env.toolTelemetry.record(ToolExecutionRecord{Name: "bash", ArgumentsSHA256: hash, RevisionBefore: revision})
 
 	got := kit.repeatedToolInputCount(providers.ToolCall{
-		Name:      "workflow_status",
-		Arguments: `{"run_id":"run-1"}`,
+		Name:      "bash",
+		Arguments: args,
 	}, revision)
 	if got != 0 {
-		t.Fatalf("workflow_status should be exempt from repeated input guard, got count %d", got)
+		t.Fatalf("background polling should be exempt from repeated input guard, got count %d", got)
 	}
 }
 
@@ -3684,8 +3685,8 @@ func TestToolkit_ToolResultSummaryContextBlockShortensArtifactRefs(t *testing.T)
 	kit.SetSessionDir(sessionDir)
 
 	kit.env.toolTelemetry.record(ToolExecutionRecord{
-		Name:                "workflow_status",
-		Kind:                ToolKindWorkflow,
+		Name:                "agent_report",
+		Kind:                ToolKindAgent,
 		Exposure:            ToolExposureDirect,
 		Risk:                ToolRiskLow,
 		PolicyAction:        ToolPolicyAllow,
@@ -4183,12 +4184,12 @@ func TestToolkit_SpawnAgentDefinitionUsesCCAgentSchema(t *testing.T) {
 			continue
 		}
 		props, _ := d.InputSchema["properties"].(map[string]any)
-		for _, field := range []string{"description", "prompt", "subagent_type", "name", "run_in_background", "isolation", "goal_id", "goal_dir"} {
+		for _, field := range []string{"description", "prompt", "subagent_type", "name", "run_in_background", "isolation"} {
 			if _, ok := props[field]; !ok {
 				t.Fatalf("spawn_agent schema must expose %s: %#v", field, d.InputSchema)
 			}
 		}
-		for _, old := range []string{"task_name", "message", "agent_type", "synchronous", "fork_turns", "base_repo", "can_post", "speech_capability"} {
+		for _, old := range []string{"task_name", "message", "agent_type", "synchronous", "fork_turns", "base_repo", "can_post", "speech_capability", "goal_id", "goal_dir"} {
 			if _, ok := props[old]; ok {
 				t.Fatalf("spawn_agent schema should not expose old field %s: %#v", old, d.InputSchema)
 			}
@@ -4265,10 +4266,8 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 		for field, wants := range map[string][]string{
 			"subagent_type": {"Subagent Types", "system context", "fork yourself"},
 			"prompt":        {"Concrete task brief", "Base Agent Brief Contract", "fresh subagents", "first query", "self-contained", "forks", "incremental directive", "helpme"},
-			"agent_profile": {"Agent Profile name with saved memory", "workflow/profile policy", "ordinary temporary child tasks"},
+			"agent_profile": {"Agent Profile name with saved memory", "agent-profile policy", "ordinary temporary child tasks"},
 			"isolation":     {"worktree", "current repo"},
-			"goal_id":       {"workflow evidence Goal id", "start_workflow", "run_workflow"},
-			"goal_dir":      {"workflow evidence Goal directory", "start_workflow", "run_workflow"},
 		} {
 			prop, _ := props[field].(map[string]any)
 			desc, _ := prop["description"].(string)

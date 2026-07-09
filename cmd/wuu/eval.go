@@ -26,7 +26,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/sessiontrace"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
 type evalReport struct {
@@ -487,19 +486,18 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 		result.Error = runErr.Error()
 	}
 	result.Observability = collectEvalObservability(rt, evalSessionID, taskRoot, cfg.KeepWorkdir, runResult.Content, contextRequests)
-	applyEvalWorkflowIssues(&result)
+	applyEvalAttentionIssues(&result)
 	result.Validation = evalharness.BuildValidationSummary(result)
 	result.DurationMS = time.Since(started).Milliseconds()
 	persistEvalTrace(&result)
 	return result
 }
 
-func applyEvalWorkflowIssues(result *evalharness.Result) {
+func applyEvalAttentionIssues(result *evalharness.Result) {
 	if result == nil || result.Observability == nil {
 		return
 	}
-	result.WorkflowIssues = evalharness.GoalValidationIssues(result.Observability.GoalAttention, result.Observability.WorkflowRuns)
-	if len(result.WorkflowIssues) > 0 {
+	if len(evalharness.GoalAttentionValidationIssues(result.Observability.GoalAttention)) > 0 {
 		result.Success = false
 	}
 }
@@ -559,26 +557,18 @@ func collectEvalObservability(rt *runtime.Session, sessionID, taskRoot string, k
 	obs.ContextBlocks = evalContextBlockObservations(rt)
 	if obs.StateDir != "" {
 		obs.SessionDir = statepath.SessionArtifactDir(obs.StateDir, sessionID)
-		obs.WorkflowDir = filepath.Join(obs.StateDir, "workflows")
 	}
 	if rt.Toolkit != nil {
 		obs.ToolInventory = evalToolInventoryObservations(rt.Toolkit.ToolInfos())
 		obs.ToolRecords = evalToolObservations(rt.Toolkit.ToolTelemetry())
 	}
-	var workflowStore *workflow.Store
-	if obs.StateDir != "" {
-		workflowStore = workflow.NewStore(obs.StateDir)
-	}
-	snapshotOpts := goalrunner.SnapshotOptions{
-		WorkflowStore: workflowStore,
-	}
+	snapshotOpts := goalrunner.SnapshotOptions{}
 	if rt.AgentControl != nil {
 		snapshotOpts.HarnessStore = rt.AgentControl.HarnessStore()
 	}
 	snapshot := goalrunner.SnapshotSystem(snapshotOpts)
 	obs.HarnessDir = snapshot.HarnessDir
 	obs.GoalAttention = evalGoalAttentionObservations(snapshot.Attention)
-	obs.WorkflowRuns = evalWorkflowObservations(snapshot.Workflows)
 	obs.HarnessTasks = evalHarnessTaskObservations(snapshot.Harness.Tasks)
 	obs.HarnessReports = evalHarnessReportObservations(snapshot.Harness.Reports)
 	obs.Warnings = append(obs.Warnings, evalSafeStringSlice(snapshot.Warnings, evalTextPreviewLimit)...)
@@ -624,12 +614,12 @@ func evalModelProfileObservation(rt *runtime.Session) *evalharness.ModelProfileO
 		FreeformTool:              profile.APIShape.FreeformTool,
 		ParallelToolCalls:         profile.APIShape.ParallelToolCalls,
 		ContextWindowTokens:       profile.Context.WindowTokens,
-		DefaultWriteMode:          string(profile.Workflow.DefaultWriteMode),
-		DefaultSearchBudget:       profile.Workflow.DefaultSearchBudget,
-		DefaultMaxAutonomousSteps: profile.Workflow.DefaultMaxAutonomousSteps,
-		NeedsReadBeforeWrite:      profile.Workflow.NeedsReadBeforeWrite,
-		AllowParallelReadOnly:     profile.Workflow.AllowParallelReadOnly,
-		AllowDirectShell:          profile.Workflow.AllowDirectShell,
+		DefaultWriteMode:          string(profile.Execution.DefaultWriteMode),
+		DefaultSearchBudget:       profile.Execution.DefaultSearchBudget,
+		DefaultMaxAutonomousSteps: profile.Execution.DefaultMaxAutonomousSteps,
+		NeedsReadBeforeWrite:      profile.Execution.NeedsReadBeforeWrite,
+		AllowParallelReadOnly:     profile.Execution.AllowParallelReadOnly,
+		AllowDirectShell:          profile.Execution.AllowDirectShell,
 	}
 }
 
@@ -825,112 +815,6 @@ func evalGoalAttentionObservations(items []goalrunner.AttentionItem) []evalharne
 			Status:  item.Status,
 			Message: evalSafePreview(item.Message, evalTextPreviewLimit),
 			Path:    item.Path,
-		})
-	}
-	return out
-}
-
-func evalWorkflowObservations(runs []goalrunner.WorkflowSnapshot) []evalharness.WorkflowRunObservation {
-	out := make([]evalharness.WorkflowRunObservation, 0, len(runs))
-	for _, run := range runs {
-		item := evalharness.WorkflowRunObservation{
-			ID:              run.ID,
-			RunDir:          run.RunDir,
-			EventLogPath:    run.EventLogPath,
-			DefinitionName:  run.DefinitionName,
-			Driver:          run.Driver,
-			Entrypoint:      run.Entrypoint,
-			Status:          run.Status,
-			Error:           evalSafePreview(run.Error, evalTextPreviewLimit),
-			ScriptPath:      run.ScriptPath,
-			FinalReportPath: run.FinalReportPath,
-			GoalID:          run.GoalID,
-			GoalDir:         run.GoalDir,
-			Phases:          evalWorkflowPhaseObservations(run.Phases),
-			AgentRuns:       evalWorkflowAgentRunObservations(run.AgentRuns),
-			TeamArbitration: evalWorkflowTeamArbitration(run.Arbitration),
-			EventCount:      run.EventCount,
-		}
-		if run.Team != nil && len(run.Team.Members) > 0 {
-			item.WorkflowTeam = evalWorkflowTeamObservation(*run.Team)
-		}
-		out = append(out, item)
-	}
-	return out
-}
-
-func evalWorkflowTeamArbitration(in goalrunner.WorkflowArbitration) evalharness.WorkflowTeamArbitration {
-	overlaps := make([]evalharness.WorkflowChangedFileOverlapObservation, 0, len(in.ChangedFileOverlaps))
-	for _, overlap := range in.ChangedFileOverlaps {
-		overlaps = append(overlaps, evalharness.WorkflowChangedFileOverlapObservation{
-			File:        overlap.File,
-			AgentRunIDs: append([]string(nil), overlap.AgentRunIDs...),
-		})
-	}
-	return evalharness.WorkflowTeamArbitration{
-		Status:              in.Status,
-		OpenAgentRuns:       append([]string(nil), in.OpenAgentRuns...),
-		MissingReports:      append([]string(nil), in.MissingReports...),
-		FailedAgentRuns:     append([]string(nil), in.FailedAgentRuns...),
-		ChangedFileOverlaps: overlaps,
-		NextActions:         append([]string(nil), in.NextActions...),
-	}
-}
-
-func evalWorkflowTeamObservation(team goalrunner.WorkflowTeamSnapshot) *evalharness.WorkflowTeamObservation {
-	out := &evalharness.WorkflowTeamObservation{
-		CreatedAt: team.CreatedAt,
-		UpdatedAt: team.UpdatedAt,
-		Members:   make([]evalharness.WorkflowTeamMemberObservation, 0, len(team.Members)),
-	}
-	for _, member := range team.Members {
-		out.Members = append(out.Members, evalharness.WorkflowTeamMemberObservation{
-			ID:             member.ID,
-			Role:           member.Role,
-			Mode:           string(member.Mode),
-			AgentProfile:   member.AgentProfile,
-			TaskName:       member.TaskName,
-			PhaseID:        member.PhaseID,
-			CreatedProfile: member.CreatedProfile,
-		})
-	}
-	return out
-}
-
-func evalWorkflowPhaseObservations(phases []goalrunner.WorkflowPhaseSnapshot) []evalharness.WorkflowPhaseObservation {
-	out := make([]evalharness.WorkflowPhaseObservation, 0, len(phases))
-	for _, phase := range phases {
-		out = append(out, evalharness.WorkflowPhaseObservation{
-			ID:          phase.ID,
-			Name:        phase.Name,
-			Status:      phase.Status,
-			Error:       evalSafePreview(phase.Error, evalTextPreviewLimit),
-			AgentRunIDs: append([]string(nil), phase.AgentRunIDs...),
-		})
-	}
-	return out
-}
-
-func evalWorkflowAgentRunObservations(agents []goalrunner.WorkflowAgentSnapshot) []evalharness.WorkflowAgentRunObservation {
-	out := make([]evalharness.WorkflowAgentRunObservation, 0, len(agents))
-	for _, agent := range agents {
-		out = append(out, evalharness.WorkflowAgentRunObservation{
-			ID:            agent.ID,
-			PhaseID:       agent.PhaseID,
-			AgentID:       agent.AgentID,
-			AgentPath:     agent.AgentPath,
-			TaskName:      agent.TaskName,
-			AgentProfile:  agent.AgentProfile,
-			Status:        agent.Status,
-			ReportPath:    agent.ReportPath,
-			ReportMissing: agent.ReportMissing,
-			ChangedFiles:  append([]string(nil), agent.ChangedFiles...),
-			Artifacts:     append([]string(nil), agent.Artifacts...),
-			WorktreePath:  agent.WorktreePath,
-			InputTokens:   agent.InputTokens,
-			OutputTokens:  agent.OutputTokens,
-			DurationMS:    agent.DurationMS,
-			Error:         evalSafePreview(agent.Error, evalTextPreviewLimit),
 		})
 	}
 	return out
@@ -1405,9 +1289,6 @@ func printEvalReport(report evalReport) {
 		if len(result.MissingErrors) > 0 {
 			fmt.Printf("  missing_errors: %s\n", strings.Join(result.MissingErrors, ","))
 		}
-		if len(result.WorkflowIssues) > 0 {
-			fmt.Printf("  workflow_issues: %s\n", strings.Join(result.WorkflowIssues, ","))
-		}
 		if result.Validation != nil {
 			fmt.Printf("  validation: status=%s tools=%d evidence=%d missing=%d failures=%d\n",
 				result.Validation.Status, len(result.Validation.ToolCalls), len(result.Validation.Evidence), len(result.Validation.Missing), len(result.Validation.Failures))
@@ -1457,9 +1338,6 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 	if summary.Task != nil && len(summary.Task.ForbiddenToolsUsed) > 0 {
 		fmt.Printf("  forbidden_tools: %s\n", strings.Join(summary.Task.ForbiddenToolsUsed, ","))
 	}
-	if summary.Task != nil && len(summary.Task.WorkflowIssues) > 0 {
-		fmt.Printf("  workflow_issues: %s\n", strings.Join(summary.Task.WorkflowIssues, ","))
-	}
 	if attention := formatEvalGoalAttention(summary.GoalAttention); attention != "" {
 		fmt.Printf("  goal_attention: %s\n", attention)
 	}
@@ -1492,15 +1370,6 @@ func printEvalTraceReplay(summary evalharness.TraceReplaySummary) {
 		if failures := formatDelimitedValues(summary.Validation.Failures, ","); failures != "" {
 			fmt.Printf("  validation_failures: %s\n", failures)
 		}
-	}
-	if runs := formatEvalWorkflowRuns(summary.WorkflowRuns, summary.WorkflowRunIDs); runs != "" {
-		fmt.Printf("  workflow_runs: %s\n", runs)
-	}
-	if agents := formatEvalWorkflowAgents(summary.WorkflowRuns); agents != "" {
-		fmt.Printf("  workflow_agents: %s\n", agents)
-	}
-	if arbitration := formatEvalWorkflowArbitration(summary.WorkflowRuns); arbitration != "" {
-		fmt.Printf("  workflow_arbitration: %s\n", arbitration)
 	}
 	if summary.Observability != nil {
 		if summary.Observability.SessionID != "" {
@@ -1605,34 +1474,6 @@ func printSessionTraceReplay(summary sessiontrace.ReplaySummary) {
 	}
 }
 
-func formatEvalWorkflowRuns(runs []evalharness.WorkflowRunObservation, fallbackIDs []string) string {
-	parts := make([]string, 0, len(runs))
-	for _, run := range runs {
-		id := strings.TrimSpace(run.ID)
-		if id == "" {
-			continue
-		}
-		labelParts := []string{id}
-		if driver := strings.TrimSpace(run.Driver); driver != "" {
-			labelParts = append(labelParts, "driver="+driver)
-		}
-		if status := strings.TrimSpace(run.Status); status != "" {
-			labelParts = append(labelParts, "status="+status)
-		}
-		if eventLog := strings.TrimSpace(run.EventLogPath); eventLog != "" {
-			labelParts = append(labelParts, "event_log="+eventLog)
-		}
-		if runDir := strings.TrimSpace(run.RunDir); runDir != "" {
-			labelParts = append(labelParts, "run_dir="+runDir)
-		}
-		parts = append(parts, strings.Join(labelParts, ":"))
-	}
-	if len(parts) > 0 {
-		return strings.Join(parts, ",")
-	}
-	return strings.Join(fallbackIDs, ",")
-}
-
 func formatEvalGoalAttention(items []evalharness.GoalAttentionObservation) string {
 	parts := make([]string, 0, len(items))
 	for _, item := range items {
@@ -1656,109 +1497,6 @@ func formatEvalGoalAttention(items []evalharness.GoalAttentionObservation) strin
 		parts = append(parts, strings.Join(labelParts, ":"))
 	}
 	return strings.Join(parts, ",")
-}
-
-func formatEvalWorkflowAgents(runs []evalharness.WorkflowRunObservation) string {
-	parts := []string(nil)
-	for _, run := range runs {
-		runID := strings.TrimSpace(run.ID)
-		for _, agent := range run.AgentRuns {
-			agentID := strings.TrimSpace(agent.ID)
-			if agentID == "" {
-				continue
-			}
-			if runID != "" {
-				agentID = runID + "/" + agentID
-			}
-			labelParts := []string{agentID}
-			if task := strings.TrimSpace(agent.TaskName); task != "" {
-				labelParts = append(labelParts, "task="+task)
-			}
-			if profile := strings.TrimSpace(agent.AgentProfile); profile != "" {
-				labelParts = append(labelParts, "profile="+profile)
-			}
-			if status := strings.TrimSpace(agent.Status); status != "" {
-				labelParts = append(labelParts, "status="+status)
-			}
-			if report := strings.TrimSpace(agent.ReportPath); report != "" {
-				labelParts = append(labelParts, "report="+report)
-			}
-			if agent.ReportMissing {
-				labelParts = append(labelParts, "report_missing=true")
-			}
-			if worktree := strings.TrimSpace(agent.WorktreePath); worktree != "" {
-				labelParts = append(labelParts, "worktree="+worktree)
-			}
-			if changed := formatDelimitedValues(agent.ChangedFiles, "|"); changed != "" {
-				labelParts = append(labelParts, "changed="+changed)
-			}
-			if artifacts := formatDelimitedValues(agent.Artifacts, "|"); artifacts != "" {
-				labelParts = append(labelParts, "artifacts="+artifacts)
-			}
-			if errText := strings.TrimSpace(agent.Error); errText != "" {
-				labelParts = append(labelParts, "error="+firstLine(errText))
-			}
-			parts = append(parts, strings.Join(labelParts, ":"))
-		}
-	}
-	return strings.Join(parts, ",")
-}
-
-func formatEvalWorkflowArbitration(runs []evalharness.WorkflowRunObservation) string {
-	parts := []string(nil)
-	for _, run := range runs {
-		arbitration := run.TeamArbitration
-		if arbitration.Status == "" &&
-			len(arbitration.OpenAgentRuns) == 0 &&
-			len(arbitration.MissingReports) == 0 &&
-			len(arbitration.FailedAgentRuns) == 0 &&
-			len(arbitration.ChangedFileOverlaps) == 0 &&
-			len(arbitration.NextActions) == 0 {
-			continue
-		}
-		id := strings.TrimSpace(run.ID)
-		if id == "" {
-			id = "workflow"
-		}
-		labelParts := []string{id}
-		if status := strings.TrimSpace(arbitration.Status); status != "" {
-			labelParts = append(labelParts, "status="+status)
-		}
-		if open := formatDelimitedValues(arbitration.OpenAgentRuns, "|"); open != "" {
-			labelParts = append(labelParts, "open="+open)
-		}
-		if missing := formatDelimitedValues(arbitration.MissingReports, "|"); missing != "" {
-			labelParts = append(labelParts, "missing_reports="+missing)
-		}
-		if failed := formatDelimitedValues(arbitration.FailedAgentRuns, "|"); failed != "" {
-			labelParts = append(labelParts, "failed="+failed)
-		}
-		if overlaps := formatEvalWorkflowChangedFileOverlaps(arbitration.ChangedFileOverlaps); overlaps != "" {
-			labelParts = append(labelParts, "overlaps="+overlaps)
-		}
-		if next := formatDelimitedValues(arbitration.NextActions, "|"); next != "" {
-			labelParts = append(labelParts, "next="+next)
-		}
-		parts = append(parts, strings.Join(labelParts, ":"))
-	}
-	return strings.Join(parts, ",")
-}
-
-func formatEvalWorkflowChangedFileOverlaps(overlaps []evalharness.WorkflowChangedFileOverlapObservation) string {
-	parts := make([]string, 0, len(overlaps))
-	for _, overlap := range overlaps {
-		file := strings.TrimSpace(overlap.File)
-		if file == "" {
-			continue
-		}
-		agents := formatDelimitedValues(overlap.AgentRunIDs, "+")
-		if agents != "" {
-			parts = append(parts, file+"="+agents)
-		} else {
-			parts = append(parts, file)
-		}
-	}
-	return strings.Join(parts, "|")
 }
 
 func formatEvalValidationEvidence(values []evalharness.VerificationEvidence) string {

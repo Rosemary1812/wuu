@@ -19,8 +19,6 @@ type AgentFailure struct {
 	RunID        string
 	AgentID      string
 	AgentPath    string
-	GoalID       string
-	GoalDir      string
 	Outcome      string
 	Message      string
 	ReportPath   string
@@ -36,8 +34,6 @@ type AgentReport struct {
 	RunID        string
 	AgentID      string
 	AgentPath    string
-	GoalID       string
-	GoalDir      string
 	Outcome      string
 	Summary      string
 	ReportPath   string
@@ -61,8 +57,6 @@ func (c *AgentControl) recordAgentFailure(failure AgentFailure) error {
 	failure.RunID = strings.TrimSpace(failure.RunID)
 	failure.AgentID = strings.TrimSpace(failure.AgentID)
 	failure.AgentPath = strings.TrimSpace(failure.AgentPath)
-	failure.GoalID = strings.TrimSpace(failure.GoalID)
-	failure.GoalDir = strings.TrimSpace(failure.GoalDir)
 	failure.Outcome = strings.TrimSpace(failure.Outcome)
 	failure.Message = strings.TrimSpace(failure.Message)
 	failure.ReportPath = strings.TrimSpace(failure.ReportPath)
@@ -87,8 +81,6 @@ func (c *AgentControl) recordAgentReport(report AgentReport) error {
 	report.RunID = strings.TrimSpace(report.RunID)
 	report.AgentID = strings.TrimSpace(report.AgentID)
 	report.AgentPath = strings.TrimSpace(report.AgentPath)
-	report.GoalID = strings.TrimSpace(report.GoalID)
-	report.GoalDir = strings.TrimSpace(report.GoalDir)
 	report.Outcome = strings.TrimSpace(report.Outcome)
 	report.Summary = strings.TrimSpace(report.Summary)
 	report.ReportPath = strings.TrimSpace(report.ReportPath)

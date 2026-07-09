@@ -2,8 +2,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 const cwd = process.env.WUU_PERMISSION_E2E_CWD || process.cwd();
 const runtimeContext = { kind: "no_project", cwd };
-let currentToolPolicy = { profile: "agent" };
-let currentPermissions = permissionPreset("agent");
+let currentToolPolicy = { profile: "standard" };
+let currentPermissions = permissionPreset("standard");
 const updateCalls = [];
 
 function provider(provider = "e2e", model = "mock-permission") {
@@ -19,24 +19,17 @@ function permissionPreset(mode) {
         approval_policy: "on_request",
         approvals_reviewer: "user"
       };
-    case "auto_review":
+    case "unconfined":
       return {
-        mode: "auto_review",
-        permission_profile: "workspace_write",
-        approval_policy: "on_request",
-        approvals_reviewer: "auto_review"
-      };
-    case "full_access":
-      return {
-        mode: "full_access",
+        mode: "unconfined",
         permission_profile: "danger_full_access",
         approval_policy: "never",
         approvals_reviewer: "user"
       };
-    case "agent":
+    case "standard":
     default:
       return {
-        mode: "agent",
+        mode: "standard",
         permission_profile: "workspace_write",
         approval_policy: "on_request",
         approvals_reviewer: "user"

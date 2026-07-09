@@ -6,10 +6,6 @@ func AgentBriefContractSummary() string {
 	return "Use the Base Agent Brief Contract: invocation mode, task, background, role, identity/memory, scope, non-goals, starting points, acceptance criteria, deliverables, reporting, and constraints. Fresh workers need a self-contained brief; forks need only the incremental focus and deliverable."
 }
 
-func WorkflowBriefExtensionSummary() string {
-	return "For workflow work, include workflow_run_id, phase_id, team_member_id, team mode, agent_profile when present, and how the result binds back to workflow state."
-}
-
 func ProfileBriefExtensionSummary() string {
 	return "If agent_profile is set, state the profile name, use saved profile memory when relevant, and surface reusable lessons as memory candidates instead of saving temporary progress."
 }
@@ -34,17 +30,5 @@ func AgentBriefContractText() string {
 		"- Reporting: how to hand results back. Fork briefs should be incremental: focus, scope, non-goals, and deliverable rather than a pasted transcript.",
 		"- Constraints: safety, permissions, isolation, time, or test limits.",
 		"- Recovery boundary: use HelpMe instead of ordinary spawn_agent when the real need is a fresh second opinion after repeated failure or polluted context.",
-	}, "\n")
-}
-
-func WorkflowBriefExtensionText() string {
-	return strings.Join([]string{
-		"Workflow context:",
-		"- Workflow Run: durable run id.",
-		"- Phase: phase id/name this work belongs to.",
-		"- Team Member: recorded team member id and role.",
-		"- Mode: reuse_profile, create_profile, or ephemeral.",
-		"- Agent Profile: profile name when mode uses a durable identity.",
-		"- State binding: require agent_report, then the orchestrator records results with workflow_control.",
 	}, "\n")
 }

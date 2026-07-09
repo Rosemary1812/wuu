@@ -455,59 +455,6 @@ func TestMultiAgentWorkerVerification(t *testing.T) {
 	}
 }
 
-func TestAgentLedWorkflowTeamVerification(t *testing.T) {
-	task, ok := ByID("agent_led_workflow_team")
-	if !ok {
-		t.Fatal("missing agent_led_workflow_team task")
-	}
-	if !task.IsolateWuuHome {
-		t.Fatal("agent-led workflow team eval should isolate WUU_HOME")
-	}
-	if !evalTaskRequiresTool(task, "start_workflow") || evalTaskRequiresTool(task, "create_workflow") {
-		t.Fatalf("agent-led workflow team eval should require start_workflow, got %+v", task.RequiredTools)
-	}
-	if !evalTaskForbidsTool(task, "create_workflow") || !evalTaskForbidsTool(task, "run_workflow") {
-		t.Fatalf("agent-led workflow team eval should forbid lower-level drivers, got %+v", task.ForbiddenTools)
-	}
-	root := t.TempDir()
-	if err := SetupTask(task, root); err != nil {
-		t.Fatalf("SetupTask: %v", err)
-	}
-
-	failed, err := VerifyTask(context.Background(), task, root, "")
-	if err != nil {
-		t.Fatalf("VerifyTask missing markers: %v", err)
-	}
-	if failed.Passed {
-		t.Fatal("missing team markers should fail verification")
-	}
-
-	if err := os.WriteFile(filepath.Join(root, "team_alpha.txt"), []byte("TEAM_ALPHA_DONE\n"), 0o644); err != nil {
-		t.Fatalf("write alpha marker: %v", err)
-	}
-	failed, err = VerifyTask(context.Background(), task, root, "")
-	if err != nil {
-		t.Fatalf("VerifyTask missing beta marker: %v", err)
-	}
-	if failed.Passed {
-		t.Fatal("missing beta marker should fail verification")
-	}
-
-	if err := os.WriteFile(filepath.Join(root, "team_beta.txt"), []byte("TEAM_BETA_DONE\n"), 0o644); err != nil {
-		t.Fatalf("write beta marker: %v", err)
-	}
-	passed, err := VerifyTask(context.Background(), task, root, "")
-	if err != nil {
-		t.Fatalf("VerifyTask team markers: %v", err)
-	}
-	if !passed.Passed {
-		t.Fatalf("team markers should pass verification: %s", passed.Reason)
-	}
-	if len(passed.Evidence) != 2 {
-		t.Fatalf("team markers should include both file checks: %+v", passed.Evidence)
-	}
-}
-
 func evalTaskRequiresTool(task Task, name string) bool {
 	for _, tool := range task.RequiredTools {
 		if tool == name {

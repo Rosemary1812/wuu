@@ -15,6 +15,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
 // workerProviderName returns the provider name the AgentControl's worker
@@ -284,6 +285,11 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 			Description:  description,
 			Status:       spawned.Status,
 			StartedAt:    time.Now().UTC(),
+			Participant: s.participantSummaryForSnapshot(subagent.SubAgentSnapshot{
+				ParticipantID: spawned.ParticipantID,
+				TaskName:      spawned.TaskName,
+				Type:          subagentType,
+			}),
 		},
 	}, nil)
 }

@@ -84,7 +84,6 @@ func isKnownSurfaceSkillTool(name string) bool {
 		"read_memory", "write_memory", "session_memory",
 		"update_plan", "goal",
 		"cron",
-		"list_workflows", "load_workflow", "save_workflow", "start_workflow", "run_workflow", "create_workflow", "workflow_control", "workflow_status",
 		"list_agent_profiles", "create_agent_profile":
 		return true
 	default:

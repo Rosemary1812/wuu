@@ -8,20 +8,16 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/harness"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 )
 
-// SystemSnapshot is the goal-level read model for existing workflow and
-// harness stores. It is intentionally a projection: workflow and harness keep
-// their current JSON schemas, while control-plane and eval callers can use one
-// goal-owned view.
+// SystemSnapshot is the goal-level read model for existing goal and harness
+// stores. It is intentionally a projection: harness keeps its current JSON
+// schema, while control-plane and eval callers can use one goal-owned view.
 type SystemSnapshot struct {
 	GeneratedAt time.Time           `json:"generated_at"`
 	GoalRoot    string              `json:"goal_root,omitempty"`
-	WorkflowDir string              `json:"workflow_dir,omitempty"`
 	HarnessDir  string              `json:"harness_dir,omitempty"`
 	Goals       []GoalStateSnapshot `json:"goals,omitempty"`
-	Workflows   []WorkflowSnapshot  `json:"workflows,omitempty"`
 	Harness     HarnessSnapshot     `json:"harness,omitempty"`
 	Approvals   []ApprovalSnapshot  `json:"approvals,omitempty"`
 	Attention   []AttentionItem     `json:"attention,omitempty"`
@@ -63,83 +59,6 @@ type ApprovalSnapshot struct {
 	Resolution      string    `json:"resolution,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	ResolvedAt      time.Time `json:"resolved_at,omitempty"`
-}
-
-type WorkflowSnapshot struct {
-	ID              string                  `json:"id"`
-	RunDir          string                  `json:"run_dir,omitempty"`
-	EventLogPath    string                  `json:"event_log_path,omitempty"`
-	DefinitionName  string                  `json:"definition_name,omitempty"`
-	Driver          string                  `json:"driver,omitempty"`
-	Entrypoint      string                  `json:"entrypoint,omitempty"`
-	Status          string                  `json:"status"`
-	Error           string                  `json:"error,omitempty"`
-	ScriptPath      string                  `json:"script_path,omitempty"`
-	FinalReportPath string                  `json:"final_report_path,omitempty"`
-	GoalID          string                  `json:"goal_id,omitempty"`
-	GoalDir         string                  `json:"goal_dir,omitempty"`
-	Phases          []WorkflowPhaseSnapshot `json:"phases,omitempty"`
-	AgentRuns       []WorkflowAgentSnapshot `json:"agent_runs,omitempty"`
-	Team            *WorkflowTeamSnapshot   `json:"team,omitempty"`
-	Arbitration     WorkflowArbitration     `json:"arbitration,omitempty"`
-	EventCount      int                     `json:"event_count,omitempty"`
-}
-
-type WorkflowPhaseSnapshot struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name,omitempty"`
-	Status      string   `json:"status"`
-	Error       string   `json:"error,omitempty"`
-	AgentRunIDs []string `json:"agent_run_ids,omitempty"`
-}
-
-type WorkflowAgentSnapshot struct {
-	ID            string   `json:"id"`
-	PhaseID       string   `json:"phase_id,omitempty"`
-	AgentID       string   `json:"agent_id,omitempty"`
-	AgentPath     string   `json:"agent_path,omitempty"`
-	TaskName      string   `json:"task_name,omitempty"`
-	AgentProfile  string   `json:"agent_profile,omitempty"`
-	Status        string   `json:"status"`
-	ReportPath    string   `json:"report_path,omitempty"`
-	ReportMissing bool     `json:"report_missing,omitempty"`
-	ChangedFiles  []string `json:"changed_files,omitempty"`
-	Artifacts     []string `json:"artifacts,omitempty"`
-	WorktreePath  string   `json:"worktree_path,omitempty"`
-	InputTokens   int      `json:"input_tokens,omitempty"`
-	OutputTokens  int      `json:"output_tokens,omitempty"`
-	DurationMS    int64    `json:"duration_ms,omitempty"`
-	Error         string   `json:"error,omitempty"`
-}
-
-type WorkflowTeamSnapshot struct {
-	Members   []WorkflowTeamMemberSnapshot `json:"members,omitempty"`
-	CreatedAt time.Time                    `json:"created_at,omitempty"`
-	UpdatedAt time.Time                    `json:"updated_at,omitempty"`
-}
-
-type WorkflowTeamMemberSnapshot struct {
-	ID             string `json:"id,omitempty"`
-	Role           string `json:"role,omitempty"`
-	Mode           string `json:"mode,omitempty"`
-	AgentProfile   string `json:"agent_profile,omitempty"`
-	TaskName       string `json:"task_name,omitempty"`
-	PhaseID        string `json:"phase_id,omitempty"`
-	CreatedProfile bool   `json:"created_profile,omitempty"`
-}
-
-type WorkflowArbitration struct {
-	Status              string                       `json:"status,omitempty"`
-	OpenAgentRuns       []string                     `json:"open_agent_runs,omitempty"`
-	MissingReports      []string                     `json:"missing_reports,omitempty"`
-	FailedAgentRuns     []string                     `json:"failed_agent_runs,omitempty"`
-	ChangedFileOverlaps []ChangedFileOverlapSnapshot `json:"changed_file_overlaps,omitempty"`
-	NextActions         []string                     `json:"next_actions,omitempty"`
-}
-
-type ChangedFileOverlapSnapshot struct {
-	File        string   `json:"file"`
-	AgentRunIDs []string `json:"agent_run_ids"`
 }
 
 type HarnessSnapshot struct {
@@ -186,10 +105,9 @@ type AttentionItem struct {
 }
 
 type SnapshotOptions struct {
-	GoalRoot      string
-	WorkflowStore *workflow.Store
-	HarnessStore  *harness.Store
-	Now           func() time.Time
+	GoalRoot     string
+	HarnessStore *harness.Store
+	Now          func() time.Time
 }
 
 func SnapshotSystem(opts SnapshotOptions) SystemSnapshot {
@@ -203,13 +121,6 @@ func SnapshotSystem(opts SnapshotOptions) SystemSnapshot {
 		goals, approvals, attention, warnings := SnapshotGoals(opts.GoalRoot)
 		snap.Goals = goals
 		snap.Approvals = approvals
-		snap.Attention = append(snap.Attention, attention...)
-		snap.Warnings = append(snap.Warnings, warnings...)
-	}
-	if opts.WorkflowStore != nil {
-		snap.WorkflowDir = filepath.Join(opts.WorkflowStore.Dir(), "workflows")
-		workflowSnapshots, attention, warnings := SnapshotWorkflows(opts.WorkflowStore)
-		snap.Workflows = workflowSnapshots
 		snap.Attention = append(snap.Attention, attention...)
 		snap.Warnings = append(snap.Warnings, warnings...)
 	}
@@ -275,70 +186,6 @@ func SnapshotGoals(goalRoot string) ([]GoalStateSnapshot, []ApprovalSnapshot, []
 		}
 	}
 	return goals, approvals, attention, warnings
-}
-
-func SnapshotWorkflows(store *workflow.Store) ([]WorkflowSnapshot, []AttentionItem, []string) {
-	if store == nil {
-		return nil, nil, nil
-	}
-	runs, err := store.ListRuns()
-	if err != nil {
-		return nil, nil, []string{"list workflow runs: " + err.Error()}
-	}
-	out := make([]WorkflowSnapshot, 0, len(runs))
-	var attention []AttentionItem
-	var warnings []string
-	for _, run := range runs {
-		runDir := filepath.Join(store.Dir(), "workflows", run.ID)
-		item := WorkflowSnapshot{
-			ID:              run.ID,
-			RunDir:          runDir,
-			EventLogPath:    filepath.Join(runDir, "events.jsonl"),
-			DefinitionName:  run.DefinitionName,
-			Driver:          run.Driver,
-			Entrypoint:      run.Entrypoint,
-			Status:          string(run.Status),
-			Error:           strings.TrimSpace(run.Error),
-			ScriptPath:      run.ScriptPath,
-			FinalReportPath: run.FinalReportPath,
-			GoalID:          run.GoalID,
-			GoalDir:         run.GoalDir,
-			Phases:          workflowPhaseSnapshots(run.Phases),
-		}
-		if run.Status == workflow.RunStateFailed || run.Status == workflow.RunStatePaused {
-			attention = append(attention, AttentionItem{
-				Source:  "workflow",
-				ID:      run.ID,
-				Status:  string(run.Status),
-				Message: firstSnapshotText(run.Error, run.PauseReason, run.ResumeHint),
-				Path:    item.EventLogPath,
-			})
-		}
-		team, err := store.LoadTeamPlan(run.ID)
-		if err != nil {
-			warnings = append(warnings, "load workflow team for "+run.ID+": "+err.Error())
-		} else if len(team.Members) > 0 {
-			item.Team = workflowTeamSnapshot(team)
-		}
-		agents, err := store.ListAgentRuns(run.ID)
-		if err != nil {
-			warnings = append(warnings, "list workflow agent runs for "+run.ID+": "+err.Error())
-		} else {
-			item.AgentRuns = workflowAgentSnapshots(agents)
-			item.Arbitration = workflowArbitrationSnapshot(workflow.AnalyzeTeamArbitration(agents))
-			for _, attentionItem := range workflowAttentionFromArbitration(run.ID, item.Arbitration) {
-				attention = append(attention, attentionItem)
-			}
-		}
-		events, err := store.ListEvents(run.ID)
-		if err != nil {
-			warnings = append(warnings, "list workflow events for "+run.ID+": "+err.Error())
-		} else {
-			item.EventCount = len(events)
-		}
-		out = append(out, item)
-	}
-	return out, attention, warnings
 }
 
 func SnapshotHarness(store *harness.Store) (HarnessSnapshot, []AttentionItem, []string) {
@@ -435,97 +282,6 @@ func approvalSnapshot(goalDir, goalID string, approval ApprovalRequest) Approval
 		CreatedAt:       approval.CreatedAt,
 		ResolvedAt:      approval.ResolvedAt,
 	}
-}
-
-func workflowPhaseSnapshots(phases []workflow.Phase) []WorkflowPhaseSnapshot {
-	out := make([]WorkflowPhaseSnapshot, 0, len(phases))
-	for _, phase := range phases {
-		out = append(out, WorkflowPhaseSnapshot{
-			ID:          phase.ID,
-			Name:        phase.Name,
-			Status:      string(phase.Status),
-			Error:       strings.TrimSpace(phase.Error),
-			AgentRunIDs: append([]string(nil), phase.AgentRunIDs...),
-		})
-	}
-	return out
-}
-
-func workflowAgentSnapshots(agents []workflow.AgentRun) []WorkflowAgentSnapshot {
-	out := make([]WorkflowAgentSnapshot, 0, len(agents))
-	for _, agent := range agents {
-		out = append(out, WorkflowAgentSnapshot{
-			ID:            agent.ID,
-			PhaseID:       agent.PhaseID,
-			AgentID:       agent.AgentID,
-			AgentPath:     agent.AgentPath,
-			TaskName:      agent.TaskName,
-			AgentProfile:  agent.AgentProfile,
-			Status:        string(agent.Status),
-			ReportPath:    agent.ReportPath,
-			ReportMissing: agent.ReportMissing,
-			ChangedFiles:  append([]string(nil), agent.ChangedFiles...),
-			Artifacts:     append([]string(nil), agent.Artifacts...),
-			WorktreePath:  agent.WorktreePath,
-			InputTokens:   agent.InputTokens,
-			OutputTokens:  agent.OutputTokens,
-			DurationMS:    agent.DurationMS,
-			Error:         strings.TrimSpace(agent.Error),
-		})
-	}
-	return out
-}
-
-func workflowTeamSnapshot(team workflow.TeamPlan) *WorkflowTeamSnapshot {
-	out := &WorkflowTeamSnapshot{
-		CreatedAt: team.CreatedAt,
-		UpdatedAt: team.UpdatedAt,
-		Members:   make([]WorkflowTeamMemberSnapshot, 0, len(team.Members)),
-	}
-	for _, member := range team.Members {
-		out.Members = append(out.Members, WorkflowTeamMemberSnapshot{
-			ID:             member.ID,
-			Role:           member.Role,
-			Mode:           string(member.Mode),
-			AgentProfile:   member.AgentProfile,
-			TaskName:       member.TaskName,
-			PhaseID:        member.PhaseID,
-			CreatedProfile: member.CreatedProfile,
-		})
-	}
-	return out
-}
-
-func workflowArbitrationSnapshot(in workflow.TeamArbitration) WorkflowArbitration {
-	overlaps := make([]ChangedFileOverlapSnapshot, 0, len(in.ChangedFileOverlaps))
-	for _, overlap := range in.ChangedFileOverlaps {
-		overlaps = append(overlaps, ChangedFileOverlapSnapshot{
-			File:        overlap.File,
-			AgentRunIDs: append([]string(nil), overlap.AgentRunIDs...),
-		})
-	}
-	return WorkflowArbitration{
-		Status:              in.Status,
-		OpenAgentRuns:       append([]string(nil), in.OpenAgentRuns...),
-		MissingReports:      append([]string(nil), in.MissingReports...),
-		FailedAgentRuns:     append([]string(nil), in.FailedAgentRuns...),
-		ChangedFileOverlaps: overlaps,
-		NextActions:         append([]string(nil), in.NextActions...),
-	}
-}
-
-func workflowAttentionFromArbitration(runID string, arbitration WorkflowArbitration) []AttentionItem {
-	var out []AttentionItem
-	for _, id := range arbitration.FailedAgentRuns {
-		out = append(out, AttentionItem{Source: "workflow_agent", ID: id, Status: "failed", Message: "workflow run " + runID + " has failed agent"})
-	}
-	for _, id := range arbitration.MissingReports {
-		out = append(out, AttentionItem{Source: "workflow_agent", ID: id, Status: "missing_report", Message: "workflow run " + runID + " is missing agent report"})
-	}
-	for _, overlap := range arbitration.ChangedFileOverlaps {
-		out = append(out, AttentionItem{Source: "workflow_conflict", ID: runID, Status: "changed_file_overlap", Message: strings.Join(overlap.AgentRunIDs, ", "), Path: overlap.File})
-	}
-	return out
 }
 
 func harnessTaskSnapshots(tasks []harness.Task) []HarnessTaskSnapshot {

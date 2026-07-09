@@ -72,7 +72,7 @@ type Profile struct {
 	Context      Context
 	Reasoning    Reasoning
 	Code         Code
-	Workflow     Workflow
+	Execution    Execution
 	Economics    Economics
 }
 
@@ -114,14 +114,13 @@ type Code struct {
 	PreferredEditPrimitive WriteMode
 }
 
-type Workflow struct {
+type Execution struct {
 	DefaultMaxAutonomousSteps int
 	DefaultWriteMode          WriteMode
 	DefaultSearchBudget       int
 	NeedsReadBeforeWrite      bool
 	AllowParallelReadOnly     bool
 	AllowDirectShell          bool
-	PreferWorkflowForDurable  bool
 }
 
 type Economics struct {
@@ -210,13 +209,12 @@ func baseProfile(providerName, model string, family Family) Profile {
 			TestDebugScore:         3,
 			PreferredEditPrimitive: WriteModeExactEdit,
 		},
-		Workflow: Workflow{
+		Execution: Execution{
 			DefaultMaxAutonomousSteps: 20,
 			DefaultWriteMode:          WriteModeExactEdit,
 			DefaultSearchBudget:       8,
 			NeedsReadBeforeWrite:      true,
 			AllowDirectShell:          true,
-			PreferWorkflowForDurable:  true,
 		},
 		Economics: Economics{
 			Latency: LatencyClassNormal,
@@ -238,10 +236,10 @@ func applyClaude(profile *Profile) {
 	profile.Code.ExactEditReliability = 5
 	profile.Code.TestDebugScore = 4
 	profile.Code.PreferredEditPrimitive = WriteModeExactEdit
-	profile.Workflow.DefaultWriteMode = WriteModeExactEdit
-	profile.Workflow.DefaultMaxAutonomousSteps = 18
-	profile.Workflow.DefaultSearchBudget = 10
-	profile.Workflow.AllowParallelReadOnly = true
+	profile.Execution.DefaultWriteMode = WriteModeExactEdit
+	profile.Execution.DefaultMaxAutonomousSteps = 18
+	profile.Execution.DefaultSearchBudget = 10
+	profile.Execution.AllowParallelReadOnly = true
 }
 
 func applyCodex(profile *Profile) {
@@ -260,10 +258,10 @@ func applyCodex(profile *Profile) {
 	profile.Code.TestDebugScore = 5
 	profile.Code.PreferredPatchGrammar = "codex_apply_patch"
 	profile.Code.PreferredEditPrimitive = WriteModePatch
-	profile.Workflow.DefaultWriteMode = WriteModePatch
-	profile.Workflow.DefaultMaxAutonomousSteps = 30
-	profile.Workflow.DefaultSearchBudget = 8
-	profile.Workflow.AllowParallelReadOnly = true
+	profile.Execution.DefaultWriteMode = WriteModePatch
+	profile.Execution.DefaultMaxAutonomousSteps = 30
+	profile.Execution.DefaultSearchBudget = 8
+	profile.Execution.AllowParallelReadOnly = true
 }
 
 func applyGPT(profile *Profile) {
@@ -272,7 +270,7 @@ func applyGPT(profile *Profile) {
 	profile.Reasoning.Budget = ReasoningBudgetMedium
 	profile.Reasoning.LongHorizonScore = 4
 	profile.Code.PatchReliability = 4
-	profile.Workflow.DefaultMaxAutonomousSteps = 24
+	profile.Execution.DefaultMaxAutonomousSteps = 24
 }
 
 func applyGemini(profile *Profile) {
@@ -284,8 +282,8 @@ func applyGemini(profile *Profile) {
 	profile.Code.PatchReliability = 2
 	profile.Code.ExactEditReliability = 4
 	profile.Code.PathHallucinationRisk = 3
-	profile.Workflow.DefaultWriteMode = WriteModeExactEdit
-	profile.Workflow.DefaultSearchBudget = 6
+	profile.Execution.DefaultWriteMode = WriteModeExactEdit
+	profile.Execution.DefaultSearchBudget = 6
 }
 
 func applyStrictPortableCoder(profile *Profile) {
@@ -295,9 +293,9 @@ func applyStrictPortableCoder(profile *Profile) {
 	profile.Code.ExactEditReliability = 4
 	profile.Code.PathHallucinationRisk = 4
 	profile.Code.TestDebugScore = 3
-	profile.Workflow.DefaultWriteMode = WriteModeExactEdit
-	profile.Workflow.DefaultMaxAutonomousSteps = 12
-	profile.Workflow.DefaultSearchBudget = 5
+	profile.Execution.DefaultWriteMode = WriteModeExactEdit
+	profile.Execution.DefaultMaxAutonomousSteps = 12
+	profile.Execution.DefaultSearchBudget = 5
 }
 
 func applyLocal(profile *Profile) {
@@ -313,8 +311,8 @@ func applyLocal(profile *Profile) {
 	profile.Code.PathHallucinationRisk = 5
 	profile.Code.TestDebugScore = 2
 	profile.Code.PreferredEditPrimitive = WriteModeExactEdit
-	profile.Workflow.DefaultWriteMode = WriteModeExactEdit
-	profile.Workflow.DefaultMaxAutonomousSteps = 5
-	profile.Workflow.DefaultSearchBudget = 3
-	profile.Workflow.AllowDirectShell = false
+	profile.Execution.DefaultWriteMode = WriteModeExactEdit
+	profile.Execution.DefaultMaxAutonomousSteps = 5
+	profile.Execution.DefaultSearchBudget = 3
+	profile.Execution.AllowDirectShell = false
 }

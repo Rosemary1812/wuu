@@ -753,7 +753,6 @@ func (s *Server) drainResidentAgent(participantID string) {
 			s.dispatchedNodesForTurn(participantID, envs)))
 		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
 		threadRuntime.Toolkit.SetTaskManager(s.residentTaskManager(participantID))
-		threadRuntime.Toolkit.SetWorkflowThreadID(th.ID)
 		s.applyEnvelopeBatchCWD(th, threadRuntime, envs)
 	}
 	userMsg := residentEnvelopeUserMessage(envs, ids)

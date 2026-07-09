@@ -1,0 +1,448 @@
+import {
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
+import type { ServerEvent, Thread } from "../shared/protocol";
+import {
+  activeThreadIDForState,
+  activeTurnIDForThread,
+  composerDraftHasContent,
+  isThreadRunning,
+  threadForTab,
+  threadItemFromRecord,
+  type AppState,
+  type ComposerDraftState,
+} from "./AppState";
+import {
+  inputFilesFromComposer,
+  inputImagesFromComposer,
+  type QueuedComposerMessage,
+} from "./ComposerMessages";
+import {
+  emptyThreadPendingComposerMessages,
+  findPendingComposerMessage,
+  pendingComposerMessagesForThread,
+  reconcilePendingComposerMessagesForThread,
+  removePendingComposerMessagesByID,
+  threadPendingComposerMessagesIsEmpty,
+  type PendingComposerMessageRemovalScope,
+  type PendingComposerMessagesByThread,
+  type ThreadPendingComposerMessages,
+} from "./ComposerPendingMessages";
+import {
+  isRecord,
+  recordValue,
+  stringValue,
+} from "./ToolActivity";
+
+export type QueuedMessageEditTarget = {
+  threadID: string;
+  queueID: string;
+};
+
+export type ComposerPendingStateController = {
+  pendingComposerMessagesByThread: PendingComposerMessagesByThread;
+  pendingComposerMessagesByThreadRef: MutableRefObject<PendingComposerMessagesByThread>;
+  queuedMessageEditTarget: QueuedMessageEditTarget | undefined;
+  queuedMessageEditTargetRef: MutableRefObject<
+    QueuedMessageEditTarget | undefined
+  >;
+  setPendingComposerMessagesByThreadNow: (
+    messagesByThread: PendingComposerMessagesByThread,
+  ) => void;
+  setQueuedMessageEditTargetNow: (
+    target: QueuedMessageEditTarget | undefined,
+  ) => void;
+  pendingComposerMessagesForThread: (
+    threadID: string | undefined,
+  ) => ThreadPendingComposerMessages;
+  updateThreadPendingComposerMessages: (
+    threadID: string,
+    update: (
+      previous: ThreadPendingComposerMessages,
+    ) => ThreadPendingComposerMessages,
+  ) => void;
+  clearThreadPendingComposerMessages: (threadID: string) => void;
+  removePendingComposerMessageByID: (
+    threadID: string | undefined,
+    id: string,
+    scope?: PendingComposerMessageRemovalScope,
+  ) => void;
+  syncPendingComposerMessagesFromServerEvent: (event: ServerEvent) => void;
+  reconcilePendingComposerMessagesForState: (state: AppState) => void;
+  enqueueComposerMessage: (
+    threadID: string,
+    message: QueuedComposerMessage,
+  ) => void;
+  removeQueuedMessage: (id: string) => Promise<boolean>;
+  removeGuideMessage: (id: string) => Promise<boolean>;
+  restorePendingComposerMessage: (message: QueuedComposerMessage) => void;
+  canRestorePendingComposerMessage: () => boolean;
+  editQueuedMessage: (id: string) => Promise<void>;
+  editGuideMessage: (id: string) => Promise<void>;
+  guideQueuedMessage: (id: string) => Promise<void>;
+  threadHasPendingComposerMessages: (threadID: string) => boolean;
+};
+
+type ComposerPendingStateOptions = {
+  getAppState: () => AppState;
+  getPrimaryComposerDraft: () => ComposerDraftState;
+  restorePrimaryComposerDraft: (draft: ComposerDraftState) => void;
+  setStatus: (status: string) => void;
+  sendComposerMessageToThread: (
+    message: QueuedComposerMessage,
+    targetThread: Thread,
+  ) => Promise<boolean>;
+};
+
+export function useComposerPendingState({
+  getAppState,
+  getPrimaryComposerDraft,
+  restorePrimaryComposerDraft,
+  setStatus,
+  sendComposerMessageToThread,
+}: ComposerPendingStateOptions): ComposerPendingStateController {
+  const [queuedMessageEditTarget, setQueuedMessageEditTarget] =
+    useState<QueuedMessageEditTarget | undefined>(undefined);
+  const [pendingComposerMessagesByThread, setPendingComposerMessagesByThread] =
+    useState<PendingComposerMessagesByThread>({});
+  const queuedMessageEditTargetRef =
+    useRef<QueuedMessageEditTarget | undefined>(undefined);
+  const pendingComposerMessagesByThreadRef =
+    useRef<PendingComposerMessagesByThread>({});
+
+  function setPendingComposerMessagesByThreadNow(
+    messagesByThread: PendingComposerMessagesByThread,
+  ): void {
+    pendingComposerMessagesByThreadRef.current = messagesByThread;
+    setPendingComposerMessagesByThread(messagesByThread);
+  }
+
+  function setQueuedMessageEditTargetNow(
+    target: QueuedMessageEditTarget | undefined,
+  ): void {
+    queuedMessageEditTargetRef.current = target;
+    setQueuedMessageEditTarget(target);
+  }
+
+  function updateThreadPendingComposerMessages(
+    threadID: string,
+    update: (
+      previous: ThreadPendingComposerMessages,
+    ) => ThreadPendingComposerMessages,
+  ): void {
+    const previousByThread = pendingComposerMessagesByThreadRef.current;
+    const previous =
+      previousByThread[threadID] ?? emptyThreadPendingComposerMessages();
+    const nextForThread = update(previous);
+    const nextByThread = { ...previousByThread };
+    if (threadPendingComposerMessagesIsEmpty(nextForThread)) {
+      delete nextByThread[threadID];
+    } else {
+      nextByThread[threadID] = nextForThread;
+    }
+    setPendingComposerMessagesByThreadNow(nextByThread);
+  }
+
+  function clearThreadPendingComposerMessages(threadID: string): void {
+    const previousByThread = pendingComposerMessagesByThreadRef.current;
+    if (!previousByThread[threadID]) {
+      return;
+    }
+    const nextByThread = { ...previousByThread };
+    delete nextByThread[threadID];
+    setPendingComposerMessagesByThreadNow(nextByThread);
+  }
+
+  function removePendingComposerMessageByID(
+    threadID: string | undefined,
+    id: string,
+    scope: PendingComposerMessageRemovalScope = "all",
+  ): void {
+    setPendingComposerMessagesByThreadNow(
+      removePendingComposerMessagesByID(
+        pendingComposerMessagesByThreadRef.current,
+        threadID,
+        id,
+        scope,
+      ),
+    );
+  }
+
+  function syncPendingComposerMessagesFromServerEvent(event: ServerEvent): void {
+    if (event.kind !== "notification") {
+      return;
+    }
+    const params = isRecord(event.message.params)
+      ? event.message.params
+      : undefined;
+    if (!params) {
+      return;
+    }
+    const threadID = stringValue(params, "thread_id");
+    if (event.message.method === "turn/started") {
+      const queueID = stringValue(params, "queue_id");
+      if (queueID) {
+        removePendingComposerMessageByID(threadID, queueID, "queue");
+      }
+      return;
+    }
+    if (event.message.method === "turn/dequeued") {
+      const queueID = stringValue(params, "queue_id");
+      if (queueID) {
+        removePendingComposerMessageByID(threadID, queueID, "queue");
+      }
+      return;
+    }
+    if (event.message.method === "item/completed") {
+      const item = threadItemFromRecord(recordValue(params, "item"));
+      if (item?.type === "user_message" && item.source_id) {
+        removePendingComposerMessageByID(threadID, item.source_id);
+      }
+    }
+  }
+
+  function reconcilePendingComposerMessagesForState(state: AppState): void {
+    const byThread = pendingComposerMessagesByThreadRef.current;
+    let next = byThread;
+    for (const threadID of Object.keys(byThread)) {
+      const thread = threadForTab(state, threadID);
+      if (thread) {
+        next = reconcilePendingComposerMessagesForThread(next, thread);
+      }
+    }
+    if (next !== byThread) {
+      setPendingComposerMessagesByThreadNow(next);
+    }
+  }
+
+  function enqueueComposerMessage(
+    threadID: string,
+    message: QueuedComposerMessage,
+  ): void {
+    updateThreadPendingComposerMessages(threadID, (previous) => ({
+      ...previous,
+      queued: [...previous.queued, message],
+    }));
+  }
+
+  async function removeQueuedMessage(id: string): Promise<boolean> {
+    const target = findPendingComposerMessage(
+      pendingComposerMessagesByThreadRef.current,
+      id,
+      "queue",
+      activeThreadIDForState(getAppState()),
+    );
+    if (!target) {
+      return false;
+    }
+    if (queuedMessageEditTargetRef.current?.queueID === id) {
+      setQueuedMessageEditTargetNow(undefined);
+    }
+    updateThreadPendingComposerMessages(target.threadID, (previous) => ({
+      ...previous,
+      queued: previous.queued.filter((message) => message.id !== id),
+    }));
+    try {
+      const result = await window.wuu.dequeueTurn(target.threadID, id);
+      if (!result.ok) {
+        setStatus("排队消息已被处理，无法取消");
+        return false;
+      }
+      return true;
+    } catch (error) {
+      updateThreadPendingComposerMessages(target.threadID, (previous) => {
+        if (previous.queued.some((message) => message.id === id)) {
+          return previous;
+        }
+        const insertAt = Math.min(target.index, previous.queued.length);
+        return {
+          ...previous,
+          queued: [
+            ...previous.queued.slice(0, insertAt),
+            target.message,
+            ...previous.queued.slice(insertAt),
+          ],
+        };
+      });
+      setStatus(error instanceof Error ? error.message : "取消排队失败");
+      return false;
+    }
+  }
+
+  async function removeGuideMessage(id: string): Promise<boolean> {
+    const target = findPendingComposerMessage(
+      pendingComposerMessagesByThreadRef.current,
+      id,
+      "guide",
+      activeThreadIDForState(getAppState()),
+    );
+    if (!target) {
+      return false;
+    }
+    updateThreadPendingComposerMessages(target.threadID, (previous) => ({
+      ...previous,
+      guides: previous.guides.filter((message) => message.id !== id),
+    }));
+    try {
+      const result = await window.wuu.unsteerTurn(target.threadID, id);
+      if (!result.ok) {
+        setStatus("引导消息已被处理，无法取消");
+        return false;
+      }
+      return true;
+    } catch (error) {
+      updateThreadPendingComposerMessages(target.threadID, (previous) => {
+        if (previous.guides.some((message) => message.id === id)) {
+          return previous;
+        }
+        const insertAt = Math.min(target.index, previous.guides.length);
+        return {
+          ...previous,
+          guides: [
+            ...previous.guides.slice(0, insertAt),
+            target.message,
+            ...previous.guides.slice(insertAt),
+          ],
+        };
+      });
+      setStatus(error instanceof Error ? error.message : "取消引导失败");
+      return false;
+    }
+  }
+
+  function restorePendingComposerMessage(message: QueuedComposerMessage): void {
+    restorePrimaryComposerDraft({
+      prompt: message.text,
+      images: message.images.map((image) => ({ ...image })),
+      files: message.files.map((file) => ({ ...file })),
+    });
+  }
+
+  function canRestorePendingComposerMessage(): boolean {
+    if (!composerDraftHasContent(getPrimaryComposerDraft())) {
+      return true;
+    }
+    setStatus("先发送或清空当前输入，再编辑排队消息");
+    return false;
+  }
+
+  async function editQueuedMessage(id: string): Promise<void> {
+    const target = findPendingComposerMessage(
+      pendingComposerMessagesByThreadRef.current,
+      id,
+      "queue",
+      activeThreadIDForState(getAppState()),
+    );
+    if (!target || !canRestorePendingComposerMessage()) {
+      return;
+    }
+    restorePendingComposerMessage(target.message);
+    setQueuedMessageEditTargetNow({
+      threadID: target.threadID,
+      queueID: target.message.id,
+    });
+    setStatus(`正在编辑第 ${target.index + 1} 条排队消息，发送后会保存到原位置`);
+  }
+
+  async function editGuideMessage(id: string): Promise<void> {
+    const target = findPendingComposerMessage(
+      pendingComposerMessagesByThreadRef.current,
+      id,
+      "guide",
+      activeThreadIDForState(getAppState()),
+    );
+    if (!target || !canRestorePendingComposerMessage()) {
+      return;
+    }
+    setQueuedMessageEditTargetNow(undefined);
+    if (await removeGuideMessage(id)) {
+      restorePendingComposerMessage(target.message);
+    }
+  }
+
+  async function guideQueuedMessage(id: string): Promise<void> {
+    const target = findPendingComposerMessage(
+      pendingComposerMessagesByThreadRef.current,
+      id,
+      "queue",
+      activeThreadIDForState(getAppState()),
+    );
+    if (!target) {
+      return;
+    }
+    const currentState = getAppState();
+    const targetThread = threadForTab(currentState, target.threadID);
+    if (!targetThread) {
+      return;
+    }
+    if (!isThreadRunning(targetThread)) {
+      updateThreadPendingComposerMessages(target.threadID, (previous) => ({
+        ...previous,
+        queued: previous.queued.filter((message) => message.id !== id),
+      }));
+      void sendComposerMessageToThread(target.message, targetThread);
+      return;
+    }
+    const turnID = activeTurnIDForThread(targetThread);
+    if (!turnID) {
+      setStatus("没有可引导的任务");
+      return;
+    }
+    try {
+      const files = inputFilesFromComposer(target.message.files);
+      await window.wuu.steerTurn(
+        targetThread.id,
+        turnID,
+        target.message.text.trim(),
+        inputImagesFromComposer(target.message.images),
+        target.message.id,
+        files,
+      );
+      updateThreadPendingComposerMessages(target.threadID, (previous) => ({
+        queued: previous.queued.filter((message) => message.id !== id),
+        guides: [...previous.guides, target.message],
+      }));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "引导失败");
+    }
+  }
+
+  function threadHasPendingComposerMessages(threadID: string): boolean {
+    return !threadPendingComposerMessagesIsEmpty(
+      pendingComposerMessagesForThread(
+        pendingComposerMessagesByThreadRef.current,
+        threadID,
+      ),
+    );
+  }
+
+  return {
+    pendingComposerMessagesByThread,
+    pendingComposerMessagesByThreadRef,
+    queuedMessageEditTarget,
+    queuedMessageEditTargetRef,
+    setPendingComposerMessagesByThreadNow,
+    setQueuedMessageEditTargetNow,
+    pendingComposerMessagesForThread: (threadID) =>
+      pendingComposerMessagesForThread(
+        pendingComposerMessagesByThread,
+        threadID,
+      ),
+    updateThreadPendingComposerMessages,
+    clearThreadPendingComposerMessages,
+    removePendingComposerMessageByID,
+    syncPendingComposerMessagesFromServerEvent,
+    reconcilePendingComposerMessagesForState,
+    enqueueComposerMessage,
+    removeQueuedMessage,
+    removeGuideMessage,
+    restorePendingComposerMessage,
+    canRestorePendingComposerMessage,
+    editQueuedMessage,
+    editGuideMessage,
+    guideQueuedMessage,
+    threadHasPendingComposerMessages,
+  };
+}

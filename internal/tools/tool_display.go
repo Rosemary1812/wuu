@@ -141,20 +141,6 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 		default:
 			return toolDisplay("goal", "查看 Goal")
 		}
-	case "list_workflows":
-		return toolDisplay("workflow", "查看工作流")
-	case "load_workflow":
-		workflow := strings.TrimPrefix(displayString(args, "name", "definition_name"), "/")
-		if workflow == "" {
-			return toolDisplay("workflow", "加载工作流")
-		}
-		return toolDisplay("workflow", "加载工作流 "+displayTruncate(workflow, 70))
-	case "save_workflow":
-		workflow := strings.TrimPrefix(displayString(args, "name"), "/")
-		if workflow == "" {
-			return toolDisplay("workflow", "保存工作流")
-		}
-		return toolDisplay("workflow", "保存工作流 "+displayTruncate(workflow, 70))
 	case "list_agent_profiles":
 		return toolDisplay("agent", "查看长期 Agent")
 	case "create_agent_profile":
@@ -163,26 +149,6 @@ func builtInToolDisplay(call providers.ToolCall) providers.ToolCallDisplay {
 			return toolDisplay("agent", "创建长期 Agent")
 		}
 		return toolDisplay("agent", "创建长期 Agent "+displayTruncate(profile, 70))
-	case "start_workflow":
-		workflow := strings.TrimPrefix(displayString(args, "definition_name"), "/")
-		if workflow == "" {
-			return toolDisplay("workflow", "启动工作流")
-		}
-		return toolDisplay("workflow", "启动工作流 "+displayTruncate(workflow, 70))
-	case "create_workflow":
-		workflow := strings.TrimPrefix(displayString(args, "definition_name"), "/")
-		if workflow == "" {
-			return toolDisplay("workflow", "创建工作流")
-		}
-		return toolDisplay("workflow", "创建工作流 "+displayTruncate(workflow, 70))
-	case "workflow_control":
-		action := displayString(args, "action")
-		if action == "" {
-			return toolDisplay("workflow", "更新工作流")
-		}
-		return toolDisplay("workflow", "更新工作流 "+displayTruncate(action, 70))
-	case "workflow_status":
-		return toolDisplay("workflow", "查看工作流状态 "+displayTarget(displayString(args, "run_id"), ""))
 	case "update_plan":
 		return toolDisplay("plan", "更新计划")
 	case "spawn_agent":
@@ -383,7 +349,7 @@ func displayGitLabel(args map[string]any) string {
 
 func displayKindForTool(name string) string {
 	switch classifyToolKind(name) {
-	case ToolKindFile, ToolKindWeb, ToolKindSkill, ToolKindWorkflow:
+	case ToolKindFile, ToolKindWeb, ToolKindSkill:
 		return "read"
 	case ToolKindSearch, ToolKindDiscovery:
 		return "search"

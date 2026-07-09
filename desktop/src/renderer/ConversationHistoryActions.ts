@@ -1,0 +1,452 @@
+import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import type { InputFile, InputImage, Thread, ThreadItem } from "../shared/protocol";
+import type { ForkMode } from "./ConversationForkDialog";
+import {
+  cloneComposerDraft,
+  emptyComposerDraft,
+  initialSplitComposerDrafts,
+  isThreadRunning,
+  openForkThreadAsPrimary,
+  requireThread,
+  sameRuntimeContext,
+  updateThreadByID,
+  type AppState,
+  type ComposerDraftState,
+  type ConversationPaneID,
+} from "./AppState";
+import {
+  createComposerMessage,
+  type ComposerFile,
+  type ComposerImage,
+  type QueuedComposerMessage,
+} from "./ComposerMessages";
+import { lastUserMessageAnchor } from "./TurnViewHelpers";
+import type { WorkspacePanelView } from "./WorkspacePanels";
+import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
+
+type SetAppState = (update: SetStateAction<AppState>) => void;
+
+export type PendingForkState = {
+  sourceThread: Thread;
+  turnID: string;
+  itemID: string;
+};
+
+export type HistoryMessageEditState = {
+  threadID: string;
+  turnID: string;
+  itemID: string;
+  pane?: ConversationPaneID;
+  submitting: boolean;
+};
+
+export type ConversationHistoryActionsDeps = {
+  appStateRef: MutableRefObject<AppState>;
+  setAppState: SetAppState;
+  localDemoThreadsRef: MutableRefObject<Map<string, Thread>>;
+  getPendingFork: () => PendingForkState | undefined;
+  setPendingFork: (update: SetStateAction<PendingForkState | undefined>) => void;
+  setHistoryMessageEdit: (
+    update: SetStateAction<HistoryMessageEditState | undefined>,
+  ) => void;
+  setArchiveConfirmThreadID: (
+    update: SetStateAction<string | undefined>,
+  ) => void;
+  getWorkspaceMode: () => WorkspacePanelView | undefined;
+  getPrompt: () => string;
+  getComposerImages: () => ComposerImage[];
+  getComposerFiles: () => ComposerFile[];
+  getSplitComposerDrafts: () => Record<ConversationPaneID, ComposerDraftState>;
+  setPrompt: Dispatch<SetStateAction<string>>;
+  setComposerImages: Dispatch<SetStateAction<ComposerImage[]>>;
+  setComposerFiles: Dispatch<SetStateAction<ComposerFile[]>>;
+  setSplitComposerDrafts: Dispatch<
+    SetStateAction<Record<ConversationPaneID, ComposerDraftState>>
+  >;
+  restorePrimaryComposerDraft: (draft: ComposerDraftState) => void;
+  closeConversationSearch: (options?: { immediate?: boolean }) => void;
+  clearEnvironmentDialog: () => void;
+  scheduleGitStatusRefresh: (delayMs: number) => void;
+  enableConversationAutoFollow: () => void;
+  threadHasPendingComposerMessages: (threadID: string) => boolean;
+  sendComposerMessageToThread: (
+    message: QueuedComposerMessage,
+    targetThread: Thread,
+  ) => Promise<boolean>;
+  worktreeForkNonGitReason: string;
+};
+
+export type ConversationHistoryActions = {
+  choosePendingFork: (mode: ForkMode) => Promise<void>;
+  forkThreadFromMessage: (
+    sourceThread: Thread,
+    turnID: string,
+    itemID: string,
+  ) => Promise<void>;
+  startEditingThreadMessageFromHistory: (
+    sourceThread: Thread,
+    turnID: string,
+    item: ThreadItem,
+    pane?: ConversationPaneID,
+  ) => void;
+  cancelEditingThreadMessage: () => void;
+  submitEditedThreadMessageFromHistory: (
+    sourceThread: Thread,
+    turnID: string,
+    item: ThreadItem,
+    text: string,
+    images: InputImage[],
+    files: InputFile[],
+    pane?: ConversationPaneID,
+  ) => Promise<void>;
+};
+
+export function createConversationHistoryActions(
+  deps: ConversationHistoryActionsDeps,
+): ConversationHistoryActions {
+  function isForkTargetLatest(
+    sourceThread: Thread,
+    turnID: string,
+    itemID: string,
+  ): boolean {
+    const latest = lastUserMessageAnchor(sourceThread);
+    return Boolean(
+      latest && latest.turnID === turnID && latest.itemID === itemID,
+    );
+  }
+
+  async function executeForkFromMessage(
+    sourceThread: Thread,
+    turnID: string,
+    itemID: string,
+    mode: ForkMode,
+  ): Promise<void> {
+    const activeContext = deps.appStateRef.current.activeContext;
+    if (!activeContext || sourceThread.read_only) {
+      return;
+    }
+    if (deps.localDemoThreadsRef.current.has(sourceThread.id)) {
+      deps.setAppState((current) => ({ ...current, status: "示例会话不能分叉" }));
+      return;
+    }
+    if (mode === "worktree") {
+      let gitStatus = deps.appStateRef.current.gitStatus;
+      if (!gitStatus) {
+        gitStatus = await window.wuu.gitStatus();
+        if (
+          !sameRuntimeContext(deps.appStateRef.current.activeContext, activeContext)
+        ) {
+          return;
+        }
+        const refreshedStatus = gitStatus;
+        deps.setAppState((current) => ({
+          ...current,
+          gitStatus: refreshedStatus,
+        }));
+      }
+      if (gitStatus.is_repo === false) {
+        deps.setAppState((current) => ({
+          ...current,
+          status: deps.worktreeForkNonGitReason,
+        }));
+        throw new Error(deps.worktreeForkNonGitReason);
+      }
+    }
+    deps.setArchiveConfirmThreadID(undefined);
+    deps.setAppState((current) => ({ ...current, status: "正在分叉会话" }));
+    try {
+      const fork = requireThread(
+        await window.wuu.forkThread(sourceThread.id, turnID, itemID, mode),
+        "thread/fork did not return a thread",
+      );
+      deps.enableConversationAutoFollow();
+      const currentState = deps.appStateRef.current;
+      const sourcePane =
+        currentState.secondaryThread?.id === sourceThread.id
+          ? "secondary"
+          : "primary";
+      const currentSplitConversation = Boolean(
+        currentState.thread &&
+          currentState.secondaryThread &&
+          !deps.getWorkspaceMode(),
+      );
+      const splitComposerDrafts = deps.getSplitComposerDrafts();
+      const splitDrafts = currentSplitConversation
+        ? {
+            primary: cloneComposerDraft(
+              splitComposerDrafts.primary ?? emptyComposerDraft(),
+            ),
+            secondary: cloneComposerDraft(
+              splitComposerDrafts.secondary ?? emptyComposerDraft(),
+            ),
+          }
+        : undefined;
+      const sourceDraft = currentSplitConversation
+        ? cloneComposerDraft(splitDrafts?.[sourcePane] ?? emptyComposerDraft())
+        : {
+            prompt: deps.getPrompt(),
+            images: deps.getComposerImages().map((image) => ({ ...image })),
+            files: deps.getComposerFiles().map((file) => ({ ...file })),
+          };
+      deps.setPrompt("");
+      deps.setComposerImages([]);
+      deps.setComposerFiles([]);
+      deps.setSplitComposerDrafts(initialSplitComposerDrafts());
+      deps.setAppState((current) =>
+        openForkThreadAsPrimary(current, {
+          sourceThread,
+          forkThread: fork,
+          context: activeContext,
+          sourceDraft,
+          splitDrafts,
+        }),
+      );
+    } catch (error) {
+      deps.setAppState((current) => ({
+        ...current,
+        status: error instanceof Error ? error.message : "fork failed",
+      }));
+      throw error;
+    }
+  }
+
+  async function choosePendingFork(mode: ForkMode): Promise<void> {
+    const target = deps.getPendingFork();
+    if (!target) {
+      return;
+    }
+    try {
+      await executeForkFromMessage(
+        target.sourceThread,
+        target.turnID,
+        target.itemID,
+        mode,
+      );
+      deps.setPendingFork(undefined);
+    } catch {
+      // Status is already set inside executeForkFromMessage; keep the
+      // dialog open so the user can pick the other option or cancel.
+    }
+  }
+
+  async function forkThreadFromMessage(
+    sourceThread: Thread,
+    turnID: string,
+    itemID: string,
+  ): Promise<void> {
+    if (!deps.appStateRef.current.activeContext || sourceThread.read_only) {
+      return;
+    }
+    if (isForkTargetLatest(sourceThread, turnID, itemID)) {
+      await executeForkFromMessage(sourceThread, turnID, itemID, "local");
+      return;
+    }
+    deps.closeConversationSearch({ immediate: true });
+    deps.clearEnvironmentDialog();
+    deps.scheduleGitStatusRefresh(0);
+    deps.setPendingFork({ sourceThread, turnID, itemID });
+  }
+
+  function startEditingThreadMessageFromHistory(
+    sourceThread: Thread,
+    turnID: string,
+    item: ThreadItem,
+    pane?: ConversationPaneID,
+  ): void {
+    if (!deps.appStateRef.current.activeContext || sourceThread.read_only) {
+      return;
+    }
+    if (deps.localDemoThreadsRef.current.has(sourceThread.id)) {
+      deps.setAppState((current) => ({
+        ...current,
+        status: "示例会话不能编辑历史",
+      }));
+      return;
+    }
+    if (isThreadRunning(sourceThread)) {
+      deps.setAppState((current) => ({
+        ...current,
+        status: "等待当前回复结束后再编辑历史",
+      }));
+      return;
+    }
+    if (deps.threadHasPendingComposerMessages(sourceThread.id)) {
+      deps.setAppState((current) => ({
+        ...current,
+        status: "先处理待发送消息，再编辑历史",
+      }));
+      return;
+    }
+    deps.setArchiveConfirmThreadID(undefined);
+    deps.setHistoryMessageEdit({
+      threadID: sourceThread.id,
+      turnID,
+      itemID: item.id,
+      pane,
+      submitting: false,
+    });
+  }
+
+  function cancelEditingThreadMessage(): void {
+    deps.setHistoryMessageEdit(undefined);
+  }
+
+  async function submitEditedThreadMessageFromHistory(
+    sourceThread: Thread,
+    turnID: string,
+    item: ThreadItem,
+    text: string,
+    images: InputImage[],
+    files: InputFile[],
+    pane?: ConversationPaneID,
+  ): Promise<void> {
+    if (!deps.appStateRef.current.activeContext || sourceThread.read_only) {
+      return;
+    }
+    const idSalt = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const composerImages: ComposerImage[] = images.map((image, index) => ({
+      id: `edit-attach-${index}-${idSalt}`,
+      media_type: image.media_type,
+      data: image.data,
+    }));
+    const composerFiles: ComposerFile[] = files.map((file, index) => ({
+      id: `edit-file-${index}-${idSalt}`,
+      media_type: file.media_type,
+      data: file.data,
+      filename: file.filename,
+    }));
+    const message = createComposerMessage(text, composerImages, composerFiles);
+    if (!message) {
+      deps.setAppState((current) => ({
+        ...current,
+        status: "编辑内容不能为空",
+      }));
+      return;
+    }
+    if (isThreadRunning(sourceThread)) {
+      deps.setAppState((current) => ({
+        ...current,
+        status: "等待当前回复结束后再编辑历史",
+      }));
+      return;
+    }
+    if (deps.threadHasPendingComposerMessages(sourceThread.id)) {
+      deps.setAppState((current) => ({
+        ...current,
+        status: "先处理待发送消息，再编辑历史",
+      }));
+      return;
+    }
+
+    deps.setHistoryMessageEdit((current) =>
+      current?.threadID === sourceThread.id &&
+      current.turnID === turnID &&
+      current.itemID === item.id
+        ? { ...current, submitting: true }
+        : current,
+    );
+    deps.setArchiveConfirmThreadID(undefined);
+    deps.setAppState((current) => ({
+      ...current,
+      status: "正在发送编辑后的消息",
+    }));
+    try {
+      const result = await window.wuu.editThreadMessage(
+        sourceThread.id,
+        turnID,
+        item.id,
+      );
+      const thread = requireThread(
+        { thread: result.thread },
+        "thread/edit-message did not return a thread",
+      );
+      deps.enableConversationAutoFollow();
+      const targetPane = pane ?? deps.appStateRef.current.activePane;
+      deps.setHistoryMessageEdit(undefined);
+      deps.appStateRef.current = updateThreadByID(
+        { ...deps.appStateRef.current, activePane: targetPane },
+        thread.id,
+        (currentThread) => ({
+          ...thread,
+          child_agents: thread.child_agents ?? currentThread.child_agents,
+        }),
+        { status: "正在发送请求" },
+      );
+      deps.setAppState((current) =>
+        updateThreadByID(
+          { ...current, activePane: targetPane },
+          thread.id,
+          (currentThread) => ({
+            ...thread,
+            child_agents: thread.child_agents ?? currentThread.child_agents,
+          }),
+          { status: "正在发送请求" },
+        ),
+      );
+      const sent = await deps.sendComposerMessageToThread(message, thread);
+      if (sent) {
+        const editIndex = thread.turns.length;
+        const reordered = (latest: Thread): Thread => {
+          if (latest.turns.length <= editIndex) return latest;
+          const newTurn = latest.turns[latest.turns.length - 1];
+          if (latest.turns[editIndex] === newTurn) return latest;
+          const turns = latest.turns.slice(0, editIndex);
+          turns.push(newTurn);
+          return { ...latest, turns };
+        };
+        deps.appStateRef.current = updateThreadByID(
+          { ...deps.appStateRef.current, activePane: targetPane },
+          thread.id,
+          reordered,
+          {},
+        );
+        deps.setAppState((current) =>
+          updateThreadByID(
+            { ...current, activePane: targetPane },
+            thread.id,
+            reordered,
+            {},
+          ),
+        );
+      }
+      if (!sent) {
+        if (pane === undefined) {
+          deps.restorePrimaryComposerDraft({
+            prompt: message.text,
+            images: message.images.map((image) => ({ ...image })),
+            files: message.files.map((file) => ({ ...file })),
+          });
+        } else {
+          deps.setSplitComposerDrafts((current) => ({
+            ...current,
+            [pane]: {
+              prompt: message.text,
+              images: message.images.map((image) => ({ ...image })),
+              files: message.files.map((file) => ({ ...file })),
+            },
+          }));
+        }
+      }
+    } catch (error) {
+      deps.setHistoryMessageEdit((current) =>
+        current?.threadID === sourceThread.id &&
+        current.turnID === turnID &&
+        current.itemID === item.id
+          ? { ...current, submitting: false }
+          : current,
+      );
+      deps.setAppState((current) => ({
+        ...current,
+        status: desktopApiErrorMessage(error, "编辑历史消息失败"),
+      }));
+    }
+  }
+
+  return {
+    choosePendingFork,
+    forkThreadFromMessage,
+    startEditingThreadMessageFromHistory,
+    cancelEditingThreadMessage,
+    submitEditedThreadMessageFromHistory,
+  };
+}

@@ -41,7 +41,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
-	"github.com/blueberrycongee/wuu/internal/workflow"
 	"github.com/blueberrycongee/wuu/internal/workspaces"
 )
 
@@ -80,7 +79,6 @@ type Session struct {
 	TitleClient    providers.Client
 	HookDispatcher *hooks.Dispatcher
 	Skills         []skills.Skill
-	Workflows      []workflow.Definition
 	Plugins        []pluginpkg.Plugin
 	Memory         []memory.File
 	// MemdirEnabled reports whether the file-directory memory (user
@@ -203,7 +201,6 @@ func NewSession(opts Options) (*Session, error) {
 	discoveredPlugins := discoverPlugins(rootDir, wuuHome)
 	hookDispatcher := buildHookDispatcher(cfg, discoveredPlugins, providers.Client(client), toolModeModel)
 	discoveredSkills := discoverSkills(rootDir, opts.HomeDir, wuuHome, discoveredPlugins)
-	discoveredWorkflows := discoverWorkflows(rootDir, opts.HomeDir, wuuHome, discoveredPlugins)
 
 	processMgr, err := process.NewManager(rootDir, statepath.RuntimeDir(workspaceStateDir))
 	if err != nil {
@@ -251,7 +248,6 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetStateDir(workspaceStateDir)
 		kit.SetProcessManager(processMgr)
 		kit.SetSkills(discoveredSkills)
-		kit.SetWorkflows(discoveredWorkflows)
 		ConfigureToolkitPermissions(kit, permissions)
 		kit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel, true)
 		kit.SetToolSearchEnabled(toolSearchEnabled)
@@ -298,7 +294,7 @@ func NewSession(opts Options) (*Session, error) {
 		return nil, err
 	}
 	mainSurface.DeferredToolCatalog = deferredToolCatalogPrompt
-	baseSystemPromptResult := buildBaseSystemPromptResult(rootDir, sessionDate, config.DefaultSystemPrompt(), userSystemPrompt, resolvedName, toolModeModel, mainSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
+	baseSystemPromptResult := buildBaseSystemPromptResult(rootDir, sessionDate, config.DefaultSystemPrompt(), userSystemPrompt, resolvedName, toolModeModel, mainSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills)
 	baseSystemPrompt := baseSystemPromptResult.Content
 	baseSystemPromptSections := agentPromptSections(baseSystemPromptResult.Sections)
 
@@ -330,14 +326,13 @@ func NewSession(opts Options) (*Session, error) {
 			return nil, catErr
 		}
 		workerToolSurface.DeferredToolCatalog = workerDeferredCatalog
-		workerBaseSystemPrompt := buildBaseSystemPromptContent(rootDir, sessionDate, config.WorkerSystemPrompt(), userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, memdirWorkerTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
+		workerBaseSystemPrompt := buildBaseSystemPromptContent(rootDir, sessionDate, config.WorkerSystemPrompt(), userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, memdirWorkerTeaching, memdirIndex, discoveredSkills)
 		var werr error
 		workerClient, werr = providerfactory.BuildStreamClientWithRetry(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider, &workerRetry)
 		if werr != nil {
 			return nil, fmt.Errorf("build worker client: %w", werr)
 		}
 
-		loopSink := goalrunner.NewAgentControlFailureSink(nil)
 		c, cerr := agentcontrol.New(agentcontrol.Config{
 			Client:                         workerClient,
 			DefaultModel:                   roleSelections.Worker.APIModel,
@@ -355,11 +350,9 @@ func NewSession(opts Options) (*Session, error) {
 			WorktreeRoot:                   statepath.WorktreeRoot(workspaceStateDir),
 			SessionID:                      "session-pending",
 			HistoryDir:                     "",
-			FailureSink:                    loopSink,
-			ReportSink:                     loopSink,
 			WorkerSysPrompt:                workerBaseSystemPrompt,
 			WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
-				return buildWorkerBasePrompt(workerRoot, sessionDate, wuuHome, userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, memdirEnabled, discoveredSkills, discoveredWorkflows), nil
+				return buildWorkerBasePrompt(workerRoot, sessionDate, wuuHome, userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, memdirEnabled, discoveredSkills), nil
 			},
 			WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 				wkit, werr := toolkit.CloneForRoot(workerRoot)
@@ -378,7 +371,6 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetStateDir(workerStateDir)
 				wkit.SetProcessManager(processMgr)
 				wkit.SetSkills(discoveredSkills)
-				wkit.SetWorkflows(discoveredWorkflows)
 				wkit.SetAgentControl(agentControl)
 				wkit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
 				wkit.SetToolSearchEnabled(workerToolSearchEnabled)
@@ -465,7 +457,6 @@ func NewSession(opts Options) (*Session, error) {
 		TitleClient:                 titleClient,
 		HookDispatcher:              hookDispatcher,
 		Skills:                      discoveredSkills,
-		Workflows:                   discoveredWorkflows,
 		Plugins:                     discoveredPlugins,
 		Memory:                      memoryFiles,
 		MemdirEnabled:               memdirEnabled,
@@ -599,29 +590,16 @@ func (s *Session) startScheduledGoal(task cron.Task, prompt string) *goalrunner.
 	}
 	goalID := scheduledCronSessionID("cron-goal", task.ID)
 	store := goalrunner.NewStore(filepath.Join(stateDir, "goals", goalID))
-	kind := strings.TrimSpace(task.Metadata["kind"])
-	if kind == "" {
-		kind = "prompt"
-	}
-	goal := "Scheduled prompt task"
-	if task.Metadata["workflow_name"] != "" {
-		goal = "Scheduled workflow " + task.Metadata["workflow_name"]
-	}
 	triggerPayload := map[string]string{
 		"task_id":   strings.TrimSpace(task.ID),
 		"cron":      strings.TrimSpace(task.Cron),
-		"kind":      kind,
+		"kind":      "prompt",
 		"recurring": fmt.Sprintf("%t", task.Recurring),
-	}
-	for _, key := range []string{"workflow_name", "workflow_arguments", "workflow_kind"} {
-		if value := strings.TrimSpace(task.Metadata[key]); value != "" {
-			triggerPayload[key] = value
-		}
 	}
 	runner := goalrunner.Runner{Store: store}
 	if _, err := runner.Init(context.Background(), goalrunner.Spec{
 		ID:            goalID,
-		Goal:          goal,
+		Goal:          "Scheduled prompt task",
 		Task:          strings.TrimSpace(prompt),
 		AssignedAgent: "cron-scheduler",
 		Trigger: goalrunner.Trigger{
@@ -649,18 +627,7 @@ func renderScheduledGoalTrigger(task cron.Task, prompt string) string {
 	fmt.Fprintf(&b, "- Task: %s\n", strings.TrimSpace(task.ID))
 	fmt.Fprintf(&b, "- Cron: %s\n", strings.TrimSpace(task.Cron))
 	fmt.Fprintf(&b, "- Recurring: %t\n", task.Recurring)
-	if kind := strings.TrimSpace(task.Metadata["kind"]); kind != "" {
-		fmt.Fprintf(&b, "- Kind: %s\n", kind)
-	}
-	if name := strings.TrimSpace(task.Metadata["workflow_name"]); name != "" {
-		fmt.Fprintf(&b, "- Workflow: %s\n", name)
-	}
-	if workflowKind := strings.TrimSpace(task.Metadata["workflow_kind"]); workflowKind != "" {
-		fmt.Fprintf(&b, "- Workflow kind: %s\n", workflowKind)
-	}
-	if arguments := strings.TrimSpace(task.Metadata["workflow_arguments"]); arguments != "" {
-		fmt.Fprintf(&b, "\n## Workflow Arguments\n\n%s\n", arguments)
-	}
+	fmt.Fprintf(&b, "- Kind: prompt\n")
 	fmt.Fprintf(&b, "\n## Prompt\n\n%s\n", strings.TrimSpace(prompt))
 	return b.String()
 }
@@ -754,7 +721,6 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		}
 		if workerClient != nil {
 			var control *agentcontrol.AgentControl
-			loopSink := goalrunner.NewAgentControlFailureSink(nil)
 			workerModel := s.Model
 			if roleModel := strings.TrimSpace(s.ModelRoles.Worker.APIModel); roleModel != "" {
 				workerModel = roleModel
@@ -784,7 +750,6 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 				s.Memory,
 				s.MemdirEnabled,
 				s.Skills,
-				s.Workflows,
 			)
 			control, _ = agentcontrol.New(agentcontrol.Config{
 				Client:                         workerClient,
@@ -804,11 +769,9 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 				HistoryDir:                     filepath.Join(artifactDir, "workers"),
 				ThreadDir:                      filepath.Join(artifactDir, "threads"),
 				HarnessDir:                     filepath.Join(artifactDir, "harness"),
-				FailureSink:                    loopSink,
-				ReportSink:                     loopSink,
 				WorkerSysPrompt:                workerBaseSystemPrompt,
 				WorkerPrompt: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata, isolation agentcontrol.IsolationMode) (string, error) {
-					return buildWorkerBasePrompt(workerRoot, s.SessionDate, wuuHome, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, s.Memory, s.MemdirEnabled, s.Skills, s.Workflows), nil
+					return buildWorkerBasePrompt(workerRoot, s.SessionDate, wuuHome, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, s.Memory, s.MemdirEnabled, s.Skills), nil
 				},
 				WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
 					parentKit := kit
@@ -835,7 +798,6 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					workerKit.SetStateDir(workerStateDir)
 					workerKit.SetProcessManager(threadProcessManager)
 					workerKit.SetSkills(s.Skills)
-					workerKit.SetWorkflows(s.Workflows)
 					workerKit.SetAgentControl(control)
 					workerKit.SetSessionID(id)
 					workerKit.SetSessionDir(artifactDir)
@@ -875,7 +837,6 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		kit.SetStateDir(stateDir)
 		kit.SetProcessManager(threadProcessManager)
 		kit.SetSkills(s.Skills)
-		kit.SetWorkflows(s.Workflows)
 		kit.SetAgentControl(agentControl)
 		ConfigureToolkitPermissions(kit, s.Permissions)
 		kit.SetSessionID(id)
@@ -1184,7 +1145,7 @@ func RuntimeContextInjector(control *agentcontrol.AgentControl, currentPath stri
 		if control != nil {
 			if agentReminder := control.ActiveTaskReminder(currentPath); agentReminder != "" {
 				blocks = append(blocks, wuucontext.Block{
-					Kind:    wuucontext.BlockWorkflowState,
+					Kind:    wuucontext.BlockTaskState,
 					Title:   "Active child-agent status",
 					Source:  "runtime.subagent_status",
 					Content: agentReminder,
@@ -1406,33 +1367,6 @@ func skillDirChain(root, leaf string) []string {
 	return chain
 }
 
-func discoverWorkflows(rootDir, homeDir, wuuHome string, plugins []pluginpkg.Plugin) []workflow.Definition {
-	var projectDirs []workflow.SourceDir
-	var userDirs []workflow.SourceDir
-	for _, item := range plugins {
-		source := item.SourceLabel()
-		for _, dir := range item.WorkflowDirs() {
-			switch item.Source {
-			case "project":
-				projectDirs = append(projectDirs, workflow.SourceDir{Path: dir, Source: source})
-			default:
-				userDirs = append(userDirs, workflow.SourceDir{Path: dir, Source: source})
-			}
-		}
-	}
-	if homeDir != "" {
-		userDirs = append(userDirs, workflow.SourceDir{Path: workflow.LegacyUserWorkflowPath(homeDir), Source: "user"})
-	}
-	if strings.TrimSpace(wuuHome) != "" {
-		userDirs = append(userDirs, workflow.SourceDir{Path: workflow.UserWorkflowPath(wuuHome), Source: "user"})
-	}
-	projectDirs = append(projectDirs,
-		workflow.SourceDir{Path: workflow.LegacyProjectWorkflowPath(rootDir), Source: "project"},
-		workflow.SourceDir{Path: workflow.ProjectWorkflowPath(rootDir), Source: "project"},
-	)
-	return workflow.MergeWithBundled(workflow.DiscoverSourceDirs(projectDirs, userDirs))
-}
-
 func connectMCPServers(cfg config.Config, plugins []pluginpkg.Plugin, toolkit *tools.Toolkit) {
 	servers := mcpServersFromConfigAndPlugins(cfg, plugins)
 	if toolkit == nil || len(servers) == 0 {
@@ -1569,7 +1503,7 @@ func discoverMemory(rootDir, homeDir string, cfg config.MemoryConfig) []memory.F
 // fresh here because worker/thread creation is a prompt-prefix creation
 // moment under the cache red lines — while the notebook directory stays
 // outside the worker's writable file scope.
-func buildWorkerBasePrompt(rootDir, sessionDate, wuuHome, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirEnabled bool, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
+func buildWorkerBasePrompt(rootDir, sessionDate, wuuHome, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirEnabled bool, discoveredSkills []skills.Skill) string {
 	var teaching, index string
 	if memdirEnabled && strings.TrimSpace(wuuHome) != "" {
 		userNotebook := memdir.UserMemdir(wuuHome)
@@ -1580,7 +1514,7 @@ func buildWorkerBasePrompt(rootDir, sessionDate, wuuHome, userPrompt, providerNa
 			providers.DebugLogf("read user memory index for worker prompt: %v", err)
 		}
 	}
-	return buildBaseSystemPromptContent(rootDir, sessionDate, config.WorkerSystemPrompt(), userPrompt, providerName, model, toolSurface, memoryFiles, teaching, index, discoveredSkills, discoveredWorkflows)
+	return buildBaseSystemPromptContent(rootDir, sessionDate, config.WorkerSystemPrompt(), userPrompt, providerName, model, toolSurface, memoryFiles, teaching, index, discoveredSkills)
 }
 
 func (s *Session) RefreshSystemPrompt(providerName, model string) string {
@@ -1611,7 +1545,6 @@ func (s *Session) RefreshSystemPrompt(providerName, model string) string {
 		memdirTeaching,
 		memdirIndex,
 		s.Skills,
-		s.Workflows,
 	)
 	baseSystemPrompt := baseSystemPromptResult.Content
 	s.BaseSystemPrompt = baseSystemPrompt
@@ -1659,24 +1592,17 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 // buildBaseSystemPrompt keeps the frozen-date-agnostic signature used by tests
 // and standalone callers; it passes an empty sessionDate so the environment
 // section falls back to the current date.
-func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
-	return buildBaseSystemPromptContent(rootDir, "", basePrompt, userPrompt, providerName, model, toolSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows)
+func buildBaseSystemPrompt(rootDir, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill) string {
+	return buildBaseSystemPromptContent(rootDir, "", basePrompt, userPrompt, providerName, model, toolSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills)
 }
 
-func buildBaseSystemPromptContent(rootDir, sessionDate, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) string {
-	return buildBaseSystemPromptResult(rootDir, sessionDate, basePrompt, userPrompt, providerName, model, toolSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills, discoveredWorkflows).Content
+func buildBaseSystemPromptContent(rootDir, sessionDate, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill) string {
+	return buildBaseSystemPromptResult(rootDir, sessionDate, basePrompt, userPrompt, providerName, model, toolSurface, memoryFiles, memdirTeaching, memdirIndex, discoveredSkills).Content
 }
 
-func buildBaseSystemPromptResult(rootDir, sessionDate, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) prompt.BuildResult {
+func buildBaseSystemPromptResult(rootDir, sessionDate, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill) prompt.BuildResult {
 	var pb prompt.Builder
 	pb.AddSection("base", basePrompt, true)
-	// The workflow entry of the orchestration path map is named-agent-only: it
-	// is re-injected here only for surfaces that can actually reach workflow
-	// tools, so ordinary project main agents (which have no workflow tools) are
-	// not taught start_workflow. Static text, cache-safe.
-	if toolSurface.HasAvailableCapability(capability.CapabilityWorkflow) {
-		pb.AddWorkflowPathGuidance()
-	}
 	pb.AddHarnessAdapter(providerName, model)
 	pb.AddSection("tool_surface", toolSurface.SystemFragment, true)
 	if _, ok := toolSurface.Tools["tool_search"]; ok {
@@ -1702,9 +1628,6 @@ func buildBaseSystemPromptResult(rootDir, sessionDate, basePrompt, userPrompt, p
 	}
 	if toolSurface.ProfileName != "" {
 		pb.AddSkills(tools.FilterSkillsForSurface(discoveredSkills, toolSurface))
-		if shouldInjectWorkflowGuidance(toolSurface) {
-			pb.AddWorkflows(tools.FilterWorkflowsForSurface(discoveredWorkflows, toolSurface))
-		}
 	}
 	return pb.BuildWithInfo()
 }
@@ -1767,24 +1690,6 @@ func agentPromptSections(sections []prompt.SectionInfo) []agent.SystemPromptSect
 		})
 	}
 	return out
-}
-
-func shouldInjectWorkflowGuidance(toolSurface capability.Surface) bool {
-	if toolSurface.ProfileName == "" {
-		return false
-	}
-	// Workflow orchestration is a named-agent-only capability. A surface that
-	// cannot reach workflow tools (ordinary project main agents, workers) must
-	// not be taught the workflow catalog it can never invoke, regardless of
-	// tool loading mode.
-	if !toolSurface.HasAvailableCapability(capability.CapabilityWorkflow) {
-		return false
-	}
-	// When progressive tool loading is available, keep workflow definitions out
-	// of the stable system prefix. The model can load list/load/start workflow
-	// schemas through tool_search and inspect the catalog only when needed.
-	_, hasToolSearch := toolSurface.Tools["tool_search"]
-	return !hasToolSearch
 }
 
 func activeSurface(kit *tools.Toolkit) capability.Surface {

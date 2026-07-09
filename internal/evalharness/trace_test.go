@@ -20,10 +20,9 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 		ToolCalls:           1,
 		ToolNames:           []string{"run_shell"},
 		ToolSequence:        []string{"read_file", "run_shell", "run_shell"},
-		ForbiddenToolsUsed:  []string{"create_workflow"},
+		ForbiddenToolsUsed:  []string{"deprecated_tool"},
 		MissingToolCalls:    []string{"checkpoint action=restore"},
 		MissingToolSeq:      []string{"apply_patch contains=checkpoint_result.txt"},
-		WorkflowIssues:      []string{"run-1:missing_reports=worker-1"},
 		InputTokens:         10,
 		OutputTokens:        20,
 		CacheReadTokens:     6,
@@ -43,7 +42,6 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 			SessionDir:         "/tmp/state/sessions/eval-task-1",
 			TracePath:          "/tmp/state/sessions/eval-task-1/eval-trace.jsonl",
 			HarnessDir:         "/tmp/state/sessions/eval-task-1/harness",
-			WorkflowDir:        "/tmp/state/workflows",
 			TaskWorkdir:        "/tmp/task",
 			TaskWorkdirKept:    true,
 			FinalAnswerPreview: "done",
@@ -92,18 +90,17 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 				RawOutputBytes: 42,
 			}},
 			GoalAttention: []GoalAttentionObservation{{
-				Source:  "workflow_agent",
-				ID:      "worker-1",
-				Status:  "missing_report",
-				Message: "workflow run run-1 is missing agent report",
+				Source:  "harness_report",
+				ID:      "report-1",
+				Status:  "partial",
+				Message: "tests failed",
 			}},
-			WorkflowRuns:   []WorkflowRunObservation{{ID: "run-1", RunDir: "/tmp/state/workflows/run-1", EventLogPath: "/tmp/state/workflows/run-1/events.jsonl", Status: "completed"}},
 			HarnessTasks:   []HarnessTaskObservation{{ID: "worker-1", Status: "completed"}},
 			HarnessReports: []HarnessReportObservation{{ID: "report-1", Outcome: "completed"}},
 		},
 	}, time.Unix(100, 0).UTC())
 
-	wantTypes := []string{"task", "observability", "model_profile", "context_blocks", "context_requests", "tool_inventory", "tool_records", "goal_attention", "workflow_runs", "harness_tasks", "harness_reports", "final"}
+	wantTypes := []string{"task", "observability", "model_profile", "context_blocks", "context_requests", "tool_inventory", "tool_records", "goal_attention", "harness_tasks", "harness_reports", "final"}
 	if len(events) != len(wantTypes) {
 		t.Fatalf("event count = %d, want %d: %+v", len(events), len(wantTypes), events)
 	}
@@ -119,7 +116,7 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	if !ok {
 		t.Fatalf("task event data has wrong type: %#v", events[0].Data)
 	}
-	if len(task.ForbiddenToolsUsed) != 1 || task.ForbiddenToolsUsed[0] != "create_workflow" {
+	if len(task.ForbiddenToolsUsed) != 1 || task.ForbiddenToolsUsed[0] != "deprecated_tool" {
 		t.Fatalf("task event missing forbidden tools: %+v", task)
 	}
 	if task.InputTokens != 10 || task.OutputTokens != 20 || task.CacheReadTokens != 6 || task.CacheCreationTokens != 4 || task.CacheHitRate != CacheHitRate(10, 6) {
@@ -172,9 +169,6 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	if len(task.MissingToolSeq) != 1 || task.MissingToolSeq[0] != "apply_patch contains=checkpoint_result.txt" {
 		t.Fatalf("task event missing tool sequence requirements: %+v", task)
 	}
-	if len(task.WorkflowIssues) != 1 || task.WorkflowIssues[0] != "run-1:missing_reports=worker-1" {
-		t.Fatalf("task event missing workflow issues: %+v", task)
-	}
 	if len(task.ToolSequence) != 3 || task.ToolSequence[0] != "read_file" || task.ToolSequence[2] != "run_shell" {
 		t.Fatalf("task event missing tool sequence: %+v", task)
 	}
@@ -185,7 +179,7 @@ func TestTraceEventsSummarizeEvalArtifacts(t *testing.T) {
 	if !ok {
 		t.Fatalf("goal_attention event data has wrong type: %#v", events[7].Data)
 	}
-	if len(attention) != 1 || attention[0].Source != "workflow_agent" || attention[0].Status != "missing_report" {
+	if len(attention) != 1 || attention[0].Source != "harness_report" || attention[0].Status != "partial" {
 		t.Fatalf("goal_attention event missing attention item: %+v", attention)
 	}
 }
@@ -307,13 +301,12 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 				Success:         false,
 			}},
 			GoalAttention: []GoalAttentionObservation{{
-				Source:  "workflow_conflict",
-				ID:      "run-1",
-				Status:  "changed_file_overlap",
-				Message: "worker-b, worker-a",
+				Source:  "harness_report",
+				ID:      "report-1",
+				Status:  "partial",
+				Message: "tests failed",
 				Path:    "shared.go",
 			}},
-			WorkflowRuns:   []WorkflowRunObservation{{ID: "run-1", RunDir: "/tmp/state/workflows/run-1", EventLogPath: "/tmp/state/workflows/run-1/events.jsonl", Status: "completed"}},
 			HarnessTasks:   []HarnessTaskObservation{{ID: "worker-1", Status: "completed"}},
 			HarnessReports: []HarnessReportObservation{{ID: "report-1", Outcome: "completed"}},
 		},
@@ -326,7 +319,7 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReplayTrace: %v", err)
 	}
-	if !summary.Complete || summary.Mode != "deterministic_trace_replay" || summary.EventCount != 11 {
+	if !summary.Complete || summary.Mode != "deterministic_trace_replay" || summary.EventCount != 10 {
 		t.Fatalf("unexpected replay summary envelope: %+v", summary)
 	}
 	if summary.Task == nil || summary.Task.ID != "task-1" || summary.Final == nil || !summary.Final.Success {
@@ -397,18 +390,10 @@ func TestReplayTraceSummarizesRecordedEvents(t *testing.T) {
 		summary.ToolSummary.PatchRisk.DeletedLines != 3 {
 		t.Fatalf("replay tool summary missing patch risk: %+v", summary.ToolSummary.PatchRisk)
 	}
-	if len(summary.WorkflowRunIDs) != 1 || summary.WorkflowRunIDs[0] != "run-1" {
-		t.Fatalf("replay missing workflow runs: %+v", summary.WorkflowRunIDs)
-	}
 	if len(summary.GoalAttention) != 1 ||
-		summary.GoalAttention[0].Source != "workflow_conflict" ||
+		summary.GoalAttention[0].Source != "harness_report" ||
 		summary.GoalAttention[0].Path != "shared.go" {
 		t.Fatalf("replay missing goal attention: %+v", summary.GoalAttention)
-	}
-	if len(summary.WorkflowRuns) != 1 ||
-		summary.WorkflowRuns[0].RunDir != "/tmp/state/workflows/run-1" ||
-		summary.WorkflowRuns[0].EventLogPath != "/tmp/state/workflows/run-1/events.jsonl" {
-		t.Fatalf("replay missing workflow artifact paths: %+v", summary.WorkflowRuns)
 	}
 }
 
@@ -454,7 +439,7 @@ func TestReplayTraceBuildsModelProfileRecommendationsFromEvidence(t *testing.T) 
 		t.Fatalf("expected one profile recommendation, got %+v", summary.ModelProfileRecommendations)
 	}
 	rec := summary.ModelProfileRecommendations[0]
-	if rec.Field != "workflow.allow_parallel_read_only" ||
+	if rec.Field != "execution.allow_parallel_read_only" ||
 		rec.CurrentValue != "false" ||
 		rec.RecommendedValue != "true" ||
 		len(rec.Evidence) == 0 ||
@@ -489,8 +474,8 @@ func TestReplayTraceSummarizesValidationLedger(t *testing.T) {
 				ResultRef:            "/tmp/wuu/tool-results/test.log",
 				ArtifactRefs:         []string{"/tmp/wuu/tool-results/test.log"},
 			}, {
-				Name:         "workflow_status",
-				CallID:       "call-workflow",
+				Name:         "status_probe",
+				CallID:       "call-status",
 				ResultAction: "status",
 				Success:      true,
 			}, {
@@ -514,7 +499,7 @@ func TestReplayTraceSummarizesValidationLedger(t *testing.T) {
 	if summary.Validation == nil {
 		t.Fatal("replay missing validation ledger")
 	}
-	if summary.Validation.Status != "passed" || len(summary.Validation.Evidence) != 1 || len(summary.Validation.ToolCalls) != 2 {
+	if summary.Validation.Status != "passed" || len(summary.Validation.Evidence) != 1 || len(summary.Validation.ToolCalls) != 1 {
 		t.Fatalf("unexpected validation ledger: %+v", summary.Validation)
 	}
 	if summary.Validation.Evidence[0].Command != "go test ./..." {
@@ -526,6 +511,9 @@ func TestReplayTraceSummarizesValidationLedger(t *testing.T) {
 		t.Fatalf("validation tool call missing metadata: %+v", summary.Validation.ToolCalls)
 	}
 	for _, call := range summary.Validation.ToolCalls {
+		if call.CallID == "call-status" {
+			t.Fatalf("ordinary status probes should not be treated as validation: %+v", summary.Validation.ToolCalls)
+		}
 		if call.CallID == "call-shell" {
 			t.Fatalf("generic bash should not be treated as validation without structured validation metadata: %+v", summary.Validation.ToolCalls)
 		}
@@ -540,8 +528,7 @@ func TestBuildValidationSummaryFromEvalResult(t *testing.T) {
 		TaskID:             "task-1",
 		TaskName:           "Task One",
 		Success:            false,
-		ForbiddenToolsUsed: []string{"run_workflow"},
-		WorkflowIssues:     []string{"run-1:missing_reports=worker-1"},
+		ForbiddenToolsUsed: []string{"deprecated_tool"},
 		VerificationEvidence: []VerificationEvidence{{
 			Check:    "marker",
 			Passed:   false,
@@ -549,6 +536,12 @@ func TestBuildValidationSummaryFromEvalResult(t *testing.T) {
 			Observed: "missing",
 		}},
 		Observability: &Observability{
+			GoalAttention: []GoalAttentionObservation{{
+				Source:  "harness_report",
+				ID:      "report-1",
+				Status:  "partial",
+				Message: "tests failed",
+			}},
 			ToolRecords: []ToolObservation{{
 				Name:                 "bash",
 				CallID:               "call-test",
@@ -567,8 +560,8 @@ func TestBuildValidationSummaryFromEvalResult(t *testing.T) {
 		t.Fatalf("validation status = %q, want incomplete: %+v", summary.Status, summary)
 	}
 	if len(summary.Missing) != 2 ||
-		summary.Missing[0] != "forbidden_tool:run_workflow" ||
-		summary.Missing[1] != "workflow_issue:run-1:missing_reports=worker-1" {
+		summary.Missing[0] != "forbidden_tool:deprecated_tool" ||
+		summary.Missing[1] != "attention_issue:harness_report:report-1:status=partial" {
 		t.Fatalf("validation missing requirements not summarized: %+v", summary.Missing)
 	}
 	if len(summary.Failures) != 2 ||
@@ -581,85 +574,22 @@ func TestBuildValidationSummaryFromEvalResult(t *testing.T) {
 	}
 }
 
-func TestGoalValidationIssuesSummarizesAttention(t *testing.T) {
-	issues := GoalValidationIssues([]GoalAttentionObservation{{
-		Source:  "workflow_agent",
-		ID:      "agent-missing",
-		Status:  "missing_report",
-		Message: "workflow run run-1 is missing agent report",
-	}, {
-		Source:  "workflow_agent",
-		ID:      "agent-failed",
-		Status:  "failed",
-		Message: "workflow run run-1 has failed agent",
-	}, {
-		Source:  "workflow_conflict",
-		ID:      "run-1",
-		Status:  "changed_file_overlap",
-		Message: "agent-b, agent-a",
-		Path:    "shared.go",
+func TestGoalAttentionValidationIssuesSummarizesAttention(t *testing.T) {
+	issues := GoalAttentionValidationIssues([]GoalAttentionObservation{{
+		Source:  "goal_approval",
+		ID:      "approval-1",
+		Status:  "pending",
+		Message: "Approve merge",
 	}, {
 		Source: "harness",
 		ID:     "task-1",
 		Status: "failed",
-	}}, []WorkflowRunObservation{{
-		ID:     "run-2",
-		Status: "running",
-		TeamArbitration: WorkflowTeamArbitration{
-			Status:         "attention_required",
-			MissingReports: []string{"agent-c"},
-		},
 	}})
 	want := []string{
+		"goal_approval:approval-1:status=pending",
 		"harness:task-1:status=failed",
-		"run-1:failed=agent-failed",
-		"run-1:missing_reports=agent-missing",
-		"run-1:overlap=shared.go=agent-a+agent-b",
-		"run-2:arbitration=attention_required",
-		"run-2:missing_reports=agent-c",
-		"run-2:status=running",
 	}
 	if strings.Join(issues, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("goal issues = %+v, want %+v", issues, want)
-	}
-}
-
-func TestWorkflowValidationIssuesSummarizesArbitration(t *testing.T) {
-	issues := WorkflowValidationIssues([]WorkflowRunObservation{{
-		ID:     "run-1",
-		Status: "completed",
-		TeamArbitration: WorkflowTeamArbitration{
-			Status:          "attention_required",
-			OpenAgentRuns:   []string{"agent-open"},
-			MissingReports:  []string{"agent-missing"},
-			FailedAgentRuns: []string{"agent-failed"},
-			ChangedFileOverlaps: []WorkflowChangedFileOverlapObservation{{
-				File:        "shared.go",
-				AgentRunIDs: []string{"agent-b", "agent-a"},
-			}},
-		},
-	}, {
-		ID:     "run-2",
-		Status: "running",
-	}})
-	want := []string{
-		"run-1:arbitration=attention_required",
-		"run-1:failed=agent-failed",
-		"run-1:missing_reports=agent-missing",
-		"run-1:open=agent-open",
-		"run-1:overlap=shared.go=agent-a+agent-b",
-		"run-2:status=running",
-	}
-	if strings.Join(issues, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("workflow issues = %+v, want %+v", issues, want)
-	}
-	if clear := WorkflowValidationIssues([]WorkflowRunObservation{{
-		ID:     "run-clear",
-		Status: "completed",
-		TeamArbitration: WorkflowTeamArbitration{
-			Status: "clear",
-		},
-	}}); len(clear) != 0 {
-		t.Fatalf("clear workflow should not produce issues: %+v", clear)
 	}
 }
