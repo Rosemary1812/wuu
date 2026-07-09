@@ -3046,6 +3046,30 @@ func TestToolkit_ToolSearchLoadsDeferredTool(t *testing.T) {
 	}
 }
 
+func TestToolSearchDefinitionDoesNotAdvertiseWorkflowPath(t *testing.T) {
+	def := NewToolSearchTool(nil).Definition()
+	for _, want := range []string{
+		"Search deferred tools",
+		"MCP tools",
+		"scheduling",
+		"memory",
+		"select:<tool_name>",
+	} {
+		if !strings.Contains(def.Description, want) {
+			t.Fatalf("tool_search description missing %q:\n%s", want, def.Description)
+		}
+	}
+	for _, bad := range []string{
+		"especially MCP tools, workflows",
+		"workflows, scheduling",
+		"matching saved workflow",
+	} {
+		if strings.Contains(def.Description, bad) {
+			t.Fatalf("tool_search description should not include generic workflow guidance %q:\n%s", bad, def.Description)
+		}
+	}
+}
+
 func TestToolkit_DeferredToolCatalogUsesStaticTrustedMetadata(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

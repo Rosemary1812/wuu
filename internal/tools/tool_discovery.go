@@ -27,7 +27,7 @@ func (t *ToolSearchTool) Definition() providers.ToolDefinition {
 		Name: "tool_search",
 		Description: "Search deferred tools and load matching tool schemas.\n\n" +
 			"Deferred tool names are listed in the static Deferred Tool Catalog under <available-deferred-tools>, but those tools are not callable until their schemas are loaded. " +
-			"Use this when you need a listed deferred tool or a capability that is not currently visible, especially MCP tools, workflows, scheduling, memory, or specialized helpers. Search by capability words, or use select:<tool_name> when you already know the exact tool. Load related tools in one call when you expect to need several, for example select:tool_a tool_b. Do not use this for tools that are already visible.",
+			"Use this when you need a listed deferred tool or a capability that is not currently visible, especially MCP tools, scheduling, memory, or specialized helpers. Search by capability words, or use select:<tool_name> when you already know the exact tool. Load related tools in one call when you expect to need several, for example select:tool_a tool_b. Do not use this for tools that are already visible.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

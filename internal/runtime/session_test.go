@@ -1481,12 +1481,25 @@ func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 		"# Harness Adapter",
 		"Provider/model: openai/gpt-5.5",
 		"same product regardless of provider, model family, or BYOK backend",
-		"Do not choose direct work, subagents, or workflows based on provider/model family or brand.",
+		"runtime goals, task rail, and subagents are wuu coordination primitives",
+		"Do not choose direct local work, runtime goals, task-rail delegation, or subagents based on provider/model family or brand.",
 		"[Tool surface: openai_gpt]",
 		"Your editing primitive is apply_patch",
 	} {
 		if !strings.Contains(rt.BaseSystemPrompt, want) {
 			t.Fatalf("BaseSystemPrompt missing harness adapter text %q:\n%s", want, rt.BaseSystemPrompt)
+		}
+	}
+	for _, bad := range []string{
+		"task-handling options inside wuu",
+		"direct work, subagents, or workflows",
+		"workflows only when",
+		"matching saved workflow",
+		"especially MCP tools, workflows",
+		"workflows, scheduling",
+	} {
+		if strings.Contains(rt.BaseSystemPrompt, bad) {
+			t.Fatalf("BaseSystemPrompt should not include generic workflow guidance %q:\n%s", bad, rt.BaseSystemPrompt)
 		}
 	}
 	if got := rt.StreamRunner.ProviderOptions["serviceTier"]; got != "priority" {
@@ -2229,6 +2242,18 @@ func TestBuildBaseSystemPromptAddsToolDiscoveryForToolSearchSurface(t *testing.T
 			t.Fatalf("tool-search surface prompt missing %q:\n%s", want, promptText)
 		}
 	}
+	for _, bad := range []string{
+		"especially MCP tools, workflows",
+		"workflows, scheduling",
+		"task-handling options inside wuu",
+		"direct work, subagents, or workflows",
+		"workflows only when",
+		"matching saved workflow",
+	} {
+		if strings.Contains(promptText, bad) {
+			t.Fatalf("main prompt should not include generic workflow guidance %q:\n%s", bad, promptText)
+		}
+	}
 }
 
 func TestBuildBaseSystemPromptDefersWorkflowCatalogForToolSearchSurface(t *testing.T) {
@@ -2249,7 +2274,6 @@ func TestBuildBaseSystemPromptDefersWorkflowCatalogForToolSearchSurface(t *testi
 
 	for _, want := range []string{
 		"# Tool Discovery",
-		"workflows",
 		"`tool_search`",
 	} {
 		if !strings.Contains(promptText, want) {
@@ -2259,6 +2283,12 @@ func TestBuildBaseSystemPromptDefersWorkflowCatalogForToolSearchSurface(t *testi
 	for _, bad := range []string{
 		"Workflow guidance",
 		"Release workflow",
+		"especially MCP tools, workflows",
+		"workflows, scheduling",
+		"task-handling options inside wuu",
+		"direct work, subagents, or workflows",
+		"workflows only when",
+		"matching saved workflow",
 	} {
 		if strings.Contains(promptText, bad) {
 			t.Fatalf("tool-search workflow prompt should defer catalog %q:\n%s", bad, promptText)
@@ -2324,10 +2354,11 @@ func TestBuildBaseSystemPromptFiltersSkillsBySurface(t *testing.T) {
 	}
 }
 
-func TestBuildBaseSystemPromptFiltersWorkflowsBySurface(t *testing.T) {
-	// A workflow-capable no-shell surface: it carries the workflow capability
-	// (so the catalog is injected) but no bash, so terminal-only workflows must
-	// still be filtered out by FilterWorkflowsForSurface.
+func TestBuildBaseSystemPromptDoesNotInjectWorkflowGuidanceForWorkflowSurface(t *testing.T) {
+	// Even if an older or hand-built surface still carries workflow capability,
+	// named agents now coordinate through task rail/runtime goal, not the legacy
+	// workflow suite. The base prompt must not inject workflow path guidance or
+	// a workflow catalog.
 	surface := capability.Surface{
 		ProfileName:          "portable_no_shell",
 		Tools:                map[string]capability.Capability{"read_file": capability.CapabilityFileRead},
@@ -2363,15 +2394,21 @@ func TestBuildBaseSystemPromptFiltersWorkflowsBySurface(t *testing.T) {
 		},
 	)
 
-	if strings.Contains(promptText, "terminal-release") ||
-		strings.Contains(promptText, "Git:") ||
-		strings.Contains(promptText, "git-status") ||
-		strings.Contains(promptText, "git_status") ||
-		strings.Contains(promptText, "Run bash") {
-		t.Fatalf("local/no-shell prompt must not advertise terminal workflows:\n%s", promptText)
-	}
-	if !strings.Contains(promptText, "portable-plan") {
-		t.Fatalf("local/no-shell prompt should keep compatible workflows:\n%s", promptText)
+	for _, bad := range []string{
+		"Workflow guidance",
+		"# Workflow orchestration",
+		"Workflow catalog",
+		"`start_workflow`",
+		"- start_workflow:",
+		"terminal-release",
+		"portable-plan",
+		"Plan a portable change.",
+		"Git: release workflow.",
+		"Use for planning.",
+	} {
+		if strings.Contains(promptText, bad) {
+			t.Fatalf("workflow guidance must not be injected for legacy workflow-capable surfaces; found %q:\n%s", bad, promptText)
+		}
 	}
 }
 
@@ -2417,11 +2454,11 @@ func TestBuildBaseSystemPromptLocalNoShellDoesNotTeachTerminalPaths(t *testing.T
 // split between prompts.System() (base sections shared with workers) and
 // prompts.SystemMain() (the Orchestration path-selection map that lives only
 // in the main agent's prompt). The Orchestration section lists main-agent
-// planning and orchestration paths (update_plan, goal,
-// start_workflow, spawn_agent, helpme, write_memory, read_memory); if it
-// leaked into a worker's system prompt the worker would receive the wrong
-// path-selection map. Inception is available to workers through the tool
-// surface, but its worker guidance lives in the tool description.
+// planning and orchestration paths (update_plan, goal, spawn_agent, helpme,
+// write_memory, read_memory); if it leaked into a worker's system prompt the
+// worker would receive the wrong path-selection map. Inception is available to
+// workers through the tool surface, but its worker guidance lives in the tool
+// description.
 func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T) {
 	surface := compiledSurfaceForProviderModel("openai", "gpt-5")
 
@@ -2456,8 +2493,8 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 			t.Fatalf("main agent prompt must contain %q; got prompt:\n%s", want, mainPrompt)
 		}
 	}
-	// start_workflow is a named-agent-only capability: the ordinary project
-	// main surface (no workflow capability) must NOT be taught it.
+	// start_workflow is part of the legacy workflow suite and must not be
+	// taught to ordinary project main agents.
 	if strings.Contains(mainPrompt, "- start_workflow:") {
 		t.Fatalf("project main prompt (no workflow capability) must not contain the start_workflow path bullet; got prompt:\n%s", mainPrompt)
 	}
@@ -2477,14 +2514,15 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 		}
 	}
 
-	// A named/workflow-capable surface DOES receive the surface-gated
-	// start_workflow path bullet, re-injected by the prompt builder.
+	// Named agents coordinate through task rail/runtime goal, not the legacy
+	// workflow suite. They must not carry workflow capability or receive
+	// start_workflow/catalog prompt guidance.
 	namedSurface := modelprofile.DefaultCompiler{}.Compile(
 		modelprofile.Resolve("openai", "gpt-5"),
 		modelprofile.SurfaceNamed,
 	)
-	if !namedSurface.HasAvailableCapability(capability.CapabilityWorkflow) {
-		t.Fatalf("named surface should carry the workflow capability: %+v", namedSurface.DeferredCapabilities)
+	if namedSurface.HasCapability(capability.CapabilityWorkflow) {
+		t.Fatalf("named surface must not carry the workflow capability: direct=%+v deferred=%+v hidden=%+v", namedSurface.Capabilities, namedSurface.DeferredCapabilities, namedSurface.HiddenCapabilities)
 	}
 	namedPrompt := buildBaseSystemPrompt(
 		t.TempDir(),
@@ -2493,10 +2531,27 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 		"openai",
 		"gpt-5",
 		namedSurface,
-		nil, "", "", nil, nil,
+		nil, "", "", nil,
+		[]workflow.Definition{{Name: "named-release", Description: "Named release workflow."}},
 	)
-	if !strings.Contains(namedPrompt, "- start_workflow:") {
-		t.Fatalf("named/workflow-capable prompt must contain the start_workflow path bullet; got prompt:\n%s", namedPrompt)
+	for _, bad := range []string{
+		"- start_workflow:",
+		"`start_workflow`",
+		"Workflow guidance",
+		"# Workflow orchestration",
+		"Workflow catalog",
+		"named-release",
+		"Named release workflow.",
+		"especially MCP tools, workflows",
+		"workflows, scheduling",
+		"task-handling options inside wuu",
+		"direct work, subagents, or workflows",
+		"workflows only when",
+		"matching saved workflow",
+	} {
+		if strings.Contains(namedPrompt, bad) {
+			t.Fatalf("named prompt must not contain legacy workflow guidance %q; got prompt:\n%s", bad, namedPrompt)
+		}
 	}
 }
 

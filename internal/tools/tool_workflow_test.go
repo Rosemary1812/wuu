@@ -377,11 +377,12 @@ func TestToolkitWorkflowToolsFilterByActiveSurface(t *testing.T) {
 	}
 	loadWorkflowDriverToolsForTest(t, kit)
 	kit.SetStateDir(t.TempDir())
-	kit.SetActiveProfile(modelprofile.Resolve("ollama", "llama-coder"), true)
-	// Workflow tools are a named-agent-only capability; enable the resident
-	// (named) identity so the suite is present on this surface.
-	kit.SetResidentParticipantEnabled(true)
-	kit.markDeferredToolsLoaded("list_workflows", "load_workflow", "save_workflow", "start_workflow")
+	// Keep workflow tools directly testable while applying the no-shell surface
+	// to workflow definition filtering. Named/resident model surfaces no longer
+	// expose workflow tools, so installing an active profile here would test the
+	// surface gate instead of the workflow filtering behavior.
+	kit.env.ActiveSurface = modelprofile.DefaultCompiler{}.Compile(modelprofile.Resolve("ollama", "llama-coder"), modelprofile.SurfaceMain)
+	kit.markDeferredToolsLoaded("list_workflows", "load_workflow", "save_workflow", "start_workflow", "run_workflow", "create_workflow")
 	kit.SetWorkflows([]workflow.Definition{
 		{
 			Name:        "portable-plan",

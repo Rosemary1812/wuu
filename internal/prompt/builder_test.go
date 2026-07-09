@@ -169,6 +169,15 @@ func TestBuilder_AddToolDiscovery(t *testing.T) {
 			t.Fatalf("tool discovery prompt missing %q:\n%s", want, result)
 		}
 	}
+	for _, bad := range []string{
+		"especially MCP tools, workflows",
+		"workflows, scheduling",
+		"matching saved workflow",
+	} {
+		if strings.Contains(result, bad) {
+			t.Fatalf("tool discovery prompt should not include generic workflow guidance %q:\n%s", bad, result)
+		}
+	}
 }
 
 func TestBuilder_AddWorkflows(t *testing.T) {

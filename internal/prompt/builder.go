@@ -214,7 +214,7 @@ func (b *Builder) AddToolDiscovery() {
 		"",
 		"Some less common tool schemas are deferred so the direct tool list stays small and cacheable. Deferred tools may be listed by trusted Wuu metadata in the static Deferred Tool Catalog, but their parameter schemas are not available until loaded.",
 		"- When `<available-deferred-tools>` appears in the Deferred Tool Catalog, a name in that list means the tool can be loaded; it does not mean the tool is callable yet.",
-		"- Use `tool_search` when you need a capability that is not currently visible, especially MCP tools, workflows, scheduling, memory, desktop port reporting, or specialized helpers.",
+		"- Use `tool_search` when you need a capability that is not currently visible, especially MCP tools, scheduling, memory, desktop port reporting, or specialized helpers.",
 		"- Search by capability words, or use `select:<tool_name>` when you already know the exact tool name. Load related tools in one call when several are likely needed, for example `select:tool_a tool_b`.",
 		"- After `tool_search` returns matching schemas, use the loaded tool normally in the next tool step if it fits the task.",
 		"- If `tool_search` reports a schema in `already_loaded`, use that loaded tool directly; do not call `tool_search` again for the same tool.",
@@ -223,13 +223,9 @@ func (b *Builder) AddToolDiscovery() {
 	}, "\n"), true)
 }
 
-// AddWorkflowPathGuidance re-injects the workflow entry of the main-agent
-// orchestration path map. It is kept out of the static prompts/system_main.md
-// embed because start_workflow is a named-agent-only capability: ordinary
-// project main agents and workers do not carry workflow tools and must not be
-// taught a tool they cannot call. The section is static (its text never varies)
-// so it does not break the prompt-prefix cache; the caller gates it on the
-// surface actually carrying the workflow capability.
+// AddWorkflowPathGuidance adds the legacy workflow path-selection entry. It is
+// retained while workflow tooling is being retired from model-facing surfaces;
+// current named/resident agents use runtime goals and the task rail instead.
 func (b *Builder) AddWorkflowPathGuidance() {
 	b.AddSection("workflow_path", strings.Join([]string{
 		"# Workflow orchestration",
@@ -238,7 +234,9 @@ func (b *Builder) AddWorkflowPathGuidance() {
 	}, "\n"), true)
 }
 
-// AddWorkflows adds reusable workflow definitions to session guidance.
+// AddWorkflows adds legacy reusable workflow definitions to session guidance.
+// The current base prompt assembly no longer calls this for named/resident
+// model surfaces.
 func (b *Builder) AddWorkflows(workflows []workflow.Definition) {
 	visible := make([]workflow.Definition, 0, len(workflows))
 	for _, wf := range workflows {

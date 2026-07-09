@@ -175,12 +175,11 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 	}
 }
 
-// TestResidentParticipantSurfaceEnablesWorkflowTools asserts the named-only
-// contract at the runtime seam: a resident/named agent (the one that inherits
-// the main surface via CloneForRoot and flips to named at turn time via
-// SetResidentParticipantEnabled) gets the workflow/agent-profile suite as
-// deferred tools, and turning the resident identity back off removes them.
-func TestResidentParticipantSurfaceEnablesWorkflowTools(t *testing.T) {
+// TestResidentParticipantSurfaceHidesWorkflowTools asserts the named-agent
+// contract at the runtime seam: a resident/named agent still receives the
+// conversation task rail, but the legacy workflow/agent-profile suite stays
+// hidden instead of becoming deferred.
+func TestResidentParticipantSurfaceHidesWorkflowTools(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -210,15 +209,39 @@ func TestResidentParticipantSurfaceEnablesWorkflowTools(t *testing.T) {
 		}
 	}
 
-	// Flip to a resident/named agent (the turn-time delivery seam).
+	// Flip to a resident/named agent (the turn-time delivery seam). Workflow
+	// tools remain hidden; resident task-reading and participant speech tools
+	// are the named-agent coordination path.
 	kit.SetResidentParticipantEnabled(true)
+	kit.SetParticipantSpeechEnabled(true)
 	for _, name := range workflowTools {
 		info, ok := kit.ToolInfo(name)
 		if !ok {
 			t.Fatalf("ToolInfo(%q) not found", name)
 		}
-		if info.Exposure != ToolExposureDeferred {
-			t.Fatalf("resident %s exposure = %s, want Deferred", name, info.Exposure)
+		if info.Exposure != ToolExposureHidden {
+			t.Fatalf("resident %s exposure = %s, want Hidden", name, info.Exposure)
+		}
+		if containsProfileDef(kit.Definitions(), name) {
+			t.Fatalf("resident workflow tool %s must not be visible, got %v", name, sortedProfileDefNames(kit.Definitions()))
+		}
+	}
+	for _, tt := range []struct {
+		name string
+		want ToolExposure
+	}{
+		{name: "goal", want: ToolExposureDeferred},
+		{name: "post_message", want: ToolExposureDirect},
+		{name: "manage_participant", want: ToolExposureDirect},
+		{name: "manage_task", want: ToolExposureDirect},
+		{name: "fetch_thread_messages", want: ToolExposureDirect},
+	} {
+		info, ok := kit.ToolInfo(tt.name)
+		if !ok {
+			t.Fatalf("ToolInfo(%q) not found", tt.name)
+		}
+		if info.Exposure != tt.want {
+			t.Fatalf("resident task rail tool %s exposure = %s, want %s", tt.name, info.Exposure, tt.want)
 		}
 	}
 
@@ -600,8 +623,8 @@ func TestActiveProfileBlocksHiddenToolExecution(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
-	// run_workflow is a named-agent-only deferred tool; enable the resident
-	// (named) identity so it is present-but-deferred on this surface.
+	// run_workflow is a retired legacy workflow entrypoint for resident/named
+	// agents too: even a resident identity must not make it deferred-loadable.
 	kit.SetResidentParticipantEnabled(true)
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "run_shell", Arguments: `{"command":"echo hi"}`})
@@ -610,13 +633,13 @@ func TestActiveProfileBlocksHiddenToolExecution(t *testing.T) {
 	}
 
 	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "run_workflow", Arguments: `{}`})
-	if err == nil || !strings.Contains(err.Error(), "deferred") {
-		t.Fatalf("inactive deferred run_workflow should ask for tool_search, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "active model surface") {
+		t.Fatalf("resident run_workflow should be blocked by the active surface, got %v", err)
 	}
 	kit.markDeferredToolsLoaded("run_workflow")
 	_, err = kit.Execute(context.Background(), providers.ToolCall{Name: "run_workflow", Arguments: `{}`})
-	if err == nil || strings.Contains(err.Error(), "deferred") || strings.Contains(err.Error(), "active model surface") {
-		t.Fatalf("loaded run_workflow should reach tool validation, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "active model surface") {
+		t.Fatalf("loaded legacy run_workflow should still be blocked by the active surface, got %v", err)
 	}
 }
 
@@ -633,6 +656,9 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	}
 	if containsProfileDef(kit.Definitions(), "manage_participant") {
 		t.Fatalf("ordinary worker surface must not advertise manage_participant: %v", sortedProfileDefNames(kit.Definitions()))
+	}
+	if containsProfileDef(kit.Definitions(), "manage_task") {
+		t.Fatalf("ordinary worker surface must not advertise manage_task: %v", sortedProfileDefNames(kit.Definitions()))
 	}
 	if containsProfileDef(kit.Definitions(), "fetch_thread_messages") {
 		t.Fatalf("ordinary worker surface must not advertise fetch_thread_messages: %v", sortedProfileDefNames(kit.Definitions()))
@@ -652,6 +678,11 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	} else if info.Exposure != ToolExposureHidden {
 		t.Fatalf("ordinary worker manage_participant exposure = %s, want %s", info.Exposure, ToolExposureHidden)
 	}
+	if info, ok := kit.ToolInfo("manage_task"); !ok {
+		t.Fatalf("ToolInfo(%q) not found", "manage_task")
+	} else if info.Exposure != ToolExposureHidden {
+		t.Fatalf("ordinary worker manage_task exposure = %s, want %s", info.Exposure, ToolExposureHidden)
+	}
 	if info, ok := kit.ToolInfo("fetch_thread_messages"); !ok {
 		t.Fatalf("ToolInfo(%q) not found", "fetch_thread_messages")
 	} else if info.Exposure != ToolExposureHidden {
@@ -662,6 +693,9 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "manage_participant", Arguments: `{"action":"list"}`}); err == nil || !strings.Contains(err.Error(), "participant speech capability") {
 		t.Fatalf("ordinary worker manage_participant should be blocked by speech capability, got %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "manage_task", Arguments: `{"action":"list"}`}); err == nil || !strings.Contains(err.Error(), "participant speech capability") {
+		t.Fatalf("ordinary worker manage_task should be blocked by speech capability, got %v", err)
 	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "fetch_thread_messages", Arguments: `{"thread_id":"thread-1"}`}); err == nil || !strings.Contains(err.Error(), "resident participant capability") {
 		t.Fatalf("ordinary worker fetch_thread_messages should be blocked by resident capability, got %v", err)
@@ -676,6 +710,9 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	}
 	if !containsProfileDef(kit.Definitions(), "manage_participant") {
 		t.Fatalf("authorized participant surface should advertise manage_participant: %v", sortedProfileDefNames(kit.Definitions()))
+	}
+	if !containsProfileDef(kit.Definitions(), "manage_task") {
+		t.Fatalf("authorized participant surface should advertise manage_task: %v", sortedProfileDefNames(kit.Definitions()))
 	}
 	if containsProfileDef(kit.Definitions(), "fetch_thread_messages") {
 		t.Fatalf("participant speech surface must not advertise resident fetch_thread_messages: %v", sortedProfileDefNames(kit.Definitions()))
@@ -695,11 +732,19 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	} else if info.Exposure != ToolExposureDirect {
 		t.Fatalf("authorized manage_participant info = %+v, want direct", info)
 	}
+	if info, ok := kit.ToolInfo("manage_task"); !ok {
+		t.Fatalf("ToolInfo(%q) not found", "manage_task")
+	} else if info.Exposure != ToolExposureDirect {
+		t.Fatalf("authorized manage_task info = %+v, want direct", info)
+	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "post_message", Arguments: `{"kind":"result","text":"hello"}`}); err == nil || strings.Contains(err.Error(), "participant speech capability") || strings.Contains(err.Error(), "active model surface") {
 		t.Fatalf("authorized post_message should reach tool validation, got %v", err)
 	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "manage_participant", Arguments: `{"action":"list"}`}); err == nil || strings.Contains(err.Error(), "participant speech capability") || strings.Contains(err.Error(), "active model surface") {
 		t.Fatalf("authorized manage_participant should reach tool validation, got %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "manage_task", Arguments: `{"action":"list"}`}); err == nil || strings.Contains(err.Error(), "participant speech capability") || strings.Contains(err.Error(), "active model surface") {
+		t.Fatalf("authorized manage_task should reach tool validation, got %v", err)
 	}
 	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: "fetch_thread_messages", Arguments: `{"thread_id":"thread-1"}`}); err == nil || !strings.Contains(err.Error(), "resident participant capability") {
 		t.Fatalf("participant speech alone should not authorize fetch_thread_messages, got %v", err)
@@ -726,6 +771,9 @@ func TestParticipantSpeechCapabilityControlsPostMessageSurface(t *testing.T) {
 	}
 	if !containsProfileDef(earlyAuthorized.Definitions(), "manage_participant") {
 		t.Fatalf("participant manage_participant authorization should survive later profile setup: %v", sortedProfileDefNames(earlyAuthorized.Definitions()))
+	}
+	if !containsProfileDef(earlyAuthorized.Definitions(), "manage_task") {
+		t.Fatalf("participant manage_task authorization should survive later profile setup: %v", sortedProfileDefNames(earlyAuthorized.Definitions()))
 	}
 	earlyResident, err := New(t.TempDir())
 	if err != nil {

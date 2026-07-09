@@ -789,7 +789,6 @@ func (t *Toolkit) SetResidentParticipantEnabled(enabled bool) {
 		enableResidentParticipantSurface(&t.activeSurface)
 	} else {
 		delete(t.activeSurface.Tools, "fetch_thread_messages")
-		disableResidentWorkflowSurface(&t.activeSurface)
 	}
 	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
 }
@@ -827,63 +826,6 @@ func enableResidentParticipantSurface(surface *capability.Surface) {
 	if !surfaceHasCapability(surface.Capabilities, capability.CapabilityTaskManage) {
 		surface.Capabilities = append(surface.Capabilities, capability.CapabilityTaskManage)
 	}
-	// Workflow / agent-profile orchestration is a named-agent-only capability.
-	// Residents inherit the main surface via CloneForRoot and only flip to
-	// named at turn time, so their compiled surface ran as SurfaceMain and
-	// carries no workflow tools. Patch the named-only workflow suite in here as
-	// deferred tools (the disable branch removes them). Both this seam and the
-	// compiler's SurfaceNamed branch consume modelprofile.NamedWorkflowTools so
-	// the two lists never drift.
-	if surface.DeferredTools == nil {
-		surface.DeferredTools = map[string]capability.Capability{}
-	}
-	for _, wt := range modelprofile.NamedWorkflowTools() {
-		surface.DeferredTools[wt.Name] = wt.Capability
-		if !surfaceHasCapability(surface.DeferredCapabilities, wt.Capability) {
-			surface.DeferredCapabilities = append(surface.DeferredCapabilities, wt.Capability)
-		}
-	}
-}
-
-// disableResidentWorkflowSurface removes the named-only workflow/agent-profile
-// suite from a surface when the resident/named identity is turned off, so an
-// ordinary agent that reuses the same toolkit does not retain workflow tools.
-func disableResidentWorkflowSurface(surface *capability.Surface) {
-	if surface == nil {
-		return
-	}
-	stillUsed := false
-	for _, wt := range modelprofile.NamedWorkflowTools() {
-		delete(surface.DeferredTools, wt.Name)
-	}
-	// Drop CapabilityWorkflow from the deferred capability list only if no
-	// remaining deferred tool still needs it (today it is exclusively the
-	// workflow suite, so it is always removed).
-	for name := range surface.DeferredTools {
-		if surface.DeferredTools[name] == capability.CapabilityWorkflow {
-			stillUsed = true
-			break
-		}
-	}
-	if !stillUsed {
-		surface.DeferredCapabilities = removeCapability(surface.DeferredCapabilities, capability.CapabilityWorkflow)
-	}
-}
-
-// removeCapability returns caps with every occurrence of capName removed,
-// preserving order.
-func removeCapability(caps []capability.Capability, capName capability.Capability) []capability.Capability {
-	if len(caps) == 0 {
-		return caps
-	}
-	out := caps[:0]
-	for _, c := range caps {
-		if c == capName {
-			continue
-		}
-		out = append(out, c)
-	}
-	return out
 }
 
 // SurfaceToolNames returns the registered built-in tools available to the

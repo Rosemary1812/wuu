@@ -1670,13 +1670,6 @@ func buildBaseSystemPromptContent(rootDir, sessionDate, basePrompt, userPrompt, 
 func buildBaseSystemPromptResult(rootDir, sessionDate, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill, discoveredWorkflows []workflow.Definition) prompt.BuildResult {
 	var pb prompt.Builder
 	pb.AddSection("base", basePrompt, true)
-	// The workflow entry of the orchestration path map is named-agent-only: it
-	// is re-injected here only for surfaces that can actually reach workflow
-	// tools, so ordinary project main agents (which have no workflow tools) are
-	// not taught start_workflow. Static text, cache-safe.
-	if toolSurface.HasAvailableCapability(capability.CapabilityWorkflow) {
-		pb.AddWorkflowPathGuidance()
-	}
 	pb.AddHarnessAdapter(providerName, model)
 	pb.AddSection("tool_surface", toolSurface.SystemFragment, true)
 	if _, ok := toolSurface.Tools["tool_search"]; ok {
@@ -1702,9 +1695,6 @@ func buildBaseSystemPromptResult(rootDir, sessionDate, basePrompt, userPrompt, p
 	}
 	if toolSurface.ProfileName != "" {
 		pb.AddSkills(tools.FilterSkillsForSurface(discoveredSkills, toolSurface))
-		if shouldInjectWorkflowGuidance(toolSurface) {
-			pb.AddWorkflows(tools.FilterWorkflowsForSurface(discoveredWorkflows, toolSurface))
-		}
 	}
 	return pb.BuildWithInfo()
 }
@@ -1767,24 +1757,6 @@ func agentPromptSections(sections []prompt.SectionInfo) []agent.SystemPromptSect
 		})
 	}
 	return out
-}
-
-func shouldInjectWorkflowGuidance(toolSurface capability.Surface) bool {
-	if toolSurface.ProfileName == "" {
-		return false
-	}
-	// Workflow orchestration is a named-agent-only capability. A surface that
-	// cannot reach workflow tools (ordinary project main agents, workers) must
-	// not be taught the workflow catalog it can never invoke, regardless of
-	// tool loading mode.
-	if !toolSurface.HasAvailableCapability(capability.CapabilityWorkflow) {
-		return false
-	}
-	// When progressive tool loading is available, keep workflow definitions out
-	// of the stable system prefix. The model can load list/load/start workflow
-	// schemas through tool_search and inspect the catalog only when needed.
-	_, hasToolSearch := toolSurface.Tools["tool_search"]
-	return !hasToolSearch
 }
 
 func activeSurface(kit *tools.Toolkit) capability.Surface {
