@@ -1043,6 +1043,10 @@ export type ThreadEscalateSubResult = {
   subthread: ConversationSubthread;
 };
 
+export type ThreadBubbleSubResult = {
+  subthread: ConversationSubthread;
+};
+
 export type ThreadResolveSubResult = {
   subthread: ConversationSubthread;
 };
@@ -1826,7 +1830,6 @@ export type WuuDesktopApi = {
       title?: string;
       createdBy?: string;
       participants?: string[];
-      threadOwnerParticipantId?: string;
     }
   ) => Promise<ThreadOpenSubResult>;
   resolveConversationSubthread: (
@@ -1834,13 +1837,20 @@ export type WuuDesktopApi = {
     subthreadId: string,
     resolved: boolean
   ) => Promise<ThreadResolveSubResult>;
-  // 把一条 Thread 升级为 Task:在同一个 cth 上挂 task_card + 推进到执行态。
-  // Task lead 由 Thread owner 派生,桌面不允许在升级时重新选人。
+  // 把一条 reply 升级为 task(人点击):在 cth 上挂 task_card + 推进到执行态。
+  // leadParticipantId 是人挑的 task lead(唯一持编排权的 named 成员)。
   escalateConversationSubthread: (
     threadId: string,
     subthreadId: string,
-    options?: { title?: string; createdBy?: string }
+    options?: { title?: string; createdBy?: string; leadParticipantId?: string }
   ) => Promise<ThreadEscalateSubResult>;
+  // 收尾:把一句结论冒泡回主流一条 participant_message + 该 cth 变 resolved+摘要。
+  bubbleConversationSubthread: (
+    threadId: string,
+    subthreadId: string,
+    summary: string,
+    options?: { participantId?: string }
+  ) => Promise<ThreadBubbleSubResult>;
   // 在分屏 reply 面板里以「你」的身份往 cth 发一条消息:折进 cth(thread_id=cth,
   // 不进主流,只推 cth 参与者子集),回执带刷新后的 subthread 视图。
   postSubthreadMessage: (
