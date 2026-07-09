@@ -750,16 +750,16 @@ func (s *Server) handleConfigProviderRemove(req Request) error {
 		return s.writeResponse(req.ID, nil, errors.New("cannot remove the last configured provider"))
 	}
 	removedWasDefault := cfg.DefaultProvider == providerName
-	newDefault, removeErr := config.RemoveProvider(s.rt.ConfigPath, providerName, params.FallbackProvider, params.FallbackModel)
-	if removeErr != nil {
-		return s.writeResponse(req.ID, nil, removeErr)
-	}
 	authStore, authErr := authstorage.ForHome(os.Getenv("HOME"))
 	if authErr != nil {
-		return s.writeResponse(req.ID, nil, fmt.Errorf("provider removed but credential cleanup failed: %w", authErr))
+		return s.writeResponse(req.ID, nil, fmt.Errorf("prepare credential cleanup: %w", authErr))
 	}
 	if authErr := authStore.DeleteProvider(resolvedName); authErr != nil {
-		return s.writeResponse(req.ID, nil, fmt.Errorf("provider removed but credential cleanup failed: %w", authErr))
+		return s.writeResponse(req.ID, nil, fmt.Errorf("remove provider credential: %w", authErr))
+	}
+	newDefault, removeErr := config.RemoveProvider(s.rt.ConfigPath, providerName, params.FallbackProvider, params.FallbackModel)
+	if removeErr != nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("credential removed but provider config update failed; re-enter the credential before retrying: %w", removeErr))
 	}
 	if !removedWasDefault {
 		// Removed an inactive provider; nothing in the runtime needs
