@@ -42,8 +42,20 @@ const AUTO_FILE_REFERENCE_PREFIX_SOURCE = String.raw`(^|[\s([{"'])`;
 const AUTO_FILE_PATH_SOURCE = String.raw`(?:(?:~|\.{1,2})\/|\/)?(?:[A-Za-z0-9_@+.-]+\/)*[A-Za-z0-9_@+.-]+\.[A-Za-z0-9][A-Za-z0-9_-]{0,15}`;
 const AUTO_FILE_LINE_RANGE_SEPARATOR_SOURCE = String.raw`[-:\u2013\u2014]`;
 const AUTO_FILE_LINE_SUFFIX_SOURCE = String.raw`(?::\d+(?:${AUTO_FILE_LINE_RANGE_SEPARATOR_SOURCE}\d+)?|\s+\((?:line|lines)\s+\d+(?:${AUTO_FILE_LINE_RANGE_SEPARATOR_SOURCE}\d+)?\))`;
+// File-reference auto-link detection. The regex matches a path-shaped token
+// (relative or absolute, with a known extension) sitting at a sentence
+// boundary or after common open brackets/quotes. The leading negative
+// lookbehind and trailing negative lookahead exclude `: ` (colon-space).
+// `: ` is the standard shell separator in `program: path: error message`
+// output (e.g. `bash: scripts/desktop-dev.sh: No such file or directory`),
+// and paths sandwiched in that format are not user-intentional file
+// references — turning them into clickable workspace links is a false
+// positive that misrepresents the error and confuses the file viewer on
+// click. Whitespace-only boundaries (regular prose) and `:digits` (line
+// ranges) are unaffected because `:` is followed by a digit or whitespace,
+// not `: `.
 const AUTO_FILE_REFERENCE_PATTERN = new RegExp(
-  `${AUTO_FILE_REFERENCE_PREFIX_SOURCE}${AUTO_FILE_PATH_SOURCE}${AUTO_FILE_LINE_SUFFIX_SOURCE}?`,
+  `(?<!:\\s)${AUTO_FILE_REFERENCE_PREFIX_SOURCE}${AUTO_FILE_PATH_SOURCE}${AUTO_FILE_LINE_SUFFIX_SOURCE}?(?!:\\s)`,
   "gi",
 );
 const AUTO_FILE_LINE_SUFFIX_PATTERN = new RegExp(`^(.*?)${AUTO_FILE_LINE_SUFFIX_SOURCE}$`, "i");
@@ -314,7 +326,10 @@ function markdownComponents(
     cwd,
     onOpenFile,
     renderText,
-    autoLinkFiles: true
+    // File-reference detection on bare prose paths has been removed. Markdown
+    // link targets are routed to RichFileLink by the `a` handler below; bare
+    // paths in prose stay plain text.
+    autoLinkFiles: false
   };
   const plainTextOptions: RichTextRenderOptions = {
     renderText,
@@ -352,6 +367,20 @@ function markdownComponents(
       const safeHref = safeMarkdownHref(href);
       if (!safeHref) {
         return <span>{inner}</span>;
+      }
+      // Markdown targets with a network-style scheme (http, https, mailto,
+      // ...) keep rendering as RichWebLink and open in the system browser.
+      // Targets without a scheme are workspace file references: render them
+      // as RichFileLink so the click hands the path to `onOpenFile`.
+      if (!/^[a-z][a-z0-9+.-]*:/i.test(safeHref)) {
+        return (
+          <RichFileLink
+            key={`a-${safeHref}`}
+            display={inner}
+            path={safeHref}
+            onOpenFile={onOpenFile}
+          />
+        );
       }
       return <RichWebLink href={safeHref} title={title}>{inner}</RichWebLink>;
     },
@@ -669,7 +698,7 @@ function RichFileLink({
   path,
   onOpenFile
 }: {
-  display: string;
+  display: ReactNode;
   path: string;
   onOpenFile: (path: string) => void;
 }): JSX.Element {
@@ -812,7 +841,13 @@ function safeMarkdownHref(href: string | undefined): string | undefined {
   if (value.startsWith("#")) {
     return value;
   }
-  return /^(https?:|mailto:)/i.test(value) ? value : undefined;
+  // Block the well-known XSS-prone schemes explicitly. Everything else is
+  // forwarded to the `a` handler, which routes URL-scheme hrefs to
+  // RichWebLink and bare workspace paths to RichFileLink.
+  if (/^(?:javascript|data|vbscript):/i.test(value)) {
+    return undefined;
+  }
+  return value;
 }
 
 function RichImage({

@@ -2572,6 +2572,14 @@
 }
 
 .rich-file-link {
+  /* File references render as ordinary inline links rather than picking
+     up the theme's accent token, which in this codebase tends to read
+     as error/warning orange and misleads the user into thinking the link
+     is a danger marker. The Tailwind blue-400 ("#60a5fa") is the modern
+     cross-platform "this is a link" cue the user is asking for; the
+     hover/focus/pending overrides below keep the whole link family on the
+     same blue instead of falling back to the orange tokens. */
+  color: #60a5fa;
   appearance: none;
   -webkit-appearance: none;
   border: 0;
@@ -2633,6 +2641,12 @@
 }
 
 .rich-file-link:hover {
+  /* Hover uses Tailwind blue-500 ("#3b82f6") — slightly more saturated
+     than the resting blue-400 ("#60a5fa") — instead of falling back to
+     the theme's --rich-link-hover-color. Stays in the bright blue family
+     so the link reads as "this is an inline link" across every
+     interaction state, not as a token-mapped warning orange. */
+  color: #3b82f6;
   background: transparent;
 }
 
@@ -2642,7 +2656,7 @@
 
 .rich-file-link:focus-visible {
   border-radius: 3px;
-  outline: 2px solid color-mix(in srgb, var(--rich-link-color) 45%, transparent);
+  outline: 2px solid color-mix(in srgb, #60a5fa 45%, transparent);
   outline-offset: 2px;
 }
 
@@ -2662,7 +2676,11 @@
 
 .rich-file-link--pending:hover,
 .rich-file-link--pending:focus-visible {
-  color: var(--rich-link-color);
+  /* Keep the placeholder on the same blue as the resting color rather
+     than dropping back to the theme's --rich-link-color, which would
+     flash orange during the first render and trigger the plain-text →
+     red-link flip we explicitly worked to avoid. */
+  color: #60a5fa;
   background: transparent;
 }
 

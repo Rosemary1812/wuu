@@ -73,99 +73,89 @@ function resolvedFileReference(
 }
 
 describe("RichContent code block", () => {
-  it("turns line-specific bare workspace file references into clickable inline links", async () => {
+  it("renders an explicit markdown-link file reference as a clickable workspace file link", () => {
     const openFile = vi.fn();
-    resolveWorkspaceFileReferenceMock.mockResolvedValueOnce(
-      resolvedFileReference("README_zh.md (line 19)", "README_zh.md"),
-    );
     render(
       <RichContent
-        text={"See README_zh.md (line 19) before editing."}
+        text={"See [README_zh.md (line 19)](README_zh.md) before editing."}
         cwd="/Users/zzzz/wuu"
         onOpenFile={openFile}
       />,
     );
-    await settleFileReferenceResolution();
 
     const link = container.querySelector(".rich-file-link") as HTMLButtonElement | null;
     expect(link).not.toBeNull();
     expect(link?.textContent).toContain("README_zh.md (line 19)");
     expect(link?.querySelector(".rich-link-icon")).not.toBeNull();
 
-    await act(async () => {
+    act(() => {
       link?.click();
     });
 
-    expect(resolveWorkspaceFileReferenceMock).toHaveBeenCalledWith("README_zh.md (line 19)");
     expect(openFile).toHaveBeenCalledWith("README_zh.md");
+    expect(resolveWorkspaceFileReferenceMock).not.toHaveBeenCalled();
   });
 
-  it("still renders a red link for unresolved bare filenames (visual consistency)", async () => {
-    // Even when the IPC says the file does not exist, the link is still
-    // rendered. A list of "改动文件" should not mix highlighted and plain
-    // entries just because one of the files was deleted; the file viewer
-    // surfaces its own "not found" feedback on click.
+  it("does not auto-link bare workspace file paths in prose", () => {
+    // Only `[label](path)` markdown links route to a file reference; bare
+    // paths in prose stay plain text. A list like "see X, then Y, then Z"
+    // should not acquire click affordances for items the model did not
+    // explicitly mark as references.
     const openFile = vi.fn();
     render(
       <RichContent
         text={"The likely tool file is tool_search.go."}
         cwd="/Users/zzzz/wuu"
         onOpenFile={openFile}
-      />
+      />,
     );
-    await settleFileReferenceResolution();
 
-    const link = container.querySelector("button.rich-file-link") as HTMLButtonElement | null;
-    expect(link).not.toBeNull();
-    expect(link?.textContent).toContain("tool_search.go");
-    expect(resolveWorkspaceFileReferenceMock).toHaveBeenCalledWith("tool_search.go");
-
-    // Click hands the display string back to the caller; the workspace
-    // panel is responsible for telling the user the file is gone.
-    await act(async () => {
-      link?.click();
-    });
-    expect(openFile).toHaveBeenCalledWith("tool_search.go");
+    expect(container.querySelector(".rich-file-link")).toBeNull();
+    expect(resolveWorkspaceFileReferenceMock).not.toHaveBeenCalled();
   });
 
-  it("turns qualified workspace file paths into clickable inline links", async () => {
+  it("renders a qualified-path markdown-link as a clickable workspace file link", () => {
     const openFile = vi.fn();
     const reference = "internal/tools/tool_discovery.go";
-    resolveWorkspaceFileReferenceMock.mockResolvedValueOnce(
-      resolvedFileReference(reference, reference),
+    render(
+      <RichContent
+        text={`Open [${reference}](${reference}) instead.`}
+        cwd="/Users/zzzz/wuu"
+        onOpenFile={openFile}
+      />,
     );
-    render(<RichContent text={`Open ${reference} instead.`} cwd="/Users/zzzz/wuu" onOpenFile={openFile} />);
-    await settleFileReferenceResolution();
 
     const link = container.querySelector(".rich-file-link") as HTMLButtonElement | null;
     expect(link).not.toBeNull();
     expect(link?.textContent).toContain(reference);
 
-    await act(async () => {
+    act(() => {
       link?.click();
     });
 
-    expect(openFile).toHaveBeenCalledWith("internal/tools/tool_discovery.go");
+    expect(openFile).toHaveBeenCalledWith(reference);
   });
 
-  it("keeps complete file line ranges inside the inline file link", async () => {
+  it("carries a line marker in the visible label but resolves the click to the bare path", () => {
     const openFile = vi.fn();
-    const reference = "internal/appserver/model.go:789\u2013926";
-    resolveWorkspaceFileReferenceMock.mockResolvedValueOnce(
-      resolvedFileReference(reference, "internal/appserver/model.go"),
+    const target = "internal/appserver/model.go";
+    render(
+      <RichContent
+        text={`See [model.go:789\u2013926](${target}) before editing.`}
+        cwd="/Users/zzzz/wuu"
+        onOpenFile={openFile}
+      />,
     );
-    render(<RichContent text={`See ${reference} before editing.`} cwd="/Users/zzzz/wuu" onOpenFile={openFile} />);
-    await settleFileReferenceResolution();
 
     const link = container.querySelector(".rich-file-link") as HTMLButtonElement | null;
     expect(link).not.toBeNull();
-    expect(link?.textContent).toContain(reference);
+    expect(link?.textContent).toContain("model.go:789\u2013926");
 
-    await act(async () => {
+    act(() => {
       link?.click();
     });
 
-    expect(openFile).toHaveBeenCalledWith("internal/appserver/model.go");
+    expect(openFile).toHaveBeenCalledWith(target);
   });
 
   it("decorates web links with an inline site icon", () => {
@@ -182,6 +172,21 @@ describe("RichContent code block", () => {
 
     expect(container.querySelector(".rich-file-link")).toBeNull();
     expect(container.querySelector("code")?.textContent).toBe("README_zh.md");
+  });
+
+  it("does not turn shell-error-format paths into file links", () => {
+    // `program: path: error message` is the standard shell separator shape.
+    // The path is sandwiched by `: ` (colon-space), which is not a
+    // user-intentional file reference. Clicking the rendered link would
+    // open a missing file and contradict the surrounding error.
+    render(
+      <RichContent
+        text={"bash: scripts/desktop-dev.sh: No such file or directory"}
+        cwd="/Users/zzzz/wuu"
+      />
+    );
+
+    expect(container.querySelector(".rich-file-link")).toBeNull();
   });
 
   it("wraps fenced code in a header with the language label and a copy button", () => {
@@ -239,148 +244,4 @@ describe("RichContent code block", () => {
     expect(style.pointerEvents).not.toBe("none");
   });
 
-  it("renders a link-shaped pending placeholder while the file reference IPC is in flight", async () => {
-    // Block IPC resolution until we have asserted the pending state.
-    let resolveIpc: (result: WorkspaceFileReferenceResolveResult) => void = () => undefined;
-    resolveWorkspaceFileReferenceMock.mockImplementationOnce(
-      (_reference: string) =>
-        new Promise<WorkspaceFileReferenceResolveResult>((resolve) => {
-          resolveIpc = resolve;
-        })
-    );
-
-    render(
-      <RichContent
-        text={"Open pending-link-test.ts here."}
-        cwd="/Users/zzzz/wuu"
-        onOpenFile={vi.fn()}
-      />
-    );
-
-    // First render: the link-shaped placeholder is shown, NOT plain text and
-    // NOT a clickable <button> link. This is what kills the plain-text -> red
-    // link flip when switching back to a previously visited session/tab.
-    const pending = container.querySelector(".rich-file-link--pending");
-    expect(pending).not.toBeNull();
-    expect(pending?.textContent).toContain("pending-link-test.ts");
-    expect(pending?.getAttribute("aria-busy")).toBe("true");
-    expect(container.querySelector("button.rich-file-link")).toBeNull();
-    expect(resolveWorkspaceFileReferenceMock).toHaveBeenCalledTimes(1);
-
-    // Resolve the IPC and let React flush. The placeholder should be
-    // replaced by the real clickable link.
-    await act(async () => {
-      resolveIpc(
-        resolvedFileReference("pending-link-test.ts", "pending-link-test.ts")
-      );
-    });
-    await settleFileReferenceResolution();
-
-    expect(container.querySelector(".rich-file-link--pending")).toBeNull();
-    const link = container.querySelector(
-      "button.rich-file-link"
-    ) as HTMLButtonElement | null;
-    expect(link).not.toBeNull();
-    expect(link?.textContent).toContain("pending-link-test.ts");
-  });
-
-  it("reuses the cached resolution when the same file reference is re-mounted", async () => {
-    const openFile = vi.fn();
-    resolveWorkspaceFileReferenceMock.mockResolvedValueOnce(
-      resolvedFileReference(
-        "internal/cache-test.ts",
-        "internal/cache-test.ts"
-      )
-    );
-
-    // First mount — should resolve the reference and populate the cache.
-    render(
-      <RichContent
-        text={"Open internal/cache-test.ts now."}
-        cwd="/Users/zzzz/wuu"
-        onOpenFile={openFile}
-      />
-    );
-    await settleFileReferenceResolution();
-    expect(container.querySelector("button.rich-file-link")).not.toBeNull();
-    expect(resolveWorkspaceFileReferenceMock).toHaveBeenCalledTimes(1);
-
-    // Simulate switching away from the session: unmount and clear the DOM.
-    act(() => {
-      root?.unmount();
-    });
-    root = null;
-    container.innerHTML = "";
-
-    // Re-mount with a different surrounding text but the same file reference
-    // and cwd. The link should render synchronously on the first render
-    // (no plain text, no pending placeholder) and IPC should NOT be called
-    // a second time, because the resolution is cached.
-    render(
-      <RichContent
-        text={"Open internal/cache-test.ts again."}
-        cwd="/Users/zzzz/wuu"
-        onOpenFile={openFile}
-      />
-    );
-
-    const link = container.querySelector(
-      "button.rich-file-link"
-    ) as HTMLButtonElement | null;
-    expect(link).not.toBeNull();
-    expect(container.querySelector(".rich-file-link--pending")).toBeNull();
-    expect(link?.textContent).toContain("internal/cache-test.ts");
-    expect(resolveWorkspaceFileReferenceMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("replaces the pending placeholder with a red link even when the IPC reports the file does not exist", async () => {
-    // Visual consistency: a list of files (e.g. "段二改了 → a.ts, b.ts")
-    // should highlight every entry. The pending placeholder is only the
-    // brief moment before the IPC roundtrip completes; once it does, the
-    // link stays red even for files that no longer exist on disk.
-    const openFile = vi.fn();
-    let resolveIpc: (result: WorkspaceFileReferenceResolveResult) => void = () => undefined;
-    resolveWorkspaceFileReferenceMock.mockImplementationOnce(
-      (_reference: string) =>
-        new Promise<WorkspaceFileReferenceResolveResult>((resolve) => {
-          resolveIpc = resolve;
-        })
-    );
-
-    render(
-      <RichContent
-        text={"Open never-resolves.ts here."}
-        cwd="/Users/zzzz/wuu"
-        onOpenFile={openFile}
-      />
-    );
-
-    // While in flight, the pending placeholder is shown.
-    expect(container.querySelector(".rich-file-link--pending")).not.toBeNull();
-
-    // Resolve with a "missing" result.
-    await act(async () => {
-      resolveIpc({
-        root: "/Users/zzzz/wuu",
-        reference: "never-resolves.ts",
-        status: "missing",
-      });
-    });
-    await settleFileReferenceResolution();
-
-    // The pending placeholder is gone, but the red link stays. Clicking
-    // hands the display string back to the caller, so the workspace
-    // panel can show "file not found" feedback on its own.
-    expect(container.querySelector(".rich-file-link--pending")).toBeNull();
-    const link = container.querySelector(
-      "button.rich-file-link"
-    ) as HTMLButtonElement | null;
-    expect(link).not.toBeNull();
-    expect(link?.textContent).toContain("never-resolves.ts");
-
-    await act(async () => {
-      link?.click();
-    });
-    expect(openFile).toHaveBeenCalledWith("never-resolves.ts");
-  });
 });
