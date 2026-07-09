@@ -1,15 +1,17 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+# ============================================================
+# Expo / React Native specifics for clients/mobile
+# ============================================================
+# Categories like node_modules, dist, .DS_Store, and .env*.local
+# are handled by the repo root .gitignore and are not repeated
+# here. This file only carries rules that are unique to an
+# Expo / React Native project (or that the mobile shell needs
+# before expo prebuild produces the first /ios and /android).
 
-# dependencies
-node_modules/
-
-# Expo
 .expo/
-dist/
 web-build/
 expo-env.d.ts
 
-# Native
+# Native build & signing intermediates
 .kotlin/
 *.orig.*
 *.jks
@@ -21,21 +23,17 @@ expo-env.d.ts
 # Metro
 .metro-health-check*
 
-# debug
+# Debug / package-manager logs
 npm-debug.*
 yarn-debug.*
 yarn-error.*
 
-# macOS
-.DS_Store
+# Mobile-specific cert noise (general TLS keys are not committed)
 *.pem
 
-# local env files
-.env*.local
-
-# typescript
+# TypeScript incremental builds
 *.tsbuildinfo
 
-# generated native folders
+# Generated native folders (anchored to clients/mobile/)
 /ios
 /android

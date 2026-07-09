@@ -1,102 +1,103 @@
+# ============================================================
 # Build artifacts
-/wuu
+# ============================================================
+# Go build (Makefile → /bin/wuu), goreleaser (→ dist/),
+# electron-vite (→ desktop/out/, .vite/, node_modules/),
+# pnpm/npm (→ node_modules/).
+
 /bin/
 dist/
 node_modules/
 .vite/
-desktop/dist/
-desktop/node_modules/
 desktop/out/
 # electron-vite writes a timestamp marker when it re-syncs node_modules;
 # keep it out of git.
 desktop/.node_modules.synced
-npm/bin/
-__pycache__/
-*.pyc
 
-# Local runtime config
+# ============================================================
+# Local runtime state (per-machine)
+# ============================================================
+# Git cannot re-include a file beneath an excluded directory,
+# so we exclude .wuu/ broadly and re-include the files we
+# DO want tracked.
+
 .wuu.json
-# Ignore .wuu state but keep the team-shared settings layer tracked.
-# (.wuu/* instead of .wuu/ because git cannot re-include a file
-# beneath an excluded directory.)
 .wuu/*
 !.wuu/settings.json
 .wuu/settings.local.json
 
-# Third party dependencies
+# ============================================================
+# Vendored / reference material
+# ============================================================
+
 thirdparty/
 
-# Local AI agent/editor config
+# ============================================================
+# Local docs / notes
+# ============================================================
+# /docs is mostly personal scratch; an explicit allow-list keeps
+# the small set of shared project docs tracked.
+
+/docs/*
+!/docs/exec.md
+!/docs/app-server-protocol.md
+!/docs/jsonl-events.md
+!/docs/compat/
+!/docs/plans/
+/docs/plans/*
+!/docs/plans/2026-07-09-goal-workflow-ledger-cleanup.md
+
+/GOAL_*.md                      # per-thread goal scratch
+/prototypes/                    # throwaway prototype dirs
+
+# ============================================================
+# Local agent / shell / editor config
+# ============================================================
+
+# AI agent scratchpads (each shell/contributor brings its own)
 CLAUDE.md
 .claude/
 .mavis/
 .opencode/
 
-# Local docs/notes
-/doc/
-/docs/*
-/GOAL_*.md
-/prototypes/
-!/docs/
-!/docs/exec.md
-!/docs/app-server-protocol.md
-!/docs/jsonl-events.md
-!/docs/2026-06-18-message-display-policy-zh.md
-!/docs/configuration-model-zh.md
-!/docs/goal-runtime-v2.md
-!/docs/tool-surface-assembly-zh.md
-!/docs/context-usage-and-caching-zh.md
-!/docs/2026-07-06-usage-cache-audit-zh.md
-!/docs/tool-loading-modes-zh.md
-!/docs/compaction-chains-zh.md
-!/docs/remote-control-zh.md
-!/docs/group-chat-and-task-rail-zh.md
-!/docs/compat/
-!/docs/plans/
-/docs/plans/*
-!/docs/plans/2026-07-03-resident-named-agents.md
-!/docs/plans/2026-07-04-memory-redesign.md
-!/docs/plans/2026-07-04-consistency-repair-plan.md
-!/docs/plans/2026-07-06-agent-task-rail-design.md
+# Editors
+.vscode/
+.idea/
 
-# Worktrees
+# Worktrees (top-level only)
 .worktrees/
+
+# OS noise
+.DS_Store
 
 # MCP plugin caches
 .playwright-mcp/
 
-# macOS
-.DS_Store
+# ============================================================
+# Test / coverage artifacts
+# ============================================================
 
-# Zig build artifacts
-zig-out/
-.zig-cache/
-
-# Test coverage output
 coverage/
 coverage.out
 *.coverprofile
 
+# ============================================================
 # Logs
+# ============================================================
+
 *.log
 
-# IDE / editor
-.idea/
-.vscode/
-
+# ============================================================
 # Environment files
+# ============================================================
+# Per-machine secrets. Commit .env.example if a sample is needed.
+
 .env
 .env.local
 .env.*.local
-!/docs/plans/2026-07-03-chat-style-threads-design.md
-!/docs/plans/2026-07-03-chat-style-threads.md
-!/docs/plans/2026-07-03-sidebar-groups-andy-workspaces.md
-!/docs/plans/2026-07-03-sidebar-groups-andy-workspaces-verify.md
-!/docs/plans/2026-07-03-subagent-followup-resume.md
-!/docs/plans/2026-07-03-subagent-completion-redesign.md
-!/docs/plans/2026-07-03-workspace-focus.md
-!/docs/plans/2026-07-06-landing-color-redesign-design.md
-!/docs/plans/2026-07-06-landing-color-redesign.md
 
-# Personal paste-inbox for images (not committed)
-.paste/
+# ============================================================
+# Personal scratch
+# ============================================================
+
+.paste/                         # personal paste-inbox for images
