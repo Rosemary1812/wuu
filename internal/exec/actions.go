@@ -22,10 +22,10 @@ const (
 	actionRPC actionKind = iota
 	// actionNamedTurn steps run a turn AS a named participant (participant/start)
 	// so the resident tool surface is mounted — the only path that lets a named
-	// agent speak (post_message), manage the roster (manage_participant fork), or
-	// orchestrate a workflow (start_workflow). The action name is only a label;
-	// which of those tools the turn actually invokes is decided by the named
-	// agent's provider, not by exec. Reuses the W1 participant machinery.
+	// agent speak (post_message) or manage the roster (manage_participant fork).
+	// The action name is only a label; which of those tools the turn actually
+	// invokes is decided by the named agent's provider, not by exec. Reuses the
+	// W1 participant machinery.
 	actionNamedTurn
 )
 
@@ -55,12 +55,12 @@ var actionMethodTable = map[string]actionMethodEntry{
 	"escalate_task":       {kind: actionRPC, method: appserver.MethodThreadEscalateSub},
 	"bubble_reply":        {kind: actionRPC, method: appserver.MethodThreadBubbleSub},
 	"post_subthread":      {kind: actionRPC, method: appserver.MethodMessagePostSubthread},
-	// Named-turn actions: run a turn AS a named participant. post_message is the
-	// speak-in-a-group case; participant_turn is the general name used when the
-	// turn is meant to orchestrate a workflow (start_workflow) or fork a copy
-	// (manage_participant) rather than only post a chat message. Both route to
-	// the same participant/start path — the distinction is purely for readable
-	// scripts, since the invoked tool is chosen by the agent, not the action.
+	// Named-turn actions: run a turn AS a named participant. post_message is
+	// the speak-in-a-group case; participant_turn is the general name for any
+	// other turn AS that participant, including forking a copy via
+	// manage_participant. Both route to the same participant/start path —
+	// the distinction is purely for readable scripts, since the invoked tool
+	// is chosen by the agent, not the action.
 	"post_message":     {kind: actionNamedTurn},
 	"participant_turn": {kind: actionNamedTurn},
 }

@@ -97,11 +97,10 @@ func tokenAfter(text, marker string) string {
 //  5. Ada answers inside that reply (post_message named turn, target cth) — the
 //     message folds into the reply and stays OUT of the main stream
 //  6. a human folds a question into the same reply (post_subthread RPC)
-//  7. escalate the reply to a task with Ada as lead (escalate_task RPC) — the
-//     lead is recorded, which is exactly the store shape the workflow-lead gate
-//     keys on: Ada leads the task cth, Ben does not (so Ada would be authorized
-//     to orchestrate the group's members and Ben would be rejected; the
-//     execute-time gate itself is unit-covered in internal/tools)
+//  7. escalate the reply to a task with Ada as lead (escalate_task RPC) —
+//     the lead is recorded: Ada leads the task cth, Ben does not. The lead
+//     is what subthread.lead_participant_id exposes for named turns on the
+//     task.
 //  8. Ada forks a memory-backed copy of herself (manage_participant named turn)
 func TestExecGroupChatEndToEndRegression(t *testing.T) {
 	rt := newExecForkTestRuntime(t, providers.AdaptStreamClient(&groupScriptWorker{}))
@@ -259,11 +258,10 @@ func TestExecGroupChatEndToEndRegression(t *testing.T) {
 		t.Fatalf("expected the fork turn to invoke manage_participant, got %d\n%s", got, stdout.String())
 	}
 
-	// Step 7: task lead ownership. The escalate recorded Ada as the lead of the
-	// task cth — the exact predicate requireWorkflowLead enforces at start_workflow
-	// time: Ada leads the task (would be authorized to orchestrate the group's
-	// named members), Ben leads nothing (would be rejected). The execute-time gate
-	// is unit-covered in internal/tools/tool_workflow_lead_test.go.
+	// Step 7: task lead ownership. The escalate recorded Ada as the lead of
+	// the task cth; Ben leads nothing. The recorded lead is the durable
+	// fact named turns on the task can inspect via
+	// subthread.lead_participant_id to decide who owns the work.
 	adaLeads, err := session.LeadTaskThreads(rt.SessionDir, ada.ID)
 	if err != nil {
 		t.Fatalf("LeadTaskThreads(ada): %v", err)
