@@ -126,8 +126,8 @@ func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, a
 		return tools.TaskView{}, fmt.Errorf("create: %w", err)
 	}
 	// Stamp task provenance (escalated_at/escalated_by). The lead stays empty:
-	// an agent-created task carries no workflow-orchestration grant
-	// (owner != lead, user-adjudicated 2026-07-06).
+	// an agent-created task grants no lead identity (owner != lead,
+	// user-adjudicated 2026-07-06).
 	thread, err = session.EscalateConversationThread(sessionDir, thread.ID, m.participantID, "", "")
 	if err != nil {
 		return tools.TaskView{}, fmt.Errorf("create: stamp task provenance: %w", err)

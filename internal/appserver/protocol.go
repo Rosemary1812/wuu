@@ -834,9 +834,9 @@ type ThreadEscalateSubParams struct {
 	Title     string `json:"title,omitempty"`
 	CreatedBy string `json:"created_by,omitempty"`
 	// LeadParticipantID names the single named member the human picks to lead the
-	// task (workflow-orchestration authority). Must be an active named participant;
-	// when empty the backend falls back to CreatedBy if that is itself a named
-	// agent, otherwise the task starts with no lead.
+	// task. Must be an active named participant; when empty the backend falls back
+	// to CreatedBy if that is itself a named agent, otherwise the task starts with
+	// no lead.
 	LeadParticipantID string `json:"lead_participant_id,omitempty"`
 }
 

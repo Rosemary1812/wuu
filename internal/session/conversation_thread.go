@@ -472,8 +472,9 @@ func validateConversationThreadStatus(status ConversationThreadStatus) error {
 // escalated_at pinned to the first escalation. A resolved thread is re-opened into
 // the task state so the human can re-run it, and the lead can be reassigned then.
 // Reached by the human-click RPC (which may grant a lead) and by manage_task
-// action=escalate (agent path, always empty lead). escalatedBy records provenance; leadParticipantID is the
-// single named agent granted workflow-orchestration authority for this task.
+// action=escalate (agent path, always empty lead). escalatedBy records
+// provenance; leadParticipantID is the single named agent recorded as the
+// task's lead.
 func EscalateConversationThread(sessDir, id, escalatedBy, leadParticipantID, title string) (ConversationThread, error) {
 	id = strings.TrimSpace(id)
 	escalatedBy = strings.TrimSpace(escalatedBy)

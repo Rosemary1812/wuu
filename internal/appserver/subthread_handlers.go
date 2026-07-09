@@ -124,12 +124,12 @@ func (s *Server) handleThreadEscalateSub(req Request) error {
 	if initiator := strings.TrimSpace(params.CreatedBy); initiator != "" && parent.ParentAuthorParticipantID != "" && initiator == parent.ParentAuthorParticipantID {
 		return s.writeResponse(req.ID, nil, errors.New("cannot open a reply thread on your own message"))
 	}
-	// Escalation grants both lead identity and workflow-orchestration authority in
-	// one act. The lead is the named member the human picked (LeadParticipantID),
-	// falling back to the reply's parent message author (T3) when that is itself a
-	// named agent. Escalation is a human click, so the picked lead field is the
-	// load-bearing one; a non-named lead is rejected so the runtime workflow gate
-	// never authorizes a phantom identity.
+	// Escalation grants the lead identity. The lead is the named member the
+	// human picked (LeadParticipantID), falling back to the reply's parent
+	// message author (T3) when that is itself a named agent. Escalation is a
+	// human click, so the picked lead field is the load-bearing one; a
+	// non-named lead is rejected so the recorded lead is never a phantom
+	// identity.
 	lead, err := s.resolveTaskLead(params.LeadParticipantID, parent.ParentAuthorParticipantID)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)

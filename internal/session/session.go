@@ -1037,9 +1037,9 @@ func migrateSchema(db *sql.DB) error {
 	if err := addColumnIfMissing(db, "conversation_threads", "summary", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
-	// lead_participant_id records the single named agent granted task-lead
-	// (workflow-orchestration) authority on escalation. Distinct from escalated_by
-	// (human-click provenance); survives resolve, reassignable on re-escalation.
+	// lead_participant_id records the single named agent assigned as the task's
+	// lead on escalation. Distinct from escalated_by (human-click provenance);
+	// survives resolve, reassignable on re-escalation.
 	if err := addColumnIfMissing(db, "conversation_threads", "lead_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
