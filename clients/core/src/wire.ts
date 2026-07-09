@@ -110,6 +110,8 @@ export const E2E_PING = "ping";
 export const E2E_PONG = "pong";
 export const E2E_BYE = "bye";
 
+export const CLIENT_PROFILE_MOBILE_CHAT = "mobile_chat";
+
 export interface HostInfo {
   name?: string;
   version?: string;
@@ -138,6 +140,7 @@ export interface E2EMsg {
   // attach / attached
   prev?: string;
   recv?: number;
+  client_profile?: string;
   session?: string;
   resumed?: boolean;
   replay_from?: number;

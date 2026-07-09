@@ -152,6 +152,11 @@ const (
 	E2EBye      = "bye"
 )
 
+// Client profiles tune the app-server event stream for a controller.
+const (
+	ClientProfileMobileChat = "mobile_chat"
+)
+
 // HostInfo describes the host to an attached phone.
 type HostInfo struct {
 	Name     string `json:"name,omitempty"`
@@ -189,11 +194,12 @@ type E2EMsg struct {
 	Sig       string `json:"sig,omitempty"`
 
 	// attach / attached
-	Prev       string `json:"prev,omitempty"`    // previous session id the phone wants to resume
-	Recv       uint64 `json:"recv,omitempty"`    // highest host seq the phone has applied
-	Session    string `json:"session,omitempty"` // current session id (attached)
-	Resumed    bool   `json:"resumed,omitempty"`
-	ReplayFrom uint64 `json:"replay_from,omitempty"`
+	Prev          string `json:"prev,omitempty"` // previous session id the phone wants to resume
+	Recv          uint64 `json:"recv,omitempty"` // highest host seq the phone has applied
+	ClientProfile string `json:"client_profile,omitempty"`
+	Session       string `json:"session,omitempty"` // current session id (attached)
+	Resumed       bool   `json:"resumed,omitempty"`
+	ReplayFrom    uint64 `json:"replay_from,omitempty"`
 
 	// rpc
 	Seq  uint64          `json:"seq,omitempty"`

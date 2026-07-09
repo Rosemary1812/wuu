@@ -4,6 +4,7 @@
 // stays pure TS (secure-store on device, anything else in tests).
 
 import {
+  CLIENT_PROFILE_MOBILE_CHAT,
   Credentials,
   RemoteClient,
   pair as corePair,
@@ -117,6 +118,7 @@ export class WuuMobile {
     this.store.setHostName(creds.host_name ?? "");
     this.store.setPhase("connecting");
     this.client = new RemoteClient(creds, {
+      clientProfile: CLIENT_PROFILE_MOBILE_CHAT,
       onNotification: (method, params) => this.store.applyNotification(method, params),
       onAttach: (ev) => void this.onAttach(ev.resumed),
       onDetach: () => this.scheduleReconnecting(),

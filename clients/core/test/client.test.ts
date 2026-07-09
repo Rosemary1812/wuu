@@ -12,6 +12,7 @@ import { Credentials, RemoteClient, WebSocketFactory, WebSocketLike, pair } from
 import { ProtocolEnvelope } from "../src/rpc.js";
 import { Channel, HS1, Identity, Pairing, acceptHandshake, encodeKey, verifyRelayAuth } from "../src/secure.js";
 import {
+  CLIENT_PROFILE_MOBILE_CHAT,
   E2EMsg,
   KIND_HANDSHAKE,
   KIND_SEALED,
@@ -85,6 +86,7 @@ class FakeHost {
   spoolLost = false;
   lastAck = 0;
   attachCount = 0;
+  attachProfiles: Array<string | undefined> = [];
   readonly sockets: FakeSocket[] = [];
   readonly uplinkEnvelopes: ProtocolEnvelope[] = [];
   handleCall: (env: ProtocolEnvelope) => unknown = (env) => ({ echo: env.method });
@@ -157,6 +159,7 @@ class FakeHost {
     switch (msg.t) {
       case "attach": {
         this.attachCount++;
+        this.attachProfiles.push(msg.client_profile);
         const recv = msg.recv ?? 0;
         const gap = this.spool.length > 0 && recv < this.spool[0].seq - 1;
         const canResume = !this.spoolLost && msg.prev === this.session && !gap && recv <= this.seq;
@@ -305,6 +308,18 @@ describe("RemoteClient", () => {
       expect(result.protocolVersion).toBe("wuu-app-server/v0.1");
       expect(attaches).toEqual([{ session: "sess-2", resumed: false }]);
       expect(client.isAttached()).toBe(true);
+    } finally {
+      await client.stop();
+    }
+  });
+
+  it("sends an optional client profile with attach", async () => {
+    const fake = new FakeHost();
+    const { client } = makeClient(fake, { clientProfile: CLIENT_PROFILE_MOBILE_CHAT });
+    client.start();
+    try {
+      await client.waitAttached(3000);
+      expect(fake.attachProfiles).toEqual([CLIENT_PROFILE_MOBILE_CHAT]);
     } finally {
       await client.stop();
     }

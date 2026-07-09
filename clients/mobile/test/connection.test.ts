@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const captured: {
   onAttach: (ev: { session: string; resumed: boolean }) => void;
   onDetach: () => void;
+  clientProfile?: string;
   started: number;
 } = {
   onAttach: () => {},
@@ -28,8 +29,13 @@ vi.mock("@wuu/remote-core", () => {
   class FakeRemoteClient {
     constructor(
       _creds: unknown,
-      opts: { onAttach?: typeof captured.onAttach; onDetach?: typeof captured.onDetach } = {},
+      opts: {
+        clientProfile?: string;
+        onAttach?: typeof captured.onAttach;
+        onDetach?: typeof captured.onDetach;
+      } = {},
     ) {
+      captured.clientProfile = opts.clientProfile;
       captured.onAttach = opts.onAttach ?? (() => {});
       captured.onDetach = opts.onDetach ?? (() => {});
     }
@@ -42,6 +48,7 @@ vi.mock("@wuu/remote-core", () => {
     async stop(): Promise<void> {}
   }
   return {
+    CLIENT_PROFILE_MOBILE_CHAT: "mobile_chat",
     RemoteClient: FakeRemoteClient,
     pair: vi.fn(),
   };
@@ -94,6 +101,7 @@ describe("WuuMobile reconnect grace window", () => {
   beforeEach(() => {
     captured.onAttach = () => {};
     captured.onDetach = () => {};
+    captured.clientProfile = undefined;
     captured.started = 0;
     vi.useFakeTimers();
   });
@@ -132,6 +140,12 @@ describe("WuuMobile reconnect grace window", () => {
     // Past the grace window: now we surface "reconnecting".
     await vi.advanceTimersByTimeAsync(400);
     expect(controller.store.getSnapshot().phase).toBe("reconnecting");
+  });
+
+  it("starts the remote client in mobile chat profile", async () => {
+    bootController();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(captured.clientProfile).toBe("mobile_chat");
   });
 
   it("cancels the pending flip when attach lands inside the grace window", async () => {

@@ -48,6 +48,7 @@ type appConn struct {
 	inW     io.Writer
 
 	// guarded by deviceSession.mu
+	profile  string
 	seq      uint64
 	spool    *spool
 	stateVer uint64
@@ -68,7 +69,7 @@ func (a *appConn) close() {
 
 // newAppConnLocked starts a fresh app-server connection for this device.
 // Called with s.mu held; goroutine startup does not block.
-func (s *deviceSession) newAppConnLocked() *appConn {
+func (s *deviceSession) newAppConnLocked(profile string) *appConn {
 	serverInR, serverInW := io.Pipe()
 	serverOutR, serverOutW := io.Pipe()
 	ctx, cancel := context.WithCancel(s.h.baseCtx)
@@ -77,6 +78,7 @@ func (s *deviceSession) newAppConnLocked() *appConn {
 		cancel:  cancel,
 		pipes:   []io.Closer{serverInR, serverInW, serverOutR, serverOutW},
 		inW:     serverInW,
+		profile: normalizeClientProfile(profile),
 		spool:   newSpool(),
 		running: map[string]wire.RunningTurn{},
 	}
@@ -109,20 +111,33 @@ func (s *deviceSession) onAppLine(app *appConn, line []byte) {
 		s.mu.Unlock()
 		return
 	}
+	stateChanged := app.observeLine(line)
+	outLine := line
+	if app.profile == wire.ClientProfileMobileChat {
+		filtered, keep := filterMobileChatLine(line)
+		if !keep {
+			attached := s.attached && s.channel != nil
+			if attached && stateChanged {
+				s.sendStateLocked()
+			}
+			s.mu.Unlock()
+			return
+		}
+		outLine = filtered
+	}
 	app.seq++
 	seq := app.seq
-	app.spool.append(seq, line)
-	stateChanged := app.observeLine(line)
+	app.spool.append(seq, outLine)
 	attached := s.attached && s.channel != nil
 	if attached {
-		s.sendSealedLocked(wire.E2EMsg{T: wire.E2ERPC, Seq: seq, Line: json.RawMessage(line)})
+		s.sendSealedLocked(wire.E2EMsg{T: wire.E2ERPC, Seq: seq, Line: json.RawMessage(outLine)})
 		if stateChanged {
 			s.sendStateLocked()
 		}
 		s.mu.Unlock()
 		return
 	}
-	hint := classifyPushHint(line)
+	hint := classifyPushHint(outLine)
 	shouldPush := hint != "" && time.Since(s.lastPush) >= s.h.pushMinInterval
 	if shouldPush {
 		s.lastPush = time.Now()
@@ -265,7 +280,8 @@ func (s *deviceSession) handleSealed(body []byte) {
 func (s *deviceSession) handleAttachLocked(msg wire.E2EMsg) {
 	var replay []spoolEntry
 	resumed := false
-	if s.app != nil && !s.app.closed && msg.Prev == s.app.contID {
+	profile := normalizeClientProfile(msg.ClientProfile)
+	if s.app != nil && !s.app.closed && msg.Prev == s.app.contID && s.app.profile == profile {
 		if entries, ok := s.app.spool.replayFrom(msg.Recv); ok {
 			replay = entries
 			resumed = true
@@ -276,7 +292,7 @@ func (s *deviceSession) handleAttachLocked(msg wire.E2EMsg) {
 		if s.app != nil {
 			s.app.close()
 		}
-		s.app = s.newAppConnLocked()
+		s.app = s.newAppConnLocked(profile)
 	}
 	s.attached = true
 	s.sendSealedLocked(wire.E2EMsg{

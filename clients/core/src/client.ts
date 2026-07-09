@@ -265,6 +265,7 @@ export interface RemoteClientOptions {
   dialTimeoutMs?: number;
   ackIntervalMs?: number;
   pingIntervalMs?: number;
+  clientProfile?: string;
   onNotification?: (method: string, params: unknown) => void;
   onServerRequest?: ServerRequestHandler;
   onState?: (state: HostState) => void;
@@ -499,7 +500,12 @@ export class RemoteClient {
     this.channel = channel;
     // Attach immediately: quote the previous continuity id and the highest
     // applied seq so the host can replay exactly what we missed.
-    this.sendSealed({ t: E2E_ATTACH, prev: this.contId, recv: this.lastRecv });
+    this.sendSealed({
+      t: E2E_ATTACH,
+      prev: this.contId,
+      recv: this.lastRecv,
+      client_profile: this.opts.clientProfile,
+    });
   }
 
   private handleSealed(body: Uint8Array): void {
