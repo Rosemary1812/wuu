@@ -30,6 +30,10 @@ func TestSystemGuidesNaturalUserCenteredReplies(t *testing.T) {
 	for _, want := range []string{
 		"from the user's mental model, not internal jargon",
 		"what the user likely already knows and what they need next",
+		"In Chinese, use direct peer language",
+		"honorific or customer-service phrasing",
+		"`您`, `您的诉求`, or `我理解您的需求`",
+		"do not start with ritual acknowledgements",
 		"Prefer natural, approachable prose",
 		"If a user assumption is wrong or risky, say so plainly",
 		"Prefer short paragraphs for ordinary answers",
