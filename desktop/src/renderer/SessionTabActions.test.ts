@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeContext } from "../shared/protocol";
 import {
   createDraftSessionTab,
@@ -41,6 +41,7 @@ function buildActions({
   );
   const selectThread = vi.fn();
   const useNoProject = vi.fn();
+  const poppingOutTabIDsRef = { current: new Set<string>() };
 
   const actions = createSessionTabActions({
     getAppState: () => appState,
@@ -56,6 +57,7 @@ function buildActions({
     useNoProject,
     setArchiveConfirmThreadID: vi.fn(),
     setWorkspaceMode,
+    poppingOutTabIDsRef,
     beginViewSwitch: vi.fn(() => 1),
     finishViewSwitch: vi.fn(() => true),
     cancelViewSwitch: vi.fn(),
@@ -74,8 +76,14 @@ function buildActions({
     selectThread,
     useNoProject,
     setWorkspaceMode,
+    poppingOutTabIDsRef,
   };
 }
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  Reflect.deleteProperty(window, "wuu");
+});
 
 describe("createSessionTabActions", () => {
   it("starts a new thread by reusing an already blank active draft tab", async () => {
@@ -152,5 +160,59 @@ describe("createSessionTabActions", () => {
     expect(harness.resetSplitComposerDrafts).toHaveBeenCalled();
     expect(harness.getCurrentDraft().prompt).toBe("restored");
     expect(harness.getAppState().activeSessionTabID).toBe(fallbackDraft.id);
+  });
+
+  it("reorders session tabs", () => {
+    const context = projectContext();
+    const first = createDraftSessionTab("draft:first", context);
+    const second = createDraftSessionTab("draft:second", context);
+    const third = createDraftSessionTab("draft:third", context);
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: context,
+        activeSessionTabID: first.id,
+        sessionTabs: [first, second, third],
+      },
+    });
+
+    harness.actions.reorderSessionTabs(first.id, third.id);
+
+    expect(harness.getAppState().sessionTabs.map((tab) => tab.id)).toEqual([
+      second.id,
+      third.id,
+      first.id,
+    ]);
+  });
+
+  it("pops out a draft tab and closes it after the detached window opens", async () => {
+    const context = projectContext();
+    const activeDraft = createDraftSessionTab("draft:active", context);
+    const fallbackDraft = createDraftSessionTab("draft:fallback", context);
+    const popOutSession = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window, "wuu", {
+      configurable: true,
+      value: { popOutSession },
+    });
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: context,
+        activeSessionTabID: activeDraft.id,
+        sessionTabs: [activeDraft, fallbackDraft],
+      },
+    });
+
+    await harness.actions.popOutSessionTab(activeDraft.id);
+
+    expect(popOutSession).toHaveBeenCalledWith({
+      kind: "draft",
+      context,
+    });
+    expect(harness.getAppState().sessionTabs.map((tab) => tab.id)).toEqual([
+      fallbackDraft.id,
+    ]);
+    expect(harness.getAppState().activeSessionTabID).toBe(fallbackDraft.id);
+    expect(harness.poppingOutTabIDsRef.current.has(activeDraft.id)).toBe(false);
   });
 });

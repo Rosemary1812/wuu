@@ -33,7 +33,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { arrayMove } from "@dnd-kit/sortable";
 import type {
   Agent,
   ConversationSubthread,
@@ -2462,59 +2461,6 @@ export function App(): JSX.Element {
     );
   }
 
-  function reorderSessionTabs(activeID: string, overID: string): void {
-    setState((current) => {
-      const sourceIndex = current.sessionTabs.findIndex(
-        (tab) => tab.id === activeID,
-      );
-      const targetIndex = current.sessionTabs.findIndex(
-        (tab) => tab.id === overID,
-      );
-      if (sourceIndex < 0 || targetIndex < 0) {
-        return current;
-      }
-      return {
-        ...current,
-        sessionTabs: arrayMove(current.sessionTabs, sourceIndex, targetIndex),
-      };
-    });
-  }
-
-  async function popOutSessionTab(tabID: string): Promise<void> {
-    const currentState = appStateRef.current;
-    const tab = currentState.sessionTabs.find((item) => item.id === tabID);
-    if (!tab || (tab.kind !== "thread" && tab.kind !== "draft")) {
-      return;
-    }
-    if (poppingOutTabIDsRef.current.has(tabID)) {
-      return;
-    }
-    poppingOutTabIDsRef.current.add(tabID);
-    try {
-      await window.wuu.popOutSession(
-        tab.kind === "thread"
-          ? {
-              kind: "thread",
-              threadID: tab.threadID,
-              context: tab.context,
-            }
-          : {
-              kind: "draft",
-              context: tab.context,
-            },
-      );
-      await closeSessionTab(tabID);
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status:
-          error instanceof Error ? error.message : "open detached window failed",
-      }));
-    } finally {
-      poppingOutTabIDsRef.current.delete(tabID);
-    }
-  }
-
   // Lift the open reply subthread (cth) into its own window. threadID is the
   // PARENT group thread (the cth's home, needed for runtime routing); the new
   // window renders the cth via the SAME ConversationSubthreadPanel + composer
@@ -2717,6 +2663,8 @@ export function App(): JSX.Element {
     closeSessionTab,
     closeSessionTabs,
     startNewThread,
+    reorderSessionTabs,
+    popOutSessionTab,
   } = createSessionTabActions({
     getAppState: () => appStateRef.current,
     setAppState: setState,
@@ -2731,6 +2679,7 @@ export function App(): JSX.Element {
     useNoProject,
     setArchiveConfirmThreadID,
     setWorkspaceMode,
+    poppingOutTabIDsRef,
     beginViewSwitch,
     finishViewSwitch,
     cancelViewSwitch,

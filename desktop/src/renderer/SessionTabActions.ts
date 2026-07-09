@@ -1,4 +1,5 @@
 import type { SetStateAction } from "react";
+import { arrayMove } from "@dnd-kit/sortable";
 import {
   activeSessionTab,
   cloneSessionTabDraft,
@@ -25,6 +26,7 @@ import type { WorkspacePanelView } from "./WorkspacePanels";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 type ViewSwitchKind = "thread" | "project" | "runtime";
+type MutableSetRef = { current: Set<string> };
 
 export type SessionTabActionsDeps = {
   getAppState: () => AppState;
@@ -40,6 +42,7 @@ export type SessionTabActionsDeps = {
   useNoProject: (fresh: boolean) => Promise<void>;
   setArchiveConfirmThreadID: (threadID: string | undefined) => void;
   setWorkspaceMode: (mode: WorkspacePanelView | undefined) => void;
+  poppingOutTabIDsRef: MutableSetRef;
   beginViewSwitch: (kind: ViewSwitchKind, targetID: string) => number;
   finishViewSwitch: (requestID: number) => boolean;
   cancelViewSwitch: () => void;
@@ -52,6 +55,8 @@ export type SessionTabActions = {
   closeSessionTab: (tabID: string) => Promise<void>;
   closeSessionTabs: (tabIDs: string[]) => Promise<void>;
   startNewThread: (options?: { resetToNoProject?: boolean }) => Promise<void>;
+  reorderSessionTabs: (activeID: string, overID: string) => void;
+  popOutSessionTab: (tabID: string) => Promise<void>;
 };
 
 export function createSessionTabActions(
@@ -492,6 +497,57 @@ export function createSessionTabActions(
     }
   }
 
+  function reorderSessionTabs(activeID: string, overID: string): void {
+    deps.setAppState((current) => {
+      const sourceIndex = current.sessionTabs.findIndex(
+        (tab) => tab.id === activeID,
+      );
+      const targetIndex = current.sessionTabs.findIndex(
+        (tab) => tab.id === overID,
+      );
+      if (sourceIndex < 0 || targetIndex < 0) {
+        return current;
+      }
+      return {
+        ...current,
+        sessionTabs: arrayMove(current.sessionTabs, sourceIndex, targetIndex),
+      };
+    });
+  }
+
+  async function popOutSessionTab(tabID: string): Promise<void> {
+    const currentState = deps.getAppState();
+    const tab = currentState.sessionTabs.find((item) => item.id === tabID);
+    if (!tab || (tab.kind !== "thread" && tab.kind !== "draft")) {
+      return;
+    }
+    if (deps.poppingOutTabIDsRef.current.has(tabID)) {
+      return;
+    }
+    deps.poppingOutTabIDsRef.current.add(tabID);
+    try {
+      await window.wuu.popOutSession(
+        tab.kind === "thread"
+          ? {
+              kind: "thread",
+              threadID: tab.threadID,
+              context: tab.context,
+            }
+          : {
+              kind: "draft",
+              context: tab.context,
+            },
+      );
+      await closeSessionTab(tabID);
+    } catch (error) {
+      setStatus(
+        error instanceof Error ? error.message : "open detached window failed",
+      );
+    } finally {
+      deps.poppingOutTabIDsRef.current.delete(tabID);
+    }
+  }
+
   async function startNewThread(
     options: { resetToNoProject?: boolean } = {},
   ): Promise<void> {
@@ -542,5 +598,7 @@ export function createSessionTabActions(
     closeSessionTab,
     closeSessionTabs,
     startNewThread,
+    reorderSessionTabs,
+    popOutSessionTab,
   };
 }
