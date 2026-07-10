@@ -1,0 +1,32 @@
+{
+  "id": "cua-mac",
+  "name": "cua-mac",
+  "version": "0.1.0",
+  "description": "Control macOS apps through background-first Accessibility actions.",
+  "author": {
+    "name": "Wuu"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Computer Use for Mac",
+    "shortDescription": "Operate Mac apps without taking over your foreground window.",
+    "longDescription": "Uses macOS Accessibility for semantic observation and background-first control, with screenshots for visual context.",
+    "developerName": "Wuu",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"]
+  },
+  "platforms": ["darwin"],
+  "requestedPermissions": [
+    "accessibility.read",
+    "accessibility.control",
+    "screen.capture"
+  ],
+  "activityKinds": ["cua"],
+  "officialNativeHelper": {
+    "id": "cua-mac",
+    "environment": "WUU_CUA_MAC_HELPER",
+    "executable": "wuu-cua-mac"
+  },
+  "minimumWuuVersion": "0.1.0"
+}

@@ -1,0 +1,23 @@
+{
+  "name": "cua-mac",
+  "version": "0.1.0",
+  "description": "Control macOS apps through background-first Accessibility actions.",
+  "author": {
+    "name": "Wuu"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Computer Use for Mac",
+    "shortDescription": "Operate Mac apps without taking over your foreground window.",
+    "longDescription": "Uses macOS Accessibility for semantic observation and background-first control, with screenshots for visual context.",
+    "developerName": "Wuu",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "defaultPrompt": [
+      "Use the Mac app I named to complete this task.",
+      "Inspect the current state of a Mac app.",
+      "Fill this form in the background without changing my active window."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

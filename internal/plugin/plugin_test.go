@@ -3,6 +3,7 @@ package plugin
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -21,10 +22,10 @@ func TestDiscoverProjectOverridesUserAndResolvesAssetDirs(t *testing.T) {
 }`)
 
 	plugins := Discover(root, wuuHome)
-	if len(plugins) != 1 {
-		t.Fatalf("plugins = %+v", plugins)
+	got, ok := findPlugin(plugins, "compose")
+	if !ok {
+		t.Fatalf("compose plugin missing: %+v", plugins)
 	}
-	got := plugins[0]
 	if got.ID != "compose" || got.Source != "project" || got.Description != "project compose" {
 		t.Fatalf("project plugin should override user plugin: %+v", got)
 	}
@@ -43,7 +44,9 @@ func TestDiscoverLoadsNestedCodexAndClaudeManifestLocations(t *testing.T) {
 	writeFile(t, filepath.Join(root, ".wuu", "plugins", "claude-kit", ".claude-plugin", "plugin.json"), `{"name":"claude-kit"}`)
 
 	plugins := Discover(root, "")
-	if len(plugins) != 2 || plugins[0].ID != "claude-kit" || plugins[1].ID != "codex-kit" {
+	_, hasClaude := findPlugin(plugins, "claude-kit")
+	_, hasCodex := findPlugin(plugins, "codex-kit")
+	if !hasClaude || !hasCodex {
 		t.Fatalf("plugins = %+v", plugins)
 	}
 }
@@ -54,11 +57,12 @@ func TestDiscoverUsesDefaultAssetDirsWhenManifestOmitsThem(t *testing.T) {
 	writePlugin(t, pluginDir, `{"id":"default-assets"}`)
 
 	plugins := Discover(root, "")
-	if len(plugins) != 1 {
-		t.Fatalf("plugins = %+v", plugins)
+	got, ok := findPlugin(plugins, "default-assets")
+	if !ok {
+		t.Fatalf("default-assets plugin missing: %+v", plugins)
 	}
-	if len(plugins[0].SkillDirs()) != 1 {
-		t.Fatalf("default skill dirs not discovered: skills=%+v", plugins[0].SkillDirs())
+	if len(got.SkillDirs()) != 1 {
+		t.Fatalf("default skill dirs not discovered: skills=%+v", got.SkillDirs())
 	}
 }
 
@@ -70,6 +74,64 @@ func TestLoadManifestRequiresID(t *testing.T) {
 	}
 	if _, err := LoadManifest(path, "project"); err == nil {
 		t.Fatal("expected missing id error")
+	}
+}
+
+func TestDiscoverWithOptionsIncludesOfficialBundledCUAMacOnDarwin(t *testing.T) {
+	helper := filepath.Join(t.TempDir(), "wuu-cua-mac")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	plugins := DiscoverWithOptions("", t.TempDir(), DiscoverOptions{
+		GOOS: "darwin",
+		LookupEnv: func(key string) (string, bool) {
+			if key == "WUU_CUA_MAC_HELPER" {
+				return helper, true
+			}
+			return "", false
+		},
+	})
+
+	var cua *Plugin
+	for index := range plugins {
+		if plugins[index].ID == "cua-mac" {
+			cua = &plugins[index]
+			break
+		}
+	}
+	if cua == nil {
+		t.Fatalf("bundled cua-mac plugin missing: %+v", plugins)
+	}
+	if !cua.Official || cua.Source != "bundled" {
+		t.Fatalf("cua-mac provenance = official:%v source:%q", cua.Official, cua.Source)
+	}
+	if got := cua.MCPServers["computer"].Command; got != helper {
+		t.Fatalf("cua-mac helper command = %q, want %q", got, helper)
+	}
+	if len(cua.ActivityKinds) != 1 || cua.ActivityKinds[0] != "cua" {
+		t.Fatalf("cua-mac activity kinds = %+v", cua.ActivityKinds)
+	}
+	if len(cua.SkillDirs()) != 1 {
+		t.Fatalf("cua-mac skill dirs = %+v", cua.SkillDirs())
+	}
+}
+
+func TestDiscoverWithOptionsFiltersBundledCUAMacOutsideDarwin(t *testing.T) {
+	plugins := DiscoverWithOptions("", t.TempDir(), DiscoverOptions{GOOS: "linux"})
+	for _, item := range plugins {
+		if item.ID == "cua-mac" {
+			t.Fatalf("cua-mac must not load on linux: %+v", item)
+		}
+	}
+}
+
+func TestDiscoverUsesCurrentPlatform(t *testing.T) {
+	plugins := Discover("", t.TempDir())
+	for _, item := range plugins {
+		if item.ID == "cua-mac" && runtime.GOOS != "darwin" {
+			t.Fatalf("cua-mac loaded on %s", runtime.GOOS)
+		}
 	}
 }
 
@@ -91,4 +153,13 @@ func writeFile(t *testing.T, path, contents string) {
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
+}
+
+func findPlugin(plugins []Plugin, id string) (Plugin, bool) {
+	for _, item := range plugins {
+		if item.ID == id {
+			return item, true
+		}
+	}
+	return Plugin{}, false
 }

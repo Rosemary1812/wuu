@@ -548,13 +548,22 @@ Brainstorm options.
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if len(rt.Plugins) != 1 || rt.Plugins[0].ID != "compose-kit" {
+	if !runtimeHasPlugin(rt.Plugins, "compose-kit") {
 		t.Fatalf("plugins not discovered: %+v", rt.Plugins)
 	}
 	skill, ok := skills.Find(rt.Skills, "brainstorm")
 	if !ok || skill.Source != "plugin:compose-kit" {
 		t.Fatalf("plugin skill not discovered with source: %+v", skill)
 	}
+}
+
+func runtimeHasPlugin(items []pluginpkg.Plugin, id string) bool {
+	for _, item := range items {
+		if item.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func TestNewSessionConsumesCodexPluginManifestAssets(t *testing.T) {

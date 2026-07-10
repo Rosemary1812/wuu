@@ -16,14 +16,25 @@ type Plugin struct {
 }
 
 func Discover(projectRoot, wuuHome string) []Plugin {
+	return DiscoverWithOptions(projectRoot, wuuHome, defaultDiscoverOptions())
+}
+
+func DiscoverWithOptions(projectRoot, wuuHome string, options DiscoverOptions) []Plugin {
+	bundledPlugins := discoverBundled(wuuHome, options)
 	userPlugins := scanPluginRoots(userPluginRoots(wuuHome), "user")
 	projectPlugins := scanPluginRoots(projectPluginRoots(projectRoot), "project")
 
-	byID := make(map[string]Plugin, len(userPlugins)+len(projectPlugins))
+	byID := make(map[string]Plugin, len(bundledPlugins)+len(userPlugins)+len(projectPlugins))
 	for _, item := range userPlugins {
 		byID[item.ID] = item
 	}
 	for _, item := range projectPlugins {
+		byID[item.ID] = item
+	}
+	// Official bundled plugins are trusted by provenance, not by id. They win
+	// collisions so a project cannot shadow a privileged helper declaration
+	// with an untrusted plugin using the same name.
+	for _, item := range bundledPlugins {
 		byID[item.ID] = item
 	}
 
