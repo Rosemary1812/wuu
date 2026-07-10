@@ -104,7 +104,6 @@ function Probe({
     secondaryTurns: undefined,
     emptyConversation: false,
     previewingLaunch: false,
-    showingWorkspaceMode: false,
     initialized: true,
   });
   if (!showConversation) {

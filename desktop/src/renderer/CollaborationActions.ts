@@ -26,7 +26,6 @@ import {
 import type { ComposerFile, ComposerImage } from "./ComposerMessages";
 import type { ContextCompositionEntry } from "./ContextCompositionCard";
 import type { InstructionFilesEntry } from "./InstructionFilesCard";
-import type { WorkspacePanelView } from "./WorkspacePanels";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 import type { CloseConversationSearchOptions } from "./ConversationSearchState";
 import type { SettingsPage } from "./SettingsView";
@@ -47,7 +46,6 @@ export type CollaborationActionsDeps = {
   setArchiveConfirmThreadID: (
     update: SetStateAction<string | undefined>,
   ) => void;
-  setWorkspaceMode: (mode: WorkspacePanelView | undefined) => void;
   cancelViewSwitch: () => void;
   activateThread: (threadID: string) => Promise<void>;
   selectThread: (threadID: string) => Promise<void>;
@@ -112,7 +110,6 @@ export function createCollaborationActions(
     }
     const tab = createSkillsSessionTab(state.activeContext);
     deps.setArchiveConfirmThreadID(undefined);
-    deps.setWorkspaceMode(undefined);
     deps.setSplitComposerDrafts(initialSplitComposerDrafts());
     deps.setAppState((current) => ({
       ...persistActiveSessionTabDraft(current, deps.getPrimaryComposerDraft()),
@@ -366,7 +363,6 @@ export function createCollaborationActions(
   function resetComposerForThreadActivation(): void {
     deps.cancelViewSwitch();
     deps.setArchiveConfirmThreadID(undefined);
-    deps.setWorkspaceMode(undefined);
     deps.setPrompt("");
     deps.setComposerImages([]);
     deps.setComposerFiles([]);

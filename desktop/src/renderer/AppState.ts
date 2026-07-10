@@ -96,13 +96,6 @@ type SessionTab =
     }
   | {
       id: string;
-      kind: "file";
-      context: RuntimeContext;
-      path: string;
-      title: string;
-    }
-  | {
-      id: string;
       kind: "skills";
       context: RuntimeContext;
       title: string;
@@ -2290,19 +2283,6 @@ function createThreadSessionTab(
   };
 }
 
-function createFileSessionTab(
-  context: RuntimeContext,
-  path: string,
-): SessionTab {
-  return {
-    id: fileSessionTabID(context, path),
-    kind: "file",
-    context,
-    path,
-    title: fileNameFromPath(path),
-  };
-}
-
 function createSkillsSessionTab(context: RuntimeContext): SessionTab {
   return {
     id: skillsSessionTabID(context),
@@ -2331,10 +2311,6 @@ function threadSessionTabID(threadID: string): string {
 
 function boardSessionTabID(threadID: string): string {
   return `board:${threadID}`;
-}
-
-function fileSessionTabID(context: RuntimeContext, path: string): string {
-  return `file:${runtimeContextKey(context)}:${encodeURIComponent(path)}`;
 }
 
 function skillsSessionTabID(context: RuntimeContext): string {
@@ -2603,7 +2579,7 @@ function sessionTabDraftForThreadID(
 }
 
 function cloneSessionTabDraft(tab: SessionTab): ComposerDraftState {
-  if (tab.kind === "file" || tab.kind === "skills" || tab.kind === "board") {
+  if (tab.kind === "skills" || tab.kind === "board") {
     return emptyComposerDraft();
   }
   return {
@@ -2651,9 +2627,6 @@ function sessionTabLabel(tab: SessionTab, state: AppState): string {
     // tab and switches to the conversation title (below).
     return workspaceNameForContext(tab.context, state);
   }
-  if (tab.kind === "file") {
-    return tab.title || fileNameFromPath(tab.path);
-  }
   if (tab.kind === "skills") {
     return tab.title;
   }
@@ -2695,7 +2668,7 @@ function requireThread(result: { thread?: Thread }, message: string): Thread {
 
 function activeThreadForState(state: AppState): Thread | undefined {
   const tab = activeSessionTab(state);
-  if (tab?.kind === "file" || tab?.kind === "skills" || tab?.kind === "board") {
+  if (tab?.kind === "skills" || tab?.kind === "board") {
     return undefined;
   }
   if (state.activePane === "secondary" && state.secondaryThread) {
@@ -3619,7 +3592,6 @@ export {
   conversationSearchContextLabel,
   conversationSearchThreadMeta,
   createDraftSessionTab,
-  createFileSessionTab,
   createBoardSessionTab,
   createSkillsSessionTab,
   createThreadSessionTab,
@@ -3628,7 +3600,6 @@ export {
   emptyComposerDraft,
   ensureSessionTab,
   fileNameFromPath,
-  fileSessionTabID,
   handleStreamingNotification,
   hasText,
   initialSplitComposerDrafts,

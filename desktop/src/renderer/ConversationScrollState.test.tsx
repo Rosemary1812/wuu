@@ -79,7 +79,6 @@ function Probe({ activeThreadID }: { activeThreadID?: string }): ReactNode {
     secondaryTurns: undefined,
     emptyConversation: false,
     previewingLaunch: false,
-    showingWorkspaceMode: false,
     initialized: true,
   });
   return createElement("div", {
@@ -407,7 +406,6 @@ describe("useConversationScrollState — dock composer height", () => {
       secondaryTurns: undefined,
       emptyConversation: false,
       previewingLaunch: false,
-      showingWorkspaceMode: false,
       initialized: true,
     });
     return createElement(
@@ -616,7 +614,6 @@ describe("useConversationScrollState — smooth scroll-to-bottom", () => {
         secondaryTurns: undefined,
         emptyConversation: false,
         previewingLaunch: false,
-        showingWorkspaceMode: false,
         initialized: true,
       });
       captured = { scrollConversationToBottom: h.scrollConversationToBottom };

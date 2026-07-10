@@ -212,6 +212,7 @@ describe("WorkspaceRightPanel", () => {
 
   it("does not close a dirty file resource until the user confirms discarding its edit", async () => {
     const onCloseTab = vi.fn();
+    const onDirtyFileTabsChange = vi.fn();
     const confirmDiscard = vi.spyOn(window, "confirm").mockReturnValue(false);
     const fileTab = workspaceFileViewTab({
       context: {
@@ -228,12 +229,14 @@ describe("WorkspaceRightPanel", () => {
         tabs={[fileTab]}
         activeTabID={fileTab.id}
         onCloseTab={onCloseTab}
+        onDirtyFileTabsChange={onDirtyFileTabsChange}
       />,
     );
     await act(async () => Promise.resolve());
     act(() => {
       fileResource(fileTab.id)?.querySelector<HTMLButtonElement>(".mock-editor-edit")?.click();
     });
+    expect(onDirtyFileTabsChange).toHaveBeenLastCalledWith(true);
     act(() => {
       container?.querySelector<HTMLButtonElement>(".workspace-tool-tab-close")?.click();
     });

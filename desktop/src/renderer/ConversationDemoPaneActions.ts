@@ -18,7 +18,6 @@ import {
   type ConversationPaneID,
 } from "./AppState";
 import type { ComposerFile, ComposerImage } from "./ComposerMessages";
-import type { WorkspacePanelView } from "./WorkspacePanels";
 import type { EnvironmentPanelMenu } from "./EnvironmentPanel";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
@@ -31,7 +30,6 @@ export type ConversationDemoPaneActionsDeps = {
   setArchiveConfirmThreadID: (
     update: SetStateAction<string | undefined>,
   ) => void;
-  setWorkspaceMode: (mode: WorkspacePanelView | undefined) => void;
   setPrompt: Dispatch<SetStateAction<string>>;
   setComposerImages: Dispatch<SetStateAction<ComposerImage[]>>;
   setComposerFiles: Dispatch<SetStateAction<ComposerFile[]>>;
@@ -59,7 +57,6 @@ export function createConversationDemoPaneActions(
   function resetComposerForDemo(): void {
     deps.cancelViewSwitch();
     deps.setArchiveConfirmThreadID(undefined);
-    deps.setWorkspaceMode(undefined);
     deps.setPrompt("");
     deps.setComposerImages([]);
     deps.setComposerFiles([]);

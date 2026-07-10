@@ -58,10 +58,6 @@ import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { ViewSwitchLoading } from "./LoadingViews";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import type { UserFacingErrorAction } from "./UserFacingErrors";
-import {
-  WorkspaceToolIcon,
-  type WorkspacePanelView,
-} from "./WorkspacePanels";
 
 type ComposerProps = ComponentProps<typeof Composer>;
 type RunDebugPanelProps = ComponentProps<typeof RunDebugPanel>;
@@ -365,7 +361,6 @@ export type ConversationTitleContentProps = {
   busyParticipantIDs?: ReadonlySet<string>;
   pendingSwitchThreadID?: string;
   pendingComposerMessagesByThread: PendingComposerMessagesByThread;
-  workspaceMode?: WorkspacePanelView;
   activeTitle: string;
   onSelectSessionTab: (tabID: string) => void;
   onCloseSessionTab: (tabID: string) => void;
@@ -381,7 +376,6 @@ export function ConversationTitleContent({
   busyParticipantIDs,
   pendingSwitchThreadID,
   pendingComposerMessagesByThread,
-  workspaceMode,
   activeTitle,
   onSelectSessionTab,
   onCloseSessionTab,
@@ -408,14 +402,7 @@ export function ConversationTitleContent({
     );
   }
   return (
-    <>
-      {workspaceMode ? (
-        <span className="workspace-title-icon" aria-hidden="true">
-          <WorkspaceToolIcon view={workspaceMode} className="icon-lg" />
-        </span>
-      ) : null}
-      <h1>{activeTitle}</h1>
-    </>
+    <h1>{activeTitle}</h1>
   );
 }
 

@@ -117,7 +117,6 @@ import {
   composerSubmissionDetail,
   conversationPaneThreadsByID,
   createDraftSessionTab,
-  createFileSessionTab,
   createThreadSessionTab,
   emptyComposerDraft,
   ensureSessionTab,
@@ -236,12 +235,8 @@ import {
 } from "./TurnView";
 import { ConversationTurnRail } from "./ConversationTurnRail";
 import {
-  WorkspaceMainPanel,
   WorkspaceRightPanel,
-  workspaceModeTitle,
-  type WorkspacePanelView,
 } from "./WorkspacePanels";
-import type { WorkspaceFileDirtyState } from "./WorkspaceFiles";
 import { useWorkspaceToolState } from "./WorkspaceToolState";
 import type { WorkspaceViewTab } from "./WorkspaceViewTabs";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
@@ -350,15 +345,6 @@ function useStableCallback<T extends (...args: any[]) => any>(callback: T): T {
     ((...args: Parameters<T>): ReturnType<T> => callbackRef.current(...args)) as T,
     [],
   );
-}
-
-function normalizeWorkspaceFileSwitchPath(path: string, root?: string): string {
-  const normalizedPath = path.trim().replace(/\\/g, "/").replace(/\/+$/, "");
-  const normalizedRoot = root?.trim().replace(/\\/g, "/").replace(/\/+$/, "");
-  if (normalizedRoot && normalizedPath.startsWith(`${normalizedRoot}/`)) {
-    return normalizedPath.slice(normalizedRoot.length + 1);
-  }
-  return normalizedPath.replace(/^\/+/, "");
 }
 
 function serverEventCarriesModelOutputDelta(event: ServerEvent): boolean {
@@ -545,13 +531,11 @@ export function App(): JSX.Element {
   const {
     workspaceViewTabs,
     workspaceActiveViewTabID,
-    workspacePanelView,
-    workspaceMode,
-    setWorkspaceMode,
     ensureWorkspaceToolTab,
     activateWorkspaceTool,
     openWorkspaceTool,
     openWorkspaceDiffTab,
+    openWorkspaceFileTab,
     showWorkspaceToolPicker,
     focusWorkspaceViewTab,
     closeWorkspaceViewTab,
@@ -707,7 +691,7 @@ export function App(): JSX.Element {
   const environmentToggleRef = useRef<HTMLButtonElement>(null);
   const environmentPanelRef = useRef<HTMLDivElement>(null);
   const appStateRef = useRef<AppState>(initialState);
-  const workspaceEditorDirtyRef = useRef<WorkspaceFileDirtyState>({ dirty: false });
+  const workspaceHasDirtyFilesRef = useRef(false);
   const {
     pendingComposerMessagesByThread,
     queuedMessageEditTargetRef,
@@ -750,7 +734,7 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent): void => {
-      if (!workspaceEditorDirtyRef.current.dirty) {
+      if (!workspaceHasDirtyFilesRef.current) {
         return;
       }
       event.preventDefault();
@@ -772,10 +756,13 @@ export function App(): JSX.Element {
     () => workspacePanelContext(state.activeContext, state.thread),
     [state.activeContext, state.thread],
   );
+  const activeWorkspaceViewTab = workspaceActiveViewTabID
+    ? workspaceViewTabs.find((tab) => tab.id === workspaceActiveViewTabID)
+    : undefined;
   const activeWorkspaceFile =
-    currentSessionTab?.kind === "file" &&
-    sameRuntimeContext(currentSessionTab.context, workspaceContext)
-      ? currentSessionTab.path
+    activeWorkspaceViewTab?.kind === "file" &&
+    sameRuntimeContext(activeWorkspaceViewTab.context, workspaceContext)
+      ? activeWorkspaceViewTab.path
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
@@ -1065,9 +1052,7 @@ export function App(): JSX.Element {
     state.gitStatus?.is_repo === false
       ? WORKTREE_FORK_NON_GIT_REASON
       : undefined;
-  const splitConversation = Boolean(
-    state.thread && state.secondaryThread && !workspaceMode,
-  );
+  const splitConversation = Boolean(state.thread && state.secondaryThread);
 
   // Past-query popover control. The rail beside the scrollbar is the hover
   // target; we close on a short delay so the user can travel from the rail
@@ -1509,9 +1494,7 @@ export function App(): JSX.Element {
     ? "Skills"
     : boardSessionTab
       ? sessionTabLabel(boardSessionTab, state)
-      : workspaceMode
-        ? workspaceModeTitle(workspaceMode)
-        : activeThread?.preview || "新对话";
+      : activeThread?.preview || "新对话";
   const currentHour = useCurrentHour();
   const greetingContext: GreetingContext = resolveGreetingContext({
     activeThread,
@@ -1548,13 +1531,10 @@ export function App(): JSX.Element {
     }
     return entries;
   }, [turns]);
-  const showingWorkspaceMode =
-    state.initialized && !previewingLaunch && workspaceMode !== undefined;
   const mainConversationDockVisible =
     Boolean(state.initialized) &&
     !previewingLaunch &&
     !emptyConversation &&
-    !showingWorkspaceMode &&
     !splitConversation &&
     !showingSkillsCatalog &&
     !showingTaskBoard;
@@ -1568,7 +1548,6 @@ export function App(): JSX.Element {
       tab.kind === "diff" &&
       (!activeThreadID ||
         tab.threadID !== activeThreadID ||
-        showingWorkspaceMode ||
         showingSkillsCatalog ||
         emptyConversation);
     if (!workspaceViewTabs.some(isStaleDiffTab)) {
@@ -1585,7 +1564,6 @@ export function App(): JSX.Element {
     closeWorkspaceViewTabsWhere,
     emptyConversation,
     showingSkillsCatalog,
-    showingWorkspaceMode,
     workspaceActiveViewTabID,
     workspaceViewTabs,
   ]);
@@ -1611,7 +1589,6 @@ export function App(): JSX.Element {
     secondaryTurns: state.secondaryThread?.turns,
     emptyConversation,
     previewingLaunch,
-    showingWorkspaceMode: Boolean(showingWorkspaceMode),
     initialized: Boolean(state.initialized),
   });
   const conversationRailScrollContainer = useCallback((): HTMLElement | null => {
@@ -1715,24 +1692,6 @@ export function App(): JSX.Element {
       openTurnFileDiffPanel(thread.id, selection);
     },
   );
-  const rememberWorkspaceFileDirtyState = useStableCallback(
-    (dirtyState: WorkspaceFileDirtyState) => {
-      workspaceEditorDirtyRef.current = dirtyState;
-    },
-  );
-  const confirmWorkspaceFileSwitch = useStableCallback(
-    (context: RuntimeContext, nextPath: string): boolean => {
-      const dirtyState = workspaceEditorDirtyRef.current;
-      if (!dirtyState.dirty) {
-        return true;
-      }
-      const nextRelativePath = normalizeWorkspaceFileSwitchPath(nextPath, context.cwd);
-      if (dirtyState.root === context.cwd && dirtyState.path === nextRelativePath) {
-        return true;
-      }
-      return window.confirm("当前文件有未保存修改，切换文件会丢失这些修改。仍要打开其他文件吗？");
-    },
-  );
   const openWorkspaceFile = useStableCallback((path: string): void => {
     // Stamp the same derived context the workspace panel's file tree/preview
     // are rooted at (workspacePanelContext), not the raw activeContext — for
@@ -1746,18 +1705,10 @@ export function App(): JSX.Element {
     if (!context) {
       return;
     }
-    if (!confirmWorkspaceFileSwitch(context, path)) {
-      return;
-    }
-    const fileTab = createFileSessionTab(context, path);
-    const outgoingDraft = currentPrimaryComposerDraft();
-    openWorkspaceTool("files");
-    setWorkspaceMode("files");
-    setState((current) => ({
-      ...persistActiveSessionTabDraft(current, outgoingDraft),
-      sessionTabs: ensureSessionTab(current.sessionTabs, fileTab),
-      activeSessionTabID: fileTab.id,
-    }));
+    openWorkspaceFileTab({ context, path });
+  });
+  const rememberWorkspaceDirtyFiles = useStableCallback((dirty: boolean): void => {
+    workspaceHasDirtyFilesRef.current = dirty;
   });
   const sidebarProjectThreadsByProjectID = useMemo(() => {
     if (state.activeContext?.kind !== "project" || !state.activeProjectId) {
@@ -1972,7 +1923,6 @@ export function App(): JSX.Element {
     state.initialized &&
     !poppedOutMode &&
     !previewingLaunch &&
-    !showingWorkspaceMode &&
     !rightPanelOpen &&
     !openSubthreadPanel &&
     !participantPanel,
@@ -2459,7 +2409,6 @@ export function App(): JSX.Element {
     nextDraftSessionTab,
     closeProjectMenus,
     setArchiveConfirmThreadID,
-    setWorkspaceMode,
     beginViewSwitch,
     finishViewSwitch,
     cancelViewSwitch,
@@ -2486,7 +2435,6 @@ export function App(): JSX.Element {
     getSidebarProjectThreadsByProjectID: () =>
       sidebarProjectThreadsByProjectID,
     setArchiveConfirmThreadID,
-    setWorkspaceMode,
     beginViewSwitch,
     beginInstantThreadSwitch,
     finishViewSwitch,
@@ -2516,7 +2464,6 @@ export function App(): JSX.Element {
     selectThread,
     useNoProject,
     setArchiveConfirmThreadID,
-    setWorkspaceMode,
     poppingOutTabIDsRef,
     beginViewSwitch,
     finishViewSwitch,
@@ -2604,7 +2551,6 @@ export function App(): JSX.Element {
     setComposerImages,
     setComposerFiles,
     setArchiveConfirmThreadID,
-    setWorkspaceMode,
     cancelViewSwitch,
     activateThread,
     selectThread,
@@ -2637,7 +2583,6 @@ export function App(): JSX.Element {
     localDemoThreadsRef,
     cancelViewSwitch,
     setArchiveConfirmThreadID,
-    setWorkspaceMode,
     setPrompt,
     setComposerImages,
     setComposerFiles,
@@ -2663,7 +2608,6 @@ export function App(): JSX.Element {
     setPendingFork,
     setHistoryMessageEdit,
     setArchiveConfirmThreadID,
-    getWorkspaceMode: () => workspaceMode,
     getPrompt: () => prompt,
     getComposerImages: () => composerImages,
     getComposerFiles: () => composerFiles,
@@ -3708,7 +3652,6 @@ export function App(): JSX.Element {
               busyParticipantIDs={busyParticipantIDs}
               pendingSwitchThreadID={visiblePendingThreadID}
               pendingComposerMessagesByThread={pendingComposerMessagesByThread}
-              workspaceMode={workspaceMode}
               activeTitle={activeTitle}
               onSelectSessionTab={(tabID) => void selectSessionTab(tabID)}
               onCloseSessionTab={(tabID) => void closeSessionTab(tabID)}
@@ -3797,7 +3740,6 @@ export function App(): JSX.Element {
           onCreateBranch={(branch) => createAndCheckoutBranch(branch)}
           onOpenReview={() => {
             openWorkspaceTool("review");
-            setWorkspaceMode(undefined);
             closeEnvironmentPanel({ dismissed: true });
           }}
           onOpenCommit={() => openEnvironmentDialog("commit")}
@@ -3871,9 +3813,9 @@ export function App(): JSX.Element {
 
         {state.initialized && !previewingLaunch ? (
           <div
-            className={`scroll-region${emptyConversation && !showingWorkspaceMode ? " empty-scroll-region" : ""}${
-              showingWorkspaceMode ? " workspace-scroll-region" : ""
-            }${splitConversation ? " split-scroll-region" : ""}${showingSkillsCatalog ? " skills-scroll-region" : ""}${showingTaskBoard ? " task-board-scroll-region" : ""}`}
+            className={`scroll-region${emptyConversation ? " empty-scroll-region" : ""}${
+              splitConversation ? " split-scroll-region" : ""
+            }${showingSkillsCatalog ? " skills-scroll-region" : ""}${showingTaskBoard ? " task-board-scroll-region" : ""}`}
             onScroll={(event) => handleConversationScroll(event.currentTarget)}
             ref={conversationScrollRef}
           >
@@ -3891,20 +3833,6 @@ export function App(): JSX.Element {
                 onOpenTask={(subthreadID) =>
                   void openTaskFromBoard(boardSessionTab.threadID, subthreadID)
                 }
-              />
-            ) : workspaceMode ? (
-              <WorkspaceMainPanel
-                view={workspaceMode}
-                activeContext={state.activeContext}
-                workspaceContext={workspaceContext}
-                gitStatus={state.gitStatus}
-                selectedFilePath={activeWorkspaceFile}
-                onFileDirtyChange={rememberWorkspaceFileDirtyState}
-                onOpenRightPanel={() => {
-                  ensureWorkspaceToolTab(workspaceMode);
-                  activateWorkspaceTool(workspaceMode);
-                  setRightPanelOpenWithMotion(true);
-                }}
               />
             ) : (
               <>
@@ -4100,6 +4028,7 @@ export function App(): JSX.Element {
           onOpenTool={openWorkspaceTool}
           onShowTools={showWorkspaceToolPicker}
           onCloseTab={closeWorkspaceViewTab}
+          onDirtyFileTabsChange={rememberWorkspaceDirtyFiles}
           onReorderTabs={reorderWorkspaceViewTabs}
           onOpenFile={openWorkspaceFile}
           onClose={() => setRightPanelOpenWithMotion(false)}

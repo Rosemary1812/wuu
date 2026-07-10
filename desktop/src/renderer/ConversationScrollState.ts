@@ -66,7 +66,6 @@ export function useConversationScrollState({
   secondaryTurns,
   emptyConversation,
   previewingLaunch,
-  showingWorkspaceMode,
   initialized
 }: {
   activeThreadID?: string;
@@ -76,7 +75,6 @@ export function useConversationScrollState({
   secondaryTurns?: Turn[];
   emptyConversation: boolean;
   previewingLaunch: boolean;
-  showingWorkspaceMode: boolean;
   initialized: boolean;
 }): {
   conversationScrollRef: RefObject<HTMLDivElement | null>;
@@ -701,7 +699,6 @@ export function useConversationScrollState({
     primaryTurns,
     secondaryTurns,
     scrollConversationToBottom,
-    showingWorkspaceMode,
     splitConversation
   ]);
 
@@ -763,7 +760,6 @@ export function useConversationScrollState({
     dockComposerNode,
     emptyConversation,
     previewingLaunch,
-    showingWorkspaceMode,
     initialized,
     scrollConversationToBottom
   ]);

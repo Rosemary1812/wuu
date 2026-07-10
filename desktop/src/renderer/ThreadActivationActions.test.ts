@@ -117,7 +117,6 @@ function buildActions({
     getSidebarThreads: () => sidebarThreads,
     getSidebarProjectThreadsByProjectID: () => sidebarProjectThreadsByProjectID,
     setArchiveConfirmThreadID: vi.fn(),
-    setWorkspaceMode: vi.fn(),
     beginViewSwitch,
     beginInstantThreadSwitch: vi.fn(() => 2),
     finishViewSwitch,

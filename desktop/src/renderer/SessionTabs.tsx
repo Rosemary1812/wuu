@@ -134,7 +134,7 @@ export function SessionTabStrip({
   }
 
   return (
-    <div className="session-tab-strip" aria-label="已打开的工作对象">
+    <div className="session-tab-strip" aria-label="已打开的对话">
       <div className="session-tab-list-shell">
         <DndContext
           sensors={sensors}

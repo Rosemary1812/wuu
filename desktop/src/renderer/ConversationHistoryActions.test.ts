@@ -23,7 +23,6 @@ import {
   type HistoryMessageEditState,
   type PendingForkState,
 } from "./ConversationHistoryActions";
-import type { WorkspacePanelView } from "./WorkspacePanels";
 
 const originalWuu = (window as unknown as { wuu?: unknown }).wuu;
 
@@ -118,13 +117,11 @@ function installWuuApi({
 function buildActions({
   initial,
   pendingFork,
-  workspaceMode,
   sendResult = true,
   hasPendingMessages = false,
 }: {
   initial?: AppState;
   pendingFork?: PendingForkState;
-  workspaceMode?: WorkspacePanelView;
   sendResult?: boolean;
   hasPendingMessages?: boolean;
 } = {}) {
@@ -202,7 +199,6 @@ function buildActions({
       archiveConfirmThreadID =
         typeof update === "function" ? update(archiveConfirmThreadID) : update;
     },
-    getWorkspaceMode: () => workspaceMode,
     getPrompt: () => prompt,
     getComposerImages: () => composerImages,
     getComposerFiles: () => composerFiles,

@@ -24,7 +24,6 @@ import {
   selectRuntimeContext as defaultSelectRuntimeContext,
 } from "./RuntimeLoadState";
 import type { PendingViewSwitch } from "./ViewSwitchState";
-import type { WorkspacePanelView } from "./WorkspacePanels";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 type SidebarProjectThreads = Record<string, Thread[] | undefined>;
@@ -41,7 +40,6 @@ export type ThreadActivationActionsDeps = {
   getSidebarThreads: () => Thread[];
   getSidebarProjectThreadsByProjectID: () => SidebarProjectThreads;
   setArchiveConfirmThreadID: (threadID: string | undefined) => void;
-  setWorkspaceMode: (mode: WorkspacePanelView | undefined) => void;
   beginViewSwitch: (
     kind: "thread" | "project" | "runtime",
     targetID: string,
@@ -99,7 +97,6 @@ export function createThreadActivationActions(
       return;
     }
     deps.setArchiveConfirmThreadID(undefined);
-    deps.setWorkspaceMode(undefined);
     const outgoingDraft = deps.getPrimaryComposerDraft();
     const targetDraft = sessionTabDraftForThread(currentState, threadID);
     const demoThread = deps.getLocalDemoThread(threadID);
@@ -283,7 +280,6 @@ export function createThreadActivationActions(
   ): Promise<void> {
     const currentState = deps.getAppState();
     deps.setArchiveConfirmThreadID(undefined);
-    deps.setWorkspaceMode(undefined);
     const outgoingDraft = deps.getPrimaryComposerDraft();
     const targetDraft = sessionTabDraftForThread(currentState, threadID);
     const requestID = deps.beginViewSwitch("thread", threadID);
@@ -452,7 +448,6 @@ export function createThreadActivationActions(
       return;
     }
     deps.setArchiveConfirmThreadID(undefined);
-    deps.setWorkspaceMode(undefined);
     const outgoingDraft = deps.getPrimaryComposerDraft();
     const targetDraft = sessionTabDraftForThread(currentState, agent.id);
     const sourceContext = currentState.activeContext;

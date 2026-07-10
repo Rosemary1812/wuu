@@ -21,7 +21,6 @@ import {
   type QueuedComposerMessage,
 } from "./ComposerMessages";
 import { lastUserMessageAnchor } from "./TurnViewHelpers";
-import type { WorkspacePanelView } from "./WorkspacePanels";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
@@ -52,7 +51,6 @@ export type ConversationHistoryActionsDeps = {
   setArchiveConfirmThreadID: (
     update: SetStateAction<string | undefined>,
   ) => void;
-  getWorkspaceMode: () => WorkspacePanelView | undefined;
   getPrompt: () => string;
   getComposerImages: () => ComposerImage[];
   getComposerFiles: () => ComposerFile[];
@@ -166,9 +164,7 @@ export function createConversationHistoryActions(
           ? "secondary"
           : "primary";
       const currentSplitConversation = Boolean(
-        currentState.thread &&
-          currentState.secondaryThread &&
-          !deps.getWorkspaceMode(),
+        currentState.thread && currentState.secondaryThread,
       );
       const splitComposerDrafts = deps.getSplitComposerDrafts();
       const splitDrafts = currentSplitConversation

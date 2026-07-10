@@ -30,7 +30,6 @@ export type ProjectRuntimeActionsDeps = {
   nextDraftSessionTab: (context: NonNullable<AppState["activeContext"]>) => SessionTab;
   closeProjectMenus: () => void;
   setArchiveConfirmThreadID: (threadID: string | undefined) => void;
-  setWorkspaceMode: (mode: undefined) => void;
   beginViewSwitch: (kind: "thread" | "project" | "runtime", targetID: string) => number;
   finishViewSwitch: (requestID: number) => boolean;
   cancelViewSwitch: () => void;
@@ -84,7 +83,6 @@ export function createProjectRuntimeActions(
     ) {
       deps.closeProjectMenus();
       deps.setArchiveConfirmThreadID(undefined);
-      deps.setWorkspaceMode(undefined);
       if (currentState.thread || currentState.secondaryThread) {
         switchToFreshDraft(currentState.activeContext);
       }
@@ -92,7 +90,6 @@ export function createProjectRuntimeActions(
     }
     const requestID = deps.beginViewSwitch("project", projectId);
     deps.closeProjectMenus();
-    deps.setWorkspaceMode(undefined);
     const outgoingDraft = deps.getPrimaryComposerDraft();
     try {
       const projectState = await window.wuu.selectProject(projectId);
@@ -134,7 +131,6 @@ export function createProjectRuntimeActions(
     ) {
       deps.closeProjectMenus();
       deps.setArchiveConfirmThreadID(undefined);
-      deps.setWorkspaceMode(undefined);
       if (currentState.thread || currentState.secondaryThread) {
         switchToFreshDraft(currentState.activeContext);
       }
@@ -148,7 +144,6 @@ export function createProjectRuntimeActions(
     const requestID = deps.beginViewSwitch("project", projectId);
     deps.closeProjectMenus();
     deps.setArchiveConfirmThreadID(undefined);
-    deps.setWorkspaceMode(undefined);
     const outgoingDraft = deps.getPrimaryComposerDraft();
     const carryDraft =
       activeSessionTab(currentState)?.kind === "draft" &&
@@ -192,7 +187,6 @@ export function createProjectRuntimeActions(
     deps.cancelViewSwitch();
     deps.closeProjectMenus();
     deps.setArchiveConfirmThreadID(undefined);
-    deps.setWorkspaceMode(undefined);
     const currentState = deps.getAppState();
     if (
       projectId === currentState.activeProjectId &&

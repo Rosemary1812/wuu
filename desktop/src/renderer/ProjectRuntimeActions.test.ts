@@ -60,7 +60,6 @@ function buildActions({
     createDraftSessionTab("draft:test", context),
   );
   const setArchiveConfirmThreadID = vi.fn();
-  const setWorkspaceMode = vi.fn();
 
   const actions = createProjectRuntimeActions({
     getAppState: () => appState,
@@ -73,7 +72,6 @@ function buildActions({
     nextDraftSessionTab,
     closeProjectMenus,
     setArchiveConfirmThreadID,
-    setWorkspaceMode,
     beginViewSwitch: vi.fn(() => 1),
     finishViewSwitch: vi.fn(() => true),
     cancelViewSwitch: vi.fn(),
@@ -87,7 +85,6 @@ function buildActions({
     clearPrimaryComposerDraft,
     nextDraftSessionTab,
     setArchiveConfirmThreadID,
-    setWorkspaceMode,
   };
 }
 
@@ -109,7 +106,6 @@ describe("createProjectRuntimeActions", () => {
     expect(harness.closeProjectMenus).toHaveBeenCalled();
     expect(harness.clearPrimaryComposerDraft).toHaveBeenCalled();
     expect(harness.setArchiveConfirmThreadID).toHaveBeenCalledWith(undefined);
-    expect(harness.setWorkspaceMode).toHaveBeenCalledWith(undefined);
     expect(harness.getAppState().thread).toBeUndefined();
     expect(harness.getAppState().activeSessionTabID).toBe("draft:test");
   });

@@ -110,6 +110,27 @@ function renderTabsWith(state: AppState, onClose: (tabID: string) => void): void
 }
 
 describe("SessionTabStrip pending indicators", () => {
+  it("names the center tablist as conversations rather than generic work objects", () => {
+    const context: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/tmp/project",
+    };
+    const thread = makeThread("thread-a", "Thread A");
+    renderTabs({
+      ...initialState,
+      activeContext: context,
+      thread,
+      activeSessionTabID: threadSessionTabID(thread.id),
+      sessionTabs: [createThreadSessionTab(thread, context)],
+      threads: [thread],
+    });
+
+    expect(container.querySelector(".session-tab-strip")?.getAttribute("aria-label")).toBe(
+      "已打开的对话",
+    );
+  });
+
   it("shows pending count only on the owning thread tab", () => {
     const context: RuntimeContext = {
       kind: "project",

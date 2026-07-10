@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useState } from "react";
 import {
   closestCenter,
   DndContext,
@@ -18,54 +18,11 @@ import type { GitStatusResult, RuntimeContext } from "../shared/protocol";
 import { TurnFileDiffPanel } from "./TurnFileDiffPanel";
 import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
 import { WorkspaceFilePreview, WorkspaceFileTree, type WorkspaceFileDirtyState } from "./WorkspaceFiles";
-import { WorkspaceDiffReview, WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
+import { WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
 import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
 import type { WorkspaceFileViewTab, WorkspaceViewTab } from "./WorkspaceViewTabs";
 
 export type WorkspacePanelView = "files" | "review" | "terminal" | "browser";
-
-export function WorkspaceMainPanel({
-  view,
-  activeContext,
-  workspaceContext,
-  gitStatus,
-  selectedFilePath,
-  onOpenRightPanel,
-  onFileDirtyChange
-}: {
-  view: WorkspacePanelView;
-  // activeContext is the pinned project/no_project context — used only by
-  // the diff/review view (see below). workspaceContext follows the active
-  // thread's own cwd (e.g. a worktree fork) when it differs from
-  // activeContext; see workspacePanelContext in AppState.ts.
-  activeContext?: RuntimeContext;
-  workspaceContext?: RuntimeContext;
-  gitStatus?: GitStatusResult;
-  selectedFilePath?: string;
-  onOpenRightPanel: () => void;
-  onFileDirtyChange?: (state: WorkspaceFileDirtyState) => void;
-}): JSX.Element | null {
-  if (view === "files") {
-    return (
-      <WorkspaceFilePreview
-        activeContext={workspaceContext}
-        selectedFilePath={selectedFilePath}
-        onOpenRightPanel={onOpenRightPanel}
-        onDirtyChange={onFileDirtyChange}
-      />
-    );
-  }
-
-  if (view === "review") {
-    // Deliberately activeContext, not workspaceContext: gitStatus is fetched
-    // from the app-server bound to activeContext's own workdir, so feeding
-    // this view the thread's cwd would silently show diff data for the
-    // wrong directory.
-    return <WorkspaceDiffReview activeContext={activeContext} gitStatus={gitStatus} />;
-  }
-
-  return null;
-}
 
 const WORKSPACE_TOOL_ITEMS: Array<{
   id: WorkspacePanelView;
@@ -91,6 +48,7 @@ export function WorkspaceRightPanel({
   onOpenTool,
   onShowTools,
   onCloseTab,
+  onDirtyFileTabsChange,
   onReorderTabs,
   onOpenFile,
   onClose,
@@ -117,6 +75,7 @@ export function WorkspaceRightPanel({
   onOpenTool: (view: WorkspacePanelView) => void;
   onShowTools: () => void;
   onCloseTab: (id: string) => void;
+  onDirtyFileTabsChange?: (dirty: boolean) => void;
   onReorderTabs: (activeID: string, overID: string) => void;
   onOpenFile: (path: string) => void;
   onClose: () => void;
@@ -134,6 +93,10 @@ export function WorkspaceRightPanel({
   const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>(undefined);
   const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const draggingTab = draggingTabID ? tabs.find((tab) => tab.id === draggingTabID) : undefined;
+
+  useEffect(() => {
+    onDirtyFileTabsChange?.(dirtyFileTabIDs.size > 0);
+  }, [dirtyFileTabIDs, onDirtyFileTabsChange]);
 
   function startTabDrag(event: DragStartEvent): void {
     setDraggingTabID(String(event.active.id));
@@ -540,8 +503,4 @@ function WorkspaceViewTabIcon({ tab, className }: { tab: WorkspaceViewTab; class
     return <FileText className={className} />;
   }
   return <WorkspaceToolIcon view={tab.kind} className={className} />;
-}
-
-export function workspaceModeTitle(view: WorkspacePanelView): string {
-  return view === "files" ? "打开文件" : workspaceToolFor(view).title;
 }

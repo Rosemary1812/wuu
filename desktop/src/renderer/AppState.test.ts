@@ -137,7 +137,6 @@ function sessionTabPrompt(
   const tab = tabs.find((candidate) => candidate.id === tabID);
   if (
     !tab ||
-    tab.kind === "file" ||
     tab.kind === "skills" ||
     tab.kind === "board"
   ) {

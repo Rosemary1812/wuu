@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { RuntimeContext } from "../shared/protocol";
 import type { WorkspacePanelView } from "./WorkspacePanels";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
@@ -21,10 +20,6 @@ export function useWorkspaceToolState({
   // more per-file diff tabs. See WorkspaceViewTabs.ts.
   workspaceViewTabs: WorkspaceViewTab[];
   workspaceActiveViewTabID: string | undefined;
-  workspacePanelView: WorkspacePanelView;
-  setWorkspacePanelView: (view: WorkspacePanelView) => void;
-  workspaceMode: WorkspacePanelView | undefined;
-  setWorkspaceMode: (view: WorkspacePanelView | undefined) => void;
   ensureWorkspaceToolTab: (view: WorkspacePanelView) => void;
   activateWorkspaceTool: (view: WorkspacePanelView) => void;
   openWorkspaceTool: (view: WorkspacePanelView) => void;
@@ -37,8 +32,6 @@ export function useWorkspaceToolState({
   reorderWorkspaceViewTabs: (activeID: string, overID: string) => void;
   toggleRightPanel: () => void;
 } {
-  const [workspacePanelView, setWorkspacePanelView] = useState<WorkspacePanelView>("files");
-  const [workspaceMode, setWorkspaceMode] = useState<WorkspacePanelView | undefined>(undefined);
   const {
     tabs: workspaceViewTabs,
     activeTabID: workspaceActiveViewTabID,
@@ -56,7 +49,6 @@ export function useWorkspaceToolState({
   }
 
   function activateWorkspaceTool(view: WorkspacePanelView): void {
-    setWorkspacePanelView(view);
     openTab(workspaceToolViewTab(view));
   }
 
@@ -93,10 +85,6 @@ export function useWorkspaceToolState({
   return {
     workspaceViewTabs,
     workspaceActiveViewTabID,
-    workspacePanelView,
-    setWorkspacePanelView,
-    workspaceMode,
-    setWorkspaceMode,
     ensureWorkspaceToolTab,
     activateWorkspaceTool,
     openWorkspaceTool,

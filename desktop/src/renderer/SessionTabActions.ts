@@ -22,7 +22,6 @@ import {
   loadRuntime as defaultLoadRuntime,
   selectRuntimeContext as defaultSelectRuntimeContext,
 } from "./RuntimeLoadState";
-import type { WorkspacePanelView } from "./WorkspacePanels";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 type ViewSwitchKind = "thread" | "project" | "runtime";
@@ -41,7 +40,6 @@ export type SessionTabActionsDeps = {
   selectThread: (threadID: string) => Promise<void>;
   useNoProject: (fresh: boolean) => Promise<void>;
   setArchiveConfirmThreadID: (threadID: string | undefined) => void;
-  setWorkspaceMode: (mode: WorkspacePanelView | undefined) => void;
   poppingOutTabIDsRef: MutableSetRef;
   beginViewSwitch: (kind: ViewSwitchKind, targetID: string) => number;
   finishViewSwitch: (requestID: number) => boolean;
@@ -93,52 +91,6 @@ export function createSessionTabActions(
       tab.context,
       currentState.activeContext,
     );
-    if (tab.kind === "file") {
-      const outgoingDraft = deps.getPrimaryComposerDraft();
-      const requestID = sameContext
-        ? undefined
-        : deps.beginViewSwitch("runtime", runtimeContextKey(tab.context));
-      try {
-        const loadedState = sameContext
-          ? undefined
-          : await loadRuntime(await selectRuntimeContext(tab.context), {
-              resumeLatestThread: false,
-            });
-        if (requestID !== undefined && !deps.finishViewSwitch(requestID)) {
-          return;
-        }
-        if (requestID === undefined) {
-          deps.cancelViewSwitch();
-        }
-        deps.resetSplitComposerDrafts();
-        deps.setWorkspaceMode("files");
-        deps.setAppState((current) => {
-          const withDraft = persistActiveSessionTabDraft(
-            current,
-            outgoingDraft,
-          );
-          const next = loadedState
-            ? { ...withDraft, ...loadedState }
-            : withDraft;
-          return {
-            ...next,
-            secondaryThread: undefined,
-            activePane: "primary",
-            sessionTabs: ensureSessionTab(next.sessionTabs, tab),
-            activeSessionTabID: tab.id,
-            allowThreadAutoActivation: false,
-            running: false,
-            status: "ready",
-          };
-        });
-      } catch (error) {
-        if (requestID !== undefined && !deps.finishViewSwitch(requestID)) {
-          return;
-        }
-        setStatus(error instanceof Error ? error.message : "load failed");
-      }
-      return;
-    }
     if (tab.kind === "skills" || tab.kind === "board") {
       const outgoingDraft = deps.getPrimaryComposerDraft();
       const requestID = sameContext
@@ -157,7 +109,6 @@ export function createSessionTabActions(
           deps.cancelViewSwitch();
         }
         deps.resetSplitComposerDrafts();
-        deps.setWorkspaceMode(undefined);
         deps.setAppState((current) => {
           const withDraft = persistActiveSessionTabDraft(
             current,
@@ -185,7 +136,6 @@ export function createSessionTabActions(
       }
       return;
     }
-    deps.setWorkspaceMode(undefined);
     if (tab.kind === "draft") {
       const outgoingDraft = deps.getPrimaryComposerDraft();
       const requestID = sameContext
@@ -305,49 +255,6 @@ export function createSessionTabActions(
       deps.nextDraftSessionTab(closedTab.context);
     const tabsWithFallback = nextTabs.length > 0 ? nextTabs : [fallbackTab];
     deps.setArchiveConfirmThreadID(undefined);
-    if (fallbackTab.kind === "file") {
-      const sameContext = sameRuntimeContext(
-        fallbackTab.context,
-        currentState.activeContext,
-      );
-      const requestID = sameContext
-        ? undefined
-        : deps.beginViewSwitch("runtime", runtimeContextKey(fallbackTab.context));
-      try {
-        const loadedState = sameContext
-          ? undefined
-          : await loadRuntime(await selectRuntimeContext(fallbackTab.context), {
-              resumeLatestThread: false,
-            });
-        if (requestID !== undefined && !deps.finishViewSwitch(requestID)) {
-          return;
-        }
-        if (requestID === undefined) {
-          deps.cancelViewSwitch();
-        }
-        deps.resetSplitComposerDrafts();
-        deps.setWorkspaceMode("files");
-        deps.setAppState((current) => {
-          const next = loadedState ? { ...current, ...loadedState } : current;
-          return {
-            ...next,
-            sessionTabs: tabsWithFallback,
-            activeSessionTabID: fallbackTab.id,
-            secondaryThread: undefined,
-            activePane: "primary",
-            allowThreadAutoActivation: false,
-            running: false,
-            status: "ready",
-          };
-        });
-      } catch (error) {
-        if (requestID !== undefined && !deps.finishViewSwitch(requestID)) {
-          return;
-        }
-        setStatus(error instanceof Error ? error.message : "load failed");
-      }
-      return;
-    }
     if (fallbackTab.kind === "skills" || fallbackTab.kind === "board") {
       const sameContext = sameRuntimeContext(
         fallbackTab.context,
@@ -369,7 +276,6 @@ export function createSessionTabActions(
           deps.cancelViewSwitch();
         }
         deps.resetSplitComposerDrafts();
-        deps.setWorkspaceMode(undefined);
         deps.setAppState((current) => {
           const next = loadedState ? { ...current, ...loadedState } : current;
           return {
@@ -391,7 +297,6 @@ export function createSessionTabActions(
       }
       return;
     }
-    deps.setWorkspaceMode(undefined);
     if (fallbackTab.kind === "draft") {
       const sameContext = sameRuntimeContext(
         fallbackTab.context,
@@ -557,7 +462,6 @@ export function createSessionTabActions(
     }
     deps.cancelViewSwitch();
     deps.setArchiveConfirmThreadID(undefined);
-    deps.setWorkspaceMode(undefined);
     const outgoingDraft = deps.getPrimaryComposerDraft();
     deps.clearPrimaryComposerDraft();
     if (

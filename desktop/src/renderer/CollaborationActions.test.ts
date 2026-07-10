@@ -18,7 +18,6 @@ import type { ComposerFile, ComposerImage } from "./ComposerMessages";
 import type { ContextCompositionEntry } from "./ContextCompositionCard";
 import type { InstructionFilesEntry } from "./InstructionFilesCard";
 import type { SettingsPage } from "./SettingsView";
-import type { WorkspacePanelView } from "./WorkspacePanels";
 
 const originalWuu = (window as unknown as { wuu?: unknown }).wuu;
 
@@ -138,7 +137,6 @@ function buildActions({
     },
   ];
   let archiveConfirmThreadID: string | undefined = "thread-1";
-  let workspaceMode: WorkspacePanelView | undefined = "files";
   let contextCompositionEntries: ContextCompositionEntry[] = [];
   let instructionFilesEntries: InstructionFilesEntry[] = [];
   let settingsMemoryFocusID: string | undefined;
@@ -188,9 +186,6 @@ function buildActions({
       archiveConfirmThreadID =
         typeof update === "function" ? update(archiveConfirmThreadID) : update;
     },
-    setWorkspaceMode: (mode) => {
-      workspaceMode = mode;
-    },
     cancelViewSwitch,
     activateThread,
     selectThread,
@@ -233,7 +228,6 @@ function buildActions({
       composerImages,
       composerFiles,
       archiveConfirmThreadID,
-      workspaceMode,
     }),
     getContextEntries: () => contextCompositionEntries,
     getInstructionEntries: () => instructionFilesEntries,
@@ -269,7 +263,6 @@ describe("createCollaborationActions", () => {
     expect(harness.getAppState().sessionTabs[0]?.kind).toBe("skills");
     expect(harness.getAppState().status).toBe("ready");
     expect(harness.getComposerState().archiveConfirmThreadID).toBeUndefined();
-    expect(harness.getComposerState().workspaceMode).toBeUndefined();
   });
 
   it("adds instruction and context cards, then fills them from the desktop API", async () => {
@@ -386,7 +379,6 @@ describe("createCollaborationActions", () => {
       composerImages: [],
       composerFiles: [],
       archiveConfirmThreadID: undefined,
-      workspaceMode: undefined,
     });
     expect(harness.getAppState().thread?.id).toBe("new-dm");
     expect(harness.getAppState().activePane).toBe("primary");

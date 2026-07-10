@@ -12,7 +12,6 @@ import {
 import { createConversationDemoPaneActions } from "./ConversationDemoPaneActions";
 import type { ComposerFile, ComposerImage } from "./ComposerMessages";
 import type { EnvironmentPanelMenu } from "./EnvironmentPanel";
-import type { WorkspacePanelView } from "./WorkspacePanels";
 
 function projectContext(): RuntimeContext {
   return { kind: "project", project_id: "project-1", cwd: "/tmp/project-1" };
@@ -69,7 +68,6 @@ function buildActions({
   ];
   let splitDrafts = initialSplitComposerDrafts();
   let archiveConfirmThreadID: string | undefined = "thread-1";
-  let workspaceMode: WorkspacePanelView | undefined = "files";
   let runDebugOpen = true;
   let environmentPanelOpen = false;
   let environmentPanelDismissed = true;
@@ -87,9 +85,6 @@ function buildActions({
     setArchiveConfirmThreadID: (update) => {
       archiveConfirmThreadID =
         typeof update === "function" ? update(archiveConfirmThreadID) : update;
-    },
-    setWorkspaceMode: (mode) => {
-      workspaceMode = mode;
     },
     setPrompt: (update) => {
       prompt = typeof update === "function" ? update(prompt) : update;
@@ -129,7 +124,6 @@ function buildActions({
       composerFiles,
       splitDrafts,
       archiveConfirmThreadID,
-      workspaceMode,
     }),
     getEnvironmentState: () => ({
       runDebugOpen,
@@ -155,7 +149,6 @@ describe("createConversationDemoPaneActions", () => {
       composerImages: [],
       composerFiles: [],
       archiveConfirmThreadID: undefined,
-      workspaceMode: undefined,
     });
     expect(harness.localDemoThreadsRef.current.size).toBeGreaterThan(1);
     expect(harness.getAppState().thread?.id).toBeTruthy();
