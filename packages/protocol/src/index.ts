@@ -1005,8 +1005,8 @@ export type ConversationSubthread = {
   // 重新选择的第二个负责人。runtime workflow 网关按
   // (caller == lead && status == task) 放行。
   lead_participant_id?: string;
-  // 执行轴(与审批轴 status 分离):planning / executing / blocked /
-  // needs_human / completed / failed;空 = 尚未进入执行(普通 reply)。
+  // 执行轴(与 status 分离):planning / executing / awaiting_lead / blocked /
+  // needs_human / completed / failed;空 = 尚未进入执行(普通 Thread)。
   exec_state?: string;
   // lead 声明的工作分解投到线上,供 Task 面板渲染进展层(plan §T11):一行一个节点,
   // 带 Status 派生的展示态与两个 liveness 时间戳。普通(未编排)reply/task 为空。

@@ -732,7 +732,7 @@ type ConversationSubthread struct {
 	// The runtime workflow gate keys on (caller == lead && status == task).
 	LeadParticipantID string `json:"lead_participant_id,omitempty"`
 	// ExecState is the task's execution axis, separate from the approval
-	// Status: planning/executing/blocked/needs_human/completed/failed. Empty
+	// Status: planning/executing/awaiting_lead/blocked/needs_human/completed/failed. Empty
 	// when the subthread never entered execution (a plain reply).
 	ExecState string `json:"exec_state,omitempty"`
 	// Plan is the lead's declared work breakdown projected onto the wire so the

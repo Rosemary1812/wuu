@@ -23,6 +23,21 @@ func seedTaskThread(t *testing.T, dir string) ConversationThread {
 	return task
 }
 
+func readyTaskForConclusionForTest(t *testing.T, dir string, task ConversationThread) ConversationThread {
+	t.Helper()
+	updated, err := SetConversationThreadPlan(dir, task.ID, []TaskPiece{{
+		ID: "worker-1", Title: "worker result", Assignee: "prt-worker", Status: TaskPieceDone,
+	}})
+	if err != nil {
+		t.Fatalf("SetConversationThreadPlan: %v", err)
+	}
+	if err := SetConversationThreadExecState(dir, task.ID, ExecStateAwaitingLead); err != nil {
+		t.Fatalf("SetConversationThreadExecState awaiting lead: %v", err)
+	}
+	updated.ExecState = ExecStateAwaitingLead
+	return updated
+}
+
 func TestConversationThreadCannotBeCreatedAsTaskOrStandalone(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {
@@ -52,6 +67,10 @@ func TestConcludeConversationThreadOnlyByImmutableLead(t *testing.T) {
 	if _, err := ConcludeConversationThread(dir, task.ID, task.LeadParticipantID, "  "); err == nil {
 		t.Fatal("empty conclusion must be refused")
 	}
+	if _, err := ConcludeConversationThread(dir, task.ID, task.LeadParticipantID, "too early"); err == nil || !strings.Contains(err.Error(), "no worker plan") {
+		t.Fatalf("unplanned conclusion = %v, want worker-plan refusal", err)
+	}
+	task = readyTaskForConclusionForTest(t, dir, task)
 	concluded, err := ConcludeConversationThread(dir, task.ID, task.LeadParticipantID, "fixed and verified")
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +87,7 @@ func TestSetConversationThreadExecState(t *testing.T) {
 	dir := t.TempDir()
 	task := seedTaskThread(t, dir)
 	for _, state := range []string{
-		ExecStatePlanning, ExecStateExecuting, ExecStateBlocked,
+		ExecStatePlanning, ExecStateExecuting, ExecStateAwaitingLead, ExecStateBlocked,
 		ExecStateNeedsHuman, ExecStateCompleted, ExecStateFailed,
 	} {
 		if err := SetConversationThreadExecState(dir, task.ID, state); err != nil {
@@ -87,5 +106,21 @@ func TestSetConversationThreadExecState(t *testing.T) {
 	}
 	if err := SetConversationThreadExecState(dir, task.ID, ""); err == nil {
 		t.Fatal("empty exec state must be refused")
+	}
+}
+
+func TestTransitionConversationThreadExecStateWinsOnce(t *testing.T) {
+	dir := t.TempDir()
+	task := seedTaskThread(t, dir)
+	if err := SetConversationThreadExecState(dir, task.ID, ExecStateExecuting); err != nil {
+		t.Fatal(err)
+	}
+	won, err := TransitionConversationThreadExecState(dir, task.ID, ExecStateExecuting, ExecStateAwaitingLead)
+	if err != nil || !won {
+		t.Fatalf("first transition = %v, %v; want true, nil", won, err)
+	}
+	won, err = TransitionConversationThreadExecState(dir, task.ID, ExecStateExecuting, ExecStateAwaitingLead)
+	if err != nil || won {
+		t.Fatalf("repeat transition = %v, %v; want false, nil", won, err)
 	}
 }

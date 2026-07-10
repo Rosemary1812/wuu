@@ -106,8 +106,8 @@ func (m *residentTaskManager) PromoteThread(ctx context.Context, subthreadID, ti
 // ConcludeTask files the task's conclusion and completes it in one act (the
 // manage_task conclude action): a single store CAS resolves the task —
 // only the lead may conclude — then the summary is published to the parent
-// main stream under the caller's identity. Filing IS the completion report;
-// there is no review gate or human approval step.
+// main stream under the caller's identity. The store accepts this only after
+// every worker node is done and execution is awaiting the lead's verification.
 func (m *residentTaskManager) ConcludeTask(ctx context.Context, subthreadID, summary string) (tools.TaskView, error) {
 	_ = ctx
 	if err := m.ready("conclude"); err != nil {
@@ -129,13 +129,6 @@ func (m *residentTaskManager) ConcludeTask(ctx context.Context, subthreadID, sum
 		Text:          concluded.Summary,
 	}); err != nil {
 		return tools.TaskView{}, fmt.Errorf("conclude: publish conclusion: %w", err)
-	}
-	// Execution is over. Best-effort: the resolved status is the durable
-	// completion signal; a failed exec-state write must not undo it.
-	if err := session.SetConversationThreadExecState(m.server.rt.SessionDir, concluded.ID, session.ExecStateCompleted); err != nil {
-		providers.DebugLogf("conclude: mark exec completed %q: %v", concluded.ID, err)
-	} else {
-		concluded.ExecState = session.ExecStateCompleted
 	}
 	m.server.recordTaskEventFor(concluded, "", session.TaskEventTaskCompleted, m.participantID,
 		concluded.Summary, "")
@@ -725,12 +718,20 @@ func (s *Server) advancePlan(taskID string) {
 		}
 	}
 	if allDone {
-		// Execution is finished the moment the last piece lands — the lead's
-		// wrap-up (conclude + report) happens after completed, not before it.
-		if err := session.SetConversationThreadExecState(s.rt.SessionDir, task.ID, session.ExecStateCompleted); err != nil {
-			providers.DebugLogf("advancePlan mark completed %q: %v", task.ID, err)
+		// Worker execution is finished, but the Task is not. Exactly one caller
+		// wins executing -> awaiting_lead and wakes the lead to verify the trace.
+		transitioned, err := session.TransitionConversationThreadExecState(
+			s.rt.SessionDir, task.ID, session.ExecStateExecuting, session.ExecStateAwaitingLead,
+		)
+		if err != nil {
+			providers.DebugLogf("advancePlan await lead %q: %v", task.ID, err)
+			return
 		}
-		s.wakePlanLead(task)
+		if transitioned {
+			task.ExecState = session.ExecStateAwaitingLead
+			s.notifySubthreadUpdated(task.SessionID, task.ID)
+			s.wakePlanLead(task)
+		}
 		return
 	}
 	for _, p := range task.Plan {
@@ -934,11 +935,11 @@ func (s *Server) wakePieceAssignee(task session.ConversationThread, piece sessio
 	}, nil, true)
 }
 
-// wakePlanLead @-wakes the lead once every piece of the plan is done, so the
-// lead wraps the task up and reports to the user. The lead is the declared
-// LeadParticipantID, falling back to the task's creator.
+// wakePlanLead wakes the immutable lead after the engine has atomically entered
+// awaiting_lead. There is no creator fallback because only the persisted lead
+// holds verification and conclusion authority.
 func (s *Server) wakePlanLead(task session.ConversationThread) {
-	lead := firstNonEmpty(strings.TrimSpace(task.LeadParticipantID), strings.TrimSpace(task.CreatedBy))
+	lead := strings.TrimSpace(task.LeadParticipantID)
 	if lead == "" {
 		return
 	}

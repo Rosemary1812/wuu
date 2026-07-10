@@ -97,6 +97,7 @@ func TestRemoveThreadMemberProtectsThreadOwnerAndTaskLead(t *testing.T) {
 	if err := RemoveConversationThreadMember(dir, cth.ID, owner.ID); err == nil || !strings.Contains(err.Error(), "leads active Task") {
 		t.Fatalf("active Task lead subset removal = %v, want authority refusal", err)
 	}
+	cth = readyTaskForConclusionForTest(t, dir, cth)
 	if _, err := ConcludeConversationThread(dir, cth.ID, owner.ID, "done"); err != nil {
 		t.Fatal(err)
 	}

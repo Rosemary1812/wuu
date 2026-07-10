@@ -104,6 +104,9 @@ func TestSetPlanRefusedOnResolvedTask(t *testing.T) {
 		t.Fatalf("SetPlan: %v", err)
 	}
 	waitForResidentQuiesce(t, srv)
+	if _, err := srv.residentTaskManager(han).PieceDone(context.Background(), task.ID, "p1", nil); err != nil {
+		t.Fatalf("worker PieceDone: %v", err)
+	}
 
 	// The lead concludes the task (status -> resolved); lead_participant_id
 	// survives the resolve. A stray set_plan by that same surviving lead must be

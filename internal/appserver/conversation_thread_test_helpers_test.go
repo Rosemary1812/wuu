@@ -26,6 +26,21 @@ func createPromotedTaskForTest(ctx context.Context, m *residentTaskManager, thre
 	return m.PromoteThread(ctx, opened.ID, title)
 }
 
+func markTaskReadyForConclusionForTest(t *testing.T, srv *Server, taskID, workerID string) session.ConversationThread {
+	t.Helper()
+	updated, err := session.SetConversationThreadPlan(srv.rt.SessionDir, taskID, []session.TaskPiece{{
+		ID: "worker-1", Title: "verified worker result", Assignee: workerID, Status: session.TaskPieceDone,
+	}})
+	if err != nil {
+		t.Fatalf("SetConversationThreadPlan: %v", err)
+	}
+	if err := session.SetConversationThreadExecState(srv.rt.SessionDir, taskID, session.ExecStateAwaitingLead); err != nil {
+		t.Fatalf("SetConversationThreadExecState awaiting lead: %v", err)
+	}
+	updated.ExecState = session.ExecStateAwaitingLead
+	return updated
+}
+
 func createStoredOpenThreadForTest(t *testing.T, srv *Server, parentThreadID, ownerID, anchorItemID string, parentSeq int) session.ConversationThread {
 	t.Helper()
 	thread, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{

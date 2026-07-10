@@ -373,7 +373,7 @@ type TaskView struct {
 	Title        string `json:"title,omitempty"`
 	Status       string `json:"status"`
 	// ExecState is the task's execution axis, separate from the approval
-	// Status: planning/executing/blocked/needs_human/completed/failed; empty
+	// Status: planning/executing/awaiting_lead/blocked/needs_human/completed/failed; empty
 	// when the task never entered execution.
 	ExecState   string `json:"exec_state,omitempty"`
 	ThreadOwner string `json:"thread_owner,omitempty"`

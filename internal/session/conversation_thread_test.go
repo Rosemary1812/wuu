@@ -306,6 +306,7 @@ func TestEscalateConversationThread(t *testing.T) {
 	if err := UpdateConversationThreadStatus(dir, created.ID, ConversationThreadResolved); err == nil || !strings.Contains(err.Error(), "active task") {
 		t.Fatalf("generic status update must reject an active task, got %v", err)
 	}
+	created = readyTaskForConclusionForTest(t, dir, created)
 	if _, err := ConcludeConversationThread(dir, created.ID, "prt-lead", "done"); err != nil {
 		t.Fatalf("lead conclude: %v", err)
 	}
@@ -491,6 +492,7 @@ func TestLeadTaskThreads(t *testing.T) {
 	}
 
 	// Resolving the task reclaims authority: it no longer shows up as a lead task.
+	led = readyTaskForConclusionForTest(t, dir, led)
 	if _, err := ConcludeConversationThread(dir, led.ID, "prt-lead", "done"); err != nil {
 		t.Fatal(err)
 	}

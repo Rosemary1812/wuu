@@ -27,17 +27,18 @@ const (
 // from the approval Status above. Status says what the thread is (open
 // discussion / board task / resolved); ExecState says where the execution
 // engine stands on the work: escalation enters planning, the lead's set_plan
-// enters executing, the engine lands completed when every piece is done.
-// blocked / needs_human / failed are the exception states. The empty string
-// is the pre-execution zero value and is never explicitly set: a thread that
-// never entered execution (a plain reply) simply stays empty.
+// enters executing, and the engine enters awaiting_lead when every piece is
+// done. Only the lead's verified conclusion lands completed. blocked /
+// needs_human / failed are exception states. The empty string is the
+// pre-execution zero value and is never explicitly set.
 const (
-	ExecStatePlanning   = "planning"
-	ExecStateExecuting  = "executing"
-	ExecStateBlocked    = "blocked"
-	ExecStateNeedsHuman = "needs_human"
-	ExecStateCompleted  = "completed"
-	ExecStateFailed     = "failed"
+	ExecStatePlanning     = "planning"
+	ExecStateExecuting    = "executing"
+	ExecStateAwaitingLead = "awaiting_lead"
+	ExecStateBlocked      = "blocked"
+	ExecStateNeedsHuman   = "needs_human"
+	ExecStateCompleted    = "completed"
+	ExecStateFailed       = "failed"
 )
 
 var (
@@ -81,8 +82,8 @@ type ConversationThread struct {
 	// single-owner task.
 	Plan []TaskPiece `json:"plan,omitempty"`
 	// ExecState is the execution axis of a task, deliberately separate from
-	// the approval axis (Status): planning -> executing -> completed on the
-	// normal path, with blocked / needs_human / failed as exception states
+	// the approval axis (Status): planning -> executing -> awaiting_lead ->
+	// completed on the normal path, with blocked / needs_human / failed as exception states
 	// (see the ExecState* constants). Empty is the pre-execution zero value —
 	// a thread that never entered execution. Written only through
 	// SetConversationThreadExecState.
@@ -594,8 +595,9 @@ ON CONFLICT(conversation_thread_id, participant_id) DO NOTHING`,
 // ConcludeConversationThread files a task's conclusion and resolves it in one
 // CAS: status task -> resolved with the summary stored. Filing the conclusion
 // IS the completion — there is no review gate waiting for a human click. The
-// task lead may conclude. CAS loss is diagnosed loudly: the status was not task
-// or the caller is not the lead.
+// task lead may conclude, and only after every planned worker node is done.
+// CAS loss is diagnosed loudly: the status was not task, the caller is not the
+// lead, or execution has not reached awaiting_lead.
 func ConcludeConversationThread(sessDir, id, participantID, summary string) (ConversationThread, error) {
 	id = strings.TrimSpace(id)
 	participantID = strings.TrimSpace(participantID)
@@ -619,11 +621,32 @@ func ConcludeConversationThread(sessDir, id, participantID, summary string) (Con
 	storeWriteMu.Lock()
 	defer storeWriteMu.Unlock()
 
+	thread, err := findConversationThreadByIDDB(db, id)
+	if err != nil {
+		return ConversationThread{}, err
+	}
+	switch {
+	case thread.Status != ConversationThreadTask:
+		return thread, fmt.Errorf("conclude conversation thread %q: status is %q, not task", id, thread.Status)
+	case thread.LeadParticipantID != participantID:
+		return thread, fmt.Errorf("conclude conversation thread %q: lead is %q — only the lead may file the conclusion", id, thread.LeadParticipantID)
+	case len(thread.Plan) == 0:
+		return thread, fmt.Errorf("conclude conversation thread %q: task has no worker plan", id)
+	case thread.ExecState != ExecStateAwaitingLead:
+		return thread, fmt.Errorf("conclude conversation thread %q: execution is %q, not %q", id, thread.ExecState, ExecStateAwaitingLead)
+	}
+	for _, piece := range thread.Plan {
+		if piece.Status != TaskPieceDone {
+			return thread, fmt.Errorf("conclude conversation thread %q: piece %q is still %q", id, piece.ID, piece.Status)
+		}
+	}
+
 	res, err := db.Exec(`
 UPDATE conversation_threads
-SET status = ?, summary = ?
-WHERE id = ? AND status = ? AND lead_participant_id = ?`,
-		string(ConversationThreadResolved), summary, id, string(ConversationThreadTask), participantID)
+SET status = ?, summary = ?, exec_state = ?
+WHERE id = ? AND status = ? AND lead_participant_id = ? AND exec_state = ?`,
+		string(ConversationThreadResolved), summary, ExecStateCompleted,
+		id, string(ConversationThreadTask), participantID, ExecStateAwaitingLead)
 	if err != nil {
 		return ConversationThread{}, fmt.Errorf("conclude conversation thread: %w", err)
 	}
@@ -639,8 +662,8 @@ WHERE id = ? AND status = ? AND lead_participant_id = ?`,
 		switch {
 		case thread.Status != ConversationThreadTask:
 			return thread, fmt.Errorf("conclude conversation thread %q: status is %q, not task", id, thread.Status)
-		case thread.LeadParticipantID != participantID:
-			return thread, fmt.Errorf("conclude conversation thread %q: lead is %q — only the lead may file the conclusion", id, thread.LeadParticipantID)
+		case thread.ExecState != ExecStateAwaitingLead:
+			return thread, fmt.Errorf("conclude conversation thread %q: execution changed to %q before conclusion", id, thread.ExecState)
 		default:
 			return thread, fmt.Errorf("conclude conversation thread %q: transition refused", id)
 		}
@@ -658,11 +681,8 @@ func SetConversationThreadExecState(sessDir, id, state string) error {
 	if id == "" {
 		return fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
 	}
-	switch state {
-	case ExecStatePlanning, ExecStateExecuting, ExecStateBlocked, ExecStateNeedsHuman, ExecStateCompleted, ExecStateFailed:
-	default:
-		return fmt.Errorf("invalid conversation thread exec state %q (valid: %s, %s, %s, %s, %s, %s)",
-			state, ExecStatePlanning, ExecStateExecuting, ExecStateBlocked, ExecStateNeedsHuman, ExecStateCompleted, ExecStateFailed)
+	if !validConversationThreadExecState(state) {
+		return fmt.Errorf("invalid conversation thread exec state %q", state)
 	}
 
 	db, err := openStore(sessDir)
@@ -689,6 +709,58 @@ WHERE id = ?`, state, id)
 		return fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
 	}
 	return nil
+}
+
+// TransitionConversationThreadExecState performs an exact state transition on
+// a live Task. It returns true only for the caller that won the transition,
+// which makes one-shot side effects such as waking the lead safe under races.
+func TransitionConversationThreadExecState(sessDir, id, from, to string) (bool, error) {
+	id = strings.TrimSpace(id)
+	from = strings.TrimSpace(from)
+	to = strings.TrimSpace(to)
+	if id == "" {
+		return false, fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
+	}
+	if !validConversationThreadExecState(from) || !validConversationThreadExecState(to) {
+		return false, fmt.Errorf("invalid conversation thread exec transition %q -> %q", from, to)
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+	res, err := db.Exec(`
+UPDATE conversation_threads
+SET exec_state = ?
+WHERE id = ? AND status = ? AND exec_state = ?`,
+		to, id, string(ConversationThreadTask), from)
+	if err != nil {
+		return false, fmt.Errorf("transition conversation thread exec state: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("transition conversation thread exec state: %w", err)
+	}
+	if affected == 1 {
+		return true, nil
+	}
+	if _, err := findConversationThreadByIDDB(db, id); err != nil {
+		return false, err
+	}
+	return false, nil
+}
+
+func validConversationThreadExecState(state string) bool {
+	switch state {
+	case ExecStatePlanning, ExecStateExecuting, ExecStateAwaitingLead,
+		ExecStateBlocked, ExecStateNeedsHuman, ExecStateCompleted, ExecStateFailed:
+		return true
+	default:
+		return false
+	}
 }
 
 // findConversationThreadByIDDB is FindConversationThreadByID against an

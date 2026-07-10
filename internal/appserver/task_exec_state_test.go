@@ -179,10 +179,9 @@ func TestSetPlanWithPromptExecutesAndDispatches(t *testing.T) {
 	}
 }
 
-// Every piece done -> exec state completed, with the approval status still
-// task (the lead's conclusion resolves it). No state on the way is "review" —
-// that gate is gone.
-func TestAllPiecesDoneCompletesExecution(t *testing.T) {
+// Every worker piece done -> awaiting_lead, with status still task. The lead's
+// verified conclusion is the only transition to completed + resolved.
+func TestAllPiecesDoneAwaitsLeadConclusion(t *testing.T) {
 	srv, groupID, andy, mia, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
 
@@ -204,18 +203,26 @@ func TestAllPiecesDoneCompletesExecution(t *testing.T) {
 	if mid.Status != string(session.ConversationThreadTask) || mid.ExecState != session.ExecStateExecuting {
 		t.Fatalf("mid-plan task = status %q exec %q, want task/executing", mid.Status, mid.ExecState)
 	}
+	if _, err := lead.ConcludeTask(context.Background(), task.ID, "too early"); err == nil || !strings.Contains(err.Error(), "not \"awaiting_lead\"") {
+		t.Fatalf("live-node conclusion = %v, want awaiting-lead refusal", err)
+	}
 
 	final, err := srv.residentTaskManager(han).PieceDone(context.Background(), task.ID, "p2", nil)
 	if err != nil {
 		t.Fatalf("piece_done p2: %v", err)
 	}
-	if final.ExecState != session.ExecStateCompleted {
-		t.Fatalf("exec_state after all pieces done = %q, want completed", final.ExecState)
+	if final.ExecState != session.ExecStateAwaitingLead {
+		t.Fatalf("exec_state after all pieces done = %q, want awaiting_lead", final.ExecState)
 	}
-	// The approval axis never passes through an intermediate wait state: the
-	// task stays task until the conclusion is filed.
 	if final.Status != string(session.ConversationThreadTask) {
 		t.Fatalf("status after all pieces done = %q, want task (conclusion still pending)", final.Status)
+	}
+	concluded, err := lead.ConcludeTask(context.Background(), task.ID, "verified result")
+	if err != nil {
+		t.Fatalf("lead conclude: %v", err)
+	}
+	if concluded.Status != string(session.ConversationThreadResolved) || concluded.ExecState != session.ExecStateCompleted {
+		t.Fatalf("concluded task = status %q exec %q, want resolved/completed", concluded.Status, concluded.ExecState)
 	}
 }
 
@@ -245,6 +252,7 @@ func TestConcludeTaskResolvesAndBubbles(t *testing.T) {
 		t.Fatalf("refusal should diagnose the caller, got %v", err)
 	}
 
+	markTaskReadyForConclusionForTest(t, srv, owned.ID, han)
 	concluded, err := srv.residentTaskManager(mia).ConcludeTask(context.Background(), owned.ID, "活干完了,已自测")
 	if err != nil {
 		t.Fatalf("ConcludeTask by lead: %v", err)
@@ -287,7 +295,7 @@ func TestConcludeTaskResolvesAndBubbles(t *testing.T) {
 }
 
 func TestConcludeTaskByImmutableLead(t *testing.T) {
-	srv, groupID, andy, _, _, _ := planFixture(t)
+	srv, groupID, andy, mia, _, _ := planFixture(t)
 
 	// A promoted Thread carries the same immutable owner and lead.
 	task, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
@@ -302,6 +310,7 @@ func TestConcludeTaskByImmutableLead(t *testing.T) {
 		t.Fatalf("EscalateConversationThread: %v", err)
 	}
 
+	markTaskReadyForConclusionForTest(t, srv, task.ID, mia)
 	concluded, err := srv.residentTaskManager(andy).ConcludeTask(context.Background(), task.ID, "全部节点收束完毕")
 	if err != nil {
 		t.Fatalf("lead conclude: %v", err)

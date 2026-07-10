@@ -295,8 +295,8 @@ func TestPublicUpdateRefreshesProgressWithoutWakingTeammate(t *testing.T) {
 	}
 }
 
-// The final lead summary (plan §T9 §5): both pieces done → the engine lands
-// completed and wakes the lead → the lead files conclude → the summary
+// The final lead summary: both pieces done → the engine enters awaiting_lead
+// and wakes the lead → the lead verifies and concludes → the summary
 // bubbles to the parent MAIN stream, task_completed is recorded, the task
 // resolves, and NO other group member gets a pending wake from the conclusion.
 func TestFinalSummaryReachesParentWakesNoTeammate(t *testing.T) {

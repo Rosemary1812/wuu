@@ -138,6 +138,7 @@ func TestRetireParticipantRefusesOpenThreadOwnerAndActiveTaskLead(t *testing.T) 
 	if err := RetireParticipant(dir, "prt-task-lead"); err == nil || !strings.Contains(err.Error(), "leads an active Task") {
 		t.Fatalf("active Task lead retirement must be rejected, got %v", err)
 	}
+	task = readyTaskForConclusionForTest(t, dir, task)
 	if _, err := ConcludeConversationThread(dir, task.ID, "prt-task-lead", "done"); err != nil {
 		t.Fatal(err)
 	}
