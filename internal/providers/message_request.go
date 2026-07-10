@@ -14,7 +14,8 @@ func PrepareMessagesForModelRequest(model string, msgs []ChatMessage) ([]ChatMes
 	if err != nil {
 		return nil, err
 	}
-	compatible := ApplyModelMessageCompatibility(model, repaired)
+	projected := ApplyToolResultProjections(repaired)
+	compatible := ApplyModelMessageCompatibility(model, projected)
 	if err := ValidateToolCallHistory(compatible); err != nil {
 		return nil, fmt.Errorf("invalid message sequence after model compatibility: %w", err)
 	}
