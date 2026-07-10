@@ -319,6 +319,11 @@ func (s *Server) openConversationSubthreadAs(params ThreadOpenSubParams, created
 		// ids. The durable seq chooses the canonical reconstructed id stored on the
 		// Thread so badges still attach after restart.
 		anchorItemID = parentItem.ID
+		if existing, err := session.FindConversationThreadByParent(s.rt.SessionDir, threadID, params.ParentSeq); err == nil {
+			return existing, nil
+		} else if !errors.Is(err, session.ErrConversationThreadNotFound) {
+			return session.ConversationThread{}, err
+		}
 	}
 	if subthreadID != "" || anchorItemID != "" {
 		if thread, err := s.findConversationSubthread(threadID, subthreadID, anchorItemID); err == nil {
@@ -384,6 +389,9 @@ func (s *Server) openConversationSubthreadAs(params ThreadOpenSubParams, created
 		// uniqueness; when the other request won, return that durable Thread
 		// instead of surfacing a transient duplicate-key error.
 		if existing, findErr := s.findConversationSubthread(threadID, "", anchorItemID); findErr == nil {
+			return existing, nil
+		}
+		if existing, findErr := session.FindConversationThreadByParent(s.rt.SessionDir, threadID, parentSeq); findErr == nil {
 			return existing, nil
 		}
 		return session.ConversationThread{}, err

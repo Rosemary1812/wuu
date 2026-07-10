@@ -269,8 +269,8 @@ func CreateConversationThread(sessDir string, thread ConversationThread) (Conver
 		var existingID string
 		err := tx.QueryRow(`
 SELECT id FROM conversation_threads
-WHERE session_id = ? AND anchor_item_id = ?
-LIMIT 1`, thread.SessionID, thread.AnchorItemID).Scan(&existingID)
+WHERE session_id = ? AND (anchor_item_id = ? OR parent_seq = ?)
+LIMIT 1`, thread.SessionID, thread.AnchorItemID, thread.ParentSeq).Scan(&existingID)
 		switch {
 		case err == nil:
 			return ConversationThread{}, fmt.Errorf("%w: %q", ErrConversationThreadAnchorUsed, existingID)
@@ -377,6 +377,33 @@ WHERE id = ?`, id)
 			return ConversationThread{}, fmt.Errorf("%w: %q", ErrConversationThreadNotFound, id)
 		}
 		return ConversationThread{}, fmt.Errorf("find conversation thread: %w", err)
+	}
+	return thread, nil
+}
+
+// FindConversationThreadByParent resolves the durable one-message/one-Thread
+// identity. It survives renderer item-id changes across live turns and reloads.
+func FindConversationThreadByParent(sessDir, sessionID string, parentSeq int) (ConversationThread, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" || parentSeq <= 0 {
+		return ConversationThread{}, fmt.Errorf("%w: %q/%d", ErrConversationThreadNotFound, sessionID, parentSeq)
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return ConversationThread{}, err
+	}
+	defer db.Close()
+
+	row := db.QueryRow(`
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at, thread_owner_participant_id, escalated_at, escalated_by, summary, lead_participant_id, plan, exec_state, parent_seq, parent_author_participant_id
+FROM conversation_threads
+WHERE session_id = ? AND parent_seq = ?`, sessionID, parentSeq)
+	thread, err := scanConversationThread(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ConversationThread{}, fmt.Errorf("%w: %q/%d", ErrConversationThreadNotFound, sessionID, parentSeq)
+		}
+		return ConversationThread{}, fmt.Errorf("find conversation thread by parent: %w", err)
 	}
 	return thread, nil
 }

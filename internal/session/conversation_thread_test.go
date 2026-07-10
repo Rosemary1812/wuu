@@ -27,7 +27,16 @@ func createOpenConversationThreadForTest(t *testing.T, dir string, thread Conver
 		t.Fatalf("add thread owner to parent: %v", err)
 	}
 	if thread.ParentSeq <= 0 {
+		threads, err := ListConversationThreads(dir, thread.SessionID)
+		if err != nil {
+			t.Fatalf("list existing conversation threads: %v", err)
+		}
 		thread.ParentSeq = 1
+		for _, existing := range threads {
+			if existing.ParentSeq >= thread.ParentSeq {
+				thread.ParentSeq = existing.ParentSeq + 1
+			}
+		}
 	}
 	if strings.TrimSpace(thread.ParentAuthorParticipantID) == "" {
 		thread.ParentAuthorParticipantID = owner
@@ -144,6 +153,129 @@ func TestCreateConversationThreadRejectsDuplicateAnchor(t *testing.T) {
 	}
 }
 
+func TestCreateConversationThreadRejectsDuplicateParentWithDifferentAnchor(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "group", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	first := createOpenConversationThreadForTest(t, dir, ConversationThread{
+		SessionID: "group", AnchorItemID: "live-item", ParentSeq: 1,
+	})
+	_, err := CreateConversationThread(dir, ConversationThread{
+		SessionID: "group", AnchorItemID: "reloaded-item", ParentSeq: first.ParentSeq,
+		ParentAuthorParticipantID: first.ParentAuthorParticipantID,
+		ThreadOwnerParticipantID:  first.ThreadOwnerParticipantID,
+	})
+	if !errors.Is(err, ErrConversationThreadAnchorUsed) {
+		t.Fatalf("duplicate parent error = %v, want ErrConversationThreadAnchorUsed", err)
+	}
+	got, err := FindConversationThreadByParent(dir, "group", 1)
+	if err != nil || got.ID != first.ID {
+		t.Fatalf("FindConversationThreadByParent = %+v, %v; want %q", got, err, first.ID)
+	}
+}
+
+func TestConversationThreadParentMigrationMergesDifferentAnchors(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "group", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	first := createOpenConversationThreadForTest(t, dir, ConversationThread{
+		ID: "cth-first-parent", SessionID: "group", AnchorItemID: "live-item", ParentSeq: 1,
+	})
+	if err := UpsertParticipant(dir, participant.Participant{ID: "prt-worker", Kind: participant.KindNamed, Name: "Worker"}); err != nil {
+		t.Fatal(err)
+	}
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DROP INDEX idx_conversation_threads_parent_seq`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO conversation_threads (
+	id, session_id, anchor_item_id, title, status, created_by, created_at,
+	thread_owner_participant_id, parent_seq, parent_author_participant_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"cth-second-parent", "group", "reloaded-item", "duplicate", string(ConversationThreadOpen),
+		"human", timeText(first.CreatedAt.Add(time.Second)), first.ThreadOwnerParticipantID,
+		first.ParentSeq, first.ParentAuthorParticipantID); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO task_attempts (
+	id, session_id, task_id, node_id, assignee_id, ordinal, status,
+	failure_category, failure_message, created_at, started_at, finished_at
+) VALUES ('tat-first-parent', 'group', 'cth-first-parent', 'node-1', 'prt-worker', 1, 'succeeded', '', '', 1, 1, 1)`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO task_attempts (
+	id, session_id, task_id, node_id, assignee_id, ordinal, status,
+	failure_category, failure_message, created_at, started_at, finished_at
+) VALUES ('tat-duplicate-parent', 'group', 'cth-second-parent', 'node-1', 'prt-worker', 1, 'succeeded', '', '', 1, 1, 1)`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO participant_runs (id, participant_id, task_id, session_id, created_at, updated_at)
+VALUES ('run-duplicate-parent', 'prt-worker', 'cth-second-parent', 'group', '1', '1')`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO message_marks (session_id, seq, participant_id, kind, thread_id, at)
+VALUES ('group', 1, 'prt-worker', 'seen', 'cth-second-parent', 1)`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO resident_inbox (id, participant_id, envelope_json, created_at)
+VALUES ('inbox-duplicate-parent', 'prt-worker', '{"source_subthread_id":"cth-second-parent","text":"keep"}', 1)`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	db.Close()
+
+	threads, err := ListConversationThreads(dir, "group")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(threads) != 1 || threads[0].ID != first.ID {
+		t.Fatalf("parent migration threads = %+v, want only %q", threads, first.ID)
+	}
+	db, err = openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var attemptTaskID string
+	var attemptOrdinal int
+	if err := db.QueryRow(`SELECT task_id, ordinal FROM task_attempts WHERE id = 'tat-duplicate-parent'`).Scan(&attemptTaskID, &attemptOrdinal); err != nil {
+		t.Fatal(err)
+	}
+	if attemptTaskID != first.ID || attemptOrdinal != 2 {
+		t.Fatalf("merged attempt = %q/%d, want %q/2", attemptTaskID, attemptOrdinal, first.ID)
+	}
+	var runTaskID, markThreadID, inboxJSON string
+	if err := db.QueryRow(`SELECT task_id FROM participant_runs WHERE id = 'run-duplicate-parent'`).Scan(&runTaskID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT thread_id FROM message_marks WHERE session_id = 'group' AND seq = 1 AND participant_id = 'prt-worker' AND kind = 'seen'`).Scan(&markThreadID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT envelope_json FROM resident_inbox WHERE id = 'inbox-duplicate-parent'`).Scan(&inboxJSON); err != nil {
+		t.Fatal(err)
+	}
+	if runTaskID != first.ID || markThreadID != first.ID || !strings.Contains(inboxJSON, `"source_subthread_id":"`+first.ID+`"`) {
+		t.Fatalf("merged references = run %q mark %q inbox %q, want %q", runTaskID, markThreadID, inboxJSON, first.ID)
+	}
+}
+
 func TestConversationThreadAnchorMigrationMergesReachableState(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := CreateWithMetadata(dir, "group", t.TempDir()); err != nil {
@@ -165,6 +297,10 @@ func TestConversationThreadAnchorMigrationMergesReachableState(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`DROP INDEX idx_conversation_threads_anchor`); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DROP INDEX idx_conversation_threads_parent_seq`); err != nil {
 		db.Close()
 		t.Fatal(err)
 	}
@@ -392,7 +528,7 @@ func TestConversationThreadOwnerMigrationUsesOnlyValidCurrentAuthority(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, task := range []ConversationThread{
+	for index, task := range []ConversationThread{
 		{ID: "cth-task-valid", SessionID: "group", AnchorItemID: "task-valid", Status: ConversationThreadTask, LeadParticipantID: "prt-valid-lead", ParentAuthorParticipantID: "prt-valid-parent"},
 		{ID: "cth-task-invalid", SessionID: "group", AnchorItemID: "task-invalid", Status: ConversationThreadTask, LeadParticipantID: "prt-ghost", ParentAuthorParticipantID: "prt-valid-parent"},
 	} {
@@ -400,9 +536,9 @@ func TestConversationThreadOwnerMigrationUsesOnlyValidCurrentAuthority(t *testin
 INSERT INTO conversation_threads (
 	id, session_id, anchor_item_id, title, status, created_by, created_at,
 	escalated_at, lead_participant_id, parent_seq, parent_author_participant_id
-) VALUES (?, ?, ?, '', ?, '', ?, ?, ?, 1, ?)`, task.ID, task.SessionID,
+) VALUES (?, ?, ?, '', ?, '', ?, ?, ?, ?, ?)`, task.ID, task.SessionID,
 			task.AnchorItemID, string(task.Status), timeText(time.Now().UTC()),
-			timeText(time.Now().UTC()), task.LeadParticipantID,
+			timeText(time.Now().UTC()), task.LeadParticipantID, index+3,
 			task.ParentAuthorParticipantID); err != nil {
 			db.Close()
 			t.Fatalf("insert legacy task %s: %v", task.ID, err)

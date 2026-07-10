@@ -85,6 +85,24 @@ func TestOpenSubthreadUsesParentSeqAcrossLiveItemIDChanges(t *testing.T) {
 	}
 }
 
+func TestOpenSubthreadReusesLegacyAnchorByParentSeq(t *testing.T) {
+	srv, groupID, andy, _, _, _ := planFixture(t)
+	seq, canonicalAnchor := appendMainStreamAgentMessage(t, srv, groupID, andy, "旧 anchor")
+	legacy := createStoredOpenThreadForTest(t, srv, groupID, andy, "live-turn-item-1", seq)
+
+	opened, err := srv.openConversationSubthread(ThreadOpenSubParams{
+		ThreadID:     groupID,
+		AnchorItemID: canonicalAnchor,
+		ParentSeq:    seq,
+	})
+	if err != nil {
+		t.Fatalf("openConversationSubthread: %v", err)
+	}
+	if opened.ID != legacy.ID {
+		t.Fatalf("opened Thread = %q, want existing %q", opened.ID, legacy.ID)
+	}
+}
+
 func TestOpenSubthreadRejectsNonMessageAnchor(t *testing.T) {
 	srv, groupID, _, _, _, _ := planFixture(t)
 	if _, err := session.AppendHistoryRecordReturningSeq(srv.rt.SessionDir, groupID, session.HistoryRecord{

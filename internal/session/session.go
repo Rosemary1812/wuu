@@ -1150,6 +1150,9 @@ WHERE thread_owner_participant_id = ''
 	if err := ensureConversationThreadAnchorUniqueness(db); err != nil {
 		return err
 	}
+	if err := ensureConversationThreadParentUniqueness(db); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1205,96 +1208,13 @@ HAVING COUNT(*) > 1`)
 	}
 
 	for _, key := range keys {
-		threadRows, err := tx.Query(`
-SELECT id, session_id, anchor_item_id, title, status, created_by, created_at,
-       thread_owner_participant_id, escalated_at, escalated_by, summary,
-       lead_participant_id, plan, exec_state, parent_seq,
-       parent_author_participant_id
-FROM conversation_threads
-WHERE session_id = ? AND anchor_item_id = ?
-ORDER BY
-  CASE
-    WHEN status = 'resolved' AND escalated_at <> '' THEN 5
-    WHEN status = 'task' THEN 4
-    WHEN status = 'open' THEN 3
-    WHEN status = 'resolved' THEN 2
-    ELSE 1
-  END DESC,
-  CASE WHEN summary <> '' THEN 1 ELSE 0 END DESC,
-  created_at ASC,
-  id ASC`, key.sessionID, key.anchorItemID)
+		duplicates, err := loadConversationThreadDuplicates(tx,
+			"session_id = ? AND anchor_item_id = ?", key.sessionID, key.anchorItemID)
 		if err != nil {
 			return fmt.Errorf("load duplicate conversation threads: %w", err)
 		}
-		var duplicates []ConversationThread
-		for threadRows.Next() {
-			thread, err := scanConversationThread(threadRows)
-			if err != nil {
-				threadRows.Close()
-				return fmt.Errorf("scan duplicate conversation thread: %w", err)
-			}
-			duplicates = append(duplicates, thread)
-		}
-		if err := threadRows.Close(); err != nil {
-			return fmt.Errorf("close duplicate conversation threads: %w", err)
-		}
-		if err := threadRows.Err(); err != nil {
-			return fmt.Errorf("scan duplicate conversation threads: %w", err)
-		}
-		if len(duplicates) < 2 {
-			continue
-		}
-
-		keeper := duplicates[0]
-		for _, duplicate := range duplicates[1:] {
-			mergeConversationThreadMigrationFields(&keeper, duplicate)
-			if _, err := tx.Exec(`
-INSERT INTO conversation_thread_members (conversation_thread_id, participant_id, joined_at)
-SELECT ?, participant_id, joined_at
-FROM conversation_thread_members
-WHERE conversation_thread_id = ?
-ON CONFLICT(conversation_thread_id, participant_id) DO NOTHING`, keeper.ID, duplicate.ID); err != nil {
-				return fmt.Errorf("merge conversation thread members: %w", err)
-			}
-			if _, err := tx.Exec(`
-UPDATE session_messages
-SET thread_id = ?
-WHERE session_id = ? AND thread_id = ?`, keeper.ID, key.sessionID, duplicate.ID); err != nil {
-				return fmt.Errorf("merge conversation thread messages: %w", err)
-			}
-			var eventOffset int
-			if err := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) FROM task_events WHERE task_id = ?`, keeper.ID).Scan(&eventOffset); err != nil {
-				return fmt.Errorf("load conversation thread event offset: %w", err)
-			}
-			if _, err := tx.Exec(`
-UPDATE task_events
-SET task_id = ?, seq = seq + ?
-WHERE task_id = ?`, keeper.ID, eventOffset, duplicate.ID); err != nil {
-				return fmt.Errorf("merge conversation thread events: %w", err)
-			}
-			if _, err := tx.Exec(`DELETE FROM conversation_threads WHERE id = ?`, duplicate.ID); err != nil {
-				return fmt.Errorf("remove duplicate conversation thread: %w", err)
-			}
-		}
-		planJSON, err := json.Marshal(keeper.Plan)
-		if err != nil {
-			return fmt.Errorf("marshal merged conversation thread plan: %w", err)
-		}
-		if len(keeper.Plan) == 0 {
-			planJSON = nil
-		}
-		if _, err := tx.Exec(`
-UPDATE conversation_threads
-SET title = ?, created_by = ?, thread_owner_participant_id = ?,
-    escalated_at = ?, escalated_by = ?, summary = ?, lead_participant_id = ?,
-    plan = ?, exec_state = ?, parent_seq = ?,
-    parent_author_participant_id = ?
-WHERE id = ?`, keeper.Title, keeper.CreatedBy, keeper.ThreadOwnerParticipantID,
-			timeText(keeper.EscalatedAt), keeper.EscalatedBy, keeper.Summary,
-			keeper.LeadParticipantID, string(planJSON),
-			keeper.ExecState, keeper.ParentSeq, keeper.ParentAuthorParticipantID,
-			keeper.ID); err != nil {
-			return fmt.Errorf("persist merged conversation thread: %w", err)
+		if err := mergeConversationThreadDuplicates(tx, key.sessionID, duplicates); err != nil {
+			return err
 		}
 	}
 
@@ -1306,6 +1226,252 @@ WHERE anchor_item_id <> ''`); err != nil {
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit conversation thread anchor migration: %w", err)
+	}
+	return nil
+}
+
+// ensureConversationThreadParentUniqueness makes the durable parent message
+// address, not a transient rendered item id, the one-message/one-Thread key.
+// Rows created before parent_seq existed remain untouched at zero.
+func ensureConversationThreadParentUniqueness(db *sql.DB) error {
+	var installed int
+	if err := db.QueryRow(`
+SELECT EXISTS(
+	SELECT 1 FROM sqlite_master
+	WHERE type = 'index' AND name = 'idx_conversation_threads_parent_seq'
+)`).Scan(&installed); err != nil {
+		return fmt.Errorf("check conversation thread parent index: %w", err)
+	}
+	if installed != 0 {
+		return nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin conversation thread parent migration: %w", err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`
+SELECT session_id, parent_seq
+FROM conversation_threads
+WHERE parent_seq > 0
+GROUP BY session_id, parent_seq
+HAVING COUNT(*) > 1`)
+	if err != nil {
+		return fmt.Errorf("list duplicate conversation thread parents: %w", err)
+	}
+	type parentKey struct {
+		sessionID string
+		parentSeq int
+	}
+	var keys []parentKey
+	for rows.Next() {
+		var key parentKey
+		if err := rows.Scan(&key.sessionID, &key.parentSeq); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan duplicate conversation thread parent: %w", err)
+		}
+		keys = append(keys, key)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close duplicate conversation thread parents: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("scan duplicate conversation thread parents: %w", err)
+	}
+
+	for _, key := range keys {
+		duplicates, err := loadConversationThreadDuplicates(tx,
+			"session_id = ? AND parent_seq = ?", key.sessionID, key.parentSeq)
+		if err != nil {
+			return fmt.Errorf("load duplicate conversation thread parents: %w", err)
+		}
+		if err := mergeConversationThreadDuplicates(tx, key.sessionID, duplicates); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.Exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_threads_parent_seq
+ON conversation_threads(session_id, parent_seq)
+WHERE parent_seq > 0`); err != nil {
+		return fmt.Errorf("create conversation thread parent index: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit conversation thread parent migration: %w", err)
+	}
+	return nil
+}
+
+func loadConversationThreadDuplicates(tx *sql.Tx, where string, args ...any) ([]ConversationThread, error) {
+	threadRows, err := tx.Query(`
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at,
+       thread_owner_participant_id, escalated_at, escalated_by, summary,
+       lead_participant_id, plan, exec_state, parent_seq,
+       parent_author_participant_id
+FROM conversation_threads
+WHERE `+where+`
+ORDER BY
+  CASE
+    WHEN status = 'resolved' AND escalated_at <> '' THEN 5
+    WHEN status = 'task' THEN 4
+    WHEN status = 'open' THEN 3
+    WHEN status = 'resolved' THEN 2
+    ELSE 1
+  END DESC,
+  CASE WHEN summary <> '' THEN 1 ELSE 0 END DESC,
+  created_at ASC,
+  id ASC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	var duplicates []ConversationThread
+	for threadRows.Next() {
+		thread, err := scanConversationThread(threadRows)
+		if err != nil {
+			threadRows.Close()
+			return nil, fmt.Errorf("scan duplicate conversation thread: %w", err)
+		}
+		duplicates = append(duplicates, thread)
+	}
+	if err := threadRows.Close(); err != nil {
+		return nil, fmt.Errorf("close duplicate conversation threads: %w", err)
+	}
+	if err := threadRows.Err(); err != nil {
+		return nil, fmt.Errorf("scan duplicate conversation threads: %w", err)
+	}
+	return duplicates, nil
+}
+
+func mergeConversationThreadDuplicates(tx *sql.Tx, sessionID string, duplicates []ConversationThread) error {
+	if len(duplicates) < 2 {
+		return nil
+	}
+	keeper := duplicates[0]
+	for _, duplicate := range duplicates[1:] {
+		mergeConversationThreadMigrationFields(&keeper, duplicate)
+		if _, err := tx.Exec(`
+INSERT INTO conversation_thread_members (conversation_thread_id, participant_id, joined_at)
+SELECT ?, participant_id, joined_at
+FROM conversation_thread_members
+WHERE conversation_thread_id = ?
+ON CONFLICT(conversation_thread_id, participant_id) DO NOTHING`, keeper.ID, duplicate.ID); err != nil {
+			return fmt.Errorf("merge conversation thread members: %w", err)
+		}
+		if _, err := tx.Exec(`
+UPDATE session_messages
+SET thread_id = ?
+WHERE session_id = ? AND thread_id = ?`, keeper.ID, sessionID, duplicate.ID); err != nil {
+			return fmt.Errorf("merge conversation thread messages: %w", err)
+		}
+		if _, err := tx.Exec(`
+UPDATE message_marks
+SET thread_id = ?
+WHERE session_id = ? AND thread_id = ?`, keeper.ID, sessionID, duplicate.ID); err != nil {
+			return fmt.Errorf("merge conversation thread marks: %w", err)
+		}
+		if _, err := tx.Exec(`
+UPDATE participant_runs
+SET task_id = ?
+WHERE task_id = ?`, keeper.ID, duplicate.ID); err != nil {
+			return fmt.Errorf("merge conversation thread participant runs: %w", err)
+		}
+		if err := rewriteResidentInboxSubthread(tx, duplicate.ID, keeper.ID); err != nil {
+			return err
+		}
+		var eventOffset int
+		if err := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) FROM task_events WHERE task_id = ?`, keeper.ID).Scan(&eventOffset); err != nil {
+			return fmt.Errorf("load conversation thread event offset: %w", err)
+		}
+		if _, err := tx.Exec(`
+UPDATE task_events
+SET task_id = ?, seq = seq + ?
+WHERE task_id = ?`, keeper.ID, eventOffset, duplicate.ID); err != nil {
+			return fmt.Errorf("merge conversation thread events: %w", err)
+		}
+		if _, err := tx.Exec(`
+UPDATE task_attempts
+SET ordinal = ordinal + COALESCE((
+	SELECT MAX(existing.ordinal)
+	FROM task_attempts AS existing
+	WHERE existing.task_id = ?
+	  AND existing.node_id = task_attempts.node_id
+), 0)
+WHERE task_id = ?`, keeper.ID, duplicate.ID); err != nil {
+			return fmt.Errorf("resequence conversation thread attempts: %w", err)
+		}
+		if _, err := tx.Exec(`
+UPDATE task_attempts
+SET task_id = ?
+WHERE task_id = ?`, keeper.ID, duplicate.ID); err != nil {
+			return fmt.Errorf("merge conversation thread attempts: %w", err)
+		}
+		if _, err := tx.Exec(`DELETE FROM conversation_threads WHERE id = ?`, duplicate.ID); err != nil {
+			return fmt.Errorf("remove duplicate conversation thread: %w", err)
+		}
+	}
+	planJSON, err := json.Marshal(keeper.Plan)
+	if err != nil {
+		return fmt.Errorf("marshal merged conversation thread plan: %w", err)
+	}
+	if len(keeper.Plan) == 0 {
+		planJSON = nil
+	}
+	if _, err := tx.Exec(`
+UPDATE conversation_threads
+SET title = ?, created_by = ?, thread_owner_participant_id = ?,
+    escalated_at = ?, escalated_by = ?, summary = ?, lead_participant_id = ?,
+    plan = ?, exec_state = ?, parent_seq = ?,
+    parent_author_participant_id = ?
+WHERE id = ?`, keeper.Title, keeper.CreatedBy, keeper.ThreadOwnerParticipantID,
+		timeText(keeper.EscalatedAt), keeper.EscalatedBy, keeper.Summary,
+		keeper.LeadParticipantID, string(planJSON),
+		keeper.ExecState, keeper.ParentSeq, keeper.ParentAuthorParticipantID,
+		keeper.ID); err != nil {
+		return fmt.Errorf("persist merged conversation thread: %w", err)
+	}
+	return nil
+}
+
+func rewriteResidentInboxSubthread(tx *sql.Tx, fromID, toID string) error {
+	rows, err := tx.Query(`SELECT id, envelope_json FROM resident_inbox`)
+	if err != nil {
+		return fmt.Errorf("load resident inbox for conversation thread merge: %w", err)
+	}
+	type inboxUpdate struct{ id, payload string }
+	var updates []inboxUpdate
+	for rows.Next() {
+		var id, raw string
+		if err := rows.Scan(&id, &raw); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan resident inbox for conversation thread merge: %w", err)
+		}
+		var envelope map[string]any
+		if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+			continue
+		}
+		if value, _ := envelope["source_subthread_id"].(string); value != fromID {
+			continue
+		}
+		envelope["source_subthread_id"] = toID
+		payload, err := json.Marshal(envelope)
+		if err != nil {
+			rows.Close()
+			return fmt.Errorf("encode resident inbox %q for conversation thread merge: %w", id, err)
+		}
+		updates = append(updates, inboxUpdate{id: id, payload: string(payload)})
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close resident inbox for conversation thread merge: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("scan resident inbox for conversation thread merge: %w", err)
+	}
+	for _, update := range updates {
+		if _, err := tx.Exec(`UPDATE resident_inbox SET envelope_json = ? WHERE id = ?`, update.payload, update.id); err != nil {
+			return fmt.Errorf("rewrite resident inbox %q for conversation thread merge: %w", update.id, err)
+		}
 	}
 	return nil
 }
