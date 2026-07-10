@@ -1,9 +1,11 @@
 import { useState } from "react";
+import type { RuntimeContext } from "../shared/protocol";
 import type { WorkspacePanelView } from "./WorkspacePanels";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import {
   useWorkspaceViewTabs,
   workspaceDiffViewTab,
+  workspaceFileViewTab,
   workspaceToolViewTab,
   type WorkspaceViewTab,
 } from "./WorkspaceViewTabs";
@@ -27,6 +29,7 @@ export function useWorkspaceToolState({
   activateWorkspaceTool: (view: WorkspacePanelView) => void;
   openWorkspaceTool: (view: WorkspacePanelView) => void;
   openWorkspaceDiffTab: (input: { threadID: string; path: string; selection: TurnFileDiffSelection }) => void;
+  openWorkspaceFileTab: (input: { context: RuntimeContext; path: string }) => void;
   showWorkspaceToolPicker: () => void;
   focusWorkspaceViewTab: (id: string | undefined) => void;
   closeWorkspaceViewTab: (id: string) => void;
@@ -66,6 +69,11 @@ export function useWorkspaceToolState({
     openTab(workspaceDiffViewTab(input));
   }
 
+  function openWorkspaceFileTab(input: { context: RuntimeContext; path: string }): void {
+    openTab(workspaceFileViewTab(input));
+    setRightPanelOpenWithMotion(true);
+  }
+
   function showWorkspaceToolPicker(): void {
     focusTab(undefined);
     setRightPanelOpenWithMotion(true);
@@ -93,6 +101,7 @@ export function useWorkspaceToolState({
     activateWorkspaceTool,
     openWorkspaceTool,
     openWorkspaceDiffTab,
+    openWorkspaceFileTab,
     showWorkspaceToolPicker,
     focusWorkspaceViewTab: focusTab,
     closeWorkspaceViewTab: closeTab,

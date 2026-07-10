@@ -13,7 +13,7 @@ import {
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { FileDiff, FolderOpen, Globe, Maximize2, Minimize2, Plus, ShieldCheck, Terminal, X } from "lucide-react";
+import { FileDiff, FileText, FolderOpen, Globe, Maximize2, Minimize2, Plus, ShieldCheck, Terminal, X } from "lucide-react";
 import type { GitStatusResult, RuntimeContext } from "../shared/protocol";
 import { TurnFileDiffPanel } from "./TurnFileDiffPanel";
 import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
@@ -451,16 +451,19 @@ function workspaceToolFor(view: WorkspacePanelView): (typeof WORKSPACE_TOOL_ITEM
 }
 
 function workspaceViewTabLabel(tab: WorkspaceViewTab): string {
-  return tab.kind === "diff" ? tab.title : workspaceToolFor(tab.kind).title;
+  return tab.kind === "diff" || tab.kind === "file" ? tab.title : workspaceToolFor(tab.kind).title;
 }
 
 function workspaceViewTabTooltip(tab: WorkspaceViewTab): string {
-  return tab.kind === "diff" ? tab.path : workspaceToolFor(tab.kind).title;
+  return tab.kind === "diff" || tab.kind === "file" ? tab.path : workspaceToolFor(tab.kind).title;
 }
 
 function WorkspaceViewTabIcon({ tab, className }: { tab: WorkspaceViewTab; className?: string }): JSX.Element {
   if (tab.kind === "diff") {
     return <FileDiff className={className} />;
+  }
+  if (tab.kind === "file") {
+    return <FileText className={className} />;
   }
   return <WorkspaceToolIcon view={tab.kind} className={className} />;
 }

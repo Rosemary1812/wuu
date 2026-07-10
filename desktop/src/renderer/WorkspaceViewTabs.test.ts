@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { RuntimeContext } from "../shared/protocol";
 import type { ToolDiffPreviewFileDiff } from "./ToolDiffPreview";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import {
@@ -10,10 +11,18 @@ import {
   reorderViewTabs,
   workspaceDiffViewTab,
   workspaceDiffViewTabID,
+  workspaceFileViewTab,
+  workspaceFileViewTabID,
   workspaceFileBasename,
   workspaceToolViewTab,
   type WorkspaceViewTabsState,
 } from "./WorkspaceViewTabs";
+
+const projectContext: RuntimeContext = {
+  kind: "project",
+  project_id: "project-1",
+  cwd: "/repo/project",
+};
 
 function makeDiff(path: string): ToolDiffPreviewFileDiff {
   return {
@@ -56,6 +65,34 @@ describe("workspaceDiffViewTab", () => {
   });
 });
 
+describe("workspaceFileViewTab", () => {
+  it("derives a deterministic resource id from the runtime root and path", () => {
+    const tab = workspaceFileViewTab({
+      context: projectContext,
+      path: "src/renderer/App.tsx",
+    });
+
+    expect(tab).toEqual({
+      kind: "file",
+      id: workspaceFileViewTabID(projectContext, "src/renderer/App.tsx"),
+      context: projectContext,
+      path: "src/renderer/App.tsx",
+      title: "App.tsx",
+    });
+  });
+
+  it("keeps the same relative path in separate worktrees as independent resources", () => {
+    const worktreeContext: RuntimeContext = {
+      ...projectContext,
+      cwd: "/repo/.wuu/worktrees/feature/project",
+    };
+
+    expect(workspaceFileViewTabID(projectContext, "src/App.tsx")).not.toBe(
+      workspaceFileViewTabID(worktreeContext, "src/App.tsx"),
+    );
+  });
+});
+
 describe("workspaceFileBasename", () => {
   it("returns the trailing path segment", () => {
     expect(workspaceFileBasename("src/renderer/App.tsx")).toBe("App.tsx");
@@ -65,6 +102,22 @@ describe("workspaceFileBasename", () => {
 });
 
 describe("openViewTab", () => {
+  it("dedupes and focuses the same file resource without duplicating its tab", () => {
+    const fileTab = workspaceFileViewTab({
+      context: projectContext,
+      path: "README.md",
+    });
+    let state = openViewTab(initialWorkspaceViewTabsState, fileTab);
+    state = openViewTab(state, workspaceToolViewTab("terminal"));
+    state = openViewTab(
+      state,
+      workspaceFileViewTab({ context: projectContext, path: "README.md" }),
+    );
+
+    expect(state.tabs.map((tab) => tab.id)).toEqual([fileTab.id, "terminal"]);
+    expect(state.activeTabID).toBe(fileTab.id);
+  });
+
   it("appends and focuses a new diff tab", () => {
     const state = openViewTab(
       initialWorkspaceViewTabsState,

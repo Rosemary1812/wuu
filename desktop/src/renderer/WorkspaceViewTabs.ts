@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
+import type { RuntimeContext } from "../shared/protocol";
 import type { WorkspacePanelView } from "./WorkspacePanels";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 
@@ -25,7 +26,15 @@ export type WorkspaceDiffViewTab = {
   selection: TurnFileDiffSelection;
 };
 
-export type WorkspaceViewTab = WorkspaceToolViewTab | WorkspaceDiffViewTab;
+export type WorkspaceFileViewTab = {
+  kind: "file";
+  id: string;
+  context: RuntimeContext;
+  path: string;
+  title: string;
+};
+
+export type WorkspaceViewTab = WorkspaceToolViewTab | WorkspaceDiffViewTab | WorkspaceFileViewTab;
 
 export type WorkspaceViewTabsState = {
   tabs: WorkspaceViewTab[];
@@ -67,6 +76,30 @@ export function workspaceDiffViewTab({
     path,
     title: workspaceFileBasename(path),
     selection,
+  };
+}
+
+export function workspaceFileViewTabID(context: RuntimeContext, path: string): string {
+  const contextKey =
+    context.kind === "project"
+      ? `project:${context.project_id}:${context.cwd}`
+      : `no_project:${context.cwd}`;
+  return `file:${encodeURIComponent(contextKey)}:${encodeURIComponent(path)}`;
+}
+
+export function workspaceFileViewTab({
+  context,
+  path,
+}: {
+  context: RuntimeContext;
+  path: string;
+}): WorkspaceFileViewTab {
+  return {
+    kind: "file",
+    id: workspaceFileViewTabID(context, path),
+    context,
+    path,
+    title: workspaceFileBasename(path),
   };
 }
 
