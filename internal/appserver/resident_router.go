@@ -553,8 +553,8 @@ func (s *Server) routeSubthreadParticipantMessage(parentThreadID, subthreadID st
 	}
 	// Reply-subthread (cth) traffic stays on the weak-isolation push path: a
 	// post pushes+wakes the reply's participant subset. Task threads are the
-	// exception. Under the task rail's two-channel contract (plan §T7, red line
-	// §4.5) every plain participant post inside a task — progress updates,
+	// exception. Under the Task workflow's two-channel contract, every plain
+	// participant post inside a task — progress updates,
 	// results, questions to the room — is PUBLIC PROGRESS for the human to read
 	// and must NOT wake the working teammates. The only things that wake a node
 	// are the engine's plan-advance wake (a node completing — via piece_done or at

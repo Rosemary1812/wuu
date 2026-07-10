@@ -79,9 +79,9 @@ func mainStreamHasParticipantPost(t *testing.T, srv *Server, threadID, substr st
 func TestNoteNodeActivityRefreshesActivityNotProgress(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "调研", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "调研")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "查资料", Assignee: mia},
@@ -138,9 +138,9 @@ func TestNoteNodeActivityRefreshesActivityNotProgress(t *testing.T) {
 func TestCommentaryAndToolResultRefreshActivityNotProgress(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "调研", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "调研")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "查资料", Assignee: mia},
@@ -203,9 +203,9 @@ func TestCommentaryAndToolResultRefreshActivityNotProgress(t *testing.T) {
 func TestNoteNodeProgressViaPieceDone(t *testing.T) {
 	srv, groupID, andy, mia, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "两步任务", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "两步任务")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "起草", Assignee: han},
@@ -254,9 +254,9 @@ func TestNoteNodeProgressViaPieceDone(t *testing.T) {
 func TestPublicUpdateRefreshesProgressWithoutWakingTeammate(t *testing.T) {
 	srv, groupID, andy, mia, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "并行任务", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "并行任务")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	// p1 (Mia, active) plus p2 (Han, gated on p1). SetPlan pulls both into the
 	// task thread, so Han is a teammate who must NOT be woken by Mia's update.
@@ -296,15 +296,15 @@ func TestPublicUpdateRefreshesProgressWithoutWakingTeammate(t *testing.T) {
 }
 
 // The final lead summary (plan §T9 §5): both pieces done → the engine lands
-// completed and wakes the lead → the lead files update_status → the summary
+// completed and wakes the lead → the lead files conclude → the summary
 // bubbles to the parent MAIN stream, task_completed is recorded, the task
 // resolves, and NO other group member gets a pending wake from the conclusion.
 func TestFinalSummaryReachesParentWakesNoTeammate(t *testing.T) {
 	srv, groupID, andy, mia, han, vera := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "收尾任务", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "收尾任务")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	// Two independent pieces so both dispatch at once.
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{

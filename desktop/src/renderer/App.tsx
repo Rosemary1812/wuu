@@ -601,8 +601,8 @@ export function App(): JSX.Element {
   // per active chat thread (see effect below); non-active panes never need it.
   const [chatSubthreads, setChatSubthreads] = useState<{
     threadID: string;
-    // byAnchor 服务消息行的 reply 徽标;standalone task 没有锚点,由任务
-    // 看板 tab 自己拉取列表展示。
+    // byAnchor feeds the Thread badge and Task activity card attached to the
+    // source message. Every workflow item has a real group-message anchor.
     byAnchor: Map<string, ConversationSubthread>;
   } | null>(null);
   // Bump on every thread/subUpdated notification: an open task-board tab

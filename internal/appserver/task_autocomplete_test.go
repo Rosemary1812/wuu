@@ -50,9 +50,9 @@ func taskMembers(t *testing.T, srv *Server, taskID string) map[string]bool {
 func TestCompletedTurnAutoCompletesNodeWithoutPieceDone(t *testing.T) {
 	srv, groupID, andy, mia, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "自动完成", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "自动完成")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "上游", Assignee: mia},
@@ -107,9 +107,9 @@ func TestCompletedTurnAutoCompletesNodeWithoutPieceDone(t *testing.T) {
 func TestCompletedTurnAutoCompletesWithNilHandoffWhenSilent(t *testing.T) {
 	srv, groupID, andy, mia, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "静默完成", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "静默完成")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "上游", Assignee: mia},
@@ -142,9 +142,9 @@ func TestCompletedTurnAutoCompletesWithNilHandoffWhenSilent(t *testing.T) {
 func TestAutoCompleteSkipsSameOwnerDownstreamActivatedInTurn(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "同人上下游", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "同人上下游")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	// A completely ordinary plan: research then write, both by Mia.
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
@@ -190,9 +190,9 @@ func TestAutoCompleteSkipsSameOwnerDownstreamActivatedInTurn(t *testing.T) {
 func TestAutoCompleteSkipsUpstreamReactivatedByNeedUpstream(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "同人回退", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "同人回退")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "上游产出", Assignee: mia, Prompt: "起草"},
@@ -238,15 +238,15 @@ func TestAutoCompleteSkipsUpstreamReactivatedByNeedUpstream(t *testing.T) {
 // executing; a blocked task (a sibling failed) is skipped, so the lead's untouched
 // active sibling is NOT auto-completed by the lead's recovery turn.
 func TestAutoCompleteSkipsLeadRecoveryTurnOnBlockedTask(t *testing.T) {
-	srv, groupID, andy, mia, _, _ := planFixture(t)
+	srv, groupID, andy, mia, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "领导恢复", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "领导恢复")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
-	// Two parallel pieces: p1 to the lead (Andy), p2 to Mia.
+	// Two parallel worker pieces. The lead owns neither.
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
-		{ID: "p1", Title: "领导的活", Assignee: andy},
+		{ID: "p1", Title: "另一位队友的活", Assignee: han},
 		{ID: "p2", Title: "队友的活", Assignee: mia},
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
@@ -270,7 +270,7 @@ func TestAutoCompleteSkipsLeadRecoveryTurnOnBlockedTask(t *testing.T) {
 		synthCompletedTurn("我在处理"), false, snapshot)
 
 	if got := loadPiece(t, srv, task.ID, "p1").Status; got != session.TaskPieceActive {
-		t.Fatalf("p1 status = %q, want STILL active — the lead's recovery turn must not complete its sibling", got)
+		t.Fatalf("p1 status = %q, want STILL active — the lead's recovery turn must not complete a worker node", got)
 	}
 }
 
@@ -279,9 +279,9 @@ func TestAutoCompleteSkipsLeadRecoveryTurnOnBlockedTask(t *testing.T) {
 func TestAutoCompleteSkipsWhenTurnAskedQuestion(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "提问阻塞", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "提问阻塞")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "需要澄清", Assignee: mia},
@@ -304,9 +304,9 @@ func TestAutoCompleteSkipsWhenTurnAskedQuestion(t *testing.T) {
 func TestAutoCompleteSkipsWhenTaskLeftExecuting(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "转人类", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "转人类")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "要人类决策", Assignee: mia},
@@ -344,9 +344,9 @@ func TestAutoCompleteSkipsWhenTaskLeftExecuting(t *testing.T) {
 func TestAutoCompleteNoOpWhenPieceAlreadyDoneViaPieceDone(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "已经完成", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "已经完成")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "一次搞定", Assignee: mia},

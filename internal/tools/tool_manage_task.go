@@ -11,11 +11,10 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
-// ManageTaskTool is the agent task rail (2026-07-06 agent-task-rail design):
-// coordination state lives on task cards — owner, status, thread — so chat
-// never has to carry it. The schema is static for every participant-speech
-// agent (prompt-cache stable); availability is gated at execute time on the
-// injected TaskManager backend, mirroring manage_participant's group actions.
+// ManageTaskTool is the group Thread -> Task workflow surface for named agents.
+// A discussion starts from a real group message, its immutable Thread owner may
+// promote it, and that same named agent becomes Task lead. DMs, standalone
+// tasks, and work-claim races are intentionally not representable.
 type ManageTaskTool struct {
 	env *Env
 }
@@ -27,47 +26,39 @@ func (t *ManageTaskTool) Name() string { return "manage_task" }
 func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "manage_task",
-		Description: "Run the task board of a group thread or of your own DM. A task is trackable work with one owner at a time; claiming it is how work is divided — never coordinate by chat message. In your DM the board is yours alone: tasks are born owned by you (claim is implied) and unclaim is refused. action=create opens a task in the thread (anchor_seq anchors it on a main-stream message; omit for a standalone task, e.g. when splitting work; claim=true takes ownership in the same call). action=escalate converts an open discussion reply (subthread_id) you belong to into a board task once the discussion has converged — e.g. the user says it is ready; claim=true self-owns it. action=claim takes ownership of an unclaimed task — if someone else already owns it, you lost the race: move on silently, never duplicate their work. action=unclaim releases ownership. action=update_status files the task's conclusion with a summary (the one-line conclusion; result + how it was verified) and COMPLETES the task — that filing is the completion report, no review step follows. action=need_human flags the task for a decision that genuinely belongs to the human (subthread_id + reason); it halts nothing mechanically and wakes nobody — use it ONLY for decisions you truly cannot make. action=unfollow stops receiving this task thread's traffic once your part is done. action=list shows the group's board. Ownership is work responsibility only — it grants no authority over other agents.",
+		Description: "Manage the Group -> Thread -> Task workflow. action=open_thread starts a focused discussion on a real group-chat message (thread_id + anchor_seq); it never creates a Task directly. A named parent author owns that Thread; for a human parent, the calling named agent becomes owner. action=promote is owner-only and converts that same Thread identity into a Task; the owner becomes immutable Task lead. action=conclude is lead-only and publishes the verified conclusion. DMs, standalone Tasks, claim/unclaim, and lead reassignment do not exist. action=list shows the group's open Threads and active Tasks. Leads use set_plan to orchestrate other named agents; assignees use piece_done for an early or structured handoff. need_human and need_upstream are explicit exception paths; unfollow leaves a Task after your assigned work is over.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
 				"action": map[string]any{
 					"type":        "string",
-					"enum":        []string{"create", "escalate", "claim", "unclaim", "update_status", "need_human", "need_upstream", "unfollow", "list", "set_plan", "piece_done"},
-					"description": "create opens a task (group members only); escalate converts a converged open discussion reply into a task; claim/unclaim take/release work ownership; update_status files the conclusion and completes the task; need_human flags the task for a decision only the human can make; unfollow leaves the task's push subset; list shows the board. As a task LEAD: set_plan declares a team plan (pieces with assignees + dependencies + per-piece prompt) on a task and the engine dispatches the ready pieces by @-waking their assignees; as an ASSIGNEE: your piece completes when your turn ends (you do not need piece_done to finish it) — piece_done reports it done EARLY and/or hands the structured result to the downstream node(s) (that handoff is the next node's real input), then the engine advances the plan (dispatches the next dependents, or wakes the lead when all pieces are done). If you are blocked, signal it before your turn ends: need_human, need_upstream, or a post_message kind=question. need_upstream bounces your piece (piece_id) back to its upstream node(s) when the handoff you were given is insufficient (reason names what is missing) — the engine re-runs the upstream and re-dispatches you with its fresh handoff; use it instead of silently working around a bad handoff.",
+					"enum":        []string{"open_thread", "promote", "conclude", "need_human", "need_upstream", "unfollow", "list", "set_plan", "piece_done"},
+					"description": "open_thread starts convergence on an anchored group message; promote is Thread-owner-only and makes that owner Task lead; conclude is Task-lead-only and completes the Task with a verified summary; list shows open Threads and active Tasks. set_plan, piece_done, need_human, need_upstream, and unfollow operate only inside the promoted Task.",
 				},
 				"thread_id": map[string]any{
 					"type":        "string",
-					"description": "Group thread id. Required for create and list.",
+					"description": "Parent group-chat id. Required for open_thread and list. DM ids are rejected.",
 				},
 				"subthread_id": map[string]any{
 					"type":        "string",
-					"description": "Task id (cth-…). Required for claim, unclaim, update_status, need_human, and unfollow.",
+					"description": "Thread/Task id (cth-…). Required for promote and Task actions.",
 				},
 				"title": map[string]any{
 					"type":        "string",
-					"description": "Task title. Required for create; write it for humans scanning the board.",
+					"description": "Optional focused title for open_thread or promote.",
 				},
 				"anchor_seq": map[string]any{
 					"type":        "integer",
-					"description": "Main-stream message seq to anchor the task on (the seq shown on the incoming_message). One message hosts at most one task/reply. Omit for a standalone task.",
-				},
-				"claim": map[string]any{
-					"type":        "boolean",
-					"description": "With create: take ownership of the new task in the same call. Use when you will do the work yourself; leave unset when dispatching for teammates to claim.",
+					"description": "Main-stream human or named-agent message seq shown on incoming_message. Required for open_thread. One message hosts exactly one durable Thread; repeated opens return it without changing owner.",
 				},
 				"summary": map[string]any{
 					"type":        "string",
-					"description": "With update_status: the one-line conclusion — the result and how it was verified. Filing it completes the task. Required.",
+					"description": "With conclude: the result and how it was verified. Filing it completes the Task. Required.",
 				},
 				"reason": map[string]any{
 					"type":        "string",
 					"description": "Required for need_human (why this decision belongs to the human) and need_upstream (what is missing from the upstream handoff).",
-				},
-				"ack_collision_id": map[string]any{
-					"type":        "string",
-					"description": "With create on a standalone task (anchor_seq omitted): STRICT id-match escape hatch for the same-group same-title collision check (issue #4 v3). When the same title already exists in the thread as an unfinished task, pass the exact existing task id (from the conflict error message) to persist a same-titled duplicate (work-splitting case). Any other value — empty string, wrong id, made-up value — keeps the dedup hard-block. Usually you should claim the existing task (manage_task action=claim) or pick a distinguishing title instead.",
 				},
 				"plan": map[string]any{
 					"type":        "array",
@@ -118,88 +109,61 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 	}
 	manager := t.env.TaskManager
 	if manager == nil {
-		return "", errors.New("manage_task: task rail not configured in this environment")
+		return "", errors.New("manage_task: group workflow not configured in this environment")
 	}
 	if strings.TrimSpace(t.env.ParticipantID) == "" {
 		return "", errors.New("manage_task: participant identity is required")
 	}
 	var params struct {
-		Action         string       `json:"action"`
-		ThreadID       string       `json:"thread_id"`
-		SubthreadID    string       `json:"subthread_id"`
-		Title          string       `json:"title"`
-		AnchorSeq      int          `json:"anchor_seq"`
-		Claim          bool         `json:"claim"`
-		AckCollisionID string       `json:"ack_collision_id"`
-		Summary        string       `json:"summary"`
-		Reason         string       `json:"reason"`
-		Plan           []TaskPiece  `json:"plan"`
-		PieceID        string       `json:"piece_id"`
-		Handoff        *TaskHandoff `json:"handoff"`
+		Action      string       `json:"action"`
+		ThreadID    string       `json:"thread_id"`
+		SubthreadID string       `json:"subthread_id"`
+		Title       string       `json:"title"`
+		AnchorSeq   int          `json:"anchor_seq"`
+		Summary     string       `json:"summary"`
+		Reason      string       `json:"reason"`
+		Plan        []TaskPiece  `json:"plan"`
+		PieceID     string       `json:"piece_id"`
+		Handoff     *TaskHandoff `json:"handoff"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
 		return "", fmt.Errorf("manage_task: parse args: %w", err)
 	}
 
 	switch strings.ToLower(strings.TrimSpace(params.Action)) {
-	case "create":
+	case "open_thread":
 		if strings.TrimSpace(params.ThreadID) == "" {
-			return "", errors.New("create: thread_id is required")
+			return "", errors.New("open_thread: thread_id is required")
 		}
-		if strings.TrimSpace(params.Title) == "" {
-			return "", errors.New("create: title is required")
+		if params.AnchorSeq <= 0 {
+			return "", errors.New("open_thread: anchor_seq is required")
 		}
-		view, err := manager.CreateTask(ctx, params.ThreadID, params.AnchorSeq, params.Title, params.Claim, params.AckCollisionID)
+		view, err := manager.OpenThread(ctx, params.ThreadID, params.AnchorSeq, params.Title)
 		if err != nil {
 			return "", err
 		}
-		return marshalTaskResult("create", map[string]any{"task": view})
-	case "escalate":
+		return marshalTaskResult("open_thread", map[string]any{"thread": view})
+	case "promote":
 		if strings.TrimSpace(params.SubthreadID) == "" {
-			return "", errors.New("escalate: subthread_id is required")
+			return "", errors.New("promote: subthread_id is required")
 		}
-		view, err := manager.EscalateTask(ctx, params.SubthreadID, params.Title, params.Claim)
+		view, err := manager.PromoteThread(ctx, params.SubthreadID, params.Title)
 		if err != nil {
 			return "", err
 		}
-		return marshalTaskResult("escalate", map[string]any{"task": view})
-	case "claim":
+		return marshalTaskResult("promote", map[string]any{"task": view})
+	case "conclude":
 		if strings.TrimSpace(params.SubthreadID) == "" {
-			return "", errors.New("claim: subthread_id is required")
-		}
-		view, claimed, err := manager.ClaimTask(ctx, params.SubthreadID)
-		if err != nil {
-			return "", err
-		}
-		if !claimed {
-			return marshalTaskResult("claim", map[string]any{
-				"claimed": false,
-				"task":    view,
-				"note":    "already owned by " + firstNonEmpty(view.OwnerName, view.Owner) + " — move on, do not duplicate their work and do not reply about it",
-			})
-		}
-		return marshalTaskResult("claim", map[string]any{"claimed": true, "task": view})
-	case "unclaim":
-		if strings.TrimSpace(params.SubthreadID) == "" {
-			return "", errors.New("unclaim: subthread_id is required")
-		}
-		view, err := manager.UnclaimTask(ctx, params.SubthreadID)
-		if err != nil {
-			return "", err
-		}
-		return marshalTaskResult("unclaim", map[string]any{"task": view})
-	case "update_status":
-		if strings.TrimSpace(params.SubthreadID) == "" {
-			return "", errors.New("update_status: subthread_id is required")
+			return "", errors.New("conclude: subthread_id is required")
 		}
 		if strings.TrimSpace(params.Summary) == "" {
-			return "", errors.New("update_status: summary is required (the one-line conclusion)")
+			return "", errors.New("conclude: summary is required (result and verification)")
 		}
 		view, err := manager.ConcludeTask(ctx, params.SubthreadID, params.Summary)
 		if err != nil {
 			return "", err
 		}
-		return marshalTaskResult("update_status", map[string]any{"task": view})
+		return marshalTaskResult("conclude", map[string]any{"task": view})
 	case "need_human":
 		if strings.TrimSpace(params.SubthreadID) == "" {
 			return "", errors.New("need_human: subthread_id is required")
@@ -239,11 +203,11 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 		if strings.TrimSpace(params.ThreadID) == "" {
 			return "", errors.New("list: thread_id is required")
 		}
-		views, err := manager.ListTasks(ctx, params.ThreadID)
+		views, err := manager.ListWorkflowThreads(ctx, params.ThreadID)
 		if err != nil {
 			return "", err
 		}
-		return marshalTaskResult("list", map[string]any{"tasks": views})
+		return marshalTaskResult("list", map[string]any{"threads": views})
 	case "set_plan":
 		if strings.TrimSpace(params.SubthreadID) == "" {
 			return "", errors.New("set_plan: subthread_id is required")
@@ -294,7 +258,7 @@ func (t *ManageTaskTool) Classify(string) ToolClassification {
 		ReadOnly:        false,
 		ConcurrencySafe: false,
 		Risk:            ToolRiskLow,
-		Reason:          "manages task-board coordination state (owner, status) inside the session store",
+		Reason:          "manages group Thread and Task workflow state inside the session store",
 	}
 }
 

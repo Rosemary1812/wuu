@@ -54,9 +54,9 @@ func TestTaskPlanFanInDispatchAndHandoff(t *testing.T) {
 
 	// Andy (lead) creates the team task and declares the plan: p1/p2/p3 are
 	// independent; p4 (verify) depends on all three.
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "M2 移动推送", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "M2 移动推送")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	plan := []tools.TaskPiece{
 		{ID: "p1", Title: "推送协议+host派发", Assignee: han},
@@ -121,9 +121,9 @@ func TestTaskPlanFanInDispatchAndHandoff(t *testing.T) {
 func TestTaskPlanWakesLeadWhenAllDone(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "小任务", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "小任务")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	// Single-piece plan assigned to Mia.
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
@@ -137,17 +137,17 @@ func TestTaskPlanWakesLeadWhenAllDone(t *testing.T) {
 		t.Fatalf("piece_done: %v", err)
 	}
 	hist := waitForResidentDMHistoryContains(t, srv, andy, "Every piece of task")
-	if !strings.Contains(historyUserContent(hist), "update_status") {
-		t.Fatalf("lead wake should tell it to wrap up via update_status")
+	if !strings.Contains(historyUserContent(hist), "action=conclude") {
+		t.Fatalf("lead wake should tell it to file the verified conclusion")
 	}
 }
 
 func TestTaskPlanPieceDoneOnlyByAssignee(t *testing.T) {
 	srv, groupID, andy, mia, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "活", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "活")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "某块", Assignee: mia},
@@ -171,9 +171,9 @@ func TestTaskPlanPieceDoneOnlyByAssignee(t *testing.T) {
 func TestSetPlanRejectsCyclesSelfAndForwardDeps(t *testing.T) {
 	srv, groupID, andy, mia, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "dep 校验", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "dep 校验")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 
 	bad := []struct {

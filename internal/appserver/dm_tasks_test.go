@@ -8,12 +8,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
-// DM tasks (task-rail design §7, 2026-07-07): the task rail opens to DM
-// threads with the multi-party half removed — born owned by the DM's
-// resident agent, no claim race, no ownerless wake broadcast, unclaim
-// refused. Group behaviour is covered by the existing task tests; these
-// pin the DM-specific semantics.
-
 func dmTaskFixture(t *testing.T) (srv *Server, dmThreadID, ada, bea string) {
 	t.Helper()
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
@@ -31,84 +25,24 @@ func dmTaskFixture(t *testing.T) (srv *Server, dmThreadID, ada, bea string) {
 	return srv, dmThreadID, ada, bea
 }
 
-func TestDMTaskBornOwnedFullChain(t *testing.T) {
-	srv, dmThreadID, ada, bea := dmTaskFixture(t)
+func TestDMHasNoThreadOrTaskWorkflow(t *testing.T) {
+	srv, dmThreadID, ada, _ := dmTaskFixture(t)
 	manager := srv.residentTaskManager(ada)
-
-	// create with claim=false: DM forces born-owned anyway (§7 claim 恒真).
-	view, err := manager.CreateTask(context.Background(), dmThreadID, 0, "整理接口文档", false, "")
-	if err != nil {
-		t.Fatalf("CreateTask in DM: %v", err)
+	if _, err := manager.OpenThread(context.Background(), dmThreadID, 1, "nope"); err == nil || !strings.Contains(err.Error(), "not a group") {
+		t.Fatalf("open_thread in DM = %v, want group-only refusal", err)
 	}
-	if view.Owner != ada {
-		t.Fatalf("DM task must be born owned by the resident agent, owner=%q want %q", view.Owner, ada)
-	}
-	if view.Status != string(session.ConversationThreadTask) {
-		t.Fatalf("DM task status = %q, want task", view.Status)
-	}
-
-	// No wake broadcast: a DM has no group members to call. Nobody's inbox
-	// gains an envelope from this create (enqueue is synchronous, so an
-	// empty inbox now is proof).
-	for name, id := range map[string]string{"ada": ada, "bea": bea} {
-		if pending, err := session.PendingResidentEnvelopes(srv.rt.SessionDir, id, 0); err != nil {
-			t.Fatalf("PendingResidentEnvelopes %s: %v", name, err)
-		} else if len(pending) != 0 {
-			t.Fatalf("DM task create must wake nobody, %s has %d pending envelope(s)", name, len(pending))
-		}
-	}
-
-	// list returns the DM's board.
-	views, err := manager.ListTasks(context.Background(), dmThreadID)
-	if err != nil {
-		t.Fatalf("ListTasks in DM: %v", err)
-	}
-	if len(views) != 1 || views[0].ID != view.ID {
-		t.Fatalf("DM board = %+v, want exactly the created task", views)
-	}
-
-	// unclaim refused: a DM task has exactly one possible executor.
-	if _, err := manager.UnclaimTask(context.Background(), view.ID); err == nil {
-		t.Fatal("unclaim of a DM task must be refused")
-	} else if !strings.Contains(err.Error(), "DM") {
-		t.Fatalf("unclaim refusal should say why (DM), got: %v", err)
-	}
-
-	// Direct task creation is a temporary legacy path. Acquire its orchestration
-	// lead before filing the conclusion; promoted Threads receive this lead
-	// atomically from their owner instead.
-	if led, becameLead, err := session.SetConversationThreadLeadIfEmpty(srv.rt.SessionDir, view.ID, ada); err != nil {
-		t.Fatalf("acquire legacy DM task lead: %v", err)
-	} else if !becameLead || led.LeadParticipantID != ada {
-		t.Fatalf("legacy DM task lead = %+v became=%v, want Ada", led, becameLead)
-	}
-
-	// update_status files the conclusion and completes the task immediately —
-	// no review gate, same state machine as groups.
-	concluded, err := manager.ConcludeTask(context.Background(), view.ID, "文档整理完,已核对接口清单")
-	if err != nil {
-		t.Fatalf("ConcludeTask in DM: %v", err)
-	}
-	if concluded.Status != string(session.ConversationThreadResolved) {
-		t.Fatalf("DM task after update_status = %q, want resolved (filing IS completion)", concluded.Status)
-	}
-	if concluded.ExecState != session.ExecStateCompleted {
-		t.Fatalf("DM task exec state after conclude = %q, want completed", concluded.ExecState)
-	}
-	if concluded.Summary != "文档整理完,已核对接口清单" {
-		t.Fatalf("DM task summary = %q, want the filed conclusion", concluded.Summary)
+	if _, err := manager.ListWorkflowThreads(context.Background(), dmThreadID); err == nil || !strings.Contains(err.Error(), "not a group") {
+		t.Fatalf("list in DM = %v, want group-only refusal", err)
 	}
 }
 
-func TestDMTaskBoardIsPrivateToItsResident(t *testing.T) {
-	srv, dmThreadID, _, bea := dmTaskFixture(t)
-
-	// Bea is not this DM's resident agent: create and list are both refused.
-	outsider := srv.residentTaskManager(bea)
-	if _, err := outsider.CreateTask(context.Background(), dmThreadID, 0, "偷塞任务", false, ""); err == nil {
-		t.Fatal("another agent must not create tasks on someone else's DM board")
+func TestOrdinarySessionHasNoThreadOrTaskWorkflow(t *testing.T) {
+	srv, _, ada, _ := dmTaskFixture(t)
+	workID := "work-session"
+	if _, err := session.CreateWithMetadata(srv.rt.SessionDir, workID, t.TempDir()); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := outsider.ListTasks(context.Background(), dmThreadID); err == nil {
-		t.Fatal("another agent must not list someone else's DM board")
+	if _, err := srv.residentTaskManager(ada).OpenThread(context.Background(), workID, 1, "nope"); err == nil || !strings.Contains(err.Error(), "not a group") {
+		t.Fatalf("open_thread in ordinary session = %v, want group-only refusal", err)
 	}
 }

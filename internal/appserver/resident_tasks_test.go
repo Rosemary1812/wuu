@@ -4,26 +4,19 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/session"
 )
 
-// Task-board wake (task-rail design §6): a task landing on the board with no
-// owner must wake the group's members, or a task created while nobody is
-// mid-turn sits unclaimed forever. These tests drive the resident task
-// manager directly (the manage_task backend) and observe the wake through
-// the same DM-history lens as the router tests.
-
 func newTaskWakeFixture(t *testing.T) (srv *Server, groupID, ada, bea string) {
 	t.Helper()
-	// Empty provider response: a woken resident produces no final answer, so
-	// no fallback reply cascades and the test observes only the wake routing.
 	rt := newTestRuntime(t, &fakeClient{response: providersResponse("")})
 	srv = New(rt, &lockedBuffer{})
 	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 	ada = saveNamedParticipant(t, rt, "Ada", "reviewer", "")
 	bea = saveNamedParticipant(t, rt, "Bea", "reviewer", "")
-	groupID = startNamedGroupThreadForTest(t, srv, "task-wake").ID
+	groupID = startNamedGroupThreadForTest(t, srv, "task-workflow").ID
 	for _, participantID := range []string{ada, bea} {
 		if err := session.AddThreadMember(rt.SessionDir, groupID, participantID); err != nil {
 			t.Fatalf("AddThreadMember: %v", err)
@@ -32,104 +25,84 @@ func newTaskWakeFixture(t *testing.T) (srv *Server, groupID, ada, bea string) {
 	return srv, groupID, ada, bea
 }
 
-func TestTaskBoardWakeOnBornOpenCreate(t *testing.T) {
+func TestAgentOpenThreadUsesRealAnchorAndStableOwner(t *testing.T) {
 	srv, groupID, ada, bea := newTaskWakeFixture(t)
+	seq, _ := appendMainStreamAgentMessage(t, srv, groupID, bea, "Bea 的方案")
 
-	view, err := srv.residentTaskManager(ada).CreateTask(context.Background(), groupID, 0, "fix login flake", false, "")
+	first, err := srv.residentTaskManager(ada).OpenThread(context.Background(), groupID, seq, "收敛方案")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatal(err)
 	}
-
-	// Bea is woken by a from="system" board envelope pointing at the task cth.
-	history := waitForResidentDMHistoryContains(t, srv, bea, `from="system"`)
-	meta := findEnvelopeMetaRecord(t, history)
-	if meta.SourceThreadID != groupID || meta.SourceSubthreadID != view.ID {
-		t.Fatalf("wake envelope meta = %+v, want source=%s subthread=%s", meta, groupID, view.ID)
+	if first.Status != string(session.ConversationThreadOpen) || first.ThreadOwner != bea {
+		t.Fatalf("opened Thread = %+v, want open owned by parent author %q", first, bea)
 	}
-	if meta.Addressed {
-		t.Fatalf("board wake must not be addressed (claim-or-silence governs), meta=%+v", meta)
+	history := waitForResidentDMHistoryContains(t, srv, bea, "You own Thread")
+	if !strings.Contains(historyUserContent(history), first.ID) {
+		t.Fatalf("owner wake does not point to Thread %q: %s", first.ID, historyUserContent(history))
 	}
-	if meta.SenderParticipantID != ada {
-		t.Fatalf("wake provenance = %q, want creator %q", meta.SenderParticipantID, ada)
+	second, err := srv.residentTaskManager(ada).OpenThread(context.Background(), groupID, seq, "换一个标题")
+	if err != nil {
+		t.Fatal(err)
 	}
-	joined := historyUserContent(history)
-	for _, want := range []string{`sender="task board"`, "fix login flake", view.ID, "action=claim"} {
-		if !strings.Contains(joined, want) {
-			t.Fatalf("wake envelope content missing %q:\n%s", want, joined)
-		}
-	}
-
-	// The creator dispatched the task; it is not woken by its own board write.
-	if pending, err := session.PendingResidentEnvelopes(srv.rt.SessionDir, ada, 0); err != nil {
-		t.Fatalf("PendingResidentEnvelopes Ada: %v", err)
-	} else if len(pending) != 0 {
-		t.Fatalf("creator was woken by its own task create: %d pending envelope(s)", len(pending))
-	}
-	if _, adaHistory := findDMHistoryIfExists(t, srv, ada); len(adaHistory) != 0 {
-		t.Fatalf("creator got a DM turn from its own task create: %+v", adaHistory)
+	if second.ID != first.ID || second.ThreadOwner != bea {
+		t.Fatalf("idempotent open changed identity/owner: first=%+v second=%+v", first, second)
 	}
 }
 
-func TestTaskBoardWakeSkippedWhenBornOwnedThenFiresOnUnclaim(t *testing.T) {
-	srv, groupID, ada, bea := newTaskWakeFixture(t)
-	manager := srv.residentTaskManager(ada)
-
-	view, err := manager.CreateTask(context.Background(), groupID, 0, "self-owned refactor", true, "")
-	if err != nil {
-		t.Fatalf("CreateTask claim=true: %v", err)
-	}
-	// Wake routing enqueues synchronously inside CreateTask, so an empty inbox
-	// now is proof a born-owned task woke nobody.
-	if pending, err := session.PendingResidentEnvelopes(srv.rt.SessionDir, bea, 0); err != nil {
-		t.Fatalf("PendingResidentEnvelopes Bea: %v", err)
-	} else if len(pending) != 0 {
-		t.Fatalf("born-owned task must wake nobody, Bea has %d pending envelope(s)", len(pending))
-	}
-	if _, beaHistory := findDMHistoryIfExists(t, srv, bea); len(beaHistory) != 0 {
-		t.Fatalf("born-owned task started a DM turn for Bea: %+v", beaHistory)
-	}
-
-	// Releasing ownership puts the task back on the board ownerless — that
-	// transition is the same failure mode as born-open and wakes the group.
-	if _, err := manager.UnclaimTask(context.Background(), view.ID); err != nil {
-		t.Fatalf("UnclaimTask: %v", err)
-	}
-	history := waitForResidentDMHistoryContains(t, srv, bea, "released back to the board")
-	meta := findEnvelopeMetaRecord(t, history)
-	if meta.SourceSubthreadID != view.ID {
-		t.Fatalf("unclaim wake points at %q, want task %q", meta.SourceSubthreadID, view.ID)
-	}
-}
-
-func TestTaskBoardWakeOnBornOpenEscalate(t *testing.T) {
-	srv, groupID, ada, bea := newTaskWakeFixture(t)
-
-	discussion, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
-		SessionID: groupID, AnchorItemID: "seq-1", ParentSeq: 1,
-		ParentAuthorParticipantID: ada, ThreadOwnerParticipantID: ada,
-		Title: "改造落地验收", CreatedBy: humanReactionParticipantID,
+func TestAgentOpenThreadOnHumanMessageMakesCallerOwner(t *testing.T) {
+	srv, groupID, ada, _ := newTaskWakeFixture(t)
+	seq, err := session.AppendHistoryRecordReturningSeq(srv.rt.SessionDir, groupID, session.HistoryRecord{
+		Role: "user", Content: "请先讨论清楚", At: time.Now().UTC(),
 	})
 	if err != nil {
-		t.Fatalf("CreateConversationThread: %v", err)
+		t.Fatal(err)
 	}
-
-	view, err := srv.residentTaskManager(ada).EscalateTask(context.Background(), discussion.ID, "", false)
+	view, err := srv.residentTaskManager(ada).OpenThread(context.Background(), groupID, seq, "")
 	if err != nil {
-		t.Fatalf("EscalateTask: %v", err)
+		t.Fatal(err)
 	}
-
-	history := waitForResidentDMHistoryContains(t, srv, bea, `from="system"`)
-	meta := findEnvelopeMetaRecord(t, history)
-	if meta.SourceSubthreadID != view.ID {
-		t.Fatalf("escalate wake points at %q, want task %q", meta.SourceSubthreadID, view.ID)
-	}
-	if !strings.Contains(historyUserContent(history), "改造落地验收") {
-		t.Fatalf("escalate wake should carry the task title, history:\n%s", historyUserContent(history))
+	if view.ThreadOwner != ada {
+		t.Fatalf("human-message Thread owner = %q, want caller %q", view.ThreadOwner, ada)
 	}
 }
 
-// historyUserContent joins the raw (model-visible) user-record contents of a
-// DM history, for asserting on rendered envelope text.
+func TestAgentCannotCreateStandaloneThreadOrTask(t *testing.T) {
+	srv, groupID, ada, _ := newTaskWakeFixture(t)
+	if _, err := srv.residentTaskManager(ada).OpenThread(context.Background(), groupID, 0, "standalone"); err == nil || !strings.Contains(err.Error(), "anchor_seq is required") {
+		t.Fatalf("standalone open = %v, want anchor refusal", err)
+	}
+}
+
+func TestOnlyThreadOwnerPromotesAndListShowsBothPhases(t *testing.T) {
+	srv, groupID, ada, bea := newTaskWakeFixture(t)
+	seq, _ := appendMainStreamAgentMessage(t, srv, groupID, ada, "Ada 的方案")
+	opened, err := srv.residentTaskManager(bea).OpenThread(context.Background(), groupID, seq, "收敛方案")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.residentTaskManager(bea).PromoteThread(context.Background(), opened.ID, "执行方案"); err == nil || !strings.Contains(err.Error(), "only its owner") {
+		t.Fatalf("non-owner promote = %v, want owner refusal", err)
+	}
+	promoted, err := srv.residentTaskManager(ada).PromoteThread(context.Background(), opened.ID, "执行方案")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if promoted.ID != opened.ID || promoted.Lead != ada || promoted.ThreadOwner != ada {
+		t.Fatalf("promoted Task = %+v", promoted)
+	}
+	seq2, _ := appendMainStreamAgentMessage(t, srv, groupID, bea, "另一个讨论")
+	if _, err := srv.residentTaskManager(bea).OpenThread(context.Background(), groupID, seq2, "继续讨论"); err != nil {
+		t.Fatal(err)
+	}
+	views, err := srv.residentTaskManager(ada).ListWorkflowThreads(context.Background(), groupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(views) != 2 {
+		t.Fatalf("workflow list = %+v, want one open Thread and one Task", views)
+	}
+}
+
 func historyUserContent(history []session.HistoryRecord) string {
 	var parts []string
 	for _, rec := range history {

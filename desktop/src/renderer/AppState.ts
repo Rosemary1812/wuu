@@ -108,8 +108,8 @@ type SessionTab =
       title: string;
     }
   | {
-      // 群任务看板 tab:列出一个群线程的全部 task/review 状态子线程
-      // (含无锚点的 standalone)。threadID 指向它所属的群。
+      // Group board tab: lists the group's anchored Threads and Tasks.
+      // threadID points to the owning group conversation.
       id: string;
       kind: "board";
       context: RuntimeContext;

@@ -181,10 +181,10 @@ func TestEscalateTaskLeadIsParentAuthorNamedAgent(t *testing.T) {
 		t.Fatalf("fresh reply status = %q, want open", cth.Status)
 	}
 
-	if _, err := srv.residentTaskManager(mia).EscalateTask(context.Background(), cth.ID, "", false); err == nil || !strings.Contains(err.Error(), "only its owner may promote") {
+	if _, err := srv.residentTaskManager(mia).PromoteThread(context.Background(), cth.ID, ""); err == nil || !strings.Contains(err.Error(), "only its owner may promote") {
 		t.Fatalf("non-owner promotion must be refused, got %v", err)
 	}
-	if _, err := srv.residentTaskManager(andy).EscalateTask(context.Background(), cth.ID, "", false); err != nil {
+	if _, err := srv.residentTaskManager(andy).PromoteThread(context.Background(), cth.ID, ""); err != nil {
 		t.Fatalf("owner EscalateTask: %v", err)
 	}
 	got, err := session.FindConversationThreadByID(srv.rt.SessionDir, cth.ID)
@@ -220,7 +220,7 @@ func TestEscalateHumanParentTaskUsesExplicitOwnerAsLead(t *testing.T) {
 		t.Fatalf("openConversationSubthread: %v", err)
 	}
 
-	if _, err := srv.residentTaskManager(mia).EscalateTask(context.Background(), cth.ID, "", false); err != nil {
+	if _, err := srv.residentTaskManager(mia).PromoteThread(context.Background(), cth.ID, ""); err != nil {
 		t.Fatalf("EscalateTask: %v", err)
 	}
 	got, err := session.FindConversationThreadByID(srv.rt.SessionDir, cth.ID)
@@ -245,7 +245,7 @@ func TestEscalateTaskOwnerMayPromoteOwnThread(t *testing.T) {
 		t.Fatalf("openConversationSubthread: %v", err)
 	}
 
-	if _, err := srv.residentTaskManager(andy).EscalateTask(context.Background(), cth.ID, "", false); err != nil {
+	if _, err := srv.residentTaskManager(andy).PromoteThread(context.Background(), cth.ID, ""); err != nil {
 		t.Fatalf("owner promotion failed: %v", err)
 	}
 	got, err := session.FindConversationThreadByID(srv.rt.SessionDir, cth.ID)

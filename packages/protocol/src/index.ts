@@ -971,8 +971,9 @@ export type ThreadContextCompositionResult = {
   segment_counts?: ContextSegmentCountSummary;
 };
 
-// "task" 是 reply 升级为 task 后的执行态(讨论态 open -> 执行态 task -> 收尾
-// resolved)。agent 提交结论(update_status)即完成,没有中间待验收态。
+// "task" is the execution phase after a Thread is promoted
+// (open -> task -> resolved). The lead concludes it directly; there is no
+// intermediate approval state.
 // 历史库中可能残留已废弃状态的行:后端原样透传,前端把未知状态当运行中处理。
 export type ConversationSubthreadStatus = "open" | "task" | "resolved";
 
@@ -1004,9 +1005,6 @@ export type ConversationSubthread = {
   // 重新选择的第二个负责人。runtime workflow 网关按
   // (caller == lead && status == task) 放行。
   lead_participant_id?: string;
-  // task rail 的认领人(claim CAS 的赢家):干活与汇报的唯一责任人。与 lead
-  // 刻意分离——owner 不带编排权(2026-07-06 agent-task-rail 设计)。空=无人认领。
-  owner_participant_id?: string;
   // 执行轴(与审批轴 status 分离):planning / executing / blocked /
   // needs_human / completed / failed;空 = 尚未进入执行(普通 reply)。
   exec_state?: string;

@@ -14,8 +14,8 @@ import (
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
-// residentTaskManager implements tools.TaskManager for one resident
-// participant (the agent task rail, 2026-07-06 design). Like
+// residentTaskManager implements the group Thread/Task workflow for one named
+// participant. Like
 // residentGroupManager, a fresh instance is wired per turn configuration.
 // Every mutation notifies the parent thread's subthread listeners so an open
 // board/reply panel stays live. There are deliberately no fallbacks: a caller
@@ -33,229 +33,87 @@ func (s *Server) residentTaskManager(participantID string) *residentTaskManager 
 	}
 }
 
-func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, anchorSeq int, title string, claim bool, ackCollisionID string) (tools.TaskView, error) {
+func (m *residentTaskManager) OpenThread(ctx context.Context, threadID string, anchorSeq int, title string) (tools.TaskView, error) {
 	_ = ctx
-	if err := m.ready("create"); err != nil {
+	if err := m.ready("open_thread"); err != nil {
 		return tools.TaskView{}, err
 	}
 	threadID = strings.TrimSpace(threadID)
 	title = strings.TrimSpace(title)
 	if threadID == "" {
-		return tools.TaskView{}, errors.New("create: thread_id is required")
+		return tools.TaskView{}, errors.New("open_thread: thread_id is required")
 	}
-	if title == "" {
-		return tools.TaskView{}, errors.New("create: title is required")
+	if anchorSeq <= 0 {
+		return tools.TaskView{}, errors.New("open_thread: anchor_seq is required; standalone Threads and Tasks do not exist")
 	}
-	meta, err := m.boardThreadMeta("create", threadID)
-	if err != nil {
+	if _, err := m.boardThreadMeta("open_thread", threadID); err != nil {
 		return tools.TaskView{}, err
 	}
-	// DM tasks are born owned (task-rail design §7): the DM has exactly one
-	// possible executor — the resident agent itself — so the claim parameter
-	// is semantically always true and the claim race cannot exist.
-	if !meta.Group {
-		claim = true
-	}
-	sessionDir := m.server.rt.SessionDir
-
-	anchorItemID := ""
-	parentSeq := 0
-	parentAuthor := ""
-	if anchorSeq > 0 {
-		anchorItem, err := m.server.mainStreamItemForSeq(threadID, anchorSeq)
-		if err != nil {
-			return tools.TaskView{}, fmt.Errorf("create: %w", err)
-		}
-		anchorItemID = anchorItem.ID
-		// Bind the task to the message it was created from: its seq and author
-		// (T3). The seq is the anchor seq the caller passed; the author is read
-		// off the resolved item.
-		parentSeq = anchorSeq
-		parentAuthor = parentAuthorParticipantID(anchorItem)
-		// One anchor hosts at most one cth (open-reply dedupe invariant) — a
-		// second task on the same message must be standalone instead.
-		if existing, err := m.server.findConversationSubthread(threadID, "", anchorItemID); err == nil {
-			return tools.TaskView{}, fmt.Errorf("create: message seq %d already hosts reply/task %q; create a standalone task instead (omit anchor_seq)", anchorSeq, existing.ID)
-		} else if !errors.Is(err, session.ErrConversationThreadNotFound) {
-			return tools.TaskView{}, fmt.Errorf("create: %w", err)
-		}
-	}
-
-	// Standalone collision check (issue #4 v3): when anchorSeq == 0 (no
-	// message to anchor the dedup on), a same-titled unfinished task in the
-	// same thread would silently spawn a duplicate card. The user spec
-	// calls for a hard-block that lets the creator decide (claim it OR
-	// persist with ack_collision_id citing the existing task id).
-	//
-	// ack_collision_id is a STRICT id-match escape hatch — it must equal
-	// the existing task's id, NOT a generic ack or a made-up value. The
-	// strict-matching rule is the 5th-test red line (`TestStandaloneCreateAckCollisionMismatchRefuses`
-	// in standalone_create_dedup_test.go): "ack" cannot degrade into a
-	// generic force bypass, because that would defeat the dedup entirely.
-	// Anchored tasks skip this check entirely — one anchor, one cth,
-	// period.
-	//
-	// The collision set is deliberately narrowed to status == task: that is
-	// the only state that means "unfinished and claimable". A resolved task
-	// is history — re-creating its title is a legitimate redo, not a
-	// duplicate. Open discussion replies never collide (they are not tasks
-	// yet). Anchored cths that escalated to task carry the same status and
-	// are caught by the same filter, so the dedup surface covers anchored
-	// and standalone same-title collisions alike.
-	if anchorSeq == 0 {
-		if existing := findUnfinishedTaskByNormalizedTitle(m.server.rt.SessionDir, threadID, normalizeTitleForDedup(title)); existing != nil {
-			if ackCollisionID != existing.ID {
-				return tools.TaskView{}, fmt.Errorf("create: title %q already in use by open task %q in this group; claim it with manage_task action=claim, or pass ack_collision_id=%q to create a duplicate", title, existing.ID, existing.ID)
-			}
-			// ack_collision_id matched the existing task's id: caller has
-			// explicitly ack'd this collision. Fall through to write the
-			// duplicate cth (work-splitting same-topic case).
-		}
-	}
-
-	thread, err := session.CreateLegacyTaskConversationThread(sessionDir, session.ConversationThread{
-		SessionID:                 threadID,
-		AnchorItemID:              anchorItemID,
-		Title:                     title,
-		Status:                    session.ConversationThreadTask,
-		CreatedBy:                 m.participantID,
-		EscalatedBy:               m.participantID,
-		ParentSeq:                 parentSeq,
-		ParentAuthorParticipantID: parentAuthor,
-	})
+	anchorItem, err := m.server.mainStreamItemForSeq(threadID, anchorSeq)
 	if err != nil {
-		return tools.TaskView{}, fmt.Errorf("create: %w", err)
+		return tools.TaskView{}, fmt.Errorf("open_thread: %w", err)
 	}
-	// The creator follows the task it dispatched (completion signal); a
-	// non-named creator cannot happen here (participantID is required).
-	if err := session.AddConversationThreadMember(sessionDir, thread.ID, m.participantID); err != nil {
-		return tools.TaskView{}, fmt.Errorf("create: follow created task: %w", err)
+	if anchorItem.Type != ThreadItemUserMessage && anchorItem.Type != ThreadItemParticipantMsg {
+		return tools.TaskView{}, fmt.Errorf("open_thread: message seq %d is %q; only a human or named-agent message can anchor a Thread", anchorSeq, anchorItem.Type)
 	}
-	if claim {
-		claimed, ok, err := session.ClaimConversationThread(sessionDir, thread.ID, m.participantID)
-		if err != nil {
-			return tools.TaskView{}, fmt.Errorf("create: self-claim: %w", err)
-		}
-		if !ok {
-			return tools.TaskView{}, fmt.Errorf("create: self-claim lost to %q on a fresh task — this should be impossible", claimed.OwnerParticipantID)
-		}
-		thread = claimed
+	requestedOwner := ""
+	if parentAuthorParticipantID(anchorItem) == humanReactionParticipantID {
+		requestedOwner = m.participantID
 	}
-	m.server.recordTaskEventFor(thread, "", session.TaskEventTaskCreated, m.participantID,
-		fmt.Sprintf("task created: %q", firstNonEmpty(title, "untitled")), "")
+	thread, err := m.server.openConversationSubthreadAs(ThreadOpenSubParams{
+		ThreadID: threadID, AnchorItemID: anchorItem.ID, Title: title,
+		ThreadOwnerParticipantID: requestedOwner,
+	}, m.participantID)
+	if err != nil {
+		return tools.TaskView{}, fmt.Errorf("open_thread: %w", err)
+	}
 	m.server.notifySubthreadUpdated(threadID, thread.ID)
-	m.server.wakeTaskBoardForOwnerlessTask(thread, m.participantID, "opened on the board")
 	return m.taskView(thread), nil
 }
 
-// EscalateTask promotes an open discussion reply to a board task once the
+// PromoteThread promotes an open discussion Thread to a board Task once the
 // conversation in it has converged. Only the persisted Thread owner may do so;
 // that same owner becomes task lead atomically. Provenance (EscalatedBy) records
 // the converting agent. Promotion starts execution immediately in planning and
 // wakes the lead to author the plan.
-func (m *residentTaskManager) EscalateTask(ctx context.Context, subthreadID, title string, claim bool) (tools.TaskView, error) {
+func (m *residentTaskManager) PromoteThread(ctx context.Context, subthreadID, title string) (tools.TaskView, error) {
 	_ = ctx
-	if err := m.ready("escalate"); err != nil {
+	if err := m.ready("promote"); err != nil {
 		return tools.TaskView{}, err
 	}
-	thread, meta, err := m.memberTask("escalate", subthreadID)
+	thread, _, err := m.memberTask("promote", subthreadID)
 	if err != nil {
 		return tools.TaskView{}, err
 	}
 	if thread.Status != session.ConversationThreadOpen {
-		return tools.TaskView{}, fmt.Errorf("escalate: reply %q is %q; only an open discussion reply can be converted to a task", thread.ID, thread.Status)
+		return tools.TaskView{}, fmt.Errorf("promote: Thread %q is %q; only an open Thread can be promoted", thread.ID, thread.Status)
 	}
 	if owner := strings.TrimSpace(thread.ThreadOwnerParticipantID); owner == "" || owner != m.participantID {
-		return tools.TaskView{}, fmt.Errorf("escalate: Thread %q is owned by %q; only its owner may promote it", thread.ID, owner)
-	}
-	// DM tasks are born owned (task-rail design §7) — same forcing as create.
-	if !meta.Group {
-		claim = true
+		return tools.TaskView{}, fmt.Errorf("promote: Thread %q is owned by %q; only its owner may promote it", thread.ID, owner)
 	}
 	sessionDir := m.server.rt.SessionDir
 	escalated, err := session.EscalateConversationThread(sessionDir, thread.ID, m.participantID, title)
 	if err != nil {
-		return tools.TaskView{}, fmt.Errorf("escalate: %w", err)
-	}
-	if err := session.AddConversationThreadMember(sessionDir, escalated.ID, m.participantID); err != nil {
-		return tools.TaskView{}, fmt.Errorf("escalate: follow task: %w", err)
-	}
-	if claim {
-		claimed, ok, err := session.ClaimConversationThread(sessionDir, escalated.ID, m.participantID)
-		if err != nil {
-			return tools.TaskView{}, fmt.Errorf("escalate: self-claim: %w", err)
-		}
-		if !ok {
-			return tools.TaskView{}, fmt.Errorf("escalate: self-claim lost to %q immediately after escalation", claimed.OwnerParticipantID)
-		}
-		escalated = claimed
+		return tools.TaskView{}, fmt.Errorf("promote: %w", err)
 	}
 	m.server.recordTaskEventFor(escalated, "", session.TaskEventTaskCreated, m.participantID,
-		fmt.Sprintf("reply escalated to task: %q", firstNonEmpty(strings.TrimSpace(escalated.Title), "untitled")), "")
+		fmt.Sprintf("Thread promoted to Task: %q", firstNonEmpty(strings.TrimSpace(escalated.Title), "untitled")), "")
 	m.server.notifySubthreadUpdated(escalated.SessionID, escalated.ID)
-	m.server.wakeTaskBoardForOwnerlessTask(escalated, m.participantID, "opened on the board")
 	m.server.wakePlanLeadForPlanning(escalated)
 	return m.taskView(escalated), nil
 }
 
-func (m *residentTaskManager) ClaimTask(ctx context.Context, subthreadID string) (tools.TaskView, bool, error) {
-	_ = ctx
-	if err := m.ready("claim"); err != nil {
-		return tools.TaskView{}, false, err
-	}
-	thread, _, err := m.memberTask("claim", subthreadID)
-	if err != nil {
-		return tools.TaskView{}, false, err
-	}
-	claimed, ok, err := session.ClaimConversationThread(m.server.rt.SessionDir, thread.ID, m.participantID)
-	if err != nil {
-		return tools.TaskView{}, false, err
-	}
-	if ok {
-		// The new owner follows its task's traffic.
-		if err := session.AddConversationThreadMember(m.server.rt.SessionDir, claimed.ID, m.participantID); err != nil {
-			return tools.TaskView{}, false, fmt.Errorf("claim: follow claimed task: %w", err)
-		}
-		m.server.notifySubthreadUpdated(claimed.SessionID, claimed.ID)
-	}
-	return m.taskView(claimed), ok, nil
-}
-
-func (m *residentTaskManager) UnclaimTask(ctx context.Context, subthreadID string) (tools.TaskView, error) {
-	_ = ctx
-	if err := m.ready("unclaim"); err != nil {
-		return tools.TaskView{}, err
-	}
-	thread, meta, err := m.memberTask("unclaim", subthreadID)
-	if err != nil {
-		return tools.TaskView{}, err
-	}
-	// A DM task has exactly one possible executor, so releasing ownership is
-	// meaningless — the board would hold a task nobody else can ever claim
-	// (task-rail design §7). Refuse loudly instead of stranding it.
-	if !meta.Group {
-		return tools.TaskView{}, fmt.Errorf("unclaim: task %q lives in a DM; a DM task has exactly one possible owner and cannot be released — finish it (update_status) or leave it as is", thread.ID)
-	}
-	released, err := session.UnclaimConversationThread(m.server.rt.SessionDir, thread.ID, m.participantID)
-	if err != nil {
-		return tools.TaskView{}, err
-	}
-	m.server.notifySubthreadUpdated(released.SessionID, released.ID)
-	m.server.wakeTaskBoardForOwnerlessTask(released, m.participantID, "released back to the board")
-	return m.taskView(released), nil
-}
-
 // ConcludeTask files the task's conclusion and completes it in one act (the
-// manage_task update_status action): a single store CAS resolves the task —
+// manage_task conclude action): a single store CAS resolves the task —
 // only the lead may conclude — then the summary is published to the parent
 // main stream under the caller's identity. Filing IS the completion report;
 // there is no review gate or human approval step.
 func (m *residentTaskManager) ConcludeTask(ctx context.Context, subthreadID, summary string) (tools.TaskView, error) {
 	_ = ctx
-	if err := m.ready("update_status"); err != nil {
+	if err := m.ready("conclude"); err != nil {
 		return tools.TaskView{}, err
 	}
-	thread, _, err := m.memberTask("update_status", subthreadID)
+	thread, _, err := m.memberTask("conclude", subthreadID)
 	if err != nil {
 		return tools.TaskView{}, err
 	}
@@ -270,12 +128,12 @@ func (m *residentTaskManager) ConcludeTask(ctx context.Context, subthreadID, sum
 		Kind:          "result",
 		Text:          concluded.Summary,
 	}); err != nil {
-		return tools.TaskView{}, fmt.Errorf("update_status: bubble conclusion: %w", err)
+		return tools.TaskView{}, fmt.Errorf("conclude: publish conclusion: %w", err)
 	}
 	// Execution is over. Best-effort: the resolved status is the durable
 	// completion signal; a failed exec-state write must not undo it.
 	if err := session.SetConversationThreadExecState(m.server.rt.SessionDir, concluded.ID, session.ExecStateCompleted); err != nil {
-		providers.DebugLogf("update_status: mark exec completed %q: %v", concluded.ID, err)
+		providers.DebugLogf("conclude: mark exec completed %q: %v", concluded.ID, err)
 	} else {
 		concluded.ExecState = session.ExecStateCompleted
 	}
@@ -433,7 +291,7 @@ func (m *residentTaskManager) UnfollowTask(ctx context.Context, subthreadID stri
 	return nil
 }
 
-func (m *residentTaskManager) ListTasks(ctx context.Context, threadID string) ([]tools.TaskView, error) {
+func (m *residentTaskManager) ListWorkflowThreads(ctx context.Context, threadID string) ([]tools.TaskView, error) {
 	_ = ctx
 	if err := m.ready("list"); err != nil {
 		return nil, err
@@ -451,7 +309,7 @@ func (m *residentTaskManager) ListTasks(ctx context.Context, threadID string) ([
 	}
 	views := make([]tools.TaskView, 0, len(threads))
 	for _, thread := range threads {
-		if thread.Status == session.ConversationThreadTask {
+		if thread.Status == session.ConversationThreadOpen || thread.Status == session.ConversationThreadTask {
 			views = append(views, m.taskView(thread))
 		}
 	}
@@ -477,27 +335,12 @@ func (m *residentTaskManager) SetPlan(ctx context.Context, subthreadID string, p
 	if thread.Status != session.ConversationThreadTask {
 		return tools.TaskView{}, fmt.Errorf("set_plan: task %q is %q, not an active task; only a live task can be planned", thread.ID, thread.Status)
 	}
-	// Plan authority = the lead's orchestration right (plan §T6): the lead is
-	// the single orchestrator, and only the lead may declare or revise the plan
-	// (a replan is just another set_plan). A human-escalated task is born with
-	// its lead; an agent-created standalone task is born leadless, so the first
-	// board member to plan it atomically takes the lead here (CAS). This gate
-	// runs before any validation or write so a non-lead's set_plan cannot even
-	// touch the plan.
+	// Plan authority is immutable: promotion copied Thread owner to Task lead.
+	// Legacy leadless tasks stay unreadable through this mutation path rather
+	// than granting authority to the first caller.
 	lead := strings.TrimSpace(thread.LeadParticipantID)
 	if lead == "" {
-		claimed, becameLead, err := session.SetConversationThreadLeadIfEmpty(m.server.rt.SessionDir, thread.ID, m.participantID)
-		if err != nil {
-			return tools.TaskView{}, fmt.Errorf("set_plan: claim orchestration lead: %w", err)
-		}
-		thread = claimed
-		lead = strings.TrimSpace(claimed.LeadParticipantID)
-		if becameLead {
-			m.server.recordTaskEventFor(claimed, "", session.TaskEventLeadInvoked, m.participantID,
-				"claimed orchestration lead", "")
-		}
-		// If becameLead is false someone raced in first; lead now holds their
-		// id and the ownership check below refuses this caller.
+		return tools.TaskView{}, fmt.Errorf("set_plan: task %q has no lead; only a Thread promoted by its owner can be planned", thread.ID)
 	}
 	if m.participantID != lead {
 		return tools.TaskView{}, fmt.Errorf("set_plan: task %q is led by %q; only its lead may declare or revise the plan", thread.ID, lead)
@@ -514,6 +357,9 @@ func (m *residentTaskManager) SetPlan(ctx context.Context, subthreadID string, p
 		}
 		if ids[id] {
 			return tools.TaskView{}, fmt.Errorf("set_plan: duplicate piece id %q", id)
+		}
+		if strings.TrimSpace(p.Assignee) == lead {
+			return tools.TaskView{}, fmt.Errorf("set_plan: Task lead %q orchestrates other named agents and cannot be a piece assignee", lead)
 		}
 		// Backward-only dependencies: a piece may depend only on pieces declared
 		// EARLIER in the plan (already in ids). The plan's own order is then a
@@ -747,11 +593,8 @@ func (m *residentTaskManager) memberTask(action, subthreadID string) (session.Co
 	return thread, meta, nil
 }
 
-// boardThreadMeta gates task-rail access and hands back the parent thread's
-// meta so callers can branch on group vs DM semantics (task-rail design §7,
-// 2026-07-07): a group's board is open to its members; a DM's board is open
-// to exactly the DM's own resident agent. Anything else — someone else's DM,
-// a non-chat work session — is a loud refusal.
+// boardThreadMeta gates workflow access to active named members of a group.
+// DMs and ordinary work sessions have no Thread/Task workflow.
 func (m *residentTaskManager) boardThreadMeta(action, threadID string) (session.Session, error) {
 	sessionDir := m.server.rt.SessionDir
 	meta, ok, err := session.Find(sessionDir, threadID)
@@ -761,14 +604,8 @@ func (m *residentTaskManager) boardThreadMeta(action, threadID string) (session.
 	if !ok {
 		return session.Session{}, fmt.Errorf("%s: %w: %q", action, session.ErrSessionNotFound, threadID)
 	}
-	if dm := strings.TrimSpace(meta.DMParticipantID); dm != "" {
-		if dm == m.participantID {
-			return meta, nil
-		}
-		return session.Session{}, fmt.Errorf("%s: thread %q is another agent's DM; only its resident agent may use this board", action, threadID)
-	}
 	if !meta.Group {
-		return session.Session{}, fmt.Errorf("%s: thread %q is neither a group nor a DM chat; the task rail lives in chat threads", action, threadID)
+		return session.Session{}, fmt.Errorf("%s: thread %q is not a group; DMs and ordinary sessions do not have Threads or Tasks", action, threadID)
 	}
 	members, err := session.ListThreadMembers(sessionDir, threadID)
 	if err != nil {
@@ -790,13 +627,14 @@ func (m *residentTaskManager) taskView(thread session.ConversationThread) tools.
 		Title:        thread.Title,
 		Status:       string(thread.Status),
 		ExecState:    thread.ExecState,
-		Owner:        thread.OwnerParticipantID,
+		ThreadOwner:  thread.ThreadOwnerParticipantID,
+		Lead:         thread.LeadParticipantID,
 		CreatedBy:    thread.CreatedBy,
 		Summary:      thread.Summary,
 	}
-	if view.Owner != "" {
-		if summary, ok := m.server.resolveParticipantSummary(view.Owner); ok {
-			view.OwnerName = summary.Name
+	if view.Lead != "" {
+		if summary, ok := m.server.resolveParticipantSummary(view.Lead); ok {
+			view.LeadName = summary.Name
 		}
 	}
 	for _, p := range thread.Plan {
@@ -1108,7 +946,7 @@ func (s *Server) wakePlanLead(task session.ConversationThread) {
 	s.recordTaskEventFor(task, "", session.TaskEventLeadInvoked, lead,
 		"all pieces done — lead woken to wrap up", "")
 	text := fmt.Sprintf(
-		"Every piece of task %q is done. Wrap it up: file the task's conclusion (manage_task action=update_status subthread_id=%q), then report the result to the user (@ the user so teammates are not re-woken).",
+		"Every piece of task %q is done. Review the trace and handoffs, then file the verified conclusion with manage_task action=conclude subthread_id=%q. Do not execute task work yourself.",
 		firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), task.ID,
 	)
 	s.deliverEnvelopeToMembers([]string{lead}, MessageEnvelope{
@@ -1140,7 +978,7 @@ func (s *Server) wakePlanLeadForPlanning(task session.ConversationThread) {
 	s.recordTaskEventFor(task, "", session.TaskEventLeadInvoked, lead,
 		"lead woken to plan", "")
 	text := fmt.Sprintf(
-		"You lead task %q. Author its workflow plan NOW: manage_task action=set_plan subthread_id=%q with pieces {id, title, assignee, prompt, depends_on}. Each piece's prompt is the briefing its assignee starts from — write it so they can begin without asking. Assign pieces to existing teammates; a task you can do alone is a one-piece plan assigned to yourself.",
+		"You lead task %q. Orchestrate it now with manage_task action=set_plan subthread_id=%q and pieces {id, title, assignee, prompt, depends_on}. Each prompt must let its assignee start without asking. Assign only other named agents: a lead coordinates, observes, revises, and concludes; it never executes a piece itself.",
 		firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), task.ID,
 	)
 	s.deliverEnvelopeToMembers([]string{lead}, MessageEnvelope{
@@ -1164,7 +1002,7 @@ func (s *Server) wakePlanLeadForPlanning(task session.ConversationThread) {
 // leadless task is a loudly-logged no-op (nobody holds orchestration authority
 // to recover it). The wake names the failed node and its reason and points the
 // lead at the three recovery levers — revise the plan (set_plan re-dispatches),
-// flag the human (need_human), or wrap it up (update_status) — after reading
+// flag the human (need_human), or conclude with verified evidence — after reading
 // the task's trace to see what happened.
 func (s *Server) wakePlanLeadOnFailure(task session.ConversationThread, piece session.TaskPiece, reason string) {
 	lead := firstNonEmpty(strings.TrimSpace(task.LeadParticipantID), strings.TrimSpace(task.CreatedBy))
@@ -1177,7 +1015,7 @@ func (s *Server) wakePlanLeadOnFailure(task session.ConversationThread, piece se
 	s.recordTaskEventFor(task, "", session.TaskEventLeadInvoked, lead,
 		fmt.Sprintf("lead woken on node failure: %s", pieceLabel), "")
 	text := fmt.Sprintf(
-		"Node %q of task %q failed and its retries are spent: %s. The task is paused (blocked) pending your decision. Read its trace to see what happened, then recover: revise the plan (manage_task action=set_plan — reassign or resequence; that re-dispatches), flag it for the human (manage_task action=need_human subthread_id=%q), or wrap it up (manage_task action=update_status subthread_id=%q).",
+		"Node %q of task %q failed and its retries are spent: %s. The task is paused pending your decision. Read its trace, then revise the plan, flag a genuinely human decision with manage_task action=need_human subthread_id=%q, or conclude with manage_task action=conclude subthread_id=%q. Do not execute the failed work yourself.",
 		pieceLabel, firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), reason, task.ID, task.ID,
 	)
 	s.deliverEnvelopeToMembers([]string{lead}, MessageEnvelope{
@@ -1258,64 +1096,6 @@ func (s *Server) taskThreadContext(parentThreadID string) (title, workspace stri
 	return title, workspace
 }
 
-// wakeTaskBoardForOwnerlessTask fans a lightweight from="system" envelope to
-// the group's members (minus the acting participant) whenever a task lands on
-// the board with no owner — born-open create, born-open escalate, unclaim
-// (task-rail design §6: 无主任务唤醒). Without it, task mutations only touch
-// the store and the GUI panel: a task put on the board while no resident is
-// mid-turn would sit unclaimed forever. The envelope carries no seq (no read
-// receipt — it is a board event, not a chat message) and is never addressed,
-// so the contract's claim-or-silence rule governs the woken members. A task
-// that is born owned (claim=true) wakes nobody: there is nothing for the
-// others to do. Callers pass the task unconditionally; owned tasks no-op here.
-func (s *Server) wakeTaskBoardForOwnerlessTask(task session.ConversationThread, actorID, event string) {
-	if s == nil || s.rt == nil {
-		return
-	}
-	threadID := strings.TrimSpace(task.SessionID)
-	if threadID == "" || strings.TrimSpace(task.OwnerParticipantID) != "" {
-		return
-	}
-	// DM tasks are born owned so this is normally unreachable for them; the
-	// explicit guard keeps the invariant local (task-rail design §7: DMs have
-	// no group members to call, the wake is a group-only mechanism).
-	if meta, ok, err := session.Find(s.rt.SessionDir, threadID); err != nil || !ok || !meta.Group {
-		return
-	}
-	actorID = strings.TrimSpace(actorID)
-	actorName := actorID
-	if summary, ok := s.resolveParticipantSummary(actorID); ok && strings.TrimSpace(summary.Name) != "" {
-		actorName = summary.Name
-	}
-	title, workspace := threadID, ""
-	if th := s.thread(threadID); th != nil {
-		th.mu.Lock()
-		title = residentEnvelopeSourceTitleLocked(th)
-		workspace = th.FocusWorkspace
-		th.mu.Unlock()
-	}
-	members, err := session.ListThreadMembers(s.rt.SessionDir, threadID)
-	if err != nil {
-		providers.DebugLogf("list thread members for task-board wake %q: %v", threadID, err)
-		return
-	}
-	text := fmt.Sprintf(
-		"Task %q was %s by %s and has no owner. If this work is yours to take, claim it now (manage_task action=claim subthread_id=%q); otherwise — or if the claim fails — end your turn without posting.",
-		firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), event, actorName, task.ID,
-	)
-	s.deliverEnvelopeToMembers(members, MessageEnvelope{
-		SourceThreadID:      threadID,
-		SourceSubthreadID:   task.ID,
-		SourceTitle:         title,
-		SenderKind:          "system",
-		SenderName:          "task board",
-		SenderParticipantID: actorID,
-		Text:                text,
-		CreatedAt:           time.Now().UTC(),
-		Workspace:           workspace,
-	}, nil, true)
-}
-
 // mainStreamItemIDForSeq resolves a message seq (the stable per-thread address
 // agents see on envelopes and pass to react) to the main-stream item id the
 // GUI anchors reply badges on. It reconstructs the main-stream turns with the
@@ -1391,48 +1171,4 @@ func parentAuthorParticipantID(item ThreadItem) string {
 		}
 	}
 	return humanReactionParticipantID
-}
-
-// normalizeTitleForDedup trims, collapses whitespace runs, and lowercases
-// so that titles like "Fix  Login Flake" and "fix login flake" collide on
-// issue #4's check. SQLite's default collation is BINARY, so this is the
-// layer that resolves case-insensitive matching — the SQL filter alone
-// would miss it. Used by findUnfinishedTaskByNormalizedTitle below; callers
-// should normalize once per request and reuse the result.
-func normalizeTitleForDedup(s string) string {
-	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(s)), " "))
-}
-
-// findUnfinishedTaskByNormalizedTitle scans the thread's cth rows via
-// session.ListConversationThreads and returns the first row whose title
-// (after normalizeTitleForDedup) equals target and whose status is
-// ConversationThreadTask. Returns nil when nothing matches.
-//
-// Why Task-status only: status == task is the only "unfinished and
-// claimable" state, which is what a duplicate would pollute. A standalone
-// task is BORN as task (conversation_thread.go creation constraint) but
-// still flows to resolved like any other; a resolved task means the work
-// was delivered, so re-creating the title is a legitimate redo and must
-// not be blocked. Open discussion replies are not tasks and never collide.
-//
-// Implemented as a one-thread in-Go scan rather than a new session
-// helper because per-thread cth counts stay small (< ~100), and this
-// matches the anchor dedup pattern at L54-68 in spirit: "no new SQL
-// helper for the symmetric case".
-func findUnfinishedTaskByNormalizedTitle(sessDir, threadID, normalizedTitle string) *session.ConversationThread {
-	threads, err := session.ListConversationThreads(sessDir, threadID)
-	if err != nil {
-		providers.DebugLogf("list conversation threads for standalone dedup %q: %v", threadID, err)
-		return nil
-	}
-	for i, t := range threads {
-		// Status filter narrowed to ConversationThreadTask only (issue #4
-		// v3): see the dedup block comment in CreateTask for the
-		// rationale (L89-93 standalone constraint pins this single value).
-		if t.Status == session.ConversationThreadTask &&
-			normalizeTitleForDedup(t.Title) == normalizedTitle {
-			return &threads[i]
-		}
-	}
-	return nil
 }

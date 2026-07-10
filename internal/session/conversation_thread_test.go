@@ -378,14 +378,6 @@ func TestConversationThreadOwnerMigrationUsesOnlyValidCurrentAuthority(t *testin
 			t.Fatal(err)
 		}
 	}
-	for _, task := range []ConversationThread{
-		{ID: "cth-task-valid", SessionID: "group", AnchorItemID: "task-valid", Status: ConversationThreadTask, LeadParticipantID: "prt-valid-lead", ParentAuthorParticipantID: "prt-valid-parent"},
-		{ID: "cth-task-invalid", SessionID: "group", AnchorItemID: "task-invalid", Status: ConversationThreadTask, LeadParticipantID: "prt-ghost", ParentAuthorParticipantID: "prt-valid-parent"},
-	} {
-		if _, err := CreateLegacyTaskConversationThread(dir, task); err != nil {
-			t.Fatalf("create legacy task %s: %v", task.ID, err)
-		}
-	}
 	createOpenConversationThreadForTest(t, dir, ConversationThread{
 		ID: "cth-open-valid", SessionID: "group", AnchorItemID: "open-valid",
 		ThreadOwnerParticipantID: "prt-valid-parent", ParentAuthorParticipantID: "prt-valid-parent",
@@ -398,6 +390,22 @@ func TestConversationThreadOwnerMigrationUsesOnlyValidCurrentAuthority(t *testin
 	db, err := openStore(dir)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, task := range []ConversationThread{
+		{ID: "cth-task-valid", SessionID: "group", AnchorItemID: "task-valid", Status: ConversationThreadTask, LeadParticipantID: "prt-valid-lead", ParentAuthorParticipantID: "prt-valid-parent"},
+		{ID: "cth-task-invalid", SessionID: "group", AnchorItemID: "task-invalid", Status: ConversationThreadTask, LeadParticipantID: "prt-ghost", ParentAuthorParticipantID: "prt-valid-parent"},
+	} {
+		if _, err := db.Exec(`
+INSERT INTO conversation_threads (
+	id, session_id, anchor_item_id, title, status, created_by, created_at,
+	escalated_at, lead_participant_id, parent_seq, parent_author_participant_id
+) VALUES (?, ?, ?, '', ?, '', ?, ?, ?, 1, ?)`, task.ID, task.SessionID,
+			task.AnchorItemID, string(task.Status), timeText(time.Now().UTC()),
+			timeText(time.Now().UTC()), task.LeadParticipantID,
+			task.ParentAuthorParticipantID); err != nil {
+			db.Close()
+			t.Fatalf("insert legacy task %s: %v", task.ID, err)
+		}
 	}
 	if _, err := db.Exec(`UPDATE conversation_threads SET thread_owner_participant_id = ''`); err != nil {
 		db.Close()

@@ -9,7 +9,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
-// The task rail's two channels (plan §T7, red line §4.5), pinned end to end:
+// The Task workflow's two channels, pinned end to end:
 //   - public_thread_message: a post_message kind=update to the task thread is
 //     progress for the human — it wakes NO teammate.
 //   - handoff payload: the structured result attached to manage_task
@@ -54,9 +54,9 @@ func findTaskEvent(t *testing.T, srv *Server, taskID, kind string) (session.Task
 func TestTaskPublicUpdateWakesNoTeammate(t *testing.T) {
 	srv, groupID, andy, mia, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "两步任务", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "两步任务")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	// Mia's p1 is dispatched; Han's p2 is gated on p1 but is already a cth member
 	// (set_plan pulls every assignee onto the team), so he is exactly the
@@ -148,9 +148,9 @@ func hanDMContains(t *testing.T, srv *Server, participantID, substr string) bool
 func TestTaskHandoffWakesDownstream(t *testing.T) {
 	srv, groupID, andy, mia, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "接力任务", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "接力任务")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "调研上游", Assignee: mia, Prompt: "做调研"},
@@ -230,9 +230,9 @@ func TestTaskHandoffWakesDownstream(t *testing.T) {
 func TestTaskTerminalHandoffStoredOnPiece(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "单节点任务", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "单节点任务")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "only", Title: "唯一节点", Assignee: mia, Prompt: "做唯一节点"},

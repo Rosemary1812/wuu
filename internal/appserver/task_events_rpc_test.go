@@ -24,9 +24,9 @@ func TestThreadTaskEventsReturnsTraceInSeqOrder(t *testing.T) {
 	// (node_progress + node_succeeded, and — all pieces done — the lead's
 	// lead_invoked wrap-up wake). Every one of these is written synchronously by
 	// the manager methods below, so the trace is deterministic.
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "轨迹任务", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "轨迹任务")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "only", Title: "写调研", Assignee: mia, Prompt: "开工"},
@@ -90,9 +90,9 @@ func TestThreadTaskEventsReturnsTraceInSeqOrder(t *testing.T) {
 func TestThreadTaskEventsRejectsForeignSubthreadAndMissingParams(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "隔离任务", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "隔离任务")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "块", Assignee: mia},

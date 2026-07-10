@@ -294,6 +294,10 @@ func participantFilesFromTurnStart(files []TurnStartFile) []agentcontrol.Partici
 }
 
 func (s *Server) openConversationSubthread(params ThreadOpenSubParams) (session.ConversationThread, error) {
+	return s.openConversationSubthreadAs(params, humanReactionParticipantID)
+}
+
+func (s *Server) openConversationSubthreadAs(params ThreadOpenSubParams, createdBy string) (session.ConversationThread, error) {
 	threadID := strings.TrimSpace(params.ThreadID)
 	subthreadID := strings.TrimSpace(params.SubthreadID)
 	anchorItemID := strings.TrimSpace(params.AnchorItemID)
@@ -330,7 +334,7 @@ func (s *Server) openConversationSubthread(params ThreadOpenSubParams) (session.
 		SessionID:                 threadID,
 		AnchorItemID:              anchorItemID,
 		Title:                     params.Title,
-		CreatedBy:                 humanReactionParticipantID,
+		CreatedBy:                 strings.TrimSpace(createdBy),
 		ThreadOwnerParticipantID:  owner,
 		ParentSeq:                 parentSeq,
 		ParentAuthorParticipantID: parentAuthor,
@@ -347,7 +351,31 @@ func (s *Server) openConversationSubthread(params ThreadOpenSubParams) (session.
 	// CreateConversationThread writes the owner into the focused member subset
 	// in the same transaction. Other members join only through real group
 	// routing; the open RPC has no cross-group participant injection surface.
+	s.wakeConversationThreadOwner(thread, strings.TrimSpace(createdBy))
 	return thread, nil
+}
+
+func (s *Server) wakeConversationThreadOwner(thread session.ConversationThread, openedBy string) {
+	ownerID := strings.TrimSpace(thread.ThreadOwnerParticipantID)
+	if s == nil || s.rt == nil || ownerID == "" || ownerID == strings.TrimSpace(openedBy) {
+		return
+	}
+	title, workspace := s.taskThreadContext(thread.SessionID)
+	text := fmt.Sprintf(
+		"You own Thread %q, opened from a group message. Converge the focused discussion here (thread_id=%q). This is not Task execution. Only you may promote it when scope and direction are concrete; after promotion you remain Lead and orchestrate other named agents without doing worker pieces yourself.",
+		firstNonEmpty(strings.TrimSpace(thread.Title), "untitled"), thread.ID,
+	)
+	s.deliverEnvelopeToMembers([]string{ownerID}, MessageEnvelope{
+		SourceThreadID:      thread.SessionID,
+		SourceSubthreadID:   thread.ID,
+		SourceTitle:         title,
+		SenderKind:          "system",
+		SenderName:          "Thread workflow",
+		SenderParticipantID: strings.TrimSpace(openedBy),
+		Text:                text,
+		CreatedAt:           time.Now().UTC(),
+		Workspace:           workspace,
+	}, nil, true)
 }
 
 // resolveConversationThreadOwner determines the named owner at Thread creation.
@@ -511,7 +539,6 @@ func conversationSubthreadViewFromRecords(threadID string, thread session.Conver
 	view.Summary = thread.Summary
 	view.EscalatedBy = thread.EscalatedBy
 	view.LeadParticipantID = thread.LeadParticipantID
-	view.OwnerParticipantID = thread.OwnerParticipantID
 	view.ExecState = thread.ExecState
 	// Project the plan onto the wire so the Task panel can render the progress
 	// layer (plan §T11): one row per node with its Status-derived display State

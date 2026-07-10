@@ -1,10 +1,30 @@
 package appserver
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/tools"
 )
+
+// createPromotedTaskForTest exercises the real product path: append a named
+// group message, open its Thread, then promote it as owner.
+func createPromotedTaskForTest(ctx context.Context, m *residentTaskManager, threadID, title string) (tools.TaskView, error) {
+	seq, err := session.AppendHistoryRecordReturningSeq(m.server.rt.SessionDir, threadID, session.HistoryRecord{
+		Role: "participant", ParticipantID: m.participantID, PostKind: "result",
+		Content: "Task proposal: " + title, At: time.Now().UTC(),
+	})
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	opened, err := m.OpenThread(ctx, threadID, seq, title)
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	return m.PromoteThread(ctx, opened.ID, title)
+}
 
 func createStoredOpenThreadForTest(t *testing.T, srv *Server, parentThreadID, ownerID, anchorItemID string, parentSeq int) session.ConversationThread {
 	t.Helper()

@@ -111,9 +111,9 @@ func waitForExecState(t *testing.T, srv *Server, taskID, state string) {
 func TestRetryableFailureRetriesWithinBudget(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "重试预算", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "重试预算")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "跑一段活", Assignee: mia},
@@ -158,9 +158,9 @@ func TestRetryableFailureRetriesWithinBudget(t *testing.T) {
 func TestCancelledTurnLeavesNodeUntouched(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "用户中断", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "用户中断")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "被打断的活", Assignee: mia},
@@ -196,9 +196,9 @@ func TestCancelledTurnLeavesNodeUntouched(t *testing.T) {
 func TestHardFailureFailsNodeWithoutSpendingBudget(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "硬失败", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "硬失败")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "缺凭证的活", Assignee: mia},
@@ -254,9 +254,9 @@ func TestBudgetExhaustionThroughRealFailedTurns(t *testing.T) {
 		}
 	}
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "真实失败重试", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "真实失败重试")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "会断网的活", Assignee: mia},
@@ -296,9 +296,9 @@ func TestBudgetExhaustionThroughRealFailedTurns(t *testing.T) {
 func TestNeedUpstreamBouncesWorkBackToUpstream(t *testing.T) {
 	srv, groupID, andy, _, han, vera := planFixture(t)
 	lead := srv.residentTaskManager(andy)
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "上下游回退", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "上下游回退")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "上游产出", Assignee: han, Prompt: "起草接口"},

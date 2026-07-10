@@ -104,7 +104,7 @@ func TestHumanEscalateEntersPlanningAndWakesLead(t *testing.T) {
 	waitForResidentDMHistoryContains(t, srv, mia, "登录链路排查")
 }
 
-// Agent escalate (manage_task action=escalate): the Thread owner promotes it,
+// Agent promotion (manage_task action=promote): the Thread owner promotes it,
 // becomes lead, and receives the same planning wake as the human path.
 func TestAgentEscalateEntersPlanningAndTraces(t *testing.T) {
 	srv, groupID, andy, _, _, _ := planFixture(t)
@@ -118,7 +118,7 @@ func TestAgentEscalateEntersPlanningAndTraces(t *testing.T) {
 		t.Fatalf("CreateConversationThread: %v", err)
 	}
 
-	view, err := srv.residentTaskManager(andy).EscalateTask(context.Background(), discussion.ID, "", false)
+	view, err := srv.residentTaskManager(andy).PromoteThread(context.Background(), discussion.ID, "")
 	if err != nil {
 		t.Fatalf("EscalateTask: %v", err)
 	}
@@ -145,9 +145,9 @@ func TestSetPlanWithPromptExecutesAndDispatches(t *testing.T) {
 	srv, groupID, andy, mia, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
 
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "带简报的团队任务", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "带简报的团队任务")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	view, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "梳理推送协议", Assignee: han, Prompt: "从 host 派发层开始梳理,列出协议分支"},
@@ -186,9 +186,9 @@ func TestAllPiecesDoneCompletesExecution(t *testing.T) {
 	srv, groupID, andy, mia, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
 
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "两块并行的活", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "两块并行的活")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "块一", Assignee: mia, Prompt: "做块一"},
@@ -219,11 +219,10 @@ func TestAllPiecesDoneCompletesExecution(t *testing.T) {
 	}
 }
 
-// ConcludeTask (manage_task update_status): filing the conclusion resolves
+// ConcludeTask (manage_task conclude): filing the conclusion resolves
 // the task immediately, bubbles the summary to the parent main stream under
 // the caller's identity, and records task_completed. A caller that is
-// neither owner nor lead is refused; the lead of an unclaimed plan-task CAN
-// conclude.
+// any non-lead is refused; the immutable lead concludes.
 func TestConcludeTaskResolvesAndBubbles(t *testing.T) {
 	srv, groupID, _, mia, han, _ := planFixture(t)
 
@@ -287,10 +286,10 @@ func TestConcludeTaskResolvesAndBubbles(t *testing.T) {
 	}
 }
 
-func TestConcludeTaskByLeadOfUnclaimedPlanTask(t *testing.T) {
+func TestConcludeTaskByImmutableLead(t *testing.T) {
 	srv, groupID, andy, _, _, _ := planFixture(t)
 
-	// An unclaimed plan-task: born as task, lead granted, no owner ever.
+	// A promoted Thread carries the same immutable owner and lead.
 	task, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
 		SessionID: groupID, AnchorItemID: "anchor-andy", ParentSeq: 1,
 		ParentAuthorParticipantID: andy, ThreadOwnerParticipantID: andy,
@@ -305,7 +304,7 @@ func TestConcludeTaskByLeadOfUnclaimedPlanTask(t *testing.T) {
 
 	concluded, err := srv.residentTaskManager(andy).ConcludeTask(context.Background(), task.ID, "全部节点收束完毕")
 	if err != nil {
-		t.Fatalf("lead conclude of unclaimed plan-task: %v", err)
+		t.Fatalf("lead conclude: %v", err)
 	}
 	if concluded.Status != string(session.ConversationThreadResolved) {
 		t.Fatalf("status = %q, want resolved", concluded.Status)
@@ -317,9 +316,9 @@ func TestConcludeTaskByLeadOfUnclaimedPlanTask(t *testing.T) {
 func TestNeedHumanFlagsTaskForTheHuman(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 
-	task, err := srv.residentTaskManager(mia).CreateTask(context.Background(), groupID, 0, "要人拍板的事", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), srv.residentTaskManager(mia), groupID, "要人拍板的事")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := srv.residentTaskManager(mia).NeedHuman(context.Background(), task.ID, "  "); err == nil {
 		t.Fatal("need_human without a reason must be refused")

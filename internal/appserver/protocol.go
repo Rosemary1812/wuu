@@ -731,11 +731,6 @@ type ConversationSubthread struct {
 	// persisted Thread owner and remains distinct from EscalatedBy provenance.
 	// The runtime workflow gate keys on (caller == lead && status == task).
 	LeadParticipantID string `json:"lead_participant_id,omitempty"`
-	// OwnerParticipantID is the task-rail work owner (claim CAS): mutual
-	// exclusion and reporting duty. Deliberately distinct from
-	// LeadParticipantID — ownership grants no orchestration authority
-	// (2026-07-06 agent-task-rail design). Empty means unclaimed.
-	OwnerParticipantID string `json:"owner_participant_id,omitempty"`
 	// ExecState is the task's execution axis, separate from the approval
 	// Status: planning/executing/blocked/needs_human/completed/failed. Empty
 	// when the subthread never entered execution (a plain reply).

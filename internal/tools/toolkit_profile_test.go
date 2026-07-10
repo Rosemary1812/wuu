@@ -220,7 +220,7 @@ func TestResidentParticipantSurfaceHidesAgentProfileTools(t *testing.T) {
 			t.Fatalf("ToolInfo(%q) not found", tt.name)
 		}
 		if info.Exposure != tt.want {
-			t.Fatalf("resident task rail tool %s exposure = %s, want %s", tt.name, info.Exposure, tt.want)
+			t.Fatalf("resident workflow tool %s exposure = %s, want %s", tt.name, info.Exposure, tt.want)
 		}
 	}
 

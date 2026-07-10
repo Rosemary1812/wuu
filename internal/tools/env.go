@@ -239,8 +239,8 @@ type Env struct {
 	// of manage_participant. Nil means group management is unavailable in this
 	// environment (those actions return an execute-time error).
 	GroupManager GroupManager
-	// TaskManager backs the resident-only manage_task tool (agent task rail,
-	// 2026-07-06 design). Nil means the task rail is unavailable in this
+	// TaskManager backs the resident-only group Thread/Task workflow. Nil means
+	// that workflow is unavailable in this
 	// environment (every action returns an execute-time error).
 	TaskManager TaskManager
 	// FileScopeRoots, when non-empty, replaces the single-RootDir file
@@ -363,9 +363,9 @@ type GroupMember struct {
 	Busy bool
 }
 
-// TaskView is the tool-facing snapshot of one task on the agent task rail (a
-// cth in task status). Owner is work ownership (mutual exclusion, reporting
-// duty) — never lead/orchestration authority.
+// TaskView is the tool-facing snapshot of one group Thread or Task. The Thread
+// owner becomes the immutable lead on promotion; the lead orchestrates work
+// but is never a plan-piece assignee.
 type TaskView struct {
 	ID           string `json:"id"`
 	ThreadID     string `json:"thread_id"`
@@ -375,13 +375,14 @@ type TaskView struct {
 	// ExecState is the task's execution axis, separate from the approval
 	// Status: planning/executing/blocked/needs_human/completed/failed; empty
 	// when the task never entered execution.
-	ExecState string `json:"exec_state,omitempty"`
-	Owner     string `json:"owner,omitempty"`
-	OwnerName string `json:"owner_name,omitempty"`
-	CreatedBy string `json:"created_by,omitempty"`
-	Summary   string `json:"summary,omitempty"`
-	// Plan is the team task's declared work breakdown (task-rail design §8),
-	// present only for team tasks the lead has planned. Empty for plain tasks.
+	ExecState   string `json:"exec_state,omitempty"`
+	ThreadOwner string `json:"thread_owner,omitempty"`
+	Lead        string `json:"lead,omitempty"`
+	LeadName    string `json:"lead_name,omitempty"`
+	CreatedBy   string `json:"created_by,omitempty"`
+	Summary     string `json:"summary,omitempty"`
+	// Plan is the lead's declared work breakdown, present only after promotion
+	// and planning.
 	Plan []TaskPiece `json:"plan,omitempty"`
 }
 
@@ -405,10 +406,8 @@ type TaskPiece struct {
 	// LastActivityAt / LastProgressAt are the node's two liveness timestamps,
 	// exposed raw: activity is any observable action by the assignee (a tool
 	// call), progress is a declared step forward (a filed handoff, a public
-	// task-thread update). They are surfaced as-is on purpose — the soft
-	// "stalled / lost" cue is a DISPLAY-ONLY relative judgement the frontend
-	// computes by comparing these two (and to now), never a backend state
-	// transition, and there is no fixed lease deadline (red line §4.7).
+	// task-thread update). They are surfaced as raw runtime facts; the frontend
+	// may describe their recency but does not infer a hidden execution state.
 	LastActivityAt time.Time `json:"last_activity_at,omitzero"`
 	LastProgressAt time.Time `json:"last_progress_at,omitzero"`
 }
@@ -429,38 +428,21 @@ type TaskHandoff struct {
 	Notes      string   `json:"notes,omitempty"`
 }
 
-// TaskManager lets resident named agents run the task rail: create tasks,
-// claim/release work ownership, file the conclusion, unfollow, and list the
-// board. The app server injects an implementation per resident runtime; task
-// runs and ordinary subagents never receive one. Claim mutual exclusion is a
-// store-level CAS: losing the race is a normal result (claimed=false), not an
-// error.
+// TaskManager lets resident named agents run the group-only Thread -> Task
+// workflow. The app server injects one per resident runtime; task workers and
+// ordinary subagents never receive it.
 type TaskManager interface {
-	// CreateTask opens a born-task cth in a group thread the caller belongs
-	// to. anchorSeq > 0 anchors it on that main-stream message (at most one
-	// cth per anchor); 0 creates a standalone task. claim self-owns it
-	// atomically in the same call. ackCollisionID is the strict-id-match
-	// escape hatch for the standalone-dedup collision check (issue #4 v3):
-	// when the same title already exists in the thread as unfinished,
-	// passing the existing task's id lets the caller persist a same-titled
-	// duplicate (work-splitting case); any other value — empty, wrong id,
-	// made-up value — keeps the dedup hard-block. Anchored tasks ignore
-	// ackCollisionID — one anchor, one cth, period.
-	CreateTask(ctx context.Context, threadID string, anchorSeq int, title string, claim bool, ackCollisionID string) (TaskView, error)
-	// EscalateTask converts an open discussion reply the caller belongs to
-	// into a board task (open -> task). It grants no lead/orchestration
-	// authority; claim self-owns it in the same call.
-	EscalateTask(ctx context.Context, subthreadID, title string, claim bool) (TaskView, error)
-	// ClaimTask takes work ownership via CAS. claimed=false with a nil error
-	// means someone else owns it (see the returned view's Owner).
-	ClaimTask(ctx context.Context, subthreadID string) (TaskView, bool, error)
-	// UnclaimTask releases ownership (owner-only); the task becomes claimable.
-	UnclaimTask(ctx context.Context, subthreadID string) (TaskView, error)
+	// OpenThread starts or returns the durable Thread anchored to one real group
+	// message. anchorSeq is required. A named parent author owns it; a human
+	// parent is owned by the caller. Existing ownership is never transferred.
+	OpenThread(ctx context.Context, threadID string, anchorSeq int, title string) (TaskView, error)
+	// PromoteThread converts an open Thread to a Task. Only its persisted owner
+	// may call it, and that owner becomes immutable Task lead.
+	PromoteThread(ctx context.Context, subthreadID, title string) (TaskView, error)
 	// ConcludeTask files the task's conclusion and completes it in one act:
 	// the summary bubbles to the parent main stream under the caller's
 	// identity and the task resolves immediately — no review gate. The
-	// owner or the lead may conclude (an unclaimed plan-task is concluded
-	// by its lead).
+	// task can only be concluded by its lead.
 	ConcludeTask(ctx context.Context, subthreadID, summary string) (TaskView, error)
 	// NeedHuman flags the task as waiting on a decision that genuinely
 	// belongs to the human (exec state needs_human + a blocked trace event
@@ -478,8 +460,8 @@ type TaskManager interface {
 	// UnfollowTask removes the caller from the task's push subset; the task
 	// stays readable via fetch_thread_messages.
 	UnfollowTask(ctx context.Context, subthreadID string) error
-	// ListTasks returns the group's task board (task status).
-	ListTasks(ctx context.Context, threadID string) ([]TaskView, error)
+	// ListWorkflowThreads returns the group's open Threads and active Tasks.
+	ListWorkflowThreads(ctx context.Context, threadID string) ([]TaskView, error)
 	// SetPlan declares the lead's work breakdown for a team task (task-rail
 	// design §8): pieces with assignees and dependencies. The engine then
 	// dispatches every piece whose dependencies are already satisfied by

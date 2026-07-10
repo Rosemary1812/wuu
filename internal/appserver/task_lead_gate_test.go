@@ -9,12 +9,9 @@ import (
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
-// Lead = the single orchestrator (plan §T6): only a task's lead may declare or
-// revise its plan. An agent-created standalone task is born leadless, so the
-// first board member to plan it atomically takes the lead; every later set_plan
-// (a replan) must come from that same lead. Workers (piece assignees) are board
-// members but never the lead, so their set_plan is refused — they do the piece
-// and file piece_done, they do not rewrite the plan.
+// Lead = the single orchestrator: Thread owner becomes immutable Task lead on
+// promotion. Planning never grants or reassigns that authority; workers execute
+// pieces but cannot rewrite the workflow.
 
 func leadOf(t *testing.T, srv *Server, taskID string) string {
 	t.Helper()
@@ -25,29 +22,30 @@ func leadOf(t *testing.T, srv *Server, taskID string) string {
 	return th.LeadParticipantID
 }
 
-func TestSetPlanFirstBoardMemberBecomesLeadThenGatesOthers(t *testing.T) {
+func TestSetPlanUsesImmutableThreadOwnerLeadAndGatesOthers(t *testing.T) {
 	srv, groupID, andy, mia, han, vera := planFixture(t)
 
-	// Andy creates a standalone team task (born owned by claim, but LEADLESS —
-	// an agent-created task carries no orchestration grant).
-	task, err := srv.residentTaskManager(andy).CreateTask(context.Background(), groupID, 0, "无主任务", true, "")
+	// The real product path opens an anchored Thread owned by Andy and promotes
+	// it. Promotion, not a planning race, makes Andy the immutable lead.
+	task, err := createPromotedTaskForTest(context.Background(), srv.residentTaskManager(andy), groupID, "无主任务")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
-	if got := leadOf(t, srv, task.ID); got != "" {
-		t.Fatalf("agent-created task must be born leadless, lead=%q", got)
+	if got := leadOf(t, srv, task.ID); got != andy {
+		t.Fatalf("promoted Thread lead=%q, want owner %q", got, andy)
 	}
 
-	// Mia is a board member but not the creator. Her set_plan is the first plan
-	// on a leadless task, so she takes the lead and the plan is applied.
-	view, err := srv.residentTaskManager(mia).SetPlan(context.Background(), task.ID, []tools.TaskPiece{
+	if _, err := srv.residentTaskManager(mia).SetPlan(context.Background(), task.ID, []tools.TaskPiece{
+		{ID: "p1", Title: "backend-api", Assignee: han},
+	}); err == nil || !strings.Contains(err.Error(), "only its lead") {
+		t.Fatalf("non-lead first planner must be refused, got %v", err)
+	}
+
+	view, err := srv.residentTaskManager(andy).SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "backend-api", Assignee: han},
 	})
 	if err != nil {
-		t.Fatalf("first board-member SetPlan: %v", err)
-	}
-	if got := leadOf(t, srv, task.ID); got != mia {
-		t.Fatalf("first planner must become lead, lead=%q want %q", got, mia)
+		t.Fatalf("lead SetPlan: %v", err)
 	}
 	if view.ExecState != session.ExecStateExecuting {
 		t.Fatalf("exec_state after set_plan = %q, want executing", view.ExecState)
@@ -65,7 +63,7 @@ func TestSetPlanFirstBoardMemberBecomesLeadThenGatesOthers(t *testing.T) {
 	}); err == nil {
 		t.Fatal("an assignee (non-lead) set_plan must be refused")
 	} else if !strings.Contains(err.Error(), "is led by") ||
-		!strings.Contains(err.Error(), mia) ||
+		!strings.Contains(err.Error(), andy) ||
 		!strings.Contains(err.Error(), "only its lead may declare or revise the plan") {
 		t.Fatalf("assignee refusal should name the lead-gate, got %v", err)
 	}
@@ -79,8 +77,7 @@ func TestSetPlanFirstBoardMemberBecomesLeadThenGatesOthers(t *testing.T) {
 		t.Fatalf("non-lead refusal should name the lead-gate, got %v", err)
 	}
 
-	// The plan is unchanged by the refused calls: still Mia's single piece,
-	// still led by Mia.
+	// The plan is unchanged by refused calls and remains led by the owner.
 	after, err := session.FindConversationThreadByID(srv.rt.SessionDir, task.ID)
 	if err != nil {
 		t.Fatalf("re-read task: %v", err)
@@ -88,8 +85,8 @@ func TestSetPlanFirstBoardMemberBecomesLeadThenGatesOthers(t *testing.T) {
 	if len(after.Plan) != 1 || after.Plan[0].ID != "p1" || after.Plan[0].Assignee != han {
 		t.Fatalf("refused set_plan must not mutate the plan, got %+v", after.Plan)
 	}
-	if after.LeadParticipantID != mia {
-		t.Fatalf("lead after refusals = %q, want %q", after.LeadParticipantID, mia)
+	if after.LeadParticipantID != andy {
+		t.Fatalf("lead after refusals = %q, want %q", after.LeadParticipantID, andy)
 	}
 }
 
@@ -97,9 +94,9 @@ func TestSetPlanRefusedOnResolvedTask(t *testing.T) {
 	srv, groupID, andy, _, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
 
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "收束后不可重规划", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "收束后不可重规划")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "backend-api", Assignee: han},
@@ -128,13 +125,12 @@ func TestSetPlanLeadReplanReDispatches(t *testing.T) {
 	srv, groupID, andy, mia, han, vera := planFixture(t)
 	lead := srv.residentTaskManager(andy)
 
-	task, err := lead.CreateTask(context.Background(), groupID, 0, "重规划任务", true, "")
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "重规划任务")
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("createPromotedTaskForTest: %v", err)
 	}
 
-	// Andy plans the task first — he becomes its lead and the first pieces are
-	// dispatched.
+	// Andy already leads by promotion and dispatches the first pieces.
 	view, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "backend-api", Assignee: han},
 		{ID: "p2", Title: "mobile-ui", Assignee: mia},

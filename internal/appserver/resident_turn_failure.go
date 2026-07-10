@@ -360,7 +360,7 @@ func (s *Server) autoCompleteTaskNodesAfterTurn(participantID string, envs []Mes
 // ThreadItemAgentMessage channel fallbackDMReplyFromFinalAnswer does; a result
 // the assignee published only through post_message (a participant item) is
 // deliberately NOT captured — a public post is user-visible progress, never a
-// downstream node's input (the task rail's two-channel contract), so a turn that
+// downstream node's input (the Task workflow's two-channel contract), so a turn that
 // spoke only through the tool channel yields "" and a nil (input-less) handoff.
 func finalAgentMessageText(turn Turn) string {
 	finalAnswer := ""

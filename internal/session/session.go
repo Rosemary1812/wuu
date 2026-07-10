@@ -1055,18 +1055,11 @@ func migrateSchema(db *sql.DB) error {
 		return err
 	}
 	// thread_owner_participant_id is the durable owner of the discussion Thread.
-	// On promotion this identity becomes lead_participant_id. It is distinct from
-	// the legacy owner_participant_id work-claim field below. Existing active tasks
+	// On promotion this identity becomes lead_participant_id. Existing active tasks
 	// preserve their active named lead as owner; open Threads use their active named
-	// parent author. Tasks without a valid lead remain ownerless; they never fall
-	// back to their parent author.
+	// parent author. Legacy Task rows without a valid lead remain ownerless; they
+	// never fall back to their parent author.
 	if err := addColumnIfMissing(db, "conversation_threads", "thread_owner_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	// owner_participant_id is the task-rail work owner (claim CAS target):
-	// mutual exclusion and reporting duty, deliberately distinct from
-	// lead_participant_id (orchestration authority). Empty = unclaimed.
-	if err := addColumnIfMissing(db, "conversation_threads", "owner_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	// plan holds the lead's declared work breakdown (JSON array of TaskPiece)
@@ -1085,7 +1078,7 @@ func migrateSchema(db *sql.DB) error {
 	// message's seq and its author's participant id ("human" for a user/thread-
 	// owner message). AnchorItemID stays for GUI rendering; these two are the
 	// durable, seq-addressable parent binding used to select the Thread owner.
-	// Legacy standalone tasks may leave them empty.
+	// Legacy rows created before anchored Threads may leave them empty.
 	if err := addColumnIfMissing(db, "conversation_threads", "parent_seq", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
@@ -1188,7 +1181,7 @@ HAVING COUNT(*) > 1`)
 		threadRows, err := tx.Query(`
 SELECT id, session_id, anchor_item_id, title, status, created_by, created_at,
        thread_owner_participant_id, escalated_at, escalated_by, summary,
-       lead_participant_id, owner_participant_id, plan, exec_state, parent_seq,
+       lead_participant_id, plan, exec_state, parent_seq,
        parent_author_participant_id
 FROM conversation_threads
 WHERE session_id = ? AND anchor_item_id = ?
@@ -1267,11 +1260,11 @@ WHERE task_id = ?`, keeper.ID, eventOffset, duplicate.ID); err != nil {
 UPDATE conversation_threads
 SET title = ?, created_by = ?, thread_owner_participant_id = ?,
     escalated_at = ?, escalated_by = ?, summary = ?, lead_participant_id = ?,
-    owner_participant_id = ?, plan = ?, exec_state = ?, parent_seq = ?,
+    plan = ?, exec_state = ?, parent_seq = ?,
     parent_author_participant_id = ?
 WHERE id = ?`, keeper.Title, keeper.CreatedBy, keeper.ThreadOwnerParticipantID,
 			timeText(keeper.EscalatedAt), keeper.EscalatedBy, keeper.Summary,
-			keeper.LeadParticipantID, keeper.OwnerParticipantID, string(planJSON),
+			keeper.LeadParticipantID, string(planJSON),
 			keeper.ExecState, keeper.ParentSeq, keeper.ParentAuthorParticipantID,
 			keeper.ID); err != nil {
 			return fmt.Errorf("persist merged conversation thread: %w", err)
@@ -1311,9 +1304,6 @@ func mergeConversationThreadMigrationFields(dst *ConversationThread, src Convers
 	}
 	if dst.LeadParticipantID == "" {
 		dst.LeadParticipantID = src.LeadParticipantID
-	}
-	if dst.OwnerParticipantID == "" {
-		dst.OwnerParticipantID = src.OwnerParticipantID
 	}
 	if len(dst.Plan) == 0 {
 		dst.Plan = src.Plan
