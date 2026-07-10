@@ -1015,7 +1015,7 @@ export type ConversationSubthread = {
 };
 
 // TaskPieceView 是一个 plan 节点在线上的投影(plan §T11):节点身份、依赖边、原始
-// status(pending/active/done/blocked/failed/retrying)、由 status 派生的展示 state
+// status(pending/active/done/blocked/failed/retrying/cancelled)、由 status 派生的展示 state
 // 标签(done -> completed 等)、重试预算/尝试计数、最近失败原因,以及两个 liveness
 // 时间戳。时间戳原样下发,前端只显示中性的最近活动/进展时间；是否阻塞、失败或需要
 // 人处理必须来自 runtime 的显式状态,不能由桌面用固定时限猜测。

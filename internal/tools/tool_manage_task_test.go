@@ -27,7 +27,26 @@ func (workflowManagerStub) UnfollowTask(context.Context, string) error { return 
 func (workflowManagerStub) ListWorkflowThreads(context.Context, string) ([]TaskView, error) {
 	return nil, nil
 }
+func (workflowManagerStub) TraceTask(context.Context, string) ([]TaskEvent, error) { return nil, nil }
 func (workflowManagerStub) SetPlan(context.Context, string, []TaskPiece) (TaskView, error) {
+	return TaskView{}, nil
+}
+func (workflowManagerStub) AddTaskPiece(context.Context, string, TaskPiece) (TaskView, error) {
+	return TaskView{}, nil
+}
+func (workflowManagerStub) ReviseTaskPiece(context.Context, string, string, string, string, []string) (TaskView, error) {
+	return TaskView{}, nil
+}
+func (workflowManagerStub) ReassignTaskPiece(context.Context, string, string, string) (TaskView, error) {
+	return TaskView{}, nil
+}
+func (workflowManagerStub) RetryTaskPiece(context.Context, string, string, string) (TaskView, error) {
+	return TaskView{}, nil
+}
+func (workflowManagerStub) CancelTaskPiece(context.Context, string, string, string) (TaskView, error) {
+	return TaskView{}, nil
+}
+func (workflowManagerStub) ResumeTask(context.Context, string, string) (TaskView, error) {
 	return TaskView{}, nil
 }
 func (workflowManagerStub) PieceDone(context.Context, string, string, *TaskHandoff) (TaskView, error) {
@@ -39,7 +58,7 @@ func TestManageTaskDefinitionExposesOnlyGroupThreadWorkflow(t *testing.T) {
 	properties := definition.InputSchema["properties"].(map[string]any)
 	action := properties["action"].(map[string]any)
 	enum := action["enum"].([]string)
-	for _, want := range []string{"open_thread", "promote", "conclude", "list", "set_plan"} {
+	for _, want := range []string{"open_thread", "promote", "conclude", "list", "trace", "set_plan", "add_piece", "revise_piece", "reassign_piece", "retry_piece", "cancel_piece", "resume"} {
 		if !containsString(enum, want) {
 			t.Fatalf("manage_task actions = %v, missing %q", enum, want)
 		}

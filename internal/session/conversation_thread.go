@@ -140,12 +140,13 @@ type TaskPiece struct {
 }
 
 const (
-	TaskPiecePending  = "pending"
-	TaskPieceActive   = "active"
-	TaskPieceDone     = "done"
-	TaskPieceBlocked  = "blocked"
-	TaskPieceFailed   = "failed"
-	TaskPieceRetrying = "retrying"
+	TaskPiecePending   = "pending"
+	TaskPieceActive    = "active"
+	TaskPieceDone      = "done"
+	TaskPieceBlocked   = "blocked"
+	TaskPieceFailed    = "failed"
+	TaskPieceRetrying  = "retrying"
+	TaskPieceCancelled = "cancelled"
 )
 
 // TaskPieceDefaultRetryBudget is the retry budget a plan node gets when the
@@ -639,7 +640,7 @@ func ConcludeConversationThread(sessDir, id, participantID, summary string) (Con
 		return thread, fmt.Errorf("conclude conversation thread %q: execution is %q, not %q", id, thread.ExecState, ExecStateAwaitingLead)
 	}
 	for _, piece := range thread.Plan {
-		if piece.Status != TaskPieceDone {
+		if piece.Status != TaskPieceDone && piece.Status != TaskPieceCancelled {
 			return thread, fmt.Errorf("conclude conversation thread %q: piece %q is still %q", id, piece.ID, piece.Status)
 		}
 	}
@@ -930,6 +931,39 @@ func UpdateTaskPiece(sessDir, id, pieceID string, mutate func(*TaskPiece)) (Conv
 	}
 	if _, err := db.Exec(`UPDATE conversation_threads SET plan = ? WHERE id = ?`, string(data), id); err != nil {
 		return ConversationThread{}, fmt.Errorf("update task piece: %w", err)
+	}
+	return thread, nil
+}
+
+// MutateConversationThreadPlan applies one lead-authored structural revision
+// under the store write lock, so concurrent worker attempt updates cannot be
+// lost by a read/replace race.
+func MutateConversationThreadPlan(sessDir, id string, mutate func(*ConversationThread) error) (ConversationThread, error) {
+	id = strings.TrimSpace(id)
+	if mutate == nil {
+		return ConversationThread{}, errors.New("task plan mutation is required")
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return ConversationThread{}, err
+	}
+	defer db.Close()
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+	thread, err := findConversationThreadByIDDB(db, id)
+	if err != nil {
+		return ConversationThread{}, err
+	}
+	if err := mutate(&thread); err != nil {
+		return thread, err
+	}
+	normalizeTaskPieces(thread.Plan)
+	data, err := json.Marshal(thread.Plan)
+	if err != nil {
+		return thread, fmt.Errorf("encode task plan: %w", err)
+	}
+	if _, err := db.Exec(`UPDATE conversation_threads SET plan = ? WHERE id = ?`, string(data), id); err != nil {
+		return thread, fmt.Errorf("mutate task plan: %w", err)
 	}
 	return thread, nil
 }

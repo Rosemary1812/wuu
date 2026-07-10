@@ -745,7 +745,7 @@ type ConversationSubthread struct {
 
 // TaskPieceView is one plan node projected onto the wire for the Task panel
 // (plan §T11). It carries the node identity, its dependency edges, the raw
-// Status (pending/active/done/blocked/failed/retrying), the display State label
+// Status (pending/active/done/blocked/failed/retrying/cancelled), the display State label
 // derived from that Status (deriveNodeState — done -> completed, etc.), the
 // retry budget/attempts counters, the most recent FailureReason (for the lead's
 // post-mortem), and the two activity timestamps retained for observability.

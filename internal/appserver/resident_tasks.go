@@ -342,6 +342,26 @@ func (m *residentTaskManager) ListWorkflowThreads(ctx context.Context, threadID 
 	return views, nil
 }
 
+func (m *residentTaskManager) TraceTask(ctx context.Context, subthreadID string) ([]tools.TaskEvent, error) {
+	_ = ctx
+	thread, _, err := m.memberTask("trace", subthreadID)
+	if err != nil {
+		return nil, err
+	}
+	events, err := session.TaskEvents(m.server.rt.SessionDir, thread.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]tools.TaskEvent, 0, len(events))
+	for _, event := range events {
+		out = append(out, tools.TaskEvent{
+			Seq: event.Seq, NodeID: event.NodeID, AttemptID: event.AttemptID, Kind: event.Kind,
+			Actor: event.Actor, Summary: event.Summary, Payload: event.Payload, At: event.At,
+		})
+	}
+	return out, nil
+}
+
 // SetPlan declares the lead's team work breakdown on a task and immediately
 // advances the plan (task-rail design §8). Assignees are pulled into the task
 // thread's team so they follow it. The plan is the durable declaration the
@@ -389,6 +409,9 @@ func (m *residentTaskManager) SetPlan(ctx context.Context, subthreadID string, p
 		}
 		if strings.TrimSpace(p.Assignee) == lead {
 			return tools.TaskView{}, fmt.Errorf("set_plan: Task lead %q orchestrates other named agents and cannot be a piece assignee", lead)
+		}
+		if err := m.validateTaskAssignee(thread, strings.TrimSpace(p.Assignee)); err != nil {
+			return tools.TaskView{}, fmt.Errorf("set_plan: piece %q: %w", id, err)
 		}
 		// Backward-only dependencies: a piece may depend only on pieces declared
 		// EARLIER in the plan (already in ids). The plan's own order is then a
@@ -440,6 +463,284 @@ func (m *residentTaskManager) SetPlan(ctx context.Context, subthreadID string, p
 		return tools.TaskView{}, err
 	}
 	return m.taskView(final), nil
+}
+
+// AddTaskPiece appends one new node without replacing completed work or live
+// attempt history. Dependencies may name any existing node; the resulting graph
+// must remain acyclic.
+func (m *residentTaskManager) AddTaskPiece(ctx context.Context, subthreadID string, piece tools.TaskPiece) (tools.TaskView, error) {
+	_ = ctx
+	thread, err := m.leadTask("add_piece", subthreadID)
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	piece.ID = strings.TrimSpace(piece.ID)
+	piece.Title = strings.TrimSpace(piece.Title)
+	piece.Assignee = strings.TrimSpace(piece.Assignee)
+	piece.Prompt = strings.TrimSpace(piece.Prompt)
+	if piece.ID == "" || piece.Title == "" || piece.Assignee == "" {
+		return tools.TaskView{}, errors.New("add_piece: piece_id, title, and assignee are required")
+	}
+	if err := m.validateTaskAssignee(thread, piece.Assignee); err != nil {
+		return tools.TaskView{}, fmt.Errorf("add_piece: %w", err)
+	}
+	updated, err := session.MutateConversationThreadPlan(m.server.rt.SessionDir, thread.ID, func(current *session.ConversationThread) error {
+		for _, existing := range current.Plan {
+			if existing.ID == piece.ID {
+				return fmt.Errorf("add_piece: piece %q already exists", piece.ID)
+			}
+		}
+		current.Plan = append(current.Plan, session.TaskPiece{
+			ID: piece.ID, Title: piece.Title, Assignee: piece.Assignee, Prompt: piece.Prompt,
+			DependsOn: cleanPieceDependencies(piece.DependsOn), Status: session.TaskPiecePending,
+		})
+		return validateTaskPlanGraph(current.Plan)
+	})
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	if err := session.AddConversationThreadMember(m.server.rt.SessionDir, thread.ID, piece.Assignee); err != nil {
+		return tools.TaskView{}, fmt.Errorf("add_piece: add assignee: %w", err)
+	}
+	if err := session.SetConversationThreadExecState(m.server.rt.SessionDir, thread.ID, session.ExecStateExecuting); err != nil {
+		return tools.TaskView{}, err
+	}
+	updated.ExecState = session.ExecStateExecuting
+	m.server.recordTaskEventFor(updated, piece.ID, session.TaskEventWorkflowRevised, m.participantID, "lead added a workflow node", "")
+	m.server.notifySubthreadUpdated(updated.SessionID, updated.ID)
+	m.server.reconcileExecutingTasks()
+	final, err := session.FindConversationThreadByID(m.server.rt.SessionDir, thread.ID)
+	return m.taskView(final), err
+}
+
+func (m *residentTaskManager) ReviseTaskPiece(ctx context.Context, subthreadID, pieceID, title, prompt string, dependsOn []string) (tools.TaskView, error) {
+	_ = ctx
+	thread, err := m.leadTask("revise_piece", subthreadID)
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	pieceID = strings.TrimSpace(pieceID)
+	updated, err := session.MutateConversationThreadPlan(m.server.rt.SessionDir, thread.ID, func(current *session.ConversationThread) error {
+		piece := findPieceByID(current.Plan, pieceID)
+		if piece == nil {
+			return fmt.Errorf("revise_piece: task %q has no piece %q", current.ID, pieceID)
+		}
+		if piece.CurrentAttemptID != "" || piece.Status == session.TaskPieceDone || piece.Status == session.TaskPieceCancelled {
+			return fmt.Errorf("revise_piece: piece %q is %q and cannot be revised", pieceID, piece.Status)
+		}
+		if value := strings.TrimSpace(title); value != "" {
+			piece.Title = value
+		}
+		if value := strings.TrimSpace(prompt); value != "" {
+			piece.Prompt = value
+		}
+		if dependsOn != nil {
+			piece.DependsOn = cleanPieceDependencies(dependsOn)
+		}
+		return validateTaskPlanGraph(current.Plan)
+	})
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	m.server.recordTaskEventFor(updated, pieceID, session.TaskEventWorkflowRevised, m.participantID, "lead revised a workflow node", "")
+	m.server.notifySubthreadUpdated(updated.SessionID, updated.ID)
+	m.server.reconcileExecutingTasks()
+	final, err := session.FindConversationThreadByID(m.server.rt.SessionDir, thread.ID)
+	return m.taskView(final), err
+}
+
+func (m *residentTaskManager) ReassignTaskPiece(ctx context.Context, subthreadID, pieceID, assignee string) (tools.TaskView, error) {
+	_ = ctx
+	thread, err := m.leadTask("reassign_piece", subthreadID)
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	assignee = strings.TrimSpace(assignee)
+	if err := m.validateTaskAssignee(thread, assignee); err != nil {
+		return tools.TaskView{}, fmt.Errorf("reassign_piece: %w", err)
+	}
+	updated, err := session.MutateConversationThreadPlan(m.server.rt.SessionDir, thread.ID, func(current *session.ConversationThread) error {
+		piece := findPieceByID(current.Plan, strings.TrimSpace(pieceID))
+		if piece == nil {
+			return fmt.Errorf("reassign_piece: task %q has no piece %q", current.ID, pieceID)
+		}
+		if piece.CurrentAttemptID != "" || piece.Status == session.TaskPieceDone || piece.Status == session.TaskPieceCancelled {
+			return fmt.Errorf("reassign_piece: piece %q is %q and cannot be reassigned", piece.ID, piece.Status)
+		}
+		piece.Assignee = assignee
+		return nil
+	})
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	if err := session.AddConversationThreadMember(m.server.rt.SessionDir, thread.ID, assignee); err != nil {
+		return tools.TaskView{}, err
+	}
+	m.server.recordTaskEventFor(updated, strings.TrimSpace(pieceID), session.TaskEventWorkflowRevised, m.participantID, "lead reassigned a workflow node", "")
+	m.server.notifySubthreadUpdated(updated.SessionID, updated.ID)
+	m.server.reconcileExecutingTasks()
+	final, err := session.FindConversationThreadByID(m.server.rt.SessionDir, thread.ID)
+	return m.taskView(final), err
+}
+
+func (m *residentTaskManager) RetryTaskPiece(ctx context.Context, subthreadID, pieceID, reason string) (tools.TaskView, error) {
+	_ = ctx
+	thread, err := m.leadTask("retry_piece", subthreadID)
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	pieceID = strings.TrimSpace(pieceID)
+	updated, err := session.MutateConversationThreadPlan(m.server.rt.SessionDir, thread.ID, func(current *session.ConversationThread) error {
+		piece := findPieceByID(current.Plan, pieceID)
+		if piece == nil {
+			return fmt.Errorf("retry_piece: task %q has no piece %q", current.ID, pieceID)
+		}
+		if piece.CurrentAttemptID != "" || (piece.Status != session.TaskPieceBlocked && piece.Status != session.TaskPieceFailed) {
+			return fmt.Errorf("retry_piece: piece %q is %q, not blocked or failed", pieceID, piece.Status)
+		}
+		piece.Status = session.TaskPieceRetrying
+		piece.FailureReason = strings.TrimSpace(reason)
+		if piece.RetryBudget <= piece.Attempts {
+			piece.RetryBudget = piece.Attempts + 1
+		}
+		return nil
+	})
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	if err := session.SetConversationThreadExecState(m.server.rt.SessionDir, thread.ID, session.ExecStateExecuting); err != nil {
+		return tools.TaskView{}, err
+	}
+	updated.ExecState = session.ExecStateExecuting
+	m.server.recordTaskEventFor(updated, pieceID, session.TaskEventWorkflowRevised, m.participantID, "lead scheduled an explicit retry", "")
+	m.server.notifySubthreadUpdated(updated.SessionID, updated.ID)
+	m.server.reconcileExecutingTasks()
+	final, err := session.FindConversationThreadByID(m.server.rt.SessionDir, thread.ID)
+	return m.taskView(final), err
+}
+
+func (m *residentTaskManager) CancelTaskPiece(ctx context.Context, subthreadID, pieceID, reason string) (tools.TaskView, error) {
+	_ = ctx
+	thread, err := m.leadTask("cancel_piece", subthreadID)
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	pieceID = strings.TrimSpace(pieceID)
+	piece := findPieceByID(thread.Plan, pieceID)
+	if piece == nil {
+		return tools.TaskView{}, fmt.Errorf("cancel_piece: task %q has no piece %q", thread.ID, pieceID)
+	}
+	if piece.Status == session.TaskPieceDone {
+		return tools.TaskView{}, fmt.Errorf("cancel_piece: completed piece %q cannot be cancelled", pieceID)
+	}
+	cancelled := map[string]bool{pieceID: true}
+	changed := true
+	for changed {
+		changed = false
+		for _, candidate := range thread.Plan {
+			if cancelled[candidate.ID] || candidate.Status == session.TaskPieceDone {
+				continue
+			}
+			for _, dep := range candidate.DependsOn {
+				if cancelled[dep] {
+					cancelled[candidate.ID] = true
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	for _, candidate := range thread.Plan {
+		if cancelled[candidate.ID] && candidate.ID != pieceID && candidate.CurrentAttemptID != "" {
+			return tools.TaskView{}, fmt.Errorf("cancel_piece: dependent piece %q is running; cancel it explicitly first", candidate.ID)
+		}
+	}
+	if piece.CurrentAttemptID != "" {
+		if _, updated, err := session.FinishTaskAttempt(
+			m.server.rt.SessionDir, piece.CurrentAttemptID, session.TaskAttemptInterrupted,
+			session.TaskPieceCancelled, "cancelled", strings.TrimSpace(reason), time.Now().UTC(),
+		); err != nil {
+			return tools.TaskView{}, err
+		} else {
+			thread = updated
+		}
+	}
+	updated, err := session.MutateConversationThreadPlan(m.server.rt.SessionDir, thread.ID, func(current *session.ConversationThread) error {
+		cancelled := map[string]bool{pieceID: true}
+		changed := true
+		for changed {
+			changed = false
+			for i := range current.Plan {
+				if cancelled[current.Plan[i].ID] || current.Plan[i].Status == session.TaskPieceDone {
+					continue
+				}
+				for _, dep := range current.Plan[i].DependsOn {
+					if cancelled[dep] {
+						cancelled[current.Plan[i].ID] = true
+						changed = true
+						break
+					}
+				}
+			}
+		}
+		for i := range current.Plan {
+			if cancelled[current.Plan[i].ID] {
+				current.Plan[i].Status = session.TaskPieceCancelled
+				current.Plan[i].FailureReason = strings.TrimSpace(reason)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	if err := session.SetConversationThreadExecState(m.server.rt.SessionDir, thread.ID, session.ExecStateExecuting); err != nil {
+		return tools.TaskView{}, err
+	}
+	updated.ExecState = session.ExecStateExecuting
+	m.server.recordTaskEventFor(updated, pieceID, session.TaskEventNodeCancelled, m.participantID, firstNonEmpty(strings.TrimSpace(reason), "lead cancelled node"), "")
+	m.server.notifySubthreadUpdated(updated.SessionID, updated.ID)
+	m.server.reconcileExecutingTasks()
+	final, err := session.FindConversationThreadByID(m.server.rt.SessionDir, thread.ID)
+	return m.taskView(final), err
+}
+
+func (m *residentTaskManager) ResumeTask(ctx context.Context, subthreadID, reason string) (tools.TaskView, error) {
+	_ = ctx
+	thread, err := m.leadTask("resume", subthreadID)
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	updated, err := session.MutateConversationThreadPlan(m.server.rt.SessionDir, thread.ID, func(current *session.ConversationThread) error {
+		resumed := 0
+		for i := range current.Plan {
+			piece := &current.Plan[i]
+			if piece.CurrentAttemptID == "" && (piece.Status == session.TaskPieceBlocked || piece.Status == session.TaskPieceFailed) {
+				piece.Status = session.TaskPieceRetrying
+				piece.FailureReason = strings.TrimSpace(reason)
+				if piece.RetryBudget <= piece.Attempts {
+					piece.RetryBudget = piece.Attempts + 1
+				}
+				resumed++
+			}
+		}
+		if resumed == 0 {
+			return errors.New("resume: task has no blocked or failed nodes to resume")
+		}
+		return nil
+	})
+	if err != nil {
+		return tools.TaskView{}, err
+	}
+	if err := session.SetConversationThreadExecState(m.server.rt.SessionDir, thread.ID, session.ExecStateExecuting); err != nil {
+		return tools.TaskView{}, err
+	}
+	updated.ExecState = session.ExecStateExecuting
+	m.server.recordTaskEventFor(updated, "", session.TaskEventWorkflowRevised, m.participantID, firstNonEmpty(strings.TrimSpace(reason), "lead resumed workflow"), "")
+	m.server.notifySubthreadUpdated(updated.SessionID, updated.ID)
+	m.server.reconcileExecutingTasks()
+	final, err := session.FindConversationThreadByID(m.server.rt.SessionDir, thread.ID)
+	return m.taskView(final), err
 }
 
 // PieceDone marks the caller's plan piece complete, records the structured
@@ -628,6 +929,97 @@ func (m *residentTaskManager) memberTask(action, subthreadID string) (session.Co
 	return thread, meta, nil
 }
 
+func (m *residentTaskManager) leadTask(action, subthreadID string) (session.ConversationThread, error) {
+	if err := m.ready(action); err != nil {
+		return session.ConversationThread{}, err
+	}
+	thread, _, err := m.memberTask(action, subthreadID)
+	if err != nil {
+		return session.ConversationThread{}, err
+	}
+	if thread.Status != session.ConversationThreadTask {
+		return session.ConversationThread{}, fmt.Errorf("%s: task %q is %q, not active", action, thread.ID, thread.Status)
+	}
+	if lead := strings.TrimSpace(thread.LeadParticipantID); lead == "" || lead != m.participantID {
+		return session.ConversationThread{}, fmt.Errorf("%s: task %q is led by %q; only its lead may revise the workflow", action, thread.ID, lead)
+	}
+	return thread, nil
+}
+
+func (m *residentTaskManager) validateTaskAssignee(thread session.ConversationThread, assignee string) error {
+	assignee = strings.TrimSpace(assignee)
+	if assignee == "" {
+		return errors.New("assignee is required")
+	}
+	if assignee == strings.TrimSpace(thread.LeadParticipantID) {
+		return fmt.Errorf("Task lead %q orchestrates and cannot be a piece assignee", assignee)
+	}
+	members, err := session.ListThreadMembers(m.server.rt.SessionDir, thread.SessionID)
+	if err != nil {
+		return err
+	}
+	for _, memberID := range members {
+		if strings.TrimSpace(memberID) == assignee {
+			return nil
+		}
+	}
+	return fmt.Errorf("assignee %q is not an active named member of group %q", assignee, thread.SessionID)
+}
+
+func cleanPieceDependencies(raw []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(raw))
+	for _, dep := range raw {
+		dep = strings.TrimSpace(dep)
+		if dep != "" && !seen[dep] {
+			seen[dep] = true
+			out = append(out, dep)
+		}
+	}
+	return out
+}
+
+func validateTaskPlanGraph(plan []session.TaskPiece) error {
+	byID := make(map[string]session.TaskPiece, len(plan))
+	for _, piece := range plan {
+		id := strings.TrimSpace(piece.ID)
+		if id == "" || byID[id].ID != "" {
+			return fmt.Errorf("workflow contains an empty or duplicate piece id %q", id)
+		}
+		byID[id] = piece
+	}
+	visiting := map[string]bool{}
+	visited := map[string]bool{}
+	var visit func(string) error
+	visit = func(id string) error {
+		if visiting[id] {
+			return fmt.Errorf("workflow dependency cycle includes %q", id)
+		}
+		if visited[id] {
+			return nil
+		}
+		visiting[id] = true
+		for _, dep := range byID[id].DependsOn {
+			dep = strings.TrimSpace(dep)
+			if _, ok := byID[dep]; !ok {
+				return fmt.Errorf("piece %q depends on unknown piece %q", id, dep)
+			}
+			if err := visit(dep); err != nil {
+				return err
+			}
+		}
+		visiting[id] = false
+		visited[id] = true
+		return nil
+	}
+	for id := range byID {
+		if err := visit(id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // boardThreadMeta gates workflow access to active named members of a group.
 // DMs and ordinary work sessions have no Thread/Task workflow.
 func (m *residentTaskManager) boardThreadMeta(action, threadID string) (session.Session, error) {
@@ -707,6 +1099,8 @@ func deriveNodeState(status string) string {
 		return "active"
 	case session.TaskPiecePending:
 		return "pending"
+	case session.TaskPieceCancelled:
+		return "cancelled"
 	default:
 		return strings.TrimSpace(status)
 	}
@@ -754,7 +1148,7 @@ func (s *Server) advancePlan(taskID string) {
 	done := map[string]bool{}
 	allDone := true
 	for _, p := range task.Plan {
-		if p.Status == session.TaskPieceDone {
+		if p.Status == session.TaskPieceDone || p.Status == session.TaskPieceCancelled {
 			done[p.ID] = true
 		} else {
 			allDone = false

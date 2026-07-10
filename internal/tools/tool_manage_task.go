@@ -26,14 +26,14 @@ func (t *ManageTaskTool) Name() string { return "manage_task" }
 func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "manage_task",
-		Description: "Manage the Group -> Thread -> Task workflow. action=open_thread starts a focused discussion on a real group-chat message (thread_id + anchor_seq); it never creates a Task directly. A named parent author owns that Thread; for a human parent, the calling named agent becomes owner. action=promote is owner-only and converts that same Thread identity into a Task; the owner becomes immutable Task lead. action=conclude is lead-only and publishes the verified conclusion. DMs, standalone Tasks, claim/unclaim, and lead reassignment do not exist. action=list shows the group's open Threads and active Tasks. Leads use set_plan to orchestrate other named agents; assignees use piece_done for an early or structured handoff. need_human and need_upstream are explicit exception paths; unfollow leaves a Task after your assigned work is over.",
+		Description: "Manage the Group -> Thread -> Task workflow. open_thread anchors convergence to a real group message; promote is owner-only and makes that owner immutable lead. set_plan declares the initial worker graph once. The lead adapts it with add_piece, revise_piece, reassign_piece, retry_piece, cancel_piece, and resume without replacing completed work or attempt history. conclude is lead-only after all live nodes finish. Workers use piece_done, need_human, and need_upstream. DMs, standalone Tasks, claims, and lead reassignment do not exist.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties": map[string]any{
 				"action": map[string]any{
 					"type":        "string",
-					"enum":        []string{"open_thread", "promote", "conclude", "need_human", "need_upstream", "unfollow", "list", "set_plan", "piece_done"},
+					"enum":        []string{"open_thread", "promote", "conclude", "need_human", "need_upstream", "unfollow", "list", "trace", "set_plan", "add_piece", "revise_piece", "reassign_piece", "retry_piece", "cancel_piece", "resume", "piece_done"},
 					"description": "open_thread starts convergence on an anchored group message; promote is Thread-owner-only and makes that owner Task lead; conclude is Task-lead-only and completes the Task with a verified summary; list shows open Threads and active Tasks. set_plan, piece_done, need_human, need_upstream, and unfollow operate only inside the promoted Task.",
 				},
 				"thread_id": map[string]any{
@@ -83,6 +83,19 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 					"type":        "string",
 					"description": "The id of your plan piece (as declared in set_plan). Required for piece_done (the piece you finished) and need_upstream (the piece whose upstream handoff was insufficient).",
 				},
+				"assignee": map[string]any{
+					"type":        "string",
+					"description": "Named group member id for add_piece or reassign_piece. The lead cannot be assigned.",
+				},
+				"prompt": map[string]any{
+					"type":        "string",
+					"description": "Worker briefing for add_piece or revise_piece.",
+				},
+				"depends_on": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Dependencies for add_piece or revise_piece. The full graph must remain acyclic.",
+				},
 				"handoff": map[string]any{
 					"type":        "object",
 					"description": "With piece_done: the structured result you hand to the downstream node(s) — the next node's real input, carried into its wake. Put that input here, never in a public post_message update (that update is progress for the human and wakes no teammate). Omit entirely if you produced nothing for a next node.",
@@ -124,6 +137,9 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 		Reason      string       `json:"reason"`
 		Plan        []TaskPiece  `json:"plan"`
 		PieceID     string       `json:"piece_id"`
+		Assignee    string       `json:"assignee"`
+		Prompt      string       `json:"prompt"`
+		DependsOn   []string     `json:"depends_on"`
 		Handoff     *TaskHandoff `json:"handoff"`
 	}
 	if err := json.Unmarshal([]byte(args), &params); err != nil {
@@ -208,6 +224,15 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 			return "", err
 		}
 		return marshalTaskResult("list", map[string]any{"threads": views})
+	case "trace":
+		if strings.TrimSpace(params.SubthreadID) == "" {
+			return "", errors.New("trace: subthread_id is required")
+		}
+		events, err := manager.TraceTask(ctx, params.SubthreadID)
+		if err != nil {
+			return "", err
+		}
+		return marshalTaskResult("trace", map[string]any{"events": events})
 	case "set_plan":
 		if strings.TrimSpace(params.SubthreadID) == "" {
 			return "", errors.New("set_plan: subthread_id is required")
@@ -220,6 +245,51 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 			return "", err
 		}
 		return marshalTaskResult("set_plan", map[string]any{"task": view})
+	case "add_piece":
+		if strings.TrimSpace(params.SubthreadID) == "" || strings.TrimSpace(params.PieceID) == "" || strings.TrimSpace(params.Title) == "" || strings.TrimSpace(params.Assignee) == "" {
+			return "", errors.New("add_piece: subthread_id, piece_id, title, and assignee are required")
+		}
+		view, err := manager.AddTaskPiece(ctx, params.SubthreadID, TaskPiece{ID: params.PieceID, Title: params.Title, Assignee: params.Assignee, Prompt: params.Prompt, DependsOn: params.DependsOn})
+		if err != nil {
+			return "", err
+		}
+		return marshalTaskResult("add_piece", map[string]any{"task": view})
+	case "revise_piece":
+		if strings.TrimSpace(params.SubthreadID) == "" || strings.TrimSpace(params.PieceID) == "" {
+			return "", errors.New("revise_piece: subthread_id and piece_id are required")
+		}
+		view, err := manager.ReviseTaskPiece(ctx, params.SubthreadID, params.PieceID, params.Title, params.Prompt, params.DependsOn)
+		if err != nil {
+			return "", err
+		}
+		return marshalTaskResult("revise_piece", map[string]any{"task": view})
+	case "reassign_piece":
+		if strings.TrimSpace(params.SubthreadID) == "" || strings.TrimSpace(params.PieceID) == "" || strings.TrimSpace(params.Assignee) == "" {
+			return "", errors.New("reassign_piece: subthread_id, piece_id, and assignee are required")
+		}
+		view, err := manager.ReassignTaskPiece(ctx, params.SubthreadID, params.PieceID, params.Assignee)
+		if err != nil {
+			return "", err
+		}
+		return marshalTaskResult("reassign_piece", map[string]any{"task": view})
+	case "retry_piece":
+		view, err := manager.RetryTaskPiece(ctx, params.SubthreadID, params.PieceID, params.Reason)
+		if err != nil {
+			return "", err
+		}
+		return marshalTaskResult("retry_piece", map[string]any{"task": view})
+	case "cancel_piece":
+		view, err := manager.CancelTaskPiece(ctx, params.SubthreadID, params.PieceID, params.Reason)
+		if err != nil {
+			return "", err
+		}
+		return marshalTaskResult("cancel_piece", map[string]any{"task": view})
+	case "resume":
+		view, err := manager.ResumeTask(ctx, params.SubthreadID, params.Reason)
+		if err != nil {
+			return "", err
+		}
+		return marshalTaskResult("resume", map[string]any{"task": view})
 	case "piece_done":
 		if strings.TrimSpace(params.SubthreadID) == "" {
 			return "", errors.New("piece_done: subthread_id is required")

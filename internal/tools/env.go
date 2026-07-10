@@ -429,6 +429,17 @@ type TaskHandoff struct {
 	Notes      string   `json:"notes,omitempty"`
 }
 
+type TaskEvent struct {
+	Seq       int       `json:"seq"`
+	NodeID    string    `json:"node_id,omitempty"`
+	AttemptID string    `json:"attempt_id,omitempty"`
+	Kind      string    `json:"kind"`
+	Actor     string    `json:"actor,omitempty"`
+	Summary   string    `json:"summary,omitempty"`
+	Payload   string    `json:"payload,omitempty"`
+	At        time.Time `json:"at"`
+}
+
 // TaskManager lets resident named agents run the group-only Thread -> Task
 // workflow. The app server injects one per resident runtime; task workers and
 // ordinary subagents never receive it.
@@ -463,12 +474,19 @@ type TaskManager interface {
 	UnfollowTask(ctx context.Context, subthreadID string) error
 	// ListWorkflowThreads returns the group's open Threads and active Tasks.
 	ListWorkflowThreads(ctx context.Context, threadID string) ([]TaskView, error)
+	TraceTask(ctx context.Context, subthreadID string) ([]TaskEvent, error)
 	// SetPlan declares the lead's work breakdown for a team task (task-rail
 	// design §8): pieces with assignees and dependencies. The engine then
 	// dispatches every piece whose dependencies are already satisfied by
 	// @-waking its assignee into the task thread. The caller must belong to
 	// the task's thread; assignees must be members.
 	SetPlan(ctx context.Context, subthreadID string, pieces []TaskPiece) (TaskView, error)
+	AddTaskPiece(ctx context.Context, subthreadID string, piece TaskPiece) (TaskView, error)
+	ReviseTaskPiece(ctx context.Context, subthreadID, pieceID, title, prompt string, dependsOn []string) (TaskView, error)
+	ReassignTaskPiece(ctx context.Context, subthreadID, pieceID, assignee string) (TaskView, error)
+	RetryTaskPiece(ctx context.Context, subthreadID, pieceID, reason string) (TaskView, error)
+	CancelTaskPiece(ctx context.Context, subthreadID, pieceID, reason string) (TaskView, error)
+	ResumeTask(ctx context.Context, subthreadID, reason string) (TaskView, error)
 	// PieceDone marks one plan piece complete (called by its assignee) and
 	// hands the structured result to the downstream node(s). The engine writes
 	// handoff onto every piece that depends on this one — or, for a terminal

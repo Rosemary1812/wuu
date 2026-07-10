@@ -15,6 +15,7 @@ import (
 const (
 	TaskEventTaskCreated     = "task_created"
 	TaskEventWorkflowPlanned = "workflow_planned"
+	TaskEventWorkflowRevised = "workflow_revised"
 	TaskEventNodeStarted     = "node_started"
 	TaskEventCommentary      = "commentary"
 	TaskEventToolCall        = "tool_call"
@@ -23,6 +24,7 @@ const (
 	TaskEventHandoffCreated  = "handoff_created"
 	TaskEventNodeSucceeded   = "node_succeeded"
 	TaskEventNodeFailed      = "node_failed"
+	TaskEventNodeCancelled   = "node_cancelled"
 	TaskEventRetrying        = "retrying"
 	TaskEventBlocked         = "blocked"
 	TaskEventLeadInvoked     = "lead_invoked"

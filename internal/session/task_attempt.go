@@ -468,7 +468,7 @@ func validTerminalTaskAttemptStatus(status string) bool {
 
 func validFinishedPieceStatus(status string) bool {
 	switch status {
-	case TaskPieceDone, TaskPieceRetrying, TaskPieceFailed, TaskPieceBlocked:
+	case TaskPieceDone, TaskPieceRetrying, TaskPieceFailed, TaskPieceBlocked, TaskPieceCancelled:
 		return true
 	default:
 		return false
