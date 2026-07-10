@@ -35,6 +35,7 @@ type TaskEvent struct {
 	SessionID string // parent group thread id
 	TaskID    string // the cth id upgraded to a task
 	NodeID    string // plan piece id; empty for task-level events
+	AttemptID string // exact task attempt; empty for task-level/legacy events
 	Seq       int    // per-task monotonic order (output-only; assigned on append)
 	Kind      string
 	Actor     string // participant id that produced the event, when applicable
@@ -50,6 +51,7 @@ func AppendTaskEvent(sessDir string, ev TaskEvent) (TaskEvent, error) {
 	ev.SessionID = strings.TrimSpace(ev.SessionID)
 	ev.TaskID = strings.TrimSpace(ev.TaskID)
 	ev.NodeID = strings.TrimSpace(ev.NodeID)
+	ev.AttemptID = strings.TrimSpace(ev.AttemptID)
 	ev.Kind = strings.TrimSpace(ev.Kind)
 	ev.Actor = strings.TrimSpace(ev.Actor)
 	if ev.TaskID == "" {
@@ -89,9 +91,9 @@ func AppendTaskEvent(sessDir string, ev TaskEvent) (TaskEvent, error) {
 	ev.Seq = int(maxSeq.Int64) + 1
 
 	if _, err := tx.Exec(`
-INSERT INTO task_events (id, session_id, task_id, node_id, seq, kind, actor, summary, payload, at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		ev.ID, ev.SessionID, ev.TaskID, ev.NodeID, ev.Seq, ev.Kind, ev.Actor, ev.Summary, ev.Payload, ev.At.UnixMilli(),
+INSERT INTO task_events (id, session_id, task_id, node_id, seq, kind, actor, attempt_id, summary, payload, at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ev.ID, ev.SessionID, ev.TaskID, ev.NodeID, ev.Seq, ev.Kind, ev.Actor, ev.AttemptID, ev.Summary, ev.Payload, ev.At.UnixMilli(),
 	); err != nil {
 		return TaskEvent{}, fmt.Errorf("insert task event: %w", err)
 	}
@@ -115,7 +117,7 @@ func TaskEvents(sessDir, taskID string) ([]TaskEvent, error) {
 	defer db.Close()
 
 	rows, err := db.Query(`
-SELECT id, session_id, task_id, node_id, seq, kind, actor, summary, payload, at
+SELECT id, session_id, task_id, node_id, seq, kind, actor, attempt_id, summary, payload, at
 FROM task_events WHERE task_id = ? ORDER BY seq ASC`, taskID)
 	if err != nil {
 		return nil, fmt.Errorf("load task events: %w", err)
@@ -126,7 +128,7 @@ FROM task_events WHERE task_id = ? ORDER BY seq ASC`, taskID)
 	for rows.Next() {
 		var ev TaskEvent
 		var at int64
-		if err := rows.Scan(&ev.ID, &ev.SessionID, &ev.TaskID, &ev.NodeID, &ev.Seq, &ev.Kind, &ev.Actor, &ev.Summary, &ev.Payload, &at); err != nil {
+		if err := rows.Scan(&ev.ID, &ev.SessionID, &ev.TaskID, &ev.NodeID, &ev.Seq, &ev.Kind, &ev.Actor, &ev.AttemptID, &ev.Summary, &ev.Payload, &at); err != nil {
 			return nil, fmt.Errorf("scan task event: %w", err)
 		}
 		ev.At = time.UnixMilli(at).UTC()

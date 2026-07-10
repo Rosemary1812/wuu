@@ -912,6 +912,29 @@ func migrateSchema(db *sql.DB) error {
 			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_message_marks_message ON message_marks(session_id, seq)`,
+		// task_attempts is the durable scheduler truth: one row per concrete
+		// execution of one plan node. queued/running attempts hold an assignee
+		// reservation, enforced globally by the partial unique index.
+		`CREATE TABLE IF NOT EXISTS task_attempts (
+			id               TEXT PRIMARY KEY,
+			session_id       TEXT NOT NULL,
+			task_id          TEXT NOT NULL,
+			node_id          TEXT NOT NULL,
+			assignee_id      TEXT NOT NULL,
+			ordinal          INTEGER NOT NULL,
+			status           TEXT NOT NULL,
+			failure_category TEXT NOT NULL DEFAULT '',
+			failure_message  TEXT NOT NULL DEFAULT '',
+			created_at       INTEGER NOT NULL,
+			started_at       INTEGER NOT NULL DEFAULT 0,
+			finished_at      INTEGER NOT NULL DEFAULT 0,
+			FOREIGN KEY(task_id) REFERENCES conversation_threads(id) ON DELETE CASCADE,
+			FOREIGN KEY(assignee_id) REFERENCES participants(id) ON DELETE CASCADE,
+			UNIQUE(task_id, node_id, ordinal)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_task_attempts_task ON task_attempts(task_id, node_id, ordinal)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_task_attempts_active_assignee
+		 ON task_attempts(assignee_id) WHERE status IN ('queued', 'running')`,
 		// task_events is the durable, append-only execution trace for a task
 		// (one conversation_thread upgraded to a task). It is the record the
 		// system, the lead/supervisor, and humans read to understand what
@@ -927,6 +950,7 @@ func migrateSchema(db *sql.DB) error {
 			seq        INTEGER NOT NULL,
 			kind       TEXT NOT NULL,
 			actor      TEXT NOT NULL DEFAULT '',
+			attempt_id TEXT NOT NULL DEFAULT '',
 			summary    TEXT NOT NULL DEFAULT '',
 			payload    TEXT NOT NULL DEFAULT '',
 			at         INTEGER NOT NULL
@@ -1083,6 +1107,9 @@ func migrateSchema(db *sql.DB) error {
 		return err
 	}
 	if err := addColumnIfMissing(db, "conversation_threads", "parent_author_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "task_events", "attempt_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if _, err := db.Exec(`

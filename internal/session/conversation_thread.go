@@ -125,6 +125,9 @@ type TaskPiece struct {
 	// carried a budget come back with 3. Attempts counts attempts made so far.
 	RetryBudget int `json:"retry_budget,omitempty"`
 	Attempts    int `json:"attempts,omitempty"`
+	// CurrentAttemptID binds this node to the one queued/running durable attempt
+	// whose dispatch envelope may complete it. Empty means no attempt owns it.
+	CurrentAttemptID string `json:"current_attempt_id,omitempty"`
 	// FailureReason is the most recent failure, kept for the lead's
 	// post-mortem when it is woken on failure.
 	FailureReason string `json:"failure_reason,omitempty"`
