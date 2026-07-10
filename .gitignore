@@ -14,6 +14,7 @@ desktop/out/
 # artifacts under tracked icon resources.
 desktop/build/bin/
 desktop/release/
+desktop/native/cua-mac/.build/
 # electron-vite writes a timestamp marker when it re-syncs node_modules;
 # keep it out of git.
 desktop/.node_modules.synced

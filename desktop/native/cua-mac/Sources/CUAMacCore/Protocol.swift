@@ -1,0 +1,238 @@
+import Foundation
+
+public enum ComputerAction: String, CaseIterable, Sendable {
+    case permissionStatus = "permission_status"
+    case requestPermissions = "request_permissions"
+    case listApps = "list_apps"
+    case observe
+    case click
+    case drag
+    case pressKey = "press_key"
+    case scroll
+    case setValue = "set_value"
+    case typeText = "type_text"
+    case selectText = "select_text"
+    case performAction = "perform_action"
+    case waitForChange = "wait_for_change"
+}
+
+public struct ComputerCommand: @unchecked Sendable {
+    public let action: ComputerAction
+    public let app: String?
+    public let elementID: Int?
+    public let x: Double?
+    public let y: Double?
+    public let toX: Double?
+    public let toY: Double?
+    public let mouseButton: String?
+    public let clickCount: Int?
+    public let key: String?
+    public let text: String?
+    public let value: String?
+    public let direction: String?
+    public let pages: Int?
+    public let actionName: String?
+    public let prefix: String?
+    public let suffix: String?
+    public let timeout: Double?
+
+    public init(arguments: [String: Any]) throws {
+        guard let rawAction = arguments["action"] as? String,
+              let action = ComputerAction(rawValue: rawAction) else {
+            throw ComputerError.invalidArguments("action is required and must be supported")
+        }
+        self.action = action
+        app = arguments["app"] as? String
+        elementID = Self.int(arguments["element_id"])
+        x = Self.double(arguments["x"] ?? arguments["from_x"])
+        y = Self.double(arguments["y"] ?? arguments["from_y"])
+        toX = Self.double(arguments["to_x"])
+        toY = Self.double(arguments["to_y"])
+        mouseButton = arguments["mouse_button"] as? String
+        clickCount = Self.int(arguments["click_count"])
+        key = arguments["key"] as? String
+        text = arguments["text"] as? String
+        value = arguments["value"] as? String
+        direction = arguments["direction"] as? String
+        pages = Self.int(arguments["pages"])
+        actionName = arguments["action_name"] as? String
+        prefix = arguments["prefix"] as? String
+        suffix = arguments["suffix"] as? String
+        timeout = Self.double(arguments["timeout"])
+    }
+
+    private static func int(_ value: Any?) -> Int? {
+        if let value = value as? Int { return value }
+        if let value = value as? NSNumber { return value.intValue }
+        return nil
+    }
+
+    private static func double(_ value: Any?) -> Double? {
+        if let value = value as? Double { return value }
+        if let value = value as? Int { return Double(value) }
+        if let value = value as? NSNumber { return value.doubleValue }
+        return nil
+    }
+}
+
+public struct ComputerResult: @unchecked Sendable {
+    public let text: String
+    public let screenshot: Data?
+    public let screenshotMIMEType: String?
+    public let structured: [String: Any]
+
+    public init(text: String, screenshot: Data? = nil, screenshotMIMEType: String? = nil, structured: [String: Any] = [:]) {
+        self.text = text
+        self.screenshot = screenshot
+        self.screenshotMIMEType = screenshotMIMEType
+        self.structured = structured
+    }
+}
+
+public protocol ComputerBackend: AnyObject {
+    func perform(_ command: ComputerCommand) throws -> ComputerResult
+}
+
+public enum ComputerError: LocalizedError, Equatable {
+    case invalidArguments(String)
+    case permissionDenied(String)
+    case appNotFound(String)
+    case elementNotFound(Int)
+    case unsupported(String)
+    case operationFailed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case let .invalidArguments(message): "invalid_arguments: \(message)"
+        case let .permissionDenied(message): "permission_denied: \(message)"
+        case let .appNotFound(app): "app_not_found: \(app)"
+        case let .elementNotFound(id): "element_not_found: \(id); observe again for fresh element ids"
+        case let .unsupported(message): "unsupported_action: \(message)"
+        case let .operationFailed(message): "operation_failed: \(message)"
+        }
+    }
+}
+
+public final class MCPServer {
+    private let backend: ComputerBackend
+    private let acceptedProtocols = Set(["2026-06-30", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"])
+
+    public init(backend: ComputerBackend) {
+        self.backend = backend
+    }
+
+    public func handle(_ request: [String: Any]) throws -> [String: Any]? {
+        let method = request["method"] as? String ?? ""
+        let id = request["id"]
+        if id == nil && method.hasPrefix("notifications/") {
+            return nil
+        }
+        switch method {
+        case "initialize":
+            let params = request["params"] as? [String: Any]
+            let proposed = params?["protocolVersion"] as? String ?? "2025-11-25"
+            let selected = acceptedProtocols.contains(proposed) ? proposed : "2025-11-25"
+            return response(id: id, result: [
+                "protocolVersion": selected,
+                "capabilities": ["tools": ["listChanged": false]],
+                "serverInfo": ["name": "wuu-cua-mac", "version": "0.1.0"],
+            ])
+        case "ping":
+            return response(id: id, result: [:])
+        case "tools/list":
+            return response(id: id, result: ["tools": [toolDefinition()]])
+        case "tools/call":
+            return callTool(id: id, params: request["params"] as? [String: Any])
+        default:
+            return rpcError(id: id, code: -32601, message: "method not found: \(method)")
+        }
+    }
+
+    private func callTool(id: Any?, params: [String: Any]?) -> [String: Any] {
+        guard params?["name"] as? String == "computer" else {
+            return rpcError(id: id, code: -32602, message: "unknown tool")
+        }
+        do {
+            let arguments = params?["arguments"] as? [String: Any] ?? [:]
+            let command = try ComputerCommand(arguments: arguments)
+            let result = try backend.perform(command)
+            var content: [[String: Any]] = [["type": "text", "text": result.text]]
+            if let screenshot = result.screenshot,
+               let mimeType = result.screenshotMIMEType,
+               !screenshot.isEmpty {
+                content.append([
+                    "type": "image",
+                    "data": screenshot.base64EncodedString(),
+                    "mimeType": mimeType,
+                ])
+            }
+            return response(id: id, result: [
+                "content": content,
+                "structuredContent": result.structured,
+                "isError": false,
+            ])
+        } catch {
+            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            return response(id: id, result: [
+                "content": [["type": "text", "text": message]],
+                "structuredContent": ["error": message],
+                "isError": true,
+            ])
+        }
+    }
+
+    private func toolDefinition() -> [String: Any] {
+        let stringProperty: [String: Any] = ["type": "string"]
+        let numberProperty: [String: Any] = ["type": "number"]
+        return [
+            "name": "computer",
+            "title": "Computer Use for Mac",
+            "description": "Observe and control macOS apps. Accessibility element actions are preferred; coordinates and synthesized keyboard or pointer events are automatic fallbacks and may activate the target app.",
+            "inputSchema": [
+                "type": "object",
+                "required": ["action"],
+                "additionalProperties": false,
+                "properties": [
+                    "action": ["type": "string", "enum": ComputerAction.allCases.map(\.rawValue)],
+                    "app": stringProperty,
+                    "element_id": ["type": "integer"],
+                    "x": numberProperty,
+                    "y": numberProperty,
+                    "to_x": numberProperty,
+                    "to_y": numberProperty,
+                    "from_x": numberProperty,
+                    "from_y": numberProperty,
+                    "mouse_button": ["type": "string", "enum": ["left", "right", "middle"]],
+                    "click_count": ["type": "integer", "minimum": 1, "maximum": 3],
+                    "key": stringProperty,
+                    "text": stringProperty,
+                    "value": stringProperty,
+                    "direction": ["type": "string", "enum": ["up", "down", "left", "right"]],
+                    "pages": ["type": "integer", "minimum": 1, "maximum": 20],
+                    "action_name": stringProperty,
+                    "prefix": stringProperty,
+                    "suffix": stringProperty,
+                    "timeout": ["type": "number", "minimum": 0.1, "maximum": 30],
+                ],
+            ],
+            "annotations": [
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": false,
+                "openWorldHint": true,
+            ],
+        ]
+    }
+
+    private func response(id: Any?, result: [String: Any]) -> [String: Any] {
+        ["jsonrpc": "2.0", "id": id ?? NSNull(), "result": result]
+    }
+
+    private func rpcError(id: Any?, code: Int, message: String) -> [String: Any] {
+        [
+            "jsonrpc": "2.0",
+            "id": id ?? NSNull(),
+            "error": ["code": code, "message": message],
+        ]
+    }
+}
