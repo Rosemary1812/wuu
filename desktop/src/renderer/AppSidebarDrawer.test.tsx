@@ -46,6 +46,7 @@ let container: HTMLDivElement;
 let root: Root | null = null;
 let serverEventHandlers: Array<(event: ServerEvent) => void> = [];
 let elementFromPointTarget: Element | null = null;
+const originalInnerWidth = window.innerWidth;
 
 const workspace = "/tmp/wuu-drawer-test";
 
@@ -259,6 +260,7 @@ function sidebarContainsFocus(): boolean {
 
 describe("collapsed sidebar hover drawer", () => {
   beforeEach(() => {
+    window.innerWidth = 1280;
     vi.useFakeTimers();
     installWindowStubs();
     serverEventHandlers = [];
@@ -270,6 +272,7 @@ describe("collapsed sidebar hover drawer", () => {
   });
 
   afterEach(() => {
+    window.innerWidth = originalInnerWidth;
     act(() => {
       root?.unmount();
     });
@@ -515,6 +518,44 @@ describe("collapsed sidebar hover drawer", () => {
     expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(
       false,
     );
+  });
+
+  it("returns to conversation when compact focus navigation selects a session", async () => {
+    installWuuApi([
+      threadFixture(
+        "thread-active",
+        "Already open session",
+        "2026-01-02T00:00:00Z",
+      ),
+      threadFixture(
+        "thread-target",
+        "Session from focused workspace",
+        "2026-01-01T00:00:00Z",
+      ),
+    ]);
+    window.innerWidth = 674;
+    await renderCollapsedApp();
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="打开右侧栏"]')
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(appShell()?.classList.contains("right-panel-globalized")).toBe(true);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="打开导航侧栏"]')
+        ?.click();
+    });
+    expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(true);
+
+    await clickSidebarSession("Session from focused workspace");
+
+    expect(appShell()?.classList.contains("right-panel-open")).toBe(false);
+    expect(appShell()?.classList.contains("right-panel-globalized")).toBe(false);
+    expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(false);
   });
 
   it("closes the drawer after a session switch when the pointer no longer hovers it", async () => {

@@ -611,6 +611,31 @@ export function App(): JSX.Element {
     toggleSidebar,
     workspaceRightPanelDockableWithoutSidebar,
   ]);
+  const revealConversationFromFocusedWorkspace = useCallback((): void => {
+    if (!rightPanelGlobalized) {
+      return;
+    }
+    closeSidebarDrawer();
+    setRightPanelManualGlobalized(false);
+    if (!rightPanelAutoGlobalized) {
+      return;
+    }
+    if (!workspaceRightPanelDockableWithoutSidebar) {
+      setRightPanelOpenWithMotion(false);
+      return;
+    }
+    if (!sidebarCollapsed) {
+      toggleSidebar();
+    }
+  }, [
+    closeSidebarDrawer,
+    rightPanelAutoGlobalized,
+    rightPanelGlobalized,
+    setRightPanelOpenWithMotion,
+    sidebarCollapsed,
+    toggleSidebar,
+    workspaceRightPanelDockableWithoutSidebar,
+  ]);
   const [environmentDialog, setEnvironmentDialog] =
     useState<EnvironmentDialog | null>(null);
   const [contextCompositionEntries, setContextCompositionEntries] = useState<
@@ -3720,18 +3745,30 @@ export function App(): JSX.Element {
               debugControlsVisible && ENABLE_CONVERSATION_FIXTURES
             }
             sectionOrder={sidebarSectionOrder}
-            onStartNewThread={() => void startNewThread({ resetToNoProject: true })}
+            onStartNewThread={() => {
+              revealConversationFromFocusedWorkspace();
+              void startNewThread({ resetToNoProject: true });
+            }}
             onOpenSkillsTab={openSkillsTab}
             onToggleConversationSearch={toggleConversationSearch}
             onSeedConversationFixture={seedConversationFixture}
             onSeedAgentTreeDemo={seedAgentTreeDemo}
             onOpenChipGallery={() => setChipGalleryOpen(true)}
-            onSelectThread={(id) => void activateThread(id)}
-            onSelectParticipant={(participant) => void openParticipantDM(participant)}
+            onSelectThread={(id) => {
+              revealConversationFromFocusedWorkspace();
+              void activateThread(id);
+            }}
+            onSelectParticipant={(participant) => {
+              revealConversationFromFocusedWorkspace();
+              void openParticipantDM(participant);
+            }}
             onEditParticipant={openParticipantProfile}
             onCreateParticipant={handleNewParticipantCreate}
             providers={state.initialized?.providers}
-            onCreateGroupThread={(title) => void createGroupThread(title)}
+            onCreateGroupThread={(title) => {
+              revealConversationFromFocusedWorkspace();
+              void createGroupThread(title);
+            }}
             onImportParticipants={importParticipantTemplate}
             onExportParticipants={exportParticipantTemplate}
             onTogglePinned={(thread) => void toggleThreadPinned(thread)}
@@ -3748,15 +3785,17 @@ export function App(): JSX.Element {
             onOpenProjectFolder={() => void chooseProjectFolder()}
             onToggleSidebarSectionCollapsed={toggleSidebarSectionCollapsed}
             onStartNewThreadForProject={(id) => {
+              revealConversationFromFocusedWorkspace();
               if (id === SCRATCH_PSEUDO_PROJECT_ID) {
                 void useNoProject(true);
               } else {
                 void startNewThreadForProject(id);
               }
             }}
-            onSelectProjectThread={(projectID, threadID) =>
-              void selectProjectThread(projectID, threadID)
-            }
+            onSelectProjectThread={(projectID, threadID) => {
+              revealConversationFromFocusedWorkspace();
+              void selectProjectThread(projectID, threadID);
+            }}
             onRemoveProject={(id) => void removeProject(id)}
             onRelocateProject={(id) => void relocateProject(id)}
             onReorderSections={setSidebarSectionOrder}
