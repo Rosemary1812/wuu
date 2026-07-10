@@ -234,5 +234,24 @@ describe("workspace file tabs", () => {
     );
     expect(rightFilePreview).not.toBeNull();
     expect(rightFilePreview?.textContent).toContain("Artifact");
+
+    fileLink?.focus();
+    const expand = container.querySelector<HTMLButtonElement>('[aria-label="展开为全面板"]');
+    await act(async () => expand?.click());
+    await flushAsync();
+
+    expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(true);
+    expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(true);
+    expect(container.querySelector(".workspace-right-panel")?.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(
+      container.querySelector(".workspace-tool-tab.active .workspace-tool-tab-main"),
+    );
+
+    const exit = container.querySelector<HTMLButtonElement>('[aria-label="退出全面板"]');
+    await act(async () => exit?.click());
+    await flushAsync();
+    expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(false);
+    expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(fileLink);
   });
 });

@@ -16,7 +16,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Plus, X } from "lucide-react";
-import { type CSSProperties, type MouseEvent as ReactMouseEvent, useState } from "react";
+import { type CSSProperties, type MouseEvent as ReactMouseEvent, useRef, useState } from "react";
 import {
   isThreadRunning,
   isThreadUnread,
@@ -32,7 +32,7 @@ import {
   type PendingComposerMessagesByThread,
 } from "./ComposerPendingMessages";
 import { ThreadContextMenu, type ThreadContextMenuItem } from "./ThreadContextMenu";
-import { handleTabListKeyDown } from "./TabKeyboardNavigation";
+import { handleTabListKeyDown, useTabCloseFocusRestoration } from "./TabKeyboardNavigation";
 
 const POP_OUT_DRAG_DISTANCE_PX = 54;
 
@@ -67,6 +67,12 @@ export function SessionTabStrip({
   onNewThread: () => void;
   onReorder: (activeID: string, overID: string) => void;
 }): JSX.Element {
+  const newTabButtonRef = useRef<HTMLButtonElement>(null);
+  const { requestFocusRestoration, tabListRef } = useTabCloseFocusRestoration(
+    state.activeSessionTabID,
+    state.sessionTabs.map((tab) => tab.id),
+    newTabButtonRef,
+  );
   const [draggingTabID, setDraggingTabID] = useState<string | undefined>();
   const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>();
   const [tabContextMenu, setTabContextMenu] = useState<
@@ -149,6 +155,7 @@ export function SessionTabStrip({
             strategy={horizontalListSortingStrategy}
           >
             <div
+              ref={tabListRef}
               className="session-tab-scroll"
               role="tablist"
               aria-label="对话"
@@ -206,8 +213,14 @@ export function SessionTabStrip({
                     }
                     reorderable={state.sessionTabs.length > 1}
                     onSelect={() => onSelect(tab.id)}
-                    onClose={() => onClose(tab.id)}
-                    onDoubleClick={() => onClose(tab.id)}
+                    onClose={() => {
+                      requestFocusRestoration();
+                      onClose(tab.id);
+                    }}
+                    onDoubleClick={() => {
+                      requestFocusRestoration();
+                      onClose(tab.id);
+                    }}
                     onContextMenu={(event) => handleTabContextMenu(tab.id, event)}
                   />
                 );
@@ -256,6 +269,7 @@ export function SessionTabStrip({
         </DndContext>
       </div>
       <button
+        ref={newTabButtonRef}
         className="icon-button workspace-panel-add session-tab-new"
         type="button"
         aria-label="新建对话"

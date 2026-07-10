@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import {
   closestCenter,
   DndContext,
@@ -21,7 +21,7 @@ import { WorkspaceFilePreview, WorkspaceFileTree, type WorkspaceFileDirtyState }
 import { WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
 import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
 import type { WorkspaceFileViewTab, WorkspaceViewTab } from "./WorkspaceViewTabs";
-import { handleTabListKeyDown } from "./TabKeyboardNavigation";
+import { handleTabListKeyDown, useTabCloseFocusRestoration } from "./TabKeyboardNavigation";
 
 export type WorkspacePanelView = "files" | "review" | "terminal" | "browser";
 
@@ -94,6 +94,12 @@ export function WorkspaceRightPanel({
   const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>(undefined);
   const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const draggingTab = draggingTabID ? tabs.find((tab) => tab.id === draggingTabID) : undefined;
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  const { requestFocusRestoration, tabListRef } = useTabCloseFocusRestoration(
+    activeTabID,
+    tabs.map((tab) => tab.id),
+    addButtonRef,
+  );
 
   useEffect(() => {
     onDirtyFileTabsChange?.(dirtyFileTabIDs.size > 0);
@@ -153,6 +159,7 @@ export function WorkspaceRightPanel({
       next.delete(tab.id);
       return next;
     });
+    requestFocusRestoration();
     onCloseTab(tab.id);
   }
 
@@ -160,6 +167,7 @@ export function WorkspaceRightPanel({
     <aside
       className={`workspace-right-panel${activeTab ? " detail" : " tools"}${activeTab?.kind === "review" ? " review" : ""}${activeTab?.kind === "diff" ? " diff" : ""}${activeTab?.kind === "file" ? " file" : ""}`}
       aria-hidden={!open}
+      inert={!open}
     >
       <div className="workspace-panel-tabbar">
         <DndContext
@@ -172,6 +180,7 @@ export function WorkspaceRightPanel({
         >
           <SortableContext items={tabs.map((tab) => tab.id)} strategy={horizontalListSortingStrategy}>
             <div
+              ref={tabListRef}
               className="workspace-panel-tabs"
               role="tablist"
               aria-label="产物与工具"
@@ -207,6 +216,7 @@ export function WorkspaceRightPanel({
         </DndContext>
         <span className="workspace-panel-tabbar-spacer" />
         <button
+          ref={addButtonRef}
           className={`icon-button workspace-panel-add${showingPicker ? " active" : ""}`}
           type="button"
           aria-label="选择工具"
@@ -242,7 +252,7 @@ export function WorkspaceRightPanel({
           <div className={`workspace-panel-body${activeTab ? "" : " picker"}`}>
             {fileTabs.map((tab) => (
               <WorkspaceFileResource
-                active={tab.id === activeTabID}
+                active={open && tab.id === activeTabID}
                 key={tab.id}
                 onDirtyChange={updateFileDirtyState}
                 tab={tab}

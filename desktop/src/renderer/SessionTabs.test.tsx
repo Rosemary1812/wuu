@@ -267,6 +267,64 @@ describe("SessionTabStrip pending indicators", () => {
     expect(tabs[1]?.classList.contains("has-unread")).toBe(true);
   });
 
+  it("restores keyboard focus to the next active conversation after close", () => {
+    const context: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/tmp/project",
+    };
+    const threadA = makeThread("thread-a", "Thread A");
+    const threadB = makeThread("thread-b", "Thread B");
+    const state = {
+      ...initialState,
+      activeContext: context,
+      thread: threadB,
+      activeSessionTabID: threadSessionTabID(threadB.id),
+      sessionTabs: [
+        createThreadSessionTab(threadA, context),
+        createThreadSessionTab(threadB, context),
+      ],
+      threads: [threadA, threadB],
+    };
+    const renderState = (nextState: AppState): void => {
+      root?.render(
+        <SessionTabStrip
+          state={nextState}
+          pendingComposerMessagesByThread={{}}
+          canStartNewThread
+          onSelect={() => {}}
+          onClose={(tabID) => {
+            expect(tabID).toBe(threadSessionTabID(threadB.id));
+            renderState({
+              ...state,
+              thread: threadA,
+              activeSessionTabID: threadSessionTabID(threadA.id),
+              sessionTabs: [createThreadSessionTab(threadA, context)],
+            });
+          }}
+          onCloseTabs={() => {}}
+          onPopOut={() => {}}
+          onNewThread={() => {}}
+          onReorder={() => {}}
+        />,
+      );
+    };
+    act(() => {
+      root = createRoot(container);
+      renderState(state);
+    });
+
+    const activeClose = container.querySelector<HTMLButtonElement>(
+      ".session-tab.active .session-tab-close",
+    );
+    activeClose?.focus();
+    act(() => activeClose?.click());
+
+    expect(document.activeElement).toBe(
+      container.querySelector(".session-tab.active .session-tab-main"),
+    );
+  });
+
   it("does not apply has-unread to running thread tabs even when their latest turn is new", () => {
     const context: RuntimeContext = {
       kind: "project",

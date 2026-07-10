@@ -188,6 +188,31 @@ describe("WorkspaceRightPanel", () => {
     expect(container?.querySelector('[aria-label="退出全面板"]')).not.toBeNull();
   });
 
+  it("makes the retained workspace inert and releases its editor while closed", async () => {
+    const fileTab = workspaceFileViewTab({
+      context: {
+        kind: "project",
+        project_id: "project-1",
+        cwd: "/repo/project",
+      },
+      path: "src/App.tsx",
+    });
+    mount(
+      <WorkspaceRightPanel
+        {...baseProps()}
+        open={false}
+        present={false}
+        tabs={[fileTab]}
+        activeTabID={fileTab.id}
+      />,
+    );
+    await act(async () => Promise.resolve());
+
+    const panel = container?.querySelector<HTMLElement>(".workspace-right-panel");
+    expect(panel?.hasAttribute("inert")).toBe(true);
+    expect(panel?.querySelector(".workspace-monaco-editor")).toBeNull();
+  });
+
   it("renders an editable file resource inside the right workspace", async () => {
     const fileTab = workspaceFileViewTab({
       context: {
@@ -457,6 +482,45 @@ describe("WorkspaceRightPanel", () => {
       diffAButton?.click();
     });
     expect(onSelectTab).toHaveBeenCalledWith(diffA.id);
+  });
+
+  it("restores keyboard focus to the next active workspace tab after close", () => {
+    const filesTab = workspaceToolViewTab("files");
+    const terminalTab = workspaceToolViewTab("terminal");
+    const renderPanel = (tabs: WorkspaceViewTab[], activeTabID: string): void => {
+      root?.render(
+        <WorkspaceRightPanel
+          {...baseProps()}
+          tabs={tabs}
+          activeTabID={activeTabID}
+          onCloseTab={(id) => {
+            expect(id).toBe(terminalTab.id);
+            renderPanel([filesTab], filesTab.id);
+          }}
+        />,
+      );
+    };
+    mount(
+      <WorkspaceRightPanel
+        {...baseProps()}
+        tabs={[filesTab, terminalTab]}
+        activeTabID={terminalTab.id}
+        onCloseTab={(id) => {
+          expect(id).toBe(terminalTab.id);
+          renderPanel([filesTab], filesTab.id);
+        }}
+      />,
+    );
+
+    const activeClose = container?.querySelector<HTMLButtonElement>(
+      ".workspace-tool-tab.active .workspace-tool-tab-close",
+    );
+    activeClose?.focus();
+    act(() => activeClose?.click());
+
+    expect(document.activeElement).toBe(
+      container?.querySelector(".workspace-tool-tab.active .workspace-tool-tab-main"),
+    );
   });
 
   it("shows the tool picker when there is no active tab, and marks open tools active", () => {

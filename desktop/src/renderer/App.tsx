@@ -692,6 +692,11 @@ export function App(): JSX.Element {
   const environmentPanelRef = useRef<HTMLDivElement>(null);
   const appStateRef = useRef<AppState>(initialState);
   const workspaceHasDirtyFilesRef = useRef(false);
+  const lastFocusOutsideWorkspaceRef = useRef<HTMLElement | null>(null);
+  const previousWorkspaceFocusModeRef = useRef({
+    fullPanel: false,
+    open: false,
+  });
   const {
     pendingComposerMessagesByThread,
     queuedMessageEditTargetRef,
@@ -745,6 +750,49 @@ export function App(): JSX.Element {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, []);
+
+  useEffect(() => {
+    const handleFocusIn = (event: FocusEvent): void => {
+      const target = event.target;
+      const workspacePanel = appShellRef.current?.querySelector(".workspace-right-panel");
+      if (target instanceof HTMLElement && !workspacePanel?.contains(target)) {
+        lastFocusOutsideWorkspaceRef.current = target;
+      }
+    };
+    document.addEventListener("focusin", handleFocusIn);
+    return () => document.removeEventListener("focusin", handleFocusIn);
+  }, []);
+
+  useLayoutEffect(() => {
+    const fullPanel = rightPanelOpen && rightPanelGlobalized;
+    const previous = previousWorkspaceFocusModeRef.current;
+    previousWorkspaceFocusModeRef.current = { fullPanel, open: rightPanelOpen };
+
+    appShellRef.current
+      ?.querySelector<HTMLElement>(".sidebar")
+      ?.toggleAttribute("inert", fullPanel);
+
+    if (fullPanel && !previous.fullPanel) {
+      appShellRef.current
+        ?.querySelector<HTMLButtonElement>(
+          '.workspace-right-panel [role="tab"][aria-selected="true"]',
+        )
+        ?.focus();
+      return;
+    }
+    if ((previous.fullPanel && !fullPanel) || (previous.open && !rightPanelOpen)) {
+      const previousFocus = lastFocusOutsideWorkspaceRef.current;
+      if (previousFocus?.isConnected && !previousFocus.closest("[inert]")) {
+        previousFocus.focus();
+        return;
+      }
+      appShellRef.current
+        ?.querySelector<HTMLButtonElement>(
+          '.session-tab-main[aria-selected="true"]',
+        )
+        ?.focus();
+    }
+  }, [rightPanelGlobalized, rightPanelOpen]);
 
   // Workspace panel (file tree / file preview / terminal) root: follows the
   // active thread's own cwd when it differs from state.activeContext — the
@@ -3595,6 +3643,7 @@ export function App(): JSX.Element {
           {sidebarCollapsed ? null : (
             <div
               className="sidebar-resizer"
+              inert={rightPanelOpen && rightPanelGlobalized}
               role="separator"
               aria-label="调整侧边栏宽度"
               aria-orientation="vertical"
@@ -3629,6 +3678,7 @@ export function App(): JSX.Element {
       />
 
       <main
+        inert={rightPanelOpen && rightPanelGlobalized}
         className={`conversation-pane${environmentPanelVisible ? " environment-panel-visible" : ""}${
           environmentPanelReserved || participantPanelVisible ? " environment-panel-reserved" : ""
         }${
@@ -4009,6 +4059,7 @@ export function App(): JSX.Element {
       {!poppedOutMode && (rightPanelOpen || rightPanelAnimating) ? (
         <div
           className="workspace-right-panel-resizer"
+          inert={rightPanelGlobalized}
           role="separator"
           aria-label="调整右侧栏宽度"
           aria-orientation="vertical"
