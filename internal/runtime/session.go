@@ -227,6 +227,7 @@ func NewSession(opts Options) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	activityRegistry := activity.NewRegistry()
 
 	// File-directory memory (memory-redesign M1): the user notebook index is
 	// read once here — session creation is one of the two allowed
@@ -274,6 +275,7 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetToolSearchEnabled(toolSearchEnabled)
 		kit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
 		kit.SetNativeDeferredToolDiscovery(nativeDeferredDiscovery)
+		kit.SetActivityRegistry(activityRegistry)
 		var fileScopeExtras []string
 		// The retired memstore layers (read_memory/write_memory) are no
 		// longer mounted (memory-redesign §6): memory is the file-directory
@@ -492,7 +494,7 @@ func NewSession(opts Options) (*Session, error) {
 		AgentControl:                agentControl,
 		ProcessManager:              processMgr,
 		Toolkit:                     toolkit,
-		ActivityRegistry:            activity.NewRegistry(),
+		ActivityRegistry:            activityRegistry,
 		WorkerClient:                workerClient,
 		ModelRoles:                  roleSelections,
 		ModelBudget:                 modelBudget,
@@ -1427,6 +1429,7 @@ func connectMCPServers(cfg config.Config, plugins []pluginpkg.Plugin, toolkit *t
 	if toolkit == nil || len(servers) == 0 {
 		return
 	}
+	toolkit.SetMCPActivityBindings(mcpActivityBindingsFromPlugins(plugins))
 	mcpMgr := mcp.NewManager()
 	toolkit.SetMCPManager(mcpMgr)
 	serverConfigs := make(map[string]mcp.ServerConfig, len(servers))
@@ -1459,6 +1462,34 @@ func connectMCPServers(cfg config.Config, plugins []pluginpkg.Plugin, toolkit *t
 			}
 		}
 	}()
+}
+
+func mcpActivityBindingsFromPlugins(plugins []pluginpkg.Plugin) map[string]tools.MCPActivityBinding {
+	out := make(map[string]tools.MCPActivityBinding)
+	for _, item := range plugins {
+		if len(item.ActivityKinds) != 1 {
+			continue
+		}
+		kind := activity.Kind(strings.TrimSpace(item.ActivityKinds[0]))
+		if kind != activity.KindBrowser && kind != activity.KindCUA {
+			continue
+		}
+		pluginID := strings.TrimSpace(item.ID)
+		if pluginID == "" {
+			continue
+		}
+		for name := range item.MCPServers {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			out["plugin."+pluginID+"."+name] = tools.MCPActivityBinding{Kind: kind, PluginID: pluginID}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func mcpServersFromConfigAndPlugins(cfg config.Config, plugins []pluginpkg.Plugin) map[string]config.MCPServerConfig {

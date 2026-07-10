@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/activity"
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
@@ -812,6 +813,22 @@ func TestMCPServersFromConfigAndPluginsPrefixesPluginServers(t *testing.T) {
 	}
 	if servers["plugin.docs.search"].Command != "plugin-docs" {
 		t.Fatalf("plugin MCP server missing or unprefixed: %+v", servers)
+	}
+}
+
+func TestMCPActivityBindingsFromPluginsUsesDeclaredKind(t *testing.T) {
+	bindings := mcpActivityBindingsFromPlugins([]pluginpkg.Plugin{{
+		Manifest: pluginpkg.Manifest{
+			ID:            "cua-mac",
+			ActivityKinds: []string{"cua"},
+			MCPServers: map[string]config.MCPServerConfig{
+				"computer": {Command: "wuu-cua-mac"},
+			},
+		},
+	}})
+	binding, ok := bindings["plugin.cua-mac.computer"]
+	if !ok || binding.Kind != activity.KindCUA || binding.PluginID != "cua-mac" {
+		t.Fatalf("cua binding = %+v, ok=%v", binding, ok)
 	}
 }
 

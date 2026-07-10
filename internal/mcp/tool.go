@@ -40,6 +40,16 @@ func (t *MCPTool) Name() string {
 	return mcpToolName(t.serverName, t.tool.Name)
 }
 
+// ServerName returns the configured MCP server identity. The toolkit uses it
+// to apply trusted local policy such as official plugin Activity bindings;
+// it is never derived from server-provided metadata.
+func (t *MCPTool) ServerName() string {
+	if t == nil {
+		return ""
+	}
+	return t.serverName
+}
+
 // Definition returns the JSON-schema tool definition for the model.
 func (t *MCPTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{

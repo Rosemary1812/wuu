@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/blueberrycongee/wuu/internal/activity"
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/capability"
@@ -66,6 +67,8 @@ type Toolkit struct {
 	mcpCatalogMu         sync.RWMutex
 	mcpCatalogGeneration uint64
 	mcpTools             []*mcp.MCPTool
+	activityRegistry     *activity.Registry
+	mcpActivityBindings  map[string]MCPActivityBinding
 
 	// activeProfileMu guards activeProfile and activeSurface. Reads
 	// from Definitions() and Execute() take the RLock; SetActiveProfile
@@ -175,9 +178,11 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	}
 
 	clone := &Toolkit{
-		env:        &env,
-		boundary:   t.boundary,
-		mcpManager: t.mcpManager,
+		env:                 &env,
+		boundary:            t.boundary,
+		mcpManager:          t.mcpManager,
+		activityRegistry:    t.activityRegistry,
+		mcpActivityBindings: cloneMCPActivityBindings(t.mcpActivityBindings),
 	}
 	t.exposureMu.RLock()
 	clone.toolSearchEnabled = t.toolSearchEnabled
@@ -1010,7 +1015,7 @@ func (t *Toolkit) ExecuteResult(ctx context.Context, call providers.ToolCall) (t
 	if tool == nil {
 		for _, mcpTool := range t.mcpToolsSnapshot() {
 			if mcpTool.Name() == call.Name {
-				return t.executeKnownToolResult(ctx, call, mcpTool)
+				return t.executeActivityBoundToolResult(ctx, call, mcpTool, mcpTool.ServerName())
 			}
 		}
 		return toolresult.Result{}, fmt.Errorf("unknown tool %q", call.Name)
