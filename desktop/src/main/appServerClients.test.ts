@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   activityServerRequestRejection,
   appServerExitMessage,
+  AppServerClientPool,
   cuaMacHelperEnvironment,
   updateStoppedActivityIDs,
 } from "./appServerClients";
@@ -79,5 +80,21 @@ describe("cuaMacHelperEnvironment", () => {
       () => true,
     );
     expect(overridden.WUU_CUA_MAC_HELPER).toBe("/custom/helper");
+  });
+});
+
+describe("AppServerClientPool Activity routing", () => {
+  it("does not create a new workspace client for an unknown Activity workdir", async () => {
+    const pool = new AppServerClientPool(
+      () => ({ kind: "no_project", cwd: "/active" }),
+      () => "/active",
+      () => undefined,
+    );
+    await expect(
+      pool.requestForWorkdir("/missing", "activity/stop", {
+        thread_id: "thread-1",
+        activity_id: "activity-1",
+      }),
+    ).rejects.toThrow("activity workspace is no longer connected");
   });
 });

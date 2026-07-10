@@ -63,6 +63,14 @@ export class AppServerClientPool {
     return this.clientForContext(context).request<T>(method, params);
   }
 
+  requestForWorkdir<T>(workdir: string, method: string, params?: unknown): Promise<T> {
+    const client = this.clients.get(resolve(workdir));
+    if (!client) {
+      return Promise.reject(new Error("activity workspace is no longer connected"));
+    }
+    return client.request<T>(method, params);
+  }
+
   respondToServerRequest(id: string, result: unknown): void {
     const route = this.serverRequestRoutes.get(id);
     if (!route) {

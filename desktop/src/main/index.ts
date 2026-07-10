@@ -25,6 +25,7 @@ import type {
   ActivityActionResult,
   ActivityListResult,
   ActivityReleaseResult,
+  ActivitySession,
   CoreBuildInfo,
   DesktopBuildInfo,
   InputFile,
@@ -83,6 +84,10 @@ import type {
   WorkspaceFileSaveParams,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
+import {
+  activityControlMethod,
+  CUAActivityWindowManager,
+} from "./cuaActivityWindows";
 import { autoInstallCli, getCliInstallStatus, installCli } from "./cliInstall";
 import {
   defaultCodexPetsDir,
@@ -154,6 +159,18 @@ const appServerClientPool = new AppServerClientPool(
   () => projectManager.ensureRuntimeContext(),
   () => projectManager.activeWorkdir(),
   (event) => emitServerEvent(event),
+);
+const cuaActivityWindowManager = new CUAActivityWindowManager(
+  windowRegistry,
+  async (activity, action): Promise<ActivitySession> => {
+    const result = await appServerClientPool.requestForWorkdir<
+      ActivityActionResult | ActivityReleaseResult
+    >(activity.workdir, activityControlMethod(action), {
+      thread_id: activity.thread_id,
+      activity_id: activity.id,
+    });
+    return result.activity;
+  },
 );
 const terminalSessionManager = new TerminalSessionManager(
   () => projectManager.ensureRuntimeContext(),
@@ -230,6 +247,7 @@ function workspaceFilesForEvent(event: IpcMainInvokeEvent): WorkspaceFileService
 }
 
 function emitServerEvent(event: ServerEvent): void {
+  cuaActivityWindowManager.handleServerEvent(event);
   broadcastToAll("wuu:server-event", event);
 }
 
