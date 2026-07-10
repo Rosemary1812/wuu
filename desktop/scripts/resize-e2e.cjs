@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, clipboard } = require("electron");
 
 const desktopRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(desktopRoot, "..");
@@ -603,6 +603,41 @@ async function run() {
   );
 
   await evaluate(win, () => {
+    const sourceMode = Array.from(document.querySelectorAll(".workspace-markdown-mode-switch button")).find(
+      (button) => button.textContent?.trim() === "源码"
+    );
+    if (sourceMode instanceof HTMLButtonElement) {
+      sourceMode.click();
+    }
+  });
+  await waitFor(
+    win,
+    () => Boolean(document.querySelector(".workspace-file-resource.active .monaco-editor textarea")) || null,
+    3000
+  );
+  const draftMarker = "wuu-full-panel-draft";
+  clipboard.writeText(draftMarker);
+  await evaluate(win, () => {
+    const input = document.querySelector(".workspace-file-resource.active .monaco-editor textarea");
+    if (!(input instanceof HTMLTextAreaElement)) {
+      throw new Error("Active Monaco input not found.");
+    }
+    input.focus();
+  });
+  win.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["meta"] });
+  win.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["meta"] });
+  win.webContents.paste();
+  await waitFor(
+    win,
+    () => {
+      const dirtyTab = document.querySelector(".workspace-tool-tab.active.dirty");
+      const editorText = document.querySelector(".workspace-file-resource.active .view-lines")?.textContent ?? "";
+      return dirtyTab && editorText.includes("wuu-full-panel-draft") ? true : null;
+    },
+    3000
+  );
+
+  await evaluate(win, () => {
     const expand = document.querySelector('[aria-label="展开为全面板"]');
     if (!(expand instanceof HTMLButtonElement)) {
       throw new Error("Full-panel expand button not found.");
@@ -637,6 +672,8 @@ async function run() {
     return {
       globalized: shell.classList.contains("right-panel-globalized"),
       resourceID: activeResource?.getAttribute("data-workspace-tab-id") ?? "",
+      dirty: Boolean(document.querySelector(".workspace-tool-tab.active.dirty")),
+      editorText: document.querySelector(".workspace-file-resource.active .view-lines")?.textContent ?? "",
       panelLeft: panelRect.left,
       panelRight: panelRect.right,
       viewportWidth: window.innerWidth,
@@ -648,6 +685,11 @@ async function run() {
     fullPanelArtifactState.resourceID,
     dockedArtifactState.resourceID,
     "Full-panel mode must preserve the active artifact tab."
+  );
+  assert.equal(fullPanelArtifactState.dirty, true, "Full-panel mode must preserve the dirty file state.");
+  assert.ok(
+    fullPanelArtifactState.editorText.includes(draftMarker),
+    "Full-panel mode must preserve the unsaved Monaco draft."
   );
   assert.ok(
     fullPanelArtifactState.panelLeft <= 1,
@@ -684,6 +726,8 @@ async function run() {
   const restoredArtifactState = await evaluate(win, () => ({
     resourceID:
       document.querySelector(".workspace-file-resource.active")?.getAttribute("data-workspace-tab-id") ?? "",
+    dirty: Boolean(document.querySelector(".workspace-tool-tab.active.dirty")),
+    editorText: document.querySelector(".workspace-file-resource.active .view-lines")?.textContent ?? "",
     sessionTabs: document.querySelectorAll(".session-tab").length,
     conversationWidth:
       document.querySelector(".conversation-pane") instanceof HTMLElement
@@ -699,6 +743,28 @@ async function run() {
     restoredArtifactState.sessionTabs,
     sessionTabCountBeforeFileOpen,
     "Full-panel round trips must not alter conversation tabs."
+  );
+  assert.equal(restoredArtifactState.dirty, true, "Docked mode must restore the dirty file state.");
+  assert.ok(
+    restoredArtifactState.editorText.includes(draftMarker),
+    "Docked mode must restore the unsaved Monaco draft."
+  );
+  clipboard.writeText("-after-focus");
+  await evaluate(win, () => {
+    const input = document.querySelector(".workspace-file-resource.active .monaco-editor textarea");
+    if (!(input instanceof HTMLTextAreaElement)) {
+      throw new Error("Restored Monaco input not found.");
+    }
+    input.focus();
+  });
+  win.webContents.paste();
+  await waitFor(
+    win,
+    () => {
+      const editorText = document.querySelector(".workspace-file-resource.active .view-lines")?.textContent ?? "";
+      return editorText.includes("wuu-full-panel-draft-after-focus") ? true : null;
+    },
+    3000
   );
   assert.ok(restoredArtifactState.conversationWidth > 300, "Exiting full-panel mode should restore the conversation.");
 
