@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/capability"
+	"github.com/blueberrycongee/wuu/internal/extensions"
 	"github.com/blueberrycongee/wuu/internal/securefs"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/prompts"
@@ -103,6 +104,10 @@ type Config struct {
 	// `.wuu/settings.local.json`). See mcpjson.go. It is a pointer so an unset
 	// section stays out of serialized templates.
 	MCPJson *MCPJsonTrust `json:"mcp_json,omitempty"`
+	// Extensions carries machine-local trust grants for executable extension
+	// configurations. Shared project settings are stripped before merge; UI
+	// writers must persist grants in .wuu/settings.local.json.
+	Extensions *extensions.Settings `json:"extensions,omitempty"`
 }
 
 // MemoryConfig overrides the defaults for memory file discovery. All fields

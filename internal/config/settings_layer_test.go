@@ -90,6 +90,68 @@ func TestLoadFrom_NoSettingsLayers_MatchesBase(t *testing.T) {
 	}
 }
 
+func TestLoadFrom_LocalSettingsCarriesExtensionGrants(t *testing.T) {
+	home := isolatedHome(t)
+	workdir := t.TempDir()
+	writeBaseConfig(t, workdir, layerBaseConfigJSON)
+	writeProjectSettings(t, workdir, localSettingsFile, `{
+  "extensions": {
+    "grants": {
+      "mcp:project:docs": {
+        "subject_id": "mcp:project:docs",
+        "fingerprint": "abc123",
+        "scope": "project",
+        "permissions": ["network.connect"],
+        "approved_at": "2026-07-10T08:00:00Z"
+      }
+    }
+  }
+}`)
+
+	cfg, _, err := LoadFrom(workdir, home)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if cfg.Extensions == nil {
+		t.Fatal("Extensions is nil")
+	}
+	grant, ok := cfg.Extensions.FindGrant("mcp:project:docs", "abc123")
+	if !ok || grant.Scope != "project" {
+		t.Fatalf("grant = %+v, ok=%v", grant, ok)
+	}
+	if _, ok := cfg.Extensions.FindGrant("mcp:project:docs", "changed"); ok {
+		t.Fatal("changed fingerprint reused a local grant")
+	}
+}
+
+func TestLoadFrom_SharedSettingsCannotGrantExtensions(t *testing.T) {
+	home := isolatedHome(t)
+	workdir := t.TempDir()
+	writeBaseConfig(t, workdir, layerBaseConfigJSON)
+	writeProjectSettings(t, workdir, sharedSettingsFile, `{
+  "extensions": {
+    "grants": {
+      "hook:project:test": {
+        "subject_id": "hook:project:test",
+        "fingerprint": "shared",
+        "scope": "project",
+        "approved_at": "2026-07-10T08:00:00Z"
+      }
+    }
+  }
+}`)
+
+	cfg, _, err := LoadFrom(workdir, home)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if cfg.Extensions != nil {
+		if _, ok := cfg.Extensions.FindGrant("hook:project:test", "shared"); ok {
+			t.Fatal("shared settings granted an executable extension")
+		}
+	}
+}
+
 // TestLoadFrom_SettingsLayerDeepMerge verifies deep-merge priority: objects
 // merge recursively, arrays replace wholesale, and settings.local.json outranks
 // settings.json which outranks the base config.

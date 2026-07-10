@@ -46,8 +46,9 @@ type settingsLayer struct {
 	// stripCredentials removes inline provider secrets before merging. It is
 	// true only for the shared layer, which may be authored by someone else in
 	// the repo; the machine-local layer is fully trusted.
-	stripCredentials bool
-	label            string
+	stripCredentials     bool
+	stripExtensionGrants bool
+	label                string
 }
 
 // projectSettingsLayers returns the ordered overlay files for projectRoot,
@@ -55,8 +56,8 @@ type settingsLayer struct {
 func projectSettingsLayers(projectRoot string) []settingsLayer {
 	dir := filepath.Join(projectRoot, projectSettingsDir)
 	return []settingsLayer{
-		{path: filepath.Join(dir, sharedSettingsFile), stripCredentials: true, label: "shared settings"},
-		{path: filepath.Join(dir, localSettingsFile), stripCredentials: false, label: "local settings"},
+		{path: filepath.Join(dir, sharedSettingsFile), stripCredentials: true, stripExtensionGrants: true, label: "shared settings"},
+		{path: filepath.Join(dir, localSettingsFile), stripCredentials: false, stripExtensionGrants: false, label: "local settings"},
 	}
 }
 
@@ -123,6 +124,9 @@ func applyProjectSettingsLayers(basePath, projectRoot string, base Config) (Conf
 		}
 		if p.spec.stripCredentials {
 			stripSharedLayerCredentials(overlay, p.spec.path)
+		}
+		if p.spec.stripExtensionGrants {
+			stripSharedLayerExtensionGrants(overlay, p.spec.path)
 		}
 		deepMergeObject(merged, overlay)
 		applied = append(applied, p.spec.path)
@@ -210,6 +214,21 @@ func stripSharedLayerCredentials(overlay map[string]any, path string) {
 				name, field, path, field)
 		}
 	}
+}
+
+func stripSharedLayerExtensionGrants(overlay map[string]any, path string) {
+	extensions, ok := overlay["extensions"].(map[string]any)
+	if !ok {
+		return
+	}
+	if _, present := extensions["grants"]; !present {
+		return
+	}
+	delete(extensions, "grants")
+	fmt.Fprintf(os.Stderr,
+		"wuu: ignoring extensions.grants from shared settings layer %s; executable extension grants are only trusted from machine-local settings\n",
+		path,
+	)
 }
 
 // logSettingsLayerDebug records which project settings layers overlaid the base
