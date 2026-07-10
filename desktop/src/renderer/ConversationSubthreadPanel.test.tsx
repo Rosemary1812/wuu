@@ -294,8 +294,11 @@ describe("ConversationSubthreadPanel", () => {
         resolveParticipantName: () => "Noel",
       }),
     );
-    expect(container.querySelector(".conversation-subthread-lead")?.textContent)
-      .toContain("LeadNoel等待 Lead 收敛");
+    expect(container.querySelector(".conversation-subthread-overview-meta")?.textContent)
+      .toContain("等待 Lead 验收");
+    expect(container.querySelector(".conversation-subthread-overview-meta")?.textContent)
+      .toContain("Lead · Noel");
+    expect(container.textContent).toContain("Lead 正在验收 worker 结果");
     expect(container.querySelector(".conversation-subthread-finalize-toggle"))
       .toBeNull();
     expect(container.querySelector('button[aria-label="标记已解决"]')).toBeNull();
@@ -316,6 +319,8 @@ describe("ConversationSubthreadPanel", () => {
               assignee: "prt-noel",
               depends_on: ["implement"],
               failure_reason: "等待测试环境",
+              attempts: 2,
+              current_attempt_id: "tat-2",
               last_activity_at: "2020-01-01T00:00:00Z",
               last_progress_at: "2020-01-01T00:00:00Z",
             },
@@ -327,6 +332,7 @@ describe("ConversationSubthreadPanel", () => {
     );
     expect(container.textContent).toContain("等待：implement");
     expect(container.textContent).toContain("等待测试环境");
+    expect(container.textContent).toContain("第 2 次尝试");
     expect(container.textContent).not.toContain("疑似失联");
     expect(container.textContent).not.toContain("进展慢");
   });

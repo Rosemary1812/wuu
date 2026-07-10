@@ -80,6 +80,7 @@ const NODE_STATE_META: Record<string, { label: string; cls: string }> = {
   blocked: { label: "阻塞", cls: "blocked" },
   failed: { label: "失败", cls: "failed" },
   retrying: { label: "重试中", cls: "retrying" },
+  cancelled: { label: "已取消", cls: "cancelled" },
 };
 
 function nodeStateMeta(
@@ -94,7 +95,7 @@ const TASK_STATE_LABEL: Record<string, string> = {
   planning: "规划中",
   executing: "执行中",
   running: "执行中",
-  awaiting_lead: "等待 Lead 收敛",
+  awaiting_lead: "等待 Lead 验收",
   blocked: "受阻",
   needs_human: "需要你处理",
   paused: "已暂停",
@@ -112,6 +113,7 @@ function taskStateLabel(state: string | undefined): string {
 const TRACE_KIND_LABEL: Record<string, string> = {
   task_created: "任务创建",
   workflow_planned: "编排计划",
+  workflow_revised: "调整编排",
   node_started: "节点开始",
   commentary: "说明",
   tool_call: "工具调用",
@@ -120,6 +122,7 @@ const TRACE_KIND_LABEL: Record<string, string> = {
   handoff_created: "交接",
   node_succeeded: "节点完成",
   node_failed: "节点失败",
+  node_cancelled: "取消节点",
   retrying: "重试",
   blocked: "阻塞",
   lead_invoked: "唤醒 lead",
@@ -128,6 +131,21 @@ const TRACE_KIND_LABEL: Record<string, string> = {
 
 function traceKindLabel(kind: string): string {
   return TRACE_KIND_LABEL[kind] ?? kind;
+}
+
+function taskAttentionText(state: string | undefined): string {
+  switch (state?.trim()) {
+    case "needs_human":
+      return "等待你的决定";
+    case "awaiting_lead":
+      return "Lead 正在验收 worker 结果";
+    case "blocked":
+      return "Lead 需要调整编排后继续";
+    case "failed":
+      return "Lead 需要处理失败节点";
+    default:
+      return "";
+  }
 }
 
 export function ConversationSubthreadPanel({
@@ -204,6 +222,8 @@ export function ConversationSubthreadPanel({
   // task's events only when the human expands it, and resets whenever the panel
   // switches to a different subthread.
   const plan = subthread?.plan ?? [];
+  const planByID = new Map(plan.map((piece) => [piece.id, piece]));
+  const attentionText = taskAttentionText(subthread?.exec_state);
   const [traceOpen, setTraceOpen] = useState(false);
   const [traceEvents, setTraceEvents] = useState<TaskEventView[] | undefined>(
     undefined,
@@ -350,12 +370,10 @@ export function ConversationSubthreadPanel({
             </div>
           </section>
         ) : null}
-        {subthread && alreadyTask ? (
-          <section className="conversation-subthread-lead" aria-label="Task Lead">
-            <span>Lead</span>
-            <strong>{ownerName}</strong>
-            <span>{taskStateLabel(subthread.exec_state)}</span>
-          </section>
+        {subthread && alreadyTask && attentionText ? (
+          <div className="conversation-subthread-attention" role="status">
+            {attentionText}
+          </div>
         ) : null}
         {subthread && alreadyTask && plan.length > 0 ? (
           <section className="conversation-subthread-board" aria-label="Task 进展">
@@ -371,6 +389,22 @@ export function ConversationSubthreadPanel({
                   ? resolveParticipantName(piece.assignee)
                   : piece.assignee
                 : "";
+              const unresolvedDependencies = (piece.depends_on ?? []).filter(
+                (id) => {
+                  const dependency = planByID.get(id);
+                  const state = (
+                    dependency?.state ||
+                    dependency?.status ||
+                    ""
+                  ).trim();
+                  return state !== "done" && state !== "completed" && state !== "cancelled";
+                },
+              );
+              const attemptHint = piece.current_attempt_id
+                ? `第 ${piece.attempts ?? 1} 次尝试`
+                : (piece.attempts ?? 0) > 0
+                  ? `已尝试 ${piece.attempts} 次`
+                  : "";
               return (
                 <div className="conversation-subthread-node" key={piece.id}>
                   <div className="conversation-subthread-node-head">
@@ -383,7 +417,7 @@ export function ConversationSubthreadPanel({
                       {meta.label}
                     </span>
                   </div>
-                  {assigneeName || progressHint ? (
+                  {assigneeName || attemptHint || progressHint ? (
                     <div className="conversation-subthread-node-meta">
                       {assigneeName ? (
                         <span className="conversation-subthread-node-assignee">
@@ -395,16 +429,21 @@ export function ConversationSubthreadPanel({
                           {progressHint}
                         </span>
                       ) : null}
+                      {attemptHint ? (
+                        <span className="conversation-subthread-node-attempt">
+                          {attemptHint}
+                        </span>
+                      ) : null}
                     </div>
                   ) : null}
-                  {piece.depends_on?.length ? (
+                  {unresolvedDependencies.length ? (
                     <div className="conversation-subthread-node-detail">
-                      等待：{piece.depends_on.join("、")}
+                      等待：{unresolvedDependencies.join("、")}
                     </div>
                   ) : null}
                   {piece.failure_reason ? (
                     <div className="conversation-subthread-node-detail is-error">
-                      {piece.failure_reason}
+                      原因：{piece.failure_reason}
                     </div>
                   ) : null}
                 </div>

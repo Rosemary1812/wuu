@@ -52,6 +52,10 @@
   text-transform: none;
 }
 
+.task-board-section.is-attention h3 {
+  color: var(--warning, #b7791f);
+}
+
 .task-board-list {
   list-style: none;
   margin: 0;
@@ -78,6 +82,15 @@
 
 .task-board-row:hover {
   background: var(--ink-overlay-4);
+}
+
+.task-board-row.is-attention {
+  border-color: color-mix(in srgb, var(--warning, #b7791f) 35%, var(--hairline));
+}
+
+.task-board-row.is-attention .task-board-row-state {
+  background: color-mix(in srgb, var(--warning, #b7791f) 14%, transparent);
+  color: var(--warning, #b7791f);
 }
 
 .task-board-row-lead-avatar {

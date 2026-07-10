@@ -204,26 +204,6 @@
   -webkit-line-clamp: 3;
 }
 
-.conversation-subthread-lead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 -16px 14px;
-  border-bottom: 1px solid var(--surface-3);
-  padding: 0 16px 12px;
-  color: var(--ink-muted);
-  font-size: var(--font-xs);
-}
-
-.conversation-subthread-lead strong {
-  color: var(--ink);
-  font-weight: var(--weight-semibold);
-}
-
-.conversation-subthread-lead span:last-child {
-  margin-left: auto;
-}
-
 .conversation-subthread-body .turn {
   margin-block: 0 18px;
 }
@@ -331,6 +311,20 @@
 .conversation-subthread-node-state.is-retrying {
   background: color-mix(in srgb, var(--warning, #b7791f) 18%, transparent);
   color: var(--warning, #b7791f);
+}
+
+.conversation-subthread-node-state.is-cancelled {
+  background: var(--surface-3);
+  color: var(--ink-muted);
+}
+
+.conversation-subthread-attention {
+  margin: -6px -16px 14px;
+  border-bottom: 1px solid var(--surface-3);
+  padding: 0 16px 12px;
+  color: var(--warning, #b7791f);
+  font-size: var(--font-xs);
+  line-height: var(--line-ui);
 }
 
 .conversation-subthread-node-meta {

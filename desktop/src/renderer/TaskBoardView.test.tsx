@@ -82,6 +82,15 @@ describe("TaskBoardView", () => {
     installListStub(async () => ({
       subthreads: [
         subthread({
+          id: "cth-review",
+          title: "验收发布结果",
+          exec_state: "awaiting_lead",
+          plan: [
+            { id: "one", title: "实现", status: "done", assignee: "prt-bea" },
+            { id: "old", title: "旧范围", status: "cancelled", assignee: "prt-cai" },
+          ],
+        }),
+        subthread({
           id: "cth-running",
           title: "修复登录抖动",
           exec_state: "executing",
@@ -116,15 +125,20 @@ describe("TaskBoardView", () => {
     const rows = Array.from(
       container.querySelectorAll<HTMLButtonElement>(".task-board-row"),
     );
-    expect(rows).toHaveLength(2);
-    expect(rows[0]?.textContent).toContain("修复登录抖动");
-    expect(rows[0]?.textContent).toContain("Lead · Ada");
-    expect(rows[0]?.textContent).toContain("执行中");
-    expect(rows[0]?.textContent).toContain("1/2 完成");
-    expect(rows[0]?.textContent).toContain("执行 · Cai");
-    expect(rows[1]?.textContent).toContain("整理演练记录");
-    expect(rows[1]?.textContent).toContain("已完成");
-    expect(container.textContent).toContain("1 进行中 · 1 已完成");
+    expect(rows).toHaveLength(3);
+    expect(rows[0]?.textContent).toContain("验收发布结果");
+    expect(rows[0]?.textContent).toContain("等待 Lead");
+    expect(rows[0]?.textContent).toContain("1/1 完成");
+    expect(rows[0]?.textContent).toContain("1 已取消");
+    expect(rows[1]?.textContent).toContain("修复登录抖动");
+    expect(rows[1]?.textContent).toContain("Lead · Ada");
+    expect(rows[1]?.textContent).toContain("执行中");
+    expect(rows[1]?.textContent).toContain("1/2 完成");
+    expect(rows[1]?.textContent).toContain("执行 · Cai");
+    expect(rows[2]?.textContent).toContain("整理演练记录");
+    expect(rows[2]?.textContent).toContain("已完成");
+    expect(container.textContent).toContain("1 待处理 · 1 执行中 · 1 已完成");
+    expect(container.textContent).toContain("需要处理");
     expect(container.textContent).not.toContain("认领");
     expect(container.textContent).not.toContain("无人认领");
     expect(container.textContent).not.toContain("闲聊讨论");

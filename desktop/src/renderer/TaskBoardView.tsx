@@ -12,7 +12,8 @@ type TaskBoardViewProps = {
 };
 
 type BoardData = {
-  active: ConversationSubthread[];
+  attention: ConversationSubthread[];
+  running: ConversationSubthread[];
   completed: ConversationSubthread[];
 };
 
@@ -65,20 +66,34 @@ function isCompletedTask(subthread: ConversationSubthread): boolean {
   );
 }
 
+function taskNeedsAttention(subthread: ConversationSubthread): boolean {
+  return ["awaiting_lead", "blocked", "needs_human", "failed"].includes(
+    subthread.exec_state?.trim() ?? "",
+  );
+}
+
 function splitBoard(subthreads: ConversationSubthread[]): BoardData {
-  const active: ConversationSubthread[] = [];
+  const attention: ConversationSubthread[] = [];
+  const running: ConversationSubthread[] = [];
   const completed: ConversationSubthread[] = [];
   for (const subthread of subthreads) {
     if (!isEscalatedTask(subthread)) {
       continue;
     }
-    (isCompletedTask(subthread) ? completed : active).push(subthread);
+    if (isCompletedTask(subthread)) {
+      completed.push(subthread);
+    } else if (taskNeedsAttention(subthread)) {
+      attention.push(subthread);
+    } else {
+      running.push(subthread);
+    }
   }
   const newestFirst = (a: ConversationSubthread, b: ConversationSubthread) =>
     Date.parse(b.created_at) - Date.parse(a.created_at);
-  active.sort(newestFirst);
+  attention.sort(newestFirst);
+  running.sort(newestFirst);
   completed.sort(newestFirst);
-  return { active, completed };
+  return { attention, running, completed };
 }
 
 function isCompletedPiece(piece: TaskPieceView): boolean {
@@ -151,9 +166,15 @@ export function TaskBoardView({
       subthread.lead_participant_id?.trim() ||
       subthread.thread_owner_participant_id?.trim() ||
       "";
-    const lead = leadID ? participantName(leadID) : "Lead 待同步";
+    const lead = leadID ? participantName(leadID) : "Lead 信息缺失";
     const plan = subthread.plan ?? [];
-    const completedCount = plan.filter(isCompletedPiece).length;
+    const cancelledCount = plan.filter(
+      (piece) => (piece.state || piece.status || "").trim() === "cancelled",
+    ).length;
+    const livePlan = plan.filter(
+      (piece) => (piece.state || piece.status || "").trim() !== "cancelled",
+    );
+    const completedCount = livePlan.filter(isCompletedPiece).length;
     const activeWorkers = [
       ...new Set(
         plan
@@ -165,7 +186,7 @@ export function TaskBoardView({
       <li key={subthread.id}>
         <button
           type="button"
-          className="task-board-row"
+          className={`task-board-row${taskNeedsAttention(subthread) ? " is-attention" : ""}`}
           onClick={() => onOpenTask(subthread.id)}
         >
           {leadID ? (
@@ -184,11 +205,12 @@ export function TaskBoardView({
             </span>
             <span className="task-board-row-meta">
               <span>Lead · {lead}</span>
-              {plan.length > 0 ? (
+              {livePlan.length > 0 ? (
                 <span>
-                  {completedCount}/{plan.length} 完成
+                  {completedCount}/{livePlan.length} 完成
                 </span>
               ) : null}
+              {cancelledCount > 0 ? <span>{cancelledCount} 已取消</span> : null}
               {activeWorkers.length > 0 ? (
                 <span>执行 · {activeWorkers.join("、")}</span>
               ) : null}
@@ -199,7 +221,11 @@ export function TaskBoardView({
     );
   };
 
-  const empty = board && board.active.length === 0 && board.completed.length === 0;
+  const empty =
+    board &&
+    board.attention.length === 0 &&
+    board.running.length === 0 &&
+    board.completed.length === 0;
 
   return (
     <div className="task-board" aria-label="任务看板">
@@ -207,7 +233,7 @@ export function TaskBoardView({
         <h2>{title?.trim() || threadID}</h2>
         {board ? (
           <span className="task-board-header-meta">
-            {board.active.length} 进行中 · {board.completed.length} 已完成
+            {board.attention.length} 待处理 · {board.running.length} 执行中 · {board.completed.length} 已完成
           </span>
         ) : null}
       </header>
@@ -222,10 +248,16 @@ export function TaskBoardView({
           还没有 Task。从群聊消息开启 Thread，收敛后升级的 Task 会出现在这里。
         </div>
       ) : null}
-      {board && board.active.length > 0 ? (
+      {board && board.attention.length > 0 ? (
+        <section className="task-board-section is-attention">
+          <h3>需要处理</h3>
+          <ul className="task-board-list">{board.attention.map(renderRow)}</ul>
+        </section>
+      ) : null}
+      {board && board.running.length > 0 ? (
         <section className="task-board-section">
-          <h3>进行中</h3>
-          <ul className="task-board-list">{board.active.map(renderRow)}</ul>
+          <h3>执行中</h3>
+          <ul className="task-board-list">{board.running.map(renderRow)}</ul>
         </section>
       ) : null}
       {board && board.completed.length > 0 ? (
