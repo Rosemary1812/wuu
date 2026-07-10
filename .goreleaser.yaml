@@ -24,11 +24,13 @@ builds:
       - -X github.com/blueberrycongee/wuu/internal/version.Date={{.Date}}
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
 
 checksum:
   name_template: "checksums.txt"
@@ -41,16 +43,13 @@ changelog:
       - "^test:"
       - "^chore:"
 
-brews:
+homebrew_casks:
   - repository:
       owner: blueberrycongee
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
+    directory: Casks
     homepage: "https://github.com/blueberrycongee/wuu"
     description: "AI coding agent for the terminal"
-    license: "MIT"
-    install: |
-      bin.install "wuu"
-    test: |
-      assert_match "wuu", shell_output("#{bin}/wuu --version")
+    binaries:
+      - wuu
