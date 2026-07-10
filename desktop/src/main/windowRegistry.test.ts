@@ -51,6 +51,32 @@ describe("windowRegistry", () => {
     expect(registry.allWindows()).toEqual([]);
     expect(registry.popOutWindowForThread("t1")).toBeNull();
     expect(registry.threadHostWindowID("t1")).toBeUndefined();
+    expect(registry.activityWindow("activity-1")).toBeNull();
+    expect(registry.activityHostWindowID("activity-1")).toBeUndefined();
+  });
+
+  describe("activity windows", () => {
+    it("round-trips an Activity window and clears it on unregister", () => {
+      const registry = createWindowRegistry();
+      const win = makeWindow(9);
+      registry.registerWindow(win, "activity", { activityID: "activity-1" });
+      registry.setActivityWindow("activity-1", 9);
+      expect(registry.activityHostWindowID("activity-1")).toBe(9);
+      expect(registry.activityWindow("activity-1")).toBe(win);
+      registry.unregisterWindow(9);
+      expect(registry.activityHostWindowID("activity-1")).toBeUndefined();
+      expect(registry.activityWindow("activity-1")).toBeNull();
+    });
+
+    it("clearActivityWindow keeps the registered window alive", () => {
+      const registry = createWindowRegistry();
+      const win = makeWindow(10);
+      registry.registerWindow(win, "activity", { activityID: "activity-2" });
+      registry.setActivityWindow("activity-2", 10);
+      registry.clearActivityWindow("activity-2");
+      expect(registry.activityWindow("activity-2")).toBeNull();
+      expect(registry.allWindows()).toContain(win);
+    });
   });
 
   describe("registerWindow / mainWindow / allWindows", () => {
