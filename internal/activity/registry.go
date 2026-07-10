@@ -101,6 +101,88 @@ func (r *Registry) Start(options StartOptions) (Session, Lease, error) {
 	return session, Lease{ActivityID: id, ThreadID: options.ThreadID, Token: token}, nil
 }
 
+// Acquire returns the current agent lease for one plugin Activity or creates
+// the Activity on first use. A user takeover and a stopped tombstone are hard
+// gates: callers cannot silently create a replacement session and continue
+// controlling the UI behind the user's back.
+func (r *Registry) Acquire(options StartOptions) (Session, Lease, error) {
+	if r == nil {
+		return Session{}, Lease{}, errors.New("activity registry is unavailable")
+	}
+	options.ThreadID = strings.TrimSpace(options.ThreadID)
+	options.Workdir = strings.TrimSpace(options.Workdir)
+	options.PluginID = strings.TrimSpace(options.PluginID)
+	if options.ThreadID == "" || options.Workdir == "" || options.PluginID == "" {
+		return Session{}, Lease{}, errors.New("activity thread_id, workdir, and plugin_id are required")
+	}
+	if !validKind(options.Kind) {
+		return Session{}, Lease{}, fmt.Errorf("unsupported activity kind %q", options.Kind)
+	}
+
+	r.mu.Lock()
+	var current *registryEntry
+	for _, entry := range r.entries {
+		if entry.session.ThreadID != options.ThreadID || entry.session.PluginID != options.PluginID || entry.session.Kind != options.Kind {
+			continue
+		}
+		if current == nil || entry.session.CreatedAt.After(current.session.CreatedAt) {
+			current = entry
+		}
+	}
+	if current != nil {
+		session := current.session
+		switch {
+		case session.State == StateStopped:
+			r.mu.Unlock()
+			return Session{}, Lease{}, ErrStopped
+		case session.Controller != ControllerAgent || current.leaseToken == "":
+			r.mu.Unlock()
+			return Session{}, Lease{}, ErrControlRevoked
+		default:
+			lease := Lease{ActivityID: session.ID, ThreadID: session.ThreadID, Token: current.leaseToken}
+			r.mu.Unlock()
+			return session, lease, nil
+		}
+	}
+
+	id := strings.TrimSpace(options.ID)
+	if id == "" {
+		var err error
+		id, err = randomID("activity", 12)
+		if err != nil {
+			r.mu.Unlock()
+			return Session{}, Lease{}, err
+		}
+	}
+	if _, exists := r.entries[id]; exists {
+		r.mu.Unlock()
+		return Session{}, Lease{}, ErrAlreadyExists
+	}
+	token, err := randomID("lease", 24)
+	if err != nil {
+		r.mu.Unlock()
+		return Session{}, Lease{}, err
+	}
+	now := r.now().UTC()
+	session := Session{
+		ID:         id,
+		Kind:       options.Kind,
+		ThreadID:   options.ThreadID,
+		Workdir:    options.Workdir,
+		PluginID:   options.PluginID,
+		Target:     strings.TrimSpace(options.Target),
+		State:      StateStarting,
+		Controller: ControllerAgent,
+		Preview:    strings.TrimSpace(options.Preview),
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	r.entries[id] = &registryEntry{session: session, leaseToken: token}
+	r.mu.Unlock()
+	r.emit(Event{Type: EventStarted, Activity: session})
+	return session, Lease{ActivityID: id, ThreadID: options.ThreadID, Token: token}, nil
+}
+
 func (r *Registry) List(threadID string) []Session {
 	if r == nil {
 		return nil

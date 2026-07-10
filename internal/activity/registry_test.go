@@ -116,3 +116,52 @@ func TestRegistryValidatesKindsStatesAndDuplicateIDs(t *testing.T) {
 		t.Fatal("expected invalid state error")
 	}
 }
+
+func TestRegistryAcquireReusesPluginActivityAndHonorsUserControl(t *testing.T) {
+	registry := NewRegistry()
+	options := StartOptions{
+		Kind:     KindCUA,
+		ThreadID: "thread-1",
+		Workdir:  "/repo",
+		PluginID: "cua-mac",
+		Target:   "com.apple.TextEdit",
+	}
+
+	first, firstLease, err := registry.Acquire(options)
+	if err != nil {
+		t.Fatalf("first Acquire: %v", err)
+	}
+	second, secondLease, err := registry.Acquire(options)
+	if err != nil {
+		t.Fatalf("second Acquire: %v", err)
+	}
+	if second.ID != first.ID || secondLease.Token != firstLease.Token {
+		t.Fatalf("Acquire should reuse activity and lease: first=%+v/%+v second=%+v/%+v", first, firstLease, second, secondLease)
+	}
+
+	if _, err := registry.Takeover("thread-1", first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := registry.Acquire(options); !errors.Is(err, ErrControlRevoked) {
+		t.Fatalf("Acquire during user takeover = %v, want ErrControlRevoked", err)
+	}
+
+	_, releasedLease, err := registry.Release("thread-1", first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumed, resumedLease, err := registry.Acquire(options)
+	if err != nil {
+		t.Fatalf("Acquire after release: %v", err)
+	}
+	if resumed.ID != first.ID || resumedLease.Token != releasedLease.Token || resumedLease.Token == firstLease.Token {
+		t.Fatalf("Acquire after release = %+v/%+v, released=%+v", resumed, resumedLease, releasedLease)
+	}
+
+	if _, err := registry.Stop("thread-1", first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := registry.Acquire(options); !errors.Is(err, ErrStopped) {
+		t.Fatalf("Acquire after stop = %v, want ErrStopped", err)
+	}
+}
