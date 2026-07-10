@@ -74,6 +74,43 @@ func TestMatchProviderTreatsTerminalV1AsOptional(t *testing.T) {
 	}
 }
 
+func TestEnrichProviderInheritsKnownOpenAIModelForCompatibleGateway(t *testing.T) {
+	provider := config.ProviderConfig{
+		Type:      "openai-compatible",
+		BaseURL:   "https://gateway.example.test/codex/v1",
+		APIKeyEnv: "GATEWAY_API_KEY",
+		Model:     "gpt-5.6-sol",
+	}
+
+	ruleName, enriched := EnrichProvider("gateway", provider, provider.Model)
+
+	if ruleName != "gateway" {
+		t.Fatalf("rule provider name = %q, want gateway", ruleName)
+	}
+	if enriched.Type != provider.Type || enriched.BaseURL != provider.BaseURL || enriched.APIKeyEnv != provider.APIKeyEnv {
+		t.Fatalf("connection identity changed: %+v", enriched)
+	}
+	if enriched.API != "" || enriched.NPM != "" {
+		t.Fatalf("catalog provider connection metadata leaked into gateway: api=%q npm=%q", enriched.API, enriched.NPM)
+	}
+	if len(enriched.Models) != 1 {
+		t.Fatalf("models = %d, want only selected model: %+v", len(enriched.Models), enriched.Models)
+	}
+	model, ok := enriched.Models[provider.Model]
+	if !ok {
+		t.Fatalf("selected model metadata missing: %+v", enriched.Models)
+	}
+	if model.Name != "GPT-5.6 Sol" || model.Family != "gpt" || model.ReleaseDate != "2026-07-09" {
+		t.Fatalf("unexpected selected model identity: %+v", model)
+	}
+	if model.Reasoning == nil || !*model.Reasoning {
+		t.Fatalf("reasoning metadata missing: %+v", model)
+	}
+	if model.Limit == nil || model.Limit.Context != 1_050_000 || model.Limit.Input != 922_000 || model.Limit.Output != 128_000 {
+		t.Fatalf("unexpected selected model limits: %+v", model.Limit)
+	}
+}
+
 func TestCatalogMatchesOpenCodeDefaultVisibility(t *testing.T) {
 	provider, ok := MatchProvider("openai", config.ProviderConfig{Type: "openai"})
 	if !ok {

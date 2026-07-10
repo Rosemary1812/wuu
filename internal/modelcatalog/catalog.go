@@ -204,9 +204,66 @@ func EnrichProvider(providerName string, provider config.ProviderConfig, modelID
 				return providerName, MergeProvider(provider, catalogProvider)
 			}
 		}
+		if isOpenAICompatibleProviderType(provider.Type) {
+			if catalogProvider, ok := catalogProviderModelsByID("openai", modelIDs...); ok {
+				return providerName, mergeProviderModelMetadata(provider, catalogProvider, modelIDs...)
+			}
+		}
 		return providerName, provider
 	}
 	return catalogProvider.ID, MergeProvider(provider, catalogProvider, modelIDs...)
+}
+
+func catalogProviderModelsByID(providerID string, modelIDs ...string) (Provider, bool) {
+	provider, ok := ProviderByID(providerID)
+	if !ok {
+		return Provider{}, false
+	}
+	requested := make(map[string]bool, len(modelIDs))
+	for _, modelID := range modelIDs {
+		if modelID = strings.TrimSpace(modelID); modelID != "" {
+			requested[modelID] = true
+		}
+	}
+	if len(requested) == 0 {
+		return Provider{}, false
+	}
+	models := make([]Model, 0, len(requested))
+	for _, model := range provider.Models {
+		if requested[strings.TrimSpace(model.ID)] {
+			models = append(models, model)
+		}
+	}
+	if len(models) == 0 {
+		return Provider{}, false
+	}
+	provider.Models = models
+	return provider, true
+}
+
+func mergeProviderModelMetadata(provider config.ProviderConfig, catalogProvider Provider, modelIDs ...string) config.ProviderConfig {
+	out := provider
+	models := make(map[string]config.ProviderModelConfig, len(provider.Models)+len(modelIDs))
+	for id, model := range provider.Models {
+		models[id] = model
+	}
+	requested := make(map[string]bool, len(modelIDs))
+	for _, modelID := range modelIDs {
+		if modelID = strings.TrimSpace(modelID); modelID != "" {
+			requested[modelID] = true
+		}
+	}
+	for _, model := range catalogProvider.Models {
+		id := strings.TrimSpace(model.ID)
+		if id == "" || !requested[id] {
+			continue
+		}
+		models[id] = MergeModelConfig(models[id], ModelConfig(model))
+	}
+	if len(models) > 0 {
+		out.Models = models
+	}
+	return out
 }
 
 func MergeProvider(provider config.ProviderConfig, catalogProvider Provider, modelIDs ...string) config.ProviderConfig {
@@ -580,6 +637,15 @@ func allowProviderIdentityCatalogMatch(provider config.ProviderConfig) bool {
 func isCodexSubscriptionProviderType(providerType string) bool {
 	switch normalizeID(providerType) {
 	case "openai-codex", "codex-subscription", "chatgpt-codex":
+		return true
+	default:
+		return false
+	}
+}
+
+func isOpenAICompatibleProviderType(providerType string) bool {
+	switch normalizeID(providerType) {
+	case "openai", "openai-compatible", "codex":
 		return true
 	default:
 		return false
