@@ -236,12 +236,16 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 }
 
 func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err error, now time.Time, finishReason, stopReason string, truncated bool) Turn {
-	th.running = false
-	th.currentTurn = ""
-	th.currentTurnKind = ""
-	th.runningProviderName = ""
-	th.runningModel = ""
-	th.cancel = nil
+	turn := th.finishTurnLocked(turnID, status, err, now, finishReason, stopReason, truncated)
+	th.releaseTurnExecutionLocked(turnID)
+	return turn
+}
+
+// finishTurnLocked records the terminal turn state while retaining the
+// execution lease. Callers that still need the per-turn runtime (for example,
+// to persist its trace or restore temporary callbacks) must finish that work
+// before calling releaseTurnExecutionLocked.
+func (th *threadState) finishTurnLocked(turnID string, status TurnStatus, err error, now time.Time, finishReason, stopReason string, truncated bool) Turn {
 	th.UpdatedAt = now
 	if th.activeAgentItemID != "" {
 		if item, ok := th.itemLocked(turnID, th.activeAgentItemID); ok && status == TurnStatusCompleted {
@@ -275,6 +279,18 @@ func (th *threadState) completeTurnLocked(turnID string, status TurnStatus, err 
 	}
 	th.replaceTurnLocked(turn)
 	return turn
+}
+
+func (th *threadState) releaseTurnExecutionLocked(turnID string) {
+	if th.currentTurn != turnID {
+		return
+	}
+	th.running = false
+	th.currentTurn = ""
+	th.currentTurnKind = ""
+	th.runningProviderName = ""
+	th.runningModel = ""
+	th.cancel = nil
 }
 
 func applyTokenUsageToTurn(turn *Turn, usage providers.TokenUsage, contextTokens int, model string) {

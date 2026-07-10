@@ -933,6 +933,13 @@ func (s *Server) applyPendingThreadRuntime(th *threadState) {
 	if th.running || th.pendingRuntimeUpdate == nil {
 		return
 	}
+	s.applyPendingThreadRuntimeLocked(th)
+}
+
+func (s *Server) applyPendingThreadRuntimeLocked(th *threadState) {
+	if th == nil || th.pendingRuntimeUpdate == nil {
+		return
+	}
 	update := *th.pendingRuntimeUpdate
 	s.applyThreadRuntimeUpdateLocked(th, update)
 }

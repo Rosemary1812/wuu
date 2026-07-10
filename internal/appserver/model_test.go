@@ -10,6 +10,26 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
+func TestThreadStateRetainsExecutionLeaseUntilRelease(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
+	th.cancel = func() {}
+
+	turn := th.finishTurnLocked("turn", TurnStatusCompleted, nil, now.Add(time.Second), "stop", "", false)
+	if turn.Status != TurnStatusCompleted {
+		t.Fatalf("turn status = %q, want completed", turn.Status)
+	}
+	if !th.running || th.currentTurn != "turn" || th.cancel == nil {
+		t.Fatalf("finishing should retain execution lease: running=%v current=%q cancel_nil=%v", th.running, th.currentTurn, th.cancel == nil)
+	}
+
+	th.releaseTurnExecutionLocked("turn")
+	if th.running || th.currentTurn != "" || th.cancel != nil {
+		t.Fatalf("release should make thread idle: running=%v current=%q cancel_nil=%v", th.running, th.currentTurn, th.cancel == nil)
+	}
+}
+
 func TestThreadStateCompletesPreambleBeforeToolStart(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)

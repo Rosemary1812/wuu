@@ -474,9 +474,10 @@ func (s *Server) handleTurnSteer(req Request) error {
 	steerMsg := userMessageFromPrompt(params.Prompt, images, files)
 	steerMsg.ClientID = clientID
 	steerMsg.Steered = true
+	removedQueued := s.removeQueuedUserTurn(params.ThreadID, clientID)
 	th.pendingSteers = append(th.pendingSteers, steerMsg)
 	th.mu.Unlock()
-	if s.removeQueuedUserTurn(params.ThreadID, clientID) {
+	if removedQueued {
 		_ = s.writeNotification(NotificationTurnDequeued, TurnDequeuedNotification{
 			ThreadID: params.ThreadID,
 			QueueID:  clientID,
@@ -1035,10 +1036,34 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		th.mu.Unlock()
 	}
 	baseTurnTools := runner.Tools
+	baseForceInitialCompact := runner.ForceInitialCompact
+	baseCompactOnly := runner.CompactOnly
+	baseBeforeStep := runner.BeforeStep
+	baseBeforeRequestContext := runner.BeforeRequestContext
+	baseOnRequestContext := runner.OnRequestContext
+	baseOnCompactAttempt := runner.OnCompactAttempt
+	baseOnToolBatchRejected := runner.OnToolBatchRejected
+	baseOnUsage := runner.OnUsage
+	baseOnTokenUsage := runner.OnTokenUsage
+	var restoreRunnerOnce sync.Once
+	restoreRunner := func() {
+		restoreRunnerOnce.Do(func() {
+			runner.Tools = baseTurnTools
+			runner.ForceInitialCompact = baseForceInitialCompact
+			runner.CompactOnly = baseCompactOnly
+			runner.BeforeStep = baseBeforeStep
+			runner.BeforeRequestContext = baseBeforeRequestContext
+			runner.OnRequestContext = baseOnRequestContext
+			runner.OnCompactAttempt = baseOnCompactAttempt
+			runner.OnToolBatchRejected = baseOnToolBatchRejected
+			runner.OnUsage = baseOnUsage
+			runner.OnTokenUsage = baseOnTokenUsage
+		})
+	}
+	defer restoreRunner()
 	if s.taskLeadManagementTurn(residentParticipantID, residentEnvelopes) {
 		runner.Tools = allowlistedToolExecutor{base: baseTurnTools, allowed: taskLeadManagementTools}
 	}
-	defer func() { runner.Tools = baseTurnTools }()
 	// Fork-to-worktree step 5: bind the thread's isolated checkout into the
 	// tool execution context. All turn variants funnel through here, so a
 	// worktree-bound thread's file/shell tools switch their execution CWD to
@@ -1066,11 +1091,6 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	if threadRuntime != nil && threadRuntime.Toolkit != nil {
 		toolRecordStart = len(threadRuntime.Toolkit.ToolTelemetry())
 	}
-	baseBeforeStep := runner.BeforeStep
-	baseBeforeRequestContext := runner.BeforeRequestContext
-	baseOnRequestContext := runner.OnRequestContext
-	baseOnCompactAttempt := runner.OnCompactAttempt
-	baseOnToolBatchRejected := runner.OnToolBatchRejected
 	// Forward provider-reported token usage into throttled "turn/usage"
 	// notifications so live UIs can render a real token-speed gauge when the
 	// provider exposes stream-time cumulative usage. We keep completed calls
@@ -1082,8 +1102,6 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	var lastUsagePushed providers.TokenUsage
 	var completedUsage providers.TokenUsage
 	var liveUsage providers.TokenUsage
-	baseOnUsage := runner.OnUsage
-	baseOnTokenUsage := runner.OnTokenUsage
 	addUsage := func(a, b providers.TokenUsage) providers.TokenUsage {
 		return providers.TokenUsage{
 			InputTokens:         a.InputTokens + b.InputTokens,
@@ -1221,15 +1239,6 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		}
 		return segments
 	}
-	defer func() {
-		runner.BeforeStep = baseBeforeStep
-		runner.BeforeRequestContext = baseBeforeRequestContext
-		runner.OnRequestContext = baseOnRequestContext
-		runner.OnCompactAttempt = baseOnCompactAttempt
-		runner.OnToolBatchRejected = baseOnToolBatchRejected
-		runner.OnUsage = baseOnUsage
-		runner.OnTokenUsage = baseOnTokenUsage
-	}()
 	// Node liveness wiring (plan §T9): if this resident turn was dispatched to
 	// run a plan node, resolve that node ONCE now (not per stream event). A tool
 	// call during the turn then refreshes the node's LastActivityAt (activity =
@@ -1293,6 +1302,10 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			Event:    sanitizeStreamEvent(ev),
 		})
 	})
+	// RunWithCallback has consumed every per-turn callback. Restore the
+	// long-lived runner before the thread can become idle and admit another
+	// turn; the deferred call remains as panic-safe cleanup.
+	restoreRunner()
 
 	now := time.Now().UTC()
 	th.mu.Lock()
@@ -1381,7 +1394,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	}
 
 	th.mu.Lock()
-	turn := th.completeTurnLocked(turnID, status, err, now, string(res.FinishReason), res.StopReason, res.Truncated)
+	turn := th.finishTurnLocked(turnID, status, err, now, string(res.FinishReason), res.StopReason, res.Truncated)
 	applyTokenUsageToTurn(&turn, providers.TokenUsage{
 		InputTokens:         res.InputTokens,
 		OutputTokens:        res.OutputTokens,
@@ -1389,31 +1402,37 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		CacheReadTokens:     res.CacheReadTokens,
 	}, res.ContextTokens, turnRuntime.Model)
 	th.replaceTurnLocked(turn)
-	unconsumedSteers := th.drainPendingSteersLocked()
 	th.mu.Unlock()
 
 	tracePath, traceErr := s.persistTurnTrace(threadRuntime, runner, th.ID, turnRuntime, turn, res, err, toolRecordStart, contextRequests, providerStates, compactAttempts, barrierRejections)
 	if traceErr != nil {
 		tracePath = ""
 	}
-	s.applyPendingThreadRuntime(th)
 
+	// Surface the Go core's typed error classification to clients while
+	// preserving the raw Error string inside the structured payload.
+	var structured *TurnError
+	if err != nil {
+		value := BuildTurnError(err, turnRuntime.ProviderName)
+		structured = &value
+		turn.Error = structured
+	}
+	th.mu.Lock()
+	if structured != nil {
+		th.replaceTurnLocked(turn)
+	}
+	// Keep the execution lease through trace persistence and runner cleanup.
+	// Applying deferred runtime updates and releasing the lease under the same
+	// lock prevents the next turn from observing a half-restored runtime.
+	unconsumedSteers := th.drainPendingSteersLocked()
 	if len(unconsumedSteers) > 0 {
 		s.prependQueuedUserTurns(th.ID, queuedTurnsFromSteers(unconsumedSteers))
 	}
+	s.applyPendingThreadRuntimeLocked(th)
+	// Publish this turn's terminal event before releasing the execution lease.
+	// Otherwise a queued successor can publish turn/started first, after which
+	// this event would incorrectly make clients mark the active thread idle.
 	if err != nil {
-		// Surface the Go core's typed error classification to the front-end
-		// instead of dropping it on the floor. BuildTurnError pulls the
-		// provider-specific code, status code, canonical category, and a
-		// structured next-step action from the typed errors
-		// (HTTPError, StreamError) and the agentcontrol classifier. The
-		// raw `Error` string is preserved for backward compatibility and
-		// for the "copy debug info" payload.
-		structured := BuildTurnError(err, turnRuntime.ProviderName)
-		turn.Error = &structured
-		th.mu.Lock()
-		th.replaceTurnLocked(turn)
-		th.mu.Unlock()
 		notify(NotificationTurnError, TurnErrorNotification{
 			ThreadID:   th.ID,
 			TurnID:     turnID,
@@ -1425,25 +1444,30 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			Action:     structured.Action,
 			Turn:       turn,
 		})
+	} else {
+		notify(NotificationTurnCompleted, TurnCompletedNotification{
+			ThreadID:            th.ID,
+			Turn:                turn,
+			Content:             res.Content,
+			InputTokens:         res.InputTokens,
+			OutputTokens:        res.OutputTokens,
+			ContextTokens:       res.ContextTokens,
+			CacheCreationTokens: res.CacheCreationTokens,
+			CacheReadTokens:     res.CacheReadTokens,
+			FinishReason:        string(res.FinishReason),
+			StopReason:          res.StopReason,
+			Truncated:           res.Truncated,
+			TracePath:           tracePath,
+		})
+	}
+	th.releaseTurnExecutionLocked(turnID)
+	th.mu.Unlock()
+	if err != nil {
 		s.afterResidentTurn(th, residentParticipantID, residentEnvelopes, turn, now)
 		s.kickAgentCompletionDrain(th.ID)
 		s.kickQueuedTurnDrain(th.ID)
 		return
 	}
-	notify(NotificationTurnCompleted, TurnCompletedNotification{
-		ThreadID:            th.ID,
-		Turn:                turn,
-		Content:             res.Content,
-		InputTokens:         res.InputTokens,
-		OutputTokens:        res.OutputTokens,
-		ContextTokens:       res.ContextTokens,
-		CacheCreationTokens: res.CacheCreationTokens,
-		CacheReadTokens:     res.CacheReadTokens,
-		FinishReason:        string(res.FinishReason),
-		StopReason:          res.StopReason,
-		Truncated:           res.Truncated,
-		TracePath:           tracePath,
-	})
 	if !turnRuntime.CompactOnly {
 		go s.generateThreadTitle(th.ID, titleHistory)
 	}
