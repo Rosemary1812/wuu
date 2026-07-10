@@ -112,6 +112,32 @@ func TestSummariesIncludeMaxForGPT56OpenAIModels(t *testing.T) {
 	}
 }
 
+func TestSummariesUseCatalogEffortsForGPT56CompatibleGateway(t *testing.T) {
+	reasoning := true
+	provider := config.ProviderConfig{
+		Type:  "openai-compatible",
+		Model: "gpt-5.6-sol",
+		Models: map[string]config.ProviderModelConfig{
+			"gpt-5.6-sol": {
+				Reasoning: &reasoning,
+				ReasoningOptions: []map[string]any{{
+					"type":   "effort",
+					"values": []any{"none", "low", "medium", "high", "xhigh", "max"},
+				}},
+			},
+		},
+	}
+
+	variants := SummariesForProvider("gateway", provider, provider.Model)
+	if got := strings.Join(variantIDs(variants), ","); got != "none,low,medium,high,xhigh,max" {
+		t.Fatalf("variants = %q", got)
+	}
+	options, ok := OptionsForProvider("gateway", provider, provider.Model, "max")
+	if !ok || options["reasoningEffort"] != "max" {
+		t.Fatalf("max options = %#v, ok=%v", options, ok)
+	}
+}
+
 func TestSummariesMatchProviderCompatForBedrockMantle(t *testing.T) {
 	reasoning := true
 	provider := config.ProviderConfig{

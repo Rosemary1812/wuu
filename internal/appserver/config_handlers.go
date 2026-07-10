@@ -1211,10 +1211,14 @@ func providerModelSummaries(providerName string, provider config.ProviderConfig)
 	if current != "" {
 		if _, ok := models[current]; !ok {
 			selectedRuleProviderName, selectedRuleProvider := modelcatalog.EnrichProvider(providerName, provider, current)
+			model := selectedRuleProvider.Models[current]
 			capabilities, behavior := modelroles.BuildFacts(selectedRuleProviderName, selectedRuleProvider, current)
 			models[current] = ProviderModelSummary{
 				ID:               current,
-				SupportedEfforts: modelvariant.SupportedEffortsForProvider(selectedRuleProviderName, selectedRuleProvider, current, selectedRuleProvider.Models[current]),
+				DisplayName:      strings.TrimSpace(model.Name),
+				DefaultEffort:    strings.TrimSpace(model.DefaultEffort),
+				DefaultVariant:   strings.TrimSpace(model.DefaultVariant),
+				SupportedEfforts: modelvariant.SupportedEffortsForProvider(selectedRuleProviderName, selectedRuleProvider, current, model),
 				Variants:         providerVariantSummaries(modelvariant.SummariesForProvider(selectedRuleProviderName, selectedRuleProvider, current)),
 				Capabilities:     capabilities,
 				Behavior:         behavior,

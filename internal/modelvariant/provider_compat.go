@@ -241,9 +241,12 @@ func inferredOptionsForProvider(providerName string, provider config.ProviderCon
 		}
 		return compatVariantsFromEfforts(efforts, compatOpenAIProviderVariantOptions)
 	case compatNPMCerebras, compatNPMTogetherAI, compatNPMXAI, compatNPMDeepInfra, compatNPMVenice, compatNPMOpenAICompatible:
-		efforts := append([]string{}, compatWidelySupportedEfforts()...)
+		efforts := modelReasoningEfforts(provider.Models[model])
+		if len(efforts) == 0 {
+			efforts = append([]string{}, compatWidelySupportedEfforts()...)
+		}
 		if strings.Contains(apiID, "deepseek-v4") {
-			efforts = append(efforts, "max")
+			efforts = appendUniqueEffort(efforts, "max")
 		}
 		return compatReasoningEffortVariants(efforts)
 	case compatNPMAzure:
@@ -281,4 +284,42 @@ func inferredOptionsForProvider(providerName string, provider config.ProviderCon
 	default:
 		return nil
 	}
+}
+
+func modelReasoningEfforts(model config.ProviderModelConfig) []string {
+	if efforts := normalizedEffortList(model.SupportedEfforts); len(efforts) > 0 {
+		return efforts
+	}
+	for _, option := range model.ReasoningOptions {
+		if strings.ToLower(strings.TrimSpace(stringOption(option["type"]))) != "effort" {
+			continue
+		}
+		var efforts []string
+		switch values := option["values"].(type) {
+		case []string:
+			efforts = append(efforts, values...)
+		case []any:
+			for _, value := range values {
+				if effort, ok := value.(string); ok {
+					efforts = append(efforts, effort)
+				}
+			}
+		}
+		return normalizedEffortList(efforts)
+	}
+	return nil
+}
+
+func stringOption(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
+func appendUniqueEffort(efforts []string, effort string) []string {
+	for _, existing := range efforts {
+		if existing == effort {
+			return efforts
+		}
+	}
+	return append(efforts, effort)
 }
