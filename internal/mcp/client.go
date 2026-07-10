@@ -74,14 +74,15 @@ type ToolOverride struct {
 
 // Client is a connected MCP server session.
 type Client struct {
-	name      string
-	transport Transport
-	inFlight  *inFlight
-	readLoop  *readLoop
-	mu        sync.RWMutex
-	tools     []Tool
-	overrides map[string]ToolOverride
-	closed    bool
+	name           string
+	transport      Transport
+	inFlight       *inFlight
+	readLoop       *readLoop
+	mu             sync.RWMutex
+	tools          []Tool
+	overrides      map[string]ToolOverride
+	onToolsChanged func()
+	closed         bool
 }
 
 // Connect establishes an MCP session with the given transport.
@@ -236,8 +237,21 @@ func (c *Client) DiscoverTools(ctx context.Context) ([]Tool, error) {
 	}
 	c.mu.Lock()
 	c.tools = result.Tools
+	callback := c.onToolsChanged
 	c.mu.Unlock()
+	if callback != nil {
+		callback()
+	}
 	return result.Tools, nil
+}
+
+func (c *Client) SetToolsChangedCallback(callback func()) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.onToolsChanged = callback
+	c.mu.Unlock()
 }
 
 func (c *Client) handleNotification(method string, _ json.RawMessage) {

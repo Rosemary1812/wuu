@@ -62,7 +62,10 @@ type Toolkit struct {
 	// mcpManager, when set, exposes MCP server tools alongside built-in
 	// tools. MCP tools are appended after built-ins to preserve prompt
 	// cache stability (the built-in prefix stays constant).
-	mcpManager *mcp.Manager
+	mcpManager           *mcp.Manager
+	mcpCatalogMu         sync.RWMutex
+	mcpCatalogGeneration uint64
+	mcpTools             []*mcp.MCPTool
 
 	// activeProfileMu guards activeProfile and activeSurface. Reads
 	// from Definitions() and Execute() take the RLock; SetActiveProfile
@@ -196,6 +199,7 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	// tool_search. A cloned toolkit must not inherit them unless the clone's
 	// own model context has seen the loadable schema.
 	clone.rebuildRegistry()
+	clone.refreshMCPToolSnapshot(true)
 	return clone, nil
 }
 
@@ -462,6 +466,7 @@ func (t *Toolkit) SetOnPlanUpdated(fn func(snapshot PlanSnapshot)) {
 // SetMCPManager attaches the MCP manager so its tools are exposed to the agent.
 func (t *Toolkit) SetMCPManager(m *mcp.Manager) {
 	t.mcpManager = m
+	t.refreshMCPToolSnapshot(true)
 }
 
 func (t *Toolkit) MCPManager() *mcp.Manager {
@@ -555,6 +560,7 @@ func (t *Toolkit) isToolDisabled(name string) bool {
 // callers that have not migrated yet (replay, debugging, internal
 // admin tools) keep working.
 func (t *Toolkit) Definitions() []providers.ToolDefinition {
+	t.refreshMCPToolSnapshot(false)
 	all := t.registry.Definitions()
 	t.refreshStateActivatedToolBundles()
 	surface := t.activeCompiledSurface()
@@ -597,21 +603,19 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	out = append(out, stable...)
 	out = append(out, dynamic...)
 	// Append direct MCP tools after built-ins to preserve prompt cache stability.
-	if t.mcpManager != nil {
-		for _, tool := range t.mcpManager.AllTools() {
-			name := tool.Name()
-			if hasSurface && !activeSurfaceAllowsKnownTool(surface, tool) {
-				continue
+	for _, tool := range t.mcpToolsSnapshot() {
+		name := tool.Name()
+		if hasSurface && !activeSurfaceAllowsKnownTool(surface, tool) {
+			continue
+		}
+		exposure := t.toolExposure(name)
+		if exposure == ToolExposureDirect || (exposure == ToolExposureDeferred && (nativeDeferred || t.isDeferredToolLoaded(name))) {
+			d := tool.Definition()
+			d.CacheStable = false
+			if nativeDeferred && exposure == ToolExposureDeferred {
+				d.DeferLoading = true
 			}
-			exposure := t.toolExposure(name)
-			if exposure == ToolExposureDirect || (exposure == ToolExposureDeferred && (nativeDeferred || t.isDeferredToolLoaded(name))) {
-				d := tool.Definition()
-				d.CacheStable = false
-				if nativeDeferred && exposure == ToolExposureDeferred {
-					d.DeferLoading = true
-				}
-				out = append(out, d)
-			}
+			out = append(out, d)
 		}
 	}
 	out = append(out, tail...)
@@ -1004,12 +1008,9 @@ func (t *Toolkit) ExecuteResult(ctx context.Context, call providers.ToolCall) (t
 	}
 	tool := t.registry.Lookup(call.Name)
 	if tool == nil {
-		// Fallback to MCP manager.
-		if t.mcpManager != nil {
-			for _, mcpTool := range t.mcpManager.AllTools() {
-				if mcpTool.Name() == call.Name {
-					return t.executeKnownToolResult(ctx, call, mcpTool)
-				}
+		for _, mcpTool := range t.mcpToolsSnapshot() {
+			if mcpTool.Name() == call.Name {
+				return t.executeKnownToolResult(ctx, call, mcpTool)
 			}
 		}
 		return toolresult.Result{}, fmt.Errorf("unknown tool %q", call.Name)
@@ -1174,14 +1175,51 @@ func (t *Toolkit) LookupTool(name string) Tool {
 	if tool := t.registry.Lookup(name); tool != nil {
 		return tool
 	}
-	if t.mcpManager != nil {
-		for _, tool := range t.mcpManager.AllTools() {
-			if tool.Name() == name {
-				return tool
-			}
+	for _, tool := range t.mcpToolsSnapshot() {
+		if tool.Name() == name {
+			return tool
 		}
 	}
 	return nil
+}
+
+func (t *Toolkit) refreshMCPToolSnapshot(force bool) {
+	if t == nil {
+		return
+	}
+	manager := t.mcpManager
+	if manager == nil {
+		t.mcpCatalogMu.Lock()
+		t.mcpCatalogGeneration = 0
+		t.mcpTools = nil
+		t.mcpCatalogMu.Unlock()
+		return
+	}
+	generation := manager.Generation()
+	t.mcpCatalogMu.RLock()
+	current := t.mcpCatalogGeneration
+	t.mcpCatalogMu.RUnlock()
+	if !force && current == generation {
+		return
+	}
+	native := manager.NativeTools()
+	tools := make([]*mcp.MCPTool, 0, len(native))
+	for _, item := range native {
+		tools = append(tools, mcp.NewMCPTool(item.Client, item.Definition))
+	}
+	t.mcpCatalogMu.Lock()
+	t.mcpCatalogGeneration = generation
+	t.mcpTools = tools
+	t.mcpCatalogMu.Unlock()
+}
+
+func (t *Toolkit) mcpToolsSnapshot() []*mcp.MCPTool {
+	if t == nil {
+		return nil
+	}
+	t.mcpCatalogMu.RLock()
+	defer t.mcpCatalogMu.RUnlock()
+	return append([]*mcp.MCPTool(nil), t.mcpTools...)
 }
 
 // ToolMetadata implements agent.ToolMetadataProvider so the loop can

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"github.com/blueberrycongee/wuu/internal/extensions"
 	"testing"
 )
 
@@ -19,6 +20,37 @@ func TestManagerConfigureRecordsConfiguredAndDisabledStatuses(t *testing.T) {
 	}
 	if status["disabled"].State != MCPServerStateDisabled || status["disabled"].Connected {
 		t.Fatalf("disabled status = %+v, want disabled", status["disabled"])
+	}
+}
+
+func TestManagerNativeToolsAndGenerationTrackCatalogChanges(t *testing.T) {
+	manager := NewManager()
+	client := &Client{name: "docs", tools: []Tool{{Name: "search", InputSchema: []byte(`{"type":"object"}`)}}}
+	manager.mu.Lock()
+	manager.clients["docs"] = client
+	manager.statuses["docs"] = ServerStatus{Name: "docs", State: MCPServerStateReady, Connected: true}
+	manager.generation++
+	manager.mu.Unlock()
+
+	firstGeneration := manager.Generation()
+	native := manager.NativeTools()
+	if len(native) != 1 || native[0].Definition.Name != "search" || native[0].Client != client {
+		t.Fatalf("NativeTools = %+v", native)
+	}
+	if native[0].Timeout <= 0 || native[0].Provenance.Kind != extensions.KindMCP {
+		t.Fatalf("native metadata = %+v", native[0])
+	}
+
+	client.mu.Lock()
+	client.tools = []Tool{{Name: "fetch"}}
+	client.mu.Unlock()
+	manager.catalogChanged("docs")
+	if manager.Generation() <= firstGeneration {
+		t.Fatalf("generation did not advance: %d -> %d", firstGeneration, manager.Generation())
+	}
+	native = manager.NativeTools()
+	if len(native) != 1 || native[0].Definition.Name != "fetch" {
+		t.Fatalf("stale native tools: %+v", native)
 	}
 }
 

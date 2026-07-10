@@ -6,14 +6,25 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/blueberrycongee/wuu/internal/extensions"
 )
 
 // Manager holds all active MCP client connections and exposes their tools.
 type Manager struct {
-	mu       sync.RWMutex
-	configs  map[string]ServerConfig
-	clients  map[string]*Client
-	statuses map[string]ServerStatus
+	mu         sync.RWMutex
+	configs    map[string]ServerConfig
+	clients    map[string]*Client
+	statuses   map[string]ServerStatus
+	generation uint64
+}
+
+type NativeTool struct {
+	Definition Tool
+	Client     *Client
+	Timeout    time.Duration
+	Provenance extensions.Provenance
 }
 
 // NewManager creates an empty MCP manager.
@@ -88,6 +99,7 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 		m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateFailed, AuthStatus: authStatusForConfig(cfg), Connected: false, Error: err.Error()})
 		return err
 	}
+	client.SetToolsChangedCallback(func() { m.catalogChanged(cfg.Name) })
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if old, ok := m.clients[cfg.Name]; ok {
@@ -101,6 +113,7 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 		Connected:  true,
 		ToolCount:  len(client.Tools()),
 	}
+	m.generation++
 	return nil
 }
 
@@ -126,6 +139,7 @@ func (m *Manager) Refresh(ctx context.Context, name string) error {
 	if !ok {
 		return fmt.Errorf("mcp server %q not configured", name)
 	}
+	m.recordStatus(ServerStatus{Name: name, State: MCPServerStateReconnecting, AuthStatus: authStatusForConfig(cfg)})
 	m.closeClient(name)
 	return m.Add(ctx, cfg)
 }
@@ -141,31 +155,82 @@ func (m *Manager) Disconnect(name string) error {
 	c, ok := m.clients[name]
 	if !ok {
 		if _, configured := m.configs[name]; configured {
-			m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateDisabled, AuthStatus: authStatusForConfig(m.configs[name])}
+			state := MCPServerStateStopped
+			if !m.configs[name].IsEnabled() {
+				state = MCPServerStateDisabled
+			}
+			m.statuses[name] = ServerStatus{Name: name, State: state, AuthStatus: authStatusForConfig(m.configs[name])}
 			return nil
 		}
 		return fmt.Errorf("mcp server %q not found", name)
 	}
 	delete(m.clients, name)
-	m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateDisabled, AuthStatus: authStatusForConfig(m.configs[name])}
+	m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateStopped, AuthStatus: authStatusForConfig(m.configs[name])}
+	m.generation++
 	return c.Close()
+}
+
+func (m *Manager) Generation() uint64 {
+	if m == nil {
+		return 0
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.generation
+}
+
+func (m *Manager) NativeTools() []NativeTool {
+	if m == nil {
+		return nil
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out []NativeTool
+	for name, client := range m.clients {
+		for _, definition := range client.Tools() {
+			out = append(out, NativeTool{
+				Definition: definition,
+				Client:     client,
+				Timeout:    30 * time.Second,
+				Provenance: extensions.Provenance{Kind: extensions.KindMCP, Source: name, Scope: "user"},
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		left := NewMCPTool(out[i].Client, out[i].Definition).Name()
+		right := NewMCPTool(out[j].Client, out[j].Definition).Name()
+		return left < right
+	})
+	return out
 }
 
 // AllTools returns every tool from every connected MCP server, wrapped as
 // wuu-compatible *MCPTool instances. The caller owns the slice.
 func (m *Manager) AllTools() []*MCPTool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	var out []*MCPTool
-	for _, c := range m.clients {
-		for _, t := range c.Tools() {
-			out = append(out, NewMCPTool(c, t))
+	native := m.NativeTools()
+	out := make([]*MCPTool, 0, len(native))
+	for _, tool := range native {
+		out = append(out, NewMCPTool(tool.Client, tool.Definition))
+	}
+	return out
+}
+
+func (m *Manager) catalogChanged(name string) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.generation++
+	if status, ok := m.statuses[name]; ok {
+		if client := m.clients[name]; client != nil {
+			status.ToolCount = len(client.Tools())
+			status.State = MCPServerStateReady
+			status.Connected = true
+			status.Error = ""
+			m.statuses[name] = status
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].Name() < out[j].Name()
-	})
-	return out
 }
 
 func (m *Manager) Config(name string) (ServerConfig, bool) {
@@ -226,8 +291,9 @@ func (m *Manager) Close() error {
 		}
 	}
 	m.clients = make(map[string]*Client)
+	m.generation++
 	for name := range m.statuses {
-		m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateDisabled, AuthStatus: authStatusForConfig(m.configs[name])}
+		m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateStopped, AuthStatus: authStatusForConfig(m.configs[name])}
 	}
 	return firstErr
 }
@@ -258,6 +324,7 @@ func (m *Manager) closeClient(name string) {
 	c := m.clients[name]
 	if c != nil {
 		delete(m.clients, name)
+		m.generation++
 	}
 	m.mu.Unlock()
 	if c != nil {
@@ -299,13 +366,20 @@ func cloneServerConfig(cfg ServerConfig) ServerConfig {
 type MCPServerState string
 
 const (
-	MCPServerStateConfigured              MCPServerState = "configured"
-	MCPServerStateConnecting              MCPServerState = "connecting"
-	MCPServerStateConnected               MCPServerState = "connected"
-	MCPServerStateFailed                  MCPServerState = "failed"
-	MCPServerStateDisabled                MCPServerState = "disabled"
-	MCPServerStateNeedsAuth               MCPServerState = "needs_auth"
-	MCPServerStateNeedsClientRegistration MCPServerState = "needs_client_registration"
+	MCPServerStateDisabled     MCPServerState = "disabled"
+	MCPServerStateStarting     MCPServerState = "starting"
+	MCPServerStateReady        MCPServerState = "ready"
+	MCPServerStateAuthRequired MCPServerState = "auth_required"
+	MCPServerStateReconnecting MCPServerState = "reconnecting"
+	MCPServerStateError        MCPServerState = "error"
+	MCPServerStateStopped      MCPServerState = "stopped"
+
+	MCPServerStateConfigured              = MCPServerStateStopped
+	MCPServerStateConnecting              = MCPServerStateStarting
+	MCPServerStateConnected               = MCPServerStateReady
+	MCPServerStateFailed                  = MCPServerStateError
+	MCPServerStateNeedsAuth               = MCPServerStateAuthRequired
+	MCPServerStateNeedsClientRegistration = MCPServerStateAuthRequired
 )
 
 type MCPAuthStatus string

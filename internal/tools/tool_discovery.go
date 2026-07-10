@@ -226,10 +226,8 @@ func toolSearchSelectNames(query string) ([]string, bool) {
 
 func (t *Toolkit) allKnownTools() []Tool {
 	all := t.registry.All()
-	if t.mcpManager != nil {
-		for _, tool := range t.mcpManager.AllTools() {
-			all = append(all, tool)
-		}
+	for _, tool := range t.mcpToolsSnapshot() {
+		all = append(all, tool)
 	}
 	return all
 }
