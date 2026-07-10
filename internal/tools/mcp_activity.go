@@ -2,9 +2,13 @@ package tools
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/activity"
@@ -92,6 +96,14 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 	}
 	state := activity.StateActive
 	update := activity.UpdateOptions{State: state}
+	if callErr == nil {
+		previewURI, previewErr := t.persistActivityPreview(session.ID, result)
+		if previewErr != nil {
+			callErr = previewErr
+		} else {
+			update.Preview = previewURI
+		}
+	}
 	if callErr != nil {
 		update.State = activity.StateError
 		update.Error = callErr.Error()
@@ -109,6 +121,48 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		PreviewURI: session.Preview,
 	}
 	return result, callErr
+}
+
+func (t *Toolkit) persistActivityPreview(activityID string, result toolresult.Result) (string, error) {
+	if t == nil || t.env == nil || strings.TrimSpace(t.env.SessionDir) == "" {
+		return "", nil
+	}
+	for _, part := range result.Content {
+		if part.Type != toolresult.ContentTypeImage || strings.TrimSpace(part.Data) == "" {
+			continue
+		}
+		data, err := base64.StdEncoding.DecodeString(part.Data)
+		if err != nil {
+			return "", fmt.Errorf("decode activity preview: %w", err)
+		}
+		if len(data) > 32*1024*1024 {
+			return "", fmt.Errorf("activity preview exceeds 32 MiB")
+		}
+		extension := ".img"
+		switch strings.ToLower(strings.TrimSpace(part.MIMEType)) {
+		case "image/png":
+			extension = ".png"
+		case "image/jpeg":
+			extension = ".jpg"
+		case "image/webp":
+			extension = ".webp"
+		}
+		dir := filepath.Join(t.env.SessionDir, "activities", strings.TrimSpace(activityID))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return "", fmt.Errorf("create activity preview directory: %w", err)
+		}
+		path := filepath.Join(dir, "preview"+extension)
+		temporary := path + ".tmp"
+		if err := os.WriteFile(temporary, data, 0o600); err != nil {
+			return "", fmt.Errorf("write activity preview: %w", err)
+		}
+		if err := os.Rename(temporary, path); err != nil {
+			_ = os.Remove(temporary)
+			return "", fmt.Errorf("publish activity preview: %w", err)
+		}
+		return (&url.URL{Scheme: "file", Path: path}).String(), nil
+	}
+	return "", nil
 }
 
 func mcpActivityTarget(arguments string) string {

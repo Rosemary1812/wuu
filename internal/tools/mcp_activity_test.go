@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/activity"
@@ -23,7 +25,10 @@ func (t *activityTestTool) Execute(context.Context, string) (string, error) {
 }
 func (t *activityTestTool) ExecuteResult(context.Context, string) (toolresult.Result, error) {
 	t.calls++
-	return toolresult.FromText("observed"), nil
+	return toolresult.Result{Content: []toolresult.ContentPart{
+		{Type: toolresult.ContentTypeText, Text: "observed"},
+		{Type: toolresult.ContentTypeImage, Data: "cG5n", MIMEType: "image/png"},
+	}}, nil
 }
 func (t *activityTestTool) IsReadOnly() bool        { return false }
 func (t *activityTestTool) IsConcurrencySafe() bool { return false }
@@ -31,8 +36,9 @@ func (t *activityTestTool) IsConcurrencySafe() bool { return false }
 func TestExecuteActivityBoundToolCreatesRefAndHonorsTakeover(t *testing.T) {
 	registry := activity.NewRegistry()
 	tool := &activityTestTool{}
+	artifacts := t.TempDir()
 	kit := &Toolkit{
-		env:              &Env{RootDir: "/repo", SessionID: "thread-1"},
+		env:              &Env{RootDir: "/repo", SessionID: "thread-1", SessionDir: artifacts},
 		registry:         NewRegistry(tool),
 		boundary:         StandardBoundary(),
 		activityRegistry: registry,
@@ -49,8 +55,15 @@ func TestExecuteActivityBoundToolCreatesRefAndHonorsTakeover(t *testing.T) {
 	if result.Activity == nil || result.Activity.Kind != string(activity.KindCUA) || result.Activity.ThreadID != "thread-1" {
 		t.Fatalf("activity result = %+v", result.Activity)
 	}
+	if result.Activity.PreviewURI == "" {
+		t.Fatalf("activity preview missing: %+v", result.Activity)
+	}
+	previewPath := filepath.Join(artifacts, "activities", result.Activity.ID, "preview.png")
+	if data, readErr := os.ReadFile(previewPath); readErr != nil || string(data) != "png" {
+		t.Fatalf("preview artifact = %q, %v", data, readErr)
+	}
 	sessions := registry.List("thread-1")
-	if len(sessions) != 1 || sessions[0].PluginID != "cua-mac" || sessions[0].Target != "com.apple.TextEdit" || sessions[0].State != activity.StateActive {
+	if len(sessions) != 1 || sessions[0].PluginID != "cua-mac" || sessions[0].Target != "com.apple.TextEdit" || sessions[0].State != activity.StateActive || sessions[0].Preview != result.Activity.PreviewURI {
 		t.Fatalf("activity sessions = %+v", sessions)
 	}
 	if tool.calls != 1 {
