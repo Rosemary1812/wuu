@@ -92,7 +92,6 @@
   grid-template-columns: 0 0 minmax(0, 1fr);
 }
 
-.app-shell.right-panel-globalized .sidebar,
 .app-shell.right-panel-globalized .conversation-pane {
   overflow: hidden;
   pointer-events: none;

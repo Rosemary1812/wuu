@@ -17,6 +17,7 @@ export type SidebarDrawerStateController = {
   sidebarHoverZoneRef: MutableRefObject<HTMLDivElement | null>;
   cancelSidebarDrawerOpen: () => void;
   openSidebarDrawer: () => void;
+  openSidebarDrawerNow: () => void;
   scheduleSidebarDrawerOpen: () => void;
   closeSidebarDrawer: () => void;
   syncSidebarDrawerHover: () => void;
@@ -121,6 +122,20 @@ export function useSidebarDrawerState({
     resizingSidebar,
     sidebarCollapsed,
     sidebarDrawerPointerHovered,
+  ]);
+
+  const openSidebarDrawerNow = useCallback((): void => {
+    if (resizingSidebar || !sidebarCollapsed) {
+      return;
+    }
+    clearSidebarDrawerOpenTimer();
+    clearSidebarDrawerCloseTimer();
+    setSidebarDrawerPhase("open");
+  }, [
+    clearSidebarDrawerCloseTimer,
+    clearSidebarDrawerOpenTimer,
+    resizingSidebar,
+    sidebarCollapsed,
   ]);
 
   const scheduleSidebarDrawerOpen = useCallback((): void => {
@@ -333,6 +348,7 @@ export function useSidebarDrawerState({
     sidebarHoverZoneRef,
     cancelSidebarDrawerOpen,
     openSidebarDrawer,
+    openSidebarDrawerNow,
     scheduleSidebarDrawerOpen,
     closeSidebarDrawer,
     syncSidebarDrawerHover,

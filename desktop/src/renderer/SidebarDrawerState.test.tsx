@@ -93,6 +93,21 @@ async function renderSidebarDrawerState(): Promise<{
 }
 
 describe("useSidebarDrawerState", () => {
+  it("opens immediately for an explicit focus-mode navigation request", async () => {
+    const hook = await renderSidebarDrawerState();
+    const openSidebarDrawerNow = (
+      hook.get() as SidebarDrawerStateController & {
+        openSidebarDrawerNow?: () => void;
+      }
+    ).openSidebarDrawerNow;
+
+    await act(async () => {
+      openSidebarDrawerNow?.();
+    });
+
+    expect(hook.get().sidebarDrawerPhase).toBe("open");
+  });
+
   it("opens after the edge hover intent delay while the pointer remains hovered", async () => {
     const hook = await renderSidebarDrawerState();
     elementFromPointTarget = hook.hoverZone;

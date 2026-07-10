@@ -161,6 +161,29 @@ function baseProps(): Parameters<typeof WorkspaceRightPanel>[0] {
 }
 
 describe("WorkspaceRightPanel", () => {
+  it("opens navigation over a focused workspace and explains forced compact focus", () => {
+    const onOpenSidebar = vi.fn();
+    const props = {
+      ...baseProps(),
+      globalized: true,
+      onOpenSidebar,
+      canExitGlobalized: false,
+    } as Parameters<typeof WorkspaceRightPanel>[0];
+    mount(<WorkspaceRightPanel {...props} />);
+
+    const navigation = container?.querySelector<HTMLButtonElement>(
+      '[aria-label="打开导航侧栏"]',
+    );
+    expect(navigation).not.toBeNull();
+    act(() => navigation?.click());
+    expect(onOpenSidebar).toHaveBeenCalledTimes(1);
+
+    const restore = container?.querySelector<HTMLButtonElement>(
+      '[aria-label="窗口过窄，无法停靠右侧栏"]',
+    );
+    expect(restore?.disabled).toBe(true);
+  });
+
   it("presents the workspace expansion as full-panel focus mode", () => {
     const onToggleGlobalize = vi.fn();
     mount(

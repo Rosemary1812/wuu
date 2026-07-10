@@ -13,7 +13,7 @@ import {
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { FileDiff, FileText, FolderOpen, Globe, Maximize2, Minimize2, Plus, ShieldCheck, Terminal, X } from "lucide-react";
+import { FileDiff, FileText, FolderOpen, Globe, Maximize2, Minimize2, PanelLeftOpen, Plus, ShieldCheck, Terminal, X } from "lucide-react";
 import type { ActivitySession, GitStatusResult, RuntimeContext } from "../shared/protocol";
 import { TurnFileDiffPanel } from "./TurnFileDiffPanel";
 import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
@@ -55,6 +55,8 @@ export function WorkspaceRightPanel({
   onClose,
   globalized,
   onToggleGlobalize,
+  onOpenSidebar,
+  canExitGlobalized = true,
   pendingBrowserURL,
   onBrowserURLConsumed,
   onBrowserURLChange,
@@ -86,6 +88,8 @@ export function WorkspaceRightPanel({
   onClose: () => void;
   globalized: boolean;
   onToggleGlobalize: () => void;
+  onOpenSidebar?: () => void;
+  canExitGlobalized?: boolean;
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
   onBrowserURLChange?: (url: string) => void;
@@ -178,6 +182,18 @@ export function WorkspaceRightPanel({
       inert={!open}
     >
       <div className="workspace-panel-tabbar">
+        {globalized && onOpenSidebar ? (
+          <button
+            className="icon-button workspace-panel-sidebar"
+            type="button"
+            aria-label="打开导航侧栏"
+            title="打开导航侧栏"
+            disabled={!open}
+            onClick={onOpenSidebar}
+          >
+            <PanelLeftOpen className="icon" />
+          </button>
+        ) : null}
         <DndContext
           sensors={tabSensors}
           collisionDetection={closestCenter}
@@ -237,10 +253,22 @@ export function WorkspaceRightPanel({
         <button
           className={`icon-button workspace-panel-globalize${globalized ? " active" : ""}`}
           type="button"
-          aria-label={globalized ? "退出全面板" : "展开为全面板"}
-          title={globalized ? "退出全面板" : "展开为全面板"}
+          aria-label={
+            globalized && !canExitGlobalized
+              ? "窗口过窄，无法停靠右侧栏"
+              : globalized
+                ? "退出全面板"
+                : "展开为全面板"
+          }
+          title={
+            globalized && !canExitGlobalized
+              ? "窗口过窄，无法停靠右侧栏"
+              : globalized
+                ? "退出全面板"
+                : "展开为全面板"
+          }
           aria-pressed={globalized}
-          disabled={!open}
+          disabled={!open || (globalized && !canExitGlobalized)}
           onClick={onToggleGlobalize}
         >
           {globalized ? <Minimize2 className="icon" /> : <Maximize2 className="icon" />}

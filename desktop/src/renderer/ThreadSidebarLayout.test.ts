@@ -38,6 +38,18 @@ describe("project sidebar row layout", () => {
 });
 
 describe("globalized right panel chrome", () => {
+  it("keeps the sidebar available as a drawer over the focused workspace", () => {
+    const conversation = cssRule(
+      ".app-shell.right-panel-globalized .conversation-pane",
+    );
+
+    expect(conversation).toMatch(/overflow:\s*hidden;/);
+    expect(conversation).toMatch(/pointer-events:\s*none;/);
+    expect(sidebarCSS).not.toMatch(
+      /\.app-shell\.right-panel-globalized \.sidebar,\s*\n\.app-shell\.right-panel-globalized \.conversation-pane/,
+    );
+  });
+
   it("hides the docked right-panel resizer while the panel fills the window", () => {
     const body = cssRule(
       ".app-shell.right-panel-globalized .workspace-right-panel-resizer",
