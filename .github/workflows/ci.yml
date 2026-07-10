@@ -20,6 +20,9 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Check module manifests
+        run: go mod tidy -diff
+
       - name: Test
         run: go test ./...
 

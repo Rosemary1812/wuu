@@ -11,6 +11,10 @@ Tagged releases are published by `.github/workflows/release.yml`.
 The workflow refuses to release if the tag, root `VERSION`, and desktop package
 version do not match.
 
+Before tagging, `go mod tidy -diff` must succeed without output. CI runs the
+same read-only check; release tooling consumes committed module manifests and
+does not update `go.mod` or `go.sum`.
+
 ## GitHub Secrets
 
 The current release workflow only publishes the macOS Electron desktop preview
