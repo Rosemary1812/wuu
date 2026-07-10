@@ -1,4 +1,4 @@
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, useCallback, useState } from "react";
 import {
   closestCenter,
   DndContext,
@@ -20,7 +20,7 @@ import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
 import { WorkspaceFilePreview, WorkspaceFileTree, type WorkspaceFileDirtyState } from "./WorkspaceFiles";
 import { WorkspaceDiffReview, WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
 import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
-import type { WorkspaceViewTab } from "./WorkspaceViewTabs";
+import type { WorkspaceFileViewTab, WorkspaceViewTab } from "./WorkspaceViewTabs";
 
 export type WorkspacePanelView = "files" | "review" | "terminal" | "browser";
 
@@ -127,7 +127,9 @@ export function WorkspaceRightPanel({
   onBrowserURLChange?: (url: string) => void;
 }): JSX.Element {
   const activeTab = activeTabID ? tabs.find((tab) => tab.id === activeTabID) : undefined;
+  const fileTabs = tabs.filter((tab): tab is WorkspaceFileViewTab => tab.kind === "file");
   const showingPicker = !activeTab;
+  const [dirtyFileTabIDs, setDirtyFileTabIDs] = useState<Set<string>>(() => new Set());
   const [draggingTabID, setDraggingTabID] = useState<string | undefined>(undefined);
   const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>(undefined);
   const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -156,9 +158,43 @@ export function WorkspaceRightPanel({
     setDraggingTabWidth(undefined);
   }
 
+  const updateFileDirtyState = useCallback((tabID: string, dirty: boolean): void => {
+    setDirtyFileTabIDs((current) => {
+      if (current.has(tabID) === dirty) {
+        return current;
+      }
+      const next = new Set(current);
+      if (dirty) {
+        next.add(tabID);
+      } else {
+        next.delete(tabID);
+      }
+      return next;
+    });
+  }, []);
+
+  function requestCloseTab(tab: WorkspaceViewTab): void {
+    if (
+      tab.kind === "file" &&
+      dirtyFileTabIDs.has(tab.id) &&
+      !window.confirm("此文件有未保存修改。关闭将丢失这些修改，仍要关闭吗？")
+    ) {
+      return;
+    }
+    setDirtyFileTabIDs((current) => {
+      if (!current.has(tab.id)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(tab.id);
+      return next;
+    });
+    onCloseTab(tab.id);
+  }
+
   return (
     <aside
-      className={`workspace-right-panel${activeTab ? " detail" : " tools"}${activeTab?.kind === "review" ? " review" : ""}${activeTab?.kind === "diff" ? " diff" : ""}`}
+      className={`workspace-right-panel${activeTab ? " detail" : " tools"}${activeTab?.kind === "review" ? " review" : ""}${activeTab?.kind === "diff" ? " diff" : ""}${activeTab?.kind === "file" ? " file" : ""}`}
       aria-hidden={!open}
     >
       <div className="workspace-panel-tabbar">
@@ -182,7 +218,7 @@ export function WorkspaceRightPanel({
                     open={open}
                     reorderable={tabs.length > 1}
                     onSelect={() => onSelectTab(tab.id)}
-                    onClose={() => onCloseTab(tab.id)}
+                    onClose={() => requestCloseTab(tab)}
                   />
                 );
               })}
@@ -229,10 +265,18 @@ export function WorkspaceRightPanel({
           <X className="icon" />
         </button>
       </div>
-      {present ? (
+      {present || fileTabs.length > 0 ? (
         <>
           <div className={`workspace-panel-body${activeTab ? "" : " picker"}`}>
-            {!activeTab ? (
+            {fileTabs.map((tab) => (
+              <WorkspaceFileResource
+                active={tab.id === activeTabID}
+                key={tab.id}
+                onDirtyChange={updateFileDirtyState}
+                tab={tab}
+              />
+            ))}
+            {activeTab?.kind === "file" ? null : !activeTab ? (
               <WorkspaceToolPicker tabs={tabs} onSelectTool={onOpenTool} />
             ) : activeTab.kind === "diff" ? (
               <TurnFileDiffPanel
@@ -263,6 +307,36 @@ export function WorkspaceRightPanel({
         </>
       ) : null}
     </aside>
+  );
+}
+
+function WorkspaceFileResource({
+  active,
+  onDirtyChange,
+  tab,
+}: {
+  active: boolean;
+  onDirtyChange: (tabID: string, dirty: boolean) => void;
+  tab: WorkspaceFileViewTab;
+}): JSX.Element {
+  const handleDirtyChange = useCallback(
+    (state: WorkspaceFileDirtyState) => onDirtyChange(tab.id, state.dirty),
+    [onDirtyChange, tab.id],
+  );
+
+  return (
+    <div
+      className={`workspace-file-resource${active ? " active" : ""}`}
+      data-workspace-tab-id={tab.id}
+      hidden={!active}
+    >
+      <WorkspaceFilePreview
+        activeContext={tab.context}
+        selectedFilePath={tab.path}
+        onOpenRightPanel={() => {}}
+        onDirtyChange={handleDirtyChange}
+      />
+    </div>
   );
 }
 
