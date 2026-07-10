@@ -761,15 +761,16 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		c.recordHarnessTaskFailure(workerID, fmt.Errorf("spawn: %w", err))
 		return nil, fmt.Errorf("spawn: %w", err)
 	}
+	spawned := sa.Snapshot()
 
 	result := &SpawnResult{
 		Action:        "spawn_agent",
-		AgentID:       sa.ID,
+		AgentID:       spawned.ID,
 		ParticipantID: participantID,
 		TaskName:      threadMeta.TaskName,
 		AgentProfile:  threadMeta.AgentProfile,
 		AgentPath:     threadMeta.Path,
-		Status:        string(sa.Status),
+		Status:        string(spawned.Status),
 		Isolation:     string(isolation),
 	}
 	result.NextSteps = spawnResultNextSteps(result.Status, req.Synchronous, result.Isolation, result.AgentPath)
@@ -790,7 +791,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		waitCtx, cancel = context.WithTimeout(ctx, req.Timeout)
 		defer cancel()
 	}
-	snap, err := c.manager.Wait(waitCtx, sa.ID)
+	snap, err := c.manager.Wait(waitCtx, spawned.ID)
 	if err != nil {
 		return nil, fmt.Errorf("wait: %w", err)
 	}
@@ -1082,14 +1083,15 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		c.recordHarnessTaskFailure(workerID, fmt.Errorf("spawn: %w", err))
 		return nil, fmt.Errorf("spawn: %w", err)
 	}
+	spawned := sa.Snapshot()
 
 	result := &SpawnResult{
 		Action:       "spawn_agent",
-		AgentID:      sa.ID,
+		AgentID:      spawned.ID,
 		TaskName:     threadMeta.TaskName,
 		AgentProfile: threadMeta.AgentProfile,
 		AgentPath:    threadMeta.Path,
-		Status:       string(sa.Status),
+		Status:       string(spawned.Status),
 		Isolation:    string(isolation),
 	}
 	result.NextSteps = spawnResultNextSteps(result.Status, req.Synchronous, result.Isolation, result.AgentPath)
@@ -1107,7 +1109,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		waitCtx, cancel = context.WithTimeout(ctx, req.Timeout)
 		defer cancel()
 	}
-	snap, err := c.manager.Wait(waitCtx, sa.ID)
+	snap, err := c.manager.Wait(waitCtx, spawned.ID)
 	if err != nil {
 		return nil, fmt.Errorf("wait: %w", err)
 	}

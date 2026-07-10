@@ -599,7 +599,7 @@ func (m *Manager) Stop(id string) bool {
 	if sa == nil {
 		return false
 	}
-	sa.cancelFunc()
+	sa.cancel()
 	return true
 }
 
@@ -612,7 +612,7 @@ func (m *Manager) StopAll() {
 	}
 	m.mu.Unlock()
 	for _, sa := range agents {
-		sa.cancelFunc()
+		sa.cancel()
 	}
 }
 
@@ -882,6 +882,14 @@ func (m *Manager) CountRunning() int {
 
 func (s *SubAgent) pushPendingMessage(message string) {
 	_, _ = s.pushPendingMessageSnapshot(message)
+}
+
+func (s *SubAgent) cancel() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cancelFunc != nil {
+		s.cancelFunc()
+	}
 }
 
 func (s *SubAgent) pushPendingMessageSnapshot(message string) (SubAgentSnapshot, bool) {

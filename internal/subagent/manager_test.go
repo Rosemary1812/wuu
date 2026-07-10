@@ -436,6 +436,31 @@ func TestStopAll(t *testing.T) {
 	}
 }
 
+func TestStopAllConcurrentCancelReplacement(t *testing.T) {
+	sa := &SubAgent{ID: "worker", cancelFunc: func() {}}
+	mgr := &Manager{agents: map[string]*SubAgent{sa.ID: sa}}
+
+	for i := 0; i < 100; i++ {
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			mgr.StopAll()
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			sa.mu.Lock()
+			sa.cancelFunc = func() {}
+			sa.mu.Unlock()
+		}()
+		close(start)
+		wg.Wait()
+	}
+}
+
 func TestNotifications(t *testing.T) {
 	client := &fakeClient{response: providers.ChatResponse{Content: "ok"}}
 	mgr := NewManager(client, "fake-model")
