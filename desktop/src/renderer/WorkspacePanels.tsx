@@ -303,6 +303,7 @@ function WorkspaceFileResource({
       hidden={!active}
     >
       <WorkspaceFilePreview
+        active={active}
         activeContext={tab.context}
         editorResourceID={tab.id}
         selectedFilePath={tab.path}

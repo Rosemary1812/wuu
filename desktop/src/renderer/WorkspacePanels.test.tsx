@@ -22,11 +22,15 @@ vi.mock("./WorkspaceTerminalPanel", () => ({
 
 vi.mock("./WorkspaceMonacoEditor", () => ({
   WorkspaceMonacoEditor: ({
+    initialViewState,
+    onViewStateChange,
     path,
     resourceID,
     text,
     onChange,
   }: {
+    initialViewState?: { scrollTop: number } | null;
+    onViewStateChange?: (state: { scrollTop: number }) => void;
     path: string;
     resourceID: string;
     text: string;
@@ -37,9 +41,17 @@ vi.mock("./WorkspaceMonacoEditor", () => ({
       data-path={path}
       data-resource-id={resourceID}
       data-text={text}
+      data-view-scroll={initialViewState?.scrollTop ?? 0}
     >
       <button type="button" className="mock-editor-edit" onClick={() => onChange?.(`edited ${path}`)}>
         edit
+      </button>
+      <button
+        type="button"
+        className="mock-editor-scroll"
+        onClick={() => onViewStateChange?.({ scrollTop: 42 })}
+      >
+        scroll
       </button>
     </div>
   ),
@@ -202,7 +214,7 @@ describe("WorkspaceRightPanel", () => {
     expect(panel?.querySelector(".workspace-file-resource.active .workspace-file-preview")).toBeTruthy();
   });
 
-  it("keeps inactive file resources mounted so unsaved edits survive tab switches", async () => {
+  it("keeps inactive file state without retaining inactive Monaco editors", async () => {
     const context: RuntimeContext = {
       kind: "project",
       project_id: "project-1",
@@ -222,6 +234,7 @@ describe("WorkspaceRightPanel", () => {
     await act(async () => Promise.resolve());
     act(() => {
       fileResource(fileA.id)?.querySelector<HTMLButtonElement>(".mock-editor-edit")?.click();
+      fileResource(fileA.id)?.querySelector<HTMLButtonElement>(".mock-editor-scroll")?.click();
     });
 
     act(() => {
@@ -238,10 +251,22 @@ describe("WorkspaceRightPanel", () => {
     const fileAResource = fileResource(fileA.id);
     expect(fileAResource).toBeTruthy();
     expect(fileAResource?.hidden).toBe(true);
-    expect(fileAResource?.querySelector(".workspace-monaco-editor")?.getAttribute("data-text")).toBe(
-      "edited src/a.ts",
-    );
+    expect(fileAResource?.querySelector(".workspace-monaco-editor")).toBeNull();
+    expect(container?.querySelectorAll(".workspace-monaco-editor")).toHaveLength(1);
     expect(container?.querySelectorAll(".workspace-file-resource")).toHaveLength(2);
+
+    act(() => {
+      root?.render(
+        <WorkspaceRightPanel
+          {...baseProps()}
+          tabs={tabs}
+          activeTabID={fileA.id}
+        />,
+      );
+    });
+    const restoredEditor = fileResource(fileA.id)?.querySelector(".workspace-monaco-editor");
+    expect(restoredEditor?.getAttribute("data-text")).toBe("edited src/a.ts");
+    expect(restoredEditor?.getAttribute("data-view-scroll")).toBe("42");
   });
 
   it("gives same-path files in separate worktrees distinct Monaco resources", async () => {
@@ -271,12 +296,24 @@ describe("WorkspaceRightPanel", () => {
     );
     await act(async () => Promise.resolve());
 
-    const resourceIDs = Array.from(
+    let resourceIDs = Array.from(
       container?.querySelectorAll<HTMLElement>(".workspace-monaco-editor") ?? [],
     ).map((editor) => editor.dataset.resourceId);
-    expect(resourceIDs).toContain(primary.id);
-    expect(resourceIDs).toContain(worktree.id);
-    expect(new Set(resourceIDs).size).toBe(2);
+    expect(resourceIDs).toEqual([primary.id]);
+
+    act(() => {
+      root?.render(
+        <WorkspaceRightPanel
+          {...baseProps()}
+          tabs={[primary, worktree]}
+          activeTabID={worktree.id}
+        />,
+      );
+    });
+    resourceIDs = Array.from(
+      container?.querySelectorAll<HTMLElement>(".workspace-monaco-editor") ?? [],
+    ).map((editor) => editor.dataset.resourceId);
+    expect(resourceIDs).toEqual([worktree.id]);
   });
 
   it("does not close a dirty file resource until the user confirms discarding its edit", async () => {

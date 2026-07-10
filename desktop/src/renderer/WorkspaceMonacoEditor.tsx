@@ -30,32 +30,40 @@ type MonacoLanguage =
   | "xml"
   | "yaml";
 
+export type WorkspaceMonacoViewState = monaco.editor.ICodeEditorViewState;
+
 export function WorkspaceMonacoEditor({
   path,
   resourceID,
   text,
+  initialViewState,
   readOnly = false,
   onChange,
   onSave,
+  onViewStateChange,
 }: {
   path: string;
   resourceID: string;
   text: string;
+  initialViewState?: WorkspaceMonacoViewState | null;
   readOnly?: boolean;
   onChange?: (value: string) => void;
   onSave?: () => void;
+  onViewStateChange?: (state: WorkspaceMonacoViewState | null) => void;
 }): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const modelRef = useRef<monaco.editor.ITextModel | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
+  const onViewStateChangeRef = useRef(onViewStateChange);
   const language = useMemo(() => monacoLanguageForPath(path), [path]);
 
   useEffect(() => {
     onChangeRef.current = onChange;
     onSaveRef.current = onSave;
-  }, [onChange, onSave]);
+    onViewStateChangeRef.current = onViewStateChange;
+  }, [onChange, onSave, onViewStateChange]);
 
   useEffect(() => {
     installMonacoWorkers();
@@ -102,9 +110,13 @@ export function WorkspaceMonacoEditor({
 
     modelRef.current = model;
     editorRef.current = editor;
+    if (initialViewState) {
+      editor.restoreViewState(initialViewState);
+    }
     editor.focus();
 
     return () => {
+      onViewStateChangeRef.current?.(editor.saveViewState());
       changeDisposable.dispose();
       editor.dispose();
       model.dispose();

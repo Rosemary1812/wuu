@@ -24,7 +24,10 @@ import type {
   WorkspaceFileTreeEntry
 } from "../shared/protocol";
 import { RichContent } from "./RichContent";
-import { WorkspaceMonacoEditor } from "./WorkspaceMonacoEditor";
+import {
+  WorkspaceMonacoEditor,
+  type WorkspaceMonacoViewState,
+} from "./WorkspaceMonacoEditor";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
 type DirectoryLoadState = {
@@ -756,12 +759,14 @@ export function formatWorkspaceRoot(root: string): string {
 }
 
 export function WorkspaceFilePreview({
+  active = true,
   activeContext,
   editorResourceID,
   selectedFilePath,
   onOpenRightPanel,
   onDirtyChange
 }: {
+  active?: boolean;
   activeContext?: RuntimeContext;
   editorResourceID?: string;
   selectedFilePath?: string;
@@ -779,6 +784,7 @@ export function WorkspaceFilePreview({
   const [markdownMode, setMarkdownMode] = useState<MarkdownMode>("reading");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const editorViewStateRef = useRef<WorkspaceMonacoViewState | null>(null);
   const selectedWorkspaceFilePath = useMemo(
     () => normalizeSelectedWorkspaceFilePath(selectedFilePath, activeContext?.cwd),
     [activeContext?.cwd, selectedFilePath]
@@ -801,6 +807,7 @@ export function WorkspaceFilePreview({
     }
 
     let cancelled = false;
+    editorViewStateRef.current = null;
     setFile(undefined);
     setDraftText("");
     setBaseText("");
@@ -1054,16 +1061,20 @@ export function WorkspaceFilePreview({
           <div className="workspace-markdown-reading">
             <RichContent text={draftText} cwd={activeContext.cwd} />
           </div>
-        ) : (
+        ) : active ? (
           <WorkspaceMonacoEditor
+            initialViewState={editorViewStateRef.current}
             path={file.path}
             resourceID={editorResourceID ?? `${activeContext.cwd}:${file.path}`}
             text={draftText}
             readOnly={readOnly}
             onChange={handleEditorChange}
             onSave={handleSave}
+            onViewStateChange={(viewState) => {
+              editorViewStateRef.current = viewState;
+            }}
           />
-        )}
+        ) : null}
       </div>
     </article>
   );
