@@ -105,3 +105,9 @@ coverage.out
 # ============================================================
 
 .paste/                         # personal paste-inbox for images
+
+# local redesign reference (matvoyce analysis assets — do NOT commit/ship)
+landing/.redesign-ref/
+
+# local CLI build artifact (use ~/go/bin/wuu via `make install`)
+/wuu
