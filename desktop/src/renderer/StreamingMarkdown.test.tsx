@@ -8,12 +8,19 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   containsMermaidFence,
   StreamingMarkdown,
   splitIntoStableBlocks,
 } from "./StreamingMarkdown";
 import { streamTextKey, streamTextStore } from "./StreamText";
+
+const turnsCSS = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/turns.css"),
+  "utf8",
+);
 
 // jsdom doesn't implement layout. Stub getBoundingClientRect so React
 // doesn't crash on layout queries.
@@ -29,6 +36,40 @@ beforeAll(() => {
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
+
+async function withManualAnimationFrames(
+  run: (flush: (timestamp: number) => Promise<void>) => Promise<void>,
+): Promise<void> {
+  const realRequestAnimationFrame = window.requestAnimationFrame;
+  const realCancelAnimationFrame = window.cancelAnimationFrame;
+  let nextHandle = 1;
+  const callbacks = new Map<number, FrameRequestCallback>();
+
+  window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+    const handle = nextHandle;
+    nextHandle += 1;
+    callbacks.set(handle, callback);
+    return handle;
+  }) as typeof window.requestAnimationFrame;
+  window.cancelAnimationFrame = ((handle: number) => {
+    callbacks.delete(handle);
+  }) as typeof window.cancelAnimationFrame;
+
+  const flush = async (timestamp: number): Promise<void> => {
+    const pending = Array.from(callbacks.values());
+    callbacks.clear();
+    await act(async () => {
+      pending.forEach((callback) => callback(timestamp));
+    });
+  };
+
+  try {
+    await run(flush);
+  } finally {
+    window.requestAnimationFrame = realRequestAnimationFrame;
+    window.cancelAnimationFrame = realCancelAnimationFrame;
+  }
+}
 
 function mount(props: Parameters<typeof StreamingMarkdown>[0]): void {
   if (container) unmount();
@@ -136,6 +177,95 @@ describe("StreamingMarkdown", () => {
     expect(cursor).toBeTruthy();
     expect(cursor?.tagName).toBe("SPAN");
     expect(cursor?.closest(".rich-paragraph")).toBeTruthy();
+  });
+
+  it("feathers only the newest live microbatch beside the cursor", async () => {
+    const key = streamTextKey("turn", "s2", "text");
+    streamTextStore.seed(key, "Hello world");
+    mount({ streamKey: key, initialText: "Hello", isLive: true, phase: "final_answer" });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const surface = document.querySelector(".streaming-markdown") as HTMLElement;
+    const feathers = Array.from(
+      surface.querySelectorAll<HTMLElement>(".stream-feather-enter"),
+    );
+    const feather = feathers.at(-1) ?? null;
+    expect(feather).not.toBeNull();
+    expect(feather?.textContent?.length).toBeGreaterThan(0);
+    expect(feather?.textContent?.length).toBeLessThan(surface.textContent?.length ?? 0);
+    expect(feather?.nextElementSibling?.classList.contains("stream-cursor")).toBe(true);
+  });
+
+  it("lets consecutive RAF microbatches finish their feather entrance together", async () => {
+    await withManualAnimationFrames(async (flush) => {
+      const key = streamTextKey("turn", "s2", "text");
+      streamTextStore.seed(key, "Hello world");
+      mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
+
+      await flush(0);
+      await flush(16);
+      await flush(32);
+
+      expect(document.querySelectorAll(".stream-feather-enter").length).toBeGreaterThan(1);
+    });
+  });
+
+  it("caps retained feather batches during sustained RAF pressure", async () => {
+    await withManualAnimationFrames(async (flush) => {
+      const key = streamTextKey("turn", "s2", "text");
+      streamTextStore.seed(key, "x".repeat(200));
+      mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
+
+      for (let frame = 0; frame < 20; frame += 1) {
+        await flush(frame * 16);
+      }
+
+      const retained = document.querySelectorAll(".stream-feather-enter").length;
+      expect(retained).toBeGreaterThan(1);
+      expect(retained).toBeLessThanOrEqual(8);
+    });
+  });
+
+  it("does not re-feather existing text when an inline Markdown delimiter closes", async () => {
+    await withManualAnimationFrames(async (flush) => {
+      const key = streamTextKey("turn", "s2", "text");
+      streamTextStore.seed(key, "**bold**");
+      mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
+
+      for (const timestamp of [0, 16, 32, 48, 64]) {
+        await flush(timestamp);
+      }
+
+      expect(document.querySelector("strong")).not.toBeNull();
+      expect(document.querySelector("strong .stream-feather-enter")).toBeNull();
+    });
+  });
+
+  it("removes active feather batches when a live item settles", async () => {
+    await withManualAnimationFrames(async (flush) => {
+      const key = streamTextKey("turn", "s2", "text");
+      streamTextStore.seed(key, "Hello world");
+      const liveProps = { streamKey: key, initialText: "", isLive: true, phase: "final_answer" as const };
+      mount(liveProps);
+
+      await flush(0);
+      await flush(16);
+      expect(document.querySelector(".stream-feather-enter")).not.toBeNull();
+
+      rerender({ ...liveProps, isLive: false });
+      expect(document.querySelector(".stream-feather-enter")).toBeNull();
+    });
+  });
+
+  it("does not feather settled historical text", () => {
+    const key = streamTextKey("turn", "s2", "text");
+    streamTextStore.seed(key, "Hello world");
+    mount({ streamKey: key, initialText: "Hello world", isLive: false, phase: "final_answer" });
+
+    expect(document.querySelector(".stream-feather-enter")).toBeNull();
   });
 
   it("uses the same live cursor treatment for commentary text", async () => {
@@ -296,6 +426,23 @@ describe("StreamingMarkdown", () => {
     const cursor = surface.querySelector(".stream-cursor") as HTMLElement | null;
     expect(surface.textContent).not.toContain("\uE000");
     expect(cursor?.closest("li")).toBeTruthy();
+  });
+});
+
+describe("StreamingMarkdown feather motion", () => {
+  it("uses a 90ms opacity-only entrance and disables it for reduced motion", () => {
+    const rule = turnsCSS.match(
+      /\.stream-feather-enter\s*\{([\s\S]*?)\n\}/,
+    )?.[1] ?? "";
+
+    expect(rule).toContain("animation: stream-feather-in 90ms linear both;");
+    expect(rule).not.toContain("transform");
+    expect(turnsCSS).toMatch(
+      /@keyframes stream-feather-in\s*\{[\s\S]*?from\s*\{\s*opacity:\s*0\.18;[\s\S]*?to\s*\{\s*opacity:\s*1;/,
+    );
+    expect(turnsCSS).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.stream-feather-enter\s*\{\s*animation:\s*none;/,
+    );
   });
 });
 

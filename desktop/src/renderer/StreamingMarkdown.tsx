@@ -6,7 +6,11 @@ import {
   useRef,
   useState
 } from "react";
-import { MarkdownContent, type RichTextRenderer } from "./RichContent";
+import {
+  MarkdownContent,
+  type RichTextRenderContext,
+  type RichTextRenderer,
+} from "./RichContent";
 import {
   useStreamedTextHasValue,
   useStreamedText
@@ -47,9 +51,19 @@ type StreamingMarkdownProps = {
 
 type StreamPhase = "streaming" | "settled";
 
+type FeatherReveal = {
+  /** Raw source interval exposed by one RAF tick. */
+  start: number;
+  end: number;
+  /** Changes every tick so the short opacity entrance restarts. */
+  sequence: number;
+};
+
 const DEFAULT_CLASS_NAME = "streaming-markdown rich-content";
 const CURSOR_CLASS_NAME = "stream-cursor";
 const CURSOR_SENTINEL = "";
+const FEATHER_RETENTION_MS = 110;
+const MAX_FEATHER_BATCHES = 8;
 
 const STREAM_CONFIG = {
   /** Calm default rate used while the reader is keeping up. */
@@ -114,6 +128,7 @@ export function StreamingMarkdown({
   const [visibleLength, setVisibleLength] = useState<number>(
     initialVisibleLength,
   );
+  const [featherReveals, setFeatherReveals] = useState<FeatherReveal[]>([]);
 
   /* --------------------- Cursor lifecycle (shown -> fading) -------------- */
   const [cursorState, setCursorState] = useState<"shown" | "fading">(
@@ -123,12 +138,16 @@ export function StreamingMarkdown({
   /* ------------------------------- Refs ---------------------------------- */
   const renderedTextRef = useRef(renderedText);
   const visibleRef = useRef(visibleLength);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const previousCursorContainerTextRef = useRef<string | undefined>(undefined);
   const rafRef = useRef<number | undefined>(undefined);
   const lastFrameTsRef = useRef<number | undefined>(undefined);
   const isLiveRef = useRef(isLive);
   const onFrameRef = useRef(onFrame);
   const onSettledRef = useRef(onSettled);
   const settledNotifiedRef = useRef(false);
+  const featherSequenceRef = useRef(0);
+  const featherTimeoutsRef = useRef(new Map<number, number>());
 
   /* ----------------------- Refs always track props ------------------------ */
   useLayoutEffect(() => {
@@ -155,6 +174,35 @@ export function StreamingMarkdown({
     onSettledRef.current?.();
   }, []);
 
+  const clearFeatherReveals = useCallback((): void => {
+    featherTimeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout));
+    featherTimeoutsRef.current.clear();
+    setFeatherReveals([]);
+  }, []);
+
+  const queueFeatherReveal = useCallback((start: number, end: number): void => {
+    featherSequenceRef.current += 1;
+    const sequence = featherSequenceRef.current;
+    setFeatherReveals((current) => [
+      ...current,
+      { start, end, sequence },
+    ].slice(-MAX_FEATHER_BATCHES));
+    // Keep the batch slightly longer than the 90ms CSS animation so React's
+    // commit time cannot remove the span before the browser paints its end.
+    const timeout = window.setTimeout(() => {
+      featherTimeoutsRef.current.delete(sequence);
+      setFeatherReveals((current) => current.filter(
+        (reveal) => reveal.sequence !== sequence,
+      ));
+    }, FEATHER_RETENTION_MS);
+    featherTimeoutsRef.current.set(sequence, timeout);
+  }, []);
+
+  useEffect(() => () => {
+    featherTimeoutsRef.current.forEach((timeout) => window.clearTimeout(timeout));
+    featherTimeoutsRef.current.clear();
+  }, []);
+
   /* --------------------------- Sync / RAF loop --------------------------- */
   // Snap visible to text length without animation. Used when the surface
   // goes non-live (e.g. unmounting, or an out-of-band text replacement).
@@ -165,10 +213,11 @@ export function StreamingMarkdown({
     }
     lastFrameTsRef.current = undefined;
     visibleRef.current = text.length;
+    clearFeatherReveals();
     setVisibleLength(text.length);
     settledNotifiedRef.current = false;
     onFrameRef.current?.();
-  }, []);
+  }, [clearFeatherReveals]);
 
   // The frame loop. Advances `visible` toward the target at a rate
   // proportional to the backlog. We never skip characters: each frame
@@ -269,6 +318,36 @@ export function StreamingMarkdown({
     trySettle();
   }, [isLive, syncImmediate, trySettle]);
 
+  /* ---------------------- Visible glyph feathering ---------------------- */
+  // Markdown source growth is not the same as visible text growth: closing
+  // `**`, a link destination, or a code delimiter can add raw characters
+  // while only reinterpreting glyphs already on screen. Read the committed
+  // cursor container and diff its actual text instead. A layout effect's
+  // state update is flushed before paint, so newly appended glyphs enter on
+  // their feather span without an intervening hard-cut frame.
+  useLayoutEffect(() => {
+    if (!isLive) {
+      previousCursorContainerTextRef.current = undefined;
+      return;
+    }
+    const currentText = cursorContainerText(surfaceRef.current);
+    if (currentText === undefined) {
+      return;
+    }
+    const previousText = previousCursorContainerTextRef.current;
+    previousCursorContainerTextRef.current = currentText;
+    if (previousText === undefined || currentText === previousText) {
+      return;
+    }
+    if (currentText.startsWith(previousText)) {
+      queueFeatherReveal(previousText.length, currentText.length);
+      return;
+    }
+    // A Markdown structure change or replacement altered existing visible
+    // glyphs. Clear old ranges rather than replaying them as new content.
+    clearFeatherReveals();
+  }, [clearFeatherReveals, isLive, queueFeatherReveal, renderedText, visibleLength]);
+
   /* --------------------- Cursor visibility & fade-out ------------------- */
   const hasMoreToReveal = visibleLength < renderedText.length;
   useEffect(() => {
@@ -302,8 +381,8 @@ export function StreamingMarkdown({
   // data-cursor-state attribute (see turns.css) instead.
   const showCursor = true;
   const cursorTextRenderer = useMemo(
-    () => createCursorTextRenderer(),
-    []
+    () => createCursorTextRenderer(isLive ? featherReveals : []),
+    [featherReveals, isLive]
   );
   // Mermaid is expensive; do not flip the markdown renderer at settle for
   // ordinary text. Only messages that actually contain a Mermaid fence enter
@@ -334,6 +413,7 @@ export function StreamingMarkdown({
   /* ------------------------------- Render -------------------------------- */
   return (
     <div
+      ref={surfaceRef}
       className={className}
       data-stream-state={phase}
       data-cursor-state={cursorState}
@@ -368,29 +448,88 @@ export function StreamingMarkdown({
  */
 const MemoMarkdownContent = MarkdownContent;
 
-function createCursorTextRenderer(): RichTextRenderer {
-  return (text, keyPrefix) => {
-    if (!text.includes(CURSOR_SENTINEL)) {
-      return [text];
-    }
+function createCursorTextRenderer(
+  featherReveals: FeatherReveal[],
+): RichTextRenderer {
+  return (text, keyPrefix, context) => {
+    const cursorIndex = text.indexOf(CURSOR_SENTINEL);
+    const visibleText = cursorIndex >= 0 ? text.slice(0, cursorIndex) : text;
     const output: Array<JSX.Element | string> = [];
-    const parts = text.split(CURSOR_SENTINEL);
-    parts.forEach((part, index) => {
-      if (part) {
-        output.push(part);
+
+    const ranges = featherRangesForNode(
+      featherReveals,
+      visibleText.length,
+      context,
+    );
+    let localOffset = 0;
+    ranges.forEach(({ start, end, sequence }) => {
+      if (start > localOffset) {
+        output.push(visibleText.slice(localOffset, start));
       }
-      if (index < parts.length - 1) {
-        output.push(
-          <span
-            key={`${keyPrefix}-cursor-${index}`}
-            className={CURSOR_CLASS_NAME}
-            aria-hidden="true"
-          />
-        );
-      }
+      output.push(
+        <span
+          key={`${keyPrefix}-feather-${sequence}-${start}`}
+          className="stream-feather-enter"
+        >
+          {visibleText.slice(start, end)}
+        </span>
+      );
+      localOffset = end;
     });
+    if (localOffset < visibleText.length) {
+      output.push(visibleText.slice(localOffset));
+    }
+
+    if (cursorIndex >= 0) {
+      output.push(
+        <span
+          key={`${keyPrefix}-cursor`}
+          className={CURSOR_CLASS_NAME}
+          aria-hidden="true"
+        />
+      );
+      const trailingText = text.slice(cursorIndex + CURSOR_SENTINEL.length);
+      if (trailingText) {
+        output.push(trailingText);
+      }
+    }
     return output;
   };
+}
+
+function featherRangesForNode(
+  reveals: FeatherReveal[],
+  nodeLength: number,
+  context?: RichTextRenderContext,
+): Array<FeatherReveal> {
+  if (!context?.hasCursor || nodeLength === 0 || reveals.length === 0) {
+    return [];
+  }
+
+  const nodeStart = context.startOffset;
+  const nodeEnd = nodeStart + nodeLength;
+  let occupiedUntil = 0;
+  const ranges: FeatherReveal[] = [];
+
+  reveals.forEach((reveal) => {
+    const start = Math.max(occupiedUntil, 0, reveal.start - nodeStart);
+    const end = Math.min(nodeLength, reveal.end - nodeStart);
+    if (end <= start || reveal.end <= nodeStart || reveal.start >= nodeEnd) {
+      return;
+    }
+    ranges.push({ start, end, sequence: reveal.sequence });
+    occupiedUntil = end;
+  });
+
+  return ranges;
+}
+
+function cursorContainerText(surface: HTMLDivElement | null): string | undefined {
+  const cursor = surface?.querySelector(`.${CURSOR_CLASS_NAME}`);
+  const container = cursor?.closest<HTMLElement>(
+    ".rich-paragraph, .rich-heading, li, code, th, td, blockquote",
+  ) ?? cursor?.parentElement;
+  return container?.textContent ?? undefined;
 }
 
 export function containsMermaidFence(text: string): boolean {

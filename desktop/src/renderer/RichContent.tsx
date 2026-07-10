@@ -22,7 +22,18 @@ export type RichBlockWithOffset = RichBlock & {
   startOffset: number;
 };
 
-export type RichTextRenderer = (text: string, keyPrefix: string) => Array<JSX.Element | string>;
+export type RichTextRenderContext = {
+  startOffset: number;
+  endOffset: number;
+  totalLength: number;
+  hasCursor: boolean;
+};
+
+export type RichTextRenderer = (
+  text: string,
+  keyPrefix: string,
+  context?: RichTextRenderContext,
+) => Array<JSX.Element | string>;
 
 type RichTextRenderOptions = {
   cwd?: string;
@@ -514,6 +525,26 @@ function renderMarkdownText(
   options: RichTextRenderOptions,
   keyPrefix: string
 ): ReactNode {
+  const flattenedText = markdownNodeText(children);
+  return renderMarkdownTextWithContext(children, options, keyPrefix, {
+    offset: 0,
+    totalLength: flattenedText.length,
+    hasCursor: flattenedText.includes("\uE000"),
+  });
+}
+
+type MarkdownTextTraversal = {
+  offset: number;
+  totalLength: number;
+  hasCursor: boolean;
+};
+
+function renderMarkdownTextWithContext(
+  children: ReactNode,
+  options: RichTextRenderOptions,
+  keyPrefix: string,
+  traversal: MarkdownTextTraversal,
+): ReactNode {
   if (!options.renderText && (!options.autoLinkFiles || !options.onOpenFile)) {
     return children;
   }
@@ -521,34 +552,64 @@ function renderMarkdownText(
     const childKey = `${keyPrefix}-${index}`;
     if (typeof child === "string" || typeof child === "number") {
       const text = String(child);
-      return renderRichText(text, childKey, options);
+      const startOffset = traversal.offset;
+      traversal.offset += text.length;
+      return renderRichText(text, childKey, options, {
+        startOffset,
+        endOffset: traversal.offset,
+        totalLength: traversal.totalLength,
+        hasCursor: traversal.hasCursor,
+      });
     }
     if (!isValidElement<{ children?: ReactNode }>(child) || child.props.children === undefined) {
       return [child];
     }
     return [
       cloneElement(child, {
-        children: renderMarkdownText(child.props.children, options, childKey)
+        children: renderMarkdownTextWithContext(
+          child.props.children,
+          options,
+          childKey,
+          traversal,
+        )
       })
     ];
   });
 }
 
+function markdownNodeText(node: ReactNode): string {
+  return Children.toArray(node).map((child) => {
+    if (typeof child === "string" || typeof child === "number") {
+      return String(child);
+    }
+    if (isValidElement<{ children?: ReactNode }>(child)) {
+      return markdownNodeText(child.props.children);
+    }
+    return "";
+  }).join("");
+}
+
 function renderRichText(
   text: string,
   keyPrefix: string,
-  options: RichTextRenderOptions
+  options: RichTextRenderOptions,
+  context?: RichTextRenderContext,
 ): Array<JSX.Element | string> {
   if (!options.autoLinkFiles || !options.onOpenFile) {
-    return options.renderText ? options.renderText(text, keyPrefix) : [text];
+    return options.renderText ? options.renderText(text, keyPrefix, context) : [text];
   }
 
   const output: Array<JSX.Element | string> = [];
-  const pushPlain = (value: string, key: string): void => {
+  const pushPlain = (value: string, key: string, relativeOffset: number): void => {
     if (!value) {
       return;
     }
-    output.push(...(options.renderText ? options.renderText(value, key) : [value]));
+    const childContext = context ? {
+      ...context,
+      startOffset: context.startOffset + relativeOffset,
+      endOffset: context.startOffset + relativeOffset + value.length,
+    } : undefined;
+    output.push(...(options.renderText ? options.renderText(value, key, childContext) : [value]));
   };
 
   let cursor = 0;
@@ -562,7 +623,7 @@ function renderRichText(
     if (!isFileReferenceCandidate(candidatePath)) {
       continue;
     }
-    pushPlain(text.slice(cursor, referenceStart), `${keyPrefix}-text-${cursor}`);
+    pushPlain(text.slice(cursor, referenceStart), `${keyPrefix}-text-${cursor}`, cursor);
     output.push(
       <RichResolvedFileReference
         key={`${keyPrefix}-file-${referenceStart}`}
@@ -574,7 +635,7 @@ function renderRichText(
     cursor = referenceStart + reference.length;
   }
 
-  pushPlain(text.slice(cursor), `${keyPrefix}-text-${cursor}`);
+  pushPlain(text.slice(cursor), `${keyPrefix}-text-${cursor}`, cursor);
   return output;
 }
 
