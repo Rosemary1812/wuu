@@ -80,6 +80,9 @@ func TestOpenSubthreadUsesParentSeqAcrossLiveItemIDChanges(t *testing.T) {
 	if cth.AnchorItemID != canonicalAnchor || cth.ParentSeq != seq {
 		t.Fatalf("binding = %q/%d, want %q/%d", cth.AnchorItemID, cth.ParentSeq, canonicalAnchor, seq)
 	}
+	if cth.Title != "稳定绑定" {
+		t.Fatalf("title = %q, want parent message text", cth.Title)
+	}
 }
 
 func TestOpenSubthreadRejectsNonMessageAnchor(t *testing.T) {

@@ -355,6 +355,17 @@ func (s *Server) openConversationSubthreadAs(params ThreadOpenSubParams, created
 	if parentSeq <= 0 || strings.TrimSpace(parentAuthor) == "" {
 		return session.ConversationThread{}, fmt.Errorf("anchor item %q has no durable parent identity", anchorItemID)
 	}
+	if parentItem.ID == "" {
+		var itemErr error
+		parentItem, itemErr = s.mainStreamItemForSeq(threadID, parentSeq)
+		if itemErr != nil {
+			return session.ConversationThread{}, itemErr
+		}
+	}
+	threadTitle := strings.TrimSpace(params.Title)
+	if threadTitle == "" {
+		threadTitle = truncateUsageTitle(strings.Join(strings.Fields(parentItem.Text), " "))
+	}
 	owner, err := s.resolveConversationThreadOwner(threadID, parentAuthor, params.ThreadOwnerParticipantID)
 	if err != nil {
 		return session.ConversationThread{}, err
@@ -362,7 +373,7 @@ func (s *Server) openConversationSubthreadAs(params ThreadOpenSubParams, created
 	thread, err := session.CreateConversationThread(s.rt.SessionDir, session.ConversationThread{
 		SessionID:                 threadID,
 		AnchorItemID:              anchorItemID,
-		Title:                     params.Title,
+		Title:                     threadTitle,
 		CreatedBy:                 strings.TrimSpace(createdBy),
 		ThreadOwnerParticipantID:  owner,
 		ParentSeq:                 parentSeq,
