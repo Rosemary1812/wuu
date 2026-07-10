@@ -538,6 +538,41 @@ func TestProviderSummariesExposeGPT56CatalogForCompatibleGateway(t *testing.T) {
 	}
 }
 
+func TestProviderSummariesEnrichPartialGPT56ConfigForCompatibleGateway(t *testing.T) {
+	cfg := config.Config{
+		DefaultProvider: "gateway",
+		Providers: map[string]config.ProviderConfig{
+			"gateway": {
+				Type:    "openai-compatible",
+				BaseURL: "https://gateway.example.test/codex/v1",
+				WireAPI: "responses",
+				Model:   "gpt-5.6-sol",
+				Models: map[string]config.ProviderModelConfig{
+					"gpt-5.6-sol": {Name: "Gateway GPT-5.6 Sol"},
+				},
+			},
+		},
+	}
+
+	summaries := providerSummariesFromConfig(cfg, t.TempDir())
+	if len(summaries) != 1 {
+		t.Fatalf("unexpected summaries: %+v", summaries)
+	}
+	model := providerModelByID(t, summaries[0], "gpt-5.6-sol")
+	if model.Source != "config" || model.DisplayName != "Gateway GPT-5.6 Sol" {
+		t.Fatalf("unexpected configured model summary: %+v", model)
+	}
+	if got := strings.Join(variantIDs(model.Variants), ","); got != "none,low,medium,high,xhigh,max" {
+		t.Fatalf("variants = %q", got)
+	}
+	if got := strings.Join(model.SupportedEfforts, ","); got != "none,low,medium,high,xhigh,max" {
+		t.Fatalf("supported efforts = %q", got)
+	}
+	if model.Capabilities.ContextWindow != 1_050_000 || model.Capabilities.InputLimit != 922_000 || model.Capabilities.OutputLimit != 128_000 {
+		t.Fatalf("capabilities = %+v", model.Capabilities)
+	}
+}
+
 func TestProviderSummariesMergeConfiguredVariants(t *testing.T) {
 	cfg := config.Config{
 		DefaultProvider: "custom",
