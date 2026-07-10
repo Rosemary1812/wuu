@@ -50,6 +50,7 @@
     "Songti SC", "Noto Serif SC", "Noto Serif CJK SC", serif;
   --project-empty-content-color: #697075;
   --wuu-launch-exit-border: #dedfdb;
+  --wuu-launch-sweep-highlight: rgba(244, 247, 248, 0.86);
   --project-empty-actions-border: #e0e0dc;
   --project-empty-actions-hover-bg: #f5f5f2;
   --diff-insert-bg: rgba(18, 161, 80, 0.08);
@@ -3758,10 +3759,95 @@ pre {
   font-size: var(--font-title);
 }
 
+/*
+ * The launch signature uses the real mascot artwork as an etched layer
+ * inside one transparent app-icon surface. The glass owns the depth and
+ * sweep; the illustration stays monochrome so startup does not replay the
+ * full-color application icon or compete with the workspace that follows.
+ */
 .wuu-launch {
   display: grid;
   justify-items: center;
-  gap: 18px;
+  gap: 24px;
+}
+
+.wuu-launch-glass {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  width: clamp(120px, 14vw, 152px);
+  aspect-ratio: 1;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  border-radius: 31%;
+  background:
+    radial-gradient(
+      circle at 28% 18%,
+      color-mix(in srgb, var(--paper) 82%, transparent) 0 18%,
+      transparent 52%
+    ),
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--paper) 64%, transparent),
+      color-mix(in srgb, var(--surface-2) 42%, transparent)
+    );
+  -webkit-backdrop-filter: blur(24px) saturate(1.18);
+  backdrop-filter: blur(24px) saturate(1.18);
+  box-shadow: 0 24px 64px color-mix(in srgb, var(--ink) 12%, transparent);
+  animation: wuu-launch-glass-enter 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.wuu-launch-glass::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--paper) 38%, transparent),
+    transparent 42%
+  );
+  content: "";
+  pointer-events: none;
+}
+
+.wuu-launch-glass::after {
+  position: absolute;
+  inset: -24% auto -24% -68%;
+  z-index: 2;
+  width: 54%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--wuu-launch-sweep-highlight) 48%,
+    transparent
+  );
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(-120%, 0, 0) rotate(9deg);
+  will-change: transform, opacity;
+  animation: wuu-launch-glass-sweep 3600ms cubic-bezier(0.16, 1, 0.3, 1) 480ms infinite;
+}
+
+.wuu-launch-carving {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 76%;
+  height: 76%;
+  object-fit: contain;
+  opacity: 0.5;
+  filter:
+    grayscale(1)
+    contrast(0.78)
+    brightness(1.28)
+    drop-shadow(-1px -1px 0 color-mix(in srgb, var(--paper) 78%, transparent))
+    drop-shadow(1px 1px 0 color-mix(in srgb, var(--ink) 18%, transparent));
+  mix-blend-mode: soft-light;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .wuu-launch-mark {
@@ -3909,6 +3995,37 @@ pre {
   }
 }
 
+@keyframes wuu-launch-glass-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes wuu-launch-glass-sweep {
+  0%,
+  16% {
+    opacity: 0;
+    transform: translate3d(-120%, 0, 0) rotate(9deg);
+  }
+  22% {
+    opacity: 0.72;
+  }
+  48% {
+    opacity: 0.58;
+    transform: translate3d(410%, 0, 0) rotate(9deg);
+  }
+  54%,
+  100% {
+    opacity: 0;
+    transform: translate3d(410%, 0, 0) rotate(9deg);
+  }
+}
+
 @keyframes thinking-icon-breathe {
   0%,
   100% {
@@ -3922,6 +4039,8 @@ pre {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .wuu-launch-glass,
+  .wuu-launch-glass::after,
   .wuu-launch-mark::after,
   .wuu-launch-mark span,
   .wuu-launch-rail::after,

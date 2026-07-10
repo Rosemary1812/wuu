@@ -14,12 +14,14 @@ export function RuntimeLoading({
     <div className="project-empty-pane">
       {isStarting ? (
         <div className="wuu-launch" role="status" aria-label={pinned ? "wuu 启动动画预览" : "wuu 正在启动"}>
-          <div className="wuu-launch-mark" aria-hidden="true">
-            <span>w</span>
-            <span>u</span>
-            <span>u</span>
+          <div className="wuu-launch-glass" aria-hidden="true">
+            <img
+              className="wuu-launch-carving"
+              src={mascotFace}
+              alt=""
+              draggable={false}
+            />
           </div>
-          <div className="wuu-launch-rail" aria-hidden="true" />
           {pinned && onExitPreview ? (
             <button className="wuu-launch-exit" type="button" onClick={onExitPreview}>
               退出预览
