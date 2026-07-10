@@ -8,6 +8,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 // ToolExecutor matches agent.ToolExecutor so HookedExecutor can decorate
@@ -15,6 +16,10 @@ import (
 type ToolExecutor interface {
 	Definitions() []providers.ToolDefinition
 	Execute(ctx context.Context, call providers.ToolCall) (string, error)
+}
+
+type RichToolExecutor interface {
+	ExecuteResult(ctx context.Context, call providers.ToolCall) (toolresult.Result, error)
 }
 
 // HookedExecutor decorates a ToolExecutor with PreToolUse / PostToolUse /
@@ -104,6 +109,13 @@ func (h *HookedExecutor) DiscoveredTools(call providers.ToolCall) []providers.Lo
 // PostToolUse and PostToolUseFailure hooks are fire-and-forget: their
 // errors are not propagated so they cannot mask the real tool outcome.
 func (h *HookedExecutor) Execute(ctx context.Context, call providers.ToolCall) (string, error) {
+	result, err := h.ExecuteResult(ctx, call)
+	return result.TextProjection(), err
+}
+
+// ExecuteResult preserves the canonical rich result while exposing only a
+// deterministic projection to legacy hook payloads.
+func (h *HookedExecutor) ExecuteResult(ctx context.Context, call providers.ToolCall) (toolresult.Result, error) {
 	h.lastAdditionalCtx = "" // reset for this call
 	input := &Input{
 		SessionID: h.sessionID,
@@ -115,14 +127,31 @@ func (h *HookedExecutor) Execute(ctx context.Context, call providers.ToolCall) (
 	// PreToolUse
 	out, err := h.dispatcher.Dispatch(ctx, PreToolUse, input)
 	if err != nil {
-		return "", fmt.Errorf("hook blocked %s: %w", call.Name, err)
+		return toolresult.Result{}, fmt.Errorf("hook blocked %s: %w", call.Name, err)
 	}
 	if len(out.UpdatedInput) > 0 {
 		call.Arguments = string(out.UpdatedInput)
 	}
 
 	// Delegate to real tool.
-	result, execErr := h.inner.Execute(ctx, call)
+	var result toolresult.Result
+	var execErr error
+	if rich, ok := h.inner.(RichToolExecutor); ok {
+		result, execErr = rich.ExecuteResult(ctx, call)
+	} else {
+		var text string
+		text, execErr = h.inner.Execute(ctx, call)
+		result = toolresult.FromText(text)
+	}
+	if execErr != nil {
+		result.IsError = true
+	}
+	if validationErr := result.Validate(); validationErr != nil {
+		if execErr == nil {
+			execErr = fmt.Errorf("tool %s returned invalid rich result: %w", call.Name, validationErr)
+		}
+		result.IsError = true
+	}
 
 	// PostToolUse / PostToolUseFailure
 	if execErr != nil {
@@ -142,7 +171,7 @@ func (h *HookedExecutor) Execute(ctx context.Context, call providers.ToolCall) (
 		CWD:          h.cwd,
 		ToolName:     call.Name,
 		ToolInput:    json.RawMessage(call.Arguments),
-		ToolResponse: result,
+		ToolResponse: result.HookProjection(),
 	}
 	postOut, _ := h.dispatcher.Dispatch(ctx, PostToolUse, postInput)
 	if postOut != nil && postOut.Context != "" {

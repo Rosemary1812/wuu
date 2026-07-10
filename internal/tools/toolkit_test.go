@@ -20,6 +20,7 @@ import (
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 
 	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 )
@@ -76,6 +77,66 @@ func (toolkitNoopExecutor) Definitions() []providers.ToolDefinition { return nil
 
 func (toolkitNoopExecutor) Execute(context.Context, providers.ToolCall) (string, error) {
 	return "", nil
+}
+
+type richToolkitTool struct {
+	richCalls   int
+	legacyCalls int
+}
+
+func (t *richToolkitTool) Name() string { return "rich_test" }
+func (t *richToolkitTool) Definition() providers.ToolDefinition {
+	return providers.ToolDefinition{Name: t.Name(), InputSchema: map[string]any{"type": "object"}}
+}
+func (t *richToolkitTool) Execute(context.Context, string) (string, error) {
+	t.legacyCalls++
+	return "legacy path", nil
+}
+func (t *richToolkitTool) ExecuteResult(context.Context, string) (toolresult.Result, error) {
+	t.richCalls++
+	return toolresult.Result{
+		Content: []toolresult.ContentPart{
+			{Type: "text", Text: "rich text"},
+			{Type: "image", Data: "aW1hZ2U=", MIMEType: "image/png"},
+		},
+		StructuredContent: json.RawMessage(`{"ok":true}`),
+		Meta:              json.RawMessage(`{"internal":"kept"}`),
+	}, nil
+}
+func (t *richToolkitTool) IsReadOnly() bool        { return true }
+func (t *richToolkitTool) IsConcurrencySafe() bool { return true }
+
+func TestToolkitExecuteResultPrefersRichToolAndKeepsTextAdapter(t *testing.T) {
+	root := t.TempDir()
+	rich := &richToolkitTool{}
+	kit := &Toolkit{
+		env:      &Env{RootDir: root},
+		registry: NewRegistry(rich),
+		boundary: StandardBoundary(),
+	}
+	call := providers.ToolCall{ID: "call-rich", Name: rich.Name(), Arguments: `{}`}
+
+	result, err := kit.ExecuteResult(context.Background(), call)
+	if err != nil {
+		t.Fatalf("ExecuteResult: %v", err)
+	}
+	if rich.richCalls != 1 || rich.legacyCalls != 0 {
+		t.Fatalf("rich calls = %d, legacy calls = %d", rich.richCalls, rich.legacyCalls)
+	}
+	if len(result.Content) != 2 || len(result.StructuredContent) == 0 || len(result.Meta) == 0 {
+		t.Fatalf("rich result was flattened: %+v", result)
+	}
+
+	text, err := kit.Execute(context.Background(), providers.ToolCall{ID: "call-text", Name: rich.Name(), Arguments: `{"projection":true}`})
+	if err != nil {
+		t.Fatalf("Execute text adapter: %v", err)
+	}
+	if !strings.Contains(text, "rich text") || !strings.Contains(text, "[image:") || !strings.Contains(text, `{"ok":true}`) {
+		t.Fatalf("text adapter projection = %q", text)
+	}
+	if rich.richCalls != 2 || rich.legacyCalls != 0 {
+		t.Fatalf("rich calls = %d, legacy calls = %d", rich.richCalls, rich.legacyCalls)
+	}
 }
 
 func stopToolkitAgentControl(control *agentcontrol.AgentControl) {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 // Tool is the interface every tool must implement. It is the single
@@ -35,6 +36,13 @@ type Tool interface {
 	// read-only is implicitly concurrency-safe; this flag exists for
 	// tools that write but whose writes don't conflict (rare).
 	IsConcurrencySafe() bool
+}
+
+// RichTool incrementally upgrades a Tool from the legacy string result to the
+// canonical provider-neutral result. Tools keep Execute during the migration;
+// Toolkit prefers ExecuteResult whenever both are available.
+type RichTool interface {
+	ExecuteResult(ctx context.Context, args string) (toolresult.Result, error)
 }
 
 // ToolClassification describes the expected behavior of one concrete tool

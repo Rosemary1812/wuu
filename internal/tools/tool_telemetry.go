@@ -17,6 +17,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 const (
@@ -103,7 +104,7 @@ func (t *Toolkit) ToolTelemetry() []ToolExecutionRecord {
 	return t.env.toolTelemetry.snapshot()
 }
 
-func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall, tool Tool) (string, error) {
+func (t *Toolkit) executeKnownToolResult(ctx context.Context, call providers.ToolCall, tool Tool) (toolresult.Result, error) {
 	info := buildToolInfoForArgs(tool, t.toolExposure(call.Name), call.Arguments)
 	startedAt := time.Now()
 	revisionBefore := workspaceRevision(ctx, t.env.RootDir)
@@ -111,12 +112,12 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 
 	if err := validateToolArgumentsJSON(call.Arguments); err != nil {
 		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err)
-		return "", err
+		return toolresult.Result{}, err
 	}
 	if validator, ok := tool.(InputValidatingTool); ok {
 		if err := validator.ValidateInput(call.Arguments); err != nil {
 			t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err)
-			return "", err
+			return toolresult.Result{}, err
 		}
 	}
 
@@ -124,7 +125,7 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 		decision.Action = ToolPolicyDeny
 		decision.Reason = "workspace boundary"
 		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err)
-		return "", err
+		return toolresult.Result{}, err
 	}
 
 	if priorRepeats := t.repeatedToolInputCount(call, revisionBefore); priorRepeats >= repeatedToolInputPriorLimit {
@@ -136,25 +137,60 @@ func (t *Toolkit) executeKnownTool(ctx context.Context, call providers.ToolCall,
 			MaxPriorRepeats: repeatedToolInputPriorLimit,
 		}
 		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err)
-		return "", err
+		return toolresult.Result{}, err
 	}
 
-	result, err := tool.Execute(ctx, call.Arguments)
-	if info.Kind == ToolKindMCP {
-		result = redactToolOutput(result)
+	var result toolresult.Result
+	var err error
+	if richTool, ok := tool.(RichTool); ok {
+		result, err = richTool.ExecuteResult(ctx, call.Arguments)
+	} else {
+		var text string
+		text, err = tool.Execute(ctx, call.Arguments)
+		result = toolresult.FromText(text)
 	}
-	returned := result
+	if err != nil {
+		result.IsError = true
+	}
+	if validationErr := result.Validate(); validationErr != nil {
+		if err == nil {
+			err = fmt.Errorf("tool %q returned invalid rich result: %w", call.Name, validationErr)
+		} else {
+			err = fmt.Errorf("%w; tool %q also returned invalid rich result: %v", err, call.Name, validationErr)
+		}
+		result.IsError = true
+	}
+	if info.Kind == ToolKindMCP {
+		result = redactRichToolText(result)
+	}
+	rawProjection := result.TextProjection()
+	returned := result.Clone()
+	returnedProjection := rawProjection
 	resultRef := ""
 	resultBudgeted := false
 	if err == nil {
 		t.recordDiscoveredToolsForCall(call, t.activateToolBundlesAfterSuccess(call.Name))
-		returned, resultRef, resultBudgeted = MaybePersistResultWithRef(t.env.SessionDir, call.Name, call.ID, result, defaultResultBudget)
+		if result.IsTextOnly() {
+			returnedProjection, resultRef, resultBudgeted = MaybePersistResultWithRef(t.env.SessionDir, call.Name, call.ID, rawProjection, defaultResultBudget)
+			returned = toolresult.FromText(returnedProjection)
+			returned.IsError = result.IsError
+		}
 	}
 
 	revisionAfter := workspaceRevision(ctx, t.env.RootDir)
-	t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionAfter, result, returned, resultRef, resultBudgeted, err)
+	t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionAfter, rawProjection, returnedProjection, resultRef, resultBudgeted, err)
 
 	return returned, err
+}
+
+func redactRichToolText(result toolresult.Result) toolresult.Result {
+	redacted := result.Clone()
+	for index := range redacted.Content {
+		if redacted.Content[index].Type == toolresult.ContentTypeText {
+			redacted.Content[index].Text = redactToolOutput(redacted.Content[index].Text)
+		}
+	}
+	return redacted
 }
 
 func validateToolArgumentsJSON(raw string) error {

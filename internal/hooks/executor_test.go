@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 // stubExecutor is a fake ToolExecutor for testing.
@@ -36,6 +39,16 @@ type discoveryStubExecutor struct {
 	stubExecutor
 	discovered     []providers.LoadableToolDefinition
 	discoveryCalls []providers.ToolCall
+}
+
+type richStubExecutor struct {
+	stubExecutor
+	result toolresult.Result
+}
+
+func (s *richStubExecutor) ExecuteResult(_ context.Context, call providers.ToolCall) (toolresult.Result, error) {
+	s.calls = append(s.calls, call)
+	return s.result.Clone(), s.err
 }
 
 func (s *discoveryStubExecutor) DiscoveredTools(call providers.ToolCall) []providers.LoadableToolDefinition {
@@ -158,6 +171,43 @@ func TestHookedExecutor_PostToolSuccessFires(t *testing.T) {
 	}
 	if result != "ok" {
 		t.Fatalf("expected ok, got %s", result)
+	}
+}
+
+func TestHookedExecutorPreservesRichResultAndSendsStableProjectionToHooks(t *testing.T) {
+	inputPath := t.TempDir() + "/hook-input.json"
+	result := toolresult.Result{
+		Content: []toolresult.ContentPart{
+			{Type: "text", Text: "visible"},
+			{Type: "image", Data: "aW1hZ2U=", MIMEType: "image/png"},
+		},
+		StructuredContent: json.RawMessage(`{"answer":42}`),
+		Meta:              json.RawMessage(`{"private":"kept"}`),
+		Activity:          &toolresult.ActivityRef{ID: "activity-1", Kind: "browser"},
+	}
+	inner := &richStubExecutor{result: result}
+	r := NewRegistry(map[Event][]HookConfig{
+		PostToolUse: {{Matcher: "*", Command: fmt.Sprintf("cat > %q", inputPath)}},
+	})
+	exec := NewHookedExecutor(inner, NewDispatcher(r), "sess-1", "/tmp")
+
+	got, err := exec.ExecuteResult(context.Background(), providers.ToolCall{Name: "browser_observe", Arguments: `{}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.JSONProjection() != result.JSONProjection() {
+		t.Fatalf("rich result changed across hooks:\ngot  %s\nwant %s", got.JSONProjection(), result.JSONProjection())
+	}
+	data, err := os.ReadFile(inputPath)
+	if err != nil {
+		t.Fatalf("read hook input: %v", err)
+	}
+	var input Input
+	if err := json.Unmarshal(data, &input); err != nil {
+		t.Fatalf("parse hook input: %v", err)
+	}
+	if input.ToolResponse != result.HookProjection() {
+		t.Fatalf("hook projection = %q, want %q", input.ToolResponse, result.HookProjection())
 	}
 }
 

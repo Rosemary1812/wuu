@@ -24,6 +24,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 const (
@@ -987,11 +988,19 @@ func cloneSurface(surface capability.Surface) capability.Surface {
 // is configured, so the model receives a compact reference instead of a
 // truncated blob.
 func (t *Toolkit) Execute(ctx context.Context, call providers.ToolCall) (string, error) {
+	result, err := t.ExecuteResult(ctx, call)
+	return result.TextProjection(), err
+}
+
+// ExecuteResult runs one tool call without flattening images, structured
+// content, metadata, or Activity references. Legacy tools are wrapped as one
+// text content part until they migrate to RichTool.
+func (t *Toolkit) ExecuteResult(ctx context.Context, call providers.ToolCall) (toolresult.Result, error) {
 	if t.isToolDisabled(call.Name) {
-		return "", fmt.Errorf("tool %q is disabled in this session", call.Name)
+		return toolresult.Result{}, fmt.Errorf("tool %q is disabled in this session", call.Name)
 	}
 	if err := t.ensureToolAvailableForExecution(call.Name); err != nil {
-		return "", err
+		return toolresult.Result{}, err
 	}
 	tool := t.registry.Lookup(call.Name)
 	if tool == nil {
@@ -999,13 +1008,13 @@ func (t *Toolkit) Execute(ctx context.Context, call providers.ToolCall) (string,
 		if t.mcpManager != nil {
 			for _, mcpTool := range t.mcpManager.AllTools() {
 				if mcpTool.Name() == call.Name {
-					return t.executeKnownTool(ctx, call, mcpTool)
+					return t.executeKnownToolResult(ctx, call, mcpTool)
 				}
 			}
 		}
-		return "", fmt.Errorf("unknown tool %q", call.Name)
+		return toolresult.Result{}, fmt.Errorf("unknown tool %q", call.Name)
 	}
-	return t.executeKnownTool(ctx, call, tool)
+	return t.executeKnownToolResult(ctx, call, tool)
 }
 
 func (t *Toolkit) ensureToolAvailableForExecution(name string) error {
