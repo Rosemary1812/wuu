@@ -779,6 +779,11 @@
   color: var(--danger);
 }
 
+.settings-mcp-code-input {
+  width: 156px;
+  min-width: 112px;
+}
+
 .settings-mcp-empty {
   display: flex;
   align-items: center;

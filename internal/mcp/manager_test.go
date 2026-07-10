@@ -104,3 +104,21 @@ func TestManagerRefreshRequiresConfiguredServer(t *testing.T) {
 		t.Fatal("expected missing refresh to fail")
 	}
 }
+
+func TestManagerDisconnectPreservesOAuthAuthenticationState(t *testing.T) {
+	manager := NewManager()
+	manager.Configure(map[string]ServerConfig{
+		"docs": {Name: "docs", URL: "https://example.test/mcp", OAuth: &OAuthConfig{ClientID: "client"}},
+	})
+	manager.mu.Lock()
+	manager.statuses["docs"] = ServerStatus{Name: "docs", State: MCPServerStateStopped, AuthStatus: MCPAuthStatusOAuth}
+	manager.mu.Unlock()
+
+	if err := manager.Disconnect("docs"); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	status := manager.Status()["docs"]
+	if status.State != MCPServerStateStopped || status.AuthStatus != MCPAuthStatusOAuth {
+		t.Fatalf("status after disconnect = %+v", status)
+	}
+}

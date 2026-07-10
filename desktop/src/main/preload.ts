@@ -121,6 +121,11 @@ const api: WuuDesktopApi = {
   disconnectMCPServer: (name: string) =>
     ipcRenderer.invoke("wuu:mcp-disconnect", name),
   refreshMCPServer: (name: string) => ipcRenderer.invoke("wuu:mcp-refresh", name),
+  startMCPAuth: (name: string) => ipcRenderer.invoke("wuu:mcp-auth-start", name),
+  getMCPAuthStatus: (name: string) => ipcRenderer.invoke("wuu:mcp-auth-status", name),
+  finishMCPAuth: (name: string, state: string, code: string) =>
+    ipcRenderer.invoke("wuu:mcp-auth-finish", name, state, code),
+  removeMCPAuth: (name: string) => ipcRenderer.invoke("wuu:mcp-auth-remove", name),
   listCodexPets: () => ipcRenderer.invoke("wuu:codex-pets-list"),
   updateCodexPetSettings: (settings) =>
     ipcRenderer.invoke("wuu:codex-pets-update", settings),

@@ -32,6 +32,10 @@ import type {
   InitializeResult,
   InstructionsListResult,
   MCPListResult,
+  MCPAuthFinishResult,
+  MCPAuthRemoveResult,
+  MCPAuthStartResult,
+  MCPAuthStatusResult,
   MCPServerActionResult,
   MemoryChatParams,
   MemoryChatResult,
@@ -942,6 +946,18 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("wuu:mcp-refresh", (event, name: string) =>
     appServerRequest<MCPServerActionResult>(event, "mcp/refresh", { name }),
+  );
+  ipcMain.handle("wuu:mcp-auth-start", (event, name: string) =>
+    appServerRequest<MCPAuthStartResult>(event, "mcp/auth/start", { name }),
+  );
+  ipcMain.handle("wuu:mcp-auth-status", (event, name: string) =>
+    appServerRequest<MCPAuthStatusResult>(event, "mcp/auth/status", { name }),
+  );
+  ipcMain.handle("wuu:mcp-auth-finish", (event, name: string, state: string, code: string) =>
+    appServerRequest<MCPAuthFinishResult>(event, "mcp/auth/finish", { name, state, code }),
+  );
+  ipcMain.handle("wuu:mcp-auth-remove", (event, name: string) =>
+    appServerRequest<MCPAuthRemoveResult>(event, "mcp/auth/remove", { name }),
   );
   ipcMain.handle(
     "wuu:thread-start",

@@ -85,6 +85,10 @@ const (
 	MethodMCPConnect       = "mcp/connect"
 	MethodMCPDisconnect    = "mcp/disconnect"
 	MethodMCPRefresh       = "mcp/refresh"
+	MethodMCPAuthStart     = "mcp/auth/start"
+	MethodMCPAuthStatus    = "mcp/auth/status"
+	MethodMCPAuthFinish    = "mcp/auth/finish"
+	MethodMCPAuthRemove    = "mcp/auth/remove"
 	MethodShutdown         = "shutdown"
 	// MethodSettingsUsage returns the aggregated per-provider/model token
 	// usage snapshot for the desktop settings page. Range filter selects
@@ -262,6 +266,35 @@ type MCPServerActionParams struct {
 
 type MCPServerActionResult struct {
 	Status MCPServerStatus `json:"status"`
+}
+
+type MCPAuthStartResult struct {
+	AuthorizationURL string   `json:"authorization_url"`
+	State            string   `json:"state"`
+	Scopes           []string `json:"scopes,omitempty"`
+}
+
+type MCPAuthStatusResult struct {
+	Name          string   `json:"name"`
+	Authenticated bool     `json:"authenticated"`
+	ExpiresAt     string   `json:"expires_at,omitempty"`
+	Scopes        []string `json:"scopes,omitempty"`
+}
+
+type MCPAuthFinishParams struct {
+	Name  string `json:"name"`
+	State string `json:"state"`
+	Code  string `json:"code"`
+}
+
+type MCPAuthFinishResult struct {
+	Auth   MCPAuthStatusResult `json:"auth"`
+	Server MCPServerStatus     `json:"server"`
+}
+
+type MCPAuthRemoveResult struct {
+	Auth   MCPAuthStatusResult `json:"auth"`
+	Server MCPServerStatus     `json:"server"`
 }
 
 type ExtensionTrustSummary struct {

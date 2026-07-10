@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/credentialstore"
+	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
@@ -210,6 +213,14 @@ type Server struct {
 }
 
 func New(rt *runtime.Session, out io.Writer) *Server {
+	store, err := credentialstore.NewDesktopStore()
+	if err != nil {
+		providers.DebugLogf("desktop credential store: %v", err)
+	}
+	return NewWithCredentialStore(rt, out, store, http.DefaultClient)
+}
+
+func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credentialstore.Store, httpClient *http.Client) *Server {
 	s := &Server{
 		rt:              rt,
 		out:             out,
@@ -229,6 +240,11 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 		participantBusy:              make(map[string]participantBusyEntry),
 		codexModelCache:              make(map[string]map[string]config.ProviderModelConfig),
 		memoryOverviewCache:          make(map[string]memoryOverviewCacheEntry),
+	}
+	if store != nil && rt != nil && rt.Toolkit != nil {
+		if manager := rt.Toolkit.MCPManager(); manager != nil {
+			manager.SetOAuthManager(mcp.NewOAuthManager(store, httpClient))
+		}
 	}
 	if rt != nil {
 		// Only seed Andy when the runtime is actually usable: test-only
@@ -458,6 +474,14 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleMCPDisconnect(req)
 	case MethodMCPRefresh:
 		return s.handleMCPRefresh(ctx, req)
+	case MethodMCPAuthStart:
+		return s.handleMCPAuthStart(ctx, req)
+	case MethodMCPAuthStatus:
+		return s.handleMCPAuthStatus(ctx, req)
+	case MethodMCPAuthFinish:
+		return s.handleMCPAuthFinish(ctx, req)
+	case MethodMCPAuthRemove:
+		return s.handleMCPAuthRemove(ctx, req)
 	case MethodShutdown:
 		if err := s.writeResponse(req.ID, OKResult{OK: true}, nil); err != nil {
 			return err

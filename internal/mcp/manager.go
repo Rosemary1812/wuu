@@ -2,12 +2,14 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/credentialstore"
 	"github.com/blueberrycongee/wuu/internal/extensions"
 )
 
@@ -18,7 +20,10 @@ type Manager struct {
 	clients    map[string]*Client
 	statuses   map[string]ServerStatus
 	generation uint64
+	oauth      *OAuthManager
 }
+
+var ErrOAuthRequired = errors.New("mcp OAuth authentication required")
 
 type NativeTool struct {
 	Definition Tool
@@ -34,6 +39,15 @@ func NewManager() *Manager {
 		clients:  make(map[string]*Client),
 		statuses: make(map[string]ServerStatus),
 	}
+}
+
+func (m *Manager) SetOAuthManager(oauth *OAuthManager) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.oauth = oauth
+	m.mu.Unlock()
 }
 
 func (m *Manager) Configure(configs map[string]ServerConfig) {
@@ -81,6 +95,26 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 		return nil
 	}
 	m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateConnecting, AuthStatus: authStatusForConfig(cfg)})
+	if cfg.OAuth != nil {
+		oauth := m.oauthManager()
+		if oauth == nil {
+			m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateAuthRequired, AuthStatus: MCPAuthStatusNotLoggedIn, Error: ErrOAuthRequired.Error()})
+			return ErrOAuthRequired
+		}
+		token, tokenErr := oauth.AccessToken(ctx, cfg.Name)
+		if tokenErr != nil {
+			m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateAuthRequired, AuthStatus: MCPAuthStatusNotLoggedIn, Error: tokenErr.Error()})
+			if errors.Is(tokenErr, credentialstore.ErrNotFound) {
+				return ErrOAuthRequired
+			}
+			return fmt.Errorf("load OAuth credentials for MCP server %q: %w", cfg.Name, tokenErr)
+		}
+		cfg = cloneServerConfig(cfg)
+		if cfg.Headers == nil {
+			cfg.Headers = make(map[string]string)
+		}
+		cfg.Headers["Authorization"] = "Bearer " + token
+	}
 	var client *Client
 	var err error
 	if cfg.URL != "" {
@@ -109,12 +143,90 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 	m.statuses[cfg.Name] = ServerStatus{
 		Name:       cfg.Name,
 		State:      MCPServerStateConnected,
-		AuthStatus: authStatusForConfig(cfg),
+		AuthStatus: connectedAuthStatus(cfg),
 		Connected:  true,
 		ToolCount:  len(client.Tools()),
 	}
 	m.generation++
 	return nil
+}
+
+func (m *Manager) StartOAuth(ctx context.Context, name string) (OAuthStartResult, error) {
+	cfg, oauth, err := m.oauthConfig(name)
+	if err != nil {
+		return OAuthStartResult{}, err
+	}
+	result, err := oauth.Start(ctx, OAuthStartOptions{
+		ServerID:     cfg.Name,
+		ResourceURL:  cfg.URL,
+		RedirectURI:  cfg.OAuth.RedirectURI,
+		Scopes:       cfg.OAuth.Scopes,
+		ClientID:     cfg.OAuth.ClientID,
+		ClientSecret: cfg.OAuth.ClientSecret,
+	})
+	if err != nil {
+		return OAuthStartResult{}, err
+	}
+	m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateAuthRequired, AuthStatus: MCPAuthStatusNotLoggedIn})
+	return result, nil
+}
+
+func (m *Manager) OAuthStatus(ctx context.Context, name string) (OAuthStatus, error) {
+	_, oauth, err := m.oauthConfig(name)
+	if err != nil {
+		return OAuthStatus{}, err
+	}
+	return oauth.Status(ctx, strings.TrimSpace(name))
+}
+
+func (m *Manager) FinishOAuth(ctx context.Context, name, state, code string) (ServerStatus, error) {
+	cfg, oauth, err := m.oauthConfig(name)
+	if err != nil {
+		return ServerStatus{}, err
+	}
+	if _, err := oauth.Finish(ctx, OAuthFinishOptions{ServerID: cfg.Name, State: state, Code: code}); err != nil {
+		return ServerStatus{}, err
+	}
+	status := ServerStatus{Name: cfg.Name, State: MCPServerStateStopped, AuthStatus: MCPAuthStatusOAuth}
+	m.recordStatus(status)
+	return status, nil
+}
+
+func (m *Manager) RemoveOAuth(ctx context.Context, name string) error {
+	cfg, oauth, err := m.oauthConfig(name)
+	if err != nil {
+		return err
+	}
+	if err := oauth.Remove(ctx, cfg.Name); err != nil {
+		return err
+	}
+	m.closeClient(cfg.Name)
+	m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateAuthRequired, AuthStatus: MCPAuthStatusNotLoggedIn})
+	return nil
+}
+
+func (m *Manager) oauthConfig(name string) (ServerConfig, *OAuthManager, error) {
+	cfg, ok := m.Config(name)
+	if !ok {
+		return ServerConfig{}, nil, fmt.Errorf("mcp server %q not configured", strings.TrimSpace(name))
+	}
+	if cfg.OAuth == nil || strings.TrimSpace(cfg.URL) == "" {
+		return ServerConfig{}, nil, fmt.Errorf("mcp server %q does not support OAuth", cfg.Name)
+	}
+	oauth := m.oauthManager()
+	if oauth == nil {
+		return ServerConfig{}, nil, errors.New("mcp OAuth credential store is unavailable")
+	}
+	return cfg, oauth, nil
+}
+
+func (m *Manager) oauthManager() *OAuthManager {
+	if m == nil {
+		return nil
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.oauth
 }
 
 func (m *Manager) Connect(ctx context.Context, name string) error {
@@ -153,19 +265,23 @@ func (m *Manager) Disconnect(name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	c, ok := m.clients[name]
+	authStatus := authStatusForConfig(m.configs[name])
+	if current := m.statuses[name]; current.AuthStatus == MCPAuthStatusOAuth {
+		authStatus = MCPAuthStatusOAuth
+	}
 	if !ok {
 		if _, configured := m.configs[name]; configured {
 			state := MCPServerStateStopped
 			if !m.configs[name].IsEnabled() {
 				state = MCPServerStateDisabled
 			}
-			m.statuses[name] = ServerStatus{Name: name, State: state, AuthStatus: authStatusForConfig(m.configs[name])}
+			m.statuses[name] = ServerStatus{Name: name, State: state, AuthStatus: authStatus}
 			return nil
 		}
 		return fmt.Errorf("mcp server %q not found", name)
 	}
 	delete(m.clients, name)
-	m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateStopped, AuthStatus: authStatusForConfig(m.configs[name])}
+	m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateStopped, AuthStatus: authStatus}
 	m.generation++
 	return c.Close()
 }
@@ -293,7 +409,11 @@ func (m *Manager) Close() error {
 	m.clients = make(map[string]*Client)
 	m.generation++
 	for name := range m.statuses {
-		m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateStopped, AuthStatus: authStatusForConfig(m.configs[name])}
+		authStatus := authStatusForConfig(m.configs[name])
+		if m.statuses[name].AuthStatus == MCPAuthStatusOAuth {
+			authStatus = MCPAuthStatusOAuth
+		}
+		m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateStopped, AuthStatus: authStatus}
 	}
 	return firstErr
 }
@@ -417,6 +537,13 @@ func authStatusForConfig(cfg ServerConfig) MCPAuthStatus {
 		return MCPAuthStatusBearerToken
 	}
 	return MCPAuthStatusUnsupported
+}
+
+func connectedAuthStatus(cfg ServerConfig) MCPAuthStatus {
+	if cfg.OAuth != nil {
+		return MCPAuthStatusOAuth
+	}
+	return authStatusForConfig(cfg)
 }
 
 func authStatusAfterConnectError(cfg ServerConfig, err error) MCPAuthStatus {

@@ -25,9 +25,11 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/contextbudget"
+	"github.com/blueberrycongee/wuu/internal/credentialstore"
 	"github.com/blueberrycongee/wuu/internal/extensions"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/hooks"
+	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/modelbudget"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
@@ -43,6 +45,90 @@ import (
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/coder/websocket"
 )
+
+func TestServerMCPAuthLifecycleDoesNotExposeCredentials(t *testing.T) {
+	var baseURL string
+	authServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/oauth-protected-resource":
+			_ = json.NewEncoder(w).Encode(map[string]any{"resource": baseURL, "authorization_servers": []string{baseURL}})
+		case "/.well-known/oauth-authorization-server":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer": baseURL, "authorization_endpoint": baseURL + "/authorize", "token_endpoint": baseURL + "/token",
+			})
+		case "/token":
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "app-server-secret", "refresh_token": "refresh-secret", "expires_in": 3600})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer authServer.Close()
+	baseURL = authServer.URL
+
+	rt := newTestRuntime(t, &fakeClient{})
+	manager := mcp.NewManager()
+	manager.Configure(map[string]mcp.ServerConfig{
+		"docs": {
+			Name: "docs",
+			URL:  baseURL,
+			OAuth: &mcp.OAuthConfig{
+				ClientID:    "desktop-client",
+				RedirectURI: "http://127.0.0.1/callback",
+				Scopes:      []string{"tools"},
+			},
+		},
+	})
+	credentialStore := credentialstore.NewFileStore(filepath.Join(t.TempDir(), "oauth.json"))
+	toolkit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	rt.Toolkit = toolkit
+	rt.Toolkit.SetMCPManager(manager)
+	out := &lockedBuffer{}
+	srv := NewWithCredentialStore(rt, out, credentialStore, authServer.Client())
+
+	requests := []string{
+		`{"id":"start","method":"mcp/auth/start","params":{"name":"docs"}}`,
+		`{"id":"status-before","method":"mcp/auth/status","params":{"name":"docs"}}`,
+	}
+	for _, raw := range requests {
+		if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+			t.Fatalf("handleLine %s: %v", raw, err)
+		}
+	}
+	start := remarshal[MCPAuthStartResult](t, responseByID(t, parseOutput(t, out.String()), "start")["result"])
+	if start.AuthorizationURL == "" || start.State == "" {
+		t.Fatalf("start result = %+v", start)
+	}
+	before := remarshal[MCPAuthStatusResult](t, responseByID(t, parseOutput(t, out.String()), "status-before")["result"])
+	if before.Authenticated {
+		t.Fatalf("status before finish = %+v", before)
+	}
+
+	finishRaw, err := json.Marshal(Request{ID: json.RawMessage(`"finish"`), Method: "mcp/auth/finish", Params: mustJSON(MCPAuthFinishParams{Name: "docs", State: start.State, Code: "code-1"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.handleLine(context.Background(), finishRaw); err != nil {
+		t.Fatalf("mcp/auth/finish: %v", err)
+	}
+	finish := remarshal[MCPAuthFinishResult](t, responseByID(t, parseOutput(t, out.String()), "finish")["result"])
+	if !finish.Auth.Authenticated || finish.Server.AuthStatus != string(mcp.MCPAuthStatusOAuth) {
+		t.Fatalf("finish result = %+v", finish)
+	}
+	if strings.Contains(out.String(), "app-server-secret") || strings.Contains(out.String(), "refresh-secret") {
+		t.Fatalf("OAuth RPC leaked credentials: %s", out.String())
+	}
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"remove","method":"mcp/auth/remove","params":{"name":"docs"}}`)); err != nil {
+		t.Fatalf("mcp/auth/remove: %v", err)
+	}
+	removed := remarshal[MCPAuthRemoveResult](t, responseByID(t, parseOutput(t, out.String()), "remove")["result"])
+	if removed.Auth.Authenticated || removed.Server.State != string(mcp.MCPServerStateAuthRequired) {
+		t.Fatalf("remove result = %+v", removed)
+	}
+}
 
 type fakeClient struct {
 	mu        sync.Mutex

@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/credentialstore"
 	"github.com/blueberrycongee/wuu/internal/securefs"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 )
@@ -54,6 +56,18 @@ func ForHome(home string) (*Store, error) {
 		return nil, err
 	}
 	return New(path), nil
+}
+
+// NewHeadlessCredentialStore is the explicit file-backed credential choice
+// for shells that cannot use a system keyring. Desktop callers must use the
+// keyring store and surface keyring failures instead of calling this fallback.
+func NewHeadlessCredentialStore(home string) (credentialstore.Store, string, error) {
+	authPath, err := statepath.AuthPath(home)
+	if err != nil {
+		return nil, "", err
+	}
+	path := filepath.Join(filepath.Dir(authPath), "credentials.json")
+	return credentialstore.NewFileStore(path), path, nil
 }
 
 func (s *Store) Path() string { return s.path }

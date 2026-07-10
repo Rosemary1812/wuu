@@ -46,6 +46,11 @@ function installBuildInfoStub(info: BuildInfoResult): void {
     connectMCPServer: vi.fn(),
     disconnectMCPServer: vi.fn(),
     refreshMCPServer: vi.fn(),
+    startMCPAuth: vi.fn(),
+    getMCPAuthStatus: vi.fn(),
+    finishMCPAuth: vi.fn(),
+    removeMCPAuth: vi.fn(),
+    openExternal: vi.fn(),
     listCodexPets: vi.fn().mockResolvedValue(emptyCodexPetsSnapshot()),
     updateCodexPetSettings: vi.fn().mockResolvedValue(emptyCodexPetsSnapshot()),
   };
@@ -743,6 +748,90 @@ describe("SettingsView About section", () => {
     expect(rootText()).toContain("已连接");
     expect(rootText()).toContain("3 个工具");
     expect(rootText()).toContain("Header 认证");
+  });
+
+  it("opens MCP OAuth and completes the authorization code flow inline", async () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const api = (window as unknown as GlobalWindow).wuu;
+    api.listMCPServers = vi.fn().mockResolvedValue({
+      servers: [
+        {
+          name: "docs",
+          state: "auth_required",
+          auth_status: "not_logged_in",
+          connected: false,
+          tool_count: 0,
+        },
+      ],
+    });
+    api.startMCPAuth = vi.fn().mockResolvedValue({
+      authorization_url: "https://auth.example.test/authorize",
+      state: "oauth-state",
+      scopes: ["tools"],
+    });
+    api.finishMCPAuth = vi.fn().mockResolvedValue({
+      auth: { name: "docs", authenticated: true, scopes: ["tools"] },
+      server: {
+        name: "docs",
+        state: "stopped",
+        auth_status: "oauth",
+        connected: false,
+        tool_count: 0,
+      },
+    });
+    api.removeMCPAuth = vi.fn().mockResolvedValue({
+      auth: { name: "docs", authenticated: false },
+      server: {
+        name: "docs",
+        state: "auth_required",
+        auth_status: "not_logged_in",
+        connected: false,
+        tool_count: 0,
+      },
+    });
+    api.openExternal = vi.fn().mockResolvedValue(undefined);
+
+    renderSettings({ initialized: baseInitialized() });
+    const rendered = container;
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const login = rendered.querySelector('button[aria-label="登录 docs"]') as HTMLButtonElement | null;
+    expect(login).not.toBeNull();
+    await act(async () => {
+      login?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.startMCPAuth).toHaveBeenCalledWith("docs");
+    expect(api.openExternal).toHaveBeenCalledWith("https://auth.example.test/authorize");
+
+    const code = rendered.querySelector('input[aria-label="docs 授权码"]') as HTMLInputElement | null;
+    expect(code).not.toBeNull();
+    act(() => {
+      setInputValue(code!, "authorization-code");
+    });
+    const finish = rendered.querySelector('button[aria-label="完成 docs OAuth 登录"]') as HTMLButtonElement | null;
+    await act(async () => {
+      finish?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.finishMCPAuth).toHaveBeenCalledWith("docs", "oauth-state", "authorization-code");
+
+    const remove = rendered.querySelector('button[aria-label="移除 docs OAuth 登录"]') as HTMLButtonElement | null;
+    expect(remove).not.toBeNull();
+    await act(async () => {
+      remove?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.removeMCPAuth).toHaveBeenCalledWith("docs");
   });
 
   it("renders extension provenance and grant state without credential values", async () => {

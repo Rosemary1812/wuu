@@ -351,6 +351,29 @@ export type MCPServerActionResult = {
   status: MCPServerStatus;
 };
 
+export type MCPAuthStartResult = {
+  authorization_url: string;
+  state: string;
+  scopes?: string[];
+};
+
+export type MCPAuthStatusResult = {
+  name: string;
+  authenticated: boolean;
+  expires_at?: string;
+  scopes?: string[];
+};
+
+export type MCPAuthFinishResult = {
+  auth: MCPAuthStatusResult;
+  server: MCPServerStatus;
+};
+
+export type MCPAuthRemoveResult = {
+  auth: MCPAuthStatusResult;
+  server: MCPServerStatus;
+};
+
 export type RuntimeConnectionUpdate = {
   base_url?: string;
   api_key?: string;
@@ -1839,6 +1862,10 @@ export type WuuDesktopApi = {
   connectMCPServer: (name: string) => Promise<MCPServerActionResult>;
   disconnectMCPServer: (name: string) => Promise<MCPServerActionResult>;
   refreshMCPServer: (name: string) => Promise<MCPServerActionResult>;
+  startMCPAuth: (name: string) => Promise<MCPAuthStartResult>;
+  getMCPAuthStatus: (name: string) => Promise<MCPAuthStatusResult>;
+  finishMCPAuth: (name: string, state: string, code: string) => Promise<MCPAuthFinishResult>;
+  removeMCPAuth: (name: string) => Promise<MCPAuthRemoveResult>;
   listSkills: () => Promise<SkillListResult>;
   listAgentTemplates: () => Promise<AgentTemplateListResult>;
   startThread: (params?: ThreadStartParams) => Promise<{ thread: Thread }>;

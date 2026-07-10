@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   BarChart3,
   Brain,
+  Check,
   KeyRound,
   Plug,
   PlugZap,
@@ -36,6 +37,7 @@ import type {
   DesktopBuildInfo,
   ExtensionInventoryRecord,
   InitializeResult,
+  MCPAuthStartResult,
   MCPServerStatus,
   ParticipantProfile,
   ProviderSummary,
@@ -354,6 +356,49 @@ export function SettingsView({
     }
   }
 
+  async function startMCPAuth(name: string): Promise<MCPAuthStartResult | undefined> {
+    setMCPBusyServer(name);
+    setMCPError("");
+    try {
+      const result = await window.wuu.startMCPAuth(name);
+      await window.wuu.openExternal(result.authorization_url);
+      return result;
+    } catch (err) {
+      setMCPError(err instanceof Error ? err.message : String(err));
+      return undefined;
+    } finally {
+      setMCPBusyServer("");
+    }
+  }
+
+  async function finishMCPAuth(name: string, state: string, code: string): Promise<boolean> {
+    setMCPBusyServer(name);
+    setMCPError("");
+    try {
+      const result = await window.wuu.finishMCPAuth(name, state, code);
+      setMCPServers((servers) => upsertMCPServerStatus(servers, result.server));
+      return true;
+    } catch (err) {
+      setMCPError(err instanceof Error ? err.message : String(err));
+      return false;
+    } finally {
+      setMCPBusyServer("");
+    }
+  }
+
+  async function removeMCPAuth(name: string): Promise<void> {
+    setMCPBusyServer(name);
+    setMCPError("");
+    try {
+      const result = await window.wuu.removeMCPAuth(name);
+      setMCPServers((servers) => upsertMCPServerStatus(servers, result.server));
+    } catch (err) {
+      setMCPError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setMCPBusyServer("");
+    }
+  }
+
   async function copyVersionInfo(): Promise<void> {
     if (!desktopBuild || copyState === "copying") {
       return;
@@ -606,6 +651,9 @@ export function SettingsView({
                 onDebugControlsChange={onDebugControlsChange}
                 onGeneralSave={onGeneralSave}
                 onMCPAction={runMCPAction}
+                onMCPAuthStart={startMCPAuth}
+                onMCPAuthFinish={finishMCPAuth}
+                onMCPAuthRemove={removeMCPAuth}
                 onCodexPetsRefresh={onCodexPetsRefresh}
                 onCodexPetsUpdate={onCodexPetsUpdate}
                 copyState={copyState}
@@ -1219,6 +1267,9 @@ function SettingsGeneralPage({
   onDebugControlsChange,
   onGeneralSave,
   onMCPAction,
+  onMCPAuthStart,
+  onMCPAuthFinish,
+  onMCPAuthRemove,
   onCodexPetsRefresh,
   onCodexPetsUpdate,
   copyState,
@@ -1239,6 +1290,9 @@ function SettingsGeneralPage({
   onDebugControlsChange: (enabled: boolean) => void;
   onGeneralSave: (settings: RuntimeGeneralSettingsUpdate) => Promise<void>;
   onMCPAction: (name: string, action: "connect" | "disconnect" | "refresh") => Promise<void>;
+  onMCPAuthStart: (name: string) => Promise<MCPAuthStartResult | undefined>;
+  onMCPAuthFinish: (name: string, state: string, code: string) => Promise<boolean>;
+  onMCPAuthRemove: (name: string) => Promise<void>;
   onCodexPetsRefresh: () => Promise<CodexPetsSnapshot>;
   onCodexPetsUpdate: (settings: CodexPetSettingsUpdate) => Promise<CodexPetsSnapshot>;
   copyState: CopyState;
@@ -1252,6 +1306,8 @@ function SettingsGeneralPage({
   const [mcpEnabledDraft, setMCPEnabledDraft] = useState<Record<string, boolean>>(() => ({ ...configuredMCPEnabled }));
   const [mcpToggleBusy, setMCPToggleBusy] = useState("");
   const [mcpToggleError, setMCPToggleError] = useState("");
+  const [mcpAuthStates, setMCPAuthStates] = useState<Record<string, string>>({});
+  const [mcpAuthCodes, setMCPAuthCodes] = useState<Record<string, string>>({});
   const [codexPetBusy, setCodexPetBusy] = useState(false);
   const [codexPetLocalError, setCodexPetLocalError] = useState("");
   const [generalError, setGeneralError] = useState("");
@@ -1293,6 +1349,27 @@ function SettingsGeneralPage({
       setMCPToggleError(toggleError instanceof Error ? toggleError.message : "保存失败");
     } finally {
       setMCPToggleBusy("");
+    }
+  }
+
+  async function beginMCPAuth(name: string): Promise<void> {
+    const result = await onMCPAuthStart(name);
+    if (!result) {
+      return;
+    }
+    setMCPAuthStates((states) => ({ ...states, [name]: result.state }));
+    setMCPAuthCodes((codes) => ({ ...codes, [name]: "" }));
+  }
+
+  async function completeMCPAuth(name: string): Promise<void> {
+    const state = mcpAuthStates[name]?.trim() ?? "";
+    const code = mcpAuthCodes[name]?.trim() ?? "";
+    if (!state || !code) {
+      return;
+    }
+    if (await onMCPAuthFinish(name, state, code)) {
+      setMCPAuthStates((states) => withoutRecordKey(states, name));
+      setMCPAuthCodes((codes) => withoutRecordKey(codes, name));
     }
   }
 
@@ -1470,9 +1547,11 @@ function SettingsGeneralPage({
             mcpRowNames.map((name) => {
               const server = mcpServerByName.get(name);
               const busy = mcpBusyServer === name || mcpToggleBusy === name;
-              const connected = server ? server.connected || server.state === "connected" : false;
+              const connected = server ? server.connected || server.state === "connected" || server.state === "ready" : false;
               const disabledByConfig = server?.state === "disabled";
               const enabled = mcpEnabledDraft[name] ?? !disabledByConfig;
+              const oauthPending = Boolean(mcpAuthStates[name]);
+              const oauthCode = mcpAuthCodes[name] ?? "";
               return (
                 <SettingsRow
                   key={name}
@@ -1494,6 +1573,67 @@ function SettingsGeneralPage({
                   ) : null}
                   {server ? (
                     <>
+                      {oauthPending ? (
+                        <>
+                          <input
+                            className="settings-input settings-mcp-code-input"
+                            aria-label={`${name} 授权码`}
+                            autoComplete="off"
+                            placeholder="授权码"
+                            value={oauthCode}
+                            disabled={busy}
+                            onChange={(event) => {
+                              const value = event.currentTarget.value;
+                              setMCPAuthCodes((codes) => ({ ...codes, [name]: value }));
+                            }}
+                          />
+                          <button
+                            className="settings-button settings-icon-button"
+                            type="button"
+                            title="完成 OAuth 登录"
+                            aria-label={`完成 ${name} OAuth 登录`}
+                            disabled={busy || oauthCode.trim() === ""}
+                            onClick={() => void completeMCPAuth(name)}
+                          >
+                            <Check size={15} aria-hidden="true" />
+                          </button>
+                          <button
+                            className="settings-button settings-icon-button"
+                            type="button"
+                            title="取消登录"
+                            aria-label={`取消 ${name} OAuth 登录`}
+                            disabled={busy}
+                            onClick={() => {
+                              setMCPAuthStates((states) => withoutRecordKey(states, name));
+                              setMCPAuthCodes((codes) => withoutRecordKey(codes, name));
+                            }}
+                          >
+                            <X size={15} aria-hidden="true" />
+                          </button>
+                        </>
+                      ) : server.auth_status === "not_logged_in" ? (
+                        <button
+                          className="settings-button settings-icon-button"
+                          type="button"
+                          title="OAuth 登录"
+                          aria-label={`登录 ${name}`}
+                          disabled={busy || disabledByConfig}
+                          onClick={() => void beginMCPAuth(name)}
+                        >
+                          <KeyRound size={15} aria-hidden="true" />
+                        </button>
+                      ) : server.auth_status === "oauth" ? (
+                        <button
+                          className="settings-button settings-icon-button"
+                          type="button"
+                          title="移除 OAuth 登录"
+                          aria-label={`移除 ${name} OAuth 登录`}
+                          disabled={busy}
+                          onClick={() => void onMCPAuthRemove(name)}
+                        >
+                          <X size={15} aria-hidden="true" />
+                        </button>
+                      ) : null}
                       <button
                         className="settings-button settings-icon-button"
                         type="button"
@@ -2248,6 +2388,12 @@ function upsertMCPServerStatus(servers: MCPServerStatus[], status: MCPServerStat
   return next;
 }
 
+function withoutRecordKey(values: Record<string, string>, key: string): Record<string, string> {
+  const next = { ...values };
+  delete next[key];
+  return next;
+}
+
 function formatMCPServerMeta(server: MCPServerStatus): string {
   const pieces = [`${server.tool_count ?? 0} 个工具`];
   if (server.auth_status && server.auth_status !== "unsupported") {
@@ -2348,18 +2494,25 @@ function extensionGrantScopeLabel(scope: NonNullable<ExtensionInventoryRecord["g
 
 function mcpStateLabel(state: string): string {
   switch (state) {
+    case "ready":
     case "connected":
       return "已连接";
+    case "starting":
     case "connecting":
       return "连接中";
+    case "error":
     case "failed":
       return "失败";
     case "disabled":
       return "已断开";
+    case "auth_required":
     case "needs_auth":
       return "需认证";
     case "needs_client_registration":
       return "需注册";
+    case "reconnecting":
+      return "重连中";
+    case "stopped":
     case "configured":
       return "已配置";
     default:
@@ -2369,12 +2522,17 @@ function mcpStateLabel(state: string): string {
 
 function mcpStateTone(state: string): string {
   switch (state) {
+    case "ready":
     case "connected":
       return "success";
+    case "error":
     case "failed":
+    case "auth_required":
     case "needs_auth":
     case "needs_client_registration":
       return "danger";
+    case "starting":
+    case "reconnecting":
     case "connecting":
       return "warning";
     default:

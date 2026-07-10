@@ -1,13 +1,40 @@
 package authstorage
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/blueberrycongee/wuu/internal/statepath"
 )
+
+func TestNewHeadlessCredentialStoreIsExplicitAndSeparate(t *testing.T) {
+	home := t.TempDir()
+	store, path, err := NewHeadlessCredentialStore(home)
+	if err != nil {
+		t.Fatalf("NewHeadlessCredentialStore: %v", err)
+	}
+	if filepath.Base(path) != "credentials.json" {
+		t.Fatalf("path = %q, want credentials.json", path)
+	}
+	if err := store.Set(context.Background(), "mcp:docs", "oauth", []byte("secret")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("credential file: %v", err)
+	}
+	authPath, err := statepath.AuthPath(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(authPath); !os.IsNotExist(err) {
+		t.Fatalf("headless MCP credentials should not create provider auth file: %v", err)
+	}
+}
 
 func TestStoreRoundTripAllCredentialKinds(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "auth.json")
