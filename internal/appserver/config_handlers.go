@@ -6,12 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/authstorage"
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/extensions"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/modelbudget"
 	"github.com/blueberrycongee/wuu/internal/modelcatalog"
@@ -46,19 +49,20 @@ func (s *Server) handleInitialize(req Request) error {
 			Date:    core.Date,
 			Dirty:   core.Dirty,
 		},
-		Provider:         s.rt.ProviderName,
-		Model:            s.rt.Model,
-		Effort:           s.currentDisplayEffort(),
-		Variant:          s.currentVariant(),
-		WorkspaceRoot:    s.rt.RootDir,
-		Permissions:      s.currentPermissionSummary(),
-		ExtensionTrust:   s.currentExtensionTrustSummary(),
-		ModelProfile:     modelProfile,
-		ToolSurface:      toolSurface,
-		ModelRoles:       s.currentModelRoleSummaries(),
-		Providers:        s.providerSummaries(),
-		AdvancedSettings: s.currentAdvancedSettingsSummary(),
-		GeneralSettings:  s.currentGeneralSettingsSummary(),
+		Provider:           s.rt.ProviderName,
+		Model:              s.rt.Model,
+		Effort:             s.currentDisplayEffort(),
+		Variant:            s.currentVariant(),
+		WorkspaceRoot:      s.rt.RootDir,
+		Permissions:        s.currentPermissionSummary(),
+		ExtensionTrust:     s.currentExtensionTrustSummary(),
+		ExtensionInventory: s.currentExtensionInventory(),
+		ModelProfile:       modelProfile,
+		ToolSurface:        toolSurface,
+		ModelRoles:         s.currentModelRoleSummaries(),
+		Providers:          s.providerSummaries(),
+		AdvancedSettings:   s.currentAdvancedSettingsSummary(),
+		GeneralSettings:    s.currentGeneralSettingsSummary(),
 	}, nil)
 }
 
@@ -75,6 +79,7 @@ func (s *Server) handleConfigRead(req Request) error {
 		SessionDir:         s.rt.SessionDir,
 		Permissions:        s.currentPermissionSummary(),
 		ExtensionTrust:     s.currentExtensionTrustSummary(),
+		ExtensionInventory: s.currentExtensionInventory(),
 		ModelProfile:       modelProfile,
 		ToolSurface:        toolSurface,
 		ModelRoles:         s.currentModelRoleSummaries(),
@@ -240,6 +245,298 @@ func (s *Server) currentExtensionTrustSummary() ExtensionTrustSummary {
 		MainSession:     main,
 		ReviewerSession: reviewer,
 	}
+}
+
+func (s *Server) currentExtensionInventory() []ExtensionInventoryRecord {
+	if s == nil || s.rt == nil {
+		return nil
+	}
+	cfg := s.currentExtensionConfig()
+	grants := extensions.Settings{}
+	if cfg.Extensions != nil {
+		grants = *cfg.Extensions
+	}
+
+	pluginsByID := make(map[string]struct {
+		scope    string
+		official bool
+	}, len(s.rt.Plugins))
+	for _, item := range s.rt.Plugins {
+		pluginsByID[item.ID] = struct {
+			scope    string
+			official bool
+		}{scope: normalizedExtensionScope(item.Source, item.ManifestPath, s.rt.RootDir), official: item.Official}
+	}
+
+	records := make([]ExtensionInventoryRecord, 0, len(s.rt.Skills)+len(s.rt.AgentTemplates)+len(s.rt.Plugins))
+	for _, skill := range s.rt.Skills {
+		source := strings.TrimSpace(skill.Source)
+		scope := normalizedExtensionScope(source, skill.Path, s.rt.RootDir)
+		pluginID := strings.TrimPrefix(source, "plugin:")
+		if pluginID == source {
+			pluginID = ""
+		} else if plugin, ok := pluginsByID[pluginID]; ok {
+			scope = plugin.scope
+		}
+		records = append(records, ExtensionInventoryRecord{
+			ID:   extensionSubjectID("skill", source, skill.Name),
+			Name: skill.Name,
+			Kind: extensions.KindSkill,
+			Provenance: extensions.Provenance{
+				Kind:     extensions.KindSkill,
+				Source:   source,
+				Scope:    scope,
+				Path:     skill.Path,
+				PluginID: pluginID,
+				Official: strings.EqualFold(source, "bundled"),
+			},
+			State: ExtensionStateActive,
+		})
+	}
+	for _, template := range s.rt.AgentTemplates {
+		source := strings.TrimSpace(template.Source)
+		records = append(records, ExtensionInventoryRecord{
+			ID:   extensionSubjectID("agent_template", source, template.Name),
+			Name: template.Name,
+			Kind: extensions.KindAgentTemplate,
+			Provenance: extensions.Provenance{
+				Kind:   extensions.KindAgentTemplate,
+				Source: source,
+				Scope:  normalizedExtensionScope(source, template.Path, s.rt.RootDir),
+				Path:   template.Path,
+			},
+			State: ExtensionStateReadOnly,
+		})
+	}
+
+	for _, item := range s.rt.Plugins {
+		scope := normalizedExtensionScope(item.Source, item.ManifestPath, s.rt.RootDir)
+		pluginSource := pluginManifestSource(item.ManifestPath)
+		records = append(records, ExtensionInventoryRecord{
+			ID:   extensionSubjectID("plugin", scope, item.ID),
+			Name: item.ID,
+			Kind: extensions.KindPlugin,
+			Provenance: extensions.Provenance{
+				Kind:     extensions.KindPlugin,
+				Source:   pluginSource,
+				Scope:    scope,
+				Path:     item.ManifestPath,
+				PluginID: item.ID,
+				Official: item.Official,
+			},
+			State:                ExtensionStateReadOnly,
+			RequestedPermissions: cloneSortedStrings(item.RequestedPermissions),
+			UnsupportedFields:    cloneSortedStrings(item.UnsupportedFields),
+		})
+
+		mcpNames := sortedMapKeys(item.MCPServers)
+		for _, name := range mcpNames {
+			server := item.MCPServers[name]
+			permissions := executablePermissions(item.RequestedPermissions, server.Command != "", server.URL != "", false)
+			subjectID := extensionSubjectID("mcp", "plugin", item.ID, name)
+			fingerprint, _ := extensions.Fingerprint(extensions.ExecutableSpec{
+				Command:     server.Command,
+				Args:        server.Args,
+				URL:         server.URL,
+				Env:         server.Env,
+				Headers:     server.Headers,
+				Permissions: permissions,
+			})
+			state, grantScope := executableExtensionState(grants, subjectID, fingerprint, server.Enabled, item.Official)
+			records = append(records, ExtensionInventoryRecord{
+				ID:                   subjectID,
+				Name:                 name,
+				Kind:                 extensions.KindMCP,
+				Provenance:           extensions.Provenance{Kind: extensions.KindMCP, Source: "plugin:" + item.ID, Scope: scope, Path: item.ManifestPath, PluginID: item.ID, Official: item.Official},
+				State:                state,
+				Executable:           true,
+				Fingerprint:          fingerprint,
+				GrantScope:           grantScope,
+				RequestedPermissions: permissions,
+			})
+		}
+		appendHookInventory := func(event string, index int, entry config.HookEntry) {
+			permissions := executablePermissions(item.RequestedPermissions, entry.Command != "", false, strings.EqualFold(strings.TrimSpace(entry.Type), "prompt"))
+			subjectID := extensionSubjectID("hook", "plugin", item.ID, event, strconv.Itoa(index))
+			fingerprint := hookFingerprint(event, index, entry, permissions)
+			state, grantScope := executableExtensionState(grants, subjectID, fingerprint, nil, item.Official)
+			records = append(records, ExtensionInventoryRecord{
+				ID:                   subjectID,
+				Name:                 event,
+				Kind:                 extensions.KindHook,
+				Provenance:           extensions.Provenance{Kind: extensions.KindHook, Source: "plugin:" + item.ID, Scope: scope, Path: item.ManifestPath, PluginID: item.ID, Official: item.Official},
+				State:                state,
+				Executable:           true,
+				Fingerprint:          fingerprint,
+				GrantScope:           grantScope,
+				RequestedPermissions: permissions,
+			})
+		}
+		for _, event := range sortedMapKeys(item.Hooks) {
+			for index, entry := range item.Hooks[event] {
+				appendHookInventory(event, index, entry)
+			}
+		}
+	}
+
+	for _, name := range sortedMapKeys(cfg.MCPServers) {
+		server := cfg.MCPServers[name]
+		permissions := executablePermissions(nil, server.Command != "", server.URL != "", false)
+		subjectID := extensionSubjectID("mcp", "config", name)
+		fingerprint, _ := extensions.Fingerprint(extensions.ExecutableSpec{
+			Command: server.Command, Args: server.Args, URL: server.URL, Env: server.Env, Headers: server.Headers, Permissions: permissions,
+		})
+		state, grantScope := executableExtensionState(grants, subjectID, fingerprint, server.Enabled, false)
+		records = append(records, ExtensionInventoryRecord{
+			ID: subjectID, Name: name, Kind: extensions.KindMCP,
+			Provenance: extensions.Provenance{Kind: extensions.KindMCP, Source: "wuu_config", Scope: "project", Path: s.rt.ConfigPath},
+			State:      state, Executable: true, Fingerprint: fingerprint, GrantScope: grantScope, RequestedPermissions: permissions,
+		})
+	}
+	for _, event := range sortedMapKeys(cfg.Hooks) {
+		for index, entry := range cfg.Hooks[event] {
+			permissions := executablePermissions(nil, entry.Command != "", false, strings.EqualFold(strings.TrimSpace(entry.Type), "prompt"))
+			subjectID := extensionSubjectID("hook", "config", event, strconv.Itoa(index))
+			fingerprint := hookFingerprint(event, index, entry, permissions)
+			state, grantScope := executableExtensionState(grants, subjectID, fingerprint, nil, false)
+			records = append(records, ExtensionInventoryRecord{
+				ID: subjectID, Name: event, Kind: extensions.KindHook,
+				Provenance: extensions.Provenance{Kind: extensions.KindHook, Source: "wuu_config", Scope: "project", Path: s.rt.ConfigPath},
+				State:      state, Executable: true, Fingerprint: fingerprint, GrantScope: grantScope, RequestedPermissions: permissions,
+			})
+		}
+	}
+
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].Kind != records[j].Kind {
+			return records[i].Kind < records[j].Kind
+		}
+		if records[i].Name != records[j].Name {
+			return records[i].Name < records[j].Name
+		}
+		return records[i].ID < records[j].ID
+	})
+	return records
+}
+
+func (s *Server) currentExtensionConfig() config.Config {
+	if s == nil || s.rt == nil {
+		return config.Config{}
+	}
+	if cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME")); err == nil {
+		return cfg
+	}
+	if cfg, _, err := config.LoadPath(s.rt.ConfigPath); err == nil {
+		return cfg
+	}
+	return config.Config{}
+}
+
+func executableExtensionState(grants extensions.Settings, subjectID, fingerprint string, enabled *bool, official bool) (ExtensionState, extensions.GrantScope) {
+	if enabled != nil && !*enabled {
+		return ExtensionStateRejected, ""
+	}
+	if official {
+		return ExtensionStateGranted, ""
+	}
+	if grant, ok := grants.FindGrant(subjectID, fingerprint); ok {
+		return ExtensionStateGranted, grant.Scope
+	}
+	if _, ok := grants.Grants[subjectID]; ok {
+		return ExtensionStateChanged, ""
+	}
+	return ExtensionStatePending, ""
+}
+
+func hookFingerprint(event string, index int, entry config.HookEntry, permissions []string) string {
+	fingerprint, _ := extensions.Fingerprint(extensions.ExecutableSpec{
+		Command:     entry.Command,
+		Args:        []string{event, strconv.Itoa(index), entry.Matcher, entry.Type, entry.Prompt, entry.Model, strconv.Itoa(entry.Timeout)},
+		Permissions: permissions,
+	})
+	return fingerprint
+}
+
+func executablePermissions(declared []string, process, network, model bool) []string {
+	permissions := append([]string(nil), declared...)
+	if process {
+		permissions = append(permissions, "process.spawn")
+	}
+	if network {
+		permissions = append(permissions, "network.connect")
+	}
+	if model {
+		permissions = append(permissions, "model.invoke")
+	}
+	return cloneSortedStrings(permissions)
+}
+
+func normalizedExtensionScope(source, path, projectRoot string) string {
+	if strings.EqualFold(strings.TrimSpace(source), "project") {
+		return "project"
+	}
+	if strings.EqualFold(strings.TrimSpace(source), "bundled") {
+		return "bundled"
+	}
+	if path != "" && projectRoot != "" {
+		if rel, err := filepath.Rel(projectRoot, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "project"
+		}
+	}
+	return "user"
+}
+
+func pluginManifestSource(path string) string {
+	slashPath := filepath.ToSlash(path)
+	switch {
+	case strings.Contains(slashPath, "/.codex-plugin/"):
+		return "codex"
+	case strings.Contains(slashPath, "/.claude-plugin/"):
+		return "claude"
+	default:
+		return "wuu"
+	}
+}
+
+func extensionSubjectID(parts ...string) string {
+	cleaned := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			cleaned = append(cleaned, part)
+		}
+	}
+	return strings.Join(cleaned, ":")
+}
+
+func cloneSortedStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func sortedMapKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func extensionSurfaceSummary(active bool, count int) ExtensionSurfaceTrustSummary {

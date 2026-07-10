@@ -790,6 +790,35 @@
   padding: 20px 24px;
 }
 
+.settings-extension-detail {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-extension-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-extension-grant,
+.settings-extension-meta {
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.settings-extension-warning {
+  color: var(--warning);
+}
+
 .settings-codex-pets-controls {
   display: flex;
   align-items: center;

@@ -25,6 +25,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/contextbudget"
+	"github.com/blueberrycongee/wuu/internal/extensions"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/modelbudget"
@@ -328,6 +329,121 @@ func TestServerInitializeExposesExtensionTrustSummary(t *testing.T) {
 	reviewer := result.ExtensionTrust.ReviewerSession
 	if reviewer.MCP.Allowed || reviewer.Hooks.Allowed || reviewer.Plugins.Allowed || reviewer.Skills.Allowed || reviewer.Workflows.Allowed || reviewer.ExternalTools.Allowed {
 		t.Fatalf("reviewer extension surfaces should be denied by default: %+v", reviewer)
+	}
+}
+
+func TestServerInitializeExposesExtensionInventoryWithoutSecrets(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	t.Setenv("TEST_WUU_KEY", "test")
+	rt.Skills = []skills.Skill{{
+		Name:   "docs",
+		Source: "project",
+		Path:   filepath.Join(rt.RootDir, ".wuu", "skills", "docs", "SKILL.md"),
+	}}
+	rt.Plugins = []pluginpkg.Plugin{{
+		Manifest: pluginpkg.Manifest{
+			ID:                   "compose-kit",
+			RequestedPermissions: []string{"network.connect"},
+			UnsupportedFields:    []string{"commands"},
+			MCPServers: map[string]config.MCPServerConfig{
+				"docs": {
+					Command: "plugin-docs",
+					Args:    []string{"--stdio"},
+					Env:     map[string]string{"API_TOKEN": "top-secret-value"},
+				},
+				"search": {URL: "https://example.test/mcp"},
+			},
+			Hooks: map[string][]config.HookEntry{
+				"PreToolUse": {{Matcher: "read_file", Command: "plugin-hook"}},
+			},
+		},
+		Source:       "project",
+		Root:         filepath.Join(rt.RootDir, ".wuu", "plugins", "compose-kit"),
+		ManifestPath: filepath.Join(rt.RootDir, ".wuu", "plugins", "compose-kit", ".codex-plugin", "plugin.json"),
+	}}
+
+	mcpFingerprint, err := extensions.Fingerprint(extensions.ExecutableSpec{
+		Command:     "plugin-docs",
+		Args:        []string{"--stdio"},
+		Env:         map[string]string{"API_TOKEN": "different-secret"},
+		Permissions: []string{"network.connect", "process.spawn"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	cfg := config.Config{
+		DefaultProvider: "fake",
+		Providers: map[string]config.ProviderConfig{
+			"fake": {Type: "openai-compatible", BaseURL: "https://example.test/v1", APIKeyEnv: "TEST_WUU_KEY", Model: "fake-model"},
+		},
+		MCPServers: map[string]config.MCPServerConfig{
+			"disabled": {Command: "disabled-server", Enabled: &disabled},
+		},
+		Extensions: &extensions.Settings{Grants: map[string]extensions.Grant{
+			"mcp:plugin:compose-kit:docs": {
+				SubjectID:   "mcp:plugin:compose-kit:docs",
+				Fingerprint: mcpFingerprint,
+				Scope:       extensions.GrantScopeProject,
+				ApprovedAt:  time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC),
+			},
+			"hook:plugin:compose-kit:PreToolUse:0": {
+				SubjectID:   "hook:plugin:compose-kit:PreToolUse:0",
+				Fingerprint: "stale-fingerprint",
+				Scope:       extensions.GrantScopeProject,
+				ApprovedAt:  time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC),
+			},
+		}},
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rt.ConfigPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[InitializeResult](t, responseByID(t, msgs, "1")["result"])
+	byID := make(map[string]ExtensionInventoryRecord, len(result.ExtensionInventory))
+	for _, record := range result.ExtensionInventory {
+		byID[record.ID] = record
+	}
+	if got := byID["skill:project:docs"]; got.State != ExtensionStateActive || got.Provenance.Kind != extensions.KindSkill {
+		t.Fatalf("skill inventory = %+v", got)
+	}
+	pluginRecord := byID["plugin:project:compose-kit"]
+	if pluginRecord.State != ExtensionStateReadOnly || len(pluginRecord.UnsupportedFields) != 1 || pluginRecord.Provenance.Source != "codex" {
+		t.Fatalf("plugin inventory = %+v", pluginRecord)
+	}
+	mcpRecord := byID["mcp:plugin:compose-kit:docs"]
+	if mcpRecord.State != ExtensionStateGranted || mcpRecord.Fingerprint != mcpFingerprint || mcpRecord.GrantScope != extensions.GrantScopeProject {
+		t.Fatalf("MCP inventory = %+v", mcpRecord)
+	}
+	if !containsTestString(mcpRecord.RequestedPermissions, "network.connect") || !containsTestString(mcpRecord.RequestedPermissions, "process.spawn") {
+		t.Fatalf("MCP permissions = %+v", mcpRecord.RequestedPermissions)
+	}
+	if got := byID["mcp:plugin:compose-kit:search"]; got.State != ExtensionStatePending {
+		t.Fatalf("pending MCP inventory = %+v", got)
+	}
+	if got := byID["mcp:config:disabled"]; got.State != ExtensionStateRejected {
+		t.Fatalf("disabled MCP inventory = %+v", got)
+	}
+	if got := byID["hook:plugin:compose-kit:PreToolUse:0"]; got.State != ExtensionStateChanged {
+		t.Fatalf("hook inventory = %+v", got)
+	}
+	raw, err := json.Marshal(result.ExtensionInventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "top-secret-value") || strings.Contains(string(raw), "different-secret") {
+		t.Fatalf("extension inventory leaked a secret: %s", raw)
 	}
 }
 

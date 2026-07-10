@@ -6,6 +6,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/capability"
+	"github.com/blueberrycongee/wuu/internal/extensions"
 	"github.com/blueberrycongee/wuu/internal/insight"
 	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/participant"
@@ -180,24 +181,25 @@ type CoreBuildInfo struct {
 }
 
 type InitializeResult struct {
-	Status             string                  `json:"status"`
-	Issues             []RuntimeIssue          `json:"issues,omitempty"`
-	ProtocolVersion    string                  `json:"protocol_version"`
-	AgentTemplateCount int                     `json:"agent_template_count,omitempty"`
-	Core               CoreBuildInfo           `json:"core"`
-	Provider           string                  `json:"provider"`
-	Model              string                  `json:"model"`
-	Effort             string                  `json:"effort,omitempty"`
-	Variant            string                  `json:"variant,omitempty"`
-	WorkspaceRoot      string                  `json:"workspace_root"`
-	Permissions        PermissionSummary       `json:"permissions"`
-	ExtensionTrust     ExtensionTrustSummary   `json:"extension_trust"`
-	ModelProfile       *ModelProfileSummary    `json:"model_profile,omitempty"`
-	ToolSurface        *ToolSurfaceSummary     `json:"tool_surface,omitempty"`
-	ModelRoles         []ModelRoleSummary      `json:"model_roles,omitempty"`
-	Providers          []ProviderSummary       `json:"providers,omitempty"`
-	AdvancedSettings   AdvancedSettingsSummary `json:"advanced_settings"`
-	GeneralSettings    GeneralSettingsSummary  `json:"general_settings"`
+	Status             string                     `json:"status"`
+	Issues             []RuntimeIssue             `json:"issues,omitempty"`
+	ProtocolVersion    string                     `json:"protocol_version"`
+	AgentTemplateCount int                        `json:"agent_template_count,omitempty"`
+	Core               CoreBuildInfo              `json:"core"`
+	Provider           string                     `json:"provider"`
+	Model              string                     `json:"model"`
+	Effort             string                     `json:"effort,omitempty"`
+	Variant            string                     `json:"variant,omitempty"`
+	WorkspaceRoot      string                     `json:"workspace_root"`
+	Permissions        PermissionSummary          `json:"permissions"`
+	ExtensionTrust     ExtensionTrustSummary      `json:"extension_trust"`
+	ExtensionInventory []ExtensionInventoryRecord `json:"extension_inventory,omitempty"`
+	ModelProfile       *ModelProfileSummary       `json:"model_profile,omitempty"`
+	ToolSurface        *ToolSurfaceSummary        `json:"tool_surface,omitempty"`
+	ModelRoles         []ModelRoleSummary         `json:"model_roles,omitempty"`
+	Providers          []ProviderSummary          `json:"providers,omitempty"`
+	AdvancedSettings   AdvancedSettingsSummary    `json:"advanced_settings"`
+	GeneralSettings    GeneralSettingsSummary     `json:"general_settings"`
 }
 
 type RuntimeIssue struct {
@@ -217,22 +219,23 @@ type ModelProfileSummary struct {
 type ToolSurfaceSummary = capability.Summary
 
 type ConfigReadResult struct {
-	Provider           string                  `json:"provider"`
-	AgentTemplateCount int                     `json:"agent_template_count,omitempty"`
-	Model              string                  `json:"model"`
-	Effort             string                  `json:"effort,omitempty"`
-	Variant            string                  `json:"variant,omitempty"`
-	ConfigPath         string                  `json:"config_path"`
-	WorkspaceRoot      string                  `json:"workspace_root"`
-	SessionDir         string                  `json:"session_dir"`
-	Permissions        PermissionSummary       `json:"permissions"`
-	ExtensionTrust     ExtensionTrustSummary   `json:"extension_trust"`
-	ModelProfile       *ModelProfileSummary    `json:"model_profile,omitempty"`
-	ToolSurface        *ToolSurfaceSummary     `json:"tool_surface,omitempty"`
-	ModelRoles         []ModelRoleSummary      `json:"model_roles,omitempty"`
-	Providers          []ProviderSummary       `json:"providers,omitempty"`
-	AdvancedSettings   AdvancedSettingsSummary `json:"advanced_settings"`
-	GeneralSettings    GeneralSettingsSummary  `json:"general_settings"`
+	Provider           string                     `json:"provider"`
+	AgentTemplateCount int                        `json:"agent_template_count,omitempty"`
+	Model              string                     `json:"model"`
+	Effort             string                     `json:"effort,omitempty"`
+	Variant            string                     `json:"variant,omitempty"`
+	ConfigPath         string                     `json:"config_path"`
+	WorkspaceRoot      string                     `json:"workspace_root"`
+	SessionDir         string                     `json:"session_dir"`
+	Permissions        PermissionSummary          `json:"permissions"`
+	ExtensionTrust     ExtensionTrustSummary      `json:"extension_trust"`
+	ExtensionInventory []ExtensionInventoryRecord `json:"extension_inventory,omitempty"`
+	ModelProfile       *ModelProfileSummary       `json:"model_profile,omitempty"`
+	ToolSurface        *ToolSurfaceSummary        `json:"tool_surface,omitempty"`
+	ModelRoles         []ModelRoleSummary         `json:"model_roles,omitempty"`
+	Providers          []ProviderSummary          `json:"providers,omitempty"`
+	AdvancedSettings   AdvancedSettingsSummary    `json:"advanced_settings"`
+	GeneralSettings    GeneralSettingsSummary     `json:"general_settings"`
 }
 
 type PermissionSummary struct {
@@ -280,6 +283,30 @@ type ExtensionSurfaceTrustSummary struct {
 	Count        int  `json:"count,omitempty"`
 	KnownTools   int  `json:"known_tools,omitempty"`
 	VisibleTools int  `json:"visible_tools,omitempty"`
+}
+
+type ExtensionState string
+
+const (
+	ExtensionStateActive   ExtensionState = "active"
+	ExtensionStateReadOnly ExtensionState = "read_only"
+	ExtensionStatePending  ExtensionState = "pending"
+	ExtensionStateGranted  ExtensionState = "granted"
+	ExtensionStateRejected ExtensionState = "rejected"
+	ExtensionStateChanged  ExtensionState = "changed"
+)
+
+type ExtensionInventoryRecord struct {
+	ID                   string                `json:"id"`
+	Name                 string                `json:"name"`
+	Kind                 extensions.Kind       `json:"kind"`
+	Provenance           extensions.Provenance `json:"provenance"`
+	State                ExtensionState        `json:"state"`
+	Executable           bool                  `json:"executable,omitempty"`
+	Fingerprint          string                `json:"fingerprint,omitempty"`
+	GrantScope           extensions.GrantScope `json:"grant_scope,omitempty"`
+	RequestedPermissions []string              `json:"requested_permissions,omitempty"`
+	UnsupportedFields    []string              `json:"unsupported_fields,omitempty"`
 }
 
 type ConfigModelUpdateParams struct {

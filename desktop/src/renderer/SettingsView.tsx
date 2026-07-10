@@ -34,6 +34,7 @@ import { SelectMenu } from "./SelectMenu";
 import type {
   CodexPetsSnapshot,
   DesktopBuildInfo,
+  ExtensionInventoryRecord,
   InitializeResult,
   MCPServerStatus,
   ParticipantProfile,
@@ -1303,6 +1304,7 @@ function SettingsGeneralPage({
   const codexPetSelectedID = codexPets?.selected_id ?? "";
   const codexPetEnabled = Boolean(codexPets?.enabled);
   const codexPetStatus = codexPetLocalError || codexPetsError;
+  const extensionInventory = initialized?.extension_inventory ?? [];
 
   async function refreshCodexPets(): Promise<void> {
     setCodexPetBusy(true);
@@ -1537,6 +1539,50 @@ function SettingsGeneralPage({
           )}
           {mcpError ? <div className="settings-mcp-empty settings-mcp-error">{mcpError}</div> : null}
           {mcpToggleError ? <div className="settings-mcp-empty settings-mcp-error">{mcpToggleError}</div> : null}
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection
+        title="扩展与权限"
+        description="查看 Skill、Plugin、Hook 和 MCP 的来源与本机授权状态。"
+        testID="settings-extensions"
+      >
+        <SettingsCard>
+          {extensionInventory.length > 0 ? (
+            extensionInventory.map((record) => (
+              <SettingsRow
+                key={record.id}
+                title={record.name}
+                description={formatExtensionProvenance(record)}
+                block
+              >
+                <div className="settings-extension-detail">
+                  <div className="settings-extension-badges">
+                    <span className={`settings-status-pill ${extensionStateTone(record.state)}`}>
+                      {extensionStateLabel(record.state)}
+                    </span>
+                    {record.grant_scope ? (
+                      <span className="settings-extension-grant">
+                        {extensionGrantScopeLabel(record.grant_scope)}
+                      </span>
+                    ) : null}
+                  </div>
+                  {record.requested_permissions?.length ? (
+                    <small className="settings-extension-meta">
+                      权限：{record.requested_permissions.join("、")}
+                    </small>
+                  ) : null}
+                  {record.unsupported_fields?.length ? (
+                    <small className="settings-extension-meta settings-extension-warning">
+                      不支持字段：{record.unsupported_fields.join("、")}
+                    </small>
+                  ) : null}
+                </div>
+              </SettingsRow>
+            ))
+          ) : (
+            <div className="settings-mcp-empty">暂无扩展</div>
+          )}
         </SettingsCard>
       </SettingsSection>
 
@@ -2208,6 +2254,96 @@ function formatMCPServerMeta(server: MCPServerStatus): string {
     pieces.push(mcpAuthLabel(server.auth_status));
   }
   return pieces.join(" · ");
+}
+
+function formatExtensionProvenance(record: ExtensionInventoryRecord): string {
+  const source = extensionSourceLabel(record.provenance.source);
+  const scope = extensionScopeLabel(record.provenance.scope);
+  return `${extensionKindLabel(record.kind)} · ${source} · ${scope}`;
+}
+
+function extensionKindLabel(kind: ExtensionInventoryRecord["kind"]): string {
+  switch (kind) {
+    case "skill":
+      return "Skill";
+    case "agent_template":
+      return "Agent Template";
+    case "mcp":
+      return "MCP";
+    case "hook":
+      return "Hook";
+    case "plugin":
+      return "Plugin";
+    case "command":
+      return "Command";
+  }
+}
+
+function extensionSourceLabel(source: string): string {
+  if (source === "codex") return "Codex";
+  if (source === "claude") return "Claude Code";
+  if (source === "wuu" || source === "wuu_config") return "Wuu";
+  if (source === "bundled") return "Wuu 内置";
+  if (source.startsWith("plugin:")) return source.replace("plugin:", "Plugin · ");
+  return source || "未知来源";
+}
+
+function extensionScopeLabel(scope: string): string {
+  switch (scope) {
+    case "project":
+      return "项目";
+    case "user":
+      return "用户";
+    case "bundled":
+      return "内置";
+    default:
+      return scope || "未知范围";
+  }
+}
+
+function extensionStateLabel(state: ExtensionInventoryRecord["state"]): string {
+  switch (state) {
+    case "active":
+      return "已启用";
+    case "read_only":
+      return "只读";
+    case "pending":
+      return "待授权";
+    case "granted":
+      return "已授权";
+    case "rejected":
+      return "已拒绝";
+    case "changed":
+      return "配置已变化";
+  }
+}
+
+function extensionStateTone(state: ExtensionInventoryRecord["state"]): string {
+  switch (state) {
+    case "active":
+    case "granted":
+      return "success";
+    case "pending":
+    case "changed":
+      return "warning";
+    case "rejected":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+function extensionGrantScopeLabel(scope: NonNullable<ExtensionInventoryRecord["grant_scope"]>): string {
+  switch (scope) {
+    case "action":
+      return "单次授权";
+    case "session":
+      return "会话授权";
+    case "project":
+      return "项目授权";
+    case "user":
+      return "用户授权";
+  }
 }
 
 function mcpStateLabel(state: string): string {

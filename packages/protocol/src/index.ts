@@ -66,6 +66,9 @@ export type InitializeResult = {
   model_profile?: ModelProfileSummary;
   tool_surface?: ToolSurfaceSummary;
   extension_trust?: ExtensionTrustSummary;
+  // Inventory describes discovered extension assets. It intentionally carries
+  // fingerprints and permission names, never resolved environment/header values.
+  extension_inventory?: ExtensionInventoryRecord[];
   model_roles?: ModelRoleSummary[];
   providers?: ProviderSummary[];
   advanced_settings?: AdvancedSettingsSummary;
@@ -146,6 +149,32 @@ export type ExtensionSurfaceTrustSummary = {
   count?: number;
   known_tools?: number;
   visible_tools?: number;
+};
+
+export type ExtensionKind = "skill" | "command" | "agent_template" | "mcp" | "hook" | "plugin";
+
+export type ExtensionState = "active" | "read_only" | "pending" | "granted" | "rejected" | "changed";
+
+export type ExtensionProvenance = {
+  kind: ExtensionKind;
+  source: string;
+  scope: string;
+  path?: string;
+  plugin_id?: string;
+  official?: boolean;
+};
+
+export type ExtensionInventoryRecord = {
+  id: string;
+  name: string;
+  kind: ExtensionKind;
+  provenance: ExtensionProvenance;
+  state: ExtensionState;
+  executable?: boolean;
+  fingerprint?: string;
+  grant_scope?: "action" | "session" | "project" | "user";
+  requested_permissions?: string[];
+  unsupported_fields?: string[];
 };
 
 export type ConfigModelUpdateResult = {
