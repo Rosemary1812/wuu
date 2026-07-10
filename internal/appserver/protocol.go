@@ -23,6 +23,7 @@ const (
 	MethodConfigCodexModels    = "config/codex/models"
 	MethodConfigProviderRemove = "config/provider/remove"
 	MethodSkillList            = "skill/list"
+	MethodAgentTemplateList    = "agent-template/list"
 	// MethodGoalActiveSummary returns the lightweight composer-banner view
 	// of the most-recently-updated non-terminal goal in the requested thread
 	// scope. The mutation methods are user-owned controls for the active
@@ -179,23 +180,24 @@ type CoreBuildInfo struct {
 }
 
 type InitializeResult struct {
-	Status           string                  `json:"status"`
-	Issues           []RuntimeIssue          `json:"issues,omitempty"`
-	ProtocolVersion  string                  `json:"protocol_version"`
-	Core             CoreBuildInfo           `json:"core"`
-	Provider         string                  `json:"provider"`
-	Model            string                  `json:"model"`
-	Effort           string                  `json:"effort,omitempty"`
-	Variant          string                  `json:"variant,omitempty"`
-	WorkspaceRoot    string                  `json:"workspace_root"`
-	Permissions      PermissionSummary       `json:"permissions"`
-	ExtensionTrust   ExtensionTrustSummary   `json:"extension_trust"`
-	ModelProfile     *ModelProfileSummary    `json:"model_profile,omitempty"`
-	ToolSurface      *ToolSurfaceSummary     `json:"tool_surface,omitempty"`
-	ModelRoles       []ModelRoleSummary      `json:"model_roles,omitempty"`
-	Providers        []ProviderSummary       `json:"providers,omitempty"`
-	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
-	GeneralSettings  GeneralSettingsSummary  `json:"general_settings"`
+	Status             string                  `json:"status"`
+	Issues             []RuntimeIssue          `json:"issues,omitempty"`
+	ProtocolVersion    string                  `json:"protocol_version"`
+	AgentTemplateCount int                     `json:"agent_template_count,omitempty"`
+	Core               CoreBuildInfo           `json:"core"`
+	Provider           string                  `json:"provider"`
+	Model              string                  `json:"model"`
+	Effort             string                  `json:"effort,omitempty"`
+	Variant            string                  `json:"variant,omitempty"`
+	WorkspaceRoot      string                  `json:"workspace_root"`
+	Permissions        PermissionSummary       `json:"permissions"`
+	ExtensionTrust     ExtensionTrustSummary   `json:"extension_trust"`
+	ModelProfile       *ModelProfileSummary    `json:"model_profile,omitempty"`
+	ToolSurface        *ToolSurfaceSummary     `json:"tool_surface,omitempty"`
+	ModelRoles         []ModelRoleSummary      `json:"model_roles,omitempty"`
+	Providers          []ProviderSummary       `json:"providers,omitempty"`
+	AdvancedSettings   AdvancedSettingsSummary `json:"advanced_settings"`
+	GeneralSettings    GeneralSettingsSummary  `json:"general_settings"`
 }
 
 type RuntimeIssue struct {
@@ -215,21 +217,22 @@ type ModelProfileSummary struct {
 type ToolSurfaceSummary = capability.Summary
 
 type ConfigReadResult struct {
-	Provider         string                  `json:"provider"`
-	Model            string                  `json:"model"`
-	Effort           string                  `json:"effort,omitempty"`
-	Variant          string                  `json:"variant,omitempty"`
-	ConfigPath       string                  `json:"config_path"`
-	WorkspaceRoot    string                  `json:"workspace_root"`
-	SessionDir       string                  `json:"session_dir"`
-	Permissions      PermissionSummary       `json:"permissions"`
-	ExtensionTrust   ExtensionTrustSummary   `json:"extension_trust"`
-	ModelProfile     *ModelProfileSummary    `json:"model_profile,omitempty"`
-	ToolSurface      *ToolSurfaceSummary     `json:"tool_surface,omitempty"`
-	ModelRoles       []ModelRoleSummary      `json:"model_roles,omitempty"`
-	Providers        []ProviderSummary       `json:"providers,omitempty"`
-	AdvancedSettings AdvancedSettingsSummary `json:"advanced_settings"`
-	GeneralSettings  GeneralSettingsSummary  `json:"general_settings"`
+	Provider           string                  `json:"provider"`
+	AgentTemplateCount int                     `json:"agent_template_count,omitempty"`
+	Model              string                  `json:"model"`
+	Effort             string                  `json:"effort,omitempty"`
+	Variant            string                  `json:"variant,omitempty"`
+	ConfigPath         string                  `json:"config_path"`
+	WorkspaceRoot      string                  `json:"workspace_root"`
+	SessionDir         string                  `json:"session_dir"`
+	Permissions        PermissionSummary       `json:"permissions"`
+	ExtensionTrust     ExtensionTrustSummary   `json:"extension_trust"`
+	ModelProfile       *ModelProfileSummary    `json:"model_profile,omitempty"`
+	ToolSurface        *ToolSurfaceSummary     `json:"tool_surface,omitempty"`
+	ModelRoles         []ModelRoleSummary      `json:"model_roles,omitempty"`
+	Providers          []ProviderSummary       `json:"providers,omitempty"`
+	AdvancedSettings   AdvancedSettingsSummary `json:"advanced_settings"`
+	GeneralSettings    GeneralSettingsSummary  `json:"general_settings"`
 }
 
 type PermissionSummary struct {
@@ -436,6 +439,28 @@ type SkillSummary struct {
 
 type SkillListResult struct {
 	Skills []SkillSummary `json:"skills"`
+}
+
+type AgentTemplateSummary struct {
+	Name           string            `json:"name"`
+	Description    string            `json:"description"`
+	Instructions   string            `json:"instructions,omitempty"`
+	Source         string            `json:"source"`
+	Path           string            `json:"path,omitempty"`
+	Model          string            `json:"model,omitempty"`
+	PermissionMode string            `json:"permission_mode,omitempty"`
+	Effort         string            `json:"effort,omitempty"`
+	Metadata       map[string]string `json:"metadata,omitempty"`
+}
+
+type AgentTemplateDiagnostic struct {
+	Path    string `json:"path"`
+	Message string `json:"message"`
+}
+
+type AgentTemplateListResult struct {
+	Templates   []AgentTemplateSummary    `json:"templates"`
+	Diagnostics []AgentTemplateDiagnostic `json:"diagnostics,omitempty"`
 }
 
 // GoalActiveSummary is the composer-banner view of the most recently

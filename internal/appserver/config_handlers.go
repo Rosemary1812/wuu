@@ -36,9 +36,10 @@ func (s *Server) handleInitialize(req Request) error {
 		issues = append(issues, RuntimeIssue{Code: issue.Code, Provider: issue.Provider, Message: issue.Message})
 	}
 	return s.writeResponse(req.ID, InitializeResult{
-		Status:          status,
-		Issues:          issues,
-		ProtocolVersion: ProtocolVersion,
+		Status:             status,
+		Issues:             issues,
+		ProtocolVersion:    ProtocolVersion,
+		AgentTemplateCount: len(s.rt.AgentTemplates),
 		Core: CoreBuildInfo{
 			Version: core.Version,
 			Commit:  core.Commit,
@@ -64,21 +65,22 @@ func (s *Server) handleInitialize(req Request) error {
 func (s *Server) handleConfigRead(req Request) error {
 	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
 	return s.writeResponse(req.ID, ConfigReadResult{
-		Provider:         s.rt.ProviderName,
-		Model:            s.rt.Model,
-		Effort:           s.currentDisplayEffort(),
-		Variant:          s.currentVariant(),
-		ConfigPath:       s.rt.ConfigPath,
-		WorkspaceRoot:    s.rt.RootDir,
-		SessionDir:       s.rt.SessionDir,
-		Permissions:      s.currentPermissionSummary(),
-		ExtensionTrust:   s.currentExtensionTrustSummary(),
-		ModelProfile:     modelProfile,
-		ToolSurface:      toolSurface,
-		ModelRoles:       s.currentModelRoleSummaries(),
-		Providers:        s.providerSummaries(),
-		AdvancedSettings: s.currentAdvancedSettingsSummary(),
-		GeneralSettings:  s.currentGeneralSettingsSummary(),
+		Provider:           s.rt.ProviderName,
+		AgentTemplateCount: len(s.rt.AgentTemplates),
+		Model:              s.rt.Model,
+		Effort:             s.currentDisplayEffort(),
+		Variant:            s.currentVariant(),
+		ConfigPath:         s.rt.ConfigPath,
+		WorkspaceRoot:      s.rt.RootDir,
+		SessionDir:         s.rt.SessionDir,
+		Permissions:        s.currentPermissionSummary(),
+		ExtensionTrust:     s.currentExtensionTrustSummary(),
+		ModelProfile:       modelProfile,
+		ToolSurface:        toolSurface,
+		ModelRoles:         s.currentModelRoleSummaries(),
+		Providers:          s.providerSummaries(),
+		AdvancedSettings:   s.currentAdvancedSettingsSummary(),
+		GeneralSettings:    s.currentGeneralSettingsSummary(),
 	}, nil)
 }
 

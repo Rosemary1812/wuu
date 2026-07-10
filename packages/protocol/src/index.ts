@@ -49,6 +49,7 @@ export type InitializeResult = {
   status?: "ready" | "needs_setup";
   issues?: RuntimeIssue[];
   protocol_version: string;
+  agent_template_count?: number;
   core?: CoreBuildInfo;
   provider: string;
   model: string;
@@ -280,6 +281,28 @@ export type SkillSummary = {
 
 export type SkillListResult = {
   skills: SkillSummary[];
+};
+
+export type AgentTemplateSummary = {
+  name: string;
+  description: string;
+  instructions?: string;
+  source: string;
+  path?: string;
+  model?: string;
+  permission_mode?: string;
+  effort?: string;
+  metadata?: Record<string, string>;
+};
+
+export type AgentTemplateDiagnostic = {
+  path: string;
+  message: string;
+};
+
+export type AgentTemplateListResult = {
+  templates: AgentTemplateSummary[];
+  diagnostics?: AgentTemplateDiagnostic[];
 };
 
 export type MCPServerStatus = {
@@ -1761,6 +1784,7 @@ export type WuuDesktopApi = {
   disconnectMCPServer: (name: string) => Promise<MCPServerActionResult>;
   refreshMCPServer: (name: string) => Promise<MCPServerActionResult>;
   listSkills: () => Promise<SkillListResult>;
+  listAgentTemplates: () => Promise<AgentTemplateListResult>;
   startThread: (params?: ThreadStartParams) => Promise<{ thread: Thread }>;
   resumeThread: (sessionId?: string) => Promise<{ thread: Thread }>;
   startParticipant: (params: ParticipantStartParams) => Promise<ParticipantStartResult>;

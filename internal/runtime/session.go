@@ -14,6 +14,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/agenttemplate"
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/config"
@@ -68,19 +69,21 @@ type Options struct {
 // stream runner. UI surfaces should depend on this instead of reassembling the
 // pieces themselves.
 type Session struct {
-	ProviderName   string
-	Model          string
-	RootDir        string
-	WorkspaceID    string
-	StateDir       string
-	ConfigPath     string
-	SessionDir     string
-	StreamRunner   *agent.StreamRunner
-	TitleClient    providers.Client
-	HookDispatcher *hooks.Dispatcher
-	Skills         []skills.Skill
-	Plugins        []pluginpkg.Plugin
-	Memory         []memory.File
+	ProviderName             string
+	Model                    string
+	RootDir                  string
+	WorkspaceID              string
+	StateDir                 string
+	ConfigPath               string
+	SessionDir               string
+	StreamRunner             *agent.StreamRunner
+	TitleClient              providers.Client
+	HookDispatcher           *hooks.Dispatcher
+	Skills                   []skills.Skill
+	AgentTemplates           []agenttemplate.Template
+	AgentTemplateDiagnostics []agenttemplate.Diagnostic
+	Plugins                  []pluginpkg.Plugin
+	Memory                   []memory.File
 	// MemdirEnabled reports whether the file-directory memory (user
 	// notebook teaching + index injection and file-scope whitelist) is
 	// active for this session. False when Memory.Disable is set.
@@ -215,6 +218,7 @@ func NewSession(opts Options) (*Session, error) {
 	discoveredPlugins := discoverPlugins(rootDir, wuuHome)
 	hookDispatcher := buildHookDispatcher(cfg, discoveredPlugins, providers.Client(client), toolModeModel)
 	discoveredSkills := discoverSkills(rootDir, opts.HomeDir, wuuHome, discoveredPlugins)
+	discoveredAgentTemplates := discoverAgentTemplates(rootDir, opts.HomeDir)
 
 	processMgr, err := process.NewManager(rootDir, statepath.RuntimeDir(workspaceStateDir))
 	if err != nil {
@@ -476,6 +480,8 @@ func NewSession(opts Options) (*Session, error) {
 		TitleClient:                 titleClient,
 		HookDispatcher:              hookDispatcher,
 		Skills:                      discoveredSkills,
+		AgentTemplates:              discoveredAgentTemplates.Templates,
+		AgentTemplateDiagnostics:    discoveredAgentTemplates.Diagnostics,
 		Plugins:                     discoveredPlugins,
 		Memory:                      memoryFiles,
 		MemdirEnabled:               memdirEnabled,
@@ -1279,6 +1285,29 @@ func discoverSkills(rootDir, homeDir, wuuHome string, plugins []pluginpkg.Plugin
 	// take precedence over commands with the same name.
 	commands := skills.DiscoverCommandsSourceDirs(commandProjectDirs(rootDir), commandUserDirs(wuuHome))
 	return skills.MergeWithBundled(skills.MergeCommands(discovered, commands), wuuHome)
+}
+
+func discoverAgentTemplates(rootDir, homeDir string) agenttemplate.Discovery {
+	var projectDirs []agenttemplate.SourceDir
+	if strings.TrimSpace(rootDir) != "" {
+		if absRoot, err := filepath.Abs(rootDir); err == nil {
+			projectRoot := findSkillProjectRoot(absRoot)
+			for _, dir := range skillDirChain(projectRoot, absRoot) {
+				projectDirs = append(projectDirs, agenttemplate.SourceDir{
+					Path:   filepath.Join(dir, ".claude", "agents"),
+					Source: "project",
+				})
+			}
+		}
+	}
+	var userDirs []agenttemplate.SourceDir
+	if home := skillUserHome(homeDir); home != "" {
+		userDirs = append(userDirs, agenttemplate.SourceDir{
+			Path:   filepath.Join(home, ".claude", "agents"),
+			Source: "user",
+		})
+	}
+	return agenttemplate.DiscoverSourceDirs(projectDirs, userDirs)
 }
 
 // commandProjectDirs returns the project-chain command directories, mirroring

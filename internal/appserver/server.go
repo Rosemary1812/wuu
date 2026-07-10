@@ -350,6 +350,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleConfigProviderRemove(req)
 	case MethodSkillList:
 		return s.handleSkillList(req)
+	case MethodAgentTemplateList:
+		return s.handleAgentTemplateList(req)
 	case MethodGoalActiveSummary:
 		return s.handleGoalActiveSummary(req)
 	case MethodGoalPause:

@@ -648,6 +648,44 @@ Create a commit for $ARGUMENTS.
 	}
 }
 
+func TestDiscoverAgentTemplatesUsesClaudePaths(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	workspace := filepath.Join(root, "packages", "app")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+
+	writeSessionTestFile(t, filepath.Join(home, ".claude", "agents", "reviewer.md"), `---
+name: reviewer
+description: User reviewer
+---
+Review from home.
+`)
+	writeSessionTestFile(t, filepath.Join(workspace, ".claude", "agents", "reviewer.md"), `---
+name: reviewer
+description: Project reviewer
+permissionMode: plan
+---
+Review from the project.
+`)
+
+	discovery := discoverAgentTemplates(workspace, home)
+	if len(discovery.Diagnostics) != 0 {
+		t.Fatalf("Diagnostics = %+v", discovery.Diagnostics)
+	}
+	if len(discovery.Templates) != 1 {
+		t.Fatalf("Templates = %+v", discovery.Templates)
+	}
+	reviewer := discovery.Templates[0]
+	if reviewer.Source != "project" || reviewer.Description != "Project reviewer" || reviewer.PermissionMode != "plan" {
+		t.Fatalf("reviewer = %+v", reviewer)
+	}
+}
+
 func TestNewSessionWiresPluginHooks(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

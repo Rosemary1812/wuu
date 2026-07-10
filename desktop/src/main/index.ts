@@ -913,6 +913,9 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:skill-list", (event) =>
     appServerRequest(event, "skill/list"),
   );
+  ipcMain.handle("wuu:agent-template-list", (event) =>
+    appServerRequest(event, "agent-template/list"),
+  );
   ipcMain.handle("wuu:codex-pets-list", () => codexPetsSnapshot());
   ipcMain.handle(
     "wuu:codex-pets-update",

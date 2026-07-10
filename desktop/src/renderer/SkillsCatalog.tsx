@@ -1,17 +1,26 @@
-import { Check, RefreshCw, Search, Wrench } from "lucide-react";
+import { AlertTriangle, Bot, Check, RefreshCw, Search, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { RuntimeContext, SkillSummary } from "../shared/protocol";
+import type {
+  AgentTemplateDiagnostic,
+  AgentTemplateSummary,
+  RuntimeContext,
+  SkillSummary
+} from "../shared/protocol";
 
 type LoadState = {
   loading: boolean;
   error: string;
   skills: SkillSummary[];
+  agentTemplates: AgentTemplateSummary[];
+  diagnostics: AgentTemplateDiagnostic[];
 };
 
 const initialLoadState: LoadState = {
   loading: true,
   error: "",
-  skills: []
+  skills: [],
+  agentTemplates: [],
+  diagnostics: []
 };
 
 export function SkillsCatalog({
@@ -25,30 +34,41 @@ export function SkillsCatalog({
 
   useEffect(() => {
     let cancelled = false;
-    void loadSkills(cancelled);
+    void loadCatalog(cancelled);
     return () => {
       cancelled = true;
     };
 
-    async function loadSkills(alreadyCancelled: boolean): Promise<void> {
+    async function loadCatalog(alreadyCancelled: boolean): Promise<void> {
       if (alreadyCancelled) {
         return;
       }
       setState((current) => ({ ...current, loading: true, error: "" }));
       try {
-        const result = await window.wuu.listSkills();
+        const [skillsResult, templatesResult] = await Promise.all([
+          window.wuu.listSkills(),
+          window.wuu.listAgentTemplates()
+        ]);
         if (cancelled) {
           return;
         }
-        setState({ loading: false, error: "", skills: result.skills });
+        setState({
+          loading: false,
+          error: "",
+          skills: skillsResult.skills,
+          agentTemplates: templatesResult.templates,
+          diagnostics: templatesResult.diagnostics ?? []
+        });
       } catch (error) {
         if (cancelled) {
           return;
         }
         setState({
           loading: false,
-          error: error instanceof Error ? error.message : "加载 Skills 失败",
-          skills: []
+          error: error instanceof Error ? error.message : "加载扩展目录失败",
+          skills: [],
+          agentTemplates: [],
+          diagnostics: []
         });
       }
     }
@@ -67,16 +87,40 @@ export function SkillsCatalog({
     );
   }, [filter, state.skills]);
 
+  const visibleAgentTemplates = useMemo(() => {
+    const query = filter.trim().toLowerCase();
+    const items = [...state.agentTemplates].sort(compareAgentTemplates);
+    if (!query) {
+      return items;
+    }
+    return items.filter((template) =>
+      [template.name, template.description, template.source, template.model, template.permission_mode]
+        .filter(Boolean)
+        .some((value) => value?.toLowerCase().includes(query))
+    );
+  }, [filter, state.agentTemplates]);
+
   async function refreshSkills(): Promise<void> {
     setState((current) => ({ ...current, loading: true, error: "" }));
     try {
-      const result = await window.wuu.listSkills();
-      setState({ loading: false, error: "", skills: result.skills });
+      const [skillsResult, templatesResult] = await Promise.all([
+        window.wuu.listSkills(),
+        window.wuu.listAgentTemplates()
+      ]);
+      setState({
+        loading: false,
+        error: "",
+        skills: skillsResult.skills,
+        agentTemplates: templatesResult.templates,
+        diagnostics: templatesResult.diagnostics ?? []
+      });
     } catch (error) {
       setState({
         loading: false,
-        error: error instanceof Error ? error.message : "加载 Skills 失败",
-        skills: []
+        error: error instanceof Error ? error.message : "加载扩展目录失败",
+        skills: [],
+        agentTemplates: [],
+        diagnostics: []
       });
     }
   }
@@ -86,7 +130,7 @@ export function SkillsCatalog({
       <header className="skills-catalog-header">
         <div className="skills-catalog-title">
           <strong>技能</strong>
-          <span>通过任务专用技能扩展 Wuu 的能力</span>
+          <span>查看任务技能和可复用的临时子代理模板</span>
         </div>
         <div className="skills-catalog-controls">
           <label className="skills-search">
@@ -105,6 +149,17 @@ export function SkillsCatalog({
       </header>
 
       {state.error ? <div className="skills-catalog-error">{state.error}</div> : null}
+
+      {state.diagnostics.length > 0 ? (
+        <div className="skills-catalog-error">
+          <AlertTriangle className="icon-sm" aria-hidden="true" />
+          {state.diagnostics.map((diagnostic) => (
+            <span key={`${diagnostic.path}:${diagnostic.message}`}>
+              {diagnostic.path}: {diagnostic.message}
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       <div className="skills-section-heading">
         <strong>Installed</strong>
@@ -133,7 +188,32 @@ export function SkillsCatalog({
         ))}
       </div>
 
-      {!state.loading && visibleSkills.length === 0 ? (
+      <div className="skills-section-heading">
+        <strong>Agent Templates</strong>
+        <span>{state.loading ? "加载中" : `${visibleAgentTemplates.length} / ${state.agentTemplates.length}`}</span>
+      </div>
+
+      <div className="skills-list">
+        {visibleAgentTemplates.map((template) => (
+          <article key={`${template.source}:${template.name}`} className="skill-row">
+            <span className="skill-row-icon" aria-hidden="true">
+              <Bot className="icon" />
+            </span>
+            <span className="skill-row-copy">
+              <span className="skill-row-titlebar">
+                <h2>{template.name}</h2>
+                <span className="skill-row-tag" title="调用时创建临时子代理，不是常驻成员">
+                  临时子代理模板
+                </span>
+              </span>
+              <p>{template.description || "无描述"}</p>
+            </span>
+            <Check className="skill-row-check" aria-hidden="true" />
+          </article>
+        ))}
+      </div>
+
+      {!state.loading && visibleSkills.length === 0 && visibleAgentTemplates.length === 0 ? (
         <div className="skills-empty">
           <Wrench className="icon-xl" />
           <strong>暂无 Skills</strong>
@@ -151,6 +231,14 @@ function isBundledSkill(source: string): boolean {
 }
 
 function compareSkills(left: SkillSummary, right: SkillSummary): number {
+  const sourceDelta = sourceRank(left.source) - sourceRank(right.source);
+  if (sourceDelta !== 0) {
+    return sourceDelta;
+  }
+  return left.name.localeCompare(right.name);
+}
+
+function compareAgentTemplates(left: AgentTemplateSummary, right: AgentTemplateSummary): number {
   const sourceDelta = sourceRank(left.source) - sourceRank(right.source);
   if (sourceDelta !== 0) {
     return sourceDelta;

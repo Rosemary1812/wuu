@@ -113,6 +113,7 @@ const api: WuuDesktopApi = {
   updateGeneralSettings: (settings) =>
     ipcRenderer.invoke("wuu:config-general-update", settings),
   listSkills: () => ipcRenderer.invoke("wuu:skill-list"),
+  listAgentTemplates: () => ipcRenderer.invoke("wuu:agent-template-list"),
   getSettingsUsage: (range?: SettingsUsageRange) =>
     ipcRenderer.invoke("wuu:settings-usage", range),
   listMCPServers: () => ipcRenderer.invoke("wuu:mcp-list"),
