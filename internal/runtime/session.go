@@ -1263,6 +1263,7 @@ func discoverSkills(rootDir, homeDir, wuuHome string, plugins []pluginpkg.Plugin
 	}
 	if home := skillUserHome(homeDir); home != "" {
 		userDirs = append(userDirs,
+			skills.SourceDir{Path: filepath.Join(home, ".codex", "skills"), Source: "user"},
 			skills.SourceDir{Path: filepath.Join(home, ".claude", "skills"), Source: "user"},
 			skills.SourceDir{Path: filepath.Join(home, ".agents", "skills"), Source: "user"},
 			skills.SourceDir{Path: filepath.Join(home, ".config", "opencode", "skills"), Source: "user"},

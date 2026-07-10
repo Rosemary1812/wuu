@@ -582,9 +582,15 @@ description: Global opencode skill.
 ---
 Global body.
 `)
+	writeSessionTestFile(t, filepath.Join(home, ".codex", "skills", "codex-user-skill", "SKILL.md"), `---
+name: codex-user-skill
+description: Codex user skill.
+---
+Codex user body.
+`)
 
 	got := discoverSkills(workspace, home, filepath.Join(home, ".wuu"), nil)
-	for _, name := range []string{"root-skill", "app-skill", "agent-skill", "global-skill"} {
+	for _, name := range []string{"root-skill", "app-skill", "agent-skill", "global-skill", "codex-user-skill"} {
 		if _, ok := skills.Find(got, name); !ok {
 			t.Fatalf("skill %q not discovered in %+v", name, got)
 		}
