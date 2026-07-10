@@ -28,7 +28,8 @@ let package = Package(
         .executableTarget(
             name: "CUAMacProtocolTests",
             dependencies: ["CUAMacCore"],
-            path: "ProtocolTests"
+            path: "ProtocolTests",
+            exclude: ["stdio-smoke.mjs"]
         ),
     ]
 )
