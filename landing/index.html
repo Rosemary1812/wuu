@@ -83,18 +83,26 @@ button { font-family: inherit; }
   z-index: 200; pointer-events: none;
 }
 
-/* cursor dot — one restrained follower, difference blend adapts to any ground */
-.cursor-dot {
-  position: fixed; left: 0; top: 0; width: 10px; height: 10px; border-radius: 50%;
-  background: #fff; mix-blend-mode: difference;
-  pointer-events: none; z-index: 300;
+/* ascii cursor — a terminal spinner tails the pointer, difference blend adapts to any ground */
+.cursor-ascii {
+  position: fixed; left: 0; top: 0;
+  font-family: var(--mono); font-size: 16px; font-weight: 700; line-height: 1;
+  color: #fff; mix-blend-mode: difference;
+  pointer-events: none; z-index: 300; user-select: none;
   transform: translate(-50%, -50%);
-  transition: width .25s var(--ease-rise), height .25s var(--ease-rise), opacity .3s;
-  opacity: 0;
+  transition: font-size .2s var(--ease-rise), opacity .3s;
+  opacity: 0; white-space: pre;
 }
-.cursor-dot.on { opacity: 1; }
-.cursor-dot.big { width: 34px; height: 34px; }
-@media (pointer: coarse) { .cursor-dot { display: none; } }
+.cursor-ascii.on { opacity: 1; }
+.cursor-ascii.big { font-size: 20px; }
+.cursor-spark {
+  position: fixed; left: 0; top: 0;
+  font-family: var(--mono); font-size: 13px; font-weight: 700; line-height: 1;
+  color: #fff; mix-blend-mode: difference;
+  pointer-events: none; z-index: 299; user-select: none;
+  transition: transform .65s var(--ease-rise), opacity .65s linear;
+}
+@media (pointer: coarse) { .cursor-ascii, .cursor-spark { display: none; } }
 
 /* mono kicker */
 .kicker {
@@ -599,7 +607,7 @@ footer .wordmark em { color: var(--coralink); }
 <body>
 
 <div class="progress" id="progress"></div>
-<div class="cursor-dot" id="cursorDot" aria-hidden="true"></div>
+<div class="cursor-ascii" id="cursorAscii" aria-hidden="true">·</div>
 <div class="grain" aria-hidden="true"></div>
 
 <!-- ============ NAV ============ -->
@@ -1040,24 +1048,53 @@ footer .wordmark em { color: var(--coralink); }
   }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
   $$('.reveal').forEach(function (el) { io.observe(el); });
 
-  /* ---------- cursor dot: lag-follow, grows over anything clickable ---------- */
-  var dot = $('#cursorDot');
-  if (dot && finePointer && !reduced) {
-    var dx = -100, dy = -100, px = -100, py = -100, shown = false;
+  /* ---------- ascii cursor: terminal spinner while moving, [+] over clickables, sparks on click ---------- */
+  var cur = $('#cursorAscii');
+  if (cur && finePointer && !reduced) {
+    var FRAMES = ['|', '/', '-', '\\'];
+    var dx = -100, dy = -100, px = -100, py = -100, shown = false, hot = false;
+    var frame = 0, lastTick = 0;
     addEventListener('mousemove', function (e) {
       dx = e.clientX; dy = e.clientY;
-      if (!shown) { shown = true; px = dx; py = dy; dot.classList.add('on'); }
+      if (!shown) { shown = true; px = dx; py = dy; cur.classList.add('on'); }
     }, { passive: true });
-    document.addEventListener('mouseleave', function () { shown = false; dot.classList.remove('on'); });
+    document.addEventListener('mouseleave', function () { shown = false; cur.classList.remove('on'); });
     document.addEventListener('mouseover', function (e) {
-      dot.classList.toggle('big', !!e.target.closest('a, button, .fl, .wave-mascot, [data-tilt], .itab'));
+      hot = !!e.target.closest('a, button, .fl, .wave-mascot, [data-tilt], .itab');
+      cur.classList.toggle('big', hot);
     });
-    (function follow() {
+    (function follow(t) {
       px += (dx - px) * 0.16; py += (dy - py) * 0.16;
-      dot.style.left = px + 'px'; dot.style.top = py + 'px';
+      cur.style.left = px + 'px'; cur.style.top = py + 'px';
+      var speed = Math.abs(dx - px) + Math.abs(dy - py);
+      if (hot) { cur.textContent = '[+]'; }
+      else if (speed > 1.5) {
+        if (t - lastTick > 90) { frame = (frame + 1) % FRAMES.length; lastTick = t; }
+        cur.textContent = FRAMES[frame];
+      } else { cur.textContent = '·'; }
       requestAnimationFrame(follow);
-    })();
-  } else if (dot) { dot.style.display = 'none'; }
+    })(0);
+    /* tiny ascii fireworks on click */
+    var GLYPHS = ['*', '+', 'x', '·', '~'];
+    document.addEventListener('click', function (e) {
+      for (var i = 0; i < 5; i++) {
+        var s = document.createElement('span');
+        s.className = 'cursor-spark';
+        s.textContent = GLYPHS[(Math.random() * GLYPHS.length) | 0];
+        s.style.left = e.clientX + 'px'; s.style.top = e.clientY + 'px';
+        document.body.appendChild(s);
+        var a = Math.random() * 6.283, r = 26 + Math.random() * 34;
+        var tx = Math.cos(a) * r, ty = Math.sin(a) * r - 18;
+        requestAnimationFrame(function (el, x, y) { return function () {
+          requestAnimationFrame(function () {
+            el.style.transform = 'translate(' + x + 'px,' + y + 'px) rotate(' + (x * 4) + 'deg)';
+            el.style.opacity = '0';
+          });
+        }; }(s, tx, ty));
+        setTimeout(function (el) { return function () { el.remove(); }; }(s), 700);
+      }
+    });
+  } else if (cur) { cur.style.display = 'none'; }
 
   /* ---------- magnetic buttons ---------- */
   if (finePointer && !reduced) {
