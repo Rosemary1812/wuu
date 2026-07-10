@@ -6,15 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/blueberrycongee/wuu/internal/agent"
-	"github.com/blueberrycongee/wuu/internal/hooks"
-	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
-	"github.com/blueberrycongee/wuu/internal/runtime"
-	"github.com/blueberrycongee/wuu/internal/session"
-	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
 // The scripted action sequence must drive the existing group/reply/task RPCs in
@@ -38,7 +31,7 @@ func TestRunActionSequenceDrivesRPCsWithVarThreading(t *testing.T) {
 			{Action: "create_group", Params: map[string]any{"title": "Bug triage"}, SaveAs: map[string]string{"group": "thread.id"}},
 			{
 				Action: "open_reply",
-				Params: map[string]any{"thread_id": "$group", "anchor_item_id": "seq-3", "participants": []any{"ada"}},
+				Params: map[string]any{"thread_id": "$group", "anchor_item_id": "seq-3", "thread_owner_participant_id": "ada"},
 				SaveAs: map[string]string{"cth": "subthread.id"},
 				Expect: map[string]any{"subthread.reply_count": float64(0)},
 			},
@@ -49,7 +42,7 @@ func TestRunActionSequenceDrivesRPCsWithVarThreading(t *testing.T) {
 			},
 			{
 				Action: "escalate_task",
-				Params: map[string]any{"thread_id": "$group", "subthread_id": "$cth", "lead_participant_id": "ada"},
+				Params: map[string]any{"thread_id": "$group", "subthread_id": "$cth"},
 				Expect: map[string]any{"subthread.lead_participant_id": "ada", "subthread.status": "task"},
 			},
 		},
@@ -78,15 +71,15 @@ func TestRunActionSequenceDrivesRPCsWithVarThreading(t *testing.T) {
 	if openParams["thread_id"] != "grp-1" {
 		t.Fatalf("open_reply thread_id not substituted from $group: %+v", openParams)
 	}
-	if parts, _ := openParams["participants"].([]any); len(parts) != 1 || parts[0] != "ada" {
-		t.Fatalf("open_reply participants subset lost: %+v", openParams)
+	if openParams["thread_owner_participant_id"] != "ada" {
+		t.Fatalf("open_reply owner lost: %+v", openParams)
 	}
 	postParams := decodeCallParams(t, controller.calls[2].params)
 	if postParams["thread_id"] != "grp-1" || postParams["subthread_id"] != "cth-1" {
 		t.Fatalf("post_subthread ids not threaded: %+v", postParams)
 	}
 	escParams := decodeCallParams(t, controller.calls[3].params)
-	if escParams["subthread_id"] != "cth-1" || escParams["lead_participant_id"] != "ada" {
+	if escParams["subthread_id"] != "cth-1" {
 		t.Fatalf("escalate_task params wrong: %+v", escParams)
 	}
 
@@ -144,119 +137,6 @@ func TestRunActionSequenceUnknownActionFails(t *testing.T) {
 	}
 	if len(controller.calls) != 0 {
 		t.Fatalf("unknown action should not issue any RPC, got %v", controller.calls)
-	}
-}
-
-// End-to-end against the REAL app-server handlers (over pipes, deterministic
-// fake provider): a scripted sequence builds a group, adds a named member, opens
-// a reply seeded with a member subset, folds a human post into that reply, and
-// escalates it to a task with a named lead. Asserts the load-bearing behaviors —
-// the post folds into the cth (does not touch the main group stream, weak
-// isolation) and the lead is recorded — through the exec driving surface.
-func TestRunActionSequenceEndToEndFoldsReplyAndRecordsLead(t *testing.T) {
-	rt := newExecGroupTestRuntime(t)
-	adaID := participant.NewID()
-	if err := session.UpsertParticipant(rt.SessionDir, participant.Participant{
-		ID:        adaID,
-		Kind:      participant.KindNamed,
-		Name:      "Ada",
-		Role:      "reviewer",
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	}); err != nil {
-		t.Fatalf("seed named participant: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	controller := newLocalControllerForRuntime(ctx, rt)
-
-	var stdout bytes.Buffer
-	err := Run(ctx, Options{
-		JSON:       true,
-		Stdout:     &stdout,
-		Controller: controller,
-		Actions: []GroupAction{
-			{Action: "create_group", Params: map[string]any{"title": "Bug triage"}, SaveAs: map[string]string{"group": "thread.id"}},
-			{Action: "add_group_member", Params: map[string]any{"thread_id": "$group", "participant_id": adaID}},
-			{
-				Action: "open_reply",
-				Params: map[string]any{"thread_id": "$group", "anchor_item_id": "seq-3", "created_by": "user", "participants": []any{adaID}},
-				SaveAs: map[string]string{"cth": "subthread.id"},
-			},
-			{
-				Action: "post_subthread",
-				Params: map[string]any{"thread_id": "$group", "subthread_id": "$cth", "text": "what about the retry path?"},
-				Expect: map[string]any{"subthread.reply_count": float64(1)},
-			},
-			{
-				Action: "escalate_task",
-				Params: map[string]any{"thread_id": "$group", "subthread_id": "$cth", "created_by": "user", "lead_participant_id": adaID, "title": "Ship the fix"},
-				Expect: map[string]any{"subthread.lead_participant_id": adaID, "subthread.status": "task"},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("Run: %v\n%s", err, stdout.String())
-	}
-
-	events := parseJSONLines(t, stdout.String())
-	groupID := actionResultPath(t, events, "create_group", "thread", "id")
-	cthID := actionResultPath(t, events, "open_reply", "subthread", "id")
-	if !strings.HasPrefix(cthID, "cth-") {
-		t.Fatalf("open_reply did not return a cth id: %q", cthID)
-	}
-
-	// Weak-isolation member subset: the reply was seeded with the named member so
-	// only that subset is alerted into the reply.
-	openEvent := actionCompletedEvent(t, events, "open_reply")
-	sub := openEvent["result"].(map[string]any)["subthread"].(map[string]any)
-	parts, _ := sub["participants"].([]any)
-	if !containsAny(parts, adaID) {
-		t.Fatalf("reply member subset missing %q: %+v", adaID, sub["participants"])
-	}
-
-	// The human post folded into the cth: it is persisted tagged with the cth
-	// thread_id and did NOT append to the main group stream.
-	history, err := session.LoadHistoryRecords(rt.SessionDir, groupID, false)
-	if err != nil {
-		t.Fatalf("LoadHistoryRecords: %v", err)
-	}
-	var foldedIntoCth bool
-	for i := range history {
-		if history[i].Content == "what about the retry path?" {
-			if strings.TrimSpace(history[i].ThreadID) != cthID {
-				t.Fatalf("reply post leaked to main stream: thread_id=%q, want cth %q", history[i].ThreadID, cthID)
-			}
-			foldedIntoCth = true
-		}
-	}
-	if !foldedIntoCth {
-		t.Fatalf("reply post not persisted tagged with cth %q: %+v", cthID, history)
-	}
-}
-
-func newExecGroupTestRuntime(t *testing.T) *runtime.Session {
-	t.Helper()
-	root := t.TempDir()
-	t.Setenv("HOME", t.TempDir())
-	kit, err := tools.New(root)
-	if err != nil {
-		t.Fatalf("tools.New: %v", err)
-	}
-	return &runtime.Session{
-		ProviderName:   "fake-provider",
-		Model:          "fake-model",
-		RootDir:        root,
-		ConfigPath:     root + "/.wuu.json",
-		SessionDir:     root + "/.wuu-state/sessions",
-		HookDispatcher: hooks.NewDispatcher(nil),
-		Toolkit:        kit,
-		StreamRunner: &agent.StreamRunner{
-			Client:       providers.AdaptStreamClient(execGroupFakeClient{}),
-			Model:        "fake-model",
-			SystemPrompt: "system prompt",
-		},
 	}
 }
 

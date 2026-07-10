@@ -18,7 +18,7 @@ const (
 	// actionRPC steps map onto an existing client RPC and are driven with a
 	// single Controller.Call. These are the human/orchestrator-side methods the
 	// desktop GUI already uses (group create, add member, open reply, post into a
-	// reply, escalate to task, bubble, participant save/list/retire).
+	// reply, escalate to task, participant save/list/retire).
 	actionRPC actionKind = iota
 	// actionNamedTurn steps run a turn AS a named participant (participant/start)
 	// so the resident tool surface is mounted — the only path that lets a named
@@ -53,7 +53,6 @@ var actionMethodTable = map[string]actionMethodEntry{
 	"list_replies":        {kind: actionRPC, method: appserver.MethodThreadListSub},
 	"resolve_reply":       {kind: actionRPC, method: appserver.MethodThreadResolveSub},
 	"escalate_task":       {kind: actionRPC, method: appserver.MethodThreadEscalateSub},
-	"bubble_reply":        {kind: actionRPC, method: appserver.MethodThreadBubbleSub},
 	"post_subthread":      {kind: actionRPC, method: appserver.MethodMessagePostSubthread},
 	// Named-turn actions: run a turn AS a named participant. post_message is
 	// the speak-in-a-group case; participant_turn is the general name for any
@@ -166,6 +165,10 @@ func runNamedTurnAction(ctx context.Context, controller Controller, opts Options
 	if prompt == "" {
 		return nil, errors.New("named turn requires a prompt (what the named agent should do)")
 	}
+	baselineItems := map[string]struct{}{}
+	if thread, err := controller.ResumeThread(ctx, threadID); err == nil {
+		baselineItems = threadItemIDs(thread)
+	}
 
 	start := appserver.ParticipantStartParams{
 		ThreadID:      threadID,
@@ -202,6 +205,12 @@ func runNamedTurnAction(ctx context.Context, controller Controller, opts Options
 		"status":         sub.status,
 		"text":           sub.finalMessage,
 	}
+	if thread, err := controller.ResumeThread(ctx, threadID); err == nil {
+		if item, ok := newestParticipantMessageOutside(thread, participantID, baselineItems); ok {
+			result["anchor_item_id"] = item.ID
+			result["message_seq"] = item.Seq
+		}
+	}
 	if sub.status == "failed" {
 		msg := strings.TrimSpace(sub.finalMessage)
 		if msg == "" {
@@ -210,6 +219,41 @@ func runNamedTurnAction(ctx context.Context, controller Controller, opts Options
 		return result, errors.New(msg)
 	}
 	return result, nil
+}
+
+func threadItemIDs(thread appserver.Thread) map[string]struct{} {
+	ids := make(map[string]struct{})
+	for _, turn := range thread.Turns {
+		for _, item := range turn.Items {
+			if strings.TrimSpace(item.ID) != "" {
+				ids[item.ID] = struct{}{}
+			}
+		}
+	}
+	return ids
+}
+
+func newestParticipantMessageOutside(thread appserver.Thread, participantID string, existing map[string]struct{}) (appserver.ThreadItem, bool) {
+	var newest appserver.ThreadItem
+	for _, turn := range thread.Turns {
+		for _, item := range turn.Items {
+			if item.Type != appserver.ThreadItemParticipantMsg {
+				continue
+			}
+			if _, seen := existing[item.ID]; seen {
+				continue
+			}
+			ownedByParticipant := strings.TrimSpace(item.AgentID) == participantID
+			if item.Participant != nil {
+				ownedByParticipant = ownedByParticipant || strings.TrimSpace(item.Participant.ID) == participantID
+			}
+			if !ownedByParticipant {
+				continue
+			}
+			newest = item
+		}
+	}
+	return newest, newest.ID != ""
 }
 
 // startParticipantTurnWaitingForQuiesce starts a named-participant turn, briefly

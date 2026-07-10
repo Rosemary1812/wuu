@@ -135,8 +135,20 @@ func (s *Server) forwardParticipantMessages(threadID string, _ *agentcontrol.Age
 			if !ok {
 				return
 			}
-			if err := s.publishParticipantMessage(threadID, msg); err != nil {
-				providers.DebugLogf("publish participant message for thread %q: %v", threadID, err)
+			participantID := strings.TrimSpace(msg.ParticipantID)
+			speech, ok := s.residentParticipantSpeech(participantID).(residentParticipantSpeech)
+			if !ok {
+				providers.DebugLogf("resolve participant message target for thread %q: speech router unavailable", threadID)
+				continue
+			}
+			targetThreadID, subthreadID, err := speech.resolveTargetThread(strings.TrimSpace(msg.ThreadID))
+			if err != nil {
+				providers.DebugLogf("resolve participant message target for thread %q: %v", threadID, err)
+				continue
+			}
+			msg.ThreadID = subthreadID
+			if err := s.publishParticipantMessage(targetThreadID, msg); err != nil {
+				providers.DebugLogf("publish participant message for thread %q: %v", targetThreadID, err)
 			}
 		}
 	}

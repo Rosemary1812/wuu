@@ -139,15 +139,13 @@ func TestExecGroupChatEndToEndRegression(t *testing.T) {
 				"thread_id": "$group",
 				"task_name": "ada_status",
 				"prompt":    "The user asked for a status. Post a result. POST_GROUP $group",
-			}},
+			}, SaveAs: map[string]string{"anchor": "anchor_item_id"}},
 			// 4. Open a reply seeded with only Ada (weak-isolation subset).
 			{
 				Action: "open_reply",
 				Params: map[string]any{
 					"thread_id":      "$group",
-					"anchor_item_id": "seq-1",
-					"created_by":     "user",
-					"participants":   []any{ada.ID},
+					"anchor_item_id": "$anchor",
 				},
 				SaveAs: map[string]string{"cth": "subthread.id"},
 			},
@@ -165,7 +163,7 @@ func TestExecGroupChatEndToEndRegression(t *testing.T) {
 			// 7. Escalate the reply to a task with Ada as lead.
 			{
 				Action: "escalate_task",
-				Params: map[string]any{"thread_id": "$group", "subthread_id": "$cth", "created_by": "user", "lead_participant_id": ada.ID, "title": "Ship the retry fix"},
+				Params: map[string]any{"thread_id": "$group", "subthread_id": "$cth", "title": "Ship the retry fix"},
 				Expect: map[string]any{"subthread.lead_participant_id": ada.ID, "subthread.status": "task"},
 			},
 			// 8. Ada forks a memory-backed copy of herself.
@@ -215,10 +213,9 @@ func TestExecGroupChatEndToEndRegression(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadHistoryRecords: %v", err)
 	}
-	// A main-stream post's history record is owned by the group thread (tag ==
-	// groupID); a folded reply post is tagged with the cth. The load-bearing
-	// weak-isolation distinction is that the group post is NOT tagged with the
-	// cth and the reply posts ARE.
+	// A main-stream post has no subthread tag; a folded reply post is tagged with
+	// the cth. The load-bearing weak-isolation distinction is that the group post
+	// is NOT tagged with the cth and the reply posts ARE.
 	var sawGroupPost, sawReplyFold bool
 	for i := range history {
 		tag := strings.TrimSpace(history[i].ThreadID)
@@ -227,8 +224,8 @@ func TestExecGroupChatEndToEndRegression(t *testing.T) {
 			if tag == cthID {
 				t.Fatalf("group post should be on the main stream, but it folded into cth %q", cthID)
 			}
-			if tag != groupID {
-				t.Fatalf("group post should be owned by the group thread %q, got thread_id=%q", groupID, tag)
+			if tag != "" {
+				t.Fatalf("group post should have no subthread tag, got thread_id=%q", tag)
 			}
 			sawGroupPost = true
 		case "Answering inside the reply.":

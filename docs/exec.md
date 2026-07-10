@@ -371,11 +371,11 @@ wuu exec --input-json <<'JSON'
 
     { "action": "participant_turn", "as": "prt-ada",
       "params": { "thread_id": "$group", "task_name": "ada_status",
-                  "prompt": "Post a status result to thread $group." } },
+                  "prompt": "Post a status result to thread $group." },
+      "save_as": { "anchor": "anchor_item_id" } },
 
     { "action": "open_reply",
-      "params": { "thread_id": "$group", "anchor_item_id": "seq-1",
-                  "created_by": "user", "participants": ["prt-ada"] },
+      "params": { "thread_id": "$group", "anchor_item_id": "$anchor" },
       "save_as": { "cth": "subthread.id" } },
 
     { "action": "participant_turn", "as": "prt-ada",
@@ -388,7 +388,6 @@ wuu exec --input-json <<'JSON'
 
     { "action": "escalate_task",
       "params": { "thread_id": "$group", "subthread_id": "$cth",
-                  "created_by": "user", "lead_participant_id": "prt-ada",
                   "title": "Ship the retry fix" },
       "expect": { "subthread.status": "task",
                   "subthread.lead_participant_id": "prt-ada" } },
@@ -406,7 +405,7 @@ Actions split by how they reach the app server:
 - Directly-callable RPCs (`action` maps to an existing app-server method):
   `create_group`, `add_group_member`, `remove_group_member`,
   `save_participant`, `list_participants`, `retire_participant`, `open_reply`,
-  `list_replies`, `resolve_reply`, `escalate_task`, `bubble_reply`,
+  `list_replies`, `resolve_reply`, `escalate_task`,
   `post_subthread`.
 - Named turns (`post_message` / `participant_turn`, run with `as` set to a named
   participant id): run a turn AS that participant so its deterministic provider
