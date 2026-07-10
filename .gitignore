@@ -104,7 +104,8 @@ coverage.out
 # Personal scratch
 # ============================================================
 
-.paste/                         # personal paste-inbox for images
+# Personal paste-inbox for images.
+.paste/
 
 # local redesign reference (matvoyce analysis assets — do NOT commit/ship)
 landing/.redesign-ref/
