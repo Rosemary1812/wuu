@@ -281,11 +281,13 @@ class AppServerClient {
     if (this.child && !this.child.killed) {
       return;
     }
+    const sourceRoot = wuuSourceRoot();
+    const resourcesPath = (process as { resourcesPath?: string }).resourcesPath;
     const command = resolveWuuCommand(
       process.env,
       this.workdir,
-      wuuSourceRoot(),
-      (process as { resourcesPath?: string }).resourcesPath,
+      sourceRoot,
+      resourcesPath,
     );
     this.stoppedActivityIDs.clear();
     const appServerArgs = [
@@ -299,7 +301,12 @@ class AppServerClient {
     }
     this.child = spawnChild(command.command, appServerArgs, {
       cwd: command.cwd,
-      env: process.env,
+      env: cuaMacHelperEnvironment(
+        process.env,
+        sourceRoot,
+        resourcesPath,
+        process.platform,
+      ),
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -477,6 +484,28 @@ class AppServerClient {
       this.runningThreadIDs.delete(value.id);
     }
   }
+}
+
+export function cuaMacHelperEnvironment(
+  env: NodeJS.ProcessEnv,
+  sourceRoot: string | undefined,
+  resourcesPath: string | undefined,
+  platform: NodeJS.Platform,
+  exists: (path: string) => boolean = existsSync,
+): NodeJS.ProcessEnv {
+  const result = { ...env };
+  if (platform !== "darwin" || result.WUU_CUA_MAC_HELPER) {
+    return result;
+  }
+  const candidates = [
+    resourcesPath ? join(resourcesPath, "bin", "wuu-cua-mac") : undefined,
+    sourceRoot ? join(sourceRoot, "desktop", "build", "bin", "wuu-cua-mac") : undefined,
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  const helper = candidates.find(exists);
+  if (helper) {
+    result.WUU_CUA_MAC_HELPER = helper;
+  }
+  return result;
 }
 
 export function updateStoppedActivityIDs(

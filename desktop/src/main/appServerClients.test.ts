@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   activityServerRequestRejection,
   appServerExitMessage,
+  cuaMacHelperEnvironment,
   updateStoppedActivityIDs,
 } from "./appServerClients";
 
@@ -42,5 +43,41 @@ describe("appServerExitMessage", () => {
         stopped,
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("cuaMacHelperEnvironment", () => {
+  it("injects the packaged signed helper path on macOS", () => {
+    const result = cuaMacHelperEnvironment(
+      { HOME: "/Users/test" },
+      "/source",
+      "/Applications/wuu.app/Contents/Resources",
+      "darwin",
+      (path) => path === "/Applications/wuu.app/Contents/Resources/bin/wuu-cua-mac",
+    );
+    expect(result.WUU_CUA_MAC_HELPER).toBe(
+      "/Applications/wuu.app/Contents/Resources/bin/wuu-cua-mac",
+    );
+  });
+
+  it("uses the development helper without replacing an explicit override", () => {
+    const discovered = cuaMacHelperEnvironment(
+      {},
+      "/source",
+      undefined,
+      "darwin",
+      (path) => path === "/source/desktop/build/bin/wuu-cua-mac",
+    );
+    expect(discovered.WUU_CUA_MAC_HELPER).toBe(
+      "/source/desktop/build/bin/wuu-cua-mac",
+    );
+    const overridden = cuaMacHelperEnvironment(
+      { WUU_CUA_MAC_HELPER: "/custom/helper" },
+      "/source",
+      undefined,
+      "darwin",
+      () => true,
+    );
+    expect(overridden.WUU_CUA_MAC_HELPER).toBe("/custom/helper");
   });
 });

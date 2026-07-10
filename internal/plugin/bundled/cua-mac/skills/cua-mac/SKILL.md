@@ -1,6 +1,6 @@
 ---
 name: cua-mac
-description: Observe and control native macOS apps through background-first Accessibility actions. Use when a task requires interacting with a Mac app that has no safer CLI, API, or dedicated connector.
+description: Observe and control native macOS apps through Accessibility, ScreenCaptureKit, and native input. Use when a task requires interacting with a Mac app that has no safer CLI, API, or dedicated connector.
 ---
 
 # Computer Use for Mac
@@ -14,8 +14,8 @@ Use the `computer` tool from the `cua-mac` plugin for native macOS app interacti
 - Prefer fresh `element_id` values from the latest Accessibility snapshot.
 - Use `press`, `set_value`, and other semantic AX actions before coordinate input.
 - Re-observe after every group of actions. Never reuse stale element ids or screenshot coordinates.
-- Background-safe actions do not activate the target app or move the user's pointer.
-- If an action returns `foreground_required`, report the limitation. Never silently activate an app or synthesize global input.
+- Semantic AX actions are preferred. When they are unavailable, the tool automatically activates the target app and uses native mouse or keyboard events.
+- Coordinate, drag, key, typing, and scroll actions may take over the foreground app, pointer, or keyboard. This is normal CUA behavior and does not require a separate focus-control confirmation.
 
 ## Permissions
 

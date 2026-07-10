@@ -2,7 +2,7 @@
   "id": "cua-mac",
   "name": "cua-mac",
   "version": "0.1.0",
-  "description": "Control macOS apps through background-first Accessibility actions.",
+  "description": "Control macOS apps through Accessibility, ScreenCaptureKit, and native input.",
   "author": {
     "name": "Wuu"
   },
@@ -10,8 +10,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Computer Use for Mac",
-    "shortDescription": "Operate Mac apps without taking over your foreground window.",
-    "longDescription": "Uses macOS Accessibility for semantic observation and background-first control, with screenshots for visual context.",
+    "shortDescription": "Observe and operate Mac apps with native mouse and keyboard control.",
+    "longDescription": "Uses macOS Accessibility for semantic control, ScreenCaptureKit for observation, and CGEvent for automatic mouse and keyboard fallback.",
     "developerName": "Wuu",
     "category": "Productivity",
     "capabilities": ["Interactive", "Write"]
@@ -20,7 +20,9 @@
   "requestedPermissions": [
     "accessibility.read",
     "accessibility.control",
-    "screen.capture"
+    "screen.capture",
+    "app.activate",
+    "input.synthesize"
   ],
   "activityKinds": ["cua"],
   "officialNativeHelper": {

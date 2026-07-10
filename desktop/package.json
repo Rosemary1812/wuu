@@ -7,8 +7,9 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build:core": "node scripts/build-core.cjs",
+    "dev": "node scripts/build-cua-mac.cjs && electron-vite dev",
+    "build:cua-mac": "node scripts/build-cua-mac.cjs",
+    "build:core": "node scripts/build-core.cjs && node scripts/build-cua-mac.cjs",
     "build": "electron-vite build",
     "pack:mac": "npm run build:core && npm run build && electron-builder --mac dir --publish=never",
     "dist:mac": "npm run build:core && npm run build && electron-builder --mac dmg zip --publish=never",
