@@ -12,6 +12,7 @@ import (
 
 	"charm.land/catwalk/pkg/catwalk"
 
+	"github.com/blueberrycongee/wuu/internal/activity"
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/agenttemplate"
@@ -92,6 +93,7 @@ type Session struct {
 	AgentControl             *agentcontrol.AgentControl
 	ProcessManager           *process.Manager
 	Toolkit                  *tools.Toolkit
+	ActivityRegistry         *activity.Registry
 	WorkerClient             providers.StreamClient
 	ModelRoles               modelroles.Set
 	ModelBudget              modelbudget.Budget
@@ -135,6 +137,7 @@ type ThreadRuntime struct {
 	Toolkit           *tools.Toolkit
 	AgentControl      *agentcontrol.AgentControl
 	GoalRuntime       *goalruntime.Runtime
+	ActivityRegistry  *activity.Registry
 	ModelBudget       modelbudget.Budget
 	WorkerModelBudget modelbudget.Budget
 }
@@ -489,6 +492,7 @@ func NewSession(opts Options) (*Session, error) {
 		AgentControl:                agentControl,
 		ProcessManager:              processMgr,
 		Toolkit:                     toolkit,
+		ActivityRegistry:            activity.NewRegistry(),
 		WorkerClient:                workerClient,
 		ModelRoles:                  roleSelections,
 		ModelBudget:                 modelBudget,
@@ -901,6 +905,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		Toolkit:           kit,
 		AgentControl:      agentControl,
 		GoalRuntime:       goalRuntime,
+		ActivityRegistry:  s.ActivityRegistry,
 		ModelBudget:       s.ModelBudget,
 		WorkerModelBudget: s.WorkerModelBudget,
 	}, nil

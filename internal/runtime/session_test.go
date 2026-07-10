@@ -288,6 +288,16 @@ func TestNewSessionUsesUserStateNotWorkspaceDotWuu(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(rt.StateDir, "runtime", "processes")); err != nil {
 		t.Fatalf("process registry should be under user state: %v", err)
 	}
+	if rt.ActivityRegistry == nil {
+		t.Fatal("session must own an Activity registry")
+	}
+	threadRuntime, err := rt.NewThreadRuntime("thread-activity-test")
+	if err != nil {
+		t.Fatalf("NewThreadRuntime: %v", err)
+	}
+	if threadRuntime.ActivityRegistry != rt.ActivityRegistry {
+		t.Fatal("thread runtime must share the session Activity registry")
+	}
 }
 
 func TestNewSessionRetiresMemoryToolsAndInjectsMemdir(t *testing.T) {
