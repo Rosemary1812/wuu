@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProviderModelSummary, ProviderSummary } from "../shared/protocol";
 import {
+  codexEffortLabel,
   providerModelReasoningMode,
   providerModelVariantOptions
 } from "./RuntimeHelpers";
@@ -16,6 +17,13 @@ function providerWithModel(model: ProviderModelSummary | undefined): ProviderSum
     models: [model]
   };
 }
+
+describe("codexEffortLabel", () => {
+  it("distinguishes xhigh from max", () => {
+    expect(codexEffortLabel("xhigh")).toBe("超高");
+    expect(codexEffortLabel("max")).toBe("最大");
+  });
+});
 
 describe("providerModelVariantOptions", () => {
   it("returns only the default option when the model exposes no levels", () => {

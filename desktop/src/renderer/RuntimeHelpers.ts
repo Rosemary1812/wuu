@@ -29,8 +29,9 @@ export function codexEffortLabel(effort: string): string {
     case "high":
       return "高";
     case "xhigh":
-    case "max":
       return "超高";
+    case "max":
+      return "最大";
     default:
       return effort;
   }
