@@ -22,6 +22,9 @@ import type {
   GitCommitParams,
   GitPullRequestParams,
   BuildInfoResult,
+  ActivityActionResult,
+  ActivityListResult,
+  ActivityReleaseResult,
   CoreBuildInfo,
   DesktopBuildInfo,
   InputFile,
@@ -958,6 +961,18 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("wuu:mcp-auth-remove", (event, name: string) =>
     appServerRequest<MCPAuthRemoveResult>(event, "mcp/auth/remove", { name }),
+  );
+  ipcMain.handle("wuu:activity-list", (event, threadId: string) =>
+    appServerRequest<ActivityListResult>(event, "activity/list", { thread_id: threadId }),
+  );
+  ipcMain.handle("wuu:activity-takeover", (event, threadId: string, activityId: string) =>
+    appServerRequest<ActivityActionResult>(event, "activity/takeover", { thread_id: threadId, activity_id: activityId }),
+  );
+  ipcMain.handle("wuu:activity-release", (event, threadId: string, activityId: string) =>
+    appServerRequest<ActivityReleaseResult>(event, "activity/release", { thread_id: threadId, activity_id: activityId }),
+  );
+  ipcMain.handle("wuu:activity-stop", (event, threadId: string, activityId: string) =>
+    appServerRequest<ActivityActionResult>(event, "activity/stop", { thread_id: threadId, activity_id: activityId }),
   );
   ipcMain.handle(
     "wuu:thread-start",

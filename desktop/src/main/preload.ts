@@ -126,6 +126,13 @@ const api: WuuDesktopApi = {
   finishMCPAuth: (name: string, state: string, code: string) =>
     ipcRenderer.invoke("wuu:mcp-auth-finish", name, state, code),
   removeMCPAuth: (name: string) => ipcRenderer.invoke("wuu:mcp-auth-remove", name),
+  listActivities: (threadId: string) => ipcRenderer.invoke("wuu:activity-list", threadId),
+  takeoverActivity: (threadId: string, activityId: string) =>
+    ipcRenderer.invoke("wuu:activity-takeover", threadId, activityId),
+  releaseActivity: (threadId: string, activityId: string) =>
+    ipcRenderer.invoke("wuu:activity-release", threadId, activityId),
+  stopActivity: (threadId: string, activityId: string) =>
+    ipcRenderer.invoke("wuu:activity-stop", threadId, activityId),
   listCodexPets: () => ipcRenderer.invoke("wuu:codex-pets-list"),
   updateCodexPetSettings: (settings) =>
     ipcRenderer.invoke("wuu:codex-pets-update", settings),

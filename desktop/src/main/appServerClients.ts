@@ -195,6 +195,7 @@ class AppServerClient {
   private disposing = false;
   private lastUsedAt = Date.now();
   private lastStderr = "";
+  private stoppedActivityIDs = new Set<string>();
 
   constructor(
     readonly workdir: string,
@@ -286,6 +287,7 @@ class AppServerClient {
       wuuSourceRoot(),
       (process as { resourcesPath?: string }).resourcesPath,
     );
+    this.stoppedActivityIDs.clear();
     const appServerArgs = [
       ...command.args,
       "app-server",
@@ -364,12 +366,21 @@ class AppServerClient {
 
     const maybeRequest = message as Required<AppServerRequest>;
     if (maybeRequest.method && maybeRequest.id !== undefined) {
+      const rejection = activityServerRequestRejection(
+        maybeRequest,
+        this.stoppedActivityIDs,
+      );
+      if (rejection) {
+        this.reject(maybeRequest.id, rejection);
+        return;
+      }
       this.emit(this, { kind: "server-request", message: maybeRequest });
       return;
     }
 
     const maybeNotification = message as AppServerNotification;
     if (maybeNotification.method) {
+      updateStoppedActivityIDs(this.stoppedActivityIDs, maybeNotification);
       this.updateRunningFromNotification(maybeNotification);
       this.emit(this, { kind: "notification", message: maybeNotification });
       this.onStateChange();
@@ -466,6 +477,33 @@ class AppServerClient {
       this.runningThreadIDs.delete(value.id);
     }
   }
+}
+
+export function updateStoppedActivityIDs(
+  stoppedActivityIDs: Set<string>,
+  notification: AppServerNotification,
+): void {
+  if (notification.method !== "activity/stopped" || !isRecord(notification.params)) {
+    return;
+  }
+  const activityID = notification.params.id;
+  if (typeof activityID === "string" && activityID.trim() !== "") {
+    stoppedActivityIDs.add(activityID);
+  }
+}
+
+export function activityServerRequestRejection(
+  request: Required<AppServerRequest>,
+  stoppedActivityIDs: ReadonlySet<string>,
+): string | undefined {
+  if (!isRecord(request.params)) {
+    return undefined;
+  }
+  const activityID = request.params.activity_id;
+  if (typeof activityID !== "string" || !stoppedActivityIDs.has(activityID)) {
+    return undefined;
+  }
+  return `activity ${activityID} is stopped`;
 }
 
 export function appServerExitMessage(

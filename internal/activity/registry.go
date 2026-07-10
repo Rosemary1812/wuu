@@ -25,13 +25,31 @@ type registryEntry struct {
 }
 
 type Registry struct {
-	mu      sync.RWMutex
-	entries map[string]*registryEntry
-	now     func() time.Time
+	mu             sync.RWMutex
+	entries        map[string]*registryEntry
+	listeners      map[uint64]func(Event)
+	nextListenerID uint64
+	now            func() time.Time
 }
 
 func NewRegistry() *Registry {
-	return &Registry{entries: make(map[string]*registryEntry), now: time.Now}
+	return &Registry{entries: make(map[string]*registryEntry), listeners: make(map[uint64]func(Event)), now: time.Now}
+}
+
+func (r *Registry) Subscribe(listener func(Event)) func() {
+	if r == nil || listener == nil {
+		return func() {}
+	}
+	r.mu.Lock()
+	r.nextListenerID++
+	id := r.nextListenerID
+	r.listeners[id] = listener
+	r.mu.Unlock()
+	return func() {
+		r.mu.Lock()
+		delete(r.listeners, id)
+		r.mu.Unlock()
+	}
 }
 
 func (r *Registry) Start(options StartOptions) (Session, Lease, error) {
@@ -73,11 +91,13 @@ func (r *Registry) Start(options StartOptions) (Session, Lease, error) {
 		UpdatedAt:  now,
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if _, exists := r.entries[id]; exists {
+		r.mu.Unlock()
 		return Session{}, Lease{}, ErrAlreadyExists
 	}
 	r.entries[id] = &registryEntry{session: session, leaseToken: token}
+	r.mu.Unlock()
+	r.emit(Event{Type: EventStarted, Activity: session})
 	return session, Lease{ActivityID: id, ThreadID: options.ThreadID, Token: token}, nil
 }
 
@@ -105,19 +125,25 @@ func (r *Registry) List(threadID string) []Session {
 
 func (r *Registry) Update(threadID, activityID string, options UpdateOptions) (Session, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	entry, err := r.entryLocked(threadID, activityID)
 	if err != nil {
+		r.mu.Unlock()
 		return Session{}, err
 	}
 	if entry.session.State == StateStopped {
+		r.mu.Unlock()
 		return Session{}, ErrStopped
 	}
 	if options.State != "" {
 		if !validState(options.State) {
+			r.mu.Unlock()
 			return Session{}, fmt.Errorf("unsupported activity state %q", options.State)
 		}
 		entry.session.State = options.State
+		if options.State == StateStopped {
+			entry.leaseToken = ""
+			entry.session.Controller = ControllerNone
+		}
 	}
 	if options.Target != "" {
 		entry.session.Target = strings.TrimSpace(options.Target)
@@ -129,62 +155,83 @@ func (r *Registry) Update(threadID, activityID string, options UpdateOptions) (S
 		entry.session.Error = strings.TrimSpace(options.Error)
 	}
 	entry.session.UpdatedAt = r.now().UTC()
-	return entry.session, nil
+	session := entry.session
+	r.mu.Unlock()
+	eventType := EventUpdated
+	if session.State == StateStopped {
+		eventType = EventStopped
+	}
+	r.emit(Event{Type: eventType, Activity: session})
+	return session, nil
 }
 
 func (r *Registry) Takeover(threadID, activityID string) (Session, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	entry, err := r.entryLocked(threadID, activityID)
 	if err != nil {
+		r.mu.Unlock()
 		return Session{}, err
 	}
 	if entry.session.State == StateStopped {
+		r.mu.Unlock()
 		return Session{}, ErrStopped
 	}
 	entry.leaseToken = ""
 	entry.session.Controller = ControllerUser
 	entry.session.State = StateUserControlled
 	entry.session.UpdatedAt = r.now().UTC()
-	return entry.session, nil
+	session := entry.session
+	r.mu.Unlock()
+	r.emit(Event{Type: EventControlChanged, Activity: session})
+	return session, nil
 }
 
 func (r *Registry) Release(threadID, activityID string) (Session, Lease, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	entry, err := r.entryLocked(threadID, activityID)
 	if err != nil {
+		r.mu.Unlock()
 		return Session{}, Lease{}, err
 	}
 	if entry.session.State == StateStopped {
+		r.mu.Unlock()
 		return Session{}, Lease{}, ErrStopped
 	}
 	token, err := randomID("lease", 24)
 	if err != nil {
+		r.mu.Unlock()
 		return Session{}, Lease{}, err
 	}
 	entry.leaseToken = token
 	entry.session.Controller = ControllerAgent
 	entry.session.State = StateActive
 	entry.session.UpdatedAt = r.now().UTC()
-	return entry.session, Lease{ActivityID: entry.session.ID, ThreadID: entry.session.ThreadID, Token: token}, nil
+	session := entry.session
+	r.mu.Unlock()
+	r.emit(Event{Type: EventControlChanged, Activity: session})
+	return session, Lease{ActivityID: session.ID, ThreadID: session.ThreadID, Token: token}, nil
 }
 
 func (r *Registry) Stop(threadID, activityID string) (Session, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	entry, err := r.entryLocked(threadID, activityID)
 	if err != nil {
+		r.mu.Unlock()
 		return Session{}, err
 	}
 	if entry.session.State == StateStopped {
-		return entry.session, nil
+		session := entry.session
+		r.mu.Unlock()
+		return session, nil
 	}
 	entry.leaseToken = ""
 	entry.session.State = StateStopped
 	entry.session.Controller = ControllerNone
 	entry.session.UpdatedAt = r.now().UTC()
-	return entry.session, nil
+	session := entry.session
+	r.mu.Unlock()
+	r.emit(Event{Type: EventStopped, Activity: session})
+	return session, nil
 }
 
 func (r *Registry) CheckControl(threadID, activityID, token string) error {
@@ -212,6 +259,21 @@ func (r *Registry) entryLocked(threadID, activityID string) (*registryEntry, err
 		return nil, ErrThreadMismatch
 	}
 	return entry, nil
+}
+
+func (r *Registry) emit(event Event) {
+	if r == nil {
+		return
+	}
+	r.mu.RLock()
+	listeners := make([]func(Event), 0, len(r.listeners))
+	for _, listener := range r.listeners {
+		listeners = append(listeners, listener)
+	}
+	r.mu.RUnlock()
+	for _, listener := range listeners {
+		listener(event)
+	}
 }
 
 func validKind(kind Kind) bool {

@@ -29,6 +29,7 @@ import {
   useState,
 } from "react";
 import type {
+  ActivitySession,
   Agent,
   ConversationSubthread,
   SubthreadUpdatedNotification,
@@ -254,6 +255,12 @@ import {
 } from "./SidebarProjectState";
 import { useViewSwitchState } from "./ViewSwitchState";
 import {
+  activitiesForThread,
+  emptyActivitySessions,
+  mergeActivityList,
+  reduceActivitySessionEvent,
+} from "./ActivitySessions";
+import {
   loadPopOutRuntime,
   loadRuntime,
   selectRuntimeContext,
@@ -415,6 +422,7 @@ export function App(): JSX.Element {
   });
   const [historyMessageEdit, setHistoryMessageEdit] =
     useState<HistoryMessageEditState | undefined>(undefined);
+  const [activitySessions, setActivitySessions] = useState(emptyActivitySessions);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
   const appShellRef = useRef<HTMLDivElement>(null);
@@ -814,6 +822,94 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
+  const activeBrowserActivity = useMemo(
+    () =>
+      activitiesForThread(activitySessions, state.activeContext?.cwd, activeThreadID)
+        .filter((activity) => activity.kind === "browser" && activity.state !== "stopped")
+        .at(-1),
+    [activitySessions, activeThreadID, state.activeContext?.cwd],
+  );
+
+  useEffect(() => {
+    const workdir = state.activeContext?.cwd;
+    if (!workdir || !activeThreadID || typeof window.wuu.listActivities !== "function") {
+      return undefined;
+    }
+    let cancelled = false;
+    void window.wuu.listActivities(activeThreadID).then((result) => {
+      if (!cancelled) {
+        setActivitySessions((current) =>
+          mergeActivityList(current, workdir, activeThreadID, result.activities ?? []),
+        );
+      }
+    }).catch(() => {
+      // Live notifications still populate the panel when the initial list
+      // races app-server startup; ordinary app status handles transport errors.
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeThreadID, state.activeContext?.cwd]);
+
+  function mergeActivityResponse(activity: ActivitySession): void {
+    setActivitySessions((current) =>
+      mergeActivityList(current, activity.workdir, activity.thread_id, [activity]),
+    );
+  }
+
+  async function takeoverBrowserActivity(): Promise<void> {
+    if (!activeBrowserActivity) {
+      return;
+    }
+    try {
+      const result = await window.wuu.takeoverActivity(
+        activeBrowserActivity.thread_id,
+        activeBrowserActivity.id,
+      );
+      mergeActivityResponse(result.activity);
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: desktopApiErrorMessage(error, "无法接管浏览器"),
+      }));
+    }
+  }
+
+  async function releaseBrowserActivity(): Promise<void> {
+    if (!activeBrowserActivity) {
+      return;
+    }
+    try {
+      const result = await window.wuu.releaseActivity(
+        activeBrowserActivity.thread_id,
+        activeBrowserActivity.id,
+      );
+      mergeActivityResponse(result.activity);
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: desktopApiErrorMessage(error, "无法交还浏览器控制"),
+      }));
+    }
+  }
+
+  async function stopBrowserActivity(): Promise<void> {
+    if (!activeBrowserActivity) {
+      return;
+    }
+    try {
+      const result = await window.wuu.stopActivity(
+        activeBrowserActivity.thread_id,
+        activeBrowserActivity.id,
+      );
+      mergeActivityResponse(result.activity);
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        status: desktopApiErrorMessage(error, "无法停止浏览器 Activity"),
+      }));
+    }
+  }
   const {
     openSubthreadPanel,
     setOpenSubthreadPanel,
@@ -1282,6 +1378,7 @@ export function App(): JSX.Element {
       if (!mounted) {
         return;
       }
+      setActivitySessions((current) => reduceActivitySessionEvent(current, event));
       if (
         event.kind === "notification" &&
         event.message.method === "participant/updated"
@@ -4095,6 +4192,10 @@ export function App(): JSX.Element {
           pendingBrowserURL={pendingBrowserURL}
           onBrowserURLConsumed={consumePendingBrowserURL}
           onBrowserURLChange={rememberBrowserURLForActiveThread}
+          browserActivity={activeBrowserActivity}
+          onBrowserActivityTakeover={() => void takeoverBrowserActivity()}
+          onBrowserActivityRelease={() => void releaseBrowserActivity()}
+          onBrowserActivityStop={() => void stopBrowserActivity()}
         />
       )}
       {environmentDialog === "commit" ? (

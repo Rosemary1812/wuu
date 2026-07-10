@@ -2,6 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
+import type { ActivitySession } from "../shared/protocol";
 
 type FakeWebviewMethods = {
   loadURL: ReturnType<typeof vi.fn>;
@@ -77,6 +78,10 @@ function render(props: {
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
   onCurrentURLChange?: (url: string) => void;
+  activity?: ActivitySession;
+  onActivityTakeover?: () => void;
+  onActivityRelease?: () => void;
+  onActivityStop?: () => void;
 }) {
   act(() => {
     root = createRoot(container);
@@ -87,6 +92,10 @@ function render(props: {
         pendingBrowserURL={props.pendingBrowserURL}
         onBrowserURLConsumed={props.onBrowserURLConsumed}
         onCurrentURLChange={props.onCurrentURLChange}
+        activity={props.activity}
+        onActivityTakeover={props.onActivityTakeover}
+        onActivityRelease={props.onActivityRelease}
+        onActivityStop={props.onActivityStop}
       />
     );
   });
@@ -100,6 +109,10 @@ function rerender(props: {
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
   onCurrentURLChange?: (url: string) => void;
+  activity?: ActivitySession;
+  onActivityTakeover?: () => void;
+  onActivityRelease?: () => void;
+  onActivityStop?: () => void;
 }) {
   act(() => {
     root!.render(
@@ -109,6 +122,10 @@ function rerender(props: {
         pendingBrowserURL={props.pendingBrowserURL}
         onBrowserURLConsumed={props.onBrowserURLConsumed}
         onCurrentURLChange={props.onCurrentURLChange}
+        activity={props.activity}
+        onActivityTakeover={props.onActivityTakeover}
+        onActivityRelease={props.onActivityRelease}
+        onActivityStop={props.onActivityStop}
       />
     );
   });
@@ -169,5 +186,37 @@ describe("WorkspaceBrowserPanel pendingBrowserURL", () => {
     expect(fakeWebview.stop).toHaveBeenCalledTimes(1);
     expect(fakeWebview.loadURL).toHaveBeenCalledWith("about:blank");
     expect(changed).toHaveBeenLastCalledWith("wuu://new-tab");
+  });
+
+  it("renders Activity control and takeover, release, and stop commands", () => {
+    const takeover = vi.fn();
+    const release = vi.fn();
+    const stop = vi.fn();
+    const activity: ActivitySession = {
+      id: "activity-1",
+      kind: "browser",
+      thread_id: "thread-1",
+      workdir: "/repo",
+      state: "active",
+      controller: "agent",
+      created_at: "2026-07-10T10:00:00Z",
+      updated_at: "2026-07-10T10:00:01Z",
+    };
+    render({ activity, onActivityTakeover: takeover, onActivityRelease: release, onActivityStop: stop });
+    expect(container.textContent).toContain("Agent 控制");
+    (container.querySelector('button[aria-label="接管浏览器"]') as HTMLButtonElement | null)?.click();
+    (container.querySelector('button[aria-label="停止浏览器 Activity"]') as HTMLButtonElement | null)?.click();
+    expect(takeover).toHaveBeenCalledTimes(1);
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    rerender({
+      activity: { ...activity, state: "user_controlled", controller: "user", updated_at: "2026-07-10T10:00:02Z" },
+      onActivityTakeover: takeover,
+      onActivityRelease: release,
+      onActivityStop: stop,
+    });
+    expect(container.textContent).toContain("你正在控制");
+    (container.querySelector('button[aria-label="交还浏览器给 Agent"]') as HTMLButtonElement | null)?.click();
+    expect(release).toHaveBeenCalledTimes(1);
   });
 });

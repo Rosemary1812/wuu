@@ -14,7 +14,7 @@ import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { FileDiff, FileText, FolderOpen, Globe, Maximize2, Minimize2, Plus, ShieldCheck, Terminal, X } from "lucide-react";
-import type { GitStatusResult, RuntimeContext } from "../shared/protocol";
+import type { ActivitySession, GitStatusResult, RuntimeContext } from "../shared/protocol";
 import { TurnFileDiffPanel } from "./TurnFileDiffPanel";
 import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
 import { WorkspaceFilePreview, WorkspaceFileTree, type WorkspaceFileDirtyState } from "./WorkspaceFiles";
@@ -57,7 +57,11 @@ export function WorkspaceRightPanel({
   onToggleGlobalize,
   pendingBrowserURL,
   onBrowserURLConsumed,
-  onBrowserURLChange
+  onBrowserURLChange,
+  browserActivity,
+  onBrowserActivityTakeover,
+  onBrowserActivityRelease,
+  onBrowserActivityStop,
 }: {
   open: boolean;
   present: boolean;
@@ -85,6 +89,10 @@ export function WorkspaceRightPanel({
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
   onBrowserURLChange?: (url: string) => void;
+  browserActivity?: ActivitySession;
+  onBrowserActivityTakeover?: () => void;
+  onBrowserActivityRelease?: () => void;
+  onBrowserActivityStop?: () => void;
 }): JSX.Element {
   const activeTab = activeTabID ? tabs.find((tab) => tab.id === activeTabID) : undefined;
   const fileTabs = tabs.filter((tab): tab is WorkspaceFileViewTab => tab.kind === "file");
@@ -283,6 +291,10 @@ export function WorkspaceRightPanel({
                 pendingBrowserURL={pendingBrowserURL}
                 onBrowserURLConsumed={onBrowserURLConsumed}
                 onCurrentURLChange={onBrowserURLChange}
+                activity={browserActivity}
+                onActivityTakeover={onBrowserActivityTakeover}
+                onActivityRelease={onBrowserActivityRelease}
+                onActivityStop={onBrowserActivityStop}
               />
             ) : null}
           </div>

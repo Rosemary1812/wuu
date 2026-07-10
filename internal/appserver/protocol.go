@@ -89,6 +89,10 @@ const (
 	MethodMCPAuthStatus    = "mcp/auth/status"
 	MethodMCPAuthFinish    = "mcp/auth/finish"
 	MethodMCPAuthRemove    = "mcp/auth/remove"
+	MethodActivityList     = "activity/list"
+	MethodActivityTakeover = "activity/takeover"
+	MethodActivityRelease  = "activity/release"
+	MethodActivityStop     = "activity/stop"
 	MethodShutdown         = "shutdown"
 	// MethodSettingsUsage returns the aggregated per-provider/model token
 	// usage snapshot for the desktop settings page. Range filter selects
@@ -97,16 +101,20 @@ const (
 	MethodDevicePushRegister   = "device/push_register"
 	MethodDevicePushUnregister = "device/push_unregister"
 
-	NotificationThreadStarted      = "thread/started"
-	NotificationThreadResumed      = "thread/resumed"
-	NotificationThreadUpdated      = "thread/updated"
-	NotificationParticipantUpdated = "participant/updated"
-	NotificationTurnStarted        = "turn/started"
-	NotificationTurnQueued         = "turn/queued"
-	NotificationTurnDequeued       = "turn/dequeued"
-	NotificationTurnEvent          = "turn/event"
-	NotificationTurnError          = "turn/error"
-	NotificationTurnCompleted      = "turn/completed"
+	NotificationThreadStarted          = "thread/started"
+	NotificationThreadResumed          = "thread/resumed"
+	NotificationThreadUpdated          = "thread/updated"
+	NotificationParticipantUpdated     = "participant/updated"
+	NotificationTurnStarted            = "turn/started"
+	NotificationTurnQueued             = "turn/queued"
+	NotificationTurnDequeued           = "turn/dequeued"
+	NotificationTurnEvent              = "turn/event"
+	NotificationTurnError              = "turn/error"
+	NotificationTurnCompleted          = "turn/completed"
+	NotificationActivityStarted        = "activity/started"
+	NotificationActivityUpdated        = "activity/updated"
+	NotificationActivityControlChanged = "activity/control_changed"
+	NotificationActivityStopped        = "activity/stopped"
 	// NotificationTurnUsage carries cumulative input/output token counts
 	// for an in-flight turn so live UIs can render a real-time generation
 	// speed gauge. Appserver-side throttles to a small number of pushes
@@ -295,6 +303,43 @@ type MCPAuthFinishResult struct {
 type MCPAuthRemoveResult struct {
 	Auth   MCPAuthStatusResult `json:"auth"`
 	Server MCPServerStatus     `json:"server"`
+}
+
+type ActivitySession struct {
+	ID         string    `json:"id"`
+	Kind       string    `json:"kind"`
+	ThreadID   string    `json:"thread_id"`
+	Workdir    string    `json:"workdir"`
+	PluginID   string    `json:"plugin_id,omitempty"`
+	Target     string    `json:"target,omitempty"`
+	State      string    `json:"state"`
+	Controller string    `json:"controller"`
+	Preview    string    `json:"preview,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type ActivityListParams struct {
+	ThreadID string `json:"thread_id"`
+}
+
+type ActivityListResult struct {
+	Activities []ActivitySession `json:"activities"`
+}
+
+type ActivityActionParams struct {
+	ThreadID   string `json:"thread_id"`
+	ActivityID string `json:"activity_id"`
+}
+
+type ActivityActionResult struct {
+	Activity ActivitySession `json:"activity"`
+}
+
+type ActivityReleaseResult struct {
+	Activity   ActivitySession `json:"activity"`
+	LeaseToken string          `json:"lease_token"`
 }
 
 type ExtensionTrustSummary struct {

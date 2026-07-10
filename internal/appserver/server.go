@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/activity"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/credentialstore"
@@ -245,6 +246,11 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		if manager := rt.Toolkit.MCPManager(); manager != nil {
 			manager.SetOAuthManager(mcp.NewOAuthManager(store, httpClient))
 		}
+	}
+	if rt != nil && rt.ActivityRegistry != nil {
+		rt.ActivityRegistry.Subscribe(func(event activity.Event) {
+			s.notifyActivityEvent(event)
+		})
 	}
 	if rt != nil {
 		// Only seed Andy when the runtime is actually usable: test-only
@@ -482,6 +488,14 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleMCPAuthFinish(ctx, req)
 	case MethodMCPAuthRemove:
 		return s.handleMCPAuthRemove(ctx, req)
+	case MethodActivityList:
+		return s.handleActivityList(req)
+	case MethodActivityTakeover:
+		return s.handleActivityTakeover(req)
+	case MethodActivityRelease:
+		return s.handleActivityRelease(req)
+	case MethodActivityStop:
+		return s.handleActivityStop(req)
 	case MethodShutdown:
 		if err := s.writeResponse(req.ID, OKResult{OK: true}, nil); err != nil {
 			return err

@@ -1254,6 +1254,33 @@
   color: var(--ink-muted);
 }
 
+.workspace-browser-activity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.workspace-browser-activity-state {
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.workspace-browser-activity-state.user {
+  color: var(--warning);
+}
+
+.workspace-browser-activity-state.agent {
+  color: var(--success);
+}
+
+.workspace-browser-activity-button {
+  width: 24px;
+  height: 24px;
+}
+
 .workspace-browser-loading-dot {
   flex: 0 0 auto;
   width: 8px;

@@ -28,6 +28,20 @@ const (
 	ControllerNone  Controller = "none"
 )
 
+type EventType string
+
+const (
+	EventStarted        EventType = "started"
+	EventUpdated        EventType = "updated"
+	EventControlChanged EventType = "control_changed"
+	EventStopped        EventType = "stopped"
+)
+
+type Event struct {
+	Type     EventType
+	Activity Session
+}
+
 type Session struct {
 	ID         string     `json:"id"`
 	Kind       Kind       `json:"kind"`

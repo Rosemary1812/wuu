@@ -1,10 +1,13 @@
 import {
   ArrowLeft,
   ArrowRight,
+  Bot,
   Globe,
+  Hand,
   RotateCw,
   Search,
   ShieldAlert,
+  Square,
   X
 } from "lucide-react";
 import {
@@ -14,7 +17,7 @@ import {
   useState,
   type FormEvent
 } from "react";
-import type { RuntimeContext } from "../shared/protocol";
+import type { ActivitySession, RuntimeContext } from "../shared/protocol";
 import { WorkspacePanelEmpty } from "./WorkspaceFiles";
 
 const HOME_PAGE_URL = "wuu://new-tab";
@@ -98,13 +101,21 @@ export function WorkspaceBrowserPanel({
   activeContext,
   pendingBrowserURL,
   onBrowserURLConsumed,
-  onCurrentURLChange
+  onCurrentURLChange,
+  activity,
+  onActivityTakeover,
+  onActivityRelease,
+  onActivityStop,
 }: {
   open?: boolean;
   activeContext?: RuntimeContext;
   pendingBrowserURL?: string;
   onBrowserURLConsumed?: () => void;
   onCurrentURLChange?: (url: string) => void;
+  activity?: ActivitySession;
+  onActivityTakeover?: () => void;
+  onActivityRelease?: () => void;
+  onActivityStop?: () => void;
 }): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const webviewRef = useRef<WebviewElement | null>(null);
@@ -458,10 +469,63 @@ export function WorkspaceBrowserPanel({
         <span className="workspace-browser-title-hint">
           {pageTitle || (isInternalUrl(currentURL) ? HOME_PAGE_TITLE : "")}
         </span>
+        {activity && activity.state !== "stopped" ? (
+          <span className="workspace-browser-activity">
+            <span className={`workspace-browser-activity-state ${activity.controller}`}>
+              {browserActivityLabel(activity)}
+            </span>
+            {activity.controller === "user" ? (
+              <button
+                className="icon-button workspace-browser-activity-button"
+                type="button"
+                aria-label="交还浏览器给 Agent"
+                title="交还给 Agent"
+                onClick={onActivityRelease}
+              >
+                <Bot className="icon-sm" />
+              </button>
+            ) : (
+              <button
+                className="icon-button workspace-browser-activity-button"
+                type="button"
+                aria-label="接管浏览器"
+                title="接管浏览器"
+                onClick={onActivityTakeover}
+              >
+                <Hand className="icon-sm" />
+              </button>
+            )}
+            <button
+              className="icon-button workspace-browser-activity-button"
+              type="button"
+              aria-label="停止浏览器 Activity"
+              title="停止 Activity"
+              onClick={onActivityStop}
+            >
+              <Square className="icon-sm" />
+            </button>
+          </span>
+        ) : null}
         {isLoading ? <span className="workspace-browser-loading-dot" aria-hidden="true" /> : null}
       </div>
     </div>
   );
+}
+
+function browserActivityLabel(activity: ActivitySession): string {
+  if (activity.state === "waiting_confirmation") {
+    return "等待确认";
+  }
+  if (activity.state === "error") {
+    return "Activity 出错";
+  }
+  if (activity.controller === "user") {
+    return "你正在控制";
+  }
+  if (activity.controller === "agent") {
+    return "Agent 控制";
+  }
+  return "未分配控制";
 }
 
 function WorkspaceBrowserHome({

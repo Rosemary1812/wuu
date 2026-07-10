@@ -374,6 +374,34 @@ export type MCPAuthRemoveResult = {
   server: MCPServerStatus;
 };
 
+export type ActivitySession = {
+  id: string;
+  kind: "browser" | "cua";
+  thread_id: string;
+  workdir: string;
+  plugin_id?: string;
+  target?: string;
+  state: "starting" | "active" | "user_controlled" | "waiting_confirmation" | "stopped" | "error";
+  controller: "agent" | "user" | "none";
+  preview?: string;
+  error?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ActivityListResult = {
+  activities: ActivitySession[];
+};
+
+export type ActivityActionResult = {
+  activity: ActivitySession;
+};
+
+export type ActivityReleaseResult = {
+  activity: ActivitySession;
+  lease_token: string;
+};
+
 export type RuntimeConnectionUpdate = {
   base_url?: string;
   api_key?: string;
@@ -1866,6 +1894,10 @@ export type WuuDesktopApi = {
   getMCPAuthStatus: (name: string) => Promise<MCPAuthStatusResult>;
   finishMCPAuth: (name: string, state: string, code: string) => Promise<MCPAuthFinishResult>;
   removeMCPAuth: (name: string) => Promise<MCPAuthRemoveResult>;
+  listActivities: (threadId: string) => Promise<ActivityListResult>;
+  takeoverActivity: (threadId: string, activityId: string) => Promise<ActivityActionResult>;
+  releaseActivity: (threadId: string, activityId: string) => Promise<ActivityReleaseResult>;
+  stopActivity: (threadId: string, activityId: string) => Promise<ActivityActionResult>;
   listSkills: () => Promise<SkillListResult>;
   listAgentTemplates: () => Promise<AgentTemplateListResult>;
   startThread: (params?: ThreadStartParams) => Promise<{ thread: Thread }>;
