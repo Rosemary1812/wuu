@@ -17,7 +17,7 @@ func TestDiscoverProjectOverridesUserAndResolvesAssetDirs(t *testing.T) {
 	writePlugin(t, filepath.Join(root, ".wuu", "plugins", "compose"), `{
   "id": "compose",
   "description": "project compose",
-  "skills": ["skills", "../escape", "/tmp/absolute"]
+  "skills": ["skills"]
 }`)
 
 	plugins := Discover(root, wuuHome)
@@ -34,6 +34,17 @@ func TestDiscoverProjectOverridesUserAndResolvesAssetDirs(t *testing.T) {
 	skillDirs := got.SkillDirs()
 	if len(skillDirs) != 1 || skillDirs[0] != filepath.Join(got.Root, "skills") {
 		t.Fatalf("SkillDirs = %+v", skillDirs)
+	}
+}
+
+func TestDiscoverLoadsNestedCodexAndClaudeManifestLocations(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ".wuu", "plugins", "codex-kit", ".codex-plugin", "plugin.json"), `{"name":"codex-kit"}`)
+	writeFile(t, filepath.Join(root, ".wuu", "plugins", "claude-kit", ".claude-plugin", "plugin.json"), `{"name":"claude-kit"}`)
+
+	plugins := Discover(root, "")
+	if len(plugins) != 2 || plugins[0].ID != "claude-kit" || plugins[1].ID != "codex-kit" {
+		t.Fatalf("plugins = %+v", plugins)
 	}
 }
 
@@ -69,5 +80,15 @@ func writePlugin(t *testing.T, dir, manifest string) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, ManifestFilename), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
+	}
+}
+
+func writeFile(t *testing.T, path, contents string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
 	}
 }

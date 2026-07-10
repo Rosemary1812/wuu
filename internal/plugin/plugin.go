@@ -1,33 +1,18 @@
 package plugin
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/blueberrycongee/wuu/internal/config"
 )
-
-const ManifestFilename = "plugin.json"
-
-type Manifest struct {
-	ID          string                            `json:"id"`
-	Name        string                            `json:"name,omitempty"`
-	Description string                            `json:"description,omitempty"`
-	Version     string                            `json:"version,omitempty"`
-	Skills      []string                          `json:"skills,omitempty"`
-	Hooks       map[string][]config.HookEntry     `json:"hooks,omitempty"`
-	MCPServers  map[string]config.MCPServerConfig `json:"mcp_servers,omitempty"`
-}
 
 type Plugin struct {
 	Manifest
 	Source       string
 	Root         string
 	ManifestPath string
+	Official     bool
 }
 
 func Discover(projectRoot, wuuHome string) []Plugin {
@@ -50,32 +35,6 @@ func Discover(projectRoot, wuuHome string) []Plugin {
 		return out[i].ID < out[j].ID
 	})
 	return out
-}
-
-func LoadManifest(path, source string) (Plugin, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Plugin{}, fmt.Errorf("read plugin manifest: %w", err)
-	}
-	var manifest Manifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return Plugin{}, fmt.Errorf("parse plugin manifest: %w", err)
-	}
-	id := strings.TrimSpace(manifest.ID)
-	if id == "" {
-		return Plugin{}, fmt.Errorf("plugin manifest %s requires id", path)
-	}
-	manifest.ID = id
-	manifest.Name = strings.TrimSpace(manifest.Name)
-	manifest.Description = strings.TrimSpace(manifest.Description)
-	manifest.Version = strings.TrimSpace(manifest.Version)
-	root := filepath.Dir(path)
-	return Plugin{
-		Manifest:     manifest,
-		Source:       source,
-		Root:         root,
-		ManifestPath: path,
-	}, nil
 }
 
 func (p Plugin) SkillDirs() []string {
@@ -139,7 +98,13 @@ func scanPluginRoots(roots []string, source string) []Plugin {
 }
 
 func loadPluginDir(dir, source string) (Plugin, error) {
-	return LoadManifest(filepath.Join(dir, ManifestFilename), source)
+	for _, rel := range []string{ManifestFilename, CodexManifestFilename, ClaudeManifestFilename} {
+		path := filepath.Join(dir, rel)
+		if plugin, err := LoadManifest(path, source); err == nil {
+			return plugin, nil
+		}
+	}
+	return Plugin{}, os.ErrNotExist
 }
 
 func userPluginRoots(wuuHome string) []string {

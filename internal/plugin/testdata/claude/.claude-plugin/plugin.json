@@ -1,0 +1,9 @@
+{
+  "name": "claude-demo",
+  "description": "Claude-compatible package",
+  "mcp_servers": {
+    "docs": {"command": "claude-docs"}
+  },
+  "platforms": ["darwin"],
+  "requested_permissions": ["process.spawn"]
+}

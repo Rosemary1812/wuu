@@ -547,6 +547,49 @@ Brainstorm options.
 	}
 }
 
+func TestNewSessionConsumesCodexPluginManifestAssets(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	pluginRoot := filepath.Join(root, ".wuu", "plugins", "codex-kit")
+	writeSessionTestFile(t, filepath.Join(pluginRoot, ".codex-plugin", "plugin.json"), `{
+  "name": "codex-kit",
+  "skills": "./skills",
+  "mcpServers": {"docs": {"command": "codex-docs"}}
+}`)
+	writeSessionTestFile(t, filepath.Join(pluginRoot, "skills", "review", "SKILL.md"), `---
+name: codex-review
+description: Review through a Codex-format plugin.
+---
+Review the change.
+`)
+
+	cfg := config.Config{
+		DefaultProvider: "test",
+		Providers: map[string]config.ProviderConfig{
+			"test": {Type: "openai-compatible", BaseURL: "https://example.test/v1", APIKeyEnv: "TEST_WUU_KEY", Model: "gpt-test"},
+		},
+	}
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config:     cfg,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if skill, ok := skills.Find(rt.Skills, "review"); !ok || skill.Source != "plugin:codex-kit" {
+		t.Fatalf("Codex plugin skill not discovered: %+v", rt.Skills)
+	}
+	servers := mcpServersFromConfigAndPlugins(cfg, rt.Plugins)
+	if servers["plugin.codex-kit.docs"].Command != "codex-docs" {
+		t.Fatalf("Codex plugin MCP server not normalized: %+v", servers)
+	}
+}
+
 func TestDiscoverSkillsUsesOpencodeAndAgentsPaths(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

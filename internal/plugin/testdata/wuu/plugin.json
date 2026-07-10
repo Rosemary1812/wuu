@@ -1,0 +1,14 @@
+{
+  "id": "wuu-demo",
+  "name": "Wuu Demo",
+  "skills": ["skills"],
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "read_file", "command": "wuu-hook"}
+    ]
+  },
+  "mcp_servers": {
+    "docs": {"command": "wuu-docs"}
+  },
+  "requested_permissions": ["network"]
+}
