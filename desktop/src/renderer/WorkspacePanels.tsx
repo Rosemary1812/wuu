@@ -21,6 +21,7 @@ import { WorkspaceFilePreview, WorkspaceFileTree, type WorkspaceFileDirtyState }
 import { WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
 import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
 import type { WorkspaceFileViewTab, WorkspaceViewTab } from "./WorkspaceViewTabs";
+import { handleTabListKeyDown } from "./TabKeyboardNavigation";
 
 export type WorkspacePanelView = "files" | "review" | "terminal" | "browser";
 
@@ -170,7 +171,12 @@ export function WorkspaceRightPanel({
           onDragCancel={cancelTabDrag}
         >
           <SortableContext items={tabs.map((tab) => tab.id)} strategy={horizontalListSortingStrategy}>
-            <div className="workspace-panel-tabs" role="tablist" aria-label="右侧栏工具">
+            <div
+              className="workspace-panel-tabs"
+              role="tablist"
+              aria-label="产物与工具"
+              onKeyDown={handleTabListKeyDown}
+            >
               {tabs.map((tab) => {
                 const active = tab.id === activeTabID;
                 return (
@@ -178,6 +184,7 @@ export function WorkspaceRightPanel({
                     key={tab.id}
                     tab={tab}
                     active={active}
+                    dirty={dirtyFileTabIDs.has(tab.id)}
                     open={open}
                     reorderable={tabs.length > 1}
                     onSelect={() => onSelectTab(tab.id)}
@@ -192,6 +199,7 @@ export function WorkspaceRightPanel({
               <WorkspaceViewTabPreview
                 tab={draggingTab}
                 active={draggingTab.id === activeTabID}
+                dirty={dirtyFileTabIDs.has(draggingTab.id)}
                 width={draggingTabWidth}
               />
             ) : null}
@@ -211,7 +219,8 @@ export function WorkspaceRightPanel({
         <button
           className={`icon-button workspace-panel-globalize${globalized ? " active" : ""}`}
           type="button"
-          aria-label={globalized ? "退出全局化" : "全局化右侧栏"}
+          aria-label={globalized ? "退出全面板" : "展开为全面板"}
+          title={globalized ? "退出全面板" : "展开为全面板"}
           aria-pressed={globalized}
           disabled={!open}
           onClick={onToggleGlobalize}
@@ -306,6 +315,7 @@ function WorkspaceFileResource({
 function SortableWorkspaceViewTab({
   tab,
   active,
+  dirty,
   open,
   reorderable,
   onSelect,
@@ -313,6 +323,7 @@ function SortableWorkspaceViewTab({
 }: {
   tab: WorkspaceViewTab;
   active: boolean;
+  dirty: boolean;
   open: boolean;
   reorderable: boolean;
   onSelect: () => void;
@@ -332,7 +343,7 @@ function SortableWorkspaceViewTab({
   return (
     <div
       ref={setNodeRef}
-      className={`workspace-tool-tab${active ? " active" : ""}${reorderable ? " can-reorder" : ""}${
+      className={`workspace-tool-tab${active ? " active" : ""}${dirty ? " dirty" : ""}${reorderable ? " can-reorder" : ""}${
         isDragging ? " dragging" : ""
       }`}
       style={style}
@@ -342,16 +353,19 @@ function SortableWorkspaceViewTab({
         ref={setActivatorNodeRef}
         className="workspace-tool-tab-main"
         type="button"
+        {...dragAttributes}
+        {...listeners}
         role="tab"
         aria-selected={active}
+        aria-label={dirty ? `${label}，有未保存修改` : label}
+        tabIndex={active ? 0 : -1}
         title={tooltip}
         disabled={!open}
         onClick={onSelect}
-        {...dragAttributes}
-        {...listeners}
       >
         <WorkspaceViewTabIcon tab={tab} className="icon" />
         <span>{label}</span>
+        {dirty ? <span className="workspace-tab-dirty-indicator" aria-hidden="true" /> : null}
       </button>
       <button
         className="workspace-tool-tab-close"
@@ -373,18 +387,21 @@ function SortableWorkspaceViewTab({
 function WorkspaceViewTabPreview({
   tab,
   active,
+  dirty,
   width
 }: {
   tab: WorkspaceViewTab;
   active: boolean;
+  dirty: boolean;
   width?: number;
 }): JSX.Element {
   const label = workspaceViewTabLabel(tab);
   return (
-    <div className={`workspace-tool-tab workspace-tool-tab-drag-overlay${active ? " active" : ""}`} style={width ? { width } : undefined}>
+    <div className={`workspace-tool-tab workspace-tool-tab-drag-overlay${active ? " active" : ""}${dirty ? " dirty" : ""}`} style={width ? { width } : undefined}>
       <div className="workspace-tool-tab-main">
         <WorkspaceViewTabIcon tab={tab} className="icon" />
         <span>{label}</span>
+        {dirty ? <span className="workspace-tab-dirty-indicator" aria-hidden="true" /> : null}
       </div>
       <div className="workspace-tool-tab-close" aria-hidden="true">
         <X className="icon-xs" />

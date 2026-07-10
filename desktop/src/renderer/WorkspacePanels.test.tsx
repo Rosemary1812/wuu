@@ -142,6 +142,33 @@ function baseProps(): Parameters<typeof WorkspaceRightPanel>[0] {
 }
 
 describe("WorkspaceRightPanel", () => {
+  it("presents the workspace expansion as full-panel focus mode", () => {
+    const onToggleGlobalize = vi.fn();
+    mount(
+      <WorkspaceRightPanel
+        {...baseProps()}
+        onToggleGlobalize={onToggleGlobalize}
+      />,
+    );
+
+    const expand = container?.querySelector<HTMLButtonElement>('[aria-label="展开为全面板"]');
+    expect(expand).not.toBeNull();
+    expect(expand?.title).toBe("展开为全面板");
+    act(() => expand?.click());
+    expect(onToggleGlobalize).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      root?.render(
+        <WorkspaceRightPanel
+          {...baseProps()}
+          globalized
+          onToggleGlobalize={onToggleGlobalize}
+        />,
+      );
+    });
+    expect(container?.querySelector('[aria-label="退出全面板"]')).not.toBeNull();
+  });
+
   it("renders an editable file resource inside the right workspace", async () => {
     const fileTab = workspaceFileViewTab({
       context: {
@@ -237,6 +264,8 @@ describe("WorkspaceRightPanel", () => {
       fileResource(fileTab.id)?.querySelector<HTMLButtonElement>(".mock-editor-edit")?.click();
     });
     expect(onDirtyFileTabsChange).toHaveBeenLastCalledWith(true);
+    expect(container?.querySelector(".workspace-tool-tab.dirty")).not.toBeNull();
+    expect(container?.querySelector(".workspace-tab-dirty-indicator")).not.toBeNull();
     act(() => {
       container?.querySelector<HTMLButtonElement>(".workspace-tool-tab-close")?.click();
     });
@@ -325,6 +354,22 @@ describe("WorkspaceRightPanel", () => {
 
     const diffBTab = container?.querySelector(".workspace-tool-tab.active");
     expect(diffBTab?.textContent).toContain("b.txt");
+    expect(container?.querySelector(".workspace-panel-tabs")?.getAttribute("aria-label")).toBe(
+      "产物与工具",
+    );
+    const semanticTabs = container?.querySelectorAll<HTMLButtonElement>(".workspace-tool-tab-main");
+    expect(semanticTabs?.[0]?.getAttribute("role")).toBe("tab");
+    expect(semanticTabs?.[0]?.tabIndex).toBe(-1);
+    expect(semanticTabs?.[2]?.getAttribute("aria-selected")).toBe("true");
+    expect(semanticTabs?.[2]?.tabIndex).toBe(0);
+    semanticTabs?.[2]?.focus();
+    act(() => {
+      semanticTabs?.[2]?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }),
+      );
+    });
+    expect(onSelectTab).toHaveBeenCalledWith(diffA.id);
+    expect(document.activeElement).toBe(semanticTabs?.[1]);
 
     const diffAButton = Array.from(
       container?.querySelectorAll<HTMLButtonElement>(".workspace-tool-tab-main") ?? [],

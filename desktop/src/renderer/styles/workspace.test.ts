@@ -16,6 +16,22 @@ function cssRuleBody(selector: string): string {
 }
 
 describe("workspace right panel chrome", () => {
+  it("uses a flat artifact rail that expands cleanly in full-panel mode", () => {
+    const panel = cssRuleBody(".workspace-right-panel");
+    const tab = cssRuleBody(".workspace-tool-tab");
+    const active = cssRuleBody(".workspace-tool-tab.active");
+    const activeEdge = cssRuleBody(".workspace-tool-tab.active::after");
+    const spacer = cssRuleBody(".workspace-panel-tabbar-spacer");
+
+    expect(panel).toMatch(/container-type:\s*inline-size;/);
+    expect(tab).toMatch(/border:\s*0;/);
+    expect(tab).toMatch(/border-radius:\s*var\(--radius-xs\);/);
+    expect(tab).toMatch(/background:\s*transparent;/);
+    expect(active).not.toMatch(/box-shadow:/);
+    expect(activeEdge).toMatch(/background:\s*var\(--wuu-accent\);/);
+    expect(spacer).toMatch(/flex:\s*0\s+0\s+2px;/);
+  });
+
   it("matches the visible session titlebar height so the pane headers align", () => {
     expect(cssRuleBody(".workspace-right-panel")).toMatch(
       /grid-template-rows:\s*48px\s+minmax\(0,\s*1fr\);/,

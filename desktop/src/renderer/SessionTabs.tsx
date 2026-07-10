@@ -32,6 +32,7 @@ import {
   type PendingComposerMessagesByThread,
 } from "./ComposerPendingMessages";
 import { ThreadContextMenu, type ThreadContextMenuItem } from "./ThreadContextMenu";
+import { handleTabListKeyDown } from "./TabKeyboardNavigation";
 
 const POP_OUT_DRAG_DISTANCE_PX = 54;
 
@@ -147,7 +148,12 @@ export function SessionTabStrip({
             items={state.sessionTabs.map((tab) => tab.id)}
             strategy={horizontalListSortingStrategy}
           >
-            <div className="session-tab-scroll">
+            <div
+              className="session-tab-scroll"
+              role="tablist"
+              aria-label="对话"
+              onKeyDown={handleTabListKeyDown}
+            >
               {state.sessionTabs.map((tab) => {
                 const active = tab.id === state.activeSessionTabID;
                 const tabThread =
@@ -323,6 +329,7 @@ function SortableSessionTab({
     id,
     disabled: !draggable,
   });
+  const { role: _dragRole, ...dragAttributes } = attributes;
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -344,13 +351,15 @@ function SortableSessionTab({
         ref={setActivatorNodeRef}
         className="session-tab-main"
         type="button"
-        aria-current={active ? "page" : undefined}
+        {...dragAttributes}
+        {...listeners}
+        role="tab"
+        aria-selected={active}
         aria-busy={pendingSwitch}
+        tabIndex={active ? 0 : -1}
         title={tabTitle}
         onClick={onSelect}
         onDoubleClick={onDoubleClick}
-        {...attributes}
-        {...listeners}
       >
         <span className="session-tab-status" aria-hidden="true" />
         <span className="session-tab-title">{label}</span>

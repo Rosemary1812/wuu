@@ -90,6 +90,7 @@
   --workspace-tab-active-border: rgba(228, 232, 235, 0.22);
   --workspace-tab-close-icon: #969ba0;
   --workspace-tab-hover-border: rgba(228, 232, 235, 0.16);
+  --workspace-tab-focus-ring: rgba(228, 232, 235, 0.32);
   --workspace-menu-item-hover-bg: #2b2f34;
   --workspace-bottom-title-text: #9aa0a5;
   --workspace-tool-card-text: #dde0e3;

@@ -85,7 +85,11 @@ function renderTabs(state: AppState): void {
   renderTabsWith(state, () => {});
 }
 
-function renderTabsWith(state: AppState, onClose: (tabID: string) => void): void {
+function renderTabsWith(
+  state: AppState,
+  onClose: (tabID: string) => void,
+  onSelect: (tabID: string) => void = () => {},
+): void {
   act(() => {
     root = createRoot(container);
     root.render(
@@ -98,7 +102,7 @@ function renderTabsWith(state: AppState, onClose: (tabID: string) => void): void
           },
         }}
         canStartNewThread
-        onSelect={() => {}}
+        onSelect={onSelect}
         onClose={onClose}
         onCloseTabs={() => {}}
         onPopOut={() => {}}
@@ -129,6 +133,47 @@ describe("SessionTabStrip pending indicators", () => {
     expect(container.querySelector(".session-tab-strip")?.getAttribute("aria-label")).toBe(
       "已打开的对话",
     );
+    const tabList = container.querySelector(".session-tab-scroll");
+    const tab = container.querySelector<HTMLButtonElement>(".session-tab-main");
+    expect(tabList?.getAttribute("role")).toBe("tablist");
+    expect(tab?.getAttribute("role")).toBe("tab");
+    expect(tab?.getAttribute("aria-selected")).toBe("true");
+    expect(tab?.tabIndex).toBe(0);
+  });
+
+  it("moves focus and selection across conversations with arrow keys", () => {
+    const context: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/tmp/project",
+    };
+    const threadA = makeThread("thread-a", "Thread A");
+    const threadB = makeThread("thread-b", "Thread B");
+    const onSelect = vi.fn();
+    renderTabsWith(
+      {
+        ...initialState,
+        activeContext: context,
+        thread: threadA,
+        activeSessionTabID: threadSessionTabID(threadA.id),
+        sessionTabs: [
+          createThreadSessionTab(threadA, context),
+          createThreadSessionTab(threadB, context),
+        ],
+        threads: [threadA, threadB],
+      },
+      () => {},
+      onSelect,
+    );
+
+    const tabs = container.querySelectorAll<HTMLButtonElement>(".session-tab-main");
+    tabs[0]?.focus();
+    act(() => {
+      tabs[0]?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+
+    expect(onSelect).toHaveBeenCalledWith(threadSessionTabID(threadB.id));
+    expect(document.activeElement).toBe(tabs[1]);
   });
 
   it("shows pending count only on the owning thread tab", () => {
@@ -251,6 +296,19 @@ describe("SessionTabStrip pending indicators", () => {
 });
 
 describe("SessionTabStrip layout styles", () => {
+  it("uses a flat document rail instead of raised pill tabs", () => {
+    const tabRule = cssRule(".session-tab");
+    const activeRule = cssRule(".session-tab.active");
+    const activeEdgeRule = cssRule(".session-tab.active::after");
+
+    expect(tabRule).toContain("border: 0;");
+    expect(tabRule).toContain("border-radius: var(--radius-xs);");
+    expect(tabRule).toContain("background: transparent;");
+    expect(activeRule).not.toContain("box-shadow:");
+    expect(activeEdgeRule).toContain("background: var(--wuu-accent);");
+    expect(activeEdgeRule).toContain("height: 2px;");
+  });
+
   it("keeps crowded tabs equal width with stable close targets", () => {
     const titlebarRule = cssRule(".titlebar");
     const titleBlockRule = cssRule(".title-block");
