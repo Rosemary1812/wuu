@@ -552,6 +552,171 @@ async function run() {
     fileTool.click();
   });
 
+  const sessionTabCountBeforeFileOpen = await evaluate(
+    win,
+    () => document.querySelectorAll(".session-tab").length
+  );
+  await waitFor(
+    win,
+    () => Boolean(document.querySelector(".workspace-file-tree-row")) || null,
+    3000
+  );
+  const openedArtifactPath = await evaluate(win, () => {
+    const row = document.querySelector(".workspace-file-tree-row");
+    if (!(row instanceof HTMLButtonElement)) {
+      throw new Error("Workspace file row not found.");
+    }
+    const path = row.getAttribute("title") ?? row.textContent?.trim() ?? "";
+    row.click();
+    return path;
+  });
+  await waitFor(
+    win,
+    () => Boolean(document.querySelector(".workspace-file-resource.active")) || null,
+    3000
+  );
+  const dockedArtifactState = await evaluate(win, () => {
+    const activeResource = document.querySelector(".workspace-file-resource.active");
+    const activeWorkspaceTab = document.querySelector(".workspace-tool-tab.active .workspace-tool-tab-main");
+    const conversation = document.querySelector(".conversation-pane");
+    return {
+      resourceID: activeResource?.getAttribute("data-workspace-tab-id") ?? "",
+      tabTitle: activeWorkspaceTab?.getAttribute("title") ?? "",
+      sessionTabs: document.querySelectorAll(".session-tab").length,
+      conversationWidth:
+        conversation instanceof HTMLElement ? conversation.getBoundingClientRect().width : 0
+    };
+  });
+  assert.equal(
+    dockedArtifactState.sessionTabs,
+    sessionTabCountBeforeFileOpen,
+    "Opening a workspace file must not create a center session tab."
+  );
+  assert.equal(
+    dockedArtifactState.tabTitle,
+    openedArtifactPath,
+    "The opened file should become the active right-workspace tab."
+  );
+  assert.ok(
+    dockedArtifactState.conversationWidth > 300,
+    "Docked artifact review must keep the conversation visible beside it."
+  );
+
+  await evaluate(win, () => {
+    const expand = document.querySelector('[aria-label="展开为全面板"]');
+    if (!(expand instanceof HTMLButtonElement)) {
+      throw new Error("Full-panel expand button not found.");
+    }
+    expand.click();
+  });
+  await waitFor(
+    win,
+    () => document.querySelector(".app-shell")?.classList.contains("right-panel-globalized") || null,
+    3000
+  );
+  await waitFor(
+    win,
+    () => {
+      const panel = document.querySelector(".workspace-right-panel");
+      if (!(panel instanceof HTMLElement)) {
+        return null;
+      }
+      const rect = panel.getBoundingClientRect();
+      return rect.left <= 1 && rect.right >= window.innerWidth - 1 ? true : null;
+    },
+    3000
+  );
+  const fullPanelArtifactState = await evaluate(win, () => {
+    const shell = document.querySelector(".app-shell");
+    const panel = document.querySelector(".workspace-right-panel");
+    const activeResource = document.querySelector(".workspace-file-resource.active");
+    if (!(shell instanceof HTMLElement) || !(panel instanceof HTMLElement)) {
+      throw new Error("Full-panel workspace shell not found.");
+    }
+    const panelRect = panel.getBoundingClientRect();
+    return {
+      globalized: shell.classList.contains("right-panel-globalized"),
+      resourceID: activeResource?.getAttribute("data-workspace-tab-id") ?? "",
+      panelLeft: panelRect.left,
+      panelRight: panelRect.right,
+      viewportWidth: window.innerWidth,
+      exitControlVisible: Boolean(document.querySelector('[aria-label="退出全面板"]'))
+    };
+  });
+  assert.equal(fullPanelArtifactState.globalized, true, "The workspace should enter full-panel mode.");
+  assert.equal(
+    fullPanelArtifactState.resourceID,
+    dockedArtifactState.resourceID,
+    "Full-panel mode must preserve the active artifact tab."
+  );
+  assert.ok(
+    fullPanelArtifactState.panelLeft <= 1,
+    `Full-panel workspace should reach the left window edge: ${JSON.stringify(fullPanelArtifactState)}`
+  );
+  assert.ok(
+    fullPanelArtifactState.panelRight >= fullPanelArtifactState.viewportWidth - 1,
+    "Full-panel workspace should reach the right window edge."
+  );
+  assert.equal(fullPanelArtifactState.exitControlVisible, true, "Full-panel mode should expose its exit control.");
+
+  await evaluate(win, () => {
+    const exit = document.querySelector('[aria-label="退出全面板"]');
+    if (!(exit instanceof HTMLButtonElement)) {
+      throw new Error("Full-panel exit button not found.");
+    }
+    exit.click();
+  });
+  await waitFor(
+    win,
+    () => !document.querySelector(".app-shell")?.classList.contains("right-panel-globalized") || null,
+    3000
+  );
+  await waitFor(
+    win,
+    () => {
+      const conversation = document.querySelector(".conversation-pane");
+      return conversation instanceof HTMLElement && conversation.getBoundingClientRect().width > 300
+        ? true
+        : null;
+    },
+    3000
+  );
+  const restoredArtifactState = await evaluate(win, () => ({
+    resourceID:
+      document.querySelector(".workspace-file-resource.active")?.getAttribute("data-workspace-tab-id") ?? "",
+    sessionTabs: document.querySelectorAll(".session-tab").length,
+    conversationWidth:
+      document.querySelector(".conversation-pane") instanceof HTMLElement
+        ? document.querySelector(".conversation-pane").getBoundingClientRect().width
+        : 0
+  }));
+  assert.equal(
+    restoredArtifactState.resourceID,
+    dockedArtifactState.resourceID,
+    "Exiting full-panel mode must keep the same artifact active."
+  );
+  assert.equal(
+    restoredArtifactState.sessionTabs,
+    sessionTabCountBeforeFileOpen,
+    "Full-panel round trips must not alter conversation tabs."
+  );
+  assert.ok(restoredArtifactState.conversationWidth > 300, "Exiting full-panel mode should restore the conversation.");
+
+  await evaluate(win, () => {
+    const filesTab = Array.from(
+      document.querySelectorAll(".workspace-panel-tabs .workspace-tool-tab-main")
+    ).find((tab) => tab.getAttribute("title") === "文件");
+    if (!(filesTab instanceof HTMLButtonElement)) {
+      throw new Error("Workspace files tab not found after full-panel round trip.");
+    }
+    filesTab.click();
+  });
+  await waitFor(
+    win,
+    () => Boolean(document.querySelector(".workspace-file-tree-row")) || null,
+    3000
+  );
+
   const before = await waitFor(win, () => treeSnapshot(), 5000);
   assert.ok(before.frameHeight > 500, "Initial file tree frame should be tall enough for resize verification.");
   assert.ok(before.renderedRows > 20, "Initial file tree should render workspace rows.");
