@@ -26,6 +26,8 @@ interface Harness {
   setRightPanelOpenWithMotion: ReturnType<
     typeof useAppLayoutState
   >["setRightPanelOpenWithMotion"];
+  workspaceRightPanelAutoGlobalized?: boolean;
+  workspaceRightPanelDockableWithoutSidebar?: boolean;
 }
 
 let container: HTMLDivElement;
@@ -50,6 +52,10 @@ function renderHookHarness(): void {
     const hook = useAppLayoutState({
       onCloseProjectMenu: () => {}
     });
+    const responsiveHook = hook as typeof hook & {
+      workspaceRightPanelAutoGlobalized?: boolean;
+      workspaceRightPanelDockableWithoutSidebar?: boolean;
+    };
     latest = {
       sidebarWidth: hook.sidebarWidth,
       sidebarCollapsed: hook.sidebarCollapsed,
@@ -57,7 +63,11 @@ function renderHookHarness(): void {
       rightPanelAnimating: hook.rightPanelAnimating,
       startSidebarResize: hook.startSidebarResize,
       startRightPanelResize: hook.startRightPanelResize,
-      setRightPanelOpenWithMotion: hook.setRightPanelOpenWithMotion
+      setRightPanelOpenWithMotion: hook.setRightPanelOpenWithMotion,
+      workspaceRightPanelAutoGlobalized:
+        responsiveHook.workspaceRightPanelAutoGlobalized,
+      workspaceRightPanelDockableWithoutSidebar:
+        responsiveHook.workspaceRightPanelDockableWithoutSidebar,
     };
     return null;
   }
@@ -167,6 +177,30 @@ describe("useAppLayoutState window-resizing class", () => {
       } as unknown as React.PointerEvent<HTMLDivElement>);
     });
     expect(document.documentElement.classList.contains(WINDOW_RESIZING_CLASS)).toBe(false);
+  });
+});
+
+describe("useAppLayoutState responsive workspace presentation", () => {
+  it("enters compact focus and returns to docking after the window has room", () => {
+    renderHookHarness();
+    expect(latest!.workspaceRightPanelAutoGlobalized).toBe(false);
+    expect(latest!.workspaceRightPanelDockableWithoutSidebar).toBe(true);
+
+    act(() => {
+      setInnerWidth(674);
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(latest!.sidebarCollapsed).toBe(true);
+    expect(latest!.workspaceRightPanelAutoGlobalized).toBe(true);
+    expect(latest!.workspaceRightPanelDockableWithoutSidebar).toBe(false);
+
+    act(() => {
+      setInnerWidth(1000);
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(latest!.sidebarCollapsed).toBe(true);
+    expect(latest!.workspaceRightPanelAutoGlobalized).toBe(false);
+    expect(latest!.workspaceRightPanelDockableWithoutSidebar).toBe(true);
   });
 });
 

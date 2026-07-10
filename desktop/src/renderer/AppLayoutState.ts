@@ -34,6 +34,8 @@ export const WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH = 360;
 export const WORKSPACE_RIGHT_PANEL_MIN_WIDTH = 300;
 export const WORKSPACE_RIGHT_PANEL_MAX_WIDTH = 860;
 export const WORKSPACE_RIGHT_PANEL_MAIN_MIN_WIDTH = 360;
+export const WORKSPACE_CONVERSATION_SAFE_WIDTH = 440;
+export const WORKSPACE_DOCKED_PANEL_SAFE_WIDTH = 320;
 // The narrowest drag range the panel must always keep. Without it, a tight
 // window collapses min === max and the panel can't be dragged at all.
 export const WORKSPACE_RIGHT_PANEL_MIN_DRAG_RANGE = 120;
@@ -251,6 +253,16 @@ export function clampWorkspaceRightPanelWidth(width: number, sidebarWidth: numbe
   return clamp(width, WORKSPACE_RIGHT_PANEL_MIN_WIDTH, maxWidth);
 }
 
+export function workspacePanelNeedsFocus(
+  windowWidth: number,
+  sidebarWidth: number,
+): boolean {
+  return (
+    windowWidth - sidebarWidth <
+    WORKSPACE_CONVERSATION_SAFE_WIDTH + WORKSPACE_DOCKED_PANEL_SAFE_WIDTH
+  );
+}
+
 // Same contract as clampWorkspaceRightPanelWidth, for the thread panel: the
 // window-aware ceiling keeps the main conversation column readable, and the
 // guaranteed drag range keeps the separator draggable on narrow windows.
@@ -376,6 +388,8 @@ export function useAppLayoutState({
   rightPanelOpen: boolean;
   rightPanelAnimating: boolean;
   effectiveSidebarWidth: number;
+  workspaceRightPanelAutoGlobalized: boolean;
+  workspaceRightPanelDockableWithoutSidebar: boolean;
   setRightPanelOpenWithMotion: (open: boolean) => void;
   startSidebarResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
   startSettingsSidebarResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -419,6 +433,14 @@ export function useAppLayoutState({
   const rightPanelMotionTimerRef = useRef<number | undefined>(undefined);
   const sidebarWidth = clampSidebarWidthForWindow(sidebarPreferredWidth, windowWidth);
   const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
+  const workspaceRightPanelAutoGlobalized = workspacePanelNeedsFocus(
+    windowWidth,
+    effectiveSidebarWidth,
+  );
+  const workspaceRightPanelDockableWithoutSidebar = !workspacePanelNeedsFocus(
+    windowWidth,
+    0,
+  );
   const clampedWorkspaceRightPanelWidth = clampWorkspaceRightPanelWidth(
     workspaceRightPanelWidth,
     effectiveSidebarWidth
@@ -1065,6 +1087,8 @@ export function useAppLayoutState({
     rightPanelOpen,
     rightPanelAnimating,
     effectiveSidebarWidth,
+    workspaceRightPanelAutoGlobalized,
+    workspaceRightPanelDockableWithoutSidebar,
     setRightPanelOpenWithMotion,
     startSidebarResize,
     startSettingsSidebarResize,

@@ -6,6 +6,35 @@ import {
   WORKSPACE_RIGHT_PANEL_MIN_WIDTH,
   clampWorkspaceRightPanelWidth,
 } from "./AppLayoutState";
+import * as appLayoutState from "./AppLayoutState";
+
+type WorkspacePanelNeedsFocus = (
+  windowWidth: number,
+  sidebarWidth: number,
+) => boolean;
+
+function workspacePanelNeedsFocus(): WorkspacePanelNeedsFocus | undefined {
+  return (
+    appLayoutState as typeof appLayoutState & {
+      workspacePanelNeedsFocus?: WorkspacePanelNeedsFocus;
+    }
+  ).workspacePanelNeedsFocus;
+}
+
+describe("workspacePanelNeedsFocus", () => {
+  it("uses a full-window workspace when a compact window cannot safely dock both primary surfaces", () => {
+    expect(workspacePanelNeedsFocus()?.(674, 0)).toBe(true);
+  });
+
+  it("keeps the workspace docked when conversation and workspace safety floors fit", () => {
+    expect(workspacePanelNeedsFocus()?.(760, 0)).toBe(false);
+  });
+
+  it("counts pinned navigation against docking capacity", () => {
+    expect(workspacePanelNeedsFocus()?.(1000, 254)).toBe(true);
+    expect(workspacePanelNeedsFocus()?.(1000, 0)).toBe(false);
+  });
+});
 
 // Regression coverage for the "right panel can't be resized on a narrow window"
 // bug. The right-panel resizer (live drag, commit, keyboard, and window-resize
