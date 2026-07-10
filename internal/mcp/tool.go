@@ -10,6 +10,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 const (
@@ -50,18 +51,30 @@ func (t *MCPTool) Definition() providers.ToolDefinition {
 
 // Execute calls the MCP server tool.
 func (t *MCPTool) Execute(ctx context.Context, args string) (string, error) {
+	result, err := t.ExecuteResult(ctx, args)
+	return result.TextProjection(), err
+}
+
+// ExecuteResult maps the MCP result losslessly into Wuu's canonical rich
+// result. Server metadata is preserved as untrusted Meta and never promoted to
+// a Wuu Activity reference here.
+func (t *MCPTool) ExecuteResult(ctx context.Context, args string) (toolresult.Result, error) {
 	var rawArgs json.RawMessage
 	if strings.TrimSpace(args) != "" {
 		rawArgs = json.RawMessage(args)
 	}
 	result, err := t.client.CallTool(ctx, t.tool.Name, rawArgs)
 	if err != nil {
-		return "", err
+		return toolresult.Result{}, err
+	}
+	mapped, mapErr := mapCallToolResult(result)
+	if mapErr != nil {
+		return toolresult.Result{}, mapErr
 	}
 	if result.IsError {
-		return formatToolResult(result), fmt.Errorf("mcp tool error")
+		return mapped, fmt.Errorf("mcp tool error")
 	}
-	return formatToolResult(result), nil
+	return mapped, nil
 }
 
 // IsReadOnly reports whether the tool never modifies state.
@@ -116,16 +129,48 @@ func (t *MCPTool) metadata() (readOnly bool, concurrencySafe bool) {
 }
 
 func formatToolResult(result *CallToolResult) string {
-	var parts []string
-	for _, c := range result.Content {
-		switch c.Type {
-		case "text":
-			parts = append(parts, c.Text)
-		default:
-			parts = append(parts, fmt.Sprintf("[%s content]", c.Type))
-		}
+	mapped, err := mapCallToolResult(result)
+	if err != nil {
+		return "[invalid MCP tool result: " + err.Error() + "]"
 	}
-	return strings.Join(parts, "\n")
+	return mapped.TextProjection()
+}
+
+func mapCallToolResult(result *CallToolResult) (toolresult.Result, error) {
+	if result == nil {
+		return toolresult.Result{}, fmt.Errorf("MCP tool result is nil")
+	}
+	mapped := toolresult.Result{
+		StructuredContent: append(json.RawMessage(nil), result.StructuredContent...),
+		Meta:              append(json.RawMessage(nil), result.Meta...),
+		IsError:           result.IsError,
+	}
+	for index, content := range result.Content {
+		part := toolresult.ContentPart{
+			Type:     content.Type,
+			Text:     content.Text,
+			Data:     content.Data,
+			MIMEType: content.MIMEType,
+			URI:      content.URI,
+			Name:     content.Name,
+			Resource: append(json.RawMessage(nil), content.Resource...),
+		}
+		switch content.Type {
+		case toolresult.ContentTypeText,
+			toolresult.ContentTypeImage,
+			toolresult.ContentTypeAudio,
+			toolresult.ContentTypeFile,
+			toolresult.ContentTypeResource,
+			toolresult.ContentTypeResourceLink:
+		default:
+			return toolresult.Result{}, fmt.Errorf("MCP content[%d] has unsupported type %q", index, content.Type)
+		}
+		mapped.Content = append(mapped.Content, part)
+	}
+	if err := mapped.Validate(); err != nil {
+		return toolresult.Result{}, fmt.Errorf("invalid MCP tool result: %w", err)
+	}
+	return mapped, nil
 }
 
 func schemaToMap(raw json.RawMessage) map[string]any {

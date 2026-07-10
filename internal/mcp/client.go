@@ -95,7 +95,7 @@ func Connect(name string, t Transport) (*Client, error) {
 	c.readLoop.Start()
 
 	// Initialize handshake.
-	params := InitializeParams{ProtocolVersion: protocolVersion}
+	params := InitializeParams{ProtocolVersion: PreferredProtocolVersion}
 	params.ClientInfo.Name = "wuu"
 	params.ClientInfo.Version = "0.1.0"
 	resultBytes, err := call(context.Background(), t, c.inFlight, "initialize", params)
@@ -107,6 +107,10 @@ func Connect(name string, t Transport) (*Client, error) {
 	if err := json.Unmarshal(resultBytes, &result); err != nil {
 		c.Close()
 		return nil, fmt.Errorf("mcp initialize decode: %w", err)
+	}
+	if err := validateProtocolVersion(result.ProtocolVersion); err != nil {
+		c.Close()
+		return nil, fmt.Errorf("mcp initialize compatibility: %w", err)
 	}
 
 	// Send initialized notification.

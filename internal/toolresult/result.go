@@ -85,9 +85,7 @@ func validateContentPart(index int, part ContentPart) error {
 	prefix := fmt.Sprintf("content[%d]", index)
 	switch kind {
 	case ContentTypeText:
-		if part.Text == "" {
-			return fmt.Errorf("%s.text is required", prefix)
-		}
+		// Empty text is valid in MCP and remains an ordered content part.
 	case ContentTypeImage, ContentTypeAudio, ContentTypeFile:
 		if strings.TrimSpace(part.Data) == "" && strings.TrimSpace(part.URI) == "" {
 			return fmt.Errorf("%s requires data or uri", prefix)

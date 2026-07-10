@@ -14,8 +14,23 @@ import (
 	"sync/atomic"
 )
 
-// Protocol version negotiated during initialize.
-const protocolVersion = "2024-11-05"
+// PreferredProtocolVersion is the newest MCP revision Wuu implements.
+const PreferredProtocolVersion = "2026-06-30"
+
+var acceptedProtocolVersions = map[string]struct{}{
+	"2026-06-30": {},
+	"2025-11-25": {},
+	"2025-06-18": {},
+	"2025-03-26": {},
+	"2024-11-05": {},
+}
+
+func validateProtocolVersion(version string) error {
+	if _, ok := acceptedProtocolVersions[version]; !ok {
+		return fmt.Errorf("unsupported MCP protocol version %q; supported versions are 2026-06-30, 2025-11-25, 2025-06-18, 2025-03-26, and 2024-11-05", version)
+	}
+	return nil
+}
 
 // Request is a JSON-RPC request.
 type Request struct {
@@ -75,15 +90,22 @@ type InitializeResult struct {
 
 // Tool represents an MCP tool definition.
 type Tool struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
-	InputSchema json.RawMessage  `json:"inputSchema"`
-	Annotations *ToolAnnotations `json:"annotations,omitempty"`
+	Name         string           `json:"name"`
+	Title        string           `json:"title,omitempty"`
+	Description  string           `json:"description"`
+	InputSchema  json.RawMessage  `json:"inputSchema"`
+	OutputSchema json.RawMessage  `json:"outputSchema,omitempty"`
+	Annotations  *ToolAnnotations `json:"annotations,omitempty"`
+	Meta         json.RawMessage  `json:"_meta,omitempty"`
 }
 
 // ToolAnnotations carries MCP server-provided behavioral hints for a tool.
 type ToolAnnotations struct {
-	ReadOnlyHint *bool `json:"readOnlyHint,omitempty"`
+	Title           string `json:"title,omitempty"`
+	ReadOnlyHint    *bool  `json:"readOnlyHint,omitempty"`
+	DestructiveHint *bool  `json:"destructiveHint,omitempty"`
+	IdempotentHint  *bool  `json:"idempotentHint,omitempty"`
+	OpenWorldHint   *bool  `json:"openWorldHint,omitempty"`
 }
 
 // ListToolsResult is returned by tools/list.
@@ -99,14 +121,23 @@ type CallToolParams struct {
 
 // CallToolResult is returned by tools/call.
 type CallToolResult struct {
-	Content []ToolContent `json:"content"`
-	IsError bool          `json:"isError,omitempty"`
+	Content           []ToolContent   `json:"content"`
+	StructuredContent json.RawMessage `json:"structuredContent,omitempty"`
+	IsError           bool            `json:"isError,omitempty"`
+	Meta              json.RawMessage `json:"_meta,omitempty"`
 }
 
 // ToolContent is a single content item in a tool result.
 type ToolContent struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
+	Type        string          `json:"type"`
+	Text        string          `json:"text,omitempty"`
+	Data        string          `json:"data,omitempty"`
+	MIMEType    string          `json:"mimeType,omitempty"`
+	URI         string          `json:"uri,omitempty"`
+	Name        string          `json:"name,omitempty"`
+	Description string          `json:"description,omitempty"`
+	Resource    json.RawMessage `json:"resource,omitempty"`
+	Meta        json.RawMessage `json:"_meta,omitempty"`
 }
 
 var requestIDCounter int64

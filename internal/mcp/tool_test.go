@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/capability"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 func TestToolAnnotationsDecodeReadOnlyHint(t *testing.T) {
@@ -31,6 +32,33 @@ func TestToolAnnotationsDecodeReadOnlyHint(t *testing.T) {
 	hint := result.Tools[0].Annotations.ReadOnlyHint
 	if hint == nil || *hint != true {
 		t.Fatalf("readOnlyHint = %v, want true", hint)
+	}
+}
+
+func TestMapCallToolResultPreservesRichMCPContent(t *testing.T) {
+	result, err := mapCallToolResult(&CallToolResult{
+		Content: []ToolContent{
+			{Type: "text", Text: "hello"},
+			{Type: "image", Data: "aW1hZ2U=", MIMEType: "image/png"},
+			{Type: "audio", Data: "YXVkaW8=", MIMEType: "audio/wav"},
+			{Type: "resource", Resource: json.RawMessage(`{"uri":"file:///tmp/a","text":"body"}`)},
+			{Type: "resource_link", URI: "https://example.test/docs", Name: "docs", MIMEType: "text/html"},
+		},
+		StructuredContent: json.RawMessage(`{"ok":true}`),
+		Meta:              json.RawMessage(`{"vendor":"kept","activity":{"id":"untrusted"}}`),
+		IsError:           true,
+	})
+	if err != nil {
+		t.Fatalf("mapCallToolResult: %v", err)
+	}
+	if len(result.Content) != 5 || result.Content[1].Type != toolresult.ContentTypeImage || result.Content[2].Type != toolresult.ContentTypeAudio {
+		t.Fatalf("content lost: %+v", result.Content)
+	}
+	if len(result.StructuredContent) == 0 || len(result.Meta) == 0 || !result.IsError {
+		t.Fatalf("rich fields lost: %+v", result)
+	}
+	if result.Activity != nil {
+		t.Fatalf("untrusted MCP meta must not create Activity: %+v", result.Activity)
 	}
 }
 
