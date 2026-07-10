@@ -412,7 +412,9 @@ export function turnProgressContent(
   }
   if (latestItem.type === "agent_message") {
     const hasText =
-      hasFinalText || debugStreamFieldLength(turn.id, latestItem, "text") > 0;
+      hasFinalText ||
+      (latestItem.phase === "final_answer" &&
+        debugStreamFieldLength(turn.id, latestItem, "text") > 0);
     return {
       label: messageFlowStatusLabel({
         done: false,

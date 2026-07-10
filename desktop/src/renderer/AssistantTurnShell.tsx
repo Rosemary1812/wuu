@@ -19,6 +19,7 @@ import type {
 import { CollapsibleDetails } from "./CollapsibleMotion";
 import { ThreadItemView } from "./ThreadItemView";
 import { LightweightStreamingText } from "./LightweightStreamingText";
+import { streamFieldValue } from "./ThreadItemText";
 import { TurnEventNotice } from "./TurnNotice";
 import { turnEventForItem } from "./TurnEvents";
 import { parseTurnTimestampMs } from "./RunDebugPanel";
@@ -28,10 +29,7 @@ import {
   useLiveNow,
 } from "./TurnProgress";
 import { ProcessSurface } from "./ProcessSurface";
-import {
-  turnHasAssistantOutput,
-  turnProgressContent,
-} from "./TurnViewHelpers";
+import { turnProgressContent } from "./TurnViewHelpers";
 import { collectTurnSources } from "./ToolActivityHelpers";
 import { TurnSourcesRow } from "./TurnSourcesRow";
 import type { UserFacingErrorAction } from "./UserFacingErrors";
@@ -40,16 +38,6 @@ import {
   useAutoFollowScrollContainer,
 } from "./AutoFollowScroll";
 import { AnimatedProcessText } from "./ProcessTextMotion";
-
-/**
- * How long to wait after a turn completes (turn.status → completed)
- * before auto-collapsing the process fold. Decouples the "turn is
- * done" signal (label / timer / preview update at t=0) from the
- * fold body collapse (starts at t=settling-delay), so the user
- * sees one motion at a time instead of five state changes on the
- * same frame.
- */
-const PROCESS_FOLD_SETTLING_DELAY_MS = 600;
 
 export function AssistantTurnShell({
   turn,
@@ -104,16 +92,6 @@ export function AssistantTurnShell({
     }
   }, []);
 
-  // Collapse the process fold once the turn is fully settled: the final
-  // text is on screen and streaming has stopped. Keeping the fold open
-  // while the answer region streams prevents the fold from snapping
-  // shut the instant final_answer begins streaming, which would create
-  // a visible layout shift next to the still-revealing preview text.
-  // The collapse transition itself is handled separately (rule 8 keeps
-  // the fold reachable so the user can re-expand it).
-  const defaultCollapsed =
-    turn.status === "completed" && answerEntries.length > 0;
-
   // An in_progress turn always shows the process header, even before the
   // first server item arrives (the optimistic placeholder right after
   // send). Without this the shell mounts as an empty box and the user
@@ -126,6 +104,11 @@ export function AssistantTurnShell({
     Boolean(display.latestProcessPreview) ||
     turn.status === "in_progress";
   const hasAnswer = answerEntries.length > 0;
+  const answerHandoffRequested = answerEntries.some(
+    (entry) =>
+      entry.item.type === "agent_message" &&
+      streamFieldValue(turn.id, entry.item, "text").trim().length > 0,
+  );
 
   const className = [
     "assistant-turn-shell",
@@ -154,8 +137,10 @@ export function AssistantTurnShell({
       {hasProcess ? (
         <TurnProcessFold
           entries={processEntries}
-          defaultCollapsed={defaultCollapsed}
-          latestPreview={display.latestProcessPreview}
+          collapseRequested={answerHandoffRequested}
+          latestPreview={
+            answerHandoffRequested ? undefined : display.latestProcessPreview
+          }
           sources={turnSources}
           onOpenSource={handleOpenSource}
           {...entryProps}
@@ -186,7 +171,7 @@ export function AssistantTurnShell({
 function TurnProcessFold({
   turn,
   entries,
-  defaultCollapsed,
+  collapseRequested,
   latestPreview,
   sources,
   onOpenSource,
@@ -203,7 +188,7 @@ function TurnProcessFold({
 }: {
   turn: Turn;
   entries: TurnEntry[];
-  defaultCollapsed: boolean;
+  collapseRequested: boolean;
   latestPreview?: TurnProcessPreview;
   sources: ReturnType<typeof collectTurnSources>;
   onOpenSource?: (url: string) => void;
@@ -226,12 +211,10 @@ function TurnProcessFold({
   onCollapseComplete?: () => void;
   onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
-  const [expanded, setExpanded] = useState(!defaultCollapsed);
-  const settledRef = useRef(turn.status !== "in_progress");
-  // Tracks whether the user has manually toggled the fold during the
-  // current turn. If so, the auto-collapse on turn completion is
-  // suppressed — the user has expressed their own intent for the
-  // fold state, and we shouldn't override it.
+  const [expanded, setExpanded] = useState(!collapseRequested);
+  const handoffHandledRef = useRef(collapseRequested);
+  // Once the reader changes the fold manually, that preference owns the
+  // rest of this turn. The answer handoff must not take control back.
   const userToggledRef = useRef(false);
   const autoCollapsePendingRef = useRef(false);
   const previousExpanded = useRef(expanded);
@@ -250,39 +233,29 @@ function TurnProcessFold({
   const processLabel = turnProcessTitle(
     turn,
     elapsedMs,
-    turnHasAssistantOutput(turn),
+    collapseRequested,
   );
   const metaParts = turnProcessMetaParts(turn, elapsedMs);
 
-  // Two-stage auto-collapse on turn completion. The fold's "settle"
-  // (label / timer / preview update) and "collapse" (body shrinks)
-  // are decoupled so the user sees one motion at a time instead of
-  // five state changes on the same frame.
-  //   t=0      : turn.status flips in_progress → completed
-  //   t=settle : fold body starts collapsing
-  // If the user manually toggles the fold during the settle window,
-  // the auto-collapse is suppressed — they've expressed their own
-  // intent for the fold state.
+  // A confirmed non-empty final answer is the handoff edge: process work
+  // yields immediately so the answer becomes the primary reading surface.
+  // Completion only changes the compact status copy; it must not trigger a
+  // second layout transition. If the user manually changed the fold before
+  // handoff, preserve that intent instead of taking control back.
   useEffect(() => {
-    if (turn.status === "in_progress") {
-      settledRef.current = false;
+    if (!collapseRequested) {
+      handoffHandledRef.current = false;
       userToggledRef.current = false;
       autoCollapsePendingRef.current = false;
       return;
     }
-    if (settledRef.current || userToggledRef.current) {
+    if (handoffHandledRef.current || userToggledRef.current) {
       return;
     }
-    settledRef.current = true;
-    const collapseTimer = window.setTimeout(() => {
-      if (userToggledRef.current) {
-        return;
-      }
-      autoCollapsePendingRef.current = true;
-      setExpanded(false);
-    }, PROCESS_FOLD_SETTLING_DELAY_MS);
-    return () => window.clearTimeout(collapseTimer);
-  }, [turn.status]);
+    handoffHandledRef.current = true;
+    autoCollapsePendingRef.current = true;
+    setExpanded(false);
+  }, [collapseRequested]);
 
   // Watch the expanded → collapsed transition and fire the callback
   // once the CSS transition has settled (slightly longer than
@@ -290,7 +263,7 @@ function TurnProcessFold({
   // final value before the caller re-anchors scrollTop). Without
   // this, the browser would silently clamp scrollTop to the new
   // max as scrollHeight drops by the fold body's height, which the
-  // user perceives as the scroll bar jumping upward at turn-settle.
+  // user perceives as the scroll bar jumping during answer handoff.
   useEffect(() => {
     if (previousExpanded.current && !expanded) {
       const autoCollapse = autoCollapsePendingRef.current;
@@ -307,10 +280,8 @@ function TurnProcessFold({
     return undefined;
   }, [expanded, onCollapseComplete]);
 
-  // User-initiated toggle: record the intent so the auto-collapse
-  // step above doesn't fight the user. Without this, manually opening
-  // a fold during the settle window would still get slammed shut by
-  // the timer.
+  // User-initiated toggle: record the intent so later snapshots from the
+  // same turn never undo the reader's choice.
   const handleToggle = useCallback(() => {
     userToggledRef.current = true;
     autoCollapsePendingRef.current = false;

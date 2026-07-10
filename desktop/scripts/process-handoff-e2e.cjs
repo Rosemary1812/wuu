@@ -109,6 +109,7 @@ async function run() {
   assert.equal(beforeProcessState.shellHasAnswer, false, "Answer lane should stay empty before final text starts.");
   assert.equal(beforeProcessState.checkpointVisible, false, "Process preview is hidden while the process fold is open.");
   assert.ok(beforeProcessState.detailsHeight > 1, `Open process details should occupy space. Height=${beforeProcessState.detailsHeight}`);
+  await delay(450);
   await capture(win, "process-handoff-before.png");
 
   emitNotification(win, "item/started", {
@@ -124,15 +125,17 @@ async function run() {
   });
 
   const finalRect = await waitFor(win, finalAnswerRect, 3000);
+  await waitFor(win, processFoldCollapsed, 3000);
+  await delay(450);
   const afterProcessState = await waitFor(win, processGroupState, 3000);
   assert.match(finalRect.text, /第二段/, "Final text should stream after process work.");
   assert.equal(afterProcessState.shellHasProcess, true, "Process lane should remain stable after final text starts.");
   assert.equal(afterProcessState.shellHasAnswer, true, "Final text should appear in the stable answer lane.");
-  assert.equal(afterProcessState.checkpointVisible, false, "Process preview stays hidden while the in-flight process fold is open.");
-  assert.equal(afterProcessState.expanded, true, "Process details should stay open until the turn completes.");
+  assert.equal(afterProcessState.checkpointVisible, false, "Stale process preview should stay hidden after answer handoff.");
+  assert.equal(afterProcessState.expanded, false, "Process details should collapse when final text starts.");
   assert.ok(
-    afterProcessState.detailsHeight > 1,
-    `Process details should remain visible during handoff. Height=${afterProcessState.detailsHeight}`
+    afterProcessState.detailsHeight <= 24,
+    `Process details should yield their space during handoff. Height=${afterProcessState.detailsHeight}`
   );
   assert.ok(
     Number.parseFloat(finalRect.fontSize) >= 14,
@@ -344,6 +347,13 @@ function processGroupState() {
         ? answerRect.top - groupRect.bottom
         : null
   };
+}
+
+function processFoldCollapsed() {
+  const turns = Array.from(document.querySelectorAll(".turn"));
+  const turn = turns.at(-1);
+  const group = turn?.querySelector(".turn-process-fold");
+  return group instanceof HTMLElement && group.classList.contains("collapsed");
 }
 
 function agentActionSlotRect() {

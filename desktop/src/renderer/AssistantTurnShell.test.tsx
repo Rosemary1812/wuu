@@ -88,6 +88,17 @@ function makeFinalAnswer(text: string): ThreadItem {
   };
 }
 
+function makeStreamingFinalAnswer(text: string): ThreadItem {
+  return {
+    id: nextID("final"),
+    type: "agent_message",
+    status: "in_progress",
+    phase: "final_answer",
+    role: "assistant",
+    text,
+  };
+}
+
 function makeLiveUnclassifiedAgentMessage(text: string): ThreadItem {
   return {
     id: nextID("live-agent"),
@@ -429,17 +440,30 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     const { container } = renderShell(turn);
 
     expect(processFoldOpen(container)).toBe(true);
+    expect(container.querySelector(".turn-process-title")?.textContent).toBe(
+      "正在处理",
+    );
     expect(container.textContent).toContain("thinking through it");
   });
 
-  it("collapses the process fold after a confirmed final_answer arrives", () => {
-    const turn = makeTurn("completed", [
-      makeCommentary("checking"),
-      makeFinalAnswer("done"),
-    ]);
-    const { container } = renderShell(turn);
+  it("collapses the process fold when a confirmed final_answer starts streaming", () => {
+    const commentary = makeCommentary("checking");
+    const { container, root } = renderShell(
+      makeTurn("in_progress", [commentary]),
+    );
+
+    expect(processFoldOpen(container)).toBe(true);
+
+    rerenderShell(
+      root,
+      makeTurn("in_progress", [
+        commentary,
+        makeStreamingFinalAnswer("done"),
+      ]),
+    );
 
     expect(processFoldOpen(container)).toBe(false);
+    expect(container.querySelector(".turn-process-preview")).toBeNull();
     // The user can re-expand; verify the toggle still exists and
     // exposes its open/closed state via aria-expanded.
     const toggle = container.querySelector(".turn-process-toggle");
@@ -477,6 +501,16 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
 
     expect(processFoldOpen(container)).toBe(true);
     expect(container.textContent).toContain("streaming unknown");
+  });
+
+  it("keeps the process open until confirmed final_answer text is non-empty", () => {
+    const turn = makeTurn("in_progress", [
+      makeCommentary("checking"),
+      makeStreamingFinalAnswer(""),
+    ]);
+    const { container } = renderShell(turn);
+
+    expect(processFoldOpen(container)).toBe(true);
   });
 
   it("shows the live process preview only when the process fold is collapsed", () => {
@@ -517,6 +551,110 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     expect(streamTextStore.get(key)).toBe("finished commentary");
   });
 
+  it("keeps a manual reopen after answer handoff through turn completion", () => {
+    vi.useFakeTimers();
+    const commentary = makeCommentary("checking");
+    const finalAnswer = makeStreamingFinalAnswer("done");
+    let collapseCompletions = 0;
+    const { container, root } = renderShell(
+      makeTurn("in_progress", [commentary]),
+      {
+        onCollapseComplete: () => {
+          collapseCompletions += 1;
+        },
+      },
+    );
+
+    rerenderShell(
+      root,
+      makeTurn("in_progress", [commentary, finalAnswer]),
+      {
+        onCollapseComplete: () => {
+          collapseCompletions += 1;
+        },
+      },
+    );
+    expect(processFoldOpen(container)).toBe(false);
+
+    const toggle = container.querySelector<HTMLElement>(".turn-process-toggle");
+    act(() => {
+      toggle?.click();
+    });
+    expect(processFoldOpen(container)).toBe(true);
+
+    rerenderShell(
+      root,
+      makeTurn("completed", [
+        commentary,
+        { ...finalAnswer, status: "completed" },
+      ]),
+      {
+        onCollapseComplete: () => {
+          collapseCompletions += 1;
+        },
+      },
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(processFoldOpen(container)).toBe(true);
+    expect(collapseCompletions).toBe(0);
+  });
+
+  it("reports one collapse completion at answer handoff and none at turn completion", () => {
+    vi.useFakeTimers();
+    const commentary = makeCommentary("checking");
+    const finalAnswer = makeStreamingFinalAnswer("done");
+    let collapseCompletions = 0;
+    const { container, root } = renderShell(
+      makeTurn("in_progress", [commentary]),
+      {
+        onCollapseComplete: () => {
+          collapseCompletions += 1;
+        },
+      },
+    );
+
+    rerenderShell(
+      root,
+      makeTurn("in_progress", [commentary, finalAnswer]),
+      {
+        onCollapseComplete: () => {
+          collapseCompletions += 1;
+        },
+      },
+    );
+
+    expect(processFoldOpen(container)).toBe(false);
+
+    act(() => {
+      vi.advanceTimersByTime(440);
+    });
+    expect(collapseCompletions).toBe(1);
+
+    rerenderShell(
+      root,
+      makeTurn("completed", [
+        commentary,
+        { ...finalAnswer, status: "completed" },
+      ]),
+      {
+        onCollapseComplete: () => {
+          collapseCompletions += 1;
+        },
+      },
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(processFoldOpen(container)).toBe(false);
+    expect(collapseCompletions).toBe(1);
+  });
+
   it("keeps manual process fold toggles local to the fold", () => {
     vi.useFakeTimers();
     const turn = makeTurn("completed", [
@@ -548,40 +686,6 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     });
 
     expect(collapseCompletions).toBe(0);
-  });
-
-  it("reports collapse completion only for the automatic settle collapse", () => {
-    vi.useFakeTimers();
-    const commentary = makeCommentary("checking");
-    const initialTurn = makeTurn("in_progress", [commentary]);
-    let collapseCompletions = 0;
-    const { container, root } = renderShell(initialTurn, {
-      onCollapseComplete: () => {
-        collapseCompletions += 1;
-      },
-    });
-    expect(processFoldOpen(container)).toBe(true);
-
-    rerenderShell(
-      root,
-      makeTurn("completed", [commentary, makeFinalAnswer("done")]),
-      {
-        onCollapseComplete: () => {
-          collapseCompletions += 1;
-        },
-      },
-    );
-
-    act(() => {
-      vi.advanceTimersByTime(600);
-    });
-    expect(processFoldOpen(container)).toBe(false);
-
-    act(() => {
-      vi.advanceTimersByTime(440);
-    });
-
-    expect(collapseCompletions).toBe(1);
   });
 
   it("renders participant result cards and opens their source agent", () => {

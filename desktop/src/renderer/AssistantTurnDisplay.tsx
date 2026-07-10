@@ -46,7 +46,8 @@ export type TurnEntryKind =
 export type AssistantTurnDisplay = {
   entries: TurnEntry[];
   /** True when the turn has at least one `answer`-position entry. The shell
-   *  uses this to collapse earlier process records once answer text begins. */
+   *  separately checks that its streamed text is non-empty before starting
+   *  the process-to-answer handoff. */
   hasAnswer: boolean;
   /** Present when a completed turn produced process text but no final
    *  answer. This is a user-facing outcome, not an internal bug label. */
