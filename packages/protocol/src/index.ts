@@ -1028,6 +1028,7 @@ export type TaskPieceView = {
   state?: string;
   attempts?: number;
   retry_budget?: number;
+  current_attempt_id?: string;
   failure_reason?: string;
   last_activity_at?: string;
   last_progress_at?: string;
@@ -1071,6 +1072,7 @@ export type ThreadTaskEventsParams = {
 export type TaskEventView = {
   seq: number;
   node_id?: string;
+  attempt_id?: string;
   kind: string;
   actor?: string;
   summary?: string;

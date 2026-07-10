@@ -69,12 +69,16 @@ func TestTaskPlanFanInDispatchAndHandoff(t *testing.T) {
 		t.Fatalf("SetPlan: %v", err)
 	}
 
-	// After set_plan: the three independent pieces are dispatched (active),
-	// their assignees woken; p4 stays pending (deps unmet). Vera is NOT woken.
-	for _, id := range []string{"p1", "p2", "p3"} {
+	// Ready work is dispatched subject to one durable attempt per named agent.
+	// Han gets p1 and Mia gets p2; Mia's second independent node p3 waits until
+	// her reservation is released. p4 stays gated on all three.
+	for _, id := range []string{"p1", "p2"} {
 		if got := pieceStatus(view, id); got != session.TaskPieceActive {
 			t.Fatalf("piece %s status = %q, want active after set_plan", id, got)
 		}
+	}
+	if got := pieceStatus(view, "p3"); got != session.TaskPiecePending {
+		t.Fatalf("p3 status = %q, want pending behind Mia's active attempt", got)
 	}
 	if got := pieceStatus(view, "p4"); got != session.TaskPiecePending {
 		t.Fatalf("p4 status = %q, want pending (deps unmet)", got)
@@ -94,6 +98,9 @@ func TestTaskPlanFanInDispatchAndHandoff(t *testing.T) {
 	}
 	if _, err := srv.residentTaskManager(mia).PieceDone(context.Background(), task.ID, "p2", nil); err != nil {
 		t.Fatalf("Mia piece_done p2: %v", err)
+	}
+	if got := loadPiece(t, srv, task.ID, "p3").Status; got != session.TaskPieceActive {
+		t.Fatalf("p3 status = %q, want active after Mia released p2", got)
 	}
 	// Drain any wake side effects, then confirm Vera still not woken.
 	waitForResidentQuiesce(t, srv)

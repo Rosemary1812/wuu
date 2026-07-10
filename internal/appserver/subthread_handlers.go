@@ -181,13 +181,14 @@ func (s *Server) handleThreadTaskEvents(req Request) error {
 	views := make([]TaskEventView, 0, len(events))
 	for _, ev := range events {
 		views = append(views, TaskEventView{
-			Seq:     ev.Seq,
-			NodeID:  ev.NodeID,
-			Kind:    ev.Kind,
-			Actor:   ev.Actor,
-			Summary: ev.Summary,
-			Payload: ev.Payload,
-			At:      ev.At,
+			Seq:       ev.Seq,
+			NodeID:    ev.NodeID,
+			AttemptID: ev.AttemptID,
+			Kind:      ev.Kind,
+			Actor:     ev.Actor,
+			Summary:   ev.Summary,
+			Payload:   ev.Payload,
+			At:        ev.At,
 		})
 	}
 	return s.writeResponse(req.ID, ThreadTaskEventsResult{Events: views}, nil)
@@ -548,17 +549,18 @@ func conversationSubthreadViewFromRecords(threadID string, thread session.Conver
 	// whether work is blocked or needs attention.
 	for _, p := range thread.Plan {
 		view.Plan = append(view.Plan, TaskPieceView{
-			ID:             p.ID,
-			Title:          p.Title,
-			Assignee:       p.Assignee,
-			DependsOn:      p.DependsOn,
-			Status:         p.Status,
-			State:          deriveNodeState(p.Status),
-			Attempts:       p.Attempts,
-			RetryBudget:    p.RetryBudget,
-			FailureReason:  p.FailureReason,
-			LastActivityAt: p.LastActivityAt,
-			LastProgressAt: p.LastProgressAt,
+			ID:               p.ID,
+			Title:            p.Title,
+			Assignee:         p.Assignee,
+			DependsOn:        p.DependsOn,
+			Status:           p.Status,
+			State:            deriveNodeState(p.Status),
+			Attempts:         p.Attempts,
+			RetryBudget:      p.RetryBudget,
+			CurrentAttemptID: p.CurrentAttemptID,
+			FailureReason:    p.FailureReason,
+			LastActivityAt:   p.LastActivityAt,
+			LastProgressAt:   p.LastProgressAt,
 		})
 	}
 	// A reply that has been escalated to a task carries a task_card: running

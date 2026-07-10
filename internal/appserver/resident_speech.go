@@ -54,7 +54,7 @@ type residentSpeechLimiter struct {
 	// these (still-unfinished) pieces, so a node a mid-turn action activated for a
 	// LATER turn (a piece_done downstream, a need_upstream upstream, a set_plan
 	// re-dispatch) is never mistaken for one this turn ran.
-	dispatchedNodes map[string]map[string]bool // taskID -> pieceID set
+	dispatchedNodes map[string]map[string]string // taskID -> pieceID -> attemptID
 }
 
 // markSpoke records that the resident published a post this turn (any kind), so
@@ -81,7 +81,7 @@ func (l *residentSpeechLimiter) askedAQuestion() bool {
 	return l.askedQuestion
 }
 
-func (l *residentSpeechLimiter) dispatchedNodesSnapshot() map[string]map[string]bool {
+func (l *residentSpeechLimiter) dispatchedNodesSnapshot() map[string]map[string]string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.dispatchedNodes
@@ -105,7 +105,7 @@ func (s *Server) lockThreadPost(threadID string) func() {
 	return mu.Unlock
 }
 
-func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThread map[string]int, engagedThreads map[string]bool, dispatchedNodes map[string]map[string]bool) tools.ParticipantSpeech {
+func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThread map[string]int, engagedThreads map[string]bool, dispatchedNodes map[string]map[string]string) tools.ParticipantSpeech {
 	hops := make(map[string]int, len(hopByThread))
 	for threadID, hop := range hopByThread {
 		threadID = strings.TrimSpace(threadID)

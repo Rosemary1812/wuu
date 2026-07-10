@@ -154,6 +154,22 @@ func (m *residentTaskManager) NeedHuman(ctx context.Context, subthreadID, reason
 	if reason == "" {
 		return tools.TaskView{}, errors.New("need_human: reason is required")
 	}
+	for _, piece := range thread.Plan {
+		if piece.Assignee != m.participantID || strings.TrimSpace(piece.CurrentAttemptID) == "" {
+			continue
+		}
+		_, updated, finishErr := session.FinishTaskAttempt(
+			m.server.rt.SessionDir, piece.CurrentAttemptID, session.TaskAttemptInterrupted,
+			session.TaskPieceBlocked, "need_human", reason, time.Now().UTC(),
+		)
+		if finishErr != nil {
+			return tools.TaskView{}, fmt.Errorf("need_human: stop current attempt: %w", finishErr)
+		}
+		thread = updated
+		m.server.recordTaskEventForAttempt(thread, piece.ID, piece.CurrentAttemptID, session.TaskEventBlocked, m.participantID,
+			fmt.Sprintf("waiting for the human: %s", reason), "")
+		break
+	}
 	if err := session.SetConversationThreadExecState(m.server.rt.SessionDir, thread.ID, session.ExecStateNeedsHuman); err != nil {
 		return tools.TaskView{}, fmt.Errorf("need_human: %w", err)
 	}
@@ -212,6 +228,17 @@ func (m *residentTaskManager) NeedUpstream(ctx context.Context, subthreadID, pie
 	if len(piece.DependsOn) == 0 {
 		return tools.TaskView{}, fmt.Errorf("need_upstream: piece %q depends on nothing — there is no upstream node to fall back to", pieceID)
 	}
+	if strings.TrimSpace(piece.CurrentAttemptID) == "" {
+		return tools.TaskView{}, fmt.Errorf("need_upstream: piece %q has no active attempt", pieceID)
+	}
+	if _, updated, err := session.FinishTaskAttempt(
+		m.server.rt.SessionDir, piece.CurrentAttemptID, session.TaskAttemptInterrupted,
+		session.TaskPieceBlocked, "need_upstream", reason, time.Now().UTC(),
+	); err != nil {
+		return tools.TaskView{}, fmt.Errorf("need_upstream: stop downstream attempt: %w", err)
+	} else {
+		thread = updated
+	}
 	downstreamTitle := piece.Title
 	upstreamIDs := make([]string, 0, len(piece.DependsOn))
 	for _, dep := range piece.DependsOn {
@@ -237,10 +264,8 @@ func (m *residentTaskManager) NeedUpstream(ctx context.Context, subthreadID, pie
 	// Re-activate every upstream and wake its assignee with targeted feedback.
 	for _, upID := range upstreamIDs {
 		reactivated, err := session.UpdateTaskPiece(m.server.rt.SessionDir, thread.ID, upID, func(p *session.TaskPiece) {
-			p.Status = session.TaskPieceActive
-			if p.Attempts < 1 {
-				p.Attempts = 1
-			}
+			p.Status = session.TaskPieceRetrying
+			p.CurrentAttemptID = ""
 			p.LastActivityAt = time.Now().UTC()
 		})
 		if err != nil {
@@ -258,7 +283,15 @@ func (m *residentTaskManager) NeedUpstream(ctx context.Context, subthreadID, pie
 		}
 		m.server.recordTaskEventFor(reactivated, upID, session.TaskEventRetrying, up.Assignee,
 			fmt.Sprintf("re-opened to fix handoff for %q", downstreamTitle), "")
-		m.server.wakeUpstreamForFallback(reactivated, *up, downstreamTitle, reason)
+		attempt, reserved, err := session.ReserveTaskAttempt(m.server.rt.SessionDir, thread.ID, upID, up.Assignee)
+		if err != nil {
+			providers.DebugLogf("need_upstream reserve %q/%q: %v", thread.ID, upID, err)
+			continue
+		}
+		fresh := findPieceByID(reserved.Plan, upID)
+		if fresh != nil {
+			m.server.wakeUpstreamForFallback(reserved, *fresh, attempt, downstreamTitle, reason)
+		}
 	}
 	m.server.notifySubthreadUpdated(thread.SessionID, thread.ID)
 	final, err := session.FindConversationThreadByID(m.server.rt.SessionDir, thread.ID)
@@ -337,6 +370,9 @@ func (m *residentTaskManager) SetPlan(ctx context.Context, subthreadID string, p
 	}
 	if m.participantID != lead {
 		return tools.TaskView{}, fmt.Errorf("set_plan: task %q is led by %q; only its lead may declare or revise the plan", thread.ID, lead)
+	}
+	if len(thread.Plan) > 0 {
+		return tools.TaskView{}, fmt.Errorf("set_plan: task %q already has a running plan; use explicit workflow revision actions instead of replacing live nodes", thread.ID)
 	}
 	if len(pieces) == 0 {
 		return tools.TaskView{}, errors.New("set_plan: plan is required")
@@ -473,16 +509,22 @@ func (m *residentTaskManager) PieceDone(ctx context.Context, subthreadID, pieceI
 // piece is marked done; actorID is the completing assignee (the trace/unfollow
 // identity).
 func (s *Server) completePieceAndAdvance(task session.ConversationThread, piece session.TaskPiece, handoff *session.TaskHandoff, actorID string) error {
-	updated, err := session.MarkTaskPieceStatus(s.rt.SessionDir, task.ID, piece.ID, session.TaskPieceDone)
+	attemptID := strings.TrimSpace(piece.CurrentAttemptID)
+	if attemptID == "" {
+		return fmt.Errorf("piece_done: piece %q has no active attempt", piece.ID)
+	}
+	_, updated, err := session.FinishTaskAttempt(
+		s.rt.SessionDir, attemptID, session.TaskAttemptSucceeded, session.TaskPieceDone, "", "", time.Now().UTC(),
+	)
 	if err != nil {
 		return fmt.Errorf("piece_done: %w", err)
 	}
-	s.recordTaskEventFor(updated, piece.ID, session.TaskEventNodeSucceeded, actorID,
+	s.recordTaskEventForAttempt(updated, piece.ID, attemptID, session.TaskEventNodeSucceeded, actorID,
 		fmt.Sprintf("piece %q reported done", piece.Title), "")
 	// Carry the handoff forward before advancing, so a downstream node that
 	// becomes ready in the same advancePlan already has its input attached.
 	if handoff != nil {
-		if err := s.recordPieceHandoff(updated, piece.ID, *handoff, actorID); err != nil {
+		if err := s.recordPieceHandoff(updated, piece.ID, attemptID, *handoff, actorID); err != nil {
 			return err
 		}
 	}
@@ -490,7 +532,7 @@ func (s *Server) completePieceAndAdvance(task session.ConversationThread, piece 
 	// activity: refresh the completing node's progress signal (plan §T9) before
 	// the engine advances.
 	s.noteNodeProgress(updated, piece.ID, session.TaskEventNodeProgress,
-		fmt.Sprintf("piece %q completed", piece.Title))
+		fmt.Sprintf("piece %q completed", piece.Title), attemptID)
 	// Auto-unfollow when this assignee has no remaining pieces: they are done
 	// with the task, so later traffic on it should not wake them (the correct
 	// lever for the lead's wrap-up not re-running finished teammates). Keep
@@ -508,7 +550,7 @@ func (s *Server) completePieceAndAdvance(task session.ConversationThread, piece 
 		}
 	}
 	s.notifySubthreadUpdated(task.SessionID, task.ID)
-	s.advancePlan(task.ID)
+	s.reconcileExecutingTasks()
 	return nil
 }
 
@@ -524,7 +566,7 @@ func (s *Server) completePieceAndAdvance(task session.ConversationThread, piece 
 // set is always recoverable. task is the plan snapshot taken right after this
 // piece was marked done (its DependsOn edges are immutable, so it is the
 // authoritative view of who is downstream); actorID is the completing assignee.
-func (s *Server) recordPieceHandoff(task session.ConversationThread, pieceID string, handoff session.TaskHandoff, actorID string) error {
+func (s *Server) recordPieceHandoff(task session.ConversationThread, pieceID, attemptID string, handoff session.TaskHandoff, actorID string) error {
 	marshaled, err := session.MarshalTaskHandoff(handoff)
 	if err != nil {
 		return fmt.Errorf("piece_done: %w", err)
@@ -552,7 +594,7 @@ func (s *Server) recordPieceHandoff(task session.ConversationThread, pieceID str
 		}
 	}
 	summary := firstNonEmpty(strings.TrimSpace(handoff.NextGoal), strings.TrimSpace(handoff.Done), "handoff")
-	s.recordTaskEventFor(task, pieceID, session.TaskEventHandoffCreated, actorID,
+	s.recordTaskEventForAttempt(task, pieceID, attemptID, session.TaskEventHandoffCreated, actorID,
 		"handoff: "+truncate(summary, 80), marshaled)
 	return nil
 }
@@ -633,10 +675,11 @@ func (m *residentTaskManager) taskView(thread session.ConversationThread) tools.
 	for _, p := range thread.Plan {
 		view.Plan = append(view.Plan, tools.TaskPiece{
 			ID: p.ID, Title: p.Title, Assignee: p.Assignee, DependsOn: p.DependsOn, Status: p.Status,
-			Prompt:         p.Prompt,
-			State:          deriveNodeState(p.Status),
-			LastActivityAt: p.LastActivityAt,
-			LastProgressAt: p.LastProgressAt,
+			Prompt:           p.Prompt,
+			CurrentAttemptID: p.CurrentAttemptID,
+			State:            deriveNodeState(p.Status),
+			LastActivityAt:   p.LastActivityAt,
+			LastProgressAt:   p.LastProgressAt,
 		})
 	}
 	return view
@@ -735,7 +778,7 @@ func (s *Server) advancePlan(taskID string) {
 		return
 	}
 	for _, p := range task.Plan {
-		if p.Status != session.TaskPiecePending {
+		if p.Status != session.TaskPiecePending && p.Status != session.TaskPieceRetrying {
 			continue
 		}
 		ready := true
@@ -748,23 +791,38 @@ func (s *Server) advancePlan(taskID string) {
 		if !ready {
 			continue
 		}
-		// Activation is also the first attempt: stamp Attempts to 1 the moment
-		// the node is dispatched (retry accounting, plan §T8) and refresh its
-		// activity signal. max(Attempts,1) keeps an already-counted node (a
-		// fallback re-open that pre-set Attempts) from being reset.
-		if _, err := session.UpdateTaskPiece(s.rt.SessionDir, taskID, p.ID, func(pc *session.TaskPiece) {
-			pc.Status = session.TaskPieceActive
-			if pc.Attempts < 1 {
-				pc.Attempts = 1
-			}
-			pc.LastActivityAt = time.Now().UTC()
-		}); err != nil {
-			providers.DebugLogf("advancePlan activate piece %q: %v", p.ID, err)
+		attempt, updated, err := session.ReserveTaskAttempt(s.rt.SessionDir, taskID, p.ID, p.Assignee)
+		if errors.Is(err, session.ErrTaskAssigneeBusy) {
 			continue
 		}
-		s.wakePieceAssignee(task, p)
+		if err != nil {
+			providers.DebugLogf("advancePlan reserve piece %q: %v", p.ID, err)
+			continue
+		}
+		fresh := findPieceByID(updated.Plan, p.ID)
+		if fresh == nil {
+			continue
+		}
+		s.wakePieceAssignee(updated, *fresh, attempt)
 	}
 	s.notifySubthreadUpdated(task.SessionID, task.ID)
+}
+
+// reconcileExecutingTasks gives every live workflow another scheduling pass.
+// It runs after an attempt releases its assignee reservation so a ready node in
+// another Task cannot remain pending merely because it lost an earlier race.
+func (s *Server) reconcileExecutingTasks() {
+	if s == nil || s.rt == nil {
+		return
+	}
+	tasks, err := session.ExecutingTaskThreads(s.rt.SessionDir)
+	if err != nil {
+		providers.DebugLogf("reconcile executing tasks: %v", err)
+		return
+	}
+	for _, task := range tasks {
+		s.advancePlan(task.ID)
+	}
 }
 
 // planTracePayload serializes a plan's pieces for the workflow_planned trace
@@ -782,6 +840,10 @@ func planTracePayload(pieces []session.TaskPiece) string {
 // critical path. task carries the ids so callers with the thread in hand avoid
 // an extra lookup.
 func (s *Server) recordTaskEventFor(task session.ConversationThread, nodeID, kind, actor, summary, payload string) {
+	s.recordTaskEventForAttempt(task, nodeID, "", kind, actor, summary, payload)
+}
+
+func (s *Server) recordTaskEventForAttempt(task session.ConversationThread, nodeID, attemptID, kind, actor, summary, payload string) {
 	if s == nil || s.rt == nil || strings.TrimSpace(task.ID) == "" {
 		return
 	}
@@ -789,12 +851,13 @@ func (s *Server) recordTaskEventFor(task session.ConversationThread, nodeID, kin
 		SessionID: task.SessionID,
 		TaskID:    task.ID,
 		NodeID:    nodeID,
+		AttemptID: attemptID,
 		Kind:      kind,
 		Actor:     actor,
 		Summary:   summary,
 		Payload:   payload,
 	}); err != nil {
-		providers.DebugLogf("record task event %s/%s: %v", task.ID, kind, err)
+		providers.DebugLogf("record task event %s/%s/%s: %v", task.ID, nodeID, attemptID, err)
 	}
 }
 
@@ -824,7 +887,7 @@ func commentaryTraceSummary(text string) string {
 	return text
 }
 
-func (s *Server) noteNodeActivity(taskID, pieceID, kind, summary string) {
+func (s *Server) noteNodeActivity(taskID, pieceID, kind, summary string, attemptIDs ...string) {
 	if s == nil || s.rt == nil {
 		return
 	}
@@ -841,10 +904,15 @@ func (s *Server) noteNodeActivity(taskID, pieceID, kind, summary string) {
 		return
 	}
 	actor := ""
+	attemptID := ""
 	if p := findPieceByID(updated.Plan, pieceID); p != nil {
 		actor = p.Assignee
+		attemptID = p.CurrentAttemptID
 	}
-	s.recordTaskEventFor(updated, pieceID, kind, actor, summary, "")
+	if len(attemptIDs) > 0 {
+		attemptID = strings.TrimSpace(attemptIDs[0])
+	}
+	s.recordTaskEventForAttempt(updated, pieceID, attemptID, kind, actor, summary, "")
 }
 
 // noteNodeProgress refreshes a plan node's real-headway signal — LastProgressAt
@@ -855,7 +923,7 @@ func (s *Server) noteNodeActivity(taskID, pieceID, kind, summary string) {
 // task it already loaded; it no-ops on an empty pieceID. Artifact-write progress
 // is deliberately OUT OF SCOPE here — it crosses the tools/appserver boundary —
 // so this covers task-update and handoff progress only.
-func (s *Server) noteNodeProgress(task session.ConversationThread, pieceID, kind, summary string) {
+func (s *Server) noteNodeProgress(task session.ConversationThread, pieceID, kind, summary string, attemptIDs ...string) {
 	if s == nil || s.rt == nil {
 		return
 	}
@@ -876,7 +944,13 @@ func (s *Server) noteNodeProgress(task session.ConversationThread, pieceID, kind
 	if p := findPieceByID(updated.Plan, pieceID); p != nil {
 		actor = p.Assignee
 	}
-	s.recordTaskEventFor(updated, pieceID, kind, actor, summary, "")
+	attemptID := ""
+	if len(attemptIDs) > 0 {
+		attemptID = strings.TrimSpace(attemptIDs[0])
+	} else if p := findPieceByID(task.Plan, pieceID); p != nil {
+		attemptID = p.CurrentAttemptID
+	}
+	s.recordTaskEventForAttempt(updated, pieceID, attemptID, kind, actor, summary, "")
 }
 
 // wakePieceText builds the wake envelope for a dispatched piece from the two
@@ -887,7 +961,7 @@ func (s *Server) noteNodeProgress(task session.ConversationThread, pieceID, kind
 // upstreams wrote a handoff onto this node, the last writer's payload is what
 // piece.Handoff holds here (last-writer-wins for the wake text); the trace
 // retains every handoff_created event.
-func wakePieceText(task session.ConversationThread, piece session.TaskPiece) string {
+func wakePieceText(task session.ConversationThread, piece session.TaskPiece, attempt session.TaskAttempt) string {
 	var b strings.Builder
 	fmt.Fprintf(&b,
 		"Your piece of task %q is ready to start: %q. Its prerequisites are done.",
@@ -907,8 +981,8 @@ func wakePieceText(task session.ConversationThread, piece session.TaskPiece) str
 		}
 	}
 	fmt.Fprintf(&b,
-		"\n\nDo it, working in this task thread (thread_id=%q). Your node completes when your turn ends, so you do not need piece_done to finish it — use manage_task action=piece_done piece_id=%q to finish early or to hand a structured result to the next node in the handoff. If you are blocked, say so before ending (post a kind=question, or need_human / need_upstream). Post here only what a teammate needs — @ them if you need something.",
-		task.ID, piece.ID,
+		"\n\nDo it as attempt %q, working in this task thread (thread_id=%q). Your node completes when your turn ends, so you do not need piece_done to finish it — use manage_task action=piece_done piece_id=%q to finish early or to hand a structured result to the next node in the handoff. If you are blocked, use need_human / need_upstream before ending. Post here only what a teammate needs — @ them if you need something.",
+		attempt.ID, task.ID, piece.ID,
 	)
 	return b.String()
 }
@@ -917,14 +991,16 @@ func wakePieceText(task session.ConversationThread, piece session.TaskPiece) str
 // whose dependencies are satisfied. The directive is medium-agnostic — it names
 // the piece, not a code action — so the same wake serves research, documents,
 // and code.
-func (s *Server) wakePieceAssignee(task session.ConversationThread, piece session.TaskPiece) {
+func (s *Server) wakePieceAssignee(task session.ConversationThread, piece session.TaskPiece, attempt session.TaskAttempt) {
 	title, workspace := s.taskThreadContext(task.SessionID)
-	text := wakePieceText(task, piece)
-	s.recordTaskEventFor(task, piece.ID, session.TaskEventNodeStarted, piece.Assignee,
+	text := wakePieceText(task, piece, attempt)
+	s.recordTaskEventForAttempt(task, piece.ID, attempt.ID, session.TaskEventNodeStarted, piece.Assignee,
 		fmt.Sprintf("node started: %q", piece.Title), "")
 	s.deliverEnvelopeToMembers([]string{piece.Assignee}, MessageEnvelope{
 		SourceThreadID:      task.SessionID,
 		SourceSubthreadID:   task.ID,
+		TaskAttemptID:       attempt.ID,
+		TaskNodeID:          piece.ID,
 		SourceTitle:         title,
 		SenderKind:          "system",
 		SenderName:          "task plan",
@@ -1038,7 +1114,7 @@ func (s *Server) wakePlanLeadOnFailure(task session.ConversationThread, piece se
 // wakePieceAssignee) carrying the upstream's original briefing plus a labeled
 // block naming the downstream node and exactly what it found missing, so the
 // upstream can revise its work and re-file piece_done with an updated handoff.
-func (s *Server) wakeUpstreamForFallback(task session.ConversationThread, upstream session.TaskPiece, downstreamTitle, reason string) {
+func (s *Server) wakeUpstreamForFallback(task session.ConversationThread, upstream session.TaskPiece, attempt session.TaskAttempt, downstreamTitle, reason string) {
 	title, workspace := s.taskThreadContext(task.SessionID)
 	var b strings.Builder
 	fmt.Fprintf(&b,
@@ -1060,6 +1136,8 @@ func (s *Server) wakeUpstreamForFallback(task session.ConversationThread, upstre
 	s.deliverEnvelopeToMembers([]string{upstream.Assignee}, MessageEnvelope{
 		SourceThreadID:      task.SessionID,
 		SourceSubthreadID:   task.ID,
+		TaskAttemptID:       attempt.ID,
+		TaskNodeID:          upstream.ID,
 		SourceTitle:         title,
 		SenderKind:          "system",
 		SenderName:          "task plan",

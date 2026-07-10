@@ -18,7 +18,11 @@ type MessageEnvelope struct {
 	// than the group's full roster. Empty for ordinary main-stream group/DM
 	// traffic. Carried so the resident replies back into the same reply thread
 	// (post_message thread_id=cth-…) instead of leaking into the main stream.
-	SourceSubthreadID   string `json:"source_subthread_id,omitempty"`
+	SourceSubthreadID string `json:"source_subthread_id,omitempty"`
+	// TaskAttemptID/TaskNodeID bind a scheduler dispatch to one exact durable
+	// attempt. They are both empty for ordinary chat and lead-management wakes.
+	TaskAttemptID       string `json:"task_attempt_id,omitempty"`
+	TaskNodeID          string `json:"task_node_id,omitempty"`
 	SourceTitle         string `json:"source_title"`
 	SenderKind          string `json:"sender_kind"`
 	SenderName          string `json:"sender_name"`
@@ -61,6 +65,12 @@ func (e MessageEnvelope) Prompt() string {
 	// main-stream traffic.
 	if sub := strings.TrimSpace(e.SourceSubthreadID); sub != "" {
 		attrs += fmt.Sprintf(" subthread_id=%q", sub)
+	}
+	if attemptID := strings.TrimSpace(e.TaskAttemptID); attemptID != "" {
+		attrs += fmt.Sprintf(" task_attempt_id=%q", attemptID)
+	}
+	if nodeID := strings.TrimSpace(e.TaskNodeID); nodeID != "" {
+		attrs += fmt.Sprintf(" task_node_id=%q", nodeID)
 	}
 	// seq is the message's stable address; the model passes it to the react
 	// tool to stamp a reaction on this exact message. Omitted when unknown.

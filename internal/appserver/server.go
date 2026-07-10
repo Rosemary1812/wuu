@@ -271,6 +271,8 @@ func New(rt *runtime.Session, out io.Writer) *Server {
 //	pass 2: scan message_marks WHERE kind='seen' AND status='in_progress',
 //	        set status='expired_unprocessed' (terminal "we didn't get a
 //	        turn" state, distinguishable from "failed" by the front-end).
+//	pass 3: interrupt queued/running task attempts, clear their node binding,
+//	        and pause each Task for its lead without starting a turn.
 //
 // ❌ Does NOT call kickResidentAgent.
 // ❌ Does NOT start any turn.
@@ -294,6 +296,24 @@ func (s *Server) settleOnBoot() {
 		providers.DebugLogf("settleOnBoot pass2 (receipt settle): %v", err)
 	} else if n > 0 {
 		providers.DebugLogf("settleOnBoot pass2: %d receipt(s) flipped to expired_unprocessed", n)
+	}
+	attempts, err := session.SettleActiveTaskAttempts(s.rt.SessionDir, now)
+	if err != nil {
+		providers.DebugLogf("settleOnBoot pass3 (task attempts): %v", err)
+		return
+	}
+	for _, attempt := range attempts {
+		task, loadErr := session.FindConversationThreadByID(s.rt.SessionDir, attempt.TaskID)
+		if loadErr != nil {
+			providers.DebugLogf("settleOnBoot load interrupted task %q: %v", attempt.TaskID, loadErr)
+			continue
+		}
+		s.recordTaskEventForAttempt(task, attempt.NodeID, attempt.ID, session.TaskEventBlocked,
+			attempt.AssigneeID, "attempt interrupted by app restart", "")
+		s.notifySubthreadUpdated(task.SessionID, task.ID)
+	}
+	if len(attempts) > 0 {
+		providers.DebugLogf("settleOnBoot pass3: %d task attempt(s) interrupted", len(attempts))
 	}
 }
 

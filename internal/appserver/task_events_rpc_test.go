@@ -76,13 +76,25 @@ func TestThreadTaskEventsReturnsTraceInSeqOrder(t *testing.T) {
 	}
 
 	// task_created is a task-level event (no node); node_succeeded is anchored to
-	// the piece it completed.
+	// the piece and exact durable attempt it completed.
+	startedAttempt := ""
 	for _, ev := range result.Events {
 		if ev.Kind == session.TaskEventTaskCreated && ev.NodeID != "" {
 			t.Fatalf("task_created must be task-level (empty node), got node %q", ev.NodeID)
 		}
-		if ev.Kind == session.TaskEventNodeSucceeded && ev.NodeID != "only" {
-			t.Fatalf("node_succeeded node = %q, want the piece id %q", ev.NodeID, "only")
+		if ev.Kind == session.TaskEventNodeStarted {
+			startedAttempt = ev.AttemptID
+			if startedAttempt == "" {
+				t.Fatal("node_started must expose its durable attempt id")
+			}
+		}
+		if ev.Kind == session.TaskEventNodeSucceeded {
+			if ev.NodeID != "only" {
+				t.Fatalf("node_succeeded node = %q, want the piece id %q", ev.NodeID, "only")
+			}
+			if ev.AttemptID == "" || ev.AttemptID != startedAttempt {
+				t.Fatalf("node_succeeded attempt = %q, want started attempt %q", ev.AttemptID, startedAttempt)
+			}
 		}
 	}
 }

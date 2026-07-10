@@ -20,7 +20,25 @@ import (
 
 // taskPlanDispatchEnv is the shape of a plan-dispatch wake (system "task plan"
 // carrying the task cth id) — the batch signature the turn-failure hook keys on.
-func taskPlanDispatchEnv(taskID string) MessageEnvelope {
+func taskPlanDispatchEnv(t *testing.T, srv *Server, taskID, assigneeID string) MessageEnvelope {
+	t.Helper()
+	task, err := session.FindConversationThreadByID(srv.rt.SessionDir, taskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, piece := range task.Plan {
+		if piece.Assignee == assigneeID && piece.CurrentAttemptID != "" {
+			return MessageEnvelope{
+				SenderKind: "system", SenderName: "task plan", SourceSubthreadID: taskID,
+				TaskNodeID: piece.ID, TaskAttemptID: piece.CurrentAttemptID,
+			}
+		}
+	}
+	t.Fatalf("task %q has no active attempt for %q", taskID, assigneeID)
+	return MessageEnvelope{}
+}
+
+func taskLeadWakeEnv(taskID string) MessageEnvelope {
 	return MessageEnvelope{SenderKind: "system", SenderName: "task plan", SourceSubthreadID: taskID}
 }
 
@@ -126,12 +144,12 @@ func TestRetryableFailureRetriesWithinBudget(t *testing.T) {
 	}
 	nodeStartedBefore := countTaskEventKind(t, srv, task.ID, session.TaskEventNodeStarted)
 
-	srv.retryOrFailTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)},
+	srv.retryOrFailTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(t, srv, task.ID, mia)},
 		synthFailedTurn("network", "connection reset by peer"))
 
 	p := loadPiece(t, srv, task.ID, "p1")
-	if p.Status != session.TaskPieceRetrying {
-		t.Fatalf("p1 status = %q, want retrying", p.Status)
+	if p.Status != session.TaskPieceActive || p.CurrentAttemptID == "" {
+		t.Fatalf("p1 = status %q attempt %q, want active retry attempt", p.Status, p.CurrentAttemptID)
 	}
 	if p.Attempts != 2 {
 		t.Fatalf("p1 attempts = %d, want 2", p.Attempts)
@@ -143,8 +161,8 @@ func TestRetryableFailureRetriesWithinBudget(t *testing.T) {
 	if !ok {
 		t.Fatal("expected a retrying trace event for p1")
 	}
-	if !strings.Contains(ev.Summary, "2/3") {
-		t.Fatalf("retrying trace summary = %q, want the attempt count", ev.Summary)
+	if !strings.Contains(ev.Summary, "1/3") {
+		t.Fatalf("retrying trace summary = %q, want failed attempt ordinal", ev.Summary)
 	}
 	// The re-dispatch recorded a second node_started (assignee re-woken).
 	if got := countTaskEventKind(t, srv, task.ID, session.TaskEventNodeStarted); got <= nodeStartedBefore {
@@ -153,9 +171,9 @@ func TestRetryableFailureRetriesWithinBudget(t *testing.T) {
 	waitForResidentDMHistoryContains(t, srv, mia, "跑一段活")
 }
 
-// A user interrupt (cancelled) leaves the node exactly as it was: no attempt is
-// spent, no trace is written, nobody is woken. The user chose to stop.
-func TestCancelledTurnLeavesNodeUntouched(t *testing.T) {
+// A user interrupt terminates the exact durable attempt and pauses the Task;
+// finished turns never leave a phantom running node behind.
+func TestInterruptedTurnPausesTask(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
 	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "用户中断")
@@ -167,27 +185,16 @@ func TestCancelledTurnLeavesNodeUntouched(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
-	before := loadPiece(t, srv, task.ID, "p1")
-	retryingBefore := countTaskEventKind(t, srv, task.ID, session.TaskEventRetrying)
-	failedBefore := countTaskEventKind(t, srv, task.ID, session.TaskEventNodeFailed)
-	leadBefore := countTaskEventKind(t, srv, task.ID, session.TaskEventLeadInvoked)
-
-	srv.retryOrFailTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)},
-		synthFailedTurn("cancelled", "user interrupted the turn"))
+	env := taskPlanDispatchEnv(t, srv, task.ID, mia)
+	srv.interruptTaskAttemptsAfterTurn(mia, []MessageEnvelope{env}, "user interrupted the turn")
 
 	after := loadPiece(t, srv, task.ID, "p1")
-	if after.Status != before.Status || after.Attempts != before.Attempts || after.FailureReason != before.FailureReason {
-		t.Fatalf("cancelled must leave the node untouched: before {status:%q attempts:%d reason:%q} after {status:%q attempts:%d reason:%q}",
-			before.Status, before.Attempts, before.FailureReason, after.Status, after.Attempts, after.FailureReason)
+	if after.Status != session.TaskPieceBlocked || after.CurrentAttemptID != "" || !strings.Contains(after.FailureReason, "interrupted") {
+		t.Fatalf("interrupted node = %+v, want blocked with no active attempt", after)
 	}
-	if got := countTaskEventKind(t, srv, task.ID, session.TaskEventRetrying); got != retryingBefore {
-		t.Fatalf("cancelled wrote a retrying trace: %d -> %d", retryingBefore, got)
-	}
-	if got := countTaskEventKind(t, srv, task.ID, session.TaskEventNodeFailed); got != failedBefore {
-		t.Fatalf("cancelled wrote a node_failed trace: %d -> %d", failedBefore, got)
-	}
-	if got := countTaskEventKind(t, srv, task.ID, session.TaskEventLeadInvoked); got != leadBefore {
-		t.Fatalf("cancelled woke the lead: %d -> %d lead_invoked", leadBefore, got)
+	thread, err := session.FindConversationThreadByID(srv.rt.SessionDir, task.ID)
+	if err != nil || thread.ExecState != session.ExecStateBlocked {
+		t.Fatalf("interrupted task = %+v, %v", thread, err)
 	}
 }
 
@@ -207,7 +214,7 @@ func TestHardFailureFailsNodeWithoutSpendingBudget(t *testing.T) {
 	}
 	before := loadPiece(t, srv, task.ID, "p1")
 
-	srv.retryOrFailTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)},
+	srv.retryOrFailTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(t, srv, task.ID, mia)},
 		synthFailedTurn("auth", "401 unauthorized"))
 
 	p := loadPiece(t, srv, task.ID, "p1")

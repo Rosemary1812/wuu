@@ -99,12 +99,7 @@ func TestNoteNodeActivityRefreshesActivityNotProgress(t *testing.T) {
 		t.Fatalf("pin baseline: %v", err)
 	}
 
-	envs := []MessageEnvelope{{
-		SenderKind:        "system",
-		SenderName:        "task plan",
-		SourceThreadID:    groupID,
-		SourceSubthreadID: task.ID,
-	}}
+	envs := []MessageEnvelope{taskPlanDispatchEnv(t, srv, task.ID, mia)}
 	gotTask, gotPiece, ok := srv.resolveExecutingNode(mia, envs)
 	if !ok || gotTask != task.ID || gotPiece != "p1" {
 		t.Fatalf("resolveExecutingNode = (%q, %q, %v), want (%q, p1, true)", gotTask, gotPiece, ok, task.ID)
@@ -149,12 +144,7 @@ func TestCommentaryAndToolResultRefreshActivityNotProgress(t *testing.T) {
 	}
 	waitForResidentQuiesce(t, srv)
 
-	envs := []MessageEnvelope{{
-		SenderKind:        "system",
-		SenderName:        "task plan",
-		SourceThreadID:    groupID,
-		SourceSubthreadID: task.ID,
-	}}
+	envs := []MessageEnvelope{taskPlanDispatchEnv(t, srv, task.ID, mia)}
 	gotTask, gotPiece, ok := srv.resolveExecutingNode(mia, envs)
 	if !ok {
 		t.Fatalf("resolveExecutingNode did not resolve the active node")

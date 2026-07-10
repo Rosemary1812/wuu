@@ -391,11 +391,12 @@ type TaskView struct {
 // the only node field the lead authors through set_plan — handoff, attempts,
 // and retry budget are engine-owned and never settable from the tool surface.
 type TaskPiece struct {
-	ID        string   `json:"id"`
-	Title     string   `json:"title"`
-	Assignee  string   `json:"assignee"`
-	DependsOn []string `json:"depends_on,omitempty"`
-	Status    string   `json:"status,omitempty"`
+	ID               string   `json:"id"`
+	Title            string   `json:"title"`
+	Assignee         string   `json:"assignee"`
+	DependsOn        []string `json:"depends_on,omitempty"`
+	Status           string   `json:"status,omitempty"`
+	CurrentAttemptID string   `json:"current_attempt_id,omitempty"`
 	// Prompt is the lead-authored briefing the assignee is woken with when
 	// the engine dispatches the piece.
 	Prompt string `json:"prompt,omitempty"`

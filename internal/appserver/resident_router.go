@@ -764,6 +764,13 @@ func (s *Server) drainResidentAgent(participantID string) {
 	if !ok {
 		return
 	}
+	for _, dispatch := range planAttemptDispatches(envs) {
+		if _, err := session.StartTaskAttempt(s.rt.SessionDir, dispatch.AttemptID, time.Now().UTC()); err != nil {
+			started.cancel()
+			providers.DebugLogf("start durable task attempt %q for resident %q: %v", dispatch.AttemptID, participantID, err)
+			return
+		}
+	}
 	// The turn is now consuming this batch: mark each source message
 	// in_progress for this resident. Turn outcome (completed/failed) is
 	// recorded later in afterResidentTurn.
@@ -1053,7 +1060,7 @@ func (s *Server) afterResidentTurn(th *threadState, participantID string, envs [
 	// reliable signal), whether it asked a question (the blocked/waiting signal),
 	// and the snapshot of which plan nodes this turn was dispatched to run.
 	spoke, askedQuestion := false, false
-	var dispatched map[string]map[string]bool
+	var dispatched map[string]map[string]string
 	if v, ok := s.residentTurnSpeech.LoadAndDelete(participantID); ok {
 		if lim, ok := v.(*residentSpeechLimiter); ok {
 			spoke = lim.didSpeak()
@@ -1071,6 +1078,9 @@ func (s *Server) afterResidentTurn(th *threadState, participantID string, envs [
 	// or fail the node and wake the lead (plan §T8). No-op unless this batch
 	// was a plan dispatch and the turn is a retryable/hard failure.
 	s.retryOrFailTaskNodesAfterTurn(participantID, envs, turn)
+	if turn.Status == TurnStatusInterrupted {
+		s.interruptTaskAttemptsAfterTurn(participantID, envs, "worker turn was interrupted")
+	}
 	// Turn-end completion capture (the flip side of the failure hook): a COMPLETED
 	// plan-dispatch turn advances the plan even without piece_done — the node it
 	// was dispatched for completes now, unless the agent gave an explicit blocked

@@ -1232,9 +1232,9 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	// resolveExecutingNode returns ok=false for any non-node turn (ordinary
 	// DM/chat, a lead's planning/wrap-up wake), so the activity hook below no-ops
 	// there.
-	nodeTaskID, nodePieceID, nodeExecuting := "", "", false
+	nodeTaskID, nodePieceID, nodeAttemptID, nodeExecuting := "", "", "", false
 	if residentParticipantID != "" && len(residentEnvelopes) > 0 {
-		nodeTaskID, nodePieceID, nodeExecuting = s.resolveExecutingNode(residentParticipantID, residentEnvelopes)
+		nodeTaskID, nodePieceID, nodeAttemptID, nodeExecuting = s.resolveExecutingAttempt(residentParticipantID, residentEnvelopes)
 	}
 	res, err := runner.RunWithCallback(ctx, history, func(ev providers.StreamEvent) {
 		if ev.Type == providers.EventUsage && ev.Usage != nil {
@@ -1266,18 +1266,18 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			switch ev.Type {
 			case providers.EventToolUseEnd:
 				if ev.ToolCall != nil {
-					s.noteNodeActivity(nodeTaskID, nodePieceID, session.TaskEventToolCall, strings.TrimSpace(ev.ToolCall.Name))
+					s.noteNodeActivity(nodeTaskID, nodePieceID, session.TaskEventToolCall, strings.TrimSpace(ev.ToolCall.Name), nodeAttemptID)
 				}
 				if strings.TrimSpace(ev.ToolResult) != "" {
 					toolName := ""
 					if ev.ToolCall != nil {
 						toolName = strings.TrimSpace(ev.ToolCall.Name)
 					}
-					s.noteNodeActivity(nodeTaskID, nodePieceID, session.TaskEventToolResult, toolName)
+					s.noteNodeActivity(nodeTaskID, nodePieceID, session.TaskEventToolResult, toolName, nodeAttemptID)
 				}
 			case providers.EventMessage:
 				if ev.Message != nil && ev.Message.Role == "assistant" && strings.TrimSpace(ev.Message.Content) != "" {
-					s.noteNodeActivity(nodeTaskID, nodePieceID, session.TaskEventCommentary, commentaryTraceSummary(ev.Message.Content))
+					s.noteNodeActivity(nodeTaskID, nodePieceID, session.TaskEventCommentary, commentaryTraceSummary(ev.Message.Content), nodeAttemptID)
 				}
 			}
 		}

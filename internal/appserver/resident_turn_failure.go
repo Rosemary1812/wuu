@@ -38,65 +38,74 @@ func isRetryableTurnFailure(turn Turn) bool {
 // sender is "task board") is not a node execution. It is the shared guard for
 // both the failure hook (T8, retryOrFailTaskNodesAfterTurn) and the activity
 // resolver (resolveExecutingNode, plan §T9) so the two never drift.
+type taskAttemptDispatch struct {
+	TaskID    string
+	NodeID    string
+	AttemptID string
+}
+
+func planAttemptDispatches(envs []MessageEnvelope) []taskAttemptDispatch {
+	seen := map[string]bool{}
+	var out []taskAttemptDispatch
+	for _, env := range envs {
+		if !strings.EqualFold(strings.TrimSpace(env.SenderKind), "system") || strings.TrimSpace(env.SenderName) != "task plan" {
+			continue
+		}
+		dispatch := taskAttemptDispatch{
+			TaskID: strings.TrimSpace(env.SourceSubthreadID), NodeID: strings.TrimSpace(env.TaskNodeID),
+			AttemptID: strings.TrimSpace(env.TaskAttemptID),
+		}
+		if dispatch.TaskID == "" || dispatch.NodeID == "" || dispatch.AttemptID == "" || seen[dispatch.AttemptID] {
+			continue
+		}
+		seen[dispatch.AttemptID] = true
+		out = append(out, dispatch)
+	}
+	return out
+}
+
 func planDispatchTaskIDs(envs []MessageEnvelope) map[string]bool {
 	taskIDs := map[string]bool{}
-	for _, env := range envs {
-		if !strings.EqualFold(strings.TrimSpace(env.SenderKind), "system") {
-			continue
-		}
-		if strings.TrimSpace(env.SenderName) != "task plan" {
-			continue
-		}
-		if id := strings.TrimSpace(env.SourceSubthreadID); id != "" {
-			taskIDs[id] = true
-		}
+	for _, dispatch := range planAttemptDispatches(envs) {
+		taskIDs[dispatch.TaskID] = true
 	}
 	return taskIDs
 }
 
-// resolveExecutingNode returns the task id and piece id of the plan node a
-// resident turn is executing — the participant's active/retrying piece in a task
-// its consumed batch dispatched (see planDispatchTaskIDs for the mechanical
-// guard). It is resolved ONCE per turn (not per stream event) to drive the
-// activity/progress liveness wiring (plan §T9). ok is false for any turn that is
-// not executing a node: an ordinary DM/chat turn (no plan dispatch in the batch),
-// a lead's planning or wrap-up wake (the lead holds no active piece), a board
-// wake (a different sender). When several dispatched tasks each carry an active
-// piece for this participant, the first found is returned — the liveness signal
-// is a bare timestamp refresh, so attributing a shared turn to one of its nodes
-// is sufficient.
-func (s *Server) resolveExecutingNode(participantID string, envs []MessageEnvelope) (taskID, pieceID string, ok bool) {
+// resolveExecutingAttempt resolves the exact durable attempt carried by a plan
+// dispatch envelope. It never guesses from the assignee's first active node.
+// A named agent has at most one queued/running attempt, so one resident turn has
+// one unambiguous task/node/attempt identity.
+func (s *Server) resolveExecutingAttempt(participantID string, envs []MessageEnvelope) (taskID, pieceID, attemptID string, ok bool) {
 	if s == nil || s.rt == nil {
-		return "", "", false
+		return "", "", "", false
 	}
 	participantID = strings.TrimSpace(participantID)
 	if participantID == "" {
-		return "", "", false
+		return "", "", "", false
 	}
-	taskIDs := planDispatchTaskIDs(envs)
-	if len(taskIDs) == 0 {
-		return "", "", false
-	}
-	for id := range taskIDs {
-		task, err := session.FindConversationThreadByID(s.rt.SessionDir, id)
+	for _, dispatch := range planAttemptDispatches(envs) {
+		attempt, err := session.TaskAttemptByID(s.rt.SessionDir, dispatch.AttemptID)
 		if err != nil {
-			providers.DebugLogf("resolveExecutingNode load task %q: %v", id, err)
+			providers.DebugLogf("resolve executing attempt %q: %v", dispatch.AttemptID, err)
 			continue
 		}
-		if piece := activePieceForAssignee(task.Plan, participantID); piece != nil {
-			return task.ID, piece.ID, true
+		if attempt.TaskID == dispatch.TaskID && attempt.NodeID == dispatch.NodeID && attempt.AssigneeID == participantID &&
+			(attempt.Status == session.TaskAttemptQueued || attempt.Status == session.TaskAttemptRunning) {
+			return dispatch.TaskID, dispatch.NodeID, dispatch.AttemptID, true
 		}
 	}
-	return "", "", false
+	return "", "", "", false
 }
 
-// dispatchedNodesForTurn snapshots, before a turn runs, the pieces it is being
-// dispatched to run: for each task its consumed batch dispatched (planDispatchTaskIDs),
-// the assignee's Active/Retrying piece ids — but only for a task in ExecState
-// executing, so a lead-management wake (a planning/blocked/completed task carries
-// the same "task plan" envelope) contributes nothing. Turn-end completion capture
-// completes only these, never a node activated mid-turn for a later turn.
-func (s *Server) dispatchedNodesForTurn(participantID string, envs []MessageEnvelope) map[string]map[string]bool {
+func (s *Server) resolveExecutingNode(participantID string, envs []MessageEnvelope) (taskID, pieceID string, ok bool) {
+	taskID, pieceID, _, ok = s.resolveExecutingAttempt(participantID, envs)
+	return taskID, pieceID, ok
+}
+
+// dispatchedNodesForTurn snapshots the exact attempt ids a turn may complete.
+// Lead-management wakes carry no attempt id and therefore contribute nothing.
+func (s *Server) dispatchedNodesForTurn(participantID string, envs []MessageEnvelope) map[string]map[string]string {
 	if s == nil || s.rt == nil {
 		return nil
 	}
@@ -104,32 +113,32 @@ func (s *Server) dispatchedNodesForTurn(participantID string, envs []MessageEnve
 	if participantID == "" {
 		return nil
 	}
-	taskIDs := planDispatchTaskIDs(envs)
-	if len(taskIDs) == 0 {
+	dispatches := planAttemptDispatches(envs)
+	if len(dispatches) == 0 {
 		return nil
 	}
-	out := map[string]map[string]bool{}
-	for id := range taskIDs {
-		task, err := session.FindConversationThreadByID(s.rt.SessionDir, id)
+	out := map[string]map[string]string{}
+	for _, dispatch := range dispatches {
+		attempt, err := session.TaskAttemptByID(s.rt.SessionDir, dispatch.AttemptID)
 		if err != nil {
-			providers.DebugLogf("dispatchedNodesForTurn load task %q: %v", id, err)
+			providers.DebugLogf("dispatchedNodesForTurn load attempt %q: %v", dispatch.AttemptID, err)
+			continue
+		}
+		task, err := session.FindConversationThreadByID(s.rt.SessionDir, dispatch.TaskID)
+		if err != nil {
 			continue
 		}
 		if task.ExecState != session.ExecStateExecuting {
 			continue
 		}
-		for _, p := range task.Plan {
-			if p.Assignee != participantID {
-				continue
-			}
-			if p.Status != session.TaskPieceActive && p.Status != session.TaskPieceRetrying {
-				continue
-			}
-			if out[task.ID] == nil {
-				out[task.ID] = map[string]bool{}
-			}
-			out[task.ID][p.ID] = true
+		piece := findPieceByID(task.Plan, dispatch.NodeID)
+		if attempt.AssigneeID != participantID || attempt.TaskID != task.ID || piece == nil || piece.CurrentAttemptID != attempt.ID {
+			continue
 		}
+		if out[task.ID] == nil {
+			out[task.ID] = map[string]string{}
+		}
+		out[task.ID][piece.ID] = attempt.ID
 	}
 	return out
 }
@@ -147,9 +156,7 @@ func (s *Server) dispatchedNodesForTurn(participantID string, envs []MessageEnve
 //   - a retryable failure with the budget exhausted, OR a hard failure that
 //     retrying cannot fix (auth/local/internal) → fail the node, block the
 //     task, and wake the lead to recover;
-//   - a cancelled turn (user interrupt) → leave the node untouched: the user
-//     chose to stop, so no budget is spent, no trace is written, nobody is
-//     woken;
+//   - an interrupted turn is handled separately by interruptTaskAttemptsAfterTurn;
 //   - a completed turn → not handled here: turn-end completion capture
 //     (autoCompleteTaskNodesAfterTurn) advances the plan for a completed
 //     dispatch turn, whether or not the agent filed piece_done.
@@ -163,48 +170,85 @@ func (s *Server) retryOrFailTaskNodesAfterTurn(participantID string, envs []Mess
 	}
 	// Guard: only a plan-dispatch batch (system "task plan" envelope carrying a
 	// task id) is a node execution turn.
-	taskIDs := planDispatchTaskIDs(envs)
-	if len(taskIDs) == 0 {
+	dispatches := planAttemptDispatches(envs)
+	if len(dispatches) == 0 {
 		return
 	}
 
 	retryable := isRetryableTurnFailure(turn)
-	// A hard failure is one a retry cannot fix — auth (needs a human),
-	// local/internal (our own bug). It fails the node immediately like an
-	// exhausted budget, but WITHOUT spending a retry. Cancelled is excluded on
-	// purpose: it is the user's interrupt, not a node fault.
+	// Any non-transient failed turn terminates the attempt. Auth/local/internal
+	// failures are not retried; interrupted turns have their own path.
 	hardFailure := false
 	category := ""
 	message := ""
-	if turn.Status == TurnStatusFailed && turn.Error != nil {
-		category = strings.TrimSpace(turn.Error.Category)
-		message = strings.TrimSpace(turn.Error.Message)
-		switch category {
-		case "auth", "local", "internal":
-			hardFailure = true
+	if turn.Status == TurnStatusFailed {
+		hardFailure = true
+		if turn.Error != nil {
+			category = strings.TrimSpace(turn.Error.Category)
+			message = strings.TrimSpace(turn.Error.Message)
+		}
+		if retryable {
+			hardFailure = false
 		}
 	}
-	// This hook owns only failures. A cancelled turn leaves every node as-is
-	// here; a completed turn is likewise not this hook's concern — turn-end
+	// This hook owns only failures. An interrupted or completed turn is not this
+	// hook's concern — turn-end
 	// completion capture (autoCompleteTaskNodesAfterTurn) advances it.
 	if !retryable && !hardFailure {
 		return
 	}
 
-	for taskID := range taskIDs {
-		task, err := session.FindConversationThreadByID(s.rt.SessionDir, taskID)
+	for _, dispatch := range dispatches {
+		attempt, err := session.TaskAttemptByID(s.rt.SessionDir, dispatch.AttemptID)
 		if err != nil {
-			providers.DebugLogf("retryOrFailTaskNodesAfterTurn load task %q: %v", taskID, err)
+			providers.DebugLogf("retryOrFailTaskNodesAfterTurn load attempt %q: %v", dispatch.AttemptID, err)
 			continue
 		}
-		for _, piece := range task.Plan {
-			if piece.Assignee != participantID {
-				continue
-			}
-			if piece.Status != session.TaskPieceActive && piece.Status != session.TaskPieceRetrying {
-				continue
-			}
-			s.handleNodeTurnFailure(task, piece, retryable, category, message)
+		task, err := session.FindConversationThreadByID(s.rt.SessionDir, dispatch.TaskID)
+		if err != nil {
+			continue
+		}
+		piece := findPieceByID(task.Plan, dispatch.NodeID)
+		if piece == nil || piece.Assignee != participantID || piece.CurrentAttemptID != attempt.ID || attempt.AssigneeID != participantID {
+			continue
+		}
+		s.handleNodeTurnFailure(task, *piece, attempt, retryable, category, message)
+	}
+}
+
+// interruptTaskAttemptsAfterTurn terminates an exact attempt when its resident
+// turn ended without a success/failure outcome the scheduler can advance from
+// (user interruption or an unresolved question). The Task pauses for its lead;
+// no invisible queued/running attempt survives a finished turn.
+func (s *Server) interruptTaskAttemptsAfterTurn(participantID string, envs []MessageEnvelope, reason string) {
+	participantID = strings.TrimSpace(participantID)
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "worker turn interrupted"
+	}
+	for _, dispatch := range planAttemptDispatches(envs) {
+		attempt, err := session.TaskAttemptByID(s.rt.SessionDir, dispatch.AttemptID)
+		if err != nil || attempt.AssigneeID != participantID ||
+			(attempt.Status != session.TaskAttemptQueued && attempt.Status != session.TaskAttemptRunning) {
+			continue
+		}
+		_, task, err := session.FinishTaskAttempt(
+			s.rt.SessionDir, attempt.ID, session.TaskAttemptInterrupted, session.TaskPieceBlocked,
+			"interrupted", reason, time.Now().UTC(),
+		)
+		if err != nil {
+			providers.DebugLogf("interrupt task attempt %q: %v", attempt.ID, err)
+			continue
+		}
+		if err := session.SetConversationThreadExecState(s.rt.SessionDir, task.ID, session.ExecStateBlocked); err != nil {
+			providers.DebugLogf("pause interrupted task %q: %v", task.ID, err)
+		} else {
+			task.ExecState = session.ExecStateBlocked
+		}
+		s.recordTaskEventForAttempt(task, dispatch.NodeID, attempt.ID, session.TaskEventBlocked, participantID, reason, "")
+		s.notifySubthreadUpdated(task.SessionID, task.ID)
+		if piece := findPieceByID(task.Plan, dispatch.NodeID); piece != nil {
+			s.wakePlanLeadOnFailure(task, *piece, reason)
 		}
 	}
 }
@@ -214,43 +258,37 @@ func (s *Server) retryOrFailTaskNodesAfterTurn(participantID string, envs []Mess
 // runtime failure (a hard failure passes retryable=false and is failed
 // immediately without spending budget). category/message describe the failure
 // for the trace and the node's FailureReason.
-func (s *Server) handleNodeTurnFailure(task session.ConversationThread, piece session.TaskPiece, retryable bool, category, message string) {
+func (s *Server) handleNodeTurnFailure(task session.ConversationThread, piece session.TaskPiece, attempt session.TaskAttempt, retryable bool, category, message string) {
 	reason := strings.TrimSpace(message)
 	if reason == "" {
 		reason = firstNonEmpty(strings.TrimSpace(category), "runtime failure")
 	}
 	reason = truncate(reason, 500)
 
-	if retryable && piece.Attempts < piece.RetryBudget {
-		// Budget remains: consume one attempt and re-dispatch the same node.
-		updated, err := session.UpdateTaskPiece(s.rt.SessionDir, task.ID, piece.ID, func(p *session.TaskPiece) {
-			p.Attempts++
-			p.Status = session.TaskPieceRetrying
-			p.FailureReason = reason
-			p.LastActivityAt = time.Now().UTC()
-		})
+	if retryable && attempt.Ordinal < piece.RetryBudget {
+		// Budget remains: terminate this exact attempt, then let the global
+		// scheduler reserve and dispatch a new attempt.
+		_, updated, err := session.FinishTaskAttempt(
+			s.rt.SessionDir, attempt.ID, session.TaskAttemptFailed, session.TaskPieceRetrying,
+			category, reason, time.Now().UTC(),
+		)
 		if err != nil {
 			providers.DebugLogf("retry node %q/%q: %v", task.ID, piece.ID, err)
 			return
 		}
-		fresh := findPieceByID(updated.Plan, piece.ID)
-		if fresh == nil {
-			return
-		}
-		s.recordTaskEventFor(updated, piece.ID, session.TaskEventRetrying, piece.Assignee,
-			fmt.Sprintf("attempt %d/%d after runtime failure", fresh.Attempts, fresh.RetryBudget), "")
-		s.wakePieceAssignee(updated, *fresh)
+		s.recordTaskEventForAttempt(updated, piece.ID, attempt.ID, session.TaskEventRetrying, piece.Assignee,
+			fmt.Sprintf("attempt %d/%d failed; retry scheduled", attempt.Ordinal, piece.RetryBudget), "")
 		s.notifySubthreadUpdated(updated.SessionID, updated.ID)
+		s.reconcileExecutingTasks()
 		return
 	}
 
 	// Budget exhausted, or a hard failure retrying cannot fix: the node is dead.
 	// Fail it, pause the task (blocked), and wake the lead to recover.
-	updated, err := session.UpdateTaskPiece(s.rt.SessionDir, task.ID, piece.ID, func(p *session.TaskPiece) {
-		p.Status = session.TaskPieceFailed
-		p.FailureReason = reason
-		p.LastActivityAt = time.Now().UTC()
-	})
+	_, updated, err := session.FinishTaskAttempt(
+		s.rt.SessionDir, attempt.ID, session.TaskAttemptFailed, session.TaskPieceFailed,
+		category, reason, time.Now().UTC(),
+	)
 	if err != nil {
 		providers.DebugLogf("fail node %q/%q: %v", task.ID, piece.ID, err)
 		return
@@ -259,7 +297,7 @@ func (s *Server) handleNodeTurnFailure(task session.ConversationThread, piece se
 	if err != nil {
 		payload = nil
 	}
-	s.recordTaskEventFor(updated, piece.ID, session.TaskEventNodeFailed, piece.Assignee,
+	s.recordTaskEventForAttempt(updated, piece.ID, attempt.ID, session.TaskEventNodeFailed, piece.Assignee,
 		fmt.Sprintf("node %q failed: %s", firstNonEmpty(strings.TrimSpace(piece.Title), piece.ID), reason), string(payload))
 	if err := session.SetConversationThreadExecState(s.rt.SessionDir, updated.ID, session.ExecStateBlocked); err != nil {
 		providers.DebugLogf("block task %q after node failure: %v", updated.ID, err)
@@ -304,7 +342,7 @@ func (s *Server) handleNodeTurnFailure(task session.ConversationThread, piece se
 // left empty-handed, then completes + advances exactly as piece_done would. So
 // piece_done is no longer REQUIRED to complete a node — it is how a node completes
 // EARLY, or with a rich structured handoff.
-func (s *Server) autoCompleteTaskNodesAfterTurn(participantID string, envs []MessageEnvelope, turn Turn, askedQuestion bool, dispatched map[string]map[string]bool) {
+func (s *Server) autoCompleteTaskNodesAfterTurn(participantID string, envs []MessageEnvelope, turn Turn, askedQuestion bool, dispatched map[string]map[string]string) {
 	if s == nil || s.rt == nil {
 		return
 	}
@@ -313,7 +351,11 @@ func (s *Server) autoCompleteTaskNodesAfterTurn(participantID string, envs []Mes
 		return
 	}
 	taskIDs := planDispatchTaskIDs(envs)
-	if len(taskIDs) == 0 || askedQuestion {
+	if len(taskIDs) == 0 {
+		return
+	}
+	if askedQuestion {
+		s.interruptTaskAttemptsAfterTurn(participantID, envs, "worker ended the attempt with an unresolved question")
 		return
 	}
 	finalAnswer := finalAgentMessageText(turn)
@@ -334,7 +376,8 @@ func (s *Server) autoCompleteTaskNodesAfterTurn(participantID string, envs []Mes
 			continue
 		}
 		for _, piece := range task.Plan {
-			if !nodes[piece.ID] || piece.Assignee != participantID {
+			attemptID := strings.TrimSpace(nodes[piece.ID])
+			if attemptID == "" || piece.Assignee != participantID || piece.CurrentAttemptID != attemptID {
 				continue
 			}
 			// Still Active/Retrying at turn end = the dispatched node the turn

@@ -124,8 +124,8 @@ func TestSetPlanRefusedOnResolvedTask(t *testing.T) {
 	}
 }
 
-func TestSetPlanLeadReplanReDispatches(t *testing.T) {
-	srv, groupID, andy, mia, han, vera := planFixture(t)
+func TestSetPlanCannotReplaceLiveAttempts(t *testing.T) {
+	srv, groupID, andy, mia, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
 
 	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "重规划任务")
@@ -156,21 +156,13 @@ func TestSetPlanLeadReplanReDispatches(t *testing.T) {
 	waitForResidentDMHistoryContains(t, srv, mia, "mobile-ui")
 	waitForResidentQuiesce(t, srv)
 
-	// Andy (still the lead) revises the plan: a replan is just another set_plan.
-	// It replaces the breakdown and re-dispatches — the new piece's assignee is
-	// woken.
-	replan, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
+	// Replacing the whole plan would orphan the durable attempts that own p1/p2.
+	// Revision must use explicit node operations instead.
+	_, err = lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{
 		{ID: "p1", Title: "backend-api", Assignee: han},
-		{ID: "p3", Title: "qa-e2e", Assignee: vera},
+		{ID: "p3", Title: "qa-e2e", Assignee: mia},
 	})
-	if err != nil {
-		t.Fatalf("replan SetPlan: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "explicit workflow revision") {
+		t.Fatalf("live plan replacement = %v, want explicit-revision refusal", err)
 	}
-	if got := pieceStatus(replan, "p3"); got != session.TaskPieceActive {
-		t.Fatalf("replan p3 = %q, want active (re-dispatched)", got)
-	}
-	if got := pieceStatus(replan, "p2"); got != "" {
-		t.Fatalf("replan must replace the plan, p2 still present with status %q", got)
-	}
-	waitForResidentDMHistoryContains(t, srv, vera, "qa-e2e")
 }

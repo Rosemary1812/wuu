@@ -751,17 +751,18 @@ type ConversationSubthread struct {
 // post-mortem), and the two activity timestamps retained for observability.
 // The timestamps do not imply a frontend stalled/slow state.
 type TaskPieceView struct {
-	ID             string    `json:"id"`
-	Title          string    `json:"title"`
-	Assignee       string    `json:"assignee,omitempty"`
-	DependsOn      []string  `json:"depends_on,omitempty"`
-	Status         string    `json:"status"`
-	State          string    `json:"state,omitempty"`
-	Attempts       int       `json:"attempts,omitempty"`
-	RetryBudget    int       `json:"retry_budget,omitempty"`
-	FailureReason  string    `json:"failure_reason,omitempty"`
-	LastActivityAt time.Time `json:"last_activity_at,omitzero"`
-	LastProgressAt time.Time `json:"last_progress_at,omitzero"`
+	ID               string    `json:"id"`
+	Title            string    `json:"title"`
+	Assignee         string    `json:"assignee,omitempty"`
+	DependsOn        []string  `json:"depends_on,omitempty"`
+	Status           string    `json:"status"`
+	State            string    `json:"state,omitempty"`
+	Attempts         int       `json:"attempts,omitempty"`
+	RetryBudget      int       `json:"retry_budget,omitempty"`
+	CurrentAttemptID string    `json:"current_attempt_id,omitempty"`
+	FailureReason    string    `json:"failure_reason,omitempty"`
+	LastActivityAt   time.Time `json:"last_activity_at,omitzero"`
+	LastProgressAt   time.Time `json:"last_progress_at,omitzero"`
 }
 
 type ThreadOpenSubParams struct {
@@ -849,13 +850,14 @@ type ThreadTaskEventsParams struct {
 // id, a short human Summary, an optional structured Payload (handoff / error
 // JSON), and the wall-clock time.
 type TaskEventView struct {
-	Seq     int       `json:"seq"`
-	NodeID  string    `json:"node_id,omitempty"`
-	Kind    string    `json:"kind"`
-	Actor   string    `json:"actor,omitempty"`
-	Summary string    `json:"summary,omitempty"`
-	Payload string    `json:"payload,omitempty"`
-	At      time.Time `json:"at"`
+	Seq       int       `json:"seq"`
+	NodeID    string    `json:"node_id,omitempty"`
+	AttemptID string    `json:"attempt_id,omitempty"`
+	Kind      string    `json:"kind"`
+	Actor     string    `json:"actor,omitempty"`
+	Summary   string    `json:"summary,omitempty"`
+	Payload   string    `json:"payload,omitempty"`
+	At        time.Time `json:"at"`
 }
 
 type ThreadTaskEventsResult struct {

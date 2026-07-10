@@ -61,13 +61,14 @@ func TestCompletedTurnAutoCompletesNodeWithoutPieceDone(t *testing.T) {
 		t.Fatalf("SetPlan: %v", err)
 	}
 	// Turn-start snapshot: Mia is dispatched to run p1.
-	snapshot := srv.dispatchedNodesForTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)})
-	if !snapshot[task.ID]["p1"] {
+	dispatchEnv := taskPlanDispatchEnv(t, srv, task.ID, mia)
+	snapshot := srv.dispatchedNodesForTurn(mia, []MessageEnvelope{dispatchEnv})
+	if snapshot[task.ID]["p1"] == "" {
 		t.Fatalf("snapshot should capture p1 as dispatched to Mia, got %v", snapshot)
 	}
 
 	// Mia's turn completes with only trailing assistant text and NO piece_done.
-	srv.autoCompleteTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)},
+	srv.autoCompleteTaskNodesAfterTurn(mia, []MessageEnvelope{dispatchEnv},
 		synthCompletedTurn("接口草稿已完成，见下"), false, snapshot)
 
 	if p := loadPiece(t, srv, task.ID, "p1"); p.Status != session.TaskPieceDone {
@@ -117,10 +118,10 @@ func TestCompletedTurnAutoCompletesWithNilHandoffWhenSilent(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
-	snapshot := srv.dispatchedNodesForTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)})
+	snapshot := srv.dispatchedNodesForTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(t, srv, task.ID, mia)})
 
 	// No agent_message items at all → finalAgentMessageText == "" → nil handoff.
-	srv.autoCompleteTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)},
+	srv.autoCompleteTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(t, srv, task.ID, mia)},
 		synthCompletedTurn(""), false, snapshot)
 
 	if p := loadPiece(t, srv, task.ID, "p1"); p.Status != session.TaskPieceDone {
@@ -154,8 +155,8 @@ func TestAutoCompleteSkipsSameOwnerDownstreamActivatedInTurn(t *testing.T) {
 		t.Fatalf("SetPlan: %v", err)
 	}
 	// Snapshot at turn start: only p1 is active/dispatched to Mia.
-	snapshot := srv.dispatchedNodesForTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)})
-	if snapshot[task.ID]["p2"] {
+	snapshot := srv.dispatchedNodesForTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(t, srv, task.ID, mia)})
+	if snapshot[task.ID]["p2"] != "" {
 		t.Fatalf("snapshot must not contain the pending downstream p2: %v", snapshot)
 	}
 
@@ -171,7 +172,7 @@ func TestAutoCompleteSkipsSameOwnerDownstreamActivatedInTurn(t *testing.T) {
 
 	// Turn ends. Auto-complete must complete NOTHING new: p1 is already done, and
 	// p2 was not in the snapshot.
-	srv.autoCompleteTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)},
+	srv.autoCompleteTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(t, srv, task.ID, mia)},
 		synthCompletedTurn("撰写ing"), false, snapshot)
 
 	if got := loadPiece(t, srv, task.ID, "p2").Status; got != session.TaskPieceActive {
@@ -206,8 +207,8 @@ func TestAutoCompleteSkipsUpstreamReactivatedByNeedUpstream(t *testing.T) {
 		t.Fatalf("Mia piece_done p1: %v", err)
 	}
 	// Turn-start snapshot for the p2 turn: only p2 is active/dispatched to Mia.
-	snapshot := srv.dispatchedNodesForTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)})
-	if !snapshot[task.ID]["p2"] || snapshot[task.ID]["p1"] {
+	snapshot := srv.dispatchedNodesForTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(t, srv, task.ID, mia)})
+	if snapshot[task.ID]["p2"] == "" || snapshot[task.ID]["p1"] != "" {
 		t.Fatalf("snapshot should hold only p2 for the downstream turn, got %v", snapshot)
 	}
 
@@ -222,7 +223,7 @@ func TestAutoCompleteSkipsUpstreamReactivatedByNeedUpstream(t *testing.T) {
 
 	// Turn ends. The reactivated upstream p1 must NOT be auto-completed (it is not
 	// in the snapshot), and the parked downstream p2 (now pending) must not either.
-	srv.autoCompleteTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)},
+	srv.autoCompleteTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(t, srv, task.ID, mia)},
 		synthCompletedTurn("bounced"), false, snapshot)
 
 	if got := loadPiece(t, srv, task.ID, "p1").Status; got != session.TaskPieceActive {
@@ -255,18 +256,18 @@ func TestAutoCompleteSkipsLeadRecoveryTurnOnBlockedTask(t *testing.T) {
 		t.Fatalf("p1 = %q, want active", got)
 	}
 	// p2 fails terminally (a hard failure) → the task blocks and the lead is woken.
-	srv.retryOrFailTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)},
+	srv.retryOrFailTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(t, srv, task.ID, mia)},
 		synthFailedTurn("auth", "401 unauthorized"))
 	waitForExecState(t, srv, task.ID, session.ExecStateBlocked)
 
 	// The lead's recovery turn carries the same "task plan" envelope. Its snapshot
 	// is empty (a blocked task contributes no dispatched node), and the hook's
 	// executing-only guard skips it too.
-	snapshot := srv.dispatchedNodesForTurn(andy, []MessageEnvelope{taskPlanDispatchEnv(task.ID)})
+	snapshot := srv.dispatchedNodesForTurn(andy, []MessageEnvelope{taskLeadWakeEnv(task.ID)})
 	if len(snapshot) != 0 {
 		t.Fatalf("a blocked task must contribute no dispatched nodes, got %v", snapshot)
 	}
-	srv.autoCompleteTaskNodesAfterTurn(andy, []MessageEnvelope{taskPlanDispatchEnv(task.ID)},
+	srv.autoCompleteTaskNodesAfterTurn(andy, []MessageEnvelope{taskLeadWakeEnv(task.ID)},
 		synthCompletedTurn("我在处理"), false, snapshot)
 
 	if got := loadPiece(t, srv, task.ID, "p1").Status; got != session.TaskPieceActive {
@@ -274,8 +275,8 @@ func TestAutoCompleteSkipsLeadRecoveryTurnOnBlockedTask(t *testing.T) {
 	}
 }
 
-// A completed turn that posted a kind=question (askedQuestion) is waiting, not
-// finished: its node is NOT auto-completed and stays open.
+// A completed turn that posted a kind=question cannot leave a phantom running
+// attempt. The attempt is interrupted and the Task pauses for its lead.
 func TestAutoCompleteSkipsWhenTurnAskedQuestion(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
@@ -288,13 +289,16 @@ func TestAutoCompleteSkipsWhenTurnAskedQuestion(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
-	snapshot := srv.dispatchedNodesForTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)})
+	snapshot := srv.dispatchedNodesForTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(t, srv, task.ID, mia)})
 
-	srv.autoCompleteTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)},
+	srv.autoCompleteTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(t, srv, task.ID, mia)},
 		synthCompletedTurn("我需要更多信息"), true /* askedQuestion */, snapshot)
 
-	if got := loadPiece(t, srv, task.ID, "p1").Status; got != session.TaskPieceActive {
-		t.Fatalf("p1 status = %q, want STILL active — a question is a blocked signal, not completion", got)
+	if got := loadPiece(t, srv, task.ID, "p1").Status; got != session.TaskPieceBlocked {
+		t.Fatalf("p1 status = %q, want blocked after unresolved question", got)
+	}
+	if thread, err := session.FindConversationThreadByID(srv.rt.SessionDir, task.ID); err != nil || thread.ExecState != session.ExecStateBlocked {
+		t.Fatalf("task after unresolved question = %+v, %v", thread, err)
 	}
 }
 
@@ -314,8 +318,9 @@ func TestAutoCompleteSkipsWhenTaskLeftExecuting(t *testing.T) {
 		t.Fatalf("SetPlan: %v", err)
 	}
 	// Snapshot captures p1 while the task is still executing.
-	snapshot := srv.dispatchedNodesForTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)})
-	if !snapshot[task.ID]["p1"] {
+	dispatchEnv := taskPlanDispatchEnv(t, srv, task.ID, mia)
+	snapshot := srv.dispatchedNodesForTurn(mia, []MessageEnvelope{dispatchEnv})
+	if snapshot[task.ID]["p1"] == "" {
 		t.Fatalf("snapshot should capture p1, got %v", snapshot)
 	}
 	// The turn flagged the task for the human, moving it out of executing.
@@ -323,11 +328,11 @@ func TestAutoCompleteSkipsWhenTaskLeftExecuting(t *testing.T) {
 		t.Fatalf("Mia need_human: %v", err)
 	}
 
-	srv.autoCompleteTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)},
+	srv.autoCompleteTaskNodesAfterTurn(mia, []MessageEnvelope{dispatchEnv},
 		synthCompletedTurn("等待决策"), false, snapshot)
 
-	if got := loadPiece(t, srv, task.ID, "p1").Status; got != session.TaskPieceActive {
-		t.Fatalf("p1 status = %q, want STILL active — a needs_human task's node is not the turn's to complete", got)
+	if got := loadPiece(t, srv, task.ID, "p1").Status; got != session.TaskPieceBlocked {
+		t.Fatalf("p1 status = %q, want blocked while waiting for the human", got)
 	}
 	th, err := session.FindConversationThreadByID(srv.rt.SessionDir, task.ID)
 	if err != nil {
@@ -353,7 +358,8 @@ func TestAutoCompleteNoOpWhenPieceAlreadyDoneViaPieceDone(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetPlan: %v", err)
 	}
-	snapshot := srv.dispatchedNodesForTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)})
+	dispatchEnv := taskPlanDispatchEnv(t, srv, task.ID, mia)
+	snapshot := srv.dispatchedNodesForTurn(mia, []MessageEnvelope{dispatchEnv})
 
 	// The agent filed piece_done mid-turn (the rich, early path).
 	if _, err := srv.residentTaskManager(mia).PieceDone(context.Background(), task.ID, "p1",
@@ -362,7 +368,7 @@ func TestAutoCompleteNoOpWhenPieceAlreadyDoneViaPieceDone(t *testing.T) {
 	}
 	succeededBefore := countTaskEventKind(t, srv, task.ID, session.TaskEventNodeSucceeded)
 
-	srv.autoCompleteTaskNodesAfterTurn(mia, []MessageEnvelope{taskPlanDispatchEnv(task.ID)},
+	srv.autoCompleteTaskNodesAfterTurn(mia, []MessageEnvelope{dispatchEnv},
 		synthCompletedTurn("结果"), false, snapshot)
 
 	if got := loadPiece(t, srv, task.ID, "p1").Status; got != session.TaskPieceDone {
