@@ -194,7 +194,12 @@ func runNamedTurnAction(ctx context.Context, controller Controller, opts Options
 	// does not clobber the sequence aggregate; the thread id anchors isCurrentTurn
 	// so the named agent's own child turns are ignored (only its agent/updated
 	// terminal status ends the wait).
-	sub := runState{threadID: threadID, turnID: agentID, status: "running"}
+	sub := runState{
+		threadID:      threadID,
+		turnID:        agentID,
+		participantID: participantID,
+		status:        "running",
+	}
 	if err := waitForParticipantRun(ctx, controller, opts, &sub, agentID); err != nil {
 		return nil, err
 	}
@@ -205,11 +210,9 @@ func runNamedTurnAction(ctx context.Context, controller Controller, opts Options
 		"status":         sub.status,
 		"text":           sub.finalMessage,
 	}
-	if thread, err := controller.ResumeThread(ctx, threadID); err == nil {
-		if item, ok := newestParticipantMessageOutside(thread, participantID, baselineItems); ok {
-			result["anchor_item_id"] = item.ID
-			result["message_seq"] = item.Seq
-		}
+	if item, ok := latestParticipantMessageForAction(ctx, controller, threadID, participantID, baselineItems, sub); ok {
+		result["anchor_item_id"] = item.ID
+		result["message_seq"] = item.Seq
 	}
 	if sub.status == "failed" {
 		msg := strings.TrimSpace(sub.finalMessage)
@@ -219,6 +222,31 @@ func runNamedTurnAction(ctx context.Context, controller Controller, opts Options
 		return result, errors.New(msg)
 	}
 	return result, nil
+}
+
+func latestParticipantMessageForAction(ctx context.Context, controller Controller, threadID, participantID string, existing map[string]struct{}, state runState) (appserver.ThreadItem, bool) {
+	if id := strings.TrimSpace(state.lastParticipantItem); id != "" {
+		return appserver.ThreadItem{ID: id, Seq: state.lastParticipantSeq}, true
+	}
+
+	const settleWindow = 2 * time.Second
+	const pollInterval = 50 * time.Millisecond
+	deadline := time.Now().Add(settleWindow)
+	for {
+		if thread, err := controller.ResumeThread(ctx, threadID); err == nil {
+			if item, ok := newestParticipantMessageOutside(thread, participantID, existing); ok {
+				return item, true
+			}
+		}
+		if time.Now().After(deadline) {
+			return appserver.ThreadItem{}, false
+		}
+		select {
+		case <-ctx.Done():
+			return appserver.ThreadItem{}, false
+		case <-time.After(pollInterval):
+		}
+	}
 }
 
 func threadItemIDs(thread appserver.Thread) map[string]struct{} {

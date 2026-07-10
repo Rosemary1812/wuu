@@ -17,6 +17,7 @@ import (
 type runState struct {
 	threadID            string
 	turnID              string
+	participantID       string
 	finalMessage        string
 	tracePath           string
 	status              string
@@ -25,6 +26,8 @@ type runState struct {
 	seenSubagents       map[string]bool
 	permissionDenied    bool
 	permissionError     string
+	lastParticipantItem string
+	lastParticipantSeq  int
 	structuredResult    any
 	structuredResultSet bool
 }

@@ -39,6 +39,7 @@ func runParticipantTurn(ctx context.Context, controller Controller, opts Options
 		AgentProfile:  strings.TrimSpace(opts.Participant.AgentProfile),
 		Isolation:     strings.TrimSpace(opts.Participant.Isolation),
 	}
+	state.participantID = params.ParticipantID
 	agent, err := controller.StartParticipantTurn(ctx, params)
 	if err != nil {
 		return classifyProtocolOrContextError(ctx, err)
@@ -139,6 +140,10 @@ func handleParticipantNotification(opts Options, notification Notification, stat
 		}
 		if params.Item.Type == appserver.ThreadItemParticipantMsg {
 			emitParticipantMessage(opts, params)
+			if participantMessageBelongsToRun(params, *state) {
+				state.lastParticipantItem = strings.TrimSpace(params.Item.ID)
+				state.lastParticipantSeq = params.Item.Seq
+			}
 			if text := strings.TrimSpace(params.Item.Text); text != "" {
 				state.finalMessage = params.Item.Text
 			}
@@ -174,6 +179,16 @@ func handleParticipantNotification(opts Options, notification Notification, stat
 		return true, nil
 	}
 	return false, nil
+}
+
+func participantMessageBelongsToRun(note appserver.ItemCompletedNotification, state runState) bool {
+	if strings.TrimSpace(note.ThreadID) != strings.TrimSpace(state.threadID) {
+		return false
+	}
+	if strings.TrimSpace(state.participantID) == "" || note.Item.Participant == nil {
+		return false
+	}
+	return strings.TrimSpace(note.Item.Participant.ID) == strings.TrimSpace(state.participantID)
 }
 
 func emitParticipantTurnStarted(opts Options, threadID, participantID string, agent appserver.Agent) {
