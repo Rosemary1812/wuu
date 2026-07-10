@@ -1,6 +1,7 @@
 /* Component color tokens for sidebar.css.
    Light-theme values; the dark theme overrides these in base.css theme blocks. */
 :root {
+  --sidebar-material-fill: rgba(255, 255, 255, 0.12);
   --sidebar-glass-shadow-ambient: rgba(32, 38, 34, 0.045);
   --sidebar-glass-shadow-elevated: rgba(32, 38, 34, 0.18);
   --sidebar-glass-overlay-bright: rgba(255, 255, 255, 0.72);
@@ -145,7 +146,7 @@
   min-height: 0;
   flex-direction: column;
   border-right: 1px solid rgba(255, 255, 255, 0.26);
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--sidebar-material-fill);
   box-shadow:
     inset -1px 0 0 rgba(255, 255, 255, 0.14),
     1px 0 12px rgba(20, 24, 28, 0.015);
