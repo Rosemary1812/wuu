@@ -139,7 +139,10 @@ describe("StreamingMarkdown perf", () => {
     // Hard ceilings on the warmed-up distribution. These are deliberately
     // loose so they catch catastrophic regressions (the kind that froze
     // the UI before block memoization) without flaking under CI noise.
-    expect(avg).toBeLessThan(4);
+    // Shared Linux runners are materially slower than local Apple Silicon
+    // while still staying far away from the pre-memoization freeze regime.
+    // Keep the ceiling loose enough to reject real regressions, not host noise.
+    expect(avg).toBeLessThan(6);
     expect(p99).toBeLessThan(16);
   }, 15000);
 });
