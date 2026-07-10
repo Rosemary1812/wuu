@@ -7,12 +7,17 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 // ToolExecutor executes model-requested tool calls.
 type ToolExecutor interface {
 	Definitions() []providers.ToolDefinition
 	Execute(ctx context.Context, call providers.ToolCall) (string, error)
+}
+
+type RichToolExecutor interface {
+	ExecuteResult(ctx context.Context, call providers.ToolCall) (toolresult.Result, error)
 }
 
 // ToolSupportProvider lets an executor report whether a tool belongs to the

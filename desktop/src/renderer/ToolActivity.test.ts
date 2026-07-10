@@ -9,6 +9,19 @@ import {
 } from "./ToolActivityHelpers";
 
 describe("readableToolActivityCommand", () => {
+  it("uses structured rich tool results when the text projection is not JSON", () => {
+    expect(
+      readableToolActivityCommand({
+        name: "web_fetch",
+        arguments: JSON.stringify({ url: "https://request.test" }),
+        result: "[image: screenshot (image/png)]",
+        result_detail: {
+          structured_content: { url: "https://result.test" },
+          content: [{ type: "image", mime_type: "image/png", data: "aW1hZ2U=" }],
+        },
+      }),
+    ).toBe("读取网页 https://result.test");
+  });
   it("ignores tool-provided display text and waits for args to parse", () => {
     // The backend ships a preformatted `display.text` ("查看项目目录")
     // with item/started, but it's just a placeholder — once args parse

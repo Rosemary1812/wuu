@@ -14,6 +14,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 // StreamCallback receives streaming events for live clients.
@@ -296,10 +297,11 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		// Forward each tool result through the streaming callback so
 		// clients can render tool output live (the loop itself only
 		// records the tool message into the history).
-		OnToolResult: func(call providers.ToolCall, result string) {
+		OnToolResultDetail: func(call providers.ToolCall, result toolresult.Result) {
 			if effectiveOnEvent == nil || isInternalContextToolName(call.Name) {
 				return
 			}
+			textResult := result.TextProjection()
 			toolCall := enrichToolCallDisplay(r.Tools, providers.ToolCall{
 				ID:                call.ID,
 				ProviderItemID:    call.ProviderItemID,
@@ -310,11 +312,12 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				Display:           call.Display,
 			})
 			effectiveOnEvent(providers.StreamEvent{
-				Type:       providers.EventToolUseEnd,
-				ToolCall:   &toolCall,
-				ToolResult: truncateLog(result, 2000),
+				Type:             providers.EventToolUseEnd,
+				ToolCall:         &toolCall,
+				ToolResult:       truncateLog(textResult, 2000),
+				ToolResultDetail: resultPointer(result),
 			})
-			if update, ok := planUpdateEventFromToolResult(call, result); ok {
+			if update, ok := planUpdateEventFromToolResult(call, textResult); ok {
 				effectiveOnEvent(providers.StreamEvent{
 					Type:       providers.EventPlanUpdate,
 					PlanUpdate: update,

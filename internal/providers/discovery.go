@@ -132,6 +132,10 @@ func CloneChatMessage(msg ChatMessage) ChatMessage {
 	msg.ReasoningBlocks = append([]ReasoningBlock(nil), msg.ReasoningBlocks...)
 	msg.ToolCalls = CloneToolCalls(msg.ToolCalls)
 	msg.DiscoveredTools = CloneLoadableToolDefinitions(msg.DiscoveredTools)
+	if msg.ToolResult != nil {
+		result := msg.ToolResult.Clone()
+		msg.ToolResult = &result
+	}
 	return msg
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/modelroles"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 const (
@@ -1720,6 +1721,7 @@ type ThreadItem struct {
 	Arguments    string                     `json:"arguments,omitempty"`
 	Display      *providers.ToolCallDisplay `json:"display,omitempty"`
 	Result       string                     `json:"result,omitempty"`
+	ResultDetail *toolresult.Result         `json:"result_detail,omitempty"`
 	Error        string                     `json:"error,omitempty"`
 	Reason       string                     `json:"reason,omitempty"`
 	FinishReason string                     `json:"finish_reason,omitempty"`
@@ -1821,27 +1823,29 @@ type ToolCallDeltaNotification struct {
 }
 
 type ToolCallOutputNotification struct {
-	ThreadID string `json:"thread_id"`
-	TurnID   string `json:"turn_id"`
-	ItemID   string `json:"item_id"`
-	Delta    string `json:"delta"`
+	ThreadID string             `json:"thread_id"`
+	TurnID   string             `json:"turn_id"`
+	ItemID   string             `json:"item_id"`
+	Delta    string             `json:"delta"`
+	Detail   *toolresult.Result `json:"tool_result_detail,omitempty"`
 }
 
 type StreamEventPayload struct {
-	Type           providers.StreamEventType        `json:"type"`
-	Content        string                           `json:"content,omitempty"`
-	Message        *providers.ChatMessage           `json:"message,omitempty"`
-	ToolCall       *providers.ToolCall              `json:"tool_call,omitempty"`
-	ToolResult     string                           `json:"tool_result,omitempty"`
-	PlanUpdate     *providers.PlanUpdate            `json:"plan_update,omitempty"`
-	Lifecycle      *StreamLifecyclePayload          `json:"lifecycle,omitempty"`
-	RequestContext *providers.RequestContextSummary `json:"request_context,omitempty"`
-	ProviderState  *providers.ProviderStateSummary  `json:"provider_state,omitempty"`
-	Usage          *providers.TokenUsage            `json:"usage,omitempty"`
-	StopReason     string                           `json:"stop_reason,omitempty"`
-	FinishReason   string                           `json:"finish_reason,omitempty"`
-	Truncated      bool                             `json:"truncated,omitempty"`
-	Error          string                           `json:"error,omitempty"`
+	Type             providers.StreamEventType        `json:"type"`
+	Content          string                           `json:"content,omitempty"`
+	Message          *providers.ChatMessage           `json:"message,omitempty"`
+	ToolCall         *providers.ToolCall              `json:"tool_call,omitempty"`
+	ToolResult       string                           `json:"tool_result,omitempty"`
+	ToolResultDetail *toolresult.Result               `json:"tool_result_detail,omitempty"`
+	PlanUpdate       *providers.PlanUpdate            `json:"plan_update,omitempty"`
+	Lifecycle        *StreamLifecyclePayload          `json:"lifecycle,omitempty"`
+	RequestContext   *providers.RequestContextSummary `json:"request_context,omitempty"`
+	ProviderState    *providers.ProviderStateSummary  `json:"provider_state,omitempty"`
+	Usage            *providers.TokenUsage            `json:"usage,omitempty"`
+	StopReason       string                           `json:"stop_reason,omitempty"`
+	FinishReason     string                           `json:"finish_reason,omitempty"`
+	Truncated        bool                             `json:"truncated,omitempty"`
+	Error            string                           `json:"error,omitempty"`
 }
 
 type StreamLifecyclePayload struct {

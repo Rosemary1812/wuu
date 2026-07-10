@@ -10,6 +10,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 type toolRunState int
@@ -32,7 +33,7 @@ type toolRun struct {
 	state  toolRunState
 	done   chan struct{}
 	cancel context.CancelFunc
-	result string
+	result toolresult.Result
 	err    error
 }
 
@@ -50,6 +51,16 @@ type TurnToolRuntime struct {
 
 	requestContext []ContextSegment
 	stepIndex      *int
+	onResultDetail func(providers.ToolCall, toolresult.Result)
+}
+
+func (r *TurnToolRuntime) SetResultCallback(callback func(providers.ToolCall, toolresult.Result)) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.onResultDetail = callback
+	r.mu.Unlock()
 }
 
 func NewTurnToolRuntime(executor ToolExecutor) *TurnToolRuntime {
@@ -223,7 +234,7 @@ func (r *TurnToolRuntime) startRunLocked(ctx context.Context, run *toolRun, stre
 	go func() {
 		select {
 		case <-runCtx.Done():
-			run.complete("", runCtx.Err())
+			run.complete(toolresult.Result{}, runCtx.Err())
 			return
 		default:
 		}
@@ -231,21 +242,21 @@ func (r *TurnToolRuntime) startRunLocked(ctx context.Context, run *toolRun, stre
 		case r.sem <- struct{}{}:
 			defer func() { <-r.sem }()
 		case <-runCtx.Done():
-			run.complete("", runCtx.Err())
+			run.complete(toolresult.Result{}, runCtx.Err())
 			return
 		}
 		select {
 		case <-runCtx.Done():
-			run.complete("", runCtx.Err())
+			run.complete(toolresult.Result{}, runCtx.Err())
 			return
 		default:
 		}
-		result, err := r.executor.Execute(runCtx, call)
+		result, err := executeToolResult(runCtx, r.executor, call)
 		run.complete(result, err)
 	}()
 }
 
-func (run *toolRun) complete(result string, err error) {
+func (run *toolRun) complete(result toolresult.Result, err error) {
 	run.mu.Lock()
 	defer run.mu.Unlock()
 	if run.state == toolRunDone {
@@ -257,10 +268,10 @@ func (run *toolRun) complete(result string, err error) {
 	close(run.done)
 }
 
-func (run *toolRun) wait(ctx context.Context) (string, error) {
+func (run *toolRun) wait(ctx context.Context) (toolresult.Result, error) {
 	select {
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return toolresult.Result{}, ctx.Err()
 	case <-run.done:
 		run.mu.Lock()
 		defer run.mu.Unlock()
@@ -323,10 +334,8 @@ func (r *TurnToolRuntime) rejectBarrierToolBatch(
 	}
 	msgs := make([]providers.ChatMessage, 0, len(calls))
 	for _, call := range calls {
-		result := barrierToolBatchRejectionResult(call, barrierName)
-		if onResult != nil {
-			onResult(call, result)
-		}
+		result := toolresult.FromErrorText(barrierToolBatchRejectionResult(call, barrierName))
+		r.notifyResult(call, result, onResult)
 		msgs = append(msgs, toolResultMessage(call, result, nil, false))
 	}
 	return msgs, true
@@ -458,9 +467,7 @@ func (r *TurnToolRuntime) executeBatch(
 		requestContext := make([]ContextSegment, 0, len(batch.calls))
 		for _, call := range batch.calls {
 			result := r.executeOrAwaitRun(ctx, call)
-			if onResult != nil {
-				onResult(call, result)
-			}
+			r.notifyResult(call, result, onResult)
 			msgs = append(msgs, toolResultMessage(call, result, discoveryProvider, hasDiscoveryProvider))
 			if hasCtxProvider {
 				if extra := ctxProvider.LastAdditionalContext(); extra != "" {
@@ -486,9 +493,7 @@ func (r *TurnToolRuntime) executeBatch(
 	msgs := make([]providers.ChatMessage, len(batch.calls))
 	for i, call := range batch.calls {
 		result := r.awaitRunResult(ctx, runs[i], call)
-		if onResult != nil {
-			onResult(call, result)
-		}
+		r.notifyResult(call, result, onResult)
 		msgs[i] = toolResultMessage(call, result, discoveryProvider, hasDiscoveryProvider)
 	}
 	return toolBatchResult{messages: msgs}
@@ -501,7 +506,7 @@ type toolBatchResult struct {
 
 func toolResultMessage(
 	call providers.ToolCall,
-	result string,
+	result toolresult.Result,
 	provider ToolDiscoveryProvider,
 	ok bool,
 ) providers.ChatMessage {
@@ -510,7 +515,8 @@ func toolResultMessage(
 		Name:            call.Name,
 		ToolCallID:      call.ID,
 		ToolResultKind:  call.Kind,
-		Content:         result,
+		Content:         result.TextProjection(),
+		ToolResult:      resultPointer(result),
 		DiscoveredTools: discoveredToolsForCall(provider, ok, call),
 	}
 }
@@ -539,7 +545,7 @@ func postToolAdditionalContextSegment(toolName, content string) ContextSegment {
 	}})
 }
 
-func (r *TurnToolRuntime) executeOrAwaitRun(ctx context.Context, call providers.ToolCall) string {
+func (r *TurnToolRuntime) executeOrAwaitRun(ctx context.Context, call providers.ToolCall) toolresult.Result {
 	r.mu.Lock()
 	run := r.runForCallLocked(call)
 	r.startRunLocked(ctx, run, false)
@@ -571,7 +577,7 @@ func (r *TurnToolRuntime) runForCallLocked(call providers.ToolCall) *toolRun {
 	return run
 }
 
-func (r *TurnToolRuntime) awaitRunResult(ctx context.Context, run *toolRun, call providers.ToolCall) string {
+func (r *TurnToolRuntime) awaitRunResult(ctx context.Context, run *toolRun, call providers.ToolCall) toolresult.Result {
 	result, err := run.wait(ctx)
 	if err == nil {
 		return result
@@ -585,20 +591,59 @@ func (r *TurnToolRuntime) awaitRunResult(ctx context.Context, run *toolRun, call
 			return result
 		}
 	}
-	return errorJSON(err)
+	return toolresult.FromErrorText(errorJSON(err))
 }
 
-func (r *TurnToolRuntime) executeDirect(ctx context.Context, call providers.ToolCall) (string, error) {
+func (r *TurnToolRuntime) executeDirect(ctx context.Context, call providers.ToolCall) (toolresult.Result, error) {
 	if r.executor == nil {
-		return "", context.Canceled
+		return toolresult.Result{}, context.Canceled
 	}
 	select {
 	case r.sem <- struct{}{}:
 		defer func() { <-r.sem }()
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return toolresult.Result{}, ctx.Err()
 	}
-	return r.executor.Execute(r.executionContext(ctx), call)
+	return executeToolResult(r.executionContext(ctx), r.executor, call)
+}
+
+func executeToolResult(ctx context.Context, executor ToolExecutor, call providers.ToolCall) (toolresult.Result, error) {
+	if executor == nil {
+		return toolresult.Result{}, context.Canceled
+	}
+	var result toolresult.Result
+	var err error
+	if rich, ok := executor.(RichToolExecutor); ok {
+		result, err = rich.ExecuteResult(ctx, call)
+	} else {
+		var text string
+		text, err = executor.Execute(ctx, call)
+		result = toolresult.FromText(text)
+	}
+	if err != nil {
+		result.IsError = true
+	}
+	if validationErr := result.Validate(); validationErr != nil {
+		return toolresult.FromErrorText(errorJSON(validationErr)), validationErr
+	}
+	return result, err
+}
+
+func (r *TurnToolRuntime) notifyResult(call providers.ToolCall, result toolresult.Result, legacy func(providers.ToolCall, string)) {
+	r.mu.Lock()
+	detail := r.onResultDetail
+	r.mu.Unlock()
+	if detail != nil {
+		detail(call, result.Clone())
+	}
+	if legacy != nil {
+		legacy(call, result.TextProjection())
+	}
+}
+
+func resultPointer(result toolresult.Result) *toolresult.Result {
+	clone := result.Clone()
+	return &clone
 }
 
 func (r *TurnToolRuntime) executionContext(ctx context.Context) context.Context {

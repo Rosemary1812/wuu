@@ -10,6 +10,7 @@ import (
 	"context"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 // StepResult is the outcome of one model round-trip, normalized so
@@ -286,6 +287,9 @@ type LoopConfig struct {
 	// (call, JSON result) pair. Used by streaming callers to feed
 	// live tool-result rendering into clients.
 	OnToolResult func(call providers.ToolCall, result string)
+	// OnToolResultDetail receives the lossless canonical result. New callers
+	// should prefer it; OnToolResult remains as a compatibility projection.
+	OnToolResultDetail func(call providers.ToolCall, result toolresult.Result)
 	// PostToolRewrite, when set, may replace live history after all
 	// tool results for a model step have been appended. This is for
 	// checkpoint/compact style tools that intentionally rewrite the

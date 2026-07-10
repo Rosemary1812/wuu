@@ -55,6 +55,10 @@ func cloneMessagesForRequest(msgs []ChatMessage) []ChatMessage {
 		if len(msg.ToolCalls) > 0 {
 			out[i].ToolCalls = append([]ToolCall(nil), msg.ToolCalls...)
 		}
+		if msg.ToolResult != nil {
+			result := msg.ToolResult.Clone()
+			out[i].ToolResult = &result
+		}
 		if len(msg.ReasoningBlocks) > 0 {
 			out[i].ReasoningBlocks = append([]ReasoningBlock(nil), msg.ReasoningBlocks...)
 		}

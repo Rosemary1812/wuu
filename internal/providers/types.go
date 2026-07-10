@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 // ToolDefinition describes a callable tool exposed to the model.
@@ -204,6 +206,7 @@ type ChatMessage struct {
 	Files            []InputFile
 	ToolCallID       string
 	ToolResultKind   ToolCallKind
+	ToolResult       *toolresult.Result
 	ToolCalls        []ToolCall
 	FinishReason     FinishReason
 	StopReason       string
@@ -536,21 +539,22 @@ func (u TokenUsage) TotalContextTokens() int {
 
 // StreamEvent is a single event from a streaming chat response.
 type StreamEvent struct {
-	Type           StreamEventType
-	Content        string
-	Phase          MessagePhase
-	ProviderItemID string
-	Message        *ChatMessage
-	ReasoningBlock *ReasoningBlock
-	ToolCall       *ToolCall
-	ToolResult     string
-	CompactReason  string
-	PlanUpdate     *PlanUpdate
-	RequestContext *RequestContextSummary
-	ProviderState  *ProviderStateSummary
-	Lifecycle      *StreamLifecycle
-	Error          error
-	Usage          *TokenUsage
+	Type             StreamEventType
+	Content          string
+	Phase            MessagePhase
+	ProviderItemID   string
+	Message          *ChatMessage
+	ReasoningBlock   *ReasoningBlock
+	ToolCall         *ToolCall
+	ToolResult       string
+	ToolResultDetail *toolresult.Result
+	CompactReason    string
+	PlanUpdate       *PlanUpdate
+	RequestContext   *RequestContextSummary
+	ProviderState    *ProviderStateSummary
+	Lifecycle        *StreamLifecycle
+	Error            error
+	Usage            *TokenUsage
 	// StopReason / FinishReason / Truncated are populated on the terminal
 	// EventDone when the provider reports them. StopReason is raw-ish provider
 	// detail; FinishReason is the normalized semantic.

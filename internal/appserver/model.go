@@ -10,6 +10,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/participant"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 type outboundNotification struct {
@@ -535,8 +536,9 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 			return nil
 		}
 		item := th.toolItemFromCallLocked(turnID, *ev.ToolCall, now)
-		if ev.ToolResult != "" {
+		if ev.ToolResult != "" || ev.ToolResultDetail != nil {
 			item.Result += ev.ToolResult
+			item.ResultDetail = cloneToolResult(ev.ToolResultDetail)
 			item.Status = ThreadItemStatusCompleted
 			th.upsertItemLocked(turnID, item, now)
 			out = append(out, outboundNotification{
@@ -546,6 +548,7 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 					TurnID:   turnID,
 					ItemID:   item.ID,
 					Delta:    ev.ToolResult,
+					Detail:   cloneToolResult(ev.ToolResultDetail),
 				},
 			})
 			out = append(out, itemCompleted(th.ID, turnID, item, now))
@@ -705,11 +708,17 @@ func (th *threadState) applyMessageItemLocked(turnID string, msg providers.ChatM
 			// announce a second completion.
 			if len(msg.Content) > len(item.Result) {
 				item.Result = msg.Content
-				th.upsertItemLocked(turnID, item, now)
 			}
+			if msg.ToolResult != nil {
+				item.ResultDetail = cloneToolResult(msg.ToolResult)
+			}
+			th.upsertItemLocked(turnID, item, now)
 			return nil
 		}
 		item.Result += msg.Content
+		if msg.ToolResult != nil {
+			item.ResultDetail = cloneToolResult(msg.ToolResult)
+		}
 		item.Status = ThreadItemStatusCompleted
 		th.upsertItemLocked(turnID, item, now)
 		return []outboundNotification{itemCompleted(th.ID, turnID, item, now)}
@@ -1202,11 +1211,12 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 		}
 	case "tool":
 		return ThreadItem{
-			ID:       id,
-			SourceID: msg.ToolCallID,
-			Type:     ThreadItemToolCall,
-			Status:   ThreadItemStatusCompleted,
-			Result:   msg.Content,
+			ID:           id,
+			SourceID:     msg.ToolCallID,
+			Type:         ThreadItemToolCall,
+			Status:       ThreadItemStatusCompleted,
+			Result:       msg.Content,
+			ResultDetail: cloneToolResult(msg.ToolResult),
 		}
 	}
 	return ThreadItem{}
@@ -1521,7 +1531,16 @@ func cloneThreadItem(item ThreadItem) ThreadItem {
 	item.Images = append([]ThreadItemImage(nil), item.Images...)
 	item.Files = append([]ThreadItemFile(nil), item.Files...)
 	item.Display = cloneToolCallDisplay(item.Display)
+	item.ResultDetail = cloneToolResult(item.ResultDetail)
 	return item
+}
+
+func cloneToolResult(result *toolresult.Result) *toolresult.Result {
+	if result == nil {
+		return nil
+	}
+	clone := result.Clone()
+	return &clone
 }
 
 func cloneToolCallDisplay(display *providers.ToolCallDisplay) *providers.ToolCallDisplay {

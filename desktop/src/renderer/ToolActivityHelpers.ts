@@ -148,7 +148,7 @@ function rawToolCommand(name: string, args: string | undefined): string {
 }
 
 export function readableToolActivityCommand(
-  item: Pick<ThreadItem, "name" | "arguments" | "result" | "display">,
+  item: Pick<ThreadItem, "name" | "arguments" | "result" | "result_detail" | "display">,
 ): string {
   return appendCapabilitySuffix(
     readableToolActivityCommandInner(item),
@@ -157,7 +157,7 @@ export function readableToolActivityCommand(
 }
 
 function readableToolActivityCommandInner(
-  item: Pick<ThreadItem, "name" | "arguments" | "result" | "display">,
+  item: Pick<ThreadItem, "name" | "arguments" | "result" | "result_detail" | "display">,
 ): string {
   // Wait until args (or result) actually parses before returning a title.
   // The backend ships a preformatted `item.display.text` ("查看项目目录",
@@ -167,7 +167,7 @@ function readableToolActivityCommandInner(
   // parse produces a placeholder → real two-step flicker, so we drop both
   // paths and only render once args (or result) is parseable.
   const args = parseJSONRecord(item.arguments);
-  const result = parseJSONRecord(item.result);
+  const result = richToolResultRecord(item) ?? parseJSONRecord(item.result);
   const name = (item.name ?? "").trim();
 
   if (isMCPToolName(name)) {
@@ -215,7 +215,7 @@ function readableToolActivityCommandInner(
     case "web_search":
       return pattern ? `搜索网页 ${formatSearchTarget(pattern)}` : "搜索网页";
     case "web_fetch": {
-      const url = stringValue(args, "url") ?? stringValue(result, "url");
+      const url = stringValue(result, "url") ?? stringValue(args, "url");
       return url ? `读取网页 ${truncateText(url, 90)}` : "读取网页";
     }
     case "tool_search":
@@ -291,6 +291,25 @@ function readableToolActivityCommandInner(
     default:
       return readableToolName(name);
   }
+}
+
+function richToolResultRecord(
+  item: Pick<ThreadItem, "result_detail">,
+): JsonRecord | undefined {
+  const structured = item.result_detail?.structured_content;
+  if (structured && typeof structured === "object" && !Array.isArray(structured)) {
+    return structured as JsonRecord;
+  }
+  for (const part of item.result_detail?.content ?? []) {
+    if (part.type !== "text" || !part.text) {
+      continue;
+    }
+    const parsed = parseJSONRecord(part.text);
+    if (parsed) {
+      return parsed;
+    }
+  }
+  return undefined;
 }
 
 // appendCapabilitySuffix adds the runtime-supplied capability name to

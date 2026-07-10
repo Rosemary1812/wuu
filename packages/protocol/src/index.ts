@@ -638,6 +638,32 @@ export type ToolCallDisplay = {
   capability?: string;
 };
 
+export type ToolResultContentPart = {
+  type: string;
+  text?: string;
+  data?: string;
+  mime_type?: string;
+  uri?: string;
+  name?: string;
+  resource?: JsonValue;
+};
+
+export type ToolResultActivityRef = {
+  id: string;
+  kind: string;
+  state?: string;
+  thread_id?: string;
+  preview_uri?: string;
+};
+
+export type ToolResult = {
+  content?: ToolResultContentPart[];
+  structured_content?: JsonValue;
+  meta?: JsonValue;
+  is_error?: boolean;
+  activity?: ToolResultActivityRef;
+};
+
 // ParticipantSummary is the wire shape of a conversation participant
 // (human, primary agent, named agent, or ephemeral task worker) embedded
 // in agents and thread items for display attribution.
@@ -1476,6 +1502,7 @@ export type ThreadItem = {
   arguments?: string;
   display?: ToolCallDisplay;
   result?: string;
+  result_detail?: ToolResult;
   error?: string;
   reason?: string;
   task?: TaskCard;

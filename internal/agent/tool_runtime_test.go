@@ -9,6 +9,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 type runtimeTestTools struct {
@@ -28,6 +29,49 @@ type cancelAwareRuntimeTools struct {
 
 	mu    sync.Mutex
 	calls []providers.ToolCall
+}
+
+type richRuntimeTools struct {
+	runtimeTestTools
+	result toolresult.Result
+}
+
+func (f *richRuntimeTools) ExecuteResult(ctx context.Context, call providers.ToolCall) (toolresult.Result, error) {
+	_, _ = f.runtimeTestTools.Execute(ctx, call)
+	return f.result.Clone(), nil
+}
+
+func TestTurnToolRuntimePreservesRichResultAndErrorState(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	tools := &richRuntimeTools{result: toolresult.Result{
+		Content: []toolresult.ContentPart{
+			{Type: "text", Text: "observed"},
+			{Type: "image", Data: "aW1hZ2U=", MIMEType: "image/png"},
+		},
+		StructuredContent: []byte(`{"url":"https://example.test"}`),
+		Meta:              []byte(`{"private":true}`),
+		IsError:           true,
+	}}
+	runtime := NewTurnToolRuntime(tools)
+	var callback toolresult.Result
+	runtime.SetResultCallback(func(_ providers.ToolCall, result toolresult.Result) {
+		callback = result.Clone()
+	})
+
+	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{ID: "call-1", Name: "browser_observe"}}, nil)
+	if len(msgs) != 1 || msgs[0].ToolResult == nil {
+		t.Fatalf("rich tool message missing: %+v", msgs)
+	}
+	if !msgs[0].ToolResult.IsError || len(msgs[0].ToolResult.Content) != 2 || len(msgs[0].ToolResult.Meta) == 0 {
+		t.Fatalf("rich tool result flattened: %+v", msgs[0].ToolResult)
+	}
+	if msgs[0].Content != msgs[0].ToolResult.TextProjection() {
+		t.Fatalf("compatibility content = %q, projection = %q", msgs[0].Content, msgs[0].ToolResult.TextProjection())
+	}
+	if callback.JSONProjection() != msgs[0].ToolResult.JSONProjection() {
+		t.Fatalf("callback result mismatch: %s != %s", callback.JSONProjection(), msgs[0].ToolResult.JSONProjection())
+	}
 }
 
 func (f *runtimeTestTools) Definitions() []providers.ToolDefinition {

@@ -8,6 +8,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 func TestThreadStateRetainsExecutionLeaseUntilRelease(t *testing.T) {
@@ -82,6 +83,31 @@ func TestThreadStateCompletesPreambleBeforeToolStart(t *testing.T) {
 	}
 	if agentItems != 1 {
 		t.Fatalf("final assistant message should not duplicate streamed preamble, got %+v", turn.Items)
+	}
+}
+
+func TestThreadStatePreservesRichToolResultDetail(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
+	call := providers.ToolCall{ID: "call-1", Name: "browser_observe"}
+	th.applyStreamEventLocked("turn", providers.StreamEvent{Type: providers.EventToolUseStart, ToolCall: &call}, now)
+	detail := toolresult.Result{
+		Content:           []toolresult.ContentPart{{Type: "image", Data: "aW1hZ2U=", MIMEType: "image/png"}},
+		StructuredContent: []byte(`{"url":"https://example.test"}`),
+		Meta:              []byte(`{"private":true}`),
+	}
+	th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:             providers.EventToolUseEnd,
+		ToolCall:         &call,
+		ToolResult:       detail.TextProjection(),
+		ToolResultDetail: &detail,
+	}, now)
+
+	turn := th.ensureTurnLocked("turn", now)
+	item := turn.Items[len(turn.Items)-1]
+	if item.ResultDetail == nil || item.ResultDetail.JSONProjection() != detail.JSONProjection() {
+		t.Fatalf("rich tool detail missing from item: %+v", item)
 	}
 }
 
