@@ -785,6 +785,7 @@ export function WorkspaceFilePreview({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const editorViewStateRef = useRef<WorkspaceMonacoViewState | null>(null);
+  const editRevisionRef = useRef(0);
   const selectedWorkspaceFilePath = useMemo(
     () => normalizeSelectedWorkspaceFilePath(selectedFilePath, activeContext?.cwd),
     [activeContext?.cwd, selectedFilePath]
@@ -870,6 +871,7 @@ export function WorkspaceFilePreview({
   }, [activeContext?.cwd, dirtyStatePath, onDirtyChange]);
 
   const handleEditorChange = useCallback((nextText: string) => {
+    editRevisionRef.current += 1;
     setDraftText(nextText);
     setSaveStatus("idle");
     setSaveError(undefined);
@@ -880,6 +882,7 @@ export function WorkspaceFilePreview({
       return;
     }
 
+    const submittedEditRevision = editRevisionRef.current;
     setSaving(true);
     setSaveError(undefined);
     void window.wuu
@@ -899,8 +902,12 @@ export function WorkspaceFilePreview({
         setBaseMtimeMs(result.file.mtime_ms);
         setBaseSha256(result.file.sha256);
         if (result.status === "saved") {
-          setDraftText(nextBaseText);
-          setSaveStatus("saved");
+          if (editRevisionRef.current === submittedEditRevision) {
+            setDraftText(nextBaseText);
+            setSaveStatus("saved");
+          } else {
+            setSaveStatus("idle");
+          }
           setSaveError(undefined);
           return;
         }

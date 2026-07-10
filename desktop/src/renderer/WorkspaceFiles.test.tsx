@@ -1,7 +1,12 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RuntimeContext, WorkspaceDirectoryListResult, WorkspaceFileReadResult } from "../shared/protocol";
+import type {
+  RuntimeContext,
+  WorkspaceDirectoryListResult,
+  WorkspaceFileReadResult,
+  WorkspaceFileSaveResult,
+} from "../shared/protocol";
 import { WorkspaceFilePreview, WorkspaceFileTree } from "./WorkspaceFiles";
 
 vi.mock("./WorkspaceMonacoEditor", () => ({
@@ -242,6 +247,17 @@ async function clickMenuItem(text: string): Promise<void> {
   });
 }
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 describe("WorkspaceFileTree", () => {
   it("expands and scrolls to the selected workspace file path", async () => {
     await render(
@@ -430,6 +446,62 @@ describe("WorkspaceFileTree", () => {
     expect(container.querySelector<HTMLButtonElement>(".workspace-file-save-button")?.disabled).toBe(true);
 
     await click(".mock-editor-edit-second");
+    await click(".mock-editor-save");
+
+    expect(writeWorkspaceFile).toHaveBeenNthCalledWith(
+      2,
+      {
+        path: "src/index.ts",
+        text: "second edit\n",
+        base_mtime_ms: 2000,
+        base_sha256: "b".repeat(64),
+      },
+      "/repo",
+    );
+  });
+
+  it("preserves edits made while an earlier save is still in flight", async () => {
+    const firstSave = deferred<WorkspaceFileSaveResult>();
+    writeWorkspaceFile
+      .mockReturnValueOnce(firstSave.promise)
+      .mockResolvedValueOnce({
+        status: "saved",
+        file: workspaceFile({
+          text: "second edit\n",
+          mtime_ms: 3000,
+          sha256: "c".repeat(64),
+        }),
+      });
+
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/src/index.ts"
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+    await click(".mock-editor-edit");
+    await click(".mock-editor-save");
+    await click(".mock-editor-edit-second");
+
+    await act(async () => {
+      firstSave.resolve({
+        status: "saved",
+        file: workspaceFile({
+          text: "edited code\n",
+          mtime_ms: 2000,
+          sha256: "b".repeat(64),
+        }),
+      });
+      await firstSave.promise;
+    });
+
+    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.text).toBe("second edit\n");
+    expect(container.textContent).toContain("已修改");
+    expect(container.querySelector<HTMLButtonElement>(".workspace-file-save-button")?.disabled).toBe(false);
+
     await click(".mock-editor-save");
 
     expect(writeWorkspaceFile).toHaveBeenNthCalledWith(
