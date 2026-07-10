@@ -274,24 +274,29 @@ describe("reconcileSidebarSectionOrder", () => {
     ]);
   });
 
-  it("preserves a stored 群聊 position instead of re-anchoring it", () => {
-    // sidebar-groups-andy-workspaces.md §2: 群聊 is a first-class
-    // reorderable section; a user-chosen position must survive reconcile.
+  it("normalizes a legacy cross-group order while preserving order inside each group", () => {
     const order = reconcileSidebarSectionOrder(
-      ["project-1", SIDEBAR_SECTION_GROUP],
-      ["project-1"],
+      [
+        "project-2",
+        SIDEBAR_SECTION_AGENTS,
+        "project-1",
+        SIDEBAR_SECTION_GROUP,
+        SCRATCH_PSEUDO_PROJECT_ID,
+      ],
+      ["project-1", "project-2"],
     );
     expect(order).toEqual([
       SIDEBAR_SECTION_AGENTS,
-      SCRATCH_PSEUDO_PROJECT_ID,
-      "project-1",
       SIDEBAR_SECTION_GROUP,
+      "project-2",
+      "project-1",
+      SCRATCH_PSEUDO_PROJECT_ID,
     ]);
   });
 });
 
 describe("AppSidebar sections", () => {
-  it("renders sections in the provided sectionOrder, including 群聊", () => {
+  it("renders collaboration and workspace as fixed functional groups", () => {
     renderSidebar({
       sectionOrder: [
         SIDEBAR_SECTION_AGENTS,
@@ -301,20 +306,27 @@ describe("AppSidebar sections", () => {
       ],
     });
 
-    const sections = Array.from(
-      container.querySelectorAll(".sidebar-main > section"),
+    const groups = Array.from(
+      container.querySelectorAll(".sidebar-main > .sidebar-functional-group"),
     );
-    const ariaLabels = sections.map((s) => s.getAttribute("aria-label"));
-    expect(ariaLabels).toEqual([
-      // 置顶 is the only fixed-position section; everything below it —
-      // including 群聊 — follows sectionOrder
-      // (sidebar-groups-andy-workspaces.md §2).
-      "置顶",
-      "Agents",
-      "群聊",
-      "项目 interview",
-      "项目 wuu",
+    expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual([
+      "协作",
+      "工作区",
     ]);
+    expect(
+      Array.from(
+        groups[0]?.querySelectorAll(
+          ".sidebar-functional-group-body > section",
+        ) ?? [],
+      ).map((section) => section.getAttribute("aria-label")),
+    ).toEqual(["Agents", "群聊"]);
+    expect(
+      Array.from(
+        groups[1]?.querySelectorAll(
+          ".sidebar-functional-group-body > section",
+        ) ?? [],
+      ).map((section) => section.getAttribute("aria-label")),
+    ).toEqual(["项目 interview", "项目 wuu"]);
   });
 
   it("skips unknown keys in sectionOrder", () => {
@@ -326,11 +338,10 @@ describe("AppSidebar sections", () => {
       ],
     });
 
-    const sections = Array.from(
-      container.querySelectorAll(".sidebar-main > section"),
-    );
-    const ariaLabels = sections.map((s) => s.getAttribute("aria-label"));
-    expect(ariaLabels).toEqual(["置顶", "Agents", "项目 wuu"]);
+    const labels = Array.from(
+      container.querySelectorAll(".sidebar-functional-group-body > section"),
+    ).map((section) => section.getAttribute("aria-label"));
+    expect(labels).toEqual(["Agents", "项目 wuu"]);
   });
 
   it("renders the 对话 scratch section in the order list", () => {
@@ -342,11 +353,10 @@ describe("AppSidebar sections", () => {
       ],
     });
 
-    const sections = Array.from(
-      container.querySelectorAll(".sidebar-main > section"),
-    );
-    const ariaLabels = sections.map((s) => s.getAttribute("aria-label"));
-    expect(ariaLabels).toEqual(["置顶", "Agents", "项目", "项目 wuu"]);
+    const labels = Array.from(
+      container.querySelectorAll(".sidebar-functional-group-body > section"),
+    ).map((section) => section.getAttribute("aria-label"));
+    expect(labels).toEqual(["Agents", "项目", "项目 wuu"]);
   });
 
   it("renders the pinned section above all reorderable sections", () => {
@@ -362,16 +372,15 @@ describe("AppSidebar sections", () => {
       ],
     });
 
-    const sections = Array.from(
-      container.querySelectorAll(".sidebar-main > section"),
+    const groups = Array.from(
+      container.querySelectorAll(".sidebar-main > .sidebar-functional-group"),
     );
-    const ariaLabels = sections.map((s) => s.getAttribute("aria-label"));
-    expect(ariaLabels).toEqual([
+    expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual([
       "置顶",
-      "群聊",
-      "Agents",
-      "项目 wuu",
+      "协作",
+      "工作区",
     ]);
+    expect(groups[0]?.textContent).toContain("Pinned session");
   });
 
   it("collapsing the Agents section hides roster rows", () => {
@@ -725,35 +734,12 @@ describe("AppSidebar sections", () => {
     expect(byName.get("Quiet")?.classList.contains("has-unread")).toBe(false);
   });
 
-  it("renders the 置顶 section even when there are no pinned threads", () => {
-    // 置顶 is fixed-position and must stay visible even when empty so
-    // the user sees a stable container alongside Agents / 对话 / 项目.
+  it("hides the 置顶 section when there are no pinned threads", () => {
     renderSidebar({
       sectionOrder: [SIDEBAR_SECTION_AGENTS, "project-1"],
     });
 
-    const pinnedSection = container.querySelector(
-      'section[aria-label="置顶"]',
-    );
-    expect(pinnedSection).not.toBeNull();
-  });
-
-  it("shows a muted '还没有会话' placeholder inside an empty 置顶 body", () => {
-    renderSidebar({
-      sectionOrder: [SIDEBAR_SECTION_AGENTS, "project-1"],
-    });
-
-    const pinnedSection = container.querySelector(
-      'section[aria-label="置顶"]',
-    );
-    expect(pinnedSection).not.toBeNull();
-    // Empty pinned shows the unified sidebar-section-empty-note with the
-    // same muted styling as the project empty-note.
-    const empty = pinnedSection?.querySelector(
-      ".sidebar-section-empty-note",
-    );
-    expect(empty).not.toBeNull();
-    expect(empty?.textContent).toBe("还没有会话");
+    expect(container.querySelector('section[aria-label="置顶"]')).toBeNull();
   });
 
   it("five section headers share the unified project-row anatomy", () => {
@@ -845,6 +831,22 @@ describe("reorderSidebarSections", () => {
   it("returns the original when over is unknown", () => {
     const order = ["a", "b", "c"];
     expect(reorderSidebarSections(order, "a", "__wuu_unknown__")).toBe(order);
+  });
+
+  it("returns the original when a drag crosses a functional group boundary", () => {
+    const order = [
+      SIDEBAR_SECTION_GROUP,
+      SIDEBAR_SECTION_AGENTS,
+      SCRATCH_PSEUDO_PROJECT_ID,
+      "project-1",
+    ];
+    expect(
+      reorderSidebarSections(
+        order,
+        SIDEBAR_SECTION_AGENTS,
+        SCRATCH_PSEUDO_PROJECT_ID,
+      ),
+    ).toBe(order);
   });
 });
 
@@ -1145,19 +1147,19 @@ describe("sidebar section spacing rhythm", () => {
     expect(sidebarCSS).toContain('.thread-list-collapse[data-state="closing"]');
   });
 
-  it("declares one set of spacing tokens shared by every section family (task B)", () => {
-    // Vertical rhythm tokens: inter-section, header → body, inter-row,
-    // and list vertical padding. Every section family below 置顶 must
-    // consume these instead of hardcoding values, so the panel reads as
-    // one grid.
-    expect(sidebarCSS).toMatch(/--sidebar-section-gap: 14px/);
+  it("declares a 4px-based rhythm for functional groups and their rows", () => {
+    expect(sidebarCSS).toMatch(/--sidebar-functional-row-gap: 4px/);
+    expect(sidebarCSS).toMatch(/--sidebar-functional-heading-gap: 8px/);
+    expect(sidebarCSS).toMatch(/--sidebar-functional-group-gap: 24px/);
     expect(sidebarCSS).toMatch(/--sidebar-section-body-gap: 5px/);
     expect(sidebarCSS).toMatch(/--sidebar-row-gap: 3px/);
     expect(sidebarCSS).toMatch(/--sidebar-list-pad-y: 2px/);
-    const sectionRule = sidebarCSS.match(
-      /\.project-section,\s*\.pinned-thread-section,\s*\.group-thread-section,\s*\.participant-roster-section \{[^}]*\}/,
-    )?.[0];
-    expect(sectionRule).toMatch(/margin-top: var\(--sidebar-section-gap\)/);
+    expect(sidebarCSS).toMatch(
+      /\.sidebar-functional-group \{[^}]*gap: var\(--sidebar-functional-heading-gap\)/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.sidebar-functional-group-body \{[^}]*gap: var\(--sidebar-functional-row-gap\)/,
+    );
     expect(sidebarCSS).toMatch(
       /\.thread-list \{[^}]*gap: var\(--sidebar-row-gap\)/,
     );

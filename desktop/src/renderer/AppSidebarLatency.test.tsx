@@ -10,7 +10,7 @@
  * (markdown and all). That re-render is the perceived click lag.
  *
  * The test mounts the real App with a stub API, mounts the pane once by
- * selecting a thread, then toggles the 置顶 section header — a
+ * selecting a thread, then toggles the Agents section header — a
  * sidebar-only state change — and asserts the turn list does NOT render
  * again.
  */
@@ -219,19 +219,19 @@ describe("sidebar click latency", () => {
 
     const baseline = turnListProbe.renders;
 
-    // A pure sidebar interaction: collapse + expand the 置顶 section.
+    // A pure sidebar interaction: collapse + expand the Agents section.
     // This flips App-local state (collapsedSidebarSectionIDs) and must not
     // cascade into the memoized conversation pane.
-    const pinnedHeader = container.querySelector<HTMLButtonElement>(
-      'section[aria-label="置顶"] .sidebar-section-row',
+    const agentsHeader = container.querySelector<HTMLButtonElement>(
+      'section[aria-label="Agents"] .sidebar-section-row',
     );
-    expect(pinnedHeader).not.toBeNull();
+    expect(agentsHeader).not.toBeNull();
     await act(async () => {
-      pinnedHeader?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      agentsHeader?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flushAsync();
     await act(async () => {
-      pinnedHeader?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      agentsHeader?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flushAsync();
 

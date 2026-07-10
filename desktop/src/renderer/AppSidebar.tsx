@@ -73,20 +73,14 @@ import { NewParticipantDialog } from "./NewParticipantDialog";
  *
  * - `SIDEBAR_SECTION_PINNED` is FIXED-position (always first, above the
  *   reorderable list). It is intentionally NOT in `sectionOrder`.
- * - `SIDEBAR_SECTION_AGENTS` is the fixed Agents section that follows the
- *   pinned block. It IS persisted in `sectionOrder` so the user can move
- *   it below projects later (drag-reorder is a separate follow-up task).
- *   Today the reconcile layer treats unknown/special keys defensively, but
- *   the canonical default is `[AGENTS, SCRATCH_PSEUDO_PROJECT_ID, ...projects]`.
+ * - `SIDEBAR_SECTION_AGENTS` and `SIDEBAR_SECTION_GROUP` belong to the fixed
+ *   collaboration functional group. Their relative order is customizable.
  * - `SCRATCH_PSEUDO_PROJECT_ID` ("__wuu_scratch__") is the 对话
- *   pseudo-project entry. It participates in the reorderable list so the
- *   user can move 对话 below their projects.
+ *   pseudo-project entry. It belongs to the workspace functional group and
+ *   can be reordered with real projects.
  */
 export const SIDEBAR_SECTION_PINNED = "__wuu_pinned__";
 export const SIDEBAR_SECTION_AGENTS = "__wuu_agents__";
-// 群聊 section key. A first-class reorderable section like Agents / 对话 /
-// projects — part of sectionOrder (sidebar-groups-andy-workspaces.md §2:
-// everything below the fixed 置顶 block is reorderable).
 export const SIDEBAR_SECTION_GROUP = "__wuu_group__";
 
 const SIDEBAR_SECTION_ORDER_KEY = "wuu.desktop.sidebarSectionOrder";
@@ -103,12 +97,9 @@ const SIDEBAR_SECTION_ORDER_KEY = "wuu.desktop.sidebarSectionOrder";
  *      included it). AGENTS and GROUP are allowed through — both are
  *      part of the reorderable list
  *      (sidebar-groups-andy-workspaces.md §2).
- *   2. Append any newly-seen project ids at the END in `projectIDs` order,
- *      preserving the stored prefix for everything else.
- *   3. When no stored value is present, return the default:
- *      `[GROUP, AGENTS, SCRATCH_PSEUDO_PROJECT_ID, ...projectIDs]` —
- *      群聊 keeps its historical spot right below 置顶 until the user
- *      drags it elsewhere.
+ *   2. Append newly-seen project ids in `projectIDs` order.
+ *   3. Normalize legacy flat orders into fixed functional groups while
+ *      preserving relative order inside collaboration and workspace.
  */
 export function reconcileSidebarSectionOrder(
   stored: string[] | undefined,
@@ -155,7 +146,28 @@ export function reconcileSidebarSectionOrder(
     // below 置顶. A stored GROUP position is preserved above.
     out.unshift(SIDEBAR_SECTION_GROUP);
   }
-  return out;
+  const collaboration = out.filter(
+    (id) => id === SIDEBAR_SECTION_GROUP || id === SIDEBAR_SECTION_AGENTS,
+  );
+  const workspaces = out.filter(
+    (id) => id !== SIDEBAR_SECTION_GROUP && id !== SIDEBAR_SECTION_AGENTS,
+  );
+  return [...collaboration, ...workspaces];
+}
+
+type SidebarFunctionalGroupID = "collaboration" | "workspace";
+
+function functionalGroupForSectionID(
+  sectionID: string,
+): SidebarFunctionalGroupID | undefined {
+  if (sectionID === SIDEBAR_SECTION_PINNED) return undefined;
+  if (
+    sectionID === SIDEBAR_SECTION_GROUP ||
+    sectionID === SIDEBAR_SECTION_AGENTS
+  ) {
+    return "collaboration";
+  }
+  return "workspace";
 }
 
 /**
@@ -179,6 +191,8 @@ export function reorderSidebarSections(
   const from = order.indexOf(activeId);
   const to = order.indexOf(overId);
   if (from === -1 || to === -1) return order;
+  const activeGroup = functionalGroupForSectionID(activeId);
+  if (activeGroup !== functionalGroupForSectionID(overId)) return order;
   return arrayMove(order, from, to);
 }
 
@@ -562,6 +576,39 @@ export function AppSidebar({
   const draggingSectionInfo = draggingSectionID
     ? sectionHeaderInfoByIDRef.current.get(draggingSectionID)
     : undefined;
+  const pinnedRows: ThreadSummary[] = pinnedThreads.map((thread) =>
+    isGroupThread(thread)
+      ? {
+          ...thread,
+          title: `#${baseThreadTitle(thread, pinnedThreads)}`,
+        }
+      : thread,
+  );
+  const pinnedCollapsed = collapsedSidebarSectionIDs.has(
+    SIDEBAR_SECTION_PINNED,
+  );
+  const functionalGroups = ([
+    {
+      id: "collaboration",
+      label: "协作",
+      sectionIDs: sectionOrder.filter(
+        (id) =>
+          id === SIDEBAR_SECTION_GROUP || id === SIDEBAR_SECTION_AGENTS,
+      ),
+    },
+    {
+      id: "workspace",
+      label: "工作区",
+      sectionIDs: sectionOrder.filter(
+        (id) =>
+          id !== SIDEBAR_SECTION_GROUP && id !== SIDEBAR_SECTION_AGENTS,
+      ),
+    },
+  ] satisfies Array<{
+    id: SidebarFunctionalGroupID;
+    label: string;
+    sectionIDs: string[];
+  }>).filter((group) => group.sectionIDs.length > 0);
 
   return (
     <aside
@@ -581,14 +628,6 @@ export function AppSidebar({
             <span>新对话</span>
           </button>
           <button
-            className="nav-item"
-            onClick={onOpenSkillsTab}
-            disabled={!hasRuntimeContext}
-          >
-            <Wrench className="icon-lg" />
-            <span>Skills</span>
-          </button>
-          <button
             className="nav-item conversation-search-trigger"
             type="button"
             aria-haspopup="dialog"
@@ -599,31 +638,14 @@ export function AppSidebar({
             <Search className="icon-lg" />
             <span>搜索会话</span>
           </button>
-          <div className="sidebar-add-workspace" ref={projectMenuRef}>
-            <button
-              className="nav-item"
-              type="button"
-              aria-label="添加工作区"
-              aria-haspopup="menu"
-              aria-expanded={projectMenuOpen}
-              onClick={onToggleProjectMenu}
-            >
-              <FolderPlus className="icon-lg" />
-              <span>添加工作区</span>
-            </button>
-            {projectMenuOpen ? (
-              <div className="project-add-menu" role="menu">
-                <button role="menuitem" onClick={onCreateProject}>
-                  <FolderPlus className="icon-xl" />
-                  <span>新建空白项目</span>
-                </button>
-                <button role="menuitem" onClick={onOpenProjectFolder}>
-                  <FolderOpen className="icon-xl" />
-                  <span>使用现有文件夹</span>
-                </button>
-              </div>
-            ) : null}
-          </div>
+          <button
+            className="nav-item"
+            onClick={onOpenSkillsTab}
+            disabled={!hasRuntimeContext}
+          >
+            <Wrench className="icon-lg" />
+            <span>Skills</span>
+          </button>
           {debugFixturesVisible ? (
             <div className="dev-fixture-nav" aria-label="开发调试会话">
               <div className="dev-fixture-label">开发样例</div>
@@ -679,41 +701,25 @@ export function AppSidebar({
         </nav>
 
         <div className="sidebar-main scrollbar-hidden">
-          {(() => {
-            // 置顶 is always visible — even when there are no pinned
-            // threads — so the section reads as a stable container
-            // alongside Agents / 对话 / projects. An empty body
-            // surfaces a muted 还没有会话 placeholder row so the
-            // collapse animation has real height to animate.
-            const pinnedCollapsed = collapsedSidebarSectionIDs.has(
-              SIDEBAR_SECTION_PINNED,
-            );
-            // Pinned group threads keep their # channel identity after
-            // moving under 置顶, mirroring the 群聊 section's prefix.
-            const pinnedRows: ThreadSummary[] = pinnedThreads.map((thread) =>
-              isGroupThread(thread)
-                ? {
-                    ...thread,
-                    title: `#${baseThreadTitle(thread, pinnedThreads)}`,
-                  }
-                : thread,
-            );
-            return (
-              <section className="pinned-thread-section" aria-label="置顶">
-                <SidebarSection
-                  expanded={!pinnedCollapsed}
-                  iconKind="pinned"
-                  CollapsedIcon={Pin}
-                  ExpandedIcon={Pin}
-                  label="置顶"
-                  ariaLabel={`${pinnedCollapsed ? "展开" : "收起"}置顶`}
-                  title={pinnedCollapsed ? "展开置顶" : "收起置顶"}
-                  onToggle={() =>
-                    onToggleSidebarSectionCollapsed(SIDEBAR_SECTION_PINNED)
-                  }
-                  emptyNote="还没有会话"
-                >
-                  {pinnedRows.length === 0 ? null : (
+          {pinnedRows.length > 0 ? (
+            <section
+              className="sidebar-functional-group pinned-functional-group"
+              aria-label="置顶"
+            >
+              <div className="sidebar-functional-group-body">
+                <div className="pinned-thread-section">
+                  <SidebarSection
+                    expanded={!pinnedCollapsed}
+                    iconKind="pinned"
+                    CollapsedIcon={Pin}
+                    ExpandedIcon={Pin}
+                    label="置顶"
+                    ariaLabel={`${pinnedCollapsed ? "展开" : "收起"}置顶`}
+                    title={pinnedCollapsed ? "展开置顶" : "收起置顶"}
+                    onToggle={() =>
+                      onToggleSidebarSectionCollapsed(SIDEBAR_SECTION_PINNED)
+                    }
+                  >
                     <PinnedThreadList
                       threads={pinnedRows}
                       activeID={activeThreadID}
@@ -728,11 +734,11 @@ export function AppSidebar({
                       onRename={onRenameThread}
                       onClearArchiveConfirm={onClearArchiveConfirm}
                     />
-                  )}
-                </SidebarSection>
-              </section>
-            );
-          })()}
+                  </SidebarSection>
+                </div>
+              </div>
+            </section>
+          ) : null}
           {sectionOrder.length > 0 ? (
             <DndContext
               sensors={sensors}
@@ -746,7 +752,49 @@ export function AppSidebar({
                 items={sectionOrder}
                 strategy={verticalListSortingStrategy}
               >
-                {sectionOrder.map((key) => {
+                {functionalGroups.map((group) => (
+                  <section
+                    key={group.id}
+                    className="sidebar-functional-group"
+                    aria-label={group.label}
+                  >
+                    <div className="sidebar-functional-heading">
+                      <span className="sidebar-functional-heading-label">
+                        {group.label}
+                      </span>
+                      {group.id === "workspace" ? (
+                        <div
+                          className="sidebar-add-workspace"
+                          ref={projectMenuRef}
+                        >
+                          <button
+                            className="sidebar-functional-action"
+                            type="button"
+                            aria-label="添加工作区"
+                            title="添加工作区"
+                            aria-haspopup="menu"
+                            aria-expanded={projectMenuOpen}
+                            onClick={onToggleProjectMenu}
+                          >
+                            <Plus aria-hidden="true" />
+                          </button>
+                          {projectMenuOpen ? (
+                            <div className="project-add-menu" role="menu">
+                              <button role="menuitem" onClick={onCreateProject}>
+                                <FolderPlus className="icon-xl" />
+                                <span>新建空白项目</span>
+                              </button>
+                              <button role="menuitem" onClick={onOpenProjectFolder}>
+                                <FolderOpen className="icon-xl" />
+                                <span>使用现有文件夹</span>
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="sidebar-functional-group-body">
+                      {group.sectionIDs.map((key) => {
             if (key === SIDEBAR_SECTION_GROUP) {
               // 群聊 — first-class reorderable section
               // (sidebar-groups-andy-workspaces.md §2). The backend
@@ -1153,7 +1201,10 @@ export function AppSidebar({
                 />
               </SortableSection>
             );
-          })}
+                      })}
+                    </div>
+                  </section>
+                ))}
               </SortableContext>
               <DragOverlay
                 dropAnimation={{

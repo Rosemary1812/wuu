@@ -214,19 +214,52 @@ describe("AppSidebar layout", () => {
     expect(scrollRegion?.querySelector(".project-section")).not.toBeNull();
   });
 
-  it("keeps the workspace add action with the primary nav", () => {
+  it("orders the primary actions by starting, finding, then extending work", () => {
+    renderSidebar();
+
+    const labels = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".primary-nav > .nav-item"),
+    ).map((button) => button.textContent?.trim());
+
+    expect(labels).toEqual(["新对话", "搜索会话", "Skills"]);
+  });
+
+  it("moves the workspace add action into the workspace group header", () => {
     renderSidebar({ projectMenuOpen: true });
 
     const primaryNav = container.querySelector(".primary-nav");
-    const addWorkspaceButton = primaryNav?.querySelector(
+    const workspaceGroup = container.querySelector(
+      'section[aria-label="工作区"]',
+    );
+    const addWorkspaceButton = workspaceGroup?.querySelector(
       'button[aria-label="添加工作区"]',
     );
     const settings = container.querySelector(".sidebar-settings");
 
-    expect(addWorkspaceButton?.classList.contains("nav-item")).toBe(true);
-    expect(primaryNav?.querySelector(".project-add-menu")).not.toBeNull();
+    expect(primaryNav?.querySelector('button[aria-label="添加工作区"]')).toBeNull();
+    expect(addWorkspaceButton?.classList.contains("sidebar-functional-action")).toBe(true);
+    expect(workspaceGroup?.querySelector(".project-add-menu")).not.toBeNull();
     expect(settings?.querySelector('button[aria-label="添加工作区"]')).toBeNull();
     expect(settings?.textContent).toBe("设置");
+  });
+
+  it("hides the pinned group when there are no pinned conversations", () => {
+    renderSidebar();
+
+    expect(container.querySelector('section[aria-label="置顶"]')).toBeNull();
+    expect(container.textContent).not.toContain("还没有会话");
+  });
+
+  it("defines a 4px-based functional spacing rhythm", () => {
+    expect(sidebarCSS).toMatch(/--sidebar-functional-row-gap:\s*4px/);
+    expect(sidebarCSS).toMatch(/--sidebar-functional-heading-gap:\s*8px/);
+    expect(sidebarCSS).toMatch(/--sidebar-functional-group-gap:\s*24px/);
+  });
+
+  it("keeps the workspace menu inside a narrow sidebar", () => {
+    expect(sidebarCSS).toMatch(
+      /\.sidebar-functional-heading \.project-add-menu \{[^}]*right:\s*calc\(-1 \* var\(--sidebar-row-pad-x\)\)/,
+    );
   });
 
   // R1: this is the sidebar's own "新对话" entry (as opposed to a

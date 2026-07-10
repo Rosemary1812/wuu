@@ -189,11 +189,11 @@
   --sidebar-row-action-size: 24px;
   --sidebar-row-control-pad-x: 8px;
   --sidebar-project-unread-size: 8px;
-  /* Vertical rhythm (task B, sidebar-groups-andy-workspaces.md §1.1
-   * spirit): one token set for every section family below 置顶 —
-   * inter-section distance, header → body offset, inter-row gap, and
-   * the list's own vertical padding. Never hardcode these per section. */
-  --sidebar-section-gap: 14px;
+  /* Functional grouping uses a 4px base rhythm: rows stay close inside a
+   * group, headings get one 8px beat, and unrelated groups get 24px. */
+  --sidebar-functional-row-gap: 4px;
+  --sidebar-functional-heading-gap: 8px;
+  --sidebar-functional-group-gap: 24px;
   --sidebar-section-body-gap: 5px;
   --sidebar-row-gap: 3px;
   --sidebar-list-pad-y: 2px;
@@ -432,6 +432,7 @@
   min-height: 0;
   flex: 1 1 0;
   flex-direction: column;
+  padding-top: var(--sidebar-functional-group-gap);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -441,7 +442,7 @@
 .project-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sidebar-functional-row-gap);
 }
 
 .primary-nav {
@@ -570,7 +571,84 @@
   min-width: 0;
   flex: 0 0 auto;
   flex-direction: column;
-  margin-top: var(--sidebar-section-gap);
+  margin-top: 0;
+}
+
+.sidebar-functional-group {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--sidebar-functional-heading-gap);
+}
+
+.sidebar-functional-group + .sidebar-functional-group {
+  margin-top: var(--sidebar-functional-group-gap);
+}
+
+.sidebar-functional-group-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--sidebar-functional-row-gap);
+}
+
+.pinned-functional-group {
+  gap: 0;
+}
+
+.sidebar-functional-heading {
+  display: flex;
+  min-width: 0;
+  min-height: 24px;
+  align-items: center;
+  padding: 0 var(--sidebar-row-pad-x);
+}
+
+.sidebar-functional-heading-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  line-height: var(--line-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-functional-action {
+  display: grid;
+  width: var(--sidebar-row-action-size);
+  height: var(--sidebar-row-action-size);
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
+}
+
+.sidebar-functional-action:hover,
+.sidebar-functional-action:focus-visible,
+.sidebar-functional-action[aria-expanded="true"] {
+  outline: 0;
+  background: var(--sidebar-row-icon-hover-bg-default);
+  color: var(--ink);
+}
+
+.sidebar-functional-action:active {
+  transform: scale(0.96);
+}
+
+.sidebar-functional-action > svg {
+  width: 16px;
+  height: 16px;
 }
 
 .project-list {
@@ -1434,7 +1512,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: var(--sidebar-section-gap);
+  margin-top: 16px;
   /* Combined with `.sidebar-content`'s 16px bottom padding, this matches
    * `.composer-wrap`'s 24px bottom inset so both bottom edges share a
    * horizontal baseline. */
@@ -1445,6 +1523,17 @@
 .sidebar-add-workspace {
   position: relative;
   width: 100%;
+}
+
+.sidebar-functional-heading .sidebar-add-workspace {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.sidebar-functional-heading .project-add-menu {
+  right: calc(-1 * var(--sidebar-row-pad-x));
+  left: auto;
+  min-width: 208px;
 }
 
 .sidebar-settings-button {

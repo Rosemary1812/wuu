@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   InitializeResult,
   ServerEvent,
+  Thread,
   WuuDesktopApi,
 } from "../shared/protocol";
 
@@ -102,14 +103,29 @@ function installWuuApi(): void {
     projects: [],
     active_context: { kind: "no_project", cwd: workspace },
   });
+  const pinnedThread: Thread = {
+    id: "thread-pinned-collapse",
+    preview: "Pinned collapse probe",
+    model_provider: "fake",
+    model: "fake-model",
+    cwd: workspace,
+    workspace_kind: "scratch",
+    status: "idle",
+    read_only: false,
+    pinned: true,
+    archived: false,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    turns: [],
+  };
   const api = {
     listProjects: vi.fn().mockImplementation(() => Promise.resolve(projectState())),
     selectNoProject: vi
       .fn()
       .mockImplementation(() => Promise.resolve(projectState())),
     initialize: vi.fn().mockResolvedValue(initialized()),
-    listThreads: vi.fn().mockResolvedValue({ threads: [] }),
-    resumeThread: vi.fn().mockResolvedValue({ thread: undefined }),
+    listThreads: vi.fn().mockResolvedValue({ threads: [pinnedThread] }),
+    resumeThread: vi.fn().mockResolvedValue({ thread: pinnedThread }),
     getActiveGoalSummary: vi.fn().mockResolvedValue(null),
     gitStatus: vi.fn().mockResolvedValue({
       is_repo: false,
