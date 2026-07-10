@@ -1034,6 +1034,11 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		turnWorktreePath = strings.TrimSpace(th.WorktreePath)
 		th.mu.Unlock()
 	}
+	baseTurnTools := runner.Tools
+	if s.taskLeadManagementTurn(residentParticipantID, residentEnvelopes) {
+		runner.Tools = allowlistedToolExecutor{base: baseTurnTools, allowed: taskLeadManagementTools}
+	}
+	defer func() { runner.Tools = baseTurnTools }()
 	// Fork-to-worktree step 5: bind the thread's isolated checkout into the
 	// tool execution context. All turn variants funnel through here, so a
 	// worktree-bound thread's file/shell tools switch their execution CWD to
