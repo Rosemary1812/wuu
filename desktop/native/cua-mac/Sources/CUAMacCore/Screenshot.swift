@@ -1,26 +1,56 @@
 import AppKit
 import CoreGraphics
 import Foundation
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
+
+public struct CaptureGeometry: Sendable {
+    public let windowFrame: CGRect
+    public let imageWidth: Int
+    public let imageHeight: Int
+
+    public init(windowFrame: CGRect, imageWidth: Int, imageHeight: Int) {
+        self.windowFrame = windowFrame
+        self.imageWidth = imageWidth
+        self.imageHeight = imageHeight
+    }
+
+    public func screenPoint(x: Double, y: Double) throws -> CGPoint {
+        guard imageWidth > 0, imageHeight > 0 else {
+            throw ComputerError.operationFailed("screenshot geometry is invalid")
+        }
+        guard x >= 0, y >= 0, x <= Double(imageWidth), y <= Double(imageHeight) else {
+            throw ComputerError.invalidArguments("coordinates must be inside the latest screenshot (\(imageWidth)×\(imageHeight))")
+        }
+        return CGPoint(
+            x: windowFrame.origin.x + x * windowFrame.width / Double(imageWidth),
+            y: windowFrame.origin.y + y * windowFrame.height / Double(imageHeight)
+        )
+    }
+}
+
+struct WindowCapture {
+    let data: Data
+    let geometry: CaptureGeometry
+}
 
 private final class CaptureBox: @unchecked Sendable {
     private let lock = NSLock()
-    private var value: Result<Data, Error>?
+    private var value: Result<WindowCapture, Error>?
 
-    func set(_ result: Result<Data, Error>) {
+    func set(_ result: Result<WindowCapture, Error>) {
         lock.lock()
         value = result
         lock.unlock()
     }
 
-    func get() -> Result<Data, Error>? {
+    func get() -> Result<WindowCapture, Error>? {
         lock.lock()
         defer { lock.unlock() }
         return value
     }
 }
 
-func captureWindowPNG(processID: pid_t, timeout: TimeInterval = 8) throws -> Data {
+func captureWindowPNG(processID: pid_t, timeout: TimeInterval = 8) throws -> WindowCapture {
     guard CGPreflightScreenCaptureAccess() else {
         throw ComputerError.permissionDenied("Screen Recording permission is required for window screenshots")
     }
@@ -47,12 +77,20 @@ func captureWindowPNG(processID: pid_t, timeout: TimeInterval = 8) throws -> Dat
         configuration.height = max(1, Int(window.frame.height * 2))
         configuration.showsCursor = false
         let filter = SCContentFilter(desktopIndependentWindow: window)
+        let windowFrame = window.frame
         SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) { image, captureError in
             if let captureError {
                 box.set(.failure(captureError))
             } else if let image,
                       let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
-                box.set(.success(data))
+                box.set(.success(WindowCapture(
+                    data: data,
+                    geometry: CaptureGeometry(
+                        windowFrame: windowFrame,
+                        imageWidth: image.width,
+                        imageHeight: image.height
+                    )
+                )))
             } else {
                 box.set(.failure(ComputerError.operationFailed("window screenshot produced no image")))
             }

@@ -26,6 +26,7 @@ public final class MacComputerBackend: ComputerBackend {
     private let snapshotter = AXSnapshotter()
     private var snapshotProcessID: pid_t?
     private var lastSnapshotText: [pid_t: String] = [:]
+    private var lastCaptureGeometry: [pid_t: CaptureGeometry] = [:]
 
     public init() {}
 
@@ -191,7 +192,20 @@ public final class MacComputerBackend: ComputerBackend {
         ]
         var screenshot: Data?
         do {
-            screenshot = try captureWindowPNG(processID: app.processIdentifier)
+            let capture = try captureWindowPNG(processID: app.processIdentifier)
+            screenshot = capture.data
+            lastCaptureGeometry[app.processIdentifier] = capture.geometry
+            structured["screenshot"] = [
+                "width": capture.geometry.imageWidth,
+                "height": capture.geometry.imageHeight,
+                "window_frame": [
+                    "x": capture.geometry.windowFrame.origin.x,
+                    "y": capture.geometry.windowFrame.origin.y,
+                    "width": capture.geometry.windowFrame.width,
+                    "height": capture.geometry.windowFrame.height,
+                ],
+                "coordinate_space": "latest_screenshot_pixels",
+            ]
         } catch {
             structured["screenshot_error"] = error.localizedDescription
         }
@@ -238,7 +252,7 @@ public final class MacComputerBackend: ComputerBackend {
             throw ComputerError.invalidArguments("click requires element_id or x and y")
         }
         try activate(app)
-        try postClick(point: CGPoint(x: x, y: y), button: command.mouseButton, count: command.clickCount ?? 1)
+        try postClick(point: try screenshotPoint(x: x, y: y, app: app), button: command.mouseButton, count: command.clickCount ?? 1)
     }
 
     private func postClick(point: CGPoint, button name: String?, count: Int) throws {
@@ -267,19 +281,29 @@ public final class MacComputerBackend: ComputerBackend {
             throw ComputerError.invalidArguments("drag requires from_x, from_y, to_x, and to_y")
         }
         try activate(app)
-        let start = CGPoint(x: x, y: y)
-        let end = CGPoint(x: toX, y: toY)
+        let start = try screenshotPoint(x: x, y: y, app: app)
+        let end = try screenshotPoint(x: toX, y: toY, app: app)
         guard let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left) else {
             throw ComputerError.operationFailed("could not create drag event")
         }
         down.post(tap: .cghidEventTap)
         for step in 1...12 {
             let progress = Double(step) / 12
-            let point = CGPoint(x: x + (toX - x) * progress, y: y + (toY - y) * progress)
+            let point = CGPoint(
+                x: start.x + (end.x - start.x) * progress,
+                y: start.y + (end.y - start.y) * progress
+            )
             CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
             usleep(8_000)
         }
         CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left)?.post(tap: .cghidEventTap)
+    }
+
+    private func screenshotPoint(x: Double, y: Double, app: NSRunningApplication) throws -> CGPoint {
+        guard let geometry = lastCaptureGeometry[app.processIdentifier] else {
+            throw ComputerError.invalidArguments("observe the app before using screenshot coordinates")
+        }
+        return try geometry.screenPoint(x: x, y: y)
     }
 
     private func pressKey(_ command: ComputerCommand, app: NSRunningApplication) throws {
@@ -303,6 +327,10 @@ public final class MacComputerBackend: ComputerBackend {
         let vertical: Int32 = direction == "up" ? amount : direction == "down" ? -amount : 0
         let horizontal: Int32 = direction == "left" ? amount : direction == "right" ? -amount : 0
         try activate(app)
+        if command.elementID != nil,
+           let frame = axFrame(try element(command, app: app)) {
+            CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: frame.midX, y: frame.midY), mouseButton: .left)?.post(tap: .cghidEventTap)
+        }
         guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: vertical, wheel2: horizontal, wheel3: 0) else {
             throw ComputerError.operationFailed("could not create scroll event")
         }
@@ -324,13 +352,15 @@ public final class MacComputerBackend: ComputerBackend {
         }
         try activate(app)
         let units = Array(text.utf16)
+        if units.isEmpty { return }
         guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
               let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else {
             throw ComputerError.operationFailed("could not create text input event")
         }
         units.withUnsafeBufferPointer { buffer in
-            down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress!)
-            up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress!)
+            guard let baseAddress = buffer.baseAddress else { return }
+            down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: baseAddress)
+            up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: baseAddress)
         }
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)

@@ -117,12 +117,23 @@ private func testNativePermissionAndAppDiscoveryAreInspectable() throws {
     try expect(apps.structured["apps"] is [[String: Any]], "running apps list")
 }
 
+private func testScreenshotCoordinatesMapToGlobalWindowCoordinates() throws {
+    let geometry = CaptureGeometry(
+        windowFrame: CGRect(x: 100, y: 50, width: 800, height: 600),
+        imageWidth: 1600,
+        imageHeight: 1200
+    )
+    let point = try geometry.screenPoint(x: 800, y: 600)
+    try expect(point.x == 500 && point.y == 350, "screenshot midpoint maps to window midpoint")
+}
+
 do {
     try testInitializesAndAdvertisesFullComputerTool()
     try testPreservesAccessibilityAndScreenshotContent()
     try testCoordinateAndKeyboardFallbackReachBackend()
     try testKeyChordParserSupportsSkyStyleAliases()
     try testNativePermissionAndAppDiscoveryAreInspectable()
+    try testScreenshotCoordinatesMapToGlobalWindowCoordinates()
     print("cua-mac protocol tests passed")
 } catch {
     FileHandle.standardError.write(Data("cua-mac protocol tests failed: \(error)\n".utf8))

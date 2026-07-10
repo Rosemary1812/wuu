@@ -183,7 +183,6 @@ public final class MCPServer {
 
     private func toolDefinition() -> [String: Any] {
         let stringProperty: [String: Any] = ["type": "string"]
-        let numberProperty: [String: Any] = ["type": "number"]
         return [
             "name": "computer",
             "title": "Computer Use for Mac",
@@ -196,12 +195,12 @@ public final class MCPServer {
                     "action": ["type": "string", "enum": ComputerAction.allCases.map(\.rawValue)],
                     "app": stringProperty,
                     "element_id": ["type": "integer"],
-                    "x": numberProperty,
-                    "y": numberProperty,
-                    "to_x": numberProperty,
-                    "to_y": numberProperty,
-                    "from_x": numberProperty,
-                    "from_y": numberProperty,
+                    "x": ["type": "number", "description": "Horizontal pixel in the latest screenshot."],
+                    "y": ["type": "number", "description": "Vertical pixel in the latest screenshot."],
+                    "to_x": ["type": "number", "description": "Drag destination horizontal pixel in the latest screenshot."],
+                    "to_y": ["type": "number", "description": "Drag destination vertical pixel in the latest screenshot."],
+                    "from_x": ["type": "number", "description": "Drag start horizontal pixel in the latest screenshot."],
+                    "from_y": ["type": "number", "description": "Drag start vertical pixel in the latest screenshot."],
                     "mouse_button": ["type": "string", "enum": ["left", "right", "middle"]],
                     "click_count": ["type": "integer", "minimum": 1, "maximum": 3],
                     "key": stringProperty,
