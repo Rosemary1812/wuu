@@ -195,7 +195,7 @@ export type ConversationSplitPaneRendererProps = {
   onSend: (pane: ConversationPaneID) => void;
   onInterrupt: (pane: ConversationPaneID) => void;
   onForkMessage: (thread: Thread, turnID: string, itemID: string) => void;
-  onOpenFile?: (path: string) => void;
+  onOpenFile?: (thread: Thread, path: string) => void;
   onOpenAgent: (agent: Agent) => void;
   canEditThreadMessage: (thread: Thread) => boolean;
   onEditMessage: (
@@ -277,7 +277,7 @@ export function ConversationSplitPaneRenderer({
       onSend={() => onSend(pane)}
       onInterrupt={() => onInterrupt(pane)}
       onForkMessage={(turnID, itemID) => onForkMessage(thread, turnID, itemID)}
-      onOpenFile={onOpenFile}
+      onOpenFile={(path) => onOpenFile?.(thread, path)}
       onOpenAgent={(agentID) => {
         const agent = thread.child_agents?.find(
           (candidate) => candidate.id === agentID,

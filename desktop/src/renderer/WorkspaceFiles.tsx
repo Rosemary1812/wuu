@@ -757,11 +757,13 @@ export function formatWorkspaceRoot(root: string): string {
 
 export function WorkspaceFilePreview({
   activeContext,
+  editorResourceID,
   selectedFilePath,
   onOpenRightPanel,
   onDirtyChange
 }: {
   activeContext?: RuntimeContext;
+  editorResourceID?: string;
   selectedFilePath?: string;
   onOpenRightPanel: () => void;
   onDirtyChange?: (state: WorkspaceFileDirtyState) => void;
@@ -1055,6 +1057,7 @@ export function WorkspaceFilePreview({
         ) : (
           <WorkspaceMonacoEditor
             path={file.path}
+            resourceID={editorResourceID ?? `${activeContext.cwd}:${file.path}`}
             text={draftText}
             readOnly={readOnly}
             onChange={handleEditorChange}

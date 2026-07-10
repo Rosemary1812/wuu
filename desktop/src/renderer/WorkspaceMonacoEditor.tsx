@@ -32,12 +32,14 @@ type MonacoLanguage =
 
 export function WorkspaceMonacoEditor({
   path,
+  resourceID,
   text,
   readOnly = false,
   onChange,
   onSave,
 }: {
   path: string;
+  resourceID: string;
   text: string;
   readOnly?: boolean;
   onChange?: (value: string) => void;
@@ -68,7 +70,7 @@ export function WorkspaceMonacoEditor({
     const model = monaco.editor.createModel(
       text,
       language,
-      monaco.Uri.parse(`wuu-workspace:///${encodeWorkspacePath(path)}`),
+      workspaceMonacoModelURI(resourceID),
     );
     const editor = monaco.editor.create(host, {
       model,
@@ -113,7 +115,7 @@ export function WorkspaceMonacoEditor({
         modelRef.current = null;
       }
     };
-  }, [language, path]);
+  }, [language, resourceID]);
 
   useEffect(() => {
     const model = modelRef.current;
@@ -142,9 +144,14 @@ export function WorkspaceMonacoEditor({
       className="workspace-monaco-editor"
       data-language={language}
       data-path={path}
+      data-resource-id={resourceID}
       ref={hostRef}
     />
   );
+}
+
+export function workspaceMonacoModelURI(resourceID: string): monaco.Uri {
+  return monaco.Uri.parse(`wuu-workspace:///${encodeURIComponent(resourceID)}`);
 }
 
 function installMonacoWorkers(): void {
@@ -169,14 +176,6 @@ function installMonacoWorkers(): void {
       return new EditorWorker();
     },
   };
-}
-
-function encodeWorkspacePath(path: string): string {
-  return path
-    .split("/")
-    .filter(Boolean)
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
 }
 
 export function monacoLanguageForPath(path: string): MonacoLanguage {

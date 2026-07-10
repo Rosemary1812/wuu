@@ -91,6 +91,24 @@ describe("workspaceFileViewTab", () => {
       workspaceFileViewTabID(worktreeContext, "src/App.tsx"),
     );
   });
+
+  it("normalizes aliases of the same workspace file to one resource", () => {
+    const relative = workspaceFileViewTab({
+      context: projectContext,
+      path: "src/App.tsx",
+    });
+    const dotted = workspaceFileViewTab({
+      context: projectContext,
+      path: "./src/App.tsx",
+    });
+    const absolute = workspaceFileViewTab({
+      context: projectContext,
+      path: "/repo/project/src/App.tsx",
+    });
+
+    expect(dotted).toEqual(relative);
+    expect(absolute).toEqual(relative);
+  });
 });
 
 describe("workspaceFileBasename", () => {

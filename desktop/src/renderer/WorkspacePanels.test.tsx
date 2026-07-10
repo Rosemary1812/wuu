@@ -23,14 +23,21 @@ vi.mock("./WorkspaceTerminalPanel", () => ({
 vi.mock("./WorkspaceMonacoEditor", () => ({
   WorkspaceMonacoEditor: ({
     path,
+    resourceID,
     text,
     onChange,
   }: {
     path: string;
+    resourceID: string;
     text: string;
     onChange?: (value: string) => void;
   }) => (
-    <div className="workspace-monaco-editor" data-path={path} data-text={text}>
+    <div
+      className="workspace-monaco-editor"
+      data-path={path}
+      data-resource-id={resourceID}
+      data-text={text}
+    >
       <button type="button" className="mock-editor-edit" onClick={() => onChange?.(`edited ${path}`)}>
         edit
       </button>
@@ -235,6 +242,41 @@ describe("WorkspaceRightPanel", () => {
       "edited src/a.ts",
     );
     expect(container?.querySelectorAll(".workspace-file-resource")).toHaveLength(2);
+  });
+
+  it("gives same-path files in separate worktrees distinct Monaco resources", async () => {
+    const primary = workspaceFileViewTab({
+      context: {
+        kind: "project",
+        project_id: "project-1",
+        cwd: "/repo/project",
+      },
+      path: "src/App.tsx",
+    });
+    const worktree = workspaceFileViewTab({
+      context: {
+        kind: "project",
+        project_id: "project-1",
+        cwd: "/repo/worktrees/feature/project",
+      },
+      path: "src/App.tsx",
+    });
+
+    mount(
+      <WorkspaceRightPanel
+        {...baseProps()}
+        tabs={[primary, worktree]}
+        activeTabID={primary.id}
+      />,
+    );
+    await act(async () => Promise.resolve());
+
+    const resourceIDs = Array.from(
+      container?.querySelectorAll<HTMLElement>(".workspace-monaco-editor") ?? [],
+    ).map((editor) => editor.dataset.resourceId);
+    expect(resourceIDs).toContain(primary.id);
+    expect(resourceIDs).toContain(worktree.id);
+    expect(new Set(resourceIDs).size).toBe(2);
   });
 
   it("does not close a dirty file resource until the user confirms discarding its edit", async () => {

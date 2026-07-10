@@ -1707,6 +1707,13 @@ export function App(): JSX.Element {
     }
     openWorkspaceFileTab({ context, path });
   });
+  const openWorkspaceFileForThread = useStableCallback((thread: Thread, path: string): void => {
+    const context = workspacePanelContext(appStateRef.current.activeContext, thread);
+    if (!context) {
+      return;
+    }
+    openWorkspaceFileTab({ context, path });
+  });
   const rememberWorkspaceDirtyFiles = useStableCallback((dirty: boolean): void => {
     workspaceHasDirtyFilesRef.current = dirty;
   });
@@ -3873,7 +3880,7 @@ export function App(): JSX.Element {
                     onForkMessage={(thread, turnID, itemID) =>
                       void forkThreadFromMessage(thread, turnID, itemID)
                     }
-                    onOpenFile={openWorkspaceFile}
+                    onOpenFile={openWorkspaceFileForThread}
                     onOpenAgent={(agent) => void selectChildAgent(agent)}
                     canEditThreadMessage={canShowHistoryEditButton}
                     onEditMessage={startEditingThreadMessageFromHistory}
@@ -3931,7 +3938,7 @@ export function App(): JSX.Element {
                 onDismissInstructions={handleCachedPaneDismissInstructions}
                 canEditThreadMessage={canEditCachedThreadMessage}
                 onForkMessage={handleCachedPaneForkMessage}
-                onOpenFile={openWorkspaceFile}
+                onOpenFile={openWorkspaceFileForThread}
                 onOpenAgent={handleCachedPaneOpenAgent}
                 onOpenSubthread={handleCachedPaneOpenSubthread}
                 onReact={handleCachedPaneReact}

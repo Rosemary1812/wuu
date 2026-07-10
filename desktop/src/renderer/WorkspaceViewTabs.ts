@@ -80,11 +80,12 @@ export function workspaceDiffViewTab({
 }
 
 export function workspaceFileViewTabID(context: RuntimeContext, path: string): string {
+  const normalizedPath = normalizeWorkspaceFileTabPath(context, path);
   const contextKey =
     context.kind === "project"
       ? `project:${context.project_id}:${context.cwd}`
       : `no_project:${context.cwd}`;
-  return `file:${encodeURIComponent(contextKey)}:${encodeURIComponent(path)}`;
+  return `file:${encodeURIComponent(contextKey)}:${encodeURIComponent(normalizedPath)}`;
 }
 
 export function workspaceFileViewTab({
@@ -94,13 +95,26 @@ export function workspaceFileViewTab({
   context: RuntimeContext;
   path: string;
 }): WorkspaceFileViewTab {
+  const normalizedPath = normalizeWorkspaceFileTabPath(context, path);
   return {
     kind: "file",
-    id: workspaceFileViewTabID(context, path),
+    id: workspaceFileViewTabID(context, normalizedPath),
     context,
-    path,
-    title: workspaceFileBasename(path),
+    path: normalizedPath,
+    title: workspaceFileBasename(normalizedPath),
   };
+}
+
+export function normalizeWorkspaceFileTabPath(context: RuntimeContext, path: string): string {
+  const normalizedRoot = context.cwd.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  const normalizedPath = path.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  const relativePath = normalizedPath.startsWith(`${normalizedRoot}/`)
+    ? normalizedPath.slice(normalizedRoot.length + 1)
+    : normalizedPath.replace(/^\/+/, "");
+  return relativePath
+    .split("/")
+    .filter((segment) => segment.length > 0 && segment !== ".")
+    .join("/");
 }
 
 export function workspaceFileBasename(path: string): string {

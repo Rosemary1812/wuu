@@ -304,6 +304,7 @@ function WorkspaceFileResource({
     >
       <WorkspaceFilePreview
         activeContext={tab.context}
+        editorResourceID={tab.id}
         selectedFilePath={tab.path}
         onOpenRightPanel={() => {}}
         onDirtyChange={handleDirtyChange}
