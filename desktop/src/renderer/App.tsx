@@ -438,6 +438,8 @@ export function App(): JSX.Element {
     rightPanelOpen,
     rightPanelAnimating,
     effectiveSidebarWidth,
+    workspaceRightPanelAutoGlobalized,
+    workspaceRightPanelDockableWithoutSidebar,
     setRightPanelOpenWithMotion,
     startSidebarResize,
     startSettingsSidebarResize,
@@ -463,16 +465,25 @@ export function App(): JSX.Element {
     settingsLayoutRootRef: settingsShellRef,
     onCloseProjectMenu: closeProjectMenu,
   });
+  const [rightPanelManualGlobalized, setRightPanelManualGlobalized] =
+    useState(false);
+  const rightPanelAutoGlobalized =
+    rightPanelOpen && workspaceRightPanelAutoGlobalized;
+  const rightPanelGlobalized =
+    rightPanelOpen &&
+    (rightPanelManualGlobalized || rightPanelAutoGlobalized);
+  const sidebarDrawerMode = sidebarCollapsed || rightPanelGlobalized;
   const {
     sidebarDrawerPhase,
     sidebarHoverZoneRef,
     cancelSidebarDrawerOpen,
     openSidebarDrawer,
+    openSidebarDrawerNow,
     scheduleSidebarDrawerOpen,
     closeSidebarDrawer,
   } = useSidebarDrawerState({
     appShellRef,
-    sidebarCollapsed,
+    sidebarCollapsed: sidebarDrawerMode,
     resizingSidebar,
     activeSessionTabID: state.activeSessionTabID,
     motionMs: SIDEBAR_MOTION_MS,
@@ -572,14 +583,34 @@ export function App(): JSX.Element {
   const [rightPanelFilePath, setRightPanelFilePath] = useState<
     string | undefined
   >(undefined);
-  // In-window "globalize" toggle: collapse sidebar + conversation so the user
-  // can dedicate the window to browsing the right panel. Reset on close.
-  const [rightPanelGlobalized, setRightPanelGlobalized] = useState(false);
+  // Manual focus is user intent; automatic focus is derived independently
+  // from current layout capacity above. Closing the workspace clears only the
+  // manual request, while resizing can freely enter/leave automatic focus.
   useEffect(() => {
     if (!rightPanelOpen) {
-      setRightPanelGlobalized(false);
+      setRightPanelManualGlobalized(false);
     }
   }, [rightPanelOpen]);
+  const toggleWorkspacePanelGlobalized = useCallback((): void => {
+    if (!rightPanelGlobalized) {
+      setRightPanelManualGlobalized(true);
+      return;
+    }
+    setRightPanelManualGlobalized(false);
+    if (
+      rightPanelAutoGlobalized &&
+      workspaceRightPanelDockableWithoutSidebar &&
+      !sidebarCollapsed
+    ) {
+      toggleSidebar();
+    }
+  }, [
+    rightPanelAutoGlobalized,
+    rightPanelGlobalized,
+    sidebarCollapsed,
+    toggleSidebar,
+    workspaceRightPanelDockableWithoutSidebar,
+  ]);
   const [environmentDialog, setEnvironmentDialog] =
     useState<EnvironmentDialog | null>(null);
   const [contextCompositionEntries, setContextCompositionEntries] = useState<
@@ -778,7 +809,10 @@ export function App(): JSX.Element {
 
     appShellRef.current
       ?.querySelector<HTMLElement>(".sidebar")
-      ?.toggleAttribute("inert", fullPanel);
+      ?.toggleAttribute(
+        "inert",
+        fullPanel && sidebarDrawerPhase !== "open",
+      );
 
     if (fullPanel && !previous.fullPanel) {
       appShellRef.current
@@ -800,7 +834,7 @@ export function App(): JSX.Element {
         )
         ?.focus();
     }
-  }, [rightPanelGlobalized, rightPanelOpen]);
+  }, [rightPanelGlobalized, rightPanelOpen, sidebarDrawerPhase]);
 
   // Workspace panel (file tree / file preview / terminal) root: follows the
   // active thread's own cwd when it differs from state.activeContext — the
@@ -2094,10 +2128,10 @@ export function App(): JSX.Element {
     state.initialized && !previewingLaunch && !poppedOutMode,
   );
   const sidebarVisible = !poppedOutMode;
-  const shellClassName = `app-shell${poppedOutMode ? " popped-out-shell" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${
-    sidebarCollapsed && sidebarDrawerPhase === "open" ? " sidebar-drawer-open" : ""
+  const shellClassName = `app-shell${poppedOutMode ? " popped-out-shell" : ""}${sidebarDrawerMode ? " sidebar-collapsed" : ""}${
+    sidebarDrawerMode && sidebarDrawerPhase === "open" ? " sidebar-drawer-open" : ""
   }${
-    sidebarCollapsed && sidebarDrawerPhase === "closing"
+    sidebarDrawerMode && sidebarDrawerPhase === "closing"
       ? " sidebar-drawer-closing"
       : ""
   }${
@@ -3737,7 +3771,7 @@ export function App(): JSX.Element {
             }}
           />
 
-          {sidebarCollapsed ? null : (
+          {sidebarDrawerMode ? null : (
             <div
               className="sidebar-resizer"
               inert={rightPanelOpen && rightPanelGlobalized}
@@ -4188,7 +4222,12 @@ export function App(): JSX.Element {
           onOpenFile={openWorkspaceFile}
           onClose={() => setRightPanelOpenWithMotion(false)}
           globalized={rightPanelGlobalized}
-          onToggleGlobalize={() => setRightPanelGlobalized((g) => !g)}
+          onToggleGlobalize={toggleWorkspacePanelGlobalized}
+          onOpenSidebar={openSidebarDrawerNow}
+          canExitGlobalized={
+            !rightPanelAutoGlobalized ||
+            workspaceRightPanelDockableWithoutSidebar
+          }
           pendingBrowserURL={pendingBrowserURL}
           onBrowserURLConsumed={consumePendingBrowserURL}
           onBrowserURLChange={rememberBrowserURLForActiveThread}

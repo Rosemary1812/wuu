@@ -34,6 +34,7 @@ import { App } from "./App";
 let container: HTMLDivElement;
 let root: Root | null = null;
 let serverEventHandlers: Array<(event: ServerEvent) => void> = [];
+const originalInnerWidth = window.innerWidth;
 
 const workspace = "/tmp/wuu-artifact-tab-test";
 
@@ -174,6 +175,10 @@ function installWuuApi(): void {
   });
 }
 
+function setInnerWidth(width: number): void {
+  window.innerWidth = width;
+}
+
 async function flushAsync(): Promise<void> {
   await act(async () => {
     await Promise.resolve();
@@ -183,6 +188,7 @@ async function flushAsync(): Promise<void> {
 
 describe("workspace file tabs", () => {
   beforeEach(() => {
+    setInnerWidth(1280);
     installWindowStubs();
     installWuuApi();
     Element.prototype.scrollIntoView = vi.fn();
@@ -193,6 +199,7 @@ describe("workspace file tabs", () => {
   });
 
   afterEach(() => {
+    setInnerWidth(originalInnerWidth);
     act(() => {
       root?.unmount();
     });
@@ -253,5 +260,69 @@ describe("workspace file tabs", () => {
     expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(false);
     expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(false);
     expect(document.activeElement).toBe(fileLink);
+  });
+
+  it("focuses the workspace automatically when a compact window cannot keep conversation usable", async () => {
+    setInnerWidth(674);
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flushAsync();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".rich-file-link")?.click();
+    });
+    await flushAsync();
+
+    const shell = container.querySelector<HTMLElement>(".app-shell");
+    expect(shell?.classList.contains("right-panel-globalized")).toBe(true);
+    expect(shell?.classList.contains("sidebar-collapsed")).toBe(true);
+    expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(true);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="打开导航侧栏"]')
+        ?.click();
+    });
+    expect(shell?.classList.contains("sidebar-drawer-open")).toBe(true);
+    expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(false);
+
+    await act(async () => {
+      setInnerWidth(1000);
+      window.dispatchEvent(new Event("resize"));
+    });
+    await flushAsync();
+    expect(shell?.classList.contains("right-panel-globalized")).toBe(false);
+    expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(false);
+  });
+
+  it("turns pinned navigation into a drawer when that makes workspace docking safe", async () => {
+    setInnerWidth(1000);
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flushAsync();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(".rich-file-link")?.click();
+    });
+    await flushAsync();
+
+    const shell = container.querySelector<HTMLElement>(".app-shell");
+    expect(shell?.classList.contains("right-panel-globalized")).toBe(true);
+    expect(shell?.classList.contains("sidebar-collapsed")).toBe(true);
+
+    const restore = container.querySelector<HTMLButtonElement>(
+      '[aria-label="退出全面板"]',
+    );
+    expect(restore?.disabled).toBe(false);
+    await act(async () => restore?.click());
+    await flushAsync();
+
+    expect(shell?.classList.contains("right-panel-globalized")).toBe(false);
+    expect(shell?.classList.contains("right-panel-open")).toBe(true);
+    expect(shell?.classList.contains("sidebar-collapsed")).toBe(true);
   });
 });
