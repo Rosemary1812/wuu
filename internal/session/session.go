@@ -1411,6 +1411,9 @@ WHERE task_id = ?`, keeper.ID, duplicate.ID); err != nil {
 			return fmt.Errorf("remove duplicate conversation thread: %w", err)
 		}
 	}
+	if err := reconcileMergedConversationThreadAttempts(tx, &keeper); err != nil {
+		return err
+	}
 	planJSON, err := json.Marshal(keeper.Plan)
 	if err != nil {
 		return fmt.Errorf("marshal merged conversation thread plan: %w", err)
@@ -1430,6 +1433,50 @@ WHERE id = ?`, keeper.Title, keeper.CreatedBy, keeper.ThreadOwnerParticipantID,
 		keeper.ExecState, keeper.ParentSeq, keeper.ParentAuthorParticipantID,
 		keeper.ID); err != nil {
 		return fmt.Errorf("persist merged conversation thread: %w", err)
+	}
+	return nil
+}
+
+func reconcileMergedConversationThreadAttempts(tx *sql.Tx, thread *ConversationThread) error {
+	if thread == nil || len(thread.Plan) == 0 {
+		return nil
+	}
+	for i := range thread.Plan {
+		piece := &thread.Plan[i]
+		var maxOrdinal int
+		if err := tx.QueryRow(`
+SELECT COALESCE(MAX(ordinal), 0)
+FROM task_attempts
+WHERE task_id = ? AND node_id = ?`, thread.ID, piece.ID).Scan(&maxOrdinal); err != nil {
+			return fmt.Errorf("load merged task attempt count for node %q: %w", piece.ID, err)
+		}
+		if maxOrdinal > piece.Attempts {
+			piece.Attempts = maxOrdinal
+		}
+
+		var activeAttemptID string
+		err := tx.QueryRow(`
+SELECT id
+FROM task_attempts
+WHERE task_id = ? AND node_id = ? AND status IN (?, ?)
+ORDER BY ordinal DESC, created_at DESC, id DESC
+LIMIT 1`, thread.ID, piece.ID, TaskAttemptQueued, TaskAttemptRunning).Scan(&activeAttemptID)
+		switch {
+		case err == nil:
+			piece.CurrentAttemptID = activeAttemptID
+			piece.Status = TaskPieceActive
+		case errors.Is(err, sql.ErrNoRows):
+			piece.CurrentAttemptID = ""
+			if piece.Status == TaskPieceActive {
+				piece.Status = TaskPieceBlocked
+				piece.FailureReason = "attempt history repaired while merging duplicate Thread records"
+				if thread.Status == ConversationThreadTask {
+					thread.ExecState = ExecStateBlocked
+				}
+			}
+		default:
+			return fmt.Errorf("load merged active task attempt for node %q: %w", piece.ID, err)
+		}
 	}
 	return nil
 }

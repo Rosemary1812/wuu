@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -186,6 +187,9 @@ func TestConversationThreadParentMigrationMergesDifferentAnchors(t *testing.T) {
 	if err := UpsertParticipant(dir, participant.Participant{ID: "prt-worker", Kind: participant.KindNamed, Name: "Worker"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := AddThreadMember(dir, "group", "prt-worker"); err != nil {
+		t.Fatal(err)
+	}
 	db, err := openStore(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -194,14 +198,32 @@ func TestConversationThreadParentMigrationMergesDifferentAnchors(t *testing.T) {
 		db.Close()
 		t.Fatal(err)
 	}
+	planJSON, err := json.Marshal([]TaskPiece{{
+		ID: "node-1", Title: "implement", Assignee: "prt-worker", Status: TaskPieceRetrying,
+		Attempts: 1, RetryBudget: 3,
+	}})
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+UPDATE conversation_threads
+SET status = ?, lead_participant_id = ?, exec_state = ?, plan = ?
+WHERE id = ?`, string(ConversationThreadTask), first.ThreadOwnerParticipantID,
+		ExecStateExecuting, string(planJSON), first.ID); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
 	if _, err := db.Exec(`
 INSERT INTO conversation_threads (
 	id, session_id, anchor_item_id, title, status, created_by, created_at,
-	thread_owner_participant_id, parent_seq, parent_author_participant_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"cth-second-parent", "group", "reloaded-item", "duplicate", string(ConversationThreadOpen),
+	thread_owner_participant_id, parent_seq, parent_author_participant_id,
+	lead_participant_id, exec_state, plan
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"cth-second-parent", "group", "reloaded-item", "duplicate", string(ConversationThreadTask),
 		"human", timeText(first.CreatedAt.Add(time.Second)), first.ThreadOwnerParticipantID,
-		first.ParentSeq, first.ParentAuthorParticipantID); err != nil {
+		first.ParentSeq, first.ParentAuthorParticipantID, first.ThreadOwnerParticipantID,
+		ExecStateExecuting, string(planJSON)); err != nil {
 		db.Close()
 		t.Fatal(err)
 	}
@@ -260,6 +282,20 @@ VALUES ('inbox-duplicate-parent', 'prt-worker', '{"source_subthread_id":"cth-sec
 	}
 	if attemptTaskID != first.ID || attemptOrdinal != 2 {
 		t.Fatalf("merged attempt = %q/%d, want %q/2", attemptTaskID, attemptOrdinal, first.ID)
+	}
+	mergedTask, err := FindConversationThreadByID(dir, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mergedTask.Plan) != 1 || mergedTask.Plan[0].Attempts != 2 || mergedTask.Plan[0].CurrentAttemptID != "" {
+		t.Fatalf("merged plan attempts = %+v, want attempts=2 and no active attempt", mergedTask.Plan)
+	}
+	attempt, _, err := ReserveTaskAttempt(dir, first.ID, "node-1", "prt-worker")
+	if err != nil {
+		t.Fatalf("reserve after migration: %v", err)
+	}
+	if attempt.Ordinal != 3 {
+		t.Fatalf("reserved ordinal = %d, want 3", attempt.Ordinal)
 	}
 	var runTaskID, markThreadID, inboxJSON string
 	if err := db.QueryRow(`SELECT task_id FROM participant_runs WHERE id = 'run-duplicate-parent'`).Scan(&runTaskID); err != nil {
