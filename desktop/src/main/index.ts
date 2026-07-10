@@ -313,7 +313,7 @@ function mainWindowMaterialOptions(): Pick<
   return {
     backgroundColor: "#00000000",
     transparent: true,
-    vibrancy: "under-window",
+    vibrancy: "sidebar",
     visualEffectState: "active",
   };
 }
