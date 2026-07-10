@@ -702,6 +702,7 @@ type ConversationSubthread struct {
 	ID           string    `json:"id"`
 	ThreadID     string    `json:"thread_id"`
 	AnchorItemID string    `json:"anchor_item_id"`
+	ParentSeq    int       `json:"parent_seq,omitempty"`
 	Title        string    `json:"title,omitempty"`
 	Status       string    `json:"status"`
 	CreatedBy    string    `json:"created_by,omitempty"`
@@ -769,6 +770,7 @@ type ThreadOpenSubParams struct {
 	ThreadID     string `json:"thread_id"`
 	SubthreadID  string `json:"subthread_id,omitempty"`
 	AnchorItemID string `json:"anchor_item_id,omitempty"`
+	ParentSeq    int    `json:"parent_seq,omitempty"`
 	Title        string `json:"title,omitempty"`
 	// ThreadOwnerParticipantID is required only when the parent message was
 	// authored by the human. It must name an active named member of the group.

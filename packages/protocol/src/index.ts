@@ -981,6 +981,7 @@ export type ConversationSubthread = {
   id: string;
   thread_id: string;
   anchor_item_id: string;
+  parent_seq?: number;
   title?: string;
   status: ConversationSubthreadStatus;
   created_by?: string;
@@ -1827,6 +1828,7 @@ export type WuuDesktopApi = {
     options: {
       subthreadId?: string;
       anchorItemId?: string;
+      parentSeq?: number;
       title?: string;
       threadOwnerParticipantId?: string;
     }

@@ -2081,6 +2081,9 @@ export function App(): JSX.Element {
           if (sub.anchor_item_id) {
             byAnchor.set(sub.anchor_item_id, sub);
           }
+          if (sub.parent_seq) {
+            byAnchor.set(`seq:${sub.parent_seq}`, sub);
+          }
         }
         setChatSubthreads({ threadID, byAnchor });
       } catch {

@@ -302,6 +302,24 @@ func (s *Server) openConversationSubthreadAs(params ThreadOpenSubParams, created
 	threadID := strings.TrimSpace(params.ThreadID)
 	subthreadID := strings.TrimSpace(params.SubthreadID)
 	anchorItemID := strings.TrimSpace(params.AnchorItemID)
+	var parentItem ThreadItem
+	if params.ParentSeq < 0 {
+		return session.ConversationThread{}, errors.New("parent_seq must be positive")
+	}
+	if params.ParentSeq > 0 {
+		var err error
+		parentItem, err = s.mainStreamItemForSeq(threadID, params.ParentSeq)
+		if err != nil {
+			return session.ConversationThread{}, err
+		}
+		if parentItem.Type != ThreadItemUserMessage && parentItem.Type != ThreadItemParticipantMsg {
+			return session.ConversationThread{}, fmt.Errorf("message seq %d cannot anchor a Thread", params.ParentSeq)
+		}
+		// Live turns and persisted reconstruction may use different transient item
+		// ids. The durable seq chooses the canonical reconstructed id stored on the
+		// Thread so badges still attach after restart.
+		anchorItemID = parentItem.ID
+	}
 	if subthreadID != "" || anchorItemID != "" {
 		if thread, err := s.findConversationSubthread(threadID, subthreadID, anchorItemID); err == nil {
 			return thread, nil
@@ -323,9 +341,19 @@ func (s *Server) openConversationSubthreadAs(params ThreadOpenSubParams, created
 	// Bind the Thread to a real parent message. An unresolved or forged rendered
 	// item id cannot create a durable Thread because it would have no owner or
 	// stable parent identity.
-	parentSeq, parentAuthor, ok := s.mainStreamAnchorBinding(threadID, anchorItemID)
-	if !ok || parentSeq <= 0 || strings.TrimSpace(parentAuthor) == "" {
-		return session.ConversationThread{}, fmt.Errorf("anchor item %q does not resolve to a visible main-stream message", anchorItemID)
+	parentSeq := params.ParentSeq
+	parentAuthor := ""
+	if parentSeq > 0 {
+		parentAuthor = parentAuthorParticipantID(parentItem)
+	} else {
+		var ok bool
+		parentSeq, parentAuthor, ok = s.mainStreamAnchorBinding(threadID, anchorItemID)
+		if !ok {
+			return session.ConversationThread{}, fmt.Errorf("anchor item %q does not resolve to a visible main-stream message", anchorItemID)
+		}
+	}
+	if parentSeq <= 0 || strings.TrimSpace(parentAuthor) == "" {
+		return session.ConversationThread{}, fmt.Errorf("anchor item %q has no durable parent identity", anchorItemID)
 	}
 	owner, err := s.resolveConversationThreadOwner(threadID, parentAuthor, params.ThreadOwnerParticipantID)
 	if err != nil {
@@ -525,6 +553,7 @@ func conversationSubthreadViewFromRecords(threadID string, thread session.Conver
 		ID:                       thread.ID,
 		ThreadID:                 thread.SessionID,
 		AnchorItemID:             thread.AnchorItemID,
+		ParentSeq:                thread.ParentSeq,
 		Title:                    thread.Title,
 		Status:                   string(thread.Status),
 		CreatedBy:                thread.CreatedBy,

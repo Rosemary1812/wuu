@@ -7,7 +7,7 @@
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import type {
   ConversationSubthread,
@@ -414,6 +414,20 @@ describe("ChatThreadView reply / task affordances", () => {
       ...over,
     };
   }
+
+  it("attaches an existing Thread by durable parent seq when the live item id changed", () => {
+    const existing = subthread({ parent_seq: 7, reply_count: 2 });
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "live-turn-item-1", seq: 7, type: "user_message", text: "讨论" },
+        ]),
+        subthreadsByAnchor: new Map([["seq:7", existing]]),
+        onOpenSubthread: vi.fn(),
+      }),
+    );
+    expect(container.textContent).toContain("2 条回复");
+  });
 
   it("renders a system event row as an inline divider", () => {
     const container = mount(

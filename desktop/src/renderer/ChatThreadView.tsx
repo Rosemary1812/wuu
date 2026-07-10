@@ -203,7 +203,9 @@ export function ChatThreadView({
       if (!onOpenSubthread) {
         return;
       }
-      const existing = subthreadsByAnchor?.get(item.id);
+      const existing =
+        subthreadsByAnchor?.get(item.id) ??
+        (item.seq ? subthreadsByAnchor?.get(`seq:${item.seq}`) : undefined);
       const ownerID =
         existing?.thread_owner_participant_id?.trim() ||
         suggestedOwnerID?.trim() ||
@@ -374,7 +376,10 @@ export function ChatThreadView({
           resolveParticipantName={resolveParticipantName}
           subthread={
             row.kind === "user" || row.kind === "participant"
-              ? subthreadsByAnchor?.get(row.item.id)
+              ? subthreadsByAnchor?.get(row.item.id) ??
+                (row.item.seq
+                  ? subthreadsByAnchor?.get(`seq:${row.item.seq}`)
+                  : undefined)
               : undefined
           }
           onOpenSubthread={

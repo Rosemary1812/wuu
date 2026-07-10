@@ -1113,6 +1113,7 @@ app.whenReady().then(async () => {
       options?: {
         subthreadId?: string;
         anchorItemId?: string;
+        parentSeq?: number;
         title?: string;
         threadOwnerParticipantId?: string;
       },
@@ -1121,6 +1122,7 @@ app.whenReady().then(async () => {
         thread_id: threadId,
         subthread_id: options?.subthreadId ?? "",
         anchor_item_id: options?.anchorItemId ?? "",
+        parent_seq: options?.parentSeq ?? 0,
         title: options?.title ?? "",
         thread_owner_participant_id: options?.threadOwnerParticipantId ?? "",
       }),

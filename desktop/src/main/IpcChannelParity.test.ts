@@ -134,6 +134,8 @@ describe("IPC channel parity", () => {
     const openEnd = index.indexOf('"wuu:thread-resolve-sub"', openStart);
     const openHandler = index.slice(openStart, openEnd);
     expect(openHandler).toContain("threadOwnerParticipantId?: string");
+    expect(openHandler).toContain("parentSeq?: number");
+    expect(openHandler).toContain("parent_seq: options?.parentSeq");
     expect(openHandler).toContain(
       "thread_owner_participant_id: options?.threadOwnerParticipantId",
     );

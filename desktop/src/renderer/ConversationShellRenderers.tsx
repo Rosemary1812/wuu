@@ -778,7 +778,9 @@ export function ConversationSidePanels({
                   .flatMap((turn) => turn.items)
                   .find(
                     (item) =>
-                      item.id === openSubthreadPanel.subthread?.anchor_item_id,
+                      item.id === openSubthreadPanel.subthread?.anchor_item_id ||
+                      (Boolean(openSubthreadPanel.subthread?.parent_seq) &&
+                        item.seq === openSubthreadPanel.subthread?.parent_seq),
                   )
               : undefined
           }

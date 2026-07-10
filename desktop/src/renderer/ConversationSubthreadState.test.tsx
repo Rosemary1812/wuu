@@ -94,6 +94,7 @@ function groupThread(overrides: Partial<Thread> = {}): Thread {
 function threadItem(overrides: Partial<ThreadItem> = {}): ThreadItem {
   return {
     id: "item-1",
+    seq: 7,
     type: "agent_message",
     status: "completed",
     task: { name: "Investigate" },
@@ -182,6 +183,7 @@ describe("useConversationSubthreadState", () => {
     expect(openConversationSubthread).toHaveBeenCalledWith("group-1", {
       subthreadId: undefined,
       anchorItemId: "item-1",
+      parentSeq: 7,
       title: "Investigate",
       threadOwnerParticipantId: "lead-a",
     });
@@ -236,6 +238,7 @@ describe("useConversationSubthreadState", () => {
     expect(openConversationSubthread).toHaveBeenCalledWith("group-1", {
       subthreadId: legacy.id,
       anchorItemId: undefined,
+      parentSeq: undefined,
       title: undefined,
       threadOwnerParticipantId: undefined,
     });

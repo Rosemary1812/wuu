@@ -206,6 +206,7 @@ export function useConversationSubthreadState({
         const result = await window.wuu.openConversationSubthread(thread.id, {
           subthreadId: subthreadID,
           anchorItemId: subthreadID ? undefined : item.id,
+          parentSeq: subthreadID ? undefined : item.seq,
           title: item.task?.name,
           threadOwnerParticipantId: ownerID || undefined,
         });
