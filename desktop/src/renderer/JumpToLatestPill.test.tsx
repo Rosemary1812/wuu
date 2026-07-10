@@ -275,22 +275,19 @@ describe("JumpToLatestPill", () => {
     expect(pill?.style.bottom).toBe("212px");
   });
 
-  it("adds anchored bottomOffset so sibling floaters do not overlap", () => {
-    const { node } = scrollContainer({
+  it("notifies parent via onScrolledAwayChange when the scroll-away boolean flips", () => {
+    // Regression (2026-07-10): the main conversation used to keep the jump
+    // pill and the active-plan progress pill in two stacked slots, because
+    // the jump pill's scrolled-away state lived inside the component. The
+    // parent needs that signal to swap a sibling progress pill in and out of
+    // the same composer-adjacent slot. Verify the callback fires on mount
+    // AND whenever the boolean flips via a real scroll event.
+    const { node, setScrollTop } = scrollContainer({
       scrollHeight: 1000,
       clientHeight: 400,
-      scrollTop: 0,
+      scrollTop: 0, // distanceFromBottom = 600 > 80 → scrolledAway = true
     });
-    stubRect(node, { left: 100, top: 56, bottom: 800, width: 600, height: 744 });
-    const anchor = document.createElement("div");
-    document.body.appendChild(anchor);
-    mountedContainers.push(anchor);
-    stubRect(anchor, { left: 100, top: 700, bottom: 780, width: 600, height: 80 });
-    Object.defineProperty(window, "innerHeight", {
-      configurable: true,
-      value: 900,
-    });
-
+    const onScrolledAwayChange = vi.fn();
     const host = document.createElement("div");
     node.appendChild(host);
     const root = createRoot(host);
@@ -298,19 +295,26 @@ describe("JumpToLatestPill", () => {
       root.render(
         createElement(JumpToLatestPill, {
           containerRef: { current: node },
-          bottomAnchor: anchor,
-          bottomOffset: 46,
+          onScrolledAwayChange,
         }),
       );
     });
     mountedRoots.push(root);
+    expect(onScrolledAwayChange).toHaveBeenLastCalledWith(true);
 
-    const pill = document.body.querySelector<HTMLButtonElement>(
-      ".jump-to-latest-pill-anchored",
-    );
-    // Base anchored bottom is 212px; the active-plan progress pill consumes
-    // that default line, so callers can add one pill-height + gap (46px).
-    expect(pill?.style.bottom).toBe("258px");
+    // Scroll back to the bottom — the boolean should flip to false.
+    setScrollTop(600);
+    act(() => {
+      node.dispatchEvent(new Event("scroll"));
+    });
+    expect(onScrolledAwayChange).toHaveBeenLastCalledWith(false);
+
+    // Scroll away again — should flip back to true.
+    setScrollTop(0);
+    act(() => {
+      node.dispatchEvent(new Event("scroll"));
+    });
+    expect(onScrolledAwayChange).toHaveBeenLastCalledWith(true);
   });
 
   it("re-evaluates visibility on container resize (thread panel drag)", () => {

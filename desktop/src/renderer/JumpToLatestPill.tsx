@@ -54,11 +54,6 @@ type JumpToLatestPillProps = {
    */
   bottomAnchor?: HTMLElement | null;
   /**
-   * Extra viewport-bottom offset in px for the anchored variant. Used when a
-   * sibling floating pill already occupies the default composer-adjacent line.
-   */
-  bottomOffset?: number;
-  /**
    * Distance (in px) from the bottom of the scroll container below which the
    * pill is considered "scrolled away" and shown. Default 80 matches the
    * existing auto-follow threshold.
@@ -68,6 +63,14 @@ type JumpToLatestPillProps = {
    * Accessible label for the pill button. Default "跳到最新".
    */
   label?: string;
+  /**
+   * Fires whenever the pill's "scrolled away from bottom" boolean flips.
+   * Used by callers that need to coordinate other composer-adjacent chrome
+   * (e.g. swap a sibling progress pill out of the same slot while the user
+   * is mid-conversation). Pass a stable callback (e.g. a state setter) —
+   * the effect re-runs only when the boolean actually changes.
+   */
+  onScrolledAwayChange?: (scrolledAway: boolean) => void;
 };
 
 const DEFAULT_THRESHOLD_PX = 80;
@@ -78,15 +81,23 @@ type PillPosition = { left: number; bottom: number };
 export function JumpToLatestPill({
   containerRef,
   bottomAnchor,
-  bottomOffset = 0,
   threshold = DEFAULT_THRESHOLD_PX,
   label = "跳到最新",
+  onScrolledAwayChange,
 }: JumpToLatestPillProps): React.ReactElement | null {
   const [scrolledAway, setScrolledAway] = useState(false);
   const [position, setPosition] = useState<PillPosition | null>(null);
   // The prop being PRESENT (even as null) selects anchored/portaled mode. The
   // subthread panel omits it and keeps the in-container sticky pill.
   const anchored = bottomAnchor !== undefined;
+
+  // Mirror the scrolled-away boolean to the parent whenever it flips. The
+  // parent uses this to swap a sibling progress pill out of the same
+  // composer-adjacent slot — see App.tsx. Effect-based so we only fire on
+  // real transitions, not on every scroll/resize tick.
+  useEffect(() => {
+    onScrolledAwayChange?.(scrolledAway);
+  }, [scrolledAway, onScrolledAwayChange]);
 
   useEffect(() => {
     const node = containerRef.current;
@@ -147,9 +158,9 @@ export function JumpToLatestPill({
       bottom: Math.max(
         PILL_BOTTOM_GAP_PX,
         window.innerHeight - anchorRect.top + PILL_BOTTOM_GAP_PX,
-      ) + bottomOffset,
+      ),
     });
-  }, [containerRef, bottomAnchor, bottomOffset]);
+  }, [containerRef, bottomAnchor]);
 
   // Measured positioning for the anchored (portaled) variant. Recomputes on
   // scroll, window resize, and container/composer resize (typing grows the

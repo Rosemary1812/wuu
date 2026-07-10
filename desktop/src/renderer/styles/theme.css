@@ -365,13 +365,11 @@
   --shell-run-debug-empty-border: #33383d;
   --shell-jump-pill-bg: rgba(40, 44, 50, 0.5);
   --shell-jump-pill-border: rgba(255, 255, 255, 0.1);
-  --shell-jump-pill-top-highlight: rgba(255, 255, 255, 0.18);
-  --shell-jump-pill-bottom-shade: rgba(0, 0, 0, 0.15);
+  --shell-jump-pill-top-highlight: rgba(255, 255, 255, 0.22);
   --shell-jump-pill-shadow: rgba(0, 0, 0, 0.28);
   --shell-jump-pill-contact-shadow: rgba(0, 0, 0, 0.12);
   --shell-jump-pill-hover-bg: rgba(50, 54, 60, 0.65);
-  --shell-jump-pill-hover-border: rgba(255, 255, 255, 0.16);
-  --shell-jump-pill-hover-top-highlight: rgba(255, 255, 255, 0.18);
+  --shell-jump-pill-hover-border: rgba(255, 255, 255, 0.18);
   --shell-jump-pill-hover-shadow: rgba(0, 0, 0, 0.35);
   --shell-jump-pill-focus-shadow-1: rgba(255, 255, 255, 0.22);
   --shell-jump-pill-focus-shadow-2: rgba(0, 0, 0, 0.3);

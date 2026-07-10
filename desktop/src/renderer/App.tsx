@@ -313,11 +313,6 @@ const WORKTREE_FORK_NON_GIT_REASON =
 // rail is a thin at-a-glance index; if there are more queries than fit,
 // we collapse the tail into a single bar.
 const QUERY_HISTORY_RAIL_MAX_BARS = 20;
-// When the active-plan progress pill is visible, it occupies the default
-// composer-adjacent floating line. Lift the jump-to-latest button by one pill
-// height (38px) plus an 8px gap so the two independent floaters never stack on
-// the same outline.
-const JUMP_TO_LATEST_PROGRESS_STACK_OFFSET_PX = 46;
 // Keep only the active conversation pane mounted. Hidden panes used to retain
 // full TurnView DOM trees, making long sessions heavier after each tab switch.
 const CACHED_THREAD_PANE_LIMIT = 1;
@@ -1735,6 +1730,8 @@ export function App(): JSX.Element {
     }
     return entries;
   }, [turns]);
+  const [mainConversationScrolledAway, setMainConversationScrolledAway] =
+    useState(false);
   const mainConversationDockVisible =
     Boolean(state.initialized) &&
     !previewingLaunch &&
@@ -4184,9 +4181,7 @@ export function App(): JSX.Element {
               <JumpToLatestPill
                 containerRef={conversationScrollRef}
                 bottomAnchor={dockComposerNode}
-                bottomOffset={
-                  activePlanVisible ? JUMP_TO_LATEST_PROGRESS_STACK_OFFSET_PX : 0
-                }
+                onScrolledAwayChange={setMainConversationScrolledAway}
               />
             ) : null}
           </div>
@@ -4200,7 +4195,7 @@ export function App(): JSX.Element {
 
         {mainConversationDockVisible ? renderComposer("dock") : null}
 
-        {mainConversationDockVisible && activePlanVisible ? (
+        {mainConversationDockVisible && activePlanVisible && !mainConversationScrolledAway ? (
           <div
             className="jump-to-latest-cluster"
             aria-label="当前位置与进度"

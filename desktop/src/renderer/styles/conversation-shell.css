@@ -15,19 +15,21 @@
   --shell-run-debug-panel-shadow-2: rgba(20, 24, 28, 0.08);
   --shell-run-debug-phase-running-color: #486f61;
   --shell-run-debug-empty-border: #e0e1dc;
-  /* Liquid-glass tokens for the jump-to-latest pill + plan-progress pill.
-     The background sits at low alpha so backdrop-filter can pull colors
-     through; the top-highlight + bottom-shade sit as 1px inset rings in
-     box-shadow to fake a refractive edge. */
+  /* iOS-style liquid-glass tokens for the jump-to-latest pill + plan-progress
+     pill. The backdrop-filter blur does the actual adaptive color sampling;
+     these tokens define only the silhouette + a single top specular highlight
+     (applied via a ::before gradient overlay, not via an inset shadow ring —
+     inset 1px shadow stacks read as a duplicate edge instead of refraction).
+     Keep border + top-highlight very low alpha so the backdrop blur reads
+     through. The previous 1px inset stack used bottom-shade and
+     hover-top-highlight; both were removed with that stack. */
   --shell-jump-pill-bg: rgba(255, 255, 255, 0.55);
-  --shell-jump-pill-border: rgba(255, 255, 255, 0.85);
-  --shell-jump-pill-top-highlight: rgba(255, 255, 255, 0.55);
-  --shell-jump-pill-bottom-shade: rgba(17, 19, 21, 0.05);
+  --shell-jump-pill-border: rgba(255, 255, 255, 0.22);
+  --shell-jump-pill-top-highlight: rgba(255, 255, 255, 0.35);
   --shell-jump-pill-shadow: rgba(20, 24, 28, 0.12);
   --shell-jump-pill-contact-shadow: rgba(20, 24, 28, 0.06);
   --shell-jump-pill-hover-bg: rgba(255, 255, 255, 0.7);
-  --shell-jump-pill-hover-border: rgba(255, 255, 255, 1);
-  --shell-jump-pill-hover-top-highlight: rgba(255, 255, 255, 0.7);
+  --shell-jump-pill-hover-border: rgba(255, 255, 255, 0.4);
   --shell-jump-pill-hover-shadow: rgba(20, 24, 28, 0.16);
   --shell-jump-pill-focus-shadow-1: rgba(20, 24, 28, 0.2);
   --shell-jump-pill-focus-shadow-2: rgba(20, 24, 28, 0.12);
@@ -894,6 +896,8 @@
 .jump-to-latest-pill,
 .jump-to-latest-progress {
   box-sizing: border-box;
+  position: relative;
+  isolation: isolate;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -901,13 +905,15 @@
   border-radius: var(--radius-pill);
   border: 1px solid var(--shell-jump-pill-border);
   background: var(--shell-jump-pill-bg);
-  /* Liquid-glass stack: 1px inner top highlight + 1px inner bottom shade +
-     tight contact shadow + ambient drop shadow. The two inset layers fake
-     a refractive edge so the pill reads as curved glass rather than a flat
-     translucent rectangle. */
+  /*
+   * iOS-style liquid glass: the backdrop-filter blur is the adaptive layer
+   * that samples whatever content sits behind the pill. The hairline +
+   * drop shadow define silhouette + elevation; the ::before overlay
+   * applies a thin top specular highlight. There is no inset shadow stack
+   * here — a 1px top + 1px bottom inset ring reads as a duplicate edge
+   * instead of refraction, which was the prior double-border artifact.
+   */
   box-shadow:
-    inset 0 1px 0 0 var(--shell-jump-pill-top-highlight),
-    inset 0 -1px 0 0 var(--shell-jump-pill-bottom-shade),
     0 1px 2px var(--shell-jump-pill-contact-shadow),
     0 8px 24px var(--shell-jump-pill-shadow);
   backdrop-filter: blur(22px) saturate(1.6);
@@ -925,6 +931,28 @@
     background-color 140ms ease,
     border-color 140ms ease,
     box-shadow 140ms ease;
+}
+
+/*
+ * Top specular highlight. Sits between the pill's own background and its
+ * text (z-index: -1 + isolation: isolate on the parent), so the gradient
+ * blends only with the pill surface — not with conversation content
+ * below the pill. The gradient fades to transparent by ~35% of the pill
+ * height so only the very top edge gets a bright band, matching iOS.
+ */
+.jump-to-latest-pill::before,
+.jump-to-latest-progress::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    var(--shell-jump-pill-top-highlight) 0%,
+    transparent 35%
+  );
+  pointer-events: none;
+  z-index: -1;
 }
 
 .jump-to-latest-pill {
@@ -993,8 +1021,6 @@
   background: var(--shell-jump-pill-hover-bg);
   border-color: var(--shell-jump-pill-hover-border);
   box-shadow:
-    inset 0 1px 0 0 var(--shell-jump-pill-hover-top-highlight),
-    inset 0 -1px 0 0 var(--shell-jump-pill-bottom-shade),
     0 1px 3px var(--shell-jump-pill-contact-shadow),
     0 10px 30px var(--shell-jump-pill-hover-shadow);
 }
@@ -1002,8 +1028,6 @@
 .jump-to-latest-pill:focus-visible {
   outline: 0;
   box-shadow:
-    inset 0 1px 0 0 var(--shell-jump-pill-hover-top-highlight),
-    inset 0 -1px 0 0 var(--shell-jump-pill-bottom-shade),
     0 0 0 2px var(--shell-jump-pill-focus-shadow-1),
     0 10px 30px var(--shell-jump-pill-focus-shadow-2);
 }
