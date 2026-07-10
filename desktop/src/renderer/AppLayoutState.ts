@@ -15,6 +15,11 @@ export const RIGHT_PANEL_MOTION_MS = 280;
 export const SIDEBAR_DEFAULT_WIDTH = 326;
 export const SIDEBAR_MIN_WIDTH = 200;
 export const SIDEBAR_MAX_WIDTH = 520;
+// The desktop opens at 1280px. Below that design width, the whole sidebar
+// range scales together; wider windows keep the familiar pixel sizes.
+export const SIDEBAR_SCALE_REFERENCE_WINDOW_WIDTH = 1280;
+// Extremely narrow windows still need enough room for icons and controls.
+export const SIDEBAR_SCALED_MIN_WIDTH = 128;
 export const SIDEBAR_AUTO_COLLAPSE_WINDOW_WIDTH = 900;
 // Keep a small pull-past-minimum dead zone so resizing to the minimum width
 // does not collapse the sidebar by accident.
@@ -101,12 +106,66 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function sidebarShouldCollapse(width: number): boolean {
-  return width <= SIDEBAR_COLLAPSE_WIDTH;
+function sidebarWindowScale(windowWidth: number): number {
+  return Math.min(1, Math.max(0, windowWidth) / SIDEBAR_SCALE_REFERENCE_WINDOW_WIDTH);
+}
+
+function sidebarMinWidthForWindow(windowWidth: number): number {
+  return Math.max(
+    SIDEBAR_SCALED_MIN_WIDTH,
+    Math.floor(SIDEBAR_MIN_WIDTH * sidebarWindowScale(windowWidth))
+  );
+}
+
+function sidebarMaxWidthForWindow(windowWidth: number): number {
+  return Math.max(
+    sidebarMinWidthForWindow(windowWidth),
+    Math.floor(SIDEBAR_MAX_WIDTH * sidebarWindowScale(windowWidth))
+  );
+}
+
+function sidebarCollapseWidthForWindow(windowWidth: number): number {
+  return Math.floor(SIDEBAR_COLLAPSE_WIDTH * sidebarWindowScale(windowWidth));
+}
+
+function sidebarShouldCollapse(width: number, windowWidth: number): boolean {
+  return width <= sidebarCollapseWidthForWindow(windowWidth);
 }
 
 function sidebarShouldAutoCollapseForWindow(width: number): boolean {
   return width < SIDEBAR_AUTO_COLLAPSE_WINDOW_WIDTH;
+}
+
+export function clampSidebarWidthForWindow(width: number, windowWidth: number): number {
+  const scale = sidebarWindowScale(windowWidth);
+  return clamp(
+    Math.floor(clamp(width, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH) * scale),
+    sidebarMinWidthForWindow(windowWidth),
+    sidebarMaxWidthForWindow(windowWidth)
+  );
+}
+
+function clampSidebarDisplayWidth(width: number, windowWidth: number): number {
+  return clamp(
+    width,
+    sidebarMinWidthForWindow(windowWidth),
+    sidebarMaxWidthForWindow(windowWidth)
+  );
+}
+
+function sidebarPreferredWidthForDisplay(width: number, windowWidth: number): number {
+  const scale = sidebarWindowScale(windowWidth);
+  if (scale === 0) {
+    return SIDEBAR_DEFAULT_WIDTH;
+  }
+  if (width <= sidebarMinWidthForWindow(windowWidth)) {
+    return SIDEBAR_MIN_WIDTH;
+  }
+  return clamp(
+    Math.round(clampSidebarDisplayWidth(width, windowWidth) / scale),
+    SIDEBAR_MIN_WIDTH,
+    SIDEBAR_MAX_WIDTH
+  );
 }
 
 // Number(null) is 0, not NaN, so a missing key must be checked explicitly —
@@ -338,7 +397,8 @@ export function useAppLayoutState({
   handleSplitSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
   resetSplitPercent: () => void;
 } {
-  const [sidebarWidth, setSidebarWidth] = useState(initialSidebarWidth);
+  const [sidebarPreferredWidth, setSidebarPreferredWidth] = useState(initialSidebarWidth);
+  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
   const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(initialSettingsSidebarWidth);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
   const [resizingSidebar, setResizingSidebar] = useState(false);
@@ -357,6 +417,7 @@ export function useAppLayoutState({
   const splitResizeSessionRef = useRef<SplitResizeSession | null>(null);
   const sidebarMotionTimerRef = useRef<number | undefined>(undefined);
   const rightPanelMotionTimerRef = useRef<number | undefined>(undefined);
+  const sidebarWidth = clampSidebarWidthForWindow(sidebarPreferredWidth, windowWidth);
   const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
   const clampedWorkspaceRightPanelWidth = clampWorkspaceRightPanelWidth(
     workspaceRightPanelWidth,
@@ -399,11 +460,11 @@ export function useAppLayoutState({
       if (!root) {
         return;
       }
-      const clampedWidth = clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+      const clampedWidth = clampSidebarDisplayWidth(nextWidth, windowWidth);
       root.style.setProperty("--sidebar-width", `${clampedWidth}px`);
       root.style.setProperty("--sidebar-open-width", `${clampedWidth}px`);
     },
-    [layoutRootRef]
+    [layoutRootRef, windowWidth]
   );
 
   // A drag that ends collapsed leaves the live writer's clamped-to-minimum
@@ -418,10 +479,10 @@ export function useAppLayoutState({
       if (!root) {
         return;
       }
-      const clampedWidth = clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
+      const clampedWidth = clampSidebarDisplayWidth(nextWidth, windowWidth);
       root.style.setProperty("--sidebar-open-width", `${clampedWidth}px`);
     },
-    [layoutRootRef]
+    [layoutRootRef, windowWidth]
   );
 
   const writeLiveSettingsSidebarWidth = useCallback(
@@ -487,7 +548,7 @@ export function useAppLayoutState({
 
   const applySidebarWidth = useCallback(
     (nextWidth: number): void => {
-      if (sidebarShouldCollapse(nextWidth)) {
+      if (sidebarShouldCollapse(nextWidth, windowWidth)) {
         if (!sidebarCollapsed && !resizingSidebar) {
           startSidebarMotion();
         }
@@ -496,16 +557,18 @@ export function useAppLayoutState({
         // Same rule as toggleSidebar: a collapsed sidebar whose remembered
         // open width is the bare minimum reopens (hover drawer included) at
         // the comfortable default instead of the cramped 200px.
-        setSidebarWidth((width) => (width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width));
+        setSidebarPreferredWidth((width) =>
+          width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width
+        );
         return;
       }
       if (sidebarCollapsed && !resizingSidebar) {
         startSidebarMotion();
       }
       setSidebarCollapsed(false);
-      setSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
+      setSidebarPreferredWidth(sidebarPreferredWidthForDisplay(nextWidth, windowWidth));
     },
-    [onCloseProjectMenu, resizingSidebar, sidebarCollapsed, startSidebarMotion]
+    [onCloseProjectMenu, resizingSidebar, sidebarCollapsed, startSidebarMotion, windowWidth]
   );
 
   const applyWorkspaceRightPanelWidth = useCallback(
@@ -539,9 +602,9 @@ export function useAppLayoutState({
   );
 
   useEffect(() => {
-    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarPreferredWidth));
     window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
-  }, [sidebarWidth, sidebarCollapsed]);
+  }, [sidebarPreferredWidth, sidebarCollapsed]);
 
   useEffect(() => {
     window.localStorage.setItem(SETTINGS_SIDEBAR_WIDTH_KEY, String(settingsSidebarWidth));
@@ -584,7 +647,7 @@ export function useAppLayoutState({
         settingsSidebarLive.schedule(nextWidth);
         return;
       }
-      if (sidebarShouldCollapse(nextWidth)) {
+      if (sidebarShouldCollapse(nextWidth, windowWidth)) {
         sidebarLive.cancel();
         applySidebarWidth(nextWidth);
         session.collapsedDuringDrag = true;
@@ -600,14 +663,14 @@ export function useAppLayoutState({
         session.collapsedDuringDrag = false;
         return;
       }
-      if (nextWidth <= SIDEBAR_MIN_WIDTH) {
+      if (nextWidth <= sidebarMinWidthForWindow(windowWidth)) {
         sidebarLive.cancel();
         applySidebarWidth(nextWidth);
         return;
       }
       sidebarLive.schedule(nextWidth);
     },
-    [applySidebarWidth, settingsSidebarLive, sidebarLive]
+    [applySidebarWidth, settingsSidebarLive, sidebarLive, windowWidth]
   );
 
   const handleSidebarResizeEnd = useCallback(
@@ -616,15 +679,23 @@ export function useAppLayoutState({
         settingsSidebarLive.cancel();
         applySettingsSidebarWidth(session.currentWidth);
       } else if (session) {
-        if (session.currentWidth > SIDEBAR_COLLAPSE_WIDTH) {
-          sidebarLive.flush();
-        } else {
+        if (session.currentWidth === session.startWidth) {
           sidebarLive.cancel();
-          restoreSidebarOpenWidth(
-            sidebarWidth <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : sidebarWidth
-          );
+        } else {
+          if (session.currentWidth > sidebarCollapseWidthForWindow(windowWidth)) {
+            sidebarLive.flush();
+          } else {
+            sidebarLive.cancel();
+            const openPreference =
+              sidebarPreferredWidth <= SIDEBAR_MIN_WIDTH
+                ? SIDEBAR_DEFAULT_WIDTH
+                : sidebarPreferredWidth;
+            restoreSidebarOpenWidth(
+              clampSidebarWidthForWindow(openPreference, windowWidth)
+            );
+          }
+          applySidebarWidth(session.currentWidth);
         }
-        applySidebarWidth(session.currentWidth);
       }
       setResizingSidebar(false);
     },
@@ -634,7 +705,8 @@ export function useAppLayoutState({
       restoreSidebarOpenWidth,
       settingsSidebarLive,
       sidebarLive,
-      sidebarWidth,
+      sidebarPreferredWidth,
+      windowWidth,
     ]
   );
 
@@ -733,19 +805,23 @@ export function useAppLayoutState({
 
   useEffect(() => {
     function handleResize(): void {
+      const nextWindowWidth = window.innerWidth;
+      setWindowWidth(nextWindowWidth);
       const autoCollapseSidebar =
         !resizingSidebar &&
-        sidebarShouldAutoCollapseForWindow(window.innerWidth);
+        sidebarShouldAutoCollapseForWindow(nextWindowWidth);
       const nextEffectiveSidebarWidth = autoCollapseSidebar
         ? 0
-        : effectiveSidebarWidth;
+        : sidebarCollapsed
+          ? 0
+          : clampSidebarWidthForWindow(sidebarPreferredWidth, nextWindowWidth);
       if (autoCollapseSidebar) {
         if (!sidebarCollapsed) {
           startSidebarMotion();
           onCloseProjectMenu();
         }
         setSidebarCollapsed(true);
-        setSidebarWidth((width) =>
+        setSidebarPreferredWidth((width) =>
           width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width
         );
       }
@@ -760,10 +836,10 @@ export function useAppLayoutState({
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, [
-    effectiveSidebarWidth,
     onCloseProjectMenu,
     resizingSidebar,
     sidebarCollapsed,
+    sidebarPreferredWidth,
     startSidebarMotion,
   ]);
 
@@ -920,7 +996,9 @@ export function useAppLayoutState({
     onCloseProjectMenu();
     startSidebarMotion();
     setSidebarCollapsed((collapsed) => !collapsed);
-    setSidebarWidth((width) => (width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width));
+    setSidebarPreferredWidth((width) =>
+      width <= SIDEBAR_MIN_WIDTH ? SIDEBAR_DEFAULT_WIDTH : width
+    );
   }
 
   function handleSidebarSeparatorKey(event: ReactKeyboardEvent<HTMLDivElement>): void {
@@ -942,7 +1020,7 @@ export function useAppLayoutState({
       if (sidebarCollapsed) {
         startSidebarMotion();
         setSidebarCollapsed(false);
-        setSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
+        setSidebarPreferredWidth(SIDEBAR_DEFAULT_WIDTH);
         return;
       }
       applySidebarWidth(sidebarWidth + SIDEBAR_STEP);
