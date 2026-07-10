@@ -38,17 +38,15 @@ func TestHumanEscalateEntersPlanningAndWakesLead(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 
 	cth, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
-		SessionID:    groupID,
-		AnchorItemID: "seq-3",
-		Title:        "收敛完的讨论",
-		Status:       session.ConversationThreadOpen,
-		CreatedBy:    mia,
+		SessionID: groupID, AnchorItemID: "seq-3", ParentSeq: 3,
+		ParentAuthorParticipantID: andy, ThreadOwnerParticipantID: andy,
+		Title: "收敛完的讨论", CreatedBy: humanReactionParticipantID,
 	})
 	if err != nil {
 		t.Fatalf("CreateConversationThread: %v", err)
 	}
 
-	raw := fmt.Sprintf(`{"id":"esc","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"title":"改造登录链路","created_by":"user","lead_participant_id":%q}}`, groupID, cth.ID, andy)
+	raw := fmt.Sprintf(`{"id":"esc","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"title":"改造登录链路"}}`, groupID, cth.ID)
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
 		t.Fatalf("thread/escalateSub: %v", err)
 	}
@@ -106,18 +104,15 @@ func TestHumanEscalateEntersPlanningAndWakesLead(t *testing.T) {
 	waitForResidentDMHistoryContains(t, srv, mia, "登录链路排查")
 }
 
-// Agent escalate (manage_task action=escalate): same auto-execution contract
-// — exec state planning plus a task_created trace event. The lead is empty on
-// this path, so no planning wake fires.
+// Agent escalate (manage_task action=escalate): the Thread owner promotes it,
+// becomes lead, and receives the same planning wake as the human path.
 func TestAgentEscalateEntersPlanningAndTraces(t *testing.T) {
 	srv, groupID, andy, _, _, _ := planFixture(t)
 
 	discussion, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
-		SessionID:    groupID,
-		AnchorItemID: "seq-8",
-		Title:        "验收遗留问题",
-		Status:       session.ConversationThreadOpen,
-		CreatedBy:    andy,
+		SessionID: groupID, AnchorItemID: "seq-8", ParentSeq: 8,
+		ParentAuthorParticipantID: andy, ThreadOwnerParticipantID: andy,
+		Title: "验收遗留问题", CreatedBy: humanReactionParticipantID,
 	})
 	if err != nil {
 		t.Fatalf("CreateConversationThread: %v", err)
@@ -138,8 +133,8 @@ func TestAgentEscalateEntersPlanningAndTraces(t *testing.T) {
 	if created.Actor != andy {
 		t.Fatalf("task_created actor = %q, want escalating agent %q", created.Actor, andy)
 	}
-	if _, ok := events[session.TaskEventLeadInvoked]; ok {
-		t.Fatalf("no lead exists on the agent path — no planning wake, no lead_invoked: %v", events)
+	if invoked, ok := events[session.TaskEventLeadInvoked]; !ok || invoked.Actor != andy {
+		t.Fatalf("agent promotion must wake the Thread owner as lead: %v", events)
 	}
 }
 
@@ -232,20 +227,28 @@ func TestAllPiecesDoneCompletesExecution(t *testing.T) {
 func TestConcludeTaskResolvesAndBubbles(t *testing.T) {
 	srv, groupID, _, mia, han, _ := planFixture(t)
 
-	owned, err := srv.residentTaskManager(mia).CreateTask(context.Background(), groupID, 0, "自领的活", true, "")
+	owned, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
+		SessionID: groupID, AnchorItemID: "owner-conclude", ParentSeq: 1,
+		ParentAuthorParticipantID: mia, ThreadOwnerParticipantID: mia,
+		Title: "lead 收束的活", CreatedBy: humanReactionParticipantID,
+	})
 	if err != nil {
-		t.Fatalf("CreateTask: %v", err)
+		t.Fatalf("CreateConversationThread: %v", err)
 	}
-	// Neither owner nor lead: refused loudly.
+	owned, err = session.EscalateConversationThread(srv.rt.SessionDir, owned.ID, "user", "")
+	if err != nil {
+		t.Fatalf("EscalateConversationThread: %v", err)
+	}
+	// A non-lead is refused loudly.
 	if _, err := srv.residentTaskManager(han).ConcludeTask(context.Background(), owned.ID, "不是我的活也想收"); err == nil {
-		t.Fatal("a caller that is neither owner nor lead must not conclude")
-	} else if !strings.Contains(err.Error(), "only the owner or the lead") {
+		t.Fatal("a non-lead must not conclude")
+	} else if !strings.Contains(err.Error(), "only the lead") {
 		t.Fatalf("refusal should diagnose the caller, got %v", err)
 	}
 
 	concluded, err := srv.residentTaskManager(mia).ConcludeTask(context.Background(), owned.ID, "活干完了,已自测")
 	if err != nil {
-		t.Fatalf("ConcludeTask by owner: %v", err)
+		t.Fatalf("ConcludeTask by lead: %v", err)
 	}
 	if concluded.Status != string(session.ConversationThreadResolved) {
 		t.Fatalf("status after conclude = %q, want resolved immediately", concluded.Status)
@@ -289,15 +292,14 @@ func TestConcludeTaskByLeadOfUnclaimedPlanTask(t *testing.T) {
 
 	// An unclaimed plan-task: born as task, lead granted, no owner ever.
 	task, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
-		SessionID: groupID,
-		Title:     "无主的团队任务",
-		Status:    session.ConversationThreadTask,
-		CreatedBy: andy,
+		SessionID: groupID, AnchorItemID: "anchor-andy", ParentSeq: 1,
+		ParentAuthorParticipantID: andy, ThreadOwnerParticipantID: andy,
+		Title: "无主的团队任务", CreatedBy: humanReactionParticipantID,
 	})
 	if err != nil {
 		t.Fatalf("CreateConversationThread: %v", err)
 	}
-	if _, err := session.EscalateConversationThread(srv.rt.SessionDir, task.ID, "user", andy, ""); err != nil {
+	if _, err := session.EscalateConversationThread(srv.rt.SessionDir, task.ID, "user", ""); err != nil {
 		t.Fatalf("EscalateConversationThread: %v", err)
 	}
 

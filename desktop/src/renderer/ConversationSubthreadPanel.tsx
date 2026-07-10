@@ -1,14 +1,7 @@
+import { useEffect, useRef, useState } from "react";
 import {
-  type KeyboardEvent as ReactKeyboardEvent,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import {
-  CheckCircle2,
   ChevronDown,
   Circle,
-  CircleCheckBig,
   ListChecks,
   Loader2,
   SquareArrowOutUpRight,
@@ -16,14 +9,12 @@ import {
 } from "lucide-react";
 import type {
   ConversationSubthread,
-  ParticipantSummary,
   TaskEventView,
   TaskPieceView,
   ThreadItem,
 } from "../shared/protocol";
 import { ChatThreadViewContainer } from "./ChatThreadViewContainer";
 import { JumpToLatestPill } from "./JumpToLatestPill";
-import { SelectMenu } from "./SelectMenu";
 
 /**
  * The split reply panel (群中群) for a message's reply subthread (cth). It renders
@@ -42,17 +33,14 @@ import { SelectMenu } from "./SelectMenu";
  * has the exact same send affordances as the main stream — not a stripped
  * one-line shell. It posts the human's messages back into the cth
  * (message/postSubthread → thread_id=cth participant_message). The header
- * carries the human-click "升级为 Task" gate. Once escalated, the same slot
- * offers a human-click "完成 Task" gate: the human writes a one-line conclusion
- * that bubbles back to the main stream (全员可见) and resolves the cth, flipping
- * its main-stream task 活动卡 to a result 摘要卡.
+ * carries the human-click "升级为 Task" gate. Promotion keeps the same cth and
+ * derives its Task lead from the Thread owner; the desktop never asks the human
+ * to pick a second owner or to finish the lead's work on its behalf.
  *
  * Once escalated it also renders the PROGRESS LAYER (plan §T11): a compact node
  * board (one row per plan piece with its assignee, a Status-derived state badge,
  * and a relative activity/progress hint) plus a collapsible "轨迹" timeline that
- * lazy-loads the task's trace on expand. The "疑似失联 / 进展慢" cue on a node is
- * a DISPLAY-ONLY relative judgement computed here in the renderer — never a
- * backend state and never a fixed lease (§4.7).
+ * lazy-loads the task's trace on expand.
  */
 
 // Compact relative-time label ("刚刚" / "N秒前" / "N分钟前" / "N小时前" / "N天前")
@@ -102,40 +90,21 @@ function nodeStateMeta(
   return NODE_STATE_META[key] ?? { label: key || "未知", cls: "pending" };
 }
 
-// A DISPLAY-ONLY, relative liveness cue (plan §T9 / red line §4.7): computed
-// here in the renderer by comparing the node's two liveness timestamps to each
-// other and to now. It is NEVER a backend state and NEVER a fixed lease — only
-// a soft hint for a node that is currently running (active / retrying). No
-// observable action for a relatively long stretch reads as 疑似失联; activity
-// that keeps landing while progress lags well behind reads as 进展慢.
-function softLivenessCue(
-  piece: TaskPieceView,
-  nowMs = Date.now(),
-): string | undefined {
-  const state = (piece.state || piece.status || "").trim();
-  if (state !== "active" && state !== "retrying") {
-    return undefined;
-  }
-  const activityMs = piece.last_activity_at
-    ? Date.parse(piece.last_activity_at)
-    : NaN;
-  if (Number.isNaN(activityMs)) {
-    return undefined;
-  }
-  const sinceActivity = Math.max(0, nowMs - activityMs);
-  if (sinceActivity > 120_000) {
-    return "疑似失联";
-  }
-  const progressMs = piece.last_progress_at
-    ? Date.parse(piece.last_progress_at)
-    : NaN;
-  const sinceProgress = Number.isNaN(progressMs)
-    ? Number.POSITIVE_INFINITY
-    : Math.max(0, nowMs - progressMs);
-  if (sinceProgress > 60_000 && sinceProgress > sinceActivity * 3) {
-    return "进展慢";
-  }
-  return undefined;
+const TASK_STATE_LABEL: Record<string, string> = {
+  planning: "规划中",
+  executing: "执行中",
+  running: "执行中",
+  awaiting_lead: "等待 Lead 收敛",
+  blocked: "受阻",
+  needs_human: "需要你处理",
+  paused: "已暂停",
+  completed: "已完成",
+  failed: "失败",
+};
+
+function taskStateLabel(state: string | undefined): string {
+  const key = state?.trim() ?? "";
+  return TASK_STATE_LABEL[key] ?? (key || "准备中");
 }
 
 // Short human labels for the trace event kinds shown in the "轨迹" timeline. An
@@ -170,10 +139,9 @@ export function ConversationSubthreadPanel({
   onClose,
   onResolve,
   onEscalate,
-  onBubble,
   onReact,
   onPopOut,
-  leadCandidates,
+  sourceItem,
   composer,
   resolveParticipantName,
   busyParticipantIDs,
@@ -188,21 +156,15 @@ export function ConversationSubthreadPanel({
   error?: string;
   onClose: () => void;
   onResolve: (resolved: boolean) => void;
-  /** Promote this reply to a task (人点击), granting编排权 to the picked named
-   *  member (task lead). Absent while no subthread is loaded. */
-  onEscalate?: (leadParticipantId: string) => void;
-  /** Finalize the task by bubbling a one-line conclusion to the main stream and
-   *  resolving the cth (人点击). Only meaningful once escalated. */
-  onBubble?: (summary: string) => void;
+  /** Promote this Thread to a Task. The Thread owner becomes Task lead. */
+  onEscalate?: () => void;
   /** Stamp an emoji reaction on a cth message (贴 emoji, right-click). */
   onReact?: (item: ThreadItem, reaction: string) => void;
   /** Lift this reply subthread into its own window. Absent while no subthread is
    *  loaded, or inside the popped-out window itself (already detached). */
   onPopOut?: () => void;
-  /** The group's named members — the candidate pool for the human's "指定 Task
-   *  lead" pick when 升级为 Task. When empty/undefined the escalate gate falls
-   *  back to escalating without an explicit lead. */
-  leadCandidates?: ParticipantSummary[];
+  /** Main-stream message this Thread converges on. */
+  sourceItem?: ThreadItem;
   /** The reused full conversation composer (host-provided slot). Rendered where
    *  the old stripped footer sat; absent while no subthread is loaded or once
    *  the cth is resolved. */
@@ -213,23 +175,30 @@ export function ConversationSubthreadPanel({
 }): JSX.Element {
   const turns = subthread?.turns ?? [];
   const resolved = subthread?.status === "resolved";
-  // A reply already promoted to a task carries a task_card; the escalate gate is
-  // then spent (execution folds into the same cth) so the button drops away and
-  // the "完成 Task" gate takes its place.
-  const alreadyTask = Boolean(subthread?.task);
-  const canFinalize = Boolean(subthread) && alreadyTask && !resolved && Boolean(onBubble);
-  // Inline "完成 Task" conclusion form, revealed by the header gate.
-  const [finalizing, setFinalizing] = useState(false);
-  const [summary, setSummary] = useState("");
+  const alreadyTask = subthread?.status === "task" || Boolean(subthread?.task);
+  const ownerID = subthread?.thread_owner_participant_id?.trim() ?? "";
+  const ownerName = ownerID
+    ? resolveParticipantName?.(ownerID) || ownerID
+    : "Owner 待同步";
+  const phaseLabel = resolved
+    ? "已完成"
+    : alreadyTask
+      ? taskStateLabel(subthread?.exec_state)
+      : "收敛中";
+  const sourceText = sourceItem?.text?.trim() ?? "";
+  const threadTitle =
+    subthread?.title?.trim() ||
+    sourceText.split("\n")[0]?.slice(0, 48) ||
+    "Thread";
+  const sourceAuthor = sourceItem
+    ? sourceItem.type === "user_message"
+      ? "你"
+      : sourceItem.participant?.name?.trim() || "群聊成员"
+    : "来源消息";
   // The panel's own scroll container (.conversation-subthread-body): a long
   // task/reply thread gets the same jump-to-latest pill as the main stream,
   // scoped to this panel's scroll (issue #5 Fix 2).
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
-  // Inline "升级为 Task" lead picker, revealed by the header gate. The human
-  // must pick a named member to hold编排权 (task lead) before escalating.
-  const candidates = leadCandidates ?? [];
-  const [escalating, setEscalating] = useState(false);
-  const [selectedLeadID, setSelectedLeadID] = useState("");
   // The progress layer (plan §T11): the plan node board is prop-driven (from
   // subthread.plan), but the "轨迹" trace timeline is lazy — it fetches the
   // task's events only when the human expands it, and resets whenever the panel
@@ -242,7 +211,14 @@ export function ConversationSubthreadPanel({
   const [traceLoading, setTraceLoading] = useState(false);
   const [traceError, setTraceError] = useState<string | undefined>(undefined);
   const subthreadID = subthread?.id;
+  const traceRequestVersionRef = useRef(0);
+  const traceSubthreadIDRef = useRef(subthreadID);
+  if (traceSubthreadIDRef.current !== subthreadID) {
+    traceSubthreadIDRef.current = subthreadID;
+    traceRequestVersionRef.current += 1;
+  }
   useEffect(() => {
+    traceRequestVersionRef.current += 1;
     setTraceOpen(false);
     setTraceEvents(undefined);
     setTraceLoading(false);
@@ -254,13 +230,23 @@ export function ConversationSubthreadPanel({
   // wired it) just leaves the timeline empty rather than throwing.
   async function loadTrace(): Promise<void> {
     const next = !traceOpen;
+    const requestVersion = ++traceRequestVersionRef.current;
     setTraceOpen(next);
-    if (!next || traceEvents !== undefined || traceLoading || !subthread) {
+    if (!next) {
+      setTraceLoading(false);
+      return;
+    }
+    if (traceEvents !== undefined || traceLoading || !subthread) {
       return;
     }
     const api = window.wuu?.taskEvents;
     if (typeof api !== "function") {
-      setTraceEvents([]);
+      if (
+        traceRequestVersionRef.current === requestVersion &&
+        traceSubthreadIDRef.current === subthread.id
+      ) {
+        setTraceEvents([]);
+      }
       return;
     }
     setTraceLoading(true);
@@ -268,63 +254,27 @@ export function ConversationSubthreadPanel({
     try {
       const parentID = threadID ?? subthread.thread_id ?? subthread.id;
       const result = await api(parentID, subthread.id);
-      setTraceEvents(result?.events ?? []);
+      if (
+        traceRequestVersionRef.current === requestVersion &&
+        traceSubthreadIDRef.current === subthread.id
+      ) {
+        setTraceEvents(result?.events ?? []);
+      }
     } catch (err) {
-      setTraceError(err instanceof Error ? err.message : String(err));
-      setTraceEvents([]);
+      if (
+        traceRequestVersionRef.current === requestVersion &&
+        traceSubthreadIDRef.current === subthread.id
+      ) {
+        setTraceError(err instanceof Error ? err.message : String(err));
+        setTraceEvents([]);
+      }
     } finally {
-      setTraceLoading(false);
-    }
-  }
-
-  // The header escalate gate: with named candidates it opens the inline lead
-  // picker (pre-selecting the first member so 人升级 always has a valid pick);
-  // with none it escalates without an explicit lead (backend allows empty).
-  function beginEscalate(): void {
-    if (!onEscalate) {
-      return;
-    }
-    if (candidates.length === 0) {
-      onEscalate("");
-      return;
-    }
-    setSelectedLeadID((prev) =>
-      prev && candidates.some((member) => member.id === prev)
-        ? prev
-        : candidates[0]!.id,
-    );
-    setEscalating(true);
-  }
-
-  function submitEscalate(): void {
-    if (!onEscalate) {
-      return;
-    }
-    const leadID = selectedLeadID || candidates[0]?.id || "";
-    if (!leadID) {
-      return;
-    }
-    onEscalate(leadID);
-    setEscalating(false);
-  }
-
-  function submitSummary(): void {
-    const text = summary.trim();
-    if (!text || !onBubble) {
-      return;
-    }
-    onBubble(text);
-    setSummary("");
-    setFinalizing(false);
-  }
-
-  function onSummaryKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>): void {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      submitSummary();
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      setFinalizing(false);
+      if (
+        traceRequestVersionRef.current === requestVersion &&
+        traceSubthreadIDRef.current === subthread.id
+      ) {
+        setTraceLoading(false);
+      }
     }
   }
 
@@ -332,10 +282,10 @@ export function ConversationSubthreadPanel({
     <aside className="conversation-subthread-panel" aria-label="Thread">
       <header className="conversation-subthread-header">
         <div className="conversation-subthread-title-group">
-          <h2>{subthread?.title || "Thread"}</h2>
+          <h2>{threadTitle}</h2>
           {subthread ? (
             <span className="conversation-subthread-meta">
-              {subthread.reply_count} 条回复
+              {phaseLabel} · {subthread.reply_count} 条回复
             </span>
           ) : null}
         </div>
@@ -344,33 +294,23 @@ export function ConversationSubthreadPanel({
             <button
               type="button"
               className="conversation-subthread-escalate"
-              aria-expanded={escalating}
-              onClick={beginEscalate}
+              disabled={!ownerID}
+              title={ownerID ? "Owner 将成为 Task Lead" : "Thread 需要 Owner"}
+              onClick={onEscalate}
             >
               <ListChecks aria-hidden="true" />
               升级为 Task
             </button>
           ) : null}
-          {canFinalize ? (
-            <button
-              type="button"
-              className="conversation-subthread-escalate conversation-subthread-finalize-toggle"
-              aria-expanded={finalizing}
-              onClick={() => setFinalizing((open) => !open)}
-            >
-              <CircleCheckBig aria-hidden="true" />
-              完成 Task
-            </button>
-          ) : null}
-          {subthread ? (
+          {subthread && !alreadyTask && !resolved ? (
             <button
               type="button"
               className="icon-button conversation-subthread-icon"
-              aria-label={resolved ? "重新打开" : "标记已解决"}
-              title={resolved ? "重新打开" : "标记已解决"}
-              onClick={() => onResolve(!resolved)}
+              aria-label="标记已解决"
+              title="标记已解决"
+              onClick={() => onResolve(true)}
             >
-              {resolved ? <CheckCircle2 aria-hidden="true" /> : <Circle aria-hidden="true" />}
+              <Circle aria-hidden="true" />
             </button>
           ) : null}
           {subthread && onPopOut ? (
@@ -396,68 +336,31 @@ export function ConversationSubthreadPanel({
         </div>
       </header>
       <div className="conversation-subthread-body" ref={bodyScrollRef}>
-        {subthread &&
-        !alreadyTask &&
-        !resolved &&
-        escalating &&
-        onEscalate &&
-        candidates.length > 0 ? (
-          <div className="conversation-subthread-escalate-form">
-            <label
-              className="conversation-subthread-lead-label"
-              htmlFor="conversation-subthread-lead-select"
-            >
-              指定 Task lead
-            </label>
-            <SelectMenu
-              id="conversation-subthread-lead-select"
-              ariaLabel="Task lead"
-              value={selectedLeadID}
-              onChange={(next) => setSelectedLeadID(next)}
-              options={candidates.map((member) => ({
-                value: member.id,
-                label: member.name || member.id,
-              }))}
-            />
-            <button
-              type="button"
-              className="conversation-subthread-escalate conversation-subthread-escalate-submit"
-              disabled={selectedLeadID.trim() === ""}
-              onClick={submitEscalate}
-            >
-              <ListChecks aria-hidden="true" />
-              确认升级
-            </button>
-          </div>
+        {subthread ? (
+          <section className="conversation-subthread-overview" aria-label="Thread 概览">
+            <div className="conversation-subthread-overview-meta">
+              <span className="conversation-subthread-phase">{phaseLabel}</span>
+              <span className="conversation-subthread-owner">
+                {alreadyTask ? "Lead" : "Owner"} · {ownerName}
+              </span>
+            </div>
+            <div className="conversation-subthread-source">
+              <span>{sourceAuthor}</span>
+              {sourceText ? <p>{sourceText}</p> : <p>来自群聊中的原消息</p>}
+            </div>
+          </section>
         ) : null}
-        {canFinalize && finalizing ? (
-          <div className="conversation-subthread-finalize">
-            <textarea
-              className="conversation-subthread-input"
-              value={summary}
-              placeholder="一句话结论,冒泡回主流…"
-              aria-label="Task 结论"
-              rows={2}
-              autoFocus
-              onChange={(event) => setSummary(event.target.value)}
-              onKeyDown={onSummaryKeyDown}
-            />
-            <button
-              type="button"
-              className="conversation-subthread-escalate conversation-subthread-finalize-submit"
-              disabled={summary.trim() === ""}
-              onClick={submitSummary}
-            >
-              <CircleCheckBig aria-hidden="true" />
-              冒泡并完成
-            </button>
-          </div>
+        {subthread && alreadyTask ? (
+          <section className="conversation-subthread-lead" aria-label="Task Lead">
+            <span>Lead</span>
+            <strong>{ownerName}</strong>
+            <span>{taskStateLabel(subthread.exec_state)}</span>
+          </section>
         ) : null}
         {subthread && alreadyTask && plan.length > 0 ? (
           <section className="conversation-subthread-board" aria-label="Task 进展">
             {plan.map((piece) => {
               const meta = nodeStateMeta(piece.state, piece.status);
-              const cue = softLivenessCue(piece);
               const progressHint = piece.last_progress_at
                 ? `进展 ${relativeTimeShort(piece.last_progress_at)}`
                 : piece.last_activity_at
@@ -480,7 +383,7 @@ export function ConversationSubthreadPanel({
                       {meta.label}
                     </span>
                   </div>
-                  {assigneeName || progressHint || cue ? (
+                  {assigneeName || progressHint ? (
                     <div className="conversation-subthread-node-meta">
                       {assigneeName ? (
                         <span className="conversation-subthread-node-assignee">
@@ -492,11 +395,16 @@ export function ConversationSubthreadPanel({
                           {progressHint}
                         </span>
                       ) : null}
-                      {cue ? (
-                        <span className="conversation-subthread-node-cue">
-                          {cue}
-                        </span>
-                      ) : null}
+                    </div>
+                  ) : null}
+                  {piece.depends_on?.length ? (
+                    <div className="conversation-subthread-node-detail">
+                      等待：{piece.depends_on.join("、")}
+                    </div>
+                  ) : null}
+                  {piece.failure_reason ? (
+                    <div className="conversation-subthread-node-detail is-error">
+                      {piece.failure_reason}
                     </div>
                   ) : null}
                 </div>

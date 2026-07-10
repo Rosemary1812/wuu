@@ -41,7 +41,6 @@ const (
 	MethodThreadListSub            = "thread/listSub"
 	MethodThreadResolveSub         = "thread/resolveSub"
 	MethodThreadEscalateSub        = "thread/escalateSub"
-	MethodThreadBubbleSub          = "thread/bubbleSub"
 	MethodThreadTaskEvents         = "thread/taskEvents"
 	MethodThreadList               = "thread/list"
 	MethodThreadSearch             = "thread/search"
@@ -707,7 +706,10 @@ type ConversationSubthread struct {
 	Status       string    `json:"status"`
 	CreatedBy    string    `json:"created_by,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
-	ReplyCount   int       `json:"reply_count"`
+	// ThreadOwnerParticipantID is the named agent that owns convergence of the
+	// discussion Thread and becomes lead if it is promoted to a Task.
+	ThreadOwnerParticipantID string `json:"thread_owner_participant_id,omitempty"`
+	ReplyCount               int    `json:"reply_count"`
 	// Participants is the weak-isolation member subset for a reply subthread:
 	// only these participants are pushed reply/task traffic into their context.
 	// Empty means the subthread has no explicit member subset yet (e.g. a
@@ -715,20 +717,19 @@ type ConversationSubthread struct {
 	// Populated by the subthread member store; the field is the shared contract
 	// the group-chat frontend reads to render who is in a reply.
 	Participants []string `json:"participants,omitempty"`
-	// Task is populated once the reply has been escalated to a task (human
-	// click). The group-chat main stream renders it as an activity card while the
+	// Task is populated once the reply has been promoted to a task. The
+	// group-chat main stream renders it as an activity card while the
 	// task runs and as a resolved result summary once it wraps up. Nil for a
 	// plain (never-escalated) reply. Summary carries the one-line conclusion
-	// bubbled back to the main stream on wrap-up; EscalatedBy records who promoted
-	// it (provenance for the human-only escalation gate).
+	// published to the main stream on wrap-up; EscalatedBy records promotion
+	// provenance.
 	Task        *TaskCard `json:"task,omitempty"`
 	Summary     string    `json:"summary,omitempty"`
 	EscalatedBy string    `json:"escalated_by,omitempty"`
 	// LeadParticipantID is the single named agent granted task-lead (workflow
-	// orchestration) authority on escalation. Distinct from EscalatedBy (the
-	// human-click provenance): the lead is the named member the human picked (or
-	// the named escalator). Empty until a task names one; the runtime workflow gate
-	// keys on (caller == lead && status == task).
+	// orchestration) authority on promotion. It is always copied from the
+	// persisted Thread owner and remains distinct from EscalatedBy provenance.
+	// The runtime workflow gate keys on (caller == lead && status == task).
 	LeadParticipantID string `json:"lead_participant_id,omitempty"`
 	// OwnerParticipantID is the task-rail work owner (claim CAS): mutual
 	// exclusion and reporting duty. Deliberately distinct from
@@ -752,11 +753,8 @@ type ConversationSubthread struct {
 // Status (pending/active/done/blocked/failed/retrying), the display State label
 // derived from that Status (deriveNodeState — done -> completed, etc.), the
 // retry budget/attempts counters, the most recent FailureReason (for the lead's
-// post-mortem), and the two liveness timestamps. The timestamps are surfaced
-// raw on purpose: the soft "stalled / slow" cue the panel shows is a
-// DISPLAY-ONLY relative judgement the frontend computes by comparing
-// LastActivityAt / LastProgressAt to each other and to now — never a backend
-// state, and never a fixed lease deadline (red line §4.7).
+// post-mortem), and the two activity timestamps retained for observability.
+// The timestamps do not imply a frontend stalled/slow state.
 type TaskPieceView struct {
 	ID             string    `json:"id"`
 	Title          string    `json:"title"`
@@ -776,12 +774,10 @@ type ThreadOpenSubParams struct {
 	SubthreadID  string `json:"subthread_id,omitempty"`
 	AnchorItemID string `json:"anchor_item_id,omitempty"`
 	Title        string `json:"title,omitempty"`
-	CreatedBy    string `json:"created_by,omitempty"`
-	// Participants seeds the reply subthread's weak-isolation member subset on
-	// create (the opener plus anyone the frontend @mentioned when opening the
-	// reply). Optional; the subset also grows as agents post in or get
-	// @mentioned. Ignored when the subthread already exists (create-or-find).
-	Participants []string `json:"participants,omitempty"`
+	// ThreadOwnerParticipantID is required only when the parent message was
+	// authored by the human. It must name an active named member of the group.
+	// For a named-agent parent, the backend always uses the parent author.
+	ThreadOwnerParticipantID string `json:"thread_owner_participant_id,omitempty"`
 }
 
 type ThreadOpenSubResult struct {
@@ -829,23 +825,12 @@ type ThreadResolveSubResult struct {
 	Subthread ConversationSubthread `json:"subthread"`
 }
 
-// ThreadEscalateSubParams promotes a reply subthread to a task. This is the
-// human-click RPC and the only escalation path that can grant a lead
-// (workflow orchestration authority stays a human act). Agents convert
-// discussion replies themselves via manage_task action=escalate, which never
-// assigns a lead (owner != lead, 2026-07-06 agent-task-rail design).
-// Idempotent (open -> task, or refresh an existing task).
+// ThreadEscalateSubParams is the human promotion RPC. It promotes one open
+// reply exactly once; the persisted Thread owner becomes task lead.
 type ThreadEscalateSubParams struct {
 	ThreadID    string `json:"thread_id"`
 	SubthreadID string `json:"subthread_id"`
-	// Title optionally (re)names the task; CreatedBy records who escalated.
-	Title     string `json:"title,omitempty"`
-	CreatedBy string `json:"created_by,omitempty"`
-	// LeadParticipantID names the single named member the human picks to lead the
-	// task. Must be an active named participant; when empty the backend falls back
-	// to CreatedBy if that is itself a named agent, otherwise the task starts with
-	// no lead.
-	LeadParticipantID string `json:"lead_participant_id,omitempty"`
+	Title       string `json:"title,omitempty"`
 }
 
 type ThreadEscalateSubResult struct {
@@ -880,25 +865,6 @@ type TaskEventView struct {
 
 type ThreadTaskEventsResult struct {
 	Events []TaskEventView `json:"events"`
-}
-
-// ThreadBubbleSubParams wraps a reply/task up: it bubbles a one-line conclusion
-// back to the main stream as a participant_message (main stream = full-roster
-// visible again) and marks the subthread resolved with that summary. Used at
-// reply wrap-up or when a task completes (task_card -> resolved + summary).
-type ThreadBubbleSubParams struct {
-	ThreadID    string `json:"thread_id"`
-	SubthreadID string `json:"subthread_id"`
-	// Summary is the one line bubbled to the main stream and stored on the
-	// subthread as its conclusion.
-	Summary string `json:"summary"`
-	// ParticipantID attributes the bubbled main-stream message to a participant
-	// (the lead who summarized). Optional; falls back to the escalator/opener.
-	ParticipantID string `json:"participant_id,omitempty"`
-}
-
-type ThreadBubbleSubResult struct {
-	Subthread ConversationSubthread `json:"subthread"`
 }
 
 type ParticipantStartParams struct {

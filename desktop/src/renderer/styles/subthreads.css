@@ -157,47 +157,71 @@
   width: 100%;
 }
 
-/* "完成 Task" 结论表单:粘在滚动消息区顶部,人写一句结论冒泡回主流并收尾。 */
-.conversation-subthread-finalize {
-  position: sticky;
-  top: -18px;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: -18px -16px 16px;
+.conversation-subthread-overview {
+  display: grid;
+  gap: 10px;
+  margin: -6px -16px 14px;
   border-bottom: 1px solid var(--surface-3);
-  padding: 14px 16px;
-  background: var(--surface-1);
+  padding: 0 16px 14px;
 }
 
-.conversation-subthread-finalize .conversation-subthread-escalate {
-  align-self: flex-end;
-}
-
-/* "升级为 Task" lead 选择表单:人从本群 named 成员里挑一个持编排权的 lead,
-   再确认升级。与结论表单同样粘在滚动消息区顶部。 */
-.conversation-subthread-escalate-form {
-  position: sticky;
-  top: -18px;
-  z-index: 1;
+.conversation-subthread-overview-meta {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: -18px -16px 16px;
-  border-bottom: 1px solid var(--surface-3);
-  padding: 14px 16px;
-  background: var(--surface-1);
-}
-
-.conversation-subthread-lead-label {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
   color: var(--ink-muted);
-  font-size: var(--font-sm);
-  line-height: var(--line-ui);
+  font-size: var(--font-xs);
 }
 
-.conversation-subthread-escalate-form .conversation-subthread-escalate {
-  align-self: flex-end;
+.conversation-subthread-phase {
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--accent);
+}
+
+.conversation-subthread-source {
+  display: grid;
+  gap: 3px;
+  border-left: 2px solid var(--hairline-strong);
+  padding-left: 10px;
+}
+
+.conversation-subthread-source > span {
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+}
+
+.conversation-subthread-source p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.conversation-subthread-lead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -16px 14px;
+  border-bottom: 1px solid var(--surface-3);
+  padding: 0 16px 12px;
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+}
+
+.conversation-subthread-lead strong {
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+.conversation-subthread-lead span:last-child {
+  margin-left: auto;
 }
 
 .conversation-subthread-body .turn {
@@ -236,26 +260,6 @@
      from collapsing below the main dock's visible chrome when its
      hideRuntimeControls variant drops a toolbar row. */
   min-height: var(--conversation-composer-min-height, 88px);
-}
-
-.conversation-subthread-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-height: 120px;
-  padding: 8px 10px;
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface-1);
-  color: var(--ink);
-  font: inherit;
-  font-size: var(--font-sm);
-  line-height: var(--line-ui);
-  resize: none;
-}
-
-.conversation-subthread-input:focus {
-  border-color: var(--focus-ring, var(--accent));
-  outline: none;
 }
 
 /* Progress layer (plan §T11): the compact node board sits at the top of the
@@ -339,8 +343,14 @@
   line-height: var(--line-ui);
 }
 
-.conversation-subthread-node-cue {
-  color: var(--warning, #b7791f);
+.conversation-subthread-node-detail {
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+}
+
+.conversation-subthread-node-detail.is-error {
+  color: var(--danger);
 }
 
 /* Collapsible "轨迹" trace timeline — lazy-loaded on expand. */

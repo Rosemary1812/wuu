@@ -5304,12 +5304,21 @@ func TestServerConversationSubthreadRPCs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	reviewerID := saveNamedParticipant(t, rt, "SubthreadReviewer", "reviewer", "")
+	if err := session.AddThreadMember(rt.SessionDir, sess.ID, reviewerID); err != nil {
+		t.Fatal(err)
+	}
 	sub, err := session.CreateConversationThread(rt.SessionDir, session.ConversationThread{
-		ID:           "cth-review",
-		SessionID:    sess.ID,
-		AnchorItemID: "parent-thread-turn-0001-item-2",
-		Title:        "Review details",
-		CreatedBy:    "prt-reviewer",
+		ID:                        "cth-review",
+		SessionID:                 sess.ID,
+		AnchorItemID:              "parent-thread-turn-0001-item-2",
+		Title:                     "Review details",
+		CreatedBy:                 humanReactionParticipantID,
+		ThreadOwnerParticipantID:  reviewerID,
+		ParentSeq:                 1,
+		ParentAuthorParticipantID: reviewerID,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -5317,15 +5326,13 @@ func TestServerConversationSubthreadRPCs(t *testing.T) {
 	for _, rec := range []session.HistoryRecord{
 		{Role: "assistant", Content: "main response"},
 		{Role: "user", Content: "Need the details", ThreadID: sub.ID},
-		{Role: "participant", Content: "Found one issue", ParticipantID: "prt-reviewer", PostKind: "update", ThreadID: sub.ID},
+		{Role: "participant", Content: "Found one issue", ParticipantID: reviewerID, PostKind: "update", ThreadID: sub.ID},
 	} {
 		if err := session.AppendHistoryRecord(rt.SessionDir, sess.ID, rec); err != nil {
 			t.Fatalf("append history: %v", err)
 		}
 	}
 
-	out := &lockedBuffer{}
-	srv := New(rt, out)
 	requests := []map[string]any{
 		{"id": "list", "method": MethodThreadListSub, "params": ThreadListSubParams{ThreadID: sess.ID}},
 		{"id": "open", "method": MethodThreadOpenSub, "params": ThreadOpenSubParams{ThreadID: sess.ID, SubthreadID: sub.ID}},

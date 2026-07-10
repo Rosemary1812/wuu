@@ -6,7 +6,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { Reply, SmilePlus } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Reply, SmilePlus, X } from "lucide-react";
 import type {
   ConversationSubthread,
   EnvelopeMeta,
@@ -36,7 +37,6 @@ import {
 } from "./MessageMarks";
 import { ReadReceiptRing } from "./ReadReceiptRing";
 import { RichContent } from "./RichContent";
-import { TaskCardItem } from "./ThreadItemView";
 
 // Distance (px) from the bottom of the scroll container within which the
 // view still counts as "at the bottom" and should auto-follow new rows.
@@ -48,6 +48,23 @@ const AUTO_FOLLOW_THRESHOLD_PX = 120;
 // instead of duplicating the magic numbers.
 export const INITIAL_CHAT_WINDOW_ROWS = 80;
 export const CHAT_WINDOW_ROW_BATCH = 80;
+
+const CHAT_TASK_STATE_LABEL: Record<string, string> = {
+  planning: "规划中",
+  executing: "执行中",
+  running: "执行中",
+  awaiting_lead: "等待 Lead",
+  blocked: "受阻",
+  needs_human: "需要处理",
+  paused: "已暂停",
+  completed: "已完成",
+  failed: "失败",
+};
+
+function taskStateLabel(state: string | undefined): string {
+  const key = state?.trim() ?? "";
+  return CHAT_TASK_STATE_LABEL[key] ?? (key || "准备中");
+}
 
 /**
  * Walk up from `start` to find the nearest scrollable ancestor — the
@@ -110,6 +127,7 @@ export function ChatThreadView({
   marksBySeq,
   readerCount = 0,
   resolveParticipantName,
+  threadOwnerCandidates = [],
   subthreadsByAnchor,
   onOpenSubthread,
   onReact,
@@ -136,6 +154,8 @@ export function ChatThreadView({
   /** How many members a message is broadcast to — the ring's denominator. */
   readerCount?: number;
   resolveParticipantName?: (id: string) => string;
+  /** Named group members eligible to own a Thread started from a human post. */
+  threadOwnerCandidates?: ReadonlyArray<ParticipantSummary>;
   /**
    * Reply subthreads (群中群) anchored on this thread's messages, keyed by
    * anchor_item_id (== the anchored ThreadItem.id). A message with an entry
@@ -149,7 +169,11 @@ export function ChatThreadView({
    * create-or-find-by-anchor path the agent-brain transcript uses. Optional:
    * when absent the reply badge / task card renders read-only (无点击入口)。
    */
-  onOpenSubthread?: (item: ThreadItem) => void;
+  onOpenSubthread?: (
+    item: ThreadItem,
+    threadOwnerParticipantID?: string,
+    existingSubthreadID?: string,
+  ) => void;
   /**
    * Stamp an emoji reaction on a message (人点击, one-click from the bubble's
    * hover toolbar). Wired to the message/react RPC. Optional: when absent the
@@ -158,14 +182,51 @@ export function ChatThreadView({
   onReact?: (item: ThreadItem, reaction: string) => void;
 }): JSX.Element {
   const rows = useMemo(() => chatMessagesFromTurns(turns), [turns]);
-  // 贴表情 and 回复 are both one-click affordances on each bubble's hover toolbar
+  // 贴表情 and 开 Thread are one-click affordances on each group bubble's toolbar
   // (ChatBubbleToolbar) — no right-click menu, no hoisted popup state. A bubble
   // inside a cth reply panel receives onReact but not onOpenSubthread, so its
-  // toolbar shows only the reaction row: "一层不嵌套" — no reply on a message
+  // toolbar shows only the reaction row: "一层不嵌套" — no Thread on a message
   // already inside a cth — is enforced at the view level (the reply-panel caller
   // never wires the reply handler).
   const containerRef = useRef<HTMLDivElement | null>(null);
   const topSentinelRef = useRef<HTMLDivElement | null>(null);
+  const [ownerSelectionItem, setOwnerSelectionItem] = useState<ThreadItem>();
+  const namedOwnerCandidates = useMemo(
+    () =>
+      threadOwnerCandidates.filter(
+        (member) => member.kind === "named" && member.id.trim() !== "",
+      ),
+    [threadOwnerCandidates],
+  );
+  const requestOpenSubthread = useCallback(
+    (item: ThreadItem, suggestedOwnerID?: string): void => {
+      if (!onOpenSubthread) {
+        return;
+      }
+      const existing = subthreadsByAnchor?.get(item.id);
+      const ownerID =
+        existing?.thread_owner_participant_id?.trim() ||
+        suggestedOwnerID?.trim() ||
+        "";
+      if (existing || item.task?.subthread_id) {
+        onOpenSubthread(item, ownerID || undefined, existing?.id);
+        return;
+      }
+      if (ownerID) {
+        onOpenSubthread(item, ownerID);
+        return;
+      }
+      if (namedOwnerCandidates.length === 1) {
+        onOpenSubthread(item, namedOwnerCandidates[0]!.id);
+        return;
+      }
+      setOwnerSelectionItem(item);
+    },
+    [namedOwnerCandidates, onOpenSubthread, subthreadsByAnchor],
+  );
+  const closeOwnerSelection = useCallback(() => {
+    setOwnerSelectionItem(undefined);
+  }, []);
   const rowCount = rows.length + pendingMessages.length;
 
   // Count of the oldest rows currently withheld from the DOM. 0 means the
@@ -316,13 +377,26 @@ export function ChatThreadView({
               ? subthreadsByAnchor?.get(row.item.id)
               : undefined
           }
-          onOpenSubthread={onOpenSubthread}
+          onOpenSubthread={
+            onOpenSubthread ? requestOpenSubthread : undefined
+          }
           onReact={onReact}
         />
       ))}
       {pendingMessages.map((message) => (
         <PendingChatRow key={`pending-${message.id}`} message={message} cwd={cwd} />
       ))}
+      {ownerSelectionItem ? (
+        <ThreadOwnerDialog
+          candidates={namedOwnerCandidates}
+          onClose={closeOwnerSelection}
+          onSelect={(ownerID) => {
+            const item = ownerSelectionItem;
+            setOwnerSelectionItem(undefined);
+            onOpenSubthread?.(item, ownerID);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -331,8 +405,8 @@ export function ChatThreadView({
  * Hover toolbar floating above a chat bubble (Slack/Discord 式). 贴表情 is a
  * single trigger that opens the sticker picker panel (the mascot faces are
  * near-identical at toolbar size, so picking happens in a panel that shows
- * each sticker large with its label — 微信式); 回复 is a one-click button
- * next to it and the sole entry into a reply subthread on the main stream.
+ * each sticker large with its label — 微信式); 开 Thread is a one-click button
+ * next to it and the sole entry into a subthread on the group stream.
  * There is deliberately no ⋯ overflow: the two affordances are the whole
  * toolbar. Renders nothing when neither reaction nor reply is wired (a
  * read-only reuse of this view, e.g. inside a cth reply panel that omits
@@ -435,15 +509,129 @@ function ChatBubbleToolbar({
         <button
           type="button"
           className="chat-bubble-toolbar-btn chat-bubble-toolbar-reply"
-          aria-label="回复"
-          title="回复"
+          aria-label="开 Thread"
+          title="开 Thread"
           onClick={() => onReply(item)}
         >
           <Reply size={14} aria-hidden="true" />
-          <span>回复</span>
+          <span>开 Thread</span>
         </button>
       ) : null}
     </div>
+  );
+}
+
+function ThreadOwnerDialog({
+  candidates,
+  onSelect,
+  onClose,
+}: {
+  candidates: ReadonlyArray<ParticipantSummary>;
+  onSelect: (participantID: string) => void;
+  onClose: () => void;
+}): JSX.Element {
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const firstOptionRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : undefined;
+    (firstOptionRef.current ?? closeButtonRef.current)?.focus();
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLButtonElement>(
+          "button:not(:disabled)",
+        ) ?? [],
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (!dialogRef.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      className="thread-owner-dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="thread-owner-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="thread-owner-dialog-title"
+      >
+        <header>
+          <div>
+            <h2 id="thread-owner-dialog-title">谁来收敛这个 Thread？</h2>
+            <p>Owner 会在升级后继续担任 Task Lead。</p>
+          </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            aria-label="关闭 Owner 选择"
+            onClick={onClose}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </header>
+        {candidates.length > 0 ? (
+          <div className="thread-owner-dialog-options">
+            {candidates.map((candidate) => (
+              <button
+                key={candidate.id}
+                ref={candidate === candidates[0] ? firstOptionRef : undefined}
+                type="button"
+                onClick={() => onSelect(candidate.id)}
+              >
+                <DefaultAvatarMark seed={candidate.id} kind={candidate.kind} />
+                <span>
+                  <strong>{candidate.name || candidate.id}</strong>
+                  {candidate.role ? <small>{candidate.role}</small> : null}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="thread-owner-dialog-empty">
+            群聊里还没有可担任 Owner 的 named agent。
+          </p>
+        )}
+      </section>
+    </div>,
+    document.body,
   );
 }
 
@@ -513,7 +701,7 @@ function ChatRow({
   readerCount?: number;
   resolveParticipantName?: (id: string) => string;
   subthread?: ConversationSubthread;
-  onOpenSubthread?: (item: ThreadItem) => void;
+  onOpenSubthread?: (item: ThreadItem, suggestedOwnerID?: string) => void;
   /** Stamp a one-click reaction from the bubble's hover toolbar. Absent = no reactions. */
   onReact?: (item: ThreadItem, reaction: string) => void;
 }): JSX.Element {
@@ -573,12 +761,11 @@ function ChatRow({
             {row.item.text ? (
               <RichContent text={row.item.text} cwd={cwd} />
             ) : null}
-            {/* No 回复 entry on the viewer's own (user) bubbles: a Thread
-                converges on someone else's message, never your own (T3). The
-                backend refuses opening a reply thread on a user/thread-owner
-                message; hiding the entry keeps the client in step. Reactions
-                stay available. */}
-            <ChatBubbleToolbar item={row.item} onReact={onReact} />
+            <ChatBubbleToolbar
+              item={row.item}
+              onReact={onReact}
+              onReply={onOpenSubthread}
+            />
           </div>
           {marks ? (
             <div className="chat-bubble-marks chat-bubble-marks--user">
@@ -597,6 +784,7 @@ function ChatRow({
             subthread={subthread}
             item={row.item}
             onOpenSubthread={onOpenSubthread}
+            resolveParticipantName={resolveParticipantName}
           />
         </div>
       </div>
@@ -631,7 +819,15 @@ function ChatRow({
           <ChatBubbleToolbar
             item={row.item}
             onReact={onReact}
-            onReply={onOpenSubthread}
+            onReply={
+              onOpenSubthread
+                ? (item) =>
+                    onOpenSubthread(
+                      item,
+                      participant?.kind === "named" ? participant.id : undefined,
+                    )
+                : undefined
+            }
           />
         </div>
         {marks && marks.reactions.length > 0 ? (
@@ -646,6 +842,7 @@ function ChatRow({
           subthread={subthread}
           item={row.item}
           onOpenSubthread={onOpenSubthread}
+          resolveParticipantName={resolveParticipantName}
         />
       </div>
     </div>
@@ -656,38 +853,54 @@ function ChatRow({
  * Reply affordance hanging under a chat bubble (群中群折叠). Nothing renders
  * unless the message actually anchors a reply subthread. A plain discussion
  * reply shows a "N 条回复" badge (封顶 99 → 99+); once the reply is
- * (人点击)升级为 task, the same slot shows the shared task 活动卡/result 摘要
- * via TaskCardItem — 进行中显示活动状态,完成后显示 result 摘要。Both open the
- * reply panel on click via the message's anchor when onOpenSubthread is wired.
+ * (人点击)升级为 Task, the same slot shows a compact summary from that same
+ * subthread workflow projection. Both open the Thread panel on click via the
+ * message's anchor when onOpenSubthread is wired.
  */
 function ReplyAffordance({
   subthread,
   item,
   onOpenSubthread,
+  resolveParticipantName,
 }: {
   subthread?: ConversationSubthread;
   item: ThreadItem;
-  onOpenSubthread?: (item: ThreadItem) => void;
+  onOpenSubthread?: (item: ThreadItem, suggestedOwnerID?: string) => void;
+  resolveParticipantName?: (id: string) => string;
 }): JSX.Element | null {
   if (!subthread) {
-    // No reply thread yet: nothing hangs under the bubble. Starting a reply is
-    // the hover toolbar's 回复 button (ChatBubbleToolbar) — one entry, no
-    // divergence. This slot only ever shows an *existing* subthread's 折叠卡.
+    // No Thread yet: nothing hangs under the bubble. Starting one is the hover
+    // toolbar's 开 Thread button — one entry, no divergence. This slot only
+    // ever shows an existing Thread's folded summary.
     return null;
   }
   const open = onOpenSubthread ? () => onOpenSubthread(item) : undefined;
-  if (subthread.task) {
-    // 升级为 task 后的活动卡/摘要:把 subthread.task 包成一个合成 task_card item
-    // 复用 TaskCardItem 呈现,与 agent-brain 转录里的 task 卡完全一致。
-    const taskItem: ThreadItem = {
-      id: subthread.anchor_item_id,
-      type: "task_card",
-      task: subthread.task,
-      participant: subthread.task.participant,
-    };
+  if (subthread.task || subthread.status === "task" || subthread.exec_state) {
+    const state = subthread.status === "resolved"
+      ? "已完成"
+      : taskStateLabel(subthread.exec_state);
+    const ownerID = subthread.thread_owner_participant_id?.trim() ?? "";
+    const owner = ownerID
+      ? resolveParticipantName?.(ownerID) || ownerID
+      : "Lead 待同步";
+    const content = (
+      <>
+        <span className="chat-thread-summary-state">{state}</span>
+        <span className="chat-thread-summary-title">
+          {subthread.title?.trim() || subthread.task?.name?.trim() || "Task"}
+        </span>
+        <span className="chat-thread-summary-owner">Lead · {owner}</span>
+      </>
+    );
     return (
       <div className="chat-reply-task">
-        <TaskCardItem item={taskItem} onOpenSubthread={open} />
+        {open ? (
+          <button type="button" className="chat-thread-summary" onClick={open}>
+            {content}
+          </button>
+        ) : (
+          <div className="chat-thread-summary">{content}</div>
+        )}
       </div>
     );
   }

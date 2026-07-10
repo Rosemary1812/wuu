@@ -360,8 +360,6 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadResolveSub(req)
 	case MethodThreadEscalateSub:
 		return s.handleThreadEscalateSub(req)
-	case MethodThreadBubbleSub:
-		return s.handleThreadBubbleSub(req)
 	case MethodThreadTaskEvents:
 		return s.handleThreadTaskEvents(req)
 	case MethodThreadList:

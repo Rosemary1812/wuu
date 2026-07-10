@@ -87,14 +87,7 @@ func TestResidentFetchThreadMessagesSubthreadPullAndMainStreamExclusion(t *testi
 			t.Fatalf("AddThreadMember %s: %v", participantID, err)
 		}
 	}
-	cth, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
-		SessionID:    groupID,
-		AnchorItemID: "seq-2",
-		CreatedBy:    mina,
-	})
-	if err != nil {
-		t.Fatalf("CreateConversationThread: %v", err)
-	}
+	cth := createStoredOpenThreadForTest(t, srv, groupID, mina, "seq-2", 2)
 	for _, rec := range []session.HistoryRecord{
 		{Role: "participant", Content: "main stream note", Name: "Mina", ParticipantID: mina, PostKind: "result"},
 		{Role: "participant", Content: "reply-only detail", Name: "Mina", ParticipantID: mina, PostKind: "update", ThreadID: cth.ID},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -14,17 +15,8 @@ import (
 // create-or-find by anchor, so the same anchor never spawns a second subthread.
 func TestOpenConversationSubthreadOnGroupThreadCreatesThenFinds(t *testing.T) {
 	srv, _ := newResidentSpeechTestServer(t)
-	groupID := startGroupThreadForTest(t, srv)
-
-	first, err := srv.openConversationSubthread(ThreadOpenSubParams{
-		ThreadID:     groupID,
-		AnchorItemID: "seq-3",
-		Title:        "reply",
-		CreatedBy:    "user",
-	})
-	if err != nil {
-		t.Fatalf("openConversationSubthread (create): %v", err)
-	}
+	groupID := startNamedGroupThreadForTest(t, srv, "subthreads").ID
+	first, ownerID, anchorItemID := openNamedSubthreadForTest(t, srv, groupID, "OwnerCreateFind")
 	if !strings.HasPrefix(first.ID, "cth-") {
 		t.Fatalf("expected a cth-* subthread id, got %q", first.ID)
 	}
@@ -35,13 +27,16 @@ func TestOpenConversationSubthreadOnGroupThreadCreatesThenFinds(t *testing.T) {
 	// Same anchor must resolve to the existing subthread, not create a new one.
 	again, err := srv.openConversationSubthread(ThreadOpenSubParams{
 		ThreadID:     groupID,
-		AnchorItemID: "seq-3",
+		AnchorItemID: anchorItemID,
 	})
 	if err != nil {
 		t.Fatalf("openConversationSubthread (find): %v", err)
 	}
 	if again.ID != first.ID {
-		t.Fatalf("create-or-find broke: anchor %q produced %q then %q", "seq-3", first.ID, again.ID)
+		t.Fatalf("create-or-find broke: anchor %q produced %q then %q", anchorItemID, first.ID, again.ID)
+	}
+	if again.ThreadOwnerParticipantID != ownerID {
+		t.Fatalf("thread owner = %q, want parent author %q", again.ThreadOwnerParticipantID, ownerID)
 	}
 
 	threads, err := session.ListConversationThreads(srv.rt.SessionDir, groupID)
@@ -53,6 +48,53 @@ func TestOpenConversationSubthreadOnGroupThreadCreatesThenFinds(t *testing.T) {
 	}
 }
 
+func TestOpenConversationSubthreadConcurrentRequestsShareOneIdentity(t *testing.T) {
+	srv, _ := newResidentSpeechTestServer(t)
+	groupID := startNamedGroupThreadForTest(t, srv, "subthread-race").ID
+	_, _, anchorItemID := appendNamedAnchorForTest(t, srv, groupID, "OwnerConcurrentOpen")
+
+	const requestCount = 8
+	ids := make(chan string, requestCount)
+	errs := make(chan error, requestCount)
+	var wg sync.WaitGroup
+	for range requestCount {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			thread, err := srv.openConversationSubthread(ThreadOpenSubParams{
+				ThreadID: groupID, AnchorItemID: anchorItemID,
+			})
+			if err != nil {
+				errs <- err
+				return
+			}
+			ids <- thread.ID
+		}()
+	}
+	wg.Wait()
+	close(ids)
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent open failed: %v", err)
+	}
+	var firstID string
+	for id := range ids {
+		if firstID == "" {
+			firstID = id
+		}
+		if id != firstID {
+			t.Fatalf("concurrent opens returned %q and %q", firstID, id)
+		}
+	}
+	threads, err := session.ListConversationThreads(srv.rt.SessionDir, groupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(threads) != 1 || threads[0].ID != firstID {
+		t.Fatalf("stored Threads = %+v, want only %q", threads, firstID)
+	}
+}
+
 // One layer, no nesting: a message that already lives inside a reply subthread
 // cannot itself anchor another reply. The backend refuses even when handed the
 // cth-scoped anchor id directly.
@@ -60,15 +102,15 @@ func TestOpenConversationSubthreadRejectsNestedReply(t *testing.T) {
 	srv, _ := newResidentSpeechTestServer(t)
 	participantID := saveNamedParticipant(t, srv.rt, "Iris", "reviewer", "")
 	dmID := startResidentDMForTest(t, srv, participantID)
-	groupID := startGroupThreadForTest(t, srv)
+	groupID := startNamedGroupThreadForTest(t, srv, "subthreads").ID
 	if err := session.AddThreadMember(srv.rt.SessionDir, groupID, participantID); err != nil {
 		t.Fatalf("AddThreadMember: %v", err)
 	}
+	_, anchorItemID := appendMainStreamAgentMessage(t, srv, groupID, participantID, "root message")
 
 	cth, err := srv.openConversationSubthread(ThreadOpenSubParams{
 		ThreadID:     groupID,
-		AnchorItemID: "seq-3",
-		CreatedBy:    participantID,
+		AnchorItemID: anchorItemID,
 	})
 	if err != nil {
 		t.Fatalf("openConversationSubthread: %v", err)
@@ -106,7 +148,6 @@ func TestOpenConversationSubthreadRejectsNestedReply(t *testing.T) {
 	if _, err := srv.openConversationSubthread(ThreadOpenSubParams{
 		ThreadID:     groupID,
 		AnchorItemID: nestedAnchor,
-		CreatedBy:    participantID,
 	}); err == nil || !strings.Contains(err.Error(), "already inside reply thread") {
 		t.Fatalf("opening a reply on a subthread message should be rejected, got %v", err)
 	}
@@ -126,18 +167,10 @@ func TestOpenConversationSubthreadRejectsNestedReply(t *testing.T) {
 // stays bound to the same cth (no new thread spawned).
 func TestEscalateConversationSubthreadAttachesTaskCard(t *testing.T) {
 	srv, _ := newResidentSpeechTestServer(t)
-	groupID := startGroupThreadForTest(t, srv)
+	groupID := startNamedGroupThreadForTest(t, srv, "subthreads").ID
+	cth, ownerID, _ := openNamedSubthreadForTest(t, srv, groupID, "OwnerEscalateCard")
 
-	cth, err := srv.openConversationSubthread(ThreadOpenSubParams{
-		ThreadID:     groupID,
-		AnchorItemID: "seq-3",
-		CreatedBy:    "user",
-	})
-	if err != nil {
-		t.Fatalf("openConversationSubthread: %v", err)
-	}
-
-	raw := fmt.Sprintf(`{"id":"esc","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"title":"Ship the fix","created_by":"user"}}`, groupID, cth.ID)
+	raw := fmt.Sprintf(`{"id":"esc","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"title":"Ship the fix"}}`, groupID, cth.ID)
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
 		t.Fatalf("thread/escalateSub: %v", err)
 	}
@@ -161,159 +194,76 @@ func TestEscalateConversationSubthreadAttachesTaskCard(t *testing.T) {
 	if view.Task.Name != "Ship the fix" {
 		t.Fatalf("task_card name = %q, want Ship the fix", view.Task.Name)
 	}
-	// A human-only escalation (created_by="user", no picked lead) leaves the task
-	// with no lead — "user" is not a named agent, so no orchestration authority is
-	// granted until a named lead is picked.
-	if view.LeadParticipantID != "" {
-		t.Fatalf("lead_participant_id = %q, want empty for a human-only escalation", view.LeadParticipantID)
+	if view.LeadParticipantID != ownerID {
+		t.Fatalf("lead_participant_id = %q, want thread owner %q", view.LeadParticipantID, ownerID)
 	}
 }
 
-// Escalation grants task-lead authority to the picked named member. A picked lead
-// that is not an active named participant is rejected; when no lead is picked the
-// backend falls back to the reply's parent message author (T3), NOT whoever
-// clicked escalate — so a named created_by no longer reassigns the lead.
-func TestEscalateConversationSubthreadRecordsPickedLead(t *testing.T) {
+// Promotion never accepts a lead override. The reply owner is the task lead,
+// while escalated_by remains provenance for the human action.
+func TestEscalateConversationSubthreadUsesOwnerAsLead(t *testing.T) {
 	srv, _ := newResidentSpeechTestServer(t)
-	// Escalation now wakes the picked lead for planning; drain that resident
-	// turn before the temp dir is torn down.
 	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
-	leadID := saveNamedParticipant(t, srv.rt, "Iris", "reviewer", "")
-	groupID := startGroupThreadForTest(t, srv)
+	groupID := startNamedGroupThreadForTest(t, srv, "subthreads").ID
+	cth, ownerID, _ := openNamedSubthreadForTest(t, srv, groupID, "OwnerNoOverride")
 
-	cth, err := srv.openConversationSubthread(ThreadOpenSubParams{
-		ThreadID:     groupID,
-		AnchorItemID: "seq-3",
-		CreatedBy:    "user",
-	})
+	raw := fmt.Sprintf(`{"id":"bad","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"lead_participant_id":"prt-ghost"}}`, groupID, cth.ID)
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("thread/escalateSub with removed field: %v", err)
+	}
+	resp := responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "bad")
+	errMsg, ok := resp["error"]
+	if !ok || !strings.Contains(fmt.Sprint(errMsg), "unknown field") {
+		t.Fatalf("lead override must be rejected as an unknown field, got %+v", resp)
+	}
+	stored, err := session.FindConversationThreadByID(srv.rt.SessionDir, cth.ID)
 	if err != nil {
-		t.Fatalf("openConversationSubthread: %v", err)
+		t.Fatalf("FindConversationThreadByID: %v", err)
+	}
+	if stored.Status != session.ConversationThreadOpen {
+		t.Fatalf("rejected override changed status to %q", stored.Status)
 	}
 
-	// A picked named lead is recorded even though the escalator (created_by) is the
-	// human.
-	raw := fmt.Sprintf(`{"id":"esc","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"title":"Ship it","created_by":"user","lead_participant_id":%q}}`, groupID, cth.ID, leadID)
+	raw = fmt.Sprintf(`{"id":"esc","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"title":"Ship it"}}`, groupID, cth.ID)
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
 		t.Fatalf("thread/escalateSub: %v", err)
 	}
-	resp := responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "esc")
+	resp = responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "esc")
 	if errMsg, ok := resp["error"]; ok {
 		t.Fatalf("thread/escalateSub returned error: %v", errMsg)
 	}
 	view := remarshal[ThreadEscalateSubResult](t, resp["result"]).Subthread
-	if view.LeadParticipantID != leadID {
-		t.Fatalf("lead_participant_id = %q, want picked lead %q", view.LeadParticipantID, leadID)
+	if view.LeadParticipantID != ownerID {
+		t.Fatalf("lead_participant_id = %q, want owner %q", view.LeadParticipantID, ownerID)
 	}
-	if view.EscalatedBy != "user" {
-		t.Fatalf("escalated_by = %q, want human provenance user (kept distinct from lead)", view.EscalatedBy)
-	}
-
-	// A picked lead that is not an active named participant is rejected.
-	raw = fmt.Sprintf(`{"id":"bad","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"lead_participant_id":"prt-ghost"}}`, groupID, cth.ID)
-	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
-		t.Fatalf("thread/escalateSub (bad lead): %v", err)
-	}
-	resp = responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "bad")
-	if _, ok := resp["error"]; !ok {
-		t.Fatalf("escalating with a non-named lead must error, got %+v", resp)
-	}
-
-	// When no lead is picked, created_by is NO LONGER the fallback (T3): the lead
-	// defaults to the reply's parent message author, not whoever clicked escalate.
-	// This cth has no bound parent author (synthetic anchor), so a leadless
-	// re-escalation naming a named created_by leaves the previously-recorded lead
-	// in place rather than reassigning it to created_by.
-	otherNamed := saveNamedParticipant(t, srv.rt, "Milo", "worker", "")
-	raw = fmt.Sprintf(`{"id":"fb","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"created_by":%q}}`, groupID, cth.ID, otherNamed)
-	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
-		t.Fatalf("thread/escalateSub (no picked lead): %v", err)
-	}
-	resp = responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "fb")
-	if errMsg, ok := resp["error"]; ok {
-		t.Fatalf("thread/escalateSub (no picked lead) returned error: %v", errMsg)
-	}
-	view = remarshal[ThreadEscalateSubResult](t, resp["result"]).Subthread
-	if view.LeadParticipantID != leadID {
-		t.Fatalf("lead_participant_id = %q, want the prior picked lead %q kept — created_by is no longer the fallback (T3: parent author is)", view.LeadParticipantID, leadID)
+	if view.EscalatedBy != humanReactionParticipantID {
+		t.Fatalf("escalated_by = %q, want human provenance", view.EscalatedBy)
 	}
 }
 
-// Bubbling wraps the task up: it posts the one-line conclusion to the main group
-// stream (full-roster visible) as a participant_message and marks the cth
-// resolved with that summary (task_card -> resolved + summary).
-func TestBubbleConversationSubthreadPostsToMainStreamAndResolves(t *testing.T) {
-	srv, rt := newResidentSpeechTestServer(t)
-	participantID := saveNamedParticipant(t, srv.rt, "Iris", "reviewer", "")
-	groupID := startGroupThreadForTest(t, srv)
-	if err := session.AddThreadMember(srv.rt.SessionDir, groupID, participantID); err != nil {
-		t.Fatalf("AddThreadMember: %v", err)
-	}
-
-	cth, err := srv.openConversationSubthread(ThreadOpenSubParams{
-		ThreadID:     groupID,
-		AnchorItemID: "seq-3",
-		CreatedBy:    participantID,
-	})
-	if err != nil {
-		t.Fatalf("openConversationSubthread: %v", err)
-	}
-	if _, err := session.EscalateConversationThread(srv.rt.SessionDir, cth.ID, participantID, participantID, "Ship the fix"); err != nil {
+func TestResolveConversationSubthreadRejectsActiveTask(t *testing.T) {
+	srv, _ := newResidentSpeechTestServer(t)
+	groupID := startNamedGroupThreadForTest(t, srv, "resolve-active-task").ID
+	cth, ownerID, _ := openNamedSubthreadForTest(t, srv, groupID, "OwnerResolveGuard")
+	if _, err := session.EscalateConversationThread(srv.rt.SessionDir, cth.ID, humanReactionParticipantID, ""); err != nil {
 		t.Fatalf("EscalateConversationThread: %v", err)
 	}
 
-	group := srv.thread(groupID)
-	group.mu.Lock()
-	turnsBefore := len(group.Turns)
-	group.mu.Unlock()
-
-	raw := fmt.Sprintf(`{"id":"bub","method":"thread/bubbleSub","params":{"thread_id":%q,"subthread_id":%q,"summary":"Fixed and deployed.","participant_id":%q}}`, groupID, cth.ID, participantID)
+	raw := fmt.Sprintf(`{"id":"resolve","method":"thread/resolveSub","params":{"thread_id":%q,"subthread_id":%q,"resolved":true}}`, groupID, cth.ID)
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
-		t.Fatalf("thread/bubbleSub: %v", err)
+		t.Fatalf("thread/resolveSub: %v", err)
 	}
-	resp := responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "bub")
-	if errMsg, ok := resp["error"]; ok {
-		t.Fatalf("thread/bubbleSub returned error: %v", errMsg)
+	resp := responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), "resolve")
+	errMsg, ok := resp["error"]
+	if !ok || !strings.Contains(fmt.Sprint(errMsg), "only its lead") {
+		t.Fatalf("active Task resolve must be rejected, got %+v", resp)
 	}
-	view := remarshal[ThreadBubbleSubResult](t, resp["result"]).Subthread
-	if view.Status != string(session.ConversationThreadResolved) {
-		t.Fatalf("subthread status = %q, want resolved", view.Status)
-	}
-	if view.Summary != "Fixed and deployed." {
-		t.Fatalf("subthread summary = %q, want the bubbled line", view.Summary)
-	}
-	if view.Task == nil || view.Task.Status != "completed" || view.Task.Description != "Fixed and deployed." {
-		t.Fatalf("resolved task_card must show completed + summary: %+v", view.Task)
-	}
-
-	// The conclusion must land in the main group stream as a visible participant
-	// item (ThreadID empty), not folded back into the cth.
-	group.mu.Lock()
-	turnsAfter := len(group.Turns)
-	lastItem := group.Turns[len(group.Turns)-1].Items[len(group.Turns[len(group.Turns)-1].Items)-1]
-	group.mu.Unlock()
-	if turnsAfter == turnsBefore {
-		t.Fatalf("bubble did not append to the main stream: turns %d -> %d", turnsBefore, turnsAfter)
-	}
-	if lastItem.Type != ThreadItemParticipantMsg {
-		t.Fatalf("bubbled main-stream item type = %q, want participant message", lastItem.Type)
-	}
-
-	history, err := session.LoadHistoryRecords(rt.sessionDir, groupID, false)
+	stored, err := session.FindConversationThreadByID(srv.rt.SessionDir, cth.ID)
 	if err != nil {
-		t.Fatalf("LoadHistoryRecords: %v", err)
+		t.Fatal(err)
 	}
-	var bubbled *session.HistoryRecord
-	for i := range history {
-		if history[i].Role == "participant" && strings.TrimSpace(history[i].ThreadID) == "" && history[i].Content == "Fixed and deployed." {
-			bubbled = &history[i]
-			break
-		}
-	}
-	if bubbled == nil {
-		t.Fatalf("bubbled conclusion not persisted on the main stream: %+v", history)
-	}
-	if bubbled.ParticipantID != participantID {
-		t.Fatalf("bubbled message author = %q, want lead %q", bubbled.ParticipantID, participantID)
+	if stored.Status != session.ConversationThreadTask || stored.LeadParticipantID != ownerID {
+		t.Fatalf("rejected resolve mutated task: %+v", stored)
 	}
 }
 
@@ -324,16 +274,8 @@ func TestBubbleConversationSubthreadPostsToMainStreamAndResolves(t *testing.T) {
 // panel updates immediately.
 func TestMessagePostSubthreadFoldsIntoReplyNotMainStream(t *testing.T) {
 	srv, rt := newResidentSpeechTestServer(t)
-	groupID := startGroupThreadForTest(t, srv)
-
-	cth, err := srv.openConversationSubthread(ThreadOpenSubParams{
-		ThreadID:     groupID,
-		AnchorItemID: "seq-3",
-		CreatedBy:    "user",
-	})
-	if err != nil {
-		t.Fatalf("openConversationSubthread: %v", err)
-	}
+	groupID := startNamedGroupThreadForTest(t, srv, "subthreads").ID
+	cth, _, _ := openNamedSubthreadForTest(t, srv, groupID, "OwnerHumanPost")
 
 	group := srv.thread(groupID)
 	group.mu.Lock()
@@ -399,16 +341,8 @@ func TestMessagePostSubthreadFoldsIntoReplyNotMainStream(t *testing.T) {
 // and render back on the participant message item so the split panel shows them.
 func TestMessagePostSubthreadCarriesAttachments(t *testing.T) {
 	srv, rt := newResidentSpeechTestServer(t)
-	groupID := startGroupThreadForTest(t, srv)
-
-	cth, err := srv.openConversationSubthread(ThreadOpenSubParams{
-		ThreadID:     groupID,
-		AnchorItemID: "seq-3",
-		CreatedBy:    "user",
-	})
-	if err != nil {
-		t.Fatalf("openConversationSubthread: %v", err)
-	}
+	groupID := startNamedGroupThreadForTest(t, srv, "subthreads").ID
+	cth, _, _ := openNamedSubthreadForTest(t, srv, groupID, "OwnerAttachments")
 
 	// Attachments-only (no caption) must be accepted — a screenshot with no text.
 	raw := fmt.Sprintf(`{"id":"post","method":"message/postSubthread","params":{"thread_id":%q,"subthread_id":%q,"text":"","images":[{"media_type":"image/png","data":"AAAB"}],"files":[{"media_type":"application/pdf","data":"JVBER","filename":"spec.pdf"}]}}`, groupID, cth.ID)
@@ -466,15 +400,8 @@ func TestMessagePostSubthreadCarriesAttachments(t *testing.T) {
 // parent thread, and rejects an empty body.
 func TestMessagePostSubthreadRejectsBadInput(t *testing.T) {
 	srv, _ := newResidentSpeechTestServer(t)
-	groupID := startGroupThreadForTest(t, srv)
-	cth, err := srv.openConversationSubthread(ThreadOpenSubParams{
-		ThreadID:     groupID,
-		AnchorItemID: "seq-3",
-		CreatedBy:    "user",
-	})
-	if err != nil {
-		t.Fatalf("openConversationSubthread: %v", err)
-	}
+	groupID := startNamedGroupThreadForTest(t, srv, "subthreads").ID
+	cth, _, _ := openNamedSubthreadForTest(t, srv, groupID, "OwnerBadInput")
 
 	empty := fmt.Sprintf(`{"id":"empty","method":"message/postSubthread","params":{"thread_id":%q,"subthread_id":%q,"text":"   "}}`, groupID, cth.ID)
 	if err := srv.handleLine(context.Background(), []byte(empty)); err != nil {
@@ -497,19 +424,14 @@ func TestMessagePostSubthreadRejectsBadInput(t *testing.T) {
 // a reply even when other subthreads already exist on the same group thread.
 func TestOpenConversationSubthreadAllowsMainStreamAnchorAlongsideSubthreads(t *testing.T) {
 	srv, _ := newResidentSpeechTestServer(t)
-	groupID := startGroupThreadForTest(t, srv)
-
-	if _, err := srv.openConversationSubthread(ThreadOpenSubParams{
-		ThreadID:     groupID,
-		AnchorItemID: "seq-3",
-	}); err != nil {
-		t.Fatalf("open first subthread: %v", err)
-	}
+	groupID := startNamedGroupThreadForTest(t, srv, "subthreads").ID
+	openNamedSubthreadForTest(t, srv, groupID, "OwnerFirstAnchor")
+	_, _, secondAnchorItemID := appendNamedAnchorForTest(t, srv, groupID, "OwnerSecondAnchor")
 
 	// A different main-stream message (its anchor belongs to no subthread scope).
 	second, err := srv.openConversationSubthread(ThreadOpenSubParams{
 		ThreadID:     groupID,
-		AnchorItemID: "seq-7",
+		AnchorItemID: secondAnchorItemID,
 	})
 	if err != nil {
 		t.Fatalf("main-stream anchor should open a reply, got %v", err)

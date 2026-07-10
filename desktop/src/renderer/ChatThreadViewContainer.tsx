@@ -23,6 +23,7 @@ export function ChatThreadViewContainer({
   busyParticipantIDs,
   readerCount,
   resolveParticipantName,
+  threadOwnerCandidates,
   subthreadsByAnchor,
   onOpenSubthread,
   onReact,
@@ -35,8 +36,15 @@ export function ChatThreadViewContainer({
   busyParticipantIDs?: ReadonlySet<string>;
   readerCount?: number;
   resolveParticipantName?: (id: string) => string;
+  threadOwnerCandidates?: ReadonlyArray<
+    import("../shared/protocol").ParticipantSummary
+  >;
   subthreadsByAnchor?: ReadonlyMap<string, ConversationSubthread>;
-  onOpenSubthread?: (item: ThreadItem) => void;
+  onOpenSubthread?: (
+    item: ThreadItem,
+    threadOwnerParticipantID?: string,
+    existingSubthreadID?: string,
+  ) => void;
   onReact?: (item: ThreadItem, reaction: string) => void;
 }): JSX.Element {
   const loadedMarksBySeq = useThreadMarks(threadID, marks === undefined);
@@ -54,6 +62,7 @@ export function ChatThreadViewContainer({
       marksBySeq={marksBySeq}
       readerCount={readerCount}
       resolveParticipantName={resolveParticipantName}
+      threadOwnerCandidates={threadOwnerCandidates}
       subthreadsByAnchor={subthreadsByAnchor}
       onOpenSubthread={onOpenSubthread}
       onReact={onReact}

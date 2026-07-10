@@ -989,15 +989,20 @@ export type ConversationSubthread = {
   // pushed reply/task traffic. Empty/undefined means no explicit member subset
   // yet. Populated by the backend weak-isolation router.
   participants?: string[];
+  // Discussion owner chosen exactly once when the Thread is created. For a
+  // named-agent message this is the author; for a human message the desktop
+  // asks which named group member should own the convergence. When promoted,
+  // this same participant becomes the immutable Task lead.
+  thread_owner_participant_id?: string;
   // 该 reply 被(人点击)升级为 task 后由后端下发的 task_card:执行中显示活动卡、
   // 收尾后显示 result 摘要。未升级的普通 reply 为 undefined。
   task?: TaskCard;
   // 收尾冒泡回主流的一句结论(同时写在 task_card 上);escalated_by 记录升级人。
   summary?: string;
   escalated_by?: string;
-  // 升级为 task 时授予编排权的唯一 named 成员(task lead)。与 escalated_by(人点击
-  // 来源)不同:lead 是人挑的 named 成员(或 named 升级者)。runtime workflow 网关按
-  // (caller == lead && status == task) 放行。未指定 lead 时为空。
+  // 升级为 Task 后持编排权的 named lead。它由 Thread owner 派生,不是升级时
+  // 重新选择的第二个负责人。runtime workflow 网关按
+  // (caller == lead && status == task) 放行。
   lead_participant_id?: string;
   // task rail 的认领人(claim CAS 的赢家):干活与汇报的唯一责任人。与 lead
   // 刻意分离——owner 不带编排权(2026-07-06 agent-task-rail 设计)。空=无人认领。
@@ -1014,9 +1019,8 @@ export type ConversationSubthread = {
 // TaskPieceView 是一个 plan 节点在线上的投影(plan §T11):节点身份、依赖边、原始
 // status(pending/active/done/blocked/failed/retrying)、由 status 派生的展示 state
 // 标签(done -> completed 等)、重试预算/尝试计数、最近失败原因,以及两个 liveness
-// 时间戳。时间戳原样下发:面板显示的「疑似失联 / 慢」是前端拿 last_activity_at /
-// last_progress_at 互比且比 now 得出的展示级相对判断——绝不是后端状态,也没有固定
-// 租约期限(红线 §4.7)。
+// 时间戳。时间戳原样下发,前端只显示中性的最近活动/进展时间；是否阻塞、失败或需要
+// 人处理必须来自 runtime 的显式状态,不能由桌面用固定时限猜测。
 export type TaskPieceView = {
   id: string;
   title: string;
@@ -1040,10 +1044,6 @@ export type ThreadListSubResult = {
 };
 
 export type ThreadEscalateSubResult = {
-  subthread: ConversationSubthread;
-};
-
-export type ThreadBubbleSubResult = {
   subthread: ConversationSubthread;
 };
 
@@ -1828,8 +1828,7 @@ export type WuuDesktopApi = {
       subthreadId?: string;
       anchorItemId?: string;
       title?: string;
-      createdBy?: string;
-      participants?: string[];
+      threadOwnerParticipantId?: string;
     }
   ) => Promise<ThreadOpenSubResult>;
   resolveConversationSubthread: (
@@ -1837,20 +1836,13 @@ export type WuuDesktopApi = {
     subthreadId: string,
     resolved: boolean
   ) => Promise<ThreadResolveSubResult>;
-  // 把一条 reply 升级为 task(人点击):在 cth 上挂 task_card + 推进到执行态。
-  // leadParticipantId 是人挑的 task lead(唯一持编排权的 named 成员)。
+  // 把一条 Thread 升级为 Task:在同一个 cth 上挂 task_card + 推进到执行态。
+  // Task lead 由 Thread owner 派生,桌面不允许在升级时重新选人。
   escalateConversationSubthread: (
     threadId: string,
     subthreadId: string,
-    options?: { title?: string; createdBy?: string; leadParticipantId?: string }
+    options?: { title?: string }
   ) => Promise<ThreadEscalateSubResult>;
-  // 收尾:把一句结论冒泡回主流一条 participant_message + 该 cth 变 resolved+摘要。
-  bubbleConversationSubthread: (
-    threadId: string,
-    subthreadId: string,
-    summary: string,
-    options?: { participantId?: string }
-  ) => Promise<ThreadBubbleSubResult>;
   // 在分屏 reply 面板里以「你」的身份往 cth 发一条消息:折进 cth(thread_id=cth,
   // 不进主流,只推 cth 参与者子集),回执带刷新后的 subthread 视图。
   postSubthreadMessage: (

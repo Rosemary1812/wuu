@@ -74,6 +74,15 @@ func TestDMTaskBornOwnedFullChain(t *testing.T) {
 		t.Fatalf("unclaim refusal should say why (DM), got: %v", err)
 	}
 
+	// Direct task creation is a temporary legacy path. Acquire its orchestration
+	// lead before filing the conclusion; promoted Threads receive this lead
+	// atomically from their owner instead.
+	if led, becameLead, err := session.SetConversationThreadLeadIfEmpty(srv.rt.SessionDir, view.ID, ada); err != nil {
+		t.Fatalf("acquire legacy DM task lead: %v", err)
+	} else if !becameLead || led.LeadParticipantID != ada {
+		t.Fatalf("legacy DM task lead = %+v became=%v, want Ada", led, becameLead)
+	}
+
 	// update_status files the conclusion and completes the task immediately —
 	// no review gate, same state machine as groups.
 	concluded, err := manager.ConcludeTask(context.Background(), view.ID, "文档整理完,已核对接口清单")

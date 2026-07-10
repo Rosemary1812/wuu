@@ -157,14 +157,20 @@ func TestStandaloneCreateSameTitleResolvedIgnored(t *testing.T) {
 	// Seed an anchored+resolved cth in the same thread. anchor_item_id
 	// must be non-empty (L89-93); resolving only the anchored path is
 	// what lets a cth reach ConversationThreadResolved.
-	if _, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
-		SessionID:    groupID,
-		AnchorItemID: "anchor-resolved",
-		Title:        "fix login flake",
-		Status:       session.ConversationThreadResolved,
-		CreatedBy:    ada,
-	}); err != nil {
-		t.Fatalf("seed anchored+resolved cth: %v", err)
+	resolved, err := session.CreateLegacyTaskConversationThread(srv.rt.SessionDir, session.ConversationThread{
+		SessionID:         groupID,
+		AnchorItemID:      "anchor-resolved",
+		Title:             "fix login flake",
+		Status:            session.ConversationThreadTask,
+		CreatedBy:         ada,
+		EscalatedBy:       ada,
+		LeadParticipantID: ada,
+	})
+	if err != nil {
+		t.Fatalf("seed anchored task: %v", err)
+	}
+	if _, err := session.ConcludeConversationThread(srv.rt.SessionDir, resolved.ID, ada, "done"); err != nil {
+		t.Fatalf("resolve seeded task: %v", err)
 	}
 
 	// Same title, standalone creation: must succeed — resolved cth is

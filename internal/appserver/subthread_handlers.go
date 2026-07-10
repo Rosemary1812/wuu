@@ -71,6 +71,9 @@ func (s *Server) handleThreadResolveSub(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	if thread.Status == session.ConversationThreadTask {
+		return s.writeResponse(req.ID, nil, errors.New("an active Task cannot be resolved through the generic Thread control; only its lead may conclude it"))
+	}
 	status := session.ConversationThreadOpen
 	if params.Resolved {
 		status = session.ConversationThreadResolved
@@ -86,13 +89,10 @@ func (s *Server) handleThreadResolveSub(req Request) error {
 	return s.writeResponse(req.ID, ThreadResolveSubResult{Subthread: view}, nil)
 }
 
-// handleThreadEscalateSub promotes a reply subthread to a task. This RPC is
-// the HUMAN escalation path and the only one that can grant a lead (workflow
-// orchestration authority stays a human act). Agents have their own
-// conversion since 2026-07-06 — manage_task action=escalate — which performs
-// the same open -> task transition but never assigns a lead (owner != lead,
-// agent-task-rail design). It advances the subthread from the discussion
-// state (open) to the execution state (task) and hangs a task_card off it;
+// handleThreadEscalateSub promotes a reply subthread to a task. It advances the
+// same cth from the discussion state (open) to the execution state (task),
+// atomically making the persisted Thread owner its lead and entering planning;
+// no caller-provided lead override exists. It hangs a task_card off the cth;
 // execution round-trips fold into the same cth via the existing
 // thread_id-tagged post_message path, so no new thread is spawned.
 // Escalation IS the start of execution: the task enters exec state planning
@@ -113,42 +113,20 @@ func (s *Server) handleThreadEscalateSub(req Request) error {
 	}
 
 	// Confirm the subthread belongs to this parent thread before mutating it.
-	parent, err := s.findConversationSubthread(threadID, subthreadID, "")
+	if _, err := s.findConversationSubthread(threadID, subthreadID, ""); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	thread, err := session.EscalateConversationThread(s.rt.SessionDir, subthreadID, humanReactionParticipantID, params.Title)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	// A reply cannot be escalated by the author of the message it hangs off of —
-	// you do not converge a task on your own message (T3). Defensive on this
-	// human path (the escalator is normally the human, not the parent author),
-	// but enforced regardless.
-	if initiator := strings.TrimSpace(params.CreatedBy); initiator != "" && parent.ParentAuthorParticipantID != "" && initiator == parent.ParentAuthorParticipantID {
-		return s.writeResponse(req.ID, nil, errors.New("cannot open a reply thread on your own message"))
-	}
-	// Escalation grants the lead identity. The lead is the named member the
-	// human picked (LeadParticipantID), falling back to the reply's parent
-	// message author (T3) when that is itself a named agent. Escalation is a
-	// human click, so the picked lead field is the load-bearing one; a
-	// non-named lead is rejected so the recorded lead is never a phantom
-	// identity.
-	lead, err := s.resolveTaskLead(params.LeadParticipantID, parent.ParentAuthorParticipantID)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	thread, err := session.EscalateConversationThread(s.rt.SessionDir, subthreadID, params.CreatedBy, lead, params.Title)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	if err := session.SetConversationThreadExecState(s.rt.SessionDir, thread.ID, session.ExecStatePlanning); err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	thread.ExecState = session.ExecStatePlanning
-	s.recordTaskEventFor(thread, "", session.TaskEventTaskCreated, params.CreatedBy,
+	s.recordTaskEventFor(thread, "", session.TaskEventTaskCreated, humanReactionParticipantID,
 		fmt.Sprintf("reply escalated to task: %q", firstNonEmpty(strings.TrimSpace(thread.Title), "untitled")), "")
 	// The lead follows the task it now orchestrates (best-effort, same as
 	// set_plan does for assignees).
-	if lead != "" {
-		if err := session.AddConversationThreadMember(s.rt.SessionDir, thread.ID, lead); err != nil {
-			providers.DebugLogf("escalate: add lead %q to task %q: %v", lead, thread.ID, err)
+	if thread.LeadParticipantID != "" {
+		if err := session.AddConversationThreadMember(s.rt.SessionDir, thread.ID, thread.LeadParticipantID); err != nil {
+			providers.DebugLogf("escalate: add lead %q to task %q: %v", thread.LeadParticipantID, thread.ID, err)
 		}
 	}
 	s.notifySubthreadUpdated(threadID, thread.ID)
@@ -158,28 +136,6 @@ func (s *Server) handleThreadEscalateSub(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	return s.writeResponse(req.ID, ThreadEscalateSubResult{Subthread: view}, nil)
-}
-
-// resolveTaskLead determines the single named agent that becomes the task lead on
-// escalation. A picked lead (leadParticipantID) wins but must be an active named
-// participant — a human/unknown id is rejected so the runtime workflow gate cannot
-// authorize a phantom identity. When no lead is picked, the fallback (the reply's
-// parent message author, T3) is used only if it is itself a named agent; otherwise
-// the lead is left empty (no one holds orchestration authority until a planner
-// claims it — T6). Returning empty is valid: it simply means the task has no
-// workflow lead yet.
-func (s *Server) resolveTaskLead(leadParticipantID, fallback string) (string, error) {
-	lead := strings.TrimSpace(leadParticipantID)
-	if lead != "" {
-		if !s.isNamedParticipant(lead) {
-			return "", fmt.Errorf("task lead %q is not an active named participant", lead)
-		}
-		return lead, nil
-	}
-	if candidate := strings.TrimSpace(fallback); candidate != "" && s.isNamedParticipant(candidate) {
-		return candidate, nil
-	}
-	return "", nil
 }
 
 // isNamedParticipant reports whether id resolves to a live KindNamed participant
@@ -194,51 +150,6 @@ func (s *Server) isNamedParticipant(id string) bool {
 		return false
 	}
 	return p.Kind == participant.KindNamed && p.RetiredAt == nil
-}
-
-// handleThreadBubbleSub wraps a reply/task up: it bubbles a one-line conclusion
-// back to the main stream (full-roster visible again) as a participant_message
-// and marks the subthread resolved with that summary. The main-stream post
-// reuses publishParticipantMessage with an empty ThreadID so it appends to the
-// group stream and fans out to everyone — the opposite of the weak-isolation
-// subthread short-circuit.
-func (s *Server) handleThreadBubbleSub(req Request) error {
-	var params ThreadBubbleSubParams
-	if err := decodeParams(req.Params, &params); err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	threadID := strings.TrimSpace(params.ThreadID)
-	subthreadID := strings.TrimSpace(params.SubthreadID)
-	summary := strings.TrimSpace(params.Summary)
-	if threadID == "" {
-		return s.writeResponse(req.ID, nil, errors.New("thread_id is required"))
-	}
-	if subthreadID == "" {
-		return s.writeResponse(req.ID, nil, errors.New("subthread_id is required"))
-	}
-	if summary == "" {
-		return s.writeResponse(req.ID, nil, errors.New("summary is required"))
-	}
-
-	thread, err := s.findConversationSubthread(threadID, subthreadID, "")
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-
-	// Bubble the conclusion to the main stream, attributed to the lead who
-	// summarized (or the escalator/opener when unspecified). ThreadID is left
-	// empty so this lands in the group's main stream, not back inside the cth.
-	author := firstNonEmpty(strings.TrimSpace(params.ParticipantID), thread.EscalatedBy, thread.CreatedBy)
-	thread, err = s.bubbleSubthreadResolve(threadID, thread, summary, author)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-
-	view, err := s.conversationSubthreadView(threadID, thread, true)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	return s.writeResponse(req.ID, ThreadBubbleSubResult{Subthread: view}, nil)
 }
 
 // handleThreadTaskEvents returns the trace timeline of an escalated subthread
@@ -404,50 +315,87 @@ func (s *Server) openConversationSubthread(params ThreadOpenSubParams) (session.
 	} else if nested {
 		return session.ConversationThread{}, fmt.Errorf("cannot open a reply on a message already inside reply thread %q", parentSub)
 	}
-	// Bind the reply to its parent message (T3): resolve the anchor to its seq
-	// and author. Best-effort — a synthetic/forged anchor matching no rendered
-	// main-stream item leaves the binding empty rather than failing the open.
-	parentSeq, parentAuthor, _ := s.mainStreamAnchorBinding(threadID, anchorItemID)
-	// You cannot open a reply thread on your own message. openConversationSubthread
-	// is the human's action (the desktop viewer is the sole caller of this RPC),
-	// and a Thread converges on someone else's message — never your own; a
-	// user/thread-owner anchor (parent author == "human") is exactly that case.
-	// The frontend hides the entry on the human's own bubbles; the backend
-	// refuses regardless so a forged anchor can't get through. (The createdBy
-	// param is the anchor author the frontend seeds membership from, not the
-	// opener's identity, so it is deliberately not compared here — the agent
-	// reply-on-own-message case is enforced on the escalation path instead.)
-	if parentAuthor == humanReactionParticipantID {
-		return session.ConversationThread{}, errors.New("cannot open a reply thread on your own message")
+	// Bind the Thread to a real parent message. An unresolved or forged rendered
+	// item id cannot create a durable Thread because it would have no owner or
+	// stable parent identity.
+	parentSeq, parentAuthor, ok := s.mainStreamAnchorBinding(threadID, anchorItemID)
+	if !ok || parentSeq <= 0 || strings.TrimSpace(parentAuthor) == "" {
+		return session.ConversationThread{}, fmt.Errorf("anchor item %q does not resolve to a visible main-stream message", anchorItemID)
+	}
+	owner, err := s.resolveConversationThreadOwner(threadID, parentAuthor, params.ThreadOwnerParticipantID)
+	if err != nil {
+		return session.ConversationThread{}, err
 	}
 	thread, err := session.CreateConversationThread(s.rt.SessionDir, session.ConversationThread{
 		SessionID:                 threadID,
 		AnchorItemID:              anchorItemID,
 		Title:                     params.Title,
-		CreatedBy:                 params.CreatedBy,
+		CreatedBy:                 humanReactionParticipantID,
+		ThreadOwnerParticipantID:  owner,
 		ParentSeq:                 parentSeq,
 		ParentAuthorParticipantID: parentAuthor,
 	})
 	if err != nil {
+		// Two windows may race the create-or-find path. The store owns anchor
+		// uniqueness; when the other request won, return that durable Thread
+		// instead of surfacing a transient duplicate-key error.
+		if existing, findErr := s.findConversationSubthread(threadID, "", anchorItemID); findErr == nil {
+			return existing, nil
+		}
 		return session.ConversationThread{}, err
 	}
-	// Seed the weak-isolation member subset with the opener and any explicitly
-	// requested participants. Each Add is best-effort: a non-named opener (e.g.
-	// the human user, or an empty CreatedBy) fails requireActiveNamedParticipant
-	// and is simply skipped, leaving the subset to grow as agents post in or get
-	// @mentioned. Members grow further via routeSubthreadParticipantMessage.
-	for _, participantID := range append([]string{params.CreatedBy}, params.Participants...) {
-		participantID = strings.TrimSpace(participantID)
-		if participantID == "" {
-			continue
+	// CreateConversationThread writes the owner into the focused member subset
+	// in the same transaction. Other members join only through real group
+	// routing; the open RPC has no cross-group participant injection surface.
+	return thread, nil
+}
+
+// resolveConversationThreadOwner determines the named owner at Thread creation.
+// A named parent author always owns the Thread and cannot be overridden. A
+// human-authored parent requires an explicit active named member of the group.
+func (s *Server) resolveConversationThreadOwner(threadID, parentAuthor, requestedOwner string) (string, error) {
+	parentAuthor = strings.TrimSpace(parentAuthor)
+	requestedOwner = strings.TrimSpace(requestedOwner)
+	if parentAuthor != humanReactionParticipantID {
+		if requestedOwner != "" && requestedOwner != parentAuthor {
+			return "", fmt.Errorf("thread owner must be the named parent message author %q", parentAuthor)
 		}
-		if err := session.AddConversationThreadMember(s.rt.SessionDir, thread.ID, participantID); err != nil {
-			// Not fatal: seeding a non-member/non-named opener is expected to
-			// fail. The subthread itself is already created.
-			continue
+		if err := s.requireActiveNamedGroupMember(threadID, parentAuthor); err != nil {
+			return "", fmt.Errorf("parent message author cannot own this Thread: %w", err)
+		}
+		return parentAuthor, nil
+	}
+	if requestedOwner == "" {
+		return "", errors.New("thread_owner_participant_id is required for a human-authored parent message")
+	}
+	if err := s.requireActiveNamedGroupMember(threadID, requestedOwner); err != nil {
+		return "", fmt.Errorf("thread owner: %w", err)
+	}
+	return requestedOwner, nil
+}
+
+func (s *Server) requireActiveNamedGroupMember(threadID, participantID string) error {
+	participantID = strings.TrimSpace(participantID)
+	if !s.isNamedParticipant(participantID) {
+		return fmt.Errorf("%q is not an active named participant", participantID)
+	}
+	meta, ok, err := session.Find(s.rt.SessionDir, strings.TrimSpace(threadID))
+	if err != nil {
+		return fmt.Errorf("resolve group: %w", err)
+	}
+	if !ok || !meta.Group {
+		return errors.New("parent thread is not a group")
+	}
+	members, err := session.ListThreadMembers(s.rt.SessionDir, threadID)
+	if err != nil {
+		return fmt.Errorf("list group members: %w", err)
+	}
+	for _, memberID := range members {
+		if strings.TrimSpace(memberID) == participantID {
+			return nil
 		}
 	}
-	return thread, nil
+	return fmt.Errorf("%q is not a member of group %q", participantID, threadID)
 }
 
 // anchorInsideSubthread reports whether anchorItemID addresses a message that is
@@ -545,13 +493,14 @@ func (s *Server) conversationSubthreadView(threadID string, thread session.Conve
 
 func conversationSubthreadViewFromRecords(threadID string, thread session.ConversationThread, records []persistedMessage, includeTurns bool, resolve participantSummaryResolver) ConversationSubthread {
 	view := ConversationSubthread{
-		ID:           thread.ID,
-		ThreadID:     thread.SessionID,
-		AnchorItemID: thread.AnchorItemID,
-		Title:        thread.Title,
-		Status:       string(thread.Status),
-		CreatedBy:    thread.CreatedBy,
-		CreatedAt:    thread.CreatedAt,
+		ID:                       thread.ID,
+		ThreadID:                 thread.SessionID,
+		AnchorItemID:             thread.AnchorItemID,
+		Title:                    thread.Title,
+		Status:                   string(thread.Status),
+		CreatedBy:                thread.CreatedBy,
+		CreatedAt:                thread.CreatedAt,
+		ThreadOwnerParticipantID: thread.ThreadOwnerParticipantID,
 	}
 	subthreadID := strings.TrimSpace(thread.ID)
 	for _, rec := range records {
@@ -566,10 +515,10 @@ func conversationSubthreadViewFromRecords(threadID string, thread session.Conver
 	view.ExecState = thread.ExecState
 	// Project the plan onto the wire so the Task panel can render the progress
 	// layer (plan §T11): one row per node with its Status-derived display State
-	// and its two liveness timestamps. deriveNodeState is the same
+	// and its two activity timestamps. deriveNodeState is the same
 	// status->label mapping the tool surface uses, so the panel and the agent
-	// see the same node vocabulary. The timestamps ride raw: the "stalled/slow"
-	// cue is a display-only relative judgement the frontend makes (§4.7).
+	// see the same node vocabulary. Runtime state, not a desktop timeout, decides
+	// whether work is blocked or needs attention.
 	for _, p := range thread.Plan {
 		view.Plan = append(view.Plan, TaskPieceView{
 			ID:             p.ID,

@@ -8,7 +8,7 @@
 import { act } from "react";
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ConversationSubthread,
   ParticipantSummary,
@@ -32,6 +32,39 @@ function mount(element: React.ReactElement): HTMLElement {
   return container;
 }
 
+function mountRerenderable(element: React.ReactElement): {
+  container: HTMLElement;
+  rerender: (next: React.ReactElement) => void;
+} {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  act(() => {
+    root.render(element);
+  });
+  mountedRoots.push(root);
+  mountedContainers.push(container);
+  return {
+    container,
+    rerender: (next) => {
+      act(() => {
+        root.render(next);
+      });
+    },
+  };
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 afterEach(() => {
   for (const root of mountedRoots) {
     act(() => {
@@ -43,6 +76,8 @@ afterEach(() => {
   }
   mountedRoots = [];
   mountedContainers = [];
+  delete (window as unknown as { wuu?: unknown }).wuu;
+  vi.restoreAllMocks();
 });
 
 const noel: ParticipantSummary = {
@@ -61,6 +96,7 @@ function subthreadWith(
     title: "重试路径",
     status: "open",
     created_by: "prt-noel",
+    thread_owner_participant_id: "prt-noel",
     created_at: "0",
     reply_count: 1,
     turns: [
@@ -84,18 +120,6 @@ function subthreadWith(
   };
 }
 
-// Set a controlled textarea's value the React-aware way (native setter so the
-// value tracker registers the change) and fire the input event that drives
-// onChange, mirroring ComposerView.test.tsx's helper.
-function typeInto(input: HTMLTextAreaElement, value: string): void {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLTextAreaElement.prototype,
-    "value",
-  )?.set;
-  setter?.call(input, value);
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
 describe("ConversationSubthreadPanel", () => {
   it("renders the cth stream through the full chat conversation view", () => {
     const container = mount(
@@ -113,101 +137,59 @@ describe("ConversationSubthreadPanel", () => {
       container.querySelector(".chat-row--participant .chat-bubble")?.textContent,
     ).toContain("在看重试逻辑");
     expect(container.querySelector(".conversation-subthread-meta")?.textContent).toBe(
-      "1 条回复",
+      "收敛中 · 1 条回复",
     );
   });
 
-  it("escalates without a lead when the group has no named candidates", () => {
-    // No lead pool → the header gate escalates straight away (backend allows an
-    // empty lead); it does NOT open the picker.
-    let lead: string | undefined;
+  it("shows the source and owner, then upgrades without a second lead choice", () => {
+    let escalations = 0;
     const container = mount(
       createElement(ConversationSubthreadPanel, {
         threadID: "group-1",
         subthread: subthreadWith(),
+        sourceItem: {
+          id: "seq-3",
+          type: "user_message",
+          text: "先把重试路径讨论清楚",
+        },
+        resolveParticipantName: (id: string) =>
+          id === "prt-noel" ? "Noel" : id,
         onClose: () => {},
         onResolve: () => {},
-        onEscalate: (leadParticipantId: string) => {
-          lead = leadParticipantId;
+        onEscalate: () => {
+          escalations += 1;
         },
       }),
     );
+    expect(container.querySelector(".conversation-subthread-source")?.textContent)
+      .toContain("先把重试路径讨论清楚");
+    expect(container.querySelector(".conversation-subthread-owner")?.textContent)
+      .toBe("Owner · Noel");
     const button = container.querySelector<HTMLButtonElement>(
       ".conversation-subthread-escalate",
     );
-    expect(button).not.toBeNull();
+    expect(button?.disabled).toBe(false);
     act(() => {
       button!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(lead).toBe("");
-    // No picker was opened.
-    expect(
-      container.querySelector(".conversation-subthread-escalate-form"),
-    ).toBeNull();
+    expect(escalations).toBe(1);
+    expect(container.querySelector("[aria-label='Task lead']")).toBeNull();
   });
 
-  it("opens the lead picker and escalates with the picked named member", () => {
-    let lead: string | undefined;
-    const candidates: ParticipantSummary[] = [
-      { id: "prt-a", name: "小青", kind: "named" },
-      { id: "prt-b", name: "小白", kind: "named" },
-    ];
+  it("does not allow a Thread without an owner to become a Task", () => {
     const container = mount(
       createElement(ConversationSubthreadPanel, {
         threadID: "group-1",
-        subthread: subthreadWith(),
+        subthread: subthreadWith({ thread_owner_participant_id: undefined }),
         onClose: () => {},
         onResolve: () => {},
-        onEscalate: (leadParticipantId: string) => {
-          lead = leadParticipantId;
-        },
-        leadCandidates: candidates,
+        onEscalate: () => {},
       }),
     );
-    // The header gate now opens the picker rather than escalating immediately.
     const gate = container.querySelector<HTMLButtonElement>(
       ".conversation-subthread-escalate",
     );
-    act(() => {
-      gate!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    expect(lead).toBeUndefined();
-    const leadTrigger = container.querySelector<HTMLButtonElement>(
-      "#conversation-subthread-lead-select",
-    );
-    expect(leadTrigger).not.toBeNull();
-    // First named candidate pre-selected — the trigger shows their name.
-    expect(leadTrigger!.querySelector(".select-menu-value")?.textContent).toBe(
-      "小青",
-    );
-    // Open the dropdown; the two candidate options render into the portal.
-    act(() => {
-      leadTrigger!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    const options = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(
-        ".select-menu-panel .select-menu-item",
-      ),
-    );
-    expect(options.length).toBe(2);
-    // Pick the second member, then confirm.
-    const second = options.find(
-      (option) => option.getAttribute("data-value") === "prt-b",
-    )!;
-    act(() => {
-      second.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    const confirm = container.querySelector<HTMLButtonElement>(
-      ".conversation-subthread-escalate-submit",
-    );
-    act(() => {
-      confirm!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    expect(lead).toBe("prt-b");
-    // Picker closes after confirming.
-    expect(
-      container.querySelector(".conversation-subthread-escalate-form"),
-    ).toBeNull();
+    expect(gate?.disabled).toBe(true);
   });
 
   it("hides 升级为 Task once the reply is already a task", () => {
@@ -296,10 +278,10 @@ describe("ConversationSubthreadPanel", () => {
     expect(toolbar!.querySelector(".chat-bubble-toolbar-reply")).toBeNull();
   });
 
-  it("offers 完成 Task only once escalated and bubbles the typed conclusion", () => {
-    const bubbled: string[] = [];
+  it("shows Task lead and runtime state without human resolve or completion controls", () => {
     const taskSubthread = subthreadWith({
       status: "task",
+      exec_state: "awaiting_lead",
       task: { id: "cth-1", status: "running", subthread_id: "cth-1" },
     });
     const container = mount(
@@ -309,89 +291,44 @@ describe("ConversationSubthreadPanel", () => {
         onClose: () => {},
         onResolve: () => {},
         onEscalate: () => {},
-        onBubble: (summary: string) => bubbled.push(summary),
+        resolveParticipantName: () => "Noel",
       }),
     );
-    // Escalate gate is spent; the finalize gate takes its place.
-    expect(
-      container.querySelector(".conversation-subthread-finalize-toggle"),
-    ).not.toBeNull();
-    // The conclusion form is hidden until the human opens it.
-    expect(container.querySelector(".conversation-subthread-finalize")).toBeNull();
-    const toggle = container.querySelector<HTMLButtonElement>(
-      ".conversation-subthread-finalize-toggle",
-    )!;
-    act(() => {
-      toggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    const submit = container.querySelector<HTMLButtonElement>(
-      ".conversation-subthread-finalize-submit",
-    )!;
-    // Submit is disabled while no conclusion is typed.
-    expect(submit.disabled).toBe(true);
-    const input = container.querySelector<HTMLTextAreaElement>(
-      ".conversation-subthread-finalize .conversation-subthread-input",
-    )!;
-    act(() => {
-      typeInto(input, "重试三次后成功,已合入");
-    });
-    expect(submit.disabled).toBe(false);
-    act(() => {
-      submit.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    expect(bubbled).toEqual(["重试三次后成功,已合入"]);
-    // Form collapses after a successful bubble.
-    expect(container.querySelector(".conversation-subthread-finalize")).toBeNull();
+    expect(container.querySelector(".conversation-subthread-lead")?.textContent)
+      .toContain("LeadNoel等待 Lead 收敛");
+    expect(container.querySelector(".conversation-subthread-finalize-toggle"))
+      .toBeNull();
+    expect(container.querySelector('button[aria-label="标记已解决"]')).toBeNull();
   });
 
-  it("does not offer 完成 Task before escalation or when onBubble is absent", () => {
-    // A plain (un-escalated) reply: no finalize gate.
-    const plain = mount(
-      createElement(ConversationSubthreadPanel, {
-        threadID: "group-1",
-        subthread: subthreadWith(),
-        onClose: () => {},
-        onResolve: () => {},
-        onBubble: () => {},
-      }),
-    );
-    expect(
-      plain.querySelector(".conversation-subthread-finalize-toggle"),
-    ).toBeNull();
-    // A task with no onBubble wired: still no finalize gate.
-    const noHandler = mount(
+  it("shows explicit WorkItem details without inventing liveness warnings", () => {
+    const container = mount(
       createElement(ConversationSubthreadPanel, {
         threadID: "group-1",
         subthread: subthreadWith({
           status: "task",
           task: { id: "cth-1", status: "running", subthread_id: "cth-1" },
+          plan: [
+            {
+              id: "verify",
+              title: "验证修复",
+              status: "blocked",
+              assignee: "prt-noel",
+              depends_on: ["implement"],
+              failure_reason: "等待测试环境",
+              last_activity_at: "2020-01-01T00:00:00Z",
+              last_progress_at: "2020-01-01T00:00:00Z",
+            },
+          ],
         }),
         onClose: () => {},
         onResolve: () => {},
       }),
     );
-    expect(
-      noHandler.querySelector(".conversation-subthread-finalize-toggle"),
-    ).toBeNull();
-  });
-
-  it("hides 完成 Task once the task is resolved", () => {
-    const container = mount(
-      createElement(ConversationSubthreadPanel, {
-        threadID: "group-1",
-        subthread: subthreadWith({
-          status: "resolved",
-          task: { id: "cth-1", status: "completed", subthread_id: "cth-1" },
-          summary: "重试三次后成功",
-        }),
-        onClose: () => {},
-        onResolve: () => {},
-        onBubble: () => {},
-      }),
-    );
-    expect(
-      container.querySelector(".conversation-subthread-finalize-toggle"),
-    ).toBeNull();
+    expect(container.textContent).toContain("等待：implement");
+    expect(container.textContent).toContain("等待测试环境");
+    expect(container.textContent).not.toContain("疑似失联");
+    expect(container.textContent).not.toContain("进展慢");
   });
 
   it("shows 弹出独立窗口 and fires onPopOut when clicked", () => {
@@ -442,5 +379,78 @@ describe("ConversationSubthreadPanel", () => {
       }),
     );
     expect(container.querySelector(".conversation-subthread-composer")).toBeNull();
+    expect(container.querySelector('button[aria-label="重新打开"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="标记已解决"]')).toBeNull();
+  });
+
+  it("does not let a late trace response from Thread A overwrite Thread B", async () => {
+    const traceA = deferred<{ events: Array<{ seq: number; kind: string; summary: string; at: string }> }>();
+    const taskEvents = vi
+      .fn()
+      .mockReturnValueOnce(traceA.promise)
+      .mockResolvedValueOnce({
+        events: [
+          {
+            seq: 1,
+            kind: "node_progress",
+            summary: "B progress",
+            at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      });
+    (window as unknown as { wuu: { taskEvents: typeof taskEvents } }).wuu = {
+      taskEvents,
+    };
+    const taskA = subthreadWith({
+      id: "cth-a",
+      status: "task",
+      task: { id: "cth-a", status: "running", subthread_id: "cth-a" },
+    });
+    const taskB = subthreadWith({
+      id: "cth-b",
+      status: "task",
+      task: { id: "cth-b", status: "running", subthread_id: "cth-b" },
+    });
+    const props = {
+      threadID: "group-1",
+      onClose: () => {},
+      onResolve: () => {},
+    };
+    const view = mountRerenderable(
+      createElement(ConversationSubthreadPanel, { ...props, subthread: taskA }),
+    );
+    await act(async () => {
+      view.container
+        .querySelector<HTMLButtonElement>(".conversation-subthread-trace-toggle")!
+        .click();
+      await Promise.resolve();
+    });
+    view.rerender(
+      createElement(ConversationSubthreadPanel, { ...props, subthread: taskB }),
+    );
+    await act(async () => {
+      view.container
+        .querySelector<HTMLButtonElement>(".conversation-subthread-trace-toggle")!
+        .click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      traceA.resolve({
+        events: [
+          {
+            seq: 1,
+            kind: "node_failed",
+            summary: "A stale failure",
+            at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(view.container.textContent).toContain("B progress");
+    expect(view.container.textContent).not.toContain("A stale failure");
   });
 });

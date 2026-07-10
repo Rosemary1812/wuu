@@ -113,24 +113,18 @@ func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, a
 		}
 	}
 
-	thread, err := session.CreateConversationThread(sessionDir, session.ConversationThread{
+	thread, err := session.CreateLegacyTaskConversationThread(sessionDir, session.ConversationThread{
 		SessionID:                 threadID,
 		AnchorItemID:              anchorItemID,
 		Title:                     title,
 		Status:                    session.ConversationThreadTask,
 		CreatedBy:                 m.participantID,
+		EscalatedBy:               m.participantID,
 		ParentSeq:                 parentSeq,
 		ParentAuthorParticipantID: parentAuthor,
 	})
 	if err != nil {
 		return tools.TaskView{}, fmt.Errorf("create: %w", err)
-	}
-	// Stamp task provenance (escalated_at/escalated_by). The lead stays empty:
-	// an agent-created task grants no lead identity (owner != lead,
-	// user-adjudicated 2026-07-06).
-	thread, err = session.EscalateConversationThread(sessionDir, thread.ID, m.participantID, "", "")
-	if err != nil {
-		return tools.TaskView{}, fmt.Errorf("create: stamp task provenance: %w", err)
 	}
 	// The creator follows the task it dispatched (completion signal); a
 	// non-named creator cannot happen here (participantID is required).
@@ -155,14 +149,10 @@ func (m *residentTaskManager) CreateTask(ctx context.Context, threadID string, a
 }
 
 // EscalateTask promotes an open discussion reply to a board task once the
-// conversation in it has converged. The lead defaults to the reply's parent
-// message author (T3) — the person whose message spawned the discussion leads
-// the task it became — when that author is a named agent; a human/unknown
-// parent author leaves the lead empty for the first planner to claim (T6).
-// Provenance (EscalatedBy) still records the converting agent. Escalating a
-// reply on your own message is refused. Escalation IS the start of execution —
-// no human approval step follows: the task enters exec state planning
-// immediately, and the lead (when one is bound) is woken to author the plan.
+// conversation in it has converged. Only the persisted Thread owner may do so;
+// that same owner becomes task lead atomically. Provenance (EscalatedBy) records
+// the converting agent. Promotion starts execution immediately in planning and
+// wakes the lead to author the plan.
 func (m *residentTaskManager) EscalateTask(ctx context.Context, subthreadID, title string, claim bool) (tools.TaskView, error) {
 	_ = ctx
 	if err := m.ready("escalate"); err != nil {
@@ -175,25 +165,15 @@ func (m *residentTaskManager) EscalateTask(ctx context.Context, subthreadID, tit
 	if thread.Status != session.ConversationThreadOpen {
 		return tools.TaskView{}, fmt.Errorf("escalate: reply %q is %q; only an open discussion reply can be converted to a task", thread.ID, thread.Status)
 	}
-	// You cannot converge a task on your own message: escalating a reply whose
-	// parent message you authored would make you both the subject and the lead
-	// of the work (T3). Refuse loudly.
-	parentAuthor := strings.TrimSpace(thread.ParentAuthorParticipantID)
-	if parentAuthor != "" && parentAuthor == m.participantID {
-		return tools.TaskView{}, fmt.Errorf("escalate: cannot open a reply thread on your own message (reply %q anchors your message)", thread.ID)
+	if owner := strings.TrimSpace(thread.ThreadOwnerParticipantID); owner == "" || owner != m.participantID {
+		return tools.TaskView{}, fmt.Errorf("escalate: Thread %q is owned by %q; only its owner may promote it", thread.ID, owner)
 	}
 	// DM tasks are born owned (task-rail design §7) — same forcing as create.
 	if !meta.Group {
 		claim = true
 	}
 	sessionDir := m.server.rt.SessionDir
-	// Lead defaults to the parent message's author (T3): the person whose
-	// message spawned the discussion leads the task it converged into, when they
-	// are a named agent. A human/unknown parent author leaves the lead empty —
-	// the first planner claims it (T6). resolveTaskLead never errors on an empty
-	// picked lead, so the fallback is safe to swallow.
-	lead, _ := m.server.resolveTaskLead("", parentAuthor)
-	escalated, err := session.EscalateConversationThread(sessionDir, thread.ID, m.participantID, lead, title)
+	escalated, err := session.EscalateConversationThread(sessionDir, thread.ID, m.participantID, title)
 	if err != nil {
 		return tools.TaskView{}, fmt.Errorf("escalate: %w", err)
 	}
@@ -210,10 +190,6 @@ func (m *residentTaskManager) EscalateTask(ctx context.Context, subthreadID, tit
 		}
 		escalated = claimed
 	}
-	if err := session.SetConversationThreadExecState(sessionDir, escalated.ID, session.ExecStatePlanning); err != nil {
-		return tools.TaskView{}, fmt.Errorf("escalate: enter planning: %w", err)
-	}
-	escalated.ExecState = session.ExecStatePlanning
 	m.server.recordTaskEventFor(escalated, "", session.TaskEventTaskCreated, m.participantID,
 		fmt.Sprintf("reply escalated to task: %q", firstNonEmpty(strings.TrimSpace(escalated.Title), "untitled")), "")
 	m.server.notifySubthreadUpdated(escalated.SessionID, escalated.ID)
@@ -271,10 +247,9 @@ func (m *residentTaskManager) UnclaimTask(ctx context.Context, subthreadID strin
 
 // ConcludeTask files the task's conclusion and completes it in one act (the
 // manage_task update_status action): a single store CAS resolves the task —
-// owner OR lead may conclude, so an unclaimed plan-task is concluded by its
-// lead — then the summary bubbles to the parent main stream under the
-// caller's identity. Filing IS the completion report; there is no review
-// gate and no human approval step.
+// only the lead may conclude — then the summary is published to the parent
+// main stream under the caller's identity. Filing IS the completion report;
+// there is no review gate or human approval step.
 func (m *residentTaskManager) ConcludeTask(ctx context.Context, subthreadID, summary string) (tools.TaskView, error) {
 	_ = ctx
 	if err := m.ready("update_status"); err != nil {
@@ -1378,10 +1353,9 @@ func (s *Server) mainStreamItemForSeq(threadID string, seq int) (ThreadItem, err
 // mainStreamAnchorBinding resolves a main-stream anchor item id (a rendered GUI
 // item id, the inverse of mainStreamItemIDForSeq) to the parent-message binding
 // a reply subthread records: the message's seq and its author's participant id.
-// It is best-effort — an anchor that matches no rendered main-stream item (a
-// synthetic/forged id, or a not-yet-persisted anchor) yields (0, "", false) so
-// the caller can proceed with an unbound reply rather than fail; a matched item
-// yields (seq, author, true).
+// Only human and named-participant messages may anchor a Thread. Synthetic,
+// task-card, tool, reasoning, and other rendered items return false, as do
+// forged or not-yet-persisted ids.
 func (s *Server) mainStreamAnchorBinding(threadID, anchorItemID string) (seq int, author string, ok bool) {
 	anchorItemID = strings.TrimSpace(anchorItemID)
 	if anchorItemID == "" {
@@ -1396,6 +1370,9 @@ func (s *Server) mainStreamAnchorBinding(threadID, anchorItemID string) (seq int
 	for _, turn := range turns {
 		for _, item := range turn.Items {
 			if item.ID == anchorItemID {
+				if item.Type != ThreadItemUserMessage && item.Type != ThreadItemParticipantMsg {
+					return 0, "", false
+				}
 				return item.Seq, parentAuthorParticipantID(item), true
 			}
 		}
@@ -1414,34 +1391,6 @@ func parentAuthorParticipantID(item ThreadItem) string {
 		}
 	}
 	return humanReactionParticipantID
-}
-
-// bubbleSubthreadResolve wraps a subthread up: the summary posts to the
-// parent's main stream under author's identity and the subthread resolves
-// with that summary stored. Serves the human bubble RPC
-// (handleThreadBubbleSub) and plain-reply wrap-ups; agents conclude tasks
-// through ConcludeTask instead.
-func (s *Server) bubbleSubthreadResolve(threadID string, thread session.ConversationThread, summary, author string) (session.ConversationThread, error) {
-	summary = strings.TrimSpace(summary)
-	if summary == "" {
-		return session.ConversationThread{}, errors.New("bubble: summary is required")
-	}
-	if err := s.publishParticipantMessage(threadID, agentcontrol.ParticipantMessage{
-		ParticipantID: author,
-		Kind:          "result",
-		Text:          summary,
-	}); err != nil {
-		return session.ConversationThread{}, err
-	}
-	if err := session.SetConversationThreadSummary(s.rt.SessionDir, thread.ID, summary); err != nil {
-		return session.ConversationThread{}, err
-	}
-	if err := session.UpdateConversationThreadStatus(s.rt.SessionDir, thread.ID, session.ConversationThreadResolved); err != nil {
-		return session.ConversationThread{}, err
-	}
-	thread.Status = session.ConversationThreadResolved
-	thread.Summary = summary
-	return thread, nil
 }
 
 // normalizeTitleForDedup trims, collapses whitespace runs, and lowercases

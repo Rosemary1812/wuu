@@ -1,6 +1,7 @@
 package session
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -53,12 +54,22 @@ func AddConversationThreadMember(sessDir, subthreadID, participantID string) err
 		return fmt.Errorf("begin conversation thread member add: %w", err)
 	}
 	defer tx.Rollback()
-	if ok, err := conversationThreadExists(tx, subthreadID); err != nil {
-		return err
-	} else if !ok {
-		return fmt.Errorf("%w: %q", ErrConversationThreadNotFound, subthreadID)
+	var parentSessionID string
+	if err := tx.QueryRow(`SELECT session_id FROM conversation_threads WHERE id = ?`, subthreadID).Scan(&parentSessionID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: %q", ErrConversationThreadNotFound, subthreadID)
+		}
+		return fmt.Errorf("load conversation thread parent: %w", err)
 	}
-	if err := requireActiveNamedParticipant(tx, participantID); err != nil {
+	var isGroup int
+	if err := tx.QueryRow(`SELECT is_group FROM sessions WHERE id = ?`, parentSessionID).Scan(&isGroup); err != nil {
+		return fmt.Errorf("load conversation thread parent session: %w", err)
+	}
+	if isGroup != 0 {
+		if err := requireActiveNamedThreadMember(tx, parentSessionID, participantID); err != nil {
+			return fmt.Errorf("conversation thread member: %w", err)
+		}
+	} else if err := requireActiveNamedParticipant(tx, participantID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`
@@ -96,6 +107,24 @@ func RemoveConversationThreadMember(sessDir, subthreadID, participantID string) 
 	storeWriteMu.Lock()
 	defer storeWriteMu.Unlock()
 
+	var status ConversationThreadStatus
+	var ownerID, leadID string
+	err = db.QueryRow(`
+SELECT status, thread_owner_participant_id, lead_participant_id
+FROM conversation_threads
+WHERE id = ?`, subthreadID).Scan(&status, &ownerID, &leadID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: %q", ErrConversationThreadNotFound, subthreadID)
+	}
+	if err != nil {
+		return fmt.Errorf("load conversation thread member authority: %w", err)
+	}
+	if status == ConversationThreadOpen && participantID == ownerID {
+		return fmt.Errorf("participant %q owns open Thread %q and must remain a member", participantID, subthreadID)
+	}
+	if status == ConversationThreadTask && participantID == leadID {
+		return fmt.Errorf("participant %q leads active Task %q and must remain a member", participantID, subthreadID)
+	}
 	if _, err := db.Exec(`DELETE FROM conversation_thread_members WHERE conversation_thread_id = ? AND participant_id = ?`, subthreadID, participantID); err != nil {
 		return fmt.Errorf("remove conversation thread member: %w", err)
 	}
@@ -125,10 +154,15 @@ func ListConversationThreadMembers(sessDir, subthreadID string) ([]string, error
 	rows, err := db.Query(`
 SELECT ctm.participant_id
 FROM conversation_thread_members ctm
+JOIN conversation_threads ct ON ct.id = ctm.conversation_thread_id
+JOIN sessions s ON s.id = ct.session_id
 JOIN participants p ON p.id = ctm.participant_id
+LEFT JOIN thread_members tm
+  ON tm.session_id = ct.session_id AND tm.participant_id = ctm.participant_id
 WHERE ctm.conversation_thread_id = ?
   AND p.kind = ?
   AND p.retired_at IS NULL
+  AND (s.is_group = 0 OR tm.participant_id IS NOT NULL)
 ORDER BY ctm.joined_at ASC, ctm.participant_id ASC`, subthreadID, string(participant.KindNamed))
 	if err != nil {
 		return nil, fmt.Errorf("list conversation thread members: %w", err)

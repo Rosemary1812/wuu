@@ -310,6 +310,20 @@ func RetireParticipant(sessDir, id string) error {
 	}
 	defer tx.Rollback()
 
+	var activeOwnerships int
+	if err := tx.QueryRow(`
+SELECT COUNT(*)
+FROM conversation_threads
+WHERE (status = ? AND thread_owner_participant_id = ?)
+   OR (status = ? AND lead_participant_id = ?)`,
+		string(ConversationThreadOpen), id, string(ConversationThreadTask), id,
+	).Scan(&activeOwnerships); err != nil {
+		return fmt.Errorf("retire participant: inspect active thread ownership: %w", err)
+	}
+	if activeOwnerships > 0 {
+		return fmt.Errorf("retire participant %q: still owns an open Thread or leads an active Task", id)
+	}
+
 	now := time.Now().UTC()
 	res, err := tx.Exec(`
 UPDATE participants

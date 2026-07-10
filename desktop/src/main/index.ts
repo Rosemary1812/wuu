@@ -61,7 +61,6 @@ import type {
   ThreadContextCompositionResult,
   ThreadEditMessageResult,
   ThreadForkResult,
-  ThreadBubbleSubResult,
   ThreadEscalateSubResult,
   ThreadListSubResult,
   ThreadMarksResult,
@@ -1115,8 +1114,7 @@ app.whenReady().then(async () => {
         subthreadId?: string;
         anchorItemId?: string;
         title?: string;
-        createdBy?: string;
-        participants?: string[];
+        threadOwnerParticipantId?: string;
       },
     ) =>
       appServerRequest<ThreadOpenSubResult>(event, "thread/openSub", {
@@ -1124,8 +1122,7 @@ app.whenReady().then(async () => {
         subthread_id: options?.subthreadId ?? "",
         anchor_item_id: options?.anchorItemId ?? "",
         title: options?.title ?? "",
-        created_by: options?.createdBy ?? "",
-        participants: options?.participants ?? [],
+        thread_owner_participant_id: options?.threadOwnerParticipantId ?? "",
       }),
   );
   ipcMain.handle(
@@ -1143,30 +1140,12 @@ app.whenReady().then(async () => {
       event,
       threadId: string,
       subthreadId: string,
-      options?: { title?: string; createdBy?: string; leadParticipantId?: string },
+      options?: { title?: string },
     ) =>
       appServerRequest<ThreadEscalateSubResult>(event, "thread/escalateSub", {
         thread_id: threadId,
         subthread_id: subthreadId,
         title: options?.title ?? "",
-        created_by: options?.createdBy ?? "",
-        lead_participant_id: options?.leadParticipantId ?? "",
-      }),
-  );
-  ipcMain.handle(
-    "wuu:thread-bubble-sub",
-    (
-      event,
-      threadId: string,
-      subthreadId: string,
-      summary: string,
-      options?: { participantId?: string },
-    ) =>
-      appServerRequest<ThreadBubbleSubResult>(event, "thread/bubbleSub", {
-        thread_id: threadId,
-        subthread_id: subthreadId,
-        summary,
-        participant_id: options?.participantId ?? "",
       }),
   );
   ipcMain.handle(

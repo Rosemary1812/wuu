@@ -445,7 +445,6 @@ export type ConversationTitleActionsProps = {
   chipGalleryOpen: boolean;
   onCloseChipGallery: () => void;
   poppedOutMode: boolean;
-  activeThreadIsChatStyle: boolean;
   activeThread?: Thread;
   onOpenTaskBoard: (thread: Thread) => void;
   environmentToggleRef: RefObject<HTMLButtonElement | null>;
@@ -482,7 +481,6 @@ export function ConversationTitleActions({
   chipGalleryOpen,
   onCloseChipGallery,
   poppedOutMode,
-  activeThreadIsChatStyle,
   activeThread,
   onOpenTaskBoard,
   environmentToggleRef,
@@ -560,7 +558,7 @@ export function ConversationTitleActions({
       <ChipGalleryPanel open={chipGalleryOpen} onClose={onCloseChipGallery} />
       {poppedOutMode ? null : (
         <>
-          {activeThreadIsChatStyle && activeThread ? (
+          {activeThreadIsGroup && activeThread ? (
             <button
               className="icon-button"
               type="button"
@@ -641,9 +639,6 @@ export type ConversationSidePanelsProps = {
   onEscalateSubthread: ComponentProps<
     typeof ConversationSubthreadPanel
   >["onEscalate"];
-  onBubbleSubthread: ComponentProps<
-    typeof ConversationSubthreadPanel
-  >["onBubble"];
   onReactSubthread: ComponentProps<
     typeof ConversationSubthreadPanel
   >["onReact"];
@@ -654,9 +649,6 @@ export type ConversationSidePanelsProps = {
     subthreadID: string,
     context: RuntimeContext,
   ) => void;
-  subthreadLeadCandidates: ComponentProps<
-    typeof ConversationSubthreadPanel
-  >["leadCandidates"];
   subthreadComposer: Omit<
     SubthreadComposerRendererProps,
     "readOnly" | "queryHistorySessionID"
@@ -714,12 +706,10 @@ export function ConversationSidePanels({
   onCloseSubthreadPanel,
   onResolveSubthread,
   onEscalateSubthread,
-  onBubbleSubthread,
   onReactSubthread,
   poppedOutMode,
   activeContext,
   onPopOutSubthread,
-  subthreadLeadCandidates,
   subthreadComposer,
   resolveParticipantName,
   busyParticipantIDs,
@@ -781,8 +771,17 @@ export function ConversationSidePanels({
           onClose={onCloseSubthreadPanel}
           onResolve={onResolveSubthread}
           onEscalate={onEscalateSubthread}
-          onBubble={onBubbleSubthread}
           onReact={onReactSubthread}
+          sourceItem={
+            activeThread?.id === openSubthreadPanel.threadID
+              ? activeThread.turns
+                  .flatMap((turn) => turn.items)
+                  .find(
+                    (item) =>
+                      item.id === openSubthreadPanel.subthread?.anchor_item_id,
+                  )
+              : undefined
+          }
           onPopOut={
             !poppedOutMode && openSubthreadPanel.subthread && activeContext
               ? () =>
@@ -793,7 +792,6 @@ export function ConversationSidePanels({
                   )
               : undefined
           }
-          leadCandidates={subthreadLeadCandidates}
           composer={
             <SubthreadComposerRenderer
               {...subthreadComposer}

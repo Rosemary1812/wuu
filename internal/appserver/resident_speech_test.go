@@ -128,14 +128,7 @@ func TestResidentPostMessageToSubthreadFoldsIntoReplyThread(t *testing.T) {
 	if err := session.AddThreadMember(srv.rt.SessionDir, groupID, participantID); err != nil {
 		t.Fatalf("AddThreadMember: %v", err)
 	}
-	cth, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
-		SessionID:    groupID,
-		AnchorItemID: "seq-3",
-		CreatedBy:    participantID,
-	})
-	if err != nil {
-		t.Fatalf("CreateConversationThread: %v", err)
-	}
+	cth := createStoredOpenThreadForTest(t, srv, groupID, participantID, "seq-3", 3)
 
 	group := srv.thread(groupID)
 	group.mu.Lock()
@@ -193,16 +186,14 @@ func TestResidentPostMessageToSubthreadRejectsNonMember(t *testing.T) {
 	participantID := saveNamedParticipant(t, srv.rt, "Jules", "reviewer", "")
 	dmID := startResidentDMForTest(t, srv, participantID)
 	groupID := startGroupThreadForTest(t, srv)
-	cth, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
-		SessionID:    groupID,
-		AnchorItemID: "seq-3",
-	})
-	if err != nil {
-		t.Fatalf("CreateConversationThread: %v", err)
+	ownerID := saveNamedParticipant(t, srv.rt, "ThreadOwner", "lead", "")
+	if err := session.AddThreadMember(srv.rt.SessionDir, groupID, ownerID); err != nil {
+		t.Fatalf("AddThreadMember(owner): %v", err)
 	}
+	cth := createStoredOpenThreadForTest(t, srv, groupID, ownerID, "seq-3", 3)
 
 	kit := residentToolkitForTest(t, srv, dmID)
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
+	_, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "post_message",
 		Arguments: fmt.Sprintf(`{"kind":"update","text":"nope","thread_id":%q}`, cth.ID),
 	})

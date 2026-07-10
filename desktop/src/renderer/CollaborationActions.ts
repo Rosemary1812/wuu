@@ -328,6 +328,9 @@ export function createCollaborationActions(
   }
 
   function openTaskBoardTab(thread: Thread): void {
+    if (!thread.group) {
+      return;
+    }
     const context = deps.getAppState().activeContext;
     if (!context) {
       return;

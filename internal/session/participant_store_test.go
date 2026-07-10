@@ -2,6 +2,7 @@ package session
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,6 +104,45 @@ func TestRetireParticipant(t *testing.T) {
 	}
 	if len(list) != 0 {
 		t.Errorf("ListParticipants after retire = %v, want empty", list)
+	}
+}
+
+func TestRetireParticipantRefusesOpenThreadOwnerAndActiveTaskLead(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "group", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+
+	open := createOpenConversationThreadForTest(t, dir, ConversationThread{
+		SessionID: "group", AnchorItemID: "open-owner", ThreadOwnerParticipantID: "prt-open-owner",
+	})
+	if err := RetireParticipant(dir, "prt-open-owner"); err == nil || !strings.Contains(err.Error(), "owns an open Thread") {
+		t.Fatalf("open Thread owner retirement must be rejected, got %v", err)
+	}
+	if err := UpdateConversationThreadStatus(dir, open.ID, ConversationThreadResolved); err != nil {
+		t.Fatal(err)
+	}
+	if err := RetireParticipant(dir, "prt-open-owner"); err != nil {
+		t.Fatalf("resolved Thread owner should retire: %v", err)
+	}
+	if err := UpdateConversationThreadStatus(dir, open.ID, ConversationThreadOpen); err == nil || !strings.Contains(err.Error(), "cannot be reopened") {
+		t.Fatalf("resolved Thread must remain terminal after owner retirement, got %v", err)
+	}
+
+	task := createOpenConversationThreadForTest(t, dir, ConversationThread{
+		SessionID: "group", AnchorItemID: "task-lead", ThreadOwnerParticipantID: "prt-task-lead",
+	})
+	if _, err := EscalateConversationThread(dir, task.ID, "human", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := RetireParticipant(dir, "prt-task-lead"); err == nil || !strings.Contains(err.Error(), "leads an active Task") {
+		t.Fatalf("active Task lead retirement must be rejected, got %v", err)
+	}
+	if _, err := ConcludeConversationThread(dir, task.ID, "prt-task-lead", "done"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RetireParticipant(dir, "prt-task-lead"); err != nil {
+		t.Fatalf("resolved Task lead should retire: %v", err)
 	}
 }
 

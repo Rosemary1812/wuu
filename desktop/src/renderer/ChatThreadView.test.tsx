@@ -55,7 +55,7 @@ afterEach(() => {
 const noel: ParticipantSummary = {
   id: "prt-noel",
   name: "Noel",
-  kind: "resident",
+  kind: "named",
 };
 
 function turns(items: Turn["items"]): ReadonlyArray<Pick<Turn, "id" | "items">> {
@@ -488,8 +488,8 @@ describe("ChatThreadView reply / task affordances", () => {
     );
   });
 
-  it("reveals a hover 回复 entry (toolbar) on participant messages with no reply thread yet", () => {
-    const opened: ThreadItem[] = [];
+  it("opens a named-agent message with its author as Thread owner", () => {
+    const opened: Array<{ item: ThreadItem; owner?: string }> = [];
     const container = mount(
       createElement(ChatThreadView, {
         turns: turns([
@@ -501,18 +501,105 @@ describe("ChatThreadView reply / task affordances", () => {
             participant: noel,
           },
         ]),
-        onOpenSubthread: (item: ThreadItem) => opened.push(item),
+        onOpenSubthread: (item: ThreadItem, owner?: string) =>
+          opened.push({ item, owner }),
       }),
     );
     const reply = container.querySelector<HTMLButtonElement>(
       ".chat-bubble-toolbar-reply",
     );
     expect(reply).not.toBeNull();
-    expect(reply?.textContent).toContain("回复");
+    expect(reply?.textContent).toContain("开 Thread");
     act(() => {
       reply!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(opened.map((item) => item.id)).toEqual(["item-1"]);
+    expect(opened.map(({ item, owner }) => [item.id, owner])).toEqual([
+      ["item-1", "prt-noel"],
+    ]);
+  });
+
+  it("automatically assigns the only named member for a human message", () => {
+    const opened: Array<{ item: ThreadItem; owner?: string }> = [];
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "human-1", type: "user_message", text: "这个方案要收敛" },
+        ]),
+        threadOwnerCandidates: [
+          { id: "prt-a", name: "Ada", kind: "named" },
+        ],
+        onOpenSubthread: (item: ThreadItem, owner?: string) =>
+          opened.push({ item, owner }),
+      }),
+    );
+    act(() => {
+      container
+        .querySelector<HTMLButtonElement>(".chat-bubble-toolbar-reply")!
+        .click();
+    });
+    expect(opened.map(({ item, owner }) => [item.id, owner])).toEqual([
+      ["human-1", "prt-a"],
+    ]);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("asks once which active named member owns a human Thread and contains focus", () => {
+    const opened: Array<{ item: ThreadItem; owner?: string }> = [];
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "human-1", type: "user_message", text: "这个方案要收敛" },
+        ]),
+        threadOwnerCandidates: [
+          { id: "prt-a", name: "Ada", kind: "named" },
+          { id: "human", name: "Human", kind: "human" },
+          { id: "legacy", name: "Legacy", kind: "resident" },
+          { id: "prt-b", name: "Bea", kind: "named" },
+        ],
+        onOpenSubthread: (item: ThreadItem, owner?: string) =>
+          opened.push({ item, owner }),
+      }),
+    );
+    const trigger = container.querySelector<HTMLButtonElement>(
+      ".chat-bubble-toolbar-reply",
+    )!;
+    trigger.focus();
+    act(() => {
+      trigger.click();
+    });
+    const dialog = document.querySelector<HTMLElement>(
+      '.thread-owner-dialog[role="dialog"]',
+    );
+    expect(dialog).not.toBeNull();
+    const options = Array.from(
+      dialog!.querySelectorAll<HTMLButtonElement>(
+        ".thread-owner-dialog-options > button",
+      ),
+    );
+    expect(
+      options.map((option) => option.querySelector("strong")?.textContent),
+    ).toEqual(["Ada", "Bea"]);
+    expect(document.activeElement).toBe(options[0]);
+
+    const close = dialog!.querySelector<HTMLButtonElement>(
+      'button[aria-label="关闭 Owner 选择"]',
+    )!;
+    close.focus();
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true }),
+      );
+    });
+    expect(document.activeElement).toBe(options[1]);
+
+    act(() => {
+      options[1]!.click();
+    });
+    expect(opened.map(({ item, owner }) => [item.id, owner])).toEqual([
+      ["human-1", "prt-b"],
+    ]);
+    expect(document.querySelector(".thread-owner-dialog")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 
   it("renders no toolbar reply entry when onOpenSubthread is not wired", () => {
@@ -552,12 +639,54 @@ describe("ChatThreadView reply / task affordances", () => {
     expect(opened[0]?.id).toBe("item-1");
   });
 
+  it("opens an ownerless legacy reply by its existing Thread id", () => {
+    const opened: Array<{
+      item: ThreadItem;
+      owner?: string;
+      subthreadID?: string;
+    }> = [];
+    const map = new Map<string, ConversationSubthread>([
+      [
+        "item-1",
+        subthread({
+          id: "cth-legacy",
+          status: "resolved",
+          thread_owner_participant_id: undefined,
+          reply_count: 2,
+        }),
+      ],
+    ]);
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          { id: "item-1", type: "user_message", text: "旧讨论" },
+        ]),
+        subthreadsByAnchor: map,
+        onOpenSubthread: (item, owner, subthreadID) =>
+          opened.push({ item, owner, subthreadID }),
+      }),
+    );
+
+    act(() => {
+      container
+        .querySelector<HTMLButtonElement>(".chat-reply-badge--button")!
+        .click();
+    });
+
+    expect(opened).toHaveLength(1);
+    expect(opened[0]?.owner).toBeUndefined();
+    expect(opened[0]?.subthreadID).toBe("cth-legacy");
+  });
+
   it("renders a task activity card instead of a badge once the reply is escalated", () => {
     const map = new Map<string, ConversationSubthread>([
       [
         "item-1",
         subthread({
+          title: "重构路由",
           status: "task",
+          exec_state: "executing",
+          thread_owner_participant_id: "prt-noel",
           reply_count: 6,
           task: {
             id: "task-9",
@@ -576,16 +705,14 @@ describe("ChatThreadView reply / task affordances", () => {
         subthreadsByAnchor: map,
       }),
     );
-    // The escalated reply shows the shared task card (result summary), not the
-    // plain "N 条回复" badge.
+    // The anchored summary reads from the same subthread workflow projection,
+    // not a synthetic generic TaskCard.
     expect(container.querySelector(".chat-reply-badge")).toBeNull();
-    const card = container.querySelector(".chat-reply-task .task-card");
+    const card = container.querySelector(".chat-thread-summary");
     expect(card).not.toBeNull();
-    expect(container.querySelector(".task-card-title")?.textContent).toBe(
-      "重构路由",
-    );
-    expect(container.textContent).toContain("已完成");
-    expect(container.textContent).toContain("已合并到主流");
+    expect(card?.textContent).toContain("重构路由");
+    expect(card?.textContent).toContain("执行中");
+    expect(card?.textContent).toContain("Lead · prt-noel");
   });
 
   it("renders no reply affordance for a message without a subthread", () => {

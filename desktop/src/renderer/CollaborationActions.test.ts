@@ -412,6 +412,24 @@ describe("createCollaborationActions", () => {
     expect(harness.getAppState().activeSessionTabID).toContain("board:");
   });
 
+  it("does not open a task board for a DM", () => {
+    installWuuApi();
+    const harness = buildActions();
+    const before = harness.getAppState().activeSessionTabID;
+
+    harness.actions.openTaskBoardTab(
+      thread("dm-thread", {
+        workspace_kind: "dm",
+        dm_participant_id: "agent-1",
+      }),
+    );
+
+    expect(harness.getAppState().activeSessionTabID).toBe(before);
+    expect(
+      harness.getAppState().sessionTabs.some((tab) => tab.kind === "board"),
+    ).toBe(false);
+  });
+
   it("opens a board task through an existing group tab before opening the subthread", async () => {
     installWuuApi();
     const group = thread("group-thread", { group: true });

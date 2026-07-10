@@ -105,11 +105,9 @@ func TestTaskBoardWakeOnBornOpenEscalate(t *testing.T) {
 	srv, groupID, ada, bea := newTaskWakeFixture(t)
 
 	discussion, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
-		SessionID:    groupID,
-		AnchorItemID: "seq-1",
-		Title:        "改造落地验收",
-		Status:       session.ConversationThreadOpen,
-		CreatedBy:    ada,
+		SessionID: groupID, AnchorItemID: "seq-1", ParentSeq: 1,
+		ParentAuthorParticipantID: ada, ThreadOwnerParticipantID: ada,
+		Title: "改造落地验收", CreatedBy: humanReactionParticipantID,
 	})
 	if err != nil {
 		t.Fatalf("CreateConversationThread: %v", err)

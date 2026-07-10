@@ -3,6 +3,7 @@ package session
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,6 +57,54 @@ func TestThreadMembersCRUD(t *testing.T) {
 	}
 	if _, err := ListThreadMembers(dir, "missing-thread"); !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("ListThreadMembers missing thread = %v, want ErrSessionNotFound", err)
+	}
+}
+
+func TestRemoveThreadMemberProtectsThreadOwnerAndTaskLead(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "group", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetGroupThread(dir, "group", true); err != nil {
+		t.Fatal(err)
+	}
+	owner := participant.Participant{ID: "prt-owner", Kind: participant.KindNamed, Name: "Owner"}
+	if err := UpsertParticipant(dir, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddThreadMember(dir, "group", owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	cth, err := CreateConversationThread(dir, ConversationThread{
+		SessionID: "group", AnchorItemID: "message-1", ParentSeq: 1,
+		ParentAuthorParticipantID: owner.ID, ThreadOwnerParticipantID: owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveThreadMember(dir, "group", owner.ID); err == nil || !strings.Contains(err.Error(), "owns open Thread") {
+		t.Fatalf("open Thread owner removal = %v, want authority refusal", err)
+	}
+	if err := RemoveConversationThreadMember(dir, cth.ID, owner.ID); err == nil || !strings.Contains(err.Error(), "owns open Thread") {
+		t.Fatalf("open Thread owner subset removal = %v, want authority refusal", err)
+	}
+	if _, err := EscalateConversationThread(dir, cth.ID, "human", "Ship"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveThreadMember(dir, "group", owner.ID); err == nil || !strings.Contains(err.Error(), "leads active Task") {
+		t.Fatalf("active Task lead removal = %v, want authority refusal", err)
+	}
+	if err := RemoveConversationThreadMember(dir, cth.ID, owner.ID); err == nil || !strings.Contains(err.Error(), "leads active Task") {
+		t.Fatalf("active Task lead subset removal = %v, want authority refusal", err)
+	}
+	if _, err := ConcludeConversationThread(dir, cth.ID, owner.ID, "done"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveThreadMember(dir, "group", owner.ID); err != nil {
+		t.Fatalf("resolved Task lead should be removable: %v", err)
+	}
+	if err := UpdateConversationThreadStatus(dir, cth.ID, ConversationThreadOpen); err == nil || !strings.Contains(err.Error(), "cannot be reopened") {
+		t.Fatalf("resolved Task reopen = %v, want terminal-state refusal", err)
 	}
 }
 

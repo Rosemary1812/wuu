@@ -395,6 +395,43 @@ img.chat-reaction-glyph {
   align-self: stretch;
   min-width: 0;
 }
+.chat-thread-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+button.chat-thread-summary {
+  cursor: pointer;
+}
+button.chat-thread-summary:hover {
+  background: var(--ink-overlay-4);
+}
+.chat-thread-summary-state {
+  border-radius: var(--radius-pill);
+  padding: 1px 7px;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--accent);
+  font-size: var(--font-xs);
+}
+.chat-thread-summary-title {
+  overflow: hidden;
+  font-size: var(--font-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-thread-summary-owner {
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+}
 /* Hover toolbar floating just above a chat bubble (贴表情 + 回复). Reuses the
    menu surface tokens so it reads as part of the same app. Positioned with
    `bottom: calc(100% - 4px)` so it sits just above the bubble, overlapping the
@@ -571,6 +608,110 @@ img.chat-reaction-glyph {
   height: 16px;
   margin: 0 3px;
   background: var(--menu-border);
+}
+
+.thread-owner-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--canvas) 42%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.thread-owner-dialog {
+  width: min(380px, 100%);
+  max-height: min(520px, 80vh);
+  overflow: auto;
+  border: 1px solid var(--menu-border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+}
+
+.thread-owner-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.thread-owner-dialog h2,
+.thread-owner-dialog p {
+  margin: 0;
+}
+
+.thread-owner-dialog h2 {
+  font-size: var(--font-ui);
+}
+
+.thread-owner-dialog header p,
+.thread-owner-dialog-empty {
+  margin-top: 4px;
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  line-height: 1.5;
+}
+
+.thread-owner-dialog header > button {
+  display: grid;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.thread-owner-dialog-options {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.thread-owner-dialog-options > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.thread-owner-dialog-options > button:hover,
+.thread-owner-dialog-options > button:focus-visible {
+  background: var(--menu-hover);
+}
+
+.thread-owner-dialog-options svg,
+.thread-owner-dialog-options canvas {
+  width: 28px;
+  height: 28px;
+}
+
+.thread-owner-dialog-options button > span {
+  display: grid;
+  gap: 2px;
+}
+
+.thread-owner-dialog-options strong {
+  font-size: var(--font-sm);
+}
+
+.thread-owner-dialog-options small {
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
 }
 
 @media (prefers-reduced-motion: reduce) {

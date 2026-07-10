@@ -1,14 +1,4 @@
-/**
- * Tests for TaskBoardView — the per-group task-board tab. The board is the
- * only place anchorless (standalone) tasks are visible in the GUI and renders
- * each task's owner; only status "task" rows appear (an agent's conclusion
- * filing completes the task, so there is no acceptance queue).
- * Render-harness pattern mirroring ConversationSubthreadPanel.test.tsx, plus
- * a window.wuu stub for listConversationSubthreads (SettingsView.test.tsx
- * pattern).
- */
-import { act } from "react";
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ConversationSubthread, WuuDesktopApi } from "../shared/protocol";
@@ -17,23 +7,9 @@ import { TaskBoardView } from "./TaskBoardView";
 let mountedRoots: Root[] = [];
 let mountedContainers: HTMLElement[] = [];
 
-async function mount(element: React.ReactElement): Promise<HTMLElement> {
-  const container = document.createElement("div");
-  document.body.appendChild(container);
-  const root = createRoot(container);
-  await act(async () => {
-    root.render(element);
-  });
-  mountedRoots.push(root);
-  mountedContainers.push(container);
-  return container;
-}
-
 afterEach(() => {
   for (const root of mountedRoots) {
-    act(() => {
-      root.unmount();
-    });
+    act(() => root.unmount());
   }
   for (const container of mountedContainers) {
     container.remove();
@@ -41,6 +17,7 @@ afterEach(() => {
   mountedRoots = [];
   mountedContainers = [];
   delete (globalThis as { wuu?: WuuDesktopApi }).wuu;
+  vi.restoreAllMocks();
 });
 
 function subthread(
@@ -49,100 +26,197 @@ function subthread(
   return {
     id: "cth-x",
     thread_id: "group-1",
-    anchor_item_id: "",
+    anchor_item_id: "item-1",
     status: "task",
     created_at: "2026-07-06T10:00:00Z",
     reply_count: 0,
+    thread_owner_participant_id: "prt-ada",
+    lead_participant_id: "prt-ada",
     ...overrides,
   };
 }
 
-function stubListSubthreads(subthreads: ConversationSubthread[]): void {
-  const stub = {
-    listConversationSubthreads: vi.fn().mockResolvedValue({ subthreads }),
-  };
-  (globalThis as { wuu?: WuuDesktopApi }).wuu = stub as unknown as WuuDesktopApi;
+function installListStub(
+  implementation: WuuDesktopApi["listConversationSubthreads"],
+): void {
+  const stub = { listConversationSubthreads: vi.fn(implementation) };
+  (globalThis as { wuu?: WuuDesktopApi }).wuu =
+    stub as unknown as WuuDesktopApi;
   (window as { wuu?: WuuDesktopApi }).wuu = stub as unknown as WuuDesktopApi;
 }
 
-describe("TaskBoardView", () => {
-  it("renders anchorless standalone tasks with owner", async () => {
-    stubListSubthreads([
-      // Standalone (no anchor message) — invisible in the chat view; the
-      // board is its only GUI surface.
-      subthread({
-        id: "cth-standalone",
-        title: "整理演练记录",
-        status: "task",
-        owner_participant_id: "prt-ada",
-        created_at: "2026-07-06T11:00:00Z",
-      }),
-      subthread({
-        id: "cth-second",
-        title: "修复登录抖动",
-        status: "task",
-        owner_participant_id: "prt-bea",
-        anchor_item_id: "item-9",
-        created_at: "2026-07-06T12:00:00Z",
-      }),
-      // Resolved/open subthreads are not board rows.
-      subthread({ id: "cth-done", title: "旧任务", status: "resolved" }),
-      subthread({ id: "cth-open", title: "闲聊讨论", status: "open" }),
-    ]);
-    const container = await mount(
+async function mountBoard(
+  props: Partial<React.ComponentProps<typeof TaskBoardView>> = {},
+): Promise<{ container: HTMLElement; root: Root }> {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(
       createElement(TaskBoardView, {
         threadID: "group-1",
-        title: "任务 · 发布小组",
         refreshToken: 0,
-        resolveParticipantName: (id: string) =>
-          ({ "prt-ada": "Ada", "prt-bea": "Bea" })[id],
         onOpenTask: () => {},
+        ...props,
       }),
     );
+  });
+  mountedRoots.push(root);
+  mountedContainers.push(container);
+  return { container, root };
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+describe("TaskBoardView", () => {
+  it("projects lead, execution state, progress, active workers, and completed Tasks", async () => {
+    installListStub(async () => ({
+      subthreads: [
+        subthread({
+          id: "cth-running",
+          title: "修复登录抖动",
+          exec_state: "executing",
+          plan: [
+            { id: "one", title: "定位", status: "done", assignee: "prt-bea" },
+            { id: "two", title: "修复", status: "active", assignee: "prt-cai" },
+          ],
+        }),
+        subthread({
+          id: "cth-done",
+          title: "整理演练记录",
+          status: "resolved",
+          exec_state: "completed",
+          task: { id: "task-done", status: "completed" },
+        }),
+        subthread({
+          id: "cth-open",
+          title: "闲聊讨论",
+          status: "open",
+          lead_participant_id: undefined,
+          exec_state: undefined,
+          task: undefined,
+        }),
+      ],
+    }));
+    const { container } = await mountBoard({
+      title: "任务 · 发布小组",
+      resolveParticipantName: (id: string) =>
+        ({ "prt-ada": "Ada", "prt-bea": "Bea", "prt-cai": "Cai" })[id],
+    });
 
     const rows = Array.from(
       container.querySelectorAll<HTMLButtonElement>(".task-board-row"),
     );
-    expect(rows.map((row) => row.textContent)).toHaveLength(2);
-    expect(rows[0]?.textContent).toContain("整理演练记录");
-    expect(rows[0]?.textContent).toContain("Ada 认领");
-    expect(rows[1]?.textContent).toContain("修复登录抖动");
-    expect(rows[1]?.textContent).toContain("Bea 认领");
-    expect(container.textContent).toContain("2 进行中");
-    expect(container.textContent).not.toContain("旧任务");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain("修复登录抖动");
+    expect(rows[0]?.textContent).toContain("Lead · Ada");
+    expect(rows[0]?.textContent).toContain("执行中");
+    expect(rows[0]?.textContent).toContain("1/2 完成");
+    expect(rows[0]?.textContent).toContain("执行 · Cai");
+    expect(rows[1]?.textContent).toContain("整理演练记录");
+    expect(rows[1]?.textContent).toContain("已完成");
+    expect(container.textContent).toContain("1 进行中 · 1 已完成");
+    expect(container.textContent).not.toContain("认领");
+    expect(container.textContent).not.toContain("无人认领");
     expect(container.textContent).not.toContain("闲聊讨论");
   });
 
-  it("marks unclaimed tasks and opens a task on row click", async () => {
-    stubListSubthreads([
-      subthread({ id: "cth-unclaimed", title: "无人认领的活", status: "task" }),
-    ]);
+  it("opens the same Task Thread from its board row", async () => {
+    installListStub(async () => ({
+      subthreads: [subthread({ id: "cth-task", title: "验证发布" })],
+    }));
     const onOpenTask = vi.fn();
-    const container = await mount(
-      createElement(TaskBoardView, {
-        threadID: "group-1",
-        refreshToken: 0,
-        onOpenTask,
-      }),
-    );
+    const { container } = await mountBoard({ onOpenTask });
 
-    const row = container.querySelector<HTMLButtonElement>(".task-board-row");
-    expect(row?.textContent).toContain("无人认领");
-    await act(async () => {
-      row?.click();
+    act(() => {
+      container.querySelector<HTMLButtonElement>(".task-board-row")!.click();
     });
-    expect(onOpenTask).toHaveBeenCalledWith("cth-unclaimed");
+    expect(onOpenTask).toHaveBeenCalledWith("cth-task");
   });
 
-  it("shows the empty state when the board has no tasks", async () => {
-    stubListSubthreads([subthread({ id: "cth-open", status: "open" })]);
-    const container = await mount(
-      createElement(TaskBoardView, {
-        threadID: "group-1",
-        refreshToken: 0,
-        onOpenTask: () => {},
-      }),
+  it("shows the new empty state when the group has no escalated Tasks", async () => {
+    installListStub(async () => ({
+      subthreads: [
+        subthread({
+          id: "cth-open",
+          status: "open",
+          lead_participant_id: undefined,
+          exec_state: undefined,
+          task: undefined,
+        }),
+      ],
+    }));
+    const { container } = await mountBoard();
+    expect(container.textContent).toContain("还没有 Task");
+  });
+
+  it("clears the previous group and ignores a slower response after thread switch", async () => {
+    const groupA = deferred<{ subthreads: ConversationSubthread[] }>();
+    const groupB = deferred<{ subthreads: ConversationSubthread[] }>();
+    installListStub((threadID) =>
+      threadID === "group-a" ? groupA.promise : groupB.promise,
     );
-    expect(container.textContent).toContain("板上没有任务");
+    const { container, root } = await mountBoard({ threadID: "group-a" });
+
+    await act(async () => {
+      root.render(
+        createElement(TaskBoardView, {
+          threadID: "group-b",
+          refreshToken: 0,
+          onOpenTask: () => {},
+        }),
+      );
+    });
+    expect(container.textContent).toContain("加载任务");
+    await act(async () => {
+      groupB.resolve({
+        subthreads: [subthread({ id: "b", title: "Group B Task" })],
+      });
+    });
+    expect(container.textContent).toContain("Group B Task");
+    await act(async () => {
+      groupA.resolve({
+        subthreads: [subthread({ id: "a", title: "Stale Group A Task" })],
+      });
+    });
+    expect(container.textContent).toContain("Group B Task");
+    expect(container.textContent).not.toContain("Stale Group A Task");
+  });
+
+  it("does not leave stale rows visible when a refresh fails", async () => {
+    let calls = 0;
+    installListStub(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          subthreads: [subthread({ id: "old", title: "Old Task" })],
+        };
+      }
+      throw new Error("offline");
+    });
+    const { container, root } = await mountBoard();
+    expect(container.textContent).toContain("Old Task");
+
+    await act(async () => {
+      root.render(
+        createElement(TaskBoardView, {
+          threadID: "group-1",
+          refreshToken: 1,
+          onOpenTask: () => {},
+        }),
+      );
+    });
+
+    expect(container.textContent).toContain("offline");
+    expect(container.textContent).not.toContain("Old Task");
   });
 });

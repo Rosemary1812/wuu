@@ -56,7 +56,12 @@ export type CachedConversationPanesProps = {
   onForkMessage: (thread: Thread, turnID: string, itemID: string) => void;
   onOpenFile?: (path: string) => void;
   onOpenAgent: (agent: Agent) => void;
-  onOpenSubthread: (thread: Thread, item: ThreadItem) => void;
+  onOpenSubthread: (
+    thread: Thread,
+    item: ThreadItem,
+    threadOwnerParticipantID?: string,
+    existingSubthreadID?: string,
+  ) => void;
   onReact: (thread: Thread, item: ThreadItem, reaction: string) => void;
   onEditMessage: (thread: Thread, turnID: string, item: ThreadItem) => void;
   onCancelEditMessage: () => void;
@@ -160,7 +165,8 @@ export const CachedConversationPanes = memo(function CachedConversationPanes({
           thread.worktree && thread.forked_from_id ? (
             <ForkWorktreeNotice thread={thread} />
           ) : null;
-        const isChatStyleThread = isDMThread(thread) || isGroupThread(thread);
+        const isGroupChat = isGroupThread(thread);
+        const isChatStyleThread = isDMThread(thread) || isGroupChat;
         return (
           <div
             key={threadID}
@@ -182,12 +188,23 @@ export const CachedConversationPanes = memo(function CachedConversationPanes({
                   busyParticipantIDs={busyParticipantIDs}
                   resolveParticipantName={resolveParticipantName}
                   readerCount={chatReaderCountForThread(thread, chatReaderCount)}
+                  threadOwnerCandidates={isGroupChat ? thread.members : undefined}
                   subthreadsByAnchor={
-                    threadID === subthreadsThreadID
+                    isGroupChat && threadID === subthreadsThreadID
                       ? subthreadsByAnchor
                       : undefined
                   }
-                  onOpenSubthread={(item) => onOpenSubthread(thread, item)}
+                  onOpenSubthread={
+                    isGroupChat
+                      ? (item, ownerID, existingSubthreadID) =>
+                          onOpenSubthread(
+                            thread,
+                            item,
+                            ownerID,
+                            existingSubthreadID,
+                          )
+                      : undefined
+                  }
                   onReact={(item, reaction) => onReact(thread, item, reaction)}
                   pendingMessages={
                     pendingComposerMessagesForThreadSnapshot(
@@ -233,7 +250,6 @@ export const CachedConversationPanes = memo(function CachedConversationPanes({
                           void onOpenAgent(agent);
                         }
                       }}
-                      onOpenSubthread={(item) => onOpenSubthread(thread, item)}
                       latestAgentMessageID={threadLatestAgentMessageID}
                       isLatestTurn={
                         thread.turns[thread.turns.length - 1]?.id === turn.id

@@ -118,8 +118,8 @@ type HistoryRecord struct {
 	// against (0 = the poster's read cursor was used / not applicable). The
 	// freshness/rebase check holds a post whose basis is stale; persisted here
 	// for audit and task trace.
-	BasisSeq int `json:"basis_seq,omitempty"`
-	EnvelopeMeta      json.RawMessage `json:"envelope_meta,omitempty"`
+	BasisSeq     int             `json:"basis_seq,omitempty"`
+	EnvelopeMeta json.RawMessage `json:"envelope_meta,omitempty"`
 	// FocusMeta is the structured {kind,name,root} metadata for a
 	// workspace-focus declaration item (2026-07-03-workspace-focus.md §3.1).
 	FocusMeta           json.RawMessage `json:"focus_meta,omitempty"`
@@ -822,6 +822,7 @@ func migrateSchema(db *sql.DB) error {
 			status         TEXT NOT NULL,
 			created_by     TEXT NOT NULL DEFAULT '',
 			created_at     TEXT NOT NULL,
+			thread_owner_participant_id TEXT NOT NULL DEFAULT '',
 			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_conversation_threads_session ON conversation_threads(session_id, created_at, id)`,
@@ -1048,9 +1049,18 @@ func migrateSchema(db *sql.DB) error {
 		return err
 	}
 	// lead_participant_id records the single named agent assigned as the task's
-	// lead on escalation. Distinct from escalated_by (human-click provenance);
-	// survives resolve, reassignable on re-escalation.
+	// lead on promotion. Distinct from escalated_by provenance; it survives
+	// resolve for history, and resolved Tasks cannot be reopened.
 	if err := addColumnIfMissing(db, "conversation_threads", "lead_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	// thread_owner_participant_id is the durable owner of the discussion Thread.
+	// On promotion this identity becomes lead_participant_id. It is distinct from
+	// the legacy owner_participant_id work-claim field below. Existing active tasks
+	// preserve their active named lead as owner; open Threads use their active named
+	// parent author. Tasks without a valid lead remain ownerless; they never fall
+	// back to their parent author.
+	if err := addColumnIfMissing(db, "conversation_threads", "thread_owner_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	// owner_participant_id is the task-rail work owner (claim CAS target):
@@ -1074,16 +1084,249 @@ func migrateSchema(db *sql.DB) error {
 	// exact main-stream message it was opened from (T3 Thread-first-class): the
 	// message's seq and its author's participant id ("human" for a user/thread-
 	// owner message). AnchorItemID stays for GUI rendering; these two are the
-	// durable, seq-addressable binding the escalation lead default and the
-	// reply-to-your-own-message refusal key on. Zero/empty when a task was born
-	// standalone (no anchor) or the anchor could not be resolved to a message.
+	// durable, seq-addressable parent binding used to select the Thread owner.
+	// Legacy standalone tasks may leave them empty.
 	if err := addColumnIfMissing(db, "conversation_threads", "parent_seq", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	if err := addColumnIfMissing(db, "conversation_threads", "parent_author_participant_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	if _, err := db.Exec(`
+UPDATE conversation_threads
+SET thread_owner_participant_id = CASE
+	WHEN status = 'task'
+	 AND lead_participant_id <> ''
+	 AND EXISTS (
+		SELECT 1 FROM participants p
+		WHERE p.id = conversation_threads.lead_participant_id
+		  AND p.kind = 'named' AND p.retired_at IS NULL
+	 )
+	 AND EXISTS (
+		SELECT 1 FROM thread_members tm
+		WHERE tm.session_id = conversation_threads.session_id
+		  AND tm.participant_id = conversation_threads.lead_participant_id
+	 )
+	THEN lead_participant_id
+	WHEN status = 'open'
+	 AND parent_author_participant_id <> ''
+	 AND EXISTS (
+		SELECT 1 FROM participants p
+		WHERE p.id = conversation_threads.parent_author_participant_id
+		  AND p.kind = 'named' AND p.retired_at IS NULL
+	 )
+	 AND EXISTS (
+		SELECT 1 FROM thread_members tm
+		WHERE tm.session_id = conversation_threads.session_id
+		  AND tm.participant_id = conversation_threads.parent_author_participant_id
+	 )
+	THEN parent_author_participant_id
+	ELSE ''
+END
+WHERE thread_owner_participant_id = ''
+  AND status IN ('open', 'task')`); err != nil {
+		return fmt.Errorf("migrate conversation thread owners: %w", err)
+	}
+	if err := ensureConversationThreadAnchorUniqueness(db); err != nil {
+		return err
+	}
 	return nil
+}
+
+// ensureConversationThreadAnchorUniqueness repairs the only state that could
+// predate the durable one-message/one-Thread invariant: two rows created for
+// the same rendered parent message by concurrent desktop windows. References
+// and memberships are folded into the most advanced row before the partial
+// unique index is installed, so migration never fixes startup by discarding
+// reachable discussion history.
+func ensureConversationThreadAnchorUniqueness(db *sql.DB) error {
+	var installed int
+	if err := db.QueryRow(`
+SELECT EXISTS(
+	SELECT 1 FROM sqlite_master
+	WHERE type = 'index' AND name = 'idx_conversation_threads_anchor'
+)`).Scan(&installed); err != nil {
+		return fmt.Errorf("check conversation thread anchor index: %w", err)
+	}
+	if installed != 0 {
+		return nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin conversation thread anchor migration: %w", err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`
+SELECT session_id, anchor_item_id
+FROM conversation_threads
+WHERE anchor_item_id <> ''
+GROUP BY session_id, anchor_item_id
+HAVING COUNT(*) > 1`)
+	if err != nil {
+		return fmt.Errorf("list duplicate conversation thread anchors: %w", err)
+	}
+	type anchorKey struct{ sessionID, anchorItemID string }
+	var keys []anchorKey
+	for rows.Next() {
+		var key anchorKey
+		if err := rows.Scan(&key.sessionID, &key.anchorItemID); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan duplicate conversation thread anchor: %w", err)
+		}
+		keys = append(keys, key)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close duplicate conversation thread anchors: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("scan duplicate conversation thread anchors: %w", err)
+	}
+
+	for _, key := range keys {
+		threadRows, err := tx.Query(`
+SELECT id, session_id, anchor_item_id, title, status, created_by, created_at,
+       thread_owner_participant_id, escalated_at, escalated_by, summary,
+       lead_participant_id, owner_participant_id, plan, exec_state, parent_seq,
+       parent_author_participant_id
+FROM conversation_threads
+WHERE session_id = ? AND anchor_item_id = ?
+ORDER BY
+  CASE
+    WHEN status = 'resolved' AND escalated_at <> '' THEN 5
+    WHEN status = 'task' THEN 4
+    WHEN status = 'open' THEN 3
+    WHEN status = 'resolved' THEN 2
+    ELSE 1
+  END DESC,
+  CASE WHEN summary <> '' THEN 1 ELSE 0 END DESC,
+  created_at ASC,
+  id ASC`, key.sessionID, key.anchorItemID)
+		if err != nil {
+			return fmt.Errorf("load duplicate conversation threads: %w", err)
+		}
+		var duplicates []ConversationThread
+		for threadRows.Next() {
+			thread, err := scanConversationThread(threadRows)
+			if err != nil {
+				threadRows.Close()
+				return fmt.Errorf("scan duplicate conversation thread: %w", err)
+			}
+			duplicates = append(duplicates, thread)
+		}
+		if err := threadRows.Close(); err != nil {
+			return fmt.Errorf("close duplicate conversation threads: %w", err)
+		}
+		if err := threadRows.Err(); err != nil {
+			return fmt.Errorf("scan duplicate conversation threads: %w", err)
+		}
+		if len(duplicates) < 2 {
+			continue
+		}
+
+		keeper := duplicates[0]
+		for _, duplicate := range duplicates[1:] {
+			mergeConversationThreadMigrationFields(&keeper, duplicate)
+			if _, err := tx.Exec(`
+INSERT INTO conversation_thread_members (conversation_thread_id, participant_id, joined_at)
+SELECT ?, participant_id, joined_at
+FROM conversation_thread_members
+WHERE conversation_thread_id = ?
+ON CONFLICT(conversation_thread_id, participant_id) DO NOTHING`, keeper.ID, duplicate.ID); err != nil {
+				return fmt.Errorf("merge conversation thread members: %w", err)
+			}
+			if _, err := tx.Exec(`
+UPDATE session_messages
+SET thread_id = ?
+WHERE session_id = ? AND thread_id = ?`, keeper.ID, key.sessionID, duplicate.ID); err != nil {
+				return fmt.Errorf("merge conversation thread messages: %w", err)
+			}
+			var eventOffset int
+			if err := tx.QueryRow(`SELECT COALESCE(MAX(seq), 0) FROM task_events WHERE task_id = ?`, keeper.ID).Scan(&eventOffset); err != nil {
+				return fmt.Errorf("load conversation thread event offset: %w", err)
+			}
+			if _, err := tx.Exec(`
+UPDATE task_events
+SET task_id = ?, seq = seq + ?
+WHERE task_id = ?`, keeper.ID, eventOffset, duplicate.ID); err != nil {
+				return fmt.Errorf("merge conversation thread events: %w", err)
+			}
+			if _, err := tx.Exec(`DELETE FROM conversation_threads WHERE id = ?`, duplicate.ID); err != nil {
+				return fmt.Errorf("remove duplicate conversation thread: %w", err)
+			}
+		}
+		planJSON, err := json.Marshal(keeper.Plan)
+		if err != nil {
+			return fmt.Errorf("marshal merged conversation thread plan: %w", err)
+		}
+		if len(keeper.Plan) == 0 {
+			planJSON = nil
+		}
+		if _, err := tx.Exec(`
+UPDATE conversation_threads
+SET title = ?, created_by = ?, thread_owner_participant_id = ?,
+    escalated_at = ?, escalated_by = ?, summary = ?, lead_participant_id = ?,
+    owner_participant_id = ?, plan = ?, exec_state = ?, parent_seq = ?,
+    parent_author_participant_id = ?
+WHERE id = ?`, keeper.Title, keeper.CreatedBy, keeper.ThreadOwnerParticipantID,
+			timeText(keeper.EscalatedAt), keeper.EscalatedBy, keeper.Summary,
+			keeper.LeadParticipantID, keeper.OwnerParticipantID, string(planJSON),
+			keeper.ExecState, keeper.ParentSeq, keeper.ParentAuthorParticipantID,
+			keeper.ID); err != nil {
+			return fmt.Errorf("persist merged conversation thread: %w", err)
+		}
+	}
+
+	if _, err := tx.Exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_threads_anchor
+ON conversation_threads(session_id, anchor_item_id)
+WHERE anchor_item_id <> ''`); err != nil {
+		return fmt.Errorf("create conversation thread anchor index: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit conversation thread anchor migration: %w", err)
+	}
+	return nil
+}
+
+func mergeConversationThreadMigrationFields(dst *ConversationThread, src ConversationThread) {
+	if dst.Title == "" {
+		dst.Title = src.Title
+	}
+	if dst.CreatedBy == "" {
+		dst.CreatedBy = src.CreatedBy
+	}
+	if dst.ThreadOwnerParticipantID == "" {
+		dst.ThreadOwnerParticipantID = src.ThreadOwnerParticipantID
+	}
+	if dst.EscalatedAt.IsZero() {
+		dst.EscalatedAt = src.EscalatedAt
+	}
+	if dst.EscalatedBy == "" {
+		dst.EscalatedBy = src.EscalatedBy
+	}
+	if dst.Summary == "" {
+		dst.Summary = src.Summary
+	}
+	if dst.LeadParticipantID == "" {
+		dst.LeadParticipantID = src.LeadParticipantID
+	}
+	if dst.OwnerParticipantID == "" {
+		dst.OwnerParticipantID = src.OwnerParticipantID
+	}
+	if len(dst.Plan) == 0 {
+		dst.Plan = src.Plan
+	}
+	if dst.ExecState == "" {
+		dst.ExecState = src.ExecState
+	}
+	if dst.ParentSeq <= 0 {
+		dst.ParentSeq = src.ParentSeq
+	}
+	if dst.ParentAuthorParticipantID == "" {
+		dst.ParentAuthorParticipantID = src.ParentAuthorParticipantID
+	}
 }
 
 func addColumnIfMissing(db *sql.DB, table, column, definition string) error {

@@ -1,22 +1,11 @@
 import { useEffect, useState } from "react";
-import type { ConversationSubthread } from "../shared/protocol";
+import type { ConversationSubthread, TaskPieceView } from "../shared/protocol";
 import { DefaultAvatarMark } from "./DefaultAvatar";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
-/**
- * TaskBoardView 是一个群线程的任务看板 tab(kind: "board"):列出该群全部
- * task 状态的子线程——包括无锚点消息的 standalone 任务,它们在聊天视图里
- * 没有任何挂靠点,这里是人能看到它们的唯一入口(task rail GUI 断点一)。
- * 每行渲染认领人。看板是观测面,不是操作面:状态流转仍走 agent 工具与
- * thread 面板,点行即跳回群聊 tab 打开该 thread。agent 提交结论即完成任务
- * (没有待验收队列);历史库残留的未知状态行按进行中展示。
- */
-
 type TaskBoardViewProps = {
   threadID: string;
-  /** 群名,仅用于标题行;缺省用 threadID 兜底。 */
   title?: string;
-  /** 变化即触发重载——App 在收到 thread/subUpdated 通知时递增。 */
   refreshToken: number;
   resolveParticipantName?: (id: string) => string | undefined;
   onOpenTask: (subthreadID: string) => void;
@@ -24,19 +13,86 @@ type TaskBoardViewProps = {
 
 type BoardData = {
   active: ConversationSubthread[];
+  completed: ConversationSubthread[];
 };
+
+type BoardSnapshot = {
+  requestKey: string;
+  data: BoardData;
+};
+
+type BoardLoadState = {
+  requestKey: string;
+  loading: boolean;
+  error?: string;
+};
+
+const EXEC_STATE_LABEL: Record<string, string> = {
+  planning: "规划中",
+  executing: "执行中",
+  running: "执行中",
+  awaiting_lead: "等待 Lead",
+  blocked: "受阻",
+  needs_human: "需要处理",
+  paused: "已暂停",
+  completed: "已完成",
+  failed: "失败",
+};
+
+function executionLabel(subthread: ConversationSubthread): string {
+  if (subthread.status === "resolved") {
+    return "已完成";
+  }
+  const key = subthread.exec_state?.trim() ?? "";
+  return EXEC_STATE_LABEL[key] ?? (key || "准备中");
+}
+
+function isEscalatedTask(subthread: ConversationSubthread): boolean {
+  return (
+    subthread.status === "task" ||
+    Boolean(
+      subthread.task ||
+        subthread.escalated_by ||
+        subthread.lead_participant_id ||
+        subthread.exec_state,
+    )
+  );
+}
+
+function isCompletedTask(subthread: ConversationSubthread): boolean {
+  return (
+    subthread.status === "resolved" || subthread.exec_state === "completed"
+  );
+}
 
 function splitBoard(subthreads: ConversationSubthread[]): BoardData {
   const active: ConversationSubthread[] = [];
-  for (const sub of subthreads) {
-    if (sub.status === "task") {
-      active.push(sub);
+  const completed: ConversationSubthread[] = [];
+  for (const subthread of subthreads) {
+    if (!isEscalatedTask(subthread)) {
+      continue;
     }
+    (isCompletedTask(subthread) ? completed : active).push(subthread);
   }
-  const byCreatedAt = (a: ConversationSubthread, b: ConversationSubthread) =>
-    Date.parse(a.created_at) - Date.parse(b.created_at);
-  active.sort(byCreatedAt);
-  return { active };
+  const newestFirst = (a: ConversationSubthread, b: ConversationSubthread) =>
+    Date.parse(b.created_at) - Date.parse(a.created_at);
+  active.sort(newestFirst);
+  completed.sort(newestFirst);
+  return { active, completed };
+}
+
+function isCompletedPiece(piece: TaskPieceView): boolean {
+  const state = (piece.state || piece.status || "").trim();
+  return state === "completed" || state === "done" || state === "succeeded";
+}
+
+function isActivePiece(piece: TaskPieceView): boolean {
+  const state = (piece.state || piece.status || "").trim();
+  return (
+    state === "active" ||
+    state === "running" ||
+    state === "retrying"
+  );
 }
 
 export function TaskBoardView({
@@ -46,61 +102,96 @@ export function TaskBoardView({
   resolveParticipantName,
   onOpenTask,
 }: TaskBoardViewProps): JSX.Element {
-  const [board, setBoard] = useState<BoardData | undefined>();
-  const [error, setError] = useState<string | undefined>();
+  const requestKey = `${threadID}:${refreshToken}`;
+  const [snapshot, setSnapshot] = useState<BoardSnapshot>();
+  const [loadState, setLoadState] = useState<BoardLoadState>({
+    requestKey,
+    loading: true,
+  });
+  const board = snapshot?.requestKey === requestKey ? snapshot.data : undefined;
+  const loading =
+    loadState.requestKey !== requestKey || loadState.loading;
+  const error =
+    loadState.requestKey === requestKey ? loadState.error : undefined;
 
   useEffect(() => {
     let cancelled = false;
+    setSnapshot(undefined);
+    setLoadState({ requestKey, loading: true });
     void (async () => {
       try {
         const result = await window.wuu.listConversationSubthreads(threadID);
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          setSnapshot({
+            requestKey,
+            data: splitBoard(result.subthreads ?? []),
+          });
+          setLoadState({ requestKey, loading: false });
         }
-        setBoard(splitBoard(result.subthreads ?? []));
-        setError(undefined);
       } catch (err) {
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          setLoadState({
+            requestKey,
+            loading: false,
+            error: desktopApiErrorMessage(err, "无法加载任务列表"),
+          });
         }
-        setError(desktopApiErrorMessage(err, "无法加载任务列表"));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [threadID, refreshToken]);
+  }, [requestKey, threadID]);
 
-  const ownerName = (sub: ConversationSubthread): string | undefined => {
-    const id = sub.owner_participant_id?.trim();
-    if (!id) {
-      return undefined;
-    }
-    return resolveParticipantName?.(id) ?? id;
-  };
+  const participantName = (id: string): string =>
+    resolveParticipantName?.(id) ?? id;
 
-  const renderRow = (sub: ConversationSubthread): JSX.Element => {
-    const owner = ownerName(sub);
+  const renderRow = (subthread: ConversationSubthread): JSX.Element => {
+    const leadID =
+      subthread.lead_participant_id?.trim() ||
+      subthread.thread_owner_participant_id?.trim() ||
+      "";
+    const lead = leadID ? participantName(leadID) : "Lead 待同步";
+    const plan = subthread.plan ?? [];
+    const completedCount = plan.filter(isCompletedPiece).length;
+    const activeWorkers = [
+      ...new Set(
+        plan
+          .filter(isActivePiece)
+          .flatMap((piece) => (piece.assignee ? [participantName(piece.assignee)] : [])),
+      ),
+    ];
     return (
-      <li key={sub.id}>
+      <li key={subthread.id}>
         <button
           type="button"
           className="task-board-row"
-          onClick={() => onOpenTask(sub.id)}
+          onClick={() => onOpenTask(subthread.id)}
         >
-          <span className="task-board-row-owner">
-            {sub.owner_participant_id ? (
-              <DefaultAvatarMark seed={sub.owner_participant_id} />
-            ) : (
-              <span className="task-board-row-unclaimed-mark" aria-hidden="true" />
-            )}
-          </span>
+          {leadID ? (
+            <span className="task-board-row-lead-avatar">
+              <DefaultAvatarMark seed={leadID} />
+            </span>
+          ) : null}
           <span className="task-board-row-main">
-            <span className="task-board-row-title">
-              {sub.title?.trim() || "未命名任务"}
+            <span className="task-board-row-heading">
+              <span className="task-board-row-title">
+                {subthread.title?.trim() || "未命名任务"}
+              </span>
+              <span className="task-board-row-state">
+                {executionLabel(subthread)}
+              </span>
             </span>
             <span className="task-board-row-meta">
-              {owner ? `${owner} 认领` : "无人认领"}
+              <span>Lead · {lead}</span>
+              {plan.length > 0 ? (
+                <span>
+                  {completedCount}/{plan.length} 完成
+                </span>
+              ) : null}
+              {activeWorkers.length > 0 ? (
+                <span>执行 · {activeWorkers.join("、")}</span>
+              ) : null}
             </span>
           </span>
         </button>
@@ -108,7 +199,7 @@ export function TaskBoardView({
     );
   };
 
-  const empty = board && board.active.length === 0;
+  const empty = board && board.active.length === 0 && board.completed.length === 0;
 
   return (
     <div className="task-board" aria-label="任务看板">
@@ -116,21 +207,31 @@ export function TaskBoardView({
         <h2>{title?.trim() || threadID}</h2>
         {board ? (
           <span className="task-board-header-meta">
-            {`${board.active.length} 进行中`}
+            {board.active.length} 进行中 · {board.completed.length} 已完成
           </span>
         ) : null}
       </header>
-      {error ? <div className="task-board-error">{error}</div> : null}
+      {loading ? (
+        <div className="task-board-loading" role="status">加载任务…</div>
+      ) : null}
+      {error ? (
+        <div className="task-board-error" role="alert">{error}</div>
+      ) : null}
       {empty ? (
         <div className="task-board-empty">
-          板上没有任务。让群里的 agent 拆活,或在消息的 thread 里「升级为
-          Task」,任务就会出现在这里。
+          还没有 Task。从群聊消息开启 Thread，收敛后升级的 Task 会出现在这里。
         </div>
       ) : null}
       {board && board.active.length > 0 ? (
         <section className="task-board-section">
           <h3>进行中</h3>
           <ul className="task-board-list">{board.active.map(renderRow)}</ul>
+        </section>
+      ) : null}
+      {board && board.completed.length > 0 ? (
+        <section className="task-board-section">
+          <h3>已完成</h3>
+          <ul className="task-board-list">{board.completed.map(renderRow)}</ul>
         </section>
       ) : null}
     </div>

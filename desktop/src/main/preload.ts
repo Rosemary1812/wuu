@@ -190,12 +190,6 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:thread-resolve-sub", threadId, subthreadId, resolved),
   escalateConversationSubthread: (threadId: string, subthreadId: string, options) =>
     ipcRenderer.invoke("wuu:thread-escalate-sub", threadId, subthreadId, options),
-  bubbleConversationSubthread: (
-    threadId: string,
-    subthreadId: string,
-    summary: string,
-    options,
-  ) => ipcRenderer.invoke("wuu:thread-bubble-sub", threadId, subthreadId, summary, options),
   postSubthreadMessage: (
     threadId: string,
     subthreadId: string,

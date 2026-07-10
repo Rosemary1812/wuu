@@ -39,7 +39,6 @@ func TestOpenSubthreadStoresParentBinding(t *testing.T) {
 		ThreadID:     groupID,
 		AnchorItemID: anchorItemID,
 		Title:        "converge on Andy's proposal",
-		CreatedBy:    "user",
 	})
 	if err != nil {
 		t.Fatalf("openConversationSubthread: %v", err)
@@ -49,6 +48,12 @@ func TestOpenSubthreadStoresParentBinding(t *testing.T) {
 	}
 	if cth.ParentAuthorParticipantID != andy {
 		t.Fatalf("cth parent_author = %q, want the anchored message author %q", cth.ParentAuthorParticipantID, andy)
+	}
+	if cth.ThreadOwnerParticipantID != andy {
+		t.Fatalf("cth owner = %q, want anchored named author %q", cth.ThreadOwnerParticipantID, andy)
+	}
+	if cth.CreatedBy != humanReactionParticipantID {
+		t.Fatalf("cth created_by = %q, want human provenance", cth.CreatedBy)
 	}
 	// Persisted, not just returned.
 	got, err := session.FindConversationThreadByID(srv.rt.SessionDir, cth.ID)
@@ -60,11 +65,64 @@ func TestOpenSubthreadStoresParentBinding(t *testing.T) {
 	}
 }
 
-// You cannot open a reply thread on your own message: openConversationSubthread
-// is the human's action, and a user/thread-owner message resolves to the "human"
-// author — refused loudly (T3).
-func TestOpenSubthreadOnOwnHumanMessageRefused(t *testing.T) {
+func TestOpenSubthreadRejectsNonMessageAnchor(t *testing.T) {
 	srv, groupID, _, _, _, _ := planFixture(t)
+	if _, err := session.AppendHistoryRecordReturningSeq(srv.rt.SessionDir, groupID, session.HistoryRecord{
+		Role: "user", Content: "start turn", At: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.AppendHistoryRecordReturningSeq(srv.rt.SessionDir, groupID, session.HistoryRecord{
+		Role: "assistant", Content: "internal assistant output", At: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	records, err := loadPersistedMessages(srv.rt.SessionDir, groupID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turns := turnsFromPersistedHistoryInScope(
+		groupID, "", records, time.Now().UTC(), srv.resolveParticipantSummary,
+	)
+	var item ThreadItem
+	for _, turn := range turns {
+		for _, candidate := range turn.Items {
+			if candidate.Type == ThreadItemAgentMessage {
+				item = candidate
+			}
+		}
+	}
+	if item.ID == "" {
+		t.Fatalf("fixture rendered no agent message: %+v", turns)
+	}
+	_, err = srv.openConversationSubthread(ThreadOpenSubParams{
+		ThreadID: groupID, AnchorItemID: item.ID,
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not resolve to a visible main-stream message") {
+		t.Fatalf("non-message anchor must be rejected, got %v", err)
+	}
+}
+
+func TestOpenSubthreadRejectsNamedParentAfterLeavingGroup(t *testing.T) {
+	srv, groupID, andy, _, _, _ := planFixture(t)
+	_, anchorItemID := appendMainStreamAgentMessage(t, srv, groupID, andy, "离组前的消息")
+	if err := session.RemoveThreadMember(srv.rt.SessionDir, groupID, andy); err != nil {
+		t.Fatalf("RemoveThreadMember: %v", err)
+	}
+
+	_, err := srv.openConversationSubthread(ThreadOpenSubParams{
+		ThreadID:     groupID,
+		AnchorItemID: anchorItemID,
+	})
+	if err == nil || !strings.Contains(err.Error(), "not a member") {
+		t.Fatalf("departed named parent must be rejected, got %v", err)
+	}
+}
+
+// A human-authored parent has no implied named owner. Opening requires an
+// explicit active named group member, which becomes the reply owner.
+func TestOpenSubthreadOnHumanMessageRequiresExplicitOwner(t *testing.T) {
+	srv, groupID, andy, _, _, _ := planFixture(t)
 
 	seq, err := session.AppendHistoryRecordReturningSeq(srv.rt.SessionDir, groupID, session.HistoryRecord{
 		Role: "user", Content: "我的问题在这里", At: time.Now().UTC(),
@@ -80,12 +138,11 @@ func TestOpenSubthreadOnOwnHumanMessageRefused(t *testing.T) {
 	_, err = srv.openConversationSubthread(ThreadOpenSubParams{
 		ThreadID:     groupID,
 		AnchorItemID: anchorItemID,
-		CreatedBy:    "user",
 	})
-	if err == nil || !strings.Contains(err.Error(), "your own message") {
-		t.Fatalf("opening a reply on the human's own message must be refused, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "thread_owner_participant_id is required") {
+		t.Fatalf("human parent without explicit owner must be refused, got %v", err)
 	}
-	// The refusal must not leak a subthread.
+
 	threads, err := session.ListConversationThreads(srv.rt.SessionDir, groupID)
 	if err != nil {
 		t.Fatalf("ListConversationThreads: %v", err)
@@ -93,11 +150,22 @@ func TestOpenSubthreadOnOwnHumanMessageRefused(t *testing.T) {
 	if len(threads) != 0 {
 		t.Fatalf("refused open leaked %d subthread(s)", len(threads))
 	}
+
+	cth, err := srv.openConversationSubthread(ThreadOpenSubParams{
+		ThreadID:                 groupID,
+		AnchorItemID:             anchorItemID,
+		ThreadOwnerParticipantID: andy,
+	})
+	if err != nil {
+		t.Fatalf("open human-parent thread with explicit owner: %v", err)
+	}
+	if cth.ThreadOwnerParticipantID != andy || cth.ParentAuthorParticipantID != humanReactionParticipantID {
+		t.Fatalf("unexpected human-parent binding: %+v", cth)
+	}
 }
 
-// Agent escalate defaults the task lead to the parent message author when that
-// author is a named agent (T3 point 5): the person whose message spawned the
-// discussion leads the task it became.
+// A named agent may promote only a reply it owns. Promotion keeps the same
+// thread and makes that owner the task lead.
 func TestEscalateTaskLeadIsParentAuthorNamedAgent(t *testing.T) {
 	srv, groupID, andy, mia, _, _ := planFixture(t)
 
@@ -105,7 +173,6 @@ func TestEscalateTaskLeadIsParentAuthorNamedAgent(t *testing.T) {
 	cth, err := srv.openConversationSubthread(ThreadOpenSubParams{
 		ThreadID:     groupID,
 		AnchorItemID: anchorItemID,
-		CreatedBy:    "user",
 	})
 	if err != nil {
 		t.Fatalf("openConversationSubthread: %v", err)
@@ -114,10 +181,11 @@ func TestEscalateTaskLeadIsParentAuthorNamedAgent(t *testing.T) {
 		t.Fatalf("fresh reply status = %q, want open", cth.Status)
 	}
 
-	// Mia (not the parent author) escalates. The lead defaults to Andy, the
-	// author of the message the reply hangs off of.
-	if _, err := srv.residentTaskManager(mia).EscalateTask(context.Background(), cth.ID, "", false); err != nil {
-		t.Fatalf("EscalateTask: %v", err)
+	if _, err := srv.residentTaskManager(mia).EscalateTask(context.Background(), cth.ID, "", false); err == nil || !strings.Contains(err.Error(), "only its owner may promote") {
+		t.Fatalf("non-owner promotion must be refused, got %v", err)
+	}
+	if _, err := srv.residentTaskManager(andy).EscalateTask(context.Background(), cth.ID, "", false); err != nil {
+		t.Fatalf("owner EscalateTask: %v", err)
 	}
 	got, err := session.FindConversationThreadByID(srv.rt.SessionDir, cth.ID)
 	if err != nil {
@@ -128,21 +196,28 @@ func TestEscalateTaskLeadIsParentAuthorNamedAgent(t *testing.T) {
 	}
 }
 
-// When the parent message author is the human (or otherwise not a named agent),
-// escalation leaves the lead empty — the first planner claims it (T3/T6).
-func TestEscalateTaskLeaderlessWhenParentAuthorIsHuman(t *testing.T) {
+// A human-authored parent uses its explicitly selected named owner as the task
+// lead when that owner promotes it.
+func TestEscalateHumanParentTaskUsesExplicitOwnerAsLead(t *testing.T) {
 	srv, groupID, _, mia, _, _ := planFixture(t)
 
-	// A reply bound to a human-authored parent (parent author == "human").
-	cth, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
-		SessionID:                 groupID,
-		AnchorItemID:              "grp-anchor-human",
-		Title:                     "converge on the human's ask",
-		Status:                    session.ConversationThreadOpen,
-		ParentAuthorParticipantID: humanReactionParticipantID,
+	seq, err := session.AppendHistoryRecordReturningSeq(srv.rt.SessionDir, groupID, session.HistoryRecord{
+		Role: "user", Content: "请收敛这个问题", At: time.Now().UTC(),
 	})
 	if err != nil {
-		t.Fatalf("CreateConversationThread: %v", err)
+		t.Fatalf("append user message: %v", err)
+	}
+	anchorItemID, err := srv.mainStreamItemIDForSeq(groupID, seq)
+	if err != nil {
+		t.Fatalf("resolve anchor item id: %v", err)
+	}
+	cth, err := srv.openConversationSubthread(ThreadOpenSubParams{
+		ThreadID:                 groupID,
+		AnchorItemID:             anchorItemID,
+		ThreadOwnerParticipantID: mia,
+	})
+	if err != nil {
+		t.Fatalf("openConversationSubthread: %v", err)
 	}
 
 	if _, err := srv.residentTaskManager(mia).EscalateTask(context.Background(), cth.ID, "", false); err != nil {
@@ -152,44 +227,39 @@ func TestEscalateTaskLeaderlessWhenParentAuthorIsHuman(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindConversationThreadByID: %v", err)
 	}
-	if strings.TrimSpace(got.LeadParticipantID) != "" {
-		t.Fatalf("escalated task lead = %q, want empty (human parent author grants no lead)", got.LeadParticipantID)
+	if got.LeadParticipantID != mia {
+		t.Fatalf("escalated task lead = %q, want explicit owner %q", got.LeadParticipantID, mia)
 	}
 }
 
-// You cannot escalate a reply on your own message: the escalating agent being
-// the parent message author is refused (T3, the initiator == parent author
-// path).
-func TestEscalateTaskOnOwnMessageRefused(t *testing.T) {
+// The owner is expected to promote the reply anchored to their message.
+func TestEscalateTaskOwnerMayPromoteOwnThread(t *testing.T) {
 	srv, groupID, andy, _, _, _ := planFixture(t)
 
-	cth, err := session.CreateConversationThread(srv.rt.SessionDir, session.ConversationThread{
-		SessionID:                 groupID,
-		AnchorItemID:              "grp-anchor-andy",
-		Title:                     "reply on Andy's own message",
-		Status:                    session.ConversationThreadOpen,
-		ParentAuthorParticipantID: andy,
+	_, anchorItemID := appendMainStreamAgentMessage(t, srv, groupID, andy, "我来负责这个 thread")
+	cth, err := srv.openConversationSubthread(ThreadOpenSubParams{
+		ThreadID:     groupID,
+		AnchorItemID: anchorItemID,
 	})
 	if err != nil {
-		t.Fatalf("CreateConversationThread: %v", err)
+		t.Fatalf("openConversationSubthread: %v", err)
 	}
 
-	if _, err := srv.residentTaskManager(andy).EscalateTask(context.Background(), cth.ID, "", false); err == nil || !strings.Contains(err.Error(), "your own message") {
-		t.Fatalf("escalating a reply on your own message must be refused, got %v", err)
+	if _, err := srv.residentTaskManager(andy).EscalateTask(context.Background(), cth.ID, "", false); err != nil {
+		t.Fatalf("owner promotion failed: %v", err)
 	}
-	// Still open — the refusal did not promote it.
 	got, err := session.FindConversationThreadByID(srv.rt.SessionDir, cth.ID)
 	if err != nil {
 		t.Fatalf("FindConversationThreadByID: %v", err)
 	}
-	if got.Status != session.ConversationThreadOpen {
-		t.Fatalf("refused escalate changed status to %q, want it left open", got.Status)
+	if got.Status != session.ConversationThreadTask || got.LeadParticipantID != andy {
+		t.Fatalf("owner promotion produced unexpected task: %+v", got)
 	}
 }
 
-// The human escalate RPC defaults the lead to the parent message author too
-// (T3 point 5): no picked lead + a named parent author => that author leads.
-func TestHumanEscalateLeadDefaultsToParentAuthor(t *testing.T) {
+// The named parent author owns the Thread; human promotion copies that owner
+// into the task lead without accepting a separate lead choice.
+func TestHumanEscalateUsesThreadOwnerAsLead(t *testing.T) {
 	srv, groupID, andy, _, _, _ := planFixture(t)
 	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
 
@@ -197,13 +267,12 @@ func TestHumanEscalateLeadDefaultsToParentAuthor(t *testing.T) {
 	cth, err := srv.openConversationSubthread(ThreadOpenSubParams{
 		ThreadID:     groupID,
 		AnchorItemID: anchorItemID,
-		CreatedBy:    "user",
 	})
 	if err != nil {
 		t.Fatalf("openConversationSubthread: %v", err)
 	}
 
-	raw := fmt.Sprintf(`{"id":"esc","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q,"created_by":"user"}}`, groupID, cth.ID)
+	raw := fmt.Sprintf(`{"id":"esc","method":"thread/escalateSub","params":{"thread_id":%q,"subthread_id":%q}}`, groupID, cth.ID)
 	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
 		t.Fatalf("thread/escalateSub: %v", err)
 	}
@@ -213,6 +282,6 @@ func TestHumanEscalateLeadDefaultsToParentAuthor(t *testing.T) {
 	}
 	view := remarshal[ThreadEscalateSubResult](t, resp["result"]).Subthread
 	if view.LeadParticipantID != andy {
-		t.Fatalf("human-escalated task lead = %q, want parent author %q (default when no lead picked)", view.LeadParticipantID, andy)
+		t.Fatalf("human-escalated task lead = %q, want Thread owner %q", view.LeadParticipantID, andy)
 	}
 }

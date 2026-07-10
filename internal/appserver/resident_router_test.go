@@ -789,14 +789,7 @@ func TestRouteSubthreadFansOutToParticipantSubsetOnly(t *testing.T) {
 	}
 	// Reply subthread whose weak-isolation subset is only Bea (Cid is a group
 	// member but deliberately NOT a participant of this reply).
-	cth, err := session.CreateConversationThread(rt.SessionDir, session.ConversationThread{
-		SessionID:    groupID,
-		AnchorItemID: "seq-3",
-		CreatedBy:    ada,
-	})
-	if err != nil {
-		t.Fatalf("CreateConversationThread: %v", err)
-	}
+	cth := createStoredOpenThreadForTest(t, srv, groupID, ada, "seq-3", 3)
 	if err := session.AddConversationThreadMember(rt.SessionDir, cth.ID, bea); err != nil {
 		t.Fatalf("seed cth member Bea: %v", err)
 	}
@@ -865,14 +858,7 @@ func TestRouteSubthreadMentionPullsGroupMemberIntoReply(t *testing.T) {
 			t.Fatalf("AddThreadMember %s: %v", participantID, err)
 		}
 	}
-	cth, err := session.CreateConversationThread(rt.SessionDir, session.ConversationThread{
-		SessionID:    groupID,
-		AnchorItemID: "seq-5",
-		CreatedBy:    ada,
-	})
-	if err != nil {
-		t.Fatalf("CreateConversationThread: %v", err)
-	}
+	cth := createStoredOpenThreadForTest(t, srv, groupID, ada, "seq-5", 5)
 	if err := session.AddConversationThreadMember(rt.SessionDir, cth.ID, bea); err != nil {
 		t.Fatalf("seed cth member Bea: %v", err)
 	}
@@ -925,14 +911,7 @@ func TestSubthreadMessageEmitsSubthreadUpdatedNotification(t *testing.T) {
 			t.Fatalf("AddThreadMember %s: %v", participantID, err)
 		}
 	}
-	cth, err := session.CreateConversationThread(rt.SessionDir, session.ConversationThread{
-		SessionID:    groupID,
-		AnchorItemID: "seq-7",
-		CreatedBy:    ada,
-	})
-	if err != nil {
-		t.Fatalf("CreateConversationThread: %v", err)
-	}
+	cth := createStoredOpenThreadForTest(t, srv, groupID, ada, "seq-7", 7)
 	if err := session.AddConversationThreadMember(rt.SessionDir, cth.ID, bea); err != nil {
 		t.Fatalf("seed cth member Bea: %v", err)
 	}

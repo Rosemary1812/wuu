@@ -1,17 +1,12 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
+  useRef,
   useState,
   type Dispatch,
   type SetStateAction,
 } from "react";
-import type {
-  ParticipantSummary,
-  SubthreadUpdatedNotification,
-  Thread,
-  ThreadItem,
-} from "../shared/protocol";
+import type { SubthreadUpdatedNotification, Thread, ThreadItem } from "../shared/protocol";
 import {
   awaitComposerImages,
   inputFilesFromComposer,
@@ -27,7 +22,6 @@ import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
 export type ConversationSubthreadStateOptions = {
   activeThreadID?: string;
-  threads: ReadonlyArray<Thread | undefined>;
   subthreadComposerDraft: ComposerDraftState;
   setSubthreadComposerDraft: Dispatch<SetStateAction<ComposerDraftState>>;
   onOpenSubthreadPanel?: () => void;
@@ -39,7 +33,6 @@ export type ConversationSubthreadStateController = {
     SetStateAction<OpenSubthreadPanel | undefined>
   >;
   chatSubthreadsNonce: number;
-  subthreadLeadCandidates: ParticipantSummary[];
   handleSubthreadUpdatedNotification: (
     note: SubthreadUpdatedNotification,
     activeThreadID?: string,
@@ -48,11 +41,15 @@ export type ConversationSubthreadStateController = {
     threadID: string,
     subthreadID: string,
   ) => void;
-  openConversationSubthread: (thread: Thread, item: ThreadItem) => void;
+  openConversationSubthread: (
+    thread: Thread,
+    item: ThreadItem,
+    threadOwnerParticipantID?: string,
+    existingSubthreadID?: string,
+  ) => void;
   resolveOpenConversationSubthread: (resolved: boolean) => void;
   sendOpenConversationSubthreadMessage: () => void;
-  escalateOpenConversationSubthread: (leadParticipantId: string) => void;
-  bubbleOpenConversationSubthread: (summary: string) => void;
+  escalateOpenConversationSubthread: () => void;
   reactToOpenConversationSubthreadMessage: (
     item: ThreadItem,
     reaction: string,
@@ -61,7 +58,6 @@ export type ConversationSubthreadStateController = {
 
 export function useConversationSubthreadState({
   activeThreadID,
-  threads,
   subthreadComposerDraft,
   setSubthreadComposerDraft,
   onOpenSubthreadPanel,
@@ -70,26 +66,44 @@ export function useConversationSubthreadState({
     OpenSubthreadPanel | undefined
   >();
   const [chatSubthreadsNonce, setChatSubthreadsNonce] = useState(0);
+  const openRequestVersionRef = useRef(0);
+  const openPanelIdentityRef = useRef<
+    { threadID: string; subthreadID?: string } | undefined
+  >(undefined);
 
-  const subthreadLeadCandidates = useMemo<ParticipantSummary[]>(() => {
-    if (!openSubthreadPanel) {
-      return [];
+  const invalidateOpenPanel = useCallback(
+    (identity?: { threadID: string; subthreadID?: string }): number => {
+      openPanelIdentityRef.current = identity;
+      openRequestVersionRef.current += 1;
+      return openRequestVersionRef.current;
+    },
+    [],
+  );
+
+  const setOpenSubthreadPanelExternal = useCallback<
+    Dispatch<SetStateAction<OpenSubthreadPanel | undefined>>
+  >((update) => {
+    if (typeof update !== "function") {
+      invalidateOpenPanel(
+        update
+          ? {
+              threadID: update.threadID,
+              subthreadID: update.subthread?.id,
+            }
+          : undefined,
+      );
+      setOpenSubthreadPanel(update);
+      return;
     }
-    const parentID = openSubthreadPanel.threadID;
-    const parent = threads.find((thread) => thread?.id === parentID);
-    const named = (parent?.members ?? []).filter(
-      (member): member is ParticipantSummary => member.kind === "named",
-    );
-    const subset = openSubthreadPanel.subthread?.participants;
-    if (subset && subset.length > 0) {
-      const inSubset = new Set(subset);
-      const scoped = named.filter((member) => inSubset.has(member.id));
-      if (scoped.length > 0) {
-        return scoped;
-      }
-    }
-    return named;
-  }, [openSubthreadPanel, threads]);
+    invalidateOpenPanel();
+    setOpenSubthreadPanel((current) => {
+      const next = update(current);
+      openPanelIdentityRef.current = next
+        ? { threadID: next.threadID, subthreadID: next.subthread?.id }
+        : undefined;
+      return next;
+    });
+  }, [invalidateOpenPanel]);
 
   const openSubthreadID = openSubthreadPanel?.subthread?.id;
   useEffect(() => {
@@ -102,9 +116,10 @@ export function useConversationSubthreadState({
       activeThreadID &&
       openSubthreadPanel.threadID !== activeThreadID
     ) {
+      invalidateOpenPanel();
       setOpenSubthreadPanel(undefined);
     }
-  }, [activeThreadID, openSubthreadPanel]);
+  }, [activeThreadID, invalidateOpenPanel, openSubthreadPanel]);
 
   const handleSubthreadUpdatedNotification = useCallback(
     (note: SubthreadUpdatedNotification, targetActiveThreadID?: string): void => {
@@ -122,29 +137,64 @@ export function useConversationSubthreadState({
     threadID: string,
     subthreadID: string,
   ): void {
+    const requestVersion = invalidateOpenPanel({ threadID, subthreadID });
     setOpenSubthreadPanel({ threadID, subthread: undefined, loading: true });
     void (async () => {
       try {
         const result = await window.wuu.openConversationSubthread(threadID, {
           subthreadId: subthreadID,
         });
-        setOpenSubthreadPanel({
-          threadID,
-          subthread: result.subthread,
-          loading: false,
-        });
+        if (openRequestVersionRef.current === requestVersion) {
+          openPanelIdentityRef.current = {
+            threadID,
+            subthreadID: result.subthread.id,
+          };
+        }
+        setOpenSubthreadPanel((current) =>
+          openRequestVersionRef.current === requestVersion &&
+          current?.threadID === threadID
+            ? {
+                threadID,
+                subthread: result.subthread,
+                loading: false,
+              }
+            : current,
+        );
       } catch (error) {
-        setOpenSubthreadPanel({
-          threadID,
-          loading: false,
-          error: desktopApiErrorMessage(error, "无法打开 thread"),
-        });
+        setOpenSubthreadPanel((current) =>
+          openRequestVersionRef.current === requestVersion &&
+          current?.threadID === threadID
+            ? {
+                threadID,
+                loading: false,
+                error: desktopApiErrorMessage(error, "无法打开 thread"),
+              }
+            : current,
+        );
       }
     })();
   }
 
-  function openConversationSubthread(thread: Thread, item: ThreadItem): void {
-    const subthreadID = item.task?.subthread_id;
+  function openConversationSubthread(
+    thread: Thread,
+    item: ThreadItem,
+    threadOwnerParticipantID?: string,
+    existingSubthreadID?: string,
+  ): void {
+    if (!thread.group) {
+      return;
+    }
+    const subthreadID = existingSubthreadID?.trim() || item.task?.subthread_id;
+    const ownerID =
+      threadOwnerParticipantID?.trim() ||
+      (item.participant?.kind === "named" ? item.participant.id : "");
+    if (!subthreadID && !ownerID) {
+      return;
+    }
+    const requestVersion = invalidateOpenPanel({
+      threadID: thread.id,
+      subthreadID,
+    });
     onOpenSubthreadPanel?.();
     setOpenSubthreadPanel({
       threadID: thread.id,
@@ -157,20 +207,35 @@ export function useConversationSubthreadState({
           subthreadId: subthreadID,
           anchorItemId: subthreadID ? undefined : item.id,
           title: item.task?.name,
-          createdBy: item.participant?.id,
+          threadOwnerParticipantId: ownerID || undefined,
         });
-        setOpenSubthreadPanel({
-          threadID: thread.id,
-          subthread: result.subthread,
-          loading: false,
-        });
-        setChatSubthreadsNonce((nonce) => nonce + 1);
+        if (openRequestVersionRef.current === requestVersion) {
+          openPanelIdentityRef.current = {
+            threadID: thread.id,
+            subthreadID: result.subthread.id,
+          };
+          setOpenSubthreadPanel((current) =>
+            current?.threadID === thread.id
+              ? {
+                  threadID: thread.id,
+                  subthread: result.subthread,
+                  loading: false,
+                }
+              : current,
+          );
+          setChatSubthreadsNonce((nonce) => nonce + 1);
+        }
       } catch (error) {
-        setOpenSubthreadPanel({
-          threadID: thread.id,
-          loading: false,
-          error: desktopApiErrorMessage(error, "无法打开 thread"),
-        });
+        setOpenSubthreadPanel((current) =>
+          openRequestVersionRef.current === requestVersion &&
+          current?.threadID === thread.id
+            ? {
+                threadID: thread.id,
+                loading: false,
+                error: desktopApiErrorMessage(error, "无法打开 thread"),
+              }
+            : current,
+        );
       }
     })();
   }
@@ -182,7 +247,12 @@ export function useConversationSubthreadState({
     }
     const threadID = current.threadID;
     const subthreadID = current.subthread.id;
-    setOpenSubthreadPanel({ ...current, loading: true });
+    const requestVersion = invalidateOpenPanel({ threadID, subthreadID });
+    setOpenSubthreadPanel((panel) =>
+      panel?.threadID === threadID && panel.subthread?.id === subthreadID
+        ? { ...panel, loading: true, error: undefined }
+        : panel,
+    );
     void (async () => {
       try {
         const result = await window.wuu.resolveConversationSubthread(
@@ -190,18 +260,31 @@ export function useConversationSubthreadState({
           subthreadID,
           resolved,
         );
-        setOpenSubthreadPanel({
-          threadID,
-          subthread: result.subthread,
-          loading: false,
-        });
+        if (openRequestVersionRef.current !== requestVersion) {
+          return;
+        }
+        setOpenSubthreadPanel((panel) =>
+          panel?.threadID === threadID && panel.subthread?.id === subthreadID
+            ? {
+                threadID,
+                subthread: result.subthread,
+                loading: false,
+              }
+            : panel,
+        );
         setChatSubthreadsNonce((nonce) => nonce + 1);
       } catch (error) {
-        setOpenSubthreadPanel({
-          ...current,
-          loading: false,
-          error: desktopApiErrorMessage(error, "无法更新 thread"),
-        });
+        setOpenSubthreadPanel((panel) =>
+          openRequestVersionRef.current === requestVersion &&
+          panel?.threadID === threadID &&
+          panel.subthread?.id === subthreadID
+            ? {
+                ...panel,
+                loading: false,
+                error: desktopApiErrorMessage(error, "无法更新 thread"),
+              }
+            : panel,
+        );
       }
     })();
   }
@@ -219,6 +302,7 @@ export function useConversationSubthreadState({
     }
     const threadID = current.threadID;
     const subthreadID = current.subthread.id;
+    const requestVersion = openRequestVersionRef.current;
     setSubthreadComposerDraft(emptyComposerDraft());
     void (async () => {
       try {
@@ -240,15 +324,24 @@ export function useConversationSubthreadState({
         );
         setChatSubthreadsNonce((nonce) => nonce + 1);
       } catch (error) {
-        setSubthreadComposerDraft((existing) =>
-          existing.prompt.trim() === "" &&
-          existing.images.length === 0 &&
-          existing.files.length === 0
-            ? draft
-            : existing,
-        );
+        const identity = openPanelIdentityRef.current;
+        const stillCurrent =
+          openRequestVersionRef.current === requestVersion &&
+          identity?.threadID === threadID &&
+          identity.subthreadID === subthreadID;
+        if (stillCurrent) {
+          setSubthreadComposerDraft((existing) =>
+            existing.prompt.trim() === "" &&
+            existing.images.length === 0 &&
+            existing.files.length === 0
+              ? draft
+              : existing,
+          );
+        }
         setOpenSubthreadPanel((prev) =>
-          prev && prev.threadID === threadID
+          stillCurrent &&
+          prev?.threadID === threadID &&
+          prev.subthread?.id === subthreadID
             ? { ...prev, error: desktopApiErrorMessage(error, "无法发送回复") }
             : prev,
         );
@@ -256,7 +349,7 @@ export function useConversationSubthreadState({
     })();
   }
 
-  function escalateOpenConversationSubthread(leadParticipantId: string): void {
+  function escalateOpenConversationSubthread(): void {
     const current = openSubthreadPanel;
     if (!current?.subthread) {
       return;
@@ -264,61 +357,44 @@ export function useConversationSubthreadState({
     const threadID = current.threadID;
     const subthreadID = current.subthread.id;
     const title = current.subthread.title;
-    setOpenSubthreadPanel({ ...current, loading: true });
+    const requestVersion = invalidateOpenPanel({ threadID, subthreadID });
+    setOpenSubthreadPanel((panel) =>
+      panel?.threadID === threadID && panel.subthread?.id === subthreadID
+        ? { ...panel, loading: true, error: undefined }
+        : panel,
+    );
     void (async () => {
       try {
         const result = await window.wuu.escalateConversationSubthread(
           threadID,
           subthreadID,
-          { title, leadParticipantId: leadParticipantId || undefined },
+          { title },
         );
-        setOpenSubthreadPanel({
-          threadID,
-          subthread: result.subthread,
-          loading: false,
-        });
+        if (openRequestVersionRef.current !== requestVersion) {
+          return;
+        }
+        setOpenSubthreadPanel((panel) =>
+          panel?.threadID === threadID && panel.subthread?.id === subthreadID
+            ? {
+                threadID,
+                subthread: result.subthread,
+                loading: false,
+              }
+            : panel,
+        );
         setChatSubthreadsNonce((nonce) => nonce + 1);
       } catch (error) {
-        setOpenSubthreadPanel({
-          ...current,
-          loading: false,
-          error: desktopApiErrorMessage(error, "无法升级为 Task"),
-        });
-      }
-    })();
-  }
-
-  function bubbleOpenConversationSubthread(summary: string): void {
-    const current = openSubthreadPanel;
-    if (!current?.subthread) {
-      return;
-    }
-    const trimmed = summary.trim();
-    if (!trimmed) {
-      return;
-    }
-    const threadID = current.threadID;
-    const subthreadID = current.subthread.id;
-    setOpenSubthreadPanel({ ...current, loading: true });
-    void (async () => {
-      try {
-        const result = await window.wuu.bubbleConversationSubthread(
-          threadID,
-          subthreadID,
-          trimmed,
+        setOpenSubthreadPanel((panel) =>
+          openRequestVersionRef.current === requestVersion &&
+          panel?.threadID === threadID &&
+          panel.subthread?.id === subthreadID
+            ? {
+                ...panel,
+                loading: false,
+                error: desktopApiErrorMessage(error, "无法升级为 Task"),
+              }
+            : panel,
         );
-        setOpenSubthreadPanel({
-          threadID,
-          subthread: result.subthread,
-          loading: false,
-        });
-        setChatSubthreadsNonce((nonce) => nonce + 1);
-      } catch (error) {
-        setOpenSubthreadPanel({
-          ...current,
-          loading: false,
-          error: desktopApiErrorMessage(error, "无法完成 Task"),
-        });
       }
     })();
   }
@@ -344,16 +420,14 @@ export function useConversationSubthreadState({
 
   return {
     openSubthreadPanel,
-    setOpenSubthreadPanel,
+    setOpenSubthreadPanel: setOpenSubthreadPanelExternal,
     chatSubthreadsNonce,
-    subthreadLeadCandidates,
     handleSubthreadUpdatedNotification,
     openConversationSubthreadByID,
     openConversationSubthread,
     resolveOpenConversationSubthread,
     sendOpenConversationSubthreadMessage,
     escalateOpenConversationSubthread,
-    bubbleOpenConversationSubthread,
     reactToOpenConversationSubthreadMessage,
   };
 }

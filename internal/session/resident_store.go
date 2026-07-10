@@ -106,6 +106,32 @@ func RemoveThreadMember(sessDir, sessionID, participantID string) error {
 	} else if !ok {
 		return fmt.Errorf("%w: %q", ErrSessionNotFound, sessionID)
 	}
+	var authorityID, authorityStatus string
+	err = tx.QueryRow(`
+SELECT id, status
+FROM conversation_threads
+WHERE session_id = ?
+  AND ((status = ? AND thread_owner_participant_id = ?)
+    OR (status = ? AND lead_participant_id = ?))
+ORDER BY created_at ASC, id ASC
+LIMIT 1`, sessionID, string(ConversationThreadOpen), participantID,
+		string(ConversationThreadTask), participantID).Scan(&authorityID, &authorityStatus)
+	switch {
+	case err == nil && ConversationThreadStatus(authorityStatus) == ConversationThreadOpen:
+		return fmt.Errorf("participant %q owns open Thread %q and cannot leave the group", participantID, authorityID)
+	case err == nil:
+		return fmt.Errorf("participant %q leads active Task %q and cannot leave the group", participantID, authorityID)
+	case !errors.Is(err, sql.ErrNoRows):
+		return fmt.Errorf("check thread member authority: %w", err)
+	}
+	if _, err := tx.Exec(`
+DELETE FROM conversation_thread_members
+WHERE participant_id = ?
+  AND conversation_thread_id IN (
+    SELECT id FROM conversation_threads WHERE session_id = ?
+  )`, participantID, sessionID); err != nil {
+		return fmt.Errorf("remove conversation thread memberships: %w", err)
+	}
 	if _, err := tx.Exec(`DELETE FROM thread_members WHERE session_id = ? AND participant_id = ?`, sessionID, participantID); err != nil {
 		return fmt.Errorf("remove thread member: %w", err)
 	}
@@ -550,6 +576,24 @@ func requireActiveNamedParticipant(q sqlRowQuerier, participantID string) error 
 	}
 	if participant.Kind(kind) != participant.KindNamed || retiredAt.Valid {
 		return fmt.Errorf("participant %q must be an active named participant", participantID)
+	}
+	return nil
+}
+
+func requireActiveNamedThreadMember(q sqlRowQuerier, sessionID, participantID string) error {
+	if err := requireActiveNamedParticipant(q, participantID); err != nil {
+		return err
+	}
+	var exists int
+	if err := q.QueryRow(`
+SELECT EXISTS(
+	SELECT 1 FROM thread_members
+	WHERE session_id = ? AND participant_id = ?
+)`, sessionID, participantID).Scan(&exists); err != nil {
+		return fmt.Errorf("check thread member: %w", err)
+	}
+	if exists == 0 {
+		return fmt.Errorf("participant %q is not a member of parent thread %q", participantID, sessionID)
 	}
 	return nil
 }

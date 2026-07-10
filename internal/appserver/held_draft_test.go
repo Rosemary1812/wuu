@@ -131,18 +131,8 @@ func TestHeldDraftCthAndMainStreamScopesAreIsolated(t *testing.T) {
 			t.Fatalf("AddThreadMember: %v", err)
 		}
 	}
-	cthHeld, err := session.CreateConversationThread(rt.SessionDir, session.ConversationThread{
-		SessionID: groupID, AnchorItemID: "anchor-held", Status: session.ConversationThreadOpen,
-	})
-	if err != nil {
-		t.Fatalf("create cthHeld: %v", err)
-	}
-	cthClean, err := session.CreateConversationThread(rt.SessionDir, session.ConversationThread{
-		SessionID: groupID, AnchorItemID: "anchor-clean", Status: session.ConversationThreadOpen,
-	})
-	if err != nil {
-		t.Fatalf("create cthClean: %v", err)
-	}
+	cthHeld := createStoredOpenThreadForTest(t, srv, groupID, ada, "anchor-held", 1)
+	cthClean := createStoredOpenThreadForTest(t, srv, groupID, ada, "anchor-clean", 2)
 
 	appendMsg := func(threadTag, pid, text string) int {
 		seq, err := session.AppendHistoryRecordReturningSeq(rt.SessionDir, groupID, session.HistoryRecord{

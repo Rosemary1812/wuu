@@ -13,7 +13,7 @@ func seedTaskThread(t *testing.T, dir string) ConversationThread {
 	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {
 		t.Fatal(err)
 	}
-	created, err := CreateConversationThread(dir, ConversationThread{
+	created, err := CreateLegacyTaskConversationThread(dir, ConversationThread{
 		SessionID: "thread-1",
 		Status:    ConversationThreadTask,
 		Title:     "fix the bug",
@@ -114,14 +114,11 @@ func TestClaimOpenReplyRefused(t *testing.T) {
 	if _, err := CreateWithMetadata(dir, "thread-1", "/tmp/project"); err != nil {
 		t.Fatal(err)
 	}
-	reply, err := CreateConversationThread(dir, ConversationThread{
+	reply := createOpenConversationThreadForTest(t, dir, ConversationThread{
 		SessionID:    "thread-1",
 		AnchorItemID: "seq-2",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _, err = ClaimConversationThread(dir, reply.ID, "prt-bella")
+	_, _, err := ClaimConversationThread(dir, reply.ID, "prt-bella")
 	if err == nil || !strings.Contains(err.Error(), "only a task can be claimed") {
 		t.Fatalf("claiming an open reply should be refused, got %v", err)
 	}
@@ -196,13 +193,10 @@ func TestSetConversationThreadLeadIfEmptyRejectsNonTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	// An open discussion reply has no orchestration lead to claim.
-	reply, err := CreateConversationThread(dir, ConversationThread{
+	reply := createOpenConversationThreadForTest(t, dir, ConversationThread{
 		SessionID:    "thread-1",
 		AnchorItemID: "seq-2",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, _, err := SetConversationThreadLeadIfEmpty(dir, reply.ID, "prt-andy"); err == nil ||
 		!strings.Contains(err.Error(), "only a task has an orchestration lead") {
 		t.Fatalf("claiming lead on an open reply should be refused, got %v", err)
@@ -214,28 +208,35 @@ func TestSetConversationThreadLeadIfEmptyRejectsNonTask(t *testing.T) {
 	}
 }
 
-func TestConcludeConversationThreadByOwner(t *testing.T) {
+func TestConcludeConversationThreadOnlyByLead(t *testing.T) {
 	dir := t.TempDir()
 	created := seedTaskThread(t, dir)
 	if _, ok, err := ClaimConversationThread(dir, created.ID, "prt-bella"); err != nil || !ok {
 		t.Fatalf("claim: ok=%v err=%v", ok, err)
 	}
 
-	// A caller that is neither owner nor lead cannot conclude.
+	// A caller that is not the lead cannot conclude.
 	if _, err := ConcludeConversationThread(dir, created.ID, "prt-carl", "done"); err == nil {
-		t.Fatal("non-owner non-lead conclude should error")
-	} else if !strings.Contains(err.Error(), "only the owner or the lead") {
+		t.Fatal("non-lead conclude should error")
+	} else if !strings.Contains(err.Error(), "only the lead") {
 		t.Fatalf("refusal should diagnose the caller, got %v", err)
 	}
+	// Work ownership no longer grants conclusion authority.
+	if _, err := ConcludeConversationThread(dir, created.ID, "prt-bella", "done"); err == nil || !strings.Contains(err.Error(), "only the lead") {
+		t.Fatalf("work owner conclusion should be refused by the lead gate, got %v", err)
+	}
+	if _, _, err := SetConversationThreadLeadIfEmpty(dir, created.ID, "prt-lead"); err != nil {
+		t.Fatalf("set lead: %v", err)
+	}
 	// Summary is required.
-	if _, err := ConcludeConversationThread(dir, created.ID, "prt-bella", "  "); err == nil {
+	if _, err := ConcludeConversationThread(dir, created.ID, "prt-lead", "  "); err == nil {
 		t.Fatal("empty summary should error")
 	}
 
 	// Filing the conclusion resolves the task in one step — no review gate.
-	concluded, err := ConcludeConversationThread(dir, created.ID, "prt-bella", "fixed and verified")
+	concluded, err := ConcludeConversationThread(dir, created.ID, "prt-lead", "fixed and verified")
 	if err != nil {
-		t.Fatalf("owner conclude: %v", err)
+		t.Fatalf("lead conclude: %v", err)
 	}
 	if concluded.Status != ConversationThreadResolved {
 		t.Fatalf("status = %q, want resolved (filing IS completion)", concluded.Status)
@@ -248,7 +249,7 @@ func TestConcludeConversationThreadByOwner(t *testing.T) {
 	if _, _, err := ClaimConversationThread(dir, created.ID, "prt-carl"); err == nil {
 		t.Fatal("claiming a resolved task should error")
 	}
-	if _, err := ConcludeConversationThread(dir, created.ID, "prt-bella", "again"); err == nil {
+	if _, err := ConcludeConversationThread(dir, created.ID, "prt-lead", "again"); err == nil {
 		t.Fatal("double conclude should error")
 	} else if !strings.Contains(err.Error(), `status is "resolved"`) {
 		t.Fatalf("refusal should diagnose the status, got %v", err)
@@ -260,8 +261,8 @@ func TestConcludeConversationThreadByLeadOfUnclaimedTask(t *testing.T) {
 	created := seedTaskThread(t, dir)
 	// Grant a lead and leave the task unclaimed (plan-task shape: the lead
 	// orchestrates; no single owner ever claims it).
-	if _, err := EscalateConversationThread(dir, created.ID, "user", "prt-lead", ""); err != nil {
-		t.Fatalf("escalate: %v", err)
+	if _, _, err := SetConversationThreadLeadIfEmpty(dir, created.ID, "prt-lead"); err != nil {
+		t.Fatalf("set lead: %v", err)
 	}
 
 	concluded, err := ConcludeConversationThread(dir, created.ID, "prt-lead", "all pieces landed")

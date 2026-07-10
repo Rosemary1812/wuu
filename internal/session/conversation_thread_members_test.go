@@ -20,11 +20,15 @@ func TestConversationThreadMembersCRUD(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	for _, participantID := range []string{noel.ID, reviewer.ID} {
+		if err := AddThreadMember(dir, "thread-1", participantID); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	cth, err := CreateConversationThread(dir, ConversationThread{
-		SessionID:    "thread-1",
-		AnchorItemID: "seq-3",
-		CreatedBy:    noel.ID,
+		SessionID: "thread-1", AnchorItemID: "seq-3", CreatedBy: noel.ID,
+		ParentSeq: 3, ParentAuthorParticipantID: noel.ID, ThreadOwnerParticipantID: noel.ID,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -57,15 +61,15 @@ func TestConversationThreadMembersCRUD(t *testing.T) {
 		t.Fatalf("members = %v, want Noel and Reviewer once", members)
 	}
 
-	if err := RemoveConversationThreadMember(dir, cth.ID, noel.ID); err != nil {
+	if err := RemoveConversationThreadMember(dir, cth.ID, reviewer.ID); err != nil {
 		t.Fatal(err)
 	}
 	members, err = ListConversationThreadMembers(dir, cth.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(members) != 1 || members[0] != reviewer.ID {
-		t.Fatalf("members after remove = %v, want only Reviewer", members)
+	if len(members) != 1 || members[0] != noel.ID {
+		t.Fatalf("members after remove = %v, want only Noel", members)
 	}
 
 	if _, err := ListConversationThreadMembers(dir, "cth-missing"); !errors.Is(err, ErrConversationThreadNotFound) {
@@ -84,10 +88,13 @@ func TestConversationThreadMembersRetireCascade(t *testing.T) {
 		if err := UpsertParticipant(dir, p); err != nil {
 			t.Fatal(err)
 		}
+		if err := AddThreadMember(dir, "thread-1", p.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
 	cth, err := CreateConversationThread(dir, ConversationThread{
-		SessionID:    "thread-1",
-		AnchorItemID: "seq-1",
+		SessionID: "thread-1", AnchorItemID: "seq-1",
+		ParentSeq: 1, ParentAuthorParticipantID: reviewer.ID, ThreadOwnerParticipantID: reviewer.ID,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -111,5 +118,56 @@ func TestConversationThreadMembersRetireCascade(t *testing.T) {
 	}
 	if len(members) != 1 || members[0] != reviewer.ID {
 		t.Fatalf("members after retire = %v, want only Reviewer", members)
+	}
+}
+
+func TestConversationThreadMembersStayInsideParentGroup(t *testing.T) {
+	dir := t.TempDir()
+	for _, groupID := range []string{"group-a", "group-b"} {
+		if _, err := CreateWithMetadata(dir, groupID, t.TempDir()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := SetGroupThread(dir, groupID, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	owner := participant.Participant{ID: "prt-owner", Kind: participant.KindNamed, Name: "Owner"}
+	member := participant.Participant{ID: "prt-member", Kind: participant.KindNamed, Name: "Member"}
+	outsider := participant.Participant{ID: "prt-outsider", Kind: participant.KindNamed, Name: "Outsider"}
+	for _, p := range []participant.Participant{owner, member, outsider} {
+		if err := UpsertParticipant(dir, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{owner.ID, member.ID} {
+		if err := AddThreadMember(dir, "group-a", id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := AddThreadMember(dir, "group-b", outsider.ID); err != nil {
+		t.Fatal(err)
+	}
+	cth, err := CreateConversationThread(dir, ConversationThread{
+		SessionID: "group-a", AnchorItemID: "message-1", ParentSeq: 1,
+		ParentAuthorParticipantID: owner.ID, ThreadOwnerParticipantID: owner.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := AddConversationThreadMember(dir, cth.ID, outsider.ID); err == nil {
+		t.Fatal("a named agent from another group must not join this Thread")
+	}
+	if err := AddConversationThreadMember(dir, cth.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveThreadMember(dir, "group-a", member.ID); err != nil {
+		t.Fatal(err)
+	}
+	members, err := ListConversationThreadMembers(dir, cth.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != 1 || members[0] != owner.ID {
+		t.Fatalf("members after parent-group removal = %v, want owner only", members)
 	}
 }

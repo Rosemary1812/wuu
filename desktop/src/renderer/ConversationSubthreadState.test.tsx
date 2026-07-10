@@ -33,6 +33,20 @@ async function flushEffects(): Promise<void> {
   await Promise.resolve();
 }
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
 function installWuuStub(overrides: Partial<WuuDesktopApi>): void {
   (window as unknown as { wuu: WuuDesktopApi }).wuu = {
     ...overrides,
@@ -57,10 +71,11 @@ function subthread(
 function groupThread(overrides: Partial<Thread> = {}): Thread {
   return {
     id: "group-1",
+    group: true,
     title: "Group",
     preview: "Group",
     cwd: "/tmp/wuu",
-    workspace_kind: "group",
+    workspace_kind: "project",
     status: "idle",
     pinned: false,
     archived: false,
@@ -88,11 +103,9 @@ function threadItem(overrides: Partial<ThreadItem> = {}): ThreadItem {
 }
 
 async function renderConversationSubthreadState({
-  threads = [groupThread()],
   activeThreadID = "group-1",
   draft = emptyComposerDraft(),
 }: {
-  threads?: Thread[];
   activeThreadID?: string;
   draft?: ComposerDraftState;
 } = {}): Promise<{
@@ -103,7 +116,6 @@ async function renderConversationSubthreadState({
   onOpenSubthreadPanel: ReturnType<typeof vi.fn>;
 }> {
   let latest: ConversationSubthreadStateController | undefined;
-  let currentThreads = threads;
   let currentActiveThreadID = activeThreadID;
   let currentDraft = draft;
   const onOpenSubthreadPanel = vi.fn();
@@ -118,7 +130,6 @@ async function renderConversationSubthreadState({
   function Probe(): null {
     latest = useConversationSubthreadState({
       activeThreadID: currentActiveThreadID,
-      threads: currentThreads,
       subthreadComposerDraft: currentDraft,
       setSubthreadComposerDraft: setDraft,
       onOpenSubthreadPanel,
@@ -172,7 +183,7 @@ describe("useConversationSubthreadState", () => {
       subthreadId: undefined,
       anchorItemId: "item-1",
       title: "Investigate",
-      createdBy: "lead-a",
+      threadOwnerParticipantId: "lead-a",
     });
     expect(hook.onOpenSubthreadPanel).toHaveBeenCalledTimes(1);
     expect(hook.get().openSubthreadPanel).toEqual({
@@ -183,20 +194,169 @@ describe("useConversationSubthreadState", () => {
     expect(hook.get().chatSubthreadsNonce).toBe(1);
   });
 
-  it("scopes task lead candidates to the open subthread participant subset", async () => {
+  it("does not open Thread from a DM", async () => {
+    const openConversationSubthread = vi.fn();
+    installWuuStub({ openConversationSubthread });
     const hook = await renderConversationSubthreadState();
 
     act(() => {
+      hook.get().openConversationSubthread(
+        groupThread({ group: false, workspace_kind: "dm" }),
+        threadItem(),
+      );
+    });
+
+    expect(openConversationSubthread).not.toHaveBeenCalled();
+    expect(hook.onOpenSubthreadPanel).not.toHaveBeenCalled();
+    expect(hook.get().openSubthreadPanel).toBeUndefined();
+  });
+
+  it("opens an existing ownerless legacy Thread by its durable id", async () => {
+    const legacy = subthread({
+      id: "cth-legacy",
+      status: "resolved",
+      thread_owner_participant_id: undefined,
+    });
+    const openConversationSubthread = vi.fn().mockResolvedValue({
+      subthread: legacy,
+    });
+    installWuuStub({ openConversationSubthread });
+    const hook = await renderConversationSubthreadState();
+
+    await act(async () => {
+      hook.get().openConversationSubthread(
+        groupThread(),
+        threadItem({ task: undefined, participant: undefined }),
+        undefined,
+        legacy.id,
+      );
+      await flushEffects();
+    });
+
+    expect(openConversationSubthread).toHaveBeenCalledWith("group-1", {
+      subthreadId: legacy.id,
+      anchorItemId: undefined,
+      title: undefined,
+      threadOwnerParticipantId: undefined,
+    });
+    expect(hook.get().openSubthreadPanel?.subthread?.id).toBe(legacy.id);
+  });
+
+  it("upgrades the same Thread without accepting a lead override", async () => {
+    const escalated = subthread({ status: "task", thread_owner_participant_id: "lead-a" });
+    const escalateConversationSubthread = vi.fn().mockResolvedValue({
+      subthread: escalated,
+    });
+    installWuuStub({ escalateConversationSubthread });
+    const hook = await renderConversationSubthreadState();
+    act(() => {
       hook.get().setOpenSubthreadPanel({
         threadID: "group-1",
-        subthread: subthread({ participants: ["lead-b"] }),
+        subthread: subthread({
+          title: "Investigate",
+          thread_owner_participant_id: "lead-a",
+        }),
         loading: false,
       });
     });
 
-    expect(hook.get().subthreadLeadCandidates.map((item) => item.id)).toEqual([
-      "lead-b",
-    ]);
+    await act(async () => {
+      hook.get().escalateOpenConversationSubthread();
+      await flushEffects();
+    });
+
+    expect(escalateConversationSubthread).toHaveBeenCalledWith(
+      "group-1",
+      "cth-1",
+      { title: "Investigate" },
+    );
+    expect(hook.get().openSubthreadPanel?.subthread).toBe(escalated);
+  });
+
+  it("keeps the second Thread open when the first request resolves last", async () => {
+    const first = deferred<{ subthread: ConversationSubthread }>();
+    const second = deferred<{ subthread: ConversationSubthread }>();
+    const openConversationSubthread = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    installWuuStub({ openConversationSubthread });
+    const hook = await renderConversationSubthreadState();
+
+    act(() => {
+      hook.get().openConversationSubthreadByID("group-1", "cth-a");
+      hook.get().openConversationSubthreadByID("group-1", "cth-b");
+    });
+    await act(async () => {
+      second.resolve({ subthread: subthread({ id: "cth-b" }) });
+      await flushEffects();
+    });
+    await act(async () => {
+      first.resolve({ subthread: subthread({ id: "cth-a" }) });
+      await flushEffects();
+    });
+
+    expect(hook.get().openSubthreadPanel?.subthread?.id).toBe("cth-b");
+  });
+
+  it("ignores a resolve result after the user opens another Thread", async () => {
+    const resolving = deferred<{ subthread: ConversationSubthread }>();
+    installWuuStub({
+      resolveConversationSubthread: vi.fn().mockReturnValue(resolving.promise),
+      openConversationSubthread: vi.fn().mockResolvedValue({
+        subthread: subthread({ id: "cth-b" }),
+      }),
+    });
+    const hook = await renderConversationSubthreadState();
+    act(() => {
+      hook.get().setOpenSubthreadPanel({
+        threadID: "group-1",
+        subthread: subthread({ id: "cth-a" }),
+        loading: false,
+      });
+    });
+    act(() => {
+      hook.get().resolveOpenConversationSubthread(true);
+      hook.get().openConversationSubthreadByID("group-1", "cth-b");
+    });
+    await act(async () => {
+      await flushEffects();
+      resolving.resolve({ subthread: subthread({ id: "cth-a", status: "resolved" }) });
+      await flushEffects();
+    });
+
+    expect(hook.get().openSubthreadPanel?.subthread?.id).toBe("cth-b");
+    expect(hook.get().openSubthreadPanel?.subthread?.status).toBe("open");
+  });
+
+  it("ignores a promotion result after the user opens another Thread", async () => {
+    const escalating = deferred<{ subthread: ConversationSubthread }>();
+    installWuuStub({
+      escalateConversationSubthread: vi.fn().mockReturnValue(escalating.promise),
+      openConversationSubthread: vi.fn().mockResolvedValue({
+        subthread: subthread({ id: "cth-b" }),
+      }),
+    });
+    const hook = await renderConversationSubthreadState();
+    act(() => {
+      hook.get().setOpenSubthreadPanel({
+        threadID: "group-1",
+        subthread: subthread({ id: "cth-a", title: "A" }),
+        loading: false,
+      });
+    });
+    act(() => {
+      hook.get().escalateOpenConversationSubthread();
+      hook.get().openConversationSubthreadByID("group-1", "cth-b");
+    });
+    await act(async () => {
+      await flushEffects();
+      escalating.resolve({ subthread: subthread({ id: "cth-a", status: "task" }) });
+      await flushEffects();
+    });
+
+    expect(hook.get().openSubthreadPanel?.subthread?.id).toBe("cth-b");
+    expect(hook.get().openSubthreadPanel?.subthread?.status).toBe("open");
   });
 
   it("restores the reply composer draft when sending fails", async () => {
@@ -231,5 +391,42 @@ describe("useConversationSubthreadState", () => {
       (window.wuu.postSubthreadMessage as ReturnType<typeof vi.fn>).mock
         .calls[0],
     ).toEqual(["group-1", "cth-1", "Need one more detail", [], []]);
+  });
+
+  it("does not restore an old draft or error into a newly opened Thread", async () => {
+    const sending = deferred<{ subthread: ConversationSubthread }>();
+    installWuuStub({
+      postSubthreadMessage: vi.fn().mockReturnValue(sending.promise),
+    });
+    const hook = await renderConversationSubthreadState();
+    act(() => {
+      hook.get().setOpenSubthreadPanel({
+        threadID: "group-1",
+        subthread: subthread({ id: "cth-a" }),
+        loading: false,
+      });
+    });
+    await flushEffects();
+    hook.setDraft({ prompt: "draft A", images: [], files: [] });
+    await hook.rerender();
+    act(() => {
+      hook.get().sendOpenConversationSubthreadMessage();
+      hook.get().setOpenSubthreadPanel({
+        threadID: "group-1",
+        subthread: subthread({ id: "cth-b" }),
+        loading: false,
+      });
+    });
+    hook.setDraft({ prompt: "draft B", images: [], files: [] });
+    await hook.rerender();
+
+    await act(async () => {
+      sending.reject(new Error("A failed"));
+      await flushEffects();
+    });
+
+    expect(hook.get().openSubthreadPanel?.subthread?.id).toBe("cth-b");
+    expect(hook.get().openSubthreadPanel?.error).toBeUndefined();
+    expect(hook.getDraft().prompt).toBe("draft B");
   });
 });

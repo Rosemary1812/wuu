@@ -783,18 +783,15 @@ export function App(): JSX.Element {
     openSubthreadPanel,
     setOpenSubthreadPanel,
     chatSubthreadsNonce,
-    subthreadLeadCandidates,
     handleSubthreadUpdatedNotification,
     openConversationSubthreadByID,
     openConversationSubthread,
     resolveOpenConversationSubthread,
     sendOpenConversationSubthreadMessage,
     escalateOpenConversationSubthread,
-    bubbleOpenConversationSubthread,
     reactToOpenConversationSubthreadMessage,
   } = useConversationSubthreadState({
     activeThreadID,
-    threads: [state.thread, state.secondaryThread, ...state.threads],
     subthreadComposerDraft,
     setSubthreadComposerDraft,
     onOpenSubthreadPanel: () => {
@@ -1684,8 +1681,18 @@ export function App(): JSX.Element {
     void selectChildAgent(agent);
   });
   const handleCachedPaneOpenSubthread = useStableCallback(
-    (thread: Thread, item: ThreadItem) => {
-      openConversationSubthread(thread, item);
+    (
+      thread: Thread,
+      item: ThreadItem,
+      ownerID?: string,
+      existingSubthreadID?: string,
+    ) => {
+      openConversationSubthread(
+        thread,
+        item,
+        ownerID,
+        existingSubthreadID,
+      );
     },
   );
   const handleCachedPaneReact = useStableCallback(
@@ -2048,18 +2055,19 @@ export function App(): JSX.Element {
     }
   }, [environmentPanelMenu, environmentPanelVisible]);
 
-  // Load the active chat thread's reply subthreads for the chat view's reply
-  // badges / task 活动卡. Best-effort and decorative: any failure leaves the
-  // last-known map untouched and never disrupts the message stream.
+  // Thread/Task is a group-chat workflow. DMs remain one-to-one and never load
+  // or expose group subthreads.
   useEffect(() => {
-    if (!activeThreadID || !activeThreadIsChatStyle) {
+    if (!activeThreadID || !activeThreadIsGroup) {
       setChatSubthreads(null);
       return;
     }
     const listSub = window.wuu?.listConversationSubthreads;
     if (typeof listSub !== "function") {
+      setChatSubthreads(null);
       return;
     }
+    setChatSubthreads(null);
     let cancelled = false;
     const threadID = activeThreadID;
     void (async () => {
@@ -2076,7 +2084,9 @@ export function App(): JSX.Element {
         }
         setChatSubthreads({ threadID, byAnchor });
       } catch {
-        // Decorative badges — keep the previous map rather than clearing it.
+        if (!cancelled) {
+          setChatSubthreads(null);
+        }
       }
     })();
     return () => {
@@ -2084,7 +2094,7 @@ export function App(): JSX.Element {
     };
   }, [
     activeThreadID,
-    activeThreadIsChatStyle,
+    activeThreadIsGroup,
     activeThreadTurnCount,
     chatSubthreadsNonce,
   ]);
@@ -3744,7 +3754,6 @@ export function App(): JSX.Element {
             chipGalleryOpen={chipGalleryOpen}
             onCloseChipGallery={() => setChipGalleryOpen(false)}
             poppedOutMode={poppedOutMode}
-            activeThreadIsChatStyle={activeThreadIsChatStyle}
             activeThread={activeThread}
             onOpenTaskBoard={openTaskBoardTab}
             environmentToggleRef={environmentToggleRef}
@@ -3815,14 +3824,12 @@ export function App(): JSX.Element {
           onCloseSubthreadPanel={() => setOpenSubthreadPanel(undefined)}
           onResolveSubthread={resolveOpenConversationSubthread}
           onEscalateSubthread={escalateOpenConversationSubthread}
-          onBubbleSubthread={bubbleOpenConversationSubthread}
           onReactSubthread={reactToOpenConversationSubthreadMessage}
           poppedOutMode={poppedOutMode}
           activeContext={state.activeContext}
           onPopOutSubthread={(threadID, subthreadID, context) =>
             void popOutSubthread(threadID, subthreadID, context)
           }
-          subthreadLeadCandidates={subthreadLeadCandidates}
           subthreadComposer={{
             draft: subthreadComposerDraft,
             setDraft: setSubthreadComposerDraft,
