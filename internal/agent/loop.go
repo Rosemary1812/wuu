@@ -257,12 +257,14 @@ func RunToolLoop(
 			req.ForceToolName = cfg.ForceToolFirstStep
 		}
 		if cfg.BeforeRequest != nil {
+			forceBefore := strings.TrimSpace(req.ForceToolName)
+			forceAvailableBefore := requestHasTool(req.Tools, forceBefore)
 			if err := cfg.BeforeRequest(ctx, &req); err != nil {
 				return loopResultSnapshot(messages, startLen, historyRewritten, totalIn, totalOut, totalCacheCreation, totalCacheRead), fmt.Errorf("transform model request: %w", err)
 			}
-		}
-		if err := validateTransformedRequest(req); err != nil {
-			return loopResultSnapshot(messages, startLen, historyRewritten, totalIn, totalOut, totalCacheCreation, totalCacheRead), err
+			if err := validateTransformedRequest(req, forceBefore, forceAvailableBefore); err != nil {
+				return loopResultSnapshot(messages, startLen, historyRewritten, totalIn, totalOut, totalCacheCreation, totalCacheRead), err
+			}
 		}
 		cacheHint := buildCacheHint(req.Messages)
 		applyPromptCacheKeyOverride(&cacheHint, cfg.PromptCacheKey)
@@ -531,7 +533,7 @@ func RunToolLoop(
 	}, fmt.Errorf("max steps exceeded (%d)", cfg.MaxSteps)
 }
 
-func validateTransformedRequest(req providers.ChatRequest) error {
+func validateTransformedRequest(req providers.ChatRequest, forceBefore string, forceAvailableBefore bool) error {
 	if strings.TrimSpace(req.Model) == "" {
 		return errors.New("transformed model request has empty model")
 	}
@@ -545,12 +547,28 @@ func validateTransformedRequest(req providers.ChatRequest) error {
 	if forced == "" {
 		return nil
 	}
-	for _, tool := range req.Tools {
-		if tool.Name == forced {
-			return nil
-		}
+	if requestHasTool(req.Tools, forced) {
+		return nil
+	}
+	// Preserve a pre-existing request shape that the runtime already allowed.
+	// The plugin validator owns regressions introduced by the transform, not
+	// unrelated legacy policy decisions made before this extension point.
+	if forced == forceBefore && !forceAvailableBefore {
+		return nil
 	}
 	return fmt.Errorf("transformed model request forces unavailable tool %q", forced)
+}
+
+func requestHasTool(tools []providers.ToolDefinition, name string) bool {
+	if strings.TrimSpace(name) == "" {
+		return false
+	}
+	for _, tool := range tools {
+		if tool.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func loopResultSnapshot(messages []providers.ChatMessage, startLen int, historyRewritten bool, input, output, cacheCreation, cacheRead int) LoopResult {

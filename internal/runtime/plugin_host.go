@@ -36,7 +36,7 @@ func startPluginHost(plugins []pluginpkg.Plugin, projectRoot, wuuHome string) *p
 }
 
 func pluginRequestInterceptor(host *pluginhost.Host, provider, threadID, cwd string) func(context.Context, *providers.ChatRequest) error {
-	if host == nil {
+	if host == nil || !host.HasHook(pluginhost.HookChatRequest) {
 		return nil
 	}
 	return func(ctx context.Context, request *providers.ChatRequest) error {

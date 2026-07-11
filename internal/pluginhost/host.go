@@ -110,6 +110,20 @@ func (h *Host) Statuses() []Status {
 	return out
 }
 
+func (h *Host) HasHook(target Hook) bool {
+	if h == nil {
+		return false
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, client := range h.clients {
+		if hasHook(client.Hooks(), target) {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *Host) Close(ctx context.Context) error {
 	if h == nil {
 		return nil
