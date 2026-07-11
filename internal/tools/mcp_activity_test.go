@@ -271,6 +271,36 @@ func TestExecuteActivityBoundToolCreatesRefAndHonorsTakeover(t *testing.T) {
 	}
 }
 
+func TestCUAInputActionPublishesActivityButReturnsNoInferredState(t *testing.T) {
+	registry := activity.NewRegistry()
+	tool := &activityTestTool{structuredContent: json.RawMessage(`{
+		"status":"verified_visual",
+		"mechanism":"background_directed",
+		"changes":["stale inferred change"],
+		"interaction":{"kind":"click","x":0.25,"y":0.75}
+	}`)}
+	kit := &Toolkit{
+		env:      &Env{RootDir: "/repo", SessionID: "thread-1", SessionDir: t.TempDir()},
+		registry: NewRegistry(tool), boundary: StandardBoundary(), activityRegistry: registry,
+		mcpActivityBindings: map[string]MCPActivityBinding{
+			"plugin.cua-mac.computer": {Kind: activity.KindCUA, PluginID: "cua-mac"},
+		},
+	}
+	call := providers.ToolCall{ID: "click-1", Name: tool.Name(), Arguments: `{"action":"click","app":"com.apple.TextEdit","x":500,"y":500,"coordinate_space":"normalized"}`}
+
+	result, err := kit.executeActivityBoundToolResult(context.Background(), call, tool, "plugin.cua-mac.computer")
+	if err != nil {
+		t.Fatalf("execute click: %v", err)
+	}
+	if projection := result.JSONProjection(); projection != `{}` {
+		t.Fatalf("input action leaked inferred state to model: %s", projection)
+	}
+	sessions := registry.List("thread-1")
+	if len(sessions) != 1 || sessions[0].Interaction == nil || sessions[0].Interaction.X != 0.25 || sessions[0].State != activity.StateBackgroundControlled {
+		t.Fatalf("internal activity metadata was not preserved: %+v", sessions)
+	}
+}
+
 func TestCUAActivityInteractionValidatesAndAssignsRevision(t *testing.T) {
 	result := toolresult.Result{StructuredContent: json.RawMessage(`{"interaction":{"kind":"click","x":0.25,"y":0.75}}`)}
 	interaction := cuaActivityInteraction(result)

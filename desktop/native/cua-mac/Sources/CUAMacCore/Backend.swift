@@ -118,43 +118,21 @@ public final class MacComputerBackend: ComputerBackend {
         case .permissionStatus, .requestPermissions, .listApps:
             preconditionFailure("global actions returned before target resolution")
         }
-        let priorSnapshot = lastSnapshotText[app.processIdentifier]
-        let previousSnapshot = priorSnapshot ?? ""
-        let settled = settleAccessibility(app: app, application: axApplication, previous: previousSnapshot)
-        // Building the first AX baseline is not evidence that this action changed
-        // the UI. Without this guard, weak-AX apps report a dropped directed event
-        // as verified merely because their menu tree was observed for the first time.
-        let axChanged = priorSnapshot != nil && settled.text != previousSnapshot
-        // Weak-AX apps can repaint without moving their Accessibility tree. When AX
-        // shows nothing, capture one frame and compare it so the model still gets a
-        // grounded verification signal instead of a bare "unverified".
-        var visualVerified = false
-        if !axChanged {
-            let hadVisualBaseline = lastScreenshotData[app.processIdentifier] != nil
-            visualVerified = captureVisualRevision(app: app) && hadVisualBaseline
-        }
         let frontmostAfter = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let canonicalTarget = app.bundleIdentifier ?? app.bundleURL?.path ?? target
-        let changes = snapshotChanges(from: previousSnapshot, to: settled.text)
-        let status = axChanged ? "verified" : (visualVerified ? "verified_visual" : "unverified")
         var structured: [String: Any] = [
             "action": command.action.rawValue,
             "app": canonicalTarget,
             "display_name": app.localizedName ?? "Unknown",
             "process_id": Int(app.processIdentifier),
-            "status": status,
             "mechanism": mechanism,
-            "visual_verified": visualVerified,
             "foreground_changed": frontmostBefore != frontmostAfter,
-            "ax_revision": axRevisions[app.processIdentifier] ?? 0,
-            "visual_revision": visualRevisions[app.processIdentifier] ?? 0,
-            "changes": changes,
         ]
         if let interaction = intendedInteraction {
             structured["interaction"] = interaction
         }
         return ComputerResult(
-            text: "Action \(command.action.rawValue) completed for app=\"\(canonicalTarget)\" via \(mechanism) (\(status)). Call observe when you need fresh UI state.",
+            text: "Input delivered to app=\"\(canonicalTarget)\". Call observe when the outcome matters.",
             structured: structured
         )
     }

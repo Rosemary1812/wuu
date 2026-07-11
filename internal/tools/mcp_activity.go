@@ -151,7 +151,25 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		ThreadID:   session.ThreadID,
 		PreviewURI: session.Preview,
 	}
+	if callErr == nil && cuaActionIsDeliveryOnly(call.Arguments) {
+		return toolresult.Result{}, nil
+	}
 	return result, callErr
+}
+
+func cuaActionIsDeliveryOnly(arguments string) bool {
+	var input struct {
+		Action string `json:"action"`
+	}
+	if json.Unmarshal([]byte(arguments), &input) != nil {
+		return false
+	}
+	switch input.Action {
+	case "click", "drag", "press_key", "press_keys", "scroll", "set_value", "type_text", "select_text", "perform_action", "activate_control":
+		return true
+	default:
+		return false
+	}
 }
 
 func (t *Toolkit) canonicalCUATarget(ctx context.Context, tool Tool, target string) string {
