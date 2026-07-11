@@ -7,10 +7,7 @@ import type { WindowRegistry } from "./windowRegistry";
 
 export type ActivityWindowAction = "takeover" | "release" | "stop";
 
-const SNAP_THRESHOLD = 52;
 const SNAP_INSET = 12;
-const SCREEN_SNAP_THRESHOLD = 20;
-const SNAP_ANIMATION_MS = 110;
 const PREVIEW_TARGET_AREA = 380 * 248;
 const PREVIEW_MIN_WIDTH = 280;
 const PREVIEW_MAX_WIDTH = 480;
@@ -57,19 +54,13 @@ export function snapActivityBounds(
   bounds: Rectangle,
   workArea: Rectangle,
   anchors: Rectangle[],
-  threshold = SNAP_THRESHOLD,
   inset = SNAP_INSET,
 ): Rectangle {
   for (const anchor of anchors) {
     if (!rectanglesOverlap(anchor, workArea)) continue;
-    const snapped = nearestCorner(bounds, cornerPositions(bounds, anchor, inset, workArea), threshold);
-    if (snapped) return snapped;
+    return nearestCorner(bounds, cornerPositions(bounds, anchor, inset, workArea));
   }
-  return nearestCorner(
-    bounds,
-    cornerPositions(bounds, workArea, inset, workArea),
-    Math.min(threshold, SCREEN_SNAP_THRESHOLD),
-  ) ?? { ...bounds };
+  return nearestCorner(bounds, cornerPositions(bounds, workArea, inset, workArea));
 }
 
 function rectanglesOverlap(a: Rectangle, b: Rectangle): boolean {
@@ -118,18 +109,25 @@ function cornerPositions(
 function nearestCorner(
   bounds: Rectangle,
   candidates: Array<{ x: number; y: number }>,
-  threshold: number,
-): Rectangle | undefined {
-  let nearest: { x: number; y: number } | undefined;
-  let distance = threshold + 1;
-  for (const candidate of candidates) {
+): Rectangle {
+  const nearest = candidates[nearestCornerIndex(bounds, candidates)] ?? { x: bounds.x, y: bounds.y };
+  return { ...bounds, ...nearest };
+}
+
+function nearestCornerIndex(
+  bounds: Rectangle,
+  candidates: Array<{ x: number; y: number }>,
+): number {
+  let nearestIndex = 0;
+  let distance = Number.POSITIVE_INFINITY;
+  for (const [index, candidate] of candidates.entries()) {
     const nextDistance = Math.hypot(bounds.x - candidate.x, bounds.y - candidate.y);
-    if (nextDistance <= threshold && nextDistance < distance) {
-      nearest = candidate;
+    if (nextDistance < distance) {
+      nearestIndex = index;
       distance = nextDistance;
     }
   }
-  return nearest ? { ...bounds, ...nearest } : undefined;
+  return nearestIndex;
 }
 
 export function activityControlMethod(action: ActivityWindowAction): "activity/takeover" | "activity/release" | "activity/stop" {
@@ -145,6 +143,8 @@ export class CUAActivityWindowManager {
   private readonly manuallyResizedWindowIDs = new Set<number>();
   private readonly previewState = new Map<string, { ratio: number; target: string }>();
   private readonly snappingWindowIDs = new Set<number>();
+  private readonly dockedCorners = new Map<number, { source: "main" | "screen"; corner: number }>();
+  private readonly snapAnimationTokens = new Map<number, number>();
 
   constructor(
     private readonly registry: WindowRegistry,
@@ -213,6 +213,13 @@ export class CUAActivityWindowManager {
     win.on("will-resize", () => {
       this.manuallyResizedWindowIDs.add(win.webContents.id);
     });
+    win.on("resized", () => {
+      const docked = this.dockedBoundsForSize(win, win.getBounds());
+      if (docked) win.setPosition(docked.x, docked.y, false);
+    });
+    win.on("will-move", () => {
+      this.cancelSnap(win.webContents.id);
+    });
     win.on("moved", () => {
       const windowID = win.webContents.id;
       if (win.isDestroyed() || this.snappingWindowIDs.has(windowID)) return;
@@ -223,6 +230,20 @@ export class CUAActivityWindowManager {
         ? [mainWindow.getContentBounds()]
         : [];
       const snapped = snapActivityBounds(bounds, workArea, anchors);
+      if (anchors.length > 0 && rectanglesOverlap(anchors[0], workArea)) {
+        this.dockedCorners.set(
+          windowID,
+          {
+            source: "main",
+            corner: nearestCornerIndex(bounds, cornerPositions(bounds, anchors[0], SNAP_INSET, workArea)),
+          },
+        );
+      } else {
+        this.dockedCorners.set(windowID, {
+          source: "screen",
+          corner: nearestCornerIndex(bounds, cornerPositions(bounds, workArea, SNAP_INSET, workArea)),
+        });
+      }
       if (snapped.x !== bounds.x || snapped.y !== bounds.y) {
         this.animateSnap(win, bounds, snapped);
       }
@@ -249,9 +270,26 @@ export class CUAActivityWindowManager {
       activityID: activity.id,
     });
     this.registry.setActivityWindow(activity.id, windowID);
+    this.dockedCorners.set(windowID, { source: mainBounds ? "main" : "screen", corner: 1 });
+    const syncWithMainWindow = (): void => {
+      const docked = this.dockedCorners.get(windowID);
+      if (docked?.source !== "main" || win.isDestroyed() || !mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
+      const anchor = mainWindow.getContentBounds();
+      const anchorWorkArea = screen.getDisplayMatching(anchor).workArea;
+      const target = cornerPositions(win.getBounds(), anchor, SNAP_INSET, anchorWorkArea)[docked.corner];
+      if (!target) return;
+      this.cancelSnap(windowID);
+      win.setPosition(target.x, target.y, false);
+    };
+    mainWindow?.on("move", syncWithMainWindow);
+    mainWindow?.on("resize", syncWithMainWindow);
     win.on("closed", () => {
+      mainWindow?.removeListener("move", syncWithMainWindow);
+      mainWindow?.removeListener("resize", syncWithMainWindow);
       this.manuallyResizedWindowIDs.delete(windowID);
       this.snappingWindowIDs.delete(windowID);
+      this.dockedCorners.delete(windowID);
+      this.snapAnimationTokens.delete(windowID);
       this.previewState.delete(activity.id);
       this.registry.unregisterWindow(windowID);
     });
@@ -263,15 +301,20 @@ export class CUAActivityWindowManager {
 
   private animateSnap(win: BrowserWindow, from: Rectangle, to: Rectangle): void {
     const windowID = win.webContents.id;
+    const token = (this.snapAnimationTokens.get(windowID) ?? 0) + 1;
+    this.snapAnimationTokens.set(windowID, token);
     this.snappingWindowIDs.add(windowID);
     const startedAt = performance.now();
+    const distance = Math.hypot(to.x - from.x, to.y - from.y);
+    const duration = Math.max(150, Math.min(320, 140 + distance * 0.18));
     const step = (): void => {
       if (win.isDestroyed()) {
         this.snappingWindowIDs.delete(windowID);
         return;
       }
-      const progress = Math.min(1, (performance.now() - startedAt) / SNAP_ANIMATION_MS);
-      const eased = 1 - Math.pow(1 - progress, 3);
+      if (this.snapAnimationTokens.get(windowID) !== token) return;
+      const progress = Math.min(1, (performance.now() - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 5);
       win.setPosition(
         Math.round(from.x + (to.x - from.x) * eased),
         Math.round(from.y + (to.y - from.y) * eased),
@@ -284,6 +327,32 @@ export class CUAActivityWindowManager {
       }
     };
     step();
+  }
+
+  private cancelSnap(windowID: number): void {
+    this.snapAnimationTokens.set(windowID, (this.snapAnimationTokens.get(windowID) ?? 0) + 1);
+    this.snappingWindowIDs.delete(windowID);
+  }
+
+  private dockedBoundsForSize(win: BrowserWindow, size: { width: number; height: number }): Rectangle | undefined {
+    const docked = this.dockedCorners.get(win.webContents.id);
+    if (!docked) return undefined;
+    const current = win.getBounds();
+    const mainWindow = this.registry.mainWindow();
+    const mainBounds = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
+      ? mainWindow.getContentBounds()
+      : undefined;
+    const anchor = docked.source === "main" && mainBounds
+      ? mainBounds
+      : screen.getDisplayMatching(current).workArea;
+    const workArea = screen.getDisplayMatching(anchor).workArea;
+    const target = cornerPositions(
+      { ...current, width: size.width, height: size.height },
+      anchor,
+      SNAP_INSET,
+      workArea,
+    )[docked.corner];
+    return target ? { ...current, ...target, width: size.width, height: size.height } : undefined;
   }
 
   private render(win: BrowserWindow, activity: ActivitySession): void {
@@ -312,7 +381,9 @@ export class CUAActivityWindowManager {
     this.previewState.set(activity.id, { ratio, target });
     const bounds = win.getBounds();
     const workArea = screen.getDisplayMatching(bounds).workArea;
-    const resized = resizeActivityBounds(bounds, fitActivityPreviewSize(imageSize.width, imageSize.height), workArea);
+    const size = fitActivityPreviewSize(imageSize.width, imageSize.height);
+    const resized = this.dockedBoundsForSize(win, size)
+      ?? resizeActivityBounds(bounds, size, workArea);
     if (resized.width !== bounds.width || resized.height !== bounds.height) {
       win.setBounds(resized, false);
     }

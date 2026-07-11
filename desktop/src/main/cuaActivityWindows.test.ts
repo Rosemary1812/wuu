@@ -73,9 +73,9 @@ describe("CUA Activity windows", () => {
     expect(html).not.toContain("正在连接 Mac");
   });
 
-  it("snaps near screen edges with an inset", () => {
+  it("snaps from anywhere on the screen to the nearest corner", () => {
     expect(snapActivityBounds(
-      { x: 5, y: 650, width: 380, height: 248 },
+      { x: 400, y: 430, width: 380, height: 248 },
       { x: 0, y: 0, width: 1440, height: 900 },
       [],
     )).toEqual({ x: 12, y: 640, width: 380, height: 248 });
@@ -98,7 +98,7 @@ describe("CUA Activity windows", () => {
       { x: 700, y: 500, width: 380, height: 248 },
       workArea,
       [wuuWindow],
-    )).toEqual({ x: 700, y: 500, width: 380, height: 248 });
+    )).toEqual({ x: 928, y: 640, width: 380, height: 248 });
   });
 
   it("keeps the preview styled as a compact app frame", () => {
@@ -113,7 +113,6 @@ describe("CUA Activity windows", () => {
       { x: 680, y: 480, width: 380, height: 248 },
       { x: 0, y: 0, width: 1000, height: 700 },
       [{ x: 760, y: 520, width: 180, height: 140 }],
-      200,
     )).toEqual({ x: 620, y: 452, width: 380, height: 248 });
   });
 
@@ -122,7 +121,7 @@ describe("CUA Activity windows", () => {
       { x: 1970, y: 80, width: 380, height: 248 },
       { x: 1800, y: 0, width: 1200, height: 900 },
       [{ x: 100, y: 100, width: 1200, height: 800 }],
-    )).toEqual({ x: 1970, y: 80, width: 380, height: 248 });
+    )).toEqual({ x: 1812, y: 12, width: 380, height: 248 });
   });
 
   it("fits preview proportions within the compact overlay envelope", () => {
