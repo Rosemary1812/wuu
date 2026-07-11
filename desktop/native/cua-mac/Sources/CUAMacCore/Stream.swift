@@ -52,6 +52,31 @@ private final class FramePipeWriter: @unchecked Sendable {
         }
     }
 
+    func writeCapture(_ capture: WindowCapture) -> Bool {
+        queue.sync {
+            guard let bitmap = NSBitmapImageRep(data: capture.data),
+                  let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.72]) else {
+                return false
+            }
+            revision += 1
+            write(metadata: [
+                "event": "frame",
+                "revision": revision,
+                "timestamp_ns": DispatchTime.now().uptimeNanoseconds,
+                "width": bitmap.pixelsWide,
+                "height": bitmap.pixelsHigh,
+                "window_frame": [
+                    "x": capture.geometry.windowFrame.origin.x,
+                    "y": capture.geometry.windowFrame.origin.y,
+                    "width": capture.geometry.windowFrame.width,
+                    "height": capture.geometry.windowFrame.height,
+                ],
+                "mime_type": "image/jpeg",
+            ], payload: data)
+            return true
+        }
+    }
+
     private func write(metadata: [String: Any], payload: Data) {
         guard let encoded = try? JSONSerialization.data(withJSONObject: metadata, options: [.sortedKeys]) else { return }
         var header = Data()
@@ -99,6 +124,8 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
     private let lock = NSLock()
     private var frame: CGRect
     private var stopped = false
+    private var firstFrameReceived = false
+    private var failure: Error?
 
     init(writer: FramePipeWriter, frame: CGRect) {
         self.writer = writer
@@ -106,16 +133,17 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, sampleBuffer.isValid else { return }
+        guard type == .screen, sampleBuffer.isValid, sampleBuffer.imageBuffer != nil else { return }
         lock.lock()
         let currentFrame = frame
+        firstFrameReceived = true
         lock.unlock()
         writer.submit(sampleBuffer, frame: currentFrame)
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        writer.event("error", message: error.localizedDescription)
         lock.lock()
+        failure = error
         stopped = true
         lock.unlock()
         CFRunLoopWakeUp(CFRunLoopGetMain())
@@ -125,6 +153,25 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
         lock.lock()
         defer { lock.unlock() }
         return stopped
+    }
+
+    func receivedFirstFrame() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return firstFrameReceived
+    }
+
+    func streamFailure() -> Error? {
+        lock.lock()
+        defer { lock.unlock() }
+        return failure
+    }
+
+    func lockFailure(_ error: Error) {
+        lock.lock()
+        failure = error
+        stopped = true
+        lock.unlock()
     }
 
     func updateFrame(_ nextFrame: CGRect) {
@@ -199,7 +246,33 @@ public func runWindowFrameStream(target: String) async throws {
     let output = WindowStreamOutput(writer: writer, frame: window.frame)
     let stream = SCStream(filter: SCContentFilter(desktopIndependentWindow: window), configuration: configuration, delegate: output)
     try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: DispatchQueue(label: "com.blueberrycongee.wuu.cua.capture"))
-    try await stream.startCapture()
+    stream.startCapture { error in
+        guard let error else { return }
+        output.lockFailure(error)
+    }
+    let firstFrameDeadline = Date(timeIntervalSinceNow: 1)
+    while !output.receivedFirstFrame(), output.streamFailure() == nil, Date() < firstFrameDeadline {
+        try await Task.sleep(for: .milliseconds(50))
+    }
+    if !output.receivedFirstFrame() {
+        try? stream.removeStreamOutput(output, type: .screen)
+        var previousCapture: Data?
+        var emittedFirstFrame = false
+        while true {
+            let capture = try captureWindowPNG(processID: app.processIdentifier, timeout: 2)
+            if previousCapture != capture.data {
+                guard writer.writeCapture(capture) else {
+                    throw ComputerError.operationFailed("live window capture could not encode a frame")
+                }
+                previousCapture = capture.data
+                if !emittedFirstFrame {
+                    writer.event("started")
+                    emittedFirstFrame = true
+                }
+            }
+            try await Task.sleep(for: .milliseconds(125))
+        }
+    }
     writer.event("started")
     let inputMonitor = UserInputMonitor(processID: app.processIdentifier, writer: writer)
     let eventTypes: [CGEventType] = [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown, .scrollWheel]
