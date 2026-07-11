@@ -683,6 +683,9 @@
   height: 100%;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
+  /* Pull the file panel out of .workspace-panel-body's 12px right padding so
+     the scrollbar sits flush against the right edge of the side panel. */
+  margin-right: -12px;
 }
 
 .workspace-file-meta {
