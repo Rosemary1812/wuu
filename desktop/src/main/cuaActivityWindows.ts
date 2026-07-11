@@ -344,6 +344,7 @@ export class CUAActivityWindowManager {
       }
       if (parsed.action === "close") {
         this.dismissedActivityIDs.add(activity.id);
+        this.stopFrameStream(activity.id);
         this.registry.clearActivityWindow(activity.id);
         win.close();
         return;
@@ -383,6 +384,7 @@ export class CUAActivityWindowManager {
     mainWindow?.on("move", syncWithMainWindow);
     mainWindow?.on("resize", syncWithMainWindow);
     win.on("closed", () => {
+      this.stopFrameStream(activity.id);
       mainWindow?.removeListener("move", syncWithMainWindow);
       mainWindow?.removeListener("resize", syncWithMainWindow);
       this.manuallyResizedWindowIDs.delete(windowID);
