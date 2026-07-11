@@ -301,6 +301,49 @@ func TestCUAInputActionPublishesActivityButReturnsNoInferredState(t *testing.T) 
 	}
 }
 
+func TestCUAGlobalActionsBypassRevokedActivityControl(t *testing.T) {
+	registry := activity.NewRegistry()
+	session, _, err := registry.Start(activity.StartOptions{
+		Kind: activity.KindCUA, ThreadID: "thread-1", Workdir: "/repo", PluginID: "cua-mac", Target: "com.apple.TextEdit",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = registry.Takeover("thread-1", session.ID); err != nil {
+		t.Fatal(err)
+	}
+	tool := &activityTestTool{structuredContent: json.RawMessage(`{"apps":[]}`)}
+	kit := &Toolkit{
+		env:      &Env{RootDir: "/repo", SessionID: "thread-1", SessionDir: t.TempDir()},
+		registry: NewRegistry(tool), boundary: StandardBoundary(), activityRegistry: registry,
+		mcpActivityBindings: map[string]MCPActivityBinding{
+			"plugin.cua-mac.computer": {Kind: activity.KindCUA, PluginID: "cua-mac"},
+		},
+	}
+
+	result, err := kit.executeActivityBoundToolResult(
+		context.Background(),
+		providers.ToolCall{ID: "list-1", Name: tool.Name(), Arguments: `{"action":"list_apps"}`},
+		tool,
+		"plugin.cua-mac.computer",
+	)
+	if err != nil {
+		t.Fatalf("list_apps was blocked by unrelated activity lease: %v", err)
+	}
+	if string(result.StructuredContent) != `{"apps":[]}` {
+		t.Fatalf("list_apps result = %s", result.StructuredContent)
+	}
+	_, err = kit.executeActivityBoundToolResult(
+		context.Background(),
+		providers.ToolCall{ID: "resolve-1", Name: tool.Name(), Arguments: `{"action":"list_apps","app":"Calculator"}`},
+		tool,
+		"plugin.cua-mac.computer",
+	)
+	if !errors.Is(err, activity.ErrControlRevoked) {
+		t.Fatalf("target-resolving list_apps bypassed revoked activity control: %v", err)
+	}
+}
+
 func TestCUAActivityInteractionValidatesAndAssignsRevision(t *testing.T) {
 	result := toolresult.Result{StructuredContent: json.RawMessage(`{"interaction":{"kind":"click","x":0.25,"y":0.75}}`)}
 	interaction := cuaActivityInteraction(result)

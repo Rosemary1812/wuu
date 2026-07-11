@@ -67,6 +67,9 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 	if !bound {
 		return t.executeKnownToolResult(ctx, call, tool)
 	}
+	if cuaActionIsGlobal(call.Arguments) {
+		return t.executeKnownToolResult(ctx, call, tool)
+	}
 	if t.activityRegistry == nil {
 		return toolresult.Result{}, errors.New("activity registry is unavailable")
 	}
@@ -155,6 +158,24 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		return toolresult.Result{}, nil
 	}
 	return result, callErr
+}
+
+func cuaActionIsGlobal(arguments string) bool {
+	var input struct {
+		Action string `json:"action"`
+		App    string `json:"app"`
+	}
+	if json.Unmarshal([]byte(arguments), &input) != nil {
+		return false
+	}
+	switch input.Action {
+	case "list_apps":
+		return strings.TrimSpace(input.App) == ""
+	case "permission_status", "request_permissions":
+		return true
+	default:
+		return false
+	}
 }
 
 func cuaActionIsDeliveryOnly(arguments string) bool {

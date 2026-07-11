@@ -387,34 +387,6 @@ private let geometryObserverCallback: AXObserverCallback = { _, _, notification,
     Unmanaged<WindowGeometryMonitor>.fromOpaque(refcon).takeUnretainedValue().handle(notification)
 }
 
-private final class UserInputMonitor: @unchecked Sendable {
-    let processID: pid_t
-    let writer: PiPEventWriter
-    private let lock = NSLock()
-    private var lastSignal = Date.distantPast
-
-    init(processID: pid_t, writer: PiPEventWriter) {
-        self.processID = processID
-        self.writer = writer
-    }
-
-    func handle(_ event: CGEvent) {
-        guard event.getIntegerValueField(.eventSourceUserData) != wuuSyntheticEventMarker,
-              NSWorkspace.shared.frontmostApplication?.processIdentifier == processID else { return }
-        lock.lock()
-        let shouldSignal = Date().timeIntervalSince(lastSignal) > 0.5
-        if shouldSignal { lastSignal = Date() }
-        lock.unlock()
-        if shouldSignal { writer.send("user_input") }
-    }
-}
-
-private let userInputCallback: CGEventTapCallBack = { _, _, event, refcon in
-    guard let refcon else { return Unmanaged.passUnretained(event) }
-    Unmanaged<UserInputMonitor>.fromOpaque(refcon).takeUnretainedValue().handle(event)
-    return Unmanaged.passUnretained(event)
-}
-
 @available(macOS 14.0, *)
 private final class NativePiPStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     let controller: NativePiPWindowController
@@ -572,20 +544,6 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
         }
     }
 
-    let inputMonitor = UserInputMonitor(processID: app.processIdentifier, writer: writer)
-    let eventMask = [CGEventType.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown, .scrollWheel]
-        .reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << CGEventMask($1.rawValue)) }
-    let eventTap = CGEvent.tapCreate(
-        tap: .cgSessionEventTap, place: .tailAppendEventTap, options: .listenOnly,
-        eventsOfInterest: eventMask, callback: userInputCallback,
-        userInfo: Unmanaged.passUnretained(inputMonitor).toOpaque()
-    )
-    let eventSource = eventTap.map { CFMachPortCreateRunLoopSource(kCFAllocatorDefault, $0, 0) }
-    if let eventTap, let eventSource {
-        CFRunLoopAddSource(CFRunLoopGetMain(), eventSource, .commonModes)
-        CGEvent.tapEnable(tap: eventTap, enable: true)
-    }
-
     var lastSafetyRefresh = Date.distantPast
     while !app.isTerminated {
         try await Task.sleep(for: .milliseconds(100))
@@ -636,6 +594,5 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
             window = nextWindow
         } catch { output.lockFailure(error) }
     }
-    if let eventSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), eventSource, .commonModes) }
     try? await stream.stopCapture()
 }
