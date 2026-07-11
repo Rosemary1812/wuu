@@ -10,7 +10,7 @@ private final class FramePipeWriter: @unchecked Sendable {
     private var writing = false
     private var revision: UInt64 = 0
 
-    func submit(_ sampleBuffer: CMSampleBuffer, frame: CGRect, contentRect: CGRect?) {
+    func submit(_ sampleBuffer: CMSampleBuffer, frame: CGRect) {
         lock.lock()
         guard !writing else { lock.unlock(); return }
         writing = true
@@ -23,9 +23,12 @@ private final class FramePipeWriter: @unchecked Sendable {
                 self.lock.unlock()
             }
             guard let imageBuffer = sampleBuffer.imageBuffer else { return }
-            let source = CIImage(cvImageBuffer: imageBuffer)
-            let crop = contentRect.map { $0.intersection(source.extent) }
-            let image = crop.flatMap { $0.isNull || $0.isEmpty ? nil : source.cropped(to: $0) } ?? source
+            // A desktop-independent window stream already contains the complete
+            // window. SCStreamFrameInfo.contentRect is expressed in window-space
+            // points, while this buffer uses the configured pixel dimensions.
+            // Cropping the pixel buffer with that unscaled rectangle truncates the
+            // right and bottom of the window, especially when it is partly off-screen.
+            let image = CIImage(cvImageBuffer: imageBuffer)
             let context = CIContext(options: [.cacheIntermediates: false])
             guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
                   let data = context.jpegRepresentation(
@@ -56,22 +59,17 @@ private final class FramePipeWriter: @unchecked Sendable {
 
     func writeCapture(_ capture: WindowCapture) -> Bool {
         queue.sync {
-            guard let bitmap = NSBitmapImageRep(data: capture.data), let source = bitmap.cgImage else {
+            guard let bitmap = NSBitmapImageRep(data: capture.data),
+                  let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.72]) else {
                 return false
             }
-            let visible = capture.geometry.visibleImageFrame.integral.intersection(
-                CGRect(x: 0, y: 0, width: source.width, height: source.height)
-            )
-            let image = (!visible.isNull && !visible.isEmpty ? source.cropping(to: visible) : nil) ?? source
-            let cropped = NSBitmapImageRep(cgImage: image)
-            guard let data = cropped.representation(using: .jpeg, properties: [.compressionFactor: 0.72]) else { return false }
             revision += 1
             write(metadata: [
                 "event": "frame",
                 "revision": revision,
                 "timestamp_ns": DispatchTime.now().uptimeNanoseconds,
-                "width": image.width,
-                "height": image.height,
+                "width": bitmap.pixelsWide,
+                "height": bitmap.pixelsHigh,
                 "window_frame": [
                     "x": capture.geometry.windowFrame.origin.x,
                     "y": capture.geometry.windowFrame.origin.y,
@@ -145,10 +143,7 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
         let currentFrame = frame
         firstFrameReceived = true
         lock.unlock()
-        let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
-            as? [[SCStreamFrameInfo: Any]]
-        let contentRect = attachments?.first?[.contentRect] as? CGRect
-        writer.submit(sampleBuffer, frame: currentFrame, contentRect: contentRect)
+        writer.submit(sampleBuffer, frame: currentFrame)
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
