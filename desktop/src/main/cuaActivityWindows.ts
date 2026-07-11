@@ -181,6 +181,7 @@ export class CUAActivityWindowManager {
   private readonly loadedWindowIDs = new Set<number>();
   private readonly pendingRenderActivities = new Map<number, ActivitySession>();
   private readonly renderedSignatures = new Map<string, string>();
+  private readonly visualReadyActivityIDs = new Set<string>();
   private activeThreadID: string | undefined;
 
   constructor(
@@ -210,11 +211,13 @@ export class CUAActivityWindowManager {
       this.dismissedActivityIDs.delete(activity.id);
       this.pendingActivities.delete(activity.id);
       this.renderedSignatures.delete(activity.id);
+      this.visualReadyActivityIDs.delete(activity.id);
       this.registry.clearActivityWindow(activity.id);
       if (existing && !existing.isDestroyed()) existing.close();
       return;
     }
     this.activities.set(activity.id, activity);
+    if (activityHasVisibleContent(activity)) this.visualReadyActivityIDs.add(activity.id);
     if (this.dismissedActivityIDs.has(activity.id)) return;
     if (existing && !existing.isDestroyed() && this.draggingWindowIDs.has(existing.webContents.id)) {
       this.pendingActivities.set(activity.id, activity);
@@ -230,7 +233,9 @@ export class CUAActivityWindowManager {
 
   private syncVisibility(win: BrowserWindow, activity: ActivitySession): void {
     if (win.isDestroyed()) return;
-    if (activityVisibleForThread(activity.thread_id, this.activeThreadID)) {
+    const showable = activityVisibleForThread(activity.thread_id, this.activeThreadID)
+      && this.visualReadyActivityIDs.has(activity.id);
+    if (showable) {
       if (!win.isVisible() && this.readyWindowIDs.has(win.webContents.id)) win.showInactive();
     } else if (win.isVisible()) {
       win.hide();
@@ -360,6 +365,7 @@ export class CUAActivityWindowManager {
       this.loadedWindowIDs.delete(windowID);
       this.pendingRenderActivities.delete(windowID);
       this.renderedSignatures.delete(activity.id);
+      this.visualReadyActivityIDs.delete(activity.id);
       this.registry.unregisterWindow(windowID);
     });
     win.once("ready-to-show", () => {
@@ -550,6 +556,11 @@ export class CUAActivityWindowManager {
     if (retry && !retry.timer) this.frameStreamRetries.delete(activityID);
     const win = this.registry.activityWindow(activityID);
     if (!win || win.isDestroyed()) return;
+    if (!this.visualReadyActivityIDs.has(activityID)) {
+      this.visualReadyActivityIDs.add(activityID);
+      const activity = this.activities.get(activityID);
+      if (activity) this.syncVisibility(win, activity);
+    }
     const revision = metadata.revision ?? Date.now();
     const url = `${renderableFileURL(path)}?v=${revision}`;
     if (typeof metadata.width === "number" && typeof metadata.height === "number") {
@@ -563,7 +574,9 @@ export class CUAActivityWindowManager {
     const activity = this.activities.get(activityID);
     const win = this.registry.activityWindow(activityID);
     if (!activity || !win || win.isDestroyed()) return;
+    this.visualReadyActivityIDs.add(activityID);
     this.render(win, { ...activity, error: message, updated_at: new Date().toISOString() });
+    this.syncVisibility(win, activity);
   }
 
   private autoSizeForLiveFrame(win: BrowserWindow, activityID: string, width: number, height: number): void {
@@ -632,6 +645,10 @@ export function activityActionFromURL(rawURL: string): { action: ActivityWindowA
   } catch {
     return undefined;
   }
+}
+
+export function activityHasVisibleContent(activity: ActivitySession): boolean {
+  return activityPreviewURL(activity) !== undefined || Boolean(activity.error?.trim());
 }
 
 export function activityRenderSignature(activity: ActivitySession, hasLiveStream: boolean): string {

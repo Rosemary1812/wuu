@@ -4,6 +4,7 @@ import {
   activityActionFromURL,
   activityActionsHTML,
   activityControlMethod,
+  activityHasVisibleContent,
   activityRenderSignature,
   activityViewState,
   activityVisibleForThread,
@@ -206,6 +207,14 @@ describe("CUA Activity windows", () => {
     expect(state.previewURL).toMatch(/^wuu-file:\/\/local\//);
     expect(activityViewState(activity({ preview: undefined })).previewURL).toBe("");
     expect(activityActionsHTML(activity({ controller: "user" }))).toContain("交还 Agent");
+  });
+
+  it("keeps the PiP hidden until real content or an error exists", () => {
+    expect(activityHasVisibleContent(activity())).toBe(true);
+    expect(activityHasVisibleContent(activity({ preview: undefined, state: "starting" }))).toBe(false);
+    expect(activityHasVisibleContent(activity({ preview: "   " }))).toBe(false);
+    expect(activityHasVisibleContent(activity({ preview: "https://example.test/p.png" }))).toBe(false);
+    expect(activityHasVisibleContent(activity({ preview: undefined, error: "boom" }))).toBe(true);
   });
 
   it("backs off dead live streams instead of retrying immediately or forever", () => {
