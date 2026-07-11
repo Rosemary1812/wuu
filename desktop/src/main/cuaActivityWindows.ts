@@ -1,5 +1,5 @@
 import { BrowserWindow, nativeImage, screen } from "electron";
-import type { Rectangle } from "electron";
+import type { BrowserWindowConstructorOptions, Rectangle } from "electron";
 import { fileURLToPath } from "node:url";
 import type { ActivitySession, ServerEvent } from "../shared/protocol";
 import { renderableFileURL } from "./renderableFileURLs";
@@ -8,6 +8,10 @@ import type { WindowRegistry } from "./windowRegistry";
 
 export type ActivityControlAction = "takeover" | "release" | "stop";
 export type ActivityWindowAction = ActivityControlAction | "close" | "drag-start" | "drag-end";
+
+export type ActivityDockedCorner =
+  | { source: "main"; corner: number }
+  | { source: "screen"; corner: number; workArea: Rectangle };
 
 const SNAP_INSET = 12;
 const PREVIEW_TARGET_AREA = 380 * 248;
@@ -159,6 +163,28 @@ export function activityVisibleForThread(activityThreadID: string, activeThreadI
   return activeThreadID !== undefined && activityThreadID === activeThreadID;
 }
 
+export function activityWindowStackingOptions(
+  parent: BrowserWindow,
+): Pick<BrowserWindowConstructorOptions, "alwaysOnTop" | "parent"> {
+  return {
+    alwaysOnTop: false,
+    parent,
+  };
+}
+
+export function activityWindowCanCreate(mainWindow: BrowserWindow | null): mainWindow is BrowserWindow {
+  return mainWindow !== null && !mainWindow.isDestroyed();
+}
+
+export function activityDockAnchor(
+  docked: ActivityDockedCorner,
+  mainBounds: Rectangle | undefined,
+  fallbackWorkArea: Rectangle,
+): Rectangle {
+  if (docked.source === "screen") return docked.workArea;
+  return mainBounds ?? fallbackWorkArea;
+}
+
 type ActivityControl = (
   activity: ActivitySession,
   action: ActivityControlAction,
@@ -173,7 +199,7 @@ export class CUAActivityWindowManager {
   private readonly readyWindowIDs = new Set<number>();
   private readonly dismissedActivityIDs = new Set<string>();
   private readonly pendingActivities = new Map<string, ActivitySession>();
-  private readonly dockedCorners = new Map<number, { source: "main" | "screen"; corner: number }>();
+  private readonly dockedCorners = new Map<number, ActivityDockedCorner>();
   private readonly snapAnimationTokens = new Map<number, number>();
   private readonly frameStreams = new Map<string, { target: string; stream: CUAFrameStream; startedAt: number }>();
   private readonly frameStreamRetries = new Map<string, { attempts: number; timer?: NodeJS.Timeout }>();
@@ -199,7 +225,11 @@ export class CUAActivityWindowManager {
     this.activeThreadID = threadID?.trim() || undefined;
     for (const [activityID, activity] of this.activities) {
       const win = this.registry.activityWindow(activityID);
-      if (win && !win.isDestroyed()) this.syncVisibility(win, activity);
+      if (win && !win.isDestroyed()) {
+        this.syncVisibility(win, activity);
+      } else if (activityVisibleForThread(activity.thread_id, this.activeThreadID)) {
+        this.update(activity);
+      }
     }
   }
 
@@ -223,9 +253,12 @@ export class CUAActivityWindowManager {
       this.pendingActivities.set(activity.id, activity);
       return;
     }
-    const win = existing && !existing.isDestroyed()
-      ? existing
-      : this.createWindow(activity);
+    let win = existing && !existing.isDestroyed() ? existing : undefined;
+    if (!win) {
+      const mainWindow = this.registry.mainWindow();
+      if (!activityWindowCanCreate(mainWindow)) return;
+      win = this.createWindow(activity, mainWindow);
+    }
     this.syncFrameStream(activity);
     this.render(win, activity);
     this.syncVisibility(win, activity);
@@ -242,13 +275,12 @@ export class CUAActivityWindowManager {
     }
   }
 
-  private createWindow(activity: ActivitySession): BrowserWindow {
+  private createWindow(activity: ActivitySession, mainWindow: BrowserWindow): BrowserWindow {
     const cursor = screen.getCursorScreenPoint();
     let workArea = screen.getDisplayNearestPoint(cursor).workArea;
     const width = 380;
     const height = 248;
-    const mainWindow = this.registry.mainWindow();
-    const mainBounds = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
+    const mainBounds = mainWindow.isVisible()
       ? mainWindow.getContentBounds()
       : undefined;
     if (mainBounds) workArea = screen.getDisplayMatching(mainBounds).workArea;
@@ -266,19 +298,16 @@ export class CUAActivityWindowManager {
       transparent: true,
       backgroundColor: "#00000000",
       hasShadow: false,
-      alwaysOnTop: true,
+      ...activityWindowStackingOptions(mainWindow),
       skipTaskbar: true,
       show: false,
-      type: "panel",
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
       },
     });
-    win.setAlwaysOnTop(true, "floating");
     win.setHasShadow(false);
-    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     win.webContents.on("did-finish-load", () => {
       if (win.isDestroyed()) return;
@@ -337,11 +366,14 @@ export class CUAActivityWindowManager {
       activityID: activity.id,
     });
     this.registry.setActivityWindow(activity.id, windowID);
-    this.dockedCorners.set(windowID, { source: mainBounds ? "main" : "screen", corner: 1 });
+    this.dockedCorners.set(windowID, mainBounds
+      ? { source: "main", corner: 1 }
+      : { source: "screen", corner: 1, workArea });
     const syncWithMainWindow = (): void => {
       const docked = this.dockedCorners.get(windowID);
-      if (docked?.source !== "main" || win.isDestroyed() || this.draggingWindowIDs.has(windowID) || this.snappingWindowIDs.has(windowID) || !mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
-      const anchor = mainWindow.getContentBounds();
+      if (!docked || win.isDestroyed() || this.draggingWindowIDs.has(windowID) || this.snappingWindowIDs.has(windowID)) return;
+      if (docked.source === "main" && (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible())) return;
+      const anchor = docked.source === "main" ? mainWindow!.getContentBounds() : docked.workArea;
       const anchorWorkArea = screen.getDisplayMatching(anchor).workArea;
       const target = cornerPositions(win.getBounds(), anchor, SNAP_INSET, anchorWorkArea)[docked.corner];
       if (!target) return;
@@ -399,6 +431,7 @@ export class CUAActivityWindowManager {
       this.dockedCorners.set(windowID, {
         source: "screen",
         corner: nearestCornerIndex(bounds, cornerPositions(bounds, workArea, SNAP_INSET, workArea)),
+        workArea,
       });
     }
     if (snapped.x !== bounds.x || snapped.y !== bounds.y) {
@@ -456,9 +489,11 @@ export class CUAActivityWindowManager {
     const mainBounds = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
       ? mainWindow.getContentBounds()
       : undefined;
-    const anchor = docked.source === "main" && mainBounds
-      ? mainBounds
-      : screen.getDisplayMatching(current).workArea;
+    const anchor = activityDockAnchor(
+      docked,
+      mainBounds,
+      screen.getDisplayMatching(current).workArea,
+    );
     const workArea = screen.getDisplayMatching(anchor).workArea;
     const target = cornerPositions(
       { ...current, width: size.width, height: size.height },

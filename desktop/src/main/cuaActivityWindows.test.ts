@@ -4,10 +4,13 @@ import {
   activityActionFromURL,
   activityActionsHTML,
   activityControlMethod,
+  activityDockAnchor,
   activityHasVisibleContent,
   activityRenderSignature,
   activityViewState,
   activityVisibleForThread,
+  activityWindowCanCreate,
+  activityWindowStackingOptions,
   cuaActivityFromServerEvent,
   cuaActivityHTML,
   frameStreamRetryDelay,
@@ -37,6 +40,29 @@ function activity(overrides: Partial<ActivitySession> = {}): ActivitySession {
 }
 
 describe("CUA Activity windows", () => {
+  it("keeps the PiP above Wuu without floating over other applications", () => {
+    const parent = { id: "main-window" } as never;
+    expect(activityWindowStackingOptions(parent)).toEqual({
+      alwaysOnTop: false,
+      parent,
+    });
+  });
+
+  it("does not create an orphan PiP after the Wuu window closes", () => {
+    expect(activityWindowCanCreate(null)).toBe(false);
+    expect(activityWindowCanCreate({ isDestroyed: () => true } as never)).toBe(false);
+    expect(activityWindowCanCreate({ isDestroyed: () => false } as never)).toBe(true);
+  });
+
+  it("keeps a screen-docked PiP anchored when the Wuu window moves", () => {
+    const originalScreen = { x: 1440, y: 0, width: 1200, height: 900 };
+    expect(activityDockAnchor(
+      { source: "screen", corner: 3, workArea: originalScreen },
+      { x: 200, y: 120, width: 1000, height: 700 },
+      { x: 0, y: 0, width: 1440, height: 900 },
+    )).toEqual(originalScreen);
+  });
+
   it("scopes PiP visibility to the active session", () => {
     expect(activityVisibleForThread("thread-1", "thread-1")).toBe(true);
     expect(activityVisibleForThread("thread-1", "thread-2")).toBe(false);
