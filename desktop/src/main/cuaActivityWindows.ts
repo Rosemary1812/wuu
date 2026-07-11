@@ -171,6 +171,10 @@ export class CUAActivityWindowManager {
   private readonly dockedCorners = new Map<number, { source: "main" | "screen"; corner: number }>();
   private readonly snapAnimationTokens = new Map<number, number>();
   private readonly frameStreams = new Map<string, { target: string; stream: CUAFrameStream; startedAt: number }>();
+  private readonly loadStartedWindowIDs = new Set<number>();
+  private readonly loadedWindowIDs = new Set<number>();
+  private readonly pendingRenderActivities = new Map<number, ActivitySession>();
+  private readonly renderedSignatures = new Map<string, string>();
   private activeThreadID: string | undefined;
 
   constructor(
@@ -199,6 +203,7 @@ export class CUAActivityWindowManager {
       this.activities.delete(activity.id);
       this.dismissedActivityIDs.delete(activity.id);
       this.pendingActivities.delete(activity.id);
+      this.renderedSignatures.delete(activity.id);
       this.registry.clearActivityWindow(activity.id);
       if (existing && !existing.isDestroyed()) existing.close();
       return;
@@ -264,6 +269,13 @@ export class CUAActivityWindowManager {
     win.setHasShadow(false);
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    win.webContents.on("did-finish-load", () => {
+      if (win.isDestroyed()) return;
+      this.loadedWindowIDs.add(win.webContents.id);
+      const pending = this.pendingRenderActivities.get(win.webContents.id);
+      this.pendingRenderActivities.delete(win.webContents.id);
+      if (pending) this.applyViewState(win, pending);
+    });
     win.on("will-resize", () => {
       this.manuallyResizedWindowIDs.add(win.webContents.id);
     });
@@ -338,6 +350,10 @@ export class CUAActivityWindowManager {
       this.dockedCorners.delete(windowID);
       this.snapAnimationTokens.delete(windowID);
       this.previewState.delete(activity.id);
+      this.loadStartedWindowIDs.delete(windowID);
+      this.loadedWindowIDs.delete(windowID);
+      this.pendingRenderActivities.delete(windowID);
+      this.renderedSignatures.delete(activity.id);
       this.registry.unregisterWindow(windowID);
     });
     win.once("ready-to-show", () => {
@@ -443,8 +459,26 @@ export class CUAActivityWindowManager {
 
   private render(win: BrowserWindow, activity: ActivitySession): void {
     if (win.isDestroyed()) return;
+    const signature = activityRenderSignature(activity, this.frameStreams.get(activity.id)?.stream.isLive() ?? false);
+    if (this.renderedSignatures.get(activity.id) === signature) return;
+    this.renderedSignatures.set(activity.id, signature);
     this.autoSizeForPreview(win, activity);
+    const windowID = win.webContents.id;
+    if (this.loadedWindowIDs.has(windowID)) {
+      this.applyViewState(win, activity);
+      return;
+    }
+    if (this.loadStartedWindowIDs.has(windowID)) {
+      this.pendingRenderActivities.set(windowID, activity);
+      return;
+    }
+    this.loadStartedWindowIDs.add(windowID);
     void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(cuaActivityHTML(activity))}`);
+  }
+
+  private applyViewState(win: BrowserWindow, activity: ActivitySession): void {
+    const payload = JSON.stringify(activityViewState(activity));
+    void win.webContents.executeJavaScript(`window.wuuCUAActivity?.(${payload})`, true).catch(() => undefined);
   }
 
   private syncFrameStream(activity: ActivitySession): void {
@@ -570,17 +604,39 @@ export function activityActionFromURL(rawURL: string): { action: ActivityWindowA
   }
 }
 
-export function cuaActivityHTML(activity: ActivitySession): string {
-  const target = escapeHTML(activity.target?.trim() || "Mac App");
-  const previewURL = activityPreviewURL(activity);
+export function activityRenderSignature(activity: ActivitySession, hasLiveStream: boolean): string {
+  return JSON.stringify([
+    activity.state,
+    activity.controller,
+    activity.error?.trim() ?? "",
+    activity.target?.trim() ?? "",
+    activity.preview?.trim() ?? "",
+    hasLiveStream ? "" : activity.updated_at,
+  ]);
+}
+
+export function activityViewState(activity: ActivitySession): { actionsHTML: string; error: string; previewURL: string } {
+  return {
+    actionsHTML: activityActionsHTML(activity),
+    error: activity.error?.trim() ?? "",
+    previewURL: activityPreviewURL(activity) ?? "",
+  };
+}
+
+export function activityActionsHTML(activity: ActivitySession): string {
   const controls = activity.controller === "user"
     ? actionLink(activity, "release", "交还 Agent", "primary")
     : activity.controller === "agent"
       ? actionLink(activity, "takeover", "接管", "primary")
       : "";
-  const error = activity.error
-    ? `<div class="error">${escapeHTML(activity.error)}</div>`
-    : "";
+  return `${controls}${actionLink(activity, "close", "关闭画中画", "stop", "×")}`;
+}
+
+export function cuaActivityHTML(activity: ActivitySession): string {
+  const target = escapeHTML(activity.target?.trim() || "Mac App");
+  const previewURL = activityPreviewURL(activity);
+  const errorText = activity.error?.trim() ?? "";
+  const error = `<div class="error"${errorText ? "" : " hidden"}>${escapeHTML(errorText)}</div>`;
   const preview = previewURL
     ? `<img id="live-preview" src="${escapeHTML(previewURL)}" alt="${target} 实时画面" />`
     : `<div class="glass" role="status" aria-label="正在获取画面"></div><img id="live-preview" hidden alt="${target} 实时画面" />`;
@@ -597,15 +653,29 @@ export function cuaActivityHTML(activity: ActivitySession): string {
 .glass{position:absolute;inset:0;background:radial-gradient(circle at 10% 0%,rgba(255,255,255,.62),transparent 44%),radial-gradient(circle at 92% 34%,rgba(255,122,72,.16),transparent 48%),radial-gradient(circle at 52% 112%,rgba(110,170,255,.14),transparent 50%),linear-gradient(145deg,var(--glass-strong),var(--glass));box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
 .actions{position:absolute;z-index:3;top:8px;right:8px;display:flex;align-items:center;gap:5px;padding:4px;border-radius:10px;background:var(--glass-strong);border:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.14);opacity:0;transform:translateY(-3px);transition:opacity 140ms ease,transform 140ms ease;-webkit-app-region:no-drag}.card:hover .actions,.actions:focus-within{opacity:1;transform:none}.button{height:25px;padding:0 8px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink);background:transparent;border:0;font-size:11px;font-weight:560}.button:hover{background:var(--hover)}.button.stop{width:25px;padding:0;font-size:15px;font-weight:400}.button.stop:hover{color:var(--danger);background:var(--danger-soft)}
 .error{position:absolute;z-index:2;left:8px;right:8px;bottom:8px;padding:8px 10px;border-radius:9px;background:var(--danger-soft);border:1px solid var(--line);font-size:10.5px;color:var(--danger);-webkit-app-region:no-drag}
-</style></head><body><section class="card"><div class="preview">${preview}</div><div class="actions">${controls}${actionLink(activity,"close","关闭画中画","stop","×")}</div>${error}</section>
+</style></head><body><section class="card"><div class="preview">${preview}</div><div class="actions">${activityActionsHTML(activity)}</div>${error}</section>
 <script>
 (() => {
   const card = document.querySelector('.card');
   const livePreview = document.querySelector('#live-preview');
+  const actions = document.querySelector('.actions');
+  const errorBox = document.querySelector('.error');
+  let lastLiveFrameAt = 0;
   window.wuuCUAFrame = (url) => {
+    lastLiveFrameAt = Date.now();
     livePreview.src = url;
     livePreview.hidden = false;
     document.querySelector('.glass')?.remove();
+  };
+  window.wuuCUAActivity = (state) => {
+    actions.innerHTML = state.actionsHTML;
+    errorBox.textContent = state.error;
+    errorBox.hidden = !state.error;
+    if (state.previewURL && Date.now() - lastLiveFrameAt > 2000) {
+      livePreview.src = state.previewURL;
+      livePreview.hidden = false;
+      document.querySelector('.glass')?.remove();
+    }
   };
   const activityID = ${JSON.stringify(activity.id)};
   let pointerID = null;

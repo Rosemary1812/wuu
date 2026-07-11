@@ -99,6 +99,10 @@ export class CUAFrameStream {
     this.latest = undefined;
   }
 
+  isLive(): boolean {
+    return this.child !== undefined;
+  }
+
   private async flushLatest(): Promise<void> {
     if (this.writing) return;
     this.writing = true;

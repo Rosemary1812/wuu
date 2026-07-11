@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { ActivitySession, ServerEvent } from "../shared/protocol";
 import {
   activityActionFromURL,
+  activityActionsHTML,
   activityControlMethod,
+  activityRenderSignature,
+  activityViewState,
   activityVisibleForThread,
   cuaActivityFromServerEvent,
   cuaActivityHTML,
@@ -181,6 +184,34 @@ describe("CUA Activity windows", () => {
     expect(activityActionFromURL("wuu-cua://action/drag-end?activity_id=activity-1")?.action).toBe("drag-end");
     expect(activityActionFromURL("wuu-cua://action/delete?activity_id=activity-1")).toBeUndefined();
     expect(activityActionFromURL("https://example.test/")).toBeUndefined();
+  });
+
+  it("keeps a stable render signature for heartbeat updates while a live stream runs", () => {
+    const first = activity({ updated_at: "2026-07-10T10:00:01Z" });
+    const later = activity({ updated_at: "2026-07-10T10:00:09Z" });
+    expect(activityRenderSignature(later, true)).toBe(activityRenderSignature(first, true));
+    expect(activityRenderSignature(later, false)).not.toBe(activityRenderSignature(first, false));
+    expect(activityRenderSignature(activity({ controller: "user" }), true))
+      .not.toBe(activityRenderSignature(first, true));
+    expect(activityRenderSignature(activity({ error: "boom" }), true))
+      .not.toBe(activityRenderSignature(first, true));
+  });
+
+  it("exposes an in-place view state instead of a full page reload", () => {
+    const state = activityViewState(activity({ error: "boom <late>" }));
+    expect(state.actionsHTML).toContain("接管");
+    expect(state.actionsHTML).toContain("关闭画中画");
+    expect(state.error).toBe("boom <late>");
+    expect(state.previewURL).toMatch(/^wuu-file:\/\/local\//);
+    expect(activityViewState(activity({ preview: undefined })).previewURL).toBe("");
+    expect(activityActionsHTML(activity({ controller: "user" }))).toContain("交还 Agent");
+  });
+
+  it("ships a patchable document with a persistent error box", () => {
+    const html = cuaActivityHTML(activity());
+    expect(html).toContain("window.wuuCUAActivity");
+    expect(html).toContain('<div class="error" hidden>');
+    expect(cuaActivityHTML(activity({ error: "boom" }))).toContain('<div class="error">boom</div>');
   });
 
   it("maps window controls onto Activity RPC methods", () => {
