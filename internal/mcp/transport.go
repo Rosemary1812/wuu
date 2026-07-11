@@ -122,6 +122,20 @@ func call(ctx context.Context, t Transport, f *inFlight, method string, params a
 	}
 	select {
 	case <-ctx.Done():
+		// Tell the server to stop working on this request (MCP
+		// notifications/cancelled). Best-effort: ctx is already done, so the
+		// notification goes out on a background context and errors are ignored.
+		// The spec forbids cancelling initialize, so skip it there.
+		f.drop(id)
+		if method != "initialize" {
+			if p, err := json.Marshal(cancelledParams{RequestID: id, Reason: ctx.Err().Error()}); err == nil {
+				_ = t.Send(context.Background(), Request{
+					JSONRPC: "2.0",
+					Method:  "notifications/cancelled",
+					Params:  p,
+				})
+			}
+		}
 		return nil, ctx.Err()
 	case resp := <-ch:
 		if resp.Error != nil {
@@ -129,4 +143,10 @@ func call(ctx context.Context, t Transport, f *inFlight, method string, params a
 		}
 		return resp.Result, nil
 	}
+}
+
+// cancelledParams is the payload for MCP notifications/cancelled.
+type cancelledParams struct {
+	RequestID int64  `json:"requestId"`
+	Reason    string `json:"reason,omitempty"`
 }

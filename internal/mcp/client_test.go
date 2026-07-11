@@ -9,6 +9,68 @@ import (
 	"time"
 )
 
+func TestCallSendsCancelledNotificationOnContextCancel(t *testing.T) {
+	transport := newScriptedTransport()
+	f := newInFlight()
+
+	// tools/call is never auto-answered by the scripted transport, so the
+	// call blocks until the context is cancelled.
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := call(ctx, transport, f, "tools/call", map[string]any{"name": "slow"})
+	if err == nil {
+		t.Fatalf("expected cancellation error")
+	}
+
+	transport.mu.Lock()
+	defer transport.mu.Unlock()
+	var cancelled *Request
+	for i := range transport.sent {
+		if transport.sent[i].Method == "notifications/cancelled" {
+			cancelled = &transport.sent[i]
+			break
+		}
+	}
+	if cancelled == nil {
+		t.Fatalf("no notifications/cancelled sent; sent=%+v", transport.sent)
+	}
+	if cancelled.ID != 0 {
+		t.Fatalf("cancelled notification must have no id, got %d", cancelled.ID)
+	}
+	var params cancelledParams
+	if err := json.Unmarshal(cancelled.Params, &params); err != nil {
+		t.Fatalf("decode cancelled params: %v", err)
+	}
+	if params.RequestID == 0 {
+		t.Fatalf("cancelled notification missing requestId: %+v", params)
+	}
+}
+
+func TestCallDoesNotCancelInitialize(t *testing.T) {
+	transport := newScriptedTransport()
+	f := newInFlight()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
+
+	_, _ = call(ctx, transport, f, "initialize", map[string]any{})
+
+	transport.mu.Lock()
+	defer transport.mu.Unlock()
+	for _, req := range transport.sent {
+		if req.Method == "notifications/cancelled" {
+			t.Fatalf("initialize must not be cancelled per MCP spec")
+		}
+	}
+}
+
 func TestClientRefreshesToolsOnListChangedNotification(t *testing.T) {
 	transport := newScriptedTransport()
 	client := &Client{

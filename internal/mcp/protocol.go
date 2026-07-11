@@ -182,6 +182,14 @@ func (f *inFlight) resolve(id int64, resp Response) bool {
 	return true
 }
 
+// drop removes a pending request without delivering a response. Used when the
+// caller's context is cancelled so the entry does not leak until closeAll.
+func (f *inFlight) drop(id int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.pending, id)
+}
+
 func (f *inFlight) closeAll() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
