@@ -955,7 +955,16 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:agent-template-list", (event) =>
     appServerRequest(event, "agent-template/list"),
   );
-  ipcMain.handle("wuu:codex-pets-list", () => codexPetsSnapshot());
+  ipcMain.handle("wuu:codex-pets-list", () => {
+    const snapshot = codexPetsSnapshot();
+    // Sync the pet window from the renderer-side list call so a failed
+    // startup sync (e.g. data: URL ready-to-show that never fires) can
+    // be recovered by re-opening the snapshot via SettingsView, not only
+    // by toggling the enabled flag. `sync` is idempotent: if the window
+    // already shows the same pet, applyView short-circuits.
+    codexPetWindowManager.sync(snapshot);
+    return snapshot;
+  });
   ipcMain.handle(
     "wuu:codex-pets-update",
     (_event, settings: CodexPetSettingsUpdate) =>

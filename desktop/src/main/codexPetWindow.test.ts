@@ -1,12 +1,88 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CodexPetsSnapshot } from "../shared/protocol";
 import {
+  CodexPetWindowManager,
   codexPetActionFromURL,
   codexPetStateForRuntime,
   codexPetView,
   codexPetWindowHTML,
   selectedCodexPet,
 } from "./codexPetWindow";
+
+// Hoisted electron mocks for the CodexPetWindowManager integration test.
+// vi.hoisted runs before module imports, so the mock function and the
+// shared captured-listener map are available when the "electron" factory
+// below captures them. We use vi.fn() instead of a class so the
+// constructor call itself is a tracked spy (`new` on a vi.fn() records
+// the call), and a single shared capturedListeners map keeps the
+// listeners in scope across the multiple BrowserWindow instances the
+// manager may create.
+const codexPetElectronMocks = vi.hoisted(() => {
+  const capturedListeners: Record<string, Array<(...args: unknown[]) => void>> = {};
+  const loadURL = vi.fn();
+  const showInactive = vi.fn();
+  const close = vi.fn();
+  const isDestroyed = vi.fn(() => false);
+  const isVisible = vi.fn(() => false);
+  const setWindowOpenHandler = vi.fn();
+  const executeJavaScript = vi.fn().mockResolvedValue(undefined);
+  const popup = vi.fn();
+  const setAlwaysOnTop = vi.fn();
+  const setHasShadow = vi.fn();
+  const setVisibleOnAllWorkspaces = vi.fn();
+
+  // `new BrowserWindow(options)` becomes a tracked spy call. The impl
+  // returns a fresh mock instance each time so per-window state (e.g.
+  // the listener maps above) can stay shared across instances.
+  const BrowserWindow = vi.fn().mockImplementation(() => ({
+    webContents: {
+      on: (event: string, listener: (...args: unknown[]) => void) => {
+        (capturedListeners[`wc:${event}`] ??= []).push(listener);
+      },
+      setWindowOpenHandler,
+      executeJavaScript,
+    },
+    on: (event: string, listener: (...args: unknown[]) => void) => {
+      (capturedListeners[`win:${event}`] ??= []).push(listener);
+    },
+    once: (event: string, listener: (...args: unknown[]) => void) => {
+      (capturedListeners[`win:${event}:once`] ??= []).push(listener);
+    },
+    showInactive,
+    close,
+    isDestroyed,
+    isVisible,
+    setAlwaysOnTop,
+    setHasShadow,
+    setVisibleOnAllWorkspaces,
+    loadURL,
+  }));
+
+  return {
+    capturedListeners,
+    loadURL,
+    showInactive,
+    close,
+    isDestroyed,
+    isVisible,
+    setWindowOpenHandler,
+    executeJavaScript,
+    popup,
+    BrowserWindow,
+  };
+});
+
+vi.mock("electron", () => ({
+  BrowserWindow: codexPetElectronMocks.BrowserWindow,
+  Menu: {
+    buildFromTemplate: () => ({ popup: codexPetElectronMocks.popup }),
+  },
+  screen: {
+    getPrimaryDisplay: () => ({
+      workArea: { x: 0, y: 0, width: 1920, height: 1080 },
+    }),
+  },
+}));
 
 function snapshot(enabled: boolean, selectedID = "alpha"): CodexPetsSnapshot {
   return {
@@ -95,5 +171,71 @@ describe("codexPetActionFromURL", () => {
     expect(codexPetActionFromURL("wuu-pet://action/close")).toBeUndefined();
     expect(codexPetActionFromURL("wuu-cua://action/menu")).toBeUndefined();
     expect(codexPetActionFromURL("not a url")).toBeUndefined();
+  });
+});
+
+function enabledSnapshot(overrides: Partial<CodexPetsSnapshot> = {}): CodexPetsSnapshot {
+  return {
+    home: "/tmp/pets",
+    enabled: true,
+    selected_id: "clawd",
+    errors: [],
+    pets: [
+      {
+        id: "clawd",
+        display_name: "Clawd",
+        description: "",
+        manifest_path: "/tmp/pets/clawd/pet.json",
+        spritesheet_path: "/tmp/pets/clawd/spritesheet.webp",
+        spritesheet_url: "wuu-file://local/clawd",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+describe("CodexPetWindowManager", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    codexPetElectronMocks.isDestroyed.mockReturnValue(false);
+    codexPetElectronMocks.isVisible.mockReturnValue(false);
+    for (const key of Object.keys(codexPetElectronMocks.capturedListeners)) {
+      delete codexPetElectronMocks.capturedListeners[key];
+    }
+  });
+
+  it("surfaces the pet window after did-finish-load when ready-to-show never fires", () => {
+    const manager = new CodexPetWindowManager(() => undefined);
+    manager.sync(enabledSnapshot());
+
+    // sync creates a BrowserWindow and queues the data: URL load.
+    expect(codexPetElectronMocks.BrowserWindow).toHaveBeenCalledTimes(1);
+    expect(codexPetElectronMocks.loadURL).toHaveBeenCalledTimes(1);
+    // Window starts hidden and is not shown until the load event surfaces it.
+    expect(codexPetElectronMocks.showInactive).not.toHaveBeenCalled();
+
+    // Simulate the regression: data: URL ready-to-show never fires, but
+    // did-finish-load does. Without the fallback, the window would stay
+    // at show: false forever (which is what the user saw after the
+    // codex pet migration).
+    const didFinishLoad =
+      codexPetElectronMocks.capturedListeners["wc:did-finish-load"]?.[0];
+    expect(didFinishLoad).toBeDefined();
+    didFinishLoad!({});
+
+    // The did-finish-load fallback must surface the window even though
+    // ready-to-show never fired.
+    expect(codexPetElectronMocks.showInactive).toHaveBeenCalledTimes(1);
+  });
+
+  it("destroys the window when the snapshot no longer has an enabled pet", () => {
+    const manager = new CodexPetWindowManager(() => undefined);
+    manager.sync(enabledSnapshot());
+    expect(codexPetElectronMocks.BrowserWindow).toHaveBeenCalledTimes(1);
+
+    // Disabling the pet (e.g. user toggled it off in Settings) tears
+    // the window down so it stops eating input on the main window.
+    manager.sync({ ...enabledSnapshot(), enabled: false, pets: [] });
+    expect(codexPetElectronMocks.close).toHaveBeenCalledTimes(1);
   });
 });

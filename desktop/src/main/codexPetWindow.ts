@@ -222,6 +222,14 @@ export class CodexPetWindowManager {
       const pending = this.pendingView;
       this.pendingView = undefined;
       if (pending) this.pushView(win, pending);
+      // Belt-and-suspenders: ready-to-show is unreliable for data: URLs
+      // in current Electron, so surface the window from the load event
+      // when it is still hidden. showInactive() is a no-op once the
+      // window is already up, so calling it after ready-to-show
+      // already ran is safe.
+      if (!win.isVisible()) {
+        win.showInactive();
+      }
     });
     win.once("ready-to-show", () => {
       if (win.isDestroyed() || this.win !== win) return;
