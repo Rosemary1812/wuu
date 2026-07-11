@@ -419,7 +419,10 @@
 }
 
 .traffic-spacer {
-  height: 58px;
+  /* Keep enough room for the macOS traffic-light row while letting the
+   * sidebar content sit higher than the old 58px reservation. The titlebar
+   * itself is 48px, but the lights need ~28px from the window top. */
+  height: 46px;
   -webkit-app-region: drag;
 }
 
