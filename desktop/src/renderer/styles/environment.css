@@ -1855,7 +1855,7 @@
 
 .new-participant-header {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-columns: 40px minmax(0, 1fr);
   grid-template-areas:
     "icon title"
     "icon subtitle";
@@ -1868,12 +1868,17 @@
 .new-participant-icon {
   grid-area: icon;
   display: grid;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   place-items: center;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--ink);
+}
+
+.new-participant-icon svg {
+  width: 20px;
+  height: 20px;
 }
 
 .new-participant-title {
@@ -1899,7 +1904,7 @@
 
 .new-participant-body {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   padding: 4px 2px;
   overflow-y: auto;
   /* Keep action buttons + title visible when the form is taller than the
@@ -1918,15 +1923,15 @@
 
 .new-participant-avatar-row {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: 40px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   padding: 2px 0;
 }
 
 .new-participant-avatar {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border: 1px dashed var(--ink-overlay-12);
   border-radius: 50%;
   background: var(--surface-2);
@@ -1951,8 +1956,8 @@
 }
 
 .new-participant-avatar-placeholder {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
 }
 
 .new-participant-file-input {
@@ -1980,6 +1985,12 @@
   font-weight: var(--weight-medium);
 }
 
+.new-participant-text-action svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
 .new-participant-text-action:hover,
 .new-participant-text-action:focus-visible {
   outline: 0;
@@ -1992,9 +2003,8 @@
 
 .new-participant-field {
   display: grid;
-  grid-template-columns: 110px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
 }
 
 .new-participant-field > span {
@@ -2054,6 +2064,12 @@
     transform 180ms var(--search-motion-easing);
 }
 
+.new-participant-actions button svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
 .new-participant-actions button:hover,
 .new-participant-actions button:focus-visible {
   outline: 0;
@@ -2084,15 +2100,6 @@
 @keyframes new-participant-spin {
   to {
     transform: rotate(360deg);
-  }
-}
-
-/* Stack the form rows when the dialog is narrow (mobile / small desktop
-   window) so the long input doesn't squash the labels. */
-@media (max-width: 520px) {
-  .new-participant-field {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
   }
 }
 
