@@ -52,6 +52,7 @@ export class CUAFrameStream {
     private readonly target: string,
     private readonly onFrame: FrameCallback,
     private readonly onError: ErrorCallback,
+    private readonly onUserInput: () => void = () => undefined,
   ) {
     const safeID = createHash("sha256").update(activityID).digest("hex").slice(0, 24);
     this.framePath = join(tmpdir(), "wuu-cua-live", `${safeID}.jpg`);
@@ -71,6 +72,8 @@ export class CUAFrameStream {
             void this.flushLatest();
           } else if (frame.metadata.event === "error") {
             this.onError(frame.metadata.message ?? "live capture stopped");
+          } else if (frame.metadata.event === "user_input") {
+            this.onUserInput();
           }
         }
       } catch (error) {

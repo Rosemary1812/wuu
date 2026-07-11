@@ -281,7 +281,6 @@ export class CUAActivityWindowManager {
         return;
       }
       if (parsed.action === "close") {
-        this.stopFrameStream(activity.id);
         this.dismissedActivityIDs.add(activity.id);
         this.registry.clearActivityWindow(activity.id);
         win.close();
@@ -452,9 +451,18 @@ export class CUAActivityWindowManager {
       target,
       (path, metadata) => this.publishLiveFrame(activity.id, path, metadata),
       (message) => this.publishStreamError(activity.id, message),
+      () => this.handleDetectedUserInput(activity.id),
     );
     this.frameStreams.set(activity.id, { target, stream });
     stream.start();
+  }
+
+  private handleDetectedUserInput(activityID: string): void {
+    const activity = this.activities.get(activityID);
+    if (!activity || activity.controller !== "agent") return;
+    void this.control(activity, "takeover")
+      .then((updated) => this.update(updated))
+      .catch(() => undefined);
   }
 
   private stopFrameStream(activityID: string): void {

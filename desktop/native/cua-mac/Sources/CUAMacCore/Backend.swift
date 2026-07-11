@@ -51,6 +51,8 @@ public final class MacComputerBackend: ComputerBackend {
         }
         let frontmostBefore = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let app = try resolveApplication(target)
+        let appActionLock = try AppActionLock.acquire(processID: app.processIdentifier)
+        defer { withExtendedLifetime(appActionLock) {} }
         let axApplication = AXUIElementCreateApplication(app.processIdentifier)
         enableElectronAccessibility(axApplication)
         if command.foregroundPolicy == .require {
@@ -460,8 +462,8 @@ public final class MacComputerBackend: ComputerBackend {
         default: button = .left; downType = .leftMouseDown; upType = .leftMouseUp
         }
         for click in 1...max(1, min(count, 3)) {
-            guard let down = CGEvent(mouseEventSource: nil, mouseType: downType, mouseCursorPosition: point, mouseButton: button),
-                  let up = CGEvent(mouseEventSource: nil, mouseType: upType, mouseCursorPosition: point, mouseButton: button) else {
+            guard let down = markSynthetic(CGEvent(mouseEventSource: nil, mouseType: downType, mouseCursorPosition: point, mouseButton: button)),
+                  let up = markSynthetic(CGEvent(mouseEventSource: nil, mouseType: upType, mouseCursorPosition: point, mouseButton: button)) else {
                 throw ComputerError.operationFailed("could not create mouse event")
             }
             down.setIntegerValueField(.mouseEventClickState, value: Int64(click))
@@ -478,7 +480,7 @@ public final class MacComputerBackend: ComputerBackend {
         let start = try inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app)
         let end = try inputPoint(x: toX, y: toY, coordinateSpace: command.coordinateSpace, app: app)
         try withForegroundInput(command, app: app) {
-            guard let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left) else {
+            guard let down = markSynthetic(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left)) else {
                 throw ComputerError.operationFailed("could not create drag event")
             }
             down.post(tap: .cghidEventTap)
@@ -488,10 +490,10 @@ public final class MacComputerBackend: ComputerBackend {
                     x: start.x + (end.x - start.x) * progress,
                     y: start.y + (end.y - start.y) * progress
                 )
-                CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+                markSynthetic(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: point, mouseButton: .left))?.post(tap: .cghidEventTap)
                 usleep(8_000)
             }
-            CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left)?.post(tap: .cghidEventTap)
+            markSynthetic(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left))?.post(tap: .cghidEventTap)
         }
     }
 
@@ -532,8 +534,8 @@ public final class MacComputerBackend: ComputerBackend {
 
     private func postKey(_ key: String) throws {
         let chord = try KeyChord.parse(key)
-        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: chord.keyCode, keyDown: true),
-              let up = CGEvent(keyboardEventSource: nil, virtualKey: chord.keyCode, keyDown: false) else {
+        guard let down = markSynthetic(CGEvent(keyboardEventSource: nil, virtualKey: chord.keyCode, keyDown: true)),
+              let up = markSynthetic(CGEvent(keyboardEventSource: nil, virtualKey: chord.keyCode, keyDown: false)) else {
             throw ComputerError.operationFailed("could not create keyboard event")
         }
         down.flags = chord.modifiers.eventFlags
@@ -551,9 +553,9 @@ public final class MacComputerBackend: ComputerBackend {
         let frame = try command.elementID.flatMap { _ in axFrame(try element(command, app: app)) }
         try withForegroundInput(command, app: app) {
             if let frame {
-                CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: frame.midX, y: frame.midY), mouseButton: .left)?.post(tap: .cghidEventTap)
+                markSynthetic(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: frame.midX, y: frame.midY), mouseButton: .left))?.post(tap: .cghidEventTap)
             }
-            guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: vertical, wheel2: horizontal, wheel3: 0) else {
+            guard let event = markSynthetic(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: vertical, wheel2: horizontal, wheel3: 0)) else {
                 throw ComputerError.operationFailed("could not create scroll event")
             }
             event.post(tap: .cghidEventTap)
@@ -571,8 +573,8 @@ public final class MacComputerBackend: ComputerBackend {
         guard let text = command.text else { throw ComputerError.invalidArguments("text is required") }
         let units = Array(text.utf16)
         if units.isEmpty { return }
-        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
-              let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else {
+        guard let down = markSynthetic(CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)),
+              let up = markSynthetic(CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)) else {
             throw ComputerError.operationFailed("could not create text input event")
         }
         try withForegroundInput(command, app: app) {

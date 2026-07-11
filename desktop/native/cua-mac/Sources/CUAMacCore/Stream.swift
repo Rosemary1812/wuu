@@ -64,6 +64,34 @@ private final class FramePipeWriter: @unchecked Sendable {
     }
 }
 
+private final class UserInputMonitor: @unchecked Sendable {
+    let processID: pid_t
+    let writer: FramePipeWriter
+    private let lock = NSLock()
+    private var lastSignal = Date.distantPast
+
+    init(processID: pid_t, writer: FramePipeWriter) {
+        self.processID = processID
+        self.writer = writer
+    }
+
+    func handle(_ event: CGEvent) {
+        guard event.getIntegerValueField(.eventSourceUserData) != wuuSyntheticEventMarker,
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == processID else { return }
+        lock.lock()
+        let shouldSignal = Date().timeIntervalSince(lastSignal) > 0.5
+        if shouldSignal { lastSignal = Date() }
+        lock.unlock()
+        if shouldSignal { writer.event("user_input") }
+    }
+}
+
+private let userInputCallback: CGEventTapCallBack = { _, _, event, refcon in
+    guard let refcon else { return Unmanaged.passUnretained(event) }
+    Unmanaged<UserInputMonitor>.fromOpaque(refcon).takeUnretainedValue().handle(event)
+    return Unmanaged.passUnretained(event)
+}
+
 @available(macOS 14.0, *)
 private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     let writer: FramePipeWriter
@@ -146,7 +174,27 @@ public func runWindowFrameStream(target: String) throws {
     }
     if let startError { throw startError }
     writer.event("started")
+    let inputMonitor = UserInputMonitor(processID: app.processIdentifier, writer: writer)
+    let eventTypes: [CGEventType] = [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown, .scrollWheel]
+    let eventMask = eventTypes.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << CGEventMask($1.rawValue)) }
+    let monitorRef = Unmanaged.passUnretained(inputMonitor).toOpaque()
+    let eventTap = CGEvent.tapCreate(
+        tap: .cgSessionEventTap,
+        place: .tailAppendEventTap,
+        options: .listenOnly,
+        eventsOfInterest: eventMask,
+        callback: userInputCallback,
+        userInfo: monitorRef
+    )
+    var eventSource: CFRunLoopSource?
+    if let eventTap {
+        eventSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
+        if let eventSource { CFRunLoopAddSource(CFRunLoopGetMain(), eventSource, .commonModes) }
+        CGEvent.tapEnable(tap: eventTap, enable: true)
+    }
     RunLoop.main.run()
+    withExtendedLifetime(inputMonitor) {}
+    if let eventSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), eventSource, .commonModes) }
     let stopped = DispatchSemaphore(value: 0)
     stream.stopCapture { _ in stopped.signal() }
     _ = stopped.wait(timeout: .now() + 2)

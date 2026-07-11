@@ -113,7 +113,7 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 	if controlErr := t.activityRegistry.CheckControl(threadID, session.ID, lease.Token); controlErr != nil {
 		return toolresult.Result{}, controlErr
 	}
-	state := activity.StateActive
+	state := cuaActivityControlState(call.Arguments, result)
 	if sequenceStatus == "policy_paused" {
 		state = activity.StateWaitingConfirmation
 	}
@@ -143,6 +143,23 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		PreviewURI: session.Preview,
 	}
 	return result, callErr
+}
+
+func cuaActivityControlState(arguments string, result toolresult.Result) activity.State {
+	var structured map[string]any
+	if json.Unmarshal(result.StructuredContent, &structured) == nil {
+		if mechanism, _ := structured["mechanism"].(string); mechanism == "foreground_native" {
+			return activity.StateForegroundControlled
+		} else if mechanism == "background_ax" {
+			return activity.StateBackgroundControlled
+		}
+	}
+	var input map[string]any
+	_ = json.Unmarshal([]byte(arguments), &input)
+	if policy, _ := input["foreground_policy"].(string); policy == "allow" || policy == "require" {
+		return activity.StateForegroundControlled
+	}
+	return activity.StateBackgroundControlled
 }
 
 func parseCUASequence(arguments string) (cuaSequenceRequest, bool) {

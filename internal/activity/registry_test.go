@@ -45,7 +45,7 @@ func TestRegistryControlLeaseLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Release: %v", err)
 	}
-	if session.Controller != ControllerAgent || session.State != StateActive || nextLease.Token == "" || nextLease.Token == lease.Token {
+	if session.Controller != ControllerAgent || session.State != StateBackgroundControlled || nextLease.Token == "" || nextLease.Token == lease.Token {
 		t.Fatalf("release = %+v lease=%+v", session, nextLease)
 	}
 	if err := registry.CheckControl("thread-1", session.ID, nextLease.Token); err != nil {

@@ -93,7 +93,7 @@ func TestExecuteActivityBoundToolCreatesRefAndHonorsTakeover(t *testing.T) {
 		t.Fatalf("preview artifact = %q, %v", data, readErr)
 	}
 	sessions := registry.List("thread-1")
-	if len(sessions) != 1 || sessions[0].PluginID != "cua-mac" || sessions[0].Target != "com.apple.TextEdit" || sessions[0].State != activity.StateActive || sessions[0].Preview != result.Activity.PreviewURI {
+	if len(sessions) != 1 || sessions[0].PluginID != "cua-mac" || sessions[0].Target != "com.apple.TextEdit" || sessions[0].State != activity.StateBackgroundControlled || sessions[0].Preview != result.Activity.PreviewURI {
 		t.Fatalf("activity sessions = %+v", sessions)
 	}
 	if tool.calls != 1 {

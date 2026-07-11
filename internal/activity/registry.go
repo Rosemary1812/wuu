@@ -286,7 +286,7 @@ func (r *Registry) Release(threadID, activityID string) (Session, Lease, error) 
 	}
 	entry.leaseToken = token
 	entry.session.Controller = ControllerAgent
-	entry.session.State = StateActive
+	entry.session.State = StateBackgroundControlled
 	entry.session.UpdatedAt = r.now().UTC()
 	session := entry.session
 	r.mu.Unlock()
@@ -364,7 +364,7 @@ func validKind(kind Kind) bool {
 
 func validState(state State) bool {
 	switch state {
-	case StateStarting, StateActive, StateUserControlled, StateWaitingConfirmation, StateStopped, StateError:
+	case StateStarting, StateActive, StateBackgroundControlled, StateForegroundControlled, StateUserControlled, StateWaitingConfirmation, StateStopped, StateError:
 		return true
 	default:
 		return false

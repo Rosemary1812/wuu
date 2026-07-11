@@ -19,6 +19,37 @@ public enum ForegroundInputLock {
     }
 }
 
+public final class AppActionLock {
+    private var descriptor: Int32
+
+    private init(descriptor: Int32) { self.descriptor = descriptor }
+
+    public static func acquire(processID: pid_t) throws -> AppActionLock {
+        let path = "/tmp/wuu-cua-app-\(getuid())-\(processID).lock"
+        let descriptor = open(path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0, flock(descriptor, LOCK_EX) == 0 else {
+            if descriptor >= 0 { close(descriptor) }
+            throw ComputerError.operationFailed("could not acquire the target app action lock")
+        }
+        return AppActionLock(descriptor: descriptor)
+    }
+
+    deinit {
+        if descriptor >= 0 {
+            flock(descriptor, LOCK_UN)
+            close(descriptor)
+            descriptor = -1
+        }
+    }
+}
+
+let wuuSyntheticEventMarker: Int64 = 0x575555435541
+
+func markSynthetic(_ event: CGEvent?) -> CGEvent? {
+    event?.setIntegerValueField(.eventSourceUserData, value: wuuSyntheticEventMarker)
+    return event
+}
+
 public struct KeyModifiers: OptionSet, Sendable {
     public let rawValue: UInt64
     public init(rawValue: UInt64) { self.rawValue = rawValue }

@@ -27,4 +27,10 @@ describe("CUAFrameDecoder", () => {
     header.writeUInt32BE(2 * 1024 * 1024, 0);
     expect(() => decoder.push(header)).toThrow("invalid CUA frame envelope size");
   });
+
+  it("decodes user input control events", () => {
+    const decoder = new CUAFrameDecoder();
+    const frames = decoder.push(envelope({ event: "user_input" }, Buffer.alloc(0)));
+    expect(frames[0]?.metadata.event).toBe("user_input");
+  });
 });

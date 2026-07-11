@@ -12,12 +12,14 @@ const (
 type State string
 
 const (
-	StateStarting            State = "starting"
-	StateActive              State = "active"
-	StateUserControlled      State = "user_controlled"
-	StateWaitingConfirmation State = "waiting_confirmation"
-	StateStopped             State = "stopped"
-	StateError               State = "error"
+	StateStarting             State = "starting"
+	StateActive               State = "active"
+	StateBackgroundControlled State = "background_controlled"
+	StateForegroundControlled State = "foreground_controlled"
+	StateUserControlled       State = "user_controlled"
+	StateWaitingConfirmation  State = "waiting_confirmation"
+	StateStopped              State = "stopped"
+	StateError                State = "error"
 )
 
 type Controller string
