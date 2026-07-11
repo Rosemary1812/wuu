@@ -118,15 +118,20 @@ public final class MacComputerBackend: ComputerBackend {
         case .permissionStatus, .requestPermissions, .listApps:
             preconditionFailure("global actions returned before target resolution")
         }
-        let previousSnapshot = lastSnapshotText[app.processIdentifier] ?? ""
+        let priorSnapshot = lastSnapshotText[app.processIdentifier]
+        let previousSnapshot = priorSnapshot ?? ""
         let settled = settleAccessibility(app: app, application: axApplication, previous: previousSnapshot)
-        let axChanged = settled.text != previousSnapshot
+        // Building the first AX baseline is not evidence that this action changed
+        // the UI. Without this guard, weak-AX apps report a dropped directed event
+        // as verified merely because their menu tree was observed for the first time.
+        let axChanged = priorSnapshot != nil && settled.text != previousSnapshot
         // Weak-AX apps can repaint without moving their Accessibility tree. When AX
         // shows nothing, capture one frame and compare it so the model still gets a
         // grounded verification signal instead of a bare "unverified".
         var visualVerified = false
         if !axChanged {
-            visualVerified = captureVisualRevision(app: app)
+            let hadVisualBaseline = lastScreenshotData[app.processIdentifier] != nil
+            visualVerified = captureVisualRevision(app: app) && hadVisualBaseline
         }
         let frontmostAfter = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let canonicalTarget = app.bundleIdentifier ?? app.bundleURL?.path ?? target
