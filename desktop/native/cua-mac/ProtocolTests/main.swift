@@ -80,6 +80,8 @@ private func testInitializesAndAdvertisesFullComputerTool() throws {
     let clickAlternatives = clickVariant?["anyOf"] as? [[String: Any]]
     try expect(clickAlternatives?.contains(where: { ($0["required"] as? [String]) == ["element_id"] }) == true, "click accepts element id")
     try expect(clickAlternatives?.contains(where: { ($0["required"] as? [String]) == ["x", "y", "coordinate_space"] }) == true, "click accepts explicit coordinates")
+    let coordinateProperty = properties?["coordinate_space"] as? [String: Any]
+    try expect((coordinateProperty?["enum"] as? [String])?.contains("normalized") == true, "coordinate space supports resize-independent normalized points")
 }
 
 private func testPreservesAccessibilityAndScreenshotContent() throws {
@@ -154,6 +156,8 @@ private func testScreenshotCoordinatesMapToGlobalWindowCoordinates() throws {
     )
     let point = try geometry.screenPoint(x: 800, y: 600)
     try expect(point.x == 500 && point.y == 350, "screenshot midpoint maps to window midpoint")
+    let normalizedPoint = try geometry.screenPoint(normalizedX: 500, normalizedY: 500)
+    try expect(normalizedPoint.x == 500 && normalizedPoint.y == 350, "normalized midpoint maps independently of screenshot resolution")
 }
 
 do {

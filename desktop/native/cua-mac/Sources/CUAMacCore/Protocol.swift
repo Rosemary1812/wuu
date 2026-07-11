@@ -233,7 +233,7 @@ public final class MCPServer {
                     "element_id": ["type": "integer"],
                     "x": ["type": "number", "description": "Horizontal coordinate in the declared coordinate_space."],
                     "y": ["type": "number", "description": "Vertical coordinate in the declared coordinate_space."],
-                    "coordinate_space": ["type": "string", "enum": ["screenshot", "screen"], "description": "Use screenshot for pixels in the latest captured image; use screen for global coordinates copied from an AX frame."],
+                    "coordinate_space": ["type": "string", "enum": ["normalized", "screenshot", "screen"], "description": "Use normalized for visual coordinates on a 0-1000 grid independent of image resizing; use screenshot for pixels in the latest captured image; use screen for global coordinates copied from an AX frame."],
                     "to_x": ["type": "number", "description": "Drag destination horizontal coordinate in the declared coordinate_space."],
                     "to_y": ["type": "number", "description": "Drag destination vertical coordinate in the declared coordinate_space."],
                     "from_x": ["type": "number", "description": "Drag start horizontal coordinate in the declared coordinate_space."],

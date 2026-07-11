@@ -264,7 +264,7 @@ public final class MacComputerBackend: ComputerBackend {
         let canonicalTarget = app.bundleIdentifier ?? app.bundleURL?.path ?? String(app.processIdentifier)
         var header = "Target app=\"\(canonicalTarget)\" display_name=\"\(app.localizedName ?? "Unknown")\" pid=\(app.processIdentifier). Reuse this exact app value for follow-up actions."
         if let geometry = lastCaptureGeometry[app.processIdentifier], screenshot != nil {
-            header += " Screenshot=\(geometry.imageWidth)×\(geometry.imageHeight) pixels maps to window_frame=(\(Int(geometry.windowFrame.origin.x)),\(Int(geometry.windowFrame.origin.y)),\(Int(geometry.windowFrame.width)),\(Int(geometry.windowFrame.height))). For coordinate_space=\"screenshot\", pass image pixels directly; the tool handles display scaling."
+            header += " Screenshot=\(geometry.imageWidth)×\(geometry.imageHeight) pixels maps to window_frame=(\(Int(geometry.windowFrame.origin.x)),\(Int(geometry.windowFrame.origin.y)),\(Int(geometry.windowFrame.width)),\(Int(geometry.windowFrame.height))). Prefer coordinate_space=\"normalized\" (0-1000) for visual targets so provider image resizing does not affect clicks; use coordinate_space=\"screenshot\" only for original image pixels."
         }
         return ComputerResult(
             text: header + "\n" + snapshot.text,
@@ -400,6 +400,8 @@ public final class MacComputerBackend: ComputerBackend {
             throw ComputerError.invalidArguments("observe the app before using screenshot coordinates")
         }
         switch coordinateSpace ?? "screenshot" {
+        case "normalized":
+            return try geometry.screenPoint(normalizedX: x, normalizedY: y)
         case "screenshot":
             return try geometry.screenPoint(x: x, y: y)
         case "screen":
@@ -409,7 +411,7 @@ public final class MacComputerBackend: ComputerBackend {
             }
             return point
         default:
-            throw ComputerError.invalidArguments("coordinate_space must be screenshot or screen")
+            throw ComputerError.invalidArguments("coordinate_space must be normalized, screenshot, or screen")
         }
     }
 

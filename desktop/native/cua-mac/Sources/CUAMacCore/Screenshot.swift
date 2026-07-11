@@ -26,6 +26,16 @@ public struct CaptureGeometry: Sendable {
             y: windowFrame.origin.y + y * windowFrame.height / Double(imageHeight)
         )
     }
+
+    public func screenPoint(normalizedX x: Double, normalizedY y: Double) throws -> CGPoint {
+        guard x >= 0, y >= 0, x <= 1000, y <= 1000 else {
+            throw ComputerError.invalidArguments("normalized coordinates must be between 0 and 1000")
+        }
+        return try screenPoint(
+            x: x * Double(imageWidth) / 1000,
+            y: y * Double(imageHeight) / 1000
+        )
+    }
 }
 
 struct WindowCapture {
