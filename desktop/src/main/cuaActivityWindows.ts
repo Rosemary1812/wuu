@@ -843,14 +843,14 @@ export function cuaActivityHTML(activity: ActivitySession): string {
       y: (innerHeight - renderedHeight) / 2 + point.y * renderedHeight,
     };
   };
-  const placePointer = () => {
-    agentPointer.getAnimations().forEach((animation) => animation.cancel());
+  const placePointer = (cancelAnimations = false) => {
+    if (cancelAnimations) agentPointer.getAnimations().forEach((animation) => animation.cancel());
     const point = mapPoint(pointerPosition);
     agentPointer.style.left = point.x + 'px';
     agentPointer.style.top = point.y + 'px';
   };
-  addEventListener('resize', placePointer);
-  livePreview.addEventListener('load', placePointer);
+  addEventListener('resize', () => placePointer(true));
+  livePreview.addEventListener('load', () => placePointer(false));
   window.wuuCUAFrame = (url, captureMode) => {
     lastLiveFrameAt = Date.now();
     livePreview.src = url;
