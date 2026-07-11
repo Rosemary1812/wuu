@@ -26,6 +26,9 @@ public final class MacComputerBackend: ComputerBackend {
     private let snapshotter = AXSnapshotter()
     private var snapshotProcessID: pid_t?
     private var lastSnapshotText: [pid_t: String] = [:]
+    private var axRevisions: [pid_t: UInt64] = [:]
+    private var visualRevisions: [pid_t: UInt64] = [:]
+    private var lastScreenshotData: [pid_t: Data] = [:]
     private var lastCaptureGeometry: [pid_t: CaptureGeometry] = [:]
     private var foregroundCaptureProcessIDs = Set<pid_t>()
 
@@ -90,9 +93,11 @@ public final class MacComputerBackend: ComputerBackend {
         case .permissionStatus, .requestPermissions, .listApps:
             preconditionFailure("global actions returned before target resolution")
         }
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.15))
+        let previousSnapshot = lastSnapshotText[app.processIdentifier] ?? ""
+        let settled = settleAccessibility(app: app, application: axApplication, previous: previousSnapshot)
         let frontmostAfter = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let canonicalTarget = app.bundleIdentifier ?? app.bundleURL?.path ?? target
+        let changes = snapshotChanges(from: previousSnapshot, to: settled.text)
         return ComputerResult(
             text: "Action \(command.action.rawValue) completed for app=\"\(canonicalTarget)\". Call observe when you need fresh UI state.",
             structured: [
@@ -100,9 +105,12 @@ public final class MacComputerBackend: ComputerBackend {
                 "app": canonicalTarget,
                 "display_name": app.localizedName ?? "Unknown",
                 "process_id": Int(app.processIdentifier),
-                "state_changed": "unverified",
+                "status": settled.text != previousSnapshot ? "verified" : "unverified",
                 "mechanism": mechanism,
                 "foreground_changed": frontmostBefore != frontmostAfter,
+                "ax_revision": axRevisions[app.processIdentifier] ?? 0,
+                "visual_revision": visualRevisions[app.processIdentifier] ?? 0,
+                "changes": changes,
             ]
         )
     }
@@ -239,6 +247,7 @@ public final class MacComputerBackend: ComputerBackend {
     private func observe(_ command: ComputerCommand, app: NSRunningApplication, axApplication: AXUIElement) throws -> ComputerResult {
         let accessibility = AXIsProcessTrusted()
         let snapshot: AXSnapshot
+        let previousText = lastSnapshotText[app.processIdentifier]
         if accessibility {
             snapshot = snapshotter.snapshot(application: axApplication)
         } else {
@@ -250,6 +259,9 @@ public final class MacComputerBackend: ComputerBackend {
         }
         snapshotProcessID = app.processIdentifier
         lastSnapshotText[app.processIdentifier] = snapshot.text
+        if previousText != snapshot.text {
+            axRevisions[app.processIdentifier, default: 0] += 1
+        }
         var structured: [String: Any] = [
             "app": app.bundleIdentifier ?? app.localizedName ?? String(app.processIdentifier),
             "display_name": app.localizedName ?? "Unknown",
@@ -262,6 +274,10 @@ public final class MacComputerBackend: ComputerBackend {
         do {
             let capture = try captureWindowWithForegroundFallback(command, app: app)
             screenshot = capture.data
+            if lastScreenshotData[app.processIdentifier] != capture.data {
+                visualRevisions[app.processIdentifier, default: 0] += 1
+                lastScreenshotData[app.processIdentifier] = capture.data
+            }
             lastCaptureGeometry[app.processIdentifier] = capture.geometry
             structured["screenshot"] = [
                 "width": capture.geometry.imageWidth,
@@ -282,8 +298,15 @@ public final class MacComputerBackend: ComputerBackend {
         if let geometry = lastCaptureGeometry[app.processIdentifier], screenshot != nil {
             header += " Screenshot=\(geometry.imageWidth)×\(geometry.imageHeight) pixels maps to window_frame=(\(Int(geometry.windowFrame.origin.x)),\(Int(geometry.windowFrame.origin.y)),\(Int(geometry.windowFrame.width)),\(Int(geometry.windowFrame.height))). Prefer coordinate_space=\"normalized\" (0-1000) for visual targets so provider image resizing does not affect clicks; use coordinate_space=\"screenshot\" only for original image pixels."
         }
+        let changes = previousText.map { snapshotChanges(from: $0, to: snapshot.text) } ?? []
+        let returnDiff = previousText != nil && !changes.isEmpty && changes.count <= 120
+        structured["ax_revision"] = axRevisions[app.processIdentifier] ?? 0
+        structured["visual_revision"] = visualRevisions[app.processIdentifier] ?? 0
+        structured["full_snapshot"] = !returnDiff
+        structured["changes"] = changes
+        let stateText = returnDiff ? "Changes since the previous observe:\n" + changes.joined(separator: "\n") : snapshot.text
         return ComputerResult(
-            text: header + "\n" + snapshot.text,
+            text: header + "\n" + stateText,
             screenshot: screenshot,
             screenshotMIMEType: screenshot == nil ? nil : "image/png",
             structured: structured
@@ -322,8 +345,49 @@ public final class MacComputerBackend: ComputerBackend {
         guard let id = command.elementID else {
             throw ComputerError.invalidArguments("element_id is required")
         }
-        guard let element = snapshotter.element(id: id) else { throw ComputerError.elementNotFound(id) }
-        return element
+        guard let element = snapshotter.element(id: id), let descriptor = snapshotter.descriptor(id: id) else {
+            throw ComputerError.elementNotFound(id)
+        }
+        var role: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) == .success {
+            return element
+        }
+        let application = AXUIElementCreateApplication(app.processIdentifier)
+        _ = snapshotter.snapshot(application: application)
+        guard let recovered = snapshotter.uniqueElement(matching: descriptor) else {
+            throw ComputerError.elementNotFound(id)
+        }
+        return recovered
+    }
+
+    private func settleAccessibility(app: NSRunningApplication, application: AXUIElement, previous: String) -> AXSnapshot {
+        guard AXIsProcessTrusted() else {
+            return AXSnapshot(text: previous, elements: [:])
+        }
+        let deadline = Date(timeIntervalSinceNow: 1.2)
+        var latest = snapshotter.snapshot(application: application)
+        var stableSamples = 0
+        while Date() < deadline && stableSamples < 2 {
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.08))
+            let next = snapshotter.snapshot(application: application)
+            stableSamples = next.text == latest.text ? stableSamples + 1 : 0
+            latest = next
+        }
+        if latest.text != previous {
+            axRevisions[app.processIdentifier, default: 0] += 1
+        }
+        lastSnapshotText[app.processIdentifier] = latest.text
+        snapshotProcessID = app.processIdentifier
+        return latest
+    }
+
+    private func snapshotChanges(from previous: String, to current: String) -> [String] {
+        guard previous != current else { return [] }
+        let old = Set(previous.split(separator: "\n").map(String.init))
+        let new = Set(current.split(separator: "\n").map(String.init))
+        let removed = old.subtracting(new).sorted().map { "- \($0)" }
+        let added = new.subtracting(old).sorted().map { "+ \($0)" }
+        return Array((removed + added).prefix(240))
     }
 
     private func activate(_ app: NSRunningApplication) throws {

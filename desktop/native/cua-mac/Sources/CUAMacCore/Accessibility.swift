@@ -7,13 +7,22 @@ struct AXSnapshot {
     let elements: [Int: AXUIElement]
 }
 
+struct AXElementDescriptor: Equatable {
+    let role: String
+    let title: String
+    let description: String
+    let frame: CGRect?
+}
+
 final class AXSnapshotter {
     private(set) var elements: [Int: AXUIElement] = [:]
+    private(set) var descriptors: [Int: AXElementDescriptor] = [:]
     private let maxDepth = 14
     private let maxElements = 700
 
     func snapshot(application: AXUIElement) -> AXSnapshot {
         elements.removeAll(keepingCapacity: true)
+        descriptors.removeAll(keepingCapacity: true)
         var lines: [String] = []
         var visited = Set<CFHashCode>()
         walk(application, depth: 0, lines: &lines, visited: &visited)
@@ -26,6 +35,14 @@ final class AXSnapshotter {
 
     func clear() {
         elements.removeAll(keepingCapacity: true)
+        descriptors.removeAll(keepingCapacity: true)
+    }
+
+    func descriptor(id: Int) -> AXElementDescriptor? { descriptors[id] }
+
+    func uniqueElement(matching descriptor: AXElementDescriptor) -> AXUIElement? {
+        let matches = descriptors.compactMap { id, candidate in candidate == descriptor ? elements[id] : nil }
+        return matches.count == 1 ? matches[0] : nil
     }
 
     private func walk(_ element: AXUIElement, depth: Int, lines: inout [String], visited: inout Set<CFHashCode>) {
@@ -34,10 +51,20 @@ final class AXSnapshotter {
         guard visited.insert(hash).inserted else { return }
         let id = elements.count
         elements[id] = element
+        descriptors[id] = descriptor(element)
         lines.append(String(repeating: "  ", count: depth) + describe(element, id: id))
         for child in axElements(element, attribute: kAXChildrenAttribute as String) {
             walk(child, depth: depth + 1, lines: &lines, visited: &visited)
         }
+    }
+
+    private func descriptor(_ element: AXUIElement) -> AXElementDescriptor {
+        AXElementDescriptor(
+            role: axString(element, kAXRoleAttribute as String) ?? "",
+            title: axString(element, kAXTitleAttribute as String) ?? "",
+            description: axString(element, kAXDescriptionAttribute as String) ?? "",
+            frame: axFrame(element)
+        )
     }
 
     private func describe(_ element: AXUIElement, id: Int) -> String {
