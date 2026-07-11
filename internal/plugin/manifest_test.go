@@ -60,6 +60,54 @@ func TestLoadManifestNormalizesSupportedFormats(t *testing.T) {
 	}
 }
 
+func TestLoadManifestNormalizesExecutableRuntime(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ManifestFilename)
+	writeFile(t, path, `{
+  "id": "runtime-demo",
+  "runtime": {
+    "protocol": "wuu-plugin-v1",
+    "command": "bin/plugin",
+    "args": ["--stdio"],
+    "env": {"PLUGIN_MODE": "test"},
+    "timeout": 12
+  }
+}`)
+	plugin, err := LoadManifest(path, "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plugin.Runtime == nil {
+		t.Fatal("runtime missing")
+	}
+	if plugin.Runtime.Command != filepath.Join(root, "bin", "plugin") || plugin.Runtime.Protocol != "wuu-plugin-v1" {
+		t.Fatalf("runtime = %+v", plugin.Runtime)
+	}
+	if plugin.Runtime.Timeout != 12 || !reflect.DeepEqual(plugin.Runtime.Args, []string{"--stdio"}) || plugin.Runtime.Env["PLUGIN_MODE"] != "test" {
+		t.Fatalf("runtime = %+v", plugin.Runtime)
+	}
+}
+
+func TestLoadManifestRejectsInvalidRuntime(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		runtime string
+	}{
+		{name: "unknown protocol", runtime: `{"protocol":"other","command":"node"}`},
+		{name: "missing command", runtime: `{"protocol":"wuu-plugin-v1"}`},
+		{name: "escaping command", runtime: `{"protocol":"wuu-plugin-v1","command":"../plugin"}`},
+		{name: "invalid env", runtime: `{"protocol":"wuu-plugin-v1","command":"node","env":{"BAD=NAME":"x"}}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), ManifestFilename)
+			writeFile(t, path, `{"id":"bad","runtime":`+test.runtime+`}`)
+			if _, err := LoadManifest(path, "project"); err == nil {
+				t.Fatal("expected runtime validation error")
+			}
+		})
+	}
+}
+
 func TestLoadManifestReportsUnsupportedFields(t *testing.T) {
 	got, err := LoadManifest(filepath.Join("testdata", "codex", ".codex-plugin", "plugin.json"), "project")
 	if err != nil {

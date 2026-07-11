@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/config"
+	"github.com/blueberrycongee/wuu/internal/pluginhost"
 )
 
 const (
@@ -29,6 +30,7 @@ type Manifest struct {
 	License              string                            `json:"license,omitempty"`
 	Keywords             []string                          `json:"keywords,omitempty"`
 	Skills               []string                          `json:"skills,omitempty"`
+	Runtime              *RuntimeSpec                      `json:"runtime,omitempty"`
 	Hooks                map[string][]config.HookEntry     `json:"hooks,omitempty"`
 	MCPServers           map[string]config.MCPServerConfig `json:"mcp_servers,omitempty"`
 	Interface            json.RawMessage                   `json:"interface,omitempty"`
@@ -38,6 +40,16 @@ type Manifest struct {
 	OfficialNativeHelper json.RawMessage                   `json:"official_native_helper,omitempty"`
 	MinimumWuuVersion    string                            `json:"minimum_wuu_version,omitempty"`
 	UnsupportedFields    []string                          `json:"unsupported_fields,omitempty"`
+}
+
+// RuntimeSpec declares a long-lived external plugin process. Installing or
+// enabling the plugin grants this process the same user authority as Wuu.
+type RuntimeSpec struct {
+	Protocol string            `json:"protocol"`
+	Command  string            `json:"command"`
+	Args     []string          `json:"args,omitempty"`
+	Env      map[string]string `json:"env,omitempty"`
+	Timeout  int               `json:"timeout,omitempty"`
 }
 
 type LoadOptions struct {
@@ -56,6 +68,7 @@ type rawManifest struct {
 	License                string          `json:"license"`
 	Keywords               []string        `json:"keywords"`
 	Skills                 json.RawMessage `json:"skills"`
+	Runtime                json.RawMessage `json:"runtime"`
 	Hooks                  json.RawMessage `json:"hooks"`
 	MCPServers             json.RawMessage `json:"mcpServers"`
 	MCPServersAlias        json.RawMessage `json:"mcp_servers"`
@@ -74,7 +87,7 @@ type rawManifest struct {
 var supportedManifestFields = map[string]struct{}{
 	"id": {}, "name": {}, "description": {}, "version": {}, "author": {},
 	"homepage": {}, "repository": {}, "license": {}, "keywords": {},
-	"skills": {}, "hooks": {}, "mcpServers": {}, "mcp_servers": {},
+	"skills": {}, "runtime": {}, "hooks": {}, "mcpServers": {}, "mcp_servers": {},
 	"interface": {}, "platforms": {},
 	"requestedPermissions": {}, "requested_permissions": {},
 	"activityKinds": {}, "activity_kinds": {},
@@ -127,6 +140,10 @@ func normalizeManifest(data []byte, root string, official bool) (Manifest, error
 	if err != nil {
 		return Manifest{}, err
 	}
+	runtimeSpec, err := normalizeRuntime(root, raw.Runtime)
+	if err != nil {
+		return Manifest{}, err
+	}
 	hooks, err := normalizeHooks(root, raw.Hooks)
 	if err != nil {
 		return Manifest{}, err
@@ -159,6 +176,7 @@ func normalizeManifest(data []byte, root string, official bool) (Manifest, error
 		License:              strings.TrimSpace(raw.License),
 		Keywords:             normalizeStrings(raw.Keywords),
 		Skills:               skills,
+		Runtime:              runtimeSpec,
 		Hooks:                hooks,
 		MCPServers:           mcpServers,
 		Interface:            cloneRaw(raw.Interface),
@@ -169,6 +187,48 @@ func normalizeManifest(data []byte, root string, official bool) (Manifest, error
 		MinimumWuuVersion:    firstString(raw.MinimumWuuVersion, raw.MinimumWuuVersionAlias),
 		UnsupportedFields:    unsupported,
 	}, nil
+}
+
+func normalizeRuntime(root string, raw json.RawMessage) (*RuntimeSpec, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil, nil
+	}
+	var spec RuntimeSpec
+	if err := json.Unmarshal(trimmed, &spec); err != nil {
+		return nil, fmt.Errorf("runtime: %w", err)
+	}
+	spec.Protocol = strings.TrimSpace(spec.Protocol)
+	spec.Command = strings.TrimSpace(spec.Command)
+	if spec.Protocol != pluginhost.ProtocolName {
+		return nil, fmt.Errorf("runtime protocol must be %q", pluginhost.ProtocolName)
+	}
+	if spec.Command == "" {
+		return nil, fmt.Errorf("runtime command is required")
+	}
+	if spec.Timeout < 0 {
+		return nil, fmt.Errorf("runtime timeout must be positive")
+	}
+	if strings.ContainsRune(spec.Command, filepath.Separator) && !filepath.IsAbs(spec.Command) {
+		command, err := normalizePluginPath(root, "runtime.command", spec.Command)
+		if err != nil {
+			return nil, err
+		}
+		spec.Command = filepath.Join(root, command)
+	}
+	spec.Args = append([]string(nil), spec.Args...)
+	if len(spec.Env) > 0 {
+		env := make(map[string]string, len(spec.Env))
+		for key, value := range spec.Env {
+			key = strings.TrimSpace(key)
+			if key == "" || strings.Contains(key, "=") {
+				return nil, fmt.Errorf("runtime env contains invalid name %q", key)
+			}
+			env[key] = value
+		}
+		spec.Env = env
+	}
+	return &spec, nil
 }
 
 func normalizePathList(root, field string, raw json.RawMessage) ([]string, error) {
