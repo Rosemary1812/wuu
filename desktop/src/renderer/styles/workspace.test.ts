@@ -20,6 +20,7 @@ describe("workspace right panel chrome", () => {
     const panel = cssRuleBody(".workspace-right-panel");
     const tab = cssRuleBody(".workspace-tool-tab");
     const active = cssRuleBody(".workspace-tool-tab.active");
+    const indicator = cssRuleBody(".workspace-tool-tab::after");
     const activeEdge = cssRuleBody(".workspace-tool-tab.active::after");
     const spacer = cssRuleBody(".workspace-panel-tabbar-spacer");
 
@@ -28,7 +29,12 @@ describe("workspace right panel chrome", () => {
     expect(tab).toMatch(/border-radius:\s*var\(--radius-xs\);/);
     expect(tab).toMatch(/background:\s*transparent;/);
     expect(active).not.toMatch(/box-shadow:/);
-    expect(activeEdge).toMatch(/background:\s*var\(--wuu-accent\);/);
+    // The accent underline lives on the shared ::after pseudo so it can fade
+    // in/out when the active tab changes instead of popping.
+    expect(indicator).toMatch(/background:\s*var\(--wuu-accent\);/);
+    expect(indicator).toMatch(/opacity:\s*0;/);
+    expect(indicator).toMatch(/transition:\s*opacity\s+140ms\s+ease;/);
+    expect(activeEdge).toMatch(/opacity:\s*1;/);
     expect(spacer).toMatch(/flex:\s*0\s+0\s+2px;/);
   });
 
