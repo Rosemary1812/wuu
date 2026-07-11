@@ -158,6 +158,13 @@
   -webkit-app-region: drag;
 }
 
+/* Once the settings rail is collapsed, the titlebar starts at the window
+ * edge. Keep the toggle clear of the macOS traffic lights, matching the
+ * main conversation titlebar reservation. */
+.settings-shell.sidebar-collapsed .settings-titlebar {
+  padding-left: 86px;
+}
+
 .settings-scroll {
   display: flex;
   min-width: 0;
