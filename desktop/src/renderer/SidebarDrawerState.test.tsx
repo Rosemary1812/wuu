@@ -108,7 +108,7 @@ describe("useSidebarDrawerState", () => {
     expect(hook.get().sidebarDrawerPhase).toBe("open");
   });
 
-  it("keeps an explicitly opened drawer visible until the pointer reaches it", async () => {
+  it("only closes the focused-workspace drawer after the pointer is outside it", async () => {
     const hook = await renderSidebarDrawerState();
 
     await act(async () => {
@@ -116,41 +116,25 @@ describe("useSidebarDrawerState", () => {
     });
     expect(hook.get().sidebarDrawerPhase).toBe("open");
 
-    // The explicit navigation button lives outside the drawer. Moving from
-    // that button toward the drawer must not close it before pointerenter.
+    // The panel swap can synthesize a pointerleave while the cursor is still
+    // over the revealed sidebar. Re-checking on the next task keeps it open.
+    elementFromPointTarget = hook.sidebar;
+    await act(async () => {
+      hook.get().scheduleSidebarDrawerCloseFromPointerLeave(
+        new MouseEvent("pointerout", { clientX: 80, clientY: 80 }),
+      );
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(hook.get().sidebarDrawerPhase).toBe("open");
+
+    // A true leave (including the pointer leaving the window) closes it.
     elementFromPointTarget = document.body;
     await act(async () => {
-      window.dispatchEvent(
-        new MouseEvent("pointermove", {
-          bubbles: true,
-          clientX: 80,
-          clientY: 80,
-        }),
+      hook.get().scheduleSidebarDrawerCloseFromPointerLeave(
+        new MouseEvent("pointerout", { clientX: 320, clientY: 80 }),
       );
-    });
-
-    expect(hook.get().sidebarDrawerPhase).toBe("open");
-
-    // Pointerleave belongs to hover-open drawers. An explicit navigation
-    // drawer stays open so its controls remain reachable.
-    await act(async () => {
-      hook.get().closeSidebarDrawerFromPointerLeave();
-    });
-
-    expect(hook.get().sidebarDrawerPhase).toBe("open");
-
-    // Entering the app content from the titlebar can surface as a window
-    // mouseout without a related target. It is still not a dismissal.
-    await act(async () => {
-      window.dispatchEvent(
-        new MouseEvent("mouseout", { relatedTarget: null }),
-      );
-    });
-
-    expect(hook.get().sidebarDrawerPhase).toBe("open");
-
-    await act(async () => {
-      hook.get().closeSidebarDrawer();
+      vi.advanceTimersByTime(1);
     });
 
     expect(hook.get().sidebarDrawerPhase).toBe("closing");

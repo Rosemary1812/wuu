@@ -475,7 +475,7 @@ export function App(): JSX.Element {
     openSidebarDrawerNow,
     scheduleSidebarDrawerOpen,
     closeSidebarDrawer,
-    closeSidebarDrawerFromPointerLeave,
+    scheduleSidebarDrawerCloseFromPointerLeave,
   } = useSidebarDrawerState({
     appShellRef,
     sidebarCollapsed: sidebarDrawerMode,
@@ -3947,7 +3947,9 @@ export function App(): JSX.Element {
             onRelocateProject={(id) => void relocateProject(id)}
             onReorderSections={setSidebarSectionOrder}
             onPointerEnter={openSidebarDrawer}
-            onPointerLeave={closeSidebarDrawerFromPointerLeave}
+            onPointerLeave={(event) =>
+              scheduleSidebarDrawerCloseFromPointerLeave(event.nativeEvent)
+            }
             onOpenSettings={() => {
               setProjectMenuOpen(false);
               setRuntimeMenuOpen(false);

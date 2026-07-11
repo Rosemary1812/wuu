@@ -293,10 +293,12 @@ describe("collapsed sidebar hover drawer", () => {
     await openDrawerViaHoverZone();
 
     // Leaving the window entirely: mouseout with no relatedTarget.
+    elementFromPointTarget = document.body;
     await act(async () => {
       window.dispatchEvent(
         new MouseEvent("mouseout", { relatedTarget: null }),
       );
+      vi.advanceTimersByTime(1);
     });
 
     expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
@@ -398,12 +400,14 @@ describe("collapsed sidebar hover drawer", () => {
     expect(zone).not.toBeNull();
 
     await act(async () => {
+      elementFromPointTarget = document.body;
       sidebar?.dispatchEvent(
         new MouseEvent("pointerout", {
           bubbles: true,
           relatedTarget: document.body,
         }),
       );
+      vi.advanceTimersByTime(1);
     });
     expect(appShell()?.classList.contains("sidebar-drawer-open")).toBe(false);
     expect(appShell()?.classList.contains("sidebar-drawer-closing")).toBe(true);

@@ -24,6 +24,7 @@ import {
 import {
   type CSSProperties,
   type HTMLAttributes,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -459,7 +460,7 @@ export function AppSidebar({
   // wiring persistence — production callers (App.tsx) always provide it.
   onReorderSections?: (nextOrder: string[]) => void;
   onPointerEnter?: () => void;
-  onPointerLeave?: () => void;
+  onPointerLeave?: (event: ReactPointerEvent<HTMLElement>) => void;
   onOpenSettings: () => void;
 }): JSX.Element {
   const hasRuntimeContext = Boolean(state.activeContext);

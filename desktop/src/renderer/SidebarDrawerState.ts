@@ -20,7 +20,7 @@ export type SidebarDrawerStateController = {
   openSidebarDrawerNow: () => void;
   scheduleSidebarDrawerOpen: () => void;
   closeSidebarDrawer: () => void;
-  closeSidebarDrawerFromPointerLeave: () => void;
+  scheduleSidebarDrawerCloseFromPointerLeave: (event?: Event) => void;
   syncSidebarDrawerHover: () => void;
 };
 
@@ -56,7 +56,7 @@ export function useSidebarDrawerState({
   );
   const sidebarDrawerSyncedSessionRef = useRef<string | undefined>(undefined);
   const sidebarDrawerSuppressedRef = useRef(false);
-  const sidebarDrawerExplicitlyOpenedRef = useRef(false);
+  const sidebarDrawerPointerLeaveTimerRef = useRef<number | undefined>(undefined);
 
   const clearSidebarDrawerCloseTimer = useCallback((): void => {
     if (sidebarDrawerCloseTimerRef.current !== undefined) {
@@ -69,6 +69,13 @@ export function useSidebarDrawerState({
     if (sidebarDrawerOpenTimerRef.current !== undefined) {
       window.clearTimeout(sidebarDrawerOpenTimerRef.current);
       sidebarDrawerOpenTimerRef.current = undefined;
+    }
+  }, []);
+
+  const clearSidebarDrawerPointerLeaveTimer = useCallback((): void => {
+    if (sidebarDrawerPointerLeaveTimerRef.current !== undefined) {
+      window.clearTimeout(sidebarDrawerPointerLeaveTimerRef.current);
+      sidebarDrawerPointerLeaveTimerRef.current = undefined;
     }
   }, []);
 
@@ -89,15 +96,32 @@ export function useSidebarDrawerState({
 
   const sidebarDrawerPointerHovered = useCallback((): boolean | undefined => {
     const point = sidebarPointerPositionRef.current;
-    if (!point || typeof document.elementFromPoint !== "function") {
+    if (!point) {
+      return undefined;
+    }
+    const sidebar = appShellRef.current?.querySelector(SIDEBAR_RAIL_SELECTOR);
+    const hoverZone = sidebarHoverZoneRef.current;
+    for (const element of [sidebar, hoverZone]) {
+      if (!element) continue;
+      const rect = element.getBoundingClientRect();
+      if (
+        rect.width > 0 &&
+        rect.height > 0 &&
+        point.x >= rect.left &&
+        point.x <= rect.right &&
+        point.y >= rect.top &&
+        point.y <= rect.bottom
+      ) {
+        return true;
+      }
+    }
+    if (typeof document.elementFromPoint !== "function") {
       return undefined;
     }
     const target = document.elementFromPoint(point.x, point.y);
     if (!target) {
       return undefined;
     }
-    const sidebar = appShellRef.current?.querySelector(SIDEBAR_RAIL_SELECTOR);
-    const hoverZone = sidebarHoverZoneRef.current;
     return Boolean(
       (sidebar && sidebar.contains(target)) ||
         (hoverZone && hoverZone.contains(target)),
@@ -136,10 +160,6 @@ export function useSidebarDrawerState({
     if (resizingSidebar || !sidebarCollapsed) {
       return;
     }
-    // This path is triggered by the navigation button inside a globalized
-    // workspace, which is outside the drawer. Keep the drawer available
-    // while the pointer travels from that button into the revealed sidebar.
-    sidebarDrawerExplicitlyOpenedRef.current = true;
     clearSidebarDrawerOpenTimer();
     clearSidebarDrawerCloseTimer();
     setSidebarDrawerPhase("open");
@@ -183,9 +203,9 @@ export function useSidebarDrawerState({
   ]);
 
   const closeSidebarDrawer = useCallback((): void => {
-    sidebarDrawerExplicitlyOpenedRef.current = false;
     cancelSidebarDrawerOpen();
     clearSidebarDrawerCloseTimer();
+    clearSidebarDrawerPointerLeaveTimer();
     blurSidebarFocus();
     if (!sidebarCollapsed || resizingSidebar) {
       setSidebarDrawerPhase("closed");
@@ -200,26 +220,35 @@ export function useSidebarDrawerState({
     blurSidebarFocus,
     cancelSidebarDrawerOpen,
     clearSidebarDrawerCloseTimer,
+    clearSidebarDrawerPointerLeaveTimer,
     motionMs,
     resizingSidebar,
     sidebarCollapsed,
   ]);
 
-  const closeSidebarDrawerFromPointerLeave = useCallback((): void => {
-    // The focused-workspace navigation button opens a persistent drawer.
-    // Pointer transitions within that overlay must not dismiss it before the
-    // user can reach a navigation item.
-    if (sidebarDrawerExplicitlyOpenedRef.current) {
-      return;
+  const scheduleSidebarDrawerCloseFromPointerLeave = useCallback((event?: Event): void => {
+    if (event) {
+      rememberSidebarPointerPosition(event);
     }
-    closeSidebarDrawer();
-  }, [closeSidebarDrawer]);
+    clearSidebarDrawerPointerLeaveTimer();
+    // Sidebar geometry settles after the globalized panel and drawer swap
+    // stacking contexts. Check the real pointer location on the next task,
+    // so a synthetic leave caused by that swap does not close the drawer.
+    sidebarDrawerPointerLeaveTimerRef.current = window.setTimeout(() => {
+      sidebarDrawerPointerLeaveTimerRef.current = undefined;
+      if (sidebarDrawerPointerHovered() === false) {
+        closeSidebarDrawer();
+      }
+    }, 0);
+  }, [
+    clearSidebarDrawerPointerLeaveTimer,
+    closeSidebarDrawer,
+    rememberSidebarPointerPosition,
+    sidebarDrawerPointerHovered,
+  ]);
 
   const syncSidebarDrawerHover = useCallback((): void => {
     if (!sidebarCollapsed || sidebarDrawerPhase !== "open") {
-      return;
-    }
-    if (sidebarDrawerExplicitlyOpenedRef.current) {
       return;
     }
     if (sidebarDrawerPointerHovered() === false) {
@@ -254,9 +283,6 @@ export function useSidebarDrawerState({
   }, [rememberSidebarPointerPosition, syncSidebarDrawerHover]);
 
   useLayoutEffect(() => {
-    if (!sidebarCollapsed) {
-      sidebarDrawerExplicitlyOpenedRef.current = false;
-    }
     if (!sidebarCollapsed && sidebarDrawerPhase !== "closed") {
       cancelSidebarDrawerOpen();
       clearSidebarDrawerCloseTimer();
@@ -281,7 +307,7 @@ export function useSidebarDrawerState({
     }
     function handleWindowMouseOut(event: MouseEvent): void {
       if (event.relatedTarget === null) {
-        closeSidebarDrawerFromPointerLeave();
+        scheduleSidebarDrawerCloseFromPointerLeave(event);
       }
     }
     window.addEventListener("mouseout", handleWindowMouseOut);
@@ -292,7 +318,7 @@ export function useSidebarDrawerState({
     };
   }, [
     closeSidebarDrawer,
-    closeSidebarDrawerFromPointerLeave,
+    scheduleSidebarDrawerCloseFromPointerLeave,
     sidebarCollapsed,
     sidebarDrawerPhase,
   ]);
@@ -373,8 +399,13 @@ export function useSidebarDrawerState({
     () => () => {
       clearSidebarDrawerOpenTimer();
       clearSidebarDrawerCloseTimer();
+      clearSidebarDrawerPointerLeaveTimer();
     },
-    [clearSidebarDrawerCloseTimer, clearSidebarDrawerOpenTimer],
+    [
+      clearSidebarDrawerCloseTimer,
+      clearSidebarDrawerOpenTimer,
+      clearSidebarDrawerPointerLeaveTimer,
+    ],
   );
 
   return {
@@ -385,7 +416,7 @@ export function useSidebarDrawerState({
     openSidebarDrawerNow,
     scheduleSidebarDrawerOpen,
     closeSidebarDrawer,
-    closeSidebarDrawerFromPointerLeave,
+    scheduleSidebarDrawerCloseFromPointerLeave,
     syncSidebarDrawerHover,
   };
 }
