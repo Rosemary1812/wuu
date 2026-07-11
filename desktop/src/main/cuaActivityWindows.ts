@@ -746,24 +746,22 @@ export function activityActionFromURL(rawURL: string): { action: ActivityWindowA
 }
 
 export function activityHasVisibleContent(activity: ActivitySession): boolean {
-  return activityPreviewURL(activity) !== undefined || Boolean(activity.error?.trim());
+  return activityPreviewURL(activity) !== undefined;
 }
 
 export function activityRenderSignature(activity: ActivitySession, hasLiveStream: boolean): string {
   return JSON.stringify([
     activity.state,
     activity.controller,
-    activity.error?.trim() ?? "",
     activity.target?.trim() ?? "",
     activity.preview?.trim() ?? "",
     hasLiveStream ? "" : activity.updated_at,
   ]);
 }
 
-export function activityViewState(activity: ActivitySession): { actionsHTML: string; error: string; previewURL: string } {
+export function activityViewState(activity: ActivitySession): { actionsHTML: string; previewURL: string } {
   return {
     actionsHTML: activityActionsHTML(activity),
-    error: activity.error?.trim() ?? "",
     previewURL: activityPreviewURL(activity) ?? "",
   };
 }
@@ -780,8 +778,6 @@ export function activityActionsHTML(activity: ActivitySession): string {
 export function cuaActivityHTML(activity: ActivitySession): string {
   const target = escapeHTML(activity.target?.trim() || "Mac App");
   const previewURL = activityPreviewURL(activity);
-  const errorText = activity.error?.trim() ?? "";
-  const error = `<div class="error"${errorText ? "" : " hidden"}>${escapeHTML(errorText)}</div>`;
   const streamStatus = `<div class="stream-status" hidden>实时画面暂不可用</div>`;
   const preview = previewURL
     ? `<img id="live-preview" src="${escapeHTML(previewURL)}" alt="${target} 实时画面" />`
@@ -798,22 +794,19 @@ export function cuaActivityHTML(activity: ActivitySession): string {
 .preview{position:absolute;inset:0;display:grid;place-items:center;overflow:hidden}.preview img{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none}
 .glass{position:absolute;inset:0;background:radial-gradient(circle at 10% 0%,rgba(255,255,255,.62),transparent 44%),radial-gradient(circle at 92% 34%,rgba(255,122,72,.16),transparent 48%),radial-gradient(circle at 52% 112%,rgba(110,170,255,.14),transparent 50%),linear-gradient(145deg,var(--glass-strong),var(--glass));box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
 .actions{position:absolute;z-index:3;top:8px;right:8px;display:flex;align-items:center;gap:5px;padding:4px;border-radius:10px;background:var(--glass-strong);border:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.14);opacity:0;transform:translateY(-3px);transition:opacity 140ms ease,transform 140ms ease;-webkit-app-region:no-drag}.card:hover .actions,.actions:focus-within{opacity:1;transform:none}.button{height:25px;padding:0 8px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink);background:transparent;border:0;font-size:11px;font-weight:560}.button:hover{background:var(--hover)}.button.stop{width:25px;padding:0;font-size:15px;font-weight:400}.button.stop:hover{color:var(--danger);background:var(--danger-soft)}
-.error{position:absolute;z-index:2;left:8px;right:8px;bottom:8px;padding:8px 10px;border-radius:9px;background:var(--danger-soft);border:1px solid var(--line);font-size:10.5px;color:var(--danger);-webkit-app-region:no-drag}
 .stream-status{position:absolute;z-index:2;left:50%;bottom:10px;transform:translateX(-50%);padding:6px 9px;border-radius:8px;background:rgba(30,32,35,.76);color:#fff;font-size:10.5px;white-space:nowrap;-webkit-app-region:no-drag}
-</style></head><body><section class="card"><div class="preview">${preview}</div><div class="actions">${activityActionsHTML(activity)}</div>${error}${streamStatus}</section>
+</style></head><body><section class="card"><div class="preview">${preview}</div><div class="actions">${activityActionsHTML(activity)}</div>${streamStatus}</section>
 <script>
 (() => {
   const card = document.querySelector('.card');
   const livePreview = document.querySelector('#live-preview');
   const actions = document.querySelector('.actions');
-  const errorBox = document.querySelector('.error');
   const streamStatus = document.querySelector('.stream-status');
   let lastLiveFrameAt = 0;
   window.wuuCUAFrame = (url) => {
     lastLiveFrameAt = Date.now();
     livePreview.src = url;
     livePreview.hidden = false;
-    errorBox.hidden = true;
     streamStatus.hidden = true;
     document.querySelector('.glass')?.remove();
   };
@@ -822,8 +815,6 @@ export function cuaActivityHTML(activity: ActivitySession): string {
   };
   window.wuuCUAActivity = (state) => {
     actions.innerHTML = state.actionsHTML;
-    errorBox.textContent = state.error;
-    errorBox.hidden = !state.error;
     if (state.previewURL && Date.now() - lastLiveFrameAt > 2000) {
       livePreview.src = state.previewURL;
       livePreview.hidden = false;
@@ -836,7 +827,7 @@ export function cuaActivityHTML(activity: ActivitySession): string {
   let offsetY = 0;
   const notify = (action) => { location.href = 'wuu-cua://action/' + action + '?activity_id=' + encodeURIComponent(activityID); };
   card.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0 || event.target.closest('.actions,.error')) return;
+    if (event.button !== 0 || event.target.closest('.actions')) return;
     pointerID = event.pointerId;
     offsetX = event.screenX - window.screenX;
     offsetY = event.screenY - window.screenY;

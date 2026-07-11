@@ -253,25 +253,24 @@ describe("CUA Activity windows", () => {
     expect(activityRenderSignature(activity({ controller: "user" }), true))
       .not.toBe(activityRenderSignature(first, true));
     expect(activityRenderSignature(activity({ error: "boom" }), true))
-      .not.toBe(activityRenderSignature(first, true));
+      .toBe(activityRenderSignature(first, true));
   });
 
   it("exposes an in-place view state instead of a full page reload", () => {
     const state = activityViewState(activity({ error: "boom <late>" }));
     expect(state.actionsHTML).toContain("接管");
     expect(state.actionsHTML).toContain("关闭画中画");
-    expect(state.error).toBe("boom <late>");
     expect(state.previewURL).toMatch(/^wuu-file:\/\/local\//);
     expect(activityViewState(activity({ preview: undefined })).previewURL).toBe("");
     expect(activityActionsHTML(activity({ controller: "user" }))).toContain("交还 Agent");
   });
 
-  it("keeps the PiP hidden until real content or an error exists", () => {
+  it("keeps the PiP hidden until real visual content exists", () => {
     expect(activityHasVisibleContent(activity())).toBe(true);
     expect(activityHasVisibleContent(activity({ preview: undefined, state: "starting" }))).toBe(false);
     expect(activityHasVisibleContent(activity({ preview: "   " }))).toBe(false);
     expect(activityHasVisibleContent(activity({ preview: "https://example.test/p.png" }))).toBe(false);
-    expect(activityHasVisibleContent(activity({ preview: undefined, error: "boom" }))).toBe(true);
+    expect(activityHasVisibleContent(activity({ preview: undefined, error: "boom" }))).toBe(false);
   });
 
   it("backs off dead live streams instead of retrying immediately or forever", () => {
@@ -282,13 +281,13 @@ describe("CUA Activity windows", () => {
     expect(frameStreamRetryDelay(0)).toBe(2000);
   });
 
-  it("ships a patchable document with a persistent error box", () => {
+  it("ships a patchable document without exposing raw tool errors", () => {
     const html = cuaActivityHTML(activity());
     expect(html).toContain("window.wuuCUAActivity");
     expect(html).toContain("window.wuuCUAStreamUnavailable");
     expect(html).toContain("实时画面暂不可用");
-    expect(html).toContain('<div class="error" hidden>');
-    expect(cuaActivityHTML(activity({ error: "boom" }))).toContain('<div class="error">boom</div>');
+    expect(html).not.toContain('class="error"');
+    expect(cuaActivityHTML(activity({ error: "boom" }))).not.toContain("boom");
   });
 
   it("maps window controls onto Activity RPC methods", () => {
