@@ -1794,6 +1794,13 @@ export type CodexPetsSnapshot = CodexPetSettings & {
 
 export type CodexPetSettingsUpdate = Partial<CodexPetSettings>;
 
+// 桌宠动画输入：渲染进程把会话运行态推给主进程，主进程据此切换独立
+// 桌宠窗口（无边框置顶小窗，主窗口隐藏/最小化后仍在桌面上）的精灵状态。
+export type CodexPetRuntime = {
+  running: boolean;
+  status: string;
+};
+
 // Remote control (设置 → 远程): desktop-local surface managing the
 // machine-global `wuu remote host` daemon and phone pairing. Status comes
 // from `wuu remote status --json`; none of this goes through the app-server
@@ -1944,6 +1951,7 @@ export type WuuDesktopApi = {
   updateCodexPetSettings: (
     settings: CodexPetSettingsUpdate,
   ) => Promise<CodexPetsSnapshot>;
+  updateCodexPetRuntime: (runtime: CodexPetRuntime) => Promise<void>;
   listParticipants: () => Promise<ParticipantListResult>;
   saveParticipant: (params: ParticipantSaveParams) => Promise<ParticipantSaveResult>;
   sendParticipantFeedback: (

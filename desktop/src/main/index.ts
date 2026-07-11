@@ -95,6 +95,7 @@ import {
   legacyCodexPetsDir,
   loadCodexPetsSnapshot,
 } from "./codexPets";
+import { CodexPetWindowManager, type CodexPetRuntime } from "./codexPetWindow";
 import { RemoteHostManager } from "./remoteControl";
 import {
   getCodexPetSettings,
@@ -172,6 +173,12 @@ const cuaActivityWindowManager = new CUAActivityWindowManager(
     return result.activity;
   },
 );
+// The pet is a standalone always-on-top window owned by the main process, so
+// it stays on the desktop when the main window is hidden or minimized. Its
+// right-click menu disables the setting, which also tears the window down.
+const codexPetWindowManager = new CodexPetWindowManager(() => {
+  updateCodexPetSettings({ enabled: false });
+});
 const terminalSessionManager = new TerminalSessionManager(
   () => projectManager.ensureRuntimeContext(),
   (event) => emitTerminalEvent(event),
@@ -235,6 +242,7 @@ function updateCodexPetSettings(update: CodexPetSettingsUpdate) {
     enabled: snapshot.enabled,
     selected_id: snapshot.selected_id,
   });
+  codexPetWindowManager.sync(snapshot);
   return snapshot;
 }
 
@@ -572,6 +580,7 @@ app.whenReady().then(async () => {
   await clearOversizedDevCaches();
   projectManager.load();
   registerRenderableFileProtocol();
+  codexPetWindowManager.sync(codexPetsSnapshot());
 
   // Startup CLI install pass (default on, toggleable in settings). Runs in
   // the background so it never delays window creation; autoInstallCli is
@@ -951,6 +960,13 @@ app.whenReady().then(async () => {
     "wuu:codex-pets-update",
     (_event, settings: CodexPetSettingsUpdate) =>
       updateCodexPetSettings(settings ?? {}),
+  );
+  ipcMain.handle(
+    "wuu:codex-pet-runtime",
+    (_event, runtime: CodexPetRuntime) =>
+      codexPetWindowManager.setRuntime(
+        runtime ?? { running: false, status: "" },
+      ),
   );
   ipcMain.handle(
     "wuu:settings-usage",

@@ -136,6 +136,8 @@ const api: WuuDesktopApi = {
   listCodexPets: () => ipcRenderer.invoke("wuu:codex-pets-list"),
   updateCodexPetSettings: (settings) =>
     ipcRenderer.invoke("wuu:codex-pets-update", settings),
+  updateCodexPetRuntime: (runtime) =>
+    ipcRenderer.invoke("wuu:codex-pet-runtime", runtime),
   startThread: (params?: ThreadStartParams) =>
     ipcRenderer.invoke("wuu:thread-start", params),
   resumeThread: (sessionId?: string) =>

@@ -87,7 +87,6 @@ import { ConversationSearchOverlay } from "./ConversationSearchOverlay";
 import { useConversationScrollState } from "./ConversationScrollState";
 import { useConversationSearch } from "./ConversationSearchState";
 import { useConversationSubthreadState } from "./ConversationSubthreadState";
-import { CodexPetLayer } from "./CodexPetLayer";
 import { useThreadMarkList } from "./useThreadMarks";
 import { useParticipantState } from "./ParticipantState";
 import { ConversationForkDialog } from "./ConversationForkDialog";
@@ -2053,6 +2052,18 @@ export function App(): JSX.Element {
   const activeThreadReadOnly = Boolean(activeThread?.read_only);
   const activeThreadIsRunning = isStateActiveThreadRunning(state);
   const anyThreadIsRunning = isAnyThreadRunning(state) || viewContextSwitchPending;
+  // The desktop pet lives in its own always-on-top window owned by the main
+  // process; the renderer only feeds it the session runtime so its sprite
+  // state tracks what the app is doing.
+  useEffect(() => {
+    const api = window.wuu as Partial<typeof window.wuu>;
+    if (typeof api.updateCodexPetRuntime !== "function") {
+      return;
+    }
+    void api
+      .updateCodexPetRuntime({ running: anyThreadIsRunning, status: state.status })
+      .catch(() => undefined);
+  }, [anyThreadIsRunning, state.status]);
   const runningProviderNames = useMemo(() => {
     const names = new Set<string>();
     for (const thread of [state.thread, state.secondaryThread, ...state.threads]) {
@@ -4325,11 +4336,6 @@ export function App(): JSX.Element {
           </div>
         </FloatingMenuPortal>
       ) : null}
-      <CodexPetLayer
-        snapshot={codexPets}
-        running={anyThreadIsRunning}
-        status={state.status}
-      />
       </div>
     </ImagePreviewProvider>
   );
