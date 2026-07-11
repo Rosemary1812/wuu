@@ -1,4 +1,5 @@
 import CUAMacCore
+import AppKit
 import Foundation
 
 private enum TestFailure: Error, CustomStringConvertible {
@@ -188,6 +189,35 @@ private func testNativePermissionAndAppDiscoveryAreInspectable() throws {
     try expect(apps.structured["apps"] is [[String: Any]], "running apps list")
 }
 
+@MainActor
+private func testWaitForChangeTimeoutIsANormalResultWhenAccessibilityIsAvailable() throws {
+    _ = NSApplication.shared
+    let backend = MacComputerBackend()
+    let permission = try backend.perform(ComputerCommand(arguments: ["action": "permission_status"]))
+    guard permission.structured["accessibility"] as? Bool == true else { return }
+
+    _ = try backend.perform(ComputerCommand(arguments: [
+        "action": "observe", "app": "/System/Applications/Calculator.app",
+    ]))
+    let server = MCPServer(backend: backend)
+    let response = try server.handle([
+        "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+        "params": [
+            "name": "computer",
+            "arguments": [
+                "action": "wait_for_change",
+                "app": "/System/Applications/Calculator.app",
+                "timeout": 0.1,
+            ],
+        ],
+    ])
+    let result = response?["result"] as? [String: Any]
+    let structured = result?["structuredContent"] as? [String: Any]
+    try expect(result?["isError"] as? Bool == false, "an unchanged wait timeout is not an error")
+    try expect(structured?["changed"] as? Bool == false, "an unchanged wait reports changed=false")
+    try expect(structured?["timed_out"] as? Bool == true, "an unchanged wait reports timed_out=true")
+}
+
 private func testScreenshotCoordinatesMapToGlobalWindowCoordinates() throws {
     let geometry = CaptureGeometry(
         windowFrame: CGRect(x: 100, y: 50, width: 800, height: 600),
@@ -215,6 +245,7 @@ do {
     try testForegroundPolicyParsingAndErrors()
     try testKeyChordParserSupportsSkyStyleAliases()
     try testNativePermissionAndAppDiscoveryAreInspectable()
+    try testWaitForChangeTimeoutIsANormalResultWhenAccessibilityIsAvailable()
     try testScreenshotCoordinatesMapToGlobalWindowCoordinates()
     print("cua-mac protocol tests passed")
 } catch {
