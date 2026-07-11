@@ -1431,7 +1431,6 @@ export function App(): JSX.Element {
         method === "turn/started" ||
         method === "turn/completed" ||
         method === "turn/error" ||
-        method === "turn/interrupted" ||
         method === "thread/started" ||
         method === "thread/resumed" ||
         method === "thread/updated"
