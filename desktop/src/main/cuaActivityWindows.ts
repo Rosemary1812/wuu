@@ -3,6 +3,7 @@ import type { Rectangle } from "electron";
 import { fileURLToPath } from "node:url";
 import type { ActivitySession, ServerEvent } from "../shared/protocol";
 import { renderableFileURL } from "./renderableFileURLs";
+import { CUAFrameStream, resolveCUAFrameHelper, type CUAFrameMetadata } from "./cuaFrameStreams";
 import type { WindowRegistry } from "./windowRegistry";
 
 export type ActivityControlAction = "takeover" | "release" | "stop";
@@ -159,6 +160,7 @@ export class CUAActivityWindowManager {
   private readonly pendingActivities = new Map<string, ActivitySession>();
   private readonly dockedCorners = new Map<number, { source: "main" | "screen"; corner: number }>();
   private readonly snapAnimationTokens = new Map<number, number>();
+  private readonly frameStreams = new Map<string, { target: string; stream: CUAFrameStream }>();
   private activeThreadID: string | undefined;
 
   constructor(
@@ -183,6 +185,7 @@ export class CUAActivityWindowManager {
   update(activity: ActivitySession): void {
     const existing = this.registry.activityWindow(activity.id);
     if (activity.state === "stopped") {
+      this.stopFrameStream(activity.id);
       this.activities.delete(activity.id);
       this.dismissedActivityIDs.delete(activity.id);
       this.pendingActivities.delete(activity.id);
@@ -199,6 +202,7 @@ export class CUAActivityWindowManager {
     const win = existing && !existing.isDestroyed()
       ? existing
       : this.createWindow(activity);
+    this.syncFrameStream(activity);
     this.render(win, activity);
     this.syncVisibility(win, activity);
   }
@@ -277,6 +281,7 @@ export class CUAActivityWindowManager {
         return;
       }
       if (parsed.action === "close") {
+        this.stopFrameStream(activity.id);
         this.dismissedActivityIDs.add(activity.id);
         this.registry.clearActivityWindow(activity.id);
         win.close();
@@ -433,6 +438,62 @@ export class CUAActivityWindowManager {
     void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(cuaActivityHTML(activity))}`);
   }
 
+  private syncFrameStream(activity: ActivitySession): void {
+    if (activity.plugin_id !== "cua-mac") return;
+    const target = activity.target?.trim();
+    const helper = resolveCUAFrameHelper();
+    if (!target || !helper) return;
+    const current = this.frameStreams.get(activity.id);
+    if (current?.target === target) return;
+    this.stopFrameStream(activity.id);
+    const stream = new CUAFrameStream(
+      helper,
+      activity.id,
+      target,
+      (path, metadata) => this.publishLiveFrame(activity.id, path, metadata),
+      (message) => this.publishStreamError(activity.id, message),
+    );
+    this.frameStreams.set(activity.id, { target, stream });
+    stream.start();
+  }
+
+  private stopFrameStream(activityID: string): void {
+    this.frameStreams.get(activityID)?.stream.stop();
+    this.frameStreams.delete(activityID);
+  }
+
+  private publishLiveFrame(activityID: string, path: string, metadata: CUAFrameMetadata): void {
+    const win = this.registry.activityWindow(activityID);
+    if (!win || win.isDestroyed()) return;
+    const revision = metadata.revision ?? Date.now();
+    const url = `${renderableFileURL(path)}?v=${revision}`;
+    if (typeof metadata.width === "number" && typeof metadata.height === "number") {
+      this.autoSizeForLiveFrame(win, activityID, metadata.width, metadata.height);
+    }
+    void win.webContents.executeJavaScript(`window.wuuCUAFrame?.(${JSON.stringify(url)})`, true).catch(() => undefined);
+  }
+
+  private publishStreamError(activityID: string, message: string): void {
+    const activity = this.activities.get(activityID);
+    const win = this.registry.activityWindow(activityID);
+    if (!activity || !win || win.isDestroyed()) return;
+    this.render(win, { ...activity, error: message, updated_at: new Date().toISOString() });
+  }
+
+  private autoSizeForLiveFrame(win: BrowserWindow, activityID: string, width: number, height: number): void {
+    const windowID = win.webContents.id;
+    if (width <= 0 || height <= 0 || this.manuallyResizedWindowIDs.has(windowID) || this.draggingWindowIDs.has(windowID)) return;
+    const ratio = width / height;
+    const previous = this.previewState.get(activityID);
+    if (previous && Math.abs(ratio / previous.ratio - 1) <= 0.05) return;
+    this.previewState.set(activityID, { ratio, target: this.activities.get(activityID)?.target?.trim() ?? "" });
+    const bounds = win.getBounds();
+    const size = fitActivityPreviewSize(width, height);
+    const resized = this.dockedBoundsForSize(win, size)
+      ?? resizeActivityBounds(bounds, size, screen.getDisplayMatching(bounds).workArea);
+    if (resized.width !== bounds.width || resized.height !== bounds.height) win.setBounds(resized, false);
+  }
+
   private autoSizeForPreview(win: BrowserWindow, activity: ActivitySession): void {
     const preview = activity.preview?.trim();
     const windowID = win.webContents.id;
@@ -499,8 +560,8 @@ export function cuaActivityHTML(activity: ActivitySession): string {
     ? `<div class="error">${escapeHTML(activity.error)}</div>`
     : "";
   const preview = previewURL
-    ? `<img src="${escapeHTML(previewURL)}" alt="${target} 最新画面" />`
-    : `<div class="glass" role="status" aria-label="正在获取画面"></div>`;
+    ? `<img id="live-preview" src="${escapeHTML(previewURL)}" alt="${target} 实时画面" />`
+    : `<div class="glass" role="status" aria-label="正在获取画面"></div><img id="live-preview" hidden alt="${target} 实时画面" />`;
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src wuu-file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; navigate-to wuu-cua:" />
@@ -518,6 +579,12 @@ export function cuaActivityHTML(activity: ActivitySession): string {
 <script>
 (() => {
   const card = document.querySelector('.card');
+  const livePreview = document.querySelector('#live-preview');
+  window.wuuCUAFrame = (url) => {
+    livePreview.src = url;
+    livePreview.hidden = false;
+    document.querySelector('.glass')?.remove();
+  };
   const activityID = ${JSON.stringify(activity.id)};
   let pointerID = null;
   let offsetX = 0;
