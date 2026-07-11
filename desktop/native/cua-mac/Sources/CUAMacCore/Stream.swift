@@ -548,6 +548,8 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
     var stream = try startWindowStream(window: window, output: output)
     var streamStartedAt = Date()
     var consecutiveStreamFailures = 0
+    var hasEverProducedFrame = false
+    var lastHealthyOutput: ObjectIdentifier?
 
     let commandReader = PiPCommandReader()
     FileHandle.standardInput.readabilityHandler = { input in
@@ -585,28 +587,36 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
     var lastSafetyRefresh = Date.distantPast
     while !app.isTerminated {
         try await Task.sleep(for: .milliseconds(100))
-        if output.hasFrame() { consecutiveStreamFailures = 0 }
-        if !output.hasFrame(), Date().timeIntervalSince(streamStartedAt) >= 5 {
-            try? stream.removeStreamOutput(output, type: .screen)
-            try? await stream.stopCapture()
-            throw ComputerError.operationFailed("native window capture did not produce a first frame")
+        let outputID = ObjectIdentifier(output)
+        if output.hasFrame(), lastHealthyOutput != outputID {
+            hasEverProducedFrame = true
+            consecutiveStreamFailures = 0
+            lastHealthyOutput = outputID
         }
-        if output.isStopped() {
+        let firstFrameTimedOut = !output.hasFrame() && Date().timeIntervalSince(streamStartedAt) >= 5
+        if output.isStopped() || firstFrameTimedOut {
             consecutiveStreamFailures += 1
             try? stream.removeStreamOutput(output, type: .screen)
             try? await stream.stopCapture()
-            if consecutiveStreamFailures >= 4 {
+            if firstFrameTimedOut, !hasEverProducedFrame {
+                throw ComputerError.operationFailed("native window capture did not produce a first frame")
+            }
+            if !hasEverProducedFrame, consecutiveStreamFailures >= 4 {
                 throw ComputerError.operationFailed("native window capture repeatedly stopped")
             }
-            let retryDelay = min(2_000, 250 * (1 << consecutiveStreamFailures))
+            let retryDelay = 250 * (1 << min(3, consecutiveStreamFailures))
             try await Task.sleep(for: .milliseconds(retryDelay))
+            if let refreshed = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
+               let currentWindow = preferredStreamWindow(in: refreshed, processID: app.processIdentifier) {
+                window = currentWindow
+            }
             let next = NativePiPStreamOutput(controller: controller, writer: writer)
             do {
                 stream = try startWindowStream(window: window, output: next)
                 output = next
                 streamStartedAt = Date()
             } catch {
-                if consecutiveStreamFailures >= 3 { throw error }
+                if !hasEverProducedFrame, consecutiveStreamFailures >= 3 { throw error }
             }
             continue
         }
