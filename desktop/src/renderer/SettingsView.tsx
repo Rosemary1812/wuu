@@ -32,6 +32,8 @@ import {
   useRef,
   useState
 } from "react";
+import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
+import { useSidebarDrawerState } from "./SidebarDrawerState";
 import { SelectMenu } from "./SelectMenu";
 import type {
   CodexPetsSnapshot,
@@ -112,6 +114,16 @@ export function SettingsView({
   setUsageRange,
   archivedThreads,
   onUnarchiveThread,
+  // Mirrors the main app's collapse/hover behaviour: when the user collapses
+  // the sidebar from the toggle button (or the persisted preference says
+  // collapsed), the settings shell hides the rail and only reveals it on
+  // hover of the left edge. `activeSessionTabID` is forwarded so the drawer
+  // hook can reset its hover-open state when the user navigates between
+  // settings pages, mirroring how the main view resets on session tab swap.
+  sidebarCollapsed,
+  onSidebarCollapsedChange,
+  sidebarMotionMs,
+  activeSessionTabID = "",
 }: {
   initialized?: InitializeResult;
   initialPage?: SettingsPage;
@@ -149,6 +161,10 @@ export function SettingsView({
   // 归档页只读侧边栏归档清单 + 恢复回调。列表为空时渲染空态卡片。
   archivedThreads?: readonly ArchivedSessionView[];
   onUnarchiveThread: (thread: ArchivedSessionView) => void;
+  sidebarCollapsed: boolean;
+  onSidebarCollapsedChange: (collapsed: boolean) => void;
+  sidebarMotionMs: number;
+  activeSessionTabID?: string;
 }): JSX.Element {
   const providers = initialized?.providers ?? [];
   const runningProviderNameSet = useMemo(
@@ -498,8 +514,47 @@ export function SettingsView({
       (connectionLocked || baseURLDraft.trim() === selectedBaseURL) &&
       (connectionLocked || !apiKeyDraft.trim()));
   const shellStyle = {
-    "--settings-sidebar-width": `${sidebarWidth}px`
+    // `--settings-sidebar-width` is the layout grid column width (settings-only
+    // — the main shell uses `--sidebar-width`). The other two variables are
+    // shared with the main sidebar so a single CSS / JS constant covers both
+    // sidebars; see sidebar.css drawer-overlay rules for the consumer side.
+    "--settings-sidebar-width": `${sidebarWidth}px`,
+    "--sidebar-open-width": `${sidebarWidth}px`,
+    "--sidebar-motion-duration": `${sidebarMotionMs}ms`
   } as CSSProperties;
+
+  // Mirror the main view's sidebar collapse/hover logic so the settings shell
+  // behaves the same way: a persistent `sidebarCollapsed` flag hides the rail
+  // and only the left-edge hover zone + the toggle button can reopen it as a
+  // drawer overlay. `activePage` is used as the sync key so navigating between
+  // settings pages resets any in-flight hover timer, just like switching
+  // session tabs in the main view.
+  const fallbackShellRef = useRef<HTMLDivElement>(null);
+  const effectiveShellRef = shellRef ?? fallbackShellRef;
+  const {
+    sidebarDrawerPhase,
+    sidebarHoverZoneRef,
+    scheduleSidebarDrawerOpen,
+    cancelSidebarDrawerOpen
+  } = useSidebarDrawerState({
+    appShellRef: effectiveShellRef,
+    sidebarCollapsed,
+    resizingSidebar,
+    activeSessionTabID: activeSessionTabID || activePage,
+    motionMs: sidebarMotionMs
+  });
+  const shellClassName = `settings-shell${resizingSidebar ? " resizing-sidebar" : ""}${
+    sidebarCollapsed ? " sidebar-collapsed" : ""
+  }${
+    sidebarCollapsed && sidebarDrawerPhase === "open" ? " sidebar-drawer-open" : ""
+  }${
+    sidebarCollapsed && sidebarDrawerPhase === "closing"
+      ? " sidebar-drawer-closing"
+      : ""
+  }`;
+  const handleToggleSidebar = (): void => {
+    onSidebarCollapsedChange(!sidebarCollapsed);
+  };
 
   const pageMeta = settingsPageMeta(
     activePage,
@@ -508,7 +563,14 @@ export function SettingsView({
   );
 
   return (
-    <div ref={shellRef} className={`settings-shell${resizingSidebar ? " resizing-sidebar" : ""}`} style={shellStyle}>
+    <div ref={effectiveShellRef} className={shellClassName} style={shellStyle}>
+      <div
+        ref={sidebarHoverZoneRef}
+        className="sidebar-hover-zone settings-sidebar-hover-zone"
+        aria-hidden="true"
+        onPointerEnter={scheduleSidebarDrawerOpen}
+        onPointerLeave={cancelSidebarDrawerOpen}
+      />
       <aside className="settings-sidebar">
         <div className="traffic-spacer" />
         {/*
@@ -562,7 +624,17 @@ export function SettingsView({
         onKeyDown={onSidebarSeparatorKey}
       />
       <main className="settings-main">
-        <div className="settings-titlebar" aria-hidden="true" />
+        <div className="settings-titlebar">
+          <button
+            type="button"
+            className="sidebar-toggle-button settings-sidebar-toggle"
+            aria-label={sidebarCollapsed ? "展开左侧栏" : "收起左侧栏"}
+            aria-pressed={!sidebarCollapsed}
+            onClick={handleToggleSidebar}
+          >
+            <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
+          </button>
+        </div>
         <div className="settings-scroll">
           <div className="settings-page">
             <header className="settings-page-header">

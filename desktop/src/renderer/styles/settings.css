@@ -194,39 +194,19 @@
   opacity: 0;
   pointer-events: none;
   transition:
-    transform var(--settings-sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
-    opacity var(--settings-sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
+    transform var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
+    opacity var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
 }
 
-/* Drawer overlay rules — same shape as the main shell so the two rails
- * behave identically when collapsed. `position: absolute` lifts the rail
- * out of the (now 0px) grid cell so it can re-mount as a floating panel. */
-.settings-shell.sidebar-collapsed.sidebar-drawer-open .settings-sidebar,
-.settings-shell.sidebar-collapsed.sidebar-drawer-closing .settings-sidebar,
-.settings-shell.sidebar-collapsed:not(.resizing-sidebar) .settings-sidebar:focus-within {
-  position: absolute;
-  inset: 0 auto 0 0;
-  z-index: 140;
-  width: var(--settings-sidebar-open-width, 280px);
-  min-width: var(--settings-sidebar-open-width, 280px);
-  border-right-color: rgba(255, 255, 255, 0.42);
-  background: var(--sidebar-drawer-bg);
-  box-shadow:
-    inset -1px 0 0 rgba(255, 255, 255, 0.24),
-    10px 0 24px var(--ink-overlay-8);
-  overflow: visible;
-  pointer-events: auto;
-  transform: translate3d(0, 0, 0);
-  opacity: 1;
-}
-
-/* Closing keeps the drawer mounted so the content can fade out smoothly;
- * the next phase (closed) drops the overlay rule entirely once opacity
- * hits 0. */
-.settings-shell.sidebar-collapsed.sidebar-drawer-closing .settings-sidebar {
-  opacity: 0;
-  transition: opacity var(--settings-sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
-}
+/* Drawer overlay positioning and the closing fade for this rail now live in
+ * sidebar.css — both shells share the same rules via `:is(.sidebar,
+ * .settings-sidebar)` selectors, so future animation tweaks (z-index,
+ * box-shadow, fade duration) only need updating in one place.
+ *
+ * The collapse transform above stays in this file because the settings rail
+ * is the transform target itself; in the main sidebar the equivalent
+ * transform lives on `.sidebar-content` (see sidebar.css), so the two
+ * shells can't share that one rule verbatim. */
 
 /* The hover zone is hidden by default; only appears once the rail is
  * collapsed so the user has a target to reveal it. While a sidebar drag is

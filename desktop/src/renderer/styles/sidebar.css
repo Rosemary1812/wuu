@@ -246,10 +246,16 @@
 
 /* :focus-within is excluded while resizing: a drag that collapses the sidebar
    would otherwise pin it open as an overlay because the last-clicked sidebar
-   control still holds focus. */
-.sidebar-collapsed.sidebar-drawer-open .sidebar,
-.sidebar-collapsed.sidebar-drawer-closing .sidebar,
-.sidebar-collapsed:not(.resizing-sidebar) .sidebar:focus-within {
+   control still holds focus. Shared between the main sidebar (`<aside
+   class="sidebar">`) and the settings rail (`<aside class="settings-sidebar">`)
+   via `:is()` so a single edit covers both shells. The transform/opacity reset
+   is needed for the settings rail (whose collapse transform lives on the rail
+   itself); for the main rail it is a no-op because the aside has no explicit
+   transform or opacity in its base state and the inner `.sidebar-content`
+   layer has its own reset rule below. */
+.sidebar-collapsed.sidebar-drawer-open :is(.sidebar, .settings-sidebar),
+.sidebar-collapsed.sidebar-drawer-closing :is(.sidebar, .settings-sidebar),
+.sidebar-collapsed:not(.resizing-sidebar) :is(.sidebar, .settings-sidebar):focus-within {
   position: absolute;
   inset: 0 auto 0 0;
   z-index: 140;
@@ -262,6 +268,8 @@
     10px 0 24px var(--ink-overlay-8);
   overflow: visible;
   pointer-events: auto;
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
 }
 
 .sidebar-collapsed.sidebar-drawer-open .sidebar .sidebar-content,
@@ -274,8 +282,8 @@
    there is room for the exit motion, but lets the content fall back to the
    collapsed values (opacity 0, slide left) and fades the panel chrome with
    it. When the closing phase ends the overlay rules drop with everything
-   already invisible. */
-.sidebar-collapsed.sidebar-drawer-closing .sidebar {
+   already invisible. Shared with the settings rail via `:is()`. */
+.sidebar-collapsed.sidebar-drawer-closing :is(.sidebar, .settings-sidebar) {
   opacity: 0;
   transition: opacity var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
 }
