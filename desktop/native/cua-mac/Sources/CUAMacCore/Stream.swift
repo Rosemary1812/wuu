@@ -58,7 +58,7 @@ private final class FramePipeWriter: @unchecked Sendable {
         }
     }
 
-    func writeCapture(_ capture: WindowCapture) -> Bool {
+    func writeCapture(_ capture: WindowCapture, mode: String = "visible_fallback") -> Bool {
         queue.sync {
             guard let bitmap = NSBitmapImageRep(data: capture.data),
                   let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.72]) else {
@@ -71,7 +71,7 @@ private final class FramePipeWriter: @unchecked Sendable {
                 "timestamp_ns": DispatchTime.now().uptimeNanoseconds,
                 "width": bitmap.pixelsWide,
                 "height": bitmap.pixelsHigh,
-                "capture_mode": "visible_fallback",
+                "capture_mode": mode,
                 "window_frame": [
                     "x": capture.geometry.windowFrame.origin.x,
                     "y": capture.geometry.windowFrame.origin.y,
@@ -194,6 +194,23 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
         frame = nextFrame
         lock.unlock()
     }
+
+    func currentFrame() -> CGRect {
+        lock.lock()
+        defer { lock.unlock() }
+        return frame
+    }
+
+    // Clear the terminal flags so this same output object can be reattached to a freshly
+    // built SCStream after a recoverable failure instead of ending the whole session.
+    func resetForRebuild() {
+        lock.lock()
+        failure = nil
+        stopped = false
+        firstFrameReceived = false
+        lastFrameAt = nil
+        lock.unlock()
+    }
 }
 
 @available(macOS 14.0, *)
@@ -244,34 +261,57 @@ private func streamConfiguration(for window: SCWindow) -> SCStreamConfiguration 
 }
 
 @available(macOS 14.0, *)
-private func runPollingWindowFallback(app: NSRunningApplication, writer: FramePipeWriter) async throws -> Never {
-    var previousCapture: Data?
-    var emittedFirstFrame = false
-    while true {
-        let processID = app.processIdentifier
-        let preferredFrame = focusedWindowFrame(processID: processID)
-        let capture = try await Task.detached {
-            do {
-                return try captureWindowPNG(
+private func startWindowStream(window: SCWindow, output: WindowStreamOutput) throws -> SCStream {
+    let stream = SCStream(
+        filter: SCContentFilter(desktopIndependentWindow: window),
+        configuration: streamConfiguration(for: window),
+        delegate: output
+    )
+    try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: DispatchQueue(label: "com.blueberrycongee.wuu.cua.capture"))
+    stream.startCapture { error in
+        guard let error else { return }
+        output.lockFailure(error)
+    }
+    return stream
+}
+
+// Pulls one COMPLETE-window frame via SCScreenshotManager(desktopIndependentWindow), which —
+// unlike the live SCStream — keeps returning the whole window while it is idle or parked
+// fully off-screen. It only runs while the live stream is silent, dedupes identical frames,
+// and is tagged "full_window". The legacy on-screen-only captureForegroundWindowPNG path is
+// intentionally never used here, so the PiP can no longer show a truncated window.
+@available(macOS 14.0, *)
+private func runFullWindowHeartbeat(processID: pid_t, output: WindowStreamOutput, writer: FramePipeWriter) async {
+    var lastData: Data?
+    var idleStreak = 0
+    while !Task.isCancelled {
+        let streamIsFresh = output.secondsSinceLastFrame().map { $0 <= 0.9 } ?? false
+        if streamIsFresh {
+            idleStreak = 0
+        } else {
+            let frame = output.currentFrame()
+            // Light path for a live frame: no per-pixel visible-bounds scan and a modest
+            // scale, so a persistently idle/off-screen window doesn't burn a CPU core.
+            let capture = try? await Task.detached {
+                try captureWindowPNG(
                     processID: processID,
-                    timeout: 3,
-                    preferredWindowFrame: preferredFrame
+                    timeout: 2,
+                    preferredWindowFrame: frame,
+                    scale: 1.25,
+                    computeVisibleBounds: false
                 )
-            } catch {
-                return try captureForegroundWindowPNG(processID: processID)
-            }
-        }.value
-        if previousCapture != capture.data {
-            guard writer.writeCapture(capture) else {
-                throw ComputerError.operationFailed("live window capture could not encode a frame")
-            }
-            previousCapture = capture.data
-            if !emittedFirstFrame {
-                writer.event("started")
-                emittedFirstFrame = true
+            }.value
+            if let capture, capture.data != lastData {
+                _ = writer.writeCapture(capture, mode: "full_window")
+                lastData = capture.data
+                idleStreak = 0
+            } else {
+                idleStreak = min(idleStreak + 1, 6)
             }
         }
-        try await Task.sleep(for: .milliseconds(125))
+        // ~3fps while the window is actively changing off-screen, backing off toward ~1fps
+        // once it goes static, so watching stays smooth without a constant full-window pull.
+        try? await Task.sleep(for: .milliseconds(300 + idleStreak * 120))
     }
 }
 
@@ -298,23 +338,19 @@ public func runWindowFrameStream(target: String) async throws {
     guard var window = preferredStreamWindow(in: content, processID: app.processIdentifier) else {
         throw ComputerError.operationFailed("no capturable window found")
     }
-    let configuration = streamConfiguration(for: window)
     let output = WindowStreamOutput(writer: writer, frame: window.frame)
-    let stream = SCStream(filter: SCContentFilter(desktopIndependentWindow: window), configuration: configuration, delegate: output)
-    try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: DispatchQueue(label: "com.blueberrycongee.wuu.cua.capture"))
-    stream.startCapture { error in
-        guard let error else { return }
-        output.lockFailure(error)
-    }
-    let firstFrameDeadline = Date(timeIntervalSinceNow: 3)
-    while !output.receivedFirstFrame(), output.streamFailure() == nil, Date() < firstFrameDeadline {
-        try await Task.sleep(for: .milliseconds(50))
-    }
-    if !output.receivedFirstFrame() {
-        try? stream.removeStreamOutput(output, type: .screen)
-        try await runPollingWindowFallback(app: app, writer: writer)
-    }
+    var stream = try startWindowStream(window: window, output: output)
     writer.event("started")
+
+    // The live SCStream only fires on content change and can go fully silent for a
+    // concealed (off-screen) window. A full-window heartbeat guarantees the PiP keeps
+    // showing the COMPLETE window regardless, and liveness is judged by real stream
+    // errors — never by frame timing — so an idle window no longer degrades the capture.
+    let heartbeatProcessID = app.processIdentifier
+    let heartbeat = Task.detached { [output, writer] in
+        await runFullWindowHeartbeat(processID: heartbeatProcessID, output: output, writer: writer)
+    }
+    defer { heartbeat.cancel() }
     let inputMonitor = UserInputMonitor(processID: app.processIdentifier, writer: writer)
     let eventTypes: [CGEventType] = [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown, .scrollWheel]
     let eventMask = eventTypes.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << CGEventMask($1.rawValue)) }
@@ -333,12 +369,21 @@ public func runWindowFrameStream(target: String) async throws {
         if let eventSource { CFRunLoopAddSource(CFRunLoopGetMain(), eventSource, .commonModes) }
         CGEvent.tapEnable(tap: eventTap, enable: true)
     }
-    while !output.isStopped() {
+    while !app.isTerminated {
         try await Task.sleep(for: .milliseconds(750))
-        if output.secondsSinceLastFrame().map({ $0 > 3 }) == true {
+        if app.isTerminated { break }
+        // Only a real stream error tears anything down; rebuild the stream in place while
+        // the heartbeat keeps full-window frames flowing. No permanent polling fallback.
+        if output.streamFailure() != nil {
             try? stream.removeStreamOutput(output, type: .screen)
             try? await stream.stopCapture()
-            try await runPollingWindowFallback(app: app, writer: writer)
+            // Clear the failure flag only once a fresh stream is actually up; otherwise leave
+            // it set so the next tick retries the rebuild instead of driving a dead stream.
+            if let rebuilt = try? startWindowStream(window: window, output: output) {
+                stream = rebuilt
+                output.resetForRebuild()
+            }
+            continue
         }
         guard let refreshedContent = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) else {
             continue
@@ -355,18 +400,24 @@ public func runWindowFrameStream(target: String) async throws {
         let windowChanged = refreshedWindow.windowID != window.windowID
         let frameChanged = windowFrameDistance(refreshedWindow.frame, window.frame) > 1
         guard windowChanged || frameChanged else { continue }
-        if windowChanged {
-            try await stream.updateContentFilter(SCContentFilter(desktopIndependentWindow: refreshedWindow))
-        }
-        if frameChanged {
-            try await stream.updateConfiguration(streamConfiguration(for: refreshedWindow))
+        do {
+            if windowChanged {
+                try await stream.updateContentFilter(SCContentFilter(desktopIndependentWindow: refreshedWindow))
+            }
+            if frameChanged {
+                try await stream.updateConfiguration(streamConfiguration(for: refreshedWindow))
+            }
+        } catch {
+            // A live reconfigure failure means the stream is unhealthy; fold it into the
+            // rebuild path on the next tick instead of killing the whole helper.
+            output.lockFailure(error)
+            continue
         }
         window = refreshedWindow
         output.updateFrame(refreshedWindow.frame)
     }
-    let streamFailure = output.streamFailure()
+    heartbeat.cancel()
     withExtendedLifetime(inputMonitor) {}
     if let eventSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), eventSource, .commonModes) }
-    if let streamFailure { throw streamFailure }
     try? await stream.stopCapture()
 }
