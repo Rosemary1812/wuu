@@ -156,10 +156,10 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 
 func (t *Toolkit) canonicalCUATarget(ctx context.Context, tool Tool, target string) string {
 	target = strings.TrimSpace(target)
-	if target == "" || (!strings.Contains(target, "/") && strings.Contains(target, ".")) {
+	if target == "" {
 		return target
 	}
-	arguments, _ := json.Marshal(map[string]any{"action": "list_apps"})
+	arguments, _ := json.Marshal(map[string]any{"action": "list_apps", "app": target})
 	result, err := t.executeKnownToolResult(ctx, providers.ToolCall{Name: tool.Name(), Arguments: string(arguments)}, tool)
 	if err != nil || result.IsError {
 		return target
@@ -169,6 +169,11 @@ func (t *Toolkit) canonicalCUATarget(ctx context.Context, tool Tool, target stri
 
 func canonicalCUATargetFromApps(target string, structured json.RawMessage) string {
 	var payload struct {
+		ResolvedApp *struct {
+			ID               string `json:"id"`
+			BundleIdentifier string `json:"bundleIdentifier"`
+			Path             string `json:"path"`
+		} `json:"resolved_app"`
 		Apps []struct {
 			ID               string `json:"id"`
 			DisplayName      string `json:"displayName"`
@@ -178,6 +183,17 @@ func canonicalCUATargetFromApps(target string, structured json.RawMessage) strin
 	}
 	if json.Unmarshal(structured, &payload) != nil {
 		return strings.TrimSpace(target)
+	}
+	if payload.ResolvedApp != nil {
+		if canonical := strings.TrimSpace(payload.ResolvedApp.BundleIdentifier); canonical != "" {
+			return canonical
+		}
+		if canonical := strings.TrimSpace(payload.ResolvedApp.Path); canonical != "" {
+			return canonical
+		}
+		if canonical := strings.TrimSpace(payload.ResolvedApp.ID); canonical != "" {
+			return canonical
+		}
 	}
 	normalized := strings.ToLower(strings.TrimSpace(target))
 	for _, app := range payload.Apps {

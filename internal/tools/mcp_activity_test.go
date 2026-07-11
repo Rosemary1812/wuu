@@ -73,6 +73,17 @@ func TestCanonicalCUATargetFromRunningApps(t *testing.T) {
 	}
 }
 
+func TestCanonicalCUATargetPrefersResolvedInstalledApp(t *testing.T) {
+	payload := json.RawMessage(`{"resolved_app":{
+		"id":"com.apple.Calculator",
+		"bundleIdentifier":"com.apple.Calculator",
+		"path":"/System/Applications/Calculator.app"
+	},"apps":[]}`)
+	if got := canonicalCUATargetFromApps("Calculator", payload); got != "com.apple.Calculator" {
+		t.Fatalf("resolved installed target = %q", got)
+	}
+}
+
 func TestSequenceControlAggregatesHighestMechanism(t *testing.T) {
 	stepResult := func(mechanism string, foregroundChanged bool) toolresult.Result {
 		payload := map[string]any{"mechanism": mechanism}
@@ -143,7 +154,14 @@ func (t *activityTestTool) Definition() providers.ToolDefinition {
 func (t *activityTestTool) Execute(context.Context, string) (string, error) {
 	panic("rich path required")
 }
-func (t *activityTestTool) ExecuteResult(context.Context, string) (toolresult.Result, error) {
+func (t *activityTestTool) ExecuteResult(_ context.Context, arguments string) (toolresult.Result, error) {
+	var input struct {
+		Action string `json:"action"`
+	}
+	_ = json.Unmarshal([]byte(arguments), &input)
+	if input.Action == "list_apps" {
+		return toolresult.Result{StructuredContent: t.structuredContent}, nil
+	}
 	t.calls++
 	if t.onExecute != nil {
 		t.onExecute()

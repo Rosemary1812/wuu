@@ -43,7 +43,7 @@ public final class MacComputerBackend: ComputerBackend {
         case .requestPermissions:
             return requestPermissions()
         case .listApps:
-            return listApps()
+            return try listApps(command)
         default:
             break
         }
@@ -273,7 +273,7 @@ public final class MacComputerBackend: ComputerBackend {
         return permissionStatus()
     }
 
-    private func listApps() -> ComputerResult {
+    private func listApps(_ command: ComputerCommand) throws -> ComputerResult {
         let apps = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular && !$0.isTerminated }
             .sorted { ($0.localizedName ?? "") < ($1.localizedName ?? "") }
@@ -291,7 +291,18 @@ public final class MacComputerBackend: ComputerBackend {
         let text = apps.map { app in
             "\(app["displayName"] ?? "Unknown")\tbundle=\(app["bundleIdentifier"] ?? "")\tpid=\(app["processID"] ?? 0)"
         }.joined(separator: "\n")
-        return ComputerResult(text: text, structured: ["apps": apps])
+        var structured: [String: Any] = ["apps": apps]
+        if let target = command.app?.trimmingCharacters(in: .whitespacesAndNewlines), !target.isEmpty {
+            let resolved = try resolveApplication(target)
+            structured["resolved_app"] = [
+                "id": resolved.bundleIdentifier ?? resolved.bundleURL?.path ?? String(resolved.processIdentifier),
+                "displayName": resolved.localizedName ?? "Unknown",
+                "bundleIdentifier": resolved.bundleIdentifier ?? "",
+                "path": resolved.bundleURL?.path ?? "",
+                "processID": Int(resolved.processIdentifier),
+            ]
+        }
+        return ComputerResult(text: text, structured: structured)
     }
 
     private func resolveApplication(_ target: String) throws -> NSRunningApplication {
