@@ -65,6 +65,8 @@ describe("CUA Activity windows", () => {
   it("uses glass without visible copy before the first preview", () => {
     const html = cuaActivityHTML(activity({ preview: undefined, state: "starting" }));
     expect(html).toContain('class="glass"');
+    expect(html).not.toContain("backdrop-filter");
+    expect(html).not.toContain("@keyframes drift");
     expect(html).not.toContain(">正在获取画面<");
     expect(html).not.toContain("正在连接 Mac");
   });

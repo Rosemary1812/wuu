@@ -101,6 +101,8 @@ export class CUAActivityWindowManager {
       frame: false,
       transparent: true,
       backgroundColor: "#00000000",
+      vibrancy: "under-window",
+      visualEffectState: "active",
       alwaysOnTop: true,
       skipTaskbar: true,
       show: false,
@@ -123,7 +125,7 @@ export class CUAActivityWindowManager {
         .map((candidate) => candidate.getBounds());
       const snapped = snapActivityBounds(bounds, workArea, anchors);
       if (snapped.x !== bounds.x || snapped.y !== bounds.y) {
-        win.setBounds(snapped, true);
+        win.setBounds(snapped, false);
       }
     });
     win.webContents.on("will-navigate", (navigationEvent, rawURL) => {
@@ -201,7 +203,7 @@ export function cuaActivityHTML(activity: ActivitySession): string {
     : "";
   const preview = previewURL
     ? `<img src="${escapeHTML(previewURL)}" alt="${target} 最新画面" />`
-    : `<div class="glass" role="status" aria-label="正在获取画面"><span></span><span></span><span></span></div>`;
+    : `<div class="glass" role="status" aria-label="正在获取画面"></div>`;
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src wuu-file:; style-src 'unsafe-inline'; navigate-to wuu-cua:" />
@@ -212,9 +214,9 @@ export function cuaActivityHTML(activity: ActivitySession): string {
 *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;background:transparent;overflow:hidden}
 .card{position:relative;height:100%;border-radius:14px;overflow:hidden;background:#101214;border:1px solid var(--line);box-shadow:var(--shadow);color:var(--ink);-webkit-app-region:drag}
 .preview{position:absolute;inset:0;display:grid;place-items:center;overflow:hidden}.preview img{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none}
-.glass{position:absolute;inset:0;overflow:hidden;background:linear-gradient(145deg,var(--glass-strong),var(--glass));backdrop-filter:blur(28px) saturate(150%)}.glass:after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.34),transparent 38%,rgba(255,255,255,.1));box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}.glass span{position:absolute;width:54%;aspect-ratio:1;border-radius:50%;filter:blur(30px);opacity:.58;animation:drift 7s ease-in-out infinite alternate}.glass span:nth-child(1){left:-12%;top:-30%;background:rgba(255,255,255,.72)}.glass span:nth-child(2){right:-18%;top:14%;background:rgba(255,122,72,.26);animation-delay:-2s}.glass span:nth-child(3){left:26%;bottom:-44%;background:rgba(110,170,255,.2);animation-delay:-4s}@keyframes drift{to{transform:translate3d(12px,18px,0) scale(1.08)}}
-.actions{position:absolute;z-index:3;top:8px;right:8px;display:flex;align-items:center;gap:5px;padding:4px;border-radius:10px;background:var(--glass-strong);border:1px solid var(--line);backdrop-filter:blur(18px) saturate(145%);box-shadow:0 2px 8px rgba(0,0,0,.14);opacity:0;transform:translateY(-3px);transition:opacity 140ms ease,transform 140ms ease;-webkit-app-region:no-drag}.card:hover .actions,.actions:focus-within{opacity:1;transform:none}.button{height:25px;padding:0 8px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink);background:transparent;border:0;font-size:11px;font-weight:560}.button:hover{background:var(--hover)}.button.stop{width:25px;padding:0;font-size:15px;font-weight:400}.button.stop:hover{color:var(--danger);background:var(--danger-soft)}
-.error{position:absolute;z-index:2;left:8px;right:8px;bottom:8px;padding:8px 10px;border-radius:9px;background:var(--danger-soft);border:1px solid var(--line);backdrop-filter:blur(18px);font-size:10.5px;color:var(--danger);-webkit-app-region:no-drag}
+.glass{position:absolute;inset:0;background:radial-gradient(circle at 10% 0%,rgba(255,255,255,.62),transparent 44%),radial-gradient(circle at 92% 34%,rgba(255,122,72,.16),transparent 48%),radial-gradient(circle at 52% 112%,rgba(110,170,255,.14),transparent 50%),linear-gradient(145deg,var(--glass-strong),var(--glass));box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
+.actions{position:absolute;z-index:3;top:8px;right:8px;display:flex;align-items:center;gap:5px;padding:4px;border-radius:10px;background:var(--glass-strong);border:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.14);opacity:0;transform:translateY(-3px);transition:opacity 140ms ease,transform 140ms ease;-webkit-app-region:no-drag}.card:hover .actions,.actions:focus-within{opacity:1;transform:none}.button{height:25px;padding:0 8px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink);background:transparent;border:0;font-size:11px;font-weight:560}.button:hover{background:var(--hover)}.button.stop{width:25px;padding:0;font-size:15px;font-weight:400}.button.stop:hover{color:var(--danger);background:var(--danger-soft)}
+.error{position:absolute;z-index:2;left:8px;right:8px;bottom:8px;padding:8px 10px;border-radius:9px;background:var(--danger-soft);border:1px solid var(--line);font-size:10.5px;color:var(--danger);-webkit-app-region:no-drag}
 </style></head><body><section class="card"><div class="preview">${preview}</div><div class="actions">${controls}${actionLink(activity,"stop","停止","stop","×")}</div>${error}</section></body></html>`;
 }
 
