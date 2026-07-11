@@ -146,19 +146,31 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 }
 
 func cuaActivityControlState(arguments string, result toolresult.Result) activity.State {
+	var input map[string]any
+	_ = json.Unmarshal([]byte(arguments), &input)
+	policy, _ := input["foreground_policy"].(string)
+	// require forcibly activates the target up front (a visible takeover) regardless
+	// of which per-action level ultimately runs, so it is always foreground.
+	if policy == "require" {
+		return activity.StateForegroundControlled
+	}
 	var structured map[string]any
 	if json.Unmarshal(result.StructuredContent, &structured) == nil {
-		if mechanism, _ := structured["mechanism"].(string); mechanism == "foreground_native" {
+		// A visible focus change means the foreground moved, whatever the mechanism.
+		if changed, _ := structured["foreground_changed"].(bool); changed {
 			return activity.StateForegroundControlled
-		} else if mechanism == "background_ax" {
+		}
+		switch mechanism, _ := structured["mechanism"].(string); mechanism {
+		case "foreground_native":
+			return activity.StateForegroundControlled
+		case "background_ax", "background_directed":
+			// Directed input (CGEvent.postToPid) reaches the target process without
+			// activating it, so it is a background-controlled state like plain AX.
 			return activity.StateBackgroundControlled
 		}
 	}
-	var input map[string]any
-	_ = json.Unmarshal([]byte(arguments), &input)
-	if policy, _ := input["foreground_policy"].(string); policy == "allow" || policy == "require" {
-		return activity.StateForegroundControlled
-	}
+	// No mechanism reported (observe, permission checks): allow alone does not take
+	// the foreground, so the action stayed in the background.
 	return activity.StateBackgroundControlled
 }
 
@@ -176,9 +188,13 @@ func (t *Toolkit) executeCUASequence(ctx context.Context, tool Tool, threadID, a
 	}
 	completed := make([]map[string]any, 0, len(request.Steps))
 	var lastImage *toolresult.ContentPart
+	// Track the most-disruptive control level any step actually used so the whole
+	// sequence maps to an honest activity state (a background sequence must not look
+	// foreground just because foreground_policy was allowed).
+	control := sequenceControl{}
 	for index, source := range request.Steps {
 		if err := t.activityRegistry.CheckControl(threadID, activityID, leaseToken); err != nil {
-			return cuaSequenceResult("control_revoked", completed, index, lastImage), "control_revoked", err
+			return cuaSequenceResult("control_revoked", completed, index, lastImage, control), "control_revoked", err
 		}
 		step := make(map[string]any, len(source)+2)
 		for key, value := range source {
@@ -186,15 +202,15 @@ func (t *Toolkit) executeCUASequence(ctx context.Context, tool Tool, threadID, a
 		}
 		action, _ := step["action"].(string)
 		if strings.TrimSpace(action) == "" || action == "sequence" {
-			return cuaSequenceResult("failed", completed, index, lastImage), "failed", fmt.Errorf("CUA sequence step %d has an invalid action", index)
+			return cuaSequenceResult("failed", completed, index, lastImage, control), "failed", fmt.Errorf("CUA sequence step %d has an invalid action", index)
 		}
 		risk, _ := step["risk"].(string)
 		if risk != "safe" && risk != "external_side_effect" && risk != "destructive" {
-			return cuaSequenceResult("failed", completed, index, lastImage), "failed", fmt.Errorf("CUA sequence step %d must declare risk", index)
+			return cuaSequenceResult("failed", completed, index, lastImage, control), "failed", fmt.Errorf("CUA sequence step %d must declare risk", index)
 		}
 		confirmed, _ := step["confirmed"].(bool)
 		if risk != "safe" && !confirmed {
-			return cuaSequenceResult("policy_paused", completed, index, lastImage), "policy_paused", nil
+			return cuaSequenceResult("policy_paused", completed, index, lastImage, control), "policy_paused", nil
 		}
 		delete(step, "risk")
 		delete(step, "confirmed")
@@ -206,15 +222,16 @@ func (t *Toolkit) executeCUASequence(ctx context.Context, tool Tool, threadID, a
 		}
 		encoded, err := json.Marshal(step)
 		if err != nil {
-			return cuaSequenceResult("failed", completed, index, lastImage), "failed", err
+			return cuaSequenceResult("failed", completed, index, lastImage, control), "failed", err
 		}
 		stepResult, err := t.executeKnownToolResult(ctx, providers.ToolCall{Name: tool.Name(), Arguments: string(encoded)}, tool)
+		control.observe(string(encoded), stepResult)
 		if err != nil || stepResult.IsError {
 			completed = append(completed, map[string]any{"index": index, "action": action, "status": "failed"})
 			if err == nil {
 				err = errors.New(stepResult.TextProjection())
 			}
-			return cuaSequenceResult("partial", completed, index+1, lastImage), "partial", err
+			return cuaSequenceResult("partial", completed, index+1, lastImage, control), "partial", err
 		}
 		for i := range stepResult.Content {
 			if stepResult.Content[i].Type == toolresult.ContentTypeImage {
@@ -224,11 +241,58 @@ func (t *Toolkit) executeCUASequence(ctx context.Context, tool Tool, threadID, a
 		}
 		completed = append(completed, map[string]any{"index": index, "action": action, "status": "completed"})
 	}
-	return cuaSequenceResult("completed", completed, len(request.Steps), lastImage), "completed", nil
+	return cuaSequenceResult("completed", completed, len(request.Steps), lastImage, control), "completed", nil
 }
 
-func cuaSequenceResult(status string, completed []map[string]any, nextStep int, imagePart *toolresult.ContentPart) toolresult.Result {
-	structured, _ := json.Marshal(map[string]any{"status": status, "completed_steps": completed, "next_step": nextStep})
+// sequenceControl accumulates the highest control level reached across a CUA
+// sequence's steps so the aggregate result can report an accurate mechanism.
+type sequenceControl struct {
+	mechanism         string
+	foregroundChanged bool
+}
+
+func mechanismRank(mechanism string) int {
+	switch mechanism {
+	case "foreground_native":
+		return 3
+	case "background_directed":
+		return 2
+	case "background_ax":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func (c *sequenceControl) observe(arguments string, result toolresult.Result) {
+	var structured map[string]any
+	if json.Unmarshal(result.StructuredContent, &structured) == nil {
+		if mechanism, _ := structured["mechanism"].(string); mechanismRank(mechanism) > mechanismRank(c.mechanism) {
+			c.mechanism = mechanism
+		}
+		if changed, _ := structured["foreground_changed"].(bool); changed {
+			c.foregroundChanged = true
+		}
+	}
+	// A require step force-activates the target even when its own mechanism reads as
+	// background, so treat it as a foreground change for the sequence.
+	var input map[string]any
+	if json.Unmarshal([]byte(arguments), &input) == nil {
+		if policy, _ := input["foreground_policy"].(string); policy == "require" {
+			c.foregroundChanged = true
+		}
+	}
+}
+
+func cuaSequenceResult(status string, completed []map[string]any, nextStep int, imagePart *toolresult.ContentPart, control sequenceControl) toolresult.Result {
+	payload := map[string]any{"status": status, "completed_steps": completed, "next_step": nextStep}
+	if control.mechanism != "" {
+		payload["mechanism"] = control.mechanism
+	}
+	if control.foregroundChanged {
+		payload["foreground_changed"] = true
+	}
+	structured, _ := json.Marshal(payload)
 	content := []toolresult.ContentPart{{Type: toolresult.ContentTypeText, Text: fmt.Sprintf("CUA sequence %s after %d step(s).", status, len(completed))}}
 	if imagePart != nil {
 		content = append(content, *imagePart)

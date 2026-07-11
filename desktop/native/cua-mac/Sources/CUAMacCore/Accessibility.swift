@@ -5,6 +5,13 @@ import Foundation
 struct AXSnapshot {
     let text: String
     let elements: [Int: AXUIElement]
+    let truncated: Bool
+
+    init(text: String, elements: [Int: AXUIElement], truncated: Bool = false) {
+        self.text = text
+        self.elements = elements
+        self.truncated = truncated
+    }
 }
 
 struct AXElementDescriptor: Equatable {
@@ -17,6 +24,7 @@ struct AXElementDescriptor: Equatable {
 final class AXSnapshotter {
     private(set) var elements: [Int: AXUIElement] = [:]
     private(set) var descriptors: [Int: AXElementDescriptor] = [:]
+    private var truncated = false
     private let maxDepth = 14
     private let maxElements = 700
 
@@ -25,7 +33,11 @@ final class AXSnapshotter {
         descriptors.removeAll(keepingCapacity: true)
         var lines: [String] = []
         var visited = Set<CFHashCode>()
+        truncated = false
         walk(application, depth: 0, lines: &lines, visited: &visited)
+        if truncated {
+            lines.append("… accessibility tree truncated at \(maxElements) elements; narrow with activate_control or observe a subview for the rest.")
+        }
         let controls = descriptors.sorted { left, right in
             let leftPriority = left.value.role == kAXButtonRole as String ? 0 : left.value.role == kAXMenuItemRole as String ? 2 : 1
             let rightPriority = right.value.role == kAXButtonRole as String ? 0 : right.value.role == kAXMenuItemRole as String ? 2 : 1
@@ -39,7 +51,7 @@ final class AXSnapshotter {
             return "[\(id)] \(descriptor.role) " + labels.joined(separator: " ")
         }
         let prefix = controls.isEmpty ? "" : "Actionable controls (prefer activate_control with an exact label):\n" + controls.prefix(160).joined(separator: "\n") + "\nAccessibility tree:\n"
-        return AXSnapshot(text: prefix + lines.joined(separator: "\n"), elements: elements)
+        return AXSnapshot(text: prefix + lines.joined(separator: "\n"), elements: elements, truncated: truncated)
     }
 
     func element(id: Int) -> AXUIElement? {
@@ -69,7 +81,8 @@ final class AXSnapshotter {
     }
 
     private func walk(_ element: AXUIElement, depth: Int, lines: inout [String], visited: inout Set<CFHashCode>) {
-        guard depth <= maxDepth, elements.count < maxElements else { return }
+        guard elements.count < maxElements else { truncated = true; return }
+        guard depth <= maxDepth else { truncated = true; return }
         let hash = CFHash(element)
         guard visited.insert(hash).inserted else { return }
         let id = elements.count

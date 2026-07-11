@@ -62,6 +62,18 @@ public final class MacComputerBackend: ComputerBackend {
                 restoreConcealedWindows(app: app, application: axApplication)
                 try activate(app)
             }
+        } else if command.foregroundPolicy == .allow {
+            // A foreground input action must not post global events at a concealed
+            // window's off-screen coordinates (the WindowServer would clamp them to a
+            // screen edge and hit whatever is there). Bring the windows back first, so
+            // element frames and coordinates resolve against the on-screen window.
+            switch command.action {
+            case .observe, .concealApp, .revealApp, .waitForChange,
+                 .permissionStatus, .requestPermissions, .listApps, .sequence:
+                break
+            default:
+                restoreConcealedWindows(app: app, application: axApplication)
+            }
         }
 
         let mechanism: String
@@ -75,23 +87,18 @@ public final class MacComputerBackend: ComputerBackend {
         case .click:
             mechanism = try click(command, app: app)
         case .drag:
-            try drag(command, app: app)
-            mechanism = "foreground_native"
+            mechanism = try drag(command, app: app)
         case .pressKey:
-            try pressKey(command, app: app)
-            mechanism = "foreground_native"
+            mechanism = try pressKey(command, app: app)
         case .pressKeys:
-            try pressKeys(command, app: app)
-            mechanism = "foreground_native"
+            mechanism = try pressKeys(command, app: app)
         case .scroll:
-            try scroll(command, app: app)
-            mechanism = "foreground_native"
+            mechanism = try scroll(command, app: app)
         case .setValue:
             try setValue(command, app: app)
             mechanism = "background_ax"
         case .typeText:
-            try typeText(command, app: app)
-            mechanism = "foreground_native"
+            mechanism = try typeText(command, app: app)
         case .selectText:
             try selectText(command, app: app)
             mechanism = "background_ax"
@@ -111,24 +118,62 @@ public final class MacComputerBackend: ComputerBackend {
         }
         let previousSnapshot = lastSnapshotText[app.processIdentifier] ?? ""
         let settled = settleAccessibility(app: app, application: axApplication, previous: previousSnapshot)
+        let axChanged = settled.text != previousSnapshot
+        // Weak-AX apps can repaint without moving their Accessibility tree. When AX
+        // shows nothing, capture one frame and compare it so the model still gets a
+        // grounded verification signal instead of a bare "unverified".
+        var visualVerified = false
+        if !axChanged {
+            visualVerified = captureVisualRevision(app: app)
+        }
         let frontmostAfter = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let canonicalTarget = app.bundleIdentifier ?? app.bundleURL?.path ?? target
         let changes = snapshotChanges(from: previousSnapshot, to: settled.text)
+        let status = axChanged ? "verified" : (visualVerified ? "verified_visual" : "unverified")
         return ComputerResult(
-            text: "Action \(command.action.rawValue) completed for app=\"\(canonicalTarget)\". Call observe when you need fresh UI state.",
+            text: "Action \(command.action.rawValue) completed for app=\"\(canonicalTarget)\" via \(mechanism) (\(status)). Call observe when you need fresh UI state.",
             structured: [
                 "action": command.action.rawValue,
                 "app": canonicalTarget,
                 "display_name": app.localizedName ?? "Unknown",
                 "process_id": Int(app.processIdentifier),
-                "status": settled.text != previousSnapshot ? "verified" : "unverified",
+                "status": status,
                 "mechanism": mechanism,
+                "visual_verified": visualVerified,
                 "foreground_changed": frontmostBefore != frontmostAfter,
                 "ax_revision": axRevisions[app.processIdentifier] ?? 0,
                 "visual_revision": visualRevisions[app.processIdentifier] ?? 0,
                 "changes": changes,
             ]
         )
+    }
+
+    // Capture the target window once and update the stored visual revision if the
+    // pixels changed. Best effort: any capture failure simply reports no change.
+    // Both capture paths run without activating the app. This never touches
+    // lastCaptureGeometry — only observe, which hands the geometry back to the
+    // model, may change the coordinate space the model is clicking against.
+    private func captureVisualRevision(app: NSRunningApplication) -> Bool {
+        guard #available(macOS 14.0, *) else { return false }
+        let pid = app.processIdentifier
+        var capture: WindowCapture?
+        if let background = try? captureWindowPNG(processID: pid) {
+            // A later background success clears a stale foreground-capture flag so
+            // observe can go back to the non-disruptive path.
+            foregroundCaptureProcessIDs.remove(pid)
+            capture = background
+        } else if let foreground = try? captureForegroundWindowPNG(processID: pid) {
+            // captureForegroundWindowPNG reads the window list without activating,
+            // so weak-AX apps that fail SCK still get a visual check.
+            capture = foreground
+        }
+        guard let capture else { return false }
+        let changed = lastScreenshotData[pid] != capture.data
+        if changed {
+            visualRevisions[pid, default: 0] += 1
+            lastScreenshotData[pid] = capture.data
+        }
+        return changed
     }
 
     private func permissionStatus() -> ComputerResult {
@@ -307,6 +352,7 @@ public final class MacComputerBackend: ComputerBackend {
             "element_count": snapshot.elements.count,
             "ax_available": accessibility,
             "ax_preferred": accessibility,
+            "ax_truncated": snapshot.truncated,
         ]
         var screenshot: Data?
         do {
@@ -408,15 +454,8 @@ public final class MacComputerBackend: ComputerBackend {
         guard AXIsProcessTrusted() else {
             return AXSnapshot(text: previous, elements: [:])
         }
-        let deadline = Date(timeIntervalSinceNow: 1.2)
-        var latest = snapshotter.snapshot(application: application)
-        var stableSamples = 0
-        while Date() < deadline && stableSamples < 2 {
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.08))
-            let next = snapshotter.snapshot(application: application)
-            stableSamples = next.text == latest.text ? stableSamples + 1 : 0
-            latest = next
-        }
+        waitForAccessibilitySettle(application: application, processID: app.processIdentifier, debounce: 0.12, timeout: 1.5)
+        let latest = snapshotter.snapshot(application: application)
         if latest.text != previous {
             axRevisions[app.processIdentifier, default: 0] += 1
         }
@@ -425,13 +464,44 @@ public final class MacComputerBackend: ComputerBackend {
         return latest
     }
 
+    // A single input action's control level, chosen deterministically by policy:
+    //   avoid (default) → level 2 directed input via CGEvent.postToPid; the target
+    //                     process receives the event without being activated, so the
+    //                     user's frontmost app and real pointer never move.
+    //   allow / require → level 3 visible foreground takeover. The model opts into
+    //                     this explicitly, so directed input is not attempted first;
+    //                     that avoids double-applying an effect a directed attempt
+    //                     may already have had (there is no reliable way to detect a
+    //                     dropped directed event without risking a double input).
+    // Element clicks and other AX-native actions resolve to level 1 before reaching
+    // here and never post synthetic input at all.
+    private func performDirectedOrForeground(
+        _ command: ComputerCommand,
+        app: NSRunningApplication,
+        directed: () throws -> Void,
+        foreground: () throws -> Void
+    ) throws -> String {
+        if command.foregroundPolicy == .avoid {
+            try directed()
+            return "background_directed"
+        }
+        try withForegroundInput(command, app: app) { try foreground() }
+        return "foreground_native"
+    }
+
     private func snapshotChanges(from previous: String, to current: String) -> [String] {
         guard previous != current else { return [] }
         let old = Set(previous.split(separator: "\n").map { semanticAXLine(String($0)) })
         let new = Set(current.split(separator: "\n").map { semanticAXLine(String($0)) })
         let removed = old.subtracting(new).sorted().map { "- \($0)" }
         let added = new.subtracting(old).sorted().map { "+ \($0)" }
-        return Array((removed + added).prefix(240))
+        let all = removed + added
+        // Stay within a line budget; when the delta overflows, keep the leading
+        // lines and summarise the rest instead of silently dropping them, so the
+        // model knows the diff is partial and can observe for the full tree.
+        let budget = 240
+        guard all.count > budget else { return all }
+        return Array(all.prefix(budget - 1)) + ["… \(all.count - (budget - 1)) more changed line(s) elided; observe for the full tree."]
     }
 
     private func semanticAXLine(_ line: String) -> String {
@@ -573,27 +643,39 @@ public final class MacComputerBackend: ComputerBackend {
     }
 
     private func click(_ command: ComputerCommand, app: NSRunningApplication) throws -> String {
+        var point: CGPoint
         if command.elementID != nil {
             let target = try element(command, app: app)
-            if axActions(target).contains(kAXPressAction as String) {
+            let hasPress = axActions(target).contains(kAXPressAction as String)
+            let frame = axFrame(target)
+            // Under the default policy a semantic AXPress is the most reliable target
+            // for buttons and menu items and needs neither the pointer nor focus.
+            // Under allow/require the model has decided AXPress was not enough, so
+            // escalate to a real click at the element's frame (the doc's "AX silently
+            // swallowed, fall to a physical click" path); AXPress remains the fallback
+            // for frameless elements such as some menu items.
+            if command.foregroundPolicy == .avoid, hasPress {
                 try performAXAction(target, action: kAXPressAction as String)
                 return "background_ax"
             }
-            if let frame = axFrame(target) {
-                try withForegroundInput(command, app: app) {
-                    try postClick(point: CGPoint(x: frame.midX, y: frame.midY), button: command.mouseButton, count: command.clickCount ?? 1)
-                }
-                return "foreground_native"
+            if let frame {
+                point = CGPoint(x: frame.midX, y: frame.midY)
+            } else if hasPress {
+                try performAXAction(target, action: kAXPressAction as String)
+                return "background_ax"
+            } else {
+                throw ComputerError.invalidArguments("element exposes no AXPress action and no frame to click")
             }
+        } else {
+            guard let x = command.x, let y = command.y else {
+                throw ComputerError.invalidArguments("click requires element_id or x and y")
+            }
+            point = try inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app)
         }
-        guard let x = command.x, let y = command.y else {
-            throw ComputerError.invalidArguments("click requires element_id or x and y")
-        }
-        let point = try inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app)
-        try withForegroundInput(command, app: app) {
-            try postClick(point: point, button: command.mouseButton, count: command.clickCount ?? 1)
-        }
-        return "foreground_native"
+        let pid = app.processIdentifier
+        return try performDirectedOrForeground(command, app: app,
+            directed: { try postClickToPid(pid, point: point, button: command.mouseButton, count: command.clickCount ?? 1) },
+            foreground: { try self.postClick(point: point, button: command.mouseButton, count: command.clickCount ?? 1) })
     }
 
     private func postClick(point: CGPoint, button name: String?, count: Int) throws {
@@ -621,29 +703,37 @@ public final class MacComputerBackend: ComputerBackend {
         }
     }
 
-    private func drag(_ command: ComputerCommand, app: NSRunningApplication) throws {
+    private func drag(_ command: ComputerCommand, app: NSRunningApplication) throws -> String {
         guard let x = command.x, let y = command.y, let toX = command.toX, let toY = command.toY else {
             throw ComputerError.invalidArguments("drag requires from_x, from_y, to_x, and to_y")
         }
         let start = try inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app)
         let end = try inputPoint(x: toX, y: toY, coordinateSpace: command.coordinateSpace, app: app)
-        try withForegroundInput(command, app: app) {
-            let source = syntheticEventSource()
-            guard let down = markSynthetic(CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left)) else {
-                throw ComputerError.operationFailed("could not create drag event")
-            }
-            down.post(tap: .cghidEventTap)
-            for step in 1...12 {
-                let progress = Double(step) / 12
-                let point = CGPoint(
-                    x: start.x + (end.x - start.x) * progress,
-                    y: start.y + (end.y - start.y) * progress
-                )
-                markSynthetic(CGEvent(mouseEventSource: source, mouseType: .leftMouseDragged, mouseCursorPosition: point, mouseButton: .left))?.post(tap: .cghidEventTap)
-                usleep(8_000)
-            }
-            markSynthetic(CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left))?.post(tap: .cghidEventTap)
+        let pid = app.processIdentifier
+        return try performDirectedOrForeground(command, app: app,
+            directed: { try postDragToPid(pid, from: start, to: end) },
+            foreground: { try self.postDragGlobal(from: start, to: end) })
+    }
+
+    private func postDragGlobal(from start: CGPoint, to end: CGPoint) throws {
+        let source = syntheticEventSource()
+        // Create the terminating mouse-up up front so a late allocation failure
+        // cannot leave the target believing the button is still held down.
+        guard let down = markSynthetic(CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left)),
+              let up = markSynthetic(CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left)) else {
+            throw ComputerError.operationFailed("could not create drag event")
         }
+        down.post(tap: .cghidEventTap)
+        for step in 1...12 {
+            let progress = Double(step) / 12
+            let point = CGPoint(
+                x: start.x + (end.x - start.x) * progress,
+                y: start.y + (end.y - start.y) * progress
+            )
+            markSynthetic(CGEvent(mouseEventSource: source, mouseType: .leftMouseDragged, mouseCursorPosition: point, mouseButton: .left))?.post(tap: .cghidEventTap)
+            usleep(8_000)
+        }
+        up.post(tap: .cghidEventTap)
     }
 
     private func inputPoint(x: Double, y: Double, coordinateSpace: String?, app: NSRunningApplication) throws -> CGPoint {
@@ -666,19 +756,32 @@ public final class MacComputerBackend: ComputerBackend {
         }
     }
 
-    private func pressKey(_ command: ComputerCommand, app: NSRunningApplication) throws {
+    private func pressKey(_ command: ComputerCommand, app: NSRunningApplication) throws -> String {
         guard let key = command.key else { throw ComputerError.invalidArguments("key is required") }
-        try withForegroundInput(command, app: app) { try postKey(key) }
+        let chord = try KeyChord.parse(key)
+        let pid = app.processIdentifier
+        return try performDirectedOrForeground(command, app: app,
+            directed: { try postKeyChordToPid(pid, chord: chord) },
+            foreground: { try self.postKey(key) })
     }
 
-    private func pressKeys(_ command: ComputerCommand, app: NSRunningApplication) throws {
+    private func pressKeys(_ command: ComputerCommand, app: NSRunningApplication) throws -> String {
         guard let keys = command.keys, !keys.isEmpty else { throw ComputerError.invalidArguments("keys is required") }
-        try withForegroundInput(command, app: app) {
-            for key in keys {
-                try postKey(key)
-                usleep(20_000)
-            }
-        }
+        let chords = try keys.map { try KeyChord.parse($0) }
+        let pid = app.processIdentifier
+        return try performDirectedOrForeground(command, app: app,
+            directed: {
+                for chord in chords {
+                    try postKeyChordToPid(pid, chord: chord)
+                    usleep(20_000)
+                }
+            },
+            foreground: {
+                for key in keys {
+                    try self.postKey(key)
+                    usleep(20_000)
+                }
+            })
     }
 
     private func postKey(_ key: String) throws {
@@ -694,22 +797,41 @@ public final class MacComputerBackend: ComputerBackend {
         up.post(tap: .cghidEventTap)
     }
 
-    private func scroll(_ command: ComputerCommand, app: NSRunningApplication) throws {
+    private func scroll(_ command: ComputerCommand, app: NSRunningApplication) throws -> String {
         let pages = max(1, min(command.pages ?? 1, 20))
         let amount = Int32(pages * 720)
         let direction = command.direction?.lowercased() ?? "down"
         let vertical: Int32 = direction == "up" ? amount : direction == "down" ? -amount : 0
         let horizontal: Int32 = direction == "left" ? amount : direction == "right" ? -amount : 0
-        let frame = try command.elementID.flatMap { _ in axFrame(try element(command, app: app)) }
-        try withForegroundInput(command, app: app) {
-            if let frame {
-                markSynthetic(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: frame.midX, y: frame.midY), mouseButton: .left))?.post(tap: .cghidEventTap)
-            }
-            guard let event = markSynthetic(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: vertical, wheel2: horizontal, wheel3: 0)) else {
-                throw ComputerError.operationFailed("could not create scroll event")
-            }
-            event.post(tap: .cghidEventTap)
+        // Scroll must land inside the target: an element frame when given, otherwise
+        // the app's primary window center. Without a point, directed scroll hit-tests
+        // at the global origin and is dropped.
+        let elementFrame = try command.elementID.flatMap { _ in axFrame(try element(command, app: app)) }
+        let frame = elementFrame ?? primaryWindowFrame(AXUIElementCreateApplication(app.processIdentifier))
+        let point = frame.map { CGPoint(x: $0.midX, y: $0.midY) }
+        let pid = app.processIdentifier
+        return try performDirectedOrForeground(command, app: app,
+            directed: { try postScrollToPid(pid, vertical: vertical, horizontal: horizontal, at: point) },
+            foreground: { try self.postScrollGlobal(vertical: vertical, horizontal: horizontal, at: point) })
+    }
+
+    private func primaryWindowFrame(_ application: AXUIElement) -> CGRect? {
+        if let focused = axValue(application, kAXFocusedWindowAttribute as String),
+           CFGetTypeID(focused) == AXUIElementGetTypeID(),
+           let frame = axFrame(focused as! AXUIElement) {
+            return frame
         }
+        return appWindows(application).compactMap { axFrame($0) }.max(by: { $0.width * $0.height < $1.width * $1.height })
+    }
+
+    private func postScrollGlobal(vertical: Int32, horizontal: Int32, at point: CGPoint?) throws {
+        if let point {
+            markSynthetic(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left))?.post(tap: .cghidEventTap)
+        }
+        guard let event = markSynthetic(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: vertical, wheel2: horizontal, wheel3: 0)) else {
+            throw ComputerError.operationFailed("could not create scroll event")
+        }
+        event.post(tap: .cghidEventTap)
     }
 
     private func setValue(_ command: ComputerCommand, app: NSRunningApplication) throws {
@@ -719,27 +841,40 @@ public final class MacComputerBackend: ComputerBackend {
         try setAXValue(target, attribute: kAXValueAttribute as String, value: value as CFString)
     }
 
-    private func typeText(_ command: ComputerCommand, app: NSRunningApplication) throws {
+    private func typeText(_ command: ComputerCommand, app: NSRunningApplication) throws -> String {
         guard let text = command.text else { throw ComputerError.invalidArguments("text is required") }
+        if text.isEmpty { return "background_directed" }
+        let pid = app.processIdentifier
+        var target: AXUIElement?
+        if command.elementID != nil {
+            let resolved = try element(command, app: app)
+            target = resolved
+            _ = AXUIElementSetAttributeValue(resolved, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        }
+        return try performDirectedOrForeground(command, app: app,
+            directed: { try postUnicodeToPid(pid, text: text) },
+            foreground: {
+                if let target {
+                    _ = AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+                }
+                try self.postUnicodeGlobal(text: text)
+            })
+    }
+
+    private func postUnicodeGlobal(text: String) throws {
         let units = Array(text.utf16)
         if units.isEmpty { return }
         guard let down = markSynthetic(CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)),
               let up = markSynthetic(CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)) else {
             throw ComputerError.operationFailed("could not create text input event")
         }
-        try withForegroundInput(command, app: app) {
-            if command.elementID != nil {
-                let target = try element(command, app: app)
-                _ = AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-            }
-            units.withUnsafeBufferPointer { buffer in
-                guard let baseAddress = buffer.baseAddress else { return }
-                down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: baseAddress)
-                up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: baseAddress)
-            }
-            down.post(tap: .cghidEventTap)
-            up.post(tap: .cghidEventTap)
+        units.withUnsafeBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: baseAddress)
+            up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: baseAddress)
         }
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
     }
 
     private func selectText(_ command: ComputerCommand, app: NSRunningApplication) throws {

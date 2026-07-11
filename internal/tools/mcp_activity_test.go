@@ -17,6 +17,77 @@ import (
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
+func TestCUAActivityControlStateMapsMechanism(t *testing.T) {
+	cases := []struct {
+		name              string
+		mechanism         string
+		foregroundChanged bool
+		policy            string
+		wantState         activity.State
+	}{
+		{name: "background_ax", mechanism: "background_ax", wantState: activity.StateBackgroundControlled},
+		{name: "background_directed", mechanism: "background_directed", wantState: activity.StateBackgroundControlled},
+		{name: "foreground_native", mechanism: "foreground_native", wantState: activity.StateForegroundControlled},
+		{name: "allow input action reports foreground mechanism", mechanism: "foreground_native", policy: "allow", wantState: activity.StateForegroundControlled},
+		{name: "allow without mechanism stays background", policy: "allow", wantState: activity.StateBackgroundControlled},
+		{name: "policy require overrides ax mechanism", mechanism: "background_ax", policy: "require", wantState: activity.StateForegroundControlled},
+		{name: "foreground_changed overrides directed mechanism", mechanism: "background_directed", foregroundChanged: true, wantState: activity.StateForegroundControlled},
+		{name: "default background", wantState: activity.StateBackgroundControlled},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := map[string]any{}
+			if tc.mechanism != "" {
+				payload["mechanism"] = tc.mechanism
+			}
+			if tc.foregroundChanged {
+				payload["foreground_changed"] = true
+			}
+			structured, _ := json.Marshal(payload)
+			arguments := `{"action":"type_text","app":"com.apple.TextEdit"}`
+			if tc.policy != "" {
+				arguments = `{"action":"type_text","app":"com.apple.TextEdit","foreground_policy":"` + tc.policy + `"}`
+			}
+			got := cuaActivityControlState(arguments, toolresult.Result{StructuredContent: structured})
+			if got != tc.wantState {
+				t.Fatalf("state = %q, want %q", got, tc.wantState)
+			}
+		})
+	}
+}
+
+func TestSequenceControlAggregatesHighestMechanism(t *testing.T) {
+	stepResult := func(mechanism string, foregroundChanged bool) toolresult.Result {
+		payload := map[string]any{"mechanism": mechanism}
+		if foregroundChanged {
+			payload["foreground_changed"] = true
+		}
+		structured, _ := json.Marshal(payload)
+		return toolresult.Result{StructuredContent: structured}
+	}
+
+	var background sequenceControl
+	background.observe(`{"action":"click","foreground_policy":"avoid"}`, stepResult("background_ax", false))
+	background.observe(`{"action":"type_text","foreground_policy":"avoid"}`, stepResult("background_directed", false))
+	if got := cuaActivityControlState("", cuaSequenceResult("completed", nil, 2, nil, background)); got != activity.StateBackgroundControlled {
+		t.Fatalf("background sequence state = %q, want %q", got, activity.StateBackgroundControlled)
+	}
+
+	var escalated sequenceControl
+	escalated.observe(`{"action":"click","foreground_policy":"avoid"}`, stepResult("background_directed", false))
+	escalated.observe(`{"action":"type_text","foreground_policy":"allow"}`, stepResult("foreground_native", true))
+	if got := cuaActivityControlState("", cuaSequenceResult("completed", nil, 2, nil, escalated)); got != activity.StateForegroundControlled {
+		t.Fatalf("escalated sequence state = %q, want %q", got, activity.StateForegroundControlled)
+	}
+
+	// A require step force-activates the app even if its own mechanism reads background.
+	var required sequenceControl
+	required.observe(`{"action":"click","foreground_policy":"require"}`, stepResult("background_ax", false))
+	if !required.foregroundChanged {
+		t.Fatalf("require step should mark the sequence foreground-changed")
+	}
+}
+
 func TestCropTransparentPNGRemovesWindowShadowPadding(t *testing.T) {
 	source := image.NewNRGBA(image.Rect(0, 0, 8, 10))
 	for y := 2; y < 9; y++ {
