@@ -3,6 +3,8 @@ package pluginhost
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
 // Hook identifies a typed interception point exposed by the Wuu runtime.
@@ -62,6 +64,30 @@ type InvokeParams struct {
 // InvokeResult returns the next output value in the deterministic plugin chain.
 type InvokeResult struct {
 	Output json.RawMessage `json:"output"`
+}
+
+// ChatRequestInput identifies one provider-neutral model request without
+// duplicating the mutable request payload carried in InvokeParams.Output.
+type ChatRequestInput struct {
+	SessionID string `json:"session_id,omitempty"`
+	ThreadID  string `json:"thread_id,omitempty"`
+	CWD       string `json:"cwd"`
+	Provider  string `json:"provider"`
+	StepIndex int    `json:"step_index"`
+}
+
+// ChatRequestOutput is the public, provider-neutral model request surface.
+// Transport-owned cache and correlation fields stay under Wuu's control.
+type ChatRequestOutput struct {
+	Model                       string                     `json:"model"`
+	Messages                    []providers.ChatMessage    `json:"messages"`
+	Tools                       []providers.ToolDefinition `json:"tools,omitempty"`
+	Temperature                 float64                    `json:"temperature,omitempty"`
+	MaxTokens                   int                        `json:"max_tokens,omitempty"`
+	Effort                      string                     `json:"effort,omitempty"`
+	ProviderOptions             map[string]any             `json:"provider_options,omitempty"`
+	NativeDeferredToolDiscovery bool                       `json:"native_deferred_tool_discovery,omitempty"`
+	ForceToolName               string                     `json:"force_tool_name,omitempty"`
 }
 
 type State string

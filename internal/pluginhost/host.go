@@ -3,6 +3,7 @@ package pluginhost
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -26,6 +27,16 @@ type Host struct {
 
 func New(clients ...Client) *Host {
 	return &Host{clients: append([]Client(nil), clients...)}
+}
+
+// Failed preserves a plugin load failure in the runtime inventory without
+// registering any interception points.
+func Failed(id string, err error) Client {
+	message := "plugin failed to start"
+	if err != nil {
+		message = err.Error()
+	}
+	return &failedClient{status: Status{ID: id, State: StateFailed, Error: message}}
 }
 
 func (h *Host) Add(client Client) {
@@ -125,3 +136,13 @@ func hasHook(hooks []Hook, target Hook) bool {
 	}
 	return false
 }
+
+type failedClient struct{ status Status }
+
+func (c *failedClient) ID() string    { return c.status.ID }
+func (c *failedClient) Hooks() []Hook { return nil }
+func (c *failedClient) Invoke(context.Context, InvokeParams) (InvokeResult, error) {
+	return InvokeResult{}, errors.New(c.status.Error)
+}
+func (c *failedClient) Status() Status              { return c.status }
+func (c *failedClient) Close(context.Context) error { return nil }

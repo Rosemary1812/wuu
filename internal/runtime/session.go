@@ -35,6 +35,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/modelvariant"
 	"github.com/blueberrycongee/wuu/internal/participant"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
+	"github.com/blueberrycongee/wuu/internal/pluginhost"
 	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/prompt"
 	"github.com/blueberrycongee/wuu/internal/providerfactory"
@@ -58,8 +59,8 @@ type Options struct {
 	// moved or renamed on disk. Empty for location-anchored roots (the shared
 	// 对话 scratch dir, agent homes), which stay keyed by their path.
 	WorkspaceID string
-	HomeDir    string
-	ConfigPath string
+	HomeDir     string
+	ConfigPath  string
 	// ConfigLoadMode records the source model that produced Config so later
 	// app-server reloads use the same inputs. The zero value is normal user
 	// config plus restricted project overlays.
@@ -102,6 +103,7 @@ type Session struct {
 	AgentTemplates           []agenttemplate.Template
 	AgentTemplateDiagnostics []agenttemplate.Diagnostic
 	Plugins                  []pluginpkg.Plugin
+	PluginHost               *pluginhost.Host
 	Memory                   []memory.File
 	// MemdirEnabled reports whether the file-directory memory (user
 	// notebook teaching + index injection and file-scope whitelist) is
@@ -237,6 +239,7 @@ func NewSession(opts Options) (*Session, error) {
 	setupCatwalk(cfg)
 
 	discoveredPlugins := discoverPlugins(rootDir, wuuHome)
+	pluginHost := startPluginHost(discoveredPlugins, rootDir, wuuHome)
 	hookDispatcher := buildHookDispatcher(cfg, discoveredPlugins, providers.Client(client), toolModeModel)
 	discoveredSkills := discoverSkills(rootDir, opts.HomeDir, wuuHome, discoveredPlugins)
 	discoveredAgentTemplates := discoverAgentTemplates(rootDir, opts.HomeDir)
@@ -487,6 +490,7 @@ func NewSession(opts Options) (*Session, error) {
 		CompactKeepRecentTokens:     cfg.Agent.CompactKeepRecentTokens,
 		DisableAutoCompact:          cfg.Agent.DisableAutoCompact,
 		BeforeRequestContext:        RuntimeContextInjector(agentControl, agentthread.RootPath, toolkitContextBlockProvider(toolkit)),
+		BeforeRequest:               pluginRequestInterceptor(pluginHost, resolvedName, "", rootDir),
 		AfterTurn:                   afterTurn,
 		ReconnectConfig:             providers.RetryConfig{MaxRetries: 5},
 	}
@@ -516,6 +520,7 @@ func NewSession(opts Options) (*Session, error) {
 		AgentTemplates:              discoveredAgentTemplates.Templates,
 		AgentTemplateDiagnostics:    discoveredAgentTemplates.Diagnostics,
 		Plugins:                     discoveredPlugins,
+		PluginHost:                  pluginHost,
 		Memory:                      memoryFiles,
 		MemdirEnabled:               memdirEnabled,
 		DreamIntervalDays:           dreamIntervalDays,
@@ -967,6 +972,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 	}
 	runner.PromptCacheKey = strings.TrimSpace(id)
 	runner.BeforeRequestContext = RuntimeContextInjector(agentControl, agentthread.RootPath, toolkitContextBlockProvider(kit))
+	runner.BeforeRequest = pluginRequestInterceptor(s.PluginHost, s.ProviderName, id, threadRoot)
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
 	if kit != nil {
 		if dreamScheduler := newSessionDreamScheduler(threadRoot, stateDir, func() string { return artifactDir }, s.DreamIntervalDays); dreamScheduler != nil {
@@ -1013,6 +1019,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		StreamingToolExecution:      base.StreamingToolExecution,
 		BeforeStep:                  base.BeforeStep,
 		BeforeRequestContext:        base.BeforeRequestContext,
+		BeforeRequest:               base.BeforeRequest,
 		AfterTurn:                   base.AfterTurn,
 		Effort:                      base.Effort,
 		Variant:                     base.Variant,
@@ -1204,6 +1211,12 @@ func (s *Session) Cleanup() (process.CleanupResult, error) {
 	}
 	if s.AgentControl != nil {
 		_ = s.AgentControl.CleanupSession()
+	}
+	if s.PluginHost != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_ = s.PluginHost.Close(ctx)
+		cancel()
+		s.PluginHost = nil
 	}
 	if s.ProcessManager == nil {
 		return process.CleanupResult{}, nil

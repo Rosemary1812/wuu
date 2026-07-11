@@ -109,6 +109,9 @@ type StreamRunner struct {
 	// Returned segments are assembled into that request but are not appended
 	// to live or durable conversation history.
 	BeforeRequestContext func() []ContextSegment
+	// BeforeRequest transforms the complete provider-neutral request immediately
+	// before it is sent. Runtime plugin hosts install their typed pipeline here.
+	BeforeRequest func(context.Context, *providers.ChatRequest) error
 	// OnRequestContext receives metadata-only summaries of request-only model
 	// context assembled before requests.
 	OnRequestContext func(info RequestContextInfo)
@@ -260,6 +263,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		ToolPrune:               true,
 		BeforeStep:              beforeStep,
 		BeforeRequestContext:    r.BeforeRequestContext,
+		BeforeRequest:           r.BeforeRequest,
 		SystemPromptSections:    systemPromptSections,
 		ForceToolFirstStep:      r.ForceToolFirstStep,
 		OnRequestContext: func(info RequestContextInfo) {
