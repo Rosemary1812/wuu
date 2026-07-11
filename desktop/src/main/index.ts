@@ -186,6 +186,16 @@ const cuaActivityWindowManager = new CUAActivityWindowManager(
     });
     return result.activity;
   },
+  async (threadID): Promise<ActivitySession[]> => {
+    const workdir = projectManager.activeWorkdir();
+    if (!workdir) return [];
+    const result = await appServerClientPool.requestForWorkdir<ActivityListResult>(
+      workdir,
+      "activity/list",
+      { thread_id: threadID },
+    );
+    return result.activities ?? [];
+  },
 );
 // The pet is a standalone always-on-top window owned by the main process, so
 // it stays on the desktop when the main window is hidden or minimized. Its

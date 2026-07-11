@@ -54,22 +54,31 @@ type ActivityControl = (
   action: ActivityControlAction,
 ) => Promise<ActivitySession>;
 
+type ActivitySnapshot = (threadID: string) => Promise<ActivitySession[]>;
+
 export class CUAActivityWindowManager {
   private readonly activities = new Map<string, ActivitySession>();
   private readonly dismissedActivityIDs = new Set<string>();
   private readonly nativePiPs = new Map<string, { target: string; pip: CUANativePiP; startedAt: number }>();
   private readonly retries = new Map<string, { attempts: number; timer?: NodeJS.Timeout }>();
   private readonly lastInteractionRevisions = new Map<string, number>();
+  private reconcileTimer: NodeJS.Timeout | undefined;
+  private reconcileInFlight = false;
   private activeThreadID: string | undefined;
 
   constructor(
     private readonly registry: WindowRegistry,
     private readonly control: ActivityControl,
+    private readonly snapshot?: ActivitySnapshot,
   ) {}
 
   handleServerEvent(event: ServerEvent): void {
     const activity = cuaActivityFromServerEvent(event);
-    if (activity) this.update(activity);
+    if (activity) {
+      this.update(activity);
+      return;
+    }
+    this.scheduleReconcile();
   }
 
   setActiveThread(threadID?: string): void {
@@ -81,6 +90,26 @@ export class CUAActivityWindowManager {
         this.stopNativePiP(activityID);
       }
     }
+    this.scheduleReconcile(0);
+  }
+
+  private scheduleReconcile(delay = 150): void {
+    if (!this.snapshot || !this.activeThreadID || this.reconcileInFlight) return;
+    if (this.reconcileTimer) return;
+    this.reconcileTimer = setTimeout(() => {
+      this.reconcileTimer = undefined;
+      const threadID = this.activeThreadID;
+      if (!threadID) return;
+      this.reconcileInFlight = true;
+      void this.snapshot?.(threadID)
+        .then((activities) => {
+          if (this.activeThreadID !== threadID) return;
+          for (const activity of activities) this.update(activity);
+        })
+        .catch(() => undefined)
+        .finally(() => { this.reconcileInFlight = false; });
+    }, delay);
+    this.reconcileTimer.unref?.();
   }
 
   update(activity: ActivitySession): void {
