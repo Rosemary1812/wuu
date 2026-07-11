@@ -39,4 +39,10 @@ describe("CUAFrameDecoder", () => {
     const frames = decoder.push(envelope({ event: "frame", capture_mode: "visible_fallback" }, Buffer.from("jpeg")));
     expect(frames[0]?.metadata.capture_mode).toBe("visible_fallback");
   });
+
+  it("decodes explicit capture health states", () => {
+    const decoder = new CUAFrameDecoder();
+    const frames = decoder.push(envelope({ event: "capture_status", status: "suspended" }, Buffer.alloc(0)));
+    expect(frames[0]?.metadata.status).toBe("suspended");
+  });
 });

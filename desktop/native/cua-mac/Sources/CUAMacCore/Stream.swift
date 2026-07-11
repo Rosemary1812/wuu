@@ -58,29 +58,15 @@ private final class FramePipeWriter: @unchecked Sendable {
         }
     }
 
-    func writeCapture(_ capture: WindowCapture, mode: String = "visible_fallback") -> Bool {
+    func captureStatus(_ status: String, message: String? = nil) {
         queue.sync {
-            guard let bitmap = NSBitmapImageRep(data: capture.data),
-                  let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.72]) else {
-                return false
-            }
-            revision += 1
-            write(metadata: [
-                "event": "frame",
-                "revision": revision,
+            var metadata: [String: Any] = [
+                "event": "capture_status",
+                "status": status,
                 "timestamp_ns": DispatchTime.now().uptimeNanoseconds,
-                "width": bitmap.pixelsWide,
-                "height": bitmap.pixelsHigh,
-                "capture_mode": mode,
-                "window_frame": [
-                    "x": capture.geometry.windowFrame.origin.x,
-                    "y": capture.geometry.windowFrame.origin.y,
-                    "width": capture.geometry.windowFrame.width,
-                    "height": capture.geometry.windowFrame.height,
-                ],
-                "mime_type": "image/jpeg",
-            ], payload: data)
-            return true
+            ]
+            if let message { metadata["message"] = message }
+            write(metadata: metadata, payload: Data())
         }
     }
 
@@ -132,8 +118,7 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
     private var frame: CGRect
     private var stopped = false
     private var firstFrameReceived = false
-    private var lastFrameAt: Date?
-    private var failure: Error?
+    private var lastStatus: SCFrameStatus?
 
     init(writer: FramePipeWriter, frame: CGRect) {
         self.writer = writer
@@ -141,20 +126,30 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, sampleBuffer.isValid, sampleBuffer.imageBuffer != nil else { return }
+        guard type == .screen, sampleBuffer.isValid else { return }
+        let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
+            as? [[SCStreamFrameInfo: Any]]
+        let status = (attachments?.first?[.status] as? NSNumber)
+            .flatMap { SCFrameStatus(rawValue: $0.intValue) }
         lock.lock()
         let currentFrame = frame
-        firstFrameReceived = true
-        lastFrameAt = Date()
+        let statusChanged = status != nil && status != lastStatus
+        if let status { lastStatus = status }
+        if status == .stopped { stopped = true }
+        let shouldWriteFrame = sampleBuffer.imageBuffer != nil
+            && (status == nil || status == .complete || status == .started)
+        if shouldWriteFrame { firstFrameReceived = true }
         lock.unlock()
-        writer.submit(sampleBuffer, frame: currentFrame)
+        if statusChanged, let status { writer.captureStatus(captureStatusName(status)) }
+        if status == .stopped { CFRunLoopWakeUp(CFRunLoopGetMain()) }
+        if shouldWriteFrame { writer.submit(sampleBuffer, frame: currentFrame) }
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         lock.lock()
-        failure = error
         stopped = true
         lock.unlock()
+        writer.captureStatus("error", message: error.localizedDescription)
         CFRunLoopWakeUp(CFRunLoopGetMain())
     }
 
@@ -170,23 +165,11 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
         return firstFrameReceived
     }
 
-    func secondsSinceLastFrame(now: Date = Date()) -> TimeInterval? {
-        lock.lock()
-        defer { lock.unlock() }
-        return lastFrameAt.map { now.timeIntervalSince($0) }
-    }
-
-    func streamFailure() -> Error? {
-        lock.lock()
-        defer { lock.unlock() }
-        return failure
-    }
-
     func lockFailure(_ error: Error) {
         lock.lock()
-        failure = error
         stopped = true
         lock.unlock()
+        writer.captureStatus("error", message: error.localizedDescription)
     }
 
     func updateFrame(_ nextFrame: CGRect) {
@@ -195,21 +178,17 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
         lock.unlock()
     }
 
-    func currentFrame() -> CGRect {
-        lock.lock()
-        defer { lock.unlock() }
-        return frame
-    }
+}
 
-    // Clear the terminal flags so this same output object can be reattached to a freshly
-    // built SCStream after a recoverable failure instead of ending the whole session.
-    func resetForRebuild() {
-        lock.lock()
-        failure = nil
-        stopped = false
-        firstFrameReceived = false
-        lastFrameAt = nil
-        lock.unlock()
+@available(macOS 14.0, *)
+private func captureStatusName(_ status: SCFrameStatus) -> String {
+    switch status {
+    case .complete, .started: "healthy"
+    case .idle: "idle"
+    case .blank: "blank"
+    case .suspended: "suspended"
+    case .stopped: "stopped"
+    @unknown default: "suspended"
     }
 }
 
@@ -275,46 +254,6 @@ private func startWindowStream(window: SCWindow, output: WindowStreamOutput) thr
     return stream
 }
 
-// Pulls one COMPLETE-window frame via SCScreenshotManager(desktopIndependentWindow), which —
-// unlike the live SCStream — keeps returning the whole window while it is idle or parked
-// fully off-screen. It only runs while the live stream is silent, dedupes identical frames,
-// and is tagged "full_window". The legacy on-screen-only captureForegroundWindowPNG path is
-// intentionally never used here, so the PiP can no longer show a truncated window.
-@available(macOS 14.0, *)
-private func runFullWindowHeartbeat(processID: pid_t, output: WindowStreamOutput, writer: FramePipeWriter) async {
-    var lastData: Data?
-    var idleStreak = 0
-    while !Task.isCancelled {
-        let streamIsFresh = output.secondsSinceLastFrame().map { $0 <= 0.9 } ?? false
-        if streamIsFresh {
-            idleStreak = 0
-        } else {
-            let frame = output.currentFrame()
-            // Light path for a live frame: no per-pixel visible-bounds scan and a modest
-            // scale, so a persistently idle/off-screen window doesn't burn a CPU core.
-            let capture = try? await Task.detached {
-                try captureWindowPNG(
-                    processID: processID,
-                    timeout: 2,
-                    preferredWindowFrame: frame,
-                    scale: 1.25,
-                    computeVisibleBounds: false
-                )
-            }.value
-            if let capture, capture.data != lastData {
-                _ = writer.writeCapture(capture, mode: "full_window")
-                lastData = capture.data
-                idleStreak = 0
-            } else {
-                idleStreak = min(idleStreak + 1, 6)
-            }
-        }
-        // ~3fps while the window is actively changing off-screen, backing off toward ~1fps
-        // once it goes static, so watching stays smooth without a constant full-window pull.
-        try? await Task.sleep(for: .milliseconds(300 + idleStreak * 120))
-    }
-}
-
 public func runWindowFrameStream(target: String) async throws {
     guard CGPreflightScreenCaptureAccess() else {
         throw ComputerError.permissionDenied("Screen Recording permission is required for live window capture")
@@ -338,19 +277,16 @@ public func runWindowFrameStream(target: String) async throws {
     guard var window = preferredStreamWindow(in: content, processID: app.processIdentifier) else {
         throw ComputerError.operationFailed("no capturable window found")
     }
-    let output = WindowStreamOutput(writer: writer, frame: window.frame)
+    var output = WindowStreamOutput(writer: writer, frame: window.frame)
     var stream = try startWindowStream(window: window, output: output)
-    writer.event("started")
-
-    // The live SCStream only fires on content change and can go fully silent for a
-    // concealed (off-screen) window. A full-window heartbeat guarantees the PiP keeps
-    // showing the COMPLETE window regardless, and liveness is judged by real stream
-    // errors — never by frame timing — so an idle window no longer degrades the capture.
-    let heartbeatProcessID = app.processIdentifier
-    let heartbeat = Task.detached { [output, writer] in
-        await runFullWindowHeartbeat(processID: heartbeatProcessID, output: output, writer: writer)
+    let firstFrameDeadline = Date(timeIntervalSinceNow: 5)
+    while !output.receivedFirstFrame(), !output.isStopped(), Date() < firstFrameDeadline {
+        try await Task.sleep(for: .milliseconds(50))
     }
-    defer { heartbeat.cancel() }
+    guard output.receivedFirstFrame() else {
+        throw ComputerError.operationFailed("live window capture produced no first frame")
+    }
+    writer.event("started")
     let inputMonitor = UserInputMonitor(processID: app.processIdentifier, writer: writer)
     let eventTypes: [CGEventType] = [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown, .scrollWheel]
     let eventMask = eventTypes.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << CGEventMask($1.rawValue)) }
@@ -374,14 +310,13 @@ public func runWindowFrameStream(target: String) async throws {
         if app.isTerminated { break }
         // Only a real stream error tears anything down; rebuild the stream in place while
         // the heartbeat keeps full-window frames flowing. No permanent polling fallback.
-        if output.streamFailure() != nil {
+        if output.isStopped() {
             try? stream.removeStreamOutput(output, type: .screen)
             try? await stream.stopCapture()
-            // Clear the failure flag only once a fresh stream is actually up; otherwise leave
-            // it set so the next tick retries the rebuild instead of driving a dead stream.
-            if let rebuilt = try? startWindowStream(window: window, output: output) {
+            let nextOutput = WindowStreamOutput(writer: writer, frame: window.frame)
+            if let rebuilt = try? startWindowStream(window: window, output: nextOutput) {
                 stream = rebuilt
-                output.resetForRebuild()
+                output = nextOutput
             }
             continue
         }
@@ -416,7 +351,6 @@ public func runWindowFrameStream(target: String) async throws {
         window = refreshedWindow
         output.updateFrame(refreshedWindow.frame)
     }
-    heartbeat.cancel()
     withExtendedLifetime(inputMonitor) {}
     if let eventSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), eventSource, .commonModes) }
     try? await stream.stopCapture()

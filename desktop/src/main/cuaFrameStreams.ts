@@ -12,8 +12,11 @@ export type CUAFrameMetadata = {
   height?: number;
   mime_type?: string;
   capture_mode?: "full_window" | "visible_fallback";
+  status?: CUACaptureStatus;
   message?: string;
 };
+
+export type CUACaptureStatus = "healthy" | "idle" | "blank" | "suspended" | "stopped" | "error";
 
 export class CUAFrameDecoder {
   private buffer = Buffer.alloc(0);
@@ -40,6 +43,7 @@ export class CUAFrameDecoder {
 
 type FrameCallback = (path: string, metadata: CUAFrameMetadata) => void;
 type ErrorCallback = (message: string) => void;
+type CaptureStatusCallback = (status: CUACaptureStatus) => void;
 
 export class CUAFrameStream {
   private child: ChildProcessWithoutNullStreams | undefined;
@@ -55,6 +59,7 @@ export class CUAFrameStream {
     private readonly target: string,
     private readonly onFrame: FrameCallback,
     private readonly onError: ErrorCallback,
+    private readonly onCaptureStatus: CaptureStatusCallback = () => undefined,
     private readonly onUserInput: () => void = () => undefined,
   ) {
     const safeID = createHash("sha256").update(`${activityID}\0${target}`).digest("hex").slice(0, 24);
@@ -75,6 +80,8 @@ export class CUAFrameStream {
             void this.flushLatest();
           } else if (frame.metadata.event === "error") {
             this.onError(frame.metadata.message ?? "live capture stopped");
+          } else if (frame.metadata.event === "capture_status" && frame.metadata.status) {
+            this.onCaptureStatus(frame.metadata.status);
           } else if (frame.metadata.event === "user_input") {
             this.onUserInput();
           }

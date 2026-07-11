@@ -3,7 +3,12 @@ import type { BrowserWindowConstructorOptions, Rectangle } from "electron";
 import { fileURLToPath } from "node:url";
 import type { ActivitySession, ServerEvent } from "../shared/protocol";
 import { renderableFileURL } from "./renderableFileURLs";
-import { CUAFrameStream, resolveCUAFrameHelper, type CUAFrameMetadata } from "./cuaFrameStreams";
+import {
+  CUAFrameStream,
+  resolveCUAFrameHelper,
+  type CUACaptureStatus,
+  type CUAFrameMetadata,
+} from "./cuaFrameStreams";
 import type { WindowRegistry } from "./windowRegistry";
 
 export type ActivityControlAction = "takeover" | "release" | "stop";
@@ -36,6 +41,20 @@ const PREVIEW_RESIZE_MAX_WIDTH = 720;
 const PREVIEW_RESIZE_MAX_HEIGHT = 800;
 const MAX_LIVE_CUA_STREAMS = 3;
 const MAX_LIVE_STREAM_RETRIES = 6;
+
+export function captureStatusCloseDelay(status: CUACaptureStatus): number | undefined {
+  switch (status) {
+    case "blank":
+    case "suspended":
+      return 1500;
+    case "stopped":
+    case "error":
+      return 4000;
+    case "healthy":
+    case "idle":
+      return undefined;
+  }
+}
 
 export function frameStreamRetryDelay(attempt: number): number {
   return Math.min(16_000, 1_000 * 2 ** Math.max(1, attempt));
@@ -254,6 +273,13 @@ export class CUAActivityWindowManager {
   private readonly pendingRenderActivities = new Map<number, ActivitySession>();
   private readonly renderedSignatures = new Map<string, string>();
   private readonly visualReadyActivityIDs = new Set<string>();
+  private readonly autoClosedTargets = new Map<string, string>();
+  private readonly captureFaults = new Map<string, {
+    target: string;
+    status: CUACaptureStatus;
+    delay: number;
+    timer: NodeJS.Timeout;
+  }>();
   private activeThreadID: string | undefined;
 
   constructor(
@@ -287,6 +313,8 @@ export class CUAActivityWindowManager {
   update(activity: ActivitySession): void {
     const existing = this.registry.activityWindow(activity.id);
     if (activity.state === "stopped") {
+      this.cancelCaptureFault(activity.id);
+      this.autoClosedTargets.delete(activity.id);
       this.stopFrameStream(activity.id);
       this.activities.delete(activity.id);
       this.dismissedActivityIDs.delete(activity.id);
@@ -298,6 +326,17 @@ export class CUAActivityWindowManager {
       return;
     }
     this.activities.set(activity.id, activity);
+    const target = activity.target?.trim() ?? "";
+    const captureFault = this.captureFaults.get(activity.id);
+    if (captureFault && captureFault.target !== target) {
+      this.cancelCaptureFault(activity.id);
+    }
+    const autoClosedTarget = this.autoClosedTargets.get(activity.id);
+    if (autoClosedTarget && autoClosedTarget !== target) {
+      this.autoClosedTargets.delete(activity.id);
+    } else if (autoClosedTarget === target) {
+      return;
+    }
     if (activityHasVisibleContent(activity)) this.visualReadyActivityIDs.add(activity.id);
     if (this.dismissedActivityIDs.has(activity.id)) return;
     if (existing && !existing.isDestroyed() && this.draggingWindowIDs.has(existing.webContents.id)) {
@@ -397,6 +436,7 @@ export class CUAActivityWindowManager {
         return;
       }
       if (parsed.action === "close") {
+        this.cancelCaptureFault(activity.id);
         this.dismissedActivityIDs.add(activity.id);
         this.stopFrameStream(activity.id);
         this.registry.clearActivityWindow(activity.id);
@@ -602,6 +642,7 @@ export class CUAActivityWindowManager {
       target,
       (path, metadata) => this.publishLiveFrame(activity.id, path, metadata),
       (message) => this.publishStreamError(activity.id, message),
+      (status) => this.handleCaptureStatus(activity.id, status),
       () => this.handleDetectedUserInput(activity.id),
     );
     this.frameStreams.set(activity.id, { target, stream, startedAt: Date.now() });
@@ -617,11 +658,48 @@ export class CUAActivityWindowManager {
   }
 
   private stopFrameStream(activityID: string): void {
+    this.cancelCaptureFault(activityID);
     this.frameStreams.get(activityID)?.stream.stop();
     this.frameStreams.delete(activityID);
     const retry = this.frameStreamRetries.get(activityID);
     if (retry?.timer) clearTimeout(retry.timer);
     this.frameStreamRetries.delete(activityID);
+  }
+
+  private cancelCaptureFault(activityID: string): void {
+    const fault = this.captureFaults.get(activityID);
+    if (fault) clearTimeout(fault.timer);
+    this.captureFaults.delete(activityID);
+  }
+
+  private handleCaptureStatus(activityID: string, status: CUACaptureStatus): void {
+    const activity = this.activities.get(activityID);
+    const target = activity?.target?.trim() ?? "";
+    if (!activity || !target || this.autoClosedTargets.get(activityID) === target) return;
+    const delay = captureStatusCloseDelay(status);
+    if (delay === undefined) {
+      this.cancelCaptureFault(activityID);
+      return;
+    }
+    const current = this.captureFaults.get(activityID);
+    if (current?.target === target) {
+      current.status = status;
+      if (delay <= current.delay) return;
+      clearTimeout(current.timer);
+    }
+    const timer = setTimeout(() => {
+      const latest = this.activities.get(activityID);
+      const fault = this.captureFaults.get(activityID);
+      if (!latest || !fault || fault.target !== target || latest.target?.trim() !== target) return;
+      this.captureFaults.delete(activityID);
+      this.autoClosedTargets.set(activityID, target);
+      this.stopFrameStream(activityID);
+      const win = this.registry.activityWindow(activityID);
+      this.registry.clearActivityWindow(activityID);
+      if (win && !win.isDestroyed()) win.close();
+    }, delay);
+    timer.unref?.();
+    this.captureFaults.set(activityID, { target, status, delay, timer });
   }
 
   private scheduleFrameStreamRetry(activityID: string): boolean {
@@ -665,10 +743,8 @@ export class CUAActivityWindowManager {
   }
 
   private publishStreamError(activityID: string, _message: string): void {
+    this.handleCaptureStatus(activityID, "error");
     if (this.scheduleFrameStreamRetry(activityID)) return;
-    const win = this.registry.activityWindow(activityID);
-    if (!win || win.isDestroyed()) return;
-    void win.webContents.executeJavaScript("window.wuuCUAStreamUnavailable?.()", true).catch(() => undefined);
   }
 
   private autoSizeForLiveFrame(win: BrowserWindow, activityID: string, width: number, height: number): void {

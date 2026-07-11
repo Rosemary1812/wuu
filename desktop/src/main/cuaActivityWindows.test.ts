@@ -16,6 +16,7 @@ import {
   activityWindowStackingOptions,
   cuaActivityFromServerEvent,
   cuaActivityHTML,
+  captureStatusCloseDelay,
   frameStreamRetryDelay,
   fitActivityPreviewSize,
   fitUserResizedPreviewSize,
@@ -44,6 +45,14 @@ function activity(overrides: Partial<ActivitySession> = {}): ActivitySession {
 }
 
 describe("CUA Activity windows", () => {
+  it("keeps idle streams visible and buffers real capture faults", () => {
+    expect(captureStatusCloseDelay("healthy")).toBeUndefined();
+    expect(captureStatusCloseDelay("idle")).toBeUndefined();
+    expect(captureStatusCloseDelay("blank")).toBe(1500);
+    expect(captureStatusCloseDelay("suspended")).toBe(1500);
+    expect(captureStatusCloseDelay("stopped")).toBe(4000);
+    expect(captureStatusCloseDelay("error")).toBe(4000);
+  });
   it("maps each Agent interaction to distinct visual feedback", () => {
     expect(activityInteractionFeedbackClass("click")).toBe("is-clicking");
     expect(activityInteractionFeedbackClass("drag")).toBe("is-dragging");

@@ -65,9 +65,7 @@ private final class CaptureBox: @unchecked Sendable {
 func captureWindowPNG(
     processID: pid_t,
     timeout: TimeInterval = 8,
-    preferredWindowFrame: CGRect? = nil,
-    scale: CGFloat = 2,
-    computeVisibleBounds: Bool = true
+    preferredWindowFrame: CGRect? = nil
 ) throws -> WindowCapture {
     guard CGPreflightScreenCaptureAccess() else {
         throw ComputerError.permissionDenied("Screen Recording permission is required for window screenshots")
@@ -96,8 +94,8 @@ func captureWindowPNG(
             return
         }
         let configuration = SCStreamConfiguration()
-        configuration.width = max(1, Int(window.frame.width * scale))
-        configuration.height = max(1, Int(window.frame.height * scale))
+        configuration.width = max(1, Int(window.frame.width * 2))
+        configuration.height = max(1, Int(window.frame.height * 2))
         configuration.showsCursor = false
         let filter = SCContentFilter(desktopIndependentWindow: window)
         let windowFrame = window.frame
@@ -112,7 +110,7 @@ func captureWindowPNG(
                         windowFrame: windowFrame,
                         imageWidth: image.width,
                         imageHeight: image.height,
-                        visibleImageFrame: computeVisibleBounds ? visiblePixelBounds(image) : nil
+                        visibleImageFrame: visiblePixelBounds(image)
                     )
                 )))
             } else {
