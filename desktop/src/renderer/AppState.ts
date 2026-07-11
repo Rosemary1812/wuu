@@ -2674,8 +2674,10 @@ function requireThread(result: { thread?: Thread }, message: string): Thread {
 
 function activeThreadForState(state: AppState): Thread | undefined {
   const tab = activeSessionTab(state);
-  if (tab?.kind === "skills" || tab?.kind === "board") {
-    return undefined;
+  if (tab) {
+    if (tab.kind !== "thread") return undefined;
+    return [state.thread, state.secondaryThread, ...state.threads]
+      .find((thread) => thread?.id === tab.threadID);
   }
   if (state.activePane === "secondary" && state.secondaryThread) {
     return state.secondaryThread;

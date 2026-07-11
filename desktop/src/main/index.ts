@@ -803,7 +803,8 @@ app.whenReady().then(async () => {
     },
   );
   ipcMain.handle("wuu:cua-active-thread", (event, threadID?: string) => {
-    if (event.sender.id !== windowRegistry.mainWindow()?.webContents.id) return;
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    if (!senderWindow || senderWindow.isDestroyed() || !senderWindow.isFocused()) return;
     cuaActivityWindowManager.setActiveThread(threadID);
   });
   ipcMain.handle("wuu:project-list", () => projectManager.list());

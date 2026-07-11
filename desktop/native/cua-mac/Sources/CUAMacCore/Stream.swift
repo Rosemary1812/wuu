@@ -269,6 +269,8 @@ private final class NativePiPWindowController: NSObject, NSWindowDelegate {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
+        panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = true
         // The helper runs in a separate process, so it cannot be attached as an
         // NSPanel child of Electron's main window. Keep the preview above normal
         // application windows while its owning activity is visible.

@@ -890,8 +890,13 @@ export function App(): JSX.Element {
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
   useEffect(() => {
-    (window.wuu as typeof window.wuu & { setActiveCUAThread?: (threadID?: string) => void })
-      .setActiveCUAThread?.(activeThreadID);
+    const syncVisibleCUAThread = () => {
+      (window.wuu as typeof window.wuu & { setActiveCUAThread?: (threadID?: string) => void })
+        .setActiveCUAThread?.(activeThreadID);
+    };
+    syncVisibleCUAThread();
+    window.addEventListener("focus", syncVisibleCUAThread);
+    return () => window.removeEventListener("focus", syncVisibleCUAThread);
   }, [activeThreadID]);
   const activeBrowserActivity = useMemo(
     () =>

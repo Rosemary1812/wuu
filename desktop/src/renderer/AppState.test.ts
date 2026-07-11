@@ -9,6 +9,7 @@ import type {
 } from "../shared/protocol";
 import {
   activePlanUpdateForThread,
+  activeThreadForState,
   activeTurnTokenSpeed,
   activeTurnTokenSpeedSnapshot,
   applyLoadedRuntimeWithDraftCarry,
@@ -85,6 +86,51 @@ function installManualRAF(): {
     },
   };
 }
+
+describe("activeThreadForState", () => {
+  it("follows the visible session tab when the loaded primary thread briefly lags behind", () => {
+    const context: RuntimeContext = { kind: "project", project_id: "project-1", cwd: "/repo" };
+    const stale = { ...threadWithUserTexts(["settings task"]), id: "thread-settings" };
+    const visible = { ...threadWithUserTexts(["NetEase task"]), id: "thread-netease" };
+    const state: AppState = {
+      ...initialState,
+      activeContext: context,
+      thread: stale,
+      threads: [stale, visible],
+      sessionTabs: [createThreadSessionTab(stale, context), createThreadSessionTab(visible, context)],
+      activeSessionTabID: threadSessionTabID(visible.id),
+    };
+
+    expect(activeThreadForState(state)?.id).toBe(visible.id);
+  });
+
+  it("does not fall back to a stale thread while a draft or unresolved thread tab is visible", () => {
+    const context: RuntimeContext = { kind: "project", project_id: "project-1", cwd: "/repo" };
+    const stale = { ...threadWithUserTexts(["old task"]), id: "thread-old" };
+    const draft = createDraftSessionTab("draft:new", context);
+    const unresolved = createThreadSessionTab(
+      { ...threadWithUserTexts(["new task"]), id: "thread-loading" },
+      context,
+    );
+
+    expect(activeThreadForState({
+      ...initialState,
+      activeContext: context,
+      thread: stale,
+      threads: [stale],
+      sessionTabs: [draft],
+      activeSessionTabID: draft.id,
+    })).toBeUndefined();
+    expect(activeThreadForState({
+      ...initialState,
+      activeContext: context,
+      thread: stale,
+      threads: [stale],
+      sessionTabs: [unresolved],
+      activeSessionTabID: unresolved.id,
+    })).toBeUndefined();
+  });
+});
 
 function handoffText(): string {
   return JSON.stringify({
