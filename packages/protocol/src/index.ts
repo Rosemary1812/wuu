@@ -1752,6 +1752,31 @@ export type ComposerGoalSummary = {
 
 // Appearance preference for the desktop shell. "system" follows the OS
 // light/dark setting via prefers-color-scheme.
+// Source of truth for the user's message-stream reading size. Lives on
+// <html> via --conversation-message-font-size so a single change scales
+// every message-flow surface (turns.css, chat.css, participants.css).
+// Kept on a three-step ladder so the segmented control in Settings stays
+// simple — finer pixel-level control still lives in the developer-only
+// design-tokens mixer (ConversationDesignTokens.ts).
+export type MessageFlowFontSize = "small" | "medium" | "large";
+
+export const MESSAGE_FLOW_FONT_SIZE_VALUES: readonly MessageFlowFontSize[] = [
+  "small",
+  "medium",
+  "large",
+] as const;
+
+// Pixel values for each step. Lifted out of the segmented control so the
+// preload bootstrap can compute the same CSS variable without importing
+// React.
+export const MESSAGE_FLOW_FONT_SIZE_PX: Readonly<
+  Record<MessageFlowFontSize, number>
+> = {
+  small: 13,
+  medium: 14,
+  large: 16,
+};
+
 export type ThemePreference = "system" | "light" | "dark";
 
 export type CodexPetStateID =
@@ -1967,6 +1992,16 @@ export type WuuDesktopApi = {
   setThemePreference: (
     theme: ThemePreference,
   ) => Promise<{ ok: boolean; theme: ThemePreference }>;
+  // Message-stream reading size. Persists to desktop-settings.json as a
+  // fixed three-step ladder. `initialMessageFlowFontSize` is read
+  // synchronously in the preload so the first paint already has the
+  // right --conversation-message-font-size on <html>, mirroring the
+  // theme pre-paint to avoid a flash.
+  initialMessageFlowFontSize?: MessageFlowFontSize;
+  getMessageFlowFontSize: () => Promise<MessageFlowFontSize>;
+  setMessageFlowFontSize: (
+    fontSize: MessageFlowFontSize,
+  ) => Promise<{ ok: boolean; fontSize: MessageFlowFontSize }>;
   listCodexPets: () => Promise<CodexPetsSnapshot>;
   updateCodexPetSettings: (
     settings: CodexPetSettingsUpdate,

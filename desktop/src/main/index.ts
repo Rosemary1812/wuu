@@ -101,10 +101,13 @@ import { RemoteHostManager } from "./remoteControl";
 import {
   getCodexPetSettings,
   getCliAutoInstallEnabled,
+  getMessageFlowFontSize,
   getThemePreference,
   setCodexPetSettings,
   setCliAutoInstallEnabled,
+  setMessageFlowFontSize,
   setThemePreference,
+  type MessageFlowFontSize,
   type ThemePreference,
 } from "./desktopSettings";
 import { GitService } from "./gitService";
@@ -1201,6 +1204,24 @@ app.whenReady().then(async () => {
     setThemePreference(next);
     return { ok: true, theme: next };
   });
+  ipcMain.on("wuu:message-flow-font-size-get-sync", (event) => {
+    // Sync partner of getMessageFlowFontSize — preload needs the value
+    // before first paint to stamp --conversation-message-font-size on
+    // <html> and avoid a flash of the default size.
+    event.returnValue = getMessageFlowFontSize();
+  });
+  ipcMain.handle("wuu:message-flow-font-size-get", () =>
+    getMessageFlowFontSize(),
+  );
+  ipcMain.handle(
+    "wuu:message-flow-font-size-set",
+    (_event, fontSize: MessageFlowFontSize) => {
+      const valid: MessageFlowFontSize[] = ["small", "medium", "large"];
+      const next = valid.includes(fontSize) ? fontSize : "medium";
+      setMessageFlowFontSize(next);
+      return { ok: true, fontSize: next };
+    },
+  );
   ipcMain.handle("wuu:participant-list", (event) =>
     appServerRequest<ParticipantListResult>(event, "participant/list"),
   );

@@ -7,10 +7,22 @@ import { wuuHomePath } from "./projects";
 // startup). Persistence mirrors projects.ts: a small JSON file under the wuu
 // home directory (~/.wuu), written synchronously on change.
 
-import type { CodexPetSettings, ThemePreference } from "../shared/protocol";
+import {
+  MESSAGE_FLOW_FONT_SIZE_VALUES,
+  type CodexPetSettings,
+  type MessageFlowFontSize,
+  type ThemePreference,
+} from "../shared/protocol";
 import type { WindowBounds } from "./windowState";
 
-export type { ThemePreference, WindowBounds };
+export type {
+  CodexPetSettings,
+  MessageFlowFontSize,
+  ThemePreference,
+  WindowBounds,
+};
+
+export const DEFAULT_MESSAGE_FLOW_FONT_SIZE: MessageFlowFontSize = "medium";
 
 export type DesktopSettings = {
   // Auto-install the wuu CLI into ~/.local/bin at app startup. Defaults to
@@ -20,6 +32,11 @@ export type DesktopSettings = {
   // Appearance. "system" follows the OS light/dark preference; the
   // renderer resolves it to a concrete data-theme on <html>.
   theme?: ThemePreference;
+  // User-facing reading size for the message stream. Persisted as one of
+  // MESSAGE_FLOW_FONT_SIZE_VALUES ("small" | "medium" | "large"); the
+  // renderer maps each step to a pixel value (MESSAGE_FLOW_FONT_SIZE_PX)
+  // and writes it to --conversation-message-font-size on <html>.
+  message_flow_font_size?: MessageFlowFontSize;
   // Codex Pets compatibility. The desktop reads local pets from Wuu's own
   // pets directory, with ~/.codex/pets as a compatibility source, and keeps
   // only the UI enablement + selected pet here.
@@ -50,6 +67,14 @@ export function readDesktopSettings(filePath: string = desktopSettingsPath()): D
     }
     if (THEME_PREFERENCES.includes(record.theme as ThemePreference)) {
       settings.theme = record.theme as ThemePreference;
+    }
+    if (
+      MESSAGE_FLOW_FONT_SIZE_VALUES.includes(
+        record.message_flow_font_size as MessageFlowFontSize,
+      )
+    ) {
+      settings.message_flow_font_size =
+        record.message_flow_font_size as MessageFlowFontSize;
     }
     if (typeof record.codex_pet === "object" && record.codex_pet !== null && !Array.isArray(record.codex_pet)) {
       const codexPet = record.codex_pet as Record<string, unknown>;
@@ -109,6 +134,23 @@ export function getThemePreference(filePath?: string): ThemePreference {
 export function setThemePreference(theme: ThemePreference, filePath?: string): void {
   const settings = readDesktopSettings(filePath);
   writeDesktopSettings({ ...settings, theme }, filePath);
+}
+
+export function getMessageFlowFontSize(
+  filePath?: string,
+): MessageFlowFontSize {
+  return (
+    readDesktopSettings(filePath).message_flow_font_size ??
+    DEFAULT_MESSAGE_FLOW_FONT_SIZE
+  );
+}
+
+export function setMessageFlowFontSize(
+  fontSize: MessageFlowFontSize,
+  filePath?: string,
+): void {
+  const settings = readDesktopSettings(filePath);
+  writeDesktopSettings({ ...settings, message_flow_font_size: fontSize }, filePath);
 }
 
 export function getCodexPetSettings(filePath?: string): CodexPetSettings {

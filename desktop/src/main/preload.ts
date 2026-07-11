@@ -1,13 +1,15 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type {
-  RemoteControlEvent,
-  ServerEvent,
-  SettingsUsageRange,
-  ThemePreference,
-  ThreadStartParams,
-  WindowResizeState,
-  WuuDesktopApi,
-  PopOutInitResult,
+import {
+  MESSAGE_FLOW_FONT_SIZE_PX,
+  type MessageFlowFontSize,
+  type PopOutInitResult,
+  type RemoteControlEvent,
+  type ServerEvent,
+  type SettingsUsageRange,
+  type ThreadStartParams,
+  type ThemePreference,
+  type WindowResizeState,
+  type WuuDesktopApi,
 } from "../shared/protocol";
 
 // Read the persisted theme preference synchronously so the very first
@@ -21,6 +23,30 @@ const initialThemePreference = ((): ThemePreference => {
       : "system";
   } catch {
     return "system";
+  }
+})();
+
+// Same FOUC-free story for the message-stream reading size: ask the
+// main process synchronously and stamp --conversation-message-font-size
+// on <html> before React mounts, so even the first render of the
+// conversation pane carries the user's chosen size.
+const MESSAGE_FLOW_FONT_SIZE_VALUES_BOOT = [
+  "small",
+  "medium",
+  "large",
+] as const satisfies readonly MessageFlowFontSize[];
+const initialMessageFlowFontSize: MessageFlowFontSize = ((): MessageFlowFontSize => {
+  try {
+    const value = ipcRenderer.sendSync(
+      "wuu:message-flow-font-size-get-sync",
+    ) as unknown;
+    return MESSAGE_FLOW_FONT_SIZE_VALUES_BOOT.includes(
+      value as MessageFlowFontSize,
+    )
+      ? (value as MessageFlowFontSize)
+      : "medium";
+  } catch {
+    return "medium";
   }
 })();
 
@@ -38,6 +64,22 @@ try {
 } catch {
   // The renderer's theme controller re-applies on boot; losing the
   // preload stamp only costs a one-frame flash.
+}
+
+try {
+  // Set --conversation-message-font-size as an inline custom property on
+  // <html>. Inline wins over the `:root` declaration in conversation-shell.css
+  // so first paint never blinks at the default size. main.tsx re-applies
+  // for the live subscription (no-op for size — we never need to react to
+  // external changes).
+  const px = MESSAGE_FLOW_FONT_SIZE_PX[initialMessageFlowFontSize];
+  document.documentElement.style.setProperty(
+    "--conversation-message-font-size",
+    `${px}px`,
+  );
+} catch {
+  // Same fall-back story as the theme stamp; dropping the inline value
+  // only costs a one-frame flash at the default size.
 }
 
 const api: WuuDesktopApi = {
@@ -178,9 +220,14 @@ const api: WuuDesktopApi = {
     return () => ipcRenderer.removeListener("wuu:remote-event", listener);
   },
   initialThemePreference,
+  initialMessageFlowFontSize,
   getThemePreference: () => ipcRenderer.invoke("wuu:theme-preference-get"),
   setThemePreference: (theme: ThemePreference) =>
     ipcRenderer.invoke("wuu:theme-preference-set", theme),
+  getMessageFlowFontSize: () =>
+    ipcRenderer.invoke("wuu:message-flow-font-size-get"),
+  setMessageFlowFontSize: (fontSize: MessageFlowFontSize) =>
+    ipcRenderer.invoke("wuu:message-flow-font-size-set", fontSize),
   listParticipants: () => ipcRenderer.invoke("wuu:participant-list"),
   saveParticipant: (params) => ipcRenderer.invoke("wuu:participant-save", params),
   sendParticipantFeedback: (participantId, text, taskId, messageId) =>

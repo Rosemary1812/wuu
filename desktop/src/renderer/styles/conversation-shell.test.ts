@@ -7,9 +7,17 @@ const conversationShellCss = readFileSync(
   "utf-8",
 );
 
+// Strip /* ... */ blocks before matching selectors so a `:root` rule
+// preceded by a CSS file-header comment still matches `^:root`. The
+// inner `{` of comments would otherwise be an obstacle.
+const conversationShellCssNoComments = conversationShellCss.replace(
+  /\/\*[\s\S]*?\*\//g,
+  "",
+);
+
 function cssRuleBody(selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = conversationShellCss.match(
+  const match = conversationShellCssNoComments.match(
     new RegExp(`(?:^|\\})\\s*${escapedSelector}\\s*\\{([\\s\\S]*?)\\}`),
   );
   if (!match) {
@@ -49,7 +57,6 @@ describe("conversation shell message typography tokens", () => {
     const body = cssRuleBody(".conversation-pane");
 
     expect(body).toMatch(/"SF Pro Text"/);
-    expect(body).toMatch(/--conversation-message-font-size:\s*14px;/);
     expect(body).toMatch(/--conversation-message-font-weight:\s*445;/);
     expect(body).toMatch(
       /--conversation-process-font-size:\s*var\(--conversation-message-font-size\);/,
@@ -65,5 +72,18 @@ describe("conversation shell message typography tokens", () => {
     expect(body).toMatch(/--conversation-process-answer-gap:\s*16px;/);
     expect(body).toMatch(/--conversation-answer-action-gap:\s*12px;/);
     expect(body).toMatch(/--conversation-answer-hover-action-gap:\s*6px;/);
+  });
+
+  it("owns the message-font-size default on :root so the user setting on <html> cascades", () => {
+    // Regression (2026-07-11, message-flow font-size setting): the user
+    // facing setting writes `--conversation-message-font-size` to <html
+    // style="...">. A more specific declaration on .conversation-pane
+    // would shadow that override and pin the size at 14px. The default
+    // must live on :root; .conversation-pane must NOT redeclare it.
+    const root = cssRuleBody(":root");
+    expect(root).toMatch(/--conversation-message-font-size:\s*14px;/);
+
+    const body = cssRuleBody(".conversation-pane");
+    expect(body).not.toMatch(/--conversation-message-font-size\s*:/);
   });
 });

@@ -6,11 +6,13 @@ import {
   getCodexPetSettings,
   getCliAutoInstallEnabled,
   getMainWindowBounds,
+  getMessageFlowFontSize,
   getThemePreference,
   readDesktopSettings,
   setCodexPetSettings,
   setCliAutoInstallEnabled,
   setMainWindowBounds,
+  setMessageFlowFontSize,
   setThemePreference,
   writeDesktopSettings,
 } from "./desktopSettings";
@@ -82,6 +84,31 @@ describe("desktopSettings", () => {
     setCliAutoInstallEnabled(false, file);
     expect(getThemePreference(file)).toBe("dark");
     expect(getCliAutoInstallEnabled(file)).toBe(false);
+  });
+
+  it("defaults the message-flow font size to medium", () => {
+    expect(getMessageFlowFontSize(file)).toBe("medium");
+  });
+
+  it("round-trips the message-flow font size", () => {
+    setMessageFlowFontSize("small", file);
+    expect(getMessageFlowFontSize(file)).toBe("small");
+    setMessageFlowFontSize("large", file);
+    expect(getMessageFlowFontSize(file)).toBe("large");
+    setMessageFlowFontSize("medium", file);
+    expect(getMessageFlowFontSize(file)).toBe("medium");
+  });
+
+  it("rejects unknown message-flow font size values on read", async () => {
+    await writeFile(file, JSON.stringify({ message_flow_font_size: "huge" }));
+    expect(getMessageFlowFontSize(file)).toBe("medium");
+  });
+
+  it("keeps the message-flow font size when toggling other settings", () => {
+    setMessageFlowFontSize("large", file);
+    setThemePreference("dark", file);
+    expect(getMessageFlowFontSize(file)).toBe("large");
+    expect(getThemePreference(file)).toBe("dark");
   });
 
   it("defaults codex pets to disabled with no selected pet", () => {

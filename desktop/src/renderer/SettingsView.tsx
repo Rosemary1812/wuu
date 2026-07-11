@@ -49,6 +49,7 @@ import type {
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 import { CliInstallSection } from "./CliInstallSection";
 import { MemoryPanel } from "./MemoryPanel";
+import { MessageFlowFontSizeControl } from "./MessageFlowFontSizeSection";
 import { SettingsRemotePage } from "./SettingsRemotePage";
 import { ThemePreferenceControl } from "./ThemePreferenceSection";
 
@@ -1417,6 +1418,12 @@ function SettingsGeneralPage({
         <SettingsCard>
           <SettingsRow title="主题" description="立即生效，无需保存">
             <ThemePreferenceControl />
+          </SettingsRow>
+          <SettingsRow
+            title="消息流字号"
+            description="三档调节（13/14/16px），覆盖正文与聊天气泡"
+          >
+            <MessageFlowFontSizeControl />
           </SettingsRow>
           <SettingsRow
             title="Codex Pet"
