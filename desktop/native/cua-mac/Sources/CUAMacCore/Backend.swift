@@ -155,7 +155,24 @@ public final class MacComputerBackend: ComputerBackend {
         let (app, error) = box.get()
         if let error { throw ComputerError.operationFailed("launch \(target): \(error.localizedDescription)") }
         guard let app else { throw ComputerError.appNotFound(target) }
+        waitForApplicationWindow(app, timeout: 5)
         return app
+    }
+
+    private func waitForApplicationWindow(_ app: NSRunningApplication, timeout: TimeInterval) {
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        let application = AXUIElementCreateApplication(app.processIdentifier)
+        repeat {
+            var value: CFTypeRef?
+            let result = AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &value)
+            if app.isFinishedLaunching,
+               result == .success,
+               let windows = value as? [AXUIElement],
+               !windows.isEmpty {
+                return
+            }
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.1))
+        } while Date() < deadline && !app.isTerminated
     }
 
     private func applicationURL(_ target: String) -> URL? {
