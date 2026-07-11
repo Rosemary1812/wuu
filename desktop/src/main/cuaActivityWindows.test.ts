@@ -103,10 +103,10 @@ describe("CUA Activity windows", () => {
 
   it("keeps the preview styled as a compact app frame", () => {
     const html = cuaActivityHTML(activity());
-    expect(html).toContain("border-radius:22px");
     expect(html).toContain("background:transparent");
     expect(html).toContain("object-fit:cover");
     expect(html).not.toContain("background:#111315");
+    expect(html).not.toContain(".card{position:relative;height:100%;border-radius");
     expect(html).not.toContain("0 24px 64px");
   });
 
