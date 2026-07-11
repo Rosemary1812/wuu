@@ -7,6 +7,7 @@ import {
   cuaActivityHTML,
   fitActivityPreviewSize,
   resizeActivityBounds,
+  shouldStartUserDrag,
   snapActivityBounds,
 } from "./cuaActivityWindows";
 
@@ -56,7 +57,8 @@ describe("CUA Activity windows", () => {
     expect(html).not.toContain("file:///tmp/preview.png");
     expect(html).toMatch(/wuu-file:\/\/local\//);
     expect(html).toContain("接管");
-    expect(html).toContain("停止");
+    expect(html).toContain("关闭画中画");
+    expect(html).not.toContain("aria-label=\"停止\"");
     expect(html).toContain("prefers-color-scheme:dark");
     expect(html).not.toContain("Agent 正在操作");
     expect(html).not.toContain("Computer Use");
@@ -79,6 +81,12 @@ describe("CUA Activity windows", () => {
       { x: 0, y: 0, width: 1440, height: 900 },
       [],
     )).toEqual({ x: 12, y: 640, width: 380, height: 248 });
+  });
+
+  it("lets a real drag interrupt an active snap but ignores animation-owned moves", () => {
+    expect(shouldStartUserDrag(false, true)).toBe(true);
+    expect(shouldStartUserDrag(true, true)).toBe(false);
+    expect(shouldStartUserDrag(true, false)).toBe(false);
   });
 
   it("snaps naturally to the four inner corners of the main Wuu window", () => {
@@ -144,6 +152,10 @@ describe("CUA Activity windows", () => {
   it("parses only explicit Activity control URLs", () => {
     expect(activityActionFromURL("wuu-cua://action/takeover?activity_id=activity-1")).toEqual({
       action: "takeover",
+      activityID: "activity-1",
+    });
+    expect(activityActionFromURL("wuu-cua://action/close?activity_id=activity-1")).toEqual({
+      action: "close",
       activityID: "activity-1",
     });
     expect(activityActionFromURL("wuu-cua://action/delete?activity_id=activity-1")).toBeUndefined();

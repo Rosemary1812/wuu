@@ -5,7 +5,8 @@ import type { ActivitySession, ServerEvent } from "../shared/protocol";
 import { renderableFileURL } from "./renderableFileURLs";
 import type { WindowRegistry } from "./windowRegistry";
 
-export type ActivityWindowAction = "takeover" | "release" | "stop";
+export type ActivityControlAction = "takeover" | "release" | "stop";
+export type ActivityWindowAction = ActivityControlAction | "close";
 
 const SNAP_INSET = 12;
 const PREVIEW_TARGET_AREA = 380 * 248;
@@ -13,6 +14,11 @@ const PREVIEW_MIN_WIDTH = 280;
 const PREVIEW_MAX_WIDTH = 480;
 const PREVIEW_MIN_HEIGHT = 180;
 const PREVIEW_MAX_HEIGHT = 420;
+
+export function shouldStartUserDrag(programmaticMoveActive: boolean, snapAnimationActive: boolean): boolean {
+  void snapAnimationActive;
+  return !programmaticMoveActive;
+}
 
 export function fitActivityPreviewSize(imageWidth: number, imageHeight: number): { width: number; height: number } {
   if (imageWidth <= 0 || imageHeight <= 0) {
@@ -130,19 +136,22 @@ function nearestCornerIndex(
   return nearestIndex;
 }
 
-export function activityControlMethod(action: ActivityWindowAction): "activity/takeover" | "activity/release" | "activity/stop" {
+export function activityControlMethod(action: ActivityControlAction): "activity/takeover" | "activity/release" | "activity/stop" {
   return `activity/${action}`;
 }
 
 type ActivityControl = (
   activity: ActivitySession,
-  action: ActivityWindowAction,
+  action: ActivityControlAction,
 ) => Promise<ActivitySession>;
 
 export class CUAActivityWindowManager {
   private readonly manuallyResizedWindowIDs = new Set<number>();
   private readonly previewState = new Map<string, { ratio: number; target: string }>();
   private readonly snappingWindowIDs = new Set<number>();
+  private readonly programmaticMoveWindowIDs = new Set<number>();
+  private readonly draggingWindowIDs = new Set<number>();
+  private readonly dismissedActivityIDs = new Set<string>();
   private readonly dockedCorners = new Map<number, { source: "main" | "screen"; corner: number }>();
   private readonly snapAnimationTokens = new Map<number, number>();
 
@@ -160,10 +169,12 @@ export class CUAActivityWindowManager {
   update(activity: ActivitySession): void {
     const existing = this.registry.activityWindow(activity.id);
     if (activity.state === "stopped") {
+      this.dismissedActivityIDs.delete(activity.id);
       this.registry.clearActivityWindow(activity.id);
       if (existing && !existing.isDestroyed()) existing.close();
       return;
     }
+    if (this.dismissedActivityIDs.has(activity.id)) return;
     const win = existing && !existing.isDestroyed()
       ? existing
       : this.createWindow(activity);
@@ -212,15 +223,23 @@ export class CUAActivityWindowManager {
       this.manuallyResizedWindowIDs.add(win.webContents.id);
     });
     win.on("resized", () => {
+      if (this.draggingWindowIDs.has(win.webContents.id)) return;
       const docked = this.dockedBoundsForSize(win, win.getBounds());
-      if (docked) win.setPosition(docked.x, docked.y, false);
+      if (docked) this.setProgrammaticPosition(win, docked.x, docked.y);
     });
     win.on("will-move", () => {
-      this.cancelSnap(win.webContents.id);
+      const windowID = win.webContents.id;
+      if (!shouldStartUserDrag(
+        this.programmaticMoveWindowIDs.has(windowID),
+        this.snappingWindowIDs.has(windowID),
+      )) return;
+      this.cancelSnap(windowID);
+      this.draggingWindowIDs.add(windowID);
     });
     win.on("moved", () => {
       const windowID = win.webContents.id;
       if (win.isDestroyed() || this.snappingWindowIDs.has(windowID)) return;
+      this.draggingWindowIDs.delete(windowID);
       const bounds = win.getBounds();
       const workArea = screen.getDisplayMatching(bounds).workArea;
       const mainWindow = this.registry.mainWindow();
@@ -250,6 +269,12 @@ export class CUAActivityWindowManager {
       const parsed = activityActionFromURL(rawURL);
       if (!parsed || parsed.activityID !== activity.id) return;
       navigationEvent.preventDefault();
+      if (parsed.action === "close") {
+        this.dismissedActivityIDs.add(activity.id);
+        this.registry.clearActivityWindow(activity.id);
+        win.close();
+        return;
+      }
       void this.control(activity, parsed.action)
         .then((updated) => this.update(updated))
         .catch((error) => {
@@ -271,13 +296,13 @@ export class CUAActivityWindowManager {
     this.dockedCorners.set(windowID, { source: mainBounds ? "main" : "screen", corner: 1 });
     const syncWithMainWindow = (): void => {
       const docked = this.dockedCorners.get(windowID);
-      if (docked?.source !== "main" || win.isDestroyed() || !mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
+      if (docked?.source !== "main" || win.isDestroyed() || this.draggingWindowIDs.has(windowID) || this.snappingWindowIDs.has(windowID) || !mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
       const anchor = mainWindow.getContentBounds();
       const anchorWorkArea = screen.getDisplayMatching(anchor).workArea;
       const target = cornerPositions(win.getBounds(), anchor, SNAP_INSET, anchorWorkArea)[docked.corner];
       if (!target) return;
       this.cancelSnap(windowID);
-      win.setPosition(target.x, target.y, false);
+      this.setProgrammaticPosition(win, target.x, target.y);
     };
     mainWindow?.on("move", syncWithMainWindow);
     mainWindow?.on("resize", syncWithMainWindow);
@@ -285,7 +310,9 @@ export class CUAActivityWindowManager {
       mainWindow?.removeListener("move", syncWithMainWindow);
       mainWindow?.removeListener("resize", syncWithMainWindow);
       this.manuallyResizedWindowIDs.delete(windowID);
+      this.draggingWindowIDs.delete(windowID);
       this.snappingWindowIDs.delete(windowID);
+      this.programmaticMoveWindowIDs.delete(windowID);
       this.dockedCorners.delete(windowID);
       this.snapAnimationTokens.delete(windowID);
       this.previewState.delete(activity.id);
@@ -313,10 +340,10 @@ export class CUAActivityWindowManager {
       if (this.snapAnimationTokens.get(windowID) !== token) return;
       const progress = Math.min(1, (performance.now() - startedAt) / duration);
       const eased = 1 - Math.pow(1 - progress, 5);
-      win.setPosition(
+      this.positionWindow(
+        win,
         Math.round(from.x + (to.x - from.x) * eased),
         Math.round(from.y + (to.y - from.y) * eased),
-        false,
       );
       if (progress < 1) {
         setTimeout(step, 16);
@@ -325,6 +352,23 @@ export class CUAActivityWindowManager {
       }
     };
     step();
+  }
+
+  private setProgrammaticPosition(win: BrowserWindow, x: number, y: number): void {
+    const windowID = win.webContents.id;
+    this.snappingWindowIDs.add(windowID);
+    this.positionWindow(win, x, y);
+    setImmediate(() => this.snappingWindowIDs.delete(windowID));
+  }
+
+  private positionWindow(win: BrowserWindow, x: number, y: number): void {
+    const windowID = win.webContents.id;
+    this.programmaticMoveWindowIDs.add(windowID);
+    try {
+      win.setPosition(x, y, false);
+    } finally {
+      this.programmaticMoveWindowIDs.delete(windowID);
+    }
   }
 
   private cancelSnap(windowID: number): void {
@@ -362,7 +406,7 @@ export class CUAActivityWindowManager {
   private autoSizeForPreview(win: BrowserWindow, activity: ActivitySession): void {
     const preview = activity.preview?.trim();
     const windowID = win.webContents.id;
-    if (!preview?.startsWith("file:") || this.manuallyResizedWindowIDs.has(windowID)) return;
+    if (!preview?.startsWith("file:") || this.manuallyResizedWindowIDs.has(windowID) || this.draggingWindowIDs.has(windowID)) return;
     let imagePath: string;
     try {
       imagePath = fileURLToPath(preview);
@@ -405,7 +449,7 @@ export function activityActionFromURL(rawURL: string): { action: ActivityWindowA
     const url = new URL(rawURL);
     if (url.protocol !== "wuu-cua:" || url.hostname !== "action") return undefined;
     const action = url.pathname.replace(/^\/+/, "") as ActivityWindowAction;
-    if (!(["takeover", "release", "stop"] as const).includes(action)) return undefined;
+    if (!(["takeover", "release", "stop", "close"] as const).includes(action)) return undefined;
     const activityID = url.searchParams.get("activity_id")?.trim() ?? "";
     return activityID ? { action, activityID } : undefined;
   } catch {
@@ -440,7 +484,7 @@ export function cuaActivityHTML(activity: ActivitySession): string {
 .glass{position:absolute;inset:0;background:radial-gradient(circle at 10% 0%,rgba(255,255,255,.62),transparent 44%),radial-gradient(circle at 92% 34%,rgba(255,122,72,.16),transparent 48%),radial-gradient(circle at 52% 112%,rgba(110,170,255,.14),transparent 50%),linear-gradient(145deg,var(--glass-strong),var(--glass));box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
 .actions{position:absolute;z-index:3;top:8px;right:8px;display:flex;align-items:center;gap:5px;padding:4px;border-radius:10px;background:var(--glass-strong);border:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.14);opacity:0;transform:translateY(-3px);transition:opacity 140ms ease,transform 140ms ease;-webkit-app-region:no-drag}.card:hover .actions,.actions:focus-within{opacity:1;transform:none}.button{height:25px;padding:0 8px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink);background:transparent;border:0;font-size:11px;font-weight:560}.button:hover{background:var(--hover)}.button.stop{width:25px;padding:0;font-size:15px;font-weight:400}.button.stop:hover{color:var(--danger);background:var(--danger-soft)}
 .error{position:absolute;z-index:2;left:8px;right:8px;bottom:8px;padding:8px 10px;border-radius:9px;background:var(--danger-soft);border:1px solid var(--line);font-size:10.5px;color:var(--danger);-webkit-app-region:no-drag}
-</style></head><body><section class="card"><div class="preview">${preview}</div><div class="actions">${controls}${actionLink(activity,"stop","停止","stop","×")}</div>${error}</section></body></html>`;
+</style></head><body><section class="card"><div class="preview">${preview}</div><div class="actions">${controls}${actionLink(activity,"close","关闭画中画","stop","×")}</div>${error}</section></body></html>`;
 }
 
 function activityPreviewURL(activity: ActivitySession): string | undefined {
