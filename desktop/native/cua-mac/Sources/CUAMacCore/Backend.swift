@@ -46,38 +46,49 @@ public final class MacComputerBackend: ComputerBackend {
         guard let target = command.app?.trimmingCharacters(in: .whitespacesAndNewlines), !target.isEmpty else {
             throw ComputerError.invalidArguments("app is required for \(command.action.rawValue)")
         }
+        let frontmostBefore = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let app = try resolveApplication(target)
         let axApplication = AXUIElementCreateApplication(app.processIdentifier)
         enableElectronAccessibility(axApplication)
 
+        let mechanism: String
         switch command.action {
         case .observe:
             return try observe(app: app, axApplication: axApplication)
         case .click:
-            try click(command, app: app)
+            mechanism = try click(command, app: app)
         case .drag:
             try drag(command, app: app)
+            mechanism = "foreground_native"
         case .pressKey:
             try pressKey(command, app: app)
+            mechanism = "foreground_native"
         case .pressKeys:
             try pressKeys(command, app: app)
+            mechanism = "foreground_native"
         case .scroll:
             try scroll(command, app: app)
+            mechanism = "foreground_native"
         case .setValue:
             try setValue(command, app: app)
+            mechanism = "background_ax"
         case .typeText:
             try typeText(command, app: app)
+            mechanism = "foreground_native"
         case .selectText:
             try selectText(command, app: app)
+            mechanism = "background_ax"
         case .performAction:
             try performSecondaryAction(command, app: app)
+            mechanism = "background_ax"
         case .waitForChange:
             try waitForChange(command, app: app, axApplication: axApplication)
             return try observe(app: app, axApplication: axApplication)
         case .permissionStatus, .requestPermissions, .listApps:
-            break
+            preconditionFailure("global actions returned before target resolution")
         }
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.15))
+        let frontmostAfter = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let canonicalTarget = app.bundleIdentifier ?? app.bundleURL?.path ?? target
         return ComputerResult(
             text: "Action \(command.action.rawValue) completed for app=\"\(canonicalTarget)\". Call observe when you need fresh UI state.",
@@ -87,6 +98,8 @@ public final class MacComputerBackend: ComputerBackend {
                 "display_name": app.localizedName ?? "Unknown",
                 "process_id": Int(app.processIdentifier),
                 "state_changed": "unverified",
+                "mechanism": mechanism,
+                "foreground_changed": frontmostBefore != frontmostAfter,
             ]
         )
     }
@@ -330,18 +343,17 @@ public final class MacComputerBackend: ComputerBackend {
         throw ComputerError.operationFailed("\(app.localizedName ?? "target app") did not become active")
     }
 
-    private func click(_ command: ComputerCommand, app: NSRunningApplication) throws {
+    private func click(_ command: ComputerCommand, app: NSRunningApplication) throws -> String {
         if command.elementID != nil {
             let target = try element(command, app: app)
             if axActions(target).contains(kAXPressAction as String) {
-                try activate(app)
                 try performAXAction(target, action: kAXPressAction as String)
-                return
+                return "background_ax"
             }
             if let frame = axFrame(target) {
                 try activate(app)
                 try postClick(point: CGPoint(x: frame.midX, y: frame.midY), button: command.mouseButton, count: command.clickCount ?? 1)
-                return
+                return "foreground_native"
             }
         }
         guard let x = command.x, let y = command.y else {
@@ -349,6 +361,7 @@ public final class MacComputerBackend: ComputerBackend {
         }
         try activate(app)
         try postClick(point: try inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app), button: command.mouseButton, count: command.clickCount ?? 1)
+        return "foreground_native"
     }
 
     private func postClick(point: CGPoint, button name: String?, count: Int) throws {
@@ -463,7 +476,6 @@ public final class MacComputerBackend: ComputerBackend {
         let target = try element(command, app: app)
         let value = command.value ?? command.text
         guard let value else { throw ComputerError.invalidArguments("value is required") }
-        try activate(app)
         try setAXValue(target, attribute: kAXValueAttribute as String, value: value as CFString)
     }
 
@@ -492,7 +504,6 @@ public final class MacComputerBackend: ComputerBackend {
     private func selectText(_ command: ComputerCommand, app: NSRunningApplication) throws {
         let target = try element(command, app: app)
         guard let needle = command.text, !needle.isEmpty else { throw ComputerError.invalidArguments("text is required") }
-        try activate(app)
         guard let fullText = axString(target, kAXValueAttribute as String) else {
             throw ComputerError.unsupported("element has no string AXValue")
         }
@@ -513,7 +524,6 @@ public final class MacComputerBackend: ComputerBackend {
     private func performSecondaryAction(_ command: ComputerCommand, app: NSRunningApplication) throws {
         let target = try element(command, app: app)
         guard let action = command.actionName, !action.isEmpty else { throw ComputerError.invalidArguments("action_name is required") }
-        try activate(app)
         try performAXAction(target, action: action)
     }
 

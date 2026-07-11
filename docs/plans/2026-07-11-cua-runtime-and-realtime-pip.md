@@ -348,7 +348,7 @@ Activity acquire
 
 ## 8. 实施计划
 
-### M0：文档与基线
+### M0：文档与基线（已完成）
 
 - 本文档。
 - 固化计算器、TextEdit、微信的行为基线。
@@ -356,7 +356,7 @@ Activity acquire
 
 验收：文档可直接指导实现；证据与推断分开。
 
-### M1：后台 AX
+### M1：后台 AX（已完成）
 
 - AXPress、AXSetValue、select、secondary action 不激活应用。
 - 动作结果增加执行机制与前台是否变化。
@@ -364,6 +364,8 @@ Activity acquire
 - 前台应用和真实鼠标保持不变。
 
 验收：ChatGPT/Wuu 保持前台时，后台计算器完成运算并清零。
+
+实施证据（2026-07-11）：后台计算器通过 8 次 AXPress 完成 `37 × 24 = 888` 并清零；每次动作均报告 `mechanism=background_ax` 和 `foreground_changed=false`。操作前后 frontmost bundle 均为 `com.openai.codex`，鼠标坐标均为 `(911, 804)`，最终 AX 值为 `0`。TextEdit 打开对话框的搜索字段完成后台 AXSetValue、select_text、AXConfirm 和清空，值变化得到 AX 验证；全程 frontmost bundle 为 `com.openai.codex`，鼠标坐标保持 `(508, 794)`。
 
 ### M2：前台控制策略
 
