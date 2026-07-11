@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -55,6 +56,15 @@ func TestPluginRequestInterceptorCarriesThreadContextAndTransformsRequest(t *tes
 	}
 	if client.input.ThreadID != "thread-1" || client.input.SessionID != "thread-1" || client.input.CWD != "/workspace" || client.input.Provider != "openai" || client.input.StepIndex != 2 {
 		t.Fatalf("input = %+v", client.input)
+	}
+}
+
+func TestPluginRequestInterceptorSkipsHostsWithoutChatRequestHook(t *testing.T) {
+	if intercept := pluginRequestInterceptor(pluginhost.New(&messagePluginClient{}), "openai", "thread-1", "/workspace"); intercept != nil {
+		t.Fatal("expected nil interceptor for host without chat request hook")
+	}
+	if intercept := pluginRequestInterceptor(pluginhost.New(pluginhost.Failed("broken", errors.New("boom"))), "openai", "thread-1", "/workspace"); intercept != nil {
+		t.Fatal("expected nil interceptor for failed plugin host")
 	}
 }
 

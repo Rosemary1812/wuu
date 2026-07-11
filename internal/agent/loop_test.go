@@ -112,6 +112,27 @@ func TestRunToolLoopRejectsForcedToolRemovedByPlugin(t *testing.T) {
 	}
 }
 
+func TestRunToolLoopAllowsPreexistingUnavailableForcedTool(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{Content: "done"}}}
+	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{{Role: "user", Content: "hello"}}, LoopConfig{
+		Model:              "model",
+		ForceToolFirstStep: "required",
+		BeforeRequest: func(_ context.Context, req *providers.ChatRequest) error {
+			req.Temperature = 0.5
+			return nil
+		},
+	}, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(step.calls) != 1 {
+		t.Fatalf("calls = %d", len(step.calls))
+	}
+	if step.calls[0].ForceToolName != "required" {
+		t.Fatalf("request force tool = %q", step.calls[0].ForceToolName)
+	}
+}
+
 // fakeLoopTools is a no-op ToolExecutor that records every call.
 type fakeLoopTools struct {
 	mu         sync.Mutex
