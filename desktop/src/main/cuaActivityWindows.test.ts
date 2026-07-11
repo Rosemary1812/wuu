@@ -17,6 +17,7 @@ import {
   cuaActivityHTML,
   frameStreamRetryDelay,
   fitActivityPreviewSize,
+  fitUserResizedPreviewSize,
   resizeActivityBounds,
   shouldScheduleDragSettle,
   snapAnimationDuration,
@@ -60,6 +61,9 @@ describe("CUA Activity windows", () => {
     });
     expect(activityAspectRatio(230, 408)).toBeCloseTo(230 / 408);
     expect(activityAspectRatio(0, 408)).toBeUndefined();
+    expect(fitUserResizedPreviewSize(400, 16 / 9)).toEqual({ width: 400, height: 225 });
+    expect(fitUserResizedPreviewSize(400, 230 / 408)).toEqual({ width: 400, height: 710 });
+    expect(fitUserResizedPreviewSize(700, 230 / 408)).toEqual({ width: 451, height: 800 });
   });
 
   it("does not create an orphan PiP after the Wuu window closes", () => {

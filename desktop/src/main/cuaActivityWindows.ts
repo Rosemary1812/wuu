@@ -193,6 +193,20 @@ export function activityAspectRatio(width: number, height: number): number | und
   return width > 0 && height > 0 ? width / height : undefined;
 }
 
+export function fitUserResizedPreviewSize(width: number, ratio: number): { width: number; height: number } {
+  let nextWidth = Math.max(PREVIEW_RESIZE_MIN_WIDTH, Math.min(PREVIEW_RESIZE_MAX_WIDTH, width));
+  let nextHeight = nextWidth / ratio;
+  if (nextHeight > PREVIEW_RESIZE_MAX_HEIGHT) {
+    nextHeight = PREVIEW_RESIZE_MAX_HEIGHT;
+    nextWidth = nextHeight * ratio;
+  }
+  if (nextHeight < PREVIEW_RESIZE_MIN_HEIGHT) {
+    nextHeight = PREVIEW_RESIZE_MIN_HEIGHT;
+    nextWidth = nextHeight * ratio;
+  }
+  return { width: Math.round(nextWidth), height: Math.round(nextHeight) };
+}
+
 export function activityWindowCanCreate(mainWindow: BrowserWindow | null): mainWindow is BrowserWindow {
   return mainWindow !== null && !mainWindow.isDestroyed();
 }
@@ -247,6 +261,11 @@ export class CUAActivityWindowManager {
     for (const [activityID, activity] of this.activities) {
       const win = this.registry.activityWindow(activityID);
       if (win && !win.isDestroyed()) {
+        if (activityVisibleForThread(activity.thread_id, this.activeThreadID)) {
+          this.syncFrameStream(activity);
+        } else {
+          this.stopFrameStream(activityID);
+        }
         this.syncVisibility(win, activity);
       } else if (activityVisibleForThread(activity.thread_id, this.activeThreadID)) {
         this.update(activity);
@@ -280,7 +299,11 @@ export class CUAActivityWindowManager {
       if (!activityWindowCanCreate(mainWindow)) return;
       win = this.createWindow(activity, mainWindow);
     }
-    this.syncFrameStream(activity);
+    if (activityVisibleForThread(activity.thread_id, this.activeThreadID)) {
+      this.syncFrameStream(activity);
+    } else {
+      this.stopFrameStream(activity.id);
+    }
     this.render(win, activity);
     this.syncVisibility(win, activity);
   }
@@ -640,9 +663,17 @@ export class CUAActivityWindowManager {
     if (!ratio) return;
     const previous = this.previewState.get(activityID);
     if (previous && Math.abs(ratio / previous.ratio - 1) <= 0.05) return;
-    this.previewState.set(activityID, { ratio, target: this.activities.get(activityID)?.target?.trim() ?? "" });
     win.setAspectRatio(ratio);
-    if (this.manuallyResizedWindowIDs.has(windowID) || this.draggingWindowIDs.has(windowID)) return;
+    if (this.draggingWindowIDs.has(windowID)) return;
+    this.previewState.set(activityID, { ratio, target: this.activities.get(activityID)?.target?.trim() ?? "" });
+    if (this.manuallyResizedWindowIDs.has(windowID)) {
+      const bounds = win.getBounds();
+      const size = fitUserResizedPreviewSize(bounds.width, ratio);
+      const resized = this.dockedBoundsForSize(win, size)
+        ?? resizeActivityBounds(bounds, size, screen.getDisplayMatching(bounds).workArea);
+      if (resized.width !== bounds.width || resized.height !== bounds.height) win.setBounds(resized, false);
+      return;
+    }
     const bounds = win.getBounds();
     const size = fitActivityPreviewSize(width, height);
     const resized = this.dockedBoundsForSize(win, size)
@@ -667,9 +698,17 @@ export class CUAActivityWindowManager {
     const previous = this.previewState.get(activity.id);
     const ratioChanged = !previous || Math.abs(ratio / previous.ratio - 1) > 0.05;
     if (!ratioChanged && previous.target === target) return;
-    this.previewState.set(activity.id, { ratio, target });
     win.setAspectRatio(ratio);
-    if (this.manuallyResizedWindowIDs.has(windowID) || this.draggingWindowIDs.has(windowID)) return;
+    if (this.draggingWindowIDs.has(windowID)) return;
+    this.previewState.set(activity.id, { ratio, target });
+    if (this.manuallyResizedWindowIDs.has(windowID)) {
+      const bounds = win.getBounds();
+      const size = fitUserResizedPreviewSize(bounds.width, ratio);
+      const resized = this.dockedBoundsForSize(win, size)
+        ?? resizeActivityBounds(bounds, size, screen.getDisplayMatching(bounds).workArea);
+      if (resized.width !== bounds.width || resized.height !== bounds.height) win.setBounds(resized, false);
+      return;
+    }
     const bounds = win.getBounds();
     const workArea = screen.getDisplayMatching(bounds).workArea;
     const size = fitActivityPreviewSize(imageSize.width, imageSize.height);
