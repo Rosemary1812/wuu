@@ -20,6 +20,7 @@ export type SidebarDrawerStateController = {
   openSidebarDrawerNow: () => void;
   scheduleSidebarDrawerOpen: () => void;
   closeSidebarDrawer: () => void;
+  closeSidebarDrawerFromPointerLeave: () => void;
   syncSidebarDrawerHover: () => void;
 };
 
@@ -204,6 +205,16 @@ export function useSidebarDrawerState({
     sidebarCollapsed,
   ]);
 
+  const closeSidebarDrawerFromPointerLeave = useCallback((): void => {
+    // The focused-workspace navigation button opens a persistent drawer.
+    // Pointer transitions within that overlay must not dismiss it before the
+    // user can reach a navigation item.
+    if (sidebarDrawerExplicitlyOpenedRef.current) {
+      return;
+    }
+    closeSidebarDrawer();
+  }, [closeSidebarDrawer]);
+
   const syncSidebarDrawerHover = useCallback((): void => {
     if (!sidebarCollapsed || sidebarDrawerPhase !== "open") {
       return;
@@ -369,6 +380,7 @@ export function useSidebarDrawerState({
     openSidebarDrawerNow,
     scheduleSidebarDrawerOpen,
     closeSidebarDrawer,
+    closeSidebarDrawerFromPointerLeave,
     syncSidebarDrawerHover,
   };
 }

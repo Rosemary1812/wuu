@@ -131,8 +131,14 @@ describe("useSidebarDrawerState", () => {
 
     expect(hook.get().sidebarDrawerPhase).toBe("open");
 
-    // Explicit drawers close through the sidebar's real pointerleave handler,
-    // not through the global pointer tracker used for hover-open drawers.
+    // Pointerleave belongs to hover-open drawers. An explicit navigation
+    // drawer stays open so its controls remain reachable.
+    await act(async () => {
+      hook.get().closeSidebarDrawerFromPointerLeave();
+    });
+
+    expect(hook.get().sidebarDrawerPhase).toBe("open");
+
     await act(async () => {
       hook.get().closeSidebarDrawer();
     });
