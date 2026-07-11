@@ -263,6 +263,8 @@ private final class NativePiPWindowController: NSObject, NSWindowDelegate {
     let content: NativePiPView
     private let writer: PiPEventWriter
     private var shown = false
+    private var requestedVisible = true
+    private var captureAvailable = false
 
     init(configuration: NativePiPConfiguration, writer: PiPEventWriter) {
         self.writer = writer
@@ -298,6 +300,7 @@ private final class NativePiPWindowController: NSObject, NSWindowDelegate {
         panel.maxSize = CGSize(width: 720, height: 800)
         panel.contentAspectRatio = configuration.frame.size
         content.onClose = { [weak self] in
+            self?.requestedVisible = false
             self?.writer.send("user_close")
             self?.panel.orderOut(nil)
         }
@@ -307,16 +310,7 @@ private final class NativePiPWindowController: NSObject, NSWindowDelegate {
         content.setVideoSize(videoSize)
         let ratio = videoSize.width / max(1, videoSize.height)
         panel.contentAspectRatio = CGSize(width: ratio, height: 1)
-        guard !shown else { return }
-        let fitted = fittedPiPSize(ratio: ratio)
-        let current = panel.frame
-        panel.setFrame(
-            CGRect(x: current.maxX - fitted.width, y: current.maxY - fitted.height, width: fitted.width, height: fitted.height),
-            display: false
-        )
-        shown = true
-        panel.orderFrontRegardless()
-        writer.send("ready", fields: ["width": Int(videoSize.width), "height": Int(videoSize.height)])
+        presentContent(width: Int(videoSize.width), height: Int(videoSize.height), ratio: ratio)
     }
 
     func showFallbackFrame(_ image: CGImage) {
@@ -324,22 +318,20 @@ private final class NativePiPWindowController: NSObject, NSWindowDelegate {
         let size = CGSize(width: image.width, height: image.height)
         let ratio = size.width / max(1, size.height)
         panel.contentAspectRatio = CGSize(width: ratio, height: 1)
-        guard !shown else { return }
-        let fitted = fittedPiPSize(ratio: ratio)
-        let current = panel.frame
-        panel.setFrame(
-            CGRect(x: current.maxX - fitted.width, y: current.maxY - fitted.height, width: fitted.width, height: fitted.height),
-            display: false
-        )
-        shown = true
-        panel.orderFrontRegardless()
-        writer.send("ready", fields: ["width": image.width, "height": image.height])
+        presentContent(width: image.width, height: image.height, ratio: ratio)
     }
 
     var hasShownContent: Bool { shown }
 
     func setVisible(_ visible: Bool) {
-        if visible, shown { panel.orderFrontRegardless() } else { panel.orderOut(nil) }
+        requestedVisible = visible
+        if visible, captureAvailable { panel.orderFrontRegardless() } else { panel.orderOut(nil) }
+    }
+
+    func markCaptureUnavailable() {
+        guard captureAvailable else { return }
+        captureAvailable = false
+        panel.orderOut(nil)
     }
 
     func animateInteraction(_ payload: [String: Any]) { content.animateInteraction(payload) }
@@ -349,6 +341,24 @@ private final class NativePiPWindowController: NSObject, NSWindowDelegate {
         let widthDriven = CGSize(width: frameSize.width, height: frameSize.width / ratio)
         if widthDriven.height <= panel.maxSize.height { return widthDriven }
         return CGSize(width: frameSize.height * ratio, height: frameSize.height)
+    }
+
+    private func presentContent(width: Int, height: Int, ratio: CGFloat) {
+        let becameAvailable = !captureAvailable
+        captureAvailable = true
+        if !shown {
+            let fitted = fittedPiPSize(ratio: ratio)
+            let current = panel.frame
+            panel.setFrame(
+                CGRect(x: current.maxX - fitted.width, y: current.maxY - fitted.height, width: fitted.width, height: fitted.height),
+                display: false
+            )
+            shown = true
+            writer.send("ready", fields: ["width": width, "height": height])
+        }
+        if requestedVisible, becameAvailable || !panel.isVisible {
+            panel.orderFrontRegardless()
+        }
     }
 
     private func fittedPiPSize(ratio: CGFloat) -> CGSize {
@@ -423,13 +433,55 @@ private let geometryObserverCallback: AXObserverCallback = { _, _, notification,
     Unmanaged<WindowGeometryMonitor>.fromOpaque(refcon).takeUnretainedValue().handle(notification)
 }
 
+struct CaptureFreshness: Equatable {
+    private(set) var hasDisplayedFrame = false
+    private(set) var lastCallbackUptime: TimeInterval?
+    private(set) var lastHealthyCallbackUptime: TimeInterval?
+    private(set) var unavailableSinceUptime: TimeInterval?
+
+    mutating func recordCallback(
+        at uptime: TimeInterval,
+        displayedFrame: Bool,
+        captureUnavailable: Bool
+    ) {
+        lastCallbackUptime = uptime
+        if displayedFrame { hasDisplayedFrame = true }
+        if captureUnavailable {
+            if unavailableSinceUptime == nil { unavailableSinceUptime = uptime }
+        } else {
+            lastHealthyCallbackUptime = uptime
+            unavailableSinceUptime = nil
+        }
+    }
+
+    func requiresRecovery(
+        at uptime: TimeInterval,
+        streamStartedAt: TimeInterval,
+        startupTimeout: TimeInterval,
+        callbackSilenceTimeout: TimeInterval,
+        unavailableStatusTimeout: TimeInterval
+    ) -> Bool {
+        if let unavailableSinceUptime,
+           uptime - unavailableSinceUptime >= unavailableStatusTimeout {
+            return true
+        }
+        guard hasDisplayedFrame else {
+            return uptime - streamStartedAt >= startupTimeout
+        }
+        guard let lastCallbackUptime else {
+            return uptime - streamStartedAt >= callbackSilenceTimeout
+        }
+        return uptime - lastCallbackUptime >= callbackSilenceTimeout
+    }
+}
+
 @available(macOS 14.0, *)
 private final class NativePiPStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     let controller: NativePiPWindowController
     let writer: PiPEventWriter
     private let lock = NSLock()
     private var stopped = false
-    private var receivedFrame = false
+    private var freshness = CaptureFreshness()
     private var lastStatus: SCFrameStatus?
 
     init(controller: NativePiPWindowController, writer: PiPEventWriter) {
@@ -438,19 +490,24 @@ private final class NativePiPStreamOutput: NSObject, SCStreamOutput, SCStreamDel
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, sampleBuffer.isValid else { return }
-        let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
-            as? [[SCStreamFrameInfo: Any]]
+        guard type == .screen else { return }
+        let valid = sampleBuffer.isValid
+        let attachments = valid
+            ? CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]]
+            : nil
         let status = (attachments?.first?[.status] as? NSNumber).flatMap { SCFrameStatus(rawValue: $0.intValue) }
+        let imageBuffer = valid ? sampleBuffer.imageBuffer : nil
+        let captureUnavailable = !valid || status == .blank || status == .suspended || status == .stopped
+        let shouldDisplay = imageBuffer != nil && !captureUnavailable
         lock.lock()
         let statusChanged = status != nil && status != lastStatus
         if let status { lastStatus = status }
         if status == .stopped { stopped = true }
-        let shouldDisplay = sampleBuffer.imageBuffer != nil
-            && status != .blank
-            && status != .suspended
-            && status != .stopped
-        if shouldDisplay { receivedFrame = true }
+        freshness.recordCallback(
+            at: ProcessInfo.processInfo.systemUptime,
+            displayedFrame: shouldDisplay,
+            captureUnavailable: captureUnavailable
+        )
         lock.unlock()
         if statusChanged, let status { writer.send("capture_status", fields: ["status": captureStatusName(status)]) }
         guard shouldDisplay, let imageBuffer = sampleBuffer.imageBuffer else { return }
@@ -465,7 +522,7 @@ private final class NativePiPStreamOutput: NSObject, SCStreamOutput, SCStreamDel
     }
 
     func isStopped() -> Bool { lock.withLock { stopped } }
-    func hasFrame() -> Bool { lock.withLock { receivedFrame } }
+    func freshnessSnapshot() -> CaptureFreshness { lock.withLock { freshness } }
     func lockFailure(_ error: Error) {
         lock.lock(); stopped = true; lock.unlock()
         writer.send("capture_status", fields: ["status": "error", "message": error.localizedDescription])
@@ -538,18 +595,39 @@ private func startWindowStream(window: SCWindow, output: NativePiPStreamOutput) 
     return stream
 }
 
+private final class ScreenshotContinuationBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<CGImage, Error>?
+
+    init(_ continuation: CheckedContinuation<CGImage, Error>) {
+        self.continuation = continuation
+    }
+
+    func complete(_ result: Result<CGImage, Error>) {
+        let next = lock.withLock { () -> CheckedContinuation<CGImage, Error>? in
+            defer { continuation = nil }
+            return continuation
+        }
+        next?.resume(with: result)
+    }
+}
+
 @available(macOS 14.0, *)
-private func captureWindowImage(window: SCWindow) async throws -> CGImage {
+private func captureWindowImage(window: SCWindow, timeout: TimeInterval) async throws -> CGImage {
     let configuration = streamConfiguration(for: window)
     let filter = SCContentFilter(desktopIndependentWindow: window)
     return try await withCheckedThrowingContinuation { continuation in
+        let box = ScreenshotContinuationBox(continuation)
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + timeout) {
+            box.complete(.failure(ComputerError.operationFailed("window screenshot timed out")))
+        }
         SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) { image, error in
             if let error {
-                continuation.resume(throwing: error)
+                box.complete(.failure(error))
             } else if let image {
-                continuation.resume(returning: image)
+                box.complete(.success(image))
             } else {
-                continuation.resume(throwing: ComputerError.operationFailed("window screenshot produced no image"))
+                box.complete(.failure(ComputerError.operationFailed("window screenshot produced no image")))
             }
         }
     }
@@ -577,10 +655,14 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
     }
     var output = NativePiPStreamOutput(controller: controller, writer: writer)
     var stream = try startWindowStream(window: window, output: output)
-    var streamStartedAt = Date()
+    var streamStartedAt = ProcessInfo.processInfo.systemUptime
+    var lastVerifiedCaptureAt = streamStartedAt
     var consecutiveStreamFailures = 0
     var lastHealthyOutput: ObjectIdentifier?
-    var lastFallbackCaptureAt = Date.distantPast
+    let startupTimeout: TimeInterval = 5
+    let callbackSilenceTimeout: TimeInterval = 3
+    let unavailableStatusTimeout: TimeInterval = 3
+    let screenshotTimeout: TimeInterval = 1
 
     let commandReader = PiPCommandReader()
     FileHandle.standardInput.readabilityHandler = { input in
@@ -604,24 +686,33 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
     var lastSafetyRefresh = Date.distantPast
     while !app.isTerminated {
         try await Task.sleep(for: .milliseconds(100))
+        let now = ProcessInfo.processInfo.systemUptime
+        let freshness = output.freshnessSnapshot()
+        if let healthyAt = freshness.lastHealthyCallbackUptime {
+            lastVerifiedCaptureAt = max(lastVerifiedCaptureAt, healthyAt)
+        }
         let outputID = ObjectIdentifier(output)
-        if output.hasFrame(), lastHealthyOutput != outputID {
+        if freshness.hasDisplayedFrame, lastHealthyOutput != outputID {
             consecutiveStreamFailures = 0
             lastHealthyOutput = outputID
         }
-        if !output.hasFrame(), Date().timeIntervalSince(lastFallbackCaptureAt) >= 0.5 {
-            lastFallbackCaptureAt = Date()
-            if let image = try? await captureWindowImage(window: window) {
-                controller.showFallbackFrame(image)
-            }
-        }
-        let startupFailed = !output.hasFrame()
-            && !controller.hasShownContent
-            && Date().timeIntervalSince(streamStartedAt) >= 5
-        if output.isStopped() || startupFailed {
+        let recoveryRequired = freshness.requiresRecovery(
+            at: now,
+            streamStartedAt: streamStartedAt,
+            startupTimeout: startupTimeout,
+            callbackSilenceTimeout: callbackSilenceTimeout,
+            unavailableStatusTimeout: unavailableStatusTimeout
+        )
+        if output.isStopped() || recoveryRequired {
             consecutiveStreamFailures += 1
             try? stream.removeStreamOutput(output, type: .screen)
             try? await stream.stopCapture()
+            if let image = try? await captureWindowImage(window: window, timeout: screenshotTimeout) {
+                controller.showFallbackFrame(image)
+                lastVerifiedCaptureAt = ProcessInfo.processInfo.systemUptime
+            } else if ProcessInfo.processInfo.systemUptime - lastVerifiedCaptureAt >= callbackSilenceTimeout {
+                controller.markCaptureUnavailable()
+            }
             if !controller.hasShownContent, consecutiveStreamFailures >= 4 {
                 throw ComputerError.operationFailed("native window capture repeatedly stopped")
             }
@@ -635,11 +726,15 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
             do {
                 stream = try startWindowStream(window: window, output: next)
                 output = next
-                streamStartedAt = Date()
+                streamStartedAt = ProcessInfo.processInfo.systemUptime
             } catch {
                 if !controller.hasShownContent, consecutiveStreamFailures >= 3 { throw error }
             }
             continue
+        }
+        if !freshness.hasDisplayedFrame,
+           now - lastVerifiedCaptureAt >= callbackSilenceTimeout {
+            controller.markCaptureUnavailable()
         }
         let safetyRefreshDue = Date().timeIntervalSince(lastSafetyRefresh) >= 5
         guard geometryMonitor.takeDirty() || safetyRefreshDue else { continue }

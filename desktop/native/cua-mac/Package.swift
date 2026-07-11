@@ -33,5 +33,10 @@ let package = Package(
             path: "ProtocolTests",
             exclude: ["stdio-smoke.mjs"]
         ),
+        .testTarget(
+            name: "CUAMacCoreTests",
+            dependencies: ["CUAMacCore"],
+            path: "Tests/CUAMacCoreTests"
+        ),
     ]
 )

@@ -7,6 +7,7 @@ if (process.platform !== "darwin") {
 }
 
 const packageRoot = resolve(__dirname, "..", "native", "cua-mac");
+run("swift", ["test"]);
 run("swift", ["run", "cua-mac-protocol-tests"]);
 run("node", ["ProtocolTests/stdio-smoke.mjs"]);
 
