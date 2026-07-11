@@ -4233,6 +4233,80 @@ func TestServerInterruptDiscardsPendingUserWorkBeforeHistoryEdit(t *testing.T) {
 	}
 }
 
+func TestServerInterruptPersistsPartialTurnMessages(t *testing.T) {
+	// D3: an interrupted turn must persist the assistant tool_call and the
+	// synthesized aborted tool result the loop already produced, not drop them
+	// to a usage-only record. Otherwise the work the user saw on screen
+	// vanishes on reload and the disk/memory histories diverge.
+	client := &fakeClient{
+		responses: []providers.ChatResponse{
+			{ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "wait_for_steer", Arguments: `{}`}}},
+			{Content: "unreachable"},
+		},
+	}
+	rt := newTestRuntime(t, client)
+	blockingTool := newBlockingToolExecutor()
+	rt.StreamRunner.Tools = blockingTool
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+
+	startReq := fmt.Sprintf(`{"id":"2","method":"turn/start","params":{"thread_id":%q,"prompt":"please"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(startReq)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+
+	// The tool is now running; interrupt cancels it mid-flight.
+	<-blockingTool.started
+	interruptReq := fmt.Sprintf(`{"id":"3","method":"turn/interrupt","params":{"thread_id":%q}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(interruptReq)); err != nil {
+		t.Fatalf("turn/interrupt: %v", err)
+	}
+	waitForMethod(t, out, NotificationTurnError)
+
+	persisted, err := loadChatMessages(rt.SessionDir, threadID)
+	if err != nil {
+		t.Fatalf("load persisted history: %v", err)
+	}
+	var hasUser, hasAssistantToolCall, hasToolResult bool
+	for _, msg := range persisted {
+		switch msg.Role {
+		case "user":
+			if msg.Content == "please" {
+				hasUser = true
+			}
+		case "assistant":
+			for _, tc := range msg.ToolCalls {
+				if tc.ID == "call_1" && tc.Name == "wait_for_steer" {
+					hasAssistantToolCall = true
+				}
+			}
+		case "tool":
+			if msg.ToolCallID == "call_1" {
+				hasToolResult = true
+			}
+		}
+	}
+	if !hasUser || !hasAssistantToolCall || !hasToolResult {
+		t.Fatalf("interrupted turn dropped partial messages: user=%v assistant_toolcall=%v tool_result=%v; persisted=%+v",
+			hasUser, hasAssistantToolCall, hasToolResult, persisted)
+	}
+
+	// Reload-time repair must be idempotent: the persisted pair is already
+	// complete, so a second load returns the same validated history.
+	reloaded, err := loadChatMessages(rt.SessionDir, threadID)
+	if err != nil {
+		t.Fatalf("reload persisted history: %v", err)
+	}
+	if len(reloaded) != len(persisted) {
+		t.Fatalf("reload changed message count: %d vs %d", len(reloaded), len(persisted))
+	}
+}
+
 func TestServerSteersActiveTurnBeforeNextModelStep(t *testing.T) {
 	client := &fakeClient{
 		responses: []providers.ChatResponse{

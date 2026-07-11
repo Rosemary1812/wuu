@@ -1311,7 +1311,14 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	th.mu.Lock()
 	var historyErr error
 	var persistErr error
-	if err == nil {
+	// D3: an interrupted turn must persist its partial assistant text and the
+	// synthesized aborted tool results the loop already put in NewMessages, not
+	// just token usage — otherwise the streamed output the user already saw on
+	// screen vanishes on reload, and the disk/memory histories diverge.
+	interrupted := errors.Is(err, context.Canceled)
+	persistNewMessages := err == nil ||
+		(interrupted && len(res.NewMessages) > 0 && th.PersistHistory)
+	if persistNewMessages {
 		rewriteHistory := res.HistoryRewritten
 		if res.HistoryRewritten {
 			th.History = cloneHistory(res.NewMessages)
