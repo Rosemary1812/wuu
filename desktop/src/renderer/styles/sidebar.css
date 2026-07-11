@@ -1064,8 +1064,16 @@
   align-items: center;
   gap: 6px;
   margin-top: 2px;
+  /* Land the button text on the same column-2 x as the rows above so
+   * "展开 / 收起" reads as part of the list, not a margin chip.
+   * Layout: row-pad-x (8) + tree-toggle-col (16) + gap (6)
+   *          + tree-icon-col (18) + gap (6) − control-pad-x (8)
+   *        = 46px, plus the button's 8px horizontal padding → 54px,
+   *        which is exactly the start of column 3 (the title column)
+   *        in the .thread-row grid. */
   padding-left: calc(
-    var(--sidebar-row-pad-x) + var(--sidebar-tree-icon-col) +
+    var(--sidebar-row-pad-x) + var(--sidebar-tree-toggle-col) +
+      var(--sidebar-tree-column-gap) + var(--sidebar-tree-icon-col) +
       var(--sidebar-tree-column-gap) - var(--sidebar-row-control-pad-x)
   );
   padding-right: var(--sidebar-row-pad-x);
