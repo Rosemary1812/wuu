@@ -9,6 +9,7 @@ import {
   activityVisibleForThread,
   cuaActivityFromServerEvent,
   cuaActivityHTML,
+  frameStreamRetryDelay,
   fitActivityPreviewSize,
   resizeActivityBounds,
   shouldScheduleDragSettle,
@@ -205,6 +206,14 @@ describe("CUA Activity windows", () => {
     expect(state.previewURL).toMatch(/^wuu-file:\/\/local\//);
     expect(activityViewState(activity({ preview: undefined })).previewURL).toBe("");
     expect(activityActionsHTML(activity({ controller: "user" }))).toContain("交还 Agent");
+  });
+
+  it("backs off dead live streams instead of retrying immediately or forever", () => {
+    expect(frameStreamRetryDelay(1)).toBe(2000);
+    expect(frameStreamRetryDelay(2)).toBe(4000);
+    expect(frameStreamRetryDelay(3)).toBe(8000);
+    expect(frameStreamRetryDelay(6)).toBe(16000);
+    expect(frameStreamRetryDelay(0)).toBe(2000);
   });
 
   it("ships a patchable document with a persistent error box", () => {

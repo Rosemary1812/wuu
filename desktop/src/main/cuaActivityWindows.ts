@@ -16,6 +16,11 @@ const PREVIEW_MAX_WIDTH = 480;
 const PREVIEW_MIN_HEIGHT = 180;
 const PREVIEW_MAX_HEIGHT = 420;
 const MAX_LIVE_CUA_STREAMS = 3;
+const MAX_LIVE_STREAM_RETRIES = 6;
+
+export function frameStreamRetryDelay(attempt: number): number {
+  return Math.min(16_000, 1_000 * 2 ** Math.max(1, attempt));
+}
 
 export function shouldScheduleDragSettle(dragging: boolean, snapping: boolean): boolean {
   return dragging && !snapping;
@@ -171,6 +176,7 @@ export class CUAActivityWindowManager {
   private readonly dockedCorners = new Map<number, { source: "main" | "screen"; corner: number }>();
   private readonly snapAnimationTokens = new Map<number, number>();
   private readonly frameStreams = new Map<string, { target: string; stream: CUAFrameStream; startedAt: number }>();
+  private readonly frameStreamRetries = new Map<string, { attempts: number; timer?: NodeJS.Timeout }>();
   private readonly loadStartedWindowIDs = new Set<number>();
   private readonly loadedWindowIDs = new Set<number>();
   private readonly pendingRenderActivities = new Map<number, ActivitySession>();
@@ -516,9 +522,32 @@ export class CUAActivityWindowManager {
   private stopFrameStream(activityID: string): void {
     this.frameStreams.get(activityID)?.stream.stop();
     this.frameStreams.delete(activityID);
+    const retry = this.frameStreamRetries.get(activityID);
+    if (retry?.timer) clearTimeout(retry.timer);
+    this.frameStreamRetries.delete(activityID);
+  }
+
+  private scheduleFrameStreamRetry(activityID: string): void {
+    const current = this.frameStreams.get(activityID);
+    if (!current || current.stream.isLive() || !this.activities.has(activityID)) return;
+    const retry = this.frameStreamRetries.get(activityID) ?? { attempts: 0 };
+    if (retry.timer || retry.attempts >= MAX_LIVE_STREAM_RETRIES) return;
+    retry.attempts += 1;
+    retry.timer = setTimeout(() => {
+      retry.timer = undefined;
+      const activity = this.activities.get(activityID);
+      const entry = this.frameStreams.get(activityID);
+      if (!activity || !entry || entry.stream.isLive()) return;
+      this.frameStreams.delete(activityID);
+      this.syncFrameStream(activity);
+    }, frameStreamRetryDelay(retry.attempts));
+    retry.timer.unref?.();
+    this.frameStreamRetries.set(activityID, retry);
   }
 
   private publishLiveFrame(activityID: string, path: string, metadata: CUAFrameMetadata): void {
+    const retry = this.frameStreamRetries.get(activityID);
+    if (retry && !retry.timer) this.frameStreamRetries.delete(activityID);
     const win = this.registry.activityWindow(activityID);
     if (!win || win.isDestroyed()) return;
     const revision = metadata.revision ?? Date.now();
@@ -530,6 +559,7 @@ export class CUAActivityWindowManager {
   }
 
   private publishStreamError(activityID: string, message: string): void {
+    this.scheduleFrameStreamRetry(activityID);
     const activity = this.activities.get(activityID);
     const win = this.registry.activityWindow(activityID);
     if (!activity || !win || win.isDestroyed()) return;
@@ -665,6 +695,7 @@ export function cuaActivityHTML(activity: ActivitySession): string {
     lastLiveFrameAt = Date.now();
     livePreview.src = url;
     livePreview.hidden = false;
+    errorBox.hidden = true;
     document.querySelector('.glass')?.remove();
   };
   window.wuuCUAActivity = (state) => {
