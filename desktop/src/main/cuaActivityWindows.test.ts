@@ -16,7 +16,6 @@ import {
   activityWindowStackingOptions,
   cuaActivityFromServerEvent,
   cuaActivityHTML,
-  captureStatusCloseDelay,
   frameStreamRetryDelay,
   fitActivityPreviewSize,
   fitUserResizedPreviewSize,
@@ -45,14 +44,6 @@ function activity(overrides: Partial<ActivitySession> = {}): ActivitySession {
 }
 
 describe("CUA Activity windows", () => {
-  it("keeps idle streams visible and buffers real capture faults", () => {
-    expect(captureStatusCloseDelay("healthy")).toBeUndefined();
-    expect(captureStatusCloseDelay("idle")).toBeUndefined();
-    expect(captureStatusCloseDelay("blank")).toBe(1500);
-    expect(captureStatusCloseDelay("suspended")).toBe(1500);
-    expect(captureStatusCloseDelay("stopped")).toBe(4000);
-    expect(captureStatusCloseDelay("error")).toBe(4000);
-  });
   it("maps each Agent interaction to distinct visual feedback", () => {
     expect(activityInteractionFeedbackClass("click")).toBe("is-clicking");
     expect(activityInteractionFeedbackClass("drag")).toBe("is-dragging");
@@ -295,7 +286,7 @@ describe("CUA Activity windows", () => {
     expect(activityHasVisibleContent(activity({ preview: undefined, error: "boom" }))).toBe(false);
   });
 
-  it("backs off dead live streams instead of retrying immediately or forever", () => {
+  it("backs off dead live streams without retrying immediately", () => {
     expect(frameStreamRetryDelay(1)).toBe(2000);
     expect(frameStreamRetryDelay(2)).toBe(4000);
     expect(frameStreamRetryDelay(3)).toBe(8000);
@@ -306,10 +297,9 @@ describe("CUA Activity windows", () => {
   it("ships a patchable document without exposing raw tool errors", () => {
     const html = cuaActivityHTML(activity());
     expect(html).toContain("window.wuuCUAActivity");
-    expect(html).toContain("window.wuuCUAStreamUnavailable");
-    expect(html).toContain("实时画面暂不可用");
-    expect(html).toContain("当前仅显示屏幕内区域");
-    expect(html).toContain("captureMode === 'visible_fallback'");
+    expect(html).not.toContain("window.wuuCUAStreamUnavailable");
+    expect(html).not.toContain("实时画面暂不可用");
+    expect(html).not.toContain("当前仅显示屏幕内区域");
     expect(html).toContain("livePreview.removeAttribute('src')");
     expect(html).toContain("glass.setAttribute('aria-label', '正在获取画面')");
     expect(html).toContain("addEventListener('resize', () => placePointer(true))");

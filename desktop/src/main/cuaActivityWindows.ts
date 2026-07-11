@@ -6,7 +6,6 @@ import { renderableFileURL } from "./renderableFileURLs";
 import {
   CUAFrameStream,
   resolveCUAFrameHelper,
-  type CUACaptureStatus,
   type CUAFrameMetadata,
 } from "./cuaFrameStreams";
 import type { WindowRegistry } from "./windowRegistry";
@@ -40,21 +39,6 @@ const PREVIEW_RESIZE_MIN_HEIGHT = 140;
 const PREVIEW_RESIZE_MAX_WIDTH = 720;
 const PREVIEW_RESIZE_MAX_HEIGHT = 800;
 const MAX_LIVE_CUA_STREAMS = 3;
-const MAX_LIVE_STREAM_RETRIES = 6;
-
-export function captureStatusCloseDelay(status: CUACaptureStatus): number | undefined {
-  switch (status) {
-    case "blank":
-    case "suspended":
-      return 1500;
-    case "stopped":
-    case "error":
-      return 4000;
-    case "healthy":
-    case "idle":
-      return undefined;
-  }
-}
 
 export function frameStreamRetryDelay(attempt: number): number {
   return Math.min(16_000, 1_000 * 2 ** Math.max(1, attempt));
@@ -273,13 +257,6 @@ export class CUAActivityWindowManager {
   private readonly pendingRenderActivities = new Map<number, ActivitySession>();
   private readonly renderedSignatures = new Map<string, string>();
   private readonly visualReadyActivityIDs = new Set<string>();
-  private readonly autoClosedTargets = new Map<string, string>();
-  private readonly captureFaults = new Map<string, {
-    target: string;
-    status: CUACaptureStatus;
-    delay: number;
-    timer: NodeJS.Timeout;
-  }>();
   private activeThreadID: string | undefined;
 
   constructor(
@@ -313,8 +290,6 @@ export class CUAActivityWindowManager {
   update(activity: ActivitySession): void {
     const existing = this.registry.activityWindow(activity.id);
     if (activity.state === "stopped") {
-      this.cancelCaptureFault(activity.id);
-      this.autoClosedTargets.delete(activity.id);
       this.stopFrameStream(activity.id);
       this.activities.delete(activity.id);
       this.dismissedActivityIDs.delete(activity.id);
@@ -326,17 +301,6 @@ export class CUAActivityWindowManager {
       return;
     }
     this.activities.set(activity.id, activity);
-    const target = activity.target?.trim() ?? "";
-    const captureFault = this.captureFaults.get(activity.id);
-    if (captureFault && captureFault.target !== target) {
-      this.cancelCaptureFault(activity.id);
-    }
-    const autoClosedTarget = this.autoClosedTargets.get(activity.id);
-    if (autoClosedTarget && autoClosedTarget !== target) {
-      this.autoClosedTargets.delete(activity.id);
-    } else if (autoClosedTarget === target) {
-      return;
-    }
     if (activityHasVisibleContent(activity)) this.visualReadyActivityIDs.add(activity.id);
     if (this.dismissedActivityIDs.has(activity.id)) return;
     if (existing && !existing.isDestroyed() && this.draggingWindowIDs.has(existing.webContents.id)) {
@@ -436,7 +400,6 @@ export class CUAActivityWindowManager {
         return;
       }
       if (parsed.action === "close") {
-        this.cancelCaptureFault(activity.id);
         this.dismissedActivityIDs.add(activity.id);
         this.stopFrameStream(activity.id);
         this.registry.clearActivityWindow(activity.id);
@@ -630,7 +593,13 @@ export class CUAActivityWindowManager {
     const helper = resolveCUAFrameHelper();
     if (!target || !helper) return;
     const current = this.frameStreams.get(activity.id);
-    if (current?.target === target) return;
+    if (current?.target === target) {
+      const retry = this.frameStreamRetries.get(activity.id);
+      if (current.stream.isLive() || retry?.timer) return;
+      this.frameStreamRetries.delete(activity.id);
+      current.stream.start();
+      return;
+    }
     this.stopFrameStream(activity.id);
     if (this.frameStreams.size >= MAX_LIVE_CUA_STREAMS) {
       const oldest = [...this.frameStreams.entries()].sort((left, right) => left[1].startedAt - right[1].startedAt)[0];
@@ -642,7 +611,7 @@ export class CUAActivityWindowManager {
       target,
       (path, metadata) => this.publishLiveFrame(activity.id, path, metadata),
       (message) => this.publishStreamError(activity.id, message),
-      (status) => this.handleCaptureStatus(activity.id, status),
+      () => undefined,
       () => this.handleDetectedUserInput(activity.id),
     );
     this.frameStreams.set(activity.id, { target, stream, startedAt: Date.now() });
@@ -658,7 +627,6 @@ export class CUAActivityWindowManager {
   }
 
   private stopFrameStream(activityID: string): void {
-    this.cancelCaptureFault(activityID);
     this.frameStreams.get(activityID)?.stream.stop();
     this.frameStreams.delete(activityID);
     const retry = this.frameStreamRetries.get(activityID);
@@ -666,55 +634,18 @@ export class CUAActivityWindowManager {
     this.frameStreamRetries.delete(activityID);
   }
 
-  private cancelCaptureFault(activityID: string): void {
-    const fault = this.captureFaults.get(activityID);
-    if (fault) clearTimeout(fault.timer);
-    this.captureFaults.delete(activityID);
-  }
-
-  private handleCaptureStatus(activityID: string, status: CUACaptureStatus): void {
-    const activity = this.activities.get(activityID);
-    const target = activity?.target?.trim() ?? "";
-    if (!activity || !target || this.autoClosedTargets.get(activityID) === target) return;
-    const delay = captureStatusCloseDelay(status);
-    if (delay === undefined) {
-      this.cancelCaptureFault(activityID);
-      return;
-    }
-    const current = this.captureFaults.get(activityID);
-    if (current?.target === target) {
-      current.status = status;
-      if (delay <= current.delay) return;
-      clearTimeout(current.timer);
-    }
-    const timer = setTimeout(() => {
-      const latest = this.activities.get(activityID);
-      const fault = this.captureFaults.get(activityID);
-      if (!latest || !fault || fault.target !== target || latest.target?.trim() !== target) return;
-      this.captureFaults.delete(activityID);
-      this.autoClosedTargets.set(activityID, target);
-      this.stopFrameStream(activityID);
-      const win = this.registry.activityWindow(activityID);
-      this.registry.clearActivityWindow(activityID);
-      if (win && !win.isDestroyed()) win.close();
-    }, delay);
-    timer.unref?.();
-    this.captureFaults.set(activityID, { target, status, delay, timer });
-  }
-
   private scheduleFrameStreamRetry(activityID: string): boolean {
     const current = this.frameStreams.get(activityID);
     if (!current || current.stream.isLive() || !this.activities.has(activityID)) return false;
     const retry = this.frameStreamRetries.get(activityID) ?? { attempts: 0 };
-    if (retry.timer || retry.attempts >= MAX_LIVE_STREAM_RETRIES) return false;
+    if (retry.timer) return false;
     retry.attempts += 1;
     retry.timer = setTimeout(() => {
       retry.timer = undefined;
       const activity = this.activities.get(activityID);
       const entry = this.frameStreams.get(activityID);
-      if (!activity || !entry || entry.stream.isLive()) return;
-      this.frameStreams.delete(activityID);
-      this.syncFrameStream(activity);
+      if (!activity || !entry || entry.stream.isLive() || activity.target?.trim() !== entry.target) return;
+      entry.stream.start();
     }, frameStreamRetryDelay(retry.attempts));
     retry.timer.unref?.();
     this.frameStreamRetries.set(activityID, retry);
@@ -737,13 +668,12 @@ export class CUAActivityWindowManager {
       this.autoSizeForLiveFrame(win, activityID, metadata.width, metadata.height);
     }
     void win.webContents.executeJavaScript(
-      `window.wuuCUAFrame?.(${JSON.stringify(url)}, ${JSON.stringify(metadata.capture_mode ?? "full_window")})`,
+      `window.wuuCUAFrame?.(${JSON.stringify(url)})`,
       true,
     ).catch(() => undefined);
   }
 
   private publishStreamError(activityID: string, _message: string): void {
-    this.handleCaptureStatus(activityID, "error");
     if (this.scheduleFrameStreamRetry(activityID)) return;
   }
 
@@ -876,7 +806,6 @@ export function activityActionsHTML(activity: ActivitySession): string {
 export function cuaActivityHTML(activity: ActivitySession): string {
   const target = escapeHTML(activity.target?.trim() || "Mac App");
   const previewURL = activityPreviewURL(activity);
-  const streamStatus = `<div class="stream-status" hidden>实时画面暂不可用</div>`;
   const agentPointer = `<div class="agent-pointer" aria-hidden="true"><svg viewBox="0 0 24 30"><path d="M3 2.5v21.2l5.4-5.1 3.4 8.2 4.1-1.8-3.5-8.1 7.3-.2L3 2.5Z" /></svg><i></i></div>`;
   const preview = previewURL
     ? `<img id="live-preview" src="${escapeHTML(previewURL)}" alt="${target} 实时画面" />`
@@ -893,15 +822,13 @@ export function cuaActivityHTML(activity: ActivitySession): string {
 .preview{position:absolute;inset:0;display:grid;place-items:center;overflow:hidden;border-radius:inherit}.preview img{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none}
 .glass{position:absolute;inset:0;background:radial-gradient(circle at 10% 0%,rgba(255,255,255,.62),transparent 44%),radial-gradient(circle at 92% 34%,rgba(255,122,72,.16),transparent 48%),radial-gradient(circle at 52% 112%,rgba(110,170,255,.14),transparent 50%),linear-gradient(145deg,var(--glass-strong),var(--glass));box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
 .actions{position:absolute;z-index:3;top:8px;right:8px;display:flex;align-items:center;gap:5px;padding:4px;border-radius:10px;background:var(--glass-strong);border:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.14);opacity:0;transform:translateY(-3px);transition:opacity 140ms ease,transform 140ms ease;-webkit-app-region:no-drag}.card:hover .actions,.actions:focus-within{opacity:1;transform:none}.button{height:25px;padding:0 8px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink);background:transparent;border:0;font-size:11px;font-weight:560}.button:hover{background:var(--hover)}.button.stop{width:25px;padding:0;font-size:15px;font-weight:400}.button.stop:hover{color:var(--danger);background:var(--danger-soft)}
-.stream-status{position:absolute;z-index:2;left:50%;bottom:10px;transform:translateX(-50%);padding:6px 9px;border-radius:8px;background:rgba(30,32,35,.76);color:#fff;font-size:10.5px;white-space:nowrap;-webkit-app-region:no-drag}
 .agent-pointer{position:absolute;z-index:4;left:50%;top:50%;width:24px;height:30px;opacity:1;pointer-events:none;filter:drop-shadow(0 3px 5px rgba(0,0,0,.32));transform:translate(-3px,-2px)}.agent-pointer svg{display:block;width:24px;height:30px;overflow:visible}.agent-pointer path{fill:#fff;stroke:#f05a28;stroke-width:2;stroke-linejoin:round}.agent-pointer i{position:absolute;left:3px;top:3px;width:10px;height:10px;border:2px solid rgba(240,90,40,.9);border-radius:50%;opacity:0}.agent-pointer.is-clicking i{animation:agent-click 480ms cubic-bezier(.16,1,.3,1)}.agent-pointer.is-scrolling svg{animation:agent-scroll 520ms ease-in-out}.agent-pointer.is-typing i{opacity:.9;width:3px;height:15px;border:0;border-radius:2px;background:#f05a28;animation:agent-type 620ms ease-in-out}.agent-pointer.is-dragging svg{animation:agent-drag 420ms ease-in-out}@keyframes agent-click{0%{opacity:.9;transform:scale(.35)}100%{opacity:0;transform:scale(3.2)}}@keyframes agent-scroll{0%,100%{transform:translateY(0)}45%{transform:translateY(-7px)}}@keyframes agent-type{0%,100%{opacity:.25;transform:scaleY(.72)}50%{opacity:1;transform:scaleY(1)}}@keyframes agent-drag{0%,100%{transform:scale(1)}45%{transform:scale(.82)}}
-</style></head><body><section class="card"><div class="preview">${preview}</div><div class="actions">${activityActionsHTML(activity)}</div>${streamStatus}${agentPointer}</section>
+</style></head><body><section class="card"><div class="preview">${preview}</div><div class="actions">${activityActionsHTML(activity)}</div>${agentPointer}</section>
 <script>
 (() => {
   const card = document.querySelector('.card');
   const livePreview = document.querySelector('#live-preview');
   const actions = document.querySelector('.actions');
-  const streamStatus = document.querySelector('.stream-status');
   const agentPointer = document.querySelector('.agent-pointer');
   const interactionFeedbackClasses = ${JSON.stringify(INTERACTION_FEEDBACK_CLASSES)};
   let lastLiveFrameAt = 0;
@@ -927,16 +854,11 @@ export function cuaActivityHTML(activity: ActivitySession): string {
   };
   addEventListener('resize', () => placePointer(true));
   livePreview.addEventListener('load', () => placePointer(false));
-  window.wuuCUAFrame = (url, captureMode) => {
+  window.wuuCUAFrame = (url) => {
     lastLiveFrameAt = Date.now();
     livePreview.src = url;
     livePreview.hidden = false;
-    streamStatus.textContent = captureMode === 'visible_fallback' ? '当前仅显示屏幕内区域' : '实时画面暂不可用';
-    streamStatus.hidden = captureMode !== 'visible_fallback';
     document.querySelector('.glass')?.remove();
-  };
-  window.wuuCUAStreamUnavailable = () => {
-    streamStatus.hidden = false;
   };
   window.wuuCUAActivity = (state) => {
     actions.innerHTML = state.actionsHTML;
@@ -945,7 +867,6 @@ export function cuaActivityHTML(activity: ActivitySession): string {
       lastLiveFrameAt = 0;
       livePreview.hidden = true;
       livePreview.removeAttribute('src');
-      streamStatus.hidden = true;
       if (!document.querySelector('.glass')) {
         const glass = document.createElement('div');
         glass.className = 'glass';
