@@ -55,6 +55,7 @@ export function useSidebarDrawerState({
   );
   const sidebarDrawerSyncedSessionRef = useRef<string | undefined>(undefined);
   const sidebarDrawerSuppressedRef = useRef(false);
+  const sidebarDrawerAwaitingEntryRef = useRef(false);
 
   const clearSidebarDrawerCloseTimer = useCallback((): void => {
     if (sidebarDrawerCloseTimerRef.current !== undefined) {
@@ -117,6 +118,7 @@ export function useSidebarDrawerState({
     if (sidebarCollapsed && sidebarDrawerPointerHovered() === false) {
       return;
     }
+    sidebarDrawerAwaitingEntryRef.current = false;
     clearSidebarDrawerOpenTimer();
     clearSidebarDrawerCloseTimer();
     if (sidebarCollapsed) {
@@ -134,6 +136,10 @@ export function useSidebarDrawerState({
     if (resizingSidebar || !sidebarCollapsed) {
       return;
     }
+    // This path is triggered by the navigation button inside a globalized
+    // workspace, which is outside the drawer. Keep the drawer available
+    // while the pointer travels from that button into the revealed sidebar.
+    sidebarDrawerAwaitingEntryRef.current = true;
     clearSidebarDrawerOpenTimer();
     clearSidebarDrawerCloseTimer();
     setSidebarDrawerPhase("open");
@@ -177,6 +183,7 @@ export function useSidebarDrawerState({
   ]);
 
   const closeSidebarDrawer = useCallback((): void => {
+    sidebarDrawerAwaitingEntryRef.current = false;
     cancelSidebarDrawerOpen();
     clearSidebarDrawerCloseTimer();
     blurSidebarFocus();
@@ -200,6 +207,9 @@ export function useSidebarDrawerState({
 
   const syncSidebarDrawerHover = useCallback((): void => {
     if (!sidebarCollapsed || sidebarDrawerPhase !== "open") {
+      return;
+    }
+    if (sidebarDrawerAwaitingEntryRef.current) {
       return;
     }
     if (sidebarDrawerPointerHovered() === false) {
@@ -234,6 +244,9 @@ export function useSidebarDrawerState({
   }, [rememberSidebarPointerPosition, syncSidebarDrawerHover]);
 
   useLayoutEffect(() => {
+    if (!sidebarCollapsed) {
+      sidebarDrawerAwaitingEntryRef.current = false;
+    }
     if (!sidebarCollapsed && sidebarDrawerPhase !== "closed") {
       cancelSidebarDrawerOpen();
       clearSidebarDrawerCloseTimer();

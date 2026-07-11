@@ -108,6 +108,49 @@ describe("useSidebarDrawerState", () => {
     expect(hook.get().sidebarDrawerPhase).toBe("open");
   });
 
+  it("keeps an explicitly opened drawer visible until the pointer reaches it", async () => {
+    const hook = await renderSidebarDrawerState();
+
+    await act(async () => {
+      hook.get().openSidebarDrawerNow();
+    });
+    expect(hook.get().sidebarDrawerPhase).toBe("open");
+
+    // The explicit navigation button lives outside the drawer. Moving from
+    // that button toward the drawer must not close it before pointerenter.
+    elementFromPointTarget = document.body;
+    await act(async () => {
+      window.dispatchEvent(
+        new MouseEvent("pointermove", {
+          bubbles: true,
+          clientX: 80,
+          clientY: 80,
+        }),
+      );
+    });
+
+    expect(hook.get().sidebarDrawerPhase).toBe("open");
+
+    // Once the pointer reaches the drawer, normal hover-close behavior
+    // resumes when it later leaves the navigation rail.
+    elementFromPointTarget = hook.sidebar;
+    await act(async () => {
+      hook.get().openSidebarDrawer();
+    });
+    elementFromPointTarget = document.body;
+    await act(async () => {
+      window.dispatchEvent(
+        new MouseEvent("pointermove", {
+          bubbles: true,
+          clientX: 320,
+          clientY: 80,
+        }),
+      );
+    });
+
+    expect(hook.get().sidebarDrawerPhase).toBe("closing");
+  });
+
   it("opens after the edge hover intent delay while the pointer remains hovered", async () => {
     const hook = await renderSidebarDrawerState();
     elementFromPointTarget = hook.hoverZone;
