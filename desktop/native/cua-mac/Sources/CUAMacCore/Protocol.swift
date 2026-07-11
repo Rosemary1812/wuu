@@ -8,6 +8,7 @@ public enum ComputerAction: String, CaseIterable, Sendable {
     case click
     case drag
     case pressKey = "press_key"
+    case pressKeys = "press_keys"
     case scroll
     case setValue = "set_value"
     case typeText = "type_text"
@@ -22,11 +23,13 @@ public struct ComputerCommand: @unchecked Sendable {
     public let elementID: Int?
     public let x: Double?
     public let y: Double?
+    public let coordinateSpace: String?
     public let toX: Double?
     public let toY: Double?
     public let mouseButton: String?
     public let clickCount: Int?
     public let key: String?
+    public let keys: [String]?
     public let text: String?
     public let value: String?
     public let direction: String?
@@ -46,11 +49,13 @@ public struct ComputerCommand: @unchecked Sendable {
         elementID = Self.int(arguments["element_id"])
         x = Self.double(arguments["x"] ?? arguments["from_x"])
         y = Self.double(arguments["y"] ?? arguments["from_y"])
+        coordinateSpace = arguments["coordinate_space"] as? String
         toX = Self.double(arguments["to_x"])
         toY = Self.double(arguments["to_y"])
         mouseButton = arguments["mouse_button"] as? String
         clickCount = Self.int(arguments["click_count"])
         key = arguments["key"] as? String
+        keys = arguments["keys"] as? [String]
         text = arguments["text"] as? String
         value = arguments["value"] as? String
         direction = arguments["direction"] as? String
@@ -183,37 +188,60 @@ public final class MCPServer {
 
     private func toolDefinition() -> [String: Any] {
         let stringProperty: [String: Any] = ["type": "string"]
-        let appOptionalActions = [
-            ComputerAction.permissionStatus.rawValue,
-            ComputerAction.requestPermissions.rawValue,
-            ComputerAction.listApps.rawValue,
+        func variant(_ action: ComputerAction, required: [String], anyOf: [[String: Any]]? = nil) -> [String: Any] {
+            var value: [String: Any] = [
+                "properties": ["action": ["enum": [action.rawValue]]],
+                "required": ["action"] + required,
+            ]
+            if let anyOf { value["anyOf"] = anyOf }
+            return value
+        }
+        let variants: [[String: Any]] = [
+            variant(.permissionStatus, required: []),
+            variant(.requestPermissions, required: []),
+            variant(.listApps, required: []),
+            variant(.observe, required: ["app"]),
+            variant(.click, required: ["app"], anyOf: [
+                ["required": ["element_id"]],
+                ["required": ["x", "y", "coordinate_space"]],
+            ]),
+            variant(.drag, required: ["app", "from_x", "from_y", "to_x", "to_y", "coordinate_space"]),
+            variant(.pressKey, required: ["app", "key"]),
+            variant(.pressKeys, required: ["app", "keys"]),
+            variant(.scroll, required: ["app", "direction"]),
+            variant(.setValue, required: ["app", "element_id"], anyOf: [
+                ["required": ["value"]],
+                ["required": ["text"]],
+            ]),
+            variant(.typeText, required: ["app", "text"]),
+            variant(.selectText, required: ["app", "element_id", "text"]),
+            variant(.performAction, required: ["app", "element_id", "action_name"]),
+            variant(.waitForChange, required: ["app"]),
         ]
-        let appRequiredActions = ComputerAction.allCases.map(\.rawValue).filter { !appOptionalActions.contains($0) }
         return [
             "name": "computer",
             "title": "Computer Use for Mac",
-            "description": "Observe and control macOS apps. Accessibility element actions are preferred; coordinates and synthesized keyboard or pointer events are automatic fallbacks and may activate the target app.",
+            "description": "Observe and control macOS apps. Observe returns a canonical app target and fresh UI state. Actions return a short acknowledgement; call observe explicitly when fresh state is needed.",
             "inputSchema": [
                 "type": "object",
                 "required": ["action"],
                 "additionalProperties": false,
-                "anyOf": [
-                    ["properties": ["action": ["enum": appOptionalActions]]],
-                    ["properties": ["action": ["enum": appRequiredActions]], "required": ["app"]],
-                ],
+                "oneOf": variants,
                 "properties": [
                     "action": ["type": "string", "enum": ComputerAction.allCases.map(\.rawValue)],
                     "app": ["type": "string", "description": "Target app display name, bundle identifier, or path. Required for every action except permission_status, request_permissions, and list_apps."],
                     "element_id": ["type": "integer"],
-                    "x": ["type": "number", "description": "Horizontal pixel in the latest screenshot."],
-                    "y": ["type": "number", "description": "Vertical pixel in the latest screenshot."],
-                    "to_x": ["type": "number", "description": "Drag destination horizontal pixel in the latest screenshot."],
-                    "to_y": ["type": "number", "description": "Drag destination vertical pixel in the latest screenshot."],
-                    "from_x": ["type": "number", "description": "Drag start horizontal pixel in the latest screenshot."],
-                    "from_y": ["type": "number", "description": "Drag start vertical pixel in the latest screenshot."],
+                    "x": ["type": "number", "description": "Horizontal coordinate in the declared coordinate_space."],
+                    "y": ["type": "number", "description": "Vertical coordinate in the declared coordinate_space."],
+                    "coordinate_space": ["type": "string", "enum": ["screenshot", "screen"], "description": "Use screenshot for pixels in the latest captured image; use screen for global coordinates copied from an AX frame."],
+                    "to_x": ["type": "number", "description": "Drag destination horizontal coordinate in the declared coordinate_space."],
+                    "to_y": ["type": "number", "description": "Drag destination vertical coordinate in the declared coordinate_space."],
+                    "from_x": ["type": "number", "description": "Drag start horizontal coordinate in the declared coordinate_space."],
+                    "from_y": ["type": "number", "description": "Drag start vertical coordinate in the declared coordinate_space."],
                     "mouse_button": ["type": "string", "enum": ["left", "right", "middle"]],
                     "click_count": ["type": "integer", "minimum": 1, "maximum": 3],
                     "key": stringProperty,
+                    "keys": ["type": "array", "minItems": 1, "maxItems": 64, "items": stringProperty, "description": "Ordered key sequence, for example [\"3\", \"7\", \"*\", \"2\", \"4\", \"return\"]."],
                     "text": stringProperty,
                     "value": stringProperty,
                     "direction": ["type": "string", "enum": ["up", "down", "left", "right"]],

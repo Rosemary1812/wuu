@@ -59,6 +59,8 @@ public final class MacComputerBackend: ComputerBackend {
             try drag(command, app: app)
         case .pressKey:
             try pressKey(command, app: app)
+        case .pressKeys:
+            try pressKeys(command, app: app)
         case .scroll:
             try scroll(command, app: app)
         case .setValue:
@@ -71,11 +73,22 @@ public final class MacComputerBackend: ComputerBackend {
             try performSecondaryAction(command, app: app)
         case .waitForChange:
             try waitForChange(command, app: app, axApplication: axApplication)
+            return try observe(app: app, axApplication: axApplication)
         case .permissionStatus, .requestPermissions, .listApps:
             break
         }
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.15))
-        return try observe(app: app, axApplication: axApplication)
+        let canonicalTarget = app.bundleIdentifier ?? app.bundleURL?.path ?? target
+        return ComputerResult(
+            text: "Action \(command.action.rawValue) completed for app=\"\(canonicalTarget)\". Call observe when you need fresh UI state.",
+            structured: [
+                "action": command.action.rawValue,
+                "app": canonicalTarget,
+                "display_name": app.localizedName ?? "Unknown",
+                "process_id": Int(app.processIdentifier),
+                "state_changed": "unverified",
+            ]
+        )
     }
 
     private func permissionStatus() -> ComputerResult {
@@ -248,8 +261,10 @@ public final class MacComputerBackend: ComputerBackend {
         } catch {
             structured["screenshot_error"] = error.localizedDescription
         }
+        let canonicalTarget = app.bundleIdentifier ?? app.bundleURL?.path ?? String(app.processIdentifier)
+        let header = "Target app=\"\(canonicalTarget)\" display_name=\"\(app.localizedName ?? "Unknown")\" pid=\(app.processIdentifier). Reuse this exact app value for follow-up actions."
         return ComputerResult(
-            text: snapshot.text,
+            text: header + "\n" + snapshot.text,
             screenshot: screenshot,
             screenshotMIMEType: screenshot == nil ? nil : "image/png",
             structured: structured
@@ -330,7 +345,7 @@ public final class MacComputerBackend: ComputerBackend {
             throw ComputerError.invalidArguments("click requires element_id or x and y")
         }
         try activate(app)
-        try postClick(point: try screenshotPoint(x: x, y: y, app: app), button: command.mouseButton, count: command.clickCount ?? 1)
+        try postClick(point: try inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app), button: command.mouseButton, count: command.clickCount ?? 1)
     }
 
     private func postClick(point: CGPoint, button name: String?, count: Int) throws {
@@ -359,8 +374,8 @@ public final class MacComputerBackend: ComputerBackend {
             throw ComputerError.invalidArguments("drag requires from_x, from_y, to_x, and to_y")
         }
         try activate(app)
-        let start = try screenshotPoint(x: x, y: y, app: app)
-        let end = try screenshotPoint(x: toX, y: toY, app: app)
+        let start = try inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app)
+        let end = try inputPoint(x: toX, y: toY, coordinateSpace: command.coordinateSpace, app: app)
         guard let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left) else {
             throw ComputerError.operationFailed("could not create drag event")
         }
@@ -377,17 +392,41 @@ public final class MacComputerBackend: ComputerBackend {
         CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left)?.post(tap: .cghidEventTap)
     }
 
-    private func screenshotPoint(x: Double, y: Double, app: NSRunningApplication) throws -> CGPoint {
+    private func inputPoint(x: Double, y: Double, coordinateSpace: String?, app: NSRunningApplication) throws -> CGPoint {
         guard let geometry = lastCaptureGeometry[app.processIdentifier] else {
             throw ComputerError.invalidArguments("observe the app before using screenshot coordinates")
         }
-        return try geometry.screenPoint(x: x, y: y)
+        switch coordinateSpace ?? "screenshot" {
+        case "screenshot":
+            return try geometry.screenPoint(x: x, y: y)
+        case "screen":
+            let point = CGPoint(x: x, y: y)
+            guard geometry.windowFrame.contains(point) else {
+                throw ComputerError.invalidArguments("screen coordinates must be inside the target window frame")
+            }
+            return point
+        default:
+            throw ComputerError.invalidArguments("coordinate_space must be screenshot or screen")
+        }
     }
 
     private func pressKey(_ command: ComputerCommand, app: NSRunningApplication) throws {
         guard let key = command.key else { throw ComputerError.invalidArguments("key is required") }
-        let chord = try KeyChord.parse(key)
         try activate(app)
+        try postKey(key)
+    }
+
+    private func pressKeys(_ command: ComputerCommand, app: NSRunningApplication) throws {
+        guard let keys = command.keys, !keys.isEmpty else { throw ComputerError.invalidArguments("keys is required") }
+        try activate(app)
+        for key in keys {
+            try postKey(key)
+            usleep(20_000)
+        }
+    }
+
+    private func postKey(_ key: String) throws {
+        let chord = try KeyChord.parse(key)
         guard let down = CGEvent(keyboardEventSource: nil, virtualKey: chord.keyCode, keyDown: true),
               let up = CGEvent(keyboardEventSource: nil, virtualKey: chord.keyCode, keyDown: false) else {
             throw ComputerError.operationFailed("could not create keyboard event")

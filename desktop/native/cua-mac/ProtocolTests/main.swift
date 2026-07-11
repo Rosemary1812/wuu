@@ -50,18 +50,36 @@ private func testInitializesAndAdvertisesFullComputerTool() throws {
     try expect(tools?.first?["name"] as? String == "computer", "computer tool name")
     let schema = tools?.first?["inputSchema"] as? [String: Any]
     let properties = schema?["properties"] as? [String: Any]
-    let variants = schema?["anyOf"] as? [[String: Any]]
+    let variants = schema?["oneOf"] as? [[String: Any]]
     let action = properties?["action"] as? [String: Any]
     let actions = action?["enum"] as? [String]
     let app = properties?["app"] as? [String: Any]
     try expect(actions == [
         "permission_status", "request_permissions", "list_apps", "observe",
-        "click", "drag", "press_key", "scroll", "set_value", "type_text",
+        "click", "drag", "press_key", "press_keys", "scroll", "set_value", "type_text",
         "select_text", "perform_action", "wait_for_change",
     ], "full computer actions")
     try expect((app?["description"] as? String)?.contains("Required for every action") == true, "app requirement is explicit")
-    let appRequired = variants?.contains(where: { ($0["required"] as? [String])?.contains("app") == true }) == true
-    try expect(appRequired, "application actions require app in the structured schema")
+    func requiredFields(for action: String) -> [String] {
+        variants?.first(where: { variant in
+            let properties = variant["properties"] as? [String: Any]
+            let actionProperty = properties?["action"] as? [String: Any]
+            return (actionProperty?["enum"] as? [String]) == [action]
+        })?["required"] as? [String] ?? []
+    }
+    try expect(requiredFields(for: "observe").contains("app"), "observe requires app")
+    try expect(requiredFields(for: "press_key").contains("key"), "press_key requires key")
+    try expect(requiredFields(for: "press_keys").contains("keys"), "press_keys requires keys")
+    try expect(requiredFields(for: "type_text").contains("text"), "type_text requires text")
+    try expect(requiredFields(for: "perform_action").contains("action_name"), "perform_action requires action_name")
+    let clickVariant = variants?.first(where: { variant in
+        let properties = variant["properties"] as? [String: Any]
+        let actionProperty = properties?["action"] as? [String: Any]
+        return (actionProperty?["enum"] as? [String]) == ["click"]
+    })
+    let clickAlternatives = clickVariant?["anyOf"] as? [[String: Any]]
+    try expect(clickAlternatives?.contains(where: { ($0["required"] as? [String]) == ["element_id"] }) == true, "click accepts element id")
+    try expect(clickAlternatives?.contains(where: { ($0["required"] as? [String]) == ["x", "y", "coordinate_space"] }) == true, "click accepts explicit coordinates")
 }
 
 private func testPreservesAccessibilityAndScreenshotContent() throws {
@@ -111,6 +129,12 @@ private func testKeyChordParserSupportsSkyStyleAliases() throws {
     try expect(chord.modifiers.contains(.shift), "shift modifier")
     let enter = try KeyChord.parse("Return")
     try expect(enter.keyCode == 36, "Return key code")
+    let multiply = try KeyChord.parse("*")
+    try expect(multiply.keyCode == 28 && multiply.modifiers.contains(.shift), "asterisk maps to shift-8")
+    let plus = try KeyChord.parse("+")
+    try expect(plus.keyCode == 24 && plus.modifiers.contains(.shift), "plus maps to shift-equals")
+    let commandPlus = try KeyChord.parse("cmd++")
+    try expect(commandPlus.keyCode == 24 && commandPlus.modifiers.contains(.shift) && commandPlus.modifiers.contains(.command), "command-plus keeps both modifiers")
 }
 
 private func testNativePermissionAndAppDiscoveryAreInspectable() throws {

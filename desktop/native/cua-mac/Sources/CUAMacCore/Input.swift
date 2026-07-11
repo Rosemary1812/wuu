@@ -27,12 +27,27 @@ public struct KeyChord: Sendable {
     public let modifiers: KeyModifiers
 
     public static func parse(_ raw: String) throws -> KeyChord {
-        let parts = raw.split(separator: "+", omittingEmptySubsequences: true).map(String.init)
-        guard let keyPart = parts.last, !keyPart.isEmpty else {
+        let keyPart: String
+        let modifierParts: [String]
+        if raw == "+" {
+            keyPart = "+"
+            modifierParts = []
+        } else if raw.hasSuffix("+") {
+            keyPart = "+"
+            modifierParts = raw.dropLast().split(separator: "+", omittingEmptySubsequences: true).map(String.init)
+        } else {
+            let parts = raw.split(separator: "+", omittingEmptySubsequences: true).map(String.init)
+            guard let last = parts.last, !last.isEmpty else {
+                throw ComputerError.invalidArguments("key is required")
+            }
+            keyPart = last
+            modifierParts = Array(parts.dropLast())
+        }
+        guard !keyPart.isEmpty else {
             throw ComputerError.invalidArguments("key is required")
         }
         var modifiers: KeyModifiers = []
-        for part in parts.dropLast() {
+        for part in modifierParts {
             switch part.lowercased() {
             case "command", "cmd", "super", "meta": modifiers.insert(.command)
             case "shift": modifiers.insert(.shift)
@@ -45,7 +60,19 @@ public struct KeyChord: Sendable {
         if keyPart.count == 1, keyPart != keyPart.lowercased() {
             modifiers.insert(.shift)
         }
-        let normalized = keyPart.lowercased().replacingOccurrences(of: "_", with: "")
+        let shiftedSymbols = [
+            "~": "`", "!": "1", "@": "2", "#": "3", "$": "4", "%": "5",
+            "^": "6", "&": "7", "*": "8", "(": "9", ")": "0", "_": "-",
+            "+": "=", "{": "[", "}": "]", "|": "\\", ":": ";", "\"": "'",
+            "<": ",", ">": ".", "?": "/",
+        ]
+        let normalized: String
+        if let base = shiftedSymbols[keyPart] {
+            modifiers.insert(.shift)
+            normalized = base
+        } else {
+            normalized = keyPart.lowercased().replacingOccurrences(of: "_", with: "")
+        }
         guard let code = keyCodes[normalized] else {
             throw ComputerError.invalidArguments("unsupported key \(keyPart)")
         }
