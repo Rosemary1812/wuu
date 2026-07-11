@@ -131,21 +131,10 @@ describe("useSidebarDrawerState", () => {
 
     expect(hook.get().sidebarDrawerPhase).toBe("open");
 
-    // Once the pointer reaches the drawer, normal hover-close behavior
-    // resumes when it later leaves the navigation rail.
-    elementFromPointTarget = hook.sidebar;
+    // Explicit drawers close through the sidebar's real pointerleave handler,
+    // not through the global pointer tracker used for hover-open drawers.
     await act(async () => {
-      hook.get().openSidebarDrawer();
-    });
-    elementFromPointTarget = document.body;
-    await act(async () => {
-      window.dispatchEvent(
-        new MouseEvent("pointermove", {
-          bubbles: true,
-          clientX: 320,
-          clientY: 80,
-        }),
-      );
+      hook.get().closeSidebarDrawer();
     });
 
     expect(hook.get().sidebarDrawerPhase).toBe("closing");
