@@ -832,6 +832,24 @@ export function cuaActivityHTML(activity: ActivitySession): string {
   let lastInteractionRevision = 0;
   let lastTarget = ${JSON.stringify(activity.target?.trim() ?? "")};
   let pointerPosition = { x: .5, y: .5 };
+  const mapPoint = (point) => {
+    const imageWidth = livePreview.naturalWidth || innerWidth;
+    const imageHeight = livePreview.naturalHeight || innerHeight;
+    const scale = Math.min(innerWidth / imageWidth, innerHeight / imageHeight);
+    const renderedWidth = imageWidth * scale;
+    const renderedHeight = imageHeight * scale;
+    return {
+      x: (innerWidth - renderedWidth) / 2 + point.x * renderedWidth,
+      y: (innerHeight - renderedHeight) / 2 + point.y * renderedHeight,
+    };
+  };
+  const placePointer = () => {
+    const point = mapPoint(pointerPosition);
+    agentPointer.style.left = point.x + 'px';
+    agentPointer.style.top = point.y + 'px';
+  };
+  addEventListener('resize', placePointer);
+  livePreview.addEventListener('load', placePointer);
   window.wuuCUAFrame = (url, captureMode) => {
     lastLiveFrameAt = Date.now();
     livePreview.src = url;
@@ -877,17 +895,6 @@ export function cuaActivityHTML(activity: ActivitySession): string {
       agentPointer.getAnimations().forEach((animation) => animation.cancel());
       agentPointer.classList.remove('is-clicking', 'is-scrolling', 'is-typing', 'is-dragging');
       agentPointer.style.opacity = '1';
-      const imageWidth = livePreview.naturalWidth || innerWidth;
-      const imageHeight = livePreview.naturalHeight || innerHeight;
-      const scale = Math.min(innerWidth / imageWidth, innerHeight / imageHeight);
-      const renderedWidth = imageWidth * scale;
-      const renderedHeight = imageHeight * scale;
-      const offsetX = (innerWidth - renderedWidth) / 2;
-      const offsetY = (innerHeight - renderedHeight) / 2;
-      const mapPoint = (point) => ({
-        x: offsetX + point.x * renderedWidth,
-        y: offsetY + point.y * renderedHeight,
-      });
       const from = mapPoint(pointerPosition);
       const to = mapPoint(destination);
       const entry = mapPoint({ x: interaction.x, y: interaction.y });

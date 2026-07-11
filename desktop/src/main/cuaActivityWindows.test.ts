@@ -303,6 +303,8 @@ describe("CUA Activity windows", () => {
     expect(html).toContain("captureMode === 'visible_fallback'");
     expect(html).toContain("livePreview.removeAttribute('src')");
     expect(html).toContain("glass.setAttribute('aria-label', '正在获取画面')");
+    expect(html).toContain("addEventListener('resize', placePointer)");
+    expect(html).toContain("livePreview.addEventListener('load', placePointer)");
     expect(html).not.toContain('class="error"');
     expect(cuaActivityHTML(activity({ error: "boom" }))).not.toContain("boom");
     expect(html).toContain('class="agent-pointer"');
