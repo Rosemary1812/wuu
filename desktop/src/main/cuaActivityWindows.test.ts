@@ -7,6 +7,7 @@ import {
   activityControlMethod,
   activityDockAnchor,
   activityHasVisibleContent,
+  activityInteractionFeedbackClass,
   activityRenderSignature,
   activityViewState,
   activityVisibleForThread,
@@ -43,6 +44,13 @@ function activity(overrides: Partial<ActivitySession> = {}): ActivitySession {
 }
 
 describe("CUA Activity windows", () => {
+  it("maps each Agent interaction to distinct visual feedback", () => {
+    expect(activityInteractionFeedbackClass("click")).toBe("is-clicking");
+    expect(activityInteractionFeedbackClass("drag")).toBe("is-dragging");
+    expect(activityInteractionFeedbackClass("scroll")).toBe("is-scrolling");
+    expect(activityInteractionFeedbackClass("type")).toBe("is-typing");
+    expect(activityInteractionFeedbackClass("observe")).toBeUndefined();
+  });
   it("keeps the PiP above Wuu without floating over other applications", () => {
     const parent = { id: "main-window" } as never;
     expect(activityWindowStackingOptions(parent)).toEqual({

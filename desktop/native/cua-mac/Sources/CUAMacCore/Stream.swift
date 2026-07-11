@@ -204,7 +204,7 @@ private func preferredStreamWindow(in content: SCShareableContent, processID: pi
        let focused = candidates.min(by: { left, right in
             windowFrameDistance(left.frame, focusedFrame) < windowFrameDistance(right.frame, focusedFrame)
        }),
-       focused.frame.width * focused.frame.height >= (largest?.frame.width ?? 0) * (largest?.frame.height ?? 0) * 0.35 {
+       focused.frame.width >= 120, focused.frame.height >= 80 {
         return focused
     }
     return largest
@@ -320,8 +320,14 @@ public func runWindowFrameStream(target: String) async throws {
         guard let refreshedContent = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) else {
             continue
         }
-        let refreshedWindow = refreshedContent.windows.first(where: { $0.windowID == window.windowID })
-            ?? preferredStreamWindow(in: refreshedContent, processID: app.processIdentifier)
+        let currentWindow = refreshedContent.windows.first(where: { $0.windowID == window.windowID })
+        let preferredWindow = preferredStreamWindow(in: refreshedContent, processID: app.processIdentifier)
+        let focusedFrame = focusedWindowFrame(processID: app.processIdentifier)
+        let focusMovedToPreferred = preferredWindow.map { preferred in
+            preferred.windowID != window.windowID
+                && focusedFrame.map { windowFrameDistance(preferred.frame, $0) <= 4 } == true
+        } ?? false
+        let refreshedWindow = focusMovedToPreferred ? preferredWindow : (currentWindow ?? preferredWindow)
         guard let refreshedWindow else { continue }
         let windowChanged = refreshedWindow.windowID != window.windowID
         let frameChanged = windowFrameDistance(refreshedWindow.frame, window.frame) > 1

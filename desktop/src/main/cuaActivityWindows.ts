@@ -13,6 +13,17 @@ export type ActivityDockedCorner =
   | { source: "main"; corner: number }
   | { source: "screen"; corner: number; workArea: Rectangle };
 
+const INTERACTION_FEEDBACK_CLASSES = {
+  click: "is-clicking",
+  drag: "is-dragging",
+  scroll: "is-scrolling",
+  type: "is-typing",
+} as const;
+
+export function activityInteractionFeedbackClass(kind: string): string | undefined {
+  return INTERACTION_FEEDBACK_CLASSES[kind as keyof typeof INTERACTION_FEEDBACK_CLASSES];
+}
+
 const SNAP_INSET = 12;
 const PREVIEW_TARGET_AREA = 380 * 248;
 const PREVIEW_MIN_WIDTH = 280;
@@ -811,6 +822,7 @@ export function cuaActivityHTML(activity: ActivitySession): string {
   const actions = document.querySelector('.actions');
   const streamStatus = document.querySelector('.stream-status');
   const agentPointer = document.querySelector('.agent-pointer');
+  const interactionFeedbackClasses = ${JSON.stringify(INTERACTION_FEEDBACK_CLASSES)};
   let lastLiveFrameAt = 0;
   let lastInteractionRevision = 0;
   let pointerPosition = { x: .5, y: .5 };
@@ -869,9 +881,7 @@ export function cuaActivityHTML(activity: ActivitySession): string {
       animation.onfinish = () => {
         agentPointer.style.left = toX + 'px';
         agentPointer.style.top = toY + 'px';
-        const feedbackClass = {
-          click: 'is-clicking', drag: 'is-dragging', scroll: 'is-scrolling', type: 'is-typing',
-        }[interaction.kind];
+        const feedbackClass = interactionFeedbackClasses[interaction.kind];
         if (feedbackClass) agentPointer.classList.add(feedbackClass);
         setTimeout(() => {
           agentPointer.classList.remove('is-clicking', 'is-scrolling', 'is-typing', 'is-dragging');
