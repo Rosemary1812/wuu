@@ -26,7 +26,11 @@ final class AXSnapshotter {
         var lines: [String] = []
         var visited = Set<CFHashCode>()
         walk(application, depth: 0, lines: &lines, visited: &visited)
-        let controls = descriptors.sorted(by: { $0.key < $1.key }).compactMap { id, descriptor -> String? in
+        let controls = descriptors.sorted { left, right in
+            let leftPriority = left.value.role == kAXButtonRole as String ? 0 : left.value.role == kAXMenuItemRole as String ? 2 : 1
+            let rightPriority = right.value.role == kAXButtonRole as String ? 0 : right.value.role == kAXMenuItemRole as String ? 2 : 1
+            return leftPriority == rightPriority ? left.key < right.key : leftPriority < rightPriority
+        }.compactMap { id, descriptor -> String? in
             guard let element = elements[id], axActions(element).contains(kAXPressAction as String) else { return nil }
             var labels: [String] = []
             if !descriptor.title.isEmpty { labels.append("title=\"\(descriptor.title)\"") }

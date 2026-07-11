@@ -50,6 +50,12 @@ func markSynthetic(_ event: CGEvent?) -> CGEvent? {
     return event
 }
 
+func syntheticEventSource() -> CGEventSource? {
+    let source = CGEventSource(stateID: .hidSystemState)
+    source?.localEventsSuppressionInterval = 0
+    return source
+}
+
 public struct KeyModifiers: OptionSet, Sendable {
     public let rawValue: UInt64
     public init(rawValue: UInt64) { self.rawValue = rawValue }

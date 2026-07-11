@@ -192,6 +192,14 @@ private func testScreenshotCoordinatesMapToGlobalWindowCoordinates() throws {
     try expect(point.x == 500 && point.y == 350, "screenshot midpoint maps to window midpoint")
     let normalizedPoint = try geometry.screenPoint(normalizedX: 500, normalizedY: 500)
     try expect(normalizedPoint.x == 500 && normalizedPoint.y == 350, "normalized midpoint maps independently of screenshot resolution")
+    let padded = CaptureGeometry(
+        windowFrame: CGRect(x: 100, y: 50, width: 800, height: 600),
+        imageWidth: 1800,
+        imageHeight: 1400,
+        visibleImageFrame: CGRect(x: 100, y: 100, width: 1600, height: 1200)
+    )
+    let paddedPoint = try padded.screenPoint(x: 900, y: 700)
+    try expect(paddedPoint.x == 500 && paddedPoint.y == 350, "transparent screenshot padding preserves full-image mapping")
 }
 
 do {

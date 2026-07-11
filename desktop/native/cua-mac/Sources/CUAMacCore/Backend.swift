@@ -296,6 +296,12 @@ public final class MacComputerBackend: ComputerBackend {
                     "height": capture.geometry.windowFrame.height,
                 ],
                 "coordinate_space": "latest_screenshot_pixels",
+                "visible_image_frame": [
+                    "x": capture.geometry.visibleImageFrame.origin.x,
+                    "y": capture.geometry.visibleImageFrame.origin.y,
+                    "width": capture.geometry.visibleImageFrame.width,
+                    "height": capture.geometry.visibleImageFrame.height,
+                ],
             ]
         } catch {
             structured["screenshot_error"] = error.localizedDescription
@@ -462,6 +468,7 @@ public final class MacComputerBackend: ComputerBackend {
     }
 
     private func postClick(point: CGPoint, button name: String?, count: Int) throws {
+        let source = syntheticEventSource()
         let button: CGMouseButton
         let downType: CGEventType
         let upType: CGEventType
@@ -470,14 +477,17 @@ public final class MacComputerBackend: ComputerBackend {
         case "middle": button = .center; downType = .otherMouseDown; upType = .otherMouseUp
         default: button = .left; downType = .leftMouseDown; upType = .leftMouseUp
         }
+        markSynthetic(CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: button))?.post(tap: .cghidEventTap)
+        usleep(20_000)
         for click in 1...max(1, min(count, 3)) {
-            guard let down = markSynthetic(CGEvent(mouseEventSource: nil, mouseType: downType, mouseCursorPosition: point, mouseButton: button)),
-                  let up = markSynthetic(CGEvent(mouseEventSource: nil, mouseType: upType, mouseCursorPosition: point, mouseButton: button)) else {
+            guard let down = markSynthetic(CGEvent(mouseEventSource: source, mouseType: downType, mouseCursorPosition: point, mouseButton: button)),
+                  let up = markSynthetic(CGEvent(mouseEventSource: source, mouseType: upType, mouseCursorPosition: point, mouseButton: button)) else {
                 throw ComputerError.operationFailed("could not create mouse event")
             }
             down.setIntegerValueField(.mouseEventClickState, value: Int64(click))
             up.setIntegerValueField(.mouseEventClickState, value: Int64(click))
             down.post(tap: .cghidEventTap)
+            usleep(35_000)
             up.post(tap: .cghidEventTap)
         }
     }
@@ -489,7 +499,8 @@ public final class MacComputerBackend: ComputerBackend {
         let start = try inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app)
         let end = try inputPoint(x: toX, y: toY, coordinateSpace: command.coordinateSpace, app: app)
         try withForegroundInput(command, app: app) {
-            guard let down = markSynthetic(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left)) else {
+            let source = syntheticEventSource()
+            guard let down = markSynthetic(CGEvent(mouseEventSource: source, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left)) else {
                 throw ComputerError.operationFailed("could not create drag event")
             }
             down.post(tap: .cghidEventTap)
@@ -499,10 +510,10 @@ public final class MacComputerBackend: ComputerBackend {
                     x: start.x + (end.x - start.x) * progress,
                     y: start.y + (end.y - start.y) * progress
                 )
-                markSynthetic(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: point, mouseButton: .left))?.post(tap: .cghidEventTap)
+                markSynthetic(CGEvent(mouseEventSource: source, mouseType: .leftMouseDragged, mouseCursorPosition: point, mouseButton: .left))?.post(tap: .cghidEventTap)
                 usleep(8_000)
             }
-            markSynthetic(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left))?.post(tap: .cghidEventTap)
+            markSynthetic(CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left))?.post(tap: .cghidEventTap)
         }
     }
 
@@ -543,8 +554,9 @@ public final class MacComputerBackend: ComputerBackend {
 
     private func postKey(_ key: String) throws {
         let chord = try KeyChord.parse(key)
-        guard let down = markSynthetic(CGEvent(keyboardEventSource: nil, virtualKey: chord.keyCode, keyDown: true)),
-              let up = markSynthetic(CGEvent(keyboardEventSource: nil, virtualKey: chord.keyCode, keyDown: false)) else {
+        let source = syntheticEventSource()
+        guard let down = markSynthetic(CGEvent(keyboardEventSource: source, virtualKey: chord.keyCode, keyDown: true)),
+              let up = markSynthetic(CGEvent(keyboardEventSource: source, virtualKey: chord.keyCode, keyDown: false)) else {
             throw ComputerError.operationFailed("could not create keyboard event")
         }
         down.flags = chord.modifiers.eventFlags

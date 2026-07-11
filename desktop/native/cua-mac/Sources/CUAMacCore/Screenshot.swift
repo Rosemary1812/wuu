@@ -7,11 +7,13 @@ public struct CaptureGeometry: Sendable {
     public let windowFrame: CGRect
     public let imageWidth: Int
     public let imageHeight: Int
+    public let visibleImageFrame: CGRect
 
-    public init(windowFrame: CGRect, imageWidth: Int, imageHeight: Int) {
+    public init(windowFrame: CGRect, imageWidth: Int, imageHeight: Int, visibleImageFrame: CGRect? = nil) {
         self.windowFrame = windowFrame
         self.imageWidth = imageWidth
         self.imageHeight = imageHeight
+        self.visibleImageFrame = visibleImageFrame ?? CGRect(x: 0, y: 0, width: imageWidth, height: imageHeight)
     }
 
     public func screenPoint(x: Double, y: Double) throws -> CGPoint {
@@ -98,7 +100,8 @@ func captureWindowPNG(processID: pid_t, timeout: TimeInterval = 8) throws -> Win
                     geometry: CaptureGeometry(
                         windowFrame: windowFrame,
                         imageWidth: image.width,
-                        imageHeight: image.height
+                        imageHeight: image.height,
+                        visibleImageFrame: visiblePixelBounds(image)
                     )
                 )))
             } else {
@@ -154,9 +157,31 @@ func captureForegroundWindowPNG(processID: pid_t) throws -> WindowCapture {
         geometry: CaptureGeometry(
             windowFrame: captured.frame,
             imageWidth: captured.image.width,
-            imageHeight: captured.image.height
+            imageHeight: captured.image.height,
+            visibleImageFrame: visiblePixelBounds(captured.image)
         )
     )
+}
+
+private func visiblePixelBounds(_ image: CGImage) -> CGRect {
+    let bitmap = NSBitmapImageRep(cgImage: image)
+    var minX = image.width
+    var minY = image.height
+    var maxX = -1
+    var maxY = -1
+    for y in 0..<image.height {
+        for x in 0..<image.width {
+            guard let color = bitmap.colorAt(x: x, y: y), color.alphaComponent >= 0.5 else { continue }
+            minX = min(minX, x)
+            minY = min(minY, y)
+            maxX = max(maxX, x)
+            maxY = max(maxY, y)
+        }
+    }
+    guard maxX >= minX, maxY >= minY else {
+        return CGRect(x: 0, y: 0, width: image.width, height: image.height)
+    }
+    return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
 }
 
 private func captureSystemWindowPNG(_ windowID: CGWindowID, frame: CGRect, timeout: TimeInterval = 4) throws -> WindowCapture {
