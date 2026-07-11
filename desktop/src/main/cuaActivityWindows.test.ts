@@ -254,13 +254,17 @@ describe("CUA Activity windows", () => {
       .not.toBe(activityRenderSignature(first, true));
     expect(activityRenderSignature(activity({ error: "boom" }), true))
       .toBe(activityRenderSignature(first, true));
+    expect(activityRenderSignature(activity({ interaction: { kind: "click", x: 0.5, y: 0.5, revision: 2 } }), true))
+      .not.toBe(activityRenderSignature(first, true));
   });
 
   it("exposes an in-place view state instead of a full page reload", () => {
-    const state = activityViewState(activity({ error: "boom <late>" }));
+    const interaction = { kind: "click" as const, x: 0.25, y: 0.75, revision: 42 };
+    const state = activityViewState(activity({ error: "boom <late>", interaction }));
     expect(state.actionsHTML).toContain("接管");
     expect(state.actionsHTML).toContain("关闭画中画");
     expect(state.previewURL).toMatch(/^wuu-file:\/\/local\//);
+    expect(state.interaction).toEqual(interaction);
     expect(activityViewState(activity({ preview: undefined })).previewURL).toBe("");
     expect(activityActionsHTML(activity({ controller: "user" }))).toContain("交还 Agent");
   });
@@ -288,6 +292,8 @@ describe("CUA Activity windows", () => {
     expect(html).toContain("实时画面暂不可用");
     expect(html).not.toContain('class="error"');
     expect(cuaActivityHTML(activity({ error: "boom" }))).not.toContain("boom");
+    expect(html).toContain('class="agent-pointer"');
+    expect(html).toContain("cubic-bezier(.22,.8,.24,1)");
   });
 
   it("maps window controls onto Activity RPC methods", () => {

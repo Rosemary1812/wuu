@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/activity"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -131,6 +132,7 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		update.Error = callErr.Error()
 	} else {
 		update.ClearError = true
+		update.Interaction = cuaActivityInteraction(result)
 	}
 	if updated, updateErr := t.activityRegistry.Update(threadID, session.ID, update); updateErr == nil {
 		session = updated
@@ -145,6 +147,21 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		PreviewURI: session.Preview,
 	}
 	return result, callErr
+}
+
+func cuaActivityInteraction(result toolresult.Result) *activity.Interaction {
+	var structured struct {
+		Interaction *activity.Interaction `json:"interaction"`
+	}
+	if json.Unmarshal(result.StructuredContent, &structured) != nil || structured.Interaction == nil {
+		return nil
+	}
+	interaction := structured.Interaction
+	if interaction.Kind == "" || interaction.X < 0 || interaction.X > 1 || interaction.Y < 0 || interaction.Y > 1 {
+		return nil
+	}
+	interaction.Revision = time.Now().UnixNano()
+	return interaction
 }
 
 func cuaActivityControlState(arguments string, result toolresult.Result) activity.State {
@@ -234,6 +251,11 @@ func (t *Toolkit) executeCUASequence(ctx context.Context, tool Tool, threadID, a
 				err = errors.New(stepResult.TextProjection())
 			}
 			return cuaSequenceResult("partial", completed, index+1, lastImage, control), "partial", err
+		}
+		if interaction := cuaActivityInteraction(stepResult); interaction != nil {
+			if _, updateErr := t.activityRegistry.Update(threadID, activityID, activity.UpdateOptions{Interaction: interaction}); updateErr != nil {
+				return cuaSequenceResult("partial", completed, index+1, lastImage, control), "partial", updateErr
+			}
 		}
 		for i := range stepResult.Content {
 			if stepResult.Content[i].Type == toolresult.ContentTypeImage {

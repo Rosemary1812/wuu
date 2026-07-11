@@ -238,6 +238,10 @@ func (r *Registry) Update(threadID, activityID string, options UpdateOptions) (S
 	} else if options.Error != "" {
 		entry.session.Error = strings.TrimSpace(options.Error)
 	}
+	if options.Interaction != nil {
+		interaction := *options.Interaction
+		entry.session.Interaction = &interaction
+	}
 	entry.session.UpdatedAt = r.now().UTC()
 	session := entry.session
 	r.mu.Unlock()

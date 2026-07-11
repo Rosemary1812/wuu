@@ -45,18 +45,29 @@ type Event struct {
 }
 
 type Session struct {
-	ID         string     `json:"id"`
-	Kind       Kind       `json:"kind"`
-	ThreadID   string     `json:"thread_id"`
-	Workdir    string     `json:"workdir"`
-	PluginID   string     `json:"plugin_id,omitempty"`
-	Target     string     `json:"target,omitempty"`
-	State      State      `json:"state"`
-	Controller Controller `json:"controller"`
-	Preview    string     `json:"preview,omitempty"`
-	Error      string     `json:"error,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
+	ID          string       `json:"id"`
+	Kind        Kind         `json:"kind"`
+	ThreadID    string       `json:"thread_id"`
+	Workdir     string       `json:"workdir"`
+	PluginID    string       `json:"plugin_id,omitempty"`
+	Target      string       `json:"target,omitempty"`
+	State       State        `json:"state"`
+	Controller  Controller   `json:"controller"`
+	Preview     string       `json:"preview,omitempty"`
+	Error       string       `json:"error,omitempty"`
+	Interaction *Interaction `json:"interaction,omitempty"`
+	CreatedAt   time.Time    `json:"created_at"`
+	UpdatedAt   time.Time    `json:"updated_at"`
+}
+
+type Interaction struct {
+	Kind      string   `json:"kind"`
+	X         float64  `json:"x"`
+	Y         float64  `json:"y"`
+	ToX       *float64 `json:"to_x,omitempty"`
+	ToY       *float64 `json:"to_y,omitempty"`
+	Direction string   `json:"direction,omitempty"`
+	Revision  int64    `json:"revision"`
 }
 
 type Lease struct {
@@ -76,9 +87,10 @@ type StartOptions struct {
 }
 
 type UpdateOptions struct {
-	State      State
-	Target     string
-	Preview    string
-	Error      string
-	ClearError bool
+	State       State
+	Target      string
+	Preview     string
+	Error       string
+	ClearError  bool
+	Interaction *Interaction
 }

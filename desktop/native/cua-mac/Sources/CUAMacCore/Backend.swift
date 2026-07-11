@@ -76,6 +76,9 @@ public final class MacComputerBackend: ComputerBackend {
             }
         }
 
+        // Resolve the visual target before the action mutates or removes it. The
+        // overlay is explanatory UI, so a best-effort position is sufficient.
+        let intendedInteraction = interactionMetadata(command, app: app, application: axApplication)
         let mechanism: String
         switch command.action {
         case .observe:
@@ -129,21 +132,90 @@ public final class MacComputerBackend: ComputerBackend {
         let canonicalTarget = app.bundleIdentifier ?? app.bundleURL?.path ?? target
         let changes = snapshotChanges(from: previousSnapshot, to: settled.text)
         let status = axChanged ? "verified" : (visualVerified ? "verified_visual" : "unverified")
+        var structured: [String: Any] = [
+            "action": command.action.rawValue,
+            "app": canonicalTarget,
+            "display_name": app.localizedName ?? "Unknown",
+            "process_id": Int(app.processIdentifier),
+            "status": status,
+            "mechanism": mechanism,
+            "visual_verified": visualVerified,
+            "foreground_changed": frontmostBefore != frontmostAfter,
+            "ax_revision": axRevisions[app.processIdentifier] ?? 0,
+            "visual_revision": visualRevisions[app.processIdentifier] ?? 0,
+            "changes": changes,
+        ]
+        if let interaction = intendedInteraction {
+            structured["interaction"] = interaction
+        }
         return ComputerResult(
             text: "Action \(command.action.rawValue) completed for app=\"\(canonicalTarget)\" via \(mechanism) (\(status)). Call observe when you need fresh UI state.",
-            structured: [
-                "action": command.action.rawValue,
-                "app": canonicalTarget,
-                "display_name": app.localizedName ?? "Unknown",
-                "process_id": Int(app.processIdentifier),
-                "status": status,
-                "mechanism": mechanism,
-                "visual_verified": visualVerified,
-                "foreground_changed": frontmostBefore != frontmostAfter,
-                "ax_revision": axRevisions[app.processIdentifier] ?? 0,
-                "visual_revision": visualRevisions[app.processIdentifier] ?? 0,
-                "changes": changes,
+            structured: structured
+        )
+    }
+
+    private func interactionMetadata(
+        _ command: ComputerCommand,
+        app: NSRunningApplication,
+        application: AXUIElement
+    ) -> [String: Any]? {
+        let kind: String
+        switch command.action {
+        case .click, .performAction, .activateControl: kind = "click"
+        case .drag: kind = "drag"
+        case .scroll: kind = "scroll"
+        case .setValue, .typeText, .selectText, .pressKey, .pressKeys: kind = "type"
+        default: return nil
+        }
+        let frame: CGRect? = {
+            if command.elementID != nil, let element = try? element(command, app: app) {
+                return axFrame(element)
+            }
+            if command.action == .activateControl,
+               let target = snapshotter.uniqueElement(role: command.role, title: command.title, description: command.description) {
+                return axFrame(target)
+            }
+            if kind == "type",
+               let focused = axValue(application, kAXFocusedUIElementAttribute as String),
+               CFGetTypeID(focused) == AXUIElementGetTypeID() {
+                return axFrame(focused as! AXUIElement)
+            }
+            return nil
+        }()
+        let point: CGPoint? = {
+            if let frame { return CGPoint(x: frame.midX, y: frame.midY) }
+            if let x = command.x, let y = command.y {
+                return try? inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app)
+            }
+            return primaryWindowFrame(application).map { CGPoint(x: $0.midX, y: $0.midY) }
+        }()
+        guard let point, let normalized = normalizedInteractionPoint(point, app: app) else { return nil }
+        var interaction: [String: Any] = ["kind": kind, "x": normalized.x, "y": normalized.y]
+        if kind == "drag", let x = command.toX, let y = command.toY {
+            let destinationArguments: [String: Any] = [
+                "action": "click", "app": command.app ?? "", "x": x, "y": y,
+                "coordinate_space": command.coordinateSpace ?? "normalized",
             ]
+            if let destinationCommand = try? ComputerCommand(arguments: destinationArguments),
+               let destinationX = destinationCommand.x,
+               let destinationY = destinationCommand.y,
+               let destination = try? inputPoint(x: destinationX, y: destinationY, coordinateSpace: destinationCommand.coordinateSpace, app: app),
+               let to = normalizedInteractionPoint(destination, app: app) {
+                interaction["to_x"] = to.x
+                interaction["to_y"] = to.y
+            }
+        }
+        if let direction = command.direction { interaction["direction"] = direction }
+        return interaction
+    }
+
+    private func normalizedInteractionPoint(_ point: CGPoint, app: NSRunningApplication) -> CGPoint? {
+        let frame = lastCaptureGeometry[app.processIdentifier]?.windowFrame
+            ?? primaryWindowFrame(AXUIElementCreateApplication(app.processIdentifier))
+        guard let frame, frame.width > 0, frame.height > 0 else { return nil }
+        return CGPoint(
+            x: max(0, min(1, (point.x - frame.minX) / frame.width)),
+            y: max(0, min(1, (point.y - frame.minY) / frame.height))
         )
     }
 

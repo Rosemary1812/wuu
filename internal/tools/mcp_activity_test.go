@@ -114,7 +114,8 @@ func TestCropTransparentPNGRemovesWindowShadowPadding(t *testing.T) {
 }
 
 type activityTestTool struct {
-	calls int
+	calls             int
+	structuredContent json.RawMessage
 }
 
 func (t *activityTestTool) Name() string { return "mcp_plugin_cua_mac_computer_computer" }
@@ -129,7 +130,7 @@ func (t *activityTestTool) ExecuteResult(context.Context, string) (toolresult.Re
 	return toolresult.Result{Content: []toolresult.ContentPart{
 		{Type: toolresult.ContentTypeText, Text: "observed"},
 		{Type: toolresult.ContentTypeImage, Data: "cG5n", MIMEType: "image/png"},
-	}}, nil
+	}, StructuredContent: t.structuredContent}, nil
 }
 func (t *activityTestTool) IsReadOnly() bool        { return false }
 func (t *activityTestTool) IsConcurrencySafe() bool { return false }
@@ -202,9 +203,21 @@ func TestExecuteActivityBoundToolCreatesRefAndHonorsTakeover(t *testing.T) {
 	}
 }
 
+func TestCUAActivityInteractionValidatesAndAssignsRevision(t *testing.T) {
+	result := toolresult.Result{StructuredContent: json.RawMessage(`{"interaction":{"kind":"click","x":0.25,"y":0.75}}`)}
+	interaction := cuaActivityInteraction(result)
+	if interaction == nil || interaction.Kind != "click" || interaction.X != 0.25 || interaction.Y != 0.75 || interaction.Revision == 0 {
+		t.Fatalf("interaction = %+v", interaction)
+	}
+	invalid := toolresult.Result{StructuredContent: json.RawMessage(`{"interaction":{"kind":"click","x":1.25,"y":0.75}}`)}
+	if got := cuaActivityInteraction(invalid); got != nil {
+		t.Fatalf("out-of-range interaction = %+v", got)
+	}
+}
+
 func TestExecuteActivityBoundCUASequenceChecksRiskPerStep(t *testing.T) {
 	registry := activity.NewRegistry()
-	tool := &activityTestTool{}
+	tool := &activityTestTool{structuredContent: json.RawMessage(`{"interaction":{"kind":"click","x":0.2,"y":0.4}}`)}
 	kit := &Toolkit{
 		env:      &Env{RootDir: "/repo", SessionID: "thread-1", SessionDir: t.TempDir()},
 		registry: NewRegistry(tool), boundary: StandardBoundary(), activityRegistry: registry,
@@ -226,6 +239,10 @@ func TestExecuteActivityBoundCUASequenceChecksRiskPerStep(t *testing.T) {
 	}
 	if result.Activity == nil || result.Activity.State != string(activity.StateWaitingConfirmation) {
 		t.Fatalf("activity state = %+v, want waiting_confirmation", result.Activity)
+	}
+	sessions := registry.List("thread-1")
+	if len(sessions) != 1 || sessions[0].Interaction == nil || sessions[0].Interaction.X != 0.2 {
+		t.Fatalf("sequence step interaction = %+v", sessions)
 	}
 	var structured struct {
 		Status   string `json:"status"`

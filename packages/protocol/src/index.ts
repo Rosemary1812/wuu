@@ -386,6 +386,15 @@ export type ActivitySession = {
   controller: "agent" | "user" | "none";
   preview?: string;
   error?: string;
+  interaction?: {
+    kind: "click" | "drag" | "scroll" | "type";
+    x: number;
+    y: number;
+    to_x?: number;
+    to_y?: number;
+    direction?: string;
+    revision: number;
+  };
   created_at: string;
   updated_at: string;
 };
