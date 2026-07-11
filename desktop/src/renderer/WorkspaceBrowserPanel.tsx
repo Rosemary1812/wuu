@@ -441,7 +441,16 @@ export function WorkspaceBrowserPanel({
           hidden={!showWebview}
         />
         {!showWebview ? (
-          <WorkspaceBrowserHome workspaceRoot={activeContext?.cwd} />
+          <WorkspacePanelEmpty
+            className="workspace-browser-home"
+            title={HOME_PAGE_TITLE}
+            description={
+              activeContext?.cwd
+                ? "在地址栏输入网址,例如 http://localhost:3000,即可调试当前项目。"
+                : "在地址栏输入网址,例如 http://localhost:3000,即可开始调试。"
+            }
+            icon={<Globe size={24} />}
+          />
         ) : null}
         {status === "error" && errorMessage ? (
           <div className="workspace-browser-error" role="alert">
@@ -463,12 +472,12 @@ export function WorkspaceBrowserPanel({
         ) : null}
       </div>
       <div className="workspace-browser-statusbar" aria-live="polite">
-        <span className="workspace-browser-host-hint">
-          {hostHint ? `${hostHint}` : isInternalUrl(currentURL) ? "新标签页" : "等待输入"}
-        </span>
-        <span className="workspace-browser-title-hint">
-          {pageTitle || (isInternalUrl(currentURL) ? HOME_PAGE_TITLE : "")}
-        </span>
+        {showWebview && hostHint ? (
+          <span className="workspace-browser-host-hint">{hostHint}</span>
+        ) : null}
+        {showWebview && pageTitle ? (
+          <span className="workspace-browser-title-hint">{pageTitle}</span>
+        ) : null}
         {activity && activity.state !== "stopped" ? (
           <span className="workspace-browser-activity">
             <span className={`workspace-browser-activity-state ${activity.controller}`}>
@@ -526,24 +535,4 @@ function browserActivityLabel(activity: ActivitySession): string {
     return "Agent 控制";
   }
   return "未分配控制";
-}
-
-function WorkspaceBrowserHome({
-  workspaceRoot
-}: {
-  workspaceRoot?: string;
-}): JSX.Element {
-  return (
-    <div className="workspace-browser-home">
-      <WorkspacePanelEmpty
-        title="新标签页"
-        description={
-          workspaceRoot
-            ? `在地址栏输入网址,例如 http://localhost:3000,可以直接调试当前项目的前端。`
-            : "在地址栏输入网址,例如 http://localhost:3000,就可以开始调试。"
-        }
-        icon={<Globe size={24} />}
-      />
-    </div>
-  );
 }

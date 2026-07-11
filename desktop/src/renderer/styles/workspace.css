@@ -1195,8 +1195,6 @@
 
 .workspace-browser-home {
   flex: 1 1 auto;
-  display: grid;
-  place-items: center;
   background: var(--browser-home-bg);
   padding: 24px 12px;
 }

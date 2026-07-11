@@ -741,14 +741,18 @@ function fileIconFor(name: string): { Icon: LucideIcon; tone: FileIconTone } {
 export function WorkspacePanelEmpty({
   title,
   description,
-  icon
+  icon,
+  className
 }: {
   title: string;
   description: string;
   icon?: JSX.Element;
+  className?: string;
 }): JSX.Element {
   return (
-    <div className="workspace-panel-empty">
+    <div
+      className={className ? `workspace-panel-empty ${className}` : "workspace-panel-empty"}
+    >
       <div className="workspace-panel-empty-icon">{icon ?? <FolderOpen size={24} />}</div>
       <strong>{title}</strong>
       <span>{description}</span>
