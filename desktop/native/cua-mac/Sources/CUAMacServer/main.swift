@@ -6,6 +6,9 @@ _ = NSApplication.shared
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--stream" {
     let target = CommandLine.arguments[2]
     NSApplication.shared.setActivationPolicy(.accessory)
+    FileHandle.standardInput.readabilityHandler = { input in
+        if input.availableData.isEmpty { exit(0) }
+    }
     Task {
         do {
             try await runWindowFrameStream(target: target)

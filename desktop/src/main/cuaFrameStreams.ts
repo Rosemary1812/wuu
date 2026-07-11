@@ -62,7 +62,6 @@ export class CUAFrameStream {
     if (this.child) return;
     const decoder = new CUAFrameDecoder();
     const child = spawn(this.helper, ["--stream", this.target], { stdio: ["pipe", "pipe", "pipe"] });
-    child.stdin.end();
     this.child = child;
     child.stdout.on("data", (chunk: Buffer) => {
       try {
