@@ -32,6 +32,7 @@ function launchEnvironment(env, token, root = repoRoot, helperPath = helper) {
     ELECTRON_RENDERER_URL: env.ELECTRON_RENDERER_URL,
     NODE_ENV: env.NODE_ENV ?? "development",
     NODE_ENV_ELECTRON_VITE: env.NODE_ENV_ELECTRON_VITE ?? "development",
+    WUU_ENABLE_CUA_MAC: env.WUU_ENABLE_CUA_MAC,
     WUU_CUA_MAC_HELPER: helperPath,
     WUU_DEV_LAUNCH_TOKEN: token,
     WUU_SOURCE_ROOT: root,

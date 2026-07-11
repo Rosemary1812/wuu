@@ -77,7 +77,7 @@ func TestLoadManifestRequiresID(t *testing.T) {
 	}
 }
 
-func TestDiscoverWithOptionsIncludesOfficialBundledCUAMacOnDarwin(t *testing.T) {
+func TestDiscoverWithOptionsIncludesOfficialBundledCUAMacWhenEnabled(t *testing.T) {
 	helper := filepath.Join(t.TempDir(), "wuu-cua-mac")
 	if err := os.WriteFile(helper, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
@@ -86,7 +86,10 @@ func TestDiscoverWithOptionsIncludesOfficialBundledCUAMacOnDarwin(t *testing.T) 
 	plugins := DiscoverWithOptions("", t.TempDir(), DiscoverOptions{
 		GOOS: "darwin",
 		LookupEnv: func(key string) (string, bool) {
-			if key == "WUU_CUA_MAC_HELPER" {
+			switch key {
+			case EnableCUAMacEnv:
+				return "1", true
+			case "WUU_CUA_MAC_HELPER":
 				return helper, true
 			}
 			return "", false
@@ -114,6 +117,18 @@ func TestDiscoverWithOptionsIncludesOfficialBundledCUAMacOnDarwin(t *testing.T) 
 	}
 	if len(cua.SkillDirs()) != 1 {
 		t.Fatalf("cua-mac skill dirs = %+v", cua.SkillDirs())
+	}
+}
+
+func TestDiscoverWithOptionsHidesBundledCUAMacByDefault(t *testing.T) {
+	plugins := DiscoverWithOptions("", t.TempDir(), DiscoverOptions{
+		GOOS:      "darwin",
+		LookupEnv: func(string) (string, bool) { return "", false },
+	})
+	for _, item := range plugins {
+		if item.ID == "cua-mac" {
+			t.Fatalf("cua-mac must stay hidden until %s=1: %+v", EnableCUAMacEnv, item)
+		}
 	}
 }
 

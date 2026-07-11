@@ -25,6 +25,8 @@ if (build.status !== 0) {
 
 const env = { ...process.env };
 if (process.platform === "darwin") {
+  // CUA is intentionally available only to internal development builds.
+  env.WUU_ENABLE_CUA_MAC = "1";
   env.WUU_DEV_ELECTRON_APP = prepareDevElectronApp(devSigning);
   env.WUU_CUA_MAC_HELPER = helperPathForApp(env.WUU_DEV_ELECTRON_APP);
   env.ELECTRON_EXEC_PATH = join(__dirname, "launch-electron-via-open.cjs");

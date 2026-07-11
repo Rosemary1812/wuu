@@ -19,6 +19,10 @@ var bundledFS embed.FS
 
 const bundledFingerprintFile = ".fingerprint"
 
+// EnableCUAMacEnv gates the bundled Computer Use plugin. It remains off in
+// normal releases while the native integration is under internal evaluation.
+const EnableCUAMacEnv = "WUU_ENABLE_CUA_MAC"
+
 type DiscoverOptions struct {
 	GOOS      string
 	LookupEnv func(string) (string, bool)
@@ -49,7 +53,7 @@ func discoverBundled(wuuHome string, options DiscoverOptions) []Plugin {
 			continue
 		}
 		item, err := loadOfficialPluginDir(filepath.Join(root, entry.Name()))
-		if err != nil || !supportsPlatform(item.Platforms, options.GOOS) {
+		if err != nil || !supportsPlatform(item.Platforms, options.GOOS) || !bundledPluginEnabled(item, options.LookupEnv) {
 			continue
 		}
 		resolveOfficialHelper(&item, options.LookupEnv)
@@ -57,6 +61,17 @@ func discoverBundled(wuuHome string, options DiscoverOptions) []Plugin {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+func bundledPluginEnabled(item Plugin, lookupEnv func(string) (string, bool)) bool {
+	if item.ID != "cua-mac" {
+		return true
+	}
+	if lookupEnv == nil {
+		return false
+	}
+	value, ok := lookupEnv(EnableCUAMacEnv)
+	return ok && strings.TrimSpace(value) == "1"
 }
 
 func loadOfficialPluginDir(dir string) (Plugin, error) {
