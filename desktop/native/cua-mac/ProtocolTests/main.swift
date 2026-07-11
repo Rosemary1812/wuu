@@ -60,6 +60,7 @@ private func testInitializesAndAdvertisesFullComputerTool() throws {
         "select_text", "perform_action", "wait_for_change",
         "sequence",
         "activate_control",
+        "conceal_app", "reveal_app",
     ], "full computer actions")
     try expect((app?["description"] as? String)?.contains("Required for every action") == true, "app requirement is explicit")
     func requiredFields(for action: String) -> [String] {
@@ -74,6 +75,8 @@ private func testInitializesAndAdvertisesFullComputerTool() throws {
     try expect(requiredFields(for: "press_keys").contains("keys"), "press_keys requires keys")
     try expect(requiredFields(for: "type_text").contains("text"), "type_text requires text")
     try expect(requiredFields(for: "perform_action").contains("action_name"), "perform_action requires action_name")
+    try expect(requiredFields(for: "conceal_app") == ["app"], "conceal_app requires only app")
+    try expect(requiredFields(for: "reveal_app") == ["app"], "reveal_app requires only app")
     let clickVariant = variants?.first(where: { variant in
         let properties = variant["properties"] as? [String: Any]
         let actionProperty = properties?["action"] as? [String: Any]

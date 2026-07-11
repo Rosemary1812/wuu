@@ -17,6 +17,8 @@ public enum ComputerAction: String, CaseIterable, Sendable {
     case waitForChange = "wait_for_change"
     case sequence
     case activateControl = "activate_control"
+    case concealApp = "conceal_app"
+    case revealApp = "reveal_app"
 }
 
 public enum ForegroundPolicy: String, Sendable {
@@ -261,11 +263,13 @@ public final class MCPServer {
                 ["required": ["description"]],
                 ["required": ["title"]],
             ]),
+            variant(.concealApp, required: ["app"]),
+            variant(.revealApp, required: ["app"]),
         ]
         return [
             "name": "computer",
             "title": "Computer Use for Mac",
-            "description": "Observe and control macOS apps. Observe returns a canonical app target and fresh UI state. Actions return a short acknowledgement; call observe explicitly when fresh state is needed.",
+            "description": "Observe and control macOS apps. Observe returns a canonical app target and fresh UI state. Actions return a short acknowledgement; call observe explicitly when fresh state is needed. conceal_app moves the target window off-screen so the user never sees it while background AX control and live capture keep working; reveal_app restores it.",
             "inputSchema": [
                 "type": "object",
                 "required": ["action"],

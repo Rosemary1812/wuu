@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import CoreGraphics
+import Darwin
 import Foundation
 
 private final class ApplicationBox: @unchecked Sendable {
@@ -31,6 +32,7 @@ public final class MacComputerBackend: ComputerBackend {
     private var lastScreenshotData: [pid_t: Data] = [:]
     private var lastCaptureGeometry: [pid_t: CaptureGeometry] = [:]
     private var foregroundCaptureProcessIDs = Set<pid_t>()
+    private var concealedWindowOrigins: [pid_t: [CGPoint]] = [:]
 
     public init() {}
 
@@ -56,13 +58,20 @@ public final class MacComputerBackend: ComputerBackend {
         let axApplication = AXUIElementCreateApplication(app.processIdentifier)
         enableElectronAccessibility(axApplication)
         if command.foregroundPolicy == .require {
-            try ForegroundInputLock.withLock { try activate(app) }
+            try ForegroundInputLock.withLock {
+                restoreConcealedWindows(app: app, application: axApplication)
+                try activate(app)
+            }
         }
 
         let mechanism: String
         switch command.action {
         case .observe:
             return try observe(command, app: app, axApplication: axApplication)
+        case .concealApp:
+            return try concealApp(app: app, application: axApplication)
+        case .revealApp:
+            return try revealApp(app: app, application: axApplication)
         case .click:
             mechanism = try click(command, app: app)
         case .drag:
@@ -166,24 +175,25 @@ public final class MacComputerBackend: ComputerBackend {
 
     private func resolveApplication(_ target: String) throws -> NSRunningApplication {
         let normalized = target.lowercased()
-        let running = NSWorkspace.shared.runningApplications.filter { !$0.isTerminated }
-        if let exact = running.first(where: {
+        let running = NSWorkspace.shared.runningApplications.filter { !$0.isTerminated && isProcessAlive($0.processIdentifier) }
+        let exactMatches = running.filter {
             $0.bundleIdentifier?.lowercased() == normalized ||
             $0.localizedName?.lowercased() == normalized ||
             $0.bundleURL?.path.lowercased() == normalized
-        }) {
+        }
+        if let exact = preferWindowedInstance(exactMatches) {
             return exact
         }
         guard let url = applicationURL(target) else {
-            if let partial = running.first(where: {
+            if let partial = preferWindowedInstance(running.filter({
                 $0.localizedName?.lowercased().contains(normalized) == true
-            }) {
+            })) {
                 return partial
             }
             throw ComputerError.appNotFound(target)
         }
         if let bundleIdentifier = Bundle(url: url)?.bundleIdentifier,
-           let existing = running.first(where: { $0.bundleIdentifier == bundleIdentifier }) {
+           let existing = preferWindowedInstance(running.filter({ $0.bundleIdentifier == bundleIdentifier })) {
             return existing
         }
         let semaphore = DispatchSemaphore(value: 0)
@@ -202,6 +212,27 @@ public final class MacComputerBackend: ComputerBackend {
         guard let app else { throw ComputerError.appNotFound(target) }
         waitForApplicationWindow(app, timeout: 5)
         return app
+    }
+
+    private func isProcessAlive(_ pid: pid_t) -> Bool {
+        // kill(pid, 0) probes existence without signalling; ESRCH means the process
+        // is gone even if NSWorkspace has not yet dropped its stale record.
+        kill(pid, 0) == 0 || errno == EPERM
+    }
+
+    private func hasWindow(_ app: NSRunningApplication) -> Bool {
+        var value: CFTypeRef?
+        let application = AXUIElementCreateApplication(app.processIdentifier)
+        guard AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement] else { return false }
+        return !windows.isEmpty
+    }
+
+    private func preferWindowedInstance(_ candidates: [NSRunningApplication]) -> NSRunningApplication? {
+        guard !candidates.isEmpty else { return nil }
+        // A windowless instance (e.g. a hidden launch that never created a window)
+        // cannot be observed or controlled, so never let it shadow a usable one.
+        return candidates.first(where: hasWindow) ?? candidates.first
     }
 
     private func waitForApplicationWindow(_ app: NSRunningApplication, timeout: TimeInterval) {
@@ -438,9 +469,107 @@ public final class MacComputerBackend: ComputerBackend {
             )
         }
         return try ForegroundInputLock.withLock {
+            restoreConcealedWindows(app: app, application: AXUIElementCreateApplication(app.processIdentifier))
             try activate(app)
             return try body()
         }
+    }
+
+    // A rendered window keeps its full Accessibility tree and its ScreenCaptureKit
+    // backing surface no matter where it sits, so parking it beyond every display
+    // hides it from the user while background control and the live PiP keep working.
+    // The Dock icon, Cmd-Tab entry, and Mission Control presence follow the target
+    // app's own activation policy, which only that process can change; conceal_app
+    // does not claim to remove them.
+    private func offscreenOrigin() -> CGPoint {
+        let union = NSScreen.screens.reduce(CGRect.zero) { $0.union($1.frame) }
+        let width = max(union.width, 4000)
+        let height = max(union.height, 4000)
+        return CGPoint(x: union.maxX + width, y: union.maxY + height)
+    }
+
+    private func appWindows(_ application: AXUIElement) -> [AXUIElement] {
+        axElements(application, attribute: kAXWindowsAttribute as String)
+    }
+
+    private func setWindowOrigin(_ window: AXUIElement, to origin: CGPoint) -> Bool {
+        var point = origin
+        guard let value = AXValueCreate(.cgPoint, &point) else { return false }
+        return AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value) == .success
+    }
+
+    private func concealApp(app: NSRunningApplication, application: AXUIElement) throws -> ComputerResult {
+        try requireAccessibility()
+        let windows = appWindows(application)
+        guard !windows.isEmpty else {
+            throw ComputerError.operationFailed("no window to conceal yet; observe the app or wait for its window before concealing")
+        }
+        let target = offscreenOrigin()
+        var origins = concealedWindowOrigins[app.processIdentifier] ?? []
+        var concealed = 0
+        var clamped = 0
+        for (index, window) in windows.enumerated() {
+            let current = axFrame(window)?.origin ?? .zero
+            // Only record an original that is still on-screen so a re-conceal does not
+            // overwrite the saved position with the off-screen one.
+            if index < origins.count {
+                if current.x < target.x - 1 { origins[index] = current }
+            } else {
+                origins.append(current)
+            }
+            guard setWindowOrigin(window, to: target) else { continue }
+            if (axFrame(window)?.origin.x ?? current.x) >= target.x - 1 {
+                concealed += 1
+            } else {
+                clamped += 1
+            }
+        }
+        concealedWindowOrigins[app.processIdentifier] = origins
+        let canonicalTarget = app.bundleIdentifier ?? app.bundleURL?.path ?? String(app.processIdentifier)
+        var text = "Concealed \(concealed) window(s) for app=\"\(canonicalTarget)\" off-screen; Accessibility control and live capture continue."
+        if clamped > 0 {
+            text += " \(clamped) window(s) refused the off-screen position and stay visible."
+        }
+        return ComputerResult(text: text, structured: [
+            "action": "conceal_app",
+            "app": canonicalTarget,
+            "process_id": Int(app.processIdentifier),
+            "status": clamped == 0 ? "concealed" : "partial",
+            "mechanism": "background_ax",
+            "foreground_changed": false,
+            "concealed_windows": concealed,
+            "unsupported_windows": clamped,
+        ])
+    }
+
+    private func revealApp(app: NSRunningApplication, application: AXUIElement) throws -> ComputerResult {
+        try requireAccessibility()
+        let restored = restoreConcealedWindows(app: app, application: application)
+        let canonicalTarget = app.bundleIdentifier ?? app.bundleURL?.path ?? String(app.processIdentifier)
+        return ComputerResult(
+            text: "Revealed \(restored) window(s) for app=\"\(canonicalTarget)\" at their original positions.",
+            structured: [
+                "action": "reveal_app",
+                "app": canonicalTarget,
+                "process_id": Int(app.processIdentifier),
+                "status": "revealed",
+                "mechanism": "background_ax",
+                "foreground_changed": false,
+                "revealed_windows": restored,
+            ]
+        )
+    }
+
+    @discardableResult
+    private func restoreConcealedWindows(app: NSRunningApplication, application: AXUIElement) -> Int {
+        guard let origins = concealedWindowOrigins[app.processIdentifier] else { return 0 }
+        let windows = appWindows(application)
+        var restored = 0
+        for (index, window) in windows.enumerated() where index < origins.count {
+            if setWindowOrigin(window, to: origins[index]) { restored += 1 }
+        }
+        concealedWindowOrigins[app.processIdentifier] = nil
+        return restored
     }
 
     private func click(_ command: ComputerCommand, app: NSRunningApplication) throws -> String {

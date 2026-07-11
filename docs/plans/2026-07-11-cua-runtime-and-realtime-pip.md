@@ -440,6 +440,22 @@ Activity acquire
 
 实施证据（2026-07-11）：所有动作按目标 PID 使用跨进程锁，同一应用串行、不同应用允许并行；所有 CGEvent 前台输入再经过唯一的全局锁。实时流上限为 3，按最旧流淘汰。计算器和 TextEdit 后台 AX 验证均保持前台和鼠标不变；微信坐标路径只有显式 `foreground_policy=allow` 才执行，结果报告 `foreground_native` 和前台变化，不会与另一前台 sequence 交叉。
 
+### M8：离屏窗口隐匿（实现，待真机验证）
+
+用户目标：目标 app 在 cua-mac 看来完整可操作，在用户看来完全不存在。
+
+硬约束（macOS 公开 API 层面）：
+
+- AX 枚举与操作要求窗口已在 WindowServer 注册并渲染；hidden launch（`open -j`）跳过建窗，AX 拿到空根，无法操作。因此不能"不建窗"，只能让已渲染窗口对人不可见。
+- 一个已渲染的窗口，无论位于屏内屏外，AX 树完整、ScreenCaptureKit 仍能抓其合成 surface。把窗口移到所有显示器之外即可对人隐藏，同时保留后台控制与实时 PiP。
+- Dock 图标、Cmd-Tab 条目、Mission Control 存在由目标 app 自身的 activation policy 决定；`setActivationPolicy` 只能改本进程，公开 API 无法改第三方进程。因此"连图标都不出现"对任意第三方 app 做不到，只有等级 4（隔离桌面/独立登录会话/VM）能满足，属第一阶段非目标。
+
+实现：新增 `conceal_app` / `reveal_app`。conceal 逐窗口读 `AXPosition`、记录原位、经 AX 设到显示器并集之外；reveal 按记录恢复。前台动作（`foreground_policy=allow/require`）自动先 reveal。若窗口拒绝离屏坐标（app 钳制），如实报告仍可见，状态 `partial`。
+
+已知 caveat（待真机确认）：离屏/遮挡窗口可能触发 occlusion 节流，重应用可能出现 PiP 停在上一帧直到有变化；纯 AX 动作触发的重绘不受影响。启动瞬间在建窗到 conceal 之间存在一帧闪现，后续可用 `AXObserver` 的 `kAXWindowCreatedNotification` 在建窗即刻隐匿来消除。
+
+验收（需在 macOS 上 build 后执行）：conceal 后计算器窗口不在任何显示器可见、frontmost 与鼠标不变、AX sequence 仍算出结果、PiP 持续显示离屏窗口画面；reveal 后窗口回到原位。
+
 ## 9. 测试矩阵
 
 | 应用 | AX | 任务 | 预期控制等级 | 验证 |
