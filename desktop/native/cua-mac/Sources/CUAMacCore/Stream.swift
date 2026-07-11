@@ -54,6 +54,7 @@ private final class PiPCommandReader: @unchecked Sendable {
 @MainActor
 private final class NativePiPView: NSView {
     private nonisolated(unsafe) let displayLayer = AVSampleBufferDisplayLayer()
+    private let fallbackLayer = CALayer()
     private let pointerLayer = CAShapeLayer()
     private let rippleLayer = CAShapeLayer()
     private let closeButton = NSButton()
@@ -72,6 +73,11 @@ private final class NativePiPView: NSView {
         displayLayer.videoGravity = .resizeAspect
         displayLayer.backgroundColor = NSColor.black.cgColor
         layer?.addSublayer(displayLayer)
+
+        fallbackLayer.contentsGravity = .resizeAspect
+        fallbackLayer.backgroundColor = NSColor.black.cgColor
+        fallbackLayer.isHidden = true
+        layer?.addSublayer(fallbackLayer)
 
         let pointerPath = CGMutablePath()
         // Core Animation uses a bottom-left origin here. Define the cursor in
@@ -121,6 +127,7 @@ private final class NativePiPView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         displayLayer.frame = bounds
+        fallbackLayer.frame = bounds
         closeButton.frame = CGRect(x: bounds.maxX - 34, y: bounds.maxY - 34, width: 26, height: 26)
         placePointer()
         CATransaction.commit()
@@ -155,8 +162,18 @@ private final class NativePiPView: NSView {
         displayLayer.enqueue(sampleBuffer)
         if let imageBuffer = sampleBuffer.imageBuffer {
             let size = CGSize(width: CVPixelBufferGetWidth(imageBuffer), height: CVPixelBufferGetHeight(imageBuffer))
-            Task { @MainActor [weak self] in self?.setVideoSize(size) }
+            Task { @MainActor [weak self] in
+                self?.fallbackLayer.isHidden = true
+                self?.fallbackLayer.contents = nil
+                self?.setVideoSize(size)
+            }
         }
+    }
+
+    func showFallback(_ image: CGImage) {
+        fallbackLayer.contents = image
+        fallbackLayer.isHidden = false
+        setVideoSize(CGSize(width: image.width, height: image.height))
     }
 
     func setVideoSize(_ size: CGSize) {
@@ -302,6 +319,25 @@ private final class NativePiPWindowController: NSObject, NSWindowDelegate {
         writer.send("ready", fields: ["width": Int(videoSize.width), "height": Int(videoSize.height)])
     }
 
+    func showFallbackFrame(_ image: CGImage) {
+        content.showFallback(image)
+        let size = CGSize(width: image.width, height: image.height)
+        let ratio = size.width / max(1, size.height)
+        panel.contentAspectRatio = CGSize(width: ratio, height: 1)
+        guard !shown else { return }
+        let fitted = fittedPiPSize(ratio: ratio)
+        let current = panel.frame
+        panel.setFrame(
+            CGRect(x: current.maxX - fitted.width, y: current.maxY - fitted.height, width: fitted.width, height: fitted.height),
+            display: false
+        )
+        shown = true
+        panel.orderFrontRegardless()
+        writer.send("ready", fields: ["width": image.width, "height": image.height])
+    }
+
+    var hasShownContent: Bool { shown }
+
     func setVisible(_ visible: Bool) {
         if visible, shown { panel.orderFrontRegardless() } else { panel.orderOut(nil) }
     }
@@ -410,7 +446,10 @@ private final class NativePiPStreamOutput: NSObject, SCStreamOutput, SCStreamDel
         let statusChanged = status != nil && status != lastStatus
         if let status { lastStatus = status }
         if status == .stopped { stopped = true }
-        let shouldDisplay = sampleBuffer.imageBuffer != nil && (status == nil || status == .complete || status == .started)
+        let shouldDisplay = sampleBuffer.imageBuffer != nil
+            && status != .blank
+            && status != .suspended
+            && status != .stopped
         if shouldDisplay { receivedFrame = true }
         lock.unlock()
         if statusChanged, let status { writer.send("capture_status", fields: ["status": captureStatusName(status)]) }
@@ -498,6 +537,23 @@ private func startWindowStream(window: SCWindow, output: NativePiPStreamOutput) 
     return stream
 }
 
+@available(macOS 14.0, *)
+private func captureWindowImage(window: SCWindow) async throws -> CGImage {
+    let configuration = streamConfiguration(for: window)
+    let filter = SCContentFilter(desktopIndependentWindow: window)
+    return try await withCheckedThrowingContinuation { continuation in
+        SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) { image, error in
+            if let error {
+                continuation.resume(throwing: error)
+            } else if let image {
+                continuation.resume(returning: image)
+            } else {
+                continuation.resume(throwing: ComputerError.operationFailed("window screenshot produced no image"))
+            }
+        }
+    }
+}
+
 @MainActor
 public func runNativePiP(configuration: NativePiPConfiguration) async throws {
     guard CGPreflightScreenCaptureAccess() else {
@@ -522,8 +578,8 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
     var stream = try startWindowStream(window: window, output: output)
     var streamStartedAt = Date()
     var consecutiveStreamFailures = 0
-    var hasEverProducedFrame = false
     var lastHealthyOutput: ObjectIdentifier?
+    var lastFallbackCaptureAt = Date.distantPast
 
     let commandReader = PiPCommandReader()
     FileHandle.standardInput.readabilityHandler = { input in
@@ -549,19 +605,23 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
         try await Task.sleep(for: .milliseconds(100))
         let outputID = ObjectIdentifier(output)
         if output.hasFrame(), lastHealthyOutput != outputID {
-            hasEverProducedFrame = true
             consecutiveStreamFailures = 0
             lastHealthyOutput = outputID
         }
-        let firstFrameTimedOut = !output.hasFrame() && Date().timeIntervalSince(streamStartedAt) >= 5
-        if output.isStopped() || firstFrameTimedOut {
+        if !output.hasFrame(), Date().timeIntervalSince(lastFallbackCaptureAt) >= 0.5 {
+            lastFallbackCaptureAt = Date()
+            if let image = try? await captureWindowImage(window: window) {
+                controller.showFallbackFrame(image)
+            }
+        }
+        let startupFailed = !output.hasFrame()
+            && !controller.hasShownContent
+            && Date().timeIntervalSince(streamStartedAt) >= 5
+        if output.isStopped() || startupFailed {
             consecutiveStreamFailures += 1
             try? stream.removeStreamOutput(output, type: .screen)
             try? await stream.stopCapture()
-            if firstFrameTimedOut, !hasEverProducedFrame {
-                throw ComputerError.operationFailed("native window capture did not produce a first frame")
-            }
-            if !hasEverProducedFrame, consecutiveStreamFailures >= 4 {
+            if !controller.hasShownContent, consecutiveStreamFailures >= 4 {
                 throw ComputerError.operationFailed("native window capture repeatedly stopped")
             }
             let retryDelay = 250 * (1 << min(3, consecutiveStreamFailures))
@@ -576,7 +636,7 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
                 output = next
                 streamStartedAt = Date()
             } catch {
-                if !hasEverProducedFrame, consecutiveStreamFailures >= 3 { throw error }
+                if !controller.hasShownContent, consecutiveStreamFailures >= 3 { throw error }
             }
             continue
         }
