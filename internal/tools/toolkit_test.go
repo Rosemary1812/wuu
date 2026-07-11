@@ -3443,6 +3443,37 @@ func TestToolkit_RepeatedToolInputGuardExemptsPollingTools(t *testing.T) {
 	}
 }
 
+func TestToolkit_RepeatedToolInputGuardExemptsCUAObserve(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	revision := workspaceRevision(context.Background(), kit.env.RootDir)
+	args := `{"action":"observe","app":"com.apple.calculator"}`
+	hash := toolArgumentsSHA256(args)
+	name := "mcp_plugin_cua_mac_computer_computer_test"
+	kit.env.toolTelemetry.record(ToolExecutionRecord{Name: name, ArgumentsSHA256: hash, RevisionBefore: revision})
+	kit.env.toolTelemetry.record(ToolExecutionRecord{Name: name, ArgumentsSHA256: hash, RevisionBefore: revision})
+
+	got := kit.repeatedToolInputCount(providers.ToolCall{
+		Name:      name,
+		Arguments: args,
+	}, revision)
+	if got != 0 {
+		t.Fatalf("CUA observe refresh should be exempt from repeated input guard, got count %d", got)
+	}
+
+	nonObserve := providers.ToolCall{Name: name, Arguments: `{"action":"click","app":"com.apple.calculator","element_id":9}`}
+	if isRepeatablePollingTool(nonObserve) {
+		t.Fatal("CUA actions must remain protected by the repeated input guard")
+	}
+	similarTool := providers.ToolCall{Name: "mcp_plugin_not_cua_mac_computer_computer_test", Arguments: args}
+	if isRepeatablePollingTool(similarTool) {
+		t.Fatal("similarly named non-CUA tools must remain protected by the repeated input guard")
+	}
+}
+
 func TestToolkit_ToolTelemetry_RecordsClassificationReason(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

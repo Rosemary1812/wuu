@@ -262,7 +262,10 @@ public final class MacComputerBackend: ComputerBackend {
             structured["screenshot_error"] = error.localizedDescription
         }
         let canonicalTarget = app.bundleIdentifier ?? app.bundleURL?.path ?? String(app.processIdentifier)
-        let header = "Target app=\"\(canonicalTarget)\" display_name=\"\(app.localizedName ?? "Unknown")\" pid=\(app.processIdentifier). Reuse this exact app value for follow-up actions."
+        var header = "Target app=\"\(canonicalTarget)\" display_name=\"\(app.localizedName ?? "Unknown")\" pid=\(app.processIdentifier). Reuse this exact app value for follow-up actions."
+        if let geometry = lastCaptureGeometry[app.processIdentifier], screenshot != nil {
+            header += " Screenshot=\(geometry.imageWidth)×\(geometry.imageHeight) pixels maps to window_frame=(\(Int(geometry.windowFrame.origin.x)),\(Int(geometry.windowFrame.origin.y)),\(Int(geometry.windowFrame.width)),\(Int(geometry.windowFrame.height))). For coordinate_space=\"screenshot\", pass image pixels directly; the tool handles display scaling."
+        }
         return ComputerResult(
             text: header + "\n" + snapshot.text,
             screenshot: screenshot,

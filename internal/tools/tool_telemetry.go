@@ -252,6 +252,14 @@ func (t *Toolkit) repeatedToolInputCount(call providers.ToolCall, revision strin
 
 func isRepeatablePollingTool(call providers.ToolCall) bool {
 	name := strings.TrimSpace(call.Name)
+	if strings.HasPrefix(name, "mcp_plugin_cua_mac_computer_computer_") {
+		var args struct {
+			Action string `json:"action"`
+		}
+		if err := json.Unmarshal([]byte(call.Arguments), &args); err == nil && args.Action == "observe" {
+			return true
+		}
+	}
 	if name == "bash" {
 		var args bashArgs
 		if err := decodeArgs(call.Arguments, &args); err == nil {
