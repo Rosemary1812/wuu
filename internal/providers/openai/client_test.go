@@ -1813,6 +1813,49 @@ func TestResponsesRequest_KeepsTopLevelToolsStableAcrossToolSearchLifecycle(t *t
 	}
 }
 
+func TestResponsesRequest_ForceToolNameSetsForcedToolChoice(t *testing.T) {
+	client := &Client{}
+	req := providers.ChatRequest{
+		Model:         "gpt-test",
+		Messages:      []providers.ChatMessage{{Role: "user", Content: "wrap up"}},
+		Tools:         []providers.ToolDefinition{{Name: "submit_report", InputSchema: map[string]any{"type": "object"}}},
+		ForceToolName: "submit_report",
+	}
+
+	payload, err := client.buildResponsesRequest(req, false)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	choice, ok := payload.ToolChoice.(map[string]any)
+	if !ok {
+		t.Fatalf("expected forced tool_choice map, got %T (%v)", payload.ToolChoice, payload.ToolChoice)
+	}
+	if choice["type"] != "function" || choice["name"] != "submit_report" {
+		t.Fatalf("unexpected forced tool_choice: %+v", choice)
+	}
+
+	// The forced wire form must serialize flatter than Chat Completions
+	// (no nested "function" object).
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	if !strings.Contains(string(raw), `"tool_choice":{"name":"submit_report","type":"function"}`) &&
+		!strings.Contains(string(raw), `"tool_choice":{"type":"function","name":"submit_report"}`) {
+		t.Fatalf("forced tool_choice not serialized as expected: %s", raw)
+	}
+
+	// Without ForceToolName it stays "auto".
+	req.ForceToolName = ""
+	autoPayload, err := client.buildResponsesRequest(req, false)
+	if err != nil {
+		t.Fatalf("build auto request: %v", err)
+	}
+	if autoPayload.ToolChoice != "auto" {
+		t.Fatalf("expected auto tool_choice, got %v", autoPayload.ToolChoice)
+	}
+}
+
 func TestResponsesRequest_UsesFunctionShapesWhenNativeDeferredDisabled(t *testing.T) {
 	client := &Client{}
 	toolSearch := providers.ToolDefinition{

@@ -169,6 +169,15 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		}
 		if len(tools) > 0 {
 			payload.ToolChoice = "auto"
+			if req.ForceToolName != "" {
+				// Forced tool choice for mechanical closing turns. The
+				// Responses wire form pins a function by name and is flatter
+				// than Chat Completions (no nested "function" object).
+				payload.ToolChoice = map[string]any{
+					"type": "function",
+					"name": req.ForceToolName,
+				}
+			}
 			payload.Tools = tools
 		}
 	}
@@ -1076,7 +1085,7 @@ type responsesRequest struct {
 	Instructions       string                    `json:"instructions,omitempty"`
 	Input              []responsesInputItem      `json:"input"`
 	Tools              []responsesToolDefinition `json:"tools,omitempty"`
-	ToolChoice         string                    `json:"tool_choice,omitempty"`
+	ToolChoice         any                       `json:"tool_choice,omitempty"`
 	Temperature        float64                   `json:"temperature,omitempty"`
 	MaxOutputTokens    int                       `json:"max_output_tokens,omitempty"`
 	Stream             bool                      `json:"stream,omitempty"`
