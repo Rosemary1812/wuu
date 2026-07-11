@@ -23,6 +23,12 @@ export type SidebarDrawerStateController = {
   syncSidebarDrawerHover: () => void;
 };
 
+// The drawer controller serves both shells: the main app (`aside.sidebar`)
+// and the settings page (`aside.settings-sidebar`). Pointer-hover checks must
+// match either rail, otherwise moving the pointer from the hover zone into
+// the revealed drawer counts as "left the drawer" and closes it.
+const SIDEBAR_RAIL_SELECTOR = ".sidebar, .settings-sidebar";
+
 export function useSidebarDrawerState({
   appShellRef,
   sidebarCollapsed,
@@ -88,7 +94,7 @@ export function useSidebarDrawerState({
     if (!target) {
       return undefined;
     }
-    const sidebar = appShellRef.current?.querySelector(".sidebar");
+    const sidebar = appShellRef.current?.querySelector(SIDEBAR_RAIL_SELECTOR);
     const hoverZone = sidebarHoverZoneRef.current;
     return Boolean(
       (sidebar && sidebar.contains(target)) ||
@@ -97,7 +103,7 @@ export function useSidebarDrawerState({
   }, [appShellRef]);
 
   const blurSidebarFocus = useCallback((): void => {
-    const sidebar = appShellRef.current?.querySelector(".sidebar");
+    const sidebar = appShellRef.current?.querySelector(SIDEBAR_RAIL_SELECTOR);
     const active = document.activeElement;
     if (sidebar && active instanceof HTMLElement && sidebar.contains(active)) {
       active.blur();
@@ -307,7 +313,7 @@ export function useSidebarDrawerState({
     if (!resizingSidebar || !sidebarCollapsed) {
       return;
     }
-    const sidebar = appShellRef.current?.querySelector(".sidebar");
+    const sidebar = appShellRef.current?.querySelector(SIDEBAR_RAIL_SELECTOR);
     const active = document.activeElement;
     if (sidebar && active instanceof HTMLElement && sidebar.contains(active)) {
       active.blur();

@@ -31,43 +31,49 @@
   --settings-heatmap-level-4: #1a4fa8;
 }
 
+/* Same column vocabulary as .app-shell: `--sidebar-width` is the live grid
+ * column (0 when collapsed), `--sidebar-open-width` remembers the open width
+ * for the hover drawer and the fixed-width rail content. The shell background
+ * must stay transparent — the sidebar's liquid-glass look is the translucent
+ * `--sidebar-material-fill` compositing over the window's native vibrancy,
+ * and any opaque layer behind the rail (the old `--surface-1` here) kills it.
+ * The content column paints its own opaque surface via .settings-main. */
 .settings-shell {
   display: grid;
   position: relative;
-  grid-template-columns: var(--settings-sidebar-width, 280px) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 326px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--surface-1);
+  background: transparent;
 }
 
-.settings-shell .settings-sidebar-resizer {
-  left: calc(var(--settings-sidebar-width, 280px) - 5px);
+/* Collapse/expand animates the same way as the main shell: the JS motion
+ * window (`sidebarAnimating`) gates a grid-template-columns transition while
+ * `--sidebar-width` flips between 0 and the open width. */
+.settings-shell.sidebar-animating {
+  transition: grid-template-columns var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
 }
 
 /* Glass surface (border, background, box-shadow, backdrop-filter) and the
  * ::before gradient overlay are inherited from the shared `.sidebar,
- * .settings-sidebar` selector list in sidebar.css — this rule keeps only
- * the layout specifics (gap). Keeping it slim means a future tweak to the
- * glass look updates both sidebars from one place.
- *
- * The padding mirrors `.sidebar-content` (0 / 12 / 16) so the brand row,
- * traffic-spacer, and inner controls land at the same vertical/horizontal
- * positions in both shells; the `gap` is a settings-only rhythm detail for
- * the brand → back-button → nav stack (the main sidebar uses internal group
- * gaps instead — see `--sidebar-functional-group-gap`). No extra padding or
- * divider strips: the settings rail must read as the same liquid-glass
- * surface as the main one, not a heavier standalone panel. */
+ * .settings-sidebar` selector list in sidebar.css; the collapse fade/slide
+ * and fixed-width clipping come from the shared `.sidebar-content` layer
+ * inside (same structure as the main rail). This rule only mirrors the main
+ * aside's material transition so collapse border fades match. */
 .settings-sidebar {
-  gap: 4px;
-  padding: 0 12px 16px;
+  transition:
+    border-color var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
+    background-color var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
+    box-shadow var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
 }
 
-.settings-shell.resizing-sidebar .settings-sidebar {
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+/* Settings-only rhythm detail for the brand → back-button → nav stack (the
+ * main sidebar uses internal group gaps instead — see
+ * `--sidebar-functional-group-gap`). */
+.settings-sidebar .sidebar-content {
+  gap: 4px;
 }
 
 .settings-sidebar .traffic-spacer {
@@ -156,70 +162,15 @@
 }
 
 /* =========================================================================
- * Settings sidebar collapse / hover-reveal — mirrors the main app shell.
+ * Settings sidebar collapse / hover-reveal — identical to the main app shell.
  *
  * The settings shell keeps the same `.sidebar-collapsed` /
- * `.sidebar-drawer-open` / `.sidebar-drawer-closing` lifecycle as
- * `.app-shell` so the same CSS vocabulary reads correctly in either view.
- * The drawer overlay rides on top of the (now zero-width) grid column and
- * stays interactive while open.
+ * `.sidebar-drawer-open` / `.sidebar-drawer-closing` / `.sidebar-animating`
+ * lifecycle as `.app-shell`, and the rail nests the same `.sidebar-content`
+ * layer, so every collapse / drawer / resize rule in sidebar.css (hover
+ * zone, drawer overlay, content fade/slide, resizer) applies to both shells
+ * verbatim. No settings-specific collapse rules remain here.
  * ========================================================================= */
-
-/* Collapsed: collapse the first grid column to 0 and slide the rail off
- * so the content column reflows into the freed space. The drawer overlay
- * rules below re-mount the rail absolutely when the user hovers the
- * left edge. */
-.settings-shell.sidebar-collapsed {
-  grid-template-columns: 0 minmax(0, 1fr);
-}
-
-.settings-shell.sidebar-collapsed .settings-sidebar {
-  transform: translate3d(-18px, 0, 0);
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    transform var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
-    opacity var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
-}
-
-/* Drawer overlay positioning and the closing fade for this rail now live in
- * sidebar.css — both shells share the same rules via `:is(.sidebar,
- * .settings-sidebar)` selectors, so future animation tweaks (z-index,
- * box-shadow, fade duration) only need updating in one place.
- *
- * The collapse transform above stays in this file because the settings rail
- * is the transform target itself; in the main sidebar the equivalent
- * transform lives on `.sidebar-content` (see sidebar.css), so the two
- * shells can't share that one rule verbatim. */
-
-/* The hover zone is hidden by default; only appears once the rail is
- * collapsed so the user has a target to reveal it. While a sidebar drag is
- * in flight the pointer can sit exactly where the zone lives, so hide it
- * to keep the resize gesture clean. */
-.settings-sidebar-hover-zone {
-  display: none;
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 130;
-  width: 14px;
-  -webkit-app-region: no-drag;
-}
-
-.settings-shell.sidebar-collapsed .settings-sidebar-hover-zone {
-  display: block;
-}
-
-.resizing-sidebar .settings-sidebar-hover-zone {
-  display: none;
-}
-
-/* When the rail is collapsed the resizer has no rail to drag against —
- * hide it so the user doesn't grab a dead handle. */
-.settings-shell.sidebar-collapsed .settings-sidebar-resizer {
-  display: none;
-}
 
 .settings-scroll {
   display: flex;

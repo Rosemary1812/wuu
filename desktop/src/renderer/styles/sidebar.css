@@ -174,8 +174,10 @@
     box-shadow var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
 }
 
-.sidebar-animating .sidebar,
-.sidebar-collapsed .sidebar {
+/* While the rail column animates (or sits collapsed) the fixed-width
+ * `.sidebar-content` inside must be clipped, not squished — both shells. */
+.sidebar-animating :is(.sidebar, .settings-sidebar),
+.sidebar-collapsed :is(.sidebar, .settings-sidebar) {
   overflow: hidden;
 }
 
@@ -191,7 +193,7 @@
   pointer-events: none;
 }
 
-.sidebar-collapsed .sidebar {
+.sidebar-collapsed :is(.sidebar, .settings-sidebar) {
   border-right-color: transparent;
   pointer-events: none;
 }
@@ -294,8 +296,8 @@
   opacity: 1;
 }
 
-.sidebar-collapsed.sidebar-drawer-open .sidebar .sidebar-content,
-.sidebar-collapsed:not(.resizing-sidebar) .sidebar:focus-within .sidebar-content {
+.sidebar-collapsed.sidebar-drawer-open :is(.sidebar, .settings-sidebar) .sidebar-content,
+.sidebar-collapsed:not(.resizing-sidebar) :is(.sidebar, .settings-sidebar):focus-within .sidebar-content {
   opacity: 1;
   transform: translate3d(0, 0, 0) scale(1);
 }
@@ -392,12 +394,12 @@
   transition: none;
 }
 
-.resizing-sidebar .sidebar,
+.resizing-sidebar :is(.sidebar, .settings-sidebar),
 .resizing-sidebar .sidebar-content {
   transition: none;
 }
 
-.resizing-sidebar .sidebar {
+.resizing-sidebar :is(.sidebar, .settings-sidebar) {
   box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;

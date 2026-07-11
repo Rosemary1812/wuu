@@ -132,6 +132,12 @@ function renderSettings(props: {
         sidebarMinWidth={240}
         sidebarMaxWidth={480}
         resizingSidebar={false}
+        // Mirror the App-level collapse/hover wiring so existing render
+        // assertions still produce a sensible non-collapsed shell by default.
+        sidebarCollapsed={false}
+        sidebarAnimating={false}
+        onToggleSidebar={() => {}}
+        sidebarMotionMs={340}
         onBack={() => {}}
         onSave={props.onSave ?? (async () => {})}
         onRemoveProvider={props.onRemoveProvider ?? (async () => {})}
@@ -140,7 +146,6 @@ function renderSettings(props: {
         onDebugControlsChange={() => {}}
         onSidebarResizeStart={noopResizeStart}
         onSidebarSeparatorKey={noopResizeKey}
-        onSidebarSeparatorDoubleClick={() => {}}
         archivedThreads={props.archivedThreads ?? []}
         onUnarchiveThread={props.onUnarchiveThread ?? (() => {})}
       />,

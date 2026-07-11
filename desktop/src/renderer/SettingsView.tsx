@@ -109,19 +109,19 @@ export function SettingsView({
   onDebugControlsChange,
   onSidebarResizeStart,
   onSidebarSeparatorKey,
-  onSidebarSeparatorDoubleClick,
   usageRange,
   setUsageRange,
   archivedThreads,
   onUnarchiveThread,
-  // Mirrors the main app's collapse/hover behaviour: when the user collapses
-  // the sidebar from the toggle button (or the persisted preference says
-  // collapsed), the settings shell hides the rail and only reveals it on
-  // hover of the left edge. `activeSessionTabID` is forwarded so the drawer
-  // hook can reset its hover-open state when the user navigates between
-  // settings pages, mirroring how the main view resets on session tab swap.
+  // The settings rail shares the main sidebar's state and handlers wholesale:
+  // same persisted width + collapse flag, same drag-to-collapse resize
+  // session, same toggle motion. `activeSessionTabID` is forwarded so the
+  // drawer hook can reset its hover-open state when the user navigates
+  // between settings pages, mirroring how the main view resets on session
+  // tab swap.
   sidebarCollapsed,
-  onSidebarCollapsedChange,
+  sidebarAnimating,
+  onToggleSidebar,
   sidebarMotionMs,
   activeSessionTabID = "",
 }: {
@@ -157,12 +157,12 @@ export function SettingsView({
   onDebugControlsChange: (enabled: boolean) => void;
   onSidebarResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
-  onSidebarSeparatorDoubleClick: () => void;
   // 归档页只读侧边栏归档清单 + 恢复回调。列表为空时渲染空态卡片。
   archivedThreads?: readonly ArchivedSessionView[];
   onUnarchiveThread: (thread: ArchivedSessionView) => void;
   sidebarCollapsed: boolean;
-  onSidebarCollapsedChange: (collapsed: boolean) => void;
+  sidebarAnimating: boolean;
+  onToggleSidebar: () => void;
   sidebarMotionMs: number;
   activeSessionTabID?: string;
 }): JSX.Element {
@@ -514,11 +514,10 @@ export function SettingsView({
       (connectionLocked || baseURLDraft.trim() === selectedBaseURL) &&
       (connectionLocked || !apiKeyDraft.trim()));
   const shellStyle = {
-    // `--settings-sidebar-width` is the layout grid column width (settings-only
-    // — the main shell uses `--sidebar-width`). The other two variables are
-    // shared with the main sidebar so a single CSS / JS constant covers both
-    // sidebars; see sidebar.css drawer-overlay rules for the consumer side.
-    "--settings-sidebar-width": `${sidebarWidth}px`,
+    // Same variables as the main app shell (`--sidebar-width` collapses to 0,
+    // `--sidebar-open-width` remembers the open width for the hover drawer)
+    // so sidebar.css and settings.css read one vocabulary for both shells.
+    "--sidebar-width": `${sidebarCollapsed ? 0 : sidebarWidth}px`,
     "--sidebar-open-width": `${sidebarWidth}px`,
     "--sidebar-motion-duration": `${sidebarMotionMs}ms`
   } as CSSProperties;
@@ -535,7 +534,9 @@ export function SettingsView({
     sidebarDrawerPhase,
     sidebarHoverZoneRef,
     scheduleSidebarDrawerOpen,
-    cancelSidebarDrawerOpen
+    cancelSidebarDrawerOpen,
+    openSidebarDrawer,
+    closeSidebarDrawer
   } = useSidebarDrawerState({
     appShellRef: effectiveShellRef,
     sidebarCollapsed,
@@ -551,10 +552,7 @@ export function SettingsView({
     sidebarCollapsed && sidebarDrawerPhase === "closing"
       ? " sidebar-drawer-closing"
       : ""
-  }`;
-  const handleToggleSidebar = (): void => {
-    onSidebarCollapsedChange(!sidebarCollapsed);
-  };
+  }${sidebarAnimating ? " sidebar-animating" : ""}`;
 
   const pageMeta = settingsPageMeta(
     activePage,
@@ -566,63 +564,76 @@ export function SettingsView({
     <div ref={effectiveShellRef} className={shellClassName} style={shellStyle}>
       <div
         ref={sidebarHoverZoneRef}
-        className="sidebar-hover-zone settings-sidebar-hover-zone"
+        className="sidebar-hover-zone"
         aria-hidden="true"
         onPointerEnter={scheduleSidebarDrawerOpen}
         onPointerLeave={cancelSidebarDrawerOpen}
       />
-      <aside className="settings-sidebar">
-        <div className="traffic-spacer" />
+      <aside
+        className="settings-sidebar"
+        onPointerEnter={openSidebarDrawer}
+        onPointerLeave={closeSidebarDrawer}
+      >
         {/*
-          * 同一个品牌占位，复制自主侧栏 AppSidebar 顶部的 .sidebar-brand。
-          * 这里放在 settings-sidebar 的 traffic-spacer 与 返回应用 按钮之间，
-          * 与主侧栏"traffic-spacer → 品牌 → 主操作"的相对位置一一对应，
-          * 这样打开/关闭设置时品牌始终在同一个视觉位置。
+          * 与主侧栏一致的内层 .sidebar-content：折叠动画期间列宽收窄时，
+          * 内容保持 --sidebar-open-width 的固定宽度被裁切（而不是被压扁），
+          * 淡出/位移也复用 sidebar.css 里同一组规则。
           */}
-        <div className="sidebar-brand">
-          <span className="sidebar-brand-wordmark">wuu</span>
+        <div className="sidebar-content">
+          <div className="traffic-spacer" />
+          {/*
+            * 同一个品牌占位，复制自主侧栏 AppSidebar 顶部的 .sidebar-brand。
+            * 这里放在 settings-sidebar 的 traffic-spacer 与 返回应用 按钮之间，
+            * 与主侧栏"traffic-spacer → 品牌 → 主操作"的相对位置一一对应，
+            * 这样打开/关闭设置时品牌始终在同一个视觉位置。
+            */}
+          <div className="sidebar-brand">
+            <span className="sidebar-brand-wordmark">wuu</span>
+          </div>
+          <button className="settings-back-button" type="button" onClick={onBack}>
+            <ArrowLeft className="icon" />
+            <span>返回应用</span>
+          </button>
+          <nav className="settings-nav" aria-label="设置">
+            <SettingsNavItem icon={<KeyRound className="icon-lg" />} active={activePage === "providers"} onClick={() => setActivePage("providers")}>
+              模型服务
+            </SettingsNavItem>
+            <SettingsNavItem icon={<Settings className="icon-lg" />} active={activePage === "general"} onClick={() => setActivePage("general")}>
+              常规
+            </SettingsNavItem>
+            <SettingsNavItem icon={<Brain className="icon-lg" />} active={activePage === "memory"} onClick={() => setActivePage("memory")}>
+              记忆
+            </SettingsNavItem>
+            <SettingsNavItem icon={<SlidersHorizontal className="icon-lg" />} active={activePage === "advanced"} onClick={() => setActivePage("advanced")}>
+              高级
+            </SettingsNavItem>
+            <SettingsNavItem icon={<BarChart3 className="icon-lg" />} active={activePage === "usage"} onClick={() => setActivePage("usage")}>
+              用量
+            </SettingsNavItem>
+            <SettingsNavItem icon={<Smartphone className="icon-lg" />} active={activePage === "remote"} onClick={() => setActivePage("remote")}>
+              远程
+            </SettingsNavItem>
+            <SettingsNavItem icon={<Archive className="icon-lg" />} active={activePage === "archive"} onClick={() => setActivePage("archive")}>
+              归档
+            </SettingsNavItem>
+          </nav>
         </div>
-        <button className="settings-back-button" type="button" onClick={onBack}>
-          <ArrowLeft className="icon" />
-          <span>返回应用</span>
-        </button>
-        <nav className="settings-nav" aria-label="设置">
-          <SettingsNavItem icon={<KeyRound className="icon-lg" />} active={activePage === "providers"} onClick={() => setActivePage("providers")}>
-            模型服务
-          </SettingsNavItem>
-          <SettingsNavItem icon={<Settings className="icon-lg" />} active={activePage === "general"} onClick={() => setActivePage("general")}>
-            常规
-          </SettingsNavItem>
-          <SettingsNavItem icon={<Brain className="icon-lg" />} active={activePage === "memory"} onClick={() => setActivePage("memory")}>
-            记忆
-          </SettingsNavItem>
-          <SettingsNavItem icon={<SlidersHorizontal className="icon-lg" />} active={activePage === "advanced"} onClick={() => setActivePage("advanced")}>
-            高级
-          </SettingsNavItem>
-          <SettingsNavItem icon={<BarChart3 className="icon-lg" />} active={activePage === "usage"} onClick={() => setActivePage("usage")}>
-            用量
-          </SettingsNavItem>
-          <SettingsNavItem icon={<Smartphone className="icon-lg" />} active={activePage === "remote"} onClick={() => setActivePage("remote")}>
-            远程
-          </SettingsNavItem>
-          <SettingsNavItem icon={<Archive className="icon-lg" />} active={activePage === "archive"} onClick={() => setActivePage("archive")}>
-            归档
-          </SettingsNavItem>
-        </nav>
       </aside>
-      <div
-        className="sidebar-resizer settings-sidebar-resizer"
-        role="separator"
-        aria-label="调整设置侧边栏宽度"
-        aria-orientation="vertical"
-        aria-valuemin={sidebarMinWidth}
-        aria-valuemax={sidebarMaxWidth}
-        aria-valuenow={sidebarWidth}
-        tabIndex={0}
-        onPointerDown={onSidebarResizeStart}
-        onDoubleClick={onSidebarSeparatorDoubleClick}
-        onKeyDown={onSidebarSeparatorKey}
-      />
+      {sidebarCollapsed ? null : (
+        <div
+          className="sidebar-resizer"
+          role="separator"
+          aria-label="调整设置侧边栏宽度"
+          aria-orientation="vertical"
+          aria-valuemin={sidebarMinWidth}
+          aria-valuemax={sidebarMaxWidth}
+          aria-valuenow={sidebarWidth}
+          tabIndex={0}
+          onPointerDown={onSidebarResizeStart}
+          onDoubleClick={onToggleSidebar}
+          onKeyDown={onSidebarSeparatorKey}
+        />
+      )}
       <main className="settings-main">
         <div className="settings-titlebar">
           <button
@@ -630,7 +641,7 @@ export function SettingsView({
             className="sidebar-toggle-button settings-sidebar-toggle"
             aria-label={sidebarCollapsed ? "展开左侧栏" : "收起左侧栏"}
             aria-pressed={!sidebarCollapsed}
-            onClick={handleToggleSidebar}
+            onClick={onToggleSidebar}
           >
             <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
           </button>

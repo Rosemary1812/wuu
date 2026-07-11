@@ -28,8 +28,6 @@ const SIDEBAR_COLLAPSE_WIDTH = SIDEBAR_MIN_WIDTH - SIDEBAR_COLLAPSE_INTENT_PX;
 const SIDEBAR_STEP = 24;
 const SIDEBAR_WIDTH_KEY = "wuu.desktop.sidebarWidth";
 const SIDEBAR_COLLAPSED_KEY = "wuu.desktop.sidebarCollapsed";
-export const SETTINGS_SIDEBAR_DEFAULT_WIDTH = 280;
-const SETTINGS_SIDEBAR_WIDTH_KEY = "wuu.desktop.settingsSidebarWidth";
 export const WORKSPACE_RIGHT_PANEL_DEFAULT_WIDTH = 360;
 export const WORKSPACE_RIGHT_PANEL_MIN_WIDTH = 300;
 export const WORKSPACE_RIGHT_PANEL_MAX_WIDTH = 860;
@@ -68,10 +66,6 @@ type SidebarResizeSession = {
   startX: number;
   startWidth: number;
   currentWidth: number;
-  // "app" drags the main sidebar (collapsible, rAF live path); "settings"
-  // drags the settings sidebar, which has its own width state and never
-  // collapses.
-  target: "app" | "settings";
   // Tracks whether the sidebar collapsed during the current drag (either at
   // pointerdown or by crossing the collapse-intent width mid-drag). When true
   // and the user drags back above that width without releasing, the move
@@ -192,15 +186,6 @@ function initialSidebarCollapsed(): boolean {
   return (
     window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true" ||
     sidebarShouldAutoCollapseForWindow(window.innerWidth)
-  );
-}
-
-function initialSettingsSidebarWidth(): number {
-  return storedWidth(
-    SETTINGS_SIDEBAR_WIDTH_KEY,
-    SETTINGS_SIDEBAR_DEFAULT_WIDTH,
-    SIDEBAR_MIN_WIDTH,
-    SIDEBAR_MAX_WIDTH
   );
 }
 
@@ -374,11 +359,13 @@ export function useAppLayoutState({
   onCloseProjectMenu
 }: {
   layoutRootRef?: RefObject<HTMLElement | null>;
+  // The settings shell mounts in place of the main app shell but shares the
+  // same sidebar width/collapse state. Live drag writes must land on
+  // whichever root is currently mounted, so both refs are consulted.
   settingsLayoutRootRef?: RefObject<HTMLElement | null>;
   onCloseProjectMenu: () => void;
 }): {
   sidebarWidth: number;
-  settingsSidebarWidth: number;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean) => void;
   resizingSidebar: boolean;
@@ -393,7 +380,6 @@ export function useAppLayoutState({
   workspaceRightPanelDockableWithoutSidebar: boolean;
   setRightPanelOpenWithMotion: (open: boolean) => void;
   startSidebarResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  startSettingsSidebarResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
   startRightPanelResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
   handleRightPanelSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
   resetWorkspaceRightPanelWidth: () => void;
@@ -404,8 +390,6 @@ export function useAppLayoutState({
   resetThreadPanelWidth: () => void;
   toggleSidebar: () => void;
   handleSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
-  handleSettingsSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
-  resetSettingsSidebarWidth: () => void;
   splitLeftPercent: number;
   resizingSplit: boolean;
   startSplitResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -414,7 +398,6 @@ export function useAppLayoutState({
 } {
   const [sidebarPreferredWidth, setSidebarPreferredWidth] = useState(initialSidebarWidth);
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
-  const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(initialSettingsSidebarWidth);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialSidebarCollapsed);
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const [sidebarAnimating, setSidebarAnimating] = useState(false);
@@ -473,21 +456,28 @@ export function useAppLayoutState({
     }, RIGHT_PANEL_MOTION_MS);
   }, []);
 
-  const applySettingsSidebarWidth = useCallback((nextWidth: number): void => {
-    setSettingsSidebarWidth(clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH));
-  }, []);
+  // Only one shell root (main app or settings) is mounted at a time; write to
+  // whichever exists so a drag started in either shell stays live.
+  const sidebarLayoutRoots = useCallback((): HTMLElement[] => {
+    const roots: HTMLElement[] = [];
+    if (layoutRootRef?.current) {
+      roots.push(layoutRootRef.current);
+    }
+    if (settingsLayoutRootRef?.current) {
+      roots.push(settingsLayoutRootRef.current);
+    }
+    return roots;
+  }, [layoutRootRef, settingsLayoutRootRef]);
 
   const writeLiveSidebarWidth = useCallback(
     (nextWidth: number): void => {
-      const root = layoutRootRef?.current;
-      if (!root) {
-        return;
-      }
       const clampedWidth = clampSidebarDisplayWidth(nextWidth, windowWidth);
-      root.style.setProperty("--sidebar-width", `${clampedWidth}px`);
-      root.style.setProperty("--sidebar-open-width", `${clampedWidth}px`);
+      for (const root of sidebarLayoutRoots()) {
+        root.style.setProperty("--sidebar-width", `${clampedWidth}px`);
+        root.style.setProperty("--sidebar-open-width", `${clampedWidth}px`);
+      }
     },
-    [layoutRootRef, windowWidth]
+    [sidebarLayoutRoots, windowWidth]
   );
 
   // A drag that ends collapsed leaves the live writer's clamped-to-minimum
@@ -498,26 +488,12 @@ export function useAppLayoutState({
   // that variable: --sidebar-width must stay 0 while collapsed).
   const restoreSidebarOpenWidth = useCallback(
     (nextWidth: number): void => {
-      const root = layoutRootRef?.current;
-      if (!root) {
-        return;
-      }
       const clampedWidth = clampSidebarDisplayWidth(nextWidth, windowWidth);
-      root.style.setProperty("--sidebar-open-width", `${clampedWidth}px`);
-    },
-    [layoutRootRef, windowWidth]
-  );
-
-  const writeLiveSettingsSidebarWidth = useCallback(
-    (nextWidth: number): void => {
-      const root = settingsLayoutRootRef?.current;
-      if (!root) {
-        return;
+      for (const root of sidebarLayoutRoots()) {
+        root.style.setProperty("--sidebar-open-width", `${clampedWidth}px`);
       }
-      const clampedWidth = clamp(nextWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
-      root.style.setProperty("--settings-sidebar-width", `${clampedWidth}px`);
     },
-    [settingsLayoutRootRef]
+    [sidebarLayoutRoots, windowWidth]
   );
 
   const writeLiveWorkspaceRightPanelWidth = useCallback(
@@ -564,7 +540,6 @@ export function useAppLayoutState({
   );
 
   const sidebarLive = useLiveWidthWriter(writeLiveSidebarWidth);
-  const settingsSidebarLive = useLiveWidthWriter(writeLiveSettingsSidebarWidth);
   const rightPanelLive = useLiveWidthWriter(writeLiveWorkspaceRightPanelWidth);
   const threadPanelLive = useLiveWidthWriter(writeLiveThreadPanelWidth);
   const splitLive = useLiveWidthWriter(writeLiveSplitPercent);
@@ -630,10 +605,6 @@ export function useAppLayoutState({
   }, [sidebarPreferredWidth, sidebarCollapsed]);
 
   useEffect(() => {
-    window.localStorage.setItem(SETTINGS_SIDEBAR_WIDTH_KEY, String(settingsSidebarWidth));
-  }, [settingsSidebarWidth]);
-
-  useEffect(() => {
     window.localStorage.setItem(WORKSPACE_RIGHT_PANEL_WIDTH_KEY, String(workspaceRightPanelWidth));
   }, [workspaceRightPanelWidth]);
 
@@ -656,20 +627,15 @@ export function useAppLayoutState({
         window.clearTimeout(rightPanelMotionTimerRef.current);
       }
       sidebarLive.cancel();
-      settingsSidebarLive.cancel();
       rightPanelLive.cancel();
       splitLive.cancel();
     };
-  }, [sidebarLive.cancel, settingsSidebarLive.cancel, rightPanelLive.cancel, splitLive.cancel]);
+  }, [sidebarLive.cancel, rightPanelLive.cancel, splitLive.cancel]);
 
   const handleSidebarResizeMove = useCallback(
     (event: PointerEvent, session: SidebarResizeSession): void => {
       const nextWidth = session.startWidth + event.clientX - session.startX;
       session.currentWidth = nextWidth;
-      if (session.target === "settings") {
-        settingsSidebarLive.schedule(nextWidth);
-        return;
-      }
       if (sidebarShouldCollapse(nextWidth, windowWidth)) {
         sidebarLive.cancel();
         applySidebarWidth(nextWidth);
@@ -693,15 +659,12 @@ export function useAppLayoutState({
       }
       sidebarLive.schedule(nextWidth);
     },
-    [applySidebarWidth, settingsSidebarLive, sidebarLive, windowWidth]
+    [applySidebarWidth, sidebarLive, windowWidth]
   );
 
   const handleSidebarResizeEnd = useCallback(
     (session: SidebarResizeSession | null): void => {
-      if (session?.target === "settings") {
-        settingsSidebarLive.cancel();
-        applySettingsSidebarWidth(session.currentWidth);
-      } else if (session) {
+      if (session) {
         if (session.currentWidth === session.startWidth) {
           sidebarLive.cancel();
         } else {
@@ -723,10 +686,8 @@ export function useAppLayoutState({
       setResizingSidebar(false);
     },
     [
-      applySettingsSidebarWidth,
       applySidebarWidth,
       restoreSidebarOpenWidth,
-      settingsSidebarLive,
       sidebarLive,
       sidebarPreferredWidth,
       windowWidth,
@@ -890,24 +851,7 @@ export function useAppLayoutState({
       startX: event.clientX,
       startWidth: sidebarCollapsed ? 0 : sidebarWidth,
       currentWidth: sidebarCollapsed ? 0 : sidebarWidth,
-      target: "app",
       collapsedDuringDrag: sidebarCollapsed
-    };
-    onCloseProjectMenu();
-    setResizingSidebar(true);
-  }
-
-  function startSettingsSidebarResize(event: ReactPointerEvent<HTMLDivElement>): void {
-    if (event.button !== 0) {
-      return;
-    }
-    event.preventDefault();
-    resizeSessionRef.current = {
-      startX: event.clientX,
-      startWidth: settingsSidebarWidth,
-      currentWidth: settingsSidebarWidth,
-      target: "settings",
-      collapsedDuringDrag: false
     };
     onCloseProjectMenu();
     setResizingSidebar(true);
@@ -1050,35 +994,8 @@ export function useAppLayoutState({
     }
   }
 
-  function handleSettingsSidebarSeparatorKey(event: ReactKeyboardEvent<HTMLDivElement>): void {
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      applySettingsSidebarWidth(settingsSidebarWidth - SIDEBAR_STEP);
-      return;
-    }
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      applySettingsSidebarWidth(settingsSidebarWidth + SIDEBAR_STEP);
-      return;
-    }
-    if (event.key === "Home") {
-      event.preventDefault();
-      applySettingsSidebarWidth(SIDEBAR_MIN_WIDTH);
-      return;
-    }
-    if (event.key === "End") {
-      event.preventDefault();
-      applySettingsSidebarWidth(SIDEBAR_MAX_WIDTH);
-    }
-  }
-
-  function resetSettingsSidebarWidth(): void {
-    applySettingsSidebarWidth(SETTINGS_SIDEBAR_DEFAULT_WIDTH);
-  }
-
   return {
     sidebarWidth,
-    settingsSidebarWidth,
     sidebarCollapsed,
     setSidebarCollapsed,
     resizingSidebar,
@@ -1093,7 +1010,6 @@ export function useAppLayoutState({
     workspaceRightPanelDockableWithoutSidebar,
     setRightPanelOpenWithMotion,
     startSidebarResize,
-    startSettingsSidebarResize,
     startRightPanelResize,
     handleRightPanelSeparatorKey,
     resetWorkspaceRightPanelWidth,
@@ -1104,8 +1020,6 @@ export function useAppLayoutState({
     resetThreadPanelWidth,
     toggleSidebar,
     handleSidebarSeparatorKey,
-    handleSettingsSidebarSeparatorKey,
-    resetSettingsSidebarWidth,
     splitLeftPercent,
     resizingSplit,
     startSplitResize,

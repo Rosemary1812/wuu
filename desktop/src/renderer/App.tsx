@@ -427,9 +427,7 @@ export function App(): JSX.Element {
   const settingsShellRef = useRef<HTMLDivElement>(null);
   const {
     sidebarWidth,
-    settingsSidebarWidth,
     sidebarCollapsed,
-    setSidebarCollapsed,
     resizingSidebar,
     sidebarAnimating,
     clampedWorkspaceRightPanelWidth,
@@ -441,7 +439,6 @@ export function App(): JSX.Element {
     workspaceRightPanelDockableWithoutSidebar,
     setRightPanelOpenWithMotion,
     startSidebarResize,
-    startSettingsSidebarResize,
     startRightPanelResize,
     handleRightPanelSeparatorKey,
     resetWorkspaceRightPanelWidth,
@@ -452,8 +449,6 @@ export function App(): JSX.Element {
     resetThreadPanelWidth,
     toggleSidebar,
     handleSidebarSeparatorKey,
-    handleSettingsSidebarSeparatorKey,
-    resetSettingsSidebarWidth,
     splitLeftPercent,
     resizingSplit,
     startSplitResize,
@@ -3787,9 +3782,21 @@ export function App(): JSX.Element {
           codexPetsError={codexPetsError}
           showDebugControlsSetting={ENABLE_DEBUG_CONTROL_SETTING}
           debugControlsEnabled={debugControlsEnabled}
-          sidebarWidth={settingsSidebarWidth}
+          sidebarWidth={sidebarWidth}
           resizingSidebar={resizingSidebar}
           shellRef={settingsShellRef}
+          // The settings rail reuses the main sidebar's state and handlers
+          // wholesale — same persisted width, same collapse flag, same
+          // drag-to-collapse resize session, same toggle motion — so both
+          // shells behave identically. The drawer controller runs
+          // independently inside the settings shell (its own ref + phase)
+          // and uses the active conversation as its sync key, mirroring how
+          // the main view resets on session-tab swap.
+          sidebarCollapsed={sidebarCollapsed}
+          sidebarAnimating={sidebarAnimating}
+          onToggleSidebar={toggleSidebar}
+          sidebarMotionMs={SIDEBAR_MOTION_MS}
+          activeSessionTabID={activeThreadID ?? ""}
           onBack={() => {
             setSettingsOpen(false);
             setSettingsMemoryFocusID(undefined);
@@ -3801,9 +3808,8 @@ export function App(): JSX.Element {
           onCodexPetsRefresh={refreshCodexPets}
           onCodexPetsUpdate={updateCodexPets}
           onDebugControlsChange={setDebugControlsEnabled}
-          onSidebarResizeStart={startSettingsSidebarResize}
-          onSidebarSeparatorKey={handleSettingsSidebarSeparatorKey}
-          onSidebarSeparatorDoubleClick={resetSettingsSidebarWidth}
+          onSidebarResizeStart={startSidebarResize}
+          onSidebarSeparatorKey={handleSidebarSeparatorKey}
           archivedThreads={state.threads.filter((thread) => thread.archived)}
           onUnarchiveThread={(thread) => void unarchiveThread(thread)}
         />
