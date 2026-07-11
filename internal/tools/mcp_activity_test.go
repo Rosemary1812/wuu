@@ -18,6 +18,11 @@ import (
 
 func TestCropTransparentPNGRemovesWindowShadowPadding(t *testing.T) {
 	source := image.NewNRGBA(image.Rect(0, 0, 8, 10))
+	for y := 2; y < 9; y++ {
+		for x := 1; x < 8; x++ {
+			source.SetNRGBA(x, y, color.NRGBA{R: 0, G: 0, B: 0, A: 48})
+		}
+	}
 	for y := 3; y < 8; y++ {
 		for x := 2; x < 7; x++ {
 			source.SetNRGBA(x, y, color.NRGBA{R: 20, G: 30, B: 40, A: 255})

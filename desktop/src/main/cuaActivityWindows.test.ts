@@ -9,7 +9,6 @@ import {
   fitActivityPreviewSize,
   resizeActivityBounds,
   shouldScheduleDragSettle,
-  shouldStartUserDrag,
   snapActivityBounds,
 } from "./cuaActivityWindows";
 
@@ -90,12 +89,6 @@ describe("CUA Activity windows", () => {
     )).toEqual({ x: 12, y: 640, width: 380, height: 248 });
   });
 
-  it("lets a real drag interrupt an active snap but ignores animation-owned moves", () => {
-    expect(shouldStartUserDrag(false, true)).toBe(true);
-    expect(shouldStartUserDrag(true, true)).toBe(false);
-    expect(shouldStartUserDrag(true, false)).toBe(false);
-  });
-
   it("settles only an active user drag and keeps programmatic movement out", () => {
     expect(shouldScheduleDragSettle(true, false)).toBe(true);
     expect(shouldScheduleDragSettle(true, true)).toBe(false);
@@ -171,6 +164,8 @@ describe("CUA Activity windows", () => {
       action: "close",
       activityID: "activity-1",
     });
+    expect(activityActionFromURL("wuu-cua://action/drag-start?activity_id=activity-1")?.action).toBe("drag-start");
+    expect(activityActionFromURL("wuu-cua://action/drag-end?activity_id=activity-1")?.action).toBe("drag-end");
     expect(activityActionFromURL("wuu-cua://action/delete?activity_id=activity-1")).toBeUndefined();
     expect(activityActionFromURL("https://example.test/")).toBeUndefined();
   });

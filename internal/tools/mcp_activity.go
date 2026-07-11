@@ -180,7 +180,7 @@ func cropTransparentPNG(data []byte) []byte {
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			_, _, _, alpha := source.At(x, y).RGBA()
-			if alpha == 0 {
+			if alpha < 0x8000 {
 				continue
 			}
 			if x < visible.Min.X {
