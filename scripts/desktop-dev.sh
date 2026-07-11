@@ -35,17 +35,42 @@
 #   5. `exec`s into `npm run dev` in desktop/, so this terminal is taken
 #      over by electron-vite and Ctrl+C cleanly terminates the whole tree.
 #
-# The script does NOT touch git remotes — no push, no fetch, no PR.
+# The script does NOT touch git remotes by default — no push, no fetch, no
+# PR. Pass --pull to opt in to `git pull --rebase --autostash` before the
+# build, so the session runs the latest pushed code.
+#
+# Install for launch-from-anywhere (the symlink is resolved back to the repo):
+#   ln -sf "$(pwd)/scripts/desktop-dev.sh" ~/.local/bin/wuu-dev
 
 set -euo pipefail
 
+DO_PULL=0
+for arg in "$@"; do
+  case "$arg" in
+    --pull) DO_PULL=1 ;;
+    *)
+      echo "usage: $(basename "$0") [--pull]" >&2
+      exit 2
+      ;;
+  esac
+done
+
 # --- locate repo root -------------------------------------------------------
-# Allow invocation from anywhere: prefer the script's own directory, fall
-# back to the current working directory.
-SCRIPT_DIR=""
-if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-fi
+# Allow invocation from anywhere, including via a symlink on PATH: walk
+# symlinks back to the real script location, then take its parent. Fall back
+# to the current working directory for `bash <(curl ...)`-style invocations.
+resolve_script_path() {
+  local src="${BASH_SOURCE[0]:-}"
+  local dir
+  while [[ -L "$src" ]]; do
+    dir="$(cd -P "$(dirname "$src")" && pwd)"
+    src="$(readlink "$src")"
+    [[ "$src" != /* ]] && src="$dir/$src"
+  done
+  [[ -n "$src" ]] && cd -P "$(dirname "$src")" && pwd
+}
+
+SCRIPT_DIR="$(resolve_script_path || true)"
 if [[ -z "$SCRIPT_DIR" || ! -f "$SCRIPT_DIR/../go.mod" ]]; then
   SCRIPT_DIR="$(pwd)"
 fi
@@ -57,8 +82,16 @@ if [[ ! -f "$REPO_ROOT/go.mod" || ! -d "$REPO_ROOT/desktop" ]]; then
   exit 1
 fi
 
-HEAD_SHORT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 echo "==> repo:   $REPO_ROOT"
+
+# --- 0. optionally sync to the latest pushed code ---------------------------
+# Rebase + autostash keeps uncommitted local edits intact across the pull.
+if [[ "$DO_PULL" -eq 1 ]]; then
+  echo "==> [0/4] pulling latest (git pull --rebase --autostash)"
+  git pull --rebase --autostash
+fi
+
+HEAD_SHORT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 echo "==> HEAD:   $HEAD_SHORT"
 
 # --- 1. restart: detect & stop any already-running session -----------------
