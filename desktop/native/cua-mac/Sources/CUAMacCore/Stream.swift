@@ -74,13 +74,15 @@ private final class NativePiPView: NSView {
         layer?.addSublayer(displayLayer)
 
         let pointerPath = CGMutablePath()
-        pointerPath.move(to: CGPoint(x: 2, y: 2))
-        pointerPath.addLine(to: CGPoint(x: 2, y: 25))
-        pointerPath.addLine(to: CGPoint(x: 8, y: 19))
-        pointerPath.addLine(to: CGPoint(x: 12, y: 28))
-        pointerPath.addLine(to: CGPoint(x: 17, y: 26))
-        pointerPath.addLine(to: CGPoint(x: 13, y: 17))
-        pointerPath.addLine(to: CGPoint(x: 21, y: 17))
+        // Core Animation uses a bottom-left origin here. Define the cursor in
+        // that coordinate space so its tip points toward the upper-left.
+        pointerPath.move(to: CGPoint(x: 2, y: 28))
+        pointerPath.addLine(to: CGPoint(x: 2, y: 5))
+        pointerPath.addLine(to: CGPoint(x: 8, y: 11))
+        pointerPath.addLine(to: CGPoint(x: 12, y: 2))
+        pointerPath.addLine(to: CGPoint(x: 17, y: 4))
+        pointerPath.addLine(to: CGPoint(x: 13, y: 13))
+        pointerPath.addLine(to: CGPoint(x: 21, y: 13))
         pointerPath.closeSubpath()
         pointerLayer.path = pointerPath
         pointerLayer.fillColor = NSColor.white.cgColor
@@ -88,6 +90,7 @@ private final class NativePiPView: NSView {
         pointerLayer.lineWidth = 2
         pointerLayer.lineJoin = .round
         pointerLayer.bounds = CGRect(x: 0, y: 0, width: 24, height: 30)
+        pointerLayer.anchorPoint = CGPoint(x: 2.0 / 24.0, y: 28.0 / 30.0)
         layer?.addSublayer(pointerLayer)
 
         rippleLayer.path = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: 18, height: 18), transform: nil)
@@ -183,7 +186,7 @@ private final class NativePiPView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         pointerLayer.position = to
-        rippleLayer.position = CGPoint(x: to.x + 5, y: to.y + 22)
+        rippleLayer.position = to
         CATransaction.commit()
 
         switch kind {
@@ -233,7 +236,7 @@ private final class NativePiPView: NSView {
 
     private func placePointer() {
         pointerLayer.position = pointerPoint(pointerPosition)
-        rippleLayer.position = CGPoint(x: pointerLayer.position.x + 5, y: pointerLayer.position.y + 22)
+        rippleLayer.position = pointerLayer.position
     }
 }
 
