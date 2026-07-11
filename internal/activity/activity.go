@@ -76,8 +76,9 @@ type StartOptions struct {
 }
 
 type UpdateOptions struct {
-	State   State
-	Target  string
-	Preview string
-	Error   string
+	State      State
+	Target     string
+	Preview    string
+	Error      string
+	ClearError bool
 }

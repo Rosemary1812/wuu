@@ -129,6 +129,8 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 	if callErr != nil {
 		update.State = activity.StateError
 		update.Error = callErr.Error()
+	} else {
+		update.ClearError = true
 	}
 	if updated, updateErr := t.activityRegistry.Update(threadID, session.ID, update); updateErr == nil {
 		session = updated

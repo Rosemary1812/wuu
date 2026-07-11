@@ -269,7 +269,7 @@ public final class MCPServer {
         return [
             "name": "computer",
             "title": "Computer Use for Mac",
-            "description": "Observe and control macOS apps without disturbing the user. The runtime picks the lowest-disruption control level automatically: background Accessibility actions, then background directed input (keyboard and mouse delivered straight to the target process without activating it), and a visible foreground takeover only when foreground_policy asks for it. By default the user's frontmost app and real pointer stay put. Observe returns a canonical app target and fresh UI state. Input actions (click, type_text, press_key, press_keys, scroll, drag) report the mechanism used (background_ax, background_directed, or foreground_native) and a status (verified when the accessibility tree changed, verified_visual when only the captured frame changed, unverified when neither did); call observe explicitly when fresh state is needed. conceal_app moves the target window off-screen so the user never sees it while background control and live capture keep working; reveal_app restores it.",
+            "description": "Observe and control macOS apps without disturbing the user. The runtime picks the lowest-disruption control level automatically: background Accessibility actions, then background directed input (keyboard and mouse delivered straight to the target process without activating it), and a visible foreground takeover only when foreground_policy asks for it. By default the user's frontmost app and real pointer stay put. Observe returns a canonical app target and fresh UI state. wait_for_change waits up to timeout seconds and returns changed=false when nothing changes; a normal timeout is not an error. Input actions (click, type_text, press_key, press_keys, scroll, drag) report the mechanism used (background_ax, background_directed, or foreground_native) and a status (verified when the accessibility tree changed, verified_visual when only the captured frame changed, unverified when neither did); call observe explicitly when fresh state is needed. conceal_app moves the target window off-screen so the user never sees it while background control and live capture keep working; reveal_app restores it.",
             "inputSchema": [
                 "type": "object",
                 "required": ["action"],
@@ -297,7 +297,7 @@ public final class MCPServer {
                     "action_name": stringProperty,
                     "prefix": stringProperty,
                     "suffix": stringProperty,
-                    "timeout": ["type": "number", "minimum": 0.1, "maximum": 30],
+                    "timeout": ["type": "number", "minimum": 0.1, "maximum": 30, "description": "Maximum wait in seconds. wait_for_change returns changed=false and timed_out=true when this duration elapses without an Accessibility change."],
                     "foreground_policy": [
                         "type": "string",
                         "enum": ["avoid", "allow", "require"],

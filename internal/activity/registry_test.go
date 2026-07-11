@@ -53,6 +53,28 @@ func TestRegistryControlLeaseLifecycle(t *testing.T) {
 	}
 }
 
+func TestRegistrySuccessfulUpdateClearsPreviousError(t *testing.T) {
+	registry := NewRegistry()
+	session, _, err := registry.Start(StartOptions{
+		ID: "activity-1", Kind: KindCUA, ThreadID: "thread-1", Workdir: "/repo",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err = registry.Update("thread-1", session.ID, UpdateOptions{
+		State: StateError, Error: "previous tool failure",
+	})
+	if err != nil || session.Error == "" {
+		t.Fatalf("error update = %+v, %v", session, err)
+	}
+	session, err = registry.Update("thread-1", session.ID, UpdateOptions{
+		State: StateBackgroundControlled, ClearError: true,
+	})
+	if err != nil || session.Error != "" || session.State != StateBackgroundControlled {
+		t.Fatalf("successful update = %+v, %v", session, err)
+	}
+}
+
 func TestRegistryStopIsIdempotentAndRevokesControl(t *testing.T) {
 	registry := NewRegistry()
 	session, lease, err := registry.Start(StartOptions{ID: "activity-1", Kind: KindCUA, ThreadID: "thread-1", Workdir: "/repo"})

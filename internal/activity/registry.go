@@ -233,7 +233,9 @@ func (r *Registry) Update(threadID, activityID string, options UpdateOptions) (S
 	if options.Preview != "" {
 		entry.session.Preview = strings.TrimSpace(options.Preview)
 	}
-	if options.Error != "" {
+	if options.ClearError {
+		entry.session.Error = ""
+	} else if options.Error != "" {
 		entry.session.Error = strings.TrimSpace(options.Error)
 	}
 	entry.session.UpdatedAt = r.now().UTC()

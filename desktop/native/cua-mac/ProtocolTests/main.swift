@@ -89,6 +89,9 @@ private func testInitializesAndAdvertisesFullComputerTool() throws {
     try expect((coordinateProperty?["enum"] as? [String])?.contains("normalized") == true, "coordinate space supports resize-independent normalized points")
     let foregroundPolicy = properties?["foreground_policy"] as? [String: Any]
     try expect(foregroundPolicy?["default"] as? String == "avoid", "foreground policy defaults to avoid")
+    let timeout = properties?["timeout"] as? [String: Any]
+    try expect((timeout?["description"] as? String)?.contains("changed=false") == true, "wait timeout is documented as a normal result")
+    try expect((tools?.first?["description"] as? String)?.contains("normal timeout is not an error") == true, "tool description teaches normal wait timeout semantics")
 }
 
 private func testPreservesAccessibilityAndScreenshotContent() throws {

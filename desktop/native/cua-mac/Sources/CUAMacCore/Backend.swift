@@ -106,8 +106,7 @@ public final class MacComputerBackend: ComputerBackend {
             try performSecondaryAction(command, app: app)
             mechanism = "background_ax"
         case .waitForChange:
-            try waitForChange(command, app: app, axApplication: axApplication)
-            return try observe(command, app: app, axApplication: axApplication)
+            return try waitForChange(command, app: app, axApplication: axApplication)
         case .sequence:
             throw ComputerError.unsupported("sequence is coordinated by the Wuu runtime")
         case .activateControl:
@@ -914,14 +913,28 @@ public final class MacComputerBackend: ComputerBackend {
         try performAXAction(target, action: kAXPressAction as String)
     }
 
-    private func waitForChange(_ command: ComputerCommand, app: NSRunningApplication, axApplication: AXUIElement) throws {
+    private func waitForChange(_ command: ComputerCommand, app: NSRunningApplication, axApplication: AXUIElement) throws -> ComputerResult {
         try requireAccessibility()
-        let previous = lastSnapshotText[app.processIdentifier] ?? ""
         let timeout = max(0.1, min(command.timeout ?? 5, 30))
-        try waitForAccessibilityChange(application: axApplication, processID: app.processIdentifier, timeout: timeout)
-        let current = snapshotter.snapshot(application: axApplication).text
-        if current == previous {
-            throw ComputerError.operationFailed("no accessibility change observed within \(timeout) seconds")
-        }
+        let notificationObserved = try waitForAccessibilityChange(
+            application: axApplication,
+            processID: app.processIdentifier,
+            timeout: timeout
+        )
+        let observation = try observe(command, app: app, axApplication: axApplication)
+        var structured = observation.structured
+        let changed = notificationObserved || !(structured["changes"] as? [String] ?? []).isEmpty
+        structured["changed"] = changed
+        structured["timed_out"] = !changed
+        structured["timeout_seconds"] = timeout
+        let outcome = changed
+            ? "Accessibility changed before the timeout."
+            : "No accessibility change was observed within \(timeout) seconds."
+        return ComputerResult(
+            text: outcome + "\n" + observation.text,
+            screenshot: observation.screenshot,
+            screenshotMIMEType: observation.screenshotMIMEType,
+            structured: structured
+        )
     }
 }

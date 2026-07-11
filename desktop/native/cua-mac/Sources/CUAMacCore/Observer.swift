@@ -95,7 +95,7 @@ func waitForAccessibilitySettle(application: AXUIElement, processID: pid_t, debo
     }
 }
 
-func waitForAccessibilityChange(application: AXUIElement, processID: pid_t, timeout: TimeInterval) throws {
+func waitForAccessibilityChange(application: AXUIElement, processID: pid_t, timeout: TimeInterval) throws -> Bool {
     var observer: AXObserver?
     let createError = AXObserverCreate(processID, axChangeCallback, &observer)
     guard createError == .success, let observer else {
@@ -127,4 +127,5 @@ func waitForAccessibilityChange(application: AXUIElement, processID: pid_t, time
     while !waiter.changed(), Date() < deadline {
         CFRunLoopRunInMode(.defaultMode, min(0.1, deadline.timeIntervalSinceNow), true)
     }
+    return waiter.changed()
 }
