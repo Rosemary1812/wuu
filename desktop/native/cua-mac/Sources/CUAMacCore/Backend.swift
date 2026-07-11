@@ -50,11 +50,14 @@ public final class MacComputerBackend: ComputerBackend {
         let app = try resolveApplication(target)
         let axApplication = AXUIElementCreateApplication(app.processIdentifier)
         enableElectronAccessibility(axApplication)
+        if command.foregroundPolicy == .require {
+            try activate(app)
+        }
 
         let mechanism: String
         switch command.action {
         case .observe:
-            return try observe(app: app, axApplication: axApplication)
+            return try observe(command, app: app, axApplication: axApplication)
         case .click:
             mechanism = try click(command, app: app)
         case .drag:
@@ -83,7 +86,7 @@ public final class MacComputerBackend: ComputerBackend {
             mechanism = "background_ax"
         case .waitForChange:
             try waitForChange(command, app: app, axApplication: axApplication)
-            return try observe(app: app, axApplication: axApplication)
+            return try observe(command, app: app, axApplication: axApplication)
         case .permissionStatus, .requestPermissions, .listApps:
             preconditionFailure("global actions returned before target resolution")
         }
@@ -233,7 +236,7 @@ public final class MacComputerBackend: ComputerBackend {
         }
     }
 
-    private func observe(app: NSRunningApplication, axApplication: AXUIElement) throws -> ComputerResult {
+    private func observe(_ command: ComputerCommand, app: NSRunningApplication, axApplication: AXUIElement) throws -> ComputerResult {
         let accessibility = AXIsProcessTrusted()
         let snapshot: AXSnapshot
         if accessibility {
@@ -257,7 +260,7 @@ public final class MacComputerBackend: ComputerBackend {
         ]
         var screenshot: Data?
         do {
-            let capture = try captureWindowWithForegroundFallback(app: app)
+            let capture = try captureWindowWithForegroundFallback(command, app: app)
             screenshot = capture.data
             lastCaptureGeometry[app.processIdentifier] = capture.geometry
             structured["screenshot"] = [
@@ -287,19 +290,19 @@ public final class MacComputerBackend: ComputerBackend {
         )
     }
 
-    private func captureWindowWithForegroundFallback(app: NSRunningApplication) throws -> WindowCapture {
+    private func captureWindowWithForegroundFallback(_ command: ComputerCommand, app: NSRunningApplication) throws -> WindowCapture {
         guard #available(macOS 14.0, *) else {
             throw ComputerError.unsupported("window screenshots require macOS 14 or newer")
         }
         if foregroundCaptureProcessIDs.contains(app.processIdentifier) {
-            try activate(app)
+            try prepareForegroundInput(command, app: app)
             return try captureForegroundWindowPNG(processID: app.processIdentifier)
         }
         do {
             return try captureWindowPNG(processID: app.processIdentifier)
         } catch let backgroundError {
             foregroundCaptureProcessIDs.insert(app.processIdentifier)
-            try activate(app)
+            try prepareForegroundInput(command, app: app)
             do {
                 return try captureForegroundWindowPNG(processID: app.processIdentifier)
             } catch let foregroundError {
@@ -343,6 +346,15 @@ public final class MacComputerBackend: ComputerBackend {
         throw ComputerError.operationFailed("\(app.localizedName ?? "target app") did not become active")
     }
 
+    private func prepareForegroundInput(_ command: ComputerCommand, app: NSRunningApplication) throws {
+        guard command.foregroundPolicy != .avoid else {
+            throw ComputerError.requiresForeground(
+                "\(command.action.rawValue) needs native mouse or keyboard input for \(app.localizedName ?? "the target app"); retry with foreground_policy=\"allow\" only when foreground control is acceptable"
+            )
+        }
+        try activate(app)
+    }
+
     private func click(_ command: ComputerCommand, app: NSRunningApplication) throws -> String {
         if command.elementID != nil {
             let target = try element(command, app: app)
@@ -351,7 +363,7 @@ public final class MacComputerBackend: ComputerBackend {
                 return "background_ax"
             }
             if let frame = axFrame(target) {
-                try activate(app)
+                try prepareForegroundInput(command, app: app)
                 try postClick(point: CGPoint(x: frame.midX, y: frame.midY), button: command.mouseButton, count: command.clickCount ?? 1)
                 return "foreground_native"
             }
@@ -359,7 +371,7 @@ public final class MacComputerBackend: ComputerBackend {
         guard let x = command.x, let y = command.y else {
             throw ComputerError.invalidArguments("click requires element_id or x and y")
         }
-        try activate(app)
+        try prepareForegroundInput(command, app: app)
         try postClick(point: try inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app), button: command.mouseButton, count: command.clickCount ?? 1)
         return "foreground_native"
     }
@@ -389,7 +401,7 @@ public final class MacComputerBackend: ComputerBackend {
         guard let x = command.x, let y = command.y, let toX = command.toX, let toY = command.toY else {
             throw ComputerError.invalidArguments("drag requires from_x, from_y, to_x, and to_y")
         }
-        try activate(app)
+        try prepareForegroundInput(command, app: app)
         let start = try inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app)
         let end = try inputPoint(x: toX, y: toY, coordinateSpace: command.coordinateSpace, app: app)
         guard let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left) else {
@@ -430,13 +442,13 @@ public final class MacComputerBackend: ComputerBackend {
 
     private func pressKey(_ command: ComputerCommand, app: NSRunningApplication) throws {
         guard let key = command.key else { throw ComputerError.invalidArguments("key is required") }
-        try activate(app)
+        try prepareForegroundInput(command, app: app)
         try postKey(key)
     }
 
     private func pressKeys(_ command: ComputerCommand, app: NSRunningApplication) throws {
         guard let keys = command.keys, !keys.isEmpty else { throw ComputerError.invalidArguments("keys is required") }
-        try activate(app)
+        try prepareForegroundInput(command, app: app)
         for key in keys {
             try postKey(key)
             usleep(20_000)
@@ -461,7 +473,7 @@ public final class MacComputerBackend: ComputerBackend {
         let direction = command.direction?.lowercased() ?? "down"
         let vertical: Int32 = direction == "up" ? amount : direction == "down" ? -amount : 0
         let horizontal: Int32 = direction == "left" ? amount : direction == "right" ? -amount : 0
-        try activate(app)
+        try prepareForegroundInput(command, app: app)
         if command.elementID != nil,
            let frame = axFrame(try element(command, app: app)) {
             CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: frame.midX, y: frame.midY), mouseButton: .left)?.post(tap: .cghidEventTap)
@@ -481,7 +493,7 @@ public final class MacComputerBackend: ComputerBackend {
 
     private func typeText(_ command: ComputerCommand, app: NSRunningApplication) throws {
         guard let text = command.text else { throw ComputerError.invalidArguments("text is required") }
-        try activate(app)
+        try prepareForegroundInput(command, app: app)
         if command.elementID != nil {
             let target = try element(command, app: app)
             _ = AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue)

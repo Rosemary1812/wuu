@@ -17,6 +17,12 @@ public enum ComputerAction: String, CaseIterable, Sendable {
     case waitForChange = "wait_for_change"
 }
 
+public enum ForegroundPolicy: String, Sendable {
+    case avoid
+    case allow
+    case require
+}
+
 public struct ComputerCommand: @unchecked Sendable {
     public let action: ComputerAction
     public let app: String?
@@ -38,6 +44,7 @@ public struct ComputerCommand: @unchecked Sendable {
     public let prefix: String?
     public let suffix: String?
     public let timeout: Double?
+    public let foregroundPolicy: ForegroundPolicy
 
     public init(arguments: [String: Any]) throws {
         guard let rawAction = arguments["action"] as? String,
@@ -64,6 +71,14 @@ public struct ComputerCommand: @unchecked Sendable {
         prefix = arguments["prefix"] as? String
         suffix = arguments["suffix"] as? String
         timeout = Self.double(arguments["timeout"])
+        if let rawPolicy = arguments["foreground_policy"] as? String {
+            guard let policy = ForegroundPolicy(rawValue: rawPolicy) else {
+                throw ComputerError.invalidArguments("foreground_policy must be avoid, allow, or require")
+            }
+            foregroundPolicy = policy
+        } else {
+            foregroundPolicy = .avoid
+        }
     }
 
     private static func int(_ value: Any?) -> Int? {
@@ -104,6 +119,7 @@ public enum ComputerError: LocalizedError, Equatable {
     case appNotFound(String)
     case elementNotFound(Int)
     case unsupported(String)
+    case requiresForeground(String)
     case operationFailed(String)
 
     public var errorDescription: String? {
@@ -113,6 +129,7 @@ public enum ComputerError: LocalizedError, Equatable {
         case let .appNotFound(app): "app_not_found: \(app)"
         case let .elementNotFound(id): "element_not_found: \(id); observe again for fresh element ids"
         case let .unsupported(message): "unsupported_action: \(message)"
+        case let .requiresForeground(message): "requires_foreground: \(message)"
         case let .operationFailed(message): "operation_failed: \(message)"
         }
     }
@@ -178,11 +195,25 @@ public final class MCPServer {
             ])
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            let code = errorCode(error)
             return response(id: id, result: [
                 "content": [["type": "text", "text": message]],
-                "structuredContent": ["error": message],
+                "structuredContent": ["error": message, "error_code": code],
                 "isError": true,
             ])
+        }
+    }
+
+    private func errorCode(_ error: Error) -> String {
+        guard let error = error as? ComputerError else { return "operation_failed" }
+        return switch error {
+        case .invalidArguments: "invalid_arguments"
+        case .permissionDenied: "permission_denied"
+        case .appNotFound: "app_not_found"
+        case .elementNotFound: "element_not_found"
+        case .unsupported: "unsupported_action"
+        case .requiresForeground: "requires_foreground"
+        case .operationFailed: "operation_failed"
         }
     }
 
@@ -250,6 +281,12 @@ public final class MCPServer {
                     "prefix": stringProperty,
                     "suffix": stringProperty,
                     "timeout": ["type": "number", "minimum": 0.1, "maximum": 30],
+                    "foreground_policy": [
+                        "type": "string",
+                        "enum": ["avoid", "allow", "require"],
+                        "default": "avoid",
+                        "description": "Foreground control policy. avoid is the default and returns requires_foreground instead of activating an app or posting global input; allow permits a foreground fallback; require explicitly brings the target forward.",
+                    ],
                 ],
             ],
             "annotations": [

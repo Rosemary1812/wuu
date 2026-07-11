@@ -82,6 +82,8 @@ private func testInitializesAndAdvertisesFullComputerTool() throws {
     try expect(clickAlternatives?.contains(where: { ($0["required"] as? [String]) == ["x", "y", "coordinate_space"] }) == true, "click accepts explicit coordinates")
     let coordinateProperty = properties?["coordinate_space"] as? [String: Any]
     try expect((coordinateProperty?["enum"] as? [String])?.contains("normalized") == true, "coordinate space supports resize-independent normalized points")
+    let foregroundPolicy = properties?["foreground_policy"] as? [String: Any]
+    try expect(foregroundPolicy?["default"] as? String == "avoid", "foreground policy defaults to avoid")
 }
 
 private func testPreservesAccessibilityAndScreenshotContent() throws {
@@ -122,6 +124,36 @@ private func testCoordinateAndKeyboardFallbackReachBackend() throws {
     try expect(backend.commands[0].x == 100 && backend.commands[0].y == 200, "click coordinates")
     try expect(backend.commands[1].action == .pressKey, "press key action")
     try expect(backend.commands[1].key == "command+a", "key value")
+    try expect(backend.commands[0].foregroundPolicy == .avoid, "omitted foreground policy is avoid")
+}
+
+private func testForegroundPolicyParsingAndErrors() throws {
+    let allowed = try ComputerCommand(arguments: [
+        "action": "press_key", "app": "com.apple.TextEdit", "key": "return", "foreground_policy": "allow",
+    ])
+    try expect(allowed.foregroundPolicy == .allow, "allow foreground policy")
+
+    do {
+        _ = try ComputerCommand(arguments: ["action": "press_key", "app": "com.apple.TextEdit", "key": "return", "foreground_policy": "sometimes"])
+        throw TestFailure.assertion("invalid foreground policy should fail")
+    } catch let error as ComputerError {
+        try expect(error.errorDescription?.hasPrefix("invalid_arguments:") == true, "invalid foreground policy error")
+    }
+
+    final class ForegroundFailingBackend: ComputerBackend {
+        func perform(_ command: ComputerCommand) throws -> ComputerResult {
+            throw ComputerError.requiresForeground("native input required")
+        }
+    }
+    let server = MCPServer(backend: ForegroundFailingBackend())
+    let response = try server.handle([
+        "jsonrpc": "2.0", "id": 8, "method": "tools/call",
+        "params": ["name": "computer", "arguments": ["action": "press_key", "app": "com.apple.TextEdit", "key": "return"]],
+    ])
+    let result = response?["result"] as? [String: Any]
+    let structured = result?["structuredContent"] as? [String: Any]
+    try expect(result?["isError"] as? Bool == true, "foreground rejection is a tool error")
+    try expect(structured?["error_code"] as? String == "requires_foreground", "foreground rejection has a stable code")
 }
 
 private func testKeyChordParserSupportsSkyStyleAliases() throws {
@@ -164,6 +196,7 @@ do {
     try testInitializesAndAdvertisesFullComputerTool()
     try testPreservesAccessibilityAndScreenshotContent()
     try testCoordinateAndKeyboardFallbackReachBackend()
+    try testForegroundPolicyParsingAndErrors()
     try testKeyChordParserSupportsSkyStyleAliases()
     try testNativePermissionAndAppDiscoveryAreInspectable()
     try testScreenshotCoordinatesMapToGlobalWindowCoordinates()

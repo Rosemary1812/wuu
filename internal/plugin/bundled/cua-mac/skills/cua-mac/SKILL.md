@@ -21,8 +21,8 @@ Use the `computer` tool from the `cua-mac` plugin for native macOS app interacti
 - Treat AX and pixels as separate evidence. An AX tree can remain unchanged while a weak-AX app visibly changes. After a coordinate action, use a fresh `observe` and compare the new screenshot; do not use `wait_for_change` when the expected change may be visual-only.
 - If a coordinate click produces no visible result, do not repeatedly click guessed nearby points. Refresh once, re-read the screenshot dimensions and visible target, then choose a materially different semantic, keyboard, menu, or corrected-coordinate path. Stop and report the unverified step if no such path is grounded in fresh evidence.
 - Semantic AX actions are preferred. When they are unavailable, the tool automatically activates the target app and uses native mouse or keyboard events.
-- If background screenshot capture fails, `observe` activates the target app and retries once in the foreground. Treat an eventual screenshot error as a capture failure, not proof that the app cannot be controlled.
-- Coordinate, drag, key, typing, and scroll actions may take over the foreground app, pointer, or keyboard. This is normal CUA behavior and does not require a separate focus-control confirmation.
+- Leave `foreground_policy` omitted (or set it to `avoid`) by default. Background AX actions continue without changing the user's active app. If an action or screenshot requires native foreground access, the tool returns `requires_foreground` instead of silently activating the app.
+- Set `foreground_policy="allow"` only when the task cannot be completed through AX and a temporary foreground takeover is acceptable. Use `require` only when the user explicitly asked to show or take over the target app. After a foreground action, observe again because focus and layout may have changed.
 
 ## Permissions
 
