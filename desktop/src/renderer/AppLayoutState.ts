@@ -380,6 +380,7 @@ export function useAppLayoutState({
   sidebarWidth: number;
   settingsSidebarWidth: number;
   sidebarCollapsed: boolean;
+  setSidebarCollapsed: (collapsed: boolean) => void;
   resizingSidebar: boolean;
   sidebarAnimating: boolean;
   workspaceRightPanelWidth: number;
@@ -1079,6 +1080,7 @@ export function useAppLayoutState({
     sidebarWidth,
     settingsSidebarWidth,
     sidebarCollapsed,
+    setSidebarCollapsed,
     resizingSidebar,
     sidebarAnimating,
     workspaceRightPanelWidth,

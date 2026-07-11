@@ -429,6 +429,7 @@ export function App(): JSX.Element {
     sidebarWidth,
     settingsSidebarWidth,
     sidebarCollapsed,
+    setSidebarCollapsed,
     resizingSidebar,
     sidebarAnimating,
     clampedWorkspaceRightPanelWidth,
