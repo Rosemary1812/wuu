@@ -501,6 +501,7 @@ function createWindow(): void {
       windowResizeEndTimer = undefined;
     }
     windowResizeState = false;
+    cuaActivityWindowManager.setActiveThread(undefined);
     windowRegistry.unregisterWindow(windowID);
     mainWindow = null;
   });
@@ -707,6 +708,10 @@ app.whenReady().then(async () => {
       } satisfies PopOutInitResult;
     },
   );
+  ipcMain.on("wuu:cua-active-thread", (event, threadID?: string) => {
+    if (event.sender.id !== windowRegistry.mainWindow()?.webContents.id) return;
+    cuaActivityWindowManager.setActiveThread(threadID);
+  });
   ipcMain.handle("wuu:project-list", () => projectManager.list());
   ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) =>
     projectManager.select(projectIDToSelect),

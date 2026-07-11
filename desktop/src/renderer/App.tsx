@@ -876,6 +876,10 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
+  useEffect(() => {
+    (window.wuu as typeof window.wuu & { setActiveCUAThread?: (threadID?: string) => void })
+      .setActiveCUAThread?.(activeThreadID);
+  }, [activeThreadID]);
   const activeBrowserActivity = useMemo(
     () =>
       activitiesForThread(activitySessions, state.activeContext?.cwd, activeThreadID)

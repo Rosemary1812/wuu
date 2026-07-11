@@ -331,4 +331,7 @@ const api: WuuDesktopApi = {
     ipcRenderer.sendSync("wuu:pop-out-init") as PopOutInitResult,
 };
 
+(api as WuuDesktopApi & { setActiveCUAThread: (threadID?: string) => void }).setActiveCUAThread =
+  (threadID?: string) => ipcRenderer.send("wuu:cua-active-thread", threadID);
+
 contextBridge.exposeInMainWorld("wuu", api);

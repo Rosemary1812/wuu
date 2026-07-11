@@ -3,6 +3,7 @@ import type { ActivitySession, ServerEvent } from "../shared/protocol";
 import {
   activityActionFromURL,
   activityControlMethod,
+  activityVisibleForThread,
   cuaActivityFromServerEvent,
   cuaActivityHTML,
   fitActivityPreviewSize,
@@ -30,6 +31,11 @@ function activity(overrides: Partial<ActivitySession> = {}): ActivitySession {
 }
 
 describe("CUA Activity windows", () => {
+  it("scopes PiP visibility to the active session", () => {
+    expect(activityVisibleForThread("thread-1", "thread-1")).toBe(true);
+    expect(activityVisibleForThread("thread-1", "thread-2")).toBe(false);
+    expect(activityVisibleForThread("thread-1", undefined)).toBe(false);
+  });
   it("accepts only CUA lifecycle notifications", () => {
     const event: ServerEvent = {
       workdir: "/repo",

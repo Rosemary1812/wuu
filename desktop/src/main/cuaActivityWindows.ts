@@ -145,21 +145,28 @@ export function activityControlMethod(action: ActivityControlAction): "activity/
   return `activity/${action}`;
 }
 
+export function activityVisibleForThread(activityThreadID: string, activeThreadID?: string): boolean {
+  return activeThreadID !== undefined && activityThreadID === activeThreadID;
+}
+
 type ActivityControl = (
   activity: ActivitySession,
   action: ActivityControlAction,
 ) => Promise<ActivitySession>;
 
 export class CUAActivityWindowManager {
+  private readonly activities = new Map<string, ActivitySession>();
   private readonly manuallyResizedWindowIDs = new Set<number>();
   private readonly previewState = new Map<string, { ratio: number; target: string }>();
   private readonly snappingWindowIDs = new Set<number>();
   private readonly programmaticMoveWindowIDs = new Set<number>();
   private readonly draggingWindowIDs = new Set<number>();
+  private readonly readyWindowIDs = new Set<number>();
   private readonly dismissedActivityIDs = new Set<string>();
   private readonly dragSettleTimers = new Map<number, ReturnType<typeof setTimeout>>();
   private readonly dockedCorners = new Map<number, { source: "main" | "screen"; corner: number }>();
   private readonly snapAnimationTokens = new Map<number, number>();
+  private activeThreadID: string | undefined;
 
   constructor(
     private readonly registry: WindowRegistry,
@@ -172,19 +179,39 @@ export class CUAActivityWindowManager {
     this.update(activity);
   }
 
+  setActiveThread(threadID?: string): void {
+    this.activeThreadID = threadID?.trim() || undefined;
+    for (const [activityID, activity] of this.activities) {
+      const win = this.registry.activityWindow(activityID);
+      if (win && !win.isDestroyed()) this.syncVisibility(win, activity);
+    }
+  }
+
   update(activity: ActivitySession): void {
     const existing = this.registry.activityWindow(activity.id);
     if (activity.state === "stopped") {
+      this.activities.delete(activity.id);
       this.dismissedActivityIDs.delete(activity.id);
       this.registry.clearActivityWindow(activity.id);
       if (existing && !existing.isDestroyed()) existing.close();
       return;
     }
+    this.activities.set(activity.id, activity);
     if (this.dismissedActivityIDs.has(activity.id)) return;
     const win = existing && !existing.isDestroyed()
       ? existing
       : this.createWindow(activity);
     this.render(win, activity);
+    this.syncVisibility(win, activity);
+  }
+
+  private syncVisibility(win: BrowserWindow, activity: ActivitySession): void {
+    if (win.isDestroyed()) return;
+    if (activityVisibleForThread(activity.thread_id, this.activeThreadID)) {
+      if (!win.isVisible() && this.readyWindowIDs.has(win.webContents.id)) win.showInactive();
+    } else if (win.isVisible()) {
+      win.hide();
+    }
   }
 
   private createWindow(activity: ActivitySession): BrowserWindow {
@@ -304,6 +331,7 @@ export class CUAActivityWindowManager {
       this.cancelDragSettle(windowID);
       this.manuallyResizedWindowIDs.delete(windowID);
       this.draggingWindowIDs.delete(windowID);
+      this.readyWindowIDs.delete(windowID);
       this.snappingWindowIDs.delete(windowID);
       this.programmaticMoveWindowIDs.delete(windowID);
       this.dockedCorners.delete(windowID);
@@ -312,7 +340,9 @@ export class CUAActivityWindowManager {
       this.registry.unregisterWindow(windowID);
     });
     win.once("ready-to-show", () => {
-      if (!win.isDestroyed()) win.showInactive();
+      if (win.isDestroyed()) return;
+      this.readyWindowIDs.add(windowID);
+      this.syncVisibility(win, activity);
     });
     return win;
   }
