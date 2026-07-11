@@ -1,5 +1,23 @@
 import CoreGraphics
+import Darwin
 import Foundation
+
+public enum ForegroundInputLock {
+    private static let path = "/tmp/wuu-cua-foreground-input-\(getuid()).lock"
+
+    public static func withLock<T>(_ body: () throws -> T) throws -> T {
+        let descriptor = open(path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else {
+            throw ComputerError.operationFailed("could not open the global foreground input lock")
+        }
+        defer { close(descriptor) }
+        guard flock(descriptor, LOCK_EX) == 0 else {
+            throw ComputerError.operationFailed("could not acquire the global foreground input lock")
+        }
+        defer { flock(descriptor, LOCK_UN) }
+        return try body()
+    }
+}
 
 public struct KeyModifiers: OptionSet, Sendable {
     public let rawValue: UInt64

@@ -51,7 +51,7 @@ public final class MacComputerBackend: ComputerBackend {
         let axApplication = AXUIElementCreateApplication(app.processIdentifier)
         enableElectronAccessibility(axApplication)
         if command.foregroundPolicy == .require {
-            try activate(app)
+            try ForegroundInputLock.withLock { try activate(app) }
         }
 
         let mechanism: String
@@ -295,16 +295,18 @@ public final class MacComputerBackend: ComputerBackend {
             throw ComputerError.unsupported("window screenshots require macOS 14 or newer")
         }
         if foregroundCaptureProcessIDs.contains(app.processIdentifier) {
-            try prepareForegroundInput(command, app: app)
-            return try captureForegroundWindowPNG(processID: app.processIdentifier)
+            return try withForegroundInput(command, app: app) {
+                try captureForegroundWindowPNG(processID: app.processIdentifier)
+            }
         }
         do {
             return try captureWindowPNG(processID: app.processIdentifier)
         } catch let backgroundError {
             foregroundCaptureProcessIDs.insert(app.processIdentifier)
-            try prepareForegroundInput(command, app: app)
             do {
-                return try captureForegroundWindowPNG(processID: app.processIdentifier)
+                return try withForegroundInput(command, app: app) {
+                    try captureForegroundWindowPNG(processID: app.processIdentifier)
+                }
             } catch let foregroundError {
                 throw ComputerError.operationFailed(
                     "window screenshot failed in background (\(backgroundError.localizedDescription)) and after foreground retry (\(foregroundError.localizedDescription))"
@@ -346,13 +348,16 @@ public final class MacComputerBackend: ComputerBackend {
         throw ComputerError.operationFailed("\(app.localizedName ?? "target app") did not become active")
     }
 
-    private func prepareForegroundInput(_ command: ComputerCommand, app: NSRunningApplication) throws {
+    private func withForegroundInput<T>(_ command: ComputerCommand, app: NSRunningApplication, body: () throws -> T) throws -> T {
         guard command.foregroundPolicy != .avoid else {
             throw ComputerError.requiresForeground(
                 "\(command.action.rawValue) needs native mouse or keyboard input for \(app.localizedName ?? "the target app"); retry with foreground_policy=\"allow\" only when foreground control is acceptable"
             )
         }
-        try activate(app)
+        return try ForegroundInputLock.withLock {
+            try activate(app)
+            return try body()
+        }
     }
 
     private func click(_ command: ComputerCommand, app: NSRunningApplication) throws -> String {
@@ -363,16 +368,19 @@ public final class MacComputerBackend: ComputerBackend {
                 return "background_ax"
             }
             if let frame = axFrame(target) {
-                try prepareForegroundInput(command, app: app)
-                try postClick(point: CGPoint(x: frame.midX, y: frame.midY), button: command.mouseButton, count: command.clickCount ?? 1)
+                try withForegroundInput(command, app: app) {
+                    try postClick(point: CGPoint(x: frame.midX, y: frame.midY), button: command.mouseButton, count: command.clickCount ?? 1)
+                }
                 return "foreground_native"
             }
         }
         guard let x = command.x, let y = command.y else {
             throw ComputerError.invalidArguments("click requires element_id or x and y")
         }
-        try prepareForegroundInput(command, app: app)
-        try postClick(point: try inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app), button: command.mouseButton, count: command.clickCount ?? 1)
+        let point = try inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app)
+        try withForegroundInput(command, app: app) {
+            try postClick(point: point, button: command.mouseButton, count: command.clickCount ?? 1)
+        }
         return "foreground_native"
     }
 
@@ -401,23 +409,24 @@ public final class MacComputerBackend: ComputerBackend {
         guard let x = command.x, let y = command.y, let toX = command.toX, let toY = command.toY else {
             throw ComputerError.invalidArguments("drag requires from_x, from_y, to_x, and to_y")
         }
-        try prepareForegroundInput(command, app: app)
         let start = try inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app)
         let end = try inputPoint(x: toX, y: toY, coordinateSpace: command.coordinateSpace, app: app)
-        guard let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left) else {
-            throw ComputerError.operationFailed("could not create drag event")
+        try withForegroundInput(command, app: app) {
+            guard let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left) else {
+                throw ComputerError.operationFailed("could not create drag event")
+            }
+            down.post(tap: .cghidEventTap)
+            for step in 1...12 {
+                let progress = Double(step) / 12
+                let point = CGPoint(
+                    x: start.x + (end.x - start.x) * progress,
+                    y: start.y + (end.y - start.y) * progress
+                )
+                CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+                usleep(8_000)
+            }
+            CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left)?.post(tap: .cghidEventTap)
         }
-        down.post(tap: .cghidEventTap)
-        for step in 1...12 {
-            let progress = Double(step) / 12
-            let point = CGPoint(
-                x: start.x + (end.x - start.x) * progress,
-                y: start.y + (end.y - start.y) * progress
-            )
-            CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
-            usleep(8_000)
-        }
-        CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left)?.post(tap: .cghidEventTap)
     }
 
     private func inputPoint(x: Double, y: Double, coordinateSpace: String?, app: NSRunningApplication) throws -> CGPoint {
@@ -442,16 +451,16 @@ public final class MacComputerBackend: ComputerBackend {
 
     private func pressKey(_ command: ComputerCommand, app: NSRunningApplication) throws {
         guard let key = command.key else { throw ComputerError.invalidArguments("key is required") }
-        try prepareForegroundInput(command, app: app)
-        try postKey(key)
+        try withForegroundInput(command, app: app) { try postKey(key) }
     }
 
     private func pressKeys(_ command: ComputerCommand, app: NSRunningApplication) throws {
         guard let keys = command.keys, !keys.isEmpty else { throw ComputerError.invalidArguments("keys is required") }
-        try prepareForegroundInput(command, app: app)
-        for key in keys {
-            try postKey(key)
-            usleep(20_000)
+        try withForegroundInput(command, app: app) {
+            for key in keys {
+                try postKey(key)
+                usleep(20_000)
+            }
         }
     }
 
@@ -473,15 +482,16 @@ public final class MacComputerBackend: ComputerBackend {
         let direction = command.direction?.lowercased() ?? "down"
         let vertical: Int32 = direction == "up" ? amount : direction == "down" ? -amount : 0
         let horizontal: Int32 = direction == "left" ? amount : direction == "right" ? -amount : 0
-        try prepareForegroundInput(command, app: app)
-        if command.elementID != nil,
-           let frame = axFrame(try element(command, app: app)) {
-            CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: frame.midX, y: frame.midY), mouseButton: .left)?.post(tap: .cghidEventTap)
+        let frame = try command.elementID.flatMap { _ in axFrame(try element(command, app: app)) }
+        try withForegroundInput(command, app: app) {
+            if let frame {
+                CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: CGPoint(x: frame.midX, y: frame.midY), mouseButton: .left)?.post(tap: .cghidEventTap)
+            }
+            guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: vertical, wheel2: horizontal, wheel3: 0) else {
+                throw ComputerError.operationFailed("could not create scroll event")
+            }
+            event.post(tap: .cghidEventTap)
         }
-        guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: vertical, wheel2: horizontal, wheel3: 0) else {
-            throw ComputerError.operationFailed("could not create scroll event")
-        }
-        event.post(tap: .cghidEventTap)
     }
 
     private func setValue(_ command: ComputerCommand, app: NSRunningApplication) throws {
@@ -493,24 +503,25 @@ public final class MacComputerBackend: ComputerBackend {
 
     private func typeText(_ command: ComputerCommand, app: NSRunningApplication) throws {
         guard let text = command.text else { throw ComputerError.invalidArguments("text is required") }
-        try prepareForegroundInput(command, app: app)
-        if command.elementID != nil {
-            let target = try element(command, app: app)
-            _ = AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-        }
         let units = Array(text.utf16)
         if units.isEmpty { return }
         guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
               let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else {
             throw ComputerError.operationFailed("could not create text input event")
         }
-        units.withUnsafeBufferPointer { buffer in
-            guard let baseAddress = buffer.baseAddress else { return }
-            down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: baseAddress)
-            up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: baseAddress)
+        try withForegroundInput(command, app: app) {
+            if command.elementID != nil {
+                let target = try element(command, app: app)
+                _ = AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+            }
+            units.withUnsafeBufferPointer { buffer in
+                guard let baseAddress = buffer.baseAddress else { return }
+                down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: baseAddress)
+                up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: baseAddress)
+            }
+            down.post(tap: .cghidEventTap)
+            up.post(tap: .cghidEventTap)
         }
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
     }
 
     private func selectText(_ command: ComputerCommand, app: NSRunningApplication) throws {
