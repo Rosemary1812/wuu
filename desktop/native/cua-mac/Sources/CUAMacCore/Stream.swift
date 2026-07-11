@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 @preconcurrency import CoreMedia
 import Foundation
 @preconcurrency import ScreenCaptureKit
@@ -95,8 +96,8 @@ private let userInputCallback: CGEventTapCallBack = { _, _, event, refcon in
 @available(macOS 14.0, *)
 private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     let writer: FramePipeWriter
-    let frame: CGRect
     private let lock = NSLock()
+    private var frame: CGRect
     private var stopped = false
 
     init(writer: FramePipeWriter, frame: CGRect) {
@@ -106,7 +107,10 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .screen, sampleBuffer.isValid else { return }
-        writer.submit(sampleBuffer, frame: frame)
+        lock.lock()
+        let currentFrame = frame
+        lock.unlock()
+        writer.submit(sampleBuffer, frame: currentFrame)
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -122,6 +126,50 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
         defer { lock.unlock() }
         return stopped
     }
+
+    func updateFrame(_ nextFrame: CGRect) {
+        lock.lock()
+        frame = nextFrame
+        lock.unlock()
+    }
+}
+
+@available(macOS 14.0, *)
+private func preferredStreamWindow(in content: SCShareableContent, processID: pid_t) -> SCWindow? {
+    let candidates = content.windows.filter {
+        $0.owningApplication?.processID == processID && $0.frame.width > 1 && $0.frame.height > 1
+    }
+    guard !candidates.isEmpty else { return nil }
+    let application = AXUIElementCreateApplication(processID)
+    var focusedValue: CFTypeRef?
+    if AXUIElementCopyAttributeValue(application, kAXFocusedWindowAttribute as CFString, &focusedValue) == .success,
+       let focused = focusedValue as! AXUIElement?,
+       let focusedFrame = axFrame(focused) {
+        return candidates.min { left, right in
+            windowFrameDistance(left.frame, focusedFrame) < windowFrameDistance(right.frame, focusedFrame)
+        }
+    }
+    return candidates.max { left, right in
+        left.frame.width * left.frame.height < right.frame.width * right.frame.height
+    }
+}
+
+private func windowFrameDistance(_ left: CGRect, _ right: CGRect) -> CGFloat {
+    abs(left.minX - right.minX)
+        + abs(left.minY - right.minY)
+        + abs(left.width - right.width)
+        + abs(left.height - right.height)
+}
+
+@available(macOS 14.0, *)
+private func streamConfiguration(for window: SCWindow) -> SCStreamConfiguration {
+    let configuration = SCStreamConfiguration()
+    configuration.width = max(1, Int(window.frame.width * 1.25))
+    configuration.height = max(1, Int(window.frame.height * 1.25))
+    configuration.minimumFrameInterval = CMTime(value: 1, timescale: 12)
+    configuration.queueDepth = 2
+    configuration.showsCursor = false
+    return configuration
 }
 
 public func runWindowFrameStream(target: String) async throws {
@@ -144,17 +192,10 @@ public func runWindowFrameStream(target: String) async throws {
 
     let writer = FramePipeWriter()
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-    guard let window = content.windows
-        .filter({ $0.owningApplication?.processID == app.processIdentifier && $0.frame.width > 1 && $0.frame.height > 1 })
-        .max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) else {
+    guard var window = preferredStreamWindow(in: content, processID: app.processIdentifier) else {
         throw ComputerError.operationFailed("no capturable window found")
     }
-    let configuration = SCStreamConfiguration()
-    configuration.width = max(1, Int(window.frame.width * 1.25))
-    configuration.height = max(1, Int(window.frame.height * 1.25))
-    configuration.minimumFrameInterval = CMTime(value: 1, timescale: 12)
-    configuration.queueDepth = 2
-    configuration.showsCursor = false
+    let configuration = streamConfiguration(for: window)
     let output = WindowStreamOutput(writer: writer, frame: window.frame)
     let stream = SCStream(filter: SCContentFilter(desktopIndependentWindow: window), configuration: configuration, delegate: output)
     try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: DispatchQueue(label: "com.blueberrycongee.wuu.cua.capture"))
@@ -179,7 +220,22 @@ public func runWindowFrameStream(target: String) async throws {
         CGEvent.tapEnable(tap: eventTap, enable: true)
     }
     while !output.isStopped() {
-        try await Task.sleep(for: .milliseconds(250))
+        try await Task.sleep(for: .milliseconds(750))
+        guard let refreshedContent = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
+              let refreshedWindow = preferredStreamWindow(in: refreshedContent, processID: app.processIdentifier) else {
+            continue
+        }
+        let windowChanged = refreshedWindow.windowID != window.windowID
+        let frameChanged = windowFrameDistance(refreshedWindow.frame, window.frame) > 1
+        guard windowChanged || frameChanged else { continue }
+        if windowChanged {
+            try await stream.updateContentFilter(SCContentFilter(desktopIndependentWindow: refreshedWindow))
+        }
+        if frameChanged {
+            try await stream.updateConfiguration(streamConfiguration(for: refreshedWindow))
+        }
+        window = refreshedWindow
+        output.updateFrame(refreshedWindow.frame)
     }
     withExtendedLifetime(inputMonitor) {}
     if let eventSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), eventSource, .commonModes) }
