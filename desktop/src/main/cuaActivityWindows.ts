@@ -658,7 +658,10 @@ export class CUAActivityWindowManager {
     if (typeof metadata.width === "number" && typeof metadata.height === "number") {
       this.autoSizeForLiveFrame(win, activityID, metadata.width, metadata.height);
     }
-    void win.webContents.executeJavaScript(`window.wuuCUAFrame?.(${JSON.stringify(url)})`, true).catch(() => undefined);
+    void win.webContents.executeJavaScript(
+      `window.wuuCUAFrame?.(${JSON.stringify(url)}, ${JSON.stringify(metadata.capture_mode ?? "full_window")})`,
+      true,
+    ).catch(() => undefined);
   }
 
   private publishStreamError(activityID: string, _message: string): void {
@@ -829,11 +832,12 @@ export function cuaActivityHTML(activity: ActivitySession): string {
   let lastInteractionRevision = 0;
   let lastTarget = ${JSON.stringify(activity.target?.trim() ?? "")};
   let pointerPosition = { x: .5, y: .5 };
-  window.wuuCUAFrame = (url) => {
+  window.wuuCUAFrame = (url, captureMode) => {
     lastLiveFrameAt = Date.now();
     livePreview.src = url;
     livePreview.hidden = false;
-    streamStatus.hidden = true;
+    streamStatus.textContent = captureMode === 'visible_fallback' ? '当前仅显示屏幕内区域' : '实时画面暂不可用';
+    streamStatus.hidden = captureMode !== 'visible_fallback';
     document.querySelector('.glass')?.remove();
   };
   window.wuuCUAStreamUnavailable = () => {

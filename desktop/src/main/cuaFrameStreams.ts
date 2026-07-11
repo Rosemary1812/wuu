@@ -11,6 +11,7 @@ export type CUAFrameMetadata = {
   width?: number;
   height?: number;
   mime_type?: string;
+  capture_mode?: "full_window" | "visible_fallback";
   message?: string;
 };
 

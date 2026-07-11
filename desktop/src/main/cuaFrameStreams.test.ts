@@ -33,4 +33,10 @@ describe("CUAFrameDecoder", () => {
     const frames = decoder.push(envelope({ event: "user_input" }, Buffer.alloc(0)));
     expect(frames[0]?.metadata.event).toBe("user_input");
   });
+
+  it("preserves the frame capture mode", () => {
+    const decoder = new CUAFrameDecoder();
+    const frames = decoder.push(envelope({ event: "frame", capture_mode: "visible_fallback" }, Buffer.from("jpeg")));
+    expect(frames[0]?.metadata.capture_mode).toBe("visible_fallback");
+  });
 });

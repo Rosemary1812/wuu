@@ -299,6 +299,8 @@ describe("CUA Activity windows", () => {
     expect(html).toContain("window.wuuCUAActivity");
     expect(html).toContain("window.wuuCUAStreamUnavailable");
     expect(html).toContain("实时画面暂不可用");
+    expect(html).toContain("当前仅显示屏幕内区域");
+    expect(html).toContain("captureMode === 'visible_fallback'");
     expect(html).not.toContain('class="error"');
     expect(cuaActivityHTML(activity({ error: "boom" }))).not.toContain("boom");
     expect(html).toContain('class="agent-pointer"');

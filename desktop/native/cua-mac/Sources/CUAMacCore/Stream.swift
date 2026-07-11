@@ -43,6 +43,7 @@ private final class FramePipeWriter: @unchecked Sendable {
                 "timestamp_ns": DispatchTime.now().uptimeNanoseconds,
                 "width": Int(image.extent.width),
                 "height": Int(image.extent.height),
+                "capture_mode": "full_window",
                 "window_frame": ["x": frame.origin.x, "y": frame.origin.y, "width": frame.width, "height": frame.height],
                 "mime_type": "image/jpeg",
             ], payload: data)
@@ -70,6 +71,7 @@ private final class FramePipeWriter: @unchecked Sendable {
                 "timestamp_ns": DispatchTime.now().uptimeNanoseconds,
                 "width": bitmap.pixelsWide,
                 "height": bitmap.pixelsHigh,
+                "capture_mode": "visible_fallback",
                 "window_frame": [
                     "x": capture.geometry.windowFrame.origin.x,
                     "y": capture.geometry.windowFrame.origin.y,
