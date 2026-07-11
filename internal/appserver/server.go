@@ -408,6 +408,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadTaskEvents(req)
 	case MethodThreadList:
 		return s.handleThreadList(req)
+	case MethodThreadListArchived:
+		return s.handleThreadListArchived(req)
 	case MethodThreadSearch:
 		return s.handleThreadSearch(req)
 	case MethodThreadPreview:

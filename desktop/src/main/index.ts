@@ -1390,6 +1390,9 @@ app.whenReady().then(async () => {
       typeof cwd === "string" && cwd.length > 0 ? { cwd } : undefined,
     ),
   );
+  ipcMain.handle("wuu:thread-list-archived", (event) =>
+    appServerRequest<{ threads: Thread[] }>(event, "thread/listArchived"),
+  );
   ipcMain.handle("wuu:thread-search", (event, query: string, limit?: number) =>
     appServerRequest(event, "thread/search", {
       query: query ?? "",

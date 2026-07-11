@@ -24,8 +24,15 @@ export async function loadRuntime(
   }
   const resumeLatestThread = options.resumeLatestThread ?? true;
   const initialized = await window.wuu.initialize();
-  const listed = await window.wuu.listThreads();
-  const listedThreads = sortThreads(listed.threads);
+  const [listed, archived] = await Promise.all([
+    window.wuu.listThreads(),
+    window.wuu.listArchivedThreads(),
+  ]);
+  // The archive page (Settings → Archive) reads from state.threads, so we
+  // merge the cross-cwd archived list into the same sorted array. The
+  // archives are never re-fetched on context switch — RuntimeLoadState is
+  // the single rebuild path.
+  const listedThreads = sortThreads([...listed.threads, ...archived.threads]);
   const defaultThread = resumeLatestThread
     ? (listedThreads.find((candidate) => !candidate.pinned) ?? listedThreads[0])
     : undefined;
@@ -61,12 +68,13 @@ export async function loadPopOutRuntime(
     return { status: "no-runtime" };
   }
   if (init.kind === "draft") {
-    const [listedProjects, initialized, listed] = await Promise.all([
+    const [listedProjects, initialized, listed, archived] = await Promise.all([
       window.wuu.listProjects(),
       window.wuu.initialize(),
       window.wuu.listThreads(),
+      window.wuu.listArchivedThreads(),
     ]);
-    const listedThreads = sortThreads(listed.threads);
+    const listedThreads = sortThreads([...listed.threads, ...archived.threads]);
     const tab = createDraftSessionTab("draft:pop-out", init.context);
     return {
       initialized,
@@ -88,13 +96,15 @@ export async function loadPopOutRuntime(
   if (!init.threadID) {
     return { status: "no-runtime" };
   }
-  const [listedProjects, initialized, listed, resumed] = await Promise.all([
-    window.wuu.listProjects(),
-    window.wuu.initialize(),
-    window.wuu.listThreads(),
-    window.wuu.resumeThread(init.threadID),
-  ]);
-  const listedThreads = sortThreads(listed.threads);
+  const [listedProjects, initialized, listed, archived, resumed] =
+    await Promise.all([
+      window.wuu.listProjects(),
+      window.wuu.initialize(),
+      window.wuu.listThreads(),
+      window.wuu.listArchivedThreads(),
+      window.wuu.resumeThread(init.threadID),
+    ]);
+  const listedThreads = sortThreads([...listed.threads, ...archived.threads]);
   const thread = reconcileResumedThreadTurns(
     requireThread(resumed, "resume did not return a thread"),
     listedThreads.find((item) => item.id === init.threadID),

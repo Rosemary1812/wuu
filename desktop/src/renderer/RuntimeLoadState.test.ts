@@ -107,6 +107,7 @@ describe("runtime load helpers", () => {
     installWuuStub({
       initialize: vi.fn().mockResolvedValue({ model: "gpt-test" }),
       listThreads: vi.fn().mockResolvedValue({ threads: [pinned, latest] }),
+      listArchivedThreads: vi.fn().mockResolvedValue({ threads: [] }),
       resumeThread: vi.fn().mockResolvedValue({ thread: resumed }),
     });
 
@@ -132,11 +133,49 @@ describe("runtime load helpers", () => {
           issues: [{ code: "credential_missing", message: "请配置模型凭据" }],
         }),
       listThreads: vi.fn().mockResolvedValue({ threads: [] }),
+      listArchivedThreads: vi.fn().mockResolvedValue({ threads: [] }),
     });
 
     const state = await loadRuntime(projectList(activeContext));
 
     expect(state.status).toBe("请配置模型凭据");
     expect(state.activeContext).toEqual(activeContext);
+  });
+
+  it("merges archived threads into state.threads so Settings → Archive can list them", async () => {
+    const activeContext: RuntimeContext = {
+      kind: "no_project",
+      cwd: "/tmp/wuu",
+    };
+    const active = thread("active-1", {
+      updated_at: "2026-03-02T00:00:00Z",
+    });
+    const archivedFromPriorCwd = thread("archived-2", {
+      archived: true,
+      updated_at: "2026-03-04T00:00:00Z",
+      cwd: "/tmp/another-workspace",
+    });
+    installWuuStub({
+      initialize: vi.fn().mockResolvedValue({ model: "gpt-test" }),
+      listThreads: vi.fn().mockResolvedValue({ threads: [active] }),
+      listArchivedThreads: vi
+        .fn()
+        .mockResolvedValue({ threads: [archivedFromPriorCwd] }),
+    });
+
+    const state = await loadRuntime(projectList(activeContext), {
+      resumeLatestThread: false,
+    });
+
+    // The Settings → Archive panel filters state.threads by thread.archived,
+    // so the cross-cwd archived session must end up in the same array as
+    // the active one — otherwise the archive page stays empty after a
+    // restart for any workspace the user has ever archived a thread in.
+    const ids = (state.threads ?? []).map((t) => t.id);
+    expect(ids).toContain("active-1");
+    expect(ids).toContain("archived-2");
+    const archived = state.threads?.find((t) => t.id === "archived-2");
+    expect(archived?.archived).toBe(true);
+    expect(archived?.cwd).toBe("/tmp/another-workspace");
   });
 });

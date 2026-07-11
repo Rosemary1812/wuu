@@ -135,6 +135,7 @@ function installWuuApi(threads: Thread[] = []): void {
       .mockImplementation(() => Promise.resolve(projectState())),
     initialize: vi.fn().mockResolvedValue(initialized()),
     listThreads: vi.fn().mockResolvedValue({ threads }),
+    listArchivedThreads: vi.fn().mockResolvedValue({ threads: [] }),
     resumeThread: vi.fn().mockImplementation((threadID?: string) => {
       const thread = threads.find((item) => item.id === threadID) ?? threads[0];
       return Promise.resolve({ thread });

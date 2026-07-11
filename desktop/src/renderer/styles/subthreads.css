@@ -136,9 +136,18 @@
   height: var(--icon-size-sm);
 }
 
+/* Subthread panel action buttons (mark resolved / pop out / close):
+ * mirror the titlebar toggle treatment — 30×30 element box with 2px
+ * transparent padding and `background-clip: content-box`, so the hover
+ * and pressed backgrounds only paint the inner 26×26. The icon (14px
+ * via --icon-size-sm) sits in a smaller, proportional visible frame
+ * instead of the previous full 30×30 fill. The 2px padding extends
+ * the click region to keep the controls easy to land. */
 .conversation-subthread-icon {
   width: 30px;
   height: 30px;
+  padding: 2px;
+  background-clip: content-box;
 }
 
 .conversation-subthread-icon svg {

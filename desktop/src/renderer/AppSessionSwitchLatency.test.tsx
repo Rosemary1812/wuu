@@ -199,6 +199,7 @@ function installWuuApi(): {
     listThreads: vi.fn().mockResolvedValue({
       threads: Array.from(threadsByID.values()),
     }),
+    listArchivedThreads: vi.fn().mockResolvedValue({ threads: [] }),
     resumeThread,
     getActiveGoalSummary: vi.fn().mockResolvedValue(null),
     gitStatus: vi.fn().mockResolvedValue({

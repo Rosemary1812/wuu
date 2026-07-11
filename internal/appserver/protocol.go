@@ -47,6 +47,7 @@ const (
 	MethodThreadEscalateSub        = "thread/escalateSub"
 	MethodThreadTaskEvents         = "thread/taskEvents"
 	MethodThreadList               = "thread/list"
+	MethodThreadListArchived       = "thread/listArchived"
 	MethodThreadSearch             = "thread/search"
 	MethodThreadPreview            = "thread/preview"
 	MethodThreadPin                = "thread/pin"

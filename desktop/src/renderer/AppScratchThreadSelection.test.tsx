@@ -165,6 +165,7 @@ function installWuuApi(
       .fn()
       .mockImplementation(() => Promise.resolve(initialized(SCRATCH_CWD_A))),
     listThreads: vi.fn().mockResolvedValue({ threads }),
+    listArchivedThreads: vi.fn().mockResolvedValue({ threads: [] }),
     resumeThread,
     getActiveGoalSummary: vi.fn().mockResolvedValue(null),
     gitStatus: vi.fn().mockResolvedValue({

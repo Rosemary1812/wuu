@@ -718,6 +718,67 @@ func (s *Server) handleThreadList(req Request) error {
 	return s.writeResponse(req.ID, ThreadListResult{Threads: result}, nil)
 }
 
+// handleThreadListArchived returns every archived session the running server
+// knows about, regardless of cwd. The Settings → Archive panel is global —
+// it must surface threads the user has archived across every workspace and
+// scratch directory, not just the active one. After an app restart the
+// archive page reconstructs itself exclusively from this handler, so we
+// merge disk-backed sessions with in-memory threads (in-memory wins when
+// both exist, mirroring handleThreadList's policy) and ignore the caller's
+// cwd argument.
+func (s *Server) handleThreadListArchived(req Request) error {
+	var params ThreadListParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+
+	sessions, err := session.List(s.rt.SessionDir, 0)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	entries := make(map[string]threadListEntry, len(sessions))
+	for _, sess := range sessions {
+		if sess.ArchivedAt == nil {
+			continue
+		}
+		entries[sess.ID] = threadEntryFromSession(sess, s.rt.ProviderName, s.rt.Model)
+	}
+
+	s.mu.Lock()
+	for _, th := range s.threads {
+		th.mu.Lock()
+		thread := th.snapshotLocked()
+		entry := threadListEntry{thread: thread, pinnedAt: th.PinnedAt}
+		th.mu.Unlock()
+		if thread.Ephemeral {
+			continue
+		}
+		if thread.ReadOnly {
+			continue
+		}
+		if !thread.Archived {
+			continue
+		}
+		entries[thread.ID] = entry
+	}
+	s.mu.Unlock()
+
+	threads := make([]threadListEntry, 0, len(entries))
+	for _, entry := range entries {
+		threads = append(threads, entry)
+	}
+	sortThreadListEntries(threads)
+	result := make([]Thread, 0, len(threads))
+	for _, entry := range threads {
+		thread, err := s.threadWithChildAgents(entry.thread)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		result = append(result, thread)
+	}
+	return s.writeResponse(req.ID, ThreadListResult{Threads: result}, nil)
+}
+
 func sameThreadListCWD(left, right string) bool {
 	return cleanThreadListCWD(left) == cleanThreadListCWD(right)
 }

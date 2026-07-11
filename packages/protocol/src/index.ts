@@ -2103,6 +2103,9 @@ export type WuuDesktopApi = {
     subthreadId: string
   ) => Promise<ThreadTaskEventsResult>;
   listThreads: (cwd?: string) => Promise<{ threads: Thread[] }>;
+  // Settings → Archive panel uses this to surface archived sessions across
+  // every cwd after a restart; the active list above stays non-archived.
+  listArchivedThreads: () => Promise<{ threads: Thread[] }>;
   searchThreads: (query: string, limit?: number) => Promise<ThreadSearchResult>;
   getThreadPreview: (
     threadId: string,
