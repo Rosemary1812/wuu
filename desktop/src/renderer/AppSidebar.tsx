@@ -776,6 +776,10 @@ export function AppSidebar({
                 ...thread,
                 title: `#${baseThreadTitle(thread, groupThreads)}`,
               }));
+              const openGroupThreadDialog = (): void => {
+                setGroupNameDraft("");
+                setCreatingGroupThread(true);
+              };
               const groupActions = (
                 <div className="sidebar-section-actions group-thread-actions">
                   <button
@@ -784,10 +788,7 @@ export function AppSidebar({
                     aria-label="新建群聊"
                     title="新建群聊"
                     disabled={!state.initialized}
-                    onClick={() => {
-                      setGroupNameDraft("");
-                      setCreatingGroupThread(true);
-                    }}
+                    onClick={openGroupThreadDialog}
                   >
                     <Plus aria-hidden="true" />
                   </button>
@@ -819,7 +820,16 @@ export function AppSidebar({
                       onToggleSidebarSectionCollapsed(SIDEBAR_SECTION_GROUP)
                     }
                     actions={groupActions}
-                    emptyNote="还没有群聊"
+                    emptyNote={
+                      <button
+                        type="button"
+                        className="sidebar-section-empty-note-action"
+                        disabled={!state.initialized}
+                        onClick={openGroupThreadDialog}
+                      >
+                        添加群聊
+                      </button>
+                    }
                   >
                     {groupRows.length > 0 ? (
                       <PinnedThreadList

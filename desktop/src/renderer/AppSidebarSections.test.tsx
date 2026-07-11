@@ -1354,14 +1354,20 @@ describe("group chat section", () => {
     return container.querySelector('section[aria-label="群聊"]');
   }
 
-  it("renders no placeholder row when empty — the backend guarantees # all", () => {
-    // sidebar-groups-andy-workspaces.md §2: the disabled "# all"
-    // placeholder is gone; an empty section just shows its empty note.
+  it("renders an add-group CTA when empty", () => {
+    // The empty-state row is the primary create affordance: a visible
+    // action is more useful than a passive "还没有群聊" status.
     renderSidebar({ sectionOrder: order });
     expect(groupSection()?.querySelector(".group-thread-row-placeholder")).toBeNull();
-    expect(
-      groupSection()?.querySelector(".sidebar-section-empty-note")?.textContent,
-    ).toBe("还没有群聊");
+    const emptyAction = groupSection()?.querySelector<HTMLButtonElement>(
+      ".sidebar-section-empty-note-action",
+    );
+    expect(emptyAction?.textContent).toBe("添加群聊");
+    expect(document.body.querySelector(".sidebar-name-dialog")).toBeNull();
+    act(() => {
+      emptyAction?.click();
+    });
+    expect(document.body.querySelector(".sidebar-name-dialog")).not.toBeNull();
   });
 
   it("shares the hover-reveal actions and section-container CSS families", () => {
