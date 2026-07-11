@@ -295,9 +295,11 @@
 }
 
 .sidebar-resizer::before {
+  /* Spans the full sidebar height so the hover/drag feedback lights the
+   * entire right edge of the left sidebar, not just a short indicator
+   * segment that leaves the top and bottom 12px dark. */
   position: absolute;
-  top: 12px;
-  bottom: 12px;
+  inset: 0;
   left: 50%;
   width: 1px;
   border-radius: var(--radius-pill);
