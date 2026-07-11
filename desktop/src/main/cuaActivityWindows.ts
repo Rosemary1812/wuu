@@ -193,9 +193,7 @@ export class CUAActivityWindowManager {
       frame: false,
       transparent: true,
       backgroundColor: "#00000000",
-      hasShadow: true,
-      vibrancy: "under-window",
-      visualEffectState: "active",
+      hasShadow: false,
       alwaysOnTop: true,
       skipTaskbar: true,
       show: false,
@@ -207,7 +205,7 @@ export class CUAActivityWindowManager {
       },
     });
     win.setAlwaysOnTop(true, "floating");
-    win.setHasShadow(true);
+    win.setHasShadow(false);
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     win.on("will-resize", () => {

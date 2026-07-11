@@ -1,8 +1,12 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +15,26 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
+
+func TestCropTransparentPNGRemovesWindowShadowPadding(t *testing.T) {
+	source := image.NewNRGBA(image.Rect(0, 0, 8, 10))
+	for y := 3; y < 8; y++ {
+		for x := 2; x < 7; x++ {
+			source.SetNRGBA(x, y, color.NRGBA{R: 20, G: 30, B: 40, A: 255})
+		}
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, source); err != nil {
+		t.Fatal(err)
+	}
+	cropped, err := png.Decode(bytes.NewReader(cropTransparentPNG(encoded.Bytes())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cropped.Bounds().Size(); got.X != 5 || got.Y != 5 {
+		t.Fatalf("cropped size = %v, want 5x5", got)
+	}
+}
 
 type activityTestTool struct {
 	calls int

@@ -1,11 +1,15 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/png"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -142,6 +146,7 @@ func (t *Toolkit) persistActivityPreview(activityID string, result toolresult.Re
 		switch strings.ToLower(strings.TrimSpace(part.MIMEType)) {
 		case "image/png":
 			extension = ".png"
+			data = cropTransparentPNG(data)
 		case "image/jpeg":
 			extension = ".jpg"
 		case "image/webp":
@@ -163,6 +168,45 @@ func (t *Toolkit) persistActivityPreview(activityID string, result toolresult.Re
 		return (&url.URL{Scheme: "file", Path: path}).String(), nil
 	}
 	return "", nil
+}
+
+func cropTransparentPNG(data []byte) []byte {
+	source, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		return data
+	}
+	bounds := source.Bounds()
+	visible := image.Rectangle{Min: bounds.Max, Max: bounds.Min}
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			_, _, _, alpha := source.At(x, y).RGBA()
+			if alpha == 0 {
+				continue
+			}
+			if x < visible.Min.X {
+				visible.Min.X = x
+			}
+			if y < visible.Min.Y {
+				visible.Min.Y = y
+			}
+			if x+1 > visible.Max.X {
+				visible.Max.X = x + 1
+			}
+			if y+1 > visible.Max.Y {
+				visible.Max.Y = y + 1
+			}
+		}
+	}
+	if visible.Empty() || visible == bounds {
+		return data
+	}
+	cropped := image.NewNRGBA(image.Rect(0, 0, visible.Dx(), visible.Dy()))
+	draw.Draw(cropped, cropped.Bounds(), source, visible.Min, draw.Src)
+	var output bytes.Buffer
+	if err := png.Encode(&output, cropped); err != nil {
+		return data
+	}
+	return output.Bytes()
 }
 
 func mcpActivityTarget(arguments string) string {
