@@ -1797,6 +1797,27 @@ export type CodexPetState = {
   frames: number;
 };
 
+// 桌宠在桌面上的渲染尺寸档位。multiplier 是相对于"默认"尺寸的缩放比例：
+// 默认档的 sprite 渲染成 192×208 单元格的 50%（96×104），"小"是 75%，"大"
+// 是 150%，"超大"是 200%。窗口尺寸、sprite 的 CSS transform 都按这个比例
+// 联动；气泡宽高保持不变以维持可读性。size 是可选字段——旧版
+// desktop-settings.json 没有它时由读取层兜底成 CODEX_PET_SIZE_DEFAULT，写
+// 回时允许省略。
+export type CodexPetSize = "small" | "default" | "large" | "extra-large";
+
+export const CODEX_PET_SIZE_DEFAULT: CodexPetSize = "default";
+
+export const CODEX_PET_SIZE_OPTIONS = [
+  { id: "small", label: "小 (75%)", multiplier: 0.75 },
+  { id: "default", label: "默认 (100%)", multiplier: 1.0 },
+  { id: "large", label: "大 (150%)", multiplier: 1.5 },
+  { id: "extra-large", label: "超大 (200%)", multiplier: 2.0 },
+] as const satisfies ReadonlyArray<{
+  id: CodexPetSize;
+  label: string;
+  multiplier: number;
+}>;
+
 export type CodexPet = {
   id: string;
   display_name: string;
@@ -1809,6 +1830,15 @@ export type CodexPet = {
 export type CodexPetSettings = {
   enabled: boolean;
   selected_id: string;
+  // 桌宠渲染尺寸档位。可选：旧版持久化文件没有这个字段时由 desktop-settings
+  // 读取层兜底成 CODEX_PET_SIZE_DEFAULT，CodexPetsSnapshot 把它透出来给
+  // renderer（如果关心的话）。
+  size?: CodexPetSize;
+  // 连续缩放值（sprite 的 CSS transform scale，默认档 = 0.5）。用户在桌宠
+  // 窗口上拖动边缘热区实时缩放，松手时提交这个原始值——不吸附回 size 档
+  // 位，所以尺寸可以停在任意中间值。有 scale 时它覆盖 size 档位；显式选
+  // 档位（若未来恢复档位入口）时应清掉 scale。
+  scale?: number;
 };
 
 export type CodexPetsSnapshot = CodexPetSettings & {

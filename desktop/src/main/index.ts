@@ -13,7 +13,7 @@ import {
 import { readdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MESSAGE_FLOW_FONT_SIZE_RANGE } from "../shared/protocol";
+import { CODEX_PET_SIZE_DEFAULT, MESSAGE_FLOW_FONT_SIZE_RANGE } from "../shared/protocol";
 import type {
   ComposerGoalSummary,
   ConfigAdvancedUpdateResult,
@@ -101,6 +101,8 @@ import { CodexPetWindowManager, type CodexPetRuntime } from "./codexPetWindow";
 import { RemoteHostManager } from "./remoteControl";
 import {
   getCodexPetSettings,
+  getCodexPetScale,
+  getCodexPetSize,
   getCliAutoInstallEnabled,
   getMessageFlowFontSize,
   getThemePreference,
@@ -215,6 +217,18 @@ const codexPetWindowManager = new CodexPetWindowManager(
     }
     broadcastToAll("wuu:codex-pet-jump", { thread_id: hint.thread_id });
   },
+  (size) => {
+    // Context-menu size change — push the choice into desktop-settings.json
+    // and refresh the snapshot so the next sync re-stages the window with
+    // the new size (CodexPetWindowManager already called applyView).
+    updateCodexPetSettings({ size });
+  },
+  (scale) => {
+    // Continuous-resize drag ended (commit=1) — persist the raw scale so
+    // the pet reopens at exactly the size the user left it. Intermediate
+    // per-frame scale updates never reach this callback.
+    updateCodexPetSettings({ scale });
+  },
 );
 const terminalSessionManager = new TerminalSessionManager(
   () => projectManager.ensureRuntimeContext(),
@@ -270,6 +284,10 @@ function updateCodexPetSettings(update: CodexPetSettingsUpdate) {
   const requested = {
     enabled: update.enabled ?? current.enabled,
     selected_id: update.selected_id ?? current.selected_id,
+    size: update.size ?? current.size,
+    // 显式选 size 档位意味着放弃之前拖出来的连续 scale——两者同时在场时
+    // scale 优先，所以这里必须把 scale 清掉档位才生效。
+    scale: update.size !== undefined ? undefined : update.scale ?? current.scale,
   };
   const snapshot = loadCodexPetsSnapshot({
     petsDirs: codexPetDirs(),
@@ -278,6 +296,8 @@ function updateCodexPetSettings(update: CodexPetSettingsUpdate) {
   setCodexPetSettings({
     enabled: snapshot.enabled,
     selected_id: snapshot.selected_id,
+    size: requested.size,
+    scale: requested.scale,
   });
   codexPetWindowManager.sync(snapshot);
   return snapshot;
@@ -665,6 +685,16 @@ app.whenReady().then(async () => {
   await clearOversizedDevCaches();
   projectManager.load();
   registerRenderableFileProtocol();
+  // Pick up the user's chosen size before the pet window is created, so the
+  // initial BrowserWindow and the inline data: URL are sized right the first
+  // time. setSize is a no-op when the persisted size equals the default. A
+  // persisted continuous scale (edge-drag resize) overrides the preset — it
+  // must be applied after setSize, which clears any scale override.
+  codexPetWindowManager.setSize(getCodexPetSize());
+  const persistedPetScale = getCodexPetScale();
+  if (persistedPetScale !== undefined) {
+    codexPetWindowManager.setScale(persistedPetScale);
+  }
   codexPetWindowManager.sync(codexPetsSnapshot());
 
   // Startup CLI install pass (default on, toggleable in settings). Runs in

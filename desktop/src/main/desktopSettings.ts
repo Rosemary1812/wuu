@@ -8,8 +8,11 @@ import { wuuHomePath } from "./projects";
 // home directory (~/.wuu), written synchronously on change.
 
 import {
+  CODEX_PET_SIZE_DEFAULT,
+  CODEX_PET_SIZE_OPTIONS,
   MESSAGE_FLOW_FONT_SIZE_RANGE,
   type CodexPetSettings,
+  type CodexPetSize,
   type MessageFlowFontSize,
   type ThemePreference,
 } from "../shared/protocol";
@@ -86,9 +89,24 @@ export function readDesktopSettings(filePath: string = desktopSettingsPath()): D
     }
     if (typeof record.codex_pet === "object" && record.codex_pet !== null && !Array.isArray(record.codex_pet)) {
       const codexPet = record.codex_pet as Record<string, unknown>;
+      const sizeRaw = codexPet.size;
+      const size =
+        typeof sizeRaw === "string" &&
+        CODEX_PET_SIZE_OPTIONS.some((option) => option.id === sizeRaw)
+          ? (sizeRaw as CodexPetSize)
+          : undefined;
+      // 连续缩放值：正的有限数即可，精确范围钳制留给
+      // CodexPetWindowManager.setScale（那里是所有 scale 输入的汇合点）。
+      const scaleRaw = codexPet.scale;
+      const scale =
+        typeof scaleRaw === "number" && Number.isFinite(scaleRaw) && scaleRaw > 0
+          ? scaleRaw
+          : undefined;
       settings.codex_pet = {
         enabled: codexPet.enabled === true,
         selected_id: typeof codexPet.selected_id === "string" ? codexPet.selected_id.trim() : "",
+        ...(size ? { size } : {}),
+        ...(scale !== undefined ? { scale } : {}),
       };
     }
     if (
@@ -162,18 +180,45 @@ export function setMessageFlowFontSize(
 }
 
 export function getCodexPetSettings(filePath?: string): CodexPetSettings {
-  return readDesktopSettings(filePath).codex_pet ?? { enabled: false, selected_id: "" };
+  const stored = readDesktopSettings(filePath).codex_pet ?? {
+    enabled: false,
+    selected_id: "",
+  };
+  // size 是可选字段；缺省时统一回落到 CODEX_PET_SIZE_DEFAULT，让 renderer
+  // 和 CodexPetWindowManager 都不必再各自处理 undefined。
+  return { ...stored, size: stored.size ?? CODEX_PET_SIZE_DEFAULT };
 }
 
 export function setCodexPetSettings(next: CodexPetSettings, filePath?: string): void {
   const settings = readDesktopSettings(filePath);
+  // codex_pet 对象整体替换：省略的可选字段（size/scale）即从持久化文件
+  // 删除。部分更新（保留旧值）由调用方负责——index.ts 的
+  // updateCodexPetSettings 先读旧值合并，要保留的字段总是显式传入；
+  // 显式选 size 档位的路径靠"省略 scale 即删除"清掉连续缩放覆盖。
+  const nextSize = next.size;
+  const nextScale = next.scale;
   writeDesktopSettings({
     ...settings,
     codex_pet: {
       enabled: next.enabled,
       selected_id: next.selected_id.trim(),
+      ...(nextSize !== undefined ? { size: nextSize } : {}),
+      ...(nextScale !== undefined ? { scale: nextScale } : {}),
     },
   }, filePath);
+}
+
+export function getCodexPetSize(filePath?: string): CodexPetSize {
+  return getCodexPetSettings(filePath).size ?? CODEX_PET_SIZE_DEFAULT;
+}
+
+export function getCodexPetScale(filePath?: string): number | undefined {
+  // 连续缩放值优先于 size 档位；损坏的持久化值（非有限数、非正数）当作
+  // 未设置，回落到档位。范围钳制交给 CodexPetWindowManager.setScale。
+  const scale = getCodexPetSettings(filePath).scale;
+  return typeof scale === "number" && Number.isFinite(scale) && scale > 0
+    ? scale
+    : undefined;
 }
 
 export function getMainWindowBounds(filePath?: string): WindowBounds | undefined {

@@ -1,10 +1,13 @@
 import { BrowserWindow, Menu, screen, type Rectangle } from "electron";
-import type {
-  CodexPet,
-  CodexPetHint,
-  CodexPetState,
-  CodexPetStateID,
-  CodexPetsSnapshot,
+import {
+  CODEX_PET_SIZE_DEFAULT,
+  CODEX_PET_SIZE_OPTIONS,
+  type CodexPet,
+  type CodexPetHint,
+  type CodexPetSize,
+  type CodexPetState,
+  type CodexPetStateID,
+  type CodexPetsSnapshot,
 } from "../shared/protocol";
 import { CODEX_PET_CELL_HEIGHT, CODEX_PET_CELL_WIDTH, CODEX_PET_STATES } from "./codexPets";
 
@@ -19,6 +22,12 @@ export type CodexPetView = {
   label: string;
   hint: CodexPetHint | null;
   layout: CodexPetBubbleLayout;
+  // Render-time sprite geometry — pre-computed at view-build time so the
+  // HTML template and the JS bridge don't have to know about CodexPetSize.
+  size: CodexPetSize;
+  spriteWidth: number;
+  spriteHeight: number;
+  scale: number;
 };
 
 export type CodexPetBubbleLayout = "above" | "right" | "below" | "left" | "hidden";
@@ -30,27 +39,44 @@ export type CodexPetLayoutDecision = {
 
 // The pet lives in its own frameless always-on-top window so it survives the
 // main window being hidden or minimized. The base window is sized for the
-// half-scale sprite cell plus its drop shadow; when a hint bubble is shown,
-// the window grows in the chosen layout direction.
-const CODEX_PET_WINDOW_WIDTH = 120;
-const CODEX_PET_WINDOW_HEIGHT = 128;
+// sprite cell plus its drop shadow; when a hint bubble is shown, the window
+// grows in the chosen layout direction. Per-size math is computed by
+// `codexPetRenderedSpriteForSize(this.size)`.
 const CODEX_PET_SCREEN_INSET = 24;
 
-// Bubble content is fixed-sized so the renderer can use CSS text-overflow /
-// -webkit-line-clamp instead of pre-truncating strings in main. Width is the
-// card width; height accommodates a single title line + up to two preview
-// lines plus inner padding.
+// Bubble is a single-line clamp. The pet's job is to surface the latest
+// stable commentary as a glance, not a paragraph; -webkit-line-clamp:1
+// plus a BUBBLE_HEIGHT tuned for one line of 13/1.45 text keeps the card
+// compact. When the renderer pushes a hint whose preview is empty (no
+// stable agent_message anywhere on the top-ranked thread), the inline
+// applyHint hides the bubble entirely — the sprite keeps its running/
+// idle/failed state without a stale text fallback. The Thread.preview
+// denormalized field is no longer surfaced by deriveActiveSessionHint, so
+// this hide path matters for both `null hint` and `hint with empty preview`.
 const CODEX_PET_BUBBLE_WIDTH = 280;
-const CODEX_PET_BUBBLE_HEIGHT = 80;
+const CODEX_PET_BUBBLE_HEIGHT = 44;
 const CODEX_PET_BUBBLE_PADDING = 8;
 const CODEX_PET_BUBBLE_GAP = 8;
+// Bubble preview swap animation: when `hint.preview` changes (e.g. first
+// commentary finishes and a second one lands, or the bubble disappears), the
+// .preview element fades out, swaps text, fades back in. Asymmetric timings so
+// the fade-out feels decisive and the fade-in is gentle — total cycle ~320ms.
+const CODEX_PET_BUBBLE_SWAP_OUT_MS = 140;
+const CODEX_PET_BUBBLE_SWAP_IN_MS = 180;
 
-// The sprite is rendered at half scale via CSS transform: scale(0.5) on a
-// 192×208 layout box. These are the rendered footprint the layout math
-// reasons about (the layout box itself stays 192×208 inside a fixed-size
-// flex frame).
-const CODEX_PET_SPRITE_RENDER_WIDTH = CODEX_PET_CELL_WIDTH / 2; // 96
-const CODEX_PET_SPRITE_RENDER_HEIGHT = CODEX_PET_CELL_HEIGHT / 2; // 104
+// The sprite is rendered from the 192×208 layout box via CSS transform:
+// scale(<size>). At the default (100%) size the transform is 0.5, so the
+// base rendered footprint is 96×104; the per-size helper below recomputes
+// the footprint against the user's chosen multiplier.
+const CODEX_PET_SPRITE_RENDER_WIDTH_BASE = CODEX_PET_CELL_WIDTH / 2; // 96
+const CODEX_PET_SPRITE_RENDER_HEIGHT_BASE = CODEX_PET_CELL_HEIGHT / 2; // 104
+const CODEX_PET_SPRITE_BASE_SCALE = 0.5;
+
+// Window chrome padding around the sprite is held constant across sizes so
+// the chrome (drop shadow margin, hit-test room, breathing space) doesn't
+// grow with the pet itself.
+const CODEX_PET_WINDOW_HORIZONTAL_PADDING = 24; // 12px each side
+const CODEX_PET_WINDOW_TOP_PADDING = 16;
 
 // The sprite sits 8px above the window bottom in vertical layouts and is
 // vertically centered (also producing an 8px bottom inset) in horizontal
@@ -62,6 +88,58 @@ const CODEX_PET_BUBBLE_SIZE: { width: number; height: number } = {
   width: CODEX_PET_BUBBLE_WIDTH,
   height: CODEX_PET_BUBBLE_HEIGHT,
 };
+
+export type CodexPetRenderedSprite = {
+  width: number;
+  height: number;
+  scale: number;
+  windowWidth: number;
+  windowHeight: number;
+};
+
+// Maps a size level to its rendered footprint + the CSS transform that
+// produces it. Driven by CODEX_PET_SIZE_OPTIONS so the menu, the
+// persisted settings, and the geometry stay in sync.
+export function codexPetRenderedSpriteForSize(
+  size: CodexPetSize,
+): CodexPetRenderedSprite {
+  const option =
+    CODEX_PET_SIZE_OPTIONS.find((entry) => entry.id === size) ??
+    CODEX_PET_SIZE_OPTIONS.find((entry) => entry.id === CODEX_PET_SIZE_DEFAULT)!;
+  const multiplier = option.multiplier;
+  const width = Math.round(CODEX_PET_SPRITE_RENDER_WIDTH_BASE * multiplier);
+  const height = Math.round(CODEX_PET_SPRITE_RENDER_HEIGHT_BASE * multiplier);
+  return {
+    width,
+    height,
+    scale: CODEX_PET_SPRITE_BASE_SCALE * multiplier,
+    windowWidth: width + CODEX_PET_WINDOW_HORIZONTAL_PADDING,
+    windowHeight:
+      height + CODEX_PET_WINDOW_TOP_PADDING + CODEX_PET_SPRITE_BOTTOM_OFFSET,
+  };
+}
+
+// Build rendered sprite geometry from a raw scale value. Used by the
+// continuous resize path: when the user drags the strip the scale moves
+// smoothly between the preset extremes and we need geometry for any
+// value, not just the four preset ids. Same math as
+// codexPetRenderedSpriteForSize but skips the preset lookup so it can
+// interpolate freely without going through CODEX_PET_SIZE_OPTIONS.
+export function codexPetRenderedSpriteForScale(
+  scale: number,
+): CodexPetRenderedSprite {
+  const multiplier = scale / CODEX_PET_SPRITE_BASE_SCALE;
+  const width = Math.round(CODEX_PET_SPRITE_RENDER_WIDTH_BASE * multiplier);
+  const height = Math.round(CODEX_PET_SPRITE_RENDER_HEIGHT_BASE * multiplier);
+  return {
+    width,
+    height,
+    scale,
+    windowWidth: width + CODEX_PET_WINDOW_HORIZONTAL_PADDING,
+    windowHeight:
+      height + CODEX_PET_WINDOW_TOP_PADDING + CODEX_PET_SPRITE_BOTTOM_OFFSET,
+  };
+}
 
 const STATE_BY_ID = new Map<CodexPetStateID, CodexPetState>(
   CODEX_PET_STATES.map((state) => [state.id, state]),
@@ -99,7 +177,20 @@ export function codexPetView(
   state: CodexPetState,
   hint: CodexPetHint | null,
   layout: CodexPetBubbleLayout,
+  size: CodexPetSize = CODEX_PET_SIZE_DEFAULT,
+  customScale?: number,
 ): CodexPetView {
+  // Continuous drag passes a raw `customScale` and we derive geometry
+  // from it directly. Without it, fall back to the preset-derived
+  // geometry so callers that don't know about continuous resize see
+  // exactly the original behavior.
+  const useCustomScale =
+    typeof customScale === "number" &&
+    Number.isFinite(customScale) &&
+    customScale > 0;
+  const rendered = useCustomScale
+    ? codexPetRenderedSpriteForScale(customScale)
+    : codexPetRenderedSpriteForSize(size);
   return {
     spritesheetURL: pet.spritesheet_url,
     y: state.row * -CODEX_PET_CELL_HEIGHT,
@@ -109,13 +200,25 @@ export function codexPetView(
     label: `${pet.display_name} ${state.id}`,
     hint,
     layout,
+    size,
+    spriteWidth: rendered.width,
+    spriteHeight: rendered.height,
+    scale: rendered.scale,
   };
 }
 
 export type CodexPetAction =
   | { action: "menu" }
   | { action: "jump"; thread_id: string }
+  | { action: "resize"; id: CodexPetSize }
+  | { action: "scale"; value: number; commit: boolean }
   | undefined;
+
+// Continuous resize pushes the live scale as a number. Clamp the parser
+// range so a malformed URL can't drag the pet off-screen (or under
+// 1px) even if the inline script's client-side clamp ever drifts.
+export const CODEX_PET_SCALE_MIN = 0.25;
+export const CODEX_PET_SCALE_MAX = 1.5;
 
 export function codexPetActionFromURL(rawURL: string): CodexPetAction {
   try {
@@ -128,6 +231,36 @@ export function codexPetActionFromURL(rawURL: string): CodexPetAction {
       if (!threadId) return undefined;
       return { action: "jump", thread_id: threadId };
     }
+    if (actionName === "resize") {
+      // Only forward ids the preset list knows about. A stale page that names
+      // an id the type system doesn't model falls through to undefined so the
+      // navigate handler treats it as a no-op instead of crashing setSize.
+      const id = url.searchParams.get("id");
+      if (!id) return undefined;
+      const known = CODEX_PET_SIZE_OPTIONS.some((option) => option.id === id);
+      if (!known) return undefined;
+      return { action: "resize", id: id as CodexPetSize };
+    }
+    if (actionName === "scale") {
+      // Live drag emits a float; drop anything non-finite and clamp the
+      // accepted range. Without the clamp a hostile or buggy page could
+      // push values like 1e9 or 0 and resize the pet into uselessness.
+      // `commit=1` marks the pointerup emission: same geometry update,
+      // but the manager also notifies the host so the value persists.
+      const valueStr = url.searchParams.get("value");
+      if (!valueStr) return undefined;
+      const value = parseFloat(valueStr);
+      if (!Number.isFinite(value)) return undefined;
+      const clamped = Math.max(
+        CODEX_PET_SCALE_MIN,
+        Math.min(CODEX_PET_SCALE_MAX, value),
+      );
+      return {
+        action: "scale",
+        value: clamped,
+        commit: url.searchParams.get("commit") === "1",
+      };
+    }
     return undefined;
   } catch {
     return undefined;
@@ -137,24 +270,42 @@ export function codexPetActionFromURL(rawURL: string): CodexPetAction {
 // Compute window bounds for a given bubble layout, keeping the sprite's
 // bottom-center (the `anchor`) at the same screen point. The returned
 // bounds are not yet clamped to the workArea; the caller decides whether
-// the layout fits before applying.
+// the layout fits before applying. `size` defaults to the 100% preset so
+// callers that don't pass one see the pre-size-feature geometry.
 export function codexPetBoundsForLayout({
   layout,
   anchor,
   bubble,
+  size = CODEX_PET_SIZE_DEFAULT,
+  customScale,
 }: {
   layout: Exclude<CodexPetBubbleLayout, "hidden">;
   anchor: { x: number; y: number };
   bubble: { width: number; height: number };
+  size?: CodexPetSize;
+  customScale?: number;
 }): Rectangle {
+  // During continuous resize we already know the live scale; use it
+  // directly so the window bounds shrink/grow with the sprite. Without
+  // it, fall back to the preset-derived geometry so callers that don't
+  // know about continuous resize see the original behavior.
+  const useCustomScale =
+    typeof customScale === "number" &&
+    Number.isFinite(customScale) &&
+    customScale > 0;
+  const rendered = useCustomScale
+    ? codexPetRenderedSpriteForScale(customScale)
+    : codexPetRenderedSpriteForSize(size);
+  const spriteW = rendered.width;
+  const spriteH = rendered.height;
   switch (layout) {
     case "above": {
-      const width = Math.max(CODEX_PET_SPRITE_RENDER_WIDTH, bubble.width);
+      const width = Math.max(spriteW, bubble.width);
       const height =
         CODEX_PET_BUBBLE_PADDING +
         bubble.height +
         CODEX_PET_BUBBLE_GAP +
-        CODEX_PET_SPRITE_RENDER_HEIGHT +
+        spriteH +
         CODEX_PET_BUBBLE_PADDING;
       return {
         x: Math.round(anchor.x - width / 2),
@@ -164,16 +315,16 @@ export function codexPetBoundsForLayout({
       };
     }
     case "below": {
-      const width = Math.max(CODEX_PET_SPRITE_RENDER_WIDTH, bubble.width);
+      const width = Math.max(spriteW, bubble.width);
       const height =
         CODEX_PET_BUBBLE_PADDING +
-        CODEX_PET_SPRITE_RENDER_HEIGHT +
+        spriteH +
         CODEX_PET_BUBBLE_GAP +
         bubble.height +
         CODEX_PET_BUBBLE_PADDING;
       return {
         x: Math.round(anchor.x - width / 2),
-        y: Math.round(anchor.y - CODEX_PET_SPRITE_RENDER_HEIGHT - CODEX_PET_BUBBLE_PADDING),
+        y: Math.round(anchor.y - spriteH - CODEX_PET_BUBBLE_PADDING),
         width,
         height,
       };
@@ -181,14 +332,14 @@ export function codexPetBoundsForLayout({
     case "right": {
       const width =
         CODEX_PET_BUBBLE_PADDING +
-        CODEX_PET_SPRITE_RENDER_WIDTH +
+        spriteW +
         CODEX_PET_BUBBLE_GAP +
         bubble.width +
         CODEX_PET_BUBBLE_PADDING;
       const height =
-        Math.max(CODEX_PET_SPRITE_RENDER_HEIGHT, bubble.height) + 2 * CODEX_PET_BUBBLE_PADDING;
+        Math.max(spriteH, bubble.height) + 2 * CODEX_PET_BUBBLE_PADDING;
       return {
-        x: Math.round(anchor.x - CODEX_PET_BUBBLE_PADDING - CODEX_PET_SPRITE_RENDER_WIDTH / 2),
+        x: Math.round(anchor.x - CODEX_PET_BUBBLE_PADDING - spriteW / 2),
         y: Math.round(anchor.y - height + CODEX_PET_SPRITE_BOTTOM_OFFSET),
         width,
         height,
@@ -199,12 +350,14 @@ export function codexPetBoundsForLayout({
         CODEX_PET_BUBBLE_PADDING +
         bubble.width +
         CODEX_PET_BUBBLE_GAP +
-        CODEX_PET_SPRITE_RENDER_WIDTH +
+        spriteW +
         CODEX_PET_BUBBLE_PADDING;
       const height =
-        Math.max(CODEX_PET_SPRITE_RENDER_HEIGHT, bubble.height) + 2 * CODEX_PET_BUBBLE_PADDING;
+        Math.max(spriteH, bubble.height) + 2 * CODEX_PET_BUBBLE_PADDING;
       return {
-        x: Math.round(anchor.x - (width - CODEX_PET_BUBBLE_PADDING - CODEX_PET_SPRITE_RENDER_WIDTH / 2)),
+        x: Math.round(
+          anchor.x - (width - CODEX_PET_BUBBLE_PADDING - spriteW / 2),
+        ),
         y: Math.round(anchor.y - height + CODEX_PET_SPRITE_BOTTOM_OFFSET),
         width,
         height,
@@ -217,14 +370,20 @@ export function codexPetBoundsForLayout({
 // given workArea. If none fit, returns "hidden" with base window bounds
 // (no bubble shown). Priority matches the user's brief: above first
 // ("pet 头上"), then right, then left/below as last-resort fallbacks.
+// `size` defaults to the 100% preset so callers that don't pass one see
+// the pre-size-feature geometry.
 export function selectCodexPetBubbleLayout({
   workArea,
   anchor,
   bubble,
+  size = CODEX_PET_SIZE_DEFAULT,
+  customScale,
 }: {
   workArea: Rectangle;
   anchor: { x: number; y: number };
   bubble: { width: number; height: number };
+  size?: CodexPetSize;
+  customScale?: number;
 }): CodexPetLayoutDecision {
   const order: Array<Exclude<CodexPetBubbleLayout, "hidden">> = [
     "above",
@@ -233,7 +392,13 @@ export function selectCodexPetBubbleLayout({
     "below",
   ];
   for (const layout of order) {
-    const bounds = codexPetBoundsForLayout({ layout, anchor, bubble });
+    const bounds = codexPetBoundsForLayout({
+      layout,
+      anchor,
+      bubble,
+      size,
+      customScale,
+    });
     if (
       bounds.x >= workArea.x &&
       bounds.y >= workArea.y &&
@@ -243,13 +408,21 @@ export function selectCodexPetBubbleLayout({
       return { layout, bounds };
     }
   }
+  const fallback =
+    typeof customScale === "number" &&
+    Number.isFinite(customScale) &&
+    customScale > 0
+      ? codexPetRenderedSpriteForScale(customScale)
+      : codexPetRenderedSpriteForSize(size);
   return {
     layout: "hidden",
     bounds: {
-      x: Math.round(anchor.x - CODEX_PET_WINDOW_WIDTH / 2),
-      y: Math.round(anchor.y - CODEX_PET_WINDOW_HEIGHT + CODEX_PET_SPRITE_BOTTOM_OFFSET),
-      width: CODEX_PET_WINDOW_WIDTH,
-      height: CODEX_PET_WINDOW_HEIGHT,
+      x: Math.round(anchor.x - fallback.windowWidth / 2),
+      y: Math.round(
+        anchor.y - fallback.windowHeight + CODEX_PET_SPRITE_BOTTOM_OFFSET,
+      ),
+      width: fallback.windowWidth,
+      height: fallback.windowHeight,
     },
   };
 }
@@ -261,6 +434,9 @@ export function codexPetWindowHTML(view: CodexPetView): string {
     `--pet-end-x:${view.endX}px`,
     `--pet-frames:${view.frames}`,
     `--pet-duration:${view.duration}ms`,
+    `--pet-frame-width:${view.spriteWidth}px`,
+    `--pet-frame-height:${view.spriteHeight}px`,
+    `--pet-scale:${view.scale}`,
   ].join(";");
   const initialHintJSON = JSON.stringify(view.hint);
   return `<!doctype html>
@@ -276,50 +452,103 @@ export function codexPetWindowHTML(view: CodexPetView): string {
 .stage.layout-right{flex-direction:row;justify-content:flex-start}
 .stage.layout-left{flex-direction:row-reverse;justify-content:flex-start}
 .stage.layout-right,.stage.layout-left{align-items:center}
-.sprite-frame{width:${CODEX_PET_SPRITE_RENDER_WIDTH}px;height:${CODEX_PET_SPRITE_RENDER_HEIGHT}px;display:flex;align-items:flex-end;justify-content:center;flex-shrink:0;pointer-events:none}
-.sprite{width:${CODEX_PET_CELL_WIDTH}px;height:${CODEX_PET_CELL_HEIGHT}px;flex-shrink:0;transform:scale(0.5);transform-origin:bottom center;background-image:var(--pet-sheet);background-repeat:no-repeat;background-position:0 var(--pet-y);image-rendering:pixelated;filter:drop-shadow(0 10px 16px rgba(0,0,0,.18));animation:pet-play var(--pet-duration) steps(var(--pet-frames)) infinite}
+.sprite-frame{width:var(--pet-frame-width);height:var(--pet-frame-height);display:flex;align-items:flex-end;justify-content:center;flex-shrink:0;pointer-events:none}
+.sprite{width:${CODEX_PET_CELL_WIDTH}px;height:${CODEX_PET_CELL_HEIGHT}px;flex-shrink:0;transform:scale(var(--pet-scale));transform-origin:bottom center;background-image:var(--pet-sheet);background-repeat:no-repeat;background-position:0 var(--pet-y);image-rendering:pixelated;filter:drop-shadow(0 10px 16px rgba(0,0,0,.18));animation:pet-play var(--pet-duration) steps(var(--pet-frames)) infinite}
 @keyframes pet-play{from{background-position:0 var(--pet-y)}to{background-position:var(--pet-end-x) var(--pet-y)}}
 @media (prefers-reduced-motion:reduce){.sprite{animation:none}}
-.bubble{display:flex;align-items:flex-start;gap:8px;width:${CODEX_PET_BUBBLE_WIDTH}px;min-height:${CODEX_PET_BUBBLE_HEIGHT}px;padding:12px;margin:${CODEX_PET_BUBBLE_PADDING}px;border-radius:12px;background:rgba(255,255,255,.95);box-shadow:0 6px 24px rgba(0,0,0,.18);cursor:pointer;flex-shrink:0;color:#1a1a1a;transition:opacity 200ms ease}
+.bubble{display:block;width:${CODEX_PET_BUBBLE_WIDTH}px;min-height:${CODEX_PET_BUBBLE_HEIGHT}px;padding:12px;margin:${CODEX_PET_BUBBLE_PADDING}px;border-radius:12px;background:rgba(255,255,255,.95);box-shadow:0 6px 24px rgba(0,0,0,.18);cursor:pointer;flex-shrink:0;text-align:left;transition:opacity 200ms ease}
 .stage.layout-hidden .bubble{display:none}
-.bubble .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex-shrink:0;background:#999}
-.bubble.attention .dot{box-shadow:0 0 0 0 rgba(255,80,80,.5);animation:pet-pulse 1.6s ease-in-out infinite}
-@keyframes pet-pulse{0%{box-shadow:0 0 0 0 rgba(255,80,80,.5)}70%{box-shadow:0 0 0 8px rgba(255,80,80,0)}100%{box-shadow:0 0 0 0 rgba(255,80,80,0)}}
-.bubble .content{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
-.bubble .title{font:600 13px/1.3 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;color:#1a1a1a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bubble .preview{font:12px/1.4 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;color:#555;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.bubble .preview{font:13px/1.45 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;color:#1a1a1a;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;white-space:pre-wrap;opacity:1;transition:opacity ${CODEX_PET_BUBBLE_SWAP_IN_MS}ms ease}
+.bubble.is-swapping .preview{opacity:0;transition:opacity ${CODEX_PET_BUBBLE_SWAP_OUT_MS}ms ease}
+.resize-handle{position:absolute;left:0;right:0;height:16px;z-index:2;cursor:ns-resize}
+.resize-handle.top{top:0}
+.resize-handle.bottom{bottom:0}
 </style></head><body><div class="stage layout-${escapeHTML(view.layout)}" style="${escapeHTML(styleVars)}">
-<div class="bubble" data-thread-id="${escapeHTML(view.hint?.thread_id ?? "")}" style="display:${view.hint ? "flex" : "none"}">
-<span class="dot"></span>
-<div class="content">
-<div class="title">${escapeHTML(view.hint?.title ?? "")}</div>
+<div class="bubble" data-thread-id="${escapeHTML(view.hint?.thread_id ?? "")}" style="display:${view.hint ? "block" : "none"}">
 <div class="preview">${escapeHTML(view.hint?.preview ?? "")}</div>
 </div>
-</div>
 <div class="sprite-frame"><div class="sprite" role="img" aria-label="${escapeHTML(view.label)}"></div></div>
+<div class="resize-handle top" data-edge="top" aria-label="调整大小"></div>
+<div class="resize-handle bottom" data-edge="bottom" aria-label="调整大小"></div>
 </div>
 <script>
 (() => {
   const stage = document.querySelector('.stage');
   const bubble = document.querySelector('.bubble');
   const sprite = document.querySelector('.sprite');
-  const titleEl = bubble.querySelector('.title');
+  // The bubble is text-only now (see codexPetWindowHTML above), so the live
+  // updater only touches .preview. Earlier revisions still queried for a
+  // .title / .dot node that the markup no longer renders, which raised a
+  // TypeError on every wuuPetView refresh and silently broke hint updates.
   const previewEl = bubble.querySelector('.preview');
-  const dotEl = bubble.querySelector('.dot');
-  const STATUS_COLORS = { running: '#4a9eff', done: '#28c840', failed: '#ff3b30', needs_review: '#ff9500', idle: '#999' };
   let currentHint = ${initialHintJSON};
+  // First apply is just the inline-rendered initial state, so no fade.
+  // Subsequent applies fade out -> swap text -> fade in only when the
+  // preview string actually changes (same title but new commentary, or
+  // the bubble disappearing entirely). cancelSwap clears any pending
+  // mid-swap timeout so a rapid back-to-back push doesn't strand the
+  // .is-swapping class with mismatched text under it.
+  let isFirstApply = true;
+  let pendingSwap = null;
+  const SWAP_OUT_MS = ${CODEX_PET_BUBBLE_SWAP_OUT_MS};
+  const cancelSwap = () => {
+    if (pendingSwap !== null) {
+      clearTimeout(pendingSwap);
+      pendingSwap = null;
+      bubble.classList.remove('is-swapping');
+    }
+  };
   const applyHint = (hint) => {
-    if (!hint) {
-      bubble.style.display = 'none';
-      bubble.removeAttribute('data-thread-id');
+    cancelSwap();
+    // Hide the bubble whenever there's no stable commentary to surface.
+    // The renderer's deriveActiveSessionHint now refuses to fall back to
+    // Thread.preview, so a top-ranked thread with no agent_message yet
+    // (running but hasn't started speaking, or idle with no commentary)
+    // pushes a non-null hint with empty preview here. Treat both
+    // 'null hint' and 'hint with empty/blank preview' as hide; the
+    // sprite keeps its running/idle/failed state and no stale
+    // fallback text is ever shown.
+    const trimmedPreview = (hint?.preview ?? "").trim();
+    if (!hint || trimmedPreview.length === 0) {
+      if (isFirstApply) {
+        currentHint = null;
+        isFirstApply = false;
+        return;
+      }
+      bubble.classList.add('is-swapping');
+      pendingSwap = setTimeout(() => {
+        pendingSwap = null;
+        bubble.style.display = 'none';
+        bubble.removeAttribute('data-thread-id');
+        previewEl.textContent = '';
+        bubble.classList.remove('is-swapping');
+        currentHint = null;
+      }, SWAP_OUT_MS);
       return;
     }
     bubble.style.display = '';
-    bubble.dataset.threadId = hint.thread_id;
-    bubble.classList.toggle('attention', !!hint.attention);
-    dotEl.style.background = STATUS_COLORS[hint.status] || STATUS_COLORS.idle;
-    titleEl.textContent = hint.title || '';
-    previewEl.textContent = hint.preview || '';
+    const newPreview = trimmedPreview;
+    const oldPreview = previewEl.textContent || '';
+    if (isFirstApply) {
+      bubble.dataset.threadId = hint.thread_id;
+      previewEl.textContent = newPreview;
+      currentHint = hint;
+      isFirstApply = false;
+      return;
+    }
+    if (oldPreview === newPreview) {
+      bubble.dataset.threadId = hint.thread_id;
+      currentHint = hint;
+      return;
+    }
+    bubble.classList.add('is-swapping');
+    pendingSwap = setTimeout(() => {
+      pendingSwap = null;
+      bubble.dataset.threadId = hint.thread_id;
+      previewEl.textContent = newPreview;
+      bubble.classList.remove('is-swapping');
+      currentHint = hint;
+    }, SWAP_OUT_MS);
   };
   applyHint(currentHint);
   window.wuuPetView = (view) => {
@@ -328,6 +557,10 @@ export function codexPetWindowHTML(view: CodexPetView): string {
     sprite.style.setProperty('--pet-end-x', view.endX + 'px');
     sprite.style.setProperty('--pet-frames', String(view.frames));
     sprite.style.setProperty('--pet-duration', view.duration + 'ms');
+    sprite.style.setProperty('--pet-scale', String(view.scale));
+    liveScale = view.scale;
+    stage.style.setProperty('--pet-frame-width', view.spriteWidth + 'px');
+    stage.style.setProperty('--pet-frame-height', view.spriteHeight + 'px');
     sprite.setAttribute('aria-label', view.label);
     stage.className = 'stage layout-' + view.layout;
     if (JSON.stringify(view.hint) !== JSON.stringify(currentHint)) {
@@ -339,6 +572,83 @@ export function codexPetWindowHTML(view: CodexPetView): string {
     event.preventDefault();
     location.href = 'wuu-pet://action/menu';
   });
+  // Edge-drag continuous resize. A 16px hot strip at the top and bottom
+  // of the stage (invisible — the ns-resize cursor is the affordance;
+  // earlier revisions painted a pair of dark grip bars there that read
+  // as a stray black line on the pet) resizes the sprite in real time:
+  // every pointermove converts the vertical drag delta to a scale delta
+  // (the sprite is a ${CODEX_PET_CELL_HEIGHT}px cell under transform:
+  // scale, so 1px of drag = 1px of rendered sprite height) and pushes
+  // it to the main process, which live-updates the window bounds and
+  // the CSS scale around the sprite's bottom-center anchor. Emission is
+  // rAF-throttled so a fast drag doesn't queue more navigations than
+  // frames. On pointerup the final value is re-sent with commit=1 so
+  // the host persists it. Dragging the top strip up grows (window-edge
+  // semantics); the bottom strip grows downward. stopPropagation on
+  // pointerdown keeps the stage's move-the-window drag from engaging,
+  // and a 2px dead-zone keeps a plain click from emitting anything.
+  const SCALE_MIN = ${CODEX_PET_SCALE_MIN};
+  const SCALE_MAX = ${CODEX_PET_SCALE_MAX};
+  const CELL_HEIGHT = ${CODEX_PET_CELL_HEIGHT};
+  let liveScale = ${JSON.stringify(view.scale)};
+  const emitScale = (value, commit) => {
+    location.href = 'wuu-pet://action/scale?value=' + encodeURIComponent(value)
+      + (commit ? '&commit=1' : '');
+  };
+  let resizePointerID = null;
+  let resizeStartY = 0;
+  let resizeStartScale = 0;
+  let resizeDir = 1;
+  let resizeMoved = false;
+  let pendingScale = null;
+  let resizeRAF = 0;
+  const RESIZE_DEAD_ZONE = 2;
+  const finishResize = (event) => {
+    if (event.pointerId !== resizePointerID) return;
+    resizePointerID = null;
+    if (resizeRAF) {
+      cancelAnimationFrame(resizeRAF);
+      resizeRAF = 0;
+    }
+    if (resizeMoved && pendingScale !== null) {
+      liveScale = pendingScale;
+      emitScale(pendingScale, true);
+    }
+    pendingScale = null;
+    resizeMoved = false;
+  };
+  for (const handle of stage.querySelectorAll('.resize-handle')) {
+    handle.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return;
+      event.stopPropagation();
+      resizePointerID = event.pointerId;
+      resizeStartY = event.screenY;
+      resizeStartScale = liveScale;
+      resizeDir = handle.dataset.edge === 'top' ? -1 : 1;
+      resizeMoved = false;
+      pendingScale = null;
+      handle.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+    handle.addEventListener('pointermove', (event) => {
+      if (event.pointerId !== resizePointerID) return;
+      const deltaY = event.screenY - resizeStartY;
+      if (!resizeMoved && Math.abs(deltaY) < RESIZE_DEAD_ZONE) return;
+      resizeMoved = true;
+      pendingScale = Math.min(
+        SCALE_MAX,
+        Math.max(SCALE_MIN, resizeStartScale + (resizeDir * deltaY) / CELL_HEIGHT),
+      );
+      if (!resizeRAF) {
+        resizeRAF = requestAnimationFrame(() => {
+          resizeRAF = 0;
+          if (pendingScale !== null) emitScale(pendingScale, false);
+        });
+      }
+    });
+    handle.addEventListener('pointerup', finishResize);
+    handle.addEventListener('pointercancel', finishResize);
+  }
   bubble.addEventListener('click', (event) => {
     event.stopPropagation();
     const threadId = bubble.dataset.threadId;
@@ -380,11 +690,82 @@ export class CodexPetWindowManager {
   private snapshot: CodexPetsSnapshot | undefined;
   private hint: CodexPetHint | null = null;
   private currentLayout: CodexPetBubbleLayout = "hidden";
+  // User-facing sprite size; defaults to the 100% preset so older callers
+  // and tests that don't set it see exactly the pre-size-feature window
+  // geometry. Mutated only through setSize(), which re-applies the view
+  // (so the window resizes around the sprite's existing anchor) and
+  // notifies onSizeChange so the host shell can persist the choice.
+  private size: CodexPetSize = CODEX_PET_SIZE_DEFAULT;
+  // Live sprite scale, set when the user drags the resize strip with
+  // the new continuous behavior. Overrides the preset-derived scale
+  // while defined so the pet can be sized to any value between the
+  // smallest and largest presets, not just the four preset ids. Cleared
+  // the next time setSize() picks a preset (a future menu shortcut,
+  // settings rehydration, or the inline script snapping to the nearest
+  // preset on drag end). applyView() picks this up so the window
+  // bounds and the CSS-driven sprite scale stay in sync without going
+  // through the preset list.
+  private currentScale: number | undefined;
+  // The scale (preset-derived or continuous) that produced the window's
+  // current bounds. anchorFromBounds() must reverse-engineer the sprite
+  // anchor from the bounds as they are on screen, so it needs the scale
+  // that was in effect when those bounds were applied — not this.size /
+  // this.currentScale, which setSize()/setScale() mutate *before*
+  // applyView() runs. Without this, every left/right-bubble resize frame
+  // extracts a slightly wrong anchor and the pet drifts sideways over a
+  // continuous drag.
+  private appliedScale: number | undefined;
 
   constructor(
     private readonly onCloseRequested: () => void,
     private readonly onJumpRequested: (hint: CodexPetHint) => void,
+    private readonly onSizeChange?: (size: CodexPetSize) => void,
+    private readonly onScaleChange?: (scale: number) => void,
   ) {}
+
+  setSize(size: CodexPetSize): void {
+    if (size === this.size) return;
+    this.size = size;
+    // Switching to a preset clears any in-flight custom scale. The
+    // previous drag's customScale no longer represents the user's
+    // intent — they explicitly picked a discrete preset. (Edge-drag
+    // resize itself never lands here anymore; it stays continuous and
+    // commits through setScale. This path serves preset callers such
+    // as settings rehydration or a future size menu.)
+    this.currentScale = undefined;
+    const pet = selectedCodexPet(this.snapshot);
+    if (pet && this.win && !this.win.isDestroyed()) {
+      this.applyView(pet);
+    }
+    if (this.onSizeChange) {
+      this.onSizeChange(size);
+    }
+  }
+
+  setScale(value: number, commit = false): void {
+    // Live-update the sprite scale without going through the preset
+    // list. The window resizes around the current anchor and the new
+    // scale is pushed back to the renderer via applyView(). During the
+    // drag (commit=false) the host shell is intentionally NOT notified —
+    // continuous drag would otherwise spam persistence on every
+    // pointermove frame. The pointerup emission arrives with commit=true
+    // and pushes the final value to the host for persistence. Clamp here
+    // too: the startup rehydration path calls setScale directly with
+    // whatever desktop-settings.json holds, bypassing the URL parser's
+    // clamp.
+    const clamped = Math.max(
+      CODEX_PET_SCALE_MIN,
+      Math.min(CODEX_PET_SCALE_MAX, value),
+    );
+    this.currentScale = clamped;
+    const pet = selectedCodexPet(this.snapshot);
+    if (pet && this.win && !this.win.isDestroyed()) {
+      this.applyView(pet);
+    }
+    if (commit && this.onScaleChange) {
+      this.onScaleChange(clamped);
+    }
+  }
 
   sync(snapshot: CodexPetsSnapshot | undefined): void {
     this.snapshot = snapshot;
@@ -422,40 +803,66 @@ export class CodexPetWindowManager {
     this.pendingView = undefined;
     this.lastViewSignature = "";
     this.currentLayout = "hidden";
+    this.appliedScale = undefined;
     if (win && !win.isDestroyed()) win.close();
   }
 
   private createWindow(pet: CodexPet): void {
     const workArea = screen.getPrimaryDisplay().workArea;
+    // Startup rehydration may have pushed a persisted continuous scale
+    // via setScale() before the window exists; honor it here the same
+    // way applyView() does, so the pet doesn't flash at the preset size
+    // and then jump on the first view push.
+    const rendered =
+      typeof this.currentScale === "number"
+        ? codexPetRenderedSpriteForScale(this.currentScale)
+        : codexPetRenderedSpriteForSize(this.size);
+    const initialAnchor = {
+      x:
+        workArea.x +
+        workArea.width -
+        rendered.windowWidth / 2 -
+        CODEX_PET_SCREEN_INSET,
+      y:
+        workArea.y +
+        workArea.height -
+        CODEX_PET_SPRITE_BOTTOM_OFFSET -
+        CODEX_PET_SCREEN_INSET,
+    };
+    const layoutDecision = this.hint
+      ? selectCodexPetBubbleLayout({
+          workArea,
+          anchor: initialAnchor,
+          bubble: CODEX_PET_BUBBLE_SIZE,
+          size: this.size,
+          customScale: this.currentScale,
+        })
+      : undefined;
     const view = codexPetView(
       pet,
       codexPetStateForRuntime(this.runtime),
       this.hint,
-      this.hint ? selectCodexPetBubbleLayout({
-        workArea,
-        anchor: {
-          x: workArea.x + workArea.width - CODEX_PET_WINDOW_WIDTH / 2 - CODEX_PET_SCREEN_INSET,
-          y: workArea.y + workArea.height - CODEX_PET_SPRITE_BOTTOM_OFFSET - CODEX_PET_SCREEN_INSET,
-        },
-        bubble: CODEX_PET_BUBBLE_SIZE,
-      }).layout : "hidden",
+      layoutDecision?.layout ?? "hidden",
+      this.size,
+      this.currentScale,
     );
-    const layoutBounds = this.hint
-      ? selectCodexPetBubbleLayout({
-          workArea,
-          anchor: {
-            x: workArea.x + workArea.width - CODEX_PET_WINDOW_WIDTH / 2 - CODEX_PET_SCREEN_INSET,
-            y: workArea.y + workArea.height - CODEX_PET_SPRITE_BOTTOM_OFFSET - CODEX_PET_SCREEN_INSET,
-          },
-          bubble: CODEX_PET_BUBBLE_SIZE,
-        }).bounds
-      : {
-          x: workArea.x + workArea.width - CODEX_PET_WINDOW_WIDTH - CODEX_PET_SCREEN_INSET,
-          y: workArea.y + workArea.height - CODEX_PET_WINDOW_HEIGHT - CODEX_PET_SCREEN_INSET,
-          width: CODEX_PET_WINDOW_WIDTH,
-          height: CODEX_PET_WINDOW_HEIGHT,
-        };
+    const layoutBounds =
+      layoutDecision?.bounds ?? {
+        x:
+          workArea.x +
+          workArea.width -
+          rendered.windowWidth -
+          CODEX_PET_SCREEN_INSET,
+        y:
+          workArea.y +
+          workArea.height -
+          rendered.windowHeight -
+          CODEX_PET_SCREEN_INSET,
+        width: rendered.windowWidth,
+        height: rendered.windowHeight,
+      };
     this.currentLayout = view.layout;
+    this.appliedScale = rendered.scale;
     this.lastViewSignature = JSON.stringify(view);
     const win = new BrowserWindow({
       width: layoutBounds.width,
@@ -498,6 +905,12 @@ export class CodexPetWindowManager {
       if (parsed.action === "jump" && this.hint && this.hint.thread_id === parsed.thread_id) {
         this.onJumpRequested(this.hint);
       }
+      if (parsed.action === "resize") {
+        this.setSize(parsed.id);
+      }
+      if (parsed.action === "scale") {
+        this.setScale(parsed.value, parsed.commit);
+      }
     });
     win.webContents.on("did-finish-load", () => {
       if (win.isDestroyed() || this.win !== win) return;
@@ -525,6 +938,7 @@ export class CodexPetWindowManager {
       this.pendingView = undefined;
       this.lastViewSignature = "";
       this.currentLayout = "hidden";
+      this.appliedScale = undefined;
     });
     void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(codexPetWindowHTML(view))}`);
   }
@@ -558,16 +972,24 @@ export class CodexPetWindowManager {
         workArea,
         anchor,
         bubble: CODEX_PET_BUBBLE_SIZE,
+        size: this.size,
+        customScale: this.currentScale,
       });
       layout = decision.layout;
       targetBounds = decision.bounds;
     } else {
       layout = "hidden";
+      const rendered =
+        typeof this.currentScale === "number"
+          ? codexPetRenderedSpriteForScale(this.currentScale)
+          : codexPetRenderedSpriteForSize(this.size);
       targetBounds = {
-        x: Math.round(anchor.x - CODEX_PET_WINDOW_WIDTH / 2),
-        y: Math.round(anchor.y - CODEX_PET_WINDOW_HEIGHT + CODEX_PET_SPRITE_BOTTOM_OFFSET),
-        width: CODEX_PET_WINDOW_WIDTH,
-        height: CODEX_PET_WINDOW_HEIGHT,
+        x: Math.round(anchor.x - rendered.windowWidth / 2),
+        y: Math.round(
+          anchor.y - rendered.windowHeight + CODEX_PET_SPRITE_BOTTOM_OFFSET,
+        ),
+        width: rendered.windowWidth,
+        height: rendered.windowHeight,
       };
     }
     this.currentLayout = layout;
@@ -579,7 +1001,15 @@ export class CodexPetWindowManager {
     ) {
       win.setBounds(targetBounds);
     }
-    const view = codexPetView(pet, codexPetStateForRuntime(this.runtime), this.hint, layout);
+    const view = codexPetView(
+      pet,
+      codexPetStateForRuntime(this.runtime),
+      this.hint,
+      layout,
+      this.size,
+      this.currentScale,
+    );
+    this.appliedScale = view.scale;
     const signature = JSON.stringify(view);
     if (signature === this.lastViewSignature && this.loaded) return;
     this.lastViewSignature = signature;
@@ -594,6 +1024,14 @@ export class CodexPetWindowManager {
     bounds: Rectangle,
     layout: CodexPetBubbleLayout,
   ): { x: number; y: number } {
+    // anchor = sprite's bottom-center on screen. Reads sprite footprint from
+    // the scale that produced these bounds (see appliedScale) so a resize
+    // that happens between snapshots still extracts the right anchor.
+    const rendered =
+      typeof this.appliedScale === "number"
+        ? codexPetRenderedSpriteForScale(this.appliedScale)
+        : codexPetRenderedSpriteForSize(this.size);
+    const spriteW = rendered.width;
     const y = bounds.y + bounds.height - CODEX_PET_SPRITE_BOTTOM_OFFSET;
     let x: number;
     switch (layout) {
@@ -603,10 +1041,10 @@ export class CodexPetWindowManager {
         x = bounds.x + bounds.width / 2;
         break;
       case "right":
-        x = bounds.x + CODEX_PET_BUBBLE_PADDING + CODEX_PET_SPRITE_RENDER_WIDTH / 2;
+        x = bounds.x + CODEX_PET_BUBBLE_PADDING + spriteW / 2;
         break;
       case "left":
-        x = bounds.x + bounds.width - CODEX_PET_BUBBLE_PADDING - CODEX_PET_SPRITE_RENDER_WIDTH / 2;
+        x = bounds.x + bounds.width - CODEX_PET_BUBBLE_PADDING - spriteW / 2;
         break;
     }
     return { x, y };

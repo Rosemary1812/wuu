@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CodexPetHint, CodexPetsSnapshot } from "../shared/protocol";
+import type {
+  CodexPetHint,
+  CodexPetSize,
+  CodexPetsSnapshot,
+} from "../shared/protocol";
 import {
   CodexPetWindowManager,
   codexPetActionFromURL,
   codexPetBoundsForLayout,
+  codexPetRenderedSpriteForSize,
   codexPetStateForRuntime,
   codexPetView,
   codexPetWindowHTML,
@@ -145,6 +150,40 @@ describe("selectedCodexPet", () => {
   });
 });
 
+describe("codexPetRenderedSpriteForSize", () => {
+  it("returns the base footprint at the default size", () => {
+    const rendered = codexPetRenderedSpriteForSize("default");
+    expect(rendered.width).toBe(96);
+    expect(rendered.height).toBe(104);
+    expect(rendered.scale).toBe(0.5);
+    expect(rendered.windowWidth).toBe(120);
+    expect(rendered.windowHeight).toBe(128);
+  });
+
+  it("scales the sprite + window footprint for non-default sizes", () => {
+    const small = codexPetRenderedSpriteForSize("small");
+    expect(small.width).toBe(72);
+    expect(small.height).toBe(78);
+    expect(small.scale).toBeCloseTo(0.375);
+    expect(small.windowWidth).toBe(96);
+    expect(small.windowHeight).toBe(102);
+
+    const large = codexPetRenderedSpriteForSize("large");
+    expect(large.width).toBe(144);
+    expect(large.height).toBe(156);
+    expect(large.scale).toBeCloseTo(0.75);
+    expect(large.windowWidth).toBe(168);
+    expect(large.windowHeight).toBe(180);
+
+    const xl = codexPetRenderedSpriteForSize("extra-large");
+    expect(xl.width).toBe(192);
+    expect(xl.height).toBe(208);
+    expect(xl.scale).toBe(1.0);
+    expect(xl.windowWidth).toBe(216);
+    expect(xl.windowHeight).toBe(232);
+  });
+});
+
 describe("codexPetView", () => {
   it("derives spritesheet animation variables from the atlas state", () => {
     const view = codexPetView(
@@ -172,6 +211,20 @@ describe("codexPetView", () => {
     );
     expect(view.hint).toEqual(sampleHint);
     expect(view.layout).toBe("above");
+  });
+
+  it("threads the size into the per-size sprite geometry when provided", () => {
+    const view = codexPetView(
+      snapshot(true).pets[0],
+      codexPetStateForRuntime({ running: false, status: "" }),
+      null,
+      "hidden",
+      "large",
+    );
+    expect(view.size).toBe("large");
+    expect(view.spriteWidth).toBe(144);
+    expect(view.spriteHeight).toBe(156);
+    expect(view.scale).toBeCloseTo(0.75);
   });
 });
 
@@ -209,8 +262,122 @@ describe("codexPetWindowHTML", () => {
     );
     expect(withHint).toContain(`data-thread-id="${sampleHint.thread_id}"`);
     expect(withHint).toContain("wuu-pet://action/jump?thread_id=");
-    expect(withHint).toContain("-webkit-line-clamp:2");
-    expect(withHint).toContain("text-overflow:ellipsis");
+    expect(withHint).toContain("-webkit-line-clamp:1");
+  });
+
+  it("keeps the live updater text-only so refreshes never touch missing nodes", () => {
+    // The bubble markup only renders `.preview`. Earlier revisions still
+    // queried `.title` and `.dot` from the live applyHint script; the missing
+    // nodes raised TypeError on every wuuPetView push and silently dropped the
+    // preview text. Pin the script to the text-only contract so the gap can't
+    // sneak back in.
+    const withHint = codexPetWindowHTML(
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), sampleHint, "above"),
+    );
+    expect(withHint).not.toMatch(/bubble\.querySelector\(['"]\.title['"]\)/);
+    expect(withHint).not.toMatch(/bubble\.querySelector\(['"]\.dot['"]\)/);
+    expect(withHint).not.toMatch(/STATUS_COLORS/);
+    expect(withHint).not.toMatch(/classList\.toggle\(['"]attention['"]/);
+    expect(withHint).toMatch(/bubble\.querySelector\(['"]\.preview['"]\)/);
+  });
+
+  it("fades the preview out, swaps text, then fades it back in on commentary change", () => {
+    // Pin the swap animation CSS so the bubble preview never regresses to a
+    // flash on text change. .preview carries the fade-in transition; the
+    // .is-swapping modifier sets opacity 0 with a shorter fade-out so the
+    // cycle reads as "fade out -> swap -> fade in" (~320ms total). Without
+    // these rules the bubble would update instantly and feel jumpy when the
+    // first commentary hands off to the second, or when the bubble disappears.
+    const withHint = codexPetWindowHTML(
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), sampleHint, "above"),
+    );
+    expect(withHint).toMatch(/\.bubble\s+\.preview\s*\{[^}]*transition:\s*opacity\s+180ms\s+ease/);
+    expect(withHint).toMatch(/\.bubble\.is-swapping\s+\.preview\s*\{[^}]*opacity:\s*0/);
+    expect(withHint).toMatch(/\.bubble\.is-swapping\s+\.preview\s*\{[^}]*transition:\s*opacity\s+140ms\s+ease/);
+  });
+
+  it("runs the swap through a state machine so a fast second push doesn't strand mid-fade", () => {
+    // The state machine has three contracts: (1) isFirstApply gates the
+    // initial render so the inline-rendered text doesn't fade on first
+    // mount, (2) cancelSwap clears any pending setTimeout AND removes the
+    // .is-swapping class so a back-to-back push doesn't leave the dimmed
+    // class lingering over mismatched text, and (3) the same-text branch
+    // short-circuits before scheduling a swap. Pin all three so the
+    // animation contract can't drift back to a no-fade world.
+    const withHint = codexPetWindowHTML(
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), sampleHint, "above"),
+    );
+    expect(withHint).toMatch(/isFirstApply\s*=\s*true/);
+    expect(withHint).toMatch(/pendingSwap\s*=\s*null/);
+    expect(withHint).toMatch(/clearTimeout\(pendingSwap\)/);
+    expect(withHint).toMatch(/bubble\.classList\.remove\(['"]is-swapping['"]\)/);
+    expect(withHint).toMatch(/bubble\.classList\.add\(['"]is-swapping['"]\)/);
+    expect(withHint).toMatch(/if\s*\(oldPreview\s*===\s*newPreview\)/);
+  });
+
+  it("hides the bubble whenever the pushed hint has no preview text", () => {
+    // The renderer drops the Thread.preview fallback, so a top-ranked
+    // thread with no stable agent_message pushes a non-null hint with
+    // empty preview here. The window-side applyHint must treat that as
+    // "hide" the same way it treats a null hint, so the bubble never
+    // surfaces stale text from any source. Pin the show/hide gate on
+    // preview emptiness and the trim() so whitespace-only previews also
+    // hide.
+    const withHint = codexPetWindowHTML(
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), sampleHint, "above"),
+    );
+    expect(withHint).toMatch(/trimmedPreview\s*=\s*\(hint\?\.preview\s*\?\?\s*['"]['"]\)/);
+    expect(withHint).toMatch(/!\s*hint\s*\|\|\s*trimmedPreview\.length\s*===\s*0/);
+    expect(withHint).toMatch(/bubble\.style\.display\s*=\s*['"]none['"]/);
+  });
+
+  it("keeps the resize strips invisible hot zones with only the cursor as affordance", () => {
+    // The 16px top/bottom strips resize the pet continuously; the
+    // ns-resize cursor is the affordance. Earlier revisions painted a
+    // pair of dark grip bars into the strip via ::before / ::after —
+    // those read as a stray black line floating over the pet, so pin
+    // that no pseudo-element chrome comes back.
+    const html = codexPetWindowHTML(
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: false, status: "" }), null, "hidden"),
+    );
+    expect(html).toMatch(/\.resize-handle\s*\{[^}]*height:16px/);
+    expect(html).toMatch(/\.resize-handle\s*\{[^}]*cursor:ns-resize/);
+    expect(html).not.toContain(".resize-handle::before");
+    expect(html).not.toContain(".resize-handle::after");
+  });
+
+  it("resizes continuously during the drag and commits the final scale on release", () => {
+    // The inline script converts each pointermove's vertical delta into a
+    // live scale (1px of drag = 1px of rendered sprite height, i.e. delta /
+    // CELL_HEIGHT), emits it rAF-throttled via wuu-pet://action/scale, and
+    // re-sends the final value with commit=1 on pointerup so the host
+    // persists it. Pin the emission URL, the throttle, the commit marker,
+    // and that the old snap-to-next-preset flow is gone.
+    const html = codexPetWindowHTML(
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: false, status: "" }), null, "hidden"),
+    );
+    expect(html).toContain("wuu-pet://action/scale?value=");
+    expect(html).toContain("&commit=1");
+    expect(html).toContain("requestAnimationFrame");
+    expect(html).toMatch(/liveScale\s*=\s*view\.scale/);
+    expect(html).not.toContain("wuu-pet://action/resize?id=");
+  });
+
+  it("threads the per-size sprite geometry into the inline CSS variables and styles", () => {
+    const html = codexPetWindowHTML(
+      codexPetView(
+        snapshot(true).pets[0],
+        codexPetStateForRuntime({ running: false, status: "" }),
+        null,
+        "hidden",
+        "large",
+      ),
+    );
+    expect(html).toContain("--pet-frame-width:144px");
+    expect(html).toContain("--pet-frame-height:156px");
+    expect(html).toContain("--pet-scale:0.75");
+    expect(html).toMatch(/\.sprite-frame\{[^}]*var\(--pet-frame-width\)/);
+    expect(html).toMatch(/\.sprite\{[^}]*scale\(var\(--pet-scale\)\)/);
   });
 });
 
@@ -228,6 +395,31 @@ describe("codexPetActionFromURL", () => {
       thread_id: "abc",
     });
     expect(codexPetActionFromURL("wuu-pet://action/jump")).toBeUndefined();
+  });
+
+  it("parses the continuous scale action with clamping and the commit marker", () => {
+    expect(codexPetActionFromURL("wuu-pet://action/scale?value=0.62")).toEqual({
+      action: "scale",
+      value: 0.62,
+      commit: false,
+    });
+    expect(
+      codexPetActionFromURL("wuu-pet://action/scale?value=0.62&commit=1"),
+    ).toEqual({ action: "scale", value: 0.62, commit: true });
+    // Out-of-range values clamp instead of resizing the pet into
+    // uselessness; non-finite / missing values are dropped entirely.
+    expect(codexPetActionFromURL("wuu-pet://action/scale?value=99")).toEqual({
+      action: "scale",
+      value: 1.5,
+      commit: false,
+    });
+    expect(codexPetActionFromURL("wuu-pet://action/scale?value=0")).toEqual({
+      action: "scale",
+      value: 0.25,
+      commit: false,
+    });
+    expect(codexPetActionFromURL("wuu-pet://action/scale?value=abc")).toBeUndefined();
+    expect(codexPetActionFromURL("wuu-pet://action/scale")).toBeUndefined();
   });
 });
 
@@ -248,6 +440,18 @@ describe("codexPetBoundsForLayout", () => {
     expect(bounds.height).toBe(120);
     expect(bounds.x).toBe(944); // anchor.x - 8 - 48
     expect(bounds.y).toBe(788); // anchor.y - (height - 8)
+  });
+
+  it("uses the size's sprite footprint when one is supplied", () => {
+    const bounds = codexPetBoundsForLayout({
+      layout: "above",
+      anchor,
+      bubble: { width: 280, height: 80 },
+      size: "large",
+    });
+    // large: spriteW = 144, spriteH = 156 → height = 8 + 80 + 8 + 156 + 8 = 260
+    expect(bounds.width).toBe(280); // bubble still drives width
+    expect(bounds.height).toBe(260);
   });
 });
 
@@ -277,6 +481,21 @@ describe("selectCodexPetBubbleLayout", () => {
     expect(decision.layout).toBe("hidden");
     expect(decision.bounds.width).toBe(120);
     expect(decision.bounds.height).toBe(128);
+  });
+
+  it("scales the hidden fallback bounds when a non-default size is requested", () => {
+    const workArea = { x: 0, y: 0, width: 400, height: 60 };
+    const anchor = { x: 200, y: 50 };
+    const decision = selectCodexPetBubbleLayout({
+      workArea,
+      anchor,
+      bubble,
+      size: "large",
+    });
+    expect(decision.layout).toBe("hidden");
+    // large: windowWidth = 168, windowHeight = 180
+    expect(decision.bounds.width).toBe(168);
+    expect(decision.bounds.height).toBe(180);
   });
 });
 
@@ -365,9 +584,13 @@ describe("CodexPetWindowManager", () => {
 
     manager.setHint(sampleHint);
 
-    // setBounds resizes to the above-layout footprint (280×208)
+    // With the single-line card-chrome bubble at 280×44 (BUBBLE_HEIGHT —
+    // wraps the 12px inner padding plus 1 line of 13/1.45 text), the
+    // window height comes out to 8 (BUBBLE_PADDING) + 44 (BUBBLE_HEIGHT) +
+    // 8 (BUBBLE_GAP) + 104 (spriteH) + 8 (BUBBLE_PADDING) = 172. The
+    // width is `max(spriteW, bubble.width) = max(96, 280) = 280`.
     expect(codexPetElectronMocks.setBounds).toHaveBeenCalledWith(
-      expect.objectContaining({ width: 280, height: 208 }),
+      expect.objectContaining({ width: 280, height: 172 }),
     );
     // wuuPetView is invoked with the new view carrying the hint.
     const lastCall = codexPetElectronMocks.executeJavaScript.mock.calls.at(-1)?.[0] as string;
@@ -378,5 +601,149 @@ describe("CodexPetWindowManager", () => {
     const willNavigate = codexPetElectronMocks.capturedListeners["wc:will-navigate"]?.[0];
     willNavigate!({ preventDefault: vi.fn() }, "wuu-pet://action/jump?thread_id=thread-42");
     expect(jumpRequested).toHaveBeenCalledWith(sampleHint);
+  });
+
+  it("resizes the pet window and notifies the host when setSize() picks a non-default size", () => {
+    const onSizeChange = vi.fn();
+    const manager = new CodexPetWindowManager(
+      () => undefined,
+      () => undefined,
+      onSizeChange,
+    );
+    manager.sync(enabledSnapshot());
+    const didFinishLoad =
+      codexPetElectronMocks.capturedListeners["wc:did-finish-load"]?.[0];
+    didFinishLoad!({});
+    codexPetElectronMocks.setBounds.mockClear();
+    codexPetElectronMocks.executeJavaScript.mockClear();
+
+    manager.setSize("large");
+
+    // The window grew to the "large" footprint: 168 × 180.
+    expect(codexPetElectronMocks.setBounds).toHaveBeenCalledWith(
+      expect.objectContaining({ width: 168, height: 180 }),
+    );
+    // The in-page sprite geometry also changed (spriteWidth/spriteHeight/scale
+    // travel inside the wuuPetView payload; the in-page closure applies them
+    // to the CSS custom properties once received). The earlier revision of
+    // this test asserted on the executeJavaScript call string, which only
+    // embeds the JSON payload now, so check the payload directly.
+    const lastCall = codexPetElectronMocks.executeJavaScript.mock.calls.at(
+      -1,
+    )?.[0] as string;
+    expect(lastCall).toContain("wuuPetView");
+    expect(lastCall).toContain('"spriteWidth":144');
+    expect(lastCall).toContain('"spriteHeight":156');
+    expect(lastCall).toContain('"scale":0.75');
+    expect(lastCall).toContain('"size":"large"');
+    // The host was told so it can persist the choice to desktop-settings.json.
+    expect(onSizeChange).toHaveBeenCalledWith("large");
+  });
+
+  it("live-resizes on setScale() without notifying the host until commit", () => {
+    const onSizeChange = vi.fn();
+    const onScaleChange = vi.fn();
+    const manager = new CodexPetWindowManager(
+      () => undefined,
+      () => undefined,
+      onSizeChange,
+      onScaleChange,
+    );
+    manager.sync(enabledSnapshot());
+    const didFinishLoad =
+      codexPetElectronMocks.capturedListeners["wc:did-finish-load"]?.[0];
+    didFinishLoad!({});
+    codexPetElectronMocks.setBounds.mockClear();
+    codexPetElectronMocks.executeJavaScript.mockClear();
+
+    // Mid-drag frame: geometry updates live, no persistence traffic.
+    manager.setScale(0.75);
+    // scale 0.75 → multiplier 1.5 → sprite 144×156 → window 168×180.
+    expect(codexPetElectronMocks.setBounds).toHaveBeenCalledWith(
+      expect.objectContaining({ width: 168, height: 180 }),
+    );
+    const midDragCall = codexPetElectronMocks.executeJavaScript.mock.calls.at(
+      -1,
+    )?.[0] as string;
+    expect(midDragCall).toContain('"scale":0.75');
+    expect(onScaleChange).not.toHaveBeenCalled();
+    expect(onSizeChange).not.toHaveBeenCalled();
+
+    // Pointerup arrives with commit=true → the host persists the value.
+    manager.setScale(0.8, true);
+    expect(onScaleChange).toHaveBeenCalledWith(0.8);
+  });
+
+  it("clamps out-of-range scales from the startup rehydration path", () => {
+    const onScaleChange = vi.fn();
+    const manager = new CodexPetWindowManager(
+      () => undefined,
+      () => undefined,
+      undefined,
+      onScaleChange,
+    );
+    // setScale runs before the window exists on startup: it must record
+    // the (clamped) scale so createWindow sizes the first BrowserWindow
+    // from it instead of the preset.
+    manager.setScale(99, true);
+    expect(onScaleChange).toHaveBeenCalledWith(1.5);
+    manager.sync(enabledSnapshot());
+    const options = codexPetElectronMocks.BrowserWindow.mock.calls.at(-1)?.[0] as {
+      width: number;
+      height: number;
+    };
+    // scale 1.5 → multiplier 3 → sprite 288×312 → window 312×336.
+    expect(options.width).toBe(312);
+    expect(options.height).toBe(336);
+  });
+
+  it("routes a scale navigation from the pet page through setScale", () => {
+    const onScaleChange = vi.fn();
+    const manager = new CodexPetWindowManager(
+      () => undefined,
+      () => undefined,
+      undefined,
+      onScaleChange,
+    );
+    manager.sync(enabledSnapshot());
+    const didFinishLoad =
+      codexPetElectronMocks.capturedListeners["wc:did-finish-load"]?.[0];
+    didFinishLoad!({});
+    codexPetElectronMocks.setBounds.mockClear();
+
+    const willNavigate =
+      codexPetElectronMocks.capturedListeners["wc:will-navigate"]?.[0];
+    willNavigate!({ preventDefault: vi.fn() }, "wuu-pet://action/scale?value=0.75");
+    expect(codexPetElectronMocks.setBounds).toHaveBeenCalledWith(
+      expect.objectContaining({ width: 168, height: 180 }),
+    );
+    expect(onScaleChange).not.toHaveBeenCalled();
+
+    willNavigate!(
+      { preventDefault: vi.fn() },
+      "wuu-pet://action/scale?value=0.75&commit=1",
+    );
+    expect(onScaleChange).toHaveBeenCalledWith(0.75);
+  });
+
+  it("is a no-op when setSize() matches the current size", () => {
+    const onSizeChange = vi.fn();
+    const manager = new CodexPetWindowManager(
+      () => undefined,
+      () => undefined,
+      onSizeChange,
+    );
+    manager.sync(enabledSnapshot());
+    const didFinishLoad =
+      codexPetElectronMocks.capturedListeners["wc:did-finish-load"]?.[0];
+    didFinishLoad!({});
+    codexPetElectronMocks.setBounds.mockClear();
+    codexPetElectronMocks.executeJavaScript.mockClear();
+
+    manager.setSize("default");
+
+    expect(onSizeChange).not.toHaveBeenCalled();
+    expect(codexPetElectronMocks.setBounds).not.toHaveBeenCalled();
+    expect(codexPetElectronMocks.executeJavaScript).not.toHaveBeenCalled();
   });
 });

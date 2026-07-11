@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  getCodexPetScale,
   getCodexPetSettings,
+  getCodexPetSize,
   getCliAutoInstallEnabled,
   getMainWindowBounds,
   getMessageFlowFontSize,
@@ -118,17 +120,31 @@ describe("desktopSettings", () => {
   });
 
   it("defaults codex pets to disabled with no selected pet", () => {
-    expect(getCodexPetSettings(file)).toEqual({ enabled: false, selected_id: "" });
+    // getCodexPetSettings backfills the size axis so downstream callers
+    // never juggle undefined.
+    expect(getCodexPetSettings(file)).toEqual({
+      enabled: false,
+      selected_id: "",
+      size: "default",
+    });
   });
 
   it("round-trips codex pet settings while preserving other desktop settings", () => {
     setThemePreference("dark", file);
     setCodexPetSettings({ enabled: true, selected_id: "pixel-duck" }, file);
-    expect(getCodexPetSettings(file)).toEqual({ enabled: true, selected_id: "pixel-duck" });
+    expect(getCodexPetSettings(file)).toEqual({
+      enabled: true,
+      selected_id: "pixel-duck",
+      size: "default",
+    });
     expect(getThemePreference(file)).toBe("dark");
 
     setCodexPetSettings({ enabled: false, selected_id: "" }, file);
-    expect(getCodexPetSettings(file)).toEqual({ enabled: false, selected_id: "" });
+    expect(getCodexPetSettings(file)).toEqual({
+      enabled: false,
+      selected_id: "",
+      size: "default",
+    });
     expect(getThemePreference(file)).toBe("dark");
   });
 
@@ -138,6 +154,100 @@ describe("desktopSettings", () => {
     await writeFile(file, JSON.stringify({ theme: "dark", skin: "work" }));
     expect(readDesktopSettings(file)).toEqual({ theme: "dark" });
     expect(getThemePreference(file)).toBe("dark");
+  });
+
+  it("defaults the codex pet size to the 100% preset", () => {
+    expect(getCodexPetSize(file)).toBe("default");
+    expect(getCodexPetSettings(file).size).toBe("default");
+  });
+
+  it("round-trips the codex pet size while preserving other settings", () => {
+    setThemePreference("dark", file);
+    setCodexPetSettings(
+      { enabled: true, selected_id: "pixel-duck", size: "large" },
+      file,
+    );
+    expect(getCodexPetSize(file)).toBe("large");
+    expect(getCodexPetSettings(file)).toEqual({
+      enabled: true,
+      selected_id: "pixel-duck",
+      size: "large",
+    });
+    expect(getThemePreference(file)).toBe("dark");
+  });
+
+  it("treats a missing size field on disk as the default", async () => {
+    // Older desktop-settings.json files predate the size axis entirely.
+    await writeFile(
+      file,
+      JSON.stringify({ codex_pet: { enabled: true, selected_id: "alpha" } }),
+    );
+    expect(getCodexPetSize(file)).toBe("default");
+    expect(getCodexPetSettings(file).size).toBe("default");
+  });
+
+  it("rejects unknown size values on read", async () => {
+    await writeFile(
+      file,
+      JSON.stringify({
+        codex_pet: { enabled: true, selected_id: "alpha", size: "huge" },
+      }),
+    );
+    expect(getCodexPetSize(file)).toBe("default");
+    expect(getCodexPetSettings(file).size).toBe("default");
+  });
+
+  it("treats each write as a full replace of the codex_pet object", () => {
+    // setCodexPetSettings 是整体替换：省略的可选字段（size/scale）即从
+    // 持久化文件删除。部分更新语义由 index.ts 的 updateCodexPetSettings
+    // 承担——它先读旧值再合并，写入时总是显式带上要保留的字段。
+    setCodexPetSettings(
+      { enabled: true, selected_id: "pixel-duck", size: "extra-large" },
+      file,
+    );
+    setCodexPetSettings({ enabled: true, selected_id: "pixel-duck" }, file);
+    expect(getCodexPetSize(file)).toBe("default");
+  });
+
+  it("round-trips the continuous pet scale from edge-drag resize", () => {
+    setCodexPetSettings(
+      { enabled: true, selected_id: "pixel-duck", scale: 0.62 },
+      file,
+    );
+    expect(getCodexPetScale(file)).toBe(0.62);
+    expect(getCodexPetSettings(file).scale).toBe(0.62);
+  });
+
+  it("drops the persisted scale when the caller writes without one", () => {
+    // 显式选 size 档位的路径写入时不带 scale——codex_pet 对象整体重写，
+    // 所以省略即删除，档位重新生效。
+    setCodexPetSettings(
+      { enabled: true, selected_id: "pixel-duck", scale: 0.62 },
+      file,
+    );
+    setCodexPetSettings(
+      { enabled: true, selected_id: "pixel-duck", size: "large" },
+      file,
+    );
+    expect(getCodexPetScale(file)).toBeUndefined();
+    expect(getCodexPetSize(file)).toBe("large");
+  });
+
+  it("rejects corrupted scale values on read", async () => {
+    await writeFile(
+      file,
+      JSON.stringify({
+        codex_pet: { enabled: true, selected_id: "alpha", scale: "big" },
+      }),
+    );
+    expect(getCodexPetScale(file)).toBeUndefined();
+    await writeFile(
+      file,
+      JSON.stringify({
+        codex_pet: { enabled: true, selected_id: "alpha", scale: -1 },
+      }),
+    );
+    expect(getCodexPetScale(file)).toBeUndefined();
   });
 
   it("returns undefined when no main_window_bounds have been saved", () => {
