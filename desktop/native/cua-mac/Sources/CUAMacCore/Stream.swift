@@ -96,6 +96,8 @@ private let userInputCallback: CGEventTapCallBack = { _, _, event, refcon in
 private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     let writer: FramePipeWriter
     let frame: CGRect
+    private let lock = NSLock()
+    private var stopped = false
 
     init(writer: FramePipeWriter, frame: CGRect) {
         self.writer = writer
@@ -109,11 +111,20 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         writer.event("error", message: error.localizedDescription)
-        CFRunLoopStop(CFRunLoopGetMain())
+        lock.lock()
+        stopped = true
+        lock.unlock()
+        CFRunLoopWakeUp(CFRunLoopGetMain())
+    }
+
+    func isStopped() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return stopped
     }
 }
 
-public func runWindowFrameStream(target: String) throws {
+public func runWindowFrameStream(target: String) async throws {
     guard CGPreflightScreenCaptureAccess() else {
         throw ComputerError.permissionDenied("Screen Recording permission is required for live window capture")
     }
@@ -131,48 +142,23 @@ public func runWindowFrameStream(target: String) throws {
     }
     guard let app else { throw ComputerError.appNotFound(target) }
 
-    let semaphore = DispatchSemaphore(value: 0)
     let writer = FramePipeWriter()
-    var stream: SCStream?
-    var output: WindowStreamOutput?
-    var setupError: Error?
-    SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) { content, error in
-        defer { semaphore.signal() }
-        if let error { setupError = error; return }
-        guard let window = content?.windows
-            .filter({ $0.owningApplication?.processID == app.processIdentifier && $0.frame.width > 1 && $0.frame.height > 1 })
-            .max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) else {
-            setupError = ComputerError.operationFailed("no capturable window found")
-            return
-        }
-        let configuration = SCStreamConfiguration()
-        configuration.width = max(1, Int(window.frame.width * 1.25))
-        configuration.height = max(1, Int(window.frame.height * 1.25))
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 12)
-        configuration.queueDepth = 2
-        configuration.showsCursor = false
-        let nextOutput = WindowStreamOutput(writer: writer, frame: window.frame)
-        let nextStream = SCStream(filter: SCContentFilter(desktopIndependentWindow: window), configuration: configuration, delegate: nextOutput)
-        do {
-            try nextStream.addStreamOutput(nextOutput, type: .screen, sampleHandlerQueue: DispatchQueue(label: "com.blueberrycongee.wuu.cua.capture"))
-            stream = nextStream
-            output = nextOutput
-        } catch {
-            setupError = error
-        }
+    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+    guard let window = content.windows
+        .filter({ $0.owningApplication?.processID == app.processIdentifier && $0.frame.width > 1 && $0.frame.height > 1 })
+        .max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) else {
+        throw ComputerError.operationFailed("no capturable window found")
     }
-    guard semaphore.wait(timeout: .now() + 8) == .success else {
-        throw ComputerError.operationFailed("live window capture setup timed out")
-    }
-    if let setupError { throw setupError }
-    guard let stream, output != nil else { throw ComputerError.operationFailed("live window capture did not initialize") }
-    let started = DispatchSemaphore(value: 0)
-    var startError: Error?
-    stream.startCapture { error in startError = error; started.signal() }
-    guard started.wait(timeout: .now() + 8) == .success else {
-        throw ComputerError.operationFailed("live window capture start timed out")
-    }
-    if let startError { throw startError }
+    let configuration = SCStreamConfiguration()
+    configuration.width = max(1, Int(window.frame.width * 1.25))
+    configuration.height = max(1, Int(window.frame.height * 1.25))
+    configuration.minimumFrameInterval = CMTime(value: 1, timescale: 12)
+    configuration.queueDepth = 2
+    configuration.showsCursor = false
+    let output = WindowStreamOutput(writer: writer, frame: window.frame)
+    let stream = SCStream(filter: SCContentFilter(desktopIndependentWindow: window), configuration: configuration, delegate: output)
+    try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: DispatchQueue(label: "com.blueberrycongee.wuu.cua.capture"))
+    try await stream.startCapture()
     writer.event("started")
     let inputMonitor = UserInputMonitor(processID: app.processIdentifier, writer: writer)
     let eventTypes: [CGEventType] = [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown, .scrollWheel]
@@ -192,10 +178,10 @@ public func runWindowFrameStream(target: String) throws {
         if let eventSource { CFRunLoopAddSource(CFRunLoopGetMain(), eventSource, .commonModes) }
         CGEvent.tapEnable(tap: eventTap, enable: true)
     }
-    RunLoop.main.run()
+    while !output.isStopped() {
+        try await Task.sleep(for: .milliseconds(250))
+    }
     withExtendedLifetime(inputMonitor) {}
     if let eventSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), eventSource, .commonModes) }
-    let stopped = DispatchSemaphore(value: 0)
-    stream.stopCapture { _ in stopped.signal() }
-    _ = stopped.wait(timeout: .now() + 2)
+    try? await stream.stopCapture()
 }

@@ -249,7 +249,7 @@ public final class MacComputerBackend: ComputerBackend {
             box.set(application: app, error: error)
             semaphore.signal()
         }
-        guard semaphore.wait(timeout: .now() + 12) == .success else {
+        guard waitForAsyncSignal(semaphore, timeout: 12) else {
             throw ComputerError.operationFailed("launching \(target) timed out")
         }
         let (app, error) = box.get()

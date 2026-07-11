@@ -4,14 +4,20 @@ import Foundation
 
 _ = NSApplication.shared
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--stream" {
-    do {
-        try runWindowFrameStream(target: CommandLine.arguments[2])
-        exit(0)
-    } catch {
-        let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        FileHandle.standardError.write(Data("wuu-cua-mac stream failed: \(message)\n".utf8))
-        exit(1)
+    let target = CommandLine.arguments[2]
+    NSApplication.shared.setActivationPolicy(.accessory)
+    Task {
+        do {
+            try await runWindowFrameStream(target: target)
+            exit(0)
+        } catch {
+            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            FileHandle.standardError.write(Data("wuu-cua-mac stream failed: \(message)\n".utf8))
+            exit(1)
+        }
     }
+    NSApplication.shared.run()
+    exit(0)
 }
 let server = MCPServer(backend: MacComputerBackend())
 
