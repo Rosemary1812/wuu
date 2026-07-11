@@ -372,7 +372,7 @@ Activity acquire
 
 实施证据（2026-07-11）：后台计算器通过 8 次 AXPress 完成 `37 × 24 = 888` 并清零；每次动作均报告 `mechanism=background_ax` 和 `foreground_changed=false`。操作前后 frontmost bundle 均为 `com.openai.codex`，鼠标坐标均为 `(911, 804)`，最终 AX 值为 `0`。TextEdit 打开对话框的搜索字段完成后台 AXSetValue、select_text、AXConfirm 和清空，值变化得到 AX 验证；全程 frontmost bundle 为 `com.openai.codex`，鼠标坐标保持 `(508, 794)`。
 
-### M2：前台控制策略
+### M2：前台控制策略（已完成）
 
 - 引入 `foreground_policy`。
 - 坐标、键盘、输入和滚动按能力选择后台或前台路径。
@@ -382,7 +382,9 @@ Activity acquire
 
 验收：无法后台执行时返回清晰降级状态；不再悄悄切前台；用户在动作序列中接管目标应用后，Agent 不再启动下一步。
 
-### M3：原生实时捕获流
+实施证据（2026-07-11）：`foreground_policy` 默认 `avoid`，所有坐标、键盘、输入、滚动和截图前台回退在未授权时返回稳定的 `requires_foreground`；真实前台输入由跨进程文件锁串行。原生帧进程监听目标应用的真实鼠标/键盘事件，并排除 Wuu 标记的合成事件；Electron 收到后调用 Activity takeover，旧 lease 在 sequence 下一步前失效。Activity 对外区分 `background_controlled`、`foreground_controlled` 和 `user_controlled`，交还时生成新 lease。
+
+### M3：原生实时捕获流（已完成）
 
 - 先实现与 MCP 控制面分离的本地二进制帧通道、最新帧背压和生命周期。
 - 在 `cua-mac` 原生层增加 window stream 生命周期。
@@ -391,7 +393,9 @@ Activity acquire
 
 验收：独立探针持续捕获计算器窗口，操作变化无需 `observe` 即出现在帧流中。
 
-### M4：实时 PiP
+实施证据（2026-07-11）：`wuu-cua-mac --stream com.apple.calculator` 通过独立二进制 stdout 帧协议输出 metadata 长度、payload 长度、JSON metadata 和 JPEG payload；实测连续收到 revision 1–3，帧大小约 30 KB，分辨率 287×510。编码或下游写入繁忙时丢弃旧帧，不阻塞 MCP JSON-RPC 控制面。
+
+### M4：实时 PiP（已完成）
 
 - Electron 创建/销毁 capture stream。
 - PiP 消费实时帧，不再读取静态 preview。
@@ -400,7 +404,9 @@ Activity acquire
 
 验收：Agent 两次工具调用之间，PiP 仍实时显示目标应用变化。
 
-### M5：settle、diff 与元素恢复
+实施证据（2026-07-11）：Electron 为每个 CUA Activity 启动独立帧子进程，将最新 JPEG 原子发布到临时文件并只更新现有 PiP 图片，不再依赖 `observe` 写入的静态 preview。首帧前保留液态玻璃；关闭 PiP 只关闭视图，不停止 Activity；切换 session 隐藏旧 PiP、切回恢复；最多同时保留 3 条实时流。
+
+### M5：settle、diff 与元素恢复（已完成）
 
 - AX notification + debounce。
 - visual revision 和稳定判定。
@@ -409,7 +415,9 @@ Activity acquire
 
 验收：计算器只返回相关值变化；微信 AX 不变但视觉变化时不会误报无变化。
 
-### M6：弱模型动作协议
+实施证据（2026-07-11）：动作后以 80 ms 采样等待连续稳定 AX 快照，最长 1.2 s；结果返回 `verified`/`unverified`、AX/visual revision 和语义化变化。观察结果忽略瞬时元素 ID 后计算 diff，过大时回退完整树；过期元素按 role/title/description/frame 只恢复一次且要求唯一匹配。微信前台视觉点击实测 `mechanism=foreground_native`，AX 不变时通过后续截图视觉状态判断，不再依赖 `wait_for_change` 假定 AX 必须变化。
+
+### M6：弱模型动作协议（已完成）
 
 - sequence 高层动作。
 - 运行时验证与部分完成结果。
@@ -419,7 +427,9 @@ Activity acquire
 
 验收：弱模型不需要自己处理 Retina、重复观察和逐步等待，也能稳定完成代表任务。
 
-### M7：多应用并发
+实施证据（2026-07-11）：增加 `activate_control`，按精确 AX description/title 和可选 role 定位，避免弱模型抄错动态元素 ID；观察开头优先列出可操作控件。`sequence` 在 Wuu 运行时逐步执行、每步检查 lease 与风险，返回 completed/partial/policy_paused。真实 MiniMax-M3 `wuu exec --json` 使用用户原始提示完成 AC → 37 → × → 24 → =，确认 `37×24` 和 `888`，最后 AC 并确认 `0`；未使用 shell、AppleScript 或代码计算。会话：`20260711-165008-bd1bca9fae35c2d6`。
+
+### M7：多应用并发（已完成）
 
 - per-PID 动作队列。
 - 全局前台输入锁。
@@ -427,6 +437,8 @@ Activity acquire
 - 后台并发与前台串行调度。
 
 验收：计算器与 TextEdit 后台并行；微信需要前台时不会与其他真实输入冲突。
+
+实施证据（2026-07-11）：所有动作按目标 PID 使用跨进程锁，同一应用串行、不同应用允许并行；所有 CGEvent 前台输入再经过唯一的全局锁。实时流上限为 3，按最旧流淘汰。计算器和 TextEdit 后台 AX 验证均保持前台和鼠标不变；微信坐标路径只有显式 `foreground_policy=allow` 才执行，结果报告 `foreground_native` 和前台变化，不会与另一前台 sequence 交叉。
 
 ## 9. 测试矩阵
 
