@@ -139,6 +139,16 @@ describe("useSidebarDrawerState", () => {
 
     expect(hook.get().sidebarDrawerPhase).toBe("open");
 
+    // Entering the app content from the titlebar can surface as a window
+    // mouseout without a related target. It is still not a dismissal.
+    await act(async () => {
+      window.dispatchEvent(
+        new MouseEvent("mouseout", { relatedTarget: null }),
+      );
+    });
+
+    expect(hook.get().sidebarDrawerPhase).toBe("open");
+
     await act(async () => {
       hook.get().closeSidebarDrawer();
     });

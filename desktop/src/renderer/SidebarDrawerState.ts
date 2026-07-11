@@ -281,7 +281,7 @@ export function useSidebarDrawerState({
     }
     function handleWindowMouseOut(event: MouseEvent): void {
       if (event.relatedTarget === null) {
-        closeSidebarDrawer();
+        closeSidebarDrawerFromPointerLeave();
       }
     }
     window.addEventListener("mouseout", handleWindowMouseOut);
@@ -290,7 +290,12 @@ export function useSidebarDrawerState({
       window.removeEventListener("mouseout", handleWindowMouseOut);
       window.removeEventListener("blur", closeSidebarDrawer);
     };
-  }, [closeSidebarDrawer, sidebarCollapsed, sidebarDrawerPhase]);
+  }, [
+    closeSidebarDrawer,
+    closeSidebarDrawerFromPointerLeave,
+    sidebarCollapsed,
+    sidebarDrawerPhase,
+  ]);
 
   useEffect(() => {
     if (!sidebarCollapsed) {
