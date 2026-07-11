@@ -305,12 +305,10 @@
   margin-left: -4px;
 }
 
-.workspace-panel-close {
-  width: 30px;
-  height: 30px;
-}
-
-.workspace-panel-sidebar {
+.workspace-panel-close,
+.workspace-panel-sidebar,
+.workspace-panel-add,
+.workspace-panel-globalize {
   width: 30px;
   height: 30px;
   flex: 0 0 auto;
@@ -494,12 +492,6 @@
 .workspace-tool-tab-close:hover {
   background: var(--ink-overlay-8);
   color: var(--ink);
-}
-
-.workspace-panel-add {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 auto;
 }
 
 .workspace-panel-add.active,
