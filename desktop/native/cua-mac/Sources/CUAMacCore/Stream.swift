@@ -66,16 +66,16 @@ private final class NativePiPView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
+        layer?.backgroundColor = NSColor.clear.cgColor
         layer?.cornerRadius = 14
         layer?.masksToBounds = true
 
         displayLayer.videoGravity = .resizeAspect
-        displayLayer.backgroundColor = NSColor.black.cgColor
+        displayLayer.backgroundColor = NSColor.clear.cgColor
         layer?.addSublayer(displayLayer)
 
         fallbackLayer.contentsGravity = .resizeAspect
-        fallbackLayer.backgroundColor = NSColor.black.cgColor
+        fallbackLayer.backgroundColor = NSColor.clear.cgColor
         fallbackLayer.isHidden = true
         layer?.addSublayer(fallbackLayer)
 
@@ -522,6 +522,7 @@ private func streamConfiguration(for window: SCWindow) -> SCStreamConfiguration 
     configuration.queueDepth = 4
     configuration.showsCursor = false
     configuration.pixelFormat = kCVPixelFormatType_32BGRA
+    configuration.ignoreShadowsSingleWindow = true
     return configuration
 }
 
