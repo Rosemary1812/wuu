@@ -165,6 +165,21 @@ describe("workspace review diff layout", () => {
       cssRuleBody(".workspace-diff-tree-row.active .workspace-diff-tree-count"),
     ).toMatch(/color:\s*var\(--wuu-accent\)/);
   });
+
+  it("keeps the review tree from eating too much horizontal space so file names don't get cut off", () => {
+    // The chevron / icon columns and the per-level indent spacer are
+    // sized so that a deeply nested path inside the 280px tree pane
+    // still has room to render the file name + stat badge without
+    // ellipsis. Going back to the wider values here would re-introduce
+    // the truncation the user reported.
+    expect(cssRuleBody(".workspace-diff-tree-row")).toMatch(
+      /grid-template-columns:\s*14px\s+14px/,
+    );
+    expect(cssRuleBody(".workspace-diff-tree-row.file")).toMatch(
+      /grid-template-columns:\s*14px\s+14px/,
+    );
+    expect(cssRuleBody(".workspace-diff-tree-spacer")).toMatch(/width:\s*12px;/);
+  });
 });
 
 describe("turn file diff panel layout", () => {

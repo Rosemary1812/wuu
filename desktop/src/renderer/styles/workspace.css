@@ -2402,7 +2402,11 @@
   display: grid;
   min-width: 0;
   min-height: 32px;
-  grid-template-columns: 18px 18px minmax(0, 1fr) auto;
+  /* Tightened chevron / icon columns (was 18px 18px) so the file name has
+     more room before the stat badge. Together with the narrower tree
+     indentation spacer below this stops common file names from getting
+     ellipsised inside the 280px review tree pane at deep paths. */
+  grid-template-columns: 14px 14px minmax(0, 1fr) auto;
   align-items: center;
   gap: 7px;
   border-radius: var(--radius-sm);
@@ -2445,7 +2449,7 @@
 }
 
 .workspace-diff-tree-row.file {
-  grid-template-columns: 18px 18px minmax(0, 1fr) auto;
+  grid-template-columns: 14px 14px minmax(0, 1fr) auto;
   color: var(--diff-tree-file-text);
 }
 
@@ -2471,7 +2475,11 @@
 }
 
 .workspace-diff-tree-spacer {
-  width: 18px;
+  /* Per-level horizontal indent for nested directories (was 18px). Combined
+     with the narrower chevron / icon columns above, a 4-deep path saves
+     ~30px of leading whitespace so longer file names don't get cut off
+     inside the 280px review tree pane. */
+  width: 12px;
 }
 
 .workspace-diff-tree-stats {
