@@ -277,7 +277,7 @@ export function codexPetWindowHTML(view: CodexPetView): string {
 .stage.layout-left{flex-direction:row-reverse;justify-content:flex-start}
 .stage.layout-right,.stage.layout-left{align-items:center}
 .sprite-frame{width:${CODEX_PET_SPRITE_RENDER_WIDTH}px;height:${CODEX_PET_SPRITE_RENDER_HEIGHT}px;display:flex;align-items:flex-end;justify-content:center;flex-shrink:0;pointer-events:none}
-.sprite{width:${CODEX_PET_CELL_WIDTH}px;height:${CODEX_PET_CELL_HEIGHT}px;transform:scale(0.5);transform-origin:bottom center;background-image:var(--pet-sheet);background-repeat:no-repeat;background-position:0 var(--pet-y);image-rendering:pixelated;filter:drop-shadow(0 10px 16px rgba(0,0,0,.18));animation:pet-play var(--pet-duration) steps(var(--pet-frames)) infinite}
+.sprite{width:${CODEX_PET_CELL_WIDTH}px;height:${CODEX_PET_CELL_HEIGHT}px;flex-shrink:0;transform:scale(0.5);transform-origin:bottom center;background-image:var(--pet-sheet);background-repeat:no-repeat;background-position:0 var(--pet-y);image-rendering:pixelated;filter:drop-shadow(0 10px 16px rgba(0,0,0,.18));animation:pet-play var(--pet-duration) steps(var(--pet-frames)) infinite}
 @keyframes pet-play{from{background-position:0 var(--pet-y)}to{background-position:var(--pet-end-x) var(--pet-y)}}
 @media (prefers-reduced-motion:reduce){.sprite{animation:none}}
 .bubble{display:flex;align-items:flex-start;gap:8px;width:${CODEX_PET_BUBBLE_WIDTH}px;min-height:${CODEX_PET_BUBBLE_HEIGHT}px;padding:12px;margin:${CODEX_PET_BUBBLE_PADDING}px;border-radius:12px;background:rgba(255,255,255,.95);box-shadow:0 6px 24px rgba(0,0,0,.18);cursor:pointer;flex-shrink:0;color:#1a1a1a;transition:opacity 200ms ease}

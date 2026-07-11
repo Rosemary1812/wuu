@@ -189,6 +189,7 @@ describe("codexPetWindowHTML", () => {
     expect(html).toContain("wuu-file://local/alpha");
     expect(html).toContain("--pet-frames:6");
     expect(html).toContain("steps(var(--pet-frames))");
+    expect(html).toMatch(/\.sprite\{[^}]*flex-shrink:0/);
   });
 
   it("keeps the window draggable and offers the context menu action", () => {
