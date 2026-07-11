@@ -56,6 +56,23 @@ func TestCUAActivityControlStateMapsMechanism(t *testing.T) {
 	}
 }
 
+func TestCanonicalCUATargetFromRunningApps(t *testing.T) {
+	apps := json.RawMessage(`{"apps":[{
+		"id":"com.apple.Calculator",
+		"displayName":"Calculator",
+		"bundleIdentifier":"com.apple.Calculator",
+		"path":"/System/Applications/Calculator.app"
+	}]}`)
+	for _, target := range []string{"Calculator", "/System/Applications/Calculator.app", "com.apple.Calculator"} {
+		if got := canonicalCUATargetFromApps(target, apps); got != "com.apple.Calculator" {
+			t.Fatalf("canonical target for %q = %q", target, got)
+		}
+	}
+	if got := canonicalCUATargetFromApps("Unknown", apps); got != "Unknown" {
+		t.Fatalf("unknown target changed to %q", got)
+	}
+}
+
 func TestSequenceControlAggregatesHighestMechanism(t *testing.T) {
 	stepResult := func(mechanism string, foregroundChanged bool) toolresult.Result {
 		payload := map[string]any{"mechanism": mechanism}

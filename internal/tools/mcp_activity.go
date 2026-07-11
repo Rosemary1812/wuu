@@ -80,6 +80,9 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		return toolresult.Result{}, errors.New("activity-bound MCP tool requires a thread context")
 	}
 	target := mcpActivityTarget(call.Arguments)
+	if binding.Kind == activity.KindCUA {
+		target = t.canonicalCUATarget(ctx, tool, target)
+	}
 	session, lease, err := t.activityRegistry.Acquire(activity.StartOptions{
 		Kind:     binding.Kind,
 		ThreadID: threadID,
@@ -149,6 +152,52 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		PreviewURI: session.Preview,
 	}
 	return result, callErr
+}
+
+func (t *Toolkit) canonicalCUATarget(ctx context.Context, tool Tool, target string) string {
+	target = strings.TrimSpace(target)
+	if target == "" || (!strings.Contains(target, "/") && strings.Contains(target, ".")) {
+		return target
+	}
+	arguments, _ := json.Marshal(map[string]any{"action": "list_apps"})
+	result, err := t.executeKnownToolResult(ctx, providers.ToolCall{Name: tool.Name(), Arguments: string(arguments)}, tool)
+	if err != nil || result.IsError {
+		return target
+	}
+	return canonicalCUATargetFromApps(target, result.StructuredContent)
+}
+
+func canonicalCUATargetFromApps(target string, structured json.RawMessage) string {
+	var payload struct {
+		Apps []struct {
+			ID               string `json:"id"`
+			DisplayName      string `json:"displayName"`
+			BundleIdentifier string `json:"bundleIdentifier"`
+			Path             string `json:"path"`
+		} `json:"apps"`
+	}
+	if json.Unmarshal(structured, &payload) != nil {
+		return strings.TrimSpace(target)
+	}
+	normalized := strings.ToLower(strings.TrimSpace(target))
+	for _, app := range payload.Apps {
+		if normalized != strings.ToLower(strings.TrimSpace(app.ID)) &&
+			normalized != strings.ToLower(strings.TrimSpace(app.DisplayName)) &&
+			normalized != strings.ToLower(strings.TrimSpace(app.BundleIdentifier)) &&
+			normalized != strings.ToLower(strings.TrimSpace(app.Path)) {
+			continue
+		}
+		if canonical := strings.TrimSpace(app.BundleIdentifier); canonical != "" {
+			return canonical
+		}
+		if canonical := strings.TrimSpace(app.Path); canonical != "" {
+			return canonical
+		}
+		if canonical := strings.TrimSpace(app.ID); canonical != "" {
+			return canonical
+		}
+	}
+	return strings.TrimSpace(target)
 }
 
 func cuaActivityInteraction(result toolresult.Result) *activity.Interaction {
