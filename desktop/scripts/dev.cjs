@@ -4,14 +4,19 @@ const {
   helperPathForApp,
   prepareDevElectronApp,
 } = require("./prepare-dev-electron-app.cjs");
+const { ensureDevSigningIdentity } = require("./dev-signing.cjs");
 
 const desktopRoot = resolve(__dirname, "..");
 const buildHelper = join(__dirname, "build-cua-mac.cjs");
 const electronVite = join(desktopRoot, "node_modules", "electron-vite", "dist", "cli.mjs");
 
+const devSigning = process.platform === "darwin" ? ensureDevSigningIdentity() : undefined;
 const build = spawnSync(process.execPath, [buildHelper], {
   cwd: desktopRoot,
-  env: process.env,
+  env: {
+    ...process.env,
+    ...(devSigning ? { WUU_CUA_MAC_SIGN_ID: devSigning.identity } : {}),
+  },
   stdio: "inherit",
 });
 if (build.status !== 0) {
@@ -20,7 +25,7 @@ if (build.status !== 0) {
 
 const env = { ...process.env };
 if (process.platform === "darwin") {
-  env.WUU_DEV_ELECTRON_APP = prepareDevElectronApp();
+  env.WUU_DEV_ELECTRON_APP = prepareDevElectronApp(devSigning);
   env.WUU_CUA_MAC_HELPER = helperPathForApp(env.WUU_DEV_ELECTRON_APP);
   env.ELECTRON_EXEC_PATH = join(__dirname, "launch-electron-via-open.cjs");
 }

@@ -174,6 +174,12 @@ npm install
 npm run dev
 ```
 
+On macOS, the first `npm run dev` creates a local `Wuu Dev Signing` certificate
+in your login keychain and uses it only for the development host. This keeps
+Accessibility and Screen Recording permission stable across source rebuilds.
+Set `WUU_DEV_SIGN_ID` to use an existing local Code Signing identity instead.
+This development certificate is never used for packaged GitHub Release builds.
+
 ## CLI and Automation
 
 `wuu exec` is the non-interactive entrypoint. It is useful for scripts, CI, review jobs, and other agents.

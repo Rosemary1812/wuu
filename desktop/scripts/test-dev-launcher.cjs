@@ -1,11 +1,20 @@
 const assert = require("node:assert/strict");
 const { resolve } = require("node:path");
+const packageJSON = require("../package.json");
 const {
   launchEnvironment,
   normalizeElectronArguments,
   processIDForLaunchToken,
 } = require("./launch-electron-via-open.cjs");
-const { helperPathForApp } = require("./prepare-dev-electron-app.cjs");
+const {
+  helperPathForApp,
+  sourceHashFromBuildInfo,
+} = require("./prepare-dev-electron-app.cjs");
+const {
+  DEFAULT_DEV_SIGNING_ID,
+  matchingIdentity,
+  parseCodeSigningIdentities,
+} = require("./dev-signing.cjs");
 
 assert.deepEqual(
   normalizeElectronArguments([".", "--inspect=9229"], "/repo/desktop"),
@@ -36,6 +45,32 @@ assert.equal(processIDForLaunchToken(processList, "missing"), undefined);
 assert.equal(
   helperPathForApp("/repo/desktop/build/dev-host/Wuu Dev.app"),
   "/repo/desktop/build/dev-host/Wuu Dev.app/Contents/Resources/bin/wuu-cua-mac",
+);
+assert.equal(
+  sourceHashFromBuildInfo({ sourceHash: "a".repeat(64) }, () => "fallback"),
+  "a".repeat(64),
+);
+assert.equal(sourceHashFromBuildInfo({}, () => "fallback"), "fallback");
+assert.match(packageJSON.scripts["pack:mac"], /CSC_IDENTITY_AUTO_DISCOVERY=false/);
+assert.match(packageJSON.scripts["dist:mac"], /CSC_IDENTITY_AUTO_DISCOVERY=false/);
+assert.match(packageJSON.scripts["pack:mac"], /WUU_CUA_MAC_SIGN_ID=-/);
+assert.match(packageJSON.scripts["dist:mac"], /WUU_CUA_MAC_SIGN_ID=-/);
+
+const identities = parseCodeSigningIdentities([
+  '  1) 0123456789ABCDEF0123456789ABCDEF01234567 "Wuu Dev Signing"',
+  "     1 valid identities found",
+].join("\n"));
+assert.deepEqual(identities, [{
+  sha1: "0123456789ABCDEF0123456789ABCDEF01234567",
+  name: DEFAULT_DEV_SIGNING_ID,
+}]);
+assert.equal(
+  matchingIdentity(identities, DEFAULT_DEV_SIGNING_ID)?.sha1,
+  "0123456789ABCDEF0123456789ABCDEF01234567",
+);
+assert.equal(
+  matchingIdentity(identities, "0123456789abcdef0123456789abcdef01234567")?.name,
+  DEFAULT_DEV_SIGNING_ID,
 );
 
 console.log("dev launcher tests passed");

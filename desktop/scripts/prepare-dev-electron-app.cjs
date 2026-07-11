@@ -17,12 +17,13 @@ const devApp = join(hostRoot, "Wuu Dev.app");
 const markerPath = join(hostRoot, "identity.json");
 const electronPackagePath = join(desktopRoot, "node_modules", "electron", "package.json");
 const builtHelper = join(desktopRoot, "build", "bin", "wuu-cua-mac");
-const identityVersion = 3;
+const helperBuildInfo = join(desktopRoot, "build", "bin", "wuu-cua-mac.build.json");
+const identityVersion = 5;
 
-function prepareDevElectronApp() {
+function prepareDevElectronApp(signing = { identity: "-", fingerprint: "adhoc", name: "ad-hoc" }) {
   const electronVersion = JSON.parse(readFileSync(electronPackagePath, "utf8")).version;
-  const helperHash = hashFile(builtHelper);
-  if (devHostIsCurrent(electronVersion, helperHash)) return devApp;
+  const helperHash = helperSourceHash();
+  if (devHostIsCurrent(electronVersion, helperHash, signing.fingerprint)) return devApp;
 
   console.log(`preparing stable Wuu Dev host for Electron ${electronVersion}...`);
   mkdirSync(hostRoot, { recursive: true });
@@ -50,24 +51,34 @@ function prepareDevElectronApp() {
     "--force",
     "--deep",
     "--sign",
-    "-",
+    signing.identity,
     "--identifier",
     "com.blueberrycongee.wuu.dev",
     devApp,
   ]);
   run("codesign", ["--verify", "--deep", "--strict", devApp]);
-  writeFileSync(markerPath, `${JSON.stringify({ electronVersion, helperHash, identityVersion })}\n`);
-  console.log("Wuu Dev identity changed; macOS may require Accessibility and Screen Recording permission again.");
+  writeFileSync(markerPath, `${JSON.stringify({
+    electronVersion,
+    helperHash,
+    signingFingerprint: signing.fingerprint,
+    identityVersion,
+  })}\n`);
+  if (signing.identity === "-") {
+    console.log("Wuu Dev uses ad-hoc signing; macOS may require Accessibility and Screen Recording permission again.");
+  } else {
+    console.log(`Wuu Dev signed with ${signing.name}; macOS permissions will persist across rebuilds.`);
+  }
   return devApp;
 }
 
-function devHostIsCurrent(electronVersion, helperHash) {
+function devHostIsCurrent(electronVersion, helperHash, signingFingerprint) {
   if (!existsSync(devApp) || !existsSync(markerPath)) return false;
   try {
     const marker = JSON.parse(readFileSync(markerPath, "utf8"));
     if (
       marker.electronVersion !== electronVersion
       || marker.helperHash !== helperHash
+      || marker.signingFingerprint !== signingFingerprint
       || marker.identityVersion !== identityVersion
     ) {
       return false;
@@ -82,6 +93,22 @@ function devHostIsCurrent(electronVersion, helperHash) {
 
 function hashFile(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function helperSourceHash() {
+  try {
+    return sourceHashFromBuildInfo(JSON.parse(readFileSync(helperBuildInfo, "utf8")), () => hashFile(builtHelper));
+  } catch {
+    // Builds made outside the development script predate the metadata file.
+    return hashFile(builtHelper);
+  }
+}
+
+function sourceHashFromBuildInfo(info, fallback) {
+  if (typeof info?.sourceHash === "string" && /^[a-f0-9]{64}$/i.test(info.sourceHash)) {
+    return info.sourceHash;
+  }
+  return fallback();
 }
 
 function helperPathForApp(appPath) {
@@ -103,4 +130,4 @@ function run(command, args) {
   }
 }
 
-module.exports = { helperPathForApp, prepareDevElectronApp };
+module.exports = { helperPathForApp, prepareDevElectronApp, sourceHashFromBuildInfo };
