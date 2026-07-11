@@ -21,11 +21,7 @@ export type ThreadMutationActionsDeps = {
   getAppState: () => AppState;
   setAppState: SetAppState;
   getActiveThreadID: () => string | undefined;
-  getArchiveConfirmThreadID: () => string | undefined;
   getArchiveConfirmSubagentID: () => string | undefined;
-  setArchiveConfirmThreadID: (
-    update: SetStateAction<string | undefined>,
-  ) => void;
   setArchiveConfirmSubagentID: (
     update: SetStateAction<string | undefined>,
   ) => void;
@@ -50,6 +46,7 @@ export type ThreadMutationActions = {
     participantID: string,
   ) => Promise<void>;
   archiveThread: (thread: ThreadSummary) => Promise<void>;
+  unarchiveThread: (thread: Pick<ThreadSummary, "id">) => Promise<void>;
   deleteThread: (thread: ThreadSummary) => Promise<void>;
   toggleSubagentPinned: (agent: Agent) => Promise<void>;
   archiveSubagent: (agent: Agent) => Promise<void>;
@@ -107,7 +104,6 @@ export function createThreadMutationActions(
     if (!deps.getAppState().activeContext) {
       return;
     }
-    deps.setArchiveConfirmThreadID(undefined);
     const localDemoThread = deps.localDemoThreadsRef.current.get(thread.id);
     if (localDemoThread) {
       const nextThread = { ...localDemoThread, pinned: !thread.pinned };
@@ -254,10 +250,6 @@ export function createThreadMutationActions(
     ) {
       return;
     }
-    if (deps.getArchiveConfirmThreadID() !== thread.id) {
-      deps.setArchiveConfirmThreadID(thread.id);
-      return;
-    }
     deps.clearThreadPendingComposerMessages(thread.id);
     const archivedActiveThread = thread.id === deps.getActiveThreadID();
     const fallbackDraft = archivedActiveThread
@@ -268,35 +260,74 @@ export function createThreadMutationActions(
     }
     if (isLocalDemoThread) {
       removeLocalDemoThread(thread.id);
-      deps.setArchiveConfirmThreadID(undefined);
       deps.setAppState((current) => {
         const nextTabs = removeSessionTab(
           current.sessionTabs,
           threadSessionTabID(thread.id),
         );
-        return archiveRemovedThreadState(current, thread.id, nextTabs, fallbackDraft);
+        return archiveMarkThreadState(current, thread.id, true, nextTabs, fallbackDraft);
       });
       return;
     }
     try {
       const result = await window.wuu.archiveThread(thread.id, true);
       deps.updateCachedSidebarThread(result.thread);
-      deps.setArchiveConfirmThreadID(undefined);
       deps.setAppState((current) => {
         const nextTabs = removeSessionTab(
           current.sessionTabs,
           threadSessionTabID(thread.id),
         );
-        return archiveRemovedThreadState(
+        return archiveMarkThreadState(
           current,
           result.thread.id,
+          true,
           nextTabs,
           fallbackDraft,
         );
       });
     } catch (error) {
-      deps.setArchiveConfirmThreadID(undefined);
       setStatus(error instanceof Error ? error.message : "archive thread failed");
+    }
+  }
+
+  async function unarchiveThread(thread: Pick<ThreadSummary, "id">): Promise<void> {
+    const isLocalDemoThread = deps.localDemoThreadsRef.current.has(thread.id);
+    if (isLocalDemoThread) {
+      const localDemoThread = deps.localDemoThreadsRef.current.get(thread.id);
+      if (!localDemoThread) {
+        return;
+      }
+      const nextThread = { ...localDemoThread, archived: false };
+      upsertLocalDemoThread(nextThread);
+      deps.setAppState((current) => ({
+        ...current,
+        thread:
+          current.thread?.id === thread.id ? nextThread : current.thread,
+        secondaryThread:
+          current.secondaryThread?.id === thread.id
+            ? nextThread
+            : current.secondaryThread,
+        threads: upsertThread(current.threads, nextThread),
+        status: current.status === "ready" ? "ready" : current.status,
+      }));
+      return;
+    }
+    try {
+      const result = await window.wuu.archiveThread(thread.id, false);
+      deps.updateCachedSidebarThread(result.thread);
+      deps.setAppState((current) => ({
+        ...current,
+        thread:
+          current.thread?.id === thread.id ? result.thread : current.thread,
+        secondaryThread:
+          current.secondaryThread?.id === thread.id
+            ? result.thread
+            : current.secondaryThread,
+        threads: upsertThread(current.threads, result.thread),
+        status: current.status === "ready" ? "ready" : current.status,
+      }));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "unarchive thread failed");
     }
   }
 
@@ -324,24 +355,22 @@ export function createThreadMutationActions(
         await window.wuu.deleteThread(thread.id);
       }
       deps.removeCachedSidebarThread(thread.id);
-      deps.setArchiveConfirmThreadID((current) =>
-        current === thread.id ? undefined : current,
-      );
       deps.setAppState((current) => {
         const nextTabs = removeSessionTab(
           current.sessionTabs,
           threadSessionTabID(thread.id),
         );
-        return archiveRemovedThreadState(current, thread.id, nextTabs, fallbackDraft);
+        return archiveMarkThreadState(current, thread.id, false, nextTabs, fallbackDraft);
       });
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "delete thread failed");
     }
   }
 
-  function archiveRemovedThreadState(
+  function archiveMarkThreadState(
     current: AppState,
     threadID: string,
+    archived: boolean,
     nextTabs: AppState["sessionTabs"],
     fallbackDraft: SessionTab | undefined,
   ): AppState {
@@ -363,7 +392,18 @@ export function createThreadMutationActions(
         fallbackDraft
           ? fallbackDraft.id
           : current.activeSessionTabID,
-      threads: current.threads.filter((candidate) => candidate.id !== threadID),
+      // Keep the thread in `threads` when archiving so the Settings → Archive
+      // page can list every archived session; the sidebar already filters by
+      // `!archived`. Deletion (`archived === false` from deleteThread) still
+      // drops the record entirely.
+      threads:
+        archived === false
+          ? current.threads.filter((candidate) => candidate.id !== threadID)
+          : current.threads.map((candidate) =>
+              candidate.id === threadID
+                ? { ...candidate, archived: true }
+                : candidate,
+            ),
       running: activeThreadIDForState(current) === threadID ? false : current.running,
       status: "ready",
     };
@@ -435,6 +475,7 @@ export function createThreadMutationActions(
     removeThreadMemberByID,
     addThreadMemberByID,
     archiveThread,
+    unarchiveThread,
     deleteThread,
     toggleSubagentPinned,
     archiveSubagent,

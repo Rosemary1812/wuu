@@ -39,7 +39,7 @@ export type SessionTabActionsDeps = {
   ) => SessionTab;
   selectThread: (threadID: string) => Promise<void>;
   useNoProject: (fresh: boolean) => Promise<void>;
-  setArchiveConfirmThreadID: (threadID: string | undefined) => void;
+  
   poppingOutTabIDsRef: MutableSetRef;
   beginViewSwitch: (kind: ViewSwitchKind, targetID: string) => number;
   finishViewSwitch: (requestID: number) => boolean;
@@ -86,7 +86,7 @@ export function createSessionTabActions(
       }
       return;
     }
-    deps.setArchiveConfirmThreadID(undefined);
+    
     const sameContext = sameRuntimeContext(
       tab.context,
       currentState.activeContext,
@@ -254,7 +254,7 @@ export function createSessionTabActions(
       nextTabs[Math.min(tabIndex, Math.max(nextTabs.length - 1, 0))] ??
       deps.nextDraftSessionTab(closedTab.context);
     const tabsWithFallback = nextTabs.length > 0 ? nextTabs : [fallbackTab];
-    deps.setArchiveConfirmThreadID(undefined);
+    
     if (fallbackTab.kind === "skills" || fallbackTab.kind === "board") {
       const sameContext = sameRuntimeContext(
         fallbackTab.context,
@@ -461,7 +461,7 @@ export function createSessionTabActions(
       return;
     }
     deps.cancelViewSwitch();
-    deps.setArchiveConfirmThreadID(undefined);
+    
     const outgoingDraft = deps.getPrimaryComposerDraft();
     deps.clearPrimaryComposerDraft();
     if (

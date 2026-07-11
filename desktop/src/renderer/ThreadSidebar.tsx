@@ -41,7 +41,7 @@ export function ProjectList({
   threadsByProjectID,
   activeThreadID,
   pendingThreadID,
-  archiveConfirmThreadID,
+  
   lastViewedTurnByThreadID,
   lastViewedMessageSeqByThreadID,
   scratchPseudoProjectID,
@@ -53,7 +53,6 @@ export function ProjectList({
   onArchiveThread,
   onDeleteThread,
   onRenameThread,
-  onClearArchiveConfirm
 }: {
   projects: DesktopProject[];
   activeID?: string;
@@ -62,7 +61,7 @@ export function ProjectList({
   threadsByProjectID: Record<string, ThreadSummary[]>;
   activeThreadID?: string;
   pendingThreadID?: string;
-  archiveConfirmThreadID?: string;
+  
   lastViewedTurnByThreadID: Record<string, string>;
   // Chat-style (DM/group) unread offset map; optional so test harnesses can
   // omit it. Absent entries mean "never viewed".
@@ -83,7 +82,7 @@ export function ProjectList({
   onArchiveThread: (thread: ThreadSummary) => void;
   onDeleteThread: (thread: ThreadSummary) => void;
   onRenameThread?: (thread: ThreadSummary, title: string) => void;
-  onClearArchiveConfirm: (threadID: string) => void;
+  
 }): JSX.Element {
   return (
     <div className="projects">
@@ -97,7 +96,7 @@ export function ProjectList({
           threadsByProjectID={threadsByProjectID}
           activeThreadID={activeThreadID}
           pendingThreadID={pendingThreadID}
-          archiveConfirmThreadID={archiveConfirmThreadID}
+          
           lastViewedTurnByThreadID={lastViewedTurnByThreadID}
           lastViewedMessageSeqByThreadID={lastViewedMessageSeqByThreadID}
           scratchPseudoProjectID={scratchPseudoProjectID}
@@ -109,7 +108,7 @@ export function ProjectList({
           onArchiveThread={onArchiveThread}
           onDeleteThread={onDeleteThread}
           onRenameThread={onRenameThread}
-          onClearArchiveConfirm={onClearArchiveConfirm}
+          
         />
       ))}
     </div>
@@ -130,7 +129,7 @@ export function ProjectGroup({
   threadsByProjectID,
   activeThreadID,
   pendingThreadID,
-  archiveConfirmThreadID,
+  
   lastViewedTurnByThreadID,
   lastViewedMessageSeqByThreadID,
   scratchPseudoProjectID,
@@ -142,7 +141,7 @@ export function ProjectGroup({
   onArchiveThread,
   onDeleteThread,
   onRenameThread,
-  onClearArchiveConfirm,
+  
   onRemoveProject,
   onRelocateProject,
 }: {
@@ -153,7 +152,7 @@ export function ProjectGroup({
   threadsByProjectID: Record<string, ThreadSummary[]>;
   activeThreadID?: string;
   pendingThreadID?: string;
-  archiveConfirmThreadID?: string;
+  
   lastViewedTurnByThreadID: Record<string, string>;
   // Chat-style (DM/group) unread offset map; optional so test harnesses can
   // omit it. Absent entries mean "never viewed".
@@ -167,7 +166,7 @@ export function ProjectGroup({
   onArchiveThread: (thread: ThreadSummary) => void;
   onDeleteThread: (thread: ThreadSummary) => void;
   onRenameThread?: (thread: ThreadSummary, title: string) => void;
-  onClearArchiveConfirm: (threadID: string) => void;
+  
   // Remove a real workspace from the sidebar. Absent for the 对话 scratch
   // pseudo project (and never wired for 群聊 / Agents, which are separate
   // sections), so those can never be removed.
@@ -278,7 +277,7 @@ export function ProjectGroup({
             threads={projectThreads}
             activeID={activeThreadID}
             pendingThreadID={pendingThreadID}
-            archiveConfirmThreadID={archiveConfirmThreadID}
+            
             lastViewedTurnByThreadID={lastViewedTurnByThreadID}
             lastViewedMessageSeqByThreadID={lastViewedMessageSeqByThreadID}
             visibleCount={visibleThreadCount}
@@ -287,7 +286,7 @@ export function ProjectGroup({
             onArchive={onArchiveThread}
             onDelete={onDeleteThread}
             onRename={onRenameThread}
-            onClearArchiveConfirm={onClearArchiveConfirm}
+            
             onShowMore={showMoreProjectThreads}
             onCollapse={collapseProjectThreads}
           />
@@ -361,7 +360,7 @@ function ThreadList({
   threads,
   activeID,
   pendingThreadID,
-  archiveConfirmThreadID,
+  
   lastViewedTurnByThreadID,
   lastViewedMessageSeqByThreadID,
   visibleCount,
@@ -370,7 +369,7 @@ function ThreadList({
   onArchive,
   onDelete,
   onRename,
-  onClearArchiveConfirm,
+  
   onSidebarThreadHover,
   onShowMore,
   onCollapse
@@ -378,7 +377,7 @@ function ThreadList({
   threads: ThreadSummary[];
   activeID?: string;
   pendingThreadID?: string;
-  archiveConfirmThreadID?: string;
+  
   lastViewedTurnByThreadID: Record<string, string>;
   // Chat-style (DM/group) unread offset map; optional so test harnesses can
   // omit it. Absent entries mean "never viewed".
@@ -389,7 +388,7 @@ function ThreadList({
   onArchive: (thread: ThreadSummary) => void;
   onDelete: (thread: ThreadSummary) => void;
   onRename?: (thread: ThreadSummary, title: string) => void;
-  onClearArchiveConfirm: (threadID: string) => void;
+  
   // Forwarded so ThreadRows can report which row is currently hovered; the
   // conversation pane owns the preview render so the card lives in the
   // message stream, not the sidebar DOM.
@@ -440,7 +439,7 @@ function ThreadList({
         threads={limitedThreads}
         activeID={activeID}
         pendingThreadID={pendingThreadID}
-        archiveConfirmThreadID={archiveConfirmThreadID}
+        
         lastViewedTurnByThreadID={lastViewedTurnByThreadID}
         lastViewedMessageSeqByThreadID={lastViewedMessageSeqByThreadID}
         onSelect={onSelect}
@@ -448,7 +447,7 @@ function ThreadList({
         onArchive={onArchive}
         onDelete={onDelete}
         onRename={onRename}
-        onClearArchiveConfirm={onClearArchiveConfirm}
+        
       />
       {showFooter ? (
         <div className="thread-list-footer">
@@ -541,7 +540,7 @@ function ThreadRows({
   threads,
   activeID,
   pendingThreadID,
-  archiveConfirmThreadID,
+  
   lastViewedTurnByThreadID,
   lastViewedMessageSeqByThreadID,
   onSelect,
@@ -549,13 +548,13 @@ function ThreadRows({
   onArchive,
   onDelete,
   onRename,
-  onClearArchiveConfirm,
+  
   onSidebarThreadHover,
 }: {
   threads: ThreadSummary[];
   activeID?: string;
   pendingThreadID?: string;
-  archiveConfirmThreadID?: string;
+  
   lastViewedTurnByThreadID: Record<string, string>;
   // Chat-style (DM/group) unread offset map; optional so test harnesses can
   // omit it. Absent entries mean "never viewed".
@@ -565,7 +564,7 @@ function ThreadRows({
   onArchive: (thread: ThreadSummary) => void;
   onDelete: (thread: ThreadSummary) => void;
   onRename?: (thread: ThreadSummary, title: string) => void;
-  onClearArchiveConfirm: (threadID: string) => void;
+  
   // Fires when a row is hovered/unhovered so the conversation pane can
   // render a "what did this thread actually do" preview without the card
   // living inside the sidebar DOM (which would put it on top of the left
@@ -620,7 +619,6 @@ function ThreadRows({
   return (
     <>
       {threads.map((thread) => {
-        const archiveConfirming = archiveConfirmThreadID === thread.id;
         const pendingSwitch = pendingThreadID === thread.id;
         const running = isThreadRunning(thread);
         const title = baseThreadTitle(thread, threads);
@@ -641,7 +639,6 @@ function ThreadRows({
               pendingSwitch ? " pending-switch" : ""
             }${unread ? " has-unread" : ""}`}
             aria-current={thread.id === activeID ? "page" : undefined}
-            onMouseLeave={() => onClearArchiveConfirm(thread.id)}
             onContextMenu={(e) => handleContextMenu(thread, e)}
           >
               {running ? (
@@ -674,10 +671,10 @@ function ThreadRows({
                   <Pin className="icon-sm" />
                 </button>
                 <button
-                  className={`sidebar-row-icon-button thread-row-action archive ${archiveConfirming ? "confirm" : ""}`}
+                  className="sidebar-row-icon-button thread-row-action archive"
                   type="button"
-                  aria-label={archiveConfirming ? "确认归档" : "归档"}
-                  title={archiveConfirming ? "再次点击归档" : "归档"}
+                  aria-label="归档"
+                  title="归档"
                   onClick={() => onArchive(thread)}
                 >
                   <Archive className="icon-sm" />
@@ -759,7 +756,7 @@ export function PinnedThreadList({
   threads,
   activeID,
   pendingThreadID,
-  archiveConfirmThreadID,
+  
   lastViewedTurnByThreadID,
   lastViewedMessageSeqByThreadID,
   onSelect,
@@ -767,12 +764,12 @@ export function PinnedThreadList({
   onArchive,
   onDelete,
   onRename,
-  onClearArchiveConfirm,
+  
 }: {
   threads: ThreadSummary[];
   activeID?: string;
   pendingThreadID?: string;
-  archiveConfirmThreadID?: string;
+  
   lastViewedTurnByThreadID: Record<string, string>;
   // Chat-style (DM/group) unread offset map; optional so test harnesses can
   // omit it. Absent entries mean "never viewed".
@@ -782,7 +779,7 @@ export function PinnedThreadList({
   onArchive: (thread: ThreadSummary) => void;
   onDelete: (thread: ThreadSummary) => void;
   onRename?: (thread: ThreadSummary, title: string) => void;
-  onClearArchiveConfirm: (threadID: string) => void;
+  
 }): JSX.Element {
   return (
     <div className="pinned-thread-list">
@@ -790,7 +787,7 @@ export function PinnedThreadList({
         threads={threads}
         activeID={activeID}
         pendingThreadID={pendingThreadID}
-        archiveConfirmThreadID={archiveConfirmThreadID}
+        
         lastViewedTurnByThreadID={lastViewedTurnByThreadID}
         lastViewedMessageSeqByThreadID={lastViewedMessageSeqByThreadID}
         onSelect={onSelect}
@@ -798,7 +795,7 @@ export function PinnedThreadList({
         onArchive={onArchive}
         onDelete={onDelete}
         onRename={onRename}
-        onClearArchiveConfirm={onClearArchiveConfirm}
+        
       />
     </div>
   );

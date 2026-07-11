@@ -45,9 +45,20 @@ import type {
   RemoteControlSnapshot,
   RuntimeConnectionUpdate,
   SettingsUsageDay,
-  SettingsUsageResponse,
-  ThreadSummary
+  SettingsUsageResponse
 } from "../shared/protocol";
+
+// 设置 → 归档页只读侧边栏归档会话的最小字段。
+// `state.threads` 是 `Thread[]`（含 `title?: string`），而 ThreadSummary
+// 额外要求 `turns` / `turn_count` 等计算字段，渲染层并不关心。
+// 用结构性子集既兼容 Thread，也避免把 ThreadSummary 的派生语义
+// 漏到 SettingsView。
+export type ArchivedSessionView = {
+  id: string;
+  title?: string;
+  cwd: string;
+  updated_at: string;
+};
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 import { CliInstallSection } from "./CliInstallSection";
 import { MemoryPanel } from "./MemoryPanel";
@@ -136,8 +147,8 @@ export function SettingsView({
   onSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
   onSidebarSeparatorDoubleClick: () => void;
   // 归档页只读侧边栏归档清单 + 恢复回调。列表为空时渲染空态卡片。
-  archivedThreads?: readonly ThreadSummary[];
-  onUnarchiveThread: (thread: ThreadSummary) => void;
+  archivedThreads?: readonly ArchivedSessionView[];
+  onUnarchiveThread: (thread: ArchivedSessionView) => void;
 }): JSX.Element {
   const providers = initialized?.providers ?? [];
   const runningProviderNameSet = useMemo(
@@ -1870,8 +1881,8 @@ function SettingsArchivePage({
   archivedThreads,
   onUnarchive,
 }: {
-  archivedThreads: readonly ThreadSummary[];
-  onUnarchive: (thread: ThreadSummary) => void;
+  archivedThreads: readonly ArchivedSessionView[];
+  onUnarchive: (thread: ArchivedSessionView) => void;
 }): JSX.Element {
   // 列表按 `updated_at` 倒序排，最近归档的会话排在最上面，跟侧边栏的"最新活动优先"心智一致。
   const sortedThreads = [...archivedThreads].sort((a, b) =>
@@ -1894,11 +1905,11 @@ function SettingsArchivePage({
         ) : (
           <div className="settings-archive-list" aria-label="已归档会话列表">
             {sortedThreads.map((thread) => (
-              <SettingsRow key={thread.id}>
+              <SettingsRow key={thread.id} title={(thread.title ?? "").trim() || "未命名会话"}>
                 <div className="settings-archive-row">
                   <div className="settings-archive-info">
                     <span className="settings-archive-title">
-                      {thread.title.trim() || "未命名会话"}
+                      {(thread.title ?? "").trim() || "未命名会话"}
                     </span>
                     <span
                       className="settings-archive-cwd"
@@ -1910,7 +1921,7 @@ function SettingsArchivePage({
                   <button
                     type="button"
                     className="settings-archive-restore"
-                    aria-label={`恢复 ${thread.title.trim() || "未命名会话"}`}
+                    aria-label={`恢复 ${(thread.title ?? "").trim() || "未命名会话"}`}
                     onClick={() => onUnarchive(thread)}
                   >
                     <Archive className="icon-sm" aria-hidden="true" />

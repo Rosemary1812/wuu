@@ -53,7 +53,7 @@ function buildActions({
     nextDraftSessionTab,
     selectThread,
     useNoProject,
-    setArchiveConfirmThreadID: vi.fn(),
+    
     poppingOutTabIDsRef,
     beginViewSwitch: vi.fn(() => 1),
     finishViewSwitch: vi.fn(() => true),

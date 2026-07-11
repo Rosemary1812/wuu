@@ -27,9 +27,7 @@ export type ConversationDemoPaneActionsDeps = {
   setAppState: SetAppState;
   localDemoThreadsRef: MutableRefObject<Map<string, Thread>>;
   cancelViewSwitch: () => void;
-  setArchiveConfirmThreadID: (
-    update: SetStateAction<string | undefined>,
-  ) => void;
+  
   setPrompt: Dispatch<SetStateAction<string>>;
   setComposerImages: Dispatch<SetStateAction<ComposerImage[]>>;
   setComposerFiles: Dispatch<SetStateAction<ComposerFile[]>>;
@@ -56,7 +54,7 @@ export function createConversationDemoPaneActions(
 ): ConversationDemoPaneActions {
   function resetComposerForDemo(): void {
     deps.cancelViewSwitch();
-    deps.setArchiveConfirmThreadID(undefined);
+    
     deps.setPrompt("");
     deps.setComposerImages([]);
     deps.setComposerFiles([]);

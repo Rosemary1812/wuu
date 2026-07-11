@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { SettingsView, type SettingsPage } from "./SettingsView";
+import { SettingsView, type ArchivedSessionView, type SettingsPage } from "./SettingsView";
 import type {
   BuildInfoResult,
   CodexPetsSnapshot,
@@ -102,6 +102,11 @@ function renderSettings(props: {
   onRemoveProvider?: (provider: string) => Promise<void>;
   onAdvancedSave?: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
   onGeneralSave?: (settings: RuntimeGeneralSettingsUpdate) => Promise<void>;
+  // ArchivedSessionView 是结构子集（id/title?/cwd/updated_at），这里
+  // 直接传对象字面量，避免引入 ThreadSummary（它要求 turns/turn_count
+  // 等计算字段，测试场景下冗余）。
+  archivedThreads?: readonly ArchivedSessionView[];
+  onUnarchiveThread?: (thread: ArchivedSessionView) => void;
 }): { about: Element | null; text: () => string; rootText: () => string } {
   const usageRange: SettingsUsageRange = props.usageRange ?? "all";
   const setUsageRange = vi.fn();
@@ -136,6 +141,8 @@ function renderSettings(props: {
         onSidebarResizeStart={noopResizeStart}
         onSidebarSeparatorKey={noopResizeKey}
         onSidebarSeparatorDoubleClick={() => {}}
+        archivedThreads={props.archivedThreads ?? []}
+        onUnarchiveThread={props.onUnarchiveThread ?? (() => {})}
       />,
     );
   });
@@ -146,6 +153,29 @@ function renderSettings(props: {
     rootText: () => container.textContent ?? "",
   };
 }
+
+describe("SettingsView shell", () => {
+  it("renders the brand placeholder at the top of the settings sidebar", () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    renderSettings({ initialized: baseInitialized() });
+
+    const sidebar = container.querySelector(".settings-sidebar");
+    const trafficSpacer = sidebar?.querySelector(".traffic-spacer");
+    const brand = sidebar?.querySelector(".sidebar-brand");
+    const backButton = sidebar?.querySelector(".settings-back-button");
+
+    // 品牌占位必须排在 traffic-spacer 之后、返回应用 按钮之前，
+    // 跟主侧栏的相对位置一致；等真正的 logo / lockup 落地后两个测试一起替换。
+    expect(brand).not.toBeNull();
+    expect(brand?.querySelector(".sidebar-brand-wordmark")?.textContent).toBe("wuu");
+    expect(brand?.previousElementSibling).toBe(trafficSpacer);
+    expect(brand?.nextElementSibling).toBe(backButton);
+    expect(brand?.textContent?.trim()).toBe("wuu");
+  });
+});
 
 describe("SettingsView provider configuration", () => {
   it("shows BYOK provider controls as a first-class settings page", async () => {
@@ -968,5 +998,89 @@ describe("SettingsView About section", () => {
     expect(rootText()).toContain("OpenAI API");
     expect(rootText()).not.toContain("最近记录");
     expect(container.querySelector(".settings-cache-heatmap")).not.toBeNull();
+  });
+});
+
+describe("SettingsView archive page", () => {
+  // SettingsView 在挂载时会同步触发 `window.wuu.getBuildInfo()` / `listMCPServers()`
+  // 这两个 useEffect，archive 页的测试也得装上 stub，不然 effect 一进来就抛。
+  beforeEach(() => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+  });
+
+  // ArchivedSessionView 的结构子集：渲染层只读 id/title?/cwd/updated_at。
+  // 这里直接返回对象字面量，结构上兼容 SettingsView 里的 ArchivedSessionView，
+  // 避免引入 ThreadSummary（它要求 turns/turn_count 等计算字段，测试场景下冗余）。
+  function archivedThread(
+    id: string,
+    overrides: Partial<ArchivedSessionView> = {},
+  ): ArchivedSessionView {
+    return {
+      id,
+      title: `已归档 ${id}`,
+      cwd: `/repo/${id}`,
+      updated_at: "2026-06-18T12:00:00Z",
+      ...overrides,
+    };
+  }
+
+  it("renders the empty-state card when no threads are archived", () => {
+    renderSettings({
+      initialized: baseInitialized(),
+      initialPage: "archive",
+      archivedThreads: [],
+    });
+
+    expect(container.textContent).toContain("暂无已归档的会话");
+    expect(container.querySelector(".settings-archive-empty")).not.toBeNull();
+    expect(container.querySelector(".settings-archive-list")).toBeNull();
+  });
+
+  it("lists archived threads and orders them by updated_at descending", () => {
+    renderSettings({
+      initialized: baseInitialized(),
+      initialPage: "archive",
+      archivedThreads: [
+        archivedThread("older", {
+          title: "旧会话",
+          updated_at: "2026-06-10T00:00:00Z",
+        }),
+        archivedThread("newer", {
+          title: "新会话",
+          updated_at: "2026-06-20T00:00:00Z",
+        }),
+      ],
+    });
+
+    const titles = Array.from(
+      container.querySelectorAll<HTMLElement>(".settings-archive-title"),
+    ).map((node) => node.textContent);
+    // 较新的会话排在前面，跟侧边栏"最新活动优先"的心智一致
+    expect(titles).toEqual(["新会话", "旧会话"]);
+  });
+
+  it("invokes onUnarchiveThread with the clicked thread", () => {
+    const onUnarchiveThread = vi.fn();
+    const target = archivedThread("dm-1", { title: "DM 旧会话" });
+    renderSettings({
+      initialized: baseInitialized(),
+      initialPage: "archive",
+      archivedThreads: [target],
+      onUnarchiveThread,
+    });
+
+    const restoreButton = container.querySelector<HTMLButtonElement>(
+      ".settings-archive-restore",
+    );
+    expect(restoreButton).not.toBeNull();
+    act(() => {
+      restoreButton?.click();
+    });
+
+    expect(onUnarchiveThread).toHaveBeenCalledTimes(1);
+    expect(onUnarchiveThread).toHaveBeenCalledWith(target);
   });
 });

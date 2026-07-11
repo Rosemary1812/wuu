@@ -85,18 +85,17 @@ function installWuuApi(baseThread: Thread): {
 function buildActions({
   initial,
   activeThreadID,
-  archiveConfirmThreadID,
+  
   archiveConfirmSubagentID,
   localDemoThreads = new Map<string, Thread>(),
 }: {
   initial: AppState;
   activeThreadID?: string;
-  archiveConfirmThreadID?: string;
+  
   archiveConfirmSubagentID?: string;
   localDemoThreads?: Map<string, Thread>;
 }) {
   let appState = initial;
-  let confirmThreadID = archiveConfirmThreadID;
   let confirmSubagentID = archiveConfirmSubagentID;
   const localDemoThreadsRef = { current: localDemoThreads };
   const clearPrimaryComposerDraft = vi.fn();
@@ -110,12 +109,7 @@ function buildActions({
       appState = typeof update === "function" ? update(appState) : update;
     },
     getActiveThreadID: () => activeThreadID,
-    getArchiveConfirmThreadID: () => confirmThreadID,
     getArchiveConfirmSubagentID: () => confirmSubagentID,
-    setArchiveConfirmThreadID: (update) => {
-      confirmThreadID =
-        typeof update === "function" ? update(confirmThreadID) : update;
-    },
     setArchiveConfirmSubagentID: (update) => {
       confirmSubagentID =
         typeof update === "function" ? update(confirmSubagentID) : update;
@@ -133,7 +127,7 @@ function buildActions({
   return {
     actions,
     getAppState: () => appState,
-    getConfirmThreadID: () => confirmThreadID,
+    
     clearPrimaryComposerDraft,
     resetSplitComposerDrafts,
     updateCachedSidebarThread,
@@ -185,10 +179,6 @@ describe("createThreadMutationActions", () => {
       },
       activeThreadID: base.id,
     });
-
-    await harness.actions.archiveThread(summary(base));
-    expect(harness.getConfirmThreadID()).toBe(base.id);
-    expect(api.archiveThread).not.toHaveBeenCalled();
 
     await harness.actions.archiveThread(summary(base));
     expect(api.archiveThread).toHaveBeenCalledWith(base.id, true);

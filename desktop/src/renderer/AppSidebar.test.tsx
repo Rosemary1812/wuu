@@ -136,7 +136,7 @@ function renderSidebar({
         busyParticipantIDs={busyParticipantIDs}
         pendingThreadID={undefined}
         pendingProjectID={undefined}
-        archiveConfirmThreadID={undefined}
+        
         collapsedSidebarSectionIDs={new Set()}
         expandedSidebarSectionIDs={new Set()}
         projectThreadsByProjectID={{}}
@@ -161,7 +161,7 @@ function renderSidebar({
         onArchiveThread={() => {}}
         onDeleteThread={() => {}}
         onRenameThread={() => {}}
-        onClearArchiveConfirm={() => {}}
+        
         onToggleProjectMenu={() => {}}
         onCreateProject={() => {}}
         onOpenProjectFolder={() => {}}
@@ -212,6 +212,24 @@ describe("AppSidebar layout", () => {
     expect(scrollRegion?.classList.contains("scrollbar-hidden")).toBe(true);
     expect(scrollRegion?.contains(primaryNav)).toBe(false);
     expect(scrollRegion?.querySelector(".project-section")).not.toBeNull();
+  });
+
+  it("renders the brand placeholder above the primary nav", () => {
+    renderSidebar();
+
+    const content = container.querySelector(".sidebar-content");
+    const brand = content?.querySelector(".sidebar-brand");
+    const primaryNav = content?.querySelector(".primary-nav");
+
+    expect(brand).not.toBeNull();
+    expect(brand?.querySelector(".sidebar-brand-wordmark")?.textContent).toBe("wuu");
+    // 品牌区只放 wordmark，不放"草稿占位"之类的小灰字；textContent 必须只剩 wuu，
+    // 否则 draft 标注会被静悄悄塞回来。
+    expect(brand?.textContent?.trim()).toBe("wuu");
+    expect(brand?.querySelector(".sidebar-brand-tag")).toBeNull();
+    // 品牌占位必须排在 traffic-spacer 之后、primary-nav 之前，等真正的
+    // logo / lockup 落地后这个测试再一起替换。
+    expect(brand?.nextElementSibling).toBe(primaryNav);
   });
 
   it("orders the primary actions by starting, finding, then extending work", () => {

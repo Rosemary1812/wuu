@@ -206,6 +206,7 @@ import {
 import { deriveActiveSessionHint } from "./activeSessionHint";
 import { pullRequestUnavailableReason } from "./RuntimeHelpers";
 import type { SettingsPage } from "./SettingsView";
+import { ArchiveTip } from "./ArchiveTip";
 import type { ComposerGoalSummary } from "../shared/protocol";
 import { useSettingsRuntimeState } from "./SettingsRuntimeState";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
@@ -675,13 +676,22 @@ export function App(): JSX.Element {
         status,
       })),
   });
-  const [archiveConfirmThreadID, setArchiveConfirmThreadID] = useState<
-    string | undefined
-  >(undefined);
-  // Mirrors `archiveConfirmThreadID` for the info-panel subagent rows.
-  // The state lives in App rather than the panel so the "press again to
-  // confirm" survives the panel being toggled off and on, and so a
-  // single archive button click in either surface is consistent.
+  // Archive is now a single-click action (the previous two-step "click again
+  // to confirm" pattern was too easy to misfire). The toast/notification lives
+  // in `archiveTip` below; the underlying IPC still goes through
+  // `window.wuu.archiveThread(id, true)`.
+  const [archiveTip, setArchiveTip] = useState<{
+    threadID: string;
+    threadTitle: string;
+  } | null>(null);
+  const dismissArchiveTip = useCallback(() => {
+    setArchiveTip(null);
+  }, []);
+  // Mirrors `archiveConfirmSubagentID` (legacy confirm state) for the
+  // info-panel subagent rows. The state lives in App rather than the panel
+  // so the "press again to confirm" survives the panel being toggled off
+  // and on, and so a single archive button click in either surface is
+  // consistent.
   const [archiveConfirmSubagentID, setArchiveConfirmSubagentID] = useState<
     string | undefined
   >(undefined);
@@ -2551,6 +2561,17 @@ export function App(): JSX.Element {
     }
   }
 
+  function openArchiveSettings(): void {
+    // Used by both the sidebar entry (when one is added later) and the
+    // archive-tip toast: always jump the Settings shell to the Archive page,
+    // even if Settings was already open on a different tab.
+    setProjectMenuOpen(false);
+    setRuntimeMenuOpen(false);
+    setCodexRuntimeMenu(null);
+    setSettingsInitialPage("archive");
+    setSettingsOpen(true);
+  }
+
   function closeProjectMenus(): void {
     setProjectMenuOpen(false);
     setRuntimeMenuOpen(false);
@@ -2667,7 +2688,7 @@ export function App(): JSX.Element {
     restoreLoadedRuntimeComposerDraft,
     nextDraftSessionTab,
     closeProjectMenus,
-    setArchiveConfirmThreadID,
+    
     beginViewSwitch,
     finishViewSwitch,
     cancelViewSwitch,
@@ -2693,7 +2714,7 @@ export function App(): JSX.Element {
     getSidebarThreads: () => sidebarThreads,
     getSidebarProjectThreadsByProjectID: () =>
       sidebarProjectThreadsByProjectID,
-    setArchiveConfirmThreadID,
+    
     beginViewSwitch,
     beginInstantThreadSwitch,
     finishViewSwitch,
@@ -2734,7 +2755,7 @@ export function App(): JSX.Element {
     nextDraftSessionTab,
     selectThread,
     useNoProject,
-    setArchiveConfirmThreadID,
+    
     poppingOutTabIDsRef,
     beginViewSwitch,
     finishViewSwitch,
@@ -2749,6 +2770,7 @@ export function App(): JSX.Element {
     removeThreadMemberByID,
     addThreadMemberByID,
     archiveThread,
+    unarchiveThread,
     deleteThread,
     toggleSubagentPinned,
     archiveSubagent,
@@ -2756,9 +2778,8 @@ export function App(): JSX.Element {
     getAppState: () => appStateRef.current,
     setAppState: setState,
     getActiveThreadID: () => activeThreadID,
-    getArchiveConfirmThreadID: () => archiveConfirmThreadID,
     getArchiveConfirmSubagentID: () => archiveConfirmSubagentID,
-    setArchiveConfirmThreadID,
+    
     setArchiveConfirmSubagentID,
     localDemoThreadsRef,
     nextDraftSessionTab,
@@ -2821,7 +2842,7 @@ export function App(): JSX.Element {
     setPrompt,
     setComposerImages,
     setComposerFiles,
-    setArchiveConfirmThreadID,
+    
     cancelViewSwitch,
     activateThread,
     selectThread,
@@ -2853,7 +2874,7 @@ export function App(): JSX.Element {
     setAppState: setState,
     localDemoThreadsRef,
     cancelViewSwitch,
-    setArchiveConfirmThreadID,
+    
     setPrompt,
     setComposerImages,
     setComposerFiles,
@@ -2878,7 +2899,7 @@ export function App(): JSX.Element {
     getPendingFork: () => pendingFork,
     setPendingFork,
     setHistoryMessageEdit,
-    setArchiveConfirmThreadID,
+    
     getPrompt: () => prompt,
     getComposerImages: () => composerImages,
     getComposerFiles: () => composerFiles,
@@ -3731,47 +3752,65 @@ export function App(): JSX.Element {
     return true;
   }
 
+  const archiveTipNode = archiveTip ? (
+    <ArchiveTip
+      threadTitle={archiveTip.threadTitle}
+      onViewArchive={() => {
+        dismissArchiveTip();
+        openArchiveSettings();
+      }}
+      onDismiss={dismissArchiveTip}
+    />
+  ) : null;
+
   if (settingsOpen) {
     return (
-      <SettingsShellRenderer
-        initialized={state.initialized}
-        initialPage={settingsInitialPage}
-        memoryFocusParticipantID={settingsMemoryFocusID}
-        running={viewContextSwitchPending}
-        runningProviderNames={runningProviderNames}
-        participants={participants}
-        usage={settingsUsage}
-        usageRange={usageRange}
-        setUsageRange={setUsageRange}
-        codexPets={codexPets}
-        codexPetsLoading={codexPetsLoading}
-        codexPetsError={codexPetsError}
-        showDebugControlsSetting={ENABLE_DEBUG_CONTROL_SETTING}
-        debugControlsEnabled={debugControlsEnabled}
-        sidebarWidth={settingsSidebarWidth}
-        resizingSidebar={resizingSidebar}
-        shellRef={settingsShellRef}
-        onBack={() => {
-          setSettingsOpen(false);
-          setSettingsMemoryFocusID(undefined);
-        }}
-        onSave={updateRuntimeSettings}
-        onRemoveProvider={removeProvider}
-        onAdvancedSave={updateAdvancedSettings}
-        onGeneralSave={updateGeneralSettings}
-        onCodexPetsRefresh={refreshCodexPets}
-        onCodexPetsUpdate={updateCodexPets}
-        onDebugControlsChange={setDebugControlsEnabled}
-        onSidebarResizeStart={startSettingsSidebarResize}
-        onSidebarSeparatorKey={handleSettingsSidebarSeparatorKey}
-        onSidebarSeparatorDoubleClick={resetSettingsSidebarWidth}
-      />
+      <>
+        {archiveTipNode}
+        <SettingsShellRenderer
+          initialized={state.initialized}
+          initialPage={settingsInitialPage}
+          memoryFocusParticipantID={settingsMemoryFocusID}
+          running={viewContextSwitchPending}
+          runningProviderNames={runningProviderNames}
+          participants={participants}
+          usage={settingsUsage}
+          usageRange={usageRange}
+          setUsageRange={setUsageRange}
+          codexPets={codexPets}
+          codexPetsLoading={codexPetsLoading}
+          codexPetsError={codexPetsError}
+          showDebugControlsSetting={ENABLE_DEBUG_CONTROL_SETTING}
+          debugControlsEnabled={debugControlsEnabled}
+          sidebarWidth={settingsSidebarWidth}
+          resizingSidebar={resizingSidebar}
+          shellRef={settingsShellRef}
+          onBack={() => {
+            setSettingsOpen(false);
+            setSettingsMemoryFocusID(undefined);
+          }}
+          onSave={updateRuntimeSettings}
+          onRemoveProvider={removeProvider}
+          onAdvancedSave={updateAdvancedSettings}
+          onGeneralSave={updateGeneralSettings}
+          onCodexPetsRefresh={refreshCodexPets}
+          onCodexPetsUpdate={updateCodexPets}
+          onDebugControlsChange={setDebugControlsEnabled}
+          onSidebarResizeStart={startSettingsSidebarResize}
+          onSidebarSeparatorKey={handleSettingsSidebarSeparatorKey}
+          onSidebarSeparatorDoubleClick={resetSettingsSidebarWidth}
+          archivedThreads={state.threads.filter((thread) => thread.archived)}
+          onUnarchiveThread={(thread) => void unarchiveThread(thread)}
+        />
+      </>
     );
   }
 
   return (
-    <ImagePreviewProvider>
-      <div ref={appShellRef} className={shellClassName} style={shellStyle}>
+    <>
+      {archiveTipNode}
+      <ImagePreviewProvider>
+        <div ref={appShellRef} className={shellClassName} style={shellStyle}>
       {sidebarVisible ? (
         <>
           <div
@@ -3794,7 +3833,6 @@ export function App(): JSX.Element {
             busyParticipantIDs={busyParticipantIDs}
             pendingThreadID={visiblePendingThreadID}
             pendingProjectID={visiblePendingProjectID}
-            archiveConfirmThreadID={archiveConfirmThreadID}
             collapsedSidebarSectionIDs={collapsedSidebarSectionIDs}
             expandedSidebarSectionIDs={expandedSidebarSectionIDs}
             projectThreadsByProjectID={sidebarThreadsByProjectID}
@@ -3832,14 +3870,13 @@ export function App(): JSX.Element {
             onImportParticipants={importParticipantTemplate}
             onExportParticipants={exportParticipantTemplate}
             onTogglePinned={(thread) => void toggleThreadPinned(thread)}
-            onArchiveThread={(thread) => void archiveThread(thread)}
+            onArchiveThread={(thread) => {
+              const archivedTitle = thread.title?.trim() || "该会话";
+              void archiveThread(thread);
+              setArchiveTip({ threadID: thread.id, threadTitle: archivedTitle });
+            }}
             onDeleteThread={(thread) => void deleteThread(thread)}
             onRenameThread={(thread, title) => void renameThread(thread, title)}
-            onClearArchiveConfirm={(id) =>
-              setArchiveConfirmThreadID((current) =>
-                current === id ? undefined : current,
-              )
-            }
             onToggleProjectMenu={() => setProjectMenuOpen((open) => !open)}
             onCreateProject={() => void createBlankProject()}
             onOpenProjectFolder={() => void chooseProjectFolder()}
@@ -4386,5 +4423,6 @@ export function App(): JSX.Element {
       ) : null}
       </div>
     </ImagePreviewProvider>
+    </>
   );
 }

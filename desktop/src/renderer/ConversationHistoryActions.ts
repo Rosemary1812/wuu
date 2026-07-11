@@ -48,9 +48,7 @@ export type ConversationHistoryActionsDeps = {
   setHistoryMessageEdit: (
     update: SetStateAction<HistoryMessageEditState | undefined>,
   ) => void;
-  setArchiveConfirmThreadID: (
-    update: SetStateAction<string | undefined>,
-  ) => void;
+  
   getPrompt: () => string;
   getComposerImages: () => ComposerImage[];
   getComposerFiles: () => ComposerFile[];
@@ -150,7 +148,7 @@ export function createConversationHistoryActions(
         throw new Error(deps.worktreeForkNonGitReason);
       }
     }
-    deps.setArchiveConfirmThreadID(undefined);
+    
     deps.setAppState((current) => ({ ...current, status: "正在分叉会话" }));
     try {
       const fork = requireThread(
@@ -273,7 +271,7 @@ export function createConversationHistoryActions(
       }));
       return;
     }
-    deps.setArchiveConfirmThreadID(undefined);
+    
     deps.setHistoryMessageEdit({
       threadID: sourceThread.id,
       turnID,
@@ -341,7 +339,7 @@ export function createConversationHistoryActions(
         ? { ...current, submitting: true }
         : current,
     );
-    deps.setArchiveConfirmThreadID(undefined);
+    
     deps.setAppState((current) => ({
       ...current,
       status: "正在发送编辑后的消息",

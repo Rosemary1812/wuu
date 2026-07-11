@@ -322,7 +322,6 @@ export function AppSidebar({
   busyParticipantIDs,
   pendingThreadID,
   pendingProjectID,
-  archiveConfirmThreadID,
   collapsedSidebarSectionIDs,
   expandedSidebarSectionIDs,
   projectThreadsByProjectID,
@@ -346,7 +345,6 @@ export function AppSidebar({
   onArchiveThread,
   onDeleteThread,
   onRenameThread,
-  onClearArchiveConfirm,
   onToggleProjectMenu,
   onCreateProject,
   onOpenProjectFolder,
@@ -395,7 +393,6 @@ export function AppSidebar({
   busyParticipantIDs: ReadonlySet<string>;
   pendingThreadID?: string;
   pendingProjectID?: string;
-  archiveConfirmThreadID?: string;
   collapsedSidebarSectionIDs: Set<string>;
   expandedSidebarSectionIDs: Set<string>;
   projectThreadsByProjectID: Record<string, ThreadSummary[]>;
@@ -446,7 +443,6 @@ export function AppSidebar({
   onArchiveThread: (thread: ThreadSummary) => void;
   onDeleteThread: (thread: ThreadSummary) => void;
   onRenameThread: (thread: ThreadSummary, title: string) => void;
-  onClearArchiveConfirm: (threadID: string) => void;
   onToggleProjectMenu: () => void;
   onCreateProject: () => void;
   onOpenProjectFolder: () => void;
@@ -582,6 +578,14 @@ export function AppSidebar({
     >
       <div className="sidebar-content">
         <div className="traffic-spacer" />
+        {/*
+          * Brand placeholder at the top of the sidebar visible area.
+          * 等真正的 logo / wordmark / lockup 设计落地后整体替换。
+          * 见 desktop/DESIGN.md 的"克制"原则：用最少的署名时刻承载识别度。
+          */}
+        <div className="sidebar-brand">
+          <span className="sidebar-brand-wordmark">wuu</span>
+        </div>
         <nav className="primary-nav" aria-label="主导航">
           <button
             className="nav-item"
@@ -688,7 +692,7 @@ export function AppSidebar({
                       threads={pinnedRows}
                       activeID={activeThreadID}
                       pendingThreadID={pendingThreadID}
-                      archiveConfirmThreadID={archiveConfirmThreadID}
+                      
                       lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
                       lastViewedMessageSeqByThreadID={state.lastViewedMessageSeqByThreadID}
                       onSelect={onSelectThread}
@@ -696,7 +700,7 @@ export function AppSidebar({
                       onArchive={onArchiveThread}
                       onDelete={onDeleteThread}
                       onRename={onRenameThread}
-                      onClearArchiveConfirm={onClearArchiveConfirm}
+                      
                     />
                   </SidebarSection>
                 </div>
@@ -822,7 +826,7 @@ export function AppSidebar({
                         threads={groupRows}
                         activeID={activeThreadID}
                         pendingThreadID={pendingThreadID}
-                        archiveConfirmThreadID={archiveConfirmThreadID}
+                        
                         lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
                         lastViewedMessageSeqByThreadID={state.lastViewedMessageSeqByThreadID}
                         onSelect={onSelectThread}
@@ -830,7 +834,7 @@ export function AppSidebar({
                         onArchive={onArchiveThread}
                         onDelete={onDeleteThread}
                         onRename={onRenameThread}
-                        onClearArchiveConfirm={onClearArchiveConfirm}
+                        
                       />
                     ) : null}
                   </SidebarSection>
@@ -948,9 +952,6 @@ export function AppSidebar({
                           const isUnread = unreadDMParticipantIDs.has(participant.id);
                           const status = isBusy ? "busy" : "online";
                           const dm = dmThreadByParticipantID.get(participant.id);
-                          const archiveConfirming = Boolean(
-                            dm && archiveConfirmThreadID === dm.id,
-                          );
                           // No placeholder glyph when the participant has no
                           // uploaded avatar: the name flows right after the
                           // status dot, and the avatar column only exists
@@ -977,11 +978,6 @@ export function AppSidebar({
                             <div
                               key={participant.id}
                               className={className}
-                              onMouseLeave={() => {
-                                if (dm) {
-                                  onClearArchiveConfirm(dm.id);
-                                }
-                              }}
                               onContextMenu={(event) => {
                                 event.preventDefault();
                                 setRosterContextMenu({
@@ -1024,16 +1020,10 @@ export function AppSidebar({
                                     <Pin className="icon-sm" />
                                   </button>
                                   <button
-                                    className={`sidebar-row-icon-button thread-row-action archive ${archiveConfirming ? "confirm" : ""}`}
+                                    className="sidebar-row-icon-button thread-row-action archive"
                                     type="button"
-                                    aria-label={
-                                      archiveConfirming ? "确认归档" : "归档"
-                                    }
-                                    title={
-                                      archiveConfirming
-                                        ? "再次点击归档"
-                                        : "归档"
-                                    }
+                                    aria-label="归档"
+                                    title="归档"
                                     onClick={() => onArchiveThread(dm)}
                                   >
                                     <Archive className="icon-sm" />
@@ -1088,7 +1078,7 @@ export function AppSidebar({
                   threadsByProjectID={projectThreadsByProjectID}
                   activeThreadID={activeThreadID}
                   pendingThreadID={pendingThreadID}
-                  archiveConfirmThreadID={archiveConfirmThreadID}
+                  
                   lastViewedTurnByThreadID={state.lastViewedTurnByThreadID}
                   lastViewedMessageSeqByThreadID={state.lastViewedMessageSeqByThreadID}
                   scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
@@ -1102,7 +1092,7 @@ export function AppSidebar({
                   onArchiveThread={onArchiveThread}
                   onDeleteThread={onDeleteThread}
                   onRenameThread={onRenameThread}
-                  onClearArchiveConfirm={onClearArchiveConfirm}
+                  
                   onRemoveProject={onRemoveProject}
                   onRelocateProject={onRelocateProject}
                 />

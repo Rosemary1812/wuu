@@ -136,7 +136,7 @@ function buildActions({
       filename: "file.pdf",
     },
   ];
-  let archiveConfirmThreadID: string | undefined = "thread-1";
+  
   let contextCompositionEntries: ContextCompositionEntry[] = [];
   let instructionFilesEntries: InstructionFilesEntry[] = [];
   let settingsMemoryFocusID: string | undefined;
@@ -182,10 +182,7 @@ function buildActions({
       composerFiles =
         typeof update === "function" ? update(composerFiles) : update;
     },
-    setArchiveConfirmThreadID: (update) => {
-      archiveConfirmThreadID =
-        typeof update === "function" ? update(archiveConfirmThreadID) : update;
-    },
+    
     cancelViewSwitch,
     activateThread,
     selectThread,
@@ -227,7 +224,6 @@ function buildActions({
       prompt,
       composerImages,
       composerFiles,
-      archiveConfirmThreadID,
     }),
     getContextEntries: () => contextCompositionEntries,
     getInstructionEntries: () => instructionFilesEntries,
@@ -262,7 +258,7 @@ describe("createCollaborationActions", () => {
     expect(harness.getAppState().activeSessionTabID).toContain("skills:");
     expect(harness.getAppState().sessionTabs[0]?.kind).toBe("skills");
     expect(harness.getAppState().status).toBe("ready");
-    expect(harness.getComposerState().archiveConfirmThreadID).toBeUndefined();
+    
   });
 
   it("adds instruction and context cards, then fills them from the desktop API", async () => {
@@ -378,7 +374,7 @@ describe("createCollaborationActions", () => {
       prompt: "",
       composerImages: [],
       composerFiles: [],
-      archiveConfirmThreadID: undefined,
+      
     });
     expect(harness.getAppState().thread?.id).toBe("new-dm");
     expect(harness.getAppState().activePane).toBe("primary");

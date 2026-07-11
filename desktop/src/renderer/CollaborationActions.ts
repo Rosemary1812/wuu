@@ -43,9 +43,7 @@ export type CollaborationActionsDeps = {
   setPrompt: Dispatch<SetStateAction<string>>;
   setComposerImages: Dispatch<SetStateAction<ComposerImage[]>>;
   setComposerFiles: Dispatch<SetStateAction<ComposerFile[]>>;
-  setArchiveConfirmThreadID: (
-    update: SetStateAction<string | undefined>,
-  ) => void;
+  
   cancelViewSwitch: () => void;
   activateThread: (threadID: string) => Promise<void>;
   selectThread: (threadID: string) => Promise<void>;
@@ -109,7 +107,7 @@ export function createCollaborationActions(
       return;
     }
     const tab = createSkillsSessionTab(state.activeContext);
-    deps.setArchiveConfirmThreadID(undefined);
+    
     deps.setSplitComposerDrafts(initialSplitComposerDrafts());
     deps.setAppState((current) => ({
       ...persistActiveSessionTabDraft(current, deps.getPrimaryComposerDraft()),
@@ -362,7 +360,7 @@ export function createCollaborationActions(
 
   function resetComposerForThreadActivation(): void {
     deps.cancelViewSwitch();
-    deps.setArchiveConfirmThreadID(undefined);
+    
     deps.setPrompt("");
     deps.setComposerImages([]);
     deps.setComposerFiles([]);

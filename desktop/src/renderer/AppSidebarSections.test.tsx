@@ -108,7 +108,7 @@ interface RenderOptions {
   activeDMParticipantID?: string;
   unreadDMParticipantIDs?: Set<string>;
   dmThreadByParticipantID?: Map<string, ThreadSummary>;
-  archiveConfirmThreadID?: string;
+  
   onSelectParticipant?: (participant: ParticipantProfile) => void;
   onEditParticipant?: (participant: ParticipantProfile) => void;
   onTogglePinned?: (thread: ThreadSummary) => void;
@@ -134,7 +134,7 @@ function renderSidebar(options: RenderOptions): void {
     activeDMParticipantID,
     unreadDMParticipantIDs = new Set<string>(),
     dmThreadByParticipantID = new Map<string, ThreadSummary>(),
-    archiveConfirmThreadID,
+    
     onSelectParticipant = () => {},
     onEditParticipant = () => {},
     onTogglePinned = () => {},
@@ -170,7 +170,7 @@ function renderSidebar(options: RenderOptions): void {
         busyParticipantIDs={busyParticipantIDs}
         pendingThreadID={undefined}
         pendingProjectID={undefined}
-        archiveConfirmThreadID={archiveConfirmThreadID}
+        
         collapsedSidebarSectionIDs={collapsedSidebarSectionIDs}
         expandedSidebarSectionIDs={new Set()}
         projectThreadsByProjectID={{}}
@@ -204,7 +204,7 @@ function renderSidebar(options: RenderOptions): void {
         onArchiveThread={onArchiveThread}
         onDeleteThread={() => {}}
         onRenameThread={() => {}}
-        onClearArchiveConfirm={() => {}}
+        
         onToggleProjectMenu={() => {}}
         onCreateProject={() => {}}
         onOpenProjectFolder={() => {}}
@@ -613,27 +613,7 @@ describe("AppSidebar sections", () => {
     expect(archived?.id).toBe("dm-1");
   });
 
-  it("marks the DM archive action as confirming via archiveConfirmThreadID", () => {
-    const participants: ParticipantProfile[] = [
-      { id: "p-1", kind: "named", name: "Alpha", role: "writer" },
-    ];
-    const dmThread = makeThreadSummary("dm-1", "DM with Alpha", {
-      dm_participant_id: "p-1",
-      pinned: false,
-    });
-    renderSidebar({
-      sectionOrder: [SIDEBAR_SECTION_AGENTS],
-      participants,
-      dmThreadByParticipantID: new Map([["p-1", dmThread]]),
-      archiveConfirmThreadID: "dm-1",
-    });
-
-    const archive = container.querySelector<HTMLButtonElement>(
-      ".participant-roster-row .thread-row-action.archive",
-    );
-    expect(archive?.classList.contains("confirm")).toBe(true);
-    expect(archive?.getAttribute("aria-label")).toBe("确认归档");
-  });
+  
 
   it("hides the roster row while the participant's DM is pinned", () => {
     // Pinning MOVES the conversation under 置顶 — same semantics as the
@@ -931,7 +911,7 @@ describe("AppSidebar drag-to-reorder wiring (T7)", () => {
             busyParticipantIDs: new Set(),
             pendingThreadID: undefined,
             pendingProjectID: undefined,
-            archiveConfirmThreadID: undefined,
+            
             collapsedSidebarSectionIDs: new Set(),
             expandedSidebarSectionIDs: new Set(),
             projectThreadsByProjectID: {},
@@ -964,7 +944,7 @@ describe("AppSidebar drag-to-reorder wiring (T7)", () => {
             onArchiveThread: () => {},
             onDeleteThread: () => {},
             onRenameThread: () => {},
-            onClearArchiveConfirm: () => {},
+            
             onToggleProjectMenu: () => {},
             onCreateProject: () => {},
             onOpenProjectFolder: () => {},

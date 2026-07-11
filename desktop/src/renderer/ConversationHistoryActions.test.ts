@@ -149,7 +149,7 @@ function buildActions({
     },
   ];
   let splitDrafts = initialSplitComposerDrafts();
-  let archiveConfirmThreadID: string | undefined = "thread-1";
+  
   const localDemoThreadsRef = { current: new Map<string, Thread>() };
   const closeConversationSearch = vi.fn();
   const clearEnvironmentDialog = vi.fn();
@@ -195,10 +195,7 @@ function buildActions({
       historyMessageEdit =
         typeof update === "function" ? update(historyMessageEdit) : update;
     },
-    setArchiveConfirmThreadID: (update) => {
-      archiveConfirmThreadID =
-        typeof update === "function" ? update(archiveConfirmThreadID) : update;
-    },
+    
     getPrompt: () => prompt,
     getComposerImages: () => composerImages,
     getComposerFiles: () => composerFiles,
@@ -238,7 +235,7 @@ function buildActions({
       composerImages,
       composerFiles,
       splitDrafts,
-      archiveConfirmThreadID,
+      
     }),
     localDemoThreadsRef,
     closeConversationSearch,
@@ -280,7 +277,7 @@ describe("createConversationHistoryActions", () => {
       prompt: "",
       composerImages: [],
       composerFiles: [],
-      archiveConfirmThreadID: undefined,
+      
     });
     expect(harness.getAppState().thread?.id).toBe("fork-thread");
   });

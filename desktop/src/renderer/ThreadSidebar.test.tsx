@@ -293,7 +293,7 @@ describe("ProjectList", () => {
           }}
           activeThreadID={undefined}
           pendingThreadID={undefined}
-          archiveConfirmThreadID={undefined}
+          
           lastViewedTurnByThreadID={{}}
           scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
           scratchPseudoActive={false}
@@ -303,7 +303,7 @@ describe("ProjectList", () => {
           onToggleThreadPinned={() => {}}
           onArchiveThread={() => {}}
           onDeleteThread={() => {}}
-          onClearArchiveConfirm={() => {}}
+          
         />,
       );
     });
@@ -338,13 +338,13 @@ describe("ProjectList", () => {
           threads={[thread]}
           activeID={undefined}
           pendingThreadID={undefined}
-          archiveConfirmThreadID={undefined}
+          
           lastViewedTurnByThreadID={{}}
           onSelect={() => {}}
           onTogglePinned={() => {}}
           onArchive={() => {}}
           onDelete={() => {}}
-          onClearArchiveConfirm={() => {}}
+          
         />,
       );
     });
@@ -370,14 +370,14 @@ describe("ProjectList", () => {
           threads={[thread]}
           activeID={undefined}
           pendingThreadID={undefined}
-          archiveConfirmThreadID={undefined}
+          
           lastViewedTurnByThreadID={{}}
           onSelect={() => {}}
           onTogglePinned={() => {}}
           onArchive={() => {}}
           onDelete={() => {}}
           onRename={onRename}
-          onClearArchiveConfirm={() => {}}
+          
         />,
       );
     });
@@ -441,14 +441,14 @@ describe("ProjectList", () => {
             threads={[thread]}
             activeID={undefined}
             pendingThreadID={undefined}
-            archiveConfirmThreadID={undefined}
+            
             lastViewedTurnByThreadID={{}}
             onSelect={() => {}}
             onTogglePinned={() => {}}
             onArchive={() => {}}
             onDelete={() => {}}
             onRename={onRename}
-            onClearArchiveConfirm={() => {}}
+            
           />,
         );
       });
@@ -541,7 +541,7 @@ describe("ProjectList", () => {
           }}
           activeThreadID="thread-wuu"
           pendingThreadID={undefined}
-          archiveConfirmThreadID={undefined}
+          
           lastViewedTurnByThreadID={{}}
           scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
           scratchPseudoActive={true}
@@ -551,7 +551,7 @@ describe("ProjectList", () => {
           onToggleThreadPinned={() => {}}
           onArchiveThread={() => {}}
           onDeleteThread={() => {}}
-          onClearArchiveConfirm={() => {}}
+          
         />,
       );
     });
@@ -583,7 +583,7 @@ describe("ProjectList", () => {
           }}
           activeThreadID={undefined}
           pendingThreadID={undefined}
-          archiveConfirmThreadID={undefined}
+          
           lastViewedTurnByThreadID={{}}
           scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
           scratchPseudoActive={false}
@@ -593,7 +593,7 @@ describe("ProjectList", () => {
           onToggleThreadPinned={() => {}}
           onArchiveThread={() => {}}
           onDeleteThread={() => {}}
-          onClearArchiveConfirm={() => {}}
+          
         />,
       );
     });
@@ -624,7 +624,7 @@ describe("ProjectList", () => {
           }}
           activeThreadID={undefined}
           pendingThreadID={undefined}
-          archiveConfirmThreadID={undefined}
+          
           lastViewedTurnByThreadID={{}}
           scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
           scratchPseudoActive={false}
@@ -634,7 +634,7 @@ describe("ProjectList", () => {
           onToggleThreadPinned={() => {}}
           onArchiveThread={() => {}}
           onDeleteThread={() => {}}
-          onClearArchiveConfirm={() => {}}
+          
         />,
       );
     });
@@ -688,7 +688,7 @@ describe("ProjectList", () => {
           }}
           activeThreadID={undefined}
           pendingThreadID={undefined}
-          archiveConfirmThreadID={undefined}
+          
           lastViewedTurnByThreadID={{}}
           scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
           scratchPseudoActive={false}
@@ -698,7 +698,7 @@ describe("ProjectList", () => {
           onToggleThreadPinned={() => {}}
           onArchiveThread={() => {}}
           onDeleteThread={() => {}}
-          onClearArchiveConfirm={() => {}}
+          
         />,
       );
     });
@@ -744,7 +744,7 @@ describe("ProjectList", () => {
           }}
           activeThreadID={undefined}
           pendingThreadID={undefined}
-          archiveConfirmThreadID={undefined}
+          
           lastViewedTurnByThreadID={{}}
           scratchPseudoProjectID={SCRATCH_PSEUDO_PROJECT_ID}
           scratchPseudoActive={false}
@@ -754,7 +754,7 @@ describe("ProjectList", () => {
           onToggleThreadPinned={() => {}}
           onArchiveThread={() => {}}
           onDeleteThread={() => {}}
-          onClearArchiveConfirm={() => {}}
+          
         />,
       );
     });
@@ -789,7 +789,7 @@ describe("ProjectGroup remove workspace", () => {
     threadsByProjectID: {},
     activeThreadID: undefined,
     pendingThreadID: undefined,
-    archiveConfirmThreadID: undefined,
+    
     lastViewedTurnByThreadID: {},
     scratchPseudoProjectID: SCRATCH_PSEUDO_PROJECT_ID,
     scratchPseudoActive: false,
@@ -799,7 +799,7 @@ describe("ProjectGroup remove workspace", () => {
     onToggleThreadPinned: () => {},
     onArchiveThread: () => {},
     onDeleteThread: () => {},
-    onClearArchiveConfirm: () => {},
+    
   };
 
   function openContextMenu(): void {
@@ -897,7 +897,7 @@ describe("ProjectGroup missing workspace", () => {
     threadsByProjectID: {},
     activeThreadID: undefined,
     pendingThreadID: undefined,
-    archiveConfirmThreadID: undefined,
+    
     lastViewedTurnByThreadID: {},
     scratchPseudoProjectID: SCRATCH_PSEUDO_PROJECT_ID,
     scratchPseudoActive: false,
@@ -907,7 +907,7 @@ describe("ProjectGroup missing workspace", () => {
     onToggleThreadPinned: () => {},
     onArchiveThread: () => {},
     onDeleteThread: () => {},
-    onClearArchiveConfirm: () => {},
+    
     onRemoveProject: () => {},
   };
 

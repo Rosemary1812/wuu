@@ -67,7 +67,7 @@ function buildActions({
     },
   ];
   let splitDrafts = initialSplitComposerDrafts();
-  let archiveConfirmThreadID: string | undefined = "thread-1";
+  
   let runDebugOpen = true;
   let environmentPanelOpen = false;
   let environmentPanelDismissed = true;
@@ -82,10 +82,7 @@ function buildActions({
     },
     localDemoThreadsRef,
     cancelViewSwitch,
-    setArchiveConfirmThreadID: (update) => {
-      archiveConfirmThreadID =
-        typeof update === "function" ? update(archiveConfirmThreadID) : update;
-    },
+    
     setPrompt: (update) => {
       prompt = typeof update === "function" ? update(prompt) : update;
     },
@@ -123,7 +120,7 @@ function buildActions({
       composerImages,
       composerFiles,
       splitDrafts,
-      archiveConfirmThreadID,
+      
     }),
     getEnvironmentState: () => ({
       runDebugOpen,
@@ -148,7 +145,7 @@ describe("createConversationDemoPaneActions", () => {
       prompt: "",
       composerImages: [],
       composerFiles: [],
-      archiveConfirmThreadID: undefined,
+      
     });
     expect(harness.localDemoThreadsRef.current.size).toBeGreaterThan(1);
     expect(harness.getAppState().thread?.id).toBeTruthy();

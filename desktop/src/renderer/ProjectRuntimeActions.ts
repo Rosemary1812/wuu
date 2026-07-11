@@ -29,7 +29,7 @@ export type ProjectRuntimeActionsDeps = {
   ) => void;
   nextDraftSessionTab: (context: NonNullable<AppState["activeContext"]>) => SessionTab;
   closeProjectMenus: () => void;
-  setArchiveConfirmThreadID: (threadID: string | undefined) => void;
+  
   beginViewSwitch: (kind: "thread" | "project" | "runtime", targetID: string) => number;
   finishViewSwitch: (requestID: number) => boolean;
   cancelViewSwitch: () => void;
@@ -82,7 +82,7 @@ export function createProjectRuntimeActions(
       currentState.activeContext?.kind === "project"
     ) {
       deps.closeProjectMenus();
-      deps.setArchiveConfirmThreadID(undefined);
+      
       if (currentState.thread || currentState.secondaryThread) {
         switchToFreshDraft(currentState.activeContext);
       }
@@ -130,7 +130,7 @@ export function createProjectRuntimeActions(
       currentState.activeContext?.kind === "project"
     ) {
       deps.closeProjectMenus();
-      deps.setArchiveConfirmThreadID(undefined);
+      
       if (currentState.thread || currentState.secondaryThread) {
         switchToFreshDraft(currentState.activeContext);
       }
@@ -143,7 +143,7 @@ export function createProjectRuntimeActions(
     }
     const requestID = deps.beginViewSwitch("project", projectId);
     deps.closeProjectMenus();
-    deps.setArchiveConfirmThreadID(undefined);
+    
     const outgoingDraft = deps.getPrimaryComposerDraft();
     const carryDraft =
       activeSessionTab(currentState)?.kind === "draft" &&
@@ -186,7 +186,7 @@ export function createProjectRuntimeActions(
   async function startNewThreadForProject(projectId: string): Promise<void> {
     deps.cancelViewSwitch();
     deps.closeProjectMenus();
-    deps.setArchiveConfirmThreadID(undefined);
+    
     const currentState = deps.getAppState();
     if (
       projectId === currentState.activeProjectId &&

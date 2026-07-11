@@ -39,7 +39,7 @@ export type ThreadActivationActionsDeps = {
   getLocalDemoThread: (threadID: string) => Thread | undefined;
   getSidebarThreads: () => Thread[];
   getSidebarProjectThreadsByProjectID: () => SidebarProjectThreads;
-  setArchiveConfirmThreadID: (threadID: string | undefined) => void;
+  
   beginViewSwitch: (
     kind: "thread" | "project" | "runtime",
     targetID: string,
@@ -96,7 +96,7 @@ export function createThreadActivationActions(
     ) {
       return;
     }
-    deps.setArchiveConfirmThreadID(undefined);
+    
     const outgoingDraft = deps.getPrimaryComposerDraft();
     const targetDraft = sessionTabDraftForThread(currentState, threadID);
     const demoThread = deps.getLocalDemoThread(threadID);
@@ -279,7 +279,7 @@ export function createThreadActivationActions(
     threadID: string,
   ): Promise<void> {
     const currentState = deps.getAppState();
-    deps.setArchiveConfirmThreadID(undefined);
+    
     const outgoingDraft = deps.getPrimaryComposerDraft();
     const targetDraft = sessionTabDraftForThread(currentState, threadID);
     const requestID = deps.beginViewSwitch("thread", threadID);
@@ -447,7 +447,7 @@ export function createThreadActivationActions(
     ) {
       return;
     }
-    deps.setArchiveConfirmThreadID(undefined);
+    
     const outgoingDraft = deps.getPrimaryComposerDraft();
     const targetDraft = sessionTabDraftForThread(currentState, agent.id);
     const sourceContext = currentState.activeContext;
