@@ -26,7 +26,8 @@ func TestServerActivityLifecycleRequestsAndNotifications(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rt.ActivityRegistry.Update("thread-1", started.ID, activity.UpdateOptions{State: activity.StateActive, Preview: "preview://activity-1"}); err != nil {
+	interaction := &activity.Interaction{Kind: "click", X: 0.25, Y: 0.75, Revision: 42}
+	if _, err := rt.ActivityRegistry.Update("thread-1", started.ID, activity.UpdateOptions{State: activity.StateActive, Preview: "preview://activity-1", Interaction: interaction}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -46,6 +47,9 @@ func TestServerActivityLifecycleRequestsAndNotifications(t *testing.T) {
 	listed := remarshal[ActivityListResult](t, responseByID(t, messages, "list")["result"])
 	if len(listed.Activities) != 1 || listed.Activities[0].ID != started.ID || listed.Activities[0].Workdir != rt.RootDir {
 		t.Fatalf("activity/list = %+v", listed)
+	}
+	if listed.Activities[0].Interaction == nil || listed.Activities[0].Interaction.Revision != 42 {
+		t.Fatalf("activity/list interaction = %+v", listed.Activities[0].Interaction)
 	}
 	takeover := remarshal[ActivityActionResult](t, responseByID(t, messages, "takeover")["result"])
 	if takeover.Activity.Controller != string(activity.ControllerUser) || takeover.Activity.State != string(activity.StateUserControlled) {
@@ -70,6 +74,9 @@ func TestServerActivityLifecycleRequestsAndNotifications(t *testing.T) {
 		payload := remarshal[ActivitySession](t, notification["params"])
 		if payload.Workdir != rt.RootDir || payload.ThreadID != "thread-1" || payload.ID != started.ID || payload.Kind != string(activity.KindBrowser) {
 			t.Fatalf("%s payload = %+v", method, payload)
+		}
+		if method == NotificationActivityUpdated && (payload.Interaction == nil || payload.Interaction.Kind != "click") {
+			t.Fatalf("%s interaction = %+v", method, payload.Interaction)
 		}
 	}
 }

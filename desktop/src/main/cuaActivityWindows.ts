@@ -802,7 +802,7 @@ export function cuaActivityHTML(activity: ActivitySession): string {
 .glass{position:absolute;inset:0;background:radial-gradient(circle at 10% 0%,rgba(255,255,255,.62),transparent 44%),radial-gradient(circle at 92% 34%,rgba(255,122,72,.16),transparent 48%),radial-gradient(circle at 52% 112%,rgba(110,170,255,.14),transparent 50%),linear-gradient(145deg,var(--glass-strong),var(--glass));box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
 .actions{position:absolute;z-index:3;top:8px;right:8px;display:flex;align-items:center;gap:5px;padding:4px;border-radius:10px;background:var(--glass-strong);border:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.14);opacity:0;transform:translateY(-3px);transition:opacity 140ms ease,transform 140ms ease;-webkit-app-region:no-drag}.card:hover .actions,.actions:focus-within{opacity:1;transform:none}.button{height:25px;padding:0 8px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink);background:transparent;border:0;font-size:11px;font-weight:560}.button:hover{background:var(--hover)}.button.stop{width:25px;padding:0;font-size:15px;font-weight:400}.button.stop:hover{color:var(--danger);background:var(--danger-soft)}
 .stream-status{position:absolute;z-index:2;left:50%;bottom:10px;transform:translateX(-50%);padding:6px 9px;border-radius:8px;background:rgba(30,32,35,.76);color:#fff;font-size:10.5px;white-space:nowrap;-webkit-app-region:no-drag}
-.agent-pointer{position:absolute;z-index:4;left:0;top:0;width:24px;height:30px;opacity:0;pointer-events:none;filter:drop-shadow(0 3px 5px rgba(0,0,0,.32));transform:translate(-3px,-2px)}.agent-pointer svg{display:block;width:24px;height:30px;overflow:visible}.agent-pointer path{fill:#fff;stroke:#f05a28;stroke-width:2;stroke-linejoin:round}.agent-pointer i{position:absolute;left:3px;top:3px;width:10px;height:10px;border:2px solid rgba(240,90,40,.9);border-radius:50%;opacity:0}.agent-pointer.is-clicking i{animation:agent-click 480ms cubic-bezier(.16,1,.3,1)}.agent-pointer.is-scrolling svg{animation:agent-scroll 520ms ease-in-out}@keyframes agent-click{0%{opacity:.9;transform:scale(.35)}100%{opacity:0;transform:scale(3.2)}}@keyframes agent-scroll{0%,100%{transform:translateY(0)}45%{transform:translateY(-7px)}}
+.agent-pointer{position:absolute;z-index:4;left:0;top:0;width:24px;height:30px;opacity:0;pointer-events:none;filter:drop-shadow(0 3px 5px rgba(0,0,0,.32));transform:translate(-3px,-2px)}.agent-pointer svg{display:block;width:24px;height:30px;overflow:visible}.agent-pointer path{fill:#fff;stroke:#f05a28;stroke-width:2;stroke-linejoin:round}.agent-pointer i{position:absolute;left:3px;top:3px;width:10px;height:10px;border:2px solid rgba(240,90,40,.9);border-radius:50%;opacity:0}.agent-pointer.is-clicking i{animation:agent-click 480ms cubic-bezier(.16,1,.3,1)}.agent-pointer.is-scrolling svg{animation:agent-scroll 520ms ease-in-out}.agent-pointer.is-typing i{opacity:.9;width:3px;height:15px;border:0;border-radius:2px;background:#f05a28;animation:agent-type 620ms ease-in-out}.agent-pointer.is-dragging svg{animation:agent-drag 420ms ease-in-out}@keyframes agent-click{0%{opacity:.9;transform:scale(.35)}100%{opacity:0;transform:scale(3.2)}}@keyframes agent-scroll{0%,100%{transform:translateY(0)}45%{transform:translateY(-7px)}}@keyframes agent-type{0%,100%{opacity:.25;transform:scaleY(.72)}50%{opacity:1;transform:scaleY(1)}}@keyframes agent-drag{0%,100%{transform:scale(1)}45%{transform:scale(.82)}}
 </style></head><body><section class="card"><div class="preview">${preview}</div><div class="actions">${activityActionsHTML(activity)}</div>${streamStatus}${agentPointer}</section>
 <script>
 (() => {
@@ -839,7 +839,7 @@ export function cuaActivityHTML(activity: ActivitySession): string {
         y: Math.max(0, Math.min(1, interaction.to_y ?? interaction.y)),
       };
       agentPointer.getAnimations().forEach((animation) => animation.cancel());
-      agentPointer.classList.remove('is-clicking', 'is-scrolling');
+      agentPointer.classList.remove('is-clicking', 'is-scrolling', 'is-typing', 'is-dragging');
       agentPointer.style.opacity = '1';
       const imageWidth = livePreview.naturalWidth || innerWidth;
       const imageHeight = livePreview.naturalHeight || innerHeight;
@@ -854,6 +854,7 @@ export function cuaActivityHTML(activity: ActivitySession): string {
       });
       const from = mapPoint(pointerPosition);
       const to = mapPoint(destination);
+      const entry = mapPoint({ x: interaction.x, y: interaction.y });
       const fromX = from.x;
       const fromY = from.y;
       const toX = to.x;
@@ -861,16 +862,19 @@ export function cuaActivityHTML(activity: ActivitySession): string {
       const bend = Math.max(12, Math.min(52, Math.hypot(toX - fromX, toY - fromY) * .18));
       const animation = agentPointer.animate([
         { left: fromX + 'px', top: fromY + 'px', opacity: .35 },
-        { left: ((fromX + toX) / 2 + bend) + 'px', top: ((fromY + toY) / 2 - bend) + 'px', opacity: 1, offset: .52 },
+        { left: (interaction.kind === 'drag' ? entry.x : (fromX + toX) / 2 + bend) + 'px', top: (interaction.kind === 'drag' ? entry.y : (fromY + toY) / 2 - bend) + 'px', opacity: 1, offset: .52 },
         { left: toX + 'px', top: toY + 'px', opacity: 1 },
       ], { duration: 520, easing: 'cubic-bezier(.22,.8,.24,1)', fill: 'forwards' });
       pointerPosition = destination;
       animation.onfinish = () => {
         agentPointer.style.left = toX + 'px';
         agentPointer.style.top = toY + 'px';
-        agentPointer.classList.add(interaction.kind === 'scroll' ? 'is-scrolling' : 'is-clicking');
+        const feedbackClass = {
+          click: 'is-clicking', drag: 'is-dragging', scroll: 'is-scrolling', type: 'is-typing',
+        }[interaction.kind];
+        if (feedbackClass) agentPointer.classList.add(feedbackClass);
         setTimeout(() => {
-          agentPointer.classList.remove('is-clicking', 'is-scrolling');
+          agentPointer.classList.remove('is-clicking', 'is-scrolling', 'is-typing', 'is-dragging');
           agentPointer.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 900, delay: 650, fill: 'forwards' });
         }, 20);
       };

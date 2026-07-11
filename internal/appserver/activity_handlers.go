@@ -121,17 +121,18 @@ func (s *Server) notifyActivityEvent(event activity.Event) {
 
 func activitySessionFromRuntime(session activity.Session) ActivitySession {
 	return ActivitySession{
-		ID:         session.ID,
-		Kind:       string(session.Kind),
-		ThreadID:   session.ThreadID,
-		Workdir:    session.Workdir,
-		PluginID:   session.PluginID,
-		Target:     session.Target,
-		State:      string(session.State),
-		Controller: string(session.Controller),
-		Preview:    session.Preview,
-		Error:      session.Error,
-		CreatedAt:  session.CreatedAt,
-		UpdatedAt:  session.UpdatedAt,
+		ID:          session.ID,
+		Kind:        string(session.Kind),
+		ThreadID:    session.ThreadID,
+		Workdir:     session.Workdir,
+		PluginID:    session.PluginID,
+		Target:      session.Target,
+		State:       string(session.State),
+		Controller:  string(session.Controller),
+		Preview:     session.Preview,
+		Error:       session.Error,
+		Interaction: session.Interaction,
+		CreatedAt:   session.CreatedAt,
+		UpdatedAt:   session.UpdatedAt,
 	}
 }

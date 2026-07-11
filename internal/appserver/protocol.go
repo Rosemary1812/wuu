@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/activity"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/extensions"
@@ -306,18 +307,19 @@ type MCPAuthRemoveResult struct {
 }
 
 type ActivitySession struct {
-	ID         string    `json:"id"`
-	Kind       string    `json:"kind"`
-	ThreadID   string    `json:"thread_id"`
-	Workdir    string    `json:"workdir"`
-	PluginID   string    `json:"plugin_id,omitempty"`
-	Target     string    `json:"target,omitempty"`
-	State      string    `json:"state"`
-	Controller string    `json:"controller"`
-	Preview    string    `json:"preview,omitempty"`
-	Error      string    `json:"error,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID          string                `json:"id"`
+	Kind        string                `json:"kind"`
+	ThreadID    string                `json:"thread_id"`
+	Workdir     string                `json:"workdir"`
+	PluginID    string                `json:"plugin_id,omitempty"`
+	Target      string                `json:"target,omitempty"`
+	State       string                `json:"state"`
+	Controller  string                `json:"controller"`
+	Preview     string                `json:"preview,omitempty"`
+	Error       string                `json:"error,omitempty"`
+	Interaction *activity.Interaction `json:"interaction,omitempty"`
+	CreatedAt   time.Time             `json:"created_at"`
+	UpdatedAt   time.Time             `json:"updated_at"`
 }
 
 type ActivityListParams struct {

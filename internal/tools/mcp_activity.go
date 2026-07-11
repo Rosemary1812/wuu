@@ -157,7 +157,14 @@ func cuaActivityInteraction(result toolresult.Result) *activity.Interaction {
 		return nil
 	}
 	interaction := structured.Interaction
-	if interaction.Kind == "" || interaction.X < 0 || interaction.X > 1 || interaction.Y < 0 || interaction.Y > 1 {
+	if interaction.Kind != "click" && interaction.Kind != "drag" && interaction.Kind != "scroll" && interaction.Kind != "type" {
+		return nil
+	}
+	if interaction.X < 0 || interaction.X > 1 || interaction.Y < 0 || interaction.Y > 1 {
+		return nil
+	}
+	if (interaction.ToX != nil && (*interaction.ToX < 0 || *interaction.ToX > 1)) ||
+		(interaction.ToY != nil && (*interaction.ToY < 0 || *interaction.ToY > 1)) {
 		return nil
 	}
 	interaction.Revision = time.Now().UnixNano()
@@ -252,11 +259,6 @@ func (t *Toolkit) executeCUASequence(ctx context.Context, tool Tool, threadID, a
 			}
 			return cuaSequenceResult("partial", completed, index+1, lastImage, control), "partial", err
 		}
-		if interaction := cuaActivityInteraction(stepResult); interaction != nil {
-			if _, updateErr := t.activityRegistry.Update(threadID, activityID, activity.UpdateOptions{Interaction: interaction}); updateErr != nil {
-				return cuaSequenceResult("partial", completed, index+1, lastImage, control), "partial", updateErr
-			}
-		}
 		for i := range stepResult.Content {
 			if stepResult.Content[i].Type == toolresult.ContentTypeImage {
 				copy := stepResult.Content[i]
@@ -264,6 +266,14 @@ func (t *Toolkit) executeCUASequence(ctx context.Context, tool Tool, threadID, a
 			}
 		}
 		completed = append(completed, map[string]any{"index": index, "action": action, "status": "completed"})
+		if interaction := cuaActivityInteraction(stepResult); interaction != nil {
+			if controlErr := t.activityRegistry.CheckControl(threadID, activityID, leaseToken); controlErr != nil {
+				return cuaSequenceResult("control_revoked", completed, index+1, lastImage, control), "control_revoked", controlErr
+			}
+			if _, updateErr := t.activityRegistry.Update(threadID, activityID, activity.UpdateOptions{Interaction: interaction}); updateErr != nil {
+				return cuaSequenceResult("partial", completed, index+1, lastImage, control), "partial", updateErr
+			}
+		}
 	}
 	return cuaSequenceResult("completed", completed, len(request.Steps), lastImage, control), "completed", nil
 }

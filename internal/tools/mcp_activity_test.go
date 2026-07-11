@@ -116,6 +116,7 @@ func TestCropTransparentPNGRemovesWindowShadowPadding(t *testing.T) {
 type activityTestTool struct {
 	calls             int
 	structuredContent json.RawMessage
+	onExecute         func()
 }
 
 func (t *activityTestTool) Name() string { return "mcp_plugin_cua_mac_computer_computer" }
@@ -127,10 +128,42 @@ func (t *activityTestTool) Execute(context.Context, string) (string, error) {
 }
 func (t *activityTestTool) ExecuteResult(context.Context, string) (toolresult.Result, error) {
 	t.calls++
+	if t.onExecute != nil {
+		t.onExecute()
+	}
 	return toolresult.Result{Content: []toolresult.ContentPart{
 		{Type: toolresult.ContentTypeText, Text: "observed"},
 		{Type: toolresult.ContentTypeImage, Data: "cG5n", MIMEType: "image/png"},
 	}, StructuredContent: t.structuredContent}, nil
+}
+
+func TestCUASequenceDoesNotPublishInteractionAfterTakeover(t *testing.T) {
+	registry := activity.NewRegistry()
+	tool := &activityTestTool{structuredContent: json.RawMessage(`{"interaction":{"kind":"click","x":0.2,"y":0.4}}`)}
+	kit := &Toolkit{
+		env:      &Env{RootDir: "/repo", SessionID: "thread-1", SessionDir: t.TempDir()},
+		registry: NewRegistry(tool), boundary: StandardBoundary(), activityRegistry: registry,
+		mcpActivityBindings: map[string]MCPActivityBinding{
+			"plugin.cua-mac.computer": {Kind: activity.KindCUA, PluginID: "cua-mac"},
+		},
+	}
+	tool.onExecute = func() {
+		sessions := registry.List("thread-1")
+		if len(sessions) == 1 {
+			_, _ = registry.Takeover("thread-1", sessions[0].ID)
+		}
+	}
+	call := providers.ToolCall{ID: "sequence-takeover", Name: tool.Name(), Arguments: `{
+		"action":"sequence","app":"com.apple.calculator","steps":[
+			{"action":"click","element_id":1,"risk":"safe"}
+		]}`}
+	if _, err := kit.executeActivityBoundToolResult(context.Background(), call, tool, "plugin.cua-mac.computer"); !errors.Is(err, activity.ErrControlRevoked) {
+		t.Fatalf("sequence error = %v, want control revoked", err)
+	}
+	sessions := registry.List("thread-1")
+	if len(sessions) != 1 || sessions[0].Interaction != nil || sessions[0].Controller != activity.ControllerUser {
+		t.Fatalf("activity after takeover = %+v", sessions)
+	}
 }
 func (t *activityTestTool) IsReadOnly() bool        { return false }
 func (t *activityTestTool) IsConcurrencySafe() bool { return false }
