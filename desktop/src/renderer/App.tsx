@@ -108,7 +108,9 @@ import {
   activeTurnIDForThread,
   activeTurnTokenSpeedSnapshot,
   applyLoadedRuntimeWithDraftCarry,
-  appendStreamingTokenSample,
+  flushPendingStreamingTokenSamples,
+  recordPendingStreamingTokenSample,
+  type PendingStreamingTokenSamples,
   bindActiveSessionTabToThread,
   computeBusyParticipantIDs,
   chatFocusValueForThread,
@@ -201,6 +203,7 @@ import {
   EmptyConversationHome,
   RuntimeLoading,
 } from "./LoadingViews";
+import { deriveActiveSessionHint } from "./activeSessionHint";
 import { pullRequestUnavailableReason } from "./RuntimeHelpers";
 import type { SettingsPage } from "./SettingsView";
 import type { ComposerGoalSummary } from "../shared/protocol";
@@ -1431,6 +1434,22 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     let mounted = true;
+    // Deltas arrive at tens per second; a setState per delta would re-render
+    // the whole App tree just to advance the token-speed gauge. Accumulate
+    // the estimates here and fold them into state at most every 250ms.
+    const pendingTokenSamples: PendingStreamingTokenSamples = new Map();
+    let tokenSampleFlushTimer: number | undefined;
+    const flushTokenSamples = () => {
+      tokenSampleFlushTimer = undefined;
+      if (!mounted || pendingTokenSamples.size === 0) {
+        return;
+      }
+      const batch = new Map(pendingTokenSamples);
+      pendingTokenSamples.clear();
+      setState((current) =>
+        flushPendingStreamingTokenSamples(current, batch, Date.now()),
+      );
+    };
     const off = window.wuu.onServerEvent((event) => {
       if (!mounted) {
         return;
@@ -1485,15 +1504,14 @@ export function App(): JSX.Element {
         scheduleStreamScroll();
         if (
           event.kind === "notification" &&
-          serverEventCarriesModelOutputDelta(event)
+          serverEventCarriesModelOutputDelta(event) &&
+          recordPendingStreamingTokenSample(
+            pendingTokenSamples,
+            event.message.params as Record<string, unknown> | undefined,
+          ) &&
+          tokenSampleFlushTimer === undefined
         ) {
-          setState((current) =>
-            appendStreamingTokenSample(
-              current,
-              event.message.params as Record<string, unknown> | undefined,
-              Date.now(),
-            ),
-          );
+          tokenSampleFlushTimer = window.setTimeout(flushTokenSamples, 250);
         }
       }
       if (handling === "stream") {
@@ -1561,6 +1579,10 @@ export function App(): JSX.Element {
     return () => {
       mounted = false;
       off();
+      if (tokenSampleFlushTimer !== undefined) {
+        window.clearTimeout(tokenSampleFlushTimer);
+        tokenSampleFlushTimer = undefined;
+      }
       if (gitRefreshTimerRef.current !== undefined) {
         window.clearTimeout(gitRefreshTimerRef.current);
         gitRefreshTimerRef.current = undefined;
@@ -2064,6 +2086,30 @@ export function App(): JSX.Element {
       .updateCodexPetRuntime({ running: anyThreadIsRunning, status: state.status })
       .catch(() => undefined);
   }, [anyThreadIsRunning, state.status]);
+  // The pet bubble is a lightweight hint of the most relevant session.
+  // Re-derive whenever the thread state changes and push the result to
+  // the main process, which keeps the always-on-top pet window in sync.
+  // See ./activeSessionHint for the priority logic.
+  useEffect(() => {
+    const api = window.wuu as Partial<typeof window.wuu>;
+    if (typeof api.updateCodexPetHint !== "function") return;
+    const hint = deriveActiveSessionHint({
+      thread: state.thread ?? undefined,
+      secondaryThread: state.secondaryThread ?? undefined,
+      threads: state.threads,
+    });
+    void api.updateCodexPetHint(hint).catch(() => undefined);
+  }, [state.thread, state.secondaryThread, state.threads]);
+  // The pet bubble click sends a `wuu:codex-pet-jump` event from main;
+  // bring the conversation forward and switch to the target thread.
+  useEffect(() => {
+    const api = window.wuu as Partial<typeof window.wuu>;
+    if (typeof api.onCodexPetJumpRequest !== "function") return;
+    return api.onCodexPetJumpRequest((event) => {
+      revealConversationFromFocusedWorkspace();
+      void activateThread(event.thread_id);
+    });
+  }, [activateThread, revealConversationFromFocusedWorkspace]);
   const runningProviderNames = useMemo(() => {
     const names = new Set<string>();
     for (const thread of [state.thread, state.secondaryThread, ...state.threads]) {

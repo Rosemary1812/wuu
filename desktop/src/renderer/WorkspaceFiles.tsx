@@ -16,7 +16,7 @@ import {
   Terminal,
   type LucideIcon
 } from "lucide-react";
-import { type CSSProperties, type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type RefObject, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   RuntimeContext,
   WorkspaceDirectoryListResult,
@@ -24,11 +24,14 @@ import type {
   WorkspaceFileTreeEntry
 } from "../shared/protocol";
 import { RichContent } from "./RichContent";
-import {
-  WorkspaceMonacoEditor,
-  type WorkspaceMonacoViewState,
-} from "./WorkspaceMonacoEditor";
+import type { WorkspaceMonacoViewState } from "./WorkspaceMonacoEditor";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
+
+// monaco-editor is several MB of JS; a static import here would drag it into
+// the eager startup chunk. Load it only when a code editor actually mounts.
+const WorkspaceMonacoEditor = lazy(async () => ({
+  default: (await import("./WorkspaceMonacoEditor")).WorkspaceMonacoEditor,
+}));
 
 type DirectoryLoadState = {
   entries?: WorkspaceFileTreeEntry[];
@@ -1069,18 +1072,20 @@ export function WorkspaceFilePreview({
             <RichContent text={draftText} cwd={activeContext.cwd} />
           </div>
         ) : active ? (
-          <WorkspaceMonacoEditor
-            initialViewState={editorViewStateRef.current}
-            path={file.path}
-            resourceID={editorResourceID ?? `${activeContext.cwd}:${file.path}`}
-            text={draftText}
-            readOnly={readOnly}
-            onChange={handleEditorChange}
-            onSave={handleSave}
-            onViewStateChange={(viewState) => {
-              editorViewStateRef.current = viewState;
-            }}
-          />
+          <Suspense fallback={null}>
+            <WorkspaceMonacoEditor
+              initialViewState={editorViewStateRef.current}
+              path={file.path}
+              resourceID={editorResourceID ?? `${activeContext.cwd}:${file.path}`}
+              text={draftText}
+              readOnly={readOnly}
+              onChange={handleEditorChange}
+              onSave={handleSave}
+              onViewStateChange={(viewState) => {
+                editorViewStateRef.current = viewState;
+              }}
+            />
+          </Suspense>
         ) : null}
       </div>
     </article>

@@ -492,9 +492,15 @@ function appendStreamDelta(
     return false;
   }
   const key = streamTextKey(turnID, itemID, field);
-  const wasEmpty = streamTextStore.get(key).trim().length === 0;
+  if (field !== "text") {
+    streamTextStore.append(key, delta);
+    return false;
+  }
+  // /\S/ short-circuits at the first visible character; trimming the full
+  // accumulated text here made every delta O(message length).
+  const hadVisibleText = /\S/.test(streamTextStore.get(key));
   streamTextStore.append(key, delta);
-  return field === "text" && wasEmpty && streamTextStore.get(key).trim().length > 0;
+  return !hadVisibleText && /\S/.test(delta);
 }
 
 function replaceStreamText(
@@ -3347,6 +3353,72 @@ function appendStreamingTokenSample(
     return state;
   }
   const threadID = stringValue(params, "thread_id") ?? "";
+  return appendEstimatedTokenSample(state, turnID, threadID, estimatedTokens, at);
+}
+
+/**
+ * Deltas arrive far faster than the token-speed gauge needs samples, and a
+ * setState per delta re-renders the whole App tree. Callers accumulate the
+ * per-turn estimates in a plain Map and flush them into state on a coarse
+ * timer instead.
+ */
+export type PendingStreamingTokenSamples = Map<
+  string,
+  { threadID: string; tokens: number }
+>;
+
+/** Accumulate a delta's estimated tokens; returns true when it recorded any. */
+function recordPendingStreamingTokenSample(
+  pending: PendingStreamingTokenSamples,
+  params: Record<string, unknown> | undefined,
+): boolean {
+  const turnID = stringValue(params, "turn_id");
+  const delta = stringValue(params, "delta");
+  if (!turnID || !delta) {
+    return false;
+  }
+  const estimatedTokens = estimateStreamingOutputTokens(delta);
+  if (estimatedTokens <= 0) {
+    return false;
+  }
+  const threadID = stringValue(params, "thread_id") ?? "";
+  const existing = pending.get(turnID);
+  if (existing) {
+    existing.tokens += estimatedTokens;
+    if (!existing.threadID) {
+      existing.threadID = threadID;
+    }
+    return true;
+  }
+  pending.set(turnID, { threadID, tokens: estimatedTokens });
+  return true;
+}
+
+function flushPendingStreamingTokenSamples(
+  state: AppState,
+  pending: PendingStreamingTokenSamples,
+  at: number,
+): AppState {
+  let next = state;
+  for (const [turnID, sample] of pending) {
+    next = appendEstimatedTokenSample(
+      next,
+      turnID,
+      sample.threadID,
+      sample.tokens,
+      at,
+    );
+  }
+  return next;
+}
+
+function appendEstimatedTokenSample(
+  state: AppState,
+  turnID: string,
+  threadID: string,
+  estimatedTokens: number,
+  at: number,
+): AppState {
   const turnTokenUsage = state.turnTokenUsage ?? {};
   const previous = turnTokenUsage[turnID];
   const cutoff = at - TOKEN_SPEED_WINDOW_MS;
@@ -3583,6 +3655,8 @@ export {
   applyLoadedRuntimeWithDraftCarry,
   appendStreamingTokenSample,
   appendTurnTokenSample,
+  flushPendingStreamingTokenSamples,
+  recordPendingStreamingTokenSample,
   bindActiveSessionTabToThread,
   cloneComposerDraft,
   cloneSessionTabDraft,
