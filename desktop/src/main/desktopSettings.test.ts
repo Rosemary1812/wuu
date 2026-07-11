@@ -86,28 +86,34 @@ describe("desktopSettings", () => {
     expect(getCliAutoInstallEnabled(file)).toBe(false);
   });
 
-  it("defaults the message-flow font size to medium", () => {
-    expect(getMessageFlowFontSize(file)).toBe("medium");
+  it("defaults the message-flow font size to 14", () => {
+    expect(getMessageFlowFontSize(file)).toBe(14);
   });
 
   it("round-trips the message-flow font size", () => {
-    setMessageFlowFontSize("small", file);
-    expect(getMessageFlowFontSize(file)).toBe("small");
-    setMessageFlowFontSize("large", file);
-    expect(getMessageFlowFontSize(file)).toBe("large");
-    setMessageFlowFontSize("medium", file);
-    expect(getMessageFlowFontSize(file)).toBe("medium");
+    setMessageFlowFontSize(13, file);
+    expect(getMessageFlowFontSize(file)).toBe(13);
+    setMessageFlowFontSize(20, file);
+    expect(getMessageFlowFontSize(file)).toBe(20);
+    setMessageFlowFontSize(15, file);
+    expect(getMessageFlowFontSize(file)).toBe(15);
   });
 
-  it("rejects unknown message-flow font size values on read", async () => {
+  it("rejects out-of-range message-flow font size values on read", async () => {
+    await writeFile(file, JSON.stringify({ message_flow_font_size: 5 }));
+    expect(getMessageFlowFontSize(file)).toBe(14);
+    await writeFile(file, JSON.stringify({ message_flow_font_size: 100 }));
+    expect(getMessageFlowFontSize(file)).toBe(14);
     await writeFile(file, JSON.stringify({ message_flow_font_size: "huge" }));
-    expect(getMessageFlowFontSize(file)).toBe("medium");
+    expect(getMessageFlowFontSize(file)).toBe(14);
+    await writeFile(file, JSON.stringify({ message_flow_font_size: null }));
+    expect(getMessageFlowFontSize(file)).toBe(14);
   });
 
   it("keeps the message-flow font size when toggling other settings", () => {
-    setMessageFlowFontSize("large", file);
+    setMessageFlowFontSize(16, file);
     setThemePreference("dark", file);
-    expect(getMessageFlowFontSize(file)).toBe("large");
+    expect(getMessageFlowFontSize(file)).toBe(16);
     expect(getThemePreference(file)).toBe("dark");
   });
 

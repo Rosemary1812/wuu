@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  Archive,
   BarChart3,
   Brain,
   Check,
@@ -44,7 +45,8 @@ import type {
   RemoteControlSnapshot,
   RuntimeConnectionUpdate,
   SettingsUsageDay,
-  SettingsUsageResponse
+  SettingsUsageResponse,
+  ThreadSummary
 } from "../shared/protocol";
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 import { CliInstallSection } from "./CliInstallSection";
@@ -53,7 +55,14 @@ import { MessageFlowFontSizeControl } from "./MessageFlowFontSizeSection";
 import { SettingsRemotePage } from "./SettingsRemotePage";
 import { ThemePreferenceControl } from "./ThemePreferenceSection";
 
-export type SettingsPage = "providers" | "general" | "memory" | "advanced" | "usage" | "remote";
+export type SettingsPage =
+  | "providers"
+  | "general"
+  | "memory"
+  | "advanced"
+  | "usage"
+  | "remote"
+  | "archive";
 
 type CopyState = "idle" | "copying" | "copied";
 
@@ -90,6 +99,8 @@ export function SettingsView({
   onSidebarSeparatorDoubleClick,
   usageRange,
   setUsageRange,
+  archivedThreads,
+  onUnarchiveThread,
 }: {
   initialized?: InitializeResult;
   initialPage?: SettingsPage;
@@ -124,6 +135,9 @@ export function SettingsView({
   onSidebarResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSidebarSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
   onSidebarSeparatorDoubleClick: () => void;
+  // 归档页只读侧边栏归档清单 + 恢复回调。列表为空时渲染空态卡片。
+  archivedThreads?: readonly ThreadSummary[];
+  onUnarchiveThread: (thread: ThreadSummary) => void;
 }): JSX.Element {
   const providers = initialized?.providers ?? [];
   const runningProviderNameSet = useMemo(
@@ -486,6 +500,15 @@ export function SettingsView({
     <div ref={shellRef} className={`settings-shell${resizingSidebar ? " resizing-sidebar" : ""}`} style={shellStyle}>
       <aside className="settings-sidebar">
         <div className="traffic-spacer" />
+        {/*
+          * 同一个品牌占位，复制自主侧栏 AppSidebar 顶部的 .sidebar-brand。
+          * 这里放在 settings-sidebar 的 traffic-spacer 与 返回应用 按钮之间，
+          * 与主侧栏"traffic-spacer → 品牌 → 主操作"的相对位置一一对应，
+          * 这样打开/关闭设置时品牌始终在同一个视觉位置。
+          */}
+        <div className="sidebar-brand">
+          <span className="sidebar-brand-wordmark">wuu</span>
+        </div>
         <button className="settings-back-button" type="button" onClick={onBack}>
           <ArrowLeft className="icon" />
           <span>返回应用</span>
@@ -508,6 +531,9 @@ export function SettingsView({
           </SettingsNavItem>
           <SettingsNavItem icon={<Smartphone className="icon-lg" />} active={activePage === "remote"} onClick={() => setActivePage("remote")}>
             远程
+          </SettingsNavItem>
+          <SettingsNavItem icon={<Archive className="icon-lg" />} active={activePage === "archive"} onClick={() => setActivePage("archive")}>
+            归档
           </SettingsNavItem>
         </nav>
       </aside>
@@ -667,6 +693,11 @@ export function SettingsView({
               />
             ) : activePage === "remote" ? (
               <SettingsRemotePageContainer />
+            ) : activePage === "archive" ? (
+              <SettingsArchivePage
+                archivedThreads={archivedThreads ?? []}
+                onUnarchive={onUnarchiveThread}
+              />
             ) : (
               <SettingsUsagePage
                 usage={usage}
@@ -1421,7 +1452,8 @@ function SettingsGeneralPage({
           </SettingsRow>
           <SettingsRow
             title="消息流字号"
-            description="三档调节（13/14/16px），覆盖正文与聊天气泡"
+            description="13–20 px，覆盖正文与聊天气泡"
+            block
           >
             <MessageFlowFontSizeControl />
           </SettingsRow>
@@ -1831,6 +1863,70 @@ function SettingsGeneralPage({
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Archive page                                                               */
+/* -------------------------------------------------------------------------- */
+
+function SettingsArchivePage({
+  archivedThreads,
+  onUnarchive,
+}: {
+  archivedThreads: readonly ThreadSummary[];
+  onUnarchive: (thread: ThreadSummary) => void;
+}): JSX.Element {
+  // 列表按 `updated_at` 倒序排，最近归档的会话排在最上面，跟侧边栏的"最新活动优先"心智一致。
+  const sortedThreads = [...archivedThreads].sort((a, b) =>
+    b.updated_at.localeCompare(a.updated_at),
+  );
+  return (
+    <SettingsSection
+      title="已归档的会话"
+      description="归档后会在侧边栏隐藏，但会话内容、CWD 与历史仍然保留；恢复后会重新出现在对应项目下。"
+    >
+      <SettingsCard>
+        {sortedThreads.length === 0 ? (
+          <div className="settings-archive-empty" role="status">
+            <Archive className="settings-archive-empty-icon" aria-hidden="true" />
+            <p className="settings-archive-empty-title">暂无已归档的会话</p>
+            <p className="settings-archive-empty-hint">
+              在侧边栏行末点击归档按钮后会出现在这里，随时可以一键恢复到侧边栏。
+            </p>
+          </div>
+        ) : (
+          <div className="settings-archive-list" aria-label="已归档会话列表">
+            {sortedThreads.map((thread) => (
+              <SettingsRow key={thread.id}>
+                <div className="settings-archive-row">
+                  <div className="settings-archive-info">
+                    <span className="settings-archive-title">
+                      {thread.title.trim() || "未命名会话"}
+                    </span>
+                    <span
+                      className="settings-archive-cwd"
+                      title={thread.cwd}
+                    >
+                      {thread.cwd}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="settings-archive-restore"
+                    aria-label={`恢复 ${thread.title.trim() || "未命名会话"}`}
+                    onClick={() => onUnarchive(thread)}
+                  >
+                    <Archive className="icon-sm" aria-hidden="true" />
+                    恢复
+                  </button>
+                </div>
+              </SettingsRow>
+            ))}
+          </div>
+        )}
+      </SettingsCard>
+    </SettingsSection>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Usage page                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -2075,6 +2171,11 @@ function settingsPageMeta(
       return {
         title: "远程",
         description: "在手机上查看、驱动、批准这台电脑上的 agent。"
+      };
+    case "archive":
+      return {
+        title: "归档",
+        description: "查看所有已归档的会话,一键恢复到侧边栏继续使用。"
       };
   }
 }

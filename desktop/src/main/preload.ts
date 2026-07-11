@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import {
-  MESSAGE_FLOW_FONT_SIZE_PX,
+  MESSAGE_FLOW_FONT_SIZE_RANGE,
   type MessageFlowFontSize,
   type PopOutInitResult,
   type RemoteControlEvent,
@@ -29,24 +29,26 @@ const initialThemePreference = ((): ThemePreference => {
 // Same FOUC-free story for the message-stream reading size: ask the
 // main process synchronously and stamp --conversation-message-font-size
 // on <html> before React mounts, so even the first render of the
-// conversation pane carries the user's chosen size.
-const MESSAGE_FLOW_FONT_SIZE_VALUES_BOOT = [
-  "small",
-  "medium",
-  "large",
-] as const satisfies readonly MessageFlowFontSize[];
+// conversation pane carries the user's chosen size. The renderer
+// defensively clamps non-finite or out-of-range values to the range
+// defined in MESSAGE_FLOW_FONT_SIZE_RANGE so a corrupted settings file
+// (or even an unset window.wuu) never crashes the first paint.
 const initialMessageFlowFontSize: MessageFlowFontSize = ((): MessageFlowFontSize => {
   try {
     const value = ipcRenderer.sendSync(
       "wuu:message-flow-font-size-get-sync",
     ) as unknown;
-    return MESSAGE_FLOW_FONT_SIZE_VALUES_BOOT.includes(
-      value as MessageFlowFontSize,
-    )
-      ? (value as MessageFlowFontSize)
-      : "medium";
+    if (
+      typeof value === "number" &&
+      Number.isFinite(value) &&
+      value >= MESSAGE_FLOW_FONT_SIZE_RANGE.min &&
+      value <= MESSAGE_FLOW_FONT_SIZE_RANGE.max
+    ) {
+      return value;
+    }
+    return MESSAGE_FLOW_FONT_SIZE_RANGE.default;
   } catch {
-    return "medium";
+    return MESSAGE_FLOW_FONT_SIZE_RANGE.default;
   }
 })();
 
@@ -72,10 +74,9 @@ try {
   // so first paint never blinks at the default size. main.tsx re-applies
   // for the live subscription (no-op for size — we never need to react to
   // external changes).
-  const px = MESSAGE_FLOW_FONT_SIZE_PX[initialMessageFlowFontSize];
   document.documentElement.style.setProperty(
     "--conversation-message-font-size",
-    `${px}px`,
+    `${initialMessageFlowFontSize}px`,
   );
 } catch {
   // Same fall-back story as the theme stamp; dropping the inline value

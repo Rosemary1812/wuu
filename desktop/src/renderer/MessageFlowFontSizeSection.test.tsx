@@ -1,72 +1,53 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { MESSAGE_FLOW_FONT_SIZE_RANGE } from "../shared/protocol";
 import { applyMessageFlowFontSize } from "./MessageFlowFontSizeSection";
 
-beforeEach(() => {
-  document.documentElement.style.removeProperty(
-    "--conversation-message-font-size",
-  );
-});
+const STYLE_PROP = "--conversation-message-font-size" as const;
 
-afterEach(() => {
-  document.documentElement.style.removeProperty(
-    "--conversation-message-font-size",
-  );
-});
+function readStamp(): string {
+  return document.documentElement.style.getPropertyValue(STYLE_PROP);
+}
+
+function clearStamp(): void {
+  document.documentElement.style.removeProperty(STYLE_PROP);
+}
+
+beforeEach(clearStamp);
+afterEach(clearStamp);
 
 describe("applyMessageFlowFontSize", () => {
-  it("stamps the small step at 13px on <html>", () => {
-    applyMessageFlowFontSize("small");
-    expect(
-      document.documentElement.style.getPropertyValue(
-        "--conversation-message-font-size",
-      ),
-    ).toBe("13px");
+  it("stamps a value inside the range on <html>", () => {
+    applyMessageFlowFontSize(16);
+    expect(readStamp()).toBe("16px");
   });
 
-  it("stamps the medium step at 14px on <html>", () => {
-    applyMessageFlowFontSize("medium");
-    expect(
-      document.documentElement.style.getPropertyValue(
-        "--conversation-message-font-size",
-      ),
-    ).toBe("14px");
+  it("clamps values above the configured maximum", () => {
+    applyMessageFlowFontSize(99);
+    expect(readStamp()).toBe(`${MESSAGE_FLOW_FONT_SIZE_RANGE.max}px`);
   });
 
-  it("stamps the large step at 16px on <html>", () => {
-    applyMessageFlowFontSize("large");
-    expect(
-      document.documentElement.style.getPropertyValue(
-        "--conversation-message-font-size",
-      ),
-    ).toBe("16px");
+  it("clamps values below the configured minimum", () => {
+    applyMessageFlowFontSize(8);
+    expect(readStamp()).toBe(`${MESSAGE_FLOW_FONT_SIZE_RANGE.min}px`);
   });
 
-  it("overwrites a previous value when the user re-picks", () => {
-    applyMessageFlowFontSize("small");
-    applyMessageFlowFontSize("large");
-    expect(
-      document.documentElement.style.getPropertyValue(
-        "--conversation-message-font-size",
-      ),
-    ).toBe("16px");
+  it("falls back to the configured default for non-finite values", () => {
+    applyMessageFlowFontSize(Number.NaN);
+    expect(readStamp()).toBe(`${MESSAGE_FLOW_FONT_SIZE_RANGE.default}px`);
+    applyMessageFlowFontSize(Number.POSITIVE_INFINITY);
+    expect(readStamp()).toBe(`${MESSAGE_FLOW_FONT_SIZE_RANGE.default}px`);
   });
 
-  it("removes the inline stamp when the property is undefined", () => {
-    // Defensive: assert that an unknown value does not silently leave a
-    // stale inline stamp behind. The TypeScript type prevents this at
-    // compile time, but the runtime check guards against the "as any"
-    // escape hatch in IPC bridges.
-    document.documentElement.style.setProperty(
-      "--conversation-message-font-size",
-      "13px",
-    );
-    document.documentElement.style.removeProperty(
-      "--conversation-message-font-size",
-    );
-    expect(
-      document.documentElement.style.getPropertyValue(
-        "--conversation-message-font-size",
-      ),
-    ).toBe("");
+  it("overwrites a previous stamp on subsequent calls", () => {
+    applyMessageFlowFontSize(13);
+    applyMessageFlowFontSize(20);
+    expect(readStamp()).toBe(`${MESSAGE_FLOW_FONT_SIZE_RANGE.max}px`);
+  });
+
+  it("supports the half-step resolution the slider emits", () => {
+    applyMessageFlowFontSize(14.5);
+    expect(readStamp()).toBe("14.5px");
+    applyMessageFlowFontSize(15.5);
+    expect(readStamp()).toBe("15.5px");
   });
 });

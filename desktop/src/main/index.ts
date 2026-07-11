@@ -103,6 +103,7 @@ import {
   getCliAutoInstallEnabled,
   getMessageFlowFontSize,
   getThemePreference,
+  MESSAGE_FLOW_FONT_SIZE_RANGE,
   setCodexPetSettings,
   setCliAutoInstallEnabled,
   setMessageFlowFontSize,
@@ -1215,9 +1216,17 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle(
     "wuu:message-flow-font-size-set",
-    (_event, fontSize: MessageFlowFontSize) => {
-      const valid: MessageFlowFontSize[] = ["small", "medium", "large"];
-      const next = valid.includes(fontSize) ? fontSize : "medium";
+    (_event, fontSize: unknown) => {
+      // Mirror the renderer's clamp: keep the IPC boundary honest about
+      // the same 13-20 window so a corrupted renderer can't widen it.
+      const valid =
+        typeof fontSize === "number" &&
+        Number.isFinite(fontSize) &&
+        fontSize >= MESSAGE_FLOW_FONT_SIZE_RANGE.min &&
+        fontSize <= MESSAGE_FLOW_FONT_SIZE_RANGE.max;
+      const next: MessageFlowFontSize = valid
+        ? (fontSize as MessageFlowFontSize)
+        : MESSAGE_FLOW_FONT_SIZE_RANGE.default;
       setMessageFlowFontSize(next);
       return { ok: true, fontSize: next };
     },

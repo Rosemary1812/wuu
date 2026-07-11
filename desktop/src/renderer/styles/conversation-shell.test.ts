@@ -53,11 +53,12 @@ describe("conversation shell visible center", () => {
 });
 
 describe("conversation shell message typography tokens", () => {
-  it("keeps message and process typography on the Codex-style two-token scale", () => {
+  it("keeps process typography on the Codex-style two-token scale", () => {
+    // The body / process-font-size and process-font-weight aliases
+    // intentionally stay in .conversation-pane — they reference the
+    // message tokens which are owned at :root for the preview use case.
     const body = cssRuleBody(".conversation-pane");
 
-    expect(body).toMatch(/"SF Pro Text"/);
-    expect(body).toMatch(/--conversation-message-font-weight:\s*445;/);
     expect(body).toMatch(
       /--conversation-process-font-size:\s*var\(--conversation-message-font-size\);/,
     );
@@ -85,5 +86,47 @@ describe("conversation shell message typography tokens", () => {
 
     const body = cssRuleBody(".conversation-pane");
     expect(body).not.toMatch(/--conversation-message-font-size\s*:/);
+  });
+
+  it("owns the message font-family and font-weight at :root so the preview outside .conversation-pane inherits the same values", () => {
+    // Companion regression (2026-07-11): the settings-page slider
+    // shows a live .message-flow-preview rendered OUTSIDE
+    // .conversation-pane. font-family and font-weight must therefore
+    // live at :root (or a selector with lower specificity than the
+    // pane) so the preview reads them via standard CSS inheritance
+    // rather than via a hard-coded redeclaration.
+    const root = cssRuleBody(":root");
+    expect(root).toMatch(/"SF Pro Text"/);
+    expect(root).toMatch(/--conversation-message-font-weight:\s*445;/);
+
+    const body = cssRuleBody(".conversation-pane");
+    expect(body).not.toMatch(/--conversation-message-font-family\s*:/);
+    expect(body).not.toMatch(/--conversation-message-font-weight\s*:/);
+  });
+});
+
+describe("conversation shell message-flow preview", () => {
+  it("renders the preview block with the live message-flow typography", () => {
+    // Companion regression (2026-07-11, message-flow font-size setting):
+    // the slider in Settings → 外观 → 消息流字号 shows a sample line
+    // below so the user can read the chosen size in prose. The
+    // .message-flow-preview class must read
+    // --conversation-message-font-size (the same var the slider
+    // writes) so the preview and the actual stream stay in sync.
+    expect(conversationShellCssNoComments).toMatch(
+      /\.message-flow-preview\s*\{[^}]*var\(--conversation-message-font-size\)/,
+    );
+  });
+
+  it("renders paragraphs with the live line-height and inter-paragraph gap", () => {
+    // Same idea: the preview's spacing rhythm must mirror the
+    // conversation pane's, otherwise the slider's chosen size wouldn't
+    // actually preview accurately.
+    expect(conversationShellCssNoComments).toMatch(
+      /\.message-flow-preview[^}]*var\(--conversation-reading-line-height\)/,
+    );
+    expect(conversationShellCssNoComments).toMatch(
+      /\.message-flow-preview[^}]*var\(--conversation-message-max-width/,
+    );
   });
 });

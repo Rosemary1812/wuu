@@ -1,44 +1,51 @@
-import { useEffect, useState } from "react";
 import {
-  MESSAGE_FLOW_FONT_SIZE_PX,
+  type ChangeEvent,
+  type PointerEvent,
+  useEffect,
+  useState,
+} from "react";
+import {
+  MESSAGE_FLOW_FONT_SIZE_RANGE,
   type MessageFlowFontSize,
 } from "../shared/protocol";
 
-// Visual labels — kept here so the protocol module stays presentation-free.
-// Each step maps to a pixel value via MESSAGE_FLOW_FONT_SIZE_PX, applied
-// to --conversation-message-font-size on <html>.
-const SIZE_LABELS: Readonly<Record<MessageFlowFontSize, string>> = {
-  small: "小",
-  medium: "默认",
-  large: "大",
-};
-
-const ORDERED_SIZES: readonly MessageFlowFontSize[] = [
-  "small",
-  "medium",
-  "large",
+// Sample prose the Settings preview shows underneath the slider. Two
+// short paragraphs model the actual turn layout: each is roughly the
+// length of a real agent reply line, with mixed CJK/Latin glyphs so the
+// preview looks like the conversation pane rather than a polite
+// placeholder.
+const PREVIEW_SAMPLES: readonly string[] = [
+  "先看一下 README 的目录约定，再读一个相邻页面的 CSS——把改动控制在同一套既有规范里。",
+  "顺手跑一下单元测试，免得新代码悄悄破坏既有流程。",
 ];
 
-const DEFAULT_SIZE: MessageFlowFontSize = "medium";
+const { min, max, step, default: defaultSize } = MESSAGE_FLOW_FONT_SIZE_RANGE;
 
-function isMessageFlowFontSize(value: unknown): value is MessageFlowFontSize {
-  return (
-    value === "small" || value === "medium" || value === "large"
-  );
+function clampSize(value: unknown): MessageFlowFontSize {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return defaultSize;
+  }
+  return Math.min(max, Math.max(min, value));
+}
+
+function formatSize(size: number): string {
+  return `${size.toFixed(1)}px`;
 }
 
 /**
- * Stamp --conversation-message-font-size on <html> from the chosen step.
- * The inline style on the document element wins over the `:root`
- * declaration in conversation-shell.css, so the change cascades through
- * every message-flow surface (turns.css, chat.css, participants.css)
- * without touching per-component styles. Mirrors applyThemePreference.
+ * Stamp --conversation-message-font-size on <html> from the chosen px
+ * value. The inline style on the document element wins over the
+ * `:root` declaration in conversation-shell.css so the change cascades
+ * through every message-flow surface (turns.css, chat.css,
+ * participants.css, and the settings-page preview). Mirrors the
+ * applyThemePreference shape — caller-friendly side-effect helper.
  */
 export function applyMessageFlowFontSize(size: MessageFlowFontSize): void {
+  const clamped = clampSize(size);
   try {
     document.documentElement.style.setProperty(
       "--conversation-message-font-size",
-      `${MESSAGE_FLOW_FONT_SIZE_PX[size]}px`,
+      `${clamped}px`,
     );
   } catch {
     // Same fall-back story as Theme.ts — losing the inline stamp only
@@ -47,25 +54,24 @@ export function applyMessageFlowFontSize(size: MessageFlowFontSize): void {
 }
 
 /**
- * Settings row body for the user-facing message-stream reading size.
- * Self-contained like ThemePreferenceControl — reads and persists
- * through `window.wuu` directly and applies the choice to
- * --conversation-message-font-size immediately so the user sees the
- * switch without a save step.
+ * Settings row body for the user-facing message-stream reading size:
+ * a slider, the current px value, and a live preview block below that
+ * reads the same CSS variables the conversation pane uses. Reads and
+ * persists through `window.wuu` directly and applies the choice on
+ * every drag tick.
  */
 export function MessageFlowFontSizeControl(): JSX.Element {
-  const [size, setSize] = useState<MessageFlowFontSize>(() => {
-    const initial = window.wuu?.initialMessageFlowFontSize;
-    return isMessageFlowFontSize(initial) ? initial : DEFAULT_SIZE;
-  });
+  const [size, setSize] = useState<MessageFlowFontSize>(() =>
+    clampSize(window.wuu?.initialMessageFlowFontSize),
+  );
 
   useEffect(() => {
     let cancelled = false;
     void window.wuu
       ?.getMessageFlowFontSize?.()
       .then((stored) => {
-        if (!cancelled && isMessageFlowFontSize(stored)) {
-          setSize(stored);
+        if (!cancelled) {
+          setSize(clampSize(stored));
         }
       })
       .catch(() => {
@@ -76,35 +82,67 @@ export function MessageFlowFontSizeControl(): JSX.Element {
     };
   }, []);
 
-  function choose(next: MessageFlowFontSize): void {
-    if (next === size) {
-      return;
-    }
-    setSize(next);
-    applyMessageFlowFontSize(next);
-    void window.wuu?.setMessageFlowFontSize?.(next).catch(() => {
+  function liveUpdate(value: number): void {
+    const clamped = clampSize(value);
+    setSize(clamped);
+    // Write the CSS variable on every onChange tick so the
+    // .message-flow-preview below reacts immediately while the user
+    // drags. The actual persistence happens on release
+    // (commitOnRelease) so we don't spam the JSON file with each
+    // pixel of drag motion.
+    applyMessageFlowFontSize(clamped);
+  }
+
+  function persist(value: number): void {
+    void window.wuu?.setMessageFlowFontSize?.(clampSize(value)).catch(() => {
       // Persistence failure leaves the applied size for this window;
       // the next launch falls back to the stored value.
     });
   }
 
   return (
-    <div
-      className="theme-segmented"
-      role="group"
-      aria-label="消息流字号"
-    >
-      {ORDERED_SIZES.map((value) => (
-        <button
-          key={value}
-          type="button"
-          aria-pressed={size === value}
-          data-testid={`settings-message-flow-font-size-${value}`}
-          onClick={() => choose(value)}
+    <div className="message-flow-font-size-control">
+      <div className="message-flow-font-size-slider-row">
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={size}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            liveUpdate(Number.parseFloat(event.currentTarget.value))
+          }
+          onPointerUp={(event: PointerEvent<HTMLInputElement>) =>
+            persist(Number.parseFloat(event.currentTarget.value))
+          }
+          onBlur={(event) =>
+            persist(Number.parseFloat(event.currentTarget.value))
+          }
+          aria-label="消息流字号"
+          data-testid="settings-message-flow-font-size-slider"
+        />
+        <span
+          className="message-flow-font-size-value"
+          aria-live="polite"
+          data-testid="settings-message-flow-font-size-value"
         >
-          {SIZE_LABELS[value]}
-        </button>
-      ))}
+          {formatSize(size)}
+        </span>
+      </div>
+      <div
+        className="message-flow-preview"
+        aria-label="消息流字号预览"
+        data-testid="settings-message-flow-font-size-preview"
+      >
+        {PREVIEW_SAMPLES.map((text, index) => (
+          <p
+            className="message-flow-preview-paragraph"
+            key={text}
+          >
+            {text}
+          </p>
+        ))}
+      </div>
     </div>
   );
 }

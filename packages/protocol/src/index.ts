@@ -1752,30 +1752,21 @@ export type ComposerGoalSummary = {
 
 // Appearance preference for the desktop shell. "system" follows the OS
 // light/dark setting via prefers-color-scheme.
-// Source of truth for the user's message-stream reading size. Lives on
-// <html> via --conversation-message-font-size so a single change scales
-// every message-flow surface (turns.css, chat.css, participants.css).
-// Kept on a three-step ladder so the segmented control in Settings stays
-// simple — finer pixel-level control still lives in the developer-only
-// design-tokens mixer (ConversationDesignTokens.ts).
-export type MessageFlowFontSize = "small" | "medium" | "large";
+// Continuous px value the user picks on the message-stream font-size
+// slider. Range mirrors the developer-only design-tokens mixer
+// (ConversationDesignTokens.ts → msg-font-size: 13–20 step 0.5 default
+// 14) so the user setting and the mixer operate in the same coordinate
+// space. The renderer clamps incoming values to this range before
+// applying them; the main process keeps the same range check at the
+// IPC boundary.
+export type MessageFlowFontSize = number;
 
-export const MESSAGE_FLOW_FONT_SIZE_VALUES: readonly MessageFlowFontSize[] = [
-  "small",
-  "medium",
-  "large",
-] as const;
-
-// Pixel values for each step. Lifted out of the segmented control so the
-// preload bootstrap can compute the same CSS variable without importing
-// React.
-export const MESSAGE_FLOW_FONT_SIZE_PX: Readonly<
-  Record<MessageFlowFontSize, number>
-> = {
-  small: 13,
-  medium: 14,
-  large: 16,
-};
+export const MESSAGE_FLOW_FONT_SIZE_RANGE = {
+  min: 13,
+  max: 20,
+  step: 0.5,
+  default: 14,
+} as const;
 
 export type ThemePreference = "system" | "light" | "dark";
 
