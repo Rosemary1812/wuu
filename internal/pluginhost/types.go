@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 // Hook identifies a typed interception point exposed by the Wuu runtime.
@@ -88,6 +89,25 @@ type ChatRequestOutput struct {
 	ProviderOptions             map[string]any             `json:"provider_options,omitempty"`
 	NativeDeferredToolDiscovery bool                       `json:"native_deferred_tool_discovery,omitempty"`
 	ForceToolName               string                     `json:"force_tool_name,omitempty"`
+}
+
+type ToolExecuteInput struct {
+	SessionID string          `json:"session_id,omitempty"`
+	ThreadID  string          `json:"thread_id,omitempty"`
+	CWD       string          `json:"cwd"`
+	StepIndex int             `json:"step_index,omitempty"`
+	CallID    string          `json:"call_id"`
+	Tool      string          `json:"tool"`
+	Arguments json.RawMessage `json:"arguments"`
+}
+
+type ToolExecuteBeforeOutput struct {
+	Arguments json.RawMessage `json:"arguments"`
+}
+
+type ToolExecuteAfterOutput struct {
+	Result toolresult.Result `json:"result"`
+	Error  string            `json:"error,omitempty"`
 }
 
 type State string

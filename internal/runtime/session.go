@@ -314,6 +314,7 @@ func NewSession(opts Options) (*Session, error) {
 		})
 		toolkit = kit
 		toolExecutor = hooks.NewHookedExecutor(kit, hookDispatcher, "", rootDir)
+		toolExecutor = newPluginToolExecutor(toolExecutor, pluginHost, "", rootDir)
 		connectMCPServers(cfg, discoveredPlugins, toolkit)
 	}
 
@@ -963,6 +964,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		// workspaces + temp + artifact/memory extras.
 		kit.SetFileScopeRoots(workspaces.BoundaryRoots(kit.RootDir(), wuuHome, fileScopeExtras...))
 		toolExecutor = hooks.NewHookedExecutor(kit, s.HookDispatcher, "", threadRoot)
+		toolExecutor = newPluginToolExecutor(toolExecutor, s.PluginHost, id, threadRoot)
 	}
 
 	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
