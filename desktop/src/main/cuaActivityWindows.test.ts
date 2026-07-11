@@ -5,6 +5,8 @@ import {
   activityControlMethod,
   cuaActivityFromServerEvent,
   cuaActivityHTML,
+  fitActivityPreviewSize,
+  resizeActivityBounds,
   snapActivityBounds,
 } from "./cuaActivityWindows";
 
@@ -92,6 +94,21 @@ describe("CUA Activity windows", () => {
       workArea,
       [wuuWindow],
     )).toEqual({ x: 700, y: 500, width: 380, height: 248 });
+  });
+
+  it("fits preview proportions within the compact overlay envelope", () => {
+    expect(fitActivityPreviewSize(1920, 1080)).toEqual({ width: 409, height: 230 });
+    expect(fitActivityPreviewSize(1100, 1442)).toEqual({ width: 280, height: 367 });
+    expect(fitActivityPreviewSize(1000, 1000)).toEqual({ width: 307, height: 307 });
+    expect(fitActivityPreviewSize(0, 0)).toEqual({ width: 380, height: 248 });
+  });
+
+  it("keeps automatic resizing anchored to the nearest work-area edges", () => {
+    expect(resizeActivityBounds(
+      { x: 1012, y: 24, width: 380, height: 248 },
+      { width: 280, height: 367 },
+      { x: 0, y: 0, width: 1440, height: 900 },
+    )).toEqual({ x: 1112, y: 24, width: 280, height: 367 });
   });
 
   it("parses only explicit Activity control URLs", () => {

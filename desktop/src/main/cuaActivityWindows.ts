@@ -1,4 +1,4 @@
-import { BrowserWindow, screen } from "electron";
+import { BrowserWindow, nativeImage, screen } from "electron";
 import type { Rectangle } from "electron";
 import { fileURLToPath } from "node:url";
 import type { ActivitySession, ServerEvent } from "../shared/protocol";
@@ -9,6 +9,47 @@ export type ActivityWindowAction = "takeover" | "release" | "stop";
 
 const SNAP_THRESHOLD = 20;
 const SNAP_INSET = 8;
+const PREVIEW_TARGET_AREA = 380 * 248;
+const PREVIEW_MIN_WIDTH = 280;
+const PREVIEW_MAX_WIDTH = 480;
+const PREVIEW_MIN_HEIGHT = 180;
+const PREVIEW_MAX_HEIGHT = 420;
+
+export function fitActivityPreviewSize(imageWidth: number, imageHeight: number): { width: number; height: number } {
+  if (imageWidth <= 0 || imageHeight <= 0) {
+    return { width: 380, height: 248 };
+  }
+  const ratio = imageWidth / imageHeight;
+  let width = Math.sqrt(PREVIEW_TARGET_AREA * ratio);
+  let height = width / ratio;
+  if (width < PREVIEW_MIN_WIDTH) { width = PREVIEW_MIN_WIDTH; height = width / ratio; }
+  if (height < PREVIEW_MIN_HEIGHT) { height = PREVIEW_MIN_HEIGHT; width = height * ratio; }
+  if (width > PREVIEW_MAX_WIDTH) { width = PREVIEW_MAX_WIDTH; height = width / ratio; }
+  if (height > PREVIEW_MAX_HEIGHT) { height = PREVIEW_MAX_HEIGHT; width = height * ratio; }
+  return {
+    width: Math.round(Math.max(PREVIEW_MIN_WIDTH, Math.min(PREVIEW_MAX_WIDTH, width))),
+    height: Math.round(Math.max(PREVIEW_MIN_HEIGHT, Math.min(PREVIEW_MAX_HEIGHT, height))),
+  };
+}
+
+export function resizeActivityBounds(
+  bounds: Rectangle,
+  size: { width: number; height: number },
+  workArea: Rectangle,
+): Rectangle {
+  const leftDistance = Math.abs(bounds.x - workArea.x);
+  const rightDistance = Math.abs(workArea.x + workArea.width - (bounds.x + bounds.width));
+  const topDistance = Math.abs(bounds.y - workArea.y);
+  const bottomDistance = Math.abs(workArea.y + workArea.height - (bounds.y + bounds.height));
+  const desiredX = rightDistance < leftDistance ? bounds.x + bounds.width - size.width : bounds.x;
+  const desiredY = bottomDistance < topDistance ? bounds.y + bounds.height - size.height : bounds.y;
+  return {
+    x: Math.max(workArea.x, Math.min(workArea.x + workArea.width - size.width, desiredX)),
+    y: Math.max(workArea.y, Math.min(workArea.y + workArea.height - size.height, desiredY)),
+    width: size.width,
+    height: size.height,
+  };
+}
 
 export function snapActivityBounds(
   bounds: Rectangle,
@@ -62,6 +103,9 @@ type ActivityControl = (
 ) => Promise<ActivitySession>;
 
 export class CUAActivityWindowManager {
+  private readonly manuallyResizedWindowIDs = new Set<number>();
+  private readonly previewState = new Map<string, { ratio: number; target: string }>();
+
   constructor(
     private readonly registry: WindowRegistry,
     private readonly control: ActivityControl,
@@ -96,8 +140,8 @@ export class CUAActivityWindowManager {
       height,
       x: workArea.x + workArea.width - width - 24,
       y: workArea.y + 24,
-      minWidth: 320,
-      minHeight: 200,
+      minWidth: PREVIEW_MIN_WIDTH,
+      minHeight: PREVIEW_MIN_HEIGHT,
       frame: false,
       transparent: true,
       backgroundColor: "#00000000",
@@ -116,6 +160,9 @@ export class CUAActivityWindowManager {
     win.setAlwaysOnTop(true, "floating");
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    win.on("will-resize", () => {
+      this.manuallyResizedWindowIDs.add(win.webContents.id);
+    });
     win.on("moved", () => {
       if (win.isDestroyed()) return;
       const bounds = win.getBounds();
@@ -151,6 +198,8 @@ export class CUAActivityWindowManager {
     });
     this.registry.setActivityWindow(activity.id, windowID);
     win.on("closed", () => {
+      this.manuallyResizedWindowIDs.delete(windowID);
+      this.previewState.delete(activity.id);
       this.registry.unregisterWindow(windowID);
     });
     win.once("ready-to-show", () => {
@@ -161,7 +210,34 @@ export class CUAActivityWindowManager {
 
   private render(win: BrowserWindow, activity: ActivitySession): void {
     if (win.isDestroyed()) return;
+    this.autoSizeForPreview(win, activity);
     void win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(cuaActivityHTML(activity))}`);
+  }
+
+  private autoSizeForPreview(win: BrowserWindow, activity: ActivitySession): void {
+    const preview = activity.preview?.trim();
+    const windowID = win.webContents.id;
+    if (!preview?.startsWith("file:") || this.manuallyResizedWindowIDs.has(windowID)) return;
+    let imagePath: string;
+    try {
+      imagePath = fileURLToPath(preview);
+    } catch {
+      return;
+    }
+    const imageSize = nativeImage.createFromPath(imagePath).getSize();
+    if (imageSize.width <= 0 || imageSize.height <= 0) return;
+    const ratio = imageSize.width / imageSize.height;
+    const target = activity.target?.trim() ?? "";
+    const previous = this.previewState.get(activity.id);
+    const ratioChanged = !previous || Math.abs(ratio / previous.ratio - 1) > 0.05;
+    if (!ratioChanged && previous.target === target) return;
+    this.previewState.set(activity.id, { ratio, target });
+    const bounds = win.getBounds();
+    const workArea = screen.getDisplayMatching(bounds).workArea;
+    const resized = resizeActivityBounds(bounds, fitActivityPreviewSize(imageSize.width, imageSize.height), workArea);
+    if (resized.width !== bounds.width || resized.height !== bounds.height) {
+      win.setBounds(resized, false);
+    }
   }
 }
 
