@@ -42,7 +42,7 @@ describe("workspace right panel chrome", () => {
     expect(cssRuleBody(".workspace-panel-tabbar")).toMatch(/height:\s*48px;/);
   });
 
-  it("lets the docked panel tabbar drag the window while controls stay clickable", () => {
+  it("keeps the docked panel tabbar drag-able when tabs are open", () => {
     expect(cssRuleBody(".workspace-panel-tabbar")).toMatch(
       /-webkit-app-region:\s*drag;/,
     );
@@ -52,10 +52,13 @@ describe("workspace right panel chrome", () => {
     expect(cssRuleBody(".workspace-panel-tabbar button *")).toMatch(
       /-webkit-app-region:\s*no-drag;/,
     );
-    expect(cssRuleBody(".workspace-tool-tab")).toMatch(
+    // Opening a tab must not shrink the drag strip. The tab chip itself and
+    // the gaps around it should stay drag-able; only the inner clickable
+    // controls (label, close button) opt out via the button / button * rules.
+    expect(cssRuleBody(".workspace-tool-tab")).not.toMatch(
       /-webkit-app-region:\s*no-drag;/,
     );
-    expect(cssRuleBody(".workspace-panel-tabs")).toMatch(
+    expect(cssRuleBody(".workspace-panel-tabs")).not.toMatch(
       /-webkit-app-region:\s*no-drag;/,
     );
   });

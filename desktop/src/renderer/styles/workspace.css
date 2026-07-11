@@ -323,7 +323,11 @@
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  -webkit-app-region: no-drag;
+  /* Inherits -webkit-app-region: drag from .workspace-panel-tabbar so the
+   * gap between tabs stays part of the window drag strip. The inner
+   * `.workspace-panel-tabbar button` / `button *` rules below opt individual
+   * tab controls out so clicks on a tab label or the close button still
+   * reach React. */
 }
 
 .workspace-panel-tabs::-webkit-scrollbar {
@@ -343,7 +347,11 @@
   background: transparent;
   color: var(--workspace-tool-tab-text);
   overflow: hidden;
-  -webkit-app-region: no-drag;
+  /* Inherits -webkit-app-region: drag from .workspace-panel-tabbar so the
+   * 8px strip above/below the tab (and the 2px gap between tabs) stays
+   * draggable when tabs are open. The tab's inner button keeps the
+   * `.workspace-panel-tabbar button` no-drag override so click to select /
+   * close still works. */
   transition:
     background-color 140ms ease,
     color 140ms ease,

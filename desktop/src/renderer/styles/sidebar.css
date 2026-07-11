@@ -103,7 +103,10 @@
  * popped-out titlebar reservation. The main titlebar (which normally
  * provides the window drag region) lives inside the now-hidden
  * conversation-pane, so the tabbar itself takes over as the drag handle.
- * Buttons + tabs opt back out below so they stay clickable. */
+ * Tabs + the tab strip stay part of the drag region (matching the docked
+ * mode behavior) so opening a tab does not shrink the drag strip; only
+ * the tabbar's buttons opt out via the `.workspace-panel-tabbar button`
+ * rule in workspace.css. */
 .app-shell.right-panel-globalized .workspace-panel-tabbar {
   padding-left: 86px;
   -webkit-app-region: drag;
@@ -116,12 +119,6 @@
     calc(86px - (100vw - var(--workspace-right-panel-width, 360px))),
     86px
   );
-}
-
-.app-shell.right-panel-globalized .workspace-panel-tabbar > button,
-.app-shell.right-panel-globalized .workspace-panel-tabbar .workspace-tool-tab,
-.app-shell.right-panel-globalized .workspace-panel-tabbar .workspace-panel-tabs {
-  -webkit-app-region: no-drag;
 }
 
 .app-shell.bottom-panel-open {
