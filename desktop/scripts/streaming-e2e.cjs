@@ -222,18 +222,22 @@ async function run() {
   emitNotification(win, "item/agentMessage/delta", { thread_id: thread.id, turn_id: turn.id, item_id: agentItem.id, delta: fullText });
 
   await waitFor(win, () => Boolean(document.querySelector(".agent-text .streaming-markdown")), 3000);
-  const partial = await waitFor(
+  const live = await waitFor(
     win,
     () => {
       const snapshot = streamingSnapshot();
-      return snapshot.hasStreaming && snapshot.textLength > 0 && snapshot.textLength < window.__STREAMING_E2E_FULL_LENGTH__
+      return snapshot.hasStreaming && snapshot.textLength >= window.__STREAMING_E2E_FULL_LENGTH__
         ? snapshot
         : null;
     },
     3000,
     { fullLength: fullText.length }
   );
-  assert.equal(partial.hasStaticFallback, false, "Assistant content should not switch to static RichContent fallback.");
+  assert.equal(live.hasStaticFallback, false, "Assistant content should not switch to static RichContent fallback.");
+  assert.ok(
+    live.text.includes("streaming-word-119"),
+    "A provider chunk should render without a second client-side character chase."
+  );
 
   const debug = await waitFor(
     win,

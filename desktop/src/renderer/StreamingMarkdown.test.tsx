@@ -199,27 +199,29 @@ describe("StreamingMarkdown", () => {
     expect(feather?.nextElementSibling?.classList.contains("stream-cursor")).toBe(true);
   });
 
-  it("lets consecutive RAF microbatches finish their feather entrance together", async () => {
+  it("lets consecutive provider chunks finish their feather entrance together", async () => {
     await withManualAnimationFrames(async (flush) => {
       const key = streamTextKey("turn", "s2", "text");
-      streamTextStore.seed(key, "Hello world");
-      mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
+      streamTextStore.seed(key, "Hello");
+      mount({ streamKey: key, initialText: "Hello", isLive: true, phase: "final_answer" });
 
+      streamTextStore.append(key, " world");
       await flush(0);
+      streamTextStore.append(key, " again");
       await flush(16);
-      await flush(32);
 
       expect(document.querySelectorAll(".stream-feather-enter").length).toBeGreaterThan(1);
     });
   });
 
-  it("caps retained feather batches during sustained RAF pressure", async () => {
+  it("caps retained feather batches during sustained provider chunks", async () => {
     await withManualAnimationFrames(async (flush) => {
       const key = streamTextKey("turn", "s2", "text");
-      streamTextStore.seed(key, "x".repeat(200));
-      mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
+      streamTextStore.seed(key, "x");
+      mount({ streamKey: key, initialText: "x", isLive: true, phase: "final_answer" });
 
       for (let frame = 0; frame < 20; frame += 1) {
+        streamTextStore.append(key, "x");
         await flush(frame * 16);
       }
 
@@ -232,12 +234,11 @@ describe("StreamingMarkdown", () => {
   it("does not re-feather existing text when an inline Markdown delimiter closes", async () => {
     await withManualAnimationFrames(async (flush) => {
       const key = streamTextKey("turn", "s2", "text");
-      streamTextStore.seed(key, "**bold**");
+      streamTextStore.seed(key, "**bold");
       mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
 
-      for (const timestamp of [0, 16, 32, 48, 64]) {
-        await flush(timestamp);
-      }
+      streamTextStore.append(key, "**");
+      await flush(0);
 
       expect(document.querySelector("strong")).not.toBeNull();
       expect(document.querySelector("strong .stream-feather-enter")).toBeNull();

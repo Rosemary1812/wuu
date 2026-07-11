@@ -23,10 +23,10 @@ import {
  * back-end thread item. We do not maintain an internal
  * streaming/settling/settled state machine — `isLive` flips the renderer
  * between two modes:
- *   - `isLive=true`:  RAF loop reveals characters one at a time with a cursor.
- *   - `isLive=false`: text is rendered in full immediately. The cursor
- *                     fades out and `onSettled` fires once the visible
- *                     cursor reaches the end of the text.
+ *   - `isLive=true`: server-streamed chunks render on the store's coalesced
+ *                    animation frame with a cursor and a short glyph fade.
+ *   - `isLive=false`: text remains rendered in full. The cursor fades out
+ *                     and `onSettled` fires once the final snapshot lands.
  *
  * `phase` is accepted so callers can pass the same semantic state they use
  * elsewhere, but typography and streaming affordances stay stable across
@@ -65,21 +65,6 @@ const CURSOR_SENTINEL = "";
 const FEATHER_RETENTION_MS = 110;
 const MAX_FEATHER_BATCHES = 8;
 
-const STREAM_CONFIG = {
-  /** Calm default rate used while the reader is keeping up. */
-  baseCps: 72,
-  /** Rate when the upstream is ahead of the cursor (catch-up). */
-  burstCps: 220,
-  /** Hard ceiling on the catch-up rate. */
-  maxCps: 360,
-  /** Floor that keeps the cursor moving even on very small backlogs. */
-  minCps: 28,
-  /** Allow a small lead-in so the next character is ready before reveal. */
-  targetLagChars: 6,
-  /** Cap a single frame's reveal count so we never skip characters. */
-  maxRevealPerFrame: 6
-} as const;
-
 export function StreamingMarkdown({
   streamKey,
   initialText = "",
@@ -98,7 +83,9 @@ export function StreamingMarkdown({
   // The text we actually render. The store may be cleared (in `onSettled`)
   // before the parent unmounts us, so the hook falls back to `initialText`
   // instead of blanking the visible message.
-  const [renderedText, setRenderedText] = useState(targetText);
+  const [renderedText, setRenderedText] = useState(
+    isLive ? initialText : targetText,
+  );
   const acceptedStreamValueRef = useRef(hasStreamValue);
   useLayoutEffect(() => {
     if (hasStreamValue) {
@@ -121,28 +108,11 @@ export function StreamingMarkdown({
   // it isn't. The back-end message phase never gates rendering of the text.
   const phase: StreamPhase = isLive ? "streaming" : "settled";
 
-  /* ------------------------- Visible character cursor -------------------- */
-  const initialVisibleLength = isLive
-    ? Math.min(initialText.length, targetText.length)
-    : targetText.length;
-  const [visibleLength, setVisibleLength] = useState<number>(
-    initialVisibleLength,
-  );
   const [featherReveals, setFeatherReveals] = useState<FeatherReveal[]>([]);
 
-  /* --------------------- Cursor lifecycle (shown -> fading) -------------- */
-  const [cursorState, setCursorState] = useState<"shown" | "fading">(
-    () => (isLive ? "shown" : "fading"),
-  );
-
   /* ------------------------------- Refs ---------------------------------- */
-  const renderedTextRef = useRef(renderedText);
-  const visibleRef = useRef(visibleLength);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const previousCursorContainerTextRef = useRef<string | undefined>(undefined);
-  const rafRef = useRef<number | undefined>(undefined);
-  const lastFrameTsRef = useRef<number | undefined>(undefined);
-  const isLiveRef = useRef(isLive);
   const onFrameRef = useRef(onFrame);
   const onSettledRef = useRef(onSettled);
   const settledNotifiedRef = useRef(false);
@@ -151,16 +121,9 @@ export function StreamingMarkdown({
 
   /* ----------------------- Refs always track props ------------------------ */
   useLayoutEffect(() => {
-    renderedTextRef.current = renderedText;
-  }, [renderedText]);
-  useLayoutEffect(() => {
-    visibleRef.current = visibleLength;
-  }, [visibleLength]);
-  useLayoutEffect(() => {
-    isLiveRef.current = isLive;
     onFrameRef.current = onFrame;
     onSettledRef.current = onSettled;
-  }, [isLive, onFrame, onSettled]);
+  }, [onFrame, onSettled]);
 
   /* -------------------------- Settle notification ------------------------ */
   // Fire `onSettled` once the upstream is no longer live AND the visible
@@ -168,8 +131,6 @@ export function StreamingMarkdown({
   // any external "live" tracking (we don't manage it ourselves anymore).
   const trySettle = useCallback((): void => {
     if (settledNotifiedRef.current) return;
-    if (isLiveRef.current) return;
-    if (visibleRef.current < renderedTextRef.current.length) return;
     settledNotifiedRef.current = true;
     onSettledRef.current?.();
   }, []);
@@ -203,120 +164,22 @@ export function StreamingMarkdown({
     featherTimeoutsRef.current.clear();
   }, []);
 
-  /* --------------------------- Sync / RAF loop --------------------------- */
-  // Snap visible to text length without animation. Used when the surface
-  // goes non-live (e.g. unmounting, or an out-of-band text replacement).
-  const syncImmediate = useCallback((text: string): void => {
-    if (rafRef.current !== undefined) {
-      window.cancelAnimationFrame(rafRef.current);
-      rafRef.current = undefined;
-    }
-    lastFrameTsRef.current = undefined;
-    visibleRef.current = text.length;
-    clearFeatherReveals();
-    setVisibleLength(text.length);
-    settledNotifiedRef.current = false;
+  // The store already coalesces provider deltas to one notification per
+  // animation frame. Rendering those committed chunks directly avoids a
+  // second client-side character chase that used to keep React and Markdown
+  // busy for seconds after the provider had already delivered the text.
+  useLayoutEffect(() => {
     onFrameRef.current?.();
-  }, [clearFeatherReveals]);
+  }, [renderedText]);
 
-  // The frame loop. Advances `visible` toward the target at a rate
-  // proportional to the backlog. We never skip characters: each frame
-  // reveals at most `maxRevealPerFrame` characters.
-  const startFrameLoop = useCallback((): void => {
-    if (rafRef.current !== undefined) return;
-    const tick = (ts: number): void => {
-      const text = renderedTextRef.current;
-      const targetLen = text.length;
-      const current = visibleRef.current;
-      if (current >= targetLen) {
-        rafRef.current = undefined;
-        lastFrameTsRef.current = undefined;
-        trySettle();
-        return;
-      }
-      const lastTs = lastFrameTsRef.current ?? ts;
-      lastFrameTsRef.current = ts;
-      // Clamp delta so a stalled tab cannot reveal a huge burst in one
-      // step.
-      const deltaSeconds = Math.max(0.001, Math.min((ts - lastTs) / 1000, 0.05));
-      const backlog = targetLen - current;
-      const lagged = Math.max(0, backlog - STREAM_CONFIG.targetLagChars);
-      const cps = Math.min(
-        STREAM_CONFIG.maxCps,
-        Math.max(
-          STREAM_CONFIG.minCps,
-          lagged > 0 ? STREAM_CONFIG.burstCps : STREAM_CONFIG.baseCps
-        )
-      );
-      const revealCount = Math.max(
-        1,
-        Math.min(
-          backlog,
-          STREAM_CONFIG.maxRevealPerFrame,
-          Math.ceil(cps * deltaSeconds)
-        )
-      );
-      const next = Math.min(targetLen, current + revealCount);
-      visibleRef.current = next;
-      setVisibleLength(next);
-      onFrameRef.current?.();
-      if (next >= targetLen) {
-        rafRef.current = undefined;
-        lastFrameTsRef.current = undefined;
-        trySettle();
-        return;
-      }
-      rafRef.current = window.requestAnimationFrame(tick);
-    };
-    rafRef.current = window.requestAnimationFrame(tick);
-  }, [trySettle]);
-
-  /* -------------------- Effect: keep target in sync --------------------- */
   useEffect(() => {
-    // Non-live surfaces render the latest text without animation.
-    if (!isLiveRef.current) {
-      syncImmediate(renderedTextRef.current);
-      trySettle();
-      return undefined;
-    }
-    const text = renderedTextRef.current;
-    // If the upstream shrank the text (e.g. `*/replace`), clamp the
-    // visible cursor so we never overshoot.
-    if (visibleRef.current > text.length) {
-      syncImmediate(text);
-      trySettle();
-      return undefined;
-    }
-    if (visibleRef.current < text.length) {
+    if (isLive) {
       settledNotifiedRef.current = false;
-      startFrameLoop();
-    } else {
-      // Already caught up; settle if appropriate.
-      trySettle();
+      return;
     }
-    return () => {
-      if (rafRef.current !== undefined) {
-        window.cancelAnimationFrame(rafRef.current);
-        rafRef.current = undefined;
-      }
-    };
-  }, [renderedText, isLive, startFrameLoop, syncImmediate, trySettle]);
-
-  /* --------- Effect: settled path skips the RAF chase -------------------- */
-  // The legacy implementation gated "settled" on the RAF loop catching up
-  // to `renderedText`, which made long commentary items (1000+ chars)
-  // appear to keep streaming for seconds after the upstream went idle. We
-  // now treat `isLive=false` as an authoritative settle signal: snap the
-  // visible cursor to the end of the text immediately and let `trySettle`
-  // fire `onSettled` in the next effect tick.
-  useEffect(() => {
-    if (isLive) return;
-    const text = renderedTextRef.current;
-    if (visibleRef.current < text.length) {
-      syncImmediate(text);
-    }
+    clearFeatherReveals();
     trySettle();
-  }, [isLive, syncImmediate, trySettle]);
+  }, [clearFeatherReveals, isLive, trySettle]);
 
   /* ---------------------- Visible glyph feathering ---------------------- */
   // Markdown source growth is not the same as visible text growth: closing
@@ -346,29 +209,11 @@ export function StreamingMarkdown({
     // A Markdown structure change or replacement altered existing visible
     // glyphs. Clear old ranges rather than replaying them as new content.
     clearFeatherReveals();
-  }, [clearFeatherReveals, isLive, queueFeatherReveal, renderedText, visibleLength]);
-
-  /* --------------------- Cursor visibility & fade-out ------------------- */
-  const hasMoreToReveal = visibleLength < renderedText.length;
-  useEffect(() => {
-    if (hasMoreToReveal) {
-      // Still streaming: keep the cursor visible.
-      setCursorState("shown");
-      return;
-    }
-    if (!isLive) {
-      // Caught up and not live: fade the cursor with a parent data
-      // attribute. The cursor span stays mounted and its class stays
-      // stable, so hiding it does not force the Markdown tail to reparse.
-      setCursorState("fading");
-      return;
-    }
-    // Caught up but still live: keep visible while we wait for more.
-    setCursorState("shown");
-  }, [hasMoreToReveal, isLive]);
+  }, [clearFeatherReveals, isLive, queueFeatherReveal, renderedText]);
 
   /* ------------------------- Derived view data -------------------------- */
-  const visibleText = renderedText.slice(0, visibleLength);
+  const visibleText = renderedText;
+  const cursorState = isLive ? "shown" : "fading";
   // The cursor appears for all live assistant text. Commentary and final
   // answers share the same visual treatment so a later phase resolution does
   // not cause a typography or affordance jump.

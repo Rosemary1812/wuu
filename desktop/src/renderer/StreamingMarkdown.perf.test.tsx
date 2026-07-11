@@ -1,13 +1,14 @@
 /**
- * Per-tick render cost for StreamingMarkdown.
+ * Stream update cost for StreamingMarkdown.
  *
- * The streaming surface re-renders on every visible-character advance.
- * Before block-level memoization, that cost scaled linearly with the
- * total answer length and made the main thread freeze on long
- * responses. The contract enforced here:
+ * The streaming surface must render provider chunks directly. It must not
+ * manufacture a second RAF loop that advances a few visible characters per
+ * frame after the provider text has already arrived. That old character
+ * chase created thousands of React/Markdown renders for one long answer and
+ * starved input such as the interrupt button. The contract enforced here:
  *
- *   - average per-tick render stays bounded regardless of total length
- *   - p99 per-tick render stays under one frame (16ms)
+ *   - a long buffered answer needs no artificial follow-up animation frames
+ *   - the initial render stays within a generous CI-safe bound
  *
  * These thresholds are deliberately generous so CI machines under load
  * don't flake. The real-world budget is much tighter.
@@ -61,7 +62,7 @@ afterEach(() => {
 });
 
 describe("StreamingMarkdown perf", () => {
-  it("keeps per-tick render cost bounded for long answers", async () => {
+  it("does not create a character-chase frame loop for long answers", async () => {
     const key = streamTextKey("turn", "perf", "text");
     streamTextStore.seed(key, longText);
     container = document.createElement("div");
@@ -72,7 +73,7 @@ describe("StreamingMarkdown perf", () => {
     const realRAF = window.requestAnimationFrame;
     const pending: FrameRequestCallback[] = [];
     let nextHandle = 1;
-    const renderDurations: number[] = [];
+    const start = performance.now();
 
     window.requestAnimationFrame = ((cb: FrameRequestCallback) => {
       pending.push(cb);
@@ -90,59 +91,12 @@ describe("StreamingMarkdown perf", () => {
       );
     });
 
-    let tickCount = 0;
-    while (pending.length > 0 && tickCount < 5000) {
-      const cb = pending.shift()!;
-      const ts = (tickCount + 1) * 16; // simulate 60fps
-      const start = performance.now();
-      await act(async () => {
-        cb(ts);
-      });
-      renderDurations.push(performance.now() - start);
-      tickCount++;
-    }
+    const duration = performance.now() - start;
 
     window.requestAnimationFrame = realRAF;
 
-    expect(renderDurations.length).toBeGreaterThan(100);
-
-    // Drop the cold-start ticks before measuring. The first ~200 frames
-    // pay the V8 parse + JIT cost for the markdown pipeline and DOM
-    // mounting, which can be 5-10x a warmed-up tick. Mixing them into
-    // the per-tick average makes the assertion flakier on shared CI
-    // runners without telling us anything about steady-state cost — the
-    // real number the test is meant to guard.
-    const WARMUP_TICKS = 200;
-    const steadyDurations = renderDurations.slice(WARMUP_TICKS);
-    expect(steadyDurations.length).toBeGreaterThan(100);
-
-    const sorted = steadyDurations.slice().sort((a, b) => a - b);
-    const total = steadyDurations.reduce((s, v) => s + v, 0);
-    const avg = total / steadyDurations.length;
-    const p50 = sorted[Math.floor(sorted.length * 0.5)];
-    const p95 = sorted[Math.floor(sorted.length * 0.95)];
-    const p99 = sorted[Math.floor(sorted.length * 0.99)];
-    const max = sorted[sorted.length - 1];
-
-    // Log for humans tuning the streamer.
-    // eslint-disable-next-line no-console
-    console.log(
-      `\n=== StreamingMarkdown perf (${longText.length} chars, ${tickCount} ticks, ${steadyDurations.length} steady) ===\n` +
-        `  avg: ${avg.toFixed(2)}ms\n` +
-        `  p50: ${p50.toFixed(2)}ms\n` +
-        `  p95: ${p95.toFixed(2)}ms\n` +
-        `  p99: ${p99.toFixed(2)}ms\n` +
-        `  max: ${max.toFixed(2)}ms\n` +
-        `  total: ${total.toFixed(0)}ms`
-    );
-
-    // Hard ceilings on the warmed-up distribution. These are deliberately
-    // loose so they catch catastrophic regressions (the kind that froze
-    // the UI before block memoization) without flaking under CI noise.
-    // Shared Linux runners are materially slower than local Apple Silicon
-    // while still staying far away from the pre-memoization freeze regime.
-    // Keep the ceiling loose enough to reject real regressions, not host noise.
-    expect(avg).toBeLessThan(6);
-    expect(p99).toBeLessThan(16);
+    expect(pending).toHaveLength(0);
+    expect(container.textContent).toContain("标题 40");
+    expect(duration).toBeLessThan(1000);
   }, 15000);
 });
