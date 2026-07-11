@@ -129,13 +129,18 @@ public final class MacComputerBackend: ComputerBackend {
         }) {
             return exact
         }
-        if let partial = running.first(where: {
-            $0.localizedName?.lowercased().contains(normalized) == true
-        }) {
-            return partial
+        guard let url = applicationURL(target) else {
+            if let partial = running.first(where: {
+                $0.localizedName?.lowercased().contains(normalized) == true
+            }) {
+                return partial
+            }
+            throw ComputerError.appNotFound(target)
         }
-        let url = applicationURL(target)
-        guard let url else { throw ComputerError.appNotFound(target) }
+        if let bundleIdentifier = Bundle(url: url)?.bundleIdentifier,
+           let existing = running.first(where: { $0.bundleIdentifier == bundleIdentifier }) {
+            return existing
+        }
         let semaphore = DispatchSemaphore(value: 0)
         let box = ApplicationBox()
         let configuration = NSWorkspace.OpenConfiguration()
@@ -160,7 +165,13 @@ public final class MacComputerBackend: ComputerBackend {
         let expanded = NSString(string: target).expandingTildeInPath
         if FileManager.default.fileExists(atPath: expanded) { return URL(fileURLWithPath: expanded) }
         let name = target.hasSuffix(".app") ? target : target + ".app"
-        for root in ["/Applications", "/System/Applications", "/System/Applications/Utilities", NSHomeDirectory() + "/Applications"] {
+        for root in [
+            "/Applications",
+            "/System/Applications",
+            "/System/Applications/Utilities",
+            "/System/Library/CoreServices",
+            NSHomeDirectory() + "/Applications",
+        ] {
             let path = URL(fileURLWithPath: root).appendingPathComponent(name).path
             if FileManager.default.fileExists(atPath: path) { return URL(fileURLWithPath: path) }
         }

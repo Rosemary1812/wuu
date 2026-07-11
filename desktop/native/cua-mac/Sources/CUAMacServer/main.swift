@@ -1,6 +1,8 @@
+import AppKit
 import CUAMacCore
 import Foundation
 
+_ = NSApplication.shared
 let server = MCPServer(backend: MacComputerBackend())
 
 while let line = readLine(strippingNewline: true) {
