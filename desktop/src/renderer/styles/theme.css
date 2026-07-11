@@ -70,7 +70,6 @@
   --sidebar-glass-border: rgba(228, 232, 235, 0.12);
   --sidebar-glass-highlight: rgba(255, 255, 255, 0.06);
   --sidebar-glass-hover: rgba(255, 90, 38, 0.07);
-  --sidebar-glass-active: rgba(255, 90, 38, 0.11);
 
   --scrollbar-thumb: rgba(170, 178, 186, 0.22);
   --scrollbar-thumb-hover: rgba(170, 190, 210, 0.34);
@@ -271,8 +270,6 @@
   --sidebar-dev-fixture-button-color: #9aa39d;
   --sidebar-nav-item-hover-ring: rgba(255, 255, 255, 0.08);
   --sidebar-nav-item-focus-shadow: rgba(228, 232, 235, 0.25);
-  --sidebar-project-row-active-bg: rgba(255, 255, 255, 0.07);
-  --sidebar-project-row-active-ring: rgba(255, 255, 255, 0.1);
   --sidebar-project-row-pending-bg: rgba(255, 255, 255, 0.05);
   --sidebar-project-loading-notch: rgba(120, 160, 132, 0.3);
   --sidebar-project-unread-ring: rgba(20, 22, 24, 0.72);

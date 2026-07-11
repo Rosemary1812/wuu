@@ -11,7 +11,7 @@
 1. 空状态问候——吉祥物 + 衬线标题（`turns.css` `.empty-home-mascot` / `--empty-home-title-font`）；
 2. 一个饱和 accent——landing 朱红 `--wuu-accent`（亮 `#ff3d00` / 暗 `#ff5a26`），承载发送键、侧栏活性标记、焦点环、`::selection`、链接；
 3. 用户气泡的小尾角——形状细节（`.user-message` / `.chat-bubble--user` 的非对称 border-radius），不是描边；
-4. 侧栏 hover/active 的一层极淡火苗 tint（`--sidebar-glass-hover/active`）。
+4. 侧栏 hover 的一层极淡火苗 tint（`--sidebar-glass-hover`）。
 
 超出这四个时刻的风格规则视为 bug。要加第五个时刻需先回答：它的完成度能不能配得上前四个。
 

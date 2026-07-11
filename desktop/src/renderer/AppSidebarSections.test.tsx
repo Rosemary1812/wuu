@@ -1262,8 +1262,8 @@ describe("unified DM/thread row spec (S1)", () => {
     );
   });
 
-  it("participant rows share the active-row treatment with thread rows", () => {
-    expect(sidebarCSS).toMatch(
+  it("participant rows do not share an active-row treatment with thread rows", () => {
+    expect(sidebarCSS).not.toMatch(
       /\.thread-row\.active,\s*\.participant-roster-row\.active \{/,
     );
   });
