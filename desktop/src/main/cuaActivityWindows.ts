@@ -15,6 +15,7 @@ const PREVIEW_MIN_WIDTH = 280;
 const PREVIEW_MAX_WIDTH = 480;
 const PREVIEW_MIN_HEIGHT = 180;
 const PREVIEW_MAX_HEIGHT = 420;
+const MAX_LIVE_CUA_STREAMS = 3;
 
 export function shouldScheduleDragSettle(dragging: boolean, snapping: boolean): boolean {
   return dragging && !snapping;
@@ -169,7 +170,7 @@ export class CUAActivityWindowManager {
   private readonly pendingActivities = new Map<string, ActivitySession>();
   private readonly dockedCorners = new Map<number, { source: "main" | "screen"; corner: number }>();
   private readonly snapAnimationTokens = new Map<number, number>();
-  private readonly frameStreams = new Map<string, { target: string; stream: CUAFrameStream }>();
+  private readonly frameStreams = new Map<string, { target: string; stream: CUAFrameStream; startedAt: number }>();
   private activeThreadID: string | undefined;
 
   constructor(
@@ -454,6 +455,10 @@ export class CUAActivityWindowManager {
     const current = this.frameStreams.get(activity.id);
     if (current?.target === target) return;
     this.stopFrameStream(activity.id);
+    if (this.frameStreams.size >= MAX_LIVE_CUA_STREAMS) {
+      const oldest = [...this.frameStreams.entries()].sort((left, right) => left[1].startedAt - right[1].startedAt)[0];
+      if (oldest) this.stopFrameStream(oldest[0]);
+    }
     const stream = new CUAFrameStream(
       helper,
       activity.id,
@@ -462,7 +467,7 @@ export class CUAActivityWindowManager {
       (message) => this.publishStreamError(activity.id, message),
       () => this.handleDetectedUserInput(activity.id),
     );
-    this.frameStreams.set(activity.id, { target, stream });
+    this.frameStreams.set(activity.id, { target, stream, startedAt: Date.now() });
     stream.start();
   }
 
