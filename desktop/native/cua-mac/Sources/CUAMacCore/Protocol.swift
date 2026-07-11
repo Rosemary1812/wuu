@@ -16,6 +16,7 @@ public enum ComputerAction: String, CaseIterable, Sendable {
     case performAction = "perform_action"
     case waitForChange = "wait_for_change"
     case sequence
+    case activateControl = "activate_control"
 }
 
 public enum ForegroundPolicy: String, Sendable {
@@ -45,6 +46,9 @@ public struct ComputerCommand: @unchecked Sendable {
     public let prefix: String?
     public let suffix: String?
     public let timeout: Double?
+    public let role: String?
+    public let title: String?
+    public let description: String?
     public let foregroundPolicy: ForegroundPolicy
 
     public init(arguments: [String: Any]) throws {
@@ -72,6 +76,9 @@ public struct ComputerCommand: @unchecked Sendable {
         prefix = arguments["prefix"] as? String
         suffix = arguments["suffix"] as? String
         timeout = Self.double(arguments["timeout"])
+        role = arguments["role"] as? String
+        title = arguments["title"] as? String
+        description = arguments["description"] as? String
         if let rawPolicy = arguments["foreground_policy"] as? String {
             guard let policy = ForegroundPolicy(rawValue: rawPolicy) else {
                 throw ComputerError.invalidArguments("foreground_policy must be avoid, allow, or require")
@@ -250,6 +257,10 @@ public final class MCPServer {
             variant(.performAction, required: ["app", "element_id", "action_name"]),
             variant(.waitForChange, required: ["app"]),
             variant(.sequence, required: ["app", "steps"]),
+            variant(.activateControl, required: ["app"], anyOf: [
+                ["required": ["description"]],
+                ["required": ["title"]],
+            ]),
         ]
         return [
             "name": "computer",
@@ -305,6 +316,9 @@ public final class MCPServer {
                             ],
                         ],
                     ],
+                    "role": stringProperty,
+                    "title": stringProperty,
+                    "description": stringProperty,
                 ],
             ],
             "annotations": [

@@ -45,6 +45,16 @@ final class AXSnapshotter {
         return matches.count == 1 ? matches[0] : nil
     }
 
+    func uniqueElement(role: String?, title: String?, description: String?) -> AXUIElement? {
+        let matches = descriptors.compactMap { id, candidate -> AXUIElement? in
+            if let role, !role.isEmpty, candidate.role != role { return nil }
+            if let title, !title.isEmpty, candidate.title != title { return nil }
+            if let description, !description.isEmpty, candidate.description != description { return nil }
+            return elements[id]
+        }
+        return matches.count == 1 ? matches[0] : nil
+    }
+
     private func walk(_ element: AXUIElement, depth: Int, lines: inout [String], visited: inout Set<CFHashCode>) {
         guard depth <= maxDepth, elements.count < maxElements else { return }
         let hash = CFHash(element)

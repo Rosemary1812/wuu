@@ -94,6 +94,9 @@ public final class MacComputerBackend: ComputerBackend {
             return try observe(command, app: app, axApplication: axApplication)
         case .sequence:
             throw ComputerError.unsupported("sequence is coordinated by the Wuu runtime")
+        case .activateControl:
+            try activateControl(command, app: app, application: axApplication)
+            mechanism = "background_ax"
         case .permissionStatus, .requestPermissions, .listApps:
             preconditionFailure("global actions returned before target resolution")
         }
@@ -387,11 +390,17 @@ public final class MacComputerBackend: ComputerBackend {
 
     private func snapshotChanges(from previous: String, to current: String) -> [String] {
         guard previous != current else { return [] }
-        let old = Set(previous.split(separator: "\n").map(String.init))
-        let new = Set(current.split(separator: "\n").map(String.init))
+        let old = Set(previous.split(separator: "\n").map { semanticAXLine(String($0)) })
+        let new = Set(current.split(separator: "\n").map { semanticAXLine(String($0)) })
         let removed = old.subtracting(new).sorted().map { "- \($0)" }
         let added = new.subtracting(old).sorted().map { "+ \($0)" }
         return Array((removed + added).prefix(240))
+    }
+
+    private func semanticAXLine(_ line: String) -> String {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.first == "[", let closing = trimmed.firstIndex(of: "]") else { return trimmed }
+        return String(trimmed[trimmed.index(after: closing)...]).trimmingCharacters(in: .whitespaces)
     }
 
     private func activate(_ app: NSRunningApplication) throws {
@@ -616,6 +625,17 @@ public final class MacComputerBackend: ComputerBackend {
         let target = try element(command, app: app)
         guard let action = command.actionName, !action.isEmpty else { throw ComputerError.invalidArguments("action_name is required") }
         try performAXAction(target, action: action)
+    }
+
+    private func activateControl(_ command: ComputerCommand, app: NSRunningApplication, application: AXUIElement) throws {
+        guard command.title?.isEmpty == false || command.description?.isEmpty == false else {
+            throw ComputerError.invalidArguments("activate_control requires title or description")
+        }
+        _ = snapshotter.snapshot(application: application)
+        guard let target = snapshotter.uniqueElement(role: command.role, title: command.title, description: command.description) else {
+            throw ComputerError.operationFailed("activate_control selector did not match exactly one element; observe and refine role, title, or description")
+        }
+        try performAXAction(target, action: kAXPressAction as String)
     }
 
     private func waitForChange(_ command: ComputerCommand, app: NSRunningApplication, axApplication: AXUIElement) throws {
