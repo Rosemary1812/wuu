@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -607,12 +608,18 @@ func (r *TurnToolRuntime) executeDirect(ctx context.Context, call providers.Tool
 	return executeToolResult(r.executionContext(ctx), r.executor, call)
 }
 
-func executeToolResult(ctx context.Context, executor ToolExecutor, call providers.ToolCall) (toolresult.Result, error) {
+func executeToolResult(ctx context.Context, executor ToolExecutor, call providers.ToolCall) (result toolresult.Result, err error) {
 	if executor == nil {
 		return toolresult.Result{}, context.Canceled
 	}
-	var result toolresult.Result
-	var err error
+	// A panic in a tool executor must not crash the whole process: convert it
+	// into an error result so the turn survives and the model sees the failure.
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("tool panicked: %v", rec)
+			result = toolresult.FromErrorText(errorJSON(err))
+		}
+	}()
 	if rich, ok := executor.(RichToolExecutor); ok {
 		result, err = rich.ExecuteResult(ctx, call)
 	} else {

@@ -168,6 +168,40 @@ func (f *cancelAwareRuntimeTools) recordedCalls() []providers.ToolCall {
 	return out
 }
 
+type panickingTool struct{}
+
+func (panickingTool) Definitions() []providers.ToolDefinition {
+	return []providers.ToolDefinition{{Name: "boom"}}
+}
+
+func (panickingTool) Execute(context.Context, providers.ToolCall) (string, error) {
+	panic("kaboom")
+}
+
+func TestTurnToolRuntimeRecoversFromToolPanic(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	runtime := NewTurnToolRuntime(panickingTool{})
+	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{
+		ID:   "call_1",
+		Name: "boom",
+	}}, nil)
+
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 tool message after panic, got %+v", msgs)
+	}
+	if msgs[0].ToolCallID != "call_1" {
+		t.Fatalf("unexpected tool call id: %q", msgs[0].ToolCallID)
+	}
+	if !strings.Contains(msgs[0].Content, "tool panicked") || !strings.Contains(msgs[0].Content, "kaboom") {
+		t.Fatalf("panic not surfaced in tool result: %q", msgs[0].Content)
+	}
+	if msgs[0].ToolResult == nil || !msgs[0].ToolResult.IsError {
+		t.Fatalf("panic result should be marked as error: %+v", msgs[0].ToolResult)
+	}
+}
+
 func TestTurnToolRuntime_PreservesToolSearchKindOnResult(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
