@@ -708,7 +708,7 @@ app.whenReady().then(async () => {
       } satisfies PopOutInitResult;
     },
   );
-  ipcMain.on("wuu:cua-active-thread", (event, threadID?: string) => {
+  ipcMain.handle("wuu:cua-active-thread", (event, threadID?: string) => {
     if (event.sender.id !== windowRegistry.mainWindow()?.webContents.id) return;
     cuaActivityWindowManager.setActiveThread(threadID);
   });

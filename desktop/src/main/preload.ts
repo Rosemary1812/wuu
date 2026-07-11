@@ -332,6 +332,6 @@ const api: WuuDesktopApi = {
 };
 
 (api as WuuDesktopApi & { setActiveCUAThread: (threadID?: string) => void }).setActiveCUAThread =
-  (threadID?: string) => ipcRenderer.send("wuu:cua-active-thread", threadID);
+  (threadID?: string) => { void ipcRenderer.invoke("wuu:cua-active-thread", threadID); };
 
 contextBridge.exposeInMainWorld("wuu", api);
