@@ -132,6 +132,7 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
     private var frame: CGRect
     private var stopped = false
     private var firstFrameReceived = false
+    private var lastFrameAt: Date?
     private var failure: Error?
 
     init(writer: FramePipeWriter, frame: CGRect) {
@@ -144,6 +145,7 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
         lock.lock()
         let currentFrame = frame
         firstFrameReceived = true
+        lastFrameAt = Date()
         lock.unlock()
         writer.submit(sampleBuffer, frame: currentFrame)
     }
@@ -166,6 +168,12 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
         lock.lock()
         defer { lock.unlock() }
         return firstFrameReceived
+    }
+
+    func secondsSinceLastFrame(now: Date = Date()) -> TimeInterval? {
+        lock.lock()
+        defer { lock.unlock() }
+        return lastFrameAt.map { now.timeIntervalSince($0) }
     }
 
     func streamFailure() -> Error? {
@@ -235,6 +243,38 @@ private func streamConfiguration(for window: SCWindow) -> SCStreamConfiguration 
     return configuration
 }
 
+@available(macOS 14.0, *)
+private func runPollingWindowFallback(app: NSRunningApplication, writer: FramePipeWriter) async throws -> Never {
+    var previousCapture: Data?
+    var emittedFirstFrame = false
+    while true {
+        let processID = app.processIdentifier
+        let preferredFrame = focusedWindowFrame(processID: processID)
+        let capture = try await Task.detached {
+            do {
+                return try captureWindowPNG(
+                    processID: processID,
+                    timeout: 3,
+                    preferredWindowFrame: preferredFrame
+                )
+            } catch {
+                return try captureForegroundWindowPNG(processID: processID)
+            }
+        }.value
+        if previousCapture != capture.data {
+            guard writer.writeCapture(capture) else {
+                throw ComputerError.operationFailed("live window capture could not encode a frame")
+            }
+            previousCapture = capture.data
+            if !emittedFirstFrame {
+                writer.event("started")
+                emittedFirstFrame = true
+            }
+        }
+        try await Task.sleep(for: .milliseconds(125))
+    }
+}
+
 public func runWindowFrameStream(target: String) async throws {
     guard CGPreflightScreenCaptureAccess() else {
         throw ComputerError.permissionDenied("Screen Recording permission is required for live window capture")
@@ -272,34 +312,7 @@ public func runWindowFrameStream(target: String) async throws {
     }
     if !output.receivedFirstFrame() {
         try? stream.removeStreamOutput(output, type: .screen)
-        var previousCapture: Data?
-        var emittedFirstFrame = false
-        while true {
-            let processID = app.processIdentifier
-            let preferredFrame = focusedWindowFrame(processID: processID)
-            let capture = try await Task.detached {
-                do {
-                    return try captureWindowPNG(
-                        processID: processID,
-                        timeout: 3,
-                        preferredWindowFrame: preferredFrame
-                    )
-                } catch {
-                    return try captureForegroundWindowPNG(processID: processID)
-                }
-            }.value
-            if previousCapture != capture.data {
-                guard writer.writeCapture(capture) else {
-                    throw ComputerError.operationFailed("live window capture could not encode a frame")
-                }
-                previousCapture = capture.data
-                if !emittedFirstFrame {
-                    writer.event("started")
-                    emittedFirstFrame = true
-                }
-            }
-            try await Task.sleep(for: .milliseconds(125))
-        }
+        try await runPollingWindowFallback(app: app, writer: writer)
     }
     writer.event("started")
     let inputMonitor = UserInputMonitor(processID: app.processIdentifier, writer: writer)
@@ -322,6 +335,11 @@ public func runWindowFrameStream(target: String) async throws {
     }
     while !output.isStopped() {
         try await Task.sleep(for: .milliseconds(750))
+        if output.secondsSinceLastFrame().map({ $0 > 3 }) == true {
+            try? stream.removeStreamOutput(output, type: .screen)
+            try? await stream.stopCapture()
+            try await runPollingWindowFallback(app: app, writer: writer)
+        }
         guard let refreshedContent = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) else {
             continue
         }
