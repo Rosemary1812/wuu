@@ -14,10 +14,15 @@ const PREVIEW_MIN_WIDTH = 280;
 const PREVIEW_MAX_WIDTH = 480;
 const PREVIEW_MIN_HEIGHT = 180;
 const PREVIEW_MAX_HEIGHT = 420;
+const DRAG_SETTLE_DELAY_MS = 140;
 
 export function shouldStartUserDrag(programmaticMoveActive: boolean, snapAnimationActive: boolean): boolean {
   void snapAnimationActive;
   return !programmaticMoveActive;
+}
+
+export function shouldScheduleDragSettle(dragging: boolean, snapping: boolean): boolean {
+  return dragging && !snapping;
 }
 
 export function fitActivityPreviewSize(imageWidth: number, imageHeight: number): { width: number; height: number } {
@@ -152,6 +157,7 @@ export class CUAActivityWindowManager {
   private readonly programmaticMoveWindowIDs = new Set<number>();
   private readonly draggingWindowIDs = new Set<number>();
   private readonly dismissedActivityIDs = new Set<string>();
+  private readonly dragSettleTimers = new Map<number, ReturnType<typeof setTimeout>>();
   private readonly dockedCorners = new Map<number, { source: "main" | "screen"; corner: number }>();
   private readonly snapAnimationTokens = new Map<number, number>();
 
@@ -235,36 +241,22 @@ export class CUAActivityWindowManager {
       )) return;
       this.cancelSnap(windowID);
       this.draggingWindowIDs.add(windowID);
+      this.cancelDragSettle(windowID);
     });
-    win.on("moved", () => {
+    const settleAfterDrag = (): void => {
       const windowID = win.webContents.id;
-      if (win.isDestroyed() || this.snappingWindowIDs.has(windowID)) return;
-      this.draggingWindowIDs.delete(windowID);
-      const bounds = win.getBounds();
-      const workArea = screen.getDisplayMatching(bounds).workArea;
-      const mainWindow = this.registry.mainWindow();
-      const anchors = mainWindow && mainWindow !== win && !mainWindow.isDestroyed() && mainWindow.isVisible()
-        ? [mainWindow.getContentBounds()]
-        : [];
-      const snapped = snapActivityBounds(bounds, workArea, anchors);
-      if (anchors.length > 0 && rectanglesOverlap(anchors[0], workArea)) {
-        this.dockedCorners.set(
-          windowID,
-          {
-            source: "main",
-            corner: nearestCornerIndex(bounds, cornerPositions(bounds, anchors[0], SNAP_INSET, workArea)),
-          },
-        );
-      } else {
-        this.dockedCorners.set(windowID, {
-          source: "screen",
-          corner: nearestCornerIndex(bounds, cornerPositions(bounds, workArea, SNAP_INSET, workArea)),
-        });
-      }
-      if (snapped.x !== bounds.x || snapped.y !== bounds.y) {
-        this.animateSnap(win, bounds, snapped);
-      }
-    });
+      if (win.isDestroyed() || !shouldScheduleDragSettle(
+        this.draggingWindowIDs.has(windowID),
+        this.snappingWindowIDs.has(windowID),
+      )) return;
+      this.cancelDragSettle(windowID);
+      this.dragSettleTimers.set(windowID, setTimeout(() => {
+        this.dragSettleTimers.delete(windowID);
+        this.finishUserDrag(win);
+      }, DRAG_SETTLE_DELAY_MS));
+    };
+    win.on("move", settleAfterDrag);
+    win.on("moved", settleAfterDrag);
     win.webContents.on("will-navigate", (navigationEvent, rawURL) => {
       const parsed = activityActionFromURL(rawURL);
       if (!parsed || parsed.activityID !== activity.id) return;
@@ -309,6 +301,7 @@ export class CUAActivityWindowManager {
     win.on("closed", () => {
       mainWindow?.removeListener("move", syncWithMainWindow);
       mainWindow?.removeListener("resize", syncWithMainWindow);
+      this.cancelDragSettle(windowID);
       this.manuallyResizedWindowIDs.delete(windowID);
       this.draggingWindowIDs.delete(windowID);
       this.snappingWindowIDs.delete(windowID);
@@ -322,6 +315,42 @@ export class CUAActivityWindowManager {
       if (!win.isDestroyed()) win.showInactive();
     });
     return win;
+  }
+
+  private finishUserDrag(win: BrowserWindow): void {
+    const windowID = win.webContents.id;
+    if (win.isDestroyed() || this.snappingWindowIDs.has(windowID) || !this.draggingWindowIDs.has(windowID)) return;
+    this.draggingWindowIDs.delete(windowID);
+    const bounds = win.getBounds();
+    const workArea = screen.getDisplayMatching(bounds).workArea;
+    const mainWindow = this.registry.mainWindow();
+    const anchors = mainWindow && mainWindow !== win && !mainWindow.isDestroyed() && mainWindow.isVisible()
+      ? [mainWindow.getContentBounds()]
+      : [];
+    const snapped = snapActivityBounds(bounds, workArea, anchors);
+    if (anchors.length > 0 && rectanglesOverlap(anchors[0], workArea)) {
+      this.dockedCorners.set(
+        windowID,
+        {
+          source: "main",
+          corner: nearestCornerIndex(bounds, cornerPositions(bounds, anchors[0], SNAP_INSET, workArea)),
+        },
+      );
+    } else {
+      this.dockedCorners.set(windowID, {
+        source: "screen",
+        corner: nearestCornerIndex(bounds, cornerPositions(bounds, workArea, SNAP_INSET, workArea)),
+      });
+    }
+    if (snapped.x !== bounds.x || snapped.y !== bounds.y) {
+      this.animateSnap(win, bounds, snapped);
+    }
+  }
+
+  private cancelDragSettle(windowID: number): void {
+    const timer = this.dragSettleTimers.get(windowID);
+    if (timer) clearTimeout(timer);
+    this.dragSettleTimers.delete(windowID);
   }
 
   private animateSnap(win: BrowserWindow, from: Rectangle, to: Rectangle): void {
@@ -367,7 +396,7 @@ export class CUAActivityWindowManager {
     try {
       win.setPosition(x, y, false);
     } finally {
-      this.programmaticMoveWindowIDs.delete(windowID);
+      setImmediate(() => this.programmaticMoveWindowIDs.delete(windowID));
     }
   }
 

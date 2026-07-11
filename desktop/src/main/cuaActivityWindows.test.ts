@@ -7,6 +7,7 @@ import {
   cuaActivityHTML,
   fitActivityPreviewSize,
   resizeActivityBounds,
+  shouldScheduleDragSettle,
   shouldStartUserDrag,
   snapActivityBounds,
 } from "./cuaActivityWindows";
@@ -87,6 +88,12 @@ describe("CUA Activity windows", () => {
     expect(shouldStartUserDrag(false, true)).toBe(true);
     expect(shouldStartUserDrag(true, true)).toBe(false);
     expect(shouldStartUserDrag(true, false)).toBe(false);
+  });
+
+  it("settles only an active user drag and keeps programmatic movement out", () => {
+    expect(shouldScheduleDragSettle(true, false)).toBe(true);
+    expect(shouldScheduleDragSettle(true, true)).toBe(false);
+    expect(shouldScheduleDragSettle(false, false)).toBe(false);
   });
 
   it("snaps naturally to the four inner corners of the main Wuu window", () => {
