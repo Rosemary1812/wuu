@@ -369,6 +369,21 @@ func handleNotification(opts Options, notification Notification, state *runState
 		if err := decodeNotification(notification, &params); err != nil {
 			return false, err
 		}
+		// The core reports interrupts through turn/error with an embedded
+		// Turn.Status; surface them as turn_interrupted rather than
+		// turn_failed so `wuu exec --json` distinguishes a cancel from a
+		// genuine failure.
+		if params.Turn.Status == appserver.TurnStatusInterrupted {
+			emitJSON(opts, map[string]any{"type": "turn_interrupted", "thread_id": params.ThreadID, "turn_id": params.TurnID, "reason": "interrupted"})
+			if !isCurrentTurn(state, params.ThreadID, params.TurnID) {
+				return false, nil
+			}
+			state.threadID = params.ThreadID
+			state.turnID = params.TurnID
+			state.status = "interrupted"
+			emitResult(opts, *state, "interrupted", params.Error)
+			return false, WithExitCode(ExitInterrupted, errors.New(params.Error))
+		}
 		emitJSON(opts, map[string]any{"type": "turn_failed", "thread_id": params.ThreadID, "turn_id": params.TurnID, "error": params.Error})
 		if !isCurrentTurn(state, params.ThreadID, params.TurnID) {
 			return false, nil

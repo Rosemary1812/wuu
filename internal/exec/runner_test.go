@@ -456,6 +456,45 @@ func TestRunTurnErrorReturnsExitCodeOne(t *testing.T) {
 	}
 }
 
+func TestRunTurnErrorWithInterruptedStatusEmitsTurnInterrupted(t *testing.T) {
+	controller := newFakeController(
+		notification(appserver.NotificationTurnError, appserver.TurnErrorNotification{
+			ThreadID: "thread-1",
+			TurnID:   "turn-1",
+			Error:    "interrupted",
+			Turn:     appserver.Turn{ID: "turn-1", Status: appserver.TurnStatusInterrupted},
+		}),
+	)
+	var stdout bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		Prompt:     "do work",
+		JSON:       true,
+		Stdout:     &stdout,
+		Controller: controller,
+	})
+	if ExitCode(err) != ExitInterrupted {
+		t.Fatalf("ExitCode = %d, err=%v", ExitCode(err), err)
+	}
+	events := parseJSONLines(t, stdout.String())
+	var sawInterrupted bool
+	for _, ev := range events {
+		if ev["type"] == "turn_failed" {
+			t.Fatalf("interrupted turn must not emit turn_failed: %+v", ev)
+		}
+		if ev["type"] == "turn_interrupted" {
+			sawInterrupted = true
+		}
+	}
+	if !sawInterrupted {
+		t.Fatalf("expected a turn_interrupted event, got %+v", events)
+	}
+	result := events[len(events)-1]
+	if result["status"] != "interrupted" {
+		t.Fatalf("unexpected result status: %+v", result)
+	}
+}
+
 func TestRunTurnErrorClassifiesProviderModelError(t *testing.T) {
 	controller := newFakeController(
 		notification(appserver.NotificationTurnError, appserver.TurnErrorNotification{ThreadID: "thread-1", TurnID: "turn-1", Error: "provider returned an error"}),
