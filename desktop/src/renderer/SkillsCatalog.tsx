@@ -1,8 +1,9 @@
-import { AlertTriangle, Bot, Check, RefreshCw, Search, Wrench } from "lucide-react";
+import { AlertTriangle, Bot, Check, Puzzle, RefreshCw, Search, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type {
   AgentTemplateDiagnostic,
   AgentTemplateSummary,
+  ExtensionInventoryRecord,
   RuntimeContext,
   SkillSummary
 } from "../shared/protocol";
@@ -24,9 +25,11 @@ const initialLoadState: LoadState = {
 };
 
 export function SkillsCatalog({
-  activeContext
+  activeContext,
+  extensionInventory = []
 }: {
   activeContext?: RuntimeContext;
+  extensionInventory?: ExtensionInventoryRecord[];
 }): JSX.Element {
   const [state, setState] = useState<LoadState>(initialLoadState);
   const [filter, setFilter] = useState("");
@@ -87,6 +90,24 @@ export function SkillsCatalog({
     );
   }, [filter, state.skills]);
 
+  const plugins = useMemo(
+    () => extensionInventory.filter((record) => record.kind === "plugin"),
+    [extensionInventory]
+  );
+
+  const visiblePlugins = useMemo(() => {
+    const query = filter.trim().toLowerCase();
+    const items = [...plugins].sort((left, right) => left.name.localeCompare(right.name));
+    if (!query) {
+      return items;
+    }
+    return items.filter((record) =>
+      [record.name, record.description, ...(record.requested_permissions ?? [])]
+        .filter(Boolean)
+        .some((value) => value?.toLowerCase().includes(query))
+    );
+  }, [filter, plugins]);
+
   const visibleAgentTemplates = useMemo(() => {
     const query = filter.trim().toLowerCase();
     const items = [...state.agentTemplates].sort(compareAgentTemplates);
@@ -130,7 +151,7 @@ export function SkillsCatalog({
       <header className="skills-catalog-header">
         <div className="skills-catalog-title">
           <strong>技能</strong>
-          <span>查看任务技能和可复用的临时子代理模板</span>
+          <span>查看任务技能、已安装插件和可复用的临时子代理模板</span>
         </div>
         <div className="skills-catalog-controls">
           <label className="skills-search">
@@ -180,6 +201,11 @@ export function SkillsCatalog({
                     官方
                   </span>
                 ) : null}
+                {pluginSkillID(skill.source) ? (
+                  <span className="skill-row-tag" title="由插件提供的技能">
+                    插件 · {pluginSkillID(skill.source)}
+                  </span>
+                ) : null}
               </span>
               <p>{skill.description || skill.when_to_use || "无描述"}</p>
             </span>
@@ -187,6 +213,37 @@ export function SkillsCatalog({
           </article>
         ))}
       </div>
+
+      {plugins.length > 0 ? (
+        <>
+          <div className="skills-section-heading">
+            <strong>Plugins</strong>
+            <span>{state.loading ? "加载中" : `${visiblePlugins.length} / ${plugins.length}`}</span>
+          </div>
+
+          <div className="skills-list">
+            {visiblePlugins.map((record) => (
+              <article key={record.id} className="skill-row">
+                <span className="skill-row-icon" aria-hidden="true">
+                  <Puzzle className="icon" />
+                </span>
+                <span className="skill-row-copy">
+                  <span className="skill-row-titlebar">
+                    <h2>{record.name}</h2>
+                    {record.provenance.official ? (
+                      <span className="skill-row-tag" title="随 Wuu 内置分发的官方插件">
+                        官方
+                      </span>
+                    ) : null}
+                  </span>
+                  <p>{record.description || "无描述"}</p>
+                </span>
+                <Check className="skill-row-check" aria-hidden="true" />
+              </article>
+            ))}
+          </div>
+        </>
+      ) : null}
 
       <div className="skills-section-heading">
         <strong>Agent Templates</strong>
@@ -213,7 +270,10 @@ export function SkillsCatalog({
         ))}
       </div>
 
-      {!state.loading && visibleSkills.length === 0 && visibleAgentTemplates.length === 0 ? (
+      {!state.loading &&
+      visibleSkills.length === 0 &&
+      visiblePlugins.length === 0 &&
+      visibleAgentTemplates.length === 0 ? (
         <div className="skills-empty">
           <Wrench className="icon-xl" />
           <strong>暂无 Skills</strong>
@@ -228,6 +288,12 @@ export function SkillsCatalog({
 // first-party skills we ship and curate, so the catalog flags them.
 function isBundledSkill(source: string): boolean {
   return source === "bundled";
+}
+
+// Skills discovered from a plugin's skills/ directory carry source
+// "plugin:<id>" (plugin.SourceLabel); surface the owning plugin on the row.
+function pluginSkillID(source: string): string {
+  return source.startsWith("plugin:") ? source.slice("plugin:".length) : "";
 }
 
 function compareSkills(left: SkillSummary, right: SkillSummary): number {

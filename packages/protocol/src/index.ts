@@ -167,6 +167,7 @@ export type ExtensionProvenance = {
 export type ExtensionInventoryRecord = {
   id: string;
   name: string;
+  description?: string;
   kind: ExtensionKind;
   provenance: ExtensionProvenance;
   state: ExtensionState;

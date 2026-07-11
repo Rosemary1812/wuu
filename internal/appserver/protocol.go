@@ -378,6 +378,7 @@ const (
 type ExtensionInventoryRecord struct {
 	ID                   string                `json:"id"`
 	Name                 string                `json:"name"`
+	Description          string                `json:"description,omitempty"`
 	Kind                 extensions.Kind       `json:"kind"`
 	Provenance           extensions.Provenance `json:"provenance"`
 	State                ExtensionState        `json:"state"`

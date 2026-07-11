@@ -313,9 +313,10 @@ func (s *Server) currentExtensionInventory() []ExtensionInventoryRecord {
 		scope := normalizedExtensionScope(item.Source, item.ManifestPath, s.rt.RootDir)
 		pluginSource := pluginManifestSource(item.ManifestPath)
 		records = append(records, ExtensionInventoryRecord{
-			ID:   extensionSubjectID("plugin", scope, item.ID),
-			Name: item.ID,
-			Kind: extensions.KindPlugin,
+			ID:          extensionSubjectID("plugin", scope, item.ID),
+			Name:        item.ID,
+			Description: item.Description,
+			Kind:        extensions.KindPlugin,
 			Provenance: extensions.Provenance{
 				Kind:     extensions.KindPlugin,
 				Source:   pluginSource,

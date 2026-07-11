@@ -4051,6 +4051,7 @@ export function App(): JSX.Element {
               {showingSkillsCatalog ? (
               <SkillsCatalog
                 activeContext={state.activeContext}
+                extensionInventory={state.initialized?.extension_inventory}
               />
             ) : boardSessionTab ? (
               <TaskBoardView
