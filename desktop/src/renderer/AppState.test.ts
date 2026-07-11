@@ -22,7 +22,6 @@ import {
   conversationPaneThreadsByID,
   conversationSearchContextLabel,
   groupThreadSummaries,
-  pinnedThreadSummaries,
   createDraftSessionTab,
   createThreadSessionTab,
   focusWorkspaceSendValue,
