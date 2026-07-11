@@ -26,7 +26,16 @@ final class AXSnapshotter {
         var lines: [String] = []
         var visited = Set<CFHashCode>()
         walk(application, depth: 0, lines: &lines, visited: &visited)
-        return AXSnapshot(text: lines.joined(separator: "\n"), elements: elements)
+        let controls = descriptors.sorted(by: { $0.key < $1.key }).compactMap { id, descriptor -> String? in
+            guard let element = elements[id], axActions(element).contains(kAXPressAction as String) else { return nil }
+            var labels: [String] = []
+            if !descriptor.title.isEmpty { labels.append("title=\"\(descriptor.title)\"") }
+            if !descriptor.description.isEmpty { labels.append("description=\"\(descriptor.description)\"") }
+            guard !labels.isEmpty else { return nil }
+            return "[\(id)] \(descriptor.role) " + labels.joined(separator: " ")
+        }
+        let prefix = controls.isEmpty ? "" : "Actionable controls (prefer activate_control with an exact label):\n" + controls.prefix(160).joined(separator: "\n") + "\nAccessibility tree:\n"
+        return AXSnapshot(text: prefix + lines.joined(separator: "\n"), elements: elements)
     }
 
     func element(id: Int) -> AXUIElement? {
