@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -43,9 +43,11 @@ type ErrorCallback = (message: string) => void;
 
 export class CUAFrameStream {
   private child: ChildProcessWithoutNullStreams | undefined;
-  private latest: { payload: Buffer; metadata: CUAFrameMetadata } | undefined;
+  private latest: { payload: Buffer; metadata: CUAFrameMetadata; generation: number } | undefined;
   private writing = false;
   private readonly framePath: string;
+  private readonly instanceID = randomUUID();
+  private generation = 0;
 
   constructor(
     private readonly helper: string,
@@ -55,12 +57,13 @@ export class CUAFrameStream {
     private readonly onError: ErrorCallback,
     private readonly onUserInput: () => void = () => undefined,
   ) {
-    const safeID = createHash("sha256").update(activityID).digest("hex").slice(0, 24);
+    const safeID = createHash("sha256").update(`${activityID}\0${target}`).digest("hex").slice(0, 24);
     this.framePath = join(tmpdir(), "wuu-cua-live", `${safeID}.jpg`);
   }
 
   start(): void {
     if (this.child) return;
+    const generation = ++this.generation;
     const decoder = new CUAFrameDecoder();
     const child = spawn(this.helper, ["--stream", this.target], { stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
@@ -68,7 +71,7 @@ export class CUAFrameStream {
       try {
         for (const frame of decoder.push(chunk)) {
           if (frame.metadata.event === "frame" && frame.payload.length > 0) {
-            this.latest = frame;
+            this.latest = { ...frame, generation };
             void this.flushLatest();
           } else if (frame.metadata.event === "error") {
             this.onError(frame.metadata.message ?? "live capture stopped");
@@ -94,6 +97,7 @@ export class CUAFrameStream {
 
   stop(): void {
     const child = this.child;
+    this.generation += 1;
     this.child = undefined;
     if (child && !child.killed) child.kill("SIGTERM");
     this.latest = undefined;
@@ -111,9 +115,15 @@ export class CUAFrameStream {
       while (this.latest) {
         const frame = this.latest;
         this.latest = undefined;
-        const temporary = `${this.framePath}.${process.pid}.tmp`;
+        if (frame.generation !== this.generation) continue;
+        const temporary = `${this.framePath}.${process.pid}.${this.instanceID}.tmp`;
         await writeFile(temporary, frame.payload, { mode: 0o600 });
+        if (frame.generation !== this.generation) {
+          await unlink(temporary).catch(() => undefined);
+          continue;
+        }
         await rename(temporary, this.framePath);
+        if (frame.generation !== this.generation) continue;
         this.onFrame(this.framePath, frame.metadata);
       }
     } catch (error) {
