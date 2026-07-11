@@ -156,8 +156,12 @@ export function threadsForDesktopProject(
   threads: Thread[],
   project: DesktopProject,
 ): Thread[] {
+  // Archived threads intentionally stay in `state.threads` so Settings → Archive
+  // can list them; this helper feeds the sidebar surfaces and must hide them.
   return sortThreads(
-    threads.filter((thread) => threadBelongsToProject(thread, project)),
+    threads.filter(
+      (thread) => !thread.archived && threadBelongsToProject(thread, project),
+    ),
   );
 }
 

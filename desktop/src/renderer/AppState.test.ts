@@ -41,6 +41,9 @@ import {
   markThreadTurnsViewed,
   mentionedParticipantIDsFromText,
   openForkThreadAsPrimary,
+  pinnedThreads,
+  pinnedThreadSummaries,
+  projectThreads,
   queryTextsForThread,
   reconcileResumedThreadTurns,
   reduceServerEvent,
@@ -1767,6 +1770,7 @@ describe("AppState sortThreads (sidebar order)", () => {
     childAgents?: Agent[];
     members?: Thread["members"];
     group?: boolean;
+    pinned?: boolean;
     archived?: boolean;
     readOnly?: boolean;
   }): Thread {
@@ -1784,6 +1788,7 @@ describe("AppState sortThreads (sidebar order)", () => {
       child_agents: args.childAgents,
       members: args.members,
       group: args.group,
+      pinned: args.pinned,
       turns: (args.turns ?? []).map((turn) => ({
         id: turn.id,
         items: [],
@@ -1964,7 +1969,7 @@ describe("AppState sortThreads (sidebar order)", () => {
     ]);
   });
 
-  it("drops archived and read-only threads from the sortable list", () => {
+  it("keeps archived and read-only threads in the sortable list so Settings → Archive can show them", () => {
     const archived = makeSortableThread({
       id: "thread-archived",
       createdAt: "2026-06-18T00:00:00Z",
@@ -1984,10 +1989,14 @@ describe("AppState sortThreads (sidebar order)", () => {
     });
 
     const sorted = sortThreads([archived, readOnly, normal]);
-    expect(sorted.map((thread) => thread.id)).toEqual(["thread-normal"]);
+    expect(sorted.map((thread) => thread.id).sort()).toEqual([
+      "thread-archived",
+      "thread-normal",
+      "thread-readonly",
+    ]);
   });
 
-  it("keeps the active read-only child thread renderable outside the sortable list", () => {
+  it("keeps the active read-only child thread renderable via conversationPaneThreadsByID", () => {
     const child = makeSortableThread({
       id: "child-running",
       createdAt: "2026-06-18T00:00:00Z",
@@ -2004,8 +2013,53 @@ describe("AppState sortThreads (sidebar order)", () => {
     const sidebarThreads = sortThreads([normal, child]);
     const renderableThreads = conversationPaneThreadsByID(sidebarThreads, child);
 
-    expect(sidebarThreads.map((thread) => thread.id)).toEqual(["thread-normal"]);
+    expect(sidebarThreads.map((thread) => thread.id).sort()).toEqual([
+      "child-running",
+      "thread-normal",
+    ]);
     expect(renderableThreads.get("child-running")?.turns).toHaveLength(1);
+  });
+
+  it("pinnedThreads and projectThreads hide archived entries but keep read-only ones", () => {
+    const pinnedArchived = makeSortableThread({
+      id: "pinned-archived",
+      createdAt: "2026-06-18T00:00:00Z",
+      updatedAt: "2026-06-20T00:00:00Z",
+      pinned: true,
+      archived: true,
+    });
+    const pinnedLive = makeSortableThread({
+      id: "pinned-live",
+      createdAt: "2026-06-18T00:00:00Z",
+      updatedAt: "2026-06-21T00:00:00Z",
+      pinned: true,
+    });
+    const projectArchived = makeSortableThread({
+      id: "project-archived",
+      createdAt: "2026-06-18T00:00:00Z",
+      updatedAt: "2026-06-22T00:00:00Z",
+      archived: true,
+    });
+    const projectReadOnly = makeSortableThread({
+      id: "project-readonly",
+      createdAt: "2026-06-18T00:00:00Z",
+      updatedAt: "2026-06-23T00:00:00Z",
+      readOnly: true,
+    });
+
+    const threads = [
+      pinnedArchived,
+      pinnedLive,
+      projectArchived,
+      projectReadOnly,
+    ];
+
+    expect(pinnedThreads(threads).map((thread) => thread.id)).toEqual([
+      "pinned-live",
+    ]);
+    expect(projectThreads(threads).map((thread) => thread.id)).toEqual([
+      "project-readonly",
+    ]);
   });
 });
 

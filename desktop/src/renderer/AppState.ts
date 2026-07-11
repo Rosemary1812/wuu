@@ -1265,9 +1265,12 @@ function upsertThread(threads: Thread[], thread: Thread | undefined): Thread[] {
   if (!isThread(thread)) {
     return validThreads;
   }
-  if (thread.archived || thread.read_only) {
-    return validThreads.filter((item) => item.id !== thread.id);
-  }
+  // Archive semantics intentionally retain the thread in `state.threads` so the
+  // Settings → Archive page can list every archived session, and so the archive
+  // action stays reversible from there. Read-only threads are still real
+  // conversations that need to render — they only differ in mutation rights.
+  // Filtering archived out of sidebar surfaces is the job of pinnedThreads /
+  // projectThreads / scratchThreads, not of this generic upsert.
   const index = validThreads.findIndex((item) => item.id === thread.id);
   if (index < 0) {
     return sortThreads([thread, ...validThreads]);
@@ -1301,10 +1304,9 @@ function sortThreads(threads: Thread[]): Thread[] {
   // clicking or switching between two running threads must leave the sidebar
   // order alone. Settled threads keep the recency-first behavior, so the most
   // recently completed conversation bubbles to the top of the settled group.
-  const valid = threads.filter(
-    (thread): thread is Thread =>
-      isThread(thread) && !thread.archived && !thread.read_only,
-  );
+  // Archived threads stay in the list so the Settings → Archive page can show
+  // them; sidebar surfaces must filter them out themselves.
+  const valid = threads.filter((thread): thread is Thread => isThread(thread));
   const running = valid.filter(isThreadRunning);
   const settled = valid.filter((thread) => !isThreadRunning(thread));
   running.sort((left, right) => threadCreatedTime(right) - threadCreatedTime(left));
@@ -1498,7 +1500,7 @@ function conversationSearchContextLabel(
 }
 
 function pinnedThreads(threads: Thread[]): Thread[] {
-  return sortThreads(threads).filter((thread) => thread.pinned);
+  return sortThreads(threads).filter((thread) => thread.pinned && !thread.archived);
 }
 
 function pinnedThreadSummaries(threads: ThreadSummary[]): ThreadSummary[] {
@@ -1506,7 +1508,7 @@ function pinnedThreadSummaries(threads: ThreadSummary[]): ThreadSummary[] {
 }
 
 function projectThreads(threads: Thread[]): Thread[] {
-  return sortThreads(threads).filter((thread) => !thread.pinned);
+  return sortThreads(threads).filter((thread) => !thread.pinned && !thread.archived);
 }
 
 function projectThreadSummaries(threads: ThreadSummary[]): ThreadSummary[] {
@@ -1636,7 +1638,10 @@ export function scratchThreads(
   projects: DesktopProject[],
 ): Thread[] {
   return sortThreads(threads).filter(
-    (thread) => !thread.pinned && isScratchThread(thread, projects),
+    (thread) =>
+      !thread.pinned &&
+      !thread.archived &&
+      isScratchThread(thread, projects),
   );
 }
 
