@@ -82,6 +82,7 @@ import type {
   PopOutInitResult,
   PopOutSessionParams,
   WorkspaceFileSaveParams,
+  CodexPetHint,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
 import {
@@ -176,9 +177,22 @@ const cuaActivityWindowManager = new CUAActivityWindowManager(
 // The pet is a standalone always-on-top window owned by the main process, so
 // it stays on the desktop when the main window is hidden or minimized. Its
 // right-click menu disables the setting, which also tears the window down.
-const codexPetWindowManager = new CodexPetWindowManager(() => {
-  updateCodexPetSettings({ enabled: false });
-});
+// The jump callback fires when the user clicks the pet's session bubble:
+// the main window is brought forward and the renderer is told to switch
+// to that thread via the `wuu:codex-pet-jump` broadcast.
+const codexPetWindowManager = new CodexPetWindowManager(
+  () => {
+    updateCodexPetSettings({ enabled: false });
+  },
+  (hint) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+    broadcastToAll("wuu:codex-pet-jump", { thread_id: hint.thread_id });
+  },
+);
 const terminalSessionManager = new TerminalSessionManager(
   () => projectManager.ensureRuntimeContext(),
   (event) => emitTerminalEvent(event),
@@ -976,6 +990,11 @@ app.whenReady().then(async () => {
       codexPetWindowManager.setRuntime(
         runtime ?? { running: false, status: "" },
       ),
+  );
+  ipcMain.handle(
+    "wuu:codex-pet-hint",
+    (_event, hint: CodexPetHint | null) =>
+      codexPetWindowManager.setHint(hint ?? null),
   );
   ipcMain.handle(
     "wuu:settings-usage",

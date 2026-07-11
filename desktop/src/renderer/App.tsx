@@ -2100,16 +2100,6 @@ export function App(): JSX.Element {
     });
     void api.updateCodexPetHint(hint).catch(() => undefined);
   }, [state.thread, state.secondaryThread, state.threads]);
-  // The pet bubble click sends a `wuu:codex-pet-jump` event from main;
-  // bring the conversation forward and switch to the target thread.
-  useEffect(() => {
-    const api = window.wuu as Partial<typeof window.wuu>;
-    if (typeof api.onCodexPetJumpRequest !== "function") return;
-    return api.onCodexPetJumpRequest((event) => {
-      revealConversationFromFocusedWorkspace();
-      void activateThread(event.thread_id);
-    });
-  }, [activateThread, revealConversationFromFocusedWorkspace]);
   const runningProviderNames = useMemo(() => {
     const names = new Set<string>();
     for (const thread of [state.thread, state.secondaryThread, ...state.threads]) {
@@ -2712,6 +2702,18 @@ export function App(): JSX.Element {
     loadRuntime,
     selectRuntimeContext,
   });
+
+  // The pet bubble click sends a `wuu:codex-pet-jump` event from main;
+  // bring the conversation forward and switch to the target thread.
+  // Placed here (after `activateThread` is destructured) to avoid TDZ.
+  useEffect(() => {
+    const api = window.wuu as Partial<typeof window.wuu>;
+    if (typeof api.onCodexPetJumpRequest !== "function") return;
+    return api.onCodexPetJumpRequest((event) => {
+      revealConversationFromFocusedWorkspace();
+      void activateThread(event.thread_id);
+    });
+  }, [activateThread, revealConversationFromFocusedWorkspace]);
 
   const {
     selectSessionTab,

@@ -1801,6 +1801,26 @@ export type CodexPetRuntime = {
   status: string;
 };
 
+// 桌宠气泡：渲染进程按优先级（attention > running > idle）从当前所有
+// session 中派生最相关的一条，以轻量 hint 形式推到主进程，桌宠窗口据
+// 此在 sprite 上方或右侧展示一个小气泡。仅作为 hint，不承担观测面板或
+// 导航职责；点击气泡触发 wuu-pet://action/jump 跳回主窗口定位 thread。
+export type CodexPetHintStatus =
+  | "running"
+  | "done"
+  | "failed"
+  | "needs_review"
+  | "idle";
+
+export type CodexPetHint = {
+  thread_id: string;
+  title: string;
+  status: CodexPetHintStatus;
+  preview: string;
+  attention: boolean;
+  updated_at: number;
+};
+
 // Remote control (设置 → 远程): desktop-local surface managing the
 // machine-global `wuu remote host` daemon and phone pairing. Status comes
 // from `wuu remote status --json`; none of this goes through the app-server
@@ -1952,6 +1972,11 @@ export type WuuDesktopApi = {
     settings: CodexPetSettingsUpdate,
   ) => Promise<CodexPetsSnapshot>;
   updateCodexPetRuntime: (runtime: CodexPetRuntime) => Promise<void>;
+  updateCodexPetHint: (hint: CodexPetHint | null) => Promise<void>;
+  // 桌宠点击气泡触发；主窗口前置并切到该 thread。监听器返回 dispose。
+  onCodexPetJumpRequest: (
+    handler: (event: { thread_id: string }) => void,
+  ) => () => void;
   listParticipants: () => Promise<ParticipantListResult>;
   saveParticipant: (params: ParticipantSaveParams) => Promise<ParticipantSaveResult>;
   sendParticipantFeedback: (

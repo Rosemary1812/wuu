@@ -138,6 +138,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:codex-pets-update", settings),
   updateCodexPetRuntime: (runtime) =>
     ipcRenderer.invoke("wuu:codex-pet-runtime", runtime),
+  updateCodexPetHint: (hint) =>
+    ipcRenderer.invoke("wuu:codex-pet-hint", hint),
   startThread: (params?: ThreadStartParams) =>
     ipcRenderer.invoke("wuu:thread-start", params),
   resumeThread: (sessionId?: string) =>
@@ -303,6 +305,19 @@ const api: WuuDesktopApi = {
     ) => handler(payload);
     ipcRenderer.on("wuu:server-event", listener);
     return () => ipcRenderer.removeListener("wuu:server-event", listener);
+  },
+  // 桌宠气泡点击跳转：主进程把当前 thread_id 广播到所有窗口，渲染进程
+  // 据此把主窗口前置并切换 thread。
+  onCodexPetJumpRequest: (
+    handler: (event: { thread_id: string }) => void,
+  ) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: { thread_id: string },
+    ) => handler(payload);
+    ipcRenderer.on("wuu:codex-pet-jump", listener);
+    return () =>
+      ipcRenderer.removeListener("wuu:codex-pet-jump", listener);
   },
   onTerminalEvent: (handler) => {
     const listener = (

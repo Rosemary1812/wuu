@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CodexPetsSnapshot } from "../shared/protocol";
+import type { CodexPetHint, CodexPetsSnapshot } from "../shared/protocol";
 import {
   CodexPetWindowManager,
   codexPetActionFromURL,
+  codexPetBoundsForLayout,
   codexPetStateForRuntime,
   codexPetView,
   codexPetWindowHTML,
+  selectCodexPetBubbleLayout,
   selectedCodexPet,
 } from "./codexPetWindow";
 
@@ -30,6 +32,12 @@ const codexPetElectronMocks = vi.hoisted(() => {
   const setAlwaysOnTop = vi.fn();
   const setHasShadow = vi.fn();
   const setVisibleOnAllWorkspaces = vi.fn();
+  const initialBounds = { x: 0, y: 0, width: 120, height: 128 };
+  const boundsStack: Array<{ x: number; y: number; width: number; height: number }> = [initialBounds];
+  const setBounds = vi.fn((next: { x: number; y: number; width: number; height: number }) => {
+    boundsStack[boundsStack.length - 1] = next;
+  });
+  const getBounds = vi.fn(() => boundsStack[boundsStack.length - 1]);
 
   // `new BrowserWindow(options)` becomes a tracked spy call. The impl
   // returns a fresh mock instance each time so per-window state (e.g.
@@ -56,6 +64,8 @@ const codexPetElectronMocks = vi.hoisted(() => {
     setHasShadow,
     setVisibleOnAllWorkspaces,
     loadURL,
+    setBounds,
+    getBounds,
   }));
 
   return {
@@ -68,6 +78,8 @@ const codexPetElectronMocks = vi.hoisted(() => {
     setWindowOpenHandler,
     executeJavaScript,
     popup,
+    setBounds,
+    getBounds,
     BrowserWindow,
   };
 });
@@ -103,6 +115,15 @@ function snapshot(enabled: boolean, selectedID = "alpha"): CodexPetsSnapshot {
   };
 }
 
+const sampleHint: CodexPetHint = {
+  thread_id: "thread-42",
+  title: "Refactor auth flow",
+  status: "running",
+  preview: "正在执行 npm test",
+  attention: false,
+  updated_at: 1700000000000,
+};
+
 describe("codexPetStateForRuntime", () => {
   it("maps app runtime state onto Codex Pets atlas states", () => {
     expect(codexPetStateForRuntime({ running: false, status: "ready" }).id).toBe("idle");
@@ -129,6 +150,8 @@ describe("codexPetView", () => {
     const view = codexPetView(
       snapshot(true).pets[0],
       codexPetStateForRuntime({ running: true, status: "" }),
+      null,
+      "hidden",
     );
     expect(view.spritesheetURL).toBe("wuu-file://local/alpha");
     expect(view.y).toBe(-1456);
@@ -136,6 +159,19 @@ describe("codexPetView", () => {
     expect(view.frames).toBe(6);
     expect(view.duration).toBe(1560);
     expect(view.label).toBe("Alpha Pet running");
+    expect(view.hint).toBeNull();
+    expect(view.layout).toBe("hidden");
+  });
+
+  it("carries the hint and layout through to the renderer payload", () => {
+    const view = codexPetView(
+      snapshot(true).pets[0],
+      codexPetStateForRuntime({ running: true, status: "" }),
+      sampleHint,
+      "above",
+    );
+    expect(view.hint).toEqual(sampleHint);
+    expect(view.layout).toBe("above");
   });
 });
 
@@ -144,6 +180,8 @@ describe("codexPetWindowHTML", () => {
     codexPetView(
       snapshot(true).pets[0],
       codexPetStateForRuntime({ running: false, status: "" }),
+      null,
+      "hidden",
     ),
   );
 
@@ -163,14 +201,81 @@ describe("codexPetWindowHTML", () => {
     expect(html).toContain("default-src 'none'");
     expect(html).toContain("img-src wuu-file:");
   });
+
+  it("renders the bubble DOM and jump action when a hint is provided", () => {
+    const withHint = codexPetWindowHTML(
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), sampleHint, "above"),
+    );
+    expect(withHint).toContain(`data-thread-id="${sampleHint.thread_id}"`);
+    expect(withHint).toContain("wuu-pet://action/jump?thread_id=");
+    expect(withHint).toContain("-webkit-line-clamp:2");
+    expect(withHint).toContain("text-overflow:ellipsis");
+  });
 });
 
 describe("codexPetActionFromURL", () => {
-  it("accepts only the pet menu action", () => {
-    expect(codexPetActionFromURL("wuu-pet://action/menu")).toBe("menu");
+  it("accepts the pet menu action", () => {
+    expect(codexPetActionFromURL("wuu-pet://action/menu")).toEqual({ action: "menu" });
     expect(codexPetActionFromURL("wuu-pet://action/close")).toBeUndefined();
     expect(codexPetActionFromURL("wuu-cua://action/menu")).toBeUndefined();
     expect(codexPetActionFromURL("not a url")).toBeUndefined();
+  });
+
+  it("accepts the jump action only with a thread_id", () => {
+    expect(codexPetActionFromURL("wuu-pet://action/jump?thread_id=abc")).toEqual({
+      action: "jump",
+      thread_id: "abc",
+    });
+    expect(codexPetActionFromURL("wuu-pet://action/jump")).toBeUndefined();
+  });
+});
+
+describe("codexPetBoundsForLayout", () => {
+  const anchor = { x: 1000, y: 900 };
+
+  it("places bubble above and centers it horizontally over the sprite", () => {
+    const bounds = codexPetBoundsForLayout({ layout: "above", anchor, bubble: { width: 280, height: 80 } });
+    expect(bounds.width).toBe(280);
+    expect(bounds.height).toBe(208);
+    expect(bounds.x).toBe(860); // anchor.x - width/2
+    expect(bounds.y).toBe(700); // anchor.y - (height - 8)
+  });
+
+  it("places the bubble to the right of the sprite with sprite anchor preserved", () => {
+    const bounds = codexPetBoundsForLayout({ layout: "right", anchor, bubble: { width: 280, height: 80 } });
+    expect(bounds.width).toBe(400);
+    expect(bounds.height).toBe(120);
+    expect(bounds.x).toBe(944); // anchor.x - 8 - 48
+    expect(bounds.y).toBe(788); // anchor.y - (height - 8)
+  });
+});
+
+describe("selectCodexPetBubbleLayout", () => {
+  const bubble = { width: 280, height: 80 };
+
+  it("picks 'above' when there is room above the sprite", () => {
+    const workArea = { x: 0, y: 0, width: 1920, height: 1080 };
+    const anchor = { x: 960, y: 900 };
+    const decision = selectCodexPetBubbleLayout({ workArea, anchor, bubble });
+    expect(decision.layout).toBe("above");
+  });
+
+  it("falls back to 'right' when the sprite sits too close to the top edge", () => {
+    const workArea = { x: 0, y: 0, width: 1920, height: 1080 };
+    // anchor.y is small enough that 'above' (height 208) overflows the top
+    // edge, but 'right' (height 120) still fits centered around the sprite.
+    const anchor = { x: 960, y: 150 };
+    const decision = selectCodexPetBubbleLayout({ workArea, anchor, bubble });
+    expect(decision.layout).toBe("right");
+  });
+
+  it("returns 'hidden' when no layout fits inside the workArea", () => {
+    const workArea = { x: 0, y: 0, width: 400, height: 60 }; // tiny workArea, nothing fits
+    const anchor = { x: 200, y: 50 };
+    const decision = selectCodexPetBubbleLayout({ workArea, anchor, bubble });
+    expect(decision.layout).toBe("hidden");
+    expect(decision.bounds.width).toBe(120);
+    expect(decision.bounds.height).toBe(128);
   });
 });
 
@@ -199,13 +304,20 @@ describe("CodexPetWindowManager", () => {
     vi.clearAllMocks();
     codexPetElectronMocks.isDestroyed.mockReturnValue(false);
     codexPetElectronMocks.isVisible.mockReturnValue(false);
+    codexPetElectronMocks.getBounds.mockImplementation(() => ({
+      x: 100,
+      y: 200,
+      width: 120,
+      height: 128,
+    }));
+    codexPetElectronMocks.setBounds.mockImplementation(() => undefined);
     for (const key of Object.keys(codexPetElectronMocks.capturedListeners)) {
       delete codexPetElectronMocks.capturedListeners[key];
     }
   });
 
   it("surfaces the pet window after did-finish-load when ready-to-show never fires", () => {
-    const manager = new CodexPetWindowManager(() => undefined);
+    const manager = new CodexPetWindowManager(() => undefined, () => undefined);
     manager.sync(enabledSnapshot());
 
     // sync creates a BrowserWindow and queues the data: URL load.
@@ -229,7 +341,7 @@ describe("CodexPetWindowManager", () => {
   });
 
   it("destroys the window when the snapshot no longer has an enabled pet", () => {
-    const manager = new CodexPetWindowManager(() => undefined);
+    const manager = new CodexPetWindowManager(() => undefined, () => undefined);
     manager.sync(enabledSnapshot());
     expect(codexPetElectronMocks.BrowserWindow).toHaveBeenCalledTimes(1);
 
@@ -237,5 +349,33 @@ describe("CodexPetWindowManager", () => {
     // the window down so it stops eating input on the main window.
     manager.sync({ ...enabledSnapshot(), enabled: false, pets: [] });
     expect(codexPetElectronMocks.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("resizes the window when a hint is set and triggers a jump via the jump callback", () => {
+    const closeRequested = vi.fn();
+    const jumpRequested = vi.fn();
+    const manager = new CodexPetWindowManager(closeRequested, jumpRequested);
+    manager.sync(enabledSnapshot());
+    const didFinishLoad =
+      codexPetElectronMocks.capturedListeners["wc:did-finish-load"]?.[0];
+    didFinishLoad!({});
+    codexPetElectronMocks.setBounds.mockClear();
+    codexPetElectronMocks.executeJavaScript.mockClear();
+
+    manager.setHint(sampleHint);
+
+    // setBounds resizes to the above-layout footprint (280×208)
+    expect(codexPetElectronMocks.setBounds).toHaveBeenCalledWith(
+      expect.objectContaining({ width: 280, height: 208 }),
+    );
+    // wuuPetView is invoked with the new view carrying the hint.
+    const lastCall = codexPetElectronMocks.executeJavaScript.mock.calls.at(-1)?.[0] as string;
+    expect(lastCall).toContain("wuuPetView");
+    expect(lastCall).toContain("thread-42");
+
+    // Simulate a bubble click: the renderer navigates to wuu-pet://action/jump
+    const willNavigate = codexPetElectronMocks.capturedListeners["wc:will-navigate"]?.[0];
+    willNavigate!({ preventDefault: vi.fn() }, "wuu-pet://action/jump?thread_id=thread-42");
+    expect(jumpRequested).toHaveBeenCalledWith(sampleHint);
   });
 });
