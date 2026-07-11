@@ -7,8 +7,10 @@ import type { WindowRegistry } from "./windowRegistry";
 
 export type ActivityWindowAction = "takeover" | "release" | "stop";
 
-const SNAP_THRESHOLD = 20;
-const SNAP_INSET = 8;
+const SNAP_THRESHOLD = 52;
+const SNAP_INSET = 12;
+const SCREEN_SNAP_THRESHOLD = 20;
+const SNAP_ANIMATION_MS = 110;
 const PREVIEW_TARGET_AREA = 380 * 248;
 const PREVIEW_MIN_WIDTH = 280;
 const PREVIEW_MAX_WIDTH = 480;
@@ -58,39 +60,76 @@ export function snapActivityBounds(
   threshold = SNAP_THRESHOLD,
   inset = SNAP_INSET,
 ): Rectangle {
-  const result = { ...bounds };
-  const xCandidates = [workArea.x + inset, workArea.x + workArea.width - bounds.width - inset];
-  const yCandidates = [workArea.y + inset, workArea.y + workArea.height - bounds.height - inset];
-
   for (const anchor of anchors) {
-    if (rangesOverlap(bounds.y, bounds.y + bounds.height, anchor.y, anchor.y + anchor.height)) {
-      xCandidates.push(anchor.x + inset, anchor.x + anchor.width - bounds.width - inset);
-    }
-    if (rangesOverlap(bounds.x, bounds.x + bounds.width, anchor.x, anchor.x + anchor.width)) {
-      yCandidates.push(anchor.y + inset, anchor.y + anchor.height - bounds.height - inset);
-    }
+    if (!rectanglesOverlap(anchor, workArea)) continue;
+    const snapped = nearestCorner(bounds, cornerPositions(bounds, anchor, inset, workArea), threshold);
+    if (snapped) return snapped;
   }
-
-  result.x = nearestSnap(bounds.x, xCandidates, threshold);
-  result.y = nearestSnap(bounds.y, yCandidates, threshold);
-  return result;
+  return nearestCorner(
+    bounds,
+    cornerPositions(bounds, workArea, inset, workArea),
+    Math.min(threshold, SCREEN_SNAP_THRESHOLD),
+  ) ?? { ...bounds };
 }
 
-function nearestSnap(value: number, candidates: number[], threshold: number): number {
-  let nearest = value;
+function rectanglesOverlap(a: Rectangle, b: Rectangle): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x
+    && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+function cornerPositions(
+  bounds: Rectangle,
+  anchor: Rectangle,
+  inset: number,
+  constraint?: Rectangle,
+): Array<{ x: number; y: number }> {
+  const horizontalRoom = anchor.width - bounds.width - inset * 2;
+  const verticalRoom = anchor.height - bounds.height - inset * 2;
+  const rawLeft = horizontalRoom >= 0
+    ? anchor.x + inset
+    : anchor.x + (anchor.width - bounds.width) / 2;
+  const rawRight = horizontalRoom >= 0
+    ? anchor.x + anchor.width - bounds.width - inset
+    : rawLeft;
+  const rawTop = verticalRoom >= 0
+    ? anchor.y + inset
+    : anchor.y + (anchor.height - bounds.height) / 2;
+  const rawBottom = verticalRoom >= 0
+    ? anchor.y + anchor.height - bounds.height - inset
+    : rawTop;
+  const clampX = (value: number): number => constraint
+    ? Math.max(constraint.x, Math.min(constraint.x + constraint.width - bounds.width, value))
+    : value;
+  const clampY = (value: number): number => constraint
+    ? Math.max(constraint.y, Math.min(constraint.y + constraint.height - bounds.height, value))
+    : value;
+  const left = clampX(rawLeft);
+  const right = clampX(rawRight);
+  const top = clampY(rawTop);
+  const bottom = clampY(rawBottom);
+  return [
+    { x: left, y: top },
+    { x: right, y: top },
+    { x: left, y: bottom },
+    { x: right, y: bottom },
+  ];
+}
+
+function nearestCorner(
+  bounds: Rectangle,
+  candidates: Array<{ x: number; y: number }>,
+  threshold: number,
+): Rectangle | undefined {
+  let nearest: { x: number; y: number } | undefined;
   let distance = threshold + 1;
   for (const candidate of candidates) {
-    const nextDistance = Math.abs(value - candidate);
+    const nextDistance = Math.hypot(bounds.x - candidate.x, bounds.y - candidate.y);
     if (nextDistance <= threshold && nextDistance < distance) {
       nearest = candidate;
       distance = nextDistance;
     }
   }
-  return nearest;
-}
-
-function rangesOverlap(startA: number, endA: number, startB: number, endB: number): boolean {
-  return startA < endB && endA > startB;
+  return nearest ? { ...bounds, ...nearest } : undefined;
 }
 
 export function activityControlMethod(action: ActivityWindowAction): "activity/takeover" | "activity/release" | "activity/stop" {
@@ -105,6 +144,7 @@ type ActivityControl = (
 export class CUAActivityWindowManager {
   private readonly manuallyResizedWindowIDs = new Set<number>();
   private readonly previewState = new Map<string, { ratio: number; target: string }>();
+  private readonly snappingWindowIDs = new Set<number>();
 
   constructor(
     private readonly registry: WindowRegistry,
@@ -132,19 +172,28 @@ export class CUAActivityWindowManager {
 
   private createWindow(activity: ActivitySession): BrowserWindow {
     const cursor = screen.getCursorScreenPoint();
-    const workArea = screen.getDisplayNearestPoint(cursor).workArea;
+    let workArea = screen.getDisplayNearestPoint(cursor).workArea;
     const width = 380;
     const height = 248;
+    const mainWindow = this.registry.mainWindow();
+    const mainBounds = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
+      ? mainWindow.getContentBounds()
+      : undefined;
+    if (mainBounds) workArea = screen.getDisplayMatching(mainBounds).workArea;
+    const initialBounds = mainBounds
+      ? cornerPositions({ x: 0, y: 0, width, height }, mainBounds, SNAP_INSET, workArea)[1]
+      : { x: workArea.x + workArea.width - width - 24, y: workArea.y + 24 };
     const win = new BrowserWindow({
       width,
       height,
-      x: workArea.x + workArea.width - width - 24,
-      y: workArea.y + 24,
+      x: initialBounds.x,
+      y: initialBounds.y,
       minWidth: PREVIEW_MIN_WIDTH,
       minHeight: PREVIEW_MIN_HEIGHT,
       frame: false,
       transparent: true,
       backgroundColor: "#00000000",
+      hasShadow: true,
       vibrancy: "under-window",
       visualEffectState: "active",
       alwaysOnTop: true,
@@ -158,21 +207,24 @@ export class CUAActivityWindowManager {
       },
     });
     win.setAlwaysOnTop(true, "floating");
+    win.setHasShadow(true);
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     win.on("will-resize", () => {
       this.manuallyResizedWindowIDs.add(win.webContents.id);
     });
     win.on("moved", () => {
-      if (win.isDestroyed()) return;
+      const windowID = win.webContents.id;
+      if (win.isDestroyed() || this.snappingWindowIDs.has(windowID)) return;
       const bounds = win.getBounds();
       const workArea = screen.getDisplayMatching(bounds).workArea;
-      const anchors = this.registry.allWindows()
-        .filter((candidate) => candidate !== win && !candidate.isDestroyed() && candidate.isVisible())
-        .map((candidate) => candidate.getBounds());
+      const mainWindow = this.registry.mainWindow();
+      const anchors = mainWindow && mainWindow !== win && !mainWindow.isDestroyed() && mainWindow.isVisible()
+        ? [mainWindow.getContentBounds()]
+        : [];
       const snapped = snapActivityBounds(bounds, workArea, anchors);
       if (snapped.x !== bounds.x || snapped.y !== bounds.y) {
-        win.setBounds(snapped, false);
+        this.animateSnap(win, bounds, snapped);
       }
     });
     win.webContents.on("will-navigate", (navigationEvent, rawURL) => {
@@ -199,6 +251,7 @@ export class CUAActivityWindowManager {
     this.registry.setActivityWindow(activity.id, windowID);
     win.on("closed", () => {
       this.manuallyResizedWindowIDs.delete(windowID);
+      this.snappingWindowIDs.delete(windowID);
       this.previewState.delete(activity.id);
       this.registry.unregisterWindow(windowID);
     });
@@ -206,6 +259,31 @@ export class CUAActivityWindowManager {
       if (!win.isDestroyed()) win.showInactive();
     });
     return win;
+  }
+
+  private animateSnap(win: BrowserWindow, from: Rectangle, to: Rectangle): void {
+    const windowID = win.webContents.id;
+    this.snappingWindowIDs.add(windowID);
+    const startedAt = performance.now();
+    const step = (): void => {
+      if (win.isDestroyed()) {
+        this.snappingWindowIDs.delete(windowID);
+        return;
+      }
+      const progress = Math.min(1, (performance.now() - startedAt) / SNAP_ANIMATION_MS);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      win.setPosition(
+        Math.round(from.x + (to.x - from.x) * eased),
+        Math.round(from.y + (to.y - from.y) * eased),
+        false,
+      );
+      if (progress < 1) {
+        setTimeout(step, 16);
+      } else {
+        this.snappingWindowIDs.delete(windowID);
+      }
+    };
+    step();
   }
 
   private render(win: BrowserWindow, activity: ActivitySession): void {
@@ -285,10 +363,10 @@ export function cuaActivityHTML(activity: ActivitySession): string {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src wuu-file:; style-src 'unsafe-inline'; navigate-to wuu-cua:" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-:root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;--ink:#111315;--line:rgba(255,255,255,.48);--glass:rgba(244,246,247,.56);--glass-strong:rgba(255,255,255,.82);--hover:rgba(31,35,40,.08);--danger:#b42318;--danger-soft:rgba(255,240,239,.92);--shadow:0 16px 40px rgba(20,24,28,.18),0 2px 8px rgba(20,24,28,.1)}
-@media(prefers-color-scheme:dark){:root{--ink:#f2f3f4;--line:rgba(255,255,255,.16);--glass:rgba(31,35,40,.58);--glass-strong:rgba(42,46,51,.88);--hover:rgba(228,232,235,.12);--danger:#f0705f;--danger-soft:rgba(52,28,24,.92);--shadow:0 16px 40px rgba(0,0,0,.58),0 2px 8px rgba(0,0,0,.42)}}
+:root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;--ink:#111315;--line:rgba(255,255,255,.64);--glass:rgba(244,246,247,.56);--glass-strong:rgba(255,255,255,.82);--hover:rgba(31,35,40,.08);--danger:#b42318;--danger-soft:rgba(255,240,239,.92)}
+@media(prefers-color-scheme:dark){:root{--ink:#f2f3f4;--line:rgba(255,255,255,.2);--glass:rgba(31,35,40,.58);--glass-strong:rgba(42,46,51,.88);--hover:rgba(228,232,235,.12);--danger:#f0705f;--danger-soft:rgba(52,28,24,.92)}}
 *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;background:transparent;overflow:hidden}
-.card{position:relative;height:100%;border-radius:14px;overflow:hidden;background:#101214;border:1px solid var(--line);box-shadow:var(--shadow);color:var(--ink);-webkit-app-region:drag}
+.card{position:relative;height:100%;border-radius:22px;overflow:hidden;background:#111315;border:1px solid var(--line);box-shadow:inset 0 1px 0 rgba(255,255,255,.12);color:var(--ink);-webkit-app-region:drag}
 .preview{position:absolute;inset:0;display:grid;place-items:center;overflow:hidden}.preview img{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none}
 .glass{position:absolute;inset:0;background:radial-gradient(circle at 10% 0%,rgba(255,255,255,.62),transparent 44%),radial-gradient(circle at 92% 34%,rgba(255,122,72,.16),transparent 48%),radial-gradient(circle at 52% 112%,rgba(110,170,255,.14),transparent 50%),linear-gradient(145deg,var(--glass-strong),var(--glass));box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
 .actions{position:absolute;z-index:3;top:8px;right:8px;display:flex;align-items:center;gap:5px;padding:4px;border-radius:10px;background:var(--glass-strong);border:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.14);opacity:0;transform:translateY(-3px);transition:opacity 140ms ease,transform 140ms ease;-webkit-app-region:no-drag}.card:hover .actions,.actions:focus-within{opacity:1;transform:none}.button{height:25px;padding:0 8px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink);background:transparent;border:0;font-size:11px;font-weight:560}.button:hover{background:var(--hover)}.button.stop{width:25px;padding:0;font-size:15px;font-weight:400}.button.stop:hover{color:var(--danger);background:var(--danger-soft)}

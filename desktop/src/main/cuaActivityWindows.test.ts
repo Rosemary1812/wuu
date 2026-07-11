@@ -78,22 +78,51 @@ describe("CUA Activity windows", () => {
       { x: 5, y: 650, width: 380, height: 248 },
       { x: 0, y: 0, width: 1440, height: 900 },
       [],
-    )).toEqual({ x: 8, y: 644, width: 380, height: 248 });
+    )).toEqual({ x: 12, y: 640, width: 380, height: 248 });
   });
 
-  it("snaps to overlapping Wuu window inner edges only within range", () => {
+  it("snaps naturally to the four inner corners of the main Wuu window", () => {
     const workArea = { x: 0, y: 0, width: 1800, height: 1100 };
     const wuuWindow = { x: 120, y: 100, width: 1200, height: 800 };
     expect(snapActivityBounds(
       { x: 128, y: 115, width: 380, height: 248 },
       workArea,
       [wuuWindow],
-    )).toEqual({ x: 128, y: 108, width: 380, height: 248 });
+    )).toEqual({ x: 132, y: 112, width: 380, height: 248 });
+    expect(snapActivityBounds(
+      { x: 925, y: 640, width: 380, height: 248 },
+      workArea,
+      [wuuWindow],
+    )).toEqual({ x: 928, y: 640, width: 380, height: 248 });
     expect(snapActivityBounds(
       { x: 700, y: 500, width: 380, height: 248 },
       workArea,
       [wuuWindow],
     )).toEqual({ x: 700, y: 500, width: 380, height: 248 });
+  });
+
+  it("keeps the preview styled as a compact app frame", () => {
+    const html = cuaActivityHTML(activity());
+    expect(html).toContain("border-radius:22px");
+    expect(html).toContain("object-fit:contain");
+    expect(html).not.toContain("0 24px 64px");
+  });
+
+  it("keeps main-window corner targets inside the active display", () => {
+    expect(snapActivityBounds(
+      { x: 680, y: 480, width: 380, height: 248 },
+      { x: 0, y: 0, width: 1000, height: 700 },
+      [{ x: 760, y: 520, width: 180, height: 140 }],
+      200,
+    )).toEqual({ x: 620, y: 452, width: 380, height: 248 });
+  });
+
+  it("ignores main-window anchors on another display", () => {
+    expect(snapActivityBounds(
+      { x: 1970, y: 80, width: 380, height: 248 },
+      { x: 1800, y: 0, width: 1200, height: 900 },
+      [{ x: 100, y: 100, width: 1200, height: 800 }],
+    )).toEqual({ x: 1970, y: 80, width: 380, height: 248 });
   });
 
   it("fits preview proportions within the compact overlay envelope", () => {
