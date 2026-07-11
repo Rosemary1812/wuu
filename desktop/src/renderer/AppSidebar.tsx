@@ -932,17 +932,13 @@ export function AppSidebar({
                       {participants.length === 0 ? (
                         <button
                           type="button"
-                          className="participant-roster-row empty"
+                          className="sidebar-section-empty-note sidebar-section-empty-note-action"
                           disabled={!state.initialized}
                           onClick={() => {
                             setCreatingParticipant(true);
                           }}
                         >
-                          <span
-                            className="participant-roster-status"
-                            data-status="offline"
-                          />
-                          <span className="participant-roster-name">添加 Agent</span>
+                          添加 Agent
                         </button>
                       ) : (
                         visibleParticipants.map((participant) => {

@@ -450,7 +450,7 @@ describe("AppSidebar participant roster", () => {
     });
 
     const empty = container.querySelector<HTMLButtonElement>(
-      ".participant-roster-row.empty",
+      ".sidebar-section-empty-note-action",
     );
     expect(empty).not.toBeNull();
     expect(empty?.textContent).toContain("添加 Agent");

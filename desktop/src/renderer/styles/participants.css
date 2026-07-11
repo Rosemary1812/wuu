@@ -293,11 +293,6 @@
   cursor: default;
 }
 
-.participant-roster-row.empty {
-  grid-template-columns: var(--sidebar-nav-icon-col) minmax(0, 1fr) auto;
-  color: var(--ink-muted);
-}
-
 .participant-roster-status {
   width: var(--sidebar-session-status-dot-size);
   height: var(--sidebar-session-status-dot-size);

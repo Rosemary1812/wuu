@@ -423,6 +423,34 @@
   -webkit-app-region: drag;
 }
 
+/* Brand placeholder at the top of the sidebar visible area.
+ * 草稿占位 — 等真正的 logo / wordmark / lockup 落地后整体替换。
+ * 遵循 DESIGN.md 的"克制原则"：用 accent + 衬线 display 字 + 一行小灰标签，
+ * 不抢侧栏日常控件的注意力，也不抢 empty-home 衬线标题这个已有署名时刻。 */
+.sidebar-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 2px 8px 10px;
+}
+
+.sidebar-brand-wordmark {
+  font-family: var(--empty-home-title-font);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  line-height: 1;
+  background: linear-gradient(
+    95deg,
+    var(--wuu-accent) 0%,
+    color-mix(in srgb, var(--ink-strong) 78%, var(--wuu-accent)) 60%,
+    var(--ink-strong) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 .sidebar-main {
   display: flex;
   min-width: 0;
@@ -1697,6 +1725,39 @@
       var(--sidebar-row-pad-x) + var(--sidebar-nav-icon-col) +
         var(--sidebar-nav-column-gap)
     );
+}
+
+/* Action variant of the empty-note — used by the Agents section's
+ * "添加 Agent" affordance. Resets button defaults so the interactive row
+ * still inherits the empty-note's size / color / indent, and adds a
+ * subtle hover / focus treatment so it stays discoverable as a button
+ * without drifting back to the heavier .participant-roster-row spec. */
+.sidebar-section-empty-note-action {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.sidebar-section-empty-note-action:hover {
+  color: var(--ink);
+  background: var(--sidebar-glass-hover);
+}
+
+.sidebar-section-empty-note-action:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.sidebar-section-empty-note-action:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 /* Header right-edge spacing: 置顶 / Agents have no right-side button,
