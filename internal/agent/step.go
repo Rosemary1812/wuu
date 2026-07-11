@@ -266,6 +266,11 @@ type LoopConfig struct {
 	// and before each provider request. Returned segments are assembled into
 	// the provider request without being appended to live or durable history.
 	BeforeRequestContext func() []ContextSegment
+	// BeforeRequest runs after Wuu has assembled the complete provider-neutral
+	// request and before cache telemetry or provider serialization. Plugin hosts
+	// use it to transform messages, model parameters, and tool definitions.
+	// Returning an error aborts the current model round.
+	BeforeRequest func(context.Context, *providers.ChatRequest) error
 	// SystemPromptSections is metadata for the stable system prompt in the
 	// live history. It is emitted as telemetry only and never sent to providers.
 	SystemPromptSections []SystemPromptSectionInfo

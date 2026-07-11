@@ -238,14 +238,11 @@ func RunToolLoop(
 		}
 		assembly := assembleModelRequest(messagesForRequest, requestSegments)
 		requestMessages := assembly.Messages
-		cacheHint := buildCacheHint(requestMessages)
-		applyPromptCacheKeyOverride(&cacheHint, cfg.PromptCacheKey)
 		req := providers.ChatRequest{
 			Model:                       cfg.Model,
 			Messages:                    requestMessages,
 			Temperature:                 cfg.Temperature,
 			MaxTokens:                   currentMaxTokens,
-			CacheHint:                   cacheHint,
 			StepIndex:                   stepIdx,
 			Effort:                      cfg.Effort,
 			ProviderOptions:             provideroptions.Clone(cfg.ProviderOptions),
@@ -259,6 +256,18 @@ func RunToolLoop(
 		if stepIdx == 0 && cfg.ForceToolFirstStep != "" {
 			req.ForceToolName = cfg.ForceToolFirstStep
 		}
+		if cfg.BeforeRequest != nil {
+			if err := cfg.BeforeRequest(ctx, &req); err != nil {
+				return loopResultSnapshot(messages, startLen, historyRewritten, totalIn, totalOut, totalCacheCreation, totalCacheRead), fmt.Errorf("transform model request: %w", err)
+			}
+		}
+		if err := validateTransformedRequest(req); err != nil {
+			return loopResultSnapshot(messages, startLen, historyRewritten, totalIn, totalOut, totalCacheCreation, totalCacheRead), err
+		}
+		cacheHint := buildCacheHint(req.Messages)
+		applyPromptCacheKeyOverride(&cacheHint, cfg.PromptCacheKey)
+		req.CacheHint = cacheHint
+		assembly.Messages = req.Messages
 
 		// Cache-break telemetry: detect changes in stable-prefix components
 		// (model, tools, system prompt) that would break cache reuse. Section
@@ -520,6 +529,39 @@ func RunToolLoop(
 		CacheCreationTokens: totalCacheCreation,
 		CacheReadTokens:     totalCacheRead,
 	}, fmt.Errorf("max steps exceeded (%d)", cfg.MaxSteps)
+}
+
+func validateTransformedRequest(req providers.ChatRequest) error {
+	if strings.TrimSpace(req.Model) == "" {
+		return errors.New("transformed model request has empty model")
+	}
+	if err := providers.ValidateToolCallHistory(req.Messages); err != nil {
+		return fmt.Errorf("transformed model request has invalid message sequence: %w", err)
+	}
+	if err := providers.ValidateToolDefinitionsForProvider(providers.ToolSurfaceValidationTarget{}, req.Tools); err != nil {
+		return fmt.Errorf("transformed model request has invalid tools: %w", err)
+	}
+	forced := strings.TrimSpace(req.ForceToolName)
+	if forced == "" {
+		return nil
+	}
+	for _, tool := range req.Tools {
+		if tool.Name == forced {
+			return nil
+		}
+	}
+	return fmt.Errorf("transformed model request forces unavailable tool %q", forced)
+}
+
+func loopResultSnapshot(messages []providers.ChatMessage, startLen int, historyRewritten bool, input, output, cacheCreation, cacheRead int) LoopResult {
+	return LoopResult{
+		NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
+		HistoryRewritten:    historyRewritten,
+		InputTokens:         input,
+		OutputTokens:        output,
+		CacheCreationTokens: cacheCreation,
+		CacheReadTokens:     cacheRead,
+	}
 }
 
 func emitCompactAttempt(cfg LoopConfig, info CompactAttemptInfo) {

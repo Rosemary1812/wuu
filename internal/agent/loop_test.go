@@ -42,6 +42,76 @@ func (f *fakeStep) Execute(_ context.Context, req providers.ChatRequest) (StepRe
 	return r, nil
 }
 
+func TestRunToolLoopBeforeRequestTransformsProviderRequest(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{Content: "done"}}}
+	tools := &fakeLoopTools{defs: []providers.ToolDefinition{{
+		Name:        "read_file",
+		Description: "Read a file",
+		InputSchema: map[string]any{"type": "object"},
+	}}}
+	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{{Role: "user", Content: "hello"}}, LoopConfig{
+		Model: "before",
+		Tools: tools,
+		BeforeRequest: func(_ context.Context, req *providers.ChatRequest) error {
+			req.Model = "after"
+			req.Temperature = 0.25
+			req.Messages = append([]providers.ChatMessage{{Role: "system", Content: "plugin system"}}, req.Messages...)
+			req.Tools[0].Description = "Plugin description"
+			return nil
+		},
+	}, step)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(step.calls) != 1 {
+		t.Fatalf("calls = %d", len(step.calls))
+	}
+	request := step.calls[0]
+	if request.Model != "after" || request.Temperature != 0.25 {
+		t.Fatalf("request model/temperature = %q/%v", request.Model, request.Temperature)
+	}
+	if request.Messages[0].Role != "system" || request.Messages[0].Content != "plugin system" {
+		t.Fatalf("messages = %+v", request.Messages)
+	}
+	if request.Tools[0].Description != "Plugin description" {
+		t.Fatalf("tools = %+v", request.Tools)
+	}
+}
+
+func TestRunToolLoopRejectsInvalidPluginRequestBeforeProvider(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{Content: "unused"}}}
+	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{{Role: "user", Content: "hello"}}, LoopConfig{
+		Model: "model",
+		BeforeRequest: func(_ context.Context, req *providers.ChatRequest) error {
+			req.Messages = append(req.Messages, providers.ChatMessage{Role: "system", Content: "too late"})
+			return nil
+		},
+	}, step)
+	if err == nil || !strings.Contains(err.Error(), "invalid message sequence") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(step.calls) != 0 {
+		t.Fatalf("provider called %d times", len(step.calls))
+	}
+}
+
+func TestRunToolLoopRejectsForcedToolRemovedByPlugin(t *testing.T) {
+	step := &fakeStep{results: []StepResult{{Content: "unused"}}}
+	tools := &fakeLoopTools{defs: []providers.ToolDefinition{{Name: "required", InputSchema: map[string]any{"type": "object"}}}}
+	_, err := RunToolLoop(context.Background(), []providers.ChatMessage{{Role: "user", Content: "hello"}}, LoopConfig{
+		Model:              "model",
+		Tools:              tools,
+		ForceToolFirstStep: "required",
+		BeforeRequest: func(_ context.Context, req *providers.ChatRequest) error {
+			req.Tools = nil
+			return nil
+		},
+	}, step)
+	if err == nil || !strings.Contains(err.Error(), "forces unavailable tool") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 // fakeLoopTools is a no-op ToolExecutor that records every call.
 type fakeLoopTools struct {
 	mu         sync.Mutex
