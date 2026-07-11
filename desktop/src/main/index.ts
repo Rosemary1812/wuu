@@ -117,9 +117,12 @@ import { TerminalSessionManager } from "./terminalSessions";
 import { WorkspaceFileService } from "./workspaceFiles";
 
 import { createWindowRegistry, type WindowRegistry } from "./windowRegistry";
+import {
+  computeDefaultMainWindowBounds,
+  MAIN_WINDOW_MIN_HEIGHT,
+  MAIN_WINDOW_MIN_WIDTH,
+} from "./windowState";
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MAIN_WINDOW_DEFAULT_WIDTH = 1280;
-const MAIN_WINDOW_DEFAULT_HEIGHT = 920;
 const DEV_CACHE_CLEANUP_THRESHOLD_BYTES = 512 * 1024 * 1024;
 const DEV_CACHE_DIRECTORIES = ["Cache", "Code Cache", "GPUCache", "DawnCache"];
 const DEFAULT_WINDOW_BACKGROUND = "#f6f6f4";
@@ -495,9 +498,13 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
 }
 
 function createWindow(): void {
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = computeDefaultMainWindowBounds(primaryDisplay.workArea);
   mainWindow = new BrowserWindow({
-    width: MAIN_WINDOW_DEFAULT_WIDTH,
-    height: MAIN_WINDOW_DEFAULT_HEIGHT,
+    width,
+    height,
+    minWidth: MAIN_WINDOW_MIN_WIDTH,
+    minHeight: MAIN_WINDOW_MIN_HEIGHT,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 18, y: 16 },
     ...mainWindowMaterialOptions(),
