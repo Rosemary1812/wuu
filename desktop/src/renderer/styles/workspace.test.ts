@@ -145,6 +145,26 @@ describe("workspace review diff layout", () => {
       cssRuleBody(".workspace-review-panel.single-file .workspace-review-resizer"),
     ).toMatch(/display:\s*none;/);
   });
+
+  it("highlights the active file in the review tree so the user can see which diff is on screen", () => {
+    const activeRow = cssRuleBody(".workspace-diff-tree-row.active");
+    const hoverRow = cssRuleBody(".workspace-diff-tree-row:hover");
+
+    // Active row must NOT share the hover background — otherwise the user
+    // can't tell which file's diff is currently being shown in the diff pane.
+    expect(activeRow).not.toMatch(/background:\s*var\(--surface-3\)/);
+    expect(activeRow).toMatch(/color-mix\(in srgb,\s*var\(--wuu-accent\)/);
+    expect(hoverRow).toMatch(/background:\s*var\(--surface-3\)/);
+
+    // The file icon and stat count in the active row should pick up the
+    // accent so the row reads as "currently diffed" at a glance.
+    expect(cssRuleBody(".workspace-diff-tree-row.active svg")).toMatch(
+      /color:\s*var\(--wuu-accent\)/,
+    );
+    expect(
+      cssRuleBody(".workspace-diff-tree-row.active .workspace-diff-tree-count"),
+    ).toMatch(/color:\s*var\(--wuu-accent\)/);
+  });
 });
 
 describe("turn file diff panel layout", () => {

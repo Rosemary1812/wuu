@@ -2415,9 +2415,25 @@
   text-align: left;
 }
 
-.workspace-diff-tree-row:hover,
-.workspace-diff-tree-row.active {
+.workspace-diff-tree-row:hover {
   background: var(--surface-3);
+}
+
+.workspace-diff-tree-row.active {
+  /* The active row is the file whose diff is shown in the diff pane, so it
+     needs to read as clearly distinct from a hover — using the same neutral
+     surface tint as hover (the old behavior) made it impossible to tell
+     which file's diff was on screen at a glance. */
+  background: color-mix(in srgb, var(--wuu-accent) 14%, transparent);
+  color: var(--ink);
+}
+
+.workspace-diff-tree-row.active svg {
+  color: var(--wuu-accent);
+}
+
+.workspace-diff-tree-row.active .workspace-diff-tree-count {
+  color: var(--wuu-accent);
 }
 
 .workspace-diff-tree-row svg {
