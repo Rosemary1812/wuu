@@ -90,6 +90,8 @@ public final class MacComputerBackend: ComputerBackend {
         case .waitForChange:
             try waitForChange(command, app: app, axApplication: axApplication)
             return try observe(command, app: app, axApplication: axApplication)
+        case .sequence:
+            throw ComputerError.unsupported("sequence is coordinated by the Wuu runtime")
         case .permissionStatus, .requestPermissions, .listApps:
             preconditionFailure("global actions returned before target resolution")
         }

@@ -15,6 +15,7 @@ public enum ComputerAction: String, CaseIterable, Sendable {
     case selectText = "select_text"
     case performAction = "perform_action"
     case waitForChange = "wait_for_change"
+    case sequence
 }
 
 public enum ForegroundPolicy: String, Sendable {
@@ -248,6 +249,7 @@ public final class MCPServer {
             variant(.selectText, required: ["app", "element_id", "text"]),
             variant(.performAction, required: ["app", "element_id", "action_name"]),
             variant(.waitForChange, required: ["app"]),
+            variant(.sequence, required: ["app", "steps"]),
         ]
         return [
             "name": "computer",
@@ -286,6 +288,22 @@ public final class MCPServer {
                         "enum": ["avoid", "allow", "require"],
                         "default": "avoid",
                         "description": "Foreground control policy. avoid is the default and returns requires_foreground instead of activating an app or posting global input; allow permits a foreground fallback; require explicitly brings the target forward.",
+                    ],
+                    "steps": [
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "description": "Ordered actions. Every step must declare risk=safe, external_side_effect, or destructive. Non-safe steps also require confirmed=true.",
+                        "items": [
+                            "type": "object",
+                            "required": ["action", "risk"],
+                            "additionalProperties": true,
+                            "properties": [
+                                "action": ["type": "string"],
+                                "risk": ["type": "string", "enum": ["safe", "external_side_effect", "destructive"]],
+                                "confirmed": ["type": "boolean"],
+                            ],
+                        ],
                     ],
                 ],
             ],

@@ -58,6 +58,7 @@ private func testInitializesAndAdvertisesFullComputerTool() throws {
         "permission_status", "request_permissions", "list_apps", "observe",
         "click", "drag", "press_key", "press_keys", "scroll", "set_value", "type_text",
         "select_text", "perform_action", "wait_for_change",
+        "sequence",
     ], "full computer actions")
     try expect((app?["description"] as? String)?.contains("Required for every action") == true, "app requirement is explicit")
     func requiredFields(for action: String) -> [String] {

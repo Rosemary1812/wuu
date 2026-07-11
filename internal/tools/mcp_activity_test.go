@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"image"
 	"image/color"
@@ -127,6 +128,43 @@ func TestExecuteActivityBoundToolCreatesRefAndHonorsTakeover(t *testing.T) {
 	}
 	if tool.calls != 2 {
 		t.Fatalf("stopped call reached helper: calls=%d", tool.calls)
+	}
+}
+
+func TestExecuteActivityBoundCUASequenceChecksRiskPerStep(t *testing.T) {
+	registry := activity.NewRegistry()
+	tool := &activityTestTool{}
+	kit := &Toolkit{
+		env:      &Env{RootDir: "/repo", SessionID: "thread-1", SessionDir: t.TempDir()},
+		registry: NewRegistry(tool), boundary: StandardBoundary(), activityRegistry: registry,
+		mcpActivityBindings: map[string]MCPActivityBinding{
+			"plugin.cua-mac.computer": {Kind: activity.KindCUA, PluginID: "cua-mac"},
+		},
+	}
+	call := providers.ToolCall{ID: "sequence-1", Name: tool.Name(), Arguments: `{
+		"action":"sequence","app":"com.apple.calculator","steps":[
+			{"action":"click","element_id":1,"risk":"safe"},
+			{"action":"click","element_id":2,"risk":"external_side_effect"}
+		]}`}
+	result, err := kit.executeActivityBoundToolResult(context.Background(), call, tool, "plugin.cua-mac.computer")
+	if err != nil {
+		t.Fatalf("sequence execute: %v", err)
+	}
+	if tool.calls != 1 {
+		t.Fatalf("executed steps = %d, want 1 before policy pause", tool.calls)
+	}
+	if result.Activity == nil || result.Activity.State != string(activity.StateWaitingConfirmation) {
+		t.Fatalf("activity state = %+v, want waiting_confirmation", result.Activity)
+	}
+	var structured struct {
+		Status   string `json:"status"`
+		NextStep int    `json:"next_step"`
+	}
+	if err := json.Unmarshal(result.StructuredContent, &structured); err != nil {
+		t.Fatal(err)
+	}
+	if structured.Status != "policy_paused" || structured.NextStep != 1 {
+		t.Fatalf("sequence result = %+v", structured)
 	}
 }
 

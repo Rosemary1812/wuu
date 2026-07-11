@@ -25,6 +25,13 @@ type MCPActivityBinding struct {
 	PluginID string
 }
 
+type cuaSequenceRequest struct {
+	Action           string           `json:"action"`
+	App              string           `json:"app"`
+	ForegroundPolicy string           `json:"foreground_policy"`
+	Steps            []map[string]any `json:"steps"`
+}
+
 func (t *Toolkit) SetActivityRegistry(registry *activity.Registry) {
 	if t == nil {
 		return
@@ -91,7 +98,15 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		}
 	}
 
-	result, callErr := t.executeKnownToolResult(ctx, call, tool)
+	sequence, isSequence := parseCUASequence(call.Arguments)
+	var result toolresult.Result
+	var callErr error
+	sequenceStatus := ""
+	if isSequence {
+		result, sequenceStatus, callErr = t.executeCUASequence(ctx, tool, threadID, session.ID, lease.Token, sequence)
+	} else {
+		result, callErr = t.executeKnownToolResult(ctx, call, tool)
+	}
 	// Re-check the lease before publishing success. A takeover that happened
 	// while the helper was running invalidates the result and prevents the
 	// agent from chaining another action from stale UI state.
@@ -99,6 +114,9 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		return toolresult.Result{}, controlErr
 	}
 	state := activity.StateActive
+	if sequenceStatus == "policy_paused" {
+		state = activity.StateWaitingConfirmation
+	}
 	update := activity.UpdateOptions{State: state}
 	if callErr == nil {
 		previewURI, previewErr := t.persistActivityPreview(session.ID, result)
@@ -125,6 +143,80 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		PreviewURI: session.Preview,
 	}
 	return result, callErr
+}
+
+func parseCUASequence(arguments string) (cuaSequenceRequest, bool) {
+	var request cuaSequenceRequest
+	if json.Unmarshal([]byte(arguments), &request) != nil || request.Action != "sequence" {
+		return cuaSequenceRequest{}, false
+	}
+	return request, true
+}
+
+func (t *Toolkit) executeCUASequence(ctx context.Context, tool Tool, threadID, activityID, leaseToken string, request cuaSequenceRequest) (toolresult.Result, string, error) {
+	if len(request.Steps) == 0 || len(request.Steps) > 64 {
+		return toolresult.Result{}, "failed", errors.New("CUA sequence requires 1 to 64 steps")
+	}
+	completed := make([]map[string]any, 0, len(request.Steps))
+	var lastImage *toolresult.ContentPart
+	for index, source := range request.Steps {
+		if err := t.activityRegistry.CheckControl(threadID, activityID, leaseToken); err != nil {
+			return cuaSequenceResult("control_revoked", completed, index, lastImage), "control_revoked", err
+		}
+		step := make(map[string]any, len(source)+2)
+		for key, value := range source {
+			step[key] = value
+		}
+		action, _ := step["action"].(string)
+		if strings.TrimSpace(action) == "" || action == "sequence" {
+			return cuaSequenceResult("failed", completed, index, lastImage), "failed", fmt.Errorf("CUA sequence step %d has an invalid action", index)
+		}
+		risk, _ := step["risk"].(string)
+		if risk != "safe" && risk != "external_side_effect" && risk != "destructive" {
+			return cuaSequenceResult("failed", completed, index, lastImage), "failed", fmt.Errorf("CUA sequence step %d must declare risk", index)
+		}
+		confirmed, _ := step["confirmed"].(bool)
+		if risk != "safe" && !confirmed {
+			return cuaSequenceResult("policy_paused", completed, index, lastImage), "policy_paused", nil
+		}
+		delete(step, "risk")
+		delete(step, "confirmed")
+		if _, ok := step["app"]; !ok && request.App != "" {
+			step["app"] = request.App
+		}
+		if _, ok := step["foreground_policy"]; !ok && request.ForegroundPolicy != "" {
+			step["foreground_policy"] = request.ForegroundPolicy
+		}
+		encoded, err := json.Marshal(step)
+		if err != nil {
+			return cuaSequenceResult("failed", completed, index, lastImage), "failed", err
+		}
+		stepResult, err := t.executeKnownToolResult(ctx, providers.ToolCall{Name: tool.Name(), Arguments: string(encoded)}, tool)
+		if err != nil || stepResult.IsError {
+			completed = append(completed, map[string]any{"index": index, "action": action, "status": "failed"})
+			if err == nil {
+				err = errors.New(stepResult.TextProjection())
+			}
+			return cuaSequenceResult("partial", completed, index+1, lastImage), "partial", err
+		}
+		for i := range stepResult.Content {
+			if stepResult.Content[i].Type == toolresult.ContentTypeImage {
+				copy := stepResult.Content[i]
+				lastImage = &copy
+			}
+		}
+		completed = append(completed, map[string]any{"index": index, "action": action, "status": "completed"})
+	}
+	return cuaSequenceResult("completed", completed, len(request.Steps), lastImage), "completed", nil
+}
+
+func cuaSequenceResult(status string, completed []map[string]any, nextStep int, imagePart *toolresult.ContentPart) toolresult.Result {
+	structured, _ := json.Marshal(map[string]any{"status": status, "completed_steps": completed, "next_step": nextStep})
+	content := []toolresult.ContentPart{{Type: toolresult.ContentTypeText, Text: fmt.Sprintf("CUA sequence %s after %d step(s).", status, len(completed))}}
+	if imagePart != nil {
+		content = append(content, *imagePart)
+	}
+	return toolresult.Result{Content: content, StructuredContent: structured, IsError: status == "failed" || status == "partial"}
 }
 
 func (t *Toolkit) persistActivityPreview(activityID string, result toolresult.Result) (string, error) {
