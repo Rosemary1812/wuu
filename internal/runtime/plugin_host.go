@@ -80,3 +80,38 @@ func pluginRequestInterceptor(host *pluginhost.Host, provider, threadID, cwd str
 		return nil
 	}
 }
+
+// TransformUserMessage runs before app-server or CLI persistence so the user,
+// UI history, durable history, and model all observe the same plugin output.
+func (s *Session) TransformUserMessage(ctx context.Context, threadID, cwd string, message providers.ChatMessage) (providers.ChatMessage, error) {
+	if s == nil || s.PluginHost == nil {
+		return message, nil
+	}
+	output := pluginhost.ChatMessageOutput{
+		Content:        message.Content,
+		DisplayContent: message.DisplayContent,
+		Images:         append([]providers.InputImage(nil), message.Images...),
+		Files:          append([]providers.InputFile(nil), message.Files...),
+	}
+	if err := s.PluginHost.Run(ctx, pluginhost.HookChatMessage, pluginhost.ChatMessageInput{
+		SessionID: threadID,
+		ThreadID:  threadID,
+		CWD:       firstNonEmptyString(cwd, s.RootDir),
+	}, &output); err != nil {
+		return providers.ChatMessage{}, err
+	}
+	message.Content = output.Content
+	message.DisplayContent = output.DisplayContent
+	message.Images = output.Images
+	message.Files = output.Files
+	return message, nil
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}

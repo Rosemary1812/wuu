@@ -91,6 +91,19 @@ type ChatRequestOutput struct {
 	ForceToolName               string                     `json:"force_tool_name,omitempty"`
 }
 
+type ChatMessageInput struct {
+	SessionID string `json:"session_id,omitempty"`
+	ThreadID  string `json:"thread_id,omitempty"`
+	CWD       string `json:"cwd"`
+}
+
+type ChatMessageOutput struct {
+	Content        string                 `json:"content"`
+	DisplayContent string                 `json:"display_content,omitempty"`
+	Images         []providers.InputImage `json:"images,omitempty"`
+	Files          []providers.InputFile  `json:"files,omitempty"`
+}
+
 type ToolExecuteInput struct {
 	SessionID string          `json:"session_id,omitempty"`
 	ThreadID  string          `json:"thread_id,omitempty"`

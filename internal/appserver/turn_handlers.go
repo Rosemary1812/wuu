@@ -1823,6 +1823,17 @@ func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userM
 	if strings.TrimSpace(userMsg.Role) == "" {
 		userMsg.Role = "user"
 	}
+	th.mu.Lock()
+	threadID := th.ID
+	threadCWD := th.CWD
+	th.mu.Unlock()
+	if s.rt != nil {
+		transformed, err := s.rt.TransformUserMessage(ctx, threadID, threadCWD, userMsg)
+		if err != nil {
+			return startedThreadTurn{}, false, fmt.Errorf("transform user message: %w", err)
+		}
+		userMsg = transformed
+	}
 	if !chatMessageHasUserPayload(userMsg) {
 		return startedThreadTurn{}, false, nil
 	}

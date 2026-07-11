@@ -71,3 +71,41 @@ func TestStartPluginHostPreservesRuntimeFailure(t *testing.T) {
 		t.Fatalf("statuses = %+v", statuses)
 	}
 }
+
+type messagePluginClient struct{ input pluginhost.ChatMessageInput }
+
+func (c *messagePluginClient) ID() string { return "message-plugin" }
+func (c *messagePluginClient) Hooks() []pluginhost.Hook {
+	return []pluginhost.Hook{pluginhost.HookChatMessage}
+}
+func (c *messagePluginClient) Status() pluginhost.Status {
+	return pluginhost.Status{ID: c.ID(), State: pluginhost.StateActive, Hooks: c.Hooks()}
+}
+func (c *messagePluginClient) Close(context.Context) error { return nil }
+func (c *messagePluginClient) Invoke(_ context.Context, params pluginhost.InvokeParams) (pluginhost.InvokeResult, error) {
+	if err := json.Unmarshal(params.Input, &c.input); err != nil {
+		return pluginhost.InvokeResult{}, err
+	}
+	var output pluginhost.ChatMessageOutput
+	if err := json.Unmarshal(params.Output, &output); err != nil {
+		return pluginhost.InvokeResult{}, err
+	}
+	output.Content = "[plugin] " + output.Content
+	data, err := json.Marshal(output)
+	return pluginhost.InvokeResult{Output: data}, err
+}
+
+func TestTransformUserMessageUsesPluginOutput(t *testing.T) {
+	client := &messagePluginClient{}
+	session := &Session{RootDir: "/root", PluginHost: pluginhost.New(client)}
+	message, err := session.TransformUserMessage(context.Background(), "thread-1", "/thread", providers.ChatMessage{Role: "user", Content: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.Content != "[plugin] hello" {
+		t.Fatalf("message = %+v", message)
+	}
+	if client.input.ThreadID != "thread-1" || client.input.CWD != "/thread" {
+		t.Fatalf("input = %+v", client.input)
+	}
+}

@@ -453,7 +453,12 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	if strings.TrimSpace(rt.StreamRunner.SystemPrompt) != "" {
 		history = append(history, providers.ChatMessage{Role: "system", Content: rt.StreamRunner.SystemPrompt})
 	}
-	history = append(history, providers.ChatMessage{Role: "user", Content: cfg.Task.Prompt})
+	userMessage, transformErr := rt.TransformUserMessage(ctx, evalSessionID, taskRoot, providers.ChatMessage{Role: "user", Content: cfg.Task.Prompt})
+	if transformErr != nil {
+		result.Error = transformErr.Error()
+		return result
+	}
+	history = append(history, userMessage)
 
 	runResult, runErr := rt.StreamRunner.RunWithCallback(ctx, history, nil)
 	result.InputTokens = runResult.InputTokens
