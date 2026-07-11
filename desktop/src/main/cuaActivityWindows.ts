@@ -844,6 +844,7 @@ export function cuaActivityHTML(activity: ActivitySession): string {
     };
   };
   const placePointer = () => {
+    agentPointer.getAnimations().forEach((animation) => animation.cancel());
     const point = mapPoint(pointerPosition);
     agentPointer.style.left = point.x + 'px';
     agentPointer.style.top = point.y + 'px';
@@ -910,8 +911,8 @@ export function cuaActivityHTML(activity: ActivitySession): string {
       ], { duration: 520, easing: 'cubic-bezier(.22,.8,.24,1)', fill: 'forwards' });
       pointerPosition = destination;
       animation.onfinish = () => {
-        agentPointer.style.left = toX + 'px';
-        agentPointer.style.top = toY + 'px';
+        animation.cancel();
+        placePointer();
         const feedbackClass = interactionFeedbackClasses[interaction.kind];
         if (feedbackClass) agentPointer.classList.add(feedbackClass);
         setTimeout(() => {
