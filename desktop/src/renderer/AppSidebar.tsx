@@ -939,7 +939,6 @@ export function AppSidebar({
                             data-status="offline"
                           />
                           <span className="participant-roster-name">添加 Agent</span>
-                          <span className="participant-roster-meta">常驻身份</span>
                         </button>
                       ) : (
                         visibleParticipants.map((participant) => {
