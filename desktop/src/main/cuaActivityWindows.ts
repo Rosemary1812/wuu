@@ -847,6 +847,17 @@ export function cuaActivityHTML(activity: ActivitySession): string {
     actions.innerHTML = state.actionsHTML;
     if (state.target !== lastTarget) {
       lastTarget = state.target;
+      lastLiveFrameAt = 0;
+      livePreview.hidden = true;
+      livePreview.removeAttribute('src');
+      streamStatus.hidden = true;
+      if (!document.querySelector('.glass')) {
+        const glass = document.createElement('div');
+        glass.className = 'glass';
+        glass.setAttribute('role', 'status');
+        glass.setAttribute('aria-label', '正在获取画面');
+        document.querySelector('.preview').prepend(glass);
+      }
       pointerPosition = { x: .5, y: .5 };
       agentPointer.style.left = '50%';
       agentPointer.style.top = '50%';
