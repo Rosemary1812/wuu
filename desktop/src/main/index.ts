@@ -13,6 +13,7 @@ import {
 import { readdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { MESSAGE_FLOW_FONT_SIZE_RANGE } from "../shared/protocol";
 import type {
   ComposerGoalSummary,
   ConfigAdvancedUpdateResult,
@@ -103,7 +104,6 @@ import {
   getCliAutoInstallEnabled,
   getMessageFlowFontSize,
   getThemePreference,
-  MESSAGE_FLOW_FONT_SIZE_RANGE,
   setCodexPetSettings,
   setCliAutoInstallEnabled,
   setMessageFlowFontSize,
