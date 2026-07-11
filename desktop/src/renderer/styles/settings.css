@@ -24,11 +24,6 @@
 /* Component color tokens for settings.css. Light-theme values; the dark
    theme overrides these in base.css theme blocks. */
 :root {
-  --settings-sidebar-glass-shadow: rgba(32, 38, 34, 0.045);
-  --settings-sidebar-gradient-1: rgba(255, 255, 255, 0.72);
-  --settings-sidebar-gradient-2: rgba(255, 255, 255, 0.14);
-  --settings-sidebar-gradient-3: rgba(209, 220, 211, 0.12);
-  --settings-sidebar-gradient-4: rgba(255, 255, 255, 0.44);
   --settings-button-primary-hover: #000;
   --settings-heatmap-level-1: #bad0f0;
   --settings-heatmap-level-2: #7aaae0;
@@ -51,33 +46,22 @@
   left: calc(var(--settings-sidebar-width, 280px) - 5px);
 }
 
+/* Glass surface (border, background, box-shadow, backdrop-filter) and the
+ * ::before gradient overlay are inherited from the shared `.sidebar,
+ * .settings-sidebar` selector list in sidebar.css — this rule keeps only
+ * the layout specifics (gap). Keeping it slim means a future tweak to the
+ * glass look updates both sidebars from one place.
+ *
+ * The padding mirrors `.sidebar-content` (0 / 12 / 16) so the brand row,
+ * traffic-spacer, and inner controls land at the same vertical/horizontal
+ * positions in both shells; the `gap` is a settings-only rhythm detail for
+ * the brand → back-button → nav stack (the main sidebar uses internal group
+ * gaps instead — see `--sidebar-functional-group-gap`). No extra padding or
+ * divider strips: the settings rail must read as the same liquid-glass
+ * surface as the main one, not a heavier standalone panel. */
 .settings-sidebar {
-  display: flex;
-  position: relative;
-  isolation: isolate;
-  min-width: 0;
-  flex-direction: column;
   gap: 4px;
-  border-right: 1px solid var(--sidebar-glass-border);
-  background: var(--sidebar-glass-bg);
-  box-shadow:
-    inset -1px 0 0 var(--sidebar-glass-highlight),
-    1px 0 18px var(--settings-sidebar-glass-shadow);
-  backdrop-filter: blur(26px) saturate(1.45);
-  -webkit-backdrop-filter: blur(26px) saturate(1.45);
-  padding: 16px 14px 20px;
-}
-
-.settings-sidebar::before {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background:
-    linear-gradient(105deg, var(--settings-sidebar-gradient-1), var(--settings-sidebar-gradient-2) 36%, var(--settings-sidebar-gradient-3) 100%),
-    linear-gradient(180deg, var(--settings-sidebar-gradient-4), rgba(255, 255, 255, 0) 28%);
-  content: "";
-  opacity: 0.72;
-  pointer-events: none;
+  padding: 0 12px 16px;
 }
 
 .settings-shell.resizing-sidebar .settings-sidebar {

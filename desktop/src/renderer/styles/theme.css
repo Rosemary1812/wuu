@@ -238,11 +238,6 @@
   --env-tone-deferred: #99a19d;
 
   /* settings.css */
-  --settings-sidebar-glass-shadow: rgba(0, 0, 0, 0.3);
-  --settings-sidebar-gradient-1: rgba(255, 255, 255, 0.05);
-  --settings-sidebar-gradient-2: rgba(255, 255, 255, 0.02);
-  --settings-sidebar-gradient-3: rgba(209, 220, 211, 0.03);
-  --settings-sidebar-gradient-4: rgba(255, 255, 255, 0.04);
   --settings-button-primary-hover: #ffffff;
   --settings-heatmap-level-1: #1f3a5e;
   --settings-heatmap-level-2: #2c568c;
@@ -272,8 +267,6 @@
   --sidebar-nav-item-focus-shadow: rgba(228, 232, 235, 0.25);
   --sidebar-project-row-pending-bg: rgba(255, 255, 255, 0.05);
   --sidebar-project-loading-notch: rgba(120, 160, 132, 0.3);
-  --sidebar-project-unread-ring: rgba(20, 22, 24, 0.72);
-  --sidebar-project-unread-shadow: rgba(88, 166, 255, 0.3);
   --sidebar-row-icon-hover-bg-default: rgba(228, 232, 235, 0.08);
   --sidebar-row-action-archive-confirm-bg: rgba(240, 112, 95, 0.15);
   --sidebar-thread-list-button-hover-bg: rgba(228, 232, 235, 0.06);
