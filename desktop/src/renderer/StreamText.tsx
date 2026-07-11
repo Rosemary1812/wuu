@@ -33,6 +33,10 @@ interface StreamEntry {
 }
 
 const STREAM_FIELD_KEYS = ["text", "arguments", "result"] as const satisfies readonly StreamTextField[];
+// Keep high-rate provider deltas from forcing one React commit and Markdown
+// parse per token. 33ms matches the established desktop streaming floor in
+// thirdparty/hermes-agent while still presenting updates at roughly 30fps.
+export const STREAM_TEXT_NOTIFY_INTERVAL_MS = 33;
 
 /**
  * Append-only text store used by the renderer to coalesce server-streamed
@@ -44,6 +48,7 @@ class StreamTextStore {
   private entries = new Map<string, StreamEntry>();
   private dirtyEntries = new Set<StreamEntry>();
   private notifyScheduled = false;
+  private lastNotifyAt = 0;
 
   key(turnID: string, itemID: string, field: StreamTextField): string {
     return `${turnID}\u0000${itemID}\u0000${field}`;
@@ -247,13 +252,22 @@ class StreamTextStore {
     this.notifyScheduled = true;
     const flush = (): void => {
       this.notifyScheduled = false;
+      this.lastNotifyAt = performance.now();
       this.flushNotifications();
     };
-    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+    const sinceLast = performance.now() - this.lastNotifyAt;
+    if (
+      sinceLast >= STREAM_TEXT_NOTIFY_INTERVAL_MS &&
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
       window.requestAnimationFrame(flush);
       return;
     }
-    globalThis.setTimeout(flush, 16);
+    globalThis.setTimeout(
+      flush,
+      Math.max(0, STREAM_TEXT_NOTIFY_INTERVAL_MS - sinceLast),
+    );
   }
 
   private flushNotifications(): void {

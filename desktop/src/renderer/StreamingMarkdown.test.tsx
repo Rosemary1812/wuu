@@ -200,49 +200,50 @@ describe("StreamingMarkdown", () => {
   });
 
   it("lets consecutive provider chunks finish their feather entrance together", async () => {
-    await withManualAnimationFrames(async (flush) => {
-      const key = streamTextKey("turn", "s2", "text");
-      streamTextStore.seed(key, "Hello");
-      mount({ streamKey: key, initialText: "Hello", isLive: true, phase: "final_answer" });
+    const key = streamTextKey("turn", "s2", "text");
+    streamTextStore.seed(key, "Hello");
+    mount({ streamKey: key, initialText: "Hello", isLive: true, phase: "final_answer" });
 
+    await act(async () => {
       streamTextStore.append(key, " world");
-      await flush(0);
+      await new Promise((resolve) => setTimeout(resolve, 40));
       streamTextStore.append(key, " again");
-      await flush(16);
-
-      expect(document.querySelectorAll(".stream-feather-enter").length).toBeGreaterThan(1);
+      await new Promise((resolve) => setTimeout(resolve, 40));
     });
+
+    expect(document.querySelectorAll(".stream-feather-enter").length).toBeGreaterThan(1);
   });
 
   it("caps retained feather batches during sustained provider chunks", async () => {
-    await withManualAnimationFrames(async (flush) => {
-      const key = streamTextKey("turn", "s2", "text");
-      streamTextStore.seed(key, "x");
-      mount({ streamKey: key, initialText: "x", isLive: true, phase: "final_answer" });
+    const key = streamTextKey("turn", "s2", "text");
+    streamTextStore.seed(key, "x");
+    mount({ streamKey: key, initialText: "x", isLive: true, phase: "final_answer" });
 
+    await act(async () => {
       for (let frame = 0; frame < 20; frame += 1) {
         streamTextStore.append(key, "x");
-        await flush(frame * 16);
+        await new Promise((resolve) => setTimeout(resolve, 35));
       }
-
-      const retained = document.querySelectorAll(".stream-feather-enter").length;
-      expect(retained).toBeGreaterThan(1);
-      expect(retained).toBeLessThanOrEqual(8);
     });
+
+    const retained = document.querySelectorAll(".stream-feather-enter").length;
+    expect(retained).toBeGreaterThan(1);
+    expect(retained).toBeLessThanOrEqual(8);
   });
 
   it("does not re-feather existing text when an inline Markdown delimiter closes", async () => {
-    await withManualAnimationFrames(async (flush) => {
-      const key = streamTextKey("turn", "s2", "text");
-      streamTextStore.seed(key, "**bold");
-      mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
+    const key = streamTextKey("turn", "s2", "text");
+    streamTextStore.seed(key, "**bold");
+    mount({ streamKey: key, initialText: "", isLive: true, phase: "final_answer" });
 
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
       streamTextStore.append(key, "**");
-      await flush(0);
-
-      expect(document.querySelector("strong")).not.toBeNull();
-      expect(document.querySelector("strong .stream-feather-enter")).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 40));
     });
+
+    expect(document.querySelector("strong")).not.toBeNull();
+    expect(document.querySelector("strong .stream-feather-enter")).toBeNull();
   });
 
   it("removes active feather batches when a live item settles", async () => {

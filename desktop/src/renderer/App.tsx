@@ -1511,7 +1511,14 @@ export function App(): JSX.Element {
       recordRunDebugEvent(event);
       const handling = handleStreamingNotification(event, appStateRef.current);
       if (handling === "stream" || handling === "stream-state") {
-        scheduleStreamScroll();
+        // The first visible delta still needs to mount and reveal the live
+        // surface. Subsequent text commits call onStreamFrame after the
+        // throttled StreamTextStore publication; scrolling here as well would
+        // schedule two layout passes for every provider delta, including
+        // passes before the DOM contains the new text.
+        if (handling === "stream-state") {
+          scheduleStreamScroll();
+        }
         if (
           event.kind === "notification" &&
           serverEventCarriesModelOutputDelta(event) &&

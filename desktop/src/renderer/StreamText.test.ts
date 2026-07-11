@@ -1,5 +1,14 @@
-import { describe, expect, it } from "vitest";
-import { streamTextKey, streamTextStore } from "./StreamText";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  STREAM_TEXT_NOTIFY_INTERVAL_MS,
+  streamTextKey,
+  streamTextStore,
+} from "./StreamText";
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 function installManualRAF(): {
   flush: () => void;
@@ -103,12 +112,14 @@ describe("streamTextStore subscriptions", () => {
 
   it("coalesces value subscribers to one notification per frame", () => {
     const raf = installManualRAF();
+    const now = vi.spyOn(performance, "now");
     const key = streamTextKey("turn-sub", "item", "text");
     const calls: string[] = [];
     const unsubscribe = streamTextStore.subscribe(key, (value) => {
       calls.push(value);
     });
     try {
+      now.mockReturnValue(100_000);
       streamTextStore.set(key, "");
       streamTextStore.append(key, "a");
       streamTextStore.append(key, "b");
@@ -119,6 +130,7 @@ describe("streamTextStore subscriptions", () => {
       raf.flush();
       expect(calls).toEqual(["ab"]);
 
+      now.mockReturnValue(100_040);
       for (let i = 0; i < 100; i += 1) {
         streamTextStore.append(key, "x");
       }
@@ -132,6 +144,37 @@ describe("streamTextStore subscriptions", () => {
       expect(calls).toEqual(["ab", `ab${"x".repeat(100)}`]);
     } finally {
       unsubscribe();
+      raf.restore();
+    }
+  });
+
+  it("enforces a 33ms floor between high-rate subscriber notifications", () => {
+    vi.useFakeTimers();
+    const raf = installManualRAF();
+    const now = vi.spyOn(performance, "now");
+    const key = streamTextKey("turn-sub-throttle", "item", "text");
+    const calls: string[] = [];
+    const unsubscribe = streamTextStore.subscribe(key, (value) => {
+      calls.push(value);
+    });
+    try {
+      now.mockReturnValue(200_000);
+      streamTextStore.set(key, "a");
+      raf.flush();
+      expect(calls).toEqual(["a"]);
+
+      now.mockReturnValue(200_010);
+      streamTextStore.append(key, "b");
+      raf.flush();
+      expect(calls).toEqual(["a"]);
+
+      vi.advanceTimersByTime(STREAM_TEXT_NOTIFY_INTERVAL_MS - 11);
+      expect(calls).toEqual(["a"]);
+      vi.advanceTimersByTime(1);
+      expect(calls).toEqual(["a", "ab"]);
+    } finally {
+      unsubscribe();
+      streamTextStore.clearItem("turn-sub-throttle", "item");
       raf.restore();
     }
   });
