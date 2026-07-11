@@ -44,14 +44,14 @@ export class CUAActivityWindowManager {
     const cursor = screen.getCursorScreenPoint();
     const workArea = screen.getDisplayNearestPoint(cursor).workArea;
     const width = 380;
-    const height = 270;
+    const height = 248;
     const win = new BrowserWindow({
       width,
       height,
       x: workArea.x + workArea.width - width - 24,
       y: workArea.y + 24,
       minWidth: 320,
-      minHeight: 220,
+      minHeight: 200,
       frame: false,
       transparent: true,
       backgroundColor: "#00000000",
@@ -136,32 +136,32 @@ export function cuaActivityHTML(activity: ActivitySession): string {
   const statusClass = escapeHTML(activity.state);
   const previewURL = activityPreviewURL(activity);
   const controls = activity.controller === "user"
-    ? actionLink(activity, "release", "交还 Agent")
+    ? actionLink(activity, "release", "交还 Agent", "primary")
     : activity.controller === "agent"
-      ? actionLink(activity, "takeover", "接管")
+      ? actionLink(activity, "takeover", "接管", "primary")
       : "";
   const error = activity.error
     ? `<div class="error">${escapeHTML(activity.error)}</div>`
     : "";
   const preview = previewURL
     ? `<img src="${escapeHTML(previewURL)}" alt="${target} 最新画面" />`
-    : `<div class="empty"><span class="pulse"></span>${escapeHTML(state)}</div>`;
+    : `<div class="empty"><span class="pulse"></span><span>正在获取画面</span></div>`;
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src wuu-file:; style-src 'unsafe-inline'; navigate-to wuu-cua:" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-:root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif}
+:root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;--paper:#fff;--surface:#f7f7f5;--ink:#111315;--ink-soft:#6f7478;--line:rgba(31,35,40,.12);--veil:rgba(255,255,255,.88);--hover:rgba(31,35,40,.07);--accent:#ff3d00;--danger:#b42318;--danger-soft:#fff0ef;--shadow:0 14px 34px rgba(20,24,28,.14),0 2px 8px rgba(20,24,28,.08)}
+@media(prefers-color-scheme:dark){:root{--paper:#1d2024;--surface:#24282c;--ink:#f2f3f4;--ink-soft:#989ea3;--line:rgba(228,232,235,.14);--veil:rgba(29,32,36,.88);--hover:rgba(228,232,235,.1);--accent:#ff5a26;--danger:#f0705f;--danger-soft:#341c18;--shadow:0 14px 34px rgba(0,0,0,.55),0 2px 8px rgba(0,0,0,.4)}}
 *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;background:transparent;overflow:hidden}
-.card{height:100%;display:grid;grid-template-rows:46px minmax(0,1fr) 34px;border-radius:18px;overflow:hidden;background:rgba(30,31,33,.94);border:1px solid rgba(255,255,255,.18);box-shadow:0 18px 55px rgba(0,0,0,.34);color:#f5f5f4}
-header{display:flex;align-items:center;gap:9px;padding:0 10px 0 14px;-webkit-app-region:drag;background:rgba(255,255,255,.055)}
-.dot{width:8px;height:8px;border-radius:50%;background:#65c97a;box-shadow:0 0 0 4px rgba(101,201,122,.13)}
-.dot.user_controlled{background:#f0b657;box-shadow:0 0 0 4px rgba(240,182,87,.14)}.dot.error{background:#ef7068}
-.title{min-width:0;flex:1}.title strong{display:block;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.title span{font-size:10.5px;color:#aeb2b7}
-.actions{display:flex;gap:6px;-webkit-app-region:no-drag}.button{height:25px;padding:0 9px;border-radius:8px;display:inline-flex;align-items:center;text-decoration:none;color:#f4f4f3;background:rgba(255,255,255,.11);font-size:11px}.button:hover{background:rgba(255,255,255,.19)}.button.stop{width:25px;padding:0;justify-content:center;color:#ff938c}
-.preview{position:relative;background:#111;min-height:0;display:grid;place-items:center}.preview img{width:100%;height:100%;object-fit:contain;display:block}.empty{display:flex;align-items:center;gap:10px;color:#aeb2b7;font-size:12px}.pulse{width:11px;height:11px;border-radius:50%;border:2px solid #72777d;border-top-color:#e6e7e8;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
-footer{display:flex;align-items:center;justify-content:space-between;padding:0 13px;color:#aeb2b7;font-size:10.5px;background:rgba(255,255,255,.04)}.brand{color:#d7d9dc}.error{position:absolute;left:10px;right:10px;bottom:8px;padding:7px 9px;border-radius:8px;background:rgba(120,35,35,.92);font-size:10.5px;color:#ffd7d4;z-index:2}
-</style></head><body><section class="card"><header><span class="dot ${statusClass}"></span><div class="title"><strong>${target}</strong><span>${escapeHTML(state)}</span></div><div class="actions">${controls}${actionLink(activity,"stop","停止","stop","■")}</div></header><div class="preview">${preview}${error}</div><footer><span class="brand">Wuu Computer Use</span><span>拖动浮窗 · 始终置顶</span></footer></section></body></html>`;
+.card{height:100%;display:grid;grid-template-rows:44px minmax(0,1fr);border-radius:12px;overflow:hidden;background:var(--paper);border:1px solid var(--line);box-shadow:var(--shadow);color:var(--ink)}
+header{display:flex;align-items:center;gap:10px;padding:0 8px 0 12px;-webkit-app-region:drag;background:var(--paper);border-bottom:1px solid var(--line)}
+.mark{width:18px;height:18px;border-radius:5px;display:grid;place-items:center;background:var(--accent);color:#fff;font-size:10px;font-weight:700;line-height:1;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+.title{min-width:0;flex:1;line-height:1.2}.title strong{display:block;font-size:12px;font-weight:620;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.title span{display:block;margin-top:2px;font-size:10px;color:var(--ink-soft)}
+.actions{display:flex;align-items:center;gap:5px;-webkit-app-region:no-drag}.button{height:26px;padding:0 9px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink);background:transparent;border:1px solid var(--line);font-size:11px;font-weight:560}.button:hover{background:var(--hover)}.button.primary{background:var(--surface)}.button.stop{width:26px;padding:0;border-color:transparent;color:var(--ink-soft);font-size:15px;font-weight:400}.button.stop:hover{color:var(--danger);background:var(--danger-soft)}
+.preview{position:relative;background:#101214;min-height:0;display:grid;place-items:center;overflow:hidden}.preview img{width:100%;height:100%;object-fit:contain;display:block}.empty{display:flex;align-items:center;gap:9px;color:#a9aeb3;font-size:11px}.pulse{width:12px;height:12px;border-radius:50%;border:2px solid #565c62;border-top-color:#e4e6e8;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.status{position:absolute;left:8px;bottom:8px;display:flex;align-items:center;gap:6px;max-width:calc(100% - 16px);height:24px;padding:0 8px;border-radius:7px;background:var(--veil);border:1px solid var(--line);backdrop-filter:blur(12px);color:var(--ink);font-size:10px;font-weight:560;box-shadow:0 1px 3px rgba(0,0,0,.12)}.dot{width:6px;height:6px;flex:none;border-radius:50%;background:#1f9d55}.dot.user_controlled{background:#d09022}.dot.error{background:var(--danger)}.error{position:absolute;left:8px;right:8px;bottom:40px;padding:7px 9px;border-radius:8px;background:var(--danger-soft);border:1px solid var(--line);font-size:10.5px;color:var(--danger);z-index:2}
+</style></head><body><section class="card"><header><span class="mark">W</span><div class="title"><strong>${target}</strong><span>Computer Use</span></div><div class="actions">${controls}${actionLink(activity,"stop","停止","stop","×")}</div></header><div class="preview">${preview}${error}<div class="status"><span class="dot ${statusClass}"></span>${escapeHTML(state)}</div></div></section></body></html>`;
 }
 
 function activityPreviewURL(activity: ActivitySession): string | undefined {

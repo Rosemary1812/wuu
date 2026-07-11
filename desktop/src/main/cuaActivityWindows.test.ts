@@ -54,6 +54,9 @@ describe("CUA Activity windows", () => {
     expect(html).toMatch(/wuu-file:\/\/local\//);
     expect(html).toContain("接管");
     expect(html).toContain("停止");
+    expect(html).toContain("prefers-color-scheme:dark");
+    expect(html).toContain("Computer Use");
+    expect(html).not.toContain("拖动浮窗");
     expect(cuaActivityHTML(activity({ controller: "user", state: "user_controlled" }))).toContain("交还 Agent");
   });
 
