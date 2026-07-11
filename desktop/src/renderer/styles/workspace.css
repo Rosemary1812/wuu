@@ -2091,6 +2091,14 @@
   overflow: auto;
 }
 
+/* Pin the code-scroll into the 1fr row of .workspace-diff-detail. Without
+   this it auto-flows into the second `auto` row whenever the error row is
+   empty (almost always), so the scroll container collapses to its content
+   height instead of filling the remaining vertical space. */
+.workspace-diff-code-scroll {
+  grid-row: 3;
+}
+
 .workspace-diff-file-scroll {
   display: grid;
   gap: 4px;
@@ -2168,6 +2176,12 @@
   display: grid;
   min-width: 0;
   min-height: 0;
+  /* Propagate the parent container's height down to the inner grid so the
+     `minmax(0, 1fr)` row can actually expand. In the bottom review panel
+     this matches the previous stretch behavior; in the right side panel
+     it's required because .workspace-review-diff-panel is a plain block
+     (no grid stretch) and the diff would otherwise collapse. */
+  height: 100%;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   background: var(--paper);
   border-right: 1px solid var(--surface-3);
@@ -2193,6 +2207,10 @@
 }
 
 .workspace-diff-truncated {
+  /* Keep the truncated banner anchored to the last row of
+     .workspace-diff-detail (below the 1fr code-scroll), regardless of
+     whether the error row above is populated. */
+  grid-row: 4;
   border-top: 1px solid var(--diff-truncated-border);
   border-bottom: 0;
   background: var(--warning-soft);
@@ -2463,6 +2481,10 @@
   min-height: 0;
   --workspace-review-tree-width: 280px;
   grid-template-columns: minmax(0, 1fr);
+  /* Fill the panel's vertical space. Without this the single grid row
+     defaults to auto and only takes the tallest child's content height,
+     leaving the bottom of the side panel empty. */
+  grid-template-rows: minmax(0, 1fr);
   overflow: hidden;
 }
 
