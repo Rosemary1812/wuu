@@ -448,19 +448,14 @@ describe("AppSidebar sections", () => {
     );
     expect(headerButton).not.toBeNull();
     // React 18 warns <button> cannot contain a nested <button>; the roster
-    // … trigger and the + new-agent button must live as siblings of the
+    // The + new-agent button must live as a sibling of the
     // header button, not inside it.
     expect(headerButton?.querySelector("button")).toBeNull();
 
-    const rosterTrigger = agentsSection?.querySelector<HTMLButtonElement>(
-      'button[aria-label="团队模板操作"]',
-    );
     const addButton = agentsSection?.querySelector<HTMLButtonElement>(
       'button[aria-label="新建 Agent"]',
     );
-    expect(rosterTrigger).not.toBeNull();
     expect(addButton).not.toBeNull();
-    expect(headerButton?.contains(rosterTrigger ?? null)).toBe(false);
     expect(headerButton?.contains(addButton ?? null)).toBe(false);
   });
 

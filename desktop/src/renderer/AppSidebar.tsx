@@ -3,7 +3,6 @@ import {
   ChevronRight,
   Clock,
   CornerDownRight,
-  Download,
   FileText,
   Folder,
   FolderOpen,
@@ -14,12 +13,10 @@ import {
   MessageSquare,
   MessageSquarePlus,
   MessagesSquare,
-  MoreHorizontal,
   Pin,
   Plus,
   Search,
   Settings,
-  Upload,
   UserRound,
   UsersRound,
   Wrench,
@@ -345,8 +342,6 @@ export function AppSidebar({
   onEditParticipant,
   onCreateParticipant,
   onCreateGroupThread,
-  onImportParticipants,
-  onExportParticipants,
   onTogglePinned,
   onArchiveThread,
   onDeleteThread,
@@ -473,9 +468,6 @@ export function AppSidebar({
 }): JSX.Element {
   const hasRuntimeContext = Boolean(state.activeContext);
   const fixturesEnabled = hasRuntimeContext && Boolean(state.initialized);
-  const participantTemplateInputRef = useRef<HTMLInputElement>(null);
-  const rosterMenuRef = useRef<HTMLDivElement>(null);
-  const [rosterMenuOpen, setRosterMenuOpen] = useState(false);
   // Floating create-group dialog for the 群聊 section: the + button opens a
   // shared overlay (same shell as the rename-conversation dialog) that
   // submits on Enter and dismisses on Escape / overlay click. Controlled
@@ -500,34 +492,6 @@ export function AppSidebar({
     y: number;
     participant: ParticipantProfile;
   } | null>(null);
-  // Close the overflow menu on outside pointerdown or Escape so the same
-  // input devices that open it (click / keyboard) can also dismiss it
-  // without coupling to a parent click handler.
-  useEffect(() => {
-    if (!rosterMenuOpen) {
-      return undefined;
-    }
-    const handlePointerDown = (event: PointerEvent): void => {
-      if (!rosterMenuRef.current) {
-        return;
-      }
-      if (event.target instanceof Node && rosterMenuRef.current.contains(event.target)) {
-        return;
-      }
-      setRosterMenuOpen(false);
-    };
-    const handleKey = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        setRosterMenuOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [rosterMenuOpen]);
   // The scratch pseudo project is "active" when the runtime context is in
   // no-project mode (i.e. the user is viewing a scratch conversation).
   // Active state is passed into ProjectList so the row highlights even though
@@ -919,62 +883,6 @@ export function AppSidebar({
               ) : null;
               const rosterActions = (
                 <div className="sidebar-section-actions participant-roster-actions">
-                  <input
-                    ref={participantTemplateInputRef}
-                    className="participant-roster-file-input"
-                    type="file"
-                    accept="application/json,.json"
-                    tabIndex={-1}
-                    onChange={(event) => {
-                      const file = event.currentTarget.files?.[0];
-                      event.currentTarget.value = "";
-                      if (file) {
-                        onImportParticipants(file);
-                      }
-                    }}
-                  />
-                  <div className="participant-roster-menu" ref={rosterMenuRef}>
-                    <button
-                      type="button"
-                      className="participant-roster-add"
-                      aria-label="团队模板操作"
-                      aria-haspopup="menu"
-                      aria-expanded={rosterMenuOpen}
-                      title="团队模板操作"
-                      disabled={!state.initialized}
-                      onClick={() => setRosterMenuOpen((open) => !open)}
-                    >
-                      <MoreHorizontal aria-hidden="true" />
-                    </button>
-                    {rosterMenuOpen ? (
-                      <div className="project-add-menu" role="menu">
-                        <button
-                          type="button"
-                          role="menuitem"
-                          disabled={!state.initialized}
-                          onClick={() => {
-                            setRosterMenuOpen(false);
-                            participantTemplateInputRef.current?.click();
-                          }}
-                        >
-                          <Upload aria-hidden="true" />
-                          <span>导入团队模板</span>
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          disabled={!state.initialized || participants.length === 0}
-                          onClick={() => {
-                            setRosterMenuOpen(false);
-                            onExportParticipants();
-                          }}
-                        >
-                          <Download aria-hidden="true" />
-                          <span>导出团队模板</span>
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
                   <button
                     type="button"
                     className="participant-roster-add"

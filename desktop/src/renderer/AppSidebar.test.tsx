@@ -342,68 +342,12 @@ describe("AppSidebar participant roster", () => {
     },
   ];
 
-  it("shows an overflow menu with import/export items that fire callbacks", () => {
-    let importedWith: File | undefined;
-    let exported = 0;
-    renderSidebar({
-      participants,
-      onImportParticipants: (file) => {
-        importedWith = file;
-      },
-      onExportParticipants: () => {
-        exported += 1;
-      },
-    });
+  it("does not show team template actions", () => {
+    renderSidebar({ participants });
 
-    // Bare icon buttons should be gone — the import/export actions live in
-    // the overflow menu triggered by the team-template trigger button.
-    expect(
-      container.querySelector('button[aria-label="导入团队模板"]'),
-    ).toBeNull();
-    expect(
-      container.querySelector('button[aria-label="导出团队模板"]'),
-    ).toBeNull();
-
-    const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="团队模板操作"]',
-    );
-    expect(trigger).not.toBeNull();
-    expect(trigger?.getAttribute("aria-expanded")).toBe("false");
-
-    act(() => {
-      trigger?.click();
-    });
-    expect(trigger?.getAttribute("aria-expanded")).toBe("true");
-
-    const menu = container.querySelector(".participant-roster-menu .project-add-menu");
-    expect(menu).not.toBeNull();
-    const items = menu?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]');
-    expect(items?.length).toBe(2);
-    expect(items?.[0].textContent).toContain("导入团队模板");
-    expect(items?.[1].textContent).toContain("导出团队模板");
-
-    // The hidden file input is the import path. Clicking the menu item
-    // dispatches a click() on the input, so drive the same code path by
-    // synthesising a File on the input directly — that exercises the
-    // callback that App.tsx wires in.
-    const fileInput = container.querySelector<HTMLInputElement>(
-      ".participant-roster-file-input",
-    );
-    expect(fileInput).not.toBeNull();
-    const file = new File(["{}"], "team.json", { type: "application/json" });
-    act(() => {
-      Object.defineProperty(fileInput, "files", {
-        configurable: true,
-        value: [file],
-      });
-      fileInput?.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    expect(importedWith?.name).toBe("team.json");
-
-    act(() => {
-      items?.[1].click();
-    });
-    expect(exported).toBe(1);
+    expect(container.querySelector('[aria-label="团队模板操作"]')).toBeNull();
+    expect(container.textContent).not.toContain("导入团队模板");
+    expect(container.textContent).not.toContain("导出团队模板");
   });
 
   it("renders the avatar column only for uploaded images and shows only the name", () => {
