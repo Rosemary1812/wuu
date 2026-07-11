@@ -519,10 +519,24 @@
   -webkit-app-region: no-drag;
 }
 
-.sidebar-toggle-button {
-  width: 44px;
-  height: 44px;
-  border-radius: 11px;
+/* Titlebar toggle buttons (left/right sidebar, info panel, new thread):
+ * uniform 26×26 visible size with a 30×30 click hit area. The padding
+ * is transparent because `background-clip: content-box` restricts the
+ * hover and pressed backgrounds to the inner 26×26, so the icon reads
+ * as a tight, proportional control and the titlebar keeps clear
+ * top/bottom breathing room. The 30×30 hit area sits below the
+ * original 34×34 `.icon-button` base, so the flakiness-fix margin
+ * from commit 4e69bef7 is no longer guaranteed — this is a deliberate
+ * trade toward visual proportion; if titlebar click reliability
+ * regresses we can revisit. */
+.titlebar .sidebar-toggle-button,
+.titlebar .side-panel-toggle-button,
+.titlebar .environment-toggle-button,
+.titlebar .session-tab-new {
+  width: 30px;
+  height: 30px;
+  padding: 2px;
+  background-clip: content-box;
 }
 
 .icon-button:hover {

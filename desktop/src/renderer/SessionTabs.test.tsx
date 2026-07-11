@@ -416,9 +416,30 @@ describe("SessionTabStrip layout styles", () => {
       "-webkit-app-region: no-drag;",
     );
 
-    const sidebarToggleRule = cssRule(".sidebar-toggle-button");
-    expect(sidebarToggleRule).toMatch(/width:\s*44px;/);
-    expect(sidebarToggleRule).toMatch(/height:\s*44px;/);
+    // Titlebar toggle buttons (left/right sidebar, info panel, new
+    // thread) share a uniform 26×26 visible size with a 30×30 click
+    // hit area: 2px padding extends the click region while
+    // `background-clip: content-box` keeps the hover background
+    // inside the inner 26×26, so the icon reads as a tight,
+    // proportional control and the titlebar keeps clear top/bottom
+    // breathing room. The 30×30 hit area is intentionally smaller
+    // than the original 34×34 `.icon-button` base — visual
+    // proportion is prioritized over the flakiness-fix margin from
+    // commit 4e69bef7; if titlebar click reliability regresses we
+    // can revisit.
+    for (const selector of [
+      ".titlebar .sidebar-toggle-button",
+      ".titlebar .side-panel-toggle-button",
+      ".titlebar .environment-toggle-button",
+      ".titlebar .session-tab-new",
+    ]) {
+      expect(conversationShellCSS).toContain(selector);
+    }
+    const toggleRule = cssRule(".titlebar .session-tab-new");
+    expect(toggleRule).toMatch(/width:\s*30px;/);
+    expect(toggleRule).toMatch(/height:\s*30px;/);
+    expect(toggleRule).toMatch(/padding:\s*2px;/);
+    expect(toggleRule).toMatch(/background-clip:\s*content-box;/);
   });
 
   it("keeps drag internals inside the tab list column", () => {
