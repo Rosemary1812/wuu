@@ -67,6 +67,12 @@ jobs:
             exit 1
           fi
 
+          screen_capture_usage="$(plutil -extract NSScreenCaptureUsageDescription raw -o - release/mac-arm64/wuu.app/Contents/Info.plist)"
+          if [ -z "$screen_capture_usage" ]; then
+            echo "::error::Packaged app is missing NSScreenCaptureUsageDescription."
+            exit 1
+          fi
+
           hdiutil verify release/wuu-*-mac-arm64.dmg
           unzip -t release/wuu-*-mac-arm64.zip >/tmp/wuu-desktop-zip-test.txt
 
@@ -112,6 +118,8 @@ jobs:
           xattr -dr com.apple.quarantine /Applications/wuu.app
           open /Applications/wuu.app
           ```
+
+          Computer Use requires both Accessibility and Screen & System Audio Recording permission. After starting `wuu` and invoking Computer Use once, enable `wuu` in both lists under System Settings > Privacy & Security, then restart the app. Because this preview is unsigned, a new preview build may require granting these permissions again.
           EOF
 
           gh release create "$GITHUB_REF_NAME" desktop-release/* \

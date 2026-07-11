@@ -7,14 +7,16 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "node scripts/build-cua-mac.cjs && electron-vite dev",
+    "dev": "node scripts/dev.cjs",
+    "dev:direct": "node scripts/build-cua-mac.cjs && electron-vite dev",
     "build:cua-mac": "node scripts/build-cua-mac.cjs",
     "build:core": "node scripts/build-core.cjs && node scripts/build-cua-mac.cjs",
     "build": "electron-vite build",
     "pack:mac": "npm run build:core && npm run build && electron-builder --mac dir --publish=never",
     "dist:mac": "npm run build:core && npm run build && electron-builder --mac dmg zip --publish=never",
     "release:desktop": "npm run dist:mac",
-    "test": "npm run typecheck && npm run test:unit && npm run test:perf && npm run test:cua-mac",
+    "test": "npm run typecheck && npm run test:dev-launcher && npm run test:unit && npm run test:perf && npm run test:cua-mac",
+    "test:dev-launcher": "node scripts/test-dev-launcher.cjs",
     "test:unit": "vitest run --exclude=src/renderer/StreamingMarkdown.perf.test.tsx",
     "test:perf": "vitest run src/renderer/StreamingMarkdown.perf.test.tsx --maxWorkers=1 --minWorkers=1",
     "test:cua-mac": "node scripts/test-cua-mac.cjs",
@@ -70,6 +72,9 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.icns",
+      "extendInfo": {
+        "NSScreenCaptureUsageDescription": "Wuu uses screen capture to show a live preview while an agent operates a Mac app."
+      },
       "target": [
         "dmg",
         "zip"

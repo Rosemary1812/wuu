@@ -58,6 +58,21 @@ open /Applications/wuu.app
 
 Do not ask users to run this for builds from untrusted sources.
 
+## macOS Privacy Permissions
+
+Computer Use needs both **Accessibility** and **Screen & System Audio
+Recording** permission. Install the app at the stable path
+`/Applications/wuu.app`, start it, invoke Computer Use once so macOS registers
+the app, then enable `wuu` in both lists under System Settings > Privacy &
+Security. Restart `wuu` after changing Screen Recording permission.
+
+The current preview is unsigned because the project has no Developer ID
+certificate. macOS ties privacy decisions to app identity and code-signing
+requirements, so installing a different unsigned preview build can require
+granting these permissions again. Do not promise permission persistence across
+preview updates. A stable Developer ID signature is required before treating
+that behavior as an update guarantee.
+
 ## Output
 
 The macOS desktop job builds and verifies the unsigned arm64 desktop preview

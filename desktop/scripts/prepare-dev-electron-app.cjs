@@ -1,0 +1,106 @@
+const {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} = require("node:fs");
+const { createHash } = require("node:crypto");
+const { join, resolve } = require("node:path");
+const { spawnSync } = require("node:child_process");
+
+const desktopRoot = resolve(__dirname, "..");
+const sourceApp = join(desktopRoot, "node_modules", "electron", "dist", "Electron.app");
+const hostRoot = join(desktopRoot, "build", "dev-host");
+const devApp = join(hostRoot, "Wuu Dev.app");
+const markerPath = join(hostRoot, "identity.json");
+const electronPackagePath = join(desktopRoot, "node_modules", "electron", "package.json");
+const builtHelper = join(desktopRoot, "build", "bin", "wuu-cua-mac");
+const identityVersion = 3;
+
+function prepareDevElectronApp() {
+  const electronVersion = JSON.parse(readFileSync(electronPackagePath, "utf8")).version;
+  const helperHash = hashFile(builtHelper);
+  if (devHostIsCurrent(electronVersion, helperHash)) return devApp;
+
+  console.log(`preparing stable Wuu Dev host for Electron ${electronVersion}...`);
+  mkdirSync(hostRoot, { recursive: true });
+  rmSync(devApp, { recursive: true, force: true });
+
+  const cloned = spawnSync("cp", ["-cR", sourceApp, devApp], { stdio: "inherit" });
+  if (cloned.status !== 0) {
+    rmSync(devApp, { recursive: true, force: true });
+    run("ditto", [sourceApp, devApp]);
+  }
+
+  const info = join(devApp, "Contents", "Info.plist");
+  run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleIdentifier com.blueberrycongee.wuu.dev", info]);
+  run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleName Wuu Dev", info]);
+  run("/usr/libexec/PlistBuddy", ["-c", "Set :CFBundleDisplayName Wuu Dev", info]);
+  setPlistString(
+    info,
+    "NSScreenCaptureUsageDescription",
+    "Wuu uses screen capture to show a live preview while an agent operates a Mac app.",
+  );
+  const packagedHelper = helperPathForApp(devApp);
+  mkdirSync(join(devApp, "Contents", "Resources", "bin"), { recursive: true });
+  copyFileSync(builtHelper, packagedHelper);
+  run("codesign", [
+    "--force",
+    "--deep",
+    "--sign",
+    "-",
+    "--identifier",
+    "com.blueberrycongee.wuu.dev",
+    devApp,
+  ]);
+  run("codesign", ["--verify", "--deep", "--strict", devApp]);
+  writeFileSync(markerPath, `${JSON.stringify({ electronVersion, helperHash, identityVersion })}\n`);
+  console.log("Wuu Dev identity changed; macOS may require Accessibility and Screen Recording permission again.");
+  return devApp;
+}
+
+function devHostIsCurrent(electronVersion, helperHash) {
+  if (!existsSync(devApp) || !existsSync(markerPath)) return false;
+  try {
+    const marker = JSON.parse(readFileSync(markerPath, "utf8"));
+    if (
+      marker.electronVersion !== electronVersion
+      || marker.helperHash !== helperHash
+      || marker.identityVersion !== identityVersion
+    ) {
+      return false;
+    }
+    return spawnSync("codesign", ["--verify", "--deep", "--strict", devApp], {
+      stdio: "ignore",
+    }).status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function hashFile(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function helperPathForApp(appPath) {
+  return join(appPath, "Contents", "Resources", "bin", "wuu-cua-mac");
+}
+
+function setPlistString(info, key, value) {
+  const set = spawnSync("/usr/libexec/PlistBuddy", ["-c", `Set :${key} ${value}`, info], {
+    stdio: "ignore",
+  });
+  if (set.status === 0) return;
+  run("/usr/libexec/PlistBuddy", ["-c", `Add :${key} string ${value}`, info]);
+}
+
+function run(command, args) {
+  const result = spawnSync(command, args, { stdio: "inherit" });
+  if (result.status !== 0) {
+    throw new Error(`${command} failed with status ${result.status ?? "unknown"}`);
+  }
+}
+
+module.exports = { helperPathForApp, prepareDevElectronApp };

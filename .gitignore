@@ -13,6 +13,7 @@ desktop/out/
 # Desktop release packaging writes the generated Go core and installer
 # artifacts under tracked icon resources.
 desktop/build/bin/
+desktop/build/dev-host/
 desktop/release/
 desktop/native/cua-mac/.build/
 # electron-vite writes a timestamp marker when it re-syncs node_modules;
