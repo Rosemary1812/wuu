@@ -162,7 +162,7 @@ describe("CUA Activity windows", () => {
   it("keeps the preview styled as a compact app frame", () => {
     const html = cuaActivityHTML(activity());
     expect(html).toContain("background:transparent");
-    expect(html).toContain("object-fit:cover");
+    expect(html).toContain("object-fit:contain");
     expect(html).not.toContain("background:#111315");
     expect(html).not.toContain(".card{position:relative;height:100%;border-radius");
     expect(html).not.toContain("0 24px 64px");
@@ -187,6 +187,7 @@ describe("CUA Activity windows", () => {
   it("fits preview proportions within the compact overlay envelope", () => {
     expect(fitActivityPreviewSize(1920, 1080)).toEqual({ width: 409, height: 230 });
     expect(fitActivityPreviewSize(1100, 1442)).toEqual({ width: 280, height: 367 });
+    expect(fitActivityPreviewSize(230, 408)).toEqual({ width: 280, height: 497 });
     expect(fitActivityPreviewSize(1000, 1000)).toEqual({ width: 307, height: 307 });
     expect(fitActivityPreviewSize(0, 0)).toEqual({ width: 380, height: 248 });
   });

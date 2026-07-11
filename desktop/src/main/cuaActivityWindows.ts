@@ -18,7 +18,7 @@ const PREVIEW_TARGET_AREA = 380 * 248;
 const PREVIEW_MIN_WIDTH = 280;
 const PREVIEW_MAX_WIDTH = 480;
 const PREVIEW_MIN_HEIGHT = 180;
-const PREVIEW_MAX_HEIGHT = 420;
+const PREVIEW_MAX_HEIGHT = 520;
 const MAX_LIVE_CUA_STREAMS = 3;
 const MAX_LIVE_STREAM_RETRIES = 6;
 
@@ -606,14 +606,8 @@ export class CUAActivityWindowManager {
     void win.webContents.executeJavaScript(`window.wuuCUAFrame?.(${JSON.stringify(url)})`, true).catch(() => undefined);
   }
 
-  private publishStreamError(activityID: string, message: string): void {
+  private publishStreamError(activityID: string, _message: string): void {
     this.scheduleFrameStreamRetry(activityID);
-    const activity = this.activities.get(activityID);
-    const win = this.registry.activityWindow(activityID);
-    if (!activity || !win || win.isDestroyed()) return;
-    this.visualReadyActivityIDs.add(activityID);
-    this.render(win, { ...activity, error: message, updated_at: new Date().toISOString() });
-    this.syncVisibility(win, activity);
   }
 
   private autoSizeForLiveFrame(win: BrowserWindow, activityID: string, width: number, height: number): void {
@@ -733,7 +727,7 @@ export function cuaActivityHTML(activity: ActivitySession): string {
 @media(prefers-color-scheme:dark){:root{--ink:#f2f3f4;--line:rgba(255,255,255,.2);--glass:rgba(31,35,40,.58);--glass-strong:rgba(42,46,51,.88);--hover:rgba(228,232,235,.12);--danger:#f0705f;--danger-soft:rgba(52,28,24,.92)}}
 *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;background:transparent;overflow:hidden}
 .card{position:relative;height:100%;overflow:hidden;background:transparent;color:var(--ink);cursor:grab;user-select:none}.card.is-dragging{cursor:grabbing}
-.preview{position:absolute;inset:0;display:grid;place-items:center;overflow:hidden}.preview img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+.preview{position:absolute;inset:0;display:grid;place-items:center;overflow:hidden}.preview img{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none}
 .glass{position:absolute;inset:0;background:radial-gradient(circle at 10% 0%,rgba(255,255,255,.62),transparent 44%),radial-gradient(circle at 92% 34%,rgba(255,122,72,.16),transparent 48%),radial-gradient(circle at 52% 112%,rgba(110,170,255,.14),transparent 50%),linear-gradient(145deg,var(--glass-strong),var(--glass));box-shadow:inset 0 1px 0 rgba(255,255,255,.5)}
 .actions{position:absolute;z-index:3;top:8px;right:8px;display:flex;align-items:center;gap:5px;padding:4px;border-radius:10px;background:var(--glass-strong);border:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.14);opacity:0;transform:translateY(-3px);transition:opacity 140ms ease,transform 140ms ease;-webkit-app-region:no-drag}.card:hover .actions,.actions:focus-within{opacity:1;transform:none}.button{height:25px;padding:0 8px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:var(--ink);background:transparent;border:0;font-size:11px;font-weight:560}.button:hover{background:var(--hover)}.button.stop{width:25px;padding:0;font-size:15px;font-weight:400}.button.stop:hover{color:var(--danger);background:var(--danger-soft)}
 .error{position:absolute;z-index:2;left:8px;right:8px;bottom:8px;padding:8px 10px;border-radius:9px;background:var(--danger-soft);border:1px solid var(--line);font-size:10.5px;color:var(--danger);-webkit-app-region:no-drag}
