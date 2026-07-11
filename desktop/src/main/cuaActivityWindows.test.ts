@@ -294,6 +294,8 @@ describe("CUA Activity windows", () => {
     expect(cuaActivityHTML(activity({ error: "boom" }))).not.toContain("boom");
     expect(html).toContain('class="agent-pointer"');
     expect(html).toContain("cubic-bezier(.22,.8,.24,1)");
+    expect(html).toContain("border-radius:clamp(10px,3.2vw,16px)");
+    expect(html).toContain("border-radius:inherit");
   });
 
   it("maps window controls onto Activity RPC methods", () => {

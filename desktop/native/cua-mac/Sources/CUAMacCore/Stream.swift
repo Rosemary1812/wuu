@@ -10,7 +10,7 @@ private final class FramePipeWriter: @unchecked Sendable {
     private var writing = false
     private var revision: UInt64 = 0
 
-    func submit(_ sampleBuffer: CMSampleBuffer, frame: CGRect) {
+    func submit(_ sampleBuffer: CMSampleBuffer, frame: CGRect, contentRect: CGRect?) {
         lock.lock()
         guard !writing else { lock.unlock(); return }
         writing = true
@@ -23,7 +23,9 @@ private final class FramePipeWriter: @unchecked Sendable {
                 self.lock.unlock()
             }
             guard let imageBuffer = sampleBuffer.imageBuffer else { return }
-            let image = CIImage(cvImageBuffer: imageBuffer)
+            let source = CIImage(cvImageBuffer: imageBuffer)
+            let crop = contentRect.map { $0.intersection(source.extent) }
+            let image = crop.flatMap { $0.isNull || $0.isEmpty ? nil : source.cropped(to: $0) } ?? source
             let context = CIContext(options: [.cacheIntermediates: false])
             guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
                   let data = context.jpegRepresentation(
@@ -36,8 +38,8 @@ private final class FramePipeWriter: @unchecked Sendable {
                 "event": "frame",
                 "revision": self.revision,
                 "timestamp_ns": DispatchTime.now().uptimeNanoseconds,
-                "width": CVPixelBufferGetWidth(imageBuffer),
-                "height": CVPixelBufferGetHeight(imageBuffer),
+                "width": Int(image.extent.width),
+                "height": Int(image.extent.height),
                 "window_frame": ["x": frame.origin.x, "y": frame.origin.y, "width": frame.width, "height": frame.height],
                 "mime_type": "image/jpeg",
             ], payload: data)
@@ -54,17 +56,22 @@ private final class FramePipeWriter: @unchecked Sendable {
 
     func writeCapture(_ capture: WindowCapture) -> Bool {
         queue.sync {
-            guard let bitmap = NSBitmapImageRep(data: capture.data),
-                  let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.72]) else {
+            guard let bitmap = NSBitmapImageRep(data: capture.data), let source = bitmap.cgImage else {
                 return false
             }
+            let visible = capture.geometry.visibleImageFrame.integral.intersection(
+                CGRect(x: 0, y: 0, width: source.width, height: source.height)
+            )
+            let image = (!visible.isNull && !visible.isEmpty ? source.cropping(to: visible) : nil) ?? source
+            let cropped = NSBitmapImageRep(cgImage: image)
+            guard let data = cropped.representation(using: .jpeg, properties: [.compressionFactor: 0.72]) else { return false }
             revision += 1
             write(metadata: [
                 "event": "frame",
                 "revision": revision,
                 "timestamp_ns": DispatchTime.now().uptimeNanoseconds,
-                "width": bitmap.pixelsWide,
-                "height": bitmap.pixelsHigh,
+                "width": image.width,
+                "height": image.height,
                 "window_frame": [
                     "x": capture.geometry.windowFrame.origin.x,
                     "y": capture.geometry.windowFrame.origin.y,
@@ -138,7 +145,10 @@ private final class WindowStreamOutput: NSObject, SCStreamOutput, SCStreamDelega
         let currentFrame = frame
         firstFrameReceived = true
         lock.unlock()
-        writer.submit(sampleBuffer, frame: currentFrame)
+        let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
+            as? [[SCStreamFrameInfo: Any]]
+        let contentRect = attachments?.first?[.contentRect] as? CGRect
+        writer.submit(sampleBuffer, frame: currentFrame, contentRect: contentRect)
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -187,14 +197,17 @@ private func preferredStreamWindow(in content: SCShareableContent, processID: pi
         $0.owningApplication?.processID == processID && $0.frame.width > 1 && $0.frame.height > 1
     }
     guard !candidates.isEmpty else { return nil }
-    if let focusedFrame = focusedWindowFrame(processID: processID) {
-        return candidates.min { left, right in
-            windowFrameDistance(left.frame, focusedFrame) < windowFrameDistance(right.frame, focusedFrame)
-        }
-    }
-    return candidates.max { left, right in
+    let largest = candidates.max { left, right in
         left.frame.width * left.frame.height < right.frame.width * right.frame.height
     }
+    if let focusedFrame = focusedWindowFrame(processID: processID),
+       let focused = candidates.min(by: { left, right in
+            windowFrameDistance(left.frame, focusedFrame) < windowFrameDistance(right.frame, focusedFrame)
+       }),
+       focused.frame.width * focused.frame.height >= (largest?.frame.width ?? 0) * (largest?.frame.height ?? 0) * 0.35 {
+        return focused
+    }
+    return largest
 }
 
 private func focusedWindowFrame(processID: pid_t) -> CGRect? {
@@ -304,10 +317,12 @@ public func runWindowFrameStream(target: String) async throws {
     }
     while !output.isStopped() {
         try await Task.sleep(for: .milliseconds(750))
-        guard let refreshedContent = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
-              let refreshedWindow = preferredStreamWindow(in: refreshedContent, processID: app.processIdentifier) else {
+        guard let refreshedContent = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) else {
             continue
         }
+        let refreshedWindow = refreshedContent.windows.first(where: { $0.windowID == window.windowID })
+            ?? preferredStreamWindow(in: refreshedContent, processID: app.processIdentifier)
+        guard let refreshedWindow else { continue }
         let windowChanged = refreshedWindow.windowID != window.windowID
         let frameChanged = windowFrameDistance(refreshedWindow.frame, window.frame) > 1
         guard windowChanged || frameChanged else { continue }
