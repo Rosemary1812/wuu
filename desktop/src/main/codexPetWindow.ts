@@ -1,5 +1,6 @@
 import { BrowserWindow, Menu, screen, type Rectangle } from "electron";
 import {
+  CODEX_PET_HINTS_MAX,
   CODEX_PET_SIZE_DEFAULT,
   CODEX_PET_SIZE_OPTIONS,
   type CodexPet,
@@ -20,7 +21,7 @@ export type CodexPetView = {
   frames: number;
   duration: number;
   label: string;
-  hint: CodexPetHint | null;
+  hints: CodexPetHint[];
   layout: CodexPetBubbleLayout;
   // Render-time sprite geometry — pre-computed at view-build time so the
   // HTML template and the JS bridge don't have to know about CodexPetSize.
@@ -44,19 +45,39 @@ export type CodexPetLayoutDecision = {
 // `codexPetRenderedSpriteForSize(this.size)`.
 const CODEX_PET_SCREEN_INSET = 24;
 
-// Bubble is a single-line clamp. The pet's job is to surface the latest
-// stable commentary as a glance, not a paragraph; -webkit-line-clamp:1
-// plus a BUBBLE_HEIGHT tuned for one line of 13/1.45 text keeps the card
-// compact. When the renderer pushes a hint whose preview is empty (no
-// stable agent_message anywhere on the top-ranked thread), the inline
-// applyHint hides the bubble entirely — the sprite keeps its running/
-// idle/failed state without a stale text fallback. The Thread.preview
-// denormalized field is no longer surfaced by deriveActiveSessionHint, so
-// this hide path matters for both `null hint` and `hint with empty preview`.
+// The bubble is a stack of up to CODEX_PET_HINTS_MAX single-line rows,
+// one per surfaced session (title + latest stable commentary, each
+// ellipsized). The pet's job is a glance, not a paragraph: rows are
+// clamped to one line of 13px text on a fixed 19px line so the card
+// height is a pure function of the row count — BUBBLE_HEIGHT_BASE for
+// one row plus BUBBLE_ROW_STEP (row line + row gap) per extra row.
+// The renderer only sends rows that have commentary (empty previews
+// are omitted at derivation), and an empty list hides the bubble
+// entirely — the sprite keeps its running/idle/failed state without a
+// stale text fallback.
 const CODEX_PET_BUBBLE_WIDTH = 280;
-const CODEX_PET_BUBBLE_HEIGHT = 44;
+const CODEX_PET_BUBBLE_HEIGHT_BASE = 44;
+const CODEX_PET_BUBBLE_ROW_LINE = 19;
+const CODEX_PET_BUBBLE_ROW_GAP = 6;
+const CODEX_PET_BUBBLE_ROW_STEP =
+  CODEX_PET_BUBBLE_ROW_LINE + CODEX_PET_BUBBLE_ROW_GAP; // 25
 const CODEX_PET_BUBBLE_PADDING = 8;
 const CODEX_PET_BUBBLE_GAP = 8;
+
+// Bubble card footprint for a given row count. Layout math (window
+// bounds, direction picking) sizes the window around this, so it must
+// stay in lockstep with the inline CSS: 12px card padding + n rows of
+// 19px + (n-1) gaps of 6px fits inside 44 + 25*(n-1) with 1px slack.
+export function codexPetBubbleSizeForCount(count: number): {
+  width: number;
+  height: number;
+} {
+  const rows = Math.max(1, Math.min(CODEX_PET_HINTS_MAX, count));
+  return {
+    width: CODEX_PET_BUBBLE_WIDTH,
+    height: CODEX_PET_BUBBLE_HEIGHT_BASE + CODEX_PET_BUBBLE_ROW_STEP * (rows - 1),
+  };
+}
 // Bubble preview swap animation: when `hint.preview` changes (e.g. first
 // commentary finishes and a second one lands, or the bubble disappears), the
 // .preview element fades out, swaps text, fades back in. Asymmetric timings so
@@ -83,11 +104,6 @@ const CODEX_PET_WINDOW_TOP_PADDING = 16;
 // layouts. Treat this as the anchor offset from window bottom for all
 // layout directions.
 const CODEX_PET_SPRITE_BOTTOM_OFFSET = 8;
-
-const CODEX_PET_BUBBLE_SIZE: { width: number; height: number } = {
-  width: CODEX_PET_BUBBLE_WIDTH,
-  height: CODEX_PET_BUBBLE_HEIGHT,
-};
 
 export type CodexPetRenderedSprite = {
   width: number;
@@ -175,7 +191,7 @@ export function selectedCodexPet(snapshot: CodexPetsSnapshot | undefined): Codex
 export function codexPetView(
   pet: CodexPet,
   state: CodexPetState,
-  hint: CodexPetHint | null,
+  hints: CodexPetHint[],
   layout: CodexPetBubbleLayout,
   size: CodexPetSize = CODEX_PET_SIZE_DEFAULT,
   customScale?: number,
@@ -198,7 +214,7 @@ export function codexPetView(
     frames: state.frames,
     duration: Math.max(state.frames * 260, 1400),
     label: `${pet.display_name} ${state.id}`,
-    hint,
+    hints,
     layout,
     size,
     spriteWidth: rendered.width,
@@ -438,7 +454,20 @@ export function codexPetWindowHTML(view: CodexPetView): string {
     `--pet-frame-height:${view.spriteHeight}px`,
     `--pet-scale:${view.scale}`,
   ].join(";");
-  const initialHintJSON = JSON.stringify(view.hint);
+  // Escape `<` inside the JSON so hint text can never terminate the
+  // surrounding <script> block (e.g. a preview containing "</script>")
+  // or smuggle raw markup into the document. < is a plain JS string
+  // escape, so the parsed value is unchanged.
+  const initialHintsJSON = JSON.stringify(view.hints).replace(/</g, "\\u003c");
+  const initialRowsHTML = view.hints
+    .map(
+      (hint) =>
+        `<div class="hint-row" data-thread-id="${escapeHTML(hint.thread_id)}">` +
+        `<span class="row-title">${escapeHTML(hint.title || "对话")}</span>` +
+        `<span class="row-preview">${escapeHTML(hint.preview)}</span>` +
+        `</div>`,
+    )
+    .join("");
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src wuu-file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; navigate-to wuu-pet:" />
@@ -456,10 +485,12 @@ export function codexPetWindowHTML(view: CodexPetView): string {
 .sprite{width:${CODEX_PET_CELL_WIDTH}px;height:${CODEX_PET_CELL_HEIGHT}px;flex-shrink:0;transform:scale(var(--pet-scale));transform-origin:bottom center;background-image:var(--pet-sheet);background-repeat:no-repeat;background-position:0 var(--pet-y);image-rendering:pixelated;filter:drop-shadow(0 10px 16px rgba(0,0,0,.18));animation:pet-play var(--pet-duration) steps(var(--pet-frames)) infinite}
 @keyframes pet-play{from{background-position:0 var(--pet-y)}to{background-position:var(--pet-end-x) var(--pet-y)}}
 @media (prefers-reduced-motion:reduce){.sprite{animation:none}}
-.bubble{display:block;width:${CODEX_PET_BUBBLE_WIDTH}px;min-height:${CODEX_PET_BUBBLE_HEIGHT}px;padding:12px;margin:${CODEX_PET_BUBBLE_PADDING}px;border-radius:12px;background:rgba(255,255,255,.95);box-shadow:0 6px 24px rgba(0,0,0,.18);cursor:pointer;flex-shrink:0;text-align:left;transition:opacity 200ms ease}
+.bubble{display:flex;flex-direction:column;gap:${CODEX_PET_BUBBLE_ROW_GAP}px;width:${CODEX_PET_BUBBLE_WIDTH}px;min-height:${CODEX_PET_BUBBLE_HEIGHT_BASE}px;padding:12px;margin:${CODEX_PET_BUBBLE_PADDING}px;border-radius:12px;background:rgba(255,255,255,.95);box-shadow:0 6px 24px rgba(0,0,0,.18);flex-shrink:0;text-align:left;transition:opacity 200ms ease}
 .stage.layout-hidden .bubble{display:none}
-.bubble .preview{font:13px/1.45 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;color:#1a1a1a;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;white-space:pre-wrap;opacity:1;transition:opacity ${CODEX_PET_BUBBLE_SWAP_IN_MS}ms ease}
-.bubble.is-swapping .preview{opacity:0;transition:opacity ${CODEX_PET_BUBBLE_SWAP_OUT_MS}ms ease}
+.bubble .hint-row{display:flex;align-items:baseline;gap:6px;height:${CODEX_PET_BUBBLE_ROW_LINE}px;cursor:pointer;font:13px/${CODEX_PET_BUBBLE_ROW_LINE}px -apple-system,BlinkMacSystemFont,system-ui,sans-serif;opacity:1;transition:opacity ${CODEX_PET_BUBBLE_SWAP_IN_MS}ms ease}
+.bubble .row-title{flex-shrink:0;max-width:96px;font-weight:600;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bubble .row-preview{flex:1;min-width:0;color:#4b4b4b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bubble.is-swapping .hint-row{opacity:0;transition:opacity ${CODEX_PET_BUBBLE_SWAP_OUT_MS}ms ease}
 .resize-handle{position:absolute;z-index:2}
 .resize-handle.edge-top{top:0;left:16px;right:16px;height:16px;cursor:ns-resize}
 .resize-handle.edge-bottom{bottom:0;left:16px;right:16px;height:16px;cursor:ns-resize}
@@ -470,9 +501,7 @@ export function codexPetWindowHTML(view: CodexPetView): string {
 .resize-handle.corner-sw{bottom:0;left:0;width:16px;height:16px;cursor:nesw-resize}
 .resize-handle.corner-se{bottom:0;right:0;width:16px;height:16px;cursor:nwse-resize}
 </style></head><body><div class="stage layout-${escapeHTML(view.layout)}" style="${escapeHTML(styleVars)}">
-<div class="bubble" data-thread-id="${escapeHTML(view.hint?.thread_id ?? "")}" style="display:${view.hint ? "block" : "none"}">
-<div class="preview">${escapeHTML(view.hint?.preview ?? "")}</div>
-</div>
+<div class="bubble" style="display:${view.hints.length ? "flex" : "none"}">${initialRowsHTML}</div>
 <div class="sprite-frame"><div class="sprite" role="img" aria-label="${escapeHTML(view.label)}"></div></div>
 <div class="resize-handle corner-nw" data-dir-x="-1" data-dir-y="-1" aria-label="调整大小"></div>
 <div class="resize-handle corner-ne" data-dir-x="1" data-dir-y="-1" aria-label="调整大小"></div>
@@ -488,18 +517,39 @@ export function codexPetWindowHTML(view: CodexPetView): string {
   const stage = document.querySelector('.stage');
   const bubble = document.querySelector('.bubble');
   const sprite = document.querySelector('.sprite');
-  // The bubble is text-only now (see codexPetWindowHTML above), so the live
-  // updater only touches .preview. Earlier revisions still queried for a
-  // .title / .dot node that the markup no longer renders, which raised a
-  // TypeError on every wuuPetView refresh and silently broke hint updates.
-  const previewEl = bubble.querySelector('.preview');
-  let currentHint = ${initialHintJSON};
+  // The bubble is a stack of up to ${CODEX_PET_HINTS_MAX} single-line rows, one per
+  // surfaced session (bold title + latest stable commentary, both
+  // ellipsized). Rows are rebuilt wholesale via DOM APIs (textContent,
+  // never innerHTML) so pushed strings can't inject markup. The main
+  // process omits empty-preview rows at derivation, but the empty-list
+  // hide path stays here too: no rows means the bubble card disappears
+  // entirely while the sprite keeps its running/idle/failed state.
+  let currentHints = ${initialHintsJSON};
+  const hintsSignature = (hints) =>
+    JSON.stringify((hints || []).map((h) => [h.thread_id, h.title, h.preview]));
+  const buildRows = (hints) => {
+    bubble.textContent = '';
+    for (const hint of hints) {
+      const row = document.createElement('div');
+      row.className = 'hint-row';
+      row.dataset.threadId = hint.thread_id;
+      const title = document.createElement('span');
+      title.className = 'row-title';
+      title.textContent = hint.title || '对话';
+      const preview = document.createElement('span');
+      preview.className = 'row-preview';
+      preview.textContent = hint.preview;
+      row.append(title, preview);
+      bubble.append(row);
+    }
+  };
   // First apply is just the inline-rendered initial state, so no fade.
-  // Subsequent applies fade out -> swap text -> fade in only when the
-  // preview string actually changes (same title but new commentary, or
-  // the bubble disappearing entirely). cancelSwap clears any pending
-  // mid-swap timeout so a rapid back-to-back push doesn't strand the
-  // .is-swapping class with mismatched text under it.
+  // Subsequent applies fade the rows out -> rebuild -> fade back in only
+  // when the row content actually changes (new commentary, a session
+  // entering/leaving the top ranks, or the bubble disappearing).
+  // cancelSwap clears any pending mid-swap timeout so a rapid
+  // back-to-back push doesn't strand the .is-swapping class with
+  // mismatched rows under it.
   let isFirstApply = true;
   let pendingSwap = null;
   const SWAP_OUT_MS = ${CODEX_PET_BUBBLE_SWAP_OUT_MS};
@@ -510,59 +560,48 @@ export function codexPetWindowHTML(view: CodexPetView): string {
       bubble.classList.remove('is-swapping');
     }
   };
-  const applyHint = (hint) => {
+  const applyHints = (hints) => {
     cancelSwap();
-    // Hide the bubble whenever there's no stable commentary to surface.
-    // The renderer's deriveActiveSessionHint now refuses to fall back to
-    // Thread.preview, so a top-ranked thread with no agent_message yet
-    // (running but hasn't started speaking, or idle with no commentary)
-    // pushes a non-null hint with empty preview here. Treat both
-    // 'null hint' and 'hint with empty/blank preview' as hide; the
-    // sprite keeps its running/idle/failed state and no stale
-    // fallback text is ever shown.
-    const trimmedPreview = (hint?.preview ?? "").trim();
-    if (!hint || trimmedPreview.length === 0) {
+    const usable = (hints || []).filter(
+      (h) => h && typeof h.thread_id === 'string' && (h.preview || '').trim(),
+    );
+    if (usable.length === 0) {
       if (isFirstApply) {
-        currentHint = null;
+        currentHints = [];
         isFirstApply = false;
         return;
       }
+      if (currentHints.length === 0) return;
       bubble.classList.add('is-swapping');
       pendingSwap = setTimeout(() => {
         pendingSwap = null;
         bubble.style.display = 'none';
-        bubble.removeAttribute('data-thread-id');
-        previewEl.textContent = '';
+        bubble.textContent = '';
         bubble.classList.remove('is-swapping');
-        currentHint = null;
+        currentHints = [];
       }, SWAP_OUT_MS);
       return;
     }
     bubble.style.display = '';
-    const newPreview = trimmedPreview;
-    const oldPreview = previewEl.textContent || '';
     if (isFirstApply) {
-      bubble.dataset.threadId = hint.thread_id;
-      previewEl.textContent = newPreview;
-      currentHint = hint;
+      buildRows(usable);
+      currentHints = usable;
       isFirstApply = false;
       return;
     }
-    if (oldPreview === newPreview) {
-      bubble.dataset.threadId = hint.thread_id;
-      currentHint = hint;
+    if (hintsSignature(usable) === hintsSignature(currentHints)) {
+      currentHints = usable;
       return;
     }
     bubble.classList.add('is-swapping');
     pendingSwap = setTimeout(() => {
       pendingSwap = null;
-      bubble.dataset.threadId = hint.thread_id;
-      previewEl.textContent = newPreview;
+      buildRows(usable);
       bubble.classList.remove('is-swapping');
-      currentHint = hint;
+      currentHints = usable;
     }, SWAP_OUT_MS);
   };
-  applyHint(currentHint);
+  applyHints(currentHints);
   window.wuuPetView = (view) => {
     sprite.style.setProperty('--pet-sheet', 'url("' + view.spritesheetURL + '")');
     sprite.style.setProperty('--pet-y', view.y + 'px');
@@ -575,10 +614,7 @@ export function codexPetWindowHTML(view: CodexPetView): string {
     stage.style.setProperty('--pet-frame-height', view.spriteHeight + 'px');
     sprite.setAttribute('aria-label', view.label);
     stage.className = 'stage layout-' + view.layout;
-    if (JSON.stringify(view.hint) !== JSON.stringify(currentHint)) {
-      currentHint = view.hint;
-      applyHint(view.hint);
-    }
+    applyHints(view.hints || []);
   };
   window.addEventListener('contextmenu', (event) => {
     event.preventDefault();
@@ -679,7 +715,8 @@ export function codexPetWindowHTML(view: CodexPetView): string {
   }
   bubble.addEventListener('click', (event) => {
     event.stopPropagation();
-    const threadId = bubble.dataset.threadId;
+    const row = event.target instanceof Element ? event.target.closest('.hint-row') : null;
+    const threadId = row ? row.dataset.threadId : '';
     if (threadId) location.href = 'wuu-pet://action/jump?thread_id=' + encodeURIComponent(threadId);
   });
   let pointerID = null;
@@ -716,7 +753,7 @@ export class CodexPetWindowManager {
   private lastViewSignature = "";
   private runtime: CodexPetRuntime = { running: false, status: "" };
   private snapshot: CodexPetsSnapshot | undefined;
-  private hint: CodexPetHint | null = null;
+  private hints: CodexPetHint[] = [];
   private currentLayout: CodexPetBubbleLayout = "hidden";
   // User-facing sprite size; defaults to the 100% preset so older callers
   // and tests that don't set it see exactly the pre-size-feature window
@@ -818,8 +855,20 @@ export class CodexPetWindowManager {
     if (pet && this.win && !this.win.isDestroyed()) this.applyView(pet);
   }
 
-  setHint(hint: CodexPetHint | null): void {
-    this.hint = hint && typeof hint.thread_id === "string" ? hint : null;
+  setHints(hints: CodexPetHint[] | null | undefined): void {
+    // Sanitize at the trust boundary: the renderer should already omit
+    // rows without commentary, but a malformed push must not produce
+    // phantom rows or an oversized bubble. Cap at CODEX_PET_HINTS_MAX.
+    this.hints = (Array.isArray(hints) ? hints : [])
+      .filter(
+        (hint): hint is CodexPetHint =>
+          Boolean(hint) &&
+          typeof hint.thread_id === "string" &&
+          hint.thread_id.length > 0 &&
+          typeof hint.preview === "string" &&
+          hint.preview.trim().length > 0,
+      )
+      .slice(0, CODEX_PET_HINTS_MAX);
     const pet = selectedCodexPet(this.snapshot);
     if (pet && this.win && !this.win.isDestroyed()) this.applyView(pet);
   }
@@ -857,11 +906,11 @@ export class CodexPetWindowManager {
         CODEX_PET_SPRITE_BOTTOM_OFFSET -
         CODEX_PET_SCREEN_INSET,
     };
-    const layoutDecision = this.hint
+    const layoutDecision = this.hints.length
       ? selectCodexPetBubbleLayout({
           workArea,
           anchor: initialAnchor,
-          bubble: CODEX_PET_BUBBLE_SIZE,
+          bubble: codexPetBubbleSizeForCount(this.hints.length),
           size: this.size,
           customScale: this.currentScale,
         })
@@ -869,7 +918,7 @@ export class CodexPetWindowManager {
     const view = codexPetView(
       pet,
       codexPetStateForRuntime(this.runtime),
-      this.hint,
+      this.hints,
       layoutDecision?.layout ?? "hidden",
       this.size,
       this.currentScale,
@@ -930,8 +979,11 @@ export class CodexPetWindowManager {
         this.popupMenu(win);
         return;
       }
-      if (parsed.action === "jump" && this.hint && this.hint.thread_id === parsed.thread_id) {
-        this.onJumpRequested(this.hint);
+      if (parsed.action === "jump") {
+        const hint = this.hints.find(
+          (candidate) => candidate.thread_id === parsed.thread_id,
+        );
+        if (hint) this.onJumpRequested(hint);
       }
       if (parsed.action === "resize") {
         this.setSize(parsed.id);
@@ -976,11 +1028,13 @@ export class CodexPetWindowManager {
     const template: Electron.MenuItemConstructorOptions[] = [
       { label: pet ? pet.display_name : "桌宠", enabled: false },
     ];
-    if (this.hint) {
-      template.push({
-        label: `打开当前会话 · ${this.hint.title}`,
-        click: () => this.onJumpRequested(this.hint!),
-      });
+    if (this.hints.length) {
+      for (const hint of this.hints) {
+        template.push({
+          label: `打开会话 · ${hint.title}`,
+          click: () => this.onJumpRequested(hint),
+        });
+      }
       template.push({ type: "separator" });
     }
     template.push({ label: "关闭桌宠", click: () => this.onCloseRequested() });
@@ -994,12 +1048,12 @@ export class CodexPetWindowManager {
     const anchor = this.anchorFromBounds(currentBounds, this.currentLayout);
     let layout: CodexPetBubbleLayout;
     let targetBounds: Rectangle;
-    if (this.hint) {
+    if (this.hints.length) {
       const workArea = screen.getPrimaryDisplay().workArea;
       const decision = selectCodexPetBubbleLayout({
         workArea,
         anchor,
-        bubble: CODEX_PET_BUBBLE_SIZE,
+        bubble: codexPetBubbleSizeForCount(this.hints.length),
         size: this.size,
         customScale: this.currentScale,
       });
@@ -1032,7 +1086,7 @@ export class CodexPetWindowManager {
     const view = codexPetView(
       pet,
       codexPetStateForRuntime(this.runtime),
-      this.hint,
+      this.hints,
       layout,
       this.size,
       this.currentScale,

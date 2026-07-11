@@ -1094,9 +1094,9 @@ app.whenReady().then(async () => {
       ),
   );
   ipcMain.handle(
-    "wuu:codex-pet-hint",
-    (_event, hint: CodexPetHint | null) =>
-      codexPetWindowManager.setHint(hint ?? null),
+    "wuu:codex-pet-hints",
+    (_event, hints: CodexPetHint[] | null) =>
+      codexPetWindowManager.setHints(hints ?? []),
   );
   ipcMain.handle(
     "wuu:settings-usage",

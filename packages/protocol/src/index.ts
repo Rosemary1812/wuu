@@ -1857,9 +1857,12 @@ export type CodexPetRuntime = {
 };
 
 // 桌宠气泡：渲染进程按优先级（attention > running > idle）从当前所有
-// session 中派生最相关的一条，以轻量 hint 形式推到主进程，桌宠窗口据
-// 此在 sprite 上方或右侧展示一个小气泡。仅作为 hint，不承担观测面板或
-// 导航职责；点击气泡触发 wuu-pet://action/jump 跳回主窗口定位 thread。
+// session 中派生最相关的最多 CODEX_PET_HINTS_MAX 条，以轻量 hint 列表
+// 推到主进程，桌宠窗口据此在 sprite 上方或右侧展示一个小气泡，每条
+// hint 占一行。仅作为 hint，不承担观测面板或导航职责；点击某一行触发
+// wuu-pet://action/jump 跳回主窗口定位该 thread。
+export const CODEX_PET_HINTS_MAX = 3;
+
 export type CodexPetHintStatus =
   | "running"
   | "done"
@@ -2037,8 +2040,8 @@ export type WuuDesktopApi = {
     settings: CodexPetSettingsUpdate,
   ) => Promise<CodexPetsSnapshot>;
   updateCodexPetRuntime: (runtime: CodexPetRuntime) => Promise<void>;
-  updateCodexPetHint: (hint: CodexPetHint | null) => Promise<void>;
-  // 桌宠点击气泡触发；主窗口前置并切到该 thread。监听器返回 dispose。
+  updateCodexPetHints: (hints: CodexPetHint[]) => Promise<void>;
+  // 桌宠点击气泡某一行触发；主窗口前置并切到该 thread。监听器返回 dispose。
   onCodexPetJumpRequest: (
     handler: (event: { thread_id: string }) => void,
   ) => () => void;

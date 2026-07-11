@@ -203,7 +203,7 @@ import {
   EmptyConversationHome,
   RuntimeLoading,
 } from "./LoadingViews";
-import { deriveActiveSessionHint } from "./activeSessionHint";
+import { deriveActiveSessionHints } from "./activeSessionHint";
 import { pullRequestUnavailableReason } from "./RuntimeHelpers";
 import type { SettingsPage } from "./SettingsView";
 import { ArchiveTip } from "./ArchiveTip";
@@ -2100,16 +2100,47 @@ export function App(): JSX.Element {
   // Re-derive whenever the thread state changes and push the result to
   // the main process, which keeps the always-on-top pet window in sync.
   // See ./activeSessionHint for the priority logic.
+  // `unreadThreadIDs` lets an idle thread outrank a plain idle one when its
+  // latest completed turn has not been viewed yet, so a finished-but-unread
+  // conversation still surfaces in the bubble.
+  const unreadThreadIDs = useMemo(() => {
+    const ids = new Set<string>();
+    for (const thread of [state.thread, state.secondaryThread, ...state.threads]) {
+      if (!thread?.id) continue;
+      if (
+        isThreadUnread(
+          thread,
+          state.lastViewedTurnByThreadID[thread.id],
+          state.lastViewedMessageSeqByThreadID[thread.id],
+        )
+      ) {
+        ids.add(thread.id);
+      }
+    }
+    return ids;
+  }, [
+    state.thread,
+    state.secondaryThread,
+    state.threads,
+    state.lastViewedTurnByThreadID,
+    state.lastViewedMessageSeqByThreadID,
+  ]);
   useEffect(() => {
     const api = window.wuu as Partial<typeof window.wuu>;
-    if (typeof api.updateCodexPetHint !== "function") return;
-    const hint = deriveActiveSessionHint({
+    if (typeof api.updateCodexPetHints !== "function") return;
+    const hints = deriveActiveSessionHints({
       thread: state.thread ?? undefined,
       secondaryThread: state.secondaryThread ?? undefined,
       threads: state.threads,
+      unreadThreadIDs,
     });
-    void api.updateCodexPetHint(hint).catch(() => undefined);
-  }, [state.thread, state.secondaryThread, state.threads]);
+    void api.updateCodexPetHints(hints).catch(() => undefined);
+  }, [
+    state.thread,
+    state.secondaryThread,
+    state.threads,
+    unreadThreadIDs,
+  ]);
   const runningProviderNames = useMemo(() => {
     const names = new Set<string>();
     for (const thread of [state.thread, state.secondaryThread, ...state.threads]) {

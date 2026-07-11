@@ -189,7 +189,7 @@ describe("codexPetView", () => {
     const view = codexPetView(
       snapshot(true).pets[0],
       codexPetStateForRuntime({ running: true, status: "" }),
-      null,
+      [],
       "hidden",
     );
     expect(view.spritesheetURL).toBe("wuu-file://local/alpha");
@@ -198,18 +198,18 @@ describe("codexPetView", () => {
     expect(view.frames).toBe(6);
     expect(view.duration).toBe(1560);
     expect(view.label).toBe("Alpha Pet running");
-    expect(view.hint).toBeNull();
+    expect(view.hints).toEqual([]);
     expect(view.layout).toBe("hidden");
   });
 
-  it("carries the hint and layout through to the renderer payload", () => {
+  it("carries the hints and layout through to the renderer payload", () => {
     const view = codexPetView(
       snapshot(true).pets[0],
       codexPetStateForRuntime({ running: true, status: "" }),
-      sampleHint,
+      [sampleHint],
       "above",
     );
-    expect(view.hint).toEqual(sampleHint);
+    expect(view.hints).toEqual([sampleHint]);
     expect(view.layout).toBe("above");
   });
 
@@ -217,7 +217,7 @@ describe("codexPetView", () => {
     const view = codexPetView(
       snapshot(true).pets[0],
       codexPetStateForRuntime({ running: false, status: "" }),
-      null,
+      [],
       "hidden",
       "large",
     );
@@ -233,7 +233,7 @@ describe("codexPetWindowHTML", () => {
     codexPetView(
       snapshot(true).pets[0],
       codexPetStateForRuntime({ running: false, status: "" }),
-      null,
+      [],
       "hidden",
     ),
   );
@@ -256,79 +256,94 @@ describe("codexPetWindowHTML", () => {
     expect(html).toContain("img-src wuu-file:");
   });
 
-  it("renders the bubble DOM and jump action when a hint is provided", () => {
-    const withHint = codexPetWindowHTML(
-      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), sampleHint, "above"),
+  it("renders one bubble row per hint with title, preview, and jump wiring", () => {
+    const second: CodexPetHint = {
+      ...sampleHint,
+      thread_id: "thread-43",
+      title: "Fix flaky tests",
+      preview: "正在重跑用例",
+    };
+    const withHints = codexPetWindowHTML(
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), [sampleHint, second], "above"),
     );
-    expect(withHint).toContain(`data-thread-id="${sampleHint.thread_id}"`);
-    expect(withHint).toContain("wuu-pet://action/jump?thread_id=");
-    expect(withHint).toContain("-webkit-line-clamp:1");
+    expect(withHints).toContain(`data-thread-id="${sampleHint.thread_id}"`);
+    expect(withHints).toContain(`data-thread-id="${second.thread_id}"`);
+    expect(withHints).toContain("Refactor auth flow");
+    expect(withHints).toContain("Fix flaky tests");
+    expect(withHints).toContain("正在重跑用例");
+    expect(withHints).toContain("wuu-pet://action/jump?thread_id=");
+    // Row-level jump: the click handler resolves the clicked row, not a
+    // single bubble-wide thread id.
+    expect(withHints).toMatch(/closest\(['"]\.hint-row['"]\)/);
   });
 
-  it("keeps the live updater text-only so refreshes never touch missing nodes", () => {
-    // The bubble markup only renders `.preview`. Earlier revisions still
-    // queried `.title` and `.dot` from the live applyHint script; the missing
-    // nodes raised TypeError on every wuuPetView push and silently dropped the
-    // preview text. Pin the script to the text-only contract so the gap can't
-    // sneak back in.
-    const withHint = codexPetWindowHTML(
-      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), sampleHint, "above"),
+  it("escapes hint text in the inline-rendered rows", () => {
+    const hostile: CodexPetHint = {
+      ...sampleHint,
+      title: '<img src=x onerror="1">',
+      preview: '</div><script>bad()</script>',
+    };
+    const withHints = codexPetWindowHTML(
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), [hostile], "above"),
     );
-    expect(withHint).not.toMatch(/bubble\.querySelector\(['"]\.title['"]\)/);
-    expect(withHint).not.toMatch(/bubble\.querySelector\(['"]\.dot['"]\)/);
-    expect(withHint).not.toMatch(/STATUS_COLORS/);
-    expect(withHint).not.toMatch(/classList\.toggle\(['"]attention['"]/);
-    expect(withHint).toMatch(/bubble\.querySelector\(['"]\.preview['"]\)/);
+    expect(withHints).not.toContain('<img src=x');
+    expect(withHints).not.toContain("<script>bad()");
+    expect(withHints).toContain("&lt;img src=x");
   });
 
-  it("fades the preview out, swaps text, then fades it back in on commentary change", () => {
-    // Pin the swap animation CSS so the bubble preview never regresses to a
-    // flash on text change. .preview carries the fade-in transition; the
+  it("keeps the live updater DOM-built so pushed strings can't inject markup", () => {
+    // Rows are rebuilt with createElement/textContent — never innerHTML —
+    // so a commentary string containing markup renders as text.
+    const withHints = codexPetWindowHTML(
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), [sampleHint], "above"),
+    );
+    expect(withHints).toMatch(/document\.createElement\(['"]div['"]\)/);
+    expect(withHints).toMatch(/preview\.textContent\s*=\s*hint\.preview/);
+    expect(withHints).not.toMatch(/bubble\.innerHTML/);
+  });
+
+  it("fades the rows out, rebuilds, then fades back in on content change", () => {
+    // Pin the swap animation CSS so the bubble never regresses to a flash
+    // on content change. .hint-row carries the fade-in transition; the
     // .is-swapping modifier sets opacity 0 with a shorter fade-out so the
-    // cycle reads as "fade out -> swap -> fade in" (~320ms total). Without
-    // these rules the bubble would update instantly and feel jumpy when the
-    // first commentary hands off to the second, or when the bubble disappears.
-    const withHint = codexPetWindowHTML(
-      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), sampleHint, "above"),
+    // cycle reads as "fade out -> rebuild -> fade in" (~320ms total).
+    const withHints = codexPetWindowHTML(
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), [sampleHint], "above"),
     );
-    expect(withHint).toMatch(/\.bubble\s+\.preview\s*\{[^}]*transition:\s*opacity\s+180ms\s+ease/);
-    expect(withHint).toMatch(/\.bubble\.is-swapping\s+\.preview\s*\{[^}]*opacity:\s*0/);
-    expect(withHint).toMatch(/\.bubble\.is-swapping\s+\.preview\s*\{[^}]*transition:\s*opacity\s+140ms\s+ease/);
+    expect(withHints).toMatch(/\.bubble\s+\.hint-row\{[^}]*transition:opacity 180ms ease/);
+    expect(withHints).toMatch(/\.bubble\.is-swapping\s+\.hint-row\{[^}]*opacity:0/);
+    expect(withHints).toMatch(/\.bubble\.is-swapping\s+\.hint-row\{[^}]*transition:opacity 140ms ease/);
   });
 
   it("runs the swap through a state machine so a fast second push doesn't strand mid-fade", () => {
     // The state machine has three contracts: (1) isFirstApply gates the
-    // initial render so the inline-rendered text doesn't fade on first
+    // initial render so the inline-rendered rows don't fade on first
     // mount, (2) cancelSwap clears any pending setTimeout AND removes the
     // .is-swapping class so a back-to-back push doesn't leave the dimmed
-    // class lingering over mismatched text, and (3) the same-text branch
-    // short-circuits before scheduling a swap. Pin all three so the
-    // animation contract can't drift back to a no-fade world.
-    const withHint = codexPetWindowHTML(
-      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), sampleHint, "above"),
+    // class lingering over mismatched rows, and (3) the same-signature
+    // branch short-circuits before scheduling a swap.
+    const withHints = codexPetWindowHTML(
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), [sampleHint], "above"),
     );
-    expect(withHint).toMatch(/isFirstApply\s*=\s*true/);
-    expect(withHint).toMatch(/pendingSwap\s*=\s*null/);
-    expect(withHint).toMatch(/clearTimeout\(pendingSwap\)/);
-    expect(withHint).toMatch(/bubble\.classList\.remove\(['"]is-swapping['"]\)/);
-    expect(withHint).toMatch(/bubble\.classList\.add\(['"]is-swapping['"]\)/);
-    expect(withHint).toMatch(/if\s*\(oldPreview\s*===\s*newPreview\)/);
+    expect(withHints).toMatch(/isFirstApply\s*=\s*true/);
+    expect(withHints).toMatch(/pendingSwap\s*=\s*null/);
+    expect(withHints).toMatch(/clearTimeout\(pendingSwap\)/);
+    expect(withHints).toMatch(/bubble\.classList\.remove\(['"]is-swapping['"]\)/);
+    expect(withHints).toMatch(/bubble\.classList\.add\(['"]is-swapping['"]\)/);
+    expect(withHints).toMatch(/hintsSignature\(usable\)\s*===\s*hintsSignature\(currentHints\)/);
   });
 
-  it("hides the bubble whenever the pushed hint has no preview text", () => {
-    // The renderer drops the Thread.preview fallback, so a top-ranked
-    // thread with no stable agent_message pushes a non-null hint with
-    // empty preview here. The window-side applyHint must treat that as
-    // "hide" the same way it treats a null hint, so the bubble never
-    // surfaces stale text from any source. Pin the show/hide gate on
-    // preview emptiness and the trim() so whitespace-only previews also
-    // hide.
-    const withHint = codexPetWindowHTML(
-      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), sampleHint, "above"),
+  it("hides the bubble whenever no pushed hint has preview text", () => {
+    // The renderer omits empty-preview rows at derivation, but the
+    // window-side applyHints keeps the same guard: rows without
+    // commentary are filtered, and an empty result hides the bubble card
+    // entirely so no stale text is ever shown.
+    const withHints = codexPetWindowHTML(
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: true, status: "" }), [sampleHint], "above"),
     );
-    expect(withHint).toMatch(/trimmedPreview\s*=\s*\(hint\?\.preview\s*\?\?\s*['"]['"]\)/);
-    expect(withHint).toMatch(/!\s*hint\s*\|\|\s*trimmedPreview\.length\s*===\s*0/);
-    expect(withHint).toMatch(/bubble\.style\.display\s*=\s*['"]none['"]/);
+    expect(withHints).toMatch(/\(h\.preview\s*\|\|\s*''\)\.trim\(\)/);
+    expect(withHints).toMatch(/usable\.length\s*===\s*0/);
+    expect(withHints).toMatch(/bubble\.style\.display\s*=\s*['"]none['"]/);
   });
 
   it("offers standard four-corner + four-edge resize zones with directional cursors", () => {
@@ -338,7 +353,7 @@ describe("codexPetWindowHTML", () => {
     // ::after — those read as a stray black line floating over the pet,
     // so pin that no pseudo-element chrome comes back.
     const html = codexPetWindowHTML(
-      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: false, status: "" }), null, "hidden"),
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: false, status: "" }), [], "hidden"),
     );
     for (const corner of ["nw", "ne", "sw", "se"]) {
       expect(html).toContain(`class="resize-handle corner-${corner}"`);
@@ -364,7 +379,7 @@ describe("codexPetWindowHTML", () => {
     // throttle, the commit marker, and that the old snap-to-next-preset
     // flow is gone.
     const html = codexPetWindowHTML(
-      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: false, status: "" }), null, "hidden"),
+      codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: false, status: "" }), [], "hidden"),
     );
     expect(html).toContain("wuu-pet://action/scale?value=");
     expect(html).toContain("&commit=1");
@@ -380,7 +395,7 @@ describe("codexPetWindowHTML", () => {
       codexPetView(
         snapshot(true).pets[0],
         codexPetStateForRuntime({ running: false, status: "" }),
-        null,
+        [],
         "hidden",
         "large",
       ),
@@ -594,13 +609,13 @@ describe("CodexPetWindowManager", () => {
     codexPetElectronMocks.setBounds.mockClear();
     codexPetElectronMocks.executeJavaScript.mockClear();
 
-    manager.setHint(sampleHint);
+    manager.setHints([sampleHint]);
 
-    // With the single-line card-chrome bubble at 280×44 (BUBBLE_HEIGHT —
-    // wraps the 12px inner padding plus 1 line of 13/1.45 text), the
-    // window height comes out to 8 (BUBBLE_PADDING) + 44 (BUBBLE_HEIGHT) +
-    // 8 (BUBBLE_GAP) + 104 (spriteH) + 8 (BUBBLE_PADDING) = 172. The
-    // width is `max(spriteW, bubble.width) = max(96, 280) = 280`.
+    // With one single-line row the bubble card is 280×44 (BUBBLE_HEIGHT_BASE
+    // — 12px inner padding plus one 19px row, with 1px slack), so the
+    // window height comes out to 8 (BUBBLE_PADDING) + 44 + 8 (BUBBLE_GAP) +
+    // 104 (spriteH) + 8 (BUBBLE_PADDING) = 172. The width is
+    // `max(spriteW, bubble.width) = max(96, 280) = 280`.
     expect(codexPetElectronMocks.setBounds).toHaveBeenCalledWith(
       expect.objectContaining({ width: 280, height: 172 }),
     );
@@ -609,10 +624,58 @@ describe("CodexPetWindowManager", () => {
     expect(lastCall).toContain("wuuPetView");
     expect(lastCall).toContain("thread-42");
 
-    // Simulate a bubble click: the renderer navigates to wuu-pet://action/jump
+    // Simulate a row click: the renderer navigates to wuu-pet://action/jump
     const willNavigate = codexPetElectronMocks.capturedListeners["wc:will-navigate"]?.[0];
     willNavigate!({ preventDefault: vi.fn() }, "wuu-pet://action/jump?thread_id=thread-42");
     expect(jumpRequested).toHaveBeenCalledWith(sampleHint);
+  });
+
+  it("grows the bubble by one row step per extra hint, capped at three", () => {
+    const manager = new CodexPetWindowManager(() => undefined, () => undefined);
+    manager.sync(enabledSnapshot());
+    const didFinishLoad =
+      codexPetElectronMocks.capturedListeners["wc:did-finish-load"]?.[0];
+    didFinishLoad!({});
+    codexPetElectronMocks.setBounds.mockClear();
+
+    const second: CodexPetHint = { ...sampleHint, thread_id: "thread-43", title: "B" };
+    const third: CodexPetHint = { ...sampleHint, thread_id: "thread-44", title: "C" };
+    const fourth: CodexPetHint = { ...sampleHint, thread_id: "thread-45", title: "D" };
+
+    // Three rows: bubble 44 + 2*25 = 94 → window 8+94+8+104+8 = 222.
+    manager.setHints([sampleHint, second, third]);
+    expect(codexPetElectronMocks.setBounds).toHaveBeenCalledWith(
+      expect.objectContaining({ width: 280, height: 222 }),
+    );
+
+    // A fourth hint is dropped at the trust boundary: same 3-row bounds
+    // and the pushed view carries only the first three thread ids.
+    codexPetElectronMocks.setBounds.mockClear();
+    codexPetElectronMocks.executeJavaScript.mockClear();
+    manager.setHints([sampleHint, second, third, fourth]);
+    const lastCall = codexPetElectronMocks.executeJavaScript.mock.calls.at(-1)?.[0] as string | undefined;
+    if (lastCall) {
+      expect(lastCall).not.toContain("thread-45");
+    }
+    for (const call of codexPetElectronMocks.setBounds.mock.calls) {
+      expect((call[0] as { height: number }).height).toBe(222);
+    }
+  });
+
+  it("drops rows without commentary at the trust boundary", () => {
+    const manager = new CodexPetWindowManager(() => undefined, () => undefined);
+    manager.sync(enabledSnapshot());
+    const didFinishLoad =
+      codexPetElectronMocks.capturedListeners["wc:did-finish-load"]?.[0];
+    didFinishLoad!({});
+    codexPetElectronMocks.setBounds.mockClear();
+
+    const empty: CodexPetHint = { ...sampleHint, thread_id: "thread-46", preview: "  " };
+    manager.setHints([sampleHint, empty]);
+    // Only one usable row → single-row bubble height (window 172).
+    expect(codexPetElectronMocks.setBounds).toHaveBeenCalledWith(
+      expect.objectContaining({ width: 280, height: 172 }),
+    );
   });
 
   it("resizes the pet window and notifies the host when setSize() picks a non-default size", () => {
