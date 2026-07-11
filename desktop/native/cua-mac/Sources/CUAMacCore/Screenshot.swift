@@ -134,7 +134,7 @@ func captureForegroundWindowPNG(processID: pid_t) throws -> WindowCapture {
     if let windowImage {
         captured = (windowImage, window.frame)
     } else {
-        return try captureSystemRegionPNG(window.frame)
+        return try captureSystemWindowPNG(window.id, frame: window.frame)
     }
     guard let data = NSBitmapImageRep(cgImage: captured.image).representation(using: .png, properties: [:]) else {
         throw ComputerError.operationFailed("foreground window screenshot produced no image")
@@ -149,7 +149,7 @@ func captureForegroundWindowPNG(processID: pid_t) throws -> WindowCapture {
     )
 }
 
-private func captureSystemRegionPNG(_ frame: CGRect, timeout: TimeInterval = 4) throws -> WindowCapture {
+private func captureSystemWindowPNG(_ windowID: CGWindowID, frame: CGRect, timeout: TimeInterval = 4) throws -> WindowCapture {
     let path = FileManager.default.temporaryDirectory
         .appendingPathComponent("wuu-cua-\(UUID().uuidString).png")
     defer { try? FileManager.default.removeItem(at: path) }
@@ -158,7 +158,8 @@ private func captureSystemRegionPNG(_ frame: CGRect, timeout: TimeInterval = 4) 
     process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
     process.arguments = [
         "-x",
-        "-R\(Int(frame.origin.x)),\(Int(frame.origin.y)),\(Int(frame.width)),\(Int(frame.height))",
+        "-o",
+        "-l\(windowID)",
         path.path,
     ]
     let finished = DispatchSemaphore(value: 0)

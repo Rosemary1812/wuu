@@ -291,16 +291,32 @@ public final class MacComputerBackend: ComputerBackend {
     }
 
     private func activate(_ app: NSRunningApplication) throws {
-        guard app.activate(options: [.activateAllWindows]) else {
+        app.unhide()
+        guard app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps]) else {
             throw ComputerError.operationFailed("could not activate \(app.localizedName ?? "target app")")
         }
-        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.12))
+        let application = AXUIElementCreateApplication(app.processIdentifier)
+        _ = AXUIElementSetAttributeValue(application, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+        var focusedWindow: CFTypeRef?
+        if AXUIElementCopyAttributeValue(application, kAXFocusedWindowAttribute as CFString, &focusedWindow) == .success,
+           let window = focusedWindow as! AXUIElement? {
+            _ = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        }
+        let deadline = Date(timeIntervalSinceNow: 2)
+        repeat {
+            if app.isActive || NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier {
+                return
+            }
+            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.02))
+        } while Date() < deadline && !app.isTerminated
+        throw ComputerError.operationFailed("\(app.localizedName ?? "target app") did not become active")
     }
 
     private func click(_ command: ComputerCommand, app: NSRunningApplication) throws {
         if command.elementID != nil {
             let target = try element(command, app: app)
             if axActions(target).contains(kAXPressAction as String) {
+                try activate(app)
                 try performAXAction(target, action: kAXPressAction as String)
                 return
             }
@@ -403,16 +419,17 @@ public final class MacComputerBackend: ComputerBackend {
         let target = try element(command, app: app)
         let value = command.value ?? command.text
         guard let value else { throw ComputerError.invalidArguments("value is required") }
+        try activate(app)
         try setAXValue(target, attribute: kAXValueAttribute as String, value: value as CFString)
     }
 
     private func typeText(_ command: ComputerCommand, app: NSRunningApplication) throws {
         guard let text = command.text else { throw ComputerError.invalidArguments("text is required") }
+        try activate(app)
         if command.elementID != nil {
             let target = try element(command, app: app)
             _ = AXUIElementSetAttributeValue(target, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         }
-        try activate(app)
         let units = Array(text.utf16)
         if units.isEmpty { return }
         guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
@@ -431,6 +448,7 @@ public final class MacComputerBackend: ComputerBackend {
     private func selectText(_ command: ComputerCommand, app: NSRunningApplication) throws {
         let target = try element(command, app: app)
         guard let needle = command.text, !needle.isEmpty else { throw ComputerError.invalidArguments("text is required") }
+        try activate(app)
         guard let fullText = axString(target, kAXValueAttribute as String) else {
             throw ComputerError.unsupported("element has no string AXValue")
         }
@@ -451,6 +469,7 @@ public final class MacComputerBackend: ComputerBackend {
     private func performSecondaryAction(_ command: ComputerCommand, app: NSRunningApplication) throws {
         let target = try element(command, app: app)
         guard let action = command.actionName, !action.isEmpty else { throw ComputerError.invalidArguments("action_name is required") }
+        try activate(app)
         try performAXAction(target, action: action)
     }
 
