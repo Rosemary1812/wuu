@@ -76,6 +76,14 @@
   gap: 4px;
 }
 
+/* The container `gap` above also inserts 4px between the traffic-spacer and
+ * the brand, which would push the settings wordmark lower than the main
+ * sidebar's. Counter-shift the brand back so the two `wuu` wordmarks stay on
+ * the same baseline when toggling between main and settings. */
+.settings-sidebar .sidebar-brand {
+  margin-top: -4px;
+}
+
 .settings-sidebar .traffic-spacer {
   flex: 0 0 auto;
 }
