@@ -820,16 +820,6 @@ export function AppSidebar({
                       onToggleSidebarSectionCollapsed(SIDEBAR_SECTION_GROUP)
                     }
                     actions={groupActions}
-                    emptyNote={
-                      <button
-                        type="button"
-                        className="sidebar-section-empty-note-action"
-                        disabled={!state.initialized}
-                        onClick={openGroupThreadDialog}
-                      >
-                        添加群聊
-                      </button>
-                    }
                   >
                     {groupRows.length > 0 ? (
                       <PinnedThreadList
@@ -846,7 +836,18 @@ export function AppSidebar({
                         onRename={onRenameThread}
                         
                       />
-                    ) : null}
+                    ) : (
+                      <div className="sidebar-section-empty-list">
+                        <button
+                          type="button"
+                          className="sidebar-section-empty-note sidebar-section-empty-note-action"
+                          disabled={!state.initialized}
+                          onClick={openGroupThreadDialog}
+                        >
+                          添加群聊
+                        </button>
+                      </div>
+                    )}
                   </SidebarSection>
                 </SortableSection>
               );

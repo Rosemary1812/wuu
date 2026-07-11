@@ -238,6 +238,12 @@
   padding: var(--sidebar-list-pad-y) 0;
 }
 
+.sidebar-section-empty-list {
+  display: grid;
+  gap: var(--sidebar-row-gap);
+  padding: var(--sidebar-list-pad-y) 0;
+}
+
 /* Row spec (height / padding / font / hover / focus / active / unread)
  * comes from the shared sidebar row family in sidebar.css
  * (sidebar-groups-andy-workspaces.md §1.1). The row itself is a single
