@@ -3,19 +3,23 @@ import CUAMacCore
 import Foundation
 
 _ = NSApplication.shared
-if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "--stream" {
-    let target = CommandLine.arguments[2]
-    NSApplication.shared.setActivationPolicy(.accessory)
-    FileHandle.standardInput.readabilityHandler = { input in
-        if input.availableData.isEmpty { exit(0) }
+if CommandLine.arguments.count >= 8, CommandLine.arguments[1] == "--native-pip" {
+    let activityID = CommandLine.arguments[2]
+    let target = CommandLine.arguments[3]
+    let values = CommandLine.arguments[4...7].compactMap(Double.init)
+    guard values.count == 4 else {
+        FileHandle.standardError.write(Data("wuu-cua-mac native PiP failed: invalid initial frame\n".utf8))
+        exit(2)
     }
+    let frame = CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
+    NSApplication.shared.setActivationPolicy(.accessory)
     Task {
         do {
-            try await runWindowFrameStream(target: target)
+            try await runNativePiP(configuration: NativePiPConfiguration(activityID: activityID, target: target, frame: frame))
             exit(0)
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            FileHandle.standardError.write(Data("wuu-cua-mac stream failed: \(message)\n".utf8))
+            FileHandle.standardError.write(Data("wuu-cua-mac native PiP failed: \(message)\n".utf8))
             exit(1)
         }
     }

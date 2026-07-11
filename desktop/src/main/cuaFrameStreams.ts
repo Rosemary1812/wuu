@@ -1,91 +1,68 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import type { Rectangle } from "electron";
 
-export type CUAFrameMetadata = {
-  event: string;
-  revision?: number;
+export type CUANativePiPEvent = {
+  event: "ready" | "user_close" | "user_input" | "capture_status";
   width?: number;
   height?: number;
-  mime_type?: string;
-  capture_mode?: "full_window" | "visible_fallback";
-  status?: CUACaptureStatus;
+  status?: "healthy" | "idle" | "blank" | "suspended" | "stopped" | "error";
   message?: string;
 };
 
-export type CUACaptureStatus = "healthy" | "idle" | "blank" | "suspended" | "stopped" | "error";
+export class CUALineDecoder {
+  private buffer = "";
 
-export class CUAFrameDecoder {
-  private buffer = Buffer.alloc(0);
-
-  push(chunk: Buffer): Array<{ metadata: CUAFrameMetadata; payload: Buffer }> {
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-    const frames: Array<{ metadata: CUAFrameMetadata; payload: Buffer }> = [];
-    while (this.buffer.length >= 8) {
-      const metadataLength = this.buffer.readUInt32BE(0);
-      const payloadLength = this.buffer.readUInt32BE(4);
-      if (metadataLength > 1024 * 1024 || payloadLength > 16 * 1024 * 1024) {
-        throw new Error("invalid CUA frame envelope size");
-      }
-      const total = 8 + metadataLength + payloadLength;
-      if (this.buffer.length < total) break;
-      const metadata = JSON.parse(this.buffer.subarray(8, 8 + metadataLength).toString("utf8")) as CUAFrameMetadata;
-      const payload = Buffer.from(this.buffer.subarray(8 + metadataLength, total));
-      this.buffer = this.buffer.subarray(total);
-      frames.push({ metadata, payload });
-    }
-    return frames;
+  push(chunk: Buffer | string): CUANativePiPEvent[] {
+    this.buffer += chunk.toString();
+    const lines = this.buffer.split("\n");
+    this.buffer = lines.pop() ?? "";
+    return lines
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as CUANativePiPEvent);
   }
 }
 
-type FrameCallback = (path: string, metadata: CUAFrameMetadata) => void;
-type ErrorCallback = (message: string) => void;
-type CaptureStatusCallback = (status: CUACaptureStatus) => void;
+type Interaction = {
+  kind: "click" | "drag" | "scroll" | "type" | "observe";
+  x: number;
+  y: number;
+  to_x?: number;
+  to_y?: number;
+  revision: number;
+};
 
-export class CUAFrameStream {
+export class CUANativePiP {
   private child: ChildProcessWithoutNullStreams | undefined;
-  private latest: { payload: Buffer; metadata: CUAFrameMetadata; generation: number } | undefined;
-  private writing = false;
-  private readonly framePath: string;
-  private readonly instanceID = randomUUID();
-  private generation = 0;
 
   constructor(
     private readonly helper: string,
     private readonly activityID: string,
     private readonly target: string,
-    private readonly onFrame: FrameCallback,
-    private readonly onError: ErrorCallback,
-    private readonly onCaptureStatus: CaptureStatusCallback = () => undefined,
-    private readonly onUserInput: () => void = () => undefined,
-  ) {
-    const safeID = createHash("sha256").update(`${activityID}\0${target}`).digest("hex").slice(0, 24);
-    this.framePath = join(tmpdir(), "wuu-cua-live", `${safeID}.jpg`);
-  }
+    private readonly initialBounds: Rectangle,
+    private readonly onEvent: (event: CUANativePiPEvent) => void,
+    private readonly onError: (message: string) => void,
+  ) {}
 
   start(): void {
     if (this.child) return;
-    const generation = ++this.generation;
-    const decoder = new CUAFrameDecoder();
-    const child = spawn(this.helper, ["--stream", this.target], { stdio: ["pipe", "pipe", "pipe"] });
+    const decoder = new CUALineDecoder();
+    const { x, y, width, height } = this.initialBounds;
+    const child = spawn(this.helper, [
+      "--native-pip",
+      this.activityID,
+      this.target,
+      String(x),
+      String(y),
+      String(width),
+      String(height),
+    ], { stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
     child.stdout.on("data", (chunk: Buffer) => {
       try {
-        for (const frame of decoder.push(chunk)) {
-          if (frame.metadata.event === "frame" && frame.payload.length > 0) {
-            this.latest = { ...frame, generation };
-            void this.flushLatest();
-          } else if (frame.metadata.event === "error") {
-            this.onError(frame.metadata.message ?? "live capture stopped");
-          } else if (frame.metadata.event === "capture_status" && frame.metadata.status) {
-            this.onCaptureStatus(frame.metadata.status);
-          } else if (frame.metadata.event === "user_input") {
-            this.onUserInput();
-          }
-        }
+        for (const event of decoder.push(chunk)) this.onEvent(event);
       } catch (error) {
         this.onError(error instanceof Error ? error.message : String(error));
         this.stop();
@@ -98,47 +75,32 @@ export class CUAFrameStream {
     child.on("exit", (code) => {
       if (this.child !== child) return;
       this.child = undefined;
-      if (code && code !== 0) this.onError(stderr.trim() || `live capture exited with code ${code}`);
+      if (code && code !== 0) this.onError(stderr.trim() || `native PiP exited with code ${code}`);
     });
+  }
+
+  setVisible(visible: boolean): void {
+    this.send({ type: "visible", visible });
+  }
+
+  animateInteraction(interaction?: Interaction): void {
+    if (!interaction || interaction.kind === "observe") return;
+    this.send({ type: "interaction", ...interaction });
   }
 
   stop(): void {
     const child = this.child;
-    this.generation += 1;
     this.child = undefined;
-    if (child && !child.killed) child.kill("SIGTERM");
-    this.latest = undefined;
+    if (!child) return;
+    if (!child.stdin.destroyed) child.stdin.write(`${JSON.stringify({ type: "close" })}\n`);
+    setTimeout(() => { if (!child.killed) child.kill("SIGTERM"); }, 500).unref?.();
   }
 
-  isLive(): boolean {
-    return this.child !== undefined;
-  }
+  isLive(): boolean { return this.child !== undefined; }
 
-  private async flushLatest(): Promise<void> {
-    if (this.writing) return;
-    this.writing = true;
-    try {
-      await mkdir(join(tmpdir(), "wuu-cua-live"), { recursive: true });
-      while (this.latest) {
-        const frame = this.latest;
-        this.latest = undefined;
-        if (frame.generation !== this.generation) continue;
-        const temporary = `${this.framePath}.${process.pid}.${this.instanceID}.tmp`;
-        await writeFile(temporary, frame.payload, { mode: 0o600 });
-        if (frame.generation !== this.generation) {
-          await unlink(temporary).catch(() => undefined);
-          continue;
-        }
-        await rename(temporary, this.framePath);
-        if (frame.generation !== this.generation) continue;
-        this.onFrame(this.framePath, frame.metadata);
-      }
-    } catch (error) {
-      this.onError(error instanceof Error ? error.message : String(error));
-    } finally {
-      this.writing = false;
-      if (this.latest) void this.flushLatest();
-    }
+  private send(command: object): void {
+    if (!this.child || this.child.stdin.destroyed) return;
+    this.child.stdin.write(`${JSON.stringify(command)}\n`);
   }
 }
 
