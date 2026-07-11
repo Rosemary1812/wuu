@@ -92,6 +92,10 @@ private func testInitializesAndAdvertisesFullComputerTool() throws {
     try expect(foregroundPolicy?["default"] as? String == "avoid", "foreground policy defaults to avoid")
     let timeout = properties?["timeout"] as? [String: Any]
     try expect((timeout?["description"] as? String)?.contains("changed=false") == true, "wait timeout is documented as a normal result")
+    let x = properties?["x"] as? [String: Any]
+    try expect((x?["description"] as? String)?.contains("scrollable region") == true, "scroll coordinates document their target region")
+    let pages = properties?["pages"] as? [String: Any]
+    try expect((pages?["description"] as? String)?.contains("line-scroll events") == true, "scroll distance documents natural event sequencing")
     try expect((tools?.first?["description"] as? String)?.contains("normal timeout is not an error") == true, "tool description teaches normal wait timeout semantics")
 }
 

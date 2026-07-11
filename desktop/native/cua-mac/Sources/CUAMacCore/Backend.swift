@@ -808,20 +808,25 @@ public final class MacComputerBackend: ComputerBackend {
     }
 
     private func inputPoint(x: Double, y: Double, coordinateSpace: String?, app: NSRunningApplication) throws -> CGPoint {
-        guard let geometry = lastCaptureGeometry[app.processIdentifier] else {
-            throw ComputerError.invalidArguments("observe the app before using screenshot coordinates")
-        }
         switch coordinateSpace ?? "screenshot" {
-        case "normalized":
-            return try geometry.screenPoint(normalizedX: x, normalizedY: y)
-        case "screenshot":
-            return try geometry.screenPoint(x: x, y: y)
         case "screen":
             let point = CGPoint(x: x, y: y)
-            guard geometry.windowFrame.contains(point) else {
+            let frame = lastCaptureGeometry[app.processIdentifier]?.windowFrame
+                ?? primaryWindowFrame(AXUIElementCreateApplication(app.processIdentifier))
+            guard let frame, frame.contains(point) else {
                 throw ComputerError.invalidArguments("screen coordinates must be inside the target window frame")
             }
             return point
+        case "normalized":
+            guard let geometry = lastCaptureGeometry[app.processIdentifier] else {
+                throw ComputerError.invalidArguments("observe the app before using normalized coordinates")
+            }
+            return try geometry.screenPoint(normalizedX: x, normalizedY: y)
+        case "screenshot":
+            guard let geometry = lastCaptureGeometry[app.processIdentifier] else {
+                throw ComputerError.invalidArguments("observe the app before using screenshot coordinates")
+            }
+            return try geometry.screenPoint(x: x, y: y)
         default:
             throw ComputerError.invalidArguments("coordinate_space must be normalized, screenshot, or screen")
         }
@@ -870,39 +875,52 @@ public final class MacComputerBackend: ComputerBackend {
 
     private func scroll(_ command: ComputerCommand, app: NSRunningApplication) throws -> String {
         let pages = max(1, min(command.pages ?? 1, 20))
-        let amount = Int32(pages * 720)
         let direction = command.direction?.lowercased() ?? "down"
-        let vertical: Int32 = direction == "up" ? amount : direction == "down" ? -amount : 0
-        let horizontal: Int32 = direction == "left" ? amount : direction == "right" ? -amount : 0
+        let vertical: Int32 = direction == "up" ? 3 : direction == "down" ? -3 : 0
+        let horizontal: Int32 = direction == "left" ? 3 : direction == "right" ? -3 : 0
         // Scroll must land inside the target: an element frame when given, otherwise
         // the app's primary window center. Without a point, directed scroll hit-tests
         // at the global origin and is dropped.
-        let elementFrame = try command.elementID.flatMap { _ in axFrame(try element(command, app: app)) }
-        let frame = elementFrame ?? primaryWindowFrame(AXUIElementCreateApplication(app.processIdentifier))
-        let point = frame.map { CGPoint(x: $0.midX, y: $0.midY) }
+        let point: CGPoint? = if command.elementID != nil {
+            try command.elementID.flatMap { _ in axFrame(try element(command, app: app)) }
+                .map { CGPoint(x: $0.midX, y: $0.midY) }
+        } else if let x = command.x, let y = command.y {
+            try inputPoint(x: x, y: y, coordinateSpace: command.coordinateSpace, app: app)
+        } else {
+            primaryWindowFrame(AXUIElementCreateApplication(app.processIdentifier))
+                .map { CGPoint(x: $0.midX, y: $0.midY) }
+        }
         let pid = app.processIdentifier
         return try performDirectedOrForeground(command, app: app,
-            directed: { try postScrollToPid(pid, vertical: vertical, horizontal: horizontal, at: point) },
-            foreground: { try self.postScrollGlobal(vertical: vertical, horizontal: horizontal, at: point) })
+            directed: { try postScrollToPid(pid, vertical: vertical, horizontal: horizontal, steps: pages * 4, at: point) },
+            foreground: { try self.postScrollGlobal(vertical: vertical, horizontal: horizontal, steps: pages * 4, at: point) })
     }
 
     private func primaryWindowFrame(_ application: AXUIElement) -> CGRect? {
+        let largest = appWindows(application)
+            .compactMap { axFrame($0) }
+            .filter { $0.width > 1 && $0.height > 1 }
+            .max(by: { $0.width * $0.height < $1.width * $1.height })
         if let focused = axValue(application, kAXFocusedWindowAttribute as String),
            CFGetTypeID(focused) == AXUIElementGetTypeID(),
-           let frame = axFrame(focused as! AXUIElement) {
+           let frame = axFrame(focused as! AXUIElement),
+           frame.width * frame.height >= (largest?.width ?? 0) * (largest?.height ?? 0) * 0.35 {
             return frame
         }
-        return appWindows(application).compactMap { axFrame($0) }.max(by: { $0.width * $0.height < $1.width * $1.height })
+        return largest
     }
 
-    private func postScrollGlobal(vertical: Int32, horizontal: Int32, at point: CGPoint?) throws {
+    private func postScrollGlobal(vertical: Int32, horizontal: Int32, steps: Int, at point: CGPoint?) throws {
         if let point {
             markSynthetic(CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left))?.post(tap: .cghidEventTap)
         }
-        guard let event = markSynthetic(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: vertical, wheel2: horizontal, wheel3: 0)) else {
-            throw ComputerError.operationFailed("could not create scroll event")
+        for _ in 0..<max(1, steps) {
+            guard let event = markSynthetic(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: vertical, wheel2: horizontal, wheel3: 0)) else {
+                throw ComputerError.operationFailed("could not create scroll event")
+            }
+            event.post(tap: .cghidEventTap)
+            usleep(16_000)
         }
-        event.post(tap: .cghidEventTap)
     }
 
     private func setValue(_ command: ComputerCommand, app: NSRunningApplication) throws {

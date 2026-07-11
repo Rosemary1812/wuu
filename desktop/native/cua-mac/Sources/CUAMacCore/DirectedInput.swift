@@ -84,15 +84,18 @@ func postClickToPid(_ pid: pid_t, point: CGPoint, button name: String?, count: I
     }
 }
 
-func postScrollToPid(_ pid: pid_t, vertical: Int32, horizontal: Int32, at point: CGPoint?) throws {
+func postScrollToPid(_ pid: pid_t, vertical: Int32, horizontal: Int32, steps: Int, at point: CGPoint?) throws {
     let source = syntheticEventSource()
-    guard let event = markSynthetic(CGEvent(scrollWheelEvent2Source: source, units: .pixel, wheelCount: 2, wheel1: vertical, wheel2: horizontal, wheel3: 0)) else {
-        throw ComputerError.operationFailed("could not create scroll event")
+    for _ in 0..<max(1, steps) {
+        guard let event = markSynthetic(CGEvent(scrollWheelEvent2Source: source, units: .line, wheelCount: 2, wheel1: vertical, wheel2: horizontal, wheel3: 0)) else {
+            throw ComputerError.operationFailed("could not create scroll event")
+        }
+        // postToPid does not move the cursor, so pin the scroll to the target point;
+        // otherwise the app hit-tests it at the global origin.
+        if let point { event.location = point }
+        event.postToPid(pid)
+        usleep(16_000)
     }
-    // postToPid does not move the cursor, so pin the scroll to the target point;
-    // otherwise the app hit-tests it at the global origin.
-    if let point { event.location = point }
-    event.postToPid(pid)
 }
 
 func postDragToPid(_ pid: pid_t, from start: CGPoint, to end: CGPoint) throws {
