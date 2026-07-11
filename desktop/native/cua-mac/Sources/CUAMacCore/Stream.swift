@@ -264,7 +264,7 @@ public func runWindowFrameStream(target: String) async throws {
         guard let error else { return }
         output.lockFailure(error)
     }
-    let firstFrameDeadline = Date(timeIntervalSinceNow: 1)
+    let firstFrameDeadline = Date(timeIntervalSinceNow: 3)
     while !output.receivedFirstFrame(), output.streamFailure() == nil, Date() < firstFrameDeadline {
         try await Task.sleep(for: .milliseconds(50))
     }
@@ -273,11 +273,19 @@ public func runWindowFrameStream(target: String) async throws {
         var previousCapture: Data?
         var emittedFirstFrame = false
         while true {
-            let capture = try captureWindowPNG(
-                processID: app.processIdentifier,
-                timeout: 2,
-                preferredWindowFrame: focusedWindowFrame(processID: app.processIdentifier)
-            )
+            let processID = app.processIdentifier
+            let preferredFrame = focusedWindowFrame(processID: processID)
+            let capture = try await Task.detached {
+                do {
+                    return try captureWindowPNG(
+                        processID: processID,
+                        timeout: 3,
+                        preferredWindowFrame: preferredFrame
+                    )
+                } catch {
+                    return try captureForegroundWindowPNG(processID: processID)
+                }
+            }.value
             if previousCapture != capture.data {
                 guard writer.writeCapture(capture) else {
                     throw ComputerError.operationFailed("live window capture could not encode a frame")
