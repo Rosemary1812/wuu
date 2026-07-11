@@ -3,6 +3,7 @@ import type { ActivitySession, ServerEvent } from "../shared/protocol";
 import {
   activityActionFromURL,
   activityActionsHTML,
+  activityAspectRatio,
   activityControlMethod,
   activityDockAnchor,
   activityHasVisibleContent,
@@ -10,6 +11,7 @@ import {
   activityViewState,
   activityVisibleForThread,
   activityWindowCanCreate,
+  activityWindowResizeOptions,
   activityWindowStackingOptions,
   cuaActivityFromServerEvent,
   cuaActivityHTML,
@@ -48,6 +50,18 @@ describe("CUA Activity windows", () => {
     });
   });
 
+  it("uses native edge resizing within a useful range", () => {
+    expect(activityWindowResizeOptions()).toEqual({
+      minWidth: 220,
+      minHeight: 140,
+      maxWidth: 720,
+      maxHeight: 800,
+      resizable: true,
+    });
+    expect(activityAspectRatio(230, 408)).toBeCloseTo(230 / 408);
+    expect(activityAspectRatio(0, 408)).toBeUndefined();
+  });
+
   it("does not create an orphan PiP after the Wuu window closes", () => {
     expect(activityWindowCanCreate(null)).toBe(false);
     expect(activityWindowCanCreate({ isDestroyed: () => true } as never)).toBe(false);
@@ -67,6 +81,18 @@ describe("CUA Activity windows", () => {
     expect(activityVisibleForThread("thread-1", "thread-1")).toBe(true);
     expect(activityVisibleForThread("thread-1", "thread-2")).toBe(false);
     expect(activityVisibleForThread("thread-1", undefined)).toBe(false);
+  });
+
+  it("shows only the PiP activities owned by the active session", () => {
+    const activities = [
+      activity({ id: "activity-a", thread_id: "session-a" }),
+      activity({ id: "activity-b", thread_id: "session-b" }),
+      activity({ id: "activity-c", thread_id: "session-a" }),
+    ];
+    expect(activities.filter((item) => activityVisibleForThread(item.thread_id, "session-a")).map((item) => item.id))
+      .toEqual(["activity-a", "activity-c"]);
+    expect(activities.filter((item) => activityVisibleForThread(item.thread_id, "session-b")).map((item) => item.id))
+      .toEqual(["activity-b"]);
   });
   it("accepts only CUA lifecycle notifications", () => {
     const event: ServerEvent = {

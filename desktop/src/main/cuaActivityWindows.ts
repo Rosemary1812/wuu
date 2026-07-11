@@ -19,6 +19,10 @@ const PREVIEW_MIN_WIDTH = 280;
 const PREVIEW_MAX_WIDTH = 480;
 const PREVIEW_MIN_HEIGHT = 180;
 const PREVIEW_MAX_HEIGHT = 520;
+const PREVIEW_RESIZE_MIN_WIDTH = 220;
+const PREVIEW_RESIZE_MIN_HEIGHT = 140;
+const PREVIEW_RESIZE_MAX_WIDTH = 720;
+const PREVIEW_RESIZE_MAX_HEIGHT = 800;
 const MAX_LIVE_CUA_STREAMS = 3;
 const MAX_LIVE_STREAM_RETRIES = 6;
 
@@ -172,6 +176,23 @@ export function activityWindowStackingOptions(
   };
 }
 
+export function activityWindowResizeOptions(): Pick<
+  BrowserWindowConstructorOptions,
+  "minWidth" | "minHeight" | "maxWidth" | "maxHeight" | "resizable"
+> {
+  return {
+    minWidth: PREVIEW_RESIZE_MIN_WIDTH,
+    minHeight: PREVIEW_RESIZE_MIN_HEIGHT,
+    maxWidth: PREVIEW_RESIZE_MAX_WIDTH,
+    maxHeight: PREVIEW_RESIZE_MAX_HEIGHT,
+    resizable: true,
+  };
+}
+
+export function activityAspectRatio(width: number, height: number): number | undefined {
+  return width > 0 && height > 0 ? width / height : undefined;
+}
+
 export function activityWindowCanCreate(mainWindow: BrowserWindow | null): mainWindow is BrowserWindow {
   return mainWindow !== null && !mainWindow.isDestroyed();
 }
@@ -292,8 +313,7 @@ export class CUAActivityWindowManager {
       height,
       x: initialBounds.x,
       y: initialBounds.y,
-      minWidth: PREVIEW_MIN_WIDTH,
-      minHeight: PREVIEW_MIN_HEIGHT,
+      ...activityWindowResizeOptions(),
       frame: false,
       transparent: true,
       backgroundColor: "#00000000",
@@ -616,11 +636,13 @@ export class CUAActivityWindowManager {
 
   private autoSizeForLiveFrame(win: BrowserWindow, activityID: string, width: number, height: number): void {
     const windowID = win.webContents.id;
-    if (width <= 0 || height <= 0 || this.manuallyResizedWindowIDs.has(windowID) || this.draggingWindowIDs.has(windowID)) return;
-    const ratio = width / height;
+    const ratio = activityAspectRatio(width, height);
+    if (!ratio) return;
     const previous = this.previewState.get(activityID);
     if (previous && Math.abs(ratio / previous.ratio - 1) <= 0.05) return;
     this.previewState.set(activityID, { ratio, target: this.activities.get(activityID)?.target?.trim() ?? "" });
+    win.setAspectRatio(ratio);
+    if (this.manuallyResizedWindowIDs.has(windowID) || this.draggingWindowIDs.has(windowID)) return;
     const bounds = win.getBounds();
     const size = fitActivityPreviewSize(width, height);
     const resized = this.dockedBoundsForSize(win, size)
@@ -631,7 +653,7 @@ export class CUAActivityWindowManager {
   private autoSizeForPreview(win: BrowserWindow, activity: ActivitySession): void {
     const preview = activity.preview?.trim();
     const windowID = win.webContents.id;
-    if (!preview?.startsWith("file:") || this.manuallyResizedWindowIDs.has(windowID) || this.draggingWindowIDs.has(windowID)) return;
+    if (!preview?.startsWith("file:")) return;
     let imagePath: string;
     try {
       imagePath = fileURLToPath(preview);
@@ -646,6 +668,8 @@ export class CUAActivityWindowManager {
     const ratioChanged = !previous || Math.abs(ratio / previous.ratio - 1) > 0.05;
     if (!ratioChanged && previous.target === target) return;
     this.previewState.set(activity.id, { ratio, target });
+    win.setAspectRatio(ratio);
+    if (this.manuallyResizedWindowIDs.has(windowID) || this.draggingWindowIDs.has(windowID)) return;
     const bounds = win.getBounds();
     const workArea = screen.getDisplayMatching(bounds).workArea;
     const size = fitActivityPreviewSize(imageSize.width, imageSize.height);
