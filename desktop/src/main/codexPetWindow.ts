@@ -460,16 +460,28 @@ export function codexPetWindowHTML(view: CodexPetView): string {
 .stage.layout-hidden .bubble{display:none}
 .bubble .preview{font:13px/1.45 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;color:#1a1a1a;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;white-space:pre-wrap;opacity:1;transition:opacity ${CODEX_PET_BUBBLE_SWAP_IN_MS}ms ease}
 .bubble.is-swapping .preview{opacity:0;transition:opacity ${CODEX_PET_BUBBLE_SWAP_OUT_MS}ms ease}
-.resize-handle{position:absolute;left:0;right:0;height:16px;z-index:2;cursor:ns-resize}
-.resize-handle.top{top:0}
-.resize-handle.bottom{bottom:0}
+.resize-handle{position:absolute;z-index:2}
+.resize-handle.edge-top{top:0;left:16px;right:16px;height:16px;cursor:ns-resize}
+.resize-handle.edge-bottom{bottom:0;left:16px;right:16px;height:16px;cursor:ns-resize}
+.resize-handle.edge-left{left:0;top:16px;bottom:16px;width:16px;cursor:ew-resize}
+.resize-handle.edge-right{right:0;top:16px;bottom:16px;width:16px;cursor:ew-resize}
+.resize-handle.corner-nw{top:0;left:0;width:16px;height:16px;cursor:nwse-resize}
+.resize-handle.corner-ne{top:0;right:0;width:16px;height:16px;cursor:nesw-resize}
+.resize-handle.corner-sw{bottom:0;left:0;width:16px;height:16px;cursor:nesw-resize}
+.resize-handle.corner-se{bottom:0;right:0;width:16px;height:16px;cursor:nwse-resize}
 </style></head><body><div class="stage layout-${escapeHTML(view.layout)}" style="${escapeHTML(styleVars)}">
 <div class="bubble" data-thread-id="${escapeHTML(view.hint?.thread_id ?? "")}" style="display:${view.hint ? "block" : "none"}">
 <div class="preview">${escapeHTML(view.hint?.preview ?? "")}</div>
 </div>
 <div class="sprite-frame"><div class="sprite" role="img" aria-label="${escapeHTML(view.label)}"></div></div>
-<div class="resize-handle top" data-edge="top" aria-label="调整大小"></div>
-<div class="resize-handle bottom" data-edge="bottom" aria-label="调整大小"></div>
+<div class="resize-handle corner-nw" data-dir-x="-1" data-dir-y="-1" aria-label="调整大小"></div>
+<div class="resize-handle corner-ne" data-dir-x="1" data-dir-y="-1" aria-label="调整大小"></div>
+<div class="resize-handle corner-sw" data-dir-x="-1" data-dir-y="1" aria-label="调整大小"></div>
+<div class="resize-handle corner-se" data-dir-x="1" data-dir-y="1" aria-label="调整大小"></div>
+<div class="resize-handle edge-top" data-dir-x="0" data-dir-y="-1" aria-label="调整大小"></div>
+<div class="resize-handle edge-bottom" data-dir-x="0" data-dir-y="1" aria-label="调整大小"></div>
+<div class="resize-handle edge-left" data-dir-x="-1" data-dir-y="0" aria-label="调整大小"></div>
+<div class="resize-handle edge-right" data-dir-x="1" data-dir-y="0" aria-label="调整大小"></div>
 </div>
 <script>
 (() => {
@@ -572,23 +584,27 @@ export function codexPetWindowHTML(view: CodexPetView): string {
     event.preventDefault();
     location.href = 'wuu-pet://action/menu';
   });
-  // Edge-drag continuous resize. A 16px hot strip at the top and bottom
-  // of the stage (invisible — the ns-resize cursor is the affordance;
-  // earlier revisions painted a pair of dark grip bars there that read
-  // as a stray black line on the pet) resizes the sprite in real time:
-  // every pointermove converts the vertical drag delta to a scale delta
-  // (the sprite is a ${CODEX_PET_CELL_HEIGHT}px cell under transform:
-  // scale, so 1px of drag = 1px of rendered sprite height) and pushes
-  // it to the main process, which live-updates the window bounds and
-  // the CSS scale around the sprite's bottom-center anchor. Emission is
-  // rAF-throttled so a fast drag doesn't queue more navigations than
-  // frames. On pointerup the final value is re-sent with commit=1 so
-  // the host persists it. Dragging the top strip up grows (window-edge
-  // semantics); the bottom strip grows downward. stopPropagation on
-  // pointerdown keeps the stage's move-the-window drag from engaging,
-  // and a 2px dead-zone keeps a plain click from emitting anything.
+  // Standard window-style continuous resize: four 16px corner squares
+  // and four edge strips between them (all invisible — the directional
+  // resize cursors are the affordance; earlier revisions painted a pair
+  // of dark grip bars that read as a stray black line over the pet).
+  // Everything still maps to the single uniform sprite scale: each
+  // pointermove converts the drag delta along the handle's outward
+  // direction (data-dir-x / data-dir-y) into a scale delta. The sprite
+  // is a ${CODEX_PET_CELL_WIDTH}×${CODEX_PET_CELL_HEIGHT} cell under transform: scale, so 1px of drag =
+  // 1px of rendered sprite width/height on that axis; corners average
+  // both axes so a 45° drag tracks ~1:1 too. Dragging away from the
+  // sprite grows (window-edge semantics), toward it shrinks. The main
+  // process live-updates window bounds and CSS scale around the
+  // sprite's bottom-center anchor; emission is rAF-throttled so a fast
+  // drag doesn't queue more navigations than frames, and pointerup
+  // re-sends the final value with commit=1 so the host persists it.
+  // stopPropagation on pointerdown keeps the stage's move-the-window
+  // drag from engaging, and a 2px dead-zone keeps a plain click from
+  // emitting anything.
   const SCALE_MIN = ${CODEX_PET_SCALE_MIN};
   const SCALE_MAX = ${CODEX_PET_SCALE_MAX};
+  const CELL_WIDTH = ${CODEX_PET_CELL_WIDTH};
   const CELL_HEIGHT = ${CODEX_PET_CELL_HEIGHT};
   let liveScale = ${JSON.stringify(view.scale)};
   const emitScale = (value, commit) => {
@@ -596,9 +612,9 @@ export function codexPetWindowHTML(view: CodexPetView): string {
       + (commit ? '&commit=1' : '');
   };
   let resizePointerID = null;
+  let resizeStartX = 0;
   let resizeStartY = 0;
   let resizeStartScale = 0;
-  let resizeDir = 1;
   let resizeMoved = false;
   let pendingScale = null;
   let resizeRAF = 0;
@@ -618,13 +634,16 @@ export function codexPetWindowHTML(view: CodexPetView): string {
     resizeMoved = false;
   };
   for (const handle of stage.querySelectorAll('.resize-handle')) {
+    const dirX = Number(handle.dataset.dirX) || 0;
+    const dirY = Number(handle.dataset.dirY) || 0;
+    const axes = (dirX !== 0 ? 1 : 0) + (dirY !== 0 ? 1 : 0);
     handle.addEventListener('pointerdown', (event) => {
       if (event.button !== 0) return;
       event.stopPropagation();
       resizePointerID = event.pointerId;
+      resizeStartX = event.screenX;
       resizeStartY = event.screenY;
       resizeStartScale = liveScale;
-      resizeDir = handle.dataset.edge === 'top' ? -1 : 1;
       resizeMoved = false;
       pendingScale = null;
       handle.setPointerCapture(event.pointerId);
@@ -632,12 +651,21 @@ export function codexPetWindowHTML(view: CodexPetView): string {
     });
     handle.addEventListener('pointermove', (event) => {
       if (event.pointerId !== resizePointerID) return;
+      const deltaX = event.screenX - resizeStartX;
       const deltaY = event.screenY - resizeStartY;
-      if (!resizeMoved && Math.abs(deltaY) < RESIZE_DEAD_ZONE) return;
+      if (
+        !resizeMoved &&
+        Math.abs(deltaX) < RESIZE_DEAD_ZONE &&
+        Math.abs(deltaY) < RESIZE_DEAD_ZONE
+      ) {
+        return;
+      }
       resizeMoved = true;
+      const deltaScale =
+        ((dirX * deltaX) / CELL_WIDTH + (dirY * deltaY) / CELL_HEIGHT) / axes;
       pendingScale = Math.min(
         SCALE_MAX,
-        Math.max(SCALE_MIN, resizeStartScale + (resizeDir * deltaY) / CELL_HEIGHT),
+        Math.max(SCALE_MIN, resizeStartScale + deltaScale),
       );
       if (!resizeRAF) {
         resizeRAF = requestAnimationFrame(() => {

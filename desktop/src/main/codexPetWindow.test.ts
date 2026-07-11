@@ -331,28 +331,38 @@ describe("codexPetWindowHTML", () => {
     expect(withHint).toMatch(/bubble\.style\.display\s*=\s*['"]none['"]/);
   });
 
-  it("keeps the resize strips invisible hot zones with only the cursor as affordance", () => {
-    // The 16px top/bottom strips resize the pet continuously; the
-    // ns-resize cursor is the affordance. Earlier revisions painted a
-    // pair of dark grip bars into the strip via ::before / ::after —
-    // those read as a stray black line floating over the pet, so pin
-    // that no pseudo-element chrome comes back.
+  it("offers standard four-corner + four-edge resize zones with directional cursors", () => {
+    // Eight invisible 16px hot zones — four corners, four edges — with
+    // the platform resize cursors as the affordance. Earlier revisions
+    // painted a pair of dark grip bars into the strip via ::before /
+    // ::after — those read as a stray black line floating over the pet,
+    // so pin that no pseudo-element chrome comes back.
     const html = codexPetWindowHTML(
       codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: false, status: "" }), null, "hidden"),
     );
-    expect(html).toMatch(/\.resize-handle\s*\{[^}]*height:16px/);
-    expect(html).toMatch(/\.resize-handle\s*\{[^}]*cursor:ns-resize/);
+    for (const corner of ["nw", "ne", "sw", "se"]) {
+      expect(html).toContain(`class="resize-handle corner-${corner}"`);
+    }
+    for (const edge of ["top", "bottom", "left", "right"]) {
+      expect(html).toContain(`class="resize-handle edge-${edge}"`);
+    }
+    expect(html).toMatch(/\.resize-handle\.edge-top\{[^}]*cursor:ns-resize/);
+    expect(html).toMatch(/\.resize-handle\.edge-left\{[^}]*cursor:ew-resize/);
+    expect(html).toMatch(/\.resize-handle\.corner-nw\{[^}]*cursor:nwse-resize/);
+    expect(html).toMatch(/\.resize-handle\.corner-ne\{[^}]*cursor:nesw-resize/);
     expect(html).not.toContain(".resize-handle::before");
     expect(html).not.toContain(".resize-handle::after");
   });
 
   it("resizes continuously during the drag and commits the final scale on release", () => {
-    // The inline script converts each pointermove's vertical delta into a
-    // live scale (1px of drag = 1px of rendered sprite height, i.e. delta /
-    // CELL_HEIGHT), emits it rAF-throttled via wuu-pet://action/scale, and
-    // re-sends the final value with commit=1 on pointerup so the host
-    // persists it. Pin the emission URL, the throttle, the commit marker,
-    // and that the old snap-to-next-preset flow is gone.
+    // The inline script converts each pointermove's delta along the
+    // handle's outward direction (data-dir-x / data-dir-y) into a live
+    // scale (1px of drag = 1px of rendered sprite size on that axis;
+    // corners average both axes), emits it rAF-throttled via
+    // wuu-pet://action/scale, and re-sends the final value with commit=1
+    // on pointerup so the host persists it. Pin the emission URL, the
+    // throttle, the commit marker, and that the old snap-to-next-preset
+    // flow is gone.
     const html = codexPetWindowHTML(
       codexPetView(snapshot(true).pets[0], codexPetStateForRuntime({ running: false, status: "" }), null, "hidden"),
     );
@@ -360,6 +370,8 @@ describe("codexPetWindowHTML", () => {
     expect(html).toContain("&commit=1");
     expect(html).toContain("requestAnimationFrame");
     expect(html).toMatch(/liveScale\s*=\s*view\.scale/);
+    expect(html).toMatch(/dataset\.dirX/);
+    expect(html).toMatch(/dataset\.dirY/);
     expect(html).not.toContain("wuu-pet://action/resize?id=");
   });
 
