@@ -1188,6 +1188,11 @@ func TestWorktreeCompletionRecordsPatchArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		c.StopAll()
+		waitForRunningWorkersToStop(t, c.Manager(), time.Second)
+		c.Close()
+	})
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        DefaultSubagentType,
 		TaskName:    "patch_artifact",
