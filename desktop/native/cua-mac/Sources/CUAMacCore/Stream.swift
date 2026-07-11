@@ -187,11 +187,7 @@ private func preferredStreamWindow(in content: SCShareableContent, processID: pi
         $0.owningApplication?.processID == processID && $0.frame.width > 1 && $0.frame.height > 1
     }
     guard !candidates.isEmpty else { return nil }
-    let application = AXUIElementCreateApplication(processID)
-    var focusedValue: CFTypeRef?
-    if AXUIElementCopyAttributeValue(application, kAXFocusedWindowAttribute as CFString, &focusedValue) == .success,
-       let focused = focusedValue as! AXUIElement?,
-       let focusedFrame = axFrame(focused) {
+    if let focusedFrame = focusedWindowFrame(processID: processID) {
         return candidates.min { left, right in
             windowFrameDistance(left.frame, focusedFrame) < windowFrameDistance(right.frame, focusedFrame)
         }
@@ -199,6 +195,16 @@ private func preferredStreamWindow(in content: SCShareableContent, processID: pi
     return candidates.max { left, right in
         left.frame.width * left.frame.height < right.frame.width * right.frame.height
     }
+}
+
+private func focusedWindowFrame(processID: pid_t) -> CGRect? {
+    let application = AXUIElementCreateApplication(processID)
+    var focusedValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(application, kAXFocusedWindowAttribute as CFString, &focusedValue) == .success,
+          let focused = focusedValue as! AXUIElement? else {
+        return nil
+    }
+    return axFrame(focused)
 }
 
 private func windowFrameDistance(_ left: CGRect, _ right: CGRect) -> CGFloat {
@@ -259,7 +265,11 @@ public func runWindowFrameStream(target: String) async throws {
         var previousCapture: Data?
         var emittedFirstFrame = false
         while true {
-            let capture = try captureWindowPNG(processID: app.processIdentifier, timeout: 2)
+            let capture = try captureWindowPNG(
+                processID: app.processIdentifier,
+                timeout: 2,
+                preferredWindowFrame: focusedWindowFrame(processID: app.processIdentifier)
+            )
             if previousCapture != capture.data {
                 guard writer.writeCapture(capture) else {
                     throw ComputerError.operationFailed("live window capture could not encode a frame")
@@ -310,7 +320,9 @@ public func runWindowFrameStream(target: String) async throws {
         window = refreshedWindow
         output.updateFrame(refreshedWindow.frame)
     }
+    let streamFailure = output.streamFailure()
     withExtendedLifetime(inputMonitor) {}
     if let eventSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), eventSource, .commonModes) }
+    if let streamFailure { throw streamFailure }
     try? await stream.stopCapture()
 }

@@ -62,7 +62,11 @@ private final class CaptureBox: @unchecked Sendable {
     }
 }
 
-func captureWindowPNG(processID: pid_t, timeout: TimeInterval = 8) throws -> WindowCapture {
+func captureWindowPNG(
+    processID: pid_t,
+    timeout: TimeInterval = 8,
+    preferredWindowFrame: CGRect? = nil
+) throws -> WindowCapture {
     guard CGPreflightScreenCaptureAccess() else {
         throw ComputerError.permissionDenied("Screen Recording permission is required for window screenshots")
     }
@@ -77,9 +81,14 @@ func captureWindowPNG(processID: pid_t, timeout: TimeInterval = 8) throws -> Win
             semaphore.signal()
             return
         }
-        guard let window = content?.windows
-            .filter({ $0.owningApplication?.processID == processID && $0.frame.width > 1 && $0.frame.height > 1 })
-            .max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) else {
+        let candidates = content?.windows
+            .filter({ $0.owningApplication?.processID == processID && $0.frame.width > 1 && $0.frame.height > 1 }) ?? []
+        let window = preferredWindowFrame.flatMap { preferred in
+            candidates.min { left, right in
+                screenshotWindowFrameDistance(left.frame, preferred) < screenshotWindowFrameDistance(right.frame, preferred)
+            }
+        } ?? candidates.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
+        guard let window else {
             box.set(.failure(ComputerError.operationFailed("no capturable window found")))
             semaphore.signal()
             return
@@ -114,6 +123,13 @@ func captureWindowPNG(processID: pid_t, timeout: TimeInterval = 8) throws -> Win
         throw ComputerError.operationFailed("window screenshot timed out")
     }
     return try box.get()?.get() ?? { throw ComputerError.operationFailed("window screenshot did not complete") }()
+}
+
+private func screenshotWindowFrameDistance(_ left: CGRect, _ right: CGRect) -> CGFloat {
+    abs(left.minX - right.minX)
+        + abs(left.minY - right.minY)
+        + abs(left.width - right.width)
+        + abs(left.height - right.height)
 }
 
 @available(macOS 14.0, *)
