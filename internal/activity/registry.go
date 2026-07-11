@@ -17,6 +17,7 @@ var (
 	ErrThreadMismatch = errors.New("activity belongs to another thread")
 	ErrControlRevoked = errors.New("activity control revoked")
 	ErrStopped        = errors.New("activity is stopped")
+	ErrTargetBusy     = errors.New("activity target is controlled by another thread")
 )
 
 type registryEntry struct {
@@ -95,6 +96,10 @@ func (r *Registry) Start(options StartOptions) (Session, Lease, error) {
 		r.mu.Unlock()
 		return Session{}, Lease{}, ErrAlreadyExists
 	}
+	if r.targetBusyLocked(session.Target, session.Kind, session.PluginID, session.ID) {
+		r.mu.Unlock()
+		return Session{}, Lease{}, ErrTargetBusy
+	}
 	r.entries[id] = &registryEntry{session: session, leaseToken: token}
 	r.mu.Unlock()
 	r.emit(Event{Type: EventStarted, Activity: session})
@@ -120,6 +125,7 @@ func (r *Registry) Acquire(options StartOptions) (Session, Lease, error) {
 	}
 
 	r.mu.Lock()
+	requestedTarget := strings.TrimSpace(options.Target)
 	var current *registryEntry
 	for _, entry := range r.entries {
 		if entry.session.ThreadID != options.ThreadID || entry.session.PluginID != options.PluginID || entry.session.Kind != options.Kind {
@@ -131,6 +137,10 @@ func (r *Registry) Acquire(options StartOptions) (Session, Lease, error) {
 	}
 	if current != nil {
 		session := current.session
+		if r.targetBusyLocked(requestedTarget, options.Kind, options.PluginID, session.ID) {
+			r.mu.Unlock()
+			return Session{}, Lease{}, ErrTargetBusy
+		}
 		switch {
 		case session.State == StateStopped:
 			r.mu.Unlock()
@@ -143,6 +153,10 @@ func (r *Registry) Acquire(options StartOptions) (Session, Lease, error) {
 			r.mu.Unlock()
 			return session, lease, nil
 		}
+	}
+	if r.targetBusyLocked(requestedTarget, options.Kind, options.PluginID, "") {
+		r.mu.Unlock()
+		return Session{}, Lease{}, ErrTargetBusy
 	}
 
 	id := strings.TrimSpace(options.ID)
@@ -228,7 +242,12 @@ func (r *Registry) Update(threadID, activityID string, options UpdateOptions) (S
 		}
 	}
 	if options.Target != "" {
-		entry.session.Target = strings.TrimSpace(options.Target)
+		target := strings.TrimSpace(options.Target)
+		if r.targetBusyLocked(target, entry.session.Kind, entry.session.PluginID, entry.session.ID) {
+			r.mu.Unlock()
+			return Session{}, ErrTargetBusy
+		}
+		entry.session.Target = target
 	}
 	if options.Preview != "" {
 		entry.session.Preview = strings.TrimSpace(options.Preview)
@@ -251,6 +270,26 @@ func (r *Registry) Update(threadID, activityID string, options UpdateOptions) (S
 	}
 	r.emit(Event{Type: eventType, Activity: session})
 	return session, nil
+}
+
+func (r *Registry) targetBusyLocked(target string, kind Kind, pluginID, exceptActivityID string) bool {
+	target = strings.ToLower(strings.TrimSpace(target))
+	if target == "" || kind != KindCUA {
+		return false
+	}
+	pluginID = strings.TrimSpace(pluginID)
+	for id, entry := range r.entries {
+		if id == exceptActivityID || entry.session.Kind != kind || entry.session.State == StateStopped {
+			continue
+		}
+		if pluginID != "" && entry.session.PluginID != pluginID {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(entry.session.Target)) == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Registry) Takeover(threadID, activityID string) (Session, error) {

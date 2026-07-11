@@ -94,9 +94,11 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		return toolresult.Result{}, err
 	}
 	if target != "" && target != session.Target {
-		if updated, updateErr := t.activityRegistry.Update(threadID, session.ID, activity.UpdateOptions{Target: target}); updateErr == nil {
-			session = updated
+		updated, updateErr := t.activityRegistry.Update(threadID, session.ID, activity.UpdateOptions{Target: target})
+		if updateErr != nil {
+			return toolresult.Result{}, updateErr
 		}
+		session = updated
 	}
 
 	sequence, isSequence := parseCUASequence(call.Arguments)

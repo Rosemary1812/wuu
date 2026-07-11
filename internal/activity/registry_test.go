@@ -187,3 +187,49 @@ func TestRegistryAcquireReusesPluginActivityAndHonorsUserControl(t *testing.T) {
 		t.Fatalf("Acquire after stop = %v, want ErrStopped", err)
 	}
 }
+
+func TestRegistryAllowsOnlyOneCUAControllerPerTarget(t *testing.T) {
+	registry := NewRegistry()
+	first, _, err := registry.Acquire(StartOptions{
+		Kind: KindCUA, ThreadID: "thread-1", Workdir: "/repo", PluginID: "cua-mac", Target: "com.tencent.xinWeChat",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := registry.Acquire(StartOptions{
+		Kind: KindCUA, ThreadID: "thread-2", Workdir: "/repo", PluginID: "cua-mac", Target: " COM.TENCENT.XINWECHAT ",
+	}); !errors.Is(err, ErrTargetBusy) {
+		t.Fatalf("second CUA target acquire = %v, want ErrTargetBusy", err)
+	}
+
+	second, _, err := registry.Acquire(StartOptions{
+		Kind: KindCUA, ThreadID: "thread-2", Workdir: "/repo", PluginID: "cua-mac", Target: "com.apple.Calculator",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.Update("thread-2", second.ID, UpdateOptions{Target: "com.tencent.xinWeChat"}); !errors.Is(err, ErrTargetBusy) {
+		t.Fatalf("target switch to busy app = %v, want ErrTargetBusy", err)
+	}
+	if got := registry.List("thread-2")[0].Target; got != "com.apple.Calculator" {
+		t.Fatalf("failed target switch changed target to %q", got)
+	}
+
+	if _, err := registry.Stop("thread-1", first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.Update("thread-2", second.ID, UpdateOptions{Target: "com.tencent.xinWeChat"}); err != nil {
+		t.Fatalf("target should be claimable after prior controller stops: %v", err)
+	}
+}
+
+func TestRegistryDoesNotApplyCUATargetExclusivityToBrowserActivities(t *testing.T) {
+	registry := NewRegistry()
+	for _, threadID := range []string{"thread-1", "thread-2"} {
+		if _, _, err := registry.Acquire(StartOptions{
+			Kind: KindBrowser, ThreadID: threadID, Workdir: "/repo", PluginID: "browser", Target: "https://example.test",
+		}); err != nil {
+			t.Fatalf("browser target in %s: %v", threadID, err)
+		}
+	}
+}
