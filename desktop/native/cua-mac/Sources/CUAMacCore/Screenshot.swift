@@ -111,10 +111,9 @@ func captureForegroundWindowPNG(processID: pid_t) throws -> WindowCapture {
     guard let windowList = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else {
         throw ComputerError.operationFailed("could not list foreground windows")
     }
-    let candidates = windowList.compactMap { info -> (id: CGWindowID, frame: CGRect)? in
+    let candidates = windowList.compactMap { info -> (id: CGWindowID, frame: CGRect, shareable: Bool)? in
         guard (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == processID,
               (info[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
-              (info[kCGWindowSharingState as String] as? NSNumber)?.intValue != 0,
               let number = info[kCGWindowNumber as String] as? NSNumber,
               let bounds = info[kCGWindowBounds as String] as? [String: Any],
               let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary),
@@ -122,17 +121,15 @@ func captureForegroundWindowPNG(processID: pid_t) throws -> WindowCapture {
               frame.height > 1 else {
             return nil
         }
-        return (CGWindowID(number.uint32Value), frame)
+        let shareable = (info[kCGWindowSharingState as String] as? NSNumber)?.intValue != 0
+        return (CGWindowID(number.uint32Value), frame, shareable)
     }
     guard let window = candidates.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) else {
         throw ComputerError.operationFailed("no foreground window found")
     }
-    let windowImage = CGWindowListCreateImage(
-        .null,
-        .optionIncludingWindow,
-        window.id,
-        [.boundsIgnoreFraming, .bestResolution]
-    )
+    let windowImage = window.shareable
+        ? CGWindowListCreateImage(.null, .optionIncludingWindow, window.id, [.boundsIgnoreFraming, .bestResolution])
+        : nil
     let captured: (image: CGImage, frame: CGRect)
     if let windowImage {
         captured = (windowImage, window.frame)

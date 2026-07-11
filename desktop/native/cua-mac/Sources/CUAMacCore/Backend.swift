@@ -27,6 +27,7 @@ public final class MacComputerBackend: ComputerBackend {
     private var snapshotProcessID: pid_t?
     private var lastSnapshotText: [pid_t: String] = [:]
     private var lastCaptureGeometry: [pid_t: CaptureGeometry] = [:]
+    private var foregroundCaptureProcessIDs = Set<pid_t>()
 
     public init() {}
 
@@ -259,9 +260,14 @@ public final class MacComputerBackend: ComputerBackend {
         guard #available(macOS 14.0, *) else {
             throw ComputerError.unsupported("window screenshots require macOS 14 or newer")
         }
+        if foregroundCaptureProcessIDs.contains(app.processIdentifier) {
+            try activate(app)
+            return try captureForegroundWindowPNG(processID: app.processIdentifier)
+        }
         do {
             return try captureWindowPNG(processID: app.processIdentifier)
         } catch let backgroundError {
+            foregroundCaptureProcessIDs.insert(app.processIdentifier)
             try activate(app)
             do {
                 return try captureForegroundWindowPNG(processID: app.processIdentifier)

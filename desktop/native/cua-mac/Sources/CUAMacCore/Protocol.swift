@@ -183,6 +183,12 @@ public final class MCPServer {
 
     private func toolDefinition() -> [String: Any] {
         let stringProperty: [String: Any] = ["type": "string"]
+        let appOptionalActions = [
+            ComputerAction.permissionStatus.rawValue,
+            ComputerAction.requestPermissions.rawValue,
+            ComputerAction.listApps.rawValue,
+        ]
+        let appRequiredActions = ComputerAction.allCases.map(\.rawValue).filter { !appOptionalActions.contains($0) }
         return [
             "name": "computer",
             "title": "Computer Use for Mac",
@@ -191,6 +197,10 @@ public final class MCPServer {
                 "type": "object",
                 "required": ["action"],
                 "additionalProperties": false,
+                "anyOf": [
+                    ["properties": ["action": ["enum": appOptionalActions]]],
+                    ["properties": ["action": ["enum": appRequiredActions]], "required": ["app"]],
+                ],
                 "properties": [
                     "action": ["type": "string", "enum": ComputerAction.allCases.map(\.rawValue)],
                     "app": ["type": "string", "description": "Target app display name, bundle identifier, or path. Required for every action except permission_status, request_permissions, and list_apps."],

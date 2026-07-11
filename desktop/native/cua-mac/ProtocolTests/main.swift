@@ -50,6 +50,7 @@ private func testInitializesAndAdvertisesFullComputerTool() throws {
     try expect(tools?.first?["name"] as? String == "computer", "computer tool name")
     let schema = tools?.first?["inputSchema"] as? [String: Any]
     let properties = schema?["properties"] as? [String: Any]
+    let variants = schema?["anyOf"] as? [[String: Any]]
     let action = properties?["action"] as? [String: Any]
     let actions = action?["enum"] as? [String]
     let app = properties?["app"] as? [String: Any]
@@ -59,6 +60,8 @@ private func testInitializesAndAdvertisesFullComputerTool() throws {
         "select_text", "perform_action", "wait_for_change",
     ], "full computer actions")
     try expect((app?["description"] as? String)?.contains("Required for every action") == true, "app requirement is explicit")
+    let appRequired = variants?.contains(where: { ($0["required"] as? [String])?.contains("app") == true }) == true
+    try expect(appRequired, "application actions require app in the structured schema")
 }
 
 private func testPreservesAccessibilityAndScreenshotContent() throws {
