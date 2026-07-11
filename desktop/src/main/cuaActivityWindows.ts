@@ -20,6 +20,15 @@ export function shouldScheduleDragSettle(dragging: boolean, snapping: boolean): 
   return dragging && !snapping;
 }
 
+export function snapAnimationDuration(distance: number): number {
+  return Math.max(220, Math.min(420, 210 + Math.max(0, distance) * 0.24));
+}
+
+export function snapAnimationProgress(progress: number): number {
+  const t = Math.max(0, Math.min(1, progress));
+  return t * t * t * (t * (t * 6 - 15) + 10);
+}
+
 export function fitActivityPreviewSize(imageWidth: number, imageHeight: number): { width: number; height: number } {
   if (imageWidth <= 0 || imageHeight <= 0) {
     return { width: 380, height: 248 };
@@ -375,7 +384,7 @@ export class CUAActivityWindowManager {
     this.snappingWindowIDs.add(windowID);
     const startedAt = performance.now();
     const distance = Math.hypot(to.x - from.x, to.y - from.y);
-    const duration = Math.max(150, Math.min(320, 140 + distance * 0.18));
+    const duration = snapAnimationDuration(distance);
     const step = (): void => {
       if (win.isDestroyed()) {
         this.snappingWindowIDs.delete(windowID);
@@ -383,7 +392,7 @@ export class CUAActivityWindowManager {
       }
       if (this.snapAnimationTokens.get(windowID) !== token) return;
       const progress = Math.min(1, (performance.now() - startedAt) / duration);
-      const eased = 1 - Math.pow(1 - progress, 5);
+      const eased = snapAnimationProgress(progress);
       win.setPosition(
         Math.round(from.x + (to.x - from.x) * eased),
         Math.round(from.y + (to.y - from.y) * eased),

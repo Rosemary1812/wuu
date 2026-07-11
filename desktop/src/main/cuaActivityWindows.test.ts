@@ -9,6 +9,8 @@ import {
   fitActivityPreviewSize,
   resizeActivityBounds,
   shouldScheduleDragSettle,
+  snapAnimationDuration,
+  snapAnimationProgress,
   snapActivityBounds,
 } from "./cuaActivityWindows";
 
@@ -93,6 +95,17 @@ describe("CUA Activity windows", () => {
     expect(shouldScheduleDragSettle(true, false)).toBe(true);
     expect(shouldScheduleDragSettle(true, true)).toBe(false);
     expect(shouldScheduleDragSettle(false, false)).toBe(false);
+  });
+
+  it("uses a zero-velocity magnetic snap curve with distance-aware timing", () => {
+    expect(snapAnimationProgress(0)).toBe(0);
+    expect(snapAnimationProgress(0.25)).toBeLessThan(0.25);
+    expect(snapAnimationProgress(0.5)).toBeCloseTo(0.5);
+    expect(snapAnimationProgress(0.75)).toBeGreaterThan(0.75);
+    expect(snapAnimationProgress(1)).toBe(1);
+    expect(snapAnimationDuration(0)).toBe(220);
+    expect(snapAnimationDuration(500)).toBe(330);
+    expect(snapAnimationDuration(2000)).toBe(420);
   });
 
   it("snaps naturally to the four inner corners of the main Wuu window", () => {
