@@ -255,6 +255,8 @@ describe("CUA Activity windows", () => {
   it("ships a patchable document with a persistent error box", () => {
     const html = cuaActivityHTML(activity());
     expect(html).toContain("window.wuuCUAActivity");
+    expect(html).toContain("window.wuuCUAStreamUnavailable");
+    expect(html).toContain("实时画面暂不可用");
     expect(html).toContain('<div class="error" hidden>');
     expect(cuaActivityHTML(activity({ error: "boom" }))).toContain('<div class="error">boom</div>');
   });
