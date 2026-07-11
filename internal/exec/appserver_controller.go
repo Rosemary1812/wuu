@@ -35,10 +35,17 @@ func NewLocalAppServerController(ctx context.Context, opts Options) (Controller,
 	if err := applyConfigOverrides(&cfg, opts); err != nil {
 		return nil, err
 	}
+	configLoadMode := runtime.ConfigLoadNormal
+	if strings.TrimSpace(opts.ConfigPath) != "" {
+		configLoadMode = runtime.ConfigLoadFile
+	} else if opts.IgnoreUserConfig {
+		configLoadMode = runtime.ConfigLoadProject
+	}
 	rt, err := runtime.NewSession(runtime.Options{
 		RootDir:       rootDir,
 		HomeDir:       homeDir,
 		ConfigPath:    configPath,
+		ConfigLoadMode: configLoadMode,
 		Config:        cfg,
 		ProviderName:  opts.Provider,
 		ModelOverride: opts.Model,
@@ -81,7 +88,7 @@ func loadExecConfig(rootDir, homeDir string, opts Options) (config.Config, strin
 		return config.LoadPath(path)
 	}
 	if opts.IgnoreUserConfig {
-		homeDir = ""
+		return config.LoadProjectConfig(rootDir)
 	}
 	return config.LoadFrom(rootDir, homeDir)
 }

@@ -139,16 +139,15 @@ func runVersion(args []string) error {
 func runInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	force := fs.Bool("force", false, "overwrite existing .wuu.json")
+	force := fs.Bool("force", false, "overwrite existing user config")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	workdir, err := os.Getwd()
+	configPath, err := statepath.ConfigPath(os.Getenv("HOME"))
 	if err != nil {
-		return fmt.Errorf("get current directory: %w", err)
+		return fmt.Errorf("resolve user config: %w", err)
 	}
-	configPath := filepath.Join(workdir, ".wuu.json")
 
 	if !*force {
 		if _, err := os.Stat(configPath); err == nil {
@@ -161,7 +160,10 @@ func runInit(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(configPath, append(data, '\n'), 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		return fmt.Errorf("create user config directory: %w", err)
+	}
+	if err := securefs.WriteFileAtomic(configPath, append(data, '\n')); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
 	fmt.Printf("created %s\n", configPath)
@@ -1618,9 +1620,9 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 		variant:           fs.String("variant", "", "model variant override"),
 		permissionMode:    fs.String("permission-mode", "", "permission mode override"),
 		workdir:           fs.String("workdir", "", "workspace directory"),
-		configPath:        fs.String("config", "", "explicit config file path"),
+		configPath:        fs.String("config", "", "trust one explicit config file path"),
 		agentProfile:      fs.String("profile", "", "agent profile name"),
-		ignoreUserConfig:  fs.Bool("ignore-user-config", false, "ignore user-level config"),
+		ignoreUserConfig:  fs.Bool("ignore-user-config", false, "trust project config and ignore user config"),
 		strictConfig:      fs.Bool("strict-config", false, "fail if config cannot be loaded"),
 		env:               &env,
 		files:             &files,
@@ -2012,11 +2014,9 @@ func loadOrCreateAppServerConfig(rootDir, homeDir string) (config.Config, string
 		return config.Config{}, "", err
 	}
 
-	configPath = filepath.Join(rootDir, ".wuu.json")
-	if strings.TrimSpace(homeDir) != "" {
-		if p, perr := statepath.ConfigPath(homeDir); perr == nil {
-			configPath = p
-		}
+	configPath, err = statepath.ConfigPath(homeDir)
+	if err != nil {
+		return config.Config{}, "", fmt.Errorf("resolve user config: %w", err)
 	}
 	cfg = appServerStarterConfig()
 	data, err := json.MarshalIndent(cfg, "", "  ")
@@ -2026,10 +2026,10 @@ func loadOrCreateAppServerConfig(rootDir, homeDir string) (config.Config, string
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		return config.Config{}, "", fmt.Errorf("create config directory: %w", err)
 	}
-	if err := os.WriteFile(configPath, append(data, '\n'), 0o600); err != nil {
+	if err := securefs.WriteFileAtomic(configPath, append(data, '\n')); err != nil {
 		return config.Config{}, "", fmt.Errorf("write starter config: %w", err)
 	}
-	return cfg, configPath, nil
+	return config.LoadFrom(rootDir, homeDir)
 }
 
 func appServerStarterConfig() config.Config {
@@ -2137,10 +2137,10 @@ Exec flags:
   --variant         model variant override
   --permission-mode permission mode override
   --workdir         workspace directory
-  --config          explicit config file path
+  --config          trust one explicit config file path
   --profile         agent profile name
   --ignore-user-config
-                   ignore user-level config
+                   trust project config and ignore user config
   --strict-config   fail if config cannot be loaded
   --env KEY=VALUE   set environment variable for the run (repeatable)
   --file            attach a local file (repeatable)

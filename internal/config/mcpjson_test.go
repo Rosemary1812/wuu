@@ -334,7 +334,7 @@ func writeMCPJson(t *testing.T, workdir, contents string) {
 func TestLoadFrom_NoMCPJson_ZeroBehaviorChange(t *testing.T) {
 	home := isolatedHome(t)
 	workdir := t.TempDir()
-	writeBaseConfig(t, workdir, mcpJsonBaseConfig)
+	writeBaseConfig(t, home, mcpJsonBaseConfig)
 
 	cfg, _, err := LoadFrom(workdir, home)
 	if err != nil {
@@ -350,7 +350,7 @@ func TestLoadFrom_NoMCPJson_ZeroBehaviorChange(t *testing.T) {
 func TestLoadFrom_MCPJson_UnapprovedNotLoaded(t *testing.T) {
 	home := isolatedHome(t)
 	workdir := t.TempDir()
-	writeBaseConfig(t, workdir, mcpJsonBaseConfig)
+	writeBaseConfig(t, home, mcpJsonBaseConfig)
 	writeMCPJson(t, workdir, `{"mcpServers": {"local": {"command": "srv"}}}`)
 
 	cfg, _, err := LoadFrom(workdir, home)
@@ -367,7 +367,7 @@ func TestLoadFrom_MCPJson_UnapprovedNotLoaded(t *testing.T) {
 func TestLoadFrom_MCPJson_ApprovedViaLocalSettings(t *testing.T) {
 	home := isolatedHome(t)
 	workdir := t.TempDir()
-	writeBaseConfig(t, workdir, mcpJsonBaseConfig)
+	writeBaseConfig(t, home, mcpJsonBaseConfig)
 	writeMCPJson(t, workdir, `{"mcpServers": {"local": {"command": "srv", "args": ["--x"]}}}`)
 	writeProjectSettings(t, workdir, localSettingsFile, `{"mcp_json": {"enabled": ["local"]}}`)
 
@@ -389,7 +389,7 @@ func TestLoadFrom_MCPJson_ApprovedViaLocalSettings(t *testing.T) {
 func TestLoadFrom_MCPJson_EnableAllViaLocalSettings(t *testing.T) {
 	home := isolatedHome(t)
 	workdir := t.TempDir()
-	writeBaseConfig(t, workdir, mcpJsonBaseConfig)
+	writeBaseConfig(t, home, mcpJsonBaseConfig)
 	writeMCPJson(t, workdir, `{"mcpServers": {"a": {"command": "a"}, "b": {"command": "b"}}}`)
 	writeProjectSettings(t, workdir, localSettingsFile, `{"mcp_json": {"enable_all": true}}`)
 
@@ -415,7 +415,7 @@ func TestLoadFrom_MCPJson_NativeConflictWins(t *testing.T) {
   "providers": {"main": {"type": "openai-compatible", "base_url": "https://b/v1", "api_key_env": "K", "model": "m"}},
   "mcp_servers": {"shared": {"command": "native-cmd"}}
 }`
-	writeBaseConfig(t, workdir, base)
+	writeBaseConfig(t, home, base)
 	writeMCPJson(t, workdir, `{"mcpServers": {"shared": {"command": "mcpjson-cmd"}}}`)
 	writeProjectSettings(t, workdir, localSettingsFile, `{"mcp_json": {"enable_all": true}}`)
 

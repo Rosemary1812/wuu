@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -56,14 +57,29 @@ type Options struct {
 	// state directory is keyed by this id so it survives the project being
 	// moved or renamed on disk. Empty for location-anchored roots (the shared
 	// 对话 scratch dir, agent homes), which stay keyed by their path.
-	WorkspaceID   string
-	HomeDir       string
-	ConfigPath    string
-	Config        config.Config
-	ProviderName  string
-	ModelOverride string
-	NoTools       bool
+	WorkspaceID string
+	HomeDir    string
+	ConfigPath string
+	// ConfigLoadMode records the source model that produced Config so later
+	// app-server reloads use the same inputs. The zero value is normal user
+	// config plus restricted project overlays.
+	ConfigLoadMode ConfigLoadMode
+	Config         config.Config
+	ProviderName   string
+	ModelOverride  string
+	NoTools        bool
 }
+
+// ConfigLoadMode identifies the three supported config source models. It is
+// intentionally not a boolean: an explicitly trusted project config includes
+// its settings layers, while an explicit file is loaded alone.
+type ConfigLoadMode uint8
+
+const (
+	ConfigLoadNormal ConfigLoadMode = iota
+	ConfigLoadFile
+	ConfigLoadProject
+)
 
 // Session owns one initialized local agent runtime: provider client, tool
 // executor, hooks, MCP, skills, memory, coordinator, process manager, and the
@@ -76,6 +92,8 @@ type Session struct {
 	WorkspaceID              string
 	StateDir                 string
 	ConfigPath               string
+	HomeDir                  string
+	ConfigLoadMode           ConfigLoadMode
 	SessionDir               string
 	StreamRunner             *agent.StreamRunner
 	TitleClient              providers.Client
@@ -473,6 +491,14 @@ func NewSession(opts Options) (*Session, error) {
 		ReconnectConfig:             providers.RetryConfig{MaxRetries: 5},
 	}
 
+	configLoadMode := opts.ConfigLoadMode
+	// Keep direct runtime callers that pass a non-user ConfigPath pinned to
+	// that file. Normal product paths set the mode explicitly when they trust
+	// a complete project config rather than one standalone file.
+	if configLoadMode == ConfigLoadNormal && strings.TrimSpace(opts.ConfigPath) != "" && !isUserConfigPath(opts.ConfigPath, opts.HomeDir) {
+		configLoadMode = ConfigLoadFile
+	}
+
 	return &Session{
 		ProviderName:                resolvedName,
 		Model:                       providerCfg.Model,
@@ -480,6 +506,8 @@ func NewSession(opts Options) (*Session, error) {
 		WorkspaceID:                 workspaceID,
 		StateDir:                    workspaceStateDir,
 		ConfigPath:                  opts.ConfigPath,
+		HomeDir:                     opts.HomeDir,
+		ConfigLoadMode:              configLoadMode,
 		SessionDir:                  sessionDir,
 		StreamRunner:                streamRunner,
 		TitleClient:                 titleClient,
@@ -515,6 +543,51 @@ func NewSession(opts Options) (*Session, error) {
 		DeferredToolCatalogPrompt:   deferredToolCatalogPrompt,
 		ReadinessIssues:             readinessIssues,
 	}, nil
+}
+
+// LoadEffectiveConfig reloads the same source model that created the session.
+// Normal sessions rebuild the user base plus restricted project overlays,
+// explicit files remain pinned to one file, and explicitly trusted project
+// configs continue to include their settings layers.
+func (s *Session) LoadEffectiveConfig() (config.Config, string, error) {
+	if s == nil {
+		return config.Config{}, "", errors.New("runtime session is nil")
+	}
+	switch s.ConfigLoadMode {
+	case ConfigLoadNormal:
+		return config.LoadFrom(s.RootDir, s.HomeDir)
+	case ConfigLoadFile:
+		return config.LoadPath(s.ConfigPath)
+	case ConfigLoadProject:
+		return config.LoadProjectConfig(s.RootDir)
+	default:
+		return config.Config{}, "", fmt.Errorf("unknown config load mode %d", s.ConfigLoadMode)
+	}
+}
+
+func isUserConfigPath(path, home string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	want := []string{statepath.LegacyConfigPath(home)}
+	if canonical, err := statepath.ConfigPath(home); err == nil {
+		want = append(want, canonical)
+	}
+	cleanPath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	for _, candidate := range want {
+		if strings.TrimSpace(candidate) == "" {
+			continue
+		}
+		cleanCandidate, err := filepath.Abs(candidate)
+		if err == nil && cleanPath == cleanCandidate {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveToolLoadingForProvider(agentCfg config.AgentConfig, providerCfg config.ProviderConfig, model string, providerOptions map[string]any) (config.ToolLoadingMode, bool, bool) {

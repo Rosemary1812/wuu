@@ -100,6 +100,7 @@ func buildParticipantPinRuntime(t *testing.T, currentClient providers.StreamClie
 		Model:          providerCfg.Model,
 		RootDir:        root,
 		ConfigPath:     cfgPath,
+		ConfigLoadMode: runtime.ConfigLoadFile,
 		SessionDir:     filepath.Join(root, ".wuu-state", "sessions"),
 		StreamRunner:   &agent.StreamRunner{Client: currentClient, Model: providerCfg.Model, APIModel: providerCfg.Model},
 		HookDispatcher: hooks.NewDispatcher(nil),

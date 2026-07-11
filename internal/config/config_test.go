@@ -10,11 +10,12 @@ import (
 	"github.com/blueberrycongee/wuu/internal/capability"
 )
 
-func TestLoadFrom_Priority(t *testing.T) {
+func TestLoadFrom_UsesUserProviderAndProjectAgentSettings(t *testing.T) {
+	t.Setenv("WUU_HOME", "")
 	workdir := t.TempDir()
 	home := t.TempDir()
 
-	homeConfig := filepath.Join(home, ".config", "wuu", "config.json")
+	homeConfig := filepath.Join(home, ".wuu", "config.json")
 	if err := os.MkdirAll(filepath.Dir(homeConfig), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -64,11 +65,17 @@ func TestLoadFrom_Priority(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
-	if path != localPath {
-		t.Fatalf("expected local path %q, got %q", localPath, path)
+	if path != homeConfig {
+		t.Fatalf("expected user path %q, got %q", homeConfig, path)
 	}
-	if cfg.DefaultProvider != "local" {
-		t.Fatalf("expected local default provider, got %q", cfg.DefaultProvider)
+	if cfg.DefaultProvider != "home" {
+		t.Fatalf("expected user default provider, got %q", cfg.DefaultProvider)
+	}
+	if _, ok := cfg.Providers["local"]; ok {
+		t.Fatalf("project provider must not be introduced: %+v", cfg.Providers)
+	}
+	if cfg.Agent.MaxSteps != 3 || cfg.Agent.SystemPrompt != "local" {
+		t.Fatalf("project agent settings were not applied: %+v", cfg.Agent)
 	}
 }
 
@@ -92,7 +99,7 @@ func TestLoadFrom_Defaults(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
@@ -141,7 +148,7 @@ func TestLoadFrom_DefaultsTemperatureToAuto(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
@@ -173,7 +180,7 @@ func TestLoadFrom_ToolLoadingConfig(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
@@ -205,7 +212,7 @@ func TestLoadFrom_ProviderCacheCreationOmittedConfig(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
@@ -234,7 +241,7 @@ func TestLoadFrom_ProviderInputTokensIncludeCacheReadConfig(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
@@ -274,7 +281,7 @@ func TestConfig_ModelRoles(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
@@ -397,7 +404,7 @@ func TestLoadFrom_AgentName(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
@@ -509,7 +516,7 @@ func TestConfig_ProviderWireAPI(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
@@ -542,7 +549,7 @@ func TestConfig_ProviderStreamTransport(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
@@ -575,7 +582,7 @@ func TestConfig_RejectsUnknownStreamTransport(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	_, _, err := LoadFrom(workdir, "")
+	_, _, err := LoadProjectConfig(workdir)
 	if err == nil || !strings.Contains(err.Error(), "stream_transport") {
 		t.Fatalf("expected stream_transport validation error, got %v", err)
 	}
@@ -619,7 +626,7 @@ func TestConfig_MCPToolOverrides(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
@@ -687,7 +694,7 @@ func TestConfig_IgnoresLegacyPermissionKeys(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom returned error: %v", err)
 	}
@@ -698,7 +705,6 @@ func TestConfig_IgnoresLegacyPermissionKeys(t *testing.T) {
 
 func TestConfig_CodexSubscriptionAllowsDefaultBaseURL(t *testing.T) {
 	workdir := t.TempDir()
-	home := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")
 	jsonData := `{
   "default_provider": "main",
@@ -719,7 +725,7 @@ func TestConfig_CodexSubscriptionAllowsDefaultBaseURL(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, home)
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom: %v", err)
 	}
@@ -730,7 +736,6 @@ func TestConfig_CodexSubscriptionAllowsDefaultBaseURL(t *testing.T) {
 
 func TestConfig_CodexSubscriptionParsesReuseCodexCredentials(t *testing.T) {
 	workdir := t.TempDir()
-	home := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")
 	jsonData := `{
   "default_provider": "main",
@@ -750,7 +755,7 @@ func TestConfig_CodexSubscriptionParsesReuseCodexCredentials(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, home)
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom: %v", err)
 	}
@@ -761,7 +766,6 @@ func TestConfig_CodexSubscriptionParsesReuseCodexCredentials(t *testing.T) {
 
 func TestConfig_CodexSubscriptionDefaultsLegacyCredentialReuse(t *testing.T) {
 	workdir := t.TempDir()
-	home := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")
 	jsonData := `{
   "default_provider": "main",
@@ -781,7 +785,7 @@ func TestConfig_CodexSubscriptionDefaultsLegacyCredentialReuse(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, home)
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom: %v", err)
 	}
@@ -792,7 +796,6 @@ func TestConfig_CodexSubscriptionDefaultsLegacyCredentialReuse(t *testing.T) {
 
 func TestConfig_CodexSubscriptionPreservesExplicitCredentialReuseFalse(t *testing.T) {
 	workdir := t.TempDir()
-	home := t.TempDir()
 	configPath := filepath.Join(workdir, ".wuu.json")
 	jsonData := `{
   "default_provider": "main",
@@ -813,7 +816,7 @@ func TestConfig_CodexSubscriptionPreservesExplicitCredentialReuseFalse(t *testin
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, home)
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom: %v", err)
 	}
@@ -843,7 +846,7 @@ func TestConfig_CodexSubscriptionRejectsChatWireAPI(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	_, _, err := LoadFrom(workdir, "")
+	_, _, err := LoadProjectConfig(workdir)
 	if err == nil {
 		t.Fatal("expected codex wire_api validation error")
 	}
@@ -875,7 +878,7 @@ func TestConfig_RejectsUnknownWireAPI(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	_, _, err := LoadFrom(workdir, "")
+	_, _, err := LoadProjectConfig(workdir)
 	if err == nil {
 		t.Fatal("expected unknown wire_api validation error")
 	}
@@ -1138,7 +1141,7 @@ func TestConfig_DisableAutoCompact(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1165,7 +1168,7 @@ func TestConfig_DisableAutoCompactDefaultsFalse(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1194,7 +1197,7 @@ func TestConfig_CompactThresholdPct(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1238,7 +1241,7 @@ func TestUpdateAdvancedRuntimePersistsAgentAndProviderSettings(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1279,7 +1282,7 @@ func TestUpdateAdvancedRuntimeDeletesTemperatureForAuto(t *testing.T) {
 	if err := UpdateAdvancedRuntime(configPath, "main", AdvancedRuntimeUpdate{Temperature: &auto}); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1315,7 +1318,7 @@ func TestConfig_ExperimentalCoordinatorMode(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1336,7 +1339,7 @@ func TestConfig_CatwalkAutoupdate(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workdir, ".wuu.json"), []byte(jsonData), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1374,7 +1377,7 @@ func TestConfig_HooksConfigParsing(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatalf("LoadFrom: %v", err)
 	}
@@ -1420,7 +1423,7 @@ func TestConfig_HooksOmittedWhenEmpty(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _, err := LoadFrom(workdir, "")
+	cfg, _, err := LoadProjectConfig(workdir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1442,6 +1445,65 @@ func TestLoadFrom_NotFound(t *testing.T) {
 	}
 }
 
+func TestLoadFrom_EmptyHomeDoesNotImplicitlyTrustProjectConfig(t *testing.T) {
+	t.Setenv("WUU_HOME", filepath.Join(t.TempDir(), "missing-user-home"))
+	workdir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workdir, localPrimaryConfig), []byte(`{
+  "default_provider": "project",
+  "providers": {
+    "project": {
+      "type": "openai-compatible",
+      "base_url": "https://project.example/v1",
+      "api_key_env": "PROJECT_KEY",
+      "model": "project-model"
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	if _, _, err := LoadFrom(workdir, ""); !errors.Is(err, ErrConfigNotFound) {
+		t.Fatalf("LoadFrom with empty home = %v, want ErrConfigNotFound", err)
+	}
+	cfg, _, err := LoadProjectConfig(workdir)
+	if err != nil {
+		t.Fatalf("explicit LoadProjectConfig: %v", err)
+	}
+	if cfg.DefaultProvider != "project" {
+		t.Fatalf("explicit project config was not loaded: %+v", cfg)
+	}
+}
+
+func TestLoadFrom_EmptyHomeArgumentUsesWUUHome(t *testing.T) {
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+	if err := os.MkdirAll(wuuHome, 0o700); err != nil {
+		t.Fatalf("mkdir WUU_HOME: %v", err)
+	}
+	configPath := filepath.Join(wuuHome, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{
+  "default_provider": "user",
+  "providers": {
+    "user": {
+      "type": "openai-compatible",
+      "base_url": "https://user.example/v1",
+      "api_key_env": "USER_KEY",
+      "model": "user-model"
+    }
+  }
+}`), 0o600); err != nil {
+		t.Fatalf("write WUU_HOME config: %v", err)
+	}
+
+	cfg, loadedPath, err := LoadFrom(t.TempDir(), "")
+	if err != nil {
+		t.Fatalf("LoadFrom with WUU_HOME and empty home: %v", err)
+	}
+	if loadedPath != configPath || cfg.DefaultProvider != "user" {
+		t.Fatalf("loaded path=%q config=%+v, want WUU_HOME config %q", loadedPath, cfg, configPath)
+	}
+}
+
 // A present-but-broken config must NOT look like ErrConfigNotFound,
 // otherwise callers that recover missing config could silently overwrite
 // the user's existing .wuu.json.
@@ -1450,7 +1512,7 @@ func TestLoadFrom_BrokenConfigIsNotNotFound(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workdir, ".wuu.json"), []byte("{not json"), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	_, _, err := LoadFrom(workdir, "")
+	_, _, err := LoadProjectConfig(workdir)
 	if err == nil {
 		t.Fatal("expected error for malformed config")
 	}
@@ -1465,7 +1527,7 @@ func TestLoadFrom_InvalidConfigIsNotNotFound(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workdir, ".wuu.json"), []byte(`{"default_provider":"x"}`), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	_, _, err := LoadFrom(workdir, "")
+	_, _, err := LoadProjectConfig(workdir)
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
@@ -1498,7 +1560,7 @@ func TestUpdateProviderModel(t *testing.T) {
 		t.Fatalf("UpdateProviderModel: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(dir, "")
+	cfg, _, err := LoadProjectConfig(dir)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
@@ -1544,7 +1606,7 @@ func TestLoadFromAcceptsOpenCodeModelMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, _, err := LoadFrom(dir, "")
+	cfg, _, err := LoadProjectConfig(dir)
 	if err != nil {
 		t.Fatalf("LoadFrom: %v", err)
 	}
@@ -1603,7 +1665,7 @@ func TestUpdateProviderSelection(t *testing.T) {
 		t.Fatalf("UpdateProviderSelection: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(dir, "")
+	cfg, _, err := LoadProjectConfig(dir)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
@@ -1649,7 +1711,7 @@ func TestUpdateProviderRuntimePersistsConnectionFields(t *testing.T) {
 		t.Fatalf("UpdateProviderRuntime: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(dir, "")
+	cfg, _, err := LoadProjectConfig(dir)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
@@ -1698,7 +1760,7 @@ func TestUpdateProviderRuntimePersistsPermissionMode(t *testing.T) {
 		t.Fatalf("UpdateProviderRuntime: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(dir, "")
+	cfg, _, err := LoadProjectConfig(dir)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
@@ -1741,7 +1803,7 @@ func TestCreateProviderRuntimePersistsNewProvider(t *testing.T) {
 		t.Fatalf("CreateProviderRuntime: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(dir, "")
+	cfg, _, err := LoadProjectConfig(dir)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
@@ -1788,7 +1850,7 @@ func TestRemoveProviderInactiveKeepsDefault(t *testing.T) {
 		t.Fatalf("expected empty newDefault when inactive provider is removed, got %q", newDefault)
 	}
 
-	cfg, _, err := LoadFrom(dir, "")
+	cfg, _, err := LoadProjectConfig(dir)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
@@ -1833,7 +1895,7 @@ func TestRemoveProviderActiveSwapsDefault(t *testing.T) {
 		t.Fatalf("expected newDefault=keep, got %q", newDefault)
 	}
 
-	cfg, _, err := LoadFrom(dir, "")
+	cfg, _, err := LoadProjectConfig(dir)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
@@ -1872,7 +1934,7 @@ func TestRemoveProviderActiveAppliesFallbackModel(t *testing.T) {
 		t.Fatalf("RemoveProvider: %v", err)
 	}
 
-	cfg, _, err := LoadFrom(dir, "")
+	cfg, _, err := LoadProjectConfig(dir)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
@@ -1903,7 +1965,7 @@ func TestRemoveProviderRejectsLastProvider(t *testing.T) {
 		t.Fatal("expected error when removing the only provider without fallback")
 	}
 
-	cfg, _, err := LoadFrom(dir, "")
+	cfg, _, err := LoadProjectConfig(dir)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}

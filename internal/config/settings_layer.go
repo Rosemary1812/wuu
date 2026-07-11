@@ -8,22 +8,21 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
 
-// Project-scoped settings layering.
+// Project-scoped settings layering. Normal startup uses the user config as its
+// trusted base, then deep-merges project sources in ascending priority:
 //
-// After LoadFrom picks the base config with its existing pick-first order
-// (.wuu.json → wuu.json → ~/.wuu/config.json → legacy), it deep-merges up to
-// two project-scoped layers on top, in ascending priority:
+//  1. <projectRoot>/.wuu.json (or wuu.json)
+//  2. <projectRoot>/.wuu/settings.json       — team-shared, checked into git
+//  3. <projectRoot>/.wuu/settings.local.json — machine-local, gitignored
 //
-//  1. <projectRoot>/.wuu/settings.json       — team-shared, checked into git
-//  2. <projectRoot>/.wuu/settings.local.json — machine-local, gitignored
-//
-// This mirrors Claude Code's settings.json + settings.local.json convention.
-// Missing layer files are a no-op, so a project without either file behaves
-// exactly like the pre-layering loader. The layers use the same schema as
-// config.json (Config) and are parsed with the same strict, unknown-field
-// rejecting decoder.
+// Every project source is schema-checked, but normal startup removes settings
+// that must remain user-owned: the entire provider selection/connection map,
+// role-specific model selection, memory discovery, and permission mode.
+// Explicit LoadProjectConfig keeps the historical standalone-project behavior
+// for callers that deliberately trust the files.
 const (
 	// projectSettingsDir is the project-scoped directory that holds the
 	// layered settings files, mirroring Claude Code's .claude directory.
@@ -40,6 +39,8 @@ const (
 // twins (api_key_env / auth_token_env) are safe and are preserved.
 var sharedLayerCredentialFields = []string{"api_key", "auth_token"}
 
+var projectSettingsWarningSeen sync.Map
+
 // settingsLayer describes one project-scoped overlay file.
 type settingsLayer struct {
 	path string
@@ -48,6 +49,7 @@ type settingsLayer struct {
 	// the repo; the machine-local layer is fully trusted.
 	stripCredentials     bool
 	stripExtensionGrants bool
+	protectUserSettings  bool
 	label                string
 }
 
@@ -59,6 +61,27 @@ func projectSettingsLayers(projectRoot string) []settingsLayer {
 		{path: filepath.Join(dir, sharedSettingsFile), stripCredentials: true, stripExtensionGrants: true, label: "shared settings"},
 		{path: filepath.Join(dir, localSettingsFile), stripCredentials: false, stripExtensionGrants: false, label: "local settings"},
 	}
+}
+
+func restrictedProjectLayers(projectRoot string) []settingsLayer {
+	var layers []settingsLayer
+	for _, name := range []string{localPrimaryConfig, localFallbackConfig} {
+		path := filepath.Join(projectRoot, name)
+		if _, err := os.Stat(path); err == nil {
+			layers = append(layers, settingsLayer{
+				path:                 path,
+				stripExtensionGrants: true,
+				protectUserSettings:  true,
+				label:                "project config",
+			})
+			break
+		}
+	}
+	for _, layer := range projectSettingsLayers(projectRoot) {
+		layer.protectUserSettings = true
+		layers = append(layers, layer)
+	}
+	return layers
 }
 
 // applyProjectSettingsLayers deep-merges the project-scoped settings layers on
@@ -73,13 +96,23 @@ func projectSettingsLayers(projectRoot string) []settingsLayer {
 // It returns the merged config and the ordered list of layer paths that were
 // actually applied (empty when none existed).
 func applyProjectSettingsLayers(basePath, projectRoot string, base Config) (Config, []string, error) {
+	return applySettingsLayers(basePath, base, projectSettingsLayers(projectRoot))
+}
+
+// applyRestrictedProjectLayers overlays every project config source on a
+// user-owned base while preserving the user-only security boundary.
+func applyRestrictedProjectLayers(basePath, projectRoot string, base Config) (Config, []string, error) {
+	return applySettingsLayers(basePath, base, restrictedProjectLayers(projectRoot))
+}
+
+func applySettingsLayers(basePath string, base Config, layers []settingsLayer) (Config, []string, error) {
 	type pendingLayer struct {
 		spec settingsLayer
 		data []byte
 	}
 
 	var pending []pendingLayer
-	for _, layer := range projectSettingsLayers(projectRoot) {
+	for _, layer := range layers {
 		info, err := os.Stat(layer.path)
 		if err != nil || info.IsDir() {
 			continue // missing (or a directory) — treat as no layer
@@ -122,7 +155,9 @@ func applyProjectSettingsLayers(basePath, projectRoot string, base Config) (Conf
 		if err != nil {
 			return Config{}, nil, fmt.Errorf("parse %s %s: %w", p.spec.label, p.spec.path, err)
 		}
-		if p.spec.stripCredentials {
+		if p.spec.protectUserSettings {
+			stripProjectUserSettings(overlay, p.spec.path)
+		} else if p.spec.stripCredentials {
 			stripSharedLayerCredentials(overlay, p.spec.path)
 		}
 		if p.spec.stripExtensionGrants {
@@ -178,6 +213,70 @@ func deepMergeObject(base, overlay map[string]any) {
 		}
 		base[key] = overlayVal
 	}
+}
+
+// stripProjectUserSettings enforces the trust boundary for every file under a
+// project root, including settings.local.json. A repository must not be able
+// to choose a provider, model, endpoint, credential source, request headers,
+// external memory inputs, or a broader permission mode. Removing the whole
+// providers and memory objects is an allowlist-by-omission: newly added fields
+// remain protected until they are deliberately classified as project-safe.
+func stripProjectUserSettings(overlay map[string]any, path string) {
+	var ignored []string
+	for _, field := range []string{"default_provider", "providers", "memory"} {
+		if deleteKeysEqualFold(overlay, field) {
+			ignored = append(ignored, field)
+		}
+	}
+	for key, rawAgent := range overlay {
+		if !strings.EqualFold(key, "agent") {
+			continue
+		}
+		agent, ok := rawAgent.(map[string]any)
+		if !ok {
+			// JSON null would replace the complete user agent object and reset
+			// a restrictive permission mode to the standard default.
+			delete(overlay, key)
+			ignored = append(ignored, "agent")
+			continue
+		}
+		if deleteKeysEqualFold(agent, "permission_mode") {
+			ignored = append(ignored, "agent.permission_mode")
+		}
+		if deleteKeysEqualFold(agent, "model_roles") {
+			ignored = append(ignored, "agent.model_roles")
+		}
+	}
+	if len(ignored) == 0 {
+		return
+	}
+	sort.Strings(ignored)
+	warningKey := path + "\x00" + strings.Join(ignored, "\x00")
+	if _, loaded := projectSettingsWarningSeen.LoadOrStore(warningKey, struct{}{}); loaded {
+		return
+	}
+	fmt.Fprintf(os.Stderr,
+		"wuu: ignoring user-owned settings from project source %s: %s\n",
+		path,
+		strings.Join(ignored, ", "),
+	)
+}
+
+// deleteKeysEqualFold mirrors encoding/json's case-insensitive struct-field
+// matching. Project JSON is decoded into a raw map before merging, so deleting
+// only the canonical spelling would let fields such as "Providers" or
+// "Permission_Mode" survive this boundary and bind to the same Config field
+// during the final decode. Remove every matching spelling, including duplicate
+// case variants in one object.
+func deleteKeysEqualFold(object map[string]any, field string) bool {
+	deleted := false
+	for key := range object {
+		if strings.EqualFold(key, field) {
+			delete(object, key)
+			deleted = true
+		}
+	}
+	return deleted
 }
 
 // stripSharedLayerCredentials removes inline provider secrets from a shared

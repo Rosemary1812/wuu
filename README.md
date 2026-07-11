@@ -104,6 +104,10 @@ Initialize once:
 wuu init
 ```
 
+This creates the user-owned config at `~/.wuu/config.json` (or
+`WUU_HOME/config.json`). Provider connections and credentials are never written
+to the project by this command.
+
 Run your first tasks:
 
 ```bash
@@ -184,9 +188,24 @@ See [`docs/exec.md`](docs/exec.md) for JSONL output, attachments, resume, fork, 
 
 ## Providers
 
-Wuu supports Anthropic and OpenAI-compatible providers such as OpenAI, OpenRouter, one-api, and local gateways. Bring your own API key — set the matching environment variable and point wuu at any compatible endpoint.
+Wuu supports Anthropic and OpenAI-compatible providers such as OpenAI,
+OpenRouter, one-api, and local gateways. Bring your own API key — set the
+matching environment variable and point wuu at any compatible endpoint.
 
-Project config usually lives in `.wuu.json`; global config lives in `~/.wuu/config.json` (set `WUU_HOME` to relocate the whole directory; the legacy `~/.config/wuu/config.json` is still read for backward compatibility).
+Provider selection, models, endpoints, credential sources, global memory
+settings, and permission mode live in the user config at
+`~/.wuu/config.json`. Set `WUU_HOME` to relocate the whole directory; the
+legacy `~/.config/wuu/config.json` is still migrated and read for backward
+compatibility.
+
+Project files (`.wuu.json`, `wuu.json`, `.wuu/settings.json`, and
+`.wuu/settings.local.json`) may add project behavior such as prompt additions,
+but normal startup ignores provider selection and definitions, role-specific
+model selection, memory discovery, and permission mode from those files. This
+keeps a repository from redirecting user credentials, routing background work
+to another configured provider, or selecting arbitrary files outside the
+workspace. Wuu's own global memory remains outside the workspace under the
+user-controlled Wuu home and can still be read and updated normally.
 
 ```json
 {

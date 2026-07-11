@@ -136,7 +136,7 @@ func (s *Server) currentAdvancedSettingsSummary() AdvancedSettingsSummary {
 		summary.CompactKeepRecentTokens = s.rt.StreamRunner.CompactKeepRecentTokens
 		summary.DisableAutoCompact = s.rt.StreamRunner.DisableAutoCompact
 	}
-	if cfg, _, err := config.LoadPath(s.rt.ConfigPath); err == nil {
+	if cfg, _, err := s.rt.LoadEffectiveConfig(); err == nil {
 		summary.MaxSteps = cfg.Agent.MaxSteps
 		summary.MaxContextTokens = cfg.Agent.MaxContextTokens
 		summary.Temperature = cfg.Agent.Temperature
@@ -164,7 +164,7 @@ func (s *Server) currentGeneralSettingsSummary() GeneralSettingsSummary {
 	summary := GeneralSettingsSummary{
 		MCPServerEnabled: map[string]bool{},
 	}
-	if cfg, _, err := config.LoadPath(s.rt.ConfigPath); err == nil {
+	if cfg, _, err := s.rt.LoadEffectiveConfig(); err == nil {
 		summary.AppendSystemPrompt = cfg.Agent.AppendSystemPrompt
 		summary.MemoryDisabled = cfg.Memory.Disable
 		for name, server := range cfg.MCPServers {
@@ -423,10 +423,7 @@ func (s *Server) currentExtensionConfig() config.Config {
 	if s == nil || s.rt == nil {
 		return config.Config{}
 	}
-	if cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME")); err == nil {
-		return cfg
-	}
-	if cfg, _, err := config.LoadPath(s.rt.ConfigPath); err == nil {
+	if cfg, _, err := s.rt.LoadEffectiveConfig(); err == nil {
 		return cfg
 	}
 	return config.Config{}
@@ -604,7 +601,7 @@ func (s *Server) handleConfigAdvancedUpdate(req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 
-	cfg, _, err := config.LoadPath(s.rt.ConfigPath)
+	cfg, _, err := s.rt.LoadEffectiveConfig()
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -670,7 +667,7 @@ func (s *Server) handleConfigGeneralUpdate(req Request) error {
 	}); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	cfg, _, err := config.LoadPath(s.rt.ConfigPath)
+	cfg, _, err := s.rt.LoadEffectiveConfig()
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -694,7 +691,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	if model == "" {
 		return s.writeResponse(req.ID, nil, errors.New("model is required"))
 	}
-	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
+	cfg, _, err := s.rt.LoadEffectiveConfig()
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -975,7 +972,7 @@ func (s *Server) handleConfigCodexModels(ctx context.Context, req Request) error
 	if providerName == "" {
 		providerName = s.rt.ProviderName
 	}
-	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
+	cfg, _, err := s.rt.LoadEffectiveConfig()
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -1028,7 +1025,7 @@ func (s *Server) handleConfigProviderRemove(req Request) error {
 	if providerName == "" {
 		return s.writeResponse(req.ID, nil, errors.New("provider is required"))
 	}
-	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
+	cfg, _, err := s.rt.LoadEffectiveConfig()
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
@@ -1401,7 +1398,7 @@ func selectionConfigPointers(selection modelvariant.Selection, touched bool, pre
 }
 
 func (s *Server) providerSummaries() []ProviderSummary {
-	cfg, _, err := config.LoadFrom(s.rt.RootDir, os.Getenv("HOME"))
+	cfg, _, err := s.rt.LoadEffectiveConfig()
 	if err != nil {
 		return nil
 	}

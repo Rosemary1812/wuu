@@ -103,6 +103,9 @@ go run ./cmd/wuu --version
 wuu init
 ```
 
+该命令会在 `~/.wuu/config.json`（或 `WUU_HOME/config.json`）创建用户配置，
+不会把提供商连接和凭据写入项目目录。
+
 运行第一个任务：
 
 ```bash
@@ -184,7 +187,15 @@ JSONL 输出、附件、恢复、fork、review 和自动化选项见 [`docs/exec
 
 Wuu 支持 Anthropic 和 OpenAI 兼容提供商，例如 OpenAI、OpenRouter、one-api、本地网关等。自带 API Key——设置对应的环境变量，将 wuu 指向任意兼容端点即可。
 
-项目配置通常放在 `.wuu.json`，全局配置放在 `~/.wuu/config.json`（设 `WUU_HOME` 可整体搬走该目录；旧位置 `~/.config/wuu/config.json` 仍会被读取以向后兼容）。
+提供商选择、模型、端点、凭据来源、全局记忆设置和权限模式都放在用户配置
+`~/.wuu/config.json` 中。设 `WUU_HOME` 可以整体搬走该目录；旧位置
+`~/.config/wuu/config.json` 仍会迁移并读取，以保持兼容。
+
+项目文件（`.wuu.json`、`wuu.json`、`.wuu/settings.json` 和
+`.wuu/settings.local.json`）可以添加提示词等项目行为，但正常启动会忽略其中的
+提供商选择与定义、角色模型选择、记忆发现设置和权限模式。这样仓库不能把用户凭据
+重定向到其他端点、把后台任务切到另一个已配置提供商，或指定工作区外的任意文件。
+Wuu 的全局记忆仍位于工作区外、用户控制的 Wuu 主目录中，并可正常读取和更新。
 
 ```json
 {

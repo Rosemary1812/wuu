@@ -201,28 +201,36 @@ Current implemented flags:
 --output-last-message <file>
 ```
 
-`--config` loads a specific config file. Relative config paths are resolved
-from `--workdir` when it is set, otherwise from the current directory.
-`--ignore-user-config` skips the user-global config (`~/.wuu/config.json`, or
-`WUU_HOME/config.json`, and the legacy `~/.config/wuu/config.json`). `--strict-config` is
-accepted for automation compatibility; `wuu exec` already fails when no usable
-config can be loaded. `--env KEY=VALUE` is repeatable and applies only to the
-current run. `--max-turns` caps the model/tool loop for the current user turn.
+`--config` loads and explicitly trusts one config file. Relative paths are
+resolved from `--workdir` when it is set, otherwise from the current directory.
+`--ignore-user-config` skips the user config and explicitly trusts the first
+project config (`.wuu.json`, then `wuu.json`) plus its project settings layers.
+Both options are intended for controlled automation: a trusted file may choose
+provider endpoints, credential environment variables, memory paths, hooks, and
+MCP servers. `--strict-config` is accepted for automation compatibility; `wuu
+exec` already fails when no usable config can be loaded. `--env KEY=VALUE` is
+repeatable and applies only to the current run. `--max-turns` caps the
+model/tool loop for the current user turn.
 `--output-schema` reads a JSON Schema file, instructs the agent to return only
 JSON, validates the final answer locally, and gives the agent a limited number
 of correction turns when the result does not match the schema. JSONL `result`
 events include `structured_result` after successful validation.
 
-When no `--config` is given, `wuu exec` resolves config with the normal
-project-first order and then deep-merges the project settings layers on top:
-`<workdir>/.wuu/settings.json` (team-shared, checked in) then
-`<workdir>/.wuu/settings.local.json` (machine-local, highest priority). Objects
-merge recursively; scalars and arrays replace. Inline credentials
-(`providers.*.api_key` / `auth_token`) in the shared `settings.json` are ignored
-with a stderr warning — only `settings.local.json` and user-level config are
-trusted for secrets, so use `*_env` indirection in the shared layer. An explicit
-`--config <path>` loads that single file as-is and does not apply the project
-settings layers. Set `WUU_DEBUG` to log which layers were applied.
+With neither option, `wuu exec` uses the user config at
+`~/.wuu/config.json` (or `WUU_HOME/config.json`) as the trusted base. It then
+deep-merges project sources in this order: `.wuu.json` (or `wuu.json`),
+`.wuu/settings.json`, and `.wuu/settings.local.json`. Objects merge recursively;
+scalars and arrays replace.
+
+Normal startup ignores `default_provider`, `providers`, `memory`,
+`agent.model_roles`, and `agent.permission_mode` from every project source,
+with a stderr warning. Those settings stay user-owned because they control
+where credentials and model context are sent, which files outside the workspace
+become model context, and how much local authority the agent receives. This
+does not disable Wuu's global memory: user-configured memory under `~/.wuu` or
+`WUU_HOME` remains readable and writable. It only stops the repository from
+redirecting that discovery to arbitrary paths. Set `WUU_DEBUG` to log which
+safe project layers were applied.
 
 After layering, `wuu exec` also reads a Claude Code project-level
 `<workdir>/.mcp.json` if present and merges its **approved** servers into

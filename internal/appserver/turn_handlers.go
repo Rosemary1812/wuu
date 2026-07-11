@@ -610,7 +610,7 @@ func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *
 	if rawPin := strings.TrimSpace(p.Model); rawPin != "" {
 		pinProvider, _ := parseParticipantModelPin(rawPin)
 		modelOverride, clientOverride, err := resolveParticipantModelOverride(
-			&runtimeSessionReference{configPath: s.rt.ConfigPath},
+			newRuntimeSessionReference(s.rt),
 			p.Name,
 			rawPin,
 			providerName,
@@ -708,7 +708,7 @@ func (s *Server) residentModelBudget(providerName, modelName string) (modelbudge
 	if s == nil || s.rt == nil || providerName == "" || modelName == "" {
 		return modelbudget.Budget{}, false
 	}
-	cfg, _, err := config.LoadPath(s.rt.ConfigPath)
+	cfg, _, err := s.rt.LoadEffectiveConfig()
 	if err != nil {
 		return modelbudget.Budget{}, false
 	}
@@ -741,7 +741,7 @@ func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.
 	if s.rt != nil {
 		workerProvider := workerProviderName(s.rt)
 		threadRuntime.AgentControl.SetWorkerProviderName(workerProvider)
-		ref := &runtimeSessionReference{configPath: s.rt.ConfigPath}
+		ref := newRuntimeSessionReference(s.rt)
 		threadRuntime.AgentControl.SetModelPinClientResolver(func(rawPin string) (string, providers.StreamClient, error) {
 			return resolveParticipantModelOverride(ref, "queued-restore", rawPin, workerProvider)
 		})

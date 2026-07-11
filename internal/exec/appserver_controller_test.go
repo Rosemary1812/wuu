@@ -33,7 +33,8 @@ func TestLocalAppServerControllerInitializeAndResumeThread(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	controller, err := NewLocalAppServerController(ctx, Options{
-		Workdir: root,
+		Workdir:    root,
+		ConfigPath: configPath,
 	})
 	if err != nil {
 		t.Fatalf("NewLocalAppServerController: %v", err)
@@ -87,9 +88,10 @@ func TestLocalAppServerControllerEffortOverrideClearsConfiguredVariant(t *testin
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	controller, err := NewLocalAppServerController(ctx, Options{
-		Workdir: root,
-		Effort:  "low",
-		NoTools: true,
+		Workdir:    root,
+		ConfigPath: configPath,
+		Effort:     "low",
+		NoTools:    true,
 	})
 	if err != nil {
 		t.Fatalf("NewLocalAppServerController: %v", err)
@@ -102,6 +104,55 @@ func TestLocalAppServerControllerEffortOverrideClearsConfiguredVariant(t *testin
 	}
 	if init.Effort != "low" || init.Variant != "low" {
 		t.Fatalf("effort override should select low variant, got effort=%q variant=%q", init.Effort, init.Variant)
+	}
+}
+
+func TestLocalAppServerControllerIgnoreUserConfigReloadsProjectLayers(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(t.TempDir(), "unused-user-home"))
+	configPath := filepath.Join(root, ".wuu.json")
+	if err := os.WriteFile(configPath, []byte(`{
+  "default_provider": "test",
+  "providers": {
+    "test": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "api_key": "sk-test",
+      "model": "gpt-test"
+    }
+  },
+  "agent": {"max_steps": 4, "append_system_prompt": "base prompt"}
+}`), 0o644); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+	settingsDir := filepath.Join(root, ".wuu")
+	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
+		t.Fatalf("mkdir project settings: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(settingsDir, "settings.json"), []byte(`{
+  "agent": {"max_steps": 17, "append_system_prompt": "layer prompt"}
+}`), 0o644); err != nil {
+		t.Fatalf("write project settings: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	controller, err := NewLocalAppServerController(ctx, Options{
+		Workdir:          root,
+		IgnoreUserConfig: true,
+		NoTools:          true,
+	})
+	if err != nil {
+		t.Fatalf("NewLocalAppServerController: %v", err)
+	}
+	defer controller.Shutdown(context.Background())
+
+	init, err := controller.Initialize(ctx)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	if init.AdvancedSettings.MaxSteps != 17 || init.GeneralSettings.AppendSystemPrompt != "layer prompt" {
+		t.Fatalf("initialize lost explicitly trusted project layer: advanced=%+v general=%+v", init.AdvancedSettings, init.GeneralSettings)
 	}
 }
 

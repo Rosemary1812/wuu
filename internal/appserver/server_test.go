@@ -7760,6 +7760,7 @@ func newTestRuntime(t *testing.T, client *fakeClient) *runtime.Session {
 		Model:          "fake-model",
 		RootDir:        root,
 		ConfigPath:     root + "/.wuu.json",
+		ConfigLoadMode: runtime.ConfigLoadFile,
 		SessionDir:     root + "/.wuu-state/sessions",
 		HookDispatcher: hooks.NewDispatcher(nil),
 		StreamRunner: &agent.StreamRunner{

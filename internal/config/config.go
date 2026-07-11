@@ -388,9 +388,9 @@ type GeneralSettingsUpdate struct {
 	MCPEnabledToggles  map[string]*bool // server name → enabled; nil = skip
 }
 
-// Load reads config with priority: .wuu.json, wuu.json, then the unified user
-// config (~/.wuu/config.json, or WUU_HOME/config.json), then the legacy
-// ~/.config/wuu/config.json for backward compatibility.
+// Load reads the user-owned config and applies project-scoped overrides that
+// cannot change provider connections, credential sources, or external memory
+// discovery. See LoadFrom for the precise source order.
 func Load() (Config, string, error) {
 	workdir, err := os.Getwd()
 	if err != nil {
@@ -399,40 +399,40 @@ func Load() (Config, string, error) {
 	return LoadFrom(workdir, os.Getenv("HOME"))
 }
 
-// LoadFrom reads config from deterministic directories (test-friendly). The
-// global lookup order is the unified user config first (~/.wuu/config.json, or
-// WUU_HOME/config.json) then the legacy ~/.config/wuu/config.json. Before the
-// global read it performs a one-time, non-destructive migration of any legacy
-// config.json/auth.json into the unified home. Passing an empty home (for
-// example via --ignore-user-config) skips the global lookup and migration
-// entirely.
+// LoadFrom reads config from deterministic directories (test-friendly).
+//
+// The user config is the trusted base: the unified ~/.wuu/config.json (or
+// WUU_HOME/config.json) first, then the legacy ~/.config/wuu/config.json.
+// statepath resolves WUU_HOME even when the HOME environment variable is
+// absent, and otherwise falls back to the operating-system user home. Project
+// files are overlays in this order:
+// .wuu.json (or wuu.json), .wuu/settings.json, then
+// .wuu/settings.local.json. Project overlays cannot define provider
+// connections or credential sources, expand memory discovery outside the
+// workspace, or loosen the user's permission mode. This prevents a repository
+// from choosing where user credentials are sent merely by being opened.
+//
+// Callers that deliberately trust a project config must opt into
+// LoadProjectConfig or LoadPath; an empty home argument is never a hidden
+// switch that grants project files this authority.
 func LoadFrom(workdir, home string) (Config, string, error) {
-	candidates := []string{
-		filepath.Join(workdir, localPrimaryConfig),
-		filepath.Join(workdir, localFallbackConfig),
+	migrateLegacyGlobalStore(home)
+	var userCandidates []string
+	newPath, pathErr := statepath.ConfigPath(home)
+	if pathErr == nil && newPath != "" {
+		userCandidates = append(userCandidates, newPath)
 	}
-	if home != "" {
-		migrateLegacyGlobalStore(home)
-		if newPath, err := statepath.ConfigPath(home); err == nil && newPath != "" {
-			candidates = append(candidates, newPath)
-		}
-		if legacyPath := statepath.LegacyConfigPath(home); legacyPath != "" {
-			candidates = append(candidates, legacyPath)
-		}
+	if legacyPath := statepath.LegacyConfigPath(home); legacyPath != "" {
+		userCandidates = append(userCandidates, legacyPath)
 	}
 
-	for _, candidate := range candidates {
+	for _, candidate := range userCandidates {
 		if _, err := os.Stat(candidate); err == nil {
 			cfg, readErr := readConfig(candidate)
 			if readErr != nil {
 				return Config{}, "", readErr
 			}
-			// Overlay the project-scoped settings layers (if any) on top of
-			// the selected base config. projectRoot is workdir, the same
-			// directory used to look up the project config above. When no
-			// layer files exist this is a no-op and cfg is returned unchanged,
-			// preserving the pre-layering pick-first behavior exactly.
-			layered, appliedLayers, layerErr := applyProjectSettingsLayers(candidate, workdir, cfg)
+			layered, appliedLayers, layerErr := applyRestrictedProjectLayers(candidate, workdir, cfg)
 			if layerErr != nil {
 				return Config{}, "", layerErr
 			}
@@ -452,7 +452,47 @@ func LoadFrom(workdir, home string) (Config, string, error) {
 		}
 	}
 
-	return Config{}, "", fmt.Errorf("%w, run `wuu init` to create %s", ErrConfigNotFound, localPrimaryConfig)
+	configPath := "~/.wuu/config.json"
+	if strings.TrimSpace(newPath) != "" {
+		configPath = newPath
+	}
+	if len(userCandidates) == 0 && pathErr != nil {
+		return Config{}, "", fmt.Errorf("%w, resolve user config: %v", ErrConfigNotFound, pathErr)
+	}
+	return Config{}, "", fmt.Errorf("%w, run `wuu init` to create user config %s", ErrConfigNotFound, configPath)
+}
+
+// LoadProjectConfig explicitly trusts the first project config (.wuu.json,
+// then wuu.json) as a complete standalone config and applies both project
+// settings layers. It is reserved for explicit CLI choices such as
+// --ignore-user-config; normal desktop and CLI startup must use LoadFrom.
+func LoadProjectConfig(workdir string) (Config, string, error) {
+	candidates := []string{
+		filepath.Join(workdir, localPrimaryConfig),
+		filepath.Join(workdir, localFallbackConfig),
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err != nil {
+			continue
+		}
+		cfg, err := readConfig(candidate)
+		if err != nil {
+			return Config{}, "", err
+		}
+		layered, appliedLayers, err := applyProjectSettingsLayers(candidate, workdir, cfg)
+		if err != nil {
+			return Config{}, "", err
+		}
+		cfg = layered
+		applyMCPJsonServers(&cfg, workdir)
+		applyDefaults(&cfg)
+		if err := cfg.Validate(); err != nil {
+			return Config{}, "", err
+		}
+		logSettingsLayerDebug(candidate, appliedLayers)
+		return cfg, candidate, nil
+	}
+	return Config{}, "", fmt.Errorf("%w, pass --config or run `wuu init` to create a user config", ErrConfigNotFound)
 }
 
 func saveConfigFile(configPath string, cfg Config) error {

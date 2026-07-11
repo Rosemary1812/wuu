@@ -81,7 +81,7 @@ func resolveParticipantModelOverride(rt *runtimeSessionReference, participantNam
 	if rt == nil || strings.TrimSpace(rt.configPath) == "" {
 		return "", nil, fmt.Errorf("participant %q pins model %q but no runtime config is available", participantName, rawPin)
 	}
-	cfg, _, loadErr := config.LoadPath(rt.configPath)
+	cfg, loadErr := rt.loadEffectiveConfig()
 	if loadErr != nil {
 		return "", nil, fmt.Errorf("participant %q pins model %q but config could not be loaded: %w", participantName, rawPin, loadErr)
 	}
@@ -103,6 +103,29 @@ func resolveParticipantModelOverride(rt *runtimeSessionReference, participantNam
 // circular dependency on the runtime package.
 type runtimeSessionReference struct {
 	configPath string
+	loadConfig func() (config.Config, string, error)
+}
+
+func newRuntimeSessionReference(rt *runtime.Session) *runtimeSessionReference {
+	if rt == nil {
+		return nil
+	}
+	return &runtimeSessionReference{
+		configPath: rt.ConfigPath,
+		loadConfig: rt.LoadEffectiveConfig,
+	}
+}
+
+func (rt *runtimeSessionReference) loadEffectiveConfig() (config.Config, error) {
+	if rt == nil {
+		return config.Config{}, errors.New("runtime config is unavailable")
+	}
+	if rt.loadConfig != nil {
+		cfg, _, err := rt.loadConfig()
+		return cfg, err
+	}
+	cfg, _, err := config.LoadPath(rt.configPath)
+	return cfg, err
 }
 
 func (s *Server) handleParticipantStart(ctx context.Context, req Request) error {

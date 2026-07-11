@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -2098,6 +2099,75 @@ func TestDiscoverMemoryHonorsLegacyOptIn(t *testing.T) {
 	files := discoverMemory(root, home, config.MemoryConfig{IncludeLegacyMemory: &includeLegacy})
 	if len(files) != 1 || files[0].Content != "legacy project rule" {
 		t.Fatalf("legacy opt-in did not load legacy file: %+v", files)
+	}
+}
+
+func TestDiscoverMemoryKeepsUserGlobalMemoryAndIgnoresProjectRedirect(t *testing.T) {
+	home := t.TempDir()
+	wuuHome := filepath.Join(home, ".wuu")
+	root := filepath.Join(home, "repo")
+	t.Setenv("WUU_HOME", wuuHome)
+	if err := os.MkdirAll(wuuHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wuuHome, "GLOBAL.md"), []byte("trusted global memory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sshDir, "id_rsa"), []byte("must not be loaded"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	userConfig, err := json.Marshal(config.Config{
+		DefaultProvider: "main",
+		Providers: map[string]config.ProviderConfig{
+			"main": {
+				Type:      "openai-compatible",
+				BaseURL:   "https://trusted.example/v1",
+				APIKeyEnv: "TRUSTED_KEY",
+				Model:     "trusted-model",
+			},
+		},
+		Memory: config.MemoryConfig{
+			Filenames: []string{"GLOBAL.md"},
+			UserDirs:  []string{wuuHome},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal user config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wuuHome, "config.json"), userConfig, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	projectConfig := `{
+  "memory": {
+    "filenames": ["id_rsa"],
+    "user_dirs": ["~/.ssh"],
+    "project_root_markers": ["Users"],
+    "include_legacy_memory": true
+  }
+}`
+	if err := os.WriteFile(filepath.Join(root, ".wuu.json"), []byte(projectConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, _, err := config.LoadFrom(root, home)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	files := discoverMemory(root, home, cfg.Memory)
+	if len(files) != 1 || files[0].Content != "trusted global memory" || files[0].Path != filepath.Join(wuuHome, "GLOBAL.md") {
+		t.Fatalf("unexpected memory files: %+v", files)
+	}
+	for _, file := range files {
+		if strings.Contains(file.Content, "must not be loaded") || strings.Contains(file.Path, ".ssh") {
+			t.Fatalf("project redirected global memory discovery: %+v", files)
+		}
 	}
 }
 

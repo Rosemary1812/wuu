@@ -617,6 +617,8 @@ func TestRunExecReviewRequiresOneScope(t *testing.T) {
 
 func TestRunInitWritesDefaultConfig(t *testing.T) {
 	workdir := t.TempDir()
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
 	t.Chdir(workdir)
 	output := captureStdout(t, func() {
 		if err := run([]string{"init", "--force"}); err != nil {
@@ -626,9 +628,10 @@ func TestRunInitWritesDefaultConfig(t *testing.T) {
 	if !strings.Contains(output, "created") {
 		t.Fatalf("expected created output, got %q", output)
 	}
-	data, err := os.ReadFile(filepath.Join(workdir, ".wuu.json"))
+	configPath := filepath.Join(wuuHome, "config.json")
+	data, err := os.ReadFile(configPath)
 	if err != nil {
-		t.Fatalf("expected config file: %v", err)
+		t.Fatalf("expected user config file: %v", err)
 	}
 	var cfg config.Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
@@ -636,6 +639,16 @@ func TestRunInitWritesDefaultConfig(t *testing.T) {
 	}
 	if cfg.DefaultProvider == "" || len(cfg.Providers) == 0 {
 		t.Fatalf("unexpected config: %+v", cfg)
+	}
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("stat user config: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("user config mode = %o, want 600", info.Mode().Perm())
+	}
+	if _, err := os.Stat(filepath.Join(workdir, ".wuu.json")); !os.IsNotExist(err) {
+		t.Fatalf("wuu init must not create a provider-bearing project config: %v", err)
 	}
 }
 
@@ -674,9 +687,35 @@ func TestLoadOrCreateAppServerConfigCreatesStarterConfig(t *testing.T) {
 	}
 }
 
+func TestLoadOrCreateAppServerConfigUsesWUUHomeWhenHomeIsEmpty(t *testing.T) {
+	root := t.TempDir()
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+
+	_, configPath, err := loadOrCreateAppServerConfig(root, "")
+	if err != nil {
+		t.Fatalf("loadOrCreateAppServerConfig: %v", err)
+	}
+	wantPath := filepath.Join(wuuHome, "config.json")
+	if configPath != wantPath {
+		t.Fatalf("config path = %q, want %q", configPath, wantPath)
+	}
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("WUU_HOME starter config missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".wuu.json")); !os.IsNotExist(err) {
+		t.Fatalf("app-server wrote starter config into project: %v", err)
+	}
+}
+
 func TestRunModelsRejectsUnsupportedProvider(t *testing.T) {
 	workdir := t.TempDir()
-	configPath := workdir + "/.wuu.json"
+	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
+	t.Setenv("WUU_HOME", wuuHome)
+	if err := os.MkdirAll(wuuHome, 0o700); err != nil {
+		t.Fatalf("mkdir WUU_HOME: %v", err)
+	}
+	configPath := filepath.Join(wuuHome, "config.json")
 	data := `{
   "default_provider": "main",
   "providers": {
