@@ -62,6 +62,13 @@ func TestMapCallToolResultPreservesRichMCPContent(t *testing.T) {
 	}
 }
 
+func TestMCPToolCallErrorPreservesServerDetail(t *testing.T) {
+	err := mcpToolCallError(toolresult.FromErrorText("invalid_arguments: app is required for click"))
+	if got := err.Error(); got != "mcp tool error: invalid_arguments: app is required for click" {
+		t.Fatalf("error = %q", got)
+	}
+}
+
 func TestMCPTool_MetadataDefaultsConservative(t *testing.T) {
 	tool := NewMCPTool(&Client{name: "server"}, Tool{Name: "inspect"})
 

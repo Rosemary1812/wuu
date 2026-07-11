@@ -193,7 +193,7 @@ public final class MCPServer {
                 "additionalProperties": false,
                 "properties": [
                     "action": ["type": "string", "enum": ComputerAction.allCases.map(\.rawValue)],
-                    "app": stringProperty,
+                    "app": ["type": "string", "description": "Target app display name, bundle identifier, or path. Required for every action except permission_status, request_permissions, and list_apps."],
                     "element_id": ["type": "integer"],
                     "x": ["type": "number", "description": "Horizontal pixel in the latest screenshot."],
                     "y": ["type": "number", "description": "Vertical pixel in the latest screenshot."],

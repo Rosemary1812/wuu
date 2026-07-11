@@ -102,3 +102,92 @@ func captureWindowPNG(processID: pid_t, timeout: TimeInterval = 8) throws -> Win
     }
     return try box.get()?.get() ?? { throw ComputerError.operationFailed("window screenshot did not complete") }()
 }
+
+@available(macOS 14.0, *)
+func captureForegroundWindowPNG(processID: pid_t) throws -> WindowCapture {
+    guard CGPreflightScreenCaptureAccess() else {
+        throw ComputerError.permissionDenied("Screen Recording permission is required for window screenshots")
+    }
+    guard let windowList = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else {
+        throw ComputerError.operationFailed("could not list foreground windows")
+    }
+    let candidates = windowList.compactMap { info -> (id: CGWindowID, frame: CGRect)? in
+        guard (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == processID,
+              (info[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
+              (info[kCGWindowSharingState as String] as? NSNumber)?.intValue != 0,
+              let number = info[kCGWindowNumber as String] as? NSNumber,
+              let bounds = info[kCGWindowBounds as String] as? [String: Any],
+              let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+              frame.width > 1,
+              frame.height > 1 else {
+            return nil
+        }
+        return (CGWindowID(number.uint32Value), frame)
+    }
+    guard let window = candidates.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) else {
+        throw ComputerError.operationFailed("no foreground window found")
+    }
+    let windowImage = CGWindowListCreateImage(
+        .null,
+        .optionIncludingWindow,
+        window.id,
+        [.boundsIgnoreFraming, .bestResolution]
+    )
+    let captured: (image: CGImage, frame: CGRect)
+    if let windowImage {
+        captured = (windowImage, window.frame)
+    } else {
+        return try captureSystemRegionPNG(window.frame)
+    }
+    guard let data = NSBitmapImageRep(cgImage: captured.image).representation(using: .png, properties: [:]) else {
+        throw ComputerError.operationFailed("foreground window screenshot produced no image")
+    }
+    return WindowCapture(
+        data: data,
+        geometry: CaptureGeometry(
+            windowFrame: captured.frame,
+            imageWidth: captured.image.width,
+            imageHeight: captured.image.height
+        )
+    )
+}
+
+private func captureSystemRegionPNG(_ frame: CGRect, timeout: TimeInterval = 4) throws -> WindowCapture {
+    let path = FileManager.default.temporaryDirectory
+        .appendingPathComponent("wuu-cua-\(UUID().uuidString).png")
+    defer { try? FileManager.default.removeItem(at: path) }
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+    process.arguments = [
+        "-x",
+        "-R\(Int(frame.origin.x)),\(Int(frame.origin.y)),\(Int(frame.width)),\(Int(frame.height))",
+        path.path,
+    ]
+    let finished = DispatchSemaphore(value: 0)
+    process.terminationHandler = { _ in finished.signal() }
+    do {
+        try process.run()
+    } catch {
+        throw ComputerError.operationFailed("start system screenshot: \(error.localizedDescription)")
+    }
+    guard finished.wait(timeout: .now() + timeout) == .success else {
+        process.terminate()
+        throw ComputerError.operationFailed("system screenshot timed out")
+    }
+    guard process.terminationStatus == 0,
+          let data = try? Data(contentsOf: path),
+          let image = NSBitmapImageRep(data: data),
+          image.pixelsWide > 0,
+          image.pixelsHigh > 0 else {
+        throw ComputerError.operationFailed("system screenshot produced no image")
+    }
+    return WindowCapture(
+        data: data,
+        geometry: CaptureGeometry(
+            windowFrame: frame,
+            imageWidth: image.pixelsWide,
+            imageHeight: image.pixelsHigh
+        )
+    )
+}

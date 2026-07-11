@@ -52,11 +52,13 @@ private func testInitializesAndAdvertisesFullComputerTool() throws {
     let properties = schema?["properties"] as? [String: Any]
     let action = properties?["action"] as? [String: Any]
     let actions = action?["enum"] as? [String]
+    let app = properties?["app"] as? [String: Any]
     try expect(actions == [
         "permission_status", "request_permissions", "list_apps", "observe",
         "click", "drag", "press_key", "scroll", "set_value", "type_text",
         "select_text", "perform_action", "wait_for_change",
     ], "full computer actions")
+    try expect((app?["description"] as? String)?.contains("Required for every action") == true, "app requirement is explicit")
 }
 
 private func testPreservesAccessibilityAndScreenshotContent() throws {

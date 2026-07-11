@@ -207,8 +207,17 @@ public final class MacComputerBackend: ComputerBackend {
     }
 
     private func observe(app: NSRunningApplication, axApplication: AXUIElement) throws -> ComputerResult {
-        try requireAccessibility()
-        let snapshot = snapshotter.snapshot(application: axApplication)
+        let accessibility = AXIsProcessTrusted()
+        let snapshot: AXSnapshot
+        if accessibility {
+            snapshot = snapshotter.snapshot(application: axApplication)
+        } else {
+            snapshotter.clear()
+            snapshot = AXSnapshot(
+                text: "Accessibility permission is unavailable; use the screenshot and coordinate input.",
+                elements: [:]
+            )
+        }
         snapshotProcessID = app.processIdentifier
         lastSnapshotText[app.processIdentifier] = snapshot.text
         var structured: [String: Any] = [
@@ -216,11 +225,12 @@ public final class MacComputerBackend: ComputerBackend {
             "display_name": app.localizedName ?? "Unknown",
             "process_id": Int(app.processIdentifier),
             "element_count": snapshot.elements.count,
-            "ax_preferred": true,
+            "ax_available": accessibility,
+            "ax_preferred": accessibility,
         ]
         var screenshot: Data?
         do {
-            let capture = try captureWindowPNG(processID: app.processIdentifier)
+            let capture = try captureWindowWithForegroundFallback(app: app)
             screenshot = capture.data
             lastCaptureGeometry[app.processIdentifier] = capture.geometry
             structured["screenshot"] = [
@@ -243,6 +253,24 @@ public final class MacComputerBackend: ComputerBackend {
             screenshotMIMEType: screenshot == nil ? nil : "image/png",
             structured: structured
         )
+    }
+
+    private func captureWindowWithForegroundFallback(app: NSRunningApplication) throws -> WindowCapture {
+        guard #available(macOS 14.0, *) else {
+            throw ComputerError.unsupported("window screenshots require macOS 14 or newer")
+        }
+        do {
+            return try captureWindowPNG(processID: app.processIdentifier)
+        } catch let backgroundError {
+            try activate(app)
+            do {
+                return try captureForegroundWindowPNG(processID: app.processIdentifier)
+            } catch let foregroundError {
+                throw ComputerError.operationFailed(
+                    "window screenshot failed in background (\(backgroundError.localizedDescription)) and after foreground retry (\(foregroundError.localizedDescription))"
+                )
+            }
+        }
     }
 
     private func element(_ command: ComputerCommand, app: NSRunningApplication) throws -> AXUIElement {

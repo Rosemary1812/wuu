@@ -24,6 +24,10 @@ final class AXSnapshotter {
         elements[id]
     }
 
+    func clear() {
+        elements.removeAll(keepingCapacity: true)
+    }
+
     private func walk(_ element: AXUIElement, depth: Int, lines: inout [String], visited: inout Set<CFHashCode>) {
         guard depth <= maxDepth, elements.count < maxElements else { return }
         let hash = CFHash(element)

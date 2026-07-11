@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -82,9 +83,17 @@ func (t *MCPTool) ExecuteResult(ctx context.Context, args string) (toolresult.Re
 		return toolresult.Result{}, mapErr
 	}
 	if result.IsError {
-		return mapped, fmt.Errorf("mcp tool error")
+		return mapped, mcpToolCallError(mapped)
 	}
 	return mapped, nil
+}
+
+func mcpToolCallError(result toolresult.Result) error {
+	detail := strings.TrimSpace(result.TextProjection())
+	if detail == "" {
+		return errors.New("mcp tool error")
+	}
+	return fmt.Errorf("mcp tool error: %s", detail)
 }
 
 // IsReadOnly reports whether the tool never modifies state.
