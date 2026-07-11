@@ -272,6 +272,7 @@ describe("CUA Activity windows", () => {
     expect(state.actionsHTML).toContain("接管");
     expect(state.actionsHTML).toContain("关闭画中画");
     expect(state.previewURL).toMatch(/^wuu-file:\/\/local\//);
+    expect(state.target).toBe("TextEdit <Draft>");
     expect(state.interaction).toEqual(interaction);
     expect(activityViewState(activity({ preview: undefined })).previewURL).toBe("");
     expect(activityActionsHTML(activity({ controller: "user" }))).toContain("交还 Agent");
@@ -301,6 +302,9 @@ describe("CUA Activity windows", () => {
     expect(html).not.toContain('class="error"');
     expect(cuaActivityHTML(activity({ error: "boom" }))).not.toContain("boom");
     expect(html).toContain('class="agent-pointer"');
+    expect(html).toContain("left:50%;top:50%");
+    expect(html).toContain("opacity:1;pointer-events:none");
+    expect(html).not.toContain("agentPointer.animate([{ opacity: 1 }, { opacity: 0 }]");
     expect(html).toContain("cubic-bezier(.22,.8,.24,1)");
     expect(html).toContain("border-radius:clamp(10px,3.2vw,16px)");
     expect(html).toContain("border-radius:inherit");
