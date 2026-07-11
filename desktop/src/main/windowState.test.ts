@@ -7,8 +7,6 @@ import {
   loadMainWindowBounds,
   MAIN_WINDOW_MAX_HEIGHT,
   MAIN_WINDOW_MAX_WIDTH,
-  MAIN_WINDOW_MIN_HEIGHT,
-  MAIN_WINDOW_MIN_WIDTH,
   saveMainWindowBounds,
   type DisplayLike,
 } from "./windowState";
@@ -21,11 +19,9 @@ describe("computeDefaultMainWindowBounds", () => {
     });
   });
 
-  it("clamps the width to the floor on a 1080p workArea", () => {
-    // 40% × 1920 = 768, below the 880 floor → floor wins.
-    // 60% × 1048 = 629, above the 560 floor → relative wins.
+  it("uses the relative ratio on a 1080p workArea", () => {
     expect(computeDefaultMainWindowBounds({ width: 1920, height: 1048 })).toEqual({
-      width: MAIN_WINDOW_MIN_WIDTH,
+      width: 768,
       height: 629,
     });
   });
@@ -47,10 +43,10 @@ describe("computeDefaultMainWindowBounds", () => {
     });
   });
 
-  it("falls back to the absolute minimum on a tiny workArea", () => {
+  it("uses the relative size on a tiny workArea", () => {
     expect(computeDefaultMainWindowBounds({ width: 1024, height: 700 })).toEqual({
-      width: MAIN_WINDOW_MIN_WIDTH,
-      height: MAIN_WINDOW_MIN_HEIGHT,
+      width: 410,
+      height: 420,
     });
   });
 

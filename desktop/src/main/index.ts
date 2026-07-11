@@ -126,8 +126,6 @@ import { createWindowRegistry, type WindowRegistry } from "./windowRegistry";
 import {
   computeDefaultMainWindowBounds,
   loadMainWindowBounds,
-  MAIN_WINDOW_MIN_HEIGHT,
-  MAIN_WINDOW_MIN_WIDTH,
   saveMainWindowBounds,
 } from "./windowState";
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -567,8 +565,6 @@ function createWindow(): void {
   const windowOptions: BrowserWindowConstructorOptions = {
     width,
     height,
-    minWidth: MAIN_WINDOW_MIN_WIDTH,
-    minHeight: MAIN_WINDOW_MIN_HEIGHT,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 18, y: 16 },
     ...mainWindowMaterialOptions(),

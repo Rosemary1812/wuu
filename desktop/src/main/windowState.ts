@@ -8,8 +8,6 @@ import {
 
 export const MAIN_WINDOW_DEFAULT_WIDTH_RATIO = 0.40;
 export const MAIN_WINDOW_DEFAULT_HEIGHT_RATIO = 0.60;
-export const MAIN_WINDOW_MIN_WIDTH = 880;
-export const MAIN_WINDOW_MIN_HEIGHT = 560;
 export const MAIN_WINDOW_MAX_WIDTH = 1600;
 export const MAIN_WINDOW_MAX_HEIGHT = 1100;
 
@@ -27,22 +25,14 @@ export type MainWindowSize = {
 // slightly taller-than-wide aspect (40% × 60%) so the chat / composer area
 // has vertical room for a typical agent conversation.
 //
-//  - Width is clamped between [MIN_WIDTH, MAX_WIDTH] so small laptops do not
-//    get a useless narrow window and 4K displays do not get a window that
-//    spans half the screen.
-//  - The same clamp is applied to height for symmetry, with the cap tuned
-//    below the width cap so the aspect stays vertical even on huge displays.
+//  - Width and height are capped on large displays so the window does not
+//    dominate the screen. There is intentionally no minimum: users can resize
+//    the window as narrowly or short as their operating system permits.
 export function computeDefaultMainWindowBounds(workArea: WorkArea): MainWindowSize {
   const targetWidth = MAIN_WINDOW_DEFAULT_WIDTH_RATIO * workArea.width;
   const targetHeight = MAIN_WINDOW_DEFAULT_HEIGHT_RATIO * workArea.height;
-  const width = Math.min(
-    MAIN_WINDOW_MAX_WIDTH,
-    Math.max(MAIN_WINDOW_MIN_WIDTH, Math.round(targetWidth)),
-  );
-  const height = Math.min(
-    MAIN_WINDOW_MAX_HEIGHT,
-    Math.max(MAIN_WINDOW_MIN_HEIGHT, Math.round(targetHeight)),
-  );
+  const width = Math.min(MAIN_WINDOW_MAX_WIDTH, Math.round(targetWidth));
+  const height = Math.min(MAIN_WINDOW_MAX_HEIGHT, Math.round(targetHeight));
   return { width, height };
 }
 
