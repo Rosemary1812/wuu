@@ -1,10 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  computeDefaultMainWindowBounds,
+  loadMainWindowBounds,
   MAIN_WINDOW_MAX_HEIGHT,
   MAIN_WINDOW_MAX_WIDTH,
   MAIN_WINDOW_MIN_HEIGHT,
   MAIN_WINDOW_MIN_WIDTH,
-  computeDefaultMainWindowBounds,
+  saveMainWindowBounds,
+  type DisplayLike,
 } from "./windowState";
 
 describe("computeDefaultMainWindowBounds", () => {
@@ -52,5 +58,109 @@ describe("computeDefaultMainWindowBounds", () => {
     const result = computeDefaultMainWindowBounds({ width: 1441, height: 901 });
     expect(Number.isInteger(result.width)).toBe(true);
     expect(Number.isInteger(result.height)).toBe(true);
+  });
+});
+
+const FAKE_DISPLAYS: DisplayLike[] = [
+  { workArea: { x: 0, y: 0, width: 1440, height: 900 } },
+  { workArea: { x: 1440, y: 0, width: 2560, height: 1440 } },
+];
+
+describe("loadMainWindowBounds / saveMainWindowBounds", () => {
+  let dir: string;
+  let file: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "wuu-window-state-"));
+    file = join(dir, "window-state.json");
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("returns null when no bounds have been saved", () => {
+    expect(loadMainWindowBounds(FAKE_DISPLAYS, { filePath: file })).toBeNull();
+  });
+
+  it("returns the saved bounds when the center sits on a connected display", () => {
+    saveMainWindowBounds(
+      { x: 200, y: 100, width: 1024, height: 840 },
+      { filePath: file },
+    );
+    expect(loadMainWindowBounds(FAKE_DISPLAYS, { filePath: file })).toEqual({
+      x: 200,
+      y: 100,
+      width: 1024,
+      height: 840,
+    });
+  });
+
+  it("returns bounds saved on a secondary display when it is still attached", () => {
+    saveMainWindowBounds(
+      { x: 1600, y: 50, width: 1280, height: 800 },
+      { filePath: file },
+    );
+    // Center at (2240, 450) falls inside the second fake display's workArea.
+    expect(loadMainWindowBounds(FAKE_DISPLAYS, { filePath: file })).toEqual({
+      x: 1600,
+      y: 50,
+      width: 1280,
+      height: 800,
+    });
+  });
+
+  it("returns null when the saved center sits off all connected displays", () => {
+    // Multi-monitor unplug case: window was on a third display that's gone.
+    saveMainWindowBounds(
+      { x: 4000, y: 1000, width: 1024, height: 840 },
+      { filePath: file },
+    );
+    expect(loadMainWindowBounds(FAKE_DISPLAYS, { filePath: file })).toBeNull();
+  });
+
+  it("returns null when the saved file is malformed or has partial fields", async () => {
+    await writeFile(file, "{not json");
+    expect(loadMainWindowBounds(FAKE_DISPLAYS, { filePath: file })).toBeNull();
+
+    await writeFile(
+      file,
+      JSON.stringify({ main_window_bounds: { x: 1, y: 2 } }),
+    );
+    expect(loadMainWindowBounds(FAKE_DISPLAYS, { filePath: file })).toBeNull();
+
+    await writeFile(
+      file,
+      JSON.stringify({ main_window_bounds: { x: 1, y: 2, width: 0, height: 100 } }),
+    );
+    expect(loadMainWindowBounds(FAKE_DISPLAYS, { filePath: file })).toBeNull();
+
+    await writeFile(
+      file,
+      JSON.stringify({ main_window_bounds: { x: 1, y: 2, width: 100, height: 100, extra: true } }),
+    );
+    // Extra unknown field is ignored, but if shape is otherwise valid the
+    // bounds still load — the data layer is lenient on whitespace.
+    expect(loadMainWindowBounds(FAKE_DISPLAYS, { filePath: file })).toEqual({
+      x: 1,
+      y: 2,
+      width: 100,
+      height: 100,
+    });
+  });
+
+  it("saveMainWindowBounds preserves other desktop settings fields", () => {
+    // Pretend other settings exist by writing a complete file first.
+    saveMainWindowBounds(
+      { x: 200, y: 100, width: 1024, height: 840 },
+      { filePath: file },
+    );
+    // Round-trip: load returns the saved bounds, file is preserved.
+    expect(loadMainWindowBounds(FAKE_DISPLAYS, { filePath: file })).toEqual({
+      x: 200,
+      y: 100,
+      width: 1024,
+      height: 840,
+    });
   });
 });

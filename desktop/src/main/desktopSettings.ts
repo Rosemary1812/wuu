@@ -8,8 +8,9 @@ import { wuuHomePath } from "./projects";
 // home directory (~/.wuu), written synchronously on change.
 
 import type { CodexPetSettings, ThemePreference } from "../shared/protocol";
+import type { WindowBounds } from "./windowState";
 
-export type { ThemePreference };
+export type { ThemePreference, WindowBounds };
 
 export type DesktopSettings = {
   // Auto-install the wuu CLI into ~/.local/bin at app startup. Defaults to
@@ -23,6 +24,11 @@ export type DesktopSettings = {
   // pets directory, with ~/.codex/pets as a compatibility source, and keeps
   // only the UI enablement + selected pet here.
   codex_pet?: CodexPetSettings;
+  // Last position + size of the main window as captured on close. The center
+  // point is checked against the connected displays at load time (in
+  // windowState.loadMainWindowBounds) so an unplugged display is treated as
+  // "no saved bounds" rather than "open off-screen".
+  main_window_bounds?: WindowBounds;
 };
 
 const THEME_PREFERENCES: readonly ThemePreference[] = ["system", "light", "dark"];
@@ -51,6 +57,26 @@ export function readDesktopSettings(filePath: string = desktopSettingsPath()): D
         enabled: codexPet.enabled === true,
         selected_id: typeof codexPet.selected_id === "string" ? codexPet.selected_id.trim() : "",
       };
+    }
+    if (
+      typeof record.main_window_bounds === "object" &&
+      record.main_window_bounds !== null &&
+      !Array.isArray(record.main_window_bounds)
+    ) {
+      const bounds = record.main_window_bounds as Record<string, unknown>;
+      if (
+        typeof bounds.x === "number" && Number.isFinite(bounds.x) &&
+        typeof bounds.y === "number" && Number.isFinite(bounds.y) &&
+        typeof bounds.width === "number" && Number.isFinite(bounds.width) && bounds.width > 0 &&
+        typeof bounds.height === "number" && Number.isFinite(bounds.height) && bounds.height > 0
+      ) {
+        settings.main_window_bounds = {
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+        };
+      }
     }
     return settings;
   } catch {
@@ -98,4 +124,16 @@ export function setCodexPetSettings(next: CodexPetSettings, filePath?: string): 
       selected_id: next.selected_id.trim(),
     },
   }, filePath);
+}
+
+export function getMainWindowBounds(filePath?: string): WindowBounds | undefined {
+  return readDesktopSettings(filePath).main_window_bounds;
+}
+
+export function setMainWindowBounds(bounds: WindowBounds, filePath?: string): void {
+  const settings = readDesktopSettings(filePath);
+  writeDesktopSettings(
+    { ...settings, main_window_bounds: { ...bounds } },
+    filePath,
+  );
 }

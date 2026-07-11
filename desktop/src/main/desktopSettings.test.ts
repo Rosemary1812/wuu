@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   getCodexPetSettings,
   getCliAutoInstallEnabled,
+  getMainWindowBounds,
   getThemePreference,
   readDesktopSettings,
   setCodexPetSettings,
   setCliAutoInstallEnabled,
+  setMainWindowBounds,
   setThemePreference,
   writeDesktopSettings,
 } from "./desktopSettings";
@@ -103,5 +105,62 @@ describe("desktopSettings", () => {
     await writeFile(file, JSON.stringify({ theme: "dark", skin: "work" }));
     expect(readDesktopSettings(file)).toEqual({ theme: "dark" });
     expect(getThemePreference(file)).toBe("dark");
+  });
+
+  it("returns undefined when no main_window_bounds have been saved", () => {
+    expect(getMainWindowBounds(file)).toBeUndefined();
+  });
+
+  it("round-trips main_window_bounds while preserving other settings", () => {
+    setThemePreference("dark", file);
+    setMainWindowBounds({ x: 100, y: 200, width: 1280, height: 800 }, file);
+    expect(getMainWindowBounds(file)).toEqual({
+      x: 100,
+      y: 200,
+      width: 1280,
+      height: 800,
+    });
+    expect(getThemePreference(file)).toBe("dark");
+
+    setMainWindowBounds({ x: 0, y: 0, width: 880, height: 560 }, file);
+    expect(getMainWindowBounds(file)).toEqual({
+      x: 0,
+      y: 0,
+      width: 880,
+      height: 560,
+    });
+    expect(getThemePreference(file)).toBe("dark");
+  });
+
+  it("ignores invalid main_window_bounds shapes on read", async () => {
+    await writeFile(
+      file,
+      JSON.stringify({ main_window_bounds: "near the screen" }),
+    );
+    expect(getMainWindowBounds(file)).toBeUndefined();
+
+    await writeFile(
+      file,
+      JSON.stringify({
+        main_window_bounds: { x: "1", y: 2, width: 100, height: 100 },
+      }),
+    );
+    expect(getMainWindowBounds(file)).toBeUndefined();
+
+    await writeFile(
+      file,
+      JSON.stringify({
+        main_window_bounds: { x: 1, y: 2, width: -1, height: 100 },
+      }),
+    );
+    expect(getMainWindowBounds(file)).toBeUndefined();
+
+    await writeFile(
+      file,
+      JSON.stringify({ theme: "light", main_window_bounds: { x: 1, y: 2 } }),
+    );
+    // Partial object (missing width / height) is dropped, theme survives.
+    expect(getMainWindowBounds(file)).toBeUndefined();
+    expect(getThemePreference(file)).toBe("light");
   });
 });

@@ -119,8 +119,10 @@ import { WorkspaceFileService } from "./workspaceFiles";
 import { createWindowRegistry, type WindowRegistry } from "./windowRegistry";
 import {
   computeDefaultMainWindowBounds,
+  loadMainWindowBounds,
   MAIN_WINDOW_MIN_HEIGHT,
   MAIN_WINDOW_MIN_WIDTH,
+  saveMainWindowBounds,
 } from "./windowState";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEV_CACHE_CLEANUP_THRESHOLD_BYTES = 512 * 1024 * 1024;
@@ -156,6 +158,10 @@ const DESKTOP_BUILD_INFO: DesktopBuildInfo = {
 let cachedCoreBuildInfo: CoreBuildInfo | undefined;
 let windowResizeEndTimer: NodeJS.Timeout | undefined;
 let windowResizeState = false;
+// Debounce timer for persisting the main window bounds on resize end. The
+// 200ms delay matches windowResizeEndTimer so the two callbacks fire
+// together — a single "user finished resizing" tick writes once.
+let mainWindowBoundsSaveTimer: NodeJS.Timeout | undefined;
 // Outcome of this session's startup CLI auto-install pass. Surfaced through
 // wuu:cli-install-status so the settings page can show a one-time,
 // non-blocking note when the pass actually installed or repaired the link.
@@ -334,6 +340,26 @@ function scheduleWindowResizeEnd(delay = 140): void {
   }, delay);
 }
 
+function scheduleMainWindowBoundsSave(win: BrowserWindow, delay = 200): void {
+  if (mainWindowBoundsSaveTimer) {
+    clearTimeout(mainWindowBoundsSaveTimer);
+  }
+  mainWindowBoundsSaveTimer = setTimeout(() => {
+    mainWindowBoundsSaveTimer = undefined;
+    persistMainWindowBoundsNow(win);
+  }, delay);
+}
+
+function persistMainWindowBoundsNow(win: BrowserWindow): void {
+  if (win.isDestroyed()) return;
+  // Maximised / fullscreen bounds are full-rect; restoring to them on the
+  // next launch would skip the user's normal layout. Skip the write so the
+  // last non-maximised bounds stay saved.
+  if (win.isMinimized()) return;
+  if (win.isMaximized() || win.isFullScreen()) return;
+  saveMainWindowBounds(win.getBounds());
+}
+
 function loadRenderer(window: BrowserWindow): void {
   if (!app.isPackaged) {
     window.webContents.on("console-message", (_event, _level, message) => {
@@ -499,8 +525,12 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
 
 function createWindow(): void {
   const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = computeDefaultMainWindowBounds(primaryDisplay.workArea);
-  mainWindow = new BrowserWindow({
+  const restoredBounds = loadMainWindowBounds(screen.getAllDisplays());
+  const defaultSize = computeDefaultMainWindowBounds(primaryDisplay.workArea);
+  const width = restoredBounds?.width ?? defaultSize.width;
+  const height = restoredBounds?.height ?? defaultSize.height;
+
+  const windowOptions: BrowserWindowConstructorOptions = {
     width,
     height,
     minWidth: MAIN_WINDOW_MIN_WIDTH,
@@ -514,7 +544,13 @@ function createWindow(): void {
       nodeIntegration: false,
       webviewTag: true,
     },
-  });
+  };
+  if (restoredBounds) {
+    windowOptions.x = restoredBounds.x;
+    windowOptions.y = restoredBounds.y;
+  }
+
+  mainWindow = new BrowserWindow(windowOptions);
 
   windowRegistry.registerWindow(mainWindow, "main");
   const win = mainWindow;
@@ -523,11 +559,25 @@ function createWindow(): void {
   windowRegistry.attachResizeHandlers(win, () => {
     setWindowResizeState(true);
     scheduleWindowResizeEnd();
+    scheduleMainWindowBoundsSave(win);
+  });
+  win.on("close", () => {
+    // Last-write-wins: cancel any pending debounce and persist synchronously
+    // before the window is destroyed.
+    if (mainWindowBoundsSaveTimer) {
+      clearTimeout(mainWindowBoundsSaveTimer);
+      mainWindowBoundsSaveTimer = undefined;
+    }
+    persistMainWindowBoundsNow(win);
   });
   win.on("closed", () => {
     if (windowResizeEndTimer) {
       clearTimeout(windowResizeEndTimer);
       windowResizeEndTimer = undefined;
+    }
+    if (mainWindowBoundsSaveTimer) {
+      clearTimeout(mainWindowBoundsSaveTimer);
+      mainWindowBoundsSaveTimer = undefined;
     }
     windowResizeState = false;
     cuaActivityWindowManager.setActiveThread(undefined);
