@@ -5,6 +5,7 @@ import {
   activityControlMethod,
   cuaActivityFromServerEvent,
   cuaActivityHTML,
+  snapActivityBounds,
 } from "./cuaActivityWindows";
 
 function activity(overrides: Partial<ActivitySession> = {}): ActivitySession {
@@ -55,9 +56,40 @@ describe("CUA Activity windows", () => {
     expect(html).toContain("接管");
     expect(html).toContain("停止");
     expect(html).toContain("prefers-color-scheme:dark");
-    expect(html).toContain("Computer Use");
+    expect(html).not.toContain("Agent 正在操作");
+    expect(html).not.toContain("Computer Use");
     expect(html).not.toContain("拖动浮窗");
     expect(cuaActivityHTML(activity({ controller: "user", state: "user_controlled" }))).toContain("交还 Agent");
+  });
+
+  it("uses glass without visible copy before the first preview", () => {
+    const html = cuaActivityHTML(activity({ preview: undefined, state: "starting" }));
+    expect(html).toContain('class="glass"');
+    expect(html).not.toContain(">正在获取画面<");
+    expect(html).not.toContain("正在连接 Mac");
+  });
+
+  it("snaps near screen edges with an inset", () => {
+    expect(snapActivityBounds(
+      { x: 5, y: 650, width: 380, height: 248 },
+      { x: 0, y: 0, width: 1440, height: 900 },
+      [],
+    )).toEqual({ x: 8, y: 644, width: 380, height: 248 });
+  });
+
+  it("snaps to overlapping Wuu window inner edges only within range", () => {
+    const workArea = { x: 0, y: 0, width: 1800, height: 1100 };
+    const wuuWindow = { x: 120, y: 100, width: 1200, height: 800 };
+    expect(snapActivityBounds(
+      { x: 128, y: 115, width: 380, height: 248 },
+      workArea,
+      [wuuWindow],
+    )).toEqual({ x: 128, y: 108, width: 380, height: 248 });
+    expect(snapActivityBounds(
+      { x: 700, y: 500, width: 380, height: 248 },
+      workArea,
+      [wuuWindow],
+    )).toEqual({ x: 700, y: 500, width: 380, height: 248 });
   });
 
   it("parses only explicit Activity control URLs", () => {
