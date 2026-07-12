@@ -1779,3 +1779,65 @@
   background: var(--surface-3);
   margin: 6px 0;
 }
+
+/* Right-click context menu for the composer textarea. The component
+   (ComposerContextMenu in ComposerContextMenu.tsx) renders into
+   document.body via createPortal so position: fixed is anchored to
+   the viewport even though composer-shell has backdrop-filter and
+   transform — both of which would otherwise break fixed positioning.
+   The visual language mirrors the file-tree context menu (flat
+   surface, soft shadow, no native chrome) so the two right-click
+   affordances feel like one system. z-index 1000 matches the file
+   tree's menu so a composer menu and a file-tree menu can never
+   accidentally sit on top of each other mid-transition. */
+.composer-context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 132px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--ink-overlay-12);
+  border-radius: var(--radius-sm);
+  box-shadow:
+    0 12px 32px var(--ink-overlay-8),
+    0 2px 6px var(--ink-overlay-6);
+  font-family: var(--font-ui, var(--font-body));
+  animation: composer-context-menu-in 0.1s ease-out;
+}
+
+.composer-context-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 12px;
+  font-family: inherit;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: default;
+}
+
+.composer-context-menu-item:hover:not(:disabled),
+.composer-context-menu-item:focus-visible:not(:disabled) {
+  background: var(--ink-overlay-4);
+  outline: none;
+}
+
+.composer-context-menu-item:disabled {
+  color: var(--ink-muted, var(--ink-overlay-40));
+  cursor: not-allowed;
+}
+
+@keyframes composer-context-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
