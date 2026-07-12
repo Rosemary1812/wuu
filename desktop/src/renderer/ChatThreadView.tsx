@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { Reply, SmilePlus, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Reply, SmilePlus, X } from "lucide-react";
 import type {
   ConversationSubthread,
   EnvelopeMeta,
@@ -25,6 +25,10 @@ import type { QueuedComposerMessage } from "./ComposerMessages";
 import { DefaultAvatarMark } from "./DefaultAvatar";
 import { reactionArt } from "./MessageReactionArt";
 import { EnvelopeNotice } from "./EnvelopeNotice";
+import {
+  collapsedLongTextPreview,
+  useLongTextCollapse,
+} from "./LongTextCollapse";
 import { MessageFileList, MessageImageGrid } from "./MessageActions";
 import { MessageReactions } from "./MessageReactions";
 import {
@@ -712,6 +716,24 @@ function ChatRow({
   onReact?: (item: ThreadItem, reaction: string) => void;
 }): JSX.Element {
   const topBubbleClass = isTopBubble ? " chat-row--top-bubble" : "";
+  // Long-text collapse state for the chat-style bubble — the same
+  // threshold + preview estimator as `ThreadItemView`'s
+  // `user-message-long-card`, so an 8 KB agent-notification dump that
+  // lands in the chat stream folds to ~14 lines by default with a
+  // "显示更多" toggle. System / focus / envelope rows don't carry a
+  // message body, so the hook runs with an empty string —
+  // `isCollapsibleLongText` bails out cheaply on that path. The hook
+  // sits above every early return so its call order is stable across
+  // renders regardless of which `row.kind` branch the user sees.
+  const messageText =
+    row.kind === "user" || row.kind === "participant"
+      ? row.item.text ?? ""
+      : "";
+  const { collapsible, expanded, toggleExpanded } =
+    useLongTextCollapse(messageText);
+  const longCardClass = collapsible
+    ? ` chat-bubble--long-card ${expanded ? "expanded" : "collapsed"}`
+    : "";
   if (row.kind === "system") {
     return (
       <div className={`chat-row chat-row--system${topBubbleClass}`}>
@@ -752,15 +774,38 @@ function ChatRow({
     return (
       <div className={`chat-row chat-row--user${topBubbleClass}`}>
         <div className="chat-bubble-group">
-          <div className="chat-bubble chat-bubble--user">
+          <div className={`chat-bubble chat-bubble--user${longCardClass}`}>
             {row.item.images?.length ? (
               <MessageImageGrid images={row.item.images} />
             ) : null}
             {row.item.files?.length ? (
               <MessageFileList files={row.item.files} />
             ) : null}
-            {row.item.text ? (
+            {collapsible ? (
+              expanded ? (
+                <RichContent text={messageText} cwd={cwd} />
+              ) : (
+                <div className="chat-bubble-raw-query">
+                  {collapsedLongTextPreview(messageText)}
+                </div>
+              )
+            ) : row.item.text ? (
               <RichContent text={row.item.text} cwd={cwd} />
+            ) : null}
+            {collapsible ? (
+              <button
+                type="button"
+                className="chat-bubble-expand-toggle"
+                aria-expanded={expanded}
+                onClick={toggleExpanded}
+              >
+                <span>{expanded ? "收起" : "显示更多"}</span>
+                {expanded ? (
+                  <ChevronUp aria-hidden="true" />
+                ) : (
+                  <ChevronDown aria-hidden="true" />
+                )}
+              </button>
             ) : null}
             <ChatBubbleToolbar
               item={row.item}
@@ -815,8 +860,33 @@ function ChatRow({
       <ChatAvatar participant={participant} status={participantStatus} />
       <div className="chat-bubble-group">
         <div className="chat-sender-name">{name}</div>
-        <div className="chat-bubble">
-          {row.item.text ? <RichContent text={row.item.text} cwd={cwd} /> : null}
+        <div className={`chat-bubble${longCardClass}`}>
+          {collapsible ? (
+            expanded ? (
+              <RichContent text={messageText} cwd={cwd} />
+            ) : (
+              <div className="chat-bubble-raw-query">
+                {collapsedLongTextPreview(messageText)}
+              </div>
+            )
+          ) : row.item.text ? (
+            <RichContent text={row.item.text} cwd={cwd} />
+          ) : null}
+          {collapsible ? (
+            <button
+              type="button"
+              className="chat-bubble-expand-toggle"
+              aria-expanded={expanded}
+              onClick={toggleExpanded}
+            >
+              <span>{expanded ? "收起" : "显示更多"}</span>
+              {expanded ? (
+                <ChevronUp aria-hidden="true" />
+              ) : (
+                <ChevronDown aria-hidden="true" />
+              )}
+            </button>
+          ) : null}
           <ChatBubbleToolbar
             item={row.item}
             onReact={onReact}

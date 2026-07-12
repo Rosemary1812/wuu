@@ -211,6 +211,23 @@
   color: var(--ink);
   font-size: var(--conversation-message-font-size, 14px);
   line-height: var(--conversation-reading-line-height, 1.5);
+  /*
+   * Last-resort wrapping for unbreakable inline tokens (file paths like
+   * `internal/appserver/turn_handlers.go:2452`, JSON-ish snippets such as
+   * `<subagent_notification>`, code identifiers, long URLs). Without this
+   * pair the bubble's text paints past its rounded right edge — the
+   * descendants all sit on min-width:0 chains that would let the bubble
+   * itself shrink, but `overflow-wrap: normal` (the default) still refuses
+   * to break mid-word, so the glyphs run straight through `border-radius`.
+   * `anywhere` lets the line break at any character when no softer break
+   * point exists, and `word-break: break-word` is the historical alias
+   * kept for older WebKit renderers. This matches the pattern already used
+   * by `.turn-process-entry` and `.workspace-content` in turns.css /
+   * workspace.css so a chat bubble stays inside its own background even
+   * when the body is a corrupted notification or a code-heavy dump.
+   */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .chat-bubble--user {
@@ -225,6 +242,75 @@
    never a queue strip. */
 .chat-bubble--pending {
   opacity: 0.65;
+}
+
+/*
+ * Long-text collapse for the chat-style bubble. Same affordance as
+ * `.user-message-long-card` in turns.css, but tuned for the chat
+ * bubble's tighter 8/12 padding and 12 px radius so the bubble keeps
+ * its chat shape even when it carries an 8 KB agent-notification dump
+ * (the failure mode that prompted the bug report: a synthesized
+ * `user_message` from `combineAgentCompletionMessages` piercing the
+ * bubble's right edge before the user could even scroll past it).
+ * Threshold + preview estimator live in `./LongTextCollapse` so this
+ * stays a pure presentational rule.
+ */
+.chat-bubble--long-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.chat-bubble-raw-query {
+  width: 100%;
+  min-width: 0;
+  color: inherit;
+  line-height: var(--conversation-reading-line-height, 1.5);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.chat-bubble-expand-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  padding: 0;
+  transition: color 120ms ease;
+}
+.chat-bubble-expand-toggle:hover,
+.chat-bubble-expand-toggle:focus-visible {
+  outline: 0;
+  color: var(--ink);
+}
+.chat-bubble-expand-toggle svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+/*
+ * Toggle aligns to the bubble's "empty" side so short bubbles don't
+ * push it off toward the avatar / screen edge: outgoing user bubbles
+ * (right-aligned) sit against the right edge, participant bubbles
+ * (left-aligned) sit against the left edge. The parent long-card
+ * variant is a column flex, so `align-self` lands the toggle on the
+ * intended side without us needing a separate wrapper element.
+ */
+.chat-row--user .chat-bubble-expand-toggle {
+  align-self: flex-end;
+}
+.chat-row--participant .chat-bubble-expand-toggle {
+  align-self: flex-start;
 }
 
 .chat-pending-hint {

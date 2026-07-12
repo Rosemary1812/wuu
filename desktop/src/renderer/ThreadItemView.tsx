@@ -9,7 +9,7 @@ import {
 } from "react";
 import { ChevronDown, ChevronUp, PanelRightOpen, Paperclip, Send } from "lucide-react";
 import type { InputFile, InputImage, ThreadItem, Turn } from "../shared/protocol";
-import { agentHandoffDisplay } from "./AgentHandoff";
+import { agentHandoffDisplayItem } from "./AgentHandoff";
 import { replyCountBadge } from "./AppState";
 import {
   clipboardAttachmentFiles,
@@ -20,6 +20,10 @@ import {
   isSupportedComposerAttachment
 } from "./ComposerMessages";
 import { EnvelopeNotice } from "./EnvelopeNotice";
+import {
+  collapsedLongTextPreview,
+  useLongTextCollapse,
+} from "./LongTextCollapse";
 import { RichContent } from "./RichContent";
 import {
   AgentMessageActions,
@@ -43,11 +47,6 @@ import {
   userFacingErrorForMessage,
   type UserFacingErrorAction,
 } from "./UserFacingErrors";
-
-const COLLAPSIBLE_USER_MESSAGE_LINE_THRESHOLD = 14;
-const COLLAPSIBLE_USER_MESSAGE_CHAR_THRESHOLD = 1200;
-const COLLAPSIBLE_USER_MESSAGE_SOFT_LINE_CHARS = 84;
-const COLLAPSIBLE_USER_MESSAGE_PREVIEW_LINES = 14;
 
 export function ThreadItemView({
   turnID,
@@ -105,7 +104,12 @@ export function ThreadItemView({
       if (item.envelope_meta && item.envelope_meta.length > 0) {
         return <EnvelopeNotice meta={item.envelope_meta} text={text} />;
       }
-      const handoff = agentHandoffDisplay(text);
+      // Item-aware gate: the name field is the reliable wire signal. Even
+      // when the payload text is malformed (combined envelopes with \n\n
+      // joins, <changed_file_overlap> tails), the item-level helper short-
+      // circuits to a generic handoff divider rather than letting raw JSON
+      // slip into the chat bubble.
+      const handoff = agentHandoffDisplayItem(item);
       if (handoff) {
         return (
           <SystemEventDivider
@@ -409,16 +413,14 @@ function UserMessageBubble({
   cwd?: string;
   onOpenFile?: (path: string) => void;
 }): JSX.Element {
-  const [expandedState, setExpandedState] = useState({
-    text,
-    expanded: false,
-  });
-  const collapsible = isCollapsibleUserMessage(text);
-  const expanded =
-    collapsible && expandedState.text === text ? expandedState.expanded : false;
-
+  // Threshold + preview logic + state keying all live in
+  // `./LongTextCollapse` so the chat bubble can reuse the exact same
+  // numbers. The hook's `{text, expanded}` state shape is what makes
+  // the toggle survive a parent re-render with a new message body
+  // without flashing the previous expansion — see the module doc.
+  const { collapsible, expanded, toggleExpanded } = useLongTextCollapse(text);
   const collapsed = collapsible && !expanded;
-  const displayedText = collapsed ? collapsedUserMessagePreview(text) : text;
+  const displayedText = collapsed ? collapsedLongTextPreview(text) : text;
 
   return (
     <div
@@ -440,12 +442,7 @@ function UserMessageBubble({
           type="button"
           className="user-message-expand-toggle"
           aria-expanded={expanded}
-          onClick={() =>
-            setExpandedState({
-              text,
-              expanded: !expanded,
-            })
-          }
+          onClick={toggleExpanded}
         >
           <span>{expanded ? "收起" : "显示更多"}</span>
           {expanded ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
@@ -455,53 +452,9 @@ function UserMessageBubble({
   );
 }
 
-function collapsedUserMessagePreview(text: string): string {
-  let estimatedLines = 0;
-  const previewLines: string[] = [];
-
-  for (const line of text.split(/\r\n|\r|\n/)) {
-    const lineEstimate = Math.max(
-      1,
-      Math.ceil(line.length / COLLAPSIBLE_USER_MESSAGE_SOFT_LINE_CHARS),
-    );
-    if (estimatedLines + lineEstimate <= COLLAPSIBLE_USER_MESSAGE_PREVIEW_LINES) {
-      previewLines.push(line);
-      estimatedLines += lineEstimate;
-      continue;
-    }
-
-    const remainingLines = COLLAPSIBLE_USER_MESSAGE_PREVIEW_LINES - estimatedLines;
-    if (remainingLines > 0) {
-      previewLines.push(
-        line
-          .slice(0, remainingLines * COLLAPSIBLE_USER_MESSAGE_SOFT_LINE_CHARS)
-          .trimEnd(),
-      );
-    }
-    break;
-  }
-
-  const preview = previewLines.join("\n").trimEnd();
-  return preview ? `${preview}...` : "...";
-}
-
-function isCollapsibleUserMessage(text: string): boolean {
-  if (text.length > COLLAPSIBLE_USER_MESSAGE_CHAR_THRESHOLD) {
-    return true;
-  }
-  let estimatedLines = 0;
-  for (const line of text.split(/\r\n|\r|\n/)) {
-    estimatedLines += Math.max(
-      1,
-      Math.ceil(line.length / COLLAPSIBLE_USER_MESSAGE_SOFT_LINE_CHARS),
-    );
-    if (estimatedLines > COLLAPSIBLE_USER_MESSAGE_LINE_THRESHOLD) {
-      return true;
-    }
-  }
-  return false;
-}
-
+// Both helpers (collapsedUserMessagePreview + isCollapsibleUserMessage) and
+// the four COLLAPSIBLE_USER_MESSAGE_* constants moved to `./LongTextCollapse`
+// so the chat bubble can reuse the same thresholds and preview estimator.
 function UserMessageInlineEditor({
   item,
   initialText,

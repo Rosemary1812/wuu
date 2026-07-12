@@ -1386,3 +1386,167 @@ describe("findScrollParent", () => {
     expect(findScrollParent(lonely)).toBeNull();
   });
 });
+
+/**
+ * Long-text collapse behaviour — mirrors the affordance the main
+ * conversation already has via `user-message-long-card`, but tuned for
+ * the chat bubble (the bug that prompted the report: a synthesized
+ * `user_message` carrying an 8 KB notification dump piercing the
+ * bubble's right edge and consuming half the screen). Threshold +
+ * preview estimator are shared with `ThreadItemView` through
+ * `./LongTextCollapse`; these tests only assert on the chat surface's
+ * own wiring.
+ */
+describe("ChatThreadView long-text collapse", () => {
+  // 18 numbered items × ~110 chars each = ~1980 chars total, well past
+  // the 1200-char / 14-line collapsible threshold and forcing real
+  // multi-line wrapping. Mirrors the failure mode: a long diagnostic
+  // dump with file paths and JSON-ish snippets.
+  function longMessage(): string {
+    return Array.from({ length: 18 }, (_, i) =>
+      `${i + 1}. 步骤 ${i + 1}:` + " 很长很长的诊断细节 ".repeat(10),
+    ).join("\n\n");
+  }
+
+  it("renders short user messages without a long-card variant or toggle", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([{ id: "item-1", type: "user_message", text: "在吗" }]),
+      }),
+    );
+    const bubble = container.querySelector(".chat-row--user .chat-bubble");
+    expect(bubble).not.toBeNull();
+    expect(bubble?.classList.contains("chat-bubble--long-card")).toBe(false);
+    expect(container.querySelector(".chat-bubble-expand-toggle")).toBeNull();
+    // Short messages keep their RichContent rendering — no preview
+    // wrapping, no `raw-query` surface.
+    expect(container.querySelector(".chat-bubble-raw-query")).toBeNull();
+  });
+
+  it("folds a long user message to a preview by default with a 显示更多 toggle", () => {
+    const longText = longMessage();
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([{ id: "item-1", type: "user_message", text: longText }]),
+      }),
+    );
+    const bubble = container.querySelector(".chat-row--user .chat-bubble");
+    expect(bubble).not.toBeNull();
+    expect(bubble?.classList.contains("chat-bubble--long-card")).toBe(true);
+    expect(bubble?.classList.contains("collapsed")).toBe(true);
+    expect(bubble?.classList.contains("expanded")).toBe(false);
+    const toggle = container.querySelector(
+      ".chat-row--user .chat-bubble-expand-toggle",
+    );
+    expect(toggle).not.toBeNull();
+    expect(toggle?.textContent).toContain("显示更多");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    // Preview is the truncated text node, shorter than the source and
+    // visibly elided so the reader can tell it was folded.
+    const preview = container.querySelector(".chat-bubble-raw-query");
+    expect(preview).not.toBeNull();
+    expect(preview?.textContent ?? "").toMatch(/\.\.\.$/);
+    expect(preview?.textContent?.length ?? 0).toBeLessThan(longText.length);
+    // RichContent is hidden while collapsed — the preview is the
+    // truthful surface until the user opts in.
+    expect(
+      container.querySelector(".chat-row--user .chat-bubble .rich-content"),
+    ).toBeNull();
+  });
+
+  it("expands a long user message when the 显示更多 toggle is clicked", () => {
+    const longText = longMessage();
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([{ id: "item-1", type: "user_message", text: longText }]),
+      }),
+    );
+    const bubble = container.querySelector(".chat-row--user .chat-bubble");
+    const toggle = container.querySelector<HTMLButtonElement>(
+      ".chat-row--user .chat-bubble-expand-toggle",
+    );
+    expect(toggle).not.toBeNull();
+    act(() => {
+      toggle!.click();
+    });
+    // State flipped to expanded on both the bubble class and the
+    // button's aria attribute, and the toggle copy switched to 收起
+    // so a screen reader user hears the change of state too.
+    expect(bubble?.classList.contains("expanded")).toBe(true);
+    expect(bubble?.classList.contains("collapsed")).toBe(false);
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle?.textContent).toContain("收起");
+    // The preview is gone, RichContent is back — full markdown
+    // fidelity once the reader opts in.
+    expect(container.querySelector(".chat-bubble-raw-query")).toBeNull();
+    expect(
+      container.querySelector(".chat-row--user .chat-bubble .rich-content"),
+    ).not.toBeNull();
+  });
+
+  it("folds a long participant message with the toggle aligned to the left edge", () => {
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: turns([
+          {
+            id: "item-1",
+            type: "participant_message",
+            text: longMessage(),
+            post_kind: "result",
+            participant: noel,
+          },
+        ]),
+      }),
+    );
+    const bubble = container.querySelector(
+      ".chat-row--participant .chat-bubble",
+    );
+    expect(bubble?.classList.contains("chat-bubble--long-card")).toBe(true);
+    expect(bubble?.classList.contains("collapsed")).toBe(true);
+    // Participant bubbles don't carry the `--user` modifier, so the
+    // toggle sits under the row-specific selector. Same affordance,
+    // opposite alignment (left instead of right) — the CSS test
+    // pins the alignment itself.
+    const toggle = container.querySelector(
+      ".chat-row--participant .chat-bubble-expand-toggle",
+    );
+    expect(toggle).not.toBeNull();
+    expect(toggle?.textContent).toContain("显示更多");
+  });
+
+  it("does not apply the long-card variant to system / focus / envelope rows", () => {
+    // These row kinds carry no user-typed body; their text is either a
+    // divider label or forwarded envelope metadata. The hook should
+    // run with an empty string and bail out cheaply — no toggle, no
+    // long-card class anywhere on those rows.
+    const container = mount(
+      createElement(ChatThreadView, {
+        turns: [
+          {
+            id: "turn-1",
+            items: [
+              {
+                id: "item-1",
+                type: "user_message",
+                text: "",
+                envelope_meta: [
+                  {
+                    source_thread_id: "thread-x",
+                    addressed: true,
+                    hop: 1,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    // An envelope row renders an EnvelopeNotice, not a chat-bubble.
+    // The relevant invariant: no chat-bubble gets the long-card class.
+    const longCards = container.querySelectorAll(".chat-bubble--long-card");
+    expect(longCards).toHaveLength(0);
+    const toggles = container.querySelectorAll(".chat-bubble-expand-toggle");
+    expect(toggles).toHaveLength(0);
+  });
+});

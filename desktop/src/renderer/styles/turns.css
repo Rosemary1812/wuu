@@ -2553,11 +2553,28 @@
   gap: 8px;
   margin: 0;
   padding-left: 24px;
+  /*
+   * The grid track must shrink with the parent — default `none` sizes
+   * each track to the widest item's max-content, so a list item with a
+   * long unbreakable token (`internal/appserver/turn_handlers.go:2452`,
+   * `<subagent_notification>`, etc.) pushes the whole list past the
+   * surrounding bubble / turn-process card. `minmax(0, 1fr)` lets the
+   * track go down to 0 and up to the available 1fr, and `min-width: 0`
+   * lets the grid container itself shrink inside the flex column it
+   * sits in. The actual mid-token breaking happens one level up at
+   * `.chat-bubble` / `.turn-process-entry`, where `overflow-wrap:
+   * anywhere` is the final guard that keeps the glyphs inside the
+   * rounded background.
+   */
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .rich-content li {
   min-width: 0;
   padding-left: 2px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .rich-content li > .rich-paragraph {
