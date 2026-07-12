@@ -1,6 +1,6 @@
 module github.com/blueberrycongee/wuu
 
-go 1.26.0
+go 1.26.5
 
 require (
 	charm.land/catwalk v0.35.3
@@ -11,8 +11,8 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/image v0.43.0
-	golang.org/x/net v0.43.0
-	golang.org/x/sys v0.42.0
+	golang.org/x/net v0.55.0
+	golang.org/x/sys v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.52.0
 )
