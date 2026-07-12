@@ -104,3 +104,28 @@ func TestMergeWithBundledMaterializesPptxReferences(t *testing.T) {
 		t.Fatalf("skill reference %q not reachable on disk: %v", ref, err)
 	}
 }
+
+// The skill-creator is the meta-skill that authors other skills: it must
+// surface from the bundle with its frontmatter reference on disk, and it must
+// pass the same lint it tells authors to run.
+func TestMergeWithBundledSkillCreatorLintsClean(t *testing.T) {
+	merged := MergeWithBundled(nil, t.TempDir())
+	creator, ok := Find(merged, "skill-creator")
+	if !ok {
+		t.Fatalf("bundled 'skill-creator' missing from %+v", merged)
+	}
+	if creator.Description == "" {
+		t.Fatal("skill-creator description empty — would be hidden from catalog")
+	}
+	ref := filepath.Join(creator.Dir, "references", "frontmatter.md")
+	if _, err := os.Stat(ref); err != nil {
+		t.Fatalf("skill reference %q not reachable on disk: %v", ref, err)
+	}
+	issues, err := LintPath(creator.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("skill-creator must lint clean, got %+v", issues)
+	}
+}
