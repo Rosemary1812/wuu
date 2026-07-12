@@ -725,6 +725,304 @@ private func windowFrameDistance(_ left: CGRect, _ right: CGRect) -> CGFloat {
     abs(left.minX - right.minX) + abs(left.minY - right.minY) + abs(left.width - right.width) + abs(left.height - right.height)
 }
 
+func captureStageOffscreenOrigin(screenFrames: [CGRect]) -> CGPoint {
+    let union = screenFrames.reduce(CGRect.zero) { $0.union($1) }
+    return CGPoint(
+        x: union.maxX + max(union.width * 3, 5800),
+        y: union.maxY + max(union.height * 3, 4000)
+    )
+}
+
+func captureStageVisibleFraction(windowFrame: CGRect, screenFrames: [CGRect]) -> CGFloat {
+    let windowArea = max(1, windowFrame.width * windowFrame.height)
+    let visibleArea = screenFrames.reduce(CGFloat.zero) { total, screen in
+        let intersection = windowFrame.intersection(screen)
+        guard !intersection.isNull, !intersection.isEmpty else { return total }
+        return total + intersection.width * intersection.height
+    }
+    return min(1, visibleArea / windowArea)
+}
+
+func captureStageTargetIndex(
+    windowFrames: [CGRect],
+    requestedFrame: CGRect?,
+    focusedFrame: CGRect?
+) -> Int? {
+    guard !windowFrames.isEmpty else { return nil }
+    if let requestedFrame {
+        return windowFrames.indices.min {
+            windowFrameDistance(windowFrames[$0], requestedFrame) < windowFrameDistance(windowFrames[$1], requestedFrame)
+        }
+    }
+    if let focusedFrame {
+        return windowFrames.indices.min {
+            windowFrameDistance(windowFrames[$0], focusedFrame) < windowFrameDistance(windowFrames[$1], focusedFrame)
+        }
+    }
+    return windowFrames.indices.max {
+        windowFrames[$0].width * windowFrames[$0].height < windowFrames[$1].width * windowFrames[$1].height
+    }
+}
+
+func captureStageWindowAssignments(
+    currentFrames: [CGRect],
+    currentTitles: [String],
+    expectedFrames: [CGRect],
+    expectedTitles: [String]
+) -> [Int?] {
+    guard currentFrames.count == currentTitles.count,
+          expectedFrames.count == expectedTitles.count else {
+        return Array(repeating: nil, count: currentFrames.count)
+    }
+    var remaining = Set(expectedFrames.indices)
+    return currentFrames.indices.map { currentIndex in
+        guard !remaining.isEmpty else { return nil }
+        let matchingTitles = remaining.filter { expectedTitles[$0] == currentTitles[currentIndex] }
+        let pool = matchingTitles.isEmpty ? Array(remaining) : Array(matchingTitles)
+        guard let match = pool.min(by: {
+            windowFrameDistance(currentFrames[currentIndex], expectedFrames[$0])
+                < windowFrameDistance(currentFrames[currentIndex], expectedFrames[$1])
+        }) else { return nil }
+        remaining.remove(match)
+        return match
+    }
+}
+
+private func captureDisplayFrames() -> [CGRect] {
+    var count: UInt32 = 0
+    guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return [] }
+    var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+    let result = displays.withUnsafeMutableBufferPointer {
+        CGGetActiveDisplayList(count, $0.baseAddress, &count)
+    }
+    guard result == .success else { return [] }
+    return displays.prefix(Int(count)).map(CGDisplayBounds)
+}
+
+private func requestedWindowFrame(windowID: CGWindowID?, processID: pid_t) -> CGRect? {
+    guard let windowID, windowID > 0,
+          let windows = CGWindowListCopyWindowInfo(.optionIncludingWindow, windowID) as? [[String: Any]],
+          let window = windows.first(where: {
+              ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == windowID
+                  && ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == processID
+          }),
+          let bounds = window[kCGWindowBounds as String] as? [String: Any] else { return nil }
+    return CGRect(dictionaryRepresentation: bounds as CFDictionary)
+}
+
+private struct NativePiPWindowSnapshot {
+    let frame: CGRect
+    let title: String
+    let wasMinimized: Bool
+}
+
+private struct NativePiPResolvedWindow {
+    let element: AXUIElement
+    let snapshotIndex: Int
+}
+
+private func windowSnapshots(_ application: AXUIElement) -> [NativePiPWindowSnapshot] {
+    axElements(application, attribute: kAXWindowsAttribute as String).compactMap { window in
+        guard let frame = axFrame(window) else { return nil }
+        return NativePiPWindowSnapshot(
+            frame: frame,
+            title: axDisplayValue(window, kAXTitleAttribute as String) ?? "",
+            wasMinimized: axBool(window, kAXMinimizedAttribute as String) == true
+        )
+    }
+}
+
+@MainActor
+private final class NativePiPWindowStage {
+    private let axApplication: AXUIElement
+    private let originalWindows: [NativePiPWindowSnapshot]
+    private let targetSnapshotIndex: Int?
+    private let wasHidden: Bool
+    private var stagedWindows: [NativePiPResolvedWindow] = []
+    private var stagedFrames: [Int: CGRect] = [:]
+    private var staged = false
+
+    init(application: NSRunningApplication, requestedFrame: CGRect?, focusedFrame: CGRect?) {
+        axApplication = AXUIElementCreateApplication(application.processIdentifier)
+        originalWindows = windowSnapshots(axApplication)
+        targetSnapshotIndex = captureStageTargetIndex(
+            windowFrames: originalWindows.map(\.frame),
+            requestedFrame: requestedFrame,
+            focusedFrame: focusedFrame
+        )
+        wasHidden = application.isHidden || axBool(axApplication, kAXHiddenAttribute as String) == true
+    }
+
+    func prepareIfNeeded() async {
+        guard let targetSnapshotIndex,
+              originalWindows.indices.contains(targetSnapshotIndex),
+              wasHidden || originalWindows[targetSnapshotIndex].wasMinimized else { return }
+        let displayFrames = captureDisplayFrames()
+        guard !displayFrames.isEmpty else { return }
+        staged = true
+        let parked = captureStageOffscreenOrigin(screenFrames: displayFrames)
+        if wasHidden {
+            _ = AXUIElementSetAttributeValue(axApplication, kAXHiddenAttribute as CFString, kCFBooleanFalse)
+        }
+        // Custom apps apply hidden/minimized changes asynchronously and may
+        // initially clamp a newly revealed window back onto a display. Retry the
+        // public AX writes briefly so the window settles offscreen before SCK
+        // resolves it, without ever activating the target app.
+        var prepared = false
+        var settledFrame: CGRect?
+        for _ in 0..<20 {
+            // Hiding and revealing some custom apps destroys and recreates their
+            // AXWindows. Keep valid resolved elements, but rematch all windows to
+            // their staged frame whenever the target goes stale or the hidden
+            // app's window set has only partially reappeared.
+            let targetIsStale = stagedWindows.first(where: { $0.snapshotIndex == targetSnapshotIndex })
+                .flatMap { axFrame($0.element) } == nil
+            let resolvedSnapshotCount = Set(stagedWindows.map(\.snapshotIndex)).count
+            if targetIsStale || (wasHidden && resolvedSnapshotCount < originalWindows.count) {
+                var merged: [Int: NativePiPResolvedWindow] = [:]
+                for item in stagedWindows where axFrame(item.element) != nil {
+                    merged[item.snapshotIndex] = item
+                }
+                for item in resolveWindows(expectedFrames: stagedFrames) {
+                    merged[item.snapshotIndex] = item
+                }
+                stagedWindows = merged.values.sorted { $0.snapshotIndex < $1.snapshotIndex }
+            }
+            guard let target = stagedWindows.first(where: { $0.snapshotIndex == targetSnapshotIndex }) else {
+                try? await Task.sleep(for: .milliseconds(50))
+                continue
+            }
+            if wasHidden {
+                for (offset, other) in stagedWindows.enumerated() where other.snapshotIndex != targetSnapshotIndex {
+                    _ = AXUIElementSetAttributeValue(other.element, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
+                    if axBool(other.element, kAXMinimizedAttribute as String) != true {
+                        _ = setOrigin(other.element, CGPoint(
+                            x: parked.x + CGFloat(offset + 1) * 32,
+                            y: parked.y + CGFloat(offset + 1) * 32
+                        ))
+                    }
+                }
+            }
+            _ = AXUIElementSetAttributeValue(target.element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+            _ = setOrigin(target.element, parked)
+            let currentFrame = axFrame(target.element)
+            for item in stagedWindows {
+                if let frame = axFrame(item.element) { stagedFrames[item.snapshotIndex] = frame }
+            }
+            let hidden = axBool(axApplication, kAXHiddenAttribute as String)
+            let minimized = axBool(target.element, kAXMinimizedAttribute as String)
+            let allOriginalWindowsResolved = !wasHidden
+                || Set(stagedWindows.map(\.snapshotIndex)).count >= originalWindows.count
+            let otherWindowsAreConcealed = !wasHidden || stagedWindows.allSatisfy { other in
+                guard other.snapshotIndex != targetSnapshotIndex else { return true }
+                if axBool(other.element, kAXMinimizedAttribute as String) == true { return true }
+                guard let frame = axFrame(other.element) else { return false }
+                return captureStageVisibleFraction(windowFrame: frame, screenFrames: displayFrames) <= 0.02
+            }
+            if hidden != true,
+               minimized != true,
+               allOriginalWindowsResolved,
+               otherWindowsAreConcealed,
+               let currentFrame,
+               captureStageVisibleFraction(windowFrame: currentFrame, screenFrames: displayFrames) <= 0.02 {
+                prepared = true
+                settledFrame = currentFrame
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        guard prepared else {
+            restore()
+            return
+        }
+        pipDebugLog("staged hidden or minimized target window from frame=\(originalWindows[targetSnapshotIndex].frame) to frame=\(String(describing: settledFrame)) windows=\(stagedWindows.count)")
+    }
+
+    func restore() {
+        guard staged else { return }
+        staged = false
+        var concealedBeforeRestore = wasHidden
+        if wasHidden {
+            // Hide every ordered-in window before moving anything back to its
+            // on-screen origin, so stopping PiP cannot flash the target app.
+            _ = AXUIElementSetAttributeValue(axApplication, kAXHiddenAttribute as CFString, kCFBooleanTrue)
+            for _ in 0..<10 where axBool(axApplication, kAXHiddenAttribute as String) != true {
+                usleep(20_000)
+            }
+        } else if let targetSnapshotIndex,
+                  let target = stagedWindows.first(where: { $0.snapshotIndex == targetSnapshotIndex }),
+                  originalWindows[targetSnapshotIndex].wasMinimized {
+            _ = AXUIElementSetAttributeValue(target.element, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
+            for _ in 0..<5 where axBool(target.element, kAXMinimizedAttribute as String) != true {
+                usleep(20_000)
+            }
+            if axBool(target.element, kAXMinimizedAttribute as String) != true {
+                // A custom window that refuses minimization must stay invisible
+                // while its original position is restored.
+                _ = AXUIElementSetAttributeValue(axApplication, kAXHiddenAttribute as CFString, kCFBooleanTrue)
+                concealedBeforeRestore = true
+            }
+        }
+
+        if stagedWindows.contains(where: { axFrame($0.element) == nil }) {
+            // AXWindows can reappear incrementally after a hide. Preserve every
+            // still-valid element and merge newly resolved snapshots until the
+            // original set is complete; replacing the array with one partial
+            // read would strand the missing window in its staged state.
+            var recovered: [Int: NativePiPResolvedWindow] = [:]
+            for item in stagedWindows where axFrame(item.element) != nil {
+                recovered[item.snapshotIndex] = item
+            }
+            for attempt in 0..<20 {
+                for item in resolveWindows(expectedFrames: stagedFrames) {
+                    recovered[item.snapshotIndex] = item
+                }
+                if recovered.count >= originalWindows.count { break }
+                if attempt < 19 { usleep(25_000) }
+            }
+            stagedWindows = recovered.values.sorted { $0.snapshotIndex < $1.snapshotIndex }
+        }
+        for item in stagedWindows {
+            guard originalWindows.indices.contains(item.snapshotIndex) else { continue }
+            let original = originalWindows[item.snapshotIndex]
+            _ = setOrigin(item.element, original.frame.origin)
+            _ = AXUIElementSetAttributeValue(
+                item.element,
+                kAXMinimizedAttribute as CFString,
+                original.wasMinimized ? kCFBooleanTrue : kCFBooleanFalse
+            )
+        }
+        if concealedBeforeRestore {
+            _ = AXUIElementSetAttributeValue(axApplication, kAXHiddenAttribute as CFString, kCFBooleanTrue)
+        }
+        let targetFrame = targetSnapshotIndex.flatMap { originalWindows.indices.contains($0) ? originalWindows[$0].frame : nil }
+        pipDebugLog("restored staged target window frame=\(String(describing: targetFrame)) hidden=\(wasHidden)")
+    }
+
+    private func resolveWindows(expectedFrames: [Int: CGRect]) -> [NativePiPResolvedWindow] {
+        let candidates = axElements(axApplication, attribute: kAXWindowsAttribute as String).compactMap { window -> (AXUIElement, CGRect, String)? in
+            guard let frame = axFrame(window) else { return nil }
+            return (window, frame, axDisplayValue(window, kAXTitleAttribute as String) ?? "")
+        }
+        let assignments = captureStageWindowAssignments(
+            currentFrames: candidates.map { $0.1 },
+            currentTitles: candidates.map { $0.2 },
+            expectedFrames: originalWindows.indices.map { expectedFrames[$0] ?? originalWindows[$0].frame },
+            expectedTitles: originalWindows.map(\.title)
+        )
+        return zip(candidates, assignments).compactMap { candidate, match in
+            guard let match else { return nil }
+            return NativePiPResolvedWindow(element: candidate.0, snapshotIndex: match)
+        }
+    }
+
+    private func setOrigin(_ window: AXUIElement, _ origin: CGPoint) -> Bool {
+        var point = origin
+        guard let value = AXValueCreate(.cgPoint, &point) else { return false }
+        return AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, value) == .success
+    }
+}
+
 @available(macOS 14.0, *)
 private func streamConfiguration(for window: SCWindow) -> SCStreamConfiguration {
     let configuration = SCStreamConfiguration()
@@ -833,17 +1131,26 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
     let writer = PiPEventWriter()
     let controller = NativePiPWindowController(configuration: configuration, writer: writer)
     controller.setIcon(app.icon)
+    let windowStage = NativePiPWindowStage(
+        application: app,
+        requestedFrame: requestedWindowFrame(windowID: configuration.windowID, processID: app.processIdentifier),
+        focusedFrame: focusedWindowFrame(processID: app.processIdentifier)
+    )
+    defer { windowStage.restore() }
 
-    // Install the command reader before any capture work. `await` suspends this
-    // task rather than blocking the main actor, so even if stream startup stalls
-    // (ScreenCaptureKit can leak startCapture's continuation on failure), the
-    // coordinator's `visible` command still reaches the main actor and shows the
-    // frosted placeholder. It also means `close`/stdin EOF can always terminate
-    // the helper, so a stuck capture never leaves an orphan process behind.
+    // Install the command reader before staging or capture work. Both staging
+    // retries and stream startup suspend instead of blocking the main actor, so
+    // close/stdin EOF can restore the target immediately even during startup.
     let commandReader = PiPCommandReader()
     FileHandle.standardInput.readabilityHandler = { input in
         let data = input.availableData
-        if data.isEmpty { exit(0) }
+        if data.isEmpty {
+            Task { @MainActor in
+                windowStage.restore()
+                exit(0)
+            }
+            return
+        }
         for encoded in commandReader.append(data) {
             Task { @MainActor in
                 guard let commandData = encoded.data(using: .utf8),
@@ -852,12 +1159,16 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
                 switch type {
                 case "visible": controller.setVisible(command["visible"] as? Bool == true)
                 case "interaction": controller.animateInteraction(command)
-                case "close": controller.panel.orderOut(nil); exit(0)
+                case "close":
+                    controller.panel.orderOut(nil)
+                    windowStage.restore()
+                    exit(0)
                 default: break
                 }
             }
         }
     }
+    await windowStage.prepareIfNeeded()
 
     let geometryMonitor = WindowGeometryMonitor(processID: app.processIdentifier, windowFrame: .zero)
     let captureStartTimeout: TimeInterval = 3

@@ -2,7 +2,12 @@ import { linkSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CUALineDecoder, cuaFrameHelperCandidates, isSameExecutableFile } from "./cuaFrameStreams";
+import {
+  CUA_PIP_FORCE_STOP_TIMEOUT_MS,
+  CUALineDecoder,
+  cuaFrameHelperCandidates,
+  isSameExecutableFile,
+} from "./cuaFrameStreams";
 
 describe("CUALineDecoder", () => {
   it("decodes fragmented native PiP events", () => {
@@ -29,6 +34,10 @@ describe("CUALineDecoder", () => {
 });
 
 describe("cuaFrameHelperCandidates", () => {
+  it("allows native staging enough time to restore before a forced stop", () => {
+    expect(CUA_PIP_FORCE_STOP_TIMEOUT_MS).toBeGreaterThanOrEqual(2_000);
+  });
+
   it("keeps the PiP on a physical sibling path instead of the MCP executable", () => {
     expect(cuaFrameHelperCandidates(
       { WUU_CUA_MAC_HELPER: "/app/bin/wuu-cua-mac" },

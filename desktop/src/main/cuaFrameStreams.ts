@@ -13,6 +13,8 @@ export type CUANativePiPEvent = {
   message?: string;
 };
 
+export const CUA_PIP_FORCE_STOP_TIMEOUT_MS = 2_000;
+
 export class CUALineDecoder {
   private buffer = "";
 
@@ -117,7 +119,10 @@ export class CUANativePiP {
       onStopped?.();
       return;
     }
-    const forceStop = setTimeout(() => child.kill("SIGTERM"), 750);
+    // Native staging and state restoration use public AX APIs. Leave enough
+    // time for a graceful close to put a hidden/minimized target back before a
+    // genuinely stuck helper is terminated.
+    const forceStop = setTimeout(() => child.kill("SIGTERM"), CUA_PIP_FORCE_STOP_TIMEOUT_MS);
     forceStop.unref?.();
     child.once("close", () => {
       clearTimeout(forceStop);
