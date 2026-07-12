@@ -97,6 +97,26 @@ func TestRegistryStopIsIdempotentAndRevokesControl(t *testing.T) {
 	}
 }
 
+func TestRegistryClearsWindowIdentityWhenCUATargetChanges(t *testing.T) {
+	registry := NewRegistry()
+	session, _, err := registry.Start(StartOptions{
+		ID: "activity-1", Kind: KindCUA, ThreadID: "thread-1", Workdir: "/repo",
+		PluginID: "cua-mac", Target: "app-a", ProcessID: 41, WindowID: 42,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err = registry.Update("thread-1", session.ID, UpdateOptions{
+		Target: "app-b", ClearWindowIdentity: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Target != "app-b" || session.ProcessID != 0 || session.WindowID != 0 {
+		t.Fatalf("target change retained stale identity: %+v", session)
+	}
+}
+
 func TestRegistryRejectsCrossThreadOperationsAndFiltersList(t *testing.T) {
 	registry := NewRegistry()
 	session, lease, err := registry.Start(StartOptions{ID: "activity-1", Kind: KindBrowser, ThreadID: "thread-1", Workdir: "/repo"})

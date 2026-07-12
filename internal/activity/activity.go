@@ -91,12 +91,13 @@ type StartOptions struct {
 }
 
 type UpdateOptions struct {
-	State       State
-	Target      string
-	ProcessID   int
-	WindowID    uint32
-	Preview     string
-	Error       string
-	ClearError  bool
-	Interaction *Interaction
+	State               State
+	Target              string
+	ProcessID           int
+	WindowID            uint32
+	ClearWindowIdentity bool
+	Preview             string
+	Error               string
+	ClearError          bool
+	Interaction         *Interaction
 }

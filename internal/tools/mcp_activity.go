@@ -100,7 +100,9 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		return toolresult.Result{}, err
 	}
 	if target != "" && target != session.Target {
-		updated, updateErr := t.activityRegistry.Update(threadID, session.ID, activity.UpdateOptions{Target: target})
+		updated, updateErr := t.activityRegistry.Update(threadID, session.ID, activity.UpdateOptions{
+			Target: target, ClearWindowIdentity: true,
+		})
 		if updateErr != nil {
 			return toolresult.Result{}, updateErr
 		}

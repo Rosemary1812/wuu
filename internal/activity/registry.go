@@ -253,6 +253,10 @@ func (r *Registry) Update(threadID, activityID string, options UpdateOptions) (S
 		}
 		entry.session.Target = target
 	}
+	if options.ClearWindowIdentity {
+		entry.session.ProcessID = 0
+		entry.session.WindowID = 0
+	}
 	if options.ProcessID != 0 {
 		entry.session.ProcessID = options.ProcessID
 	}

@@ -484,7 +484,10 @@ public final class MacComputerBackend: ComputerBackend {
             }
         }
         do {
-            return try captureWindowPNG(processID: app.processIdentifier)
+            return try captureWindowPNG(
+                processID: app.processIdentifier,
+                preferredWindowFrame: focusedWindowFrame(processID: app.processIdentifier)
+            )
         } catch let backgroundError {
             foregroundCaptureProcessIDs.insert(app.processIdentifier)
             do {
@@ -497,6 +500,14 @@ public final class MacComputerBackend: ComputerBackend {
                 )
             }
         }
+    }
+
+    private func focusedWindowFrame(processID: pid_t) -> CGRect? {
+        let application = AXUIElementCreateApplication(processID)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(application, kAXFocusedWindowAttribute as CFString, &value) == .success,
+              let window = value as! AXUIElement? else { return nil }
+        return axFrame(window)
     }
 
     private func element(_ command: ComputerCommand, app: NSRunningApplication) throws -> AXUIElement {
