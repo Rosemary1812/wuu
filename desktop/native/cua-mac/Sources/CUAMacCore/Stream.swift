@@ -409,8 +409,6 @@ private final class WindowGeometryMonitor: @unchecked Sendable {
         markDirty()
     }
 
-    func rebind(nearestTo frame: CGRect) { bindWindow(nearestTo: frame) }
-
     func takeDirty() -> Bool {
         lock.lock(); defer { lock.unlock() }
         let value = dirty
@@ -696,8 +694,7 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
             let retryDelay = 250 * (1 << min(3, consecutiveStreamFailures))
             try await Task.sleep(for: .milliseconds(retryDelay))
             if let refreshed = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
-               let currentWindow = refreshed.windows.first(where: { $0.windowID == window.windowID })
-                ?? preferredStreamWindow(in: refreshed, processID: app.processIdentifier) {
+               let currentWindow = refreshed.windows.first(where: { $0.windowID == window.windowID }) {
                 window = currentWindow
             }
             let next = NativePiPStreamOutput(controller: controller, writer: writer)
@@ -718,14 +715,11 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
         guard geometryMonitor.takeDirty() || safetyRefreshDue else { continue }
         lastSafetyRefresh = Date()
         guard let refreshed = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
-              let nextWindow = refreshed.windows.first(where: { $0.windowID == window.windowID }) ?? preferredStreamWindow(in: refreshed, processID: app.processIdentifier) else { continue }
-        let changedWindow = nextWindow.windowID != window.windowID
+              let nextWindow = refreshed.windows.first(where: { $0.windowID == window.windowID }) else { continue }
         let changedFrame = windowFrameDistance(nextWindow.frame, window.frame) > 1
-        guard changedWindow || changedFrame else { continue }
+        guard changedFrame else { continue }
         do {
-            if changedWindow { try await stream.updateContentFilter(SCContentFilter(desktopIndependentWindow: nextWindow)) }
-            if changedFrame { try await stream.updateConfiguration(streamConfiguration(for: nextWindow)) }
-            if changedWindow { geometryMonitor.rebind(nearestTo: nextWindow.frame) }
+            try await stream.updateConfiguration(streamConfiguration(for: nextWindow))
             window = nextWindow
         } catch { output.lockFailure(error) }
     }
