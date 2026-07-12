@@ -5,39 +5,36 @@ import (
 	"testing"
 )
 
-func TestSystemMainTeachesInceptionTriggers(t *testing.T) {
+func TestSystemMainKeepsOnlyMainAgentCoordinationRules(t *testing.T) {
 	prompt := SystemMain()
 	for _, want := range []string{
-		"Use it proactively during the work",
-		"keeps its working context clean",
-		"not a last resort",
-		"<system>CHECKPOINT N</system>",
-		"available in the current tool list",
-		"large file",
-		"web/search result",
-		"dead end",
-		"coding or debugging detour",
-		"Do not wait until only the final answer remains",
+		"participant posted a result card",
+		"Reference the card",
+		"plan, goal, or delegated result",
+		"evidence for the broader objective",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("SystemMain missing %q:\n%s", want, prompt)
 		}
+	}
+	for _, toolName := range []string{"tool_search", "update_plan", "spawn_agent", "helpme", "inception"} {
+		if strings.Contains(prompt, toolName) {
+			t.Fatalf("SystemMain should leave %q guidance to its surface-gated tool description:\n%s", toolName, prompt)
+		}
+	}
+	if len(prompt) > 1024 {
+		t.Fatalf("SystemMain should remain a small main-only coordination section, got %d bytes", len(prompt))
 	}
 }
 
 func TestSystemGuidesNaturalUserCenteredReplies(t *testing.T) {
 	prompt := System()
 	for _, want := range []string{
-		"from the user's mental model, not internal jargon",
-		"what the user likely already knows and what they need next",
+		"user's mental model",
 		"Skip ritual openings",
-		"Sure!",
-		"concrete next action is enough",
-		"Prefer natural, approachable prose",
-		"If a user assumption is wrong or risky, say so plainly",
-		"Prefer short paragraphs for ordinary answers",
-		"Avoid frequent line breaks, stacked headers, tables, or bullet lists",
-		"when a sentence or two would read more naturally",
+		"Treat the user as an equal",
+		"short paragraph for simple work",
+		"only when they improve scanning",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("System missing %q:\n%s", want, prompt)

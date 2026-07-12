@@ -2436,16 +2436,11 @@ func TestBuildBaseSystemPromptLocalNoShellDoesNotTeachTerminalPaths(t *testing.T
 	}
 }
 
-// TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration locks in the
-// split between prompts.System() (base sections shared with workers) and
-// prompts.SystemMain() (the Orchestration path-selection map that lives only
-// in the main agent's prompt). The Orchestration section lists main-agent
-// planning and orchestration paths (update_plan, goal, spawn_agent, helpme,
-// write_memory, read_memory); if it leaked into a worker's system prompt the
-// worker would receive the wrong path-selection map. Inception is available to
-// workers through the tool surface, but its worker guidance lives in the tool
-// description.
-func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T) {
+// TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyCoordination locks in the
+// split between prompts.System() (invariants shared with workers) and
+// prompts.SystemMain() (the small coordination contract used only by the main
+// agent). Tool-specific manuals belong to the active tool surface instead.
+func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyCoordination(t *testing.T) {
 	surface := compiledSurfaceForProviderModel("openai", "gpt-5")
 
 	mainPrompt := buildBaseSystemPrompt(
@@ -2468,12 +2463,9 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 	)
 
 	for _, want := range []string{
-		"# Orchestration",
-		"- helpme:",
-		"- inception:",
-		"- update_plan:",
-		"- goal:",
-		"- spawn_agent:",
+		"# Coordinated work",
+		"participant posted a result card",
+		"plan, goal, or delegated result",
 	} {
 		if !strings.Contains(mainPrompt, want) {
 			t.Fatalf("main agent prompt must contain %q; got prompt:\n%s", want, mainPrompt)
@@ -2485,15 +2477,9 @@ func TestBuildBaseSystemPrompt_WorkerExcludesMainOnlyOrchestration(t *testing.T)
 		t.Fatalf("project main prompt (no workflow capability) must not contain the start_workflow path bullet; got prompt:\n%s", mainPrompt)
 	}
 	for _, banned := range []string{
-		"# Orchestration",
-		"- helpme:",
-		"- inception:",
-		"- update_plan:",
-		"- goal:",
-		"- start_workflow:",
-		"- spawn_agent:",
-		"- write_memory",
-		"- read_memory",
+		"# Coordinated work",
+		"participant posted a result card",
+		"plan, goal, or delegated result",
 	} {
 		if strings.Contains(workerPrompt, banned) {
 			t.Fatalf("worker prompt must not contain main-only guidance %q; got prompt:\n%s", banned, workerPrompt)

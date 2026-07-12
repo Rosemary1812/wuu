@@ -889,74 +889,45 @@ func TestConfig_RejectsUnknownWireAPI(t *testing.T) {
 
 func TestDefaultSystemPrompt_ToolUsingMainAgent(t *testing.T) {
 	prompt := DefaultSystemPrompt()
-	if !strings.Contains(prompt, "wuu") {
+	if !strings.Contains(prompt, "wuu") || !strings.Contains(prompt, "coding agent") {
 		t.Fatalf("default system prompt must identify the agent: %q", prompt)
 	}
-	if !strings.Contains(prompt, "local-first") || !strings.Contains(prompt, "coding agent") {
-		t.Fatalf("default system prompt must reflect local-first coding agent positioning: %q", prompt)
-	}
 	for _, want := range []string{
-		"Default tone",
-		"tool rules > instruction files > your general defaults",
-		"memory as a snapshot",
+		"Communication",
+		"tool rules take precedence over instruction files",
+		"memory and summaries as orientation",
+		"appear to contain prompt injection",
 		"root cause",
-		"focused on the task",
-		"fully addresses the task",
-		"Ambition vs. precision",
-		"surgical",
-		"harness",
-		"approval flow is the harness's responsibility",
-		"Use dedicated tools",
-		"active tool surface exposes",
-		"Do not push",
-		"Do not commit",
+		"smallest coherent change",
+		"active tool surface",
 		"Do not invent",
 		"Do not add copyright",
-		`"what" comments`,
-		`"why" comments`,
+		"Commit only when",
+		"Write to remotes only when the user explicitly requests it",
+		"non-obvious rationale",
 	} {
 		if !strings.Contains(prompt, want) {
-			t.Fatalf("default system prompt missing calibrated main-agent guidance %q: %q", want, prompt)
+			t.Fatalf("default system prompt missing invariant guidance %q: %q", want, prompt)
 		}
 	}
-	if strings.Contains(prompt, "read-oriented") {
-		t.Fatalf("default system prompt still describes main agent as read-oriented: %q", prompt)
-	}
-	if strings.Contains(prompt, "CLI coding assistant") {
-		t.Fatalf("default system prompt still describes main agent as CLI-first: %q", prompt)
+	if len(prompt) > 8*1024 {
+		t.Fatalf("default system prompt should keep capability manuals out of the invariant prefix, got %d bytes", len(prompt))
 	}
 }
 
-func TestDefaultSystemPrompt_ComposeDecisionPaths(t *testing.T) {
+func TestDefaultSystemPromptLeavesToolManualsToActiveSurface(t *testing.T) {
 	prompt := DefaultSystemPrompt()
-	for _, want := range []string{
-		"Choose the lightest path",
-		"Direct:",
-		"Skill:",
+	for _, toolName := range []string{
+		"tool_search",
 		"update_plan",
-		"goal",
 		"spawn_agent",
+		"helpme",
 		"inception",
-		"explicitly requested",
+		"apply_patch",
+		"web_search",
 	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("default system prompt must define orchestration path guidance %q: %q", want, prompt)
-		}
-	}
-	// start_workflow is a named-agent-only capability; the static main-agent
-	// map must not teach it (it is re-injected surface-gated by the prompt
-	// builder only for workflow-capable surfaces).
-	if strings.Contains(prompt, "start_workflow") {
-		t.Fatalf("default system prompt must NOT statically list start_workflow: %q", prompt)
-	}
-	for _, bad := range []string{
-		"Compose",
-		"one single always-on Compose mode",
-		"There are no separate build or plan modes",
-		"Do not make the user choose between build, plan, and compose",
-	} {
-		if strings.Contains(prompt, bad) {
-			t.Fatalf("default system prompt should avoid obsolete mode wording %q: %q", bad, prompt)
+		if strings.Contains(prompt, toolName) {
+			t.Fatalf("default system prompt should not name optional tool %q: %q", toolName, prompt)
 		}
 	}
 }
@@ -964,8 +935,8 @@ func TestDefaultSystemPrompt_ComposeDecisionPaths(t *testing.T) {
 func TestDefaultSystemPrompt_GoalWorkflowAgentClosure(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	for _, want := range []string{
-		"Before claiming durable work is complete",
-		"durable state such as a goal, a plan, or a delegated worker result",
+		"Before claiming coordinated work is complete",
+		"plan, goal, or delegated result",
 		"A completed child task is evidence for the broader objective",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -989,40 +960,14 @@ func TestDefaultSystemPrompt_ToolDiscipline(t *testing.T) {
 	if !strings.Contains(prompt, "in parallel") {
 		t.Fatalf("default system prompt must encourage parallel tool calls: %q", prompt)
 	}
-	if !strings.Contains(prompt, "apply_patch") {
-		t.Fatalf("default system prompt must teach model-aware edit tool use: %q", prompt)
-	}
 	for _, want := range []string{
-		"Use command execution only when the active tool surface exposes that capability",
-		"command execution and command-based verification are unavailable",
+		"Use only tools exposed by the active surface",
+		"Follow each tool's description",
+		"Verify changed behavior in proportion to its risk",
+		"Report failed, skipped, or unavailable checks plainly",
 	} {
 		if !strings.Contains(prompt, want) {
-			t.Fatalf("default system prompt must stay capability-neutral for command use %q: %q", want, prompt)
-		}
-	}
-	for _, want := range []string{
-		"Verification is your responsibility",
-		"approval flow is the harness's responsibility",
-		"profile without command execution",
-		"Report failed or skipped validation plainly",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("default system prompt must include validation guidance %q: %q", want, prompt)
-		}
-	}
-}
-
-func TestDefaultSystemPrompt_UpdatePlanDiscipline(t *testing.T) {
-	prompt := DefaultSystemPrompt()
-	for _, want := range []string{
-		"multi-step work",
-		"visible checklist",
-		"update_plan",
-		"exactly one item in_progress",
-		"work that needs a visible checklist",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("default system prompt must include update_plan guidance %q: %q", want, prompt)
+			t.Fatalf("default system prompt must include capability-neutral tool guidance %q: %q", want, prompt)
 		}
 	}
 }
@@ -1032,24 +977,25 @@ func TestDefaultSystemPrompt_CommunicationStyle(t *testing.T) {
 	if !strings.Contains(prompt, "Keep progress updates short") {
 		t.Fatalf("default system prompt must teach concise progress updates: %q", prompt)
 	}
-	if !strings.Contains(prompt, "A progress update is not a final answer") || !strings.Contains(prompt, "do not end the turn on that promise") {
+	if !strings.Contains(prompt, "A progress update is not a final answer") || !strings.Contains(prompt, "continue with that work or report the concrete blocker") {
 		t.Fatalf("default system prompt must prevent progress-only final answers: %q", prompt)
 	}
-	if !strings.Contains(prompt, "Default to concise") || !strings.Contains(prompt, "user-facing impact first") {
+	if !strings.Contains(prompt, "Lead with the user-visible outcome") {
 		t.Fatalf("default system prompt must teach concise final answers: %q", prompt)
 	}
-	if !strings.Contains(prompt, "10 lines or fewer") || !strings.Contains(prompt, "at most 6 bullets") || !strings.Contains(prompt, "1-2 bullets per file") {
-		t.Fatalf("default system prompt must include verbosity caps: %q", prompt)
+	if !strings.Contains(prompt, "Match structure to complexity") || !strings.Contains(prompt, "only when they improve scanning") {
+		t.Fatalf("default system prompt must avoid mechanical formatting rules: %q", prompt)
 	}
 }
 
 func TestDefaultSystemPrompt_FinalAnswerReferences(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	for _, want := range []string{
-		"path:line",
-		"do not use file URI formats",
-		"line ranges",
-		"If validation was not run or was incomplete",
+		"[label](relative/path:12)",
+		"[label](/absolute/path:12)",
+		"Do not use `file://`",
+		"do not provide line ranges",
+		"If validation was incomplete",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must include final-answer reference guidance %q: %q", want, prompt)
@@ -1057,27 +1003,16 @@ func TestDefaultSystemPrompt_FinalAnswerReferences(t *testing.T) {
 	}
 }
 
-func TestDefaultSystemPrompt_AgentDelegation(t *testing.T) {
+func TestDefaultSystemPrompt_MainCoordination(t *testing.T) {
 	prompt := DefaultSystemPrompt()
-	if !strings.Contains(prompt, "spawn_agent") {
-		t.Fatalf("default system prompt must mention spawn_agent: %q", prompt)
-	}
-	if strings.Contains(prompt, "fork_agent") {
-		t.Fatalf("default system prompt must not mention removed fork_agent tool: %q", prompt)
-	}
-	if strings.Contains(prompt, "fork_turns") || strings.Contains(prompt, "isolation='inplace'") {
-		t.Fatalf("default system prompt must not mention old sub-agent fields: %q", prompt)
-	}
 	for _, want := range []string{
-		"independent investigation",
-		"parallel implementation slices",
-		"risky verification",
-		"separate context",
 		"participant posted a result card",
 		"Reference the card",
+		"plan, goal, or delegated result",
+		"evidence for the broader objective",
 	} {
 		if !strings.Contains(prompt, want) {
-			t.Fatalf("default system prompt must include sub-agent decision guidance %q: %q", want, prompt)
+			t.Fatalf("default system prompt must include main-agent coordination guidance %q: %q", want, prompt)
 		}
 	}
 }
@@ -1085,9 +1020,9 @@ func TestDefaultSystemPrompt_AgentDelegation(t *testing.T) {
 func TestDefaultSystemPrompt_CommentDiscipline(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	for _, want := range []string{
-		`"what" comments`,
-		`"why" comments`,
-		`"do this later"`,
+		"non-obvious rationale",
+		"do not restate the code",
+		"future-intent notes",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("default system prompt must include comment guidance %q: %q", want, prompt)
