@@ -1,7 +1,14 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ArchiveTip } from "./ArchiveTip";
+
+const archiveTipCSS = readFileSync(
+  resolve(process.cwd(), "src/renderer/styles/archive-tip.css"),
+  "utf8",
+);
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -43,6 +50,15 @@ function renderTip(
 }
 
 describe("ArchiveTip", () => {
+  it("accepts pointer input until dismissal starts", () => {
+    expect(archiveTipCSS).toMatch(
+      /\.archive-tip\s*\{[\s\S]*?pointer-events:\s*auto;/,
+    );
+    expect(archiveTipCSS).toMatch(
+      /\.archive-tip\.leaving\s*\{[\s\S]*?pointer-events:\s*none;/,
+    );
+  });
+
   it("renders the archived session title and the jump-to-archive action", () => {
     renderTip({ threadTitle: "迁移脚本调试" });
 

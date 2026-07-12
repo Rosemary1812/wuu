@@ -28,14 +28,14 @@
   line-height: 1.4;
   transform: translate(-50%, -8px);
   opacity: 0;
-  pointer-events: none;
+  pointer-events: auto;
   animation: archive-tip-enter 220ms ease-out forwards;
 }
 
-/* `.leaving` is set ~400ms before onDismiss fires; let the
-   component stay interactive while it fades out. */
+/* `.leaving` is set shortly before onDismiss fires. Disable hit testing so a
+   fading toast cannot queue duplicate close or navigation actions. */
 .archive-tip.leaving {
-  pointer-events: auto;
+  pointer-events: none;
   animation: archive-tip-leave 200ms ease-in forwards;
 }
 
