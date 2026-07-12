@@ -599,14 +599,14 @@ private func streamConfiguration(for window: SCWindow) -> SCStreamConfiguration 
 }
 
 @available(macOS 14.0, *)
-private func startWindowStream(window: SCWindow, output: NativePiPStreamOutput) throws -> SCStream {
+private func startWindowStream(window: SCWindow, output: NativePiPStreamOutput) async throws -> SCStream {
     let stream = SCStream(
         filter: SCContentFilter(desktopIndependentWindow: window),
         configuration: streamConfiguration(for: window),
         delegate: output
     )
     try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: DispatchQueue(label: "com.blueberrycongee.wuu.cua.native-pip"))
-    stream.startCapture { error in if let error { output.lockFailure(error) } }
+    try await stream.startCapture()
     return stream
 }
 
@@ -633,7 +633,7 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
     }
     let geometryMonitor = WindowGeometryMonitor(processID: app.processIdentifier, windowFrame: window.frame)
     var output = NativePiPStreamOutput(controller: controller, writer: writer)
-    var stream = try startWindowStream(window: window, output: output)
+    var stream = try await startWindowStream(window: window, output: output)
     var streamStartedAt = ProcessInfo.processInfo.systemUptime
     var lastVerifiedCaptureAt = streamStartedAt
     var consecutiveStreamFailures = 0
@@ -699,7 +699,7 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
             }
             let next = NativePiPStreamOutput(controller: controller, writer: writer)
             do {
-                stream = try startWindowStream(window: window, output: next)
+                stream = try await startWindowStream(window: window, output: next)
                 output = next
                 streamStartedAt = ProcessInfo.processInfo.systemUptime
             } catch {
