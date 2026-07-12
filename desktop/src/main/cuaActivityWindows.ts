@@ -5,8 +5,8 @@ import type { WindowRegistry } from "./windowRegistry";
 
 export type ActivityControlAction = "takeover" | "release" | "stop";
 
-const PIP_WIDTH = 380;
-const PIP_HEIGHT = 248;
+const PIP_WIDTH = 260;
+const PIP_HEIGHT = 170;
 const PIP_INSET = 12;
 
 export function activityControlMethod(action: ActivityControlAction): "activity/takeover" | "activity/release" | "activity/stop" {

@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import AVFoundation
 @preconcurrency import CoreMedia
+import Darwin
 import Foundation
 import QuartzCore
 @preconcurrency import ScreenCaptureKit
@@ -12,13 +13,15 @@ public struct NativePiPConfiguration: Sendable {
     public let frame: CGRect
     public let processID: pid_t?
     public let windowID: CGWindowID?
+    public let parentProcessID: pid_t?
 
-    public init(activityID: String, target: String, frame: CGRect, processID: pid_t? = nil, windowID: CGWindowID? = nil) {
+    public init(activityID: String, target: String, frame: CGRect, processID: pid_t? = nil, windowID: CGWindowID? = nil, parentProcessID: pid_t? = nil) {
         self.activityID = activityID
         self.target = target
         self.frame = frame
         self.processID = processID
         self.windowID = windowID
+        self.parentProcessID = parentProcessID
     }
 }
 
@@ -662,7 +665,7 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
     }
 
     var lastSafetyRefresh = Date.distantPast
-    while !app.isTerminated {
+    while !app.isTerminated && processIsAlive(configuration.parentProcessID) {
         try await Task.sleep(for: .milliseconds(100))
         let now = ProcessInfo.processInfo.systemUptime
         let freshness = output.freshnessSnapshot()
@@ -724,4 +727,9 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
         } catch { output.lockFailure(error) }
     }
     try? await stream.stopCapture()
+}
+
+private func processIsAlive(_ processID: pid_t?) -> Bool {
+    guard let processID, processID > 0 else { return true }
+    return kill(processID, 0) == 0 || errno == EPERM
 }

@@ -36,9 +36,9 @@ describe("CUA native picture-in-picture", () => {
     expect(nativePiPInitialBounds(
       { x: 100, y: 80, width: 1200, height: 800 },
       { x: 0, y: 0, width: 1440, height: 900 },
-    )).toEqual({ x: 908, y: 92, width: 380, height: 248 });
+    )).toEqual({ x: 1028, y: 92, width: 260, height: 170 });
     expect(nativePiPInitialBounds(undefined, { x: 1440, y: 0, width: 1200, height: 900 }))
-      .toEqual({ x: 2236, y: 24, width: 380, height: 248 });
+      .toEqual({ x: 2356, y: 24, width: 260, height: 170 });
   });
 
   it("backs off native capture restarts", () => {

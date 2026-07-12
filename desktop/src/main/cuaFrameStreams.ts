@@ -64,6 +64,7 @@ export class CUANativePiP {
       String(height),
       String(this.processID ?? 0),
       String(this.windowID ?? 0),
+      String(process.pid),
     ], { stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
     child.stdout.on("data", (chunk: Buffer) => {
