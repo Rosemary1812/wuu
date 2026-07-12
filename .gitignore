@@ -16,6 +16,8 @@ desktop/build/bin/
 desktop/build/dev-host/
 desktop/release/
 desktop/native/cua-mac/.build/
+# inspect-cua-pip.cjs writes diagnostic JSON and window screenshots here.
+/artifacts/cua-pip/
 # electron-vite writes a timestamp marker when it re-syncs node_modules;
 # keep it out of git.
 desktop/.node_modules.synced
