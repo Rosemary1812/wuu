@@ -589,6 +589,7 @@
 }
 
 .agent-handoff-divider {
+  width: min(760px, 88%);
   max-width: min(760px, 88%);
   margin: 2px auto 18px;
 }

@@ -135,6 +135,12 @@ describe("turns.css turn notice positioning", () => {
       /color:\s*var\(--ink-muted\);/,
     );
   });
+
+  it("gives subagent system events enough width for both side lines", () => {
+    expect(cssRuleBody(".agent-handoff-divider")).toMatch(
+      /width:\s*min\(760px,\s*88%\);/,
+    );
+  });
 });
 
 describe("turns.css message-flow typography", () => {

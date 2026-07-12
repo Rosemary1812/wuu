@@ -33,7 +33,11 @@ import { streamTextKey, streamTextStore } from "./StreamText";
 import { streamFieldValue } from "./ThreadItemText";
 import { ParticipantChip } from "./ParticipantChip";
 import { ToolActivityRow } from "./ToolActivity";
-import { ContextCompactionNotice, TurnNotice } from "./TurnNotice";
+import {
+  ContextCompactionNotice,
+  SystemEventDivider,
+  TurnNotice,
+} from "./TurnNotice";
 import { userMessageAnchorID } from "./TurnViewHelpers";
 import {
   userFacingErrorForMessage,
@@ -104,15 +108,10 @@ export function ThreadItemView({
       const handoff = agentHandoffDisplay(text);
       if (handoff) {
         return (
-          <div
-            className="chat-inline-divider agent-handoff-divider"
-            role="status"
-            aria-label={handoff.label}
-          >
-            <span className="chat-inline-divider-label agent-handoff-divider-label">
-              {handoff.label}
-            </span>
-          </div>
+          <SystemEventDivider
+            text={handoff.label}
+            className="agent-handoff-divider"
+          />
         );
       }
       const copyable = text.trim() !== "";

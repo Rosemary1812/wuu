@@ -37,6 +37,7 @@ import {
 } from "./MessageMarks";
 import { ReadReceiptRing } from "./ReadReceiptRing";
 import { RichContent } from "./RichContent";
+import { SystemEventDivider } from "./TurnNotice";
 
 // Distance (px) from the bottom of the scroll container within which the
 // view still counts as "at the bottom" and should auto-follow new rows.
@@ -714,15 +715,10 @@ function ChatRow({
   if (row.kind === "system") {
     return (
       <div className={`chat-row chat-row--system${topBubbleClass}`}>
-        <div
-          className="chat-inline-divider chat-system-divider"
-          role="status"
-          aria-label={row.text}
-        >
-          <span className="chat-inline-divider-label chat-system-divider-label">
-            {row.text}
-          </span>
-        </div>
+        <SystemEventDivider
+          text={row.text}
+          className="chat-system-divider"
+        />
       </div>
     );
   }

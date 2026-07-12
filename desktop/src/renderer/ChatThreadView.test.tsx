@@ -456,10 +456,11 @@ describe("ChatThreadView reply / task affordances", () => {
     );
     const divider = container.querySelector(".chat-system-divider");
     expect(divider).not.toBeNull();
-    expect(divider?.classList.contains("chat-inline-divider")).toBe(true);
-    expect(container.querySelector(".chat-system-divider-label")?.textContent).toBe(
-      "subagent 完成了任务",
-    );
+    expect(divider?.classList.contains("turn-event-notice")).toBe(true);
+    expect(
+      container.querySelector(".chat-system-divider .turn-event-title")
+        ?.textContent,
+    ).toBe("subagent 完成了任务");
   });
 
   it("hangs a 'N 条回复' badge under a message that anchors a plain reply", () => {

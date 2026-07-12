@@ -2,6 +2,26 @@ import type { ThreadItemStatus } from "../shared/protocol";
 import type { TurnEventDisplay } from "./TurnEvents";
 import type { UserFacingErrorAction, UserFacingErrorDisplay } from "./UserFacingErrors";
 
+export function SystemEventDivider({
+  text,
+  className,
+}: {
+  text: string;
+  className?: string;
+}): JSX.Element {
+  return (
+    <aside
+      className={`turn-notice turn-event-notice${className ? ` ${className}` : ""}`}
+      role="status"
+      aria-label={text}
+    >
+      <span className="turn-event-content">
+        <strong className="turn-event-title">{text}</strong>
+      </span>
+    </aside>
+  );
+}
+
 export function TurnEventNotice({
   event,
   onAction,

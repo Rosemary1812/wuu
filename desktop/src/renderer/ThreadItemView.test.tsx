@@ -340,6 +340,29 @@ describe("ThreadItemView", () => {
     expect(onOpenAgent).toHaveBeenCalledWith("agent-42");
   });
 
+  it("renders a subagent completion handoff with the shared system event divider", () => {
+    render({
+      item: {
+        id: "handoff-1",
+        type: "user_message",
+        text: JSON.stringify({
+          content: `<subagent_notification>\n${JSON.stringify({
+            status: { status: "completed" },
+          })}\n</subagent_notification>`,
+          trigger_turn: true,
+        }),
+      },
+      turnStatus: "completed",
+      streaming: false,
+    });
+
+    const divider = container?.querySelector(".agent-handoff-divider");
+    expect(divider?.classList.contains("turn-event-notice")).toBe(true);
+    expect(divider?.querySelector(".turn-event-title")?.textContent).toBe(
+      "subagent 完成了任务",
+    );
+  });
+
   it("renders a task card and opens its subthread", () => {
     const onOpenSubthread = vi.fn();
     const item: ThreadItem = {
