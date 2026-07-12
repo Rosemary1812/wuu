@@ -221,7 +221,8 @@ public final class MacComputerBackend: ComputerBackend {
         // interrupt each other -> SCStream -3805).
         if let foreground = try? captureForegroundWindowPNG(processID: pid) {
             capture = foreground
-        } else if let background = try? captureWindowPNG(processID: pid) {
+        } else if ProcessInfo.processInfo.environment["WUU_CUA_NO_SCK_OBSERVE"] != "1",
+                  let background = try? captureWindowPNG(processID: pid) {
             foregroundCaptureProcessIDs.remove(pid)
             capture = background
         }
@@ -488,6 +489,12 @@ public final class MacComputerBackend: ComputerBackend {
         // stays fully in the background.
         if let background = try? captureForegroundWindowPNG(processID: app.processIdentifier) {
             return background
+        }
+        // Isolation switch (dev/test only): never open a ScreenCaptureKit client
+        // from the observe path, so the live PiP stream is provably the only SCK
+        // client. Confirms whether -3805 is caused by a second SCK client here.
+        if ProcessInfo.processInfo.environment["WUU_CUA_NO_SCK_OBSERVE"] == "1" {
+            throw ComputerError.operationFailed("observe capture unavailable (no-SCK isolation mode)")
         }
         if foregroundCaptureProcessIDs.contains(app.processIdentifier) {
             return try withForegroundInput(command, app: app) {
