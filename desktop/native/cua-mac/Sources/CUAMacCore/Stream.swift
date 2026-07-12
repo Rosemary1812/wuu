@@ -160,12 +160,21 @@ private final class NativePiPView: NSView {
     @objc private func closePressed() { onClose?() }
 
     func enqueue(_ sampleBuffer: CMSampleBuffer) {
-        CMSetAttachment(
-            sampleBuffer,
-            key: kCMSampleAttachmentKey_DisplayImmediately,
-            value: kCFBooleanTrue,
-            attachmentMode: kCMAttachmentMode_ShouldPropagate
-        )
+        // AVSampleBufferDisplayLayer reads DisplayImmediately from the per-sample
+        // attachments array, never from buffer-level attachments. Without a
+        // control timebase, a frame only presents when this flag is set on the
+        // sample itself; writing it with CMSetAttachment lands it in the wrong
+        // bucket, so the layer holds every frame in its queue and stays black
+        // while the overlay pointer (a separate CAShapeLayer) still renders.
+        if let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: true),
+           CFArrayGetCount(attachments) > 0 {
+            let sampleAttachments = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
+            CFDictionarySetValue(
+                sampleAttachments,
+                Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
+                Unmanaged.passUnretained(kCFBooleanTrue).toOpaque()
+            )
+        }
         if displayLayer.status == .failed { displayLayer.flush() }
         displayLayer.enqueue(sampleBuffer)
         if let imageBuffer = sampleBuffer.imageBuffer {
