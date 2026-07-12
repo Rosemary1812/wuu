@@ -40,6 +40,9 @@ describe("chat.css inline divider", () => {
     expect(chatCss).toMatch(
       /\.chat-inline-divider::before,\s*\.chat-inline-divider::after\s*\{[\s\S]*flex:\s*1 1 auto;[\s\S]*height:\s*1px;/,
     );
+    expect(
+      cssRuleBody(".chat-inline-divider::before,\n.chat-inline-divider::after"),
+    ).toMatch(/background:\s*currentColor;/);
   });
 });
 

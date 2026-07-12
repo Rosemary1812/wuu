@@ -3454,13 +3454,13 @@ pre {
 .turn-event-notice::before,
 .turn-event-notice::after {
   /* System events read as a broken divider: hairlines on both sides,
-     a single quiet line of text in the gap. The hairlines use the same
-     full-length rule treatment as the assistant turn's top separator. */
+     a single quiet line of text in the gap. The hairlines inherit the
+     event text color so the divider reads as one visual mark. */
   content: "";
   flex: 1 1 0;
   min-width: 24px;
   height: 1px;
-  background: var(--wuu-hairline);
+  background: currentColor;
 }
 
 .turn-event-detail {
@@ -3472,7 +3472,7 @@ pre {
 
 .turn-event-content {
   /* The text sits bare in the divider gap — no fill, no radius. Tone is
-     carried by text color alone; the side lines stay neutral gray. */
+     carried by the shared text-and-line color. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3541,9 +3541,8 @@ pre {
   line-height: 1.45;
 }
 
-/* Tone-aware text colors. The divider lines stay neutral in every tone;
-   only the centered text picks up the tone color, so an error reads as a
-   red line of text between gray hairlines rather than a colored badge. */
+/* Tone-aware event colors. Text and divider lines use the same color so
+   each system event reads as one restrained timeline mark. */
 .turn-notice.warning .turn-event-content {
   color: var(--turn-warning-text);
 }
@@ -3561,7 +3560,7 @@ pre {
 }
 
 .turn-notice.warning {
-  color: var(--warning);
+  color: var(--turn-warning-text);
 }
 
 .turn-notice.auth {

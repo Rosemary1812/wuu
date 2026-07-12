@@ -62,7 +62,7 @@
   content: "";
   flex: 1 1 auto;
   height: 1px;
-  background: var(--ink-overlay-8);
+  background: currentColor;
 }
 
 .chat-inline-divider-label {
