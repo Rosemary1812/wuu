@@ -1194,6 +1194,7 @@ func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 			Text:         chatMessageDisplayContent(msg),
 			Images:       threadItemImages(msg.Images),
 			Files:        threadItemFiles(msg.Files),
+			Name:         strings.TrimSpace(msg.Name),
 			EnvelopeMeta: append(json.RawMessage(nil), msg.EnvelopeMeta...),
 			FocusMeta:    append(json.RawMessage(nil), msg.FocusMeta...),
 		}

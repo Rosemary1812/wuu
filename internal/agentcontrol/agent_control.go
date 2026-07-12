@@ -2631,19 +2631,20 @@ func (c *AgentControl) AgentCompletionChatMessage(snap subagent.SubAgentSnapshot
 		c.agentMailboxMessageWithRefs(snap, reportPath, artifacts),
 		true,
 	)
-	content := communication.String()
 	if warnings := c.CompletionOverlapWarnings(snap); len(warnings) > 0 {
 		// The deleted await_agents tool used to surface changed-file overlaps
 		// only when a parent explicitly joined multiple agents. Relocate that
 		// value onto the completion wakeup so the resumed parent still sees
 		// sibling agents that wrote the same files before it synthesizes.
-		content = content + "\n\n<changed_file_overlap>\n" + strings.Join(warnings, "\n") +
-			"\nResolve these overlapping writes before merge or synthesis.\n</changed_file_overlap>"
+		// Carry as a structured sibling on the envelope so the channel payload
+		// stays a single JSON object (no text-after-JSON tail); see
+		// agentthread.InterAgentCommunication.ChangedFileOverlap.
+		communication.ChangedFileOverlap = warnings
 	}
 	return providers.ChatMessage{
 		Role:    "user",
 		Name:    wuucontext.AgentNotificationMessageName,
-		Content: content,
+		Content: communication.String(),
 	}
 }
 

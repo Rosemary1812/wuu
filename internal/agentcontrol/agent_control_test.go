@@ -2681,6 +2681,12 @@ func TestAgentCompletionChatMessageTriggersRootTurn(t *testing.T) {
 	if !strings.Contains(communication.Content, "found bug at line 42") {
 		t.Fatalf("completion content missing result: %s", communication.Content)
 	}
+	if strings.Contains(msg.Content, "<changed_file_overlap>") {
+		t.Fatalf("completion content should not embed the legacy overlap text tail: %s", msg.Content)
+	}
+	if communication.ChangedFileOverlap != nil {
+		t.Fatalf("single-agent completion should keep ChangedFileOverlap nil, got %+v", communication.ChangedFileOverlap)
+	}
 }
 
 func TestAgentCompletionPersistsLongResultAndReturnsPreview(t *testing.T) {

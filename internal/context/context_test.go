@@ -208,6 +208,8 @@ func TestIsAgentNotificationDetectsNamedAndLegacyHandoffs(t *testing.T) {
 		{name: "named", msgName: AgentNotificationMessageName, content: "anything", want: true},
 		{name: "raw notification", content: rawNotification, want: true},
 		{name: "inter-agent envelope", content: envelope, want: true},
+		{name: "envelope with overlap sibling (named)", msgName: AgentNotificationMessageName, content: `{"author":"/root/worker","recipient":"/root","content":` + strconv.Quote(rawNotification) + `,"trigger_turn":true,"changed_file_overlap":["changed_file_overlap: foo.go touched by /root/a, /root/b"]}`, want: true},
+		{name: "envelope with overlap sibling (unnamed)", content: `{"author":"/root/worker","recipient":"/root","content":` + strconv.Quote(rawNotification) + `,"trigger_turn":true,"changed_file_overlap":["changed_file_overlap: foo.go touched by /root/a, /root/b"]}`, want: true},
 		{name: "normal user json", content: `{"content":"plain user text"}`, want: false},
 		{name: "normal user text", content: "please inspect this", want: false},
 	}

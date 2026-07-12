@@ -11,6 +11,12 @@ type InterAgentCommunication struct {
 	OtherRecipients []AgentPath `json:"other_recipients,omitempty"`
 	Content         string      `json:"content"`
 	TriggerTurn     bool        `json:"trigger_turn"`
+	// ChangedFileOverlap carries sibling-agent file-overlap warnings on
+	// completion notifications so the envelope stays a single JSON object
+	// rather than text-after-JSON. Consumers read it via the parsed struct
+	// or the IsAgentNotification name gate; the textual <changed_file_overlap>
+	// suffix that used to be glued onto Content is gone.
+	ChangedFileOverlap []string `json:"changed_file_overlap,omitempty"`
 }
 
 func NewInterAgentCommunication(author, recipient AgentPath, content string, triggerTurn bool) InterAgentCommunication {
