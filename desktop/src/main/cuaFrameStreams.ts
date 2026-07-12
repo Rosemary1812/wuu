@@ -99,7 +99,7 @@ export class CUANativePiP {
     this.child = undefined;
     if (!child) return;
     if (!child.stdin.destroyed) child.stdin.write(`${JSON.stringify({ type: "close" })}\n`);
-    setTimeout(() => { if (!child.killed) child.kill("SIGTERM"); }, 500).unref?.();
+    child.kill("SIGTERM");
   }
 
   isLive(): boolean { return this.child !== undefined; }
