@@ -80,7 +80,13 @@ function makeLogTail(path, destination) {
 function waitForElectron(token, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const processes = execFileSync("ps", ["eww", "-axo", "pid=,command="], { encoding: "utf8" });
+    // `e` prints each process's full environment (that is where the launch
+    // token lives), so with many processes the output easily exceeds Node's
+    // default 1 MB buffer and spawnSync throws ENOBUFS. Give it plenty of room.
+    const processes = execFileSync("ps", ["eww", "-axo", "pid=,command="], {
+      encoding: "utf8",
+      maxBuffer: 256 * 1024 * 1024,
+    });
     const pid = processIDForLaunchToken(processes, token);
     if (pid) return pid;
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);

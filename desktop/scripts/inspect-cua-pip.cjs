@@ -34,7 +34,7 @@ if (process.platform !== "darwin") {
 
 function run(cmd, args, opts = {}) {
   try {
-    return { ok: true, out: execFileSync(cmd, args, { encoding: "utf8", ...opts }) };
+    return { ok: true, out: execFileSync(cmd, args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, ...opts }) };
   } catch (error) {
     return { ok: false, out: (error.stdout || "").toString(), err: (error.stderr || error.message || "").toString() };
   }
