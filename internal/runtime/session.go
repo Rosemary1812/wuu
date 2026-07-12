@@ -1777,10 +1777,8 @@ func buildBaseSystemPromptContent(rootDir, sessionDate, basePrompt, userPrompt, 
 func buildBaseSystemPromptResult(rootDir, sessionDate, basePrompt, userPrompt, providerName, model string, toolSurface capability.Surface, memoryFiles []memory.File, memdirTeaching, memdirIndex string, discoveredSkills []skills.Skill) prompt.BuildResult {
 	var pb prompt.Builder
 	pb.AddSection("base", basePrompt, true)
-	pb.AddHarnessAdapter(providerName, model)
 	pb.AddSection("tool_surface", toolSurface.SystemFragment, true)
 	if _, ok := toolSurface.Tools["tool_search"]; ok {
-		pb.AddToolDiscovery()
 		pb.AddSection("deferred_tool_catalog", toolSurface.DeferredToolCatalog, true)
 	}
 	// The spawn_agent worker-type roster is session-static (compile-time

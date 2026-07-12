@@ -148,37 +148,6 @@ func TestBuilder_AddSkills(t *testing.T) {
 	}
 }
 
-func TestBuilder_AddToolDiscovery(t *testing.T) {
-	var b Builder
-	b.AddToolDiscovery()
-	result := b.Build()
-
-	for _, want := range []string{
-		"# Tool Discovery",
-		"deferred",
-		"<available-deferred-tools>",
-		"`tool_search`",
-		"select:<tool_name>",
-		"select:tool_a tool_b",
-		"desktop port reporting",
-		"`already_loaded`",
-		"Do not use `tool_search` for visible core tools",
-	} {
-		if !strings.Contains(result, want) {
-			t.Fatalf("tool discovery prompt missing %q:\n%s", want, result)
-		}
-	}
-	for _, bad := range []string{
-		"especially MCP tools, workflows",
-		"workflows, scheduling",
-		"matching saved workflow",
-	} {
-		if strings.Contains(result, bad) {
-			t.Fatalf("tool discovery prompt should not include generic workflow guidance %q:\n%s", bad, result)
-		}
-	}
-}
-
 func TestBuilder_AddMemdirWithIndexContent(t *testing.T) {
 	var b Builder
 	b.AddMemdir("# Memory directory\nTeaching text here.", "- [User role](user_role.md) — data scientist")

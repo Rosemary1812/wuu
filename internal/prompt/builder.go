@@ -204,24 +204,6 @@ func (b *Builder) AddSkills(sks []skills.Skill) {
 	b.AddSection("skills", strings.TrimRight(sb.String(), "\n"), false)
 }
 
-// AddToolDiscovery teaches the model the stable contract for deferred
-// tool schemas. The section is static so progressive tool loading does
-// not mutate the system prompt prefix across turns.
-func (b *Builder) AddToolDiscovery() {
-	b.AddSection("tool_discovery", strings.Join([]string{
-		"# Tool Discovery",
-		"",
-		"Some less common tool schemas are deferred so the direct tool list stays small and cacheable. Deferred tools may be listed by trusted Wuu metadata in the static Deferred Tool Catalog, but their parameter schemas are not available until loaded.",
-		"- When `<available-deferred-tools>` appears in the Deferred Tool Catalog, a name in that list means the tool can be loaded; it does not mean the tool is callable yet.",
-		"- Use `tool_search` when you need a capability that is not currently visible, especially MCP tools, scheduling, memory, desktop port reporting, or specialized helpers.",
-		"- Search by capability words, or use `select:<tool_name>` when you already know the exact tool name. Load related tools in one call when several are likely needed, for example `select:tool_a tool_b`.",
-		"- After `tool_search` returns matching schemas, use the loaded tool normally in the next tool step if it fits the task.",
-		"- If `tool_search` reports a schema in `already_loaded`, use that loaded tool directly; do not call `tool_search` again for the same tool.",
-		"- Do not use `tool_search` for visible core tools already listed in this session, such as file reading, file editing, grep/glob search, patching, planning, or skill loading.",
-		"- Do not call MCP list/resource tools only to discover available tools; use `tool_search` for tool discovery.",
-	}, "\n"), true)
-}
-
 // Build returns the assembled system prompt. Static sections appear first
 // (preserving insertion order), then dynamic sections.
 func (b *Builder) Build() string {

@@ -1460,11 +1460,6 @@ func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 		t.Fatalf("APIModel = %q", rt.StreamRunner.APIModel)
 	}
 	for _, want := range []string{
-		"# Harness Adapter",
-		"Provider/model: openai/gpt-5.5",
-		"same product regardless of provider, model family, or BYOK backend",
-		"runtime goals, task rail, and subagents are wuu coordination primitives",
-		"Do not choose direct local work, runtime goals, task-rail delegation, or subagents based on provider/model family or brand.",
 		"[Tool surface: openai_gpt]",
 		"Your editing primitive is apply_patch",
 	} {
@@ -1473,6 +1468,8 @@ func TestNewSessionUsesCatalogModelAPIIDAndOptions(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{
+		"# Harness Adapter",
+		"Provider/model:",
 		"task-handling options inside wuu",
 		"direct work, subagents, or workflows",
 		"workflows only when",
@@ -2059,11 +2056,8 @@ func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
 	prompt := rt.RefreshSystemPrompt("openai", "gpt-5-codex")
 
 	for _, want := range []string{
-		"# Harness Adapter",
-		"Provider/model: openai/gpt-5-codex",
 		"[Tool surface: openai_codex]",
 		"Your editing primitive is apply_patch",
-		"same product regardless of provider, model family, or BYOK backend",
 		"Prefer concise answers.",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -2075,6 +2069,11 @@ func TestSessionRefreshSystemPromptUpdatesRunnerPrompt(t *testing.T) {
 	}
 	if strings.Contains(prompt, "old prompt") {
 		t.Fatalf("refreshed prompt should not keep stale runner prompt:\n%s", prompt)
+	}
+	for _, duplicated := range []string{"# Harness Adapter", "Provider/model:"} {
+		if strings.Contains(prompt, duplicated) {
+			t.Fatalf("refreshed prompt should not expose provider-brand adapter text %q:\n%s", duplicated, prompt)
+		}
 	}
 }
 
@@ -2261,7 +2260,7 @@ func TestBuildBaseSystemPromptNoToolsSkipsToolLoadedGuidance(t *testing.T) {
 	}
 }
 
-func TestBuildBaseSystemPromptAddsToolDiscoveryForToolSearchSurface(t *testing.T) {
+func TestBuildBaseSystemPromptAddsCatalogForToolSearchSurface(t *testing.T) {
 	surface := compiledSurfaceForProviderModel("openai", "gpt-5-codex")
 	surface.DeferredToolCatalog = "# Deferred Tool Catalog\n\n<available-deferred-tools>\n- await_agents: Wait for helper agents. [tags: agent]\n</available-deferred-tools>"
 	promptText := buildBaseSystemPrompt(
@@ -2278,16 +2277,21 @@ func TestBuildBaseSystemPromptAddsToolDiscoveryForToolSearchSurface(t *testing.T
 	)
 
 	for _, want := range []string{
-		"# Tool Discovery",
-		"`tool_search`",
 		"# Deferred Tool Catalog",
 		"<available-deferred-tools>",
 		"await_agents: Wait for helper agents.",
-		"select:<tool_name>",
-		"Do not use `tool_search` for visible core tools",
 	} {
 		if !strings.Contains(promptText, want) {
 			t.Fatalf("tool-search surface prompt missing %q:\n%s", want, promptText)
+		}
+	}
+	for _, duplicatedManual := range []string{
+		"# Tool Discovery",
+		"select:<tool_name>",
+		"Do not use `tool_search` for visible core tools",
+	} {
+		if strings.Contains(promptText, duplicatedManual) {
+			t.Fatalf("tool-search usage belongs to its tool schema, not the system prompt %q:\n%s", duplicatedManual, promptText)
 		}
 	}
 	for _, bad := range []string{
