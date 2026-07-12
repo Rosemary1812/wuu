@@ -54,8 +54,12 @@ thirdparty/
 !/docs/plans/
 /docs/plans/*
 
-/GOAL_*.md                      # per-thread goal scratch
-/prototypes/                    # throwaway prototype dirs
+# per-thread goal scratch
+/GOAL_*.md
+# throwaway prototype dirs
+/prototypes/
+# local benchmark runs and judgments
+/bench/
 
 # ============================================================
 # Local agent / shell / editor config
