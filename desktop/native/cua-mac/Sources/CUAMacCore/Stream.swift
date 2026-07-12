@@ -763,22 +763,13 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
     let writer = PiPEventWriter()
     let controller = NativePiPWindowController(configuration: configuration, writer: writer)
     controller.setIcon(app.icon)
-    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-    guard var window = configuration.windowID.flatMap({ requested in content.windows.first(where: { $0.windowID == requested }) })
-        ?? preferredStreamWindow(in: content, processID: app.processIdentifier) else {
-        throw ComputerError.operationFailed("no capturable window found")
-    }
-    let geometryMonitor = WindowGeometryMonitor(processID: app.processIdentifier, windowFrame: window.frame)
-    var output = NativePiPStreamOutput(controller: controller, writer: writer)
-    var stream = try await startWindowStream(window: window, output: output)
-    var streamStartedAt = ProcessInfo.processInfo.systemUptime
-    var lastVerifiedCaptureAt = streamStartedAt
-    var consecutiveStreamFailures = 0
-    var lastHealthyOutput: ObjectIdentifier?
-    let startupTimeout: TimeInterval = 5
-    let callbackSilenceTimeout: TimeInterval = 3
-    let unavailableStatusTimeout: TimeInterval = 3
 
+    // Install the command reader before any capture work. `await` suspends this
+    // task rather than blocking the main actor, so even if stream startup stalls
+    // (ScreenCaptureKit can leak startCapture's continuation on failure), the
+    // coordinator's `visible` command still reaches the main actor and shows the
+    // frosted placeholder. It also means `close`/stdin EOF can always terminate
+    // the helper, so a stuck capture never leaves an orphan process behind.
     let commandReader = PiPCommandReader()
     FileHandle.standardInput.readabilityHandler = { input in
         let data = input.availableData
@@ -797,6 +788,22 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
             }
         }
     }
+
+    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+    guard var window = configuration.windowID.flatMap({ requested in content.windows.first(where: { $0.windowID == requested }) })
+        ?? preferredStreamWindow(in: content, processID: app.processIdentifier) else {
+        throw ComputerError.operationFailed("no capturable window found")
+    }
+    let geometryMonitor = WindowGeometryMonitor(processID: app.processIdentifier, windowFrame: window.frame)
+    var output = NativePiPStreamOutput(controller: controller, writer: writer)
+    var stream = try await startWindowStream(window: window, output: output)
+    var streamStartedAt = ProcessInfo.processInfo.systemUptime
+    var lastVerifiedCaptureAt = streamStartedAt
+    var consecutiveStreamFailures = 0
+    var lastHealthyOutput: ObjectIdentifier?
+    let startupTimeout: TimeInterval = 5
+    let callbackSilenceTimeout: TimeInterval = 3
+    let unavailableStatusTimeout: TimeInterval = 3
 
     var lastSafetyRefresh = Date.distantPast
     while !app.isTerminated && processIsAlive(configuration.parentProcessID) {
