@@ -21,6 +21,7 @@ import type {
   PermissionSummary,
   RuntimeContext,
   SkillSummary,
+  Turn,
   WuuDesktopApi,
 } from "../shared/protocol";
 
@@ -89,6 +90,8 @@ function renderComposer(props: {
   status?: string;
   statusLiveProgress?: boolean;
   runtimeControlsDisabled?: boolean;
+  initialized?: InitializeResult;
+  activeTurn?: Pick<Turn, "model_provider" | "model">;
   readOnly?: boolean;
   onInterrupt?: () => void;
   onSend?: () => void;
@@ -136,10 +139,11 @@ function renderComposer(props: {
           guideMessages={props.guideMessages ?? []}
           running={props.running ?? false}
           runtimeControlsDisabled={props.runtimeControlsDisabled}
+          activeTurn={props.activeTurn}
           status={props.status ?? "ready"}
           statusLiveProgress={props.statusLiveProgress}
           readOnly={props.readOnly ?? false}
-        initialized={initialized(props.permissions)}
+          initialized={props.initialized ?? initialized(props.permissions)}
           projects={props.projects ?? []}
           activeContext={props.activeContext}
           activeProject={props.activeProject}
@@ -725,6 +729,47 @@ describe("Composer send control", () => {
 
     expect(runtimeButton?.disabled).toBe(true);
     expect(sendButton?.disabled).toBe(false);
+  });
+
+  it("shows the active turn model instead of the later global default", () => {
+    const globalDefault = initialized();
+    globalDefault.provider = "provider-b";
+    globalDefault.model = "model-b";
+    globalDefault.providers = [
+      { name: "provider-a", type: "openai-compatible", model: "model-a" },
+      { name: "provider-b", type: "openai-compatible", model: "model-b" }
+    ];
+
+    renderComposer({
+      variant: "dock",
+      initialized: globalDefault,
+      activeTurn: { model_provider: "provider-a", model: "model-a" },
+      runtimeControlsDisabled: true
+    });
+
+    const runtimeButton = container.querySelector<HTMLButtonElement>(".codex-runtime-trigger");
+    expect(runtimeButton?.textContent).toContain("model-a");
+    expect(runtimeButton?.disabled).toBe(true);
+  });
+
+  it("falls back to the global default once the active turn snapshot is gone", () => {
+    const globalDefault = initialized();
+    globalDefault.provider = "provider-b";
+    globalDefault.model = "model-b";
+    globalDefault.providers = [
+      { name: "provider-a", type: "openai-compatible", model: "model-a" },
+      { name: "provider-b", type: "openai-compatible", model: "model-b" }
+    ];
+
+    renderComposer({
+      variant: "dock",
+      initialized: globalDefault,
+      runtimeControlsDisabled: false
+    });
+
+    const runtimeButton = container.querySelector<HTMLButtonElement>(".codex-runtime-trigger");
+    expect(runtimeButton?.textContent).toContain("model-b");
+    expect(runtimeButton?.disabled).toBe(false);
   });
 
   it("uses the disabled cursor for locked runtime model controls", () => {

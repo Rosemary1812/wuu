@@ -104,6 +104,7 @@ import {
   activeSessionTab,
   activeThreadForState,
   activeThreadIDForState,
+  activeTurnForThread,
   latestContextUsageForThread,
   activeTurnIDForThread,
   activeTurnTokenSpeedSnapshot,
@@ -884,6 +885,7 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
+  const activeTurn = activeTurnForThread(activeThread);
   useEffect(() => {
     const syncVisibleCUAThread = () => {
       (window.wuu as typeof window.wuu & { setActiveCUAThread?: (threadID?: string) => void })
@@ -2444,6 +2446,7 @@ export function App(): JSX.Element {
             : streamStatus?.liveProgress
         }
         readOnly={activeThreadReadOnly}
+        activeTurn={activeTurn}
         initialized={composerInitialized}
         gitStatus={state.gitStatus}
         projects={state.projects}

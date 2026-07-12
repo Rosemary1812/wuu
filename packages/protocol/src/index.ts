@@ -1346,6 +1346,10 @@ export type CliInstallResult = {
 export type Turn = {
   id: string;
   kind?: TurnKind;
+  // The runtime selection captured when this turn began. It remains stable
+  // while a later default-model update prepares subsequent turns.
+  model_provider?: string;
+  model?: string;
   items: ThreadItem[];
   items_view: TurnItemsView;
   status: TurnStatus;

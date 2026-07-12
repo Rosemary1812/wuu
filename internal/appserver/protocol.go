@@ -1719,8 +1719,12 @@ type ThreadBrowserState struct {
 }
 
 type Turn struct {
-	ID                  string        `json:"id"`
-	Kind                TurnKind      `json:"kind,omitempty"`
+	ID   string   `json:"id"`
+	Kind TurnKind `json:"kind,omitempty"`
+	// ModelProvider and Model are captured when the turn begins. They stay
+	// stable while a config update prepares the thread for its next turn.
+	ModelProvider       string        `json:"model_provider,omitempty"`
+	Model               string        `json:"model,omitempty"`
 	Items               []ThreadItem  `json:"items"`
 	ItemsView           TurnItemsView `json:"items_view"`
 	Status              TurnStatus    `json:"status"`

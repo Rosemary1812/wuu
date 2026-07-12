@@ -31,6 +31,7 @@ import {
 import {
   type ClipboardEvent as ReactClipboardEvent,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type Ref,
   type RefObject,
   useEffect,
@@ -46,7 +47,8 @@ import type {
   ParticipantProfile,
   ParticipantSummary,
   RuntimeContext,
-  SkillSummary
+  SkillSummary,
+  Turn
 } from "../shared/protocol";
 import {
   buildComposerSlashCommands,
@@ -67,6 +69,7 @@ import {
   type QueuedComposerMessage
 } from "./ComposerMessages";
 import { FloatingMenuPortal } from "./ComposerFloatingMenu";
+import { ComposerContextMenu } from "./ComposerContextMenu";
 import { ComposerAttachmentStrip, ComposerQueueStrip } from "./ComposerInputSections";
 import { ComposerGoalStrip } from "./ComposerGoalStrip";
 import {
@@ -125,6 +128,7 @@ export function Composer({
   guideMessages,
   running,
   runtimeControlsDisabled = running,
+  activeTurn,
   status,
   statusLiveProgress,
   readOnly,
@@ -202,6 +206,7 @@ export function Composer({
   guideMessages: QueuedComposerMessage[];
   running: boolean;
   runtimeControlsDisabled?: boolean;
+  activeTurn?: Pick<Turn, "model_provider" | "model">;
   status: string;
   statusLiveProgress?: boolean;
   readOnly: boolean;
@@ -301,6 +306,11 @@ export function Composer({
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [mentionDismissedValue, setMentionDismissedValue] = useState("");
   const [slashSkills, setSlashSkills] = useState<SkillSummary[]>([]);
+  const [composerContextMenu, setComposerContextMenu] = useState<{
+    x: number;
+    y: number;
+    hasSelection: boolean;
+  } | null>(null);
   const collapsedPromptPrefix = useMemo(
     () => collapsedPromptBlocks.map((block) => block.text).join(""),
     [collapsedPromptBlocks]
@@ -715,6 +725,24 @@ export function Composer({
     }
   }
 
+  // Suppress the browser's native context menu on the textarea and open
+  // our composer context menu anchored at the cursor instead. We still
+  // allow the gesture in a read-only composer so the user can copy
+  // existing prompt text out — copy/select-all remain enabled; only
+  // mutating actions (cut/paste/delete) are blocked.
+  function handleComposerContextMenu(event: ReactMouseEvent<HTMLTextAreaElement>): void {
+    event.preventDefault();
+    const textarea = textareaRef.current;
+    const hasSelection = textarea
+      ? textarea.selectionStart !== textarea.selectionEnd
+      : false;
+    setComposerContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      hasSelection
+    });
+  }
+
   const content = (
     <div className={`composer-stack${isComposerExpanded ? " is-expanded" : ""}`}>
       <div className="composer-shell">
@@ -888,6 +916,7 @@ export function Composer({
                 }
               }}
               onKeyDown={handleComposerKeyDown}
+              onContextMenu={handleComposerContextMenu}
             />
             <button
               className="composer-expand-button"
@@ -1035,6 +1064,7 @@ export function Composer({
                       <RuntimePicker
                         variant={variant}
                         initialized={initialized}
+                        activeTurn={activeTurn}
                         state={codexModels}
                         openMenu={codexRuntimeMenu}
                         anchorRef={codexRuntimeRef}
@@ -1079,6 +1109,17 @@ export function Composer({
           </div>
         </div>
       </div>
+      {composerContextMenu ? (
+        <ComposerContextMenu
+          textareaRef={textareaRef}
+          x={composerContextMenu.x}
+          y={composerContextMenu.y}
+          hasSelection={composerContextMenu.hasSelection}
+          disabled={readOnly}
+          onClose={() => setComposerContextMenu(null)}
+          onValueChange={updateVisiblePrompt}
+        />
+      ) : null}
     </div>
   );
   return variant === "hero" ? (

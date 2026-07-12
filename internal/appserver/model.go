@@ -101,11 +101,13 @@ func (th *threadState) startTurnLocked(turnID string, userMsg providers.ChatMess
 
 	userItem := chatMessageItem(th.nextItemIDLocked(turnID), userMsg)
 	turn := Turn{
-		ID:        turnID,
-		Items:     []ThreadItem{userItem},
-		ItemsView: TurnItemsViewFull,
-		Status:    TurnStatusInProgress,
-		StartedAt: &now,
+		ID:            turnID,
+		ModelProvider: th.ModelProvider,
+		Model:         th.Model,
+		Items:         []ThreadItem{userItem},
+		ItemsView:     TurnItemsViewFull,
+		Status:        TurnStatusInProgress,
+		StartedAt:     &now,
 	}
 	th.Turns = append(th.Turns, turn)
 	return turn
@@ -167,11 +169,13 @@ func (th *threadState) startInternalTurnWithKindLocked(turnID string, kind TurnK
 	th.toolItems = make(map[string]string)
 
 	turn := Turn{
-		ID:        turnID,
-		Kind:      kind,
-		ItemsView: TurnItemsViewFull,
-		Status:    TurnStatusInProgress,
-		StartedAt: &now,
+		ID:            turnID,
+		Kind:          kind,
+		ModelProvider: th.ModelProvider,
+		Model:         th.Model,
+		ItemsView:     TurnItemsViewFull,
+		Status:        TurnStatusInProgress,
+		StartedAt:     &now,
 	}
 	th.Turns = append(th.Turns, turn)
 	return turn
@@ -193,10 +197,12 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 	if len(th.Turns) == 0 {
 		turnID := fmt.Sprintf("%s-turn-%04d", th.ID, 1)
 		turn := Turn{
-			ID:        turnID,
-			ItemsView: TurnItemsViewFull,
-			Status:    TurnStatusInProgress,
-			StartedAt: &now,
+			ID:            turnID,
+			ModelProvider: th.ModelProvider,
+			Model:         th.Model,
+			ItemsView:     TurnItemsViewFull,
+			Status:        TurnStatusInProgress,
+			StartedAt:     &now,
 		}
 		th.Turns = append(th.Turns, turn)
 		th.currentTurn = turnID
@@ -222,6 +228,8 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 	}
 	turn.CompletedAt = nil
 	turn.Error = nil
+	turn.ModelProvider = th.ModelProvider
+	turn.Model = th.Model
 	th.Turns[index] = turn
 	th.currentTurn = turn.ID
 	th.currentTurnKind = TurnKindInternal
@@ -863,10 +871,12 @@ func (th *threadState) ensureTurnLocked(turnID string, now time.Time) Turn {
 		}
 	}
 	turn := Turn{
-		ID:        turnID,
-		ItemsView: TurnItemsViewFull,
-		Status:    TurnStatusInProgress,
-		StartedAt: &now,
+		ID:            turnID,
+		ModelProvider: th.ModelProvider,
+		Model:         th.Model,
+		ItemsView:     TurnItemsViewFull,
+		Status:        TurnStatusInProgress,
+		StartedAt:     &now,
 	}
 	th.Turns = append(th.Turns, turn)
 	return turn

@@ -2970,13 +2970,17 @@ function markThreadTurnsViewed(
 }
 
 function activeTurnIDForThread(thread: Thread | undefined): string | undefined {
+  return activeTurnForThread(thread)?.id;
+}
+
+function activeTurnForThread(thread: Thread | undefined): Turn | undefined {
   if (!thread) {
     return undefined;
   }
   for (let index = thread.turns.length - 1; index >= 0; index -= 1) {
     const turn = thread.turns[index];
     if (turn.status === "in_progress") {
-      return turn.id;
+      return turn;
     }
   }
   return undefined;
@@ -3627,6 +3631,7 @@ export {
   activeThreadIDForState,
   activeTurnContextUsage,
   latestContextUsageForThread,
+  activeTurnForThread,
   activeTurnIDForThread,
   activeTurnTokenSpeed,
   activeTurnTokenSpeedSnapshot,

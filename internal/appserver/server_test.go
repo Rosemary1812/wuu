@@ -1023,6 +1023,9 @@ func TestServerConfigModelUpdateAllowedWithRunningThread(t *testing.T) {
 	if running.ModelProvider != "fake-provider" || running.Model != "new-model" {
 		t.Fatalf("running thread next model should update: provider=%q model=%q", running.ModelProvider, running.Model)
 	}
+	if turn := running.Turns[0]; turn.ModelProvider != "fake-provider" || turn.Model != "fake-model" {
+		t.Fatalf("running turn should keep its model snapshot: provider=%q model=%q", turn.ModelProvider, turn.Model)
+	}
 	if running.execRuntime.StreamRunner.Model != "fake-model" || running.execRuntime.StreamRunner.APIModel != "fake-model" {
 		t.Fatalf("running turn runtime should stay put: model=%q api=%q", running.execRuntime.StreamRunner.Model, running.execRuntime.StreamRunner.APIModel)
 	}
