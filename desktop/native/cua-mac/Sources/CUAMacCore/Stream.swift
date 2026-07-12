@@ -67,22 +67,17 @@ private final class CapturedFrame: @unchecked Sendable {
 }
 
 @MainActor
-private final class NativePiPView: NSView {
-    private nonisolated(unsafe) let displayLayer = AVSampleBufferDisplayLayer()
+private final class NativePiPLiveView: NSView {
+    private let displayLayer = AVSampleBufferDisplayLayer()
     private let pointerLayer = CAShapeLayer()
     private let rippleLayer = CAShapeLayer()
-    private let closeButton = NSButton()
-    private var trackingArea: NSTrackingArea?
     private var videoSize = CGSize(width: 16, height: 9)
     private var pointerPosition = CGPoint(x: 0.5, y: 0.5)
-    var onClose: (() -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
-        layer?.cornerRadius = 14
-        layer?.masksToBounds = true
 
         displayLayer.videoGravity = .resizeAspect
         displayLayer.backgroundColor = NSColor.clear.cgColor
@@ -115,18 +110,6 @@ private final class NativePiPView: NSView {
         rippleLayer.bounds = CGRect(x: 0, y: 0, width: 18, height: 18)
         rippleLayer.opacity = 0
         layer?.addSublayer(rippleLayer)
-
-        closeButton.title = "×"
-        closeButton.isBordered = false
-        closeButton.font = .systemFont(ofSize: 17, weight: .regular)
-        closeButton.contentTintColor = .labelColor
-        closeButton.wantsLayer = true
-        closeButton.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.88).cgColor
-        closeButton.layer?.cornerRadius = 8
-        closeButton.alphaValue = 0
-        closeButton.target = self
-        closeButton.action = #selector(closePressed)
-        addSubview(closeButton)
     }
 
     required init?(coder: NSCoder) { nil }
@@ -136,28 +119,9 @@ private final class NativePiPView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         displayLayer.frame = bounds
-        closeButton.frame = CGRect(x: bounds.maxX - 34, y: bounds.maxY - 34, width: 26, height: 26)
         placePointer()
         CATransaction.commit()
     }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let trackingArea { removeTrackingArea(trackingArea) }
-        let next = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self)
-        addTrackingArea(next)
-        trackingArea = next
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        NSAnimationContext.runAnimationGroup { _ in closeButton.animator().alphaValue = 1 }
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        NSAnimationContext.runAnimationGroup { _ in closeButton.animator().alphaValue = 0 }
-    }
-
-    @objc private func closePressed() { onClose?() }
 
     func enqueue(_ sampleBuffer: CMSampleBuffer) {
         // AVSampleBufferDisplayLayer reads DisplayImmediately from the per-sample
@@ -264,6 +228,143 @@ private final class NativePiPView: NSView {
     }
 }
 
+/// Container that shows a frosted placeholder (target app icon) the instant the
+/// preview is requested, then cross-fades to the live capture once the first
+/// real frame is presented. The placeholder communicates *which* app is being
+/// observed; it is not a status badge and never carries error text.
+@MainActor
+private final class NativePiPView: NSView {
+    private let frostView = NSVisualEffectView()
+    private let iconView = NSImageView()
+    private let live = NativePiPLiveView()
+    private let closeButton = NSButton()
+    private var trackingArea: NSTrackingArea?
+    private var isLive = false
+    var onClose: (() -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerRadius = 14
+        layer?.masksToBounds = true
+
+        frostView.material = .hudWindow
+        frostView.state = .active
+        frostView.blendingMode = .behindWindow
+        frostView.wantsLayer = true
+        addSubview(frostView)
+
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.contentTintColor = .secondaryLabelColor
+        iconView.wantsLayer = true
+        iconView.image = NativePiPView.fallbackIcon()
+        addSubview(iconView)
+
+        // Live capture sits above the placeholder and starts transparent, so the
+        // frosted icon shows through until the first frame reveals it.
+        live.alphaValue = 0
+        addSubview(live)
+
+        closeButton.title = "×"
+        closeButton.isBordered = false
+        closeButton.font = .systemFont(ofSize: 17, weight: .regular)
+        closeButton.contentTintColor = .labelColor
+        closeButton.wantsLayer = true
+        closeButton.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.88).cgColor
+        closeButton.layer?.cornerRadius = 8
+        closeButton.alphaValue = 0
+        closeButton.target = self
+        closeButton.action = #selector(closePressed)
+        addSubview(closeButton)
+
+        startPlaceholderPulse()
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    private static func fallbackIcon() -> NSImage? {
+        NSImage(systemSymbolName: "macwindow", accessibilityDescription: "preparing live preview")
+    }
+
+    func setIcon(_ image: NSImage?) {
+        if let image {
+            iconView.contentTintColor = nil
+            iconView.image = image
+        } else {
+            iconView.contentTintColor = .secondaryLabelColor
+            iconView.image = NativePiPView.fallbackIcon()
+        }
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        frostView.frame = bounds
+        live.frame = bounds
+        let side = max(28, min(bounds.width, bounds.height) * 0.42)
+        iconView.frame = CGRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side)
+        closeButton.frame = CGRect(x: bounds.maxX - 34, y: bounds.maxY - 34, width: 26, height: 26)
+        CATransaction.commit()
+    }
+
+    private func startPlaceholderPulse() {
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = 0.85
+        pulse.toValue = 0.4
+        pulse.duration = 1.35
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        iconView.layer?.add(pulse, forKey: "pulse")
+    }
+
+    func revealLive() {
+        guard !isLive else { return }
+        isLive = true
+        iconView.layer?.removeAnimation(forKey: "pulse")
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.28
+            live.animator().alphaValue = 1
+            iconView.animator().alphaValue = 0
+        }
+    }
+
+    func showPlaceholder() {
+        guard isLive else { return }
+        isLive = false
+        iconView.alphaValue = 1
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            live.animator().alphaValue = 0
+        }
+        startPlaceholderPulse()
+    }
+
+    func enqueue(_ sampleBuffer: CMSampleBuffer) { live.enqueue(sampleBuffer) }
+    func setVideoSize(_ size: CGSize) { live.setVideoSize(size) }
+    func animateInteraction(_ payload: [String: Any]) { live.animateInteraction(payload) }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let next = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self)
+        addTrackingArea(next)
+        trackingArea = next
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        NSAnimationContext.runAnimationGroup { _ in closeButton.animator().alphaValue = 1 }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        NSAnimationContext.runAnimationGroup { _ in closeButton.animator().alphaValue = 0 }
+    }
+
+    @objc private func closePressed() { onClose?() }
+}
+
 @MainActor
 private final class NativePiPWindowController: NSObject, NSWindowDelegate {
     let panel: NSPanel
@@ -329,13 +430,19 @@ private final class NativePiPWindowController: NSObject, NSWindowDelegate {
 
     func setVisible(_ visible: Bool) {
         requestedVisible = visible
-        if visible, captureAvailable { panel.orderFrontRegardless() } else { panel.orderOut(nil) }
+        // Show the surface immediately so the frosted placeholder appears while
+        // capture spins up; visibility is no longer gated on the first frame.
+        if visible { panel.orderFrontRegardless() } else { panel.orderOut(nil) }
     }
+
+    func setIcon(_ image: NSImage?) { content.setIcon(image) }
 
     func markCaptureUnavailable() {
         guard captureAvailable else { return }
         captureAvailable = false
-        panel.orderOut(nil)
+        // Fall back to the frosted placeholder instead of vanishing; a briefly
+        // unavailable window should still read as "observing this app".
+        content.showPlaceholder()
     }
 
     func animateInteraction(_ payload: [String: Any]) { content.animateInteraction(payload) }
@@ -351,19 +458,22 @@ private final class NativePiPWindowController: NSObject, NSWindowDelegate {
     func windowDidMove(_ notification: Notification) { publishGeometry() }
 
     private func presentContent(width: Int, height: Int, ratio: CGFloat) {
-        let becameAvailable = !captureAvailable
         captureAvailable = true
+        // First real frame: cross-fade the live capture over the placeholder and
+        // grow from the fixed placeholder size to the window's true aspect ratio.
+        content.revealLive()
         if !shown {
             let fitted = fittedPiPSize(ratio: ratio, preferredWidth: panel.frame.width)
             let current = panel.frame
             panel.setFrame(
                 CGRect(x: current.maxX - fitted.width, y: current.maxY - fitted.height, width: fitted.width, height: fitted.height),
-                display: false
+                display: true,
+                animate: true
             )
             shown = true
             writer.send("ready", fields: ["width": width, "height": height])
         }
-        if requestedVisible, becameAvailable || !panel.isVisible {
+        if requestedVisible, !panel.isVisible {
             panel.orderFrontRegardless()
         }
     }
@@ -652,6 +762,7 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
 
     let writer = PiPEventWriter()
     let controller = NativePiPWindowController(configuration: configuration, writer: writer)
+    controller.setIcon(app.icon)
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
     guard var window = configuration.windowID.flatMap({ requested in content.windows.first(where: { $0.windowID == requested }) })
         ?? preferredStreamWindow(in: content, processID: app.processIdentifier) else {

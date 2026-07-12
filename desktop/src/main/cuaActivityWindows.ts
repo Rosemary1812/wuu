@@ -51,6 +51,9 @@ type PiPEntry = {
   threadID: string;
   activity: ActivitySession;
   pip: CUANativePiP;
+  // "preparing" = frosted placeholder shown, no live frame yet.
+  // "live" = first real frame presented (native `ready`).
+  phase: "preparing" | "live";
 };
 
 /**
@@ -128,15 +131,44 @@ export class CUAObservationCoordinator {
       this.animateInteractionIfNew(activity, this.candidate.pip);
       return;
     }
-    this.startCandidate(activity, key);
+    // Keep a live preview on screen until its replacement is ready, so an A→B
+    // switch never flashes. But when nothing live is showing for this session,
+    // bring the frosted placeholder up immediately instead of waiting for the
+    // first frame — that is the difference between "preparing" and "blank".
+    const haveLiveCurrent = this.current?.threadID === threadID && this.current?.phase === "live";
+    if (haveLiveCurrent) {
+      this.startCandidate(activity, key);
+    } else {
+      this.startImmediate(activity, key);
+    }
   }
 
   private startCandidate(activity: ActivitySession, key: string): void {
+    const pip = this.spawnPiP(activity, key);
+    if (!pip) return;
+    this.stopCandidate();
+    this.candidate = { key, threadID: activity.thread_id, activity, pip, phase: "preparing" };
+    pip.start();
+    pip.setVisible(false);
+    this.animateInteractionIfNew(activity, pip);
+  }
+
+  private startImmediate(activity: ActivitySession, key: string): void {
+    const pip = this.spawnPiP(activity, key);
+    if (!pip) return;
+    this.stopCandidate();
+    this.stopCurrent();
+    this.current = { key, threadID: activity.thread_id, activity, pip, phase: "preparing" };
+    pip.start();
+    pip.setVisible(true);
+    this.animateInteractionIfNew(activity, pip);
+  }
+
+  private spawnPiP(activity: ActivitySession, key: string): CUANativePiP | undefined {
     const helper = resolveCUAFrameHelper();
     const target = activity.target?.trim();
-    if (!helper || !target) return;
-    this.stopCandidate();
-    const pip = new CUANativePiP(
+    if (!helper || !target) return undefined;
+    return new CUANativePiP(
       helper,
       activity.thread_id,
       target,
@@ -146,10 +178,6 @@ export class CUAObservationCoordinator {
       (event) => this.handleNativePiPEvent(key, event),
       () => this.handleNativePiPFailure(key),
     );
-    this.candidate = { key, threadID: activity.thread_id, activity, pip };
-    pip.start();
-    pip.setVisible(false);
-    this.animateInteractionIfNew(activity, pip);
   }
 
   private handleNativePiPEvent(key: string, event: CUANativePiPEvent): void {
@@ -157,12 +185,22 @@ export class CUAObservationCoordinator {
     if (!entry) return;
     switch (event.event) {
       case "ready":
-        if (this.candidate?.key !== key || entry.threadID !== this.activeThreadID) return;
-        this.current?.pip.stop();
-        this.current = entry;
-        this.candidate = undefined;
+        if (this.candidate?.key === key) {
+          // A warmed-up replacement produced its first live frame: swap it in
+          // for the outgoing target only now, so the switch never shows a gap.
+          if (entry.threadID !== this.activeThreadID) return;
+          this.current?.pip.stop();
+          this.current = entry;
+          this.candidate = undefined;
+          this.retryAttempts.delete(entry.threadID);
+          entry.phase = "live";
+          entry.pip.setVisible(true);
+          return;
+        }
+        // A placeholder-first current reached its first live frame; the native
+        // side already cross-faded from the frosted placeholder to the capture.
+        entry.phase = "live";
         this.retryAttempts.delete(entry.threadID);
-        entry.pip.setVisible(true);
         return;
       case "user_close":
         this.dismissedAt.set(entry.threadID, new Date().toISOString());
