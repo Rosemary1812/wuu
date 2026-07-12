@@ -671,6 +671,8 @@ private final class NativePiPStreamOutput: NSObject, SCStreamOutput, SCStreamDel
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         lock.lock(); stopped = true; lock.unlock()
+        let ns = error as NSError
+        pipDebugLog("stream didStopWithError domain=\(ns.domain) code=\(ns.code)")
         writer.send("capture_status", fields: ["status": "error", "message": error.localizedDescription])
     }
 
@@ -738,6 +740,38 @@ private func streamConfiguration(for window: SCWindow) -> SCStreamConfiguration 
 
 private func pipDebugLog(_ message: String) {
     FileHandle.standardError.write(Data("[pip] \(message)\n".utf8))
+}
+
+// Dev probe: report which capture APIs actually work for the target window, so a
+// window ScreenCaptureKit refuses (e.g. sharing-restricted) can be told apart
+// from a fixable SCStream problem. Logs only; changes no behavior.
+@available(macOS 14.0, *)
+private func pipProbeCapture(window: SCWindow) {
+    if let list = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]],
+       let info = list.first(where: { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == window.windowID }) {
+        let sharing = (info[kCGWindowSharingState as String] as? NSNumber)?.intValue ?? -1
+        pipDebugLog("probe sharingState=\(sharing)")
+    } else {
+        pipDebugLog("probe sharingState=unknown")
+    }
+    if let image = CGWindowListCreateImage(.null, .optionIncludingWindow, window.windowID, [.boundsIgnoreFraming, .bestResolution]) {
+        pipDebugLog("probe CGWindowListCreateImage ok \(image.width)x\(image.height)")
+    } else {
+        pipDebugLog("probe CGWindowListCreateImage nil")
+    }
+    let config = SCStreamConfiguration()
+    config.width = max(1, Int(window.frame.width))
+    config.height = max(1, Int(window.frame.height))
+    SCScreenshotManager.captureImage(contentFilter: SCContentFilter(desktopIndependentWindow: window), configuration: config) { image, error in
+        if let error {
+            let ns = error as NSError
+            pipDebugLog("probe SCScreenshotManager error domain=\(ns.domain) code=\(ns.code)")
+        } else if let image {
+            pipDebugLog("probe SCScreenshotManager ok \(image.width)x\(image.height)")
+        } else {
+            pipDebugLog("probe SCScreenshotManager nil")
+        }
+    }
 }
 
 // Guards a one-shot resume so the capture-start completion handler and its
@@ -845,6 +879,7 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
     var establishFailures = 0
     var lastHealthyOutput: ObjectIdentifier?
     var lastSafetyRefresh = Date.distantPast
+    var didProbe = false
 
     while !app.isTerminated && processIsAlive(configuration.parentProcessID) {
         // Establish (or re-establish) the capture stream whenever we do not have
@@ -871,6 +906,7 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
                 continue
             }
             pipDebugLog("resolve window id=\(target.windowID) frame=\(target.frame) title=\(target.title ?? "-")")
+            if !didProbe { didProbe = true; pipProbeCapture(window: target) }
             let next = NativePiPStreamOutput(controller: controller, writer: writer)
             do {
                 stream = try await startWindowStream(window: target, output: next, timeout: captureStartTimeout)
