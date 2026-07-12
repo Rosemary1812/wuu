@@ -79,15 +79,10 @@ export class CUANativePiP {
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => { stderr = (stderr + chunk).slice(-4096); });
     child.on("error", (error) => this.onError(error.message));
-    child.on("exit", (code, signal) => {
+    child.on("exit", (code) => {
       if (this.child !== child) return;
-      // Reaching here means the helper died without us asking: a deliberate
-      // stop() clears this.child first, so it is filtered out above. Report every
-      // unexpected exit — including a clean code 0 (e.g. stdin EOF) — so the
-      // coordinator drops the dead entry and can recover, instead of holding a
-      // reference to a vanished window forever.
       this.child = undefined;
-      this.onError(stderr.trim() || `native PiP exited (${signal ?? `code ${code ?? 0}`})`);
+      if (code && code !== 0) this.onError(stderr.trim() || `native PiP exited with code ${code}`);
     });
   }
 
