@@ -1,5 +1,5 @@
 import type { Thread, ThreadItem, Turn } from "../shared/protocol";
-import { isAgentHandoffText } from "./AgentHandoff";
+import { isAgentHandoffItem } from "./AgentHandoff";
 import {
   messageFlowFinalTextIndex,
   messageFlowStatusLabel,
@@ -53,7 +53,7 @@ export function firstUserMessageAnchor(
     "turns" in source ? source.turns ?? [] : [source as Turn];
   for (const turn of turns) {
     for (const item of turn.items ?? []) {
-      if (item.type === "user_message" && !isAgentHandoffText(item.text)) {
+      if (item.type === "user_message" && !isAgentHandoffItem(item)) {
         return { turnID: turn.id, itemID: item.id };
       }
     }
@@ -79,7 +79,7 @@ export function lastUserMessageAnchor(
     const items = turn.items ?? [];
     for (let itemIndex = items.length - 1; itemIndex >= 0; itemIndex -= 1) {
       const item = items[itemIndex];
-      if (item.type === "user_message" && !isAgentHandoffText(item.text)) {
+      if (item.type === "user_message" && !isAgentHandoffItem(item)) {
         return { turnID: turn.id, itemID: item.id };
       }
     }
@@ -177,8 +177,13 @@ export function firstUserMessageText(
     if (item.type !== "user_message") {
       continue;
     }
+    // Gate first on the item-level signal so corrupted payload text never
+    // reaches the trim path.
+    if (isAgentHandoffItem(item)) {
+      continue;
+    }
     const trimmed = (item.text ?? "").trim();
-    if (!trimmed || isAgentHandoffText(trimmed)) {
+    if (!trimmed) {
       continue;
     }
     return trimmed;

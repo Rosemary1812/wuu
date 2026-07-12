@@ -16,7 +16,7 @@ import type {
   Turn,
 } from "../shared/protocol";
 import type { ComposerFile, ComposerImage } from "./ComposerMessages";
-import { agentHandoffDisplay, isAgentHandoffText } from "./AgentHandoff";
+import { agentHandoffDisplayItem, isAgentHandoffItem } from "./AgentHandoff";
 import { threadDisplayTitle } from "./ThreadTitles";
 import { sortChildAgents } from "./ThreadAgents";
 import {
@@ -2076,7 +2076,9 @@ export function chatMessagesFromTurns(
         // a <subagent_notification> payload). They are working-transcript
         // machinery, not user-authored chat. Trigger-turn handoffs become a
         // neutral system divider; stored mailbox payloads are still hidden.
-        const handoff = agentHandoffDisplay(item.text);
+        // The item-aware helper is the primary gate (see AgentHandoff.ts for
+        // why `name` is the reliable signal and `text` sniff is a fallback).
+        const handoff = agentHandoffDisplayItem(item);
         if (handoff) {
           rows.push({
             kind: "system",
@@ -2087,7 +2089,7 @@ export function chatMessagesFromTurns(
           });
           continue;
         }
-        if (isAgentHandoffText(item.text)) {
+        if (isAgentHandoffItem(item)) {
           continue;
         }
         if (item.envelope_meta && item.envelope_meta.length > 0) {
@@ -2717,8 +2719,14 @@ function queryTextForUserItem(item: ThreadItem): string | undefined {
   if (item.type !== "user_message") {
     return undefined;
   }
+  // Gate first on the item-level signal so corrupted payload text
+  // (combined envelopes with \n\n joins, <changed_file_overlap> tails)
+  // never reaches the text trim/return path.
+  if (isAgentHandoffItem(item)) {
+    return undefined;
+  }
   const text = (item.text ?? "").trim();
-  if (!text || isAgentHandoffText(text)) {
+  if (!text) {
     return undefined;
   }
   return text;
