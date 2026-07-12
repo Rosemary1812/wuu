@@ -4,7 +4,7 @@
 // Dev-only diagnostic for the native CUA picture-in-picture (PiP) window.
 //
 // The PiP is not part of the Electron window: the Electron main process spawns
-// a separate `wuu-cua-mac --native-pip` helper, and that helper owns an
+// a separate `wuu-cua-mac-pip --native-pip` helper, and that helper owns an
 // independent NSPanel. So "the PiP is not visible in Wuu Dev" is not enough to
 // tell whether the helper never started, started but has no panel, has a panel
 // that is hidden/offscreen, or has a visible panel with no real content.
@@ -12,7 +12,8 @@
 // This script correlates all three observation planes:
 //   A. Electron main process (who spawned the helper)
 //   B. the helper process + its arguments (target, window identity, parent pid)
-//   C. the real NSPanel via CGWindowList + a single-window screencapture
+//   C. the real NSPanel via CGWindowList, a window capture, and the visible
+//      screen region the user actually sees
 //
 // It writes artifacts/cua-pip/<timestamp>/{diagnostic.json,pip-<id>.png} and
 // prints a classification of why the PiP is (not) visible. It never runs in
@@ -20,8 +21,8 @@
 
 const { execFileSync } = require("node:child_process");
 const { createHash } = require("node:crypto");
-const { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } = require("node:fs");
-const { join, resolve } = require("node:path");
+const { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } = require("node:fs");
+const { basename, dirname, join, resolve } = require("node:path");
 
 function fail(message) {
   process.stderr.write(`inspect-cua-pip: ${message}\n`);
@@ -55,6 +56,17 @@ function sha256(path) {
     return createHash("sha256").update(readFileSync(path)).digest("hex");
   } catch {
     return undefined;
+  }
+}
+
+function samePhysicalFile(first, second) {
+  try {
+    if (realpathSync(first) === realpathSync(second)) return true;
+    const firstStat = statSync(first);
+    const secondStat = statSync(second);
+    return firstStat.dev === secondStat.dev && firstStat.ino === secondStat.ino;
+  } catch {
+    return false;
   }
 }
 
@@ -121,7 +133,8 @@ import CoreGraphics
 import Foundation
 let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] ?? []
 var out: [[String: Any]] = []
-for w in list where (w[kCGWindowOwnerName as String] as? String) == "wuu-cua-mac" {
+let ownerNames: Set<String> = ["wuu-cua-mac-pip", "wuu-cua-mac"]
+for w in list where ownerNames.contains(w[kCGWindowOwnerName as String] as? String ?? "") {
     var e: [String: Any] = [:]
     e["windowID"] = w[kCGWindowNumber as String] ?? 0
     e["ownerPID"] = w[kCGWindowOwnerPID as String] ?? 0
@@ -149,7 +162,7 @@ function listPiPWindows() {
 
 function preflightScreenRecording() {
   // NOTE: this reports the *swift* process's Screen Recording grant, which is a
-  // proxy only. TCC is per-binary, so the helper (wuu-cua-mac) has its own grant.
+  // proxy only. TCC is per-binary, so the PiP helper has its own grant.
   // Use this as a hint, and confirm the helper's own entry in System Settings.
   const { ok, out } = run("swift", ["-e", "import CoreGraphics; print(CGPreflightScreenCaptureAccess())"]);
   if (!ok) return undefined;
@@ -162,9 +175,9 @@ function repoBuiltHelper() {
   const roots = [process.env.WUU_SOURCE_ROOT, resolve(__dirname, ".."), resolve(__dirname, "..", "..")];
   for (const root of roots) {
     if (!root) continue;
-    const candidate = join(root, "desktop", "build", "bin", "wuu-cua-mac");
+    const candidate = join(root, "desktop", "build", "bin", "wuu-cua-mac-pip");
     if (existsSync(candidate)) return candidate;
-    const nested = join(root, "build", "bin", "wuu-cua-mac");
+    const nested = join(root, "build", "bin", "wuu-cua-mac-pip");
     if (existsSync(nested)) return nested;
   }
   return undefined;
@@ -184,6 +197,15 @@ function classify({ helpers, windows, windowPlane }) {
   if (live.length === 0) {
     return { stage: "orphan_only", likely: "Only orphaned helpers (parent Electron gone) are running. Reap them and restart Wuu Dev." };
   }
+  const pathCollisions = live.filter((helper) => !helper.matchesExpectedRole || helper.sharesMCPExecutable);
+  if (pathCollisions.length > 0) {
+    return {
+      stage: "helper_path_collision",
+      likely:
+        "A PiP process is not running from the dedicated wuu-cua-mac-pip executable identity. " +
+        "Hash equality only proves the version; this path/physical-file check prevents PiP from sharing replayd identity with MCP.",
+    };
+  }
   if (!windowPlane.available) {
     return { stage: "window_plane_unavailable", likely: `Could not enumerate windows (${windowPlane.reason}). Cannot confirm the panel; check the helper stderr in the Electron dev log.` };
   }
@@ -193,9 +215,8 @@ function classify({ helpers, windows, windowPlane }) {
     return {
       stage: "helper_started_no_panel",
       likely:
-        "A live helper exists but owns no NSPanel yet. The panel is only ordered front after the first displayable frame " +
-        "(the `ready` event). Most common cause: Screen Recording permission for wuu-cua-mac is missing/was reset by a rebuild, " +
-        "so the helper throws before any frame; also possible: target window not found, or only blank/suspended frames.",
+        "A live helper exists but owns no discoverable NSPanel. It may have failed before creating the controller, " +
+        "or the WindowServer query may not recognize the helper owner name. Check the helper stderr and process path.",
     };
   }
   const visible = panels.filter((w) => Boolean(w.onscreen) && Number(w.alpha) > 0.01);
@@ -208,10 +229,10 @@ function classify({ helpers, windows, windowPlane }) {
     };
   }
   return {
-    stage: "panel_visible",
+    stage: "panel_visible_unverified",
     likely:
-      "A panel is on-screen with alpha > 0. If the captured PNG shows only a black background and the virtual pointer, " +
-      "this is the content-presentation issue (frames enqueued but not presented). If it shows the target app, the PiP is working.",
+      "A panel is on-screen with alpha > 0, but this does not prove live capture: the frosted app-icon placeholder is also visible. " +
+      "Inspect the captured PNG and confirm real target pixels (and a changing value) before calling the PiP live.",
   };
 }
 
@@ -227,8 +248,13 @@ const builtHelper = repoBuiltHelper();
 const builtHash = builtHelper ? sha256(builtHelper) : undefined;
 for (const helper of helpers) {
   const runningHash = sha256(helper.binaryPath);
+  const colocatedMCPHelper = join(dirname(helper.binaryPath), "wuu-cua-mac");
   helper.runningBinaryHash = runningHash;
   helper.matchesBuiltHelper = builtHash && runningHash ? builtHash === runningHash : undefined;
+  helper.matchesExpectedRole = basename(helper.binaryPath) === "wuu-cua-mac-pip";
+  helper.sharesMCPExecutable = existsSync(colocatedMCPHelper)
+    ? samePhysicalFile(helper.binaryPath, colocatedMCPHelper)
+    : undefined;
 }
 
 const electronMains = new Map();
@@ -248,11 +274,21 @@ for (const w of windows) {
   const png = join(outDir, `pip-${w.windowID}.png`);
   const result = run("screencapture", ["-x", "-o", "-l", String(w.windowID), png]);
   const size = existsSync(png) ? statSync(png).size : 0;
+  const visiblePng = join(outDir, `pip-visible-${w.windowID}.png`);
+  const bounds = w.bounds || {};
+  const region = [bounds.X, bounds.Y, bounds.Width, bounds.Height].map(Number);
+  const visibleResult = region.every(Number.isFinite) && region[2] > 0 && region[3] > 0
+    ? run("screencapture", ["-x", `-R${region.map(Math.round).join(",")}`, visiblePng])
+    : { ok: false };
+  const visibleSize = existsSync(visiblePng) ? statSync(visiblePng).size : 0;
   captures.push({
     windowID: w.windowID,
     path: png,
     bytes: size,
     captured: result.ok && size > 0,
+    visiblePath: visiblePng,
+    visibleBytes: visibleSize,
+    visibleCaptured: visibleResult.ok && visibleSize > 0,
     // A tiny PNG for a 260x170 window is a weak hint of an all-black / empty frame.
     blackHint: size > 0 && size < 3000,
   });
@@ -289,7 +325,13 @@ lines.push(`helpers running: ${helpers.length}`);
 for (const h of helpers) {
   lines.push(`  pid ${h.pid}  target=${h.target}  win=${h.targetWindowID ?? "-"}  parent=${h.parentProcessID ?? "-"}${h.orphan ? "  [ORPHAN]" : ""}`);
   if (h.matchesBuiltHelper === false) {
-    lines.push(`    ! running binary differs from desktop/build/bin/wuu-cua-mac (stale helper — rebuild + restart)`);
+    lines.push(`    ! running binary differs from desktop/build/bin/wuu-cua-mac-pip (stale helper — rebuild + restart)`);
+  }
+  if (!h.matchesExpectedRole) {
+    lines.push(`    ! running path is not the dedicated wuu-cua-mac-pip role (full Electron restart required)`);
+  }
+  if (h.sharesMCPExecutable) {
+    lines.push(`    ! PiP and MCP resolve to the same physical executable (SCStream connection collision)`);
   }
 }
 lines.push(`electron mains: ${diagnostic.electron_mains.map((e) => e.pid).join(", ") || "(none correlated)"}`);
@@ -298,11 +340,12 @@ for (const w of windows) {
   lines.push(`  id ${w.windowID}  owner ${w.ownerPID}  layer ${w.layer}  alpha ${w.alpha}  onscreen ${w.onscreen}  bounds ${JSON.stringify(w.bounds)}`);
 }
 for (const cap of captures) {
-  lines.push(`capture: ${cap.path}  (${cap.bytes} bytes${cap.blackHint ? ", tiny — possibly black/empty" : ""})`);
+  lines.push(`window capture: ${cap.path}  (${cap.bytes} bytes${cap.blackHint ? ", tiny — possibly black/empty" : ""})`);
+  lines.push(`visible pixels: ${cap.visiblePath}  (${cap.visibleBytes} bytes${cap.visibleCaptured ? "" : ", capture failed"})`);
 }
 if (diagnostic.screen_recording_preflight_swift_proxy === false) {
   lines.push("");
-  lines.push("! Screen Recording preflight (swift proxy) is FALSE. Confirm the 'wuu-cua-mac' entry in");
+  lines.push("! Screen Recording preflight (swift proxy) is FALSE. Confirm the Wuu Dev entry in");
   lines.push("  System Settings > Privacy & Security > Screen Recording. A rebuild/re-sign can reset this grant.");
 }
 lines.push("");

@@ -3,6 +3,7 @@ const { readFileSync } = require("node:fs");
 const { dirname, join, resolve } = require("node:path");
 const {
   helperPathForApp,
+  pipHelperPathForApp,
   prepareDevElectronApp,
 } = require("./prepare-dev-electron-app.cjs");
 const { ensureDevSigningIdentity } = require("./dev-signing.cjs");
@@ -32,6 +33,7 @@ if (process.platform === "darwin") {
   env.WUU_ENABLE_CUA_MAC = "1";
   env.WUU_DEV_ELECTRON_APP = prepareDevElectronApp(devSigning);
   env.WUU_CUA_MAC_HELPER = helperPathForApp(env.WUU_DEV_ELECTRON_APP);
+  env.WUU_CUA_MAC_PIP_HELPER = pipHelperPathForApp(env.WUU_DEV_ELECTRON_APP);
   env.ELECTRON_EXEC_PATH = join(__dirname, "launch-electron-via-open.cjs");
 }
 

@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, realpathSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import type { Rectangle } from "electron";
 
 export type CUANativePiPEvent = {
@@ -110,12 +110,24 @@ export class CUANativePiP {
     this.send({ type: "interaction", ...interaction });
   }
 
-  stop(): void {
+  stop(onStopped?: () => void): void {
     const child = this.child;
     this.child = undefined;
-    if (!child) return;
-    if (!child.stdin.destroyed) child.stdin.write(`${JSON.stringify({ type: "close" })}\n`);
-    child.kill("SIGTERM");
+    if (!child) {
+      onStopped?.();
+      return;
+    }
+    const forceStop = setTimeout(() => child.kill("SIGTERM"), 750);
+    forceStop.unref?.();
+    child.once("close", () => {
+      clearTimeout(forceStop);
+      onStopped?.();
+    });
+    if (!child.stdin.destroyed) {
+      child.stdin.end(`${JSON.stringify({ type: "close" })}\n`);
+    } else {
+      child.kill("SIGTERM");
+    }
   }
 
   isLive(): boolean { return this.child !== undefined; }
@@ -131,10 +143,35 @@ export function resolveCUAFrameHelper(): string | undefined {
   const resourcesPath = (process as { resourcesPath?: string }).resourcesPath;
   const roots = [process.env.WUU_SOURCE_ROOT, process.cwd(), resolve(process.cwd(), "..")]
     .filter((value): value is string => Boolean(value));
+  const mcpHelper = process.env.WUU_CUA_MAC_HELPER;
+  return cuaFrameHelperCandidates(process.env, resourcesPath, roots)
+    .find((candidate) => existsSync(candidate) && (!mcpHelper || !isSameExecutableFile(candidate, mcpHelper)));
+}
+
+export function isSameExecutableFile(first: string, second: string): boolean {
+  if (resolve(first) === resolve(second)) return true;
+  try {
+    if (realpathSync(first) === realpathSync(second)) return true;
+    const firstStat = statSync(first);
+    const secondStat = statSync(second);
+    return firstStat.dev === secondStat.dev && firstStat.ino === secondStat.ino;
+  } catch {
+    return false;
+  }
+}
+
+export function cuaFrameHelperCandidates(
+  env: NodeJS.ProcessEnv,
+  resourcesPath: string | undefined,
+  roots: string[],
+): string[] {
+  const mcpHelper = env.WUU_CUA_MAC_HELPER;
   const candidates = [
-    process.env.WUU_CUA_MAC_HELPER,
-    resourcesPath ? join(resourcesPath, "bin", "wuu-cua-mac") : undefined,
-    ...roots.map((root) => join(root, "desktop", "build", "bin", "wuu-cua-mac")),
+    env.WUU_CUA_MAC_PIP_HELPER,
+    mcpHelper ? join(dirname(mcpHelper), "wuu-cua-mac-pip") : undefined,
+    resourcesPath ? join(resourcesPath, "bin", "wuu-cua-mac-pip") : undefined,
+    ...roots.map((root) => join(root, "desktop", "build", "bin", "wuu-cua-mac-pip")),
   ].filter((value): value is string => Boolean(value));
-  return candidates.find(existsSync);
+  const mcpPath = mcpHelper ? resolve(mcpHelper) : undefined;
+  return [...new Set(candidates)].filter((candidate) => resolve(candidate) !== mcpPath);
 }

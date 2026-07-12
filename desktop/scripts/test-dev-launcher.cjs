@@ -8,6 +8,7 @@ const {
 } = require("./launch-electron-via-open.cjs");
 const {
   helperPathForApp,
+  pipHelperPathForApp,
   sourceHashFromBuildInfo,
 } = require("./prepare-dev-electron-app.cjs");
 const {
@@ -30,12 +31,14 @@ const environment = launchEnvironment(
   "token-1",
   "/repo",
   "/repo/desktop/build/bin/wuu-cua-mac",
+  "/repo/desktop/build/bin/wuu-cua-mac-pip",
 );
 assert.ok(environment.includes("ELECTRON_RENDERER_URL=http://localhost:5173"));
 assert.ok(environment.includes("WUU_DEV_LAUNCH_TOKEN=token-1"));
 assert.ok(environment.includes("WUU_SOURCE_ROOT=/repo"));
 assert.ok(environment.includes("WUU_ENABLE_CUA_MAC=1"));
 assert.ok(environment.includes("WUU_CUA_MAC_HELPER=/repo/desktop/build/bin/wuu-cua-mac"));
+assert.ok(environment.includes("WUU_CUA_MAC_PIP_HELPER=/repo/desktop/build/bin/wuu-cua-mac-pip"));
 
 const processList = [
   "  41 /path/Electron Helper WUU_DEV_LAUNCH_TOKEN=token-1",
@@ -46,6 +49,10 @@ assert.equal(processIDForLaunchToken(processList, "missing"), undefined);
 assert.equal(
   helperPathForApp("/repo/desktop/build/dev-host/Wuu Dev.app"),
   "/repo/desktop/build/dev-host/Wuu Dev.app/Contents/Resources/bin/wuu-cua-mac",
+);
+assert.equal(
+  pipHelperPathForApp("/repo/desktop/build/dev-host/Wuu Dev.app"),
+  "/repo/desktop/build/dev-host/Wuu Dev.app/Contents/Resources/bin/wuu-cua-mac-pip",
 );
 assert.equal(
   sourceHashFromBuildInfo({ sourceHash: "a".repeat(64) }, () => "fallback"),

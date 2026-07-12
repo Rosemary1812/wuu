@@ -215,10 +215,10 @@ public final class MacComputerBackend: ComputerBackend {
         guard #available(macOS 14.0, *) else { return false }
         let pid = app.processIdentifier
         var capture: WindowCapture?
-        // Prefer the non-ScreenCaptureKit, non-activating capture so change
-        // detection never opens a second SCK client against the window the live
-        // picture-in-picture helper is already streaming (concurrent SCK clients
-        // interrupt each other -> SCStream -3805).
+        // Prefer the non-activating window capture. Current macOS releases may
+        // proxy this legacy Core Graphics API through the system capture service,
+        // so the live PiP uses a separate executable path and therefore a distinct
+        // capture-client identity.
         if let foreground = try? captureForegroundWindowPNG(processID: pid) {
             capture = foreground
         } else if ProcessInfo.processInfo.environment["WUU_CUA_NO_SCK_OBSERVE"] != "1",
@@ -479,20 +479,16 @@ public final class MacComputerBackend: ComputerBackend {
         guard #available(macOS 14.0, *) else {
             throw ComputerError.unsupported("window screenshots require macOS 14 or newer")
         }
-        // Capture without ScreenCaptureKit and without activating the app. The
-        // live picture-in-picture helper already streams this same window through
-        // SCStream, and opening a second, concurrent SCK client (SCScreenshotManager)
-        // on the same window interrupts that stream's connection to the capture
-        // daemon (SCStreamError -3805). A window-id screenshot keeps SCK to a
-        // single client and never steals focus. captureForegroundWindowPNG only
-        // foregrounds when wrapped in withForegroundInput, so calling it directly
-        // stays fully in the background.
+        // Capture without activating the app. Current macOS releases may proxy
+        // this Core Graphics call through the system capture service; the PiP's
+        // separate executable path keeps that proxy connection from replacing the
+        // live stream's client identity.
         if let background = try? captureForegroundWindowPNG(processID: app.processIdentifier) {
             return background
         }
-        // Isolation switch (dev/test only): never open a ScreenCaptureKit client
-        // from the observe path, so the live PiP stream is provably the only SCK
-        // client. Confirms whether -3805 is caused by a second SCK client here.
+        // Test-only isolation switch: skip the explicit SCScreenshotManager path.
+        // The Core Graphics path above may still be proxied through the system
+        // capture service, so this is not a guarantee that observe avoids it.
         if ProcessInfo.processInfo.environment["WUU_CUA_NO_SCK_OBSERVE"] == "1" {
             throw ComputerError.operationFailed("observe capture unavailable (no-SCK isolation mode)")
         }

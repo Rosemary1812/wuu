@@ -17,14 +17,22 @@ const devApp = join(hostRoot, "Wuu Dev.app");
 const markerPath = join(hostRoot, "identity.json");
 const electronPackagePath = join(desktopRoot, "node_modules", "electron", "package.json");
 const builtHelper = join(desktopRoot, "build", "bin", "wuu-cua-mac");
+const builtPiPHelper = join(desktopRoot, "build", "bin", "wuu-cua-mac-pip");
 const helperBuildInfo = join(desktopRoot, "build", "bin", "wuu-cua-mac.build.json");
-const identityVersion = 6;
+const identityVersion = 7;
 
 function prepareDevElectronApp(signing = { identity: "-", fingerprint: "adhoc", name: "ad-hoc" }) {
   const electronVersion = JSON.parse(readFileSync(electronPackagePath, "utf8")).version;
   const helperHash = helperSourceHash();
   const builtHelperHash = hashFile(builtHelper);
-  if (devHostIsCurrent(electronVersion, helperHash, builtHelperHash, signing.fingerprint)) return devApp;
+  const builtPiPHelperHash = hashFile(builtPiPHelper);
+  if (devHostIsCurrent(
+    electronVersion,
+    helperHash,
+    builtHelperHash,
+    builtPiPHelperHash,
+    signing.fingerprint,
+  )) return devApp;
 
   console.log(`preparing stable Wuu Dev host for Electron ${electronVersion}...`);
   mkdirSync(hostRoot, { recursive: true });
@@ -46,8 +54,10 @@ function prepareDevElectronApp(signing = { identity: "-", fingerprint: "adhoc", 
     "Wuu uses screen capture to show a live preview while an agent operates a Mac app.",
   );
   const packagedHelper = helperPathForApp(devApp);
+  const packagedPiPHelper = pipHelperPathForApp(devApp);
   mkdirSync(join(devApp, "Contents", "Resources", "bin"), { recursive: true });
   copyFileSync(builtHelper, packagedHelper);
+  copyFileSync(builtPiPHelper, packagedPiPHelper);
   run("codesign", [
     "--force",
     "--deep",
@@ -59,11 +69,14 @@ function prepareDevElectronApp(signing = { identity: "-", fingerprint: "adhoc", 
   ]);
   run("codesign", ["--verify", "--deep", "--strict", devApp]);
   const embeddedHelperHash = hashFile(packagedHelper);
+  const embeddedPiPHelperHash = hashFile(packagedPiPHelper);
   writeFileSync(markerPath, `${JSON.stringify({
     electronVersion,
     helperHash,
     builtHelperHash,
+    builtPiPHelperHash,
     embeddedHelperHash,
+    embeddedPiPHelperHash,
     signingFingerprint: signing.fingerprint,
     identityVersion,
   })}\n`);
@@ -75,7 +88,13 @@ function prepareDevElectronApp(signing = { identity: "-", fingerprint: "adhoc", 
   return devApp;
 }
 
-function devHostIsCurrent(electronVersion, helperHash, builtHelperHash, signingFingerprint) {
+function devHostIsCurrent(
+  electronVersion,
+  helperHash,
+  builtHelperHash,
+  builtPiPHelperHash,
+  signingFingerprint,
+) {
   if (!existsSync(devApp) || !existsSync(markerPath)) return false;
   try {
     const marker = JSON.parse(readFileSync(markerPath, "utf8"));
@@ -83,7 +102,9 @@ function devHostIsCurrent(electronVersion, helperHash, builtHelperHash, signingF
       marker.electronVersion !== electronVersion
       || marker.helperHash !== helperHash
       || marker.builtHelperHash !== builtHelperHash
+      || marker.builtPiPHelperHash !== builtPiPHelperHash
       || marker.embeddedHelperHash !== hashFile(helperPathForApp(devApp))
+      || marker.embeddedPiPHelperHash !== hashFile(pipHelperPathForApp(devApp))
       || marker.signingFingerprint !== signingFingerprint
       || marker.identityVersion !== identityVersion
     ) {
@@ -121,6 +142,10 @@ function helperPathForApp(appPath) {
   return join(appPath, "Contents", "Resources", "bin", "wuu-cua-mac");
 }
 
+function pipHelperPathForApp(appPath) {
+  return join(appPath, "Contents", "Resources", "bin", "wuu-cua-mac-pip");
+}
+
 function setPlistString(info, key, value) {
   const set = spawnSync("/usr/libexec/PlistBuddy", ["-c", `Set :${key} ${value}`, info], {
     stdio: "ignore",
@@ -136,4 +161,9 @@ function run(command, args) {
   }
 }
 
-module.exports = { helperPathForApp, prepareDevElectronApp, sourceHashFromBuildInfo };
+module.exports = {
+  helperPathForApp,
+  pipHelperPathForApp,
+  prepareDevElectronApp,
+  sourceHashFromBuildInfo,
+};

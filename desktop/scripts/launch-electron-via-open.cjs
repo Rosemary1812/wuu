@@ -19,6 +19,8 @@ const electronApp = process.env.WUU_DEV_ELECTRON_APP
   || join(desktopRoot, "node_modules", "electron", "dist", "Electron.app");
 const helper = process.env.WUU_CUA_MAC_HELPER
   || join(electronApp, "Contents", "Resources", "bin", "wuu-cua-mac");
+const pipHelper = process.env.WUU_CUA_MAC_PIP_HELPER
+  || join(electronApp, "Contents", "Resources", "bin", "wuu-cua-mac-pip");
 
 function normalizeElectronArguments(args, root = desktopRoot) {
   if (args.length === 0 || args[0].startsWith("-") || isAbsolute(args[0])) {
@@ -27,13 +29,20 @@ function normalizeElectronArguments(args, root = desktopRoot) {
   return [resolve(root, args[0]), ...args.slice(1)];
 }
 
-function launchEnvironment(env, token, root = repoRoot, helperPath = helper) {
+function launchEnvironment(
+  env,
+  token,
+  root = repoRoot,
+  helperPath = helper,
+  pipHelperPath = pipHelper,
+) {
   const values = {
     ELECTRON_RENDERER_URL: env.ELECTRON_RENDERER_URL,
     NODE_ENV: env.NODE_ENV ?? "development",
     NODE_ENV_ELECTRON_VITE: env.NODE_ENV_ELECTRON_VITE ?? "development",
     WUU_ENABLE_CUA_MAC: env.WUU_ENABLE_CUA_MAC,
     WUU_CUA_MAC_HELPER: helperPath,
+    WUU_CUA_MAC_PIP_HELPER: pipHelperPath,
     WUU_DEV_LAUNCH_TOKEN: token,
     WUU_SOURCE_ROOT: root,
   };
