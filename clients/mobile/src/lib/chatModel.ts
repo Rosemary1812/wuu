@@ -6,7 +6,7 @@
 
 import type { ThreadItem, Turn } from "@wuu/protocol";
 
-import { isAgentHandoffText } from "./handoff";
+import { isAgentHandoffItem } from "./handoff";
 
 export type ChatRow =
   | { kind: "focus"; id: string; turnID: string; item: ThreadItem }
@@ -27,7 +27,11 @@ export function chatRowsFromTurns(
       if (item.focus_meta) {
         rows.push({ kind: "focus", id, turnID: turn.id, item });
       } else if (item.type === "user_message") {
-        if (isAgentHandoffText(item.text)) {
+        // Item-aware gate: AGENT_NOTIFICATION_NAME is the reliable wire
+        // signal the backend stamps on every agent self-addressed
+        // user_message. Text sniffing stays available via the helper for
+        // items where the backend hasn't propagated `name` yet.
+        if (isAgentHandoffItem(item)) {
           continue; // inter-agent machinery, never a chat bubble
         }
         if (item.envelope_meta && item.envelope_meta.length > 0) {
