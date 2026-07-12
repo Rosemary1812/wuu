@@ -52,6 +52,13 @@ export class CUANativePiP {
 
   start(): void {
     if (this.child) return;
+    // Dev-only trace of the whole helper lifecycle to the Electron process
+    // stderr (the `wuu-dev` terminal). Enable with WUU_CUA_DEBUG=1. This never
+    // touches the PiP content or any product UI.
+    const debug = process.env.WUU_CUA_DEBUG === "1";
+    const trace = (message: string) => {
+      if (debug) process.stderr.write(`[cua-pip:${this.target}] ${message}\n`);
+    };
     const decoder = new CUALineDecoder();
     const { x, y, width, height } = this.initialBounds;
     const child = spawn(this.helper, [
@@ -67,9 +74,13 @@ export class CUANativePiP {
       String(process.pid),
     ], { stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
+    trace(`spawn helperPid=${child.pid} processID=${this.processID ?? 0} windowID=${this.windowID ?? 0}`);
     child.stdout.on("data", (chunk: Buffer) => {
       try {
-        for (const event of decoder.push(chunk)) this.onEvent(event);
+        for (const event of decoder.push(chunk)) {
+          trace(`event ${JSON.stringify(event)}`);
+          this.onEvent(event);
+        }
       } catch (error) {
         this.onError(error instanceof Error ? error.message : String(error));
         this.stop();
@@ -77,11 +88,15 @@ export class CUANativePiP {
     });
     let stderr = "";
     child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => { stderr = (stderr + chunk).slice(-4096); });
-    child.on("error", (error) => this.onError(error.message));
-    child.on("exit", (code) => {
+    child.stderr.on("data", (chunk: string) => {
+      stderr = (stderr + chunk).slice(-4096);
+      trace(`stderr ${chunk.trim()}`);
+    });
+    child.on("error", (error) => { trace(`error ${error.message}`); this.onError(error.message); });
+    child.on("exit", (code, signal) => {
       if (this.child !== child) return;
       this.child = undefined;
+      trace(`exit code=${code} signal=${signal}`);
       if (code && code !== 0) this.onError(stderr.trim() || `native PiP exited with code ${code}`);
     });
   }
