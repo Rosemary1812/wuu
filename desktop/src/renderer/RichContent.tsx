@@ -1,6 +1,7 @@
 import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { FileText, Github, Globe2, Mail } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
+import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
 import type { WorkspaceFileReferenceResolveResult } from "../shared/protocol";
 import { useImagePreview } from "./ImagePreview";
@@ -10,6 +11,13 @@ type RichContentProps = {
   text?: string;
   cwd?: string;
   onOpenFile?: (path: string) => void;
+  /**
+   * When true, inline HTML inside the markdown source is rendered as HTML
+   * instead of being escaped. Use only for trusted sources the user opened
+   * themselves (e.g. workspace file previews). Chat messages stay off by
+   * default so LLM output cannot inject arbitrary HTML.
+   */
+  allowRawHtml?: boolean;
 };
 
 export type RichBlock =
@@ -135,10 +143,20 @@ const AUTO_LINK_FILE_EXTENSIONS = new Set([
   ".zsh"
 ]);
 
-export const RichContent = memo(function RichContent({ text = "", cwd, onOpenFile }: RichContentProps): JSX.Element {
+export const RichContent = memo(function RichContent({
+  text = "",
+  cwd,
+  onOpenFile,
+  allowRawHtml = false
+}: RichContentProps): JSX.Element {
   return (
     <div className="rich-content">
-      <MarkdownContent text={text} cwd={cwd} onOpenFile={onOpenFile} />
+      <MarkdownContent
+        text={text}
+        cwd={cwd}
+        onOpenFile={onOpenFile}
+        allowRawHtml={allowRawHtml}
+      />
     </div>
   );
 });
@@ -148,20 +166,26 @@ function MarkdownContentView({
   cwd,
   renderText,
   onOpenFile,
-  renderMermaid = true
+  renderMermaid = true,
+  allowRawHtml = false
 }: {
   text: string;
   cwd?: string;
   renderText?: RichTextRenderer;
   onOpenFile?: (path: string) => void;
   renderMermaid?: boolean;
+  allowRawHtml?: boolean;
 }): JSX.Element {
   const components = useMemo(
     () => markdownComponents(cwd, renderText, renderMermaid, onOpenFile),
     [cwd, renderText, renderMermaid, onOpenFile]
   );
   return (
-    <ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>
+    <ReactMarkdown
+      components={components}
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={allowRawHtml ? [rehypeRaw] : undefined}
+    >
       {text}
     </ReactMarkdown>
   );
@@ -357,28 +381,51 @@ function markdownComponents(
         </>
       );
     },
-    // Every heading level renders as the same whisper-level anchor: a
-    // same-size semibold paragraph with extra space above (.rich-heading).
-    // One tier only — the stream needs scannable section marks, not a
-    // document outline. Flattening headings to plain paragraphs (the
-    // previous iteration) left long answers with no anchors at all.
+    // Heading levels share the same flat `rich-heading` shape so streamed
+    // chat output stays scannable, but they also expose a level modifier so
+    // the workspace file preview can render a proper document outline
+    // (h1 → big title with underline; h2 → section heading; h3 → sub-head).
     h1({ children }) {
-      return <p className="rich-heading">{renderMarkdownText(children, richTextOptions, "h1")}</p>;
+      return (
+        <p className="rich-heading rich-heading--h1">
+          {renderMarkdownText(children, richTextOptions, "h1")}
+        </p>
+      );
     },
     h2({ children }) {
-      return <p className="rich-heading">{renderMarkdownText(children, richTextOptions, "h2")}</p>;
+      return (
+        <p className="rich-heading rich-heading--h2">
+          {renderMarkdownText(children, richTextOptions, "h2")}
+        </p>
+      );
     },
     h3({ children }) {
-      return <p className="rich-heading">{renderMarkdownText(children, richTextOptions, "h3")}</p>;
+      return (
+        <p className="rich-heading rich-heading--h3">
+          {renderMarkdownText(children, richTextOptions, "h3")}
+        </p>
+      );
     },
     h4({ children }) {
-      return <p className="rich-heading">{renderMarkdownText(children, richTextOptions, "h4")}</p>;
+      return (
+        <p className="rich-heading rich-heading--h4">
+          {renderMarkdownText(children, richTextOptions, "h4")}
+        </p>
+      );
     },
     h5({ children }) {
-      return <p className="rich-heading">{renderMarkdownText(children, richTextOptions, "h5")}</p>;
+      return (
+        <p className="rich-heading rich-heading--h5">
+          {renderMarkdownText(children, richTextOptions, "h5")}
+        </p>
+      );
     },
     h6({ children }) {
-      return <p className="rich-heading">{renderMarkdownText(children, richTextOptions, "h6")}</p>;
+      return (
+        <p className="rich-heading rich-heading--h6">
+          {renderMarkdownText(children, richTextOptions, "h6")}
+        </p>
+      );
     },
     a({ href, title, children }) {
       const inner = renderMarkdownText(children, plainTextOptions, "a");

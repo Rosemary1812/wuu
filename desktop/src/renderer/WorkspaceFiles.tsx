@@ -1073,7 +1073,7 @@ export function WorkspaceFilePreview({
       <div className={`workspace-file-editor-scroll ${editorModeClass}`}>
         {isMarkdown && markdownMode === "reading" ? (
           <div className="workspace-markdown-reading">
-            <RichContent text={draftText} cwd={activeContext.cwd} />
+            <RichContent text={draftText} cwd={activeContext.cwd} allowRawHtml />
           </div>
         ) : active ? (
           <Suspense fallback={null}>

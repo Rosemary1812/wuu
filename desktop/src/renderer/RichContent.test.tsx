@@ -309,3 +309,49 @@ describe("RichContent code block", () => {
   });
 
 });
+
+describe("RichContent raw HTML and heading levels", () => {
+  it("escapes inline HTML by default so chat output cannot inject DOM", () => {
+    // Chat messages come from the model — without rehype-raw, an LLM that
+    // emits <h1>title</h1> in a fenced answer should render as literal
+    // text, not as an actual <h1> the user might mistake for a UI heading.
+    render(<RichContent text={"<h1>injected</h1>"} />);
+
+    expect(container.querySelector("h1")).toBeNull();
+    expect(container.textContent).toContain("<h1>injected</h1>");
+  });
+
+  it("renders inline HTML as DOM elements when allowRawHtml is true", () => {
+    // The workspace file preview enables this so README badges, centered
+    // <div>s, and other GitHub-rendered HTML show up the same way locally
+    // as they do on github.com. The h1-h6 components still override the
+    // tag to a styled <p>, but a <div> the user wrote passes through
+    // untouched, which is what the README badge row relies on.
+    render(<RichContent text={'<div class="badge">x</div>'} allowRawHtml />);
+
+    const badge = container.querySelector(".rich-content .badge");
+    expect(badge).not.toBeNull();
+    expect(badge?.textContent).toBe("x");
+  });
+
+  it("keeps a workspace <div align=\"center\"> wrapper when allowRawHtml is on", () => {
+    render(
+      <RichContent
+        text={'<div align="center"><a href="https://example.com">badge</a></div>'}
+        allowRawHtml
+      />,
+    );
+
+    const wrapper = container.querySelector('div[align="center"]');
+    expect(wrapper).not.toBeNull();
+    expect(wrapper?.querySelector("a")).not.toBeNull();
+  });
+
+  it("differentiates heading levels with rich-heading--hN modifier classes", () => {
+    render(<RichContent text={"# alpha\n\n## beta\n\n### gamma"} />);
+
+    expect(container.querySelector(".rich-heading.rich-heading--h1")?.textContent).toContain("alpha");
+    expect(container.querySelector(".rich-heading.rich-heading--h2")?.textContent).toContain("beta");
+    expect(container.querySelector(".rich-heading.rich-heading--h3")?.textContent).toContain("gamma");
+  });
+});

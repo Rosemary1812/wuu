@@ -6,8 +6,11 @@ const workspaceCss = readFileSync(resolve(__dirname, "workspace.css"), "utf-8");
 
 function cssRuleBody(selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // The selector may be preceded by CSS comments between the previous rule's
+  // closing brace and the new selector — \s* alone cannot cross `/* ... */`,
+  // so we match any chars (lazy) up to the literal selector instead.
   const match = workspaceCss.match(
-    new RegExp(`(?:^|\\})\\s*${escapedSelector}\\s*\\{([\\s\\S]*?)\\}`),
+    new RegExp(`(?:^|\\})[\\s\\S]*?${escapedSelector}\\s*\\{([\\s\\S]*?)\\}`),
   );
   if (!match) {
     throw new Error(`missing CSS rule for ${selector}`);
@@ -66,6 +69,68 @@ describe("workspace right panel chrome", () => {
     );
     expect(cssRuleBody(".workspace-panel-tabs")).not.toMatch(
       /-webkit-app-region:\s*no-drag;/,
+    );
+  });
+});
+
+describe("workspace file preview toolbar", () => {
+  it("keeps the editor toolbar compact so the content area dominates", () => {
+    // The toolbar hosts the dirty-state indicator, the markdown mode
+    // switch, and the save button. Earlier padding pushed the chrome to
+    // ~42px even for plain text files, which dwarfed the actual preview.
+    const toolbar = cssRuleBody(".workspace-file-editor-toolbar");
+    expect(toolbar).toMatch(/padding:\s*3px\s+10px;/);
+    expect(toolbar).toMatch(/gap:\s*10px;/);
+
+    // Save button and markdown mode switch should share one height so
+    // their baselines line up without per-side vertical padding games.
+    expect(cssRuleBody(".workspace-file-save-button")).toMatch(/height:\s*24px;/);
+    expect(cssRuleBody(".workspace-markdown-mode-switch button")).toMatch(/height:\s*24px;/);
+  });
+});
+
+describe("workspace markdown reading prose", () => {
+  it("gives heading levels a real outline instead of one flat tier", () => {
+    // The file preview turns heading levels into distinct visual anchors.
+    // Without this, every #/##/### collapses to the same small label and
+    // long READMEs lose their structure.
+    const h1 = cssRuleBody(".workspace-markdown-reading .rich-heading--h1");
+    const h2 = cssRuleBody(".workspace-markdown-reading .rich-heading--h2");
+    const h3 = cssRuleBody(".workspace-markdown-reading .rich-heading--h3");
+    expect(h1).toMatch(/font-size:\s*28px;/);
+    expect(h1).toMatch(/border-bottom:\s*1px\s+solid\s+var\(--rule\);/);
+    expect(h2).toMatch(/font-size:\s*21px;/);
+    expect(h3).toMatch(/font-size:\s*17px;/);
+  });
+
+  it("colors inline links with the accent and underlines only on hover", () => {
+    // GitHub-style README links: a row of shields.io badges is dense
+    // enough that always-underlined anchors look like a wall of strikethrough.
+    const link = cssRuleBody(".workspace-markdown-reading .rich-link.rich-web-link");
+    expect(link).toMatch(/color:\s*var\(--wuu-accent\);/);
+    expect(link).toMatch(/text-decoration:\s*none;/);
+    expect(
+      cssRuleBody(".workspace-markdown-reading .rich-link.rich-web-link:hover"),
+    ).toMatch(/text-decoration:\s*underline;/);
+  });
+
+  it("frames code blocks, tables, and blockquotes so they read as artifacts", () => {
+    const codeBlock = cssRuleBody(".workspace-markdown-reading .rich-code-block");
+    const tableWrap = cssRuleBody(".workspace-markdown-reading .rich-table-wrap");
+    const blockquote = cssRuleBody(".workspace-markdown-reading .rich-blockquote");
+
+    expect(codeBlock).toMatch(/border:\s*1px\s+solid\s+var\(--rule\);/);
+    expect(codeBlock).toMatch(/border-radius:\s*8px;/);
+    expect(tableWrap).toMatch(/border:\s*1px\s+solid\s+var\(--rule\);/);
+    expect(blockquote).toMatch(/border-left:\s*3px\s+solid\s+var\(--wuu-accent\);/);
+  });
+
+  it("centers the README's <div align=\"center\"> badge row", () => {
+    // rehype-raw passes the wrapper div through; the workspace scope
+    // styles the legacy HTML attribute here instead of rewriting every
+    // user's README to use markdown-only centering.
+    expect(cssRuleBody('.workspace-markdown-reading div[align="center"]')).toMatch(
+      /text-align:\s*center;/,
     );
   });
 });

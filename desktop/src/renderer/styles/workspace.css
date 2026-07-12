@@ -1707,17 +1707,17 @@
   min-width: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   border-bottom: 1px solid var(--surface-2);
   background: transparent;
-  padding: 7px 12px;
+  padding: 3px 10px;
 }
 
 .workspace-file-editor-left {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
 }
 
 .workspace-file-editor-status {
@@ -1772,16 +1772,16 @@
 
 .workspace-file-save-button {
   display: inline-flex;
-  height: 28px;
+  height: 24px;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink);
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
-  padding: 0 9px;
+  padding: 0 8px;
   transition: background 120ms ease;
 }
 
@@ -1941,6 +1941,221 @@
   font-size: 19px;
   font-weight: var(--weight-semibold);
   line-height: 1.35;
+}
+
+/* Heading hierarchy: h1 = page title, h2 = section, h3+ = sub-head. */
+.workspace-markdown-reading .rich-heading--h1 {
+  font-size: 28px;
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.01em;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.workspace-markdown-reading .rich-heading--h2 {
+  font-size: 21px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.005em;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.workspace-markdown-reading .rich-heading--h3 {
+  font-size: 17px;
+  font-weight: var(--weight-semibold);
+}
+
+.workspace-markdown-reading .rich-heading--h4,
+.workspace-markdown-reading .rich-heading--h5,
+.workspace-markdown-reading .rich-heading--h6 {
+  font-size: 15px;
+  font-weight: var(--weight-semibold);
+  color: var(--ink-soft);
+}
+
+/* Drop the leading gap on the first block so a top-of-file h1 hugs the
+   toolbar's bottom border like GitHub's README viewer does. */
+.workspace-markdown-reading .rich-content > :first-child {
+  margin-top: 0;
+}
+
+/* Paragraphs: the rich-content flex `gap` already spaces siblings, so just
+   zero out the default <p> margin to avoid double spacing. */
+.workspace-markdown-reading .rich-paragraph {
+  margin: 0;
+}
+
+.workspace-markdown-reading strong {
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+.workspace-markdown-reading em {
+  font-style: italic;
+}
+
+/* Links: accent color, underline only on hover so a dense badge row in
+   READMEs doesn't read as a wall of underlined text. Each selector gets
+   its own rule so the cssRuleBody test helper can match it without
+   having to know how to walk past comma-separated selector lists. */
+.workspace-markdown-reading .rich-link.rich-web-link {
+  color: var(--wuu-accent);
+  text-decoration: none;
+}
+
+.workspace-markdown-reading .rich-link.rich-file-link {
+  color: var(--wuu-accent);
+  text-decoration: none;
+}
+
+.workspace-markdown-reading .rich-link.rich-web-link:hover {
+  text-decoration: underline;
+}
+
+.workspace-markdown-reading .rich-link.rich-file-link:hover {
+  text-decoration: underline;
+}
+
+/* Inline code: react-markdown renders this as a bare <code>. */
+.workspace-markdown-reading code {
+  font-family: var(--font-mono, "SFMono-Regular", Consolas, "Liberation Mono", monospace);
+  font-size: 0.88em;
+  background: var(--surface-2);
+  padding: 0.1em 0.36em;
+  border-radius: 4px;
+}
+
+/* Block code: keeps the existing rich-code-block chrome (header + copy
+   button) and only overrides the inner <pre><code> and the outer frame. */
+.workspace-markdown-reading .rich-code-block {
+  margin: 14px 0;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.workspace-markdown-reading .rich-code-block .rich-code {
+  margin: 0;
+  padding: 12px 14px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-mono, "SFMono-Regular", Consolas, "Liberation Mono", monospace);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.workspace-markdown-reading .rich-code-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+/* Blockquote. */
+.workspace-markdown-reading .rich-blockquote {
+  margin: 12px 0;
+  padding: 6px 14px;
+  border-left: 3px solid var(--wuu-accent);
+  background: color-mix(in srgb, var(--surface-2) 65%, transparent);
+  color: var(--ink-soft);
+  border-radius: 0 6px 6px 0;
+}
+
+/* Lists (react-markdown emits standard ul/ol when no override is supplied). */
+.workspace-markdown-reading ul,
+.workspace-markdown-reading ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.workspace-markdown-reading li {
+  margin: 3px 0;
+}
+
+.workspace-markdown-reading li > p {
+  margin: 0;
+}
+
+/* Horizontal rule. */
+.workspace-markdown-reading .rich-rule {
+  margin: 22px 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+
+/* Tables. */
+.workspace-markdown-reading .rich-table-wrap {
+  margin: 14px 0;
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+
+.workspace-markdown-reading .rich-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.workspace-markdown-reading .rich-table-wrap th,
+.workspace-markdown-reading .rich-table-wrap td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+
+.workspace-markdown-reading .rich-table-wrap th {
+  background: var(--surface-2);
+  font-weight: var(--weight-semibold);
+  color: var(--ink);
+}
+
+.workspace-markdown-reading .rich-table-wrap tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Images. Raw HTML badges (e.g. shields.io) come in through img.rich-image
+   wrapped in an inline span; keep the wrapper hug the image so a row of
+   badges doesn't break onto its own line per badge. */
+.workspace-markdown-reading .rich-image {
+  max-width: 100%;
+  height: auto;
+}
+
+.workspace-markdown-reading .rich-image-block.inline {
+  display: inline-block;
+  margin: 0 2px;
+  vertical-align: middle;
+}
+
+.workspace-markdown-reading .rich-image-block:not(.inline) {
+  display: block;
+  margin: 14px auto;
+}
+
+.workspace-markdown-reading .rich-image-caption {
+  display: block;
+  margin-top: 6px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* The README uses <div align="center"> for the badge row. When
+   allowRawHtml is on, react-markdown leaves the wrapper div alone, so we
+   just style the inline attribute here. */
+.workspace-markdown-reading div[align="center"] {
+  text-align: center;
+}
+
+.workspace-markdown-reading div[align="right"] {
+  text-align: right;
 }
 
 .workspace-monaco-editor {
