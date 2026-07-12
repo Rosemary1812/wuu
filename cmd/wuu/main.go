@@ -23,6 +23,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/securefs"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/sessiontrace"
+	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/version"
 )
@@ -86,6 +87,8 @@ func run(args []string) error {
 		return errors.New("the TUI has been removed; use the desktop GUI or `wuu exec` for agent-friendly text tasks")
 	case "session":
 		return runSession(args[1:])
+	case "skills":
+		return runSkills(args[1:])
 	case "session-show":
 		return runSessionShow(args[1:])
 	case "debug":
@@ -381,6 +384,65 @@ func runSessionShow(args []string) error {
 			content = content[:240] + "..."
 		}
 		fmt.Printf("%s[%d] %s: %s\n", prefix, i+1, role, content)
+	}
+	return nil
+}
+
+func runSkills(args []string) error {
+	if len(args) == 0 {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("skills subcommand is required (available: lint)"))
+	}
+	switch args[0] {
+	case "lint":
+		return runSkillsLint(args[1:])
+	default:
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, fmt.Errorf("unknown skills subcommand %q (available: lint)", args[0]))
+	}
+}
+
+func runSkillsLint(args []string) error {
+	fs := flag.NewFlagSet("skills lint", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	jsonOutput := fs.Bool("json", false, "output issues as JSON")
+	if err := fs.Parse(args); err != nil {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, err)
+	}
+	paths := fs.Args()
+	if len(paths) == 0 {
+		return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, errors.New("skills lint requires at least one path (a skill directory, a skills root, or a flat .md file)"))
+	}
+
+	var issues []skills.LintIssue
+	for _, path := range paths {
+		found, err := skills.LintPath(path)
+		if err != nil {
+			return wuuexec.WithExitCode(wuuexec.ExitInvalidInput, fmt.Errorf("lint %s: %w", path, err))
+		}
+		issues = append(issues, found...)
+	}
+
+	errorCount := 0
+	for _, issue := range issues {
+		if issue.Severity == skills.LintError {
+			errorCount++
+		}
+	}
+
+	if *jsonOutput {
+		data, err := json.MarshalIndent(issues, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal lint issues: %w", err)
+		}
+		fmt.Println(string(data))
+	} else {
+		for _, issue := range issues {
+			fmt.Printf("%s: %s: %s\n", issue.Severity, issue.Path, issue.Message)
+		}
+		fmt.Printf("%d issue(s): %d error(s), %d warning(s)\n", len(issues), errorCount, len(issues)-errorCount)
+	}
+
+	if errorCount > 0 {
+		return wuuexec.WithExitCode(wuuexec.ExitTurnFailed, fmt.Errorf("skills lint found %d error(s)", errorCount))
 	}
 	return nil
 }
@@ -2110,6 +2172,7 @@ Usage:
   wuu -c|--continue [flags] [prompt...]          shortcut: exec -c
   wuu -r|--resume THREAD_ID [flags] [prompt...]  shortcut: exec -r
   wuu session list|show|trace|search|archive|delete|export [flags]
+  wuu skills lint [--json] PATH...
   wuu debug app-server initialize [flags]
   wuu debug app-server send [flags] METHOD [JSON]
   wuu debug protocol events [flags] THREAD_ID
@@ -2175,6 +2238,11 @@ Session commands:
                    delete a session and its workspace artifacts
   export [--json] [--last|THREAD_ID] [--out FILE] [--workdir DIR]
                    export session history as JSONL format
+
+Skills commands:
+  lint [--json] PATH...
+                   check skill files with the same rules discovery uses;
+                   PATH is a skill directory, a skills root, or a flat .md file
 
 Debug commands:
   app-server initialize [--workdir DIR] [--provider NAME] [--model MODEL] [--no-tools]

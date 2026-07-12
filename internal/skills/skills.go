@@ -301,54 +301,70 @@ func parseSkillFile(path, source string) (Skill, error) {
 	return skill, nil
 }
 
-// parseSkill splits a SKILL.md into YAML frontmatter and markdown body. The
-// frontmatter is parsed with a real YAML parser, so block lists
-// (allowed-tools:\n  - bash) work identically to inline lists ([bash]) — the
-// portable shape Claude Code and opencode skills use. Frontmatter that fails to
-// parse is tolerated (fields stay empty) rather than rejected, matching cc.
-func parseSkill(content, source string) (Skill, error) {
+// splitFrontmatter separates a SKILL.md into its raw YAML frontmatter and
+// markdown body. It errors only when the leading "---" fence is missing;
+// whether the frontmatter is valid YAML is the caller's concern.
+func splitFrontmatter(content string) (front, body string, err error) {
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	scanner.Buffer(make([]byte, 4096), 1024*1024)
 
 	if !scanner.Scan() || strings.TrimSpace(scanner.Text()) != "---" {
-		return Skill{}, fmt.Errorf("no frontmatter")
+		return "", "", fmt.Errorf("no frontmatter")
 	}
 
-	var front strings.Builder
+	var frontB strings.Builder
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.TrimSpace(line) == "---" {
 			break
 		}
-		front.WriteString(line)
-		front.WriteString("\n")
+		frontB.WriteString(line)
+		frontB.WriteString("\n")
+	}
+
+	var bodyB strings.Builder
+	for scanner.Scan() {
+		if bodyB.Len() > 0 {
+			bodyB.WriteString("\n")
+		}
+		bodyB.WriteString(scanner.Text())
+	}
+	return frontB.String(), bodyB.String(), nil
+}
+
+// parseSkill splits a SKILL.md into YAML frontmatter and markdown body. The
+// frontmatter is parsed with a real YAML parser, so block lists
+// (allowed-tools:\n  - bash) work identically to inline lists ([bash]) — the
+// portable shape imported skills use. Frontmatter that fails to parse is
+// tolerated (fields stay empty) rather than rejected, matching the permissive
+// behavior of the ecosystems those skills come from.
+func parseSkill(content, source string) (Skill, error) {
+	front, body, err := splitFrontmatter(content)
+	if err != nil {
+		return Skill{}, err
 	}
 
 	skill := Skill{Source: source, UserInvocable: true}
-	if raw := strings.TrimSpace(front.String()); raw != "" {
+	if raw := strings.TrimSpace(front); raw != "" {
 		var fm map[string]any
-		if err := yaml.Unmarshal([]byte(front.String()), &fm); err == nil {
+		if err := yaml.Unmarshal([]byte(front), &fm); err == nil {
 			assignFrontmatter(&skill, fm)
 		}
 	}
-
-	var body strings.Builder
-	for scanner.Scan() {
-		if body.Len() > 0 {
-			body.WriteString("\n")
-		}
-		body.WriteString(scanner.Text())
-	}
-	skill.Content = body.String()
+	skill.Content = body
 
 	return skill, nil
 }
 
 // assignFrontmatter maps parsed YAML keys onto the Skill. Keys are normalized so
 // hyphen and underscore spellings (when-to-use / when_to_use) are equivalent.
-func assignFrontmatter(skill *Skill, fm map[string]any) {
+// The returned slice lists normalized keys that matched no known field; the
+// engine ignores them silently and lint reports them.
+func assignFrontmatter(skill *Skill, fm map[string]any) []string {
+	var unknown []string
 	for key, val := range fm {
-		switch strings.ToLower(strings.ReplaceAll(strings.TrimSpace(key), "_", "-")) {
+		normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(key), "_", "-"))
+		switch normalized {
 		case "name":
 			skill.Name = scalarString(val)
 		case "description":
@@ -387,8 +403,19 @@ func assignFrontmatter(skill *Skill, fm map[string]any) {
 			skill.Version = scalarString(val)
 		case "shell":
 			skill.Shell = scalarString(val)
+		case "hooks":
+			// Declared in the Skill struct but not yet wired to the hook
+			// registry; recognized here so lint reports it as a not-executed
+			// field rather than an unknown key.
+		case "license", "metadata":
+			// Inert informational fields common in imported skills;
+			// recognized so lint does not flag them as unknown.
+		default:
+			unknown = append(unknown, normalized)
 		}
 	}
+	sort.Strings(unknown)
+	return unknown
 }
 
 // scalarString renders a YAML scalar (string, number, bool) as a trimmed string.
