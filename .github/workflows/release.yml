@@ -112,7 +112,7 @@ jobs:
           cat > release-notes.md <<'EOF'
           # wuu macOS desktop preview
 
-          This is the first packaged wuu desktop release. It contains unsigned macOS arm64 preview builds:
+          This release contains unsigned macOS arm64 preview builds:
 
           - `wuu-<version>-mac-arm64.dmg`
           - `wuu-<version>-mac-arm64.zip`
