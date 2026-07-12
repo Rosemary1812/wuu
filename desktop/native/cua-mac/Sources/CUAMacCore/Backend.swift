@@ -215,15 +215,15 @@ public final class MacComputerBackend: ComputerBackend {
         guard #available(macOS 14.0, *) else { return false }
         let pid = app.processIdentifier
         var capture: WindowCapture?
-        if let background = try? captureWindowPNG(processID: pid) {
-            // A later background success clears a stale foreground-capture flag so
-            // observe can go back to the non-disruptive path.
+        // Prefer the non-ScreenCaptureKit, non-activating capture so change
+        // detection never opens a second SCK client against the window the live
+        // picture-in-picture helper is already streaming (concurrent SCK clients
+        // interrupt each other -> SCStream -3805).
+        if let foreground = try? captureForegroundWindowPNG(processID: pid) {
+            capture = foreground
+        } else if let background = try? captureWindowPNG(processID: pid) {
             foregroundCaptureProcessIDs.remove(pid)
             capture = background
-        } else if let foreground = try? captureForegroundWindowPNG(processID: pid) {
-            // captureForegroundWindowPNG reads the window list without activating,
-            // so weak-AX apps that fail SCK still get a visual check.
-            capture = foreground
         }
         guard let capture else { return false }
         let changed = lastScreenshotData[pid] != capture.data
@@ -477,6 +477,17 @@ public final class MacComputerBackend: ComputerBackend {
     private func captureWindowWithForegroundFallback(_ command: ComputerCommand, app: NSRunningApplication) throws -> WindowCapture {
         guard #available(macOS 14.0, *) else {
             throw ComputerError.unsupported("window screenshots require macOS 14 or newer")
+        }
+        // Capture without ScreenCaptureKit and without activating the app. The
+        // live picture-in-picture helper already streams this same window through
+        // SCStream, and opening a second, concurrent SCK client (SCScreenshotManager)
+        // on the same window interrupts that stream's connection to the capture
+        // daemon (SCStreamError -3805). A window-id screenshot keeps SCK to a
+        // single client and never steals focus. captureForegroundWindowPNG only
+        // foregrounds when wrapped in withForegroundInput, so calling it directly
+        // stays fully in the background.
+        if let background = try? captureForegroundWindowPNG(processID: app.processIdentifier) {
+            return background
         }
         if foregroundCaptureProcessIDs.contains(app.processIdentifier) {
             return try withForegroundInput(command, app: app) {
