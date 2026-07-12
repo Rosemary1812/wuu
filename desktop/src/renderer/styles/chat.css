@@ -62,7 +62,7 @@
   content: "";
   flex: 1 1 auto;
   height: 1px;
-  background: currentColor;
+  background: var(--wuu-hairline);
 }
 
 .chat-inline-divider-label {

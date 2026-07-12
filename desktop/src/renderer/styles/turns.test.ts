@@ -109,7 +109,7 @@ describe("turns.css turn notice positioning", () => {
     expect(lines).toMatch(/content:\s*"";/);
     expect(lines).toMatch(/flex:\s*1 1 0;/);
     expect(lines).toMatch(/height:\s*1px;/);
-    expect(lines).toMatch(/background:\s*currentColor;/);
+    expect(lines).toMatch(/background:\s*var\(--turn-event-line-color\);/);
     expect(lines).not.toMatch(/linear-gradient|transparent/);
   });
 
@@ -123,14 +123,26 @@ describe("turns.css turn notice positioning", () => {
     expect(cssRuleBody(".turn-event-code")).toMatch(/color:\s*var\(--ink-muted\);/);
   });
 
-  it("uses the same tone for each system event label and its side lines", () => {
+  it("keeps neutral lines aligned with turn rules and semantic lines in a faint matching hue", () => {
+    expect(cssRuleBody(".turn-notice")).toMatch(
+      /--turn-event-line-color:\s*var\(--wuu-hairline\);/,
+    );
     expect(cssRuleBody(".turn-notice.warning")).toMatch(
       /color:\s*var\(--turn-warning-text\);/,
+    );
+    expect(cssRuleBody(".turn-notice.warning")).toMatch(
+      /--turn-event-line-color:\s*color-mix\(in srgb,\s*currentColor 28%,\s*transparent\);/,
     );
     expect(cssRuleBody(".turn-notice.auth")).toMatch(
       /color:\s*var\(--turn-notice-auth-color\);/,
     );
+    expect(cssRuleBody(".turn-notice.auth")).toMatch(
+      /--turn-event-line-color:\s*color-mix\(in srgb,\s*currentColor 28%,\s*transparent\);/,
+    );
     expect(cssRuleBody(".turn-notice.error")).toMatch(/color:\s*var\(--danger\);/);
+    expect(cssRuleBody(".turn-notice.error")).toMatch(
+      /--turn-event-line-color:\s*color-mix\(in srgb,\s*currentColor 28%,\s*transparent\);/,
+    );
     expect(cssRuleBody(".turn-notice.context-compaction-notice")).toMatch(
       /color:\s*var\(--ink-muted\);/,
     );

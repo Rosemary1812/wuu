@@ -3442,6 +3442,7 @@ pre {
 }
 
 .turn-notice {
+  --turn-event-line-color: var(--wuu-hairline);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3455,13 +3456,13 @@ pre {
 .turn-event-notice::before,
 .turn-event-notice::after {
   /* System events read as a broken divider: hairlines on both sides,
-     a single quiet line of text in the gap. The hairlines inherit the
-     event text color so the divider reads as one visual mark. */
+     a single quiet line of text in the gap. Neutral events match the
+     conversation rule; semantic events use a faint line of the same hue. */
   content: "";
   flex: 1 1 0;
   min-width: 24px;
   height: 1px;
-  background: currentColor;
+  background: var(--turn-event-line-color);
 }
 
 .turn-event-detail {
@@ -3473,7 +3474,7 @@ pre {
 
 .turn-event-content {
   /* The text sits bare in the divider gap — no fill, no radius. Tone is
-     carried by the shared text-and-line color. */
+     carried by the text while the related line stays deliberately softer. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3542,8 +3543,8 @@ pre {
   line-height: 1.45;
 }
 
-/* Tone-aware event colors. Text and divider lines use the same color so
-   each system event reads as one restrained timeline mark. */
+/* Tone-aware event colors. Semantic lines share the text hue at hairline
+   intensity; neutral events keep the same rule used between turns. */
 .turn-notice.warning .turn-event-content {
   color: var(--turn-warning-text);
 }
@@ -3561,14 +3562,17 @@ pre {
 }
 
 .turn-notice.warning {
+  --turn-event-line-color: color-mix(in srgb, currentColor 28%, transparent);
   color: var(--turn-warning-text);
 }
 
 .turn-notice.auth {
+  --turn-event-line-color: color-mix(in srgb, currentColor 28%, transparent);
   color: var(--turn-notice-auth-color);
 }
 
 .turn-notice.error {
+  --turn-event-line-color: color-mix(in srgb, currentColor 28%, transparent);
   color: var(--danger);
 }
 

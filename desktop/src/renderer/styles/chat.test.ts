@@ -42,7 +42,7 @@ describe("chat.css inline divider", () => {
     );
     expect(
       cssRuleBody(".chat-inline-divider::before,\n.chat-inline-divider::after"),
-    ).toMatch(/background:\s*currentColor;/);
+    ).toMatch(/background:\s*var\(--wuu-hairline\);/);
   });
 });
 
