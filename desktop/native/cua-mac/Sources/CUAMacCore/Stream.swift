@@ -755,6 +755,14 @@ private final class CaptureStartGate: @unchecked Sendable {
     }
 }
 
+// Carries a non-Sendable value across a continuation resume. SCShareableContent
+// is an immutable snapshot, so handing it from the completion handler to the
+// awaiting task does not actually race.
+private final class UncheckedBox<T>: @unchecked Sendable {
+    let value: T
+    init(_ value: T) { self.value = value }
+}
+
 @available(macOS 14.0, *)
 private func shareableContent(timeout: TimeInterval) async -> SCShareableContent? {
     // The async SCShareableContent API can leave its continuation unresumed when
@@ -763,14 +771,15 @@ private func shareableContent(timeout: TimeInterval) async -> SCShareableContent
     // completion handler and race it against a timeout so the loop can always
     // keep retrying instead of leaking a continuation and freezing.
     let gate = CaptureStartGate()
-    return await withCheckedContinuation { (continuation: CheckedContinuation<SCShareableContent?, Never>) in
+    let box: UncheckedBox<SCShareableContent?> = await withCheckedContinuation { continuation in
         SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) { content, _ in
-            gate.settle { continuation.resume(returning: content) }
+            gate.settle { continuation.resume(returning: UncheckedBox(content)) }
         }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
-            gate.settle { continuation.resume(returning: nil) }
+            gate.settle { continuation.resume(returning: UncheckedBox(nil)) }
         }
     }
+    return box.value
 }
 
 @available(macOS 14.0, *)
