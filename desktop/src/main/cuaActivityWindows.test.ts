@@ -65,11 +65,13 @@ describe("CUA native picture-in-picture", () => {
     expect(activityControlMethod("stop")).toBe("activity/stop");
   });
 
-  it("keys an observation by session and exact native window", () => {
-    expect(observationKey(activity({
-      target: "com.apple.TextEdit",
-      process_id: 42,
-      window_id: 99,
-    }))).toBe("thread-1:com.apple.TextEdit:42:99");
+  it("keys an observation by session and target, ignoring window identity", () => {
+    expect(observationKey(activity({ target: "com.apple.TextEdit" })))
+      .toBe("thread-1:com.apple.TextEdit");
+    // Window identity is 0/0 on `started` and resolved on `updated`; a refinement
+    // must not change the key, or a second helper would race the first on the
+    // same window and trip a ScreenCaptureKit connection error.
+    expect(observationKey(activity({ target: "com.apple.TextEdit", process_id: 0, window_id: 0 })))
+      .toBe(observationKey(activity({ target: "com.apple.TextEdit", process_id: 42, window_id: 99 })));
   });
 });

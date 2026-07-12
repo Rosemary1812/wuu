@@ -287,7 +287,13 @@ export class CUAObservationCoordinator {
 }
 
 export function observationKey(activity: ActivitySession): string {
-  return [activity.thread_id, activity.target?.trim(), activity.process_id ?? 0, activity.window_id ?? 0].join(":");
+  // Key the PiP lifecycle by session + target only. A single CUA call emits
+  // `started` with no window identity (0/0) and then `updated` with the resolved
+  // process/window id; including those here changed the key mid-call and spawned
+  // a second helper, so two ScreenCaptureKit streams raced for the same window
+  // and tripped "application connection interrupted". One target = one helper =
+  // one stream. The exact identity is still passed to the helper as a hint.
+  return [activity.thread_id, activity.target?.trim()].join(":");
 }
 
 export function cuaActivityFromServerEvent(event: ServerEvent): ActivitySession | undefined {
