@@ -58,6 +58,14 @@ private final class PiPCommandReader: @unchecked Sendable {
     }
 }
 
+private final class CapturedFrame: @unchecked Sendable {
+    let sampleBuffer: CMSampleBuffer
+
+    init(_ sampleBuffer: CMSampleBuffer) {
+        self.sampleBuffer = sampleBuffer
+    }
+}
+
 @MainActor
 private final class NativePiPView: NSView {
     private nonisolated(unsafe) let displayLayer = AVSampleBufferDisplayLayer()
@@ -151,7 +159,7 @@ private final class NativePiPView: NSView {
 
     @objc private func closePressed() { onClose?() }
 
-    nonisolated func enqueue(_ sampleBuffer: CMSampleBuffer) {
+    func enqueue(_ sampleBuffer: CMSampleBuffer) {
         CMSetAttachment(
             sampleBuffer,
             key: kCMSampleAttachmentKey_DisplayImmediately,
@@ -162,9 +170,7 @@ private final class NativePiPView: NSView {
         displayLayer.enqueue(sampleBuffer)
         if let imageBuffer = sampleBuffer.imageBuffer {
             let size = CGSize(width: CVPixelBufferGetWidth(imageBuffer), height: CVPixelBufferGetHeight(imageBuffer))
-            Task { @MainActor [weak self] in
-                self?.setVideoSize(size)
-            }
+            setVideoSize(size)
         }
     }
 
@@ -529,9 +535,17 @@ private final class NativePiPStreamOutput: NSObject, SCStreamOutput, SCStreamDel
         lock.unlock()
         if statusChanged, let status { writer.send("capture_status", fields: ["status": captureStatusName(status)]) }
         guard shouldDisplay, let imageBuffer = sampleBuffer.imageBuffer else { return }
-        controller.content.enqueue(sampleBuffer)
         let size = CGSize(width: CVPixelBufferGetWidth(imageBuffer), height: CVPixelBufferGetHeight(imageBuffer))
-        Task { @MainActor [weak controller] in controller?.showAfterFirstFrame(videoSize: size) }
+        // SCStream invokes this callback on its capture queue. Core Animation
+        // layers belong to the main actor, so enqueue and publish readiness in
+        // one ordered main-actor operation. Publishing ready before the layer
+        // receives the frame creates a visible-but-empty PiP window.
+        let frame = CapturedFrame(sampleBuffer)
+        Task { @MainActor [weak controller, frame] in
+            guard let controller else { return }
+            controller.content.enqueue(frame.sampleBuffer)
+            controller.showAfterFirstFrame(videoSize: size)
+        }
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
