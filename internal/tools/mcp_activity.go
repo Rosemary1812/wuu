@@ -213,7 +213,11 @@ func (t *Toolkit) canonicalCUATarget(ctx context.Context, tool Tool, target stri
 		return target
 	}
 	arguments, _ := json.Marshal(map[string]any{"action": "list_apps", "app": target})
-	result, err := t.executeKnownToolResult(ctx, providers.ToolCall{Name: tool.Name(), Arguments: string(arguments)}, tool)
+	// Target resolution is an internal read-before-action preflight. It must run
+	// on every CUA call even when the model reuses the same localized app alias;
+	// otherwise the generic repeated-input guard eventually leaks that alias into
+	// the activity identity and needlessly restarts the live PiP stream.
+	result, err := t.executeKnownToolResultAllowRepeated(ctx, providers.ToolCall{Name: tool.Name(), Arguments: string(arguments)}, tool)
 	if err != nil || result.IsError {
 		return target
 	}

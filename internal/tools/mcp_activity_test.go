@@ -84,6 +84,26 @@ func TestCanonicalCUATargetPrefersResolvedInstalledApp(t *testing.T) {
 	}
 }
 
+func TestCanonicalCUATargetKeepsResolvingRepeatedLocalizedAlias(t *testing.T) {
+	root := t.TempDir()
+	tool := &activityTestTool{structuredContent: json.RawMessage(`{"resolved_app":{
+		"id":"com.apple.calculator",
+		"displayName":"计算器",
+		"bundleIdentifier":"com.apple.calculator",
+		"path":"/System/Applications/Calculator.app"
+	},"apps":[]}`)}
+	kit := &Toolkit{
+		env:      &Env{RootDir: root},
+		registry: NewRegistry(tool),
+		boundary: StandardBoundary(),
+	}
+	for attempt := 1; attempt <= 4; attempt++ {
+		if got := kit.canonicalCUATarget(context.Background(), tool, "计算器"); got != "com.apple.calculator" {
+			t.Fatalf("canonical target attempt %d = %q", attempt, got)
+		}
+	}
+}
+
 func TestSequenceControlAggregatesHighestMechanism(t *testing.T) {
 	stepResult := func(mechanism string, foregroundChanged bool) toolresult.Result {
 		payload := map[string]any{"mechanism": mechanism}

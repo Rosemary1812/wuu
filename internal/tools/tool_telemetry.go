@@ -105,6 +105,14 @@ func (t *Toolkit) ToolTelemetry() []ToolExecutionRecord {
 }
 
 func (t *Toolkit) executeKnownToolResult(ctx context.Context, call providers.ToolCall, tool Tool) (toolresult.Result, error) {
+	return t.executeKnownToolResultWithRepeatPolicy(ctx, call, tool, false)
+}
+
+func (t *Toolkit) executeKnownToolResultAllowRepeated(ctx context.Context, call providers.ToolCall, tool Tool) (toolresult.Result, error) {
+	return t.executeKnownToolResultWithRepeatPolicy(ctx, call, tool, true)
+}
+
+func (t *Toolkit) executeKnownToolResultWithRepeatPolicy(ctx context.Context, call providers.ToolCall, tool Tool, allowRepeated bool) (toolresult.Result, error) {
 	info := buildToolInfoForArgs(tool, t.toolExposure(call.Name), call.Arguments)
 	startedAt := time.Now()
 	revisionBefore := workspaceRevision(ctx, t.env.RootDir)
@@ -128,7 +136,7 @@ func (t *Toolkit) executeKnownToolResult(ctx context.Context, call providers.Too
 		return toolresult.Result{}, err
 	}
 
-	if priorRepeats := t.repeatedToolInputCount(call, revisionBefore); priorRepeats >= repeatedToolInputPriorLimit {
+	if priorRepeats := t.repeatedToolInputCount(call, revisionBefore); !allowRepeated && priorRepeats >= repeatedToolInputPriorLimit {
 		err := repeatedToolInputError{
 			ToolName:        call.Name,
 			ArgumentsSHA256: toolArgumentsSHA256(call.Arguments),

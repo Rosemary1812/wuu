@@ -46,11 +46,13 @@ export function nativePiPInitialBounds(mainBounds: Rectangle | undefined, workAr
 }
 
 type ActivitySnapshot = (threadID: string) => Promise<ActivitySession[]>;
+type PiPHandle = Pick<CUANativePiP, "start" | "setVisible" | "animateInteraction" | "stop">;
+type PiPFactory = (activity: ActivitySession, key: string) => PiPHandle | undefined;
 type PiPEntry = {
   key: string;
   threadID: string;
   activity: ActivitySession;
-  pip: CUANativePiP;
+  pip: PiPHandle;
   // "preparing" = frosted placeholder shown, no live frame yet.
   // "live" = first real frame presented (native `ready`).
   phase: "preparing" | "live";
@@ -67,7 +69,8 @@ export class CUAObservationCoordinator {
   private readonly retryAttempts = new Map<string, number>();
   private readonly retryTimers = new Map<string, NodeJS.Timeout>();
   private current: PiPEntry | undefined;
-  private candidate: PiPEntry | undefined;
+  private replacement: { activity: ActivitySession; key: string } | undefined;
+  private replacementInFlight = false;
   private userBounds: Rectangle | undefined;
   private reconcileTimer: NodeJS.Timeout | undefined;
   private reconcileInFlight = false;
@@ -76,6 +79,7 @@ export class CUAObservationCoordinator {
   constructor(
     private readonly registry: WindowRegistry,
     private readonly snapshot?: ActivitySnapshot,
+    private readonly pipFactory?: PiPFactory,
   ) {}
 
   handleServerEvent(event: ServerEvent): void {
@@ -90,7 +94,7 @@ export class CUAObservationCoordinator {
   setActiveThread(threadID?: string): void {
     this.activeThreadID = threadID?.trim() || undefined;
     if (this.current?.threadID !== this.activeThreadID) this.current?.pip.setVisible(false);
-    if (this.candidate?.threadID !== this.activeThreadID) this.stopCandidate();
+    if (this.replacement?.activity.thread_id !== this.activeThreadID) this.replacement = undefined;
     this.syncActiveObservation();
     this.scheduleReconcile(0);
   }
@@ -127,44 +131,62 @@ export class CUAObservationCoordinator {
       this.animateInteractionIfNew(activity, this.current.pip);
       return;
     }
-    if (this.candidate?.key === key) {
-      this.animateInteractionIfNew(activity, this.candidate.pip);
+    if (this.replacement?.key === key) {
+      this.replacement.activity = activity;
       return;
     }
-    // Keep a live preview on screen until its replacement is ready, so an A→B
-    // switch never flashes. But when nothing live is showing for this session,
-    // bring the frosted placeholder up immediately instead of waiting for the
-    // first frame — that is the difference between "preparing" and "blank".
-    const haveLiveCurrent = this.current?.threadID === threadID && this.current?.phase === "live";
-    if (haveLiveCurrent) {
-      this.startCandidate(activity, key);
-    } else {
-      this.startImmediate(activity, key);
+    if (this.current || this.replacementInFlight) {
+      this.replaceCurrent(activity, key);
+      return;
     }
-  }
-
-  private startCandidate(activity: ActivitySession, key: string): void {
-    const pip = this.spawnPiP(activity, key);
-    if (!pip) return;
-    this.stopCandidate();
-    this.candidate = { key, threadID: activity.thread_id, activity, pip, phase: "preparing" };
-    pip.start();
-    pip.setVisible(false);
-    this.animateInteractionIfNew(activity, pip);
+    this.startImmediate(activity, key);
   }
 
   private startImmediate(activity: ActivitySession, key: string): void {
     const pip = this.spawnPiP(activity, key);
     if (!pip) return;
-    this.stopCandidate();
-    this.stopCurrent();
     this.current = { key, threadID: activity.thread_id, activity, pip, phase: "preparing" };
     pip.start();
     pip.setVisible(true);
     this.animateInteractionIfNew(activity, pip);
   }
 
-  private spawnPiP(activity: ActivitySession, key: string): CUANativePiP | undefined {
+  private replaceCurrent(activity: ActivitySession, key: string): void {
+    this.replacement = { activity, key };
+    if (this.replacementInFlight) return;
+    if (!this.current) {
+      this.startReplacement();
+      return;
+    }
+    this.stopCurrent();
+  }
+
+  private stopCurrent(): void {
+    if (this.replacementInFlight) return;
+    const outgoing = this.current;
+    if (!outgoing) return;
+    // replayd groups capture clients by executable path. Two overlapping PiP
+    // helpers therefore interrupt one another even when they stream different
+    // apps. Every stop path shares this lock so a user close or stream failure
+    // cannot let a replacement start before the old process has closed.
+    this.replacementInFlight = true;
+    this.current = undefined;
+    outgoing.pip.stop(() => {
+      this.replacementInFlight = false;
+      this.startReplacement();
+    });
+  }
+
+  private startReplacement(): void {
+    const replacement = this.replacement;
+    this.replacement = undefined;
+    if (!replacement) return;
+    if (replacement.activity.thread_id !== this.activeThreadID || this.dismissedAt.has(replacement.activity.thread_id)) return;
+    this.startImmediate(replacement.activity, replacement.key);
+  }
+
+  private spawnPiP(activity: ActivitySession, key: string): PiPHandle | undefined {
+    if (this.pipFactory) return this.pipFactory(activity, key);
     const helper = resolveCUAFrameHelper();
     const target = activity.target?.trim();
     if (!helper || !target) return undefined;
@@ -181,22 +203,10 @@ export class CUAObservationCoordinator {
   }
 
   private handleNativePiPEvent(key: string, event: CUANativePiPEvent): void {
-    const entry = this.candidate?.key === key ? this.candidate : this.current?.key === key ? this.current : undefined;
+    const entry = this.current?.key === key ? this.current : undefined;
     if (!entry) return;
     switch (event.event) {
       case "ready":
-        if (this.candidate?.key === key) {
-          // A warmed-up replacement produced its first live frame: swap it in
-          // for the outgoing target only now, so the switch never shows a gap.
-          if (entry.threadID !== this.activeThreadID) return;
-          this.current?.pip.stop();
-          this.current = entry;
-          this.candidate = undefined;
-          this.retryAttempts.delete(entry.threadID);
-          entry.phase = "live";
-          entry.pip.setVisible(true);
-          return;
-        }
         // A placeholder-first current reached its first live frame; the native
         // side already cross-faded from the frosted placeholder to the capture.
         entry.phase = "live";
@@ -205,7 +215,6 @@ export class CUAObservationCoordinator {
       case "user_close":
         this.dismissedAt.set(entry.threadID, new Date().toISOString());
         if (this.current?.key === key) this.stopCurrent();
-        if (this.candidate?.key === key) this.stopCandidate();
         return;
       case "user_input":
         return;
@@ -220,9 +229,8 @@ export class CUAObservationCoordinator {
   }
 
   private handleNativePiPFailure(key: string): void {
-    const entry = this.candidate?.key === key ? this.candidate : this.current?.key === key ? this.current : undefined;
+    const entry = this.current?.key === key ? this.current : undefined;
     if (!entry) return;
-    if (this.candidate?.key === key) this.stopCandidate();
     if (this.current?.key === key) this.stopCurrent();
     if (entry.threadID !== this.activeThreadID || this.dismissedAt.has(entry.threadID)) return;
     const attempts = (this.retryAttempts.get(entry.threadID) ?? 0) + 1;
@@ -235,7 +243,7 @@ export class CUAObservationCoordinator {
     this.retryTimers.set(entry.threadID, timer);
   }
 
-  private animateInteractionIfNew(activity: ActivitySession, pip: CUANativePiP): void {
+  private animateInteractionIfNew(activity: ActivitySession, pip: PiPHandle): void {
     const interaction = activity.interaction;
     if (!interaction) return;
     const previous = this.lastInteractionRevisions.get(activity.thread_id);
@@ -260,16 +268,6 @@ export class CUAObservationCoordinator {
         .finally(() => { this.reconcileInFlight = false; });
     }, delay);
     this.reconcileTimer.unref?.();
-  }
-
-  private stopCurrent(): void {
-    this.current?.pip.stop();
-    this.current = undefined;
-  }
-
-  private stopCandidate(): void {
-    this.candidate?.pip.stop();
-    this.candidate = undefined;
   }
 
   private initialBounds(): Rectangle {

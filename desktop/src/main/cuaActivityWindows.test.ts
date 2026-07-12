@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivitySession, ServerEvent } from "../shared/protocol";
+import type { CUANativePiPEvent } from "./cuaFrameStreams";
+import type { WindowRegistry } from "./windowRegistry";
 import {
+  CUAObservationCoordinator,
   activityControlMethod,
   activityVisibleForThread,
   cuaActivityFromServerEvent,
@@ -24,6 +27,10 @@ function activity(overrides: Partial<ActivitySession> = {}): ActivitySession {
     ...overrides,
   };
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("CUA native picture-in-picture", () => {
   it("scopes the native PiP to the active session", () => {
@@ -73,5 +80,77 @@ describe("CUA native picture-in-picture", () => {
     // same window and trip a ScreenCaptureKit connection error.
     expect(observationKey(activity({ target: "com.apple.TextEdit", process_id: 0, window_id: 0 })))
       .toBe(observationKey(activity({ target: "com.apple.TextEdit", process_id: 42, window_id: 99 })));
+  });
+
+  it("waits for the outgoing helper to close and coalesces replacements", () => {
+    const events: string[] = [];
+    const helpers: Array<{ target: string; finishStop?: () => void }> = [];
+    const coordinator = new CUAObservationCoordinator(
+      { mainWindow: () => undefined } as unknown as WindowRegistry,
+      undefined,
+      (next) => {
+        const helper: { target: string; finishStop?: () => void } = { target: next.target ?? "" };
+        helpers.push(helper);
+        return {
+          start: () => { events.push(`start:${helper.target}`); },
+          setVisible: () => undefined,
+          animateInteraction: () => undefined,
+          stop: (onStopped?: () => void) => {
+            events.push(`stop:${helper.target}`);
+            helper.finishStop = onStopped;
+          },
+        };
+      },
+    );
+    coordinator.setActiveThread("thread-1");
+    coordinator.update(activity({ target: "app-a" }));
+    coordinator.update(activity({ target: "app-b", updated_at: "2026-07-10T10:00:02Z" }));
+    coordinator.update(activity({ target: "app-c", updated_at: "2026-07-10T10:00:03Z" }));
+
+    expect(events).toEqual(["start:app-a", "stop:app-a"]);
+    expect(helpers).toHaveLength(1);
+
+    helpers[0].finishStop?.();
+    expect(events).toEqual(["start:app-a", "stop:app-a", "start:app-c"]);
+    expect(helpers.map((helper) => helper.target)).toEqual(["app-a", "app-c"]);
+  });
+
+  it("does not start an update while a user-closed helper is still stopping", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-07-10T10:00:01.500Z");
+    const events: string[] = [];
+    const helpers: Array<{ target: string; finishStop?: () => void }> = [];
+    const coordinator = new CUAObservationCoordinator(
+      { mainWindow: () => undefined } as unknown as WindowRegistry,
+      undefined,
+      (next) => {
+        const helper: { target: string; finishStop?: () => void } = { target: next.target ?? "" };
+        helpers.push(helper);
+        return {
+          start: () => { events.push(`start:${helper.target}`); },
+          setVisible: () => undefined,
+          animateInteraction: () => undefined,
+          stop: (onStopped?: () => void) => {
+            events.push(`stop:${helper.target}`);
+            helper.finishStop = onStopped;
+          },
+        };
+      },
+    );
+    const initial = activity({ target: "app-a" });
+    coordinator.setActiveThread("thread-1");
+    coordinator.update(initial);
+    const testCoordinator = coordinator as unknown as {
+      handleNativePiPEvent: (key: string, event: CUANativePiPEvent) => void;
+    };
+    testCoordinator.handleNativePiPEvent(observationKey(initial), { event: "user_close" });
+    coordinator.update(activity({ target: "app-b", updated_at: "2026-07-10T10:00:02Z" }));
+
+    expect(events).toEqual(["start:app-a", "stop:app-a"]);
+    expect(helpers).toHaveLength(1);
+
+    helpers[0].finishStop?.();
+    expect(events).toEqual(["start:app-a", "stop:app-a", "start:app-b"]);
+    expect(helpers.map((helper) => helper.target)).toEqual(["app-a", "app-b"]);
   });
 });
