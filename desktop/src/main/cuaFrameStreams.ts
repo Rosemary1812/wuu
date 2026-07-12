@@ -4,7 +4,9 @@ import { join, resolve } from "node:path";
 import type { Rectangle } from "electron";
 
 export type CUANativePiPEvent = {
-  event: "ready" | "user_close" | "user_input" | "capture_status";
+  event: "ready" | "user_close" | "user_input" | "capture_status" | "geometry";
+  x?: number;
+  y?: number;
   width?: number;
   height?: number;
   status?: "healthy" | "idle" | "blank" | "suspended" | "stopped" | "error";
@@ -39,8 +41,10 @@ export class CUANativePiP {
 
   constructor(
     private readonly helper: string,
-    private readonly activityID: string,
+    private readonly threadID: string,
     private readonly target: string,
+    private readonly processID: number | undefined,
+    private readonly windowID: number | undefined,
     private readonly initialBounds: Rectangle,
     private readonly onEvent: (event: CUANativePiPEvent) => void,
     private readonly onError: (message: string) => void,
@@ -52,12 +56,14 @@ export class CUANativePiP {
     const { x, y, width, height } = this.initialBounds;
     const child = spawn(this.helper, [
       "--native-pip",
-      this.activityID,
+      this.threadID,
       this.target,
       String(x),
       String(y),
       String(width),
       String(height),
+      String(this.processID ?? 0),
+      String(this.windowID ?? 0),
     ], { stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
     child.stdout.on("data", (chunk: Buffer) => {

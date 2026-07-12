@@ -5,7 +5,6 @@ import type { WindowRegistry } from "./windowRegistry";
 
 export type ActivityControlAction = "takeover" | "release" | "stop";
 
-const MAX_LIVE_CUA_STREAMS = 3;
 const PIP_WIDTH = 380;
 const PIP_HEIGHT = 248;
 const PIP_INSET = 12;
@@ -26,10 +25,7 @@ export function activityVisibleForThread(activityThreadID: string, activeThreadI
   return Boolean(activeThreadID && activityThreadID === activeThreadID);
 }
 
-export function nativePiPInitialBounds(
-  mainBounds: Rectangle | undefined,
-  workArea: Rectangle,
-): Rectangle {
+export function nativePiPInitialBounds(mainBounds: Rectangle | undefined, workArea: Rectangle): Rectangle {
   if (!mainBounds) {
     return {
       x: workArea.x + workArea.width - PIP_WIDTH - 24,
@@ -49,26 +45,33 @@ export function nativePiPInitialBounds(
   return { x, y, width: PIP_WIDTH, height: PIP_HEIGHT };
 }
 
-type ActivityControl = (
-  activity: ActivitySession,
-  action: ActivityControlAction,
-) => Promise<ActivitySession>;
-
 type ActivitySnapshot = (threadID: string) => Promise<ActivitySession[]>;
+type PiPEntry = {
+  key: string;
+  threadID: string;
+  activity: ActivitySession;
+  pip: CUANativePiP;
+};
 
-export class CUAActivityWindowManager {
-  private readonly activities = new Map<string, ActivitySession>();
-  private readonly dismissedActivityIDs = new Set<string>();
-  private readonly nativePiPs = new Map<string, { target: string; pip: CUANativePiP; startedAt: number }>();
-  private readonly retries = new Map<string, { attempts: number; timer?: NodeJS.Timeout }>();
+/**
+ * Owns one user-visible CUA observation surface. Activity events update the
+ * target, but an individual action ending never owns the PiP lifetime.
+ */
+export class CUAObservationCoordinator {
+  private readonly observations = new Map<string, ActivitySession>();
+  private readonly dismissedAt = new Map<string, string>();
   private readonly lastInteractionRevisions = new Map<string, number>();
+  private readonly retryAttempts = new Map<string, number>();
+  private readonly retryTimers = new Map<string, NodeJS.Timeout>();
+  private current: PiPEntry | undefined;
+  private candidate: PiPEntry | undefined;
+  private userBounds: Rectangle | undefined;
   private reconcileTimer: NodeJS.Timeout | undefined;
   private reconcileInFlight = false;
   private activeThreadID: string | undefined;
 
   constructor(
     private readonly registry: WindowRegistry,
-    private readonly control: ActivityControl,
     private readonly snapshot?: ActivitySnapshot,
   ) {}
 
@@ -83,19 +86,128 @@ export class CUAActivityWindowManager {
 
   setActiveThread(threadID?: string): void {
     this.activeThreadID = threadID?.trim() || undefined;
-    for (const [activityID, activity] of this.activities) {
-      if (activityVisibleForThread(activity.thread_id, this.activeThreadID) && !this.dismissedActivityIDs.has(activityID)) {
-        this.syncNativePiP(activity);
-      } else {
-        this.stopNativePiP(activityID);
-      }
-    }
+    if (this.current?.threadID !== this.activeThreadID) this.current?.pip.setVisible(false);
+    if (this.candidate?.threadID !== this.activeThreadID) this.stopCandidate();
+    this.syncActiveObservation();
     this.scheduleReconcile(0);
   }
 
+  update(activity: ActivitySession): void {
+    if (activity.kind !== "cua" || activity.plugin_id !== "cua-mac") return;
+    // A stopped control lease is not the end of the user's observation. Keep
+    // the last target until the session changes, the user closes it, or a new
+    // target replaces it.
+    if (activity.state === "stopped" || !activity.target?.trim()) return;
+    const current = this.observations.get(activity.thread_id);
+    if (!current || current.updated_at <= activity.updated_at) {
+      this.observations.set(activity.thread_id, activity);
+    }
+    const dismissed = this.dismissedAt.get(activity.thread_id);
+    if (dismissed && dismissed < activity.updated_at) this.dismissedAt.delete(activity.thread_id);
+    if (activity.thread_id === this.activeThreadID) this.syncActiveObservation();
+  }
+
+  private syncActiveObservation(): void {
+    const threadID = this.activeThreadID;
+    if (!threadID || this.dismissedAt.has(threadID)) {
+      this.current?.pip.setVisible(false);
+      return;
+    }
+    const activity = this.observations.get(threadID);
+    if (!activity) {
+      this.current?.pip.setVisible(false);
+      return;
+    }
+    const key = observationKey(activity);
+    if (this.current?.key === key) {
+      this.current.pip.setVisible(true);
+      this.animateInteractionIfNew(activity, this.current.pip);
+      return;
+    }
+    if (this.candidate?.key === key) {
+      this.animateInteractionIfNew(activity, this.candidate.pip);
+      return;
+    }
+    this.startCandidate(activity, key);
+  }
+
+  private startCandidate(activity: ActivitySession, key: string): void {
+    const helper = resolveCUAFrameHelper();
+    const target = activity.target?.trim();
+    if (!helper || !target) return;
+    this.stopCandidate();
+    const pip = new CUANativePiP(
+      helper,
+      activity.thread_id,
+      target,
+      activity.process_id,
+      activity.window_id,
+      this.initialBounds(),
+      (event) => this.handleNativePiPEvent(key, event),
+      () => this.handleNativePiPFailure(key),
+    );
+    this.candidate = { key, threadID: activity.thread_id, activity, pip };
+    pip.start();
+    pip.setVisible(false);
+    this.animateInteractionIfNew(activity, pip);
+  }
+
+  private handleNativePiPEvent(key: string, event: CUANativePiPEvent): void {
+    const entry = this.candidate?.key === key ? this.candidate : this.current?.key === key ? this.current : undefined;
+    if (!entry) return;
+    switch (event.event) {
+      case "ready":
+        if (this.candidate?.key !== key || entry.threadID !== this.activeThreadID) return;
+        this.current?.pip.stop();
+        this.current = entry;
+        this.candidate = undefined;
+        this.retryAttempts.delete(entry.threadID);
+        entry.pip.setVisible(true);
+        return;
+      case "user_close":
+        this.dismissedAt.set(entry.threadID, new Date().toISOString());
+        if (this.current?.key === key) this.stopCurrent();
+        if (this.candidate?.key === key) this.stopCandidate();
+        return;
+      case "user_input":
+        return;
+      case "geometry":
+        if ([event.x, event.y, event.width, event.height].every((value) => typeof value === "number")) {
+          this.userBounds = { x: event.x!, y: event.y!, width: event.width!, height: event.height! };
+        }
+        return;
+      case "capture_status":
+        return;
+    }
+  }
+
+  private handleNativePiPFailure(key: string): void {
+    const entry = this.candidate?.key === key ? this.candidate : this.current?.key === key ? this.current : undefined;
+    if (!entry) return;
+    if (this.candidate?.key === key) this.stopCandidate();
+    if (this.current?.key === key) this.stopCurrent();
+    if (entry.threadID !== this.activeThreadID || this.dismissedAt.has(entry.threadID)) return;
+    const attempts = (this.retryAttempts.get(entry.threadID) ?? 0) + 1;
+    this.retryAttempts.set(entry.threadID, attempts);
+    const timer = setTimeout(() => {
+      this.retryTimers.delete(entry.threadID);
+      this.syncActiveObservation();
+    }, frameStreamRetryDelay(attempts));
+    timer.unref?.();
+    this.retryTimers.set(entry.threadID, timer);
+  }
+
+  private animateInteractionIfNew(activity: ActivitySession, pip: CUANativePiP): void {
+    const interaction = activity.interaction;
+    if (!interaction) return;
+    const previous = this.lastInteractionRevisions.get(activity.thread_id);
+    if (previous !== undefined && interaction.revision <= previous) return;
+    this.lastInteractionRevisions.set(activity.thread_id, interaction.revision);
+    pip.animateInteraction(interaction);
+  }
+
   private scheduleReconcile(delay = 150): void {
-    if (!this.snapshot || !this.activeThreadID || this.reconcileInFlight) return;
-    if (this.reconcileTimer) return;
+    if (!this.snapshot || !this.activeThreadID || this.reconcileInFlight || this.reconcileTimer) return;
     this.reconcileTimer = setTimeout(() => {
       this.reconcileTimer = undefined;
       const threadID = this.activeThreadID;
@@ -112,70 +224,18 @@ export class CUAActivityWindowManager {
     this.reconcileTimer.unref?.();
   }
 
-  update(activity: ActivitySession): void {
-    if (activity.state === "stopped") {
-      this.stopNativePiP(activity.id);
-      this.activities.delete(activity.id);
-      this.dismissedActivityIDs.delete(activity.id);
-      this.lastInteractionRevisions.delete(activity.id);
-      return;
-    }
-    this.activities.set(activity.id, activity);
-    if (this.dismissedActivityIDs.has(activity.id)) return;
-    if (activityVisibleForThread(activity.thread_id, this.activeThreadID)) {
-      this.syncNativePiP(activity);
-    } else {
-      this.stopNativePiP(activity.id);
-    }
+  private stopCurrent(): void {
+    this.current?.pip.stop();
+    this.current = undefined;
   }
 
-  private syncNativePiP(activity: ActivitySession): void {
-    if (activity.plugin_id !== "cua-mac") return;
-    const target = activity.target?.trim();
-    const helper = resolveCUAFrameHelper();
-    if (!target || !helper) return;
-
-    const current = this.nativePiPs.get(activity.id);
-    if (current?.target === target) {
-      current.pip.setVisible(true);
-      this.animateInteractionIfNew(activity, current.pip);
-      const retry = this.retries.get(activity.id);
-      if (current.pip.isLive() || retry?.timer) return;
-      this.retries.delete(activity.id);
-      current.pip.start();
-      return;
-    }
-
-    this.stopNativePiP(activity.id);
-    if (this.nativePiPs.size >= MAX_LIVE_CUA_STREAMS) {
-      const oldest = [...this.nativePiPs.entries()]
-        .sort((left, right) => left[1].startedAt - right[1].startedAt)[0];
-      if (oldest) this.stopNativePiP(oldest[0]);
-    }
-
-    const pip = new CUANativePiP(
-      helper,
-      activity.id,
-      target,
-      this.initialBounds(),
-      (event) => this.handleNativePiPEvent(activity.id, event),
-      () => this.scheduleRetry(activity.id),
-    );
-    this.nativePiPs.set(activity.id, { target, pip, startedAt: Date.now() });
-    pip.start();
-    this.animateInteractionIfNew(activity, pip);
-  }
-
-  private animateInteractionIfNew(activity: ActivitySession, pip: CUANativePiP): void {
-    const interaction = activity.interaction;
-    if (!interaction) return;
-    const previous = this.lastInteractionRevisions.get(activity.id);
-    if (previous !== undefined && interaction.revision <= previous) return;
-    this.lastInteractionRevisions.set(activity.id, interaction.revision);
-    pip.animateInteraction(interaction);
+  private stopCandidate(): void {
+    this.candidate?.pip.stop();
+    this.candidate = undefined;
   }
 
   private initialBounds(): Rectangle {
+    if (this.userBounds) return this.userBounds;
     const mainWindow = this.registry.mainWindow();
     const mainBounds = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
       ? mainWindow.getContentBounds()
@@ -186,67 +246,16 @@ export class CUAActivityWindowManager {
       : screen.getDisplayNearestPoint(cursor).workArea;
     return nativePiPInitialBounds(mainBounds, workArea);
   }
+}
 
-  private handleNativePiPEvent(activityID: string, event: CUANativePiPEvent): void {
-    switch (event.event) {
-      case "ready": {
-        const retry = this.retries.get(activityID);
-        if (retry && !retry.timer) this.retries.delete(activityID);
-        this.nativePiPs.get(activityID)?.pip.setVisible(true);
-        return;
-      }
-      case "user_close":
-        this.dismissedActivityIDs.add(activityID);
-        this.stopNativePiP(activityID);
-        return;
-      case "user_input":
-        this.handleDetectedUserInput(activityID);
-        return;
-      case "capture_status":
-        return;
-    }
-  }
-
-  private handleDetectedUserInput(activityID: string): void {
-    const activity = this.activities.get(activityID);
-    if (!activity || activity.controller !== "agent") return;
-    void this.control(activity, "takeover")
-      .then((updated) => this.update(updated))
-      .catch(() => undefined);
-  }
-
-  private stopNativePiP(activityID: string): void {
-    this.nativePiPs.get(activityID)?.pip.stop();
-    this.nativePiPs.delete(activityID);
-    const retry = this.retries.get(activityID);
-    if (retry?.timer) clearTimeout(retry.timer);
-    this.retries.delete(activityID);
-  }
-
-  private scheduleRetry(activityID: string): void {
-    const current = this.nativePiPs.get(activityID);
-    if (!current || current.pip.isLive() || !this.activities.has(activityID)) return;
-    const retry = this.retries.get(activityID) ?? { attempts: 0 };
-    if (retry.timer) return;
-    retry.attempts += 1;
-    retry.timer = setTimeout(() => {
-      retry.timer = undefined;
-      const activity = this.activities.get(activityID);
-      const entry = this.nativePiPs.get(activityID);
-      if (!activity || !entry || entry.pip.isLive() || activity.target?.trim() !== entry.target) return;
-      entry.pip.start();
-    }, frameStreamRetryDelay(retry.attempts));
-    retry.timer.unref?.();
-    this.retries.set(activityID, retry);
-  }
+export function observationKey(activity: ActivitySession): string {
+  return [activity.thread_id, activity.target?.trim(), activity.process_id ?? 0, activity.window_id ?? 0].join(":");
 }
 
 export function cuaActivityFromServerEvent(event: ServerEvent): ActivitySession | undefined {
   if (event.kind !== "notification") return undefined;
   const method = event.message.method;
-  if (method !== "activity/started" && method !== "activity/updated" && method !== "activity/control_changed" && method !== "activity/stopped") {
-    return undefined;
-  }
+  if (method !== "activity/started" && method !== "activity/updated" && method !== "activity/control_changed" && method !== "activity/stopped") return undefined;
   const value = event.message.params;
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const activity = value as Partial<ActivitySession>;

@@ -10,11 +10,15 @@ public struct NativePiPConfiguration: Sendable {
     public let activityID: String
     public let target: String
     public let frame: CGRect
+    public let processID: pid_t?
+    public let windowID: CGWindowID?
 
-    public init(activityID: String, target: String, frame: CGRect) {
+    public init(activityID: String, target: String, frame: CGRect, processID: pid_t? = nil, windowID: CGWindowID? = nil) {
         self.activityID = activityID
         self.target = target
         self.frame = frame
+        self.processID = processID
+        self.windowID = windowID
     }
 }
 
@@ -54,7 +58,6 @@ private final class PiPCommandReader: @unchecked Sendable {
 @MainActor
 private final class NativePiPView: NSView {
     private nonisolated(unsafe) let displayLayer = AVSampleBufferDisplayLayer()
-    private let fallbackLayer = CALayer()
     private let pointerLayer = CAShapeLayer()
     private let rippleLayer = CAShapeLayer()
     private let closeButton = NSButton()
@@ -73,11 +76,6 @@ private final class NativePiPView: NSView {
         displayLayer.videoGravity = .resizeAspect
         displayLayer.backgroundColor = NSColor.clear.cgColor
         layer?.addSublayer(displayLayer)
-
-        fallbackLayer.contentsGravity = .resizeAspect
-        fallbackLayer.backgroundColor = NSColor.clear.cgColor
-        fallbackLayer.isHidden = true
-        layer?.addSublayer(fallbackLayer)
 
         let pointerPath = CGMutablePath()
         // Core Animation uses a bottom-left origin here. Define the cursor in
@@ -127,7 +125,6 @@ private final class NativePiPView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         displayLayer.frame = bounds
-        fallbackLayer.frame = bounds
         closeButton.frame = CGRect(x: bounds.maxX - 34, y: bounds.maxY - 34, width: 26, height: 26)
         placePointer()
         CATransaction.commit()
@@ -163,17 +160,9 @@ private final class NativePiPView: NSView {
         if let imageBuffer = sampleBuffer.imageBuffer {
             let size = CGSize(width: CVPixelBufferGetWidth(imageBuffer), height: CVPixelBufferGetHeight(imageBuffer))
             Task { @MainActor [weak self] in
-                self?.fallbackLayer.isHidden = true
-                self?.fallbackLayer.contents = nil
                 self?.setVideoSize(size)
             }
         }
-    }
-
-    func showFallback(_ image: CGImage) {
-        fallbackLayer.contents = image
-        fallbackLayer.isHidden = false
-        setVideoSize(CGSize(width: image.width, height: image.height))
     }
 
     func setVideoSize(_ size: CGSize) {
@@ -262,6 +251,7 @@ private final class NativePiPWindowController: NSObject, NSWindowDelegate {
     let panel: NSPanel
     let content: NativePiPView
     private let writer: PiPEventWriter
+    private let desktopTop: CGFloat
     private var shown = false
     private var requestedVisible = true
     private var captureAvailable = false
@@ -269,7 +259,7 @@ private final class NativePiPWindowController: NSObject, NSWindowDelegate {
     init(configuration: NativePiPConfiguration, writer: PiPEventWriter) {
         self.writer = writer
         content = NativePiPView(frame: CGRect(origin: .zero, size: configuration.frame.size))
-        let desktopTop = NSScreen.screens.first?.frame.maxY ?? 0
+        desktopTop = NSScreen.screens.first?.frame.maxY ?? 0
         let nativeFrame = CGRect(
             x: configuration.frame.minX,
             y: desktopTop - configuration.frame.maxY,
@@ -309,16 +299,12 @@ private final class NativePiPWindowController: NSObject, NSWindowDelegate {
     func showAfterFirstFrame(videoSize: CGSize) {
         content.setVideoSize(videoSize)
         let ratio = videoSize.width / max(1, videoSize.height)
+        let previousRatio = panel.contentAspectRatio.width / max(0.01, panel.contentAspectRatio.height)
         panel.contentAspectRatio = CGSize(width: ratio, height: 1)
+        if shown, abs(previousRatio - ratio) > 0.001 {
+            resizeForAspectRatio(ratio)
+        }
         presentContent(width: Int(videoSize.width), height: Int(videoSize.height), ratio: ratio)
-    }
-
-    func showFallbackFrame(_ image: CGImage) {
-        content.showFallback(image)
-        let size = CGSize(width: image.width, height: image.height)
-        let ratio = size.width / max(1, size.height)
-        panel.contentAspectRatio = CGSize(width: ratio, height: 1)
-        presentContent(width: image.width, height: image.height, ratio: ratio)
     }
 
     var hasShownContent: Bool { shown }
@@ -343,11 +329,14 @@ private final class NativePiPWindowController: NSObject, NSWindowDelegate {
         return CGSize(width: frameSize.height * ratio, height: frameSize.height)
     }
 
+    func windowDidResize(_ notification: Notification) { publishGeometry() }
+    func windowDidMove(_ notification: Notification) { publishGeometry() }
+
     private func presentContent(width: Int, height: Int, ratio: CGFloat) {
         let becameAvailable = !captureAvailable
         captureAvailable = true
         if !shown {
-            let fitted = fittedPiPSize(ratio: ratio)
+            let fitted = fittedPiPSize(ratio: ratio, preferredWidth: panel.frame.width)
             let current = panel.frame
             panel.setFrame(
                 CGRect(x: current.maxX - fitted.width, y: current.maxY - fitted.height, width: fitted.width, height: fitted.height),
@@ -361,14 +350,38 @@ private final class NativePiPWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    private func fittedPiPSize(ratio: CGFloat) -> CGSize {
-        let preferredWidth: CGFloat = ratio >= 1.35 ? 409 : (ratio <= 0.75 ? 280 : 307)
+    private func fittedPiPSize(ratio: CGFloat, preferredWidth: CGFloat) -> CGSize {
         var width = preferredWidth
         var height = width / max(0.01, ratio)
         if height > 800 { height = 800; width = height * ratio }
         if height < 140 { height = 140; width = height * ratio }
         if width > 720 { width = 720; height = width / ratio }
         return CGSize(width: max(220, width), height: max(140, height))
+    }
+
+    private func resizeForAspectRatio(_ ratio: CGFloat) {
+        let current = panel.frame
+        var width = current.width
+        var height = width / max(0.01, ratio)
+        if height > panel.maxSize.height { height = panel.maxSize.height; width = height * ratio }
+        if height < panel.minSize.height { height = panel.minSize.height; width = height * ratio }
+        if width > panel.maxSize.width { width = panel.maxSize.width; height = width / ratio }
+        if width < panel.minSize.width { width = panel.minSize.width; height = width / ratio }
+        panel.setFrame(
+            CGRect(x: current.maxX - width, y: current.maxY - height, width: width, height: height),
+            display: true,
+            animate: true
+        )
+    }
+
+    private func publishGeometry() {
+        let frame = panel.frame
+        writer.send("geometry", fields: [
+            "x": frame.minX,
+            "y": desktopTop - frame.maxY,
+            "width": frame.width,
+            "height": frame.height,
+        ])
     }
 }
 
@@ -377,17 +390,15 @@ private final class WindowGeometryMonitor: @unchecked Sendable {
     private var dirty = false
     private var observer: AXObserver?
     private let application: AXUIElement
-    private var focusedWindow: AXUIElement?
+    private var boundWindow: AXUIElement?
 
-    init(processID: pid_t) {
+    init(processID: pid_t, windowFrame: CGRect) {
         application = AXUIElementCreateApplication(processID)
         var created: AXObserver?
         guard AXObserverCreate(processID, geometryObserverCallback, &created) == .success, let created else { return }
         observer = created
-        let refcon = Unmanaged.passUnretained(self).toOpaque()
-        AXObserverAddNotification(created, application, kAXFocusedWindowChangedNotification as CFString, refcon)
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .commonModes)
-        refreshFocusedWindow()
+        bindWindow(nearestTo: windowFrame)
     }
 
     deinit {
@@ -396,10 +407,9 @@ private final class WindowGeometryMonitor: @unchecked Sendable {
 
     func handle(_ notification: CFString) {
         markDirty()
-        if notification as String == kAXFocusedWindowChangedNotification {
-            DispatchQueue.main.async { [weak self] in self?.refreshFocusedWindow() }
-        }
     }
+
+    func rebind(nearestTo frame: CGRect) { bindWindow(nearestTo: frame) }
 
     func takeDirty() -> Bool {
         lock.lock(); defer { lock.unlock() }
@@ -410,18 +420,25 @@ private final class WindowGeometryMonitor: @unchecked Sendable {
 
     private func markDirty() { lock.withLock { dirty = true } }
 
-    private func refreshFocusedWindow() {
+    private func bindWindow(nearestTo frame: CGRect) {
         guard let observer else { return }
         let refcon = Unmanaged.passUnretained(self).toOpaque()
-        if let focusedWindow {
-            AXObserverRemoveNotification(observer, focusedWindow, kAXMovedNotification as CFString)
-            AXObserverRemoveNotification(observer, focusedWindow, kAXResizedNotification as CFString)
-            AXObserverRemoveNotification(observer, focusedWindow, kAXUIElementDestroyedNotification as CFString)
+        if let boundWindow {
+            AXObserverRemoveNotification(observer, boundWindow, kAXMovedNotification as CFString)
+            AXObserverRemoveNotification(observer, boundWindow, kAXResizedNotification as CFString)
+            AXObserverRemoveNotification(observer, boundWindow, kAXUIElementDestroyedNotification as CFString)
         }
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(application, kAXFocusedWindowAttribute as CFString, &value) == .success,
-              let window = value as! AXUIElement? else { focusedWindow = nil; return }
-        focusedWindow = window
+        guard AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &value) == .success,
+              let windows = value as? [AXUIElement],
+              let window = windows.compactMap({ item -> (AXUIElement, CGRect)? in
+                  guard let candidate = axFrame(item) else { return nil }
+                  return (item, candidate)
+              }).min(by: { windowFrameDistance($0.1, frame) < windowFrameDistance($1.1, frame) })?.0 else {
+            boundWindow = nil
+            return
+        }
+        boundWindow = window
         AXObserverAddNotification(observer, window, kAXMovedNotification as CFString, refcon)
         AXObserverAddNotification(observer, window, kAXResizedNotification as CFString, refcon)
         AXObserverAddNotification(observer, window, kAXUIElementDestroyedNotification as CFString, refcon)
@@ -595,44 +612,6 @@ private func startWindowStream(window: SCWindow, output: NativePiPStreamOutput) 
     return stream
 }
 
-private final class ScreenshotContinuationBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<CGImage, Error>?
-
-    init(_ continuation: CheckedContinuation<CGImage, Error>) {
-        self.continuation = continuation
-    }
-
-    func complete(_ result: Result<CGImage, Error>) {
-        let next = lock.withLock { () -> CheckedContinuation<CGImage, Error>? in
-            defer { continuation = nil }
-            return continuation
-        }
-        next?.resume(with: result)
-    }
-}
-
-@available(macOS 14.0, *)
-private func captureWindowImage(window: SCWindow, timeout: TimeInterval) async throws -> CGImage {
-    let configuration = streamConfiguration(for: window)
-    let filter = SCContentFilter(desktopIndependentWindow: window)
-    return try await withCheckedThrowingContinuation { continuation in
-        let box = ScreenshotContinuationBox(continuation)
-        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + timeout) {
-            box.complete(.failure(ComputerError.operationFailed("window screenshot timed out")))
-        }
-        SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) { image, error in
-            if let error {
-                box.complete(.failure(error))
-            } else if let image {
-                box.complete(.success(image))
-            } else {
-                box.complete(.failure(ComputerError.operationFailed("window screenshot produced no image")))
-            }
-        }
-    }
-}
-
 @MainActor
 public func runNativePiP(configuration: NativePiPConfiguration) async throws {
     guard CGPreflightScreenCaptureAccess() else {
@@ -643,16 +622,18 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
     }
     let normalized = configuration.target.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     guard let app = NSWorkspace.shared.runningApplications.first(where: {
-        !$0.isTerminated && ($0.bundleIdentifier?.lowercased() == normalized || $0.localizedName?.lowercased() == normalized || $0.bundleURL?.path.lowercased() == normalized)
+        if let processID = configuration.processID { return !$0.isTerminated && $0.processIdentifier == processID }
+        return !$0.isTerminated && ($0.bundleIdentifier?.lowercased() == normalized || $0.localizedName?.lowercased() == normalized || $0.bundleURL?.path.lowercased() == normalized)
     }) else { throw ComputerError.appNotFound(configuration.target) }
 
     let writer = PiPEventWriter()
     let controller = NativePiPWindowController(configuration: configuration, writer: writer)
-    let geometryMonitor = WindowGeometryMonitor(processID: app.processIdentifier)
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-    guard var window = preferredStreamWindow(in: content, processID: app.processIdentifier) else {
+    guard var window = configuration.windowID.flatMap({ requested in content.windows.first(where: { $0.windowID == requested }) })
+        ?? preferredStreamWindow(in: content, processID: app.processIdentifier) else {
         throw ComputerError.operationFailed("no capturable window found")
     }
+    let geometryMonitor = WindowGeometryMonitor(processID: app.processIdentifier, windowFrame: window.frame)
     var output = NativePiPStreamOutput(controller: controller, writer: writer)
     var stream = try startWindowStream(window: window, output: output)
     var streamStartedAt = ProcessInfo.processInfo.systemUptime
@@ -662,7 +643,6 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
     let startupTimeout: TimeInterval = 5
     let callbackSilenceTimeout: TimeInterval = 3
     let unavailableStatusTimeout: TimeInterval = 3
-    let screenshotTimeout: TimeInterval = 1
 
     let commandReader = PiPCommandReader()
     FileHandle.standardInput.readabilityHandler = { input in
@@ -707,10 +687,7 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
             consecutiveStreamFailures += 1
             try? stream.removeStreamOutput(output, type: .screen)
             try? await stream.stopCapture()
-            if let image = try? await captureWindowImage(window: window, timeout: screenshotTimeout) {
-                controller.showFallbackFrame(image)
-                lastVerifiedCaptureAt = ProcessInfo.processInfo.systemUptime
-            } else if ProcessInfo.processInfo.systemUptime - lastVerifiedCaptureAt >= callbackSilenceTimeout {
+            if ProcessInfo.processInfo.systemUptime - lastVerifiedCaptureAt >= callbackSilenceTimeout {
                 controller.markCaptureUnavailable()
             }
             if !controller.hasShownContent, consecutiveStreamFailures >= 4 {
@@ -719,7 +696,8 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
             let retryDelay = 250 * (1 << min(3, consecutiveStreamFailures))
             try await Task.sleep(for: .milliseconds(retryDelay))
             if let refreshed = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
-               let currentWindow = preferredStreamWindow(in: refreshed, processID: app.processIdentifier) {
+               let currentWindow = refreshed.windows.first(where: { $0.windowID == window.windowID })
+                ?? preferredStreamWindow(in: refreshed, processID: app.processIdentifier) {
                 window = currentWindow
             }
             let next = NativePiPStreamOutput(controller: controller, writer: writer)
@@ -747,6 +725,7 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
         do {
             if changedWindow { try await stream.updateContentFilter(SCContentFilter(desktopIndependentWindow: nextWindow)) }
             if changedFrame { try await stream.updateConfiguration(streamConfiguration(for: nextWindow)) }
+            if changedWindow { geometryMonitor.rebind(nearestTo: nextWindow.frame) }
             window = nextWindow
         } catch { output.lockFailure(error) }
     }

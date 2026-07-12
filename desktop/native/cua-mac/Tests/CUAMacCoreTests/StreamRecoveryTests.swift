@@ -30,7 +30,7 @@ final class StreamRecoveryTests: XCTestCase {
         ))
     }
 
-    func testFallbackContentDoesNotMaskAStreamThatNeverStarts() {
+    func testAStreamThatNeverStartsStillRequiresRecovery() {
         let freshness = CaptureFreshness()
 
         XCTAssertTrue(freshness.requiresRecovery(

@@ -87,8 +87,7 @@ import type {
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
 import {
-  activityControlMethod,
-  CUAActivityWindowManager,
+  CUAObservationCoordinator,
 } from "./cuaActivityWindows";
 import { autoInstallCli, getCliInstallStatus, installCli } from "./cliInstall";
 import {
@@ -175,17 +174,8 @@ const appServerClientPool = new AppServerClientPool(
   () => projectManager.activeWorkdir(),
   (event) => emitServerEvent(event),
 );
-const cuaActivityWindowManager = new CUAActivityWindowManager(
+const cuaObservationCoordinator = new CUAObservationCoordinator(
   windowRegistry,
-  async (activity, action): Promise<ActivitySession> => {
-    const result = await appServerClientPool.requestForWorkdir<
-      ActivityActionResult | ActivityReleaseResult
-    >(activity.workdir, activityControlMethod(action), {
-      thread_id: activity.thread_id,
-      activity_id: activity.id,
-    });
-    return result.activity;
-  },
   async (threadID): Promise<ActivitySession[]> => {
     const workdir = projectManager.activeWorkdir();
     if (!workdir) return [];
@@ -310,7 +300,7 @@ function workspaceFilesForEvent(event: IpcMainInvokeEvent): WorkspaceFileService
 }
 
 function emitServerEvent(event: ServerEvent): void {
-  cuaActivityWindowManager.handleServerEvent(event);
+  cuaObservationCoordinator.handleServerEvent(event);
   broadcastToAll("wuu:server-event", event);
 }
 
@@ -610,7 +600,7 @@ function createWindow(): void {
       mainWindowBoundsSaveTimer = undefined;
     }
     windowResizeState = false;
-    cuaActivityWindowManager.setActiveThread(undefined);
+    cuaObservationCoordinator.setActiveThread(undefined);
     windowRegistry.unregisterWindow(windowID);
     mainWindow = null;
   });
@@ -830,8 +820,11 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("wuu:cua-active-thread", (event, threadID?: string) => {
     const senderWindow = BrowserWindow.fromWebContents(event.sender);
-    if (!senderWindow || senderWindow.isDestroyed() || !senderWindow.isFocused()) return;
-    cuaActivityWindowManager.setActiveThread(threadID);
+    if (!senderWindow || senderWindow.isDestroyed()) return;
+    // Renderer focus and React mount are independent. Rejecting the initial
+    // thread sync while focus is still settling permanently suppresses PiP for
+    // that session because no later focus event is guaranteed.
+    cuaObservationCoordinator.setActiveThread(threadID);
   });
   ipcMain.handle("wuu:project-list", () => projectManager.list());
   ipcMain.handle("wuu:project-select", (_event, projectIDToSelect: string) =>

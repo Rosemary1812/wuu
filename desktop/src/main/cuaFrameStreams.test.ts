@@ -16,4 +16,11 @@ describe("CUALineDecoder", () => {
     expect(decoder.push('{"event":"capture_status","status":"idle"}')).toEqual([]);
     expect(decoder.push("\n")).toEqual([{ event: "capture_status", status: "idle" }]);
   });
+
+  it("decodes user-resized PiP geometry", () => {
+    const decoder = new CUALineDecoder();
+    expect(decoder.push('{"event":"geometry","x":20,"y":30,"width":520,"height":300}\n')).toEqual([
+      { event: "geometry", x: 20, y: 30, width: 520, height: 300 },
+    ]);
+  });
 });

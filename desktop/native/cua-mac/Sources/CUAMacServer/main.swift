@@ -12,10 +12,18 @@ if CommandLine.arguments.count >= 8, CommandLine.arguments[1] == "--native-pip" 
         exit(2)
     }
     let frame = CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
+    let processID = CommandLine.arguments.count > 8 ? Int32(CommandLine.arguments[8]) : nil
+    let windowID = CommandLine.arguments.count > 9 ? UInt32(CommandLine.arguments[9]) : nil
     NSApplication.shared.setActivationPolicy(.accessory)
     Task {
         do {
-            try await runNativePiP(configuration: NativePiPConfiguration(activityID: activityID, target: target, frame: frame))
+            try await runNativePiP(configuration: NativePiPConfiguration(
+                activityID: activityID,
+                target: target,
+                frame: frame,
+                processID: processID.flatMap { $0 > 0 ? $0 : nil },
+                windowID: windowID.flatMap { $0 > 0 ? $0 : nil }
+            ))
             exit(0)
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription

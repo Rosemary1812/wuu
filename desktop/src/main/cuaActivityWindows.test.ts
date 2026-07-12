@@ -6,6 +6,7 @@ import {
   cuaActivityFromServerEvent,
   frameStreamRetryDelay,
   nativePiPInitialBounds,
+  observationKey,
 } from "./cuaActivityWindows";
 
 function activity(overrides: Partial<ActivitySession> = {}): ActivitySession {
@@ -62,5 +63,13 @@ describe("CUA native picture-in-picture", () => {
     expect(activityControlMethod("takeover")).toBe("activity/takeover");
     expect(activityControlMethod("release")).toBe("activity/release");
     expect(activityControlMethod("stop")).toBe("activity/stop");
+  });
+
+  it("keys an observation by session and exact native window", () => {
+    expect(observationKey(activity({
+      target: "com.apple.TextEdit",
+      process_id: 42,
+      window_id: 99,
+    }))).toBe("thread-1:com.apple.TextEdit:42:99");
   });
 });
