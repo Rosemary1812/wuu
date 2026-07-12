@@ -85,6 +85,8 @@ func (r *Registry) Start(options StartOptions) (Session, Lease, error) {
 		Workdir:    options.Workdir,
 		PluginID:   strings.TrimSpace(options.PluginID),
 		Target:     strings.TrimSpace(options.Target),
+		ProcessID:  options.ProcessID,
+		WindowID:   options.WindowID,
 		State:      StateStarting,
 		Controller: ControllerAgent,
 		Preview:    strings.TrimSpace(options.Preview),
@@ -185,6 +187,8 @@ func (r *Registry) Acquire(options StartOptions) (Session, Lease, error) {
 		Workdir:    options.Workdir,
 		PluginID:   options.PluginID,
 		Target:     strings.TrimSpace(options.Target),
+		ProcessID:  options.ProcessID,
+		WindowID:   options.WindowID,
 		State:      StateStarting,
 		Controller: ControllerAgent,
 		Preview:    strings.TrimSpace(options.Preview),
@@ -248,6 +252,12 @@ func (r *Registry) Update(threadID, activityID string, options UpdateOptions) (S
 			return Session{}, ErrTargetBusy
 		}
 		entry.session.Target = target
+	}
+	if options.ProcessID != 0 {
+		entry.session.ProcessID = options.ProcessID
+	}
+	if options.WindowID != 0 {
+		entry.session.WindowID = options.WindowID
 	}
 	if options.Preview != "" {
 		entry.session.Preview = strings.TrimSpace(options.Preview)

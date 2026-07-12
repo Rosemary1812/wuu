@@ -31,6 +31,7 @@ public final class MacComputerBackend: ComputerBackend {
     private var visualRevisions: [pid_t: UInt64] = [:]
     private var lastScreenshotData: [pid_t: Data] = [:]
     private var lastCaptureGeometry: [pid_t: CaptureGeometry] = [:]
+    private var lastWindowIDs: [pid_t: CGWindowID] = [:]
     private var foregroundCaptureProcessIDs = Set<pid_t>()
     private var concealedWindowOrigins: [pid_t: [CGPoint]] = [:]
 
@@ -128,6 +129,9 @@ public final class MacComputerBackend: ComputerBackend {
             "mechanism": mechanism,
             "foreground_changed": frontmostBefore != frontmostAfter,
         ]
+        if let windowID = lastWindowIDs[app.processIdentifier] {
+            structured["window_id"] = Int(windowID)
+        }
         if let interaction = intendedInteraction {
             structured["interaction"] = interaction
         }
@@ -428,6 +432,8 @@ public final class MacComputerBackend: ComputerBackend {
                 lastScreenshotData[app.processIdentifier] = capture.data
             }
             lastCaptureGeometry[app.processIdentifier] = capture.geometry
+            lastWindowIDs[app.processIdentifier] = capture.windowID
+            structured["window_id"] = Int(capture.windowID)
             structured["screenshot"] = [
                 "width": capture.geometry.imageWidth,
                 "height": capture.geometry.imageHeight,

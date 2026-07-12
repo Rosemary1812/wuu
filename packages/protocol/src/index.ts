@@ -382,6 +382,8 @@ export type ActivitySession = {
   workdir: string;
   plugin_id?: string;
   target?: string;
+  process_id?: number;
+  window_id?: number;
   state: "starting" | "active" | "background_controlled" | "foreground_controlled" | "user_controlled" | "waiting_confirmation" | "stopped" | "error";
   controller: "agent" | "user" | "none";
   preview?: string;

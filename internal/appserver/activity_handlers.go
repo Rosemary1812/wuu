@@ -127,6 +127,8 @@ func activitySessionFromRuntime(session activity.Session) ActivitySession {
 		Workdir:     session.Workdir,
 		PluginID:    session.PluginID,
 		Target:      session.Target,
+		ProcessID:   session.ProcessID,
+		WindowID:    session.WindowID,
 		State:       string(session.State),
 		Controller:  string(session.Controller),
 		Preview:     session.Preview,

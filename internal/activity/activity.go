@@ -51,6 +51,8 @@ type Session struct {
 	Workdir     string       `json:"workdir"`
 	PluginID    string       `json:"plugin_id,omitempty"`
 	Target      string       `json:"target,omitempty"`
+	ProcessID   int          `json:"process_id,omitempty"`
+	WindowID    uint32       `json:"window_id,omitempty"`
 	State       State        `json:"state"`
 	Controller  Controller   `json:"controller"`
 	Preview     string       `json:"preview,omitempty"`
@@ -77,18 +79,22 @@ type Lease struct {
 }
 
 type StartOptions struct {
-	ID       string
-	Kind     Kind
-	ThreadID string
-	Workdir  string
-	PluginID string
-	Target   string
-	Preview  string
+	ID        string
+	Kind      Kind
+	ThreadID  string
+	Workdir   string
+	PluginID  string
+	Target    string
+	ProcessID int
+	WindowID  uint32
+	Preview   string
 }
 
 type UpdateOptions struct {
 	State       State
 	Target      string
+	ProcessID   int
+	WindowID    uint32
 	Preview     string
 	Error       string
 	ClearError  bool

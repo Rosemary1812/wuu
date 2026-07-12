@@ -127,6 +127,7 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		state = activity.StateWaitingConfirmation
 	}
 	update := activity.UpdateOptions{State: state}
+	update.ProcessID, update.WindowID = cuaActivityWindowIdentity(result)
 	if callErr == nil {
 		previewURI, previewErr := t.persistActivityPreview(session.ID, result)
 		if previewErr != nil {
@@ -158,6 +159,17 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		return toolresult.Result{}, nil
 	}
 	return result, callErr
+}
+
+func cuaActivityWindowIdentity(result toolresult.Result) (int, uint32) {
+	var structured struct {
+		ProcessID int    `json:"process_id"`
+		WindowID  uint32 `json:"window_id"`
+	}
+	if json.Unmarshal(result.StructuredContent, &structured) != nil {
+		return 0, 0
+	}
+	return structured.ProcessID, structured.WindowID
 }
 
 func cuaActionIsGlobal(arguments string) bool {

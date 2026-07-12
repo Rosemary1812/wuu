@@ -43,6 +43,7 @@ public struct CaptureGeometry: Sendable {
 struct WindowCapture {
     let data: Data
     let geometry: CaptureGeometry
+    let windowID: CGWindowID
 }
 
 private final class CaptureBox: @unchecked Sendable {
@@ -111,7 +112,8 @@ func captureWindowPNG(
                         imageWidth: image.width,
                         imageHeight: image.height,
                         visibleImageFrame: visiblePixelBounds(image)
-                    )
+                    ),
+                    windowID: window.windowID
                 )))
             } else {
                 box.set(.failure(ComputerError.operationFailed("window screenshot produced no image")))
@@ -175,7 +177,8 @@ func captureForegroundWindowPNG(processID: pid_t) throws -> WindowCapture {
             imageWidth: captured.image.width,
             imageHeight: captured.image.height,
             visibleImageFrame: visiblePixelBounds(captured.image)
-        )
+        ),
+        windowID: window.id
     )
 }
 
@@ -237,6 +240,7 @@ private func captureSystemWindowPNG(_ windowID: CGWindowID, frame: CGRect, timeo
             windowFrame: frame,
             imageWidth: image.pixelsWide,
             imageHeight: image.pixelsHigh
-        )
+        ),
+        windowID: windowID
     )
 }

@@ -314,6 +314,8 @@ type ActivitySession struct {
 	Workdir     string                `json:"workdir"`
 	PluginID    string                `json:"plugin_id,omitempty"`
 	Target      string                `json:"target,omitempty"`
+	ProcessID   int                   `json:"process_id,omitempty"`
+	WindowID    uint32                `json:"window_id,omitempty"`
 	State       string                `json:"state"`
 	Controller  string                `json:"controller"`
 	Preview     string                `json:"preview,omitempty"`
