@@ -483,7 +483,6 @@ function WorkspaceToolPicker({
           </span>
           <span className="workspace-tool-menu-copy">
             <strong>{item.title}</strong>
-            <span>{item.subtitle}</span>
           </span>
         </button>
       ))}
