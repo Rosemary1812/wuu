@@ -546,6 +546,8 @@ private final class WindowGeometryMonitor: @unchecked Sendable {
 
     private func markDirty() { lock.withLock { dirty = true } }
 
+    func rebind(nearestTo frame: CGRect) { bindWindow(nearestTo: frame) }
+
     private func bindWindow(nearestTo frame: CGRect) {
         guard let observer else { return }
         let refcon = Unmanaged.passUnretained(self).toOpaque()
@@ -734,15 +736,54 @@ private func streamConfiguration(for window: SCWindow) -> SCStreamConfiguration 
     return configuration
 }
 
+private func pipDebugLog(_ message: String) {
+    FileHandle.standardError.write(Data("[pip] \(message)\n".utf8))
+}
+
+// Guards a one-shot resume so the capture-start completion handler and its
+// timeout can race without ever resuming the continuation twice.
+private final class CaptureStartGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var settled = false
+    func settle(_ body: () -> Void) {
+        lock.lock(); defer { lock.unlock() }
+        if settled { return }
+        settled = true
+        body()
+    }
+}
+
 @available(macOS 14.0, *)
-private func startWindowStream(window: SCWindow, output: NativePiPStreamOutput) async throws -> SCStream {
+private func startWindowStream(window: SCWindow, output: NativePiPStreamOutput, timeout: TimeInterval) async throws -> SCStream {
     let stream = SCStream(
         filter: SCContentFilter(desktopIndependentWindow: window),
         configuration: streamConfiguration(for: window),
         delegate: output
     )
     try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: DispatchQueue(label: "com.blueberrycongee.wuu.cua.native-pip"))
-    try await stream.startCapture()
+    // ScreenCaptureKit can report a startup failure through the delegate's
+    // didStopWithError instead of resuming startCapture's completion handler,
+    // which leaks the async continuation and suspends the caller forever. Drive
+    // the completion handler directly and race it against a timeout so a stalled
+    // start surfaces as a thrown error the supervision loop can retry.
+    let gate = CaptureStartGate()
+    let started: Bool = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+        stream.startCapture { error in
+            gate.settle { continuation.resume(returning: error == nil) }
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+            gate.settle { continuation.resume(returning: false) }
+        }
+    }
+    guard started else {
+        // A merely-slow start can still complete after the timeout fires, so
+        // stop the stream — fire-and-forget via the completion handler so we
+        // never re-hang on a genuinely stuck one — rather than leaking a stream
+        // that keeps capturing with no output attached.
+        try? stream.removeStreamOutput(output, type: .screen)
+        stream.stopCapture { _ in }
+        throw ComputerError.operationFailed("capture failed to start")
+    }
     return stream
 }
 
@@ -789,33 +830,77 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
         }
     }
 
-    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-    guard var window = configuration.windowID.flatMap({ requested in content.windows.first(where: { $0.windowID == requested }) })
-        ?? preferredStreamWindow(in: content, processID: app.processIdentifier) else {
-        throw ComputerError.operationFailed("no capturable window found")
-    }
-    let geometryMonitor = WindowGeometryMonitor(processID: app.processIdentifier, windowFrame: window.frame)
-    var output = NativePiPStreamOutput(controller: controller, writer: writer)
-    var stream = try await startWindowStream(window: window, output: output)
-    var streamStartedAt = ProcessInfo.processInfo.systemUptime
-    var lastVerifiedCaptureAt = streamStartedAt
-    var consecutiveStreamFailures = 0
-    var lastHealthyOutput: ObjectIdentifier?
+    let geometryMonitor = WindowGeometryMonitor(processID: app.processIdentifier, windowFrame: .zero)
+    let captureStartTimeout: TimeInterval = 3
     let startupTimeout: TimeInterval = 5
     let callbackSilenceTimeout: TimeInterval = 3
     let unavailableStatusTimeout: TimeInterval = 3
 
+    var stream: SCStream?
+    var output: NativePiPStreamOutput?
+    var trackedWindowID: CGWindowID?
+    var trackedFrame: CGRect = .zero
+    var streamStartedAt = ProcessInfo.processInfo.systemUptime
+    var lastVerifiedCaptureAt = streamStartedAt
+    var establishFailures = 0
+    var lastHealthyOutput: ObjectIdentifier?
     var lastSafetyRefresh = Date.distantPast
+
     while !app.isTerminated && processIsAlive(configuration.parentProcessID) {
+        // Establish (or re-establish) the capture stream whenever we do not have
+        // a live one. Failures are non-fatal: the frosted placeholder stays up
+        // and we back off and retry, matching how the reference implementation
+        // keeps a placeholder when a capture stream stops with an error.
+        if stream == nil || output?.isStopped() == true {
+            if let existing = stream, let existingOutput = output {
+                try? existing.removeStreamOutput(existingOutput, type: .screen)
+                try? await existing.stopCapture()
+            }
+            stream = nil
+            output = nil
+            if establishFailures > 0 {
+                if ProcessInfo.processInfo.systemUptime - lastVerifiedCaptureAt >= callbackSilenceTimeout {
+                    controller.markCaptureUnavailable()
+                }
+                try await Task.sleep(for: .milliseconds(250 * (1 << min(5, establishFailures))))
+            }
+            guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
+                  let target = configuration.windowID.flatMap({ requested in content.windows.first(where: { $0.windowID == requested }) })
+                    ?? preferredStreamWindow(in: content, processID: app.processIdentifier) else {
+                establishFailures += 1
+                continue
+            }
+            pipDebugLog("resolve window id=\(target.windowID) frame=\(target.frame) title=\(target.title ?? "-")")
+            let next = NativePiPStreamOutput(controller: controller, writer: writer)
+            do {
+                stream = try await startWindowStream(window: target, output: next, timeout: captureStartTimeout)
+                output = next
+                trackedWindowID = target.windowID
+                trackedFrame = target.frame
+                geometryMonitor.rebind(nearestTo: target.frame)
+                streamStartedAt = ProcessInfo.processInfo.systemUptime
+                // Do NOT reset establishFailures here. A stream that starts but
+                // never delivers a displayable frame (blank/suspended/DRM window)
+                // must let the backoff escalate; the counter resets only when a
+                // real frame arrives (freshness.hasDisplayedFrame below).
+                pipDebugLog("capture started id=\(target.windowID)")
+            } catch {
+                establishFailures += 1
+                pipDebugLog("capture start failed attempt=\(establishFailures)")
+            }
+            continue
+        }
+
+        guard let activeStream = stream, let activeOutput = output else { continue }
         try await Task.sleep(for: .milliseconds(100))
         let now = ProcessInfo.processInfo.systemUptime
-        let freshness = output.freshnessSnapshot()
+        let freshness = activeOutput.freshnessSnapshot()
         if let healthyAt = freshness.lastHealthyCallbackUptime {
             lastVerifiedCaptureAt = max(lastVerifiedCaptureAt, healthyAt)
         }
-        let outputID = ObjectIdentifier(output)
+        let outputID = ObjectIdentifier(activeOutput)
         if freshness.hasDisplayedFrame, lastHealthyOutput != outputID {
-            consecutiveStreamFailures = 0
+            establishFailures = 0
             lastHealthyOutput = outputID
         }
         let recoveryRequired = freshness.requiresRecovery(
@@ -825,49 +910,35 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
             callbackSilenceTimeout: callbackSilenceTimeout,
             unavailableStatusTimeout: unavailableStatusTimeout
         )
-        if output.isStopped() || recoveryRequired {
-            consecutiveStreamFailures += 1
-            try? stream.removeStreamOutput(output, type: .screen)
-            try? await stream.stopCapture()
-            if ProcessInfo.processInfo.systemUptime - lastVerifiedCaptureAt >= callbackSilenceTimeout {
+        if activeOutput.isStopped() || recoveryRequired {
+            try? activeStream.removeStreamOutput(activeOutput, type: .screen)
+            try? await activeStream.stopCapture()
+            if now - lastVerifiedCaptureAt >= callbackSilenceTimeout {
                 controller.markCaptureUnavailable()
             }
-            if !controller.hasShownContent, consecutiveStreamFailures >= 4 {
-                throw ComputerError.operationFailed("native window capture repeatedly stopped")
-            }
-            let retryDelay = 250 * (1 << min(3, consecutiveStreamFailures))
-            try await Task.sleep(for: .milliseconds(retryDelay))
-            if let refreshed = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
-               let currentWindow = refreshed.windows.first(where: { $0.windowID == window.windowID }) {
-                window = currentWindow
-            }
-            let next = NativePiPStreamOutput(controller: controller, writer: writer)
-            do {
-                stream = try await startWindowStream(window: window, output: next)
-                output = next
-                streamStartedAt = ProcessInfo.processInfo.systemUptime
-            } catch {
-                if !controller.hasShownContent, consecutiveStreamFailures >= 3 { throw error }
-            }
+            establishFailures += 1
+            stream = nil
+            output = nil
             continue
         }
-        if !freshness.hasDisplayedFrame,
-           now - lastVerifiedCaptureAt >= callbackSilenceTimeout {
+        if !freshness.hasDisplayedFrame, now - lastVerifiedCaptureAt >= callbackSilenceTimeout {
             controller.markCaptureUnavailable()
         }
         let safetyRefreshDue = Date().timeIntervalSince(lastSafetyRefresh) >= 5
         guard geometryMonitor.takeDirty() || safetyRefreshDue else { continue }
         lastSafetyRefresh = Date()
         guard let refreshed = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
-              let nextWindow = refreshed.windows.first(where: { $0.windowID == window.windowID }) else { continue }
-        let changedFrame = windowFrameDistance(nextWindow.frame, window.frame) > 1
-        guard changedFrame else { continue }
+              let nextWindow = refreshed.windows.first(where: { $0.windowID == (trackedWindowID ?? 0) }) else { continue }
+        guard windowFrameDistance(nextWindow.frame, trackedFrame) > 1 else { continue }
         do {
-            try await stream.updateConfiguration(streamConfiguration(for: nextWindow))
-            window = nextWindow
-        } catch { output.lockFailure(error) }
+            try await activeStream.updateConfiguration(streamConfiguration(for: nextWindow))
+            trackedFrame = nextWindow.frame
+        } catch { activeOutput.lockFailure(error) }
     }
-    try? await stream.stopCapture()
+    if let stream, let output {
+        try? stream.removeStreamOutput(output, type: .screen)
+        try? await stream.stopCapture()
+    }
 }
 
 private func processIsAlive(_ processID: pid_t?) -> Bool {
