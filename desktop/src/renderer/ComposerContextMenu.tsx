@@ -1,11 +1,21 @@
 import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-// Right-click context menu for the composer textarea. Mirrors the visual
-// language of WorkspaceTreeContextMenu (file-tree row menu): flat surface,
-// soft shadow, no native chrome. Positioning lives in viewport coordinates
-// so the menu stays anchored to the cursor even when the textarea itself
-// is scrolled inside a tall composer shell.
+// Right-click edit menu for the composer textarea. Shares the visual
+// language of ThreadContextMenu (the conversation row's right-click
+// panel): design-token surface, menu-enter animation, 32px flex items.
+// Positioning lives in viewport coordinates so the menu stays anchored
+// to the cursor even when the textarea itself is scrolled inside a tall
+// composer shell.
+//
+// Placement: the menu prefers to grow down-right from the cursor like a
+// native context menu. When a side would clip against the viewport it
+// flips to the opposite side of the cursor (so the cursor never lands
+// on top of a menu item — the composer sits at the bottom of the
+// window, so the flipped-up case is the common one). Clamping to the
+// viewport is the fallback for windows too small to fit the menu on
+// either side. data-origin carries the anchored corner to CSS so the
+// enter animation scales out of the cursor.
 //
 // Dismissal rules:
 //   - Left click outside the menu → close. Right click is intentionally
@@ -13,9 +23,59 @@ import { createPortal } from "react-dom";
 //     same gesture the textarea uses to reopen us, and dismissing on it
 //     would race with reopen. Same rule as WorkspaceTreeContextMenu.
 //   - Escape → close.
+//   - Any scroll, window resize, or the window losing focus → close.
+//     The menu is anchored to a cursor position, not an element; once
+//     the content under that position moves there is nothing meaningful
+//     to stay anchored to.
 //   - Listeners are attached via setTimeout(0) so the burst of pointer
 //     events the right-click itself dispatches doesn't immediately
 //     dismiss the menu we just opened.
+
+const VIEWPORT_MARGIN = 8;
+
+type MenuOrigin = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
+type MenuLayout = {
+  left: number;
+  top: number;
+  origin: MenuOrigin;
+};
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), Math.max(min, max));
+}
+
+export function placeContextMenu(
+  x: number,
+  y: number,
+  menuWidth: number,
+  menuHeight: number,
+  viewportWidth: number,
+  viewportHeight: number
+): MenuLayout {
+  const fitsRight = x + menuWidth + VIEWPORT_MARGIN <= viewportWidth;
+  const fitsLeft = x - menuWidth >= VIEWPORT_MARGIN;
+  const fitsBelow = y + menuHeight + VIEWPORT_MARGIN <= viewportHeight;
+  const fitsAbove = y - menuHeight >= VIEWPORT_MARGIN;
+  // Flip only when the preferred side clips AND the opposite side has
+  // room; when neither fits, keep the preferred side and let the clamp
+  // pin the menu inside the viewport.
+  const growsRight = fitsRight || !fitsLeft;
+  const growsDown = fitsBelow || !fitsAbove;
+  return {
+    left: clamp(
+      growsRight ? x : x - menuWidth,
+      VIEWPORT_MARGIN,
+      viewportWidth - menuWidth - VIEWPORT_MARGIN
+    ),
+    top: clamp(
+      growsDown ? y : y - menuHeight,
+      VIEWPORT_MARGIN,
+      viewportHeight - menuHeight - VIEWPORT_MARGIN
+    ),
+    origin: `${growsDown ? "top" : "bottom"}-${growsRight ? "left" : "right"}`
+  };
+}
 
 export function ComposerContextMenu({
   textareaRef,
@@ -37,29 +97,30 @@ export function ComposerContextMenu({
   const ref = useRef<HTMLDivElement | null>(null);
   // The menu mounts at the cursor, but until React commits the first
   // paint its own size isn't known — measure on the layout effect that
-  // runs just before paint, clamp to viewport so the user never sees
-  // it spilling off-screen.
-  const [position, setPosition] = useState({ x, y });
+  // runs just before paint and place relative to the viewport, so the
+  // user never sees an unpositioned frame. The layout is recomputed
+  // unconditionally on every x/y change: the component stays mounted
+  // when a second right-click re-anchors it, so the placement must
+  // always be derived from the latest props, never from the mount-time
+  // coordinates. offsetWidth/offsetHeight are used instead of
+  // getBoundingClientRect because the enter animation's first frame
+  // applies a scale/translate transform that would skew the measurement.
+  const [layout, setLayout] = useState<MenuLayout | null>(null);
   useLayoutEffect(() => {
     const menuElement = ref.current;
     if (!menuElement) {
       return;
     }
-    const rect = menuElement.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const margin = 8;
-    const clampedX = Math.max(
-      margin,
-      Math.min(viewportWidth - rect.width - margin, x)
+    setLayout(
+      placeContextMenu(
+        x,
+        y,
+        menuElement.offsetWidth,
+        menuElement.offsetHeight,
+        window.innerWidth,
+        window.innerHeight
+      )
     );
-    const clampedY = Math.max(
-      margin,
-      Math.min(viewportHeight - rect.height - margin, y)
-    );
-    if (clampedX !== x || clampedY !== y) {
-      setPosition({ x: clampedX, y: clampedY });
-    }
   }, [x, y]);
 
   useEffect(() => {
@@ -81,6 +142,12 @@ export function ComposerContextMenu({
         onClose();
       }
     };
+    // The menu never scrolls internally (it is always placed fully
+    // visible via flip + clamp), so any scroll means the content under
+    // the cursor anchor moved — close unconditionally.
+    const handleScroll = () => {
+      onClose();
+    };
     let active = true;
     const id = window.setTimeout(() => {
       if (!active) {
@@ -88,12 +155,18 @@ export function ComposerContextMenu({
       }
       document.addEventListener("pointerdown", handlePointerDown);
       document.addEventListener("keydown", handleKeyDown);
+      document.addEventListener("scroll", handleScroll, true);
+      window.addEventListener("resize", onClose);
+      window.addEventListener("blur", onClose);
     }, 0);
     return () => {
       active = false;
       window.clearTimeout(id);
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("resize", onClose);
+      window.removeEventListener("blur", onClose);
     };
   }, [onClose]);
 
@@ -240,60 +313,48 @@ export function ComposerContextMenu({
   const canMutate = hasSelection && !disabled;
   const canCopy = hasSelection;
 
+  const items: Array<{ label: string; run: () => void; itemDisabled: boolean }> = [
+    { label: "剪切", run: runCut, itemDisabled: !canMutate },
+    { label: "复制", run: runCopy, itemDisabled: !canCopy },
+    {
+      label: "粘贴",
+      run: () => {
+        void runPaste();
+      },
+      itemDisabled: disabled
+    },
+    { label: "全选", run: runSelectAll, itemDisabled: false },
+    { label: "删除", run: runDelete, itemDisabled: !canMutate }
+  ];
+
   return createPortal(
     <div
       ref={ref}
-      className="composer-context-menu"
+      className="composer-textarea-context-menu"
       role="menu"
-      style={{ left: position.x, top: position.y }}
+      data-origin={layout?.origin ?? "top-left"}
+      style={
+        layout
+          ? { left: layout.left, top: layout.top }
+          : // First render: not yet measured. Park at the cursor but
+            // invisible — the layout effect above replaces this before
+            // the browser ever paints.
+            { left: x, top: y, visibility: "hidden" }
+      }
       onContextMenu={(event) => event.preventDefault()}
     >
-      <button
-        type="button"
-        role="menuitem"
-        className="composer-context-menu-item"
-        onClick={runCut}
-        disabled={!canMutate}
-      >
-        剪切
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        className="composer-context-menu-item"
-        onClick={runCopy}
-        disabled={!canCopy}
-      >
-        复制
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        className="composer-context-menu-item"
-        onClick={() => {
-          void runPaste();
-        }}
-        disabled={disabled}
-      >
-        粘贴
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        className="composer-context-menu-item"
-        onClick={runSelectAll}
-      >
-        全选
-      </button>
-      <button
-        type="button"
-        role="menuitem"
-        className="composer-context-menu-item"
-        onClick={runDelete}
-        disabled={!canMutate}
-      >
-        删除
-      </button>
+      {items.map((item) => (
+        <button
+          key={item.label}
+          type="button"
+          role="menuitem"
+          className="composer-textarea-context-menu-item"
+          onClick={item.run}
+          disabled={item.itemDisabled}
+        >
+          <span>{item.label}</span>
+        </button>
+      ))}
     </div>,
     document.body
   );

@@ -1780,64 +1780,90 @@
   margin: 6px 0;
 }
 
-/* Right-click context menu for the composer textarea. The component
-   (ComposerContextMenu in ComposerContextMenu.tsx) renders into
-   document.body via createPortal so position: fixed is anchored to
-   the viewport even though composer-shell has backdrop-filter and
-   transform — both of which would otherwise break fixed positioning.
-   The visual language mirrors the file-tree context menu (flat
-   surface, soft shadow, no native chrome) so the two right-click
-   affordances feel like one system. z-index 1000 matches the file
-   tree's menu so a composer menu and a file-tree menu can never
-   accidentally sit on top of each other mid-transition. */
-.composer-context-menu {
+/* Right-click edit menu for the composer textarea (ComposerContextMenu
+   in ComposerContextMenu.tsx). Renders into document.body via
+   createPortal so position: fixed is anchored to the viewport even
+   though composer-shell has backdrop-filter and transform — both of
+   which would otherwise break fixed positioning. Class is namespaced
+   -textarea- because .composer-context-menu is already the runtime
+   access/branch menu shell above.
+
+   The visual language follows .thread-row-context-menu (the
+   conversation row's right-click panel) — token surface, menu-enter
+   animation — but a step more compact: this menu is five short verbs,
+   not a list of titled rows. It is always fully visible (the component
+   flips above the cursor when the bottom of the viewport is close, and
+   clamps as a last resort) and therefore never scrolls internally.
+   data-origin names the corner anchored to the cursor so the enter
+   animation scales out of it. */
+.composer-textarea-context-menu {
   position: fixed;
-  z-index: 1000;
-  min-width: 132px;
+  z-index: 2147482000;
+  min-width: 116px;
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-radius);
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
   padding: 4px;
-  background: #fff;
-  border: 1px solid var(--ink-overlay-12);
-  border-radius: var(--radius-sm);
-  box-shadow:
-    0 12px 32px var(--ink-overlay-8),
-    0 2px 6px var(--ink-overlay-6);
-  font-family: var(--font-ui, var(--font-body));
-  animation: composer-context-menu-in 0.1s ease-out;
+  backdrop-filter: blur(16px);
+  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
 }
 
-.composer-context-menu-item {
-  display: block;
+.composer-textarea-context-menu[data-origin="top-left"] {
+  transform-origin: top left;
+  --menu-enter-x: -4px;
+  --menu-enter-y: -4px;
+}
+
+.composer-textarea-context-menu[data-origin="top-right"] {
+  transform-origin: top right;
+  --menu-enter-x: 4px;
+  --menu-enter-y: -4px;
+}
+
+.composer-textarea-context-menu[data-origin="bottom-left"] {
+  transform-origin: bottom left;
+  --menu-enter-x: -4px;
+  --menu-enter-y: 4px;
+}
+
+.composer-textarea-context-menu[data-origin="bottom-right"] {
+  transform-origin: bottom right;
+  --menu-enter-x: 4px;
+  --menu-enter-y: 4px;
+}
+
+.composer-textarea-context-menu-item {
+  display: flex;
   width: 100%;
-  text-align: left;
-  padding: 7px 12px;
-  font-family: inherit;
+  height: 26px;
+  align-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
-  color: var(--ink);
-  background: transparent;
-  border: 0;
-  border-radius: 4px;
-  cursor: default;
+  padding: 0 10px;
+  text-align: left;
+  cursor: pointer;
 }
 
-.composer-context-menu-item:hover:not(:disabled),
-.composer-context-menu-item:focus-visible:not(:disabled) {
-  background: var(--ink-overlay-4);
+.composer-textarea-context-menu-item:hover:not(:disabled),
+.composer-textarea-context-menu-item:focus-visible:not(:disabled) {
+  background: var(--menu-hover);
   outline: none;
 }
 
-.composer-context-menu-item:disabled {
-  color: var(--ink-muted, var(--ink-overlay-40));
-  cursor: not-allowed;
+.composer-textarea-context-menu-item:disabled {
+  color: var(--ink-muted);
+  cursor: default;
 }
 
-@keyframes composer-context-menu-in {
-  from {
-    opacity: 0;
-    transform: translateY(-2px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+.composer-textarea-context-menu-item span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
