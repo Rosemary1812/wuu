@@ -1371,14 +1371,15 @@
   left: 0;
   z-index: 35;
   display: grid;
-  width: min(560px, 100%);
+  grid-template-rows: minmax(0, 1fr) auto;
+  width: min(520px, 100%);
   max-height: min(360px, calc(100vh - 190px));
   overflow: hidden;
   border: 1px solid var(--ink-overlay-12);
   border-radius: var(--radius-lg);
   background: var(--composer-slash-menu-bg);
   box-shadow: var(--composer-slash-menu-shadow);
-  padding: 6px;
+  padding: 5px;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   transform-origin: bottom center;
@@ -1394,21 +1395,20 @@
 .slash-command-list {
   display: grid;
   gap: 1px;
-  max-height: 320px;
   overflow-y: auto;
   padding-right: 2px;
 }
 
 .slash-command-item {
   display: grid;
-  min-height: 46px;
-  grid-template-columns: 22px minmax(0, 1fr);
+  min-height: 32px;
+  grid-template-columns: var(--icon-size) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink);
-  padding: 0 10px;
+  padding: 0 9px 0 8px;
   text-align: left;
 }
 
@@ -1422,55 +1422,122 @@
 }
 
 .slash-command-item:disabled {
-  opacity: 0.48;
+  opacity: 0.45;
 }
 
 .slash-command-icon {
   display: grid;
-  width: 16px;
-  height: 16px;
+  width: var(--icon-size);
+  height: var(--icon-size);
   place-items: center;
   color: var(--ink-tertiary);
 }
 
-.slash-command-copy {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-  line-height: 17px;
+.slash-command-icon .icon {
+  width: 14px;
+  height: 14px;
 }
 
-.slash-command-copy strong {
+.slash-command-item:hover:not(:disabled) .slash-command-icon,
+.slash-command-item.selected:not(:disabled) .slash-command-icon {
+  color: var(--ink-muted);
+}
+
+.slash-command-label {
+  display: flex;
   min-width: 0;
+  align-items: baseline;
+  gap: 9px;
   overflow: hidden;
-  color: var(--composer-slash-command-title);
-  font-size: var(--font-content);
-  font-weight: var(--weight-medium);
-  line-height: 18px;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.slash-command-copy small {
+.slash-command-name {
+  flex: none;
+  color: var(--composer-slash-command-title);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.01em;
+}
+
+.slash-command-title {
   min-width: 0;
   overflow: hidden;
   color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: 400;
-  line-height: 17px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.slash-command-name {
-  display: none;
+.slash-command-meta {
+  color: var(--ink-tertiary);
+  font-size: var(--font-xs);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.slash-command-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 5px;
+  border-top: 1px solid var(--hairline);
+  padding: 7px 5px 3px;
+}
+
+.slash-command-footer-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-command-footer-args {
+  margin-right: 8px;
+  color: var(--ink-tertiary);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: var(--font-xs);
+}
+
+.slash-command-footer-keys {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-tertiary);
+  font-size: var(--font-xs);
+  line-height: 16px;
+}
+
+.slash-command-footer-keys span + kbd {
+  margin-left: 6px;
+}
+
+.slash-command-footer-keys kbd {
+  display: inline-grid;
+  min-width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 1px solid var(--ink-overlay-12);
+  border-radius: 4px;
+  padding: 0 4px;
+  color: var(--ink-tertiary);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1;
 }
 
 .slash-command-empty {
   color: var(--ink-muted);
-  font-size: var(--font-content);
+  font-size: var(--font-ui);
   line-height: 18px;
-  padding: 16px 12px 18px;
+  padding: 14px 12px 15px;
   text-align: center;
 }
 

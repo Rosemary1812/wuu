@@ -6,25 +6,30 @@ import {
   ChevronRight,
   ChevronUp,
   CircleHelp,
+  Cpu,
   FileText,
   FlaskConical,
+  FoldVertical,
   Folder,
   FolderOpen,
   FolderX,
+  Gauge,
   GitCommitHorizontal,
+  GitCompare,
   GitPullRequest,
   Hammer,
-  Laptop,
+  LifeBuoy,
   MessageSquarePlus,
   Paperclip,
   PieChart,
+  Puzzle,
+  ScrollText,
   Search,
   Send,
   Settings,
   Slash,
   Square,
   Terminal,
-  Wrench,
   X,
   Zap
 } from "lucide-react";
@@ -749,39 +754,64 @@ export function Composer({
         {slashMenuOpen ? (
           <div className="slash-command-menu" id={slashMenuID} role="listbox" aria-label="斜杠命令">
             {visibleSlashCommands.length > 0 ? (
-              <div className="slash-command-list scrollbar-hidden">
-                {visibleSlashCommands.map((command, index) => {
-                  const selected = index === selectedSlashIndex;
-                  const optionID = `${slashMenuID}-${command.id}`;
-                  return (
-                    <button
-                      className={`slash-command-item${selected ? " selected" : ""}`}
-                      id={optionID}
-                      key={command.id}
-                      role="option"
-                      type="button"
-                      aria-selected={selected}
-                      disabled={Boolean(command.disabledReason)}
-                      onMouseEnter={() => {
-                        if (!command.disabledReason) {
-                          setSelectedSlashIndex(index);
-                        }
-                      }}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => applySlashCommand(command, slashDraft)}
-                    >
-                      <span className="slash-command-icon" aria-hidden="true">
-                        <SlashCommandIcon command={command} />
-                      </span>
-                      <span className="slash-command-copy">
-                        <strong>{command.title}</strong>
-                        <small>{command.disabledReason ?? command.description}</small>
-                      </span>
-                      <span className="slash-command-name">/{command.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              <>
+                <div className="slash-command-list scrollbar-hidden">
+                  {visibleSlashCommands.map((command, index) => {
+                    const selected = index === selectedSlashIndex;
+                    const optionID = `${slashMenuID}-${command.id}`;
+                    return (
+                      <button
+                        className={`slash-command-item${selected ? " selected" : ""}`}
+                        id={optionID}
+                        key={command.id}
+                        role="option"
+                        type="button"
+                        aria-selected={selected}
+                        disabled={Boolean(command.disabledReason)}
+                        title={command.disabledReason ?? command.description}
+                        onMouseEnter={() => {
+                          if (!command.disabledReason) {
+                            setSelectedSlashIndex(index);
+                          }
+                        }}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => applySlashCommand(command, slashDraft)}
+                      >
+                        <span className="slash-command-icon" aria-hidden="true">
+                          <SlashCommandIcon command={command} />
+                        </span>
+                        <span className="slash-command-label">
+                          <span className="slash-command-name">/{command.name}</span>
+                          <span className="slash-command-title">
+                            {command.kind === "skill" ? command.description : command.title}
+                          </span>
+                        </span>
+                        {command.disabledReason ? (
+                          <span className="slash-command-meta">{command.disabledReason}</span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="slash-command-footer" aria-hidden="true">
+                  <span className="slash-command-footer-detail">
+                    {selectedSlashCommand?.argumentHint ? (
+                      <code className="slash-command-footer-args">
+                        /{selectedSlashCommand.name} {selectedSlashCommand.argumentHint}
+                      </code>
+                    ) : null}
+                    {selectedSlashCommand
+                      ? selectedSlashCommand.disabledReason ?? selectedSlashCommand.description
+                      : ""}
+                  </span>
+                  <span className="slash-command-footer-keys">
+                    <kbd>↑↓</kbd>
+                    <span>选择</span>
+                    <kbd>↵</kbd>
+                    <span>运行</span>
+                  </span>
+                </div>
+              </>
             ) : (
               <div className="slash-command-empty">没有匹配 “/{slashQuery}” 的命令</div>
             )}
@@ -1175,13 +1205,16 @@ function CollapsedComposerPromptCard({
 
 function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.Element {
   switch (command.action ?? command.id) {
-    case "open-review":
     case "review":
       return <Search className="icon" />;
+    case "open-review":
+      return <GitCompare className="icon" />;
     case "debug":
       return <Bug className="icon" />;
     case "fix":
       return <Hammer className="icon" />;
+    case "helpme":
+      return <LifeBuoy className="icon" />;
     case "test":
       return <FlaskConical className="icon" />;
     case "explain":
@@ -1191,7 +1224,7 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
     case "pr":
       return <GitPullRequest className="icon" />;
     case "open-skills":
-      return <Wrench className="icon" />;
+      return <Puzzle className="icon" />;
     case "new-thread":
       return <MessageSquarePlus className="icon" />;
     case "open-terminal":
@@ -1203,19 +1236,23 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
     case "no-project":
       return <FolderX className="icon" />;
     case "context":
-    case "compact":
       return <PieChart className="icon" />;
+    case "compact":
+      return <FoldVertical className="icon" />;
+    case "instructions":
+      return <ScrollText className="icon" />;
     case "open-memory":
       return <Brain className="icon" />;
     case "fast":
       return <Zap className="icon" />;
     case "model":
+      return <Cpu className="icon" />;
     case "effort":
-      return <Laptop className="icon" />;
+      return <Gauge className="icon" />;
     case "settings":
       return <Settings className="icon" />;
     default:
-      return <Wrench className="icon" />;
+      return <Puzzle className="icon" />;
   }
 }
 
