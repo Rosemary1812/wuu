@@ -287,7 +287,12 @@ export class CUAObservationCoordinator {
 }
 
 export function observationKey(activity: ActivitySession): string {
-  return [activity.thread_id, activity.target?.trim(), activity.process_id ?? 0, activity.window_id ?? 0].join(":");
+  // Key the PiP lifecycle by session + target only. Window identity is unknown
+  // (0) on the `started` event and resolved on the post-observe `updated` event,
+  // so including it here would change the key mid-call and tear down the just-
+  // shown placeholder before it can reach its first live frame. The exact window
+  // identity is still passed to the helper at spawn time as a hint.
+  return [activity.thread_id, activity.target?.trim()].join(":");
 }
 
 export function cuaActivityFromServerEvent(event: ServerEvent): ActivitySession | undefined {

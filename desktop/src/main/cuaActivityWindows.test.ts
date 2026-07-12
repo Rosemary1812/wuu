@@ -65,11 +65,13 @@ describe("CUA native picture-in-picture", () => {
     expect(activityControlMethod("stop")).toBe("activity/stop");
   });
 
-  it("keys an observation by session and exact native window", () => {
-    expect(observationKey(activity({
-      target: "com.apple.TextEdit",
-      process_id: 42,
-      window_id: 99,
-    }))).toBe("thread-1:com.apple.TextEdit:42:99");
+  it("keys an observation by session and target, ignoring window identity", () => {
+    expect(observationKey(activity({ target: "com.apple.TextEdit" })))
+      .toBe("thread-1:com.apple.TextEdit");
+    // Window identity is unknown on `started` and resolved on `updated`; a
+    // refinement must not change the key, or the placeholder would be torn down
+    // and restarted mid-call before it can reach its first live frame.
+    expect(observationKey(activity({ target: "com.apple.TextEdit", process_id: 0, window_id: 0 })))
+      .toBe(observationKey(activity({ target: "com.apple.TextEdit", process_id: 42, window_id: 99 })));
   });
 });
