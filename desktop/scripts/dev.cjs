@@ -1,5 +1,6 @@
 const { spawn, spawnSync } = require("node:child_process");
-const { join, resolve } = require("node:path");
+const { readFileSync } = require("node:fs");
+const { dirname, join, resolve } = require("node:path");
 const {
   helperPathForApp,
   prepareDevElectronApp,
@@ -8,7 +9,9 @@ const { ensureDevSigningIdentity } = require("./dev-signing.cjs");
 
 const desktopRoot = resolve(__dirname, "..");
 const buildHelper = join(__dirname, "build-cua-mac.cjs");
-const electronVite = join(desktopRoot, "node_modules", "electron-vite", "dist", "cli.mjs");
+const electronVitePackage = require.resolve("electron-vite/package.json", { paths: [desktopRoot] });
+const electronViteManifest = JSON.parse(readFileSync(electronVitePackage, "utf8"));
+const electronVite = join(dirname(electronVitePackage), electronViteManifest.bin["electron-vite"]);
 
 const devSigning = process.platform === "darwin" ? ensureDevSigningIdentity() : undefined;
 const build = spawnSync(process.execPath, [buildHelper], {
