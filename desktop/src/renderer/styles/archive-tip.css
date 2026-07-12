@@ -1,0 +1,156 @@
+/*
+ * Archive tip toast.
+ *
+ * Renders the floating "已归档 · 查看归档" notice shown by App.tsx after a
+ * session is archived. The container is a fixed-positioned pill anchored to
+ * the top of the viewport, centered horizontally, with a slide-down/fade-in
+ * entrance and an upward fade for the `.leaving` dismissal class managed by
+ * ArchiveTip.tsx. Keep it visually quiet — the toast must read as ephemeral
+ * feedback, not as a permanent banner over the shell.
+ */
+
+.archive-tip {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  z-index: 9999; /* above .sidebar (140) and SettingsShell (140), below image-preview (~2.1e9) */
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 48px);
+  padding: 10px 12px 10px 14px;
+  background: var(--paper, #ffffff);
+  color: var(--ink, #1c2024);
+  border: 1px solid var(--hairline, rgba(20, 24, 28, 0.1));
+  border-radius: var(--radius-md, 12px);
+  box-shadow: var(--shadow-pop, 0 14px 34px rgba(0, 0, 0, 0.18));
+  font-size: var(--font-ui, 13px);
+  line-height: 1.4;
+  transform: translate(-50%, -8px);
+  opacity: 0;
+  pointer-events: none;
+  animation: archive-tip-enter 220ms ease-out forwards;
+}
+
+/* `.leaving` is set ~400ms before onDismiss fires; let the
+   component stay interactive while it fades out. */
+.archive-tip.leaving {
+  pointer-events: auto;
+  animation: archive-tip-leave 200ms ease-in forwards;
+}
+
+.archive-tip-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--ink-soft, #5c6165);
+}
+
+.archive-tip-message {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink, #1c2024);
+}
+
+.archive-tip-message strong {
+  font-weight: var(--weight-medium, 500);
+  color: var(--ink-strong, #1c2024);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.archive-tip-action {
+  flex: 0 0 auto;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 4px 6px;
+  margin: -4px -2px;
+  font: inherit;
+  font-weight: var(--weight-medium, 500);
+  color: var(--info, #1a73e8);
+  cursor: pointer;
+  border-radius: var(--radius-sm, 8px);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.archive-tip-action:hover {
+  background: var(--ink-overlay-8, rgba(20, 24, 28, 0.08));
+  color: var(--info, #1a73e8);
+  text-decoration: underline;
+}
+
+.archive-tip-action:focus-visible {
+  outline: 2px solid var(--info, #1a73e8);
+  outline-offset: 2px;
+}
+
+.archive-tip-dismiss {
+  flex: 0 0 auto;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 4px;
+  margin: -4px -4px -4px 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-tertiary, #6d7378);
+  cursor: pointer;
+  border-radius: var(--radius-pill, 999px);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.archive-tip-dismiss:hover {
+  background: var(--ink-overlay-8, rgba(20, 24, 28, 0.08));
+  color: var(--ink, #1c2024);
+}
+
+.archive-tip-dismiss:focus-visible {
+  outline: 2px solid var(--info, #1a73e8);
+  outline-offset: 2px;
+}
+
+@keyframes archive-tip-enter {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes archive-tip-leave {
+  from {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .archive-tip,
+  .archive-tip.leaving {
+    animation: none;
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@media (max-width: 480px) {
+  .archive-tip {
+    top: 12px;
+    max-width: calc(100vw - 24px);
+  }
+}
