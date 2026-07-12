@@ -237,7 +237,7 @@ export function buildComposerSlashCommands({
       id: "new",
       name: "new",
       title: "新建对话",
-      description: "清空当前对话视图，保留所选项目",
+      description: "在当前工作区新建会话；已有草稿时直接继续编辑",
       tag: "会话",
       kind: "action",
       action: "new-thread",

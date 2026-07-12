@@ -4,13 +4,13 @@ import {
   activeSessionTab,
   cloneSessionTabDraft,
   createThreadSessionTab,
+  draftSessionTabForContext,
   ensureSessionTab,
   isThreadRunning,
   persistActiveSessionTabDraft,
   requireThread,
   runtimeContextKey,
   sameRuntimeContext,
-  shouldResetToNoProjectForNewThread,
   threadNeedsResumeOnReselect,
   threadSessionTabID,
   upsertThread,
@@ -38,7 +38,6 @@ export type SessionTabActionsDeps = {
     context: NonNullable<AppState["activeContext"]>,
   ) => SessionTab;
   selectThread: (threadID: string) => Promise<void>;
-  useNoProject: (fresh: boolean) => Promise<void>;
   
   poppingOutTabIDsRef: MutableSetRef;
   beginViewSwitch: (kind: ViewSwitchKind, targetID: string) => number;
@@ -52,7 +51,7 @@ export type SessionTabActions = {
   selectSessionTab: (tabID: string) => Promise<void>;
   closeSessionTab: (tabID: string) => Promise<void>;
   closeSessionTabs: (tabIDs: string[]) => Promise<void>;
-  startNewThread: (options?: { resetToNoProject?: boolean }) => Promise<void>;
+  startNewThread: () => Promise<void>;
   reorderSessionTabs: (activeID: string, overID: string) => void;
   popOutSessionTab: (tabID: string) => Promise<void>;
 };
@@ -453,27 +452,23 @@ export function createSessionTabActions(
     }
   }
 
-  async function startNewThread(
-    options: { resetToNoProject?: boolean } = {},
-  ): Promise<void> {
+  async function startNewThread(): Promise<void> {
     const currentState = deps.getAppState();
     if (!currentState.activeContext) {
+      return;
+    }
+    const existingDraft = draftSessionTabForContext(
+      currentState.sessionTabs,
+      currentState.activeContext,
+    );
+    if (existingDraft) {
+      await selectSessionTab(existingDraft.id);
       return;
     }
     deps.cancelViewSwitch();
     
     const outgoingDraft = deps.getPrimaryComposerDraft();
     deps.clearPrimaryComposerDraft();
-    if (
-      shouldResetToNoProjectForNewThread(
-        currentState.activeContext,
-        Boolean(currentState.thread || currentState.secondaryThread),
-        options.resetToNoProject ?? false,
-      )
-    ) {
-      await deps.useNoProject(true);
-      return;
-    }
     const nextTab =
       activeSessionTab(currentState)?.kind === "draft" &&
       !outgoingDraft.prompt.trim() &&

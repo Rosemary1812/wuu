@@ -2834,33 +2834,6 @@ function sameRuntimeContext(
   return left.cwd === right.cwd;
 }
 
-/**
- * Decides whether a "new thread" entry point should reset to a fresh
- * no-project context instead of inheriting whatever context is currently
- * active. The sidebar's "新对话" button and the composer's "/新建对话" slash
- * command both want a blank slate regardless of what project happens to be
- * open (`resetToNoProject`); the session-tab strip's "+" wants to keep
- * adding tabs to the project the user is already looking at.
- *
- * Independent of `resetToNoProject`, starting a new thread while already
- * sitting on an *active* no-project thread always gets a fresh scratch
- * directory — reusing the current one would silently continue writing into
- * an existing conversation's workspace.
- */
-function shouldResetToNoProjectForNewThread(
-  activeContext: Pick<RuntimeContext, "kind"> | undefined,
-  hasActiveThread: boolean,
-  resetToNoProject: boolean,
-): boolean {
-  if (!activeContext) {
-    return false;
-  }
-  if (resetToNoProject && activeContext.kind === "project") {
-    return true;
-  }
-  return activeContext.kind === "no_project" && hasActiveThread;
-}
-
 function threadMatchesActiveContext(
   thread: Thread,
   context: RuntimeContext | undefined,
@@ -3716,7 +3689,6 @@ export {
   serverEventShouldRefreshGit,
   serverEventTargetsActiveContext,
   serverEventTargetsGlobalThread,
-  shouldResetToNoProjectForNewThread,
   sessionTabDraftForThread,
   sessionTabDraftForThreadID,
   sessionTabForLoadedRuntime,

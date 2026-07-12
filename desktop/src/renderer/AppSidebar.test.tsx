@@ -280,13 +280,8 @@ describe("AppSidebar layout", () => {
     );
   });
 
-  // R1: this is the sidebar's own "新对话" entry (as opposed to a
-  // project row's hover "+" or the session-tab strip's "+"). App.tsx wires
-  // it to startNewThread({ resetToNoProject: true }) so it always lands on
-  // a fresh no-project draft, regardless of which project is active; this
-  // test just pins that the button fires the callback AppSidebar was given
-  // (the reset decision itself is unit-tested in AppState.test.ts via
-  // shouldResetToNoProjectForNewThread).
+  // The sidebar entry shares the same current-workspace new-session action
+  // as the session-tab strip. This test pins the sidebar click boundary.
   it("fires onStartNewThread when the primary-nav 新对话 button is clicked", () => {
     let started = 0;
     renderSidebar({ onStartNewThread: () => { started += 1; } });

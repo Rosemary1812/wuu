@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeContext } from "../shared/protocol";
 import {
   createDraftSessionTab,
+  createThreadSessionTab,
   emptyComposerDraft,
   initialState,
   type AppState,
@@ -12,6 +13,15 @@ import { createSessionTabActions } from "./SessionTabActions";
 
 function projectContext(id = "project-1"): RuntimeContext {
   return { kind: "project", project_id: id, cwd: `/tmp/${id}` };
+}
+
+function noProjectContext(): RuntimeContext {
+  return { kind: "no_project", cwd: "/tmp/scratch/default" };
+}
+
+function sessionTabPrompt(tabs: SessionTab[], id: string): string | undefined {
+  const tab = tabs.find((candidate) => candidate.id === id);
+  return tab?.kind === "draft" || tab?.kind === "thread" ? tab.prompt : undefined;
 }
 
 function buildActions({
@@ -38,7 +48,6 @@ function buildActions({
     createDraftSessionTab("draft:new", context),
   );
   const selectThread = vi.fn();
-  const useNoProject = vi.fn();
   const poppingOutTabIDsRef = { current: new Set<string>() };
 
   const actions = createSessionTabActions({
@@ -52,7 +61,6 @@ function buildActions({
     resetSplitComposerDrafts,
     nextDraftSessionTab,
     selectThread,
-    useNoProject,
     
     poppingOutTabIDsRef,
     beginViewSwitch: vi.fn(() => 1),
@@ -71,7 +79,6 @@ function buildActions({
     resetSplitComposerDrafts,
     nextDraftSessionTab,
     selectThread,
-    useNoProject,
     poppingOutTabIDsRef,
   };
 }
@@ -82,7 +89,7 @@ afterEach(() => {
 });
 
 describe("createSessionTabActions", () => {
-  it("starts a new thread by reusing an already blank active draft tab", async () => {
+  it("focuses an already active draft without creating or clearing it", async () => {
     const context = projectContext();
     const draftTab = createDraftSessionTab("draft:active", context);
     const harness = buildActions({
@@ -96,10 +103,83 @@ describe("createSessionTabActions", () => {
 
     await harness.actions.startNewThread();
 
-    expect(harness.clearPrimaryComposerDraft).toHaveBeenCalled();
+    expect(harness.clearPrimaryComposerDraft).not.toHaveBeenCalled();
     expect(harness.nextDraftSessionTab).not.toHaveBeenCalled();
     expect(harness.getAppState().activeSessionTabID).toBe(draftTab.id);
     expect(harness.getAppState().thread).toBeUndefined();
+  });
+
+  it("starts a new no-project conversation in the current workspace", async () => {
+    const context = noProjectContext();
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: context,
+        thread: {
+          id: "thread-1",
+          title: "existing",
+          preview: "existing",
+          cwd: context.cwd,
+          status: "idle",
+          model_provider: "fake",
+          model: "fake-model",
+          pinned: false,
+          archived: false,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+          turns: [],
+        },
+      },
+    });
+
+    await harness.actions.startNewThread();
+
+    expect(harness.nextDraftSessionTab).toHaveBeenCalledWith(context);
+    expect(harness.getAppState().thread).toBeUndefined();
+    expect(harness.getAppState().activeSessionTabID).toBe("draft:new");
+  });
+
+  it("reuses the existing project draft instead of creating another tab", async () => {
+    const context = projectContext();
+    const source = {
+      id: "thread-1",
+      title: "existing",
+      preview: "existing",
+      cwd: context.cwd,
+      status: "idle" as const,
+      model_provider: "fake",
+      model: "fake-model",
+      pinned: false,
+      archived: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+      turns: [],
+    };
+    const sourceTab = createThreadSessionTab(source, context);
+    const existingDraft = createDraftSessionTab("draft:existing", context, {
+      prompt: "continue this later",
+      images: [],
+      files: [],
+    });
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: context,
+        thread: source,
+        sessionTabs: [sourceTab, existingDraft],
+        activeSessionTabID: sourceTab.id,
+      },
+      draft: { prompt: "keep this in the source", images: [], files: [] },
+    });
+
+    await harness.actions.startNewThread();
+
+    expect(harness.nextDraftSessionTab).not.toHaveBeenCalled();
+    expect(harness.getAppState().activeSessionTabID).toBe(existingDraft.id);
+    expect(harness.getCurrentDraft().prompt).toBe("continue this later");
+    expect(sessionTabPrompt(harness.getAppState().sessionTabs, sourceTab.id)).toBe(
+      "keep this in the source",
+    );
   });
 
   it("reorders session tabs", () => {

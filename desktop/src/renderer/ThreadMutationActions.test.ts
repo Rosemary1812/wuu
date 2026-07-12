@@ -191,6 +191,40 @@ describe("createThreadMutationActions", () => {
     expect(harness.getAppState().activeSessionTabID).toBe("draft:fallback");
   });
 
+  it("reuses a parked workspace draft when archiving the active thread", async () => {
+    const context = projectContext();
+    const base = thread();
+    const api = installWuuApi(base);
+    const threadTab = createThreadSessionTab(base, context);
+    const draftTab = createDraftSessionTab("draft:parked", context, {
+      prompt: "keep this draft",
+      images: [],
+      files: [],
+    });
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: context,
+        thread: base,
+        threads: [base],
+        sessionTabs: [threadTab, draftTab],
+        activeSessionTabID: threadTab.id,
+        status: "ready",
+      },
+      activeThreadID: base.id,
+    });
+
+    await harness.actions.archiveThread(summary(base));
+
+    expect(api.archiveThread).toHaveBeenCalledWith(base.id, true);
+    expect(harness.getAppState().activeSessionTabID).toBe(draftTab.id);
+    expect(harness.getAppState().sessionTabs).toHaveLength(1);
+    expect(harness.getAppState().sessionTabs[0]).toMatchObject({
+      id: draftTab.id,
+      prompt: "keep this draft",
+    });
+  });
+
   it("deletes a thread and removes it from sidebar caches", async () => {
     const context = projectContext();
     const base = thread();

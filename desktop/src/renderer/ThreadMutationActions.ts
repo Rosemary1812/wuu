@@ -2,6 +2,7 @@ import type { MutableRefObject, SetStateAction } from "react";
 import type { Agent, Thread } from "../shared/protocol";
 import {
   activeThreadIDForState,
+  draftSessionTabForContext,
   ensureSessionTab,
   isDMThread,
   isGroupThread,
@@ -98,6 +99,16 @@ export function createThreadMutationActions(
   function clearActiveComposer(): void {
     deps.clearPrimaryComposerDraft();
     deps.resetSplitComposerDrafts();
+  }
+
+  function workspaceDraftOrNew(current: AppState): SessionTab | undefined {
+    if (!current.activeContext) {
+      return undefined;
+    }
+    return (
+      draftSessionTabForContext(current.sessionTabs, current.activeContext) ??
+      deps.nextDraftSessionTab(current.activeContext)
+    );
   }
 
   async function toggleThreadPinned(thread: ThreadSummary): Promise<void> {
@@ -253,7 +264,7 @@ export function createThreadMutationActions(
     deps.clearThreadPendingComposerMessages(thread.id);
     const archivedActiveThread = thread.id === deps.getActiveThreadID();
     const fallbackDraft = archivedActiveThread
-      ? deps.nextDraftSessionTab(currentState.activeContext)
+      ? workspaceDraftOrNew(currentState)
       : undefined;
     if (archivedActiveThread) {
       clearActiveComposer();
@@ -343,7 +354,7 @@ export function createThreadMutationActions(
     deps.clearThreadPendingComposerMessages(thread.id);
     const deletedActiveThread = thread.id === deps.getActiveThreadID();
     const fallbackDraft = deletedActiveThread
-      ? deps.nextDraftSessionTab(currentState.activeContext)
+      ? workspaceDraftOrNew(currentState)
       : undefined;
     if (deletedActiveThread) {
       clearActiveComposer();

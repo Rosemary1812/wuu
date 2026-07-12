@@ -3,7 +3,9 @@ import type { DesktopProject } from "../shared/protocol";
 import {
   activeSessionTab,
   applyLoadedRuntimeWithDraftCarry,
+  cloneSessionTabDraft,
   composerDraftHasContent,
+  draftSessionTabForContext,
   emptyComposerDraft,
   ensureSessionTab,
   isAnyThreadRunning,
@@ -22,6 +24,7 @@ export type ProjectRuntimeActionsDeps = {
   getAppState: () => AppState;
   setAppState: SetAppState;
   getPrimaryComposerDraft: () => ComposerDraftState;
+  restorePrimaryComposerDraft: (draft: ComposerDraftState) => void;
   clearPrimaryComposerDraft: () => void;
   restoreLoadedRuntimeComposerDraft: (
     loadedState: Partial<AppState>,
@@ -59,20 +62,48 @@ export function createProjectRuntimeActions(
     }));
   }
 
-  function switchToFreshDraft(context: NonNullable<AppState["activeContext"]>): void {
+  function activateWorkspaceDraft(
+    context: NonNullable<AppState["activeContext"]>,
+  ): void {
+    const draft = deps.getPrimaryComposerDraft();
+    const currentState = deps.getAppState();
+    const existingDraft = draftSessionTabForContext(
+      currentState.sessionTabs,
+      context,
+    );
+    if (existingDraft) {
+      if (existingDraft.id === currentState.activeSessionTabID) {
+        return;
+      }
+      deps.restorePrimaryComposerDraft(cloneSessionTabDraft(existingDraft));
+      deps.setAppState((current) => ({
+        ...persistActiveSessionTabDraft(current, draft),
+        thread: undefined,
+        secondaryThread: undefined,
+        activePane: "primary",
+        activeSessionTabID: existingDraft.id,
+        allowThreadAutoActivation: false,
+        running: false,
+        status: "ready",
+      }));
+      return;
+    }
     const nextTab = deps.nextDraftSessionTab(context);
     deps.clearPrimaryComposerDraft();
-    deps.setAppState((current) => ({
-      ...persistActiveSessionTabDraft(current, deps.getPrimaryComposerDraft()),
-      thread: undefined,
-      secondaryThread: undefined,
-      activePane: "primary",
-      sessionTabs: ensureSessionTab(current.sessionTabs, nextTab),
-      activeSessionTabID: nextTab.id,
-      allowThreadAutoActivation: false,
-      running: false,
-      status: "ready",
-    }));
+    deps.setAppState((current) => {
+      const withDraft = persistActiveSessionTabDraft(current, draft);
+      return {
+        ...withDraft,
+        thread: undefined,
+        secondaryThread: undefined,
+        activePane: "primary",
+        sessionTabs: ensureSessionTab(withDraft.sessionTabs, nextTab),
+        activeSessionTabID: nextTab.id,
+        allowThreadAutoActivation: false,
+        running: false,
+        status: "ready",
+      };
+    });
   }
 
   async function openProject(projectId: string): Promise<void> {
@@ -84,7 +115,7 @@ export function createProjectRuntimeActions(
       deps.closeProjectMenus();
       
       if (currentState.thread || currentState.secondaryThread) {
-        switchToFreshDraft(currentState.activeContext);
+        activateWorkspaceDraft(currentState.activeContext);
       }
       return;
     }
@@ -132,7 +163,7 @@ export function createProjectRuntimeActions(
       deps.closeProjectMenus();
       
       if (currentState.thread || currentState.secondaryThread) {
-        switchToFreshDraft(currentState.activeContext);
+        activateWorkspaceDraft(currentState.activeContext);
       }
       return;
     }
@@ -192,29 +223,7 @@ export function createProjectRuntimeActions(
       projectId === currentState.activeProjectId &&
       currentState.activeContext?.kind === "project"
     ) {
-      const draft = deps.getPrimaryComposerDraft();
-      const nextTab =
-        activeSessionTab(currentState)?.kind === "draft" &&
-        !draft.prompt.trim() &&
-        draft.images.length === 0 &&
-        draft.files.length === 0
-          ? activeSessionTab(currentState)
-          : deps.nextDraftSessionTab(currentState.activeContext);
-      if (!nextTab) {
-        return;
-      }
-      deps.clearPrimaryComposerDraft();
-      deps.setAppState((current) => ({
-        ...persistActiveSessionTabDraft(current, deps.getPrimaryComposerDraft()),
-        thread: undefined,
-        secondaryThread: undefined,
-        activePane: "primary",
-        sessionTabs: ensureSessionTab(current.sessionTabs, nextTab),
-        activeSessionTabID: nextTab.id,
-        allowThreadAutoActivation: false,
-        running: false,
-        status: "ready",
-      }));
+      activateWorkspaceDraft(currentState.activeContext);
       return;
     }
     const requestID = deps.beginViewSwitch("project", projectId);
@@ -228,6 +237,30 @@ export function createProjectRuntimeActions(
         return;
       }
       if (!loadedState.activeContext) {
+        return;
+      }
+      if (
+        draftSessionTabForContext(
+          currentState.sessionTabs,
+          loadedState.activeContext,
+        )
+      ) {
+        deps.restoreLoadedRuntimeComposerDraft(loadedState);
+        deps.setAppState((current) => {
+          const next = withLoadedRuntimeSessionTab(
+            persistActiveSessionTabDraft(current, outgoingDraft),
+            loadedState,
+          );
+          return {
+            ...next,
+            thread: undefined,
+            secondaryThread: undefined,
+            activePane: "primary",
+            allowThreadAutoActivation: false,
+            running: false,
+            status: "ready",
+          };
+        });
         return;
       }
       deps.clearPrimaryComposerDraft();
@@ -451,8 +484,46 @@ export function createProjectRuntimeActions(
         : undefined;
     try {
       const projectState = await window.wuu.selectNoProject(fresh);
-      const loadedState = await loadRuntime(projectState);
+      const loadedState = await loadRuntime(projectState, {
+        resumeLatestThread: !fresh,
+      });
       if (!deps.finishViewSwitch(requestID)) {
+        return;
+      }
+      if (fresh) {
+        if (!loadedState.activeContext) {
+          return;
+        }
+        const existingDraft = draftSessionTabForContext(
+          currentState.sessionTabs,
+          loadedState.activeContext,
+        );
+        if (existingDraft) {
+          deps.restoreLoadedRuntimeComposerDraft(loadedState);
+          deps.setAppState((current) =>
+            withLoadedRuntimeSessionTab(
+              persistActiveSessionTabDraft(current, outgoingDraft),
+              loadedState,
+            ),
+          );
+          return;
+        }
+        const nextTab = deps.nextDraftSessionTab(loadedState.activeContext);
+        deps.clearPrimaryComposerDraft();
+        deps.setAppState((current) => {
+          const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+          return {
+            ...withDraft,
+            ...loadedState,
+            thread: undefined,
+            secondaryThread: undefined,
+            activePane: "primary",
+            sessionTabs: ensureSessionTab(withDraft.sessionTabs, nextTab),
+            activeSessionTabID: nextTab.id,
+            allowThreadAutoActivation: false,
+            running: false,
+          };
+        });
         return;
       }
       deps.restoreLoadedRuntimeComposerDraft(loadedState, carryDraft);

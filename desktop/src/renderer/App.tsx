@@ -156,7 +156,6 @@ import {
   serverEventShouldRefreshGit,
   serverEventTargetsActiveContext,
   serverEventTargetsGlobalThread,
-  shouldResetToNoProjectForNewThread,
   sessionTabForLoadedRuntime,
   sessionTabLabel,
   setThreadForPane,
@@ -2507,7 +2506,7 @@ export function App(): JSX.Element {
         onSelectGitBranch={(branch) => void checkoutBranch(branch)}
         onCreateProject={() => void createBlankProject()}
         onOpenProject={() => void chooseProjectFolder()}
-        onStartNewThread={() => void startNewThread({ resetToNoProject: true })}
+        onStartNewThread={() => void startNewThread()}
         onOpenWorkspaceTool={openWorkspaceTool}
         onOpenContextComposition={openContextComposition}
         onCompactContext={() => void compactActiveThread()}
@@ -2722,6 +2721,7 @@ export function App(): JSX.Element {
     getAppState: () => appStateRef.current,
     setAppState: setState,
     getPrimaryComposerDraft: currentPrimaryComposerDraft,
+    restorePrimaryComposerDraft,
     clearPrimaryComposerDraft: () =>
       restorePrimaryComposerDraft(emptyComposerDraft()),
     restoreLoadedRuntimeComposerDraft,
@@ -2793,7 +2793,6 @@ export function App(): JSX.Element {
       setSplitComposerDrafts(initialSplitComposerDrafts()),
     nextDraftSessionTab,
     selectThread,
-    useNoProject,
     
     poppingOutTabIDsRef,
     beginViewSwitch,
@@ -3895,7 +3894,7 @@ export function App(): JSX.Element {
             sectionOrder={sidebarSectionOrder}
             onStartNewThread={() => {
               revealConversationFromFocusedWorkspace();
-              void startNewThread({ resetToNoProject: true });
+              void startNewThread();
             }}
             onOpenSkillsTab={openSkillsTab}
             onToggleConversationSearch={toggleConversationSearch}
