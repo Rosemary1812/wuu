@@ -286,6 +286,37 @@
   border-bottom: 0;
 }
 
+/* Archive is an action list, not a settings form: one compact line gives the
+ * session name and the only relevant action without exposing its local path. */
+.settings-archive-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+  border-bottom: 1px solid var(--hairline-soft);
+  padding: 10px 16px 10px 20px;
+}
+
+.settings-archive-row:last-child {
+  border-bottom: 0;
+}
+
+.settings-archive-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-archive-restore {
+  flex: 0 0 auto;
+}
+
 /* --- Row -----------------------------------------------------------------
  * A row is a two-column grid: label area (title + description) on the left,
  * control area on the right. Both cells align to center vertically so a

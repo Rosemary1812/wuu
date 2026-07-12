@@ -102,7 +102,7 @@ function renderSettings(props: {
   onRemoveProvider?: (provider: string) => Promise<void>;
   onAdvancedSave?: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
   onGeneralSave?: (settings: RuntimeGeneralSettingsUpdate) => Promise<void>;
-  // ArchivedSessionView 是结构子集（id/title?/cwd/updated_at），这里
+  // ArchivedSessionView 是结构子集（id/title?/updated_at），这里
   // 直接传对象字面量，避免引入 ThreadSummary（它要求 turns/turn_count
   // 等计算字段，测试场景下冗余）。
   archivedThreads?: readonly ArchivedSessionView[];
@@ -1016,7 +1016,7 @@ describe("SettingsView archive page", () => {
     });
   });
 
-  // ArchivedSessionView 的结构子集：渲染层只读 id/title?/cwd/updated_at。
+  // ArchivedSessionView 的结构子集：渲染层只读 id/title?/updated_at。
   // 这里直接返回对象字面量，结构上兼容 SettingsView 里的 ArchivedSessionView，
   // 避免引入 ThreadSummary（它要求 turns/turn_count 等计算字段，测试场景下冗余）。
   function archivedThread(
@@ -1026,7 +1026,6 @@ describe("SettingsView archive page", () => {
     return {
       id,
       title: `已归档 ${id}`,
-      cwd: `/repo/${id}`,
       updated_at: "2026-06-18T12:00:00Z",
       ...overrides,
     };
@@ -1065,6 +1064,22 @@ describe("SettingsView archive page", () => {
     ).map((node) => node.textContent);
     // 较新的会话排在前面，跟侧边栏"最新活动优先"的心智一致
     expect(titles).toEqual(["新会话", "旧会话"]);
+  });
+
+  it("keeps archived rows compact and does not render their local paths", () => {
+    const threadWithPath = {
+      ...archivedThread("hidden-path"),
+      cwd: "/private/workspace",
+    };
+    renderSettings({
+      initialized: baseInitialized(),
+      initialPage: "archive",
+      archivedThreads: [threadWithPath],
+    });
+
+    expect(container.querySelectorAll(".settings-archive-row")).toHaveLength(1);
+    expect(container.querySelectorAll(".settings-row")).toHaveLength(0);
+    expect(container.textContent).not.toContain("/private/workspace");
   });
 
   it("invokes onUnarchiveThread with the clicked thread", () => {

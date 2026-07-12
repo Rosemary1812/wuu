@@ -54,11 +54,10 @@ import type {
 // `state.threads` 是 `Thread[]`（含 `title?: string`），而 ThreadSummary
 // 额外要求 `turns` / `turn_count` 等计算字段，渲染层并不关心。
 // 用结构性子集既兼容 Thread，也避免把 ThreadSummary 的派生语义
-// 漏到 SettingsView。
+// 漏到 SettingsView。归档页只用于识别和恢复会话，不展示工作目录。
 export type ArchivedSessionView = {
   id: string;
   title?: string;
-  cwd: string;
   updated_at: string;
 };
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
@@ -1972,51 +1971,37 @@ function SettingsArchivePage({
     b.updated_at.localeCompare(a.updated_at),
   );
   return (
-    <SettingsSection
-      title="已归档的会话"
-      description="归档后会在侧边栏隐藏，但会话内容、CWD 与历史仍然保留；恢复后会重新出现在对应项目下。"
-    >
-      <SettingsCard>
-        {sortedThreads.length === 0 ? (
-          <div className="settings-archive-empty" role="status">
-            <Archive className="settings-archive-empty-icon" aria-hidden="true" />
-            <p className="settings-archive-empty-title">暂无已归档的会话</p>
-            <p className="settings-archive-empty-hint">
-              在侧边栏行末点击归档按钮后会出现在这里，随时可以一键恢复到侧边栏。
-            </p>
-          </div>
-        ) : (
-          <div className="settings-archive-list" aria-label="已归档会话列表">
-            {sortedThreads.map((thread) => (
-              <SettingsRow key={thread.id} title={(thread.title ?? "").trim() || "未命名会话"}>
-                <div className="settings-archive-row">
-                  <div className="settings-archive-info">
-                    <span className="settings-archive-title">
-                      {(thread.title ?? "").trim() || "未命名会话"}
-                    </span>
-                    <span
-                      className="settings-archive-cwd"
-                      title={thread.cwd}
-                    >
-                      {thread.cwd}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="settings-archive-restore"
-                    aria-label={`恢复 ${(thread.title ?? "").trim() || "未命名会话"}`}
-                    onClick={() => onUnarchive(thread)}
-                  >
-                    <Archive className="icon-sm" aria-hidden="true" />
-                    恢复
-                  </button>
-                </div>
-              </SettingsRow>
-            ))}
-          </div>
-        )}
-      </SettingsCard>
-    </SettingsSection>
+    <SettingsCard>
+      {sortedThreads.length === 0 ? (
+        <div className="settings-archive-empty" role="status">
+          <Archive className="settings-archive-empty-icon" aria-hidden="true" />
+          <p className="settings-archive-empty-title">暂无已归档的会话</p>
+          <p className="settings-archive-empty-hint">
+            在侧边栏行末点击归档按钮后会出现在这里，随时可以恢复。
+          </p>
+        </div>
+      ) : (
+        <div className="settings-archive-list" aria-label="已归档会话列表">
+          {sortedThreads.map((thread) => {
+            const title = (thread.title ?? "").trim() || "未命名会话";
+            return (
+              <div className="settings-archive-row" key={thread.id}>
+                <span className="settings-archive-title" title={title}>{title}</span>
+                <button
+                  type="button"
+                  className="settings-button settings-archive-restore"
+                  aria-label={`恢复 ${title}`}
+                  onClick={() => onUnarchive(thread)}
+                >
+                  <Archive className="icon-sm" aria-hidden="true" />
+                  恢复
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </SettingsCard>
   );
 }
 
@@ -2269,7 +2254,7 @@ function settingsPageMeta(
     case "archive":
       return {
         title: "归档",
-        description: "查看所有已归档的会话,一键恢复到侧边栏继续使用。"
+        description: "已归档的会话会从侧边栏隐藏，可随时恢复。"
       };
   }
 }
