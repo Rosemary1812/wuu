@@ -186,8 +186,17 @@
  * verbatim. No settings-specific collapse rules remain here.
  * ========================================================================= */
 
+/* Column direction is load-bearing, not cosmetic: .settings-page carries
+ * `flex: 1` (to fill the viewport height) alongside `width: min(800px, …)` and
+ * `margin: 0 auto` (to cap and center the content column). In a row flex the
+ * `flex: 1` basis wins over `width`, so the page would stretch edge-to-edge and
+ * the 800px cap + centering would never apply. As a column flex, `flex: 1`
+ * governs the vertical main axis while `width`/`margin` govern the horizontal
+ * cross axis — the column caps, centers, and keeps its `--wuu-grid-margin`
+ * gutter on both edges. */
 .settings-scroll {
   display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: auto;
@@ -203,11 +212,21 @@
   min-height: 100%;
   --settings-page-max-width: 800px;
   width: min(var(--settings-page-max-width), calc(100% - var(--wuu-grid-margin) * 2));
-  flex: 1;
+  /* Grow to fill a tall viewport, but never shrink below content. The bare
+   * `flex: 1` (flex-shrink: 1) let the page be squished to the scroll viewport
+   * height even when its content was taller, which pushed its own padding-bottom
+   * out of the scroll range — so the last section sat flush against the bottom
+   * edge when you scrolled down. `flex-shrink: 0` keeps the bottom padding
+   * inside the scrollable area. */
+  flex: 1 0 auto;
   flex-direction: column;
   gap: 36px;
   margin: 0 auto;
-  padding: clamp(24px, 4vw, 40px) clamp(12px, 3vw, 24px) clamp(48px, 8vh, 72px);
+  /* Bottom carries a deliberate scroll-past gap, a touch larger than the top.
+   * All three sides share the vw axis — the old `8vh` bottom scaled with window
+   * height instead, so a tall window opened an arbitrary chasm below the last
+   * section. */
+  padding: clamp(24px, 4vw, 40px) clamp(12px, 3vw, 24px) clamp(48px, 6vw, 64px);
 }
 
 /* --- Page header --------------------------------------------------------- */

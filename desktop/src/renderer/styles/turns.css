@@ -874,13 +874,13 @@
   display: block;
   width: 100%;
   /*
-   * Answer prose shares the question bubble's measure. Uncapped, the
-   * text ran the full 832px content column (~59 CJK chars per line,
-   * far past the 35–45 comfort range) while the user bubble stopped
-   * at 720px — two different measures inside one exchange. Tool rows
-   * and cards keep the full column; only running prose is capped.
+   * Answer prose is capped at the shared readable measure
+   * (--conversation-message-max-width, 680px) which equals the content
+   * column and the composer width, so the reply lines up flush with the
+   * input box that produced it. The cap only bites if the column is ever
+   * widened past the measure; today it matches the column exactly.
    */
-  max-width: min(var(--conversation-message-max-width, 720px), 100%);
+  max-width: min(var(--conversation-message-max-width, 680px), 100%);
   min-width: 0;
   color: var(--ink);
   font-size: var(--conversation-message-font-size);

@@ -102,7 +102,7 @@
   grid-template-rows: 48px minmax(0, 1fr);
   overflow: hidden;
   border-left: 1px solid transparent;
-  background: var(--surface-1);
+  background: var(--paper);
   opacity: 0;
   transform: translate3d(18px, 0, 0) scale(0.988);
   transform-origin: right center;
@@ -173,7 +173,7 @@
   align-items: start;
   gap: 12px;
   border-bottom: 1px solid var(--surface-2);
-  background: var(--surface-1);
+  background: transparent;
   padding: 12px 14px 12px 16px;
 }
 
@@ -517,6 +517,7 @@
   min-height: 0;
   overflow: hidden;
   padding: 12px;
+  background: var(--paper);
 }
 
 .workspace-panel-body.picker {
@@ -745,9 +746,9 @@
   width: 100%;
   height: 32px;
   min-width: 0;
-  border: 1px solid var(--surface-4);
+  border: 1px solid var(--surface-3);
   border-radius: var(--radius-sm);
-  background: var(--surface-1);
+  background: transparent;
   color: var(--ink);
   font: inherit;
   font-size: var(--font-ui);
@@ -1084,7 +1085,7 @@
   gap: 4px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--surface-3);
-  background: var(--surface-1);
+  background: transparent;
 }
 
 .workspace-browser-nav {
@@ -1254,7 +1255,7 @@
   gap: 10px;
   padding: 4px 12px;
   border-top: 1px solid var(--surface-3);
-  background: var(--surface-1);
+  background: transparent;
   color: var(--ink-muted);
   font-size: 11.5px;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -1707,8 +1708,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid var(--surface-3);
-  background: var(--surface-1);
+  border-bottom: 1px solid var(--surface-2);
+  background: transparent;
   padding: 7px 12px;
 }
 
@@ -1776,21 +1777,21 @@
   align-items: center;
   gap: 6px;
   border-radius: var(--radius-sm);
-  background: var(--surface-3);
+  background: transparent;
   color: var(--ink);
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   padding: 0 9px;
+  transition: background 120ms ease;
 }
 
 .workspace-file-save-button:hover:not(:disabled) {
-  background: var(--surface-4);
+  background: var(--surface-2);
 }
 
 .workspace-file-save-button:disabled {
   color: var(--ink-tertiary);
   cursor: default;
-  opacity: 0.72;
 }
 
 .workspace-file-save-button svg {
@@ -1802,22 +1803,20 @@
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 2px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  padding: 2px;
+  gap: 4px;
 }
 
 .workspace-markdown-mode-switch button {
+  position: relative;
   height: 24px;
   border: 0;
   background: transparent;
-  border-radius: calc(var(--radius-sm) - 2px);
   color: var(--ink-soft);
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   padding: 0 10px;
   cursor: pointer;
+  transition: color 120ms ease;
 }
 
 .workspace-markdown-mode-switch button:hover {
@@ -1825,9 +1824,19 @@
 }
 
 .workspace-markdown-mode-switch button.selected {
-  background: var(--paper);
   color: var(--ink);
-  box-shadow: var(--shadow-soft);
+}
+
+.workspace-markdown-mode-switch button.selected::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: -1px;
+  left: 8px;
+  height: 2px;
+  border-radius: var(--radius-pill) var(--radius-pill) 0 0;
+  background: var(--wuu-accent);
+  pointer-events: none;
 }
 
 .workspace-file-preview-header {
@@ -2083,7 +2092,7 @@
   min-height: 0;
   overflow: hidden;
   border-right: 1px solid var(--surface-3);
-  background: var(--surface-1);
+  background: transparent;
 }
 
 .workspace-diff-file-scroll,
@@ -2312,7 +2321,7 @@
   min-width: 0;
   min-height: 0;
   grid-template-rows: auto auto minmax(0, 1fr);
-  background: var(--surface-1);
+  background: transparent;
 }
 
 .workspace-diff-tree-header {
@@ -2585,7 +2594,7 @@
 .workspace-review-tree-pane .workspace-diff-tree {
   height: 100%;
   overflow: hidden;
-  background: var(--surface-1);
+  background: transparent;
 }
 
 .workspace-review-tree-pane .workspace-diff-tree-header {
