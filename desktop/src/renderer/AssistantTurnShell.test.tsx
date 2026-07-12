@@ -28,7 +28,11 @@ import { createElement, type JSX } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import { buildAssistantTurnDisplay } from "./AssistantTurnDisplay";
 import { AssistantTurnShell } from "./AssistantTurnShell";
-import { streamTextKey, streamTextStore } from "./StreamText";
+import {
+  STREAM_TEXT_NOTIFY_INTERVAL_MS,
+  streamTextKey,
+  streamTextStore,
+} from "./StreamText";
 
 let idCounter = 0;
 let mountedRoots: Root[] = [];
@@ -1057,15 +1061,29 @@ describe("AssistantTurnShell — reasoning fold (rule 3)", () => {
     await openReasoningFold(fold);
     expect(layout.scrollTop).toBe(1000);
 
-    await withManualAnimationFrames(async (flush) => {
-      await act(async () => {
-        for (let tick = 0; tick < 120; tick += 1) {
-          layout.scrollHeight += 4;
-          streamTextStore.append(key, " x");
-        }
+    vi.useFakeTimers();
+    const now = vi.spyOn(performance, "now");
+    try {
+      await withManualAnimationFrames(async (flush) => {
+        now.mockReturnValue(100_000);
+        await act(async () => {
+          streamTextStore.append(key, " first");
+        });
+        await flush();
+
+        now.mockReturnValue(100_010);
+        await act(async () => {
+          for (let tick = 0; tick < 120; tick += 1) {
+            layout.scrollHeight += 4;
+            streamTextStore.append(key, " x");
+          }
+          vi.advanceTimersByTime(STREAM_TEXT_NOTIFY_INTERVAL_MS - 10);
+        });
+        await flush(3);
       });
-      await flush(3);
-    });
+    } finally {
+      now.mockRestore();
+    }
 
     expect(layout.scrollTop).toBe(layout.scrollHeight);
   });

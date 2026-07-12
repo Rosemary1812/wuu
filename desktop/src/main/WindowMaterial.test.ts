@@ -19,13 +19,13 @@ describe("macOS sidebar material", () => {
       /--sidebar-material-fill:\s*rgba\(255, 255, 255, 0\.12\);/,
     );
     expect(sidebarCSS).toMatch(
-      /\.sidebar\s*\{[\s\S]*?background:\s*var\(--sidebar-material-fill\);/,
+      /\.sidebar,\s*\n\.settings-sidebar\s*\{[\s\S]*?background:\s*var\(--sidebar-material-fill\);/,
     );
     expect(sidebarCSS).toMatch(
-      /\.sidebar::before\s*\{[\s\S]*?opacity:\s*0\.42;/,
+      /\.sidebar::before,\s*\n\.settings-sidebar::before\s*\{[\s\S]*?opacity:\s*0\.42;/,
     );
     expect(sidebarCSS).toMatch(
-      /\.sidebar\s*\{[\s\S]*?backdrop-filter:\s*none;/,
+      /\.sidebar,\s*\n\.settings-sidebar\s*\{[\s\S]*?backdrop-filter:\s*none;/,
     );
   });
 

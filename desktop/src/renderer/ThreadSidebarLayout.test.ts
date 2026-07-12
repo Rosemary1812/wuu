@@ -27,10 +27,10 @@ describe("project sidebar row layout", () => {
     expect(cssRule(".sidebar-row-icon-button")).toMatch(/width:\s*var\(--sidebar-row-action-size,\s*24px\)/);
   });
 
-  it("aligns thread list footer text with thread row titles", () => {
+  it("aligns thread list footer text with the navigation body column", () => {
     expect(cssRule(".sidebar-content")).toMatch(/--sidebar-row-control-pad-x:\s*8px/);
     expect(cssRule(".thread-list-footer")).toMatch(
-      /padding-left:\s*calc\([\s\S]*var\(--sidebar-tree-column-gap\)\s*-\s*var\(--sidebar-row-control-pad-x\)[\s\S]*\)/,
+      /padding-left:\s*calc\([\s\S]*var\(--sidebar-nav-icon-col\)[\s\S]*var\(--sidebar-nav-column-gap\)[\s\S]*-\s*var\(--sidebar-row-control-pad-x\)[\s\S]*\)/,
     );
     expect(cssRule(".thread-list-more")).toMatch(/padding:\s*0 var\(--sidebar-row-control-pad-x\)/);
     expect(cssRule(".thread-list-collapse-btn")).toMatch(/padding:\s*0 var\(--sidebar-row-control-pad-x\)/);
