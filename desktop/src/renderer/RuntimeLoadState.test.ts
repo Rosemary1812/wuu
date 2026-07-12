@@ -119,6 +119,53 @@ describe("runtime load helpers", () => {
     expect(state.threads?.some((item) => item.id === "latest")).toBe(true);
   });
 
+  it("skips archived conversations when resuming, even if one is the most recent", async () => {
+    const activeContext: RuntimeContext = {
+      kind: "no_project",
+      cwd: "/tmp/wuu",
+    };
+    const live = thread("live", { updated_at: "2026-03-01T00:00:00Z" });
+    const archivedLatest = thread("archived-latest", {
+      archived: true,
+      updated_at: "2026-03-05T00:00:00Z",
+    });
+    const resumeThread = vi.fn().mockResolvedValue({ thread: live });
+    installWuuStub({
+      initialize: vi.fn().mockResolvedValue({ model: "gpt-test" }),
+      listThreads: vi.fn().mockResolvedValue({ threads: [live] }),
+      listArchivedThreads: vi
+        .fn()
+        .mockResolvedValue({ threads: [archivedLatest] }),
+      resumeThread,
+    });
+
+    const state = await loadRuntime(projectList(activeContext));
+
+    expect(resumeThread).toHaveBeenCalledWith("live");
+    expect(state.thread?.id).toBe("live");
+  });
+
+  it("resumes nothing when every conversation is archived", async () => {
+    const activeContext: RuntimeContext = {
+      kind: "no_project",
+      cwd: "/tmp/wuu",
+    };
+    const resumeThread = vi.fn();
+    installWuuStub({
+      initialize: vi.fn().mockResolvedValue({ model: "gpt-test" }),
+      listThreads: vi.fn().mockResolvedValue({ threads: [] }),
+      listArchivedThreads: vi.fn().mockResolvedValue({
+        threads: [thread("archived", { archived: true })],
+      }),
+      resumeThread,
+    });
+
+    const state = await loadRuntime(projectList(activeContext));
+
+    expect(resumeThread).not.toHaveBeenCalled();
+    expect(state.thread).toBeUndefined();
+  });
+
   it("keeps the runtime available when credentials need setup", async () => {
     const activeContext: RuntimeContext = {
       kind: "no_project",

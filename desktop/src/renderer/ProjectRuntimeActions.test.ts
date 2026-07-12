@@ -266,6 +266,107 @@ describe("createProjectRuntimeActions", () => {
     expect(harness.getCurrentDraft()).toEqual(emptyComposerDraft());
   });
 
+  it("lands on the 对话 draft page instead of resuming an old conversation when the picker selects 不使用项目", async () => {
+    const sourceContext = projectContext();
+    const context = noProjectContext();
+    const oldScratchThread = { ...thread("old-scratch"), cwd: context.cwd };
+    const sourceDraftTab = createDraftSessionTab("draft:new-project", sourceContext);
+    const projectState = {
+      projects: [project()],
+      active_context: context,
+    } as ProjectListResult;
+    // The runtime load must be asked NOT to resume: even though the 对话
+    // workspace holds an older conversation, retargeting a draft lands on
+    // the draft page, never inside history.
+    const loadRuntime = vi.fn().mockResolvedValue({
+      activeContext: context,
+      thread: undefined,
+      threads: [oldScratchThread],
+      status: "ready",
+    });
+    const selectNoProject = vi.fn().mockResolvedValue(projectState);
+    Object.defineProperty(window, "wuu", {
+      configurable: true,
+      value: { selectNoProject } as Partial<WuuDesktopApi>,
+    });
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: sourceContext,
+        activeProjectId: "project-1",
+        projects: [project()],
+        sessionTabs: [sourceDraftTab],
+        activeSessionTabID: sourceDraftTab.id,
+      },
+      draft: { prompt: "draft aimed at no project", images: [], files: [] },
+      loadRuntime,
+    });
+
+    await harness.actions.useNoProject(false);
+
+    expect(selectNoProject).toHaveBeenCalledWith(false);
+    expect(loadRuntime).toHaveBeenCalledWith(projectState, {
+      resumeLatestThread: false,
+    });
+    const state = harness.getAppState();
+    expect(state.thread).toBeUndefined();
+    const landingTab = state.sessionTabs.find(
+      (tab) => tab.id === state.activeSessionTabID,
+    );
+    expect(landingTab?.kind).toBe("draft");
+    expect(
+      landingTab?.kind === "draft" ? landingTab.context : undefined,
+    ).toEqual(context);
+    // The typed draft travels with the user into the landing tab.
+    expect(sessionTabPrompt(state.sessionTabs, state.activeSessionTabID)).toBe(
+      "draft aimed at no project",
+    );
+  });
+
+  it("returns to the 对话 draft page when 不使用项目 is re-selected over an open conversation", async () => {
+    const context = noProjectContext();
+    const source = { ...thread(), cwd: context.cwd };
+    const sourceTab = createThreadSessionTab(source, context);
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: context,
+        thread: source,
+        sessionTabs: [sourceTab],
+        activeSessionTabID: sourceTab.id,
+      },
+      draft: { prompt: "keep this thread draft", images: [], files: [] },
+    });
+
+    await harness.actions.useNoProject(false);
+
+    expect(harness.closeProjectMenus).toHaveBeenCalled();
+    expect(harness.nextDraftSessionTab).toHaveBeenCalledWith(context);
+    expect(harness.getAppState().thread).toBeUndefined();
+    expect(harness.getAppState().activeSessionTabID).toBe("draft:test");
+    expect(sessionTabPrompt(harness.getAppState().sessionTabs, sourceTab.id)).toBe(
+      "keep this thread draft",
+    );
+  });
+
+  it("refuses to switch to 不使用项目 while work is running", async () => {
+    const context = projectContext("project-1");
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: context,
+        activeProjectId: "project-1",
+        projects: [project("project-1")],
+        thread: thread("running", "in_progress"),
+      },
+    });
+
+    await harness.actions.useNoProject(false);
+
+    expect(harness.closeProjectMenus).toHaveBeenCalled();
+    expect(harness.getAppState().status).toBe("任务运行中，暂不能切换项目");
+  });
+
   it("reuses an existing no-project draft when the 对话 workspace plus is clicked", async () => {
     const sourceContext = projectContext();
     const context = noProjectContext();

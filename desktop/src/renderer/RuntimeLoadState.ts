@@ -33,8 +33,14 @@ export async function loadRuntime(
   // archives are never re-fetched on context switch — RuntimeLoadState is
   // the single rebuild path.
   const listedThreads = sortThreads([...listed.threads, ...archived.threads]);
+  // Archived conversations ride along in listedThreads for the Settings →
+  // Archive page, but they are put away — a context switch must never
+  // resurrect one into the composer. Resume the most recent live thread:
+  // unpinned first (pinning marks a thread as parked, not as the place to
+  // land), falling back to a pinned one when nothing else exists.
+  const liveThreads = listedThreads.filter((candidate) => !candidate.archived);
   const defaultThread = resumeLatestThread
-    ? (listedThreads.find((candidate) => !candidate.pinned) ?? listedThreads[0])
+    ? (liveThreads.find((candidate) => !candidate.pinned) ?? liveThreads[0])
     : undefined;
   const thread = defaultThread
     ? requireThread(

@@ -1,5 +1,5 @@
 import type { SetStateAction } from "react";
-import type { DesktopProject } from "../shared/protocol";
+import type { DesktopProject, ProjectListResult } from "../shared/protocol";
 import {
   activeSessionTab,
   applyLoadedRuntimeWithDraftCarry,
@@ -154,16 +154,39 @@ export function createProjectRuntimeActions(
     }
   }
 
-  async function selectProjectForNewThread(projectId: string): Promise<void> {
+  /**
+   * The composer's project picker has one mental model regardless of the
+   * destination: "retarget the conversation I'm drafting at that
+   * context". Selecting a project and selecting 不使用项目 are the same
+   * gesture, so they share this implementation:
+   *
+   *   - re-selecting the current context returns to its draft page when
+   *     a conversation is on screen (and is otherwise a no-op);
+   *   - the switch lands on the destination context's draft tab — it
+   *     never resumes an existing conversation, because the user is
+   *     holding a draft, not asking to reopen history;
+   *   - an in-progress draft travels with the user (see
+   *     applyLoadedRuntimeWithDraftCarry).
+   */
+  async function retargetDraftToContext({
+    switchKind,
+    switchTarget,
+    isCurrentContext,
+    selectContext,
+    failureStatus,
+  }: {
+    switchKind: "project" | "runtime";
+    switchTarget: string;
+    isCurrentContext: (state: AppState) => boolean;
+    selectContext: () => Promise<ProjectListResult>;
+    failureStatus: string;
+  }): Promise<void> {
     const currentState = deps.getAppState();
-    if (
-      projectId === currentState.activeProjectId &&
-      currentState.activeContext?.kind === "project"
-    ) {
+    if (isCurrentContext(currentState)) {
       deps.closeProjectMenus();
-      
-      if (currentState.thread || currentState.secondaryThread) {
-        activateWorkspaceDraft(currentState.activeContext);
+      const context = currentState.activeContext;
+      if (context && (currentState.thread || currentState.secondaryThread)) {
+        activateWorkspaceDraft(context);
       }
       return;
     }
@@ -172,9 +195,9 @@ export function createProjectRuntimeActions(
       setStatus("任务运行中，暂不能切换项目");
       return;
     }
-    const requestID = deps.beginViewSwitch("project", projectId);
+    const requestID = deps.beginViewSwitch(switchKind, switchTarget);
     deps.closeProjectMenus();
-    
+
     const outgoingDraft = deps.getPrimaryComposerDraft();
     const carryDraft =
       activeSessionTab(currentState)?.kind === "draft" &&
@@ -182,7 +205,7 @@ export function createProjectRuntimeActions(
         ? outgoingDraft
         : undefined;
     try {
-      const projectState = await window.wuu.selectProject(projectId);
+      const projectState = await selectContext();
       const loadedState = await loadRuntime(projectState, {
         resumeLatestThread: false,
       });
@@ -210,8 +233,20 @@ export function createProjectRuntimeActions(
       if (!deps.finishViewSwitch(requestID)) {
         return;
       }
-      setStatus(error instanceof Error ? error.message : "open project failed");
+      setStatus(error instanceof Error ? error.message : failureStatus);
     }
+  }
+
+  async function selectProjectForNewThread(projectId: string): Promise<void> {
+    await retargetDraftToContext({
+      switchKind: "project",
+      switchTarget: projectId,
+      isCurrentContext: (state) =>
+        projectId === state.activeProjectId &&
+        state.activeContext?.kind === "project",
+      selectContext: () => window.wuu.selectProject(projectId),
+      failureStatus: "open project failed",
+    });
   }
 
   async function startNewThreadForProject(projectId: string): Promise<void> {
@@ -466,70 +501,67 @@ export function createProjectRuntimeActions(
   }
 
   async function useNoProject(fresh: boolean): Promise<void> {
-    const currentState = deps.getAppState();
-    if (!fresh && currentState.activeContext?.kind === "no_project") {
-      deps.closeProjectMenus();
+    // The non-fresh flavor is the composer picker's 不使用项目 entry —
+    // the same "retarget my draft" gesture as picking a project, so it
+    // shares that path (land on the 对话 draft page, never resume an
+    // old conversation). The fresh flavor below is the sidebar's 新对话
+    // button: an explicit "start clean" that discards nothing but also
+    // carries nothing.
+    if (!fresh) {
+      await retargetDraftToContext({
+        switchKind: "runtime",
+        switchTarget: "no-project",
+        isCurrentContext: (state) => state.activeContext?.kind === "no_project",
+        selectContext: () => window.wuu.selectNoProject(false),
+        failureStatus: "open no-project failed",
+      });
       return;
     }
-    const requestID = deps.beginViewSwitch(
-      "runtime",
-      fresh ? "no-project:fresh" : "no-project",
-    );
+    const currentState = deps.getAppState();
+    const requestID = deps.beginViewSwitch("runtime", "no-project:fresh");
     deps.closeProjectMenus();
     const outgoingDraft = deps.getPrimaryComposerDraft();
-    const carryDraft =
-      activeSessionTab(currentState)?.kind === "draft" &&
-      composerDraftHasContent(outgoingDraft)
-        ? outgoingDraft
-        : undefined;
     try {
-      const projectState = await window.wuu.selectNoProject(fresh);
+      const projectState = await window.wuu.selectNoProject(true);
       const loadedState = await loadRuntime(projectState, {
-        resumeLatestThread: !fresh,
+        resumeLatestThread: false,
       });
       if (!deps.finishViewSwitch(requestID)) {
         return;
       }
-      if (fresh) {
-        if (!loadedState.activeContext) {
-          return;
-        }
-        const existingDraft = draftSessionTabForContext(
-          currentState.sessionTabs,
-          loadedState.activeContext,
-        );
-        if (existingDraft) {
-          deps.restoreLoadedRuntimeComposerDraft(loadedState);
-          deps.setAppState((current) =>
-            withLoadedRuntimeSessionTab(
-              persistActiveSessionTabDraft(current, outgoingDraft),
-              loadedState,
-            ),
-          );
-          return;
-        }
-        const nextTab = deps.nextDraftSessionTab(loadedState.activeContext);
-        deps.clearPrimaryComposerDraft();
-        deps.setAppState((current) => {
-          const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
-          return {
-            ...withDraft,
-            ...loadedState,
-            thread: undefined,
-            secondaryThread: undefined,
-            activePane: "primary",
-            sessionTabs: ensureSessionTab(withDraft.sessionTabs, nextTab),
-            activeSessionTabID: nextTab.id,
-            allowThreadAutoActivation: false,
-            running: false,
-          };
-        });
+      if (!loadedState.activeContext) {
         return;
       }
-      deps.restoreLoadedRuntimeComposerDraft(loadedState, carryDraft);
-      deps.setAppState((current) =>
-        applyLoadedRuntimeWithDraftCarry(current, loadedState, outgoingDraft),
+      const existingDraft = draftSessionTabForContext(
+        currentState.sessionTabs,
+        loadedState.activeContext,
       );
+      if (existingDraft) {
+        deps.restoreLoadedRuntimeComposerDraft(loadedState);
+        deps.setAppState((current) =>
+          withLoadedRuntimeSessionTab(
+            persistActiveSessionTabDraft(current, outgoingDraft),
+            loadedState,
+          ),
+        );
+        return;
+      }
+      const nextTab = deps.nextDraftSessionTab(loadedState.activeContext);
+      deps.clearPrimaryComposerDraft();
+      deps.setAppState((current) => {
+        const withDraft = persistActiveSessionTabDraft(current, outgoingDraft);
+        return {
+          ...withDraft,
+          ...loadedState,
+          thread: undefined,
+          secondaryThread: undefined,
+          activePane: "primary",
+          sessionTabs: ensureSessionTab(withDraft.sessionTabs, nextTab),
+          activeSessionTabID: nextTab.id,
+          allowThreadAutoActivation: false,
+          running: false,
+        };
+      });
     } catch (error) {
       if (!deps.finishViewSwitch(requestID)) {
         return;
