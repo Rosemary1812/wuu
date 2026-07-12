@@ -18,12 +18,13 @@ const markerPath = join(hostRoot, "identity.json");
 const electronPackagePath = join(desktopRoot, "node_modules", "electron", "package.json");
 const builtHelper = join(desktopRoot, "build", "bin", "wuu-cua-mac");
 const helperBuildInfo = join(desktopRoot, "build", "bin", "wuu-cua-mac.build.json");
-const identityVersion = 5;
+const identityVersion = 6;
 
 function prepareDevElectronApp(signing = { identity: "-", fingerprint: "adhoc", name: "ad-hoc" }) {
   const electronVersion = JSON.parse(readFileSync(electronPackagePath, "utf8")).version;
   const helperHash = helperSourceHash();
-  if (devHostIsCurrent(electronVersion, helperHash, signing.fingerprint)) return devApp;
+  const builtHelperHash = hashFile(builtHelper);
+  if (devHostIsCurrent(electronVersion, helperHash, builtHelperHash, signing.fingerprint)) return devApp;
 
   console.log(`preparing stable Wuu Dev host for Electron ${electronVersion}...`);
   mkdirSync(hostRoot, { recursive: true });
@@ -57,9 +58,12 @@ function prepareDevElectronApp(signing = { identity: "-", fingerprint: "adhoc", 
     devApp,
   ]);
   run("codesign", ["--verify", "--deep", "--strict", devApp]);
+  const embeddedHelperHash = hashFile(packagedHelper);
   writeFileSync(markerPath, `${JSON.stringify({
     electronVersion,
     helperHash,
+    builtHelperHash,
+    embeddedHelperHash,
     signingFingerprint: signing.fingerprint,
     identityVersion,
   })}\n`);
@@ -71,13 +75,15 @@ function prepareDevElectronApp(signing = { identity: "-", fingerprint: "adhoc", 
   return devApp;
 }
 
-function devHostIsCurrent(electronVersion, helperHash, signingFingerprint) {
+function devHostIsCurrent(electronVersion, helperHash, builtHelperHash, signingFingerprint) {
   if (!existsSync(devApp) || !existsSync(markerPath)) return false;
   try {
     const marker = JSON.parse(readFileSync(markerPath, "utf8"));
     if (
       marker.electronVersion !== electronVersion
       || marker.helperHash !== helperHash
+      || marker.builtHelperHash !== builtHelperHash
+      || marker.embeddedHelperHash !== hashFile(helperPathForApp(devApp))
       || marker.signingFingerprint !== signingFingerprint
       || marker.identityVersion !== identityVersion
     ) {
