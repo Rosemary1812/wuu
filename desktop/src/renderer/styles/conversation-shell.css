@@ -530,6 +530,7 @@
  * trade toward visual proportion; if titlebar click reliability
  * regresses we can revisit. */
 .titlebar .sidebar-toggle-button,
+.settings-titlebar .sidebar-toggle-button,
 .titlebar .side-panel-toggle-button,
 .titlebar .environment-toggle-button,
 .titlebar .session-tab-new {

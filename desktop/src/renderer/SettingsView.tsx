@@ -637,7 +637,7 @@ export function SettingsView({
         <div className="settings-titlebar">
           <button
             type="button"
-            className="sidebar-toggle-button settings-sidebar-toggle"
+            className="icon-button side-panel-toggle-button sidebar-toggle-button settings-sidebar-toggle"
             aria-label={sidebarCollapsed ? "展开左侧栏" : "收起左侧栏"}
             aria-pressed={!sidebarCollapsed}
             onClick={onToggleSidebar}

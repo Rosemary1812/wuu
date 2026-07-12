@@ -102,6 +102,7 @@ function renderSettings(props: {
   onRemoveProvider?: (provider: string) => Promise<void>;
   onAdvancedSave?: (settings: RuntimeAdvancedSettingsUpdate) => Promise<void>;
   onGeneralSave?: (settings: RuntimeGeneralSettingsUpdate) => Promise<void>;
+  onToggleSidebar?: () => void;
   // ArchivedSessionView 是结构子集（id/title?/updated_at），这里
   // 直接传对象字面量，避免引入 ThreadSummary（它要求 turns/turn_count
   // 等计算字段，测试场景下冗余）。
@@ -136,7 +137,7 @@ function renderSettings(props: {
         // assertions still produce a sensible non-collapsed shell by default.
         sidebarCollapsed={false}
         sidebarAnimating={false}
-        onToggleSidebar={() => {}}
+        onToggleSidebar={props.onToggleSidebar ?? (() => {})}
         sidebarMotionMs={340}
         onBack={() => {}}
         onSave={props.onSave ?? (async () => {})}
@@ -179,6 +180,28 @@ describe("SettingsView shell", () => {
     expect(brand?.previousElementSibling).toBe(trafficSpacer);
     expect(brand?.nextElementSibling).toBe(backButton);
     expect(brand?.textContent?.trim()).toBe("wuu");
+  });
+
+  it("uses the same transparent-until-hover sidebar toggle as the conversation titlebar", () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    const onToggleSidebar = vi.fn();
+    renderSettings({ initialized: baseInitialized(), onToggleSidebar });
+
+    const toggle = container.querySelector<HTMLButtonElement>(
+      ".settings-titlebar .sidebar-toggle-button",
+    );
+    expect(toggle).not.toBeNull();
+    expect(toggle?.classList.contains("icon-button")).toBe(true);
+    expect(toggle?.classList.contains("side-panel-toggle-button")).toBe(true);
+    expect(toggle?.getAttribute("aria-pressed")).toBe("true");
+
+    act(() => {
+      toggle?.click();
+    });
+    expect(onToggleSidebar).toHaveBeenCalledTimes(1);
   });
 });
 

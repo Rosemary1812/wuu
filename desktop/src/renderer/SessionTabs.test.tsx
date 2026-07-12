@@ -429,6 +429,7 @@ describe("SessionTabStrip layout styles", () => {
     // can revisit.
     for (const selector of [
       ".titlebar .sidebar-toggle-button",
+      ".settings-titlebar .sidebar-toggle-button",
       ".titlebar .side-panel-toggle-button",
       ".titlebar .environment-toggle-button",
       ".titlebar .session-tab-new",
