@@ -756,6 +756,24 @@ private final class CaptureStartGate: @unchecked Sendable {
 }
 
 @available(macOS 14.0, *)
+private func shareableContent(timeout: TimeInterval) async -> SCShareableContent? {
+    // The async SCShareableContent API can leave its continuation unresumed when
+    // the capture daemon is wedged (it happens right after a stream's connection
+    // is interrupted), which permanently stalls the supervision loop. Drive the
+    // completion handler and race it against a timeout so the loop can always
+    // keep retrying instead of leaking a continuation and freezing.
+    let gate = CaptureStartGate()
+    return await withCheckedContinuation { (continuation: CheckedContinuation<SCShareableContent?, Never>) in
+        SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) { content, _ in
+            gate.settle { continuation.resume(returning: content) }
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+            gate.settle { continuation.resume(returning: nil) }
+        }
+    }
+}
+
+@available(macOS 14.0, *)
 private func startWindowStream(window: SCWindow, output: NativePiPStreamOutput, timeout: TimeInterval) async throws -> SCStream {
     let stream = SCStream(
         filter: SCContentFilter(desktopIndependentWindow: window),
@@ -866,7 +884,7 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
                 }
                 try await Task.sleep(for: .milliseconds(250 * (1 << min(5, establishFailures))))
             }
-            guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
+            guard let content = await shareableContent(timeout: 3),
                   let target = configuration.windowID.flatMap({ requested in content.windows.first(where: { $0.windowID == requested }) })
                     ?? preferredStreamWindow(in: content, processID: app.processIdentifier) else {
                 establishFailures += 1
@@ -929,7 +947,7 @@ public func runNativePiP(configuration: NativePiPConfiguration) async throws {
         let safetyRefreshDue = Date().timeIntervalSince(lastSafetyRefresh) >= 5
         guard geometryMonitor.takeDirty() || safetyRefreshDue else { continue }
         lastSafetyRefresh = Date()
-        guard let refreshed = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false),
+        guard let refreshed = await shareableContent(timeout: 3),
               let nextWindow = refreshed.windows.first(where: { $0.windowID == (trackedWindowID ?? 0) }) else { continue }
         guard windowFrameDistance(nextWindow.frame, trackedFrame) > 1 else { continue }
         do {
