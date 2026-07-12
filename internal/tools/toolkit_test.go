@@ -4308,9 +4308,12 @@ func TestToolkit_SpawnAgentDescriptionDoesNotForceStopAfterSpawn(t *testing.T) {
 		if strings.Contains(d.Description, "END YOUR TURN") {
 			t.Fatalf("spawn_agent description must not force stopping after async spawn: %q", d.Description)
 		}
-		for _, want := range []string{"non-overlapping", "Do not sleep, poll", "run_in_background=true"} {
-			if !strings.Contains(d.Description, want) {
-				t.Fatalf("spawn_agent description missing %q: %q", want, d.Description)
+		props, _ := d.InputSchema["properties"].(map[string]any)
+		background, _ := props["run_in_background"].(map[string]any)
+		backgroundDescription, _ := background["description"].(string)
+		for _, want := range []string{"return immediately", "completion notification", "Omit or false to wait", "return its result from this call", "background runs and forks", "do not poll"} {
+			if !strings.Contains(backgroundDescription, want) {
+				t.Fatalf("spawn_agent run_in_background description missing %q: %q", want, backgroundDescription)
 			}
 		}
 		return
@@ -4329,26 +4332,13 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 			continue
 		}
 		for _, want := range []string{
-			"delegation materially improves",
+			"materially improves",
 			"Keep work local",
-			"concrete brief",
-			"Base Agent Brief Contract",
-			"fresh subagent_type invocation",
-			"first and complete query",
-			"fork invocation",
-			"incremental directive",
-			"Use helpme",
-			"context rescue",
-			"destructive or broad experiments",
-			"overlapping or uncertain concurrent writes",
-			"generated outputs/formatters",
 			"subagent_type",
-			"fork yourself",
+			"fork the current conversation",
 			"general-purpose",
-			"verification",
-			"Ordinary child agents are temporary",
-			"saved profile memory",
-			"agent_profile",
+			"helpme",
+			"verify relevant evidence",
 		} {
 			if !strings.Contains(d.Description, want) {
 				t.Fatalf("spawn_agent description missing decision guidance %q: %q", want, d.Description)
@@ -4357,9 +4347,9 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 		props, _ := d.InputSchema["properties"].(map[string]any)
 		for field, wants := range map[string][]string{
 			"subagent_type": {"Subagent Types", "system context", "fork yourself"},
-			"prompt":        {"Concrete task brief", "Base Agent Brief Contract", "fresh subagents", "first query", "self-contained", "forks", "incremental directive", "helpme"},
+			"prompt":        {"Concrete task brief", "fresh subagents", "first query", "self-contained", "scope", "non-goals", "forks", "incremental directive", "verifiable"},
 			"agent_profile": {"Agent Profile name with saved memory", "agent-profile policy", "ordinary temporary child tasks"},
-			"isolation":     {"worktree", "current repo"},
+			"isolation":     {"worktree", "selected subagent type decides", "general-purpose uses the current repo", "worker defaults to a worktree", "destructive or broad experiments", "overlapping or uncertain concurrent writes", "generated changes"},
 		} {
 			prop, _ := props[field].(map[string]any)
 			desc, _ := prop["description"].(string)
@@ -4371,6 +4361,16 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 		}
 		if strings.Contains(d.Description, "memoryless") || strings.Contains(d.Description, "memory-bearing") || strings.Contains(d.Description, "long-lived identity") {
 			t.Fatalf("spawn_agent description should avoid awkward memory wording: %q", d.Description)
+		}
+		if len(d.Description) > 1024 {
+			t.Fatalf("spawn_agent top-level description should contain selection guidance, not parameter manuals; got %d bytes", len(d.Description))
+		}
+		encoded, err := json.Marshal(d)
+		if err != nil {
+			t.Fatalf("marshal spawn_agent definition: %v", err)
+		}
+		if len(encoded) > 5*1024 {
+			t.Fatalf("spawn_agent schema should stay within a focused tool budget, got %d bytes", len(encoded))
 		}
 		return
 	}

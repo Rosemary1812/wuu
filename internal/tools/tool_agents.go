@@ -17,7 +17,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
-	prompttext "github.com/blueberrycongee/wuu/internal/prompt"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
@@ -37,44 +36,11 @@ func (t *SpawnAgentTool) IsConcurrencySafe() bool { return true }
 func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "spawn_agent",
-		Description: "Launch a new agent to handle a complex, multi-step task autonomously. " +
-			"The available subagent_type values and their descriptions are provided in the Subagent Types section of your system context. " +
-			"Specify subagent_type to launch a fresh specialized agent. Omit subagent_type to fork yourself: " +
-			"the child inherits your full conversation context and always runs in the background. For a fresh " +
-			"general-purpose agent, set subagent_type='general-purpose'. The child has its own context " +
-			"and its final answer is delivered to you when it finishes. " +
-			"Use a child only when delegation materially improves the task: independent investigation, " +
-			"parallel implementation slices, risky verification, or work that benefits from a separate context. " +
-			"Ordinary child agents are temporary and do not use saved profile memory. Set agent_profile only when the user asks to use a named " +
-			"Agent Profile with saved memory, or when an agent-profile policy requires one; the profile name selects the saved memory to reuse. " +
-			"Do not set agent_profile for routine one-off delegation. " +
-			"Keep work local when the next step is tightly coupled, on the critical path, or simpler to do directly. " +
-			"Write a concrete brief using the shared Base Agent Brief Contract. " +
-			prompttext.AgentBriefContractSummary() + " " +
-			"For a fresh subagent_type invocation, write `prompt` as the helper's first and complete query: include the task, necessary context, scope, constraints, acceptance criteria, and expected report. " +
-			"For a fork invocation, write `prompt` as an incremental directive: rely on inherited context and specify the focus, owned scope, non-goals, and deliverable instead of pasting the whole transcript. " +
-			"Use helpme, not ordinary spawn_agent, when the purpose is context rescue, repeated-failure recovery, or a fresh second opinion on the parent agent's assumptions. " +
-			prompttext.ProfileBriefExtensionSummary() + " " +
-			prompttext.EphemeralBriefExtensionSummary() + " " +
-			"Do not make the child infer missing acceptance criteria from a vague ask. " +
-			"The child's final message is its deliverable: state exactly what it must contain, " +
-			"including verifiable handles (paths, commands, IDs) you can check without trusting prose. " +
-			"By default the agent runs in the user's current repo, so any files it creates or edits " +
-			"land directly in the working tree. Set isolation='worktree' only " +
-			"for destructive or broad experiments, overlapping or uncertain concurrent writes, " +
-			"generated outputs/formatters that may touch many files, or when the user explicitly " +
-			"asked for a sandbox. Do not use a worktree just because the task involves writing " +
-			"files; small additive or clearly disjoint edits can share the current repo when shared visibility helps. " +
-			"Always include a short description (3-5 words) summarizing what the agent will do. " +
-			"Each fresh subagent_type invocation starts without conversation context, so the `prompt` parameter must be a complete brief. " +
-			"Forks inherit your current context; do not use a fork when a fresh independent second opinion is needed. " +
-			"Fresh agents run in the foreground by default, so the tool returns the child result before you continue. " +
-			"Set run_in_background=true only for independent or long-running work that can proceed while you do other work; " +
-			"background agents return quickly and send a completion notification when done. " +
-			"After spawning background agents, continue meaningful non-overlapping local work when available; otherwise end your turn " +
-			"and let the completion notification resume you. Do not sleep, poll, or loop checking status. When the next step truly " +
-			"depends on child output, end your turn and let the child's completion notification resume you instead of blocking. " +
-			"Spawn multiple independent agents in parallel by calling spawn_agent multiple times in the same response.",
+		Description: "Delegate a bounded task when separate context or parallel work materially improves the result. " +
+			"Keep work local when the next step is tightly coupled or simpler to do directly. " +
+			"Set subagent_type for a fresh worker; omit it to fork the current conversation, and use general-purpose for unspecialized fresh work. " +
+			"Use helpme instead for repeated-failure or polluted-context recovery. " +
+			"Treat the child's final message as a deliverable and verify relevant evidence before relying on it.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -84,10 +50,9 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"prompt": map[string]any{
 					"type": "string",
-					"description": "Concrete task brief. " + prompttext.AgentBriefContractSummary() +
-						" For fresh subagents, this is their first query and must be self-contained: include the task, necessary context, starting points, constraints, acceptance criteria, and expected report. " +
+					"description": "Concrete task brief. For fresh subagents, this is their first query and must be self-contained: include the task, relevant context, scope, non-goals, starting points, constraints, acceptance criteria, and expected deliverable. " +
 						"For forks, keep this as an incremental directive that relies on inherited context while naming focus, scope, non-goals, and deliverable. " +
-						"For code edits, include owned files/modules and out-of-scope neighbors. Use helpme instead when the purpose is context rescue or second-opinion recovery.",
+						"For code edits, include owned files/modules and out-of-scope neighbors. Ask for verifiable paths, commands, or IDs when evidence matters.",
 				},
 				"subagent_type": map[string]any{
 					"type":        "string",
@@ -103,12 +68,12 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 				},
 				"run_in_background": map[string]any{
 					"type":        "boolean",
-					"description": "Optional. For fresh subagents only. Set true for independent or long-running work that should return immediately and notify you later. Omit or false when the next step needs the result now. Forks always run in the background.",
+					"description": "Optional. For fresh subagents only. Set true to return immediately and receive the result later through a completion notification while you do non-overlapping work. Omit or false to wait for the child and return its result from this call. Forks always run in the background. For background runs and forks, do not poll; wait for the notification when blocked on the result.",
 				},
 				"isolation": map[string]any{
 					"type":        "string",
 					"enum":        []string{"worktree"},
-					"description": "Optional. 'worktree' creates a fresh isolated workspace for sandboxed edits. Omit to run in the current repo.",
+					"description": "Optional. Use 'worktree' for destructive or broad experiments, overlapping or uncertain concurrent writes, wide generated changes, or an explicitly requested sandbox. When omitted, the selected subagent type decides: general-purpose uses the current repo, while worker defaults to a worktree.",
 				},
 			},
 			"required": []string{"description", "prompt"},
