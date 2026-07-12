@@ -203,6 +203,10 @@ private func testWaitForChangeTimeoutIsANormalResultWhenAccessibilityIsAvailable
     _ = try backend.perform(ComputerCommand(arguments: [
         "action": "observe", "app": "/System/Applications/Calculator.app",
     ]))
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.25))
+    _ = try backend.perform(ComputerCommand(arguments: [
+        "action": "observe", "app": "/System/Applications/Calculator.app",
+    ]))
     let server = MCPServer(backend: backend)
     let response = try server.handle([
         "jsonrpc": "2.0", "id": 9, "method": "tools/call",
