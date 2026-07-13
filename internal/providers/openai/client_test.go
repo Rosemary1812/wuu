@@ -816,8 +816,12 @@ func TestChat_AppliesMistralMessageCompatibility(t *testing.T) {
 		if len(body.Messages) != 5 {
 			t.Fatalf("expected assistant separator message, got %#v", body.Messages)
 		}
-		if body.Messages[1].ToolCalls[0].ID != "call12345" || body.Messages[2].ToolCallID != "call12345" {
-			t.Fatalf("expected scrubbed Mistral tool call IDs, got %#v", body.Messages)
+		scrubbed := body.Messages[1].ToolCalls[0].ID
+		if len(scrubbed) != 9 || scrubbed == "call_123456789_extra" {
+			t.Fatalf("expected 9-char scrubbed Mistral tool call ID, got %#v", body.Messages)
+		}
+		if body.Messages[2].ToolCallID != scrubbed {
+			t.Fatalf("expected matching scrubbed Mistral tool call IDs, got %#v", body.Messages)
 		}
 		if body.Messages[3].Role != "assistant" || body.Messages[3].Content != "Done." || body.Messages[4].Role != "user" {
 			t.Fatalf("expected Done separator before user, got %#v", body.Messages)
@@ -1037,7 +1041,10 @@ func TestStreamChat_ConnectTimeout(t *testing.T) {
 		APIKey:  "test-key",
 		StreamConfig: &providers.StreamTransportConfig{
 			ConnectTimeout: 50 * time.Millisecond,
-			IdleTimeout:    time.Second,
+			// Header wait is bounded separately from dial/TLS; this test
+			// delays the response headers, so bound that stage tightly too.
+			HeaderTimeout: 50 * time.Millisecond,
+			IdleTimeout:   time.Second,
 		},
 	})
 	if err != nil {

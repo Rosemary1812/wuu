@@ -1988,3 +1988,50 @@ func TestResponsesStreamChatWebSocket_IdleWatchdogAbortsSilentStream(t *testing.
 		t.Fatal("dead connection was not closed after watchdog fired")
 	}
 }
+
+func TestResponsesWebSocketFallbackPinExpires(t *testing.T) {
+	client, err := New(ClientConfig{
+		BaseURL:            "https://example.test/v1",
+		WireAPI:            "responses",
+		APIKey:             "test-key",
+		ResponsesTransport: providers.StreamTransportWebSocket,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	cache := client.responsesWSCache
+	session := cache.session("thread-pin")
+
+	client.responsesWebSocketMarkFallback(session, "websocket_setup_failed")
+
+	session.mu.Lock()
+	if !session.fallbackActiveLocked(time.Now()) {
+		session.mu.Unlock()
+		t.Fatal("fresh fallback pin must be active")
+	}
+	if session.fallback.until.IsZero() {
+		session.mu.Unlock()
+		t.Fatal("fallback pin must carry an expiry")
+	}
+	// Simulate the pin lapsing: the next check clears it so the websocket is
+	// retried instead of the session being degraded for the process lifetime.
+	session.fallback.until = time.Now().Add(-time.Second)
+	if session.fallbackActiveLocked(time.Now()) {
+		session.mu.Unlock()
+		t.Fatal("expired fallback pin must clear")
+	}
+	if session.fallback.active {
+		session.mu.Unlock()
+		t.Fatal("expired pin state must be reset")
+	}
+	session.mu.Unlock()
+
+	// The reclaim timer expires the entry once the pin lapses.
+	cache.expireIdleSession("thread-pin", session)
+	cache.mu.Lock()
+	_, exists := cache.sessions["thread-pin"]
+	cache.mu.Unlock()
+	if exists {
+		t.Fatal("expired fallback session entry must be reclaimed")
+	}
+}

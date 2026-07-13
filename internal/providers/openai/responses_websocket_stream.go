@@ -17,7 +17,13 @@ import (
 )
 
 const (
-	defaultResponsesWebSocketCacheTTL     = 5 * time.Minute
+	defaultResponsesWebSocketCacheTTL = 5 * time.Minute
+	// A fallback pin routes a session's requests to SSE after a websocket
+	// failure. Most pin causes are transient (connection-limit pressure, one
+	// dial hiccup), so the pin expires and the websocket is retried instead
+	// of degrading the session for the whole process lifetime — which also
+	// let pinned map entries accumulate without bound.
+	defaultResponsesWebSocketFallbackTTL  = 10 * time.Minute
 	responsesWebSocketConnectionLimitCode = "websocket_connection_limit_reached"
 )
 
@@ -75,6 +81,20 @@ type responsesWebSocketReadEvent struct {
 type responsesWebSocketFallbackState struct {
 	active bool
 	reason string
+	until  time.Time
+}
+
+// fallbackActiveLocked reports whether the SSE pin is still in force and
+// clears it once expired. Callers must hold session.mu.
+func (s *responsesWebSocketSession) fallbackActiveLocked(now time.Time) bool {
+	if !s.fallback.active {
+		return false
+	}
+	if !s.fallback.until.IsZero() && !now.Before(s.fallback.until) {
+		s.fallback = responsesWebSocketFallbackState{}
+		return false
+	}
+	return true
 }
 
 type responsesWebSocketRequestMeta struct {
@@ -133,7 +153,7 @@ func (c *Client) responsesStreamChatWebSocketAttempt(ctx context.Context, payloa
 	session := c.responsesWSCache.session(sessionID)
 	session.mu.Lock()
 	c.responsesWebSocketCancelIdleTimerLocked(session)
-	if session.fallback.active {
+	if session.fallbackActiveLocked(time.Now()) {
 		reason := session.fallback.reason
 		session.mu.Unlock()
 		lease.Release()
@@ -754,8 +774,10 @@ func (c *Client) responsesWebSocketScheduleIdleExpiryLocked(session *responsesWe
 }
 
 func (c *Client) responsesWebSocketActivateFallbackLocked(session *responsesWebSocketSession, reason string) {
-	c.responsesWebSocketMarkFallbackLocked(session, reason)
+	// Invalidate first: it cancels the idle timer, and marking afterwards
+	// installs the pin-expiry timer that reclaims this session.
 	c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, reason)
+	c.responsesWebSocketMarkFallbackLocked(session, reason)
 }
 
 func (c *Client) responsesWebSocketMarkFallback(session *responsesWebSocketSession, reason string) {
@@ -772,7 +794,22 @@ func (c *Client) responsesWebSocketMarkFallbackLocked(session *responsesWebSocke
 	if reason == "" {
 		reason = "websocket_unavailable_before_start"
 	}
-	session.fallback = responsesWebSocketFallbackState{active: true, reason: reason}
+	session.fallback = responsesWebSocketFallbackState{
+		active: true,
+		reason: reason,
+		until:  time.Now().Add(defaultResponsesWebSocketFallbackTTL),
+	}
+	// A pinned session holds no connection, so the regular idle expiry never
+	// runs for it. Arm a timer so the entry is reclaimed (and the websocket
+	// retried) once the pin lapses instead of accumulating forever.
+	if session.cache != nil {
+		c.responsesWebSocketCancelIdleTimerLocked(session)
+		cache := session.cache
+		sessionID := session.id
+		session.idleTimer = time.AfterFunc(defaultResponsesWebSocketFallbackTTL, func() {
+			cache.expireIdleSession(sessionID, session)
+		})
+	}
 }
 
 func (c *Client) responsesWebSocketInvalidateConnectionLocked(session *responsesWebSocketSession, status websocket.StatusCode, reason string) {
@@ -824,8 +861,17 @@ func (c *ResponsesWebSocketCache) expireIdleSession(sessionID string, session *r
 	session.active = nil
 	session.continuation = nil
 	session.generation++
-	keepSession := session.fallback.active
+	now := time.Now()
+	keepSession := session.fallbackActiveLocked(now)
 	session.idleTimer = nil
+	if keepSession && !session.fallback.until.IsZero() {
+		// Fired before the pin lapsed (e.g. a connection idle expiry).
+		// Re-arm so the entry is still reclaimed at pin expiry.
+		sessionID := sessionID
+		session.idleTimer = time.AfterFunc(session.fallback.until.Sub(now)+time.Second, func() {
+			c.expireIdleSession(sessionID, session)
+		})
+	}
 	session.mu.Unlock()
 
 	if keepSession {
