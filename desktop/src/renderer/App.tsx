@@ -1833,6 +1833,8 @@ export function App(): JSX.Element {
     scrollConversationToBottom,
     enableConversationAutoFollow,
     disableConversationAutoFollow,
+    captureConversationScrollPosition,
+    restoreConversationScrollPosition,
     userScrolledAway
   } = useConversationScrollState({
     activeThreadID,
@@ -1853,6 +1855,28 @@ export function App(): JSX.Element {
   const handleTurnCollapseComplete = useCallback(() => {
     scheduleStreamScroll();
   }, [scheduleStreamScroll]);
+
+  // Captures the user's scroll position when they open the inline edit on a
+  // historical message so cancel can put them back exactly where they were
+  // instead of dropping them at the latest content via the resize observer.
+  const preEditScrollSnapshotRef = useRef<
+    | {
+        scrollTop: number;
+        autoFollow: boolean;
+      }
+    | undefined
+  >(undefined);
+  const rememberConversationScrollForEdit = useCallback((): void => {
+    preEditScrollSnapshotRef.current = captureConversationScrollPosition();
+  }, [captureConversationScrollPosition]);
+  const restoreConversationScrollForEdit = useCallback((): void => {
+    const snapshot = preEditScrollSnapshotRef.current;
+    preEditScrollSnapshotRef.current = undefined;
+    if (!snapshot) {
+      return;
+    }
+    restoreConversationScrollPosition(snapshot);
+  }, [restoreConversationScrollPosition]);
   const canEditCachedThreadMessage = useStableCallback((thread: Thread) =>
     canShowHistoryEditButton(thread),
   );
@@ -2952,7 +2976,10 @@ export function App(): JSX.Element {
     closeConversationSearch,
     clearEnvironmentDialog: () => setEnvironmentDialog(null),
     scheduleGitStatusRefresh,
+    disableConversationAutoFollow,
     enableConversationAutoFollow,
+    rememberConversationScrollForEdit,
+    restoreConversationScrollForEdit,
     threadHasPendingComposerMessages,
     sendComposerMessageToThread,
     worktreeForkNonGitReason: WORKTREE_FORK_NON_GIT_REASON,

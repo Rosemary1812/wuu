@@ -20,7 +20,7 @@ import {
   type ComposerImage,
   type QueuedComposerMessage,
 } from "./ComposerMessages";
-import { lastUserMessageAnchor } from "./TurnViewHelpers";
+import { lastUserMessageAnchor, scrollToUserMessage } from "./TurnViewHelpers";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
@@ -63,7 +63,16 @@ export type ConversationHistoryActionsDeps = {
   closeConversationSearch: (options?: { immediate?: boolean }) => void;
   clearEnvironmentDialog: () => void;
   scheduleGitStatusRefresh: (delayMs: number) => void;
+  disableConversationAutoFollow: () => void;
   enableConversationAutoFollow: () => void;
+  /**
+   * Snapshot the conversation viewport's scrollTop and auto-follow state so
+   * the caller can put the user back exactly where they came from after a
+   * transient interaction (currently: cancelling a history-message edit).
+   */
+  rememberConversationScrollForEdit: () => void;
+  /** Restore the snapshot captured by `rememberConversationScrollForEdit`. */
+  restoreConversationScrollForEdit: () => void;
   threadHasPendingComposerMessages: (threadID: string) => boolean;
   sendComposerMessageToThread: (
     message: QueuedComposerMessage,
@@ -271,7 +280,19 @@ export function createConversationHistoryActions(
       }));
       return;
     }
-    
+
+    // Capture the user's pre-edit scroll state *before* we change anything.
+// Cancelling the edit will restore this snapshot so the user is parked
+// back at the same scrollTop (and same auto-follow state) they came
+// from — otherwise the resize observer triggered by the editor→bubble
+// swap would yank them back to the bottom.
+deps.rememberConversationScrollForEdit();
+    // Disarm auto-follow *before* setting the edit state. The editor's
+    // taller height grows the conversation's scrollHeight, which would
+    // otherwise read as "user scrolled away from latest" once the
+    // bubble-to-editor swap reflows. Disarming up front keeps the
+    // "跳到最新" pill hidden while the user is editing.
+    deps.disableConversationAutoFollow();
     deps.setHistoryMessageEdit({
       threadID: sourceThread.id,
       turnID,
@@ -279,10 +300,23 @@ export function createConversationHistoryActions(
       pane,
       submitting: false,
     });
+    // Bring the editor into view deliberately — `scrollToUserMessage` is the
+    // same helper the query-history popover uses, so the jump matches the
+    // existing scroll contract (smooth scroll, 64px headroom, no surprise
+    // auto-follow disarms). The helper retries on a short cadence, which
+    // covers the case where the editor hasn't mounted yet on the first
+    // synchronous attempt.
+    scrollToUserMessage(turnID, item.id);
   }
 
   function cancelEditingThreadMessage(): void {
     deps.setHistoryMessageEdit(undefined);
+    // Restore the viewport to where the user was before they opened the
+    // editor. The snapshot also captures auto-follow, so a user who was
+    // parked at the bottom is sent back to the bottom via the resize
+    // observer, while a user who had scrolled up stays scrolled up —
+    // matching their original intent instead of dropping them at latest.
+    deps.restoreConversationScrollForEdit();
   }
 
   async function submitEditedThreadMessageFromHistory(

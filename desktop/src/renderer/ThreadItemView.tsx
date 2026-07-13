@@ -488,7 +488,14 @@ function UserMessageInlineEditor({
       if (!textarea) {
         return;
       }
-      textarea.focus();
+      // preventScroll: the conversation pane owns its scroll position, so
+      // the browser's default focus-scroll must not yank the viewport to
+      // bring the textarea into view — that scroll would disarm auto-follow
+      // and surface the "跳到最新" pill on what is otherwise a deliberate
+      // edit action. We scroll the editor into view ourselves on edit start
+      // (see startEditingThreadMessageFromHistory) so this stays consistent
+      // with the rest of the conversation scroll contract.
+      textarea.focus({ preventScroll: true });
       textarea.setSelectionRange(textarea.value.length, textarea.value.length);
     });
   }, []);

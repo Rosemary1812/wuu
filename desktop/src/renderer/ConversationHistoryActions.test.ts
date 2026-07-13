@@ -23,6 +23,12 @@ import {
   type HistoryMessageEditState,
   type PendingForkState,
 } from "./ConversationHistoryActions";
+import * as TurnViewHelpers from "./TurnViewHelpers";
+
+// `scrollToUserMessage` schedules retry timeouts that would otherwise leak
+// across tests in jsdom (no DOM anchor is mounted, so the helper keeps
+// retrying). Replace it with a synchronous stub that just records calls.
+vi.spyOn(TurnViewHelpers, "scrollToUserMessage").mockImplementation(() => {});
 
 const originalWuu = (window as unknown as { wuu?: unknown }).wuu;
 
@@ -154,7 +160,10 @@ function buildActions({
   const closeConversationSearch = vi.fn();
   const clearEnvironmentDialog = vi.fn();
   const scheduleGitStatusRefresh = vi.fn();
+  const disableConversationAutoFollow = vi.fn();
   const enableConversationAutoFollow = vi.fn();
+  const rememberConversationScrollForEdit = vi.fn();
+  const restoreConversationScrollForEdit = vi.fn();
   const restorePrimaryComposerDraft = vi.fn();
   const sendComposerMessageToThread = vi
     .fn()
@@ -219,7 +228,10 @@ function buildActions({
     closeConversationSearch,
     clearEnvironmentDialog,
     scheduleGitStatusRefresh,
+    disableConversationAutoFollow,
     enableConversationAutoFollow,
+    rememberConversationScrollForEdit,
+    restoreConversationScrollForEdit,
     threadHasPendingComposerMessages: () => hasPendingMessages,
     sendComposerMessageToThread,
     worktreeForkNonGitReason: "当前工作目录不是 git 仓库，不能创建 git worktree",
@@ -241,7 +253,10 @@ function buildActions({
     closeConversationSearch,
     clearEnvironmentDialog,
     scheduleGitStatusRefresh,
+    disableConversationAutoFollow,
     enableConversationAutoFollow,
+    rememberConversationScrollForEdit,
+    restoreConversationScrollForEdit,
     restorePrimaryComposerDraft,
     sendComposerMessageToThread,
   };
@@ -345,8 +360,30 @@ describe("createConversationHistoryActions", () => {
       pane: "secondary",
       submitting: false,
     });
+    // Capture happens *before* anything that would mutate the viewport,
+    // so the snapshot reflects the user's true pre-edit scrollTop +
+    // auto-follow state — the data that cancel needs to put them back.
+    expect(harness.rememberConversationScrollForEdit).toHaveBeenCalledTimes(1);
+    // The bubble-to-editor swap makes the conversation taller; without
+    // disarming auto-follow first, the reflow would be read as "user
+    // scrolled away from latest" and the "跳到最新" pill would pop up.
+    expect(harness.disableConversationAutoFollow).toHaveBeenCalledTimes(1);
+    // The editor also needs to be visible — the previous flow relied on
+    // the browser's default focus-scroll, which both moved the scroll
+    // unexpectedly and triggered the auto-follow disarm above.
+    expect(TurnViewHelpers.scrollToUserMessage).toHaveBeenCalledWith(
+      "turn-1",
+      "item-1",
+    );
+
     harness.actions.cancelEditingThreadMessage();
     expect(harness.getHistoryMessageEdit()).toBeUndefined();
+    // Cancel restores the captured scrollTop + auto-follow snapshot
+    // instead of blanket-enabling auto-follow (which would let the
+    // resize observer drop the user at the bottom even when they had
+    // been scrolled up before clicking edit).
+    expect(harness.restoreConversationScrollForEdit).toHaveBeenCalledTimes(1);
+    expect(harness.enableConversationAutoFollow).not.toHaveBeenCalled();
   });
 
   it("blocks history edit while the thread has pending composer messages", () => {

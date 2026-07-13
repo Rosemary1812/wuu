@@ -53,7 +53,7 @@ function dockComposerVisualHeight(node: HTMLElement): number {
   return layoutHeight + expandedOffset;
 }
 
-type ConversationScrollSnapshot = {
+export type ConversationScrollSnapshot = {
   scrollTop: number;
   autoFollow: boolean;
 };
@@ -109,6 +109,14 @@ export function useConversationScrollState({
    * near the bottom.
    */
   disableConversationAutoFollow: () => void;
+  /**
+   * Snapshot the current scrollTop + auto-follow state so a later call to
+   * `restoreConversationScrollPosition` can return the viewport to the
+   * exact position the user came from. Used by the history-message edit
+   * flow (capture on edit start, restore on cancel).
+   */
+  captureConversationScrollPosition: () => ConversationScrollSnapshot | undefined;
+  restoreConversationScrollPosition: (snapshot: ConversationScrollSnapshot) => void;
   /**
    * True when the user has scrolled up out of the bottom band. Drives
    * the "Jump to latest" pill: hidden when false, shown when true.
@@ -382,6 +390,39 @@ export function useConversationScrollState({
       rememberActiveThreadScrollSnapshot(node, false);
     }
   }, [activePane, activeThreadID, setAutoFollow, splitConversation]);
+
+  // Snapshot the user's current scroll state so a later call to
+  // restoreConversationScrollPosition can return the viewport to exactly
+  // where they were. Used by the history-message edit flow: capture on
+  // edit start, restore on cancel so the user is parked back where they
+  // came from instead of being yanked to the bottom by the resize
+  // observer when the inline editor swaps back to a bubble.
+  const captureConversationScrollPosition = useCallback(
+    (): ConversationScrollSnapshot | undefined => {
+      const node = conversationViewport();
+      if (!node) {
+        return undefined;
+      }
+      return {
+        scrollTop: clampScrollTop(node, node.scrollTop),
+        autoFollow: conversationAutoFollowRef.current,
+      };
+    },
+    [activePane, splitConversation],
+  );
+
+  const restoreConversationScrollPosition = useCallback(
+    (snapshot: ConversationScrollSnapshot): void => {
+      const node = conversationViewport();
+      if (!node) {
+        return;
+      }
+      applyProgrammaticScroll(node, snapshot.scrollTop, snapshot.autoFollow, {
+        revealScrollbar: true,
+      });
+    },
+    [activePane, activeThreadID, setAutoFollow, splitConversation],
+  );
 
   function handleConversationScroll(scrolledNode?: HTMLElement): void {
     const node = scrolledNode ?? conversationViewport();
@@ -826,6 +867,8 @@ export function useConversationScrollState({
     scrollConversationToBottom,
     enableConversationAutoFollow,
     disableConversationAutoFollow,
+    captureConversationScrollPosition,
+    restoreConversationScrollPosition,
     userScrolledAway
   };
 }
