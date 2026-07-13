@@ -70,3 +70,10 @@ describe("globalized right panel chrome", () => {
     expect(body).not.toMatch(/padding-left:\s*86px;/);
   });
 });
+
+describe("panel resizer feedback", () => {
+  it("lights the full height of both sidebar edges", () => {
+    expect(cssRule(".sidebar-resizer::before")).toMatch(/inset:\s*0;/);
+    expect(cssRule(".workspace-right-panel-resizer::before")).toMatch(/inset:\s*0;/);
+  });
+});

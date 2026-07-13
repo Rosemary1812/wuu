@@ -448,9 +448,10 @@
 }
 
 .workspace-right-panel-resizer::before {
+  /* Match the left sidebar resizer: hover and drag feedback follows the
+   * panel's complete left edge instead of stopping 12px from each end. */
   position: absolute;
-  top: 12px;
-  bottom: 12px;
+  inset: 0;
   left: 50%;
   width: 1px;
   border-radius: var(--radius-pill);
