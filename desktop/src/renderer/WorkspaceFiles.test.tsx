@@ -73,41 +73,24 @@ function workspaceFile(overrides: Partial<WorkspaceFileReadResult> = {}): Worksp
 }
 
 const directoryResults: Record<string, WorkspaceDirectoryListResult> = {
-  "": {
-    root: "/repo",
-    path: "",
-    entries: [
-      { kind: "directory", name: "src", path: "src/" },
-      { kind: "file", name: "README.md", path: "README.md" },
-    ],
-    truncated: false,
-  },
-  src: {
-    root: "/repo",
-    path: "src",
-    entries: [
-      { kind: "directory", name: "components", path: "src/components/" },
-      { kind: "file", name: "index.ts", path: "src/index.ts" },
-    ],
-    truncated: false,
-  },
-  "src/components": {
-    root: "/repo",
-    path: "src/components",
-    entries: [
-      { kind: "file", name: "Button.tsx", path: "src/components/Button.tsx" },
-    ],
-    truncated: false,
-  },
+  "": { root: "/repo", path: "", entries: [
+    { kind: "directory", name: "src", path: "src/" },
+    { kind: "file", name: "README.md", path: "README.md" },
+  ], truncated: false },
+  src: { root: "/repo", path: "src", entries: [
+    { kind: "directory", name: "components", path: "src/components/" },
+    { kind: "file", name: "index.ts", path: "src/index.ts" },
+  ], truncated: false },
+  "src/components": { root: "/repo", path: "src/components", entries: [
+    { kind: "file", name: "Button.tsx", path: "src/components/Button.tsx" },
+  ], truncated: false },
 };
 
 beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  listWorkspaceDirectory = vi.fn((path?: string) =>
-    Promise.resolve(directoryResults[path ?? ""]),
-  );
+  listWorkspaceDirectory = vi.fn((path = "") => Promise.resolve(directoryResults[path]));
   readWorkspaceFile = vi.fn((path: string) =>
     Promise.resolve(workspaceFile({ path, absolute_path: `/repo/${path}` })),
   );
@@ -176,14 +159,15 @@ async function click(selector: string): Promise<void> {
 // reach the row's onContextMenu handler, which sets React state; menu
 // listeners attach via setTimeout(0) inside useEffect, so tests must flush
 // a real macrotask before dispatching outside pointerdown / Escape events.
+function treeShadowRoot(): ShadowRoot {
+  const shadowRoot = container.querySelector("file-tree-container")?.shadowRoot;
+  if (!shadowRoot) throw new Error("missing Pierre tree shadow root");
+  return shadowRoot;
+}
+
 function rowButtonByTitle(title: string): HTMLButtonElement {
-  // Test titles are simple strings (e.g., "README.md", "/repo/src/page.tsx") —
-  // the slash and dot are valid in an attribute selector value unescaped, and
-  // we never work with titles that contain `"` or `\` here. Avoid CSS.escape
-  // since JSDOM doesn't expose it in every version and we don't need it.
-  const row = container.querySelector<HTMLButtonElement>(
-    `.workspace-file-tree-row[title="${title}"]`,
-  );
+  const row = [...treeShadowRoot().querySelectorAll<HTMLButtonElement>("button[data-type='item']")]
+    .find((button) => button.getAttribute("aria-label") === title || button.dataset.itemPath === title);
   if (!row) {
     throw new Error(`missing tree row with title ${title}`);
   }
@@ -249,16 +233,8 @@ describe("WorkspaceFileTree", () => {
     expect(listWorkspaceDirectory).toHaveBeenCalledWith("", "/repo");
     expect(listWorkspaceDirectory).toHaveBeenCalledWith("src", "/repo");
     expect(listWorkspaceDirectory).toHaveBeenCalledWith("src/components", "/repo");
-
-    const selected = container.querySelector<HTMLButtonElement>(
-      ".workspace-file-tree-row.selected",
-    );
-    expect(selected?.title).toBe("src/components/Button.tsx");
-    expect(selected?.textContent).toContain("Button.tsx");
-    expect(scrollIntoView).toHaveBeenCalledWith({
-      block: "nearest",
-      inline: "nearest",
-    });
+    const selected = treeShadowRoot().querySelector("[aria-selected='true']");
+    expect(selected?.getAttribute("data-item-path")).toBe("src/components/Button.tsx");
   });
 
   it("forwards a worktree root that differs from /repo through to the preload API", async () => {
@@ -506,58 +482,38 @@ describe("WorkspaceFileTree", () => {
     // Override the root mock so entry.path is absolute — lets the assertions
     // distinguish "the raw entry path" from "the workspace-root-stripped
     // variant" in the next two tests.
-    listWorkspaceDirectory.mockImplementation((path?: string) =>
-      Promise.resolve({
-        root: "/repo",
-        path: path ?? "",
-        entries:
-          path === ""
-            ? [{ kind: "file", name: "page.tsx", path: "/repo/src/page.tsx" }]
-            : [],
-        truncated: false,
-      }),
-    );
+    listWorkspaceDirectory.mockResolvedValue({ root: "/repo", path: "", entries: [{ kind: "file", name: "page.tsx", path: "page.tsx" }], truncated: false });
 
     await render(
       <WorkspaceFileTree activeContext={activeContext} open onOpenFile={() => {}} />,
     );
     await settleDirectoryLoads();
 
-    const row = rowButtonByTitle("/repo/src/page.tsx");
+    const row = rowButtonByTitle("page.tsx");
     await dispatchContextMenu(row, 120, 240);
     await flushMacrotask();
 
     await clickMenuItem("复制路径");
 
-    expect(writeClipboard).toHaveBeenCalledWith("/repo/src/page.tsx");
+    expect(writeClipboard).toHaveBeenCalledWith("/repo/page.tsx");
     expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
   });
 
   it("复制相对路径 strips the workspace-root prefix and closes the menu", async () => {
-    listWorkspaceDirectory.mockImplementation((path?: string) =>
-      Promise.resolve({
-        root: "/repo",
-        path: path ?? "",
-        entries:
-          path === ""
-            ? [{ kind: "file", name: "page.tsx", path: "/repo/src/page.tsx" }]
-            : [],
-        truncated: false,
-      }),
-    );
+    listWorkspaceDirectory.mockResolvedValue({ root: "/repo", path: "", entries: [{ kind: "file", name: "page.tsx", path: "page.tsx" }], truncated: false });
 
     await render(
       <WorkspaceFileTree activeContext={activeContext} open onOpenFile={() => {}} />,
     );
     await settleDirectoryLoads();
 
-    const row = rowButtonByTitle("/repo/src/page.tsx");
+    const row = rowButtonByTitle("page.tsx");
     await dispatchContextMenu(row, 120, 240);
     await flushMacrotask();
 
     await clickMenuItem("复制相对路径");
 
-    expect(writeClipboard).toHaveBeenCalledWith("src/page.tsx");
+    expect(writeClipboard).toHaveBeenCalledWith("page.tsx");
     expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
   });
 
@@ -589,7 +545,7 @@ describe("WorkspaceFileTree", () => {
 
     await clickMenuItem("在文件管理器中显示");
 
-    expect(revealWorkspaceItem).toHaveBeenCalledWith("README.md");
+    expect(revealWorkspaceItem).toHaveBeenCalledWith("/repo/README.md");
     expect(container.querySelector(".workspace-tree-context-menu")).toBeNull();
   });
 

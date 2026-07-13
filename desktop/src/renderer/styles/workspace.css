@@ -880,88 +880,34 @@ html.resizing-workspace-file-split * {
 }
 
 .workspace-file-panel {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   height: 100%;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 8px;
   /* Pull the file panel out of .workspace-panel-body's 12px right padding so
      the scrollbar sits flush against the right edge of the side panel. */
   margin-right: -12px;
 }
 
-.workspace-file-meta {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--ink);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-semibold);
-  padding: 0 2px;
-}
-
-.workspace-file-meta span,
-.workspace-file-meta small {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workspace-file-meta small {
+.workspace-file-tree-limit {
+  flex: 0 0 auto;
   color: var(--ink-muted);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
+  padding: 0 5px 6px;
 }
 
 .workspace-file-tree-frame {
+  flex: 1 1 auto;
   contain: strict;
-  display: grid;
   position: relative;
   height: 100%;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 6px;
   overflow: hidden;
   transform: translateZ(0);
   will-change: transform;
-}
-
-.workspace-file-search {
-  width: 100%;
-  height: 28px;
-  min-width: 0;
-  border: 1px solid var(--surface-3);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: var(--font-sm);
-  outline: none;
-  padding: 0 8px;
-  transition: border-color 120ms ease;
-}
-
-.workspace-files-tree .workspace-file-search {
-  width: calc(100% - 10px);
-}
-
-.workspace-file-search:focus {
-  border-color: var(--ink-overlay-18);
-}
-
-.workspace-file-search::placeholder {
-  color: var(--ink-faint);
-}
-
-.workspace-file-tree-scroll {
-  min-width: 0;
-  min-height: 0;
-  overflow: auto;
 }
 
 .window-resizing .workspace-file-tree-frame {
@@ -970,126 +916,6 @@ html.resizing-workspace-file-split * {
   will-change: auto;
 }
 
-.window-resizing .workspace-file-tree-scroll {
-  pointer-events: none;
-}
-
-.workspace-file-tree-list {
-  display: grid;
-  min-width: 0;
-  align-content: start;
-  padding: 1px 0 6px;
-}
-
-.workspace-file-tree-row {
-  --workspace-tree-indent: calc(var(--workspace-tree-depth, 0) * 14px);
-  display: grid;
-  width: 100%;
-  min-width: 0;
-  height: 24px;
-  grid-template-columns: 16px 16px minmax(0, 1fr);
-  align-items: center;
-  gap: 4px;
-  border: 0;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--ink);
-  cursor: default;
-  font: inherit;
-  font-size: var(--font-sm);
-  font-weight: 400;
-  line-height: 1;
-  padding: 0 6px 0 calc(4px + var(--workspace-tree-indent));
-  text-align: left;
-}
-
-.workspace-file-tree-row:hover {
-  background: var(--surface-2);
-}
-
-.workspace-file-tree-row.selected {
-  background: var(--surface-3);
-  color: var(--ink-strong);
-}
-
-.workspace-file-tree-row.hidden .workspace-file-tree-name,
-.workspace-file-tree-row.hidden {
-  color: var(--ink-soft);
-}
-
-.workspace-file-tree-row svg {
-  color: var(--ink-muted);
-}
-
-.workspace-file-tree-row.selected svg {
-  color: var(--ink-strong);
-}
-
-.workspace-file-tree-icon.code {
-  color: var(--file-icon-code);
-}
-
-.workspace-file-tree-icon.config {
-  color: var(--warning);
-}
-
-.workspace-file-tree-icon.doc {
-  color: var(--success);
-}
-
-.workspace-file-tree-icon.shell {
-  color: var(--ink-soft);
-}
-
-.workspace-file-tree-icon.data {
-  color: var(--file-icon-data);
-}
-
-.workspace-file-tree-row.selected .workspace-file-tree-icon {
-  color: var(--ink-strong);
-}
-
-.workspace-file-tree-toggle,
-.workspace-file-tree-toggle-spacer {
-  display: grid;
-  width: 16px;
-  height: 16px;
-  place-items: center;
-  color: var(--ink-faint);
-}
-
-.workspace-file-tree-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workspace-file-tree-status {
-  color: var(--ink-muted);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
-  padding: 12px 10px;
-}
-
-.workspace-file-tree-status.row {
-  --workspace-tree-indent: calc(var(--workspace-tree-depth, 0) * 14px);
-  height: 24px;
-  padding: 4px 6px 0 calc(44px + var(--workspace-tree-indent));
-}
-
-.workspace-file-tree-status.action {
-  display: block;
-  width: 100%;
-  border: 0;
-  background: transparent;
-  cursor: default;
-  text-align: left;
-}
-
-.workspace-file-tree-status.action:hover {
-  color: var(--ink);
-}
 
 /* Right-click menu on file-tree rows. The component (WorkspaceTreeContextMenu
    in WorkspaceFiles.tsx) positions the menu in viewport coordinates and

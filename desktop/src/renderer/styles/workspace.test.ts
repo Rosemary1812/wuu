@@ -85,23 +85,16 @@ describe("workspace readonly file preview", () => {
 });
 
 describe("workspace file tree density", () => {
-  it("uses compact editor-style rows, typography, and indentation", () => {
-    const row = cssRuleBody(".workspace-file-tree-row");
-    expect(row).toMatch(/height:\s*24px;/);
-    expect(row).toMatch(/font-size:\s*var\(--font-sm\);/);
-    expect(row).toMatch(/font-weight:\s*400;/);
-    expect(row).toMatch(/grid-template-columns:\s*16px\s+16px\s+minmax\(0,\s*1fr\);/);
-    expect(row).toMatch(/gap:\s*4px;/);
-    expect(row).toMatch(/var\(--workspace-tree-depth,\s*0\)\s*\*\s*14px/);
-    expect(row).toMatch(/border-radius:\s*var\(--radius-xs\);/);
+  it("lets the library-owned tree fill the available panel", () => {
+    expect(workspaceCss).toMatch(/(?:^|\n)\.workspace-file-panel\s*\{[^}]*display:\s*flex;/);
+    expect(workspaceCss).toMatch(/(?:^|\n)\.workspace-file-panel\s*\{[^}]*flex-direction:\s*column;/);
+    expect(cssRuleBody(".workspace-file-tree-frame")).toMatch(/flex:\s*1 1 auto;/);
+    expect(cssRuleBody(".workspace-file-tree-frame")).toMatch(/contain:\s*strict;/);
   });
 
-  it("keeps the search and surrounding tree chrome proportionate to the rows", () => {
-    const search = cssRuleBody(".workspace-file-search");
-    expect(search).toMatch(/height:\s*28px;/);
-    expect(search).toMatch(/font-size:\s*var\(--font-sm\);/);
-    expect(cssRuleBody(".workspace-file-tree-frame")).toMatch(/gap:\s*6px;/);
-    expect(workspaceCss).toMatch(/(?:^|\n)\.workspace-file-panel\s*\{[^}]*gap:\s*8px;/);
+  it("removes the duplicated custom tree row and search styling", () => {
+    expect(workspaceCss).not.toContain(".workspace-file-tree-row");
+    expect(workspaceCss).not.toContain(".workspace-file-search");
   });
 });
 
@@ -174,9 +167,6 @@ describe("workspace file preview layout", () => {
     );
     expect(cssRuleBody(".workspace-files-resizer")).toMatch(/cursor:\s*col-resize;/);
     expect(cssRuleBody(".workspace-files-resizer::before")).toMatch(/width:\s*1px;/);
-    expect(cssRuleBody(".workspace-files-tree .workspace-file-search")).toMatch(
-      /width:\s*calc\(100% - 10px\);/,
-    );
     expect(workspaceCss).not.toContain(".workspace-files-content-header");
     expect(cssRuleBody(".workspace-files-content-body")).toMatch(/height:\s*100%;/);
   });
