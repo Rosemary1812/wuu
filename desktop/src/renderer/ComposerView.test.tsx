@@ -675,6 +675,32 @@ describe("Composer send control", () => {
     }
   });
 
+  it("keeps essential slash command information longest as the composer narrows", () => {
+    expect(composerCSS).toMatch(
+      /\.composer-shell\s*{[^}]*container:\s*composer-shell\s*\/\s*inline-size;/s,
+    );
+
+    const shortcutLabelCollapse = composerCSS.indexOf(
+      "@container composer-shell (max-width: 520px)",
+    );
+    const iconCollapse = composerCSS.indexOf(
+      "@container composer-shell (max-width: 460px)",
+    );
+    const secondaryTitleCollapse = composerCSS.indexOf(
+      "@container composer-shell (max-width: 360px)",
+    );
+
+    expect(shortcutLabelCollapse).toBeGreaterThan(-1);
+    expect(iconCollapse).toBeGreaterThan(shortcutLabelCollapse);
+    expect(secondaryTitleCollapse).toBeGreaterThan(iconCollapse);
+    expect(composerCSS).toMatch(
+      /@container composer-shell \(max-width: 460px\)[\s\S]*?\.slash-command-icon\s*{[^}]*display:\s*none;/,
+    );
+    expect(composerCSS).toMatch(
+      /@container composer-shell \(max-width: 360px\)[\s\S]*?\.slash-command-title,[\s\S]*?display:\s*none;/,
+    );
+  });
+
   it("shows the hero project selector inside the composer toolbar", () => {
     renderComposer({
       variant: "hero",

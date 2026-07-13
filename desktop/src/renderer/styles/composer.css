@@ -94,6 +94,7 @@
   width: 100%;
   margin: 0;
   overflow: visible;
+  container: composer-shell / inline-size;
 }
 
 .composer-frame {
@@ -1542,6 +1543,47 @@
   line-height: 18px;
   padding: 14px 12px 15px;
   text-align: center;
+}
+
+@container composer-shell (max-width: 520px) {
+  .slash-command-footer-keys {
+    gap: 2px;
+  }
+
+  .slash-command-footer-keys span {
+    display: none;
+  }
+
+  .slash-command-footer-keys span + kbd {
+    margin-left: 2px;
+  }
+}
+
+@container composer-shell (max-width: 460px) {
+  .slash-command-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px;
+    padding-inline: 9px;
+  }
+
+  .slash-command-icon {
+    display: none;
+  }
+
+  .slash-command-label {
+    gap: 7px;
+  }
+}
+
+@container composer-shell (max-width: 360px) {
+  .slash-command-title,
+  .slash-command-footer-keys {
+    display: none;
+  }
+
+  .slash-command-footer {
+    padding-inline: 7px;
+  }
 }
 
 .mention-menu {
