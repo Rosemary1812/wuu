@@ -10,6 +10,7 @@
 @import "./styles/task-cards.css";
 @import "./styles/task-board.css";
 @import "./styles/subthreads.css";
+@import "./styles/side-thread.css";
 @import "./styles/environment.css";
 @import "./styles/workspace.css";
 @import "./styles/turns.css";
