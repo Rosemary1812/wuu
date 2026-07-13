@@ -165,14 +165,14 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
   const selectedFilePathRef = useRef(selectedFilePath);
   const onOpenFileRef = useRef(onOpenFile);
   const onLoadDirectoryRef = useRef(onLoadDirectory);
-  const syncedPathsRef = useRef(paths);
 
   useEffect(() => { onOpenFileRef.current = onOpenFile; }, [onOpenFile]);
   useEffect(() => { onLoadDirectoryRef.current = onLoadDirectory; }, [onLoadDirectory]);
   useEffect(() => {
-    if (paths === syncedPathsRef.current) return;
-    model.resetPaths(paths);
-    syncedPathsRef.current = paths;
+    const addedPaths = paths.filter((path) => model.getItem(path) === null);
+    if (addedPaths.length > 0) {
+      model.batch(addedPaths.map((path) => ({ type: "add", path })));
+    }
     if (selectedFilePath && model.getItem(selectedFilePath)) {
       for (const parentPath of parentDirectoryPathsForFile(selectedFilePath)) {
         const parent = model.getItem(`${parentPath}/`);
@@ -181,7 +181,7 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
       model.getItem(selectedFilePath)?.select();
       model.scrollToPath(selectedFilePath, { focus: false, offset: "nearest" });
     }
-  }, [model, paths, preparedInput, selectedFilePath]);
+  }, [model, paths, selectedFilePath]);
   useEffect(() => model.subscribe(() => {
     for (const path of model.getSelectedPaths()) {
       const item = model.getItem(path);

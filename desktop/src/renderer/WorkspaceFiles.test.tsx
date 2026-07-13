@@ -251,6 +251,33 @@ describe("WorkspaceFileTree", () => {
     expect(selected?.getAttribute("data-item-path")).toBe("src/components/Button.tsx");
   });
 
+  it("keeps parent directories expanded while nested directories load", async () => {
+    await render(
+      <WorkspaceFileTree activeContext={activeContext} open onOpenFile={() => {}} />,
+    );
+    await settleDirectoryLoads();
+
+    await act(async () => {
+      rowButtonByTitle("src/").click();
+      await Promise.resolve();
+    });
+    await settleDirectoryLoads();
+
+    expect(listWorkspaceDirectory).toHaveBeenCalledWith("src", "/repo");
+    expect(rowButtonByTitle("src/").getAttribute("aria-expanded")).toBe("true");
+
+    await act(async () => {
+      rowButtonByTitle("src/components/").click();
+      await Promise.resolve();
+    });
+    await settleDirectoryLoads();
+
+    expect(listWorkspaceDirectory).toHaveBeenCalledWith("src/components", "/repo");
+    expect(rowButtonByTitle("src/").getAttribute("aria-expanded")).toBe("true");
+    expect(rowButtonByTitle("src/components/").getAttribute("aria-expanded")).toBe("true");
+    expect(rowButtonByTitle("src/components/Button.tsx")).toBeTruthy();
+  });
+
   it("forwards a worktree root that differs from /repo through to the preload API", async () => {
     const worktreeContext: RuntimeContext = {
       kind: "project",
