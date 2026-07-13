@@ -274,9 +274,9 @@ describe("AppSidebar layout", () => {
     expect(sidebarCSS).toMatch(/--sidebar-functional-group-gap:\s*24px/);
   });
 
-  it("keeps the workspace menu inside a narrow sidebar", () => {
+  it("keeps the workspace menu inside a narrow sidebar with restrained elevation", () => {
     expect(sidebarCSS).toMatch(
-      /\.sidebar-functional-heading \.project-add-menu \{[^}]*right:\s*calc\(-1 \* var\(--sidebar-row-pad-x\)\)/,
+      /\.sidebar-functional-heading \.project-add-menu \{[^}]*right:\s*calc\(-1 \* var\(--sidebar-row-pad-x\)\)[^}]*box-shadow:\s*var\(--shadow-card\)/,
     );
   });
 

@@ -1615,6 +1615,7 @@
   right: calc(-1 * var(--sidebar-row-pad-x));
   left: auto;
   min-width: 208px;
+  box-shadow: var(--shadow-card);
 }
 
 .sidebar-settings-button {
