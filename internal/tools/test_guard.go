@@ -87,7 +87,7 @@ func testContractWarning(path, oldContent, newContent string) string {
 		return ""
 	}
 	return fmt.Sprintf(
-		"this edit removes existing test(s): %s. Existing tests encode behavioral contracts; do not delete, rename, or invert a test because it blocks your implementation — scope the implementation to respect it instead. Keep this removal only if the user explicitly asked for it, otherwise restore the test and rework the change.",
+		"this edit removes existing test(s): %s. Existing tests encode behavioral contracts; do not delete, rename, or invert a test because it blocks your implementation — scope the implementation to respect it instead. If the test appears to contradict the requested fix, first check whether it covers a different scenario than the request (it usually does — e.g. a different trigger, state, or error class) and make both hold. Keep this removal only if the user explicitly asked for it or the test provably describes the exact scenario the user wants changed, and say so in your final answer.",
 		strings.Join(removed, ", "),
 	)
 }
