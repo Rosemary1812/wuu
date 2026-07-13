@@ -1937,6 +1937,10 @@ type StreamLifecyclePayload struct {
 	RetryInMS       int64  `json:"retry_in_ms,omitempty"`
 	ElapsedMS       int64  `json:"elapsed_ms,omitempty"`
 	Reason          string `json:"reason,omitempty"`
+	FailureCategory string `json:"failure_category,omitempty"`
+	RecoveryAction  string `json:"recovery_action,omitempty"`
+	BudgetDimension string `json:"budget_dimension,omitempty"`
+	ReplayReason    string `json:"replay_reason,omitempty"`
 	ResetPartial    bool   `json:"reset_partial,omitempty"`
 }
 

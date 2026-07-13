@@ -81,6 +81,13 @@ func (e *ReplayBlockedError) Error() string {
 	return fmt.Sprintf("tool replay blocked: %s (%s)", e.Decision.Reason, strings.Join(e.Decision.BlockingInvocationIDs, ","))
 }
 
+func (e *ReplayBlockedError) ReplayReasonCode() string {
+	if e == nil {
+		return ""
+	}
+	return string(e.Decision.Reason)
+}
+
 type Invocation struct {
 	ID             string
 	BatchID        string

@@ -938,6 +938,29 @@ function streamStatusFromLifecycle(
   }
   const subject = transportSubject(transportLabel(transport));
   if (phase === "failed") {
+    const failureCategory = stringValue(lifecycle, "failure_category");
+    const replayReason = stringValue(lifecycle, "replay_reason");
+    if (failureCategory === "replay_unsafe") {
+      return {
+        text:
+          replayReason === "invocation_unknown"
+            ? "工具是否执行成功无法确认，已停止自动恢复以避免重复操作"
+            : `为避免工具被重复执行，${subject}已停止自动恢复`,
+        liveProgress: false,
+      };
+    }
+    if (failureCategory === "workflow_budget_exceeded") {
+      return {
+        text: "本次任务的自动恢复额度已用完",
+        liveProgress: false,
+      };
+    }
+    if (failureCategory === "workflow_cost_indeterminate") {
+      return {
+        text: "存在状态未知且可能已计费的请求，已停止自动恢复",
+        liveProgress: false,
+      };
+    }
     const reason = stringValue(lifecycle, "reason")?.toLowerCase() ?? "";
     if (
       reason.includes("automatic replay blocked") ||
@@ -966,10 +989,16 @@ function streamStatusFromLifecycle(
     : `第 ${attempt} 次尝试`;
   const retryInMs = positiveInteger(numberValue(lifecycle, "retry_in_ms"));
   const waitText = retryWaitText(retryInMs);
+  const submissionCount = positiveInteger(
+    numberValue(lifecycle, "submission_count"),
+  );
+  const progressText = submissionCount
+    ? `${attemptText}，已发送 ${submissionCount} 次请求`
+    : attemptText;
   return {
     text: waitText
-      ? `${subject}暂时中断，${waitText}（${attemptText}）`
-      : `${subject}正在恢复（${attemptText}）`,
+      ? `${subject}暂时中断，${waitText}（${progressText}）`
+      : `${subject}正在恢复（${progressText}）`,
     liveProgress: true,
   };
 }

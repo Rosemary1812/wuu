@@ -235,6 +235,7 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 		}
 		nextAttempt, journalErr := attempt.PrepareRecoveryAttempt(ctx, plan, time.Now().Add(delay))
 		if journalErr != nil {
+			r.sendLifecycle(ctx, out, attemptReq.Execution, operation, StreamPhaseFailed, attempt.ID, attempt.Ordinal, maxAttempts, retriesUsed, maxRetries, journalErr, 0, false, startedAt)
 			r.send(ctx, out, StreamEvent{Type: EventError, Error: journalErr})
 			return
 		}
@@ -356,6 +357,20 @@ func (r *ReliableStreamClient) sendLifecycle(
 	}
 	if reason != nil {
 		lifecycle.Reason = StreamErrorSummary(reason)
+		failure := NormalizeFailure(reason)
+		lifecycle.FailureCategory = string(failure.Category)
+		lifecycle.RecoveryAction = string(PlanRecovery(failure).Action)
+		var budgetExceeded *WorkflowBudgetExceededError
+		if errors.As(reason, &budgetExceeded) {
+			lifecycle.BudgetDimension = string(budgetExceeded.Dimension)
+		}
+		var replayBlocked *ReplayBlockedError
+		if errors.As(reason, &replayBlocked) && replayBlocked.Reason != nil {
+			var coded interface{ ReplayReasonCode() string }
+			if errors.As(replayBlocked.Reason, &coded) {
+				lifecycle.ReplayReason = coded.ReplayReasonCode()
+			}
+		}
 	}
 	return r.send(ctx, out, StreamEvent{Type: EventLifecycle, Lifecycle: lifecycle})
 }

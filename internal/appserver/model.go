@@ -423,6 +423,21 @@ func maxTurnItemIndex(turn Turn) int {
 func (th *threadState) applyStreamEventLocked(turnID string, ev providers.StreamEvent, now time.Time) []outboundNotification {
 	var out []outboundNotification
 	switch ev.Type {
+	case providers.EventLifecycle:
+		if ev.Lifecycle == nil || ev.Lifecycle.Phase != providers.StreamPhaseReconnecting || !ev.Lifecycle.ResetPartial {
+			return nil
+		}
+		for sourceID, itemID := range th.toolItems {
+			item, ok := th.itemLocked(turnID, itemID)
+			if !ok || item.Status != ThreadItemStatusInProgress {
+				continue
+			}
+			item.Status = ThreadItemStatusFailed
+			item.Error = "Superseded by a new inference attempt before execution"
+			th.upsertItemLocked(turnID, item, now)
+			delete(th.toolItems, sourceID)
+			out = append(out, itemCompleted(th.ID, turnID, item, now))
+		}
 	case providers.EventContentDelta:
 		if ev.Content == "" {
 			return nil

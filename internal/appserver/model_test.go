@@ -111,6 +111,32 @@ func TestThreadStatePreservesRichToolResultDetail(t *testing.T) {
 	}
 }
 
+func TestThreadStateSupersedesToolDraftOnInferenceReplay(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "inspect"}, now)
+	call := providers.ToolCall{ID: "call-1", Name: "read_file"}
+	th.applyStreamEventLocked("turn", providers.StreamEvent{Type: providers.EventToolUseStart, ToolCall: &call}, now)
+	out := th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type: providers.EventLifecycle,
+		Lifecycle: &providers.StreamLifecycle{
+			Phase: providers.StreamPhaseReconnecting, ResetPartial: true,
+		},
+	}, now.Add(time.Second))
+
+	turn := th.ensureTurnLocked("turn", now)
+	item := turn.Items[len(turn.Items)-1]
+	if item.Status != ThreadItemStatusFailed || !strings.Contains(item.Error, "Superseded") {
+		t.Fatalf("superseded tool draft = %+v", item)
+	}
+	if len(out) != 1 || out[0].method != NotificationItemCompleted {
+		t.Fatalf("supersede notifications = %+v", out)
+	}
+	if _, exists := th.toolItems[call.ID]; exists {
+		t.Fatal("superseded provider call id remained registered")
+	}
+}
+
 func TestThreadStateLeavesUnresolvedTextPhaseUnknown(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)

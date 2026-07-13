@@ -444,6 +444,10 @@ type StreamLifecycle struct {
 	RetryIn         time.Duration
 	Elapsed         time.Duration
 	Reason          string
+	FailureCategory string
+	RecoveryAction  string
+	BudgetDimension string
+	ReplayReason    string
 	// ResetPartial tells aggregators that events from the previous attempt
 	// must be superseded before any replacement output is accepted.
 	ResetPartial bool

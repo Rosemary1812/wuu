@@ -738,6 +738,10 @@ func sanitizeStreamLifecycle(lifecycle *providers.StreamLifecycle) *StreamLifecy
 		RetryInMS:       durationMilliseconds(lifecycle.RetryIn),
 		ElapsedMS:       durationMilliseconds(lifecycle.Elapsed),
 		Reason:          lifecycle.Reason,
+		FailureCategory: lifecycle.FailureCategory,
+		RecoveryAction:  lifecycle.RecoveryAction,
+		BudgetDimension: lifecycle.BudgetDimension,
+		ReplayReason:    lifecycle.ReplayReason,
 		ResetPartial:    lifecycle.ResetPartial,
 	}
 }

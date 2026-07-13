@@ -28,6 +28,10 @@ func TestSanitizeStreamEventIncludesLifecycle(t *testing.T) {
 			RetryIn:         1500 * time.Millisecond,
 			Elapsed:         2 * time.Second,
 			Reason:          "connection reset",
+			FailureCategory: "transport",
+			RecoveryAction:  "replay_same",
+			BudgetDimension: "same_payload_replays",
+			ReplayReason:    "invocation_running",
 			ResetPartial:    true,
 		},
 	})
@@ -49,7 +53,11 @@ func TestSanitizeStreamEventIncludesLifecycle(t *testing.T) {
 		got.Lifecycle.RetryInMS != 1500 ||
 		got.Lifecycle.ElapsedMS != 2000 ||
 		!got.Lifecycle.ResetPartial ||
-		got.Lifecycle.Reason != "connection reset" {
+		got.Lifecycle.Reason != "connection reset" ||
+		got.Lifecycle.FailureCategory != "transport" ||
+		got.Lifecycle.RecoveryAction != "replay_same" ||
+		got.Lifecycle.BudgetDimension != "same_payload_replays" ||
+		got.Lifecycle.ReplayReason != "invocation_running" {
 		t.Fatalf("unexpected lifecycle payload: %+v", got.Lifecycle)
 	}
 
@@ -58,7 +66,7 @@ func TestSanitizeStreamEventIncludesLifecycle(t *testing.T) {
 		t.Fatalf("marshal stream event: %v", err)
 	}
 	wire := string(raw)
-	if !strings.Contains(wire, `"retry_in_ms":1500`) || !strings.Contains(wire, `"max_attempts":4`) || !strings.Contains(wire, `"attempt_id":"iop-test-a2"`) || !strings.Contains(wire, `"submission_id":"iop-test-s2"`) {
+	if !strings.Contains(wire, `"retry_in_ms":1500`) || !strings.Contains(wire, `"max_attempts":4`) || !strings.Contains(wire, `"attempt_id":"iop-test-a2"`) || !strings.Contains(wire, `"submission_id":"iop-test-s2"`) || !strings.Contains(wire, `"failure_category":"transport"`) {
 		t.Fatalf("expected snake_case lifecycle wire payload, got %s", wire)
 	}
 	if strings.Contains(wire, "RetryIn") {

@@ -394,7 +394,8 @@ func TestReliableStreamClientReplayGuardBlocksUnsafeRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
-	events := nonLifecycleEvents(collectReliableEvents(t, ch))
+	allEvents := collectReliableEvents(t, ch)
+	events := nonLifecycleEvents(allEvents)
 	if inner.callCount != 1 {
 		t.Fatalf("attempts = %d, want replay blocked after first", inner.callCount)
 	}
@@ -407,5 +408,14 @@ func TestReliableStreamClientReplayGuardBlocksUnsafeRetry(t *testing.T) {
 	}
 	if IsRetryable(events[1].Error) {
 		t.Fatalf("replay-blocked error must be terminal: %v", events[1].Error)
+	}
+	var failed *StreamLifecycle
+	for _, lifecycle := range lifecycleEvents(allEvents) {
+		if lifecycle.Phase == StreamPhaseFailed {
+			failed = lifecycle
+		}
+	}
+	if failed == nil || failed.FailureCategory != string(FailureReplayUnsafe) {
+		t.Fatalf("typed failed lifecycle = %+v", failed)
 	}
 }

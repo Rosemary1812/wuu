@@ -958,6 +958,57 @@ describe("AppState token usage", () => {
     });
   });
 
+  it.each([
+    ["workflow_budget_exceeded", undefined, "本次任务的自动恢复额度已用完"],
+    [
+      "workflow_cost_indeterminate",
+      undefined,
+      "存在状态未知且可能已计费的请求，已停止自动恢复",
+    ],
+    [
+      "replay_unsafe",
+      "invocation_unknown",
+      "工具是否执行成功无法确认，已停止自动恢复以避免重复操作",
+    ],
+  ])("explains typed terminal recovery state %s", (category, replayReason, text) => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = reduceServerEvent(
+      {...initialState, thread, threads: [thread], running: true},
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "turn/event",
+          params: {
+            thread_id: "thread-1",
+            turn_id: "turn-1",
+            event: {
+              lifecycle: {
+                phase: "failed",
+                failure_category: category,
+                replay_reason: replayReason,
+              },
+            },
+          },
+        },
+      },
+    );
+    expect(turnStreamStatusForThread(state, state.thread)).toEqual({
+      text,
+      liveProgress: false,
+    });
+  });
+
   it("surfaces websocket to http fallback as a static stream status", () => {
     const thread: Thread = {
       ...threadWithUserTexts(["hi"]),
