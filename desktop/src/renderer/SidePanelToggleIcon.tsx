@@ -1,14 +1,14 @@
 export function SidePanelToggleIcon({
   side,
   open,
-  size = 22
+  size = 18
 }: {
   side: "left" | "right";
   open: boolean;
   size?: number;
 }): JSX.Element {
-  const paneX = side === "left" ? 4 : 10.2;
-  const dividerX = side === "left" ? 8.5 : 9.5;
+  const paneX = side === "left" ? 3.2 : 10.4;
+  const dividerX = side === "left" ? 8.4 : 9.6;
   return (
     <svg
       className="side-panel-toggle-icon"
@@ -19,9 +19,9 @@ export function SidePanelToggleIcon({
       aria-hidden="true"
       focusable="false"
     >
-      <rect className="side-panel-toggle-frame" x="2.65" y="3.05" width="12.7" height="11.9" rx="2.4" />
-      <path className="side-panel-toggle-divider" d={`M${dividerX} 3.65v10.7`} />
-      <rect className="side-panel-toggle-pane" x={paneX} y="4.75" width="3.8" height="8.5" rx="1.1" />
+      <rect className="side-panel-toggle-frame" x="1.5" y="1.5" width="15" height="15" rx="3" />
+      <path className="side-panel-toggle-divider" d={`M${dividerX} 2.3v13.4`} />
+      <rect className="side-panel-toggle-pane" x={paneX} y="3.6" width="4.4" height="10.8" rx="1.2" />
     </svg>
   );
 }

@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Thread } from "../shared/protocol";
@@ -22,7 +22,10 @@ vi.mock("./ConversationSplitPane", () => ({
   ),
 }));
 
-import { ConversationSplitPaneRenderer } from "./ConversationShellRenderers";
+import {
+  ConversationSplitPaneRenderer,
+  ConversationTitleActions,
+} from "./ConversationShellRenderers";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -95,5 +98,64 @@ describe("ConversationSplitPaneRenderer file routing", () => {
     });
 
     expect(onOpenFile).toHaveBeenCalledWith(secondaryThread, "src/App.tsx");
+  });
+});
+
+describe("ConversationTitleActions icon sizing", () => {
+  it("uses the info icon as the 18px optical-size baseline", () => {
+    const activeThread = thread("group", "/repo");
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => {
+      root?.render(
+        <ConversationTitleActions
+          state={initialState}
+          debugControlsVisible={false}
+          enableLaunchPreview={false}
+          previewingLaunch={false}
+          onPinLaunchPreview={() => {}}
+          enablePlanPanelDebug={false}
+          onSeedPlanPanelDebug={() => {}}
+          conversationGridVisible={false}
+          onToggleConversationGrid={() => {}}
+          enableRunDebugPanel={false}
+          runDebugRef={createRef<HTMLDivElement>()}
+          runDebugOpen={false}
+          onToggleRunDebug={() => {}}
+          runDebugPhase={{ label: "", detail: "", tone: "idle" }}
+          runDebugEvents={[]}
+          queuedMessages={[]}
+          guideMessages={[]}
+          composerImages={[]}
+          composerFiles={[]}
+          runDebugCopied={false}
+          onCopyRunDebug={() => {}}
+          onCloseRunDebug={() => {}}
+          chipGalleryOpen={false}
+          onCloseChipGallery={() => {}}
+          poppedOutMode={false}
+          activeThread={activeThread}
+          onOpenTaskBoard={() => {}}
+          environmentToggleRef={createRef<HTMLButtonElement>()}
+          environmentPanelVisible={false}
+          activeThreadIsGroup
+          onToggleEnvironmentPanel={() => {}}
+          rightPanelOpen={false}
+          onToggleRightPanel={() => {}}
+        />,
+      );
+    });
+
+    const taskBoardIcon = container.querySelector(".task-board-button svg");
+    const infoIcon = container.querySelector(".environment-toggle-button svg");
+
+    expect(taskBoardIcon?.getAttribute("width")).toBe("18");
+    expect(taskBoardIcon?.getAttribute("height")).toBe("18");
+    expect(taskBoardIcon?.getAttribute("viewBox")).toBe("2 2 20 20");
+    expect(infoIcon?.getAttribute("width")).toBe("18");
+    expect(infoIcon?.getAttribute("height")).toBe("18");
+    expect(infoIcon?.getAttribute("viewBox")).toBe("0 0 24 24");
   });
 });

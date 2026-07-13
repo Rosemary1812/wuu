@@ -277,7 +277,7 @@ export function SessionTabStrip({
         disabled={!canStartNewThread}
         onClick={onNewThread}
       >
-        <Plus className="icon-lg" />
+        <Plus className="icon-lg" size={18} viewBox="3 3 18 18" />
       </button>
       {tabContextMenu ? (
         <ThreadContextMenu

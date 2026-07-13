@@ -519,7 +519,7 @@
   -webkit-app-region: no-drag;
 }
 
-/* Titlebar toggle buttons (left/right sidebar, info panel, new thread):
+/* Titlebar icon buttons (left/right sidebar, task board, info panel, new thread):
  * uniform 26×26 visible size with a 30×30 click hit area. The padding
  * is transparent because `background-clip: content-box` restricts the
  * hover and pressed backgrounds to the inner 26×26, so the icon reads
@@ -533,6 +533,7 @@
 .settings-titlebar .sidebar-toggle-button,
 .titlebar .side-panel-toggle-button,
 .titlebar .environment-toggle-button,
+.titlebar .task-board-button,
 .titlebar .session-tab-new {
   width: 30px;
   height: 30px;

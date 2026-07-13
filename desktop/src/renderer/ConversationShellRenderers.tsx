@@ -547,13 +547,13 @@ export function ConversationTitleActions({
         <>
           {activeThreadIsGroup && activeThread ? (
             <button
-              className="icon-button"
+              className="icon-button task-board-button"
               type="button"
               aria-label="打开任务看板"
               title="任务看板"
               onClick={() => onOpenTaskBoard(activeThread)}
             >
-              <ListChecks className="icon-lg" />
+              <ListChecks className="icon-lg" size={18} viewBox="2 2 20 20" />
             </button>
           ) : null}
           <button
@@ -572,7 +572,7 @@ export function ConversationTitleActions({
             aria-pressed={environmentPanelVisible}
             onClick={onToggleEnvironmentPanel}
           >
-            <Info className="icon-lg" />
+            <Info className="icon-lg" size={18} />
           </button>
           <button
             className="icon-button side-panel-toggle-button"

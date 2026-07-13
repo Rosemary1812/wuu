@@ -354,6 +354,15 @@ describe("SessionTabStrip pending indicators", () => {
 });
 
 describe("SessionTabStrip layout styles", () => {
+  it("optically fills the 18px new-conversation icon box", () => {
+    renderTabs(initialState);
+
+    const icon = container.querySelector(".session-tab-new svg");
+    expect(icon?.getAttribute("width")).toBe("18");
+    expect(icon?.getAttribute("height")).toBe("18");
+    expect(icon?.getAttribute("viewBox")).toBe("3 3 18 18");
+  });
+
   it("uses a flat document rail instead of raised pill tabs", () => {
     const tabRule = cssRule(".session-tab");
     const activeRule = cssRule(".session-tab.active");
@@ -432,6 +441,7 @@ describe("SessionTabStrip layout styles", () => {
       ".settings-titlebar .sidebar-toggle-button",
       ".titlebar .side-panel-toggle-button",
       ".titlebar .environment-toggle-button",
+      ".titlebar .task-board-button",
       ".titlebar .session-tab-new",
     ]) {
       expect(conversationShellCSS).toContain(selector);
