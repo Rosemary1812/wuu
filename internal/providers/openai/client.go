@@ -341,11 +341,15 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	}
 
 	payload := chatCompletionsRequest{
-		Model:           req.Model,
-		Messages:        make([]chatMessage, 0, len(req.Messages)),
-		Temperature:     effectiveTemperature(req),
-		MaxTokens:       req.MaxTokens,
-		Stream:          true,
+		Model:       req.Model,
+		Messages:    make([]chatMessage, 0, len(req.Messages)),
+		Temperature: effectiveTemperature(req),
+		MaxTokens:   req.MaxTokens,
+		Stream:      true,
+		// Without include_usage many endpoints never report usage on streams;
+		// each such submission then stays unknown-billable and the cumulative
+		// per-workflow cap kills the turn after a handful of steps.
+		StreamOptions:   &streamOptions{IncludeUsage: true},
 		ReasoningFormat: c.reasoningFormat,
 		Options:         provideroptions.Clone(req.ProviderOptions),
 	}
@@ -439,10 +443,11 @@ func (c *Client) doSingleChatCompletionsRequest(
 		return nil, nil, err
 	}
 	if _, err := lease.RecordSubmission(attempt, providers.InferenceSubmissionMeta{
-		Provider:  "openai",
-		Protocol:  "chat_completions",
-		Transport: "http",
-		Mode:      mode,
+		Provider:     "openai",
+		Protocol:     "chat_completions",
+		Transport:    "http",
+		Mode:         mode,
+		RequestBytes: len(body),
 	}); err != nil {
 		lease.Release()
 		return nil, nil, fmt.Errorf("journal chat completion submission: %w", err)
@@ -1063,12 +1068,17 @@ type chatCompletionsRequest struct {
 	Temperature     float64               `json:"temperature,omitempty"`
 	MaxTokens       int                   `json:"max_tokens,omitempty"`
 	Stream          bool                  `json:"stream,omitempty"`
+	StreamOptions   *streamOptions        `json:"stream_options,omitempty"`
 	PromptCacheKey  string                `json:"promptCacheKey,omitempty"`
 	AltCacheKey     string                `json:"prompt_cache_key,omitempty"`
 	ReasoningEffort string                `json:"reasoning_effort,omitempty"`
 	Reasoning       *reasoningConfig      `json:"reasoning,omitempty"`
 	ReasoningFormat reasoningEffortFormat `json:"-"`
 	Options         map[string]any        `json:"-"`
+}
+
+type streamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type chatMessage struct {

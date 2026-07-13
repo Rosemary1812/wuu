@@ -148,21 +148,23 @@ func TestUsageTracker_CacheReadCountsTowardContext(t *testing.T) {
 	}
 }
 
-func TestUsageTracker_CacheCreationNotDoubleCounted(t *testing.T) {
-	// Anthropic's cache_creation_input_tokens is a SUBSET of
-	// input_tokens, not an addition. Including it would inflate the
-	// reported total.
+func TestUsageTracker_CacheCreationCountsTowardContext(t *testing.T) {
+	// Anthropic's input_tokens EXCLUDES cache_creation and cache_read: the
+	// full prompt is input + cache_creation + cache_read. On a cold-cache
+	// first request cache_creation is roughly the entire history; dropping it
+	// made the session look nearly empty and suppressed proactive
+	// auto-compact exactly when it was most needed.
 	tr := NewUsageTracker()
 	tr.RecordResponse(&providers.TokenUsage{
-		InputTokens:         5000, // already includes the 4000 cache write below
-		CacheCreationTokens: 4000,
+		InputTokens:         1000,
+		CacheCreationTokens: 90_000, // cold cache: history written to cache
 		OutputTokens:        100,
 	})
 
 	got := tr.EstimateCurrent()
-	want := 5000 + 100
+	want := 1000 + 90_000 + 100
 	if got != want {
-		t.Fatalf("expected cache_creation NOT double-counted: got %d, want %d", got, want)
+		t.Fatalf("expected cache_creation in fill: got %d, want %d", got, want)
 	}
 }
 

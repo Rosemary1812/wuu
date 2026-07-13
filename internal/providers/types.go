@@ -392,6 +392,16 @@ const (
 	EventError           StreamEventType = "error"
 )
 
+// CompactPhase identifies whether a compact event starts or finishes a
+// compaction pass. Empty is treated as completed for compatibility with
+// stream producers that predate explicit progress events.
+type CompactPhase string
+
+const (
+	CompactPhaseStarted   CompactPhase = "started"
+	CompactPhaseCompleted CompactPhase = "completed"
+)
+
 // StreamLifecyclePhase is the structured state of the live response transport.
 type StreamLifecyclePhase string
 
@@ -554,15 +564,19 @@ type SystemPromptSectionSummary struct {
 }
 
 // TotalContextTokens returns the number of tokens this call actually
-// consumed against the model's context window. Equals InputTokens +
-// CacheReadTokens + OutputTokens. CacheCreationTokens are NOT
-// included because the cache_creation count reported by Anthropic is
-// already a subset of InputTokens — adding it would double-count.
+// consumed against the model's context window. On the Anthropic wire format
+// input_tokens EXCLUDES both cache_read and cache_creation tokens (the full
+// prompt is input + cache_creation + cache_read), so all three input parts
+// must be summed. Omitting cache_creation made a cold-cache first request —
+// where cache_creation is roughly the entire history — look nearly empty and
+// suppressed proactive auto-compact exactly when it was most needed.
+// Endpoints whose input_tokens are inclusive (e.g. MiniMax) are normalized to
+// this exclusive form at the client layer before this method sees them.
 func (u TokenUsage) TotalContextTokens() int {
 	if u == (TokenUsage{}) {
 		return 0
 	}
-	return u.InputTokens + u.CacheReadTokens + u.OutputTokens
+	return u.InputTokens + u.CacheCreationTokens + u.CacheReadTokens + u.OutputTokens
 }
 
 // StreamEvent is a single event from a streaming chat response.
@@ -577,6 +591,7 @@ type StreamEvent struct {
 	ToolResult       string
 	ToolResultDetail *toolresult.Result
 	CompactReason    string
+	CompactPhase     CompactPhase
 	PlanUpdate       *PlanUpdate
 	RequestContext   *RequestContextSummary
 	ProviderState    *ProviderStateSummary

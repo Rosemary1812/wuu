@@ -17,6 +17,11 @@ type InferenceSubmissionMeta struct {
 	Transport string
 	Mode      string
 	Reason    string
+	// RequestBytes is the serialized request body size. It seeds a
+	// conservative input-token estimate so a submission whose endpoint never
+	// reports usage can settle as estimated instead of occupying the
+	// workflow's unknown-billable budget forever.
+	RequestBytes int
 }
 
 type InferenceSubmissionOutcome string
@@ -88,7 +93,7 @@ func (s InferenceSubmission) ObserveOutput(content string) {
 		if current.EstimatedUsage == nil {
 			current.EstimatedUsage = &TokenUsage{}
 		}
-		current.EstimatedUsage.OutputTokens = estimateOutputTokens(current.OutputBytes)
+		current.EstimatedUsage.OutputTokens = estimateTokensFromBytes(current.OutputBytes)
 	})
 }
 
@@ -162,15 +167,28 @@ func (s InferenceSubmission) complete(outcome InferenceSubmissionOutcome, failur
 		if copyUsage != nil {
 			current.CostState = InferenceCostKnown
 			current.ReportedUsage = copyUsage
+			return
+		}
+		// Terminal without reported usage: settle on the conservative
+		// estimate instead of occupying the workflow's unknown-billable
+		// budget forever. Endpoints that never report usage would otherwise
+		// kill the turn once the cumulative cap is reached, and every
+		// canceled or abandoned stream would permanently burn a slot. The
+		// promotion requires input evidence (the request-size seed from
+		// RecordSubmission or a full ObserveEstimatedUsage); partial output
+		// alone stays unknown-but-billable because input often dominates.
+		if current.CostState == InferenceCostUnknownBillable &&
+			current.EstimatedUsage != nil && current.EstimatedUsage.InputTokens > 0 {
+			current.CostState = InferenceCostEstimated
 		}
 	})
 }
 
-func estimateOutputTokens(outputBytes int) int {
-	if outputBytes <= 0 {
+func estimateTokensFromBytes(byteCount int) int {
+	if byteCount <= 0 {
 		return 0
 	}
-	return (outputBytes + 3) / 4
+	return (byteCount + 3) / 4
 }
 
 // InferenceExecutionSnapshot is a race-free diagnostic view of one logical
@@ -501,6 +519,9 @@ func (a InferenceAttempt) RecordSubmission(meta InferenceSubmissionMeta) (Infere
 		Outcome:        InferenceSubmissionInFlight,
 		CostState:      InferenceCostUnknownBillable,
 		execution:      e,
+	}
+	if meta.RequestBytes > 0 {
+		submission.EstimatedUsage = &TokenUsage{InputTokens: estimateTokensFromBytes(meta.RequestBytes)}
 	}
 	if e.workflow != nil && e.workflow.spend != nil {
 		if err := e.workflow.spend.AdmitSubmission(submission.ID); err != nil {

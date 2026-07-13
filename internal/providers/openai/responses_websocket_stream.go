@@ -191,11 +191,12 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 		mode = "fallback"
 	}
 	if _, err := lease.RecordSubmission(requestPayload.Attempt, providers.InferenceSubmissionMeta{
-		Provider:  "openai",
-		Protocol:  "responses",
-		Transport: "websocket",
-		Mode:      mode,
-		Reason:    requestPayload.SubmissionReason,
+		Provider:     "openai",
+		Protocol:     "responses",
+		Transport:    "websocket",
+		Mode:         mode,
+		Reason:       requestPayload.SubmissionReason,
+		RequestBytes: len(body),
 	}); err != nil {
 		c.responsesWebSocketReleaseLocked(session, readCh)
 		session.mu.Unlock()

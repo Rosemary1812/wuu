@@ -2865,7 +2865,7 @@ func TestServerThreadContextCompositionReturnsLatestRequest(t *testing.T) {
 	if result.TurnID == "" || result.TracePath == "" {
 		t.Fatalf("expected latest turn and trace path: %+v", result)
 	}
-	if result.PromptTokens != 14 || result.TotalContextTokens != 17 || result.RetainedTokens != 17 {
+	if result.PromptTokens != 20 || result.TotalContextTokens != 23 || result.RetainedTokens != 23 {
 		t.Fatalf("unexpected token totals: %+v", result)
 	}
 	if result.InputTokens != 10 || result.OutputTokens != 3 || result.CacheCreationTokens != 6 || result.CacheReadTokens != 4 {

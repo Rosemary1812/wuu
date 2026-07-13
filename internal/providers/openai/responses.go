@@ -661,11 +661,12 @@ func (c *Client) doSingleResponsesRequest(
 		return nil, nil, err
 	}
 	if _, err := lease.RecordSubmission(attempt, providers.InferenceSubmissionMeta{
-		Provider:  "openai",
-		Protocol:  "responses",
-		Transport: "http",
-		Mode:      mode,
-		Reason:    submissionReason,
+		Provider:     "openai",
+		Protocol:     "responses",
+		Transport:    "http",
+		Mode:         mode,
+		Reason:       submissionReason,
+		RequestBytes: len(body),
 	}); err != nil {
 		lease.Release()
 		return nil, nil, fmt.Errorf("journal responses submission: %w", err)

@@ -1000,10 +1000,11 @@ func (c *Client) doSingleMessagesRequest(
 		return nil, nil, err
 	}
 	if _, err := lease.RecordSubmission(attempt, providers.InferenceSubmissionMeta{
-		Provider:  "anthropic",
-		Protocol:  "messages",
-		Transport: "http",
-		Mode:      mode,
+		Provider:     "anthropic",
+		Protocol:     "messages",
+		Transport:    "http",
+		Mode:         mode,
+		RequestBytes: len(body),
 	}); err != nil {
 		lease.Release()
 		return nil, nil, fmt.Errorf("journal messages submission: %w", err)

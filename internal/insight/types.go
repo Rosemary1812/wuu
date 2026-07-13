@@ -47,7 +47,7 @@ type ModelUsage struct {
 
 // TotalContextTokens mirrors providers.TokenUsage.TotalContextTokens.
 func (m ModelUsage) TotalContextTokens() int {
-	return m.InputTokens + m.CacheReadTokens + m.OutputTokens
+	return m.InputTokens + m.CacheCreationTokens + m.CacheReadTokens + m.OutputTokens
 }
 
 // CacheHitRate returns the prompt-cache hit rate across this bucket.

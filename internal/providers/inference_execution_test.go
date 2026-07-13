@@ -207,3 +207,55 @@ func TestInferenceAttemptAttributesStreamEventsToLatestSubmission(t *testing.T) 
 		t.Fatalf("submissions = %+v", submissions)
 	}
 }
+
+func TestUsageLessTerminalSubmissionSettlesAsEstimated(t *testing.T) {
+	execution := NewInferenceExecution(NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive))
+
+	// A stream that completes successfully but whose endpoint never reports
+	// usage must settle as estimated via the request-size input seed, not
+	// occupy the workflow's unknown-billable budget forever.
+	success, err := execution.BeginAttempt().RecordSubmission(InferenceSubmissionMeta{
+		Provider: "openai", Transport: "http", RequestBytes: 4000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	success.ObserveOutput("streamed answer text")
+	success.CompleteSuccess(nil)
+	settled := execution.Snapshot().Submissions[0]
+	if settled.CostState != InferenceCostEstimated {
+		t.Fatalf("usage-less success cost state = %v, want estimated", settled.CostState)
+	}
+	if settled.EstimatedUsage == nil || settled.EstimatedUsage.InputTokens != 1000 || settled.EstimatedUsage.OutputTokens == 0 {
+		t.Fatalf("estimated usage = %+v, want input seed and output estimate", settled.EstimatedUsage)
+	}
+
+	// An abandoned stream with the input seed settles the same way.
+	abandoned, err := execution.BeginAttempt().RecordSubmission(InferenceSubmissionMeta{
+		Provider: "openai", Transport: "http", RequestBytes: 400,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	abandoned.Abandon()
+	if got := execution.Snapshot().Submissions[1].CostState; got != InferenceCostEstimated {
+		t.Fatalf("abandoned cost state = %v, want estimated", got)
+	}
+
+	// Reported usage still supersedes the estimate.
+	known, err := execution.BeginAttempt().RecordSubmission(InferenceSubmissionMeta{
+		Provider: "openai", Transport: "http", RequestBytes: 400,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	known.CompleteSuccess(&TokenUsage{InputTokens: 123, OutputTokens: 45})
+	if got := execution.Snapshot().Submissions[2]; got.CostState != InferenceCostKnown || got.ReportedUsage.InputTokens != 123 {
+		t.Fatalf("known submission = %+v", got)
+	}
+
+	summary := execution.Snapshot().CostSummary()
+	if summary.UnknownBillableSubmissions != 0 || summary.EstimatedSubmissions != 2 || summary.KnownSubmissions != 1 {
+		t.Fatalf("cost summary = %+v, want zero unknown-billable", summary)
+	}
+}

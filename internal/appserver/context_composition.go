@@ -135,7 +135,7 @@ func (s *Server) contextCompositionFromTrace(threadID, tracePath string, summary
 	}
 	contextCeilingTokens := effectiveContextCeilingTokens(contextWindowTokens, inputLimitTokens)
 
-	promptTokens := request.InputTokens + request.CacheReadTokens
+	promptTokens := request.InputTokens + request.CacheCreationTokens + request.CacheReadTokens
 	totalContextTokens := promptTokens + request.OutputTokens
 	promptBytes := request.MessageBytes + request.ToolSchemaBytes
 	tokenSource := "byte_estimate"
