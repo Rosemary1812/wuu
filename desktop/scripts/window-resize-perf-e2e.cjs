@@ -49,14 +49,32 @@ async function run() {
 
   await loadFile(win, rendererHtml);
   await waitFor(win, () => Boolean(document.querySelector(".conversation-pane")), 5000);
+  await waitFor(
+    win,
+    () => {
+      const node = document.querySelector(".scroll-region");
+      return document.querySelectorAll(".turn").length > 0 &&
+        node instanceof HTMLElement &&
+        node.scrollHeight > node.clientHeight;
+    },
+    5000
+  );
   await delay(250);
   await evaluate(win, () => {
     const node = document.querySelector(".scroll-region");
     if (node instanceof HTMLElement) {
-      node.scrollTop = Math.max(0, Math.floor(node.scrollHeight * 0.35));
+      const bottom = Math.max(0, node.scrollHeight - node.clientHeight);
+      node.scrollTop = Math.max(0, bottom - 100);
+      node.dispatchEvent(new Event("scroll", { bubbles: true }));
+      node.scrollTop = node.scrollHeight;
       node.dispatchEvent(new Event("scroll", { bubbles: true }));
     }
   });
+  await waitFor(
+    win,
+    () => document.querySelector(".scroll-region")?.style.overflowAnchor === "none",
+    1000
+  );
   await delay(120);
   await evaluate(win, () => {
     window.__wuuWindowResizePerfProbe = {
@@ -148,10 +166,12 @@ async function run() {
     let previousTs;
     const sample = (ts) => {
       const samples = window.__wuuWindowResizePerfSamples;
+      const scroll = document.querySelector(".scroll-region");
       samples.push({
         dt: previousTs === undefined ? 0 : ts - previousTs,
         resizing: document.documentElement.classList.contains("window-resizing"),
-        scrollTop: document.querySelector(".scroll-region")?.scrollTop ?? 0,
+        autoFollow: scroll instanceof HTMLElement && scroll.style.overflowAnchor === "none",
+        scrollTop: scroll?.scrollTop ?? 0,
         width: window.innerWidth
       });
       previousTs = ts;
@@ -188,10 +208,12 @@ async function run() {
   const sorted = samples.map((sample) => sample.dt).sort((left, right) => left - right);
   const p95FrameMs = sorted[Math.floor(sorted.length * 0.95)] ?? 0;
   const resizingSamples = samples.filter((sample) => sample.resizing);
+  const autoFollowResizeSamples = resizingSamples.filter((sample) => sample.autoFollow);
   const widths = samples.map((sample) => sample.width);
   const summary = {
     samples: samples.length,
     resizingSamples: resizingSamples.length,
+    autoFollowResizeSamples: autoFollowResizeSamples.length,
     maxFrameMs: Math.round(maxFrameMs),
     p95FrameMs: Math.round(p95FrameMs),
     minWidth: Math.min(...widths),
@@ -206,11 +228,20 @@ async function run() {
   console.log(JSON.stringify(summary, null, 2));
   assert.ok(samples.length > 20, "Window resize perf probe should collect frame samples.");
   assert.ok(resizingSamples.length > 0, "window-resizing marker should appear during BrowserWindow resize.");
+  assert.equal(
+    summary.autoFollowResizeSamples,
+    summary.resizingSamples,
+    `Resize performance probe must stay in the auto-follow scenario it is intended to verify. Summary=${JSON.stringify(summary)}`
+  );
   assert.ok(summary.maxWidth - summary.minWidth >= 160, `Window width should change during probe. Summary=${JSON.stringify(summary)}`);
   assert.ok(summary.p95FrameMs <= 50, `Window resize p95 frame time should stay below 50ms. Summary=${JSON.stringify(summary)}`);
   assert.ok(summary.maxFrameMs <= 120, `Window resize max frame time should stay below 120ms. Summary=${JSON.stringify(summary)}`);
   assert.equal(summary.turnScansDuringResize, 0, `Turn rail should not scan turn DOM during live window resize. Summary=${JSON.stringify(summary)}`);
-  assert.equal(summary.scrollTopWritesDuringResize, 0, `Auto-follow should not write scrollTop during live window resize. Summary=${JSON.stringify(summary)}`);
+  assert.ok(summary.scrollTopWritesDuringResize > 0, `Auto-follow should continuously track reflow during live window resize. Summary=${JSON.stringify(summary)}`);
+  assert.ok(
+    summary.scrollTopWritesDuringResize <= summary.resizingSamples + 2,
+    `Auto-follow should coalesce live resize updates to at most one scrollTop write per frame. Summary=${JSON.stringify(summary)}`
+  );
   assert.equal(summary.scrollMetricReadsDuringResize, 0, `Auto-follow should not read scroll metrics during live window resize. Summary=${JSON.stringify(summary)}`);
   assert.equal(summary.boundingRectReadsDuringResize, 0, `Resize handlers should not force element rect reads during live window resize. Summary=${JSON.stringify(summary)}`);
 

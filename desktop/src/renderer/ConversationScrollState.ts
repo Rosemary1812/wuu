@@ -150,6 +150,7 @@ export function useConversationScrollState({
     new Map<string, ConversationScrollSnapshot>()
   );
   const streamScrollFrameRef = useRef<number | undefined>(undefined);
+  const liveResizeScrollFrameRef = useRef<number | undefined>(undefined);
   const resizeSettleStreamScrollRef = useRef<ReturnType<
     typeof createWindowResizeSettleScheduler
   > | null>(null);
@@ -304,6 +305,31 @@ export function useConversationScrollState({
     [activePane, activeThreadID, setAutoFollow, splitConversation]
   );
 
+  const scheduleLiveResizeScroll = useCallback((): void => {
+    if (
+      liveResizeScrollFrameRef.current !== undefined ||
+      !conversationAutoFollowRef.current
+    ) {
+      return;
+    }
+    liveResizeScrollFrameRef.current = window.requestAnimationFrame(() => {
+      liveResizeScrollFrameRef.current = undefined;
+      const node = conversationViewport();
+      if (
+        !node ||
+        !isWindowResizing() ||
+        !conversationAutoFollowRef.current
+      ) {
+        return;
+      }
+      // Chromium clamps oversized scroll targets to the real bottom. Using a
+      // sentinel avoids reading scrollHeight/clientHeight during live resize,
+      // and rAF coalescing caps the work at one scroll write per paint.
+      node.scrollTop = Number.MAX_SAFE_INTEGER;
+      lastConversationScrollTopRef.current = node.scrollTop;
+    });
+  }, [activePane, splitConversation]);
+
   const scheduleStreamScroll = useCallback((): void => {
     if (!activeThreadID) {
       return;
@@ -312,6 +338,7 @@ export function useConversationScrollState({
       return;
     }
     if (isWindowResizing()) {
+      scheduleLiveResizeScroll();
       if (!resizeSettleStreamScrollRef.current) {
         resizeSettleStreamScrollRef.current =
           createWindowResizeSettleScheduler(scrollConversationToBottom);
@@ -329,7 +356,7 @@ export function useConversationScrollState({
         scrollConversationToBottom();
       });
     });
-  }, [scrollConversationToBottom]);
+  }, [scheduleLiveResizeScroll, scrollConversationToBottom]);
 
   useEffect(() => {
     resizeSettleStreamScrollRef.current?.cancel();
@@ -678,6 +705,7 @@ export function useConversationScrollState({
     });
     const resizeObserver = new ResizeObserver(() => {
       if (isWindowResizing()) {
+        scheduleLiveResizeScroll();
         windowResizeScroll.schedule();
         return;
       }
@@ -685,9 +713,11 @@ export function useConversationScrollState({
       scrollConversationToBottom();
     });
     observeAutoFollowResizeTargets(node, resizeObserver);
+    window.addEventListener("resize", scheduleLiveResizeScroll);
     return () => {
       windowResizeScroll.cancel();
       resizeObserver.disconnect();
+      window.removeEventListener("resize", scheduleLiveResizeScroll);
       scrollContentRef.current?.style.removeProperty("transform");
     };
   }, [
@@ -699,6 +729,7 @@ export function useConversationScrollState({
     primaryTurns,
     secondaryTurns,
     scrollConversationToBottom,
+    scheduleLiveResizeScroll,
     splitConversation
   ]);
 
@@ -769,6 +800,10 @@ export function useConversationScrollState({
       if (streamScrollFrameRef.current !== undefined) {
         window.cancelAnimationFrame(streamScrollFrameRef.current);
         streamScrollFrameRef.current = undefined;
+      }
+      if (liveResizeScrollFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(liveResizeScrollFrameRef.current);
+        liveResizeScrollFrameRef.current = undefined;
       }
       resizeSettleStreamScrollRef.current?.cancel();
       resizeSettleStreamScrollRef.current = null;

@@ -837,11 +837,10 @@ describe("useConversationScrollState — high-frequency stream", () => {
     expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
-  it("does not transform the conversation during live window resize, then commits the real scrollTop when the resize settles", () => {
-    // User parked at the bottom of a tall conversation. During live
-    // window resize we keep the message container in normal flow and
-    // avoid scrollTop writes; once the drag settles we commit the real
-    // scroll position in one step.
+  it("keeps latest content continuously pinned during live window resize", () => {
+    // User parked at the bottom of a tall conversation. Reflow changes the
+    // real bottom while the window is being dragged, so coalesce observer
+    // notifications into one scroll update on the next animation frame.
     mount({ scrollHeight: 2200, clientHeight: 600 });
     if (!layout || !handle || !node) throw new Error("not mounted");
     flushScheduledScroll();
@@ -868,11 +867,12 @@ describe("useConversationScrollState — high-frequency stream", () => {
       flushResizeObservers();
     });
 
-    // The real scrollTop is untouched during the drag and the message
-    // container stays in normal flow, so text does not move through a
-    // temporary transform while the user is resizing the window.
+    // The message container stays in normal flow. The bottom update is
+    // deferred only to the next paint, not until the whole drag settles.
     expect(contentNode.style.transform).toBe("");
     expect(layout.scrollTop).toBe(1600);
+    act(() => flushAnimationFrames());
+    expect(layout.scrollTop).toBe(2200 - 400);
     // The user is still considered "following" — the pill stays hidden
     // and the next stream tick would happily stick to the new bottom.
     expect(node.dataset.userScrolledAway ?? "false").toBe("false");
@@ -957,11 +957,9 @@ describe("useConversationScrollState — high-frequency stream", () => {
     });
   });
 
-  it("keeps the conversation in normal flow as the user keeps dragging past the initial viewport size", () => {
-    // A second live-resize fire after a partial settle should still avoid
-    // transient transforms. The real scroll position is committed after
-    // the drag settles, preserving the no-scrollTop-writes-during-resize
-    // performance invariant without moving text through a composited layer.
+  it("keeps the conversation in normal flow while following each live resize frame", () => {
+    // Repeated observer notifications should keep the real scroll position
+    // aligned without introducing a temporary transform.
     mount({ scrollHeight: 2200, clientHeight: 600 });
     if (!layout || !handle || !node) throw new Error("not mounted");
     flushScheduledScroll();
@@ -980,12 +978,16 @@ describe("useConversationScrollState — high-frequency stream", () => {
       flushResizeObservers();
     });
     expect(contentNode.style.transform).toBe("");
+    act(() => flushAnimationFrames());
+    expect(layout.scrollTop).toBe(2200 - 500);
 
     act(() => {
       layout!.clientHeight = 350;
       flushResizeObservers();
     });
     expect(contentNode.style.transform).toBe("");
+    act(() => flushAnimationFrames());
+    expect(layout.scrollTop).toBe(2200 - 350);
 
     act(() => {
       document.documentElement.classList.remove(WINDOW_RESIZING_CLASS);
