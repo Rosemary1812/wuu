@@ -120,7 +120,7 @@ describe("workspaceFileBasename", () => {
 });
 
 describe("openViewTab", () => {
-  it("dedupes and focuses the same file resource without duplicating its tab", () => {
+  it("dedupes the same file resource and keeps it inside the focused Files tool", () => {
     const fileTab = workspaceFileViewTab({
       context: projectContext,
       path: "README.md",
@@ -132,8 +132,20 @@ describe("openViewTab", () => {
       workspaceFileViewTab({ context: projectContext, path: "README.md" }),
     );
 
-    expect(state.tabs.map((tab) => tab.id)).toEqual([fileTab.id, "terminal"]);
-    expect(state.activeTabID).toBe(fileTab.id);
+    expect(state.tabs.map((tab) => tab.id)).toEqual(["files", fileTab.id, "terminal"]);
+    expect(state.activeTabID).toBe("files");
+    expect(state.activeFileTabID).toBe(fileTab.id);
+  });
+
+  it("keeps opened file resources while switching the file shown inside Files", () => {
+    const first = workspaceFileViewTab({ context: projectContext, path: "src/a.ts" });
+    const second = workspaceFileViewTab({ context: projectContext, path: "src/b.ts" });
+    let state = openViewTab(initialWorkspaceViewTabsState, first);
+    state = openViewTab(state, second);
+
+    expect(state.tabs.map((tab) => tab.id)).toEqual(["files", first.id, second.id]);
+    expect(state.activeTabID).toBe("files");
+    expect(state.activeFileTabID).toBe(second.id);
   });
 
   it("appends and focuses a new diff tab", () => {

@@ -17,7 +17,12 @@ import { FileDiff, FileText, FolderOpen, Globe, Maximize2, Minimize2, PanelLeftO
 import type { ActivitySession, GitStatusResult, RuntimeContext } from "../shared/protocol";
 import { TurnFileDiffPanel } from "./TurnFileDiffPanel";
 import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
-import { WorkspaceFilePreview, WorkspaceFileTree, type WorkspaceFileDirtyState } from "./WorkspaceFiles";
+import {
+  WorkspaceFilePreview,
+  WorkspaceFileTree,
+  WorkspacePanelEmpty,
+  type WorkspaceFileDirtyState,
+} from "./WorkspaceFiles";
 import { WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
 import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
 import type { WorkspaceFileViewTab, WorkspaceViewTab } from "./WorkspaceViewTabs";
@@ -41,6 +46,7 @@ export function WorkspaceRightPanel({
   present,
   tabs,
   activeTabID,
+  activeFileTabID,
   activeContext,
   workspaceContext,
   gitStatus,
@@ -69,6 +75,7 @@ export function WorkspaceRightPanel({
   present: boolean;
   tabs: WorkspaceViewTab[];
   activeTabID: string | undefined;
+  activeFileTabID?: string;
   // activeContext is the pinned project/no_project context — used for the
   // browser tab (its "current project" hint text, not a filesystem root).
   // workspaceContext follows the active thread's own cwd (e.g. a worktree
@@ -100,6 +107,10 @@ export function WorkspaceRightPanel({
 }): JSX.Element {
   const activeTab = activeTabID ? tabs.find((tab) => tab.id === activeTabID) : undefined;
   const fileTabs = tabs.filter((tab): tab is WorkspaceFileViewTab => tab.kind === "file");
+  const visibleTabs = tabs.filter((tab) => tab.kind !== "file");
+  const activeFileTab = activeFileTabID
+    ? fileTabs.find((tab) => tab.id === activeFileTabID)
+    : undefined;
   const showingPicker = !activeTab;
   const [dirtyFileTabIDs, setDirtyFileTabIDs] = useState<Set<string>>(() => new Set());
   const [draggingTabID, setDraggingTabID] = useState<string | undefined>(undefined);
@@ -109,7 +120,7 @@ export function WorkspaceRightPanel({
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const { requestFocusRestoration, tabListRef } = useTabCloseFocusRestoration(
     activeTabID,
-    tabs.map((tab) => tab.id),
+    visibleTabs.map((tab) => tab.id),
     addButtonRef,
   );
 
@@ -177,7 +188,7 @@ export function WorkspaceRightPanel({
 
   return (
     <aside
-      className={`workspace-right-panel${activeTab ? " detail" : " tools"}${activeTab?.kind === "review" ? " review" : ""}${activeTab?.kind === "diff" ? " diff" : ""}${activeTab?.kind === "file" ? " file" : ""}`}
+      className={`workspace-right-panel${activeTab ? " detail" : " tools"}${activeTab?.kind === "review" ? " review" : ""}${activeTab?.kind === "diff" ? " diff" : ""}${activeTab?.kind === "files" ? " files" : ""}`}
       aria-hidden={!open}
       inert={!open}
     >
@@ -207,7 +218,7 @@ export function WorkspaceRightPanel({
           onDragEnd={endTabDrag}
           onDragCancel={cancelTabDrag}
         >
-          <SortableContext items={tabs.map((tab) => tab.id)} strategy={horizontalListSortingStrategy}>
+          <SortableContext items={visibleTabs.map((tab) => tab.id)} strategy={horizontalListSortingStrategy}>
             <div
               ref={tabListRef}
               className="workspace-panel-tabs"
@@ -215,16 +226,16 @@ export function WorkspaceRightPanel({
               aria-label="产物与工具"
               onKeyDown={handleTabListKeyDown}
             >
-              {tabs.map((tab) => {
+              {visibleTabs.map((tab) => {
                 const active = tab.id === activeTabID;
                 return (
                   <SortableWorkspaceViewTab
                     key={tab.id}
                     tab={tab}
                     active={active}
-                    dirty={dirtyFileTabIDs.has(tab.id)}
+                    dirty={tab.kind === "files" && dirtyFileTabIDs.size > 0}
                     open={open}
-                    reorderable={tabs.length > 1}
+                    reorderable={visibleTabs.length > 1}
                     onSelect={() => onSelectTab(tab.id)}
                     onClose={() => requestCloseTab(tab)}
                   />
@@ -291,29 +302,47 @@ export function WorkspaceRightPanel({
       {present || fileTabs.length > 0 ? (
         <>
           <div className={`workspace-panel-body${activeTab ? "" : " picker"}`}>
-            {fileTabs.map((tab) => (
-              <WorkspaceFileResource
-                active={open && tab.id === activeTabID}
-                key={tab.id}
-                onDirtyChange={updateFileDirtyState}
-                tab={tab}
-              />
-            ))}
-            {activeTab?.kind === "file" ? null : !activeTab ? (
+            <div className="workspace-files-split" hidden={activeTab?.kind !== "files"}>
+              <section className="workspace-files-content" aria-label="文件内容">
+                <div className="workspace-files-content-header">
+                  <strong>{activeFileTab?.title ?? "文件内容"}</strong>
+                  {activeFileTab ? <span title={activeFileTab.path}>{activeFileTab.path}</span> : null}
+                </div>
+                <div className="workspace-files-content-body">
+                  {fileTabs.map((tab) => (
+                    <WorkspaceFileResource
+                      active={open && activeTab?.kind === "files" && tab.id === activeFileTabID}
+                      key={tab.id}
+                      onDirtyChange={updateFileDirtyState}
+                      tab={tab}
+                    />
+                  ))}
+                  {!activeFileTab ? (
+                    <WorkspacePanelEmpty
+                      title="选择文件"
+                      description="从右侧文件树中选择要查看的文件。"
+                      icon={<FileText size={24} />}
+                    />
+                  ) : null}
+                </div>
+              </section>
+              <section className="workspace-files-tree" aria-label="文件树">
+                <WorkspaceFileTree
+                  activeContext={workspaceContext}
+                  open={open && activeTab?.kind === "files"}
+                  selectedFilePath={selectedFilePath}
+                  onOpenFile={onOpenFile}
+                />
+              </section>
+            </div>
+            {!activeTab ? (
               <WorkspaceToolPicker tabs={tabs} onSelectTool={onOpenTool} />
             ) : activeTab.kind === "diff" ? (
               <TurnFileDiffPanel
                 selection={activeTab.selection}
                 onClose={() => onCloseTab(activeTab.id)}
               />
-            ) : activeTab.kind === "files" ? (
-              <WorkspaceFileTree
-                activeContext={workspaceContext}
-                open={open}
-                selectedFilePath={selectedFilePath}
-                onOpenFile={onOpenFile}
-              />
-            ) : activeTab.kind === "review" ? (
+            ) : activeTab.kind === "files" ? null : activeTab.kind === "review" ? (
               <WorkspaceReviewPanel gitStatus={gitStatus} />
             ) : activeTab.kind === "terminal" ? (
               <WorkspaceTerminalPanel activeContext={workspaceContext} />

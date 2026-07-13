@@ -544,6 +544,7 @@ export function App(): JSX.Element {
   const {
     workspaceViewTabs,
     workspaceActiveViewTabID,
+    workspaceActiveFileTabID,
     ensureWorkspaceToolTab,
     activateWorkspaceTool,
     openWorkspaceTool,
@@ -874,13 +875,17 @@ export function App(): JSX.Element {
     () => workspacePanelContext(state.activeContext, state.thread),
     [state.activeContext, state.thread],
   );
-  const activeWorkspaceViewTab = workspaceActiveViewTabID
-    ? workspaceViewTabs.find((tab) => tab.id === workspaceActiveViewTabID)
+  const activeWorkspaceFileTab = workspaceActiveFileTabID
+    ? workspaceViewTabs.find((tab) => tab.id === workspaceActiveFileTabID)
     : undefined;
+  const activeWorkspaceFileTabID =
+    activeWorkspaceFileTab?.kind === "file" &&
+    sameRuntimeContext(activeWorkspaceFileTab.context, workspaceContext)
+      ? activeWorkspaceFileTab.id
+      : undefined;
   const activeWorkspaceFile =
-    activeWorkspaceViewTab?.kind === "file" &&
-    sameRuntimeContext(activeWorkspaceViewTab.context, workspaceContext)
-      ? activeWorkspaceViewTab.path
+    activeWorkspaceFileTab?.kind === "file" && activeWorkspaceFileTabID
+      ? activeWorkspaceFileTab.path
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
@@ -4390,6 +4395,7 @@ export function App(): JSX.Element {
           present={rightPanelOpen || rightPanelAnimating}
           tabs={workspaceViewTabs}
           activeTabID={workspaceActiveViewTabID}
+          activeFileTabID={activeWorkspaceFileTabID}
           activeContext={state.activeContext}
           workspaceContext={workspaceContext}
           gitStatus={state.gitStatus}

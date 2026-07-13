@@ -241,30 +241,39 @@ describe("WorkspaceRightPanel", () => {
     expect(panel?.querySelector(".workspace-monaco-editor")).toBeNull();
   });
 
-  it("renders an editable file resource inside the right workspace", async () => {
+  it("renders file content on the left and the persistent file tree on the right", async () => {
+    const context: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/repo/project",
+    };
+    const filesTab = workspaceToolViewTab("files");
     const fileTab = workspaceFileViewTab({
-      context: {
-        kind: "project",
-        project_id: "project-1",
-        cwd: "/repo/project",
-      },
+      context,
       path: "src/App.tsx",
     });
 
     mount(
       <WorkspaceRightPanel
         {...baseProps()}
-        tabs={[fileTab]}
-        activeTabID={fileTab.id}
+        tabs={[filesTab, fileTab]}
+        activeTabID={filesTab.id}
+        activeFileTabID={fileTab.id}
+        workspaceContext={context}
       />,
     );
     await act(async () => Promise.resolve());
 
-    const panel = container?.querySelector<HTMLElement>(".workspace-right-panel.detail.file");
+    const panel = container?.querySelector<HTMLElement>(".workspace-right-panel.detail.files");
     expect(panel).toBeTruthy();
-    expect(panel?.querySelector(".workspace-tool-tab.active")?.textContent).toContain("App.tsx");
-    expect(panel?.querySelector(".workspace-tool-tab-main")?.getAttribute("title")).toBe("src/App.tsx");
+    expect(panel?.querySelector(".workspace-tool-tab.active")?.textContent).toContain("文件");
+    expect(panel?.querySelector(".workspace-files-content-header")?.textContent).toContain("App.tsx");
     expect(panel?.querySelector(".workspace-file-resource.active .workspace-file-preview")).toBeTruthy();
+    const content = panel?.querySelector(".workspace-files-content");
+    const tree = panel?.querySelector(".workspace-files-tree");
+    expect(content).not.toBeNull();
+    expect(tree).not.toBeNull();
+    expect(content!.compareDocumentPosition(tree!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("keeps inactive file state without retaining inactive Monaco editors", async () => {
@@ -275,13 +284,16 @@ describe("WorkspaceRightPanel", () => {
     };
     const fileA = workspaceFileViewTab({ context, path: "src/a.ts" });
     const fileB = workspaceFileViewTab({ context, path: "src/b.ts" });
-    const tabs: WorkspaceViewTab[] = [fileA, fileB];
+    const filesTab = workspaceToolViewTab("files");
+    const tabs: WorkspaceViewTab[] = [filesTab, fileA, fileB];
 
     mount(
       <WorkspaceRightPanel
         {...baseProps()}
         tabs={tabs}
-        activeTabID={fileA.id}
+        activeTabID={filesTab.id}
+        activeFileTabID={fileA.id}
+        workspaceContext={context}
       />,
     );
     await act(async () => Promise.resolve());
@@ -295,7 +307,9 @@ describe("WorkspaceRightPanel", () => {
         <WorkspaceRightPanel
           {...baseProps()}
           tabs={tabs}
-          activeTabID={fileB.id}
+          activeTabID={filesTab.id}
+          activeFileTabID={fileB.id}
+          workspaceContext={context}
         />,
       );
     });
@@ -313,7 +327,9 @@ describe("WorkspaceRightPanel", () => {
         <WorkspaceRightPanel
           {...baseProps()}
           tabs={tabs}
-          activeTabID={fileA.id}
+          activeTabID={filesTab.id}
+          activeFileTabID={fileA.id}
+          workspaceContext={context}
         />,
       );
     });
@@ -339,12 +355,15 @@ describe("WorkspaceRightPanel", () => {
       },
       path: "src/App.tsx",
     });
+    const filesTab = workspaceToolViewTab("files");
 
     mount(
       <WorkspaceRightPanel
         {...baseProps()}
-        tabs={[primary, worktree]}
-        activeTabID={primary.id}
+        tabs={[filesTab, primary, worktree]}
+        activeTabID={filesTab.id}
+        activeFileTabID={primary.id}
+        workspaceContext={primary.context}
       />,
     );
     await act(async () => Promise.resolve());
@@ -358,8 +377,10 @@ describe("WorkspaceRightPanel", () => {
       root?.render(
         <WorkspaceRightPanel
           {...baseProps()}
-          tabs={[primary, worktree]}
-          activeTabID={worktree.id}
+          tabs={[filesTab, primary, worktree]}
+          activeTabID={filesTab.id}
+          activeFileTabID={worktree.id}
+          workspaceContext={worktree.context}
         />,
       );
     });
@@ -369,10 +390,11 @@ describe("WorkspaceRightPanel", () => {
     expect(resourceIDs).toEqual([worktree.id]);
   });
 
-  it("does not close a dirty file resource until the user confirms discarding its edit", async () => {
+  it("shows a dirty marker on Files without treating tool close as discarding the retained resource", async () => {
     const onCloseTab = vi.fn();
     const onDirtyFileTabsChange = vi.fn();
-    const confirmDiscard = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const confirmDiscard = vi.spyOn(window, "confirm");
+    const filesTab = workspaceToolViewTab("files");
     const fileTab = workspaceFileViewTab({
       context: {
         kind: "project",
@@ -385,8 +407,10 @@ describe("WorkspaceRightPanel", () => {
     mount(
       <WorkspaceRightPanel
         {...baseProps()}
-        tabs={[fileTab]}
-        activeTabID={fileTab.id}
+        tabs={[filesTab, fileTab]}
+        activeTabID={filesTab.id}
+        activeFileTabID={fileTab.id}
+        workspaceContext={fileTab.context}
         onCloseTab={onCloseTab}
         onDirtyFileTabsChange={onDirtyFileTabsChange}
       />,
@@ -396,20 +420,14 @@ describe("WorkspaceRightPanel", () => {
       fileResource(fileTab.id)?.querySelector<HTMLButtonElement>(".mock-editor-edit")?.click();
     });
     expect(onDirtyFileTabsChange).toHaveBeenLastCalledWith(true);
-    expect(container?.querySelector(".workspace-tool-tab.dirty")).not.toBeNull();
+    expect(container?.querySelector(".workspace-tool-tab.active.dirty")?.textContent).toContain("文件");
     expect(container?.querySelector(".workspace-tab-dirty-indicator")).not.toBeNull();
     act(() => {
       container?.querySelector<HTMLButtonElement>(".workspace-tool-tab-close")?.click();
     });
 
-    expect(confirmDiscard).toHaveBeenCalledTimes(1);
-    expect(onCloseTab).not.toHaveBeenCalled();
-
-    confirmDiscard.mockReturnValue(true);
-    act(() => {
-      container?.querySelector<HTMLButtonElement>(".workspace-tool-tab-close")?.click();
-    });
-    expect(onCloseTab).toHaveBeenCalledWith(fileTab.id);
+    expect(confirmDiscard).not.toHaveBeenCalled();
+    expect(onCloseTab).toHaveBeenCalledWith(filesTab.id);
   });
 
   it("renders a diff tab as a unified, closable right panel tab (folded into the tab strip)", () => {

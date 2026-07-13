@@ -150,6 +150,13 @@ describe("workspace file preview layout", () => {
     expect(cssRuleBody(".workspace-monaco-editor")).toMatch(/height:\s*100%;/);
   });
 
+  it("lays out file content first and the file tree as the right column", () => {
+    const split = cssRuleBody(".workspace-files-split");
+    expect(split).toMatch(/display:\s*grid;/);
+    expect(split).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) minmax\(180px, 34%\);/);
+    expect(workspaceCss).toMatch(/\.workspace-files-tree\s*\{[\s\S]*?border-left:/);
+  });
+
   it("adds a restrained syntax palette for highlighted code tokens", () => {
     expect(cssRuleBody(".workspace-file-code .hljs-keyword")).toMatch(
       /color:\s*var\(--hljs-keyword\);/,

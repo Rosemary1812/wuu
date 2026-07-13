@@ -5,12 +5,11 @@ import type { WorkspacePanelView } from "./WorkspacePanels";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 
 /**
- * A single instance of content shown in the workspace right panel's tab
- * strip. The four built-in tools (files/review/terminal/browser) are
- * singletons — their tab `id` is just their `kind` — while a "diff" tab is
- * one instance per (thread, file path) pair, so diffs for several files
- * (even across different turns of the same thread) can stay open side by
- * side instead of sharing a single ephemeral slot.
+ * Content retained by the workspace right panel. The four built-in tools
+ * (files/review/terminal/browser) are singleton top-level tabs, and a diff
+ * is one top-level tab per (thread, file path) pair. File resources are
+ * retained inside the Files tool instead of appearing in the top-level tab
+ * strip, so the tree and current file can remain visible together.
  */
 export type WorkspaceToolViewTab = {
   kind: WorkspacePanelView;
@@ -39,6 +38,10 @@ export type WorkspaceViewTab = WorkspaceToolViewTab | WorkspaceDiffViewTab | Wor
 export type WorkspaceViewTabsState = {
   tabs: WorkspaceViewTab[];
   activeTabID: string | undefined;
+  // File resources live inside the singleton Files tool. Keeping their
+  // active id separate lets the file tree stay visible while the user moves
+  // between files, without throwing away per-file editor/draft state.
+  activeFileTabID: string | undefined;
   // Most-recently-active tab ids, oldest first, excluding the current
   // activeTabID. Lets closing a tab restore whichever tab was active
   // immediately before it, instead of always falling back to the tool
@@ -49,6 +52,7 @@ export type WorkspaceViewTabsState = {
 export const initialWorkspaceViewTabsState: WorkspaceViewTabsState = {
   tabs: [],
   activeTabID: undefined,
+  activeFileTabID: undefined,
   activationHistory: [],
 };
 
@@ -125,13 +129,23 @@ export function workspaceFileBasename(path: string): string {
 }
 
 /**
- * Opens `tab`: if a tab with the same id is already present it is replaced
- * in place (so re-opening a diff for the same file picks up a fresh
- * selection) and focused; otherwise it is appended and focused. Mirrors the
- * find-or-append-then-focus pattern used for AppState's session tabs
- * (ensureSessionTab), extended with focus tracking.
+ * Opens `tab`: top-level tools and diffs are focused directly. Files are
+ * retained as editor resources, set as the active file, and shown through
+ * the singleton Files tool. Existing ids are replaced in place so refreshed
+ * diffs and file contexts do not create duplicates.
  */
 export function openViewTab(state: WorkspaceViewTabsState, tab: WorkspaceViewTab): WorkspaceViewTabsState {
+  if (tab.kind === "file") {
+    const existingFileIndex = state.tabs.findIndex((candidate) => candidate.id === tab.id);
+    let tabs = existingFileIndex < 0
+      ? [...state.tabs, tab]
+      : state.tabs.map((candidate, index) => (index === existingFileIndex ? tab : candidate));
+    if (!tabs.some((candidate) => candidate.id === "files")) {
+      tabs = [workspaceToolViewTab("files"), ...tabs];
+    }
+    const focused = focusViewTab({ ...state, tabs }, "files");
+    return { ...focused, activeFileTabID: tab.id };
+  }
   const index = state.tabs.findIndex((candidate) => candidate.id === tab.id);
   const tabs =
     index < 0 ? [...state.tabs, tab] : state.tabs.map((candidate, i) => (i === index ? tab : candidate));
@@ -140,6 +154,13 @@ export function openViewTab(state: WorkspaceViewTabsState, tab: WorkspaceViewTab
 
 /** Focuses the tab with the given id (or the tool picker, when `id` is undefined). */
 export function focusViewTab(state: WorkspaceViewTabsState, id: string | undefined): WorkspaceViewTabsState {
+  const fileTab = id ? state.tabs.find((tab) => tab.id === id && tab.kind === "file") : undefined;
+  if (fileTab) {
+    return {
+      ...focusViewTab(state, "files"),
+      activeFileTabID: fileTab.id,
+    };
+  }
   if (state.activeTabID === id) {
     return state;
   }
@@ -157,9 +178,12 @@ export function focusViewTab(state: WorkspaceViewTabsState, id: string | undefin
  */
 export function closeViewTab(state: WorkspaceViewTabsState, id: string): WorkspaceViewTabsState {
   const tabs = state.tabs.filter((tab) => tab.id !== id);
+  const activeFileTabID = state.activeFileTabID === id
+    ? tabs.findLast((tab) => tab.kind === "file")?.id
+    : state.activeFileTabID;
   let activationHistory = state.activationHistory.filter((entry) => entry !== id);
   if (state.activeTabID !== id) {
-    return { ...state, tabs, activationHistory };
+    return { ...state, tabs, activeFileTabID, activationHistory };
   }
   let activeTabID: string | undefined;
   while (activationHistory.length > 0) {
@@ -170,7 +194,7 @@ export function closeViewTab(state: WorkspaceViewTabsState, id: string): Workspa
       break;
     }
   }
-  return { tabs, activationHistory, activeTabID };
+  return { tabs, activationHistory, activeTabID, activeFileTabID };
 }
 
 /** Closes every tab matching `predicate`, one at a time, preserving closeViewTab's fallback-focus behavior. */
@@ -211,6 +235,7 @@ export function reorderViewTabs(
 export function useWorkspaceViewTabs(): {
   tabs: WorkspaceViewTab[];
   activeTabID: string | undefined;
+  activeFileTabID: string | undefined;
   openTab: (tab: WorkspaceViewTab) => void;
   focusTab: (id: string | undefined) => void;
   closeTab: (id: string) => void;
@@ -238,6 +263,7 @@ export function useWorkspaceViewTabs(): {
   return {
     tabs: state.tabs,
     activeTabID: state.activeTabID,
+    activeFileTabID: state.activeFileTabID,
     openTab,
     focusTab,
     closeTab,

@@ -20,6 +20,7 @@ export function useWorkspaceToolState({
   // more per-file diff tabs. See WorkspaceViewTabs.ts.
   workspaceViewTabs: WorkspaceViewTab[];
   workspaceActiveViewTabID: string | undefined;
+  workspaceActiveFileTabID: string | undefined;
   ensureWorkspaceToolTab: (view: WorkspacePanelView) => void;
   activateWorkspaceTool: (view: WorkspacePanelView) => void;
   openWorkspaceTool: (view: WorkspacePanelView) => void;
@@ -35,6 +36,7 @@ export function useWorkspaceToolState({
   const {
     tabs: workspaceViewTabs,
     activeTabID: workspaceActiveViewTabID,
+    activeFileTabID: workspaceActiveFileTabID,
     openTab,
     focusTab,
     closeTab,
@@ -85,6 +87,7 @@ export function useWorkspaceToolState({
   return {
     workspaceViewTabs,
     workspaceActiveViewTabID,
+    workspaceActiveFileTabID,
     ensureWorkspaceToolTab,
     activateWorkspaceTool,
     openWorkspaceTool,
