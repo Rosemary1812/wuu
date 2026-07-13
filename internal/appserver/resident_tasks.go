@@ -105,9 +105,10 @@ func (m *residentTaskManager) PromoteThread(ctx context.Context, subthreadID, ti
 
 // ConcludeTask files the task's conclusion and completes it in one act (the
 // manage_task conclude action): a single store CAS resolves the task —
-// only the lead may conclude — then the summary is published to the parent
-// main stream under the caller's identity. The store accepts this only after
-// every worker node is done and execution is awaiting the lead's verification.
+// only the lead may conclude — then a short conclusion signal is published to
+// the parent main stream under the caller's identity while the complete report
+// stays on the Task. The store accepts this only after every worker node is
+// done and execution is awaiting the lead's verification.
 func (m *residentTaskManager) ConcludeTask(ctx context.Context, subthreadID, summary string) (tools.TaskView, error) {
 	_ = ctx
 	if err := m.ready("conclude"); err != nil {
@@ -121,12 +122,13 @@ func (m *residentTaskManager) ConcludeTask(ctx context.Context, subthreadID, sum
 	if err != nil {
 		return tools.TaskView{}, err
 	}
-	// The conclusion posts to the parent's main stream (empty ThreadID =
-	// full-roster visible), same publish path the human bubble click uses.
+	// The decision-bearing first paragraph posts to the parent's main stream
+	// (empty ThreadID = full-roster visible); the durable Task keeps the full
+	// report for its detail view and trace.
 	if err := m.server.publishParticipantMessage(concluded.SessionID, agentcontrol.ParticipantMessage{
 		ParticipantID: m.participantID,
 		Kind:          "result",
-		Text:          concluded.Summary,
+		Text:          taskConclusionSignal(concluded.Summary),
 	}); err != nil {
 		return tools.TaskView{}, fmt.Errorf("conclude: publish conclusion: %w", err)
 	}
@@ -134,6 +136,38 @@ func (m *residentTaskManager) ConcludeTask(ctx context.Context, subthreadID, sum
 		concluded.Summary, "")
 	m.server.notifySubthreadUpdated(concluded.SessionID, concluded.ID)
 	return m.taskView(concluded), nil
+}
+
+// taskConclusionSignal keeps the durable Task as the home of the complete
+// report while the parent group receives only its decision-bearing first
+// paragraph. A leading markdown heading is treated as a label, not the signal.
+func taskConclusionSignal(summary string) string {
+	summary = strings.ReplaceAll(strings.TrimSpace(summary), "\r\n", "\n")
+	var paragraph []string
+	fallback := ""
+	for _, raw := range strings.Split(summary, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			if len(paragraph) > 0 {
+				break
+			}
+			continue
+		}
+		if len(paragraph) == 0 && strings.HasPrefix(line, "#") {
+			fallback = strings.TrimSpace(strings.TrimLeft(line, "#"))
+			continue
+		}
+		paragraph = append(paragraph, line)
+	}
+	signal := strings.Join(strings.Fields(strings.Join(paragraph, " ")), " ")
+	if signal == "" {
+		signal = fallback
+	}
+	runes := []rune(signal)
+	if len(runes) > maxGroupBriefRunes {
+		signal = string(runes[:maxGroupBriefRunes-1]) + "…"
+	}
+	return signal
 }
 
 // NeedHuman flags a task as waiting on a decision that genuinely belongs to

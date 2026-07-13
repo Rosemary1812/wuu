@@ -5,10 +5,22 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
+
+func TestTaskConclusionSignalUsesFirstSubstantiveParagraphAndCapsLength(t *testing.T) {
+	long := "# 调查结果\n\n" + strings.Repeat("结论成立，", 80) + "\n\n后续完整证据"
+	got := taskConclusionSignal(long)
+	if strings.Contains(got, "调查结果") || strings.Contains(got, "后续完整证据") {
+		t.Fatalf("signal should contain only the first substantive paragraph: %q", got)
+	}
+	if utf8.RuneCountInString(got) > maxGroupBriefRunes || !strings.HasSuffix(got, "…") {
+		t.Fatalf("signal was not capped to %d runes: %d %q", maxGroupBriefRunes, utf8.RuneCountInString(got), got)
+	}
+}
 
 // Task state machine + auto-execution on escalation (T4): upgrading a reply
 // to a task IS the start of execution. No user approval sits anywhere on the
@@ -232,8 +244,8 @@ func TestAllPiecesDoneAwaitsLeadConclusion(t *testing.T) {
 }
 
 // ConcludeTask (manage_task conclude): filing the conclusion resolves
-// the task immediately, bubbles the summary to the parent main stream under
-// the caller's identity, and records task_completed. A caller that is
+// the task immediately, bubbles a short result signal to the parent main stream
+// under the caller's identity, and records the complete task result. A caller that is
 // any non-lead is refused; the immutable lead concludes.
 func TestConcludeTaskResolvesAndBubbles(t *testing.T) {
 	srv, groupID, _, mia, han, _ := planFixture(t)
@@ -258,7 +270,9 @@ func TestConcludeTaskResolvesAndBubbles(t *testing.T) {
 	}
 
 	markTaskReadyForConclusionForTest(t, srv, owned.ID, han)
-	concluded, err := srv.residentTaskManager(mia).ConcludeTask(context.Background(), owned.ID, "活干完了,已自测")
+	const fullConclusion = "结论：活干完了，已自测。\n\n**完整证据**\n" +
+		"这里保留 Task 的详细结果、验证过程和后续注意事项，不应整段复制到群聊主流。"
+	concluded, err := srv.residentTaskManager(mia).ConcludeTask(context.Background(), owned.ID, fullConclusion)
 	if err != nil {
 		t.Fatalf("ConcludeTask by lead: %v", err)
 	}
@@ -269,15 +283,15 @@ func TestConcludeTaskResolvesAndBubbles(t *testing.T) {
 		t.Fatalf("exec_state after conclude = %q, want completed", concluded.ExecState)
 	}
 
-	// The conclusion bubbled to the parent's MAIN stream (empty thread tag)
-	// under the owner's identity.
+	// Only the conclusion's first paragraph bubbled to the parent's MAIN stream
+	// (empty thread tag) under the owner's identity.
 	history, err := session.LoadHistoryRecords(srv.rt.SessionDir, groupID, false)
 	if err != nil {
 		t.Fatalf("LoadHistoryRecords: %v", err)
 	}
 	var bubbled *session.HistoryRecord
 	for i := range history {
-		if history[i].Role == "participant" && strings.TrimSpace(history[i].ThreadID) == "" && history[i].Content == "活干完了,已自测" {
+		if history[i].Role == "participant" && strings.TrimSpace(history[i].ThreadID) == "" && history[i].Content == "结论：活干完了，已自测。" {
 			bubbled = &history[i]
 			break
 		}
@@ -294,8 +308,15 @@ func TestConcludeTaskResolvesAndBubbles(t *testing.T) {
 	if !ok {
 		t.Fatalf("trace missing task_completed, have %v", events)
 	}
-	if completed.Actor != mia || completed.Summary != "活干完了,已自测" {
+	if completed.Actor != mia || completed.Summary != fullConclusion {
 		t.Fatalf("task_completed = actor %q summary %q, want owner + conclusion", completed.Actor, completed.Summary)
+	}
+	stored, err := session.FindConversationThreadByID(srv.rt.SessionDir, owned.ID)
+	if err != nil {
+		t.Fatalf("reload concluded Task: %v", err)
+	}
+	if stored.Summary != fullConclusion {
+		t.Fatalf("Task lost full conclusion: %q", stored.Summary)
 	}
 }
 
