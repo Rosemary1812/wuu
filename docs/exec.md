@@ -354,13 +354,17 @@ Actions split by how they reach the app server:
   `participant_turn` is the general label for any other turn AS that
   participant, including forking a copy via `manage_participant`. Which tool the
   turn actually invokes is decided by the agent, not by the action name.
+- Human turns (`send_user_message`) call `turn/start` on an existing thread.
+  This is the desktop-equivalent way to talk to a resident named agent in its
+  DM; it is intentionally different from `participant_turn`, which starts a
+  separate named task run.
 
 Notes for scripting named turns:
 
 - `create_dm` takes `dm_participant_id` and returns the same idempotent
   `thread/start` result used by the desktop when opening a named agent's DM.
-  Save `thread.id`, then pass it to a `participant_turn` action to exercise the
-  real resident DM path in the same script.
+  Save `thread.id`, then pass it to `send_user_message` to exercise the real
+  resident DM brain in the same script.
 
 - A named agent runs one task at a time. Running two turns as the SAME
   participant back to back is supported — exec briefly waits out the prior run's

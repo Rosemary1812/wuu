@@ -23,17 +23,18 @@ type fakeController struct {
 	events     []Notification
 	batches    [][]Notification
 
-	startedThread  bool
-	startEphemeral bool
-	resumedThread  string
-	forkedThread   string
-	startedPrompt  string
-	startedPrompts []string
-	startedImages  []appserver.TurnStartImage
-	startedFiles   []appserver.TurnStartFile
-	interrupted    string
-	shutdown       bool
-	startCount     int
+	startedThread     bool
+	startEphemeral    bool
+	resumedThread     string
+	forkedThread      string
+	startedPrompt     string
+	startedTurnThread string
+	startedPrompts    []string
+	startedImages     []appserver.TurnStartImage
+	startedFiles      []appserver.TurnStartFile
+	interrupted       string
+	shutdown          bool
+	startCount        int
 
 	participantStart  appserver.ParticipantStartParams
 	participantAgent  appserver.Agent
@@ -92,8 +93,9 @@ func (f *fakeController) ForkThread(_ context.Context, id string) (appserver.Thr
 	return f.thread, nil
 }
 
-func (f *fakeController) StartTurn(_ context.Context, _ string, input TurnInput) (appserver.Turn, error) {
+func (f *fakeController) StartTurn(_ context.Context, threadID string, input TurnInput) (appserver.Turn, error) {
 	f.startCount++
+	f.startedTurnThread = threadID
 	f.startedPrompt = input.Prompt
 	f.startedPrompts = append(f.startedPrompts, input.Prompt)
 	f.startedImages = append([]appserver.TurnStartImage(nil), input.Images...)

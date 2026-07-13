@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -125,6 +126,29 @@ func TestRunActionSequenceCreatesDMThroughThreadStart(t *testing.T) {
 	}
 	if _, ok := params["group"]; ok {
 		t.Fatalf("create_dm must not inject group:true: %+v", params)
+	}
+}
+
+func TestRunActionSequenceSendsDesktopEquivalentUserTurn(t *testing.T) {
+	controller := newFakeController(notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{
+		ThreadID: "dm-1",
+		Turn:     appserver.Turn{ID: "turn-1", Status: appserver.TurnStatusCompleted},
+		Content:  "DM reply",
+	}))
+
+	err := Run(context.Background(), Options{
+		Controller: controller,
+		Actions: []GroupAction{{
+			Action: "send_user_message",
+			Params: map[string]any{"thread_id": "dm-1", "prompt": "please investigate"},
+			Expect: map[string]any{"status": "completed", "text": "DM reply"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if controller.startedTurnThread != "dm-1" || controller.startedPrompt != "please investigate" {
+		t.Fatalf("turn/start = thread %q prompt %q", controller.startedTurnThread, controller.startedPrompt)
 	}
 }
 

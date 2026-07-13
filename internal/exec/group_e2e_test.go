@@ -94,6 +94,7 @@ func (w *dmScriptWorker) Chat(_ context.Context, req providers.ChatRequest) (pro
 func TestExecDMEndToEndRegression(t *testing.T) {
 	worker := &dmScriptWorker{}
 	rt := newExecForkTestRuntime(t, providers.AdaptStreamClient(worker))
+	rt.StreamRunner.Client = providers.AdaptStreamClient(worker)
 	t.Cleanup(func() {
 		waitForTreeQuiesce(rt.RootDir)
 		waitForTreeQuiesce(rt.WuuHome)
@@ -116,15 +117,14 @@ func TestExecDMEndToEndRegression(t *testing.T) {
 				SaveAs: map[string]string{"dm": "thread.id"},
 				Expect: map[string]any{"thread.dm_participant_id": ada.ID},
 			},
-			{Action: "participant_turn", As: ada.ID, Params: map[string]any{
+			{Action: "send_user_message", Params: map[string]any{
 				"thread_id": "$dm",
-				"task_name": "ada_dm_reply",
 				"prompt":    "Answer the user in your DM. POST_DM",
 			}},
 		},
 	})
 	if err != nil {
-		t.Fatalf("Run: %v\n%s", err, stdout.String())
+		t.Fatalf("Run: %v; provider defs: %+v\n%s", err, worker.defs, stdout.String())
 	}
 
 	events := parseJSONLines(t, stdout.String())

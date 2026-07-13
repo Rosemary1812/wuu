@@ -27,6 +27,10 @@ const (
 	// invokes is decided by the named agent's provider, not by exec. Reuses the
 	// W1 participant machinery.
 	actionNamedTurn
+	// actionUserTurn sends a real human-authored turn through turn/start. This
+	// is the desktop-equivalent path for talking to a resident named agent in
+	// its DM; participant/start is a task-run path and cannot substitute for it.
+	actionUserTurn
 )
 
 // actionMethodEntry binds a scripted action name to the app-server method it
@@ -61,8 +65,9 @@ var actionMethodTable = map[string]actionMethodEntry{
 	// manage_participant. Both route to the same participant/start path —
 	// the distinction is purely for readable scripts, since the invoked tool
 	// is chosen by the agent, not the action.
-	"post_message":     {kind: actionNamedTurn},
-	"participant_turn": {kind: actionNamedTurn},
+	"post_message":      {kind: actionNamedTurn},
+	"participant_turn":  {kind: actionNamedTurn},
+	"send_user_message": {kind: actionUserTurn},
 }
 
 // runActionSequence drives a scripted list of group/reply/task steps against the
@@ -91,6 +96,8 @@ func runActionSequence(ctx context.Context, controller Controller, opts Options,
 		switch entry.kind {
 		case actionNamedTurn:
 			result, err = runNamedTurnAction(ctx, controller, opts, action, vars)
+		case actionUserTurn:
+			result, err = runUserTurnAction(ctx, controller, opts, action, vars)
 		default:
 			result, err = runRPCAction(ctx, controller, entry, action, vars)
 		}
@@ -115,6 +122,54 @@ func runActionSequence(ctx context.Context, controller Controller, opts Options,
 	state.status = "completed"
 	emitResult(opts, *state, "completed", "")
 	return nil
+}
+
+// runUserTurnAction exercises the same turn/start path used by the desktop
+// composer. In a DM this wakes the resident named agent's persistent brain;
+// it deliberately does not use participant/start, which creates a separate
+// task run with different lifecycle and authority.
+func runUserTurnAction(ctx context.Context, controller Controller, opts Options, action GroupAction, vars map[string]string) (map[string]any, error) {
+	params := substituteVars(action.Params, vars)
+	threadID := stringParam(params, "thread_id")
+	if threadID == "" {
+		return nil, errors.New("send_user_message requires params.thread_id")
+	}
+	prompt := strings.TrimSpace(action.Prompt)
+	if prompt == "" {
+		prompt = stringParam(params, "prompt")
+	}
+	prompt = substituteEmbedded(prompt, vars)
+	if prompt == "" {
+		return nil, errors.New("send_user_message requires a prompt")
+	}
+
+	turn, err := controller.StartTurn(ctx, threadID, TurnInput{Prompt: prompt})
+	if err != nil {
+		return nil, err
+	}
+	emitTurnStarted(opts, threadID, turn)
+	sub := runState{
+		threadID: threadID,
+		turnID:   turn.ID,
+		status:   "running",
+	}
+	if err := waitForTurn(ctx, controller, opts, &sub); err != nil {
+		return nil, err
+	}
+	result := map[string]any{
+		"thread_id": threadID,
+		"turn_id":   turn.ID,
+		"status":    sub.status,
+		"text":      sub.finalMessage,
+	}
+	if sub.status == "failed" {
+		message := strings.TrimSpace(sub.finalMessage)
+		if message == "" {
+			message = "user turn failed"
+		}
+		return result, errors.New(message)
+	}
+	return result, nil
 }
 
 // runRPCAction issues one app-server RPC for an actionRPC step and returns the
