@@ -2107,3 +2107,27 @@ func TestSeedConversationUsageBaseline(t *testing.T) {
 		t.Fatal("zero total must not seed ground truth")
 	}
 }
+
+func TestStreamRunner_PauseTurnContinuesTheTurn(t *testing.T) {
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{events: []providers.StreamEvent{
+			{Type: providers.EventContentDelta, Content: "searching..."},
+			{Type: providers.EventDone, StopReason: "pause_turn"},
+		}},
+		{events: []providers.StreamEvent{
+			{Type: providers.EventContentDelta, Content: "final answer"},
+			{Type: providers.EventDone, StopReason: "end_turn"},
+		}},
+	}}
+	runner := &StreamRunner{Client: client, Model: "test"}
+	result, err := runner.Run(context.Background(), "hello")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "final answer" {
+		t.Fatalf("pause_turn must continue the turn, got %q", result)
+	}
+	if client.callCount != 2 {
+		t.Fatalf("attempts = %d, want the paused turn to be resent once", client.callCount)
+	}
+}

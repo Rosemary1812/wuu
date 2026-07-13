@@ -441,6 +441,15 @@ func RunToolLoop(
 			appendMessage(assistant)
 		}
 
+		// Anthropic's pause_turn pauses a long-running turn (server-side tool
+		// use such as web search) and expects the conversation — including
+		// the paused assistant content just appended — to be resent so the
+		// model can continue. Treating it as a terminal stop silently
+		// truncated those turns. The step cap still bounds repeated pauses.
+		if len(result.ToolCalls) == 0 && strings.EqualFold(strings.TrimSpace(result.StopReason), "pause_turn") {
+			continue
+		}
+
 		// No tool calls → model is done. Return content plus finish metadata.
 		if len(result.ToolCalls) == 0 {
 			finalContent := result.Content
