@@ -33,6 +33,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
+	"github.com/blueberrycongee/wuu/internal/toolledger"
 	"github.com/blueberrycongee/wuu/internal/worktree"
 )
 
@@ -187,9 +188,10 @@ type Config struct {
 	// ParticipantStore, when set, persists the ephemeral participant
 	// identity created for each spawned worker. Optional: when nil,
 	// participant IDs are still generated in-memory but not persisted.
-	ParticipantStore ParticipantStore
-	MaxParallel      int
-	InferenceJournal providers.InferenceJournal
+	ParticipantStore  ParticipantStore
+	MaxParallel       int
+	InferenceJournal  providers.InferenceJournal
+	ToolLedgerFactory func(ownerID string) (*toolledger.Ledger, error)
 }
 
 // New constructs an AgentControl. Worktree isolation is only available
@@ -227,6 +229,7 @@ func New(cfg Config) (*AgentControl, error) {
 		CompactKeepRecentTokens: cfg.DefaultCompactKeepRecentTokens,
 		DisableAutoCompact:      cfg.DefaultDisableAutoCompact,
 		InferenceJournal:        cfg.InferenceJournal,
+		ToolLedgerFactory:       cfg.ToolLedgerFactory,
 	})
 	threadRegistry := agentthread.NewRegistry()
 

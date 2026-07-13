@@ -217,7 +217,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		requestModel = r.Model
 	}
 	history = filterDurableHistory(history)
-	recoveredToolMessages, err := r.pendingToolResultMessages(ctx)
+	recoveredToolMessages, err := r.pendingToolResultMessages(ctx, history)
 	if err != nil {
 		return LoopResult{}, fmt.Errorf("recover pending tool results: %w", err)
 	}
@@ -418,9 +418,18 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	return res, nil
 }
 
-func (r *StreamRunner) pendingToolResultMessages(ctx context.Context) ([]providers.ChatMessage, error) {
+func (r *StreamRunner) pendingToolResultMessages(ctx context.Context, history []providers.ChatMessage) ([]providers.ChatMessage, error) {
 	if r == nil || r.ToolLedger == nil {
 		return nil, nil
+	}
+	projected := make([]string, 0)
+	for _, message := range history {
+		if id := strings.TrimSpace(message.ToolInvocationID); id != "" {
+			projected = append(projected, id)
+		}
+	}
+	if err := r.ToolLedger.MarkProjected(ctx, projected); err != nil {
+		return nil, err
 	}
 	pending, err := r.ToolLedger.PendingProjection(ctx)
 	if err != nil || len(pending) == 0 {

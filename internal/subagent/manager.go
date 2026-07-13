@@ -14,6 +14,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolledger"
 )
 
 // Manager registers and orchestrates sub-agents. It is safe for
@@ -32,6 +33,7 @@ type Manager struct {
 	defaultKeepRecent      int
 	defaultDisableCompact  bool
 	defaultJournal         providers.InferenceJournal
+	toolLedgerFactory      func(string) (*toolledger.Ledger, error)
 
 	mu        sync.Mutex
 	agents    map[string]*SubAgent
@@ -52,23 +54,25 @@ type ManagerOptions struct {
 	DisableAutoCompact      bool
 	// InferenceJournal is an infrastructure dependency fixed at manager
 	// construction. UpdateDefaults intentionally does not replace it.
-	InferenceJournal providers.InferenceJournal
+	InferenceJournal  providers.InferenceJournal
+	ToolLedgerFactory func(ownerID string) (*toolledger.Ledger, error)
 }
 
 type managerDefaults struct {
-	client         providers.StreamClient
-	model          string
-	effort         string
-	options        map[string]any
-	contextWindow  int
-	maxInputTokens int
-	outputReserve  int
-	compactTokens  int
-	compactPct     float64
-	temperature    float64
-	keepRecent     int
-	disableCompact bool
-	journal        providers.InferenceJournal
+	client            providers.StreamClient
+	model             string
+	effort            string
+	options           map[string]any
+	contextWindow     int
+	maxInputTokens    int
+	outputReserve     int
+	compactTokens     int
+	compactPct        float64
+	temperature       float64
+	keepRecent        int
+	disableCompact    bool
+	journal           providers.InferenceJournal
+	toolLedgerFactory func(string) (*toolledger.Ledger, error)
 }
 
 type toolContextBlockProvider interface {
@@ -98,6 +102,7 @@ func NewManagerWithOptions(client providers.StreamClient, defaultModel string, o
 		defaultKeepRecent:      opts.CompactKeepRecentTokens,
 		defaultDisableCompact:  opts.DisableAutoCompact,
 		defaultJournal:         opts.InferenceJournal,
+		toolLedgerFactory:      opts.ToolLedgerFactory,
 		agents:                 make(map[string]*SubAgent),
 	}
 }
@@ -132,19 +137,20 @@ func (m *Manager) defaultsSnapshot() managerDefaults {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return managerDefaults{
-		client:         m.client,
-		model:          m.defaultModel,
-		effort:         m.defaultEffort,
-		options:        provideroptions.Clone(m.defaultProviderOptions),
-		contextWindow:  m.defaultContextWindow,
-		maxInputTokens: m.defaultMaxInputTokens,
-		outputReserve:  m.defaultOutputReserve,
-		compactTokens:  m.defaultCompactTokens,
-		temperature:    m.defaultTemperature,
-		compactPct:     m.defaultCompactPct,
-		keepRecent:     m.defaultKeepRecent,
-		disableCompact: m.defaultDisableCompact,
-		journal:        m.defaultJournal,
+		client:            m.client,
+		model:             m.defaultModel,
+		effort:            m.defaultEffort,
+		options:           provideroptions.Clone(m.defaultProviderOptions),
+		contextWindow:     m.defaultContextWindow,
+		maxInputTokens:    m.defaultMaxInputTokens,
+		outputReserve:     m.defaultOutputReserve,
+		compactTokens:     m.defaultCompactTokens,
+		temperature:       m.defaultTemperature,
+		compactPct:        m.defaultCompactPct,
+		keepRecent:        m.defaultKeepRecent,
+		disableCompact:    m.defaultDisableCompact,
+		journal:           m.defaultJournal,
+		toolLedgerFactory: m.toolLedgerFactory,
 	}
 }
 
@@ -251,6 +257,14 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 	if id == "" {
 		id = newAgentID(opts.Type)
 	}
+	var toolLedger *toolledger.Ledger
+	if defaults.toolLedgerFactory != nil {
+		var err error
+		toolLedger, err = defaults.toolLedgerFactory(id)
+		if err != nil {
+			return nil, fmt.Errorf("open tool ledger for subagent %q: %w", id, err)
+		}
+	}
 	lifetime := opts.MaxLifetime
 	subCtx, cancel := context.WithCancel(ctx)
 	if lifetime > 0 {
@@ -282,6 +296,7 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 		maxLifetime:     lifetime,
 		runtimeDefaults: defaults,
 		client:          client,
+		toolLedger:      toolLedger,
 		cancelFunc:      cancel,
 		doneCh:          make(chan struct{}),
 	}
@@ -366,6 +381,7 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	runner := &agent.StreamRunner{
 		Client:                   sa.client,
 		Tools:                    sa.toolkit,
+		ToolLedger:               sa.toolLedger,
 		Model:                    sa.model,
 		SystemPrompt:             sa.systemPrompt,
 		MaxSteps:                 maxSteps,
@@ -473,10 +489,22 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	sa.mu.Unlock()
 
 	if sa.historyPath != "" {
-		_ = persistHistory(sa)
+		if persistErr := persistHistory(sa); persistErr == nil && sa.toolLedger != nil {
+			_ = sa.toolLedger.MarkProjected(context.WithoutCancel(ctx), toolInvocationIDs(nextHistory))
+		}
 	}
 
 	m.notify(sa, finalStatus)
+}
+
+func toolInvocationIDs(messages []providers.ChatMessage) []string {
+	ids := make([]string, 0)
+	for _, message := range messages {
+		if id := strings.TrimSpace(message.ToolInvocationID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 // emptyWorkerResultPlaceholder is the clearly-labelled stand-in delivered when
@@ -788,6 +816,14 @@ func (m *Manager) Restore(opts RestoreOptions) (*SubAgent, error) {
 	if client == nil {
 		client = defaults.client
 	}
+	var toolLedger *toolledger.Ledger
+	if defaults.toolLedgerFactory != nil {
+		var err error
+		toolLedger, err = defaults.toolLedgerFactory(id)
+		if err != nil {
+			return nil, fmt.Errorf("open tool ledger for subagent %q: %w", id, err)
+		}
+	}
 	if client == nil {
 		return nil, fmt.Errorf("subagent %q cannot resume: no stream client configured", id)
 	}
@@ -829,6 +865,7 @@ func (m *Manager) Restore(opts RestoreOptions) (*SubAgent, error) {
 		maxLifetime:     opts.MaxLifetime,
 		runtimeDefaults: defaults,
 		client:          client,
+		toolLedger:      toolLedger,
 		cancelFunc:      func() {},
 		doneCh:          doneCh,
 	}

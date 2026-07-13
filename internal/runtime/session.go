@@ -455,6 +455,9 @@ func NewSession(opts Options) (*Session, error) {
 			ParticipantStore: sessionParticipantStore{sessDir: statepath.SessionsDir(wuuHome)},
 			MaxParallel:      5,
 			InferenceJournal: workspaceJournal,
+			ToolLedgerFactory: func(ownerID string) (*toolledger.Ledger, error) {
+				return toolledger.New(sessionDir, ownerID)
+			},
 		})
 		if cerr == nil {
 			agentControl = c
@@ -971,6 +974,9 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 				ParticipantStore: sessionParticipantStore{sessDir: statepath.SessionsDir(wuuHome)},
 				MaxParallel:      5,
 				InferenceJournal: s.InferenceJournalForOwner(id),
+				ToolLedgerFactory: func(ownerID string) (*toolledger.Ledger, error) {
+					return toolledger.New(s.SessionDir, ownerID)
+				},
 			})
 			agentControl = control
 		}

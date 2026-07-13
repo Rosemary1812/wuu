@@ -1888,6 +1888,26 @@ func TestStreamRunnerRecoversSettledUnprojectedToolResult(t *testing.T) {
 	if len(pending) != 1 {
 		t.Fatalf("result was marked projected before durable history append: %+v", pending)
 	}
+
+	client = &mockStreamClient{attempts: []mockStreamAttempt{{events: []providers.StreamEvent{
+		{Type: providers.EventContentDelta, Content: "again"}, {Type: providers.EventDone},
+	}}}}
+	runner.Client = client
+	if _, err := runner.RunWithCallback(ctx, result.NewMessages, nil); err != nil {
+		t.Fatal(err)
+	}
+	invocationMessages := 0
+	for _, message := range client.requests[0].Messages {
+		if message.ToolInvocationID == invocation.ID {
+			invocationMessages++
+		}
+	}
+	if invocationMessages != 1 {
+		t.Fatalf("durably present tool result was injected again: %+v", client.requests[0].Messages)
+	}
+	if pending, err := ledger.PendingProjection(ctx); err != nil || len(pending) != 0 {
+		t.Fatalf("durably present result was not reconciled as projected: %+v, %v", pending, err)
+	}
 }
 
 // TestStreamRunner_ResetConversationUsageReflectsCompaction verifies that an

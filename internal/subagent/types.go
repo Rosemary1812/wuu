@@ -14,6 +14,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolledger"
 )
 
 // Status describes a sub-agent's lifecycle state.
@@ -207,7 +208,8 @@ type SubAgent struct {
 	// the interactive main agent — most importantly, they avoid the
 	// short idle timeouts that proxies tend to apply to non-stream
 	// HTTP requests during long worker runs.
-	client providers.StreamClient
+	client     providers.StreamClient
+	toolLedger *toolledger.Ledger
 
 	// Lifecycle plumbing.
 	cancelFunc context.CancelFunc
