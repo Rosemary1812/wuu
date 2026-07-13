@@ -84,7 +84,7 @@ release-dry:
 
 release-check: check-release-versions
 	goreleaser check
-	npm pack --prefix npm --dry-run
+	cd npm && npm pack --dry-run
 
 check-release-versions:
 	@core="$$(cat VERSION)"; \
