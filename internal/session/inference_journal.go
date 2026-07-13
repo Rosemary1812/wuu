@@ -20,6 +20,11 @@ const inferenceJournalRetention = 30 * 24 * time.Hour
 const (
 	inferenceJournalHeartbeatInterval = 3 * time.Second
 	inferenceJournalStaleAfter        = 12 * time.Second
+	// inferenceJournalProgressFlushInterval bounds how often coalesced streaming
+	// submission estimates reach disk. It only keeps the durable cost estimate
+	// roughly current; terminal accuracy is guaranteed by the synchronous flush
+	// barrier at CompleteAttempt / CompleteOperation, not by this cadence.
+	inferenceJournalProgressFlushInterval = 250 * time.Millisecond
 )
 
 func InferenceJournalRecoveryInterval() time.Duration {
@@ -37,6 +42,25 @@ type InferenceJournalRuntime struct {
 	heartbeatStop  chan struct{}
 	heartbeatDone  chan struct{}
 	closeOnce      sync.Once
+
+	// Streaming submission progress is coalesced by submission id and flushed
+	// off the caller's goroutine by a single background writer, so a fast token
+	// stream never pays a per-delta open+lock+transaction cost. progressErr
+	// records the last flush failure for diagnostics; it never propagates to a
+	// stream.
+	progressOnce sync.Once
+	progressStop chan struct{}
+	progressDone chan struct{}
+	progressMu   sync.Mutex
+	progress     map[string]pendingSubmissionProgress
+	progressErr  error
+}
+
+// pendingSubmissionProgress carries a coalesced streaming update together with
+// the owner-scoped journal that must apply it (ownership is asserted per row).
+type pendingSubmissionProgress struct {
+	journal *inferenceJournal
+	record  providers.InferenceSubmissionJournalRecord
 }
 
 func NewInferenceJournalRuntime(sessDir, workspaceScope string) (*InferenceJournalRuntime, error) {
@@ -73,8 +97,11 @@ INSERT INTO inference_journal_runtimes (
 		runtimeID:      runtimeID,
 		heartbeatStop:  make(chan struct{}),
 		heartbeatDone:  make(chan struct{}),
+		progressStop:   make(chan struct{}),
+		progressDone:   make(chan struct{}),
 	}
 	runtime.startHeartbeat()
+	runtime.startProgressFlusher()
 	return runtime, nil
 }
 
@@ -129,6 +156,12 @@ func (r *InferenceJournalRuntime) Close() error {
 	r.closeOnce.Do(func() {
 		close(r.heartbeatStop)
 		<-r.heartbeatDone
+		// Drain any coalesced streaming progress while the runtime lease is
+		// still open, before we stamp closed_at below.
+		if r.progressStop != nil {
+			close(r.progressStop)
+			<-r.progressDone
+		}
 		db, err := openStore(r.sessDir)
 		if err != nil {
 			closeErr = fmt.Errorf("close inference journal runtime: %w", err)
@@ -160,6 +193,111 @@ func (r *InferenceJournalRuntime) ForOwner(ownerID string) providers.InferenceJo
 		runtime: r,
 		ownerID: ownerID,
 	}
+}
+
+func (r *InferenceJournalRuntime) startProgressFlusher() {
+	if r == nil {
+		return
+	}
+	r.progressOnce.Do(func() {
+		go func() {
+			defer close(r.progressDone)
+			ticker := time.NewTicker(inferenceJournalProgressFlushInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					r.flushSubmissionProgress()
+				case <-r.progressStop:
+					r.flushSubmissionProgress()
+					return
+				}
+			}
+		}()
+	})
+}
+
+// enqueueSubmissionProgress coalesces a streaming submission update by id. Only
+// the latest state per submission survives until the next flush, so a burst of
+// deltas collapses to one write regardless of token rate.
+func (r *InferenceJournalRuntime) enqueueSubmissionProgress(j *inferenceJournal, record providers.InferenceSubmissionJournalRecord) {
+	if r == nil || j == nil {
+		return
+	}
+	id := strings.TrimSpace(record.ID)
+	if id == "" {
+		return
+	}
+	r.progressMu.Lock()
+	if r.progress == nil {
+		r.progress = make(map[string]pendingSubmissionProgress)
+	}
+	r.progress[id] = pendingSubmissionProgress{journal: j, record: record}
+	r.progressMu.Unlock()
+}
+
+// flushSubmissionProgress writes all coalesced updates in one transaction. It is
+// safe to call from the background flusher and, as a durability barrier, from a
+// synchronous terminal write concurrently; each caller claims a disjoint batch
+// under progressMu. A failure is recorded and the batch dropped: these are
+// best-effort in-flight estimates, and terminal cost is anchored by the
+// synchronous CompleteAttempt write that follows the barrier.
+func (r *InferenceJournalRuntime) flushSubmissionProgress() {
+	if r == nil {
+		return
+	}
+	r.progressMu.Lock()
+	if len(r.progress) == 0 {
+		r.progressMu.Unlock()
+		return
+	}
+	batch := r.progress
+	r.progress = make(map[string]pendingSubmissionProgress)
+	r.progressMu.Unlock()
+
+	if err := r.writeSubmissionProgressBatch(batch); err != nil {
+		r.progressMu.Lock()
+		r.progressErr = err
+		r.progressMu.Unlock()
+		providers.DebugLogf("inference journal: submission progress flush degraded (%d records): %v", len(batch), err)
+	}
+}
+
+func (r *InferenceJournalRuntime) writeSubmissionProgressBatch(batch map[string]pendingSubmissionProgress) error {
+	db, err := openStore(r.sessDir)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return fmt.Errorf("begin submission progress: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`
+UPDATE inference_journal_runtimes SET heartbeat_at = ?
+WHERE id = ? AND closed_at = 0`, time.Now().UTC().UnixMilli(), r.runtimeID); err != nil {
+		return fmt.Errorf("refresh runtime lease: %w", err)
+	}
+	for _, pending := range batch {
+		if err := pending.journal.upsertSubmissionRecordTx(tx, pending.record); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// pendingProgressErr returns the last coalesced-flush failure, if any. It exists
+// for diagnostics and tests; a degraded flush never affects control flow.
+func (r *InferenceJournalRuntime) pendingProgressErr() error {
+	if r == nil {
+		return nil
+	}
+	r.progressMu.Lock()
+	defer r.progressMu.Unlock()
+	return r.progressErr
 }
 
 type inferenceJournal struct {
@@ -332,6 +470,28 @@ INSERT INTO inference_attempts (
 }
 
 func (j *inferenceJournal) UpsertSubmission(record providers.InferenceSubmissionJournalRecord) error {
+	return j.write("upsert inference submission", func(tx *sql.Tx) error {
+		return j.upsertSubmissionRecordTx(tx, record)
+	})
+}
+
+// RecordSubmissionProgress implements providers.InferenceProgressJournal. It
+// hands a streaming cost estimate to the runtime's coalescing writer and
+// returns immediately, so token delivery never blocks on a durability write and
+// a flush failure only degrades bookkeeping.
+func (j *inferenceJournal) RecordSubmissionProgress(record providers.InferenceSubmissionJournalRecord) {
+	if j == nil || j.runtime == nil {
+		return
+	}
+	j.runtime.enqueueSubmissionProgress(j, record)
+}
+
+// upsertSubmissionRecordTx applies one submission record inside an existing
+// transaction. The synchronous UpsertSubmission checkpoint and the asynchronous
+// progress flusher share it, so a coalesced batch write and a single write take
+// exactly the same monotonic merge path (an in-flight estimate can never
+// downgrade a recorded terminal outcome, regardless of flush ordering).
+func (j *inferenceJournal) upsertSubmissionRecordTx(tx *sql.Tx, record providers.InferenceSubmissionJournalRecord) error {
 	record.OperationID = strings.TrimSpace(record.OperationID)
 	record.AttemptID = strings.TrimSpace(record.AttemptID)
 	record.ID = strings.TrimSpace(record.ID)
@@ -342,28 +502,27 @@ func (j *inferenceJournal) UpsertSubmission(record providers.InferenceSubmission
 	completedAt := optionalJournalTime(record.CompletedAt)
 	reported := journalUsage(record.ReportedUsage)
 	estimated := journalUsage(record.EstimatedUsage)
-	return j.write("upsert inference submission", func(tx *sql.Tx) error {
-		if err := j.assertOperationTx(tx, record.OperationID, false); err != nil {
-			return err
-		}
-		var linkedOperation, workflowID string
-		var linkedOrdinal int
-		if err := tx.QueryRow(`
+	if err := j.assertOperationTx(tx, record.OperationID, false); err != nil {
+		return err
+	}
+	var linkedOperation, workflowID string
+	var linkedOrdinal int
+	if err := tx.QueryRow(`
 SELECT a.operation_id, a.ordinal, o.workflow_id
 FROM inference_attempts a
 JOIN inference_operations o ON o.id = a.operation_id
 WHERE a.id = ?`, record.AttemptID).
-			Scan(&linkedOperation, &linkedOrdinal, &workflowID); err != nil {
-			return err
-		}
-		if linkedOperation != record.OperationID || linkedOrdinal != record.AttemptOrdinal {
-			return fmt.Errorf("attempt %q does not belong to operation %q", record.AttemptID, record.OperationID)
-		}
-		var operationID, attemptID, existingOutcome, existingFailure, existingCost string
-		var ordinal, attemptOrdinal, existingOutputBytes int
-		var existingReported, existingEstimated inferenceJournalUsage
-		var existingCompletedAt int64
-		err := tx.QueryRow(`
+		Scan(&linkedOperation, &linkedOrdinal, &workflowID); err != nil {
+		return err
+	}
+	if linkedOperation != record.OperationID || linkedOrdinal != record.AttemptOrdinal {
+		return fmt.Errorf("attempt %q does not belong to operation %q", record.AttemptID, record.OperationID)
+	}
+	var operationID, attemptID, existingOutcome, existingFailure, existingCost string
+	var ordinal, attemptOrdinal, existingOutputBytes int
+	var existingReported, existingEstimated inferenceJournalUsage
+	var existingCompletedAt int64
+	err := tx.QueryRow(`
 SELECT operation_id, attempt_id, ordinal, attempt_ordinal,
        outcome, failure_category, cost_state,
        reported_input_tokens, reported_output_tokens, reported_cache_creation,
@@ -372,32 +531,32 @@ SELECT operation_id, attempt_id, ordinal, attempt_ordinal,
        estimated_cache_read, estimated_cache_unknown, has_estimated_usage,
        output_bytes, completed_at
 FROM inference_submissions WHERE id = ?`, record.ID).
-			Scan(
-				&operationID, &attemptID, &ordinal, &attemptOrdinal,
-				&existingOutcome, &existingFailure, &existingCost,
-				&existingReported.input, &existingReported.output, &existingReported.cacheCreation,
-				&existingReported.cacheRead, &existingReported.cacheUnknown, &existingReported.present,
-				&existingEstimated.input, &existingEstimated.output, &existingEstimated.cacheCreation,
-				&existingEstimated.cacheRead, &existingEstimated.cacheUnknown, &existingEstimated.present,
-				&existingOutputBytes, &existingCompletedAt,
-			)
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-			if err := assertWorkflowCostAdmissibleTx(tx, workflowID); err != nil {
-				return err
-			}
-			if err := reserveWorkflowCounterTx(tx, workflowID, providers.WorkflowBudgetSubmissions, "used_submissions", "max_submissions", 1, startedAt); err != nil {
-				return err
-			}
-			if err := applyWorkflowCostDeltaTx(
-				tx, workflowID,
-				"", inferenceJournalUsage{}, inferenceJournalUsage{},
-				string(record.CostState), reported, estimated,
-				startedAt,
-			); err != nil {
-				return err
-			}
-			_, err = tx.Exec(`
+		Scan(
+			&operationID, &attemptID, &ordinal, &attemptOrdinal,
+			&existingOutcome, &existingFailure, &existingCost,
+			&existingReported.input, &existingReported.output, &existingReported.cacheCreation,
+			&existingReported.cacheRead, &existingReported.cacheUnknown, &existingReported.present,
+			&existingEstimated.input, &existingEstimated.output, &existingEstimated.cacheCreation,
+			&existingEstimated.cacheRead, &existingEstimated.cacheUnknown, &existingEstimated.present,
+			&existingOutputBytes, &existingCompletedAt,
+		)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		if err := assertWorkflowCostAdmissibleTx(tx, workflowID); err != nil {
+			return err
+		}
+		if err := reserveWorkflowCounterTx(tx, workflowID, providers.WorkflowBudgetSubmissions, "used_submissions", "max_submissions", 1, startedAt); err != nil {
+			return err
+		}
+		if err := applyWorkflowCostDeltaTx(
+			tx, workflowID,
+			"", inferenceJournalUsage{}, inferenceJournalUsage{},
+			string(record.CostState), reported, estimated,
+			startedAt,
+		); err != nil {
+			return err
+		}
+		_, err = tx.Exec(`
 INSERT INTO inference_submissions (
     id, operation_id, attempt_id, ordinal, attempt_ordinal,
     provider, protocol, transport, mode, reason, outcome, failure_category,
@@ -408,64 +567,64 @@ INSERT INTO inference_submissions (
     estimated_cache_read, estimated_cache_unknown, has_estimated_usage,
     output_bytes, started_at, completed_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				record.ID, record.OperationID, record.AttemptID, record.Ordinal, record.AttemptOrdinal,
-				journalText(record.Provider, 128), journalText(record.Protocol, 128),
-				journalText(record.Transport, 128), journalText(record.Mode, 128), journalText(record.Reason, 256),
-				string(record.Outcome), string(record.FailureCategory), string(record.CostState),
-				reported.input, reported.output, reported.cacheCreation, reported.cacheRead, reported.cacheUnknown, reported.present,
-				estimated.input, estimated.output, estimated.cacheCreation, estimated.cacheRead, estimated.cacheUnknown, estimated.present,
-				record.OutputBytes, startedAt, completedAt,
-			)
-			if err != nil {
-				return err
-			}
-		case err != nil:
+			record.ID, record.OperationID, record.AttemptID, record.Ordinal, record.AttemptOrdinal,
+			journalText(record.Provider, 128), journalText(record.Protocol, 128),
+			journalText(record.Transport, 128), journalText(record.Mode, 128), journalText(record.Reason, 256),
+			string(record.Outcome), string(record.FailureCategory), string(record.CostState),
+			reported.input, reported.output, reported.cacheCreation, reported.cacheRead, reported.cacheUnknown, reported.present,
+			estimated.input, estimated.output, estimated.cacheCreation, estimated.cacheRead, estimated.cacheUnknown, estimated.present,
+			record.OutputBytes, startedAt, completedAt,
+		)
+		if err != nil {
 			return err
-		case operationID != record.OperationID || attemptID != record.AttemptID ||
-			ordinal != record.Ordinal || attemptOrdinal != record.AttemptOrdinal:
-			return fmt.Errorf("submission %q metadata changed after preparation", record.ID)
-		default:
-			mergedOutcome := string(record.Outcome)
-			if existingOutcome != string(providers.InferenceSubmissionInFlight) {
-				if mergedOutcome != string(providers.InferenceSubmissionInFlight) && mergedOutcome != existingOutcome {
-					return fmt.Errorf("submission %q already completed as %s", record.ID, existingOutcome)
-				}
-				mergedOutcome = existingOutcome
+		}
+	case err != nil:
+		return err
+	case operationID != record.OperationID || attemptID != record.AttemptID ||
+		ordinal != record.Ordinal || attemptOrdinal != record.AttemptOrdinal:
+		return fmt.Errorf("submission %q metadata changed after preparation", record.ID)
+	default:
+		mergedOutcome := string(record.Outcome)
+		if existingOutcome != string(providers.InferenceSubmissionInFlight) {
+			if mergedOutcome != string(providers.InferenceSubmissionInFlight) && mergedOutcome != existingOutcome {
+				return fmt.Errorf("submission %q already completed as %s", record.ID, existingOutcome)
 			}
-			mergedFailure := string(record.FailureCategory)
-			if existingFailure != "" {
-				mergedFailure = existingFailure
-			}
-			mergedCost := string(record.CostState)
-			mergedReported, mergedEstimated := reported, estimated
-			switch {
-			case inferenceCostRank(existingCost) > inferenceCostRank(mergedCost):
-				mergedCost = existingCost
-				mergedReported = existingReported
-				mergedEstimated = existingEstimated
-			case inferenceCostRank(existingCost) == inferenceCostRank(mergedCost):
-				mergedReported = mergeJournalUsage(existingReported, reported)
-				mergedEstimated = mergeJournalUsage(existingEstimated, estimated)
-			case existingEstimated.present != 0 && mergedEstimated.present == 0:
-				mergedEstimated = existingEstimated
-			}
-			mergedOutputBytes := record.OutputBytes
-			if existingOutputBytes > mergedOutputBytes {
-				mergedOutputBytes = existingOutputBytes
-			}
-			mergedCompletedAt := completedAt
-			if existingCompletedAt != 0 {
-				mergedCompletedAt = existingCompletedAt
-			}
-			if err := applyWorkflowCostDeltaTx(
-				tx, workflowID,
-				existingCost, existingReported, existingEstimated,
-				mergedCost, mergedReported, mergedEstimated,
-				startedAt,
-			); err != nil {
-				return err
-			}
-			_, err = tx.Exec(`
+			mergedOutcome = existingOutcome
+		}
+		mergedFailure := string(record.FailureCategory)
+		if existingFailure != "" {
+			mergedFailure = existingFailure
+		}
+		mergedCost := string(record.CostState)
+		mergedReported, mergedEstimated := reported, estimated
+		switch {
+		case inferenceCostRank(existingCost) > inferenceCostRank(mergedCost):
+			mergedCost = existingCost
+			mergedReported = existingReported
+			mergedEstimated = existingEstimated
+		case inferenceCostRank(existingCost) == inferenceCostRank(mergedCost):
+			mergedReported = mergeJournalUsage(existingReported, reported)
+			mergedEstimated = mergeJournalUsage(existingEstimated, estimated)
+		case existingEstimated.present != 0 && mergedEstimated.present == 0:
+			mergedEstimated = existingEstimated
+		}
+		mergedOutputBytes := record.OutputBytes
+		if existingOutputBytes > mergedOutputBytes {
+			mergedOutputBytes = existingOutputBytes
+		}
+		mergedCompletedAt := completedAt
+		if existingCompletedAt != 0 {
+			mergedCompletedAt = existingCompletedAt
+		}
+		if err := applyWorkflowCostDeltaTx(
+			tx, workflowID,
+			existingCost, existingReported, existingEstimated,
+			mergedCost, mergedReported, mergedEstimated,
+			startedAt,
+		); err != nil {
+			return err
+		}
+		_, err = tx.Exec(`
 UPDATE inference_submissions SET
     outcome = ?, failure_category = ?, cost_state = ?,
     reported_input_tokens = ?, reported_output_tokens = ?, reported_cache_creation = ?,
@@ -474,26 +633,25 @@ UPDATE inference_submissions SET
     estimated_cache_read = ?, estimated_cache_unknown = ?, has_estimated_usage = ?,
     output_bytes = ?, completed_at = ?
 WHERE id = ?`,
-				mergedOutcome, mergedFailure, mergedCost,
-				mergedReported.input, mergedReported.output, mergedReported.cacheCreation, mergedReported.cacheRead, mergedReported.cacheUnknown, mergedReported.present,
-				mergedEstimated.input, mergedEstimated.output, mergedEstimated.cacheCreation, mergedEstimated.cacheRead, mergedEstimated.cacheUnknown, mergedEstimated.present,
-				mergedOutputBytes, mergedCompletedAt, record.ID,
-			)
-			if err != nil {
-				return err
-			}
+			mergedOutcome, mergedFailure, mergedCost,
+			mergedReported.input, mergedReported.output, mergedReported.cacheCreation, mergedReported.cacheRead, mergedReported.cacheUnknown, mergedReported.present,
+			mergedEstimated.input, mergedEstimated.output, mergedEstimated.cacheCreation, mergedEstimated.cacheRead, mergedEstimated.cacheUnknown, mergedEstimated.present,
+			mergedOutputBytes, mergedCompletedAt, record.ID,
+		)
+		if err != nil {
+			return err
 		}
-		_, err = tx.Exec(`
+	}
+	_, err = tx.Exec(`
 UPDATE inference_attempts
 SET phase = CASE WHEN phase IN ('prepared', 'dispatching') THEN 'sent' ELSE phase END,
     sent_at = CASE WHEN sent_at = 0 THEN ? ELSE sent_at END
 WHERE id = ? AND operation_id = ? AND phase <> 'terminal'`, startedAt, record.AttemptID, record.OperationID)
-		if err != nil {
-			return err
-		}
-		_, err = tx.Exec(`UPDATE inference_operations SET updated_at = ? WHERE id = ? AND status = 'active'`, startedAt, record.OperationID)
+	if err != nil {
 		return err
-	})
+	}
+	_, err = tx.Exec(`UPDATE inference_operations SET updated_at = ? WHERE id = ? AND status = 'active'`, startedAt, record.OperationID)
+	return err
 }
 
 func (j *inferenceJournal) MarkAttemptFirstEvent(operationID, attemptID, submissionID string, at time.Time) error {
@@ -539,6 +697,9 @@ func (j *inferenceJournal) CompleteAttempt(record providers.InferenceAttemptTerm
 	if record.OperationID == "" || record.AttemptID == "" || record.Outcome == "" {
 		return errors.New("complete inference attempt: ids and outcome are required")
 	}
+	// Durability barrier: land this attempt's coalesced streaming estimates
+	// before we record the attempt terminal, so the two never disagree on crash.
+	j.runtime.flushSubmissionProgress()
 	stamp := journalTime(record.At)
 	return j.write("complete inference attempt", func(tx *sql.Tx) error {
 		if err := j.assertOperationTx(tx, record.OperationID, false); err != nil {
@@ -651,6 +812,9 @@ func (j *inferenceJournal) CompleteOperation(record providers.InferenceOperation
 	if record.OperationID == "" || record.Outcome == "" {
 		return errors.New("complete inference operation: id and outcome are required")
 	}
+	// Durability barrier: land coalesced streaming estimates before the
+	// operation terminal so cost accounting is complete at the boundary.
+	j.runtime.flushSubmissionProgress()
 	stamp := journalTime(record.At)
 	return j.write("complete inference operation", func(tx *sql.Tx) error {
 		if err := j.assertOperationTx(tx, record.OperationID, false); err != nil {

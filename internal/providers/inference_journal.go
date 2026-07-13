@@ -6,8 +6,14 @@ import (
 )
 
 // InferenceJournal is the durable, metadata-only write-ahead boundary for one
-// inference operation. Implementations must commit each method before it
-// returns: callers use an error to stop before the next wire transition.
+// inference operation. These methods are synchronous durability checkpoints:
+// each commits before it returns, and each gates a wire or control-flow
+// transition (record before send, terminalize before the next attempt). A
+// caller uses their error to stop before crossing that boundary. They run at
+// most once per attempt or operation — never once per streamed delta.
+//
+// Streaming cost observation is deliberately NOT part of this interface: it is
+// best-effort telemetry, not a checkpoint, and belongs on InferenceProgressJournal.
 //
 // None of these records may contain prompts, credentials, request/response
 // bodies, or raw provider errors. RequestHash is the only durable payload
@@ -21,6 +27,19 @@ type InferenceJournal interface {
 	PrepareRecoveryAttempt(context.Context, InferenceRecoveryAttemptJournalRecord) error
 	CompleteOperation(InferenceOperationTerminalRecord) error
 	CompleteWorkflow(InferenceWorkflowTerminalRecord) error
+}
+
+// InferenceProgressJournal is an optional capability for journals that can
+// absorb streaming cost observations off the caller's goroutine. It exists to
+// keep bookkeeping subordinate to the user-facing stream: a per-delta cost
+// estimate is telemetry, so recording it must never block token delivery and
+// its failure must never abort a healthy stream. Implementations coalesce
+// updates by submission id and flush them asynchronously; durability at the
+// terminal boundary is the job of the synchronous InferenceJournal methods,
+// which flush any pending progress before they commit. RecordSubmissionProgress
+// therefore returns nothing — the caller cannot and must not wait on it.
+type InferenceProgressJournal interface {
+	RecordSubmissionProgress(InferenceSubmissionJournalRecord)
 }
 
 type InferenceOperationJournalRecord struct {

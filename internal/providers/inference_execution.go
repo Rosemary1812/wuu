@@ -229,17 +229,18 @@ func addTokenUsage(total *TokenUsage, usage TokenUsage) {
 type InferenceExecution struct {
 	mu sync.Mutex
 
-	operation      InferenceOperation
-	workflow       *InferenceWorkflow
-	nextAttempt    int
-	nextSubmission int
-	submissions    []InferenceSubmission
-	journal        InferenceJournal
-	requestHash    string
-	journalErr     error
-	firstEvents    map[string]bool
-	terminal       bool
-	ownsWorkflow   bool
+	operation       InferenceOperation
+	workflow        *InferenceWorkflow
+	nextAttempt     int
+	nextSubmission  int
+	submissions     []InferenceSubmission
+	journal         InferenceJournal
+	requestHash     string
+	journalErr      error
+	journalDegraded error
+	firstEvents     map[string]bool
+	terminal        bool
+	ownsWorkflow    bool
 }
 
 // InferenceAttempt identifies one ExecuteOnce call. The execution pointer is
@@ -554,21 +555,58 @@ func (a InferenceAttempt) ObserveStreamEvent(event StreamEvent) error {
 func (a InferenceAttempt) markFirstEvent(submissionID string) {
 	e := a.execution
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.journal == nil || e.journalErr != nil {
+	if e.journal == nil {
+		e.mu.Unlock()
 		return
 	}
 	if e.firstEvents == nil {
 		e.firstEvents = make(map[string]bool)
 	}
 	if e.firstEvents[a.ID] {
+		e.mu.Unlock()
 		return
 	}
-	if err := e.journal.MarkAttemptFirstEvent(e.operation.ID, a.ID, submissionID, time.Now().UTC()); err != nil {
-		e.journalErr = err
-		return
-	}
+	// This milestone is best-effort telemetry recorded once per attempt. Mark
+	// it attempted before the write so a failure does not retry on every
+	// following delta, run the write off the execution lock, and degrade
+	// (never abort the stream) if it fails.
 	e.firstEvents[a.ID] = true
+	journal := e.journal
+	operationID := e.operation.ID
+	attemptID := a.ID
+	e.mu.Unlock()
+	if err := journal.MarkAttemptFirstEvent(operationID, attemptID, submissionID, time.Now().UTC()); err != nil {
+		e.noteJournalDegraded(err)
+	}
+}
+
+// noteJournalDegraded records that best-effort journaling failed without
+// poisoning journalErr. journalErr is reserved for synchronous durability
+// checkpoints that gate a wire transition; streaming telemetry failures must
+// only degrade bookkeeping, so they surface here (and in the debug log) but
+// never abort a healthy stream.
+func (e *InferenceExecution) noteJournalDegraded(err error) {
+	if e == nil || err == nil {
+		return
+	}
+	e.mu.Lock()
+	if e.journalDegraded == nil {
+		e.journalDegraded = err
+	}
+	e.mu.Unlock()
+	DebugLogf("inference journal: streaming observation degraded: %v", err)
+}
+
+// JournalDegraded returns the first best-effort journaling failure observed
+// during streaming, or nil. It is diagnostics only and never affects control
+// flow.
+func (e *InferenceExecution) JournalDegraded() error {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.journalDegraded
 }
 
 func isProviderResponseEvidence(eventType StreamEventType) bool {
@@ -823,13 +861,18 @@ func (e *InferenceExecution) updateSubmission(id string, update func(*InferenceS
 			if workflow != nil && workflow.spend != nil {
 				workflow.spend.SettleSubmission(submission)
 			}
+			// A per-delta submission update is streaming cost telemetry, not a
+			// durability checkpoint. Hand it to the journal's async progress
+			// path when available so the write never blocks token delivery, and
+			// never let a bookkeeping failure poison the execution or abort the
+			// stream — the terminal record (via CompleteAttempt) is the real
+			// durability boundary and stays synchronous.
 			if journal != nil {
-				if err := journal.UpsertSubmission(journalSubmission(operationID, submission)); err != nil {
-					e.mu.Lock()
-					if e.journalErr == nil {
-						e.journalErr = err
-					}
-					e.mu.Unlock()
+				record := journalSubmission(operationID, submission)
+				if progress, ok := journal.(InferenceProgressJournal); ok {
+					progress.RecordSubmissionProgress(record)
+				} else if err := journal.UpsertSubmission(record); err != nil {
+					e.noteJournalDegraded(err)
 				}
 			}
 			return
