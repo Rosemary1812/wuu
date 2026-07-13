@@ -767,16 +767,11 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		})
 	}
 
-	// Wrap the event callback so streamed tool blocks enter the per-turn
-	// runtime as soon as they arrive.
-	origOnEvent := s.onEvent
-	if toolRuntime != nil && s.enableStreamingToolExec {
-		s.onEvent = func(ev providers.StreamEvent) {
-			toolRuntime.ObserveStreamEvent(ctx, ev)
-			if origOnEvent != nil {
-				origOnEvent(ev)
-			}
+	observeEvent := func(eventCtx context.Context, ev providers.StreamEvent) error {
+		if toolRuntime == nil || !s.enableStreamingToolExec {
+			return nil
 		}
+		return toolRuntime.ObserveStreamEvent(eventCtx, ev)
 	}
 
 	resetRuntime := func() {
@@ -808,11 +803,10 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		}
 		return nil
 	}
-	if err := s.runReliableStream(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &messagePhase, &providerItemID, &providerItemModel, &usage, &stopReason, &finishReason, &truncated, resetRuntime, replayGuard); err != nil {
+	if err := s.runReliableStream(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &messagePhase, &providerItemID, &providerItemModel, &usage, &stopReason, &finishReason, &truncated, resetRuntime, replayGuard, observeEvent); err != nil {
 		if toolRuntime != nil {
 			toolRuntime.Cancel()
 		}
-		s.onEvent = origOnEvent // restore
 		failure := providers.NormalizeFailure(err)
 		outcome := providers.InferenceOutcomeFailed
 		if failure.Category == providers.FailureCanceled || failure.Category == providers.FailureDeadline {
@@ -823,8 +817,6 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		}
 		return StepResult{}, fmt.Errorf("stream request failed: %w", err)
 	}
-	s.onEvent = origOnEvent // restore
-
 	// Build ordered tool calls list from the pending map.
 	toolCalls := make([]providers.ToolCall, 0, len(pendingTools))
 	for i := 0; i < len(pendingTools); i++ {
@@ -1004,6 +996,7 @@ func (s *streamStep) runReliableStream(
 	truncated *bool,
 	onAttemptStart func(),
 	replayGuard providers.StreamReplayGuard,
+	eventObserver providers.StreamEventObserver,
 ) error {
 	onEvent := s.onEvent
 
@@ -1075,7 +1068,12 @@ func (s *streamStep) runReliableStream(
 			onAttemptStart()
 		}
 
-		client := providers.NewReliableStreamClient(s.client, onRetry, providers.WithStreamReplayGuard(replayGuard))
+		client := providers.NewReliableStreamClient(
+			s.client,
+			onRetry,
+			providers.WithStreamReplayGuard(replayGuard),
+			providers.WithStreamEventObserver(eventObserver),
+		)
 		ch, err := client.StreamChat(ctx, req)
 		if err != nil {
 			return err

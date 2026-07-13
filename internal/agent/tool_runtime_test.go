@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -472,8 +471,8 @@ func TestTurnToolRuntime_StreamingErrorDoesNotExecuteAgain(t *testing.T) {
 	msgs, err := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
 		{ID: "call_1", Name: "read_file", Arguments: `{"path":"a.go"}`},
 	}, nil)
-	if !errors.Is(err, context.Canceled) || len(msgs) != 0 {
-		t.Fatalf("expected the original canceled execution to stop the batch, got messages=%+v error=%v", msgs, err)
+	if err != nil || len(msgs) != 1 || !strings.Contains(msgs[0].Content, "context canceled") {
+		t.Fatalf("expected one settled cancellation result, got messages=%+v error=%v", msgs, err)
 	}
 	if calls := tools.recordedCalls(); len(calls) > 1 {
 		t.Fatalf("streaming execution was repeated: %+v", calls)

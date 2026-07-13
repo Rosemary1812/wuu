@@ -27,6 +27,11 @@ type StreamRetryContext struct {
 // the retry and is surfaced as ReplayBlockedError.
 type StreamReplayGuard func(StreamRetryContext) error
 
+// StreamEventObserver runs synchronously before an event is forwarded to the
+// consumer. It is used for durable admission that must be visible to the
+// replay guard before the provider goroutine can start another attempt.
+type StreamEventObserver func(context.Context, StreamEvent) error
+
 // ReliableStreamOption configures behavior that is orthogonal to retry count.
 type ReliableStreamOption func(*ReliableStreamClient)
 
@@ -34,6 +39,13 @@ type ReliableStreamOption func(*ReliableStreamClient)
 func WithStreamReplayGuard(guard StreamReplayGuard) ReliableStreamOption {
 	return func(client *ReliableStreamClient) {
 		client.replayGuard = guard
+	}
+}
+
+// WithStreamEventObserver installs a synchronous pre-forward observer.
+func WithStreamEventObserver(observer StreamEventObserver) ReliableStreamOption {
+	return func(client *ReliableStreamClient) {
+		client.eventObserver = observer
 	}
 }
 
@@ -52,10 +64,11 @@ func WithStreamRetryWait(wait func(context.Context, time.Duration) error) Reliab
 // streams. Callers receive a single output channel; reconnectable inner errors
 // are consumed internally and only the final unrecoverable error is forwarded.
 type ReliableStreamClient struct {
-	inner       StreamClient
-	onRetry     StreamRetryHook
-	replayGuard StreamReplayGuard
-	wait        func(context.Context, time.Duration) error
+	inner         StreamClient
+	onRetry       StreamRetryHook
+	replayGuard   StreamReplayGuard
+	eventObserver StreamEventObserver
+	wait          func(context.Context, time.Duration) error
 }
 
 // ReplayBlockedError reports a retryable transport failure that Wuu chose not
@@ -308,6 +321,11 @@ func (r *ReliableStreamClient) forwardAttempt(
 		}
 		if ev.Type == EventToolUseEnd && ev.ToolCall != nil {
 			finalizedToolCalls = append(finalizedToolCalls, *ev.ToolCall)
+		}
+		if r.eventObserver != nil {
+			if err := r.eventObserver(ctx, ev); err != nil {
+				return err, sawDone, forwardedEvents, finalizedToolCalls
+			}
 		}
 		if !r.send(ctx, out, ev) {
 			return streamErr, sawDone, forwardedEvents, finalizedToolCalls

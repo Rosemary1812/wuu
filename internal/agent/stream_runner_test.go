@@ -1760,7 +1760,7 @@ func TestStreamRunner_CancelsOrphanStreamingToolWhenNoFinalToolCalls(t *testing.
 	}
 }
 
-func TestStreamRunner_BlocksReplayAfterStreamingToolStarts(t *testing.T) {
+func TestStreamRunner_BlocksReplayAfterDurableToolAdmission(t *testing.T) {
 	client := &mockStreamClient{attempts: []mockStreamAttempt{
 		{events: []providers.StreamEvent{
 			{
@@ -1789,16 +1789,6 @@ func TestStreamRunner_BlocksReplayAfterStreamingToolStarts(t *testing.T) {
 		Tools:                  tools,
 		ToolLedger:             ledger,
 		StreamingToolExecution: true,
-		OnEvent: func(event providers.StreamEvent) {
-			if event.Type != providers.EventToolUseEnd {
-				return
-			}
-			select {
-			case <-tools.started:
-			case <-time.After(time.Second):
-				t.Fatal("streaming tool did not start")
-			}
-		},
 	}
 
 	_, err = runner.Run(context.Background(), "hello")
@@ -1811,16 +1801,6 @@ func TestStreamRunner_BlocksReplayAfterStreamingToolStarts(t *testing.T) {
 	}
 	if client.callCount != 1 {
 		t.Fatalf("stream attempts = %d, want unsafe replay blocked", client.callCount)
-	}
-	select {
-	case <-tools.started:
-	default:
-		t.Fatal("streaming tool never crossed the replay fence")
-	}
-	select {
-	case <-tools.canceled:
-	case <-time.After(time.Second):
-		t.Fatal("blocked replay did not cancel the in-flight tool")
 	}
 	deadline := time.Now().Add(time.Second)
 	for {

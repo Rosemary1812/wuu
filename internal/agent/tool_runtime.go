@@ -101,24 +101,27 @@ func (r *TurnToolRuntime) SetStepIndex(stepIndex int) {
 
 // ObserveStreamEvent records streamed tool blocks and starts safe prefix tools
 // as soon as their arguments are complete.
-func (r *TurnToolRuntime) ObserveStreamEvent(ctx context.Context, event providers.StreamEvent) {
+func (r *TurnToolRuntime) ObserveStreamEvent(ctx context.Context, event providers.StreamEvent) error {
 	if r == nil || r.executor == nil {
-		return
+		return nil
 	}
 	switch event.Type {
 	case providers.EventToolUseStart:
 		if event.ToolCall == nil || strings.TrimSpace(event.ToolCall.ID) == "" {
-			return
+			return nil
 		}
 		r.addStreamToolStart(event.ToolCall)
 	case providers.EventToolUseDelta:
 		r.appendStreamToolDelta(event.Content)
 	case providers.EventToolUseEnd:
 		if event.ToolCall == nil || strings.TrimSpace(event.ToolCall.ID) == "" {
-			return
+			return nil
 		}
 		r.finalizeStreamTool(ctx, event.ToolCall)
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.ledgerErr
 }
 
 // Cancel stops any in-flight streaming-started work and prevents additional
@@ -258,6 +261,7 @@ func (r *TurnToolRuntime) startRunLocked(ctx context.Context, run *toolRun, stre
 	}
 	if r.ledger != nil {
 		if err := r.ledger.Start(ctx, run.invocationID); err != nil {
+			r.ledgerErr = err
 			run.state = toolRunRunning
 			run.mu.Unlock()
 			run.complete(toolresult.Result{}, err)
@@ -274,9 +278,21 @@ func (r *TurnToolRuntime) startRunLocked(ctx context.Context, run *toolRun, stre
 	run.mu.Unlock()
 
 	go func() {
+		finish := func(result toolresult.Result, executionErr error) {
+			if executionErr != nil {
+				result = toolresult.FromErrorText(errorJSON(executionErr))
+			}
+			if r.ledger != nil {
+				if settleErr := r.ledger.Settle(context.WithoutCancel(runCtx), run.invocationID, result); settleErr != nil {
+					run.complete(toolresult.Result{}, fmt.Errorf("settle tool invocation: %w", settleErr))
+					return
+				}
+			}
+			run.complete(result, nil)
+		}
 		select {
 		case <-runCtx.Done():
-			run.complete(toolresult.Result{}, runCtx.Err())
+			finish(toolresult.Result{}, runCtx.Err())
 			return
 		default:
 		}
@@ -284,26 +300,17 @@ func (r *TurnToolRuntime) startRunLocked(ctx context.Context, run *toolRun, stre
 		case r.sem <- struct{}{}:
 			defer func() { <-r.sem }()
 		case <-runCtx.Done():
-			run.complete(toolresult.Result{}, runCtx.Err())
+			finish(toolresult.Result{}, runCtx.Err())
 			return
 		}
 		select {
 		case <-runCtx.Done():
-			run.complete(toolresult.Result{}, runCtx.Err())
+			finish(toolresult.Result{}, runCtx.Err())
 			return
 		default:
 		}
 		result, err := executeToolResult(runCtx, r.executor, call)
-		if err != nil {
-			result = toolresult.FromErrorText(errorJSON(err))
-		}
-		if r.ledger != nil {
-			if settleErr := r.ledger.Settle(context.WithoutCancel(runCtx), run.invocationID, result); settleErr != nil {
-				run.complete(toolresult.Result{}, fmt.Errorf("settle tool invocation: %w", settleErr))
-				return
-			}
-		}
-		run.complete(result, nil)
+		finish(result, err)
 	}()
 }
 
