@@ -89,6 +89,27 @@ describe("workspace file preview toolbar", () => {
   });
 });
 
+describe("workspace file tree density", () => {
+  it("uses compact editor-style rows, typography, and indentation", () => {
+    const row = cssRuleBody(".workspace-file-tree-row");
+    expect(row).toMatch(/height:\s*24px;/);
+    expect(row).toMatch(/font-size:\s*var\(--font-sm\);/);
+    expect(row).toMatch(/font-weight:\s*400;/);
+    expect(row).toMatch(/grid-template-columns:\s*16px\s+16px\s+minmax\(0,\s*1fr\);/);
+    expect(row).toMatch(/gap:\s*4px;/);
+    expect(row).toMatch(/var\(--workspace-tree-depth,\s*0\)\s*\*\s*14px/);
+    expect(row).toMatch(/border-radius:\s*var\(--radius-xs\);/);
+  });
+
+  it("keeps the search and surrounding tree chrome proportionate to the rows", () => {
+    const search = cssRuleBody(".workspace-file-search");
+    expect(search).toMatch(/height:\s*28px;/);
+    expect(search).toMatch(/font-size:\s*var\(--font-sm\);/);
+    expect(cssRuleBody(".workspace-file-tree-frame")).toMatch(/gap:\s*6px;/);
+    expect(workspaceCss).toMatch(/(?:^|\n)\.workspace-file-panel\s*\{[^}]*gap:\s*8px;/);
+  });
+});
+
 describe("workspace markdown reading prose", () => {
   it("gives heading levels a real outline instead of one flat tier", () => {
     // The file preview turns heading levels into distinct visual anchors.
