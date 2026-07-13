@@ -183,7 +183,7 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 	if strings.TrimSpace(requestPayload.SubmissionReason) != "" {
 		mode = "fallback"
 	}
-	requestPayload.Attempt.RecordSubmission(providers.InferenceSubmissionMeta{
+	lease.RecordSubmission(requestPayload.Attempt, providers.InferenceSubmissionMeta{
 		Provider:  "openai",
 		Protocol:  "responses",
 		Transport: "websocket",
@@ -202,7 +202,7 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 			c.responsesWebSocketMarkFallback(fallbackSession, "websocket_write_failed")
 		}
 		fallbackErr := newResponsesWebSocketFallbackError("websocket_write_failed", err)
-		lease.Release()
+		lease.FallbackError(fallbackErr)
 		return nil, fallbackErr
 	}
 	state := responsesWebSocketProviderState(fullPayload, requestPayload, transport, responsesWebSocketRequestMeta{
@@ -365,7 +365,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 				if !cacheConnection {
 					c.responsesWebSocketMarkFallback(fallbackSession, reason)
 				}
-				lease.Release()
+				lease.FallbackError(frame.err)
 				c.forwardResponsesSSEFallback(ctx, fullPayload, transport, reason, ch)
 				return
 			}
@@ -384,7 +384,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			// The session is pinned to SSE for the next engine attempt. Keep the
 			// replay decision and billable ambiguity in the attempt outcome, but
 			// do not let a WS-only disconnect open the cross-transport circuit.
-			lease.Release()
+			lease.FallbackError(streamErr)
 			ch <- providers.StreamEvent{
 				Type:          providers.EventProviderState,
 				ProviderState: responsesWebSocketTransportFailureState(state, "stream_error_after_provider_event"),
@@ -413,7 +413,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 		if responsesWebSocketConnectionLimitReached(event) && !sawProviderEvent {
 			// Connection capacity is transport-specific. The retry/fallback owns
 			// a new lease, while account-wide rate limits remain shared.
-			lease.Release()
+			lease.FallbackError(errors.New("websocket connection limit reached"))
 			if allowConnectionLimitRetry {
 				session.mu.Lock()
 				c.responsesWebSocketReleaseLocked(session, readCh)
@@ -525,7 +525,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 				c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusNormalClosure, "done")
 			}
 			session.mu.Unlock()
-			lease.Succeed()
+			lease.SucceedWithUsage(usage)
 			ch <- providers.StreamEvent{
 				Type:         providers.EventDone,
 				Usage:        usage,

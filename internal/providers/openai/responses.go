@@ -58,7 +58,7 @@ func (c *Client) responsesChat(ctx context.Context, req providers.ChatRequest) (
 		lease.FailError(err)
 		return providers.ChatResponse{}, err
 	}
-	lease.Succeed()
+	lease.SucceedWithUsage(response.Usage)
 	return response, nil
 }
 
@@ -656,7 +656,7 @@ func (c *Client) doSingleResponsesRequest(
 	if err != nil {
 		return nil, nil, err
 	}
-	attempt.RecordSubmission(providers.InferenceSubmissionMeta{
+	lease.RecordSubmission(attempt, providers.InferenceSubmissionMeta{
 		Provider:  "openai",
 		Protocol:  "responses",
 		Transport: "http",
@@ -829,7 +829,7 @@ func (c *Client) readResponsesSSE(resp *http.Response, lease *providers.Provider
 		case "response.completed", "response.done", "response.incomplete":
 			pending.emitEnds(ch)
 			usage, stopReason, finishReason, truncated := responsesDoneMetadata(event.Response, sawToolCall)
-			lease.Succeed()
+			lease.SucceedWithUsage(usage)
 			ch <- providers.StreamEvent{
 				Type:         providers.EventDone,
 				Usage:        usage,

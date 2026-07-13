@@ -1,6 +1,9 @@
 package providers
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestInferenceExecutionTracksAttemptsAndSubmissions(t *testing.T) {
 	op := NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive)
@@ -46,5 +49,54 @@ func TestInferenceAttemptExposesOperationProfile(t *testing.T) {
 	}
 	if got := (InferenceAttempt{}).Operation(); got != (InferenceOperation{}) {
 		t.Fatalf("invalid attempt operation = %+v", got)
+	}
+}
+
+func TestInferenceSubmissionTracksCostConfidenceAndOutcome(t *testing.T) {
+	execution := NewInferenceExecution(NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive))
+	attempt := execution.BeginAttempt()
+	submission := attempt.RecordSubmission(InferenceSubmissionMeta{Provider: "openai", Transport: "http"})
+	initial := execution.Snapshot().Submissions[0]
+	if initial.Outcome != InferenceSubmissionInFlight || initial.CostState != InferenceCostUnknownBillable {
+		t.Fatalf("initial submission = %+v", initial)
+	}
+
+	submission.ObserveOutput("partial output")
+	submission.CompleteFailure(NormalizedFailure{Category: FailureIncompleteStream})
+	failed := execution.Snapshot().Submissions[0]
+	if failed.Outcome != InferenceSubmissionFailed || failed.FailureCategory != FailureIncompleteStream || failed.CostState != InferenceCostUnknownBillable || failed.EstimatedUsage == nil || failed.EstimatedUsage.OutputTokens == 0 {
+		t.Fatalf("failed submission = %+v", failed)
+	}
+
+	// Late provider usage is more authoritative than a local estimate even
+	// after the terminal transport outcome was recorded.
+	submission.ObserveUsage(&TokenUsage{InputTokens: 10, OutputTokens: 4})
+	known := execution.Snapshot().Submissions[0]
+	if known.CostState != InferenceCostKnown || known.ReportedUsage == nil || known.ReportedUsage.InputTokens != 10 {
+		t.Fatalf("known submission = %+v", known)
+	}
+	execution.BeginAttempt().RecordSubmission(InferenceSubmissionMeta{Provider: "openai", Transport: "http"})
+	estimated := execution.BeginAttempt().RecordSubmission(InferenceSubmissionMeta{Provider: "openai", Transport: "http"})
+	estimated.ObserveOutput("estimated output")
+	estimated.ObserveEstimatedUsage(&TokenUsage{InputTokens: 8, OutputTokens: 1})
+	estimated.CompleteFailure(NormalizedFailure{Category: FailureIncompleteStream})
+	summary := execution.Snapshot().CostSummary()
+	if summary.KnownSubmissions != 1 || summary.EstimatedSubmissions != 1 || summary.UnknownBillableSubmissions != 1 || summary.KnownUsage.InputTokens != 10 || summary.KnownUsage.OutputTokens != 4 || summary.EstimatedUsage.InputTokens != 8 {
+		t.Fatalf("cost summary = %+v", summary)
+	}
+}
+
+func TestInferenceAttemptAttributesStreamEventsToLatestSubmission(t *testing.T) {
+	execution := NewInferenceExecution(NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive))
+	attempt := execution.BeginAttempt()
+	websocket := attempt.RecordSubmission(InferenceSubmissionMeta{Transport: "websocket"})
+	websocket.CompleteFallback(NormalizeFailure(errors.New("websocket unavailable")))
+	attempt.RecordSubmission(InferenceSubmissionMeta{Transport: "http", Mode: "fallback"})
+	attempt.ObserveStreamEvent(StreamEvent{Type: EventContentDelta, Content: "hello"})
+	attempt.ObserveStreamEvent(StreamEvent{Type: EventDone, Usage: &TokenUsage{InputTokens: 3, OutputTokens: 1}})
+
+	submissions := execution.Snapshot().Submissions
+	if len(submissions) != 2 || submissions[0].Outcome != InferenceSubmissionFallback || submissions[1].Outcome != InferenceSubmissionSucceeded || submissions[1].CostState != InferenceCostKnown || submissions[1].OutputBytes != len("hello") {
+		t.Fatalf("submissions = %+v", submissions)
 	}
 }

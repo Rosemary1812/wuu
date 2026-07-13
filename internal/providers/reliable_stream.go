@@ -170,6 +170,9 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 				err = NewIncompleteStreamError("stream closed before done")
 			}
 		}
+		if err != nil {
+			attempt.ObserveStreamEvent(StreamEvent{Type: EventError, Error: err})
+		}
 		if forwardedEvents > 0 {
 			err = &PartialStreamError{Err: err, ForwardedEvents: forwardedEvents}
 		}
@@ -226,6 +229,7 @@ func (r *ReliableStreamClient) forwardAttempt(
 	var finalizedToolCalls []ToolCall
 	connected := false
 	for ev := range ch {
+		attempt.ObserveStreamEvent(ev)
 		if !connected {
 			if !r.sendLifecycle(ctx, out, execution, operation, StreamPhaseConnected, attempt.ID, attempt.Ordinal, maxAttempts, retryCount, nil, 0, false, startedAt) {
 				return streamErr, sawDone, forwardedEvents, finalizedToolCalls

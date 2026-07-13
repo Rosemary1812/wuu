@@ -320,7 +320,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	}
 	resp.FinishReason = providers.NormalizeFinishReason(resp.StopReason, resp.Truncated, len(calls) > 0)
 	resp.Usage = parsed.Usage.asTokenUsage()
-	lease.Succeed()
+	lease.SucceedWithUsage(resp.Usage)
 	return resp, nil
 }
 
@@ -438,7 +438,7 @@ func (c *Client) doSingleChatCompletionsRequest(
 	if err != nil {
 		return nil, nil, err
 	}
-	attempt.RecordSubmission(providers.InferenceSubmissionMeta{
+	lease.RecordSubmission(attempt, providers.InferenceSubmissionMeta{
 		Provider:  "openai",
 		Protocol:  "chat_completions",
 		Transport: "http",
@@ -569,7 +569,7 @@ func (c *Client) readSSE(resp *http.Response, lease *providers.ProviderLease, ch
 			}
 			emitToolEnds()
 			truncated := lastFinishReason == "length"
-			lease.Succeed()
+			lease.SucceedWithUsage(lastUsage)
 			ch <- providers.StreamEvent{
 				Type:         providers.EventDone,
 				Usage:        lastUsage,

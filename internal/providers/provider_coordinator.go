@@ -178,26 +178,32 @@ type providerWaiter struct {
 }
 
 type ProviderLease struct {
-	coordinator *ProviderCoordinator
-	scope       ProviderScope
-	generation  uint64
-	once        sync.Once
+	coordinator  *ProviderCoordinator
+	scope        ProviderScope
+	generation   uint64
+	submissionMu sync.Mutex
+	submission   InferenceSubmission
+	once         sync.Once
 }
 
 func (l *ProviderLease) Release() {
-	l.finish(nil, false)
+	l.finish(InferenceSubmissionAbandoned, nil, nil, false, false)
 }
 
 // Succeed records a provider success and releases the admission slot. A
 // success from a request admitted before the current circuit generation is
 // deliberately ignored so a late response cannot close a newer circuit.
 func (l *ProviderLease) Succeed() {
-	l.finish(nil, true)
+	l.SucceedWithUsage(nil)
+}
+
+func (l *ProviderLease) SucceedWithUsage(usage *TokenUsage) {
+	l.finish(InferenceSubmissionSucceeded, nil, usage, true, false)
 }
 
 // Fail records a provider failure and releases the admission slot.
 func (l *ProviderLease) Fail(failure NormalizedFailure) {
-	l.finish(&failure, false)
+	l.finish(InferenceSubmissionFailed, &failure, nil, false, true)
 }
 
 // FailError normalizes a provider or transport error, records its shared
@@ -206,12 +212,79 @@ func (l *ProviderLease) FailError(err error) {
 	l.Fail(NormalizeFailure(err))
 }
 
-func (l *ProviderLease) finish(failure *NormalizedFailure, success bool) {
-	if l == nil || l.coordinator == nil {
+// FallbackError closes this transport submission without feeding a
+// transport-specific failure into the account-level circuit.
+func (l *ProviderLease) FallbackError(err error) {
+	failure := NormalizeFailure(err)
+	l.finish(InferenceSubmissionFallback, &failure, nil, false, false)
+}
+
+// RecordSubmission binds the single physical wire submission owned by this
+// lease. A second bind is a programming error: it would recreate a hidden
+// multi-send attempt.
+func (l *ProviderLease) RecordSubmission(attempt InferenceAttempt, meta InferenceSubmissionMeta) InferenceSubmission {
+	if l == nil {
+		panic("providers: record submission on nil provider lease")
+	}
+	l.submissionMu.Lock()
+	defer l.submissionMu.Unlock()
+	if l.submission.Valid() {
+		panic("providers: provider lease already owns a submission")
+	}
+	l.submission = attempt.RecordSubmission(meta)
+	return l.submission
+}
+
+func (l *ProviderLease) ObserveOutput(content string) {
+	if submission := l.submissionHandle(); submission.Valid() {
+		submission.ObserveOutput(content)
+	}
+}
+
+func (l *ProviderLease) ObserveUsage(usage *TokenUsage) {
+	if submission := l.submissionHandle(); submission.Valid() {
+		submission.ObserveUsage(usage)
+	}
+}
+
+func (l *ProviderLease) submissionHandle() InferenceSubmission {
+	if l == nil {
+		return InferenceSubmission{}
+	}
+	l.submissionMu.Lock()
+	defer l.submissionMu.Unlock()
+	return l.submission
+}
+
+func (l *ProviderLease) finish(outcome InferenceSubmissionOutcome, failure *NormalizedFailure, usage *TokenUsage, success bool, observeFailure bool) {
+	if l == nil {
 		return
 	}
 	l.once.Do(func() {
-		l.coordinator.complete(l.scope, l.generation, failure, success)
+		if submission := l.submissionHandle(); submission.Valid() {
+			switch outcome {
+			case InferenceSubmissionSucceeded:
+				submission.CompleteSuccess(usage)
+			case InferenceSubmissionFailed:
+				if failure != nil {
+					submission.CompleteFailure(*failure)
+				}
+			case InferenceSubmissionFallback:
+				if failure != nil {
+					submission.CompleteFallback(*failure)
+				}
+			case InferenceSubmissionAbandoned:
+				submission.Abandon()
+			}
+		}
+		if l.coordinator == nil {
+			return
+		}
+		coordinatorFailure := failure
+		if !observeFailure {
+			coordinatorFailure = nil
+		}
+		l.coordinator.complete(l.scope, l.generation, coordinatorFailure, success)
 	})
 }
 

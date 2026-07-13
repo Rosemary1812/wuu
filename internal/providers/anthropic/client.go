@@ -297,7 +297,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 		c.normalizeInclusiveInput(resp.Usage)
 		c.stampCacheCreationFlag(resp.Usage)
 	}
-	lease.Succeed()
+	lease.SucceedWithUsage(resp.Usage)
 	return resp, nil
 }
 
@@ -1000,7 +1000,7 @@ func (c *Client) doSingleMessagesRequest(
 	if err != nil {
 		return nil, nil, err
 	}
-	attempt.RecordSubmission(providers.InferenceSubmissionMeta{
+	lease.RecordSubmission(attempt, providers.InferenceSubmissionMeta{
 		Provider:  "anthropic",
 		Protocol:  "messages",
 		Transport: "http",
@@ -1274,10 +1274,11 @@ func (c *Client) handleSSEEvent(
 			*sawMessageStop = true
 		}
 		truncated := *stopReason == "max_tokens"
-		lease.Succeed()
+		terminalUsage := &providers.TokenUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationTokens: usage.CacheCreationTokens, CacheReadTokens: usage.CacheReadTokens, CacheCreationUnknown: usage.CacheCreationUnknown}
+		lease.SucceedWithUsage(terminalUsage)
 		ch <- providers.StreamEvent{
 			Type:         providers.EventDone,
-			Usage:        &providers.TokenUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationTokens: usage.CacheCreationTokens, CacheReadTokens: usage.CacheReadTokens, CacheCreationUnknown: usage.CacheCreationUnknown},
+			Usage:        terminalUsage,
 			StopReason:   *stopReason,
 			FinishReason: providers.NormalizeFinishReason(*stopReason, truncated, false),
 			Truncated:    truncated,

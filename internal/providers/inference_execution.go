@@ -17,20 +17,156 @@ type InferenceSubmissionMeta struct {
 	Reason    string
 }
 
+type InferenceSubmissionOutcome string
+
+const (
+	InferenceSubmissionInFlight  InferenceSubmissionOutcome = "in_flight"
+	InferenceSubmissionSucceeded InferenceSubmissionOutcome = "succeeded"
+	InferenceSubmissionFailed    InferenceSubmissionOutcome = "failed"
+	InferenceSubmissionFallback  InferenceSubmissionOutcome = "transport_fallback"
+	InferenceSubmissionAbandoned InferenceSubmissionOutcome = "abandoned"
+)
+
+type InferenceCostState string
+
+const (
+	// Unknown-but-billable is the safe initial state once a payload may have
+	// crossed the wire. It must never be aggregated as zero cost.
+	InferenceCostUnknownBillable InferenceCostState = "unknown_but_billable"
+	InferenceCostEstimated       InferenceCostState = "estimated"
+	InferenceCostKnown           InferenceCostState = "known"
+)
+
 // InferenceSubmission is one physical request that may have crossed the wire
 // boundary. Multiple submissions under one attempt expose legacy adapter
 // retries and protocol fallbacks until those paths are moved into the engine.
 type InferenceSubmission struct {
-	ID             string
-	Ordinal        int
-	AttemptID      string
-	AttemptOrdinal int
-	Provider       string
-	Protocol       string
-	Transport      string
-	Mode           string
-	Reason         string
-	StartedAt      time.Time
+	ID              string
+	Ordinal         int
+	AttemptID       string
+	AttemptOrdinal  int
+	Provider        string
+	Protocol        string
+	Transport       string
+	Mode            string
+	Reason          string
+	StartedAt       time.Time
+	CompletedAt     time.Time
+	Outcome         InferenceSubmissionOutcome
+	FailureCategory FailureCategory
+	CostState       InferenceCostState
+	ReportedUsage   *TokenUsage
+	EstimatedUsage  *TokenUsage
+	OutputBytes     int
+
+	execution *InferenceExecution
+}
+
+func (s InferenceSubmission) Valid() bool {
+	return strings.TrimSpace(s.ID) != ""
+}
+
+func (s InferenceSubmission) mutable() bool {
+	return s.execution != nil && s.Valid()
+}
+
+// ObserveOutput records a conservative partial-output estimate. Provider
+// usage, when it arrives, always supersedes this estimate.
+func (s InferenceSubmission) ObserveOutput(content string) {
+	if !s.mutable() || content == "" {
+		return
+	}
+	s.execution.updateSubmission(s.ID, func(current *InferenceSubmission) {
+		current.OutputBytes += len([]byte(content))
+		if current.CostState == InferenceCostKnown {
+			return
+		}
+		if current.EstimatedUsage == nil {
+			current.EstimatedUsage = &TokenUsage{}
+		}
+		current.EstimatedUsage.OutputTokens = estimateOutputTokens(current.OutputBytes)
+	})
+}
+
+// ObserveEstimatedUsage promotes a submission only when the caller has a
+// complete conservative estimate, including input. Partial output evidence
+// alone remains unknown-but-billable because input often dominates cost.
+func (s InferenceSubmission) ObserveEstimatedUsage(usage *TokenUsage) {
+	if !s.mutable() || usage == nil {
+		return
+	}
+	copyUsage := *usage
+	s.execution.updateSubmission(s.ID, func(current *InferenceSubmission) {
+		if current.CostState == InferenceCostKnown {
+			return
+		}
+		if current.EstimatedUsage != nil && current.EstimatedUsage.OutputTokens > copyUsage.OutputTokens {
+			copyUsage.OutputTokens = current.EstimatedUsage.OutputTokens
+		}
+		current.CostState = InferenceCostEstimated
+		current.EstimatedUsage = &copyUsage
+	})
+}
+
+func (s InferenceSubmission) ObserveUsage(usage *TokenUsage) {
+	if !s.mutable() || usage == nil {
+		return
+	}
+	copyUsage := *usage
+	s.execution.updateSubmission(s.ID, func(current *InferenceSubmission) {
+		current.CostState = InferenceCostKnown
+		current.ReportedUsage = &copyUsage
+	})
+}
+
+func (s InferenceSubmission) CompleteSuccess(usage *TokenUsage) {
+	s.complete(InferenceSubmissionSucceeded, NormalizedFailure{}, usage)
+}
+
+func (s InferenceSubmission) CompleteFailure(failure NormalizedFailure) {
+	s.complete(InferenceSubmissionFailed, failure, nil)
+}
+
+func (s InferenceSubmission) CompleteFallback(failure NormalizedFailure) {
+	s.complete(InferenceSubmissionFallback, failure, nil)
+}
+
+func (s InferenceSubmission) Abandon() {
+	s.complete(InferenceSubmissionAbandoned, NormalizedFailure{}, nil)
+}
+
+func (s InferenceSubmission) complete(outcome InferenceSubmissionOutcome, failure NormalizedFailure, usage *TokenUsage) {
+	if !s.mutable() {
+		return
+	}
+	var copyUsage *TokenUsage
+	if usage != nil {
+		value := *usage
+		copyUsage = &value
+	}
+	s.execution.updateSubmission(s.ID, func(current *InferenceSubmission) {
+		if current.Outcome != InferenceSubmissionInFlight {
+			if copyUsage != nil && current.CostState != InferenceCostKnown {
+				current.CostState = InferenceCostKnown
+				current.ReportedUsage = copyUsage
+			}
+			return
+		}
+		current.Outcome = outcome
+		current.CompletedAt = time.Now().UTC()
+		current.FailureCategory = failure.Category
+		if copyUsage != nil {
+			current.CostState = InferenceCostKnown
+			current.ReportedUsage = copyUsage
+		}
+	})
+}
+
+func estimateOutputTokens(outputBytes int) int {
+	if outputBytes <= 0 {
+		return 0
+	}
+	return (outputBytes + 3) / 4
 }
 
 // InferenceExecutionSnapshot is a race-free diagnostic view of one logical
@@ -39,6 +175,48 @@ type InferenceExecutionSnapshot struct {
 	Operation   InferenceOperation
 	Attempts    int
 	Submissions []InferenceSubmission
+}
+
+type InferenceCostSummary struct {
+	KnownSubmissions           int
+	EstimatedSubmissions       int
+	UnknownBillableSubmissions int
+	KnownUsage                 TokenUsage
+	EstimatedUsage             TokenUsage
+}
+
+// CostSummary preserves cost confidence instead of silently adding unknown
+// billable submissions as zero usage.
+func (s InferenceExecutionSnapshot) CostSummary() InferenceCostSummary {
+	var summary InferenceCostSummary
+	for _, submission := range s.Submissions {
+		switch submission.CostState {
+		case InferenceCostKnown:
+			summary.KnownSubmissions++
+			if submission.ReportedUsage != nil {
+				addTokenUsage(&summary.KnownUsage, *submission.ReportedUsage)
+			}
+		case InferenceCostEstimated:
+			summary.EstimatedSubmissions++
+			if submission.EstimatedUsage != nil {
+				addTokenUsage(&summary.EstimatedUsage, *submission.EstimatedUsage)
+			}
+		default:
+			summary.UnknownBillableSubmissions++
+		}
+	}
+	return summary
+}
+
+func addTokenUsage(total *TokenUsage, usage TokenUsage) {
+	if total == nil {
+		return
+	}
+	total.InputTokens += usage.InputTokens
+	total.OutputTokens += usage.OutputTokens
+	total.CacheCreationTokens += usage.CacheCreationTokens
+	total.CacheReadTokens += usage.CacheReadTokens
+	total.CacheCreationUnknown = total.CacheCreationUnknown || usage.CacheCreationUnknown
 }
 
 // InferenceExecution owns attempt and submission ordinals for one operation.
@@ -157,9 +335,51 @@ func (a InferenceAttempt) RecordSubmission(meta InferenceSubmissionMeta) Inferen
 		Mode:           strings.TrimSpace(meta.Mode),
 		Reason:         strings.TrimSpace(meta.Reason),
 		StartedAt:      time.Now().UTC(),
+		Outcome:        InferenceSubmissionInFlight,
+		CostState:      InferenceCostUnknownBillable,
+		execution:      e,
 	}
 	e.submissions = append(e.submissions, submission)
 	return submission
+}
+
+// ObserveStreamEvent attributes provider-neutral stream evidence to the most
+// recent physical submission in this attempt. Protocol adapters may also
+// update an exact submission handle; both paths are idempotent at terminal.
+func (a InferenceAttempt) ObserveStreamEvent(event StreamEvent) {
+	if !a.Valid() {
+		return
+	}
+	submission, ok := a.latestSubmission()
+	if !ok {
+		return
+	}
+	switch event.Type {
+	case EventContentDelta, EventThinkingDelta, EventToolUseDelta:
+		submission.ObserveOutput(event.Content)
+	case EventUsage:
+		submission.ObserveUsage(event.Usage)
+	case EventDone:
+		submission.CompleteSuccess(event.Usage)
+	case EventError:
+		err := event.Error
+		if err == nil {
+			err = NewIncompleteStreamError("provider stream failed")
+		}
+		submission.CompleteFailure(NormalizeFailure(err))
+	}
+}
+
+func (a InferenceAttempt) latestSubmission() (InferenceSubmission, bool) {
+	e := a.execution
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for index := len(e.submissions) - 1; index >= 0; index-- {
+		if e.submissions[index].AttemptID == a.ID {
+			return e.submissions[index], true
+		}
+	}
+	return InferenceSubmission{}, false
 }
 
 func (a InferenceAttempt) SubmissionSnapshot() []InferenceSubmission {
@@ -172,7 +392,7 @@ func (a InferenceAttempt) SubmissionSnapshot() []InferenceSubmission {
 	out := make([]InferenceSubmission, 0)
 	for _, submission := range e.submissions {
 		if submission.AttemptID == a.ID {
-			out = append(out, submission)
+			out = append(out, snapshotSubmission(submission))
 		}
 	}
 	return out
@@ -184,9 +404,40 @@ func (e *InferenceExecution) Snapshot() InferenceExecutionSnapshot {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	submissions := make([]InferenceSubmission, len(e.submissions))
+	for index, submission := range e.submissions {
+		submissions[index] = snapshotSubmission(submission)
+	}
 	return InferenceExecutionSnapshot{
 		Operation:   e.operation,
 		Attempts:    e.nextAttempt,
-		Submissions: append([]InferenceSubmission(nil), e.submissions...),
+		Submissions: submissions,
 	}
+}
+
+func (e *InferenceExecution) updateSubmission(id string, update func(*InferenceSubmission)) {
+	if e == nil || strings.TrimSpace(id) == "" || update == nil {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for index := range e.submissions {
+		if e.submissions[index].ID == id {
+			update(&e.submissions[index])
+			return
+		}
+	}
+}
+
+func snapshotSubmission(submission InferenceSubmission) InferenceSubmission {
+	submission.execution = nil
+	if submission.ReportedUsage != nil {
+		usage := *submission.ReportedUsage
+		submission.ReportedUsage = &usage
+	}
+	if submission.EstimatedUsage != nil {
+		usage := *submission.EstimatedUsage
+		submission.EstimatedUsage = &usage
+	}
+	return submission
 }

@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -363,5 +364,43 @@ func TestProviderCoordinatorUsesAttemptWorkloadProfile(t *testing.T) {
 	}
 	if got := receiveProviderCoordinatorResult(t, order); got != "background" {
 		t.Fatalf("second admitted profile = %q", got)
+	}
+}
+
+func TestProviderLeaseSettlesBoundSubmissionWithoutCoordinator(t *testing.T) {
+	execution := NewInferenceExecution(NewInferenceOperation(InferenceOperationAuxiliary, InferenceProfileInteractive))
+	attempt := execution.BeginAttempt()
+	lease := &ProviderLease{}
+	lease.RecordSubmission(attempt, InferenceSubmissionMeta{Provider: "test", Transport: "memory"})
+	lease.ObserveOutput("answer")
+	lease.SucceedWithUsage(&TokenUsage{InputTokens: 2, OutputTokens: 1})
+	lease.Release()
+
+	submission := execution.Snapshot().Submissions[0]
+	if submission.Outcome != InferenceSubmissionSucceeded || submission.CostState != InferenceCostKnown || submission.ReportedUsage == nil || submission.ReportedUsage.OutputTokens != 1 {
+		t.Fatalf("submission = %+v", submission)
+	}
+}
+
+func TestProviderLeaseTransportFallbackDoesNotOpenAccountCircuit(t *testing.T) {
+	coordinator := NewProviderCoordinator(ProviderCoordinatorConfig{
+		MaxInFlight:             1,
+		CircuitFailureThreshold: 1,
+		CircuitOpenDuration:     time.Second,
+	})
+	scope := NewProviderScope("https://api.example.test", "key", "")
+	execution := NewInferenceExecution(NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive))
+	attempt := execution.BeginAttempt()
+	lease, err := coordinator.AcquireForAttempt(context.Background(), scope, attempt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease.RecordSubmission(attempt, InferenceSubmissionMeta{Transport: "websocket"})
+	lease.FallbackError(errors.New("websocket transport failed"))
+
+	coordinatorState := coordinator.Snapshot(scope)
+	submission := execution.Snapshot().Submissions[0]
+	if coordinatorState.ConsecutiveFailure != 0 || !coordinatorState.CircuitUntil.IsZero() || submission.Outcome != InferenceSubmissionFallback || submission.CostState != InferenceCostUnknownBillable {
+		t.Fatalf("coordinator=%+v submission=%+v", coordinatorState, submission)
 	}
 }
