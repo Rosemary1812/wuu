@@ -475,7 +475,7 @@ export function ConversationTitleActions({
   rightPanelOpen,
   onToggleRightPanel,
 }: ConversationTitleActionsProps): JSX.Element {
-  const reserveTaskBoardSlot =
+  const showTaskBoardAction =
     activeThreadIsGroup ||
     state.sessionTabs.some((tab) => {
       if (tab.kind === "board") {
@@ -486,6 +486,7 @@ export function ConversationTitleActions({
         isGroupThread(threadForTab(state, tab.threadID) ?? {})
       );
     });
+  const taskBoardAvailable = activeThreadIsGroup && Boolean(activeThread);
 
   return (
     <div className="title-actions">
@@ -555,20 +556,21 @@ export function ConversationTitleActions({
       <ChipGalleryPanel open={chipGalleryOpen} onClose={onCloseChipGallery} />
       {poppedOutMode ? null : (
         <>
-          {reserveTaskBoardSlot ? (
-            <div className="task-board-action-slot">
-              {activeThreadIsGroup && activeThread ? (
-                <button
-                  className="icon-button task-board-button"
-                  type="button"
-                  aria-label="打开任务看板"
-                  title="任务看板"
-                  onClick={() => onOpenTaskBoard(activeThread)}
-                >
-                  <ListChecks className="icon-lg" size={18} viewBox="2 2 20 20" />
-                </button>
-              ) : null}
-            </div>
+          {showTaskBoardAction ? (
+            <button
+              className="icon-button task-board-button"
+              type="button"
+              aria-label={taskBoardAvailable ? "打开任务看板" : "当前对话没有任务看板"}
+              title={taskBoardAvailable ? "任务看板" : "当前对话没有任务看板"}
+              disabled={!taskBoardAvailable}
+              onClick={() => {
+                if (activeThreadIsGroup && activeThread) {
+                  onOpenTaskBoard(activeThread);
+                }
+              }}
+            >
+              <ListChecks className="icon-lg" size={18} viewBox="2 2 20 20" />
+            </button>
           ) : null}
           <button
             ref={environmentToggleRef}

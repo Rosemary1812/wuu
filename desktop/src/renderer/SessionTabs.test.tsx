@@ -399,7 +399,6 @@ describe("SessionTabStrip layout styles", () => {
     const titlebarRule = cssRule(".titlebar");
     const titleBlockRule = cssRule(".title-block");
     const titleActionsRule = cssRule(".title-actions");
-    const taskBoardSlotRule = cssRule(".task-board-action-slot");
     const tabStripRule = cssRule(".session-tab-strip");
     const tabListShellRule = cssRule(".session-tab-list-shell");
     const tabScrollRule = cssRule(".session-tab-scroll");
@@ -418,8 +417,6 @@ describe("SessionTabStrip layout styles", () => {
     expect(titleBlockRule).toContain("overflow: hidden;");
     expect(titleActionsRule).toContain("flex: 0 0 auto;");
     expect(titleActionsRule).toContain("min-width: max-content;");
-    expect(taskBoardSlotRule).toContain("width: 30px;");
-    expect(taskBoardSlotRule).toContain("flex: 0 0 30px;");
     expect(tabStripRule).toContain("display: grid;");
     expect(tabStripRule).toContain(
       "grid-template-columns: minmax(0, 1fr) max-content;",

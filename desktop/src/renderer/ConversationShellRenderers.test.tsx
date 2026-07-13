@@ -162,7 +162,7 @@ describe("ConversationTitleActions icon sizing", () => {
     expect(infoIcon?.getAttribute("viewBox")).toBe("0 0 24 24");
   });
 
-  it("keeps the task-board action slot stable while switching tab kinds", () => {
+  it("keeps the task-board action stable while switching tab kinds", () => {
     const context: RuntimeContext = { kind: "no_project", cwd: "/repo" };
     const groupThread = { ...thread("group", "/repo"), group: true };
     const normalThread = thread("normal", "/repo");
@@ -226,13 +226,17 @@ describe("ConversationTitleActions icon sizing", () => {
     };
 
     renderActions(normalThread, false);
-    const inactiveSlot = container.querySelector(".task-board-action-slot");
-    expect(inactiveSlot).toBeTruthy();
-    expect(inactiveSlot?.querySelector(".task-board-button")).toBeNull();
+    const inactiveButton = container.querySelector<HTMLButtonElement>(
+      ".task-board-button",
+    );
+    expect(inactiveButton).toBeTruthy();
+    expect(inactiveButton?.disabled).toBe(true);
 
     renderActions(groupThread, true);
-    const activeSlot = container.querySelector(".task-board-action-slot");
-    expect(activeSlot).toBe(inactiveSlot);
-    expect(activeSlot?.querySelector(".task-board-button")).toBeTruthy();
+    const activeButton = container.querySelector<HTMLButtonElement>(
+      ".task-board-button",
+    );
+    expect(activeButton).toBe(inactiveButton);
+    expect(activeButton?.disabled).toBe(false);
   });
 });

@@ -246,14 +246,6 @@
   min-width: max-content;
 }
 
-.task-board-action-slot {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
-  place-items: center;
-}
-
 .title-block h1 {
   min-width: 0;
   max-width: 100%;
@@ -563,6 +555,13 @@
 .workspace-panel-add.session-tab-new {
   padding: 0;
   background-clip: border-box;
+}
+
+.titlebar .task-board-button:disabled {
+  background: transparent;
+  color: var(--ink-tertiary);
+  cursor: default;
+  opacity: 0.38;
 }
 
 .icon-button:hover {
