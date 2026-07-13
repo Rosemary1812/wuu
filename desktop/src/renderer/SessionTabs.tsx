@@ -397,7 +397,12 @@ function SortableSessionTab({
           onClose();
         }}
       >
-        <X className="icon-xs" />
+        <X
+          className="icon-lg"
+          size={18}
+          strokeWidth={1.5}
+          viewBox="3 3 18 18"
+        />
       </button>
     </div>
   );
@@ -434,7 +439,12 @@ function SessionTabDragPreview({
         ) : null}
       </div>
       <div className="session-tab-close" aria-hidden="true">
-        <X className="icon-xs" />
+        <X
+          className="icon-lg"
+          size={18}
+          strokeWidth={1.5}
+          viewBox="3 3 18 18"
+        />
       </div>
     </div>
   );

@@ -355,12 +355,29 @@ describe("SessionTabStrip pending indicators", () => {
 
 describe("SessionTabStrip layout styles", () => {
   it("optically fills the 18px new-conversation icon box", () => {
-    renderTabs(initialState);
+    const context: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/tmp/project",
+    };
+    const thread = makeThread("thread-a", "Thread A");
+    renderTabs({
+      ...initialState,
+      activeContext: context,
+      thread,
+      activeSessionTabID: threadSessionTabID(thread.id),
+      sessionTabs: [createThreadSessionTab(thread, context)],
+      threads: [thread],
+    });
 
-    const icon = container.querySelector(".session-tab-new svg");
-    expect(icon?.getAttribute("width")).toBe("18");
-    expect(icon?.getAttribute("height")).toBe("18");
-    expect(icon?.getAttribute("viewBox")).toBe("3 3 18 18");
+    const newConversationIcon = container.querySelector(".session-tab-new svg");
+    const closeIcon = container.querySelector(".session-tab-close svg");
+    expect(newConversationIcon?.getAttribute("width")).toBe("18");
+    expect(newConversationIcon?.getAttribute("height")).toBe("18");
+    expect(newConversationIcon?.getAttribute("viewBox")).toBe("3 3 18 18");
+    expect(closeIcon?.getAttribute("width")).toBe("18");
+    expect(closeIcon?.getAttribute("height")).toBe("18");
+    expect(closeIcon?.getAttribute("viewBox")).toBe("3 3 18 18");
   });
 
   it("uses a flat document rail instead of raised pill tabs", () => {
@@ -413,7 +430,7 @@ describe("SessionTabStrip layout styles", () => {
     expect(tabRule).toContain("flex: 1 1 0%;");
     expect(tabRule).toContain("min-width: 56px;");
     expect(tabRule).toContain("max-width: 236px;");
-    expect(closeRule).toContain("width: 24px;");
+    expect(closeRule).toContain("width: 30px;");
     expect(closeRule).toContain("flex: 0 0 auto;");
   });
 
