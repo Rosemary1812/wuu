@@ -251,7 +251,12 @@
   --participants-roster-focus-ring: rgba(228, 232, 235, 0.25);
 
   /* sidebar.css */
-  --sidebar-material-fill: rgba(20, 22, 24, 0.9);
+  /* Let the native material keep sampling the wallpaper in dark mode too;
+     this veil only preserves enough contrast for sidebar text. */
+  --sidebar-material-fill: rgba(12, 14, 17, 0.22);
+  --sidebar-material-edge: rgba(255, 255, 255, 0.16);
+  --sidebar-material-inner-edge: rgba(255, 255, 255, 0.055);
+  --sidebar-material-highlight: rgba(255, 255, 255, 0.075);
   --sidebar-glass-shadow-ambient: rgba(0, 0, 0, 0.3);
   --sidebar-glass-shadow-elevated: rgba(0, 0, 0, 0.5);
   --sidebar-glass-overlay-bright: rgba(255, 255, 255, 0.06);

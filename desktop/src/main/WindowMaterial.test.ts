@@ -13,25 +13,25 @@ const themeCSS = readFileSync(
 );
 
 describe("macOS sidebar material", () => {
-  it("keeps the native sidebar material clear instead of covering it with a white veil", () => {
+  it("lets the native sidebar material sample the wallpaper without a white veil", () => {
     expect(mainSource).toContain('vibrancy: "sidebar"');
     expect(sidebarCSS).toMatch(
-      /--sidebar-material-fill:\s*rgba\(255, 255, 255, 0\.12\);/,
+      /--sidebar-material-fill:\s*rgba\(255, 255, 255, 0\.025\);/,
     );
     expect(sidebarCSS).toMatch(
       /\.sidebar,\s*\n\.settings-sidebar\s*\{[\s\S]*?background:\s*var\(--sidebar-material-fill\);/,
     );
     expect(sidebarCSS).toMatch(
-      /\.sidebar::before,\s*\n\.settings-sidebar::before\s*\{[\s\S]*?opacity:\s*0\.42;/,
+      /\.sidebar::before,\s*\n\.settings-sidebar::before\s*\{[\s\S]*?opacity:\s*0\.5;/,
     );
     expect(sidebarCSS).toMatch(
       /\.sidebar,\s*\n\.settings-sidebar\s*\{[\s\S]*?backdrop-filter:\s*none;/,
     );
   });
 
-  it("adds a dark fill when the app theme cannot change the native macOS material", () => {
+  it("uses only a translucent contrast veil in dark mode", () => {
     expect(themeCSS).toMatch(
-      /:root\[data-theme="dark"\][\s\S]*?--sidebar-material-fill:\s*rgba\(20, 22, 24, 0\.9\);/,
+      /:root\[data-theme="dark"\][\s\S]*?--sidebar-material-fill:\s*rgba\(12, 14, 17, 0\.22\);/,
     );
   });
 });
