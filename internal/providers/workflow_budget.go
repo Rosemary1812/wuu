@@ -96,7 +96,11 @@ type InferenceWorkflow struct {
 	Budget    WorkflowBudgetSpec
 	StartedAt time.Time
 
-	spend *WorkflowBudget
+	mu          sync.Mutex
+	spend       *WorkflowBudget
+	terminal    bool
+	terminalErr error
+	outcome     InferenceTerminalOutcome
 }
 
 func NewInferenceWorkflow(profile InferenceWorkloadProfile) *InferenceWorkflow {
@@ -162,12 +166,12 @@ func WithInferenceWorkflow(ctx context.Context, workflow *InferenceWorkflow) con
 // EnsureInferenceWorkflow creates a workflow only when the caller has not
 // already provided one. Nested compaction therefore consumes the parent's
 // budget instead of minting a fresh allowance.
-func EnsureInferenceWorkflow(ctx context.Context, profile InferenceWorkloadProfile) (context.Context, *InferenceWorkflow) {
+func EnsureInferenceWorkflow(ctx context.Context, profile InferenceWorkloadProfile) (context.Context, *InferenceWorkflow, bool) {
 	if existing := InferenceWorkflowFromContext(ctx); existing != nil {
-		return ctx, existing
+		return ctx, existing, false
 	}
 	workflow := NewInferenceWorkflow(profile)
-	return WithInferenceWorkflow(ctx, workflow), workflow
+	return WithInferenceWorkflow(ctx, workflow), workflow, true
 }
 
 // StartInferenceWorkflow establishes a new product-work boundary even when
@@ -176,6 +180,50 @@ func EnsureInferenceWorkflow(ctx context.Context, profile InferenceWorkloadProfi
 func StartInferenceWorkflow(ctx context.Context, profile InferenceWorkloadProfile) (context.Context, *InferenceWorkflow) {
 	workflow := NewInferenceWorkflow(profile)
 	return WithInferenceWorkflow(ctx, workflow), workflow
+}
+
+func (w *InferenceWorkflow) admitOperation(operation InferenceOperation) error {
+	if w == nil {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.terminal {
+		if w.terminalErr != nil {
+			return w.terminalErr
+		}
+		return fmt.Errorf("inference workflow %q is already terminal (%s)", w.ID, w.outcome)
+	}
+	return w.spend.AdmitOperation(operation)
+}
+
+// CompleteInferenceWorkflow closes the outer workflow scope. A workflow with
+// no prepared operations is terminal only in memory and has no durable row to
+// update. Journal failures remain fail-closed in the process-local workflow.
+func CompleteInferenceWorkflow(workflow *InferenceWorkflow, journal InferenceJournal, outcome InferenceTerminalOutcome) error {
+	if workflow == nil {
+		return nil
+	}
+	workflow.mu.Lock()
+	defer workflow.mu.Unlock()
+	if workflow.terminal {
+		if workflow.outcome == outcome {
+			return workflow.terminalErr
+		}
+		return fmt.Errorf("inference workflow %q already completed as %s", workflow.ID, workflow.outcome)
+	}
+	workflow.terminal = true
+	workflow.outcome = outcome
+	if journal == nil || workflow.spend.Snapshot().Operations == 0 {
+		return nil
+	}
+	err := journal.CompleteWorkflow(InferenceWorkflowTerminalRecord{
+		WorkflowID: workflow.ID,
+		Outcome:    outcome,
+		At:         time.Now().UTC(),
+	})
+	workflow.terminalErr = err
+	return err
 }
 
 func InferenceWorkflowFromContext(ctx context.Context) *InferenceWorkflow {

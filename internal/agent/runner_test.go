@@ -4,9 +4,40 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
+
+type workflowRecordingJournal struct {
+	completed []providers.InferenceWorkflowTerminalRecord
+}
+
+func (*workflowRecordingJournal) PrepareOperation(providers.InferenceOperationJournalRecord) error {
+	return nil
+}
+func (*workflowRecordingJournal) PrepareAttempt(providers.InferenceAttemptJournalRecord) error {
+	return nil
+}
+func (*workflowRecordingJournal) UpsertSubmission(providers.InferenceSubmissionJournalRecord) error {
+	return nil
+}
+func (*workflowRecordingJournal) MarkAttemptFirstEvent(string, string, string, time.Time) error {
+	return nil
+}
+func (*workflowRecordingJournal) CompleteAttempt(providers.InferenceAttemptTerminalRecord) error {
+	return nil
+}
+func (*workflowRecordingJournal) RecordRecovery(providers.InferenceRecoveryJournalRecord) error {
+	return nil
+}
+func (*workflowRecordingJournal) CompleteOperation(providers.InferenceOperationTerminalRecord) error {
+	return nil
+}
+func (j *workflowRecordingJournal) CompleteWorkflow(record providers.InferenceWorkflowTerminalRecord) error {
+	j.completed = append(j.completed, record)
+	return nil
+}
 
 type fakeStreamBackedClient struct {
 	streamCalls int
@@ -48,7 +79,8 @@ func TestRunner_UsesStreamingStepPath(t *testing.T) {
 
 func TestRunnerPreservesExplicitInferenceWorkflow(t *testing.T) {
 	client := &fakeClient{responses: []providers.ChatResponse{{Content: "done"}}}
-	runner := Runner{Client: client, Model: "gpt-test"}
+	journal := &workflowRecordingJournal{}
+	runner := Runner{Client: client, Model: "gpt-test", InferenceJournal: journal}
 	workflow := providers.NewInferenceWorkflow(providers.InferenceProfileInteractive)
 	ctx := providers.WithInferenceWorkflow(context.Background(), workflow)
 
@@ -60,6 +92,25 @@ func TestRunnerPreservesExplicitInferenceWorkflow(t *testing.T) {
 	}
 	if got := client.requests[0].Operation.WorkflowID; got != workflow.ID {
 		t.Fatalf("workflow = %q, want %q", got, workflow.ID)
+	}
+	if len(journal.completed) != 0 {
+		t.Fatalf("runner completed caller-owned workflow: %+v", journal.completed)
+	}
+}
+
+func TestRunnerCompletesWorkflowItCreates(t *testing.T) {
+	client := &fakeClient{responses: []providers.ChatResponse{{Content: "done"}}}
+	journal := &workflowRecordingJournal{}
+	runner := Runner{Client: client, Model: "gpt-test", InferenceJournal: journal}
+
+	if _, err := runner.Run(context.Background(), "hello"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(journal.completed) != 1 || journal.completed[0].Outcome != providers.InferenceOutcomeSucceeded {
+		t.Fatalf("workflow completions = %+v", journal.completed)
+	}
+	if journal.completed[0].WorkflowID != client.requests[0].Operation.WorkflowID {
+		t.Fatalf("completed workflow = %q, request workflow = %q", journal.completed[0].WorkflowID, client.requests[0].Operation.WorkflowID)
 	}
 }
 

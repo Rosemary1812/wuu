@@ -16,6 +16,7 @@ import (
 
 type dreamRecordingJournal struct {
 	operations chan providers.InferenceOperation
+	workflows  chan providers.InferenceWorkflowTerminalRecord
 }
 
 func (j *dreamRecordingJournal) PrepareOperation(record providers.InferenceOperationJournalRecord) error {
@@ -43,13 +44,23 @@ func (*dreamRecordingJournal) RecordRecovery(providers.InferenceRecoveryJournalR
 func (*dreamRecordingJournal) CompleteOperation(providers.InferenceOperationTerminalRecord) error {
 	return nil
 }
+func (j *dreamRecordingJournal) CompleteWorkflow(record providers.InferenceWorkflowTerminalRecord) error {
+	select {
+	case j.workflows <- record:
+	default:
+	}
+	return nil
+}
 
 func TestSessionDreamScheduler_BackgroundRunKeepsInferenceJournal(t *testing.T) {
 	root := t.TempDir()
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
 	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
-	journal := &dreamRecordingJournal{operations: make(chan providers.InferenceOperation, 1)}
+	journal := &dreamRecordingJournal{
+		operations: make(chan providers.InferenceOperation, 1),
+		workflows:  make(chan providers.InferenceWorkflowTerminalRecord, 1),
+	}
 	runner := &agent.StreamRunner{
 		Client: providers.AdaptStreamClient(&profileMemoryReviewFakeClient{
 			responses: []providers.ChatResponse{{Content: "Nothing to dream."}},
@@ -67,6 +78,27 @@ func TestSessionDreamScheduler_BackgroundRunKeepsInferenceJournal(t *testing.T) 
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("background dream did not prepare an inference operation in the runner journal")
+	}
+	select {
+	case workflow := <-journal.workflows:
+		if workflow.Outcome != providers.InferenceOutcomeSucceeded {
+			t.Fatalf("dream workflow completion = %+v", workflow)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("background dream did not complete its inference workflow")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		scheduler.mu.Lock()
+		running := scheduler.running
+		scheduler.mu.Unlock()
+		if !running {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("background dream did not finish after workflow completion")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

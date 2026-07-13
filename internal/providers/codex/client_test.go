@@ -33,6 +33,7 @@ func (codexJournal) RecordRecovery(providers.InferenceRecoveryJournalRecord) err
 func (codexJournal) CompleteOperation(providers.InferenceOperationTerminalRecord) error {
 	return nil
 }
+func (codexJournal) CompleteWorkflow(providers.InferenceWorkflowTerminalRecord) error { return nil }
 
 func TestClientDoesNotUseCodexCLIAuthUnlessEnabled(t *testing.T) {
 	home := t.TempDir()

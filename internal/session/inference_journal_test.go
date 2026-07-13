@@ -136,6 +136,128 @@ FROM inference_submissions WHERE id = ?`, submissionID).
 	}
 }
 
+func TestInferenceJournalCompletesWorkflowOnlyAfterOperationsAreTerminal(t *testing.T) {
+	dir := t.TempDir()
+	runtime, err := NewInferenceJournalRuntime(dir, "workspace-workflow-terminal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
+	journal := runtime.ForOwner("thread-terminal")
+	now := time.Now().UTC()
+	workflowID := "iwf-terminal"
+	op := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	if err := journal.PrepareOperation(budgetedInferenceOperationRecord(
+		op, workflowID, providers.WorkflowBudgetSpec{}, testInferenceHash("terminal"), now,
+	)); err != nil {
+		t.Fatal(err)
+	}
+	record := providers.InferenceWorkflowTerminalRecord{
+		WorkflowID: workflowID, Outcome: providers.InferenceOutcomeSucceeded, At: now.Add(time.Second),
+	}
+	if err := journal.CompleteWorkflow(record); err == nil {
+		t.Fatal("workflow completed while an operation was active")
+	}
+	if err := journal.CompleteOperation(providers.InferenceOperationTerminalRecord{
+		OperationID: op.ID, Outcome: providers.InferenceOutcomeSucceeded, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.CompleteWorkflow(record); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.CompleteWorkflow(record); err != nil {
+		t.Fatalf("idempotent workflow completion: %v", err)
+	}
+	conflict := record
+	conflict.Outcome = providers.InferenceOutcomeFailed
+	if err := journal.CompleteWorkflow(conflict); err == nil {
+		t.Fatal("workflow terminal outcome changed")
+	}
+
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var status string
+	var terminalAt int64
+	if err := db.QueryRow(`SELECT status, terminal_at FROM inference_workflows WHERE id = ?`, workflowID).Scan(&status, &terminalAt); err != nil {
+		t.Fatal(err)
+	}
+	if status != string(providers.InferenceOutcomeSucceeded) || terminalAt == 0 {
+		t.Fatalf("workflow terminal state = %q/%d", status, terminalAt)
+	}
+}
+
+func TestInferenceJournalSettlesLateUsageAfterWorkflowCompletion(t *testing.T) {
+	dir := t.TempDir()
+	runtime, err := NewInferenceJournalRuntime(dir, "workspace-late-usage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
+	journal := runtime.ForOwner("thread-late-usage")
+	now := time.Now().UTC()
+	workflowID := "iwf-late-usage"
+	op := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	hash := testInferenceHash("late-usage")
+	if err := journal.PrepareOperation(budgetedInferenceOperationRecord(op, workflowID, providers.WorkflowBudgetSpec{}, hash, now)); err != nil {
+		t.Fatal(err)
+	}
+	attemptID := op.AttemptID(1)
+	if err := journal.PrepareAttempt(providers.InferenceAttemptJournalRecord{
+		OperationID: op.ID, WorkflowID: workflowID, AttemptID: attemptID, Ordinal: 1, RequestHash: hash, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	submission := providers.InferenceSubmissionJournalRecord{
+		OperationID: op.ID, AttemptID: attemptID, ID: op.ID + "-s1", Ordinal: 1, AttemptOrdinal: 1,
+		Outcome: providers.InferenceSubmissionInFlight, CostState: providers.InferenceCostUnknownBillable, StartedAt: now,
+	}
+	if err := journal.UpsertSubmission(submission); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.CompleteAttempt(providers.InferenceAttemptTerminalRecord{
+		OperationID: op.ID, AttemptID: attemptID, Outcome: providers.InferenceOutcomeSucceeded, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.CompleteOperation(providers.InferenceOperationTerminalRecord{
+		OperationID: op.ID, Outcome: providers.InferenceOutcomeSucceeded, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.CompleteWorkflow(providers.InferenceWorkflowTerminalRecord{
+		WorkflowID: workflowID, Outcome: providers.InferenceOutcomeSucceeded, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	submission.Outcome = providers.InferenceSubmissionSucceeded
+	submission.CostState = providers.InferenceCostKnown
+	submission.ReportedUsage = &providers.TokenUsage{InputTokens: 9, OutputTokens: 3}
+	submission.CompletedAt = now.Add(time.Second)
+	if err := journal.UpsertSubmission(submission); err != nil {
+		t.Fatalf("late usage settlement: %v", err)
+	}
+
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var status string
+	var known, unknown, tokens int
+	if err := db.QueryRow(`
+SELECT status, known_submissions, unknown_billable, known_usage_tokens
+FROM inference_workflows WHERE id = ?`, workflowID).Scan(&status, &known, &unknown, &tokens); err != nil {
+		t.Fatal(err)
+	}
+	if status != string(providers.InferenceOutcomeSucceeded) || known != 1 || unknown != 0 || tokens != 12 {
+		t.Fatalf("late workflow settlement = status=%q known=%d unknown=%d tokens=%d", status, known, unknown, tokens)
+	}
+}
+
 func TestInferenceJournalEnforcesSharedReplayAndSubmissionBudget(t *testing.T) {
 	dir := t.TempDir()
 	runtime, err := NewInferenceJournalRuntime(dir, "workspace-budget")
@@ -479,6 +601,13 @@ SELECT status, terminal_outcome, recovery_action FROM inference_operations WHERE
 		if status != string(fixture.wantResult) || outcome != string(fixture.wantResult) || action != string(fixture.wantAction) {
 			t.Errorf("%s persisted = %q/%q/%q", fixture.name, status, outcome, action)
 		}
+		var workflowStatus string
+		if err := db.QueryRow(`SELECT status FROM inference_workflows WHERE id = ?`, "iwf-"+ops[fixture.name].ID).Scan(&workflowStatus); err != nil {
+			t.Fatal(err)
+		}
+		if workflowStatus != string(fixture.wantResult) {
+			t.Errorf("%s workflow status = %q, want %q", fixture.name, workflowStatus, fixture.wantResult)
+		}
 		if fixture.phase == "sent" || fixture.phase == "streaming" {
 			var submissionOutcome, costState string
 			if err := db.QueryRow(`
@@ -508,6 +637,106 @@ SELECT outcome, cost_state FROM inference_submissions WHERE operation_id = ?`, o
 	}
 	if len(again) != 0 {
 		t.Fatalf("second recovery should be idempotent, got %+v", again)
+	}
+}
+
+func TestInferenceJournalReconcilesCrashBetweenOperationAndWorkflowCompletion(t *testing.T) {
+	dir := t.TempDir()
+	oldRuntime, err := NewInferenceJournalRuntime(dir, "workspace-workflow-crash-window")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	journal := oldRuntime.ForOwner("thread-crash-window")
+	workflowID := "iwf-crash-window"
+	op := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	if err := journal.PrepareOperation(budgetedInferenceOperationRecord(
+		op, workflowID, providers.WorkflowBudgetSpec{}, testInferenceHash("crash-window"), now,
+	)); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.CompleteOperation(providers.InferenceOperationTerminalRecord{
+		OperationID: op.ID, Outcome: providers.InferenceOutcomeSucceeded, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	crashInferenceRuntimeForTest(t, oldRuntime, now.Add(-time.Hour))
+
+	newRuntime, err := NewInferenceJournalRuntime(dir, "workspace-workflow-crash-window")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = newRuntime.Close() })
+	recoveries, err := newRuntime.ReconcileOrphans(now.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recoveries) != 0 {
+		t.Fatalf("operation was already terminal, got recoveries %+v", recoveries)
+	}
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var status string
+	if err := db.QueryRow(`SELECT status FROM inference_workflows WHERE id = ?`, workflowID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != string(providers.InferenceOutcomeInterrupted) {
+		t.Fatalf("workflow status = %q, want interrupted without outer completion evidence", status)
+	}
+}
+
+func TestInferenceJournalReconcileDoesNotTreatRecoveredFailureAsWorkflowFailure(t *testing.T) {
+	dir := t.TempDir()
+	oldRuntime, err := NewInferenceJournalRuntime(dir, "workspace-recovered-failure-window")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	journal := oldRuntime.ForOwner("thread-recovered-failure")
+	workflowID := "iwf-recovered-failure"
+	prepareTerminal := func(label string, kind providers.InferenceOperationKind, parent string, outcome providers.InferenceTerminalOutcome) providers.InferenceOperation {
+		op := providers.NewInferenceOperation(kind, providers.InferenceProfileInteractive)
+		op.WorkflowID = workflowID
+		op.ParentOperationID = parent
+		if err := journal.PrepareOperation(budgetedInferenceOperationRecord(
+			op, workflowID, providers.WorkflowBudgetSpec{}, testInferenceHash(label), now,
+		)); err != nil {
+			t.Fatal(err)
+		}
+		if err := journal.CompleteOperation(providers.InferenceOperationTerminalRecord{
+			OperationID: op.ID, Outcome: outcome, At: now,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return op
+	}
+	overflow := prepareTerminal("overflow", providers.InferenceOperationAgentRound, "", providers.InferenceOutcomeFailed)
+	compaction := prepareTerminal("compaction", providers.InferenceOperationCompaction, overflow.ID, providers.InferenceOutcomeSucceeded)
+	prepareTerminal("resumed", providers.InferenceOperationAgentRound, compaction.ID, providers.InferenceOutcomeSucceeded)
+	crashInferenceRuntimeForTest(t, oldRuntime, now.Add(-time.Hour))
+
+	newRuntime, err := NewInferenceJournalRuntime(dir, "workspace-recovered-failure-window")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = newRuntime.Close() })
+	if _, err := newRuntime.ReconcileOrphans(now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var status string
+	if err := db.QueryRow(`SELECT status FROM inference_workflows WHERE id = ?`, workflowID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != string(providers.InferenceOutcomeInterrupted) {
+		t.Fatalf("workflow status = %q, recovered historical failure must not force failed", status)
 	}
 }
 
@@ -744,6 +973,11 @@ func TestInferenceJournalPrunesOnlyOldTerminalOperations(t *testing.T) {
 		if err := journal.CompleteOperation(providers.InferenceOperationTerminalRecord{OperationID: op.ID, Outcome: providers.InferenceOutcomeAbandoned, At: at}); err != nil {
 			t.Fatal(err)
 		}
+		if err := journal.CompleteWorkflow(providers.InferenceWorkflowTerminalRecord{
+			WorkflowID: "iwf-" + op.ID, Outcome: providers.InferenceOutcomeAbandoned, At: at,
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	active := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
 	if err := journal.PrepareOperation(providers.InferenceOperationJournalRecord{Operation: active, RequestHash: testInferenceHash("hash"), At: now.Add(-40 * 24 * time.Hour)}); err != nil {
@@ -754,8 +988,8 @@ func TestInferenceJournalPrunesOnlyOldTerminalOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deleted != 1 {
-		t.Fatalf("deleted = %d, want 1", deleted)
+	if deleted != 2 {
+		t.Fatalf("deleted = %d, want old operation and workflow", deleted)
 	}
 	db, err := openStore(dir)
 	if err != nil {

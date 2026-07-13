@@ -62,6 +62,10 @@ func (j *recordingInferenceJournal) CompleteOperation(record InferenceOperationT
 	j.record("operation:" + string(record.Outcome))
 	return nil
 }
+func (j *recordingInferenceJournal) CompleteWorkflow(record InferenceWorkflowTerminalRecord) error {
+	j.record("complete_workflow")
+	return nil
+}
 
 type journalWireClient struct {
 	calls int
@@ -127,6 +131,7 @@ func TestExecuteChatCommitsWriteAheadLifecycle(t *testing.T) {
 		"submission:succeeded",
 		"attempt:succeeded",
 		"operation:succeeded",
+		"complete_workflow",
 	}
 	if strings.Join(journal.events, "|") != strings.Join(want, "|") {
 		t.Fatalf("journal events = %v, want %v", journal.events, want)
@@ -195,7 +200,7 @@ func TestExecuteChatCancellationDuringRecoveryDoesNotCreateAttempt(t *testing.T)
 	if client.calls != 1 || client.refreshes != 0 {
 		t.Fatalf("client calls/refreshes = %d/%d, want 1/0", client.calls, client.refreshes)
 	}
-	want := "operation:prepared|attempt:prepared|attempt:failed|recovery:refresh_credential|operation:canceled"
+	want := "operation:prepared|attempt:prepared|attempt:failed|recovery:refresh_credential|operation:canceled|complete_workflow"
 	if got := strings.Join(journal.events, "|"); got != want {
 		t.Fatalf("journal events = %q, want %q", got, want)
 	}

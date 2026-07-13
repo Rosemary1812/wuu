@@ -14,7 +14,10 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
-type managerTestJournal struct{}
+type managerTestJournal struct {
+	mu                  sync.Mutex
+	workflowCompletions []providers.InferenceWorkflowTerminalRecord
+}
 
 func (*managerTestJournal) PrepareOperation(providers.InferenceOperationJournalRecord) error {
 	return nil
@@ -29,6 +32,12 @@ func (*managerTestJournal) CompleteAttempt(providers.InferenceAttemptTerminalRec
 }
 func (*managerTestJournal) RecordRecovery(providers.InferenceRecoveryJournalRecord) error { return nil }
 func (*managerTestJournal) CompleteOperation(providers.InferenceOperationTerminalRecord) error {
+	return nil
+}
+func (j *managerTestJournal) CompleteWorkflow(record providers.InferenceWorkflowTerminalRecord) error {
+	j.mu.Lock()
+	j.workflowCompletions = append(j.workflowCompletions, record)
+	j.mu.Unlock()
 	return nil
 }
 
@@ -231,7 +240,8 @@ func TestSpawn_HappyPath(t *testing.T) {
 
 func TestSpawnStartsWorkflowIndependentFromParentAgent(t *testing.T) {
 	client := &fakeClient{response: providers.ChatResponse{Content: "all done"}}
-	mgr := NewManager(client, "fake-model")
+	journal := &managerTestJournal{}
+	mgr := NewManagerWithOptions(client, "fake-model", ManagerOptions{InferenceJournal: journal})
 	parent := providers.NewInferenceWorkflow(providers.InferenceProfileInteractive)
 	ctx := providers.WithInferenceWorkflow(context.Background(), parent)
 
@@ -255,6 +265,12 @@ func TestSpawnStartsWorkflowIndependentFromParentAgent(t *testing.T) {
 	}
 	if req.Operation.WorkloadProfile != providers.InferenceProfileBackgroundAgent {
 		t.Fatalf("child workload profile = %q", req.Operation.WorkloadProfile)
+	}
+	journal.mu.Lock()
+	completions := append([]providers.InferenceWorkflowTerminalRecord(nil), journal.workflowCompletions...)
+	journal.mu.Unlock()
+	if len(completions) != 1 || completions[0].WorkflowID != req.Operation.WorkflowID || completions[0].Outcome != providers.InferenceOutcomeSucceeded {
+		t.Fatalf("child workflow completions = %+v", completions)
 	}
 }
 

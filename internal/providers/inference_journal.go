@@ -20,6 +20,7 @@ type InferenceJournal interface {
 	CompleteAttempt(InferenceAttemptTerminalRecord) error
 	RecordRecovery(InferenceRecoveryJournalRecord) error
 	CompleteOperation(InferenceOperationTerminalRecord) error
+	CompleteWorkflow(InferenceWorkflowTerminalRecord) error
 }
 
 type InferenceOperationJournalRecord struct {
@@ -87,6 +88,12 @@ type InferenceOperationTerminalRecord struct {
 	Outcome     InferenceTerminalOutcome
 	Failure     InferenceJournalFailure
 	At          time.Time
+}
+
+type InferenceWorkflowTerminalRecord struct {
+	WorkflowID string
+	Outcome    InferenceTerminalOutcome
+	At         time.Time
 }
 
 // InferenceJournalFailure is the durable allowlist of failure metadata. Raw

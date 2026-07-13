@@ -239,6 +239,7 @@ type InferenceExecution struct {
 	journalErr     error
 	firstEvents    map[string]bool
 	terminal       bool
+	ownsWorkflow   bool
 }
 
 // InferenceAttempt identifies one ExecuteOnce call. The execution pointer is
@@ -261,6 +262,7 @@ func NewInferenceExecution(operation InferenceOperation) *InferenceExecution {
 
 func newInferenceExecution(operation InferenceOperation, workflow *InferenceWorkflow) (*InferenceExecution, error) {
 	operation = EnsureInferenceOperation(operation, InferenceOperationAuxiliary, InferenceProfileInteractive)
+	ownsWorkflow := workflow == nil && strings.TrimSpace(operation.WorkflowID) == ""
 	if workflow == nil {
 		if strings.TrimSpace(operation.WorkflowID) != "" {
 			workflow = newInferenceWorkflowWithIdentity(
@@ -282,10 +284,10 @@ func newInferenceExecution(operation InferenceOperation, workflow *InferenceWork
 	if operation.WorkflowID != workflow.ID {
 		return nil, fmt.Errorf("operation %q belongs to workflow %q, not %q", operation.ID, operation.WorkflowID, workflow.ID)
 	}
-	if err := workflow.spend.AdmitOperation(operation); err != nil {
+	if err := workflow.admitOperation(operation); err != nil {
 		return nil, err
 	}
-	return &InferenceExecution{operation: operation, workflow: workflow}, nil
+	return &InferenceExecution{operation: operation, workflow: workflow, ownsWorkflow: ownsWorkflow}, nil
 }
 
 // ensureInferenceExecution attaches the process-local ledger while preserving
@@ -673,6 +675,12 @@ func (e *InferenceExecution) Complete(outcome InferenceTerminalOutcome, failure 
 		}
 	}
 	e.terminal = true
+	if e.ownsWorkflow {
+		if err := CompleteInferenceWorkflow(e.workflow, e.journal, outcome); err != nil {
+			e.journalErr = err
+			return err
+		}
+	}
 	return nil
 }
 

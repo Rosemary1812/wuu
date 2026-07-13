@@ -64,14 +64,28 @@ func RunToolLoop(
 	history []providers.ChatMessage,
 	cfg LoopConfig,
 	step Step,
-) (LoopResult, error) {
+) (loopResult LoopResult, runErr error) {
 	if step == nil {
 		return LoopResult{}, errors.New("agent: step is required")
 	}
 	if strings.TrimSpace(cfg.Model) == "" {
 		return LoopResult{}, errors.New("agent: model is required")
 	}
-	ctx, _ = providers.EnsureInferenceWorkflow(ctx, cfg.InferenceWorkloadProfile)
+	ctx, workflow, ownsWorkflow := providers.EnsureInferenceWorkflow(ctx, cfg.InferenceWorkloadProfile)
+	if ownsWorkflow {
+		defer func() {
+			outcome := providers.InferenceOutcomeSucceeded
+			if runErr != nil {
+				outcome = providers.InferenceOutcomeFailed
+				if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) || ctx.Err() != nil {
+					outcome = providers.InferenceOutcomeCanceled
+				}
+			}
+			if err := providers.CompleteInferenceWorkflow(workflow, providers.InferenceJournalFromContext(ctx), outcome); err != nil {
+				runErr = errors.Join(runErr, err)
+			}
+		}()
+	}
 
 	messages := make([]providers.ChatMessage, len(history))
 	copy(messages, history)

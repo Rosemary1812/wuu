@@ -621,6 +621,26 @@ func (j *inferenceJournal) CompleteOperation(record providers.InferenceOperation
 	})
 }
 
+func (j *inferenceJournal) CompleteWorkflow(record providers.InferenceWorkflowTerminalRecord) error {
+	record.WorkflowID = strings.TrimSpace(record.WorkflowID)
+	if record.WorkflowID == "" || record.Outcome == "" {
+		return errors.New("complete inference workflow: id and outcome are required")
+	}
+	stamp := journalTime(record.At)
+	return j.write("complete inference workflow", func(tx *sql.Tx) error {
+		var runtimeID, scope, owner string
+		if err := tx.QueryRow(`
+SELECT runtime_id, workspace_scope, owner_id
+FROM inference_workflows WHERE id = ?`, record.WorkflowID).Scan(&runtimeID, &scope, &owner); err != nil {
+			return err
+		}
+		if runtimeID != j.runtime.runtimeID || scope != j.runtime.workspaceScope || owner != j.ownerID {
+			return fmt.Errorf("workflow %q is owned by another inference journal", record.WorkflowID)
+		}
+		return completeInferenceWorkflowTx(tx, record.WorkflowID, record.Outcome, stamp)
+	})
+}
+
 func (j *inferenceJournal) assertOperationTx(tx *sql.Tx, operationID string, requireActive bool) error {
 	var runtimeID, scope, owner, status string
 	if err := tx.QueryRow(`
@@ -936,7 +956,7 @@ FROM inference_workflows WHERE id = ?`, workflowID).
 UPDATE inference_workflows SET
     known_submissions = ?, estimated_submissions = ?, unknown_billable = ?,
     known_usage_tokens = ?, estimated_usage_tokens = ?, updated_at = ?
-WHERE id = ? AND status = 'active'`,
+WHERE id = ?`,
 		known, estimated, unknown, knownTokens, estimatedTokens, stamp, workflowID,
 	)
 	return err
@@ -1111,6 +1131,9 @@ UPDATE inference_attempts SET recovery_action = ? WHERE id = ? AND operation_id 
 			return nil, fmt.Errorf("reconcile inference journal operation %q: %w", item.OperationID, err)
 		}
 	}
+	if err := reconcileOrphanWorkflowsTx(tx, r.workspaceScope, r.runtimeID, cutoff, stamp); err != nil {
+		return nil, fmt.Errorf("reconcile inference journal workflows: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("reconcile inference journal: commit: %w", err)
 	}
@@ -1146,7 +1169,99 @@ WHERE workspace_scope = ? AND status <> 'active' AND updated_at < ?`, r.workspac
 	if err != nil {
 		return 0, fmt.Errorf("prune inference journal: %w", err)
 	}
-	return result.RowsAffected()
+	deletedOperations, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("prune inference journal operations: %w", err)
+	}
+	workflowResult, err := db.Exec(`
+DELETE FROM inference_workflows
+WHERE workspace_scope = ? AND status <> 'active' AND updated_at < ?
+  AND NOT EXISTS (
+      SELECT 1 FROM inference_operations o WHERE o.workflow_id = inference_workflows.id
+  )`, r.workspaceScope, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("prune inference journal workflows: %w", err)
+	}
+	deletedWorkflows, err := workflowResult.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("prune inference journal workflows: %w", err)
+	}
+	return deletedOperations + deletedWorkflows, nil
+}
+
+func reconcileOrphanWorkflowsTx(tx *sql.Tx, workspaceScope, currentRuntimeID string, cutoff, stamp int64) error {
+	rows, err := tx.Query(`
+SELECT w.id, w.workload_profile, rt.pid, rt.closed_at
+FROM inference_workflows w
+JOIN inference_journal_runtimes rt ON rt.id = w.runtime_id
+WHERE w.workspace_scope = ? AND w.runtime_id <> ? AND w.status = 'active'
+  AND (rt.closed_at <> 0 OR rt.heartbeat_at < ?)
+  AND NOT EXISTS (
+      SELECT 1 FROM inference_operations o
+      WHERE o.workflow_id = w.id AND o.status = 'active'
+  )
+ORDER BY w.created_at, w.id`, workspaceScope, currentRuntimeID, cutoff)
+	if err != nil {
+		return err
+	}
+	type candidate struct {
+		id       string
+		profile  providers.InferenceWorkloadProfile
+		pid      int
+		closedAt int64
+	}
+	var candidates []candidate
+	for rows.Next() {
+		var item candidate
+		var profile string
+		if err := rows.Scan(&item.id, &profile, &item.pid, &item.closedAt); err != nil {
+			rows.Close()
+			return err
+		}
+		item.profile = providers.InferenceWorkloadProfile(profile)
+		candidates = append(candidates, item)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, item := range candidates {
+		if item.closedAt == 0 && inferenceRuntimeProcessAlive(item.pid) {
+			continue
+		}
+		outcome, err := orphanWorkflowOutcomeTx(tx, item.id, item.profile)
+		if err != nil {
+			return err
+		}
+		if err := completeInferenceWorkflowTx(tx, item.id, outcome, stamp); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func orphanWorkflowOutcomeTx(tx *sql.Tx, workflowID string, profile providers.InferenceWorkloadProfile) (providers.InferenceTerminalOutcome, error) {
+	var blocked int
+	if err := tx.QueryRow(`
+SELECT SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END)
+FROM inference_operations WHERE workflow_id = ?`, workflowID).
+		Scan(&blocked); err != nil {
+		return "", err
+	}
+	switch {
+	case blocked > 0:
+		return providers.InferenceOutcomeBlocked, nil
+	case profile == providers.InferenceProfileBestEffort:
+		return providers.InferenceOutcomeAbandoned, nil
+	default:
+		// Historical failures may already have been recovered by a later
+		// compaction or agent operation, and all-success history may simply be
+		// a tool loop between rounds. Without a durable outer completion record,
+		// the workflow outcome is unproven and therefore interrupted.
+		return providers.InferenceOutcomeInterrupted, nil
+	}
 }
 
 func completeInferenceAttemptTx(
@@ -1214,6 +1329,44 @@ WHERE id = ?`,
 		stamp, stamp, operationID,
 	)
 	return err
+}
+
+func completeInferenceWorkflowTx(
+	tx *sql.Tx,
+	workflowID string,
+	outcome providers.InferenceTerminalOutcome,
+	stamp int64,
+) error {
+	var status string
+	if err := tx.QueryRow(`SELECT status FROM inference_workflows WHERE id = ?`, workflowID).Scan(&status); err != nil {
+		return err
+	}
+	if status != "active" {
+		if status == string(outcome) {
+			return nil
+		}
+		return fmt.Errorf("workflow %q already completed as %s", workflowID, status)
+	}
+	var activeOperations int
+	if err := tx.QueryRow(`
+SELECT COUNT(*) FROM inference_operations
+WHERE workflow_id = ? AND status = 'active'`, workflowID).Scan(&activeOperations); err != nil {
+		return err
+	}
+	if activeOperations != 0 {
+		return fmt.Errorf("workflow %q still has %d active operation(s)", workflowID, activeOperations)
+	}
+	result, err := tx.Exec(`
+UPDATE inference_workflows
+SET status = ?, updated_at = ?, terminal_at = ?
+WHERE id = ? AND status = 'active'`, string(outcome), stamp, stamp, workflowID)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return fmt.Errorf("workflow %q was not active for completion", workflowID)
+	}
+	return nil
 }
 
 type inferenceJournalUsage struct {

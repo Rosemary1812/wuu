@@ -319,7 +319,7 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	// Status was already set to StatusRunning in Spawn (so CountRunning
 	// sees it synchronously). Just notify listeners.
 	m.notify(sa, StatusRunning)
-	ctx, _ = providers.StartInferenceWorkflow(ctx, providers.InferenceProfileBackgroundAgent)
+	ctx, workflow := providers.StartInferenceWorkflow(ctx, providers.InferenceProfileBackgroundAgent)
 
 	// Live token accumulation: every LLM round-trip updates the
 	// SubAgent's running totals so the activity panel can display
@@ -433,6 +433,16 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 		if strings.TrimSpace(content) == "" {
 			content = emptyWorkerResultPlaceholder
 		}
+	}
+	workflowOutcome := providers.InferenceOutcomeSucceeded
+	if err != nil {
+		workflowOutcome = providers.InferenceOutcomeFailed
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+			workflowOutcome = providers.InferenceOutcomeCanceled
+		}
+	}
+	if workflowErr := providers.CompleteInferenceWorkflow(workflow, defaults.journal, workflowOutcome); workflowErr != nil {
+		err = errors.Join(err, workflowErr)
 	}
 
 	sa.mu.Lock()
