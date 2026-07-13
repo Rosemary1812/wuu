@@ -4,7 +4,86 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
+
+// failAfterFirstSubmissionJournal accepts the pre-send submission checkpoint and
+// then fails every subsequent (streaming) UpsertSubmission. It does NOT implement
+// InferenceProgressJournal, so streaming updates fall back to the synchronous
+// UpsertSubmission path — the strictest test of "a streaming journal failure must
+// degrade bookkeeping without aborting the stream."
+type failAfterFirstSubmissionJournal struct {
+	upserts int
+}
+
+func (j *failAfterFirstSubmissionJournal) PrepareOperation(InferenceOperationJournalRecord) error {
+	return nil
+}
+func (j *failAfterFirstSubmissionJournal) PrepareAttempt(InferenceAttemptJournalRecord) error {
+	return nil
+}
+func (j *failAfterFirstSubmissionJournal) UpsertSubmission(InferenceSubmissionJournalRecord) error {
+	j.upserts++
+	if j.upserts == 1 {
+		return nil
+	}
+	return errors.New("streaming submission journal failed")
+}
+func (j *failAfterFirstSubmissionJournal) MarkAttemptFirstEvent(string, string, string, time.Time) error {
+	return nil
+}
+func (j *failAfterFirstSubmissionJournal) CompleteAttempt(InferenceAttemptTerminalRecord) error {
+	return nil
+}
+func (j *failAfterFirstSubmissionJournal) PrepareRecoveryAttempt(context.Context, InferenceRecoveryAttemptJournalRecord) error {
+	return nil
+}
+func (j *failAfterFirstSubmissionJournal) CompleteOperation(InferenceOperationTerminalRecord) error {
+	return nil
+}
+func (j *failAfterFirstSubmissionJournal) CompleteWorkflow(InferenceWorkflowTerminalRecord) error {
+	return nil
+}
+
+func TestStreamingJournalFailureDegradesButDoesNotAbortStream(t *testing.T) {
+	execution := NewInferenceExecution(NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive))
+	journal := &failAfterFirstSubmissionJournal{}
+	execution.journal = journal
+
+	attempt := execution.BeginAttempt()
+	if _, err := attempt.RecordSubmission(InferenceSubmissionMeta{Provider: "openai", Transport: "websocket"}); err != nil {
+		t.Fatalf("pre-send submission checkpoint must succeed: %v", err)
+	}
+
+	// Every streaming observation's journal write fails. None may return an
+	// error (forwardAttempt treats a non-nil return as fatal and kills the
+	// stream) or poison the execution.
+	for _, ev := range []StreamEvent{
+		{Type: EventContentDelta, Content: "hel"},
+		{Type: EventThinkingDelta, Content: "think"},
+		{Type: EventContentDelta, Content: "lo"},
+		{Type: EventDone, Usage: &TokenUsage{InputTokens: 4, OutputTokens: 2}},
+	} {
+		if err := attempt.ObserveStreamEvent(ev); err != nil {
+			t.Fatalf("event %v aborted the stream: %v", ev.Type, err)
+		}
+	}
+
+	if err := attempt.JournalError(); err != nil {
+		t.Fatalf("streaming journal failure poisoned journalErr: %v", err)
+	}
+	if execution.JournalDegraded() == nil {
+		t.Fatal("expected the streaming journal failure to be recorded as a degradation")
+	}
+
+	// In-memory accounting still completed end to end despite the failing journal.
+	// OutputBytes accumulates every observed delta kind (content + thinking).
+	wantBytes := len("hel") + len("think") + len("lo")
+	subs := execution.Snapshot().Submissions
+	if len(subs) != 1 || subs[0].Outcome != InferenceSubmissionSucceeded || subs[0].OutputBytes != wantBytes {
+		t.Fatalf("submission = %+v", subs)
+	}
+}
 
 func TestInferenceExecutionTracksAttemptsAndSubmissions(t *testing.T) {
 	op := NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive)

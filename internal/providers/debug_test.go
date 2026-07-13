@@ -2,8 +2,62 @@ package providers
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 )
+
+// TestDebugLogfConcurrentWritesAreSerialized exercises DebugLogf from many
+// goroutines. With the per-line mutex, every line lands intact; without it (and
+// under -race) the writes would interleave or race. It also implicitly confirms
+// DebugLogf writes straight to the fd (no fsync, no buffering): the content is
+// readable immediately from a separate handle.
+func TestDebugLogfConcurrentWritesAreSerialized(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "debug.log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	debugMu.Lock()
+	prev := debugLog
+	debugLog = f
+	debugMu.Unlock()
+	t.Cleanup(func() {
+		debugMu.Lock()
+		debugLog = prev
+		debugMu.Unlock()
+		f.Close()
+	})
+
+	const writers, perWriter = 8, 64
+	var wg sync.WaitGroup
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < perWriter; i++ {
+				DebugLogf("entry w=%d i=%d", w, i)
+			}
+		}(w)
+	}
+	wg.Wait()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(data), "entry w="); got != writers*perWriter {
+		t.Fatalf("wrote %d entries, want %d", got, writers*perWriter)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.Count(line, "entry w=") > 1 {
+			t.Fatalf("interleaved writers on one line: %q", line)
+		}
+	}
+}
 
 func TestWireEnabled_DefaultOff(t *testing.T) {
 	// Default: env var unset → wire dumps are off.

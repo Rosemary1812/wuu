@@ -142,6 +142,100 @@ FROM inference_submissions WHERE id = ?`, submissionID).
 	}
 }
 
+func readInferenceSubmissionProgress(t *testing.T, dir, submissionID string) (outputBytes int, outcome, costState string) {
+	t.Helper()
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.QueryRow(`
+SELECT output_bytes, outcome, cost_state
+FROM inference_submissions WHERE id = ?`, submissionID).Scan(&outputBytes, &outcome, &costState); err != nil {
+		t.Fatal(err)
+	}
+	return outputBytes, outcome, costState
+}
+
+func TestInferenceJournalCoalescesStreamingProgressAndFlushesAtBarrier(t *testing.T) {
+	dir := t.TempDir()
+	runtime, err := NewInferenceJournalRuntime(dir, "workspace-progress")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
+	journal := runtime.ForOwner("thread-progress")
+	progress, ok := journal.(providers.InferenceProgressJournal)
+	if !ok {
+		t.Fatal("session journal must implement providers.InferenceProgressJournal")
+	}
+
+	now := time.Now().UTC()
+	op := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	attemptID := op.AttemptID(1)
+	submissionID := op.ID + "-s1"
+	if err := journal.PrepareOperation(providers.InferenceOperationJournalRecord{
+		Operation: op, RequestHash: testInferenceHash("progress"), At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.PrepareAttempt(providers.InferenceAttemptJournalRecord{
+		OperationID: op.ID, AttemptID: attemptID, Ordinal: 1, RequestHash: testInferenceHash("progress"), At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	base := providers.InferenceSubmissionJournalRecord{
+		OperationID: op.ID, AttemptID: attemptID, ID: submissionID, Ordinal: 1, AttemptOrdinal: 1,
+		Provider: "openai", Protocol: "responses", Transport: "websocket", Mode: "stream",
+		StartedAt: now, Outcome: providers.InferenceSubmissionInFlight, CostState: providers.InferenceCostUnknownBillable,
+	}
+	// Pre-send durable checkpoint (synchronous).
+	if err := journal.UpsertSubmission(base); err != nil {
+		t.Fatal(err)
+	}
+
+	// A burst of streaming estimates. Each is enqueued off the caller's
+	// goroutine and coalesced by submission id, so only the latest survives.
+	for _, bytes := range []int{5, 20, 40, 64} {
+		rec := base
+		rec.CostState = providers.InferenceCostEstimated
+		rec.OutputBytes = bytes
+		rec.EstimatedUsage = &providers.TokenUsage{OutputTokens: bytes / 4}
+		progress.RecordSubmissionProgress(rec)
+	}
+	// Deterministically flush the coalesced batch (the background ticker would
+	// otherwise do this within inferenceJournalProgressFlushInterval).
+	runtime.flushSubmissionProgress()
+
+	outputBytes, outcome, costState := readInferenceSubmissionProgress(t, dir, submissionID)
+	if outcome != string(providers.InferenceSubmissionInFlight) || costState != string(providers.InferenceCostEstimated) || outputBytes != 64 {
+		t.Fatalf("after coalesced flush: outcome=%q cost=%q bytes=%d, want in_flight/estimated/64", outcome, costState, outputBytes)
+	}
+
+	// Terminal submission estimate is enqueued async; the CompleteAttempt barrier
+	// must land it before recording the attempt terminal.
+	final := base
+	final.Outcome = providers.InferenceSubmissionSucceeded
+	final.CostState = providers.InferenceCostKnown
+	final.ReportedUsage = &providers.TokenUsage{InputTokens: 10, OutputTokens: 20}
+	final.OutputBytes = 80
+	final.CompletedAt = now.Add(time.Millisecond)
+	progress.RecordSubmissionProgress(final)
+	if err := journal.CompleteAttempt(providers.InferenceAttemptTerminalRecord{
+		OperationID: op.ID, AttemptID: attemptID, Outcome: providers.InferenceOutcomeSucceeded, At: now.Add(2 * time.Millisecond),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	outputBytes, outcome, costState = readInferenceSubmissionProgress(t, dir, submissionID)
+	if outcome != "succeeded" || costState != "known" || outputBytes != 80 {
+		t.Fatalf("after terminal barrier: outcome=%q cost=%q bytes=%d, want succeeded/known/80", outcome, costState, outputBytes)
+	}
+	if err := runtime.pendingProgressErr(); err != nil {
+		t.Fatalf("unexpected progress flush degradation: %v", err)
+	}
+}
+
 func TestInferenceJournalCompletesWorkflowOnlyAfterOperationsAreTerminal(t *testing.T) {
 	dir := t.TempDir()
 	runtime, err := NewInferenceJournalRuntime(dir, "workspace-workflow-terminal")
