@@ -25,6 +25,9 @@ const (
 	InferenceSubmissionFailed    InferenceSubmissionOutcome = "failed"
 	InferenceSubmissionFallback  InferenceSubmissionOutcome = "transport_fallback"
 	InferenceSubmissionAbandoned InferenceSubmissionOutcome = "abandoned"
+	// Interrupted is written by crash recovery when a submission may have
+	// crossed the wire but the process died before observing a terminal result.
+	InferenceSubmissionInterrupted InferenceSubmissionOutcome = "interrupted"
 )
 
 type InferenceCostState string

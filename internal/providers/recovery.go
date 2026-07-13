@@ -72,6 +72,12 @@ const (
 	RecoveryTransformPayload RecoveryActionKind = "transform_payload"
 	RecoveryRefreshAuth      RecoveryActionKind = "refresh_credential"
 	RecoveryBlockUnsafe      RecoveryActionKind = "block_unsafe_replay"
+	// RecoveryRescheduleSafe is a crash-recovery marker for an attempt that
+	// was durably prepared but never entered the transport boundary.
+	RecoveryRescheduleSafe RecoveryActionKind = "reschedule_safe"
+	// RecoveryBlockAmbiguous marks a crash orphan whose request may have
+	// crossed the wire without an idempotency key or queryable receipt.
+	RecoveryBlockAmbiguous RecoveryActionKind = "block_ambiguous_commit"
 )
 
 type RecoveryPlan struct {
