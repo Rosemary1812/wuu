@@ -217,6 +217,11 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		requestModel = r.Model
 	}
 	history = filterDurableHistory(history)
+	recoveredToolMessages, err := r.pendingToolResultMessages(ctx)
+	if err != nil {
+		return LoopResult{}, fmt.Errorf("recover pending tool results: %w", err)
+	}
+	history = append(history, recoveredToolMessages...)
 	runUsage, baseHistoryLen := r.prepareUsageTracker(history)
 
 	// Wrap the caller's callback so events also flow to the bus, if wired.
@@ -390,6 +395,9 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 
 	res, err := RunToolLoop(ctx, history, cfg, step)
 	res.ContextTokens = runUsage.EstimateCurrent()
+	if len(recoveredToolMessages) > 0 && !res.HistoryRewritten {
+		res.NewMessages = append(append([]providers.ChatMessage(nil), recoveredToolMessages...), res.NewMessages...)
+	}
 	res.NewMessages = filterDurableHistory(res.NewMessages)
 	if err != nil {
 		r.commitUsageTracker(runUsage, baseHistoryLen)
@@ -408,6 +416,40 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		r.AfterTurn(ctx, r, fullHistory, res)
 	}
 	return res, nil
+}
+
+func (r *StreamRunner) pendingToolResultMessages(ctx context.Context) ([]providers.ChatMessage, error) {
+	if r == nil || r.ToolLedger == nil {
+		return nil, nil
+	}
+	pending, err := r.ToolLedger.PendingProjection(ctx)
+	if err != nil || len(pending) == 0 {
+		return nil, err
+	}
+	var messages []providers.ChatMessage
+	for index := 0; index < len(pending); {
+		batchID := pending[index].BatchID
+		end := index
+		calls := make([]providers.ToolCall, 0, 1)
+		for end < len(pending) && pending[end].BatchID == batchID {
+			invocation := pending[end]
+			calls = append(calls, providers.ToolCall{
+				ID: invocation.ProviderCallID, Name: invocation.ToolName,
+				Kind: invocation.ToolKind, Arguments: invocation.Arguments,
+			})
+			end++
+		}
+		messages = append(messages, providers.ChatMessage{Role: "assistant", ToolCalls: calls})
+		for _, invocation := range pending[index:end] {
+			messages = append(messages, providers.ChatMessage{
+				Role: "tool", Name: invocation.ToolName, ToolCallID: invocation.ProviderCallID,
+				ToolInvocationID: invocation.ID, ToolResultKind: invocation.ToolKind,
+				Content: invocation.Result.TextProjection(), ToolResult: resultPointer(invocation.Result),
+			})
+		}
+		index = end
+	}
+	return messages, nil
 }
 
 func planUpdateEventFromToolResult(call providers.ToolCall, result string) (*providers.PlanUpdate, bool) {

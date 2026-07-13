@@ -324,7 +324,7 @@ SELECT i.id, i.batch_id, i.provider_call_id, i.tool_name, i.tool_kind,
 FROM tool_invocations i
 JOIN tool_batches b ON b.id = i.batch_id
 WHERE b.owner_id = ? AND i.state IN (?, ?) AND i.projected_at = 0
-ORDER BY i.settled_at, i.id`, l.ownerID, InvocationSucceeded, InvocationFailed)
+ORDER BY b.created_at, b.id, i.prepared_at, i.id`, l.ownerID, InvocationSucceeded, InvocationFailed)
 	if err != nil {
 		return nil, err
 	}

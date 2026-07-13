@@ -12,6 +12,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolledger"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 type mockStreamAttempt struct {
@@ -1832,6 +1833,60 @@ func TestStreamRunner_BlocksReplayAfterStreamingToolStarts(t *testing.T) {
 			t.Fatal("canceled tool result was not durably settled")
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestStreamRunnerRecoversSettledUnprojectedToolResult(t *testing.T) {
+	ctx := context.Background()
+	ledger, err := toolledger.New(t.TempDir(), "thread-recovery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	batchID, err := ledger.BeginBatch(ctx, "operation-crashed", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := ledger.Prepare(ctx, batchID, providers.ToolCall{
+		ID: "call-crashed", Name: "write_file", Arguments: `{"path":"a"}`,
+	}, toolledger.ReplayAtMostOnce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ledger.FinalizeBatch(ctx, batchID); err != nil {
+		t.Fatal(err)
+	}
+	if err := ledger.Start(ctx, invocation.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := ledger.Settle(ctx, invocation.ID, toolresult.FromText("written")); err != nil {
+		t.Fatal(err)
+	}
+
+	client := &mockStreamClient{attempts: []mockStreamAttempt{{events: []providers.StreamEvent{
+		{Type: providers.EventContentDelta, Content: "continued"}, {Type: providers.EventDone},
+	}}}}
+	runner := &StreamRunner{Client: client, Model: "test", ToolLedger: ledger}
+	result, err := runner.RunWithCallback(ctx, []providers.ChatMessage{{Role: "user", Content: "continue"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(client.requests) != 1 || len(client.requests[0].Messages) != 3 {
+		t.Fatalf("recovery request = %+v", client.requests)
+	}
+	requestMessages := client.requests[0].Messages
+	if len(requestMessages[1].ToolCalls) != 1 || requestMessages[1].ToolCalls[0].ID != "call-crashed" ||
+		requestMessages[2].ToolInvocationID != invocation.ID || requestMessages[2].Content != "written" {
+		t.Fatalf("recovered request messages = %+v", requestMessages)
+	}
+	if len(result.NewMessages) != 3 || result.NewMessages[1].ToolInvocationID != invocation.ID || result.Content != "continued" {
+		t.Fatalf("recovered result = %+v", result)
+	}
+	pending, err := ledger.PendingProjection(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("result was marked projected before durable history append: %+v", pending)
 	}
 }
 
