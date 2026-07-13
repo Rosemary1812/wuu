@@ -2373,23 +2373,25 @@ export type WuuDesktopApi = {
   // because the renderer never holds a side_thread_id of its own until
   // after `openSideThread` returns a non-null summary. The main process
   // resolves the binding both ways.
-  openSideThread: (
+  // Side thread support is experimental and may be omitted by desktop builds
+  // until the core RPC handlers ship. Callers must feature-detect every entry.
+  openSideThread?: (
     mainThreadId: string,
   ) => Promise<SideThreadOpenResult>;
-  getSideThreadHistory: (
+  getSideThreadHistory?: (
     mainThreadId: string,
   ) => Promise<SideThreadHistoryResult | null>;
-  sendSideThreadMessage: (
+  sendSideThreadMessage?: (
     params: SideThreadSendParams,
   ) => Promise<SideThreadSendResult>;
-  interruptSideThread: (
+  interruptSideThread?: (
     mainThreadId: string,
   ) => Promise<{ ok: boolean }>;
   // Streamed assistant output for a side thread. The main process
   // re-uses the existing `wuu:server-event` channel and tags each
   // event with `side_thread_id` so the renderer can route it to the
   // correct side panel without inventing a new IPC bus.
-  onSideThreadEvent: (
+  onSideThreadEvent?: (
     handler: (event: SideThreadEvent) => void,
   ) => () => void;
 };
