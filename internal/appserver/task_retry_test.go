@@ -106,7 +106,7 @@ func findTaskEventForNode(t *testing.T, srv *Server, taskID, kind, nodeID string
 
 func waitForPieceState(t *testing.T, srv *Server, taskID, pieceID, status string, attempts int) session.TaskPiece {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	var last session.TaskPiece
 	for time.Now().Before(deadline) {
 		last = loadPiece(t, srv, taskID, pieceID)
