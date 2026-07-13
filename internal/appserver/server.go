@@ -647,12 +647,20 @@ func sanitizeStreamLifecycle(lifecycle *providers.StreamLifecycle) *StreamLifecy
 		return nil
 	}
 	return &StreamLifecyclePayload{
-		Phase:      string(lifecycle.Phase),
-		Attempt:    lifecycle.Attempt,
-		RetryCount: lifecycle.RetryCount,
-		MaxRetries: lifecycle.MaxRetries,
-		RetryInMS:  durationMilliseconds(lifecycle.RetryIn),
-		Reason:     lifecycle.Reason,
+		Phase:           string(lifecycle.Phase),
+		OperationID:     lifecycle.OperationID,
+		OperationKind:   string(lifecycle.OperationKind),
+		WorkloadProfile: string(lifecycle.WorkloadProfile),
+		PayloadVersion:  lifecycle.PayloadVersion,
+		AttemptID:       lifecycle.AttemptID,
+		Attempt:         lifecycle.Attempt,
+		MaxAttempts:     lifecycle.MaxAttempts,
+		RetryCount:      lifecycle.RetryCount,
+		MaxRetries:      lifecycle.MaxRetries,
+		RetryInMS:       durationMilliseconds(lifecycle.RetryIn),
+		ElapsedMS:       durationMilliseconds(lifecycle.Elapsed),
+		Reason:          lifecycle.Reason,
+		ResetPartial:    lifecycle.ResetPartial,
 	}
 }
 

@@ -330,6 +330,10 @@ func IsRetryable(err error) bool {
 	if err == nil {
 		return false
 	}
+	var replayBlocked *ReplayBlockedError
+	if errors.As(err, &replayBlocked) {
+		return false
+	}
 	var streamErr *StreamError
 	if errors.As(err, &streamErr) {
 		if streamErr.ContextOverflow || streamErr.Auth {

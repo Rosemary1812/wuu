@@ -132,6 +132,60 @@ func TestStreamTitleText_PropagatesStreamError(t *testing.T) {
 	}
 }
 
+type retryingTitleStreamClient struct {
+	mu         sync.Mutex
+	calls      int
+	operations []providers.InferenceOperation
+}
+
+func (c *retryingTitleStreamClient) Chat(_ context.Context, _ providers.ChatRequest) (providers.ChatResponse, error) {
+	return providers.ChatResponse{}, nil
+}
+
+func (c *retryingTitleStreamClient) StreamChat(_ context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	c.mu.Lock()
+	c.calls++
+	call := c.calls
+	c.operations = append(c.operations, req.Operation)
+	c.mu.Unlock()
+
+	ch := make(chan providers.StreamEvent, 3)
+	if call == 1 {
+		ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: "stale draft"}
+		ch <- providers.StreamEvent{Type: providers.EventError, Error: &providers.HTTPError{
+			StatusCode: 500,
+			Body:       "temporary upstream failure",
+			RetryAfter: time.Nanosecond,
+		}}
+	} else {
+		ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: "Final title"}
+		ch <- providers.StreamEvent{Type: providers.EventDone}
+	}
+	close(ch)
+	return ch, nil
+}
+
+func TestStreamTitleText_RetrySupersedesPartialAttempt(t *testing.T) {
+	client := &retryingTitleStreamClient{}
+	got, deltas, err := streamTitleTextWithDeltas(context.Background(), client, providers.ChatRequest{Model: "test"})
+	if err != nil {
+		t.Fatalf("streamTitleTextWithDeltas: %v", err)
+	}
+	if got != "Final title" {
+		t.Fatalf("title = %q, want only recovered attempt", got)
+	}
+	if joined := strings.Join(deltas, "|"); joined != "stale draft|[attempt-reset]|Final title" {
+		t.Fatalf("deltas = %q", joined)
+	}
+	if client.calls != 2 || len(client.operations) != 2 {
+		t.Fatalf("calls/operations = %d/%d, want 2/2", client.calls, len(client.operations))
+	}
+	first, second := client.operations[0], client.operations[1]
+	if first.ID == "" || first.ID != second.ID || first.Kind != providers.InferenceOperationTitle || first.WorkloadProfile != providers.InferenceProfileBestEffort {
+		t.Fatalf("operation metadata not stable across retry: %+v / %+v", first, second)
+	}
+}
+
 type staticStreamClient struct {
 	events chan providers.StreamEvent
 }

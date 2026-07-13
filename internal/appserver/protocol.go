@@ -1922,12 +1922,20 @@ type StreamEventPayload struct {
 }
 
 type StreamLifecyclePayload struct {
-	Phase      string `json:"phase"`
-	Attempt    int    `json:"attempt,omitempty"`
-	RetryCount int    `json:"retry_count,omitempty"`
-	MaxRetries int    `json:"max_retries,omitempty"`
-	RetryInMS  int64  `json:"retry_in_ms,omitempty"`
-	Reason     string `json:"reason,omitempty"`
+	Phase           string `json:"phase"`
+	OperationID     string `json:"operation_id,omitempty"`
+	OperationKind   string `json:"operation_kind,omitempty"`
+	WorkloadProfile string `json:"workload_profile,omitempty"`
+	PayloadVersion  int    `json:"payload_version,omitempty"`
+	AttemptID       string `json:"attempt_id,omitempty"`
+	Attempt         int    `json:"attempt,omitempty"`
+	MaxAttempts     int    `json:"max_attempts,omitempty"`
+	RetryCount      int    `json:"retry_count,omitempty"`
+	MaxRetries      int    `json:"max_retries,omitempty"`
+	RetryInMS       int64  `json:"retry_in_ms,omitempty"`
+	ElapsedMS       int64  `json:"elapsed_ms,omitempty"`
+	Reason          string `json:"reason,omitempty"`
+	ResetPartial    bool   `json:"reset_partial,omitempty"`
 }
 
 // SettingsUsageRange selects which time window the settings/usage RPC

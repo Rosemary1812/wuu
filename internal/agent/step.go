@@ -203,6 +203,10 @@ type LoopConfig struct {
 	Tools ToolExecutor
 	// Model is the model identifier passed through to the provider.
 	Model string
+	// InferenceOperationKind and InferenceWorkloadProfile classify each
+	// provider request for the shared retry lifecycle.
+	InferenceOperationKind   providers.InferenceOperationKind
+	InferenceWorkloadProfile providers.InferenceWorkloadProfile
 	// Temperature is the sampling temperature; 0 means provider default.
 	Temperature float64
 	// MaxSteps caps the number of model round-trips per Run. Zero means

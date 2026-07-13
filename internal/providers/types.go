@@ -298,6 +298,10 @@ type ChatRequest struct {
 	Tools       []ToolDefinition
 	Temperature float64
 	CacheHint   *CacheHint
+	// Operation correlates one logical model operation across execution
+	// attempts and transport fallbacks. Provider clients must not send it on
+	// the wire.
+	Operation InferenceOperation
 	// StepIndex is agent-loop metadata for correlating request-shape,
 	// provider-state, and usage telemetry. Provider clients must not send it
 	// on the wire.
@@ -418,12 +422,22 @@ type ProviderStateSummary struct {
 // Attempt is 1-based and includes the initial connect.
 // RetryCount is the number of retries so far; MaxRetries is the configured cap.
 type StreamLifecycle struct {
-	Phase      StreamLifecyclePhase
-	Attempt    int
-	RetryCount int
-	MaxRetries int
-	RetryIn    time.Duration
-	Reason     string
+	Phase           StreamLifecyclePhase
+	OperationID     string
+	OperationKind   InferenceOperationKind
+	WorkloadProfile InferenceWorkloadProfile
+	PayloadVersion  int
+	AttemptID       string
+	Attempt         int
+	MaxAttempts     int
+	RetryCount      int
+	MaxRetries      int
+	RetryIn         time.Duration
+	Elapsed         time.Duration
+	Reason          string
+	// ResetPartial tells aggregators that events from the previous attempt
+	// must be superseded before any replacement output is accepted.
+	ResetPartial bool
 }
 
 // TokenUsage reports token consumption for a single API call. Cache

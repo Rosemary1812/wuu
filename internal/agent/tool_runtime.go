@@ -125,6 +125,27 @@ func (r *TurnToolRuntime) Cancel() {
 	}
 }
 
+// HasStartedStreamingTool reports whether this attempt has crossed the
+// speculative tool-execution fence. Once true, replaying the model request may
+// generate and execute the same logical tool call again, so the retry engine
+// must default to stopping instead of performing a full replay.
+func (r *TurnToolRuntime) HasStartedStreamingTool() bool {
+	if r == nil {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, run := range r.runs {
+		run.mu.Lock()
+		started := run.streamStarted && run.state != toolRunQueued
+		run.mu.Unlock()
+		if started {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *TurnToolRuntime) addStreamToolStart(call *providers.ToolCall) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

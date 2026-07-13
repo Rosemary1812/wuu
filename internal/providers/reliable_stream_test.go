@@ -61,6 +61,26 @@ func eventTypes(events []StreamEvent) []StreamEventType {
 	return out
 }
 
+func nonLifecycleEvents(events []StreamEvent) []StreamEvent {
+	out := make([]StreamEvent, 0, len(events))
+	for _, ev := range events {
+		if ev.Type != EventLifecycle {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+func lifecycleEvents(events []StreamEvent) []*StreamLifecycle {
+	out := make([]*StreamLifecycle, 0, len(events))
+	for _, ev := range events {
+		if ev.Type == EventLifecycle && ev.Lifecycle != nil {
+			out = append(out, ev.Lifecycle)
+		}
+	}
+	return out
+}
+
 func TestReliableStreamClientSingleSuccess(t *testing.T) {
 	inner := &reliableStreamMockClient{attempts: []reliableStreamAttempt{{events: []StreamEvent{
 		{Type: EventContentDelta, Content: "ok"},
@@ -72,8 +92,18 @@ func TestReliableStreamClientSingleSuccess(t *testing.T) {
 		t.Fatalf("StreamChat: %v", err)
 	}
 	events := collectReliableEvents(t, ch)
-	if got, want := eventTypes(events), []StreamEventType{EventContentDelta, EventDone}; !reflect.DeepEqual(got, want) {
+	if got, want := eventTypes(nonLifecycleEvents(events)), []StreamEventType{EventContentDelta, EventDone}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("events = %v, want %v", got, want)
+	}
+	lifecycle := lifecycleEvents(events)
+	if len(lifecycle) != 2 || lifecycle[0].Phase != StreamPhaseConnecting || lifecycle[1].Phase != StreamPhaseConnected {
+		t.Fatalf("lifecycle = %+v, want connecting then connected", lifecycle)
+	}
+	if lifecycle[0].OperationID == "" || lifecycle[0].AttemptID == "" || lifecycle[0].AttemptID != lifecycle[1].AttemptID {
+		t.Fatalf("lifecycle identity missing or unstable: %+v", lifecycle)
+	}
+	if lifecycle[0].Attempt != 1 || lifecycle[0].MaxAttempts != 4 {
+		t.Fatalf("initial attempt = %+v, want 1/4", lifecycle[0])
 	}
 	if inner.callCount != 1 {
 		t.Fatalf("attempts = %d, want 1", inner.callCount)
@@ -96,7 +126,7 @@ func TestReliableStreamClientRetriesStreamErrorsThenSucceeds(t *testing.T) {
 		t.Fatalf("StreamChat: %v", err)
 	}
 	events := collectReliableEvents(t, ch)
-	if got, want := eventTypes(events), []StreamEventType{EventContentDelta, EventDone}; !reflect.DeepEqual(got, want) {
+	if got, want := eventTypes(nonLifecycleEvents(events)), []StreamEventType{EventContentDelta, EventDone}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("events = %v, want %v", got, want)
 	}
 	if !reflect.DeepEqual(attempts, []int{1, 2}) {
@@ -116,11 +146,24 @@ func TestReliableStreamClientRetriesConnectFailure(t *testing.T) {
 		t.Fatalf("StreamChat: %v", err)
 	}
 	events := collectReliableEvents(t, ch)
-	if got, want := eventTypes(events), []StreamEventType{EventContentDelta, EventDone}; !reflect.DeepEqual(got, want) {
+	if got, want := eventTypes(nonLifecycleEvents(events)), []StreamEventType{EventContentDelta, EventDone}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("events = %v, want %v", got, want)
 	}
 	if retries != 1 || inner.callCount != 2 {
 		t.Fatalf("retries=%d attempts=%d, want 1/2", retries, inner.callCount)
+	}
+	lifecycle := lifecycleEvents(events)
+	wantPhases := []StreamLifecyclePhase{StreamPhaseConnecting, StreamPhaseReconnecting, StreamPhaseConnecting, StreamPhaseConnected}
+	if len(lifecycle) != len(wantPhases) {
+		t.Fatalf("lifecycle = %+v, want phases %v", lifecycle, wantPhases)
+	}
+	for i, want := range wantPhases {
+		if lifecycle[i].Phase != want {
+			t.Fatalf("lifecycle[%d] = %+v, want phase %s", i, lifecycle[i], want)
+		}
+	}
+	if lifecycle[1].Attempt != 2 || lifecycle[1].RetryCount != 1 || lifecycle[1].ResetPartial {
+		t.Fatalf("connect-failure retry lifecycle = %+v", lifecycle[1])
 	}
 }
 
@@ -140,7 +183,7 @@ func TestReliableStreamClientEmitsFinalErrorAfterMaxRetries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
-	events := collectReliableEvents(t, ch)
+	events := nonLifecycleEvents(collectReliableEvents(t, ch))
 	if len(events) != 1 || events[0].Type != EventError || events[0].Error == nil {
 		t.Fatalf("events = %+v, want final error", events)
 	}
@@ -160,7 +203,7 @@ func TestReliableStreamClientContextCancelStopsRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
-	if events := collectReliableEvents(t, ch); len(events) != 0 {
+	if events := nonLifecycleEvents(collectReliableEvents(t, ch)); len(events) != 0 {
 		t.Fatalf("events = %+v, want closed without error", events)
 	}
 }
@@ -176,7 +219,7 @@ func TestReliableStreamClientDoesNotRetryNonRetryableError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
-	events := collectReliableEvents(t, ch)
+	events := nonLifecycleEvents(collectReliableEvents(t, ch))
 	if len(events) != 1 || events[0].Type != EventError {
 		t.Fatalf("events = %+v, want final error", events)
 	}
@@ -196,10 +239,59 @@ func TestReliableStreamClientRetriesTruncatedStream(t *testing.T) {
 		t.Fatalf("StreamChat: %v", err)
 	}
 	events := collectReliableEvents(t, ch)
-	if got, want := eventTypes(events), []StreamEventType{EventContentDelta, EventContentDelta, EventDone}; !reflect.DeepEqual(got, want) {
+	if got, want := eventTypes(nonLifecycleEvents(events)), []StreamEventType{EventContentDelta, EventContentDelta, EventDone}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("events = %v, want %v", got, want)
 	}
-	if events[0].Content != "partial" || events[1].Content != "ok" {
-		t.Fatalf("unexpected content events: %+v", events)
+	businessEvents := nonLifecycleEvents(events)
+	if businessEvents[0].Content != "partial" || businessEvents[1].Content != "ok" {
+		t.Fatalf("unexpected content events: %+v", businessEvents)
+	}
+	lifecycle := lifecycleEvents(events)
+	var reconnect *StreamLifecycle
+	for _, event := range lifecycle {
+		if event.Phase == StreamPhaseReconnecting {
+			reconnect = event
+			break
+		}
+	}
+	if reconnect == nil || !reconnect.ResetPartial || reconnect.Attempt != 2 {
+		t.Fatalf("partial retry lifecycle = %+v, want reset for attempt 2", reconnect)
+	}
+}
+
+func TestReliableStreamClientReplayGuardBlocksUnsafeRetry(t *testing.T) {
+	inner := &reliableStreamMockClient{attempts: []reliableStreamAttempt{
+		{events: []StreamEvent{{Type: EventContentDelta, Content: "partial"}, {Type: EventError, Error: NewIncompleteStreamError("temporary drop")}}},
+		{events: []StreamEvent{{Type: EventContentDelta, Content: "must not run"}, {Type: EventDone}}},
+	}}
+	guardReason := errors.New("tool already started")
+	client := NewReliableStreamClient(
+		inner,
+		reliableTestRetryConfig(3),
+		nil,
+		WithStreamReplayGuard(func(ctx StreamRetryContext) error {
+			if ctx.Attempt != 1 || ctx.ForwardedEvents != 1 || ctx.Operation.ID == "" {
+				t.Fatalf("retry context = %+v", ctx)
+			}
+			return guardReason
+		}),
+	)
+	ch, err := client.StreamChat(context.Background(), ChatRequest{})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	events := nonLifecycleEvents(collectReliableEvents(t, ch))
+	if inner.callCount != 1 {
+		t.Fatalf("attempts = %d, want replay blocked after first", inner.callCount)
+	}
+	if len(events) != 2 || events[0].Content != "partial" || events[1].Type != EventError {
+		t.Fatalf("events = %+v", events)
+	}
+	var blocked *ReplayBlockedError
+	if !errors.As(events[1].Error, &blocked) || !errors.Is(blocked.Reason, guardReason) {
+		t.Fatalf("error = %v, want ReplayBlockedError", events[1].Error)
+	}
+	if IsRetryable(events[1].Error) {
+		t.Fatalf("replay-blocked error must be terminal: %v", events[1].Error)
 	}
 }

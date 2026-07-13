@@ -114,6 +114,34 @@ type partialStreamCompactClient struct {
 	lastRequest providers.ChatRequest
 }
 
+type retryingStreamCompactClient struct {
+	calls      int
+	operations []providers.InferenceOperation
+}
+
+func (c *retryingStreamCompactClient) Chat(_ context.Context, _ providers.ChatRequest) (providers.ChatResponse, error) {
+	return providers.ChatResponse{}, nil
+}
+
+func (c *retryingStreamCompactClient) StreamChat(_ context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	c.calls++
+	c.operations = append(c.operations, req.Operation)
+	ch := make(chan providers.StreamEvent, 3)
+	if c.calls == 1 {
+		ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: "stale partial summary"}
+		ch <- providers.StreamEvent{Type: providers.EventError, Error: &providers.HTTPError{
+			StatusCode: 500,
+			Body:       "temporary upstream failure",
+			RetryAfter: time.Nanosecond,
+		}}
+	} else {
+		ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: "fresh complete summary"}
+		ch <- providers.StreamEvent{Type: providers.EventDone}
+	}
+	close(ch)
+	return ch, nil
+}
+
 func (p *partialStreamCompactClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
 	p.lastRequest = req
 	return providers.ChatResponse{Content: "fallback summary"}, nil
@@ -349,6 +377,24 @@ func TestCompact_UsesPartialStreamSummaryWhenDoneIsMissing(t *testing.T) {
 	}
 	if !strings.Contains(result[0].Content, strings.TrimSpace(partial)) {
 		t.Fatalf("expected partial summary to be used, got %q", result[0].Content)
+	}
+}
+
+func TestStreamCompactSummary_RetrySupersedesPartialAttempt(t *testing.T) {
+	client := &retryingStreamCompactClient{}
+	resp, err := streamCompactSummary(context.Background(), client, providers.ChatRequest{Model: "test"})
+	if err != nil {
+		t.Fatalf("streamCompactSummary: %v", err)
+	}
+	if resp.Content != "fresh complete summary" {
+		t.Fatalf("summary = %q, want only recovered attempt", resp.Content)
+	}
+	if client.calls != 2 || len(client.operations) != 2 {
+		t.Fatalf("calls/operations = %d/%d, want 2/2", client.calls, len(client.operations))
+	}
+	first, second := client.operations[0], client.operations[1]
+	if first.ID == "" || first.ID != second.ID || first.Kind != providers.InferenceOperationCompaction || first.WorkloadProfile != providers.InferenceProfileContinuationCritical {
+		t.Fatalf("operation metadata not stable across retry: %+v / %+v", first, second)
 	}
 }
 

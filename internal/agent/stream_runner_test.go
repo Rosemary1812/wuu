@@ -688,20 +688,26 @@ func TestStreamRunner_EmitsStructuredLifecycleEvents(t *testing.T) {
 	if result != "ok" {
 		t.Fatalf("unexpected result: %q", result)
 	}
-	if len(lifecycle) < 3 {
-		t.Fatalf("expected >= 3 lifecycle events, got %d", len(lifecycle))
+	if len(lifecycle) != 4 {
+		t.Fatalf("expected 4 lifecycle events, got %d: %+v", len(lifecycle), lifecycle)
 	}
 	if lifecycle[0].Phase != providers.StreamPhaseConnecting || lifecycle[0].Attempt != 1 {
 		t.Fatalf("unexpected first lifecycle event: %+v", lifecycle[0])
 	}
-	if lifecycle[1].Phase != providers.StreamPhaseConnected {
-		t.Fatalf("unexpected connected lifecycle event: %+v", lifecycle[1])
+	if lifecycle[1].Phase != providers.StreamPhaseReconnecting || lifecycle[1].RetryCount != 1 || lifecycle[1].Attempt != 2 {
+		t.Fatalf("unexpected reconnect lifecycle event: %+v", lifecycle[1])
 	}
-	if lifecycle[2].Phase != providers.StreamPhaseReconnecting || lifecycle[2].RetryCount != 1 {
-		t.Fatalf("unexpected reconnect lifecycle event: %+v", lifecycle[2])
+	if lifecycle[2].Phase != providers.StreamPhaseConnecting || lifecycle[2].Attempt != 2 {
+		t.Fatalf("unexpected second connecting lifecycle event: %+v", lifecycle[2])
 	}
-	if lifecycle[2].MaxRetries <= 0 {
-		t.Fatalf("expected positive max_retries in reconnect event, got %d", lifecycle[2].MaxRetries)
+	if lifecycle[3].Phase != providers.StreamPhaseConnected || lifecycle[3].Attempt != 2 {
+		t.Fatalf("unexpected connected lifecycle event: %+v", lifecycle[3])
+	}
+	if lifecycle[1].MaxAttempts != 4 || lifecycle[1].MaxRetries != 3 {
+		t.Fatalf("unexpected retry budget: %+v", lifecycle[1])
+	}
+	if lifecycle[0].OperationID == "" || lifecycle[0].AttemptID == "" || lifecycle[0].AttemptID == lifecycle[3].AttemptID {
+		t.Fatalf("unexpected lifecycle identities: %+v", lifecycle)
 	}
 }
 
@@ -1679,6 +1685,66 @@ func TestStreamRunner_CancelsOrphanStreamingToolWhenNoFinalToolCalls(t *testing.
 		if calls := tools.recordedCalls(); len(calls) != 0 {
 			t.Fatalf("orphan tool entered executor without completing cancellation: %+v", calls)
 		}
+	}
+}
+
+func TestStreamRunner_BlocksReplayAfterStreamingToolStarts(t *testing.T) {
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{events: []providers.StreamEvent{
+			{
+				Type: providers.EventToolUseEnd,
+				ToolCall: &providers.ToolCall{
+					ID:        "orphan",
+					Name:      "read_file",
+					Arguments: `{"path":"important.go"}`,
+				},
+			},
+			{Type: providers.EventError, Error: providers.NewIncompleteStreamError("temporary drop")},
+		}},
+		{events: []providers.StreamEvent{{Type: providers.EventContentDelta, Content: "must not replay"}, {Type: providers.EventDone}}},
+	}}
+	tools := &cancelAwareRuntimeTools{
+		started:  make(chan struct{}),
+		canceled: make(chan struct{}),
+	}
+	runner := &StreamRunner{
+		Client:                 client,
+		Model:                  "test",
+		Tools:                  tools,
+		StreamingToolExecution: true,
+		ReconnectConfig:        testReconnectConfig(),
+		OnEvent: func(event providers.StreamEvent) {
+			if event.Type != providers.EventToolUseEnd {
+				return
+			}
+			select {
+			case <-tools.started:
+			case <-time.After(time.Second):
+				t.Fatal("streaming tool did not start")
+			}
+		},
+	}
+
+	_, err := runner.Run(context.Background(), "hello")
+	if err == nil {
+		t.Fatal("expected replay fence error")
+	}
+	var blocked *providers.ReplayBlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("error = %v, want ReplayBlockedError", err)
+	}
+	if client.callCount != 1 {
+		t.Fatalf("stream attempts = %d, want unsafe replay blocked", client.callCount)
+	}
+	select {
+	case <-tools.started:
+	default:
+		t.Fatal("streaming tool never crossed the replay fence")
+	}
+	select {
+	case <-tools.canceled:
+	case <-time.After(time.Second):
+		t.Fatal("blocked replay did not cancel the in-flight tool")
 	}
 }
 

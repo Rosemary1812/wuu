@@ -140,6 +140,11 @@ type StreamRunner struct {
 	// PromptCacheKey is a stable conversation-scoped cache key forwarded
 	// to providers that support explicit prompt-cache routing.
 	PromptCacheKey string
+	// InferenceOperationKind and InferenceWorkloadProfile identify each model
+	// round for the shared retry lifecycle. Empty values use the interactive
+	// agent defaults.
+	InferenceOperationKind   providers.InferenceOperationKind
+	InferenceWorkloadProfile providers.InferenceWorkloadProfile
 
 	// ReconnectConfig controls stream reconnect behavior.
 	// Zero value disables reconnect. Normalized on first use.
@@ -247,25 +252,35 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 			return filterDurableHistory(capturedBeforeStep())
 		}
 	}
+	operationKind := r.InferenceOperationKind
+	if operationKind == "" {
+		operationKind = providers.InferenceOperationAgentRound
+	}
+	workloadProfile := r.InferenceWorkloadProfile
+	if workloadProfile == "" {
+		workloadProfile = providers.InferenceProfileInteractive
+	}
 	cfg := LoopConfig{
-		Tools:                   r.Tools,
-		Model:                   requestModel,
-		Temperature:             r.Temperature,
-		MaxSteps:                r.MaxSteps,
-		MaxContextTokens:        maxCtx,
-		MaxInputTokens:          r.MaxInputTokens,
-		OutputReserveTokens:     r.OutputReserveTokens,
-		CompactThresholdTokens:  compactThresholdTokens,
-		CompactThresholdPct:     r.CompactThresholdPct,
-		CompactKeepRecentTokens: r.CompactKeepRecentTokens,
-		ForceInitialCompact:     r.ForceInitialCompact,
-		CompactOnly:             r.CompactOnly,
-		ToolPrune:               true,
-		BeforeStep:              beforeStep,
-		BeforeRequestContext:    r.BeforeRequestContext,
-		BeforeRequest:           r.BeforeRequest,
-		SystemPromptSections:    systemPromptSections,
-		ForceToolFirstStep:      r.ForceToolFirstStep,
+		Tools:                    r.Tools,
+		Model:                    requestModel,
+		InferenceOperationKind:   operationKind,
+		InferenceWorkloadProfile: workloadProfile,
+		Temperature:              r.Temperature,
+		MaxSteps:                 r.MaxSteps,
+		MaxContextTokens:         maxCtx,
+		MaxInputTokens:           r.MaxInputTokens,
+		OutputReserveTokens:      r.OutputReserveTokens,
+		CompactThresholdTokens:   compactThresholdTokens,
+		CompactThresholdPct:      r.CompactThresholdPct,
+		CompactKeepRecentTokens:  r.CompactKeepRecentTokens,
+		ForceInitialCompact:      r.ForceInitialCompact,
+		CompactOnly:              r.CompactOnly,
+		ToolPrune:                true,
+		BeforeStep:               beforeStep,
+		BeforeRequestContext:     r.BeforeRequestContext,
+		BeforeRequest:            r.BeforeRequest,
+		SystemPromptSections:     systemPromptSections,
+		ForceToolFirstStep:       r.ForceToolFirstStep,
 		OnRequestContext: func(info RequestContextInfo) {
 			if r.OnRequestContext != nil {
 				r.OnRequestContext(info)
@@ -713,7 +728,18 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 			toolRuntime.SetStepIndex(req.StepIndex)
 		}
 	}
-	if err := s.runReliableStream(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &messagePhase, &providerItemID, &providerItemModel, &usage, &stopReason, &finishReason, &truncated, resetRuntime); err != nil {
+	replayGuard := func(retry providers.StreamRetryContext) error {
+		for _, call := range retry.FinalizedToolCalls {
+			if toolCanStartDuringStreaming(s.tools, call) {
+				return fmt.Errorf("streamed tool %q may already be running; reconnecting could run it twice", call.Name)
+			}
+		}
+		if toolRuntime != nil && toolRuntime.HasStartedStreamingTool() {
+			return errors.New("a streamed tool has already started; reconnecting could run it twice")
+		}
+		return nil
+	}
+	if err := s.runReliableStream(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &messagePhase, &providerItemID, &providerItemModel, &usage, &stopReason, &finishReason, &truncated, resetRuntime, replayGuard); err != nil {
 		if toolRuntime != nil {
 			toolRuntime.Cancel()
 		}
@@ -888,30 +914,10 @@ func (s *streamStep) runReliableStream(
 	finishReason *providers.FinishReason,
 	truncated *bool,
 	onAttemptStart func(),
+	replayGuard providers.StreamReplayGuard,
 ) error {
 	cfg := s.retryCfg
 	onEvent := s.onEvent
-	attempt := 0
-
-	emitLifecycle := func(phase providers.StreamLifecyclePhase, retryCount int, reason error, retryIn time.Duration) {
-		if onEvent == nil {
-			return
-		}
-		details := &providers.StreamLifecycle{
-			Phase:      phase,
-			Attempt:    retryCount + 1,
-			RetryCount: retryCount,
-			MaxRetries: cfg.MaxRetries,
-			RetryIn:    retryIn,
-		}
-		if reason != nil {
-			details.Reason = providers.StreamErrorSummary(reason)
-		}
-		onEvent(providers.StreamEvent{
-			Type:      providers.EventLifecycle,
-			Lifecycle: details,
-		})
-	}
 
 	resetPartialOutput := func() {
 		hadContent := contentBuf.Len() > 0
@@ -956,7 +962,6 @@ func (s *streamStep) runReliableStream(
 		if errors.As(err, &streamErr) {
 			providers.DebugLogf("  stream error code=%s msg=%s", streamErr.Code, streamErr.Message)
 		}
-		emitLifecycle(providers.StreamPhaseReconnecting, attempt, err, delay)
 		if onEvent != nil {
 			onEvent(providers.StreamEvent{
 				Type:    providers.EventReconnect,
@@ -982,17 +987,11 @@ func (s *streamStep) runReliableStream(
 			onAttemptStart()
 		}
 
-		emitLifecycle(providers.StreamPhaseConnecting, attempt, nil, 0)
-
-		client := providers.NewReliableStreamClient(s.client, cfg, onRetry)
+		client := providers.NewReliableStreamClient(s.client, cfg, onRetry, providers.WithStreamReplayGuard(replayGuard))
 		ch, err := client.StreamChat(ctx, req)
 		if err != nil {
-			emitLifecycle(providers.StreamPhaseFailed, attempt, err, 0)
 			return err
 		}
-		// Successful connect resets the retry counter.
-		attempt = 0
-		emitLifecycle(providers.StreamPhaseConnected, attempt, nil, 0)
 
 		var (
 			streamErr error
@@ -1093,6 +1092,17 @@ func (s *streamStep) runReliableStream(
 					event.ProviderState.StepIndex = req.StepIndex
 				}
 
+			case providers.EventLifecycle:
+				if event.Lifecycle != nil && event.Lifecycle.Phase == providers.StreamPhaseReconnecting && event.Lifecycle.ResetPartial {
+					resetPartialOutput()
+					for k := range pendingTools {
+						delete(pendingTools, k)
+					}
+					if onAttemptStart != nil {
+						onAttemptStart()
+					}
+				}
+
 			case providers.EventReconnect:
 				if event.Error != nil {
 					resetPartialOutput()
@@ -1144,7 +1154,6 @@ func (s *streamStep) runReliableStream(
 			return nil
 		}
 
-		emitLifecycle(providers.StreamPhaseFailed, attempt, streamErr, 0)
 		if onEvent != nil && !providers.IsContextOverflow(streamErr) {
 			onEvent(providers.StreamEvent{
 				Type:  providers.EventError,

@@ -306,7 +306,8 @@ func summarizeCompactChunk(ctx context.Context, client providers.Client, model s
 
 func compactSummaryRequest(model, prompt string) providers.ChatRequest {
 	return providers.ChatRequest{
-		Model: model,
+		Model:     model,
+		Operation: providers.NewInferenceOperation(providers.InferenceOperationCompaction, providers.InferenceProfileContinuationCritical),
 		Messages: []providers.ChatMessage{
 			{Role: "system", Content: "You summarize coding-agent conversations for context compaction. Follow the user's required format exactly. Do not call tools."},
 			{Role: "user", Content: prompt},
@@ -327,6 +328,7 @@ func summarizeCompact(ctx context.Context, client providers.Client, req provider
 }
 
 func streamCompactSummary(ctx context.Context, client providers.StreamClient, req providers.ChatRequest) (providers.ChatResponse, error) {
+	req.Operation = providers.EnsureInferenceOperation(req.Operation, providers.InferenceOperationCompaction, providers.InferenceProfileContinuationCritical)
 	reliableClient := providers.NewReliableStreamClient(client, providers.RetryConfig{MaxRetries: 3}, nil)
 	ch, err := reliableClient.StreamChat(ctx, req)
 	if err != nil {
@@ -343,6 +345,15 @@ func streamCompactSummary(ctx context.Context, client providers.StreamClient, re
 		switch event.Type {
 		case providers.EventContentDelta:
 			content.WriteString(event.Content)
+		case providers.EventLifecycle:
+			if event.Lifecycle != nil && event.Lifecycle.Phase == providers.StreamPhaseReconnecting && event.Lifecycle.ResetPartial {
+				content.Reset()
+				usage = nil
+				finishReason = ""
+				stopReason = ""
+				truncated = false
+				done = false
+			}
 		case providers.EventError:
 			if event.Error != nil {
 				if resp, ok, ferr := recoverCompactStream(ctx, client, req, content.String(), event.Error); ok {

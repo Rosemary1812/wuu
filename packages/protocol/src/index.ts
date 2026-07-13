@@ -1449,6 +1449,11 @@ export type StreamLifecyclePhase =
 
 export type StreamLifecyclePayload = {
   phase: StreamLifecyclePhase | string;
+  operation_id?: string;
+  operation_kind?: string;
+  workload_profile?: string;
+  payload_version?: number;
+  attempt_id?: string;
   attempt?: number;
   max_attempts?: number;
   retry_count?: number;
@@ -1457,6 +1462,7 @@ export type StreamLifecyclePayload = {
   elapsed_ms?: number;
   budget_ms?: number;
   reason?: string;
+  reset_partial?: boolean;
 };
 
 export type ProviderStatePayload = {

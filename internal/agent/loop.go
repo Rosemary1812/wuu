@@ -239,9 +239,13 @@ func RunToolLoop(
 		assembly := assembleModelRequest(messagesForRequest, requestSegments)
 		requestMessages := assembly.Messages
 		req := providers.ChatRequest{
-			Model:                       cfg.Model,
-			Messages:                    requestMessages,
-			Temperature:                 cfg.Temperature,
+			Model:       cfg.Model,
+			Messages:    requestMessages,
+			Temperature: cfg.Temperature,
+			Operation: providers.NewInferenceOperation(
+				cfg.InferenceOperationKind,
+				cfg.InferenceWorkloadProfile,
+			),
 			MaxTokens:                   currentMaxTokens,
 			StepIndex:                   stepIdx,
 			Effort:                      cfg.Effort,

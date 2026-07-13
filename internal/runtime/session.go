@@ -493,6 +493,8 @@ func NewSession(opts Options) (*Session, error) {
 		BeforeRequestContext:        RuntimeContextInjector(agentControl, agentthread.RootPath, toolkitContextBlockProvider(toolkit)),
 		BeforeRequest:               pluginRequestInterceptor(pluginHost, resolvedName, "", rootDir),
 		AfterTurn:                   afterTurn,
+		InferenceOperationKind:      providers.InferenceOperationAgentRound,
+		InferenceWorkloadProfile:    providers.InferenceProfileInteractive,
 		ReconnectConfig:             providers.RetryConfig{MaxRetries: 5},
 	}
 
@@ -1028,6 +1030,8 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		ProviderOptions:             provideroptions.Clone(base.ProviderOptions),
 		NativeDeferredToolDiscovery: base.NativeDeferredToolDiscovery,
 		PromptCacheKey:              base.PromptCacheKey,
+		InferenceOperationKind:      base.InferenceOperationKind,
+		InferenceWorkloadProfile:    base.InferenceWorkloadProfile,
 		ReconnectConfig:             base.ReconnectConfig,
 	}
 }

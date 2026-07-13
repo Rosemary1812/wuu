@@ -246,6 +246,7 @@ func (s *Server) generateThreadTitleCore(threadID string, history []providers.Ch
 			{Role: "system", Content: threadTitleSystemPrompt},
 			{Role: "user", Content: "Generate a title for this conversation:\n" + firstUser},
 		},
+		Operation:       providers.NewInferenceOperation(providers.InferenceOperationTitle, providers.InferenceProfileBestEffort),
 		Effort:          titleRole.LegacyEffort,
 		ProviderOptions: modelvariant.CloneOptions(titleRole.ProviderOptions),
 	}
@@ -357,6 +358,7 @@ func streamTitleText(ctx context.Context, client providers.StreamClient, req pro
 // the streaming behavior — useful when the model returns a non-monotonic
 // sequence (replace / message events reset the buffer).
 func streamTitleTextWithDeltas(ctx context.Context, client providers.StreamClient, req providers.ChatRequest) (string, []string, error) {
+	req.Operation = providers.EnsureInferenceOperation(req.Operation, providers.InferenceOperationTitle, providers.InferenceProfileBestEffort)
 	reliableClient := providers.NewReliableStreamClient(client, providers.RetryConfig{MaxRetries: 3}, nil)
 	events, err := reliableClient.StreamChat(ctx, req)
 	if err != nil {
@@ -380,6 +382,11 @@ func streamTitleTextWithDeltas(ctx context.Context, client providers.StreamClien
 				deltas = append(deltas, "[message:"+ev.Message.Content+"]")
 				b.Reset()
 				b.WriteString(ev.Message.Content)
+			}
+		case providers.EventLifecycle:
+			if ev.Lifecycle != nil && ev.Lifecycle.Phase == providers.StreamPhaseReconnecting && ev.Lifecycle.ResetPartial {
+				deltas = append(deltas, "[attempt-reset]")
+				b.Reset()
 			}
 		case providers.EventError:
 			if ev.Error != nil {
