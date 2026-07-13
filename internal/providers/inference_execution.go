@@ -618,37 +618,59 @@ func (a InferenceAttempt) Complete(outcome InferenceTerminalOutcome, failure Nor
 	return nil
 }
 
-func (a InferenceAttempt) RecordRecovery(plan RecoveryPlan, retryAt time.Time) error {
+func (a InferenceAttempt) PrepareRecoveryAttempt(ctx context.Context, plan RecoveryPlan, retryAt time.Time) (InferenceAttempt, error) {
 	if !a.Valid() {
-		return errors.New("record recovery without a valid inference attempt")
+		return InferenceAttempt{}, errors.New("prepare recovery without a valid inference attempt")
 	}
 	e := a.execution
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.journalErr != nil {
-		return e.journalErr
+		return InferenceAttempt{}, e.journalErr
 	}
-	if e.workflow != nil && e.workflow.spend != nil {
-		if err := e.workflow.spend.ReserveRecovery(a.ID, plan, retryAt); err != nil {
+	if e.terminal {
+		return InferenceAttempt{}, errors.New("inference operation is already terminal")
+	}
+	nextOrdinal := e.nextAttempt + 1
+	nextAttempt := InferenceAttempt{
+		ID: e.operation.AttemptID(nextOrdinal), Ordinal: nextOrdinal, execution: e,
+	}
+	now := time.Now().UTC()
+	persist := func() error {
+		if err := inferenceContextError(ctx); err != nil {
 			return err
 		}
+		if e.journal == nil {
+			return nil
+		}
+		return e.journal.PrepareRecoveryAttempt(ctx, InferenceRecoveryAttemptJournalRecord{
+			Recovery: InferenceRecoveryJournalRecord{
+				OperationID: e.operation.ID, AttemptID: a.ID,
+				Action: plan.Action, RetryAt: retryAt, At: now,
+			},
+			NextAttempt: InferenceAttemptJournalRecord{
+				OperationID: e.operation.ID, WorkflowID: e.operation.WorkflowID,
+				AttemptID: nextAttempt.ID, Ordinal: nextAttempt.Ordinal,
+				RequestHash: e.requestHash, At: now,
+			},
+		})
 	}
-	if e.journal == nil {
-		return nil
+	var err error
+	if e.workflow != nil && e.workflow.spend != nil {
+		err = e.workflow.spend.AdmitRecoveryAttempt(
+			e.operation, a.ID, nextAttempt.ID, nextAttempt.Ordinal, plan, retryAt, persist,
+		)
+	} else {
+		err = persist()
 	}
-	if err := e.journal.RecordRecovery(InferenceRecoveryJournalRecord{
-		OperationID: e.operation.ID,
-		AttemptID:   a.ID,
-		Action:      plan.Action,
-		RetryAt:     retryAt,
-		At:          time.Now().UTC(),
-	}); err != nil {
-		if !IsWorkflowBudgetError(err) {
+	if err != nil {
+		if !IsWorkflowBudgetError(err) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			e.journalErr = err
 		}
-		return err
+		return InferenceAttempt{}, err
 	}
-	return nil
+	e.nextAttempt = nextOrdinal
+	return nextAttempt, nil
 }
 
 func (e *InferenceExecution) Complete(outcome InferenceTerminalOutcome, failure NormalizedFailure) error {

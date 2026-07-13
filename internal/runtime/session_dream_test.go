@@ -38,7 +38,7 @@ func (*dreamRecordingJournal) MarkAttemptFirstEvent(string, string, string, time
 func (*dreamRecordingJournal) CompleteAttempt(providers.InferenceAttemptTerminalRecord) error {
 	return nil
 }
-func (*dreamRecordingJournal) RecordRecovery(providers.InferenceRecoveryJournalRecord) error {
+func (*dreamRecordingJournal) PrepareRecoveryAttempt(context.Context, providers.InferenceRecoveryAttemptJournalRecord) error {
 	return nil
 }
 func (*dreamRecordingJournal) CompleteOperation(providers.InferenceOperationTerminalRecord) error {

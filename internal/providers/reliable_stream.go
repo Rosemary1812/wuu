@@ -37,14 +37,25 @@ func WithStreamReplayGuard(guard StreamReplayGuard) ReliableStreamOption {
 	}
 }
 
+// WithStreamRetryWait replaces only the passage of backoff time. Recovery
+// limits and delays still come from the operation workload profile, so this
+// seam can make tests deterministic without creating a second policy source.
+func WithStreamRetryWait(wait func(context.Context, time.Duration) error) ReliableStreamOption {
+	return func(client *ReliableStreamClient) {
+		if wait != nil {
+			client.wait = wait
+		}
+	}
+}
+
 // ReliableStreamClient wraps a StreamClient and transparently retries dropped
 // streams. Callers receive a single output channel; reconnectable inner errors
 // are consumed internally and only the final unrecoverable error is forwarded.
 type ReliableStreamClient struct {
 	inner       StreamClient
-	cfg         RetryConfig
 	onRetry     StreamRetryHook
 	replayGuard StreamReplayGuard
+	wait        func(context.Context, time.Duration) error
 }
 
 // ReplayBlockedError reports a retryable transport failure that Wuu chose not
@@ -71,13 +82,13 @@ func (e *ReplayBlockedError) Unwrap() error {
 	return e.Cause
 }
 
-// NewReliableStreamClient constructs a ReliableStreamClient.
-// cfg is normalized before use. onRetry may be nil.
-func NewReliableStreamClient(inner StreamClient, cfg RetryConfig, onRetry StreamRetryHook, options ...ReliableStreamOption) *ReliableStreamClient {
+// NewReliableStreamClient constructs a ReliableStreamClient. Recovery policy
+// is resolved from each request operation after request normalization.
+func NewReliableStreamClient(inner StreamClient, onRetry StreamRetryHook, options ...ReliableStreamOption) *ReliableStreamClient {
 	client := &ReliableStreamClient{
 		inner:   inner,
-		cfg:     NormalizeRetryConfig(cfg),
 		onRetry: onRetry,
+		wait:    waitWithContext,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -120,20 +131,33 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 		return
 	}
 	operation := req.Operation
+	cfg := NormalizeRetryConfig(RetryConfigForProfile(operation.WorkloadProfile))
 	startedAt := time.Now()
-	maxAttempts := req.Execution.Snapshot().Attempts + r.cfg.MaxRetries + 1
-	retriesUsed := 0
+	maxAttempts := operation.AttemptLimit
+	maxRetries := maxAttempts - 1
+	var preparedNextAttempt InferenceAttempt
 	for {
 		if ctx.Err() != nil {
+			if preparedNextAttempt.Valid() {
+				_ = preparedNextAttempt.Complete(InferenceOutcomeCanceled, NormalizeFailure(ctx.Err()))
+			}
 			return
 		}
-		attemptReq, beginErr := BeginInferenceAttemptContext(ctx, req, operation.Kind, operation.WorkloadProfile)
-		if beginErr != nil {
-			r.send(ctx, out, StreamEvent{Type: EventError, Error: beginErr})
-			return
+		attemptReq := req
+		if preparedNextAttempt.Valid() {
+			attemptReq.Attempt = preparedNextAttempt
+			preparedNextAttempt = InferenceAttempt{}
+		} else {
+			var beginErr error
+			attemptReq, beginErr = BeginInferenceAttemptContext(ctx, req, operation.Kind, operation.WorkloadProfile)
+			if beginErr != nil {
+				r.send(ctx, out, StreamEvent{Type: EventError, Error: beginErr})
+				return
+			}
 		}
 		attempt := attemptReq.Attempt
-		if !r.sendLifecycle(ctx, out, attemptReq.Execution, operation, StreamPhaseConnecting, attempt.ID, attempt.Ordinal, maxAttempts, retriesUsed, nil, 0, false, startedAt) {
+		retriesUsed := attempt.Ordinal - 1
+		if !r.sendLifecycle(ctx, out, attemptReq.Execution, operation, StreamPhaseConnecting, attempt.ID, attempt.Ordinal, maxAttempts, retriesUsed, maxRetries, nil, 0, false, startedAt) {
 			_ = attempt.Complete(InferenceOutcomeCanceled, NormalizeFailure(ctx.Err()))
 			return
 		}
@@ -144,7 +168,7 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 		var finalizedToolCalls []ToolCall
 		if err == nil {
 			var sawDone bool
-			err, sawDone, forwardedEvents, finalizedToolCalls = r.forwardAttempt(attemptCtx, ch, out, attemptReq.Execution, operation, attempt, maxAttempts, retriesUsed, startedAt)
+			err, sawDone, forwardedEvents, finalizedToolCalls = r.forwardAttempt(attemptCtx, ch, out, attemptReq.Execution, operation, attempt, maxAttempts, retriesUsed, maxRetries, startedAt)
 			cancelAttempt()
 			if ctx.Err() != nil {
 				failure := NormalizeFailure(ctx.Err())
@@ -170,7 +194,7 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 		}
 		failure := NormalizeFailure(err)
 		plan := PlanRecovery(failure)
-		canRetry := ctx.Err() == nil && retriesUsed < r.cfg.MaxRetries && streamRecoverySupported(r.inner, plan)
+		canRetry := ctx.Err() == nil && attempt.Ordinal < maxAttempts && streamRecoverySupported(r.inner, plan)
 		if canRetry && r.replayGuard != nil {
 			if guardErr := r.replayGuard(StreamRetryContext{
 				Operation:          operation,
@@ -194,7 +218,7 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 				failure = NormalizeFailure(journalErr)
 				outcome = InferenceOutcomeFailed
 			}
-			if !r.sendLifecycle(ctx, out, attemptReq.Execution, operation, StreamPhaseFailed, attempt.ID, attempt.Ordinal, maxAttempts, retriesUsed, err, 0, false, startedAt) {
+			if !r.sendLifecycle(ctx, out, attemptReq.Execution, operation, StreamPhaseFailed, attempt.ID, attempt.Ordinal, maxAttempts, retriesUsed, maxRetries, err, 0, false, startedAt) {
 				return
 			}
 			r.send(ctx, out, StreamEvent{Type: EventError, Error: err})
@@ -203,37 +227,43 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 
 		delay := time.Duration(0)
 		if plan.Action != RecoveryRefreshAuth {
-			delay = backoffDelay(retriesUsed, r.cfg.InitialDelay, r.cfg.MaxDelay, err)
+			delay = backoffDelay(retriesUsed, cfg.InitialDelay, cfg.MaxDelay, err)
 		}
 		if journalErr := attempt.Complete(InferenceOutcomeFailed, failure); journalErr != nil {
 			r.send(ctx, out, StreamEvent{Type: EventError, Error: journalErr})
 			return
 		}
-		if journalErr := attempt.RecordRecovery(plan, time.Now().Add(delay)); journalErr != nil {
+		nextAttempt, journalErr := attempt.PrepareRecoveryAttempt(ctx, plan, time.Now().Add(delay))
+		if journalErr != nil {
 			r.send(ctx, out, StreamEvent{Type: EventError, Error: journalErr})
 			return
 		}
 		if ctx.Err() != nil {
+			_ = nextAttempt.Complete(InferenceOutcomeCanceled, NormalizeFailure(ctx.Err()))
 			return
 		}
 		if plan.Action == RecoveryRefreshAuth {
 			applier := r.inner.(InferenceRecoveryApplier)
 			if applyErr := applier.ApplyInferenceRecovery(ctx, plan); applyErr != nil {
+				_ = nextAttempt.Complete(InferenceOutcomeFailed, NormalizeFailure(applyErr))
 				r.send(ctx, out, StreamEvent{Type: EventError, Error: errors.Join(err, applyErr)})
 				return
 			}
 		}
-		retriesUsed++
+		retriesUsed = attempt.Ordinal
 		nextAttemptOrdinal := attempt.Ordinal + 1
-		if !r.sendLifecycle(ctx, out, attemptReq.Execution, operation, StreamPhaseReconnecting, operation.AttemptID(nextAttemptOrdinal), nextAttemptOrdinal, maxAttempts, retriesUsed, err, delay, forwardedEvents > 0, startedAt) {
+		if !r.sendLifecycle(ctx, out, attemptReq.Execution, operation, StreamPhaseReconnecting, operation.AttemptID(nextAttemptOrdinal), nextAttemptOrdinal, maxAttempts, retriesUsed, maxRetries, err, delay, forwardedEvents > 0, startedAt) {
+			_ = nextAttempt.Complete(InferenceOutcomeCanceled, NormalizeFailure(ctx.Err()))
 			return
 		}
 		if r.onRetry != nil {
-			r.onRetry(retriesUsed, r.cfg.MaxRetries, err, delay)
+			r.onRetry(retriesUsed, maxRetries, err, delay)
 		}
-		if waitWithContext(ctx, delay) != nil {
+		if r.wait(ctx, delay) != nil {
+			_ = nextAttempt.Complete(InferenceOutcomeCanceled, NormalizeFailure(ctx.Err()))
 			return
 		}
+		preparedNextAttempt = nextAttempt
 	}
 }
 
@@ -246,6 +276,7 @@ func (r *ReliableStreamClient) forwardAttempt(
 	attempt InferenceAttempt,
 	maxAttempts int,
 	retryCount int,
+	maxRetries int,
 	startedAt time.Time,
 ) (error, bool, int, []ToolCall) {
 	var streamErr error
@@ -258,7 +289,7 @@ func (r *ReliableStreamClient) forwardAttempt(
 			return err, sawDone, forwardedEvents, finalizedToolCalls
 		}
 		if !connected {
-			if !r.sendLifecycle(ctx, out, execution, operation, StreamPhaseConnected, attempt.ID, attempt.Ordinal, maxAttempts, retryCount, nil, 0, false, startedAt) {
+			if !r.sendLifecycle(ctx, out, execution, operation, StreamPhaseConnected, attempt.ID, attempt.Ordinal, maxAttempts, retryCount, maxRetries, nil, 0, false, startedAt) {
 				return streamErr, sawDone, forwardedEvents, finalizedToolCalls
 			}
 			connected = true
@@ -295,6 +326,7 @@ func (r *ReliableStreamClient) sendLifecycle(
 	attempt int,
 	maxAttempts int,
 	retryCount int,
+	maxRetries int,
 	reason error,
 	retryIn time.Duration,
 	resetPartial bool,
@@ -317,7 +349,7 @@ func (r *ReliableStreamClient) sendLifecycle(
 		SubmissionID:    lastSubmissionID,
 		SubmissionCount: len(snapshot.Submissions),
 		RetryCount:      retryCount,
-		MaxRetries:      r.cfg.MaxRetries,
+		MaxRetries:      maxRetries,
 		RetryIn:         retryIn,
 		Elapsed:         time.Since(startedAt),
 		ResetPartial:    resetPartial,

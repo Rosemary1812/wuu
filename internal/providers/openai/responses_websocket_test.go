@@ -18,6 +18,8 @@ import (
 	"github.com/coder/websocket"
 )
 
+func immediateStreamRetryWait(context.Context, time.Duration) error { return nil }
+
 func TestResolveCodexWebSocketURL(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -320,7 +322,7 @@ func TestResponsesStreamChatWebSocket_UsesPreviousResponseIDDelta(t *testing.T) 
 		t.Fatalf("unexpected first provider state: %+v", firstStates)
 	}
 
-	reliable := providers.NewReliableStreamClient(client, providers.RetryConfig{MaxRetries: 1, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond}, nil)
+	reliable := providers.NewReliableStreamClient(client, nil, providers.WithStreamRetryWait(immediateStreamRetryWait))
 	ch, err = reliable.StreamChat(context.Background(), providers.ChatRequest{
 		Model: "gpt-test",
 		Messages: []providers.ChatMessage{
@@ -1143,7 +1145,7 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterTransportCloseBeforeFir
 		},
 		{Role: "user", Content: "second"},
 	}
-	reliable := providers.NewReliableStreamClient(client, providers.RetryConfig{MaxRetries: 1, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond}, nil)
+	reliable := providers.NewReliableStreamClient(client, nil, providers.WithStreamRetryWait(immediateStreamRetryWait))
 	ch, err = reliable.StreamChat(context.Background(), providers.ChatRequest{
 		Model:     "gpt-test",
 		Messages:  followUp,
@@ -1379,7 +1381,7 @@ func TestResponsesStreamChatWebSocket_SwitchesToSSEOnConnectionLimit(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	reliable := providers.NewReliableStreamClient(client, providers.RetryConfig{MaxRetries: 2, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond}, nil)
+	reliable := providers.NewReliableStreamClient(client, nil, providers.WithStreamRetryWait(immediateStreamRetryWait))
 	ch, err := reliable.StreamChat(context.Background(), req)
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
@@ -1482,7 +1484,7 @@ func TestResponsesStreamChatWebSocket_PersistsSSEFallbackAfterConnectionLimit(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	reliable := providers.NewReliableStreamClient(client, providers.RetryConfig{MaxRetries: 2, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond}, nil)
+	reliable := providers.NewReliableStreamClient(client, nil, providers.WithStreamRetryWait(immediateStreamRetryWait))
 	ch, err := reliable.StreamChat(context.Background(), req)
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)

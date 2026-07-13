@@ -124,7 +124,7 @@ func TestCoordinatorReleasesWebSocketLeaseBeforeSSEFallback(t *testing.T) {
 	client := coordinatedResponsesWebSocketClient(t, server, coordinator, NewResponsesWebSocketCache())
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	reliable := providers.NewReliableStreamClient(client, providers.RetryConfig{MaxRetries: 1, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond}, nil)
+	reliable := providers.NewReliableStreamClient(client, nil, providers.WithStreamRetryWait(immediateStreamRetryWait))
 	stream, err := reliable.StreamChat(ctx, coordinatedResponsesRequest("fallback-no-deadlock"))
 	if err != nil {
 		t.Fatal(err)

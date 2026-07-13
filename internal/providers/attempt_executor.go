@@ -31,8 +31,6 @@ func ExecuteChat(
 	kind InferenceOperationKind,
 	profile InferenceWorkloadProfile,
 ) (ChatResponse, error) {
-	cfg := NormalizeRetryConfig(RetryConfigForProfile(profile))
-	retriesUsed := 0
 	for {
 		resp, prepared, callErr := ExecuteChatAttempt(ctx, client, req, kind, profile)
 		if prepared.Execution == nil {
@@ -46,8 +44,9 @@ func ExecuteChat(
 			return resp, nil
 		}
 
+		cfg := NormalizeRetryConfig(RetryConfigForProfile(prepared.Operation.WorkloadProfile))
 		plan := PlanRecovery(failure)
-		canRetry := retriesUsed < cfg.MaxRetries && unaryRecoverySupported(client, plan)
+		canRetry := prepared.Attempt.Ordinal < prepared.Operation.AttemptLimit && unaryRecoverySupported(client, plan)
 		if ctx.Err() != nil || !canRetry {
 			if journalErr := prepared.Execution.Complete(outcome, failure); journalErr != nil {
 				return resp, errors.Join(callErr, journalErr)
@@ -56,43 +55,43 @@ func ExecuteChat(
 		}
 		delay := time.Duration(0)
 		if plan.Action != RecoveryRefreshAuth {
-			delay = backoffDelay(retriesUsed, cfg.InitialDelay, cfg.MaxDelay, callErr)
+			delay = backoffDelay(prepared.Attempt.Ordinal-1, cfg.InitialDelay, cfg.MaxDelay, callErr)
 		}
-		if journalErr := prepared.Attempt.RecordRecovery(plan, time.Now().Add(delay)); journalErr != nil {
-			if IsWorkflowBudgetError(journalErr) {
-				budgetFailure := NormalizeFailure(journalErr)
-				completeErr := prepared.Execution.Complete(InferenceOutcomeFailed, budgetFailure)
-				return resp, errors.Join(callErr, journalErr, completeErr)
-			}
-			return resp, errors.Join(callErr, journalErr)
+		nextAttempt, journalErr := prepared.Attempt.PrepareRecoveryAttempt(ctx, plan, time.Now().Add(delay))
+		if journalErr != nil {
+			recoveryOutcome, recoveryFailure := inferenceTerminalFromError(journalErr)
+			completeErr := prepared.Execution.Complete(recoveryOutcome, recoveryFailure)
+			return resp, errors.Join(callErr, journalErr, completeErr)
 		}
+		req = prepared
+		req.Attempt = nextAttempt
 		if cancelErr := inferenceContextError(ctx); cancelErr != nil {
+			attemptErr := nextAttempt.Complete(InferenceOutcomeCanceled, NormalizeFailure(cancelErr))
 			journalErr := prepared.Execution.Complete(InferenceOutcomeCanceled, NormalizeFailure(cancelErr))
-			return resp, errors.Join(cancelErr, journalErr)
+			return resp, errors.Join(cancelErr, attemptErr, journalErr)
 		}
 		if plan.Action == RecoveryRefreshAuth {
 			applier := client.(InferenceRecoveryApplier)
 			if applyErr := applier.ApplyInferenceRecovery(ctx, plan); applyErr != nil {
+				attemptErr := nextAttempt.Complete(InferenceOutcomeFailed, NormalizeFailure(applyErr))
 				journalErr := prepared.Execution.Complete(InferenceOutcomeFailed, NormalizeFailure(applyErr))
-				return resp, errors.Join(callErr, applyErr, journalErr)
+				return resp, errors.Join(callErr, applyErr, attemptErr, journalErr)
 			}
 		}
 		if delay > 0 {
 			if waitErr := waitWithContext(ctx, delay); waitErr != nil {
+				attemptErr := nextAttempt.Complete(InferenceOutcomeCanceled, NormalizeFailure(waitErr))
 				journalErr := prepared.Execution.Complete(InferenceOutcomeCanceled, NormalizeFailure(waitErr))
-				return resp, errors.Join(waitErr, journalErr)
+				return resp, errors.Join(waitErr, attemptErr, journalErr)
 			}
 		}
-		retriesUsed++
-		req.Operation = prepared.Operation
-		req.Execution = prepared.Execution
-		req.Attempt = InferenceAttempt{}
 	}
 }
 
 // InferenceRecoveryApplier performs a protocol-local mutation selected by the
-// shared planner, such as refreshing an OAuth credential. It must not submit
-// the inference request; the executor creates the next attempt afterwards.
+// shared planner, such as refreshing an OAuth credential. The executor
+// durably prepares the next attempt before calling it; the applier must not
+// submit the inference request itself.
 type InferenceRecoveryApplier interface {
 	ApplyInferenceRecovery(context.Context, RecoveryPlan) error
 }
@@ -124,11 +123,11 @@ func ExecuteChatAttempt(
 	var err error
 	req, err = prepareInferenceRequest(ctx, client, req)
 	if err != nil {
-		return ChatResponse{}, req, err
+		return ChatResponse{}, req, completePreparedAttemptError(req, err)
 	}
 	prepared, err := EnsureInferenceAttemptContext(ctx, req, kind, profile)
 	if err != nil {
-		return ChatResponse{}, prepared, err
+		return ChatResponse{}, prepared, completePreparedAttemptError(prepared, err)
 	}
 	resp, callErr := client.Chat(ctx, prepared)
 	outcome, failure := inferenceTerminalFromError(callErr)
@@ -139,6 +138,17 @@ func ExecuteChatAttempt(
 		return resp, prepared, journalErr
 	}
 	return resp, prepared, callErr
+}
+
+func completePreparedAttemptError(req ChatRequest, cause error) error {
+	if !req.Attempt.Valid() {
+		return cause
+	}
+	outcome, failure := inferenceTerminalFromError(cause)
+	if err := req.Attempt.Complete(outcome, failure); err != nil {
+		return errors.Join(cause, err)
+	}
+	return cause
 }
 
 func inferenceTerminalFromError(err error) (InferenceTerminalOutcome, NormalizedFailure) {

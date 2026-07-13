@@ -140,20 +140,27 @@ func TestWorkflowBudgetRecoveryReservationsAreTypedAndIdempotent(t *testing.T) {
 		MaxRecoveryWaitMillis:  LimitedBudget(0),
 	})
 	budget := workflow.spend
-	refresh := RecoveryPlan{Action: RecoveryRefreshAuth}
-	if err := budget.ReserveRecovery("attempt-1", refresh, time.Time{}); err != nil {
+	operation := NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive)
+	operation.WorkflowID = workflow.ID
+	execution, err := newInferenceExecution(operation, workflow)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := budget.ReserveRecovery("attempt-1", refresh, time.Time{}); err != nil {
+	firstAttempt := execution.BeginAttempt()
+	refresh := RecoveryPlan{Action: RecoveryRefreshAuth}
+	if err := budget.AdmitRecoveryAttempt(operation, firstAttempt.ID, operation.AttemptID(2), 2, refresh, time.Time{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := budget.AdmitRecoveryAttempt(operation, firstAttempt.ID, operation.AttemptID(2), 2, refresh, time.Time{}, nil); err != nil {
 		t.Fatalf("idempotent recovery reservation: %v", err)
 	}
-	if err := budget.ReserveRecovery("attempt-2", refresh, time.Time{}); err == nil {
+	if err := budget.AdmitRecoveryAttempt(operation, operation.AttemptID(2), operation.AttemptID(3), 3, refresh, time.Time{}, nil); err == nil {
 		t.Fatal("second credential refresh was admitted")
 	}
-	if err := budget.ReserveRecovery("attempt-3", RecoveryPlan{Action: RecoverySwitchTransport}, time.Time{}); err == nil {
+	if err := budget.AdmitRecoveryAttempt(operation, operation.AttemptID(2), operation.AttemptID(3), 3, RecoveryPlan{Action: RecoverySwitchTransport}, time.Time{}, nil); err == nil {
 		t.Fatal("transport switch with a hard zero limit was admitted")
 	}
-	if err := budget.ReserveRecovery("attempt-4", RecoveryPlan{Action: RecoveryReplaySame}, time.Now().Add(time.Second)); err == nil {
+	if err := budget.AdmitRecoveryAttempt(operation, operation.AttemptID(2), operation.AttemptID(3), 3, RecoveryPlan{Action: RecoveryReplaySame}, time.Now().Add(time.Second), nil); err == nil {
 		t.Fatal("recovery wait with a hard zero limit was admitted")
 	}
 	if got := workflow.SpendSnapshot().CredentialRefreshes; got != 1 {

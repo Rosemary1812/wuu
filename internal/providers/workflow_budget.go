@@ -463,20 +463,54 @@ func (b *WorkflowBudget) SettleSubmission(submission InferenceSubmission) {
 	b.submissions[submission.ID] = next
 }
 
-func (b *WorkflowBudget) ReserveRecovery(attemptID string, plan RecoveryPlan, retryAt time.Time) error {
+func (b *WorkflowBudget) AdmitRecoveryAttempt(
+	operation InferenceOperation,
+	attemptID string,
+	nextAttemptID string,
+	nextOrdinal int,
+	plan RecoveryPlan,
+	retryAt time.Time,
+	persist func() error,
+) error {
 	if b == nil {
+		if persist != nil {
+			return persist()
+		}
 		return nil
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	attemptID = strings.TrimSpace(attemptID)
+	spend, ok := b.operations[operation.ID]
+	if !ok {
+		return fmt.Errorf("inference operation %q is not registered in workflow %q", operation.ID, b.workflowID)
+	}
+	if _, ok := spend.attempts[attemptID]; !ok {
+		return fmt.Errorf("inference attempt %q is not registered in operation %q", attemptID, operation.ID)
+	}
 	if existing, ok := b.recoveries[attemptID]; ok {
-		if existing.Action == plan.Action {
+		_, attemptExists := spend.attempts[nextAttemptID]
+		if existing.Action == plan.Action && attemptExists {
 			return nil
 		}
 		return fmt.Errorf("attempt %q already reserved recovery %q", attemptID, existing.Action)
 	}
+	if _, ok := spend.attempts[nextAttemptID]; ok {
+		return fmt.Errorf("attempt %q exists without recovery from %q", nextAttemptID, attemptID)
+	}
 	if err := b.checkCostLocked(); err != nil {
+		return err
+	}
+	if operation.AttemptLimit > 0 && uint64(nextOrdinal) > uint64(operation.AttemptLimit) {
+		return &WorkflowBudgetExceededError{
+			WorkflowID: b.workflowID, Dimension: WorkflowBudgetAttempts,
+			Limit: uint64(operation.AttemptLimit), Used: uint64(len(spend.attempts)), Requested: 1,
+		}
+	}
+	if err := b.checkLocked(WorkflowBudgetAttempts, b.spec.MaxAttempts, b.snapshot.Attempts, 1); err != nil {
+		return err
+	}
+	if err := b.checkLocked(WorkflowBudgetSamePayloadReplays, b.spec.MaxSamePayloadReplays, b.snapshot.SamePayloadReplays, 1); err != nil {
 		return err
 	}
 	dimension, limit, used := b.recoveryDimensionLocked(plan.Action)
@@ -495,6 +529,14 @@ func (b *WorkflowBudget) ReserveRecovery(attemptID string, plan RecoveryPlan, re
 	if err := b.checkLocked(WorkflowBudgetRecoveryWait, b.spec.MaxRecoveryWaitMillis, b.snapshot.RecoveryWaitMillis, waitMillis); err != nil {
 		return err
 	}
+	if persist != nil {
+		if err := persist(); err != nil {
+			return err
+		}
+	}
+	spend.attempts[nextAttemptID] = struct{}{}
+	b.snapshot.Attempts++
+	b.snapshot.SamePayloadReplays++
 	b.recoveries[attemptID] = plan
 	switch plan.Action {
 	case RecoverySwitchTransport:

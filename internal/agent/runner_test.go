@@ -28,7 +28,7 @@ func (*workflowRecordingJournal) MarkAttemptFirstEvent(string, string, string, t
 func (*workflowRecordingJournal) CompleteAttempt(providers.InferenceAttemptTerminalRecord) error {
 	return nil
 }
-func (*workflowRecordingJournal) RecordRecovery(providers.InferenceRecoveryJournalRecord) error {
+func (*workflowRecordingJournal) PrepareRecoveryAttempt(context.Context, providers.InferenceRecoveryAttemptJournalRecord) error {
 	return nil
 }
 func (*workflowRecordingJournal) CompleteOperation(providers.InferenceOperationTerminalRecord) error {

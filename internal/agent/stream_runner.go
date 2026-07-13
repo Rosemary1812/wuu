@@ -787,12 +787,14 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 			})
 		}
 		completedAttempt := req.Execution.LatestAttempt()
-		if err := completedAttempt.RecordRecovery(providers.RecoveryPlan{
+		nextAttempt, err := completedAttempt.PrepareRecoveryAttempt(ctx, providers.RecoveryPlan{
 			Action: providers.RecoverySwitchTransport,
 			Reason: "empty streaming response",
-		}, time.Time{}); err != nil {
+		}, time.Time{})
+		if err != nil {
 			return StepResult{}, fmt.Errorf("record non-streaming fallback: %w", err)
 		}
+		req.Attempt = nextAttempt
 		resp, err := providers.ExecuteChat(ctx, s.client, req, req.Operation.Kind, req.Operation.WorkloadProfile)
 		if err != nil {
 			return StepResult{}, fmt.Errorf("non-streaming fallback failed: %w", err)
@@ -936,7 +938,6 @@ func (s *streamStep) runReliableStream(
 	onAttemptStart func(),
 	replayGuard providers.StreamReplayGuard,
 ) error {
-	cfg := providers.RetryConfigForProfile(req.Operation.WorkloadProfile)
 	onEvent := s.onEvent
 
 	resetPartialOutput := func() {
@@ -1007,7 +1008,7 @@ func (s *streamStep) runReliableStream(
 			onAttemptStart()
 		}
 
-		client := providers.NewReliableStreamClient(s.client, cfg, onRetry, providers.WithStreamReplayGuard(replayGuard))
+		client := providers.NewReliableStreamClient(s.client, onRetry, providers.WithStreamReplayGuard(replayGuard))
 		ch, err := client.StreamChat(ctx, req)
 		if err != nil {
 			return err

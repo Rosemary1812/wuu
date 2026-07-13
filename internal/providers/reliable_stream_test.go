@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -43,8 +44,17 @@ func (m *reliableStreamMockClient) StreamChat(_ context.Context, req ChatRequest
 	return ch, nil
 }
 
-func reliableTestRetryConfig(maxRetries int) RetryConfig {
-	return RetryConfig{MaxRetries: maxRetries, InitialDelay: time.Nanosecond, MaxDelay: time.Nanosecond}
+func reliableTestRetryWait(context.Context, time.Duration) error {
+	return nil
+}
+
+func newReliableTestClient(inner StreamClient, onRetry StreamRetryHook, options ...ReliableStreamOption) *ReliableStreamClient {
+	options = append(options, WithStreamRetryWait(reliableTestRetryWait))
+	return NewReliableStreamClient(inner, onRetry, options...)
+}
+
+func reliableTestRequest() ChatRequest {
+	return ChatRequest{Operation: NewInferenceOperation(InferenceOperationAuxiliary, InferenceProfileBestEffort)}
 }
 
 func collectReliableEvents(t *testing.T, ch <-chan StreamEvent) []StreamEvent {
@@ -89,8 +99,8 @@ func TestReliableStreamClientSingleSuccess(t *testing.T) {
 		{Type: EventContentDelta, Content: "ok"},
 		{Type: EventDone},
 	}}}}
-	client := NewReliableStreamClient(inner, reliableTestRetryConfig(3), nil)
-	ch, err := client.StreamChat(context.Background(), ChatRequest{})
+	client := newReliableTestClient(inner, nil)
+	ch, err := client.StreamChat(context.Background(), reliableTestRequest())
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
@@ -124,10 +134,10 @@ func TestReliableStreamClientRetriesStreamErrorsThenSucceeds(t *testing.T) {
 		{events: []StreamEvent{{Type: EventContentDelta, Content: "ok"}, {Type: EventDone}}},
 	}}
 	var attempts []int
-	client := NewReliableStreamClient(inner, reliableTestRetryConfig(3), func(attempt, _ int, _ error, _ time.Duration) {
+	client := newReliableTestClient(inner, func(attempt, _ int, _ error, _ time.Duration) {
 		attempts = append(attempts, attempt)
 	})
-	ch, err := client.StreamChat(context.Background(), ChatRequest{})
+	ch, err := client.StreamChat(context.Background(), reliableTestRequest())
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
@@ -146,8 +156,8 @@ func TestReliableStreamClientRetriesConnectFailure(t *testing.T) {
 		{events: []StreamEvent{{Type: EventContentDelta, Content: "ok"}, {Type: EventDone}}},
 	}}
 	var retries int
-	client := NewReliableStreamClient(inner, reliableTestRetryConfig(3), func(int, int, error, time.Duration) { retries++ })
-	ch, err := client.StreamChat(context.Background(), ChatRequest{})
+	client := newReliableTestClient(inner, func(int, int, error, time.Duration) { retries++ })
+	ch, err := client.StreamChat(context.Background(), reliableTestRequest())
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
@@ -187,8 +197,8 @@ func TestReliableStreamClientRetriesTypedGatewayFailures(t *testing.T) {
 				{err: test.err},
 				{events: []StreamEvent{{Type: EventContentDelta, Content: "recovered"}, {Type: EventDone}}},
 			}}
-			client := NewReliableStreamClient(inner, reliableTestRetryConfig(2), nil)
-			ch, err := client.StreamChat(context.Background(), ChatRequest{})
+			client := newReliableTestClient(inner, nil)
+			ch, err := client.StreamChat(context.Background(), reliableTestRequest())
 			if err != nil {
 				t.Fatalf("StreamChat: %v", err)
 			}
@@ -209,10 +219,10 @@ func TestReliableStreamClientEmitsFinalErrorAfterMaxRetries(t *testing.T) {
 		{events: []StreamEvent{{Type: EventError, Error: retryErr}}},
 	}}
 	var attempts []int
-	client := NewReliableStreamClient(inner, reliableTestRetryConfig(3), func(attempt, _ int, _ error, _ time.Duration) {
+	client := newReliableTestClient(inner, func(attempt, _ int, _ error, _ time.Duration) {
 		attempts = append(attempts, attempt)
 	})
-	ch, err := client.StreamChat(context.Background(), ChatRequest{})
+	ch, err := client.StreamChat(context.Background(), reliableTestRequest())
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
@@ -225,19 +235,75 @@ func TestReliableStreamClientEmitsFinalErrorAfterMaxRetries(t *testing.T) {
 	}
 }
 
+func TestReliableStreamClientHonorsFrozenOperationAttemptLimit(t *testing.T) {
+	retryErr := NewIncompleteStreamError("temporary drop")
+	inner := &reliableStreamMockClient{attempts: []reliableStreamAttempt{
+		{events: []StreamEvent{{Type: EventError, Error: retryErr}}},
+		{events: []StreamEvent{{Type: EventDone}}},
+	}}
+	retries := 0
+	client := newReliableTestClient(inner, func(int, int, error, time.Duration) { retries++ })
+	req := reliableTestRequest()
+	req.Operation.AttemptLimit = 1
+	ch, err := client.StreamChat(context.Background(), req)
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	events := collectReliableEvents(t, ch)
+	if retries != 0 || inner.callCount != 1 {
+		t.Fatalf("retries=%d attempts=%d, want frozen single attempt", retries, inner.callCount)
+	}
+	var failed *StreamLifecycle
+	for _, lifecycle := range lifecycleEvents(events) {
+		if lifecycle.Phase == StreamPhaseReconnecting {
+			t.Fatalf("single-attempt operation emitted reconnecting lifecycle: %+v", lifecycle)
+		}
+		if lifecycle.Phase == StreamPhaseFailed {
+			failed = lifecycle
+		}
+	}
+	if failed == nil || failed.MaxAttempts != 1 || failed.MaxRetries != 0 {
+		t.Fatalf("failed lifecycle = %+v, want frozen 1/0 limit", failed)
+	}
+}
+
 func TestReliableStreamClientContextCancelStopsRetry(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	inner := &reliableStreamMockClient{attempts: []reliableStreamAttempt{
 		{events: []StreamEvent{{Type: EventError, Error: NewIncompleteStreamError("temporary drop")}}},
 		{events: []StreamEvent{{Type: EventDone}}},
 	}}
-	client := NewReliableStreamClient(inner, reliableTestRetryConfig(3), func(int, int, error, time.Duration) { cancel() })
-	ch, err := client.StreamChat(ctx, ChatRequest{})
+	client := newReliableTestClient(inner, func(int, int, error, time.Duration) { cancel() })
+	ch, err := client.StreamChat(ctx, reliableTestRequest())
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
 	if events := nonLifecycleEvents(collectReliableEvents(t, ch)); len(events) != 0 {
 		t.Fatalf("events = %+v, want closed without error", events)
+	}
+}
+
+func TestReliableStreamClientTerminalizesPreparedAttemptWhenWaitCancels(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	journal := &recordingInferenceJournal{}
+	inner := &reliableStreamMockClient{attempts: []reliableStreamAttempt{
+		{events: []StreamEvent{{Type: EventError, Error: NewIncompleteStreamError("temporary drop")}}},
+		{events: []StreamEvent{{Type: EventDone}}},
+	}}
+	client := NewReliableStreamClient(inner, nil, WithStreamRetryWait(func(context.Context, time.Duration) error {
+		cancel()
+		return nil
+	}))
+	ch, err := client.StreamChat(WithInferenceJournal(ctx, journal), reliableTestRequest())
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	_ = collectReliableEvents(t, ch)
+	if inner.callCount != 1 {
+		t.Fatalf("stream calls = %d, want no send from prepared recovery attempt", inner.callCount)
+	}
+	if got := strings.Join(journal.events, "|"); !strings.Contains(got, "recovery:replay_same_payload|attempt:prepared|attempt:canceled") {
+		t.Fatalf("prepared recovery attempt was not terminalized: %q", got)
 	}
 }
 
@@ -247,8 +313,8 @@ func TestReliableStreamClientDoesNotRetryNonRetryableError(t *testing.T) {
 		{events: []StreamEvent{{Type: EventDone}}},
 	}}
 	var retries int
-	client := NewReliableStreamClient(inner, reliableTestRetryConfig(3), func(int, int, error, time.Duration) { retries++ })
-	ch, err := client.StreamChat(context.Background(), ChatRequest{})
+	client := newReliableTestClient(inner, func(int, int, error, time.Duration) { retries++ })
+	ch, err := client.StreamChat(context.Background(), reliableTestRequest())
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
@@ -266,8 +332,8 @@ func TestReliableStreamClientDoesNotReplayLocalBackpressure(t *testing.T) {
 		{events: []StreamEvent{{Type: EventError, Error: &LocalBackpressureError{Component: "test reader"}}}},
 		{events: []StreamEvent{{Type: EventDone}}},
 	}}
-	client := NewReliableStreamClient(inner, reliableTestRetryConfig(3), nil)
-	ch, err := client.StreamChat(context.Background(), ChatRequest{})
+	client := newReliableTestClient(inner, nil)
+	ch, err := client.StreamChat(context.Background(), reliableTestRequest())
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
@@ -282,8 +348,8 @@ func TestReliableStreamClientRetriesTruncatedStream(t *testing.T) {
 		{events: []StreamEvent{{Type: EventContentDelta, Content: "partial"}}},
 		{events: []StreamEvent{{Type: EventContentDelta, Content: "ok"}, {Type: EventDone}}},
 	}}
-	client := NewReliableStreamClient(inner, reliableTestRetryConfig(3), nil)
-	ch, err := client.StreamChat(context.Background(), ChatRequest{})
+	client := newReliableTestClient(inner, nil)
+	ch, err := client.StreamChat(context.Background(), reliableTestRequest())
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
@@ -314,9 +380,8 @@ func TestReliableStreamClientReplayGuardBlocksUnsafeRetry(t *testing.T) {
 		{events: []StreamEvent{{Type: EventContentDelta, Content: "must not run"}, {Type: EventDone}}},
 	}}
 	guardReason := errors.New("tool already started")
-	client := NewReliableStreamClient(
+	client := newReliableTestClient(
 		inner,
-		reliableTestRetryConfig(3),
 		nil,
 		WithStreamReplayGuard(func(ctx StreamRetryContext) error {
 			if ctx.Attempt != 1 || ctx.ForwardedEvents != 1 || ctx.Operation.ID == "" {
@@ -325,7 +390,7 @@ func TestReliableStreamClientReplayGuardBlocksUnsafeRetry(t *testing.T) {
 			return guardReason
 		}),
 	)
-	ch, err := client.StreamChat(context.Background(), ChatRequest{})
+	ch, err := client.StreamChat(context.Background(), reliableTestRequest())
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}

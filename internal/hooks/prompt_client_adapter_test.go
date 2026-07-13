@@ -28,7 +28,9 @@ func (*adapterJournal) MarkAttemptFirstEvent(string, string, string, time.Time) 
 func (*adapterJournal) CompleteAttempt(providers.InferenceAttemptTerminalRecord) error {
 	return nil
 }
-func (*adapterJournal) RecordRecovery(providers.InferenceRecoveryJournalRecord) error { return nil }
+func (*adapterJournal) PrepareRecoveryAttempt(context.Context, providers.InferenceRecoveryAttemptJournalRecord) error {
+	return nil
+}
 func (*adapterJournal) CompleteOperation(providers.InferenceOperationTerminalRecord) error {
 	return nil
 }

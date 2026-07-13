@@ -50,11 +50,15 @@ func (j *recordingInferenceJournal) CompleteAttempt(record InferenceAttemptTermi
 	return nil
 }
 
-func (j *recordingInferenceJournal) RecordRecovery(record InferenceRecoveryJournalRecord) error {
-	j.record("recovery:" + string(record.Action))
+func (j *recordingInferenceJournal) PrepareRecoveryAttempt(ctx context.Context, record InferenceRecoveryAttemptJournalRecord) error {
 	if j.onRecovery != nil {
 		j.onRecovery()
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	j.record("recovery:" + string(record.Recovery.Action))
+	j.record("attempt:prepared")
 	return nil
 }
 
@@ -81,6 +85,11 @@ type alwaysRetryableClient struct {
 	calls int
 }
 
+type cancelAfterRefreshClient struct {
+	cancel context.CancelFunc
+	calls  int
+}
+
 func (c *alwaysRetryableClient) Chat(context.Context, ChatRequest) (ChatResponse, error) {
 	c.calls++
 	return ChatResponse{}, &HTTPError{StatusCode: 503, Body: "unavailable"}
@@ -93,6 +102,16 @@ func (c *refreshThenReplayClient) Chat(context.Context, ChatRequest) (ChatRespon
 
 func (c *refreshThenReplayClient) ApplyInferenceRecovery(context.Context, RecoveryPlan) error {
 	c.refreshes++
+	return nil
+}
+
+func (c *cancelAfterRefreshClient) Chat(context.Context, ChatRequest) (ChatResponse, error) {
+	c.calls++
+	return ChatResponse{}, MarkAuthRefreshable(&HTTPError{StatusCode: 401, Body: "expired"})
+}
+
+func (c *cancelAfterRefreshClient) ApplyInferenceRecovery(context.Context, RecoveryPlan) error {
+	c.cancel()
 	return nil
 }
 
@@ -200,7 +219,7 @@ func TestExecuteChatCancellationDuringRecoveryDoesNotCreateAttempt(t *testing.T)
 	if client.calls != 1 || client.refreshes != 0 {
 		t.Fatalf("client calls/refreshes = %d/%d, want 1/0", client.calls, client.refreshes)
 	}
-	want := "operation:prepared|attempt:prepared|attempt:failed|recovery:refresh_credential|operation:canceled|complete_workflow"
+	want := "operation:prepared|attempt:prepared|attempt:failed|operation:canceled|complete_workflow"
 	if got := strings.Join(journal.events, "|"); got != want {
 		t.Fatalf("journal events = %q, want %q", got, want)
 	}
@@ -224,7 +243,48 @@ func TestExecuteChatCompletesOperationWhenWorkflowRecoveryBudgetIsExhausted(t *t
 	if client.calls != 1 {
 		t.Fatalf("client calls = %d, want 1", client.calls)
 	}
-	want := "operation:prepared|attempt:prepared|attempt:failed|recovery:replay_same_payload|operation:failed"
+	want := "operation:prepared|attempt:prepared|attempt:failed|operation:failed"
+	if got := strings.Join(journal.events, "|"); got != want {
+		t.Fatalf("journal events = %q, want %q", got, want)
+	}
+}
+
+func TestExecuteChatHonorsFrozenOperationAttemptLimit(t *testing.T) {
+	journal := &recordingInferenceJournal{}
+	client := &alwaysRetryableClient{}
+	op := NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive)
+	op.AttemptLimit = 1
+
+	_, err := ExecuteChat(WithInferenceJournal(context.Background(), journal), client, ChatRequest{
+		Model: "test", Messages: []ChatMessage{{Role: "user", Content: "hello"}}, Operation: op,
+	}, InferenceOperationAgentRound, InferenceProfileInteractive)
+	if err == nil {
+		t.Fatal("ExecuteChat succeeded after retryable failure")
+	}
+	if client.calls != 1 {
+		t.Fatalf("client calls = %d, want frozen single attempt", client.calls)
+	}
+	want := "operation:prepared|attempt:prepared|attempt:failed|operation:failed|complete_workflow"
+	if got := strings.Join(journal.events, "|"); got != want {
+		t.Fatalf("journal events = %q, want %q", got, want)
+	}
+}
+
+func TestExecuteChatTerminalizesPreparedAttemptWhenCanceledAfterRecovery(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	journal := &recordingInferenceJournal{}
+	client := &cancelAfterRefreshClient{cancel: cancel}
+
+	_, err := ExecuteChat(WithInferenceJournal(ctx, journal), client, ChatRequest{
+		Model: "test", Messages: []ChatMessage{{Role: "user", Content: "hello"}},
+	}, InferenceOperationAgentRound, InferenceProfileInteractive)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("ExecuteChat error = %v, want context canceled", err)
+	}
+	if client.calls != 1 {
+		t.Fatalf("client calls = %d, want no send from prepared recovery attempt", client.calls)
+	}
+	want := "operation:prepared|attempt:prepared|attempt:failed|recovery:refresh_credential|attempt:prepared|attempt:canceled|operation:canceled|complete_workflow"
 	if got := strings.Join(journal.events, "|"); got != want {
 		t.Fatalf("journal events = %q, want %q", got, want)
 	}

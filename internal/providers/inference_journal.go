@@ -18,7 +18,7 @@ type InferenceJournal interface {
 	UpsertSubmission(InferenceSubmissionJournalRecord) error
 	MarkAttemptFirstEvent(operationID, attemptID, submissionID string, at time.Time) error
 	CompleteAttempt(InferenceAttemptTerminalRecord) error
-	RecordRecovery(InferenceRecoveryJournalRecord) error
+	PrepareRecoveryAttempt(context.Context, InferenceRecoveryAttemptJournalRecord) error
 	CompleteOperation(InferenceOperationTerminalRecord) error
 	CompleteWorkflow(InferenceWorkflowTerminalRecord) error
 }
@@ -81,6 +81,11 @@ type InferenceRecoveryJournalRecord struct {
 	Action      RecoveryActionKind
 	RetryAt     time.Time
 	At          time.Time
+}
+
+type InferenceRecoveryAttemptJournalRecord struct {
+	Recovery    InferenceRecoveryJournalRecord
+	NextAttempt InferenceAttemptJournalRecord
 }
 
 type InferenceOperationTerminalRecord struct {

@@ -2,6 +2,7 @@ package session
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -297,13 +298,13 @@ func TestInferenceJournalEnforcesSharedReplayAndSubmissionBudget(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := journal.RecordRecovery(providers.InferenceRecoveryJournalRecord{
-		OperationID: first.ID, AttemptID: firstAttempt, Action: providers.RecoveryReplaySame, At: now,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := journal.PrepareAttempt(providers.InferenceAttemptJournalRecord{
-		OperationID: first.ID, WorkflowID: workflowID, AttemptID: first.AttemptID(2), Ordinal: 2, RequestHash: firstHash, At: now,
+	if err := journal.PrepareRecoveryAttempt(context.Background(), providers.InferenceRecoveryAttemptJournalRecord{
+		Recovery: providers.InferenceRecoveryJournalRecord{
+			OperationID: first.ID, AttemptID: firstAttempt, Action: providers.RecoveryReplaySame, At: now,
+		},
+		NextAttempt: providers.InferenceAttemptJournalRecord{
+			OperationID: first.ID, WorkflowID: workflowID, AttemptID: first.AttemptID(2), Ordinal: 2, RequestHash: firstHash, At: now,
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -360,6 +361,72 @@ FROM inference_workflows WHERE id = ?`, workflowID).
 	}
 	if secondPhase != "prepared" {
 		t.Fatalf("budget-denied submission changed attempt phase to %q", secondPhase)
+	}
+}
+
+func TestInferenceJournalRecoveryAttemptAdmissionRollsBackAtomically(t *testing.T) {
+	dir := t.TempDir()
+	runtime, err := NewInferenceJournalRuntime(dir, "workspace-recovery-atomic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
+	journal := runtime.ForOwner("thread-recovery-atomic")
+	now := time.Now().UTC()
+	workflowID := "iwf-recovery-atomic"
+	spec := providers.WorkflowBudgetSpec{
+		MaxSamePayloadReplays: providers.LimitedBudget(0),
+		MaxTransportSwitches:  providers.LimitedBudget(1),
+	}
+	op := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	hash := testInferenceHash("recovery-atomic")
+	if err := journal.PrepareOperation(budgetedInferenceOperationRecord(op, workflowID, spec, hash, now)); err != nil {
+		t.Fatal(err)
+	}
+	firstAttempt := op.AttemptID(1)
+	if err := journal.PrepareAttempt(providers.InferenceAttemptJournalRecord{
+		OperationID: op.ID, WorkflowID: workflowID, AttemptID: firstAttempt,
+		Ordinal: 1, RequestHash: hash, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.CompleteAttempt(providers.InferenceAttemptTerminalRecord{
+		OperationID: op.ID, AttemptID: firstAttempt, Outcome: providers.InferenceOutcomeFailed, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err = journal.PrepareRecoveryAttempt(context.Background(), providers.InferenceRecoveryAttemptJournalRecord{
+		Recovery: providers.InferenceRecoveryJournalRecord{
+			OperationID: op.ID, AttemptID: firstAttempt,
+			Action: providers.RecoverySwitchTransport, At: now,
+		},
+		NextAttempt: providers.InferenceAttemptJournalRecord{
+			OperationID: op.ID, WorkflowID: workflowID, AttemptID: op.AttemptID(2),
+			Ordinal: 2, RequestHash: hash, At: now,
+		},
+	})
+	requireWorkflowBudgetDimension(t, err, providers.WorkflowBudgetSamePayloadReplays)
+
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var attempts, usedAttempts, replays, switches int
+	var recovery string
+	if err := db.QueryRow(`SELECT COUNT(*) FROM inference_attempts WHERE operation_id = ?`, op.ID).Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT recovery_action FROM inference_attempts WHERE id = ?`, firstAttempt).Scan(&recovery); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`
+SELECT used_attempts, used_replays, used_transport_switches
+FROM inference_workflows WHERE id = ?`, workflowID).Scan(&usedAttempts, &replays, &switches); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 1 || recovery != "" || usedAttempts != 1 || replays != 0 || switches != 0 {
+		t.Fatalf("rolled-back recovery = attempts=%d action=%q counters=%d/%d/%d", attempts, recovery, usedAttempts, replays, switches)
 	}
 }
 
@@ -1270,8 +1337,13 @@ func TestInferenceJournalRecoversTerminalRetryCheckpoint(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := journal.RecordRecovery(providers.InferenceRecoveryJournalRecord{
-		OperationID: op.ID, AttemptID: attemptID, Action: providers.RecoveryReplaySame, At: now,
+	if err := journal.PrepareRecoveryAttempt(context.Background(), providers.InferenceRecoveryAttemptJournalRecord{
+		Recovery: providers.InferenceRecoveryJournalRecord{
+			OperationID: op.ID, AttemptID: attemptID, Action: providers.RecoveryReplaySame, At: now,
+		},
+		NextAttempt: providers.InferenceAttemptJournalRecord{
+			OperationID: op.ID, AttemptID: op.AttemptID(2), Ordinal: 2, RequestHash: hash, At: now,
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1285,8 +1357,8 @@ func TestInferenceJournalRecoversTerminalRetryCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(recovered) != 1 || recovered[0].PriorPhase != "terminal" || recovered[0].PriorOutcome != "failed" ||
-		recovered[0].PriorRecovery != providers.RecoveryReplaySame || recovered[0].Action != providers.RecoveryRescheduleSafe {
+	if len(recovered) != 1 || recovered[0].PriorPhase != "prepared" || recovered[0].PriorOutcome != "" ||
+		recovered[0].PriorRecovery != "" || recovered[0].Action != providers.RecoveryRescheduleSafe {
 		t.Fatalf("checkpoint recovery = %+v", recovered)
 	}
 	db, err := openStore(dir)

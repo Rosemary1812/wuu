@@ -29,7 +29,9 @@ func (codexJournal) MarkAttemptFirstEvent(string, string, string, time.Time) err
 func (codexJournal) CompleteAttempt(providers.InferenceAttemptTerminalRecord) error {
 	return nil
 }
-func (codexJournal) RecordRecovery(providers.InferenceRecoveryJournalRecord) error { return nil }
+func (codexJournal) PrepareRecoveryAttempt(context.Context, providers.InferenceRecoveryAttemptJournalRecord) error {
+	return nil
+}
 func (codexJournal) CompleteOperation(providers.InferenceOperationTerminalRecord) error {
 	return nil
 }
@@ -189,7 +191,7 @@ func TestClientStreamNormalizesRequestBeforeJournalHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reliable := providers.NewReliableStreamClient(client, providers.DefaultRetryConfig(), nil)
+	reliable := providers.NewReliableStreamClient(client, nil)
 	events, err := reliable.StreamChat(ctx, req)
 	if err != nil {
 		t.Fatal(err)

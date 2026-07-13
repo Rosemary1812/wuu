@@ -30,7 +30,9 @@ func (*managerTestJournal) MarkAttemptFirstEvent(string, string, string, time.Ti
 func (*managerTestJournal) CompleteAttempt(providers.InferenceAttemptTerminalRecord) error {
 	return nil
 }
-func (*managerTestJournal) RecordRecovery(providers.InferenceRecoveryJournalRecord) error { return nil }
+func (*managerTestJournal) PrepareRecoveryAttempt(context.Context, providers.InferenceRecoveryAttemptJournalRecord) error {
+	return nil
+}
 func (*managerTestJournal) CompleteOperation(providers.InferenceOperationTerminalRecord) error {
 	return nil
 }

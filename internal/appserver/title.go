@@ -365,7 +365,7 @@ func streamTitleTextWithDeltas(ctx context.Context, client providers.StreamClien
 	if err != nil {
 		return "", nil, err
 	}
-	reliableClient := providers.NewReliableStreamClient(client, providers.RetryConfigForProfile(providers.InferenceProfileBestEffort), nil)
+	reliableClient := providers.NewReliableStreamClient(client, nil)
 	events, err := reliableClient.StreamChat(ctx, req)
 	if err != nil {
 		return "", nil, finishTitleFailure(req.Execution, err)

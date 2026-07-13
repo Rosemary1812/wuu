@@ -330,7 +330,7 @@ func streamCompactSummary(ctx context.Context, client providers.StreamClient, re
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
-	reliableClient := providers.NewReliableStreamClient(client, providers.RetryConfigForProfile(providers.InferenceProfileContinuationCritical), nil)
+	reliableClient := providers.NewReliableStreamClient(client, nil)
 	ch, err := reliableClient.StreamChat(ctx, req)
 	if err != nil {
 		return providers.ChatResponse{}, finishCompactFailure(req.Execution, err)
@@ -411,13 +411,15 @@ func recoverCompactStream(ctx context.Context, client providers.Client, req prov
 		return providers.ChatResponse{}, false, nil
 	}
 	priorAttempt := req.Execution.LatestAttempt()
-	if err := priorAttempt.RecordRecovery(providers.RecoveryPlan{
+	nextAttempt, err := priorAttempt.PrepareRecoveryAttempt(ctx, providers.RecoveryPlan{
 		Action: providers.RecoverySwitchTransport,
 		Reason: "compaction stream incomplete",
-	}, time.Time{}); err != nil {
+	}, time.Time{})
+	if err != nil {
 		wrapped := fmt.Errorf("record compact fallback: %w", err)
 		return providers.ChatResponse{}, true, finishCompactFailure(req.Execution, wrapped)
 	}
+	req.Attempt = nextAttempt
 	resp, executed, err := providers.ExecuteChatAttempt(ctx, client, req, req.Operation.Kind, req.Operation.WorkloadProfile)
 	if err != nil {
 		execution := executed.Execution
