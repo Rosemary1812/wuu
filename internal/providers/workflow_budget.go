@@ -138,6 +138,15 @@ func (w *InferenceWorkflow) SpendSnapshot() WorkflowBudgetSnapshot {
 
 type workflowBudgetContextKey struct{}
 type inferenceParentOperationContextKey struct{}
+type inferenceOperationLineageContextKey struct{}
+
+// InferenceOperationLineage is a sequential parent cursor scoped to one
+// nested inference flow such as multi-chunk compaction. It is intentionally
+// not stored on the workflow: independent operations may run concurrently.
+type InferenceOperationLineage struct {
+	mu              sync.Mutex
+	lastOperationID string
+}
 
 // WithInferenceWorkflow binds an existing workflow to nested inference calls.
 func WithInferenceWorkflow(ctx context.Context, workflow *InferenceWorkflow) context.Context {
@@ -194,6 +203,44 @@ func inferenceParentOperationFromContext(ctx context.Context) string {
 	}
 	parent, _ := ctx.Value(inferenceParentOperationContextKey{}).(string)
 	return strings.TrimSpace(parent)
+}
+
+// BeginInferenceOperationLineage creates a sequential child-operation scope.
+// Every operation prepared under the returned context advances the cursor, so
+// the next operation becomes its child. Callers may read LastOperationID to
+// connect the next operation outside the nested flow.
+func BeginInferenceOperationLineage(ctx context.Context, parentOperationID string) (context.Context, *InferenceOperationLineage) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	lineage := &InferenceOperationLineage{lastOperationID: strings.TrimSpace(parentOperationID)}
+	return context.WithValue(ctx, inferenceOperationLineageContextKey{}, lineage), lineage
+}
+
+func (l *InferenceOperationLineage) LastOperationID() string {
+	if l == nil {
+		return ""
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.lastOperationID
+}
+
+func (l *InferenceOperationLineage) advance(operationID string) {
+	if l == nil || strings.TrimSpace(operationID) == "" {
+		return
+	}
+	l.mu.Lock()
+	l.lastOperationID = strings.TrimSpace(operationID)
+	l.mu.Unlock()
+}
+
+func inferenceOperationLineageFromContext(ctx context.Context) *InferenceOperationLineage {
+	if ctx == nil {
+		return nil
+	}
+	lineage, _ := ctx.Value(inferenceOperationLineageContextKey{}).(*InferenceOperationLineage)
+	return lineage
 }
 
 type WorkflowBudgetSnapshot struct {

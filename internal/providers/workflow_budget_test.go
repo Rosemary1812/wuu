@@ -52,6 +52,40 @@ func TestWorkflowBudgetSharesReplayAllowanceAcrossOperations(t *testing.T) {
 	}
 }
 
+func TestInferenceOperationLineageChainsSequentialChildren(t *testing.T) {
+	workflow := testInferenceWorkflow(WorkflowBudgetSpec{})
+	ctx := WithInferenceWorkflow(context.Background(), workflow)
+	root, err := EnsureInferenceExecutionContext(ctx, ChatRequest{
+		Operation: NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive),
+	}, InferenceOperationAgentRound, InferenceProfileInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lineageCtx, lineage := BeginInferenceOperationLineage(ctx, root.Operation.ID)
+	first, err := EnsureInferenceExecutionContext(lineageCtx, ChatRequest{
+		Operation: NewInferenceOperation(InferenceOperationCompaction, InferenceProfileContinuationCritical),
+	}, InferenceOperationCompaction, InferenceProfileContinuationCritical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := EnsureInferenceExecutionContext(lineageCtx, ChatRequest{
+		Operation: NewInferenceOperation(InferenceOperationCompaction, InferenceProfileContinuationCritical),
+	}, InferenceOperationCompaction, InferenceProfileContinuationCritical)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if first.Operation.ParentOperationID != root.Operation.ID {
+		t.Fatalf("first parent = %q, want %q", first.Operation.ParentOperationID, root.Operation.ID)
+	}
+	if second.Operation.ParentOperationID != first.Operation.ID {
+		t.Fatalf("second parent = %q, want %q", second.Operation.ParentOperationID, first.Operation.ID)
+	}
+	if lineage.LastOperationID() != second.Operation.ID {
+		t.Fatalf("lineage tail = %q, want %q", lineage.LastOperationID(), second.Operation.ID)
+	}
+}
+
 func TestWorkflowBudgetUnknownBillableIsNeverZeroCost(t *testing.T) {
 	workflow := testInferenceWorkflow(WorkflowBudgetSpec{
 		MaxUnknownBillableSubmissions: LimitedBudget(1),

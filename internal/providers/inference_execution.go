@@ -307,7 +307,11 @@ func ensureInferenceExecution(ctx context.Context, req ChatRequest, fallbackKind
 		req.Operation.WorkflowID = workflow.ID
 	}
 	if strings.TrimSpace(req.Operation.ParentOperationID) == "" {
-		req.Operation.ParentOperationID = inferenceParentOperationFromContext(ctx)
+		if lineage := inferenceOperationLineageFromContext(ctx); lineage != nil {
+			req.Operation.ParentOperationID = lineage.LastOperationID()
+		} else {
+			req.Operation.ParentOperationID = inferenceParentOperationFromContext(ctx)
+		}
 	}
 	execution, err := newInferenceExecution(req.Operation, workflow)
 	if err != nil {
@@ -315,6 +319,9 @@ func ensureInferenceExecution(ctx context.Context, req ChatRequest, fallbackKind
 	}
 	req.Execution = execution
 	req.Operation = execution.Operation()
+	if lineage := inferenceOperationLineageFromContext(ctx); lineage != nil {
+		lineage.advance(req.Operation.ID)
+	}
 	return req, nil
 }
 

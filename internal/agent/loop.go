@@ -107,6 +107,10 @@ func RunToolLoop(
 		// Used to detect and log when model, tools, or system prompt changes
 		// between rounds, which would break cache reuse.
 		prevCacheFingerprint string
+		// Compaction is a nested inference flow. Its final operation becomes the
+		// parent of the first agent round that consumes the rewritten history.
+		lastAgentOperationID  string
+		nextOperationParentID string
 	)
 	if usage == nil {
 		usage = NewUsageTracker()
@@ -129,7 +133,8 @@ func RunToolLoop(
 		}
 		before := usage.EstimateCurrent()
 		msgsBefore := len(messages)
-		compacted, cerr := cfg.Compact(ctx, messages)
+		compactCtx, lineage := providers.BeginInferenceOperationLineage(ctx, lastAgentOperationID)
+		compacted, cerr := cfg.Compact(compactCtx, messages)
 		switch {
 		case cerr != nil:
 			if !force {
@@ -143,6 +148,9 @@ func RunToolLoop(
 				Error:          cerr.Error(),
 			})
 		case compactChanged(messages, compacted):
+			if compactOperationID := lineage.LastOperationID(); compactOperationID != "" && compactOperationID != lastAgentOperationID {
+				nextOperationParentID = compactOperationID
+			}
 			messages = compacted
 			historyRewritten = true
 			usage.Reset()
@@ -239,14 +247,17 @@ func RunToolLoop(
 		}
 		assembly := assembleModelRequest(messagesForRequest, requestSegments)
 		requestMessages := assembly.Messages
+		operation := providers.NewInferenceOperation(
+			cfg.InferenceOperationKind,
+			cfg.InferenceWorkloadProfile,
+		)
+		operation.ParentOperationID = nextOperationParentID
+		nextOperationParentID = ""
 		req := providers.ChatRequest{
-			Model:       cfg.Model,
-			Messages:    requestMessages,
-			Temperature: cfg.Temperature,
-			Operation: providers.NewInferenceOperation(
-				cfg.InferenceOperationKind,
-				cfg.InferenceWorkloadProfile,
-			),
+			Model:                       cfg.Model,
+			Messages:                    requestMessages,
+			Temperature:                 cfg.Temperature,
+			Operation:                   operation,
 			MaxTokens:                   currentMaxTokens,
 			StepIndex:                   stepIdx,
 			Effort:                      cfg.Effort,
@@ -297,6 +308,7 @@ func RunToolLoop(
 		}
 
 		result, err := step.Execute(ctx, req)
+		lastAgentOperationID = req.Operation.ID
 		if err != nil {
 			// Context window exceeded — try a one-shot compaction of
 			// older history and re-issue. Provider-agnostic; the
@@ -307,8 +319,12 @@ func RunToolLoop(
 				overflowCompacted = true // gate first; never retry twice
 				before := usage.EstimateCurrent()
 				msgsBefore := len(messages)
-				if compacted, cerr := cfg.Compact(ctx, messages); cerr == nil {
+				compactCtx, lineage := providers.BeginInferenceOperationLineage(ctx, req.Operation.ID)
+				if compacted, cerr := cfg.Compact(compactCtx, messages); cerr == nil {
 					if compactChanged(messages, compacted) {
+						if compactOperationID := lineage.LastOperationID(); compactOperationID != "" && compactOperationID != req.Operation.ID {
+							nextOperationParentID = compactOperationID
+						}
 						messages = compacted
 						historyRewritten = true
 						usage.Reset()

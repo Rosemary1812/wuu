@@ -1150,6 +1150,12 @@ func TestStreamRunner_ProactiveCompactFailureEmitsVisibleEvent(t *testing.T) {
 	if compactEvents[0].CompactReason != string(CompactReasonProactive) {
 		t.Fatalf("expected proactive compact reason, got %+v", compactEvents[0])
 	}
+	if len(client.requests) != 2 {
+		t.Fatalf("requests = %d, want failed compact then agent request", len(client.requests))
+	}
+	if got := client.requests[1].Operation.ParentOperationID; got != "" {
+		t.Fatalf("agent request parent = %q after failed compaction", got)
+	}
 }
 
 func TestFormatCompactAttemptNoticeOnlyShowsProactiveFailures(t *testing.T) {
@@ -1353,6 +1359,15 @@ func TestStreamRunner_ContextOverflowStreamErrorCompactsSingleUserTurn(t *testin
 	}
 	if len(client.requests) != 3 {
 		t.Fatalf("expected stream, compact, stream requests, got %d", len(client.requests))
+	}
+	initialOperation := client.requests[0].Operation
+	compactOperation := client.requests[1].Operation
+	resumedOperation := client.requests[2].Operation
+	if compactOperation.ParentOperationID != initialOperation.ID {
+		t.Fatalf("compact parent = %q, want overflow operation %q", compactOperation.ParentOperationID, initialOperation.ID)
+	}
+	if resumedOperation.ParentOperationID != compactOperation.ID {
+		t.Fatalf("resumed parent = %q, want compact operation %q", resumedOperation.ParentOperationID, compactOperation.ID)
 	}
 	finalRequest := client.requests[2]
 	if got := finalRequest.Messages[0].Content; !compact.IsConversationSummaryContent(got) ||
