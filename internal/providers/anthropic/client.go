@@ -61,14 +61,16 @@ func resolveMaxTokens(perRequest, clientDefault int, model string) int {
 
 // ClientConfig configures an Anthropic messages endpoint.
 type ClientConfig struct {
-	BaseURL      string
-	APIKey       string
-	AuthToken    string // Bearer token (ANTHROPIC_AUTH_TOKEN). Used instead of APIKey when set.
-	Headers      map[string]string
-	HTTPClient   *http.Client
-	MaxTokens    int
-	RetryConfig  *providers.RetryConfig
-	StreamConfig *providers.StreamTransportConfig
+	BaseURL       string
+	APIKey        string
+	AuthToken     string // Bearer token (ANTHROPIC_AUTH_TOKEN). Used instead of APIKey when set.
+	Headers       map[string]string
+	HTTPClient    *http.Client
+	MaxTokens     int
+	RetryConfig   *providers.RetryConfig
+	StreamConfig  *providers.StreamTransportConfig
+	Coordinator   *providers.ProviderCoordinator
+	ProviderScope providers.ProviderScope
 	// CacheCreationInputTokensOmitted marks compatible endpoints that omit
 	// cache_creation_input_tokens from usage payloads.
 	CacheCreationInputTokensOmitted bool
@@ -125,6 +127,8 @@ type Client struct {
 	maxTokens                       int
 	retryConfig                     providers.RetryConfig
 	streamConfig                    providers.StreamTransportConfig
+	coordinator                     *providers.ProviderCoordinator
+	providerScope                   providers.ProviderScope
 	cacheCreationInputTokensOmitted bool
 	inputTokensIncludeCacheRead     bool
 }
@@ -148,6 +152,14 @@ func New(cfg ClientConfig) (*Client, error) {
 		rc = *cfg.RetryConfig
 	}
 	rc = providers.NormalizeRetryConfig(rc)
+	providerScope := cfg.ProviderScope
+	if providerScope == "" && cfg.Coordinator != nil {
+		credential := cfg.APIKey
+		if strings.TrimSpace(cfg.AuthToken) != "" {
+			credential = cfg.AuthToken
+		}
+		providerScope = providers.NewProviderScope(cfg.BaseURL, credential, "")
+	}
 
 	return &Client{
 		baseURL:                         strings.TrimRight(cfg.BaseURL, "/"),
@@ -158,6 +170,8 @@ func New(cfg ClientConfig) (*Client, error) {
 		maxTokens:                       maxTokens,
 		retryConfig:                     rc,
 		streamConfig:                    streamTransportConfig(cfg.StreamConfig),
+		coordinator:                     cfg.Coordinator,
+		providerScope:                   providerScope,
 		cacheCreationInputTokensOmitted: cfg.CacheCreationInputTokensOmitted,
 		// Explicit config only — never base_url auto-detection. Usage
 		// semantics are vendor behavior that changes over time (MiniMax was
@@ -193,15 +207,18 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 		return providers.ChatResponse{}, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpResp, err := c.doMessagesRequest(ctx, c.httpClient, body, payload.Betas, req.Attempt, "unary")
+	httpResp, lease, err := c.doMessagesRequest(ctx, c.httpClient, body, payload.Betas, req.Attempt, "unary")
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
 	defer httpResp.Body.Close()
+	defer lease.Release()
 
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return providers.ChatResponse{}, fmt.Errorf("read response body: %w", err)
+		err = fmt.Errorf("read response body: %w", err)
+		failAnthropicResponseLease(lease, httpResp, err)
+		return providers.ChatResponse{}, err
 	}
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 		snippet := string(respBody)
@@ -209,21 +226,27 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 			snippet = snippet[:400]
 		}
 		body := fmt.Sprintf("%s: %s", httpResp.Status, snippet)
-		return providers.ChatResponse{}, &providers.HTTPError{
+		err := &providers.HTTPError{
 			ProviderFamily:  "anthropic",
 			StatusCode:      httpResp.StatusCode,
 			Body:            body,
 			RetryAfter:      providers.ParseRetryAfter(httpResp),
 			ContextOverflow: providers.DetectContextOverflow(body),
 		}
+		lease.FailError(err)
+		return providers.ChatResponse{}, err
 	}
 
 	var parsed anthropicResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return providers.ChatResponse{}, fmt.Errorf("parse response JSON: %w", err)
+		err = fmt.Errorf("parse response JSON: %w", err)
+		lease.FailError(err)
+		return providers.ChatResponse{}, err
 	}
 	if len(parsed.Content) == 0 {
-		return providers.ChatResponse{}, errors.New("provider returned empty content")
+		err := errors.New("provider returned empty content")
+		lease.FailError(err)
+		return providers.ChatResponse{}, err
 	}
 
 	var textParts []string
@@ -240,7 +263,9 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 		case "tool_use":
 			args, err := json.Marshal(block.Input)
 			if err != nil {
-				return providers.ChatResponse{}, fmt.Errorf("marshal tool_use input: %w", err)
+				err = fmt.Errorf("marshal tool_use input: %w", err)
+				lease.FailError(err)
+				return providers.ChatResponse{}, err
 			}
 			toolCalls = append(toolCalls, providers.ToolCall{
 				ID:        block.ID,
@@ -272,6 +297,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 		c.normalizeInclusiveInput(resp.Usage)
 		c.stampCacheCreationFlag(resp.Usage)
 	}
+	lease.Succeed()
 	return resp, nil
 }
 
@@ -311,14 +337,14 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 		_ = os.WriteFile(dumpPath, body, 0o644)
 		providers.DebugLogf("StreamChat: dumped request body to %s", dumpPath)
 	}
-	resp, err := c.doSingleMessagesRequest(ctx, sseClient, body, payload.Betas, req.Attempt, "stream")
+	resp, lease, err := c.doSingleMessagesRequest(ctx, sseClient, body, payload.Betas, req.Attempt, "stream")
 	if err != nil {
 		providers.DebugLogf("StreamChat: error: %v", err)
 		return nil, err
 	}
 
 	ch := make(chan providers.StreamEvent, 64)
-	go c.readSSEStream(resp, ch)
+	go c.readSSEStream(resp, lease, ch)
 	return ch, nil
 }
 
@@ -932,10 +958,10 @@ func (c *Client) doSingleMessagesRequest(
 	extraBetas []string,
 	attempt providers.InferenceAttempt,
 	mode string,
-) (*http.Response, error) {
+) (*http.Response, *providers.ProviderLease, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/messages", bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
+		return nil, nil, fmt.Errorf("build request: %w", err)
 	}
 	httpReq.Header.Set("content-type", "application/json")
 	if c.apiKey != "" {
@@ -970,6 +996,10 @@ func (c *Client) doSingleMessagesRequest(
 	}
 	httpReq.Header.Set("anthropic-beta", strings.Join(betas, ","))
 
+	lease, err := c.coordinator.AcquireForAttempt(ctx, c.providerScope, attempt)
+	if err != nil {
+		return nil, nil, err
+	}
 	attempt.RecordSubmission(providers.InferenceSubmissionMeta{
 		Provider:  "anthropic",
 		Protocol:  "messages",
@@ -978,21 +1008,25 @@ func (c *Client) doSingleMessagesRequest(
 	})
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		err = fmt.Errorf("request failed: %w", err)
+		lease.FailError(err)
+		return nil, nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 400))
 		_ = resp.Body.Close()
 		body := fmt.Sprintf("%s: %s", resp.Status, string(snippet))
-		return nil, &providers.HTTPError{
+		err := &providers.HTTPError{
 			ProviderFamily:  "anthropic",
 			StatusCode:      resp.StatusCode,
 			Body:            body,
 			RetryAfter:      providers.ParseRetryAfter(resp),
 			ContextOverflow: providers.DetectContextOverflow(body),
 		}
+		lease.FailError(err)
+		return nil, nil, err
 	}
-	return resp, nil
+	return resp, lease, nil
 }
 
 // doMessagesRequest sends an HTTP request with automatic retries.
@@ -1004,20 +1038,32 @@ func (c *Client) doMessagesRequest(
 	extraBetas []string,
 	attempt providers.InferenceAttempt,
 	mode string,
-) (*http.Response, error) {
+) (*http.Response, *providers.ProviderLease, error) {
 	var httpResp *http.Response
+	var responseLease *providers.ProviderLease
 	err := providers.WithRetry(ctx, c.retryConfig, func() error {
-		resp, err := c.doSingleMessagesRequest(ctx, httpClient, body, extraBetas, attempt, mode)
+		resp, lease, err := c.doSingleMessagesRequest(ctx, httpClient, body, extraBetas, attempt, mode)
 		if err != nil {
 			return err
 		}
 		httpResp = resp
+		responseLease = lease
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return httpResp, nil
+	return httpResp, responseLease, nil
+}
+
+func failAnthropicResponseLease(lease *providers.ProviderLease, resp *http.Response, err error) {
+	if resp != nil && resp.Request != nil {
+		if ctxErr := resp.Request.Context().Err(); ctxErr != nil {
+			lease.FailError(ctxErr)
+			return
+		}
+	}
+	lease.FailError(err)
 }
 
 // blockState tracks an active content block during SSE streaming.
@@ -1029,9 +1075,10 @@ type blockState struct {
 	reasoning providers.ReasoningBlock
 }
 
-func (c *Client) readSSEStream(resp *http.Response, ch chan<- providers.StreamEvent) {
+func (c *Client) readSSEStream(resp *http.Response, lease *providers.ProviderLease, ch chan<- providers.StreamEvent) {
 	defer close(ch)
 	defer resp.Body.Close()
+	defer lease.Release()
 
 	idleTimeout := c.streamConfig.IdleTimeout
 	var idleFired atomic.Bool
@@ -1065,35 +1112,43 @@ func (c *Client) readSSEStream(resp *http.Response, ch chan<- providers.StreamEv
 			continue
 		}
 		if line == "" && cur.Event != "" {
-			c.handleSSEEvent(cur, &usage, &stopReason, blocks, ch, &sawMessageStop, &sawStreamError)
+			c.handleSSEEvent(cur, &usage, &stopReason, blocks, lease, ch, &sawMessageStop, &sawStreamError)
 			cur = sseRawEvent{}
 		}
 	}
 
 	if cur.Event != "" {
-		c.handleSSEEvent(cur, &usage, &stopReason, blocks, ch, &sawMessageStop, &sawStreamError)
+		c.handleSSEEvent(cur, &usage, &stopReason, blocks, lease, ch, &sawMessageStop, &sawStreamError)
 	}
 
 	if err := scanner.Err(); err != nil {
 		if idleFired.Load() {
 			providers.DebugLogf("readSSEStream: idle timeout after %s", idleTimeout)
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)}
+			err := fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)
+			failAnthropicResponseLease(lease, resp, err)
+			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 			return
 		}
 		providers.DebugLogf("readSSEStream: scanner error: %v", err)
-		ch <- providers.StreamEvent{Type: providers.EventError, Error: fmt.Errorf("read SSE stream: %w", err)}
+		err = fmt.Errorf("read SSE stream: %w", err)
+		failAnthropicResponseLease(lease, resp, err)
+		ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 		return
 	}
 	if idleFired.Load() {
 		providers.DebugLogf("readSSEStream: idle timeout (post-scan) after %s", idleTimeout)
-		ch <- providers.StreamEvent{Type: providers.EventError, Error: fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)}
+		err := fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)
+		failAnthropicResponseLease(lease, resp, err)
+		ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 		return
 	}
 	if !sawMessageStop && !sawStreamError {
 		providers.DebugLogf("readSSEStream: incomplete stream (no message_stop)")
+		err := providers.NewIncompleteStreamError("stream closed before message_stop")
+		failAnthropicResponseLease(lease, resp, err)
 		ch <- providers.StreamEvent{
 			Type:  providers.EventError,
-			Error: providers.NewIncompleteStreamError("stream closed before message_stop"),
+			Error: err,
 		}
 	}
 }
@@ -1103,6 +1158,7 @@ func (c *Client) handleSSEEvent(
 	usage *providers.TokenUsage,
 	stopReason *string,
 	blocks map[int]*blockState,
+	lease *providers.ProviderLease,
 	ch chan<- providers.StreamEvent,
 	sawMessageStop *bool,
 	sawStreamError *bool,
@@ -1218,6 +1274,7 @@ func (c *Client) handleSSEEvent(
 			*sawMessageStop = true
 		}
 		truncated := *stopReason == "max_tokens"
+		lease.Succeed()
 		ch <- providers.StreamEvent{
 			Type:         providers.EventDone,
 			Usage:        &providers.TokenUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationTokens: usage.CacheCreationTokens, CacheReadTokens: usage.CacheReadTokens, CacheCreationUnknown: usage.CacheCreationUnknown},
@@ -1235,6 +1292,7 @@ func (c *Client) handleSSEEvent(
 			providers.DebugLogf("readSSEStream: error code=%s msg=%s", p.Error.Code, p.Error.Message)
 			streamErr := providers.NewProviderStreamError(p.Error.Code, p.Error.Message)
 			streamErr.ProviderFamily = "anthropic"
+			lease.FailError(streamErr)
 			ch <- providers.StreamEvent{
 				Type:  providers.EventError,
 				Error: streamErr,
@@ -1243,6 +1301,7 @@ func (c *Client) handleSSEEvent(
 		}
 		streamErr := providers.NewProviderStreamError("", raw.Data)
 		streamErr.ProviderFamily = "anthropic"
+		lease.FailError(streamErr)
 		ch <- providers.StreamEvent{
 			Type:  providers.EventError,
 			Error: streamErr,
