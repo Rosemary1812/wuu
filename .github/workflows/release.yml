@@ -21,6 +21,10 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
       - name: Check release version
         run: |
           tag_version="${GITHUB_REF_NAME#v}"
@@ -83,7 +87,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 

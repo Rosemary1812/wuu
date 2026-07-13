@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "description": "Wuu remote-control client core — pairing, sealed channel, attach/resume, app-server RPC. Pure TS, no UI dependencies; runs in React Native, browsers, and Node.",
   "exports": {
     ".": "./src/index.ts"

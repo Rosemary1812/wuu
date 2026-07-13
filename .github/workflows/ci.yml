@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  go:
-    name: Go
+  go-check:
+    name: Go check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,32 +20,75 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Check module manifests
-        run: go mod tidy -diff
+      - name: Check, test, and build
+        run: make check-go test-go build-go
 
-      - name: Test
-        run: go test ./...
-
-  desktop:
-    name: Desktop
+  desktop-check:
+    name: Desktop check
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: desktop
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
       - name: Install
-        run: npm ci
+        run: npm ci --prefix desktop
 
-      - name: Test
-        run: npm test
+      - name: Check, test, and build
+        run: make check-desktop test-desktop build-desktop
 
-      - name: Build
-        run: npm run build
+  clients-check:
+    name: Clients check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: |
+            clients/core/package-lock.json
+            clients/mobile/package-lock.json
+            packages/protocol/package-lock.json
+
+      - name: Install remote core
+        run: npm ci --prefix clients/core
+
+      - name: Install mobile
+        run: npm ci --prefix clients/mobile
+
+      - name: Install protocol
+        run: npm ci --prefix packages/protocol
+
+      - name: Check, test, and export
+        run: make check-clients test-clients build-clients
+
+  macos-check:
+    name: macOS native check
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install
+        run: npm ci --prefix desktop
+
+      - name: Test native helper
+        run: make test-native
+
+      - name: Package macOS app
+        run: make build-macos
