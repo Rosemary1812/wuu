@@ -20,7 +20,6 @@ func (*managerTestJournal) PrepareOperation(providers.InferenceOperationJournalR
 	return nil
 }
 func (*managerTestJournal) PrepareAttempt(providers.InferenceAttemptJournalRecord) error { return nil }
-func (*managerTestJournal) MarkAttemptDispatching(string, string, time.Time) error       { return nil }
 func (*managerTestJournal) UpsertSubmission(providers.InferenceSubmissionJournalRecord) error {
 	return nil
 }

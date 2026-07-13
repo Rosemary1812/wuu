@@ -968,11 +968,53 @@ func migrateSchema(db *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_inference_journal_runtimes_scope
 		 ON inference_journal_runtimes(workspace_scope, heartbeat_at, closed_at)`,
+		`CREATE TABLE IF NOT EXISTS inference_workflows (
+			id                         TEXT PRIMARY KEY,
+			runtime_id                 TEXT NOT NULL,
+			workspace_scope            TEXT NOT NULL,
+			owner_id                   TEXT NOT NULL,
+			workload_profile           TEXT NOT NULL,
+			max_operations             INTEGER NOT NULL DEFAULT -1,
+			max_attempts               INTEGER NOT NULL DEFAULT -1,
+			max_submissions            INTEGER NOT NULL DEFAULT -1,
+			max_replays                INTEGER NOT NULL DEFAULT -1,
+			max_transport_switches     INTEGER NOT NULL DEFAULT -1,
+			max_credential_refreshes   INTEGER NOT NULL DEFAULT -1,
+			max_payload_transforms     INTEGER NOT NULL DEFAULT -1,
+			max_child_operations       INTEGER NOT NULL DEFAULT -1,
+			max_recovery_wait_ms       INTEGER NOT NULL DEFAULT -1,
+			max_unknown_billable       INTEGER NOT NULL DEFAULT -1,
+			max_usage_tokens           INTEGER NOT NULL DEFAULT -1,
+			used_operations            INTEGER NOT NULL DEFAULT 0,
+			used_attempts              INTEGER NOT NULL DEFAULT 0,
+			used_submissions           INTEGER NOT NULL DEFAULT 0,
+			used_replays               INTEGER NOT NULL DEFAULT 0,
+			used_transport_switches    INTEGER NOT NULL DEFAULT 0,
+			used_credential_refreshes  INTEGER NOT NULL DEFAULT 0,
+			used_payload_transforms    INTEGER NOT NULL DEFAULT 0,
+			used_child_operations      INTEGER NOT NULL DEFAULT 0,
+			used_recovery_wait_ms      INTEGER NOT NULL DEFAULT 0,
+			known_submissions          INTEGER NOT NULL DEFAULT 0,
+			estimated_submissions      INTEGER NOT NULL DEFAULT 0,
+			unknown_billable           INTEGER NOT NULL DEFAULT 0,
+			known_usage_tokens         INTEGER NOT NULL DEFAULT 0,
+			estimated_usage_tokens     INTEGER NOT NULL DEFAULT 0,
+			status                     TEXT NOT NULL DEFAULT 'active',
+			created_at                 INTEGER NOT NULL,
+			updated_at                 INTEGER NOT NULL,
+			terminal_at                INTEGER NOT NULL DEFAULT 0,
+			FOREIGN KEY(runtime_id) REFERENCES inference_journal_runtimes(id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_inference_workflows_owner
+		 ON inference_workflows(owner_id, created_at, id)`,
 		// inference_operations / attempts / submissions form the metadata-only
 		// write-ahead journal for provider requests. They intentionally store a
 		// SHA-256 request identity instead of prompt or wire payload content.
 		`CREATE TABLE IF NOT EXISTS inference_operations (
 			id                 TEXT PRIMARY KEY,
+			workflow_id        TEXT NOT NULL,
+			parent_operation_id TEXT NOT NULL DEFAULT '',
+			attempt_limit      INTEGER NOT NULL,
 			runtime_id         TEXT NOT NULL,
 			workspace_scope    TEXT NOT NULL,
 			owner_id           TEXT NOT NULL,
@@ -993,6 +1035,7 @@ func migrateSchema(db *sql.DB) error {
 			updated_at         INTEGER NOT NULL,
 			terminal_at        INTEGER NOT NULL DEFAULT 0
 			,FOREIGN KEY(runtime_id) REFERENCES inference_journal_runtimes(id)
+			,FOREIGN KEY(workflow_id) REFERENCES inference_workflows(id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_inference_operations_recovery
 		 ON inference_operations(workspace_scope, status, runtime_id, updated_at)`,
@@ -1075,6 +1118,53 @@ func migrateSchema(db *sql.DB) error {
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("migrate sessions database: %w", err)
 		}
+	}
+	if err := addColumnIfMissing(db, "inference_operations", "workflow_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "inference_operations", "parent_operation_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "inference_operations", "attempt_limit", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return err
+	}
+	// Existing journal rows predate workflow identity. Give each historical
+	// operation a conservative synthetic workflow and rebuild exact counters
+	// from its durable attempts/submissions without inventing hard limits.
+	if _, err := db.Exec(`
+INSERT OR IGNORE INTO inference_workflows (
+    id, runtime_id, workspace_scope, owner_id, workload_profile,
+    used_operations, used_attempts, used_submissions, used_replays,
+    known_submissions, estimated_submissions, unknown_billable,
+    known_usage_tokens, estimated_usage_tokens, status, created_at, updated_at, terminal_at
+)
+SELECT 'iwf-legacy-' || o.id, o.runtime_id, o.workspace_scope, o.owner_id, o.workload_profile,
+       1,
+       (SELECT COUNT(*) FROM inference_attempts a WHERE a.operation_id = o.id),
+       (SELECT COUNT(*) FROM inference_submissions s WHERE s.operation_id = o.id),
+       MAX(0, (SELECT COUNT(*) FROM inference_attempts a WHERE a.operation_id = o.id) - 1),
+       (SELECT COUNT(*) FROM inference_submissions s WHERE s.operation_id = o.id AND s.cost_state = 'known'),
+       (SELECT COUNT(*) FROM inference_submissions s WHERE s.operation_id = o.id AND s.cost_state = 'estimated'),
+       (SELECT COUNT(*) FROM inference_submissions s WHERE s.operation_id = o.id AND s.cost_state = 'unknown_but_billable'),
+       COALESCE((SELECT SUM(reported_input_tokens + reported_output_tokens + reported_cache_creation + reported_cache_read)
+                 FROM inference_submissions s WHERE s.operation_id = o.id AND s.cost_state = 'known'), 0),
+       COALESCE((SELECT SUM(estimated_input_tokens + estimated_output_tokens + estimated_cache_creation + estimated_cache_read)
+                 FROM inference_submissions s WHERE s.operation_id = o.id AND s.cost_state = 'estimated'), 0),
+       o.status, o.created_at, o.updated_at, o.terminal_at
+FROM inference_operations o
+WHERE o.workflow_id = ''`); err != nil {
+		return fmt.Errorf("migrate inference workflows: %w", err)
+	}
+	if _, err := db.Exec(`
+UPDATE inference_operations
+SET workflow_id = 'iwf-legacy-' || id,
+    attempt_limit = MAX(attempt_limit, (SELECT COUNT(*) FROM inference_attempts a WHERE a.operation_id = inference_operations.id), 1)
+WHERE workflow_id = ''`); err != nil {
+		return fmt.Errorf("backfill inference workflow identity: %w", err)
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_inference_operations_workflow
+		ON inference_operations(workflow_id, created_at, id)`); err != nil {
+		return fmt.Errorf("migrate inference workflow index: %w", err)
 	}
 	if err := addColumnIfMissing(db, "session_messages", "phase", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err

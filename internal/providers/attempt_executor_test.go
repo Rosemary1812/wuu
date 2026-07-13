@@ -14,7 +14,6 @@ type recordingInferenceJournal struct {
 	events         []string
 	operation      InferenceOperationJournalRecord
 	failPrepare    error
-	failDispatch   error
 	failSubmission error
 	onRecovery     func()
 }
@@ -34,11 +33,6 @@ func (j *recordingInferenceJournal) PrepareOperation(record InferenceOperationJo
 func (j *recordingInferenceJournal) PrepareAttempt(InferenceAttemptJournalRecord) error {
 	j.record("attempt:prepared")
 	return j.failPrepare
-}
-
-func (j *recordingInferenceJournal) MarkAttemptDispatching(string, string, time.Time) error {
-	j.record("attempt:dispatching")
-	return j.failDispatch
 }
 
 func (j *recordingInferenceJournal) UpsertSubmission(record InferenceSubmissionJournalRecord) error {
@@ -79,6 +73,15 @@ type refreshThenReplayClient struct {
 	refreshes int
 }
 
+type alwaysRetryableClient struct {
+	calls int
+}
+
+func (c *alwaysRetryableClient) Chat(context.Context, ChatRequest) (ChatResponse, error) {
+	c.calls++
+	return ChatResponse{}, &HTTPError{StatusCode: 503, Body: "unavailable"}
+}
+
 func (c *refreshThenReplayClient) Chat(context.Context, ChatRequest) (ChatResponse, error) {
 	c.calls++
 	return ChatResponse{}, MarkAuthRefreshable(&HTTPError{StatusCode: 401, Body: "expired"})
@@ -91,9 +94,6 @@ func (c *refreshThenReplayClient) ApplyInferenceRecovery(context.Context, Recove
 
 func (c *journalWireClient) Chat(_ context.Context, req ChatRequest) (ChatResponse, error) {
 	c.calls++
-	if err := req.Attempt.MarkDispatching(); err != nil {
-		return ChatResponse{}, err
-	}
 	submission, err := req.Attempt.RecordSubmission(InferenceSubmissionMeta{
 		Provider: "test", Protocol: "test", Transport: "memory", Mode: "unary",
 	})
@@ -123,7 +123,6 @@ func TestExecuteChatCommitsWriteAheadLifecycle(t *testing.T) {
 	want := []string{
 		"operation:prepared",
 		"attempt:prepared",
-		"attempt:dispatching",
 		"submission:in_flight",
 		"submission:succeeded",
 		"attempt:succeeded",
@@ -151,21 +150,16 @@ func TestExecuteChatFailsClosedBeforeClientOnPrepareError(t *testing.T) {
 	}
 }
 
-func TestExecuteChatFailsClosedAtDispatchBoundary(t *testing.T) {
+func TestExecuteChatFailsClosedAtSubmissionBoundary(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		journal    *recordingInferenceJournal
 		wantEvents string
 	}{
 		{
-			name:       "dispatching write",
-			journal:    &recordingInferenceJournal{failDispatch: errors.New("dispatch journal failed")},
-			wantEvents: "operation:prepared|attempt:prepared|attempt:dispatching",
-		},
-		{
 			name:       "submission write",
 			journal:    &recordingInferenceJournal{failSubmission: errors.New("submission journal failed")},
-			wantEvents: "operation:prepared|attempt:prepared|attempt:dispatching|submission:in_flight",
+			wantEvents: "operation:prepared|attempt:prepared|submission:in_flight",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -202,6 +196,30 @@ func TestExecuteChatCancellationDuringRecoveryDoesNotCreateAttempt(t *testing.T)
 		t.Fatalf("client calls/refreshes = %d/%d, want 1/0", client.calls, client.refreshes)
 	}
 	want := "operation:prepared|attempt:prepared|attempt:failed|recovery:refresh_credential|operation:canceled"
+	if got := strings.Join(journal.events, "|"); got != want {
+		t.Fatalf("journal events = %q, want %q", got, want)
+	}
+}
+
+func TestExecuteChatCompletesOperationWhenWorkflowRecoveryBudgetIsExhausted(t *testing.T) {
+	journal := &recordingInferenceJournal{}
+	workflow := newInferenceWorkflowWithIdentity("iwf-no-replay", InferenceProfileInteractive, WorkflowBudgetSpec{
+		MaxSamePayloadReplays: LimitedBudget(0),
+	}, time.Now())
+	ctx := WithInferenceWorkflow(WithInferenceJournal(context.Background(), journal), workflow)
+	client := &alwaysRetryableClient{}
+
+	_, err := ExecuteChat(ctx, client, ChatRequest{
+		Model: "test", Messages: []ChatMessage{{Role: "user", Content: "hello"}},
+	}, InferenceOperationAgentRound, InferenceProfileInteractive)
+	var exceeded *WorkflowBudgetExceededError
+	if !errors.As(err, &exceeded) || exceeded.Dimension != WorkflowBudgetSamePayloadReplays {
+		t.Fatalf("ExecuteChat error = %v", err)
+	}
+	if client.calls != 1 {
+		t.Fatalf("client calls = %d, want 1", client.calls)
+	}
+	want := "operation:prepared|attempt:prepared|attempt:failed|recovery:replay_same_payload|operation:failed"
 	if got := strings.Join(journal.events, "|"); got != want {
 		t.Fatalf("journal events = %q, want %q", got, want)
 	}

@@ -28,7 +28,6 @@ func (j *dreamRecordingJournal) PrepareOperation(record providers.InferenceOpera
 func (*dreamRecordingJournal) PrepareAttempt(providers.InferenceAttemptJournalRecord) error {
 	return nil
 }
-func (*dreamRecordingJournal) MarkAttemptDispatching(string, string, time.Time) error { return nil }
 func (*dreamRecordingJournal) UpsertSubmission(providers.InferenceSubmissionJournalRecord) error {
 	return nil
 }

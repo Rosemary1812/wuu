@@ -231,9 +231,6 @@ func (l *ProviderLease) RecordSubmission(attempt InferenceAttempt, meta Inferenc
 	if l.submission.Valid() {
 		panic("providers: provider lease already owns a submission")
 	}
-	if err := attempt.MarkDispatching(); err != nil {
-		return InferenceSubmission{}, err
-	}
 	submission, err := attempt.RecordSubmission(meta)
 	if err != nil {
 		return InferenceSubmission{}, err

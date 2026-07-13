@@ -461,28 +461,6 @@ func (a InferenceAttempt) Operation() InferenceOperation {
 	return a.execution.Operation()
 }
 
-// RecordSubmission marks the physical send boundary immediately before the
-// provider transport writes the inference request.
-func (a InferenceAttempt) MarkDispatching() error {
-	if !a.Valid() {
-		return errors.New("mark dispatching without a valid inference attempt")
-	}
-	e := a.execution
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.journalErr != nil {
-		return e.journalErr
-	}
-	if e.journal == nil {
-		return nil
-	}
-	if err := e.journal.MarkAttemptDispatching(e.operation.ID, a.ID, time.Now().UTC()); err != nil {
-		e.journalErr = err
-		return err
-	}
-	return nil
-}
-
 func (a InferenceAttempt) RecordSubmission(meta InferenceSubmissionMeta) (InferenceSubmission, error) {
 	if !a.Valid() {
 		return InferenceSubmission{}, errors.New("record submission without a valid inference attempt")

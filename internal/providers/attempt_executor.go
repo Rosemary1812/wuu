@@ -59,6 +59,11 @@ func ExecuteChat(
 			delay = backoffDelay(retriesUsed, cfg.InitialDelay, cfg.MaxDelay, callErr)
 		}
 		if journalErr := prepared.Attempt.RecordRecovery(plan, time.Now().Add(delay)); journalErr != nil {
+			if IsWorkflowBudgetError(journalErr) {
+				budgetFailure := NormalizeFailure(journalErr)
+				completeErr := prepared.Execution.Complete(InferenceOutcomeFailed, budgetFailure)
+				return resp, errors.Join(callErr, journalErr, completeErr)
+			}
 			return resp, errors.Join(callErr, journalErr)
 		}
 		if cancelErr := inferenceContextError(ctx); cancelErr != nil {

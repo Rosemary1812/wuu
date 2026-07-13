@@ -22,7 +22,6 @@ type codexJournal struct{}
 
 func (codexJournal) PrepareOperation(providers.InferenceOperationJournalRecord) error { return nil }
 func (codexJournal) PrepareAttempt(providers.InferenceAttemptJournalRecord) error     { return nil }
-func (codexJournal) MarkAttemptDispatching(string, string, time.Time) error           { return nil }
 func (codexJournal) UpsertSubmission(providers.InferenceSubmissionJournalRecord) error {
 	return nil
 }

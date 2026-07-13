@@ -176,31 +176,64 @@ func (j *inferenceJournal) PrepareOperation(record providers.InferenceOperationJ
 	if op.PayloadVersion < 1 {
 		return errors.New("prepare inference operation: payload version must be positive")
 	}
+	if op.AttemptLimit < 1 {
+		return errors.New("prepare inference operation: attempt limit must be positive")
+	}
+	workflow := normalizeInferenceWorkflowRecord(record.Workflow, op, record.At)
+	op.WorkflowID = strings.TrimSpace(op.WorkflowID)
+	if op.WorkflowID == "" {
+		op.WorkflowID = workflow.ID
+	}
+	if workflow.ID != op.WorkflowID {
+		return fmt.Errorf("prepare inference operation: operation workflow %q does not match record workflow %q", op.WorkflowID, workflow.ID)
+	}
 	at := journalTime(record.At)
 	return j.write("prepare inference operation", func(tx *sql.Tx) error {
-		var runtimeID, scope, owner, kind, profile, requestHash, status string
-		var payloadVersion int
+		if err := j.prepareWorkflowTx(tx, workflow, at); err != nil {
+			return err
+		}
+		var workflowID, parentID, runtimeID, scope, owner, kind, profile, requestHash, status string
+		var attemptLimit, payloadVersion int
 		err := tx.QueryRow(`
-SELECT runtime_id, workspace_scope, owner_id, kind, workload_profile,
+SELECT workflow_id, parent_operation_id, attempt_limit,
+       runtime_id, workspace_scope, owner_id, kind, workload_profile,
        payload_version, request_hash, status
 FROM inference_operations WHERE id = ?`, op.ID).Scan(
+			&workflowID, &parentID, &attemptLimit,
 			&runtimeID, &scope, &owner, &kind, &profile, &payloadVersion, &requestHash, &status,
 		)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
+			if err := validateInferenceParentTx(tx, op); err != nil {
+				return err
+			}
+			if err := assertWorkflowCostAdmissibleTx(tx, workflow.ID); err != nil {
+				return err
+			}
+			if err := reserveWorkflowCounterTx(tx, workflow.ID, providers.WorkflowBudgetOperations, "used_operations", "max_operations", 1, at); err != nil {
+				return err
+			}
+			if op.ParentOperationID != "" {
+				if err := reserveWorkflowCounterTx(tx, workflow.ID, providers.WorkflowBudgetChildOperations, "used_child_operations", "max_child_operations", 1, at); err != nil {
+					return err
+				}
+			}
 			_, err = tx.Exec(`
 INSERT INTO inference_operations (
-    id, runtime_id, workspace_scope, owner_id, kind, workload_profile,
+    id, workflow_id, parent_operation_id, attempt_limit,
+    runtime_id, workspace_scope, owner_id, kind, workload_profile,
     payload_version, request_hash, status, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
-				op.ID, j.runtime.runtimeID, j.runtime.workspaceScope, j.ownerID,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+				op.ID, workflow.ID, strings.TrimSpace(op.ParentOperationID), op.AttemptLimit,
+				j.runtime.runtimeID, j.runtime.workspaceScope, j.ownerID,
 				string(op.Kind), string(op.WorkloadProfile), op.PayloadVersion,
 				record.RequestHash, at, at,
 			)
 			return err
 		case err != nil:
 			return err
-		case runtimeID != j.runtime.runtimeID || scope != j.runtime.workspaceScope || owner != j.ownerID ||
+		case workflowID != workflow.ID || parentID != strings.TrimSpace(op.ParentOperationID) || attemptLimit != op.AttemptLimit ||
+			runtimeID != j.runtime.runtimeID || scope != j.runtime.workspaceScope || owner != j.ownerID ||
 			kind != string(op.Kind) || profile != string(op.WorkloadProfile) ||
 			payloadVersion != op.PayloadVersion || requestHash != record.RequestHash:
 			return fmt.Errorf("operation %q metadata changed after preparation", op.ID)
@@ -214,6 +247,7 @@ INSERT INTO inference_operations (
 
 func (j *inferenceJournal) PrepareAttempt(record providers.InferenceAttemptJournalRecord) error {
 	record.OperationID = strings.TrimSpace(record.OperationID)
+	record.WorkflowID = strings.TrimSpace(record.WorkflowID)
 	record.AttemptID = strings.TrimSpace(record.AttemptID)
 	record.RequestHash = strings.TrimSpace(record.RequestHash)
 	if record.OperationID == "" || record.AttemptID == "" || !validInferenceRequestHash(record.RequestHash) || record.Ordinal < 1 {
@@ -221,19 +255,58 @@ func (j *inferenceJournal) PrepareAttempt(record providers.InferenceAttemptJourn
 	}
 	at := journalTime(record.At)
 	return j.write("prepare inference attempt", func(tx *sql.Tx) error {
-		var runtimeID, scope, owner, requestHash, status string
+		var existingOperationID, existingHash string
+		var existingOrdinal int
+		err := tx.QueryRow(`
+SELECT operation_id, ordinal, request_hash FROM inference_attempts WHERE id = ?`, record.AttemptID).
+			Scan(&existingOperationID, &existingOrdinal, &existingHash)
+		if err == nil {
+			if existingOperationID != record.OperationID || existingOrdinal != record.Ordinal || existingHash != record.RequestHash {
+				return fmt.Errorf("attempt %q metadata changed after preparation", record.AttemptID)
+			}
+			return nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+
+		var workflowID, runtimeID, scope, owner, requestHash, status string
+		var attemptLimit int
 		if err := tx.QueryRow(`
-SELECT runtime_id, workspace_scope, owner_id, request_hash, status
+SELECT workflow_id, attempt_limit, runtime_id, workspace_scope, owner_id, request_hash, status
 FROM inference_operations WHERE id = ?`, record.OperationID).
-			Scan(&runtimeID, &scope, &owner, &requestHash, &status); err != nil {
+			Scan(&workflowID, &attemptLimit, &runtimeID, &scope, &owner, &requestHash, &status); err != nil {
 			return err
 		}
 		if runtimeID != j.runtime.runtimeID || scope != j.runtime.workspaceScope || owner != j.ownerID ||
 			requestHash != record.RequestHash || status != "active" {
 			return fmt.Errorf("operation %q is not the active prepared operation", record.OperationID)
 		}
-		result, err := tx.Exec(`
-INSERT OR IGNORE INTO inference_attempts (
+		if record.WorkflowID != "" && record.WorkflowID != workflowID {
+			return fmt.Errorf("attempt %q workflow %q does not match operation workflow %q", record.AttemptID, record.WorkflowID, workflowID)
+		}
+		if record.Ordinal > attemptLimit {
+			return &providers.WorkflowBudgetExceededError{
+				WorkflowID: workflowID,
+				Dimension:  providers.WorkflowBudgetAttempts,
+				Limit:      uint64(attemptLimit),
+				Used:       uint64(attemptLimit),
+				Requested:  1,
+			}
+		}
+		if err := assertWorkflowCostAdmissibleTx(tx, workflowID); err != nil {
+			return err
+		}
+		if err := reserveWorkflowCounterTx(tx, workflowID, providers.WorkflowBudgetAttempts, "used_attempts", "max_attempts", 1, at); err != nil {
+			return err
+		}
+		if record.Ordinal > 1 {
+			if err := reserveWorkflowCounterTx(tx, workflowID, providers.WorkflowBudgetSamePayloadReplays, "used_replays", "max_replays", 1, at); err != nil {
+				return err
+			}
+		}
+		_, err = tx.Exec(`
+INSERT INTO inference_attempts (
     id, operation_id, ordinal, request_hash, phase, prepared_at
 ) VALUES (?, ?, ?, ?, 'prepared', ?)`,
 			record.AttemptID, record.OperationID, record.Ordinal, record.RequestHash, at,
@@ -241,48 +314,7 @@ INSERT OR IGNORE INTO inference_attempts (
 		if err != nil {
 			return err
 		}
-		if n, _ := result.RowsAffected(); n == 0 {
-			var operationID, attemptHash string
-			var ordinal int
-			if err := tx.QueryRow(`
-SELECT operation_id, ordinal, request_hash FROM inference_attempts WHERE id = ?`, record.AttemptID).
-				Scan(&operationID, &ordinal, &attemptHash); err != nil {
-				return err
-			}
-			if operationID != record.OperationID || ordinal != record.Ordinal || attemptHash != record.RequestHash {
-				return fmt.Errorf("attempt %q metadata changed after preparation", record.AttemptID)
-			}
-		}
 		_, err = tx.Exec(`UPDATE inference_operations SET updated_at = ? WHERE id = ?`, at, record.OperationID)
-		return err
-	})
-}
-
-func (j *inferenceJournal) MarkAttemptDispatching(operationID, attemptID string, at time.Time) error {
-	operationID = strings.TrimSpace(operationID)
-	attemptID = strings.TrimSpace(attemptID)
-	if operationID == "" || attemptID == "" {
-		return errors.New("mark inference attempt dispatching: ids are required")
-	}
-	stamp := journalTime(at)
-	return j.write("mark inference attempt dispatching", func(tx *sql.Tx) error {
-		if err := j.assertOperationTx(tx, operationID, true); err != nil {
-			return err
-		}
-		result, err := tx.Exec(`
-UPDATE inference_attempts
-SET phase = CASE WHEN phase = 'prepared' THEN 'dispatching' ELSE phase END,
-    dispatching_at = CASE WHEN dispatching_at = 0 THEN ? ELSE dispatching_at END
-WHERE id = ? AND operation_id = ? AND phase IN ('prepared', 'dispatching', 'sent', 'streaming')`,
-			stamp, attemptID, operationID,
-		)
-		if err != nil {
-			return err
-		}
-		if n, _ := result.RowsAffected(); n != 1 {
-			return fmt.Errorf("attempt %q is not dispatchable", attemptID)
-		}
-		_, err = tx.Exec(`UPDATE inference_operations SET updated_at = ? WHERE id = ? AND status = 'active'`, stamp, operationID)
 		return err
 	})
 }
@@ -302,11 +334,14 @@ func (j *inferenceJournal) UpsertSubmission(record providers.InferenceSubmission
 		if err := j.assertOperationTx(tx, record.OperationID, false); err != nil {
 			return err
 		}
-		var linkedOperation string
+		var linkedOperation, workflowID string
 		var linkedOrdinal int
 		if err := tx.QueryRow(`
-SELECT operation_id, ordinal FROM inference_attempts WHERE id = ?`, record.AttemptID).
-			Scan(&linkedOperation, &linkedOrdinal); err != nil {
+SELECT a.operation_id, a.ordinal, o.workflow_id
+FROM inference_attempts a
+JOIN inference_operations o ON o.id = a.operation_id
+WHERE a.id = ?`, record.AttemptID).
+			Scan(&linkedOperation, &linkedOrdinal, &workflowID); err != nil {
 			return err
 		}
 		if linkedOperation != record.OperationID || linkedOrdinal != record.AttemptOrdinal {
@@ -336,6 +371,20 @@ FROM inference_submissions WHERE id = ?`, record.ID).
 			)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
+			if err := assertWorkflowCostAdmissibleTx(tx, workflowID); err != nil {
+				return err
+			}
+			if err := reserveWorkflowCounterTx(tx, workflowID, providers.WorkflowBudgetSubmissions, "used_submissions", "max_submissions", 1, startedAt); err != nil {
+				return err
+			}
+			if err := applyWorkflowCostDeltaTx(
+				tx, workflowID,
+				"", inferenceJournalUsage{}, inferenceJournalUsage{},
+				string(record.CostState), reported, estimated,
+				startedAt,
+			); err != nil {
+				return err
+			}
 			_, err = tx.Exec(`
 INSERT INTO inference_submissions (
     id, operation_id, attempt_id, ordinal, attempt_ordinal,
@@ -395,6 +444,14 @@ INSERT INTO inference_submissions (
 			mergedCompletedAt := completedAt
 			if existingCompletedAt != 0 {
 				mergedCompletedAt = existingCompletedAt
+			}
+			if err := applyWorkflowCostDeltaTx(
+				tx, workflowID,
+				existingCost, existingReported, existingEstimated,
+				mergedCost, mergedReported, mergedEstimated,
+				startedAt,
+			); err != nil {
+				return err
 			}
 			_, err = tx.Exec(`
 UPDATE inference_submissions SET
@@ -491,6 +548,41 @@ func (j *inferenceJournal) RecordRecovery(record providers.InferenceRecoveryJour
 		if err := j.assertOperationTx(tx, record.OperationID, true); err != nil {
 			return err
 		}
+		var workflowID, phase, existingAction string
+		if err := tx.QueryRow(`
+SELECT o.workflow_id, a.phase, a.recovery_action
+FROM inference_attempts a
+JOIN inference_operations o ON o.id = a.operation_id
+WHERE a.id = ? AND a.operation_id = ?`, record.AttemptID, record.OperationID).
+			Scan(&workflowID, &phase, &existingAction); err != nil {
+			return err
+		}
+		if phase != "terminal" {
+			return fmt.Errorf("attempt %q is not terminal for recovery", record.AttemptID)
+		}
+		if existingAction != "" {
+			if existingAction == string(record.Action) {
+				return nil
+			}
+			return fmt.Errorf("attempt %q already recorded recovery %q", record.AttemptID, existingAction)
+		}
+		if err := assertWorkflowCostAdmissibleTx(tx, workflowID); err != nil {
+			return err
+		}
+		if dimension, usedColumn, maxColumn := recoveryWorkflowColumns(record.Action); dimension != "" {
+			if err := reserveWorkflowCounterTx(tx, workflowID, dimension, usedColumn, maxColumn, 1, stamp); err != nil {
+				return err
+			}
+		}
+		waitMillis := int64(0)
+		if retryAt > stamp {
+			waitMillis = retryAt - stamp
+		}
+		if waitMillis > 0 {
+			if err := reserveWorkflowCounterTx(tx, workflowID, providers.WorkflowBudgetRecoveryWait, "used_recovery_wait_ms", "max_recovery_wait_ms", waitMillis, stamp); err != nil {
+				return err
+			}
+		}
 		result, err := tx.Exec(`
 UPDATE inference_attempts SET recovery_action = ?, retry_at = ?
 WHERE id = ? AND operation_id = ? AND phase = 'terminal'`,
@@ -544,6 +636,330 @@ FROM inference_operations WHERE id = ?`, operationID).
 		return fmt.Errorf("operation %q is already terminal (%s)", operationID, status)
 	}
 	return nil
+}
+
+func normalizeInferenceWorkflowRecord(record providers.InferenceWorkflowJournalRecord, operation providers.InferenceOperation, at time.Time) providers.InferenceWorkflowJournalRecord {
+	emptyRecord := strings.TrimSpace(record.ID) == ""
+	if emptyRecord {
+		record.ID = strings.TrimSpace(operation.WorkflowID)
+		if record.ID == "" {
+			record.ID = "iwf-" + operation.ID
+		}
+	}
+	if record.Profile == "" {
+		record.Profile = operation.WorkloadProfile
+	}
+	if record.Profile == "" {
+		record.Profile = providers.InferenceProfileInteractive
+	}
+	if emptyRecord {
+		record.Budget = providers.WorkflowBudgetSpecForProfile(record.Profile)
+	}
+	if record.StartedAt.IsZero() {
+		record.StartedAt = at
+	}
+	return record
+}
+
+type inferenceWorkflowLimitColumns struct {
+	operations, attempts, submissions, replays int64
+	transportSwitches, credentialRefreshes     int64
+	payloadTransforms, childOperations         int64
+	recoveryWaitMillis, unknownBillable        int64
+	usageTokens                                int64
+}
+
+func inferenceWorkflowLimits(spec providers.WorkflowBudgetSpec) (inferenceWorkflowLimitColumns, error) {
+	convert := func(name string, limit providers.BudgetLimit) (int64, error) {
+		if !limit.Set {
+			return -1, nil
+		}
+		if limit.Value > uint64(1<<63-1) {
+			return 0, fmt.Errorf("workflow budget %s exceeds SQLite integer range", name)
+		}
+		return int64(limit.Value), nil
+	}
+	var out inferenceWorkflowLimitColumns
+	var err error
+	fields := []struct {
+		name  string
+		limit providers.BudgetLimit
+		dest  *int64
+	}{
+		{"operations", spec.MaxOperations, &out.operations},
+		{"attempts", spec.MaxAttempts, &out.attempts},
+		{"submissions", spec.MaxSubmissions, &out.submissions},
+		{"replays", spec.MaxSamePayloadReplays, &out.replays},
+		{"transport switches", spec.MaxTransportSwitches, &out.transportSwitches},
+		{"credential refreshes", spec.MaxCredentialRefreshes, &out.credentialRefreshes},
+		{"payload transforms", spec.MaxPayloadTransforms, &out.payloadTransforms},
+		{"child operations", spec.MaxChildOperations, &out.childOperations},
+		{"recovery wait", spec.MaxRecoveryWaitMillis, &out.recoveryWaitMillis},
+		{"unknown billable", spec.MaxUnknownBillableSubmissions, &out.unknownBillable},
+		{"usage tokens", spec.MaxUsageTokens, &out.usageTokens},
+	}
+	for _, field := range fields {
+		*field.dest, err = convert(field.name, field.limit)
+		if err != nil {
+			return inferenceWorkflowLimitColumns{}, err
+		}
+	}
+	return out, nil
+}
+
+func (j *inferenceJournal) prepareWorkflowTx(tx *sql.Tx, record providers.InferenceWorkflowJournalRecord, fallbackAt int64) error {
+	record.ID = strings.TrimSpace(record.ID)
+	if record.ID == "" || record.Profile == "" {
+		return errors.New("prepare inference workflow: id and profile are required")
+	}
+	limits, err := inferenceWorkflowLimits(record.Budget)
+	if err != nil {
+		return err
+	}
+	startedAt := optionalJournalTime(record.StartedAt)
+	if startedAt == 0 {
+		startedAt = fallbackAt
+	}
+	var runtimeID, scope, owner, profile, status string
+	var existing inferenceWorkflowLimitColumns
+	err = tx.QueryRow(`
+SELECT runtime_id, workspace_scope, owner_id, workload_profile,
+       max_operations, max_attempts, max_submissions, max_replays,
+       max_transport_switches, max_credential_refreshes, max_payload_transforms,
+       max_child_operations, max_recovery_wait_ms, max_unknown_billable,
+       max_usage_tokens, status
+FROM inference_workflows WHERE id = ?`, record.ID).Scan(
+		&runtimeID, &scope, &owner, &profile,
+		&existing.operations, &existing.attempts, &existing.submissions, &existing.replays,
+		&existing.transportSwitches, &existing.credentialRefreshes, &existing.payloadTransforms,
+		&existing.childOperations, &existing.recoveryWaitMillis, &existing.unknownBillable,
+		&existing.usageTokens, &status,
+	)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		_, err = tx.Exec(`
+INSERT INTO inference_workflows (
+    id, runtime_id, workspace_scope, owner_id, workload_profile,
+    max_operations, max_attempts, max_submissions, max_replays,
+    max_transport_switches, max_credential_refreshes, max_payload_transforms,
+    max_child_operations, max_recovery_wait_ms, max_unknown_billable,
+    max_usage_tokens, status, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+			record.ID, j.runtime.runtimeID, j.runtime.workspaceScope, j.ownerID, string(record.Profile),
+			limits.operations, limits.attempts, limits.submissions, limits.replays,
+			limits.transportSwitches, limits.credentialRefreshes, limits.payloadTransforms,
+			limits.childOperations, limits.recoveryWaitMillis, limits.unknownBillable,
+			limits.usageTokens, startedAt, fallbackAt,
+		)
+		return err
+	case err != nil:
+		return err
+	case runtimeID != j.runtime.runtimeID || scope != j.runtime.workspaceScope || owner != j.ownerID ||
+		profile != string(record.Profile) || existing != limits:
+		return fmt.Errorf("workflow %q metadata changed after preparation", record.ID)
+	case status != "active":
+		return fmt.Errorf("workflow %q is already terminal (%s)", record.ID, status)
+	default:
+		return nil
+	}
+}
+
+func validateInferenceParentTx(tx *sql.Tx, operation providers.InferenceOperation) error {
+	parentID := strings.TrimSpace(operation.ParentOperationID)
+	if parentID == "" {
+		return nil
+	}
+	if parentID == operation.ID {
+		return errors.New("inference operation cannot be its own parent")
+	}
+	var workflowID string
+	if err := tx.QueryRow(`SELECT workflow_id FROM inference_operations WHERE id = ?`, parentID).Scan(&workflowID); err != nil {
+		return fmt.Errorf("load parent inference operation %q: %w", parentID, err)
+	}
+	if workflowID != operation.WorkflowID {
+		return fmt.Errorf("parent inference operation %q belongs to workflow %q, not %q", parentID, workflowID, operation.WorkflowID)
+	}
+	return nil
+}
+
+func reserveWorkflowCounterTx(
+	tx *sql.Tx,
+	workflowID string,
+	dimension providers.WorkflowBudgetDimension,
+	usedColumn, maxColumn string,
+	delta int64,
+	stamp int64,
+) error {
+	if delta < 0 {
+		panic("session: negative workflow budget reservation")
+	}
+	allowed := map[string]string{
+		"used_operations":           "max_operations",
+		"used_attempts":             "max_attempts",
+		"used_submissions":          "max_submissions",
+		"used_replays":              "max_replays",
+		"used_transport_switches":   "max_transport_switches",
+		"used_credential_refreshes": "max_credential_refreshes",
+		"used_payload_transforms":   "max_payload_transforms",
+		"used_child_operations":     "max_child_operations",
+		"used_recovery_wait_ms":     "max_recovery_wait_ms",
+	}
+	if allowed[usedColumn] != maxColumn {
+		panic("session: invalid workflow budget columns")
+	}
+	query := fmt.Sprintf(`
+UPDATE inference_workflows
+SET %s = %s + ?, updated_at = ?
+WHERE id = ? AND status = 'active'
+  AND (%s < 0 OR %s + ? <= %s)`, usedColumn, usedColumn, maxColumn, usedColumn, maxColumn)
+	result, err := tx.Exec(query, delta, stamp, workflowID, delta)
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 1 {
+		return nil
+	}
+	var used, limit int64
+	var status string
+	read := fmt.Sprintf(`SELECT %s, %s, status FROM inference_workflows WHERE id = ?`, usedColumn, maxColumn)
+	if err := tx.QueryRow(read, workflowID).Scan(&used, &limit, &status); err != nil {
+		return err
+	}
+	if status != "active" {
+		return fmt.Errorf("workflow %q is already terminal (%s)", workflowID, status)
+	}
+	if limit < 0 {
+		return fmt.Errorf("workflow %q counter %s could not be reserved", workflowID, dimension)
+	}
+	return &providers.WorkflowBudgetExceededError{
+		WorkflowID: workflowID,
+		Dimension:  dimension,
+		Limit:      uint64(limit),
+		Used:       uint64(used),
+		Requested:  uint64(delta),
+	}
+}
+
+func assertWorkflowCostAdmissibleTx(tx *sql.Tx, workflowID string) error {
+	var maxUsage, knownUsage, estimatedUsage, unknown int64
+	var status string
+	if err := tx.QueryRow(`
+SELECT max_usage_tokens, known_usage_tokens, estimated_usage_tokens, unknown_billable, status
+FROM inference_workflows WHERE id = ?`, workflowID).
+		Scan(&maxUsage, &knownUsage, &estimatedUsage, &unknown, &status); err != nil {
+		return err
+	}
+	if status != "active" {
+		return fmt.Errorf("workflow %q is already terminal (%s)", workflowID, status)
+	}
+	if maxUsage < 0 {
+		return nil
+	}
+	if unknown > 0 {
+		return &providers.WorkflowCostIndeterminateError{
+			WorkflowID: workflowID, UnknownBillableSubmissions: uint64(unknown),
+		}
+	}
+	used := knownUsage + estimatedUsage
+	if used <= maxUsage {
+		return nil
+	}
+	return &providers.WorkflowBudgetExceededError{
+		WorkflowID: workflowID,
+		Dimension:  providers.WorkflowBudgetUsageTokens,
+		Limit:      uint64(maxUsage),
+		Used:       uint64(used),
+	}
+}
+
+func applyWorkflowCostDeltaTx(
+	tx *sql.Tx,
+	workflowID string,
+	oldState string,
+	oldReported, oldEstimated inferenceJournalUsage,
+	newState string,
+	newReported, newEstimated inferenceJournalUsage,
+	stamp int64,
+) error {
+	type contribution struct {
+		known, estimated, unknown    int64
+		knownTokens, estimatedTokens int64
+	}
+	contribute := func(state string, reported, estimated inferenceJournalUsage) contribution {
+		switch state {
+		case string(providers.InferenceCostKnown):
+			return contribution{known: 1, knownTokens: journalUsageTokens(reported)}
+		case string(providers.InferenceCostEstimated):
+			return contribution{estimated: 1, estimatedTokens: journalUsageTokens(estimated)}
+		case string(providers.InferenceCostUnknownBillable):
+			return contribution{unknown: 1}
+		default:
+			return contribution{}
+		}
+	}
+	oldCost := contribute(oldState, oldReported, oldEstimated)
+	newCost := contribute(newState, newReported, newEstimated)
+	knownDelta := newCost.known - oldCost.known
+	estimatedDelta := newCost.estimated - oldCost.estimated
+	unknownDelta := newCost.unknown - oldCost.unknown
+	knownTokensDelta := newCost.knownTokens - oldCost.knownTokens
+	estimatedTokensDelta := newCost.estimatedTokens - oldCost.estimatedTokens
+	if knownDelta == 0 && estimatedDelta == 0 && unknownDelta == 0 && knownTokensDelta == 0 && estimatedTokensDelta == 0 {
+		return nil
+	}
+	var known, estimated, unknown, knownTokens, estimatedTokens, maxUnknown int64
+	if err := tx.QueryRow(`
+SELECT known_submissions, estimated_submissions, unknown_billable,
+       known_usage_tokens, estimated_usage_tokens, max_unknown_billable
+FROM inference_workflows WHERE id = ?`, workflowID).
+		Scan(&known, &estimated, &unknown, &knownTokens, &estimatedTokens, &maxUnknown); err != nil {
+		return err
+	}
+	known += knownDelta
+	estimated += estimatedDelta
+	unknown += unknownDelta
+	knownTokens += knownTokensDelta
+	estimatedTokens += estimatedTokensDelta
+	if known < 0 || estimated < 0 || unknown < 0 || knownTokens < 0 || estimatedTokens < 0 {
+		return errors.New("workflow cost accounting underflow")
+	}
+	if maxUnknown >= 0 && unknown > maxUnknown {
+		return &providers.WorkflowBudgetExceededError{
+			WorkflowID: workflowID,
+			Dimension:  providers.WorkflowBudgetUnknownBillable,
+			Limit:      uint64(maxUnknown),
+			Used:       uint64(unknown - unknownDelta),
+			Requested:  uint64(unknownDelta),
+		}
+	}
+	_, err := tx.Exec(`
+UPDATE inference_workflows SET
+    known_submissions = ?, estimated_submissions = ?, unknown_billable = ?,
+    known_usage_tokens = ?, estimated_usage_tokens = ?, updated_at = ?
+WHERE id = ? AND status = 'active'`,
+		known, estimated, unknown, knownTokens, estimatedTokens, stamp, workflowID,
+	)
+	return err
+}
+
+func journalUsageTokens(usage inferenceJournalUsage) int64 {
+	if usage.present == 0 {
+		return 0
+	}
+	return int64(usage.input + usage.output + usage.cacheCreation + usage.cacheRead)
+}
+
+func recoveryWorkflowColumns(action providers.RecoveryActionKind) (providers.WorkflowBudgetDimension, string, string) {
+	switch action {
+	case providers.RecoverySwitchTransport:
+		return providers.WorkflowBudgetTransportSwitches, "used_transport_switches", "max_transport_switches"
+	case providers.RecoveryRefreshAuth:
+		return providers.WorkflowBudgetCredentialRefresh, "used_credential_refreshes", "max_credential_refreshes"
+	case providers.RecoveryTransformPayload:
+		return providers.WorkflowBudgetPayloadTransforms, "used_payload_transforms", "max_payload_transforms"
+	default:
+		return "", "", ""
+	}
 }
 
 func (j *inferenceJournal) write(action string, fn func(*sql.Tx) error) error {
