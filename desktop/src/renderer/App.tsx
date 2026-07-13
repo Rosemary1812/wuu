@@ -1093,7 +1093,10 @@ export function App(): JSX.Element {
   // authoritative thread turns means a message that already went out can never
   // stay stuck as "排队中".
   useEffect(() => {
-    reconcilePendingComposerMessagesForState(appStateRef.current);
+    // Use the state snapshot that produced this render. appStateRef is synced
+    // by a later effect, so reading it here can observe the previous thread
+    // snapshot and permanently miss a materialized queued user_message.
+    reconcilePendingComposerMessagesForState(state);
   }, [
     pendingComposerMessagesByThread,
     state.thread,
