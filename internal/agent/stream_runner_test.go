@@ -728,7 +728,7 @@ func TestStreamRunner_RetryOnInitialConnectHTTP500(t *testing.T) {
 	}
 }
 
-func TestStreamRunnerResetsReplaySpendAfterAgentRoundProgress(t *testing.T) {
+func TestStreamRunnerSharesReplaySpendAcrossAgentRounds(t *testing.T) {
 	const successfulToolRounds = 6
 	attempts := make([]mockStreamAttempt, 0, successfulToolRounds*2)
 	results := make(map[string]string, successfulToolRounds)
@@ -759,14 +759,16 @@ func TestStreamRunnerResetsReplaySpendAfterAgentRoundProgress(t *testing.T) {
 	}
 
 	result, err := runner.Run(context.Background(), "read files")
-	if err != nil {
-		t.Fatalf("Run error = %v", err)
+	var exceeded *providers.WorkflowBudgetExceededError
+	if !errors.As(err, &exceeded) || exceeded.Dimension != providers.WorkflowBudgetSamePayloadReplays {
+		t.Fatalf("Run error = %v, want shared replay budget exhaustion", err)
 	}
-	if result != "done" {
-		t.Fatalf("result = %q, want done", result)
+	if result != "" {
+		t.Fatalf("result = %q, want no final answer after budget denial", result)
 	}
-	if client.callCount != successfulToolRounds*2+1 {
-		t.Fatalf("physical stream attempts = %d, want %d", client.callCount, successfulToolRounds*2+1)
+	wantPhysicalAttempts := 5*2 + 1
+	if client.callCount != wantPhysicalAttempts {
+		t.Fatalf("physical stream attempts = %d, want %d", client.callCount, wantPhysicalAttempts)
 	}
 	workflowID := client.requests[0].Operation.WorkflowID
 	if workflowID == "" {
