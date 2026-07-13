@@ -599,14 +599,6 @@ func (a InferenceAttempt) Complete(outcome InferenceTerminalOutcome, failure Nor
 	e := a.execution
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	// A successfully completed attempt is forward progress: reset the
-	// workflow's same-payload replay spend so scattered transient recoveries
-	// across a long session never accumulate into the storm gate. This is
-	// the hook that streaming rounds actually hit; operation-level Complete
-	// below covers non-streaming paths.
-	if outcome == InferenceOutcomeSucceeded && e.workflow != nil {
-		e.workflow.spend.NoteOperationSuccess()
-	}
 	if e.journalErr != nil {
 		return e.journalErr
 	}
@@ -705,9 +697,6 @@ func (e *InferenceExecution) Complete(outcome InferenceTerminalOutcome, failure 
 		}
 	}
 	e.terminal = true
-	if outcome == InferenceOutcomeSucceeded && e.workflow != nil {
-		e.workflow.spend.NoteOperationSuccess()
-	}
 	if e.ownsWorkflow {
 		if err := CompleteInferenceWorkflow(e.workflow, e.journal, outcome); err != nil {
 			e.journalErr = err
