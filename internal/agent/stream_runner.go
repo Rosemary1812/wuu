@@ -14,6 +14,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
+	"github.com/blueberrycongee/wuu/internal/toolledger"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
@@ -30,6 +31,7 @@ const maxConsecutiveProactiveCompactFailures = 3
 type StreamRunner struct {
 	Client       providers.StreamClient
 	Tools        ToolExecutor
+	ToolLedger   *toolledger.Ledger
 	Model        string
 	APIModel     string
 	SystemPrompt string
@@ -233,6 +235,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		client:                  r.Client,
 		onEvent:                 effectiveOnEvent,
 		tools:                   r.Tools,
+		toolLedger:              r.ToolLedger,
 		enableStreamingToolExec: r.StreamingToolExecution,
 	}
 
@@ -682,6 +685,7 @@ type streamStep struct {
 	// executing as soon as their arguments are fully received,
 	// overlapping with continued model output.
 	tools                   ToolExecutor
+	toolLedger              *toolledger.Ledger
 	enableStreamingToolExec bool
 }
 
@@ -706,15 +710,16 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 	)
 
 	var toolRuntime *TurnToolRuntime
-	if s.enableStreamingToolExec && s.tools != nil {
-		toolRuntime = NewTurnToolRuntime(s.tools)
-		toolRuntime.SetStepIndex(req.StepIndex)
+	if s.tools != nil && (s.enableStreamingToolExec || s.toolLedger != nil) {
+		toolRuntime = NewTurnToolRuntime(ToolRuntimeConfig{
+			Executor: s.tools, Ledger: s.toolLedger, OperationID: req.Operation.ID, StepIndex: req.StepIndex,
+		})
 	}
 
 	// Wrap the event callback so streamed tool blocks enter the per-turn
 	// runtime as soon as they arrive.
 	origOnEvent := s.onEvent
-	if toolRuntime != nil {
+	if toolRuntime != nil && s.enableStreamingToolExec {
 		s.onEvent = func(ev providers.StreamEvent) {
 			toolRuntime.ObserveStreamEvent(ctx, ev)
 			if origOnEvent != nil {
@@ -726,18 +731,29 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 	resetRuntime := func() {
 		if toolRuntime != nil {
 			toolRuntime.Cancel()
-			toolRuntime = NewTurnToolRuntime(s.tools)
-			toolRuntime.SetStepIndex(req.StepIndex)
+			toolRuntime = NewTurnToolRuntime(ToolRuntimeConfig{
+				Executor: s.tools, Ledger: s.toolLedger, OperationID: req.Operation.ID, StepIndex: req.StepIndex,
+			})
 		}
 	}
-	replayGuard := func(retry providers.StreamRetryContext) error {
-		for _, call := range retry.FinalizedToolCalls {
-			if toolCanStartDuringStreaming(s.tools, call) {
-				return fmt.Errorf("streamed tool %q may already be running; reconnecting could run it twice", call.Name)
-			}
+	replayGuard := func(_ providers.StreamRetryContext) error {
+		if toolRuntime == nil {
+			return nil
 		}
-		if toolRuntime != nil && toolRuntime.HasStartedStreamingTool() {
-			return errors.New("a streamed tool has already started; reconnecting could run it twice")
+		decision, err := toolRuntime.ReplayDecision(ctx)
+		if err != nil {
+			return err
+		}
+		if decision.Action == toolledger.ReplayBlock {
+			return &toolledger.ReplayBlockedError{Decision: decision}
+		}
+		if decision.SupersedePartial {
+			toolRuntime.mu.Lock()
+			batchID := toolRuntime.batchID
+			toolRuntime.mu.Unlock()
+			if err := s.toolLedger.SupersedePreparedBatch(ctx, batchID); err != nil {
+				return err
+			}
 		}
 		return nil
 	}

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
+	"github.com/blueberrycongee/wuu/internal/toolledger"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
@@ -53,13 +55,13 @@ func TestTurnToolRuntimePreservesRichResultAndErrorState(t *testing.T) {
 		Meta:              []byte(`{"private":true}`),
 		IsError:           true,
 	}}
-	runtime := NewTurnToolRuntime(tools)
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools})
 	var callback toolresult.Result
 	runtime.SetResultCallback(func(_ providers.ToolCall, result toolresult.Result) {
 		callback = result.Clone()
 	})
 
-	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{ID: "call-1", Name: "browser_observe"}}, nil)
+	msgs, _ := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{ID: "call-1", Name: "browser_observe"}}, nil)
 	if len(msgs) != 1 || msgs[0].ToolResult == nil {
 		t.Fatalf("rich tool message missing: %+v", msgs)
 	}
@@ -182,8 +184,8 @@ func TestTurnToolRuntimeRecoversFromToolPanic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	runtime := NewTurnToolRuntime(panickingTool{})
-	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: panickingTool{}})
+	msgs, _ := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{
 		ID:   "call_1",
 		Name: "boom",
 	}}, nil)
@@ -209,9 +211,9 @@ func TestTurnToolRuntime_PreservesToolSearchKindOnResult(t *testing.T) {
 	tools := &runtimeTestTools{
 		results: map[string]string{"search_1": `{"loadable_tools":[]}`},
 	}
-	runtime := NewTurnToolRuntime(tools)
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools})
 
-	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{
+	msgs, _ := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{
 		ID:        "search_1",
 		Name:      "tool_search",
 		Kind:      providers.ToolCallKindToolSearch,
@@ -232,10 +234,10 @@ func TestTurnToolRuntimeAnnotatesToolExecutionStep(t *testing.T) {
 	defer cancel()
 
 	tools := &runtimeTestTools{}
-	runtime := NewTurnToolRuntime(tools)
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools})
 	runtime.SetStepIndex(3)
 
-	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{
+	msgs, _ := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{
 		ID:   "call_1",
 		Name: "read_file",
 	}}, nil)
@@ -261,9 +263,9 @@ func TestTurnToolRuntimeAttachesDiscoveredToolsToToolResult(t *testing.T) {
 			}},
 		},
 	}
-	runtime := NewTurnToolRuntime(tools)
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools})
 
-	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{
+	msgs, _ := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{
 		ID:   "spawn_1",
 		Name: "spawn_agent",
 	}}, nil)
@@ -285,11 +287,11 @@ func TestTurnToolRuntimeRejectsBarrierToolBatchBeforeExecutingSiblings(t *testin
 	defer cancel()
 
 	tools := &runtimeTestTools{}
-	runtime := NewTurnToolRuntime(tools)
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools})
 	var seen []providers.ToolCall
 	var rejections []ToolBatchRejectionInfo
 
-	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
+	msgs, _ := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
 		{ID: "call_write", Name: "run_shell"},
 		{ID: "call_inception", Name: "inception"},
 	}, func(call providers.ToolCall, _ string) {
@@ -327,9 +329,9 @@ func TestTurnToolRuntimeExecutesBarrierToolWhenCalledAlone(t *testing.T) {
 	defer cancel()
 
 	tools := &runtimeTestTools{}
-	runtime := NewTurnToolRuntime(tools)
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools})
 
-	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{ID: "call_inception", Name: "inception"}}, nil)
+	msgs, _ := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{ID: "call_inception", Name: "inception"}}, nil)
 
 	if calls := tools.recordedCalls(); len(calls) != 1 || calls[0].ID != "call_inception" {
 		t.Fatalf("single barrier tool should execute normally, got %+v", calls)
@@ -356,7 +358,7 @@ func TestTurnToolRuntime_ReusesStreamingStartedConcurrentRuns(t *testing.T) {
 			"call_2": 20 * time.Millisecond,
 		},
 	}
-	runtime := NewTurnToolRuntime(tools)
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools})
 	runtime.SetStepIndex(5)
 
 	for _, call := range []providers.ToolCall{
@@ -373,7 +375,7 @@ func TestTurnToolRuntime_ReusesStreamingStartedConcurrentRuns(t *testing.T) {
 		})
 	}
 
-	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
+	msgs, _ := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
 		{ID: "call_1", Name: "read_file", Arguments: `{"path":"a.go"}`},
 		{ID: "call_2", Name: "read_file", Arguments: `{"path":"b.go"}`},
 	}, nil)
@@ -406,7 +408,7 @@ func TestTurnToolRuntime_DoesNotStreamStartAcrossWriteBarrier(t *testing.T) {
 			"read_file": {ReadOnly: true, ConcurrencySafe: true},
 		},
 	}
-	runtime := NewTurnToolRuntime(tools)
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools})
 
 	for _, call := range []providers.ToolCall{
 		{ID: "write_first", Name: "run_shell", Arguments: `{"command":"touch x"}`},
@@ -426,7 +428,7 @@ func TestTurnToolRuntime_DoesNotStreamStartAcrossWriteBarrier(t *testing.T) {
 		t.Fatalf("expected no streaming-started calls across write barrier, got %+v", calls)
 	}
 
-	_ = runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
+	_, _ = runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
 		{ID: "write_first", Name: "run_shell", Arguments: `{"command":"touch x"}`},
 		{ID: "read_second", Name: "read_file", Arguments: `{"path":"x"}`},
 	}, nil)
@@ -440,7 +442,7 @@ func TestTurnToolRuntime_DoesNotStreamStartAcrossWriteBarrier(t *testing.T) {
 	}
 }
 
-func TestTurnToolRuntime_StreamingErrorFallsBackToFinalExecution(t *testing.T) {
+func TestTurnToolRuntime_StreamingErrorDoesNotExecuteAgain(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
@@ -452,7 +454,7 @@ func TestTurnToolRuntime_StreamingErrorFallsBackToFinalExecution(t *testing.T) {
 			"call_1": `{"ok":true}`,
 		},
 	}
-	runtime := NewTurnToolRuntime(tools)
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools})
 	runtime.ObserveStreamEvent(ctx, providers.StreamEvent{
 		Type:     providers.EventToolUseStart,
 		ToolCall: &providers.ToolCall{ID: "call_1", Name: "read_file"},
@@ -467,17 +469,14 @@ func TestTurnToolRuntime_StreamingErrorFallsBackToFinalExecution(t *testing.T) {
 	})
 	runtime.Cancel()
 
-	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
+	msgs, err := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
 		{ID: "call_1", Name: "read_file", Arguments: `{"path":"a.go"}`},
 	}, nil)
-	if len(msgs) != 1 {
-		t.Fatalf("expected one tool message, got %d", len(msgs))
+	if !errors.Is(err, context.Canceled) || len(msgs) != 0 {
+		t.Fatalf("expected the original canceled execution to stop the batch, got messages=%+v error=%v", msgs, err)
 	}
-	if msgs[0].Content != `{"ok":true}` {
-		t.Fatalf("expected fallback execution result, got %+v", msgs[0])
-	}
-	if calls := tools.recordedCalls(); len(calls) == 0 {
-		t.Fatal("expected the tool to execute at least once")
+	if calls := tools.recordedCalls(); len(calls) > 1 {
+		t.Fatalf("streaming execution was repeated: %+v", calls)
 	}
 }
 
@@ -489,7 +488,7 @@ func TestTurnToolRuntime_CancelsStreamingRunsMissingFromFinalCalls(t *testing.T)
 		started:  make(chan struct{}),
 		canceled: make(chan struct{}),
 	}
-	runtime := NewTurnToolRuntime(tools)
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools})
 	runtime.ObserveStreamEvent(ctx, providers.StreamEvent{
 		Type:     providers.EventToolUseStart,
 		ToolCall: &providers.ToolCall{ID: "orphan", Name: "read_file"},
@@ -509,7 +508,7 @@ func TestTurnToolRuntime_CancelsStreamingRunsMissingFromFinalCalls(t *testing.T)
 		t.Fatal("expected orphan streaming run to start")
 	}
 
-	msgs := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
+	msgs, _ := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{
 		{ID: "kept", Name: "read_file", Arguments: `{"path":"kept.go"}`},
 	}, nil)
 	if len(msgs) != 1 || msgs[0].ToolCallID != "kept" {
@@ -526,6 +525,51 @@ func TestTurnToolRuntime_CancelsStreamingRunsMissingFromFinalCalls(t *testing.T)
 	runtime.mu.Unlock()
 	if stillRegistered {
 		t.Fatal("expected missing streaming run to be dropped from runtime registry")
+	}
+}
+
+func TestTurnToolRuntimeDurablySettlesBeforeReturningResult(t *testing.T) {
+	ctx := context.Background()
+	tools := &runtimeTestTools{results: map[string]string{"call-1": "done"}}
+	ledger, err := toolledger.New(t.TempDir(), "thread-durable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{
+		Executor: tools, Ledger: ledger, OperationID: "operation-1", StepIndex: 3,
+	})
+	msgs, err := runtime.ExecuteFinalCalls(ctx, []providers.ToolCall{{ID: "call-1", Name: "write_file", Arguments: `{}`}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Content != "done" || msgs[0].ToolInvocationID == "" {
+		t.Fatalf("durable tool message = %+v", msgs)
+	}
+	pending, err := ledger.PendingProjection(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].ID != msgs[0].ToolInvocationID {
+		t.Fatalf("pending invocation = %+v", pending)
+	}
+	if calls := tools.recordedCalls(); len(calls) != 1 {
+		t.Fatalf("tool executions = %+v", calls)
+	}
+}
+
+func TestTurnToolRuntimeStopsWhenLedgerCannotPrepare(t *testing.T) {
+	tools := &runtimeTestTools{results: map[string]string{"call-1": "must not execute"}}
+	ledger, err := toolledger.New(t.TempDir(), "thread-invalid-operation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools, Ledger: ledger})
+	msgs, err := runtime.ExecuteFinalCalls(context.Background(), []providers.ToolCall{{ID: "call-1", Name: "write_file", Arguments: `{}`}}, nil)
+	if err == nil || len(msgs) != 0 {
+		t.Fatalf("ledger preparation failure returned messages=%+v error=%v", msgs, err)
+	}
+	if calls := tools.recordedCalls(); len(calls) != 0 {
+		t.Fatalf("tool ran without durable preparation: %+v", calls)
 	}
 }
 
@@ -563,7 +607,7 @@ func benchmarkTurnToolRuntimeOverlap(b *testing.B, streaming bool) {
 				"call_4": toolDelay,
 			},
 		}
-		runtime := NewTurnToolRuntime(tools)
+		runtime := NewTurnToolRuntime(ToolRuntimeConfig{Executor: tools})
 		if streaming {
 			for _, call := range calls {
 				runtime.ObserveStreamEvent(ctx, providers.StreamEvent{
@@ -577,7 +621,7 @@ func benchmarkTurnToolRuntimeOverlap(b *testing.B, streaming bool) {
 			}
 		}
 		time.Sleep(modelTail)
-		msgs := runtime.ExecuteFinalCalls(ctx, calls, nil)
+		msgs, _ := runtime.ExecuteFinalCalls(ctx, calls, nil)
 		if len(msgs) != len(calls) {
 			b.Fatalf("expected %d tool messages, got %d", len(calls), len(msgs))
 		}

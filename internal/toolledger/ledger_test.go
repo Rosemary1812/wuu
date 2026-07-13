@@ -247,3 +247,39 @@ func TestLedgerReplayDecisionUsesHighestRiskState(t *testing.T) {
 		t.Fatalf("mixed-state replay decision = %+v", decision)
 	}
 }
+
+func TestLedgerSupersedesOnlyPreparedBatch(t *testing.T) {
+	dir := t.TempDir()
+	ledger, err := New(dir, "thread-supersede")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	batchID, err := ledger.BeginBatch(ctx, "operation-supersede", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := ledger.Prepare(ctx, batchID, providers.ToolCall{ID: "call-prepared", Name: "read_file", Arguments: `{}`}, ReplayAtMostOnce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ledger.SupersedePreparedBatch(ctx, batchID); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := session.OpenStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var invocationState, batchState string
+	if err := db.QueryRow(`SELECT state FROM tool_invocations WHERE id = ?`, invocation.ID).Scan(&invocationState); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT status FROM tool_batches WHERE id = ?`, batchID).Scan(&batchState); err != nil {
+		t.Fatal(err)
+	}
+	if invocationState != string(InvocationAbandoned) || batchState != string(BatchAbandoned) {
+		t.Fatalf("superseded states = %q/%q", invocationState, batchState)
+	}
+}

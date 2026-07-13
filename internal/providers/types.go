@@ -205,6 +205,9 @@ type ChatMessage struct {
 	Images           []InputImage
 	Files            []InputFile
 	ToolCallID       string
+	// ToolInvocationID is Wuu's durable identity for the execution. Provider
+	// adapters must continue using ToolCallID for protocol correlation.
+	ToolInvocationID string
 	ToolResultKind   ToolCallKind
 	ToolResult       *toolresult.Result
 	ToolCalls        []ToolCall

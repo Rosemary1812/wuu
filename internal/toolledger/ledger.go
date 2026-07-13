@@ -408,6 +408,36 @@ SELECT id, state, replay_policy FROM tool_invocations WHERE batch_id = ? ORDER B
 	return decision, rows.Err()
 }
 
+func (l *Ledger) SupersedePreparedBatch(ctx context.Context, batchID string) error {
+	if l == nil || strings.TrimSpace(batchID) == "" {
+		return nil
+	}
+	now := time.Now().UTC().UnixMilli()
+	return l.write(ctx, func(tx *sql.Tx) error {
+		if err := l.assertBatchOwnerTx(ctx, tx, batchID, BatchCollecting); err != nil {
+			return err
+		}
+		var unsafe int
+		if err := tx.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM tool_invocations
+WHERE batch_id = ? AND state != ?`, batchID, InvocationPrepared).Scan(&unsafe); err != nil {
+			return err
+		}
+		if unsafe != 0 {
+			return fmt.Errorf("tool batch %q cannot be superseded after execution started", batchID)
+		}
+		if _, err := tx.ExecContext(ctx, `
+UPDATE tool_invocations SET state = ?, settled_at = MAX(settled_at, ?)
+WHERE batch_id = ? AND state = ?`, InvocationAbandoned, now, batchID, InvocationPrepared); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `
+UPDATE tool_batches SET status = ?, updated_at = ?, terminal_at = MAX(terminal_at, ?)
+WHERE id = ? AND owner_id = ? AND status = ?`, BatchAbandoned, now, now, batchID, l.ownerID, BatchCollecting)
+		return err
+	})
+}
+
 func (l *Ledger) Reconcile(ctx context.Context) error {
 	if l == nil {
 		return nil

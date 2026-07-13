@@ -11,6 +11,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/compact"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolledger"
 )
 
 type mockStreamAttempt struct {
@@ -726,9 +727,9 @@ func TestStreamRunner_RetryOnInitialConnectHTTP500(t *testing.T) {
 	}
 }
 
-func TestStreamRunnerSharesRecoveryBudgetAcrossAgentRounds(t *testing.T) {
-	const successfulToolRounds = 5
-	attempts := make([]mockStreamAttempt, 0, successfulToolRounds*2+1)
+func TestStreamRunnerResetsReplaySpendAfterAgentRoundProgress(t *testing.T) {
+	const successfulToolRounds = 6
+	attempts := make([]mockStreamAttempt, 0, successfulToolRounds*2)
 	results := make(map[string]string, successfulToolRounds)
 	for round := 0; round < successfulToolRounds; round++ {
 		callID := fmt.Sprintf("call-%d", round)
@@ -742,10 +743,10 @@ func TestStreamRunnerSharesRecoveryBudgetAcrossAgentRounds(t *testing.T) {
 		)
 		results[callID] = `{"ok":true}`
 	}
-	// A sixth round needs another replay. The interactive workflow owns only
-	// five same-payload replays in total, so admission must fail before this
-	// recovery can create a second physical attempt.
-	attempts = append(attempts, mockStreamAttempt{err: errors.New("connection reset by peer")})
+	attempts = append(attempts, mockStreamAttempt{events: []providers.StreamEvent{
+		{Type: providers.EventContentDelta, Content: "done"},
+		{Type: providers.EventDone},
+	}})
 	client := &mockStreamClient{attempts: attempts}
 	runner := StreamRunner{
 		Client: client,
@@ -756,10 +757,12 @@ func TestStreamRunnerSharesRecoveryBudgetAcrossAgentRounds(t *testing.T) {
 		},
 	}
 
-	_, err := runner.Run(context.Background(), "read files")
-	var exceeded *providers.WorkflowBudgetExceededError
-	if !errors.As(err, &exceeded) || exceeded.Dimension != providers.WorkflowBudgetSamePayloadReplays {
-		t.Fatalf("Run error = %v, want shared replay budget exhaustion", err)
+	result, err := runner.Run(context.Background(), "read files")
+	if err != nil {
+		t.Fatalf("Run error = %v", err)
+	}
+	if result != "done" {
+		t.Fatalf("result = %q, want done", result)
 	}
 	if client.callCount != successfulToolRounds*2+1 {
 		t.Fatalf("physical stream attempts = %d, want %d", client.callCount, successfulToolRounds*2+1)
@@ -1773,10 +1776,15 @@ func TestStreamRunner_BlocksReplayAfterStreamingToolStarts(t *testing.T) {
 		started:  make(chan struct{}),
 		canceled: make(chan struct{}),
 	}
+	ledger, err := toolledger.New(t.TempDir(), "thread-replay-fence")
+	if err != nil {
+		t.Fatal(err)
+	}
 	runner := &StreamRunner{
 		Client:                 client,
 		Model:                  "test",
 		Tools:                  tools,
+		ToolLedger:             ledger,
 		StreamingToolExecution: true,
 		OnEvent: func(event providers.StreamEvent) {
 			if event.Type != providers.EventToolUseEnd {
@@ -1790,7 +1798,7 @@ func TestStreamRunner_BlocksReplayAfterStreamingToolStarts(t *testing.T) {
 		},
 	}
 
-	_, err := runner.Run(context.Background(), "hello")
+	_, err = runner.Run(context.Background(), "hello")
 	if err == nil {
 		t.Fatal("expected replay fence error")
 	}
@@ -1810,6 +1818,20 @@ func TestStreamRunner_BlocksReplayAfterStreamingToolStarts(t *testing.T) {
 	case <-tools.canceled:
 	case <-time.After(time.Second):
 		t.Fatal("blocked replay did not cancel the in-flight tool")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		pending, pendingErr := ledger.PendingProjection(context.Background())
+		if pendingErr != nil {
+			t.Fatal(pendingErr)
+		}
+		if len(pending) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("canceled tool result was not durably settled")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 

@@ -496,11 +496,21 @@ func RunToolLoop(
 		toolCtx := ContextWithHistory(ctx, messages)
 		toolRuntime := result.ToolRuntime
 		if toolRuntime == nil {
-			toolRuntime = NewTurnToolRuntime(cfg.Tools)
+			toolRuntime = NewTurnToolRuntime(ToolRuntimeConfig{Executor: cfg.Tools, StepIndex: stepIdx})
 		}
 		toolRuntime.SetStepIndex(stepIdx)
 		toolRuntime.SetResultCallback(cfg.OnToolResultDetail)
-		orderedToolMessages := toolRuntime.ExecuteFinalCalls(toolCtx, result.ToolCalls, cfg.OnToolResult, cfg.OnToolBatchRejected)
+		orderedToolMessages, toolErr := toolRuntime.ExecuteFinalCalls(toolCtx, result.ToolCalls, cfg.OnToolResult, cfg.OnToolBatchRejected)
+		if toolErr != nil {
+			return LoopResult{
+				NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
+				HistoryRewritten:    historyRewritten,
+				InputTokens:         totalIn,
+				OutputTokens:        totalOut,
+				CacheCreationTokens: totalCacheCreation,
+				CacheReadTokens:     totalCacheRead,
+			}, fmt.Errorf("execute tool batch: %w", toolErr)
+		}
 		postToolContextSegments = append(postToolContextSegments, toolRuntime.TakeRequestContextSegments()...)
 		enforceAggregateResultBudget(orderedToolMessages)
 		for _, toolMsg := range orderedToolMessages {
