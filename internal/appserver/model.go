@@ -591,6 +591,21 @@ func (th *threadState) applyStreamEventLocked(turnID string, ev providers.Stream
 		}
 		out = append(out, th.applyMessageItemLocked(turnID, *ev.Message, now)...)
 	case providers.EventCompact:
+		if ev.CompactPhase == providers.CompactPhaseStarted {
+			item, alreadyPending := th.pendingContextCompactionItemLocked(turnID, now)
+			if alreadyPending {
+				return nil
+			}
+			item = ThreadItem{
+				ID:     th.nextItemIDLocked(turnID),
+				Type:   ThreadItemContextCompaction,
+				Status: ThreadItemStatusInProgress,
+				Reason: ev.CompactReason,
+			}
+			th.upsertItemLocked(turnID, item, now)
+			out = append(out, itemStarted(th.ID, turnID, item, now))
+			return out
+		}
 		// A compaction pass just folded this thread's older history into a
 		// summary that may not have preserved the workspace-focus
 		// declaration item (2026-07-03-workspace-focus.md §7). Mark the

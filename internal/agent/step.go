@@ -304,6 +304,9 @@ type LoopConfig struct {
 	// checkpoint/compact style tools that intentionally rewrite the
 	// next model-visible context.
 	PostToolRewrite PostToolRewriteFn
+	// OnCompactStart is invoked immediately before a potentially slow compact
+	// pass begins so interactive clients can render real progress.
+	OnCompactStart func(reason CompactReason)
 	// OnCompact is invoked once per compact pass (proactive or
 	// reactive). Optional; clients can use it to render a status line.
 	OnCompact func(info CompactInfo)

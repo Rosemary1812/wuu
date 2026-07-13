@@ -351,6 +351,16 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 			}
 		},
 		PostToolRewrite: compact.RewriteHistoryFromInternalToolMessagesWithContext,
+		OnCompactStart: func(reason CompactReason) {
+			if effectiveOnEvent == nil {
+				return
+			}
+			effectiveOnEvent(providers.StreamEvent{
+				Type:          providers.EventCompact,
+				CompactReason: string(reason),
+				CompactPhase:  providers.CompactPhaseStarted,
+			})
+		},
 		// Surface auto-compact events as stream events. The loop fires
 		// this for both the proactive and the reactive overflow path.
 		OnCompact: func(info CompactInfo) {
@@ -361,6 +371,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				Type:          providers.EventCompact,
 				Content:       formatCompactNotice(info),
 				CompactReason: string(info.Reason),
+				CompactPhase:  providers.CompactPhaseCompleted,
 			})
 		},
 		OnCompactAttempt: func(info CompactAttemptInfo) {
@@ -379,6 +390,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 				Type:          providers.EventCompact,
 				Content:       notice,
 				CompactReason: string(info.Reason),
+				CompactPhase:  providers.CompactPhaseCompleted,
 			})
 		},
 		OnToolBatchRejected: func(info ToolBatchRejectionInfo) {
@@ -973,11 +985,15 @@ func formatCompactAttemptNotice(info CompactAttemptInfo) (string, bool) {
 	switch {
 	case info.Reason == CompactReasonProactive && info.Status == CompactAttemptFailed:
 		return "Context compaction failed; continuing without compacting history.", true
+	case info.Reason == CompactReasonOverflow && info.Status == CompactAttemptFailed:
+		return "Context-overflow compact failed; history is unchanged.", true
 	// A user-requested /compact must report its outcome even when nothing
 	// happened — silence would read as a successful compaction.
 	case info.Reason == CompactReasonManual && info.Status == CompactAttemptFailed:
 		return "Manual context compaction failed; history is unchanged.", true
 	case info.Reason == CompactReasonManual && info.Status == CompactAttemptUnchanged:
+		return "Nothing to compact yet; history is unchanged.", true
+	case info.Status == CompactAttemptUnchanged:
 		return "Nothing to compact yet; history is unchanged.", true
 	}
 	return "", false

@@ -91,3 +91,21 @@ func TestAdaptStreamEventPreservesTextPhase(t *testing.T) {
 		t.Fatalf("text phase not converted back: %+v", stream)
 	}
 }
+
+func TestAdaptStreamEventPreservesCompactPhase(t *testing.T) {
+	stream := providers.StreamEvent{
+		Type:          providers.EventCompact,
+		CompactReason: "proactive",
+		CompactPhase:  providers.CompactPhaseStarted,
+	}
+
+	event := AdaptStreamEvent(stream)
+	if event.CompactReason != stream.CompactReason || event.CompactPhase != stream.CompactPhase {
+		t.Fatalf("adapted compact event = %+v, want reason and phase preserved", event)
+	}
+
+	roundTrip := ToStreamEvent(event)
+	if roundTrip.CompactReason != stream.CompactReason || roundTrip.CompactPhase != stream.CompactPhase {
+		t.Fatalf("round-tripped compact event = %+v, want reason and phase preserved", roundTrip)
+	}
+}

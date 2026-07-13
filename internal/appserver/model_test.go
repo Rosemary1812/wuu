@@ -639,6 +639,40 @@ func TestThreadStateLabelsInceptionCompactEvent(t *testing.T) {
 	}
 }
 
+func TestThreadStateUpdatesContextCompactionProgressItem(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	th := newThreadState("thread", nil, "provider", "model", "/repo", false, now)
+	th.startTurnLocked("turn", providers.ChatMessage{Role: "user", Content: "continue"}, now)
+
+	started := th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:          providers.EventCompact,
+		CompactReason: "proactive",
+		CompactPhase:  providers.CompactPhaseStarted,
+	}, now)
+	turn := th.ensureTurnLocked("turn", now)
+	if len(turn.Items) != 2 || turn.Items[1].Type != ThreadItemContextCompaction || turn.Items[1].Status != ThreadItemStatusInProgress {
+		t.Fatalf("compact start should add one in-progress item, got %+v", turn.Items)
+	}
+	if len(started) != 1 || started[0].method != NotificationItemStarted {
+		t.Fatalf("compact start notifications = %+v, want one item/started", started)
+	}
+	itemID := turn.Items[1].ID
+
+	completed := th.applyStreamEventLocked("turn", providers.StreamEvent{
+		Type:          providers.EventCompact,
+		Content:       "✦ Compacted history: 8 → 3 messages",
+		CompactReason: "proactive",
+		CompactPhase:  providers.CompactPhaseCompleted,
+	}, now.Add(time.Second))
+	turn = th.ensureTurnLocked("turn", now)
+	if len(turn.Items) != 2 || turn.Items[1].ID != itemID || turn.Items[1].Status != ThreadItemStatusCompleted {
+		t.Fatalf("compact completion should update the progress item in place, got %+v", turn.Items)
+	}
+	if len(completed) != 1 || completed[0].method != NotificationItemCompleted {
+		t.Fatalf("compact completion notifications = %+v, want one item/completed", completed)
+	}
+}
+
 func TestTurnsFromHistoryKeepsSteeredUserMessageInCurrentTurn(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
 	turns := turnsFromHistory("thread", []providers.ChatMessage{

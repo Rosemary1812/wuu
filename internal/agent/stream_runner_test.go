@@ -1083,7 +1083,12 @@ func TestStreamRunner_PreRequestCompactUsesColdStartEstimate(t *testing.T) {
 		{Role: "assistant", Content: strings.Repeat("older ", 2000)},
 		{Role: "user", Content: "continue"},
 	}
-	res, err := runner.RunWithCallback(context.Background(), history, nil)
+	var compactEvents []providers.StreamEvent
+	res, err := runner.RunWithCallback(context.Background(), history, func(event providers.StreamEvent) {
+		if event.Type == providers.EventCompact {
+			compactEvents = append(compactEvents, event)
+		}
+	})
 	if err != nil {
 		t.Fatalf("RunWithCallback: %v", err)
 	}
@@ -1102,6 +1107,15 @@ func TestStreamRunner_PreRequestCompactUsesColdStartEstimate(t *testing.T) {
 	}
 	if got := client.requests[1].Messages[1].Content; !compact.IsConversationSummaryContent(got) || !strings.Contains(got, "summarized") {
 		t.Fatalf("expected compacted summary after system prompt, got %q", got)
+	}
+	if len(compactEvents) != 2 {
+		t.Fatalf("compact events = %+v, want started and completed", compactEvents)
+	}
+	if compactEvents[0].CompactPhase != providers.CompactPhaseStarted || compactEvents[0].CompactReason != string(CompactReasonProactive) {
+		t.Fatalf("first compact event should start proactive progress, got %+v", compactEvents[0])
+	}
+	if compactEvents[1].CompactPhase != providers.CompactPhaseCompleted || compactEvents[1].Content == "" {
+		t.Fatalf("second compact event should complete progress with a notice, got %+v", compactEvents[1])
 	}
 }
 
@@ -1148,14 +1162,17 @@ func TestStreamRunner_ProactiveCompactFailureEmitsVisibleEvent(t *testing.T) {
 			compactEvents = append(compactEvents, event)
 		}
 	}
-	if len(compactEvents) != 1 {
-		t.Fatalf("expected one visible compact failure event, got %+v", compactEvents)
+	if len(compactEvents) != 2 {
+		t.Fatalf("expected compact progress and failure events, got %+v", compactEvents)
 	}
-	if !strings.Contains(compactEvents[0].Content, "compaction failed") {
-		t.Fatalf("expected failure notice content, got %+v", compactEvents[0])
+	if compactEvents[0].CompactPhase != providers.CompactPhaseStarted {
+		t.Fatalf("expected compact progress to start first, got %+v", compactEvents[0])
 	}
-	if compactEvents[0].CompactReason != string(CompactReasonProactive) {
-		t.Fatalf("expected proactive compact reason, got %+v", compactEvents[0])
+	if compactEvents[1].CompactPhase != providers.CompactPhaseCompleted || !strings.Contains(compactEvents[1].Content, "compaction failed") {
+		t.Fatalf("expected failure notice to complete progress, got %+v", compactEvents[1])
+	}
+	if compactEvents[1].CompactReason != string(CompactReasonProactive) {
+		t.Fatalf("expected proactive compact reason, got %+v", compactEvents[1])
 	}
 	if len(client.requests) != 2 {
 		t.Fatalf("requests = %d, want failed compact then agent request", len(client.requests))
@@ -1165,19 +1182,23 @@ func TestStreamRunner_ProactiveCompactFailureEmitsVisibleEvent(t *testing.T) {
 	}
 }
 
-func TestFormatCompactAttemptNoticeOnlyShowsProactiveFailures(t *testing.T) {
+func TestFormatCompactAttemptNoticeClosesVisibleProgress(t *testing.T) {
+	if notice, ok := formatCompactAttemptNotice(CompactAttemptInfo{Reason: CompactReasonProactive, Status: CompactAttemptSucceeded}); ok || notice != "" {
+		t.Fatalf("successful attempts use OnCompact completion, got ok=%v notice=%q", ok, notice)
+	}
+
 	cases := []CompactAttemptInfo{
-		{Reason: CompactReasonProactive, Status: CompactAttemptUnchanged},
+		{Reason: CompactReasonProactive, Status: CompactAttemptFailed},
 		{Reason: CompactReasonOverflow, Status: CompactAttemptFailed},
-		{Reason: CompactReasonProactive, Status: CompactAttemptSucceeded},
+		{Reason: CompactReasonManual, Status: CompactAttemptFailed},
+		{Reason: CompactReasonProactive, Status: CompactAttemptUnchanged},
+		{Reason: CompactReasonOverflow, Status: CompactAttemptUnchanged},
+		{Reason: CompactReasonManual, Status: CompactAttemptUnchanged},
 	}
 	for _, tc := range cases {
-		if notice, ok := formatCompactAttemptNotice(tc); ok || notice != "" {
-			t.Fatalf("unexpected visible notice for %+v: %q", tc, notice)
+		if notice, ok := formatCompactAttemptNotice(tc); !ok || notice == "" {
+			t.Fatalf("attempt %+v must emit a terminal notice, got ok=%v notice=%q", tc, ok, notice)
 		}
-	}
-	if notice, ok := formatCompactAttemptNotice(CompactAttemptInfo{Reason: CompactReasonProactive, Status: CompactAttemptFailed}); !ok || notice == "" {
-		t.Fatalf("expected proactive failure notice, got ok=%v notice=%q", ok, notice)
 	}
 }
 

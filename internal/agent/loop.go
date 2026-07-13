@@ -147,6 +147,9 @@ func RunToolLoop(
 		}
 		before := usage.EstimateCurrent()
 		msgsBefore := len(messages)
+		if cfg.OnCompactStart != nil {
+			cfg.OnCompactStart(reason)
+		}
 		compactCtx, lineage := providers.BeginInferenceOperationLineage(ctx, lastAgentOperationID)
 		compacted, cerr := cfg.Compact(compactCtx, messages)
 		switch {
@@ -333,6 +336,9 @@ func RunToolLoop(
 				overflowCompacted = true // gate first; never retry twice
 				before := usage.EstimateCurrent()
 				msgsBefore := len(messages)
+				if cfg.OnCompactStart != nil {
+					cfg.OnCompactStart(CompactReasonOverflow)
+				}
 				compactCtx, lineage := providers.BeginInferenceOperationLineage(ctx, req.Operation.ID)
 				if compacted, cerr := cfg.Compact(compactCtx, messages); cerr == nil {
 					if compactChanged(messages, compacted) {

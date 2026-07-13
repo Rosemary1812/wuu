@@ -1586,12 +1586,27 @@ func TestRunToolLoop_ProactiveCompactTriggers(t *testing.T) {
 	}
 
 	compactCalled := 0
+	var callbackOrder []string
 	compactFn := func(_ context.Context, msgs []providers.ChatMessage) ([]providers.ChatMessage, error) {
 		compactCalled++
+		callbackOrder = append(callbackOrder, "compact")
 		return []providers.ChatMessage{{Role: "user", Content: "summary"}}, nil
 	}
 	var compactInfos []CompactInfo
-	cfg := LoopConfig{Model: "m", Compact: compactFn, MaxContextTokens: 1000, DefaultMaxTokens: 100, OnCompact: func(info CompactInfo) { compactInfos = append(compactInfos, info) }, UsageTracker: tracker}
+	cfg := LoopConfig{
+		Model:            "m",
+		Compact:          compactFn,
+		MaxContextTokens: 1000,
+		DefaultMaxTokens: 100,
+		OnCompactStart: func(reason CompactReason) {
+			callbackOrder = append(callbackOrder, "start:"+string(reason))
+		},
+		OnCompact: func(info CompactInfo) {
+			callbackOrder = append(callbackOrder, "completed:"+string(info.Reason))
+			compactInfos = append(compactInfos, info)
+		},
+		UsageTracker: tracker,
+	}
 
 	res, err := RunToolLoop(context.Background(), history, cfg, step)
 	if err != nil {
@@ -1608,6 +1623,10 @@ func TestRunToolLoop_ProactiveCompactTriggers(t *testing.T) {
 	}
 	if compactInfos[0].MessagesAfter >= compactInfos[0].MessagesBefore {
 		t.Fatalf("expected MessagesAfter < MessagesBefore, got %+v", compactInfos[0])
+	}
+	wantOrder := []string{"start:proactive", "compact", "completed:proactive"}
+	if strings.Join(callbackOrder, ",") != strings.Join(wantOrder, ",") {
+		t.Fatalf("compact callback order = %v, want %v", callbackOrder, wantOrder)
 	}
 	if res.Content != "compacted answer" {
 		t.Fatalf("expected compacted answer, got %q", res.Content)

@@ -59,6 +59,7 @@ type Event struct {
 	Content       string
 	Phase         providers.MessagePhase
 	CompactReason string
+	CompactPhase  providers.CompactPhase
 
 	// Message carries a full chat message (for TurnBegin/TurnEnd/Message).
 	Message *providers.ChatMessage
@@ -164,7 +165,7 @@ func AdaptStreamEvent(se providers.StreamEvent) Event {
 	case providers.EventLifecycle:
 		return Event{Type: Lifecycle, Lifecycle: se.Lifecycle}
 	case providers.EventCompact:
-		return Event{Type: Compact, Content: se.Content, CompactReason: se.CompactReason}
+		return Event{Type: Compact, Content: se.Content, CompactReason: se.CompactReason, CompactPhase: se.CompactPhase}
 	case providers.EventRequestContext:
 		return Event{Type: RequestContext, RequestContext: se.RequestContext}
 	case providers.EventProviderState:
@@ -205,7 +206,7 @@ func ToStreamEvent(ev Event) providers.StreamEvent {
 	case Lifecycle:
 		return providers.StreamEvent{Type: providers.EventLifecycle, Lifecycle: ev.Lifecycle}
 	case Compact:
-		return providers.StreamEvent{Type: providers.EventCompact, Content: ev.Content, CompactReason: ev.CompactReason}
+		return providers.StreamEvent{Type: providers.EventCompact, Content: ev.Content, CompactReason: ev.CompactReason, CompactPhase: ev.CompactPhase}
 	case RequestContext:
 		return providers.StreamEvent{Type: providers.EventRequestContext, RequestContext: ev.RequestContext}
 	case ProviderState:
