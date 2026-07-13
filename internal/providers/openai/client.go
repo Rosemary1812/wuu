@@ -530,7 +530,7 @@ func (c *Client) readSSE(resp *http.Response, lease *providers.ProviderLease, ch
 	for scanner.Scan() {
 		resetIdle()
 		line := scanner.Text()
-		providers.DebugLogf("SSE raw: %s", line)
+		providers.DebugLogfWire("SSE raw: %s", line)
 		if line == "" || strings.HasPrefix(line, "event:") {
 			continue
 		}
@@ -559,14 +559,15 @@ func (c *Client) readSSE(resp *http.Response, lease *providers.ProviderLease, ch
 
 		var chunk chatCompletionsChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			providers.DebugLogf("SSE parse error: %v, data: %s", err, data)
+			providers.DebugLogf("SSE parse error: %v", err)
+			providers.DebugLogfWire("SSE parse error data: %s", data)
 			err = fmt.Errorf("parse chunk: %w", err)
 			failOpenAIResponseLease(lease, resp, err)
 			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 			return
 		}
 
-		providers.DebugLogf("SSE chunk: choices=%d, content=%q, tool_calls=%d",
+		providers.DebugLogfWire("SSE chunk: choices=%d, content=%q, tool_calls=%d",
 			len(chunk.Choices),
 			func() string {
 				if len(chunk.Choices) > 0 {

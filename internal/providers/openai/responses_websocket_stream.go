@@ -428,7 +428,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 		if frame.typ != websocket.MessageText {
 			continue
 		}
-		providers.DebugLogf("Responses websocket raw: %s", string(frame.data))
+		providers.DebugLogfWire("Responses websocket raw: %s", string(frame.data))
 		var event responsesStreamEvent
 		if err := json.Unmarshal(frame.data, &event); err != nil {
 			session.mu.Lock()

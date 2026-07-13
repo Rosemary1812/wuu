@@ -49,6 +49,7 @@ func DebugLogfWire(format string, args ...any) {
 var (
 	debugLog  *os.File
 	debugOnce sync.Once
+	debugMu   sync.Mutex
 )
 
 // InitDebugLog opens a debug log file in the given user-level log directory.
@@ -71,16 +72,24 @@ func InitDebugLog(logDir string) {
 		if err != nil {
 			return
 		}
+		debugMu.Lock()
 		debugLog = f
+		debugMu.Unlock()
 		DebugLogf("=== wuu debug log started at %s ===", time.Now().Format(time.RFC3339))
 	})
 }
 
-// DebugLogf writes a formatted line to the debug log.
+// DebugLogf writes a formatted line to the debug log. It is diagnostics only
+// and must never gate the user-facing stream: the write goes straight to the
+// file descriptor (so a process crash still lands the line via the OS page
+// cache) but is not fsync'd, because a per-line fsync on the streaming path
+// stalls event delivery for a durability guarantee the debug log does not need.
+// The mutex only serializes concurrent writers so lines do not interleave.
 func DebugLogf(format string, args ...any) {
+	debugMu.Lock()
+	defer debugMu.Unlock()
 	if debugLog == nil {
 		return
 	}
 	fmt.Fprintf(debugLog, "[%s] %s\n", time.Now().Format("15:04:05.000"), fmt.Sprintf(format, args...))
-	debugLog.Sync()
 }
