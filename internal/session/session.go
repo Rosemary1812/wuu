@@ -730,6 +730,12 @@ func openStore(sessDir string) (*sql.DB, error) {
 	return db, nil
 }
 
+// OpenStore exposes the shared sessions database to sibling persistence
+// components that own independent tables, such as the durable tool ledger.
+func OpenStore(sessDir string) (*sql.DB, error) {
+	return openStore(sessDir)
+}
+
 func sqliteDSN(path string) string {
 	u := url.URL{Scheme: "file", Path: path}
 	q := u.Query()
@@ -1113,6 +1119,39 @@ func migrateSchema(db *sql.DB) error {
 		 BEGIN
 			SELECT RAISE(ABORT, 'inference submission attempt/operation mismatch');
 		 END`,
+		`CREATE TABLE IF NOT EXISTS tool_batches (
+			id              TEXT PRIMARY KEY,
+			owner_id        TEXT NOT NULL,
+			operation_id    TEXT NOT NULL,
+			step_index      INTEGER NOT NULL,
+			status          TEXT NOT NULL,
+			created_at      INTEGER NOT NULL,
+			updated_at      INTEGER NOT NULL,
+			terminal_at     INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_tool_batches_owner
+		 ON tool_batches(owner_id, created_at, id)`,
+		`CREATE TABLE IF NOT EXISTS tool_invocations (
+			id                TEXT PRIMARY KEY,
+			batch_id          TEXT NOT NULL,
+			provider_call_id  TEXT NOT NULL,
+			tool_name         TEXT NOT NULL,
+			tool_kind         TEXT NOT NULL DEFAULT '',
+			arguments_json    TEXT NOT NULL,
+			replay_policy     TEXT NOT NULL,
+			state             TEXT NOT NULL,
+			result_json       TEXT NOT NULL DEFAULT '',
+			prepared_at       INTEGER NOT NULL,
+			running_at        INTEGER NOT NULL DEFAULT 0,
+			settled_at        INTEGER NOT NULL DEFAULT 0,
+			projected_at      INTEGER NOT NULL DEFAULT 0,
+			FOREIGN KEY(batch_id) REFERENCES tool_batches(id) ON DELETE CASCADE,
+			UNIQUE(batch_id, provider_call_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_tool_invocations_batch
+		 ON tool_invocations(batch_id, prepared_at, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_tool_invocations_projection
+		 ON tool_invocations(state, projected_at, settled_at)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
