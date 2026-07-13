@@ -344,7 +344,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	}
 
 	ch := make(chan providers.StreamEvent, 64)
-	go c.readSSEStream(resp, lease, ch)
+	go c.readSSEStream(ctx, resp, lease, ch)
 	return ch, nil
 }
 
@@ -1050,10 +1050,12 @@ type blockState struct {
 	reasoning providers.ReasoningBlock
 }
 
-func (c *Client) readSSEStream(resp *http.Response, lease *providers.ProviderLease, ch chan<- providers.StreamEvent) {
+func (c *Client) readSSEStream(ctx context.Context, resp *http.Response, lease *providers.ProviderLease, ch chan<- providers.StreamEvent) {
 	defer close(ch)
 	defer resp.Body.Close()
 	defer lease.Release()
+
+	emit := providers.NewStreamEmitter(ctx, ch)
 
 	idleTimeout := c.streamConfig.IdleTimeout
 	var idleFired atomic.Bool
@@ -1087,13 +1089,21 @@ func (c *Client) readSSEStream(resp *http.Response, lease *providers.ProviderLea
 			continue
 		}
 		if line == "" && cur.Event != "" {
-			c.handleSSEEvent(cur, &usage, &stopReason, blocks, lease, ch, &sawMessageStop, &sawStreamError)
+			stop := c.handleSSEEvent(cur, &usage, &stopReason, blocks, lease, emit, &sawMessageStop, &sawStreamError)
 			cur = sseRawEvent{}
+			if stop {
+				// message_stop and error are terminal: keeping the scanner
+				// alive lets a trailing reset or a keepalive-holding proxy
+				// turn an already-delivered response into a retry or a hang.
+				return
+			}
 		}
 	}
 
 	if cur.Event != "" {
-		c.handleSSEEvent(cur, &usage, &stopReason, blocks, lease, ch, &sawMessageStop, &sawStreamError)
+		if c.handleSSEEvent(cur, &usage, &stopReason, blocks, lease, emit, &sawMessageStop, &sawStreamError) {
+			return
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -1101,43 +1111,46 @@ func (c *Client) readSSEStream(resp *http.Response, lease *providers.ProviderLea
 			providers.DebugLogf("readSSEStream: idle timeout after %s", idleTimeout)
 			err := fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)
 			failAnthropicResponseLease(lease, resp, err)
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+			emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 			return
 		}
 		providers.DebugLogf("readSSEStream: scanner error: %v", err)
 		err = fmt.Errorf("read SSE stream: %w", err)
 		failAnthropicResponseLease(lease, resp, err)
-		ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+		emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 		return
 	}
 	if idleFired.Load() {
 		providers.DebugLogf("readSSEStream: idle timeout (post-scan) after %s", idleTimeout)
 		err := fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)
 		failAnthropicResponseLease(lease, resp, err)
-		ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+		emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 		return
 	}
 	if !sawMessageStop && !sawStreamError {
 		providers.DebugLogf("readSSEStream: incomplete stream (no message_stop)")
 		err := providers.NewIncompleteStreamError("stream closed before message_stop")
 		failAnthropicResponseLease(lease, resp, err)
-		ch <- providers.StreamEvent{
+		emit.Send(providers.StreamEvent{
 			Type:  providers.EventError,
 			Error: err,
-		}
+		})
 	}
 }
 
+// handleSSEEvent processes one SSE event and reports whether the reader must
+// stop: after the terminal message_stop/error events, or once the request
+// context ended and no further event can be delivered.
 func (c *Client) handleSSEEvent(
 	raw sseRawEvent,
 	usage *providers.TokenUsage,
 	stopReason *string,
 	blocks map[int]*blockState,
 	lease *providers.ProviderLease,
-	ch chan<- providers.StreamEvent,
+	emit *providers.StreamEmitter,
 	sawMessageStop *bool,
 	sawStreamError *bool,
-) {
+) bool {
 	switch raw.Event {
 	case "message_start":
 		var p messageStartPayload
@@ -1163,7 +1176,9 @@ func (c *Client) handleSSEEvent(
 			if p.ContentBlock.Type == "tool_use" {
 				bs.toolID = p.ContentBlock.ID
 				bs.toolName = p.ContentBlock.Name
-				ch <- providers.StreamEvent{Type: providers.EventToolUseStart, ToolCall: &providers.ToolCall{ID: p.ContentBlock.ID, Name: p.ContentBlock.Name, Kind: anthropicToolCallKind(p.ContentBlock.Name)}}
+				if !emit.Send(providers.StreamEvent{Type: providers.EventToolUseStart, ToolCall: &providers.ToolCall{ID: p.ContentBlock.ID, Name: p.ContentBlock.Name, Kind: anthropicToolCallKind(p.ContentBlock.Name)}}) {
+					return true
+				}
 			}
 			blocks[p.Index] = bs
 		}
@@ -1173,17 +1188,23 @@ func (c *Client) handleSSEEvent(
 			bs := blocks[p.Index]
 			switch p.Delta.Type {
 			case "text_delta":
-				ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: p.Delta.Text}
+				if !emit.Send(providers.StreamEvent{Type: providers.EventContentDelta, Content: p.Delta.Text}) {
+					return true
+				}
 			case "input_json_delta":
 				if bs != nil {
 					bs.argsJSON.WriteString(p.Delta.PartialJSON)
 				}
-				ch <- providers.StreamEvent{Type: providers.EventToolUseDelta, Content: p.Delta.PartialJSON}
+				if !emit.Send(providers.StreamEvent{Type: providers.EventToolUseDelta, Content: p.Delta.PartialJSON}) {
+					return true
+				}
 			case "thinking_delta":
 				if bs != nil {
 					bs.reasoning.Thinking += p.Delta.Thinking
 				}
-				ch <- providers.StreamEvent{Type: providers.EventThinkingDelta, Content: p.Delta.Thinking}
+				if !emit.Send(providers.StreamEvent{Type: providers.EventThinkingDelta, Content: p.Delta.Thinking}) {
+					return true
+				}
 			case "signature_delta":
 				if bs != nil {
 					bs.reasoning.Signature += p.Delta.Signature
@@ -1197,11 +1218,15 @@ func (c *Client) handleSSEEvent(
 		if json.Unmarshal([]byte(raw.Data), &idx) == nil {
 			if bs, ok := blocks[idx.Index]; ok {
 				if bs.blockType == "tool_use" {
-					ch <- providers.StreamEvent{Type: providers.EventToolUseEnd, ToolCall: &providers.ToolCall{ID: bs.toolID, Name: bs.toolName, Kind: anthropicToolCallKind(bs.toolName), Arguments: bs.argsJSON.String()}}
+					if !emit.Send(providers.StreamEvent{Type: providers.EventToolUseEnd, ToolCall: &providers.ToolCall{ID: bs.toolID, Name: bs.toolName, Kind: anthropicToolCallKind(bs.toolName), Arguments: bs.argsJSON.String()}}) {
+						return true
+					}
 				}
 				if bs.blockType == "thinking" || bs.blockType == "redacted_thinking" {
 					reasoningBlock := bs.reasoning
-					ch <- providers.StreamEvent{Type: providers.EventThinkingDone, ReasoningBlock: &reasoningBlock}
+					if !emit.Send(providers.StreamEvent{Type: providers.EventThinkingDone, ReasoningBlock: &reasoningBlock}) {
+						return true
+					}
 				}
 			}
 			delete(blocks, idx.Index)
@@ -1238,7 +1263,9 @@ func (c *Client) handleSSEEvent(
 				c.normalizeInclusiveInput(usage)
 			}
 			if usageUpdated {
-				ch <- providers.StreamEvent{Type: providers.EventUsage, Usage: &providers.TokenUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationTokens: usage.CacheCreationTokens, CacheReadTokens: usage.CacheReadTokens, CacheCreationUnknown: usage.CacheCreationUnknown}}
+				if !emit.Send(providers.StreamEvent{Type: providers.EventUsage, Usage: &providers.TokenUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationTokens: usage.CacheCreationTokens, CacheReadTokens: usage.CacheReadTokens, CacheCreationUnknown: usage.CacheCreationUnknown}}) {
+					return true
+				}
 			}
 			if p.Delta.StopReason != "" {
 				*stopReason = strings.ToLower(p.Delta.StopReason)
@@ -1251,13 +1278,14 @@ func (c *Client) handleSSEEvent(
 		truncated := *stopReason == "max_tokens"
 		terminalUsage := &providers.TokenUsage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CacheCreationTokens: usage.CacheCreationTokens, CacheReadTokens: usage.CacheReadTokens, CacheCreationUnknown: usage.CacheCreationUnknown}
 		lease.SucceedWithUsage(terminalUsage)
-		ch <- providers.StreamEvent{
+		emit.Send(providers.StreamEvent{
 			Type:         providers.EventDone,
 			Usage:        terminalUsage,
 			StopReason:   *stopReason,
 			FinishReason: providers.NormalizeFinishReason(*stopReason, truncated, false),
 			Truncated:    truncated,
-		}
+		})
+		return true
 	case "error":
 		if sawStreamError != nil {
 			*sawStreamError = true
@@ -1269,20 +1297,22 @@ func (c *Client) handleSSEEvent(
 			streamErr := providers.NewProviderStreamError(p.Error.Code, p.Error.Message)
 			streamErr.ProviderFamily = "anthropic"
 			lease.FailError(streamErr)
-			ch <- providers.StreamEvent{
+			emit.Send(providers.StreamEvent{
 				Type:  providers.EventError,
 				Error: streamErr,
-			}
-			return
+			})
+			return true
 		}
 		streamErr := providers.NewProviderStreamError("", raw.Data)
 		streamErr.ProviderFamily = "anthropic"
 		lease.FailError(streamErr)
-		ch <- providers.StreamEvent{
+		emit.Send(providers.StreamEvent{
 			Type:  providers.EventError,
 			Error: streamErr,
-		}
+		})
+		return true
 	}
+	return emit.Aborted()
 }
 
 // Thinking replay modes for historical assistant reasoning blocks. See the

@@ -405,7 +405,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	}
 
 	ch := make(chan providers.StreamEvent, 64)
-	go c.readSSE(resp, lease, ch)
+	go c.readSSE(ctx, resp, lease, ch)
 	return ch, nil
 }
 
@@ -480,10 +480,12 @@ func failOpenAIResponseLease(lease *providers.ProviderLease, resp *http.Response
 	lease.FailError(err)
 }
 
-func (c *Client) readSSE(resp *http.Response, lease *providers.ProviderLease, ch chan<- providers.StreamEvent) {
+func (c *Client) readSSE(ctx context.Context, resp *http.Response, lease *providers.ProviderLease, ch chan<- providers.StreamEvent) {
 	defer close(ch)
 	defer resp.Body.Close()
 	defer lease.Release()
+
+	emit := providers.NewStreamEmitter(ctx, ch)
 
 	// Idle watchdog: if no chunk arrives within streamIdleTimeout(),
 	// close the body to abort the scanner. Wrap the surfaced error in
@@ -512,18 +514,21 @@ func (c *Client) readSSE(resp *http.Response, lease *providers.ProviderLease, ch
 		currentPhase     providers.MessagePhase
 	)
 
-	emitToolEnds := func() {
+	emitToolEnds := func() bool {
 		for idx, pt := range pending {
-			ch <- providers.StreamEvent{
+			if !emit.Send(providers.StreamEvent{
 				Type: providers.EventToolUseEnd,
 				ToolCall: &providers.ToolCall{
 					ID:        pt.id,
 					Name:      pt.name,
 					Arguments: pt.args.String(),
 				},
+			}) {
+				return false
 			}
 			delete(pending, idx)
 		}
+		return true
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -541,19 +546,23 @@ func (c *Client) readSSE(resp *http.Response, lease *providers.ProviderLease, ch
 		if data == "[DONE]" {
 			providers.DebugLogf("SSE [DONE]")
 			if sawThinking && !thinkingDone {
-				ch <- providers.StreamEvent{Type: providers.EventThinkingDone}
+				if !emit.Send(providers.StreamEvent{Type: providers.EventThinkingDone}) {
+					return
+				}
 				thinkingDone = true
 			}
-			emitToolEnds()
+			if !emitToolEnds() {
+				return
+			}
 			truncated := lastFinishReason == "length"
 			lease.SucceedWithUsage(lastUsage)
-			ch <- providers.StreamEvent{
+			emit.Send(providers.StreamEvent{
 				Type:         providers.EventDone,
 				Usage:        lastUsage,
 				StopReason:   lastFinishReason,
 				FinishReason: providers.NormalizeFinishReason(lastFinishReason, truncated, sawToolCall),
 				Truncated:    truncated,
-			}
+			})
 			return
 		}
 
@@ -563,7 +572,7 @@ func (c *Client) readSSE(resp *http.Response, lease *providers.ProviderLease, ch
 			providers.DebugLogfWire("SSE parse error data: %s", data)
 			err = fmt.Errorf("parse chunk: %w", err)
 			failOpenAIResponseLease(lease, resp, err)
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+			emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 			return
 		}
 
@@ -585,7 +594,9 @@ func (c *Client) readSSE(resp *http.Response, lease *providers.ProviderLease, ch
 
 		if chunk.Usage != nil {
 			lastUsage = chunk.Usage.asTokenUsage()
-			ch <- providers.StreamEvent{Type: providers.EventUsage, Usage: lastUsage}
+			if !emit.Send(providers.StreamEvent{Type: providers.EventUsage, Usage: lastUsage}) {
+				return
+			}
 		}
 
 		if len(chunk.Choices) == 0 {
@@ -595,9 +606,11 @@ func (c *Client) readSSE(resp *http.Response, lease *providers.ProviderLease, ch
 
 		if choice.Delta.ReasoningContent != "" {
 			sawThinking = true
-			ch <- providers.StreamEvent{
+			if !emit.Send(providers.StreamEvent{
 				Type:    providers.EventThinkingDelta,
 				Content: choice.Delta.ReasoningContent,
+			}) {
+				return
 			}
 		}
 
@@ -605,47 +618,59 @@ func (c *Client) readSSE(resp *http.Response, lease *providers.ProviderLease, ch
 		if deltaPhase != "" {
 			currentPhase = deltaPhase
 			if choice.Delta.Content == "" {
-				ch <- providers.StreamEvent{
+				if !emit.Send(providers.StreamEvent{
 					Type:  providers.EventContentDelta,
 					Phase: currentPhase,
+				}) {
+					return
 				}
 			}
 		}
 
 		if choice.Delta.Content != "" {
 			if sawThinking && !thinkingDone {
-				ch <- providers.StreamEvent{Type: providers.EventThinkingDone}
+				if !emit.Send(providers.StreamEvent{Type: providers.EventThinkingDone}) {
+					return
+				}
 				thinkingDone = true
 			}
-			ch <- providers.StreamEvent{
+			if !emit.Send(providers.StreamEvent{
 				Type:    providers.EventContentDelta,
 				Content: choice.Delta.Content,
 				Phase:   currentPhase,
+			}) {
+				return
 			}
 		}
 
 		for _, tc := range choice.Delta.ToolCalls {
 			sawToolCall = true
 			if sawThinking && !thinkingDone {
-				ch <- providers.StreamEvent{Type: providers.EventThinkingDone}
+				if !emit.Send(providers.StreamEvent{Type: providers.EventThinkingDone}) {
+					return
+				}
 				thinkingDone = true
 			}
 			pt, exists := pending[tc.Index]
 			if !exists {
 				pt = &pendingTool{id: tc.ID, name: tc.Function.Name}
 				pending[tc.Index] = pt
-				ch <- providers.StreamEvent{
+				if !emit.Send(providers.StreamEvent{
 					Type: providers.EventToolUseStart,
 					ToolCall: &providers.ToolCall{
 						ID:   tc.ID,
 						Name: tc.Function.Name,
 					},
+				}) {
+					return
 				}
 			} else {
 				pt.args.WriteString(tc.Function.Arguments)
-				ch <- providers.StreamEvent{
+				if !emit.Send(providers.StreamEvent{
 					Type:    providers.EventToolUseDelta,
 					Content: tc.Function.Arguments,
+				}) {
+					return
 				}
 			}
 		}
@@ -653,7 +678,9 @@ func (c *Client) readSSE(resp *http.Response, lease *providers.ProviderLease, ch
 		if choice.FinishReason != nil {
 			lastFinishReason = strings.ToLower(*choice.FinishReason)
 			if lastFinishReason == "tool_calls" {
-				emitToolEnds()
+				if !emitToolEnds() {
+					return
+				}
 			}
 		}
 	}
@@ -662,15 +689,15 @@ func (c *Client) readSSE(resp *http.Response, lease *providers.ProviderLease, ch
 		if idleFired.Load() {
 			err := fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)
 			failOpenAIResponseLease(lease, resp, err)
-			ch <- providers.StreamEvent{
+			emit.Send(providers.StreamEvent{
 				Type:  providers.EventError,
 				Error: err,
-			}
+			})
 			return
 		}
 		err = fmt.Errorf("read stream: %w", err)
 		failOpenAIResponseLease(lease, resp, err)
-		ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+		emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 		return
 	}
 	// Scanner ended cleanly (e.g. body closed) but we never saw [DONE].
@@ -678,18 +705,18 @@ func (c *Client) readSSE(resp *http.Response, lease *providers.ProviderLease, ch
 	if idleFired.Load() {
 		err := fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)
 		failOpenAIResponseLease(lease, resp, err)
-		ch <- providers.StreamEvent{
+		emit.Send(providers.StreamEvent{
 			Type:  providers.EventError,
 			Error: err,
-		}
+		})
 		return
 	}
 	err := providers.NewIncompleteStreamError("stream closed before [DONE]")
 	failOpenAIResponseLease(lease, resp, err)
-	ch <- providers.StreamEvent{
+	emit.Send(providers.StreamEvent{
 		Type:  providers.EventError,
 		Error: err,
-	}
+	})
 }
 
 func mapMessage(model string, msg providers.ChatMessage) chatMessage {

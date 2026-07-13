@@ -318,9 +318,13 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 	defer close(ch)
 	defer lease.Release()
 
-	ch <- providers.StreamEvent{
+	emit := providers.NewStreamEmitter(ctx, ch)
+
+	if !emit.Send(providers.StreamEvent{
 		Type:          providers.EventProviderState,
 		ProviderState: state,
+	}) {
+		return
 	}
 
 	pending := newResponsesPendingTools()
@@ -342,7 +346,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			c.responsesWebSocketAbortConnectionLocked(session)
 			session.mu.Unlock()
 			lease.FailError(ctx.Err())
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
+			emit.Send(providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()})
 			return
 		case frame, ok = <-readCh:
 		}
@@ -362,7 +366,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 				c.responsesWebSocketAbortConnectionLocked(session)
 				session.mu.Unlock()
 				lease.FailError(ctx.Err())
-				ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
+				emit.Send(providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()})
 				return
 			}
 			if providers.NormalizeFailure(frame.err).Category == providers.FailureLocalBackpressure {
@@ -370,7 +374,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 				c.responsesWebSocketReleaseLocked(session, readCh)
 				session.mu.Unlock()
 				lease.FailError(frame.err)
-				ch <- providers.StreamEvent{Type: providers.EventError, Error: frame.err}
+				emit.Send(providers.StreamEvent{Type: providers.EventError, Error: frame.err})
 				return
 			}
 			if !sawProviderEvent {
@@ -389,11 +393,11 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 				}
 				fallbackErr := newResponsesWebSocketFallbackError(reason, frame.err)
 				lease.FallbackError(fallbackErr)
-				ch <- providers.StreamEvent{
+				emit.Send(providers.StreamEvent{
 					Type:          providers.EventProviderState,
 					ProviderState: responsesWebSocketTransportFailureState(state, reason),
-				}
-				ch <- providers.StreamEvent{Type: providers.EventError, Error: fallbackErr}
+				})
+				emit.Send(providers.StreamEvent{Type: providers.EventError, Error: fallbackErr})
 				return
 			}
 			session.mu.Lock()
@@ -415,14 +419,14 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			// replay decision and billable ambiguity in the attempt outcome, but
 			// do not let a WS-only disconnect open the cross-transport circuit.
 			lease.FallbackError(streamErr)
-			ch <- providers.StreamEvent{
+			emit.Send(providers.StreamEvent{
 				Type:          providers.EventProviderState,
 				ProviderState: responsesWebSocketTransportFailureState(state, "stream_error_after_provider_event"),
-			}
-			ch <- providers.StreamEvent{
+			})
+			emit.Send(providers.StreamEvent{
 				Type:  providers.EventError,
 				Error: streamErr,
-			}
+			})
 			return
 		}
 		if frame.typ != websocket.MessageText {
@@ -437,7 +441,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			session.mu.Unlock()
 			err = fmt.Errorf("parse websocket event: %w", err)
 			lease.FailError(err)
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+			emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 			return
 		}
 		if responsesWebSocketConnectionLimitReached(event) && !sawProviderEvent {
@@ -456,11 +460,11 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			if !cacheConnection {
 				c.responsesWebSocketMarkFallback(fallbackSession, responsesWebSocketConnectionLimitCode)
 			}
-			ch <- providers.StreamEvent{
+			emit.Send(providers.StreamEvent{
 				Type:          providers.EventProviderState,
 				ProviderState: responsesWebSocketTransportFailureState(state, responsesWebSocketConnectionLimitCode),
-			}
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: fallbackErr}
+			})
+			emit.Send(providers.StreamEvent{Type: providers.EventError, Error: fallbackErr})
 			return
 		}
 		if event.Type != "error" {
@@ -474,17 +478,17 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			}
 
 		case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
-			pendingReasoning.appendDelta(event, event.Delta, ch)
+			pendingReasoning.appendDelta(event, event.Delta, emit)
 
 		case "response.reasoning_summary_part.done":
-			pendingReasoning.appendDelta(event, "\n\n", ch)
+			pendingReasoning.appendDelta(event, "\n\n", emit)
 
 		case "response.output_text.delta":
 			if event.Delta != "" {
 				if event.ItemID != "" {
 					currentTextItemID = event.ItemID
 				}
-				ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: event.Delta, Phase: currentTextPhase, ProviderItemID: currentTextItemID}
+				emit.Send(providers.StreamEvent{Type: providers.EventContentDelta, Content: event.Delta, Phase: currentTextPhase, ProviderItemID: currentTextItemID})
 			}
 
 		case "response.output_item.added":
@@ -497,16 +501,16 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 				}
 				if phase := providers.NormalizeMessagePhase(event.Item.Phase); phase != "" {
 					currentTextPhase = phase
-					ch <- providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase, ProviderItemID: currentTextItemID}
+					emit.Send(providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase, ProviderItemID: currentTextItemID})
 				}
 			case "function_call", "tool_search_call":
 				sawToolCall = true
-				pending.start(event.Item, event.outputIndex(), ch)
+				pending.start(event.Item, event.outputIndex(), emit)
 			}
 
 		case "response.function_call_arguments.delta", "response.tool_search_call.arguments.delta":
 			if event.Delta != "" {
-				pending.appendDelta(event, ch)
+				pending.appendDelta(event, emit)
 			}
 
 		case "response.function_call_arguments.done", "response.tool_search_call.arguments.done":
@@ -518,26 +522,26 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			}
 			switch event.Item.Type {
 			case "reasoning":
-				pendingReasoning.emitDone(event, ch)
+				pendingReasoning.emitDone(event, emit)
 			case "message":
 				if event.Item.ID != "" {
 					currentTextItemID = event.Item.ID
 				}
 				if phase := providers.NormalizeMessagePhase(event.Item.Phase); phase != "" {
 					currentTextPhase = phase
-					ch <- providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase, ProviderItemID: currentTextItemID}
+					emit.Send(providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase, ProviderItemID: currentTextItemID})
 				}
 			case "function_call", "tool_search_call":
 				sawToolCall = true
-				pt := pending.start(event.Item, event.outputIndex(), ch)
-				pending.emitEnd(pt, event.Item.argumentsString(), ch)
+				pt := pending.start(event.Item, event.outputIndex(), emit)
+				pending.emitEnd(pt, event.Item.argumentsString(), emit)
 			}
 
 		case "response.completed", "response.done", "response.incomplete":
 			if event.Response != nil && event.Response.ID != "" {
 				responseID = event.Response.ID
 			}
-			pending.emitEnds(ch)
+			pending.emitEnds(emit)
 			usage, stopReason, finishReason, truncated := responsesDoneMetadata(event.Response, sawToolCall)
 			session.mu.Lock()
 			if useCachedContext {
@@ -553,13 +557,13 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			}
 			session.mu.Unlock()
 			lease.SucceedWithUsage(usage)
-			ch <- providers.StreamEvent{
+			emit.Send(providers.StreamEvent{
 				Type:         providers.EventDone,
 				Usage:        usage,
 				StopReason:   stopReason,
 				FinishReason: finishReason,
 				Truncated:    truncated,
-			}
+			})
 			return
 
 		case "response.failed":
@@ -570,12 +574,12 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			if event.Response != nil && event.Response.Error != nil {
 				err := event.Response.Error.asError()
 				lease.FailError(err)
-				ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+				emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 				return
 			}
 			err := errors.New("response failed")
 			lease.FailError(err)
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+			emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 			return
 
 		case "error":
@@ -586,12 +590,12 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			if event.Error != nil {
 				err := event.Error.asError()
 				lease.FailError(err)
-				ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+				emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 				return
 			}
 			err := errors.New("response websocket error")
 			lease.FailError(err)
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+			emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 			return
 		}
 	}

@@ -99,7 +99,7 @@ func (c *Client) responsesStreamChatSSE(ctx context.Context, payload responsesRe
 	}
 
 	ch := make(chan providers.StreamEvent, 64)
-	go c.readResponsesSSE(resp, lease, ch, state)
+	go c.readResponsesSSE(ctx, resp, lease, ch, state)
 	return ch, nil
 }
 
@@ -693,15 +693,19 @@ func (c *Client) doSingleResponsesRequest(
 	return resp, lease, nil
 }
 
-func (c *Client) readResponsesSSE(resp *http.Response, lease *providers.ProviderLease, ch chan<- providers.StreamEvent, state *providers.ProviderStateSummary) {
+func (c *Client) readResponsesSSE(ctx context.Context, resp *http.Response, lease *providers.ProviderLease, ch chan<- providers.StreamEvent, state *providers.ProviderStateSummary) {
 	defer close(ch)
 	defer resp.Body.Close()
 	defer lease.Release()
 
+	emit := providers.NewStreamEmitter(ctx, ch)
+
 	if state != nil {
-		ch <- providers.StreamEvent{
+		if !emit.Send(providers.StreamEvent{
 			Type:          providers.EventProviderState,
 			ProviderState: state,
+		}) {
+			return
 		}
 	}
 
@@ -734,9 +738,9 @@ func (c *Client) readResponsesSSE(resp *http.Response, lease *providers.Provider
 		}
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
-			pending.emitEnds(ch)
+			pending.emitEnds(emit)
 			lease.Succeed()
-			ch <- providers.StreamEvent{Type: providers.EventDone}
+			emit.Send(providers.StreamEvent{Type: providers.EventDone})
 			return
 		}
 
@@ -745,23 +749,23 @@ func (c *Client) readResponsesSSE(resp *http.Response, lease *providers.Provider
 			providers.DebugLogfWire("Responses SSE parse error: %v, data: %s", err, data)
 			err = fmt.Errorf("parse chunk: %w", err)
 			failOpenAIResponseLease(lease, resp, err)
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+			emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 			return
 		}
 
 		switch event.Type {
 		case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
-			pendingReasoning.appendDelta(event, event.Delta, ch)
+			pendingReasoning.appendDelta(event, event.Delta, emit)
 
 		case "response.reasoning_summary_part.done":
-			pendingReasoning.appendDelta(event, "\n\n", ch)
+			pendingReasoning.appendDelta(event, "\n\n", emit)
 
 		case "response.output_text.delta":
 			if event.Delta != "" {
 				if event.ItemID != "" {
 					currentTextItemID = event.ItemID
 				}
-				ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: event.Delta, Phase: currentTextPhase, ProviderItemID: currentTextItemID}
+				emit.Send(providers.StreamEvent{Type: providers.EventContentDelta, Content: event.Delta, Phase: currentTextPhase, ProviderItemID: currentTextItemID})
 			}
 
 		case "response.output_item.added":
@@ -774,16 +778,16 @@ func (c *Client) readResponsesSSE(resp *http.Response, lease *providers.Provider
 				}
 				if phase := providers.NormalizeMessagePhase(event.Item.Phase); phase != "" {
 					currentTextPhase = phase
-					ch <- providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase, ProviderItemID: currentTextItemID}
+					emit.Send(providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase, ProviderItemID: currentTextItemID})
 				}
 			case "function_call", "tool_search_call":
 				sawToolCall = true
-				pending.start(event.Item, event.outputIndex(), ch)
+				pending.start(event.Item, event.outputIndex(), emit)
 			}
 
 		case "response.function_call_arguments.delta", "response.tool_search_call.arguments.delta":
 			if event.Delta != "" {
-				pending.appendDelta(event, ch)
+				pending.appendDelta(event, emit)
 			}
 
 		case "response.function_call_arguments.done", "response.tool_search_call.arguments.done":
@@ -792,56 +796,59 @@ func (c *Client) readResponsesSSE(resp *http.Response, lease *providers.Provider
 		case "response.output_item.done":
 			switch event.Item.Type {
 			case "reasoning":
-				pendingReasoning.emitDone(event, ch)
+				pendingReasoning.emitDone(event, emit)
 			case "message":
 				if event.Item.ID != "" {
 					currentTextItemID = event.Item.ID
 				}
 				if phase := providers.NormalizeMessagePhase(event.Item.Phase); phase != "" {
 					currentTextPhase = phase
-					ch <- providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase, ProviderItemID: currentTextItemID}
+					emit.Send(providers.StreamEvent{Type: providers.EventContentDelta, Phase: currentTextPhase, ProviderItemID: currentTextItemID})
 				}
 			case "function_call", "tool_search_call":
 				sawToolCall = true
-				pt := pending.start(event.Item, event.outputIndex(), ch)
-				pending.emitEnd(pt, event.Item.argumentsString(), ch)
+				pt := pending.start(event.Item, event.outputIndex(), emit)
+				pending.emitEnd(pt, event.Item.argumentsString(), emit)
 			}
 
 		case "response.completed", "response.done", "response.incomplete":
-			pending.emitEnds(ch)
+			pending.emitEnds(emit)
 			usage, stopReason, finishReason, truncated := responsesDoneMetadata(event.Response, sawToolCall)
 			lease.SucceedWithUsage(usage)
-			ch <- providers.StreamEvent{
+			emit.Send(providers.StreamEvent{
 				Type:         providers.EventDone,
 				Usage:        usage,
 				StopReason:   stopReason,
 				FinishReason: finishReason,
 				Truncated:    truncated,
-			}
+			})
 			return
 
 		case "response.failed":
 			if event.Response != nil && event.Response.Error != nil {
 				err := event.Response.Error.asError()
 				lease.FailError(err)
-				ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+				emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 				return
 			}
 			err := errors.New("response failed")
 			lease.FailError(err)
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+			emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 			return
 
 		case "error":
 			if event.Error != nil {
 				err := event.Error.asError()
 				lease.FailError(err)
-				ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+				emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 				return
 			}
 			err := errors.New("response stream error")
 			lease.FailError(err)
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+			emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
+			return
+		}
+		if emit.Aborted() {
 			return
 		}
 	}
@@ -850,32 +857,32 @@ func (c *Client) readResponsesSSE(resp *http.Response, lease *providers.Provider
 		if idleFired.Load() {
 			err := fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)
 			failOpenAIResponseLease(lease, resp, err)
-			ch <- providers.StreamEvent{
+			emit.Send(providers.StreamEvent{
 				Type:  providers.EventError,
 				Error: err,
-			}
+			})
 			return
 		}
 		err = fmt.Errorf("read stream: %w", err)
 		failOpenAIResponseLease(lease, resp, err)
-		ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
+		emit.Send(providers.StreamEvent{Type: providers.EventError, Error: err})
 		return
 	}
 	if idleFired.Load() {
 		err := fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)
 		failOpenAIResponseLease(lease, resp, err)
-		ch <- providers.StreamEvent{
+		emit.Send(providers.StreamEvent{
 			Type:  providers.EventError,
 			Error: err,
-		}
+		})
 		return
 	}
 	err := providers.NewIncompleteStreamError("stream closed before response.completed")
 	failOpenAIResponseLease(lease, resp, err)
-	ch <- providers.StreamEvent{
+	emit.Send(providers.StreamEvent{
 		Type:  providers.EventError,
 		Error: err,
-	}
+	})
 }
 
 func responsesDoneMetadata(resp *responsesResponse, sawToolCall bool) (*providers.TokenUsage, string, providers.FinishReason, bool) {
@@ -937,7 +944,7 @@ func (p *responsesPendingReasoning) start(item responsesOutputItem, outputIndex 
 	return builder
 }
 
-func (p *responsesPendingReasoning) appendDelta(event responsesStreamEvent, delta string, ch chan<- providers.StreamEvent) {
+func (p *responsesPendingReasoning) appendDelta(event responsesStreamEvent, delta string, emit *providers.StreamEmitter) {
 	if delta == "" {
 		return
 	}
@@ -948,10 +955,10 @@ func (p *responsesPendingReasoning) appendDelta(event responsesStreamEvent, delt
 	if builder != nil {
 		builder.WriteString(delta)
 	}
-	ch <- providers.StreamEvent{Type: providers.EventThinkingDelta, Content: delta}
+	emit.Send(providers.StreamEvent{Type: providers.EventThinkingDelta, Content: delta})
 }
 
-func (p *responsesPendingReasoning) emitDone(event responsesStreamEvent, ch chan<- providers.StreamEvent) {
+func (p *responsesPendingReasoning) emitDone(event responsesStreamEvent, emit *providers.StreamEmitter) {
 	if event.Item.Type != "reasoning" {
 		return
 	}
@@ -963,10 +970,12 @@ func (p *responsesPendingReasoning) emitDone(event responsesStreamEvent, ch chan
 	}
 	if strings.TrimSpace(block.Thinking) != "" {
 		if builder := p.find(event); builder == nil || builder.String() == "" {
-			ch <- providers.StreamEvent{Type: providers.EventThinkingDelta, Content: block.Thinking}
+			if !emit.Send(providers.StreamEvent{Type: providers.EventThinkingDelta, Content: block.Thinking}) {
+				return
+			}
 		}
 	}
-	ch <- providers.StreamEvent{Type: providers.EventThinkingDone, ReasoningBlock: &block}
+	emit.Send(providers.StreamEvent{Type: providers.EventThinkingDone, ReasoningBlock: &block})
 }
 
 func (p *responsesPendingReasoning) find(event responsesStreamEvent) *strings.Builder {
@@ -1004,7 +1013,7 @@ func newResponsesPendingTools() *responsesPendingTools {
 	}
 }
 
-func (p *responsesPendingTools) start(item responsesOutputItem, outputIndex int, ch chan<- providers.StreamEvent) *responsesPendingTool {
+func (p *responsesPendingTools) start(item responsesOutputItem, outputIndex int, emit *providers.StreamEmitter) *responsesPendingTool {
 	if item.ID != "" {
 		if existing := p.byItemID[item.ID]; existing != nil {
 			existing.update(item, outputIndex)
@@ -1035,7 +1044,7 @@ func (p *responsesPendingTools) start(item responsesOutputItem, outputIndex int,
 	if outputIndex >= 0 {
 		p.byIndex[outputIndex] = pt
 	}
-	ch <- providers.StreamEvent{
+	emit.Send(providers.StreamEvent{
 		Type: providers.EventToolUseStart,
 		ToolCall: &providers.ToolCall{
 			ID:             pt.id,
@@ -1043,16 +1052,16 @@ func (p *responsesPendingTools) start(item responsesOutputItem, outputIndex int,
 			Name:           pt.name,
 			Kind:           pt.kind,
 		},
-	}
+	})
 	return pt
 }
 
-func (p *responsesPendingTools) appendDelta(event responsesStreamEvent, ch chan<- providers.StreamEvent) {
+func (p *responsesPendingTools) appendDelta(event responsesStreamEvent, emit *providers.StreamEmitter) {
 	pt := p.find(event)
 	if pt != nil {
 		pt.args.WriteString(event.Delta)
 	}
-	ch <- providers.StreamEvent{Type: providers.EventToolUseDelta, Content: event.Delta}
+	emit.Send(providers.StreamEvent{Type: providers.EventToolUseDelta, Content: event.Delta})
 }
 
 func (p *responsesPendingTools) setArguments(event responsesStreamEvent) {
@@ -1065,7 +1074,7 @@ func (p *responsesPendingTools) setArguments(event responsesStreamEvent) {
 	pt.args.WriteString(args)
 }
 
-func (p *responsesPendingTools) emitEnd(pt *responsesPendingTool, arguments string, ch chan<- providers.StreamEvent) {
+func (p *responsesPendingTools) emitEnd(pt *responsesPendingTool, arguments string, emit *providers.StreamEmitter) {
 	if pt == nil || pt.ended {
 		return
 	}
@@ -1074,7 +1083,7 @@ func (p *responsesPendingTools) emitEnd(pt *responsesPendingTool, arguments stri
 		pt.args.WriteString(arguments)
 	}
 	pt.ended = true
-	ch <- providers.StreamEvent{
+	emit.Send(providers.StreamEvent{
 		Type: providers.EventToolUseEnd,
 		ToolCall: &providers.ToolCall{
 			ID:             pt.id,
@@ -1083,12 +1092,12 @@ func (p *responsesPendingTools) emitEnd(pt *responsesPendingTool, arguments stri
 			Kind:           pt.kind,
 			Arguments:      pt.args.String(),
 		},
-	}
+	})
 }
 
-func (p *responsesPendingTools) emitEnds(ch chan<- providers.StreamEvent) {
+func (p *responsesPendingTools) emitEnds(emit *providers.StreamEmitter) {
 	for _, pt := range p.items {
-		p.emitEnd(pt, "", ch)
+		p.emitEnd(pt, "", emit)
 	}
 }
 

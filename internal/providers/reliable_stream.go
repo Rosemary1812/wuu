@@ -177,12 +177,19 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 
 		attemptCtx, cancelAttempt := context.WithCancel(ctx)
 		ch, err := r.inner.StreamChat(attemptCtx, attemptReq)
+		if err == nil && ch == nil {
+			err = errors.New("stream client returned a nil event channel")
+		}
 		forwardedEvents := 0
 		var finalizedToolCalls []ToolCall
 		if err == nil {
 			var sawDone bool
 			err, sawDone, forwardedEvents, finalizedToolCalls = r.forwardAttempt(attemptCtx, ch, out, attemptReq.Execution, operation, attempt, maxAttempts, retriesUsed, maxRetries, startedAt)
+			// Cancel before draining: a producer blocked mid-send unblocks on
+			// either the drain or its own ctx select, finishes, and releases
+			// its lease through its defers.
 			cancelAttempt()
+			drainStream(ch)
 			if ctx.Err() != nil {
 				failure := NormalizeFailure(ctx.Err())
 				_ = attempt.Complete(InferenceOutcomeCanceled, failure)
@@ -202,7 +209,7 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 		}
 		if err != nil {
 			if journalErr := attempt.ObserveStreamEvent(StreamEvent{Type: EventError, Error: err}); journalErr != nil {
-				err = journalErr
+				err = errors.Join(err, journalErr)
 			}
 		}
 		failure := NormalizeFailure(err)
@@ -227,7 +234,7 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 				outcome = InferenceOutcomeCanceled
 			}
 			if journalErr := attempt.Complete(outcome, failure); journalErr != nil {
-				err = journalErr
+				err = errors.Join(err, journalErr)
 				failure = NormalizeFailure(journalErr)
 				outcome = InferenceOutcomeFailed
 			}
@@ -298,7 +305,20 @@ func (r *ReliableStreamClient) forwardAttempt(
 	var forwardedEvents int
 	var finalizedToolCalls []ToolCall
 	connected := false
-	for ev := range ch {
+	for {
+		var ev StreamEvent
+		var ok bool
+		// Never block on a provider that stalls without sending, closing, or
+		// honoring cancellation: the consumer's context must always be able to
+		// end this loop.
+		select {
+		case <-ctx.Done():
+			return streamErr, sawDone, forwardedEvents, finalizedToolCalls
+		case ev, ok = <-ch:
+		}
+		if !ok {
+			return streamErr, sawDone, forwardedEvents, finalizedToolCalls
+		}
 		if err := attempt.ObserveStreamEvent(ev); err != nil {
 			return err, sawDone, forwardedEvents, finalizedToolCalls
 		}
@@ -331,8 +351,14 @@ func (r *ReliableStreamClient) forwardAttempt(
 			return streamErr, sawDone, forwardedEvents, finalizedToolCalls
 		}
 		forwardedEvents++
+		// EventDone is terminal for the logical response. Anything a provider
+		// emits afterwards — a trailing transport error from an unclean close,
+		// a stray frame — must not retroactively fail and replay a response
+		// the consumer has already accepted.
+		if ev.Type == EventDone {
+			return nil, sawDone, forwardedEvents, finalizedToolCalls
+		}
 	}
-	return streamErr, sawDone, forwardedEvents, finalizedToolCalls
 }
 
 func (r *ReliableStreamClient) sendLifecycle(
