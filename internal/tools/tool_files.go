@@ -872,6 +872,10 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 		result["action"] = "overwrite"
 		result["old_file_sha"] = formatFileSHA(sha256Hex(oldContent))
 		result["diff"] = writeFileDiffResult(oldContent, args.Content)
+		if warning := testContractWarning(resolved, string(oldContent), args.Content); warning != "" {
+			result["contract_warning"] = warning
+			result["next_suggestions"] = []string{"address the contract_warning before anything else"}
+		}
 	} else {
 		lineCount := strings.Count(args.Content, "\n")
 		if len(args.Content) > 0 && !strings.HasSuffix(args.Content, "\n") {
@@ -1276,6 +1280,10 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 		"diff":               diff,
 		"next_suggestions":   []string{"run targeted validation with command execution if that capability is exposed, otherwise inspect the resulting diff before finishing"},
+	}
+	if warning := testContractWarning(resolved, text, newContent); warning != "" {
+		result["contract_warning"] = warning
+		result["next_suggestions"] = []string{"address the contract_warning before anything else", "run targeted validation with command execution if that capability is exposed, otherwise inspect the resulting diff before finishing"}
 	}
 	return mustJSON(result)
 }
