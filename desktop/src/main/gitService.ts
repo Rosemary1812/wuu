@@ -210,7 +210,17 @@ function gitFileDiffResult(
   };
 
   if (change.status === "untracked") {
-    return gitUntrackedFileDiffResult(root, absolutePath, change);
+    return gitNewFileDiffResult(root, absolutePath, change);
+  }
+
+  if (change.status === "unknown" && gitPathIgnored(root, relativePath)) {
+    const stats = untrackedGitFileStats(root, relativePath);
+    return gitNewFileDiffResult(root, absolutePath, {
+      ...change,
+      status: "ignored",
+      additions: stats.additions,
+      binary: stats.binary,
+    });
   }
 
   const rawPatch = gitDiffOutput(root, relativePath);
@@ -601,7 +611,7 @@ function untrackedGitFileStats(
   }
 }
 
-function gitUntrackedFileDiffResult(
+function gitNewFileDiffResult(
   root: string,
   absolutePath: string,
   change: GitChangeFile,
@@ -620,7 +630,7 @@ function gitUntrackedFileDiffResult(
     );
     const binary = previewBuffer.includes(0);
     const patch = binary
-      ? `Binary file ${change.path} is untracked`
+      ? `Binary file ${change.path} is not tracked by Git`
       : buildUntrackedPatch(
           change.path,
           previewBuffer.toString("utf8"),
@@ -640,6 +650,19 @@ function gitUntrackedFileDiffResult(
   } catch {
     return emptyGitFileDiffResult(change.path, true);
   }
+}
+
+function gitPathIgnored(root: string, relativePath: string): boolean {
+  const result = spawnSync(
+    "git",
+    ["-C", root, "check-ignore", "--quiet", "--", relativePath],
+    {
+      cwd: root,
+      encoding: "utf8",
+      env: process.env,
+    },
+  );
+  return result.status === 0;
 }
 
 function buildUntrackedPatch(

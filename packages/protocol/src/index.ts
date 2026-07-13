@@ -522,7 +522,7 @@ export type GitDiffStats = {
   deletions: number;
 };
 
-export type GitChangeStatus = "modified" | "added" | "deleted" | "renamed" | "copied" | "untracked" | "unknown";
+export type GitChangeStatus = "modified" | "added" | "deleted" | "renamed" | "copied" | "untracked" | "ignored" | "unknown";
 
 export type GitChangeFile = {
   path: string;

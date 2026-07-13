@@ -191,6 +191,8 @@ function gitChangeStatusText(status: GitChangeFile["status"]): string {
       return "已复制";
     case "untracked":
       return "未跟踪";
+    case "ignored":
+      return "已被 Git 忽略";
     default:
       return "已变更";
   }
