@@ -938,25 +938,55 @@ function streamStatusFromLifecycle(
   }
   const subject = transportSubject(transportLabel(transport));
   if (phase === "failed") {
+    const reason = stringValue(lifecycle, "reason")?.toLowerCase() ?? "";
+    if (
+      reason.includes("automatic replay blocked") ||
+      reason.includes("run it twice")
+    ) {
+      return {
+        text: `为避免工具被重复执行，${subject}已停止自动恢复`,
+        liveProgress: false,
+      };
+    }
     return {
-      text: `${subject}恢复失败`,
+      text: `${subject}未能自动恢复`,
       liveProgress: false,
     };
   }
   const retryCount =
     positiveInteger(numberValue(lifecycle, "retry_count")) ??
     retryCountFromAttempt(numberValue(lifecycle, "attempt"));
-  const maxRetries = positiveInteger(numberValue(lifecycle, "max_retries"));
-  if (maxRetries) {
-    return {
-      text: `${subject}重连中 ${retryCount}/${maxRetries}`,
-      liveProgress: true,
-    };
-  }
+  const attempt =
+    positiveInteger(numberValue(lifecycle, "attempt")) ?? retryCount + 1;
+  const maxAttempts =
+    positiveInteger(numberValue(lifecycle, "max_attempts")) ??
+    maxAttemptsFromRetries(numberValue(lifecycle, "max_retries"));
+  const attemptText = maxAttempts
+    ? `第 ${attempt}/${maxAttempts} 次尝试`
+    : `第 ${attempt} 次尝试`;
+  const retryInMs = positiveInteger(numberValue(lifecycle, "retry_in_ms"));
+  const waitText = retryWaitText(retryInMs);
   return {
-    text: `${subject}重连中，第 ${retryCount} 次`,
+    text: waitText
+      ? `${subject}暂时中断，${waitText}（${attemptText}）`
+      : `${subject}正在恢复（${attemptText}）`,
     liveProgress: true,
   };
+}
+
+function retryWaitText(retryInMs: number | undefined): string | undefined {
+  if (!retryInMs) {
+    return undefined;
+  }
+  if (retryInMs < 60_000) {
+    return `约 ${Math.max(1, Math.ceil(retryInMs / 1_000))} 秒后继续`;
+  }
+  return `约 ${Math.ceil(retryInMs / 60_000)} 分钟后继续`;
+}
+
+function maxAttemptsFromRetries(maxRetries: number | undefined): number | undefined {
+  const safeRetries = positiveInteger(maxRetries);
+  return safeRetries ? safeRetries + 1 : undefined;
 }
 
 function failedTransportLabelFromProviderState(

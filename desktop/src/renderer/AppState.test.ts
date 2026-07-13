@@ -817,8 +817,10 @@ describe("AppState token usage", () => {
             lifecycle: {
               phase: "reconnecting",
               attempt: 2,
+              max_attempts: 4,
               retry_count: 1,
               max_retries: 3,
+              retry_in_ms: 1500,
             },
           },
         },
@@ -826,7 +828,7 @@ describe("AppState token usage", () => {
     });
 
     expect(turnStreamStatusForThread(reconnecting, reconnecting.thread)).toEqual({
-      text: "消息流重连中 1/3",
+      text: "消息流暂时中断，约 2 秒后继续（第 2/4 次尝试）",
       liveProgress: true,
     });
 
@@ -906,8 +908,53 @@ describe("AppState token usage", () => {
     });
 
     expect(turnStreamStatusForThread(reconnecting, reconnecting.thread)).toEqual({
-      text: "HTTP 消息流重连中 2/3",
+      text: "HTTP 消息流正在恢复（第 3/4 次尝试）",
       liveProgress: true,
+    });
+  });
+
+  it("explains when automatic replay stops to avoid duplicate tools", () => {
+    const thread: Thread = {
+      ...threadWithUserTexts(["hi"]),
+      turns: [
+        {
+          id: "turn-1",
+          items_view: "full",
+          status: "in_progress",
+          items: [],
+        },
+      ],
+    };
+    const state = reduceServerEvent(
+      {
+        ...initialState,
+        thread,
+        threads: [thread],
+        running: true,
+      },
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "turn/event",
+          params: {
+            thread_id: "thread-1",
+            turn_id: "turn-1",
+            event: {
+              lifecycle: {
+                phase: "failed",
+                reason:
+                  'automatic replay blocked: streamed tool "read_file" may already be running; reconnecting could run it twice',
+              },
+            },
+          },
+        },
+      },
+    );
+
+    expect(turnStreamStatusForThread(state, state.thread)).toEqual({
+      text: "为避免工具被重复执行，消息流已停止自动恢复",
+      liveProgress: false,
     });
   });
 
