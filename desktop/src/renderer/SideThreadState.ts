@@ -127,6 +127,7 @@ export type SideThreadAction =
       messageId: string;
       patch: Partial<SideThreadMessage>;
     }
+  | { type: "setHistory"; mainThreadId: string; messages: SideThreadMessage[] }
   | { type: "setStreaming"; mainThreadId: string; streaming: boolean }
   | { type: "setError"; mainThreadId: string; error: string | undefined }
   | { type: "applyEvent"; event: SideThreadEvent }
@@ -177,6 +178,12 @@ export function reduceSideThreadStore(
         messages: entry.messages.map((m) =>
           m.id === action.messageId ? { ...m, ...action.patch } : m
         )
+      }));
+    case "setHistory":
+      return updateEntry(store, action.mainThreadId, (entry) => ({
+        ...entry,
+        // 用后端的真实历史覆盖本地缓存；保留 draft 与 open 状态。
+        messages: [...action.messages]
       }));
     case "setStreaming":
       return updateEntry(store, action.mainThreadId, (entry) => ({
