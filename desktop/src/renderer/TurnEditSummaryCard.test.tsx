@@ -252,6 +252,31 @@ describe("TurnEditSummaryCard", () => {
     );
   });
 
+  it("uses the shared workspace file chain for the primary row click", () => {
+    const onOpenFile = vi.fn();
+    const onOpenFileDiff = vi.fn();
+    const turn: Turn = {
+      id: "turn-1",
+      status: "completed",
+      items_view: "full",
+      items: [buildEditItem("docs/brief.md", 2, 1)],
+    };
+
+    mount(
+      <TurnEditSummaryCard
+        turn={turn}
+        onOpenFile={onOpenFile}
+        onOpenFileDiff={onOpenFileDiff}
+      />,
+    );
+    act(() => {
+      container?.querySelector<HTMLButtonElement>(".turn-edit-summary-row")?.click();
+    });
+
+    expect(onOpenFile).toHaveBeenCalledWith("docs/brief.md");
+    expect(onOpenFileDiff).not.toHaveBeenCalled();
+  });
+
   it("restores an added apply_patch file as a turn snapshot", () => {
     const onOpenFileDiff = vi.fn();
     const turn: Turn = {

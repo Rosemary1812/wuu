@@ -301,10 +301,12 @@ const FILE_BATCH_SIZE = 3;
 export function TurnEditSummaryCard({
   turn,
   cwd,
+  onOpenFile,
   onOpenFileDiff,
 }: {
   turn: Turn;
   cwd?: string;
+  onOpenFile?: (path: string) => void;
   onOpenFileDiff?: (selection: TurnFileDiffSelection) => void;
 }): JSX.Element | null {
   const [visibleCount, setVisibleCount] = useState(FILE_BATCH_SIZE);
@@ -329,7 +331,7 @@ export function TurnEditSummaryCard({
       </div>
       <div className="turn-edit-summary-list">
         {visibleEdits.map((edit) => {
-          const canOpenDiff = Boolean(onOpenFileDiff);
+          const canOpenFile = Boolean(onOpenFile || onOpenFileDiff);
           const rowContent = (
             <>
               <span className="turn-edit-summary-file">
@@ -358,12 +360,16 @@ export function TurnEditSummaryCard({
           );
           return (
             <div key={edit.path}>
-              {canOpenDiff ? (
+              {canOpenFile ? (
                 <button
                   className="turn-edit-summary-row is-clickable"
                   type="button"
-                  aria-label={`在右侧查看 ${edit.path} 的本轮产出`}
-                  onClick={() =>
+                  aria-label={`打开文件 ${edit.path}`}
+                  onClick={() => {
+                    if (onOpenFile) {
+                      onOpenFile(edit.path);
+                      return;
+                    }
                     onOpenFileDiff?.({
                       artifactID: edit.item.id,
                       path: edit.path,
@@ -375,8 +381,8 @@ export function TurnEditSummaryCard({
                       additions: edit.additions,
                       deletions: edit.deletions,
                       newFile: edit.newFile,
-                    })
-                  }
+                    });
+                  }}
                 >
                   {rowContent}
                 </button>

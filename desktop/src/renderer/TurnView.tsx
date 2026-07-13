@@ -155,6 +155,7 @@ export function TurnView({
       <TurnEditSummaryCard
         turn={turn}
         cwd={cwd}
+        onOpenFile={onOpenFile}
         onOpenFileDiff={onOpenFileDiff}
       />
       {isLatestTurn && turn.status === "in_progress" && streamStatus?.liveProgress ? (
