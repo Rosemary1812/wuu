@@ -758,11 +758,21 @@ func (m *residentTaskManager) PieceDone(ctx context.Context, subthreadID, pieceI
 	if err := m.ready("piece_done"); err != nil {
 		return tools.TaskView{}, err
 	}
+	pieceID = strings.TrimSpace(pieceID)
+	if strings.TrimSpace(subthreadID) == "" {
+		attempt, err := session.ActiveTaskAttemptForAssignee(m.server.rt.SessionDir, m.participantID)
+		if err != nil {
+			return tools.TaskView{}, fmt.Errorf("piece_done: infer current Task: %w", err)
+		}
+		if attempt.NodeID != pieceID {
+			return tools.TaskView{}, fmt.Errorf("piece_done: active assignment is piece %q, not %q", attempt.NodeID, pieceID)
+		}
+		subthreadID = attempt.TaskID
+	}
 	thread, _, err := m.memberTask("piece_done", subthreadID)
 	if err != nil {
 		return tools.TaskView{}, err
 	}
-	pieceID = strings.TrimSpace(pieceID)
 	var piece *session.TaskPiece
 	for i := range thread.Plan {
 		if thread.Plan[i].ID == pieceID {

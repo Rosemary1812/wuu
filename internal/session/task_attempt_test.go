@@ -92,6 +92,22 @@ func TestTaskAttemptActiveAssigneeReservationIsGlobal(t *testing.T) {
 	}
 }
 
+func TestActiveTaskAttemptForAssigneeReturnsUniqueAssignment(t *testing.T) {
+	dir := t.TempDir()
+	task := attemptTaskForTest(t, dir, "group-a", "owner-a", "worker-a")
+	want, _, err := ReserveTaskAttempt(dir, task.ID, "node-1", "worker-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ActiveTaskAttemptForAssignee(dir, "worker-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != want.ID || got.TaskID != task.ID || got.NodeID != "node-1" {
+		t.Fatalf("active attempt = %+v, want %+v", got, want)
+	}
+}
+
 func TestSettleActiveTaskAttemptsPausesWithoutReplay(t *testing.T) {
 	dir := t.TempDir()
 	task := attemptTaskForTest(t, dir, "group-a", "owner-a", "worker-a")

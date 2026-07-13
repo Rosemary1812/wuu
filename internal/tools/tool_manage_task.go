@@ -42,7 +42,7 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 				},
 				"subthread_id": map[string]any{
 					"type":        "string",
-					"description": "Thread/Task id (cth-…). Required for promote and Task actions.",
+					"description": "Thread/Task id (cth-…). Required for promote and Task actions except piece_done during your current assigned attempt, where the runtime infers it.",
 				},
 				"title": map[string]any{
 					"type":        "string",
@@ -296,9 +296,6 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 		}
 		return marshalTaskResult("resume", map[string]any{"task": view})
 	case "piece_done":
-		if strings.TrimSpace(params.SubthreadID) == "" {
-			return "", errors.New("piece_done: subthread_id is required")
-		}
 		if strings.TrimSpace(params.PieceID) == "" {
 			return "", errors.New("piece_done: piece_id is required")
 		}

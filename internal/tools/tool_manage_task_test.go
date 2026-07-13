@@ -8,6 +8,16 @@ import (
 
 type workflowManagerStub struct{}
 
+type pieceDoneManagerStub struct {
+	workflowManagerStub
+	subthreadID string
+}
+
+func (s *pieceDoneManagerStub) PieceDone(_ context.Context, subthreadID, _ string, _ *TaskHandoff) (TaskView, error) {
+	s.subthreadID = subthreadID
+	return TaskView{}, nil
+}
+
 func (workflowManagerStub) OpenThread(context.Context, string, int, string) (TaskView, error) {
 	return TaskView{}, nil
 }
@@ -97,5 +107,16 @@ func TestManageTaskRejectsRemovedActionsAndStandaloneOpen(t *testing.T) {
 	}
 	if _, err := tool.Execute(context.Background(), `{"action":"set_plan","subthread_id":"cth-1","plan":[{"id":"p1","title":"inspect only","assignee":"prt-mia"}]}`); err == nil || !strings.Contains(err.Error(), "preserves the authorized outcome and scope limits") {
 		t.Fatalf("set_plan without worker scope prompt error = %v", err)
+	}
+}
+
+func TestManageTaskLetsActiveWorkerOmitRedundantTaskIDForPieceDone(t *testing.T) {
+	manager := &pieceDoneManagerStub{}
+	tool := NewManageTaskTool(&Env{ParticipantID: "prt-ada", TaskManager: manager})
+	if _, err := tool.Execute(context.Background(), `{"action":"piece_done","piece_id":"p1"}`); err != nil {
+		t.Fatalf("piece_done without redundant task id: %v", err)
+	}
+	if manager.subthreadID != "" {
+		t.Fatalf("tool should let runtime infer task id, got %q", manager.subthreadID)
 	}
 }

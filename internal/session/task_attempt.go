@@ -274,6 +274,32 @@ FROM task_attempts WHERE task_id = ? ORDER BY created_at, id`, strings.TrimSpace
 	return out, rows.Err()
 }
 
+// ActiveTaskAttemptForAssignee returns the caller's one queued/running Task
+// assignment. The partial unique index on task_attempts makes this identity
+// unambiguous across every Task in the workspace.
+func ActiveTaskAttemptForAssignee(sessDir, assigneeID string) (TaskAttempt, error) {
+	assigneeID = strings.TrimSpace(assigneeID)
+	if assigneeID == "" {
+		return TaskAttempt{}, errors.New("assignee_id is required")
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return TaskAttempt{}, err
+	}
+	defer db.Close()
+	row := db.QueryRow(`
+SELECT id, session_id, task_id, node_id, assignee_id, ordinal, status,
+       failure_category, failure_message, created_at, started_at, finished_at
+FROM task_attempts
+WHERE assignee_id = ? AND status IN (?, ?)
+LIMIT 1`, assigneeID, TaskAttemptQueued, TaskAttemptRunning)
+	attempt, err := scanTaskAttempt(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return TaskAttempt{}, fmt.Errorf("active task attempt not found for assignee %q", assigneeID)
+	}
+	return attempt, err
+}
+
 // SettleActiveTaskAttempts interrupts every queued/running attempt left by a
 // dead process, clears its node binding, and pauses the Task without starting a
 // model turn. The returned attempts are the durable recovery facts for tracing.

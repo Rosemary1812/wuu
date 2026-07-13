@@ -149,6 +149,30 @@ func TestTaskPlanWakesLeadWhenAllDone(t *testing.T) {
 	}
 }
 
+func TestTaskPieceDoneInfersTaskFromWorkersActiveAttempt(t *testing.T) {
+	srv, groupID, andy, mia, _, _ := planFixture(t)
+	lead := srv.residentTaskManager(andy)
+	task, err := createPromotedTaskForTest(context.Background(), lead, groupID, "唯一活跃任务")
+	if err != nil {
+		t.Fatalf("createPromotedTaskForTest: %v", err)
+	}
+	if _, err := lead.SetPlan(context.Background(), task.ID, []tools.TaskPiece{{
+		ID: "only", Title: "调查", Assignee: mia,
+	}}); err != nil {
+		t.Fatalf("SetPlan: %v", err)
+	}
+	if _, err := srv.residentTaskManager(mia).PieceDone(context.Background(), "", "other", nil); err == nil || !strings.Contains(err.Error(), "active assignment is piece") {
+		t.Fatalf("piece_done must not infer a task for a different piece: %v", err)
+	}
+	view, err := srv.residentTaskManager(mia).PieceDone(context.Background(), "", "only", nil)
+	if err != nil {
+		t.Fatalf("piece_done should infer active task: %v", err)
+	}
+	if view.ID != task.ID || pieceStatus(view, "only") != session.TaskPieceDone {
+		t.Fatalf("piece_done inferred wrong task: %+v", view)
+	}
+}
+
 func TestTaskPlanPieceDoneOnlyByAssignee(t *testing.T) {
 	srv, groupID, andy, mia, han, _ := planFixture(t)
 	lead := srv.residentTaskManager(andy)
