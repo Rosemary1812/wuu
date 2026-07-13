@@ -251,9 +251,10 @@
   --participants-roster-focus-ring: rgba(228, 232, 235, 0.25);
 
   /* sidebar.css */
-  /* Let the native material keep sampling the wallpaper in dark mode too;
-     this veil only preserves enough contrast for sidebar text. */
-  --sidebar-material-fill: rgba(12, 14, 17, 0.22);
+  /* macOS's `sidebar` vibrancy material can remain light even when the
+     renderer is dark. Keep a little depth from the native material, but make
+     the dark surface dense enough that navigation text always has contrast. */
+  --sidebar-material-fill: rgba(16, 18, 21, 0.88);
   --sidebar-material-edge: rgba(255, 255, 255, 0.16);
   --sidebar-material-inner-edge: rgba(255, 255, 255, 0.055);
   --sidebar-material-highlight: rgba(255, 255, 255, 0.075);

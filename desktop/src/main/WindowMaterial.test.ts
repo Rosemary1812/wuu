@@ -29,9 +29,9 @@ describe("macOS sidebar material", () => {
     );
   });
 
-  it("uses only a translucent contrast veil in dark mode", () => {
+  it("uses a stable dark surface when the native sidebar material is light", () => {
     expect(themeCSS).toMatch(
-      /:root\[data-theme="dark"\][\s\S]*?--sidebar-material-fill:\s*rgba\(12, 14, 17, 0\.22\);/,
+      /:root\[data-theme="dark"\][\s\S]*?--sidebar-material-fill:\s*rgba\(16, 18, 21, 0\.88\);/,
     );
   });
 });
