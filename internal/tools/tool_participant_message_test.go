@@ -38,6 +38,7 @@ func TestPostMessageToolDescriptionTeachesGroupThreadID(t *testing.T) {
 	for _, want := range []string{
 		"For group chat replies, set thread_id to the source thread_id from the incoming_message.",
 		"Plain assistant text is private and is not posted to the group.",
+		"Use brief for an ordinary group contribution, DM-to-group kickoff, handoff, or milestone",
 	} {
 		if !strings.Contains(def.Description, want) {
 			t.Fatalf("post_message description missing %q:\n%s", want, def.Description)
@@ -60,5 +61,13 @@ func TestPostMessageToolDescriptionTeachesGroupThreadID(t *testing.T) {
 		if !strings.Contains(description, want) {
 			t.Fatalf("thread_id description missing %q:\n%s", want, description)
 		}
+	}
+	kind, ok := properties["kind"].(map[string]any)
+	if !ok {
+		t.Fatalf("post_message schema missing kind property: %+v", properties)
+	}
+	enum, ok := kind["enum"].([]string)
+	if !ok || !containsString(enum, "brief") {
+		t.Fatalf("post_message kind enum missing brief: %+v", kind["enum"])
 	}
 }

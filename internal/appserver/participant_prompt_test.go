@@ -71,9 +71,45 @@ func TestResidentParticipantSystemPromptRequiresGroupReplyPostMessage(t *testing
 		"If you decide to speak in response to a group <incoming_message>, call post_message",
 		"with thread_id set to that incoming_message's source thread_id.",
 		"Plain assistant text is private working transcript and never reaches the group.",
+		"A group main-stream post is a BRIEF coordination signal, not a report.",
+		"Default to kind=brief and stay within 280 characters",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("resident prompt missing group reply contract %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestResidentParticipantSystemPromptCarriesConvergedDMIntoGroup(t *testing.T) {
+	got := residentParticipantSystemPrompt(participant.Participant{
+		Name:    "Ari",
+		Role:    "teammate",
+		Tagline: "helps in group chat",
+	}, "", "", "", "", nil)
+
+	for _, want := range []string{
+		"it may receive a direction already converged in a DM",
+		"do not reopen settled decisions without new evidence",
+		"A common path starts in your DM: investigate with the user, then bring in a",
+		"@ each teammate who should start now",
+		"adding them does not assign work or wake them immediately",
+		"open a Thread from that kickoff and converge only remaining",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("resident prompt missing DM-to-group handoff contract %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestResidentParticipantSystemPromptRequiresSemanticTaskUpdates(t *testing.T) {
+	got := residentParticipantSystemPrompt(participant.Participant{Name: "Ari"}, "", "", "", "", nil)
+	for _, want := range []string{
+		"Do not\n   narrate tool activity",
+		"when a phase completes",
+		"answer to 'where is this now?' materially changes",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("resident prompt missing task progress contract %q:\n%s", want, got)
 		}
 	}
 }

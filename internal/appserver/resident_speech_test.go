@@ -77,6 +77,9 @@ func TestResidentPostMessageToMemberThreadPersistsSignedCard(t *testing.T) {
 	participantID := saveNamedParticipant(t, srv.rt, "Iris", "reviewer", "")
 	dmID := startResidentDMForTest(t, srv, participantID)
 	groupID := startGroupThreadForTest(t, srv)
+	if _, err := session.SetGroupThread(srv.rt.SessionDir, groupID, true); err != nil {
+		t.Fatalf("SetGroupThread: %v", err)
+	}
 	if err := session.AddThreadMember(srv.rt.SessionDir, groupID, participantID); err != nil {
 		t.Fatalf("AddThreadMember: %v", err)
 	}
@@ -84,7 +87,7 @@ func TestResidentPostMessageToMemberThreadPersistsSignedCard(t *testing.T) {
 	kit := residentToolkitForTest(t, srv, dmID)
 	_, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "post_message",
-		Arguments: fmt.Sprintf(`{"kind":"result","text":"Found the bug.","thread_id":%q}`, groupID),
+		Arguments: fmt.Sprintf(`{"kind":"brief","text":"Found the bug; Iris owns the fix.","thread_id":%q}`, groupID),
 	})
 	if err != nil {
 		t.Fatalf("post_message: %v", err)
@@ -104,7 +107,7 @@ func TestResidentPostMessageToMemberThreadPersistsSignedCard(t *testing.T) {
 	if posted == nil {
 		t.Fatalf("participant message not persisted: %+v", history)
 	}
-	if posted.ParticipantID != participantID || posted.PostKind != "result" || posted.Content != "Found the bug." {
+	if posted.ParticipantID != participantID || posted.PostKind != "brief" || posted.Content != "Found the bug; Iris owns the fix." {
 		t.Fatalf("unexpected persisted participant message: %+v", *posted)
 	}
 
@@ -117,6 +120,53 @@ func TestResidentPostMessageToMemberThreadPersistsSignedCard(t *testing.T) {
 	item := group.Turns[len(group.Turns)-1].Items[len(group.Turns[len(group.Turns)-1].Items)-1]
 	if item.Type != ThreadItemParticipantMsg || item.Participant == nil || item.Participant.ID != participantID {
 		t.Fatalf("unexpected participant thread item: %+v", item)
+	}
+}
+
+func TestResidentPostMessageLimitsOnlyGroupMainStream(t *testing.T) {
+	srv, rt := newResidentSpeechTestServer(t)
+	participantID := saveNamedParticipant(t, srv.rt, "Iris", "reviewer", "")
+	dmID := startResidentDMForTest(t, srv, participantID)
+	groupID := startGroupThreadForTest(t, srv)
+	if _, err := session.SetGroupThread(srv.rt.SessionDir, groupID, true); err != nil {
+		t.Fatalf("SetGroupThread: %v", err)
+	}
+	if err := session.AddThreadMember(srv.rt.SessionDir, groupID, participantID); err != nil {
+		t.Fatalf("AddThreadMember: %v", err)
+	}
+	cth := createStoredOpenThreadForTest(t, srv, groupID, participantID, "seq-3", 3)
+	longText := strings.Repeat("界", maxGroupBriefRunes+1)
+	kit := residentToolkitForTest(t, srv, dmID)
+
+	_, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "post_message",
+		Arguments: fmt.Sprintf(`{"kind":"brief","text":%q,"thread_id":%q}`, longText, groupID),
+	})
+	if err == nil || !strings.Contains(err.Error(), "coordination briefs") || !strings.Contains(err.Error(), "got 281") {
+		t.Fatalf("long group main-stream post should be rejected with repair guidance, got %v", err)
+	}
+
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "post_message",
+		Arguments: fmt.Sprintf(`{"kind":"result","text":%q}`, longText),
+	}); err != nil {
+		t.Fatalf("long DM result should remain allowed: %v", err)
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "post_message",
+		Arguments: fmt.Sprintf(`{"kind":"update","text":%q,"thread_id":%q}`, longText, cth.ID),
+	}); err != nil {
+		t.Fatalf("long reply/task detail should remain allowed: %v", err)
+	}
+
+	history, err := session.LoadHistoryRecords(rt.sessionDir, groupID, false)
+	if err != nil {
+		t.Fatalf("LoadHistoryRecords: %v", err)
+	}
+	for _, record := range history {
+		if record.Role == "participant" && record.ThreadID == "" && record.Content == longText {
+			t.Fatal("rejected long group brief was persisted")
+		}
 	}
 }
 

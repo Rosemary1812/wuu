@@ -129,7 +129,7 @@ func (c *AgentControl) PostParticipantMessage(ctx context.Context, agentID, kind
 		kind = "result"
 	}
 	switch kind {
-	case "result", "question", "update", "decline":
+	case "brief", "result", "question", "update", "decline":
 	default:
 		return ParticipantMessage{}, fmt.Errorf("post_message: kind %q is not supported", kind)
 	}

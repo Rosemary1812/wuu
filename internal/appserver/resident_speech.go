@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -27,6 +28,12 @@ type residentParticipantSpeech struct {
 	// far the agent has read a thread.
 	engagedThreads map[string]bool
 }
+
+// A main group post is a coordination signal, not the work product. Details
+// belong in the anchored reply Thread, Task, or a linked artifact. The limit is
+// deliberately scoped to named-agent posts in the group main stream: DMs and
+// reply/task threads remain able to carry complete answers and evidence.
+const maxGroupBriefRunes = 280
 
 type residentSpeechLimiter struct {
 	mu            sync.Mutex
@@ -149,7 +156,7 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 		kind = "result"
 	}
 	switch kind {
-	case "result", "question", "update", "decline":
+	case "brief", "result", "question", "update", "decline":
 	default:
 		return tools.PostedMessage{}, fmt.Errorf("post_message: kind %q is not supported", kind)
 	}
@@ -163,6 +170,15 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 	targetThreadID, subthreadID, err := r.resolveTargetThread(strings.TrimSpace(targetThreadID))
 	if err != nil {
 		return tools.PostedMessage{}, err
+	}
+	if subthreadID == "" && utf8.RuneCountInString(text) > maxGroupBriefRunes {
+		if meta, found, findErr := session.Find(r.server.rt.SessionDir, targetThreadID); findErr == nil && found && meta.Group {
+			return tools.PostedMessage{}, fmt.Errorf(
+				"post_message: group main-stream posts are coordination briefs and must be at most %d characters (got %d); keep only the decision, why it matters, and next owner/action, then put details in a reply Thread, Task, or linked artifact",
+				maxGroupBriefRunes,
+				utf8.RuneCountInString(text),
+			)
+		}
 	}
 	// Serialize the freshness-check-then-publish critical section per target
 	// thread. The staleness read and the seq-assigning append are two steps;

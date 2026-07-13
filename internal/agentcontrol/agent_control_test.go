@@ -321,6 +321,21 @@ func TestPostParticipantMessagePublishesOncePerAgent(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for participant update event")
 	}
+	brief, err := c.PostParticipantMessage(context.Background(), "agent-1", "brief", "Decision made; reviewer starts next.", "group-1")
+	if err != nil {
+		t.Fatalf("PostParticipantMessage brief: %v", err)
+	}
+	if brief.Kind != "brief" || brief.ThreadID != "group-1" {
+		t.Fatalf("unexpected brief message: %+v", brief)
+	}
+	select {
+	case got := <-events:
+		if got.Kind != "brief" || got.ThreadID != "group-1" {
+			t.Fatalf("unexpected brief event: %+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for participant brief event")
+	}
 	if _, err := c.PostParticipantMessage(context.Background(), "agent-1", "result", "Second result.", ""); err == nil {
 		t.Fatal("expected duplicate result error")
 	}

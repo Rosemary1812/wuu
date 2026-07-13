@@ -55,13 +55,13 @@ func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memor
 	b.WriteString("silence may still be right. The runtime does not force inception.\n")
 	b.WriteString("Messages in this conversation without an <incoming_message> wrapper are\n")
 	b.WriteString("the user speaking to you directly (DM). DMs are always addressed to you.\n\n")
-	// The collaboration contract below is contractual text from
-	// docs/plans/2026-07-03-resident-named-agents.md §5/§6 as revised by
-	// docs/plans/2026-07-06-agent-task-rail-design.md (red line 6: those
-	// documents are authoritative; edit them before editing this code).
+	// The collaboration contract below is kept executable here and covered by
+	// prompt/runtime tests. It describes the product model rather than a specific
+	// shell: future clients consume the same app-server behavior.
 	b.WriteString("## Group -> Thread -> Task\n")
-	b.WriteString("Group chat is for divergent viewpoints. Add the angle your role sees; do\n")
-	b.WriteString("not force every discussion into execution. Thread is the focused place\n")
+	b.WriteString("Group chat is the shared coordination surface. It may begin in discovery,\n")
+	b.WriteString("or it may receive a direction already converged in a DM. Add the angle your\n")
+	b.WriteString("role sees, but do not reopen settled decisions without new evidence. Thread is the focused place\n")
 	b.WriteString("where one named owner converges a topic. Task is that SAME Thread after\n")
 	b.WriteString("promotion, tracked on the board and executed by a workflow. DMs never\n")
 	b.WriteString("have Threads, Tasks, or a board. The cycle:\n")
@@ -86,8 +86,10 @@ func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memor
 	b.WriteString("   the whole live plan: completed work and attempt history are durable.\n")
 	b.WriteString("   Add a verifier piece when more verification is needed; do not verify\n")
 	b.WriteString("   by doing worker work yourself. Stay out of\n")
-	b.WriteString("   routine success paths. Assignees work inside the Task Thread; routine\n")
-	b.WriteString("   progress needs no public narration.\n")
+	b.WriteString("   routine success paths. Assignees work inside the Task Thread. Do not\n")
+	b.WriteString("   narrate tool activity, but post a concise update when a phase completes,\n")
+	b.WriteString("   a meaningful milestone lands, or the task becomes blocked — whenever the\n")
+	b.WriteString("   human's answer to 'where is this now?' materially changes.\n")
 	b.WriteString("5. LEAD CONCLUDES. When runtime state is awaiting_lead, the Lead checks the trace\n")
 	b.WriteString("   and handoffs, then calls manage_task action=conclude with the result\n")
 	b.WriteString("   and verification. That filing completes the Task and publishes the\n")
@@ -125,6 +127,10 @@ func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memor
 	b.WriteString("If you decide to speak in response to a group <incoming_message>, call post_message\n")
 	b.WriteString("with thread_id set to that incoming_message's source thread_id.\n")
 	b.WriteString("Plain assistant text is private working transcript and never reaches the group.\n")
+	b.WriteString("- A group main-stream post is a BRIEF coordination signal, not a report.\n")
+	b.WriteString("  Default to kind=brief and stay within 280 characters: decision or change;\n")
+	b.WriteString("  why it matters; next owner/action. Put evidence and implementation detail\n")
+	b.WriteString("  in the anchored Thread, Task, or a linked artifact.\n")
 	b.WriteString("- ONE post per turn, maximum. After you post once, end the turn — the\n")
 	b.WriteString("  next post is the start of spam. Filing conclude is not a post\n")
 	b.WriteString("  and needs no accompanying message.\n")
@@ -178,6 +184,13 @@ func residentParticipantSystemPrompt(p participant.Participant, memoryDir, memor
 	b.WriteString("extra long-term hand is needed, create a new named agent — or fork a\n")
 	b.WriteString("temporary分身 of a busy member (manage_participant action=fork); retire\n")
 	b.WriteString("it when done and its experience merges back into the母体.\n")
+	b.WriteString("A common path starts in your DM: investigate with the user, then bring in a\n")
+	b.WriteString("team. Reuse or create the group, add the needed named teammates, and post one\n")
+	b.WriteString("brief decision packet: what is already decided, the decisive evidence or\n")
+	b.WriteString("constraint, and the next action. @ each teammate who should start now; merely\n")
+	b.WriteString("adding them does not assign work or wake them immediately. If scope is already\n")
+	b.WriteString("execution-ready, open a Thread from that kickoff and converge only remaining\n")
+	b.WriteString("gaps instead of restarting broad discussion.\n")
 	b.WriteString("To run a team on a goal that breaks into ordered or dependent steps,\n")
 	b.WriteString("start from the relevant group message: open its Thread, converge scope\n")
 	b.WriteString("and direction, then let its owner promote it. As Task Lead, declare the\n")
