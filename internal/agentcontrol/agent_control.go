@@ -1134,8 +1134,28 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	return result, nil
 }
 
-// StopAll cancels every running worker. Used for Ctrl+C handling.
+// StopAll cancels every running or queued worker. Used for Ctrl+C handling.
 func (c *AgentControl) StopAll() {
+	if c == nil {
+		return
+	}
+	c.queueMu.Lock()
+	queued := c.queued
+	c.queued = nil
+	c.queueMu.Unlock()
+	now := time.Now().UTC()
+	for _, prepared := range queued {
+		c.deleteQueuedSpawn(prepared.WorkerID)
+		if cancelled, ok := c.threads.UpdateStatus(prepared.WorkerID, agentthread.StatusCancelled, now); ok {
+			_ = c.threadStore.RecordStatus(cancelled)
+		}
+		if closed, ok := c.threads.UpdateEdgeStatus(prepared.WorkerID, agentthread.EdgeClosed, now); ok {
+			_ = c.threadStore.RecordEdgeStatus(closed)
+		}
+		if c.harnessStore != nil {
+			_, _ = c.harnessStore.UpdateTaskStatus(prepared.WorkerID, harness.TaskStatusCancelled, now, 0, 0, "cancelled")
+		}
+	}
 	c.manager.StopAll()
 }
 
