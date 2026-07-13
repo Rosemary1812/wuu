@@ -177,6 +177,64 @@ func TestRunActionSequenceSendsDesktopEquivalentUserTurn(t *testing.T) {
 	}
 }
 
+func TestRunActionSequenceObservesBackgroundCollaboration(t *testing.T) {
+	controller := newFakeController()
+	controller.events = []Notification{
+		notification(appserver.NotificationAgentUpdated, appserver.AgentUpdatedNotification{
+			ThreadID: "group-1",
+			Agent:    appserver.Agent{ID: "resident-1", Status: "running"},
+		}),
+		notification(appserver.NotificationItemCompleted, appserver.ItemCompletedNotification{
+			ThreadID: "group-1",
+			TurnID:   "resident-turn-1",
+			Item: appserver.ThreadItem{
+				ID:       "participant-message-1",
+				Type:     appserver.ThreadItemParticipantMsg,
+				PostKind: "result",
+				Text:     "Resident follow-up",
+				Participant: &participant.Summary{
+					ID:   "prt-bea",
+					Name: "Bea",
+				},
+			},
+		}),
+	}
+	var stdout bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		JSON:       true,
+		Stdout:     &stdout,
+		Controller: controller,
+		Actions: []GroupAction{{
+			Action: "observe_collaboration",
+			Params: map[string]any{"duration": "20ms"},
+			Expect: map[string]any{
+				"status":               "observed",
+				"participant_messages": 1,
+				"agent_updates":        1,
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v\n%s", err, stdout.String())
+	}
+	events := parseJSONLines(t, stdout.String())
+	message := firstEventOfType(t, events, "participant_message")
+	if message["participant_name"] != "Bea" || message["text"] != "Resident follow-up" {
+		t.Fatalf("unexpected observed public message: %+v", message)
+	}
+}
+
+func TestObserveCollaborationRequiresExplicitDuration(t *testing.T) {
+	err := Run(context.Background(), Options{
+		Controller: newFakeController(),
+		Actions:    []GroupAction{{Action: "observe_collaboration"}},
+	})
+	if ExitCode(err) != ExitTurnFailed || !strings.Contains(err.Error(), "requires params.duration") {
+		t.Fatalf("err = %v (exit %d), want explicit-duration failure", err, ExitCode(err))
+	}
+}
+
 // A failed per-step expectation aborts the sequence with a tool-failed exit and
 // emits an action_failed event.
 func TestRunActionSequenceExpectMismatchFails(t *testing.T) {

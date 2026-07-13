@@ -31,6 +31,11 @@ const (
 	// is the desktop-equivalent path for talking to a resident named agent in
 	// its DM; participant/start is a task-run path and cannot substitute for it.
 	actionUserTurn
+	// actionObserve keeps the in-process app server alive for a bounded window
+	// and forwards background resident notifications. The desktop naturally
+	// stays alive while delayed unread wakes fire; a headless exec sequence
+	// otherwise shuts the server down as soon as its foreground turn ends.
+	actionObserve
 )
 
 // actionMethodEntry binds a scripted action name to the app-server method it
@@ -65,9 +70,10 @@ var actionMethodTable = map[string]actionMethodEntry{
 	// manage_participant. Both route to the same participant/start path —
 	// the distinction is purely for readable scripts, since the invoked tool
 	// is chosen by the agent, not the action.
-	"post_message":      {kind: actionNamedTurn},
-	"participant_turn":  {kind: actionNamedTurn},
-	"send_user_message": {kind: actionUserTurn},
+	"post_message":          {kind: actionNamedTurn},
+	"participant_turn":      {kind: actionNamedTurn},
+	"send_user_message":     {kind: actionUserTurn},
+	"observe_collaboration": {kind: actionObserve},
 }
 
 // runActionSequence drives a scripted list of group/reply/task steps against the
@@ -98,6 +104,8 @@ func runActionSequence(ctx context.Context, controller Controller, opts Options,
 			result, err = runNamedTurnAction(ctx, controller, opts, action, vars)
 		case actionUserTurn:
 			result, err = runUserTurnAction(ctx, controller, opts, action, vars)
+		case actionObserve:
+			result, err = runObserveCollaborationAction(ctx, controller, opts, action, vars)
 		default:
 			result, err = runRPCAction(ctx, controller, entry, action, vars)
 		}
@@ -122,6 +130,68 @@ func runActionSequence(ctx context.Context, controller Controller, opts Options,
 	state.status = "completed"
 	emitResult(opts, *state, "completed", "")
 	return nil
+}
+
+// runObserveCollaborationAction closes the lifecycle gap between a persistent
+// desktop app and a one-shot exec process. Group posts from agents deliberately
+// wake idle readers only after the room has been quiet for 30 seconds; keeping
+// the server alive here lets those real timers and resident turns run while
+// their notifications continue to stream as JSONL. The caller chooses the
+// observation window explicitly so scripts pay only for the product behavior
+// they intend to inspect.
+func runObserveCollaborationAction(ctx context.Context, controller Controller, opts Options, action GroupAction, vars map[string]string) (map[string]any, error) {
+	params := substituteVars(action.Params, vars)
+	rawDuration := stringParam(params, "duration")
+	if rawDuration == "" {
+		return nil, errors.New("observe_collaboration requires params.duration (for example 75s)")
+	}
+	duration, err := time.ParseDuration(rawDuration)
+	if err != nil || duration <= 0 {
+		return nil, fmt.Errorf("observe_collaboration duration %q must be a positive Go duration", rawDuration)
+	}
+	if duration > 30*time.Minute {
+		return nil, errors.New("observe_collaboration duration must not exceed 30m")
+	}
+
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	notifications := controller.Notifications()
+	state := runState{status: "observing"}
+	started := time.Now()
+	participantMessages := 0
+	agentUpdates := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timer.C:
+			return map[string]any{
+				"status":               "observed",
+				"duration_ms":          time.Since(started).Milliseconds(),
+				"participant_messages": participantMessages,
+				"agent_updates":        agentUpdates,
+			}, nil
+		case notification, ok := <-notifications:
+			if !ok {
+				return nil, errors.New("app-server notification stream closed while observing collaboration")
+			}
+			if notification.Method == appserver.NotificationItemCompleted {
+				var item appserver.ItemCompletedNotification
+				if err := decodeNotification(notification, &item); err != nil {
+					return nil, err
+				}
+				if item.Item.Type == appserver.ThreadItemParticipantMsg {
+					participantMessages++
+				}
+			}
+			if notification.Method == appserver.NotificationAgentUpdated {
+				agentUpdates++
+			}
+			if _, err := handleNotification(opts, notification, &state); err != nil {
+				return nil, err
+			}
+		}
+	}
 }
 
 // runUserTurnAction exercises the same turn/start path used by the desktop

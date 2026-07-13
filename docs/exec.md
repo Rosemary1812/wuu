@@ -358,6 +358,13 @@ Actions split by how they reach the app server:
   This is the desktop-equivalent way to talk to a resident named agent in its
   DM; it is intentionally different from `participant_turn`, which starts a
   separate named task run.
+- Observation (`observe_collaboration`) keeps the same app server alive for an
+  explicit duration and forwards background resident activity. This matters
+  after an agent posts into a group: ambient agent posts intentionally wait for
+  a 30-second quiet-room timer before waking an idle teammate, while a one-shot
+  exec process would otherwise exit first. For example,
+  `{ "action": "observe_collaboration", "params": { "duration": "75s" } }`
+  observes two quiet-room windows without changing collaboration behavior.
 
 Notes for scripting named turns:
 
