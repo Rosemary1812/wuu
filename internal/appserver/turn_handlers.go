@@ -2599,10 +2599,8 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, 
 			return err
 		}
 	} else {
-		for _, msg := range res.NewMessages {
-			if _, err := appendChatMessage(s.rt.SessionDir, th.ID, msg); err != nil {
-				return err
-			}
+		if err := appendChatMessages(s.rt.SessionDir, th.ID, res.NewMessages); err != nil {
+			return err
 		}
 	}
 	if err := appendTokenUsage(s.rt.SessionDir, th.ID, providerName, model, providers.TokenUsage{

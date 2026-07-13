@@ -620,6 +620,43 @@ func AppendHistoryRecordReturningSeq(sessDir, id string, rec HistoryRecord) (int
 	return seq, nil
 }
 
+// AppendHistoryRecords appends a related history segment in one transaction.
+// Tool-call declarations and their results must use this path so a crash can
+// never expose a partially projected provider message sequence.
+func AppendHistoryRecords(sessDir, id string, records []HistoryRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+	db, err := openStore(sessDir)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin history batch append: %w", err)
+	}
+	defer tx.Rollback()
+	if ok, err := sessionExistsTx(tx, id); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("%w: %q", ErrSessionNotFound, id)
+	}
+	for _, rec := range records {
+		if _, err := appendHistoryRecordTx(tx, id, rec); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit history batch append: %w", err)
+	}
+	return nil
+}
+
 // RewriteHistoryRecords replaces a session's durable history records.
 func RewriteHistoryRecords(sessDir, id string, records []HistoryRecord) error {
 	db, err := openStore(sessDir)

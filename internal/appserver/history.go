@@ -226,6 +226,20 @@ func appendChatMessage(sessDir, id string, msg providers.ChatMessage) (int, erro
 	return sessionstore.AppendHistoryRecordReturningSeq(sessDir, id, historyRecordFromPersistedMessage(rec))
 }
 
+func appendChatMessages(sessDir, id string, msgs []providers.ChatMessage) error {
+	if strings.TrimSpace(sessDir) == "" || strings.TrimSpace(id) == "" || len(msgs) == 0 {
+		return nil
+	}
+	records := make([]sessionstore.HistoryRecord, 0, len(msgs))
+	for _, msg := range msgs {
+		if !shouldPersistMessage(msg) {
+			continue
+		}
+		records = append(records, historyRecordFromPersistedMessage(persistedMessageFromChatMessage(msg)))
+	}
+	return sessionstore.AppendHistoryRecords(sessDir, id, records)
+}
+
 func rewriteChatHistory(sessDir, id string, msgs []providers.ChatMessage) error {
 	if strings.TrimSpace(sessDir) == "" || strings.TrimSpace(id) == "" {
 		return nil

@@ -1128,6 +1128,28 @@ func TestAppendHistoryRollsBackUnknownToolProjection(t *testing.T) {
 	}
 }
 
+func TestAppendHistoryRecordsRollsBackWholeToolSegment(t *testing.T) {
+	dir := t.TempDir()
+	sess, err := CreateWithMetadata(dir, "thread-tool-segment-rollback", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = AppendHistoryRecords(dir, sess.ID, []HistoryRecord{
+		{Role: "assistant", ToolCalls: json.RawMessage(`[{"id":"call-missing","name":"read_file","arguments":"{}"}]`)},
+		{Role: "tool", ToolCallID: "call-missing", ToolInvocationID: "invocation-missing", Content: "missing"},
+	})
+	if err == nil {
+		t.Fatal("unknown tool invocation was projected")
+	}
+	records, loadErr := LoadHistoryRecords(dir, sess.ID, false)
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if len(records) != 0 {
+		t.Fatalf("partial tool segment was persisted: %+v", records)
+	}
+}
+
 func setSessionUpdatedAt(t *testing.T, dir, id string, at time.Time) {
 	t.Helper()
 	if _, err := updateMetadata(dir, id, false, func(s *Session) {
