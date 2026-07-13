@@ -726,6 +726,55 @@ func TestStreamRunner_RetryOnInitialConnectHTTP500(t *testing.T) {
 	}
 }
 
+func TestStreamRunnerSharesRecoveryBudgetAcrossAgentRounds(t *testing.T) {
+	const successfulToolRounds = 5
+	attempts := make([]mockStreamAttempt, 0, successfulToolRounds*2+1)
+	results := make(map[string]string, successfulToolRounds)
+	for round := 0; round < successfulToolRounds; round++ {
+		callID := fmt.Sprintf("call-%d", round)
+		attempts = append(attempts,
+			mockStreamAttempt{err: errors.New("connection reset by peer")},
+			mockStreamAttempt{events: []providers.StreamEvent{
+				{Type: providers.EventToolUseStart, ToolCall: &providers.ToolCall{ID: callID, Name: "read_file"}},
+				{Type: providers.EventToolUseEnd, ToolCall: &providers.ToolCall{ID: callID, Name: "read_file", Arguments: `{}`}},
+				{Type: providers.EventDone},
+			}},
+		)
+		results[callID] = `{"ok":true}`
+	}
+	// A sixth round needs another replay. The interactive workflow owns only
+	// five same-payload replays in total, so admission must fail before this
+	// recovery can create a second physical attempt.
+	attempts = append(attempts, mockStreamAttempt{err: errors.New("connection reset by peer")})
+	client := &mockStreamClient{attempts: attempts}
+	runner := StreamRunner{
+		Client: client,
+		Model:  "m",
+		Tools: &fakeLoopTools{
+			defs:    []providers.ToolDefinition{{Name: "read_file"}},
+			results: results,
+		},
+	}
+
+	_, err := runner.Run(context.Background(), "read files")
+	var exceeded *providers.WorkflowBudgetExceededError
+	if !errors.As(err, &exceeded) || exceeded.Dimension != providers.WorkflowBudgetSamePayloadReplays {
+		t.Fatalf("Run error = %v, want shared replay budget exhaustion", err)
+	}
+	if client.callCount != successfulToolRounds*2+1 {
+		t.Fatalf("physical stream attempts = %d, want %d", client.callCount, successfulToolRounds*2+1)
+	}
+	workflowID := client.requests[0].Operation.WorkflowID
+	if workflowID == "" {
+		t.Fatal("first agent round has no workflow identity")
+	}
+	for index, req := range client.requests {
+		if req.Operation.WorkflowID != workflowID {
+			t.Fatalf("request %d workflow = %q, want %q", index, req.Operation.WorkflowID, workflowID)
+		}
+	}
+}
+
 func TestStreamRunner_DoesNotRetryTerminalUsageLimit(t *testing.T) {
 	client := &mockStreamClient{attempts: []mockStreamAttempt{
 		{events: []providers.StreamEvent{{Type: providers.EventError, Error: providers.NewProviderStreamError("usage_limit_reached", "The usage limit has been reached")}}},

@@ -150,6 +150,8 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 	cfg := LoopConfig{
 		Tools:                       r.Tools,
 		Model:                       r.Model,
+		InferenceOperationKind:      providers.InferenceOperationAgentRound,
+		InferenceWorkloadProfile:    providers.InferenceProfileInteractive,
 		Temperature:                 r.Temperature,
 		MaxSteps:                    r.MaxSteps,
 		MaxContextTokens:            maxCtx,

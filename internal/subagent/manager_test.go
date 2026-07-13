@@ -229,6 +229,35 @@ func TestSpawn_HappyPath(t *testing.T) {
 	}
 }
 
+func TestSpawnStartsWorkflowIndependentFromParentAgent(t *testing.T) {
+	client := &fakeClient{response: providers.ChatResponse{Content: "all done"}}
+	mgr := NewManager(client, "fake-model")
+	parent := providers.NewInferenceWorkflow(providers.InferenceProfileInteractive)
+	ctx := providers.WithInferenceWorkflow(context.Background(), parent)
+
+	sa, err := mgr.Spawn(ctx, SpawnOptions{
+		Type:    "worker",
+		Prompt:  "do work",
+		Toolkit: fakeToolkit{},
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if _, err := mgr.Wait(context.Background(), sa.ID); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	req := client.lastRequest.Load()
+	if req == nil {
+		t.Fatal("expected a provider request")
+	}
+	if req.Operation.WorkflowID == "" || req.Operation.WorkflowID == parent.ID {
+		t.Fatalf("child workflow = %q, parent = %q", req.Operation.WorkflowID, parent.ID)
+	}
+	if req.Operation.WorkloadProfile != providers.InferenceProfileBackgroundAgent {
+		t.Fatalf("child workload profile = %q", req.Operation.WorkloadProfile)
+	}
+}
+
 func TestSpawn_UsesManagerDefaultRequestOptions(t *testing.T) {
 	client := &fakeClient{response: providers.ChatResponse{Content: "all done"}}
 	mgr := NewManagerWithOptions(client, "worker-api-model", ManagerOptions{

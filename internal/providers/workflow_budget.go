@@ -161,6 +161,14 @@ func EnsureInferenceWorkflow(ctx context.Context, profile InferenceWorkloadProfi
 	return WithInferenceWorkflow(ctx, workflow), workflow
 }
 
+// StartInferenceWorkflow establishes a new product-work boundary even when
+// ctx was inherited from a parent agent. Nested inference such as compaction
+// should use EnsureInferenceWorkflow instead so it spends the parent's budget.
+func StartInferenceWorkflow(ctx context.Context, profile InferenceWorkloadProfile) (context.Context, *InferenceWorkflow) {
+	workflow := NewInferenceWorkflow(profile)
+	return WithInferenceWorkflow(ctx, workflow), workflow
+}
+
 func InferenceWorkflowFromContext(ctx context.Context) *InferenceWorkflow {
 	if ctx == nil {
 		return nil

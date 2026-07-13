@@ -71,6 +71,7 @@ func RunToolLoop(
 	if strings.TrimSpace(cfg.Model) == "" {
 		return LoopResult{}, errors.New("agent: model is required")
 	}
+	ctx, _ = providers.EnsureInferenceWorkflow(ctx, cfg.InferenceWorkloadProfile)
 
 	messages := make([]providers.ChatMessage, len(history))
 	copy(messages, history)

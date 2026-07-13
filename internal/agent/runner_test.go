@@ -46,6 +46,23 @@ func TestRunner_UsesStreamingStepPath(t *testing.T) {
 	}
 }
 
+func TestRunnerPreservesExplicitInferenceWorkflow(t *testing.T) {
+	client := &fakeClient{responses: []providers.ChatResponse{{Content: "done"}}}
+	runner := Runner{Client: client, Model: "gpt-test"}
+	workflow := providers.NewInferenceWorkflow(providers.InferenceProfileInteractive)
+	ctx := providers.WithInferenceWorkflow(context.Background(), workflow)
+
+	if _, err := runner.Run(ctx, "hello"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(client.requests) != 1 {
+		t.Fatalf("requests = %d", len(client.requests))
+	}
+	if got := client.requests[0].Operation.WorkflowID; got != workflow.ID {
+		t.Fatalf("workflow = %q, want %q", got, workflow.ID)
+	}
+}
+
 func TestRunner_RunWithToolCall(t *testing.T) {
 	client := &fakeClient{responses: []providers.ChatResponse{
 		{
