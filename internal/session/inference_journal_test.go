@@ -1,6 +1,8 @@
 package session
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"sort"
 	"testing"
@@ -15,6 +17,7 @@ func TestInferenceJournalPersistsMetadataOnlyLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = runtime.Close() })
 	journal := runtime.ForOwner("thread-test")
 	now := time.Date(2026, 7, 13, 10, 0, 0, 0, time.UTC)
 	op := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
@@ -139,7 +142,7 @@ func TestInferenceJournalCrashRecoveryMatrix(t *testing.T) {
 		}
 		ops[fixture.name] = op
 		journal := oldRuntime.ForOwner("thread-" + fixture.name)
-		hash := "hash-" + fixture.name
+		hash := testInferenceHash(fixture.name)
 		if err := journal.PrepareOperation(providers.InferenceOperationJournalRecord{Operation: op, RequestHash: hash, At: now.Add(time.Duration(index) * time.Second)}); err != nil {
 			t.Fatalf("%s prepare operation: %v", fixture.name, err)
 		}
@@ -178,15 +181,18 @@ func TestInferenceJournalCrashRecoveryMatrix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = otherRuntime.Close() })
 	otherOp := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
-	if err := otherRuntime.ForOwner("other").PrepareOperation(providers.InferenceOperationJournalRecord{Operation: otherOp, RequestHash: "other-hash", At: now}); err != nil {
+	if err := otherRuntime.ForOwner("other").PrepareOperation(providers.InferenceOperationJournalRecord{Operation: otherOp, RequestHash: testInferenceHash("other"), At: now}); err != nil {
 		t.Fatal(err)
 	}
+	crashInferenceRuntimeForTest(t, oldRuntime, now.Add(-time.Hour))
 
 	newRuntime, err := NewInferenceJournalRuntime(dir, "workspace-recovery")
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = newRuntime.Close() })
 	recovered, err := newRuntime.ReconcileOrphans(now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
@@ -257,20 +263,211 @@ func TestInferenceJournalRejectsMetadataMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = runtime.Close() })
 	journal := runtime.ForOwner("thread-test")
 	op := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
-	first := providers.InferenceOperationJournalRecord{Operation: op, RequestHash: "first"}
+	first := providers.InferenceOperationJournalRecord{Operation: op, RequestHash: testInferenceHash("first")}
 	if err := journal.PrepareOperation(first); err != nil {
 		t.Fatal(err)
 	}
-	first.RequestHash = "changed"
+	first.RequestHash = testInferenceHash("changed")
 	if err := journal.PrepareOperation(first); err == nil {
 		t.Fatal("expected changed request hash to be rejected")
 	}
 	otherOwner := runtime.ForOwner("other-thread")
-	first.RequestHash = "first"
+	first.RequestHash = testInferenceHash("first")
 	if err := otherOwner.PrepareOperation(first); err == nil {
 		t.Fatal("expected changed owner to be rejected")
+	}
+}
+
+func TestInferenceJournalDoesNotRecoverLiveRuntime(t *testing.T) {
+	dir := t.TempDir()
+	first, err := NewInferenceJournalRuntime(dir, "workspace-live")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = first.Close() })
+	op := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	if err := first.ForOwner("thread").PrepareOperation(providers.InferenceOperationJournalRecord{
+		Operation: op, RequestHash: testInferenceHash("live"), At: time.Now().Add(-time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := NewInferenceJournalRuntime(dir, "workspace-live")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = second.Close() })
+	recovered, err := second.ReconcileOrphans(time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recovered) != 0 {
+		t.Fatalf("live runtime was treated as crashed: %+v", recovered)
+	}
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var status string
+	if err := db.QueryRow(`SELECT status FROM inference_operations WHERE id = ?`, op.ID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "active" {
+		t.Fatalf("live operation status = %q, want active", status)
+	}
+}
+
+func TestInferenceJournalRecoversTerminalRetryCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	oldRuntime, err := NewInferenceJournalRuntime(dir, "workspace-checkpoint")
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := oldRuntime.ForOwner("thread")
+	now := time.Now().UTC()
+	op := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	hash := testInferenceHash("checkpoint")
+	attemptID := op.AttemptID(1)
+	if err := journal.PrepareOperation(providers.InferenceOperationJournalRecord{Operation: op, RequestHash: hash, At: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.PrepareAttempt(providers.InferenceAttemptJournalRecord{OperationID: op.ID, AttemptID: attemptID, Ordinal: 1, RequestHash: hash, At: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.CompleteAttempt(providers.InferenceAttemptTerminalRecord{
+		OperationID: op.ID, AttemptID: attemptID, Outcome: providers.InferenceOutcomeFailed,
+		Failure: providers.InferenceJournalFailure{Category: providers.FailureNetwork}, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.RecordRecovery(providers.InferenceRecoveryJournalRecord{
+		OperationID: op.ID, AttemptID: attemptID, Action: providers.RecoveryReplaySame, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	crashInferenceRuntimeForTest(t, oldRuntime, now.Add(-time.Hour))
+	newRuntime, err := NewInferenceJournalRuntime(dir, "workspace-checkpoint")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = newRuntime.Close() })
+	recovered, err := newRuntime.ReconcileOrphans(now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recovered) != 1 || recovered[0].PriorPhase != "terminal" || recovered[0].PriorOutcome != "failed" ||
+		recovered[0].PriorRecovery != providers.RecoveryReplaySame || recovered[0].Action != providers.RecoveryRescheduleSafe {
+		t.Fatalf("checkpoint recovery = %+v", recovered)
+	}
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var attemptOutcome, operationStatus string
+	if err := db.QueryRow(`SELECT terminal_outcome FROM inference_attempts WHERE id = ?`, attemptID).Scan(&attemptOutcome); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT status FROM inference_operations WHERE id = ?`, op.ID).Scan(&operationStatus); err != nil {
+		t.Fatal(err)
+	}
+	if attemptOutcome != "failed" || operationStatus != "interrupted" {
+		t.Fatalf("checkpoint persisted attempt=%q operation=%q", attemptOutcome, operationStatus)
+	}
+}
+
+func TestInferenceJournalSubmissionEvidenceIsMonotonic(t *testing.T) {
+	dir := t.TempDir()
+	runtime, err := NewInferenceJournalRuntime(dir, "workspace-monotonic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
+	journal := runtime.ForOwner("thread")
+	now := time.Now().UTC()
+	op := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	hash := testInferenceHash("monotonic")
+	attemptID := op.AttemptID(1)
+	submissionID := op.ID + "-s1"
+	if err := journal.PrepareOperation(providers.InferenceOperationJournalRecord{Operation: op, RequestHash: hash, At: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := journal.PrepareAttempt(providers.InferenceAttemptJournalRecord{OperationID: op.ID, AttemptID: attemptID, Ordinal: 1, RequestHash: hash, At: now}); err != nil {
+		t.Fatal(err)
+	}
+	base := providers.InferenceSubmissionJournalRecord{
+		OperationID: op.ID, AttemptID: attemptID, ID: submissionID, Ordinal: 1, AttemptOrdinal: 1,
+		StartedAt: now, Outcome: providers.InferenceSubmissionSucceeded, CostState: providers.InferenceCostKnown,
+		ReportedUsage: &providers.TokenUsage{InputTokens: 20, OutputTokens: 8}, OutputBytes: 32, CompletedAt: now.Add(time.Second),
+	}
+	if err := journal.UpsertSubmission(base); err != nil {
+		t.Fatal(err)
+	}
+	stale := base
+	stale.Outcome = providers.InferenceSubmissionInFlight
+	stale.CostState = providers.InferenceCostUnknownBillable
+	stale.ReportedUsage = nil
+	stale.OutputBytes = 4
+	stale.CompletedAt = time.Time{}
+	if err := journal.UpsertSubmission(stale); err != nil {
+		t.Fatal(err)
+	}
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var outcome, cost string
+	var input, output, outputBytes int
+	var completedAt int64
+	if err := db.QueryRow(`
+SELECT outcome, cost_state, reported_input_tokens, reported_output_tokens,
+       output_bytes, completed_at
+FROM inference_submissions WHERE id = ?`, submissionID).
+		Scan(&outcome, &cost, &input, &output, &outputBytes, &completedAt); err != nil {
+		t.Fatal(err)
+	}
+	if outcome != "succeeded" || cost != "known" || input != 20 || output != 8 || outputBytes != 32 || completedAt == 0 {
+		t.Fatalf("monotonic evidence regressed: %q %q usage=%d/%d bytes=%d completed=%d", outcome, cost, input, output, outputBytes, completedAt)
+	}
+}
+
+func TestInferenceJournalEnforcesOwnerAndDigestBoundaries(t *testing.T) {
+	dir := t.TempDir()
+	runtime, err := NewInferenceJournalRuntime(dir, "workspace-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
+	owner := runtime.ForOwner("thread-a")
+	op := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	hash := testInferenceHash("owner")
+	if err := owner.PrepareOperation(providers.InferenceOperationJournalRecord{Operation: op, RequestHash: hash}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.ForOwner("thread-b").CompleteOperation(providers.InferenceOperationTerminalRecord{
+		OperationID: op.ID, Outcome: providers.InferenceOutcomeSucceeded,
+	}); err == nil {
+		t.Fatal("different owner terminalized operation")
+	}
+	otherRuntime, err := NewInferenceJournalRuntime(dir, "workspace-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = otherRuntime.Close() })
+	if err := otherRuntime.ForOwner("thread-a").CompleteOperation(providers.InferenceOperationTerminalRecord{
+		OperationID: op.ID, Outcome: providers.InferenceOutcomeSucceeded,
+	}); err == nil {
+		t.Fatal("different runtime terminalized operation")
+	}
+	raw := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	if err := owner.PrepareOperation(providers.InferenceOperationJournalRecord{
+		Operation: raw, RequestHash: "this is raw prompt text",
+	}); err == nil {
+		t.Fatal("non-digest request identity was persisted")
 	}
 }
 
@@ -280,6 +477,7 @@ func TestInferenceJournalPrunesOnlyOldTerminalOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = runtime.Close() })
 	journal := runtime.ForOwner("thread")
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
 	var ids []string
@@ -287,7 +485,7 @@ func TestInferenceJournalPrunesOnlyOldTerminalOperations(t *testing.T) {
 		op := providers.NewInferenceOperation(providers.InferenceOperationTitle, providers.InferenceProfileBestEffort)
 		ids = append(ids, op.ID)
 		at := now.Add(-age)
-		if err := journal.PrepareOperation(providers.InferenceOperationJournalRecord{Operation: op, RequestHash: "hash", At: at}); err != nil {
+		if err := journal.PrepareOperation(providers.InferenceOperationJournalRecord{Operation: op, RequestHash: testInferenceHash("hash"), At: at}); err != nil {
 			t.Fatal(err)
 		}
 		if err := journal.CompleteOperation(providers.InferenceOperationTerminalRecord{OperationID: op.ID, Outcome: providers.InferenceOutcomeAbandoned, At: at}); err != nil {
@@ -295,7 +493,7 @@ func TestInferenceJournalPrunesOnlyOldTerminalOperations(t *testing.T) {
 		}
 	}
 	active := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
-	if err := journal.PrepareOperation(providers.InferenceOperationJournalRecord{Operation: active, RequestHash: "hash", At: now.Add(-40 * 24 * time.Hour)}); err != nil {
+	if err := journal.PrepareOperation(providers.InferenceOperationJournalRecord{Operation: active, RequestHash: testInferenceHash("hash"), At: now.Add(-40 * 24 * time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -329,5 +527,31 @@ func TestInferenceJournalPrunesOnlyOldTerminalOperations(t *testing.T) {
 	sort.Strings(want)
 	if len(remaining) != len(want) || remaining[0] != want[0] || remaining[1] != want[1] {
 		t.Fatalf("remaining = %v, want %v", remaining, want)
+	}
+}
+
+func testInferenceHash(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(digest[:])
+}
+
+func crashInferenceRuntimeForTest(t *testing.T, runtime *InferenceJournalRuntime, heartbeat time.Time) {
+	t.Helper()
+	runtime.closeOnce.Do(func() {
+		close(runtime.heartbeatStop)
+		<-runtime.heartbeatDone
+	})
+	db, err := openStore(runtime.sessDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+	if _, err := db.Exec(`
+UPDATE inference_journal_runtimes
+SET pid = ?, heartbeat_at = ?, closed_at = 0
+WHERE id = ?`, 99999999, heartbeat.UTC().UnixMilli(), runtime.runtimeID); err != nil {
+		t.Fatal(err)
 	}
 }

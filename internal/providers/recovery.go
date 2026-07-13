@@ -71,6 +71,7 @@ const (
 	RecoveryWaitThenReplay   RecoveryActionKind = "wait_then_replay"
 	RecoveryTransformPayload RecoveryActionKind = "transform_payload"
 	RecoveryRefreshAuth      RecoveryActionKind = "refresh_credential"
+	RecoverySwitchTransport  RecoveryActionKind = "switch_transport"
 	RecoveryBlockUnsafe      RecoveryActionKind = "block_unsafe_replay"
 	// RecoveryRescheduleSafe is a crash-recovery marker for an attempt that
 	// was durably prepared but never entered the transport boundary.

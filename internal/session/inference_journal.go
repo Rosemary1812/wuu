@@ -6,13 +6,24 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
 const inferenceJournalRetention = 30 * 24 * time.Hour
+
+const (
+	inferenceJournalHeartbeatInterval = 3 * time.Second
+	inferenceJournalStaleAfter        = 12 * time.Second
+)
+
+func InferenceJournalRecoveryInterval() time.Duration {
+	return inferenceJournalStaleAfter
+}
 
 // InferenceJournalRuntime binds all journals created by one runtime process to
 // a workspace scope. A fresh runtime id lets startup recovery distinguish
@@ -21,6 +32,10 @@ type InferenceJournalRuntime struct {
 	sessDir        string
 	workspaceScope string
 	runtimeID      string
+	heartbeatOnce  sync.Once
+	heartbeatStop  chan struct{}
+	heartbeatDone  chan struct{}
+	closeOnce      sync.Once
 }
 
 func NewInferenceJournalRuntime(sessDir, workspaceScope string) (*InferenceJournalRuntime, error) {
@@ -36,14 +51,30 @@ func NewInferenceJournalRuntime(sessDir, workspaceScope string) (*InferenceJourn
 	if err != nil {
 		return nil, fmt.Errorf("open inference journal: %w", err)
 	}
+	runtimeID := newInferenceRuntimeID()
+	now := time.Now().UTC().UnixMilli()
+	storeWriteMu.Lock()
+	_, registerErr := db.Exec(`
+INSERT INTO inference_journal_runtimes (
+    id, workspace_scope, pid, started_at, heartbeat_at, closed_at
+) VALUES (?, ?, ?, ?, ?, 0)`, runtimeID, workspaceScope, os.Getpid(), now, now)
+	storeWriteMu.Unlock()
+	if registerErr != nil {
+		db.Close()
+		return nil, fmt.Errorf("register inference journal runtime: %w", registerErr)
+	}
 	if err := db.Close(); err != nil {
 		return nil, fmt.Errorf("close inference journal: %w", err)
 	}
-	return &InferenceJournalRuntime{
+	runtime := &InferenceJournalRuntime{
 		sessDir:        sessDir,
 		workspaceScope: workspaceScope,
-		runtimeID:      newInferenceRuntimeID(),
-	}, nil
+		runtimeID:      runtimeID,
+		heartbeatStop:  make(chan struct{}),
+		heartbeatDone:  make(chan struct{}),
+	}
+	runtime.startHeartbeat()
+	return runtime, nil
 }
 
 func (r *InferenceJournalRuntime) RuntimeID() string {
@@ -51,6 +82,69 @@ func (r *InferenceJournalRuntime) RuntimeID() string {
 		return ""
 	}
 	return r.runtimeID
+}
+
+func (r *InferenceJournalRuntime) startHeartbeat() {
+	if r == nil {
+		return
+	}
+	r.heartbeatOnce.Do(func() {
+		go func() {
+			defer close(r.heartbeatDone)
+			db, err := openStore(r.sessDir)
+			if err != nil {
+				providers.DebugLogf("inference journal heartbeat open: %v", err)
+				return
+			}
+			defer db.Close()
+			ticker := time.NewTicker(inferenceJournalHeartbeatInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case at := <-ticker.C:
+					storeWriteMu.Lock()
+					_, heartbeatErr := db.Exec(`
+UPDATE inference_journal_runtimes SET heartbeat_at = ?
+WHERE id = ? AND closed_at = 0`, at.UTC().UnixMilli(), r.runtimeID)
+					storeWriteMu.Unlock()
+					if heartbeatErr != nil {
+						providers.DebugLogf("inference journal heartbeat update: %v", heartbeatErr)
+					}
+				case <-r.heartbeatStop:
+					return
+				}
+			}
+		}()
+	})
+}
+
+// Close releases the runtime lease. Process crashes leave closed_at unset and
+// are detected by the heartbeat deadline instead.
+func (r *InferenceJournalRuntime) Close() error {
+	if r == nil {
+		return nil
+	}
+	var closeErr error
+	r.closeOnce.Do(func() {
+		close(r.heartbeatStop)
+		<-r.heartbeatDone
+		db, err := openStore(r.sessDir)
+		if err != nil {
+			closeErr = fmt.Errorf("close inference journal runtime: %w", err)
+			return
+		}
+		defer db.Close()
+		storeWriteMu.Lock()
+		_, err = db.Exec(`
+UPDATE inference_journal_runtimes
+SET heartbeat_at = ?, closed_at = ?
+WHERE id = ?`, time.Now().UTC().UnixMilli(), time.Now().UTC().UnixMilli(), r.runtimeID)
+		storeWriteMu.Unlock()
+		if err != nil {
+			closeErr = fmt.Errorf("close inference journal runtime: %w", err)
+		}
+	})
+	return closeErr
 }
 
 func (r *InferenceJournalRuntime) ForOwner(ownerID string) providers.InferenceJournal {
@@ -62,25 +156,21 @@ func (r *InferenceJournalRuntime) ForOwner(ownerID string) providers.InferenceJo
 		ownerID = "workspace-runtime"
 	}
 	return &inferenceJournal{
-		sessDir:        r.sessDir,
-		workspaceScope: r.workspaceScope,
-		runtimeID:      r.runtimeID,
-		ownerID:        ownerID,
+		runtime: r,
+		ownerID: ownerID,
 	}
 }
 
 type inferenceJournal struct {
-	sessDir        string
-	workspaceScope string
-	runtimeID      string
-	ownerID        string
+	runtime *InferenceJournalRuntime
+	ownerID string
 }
 
 func (j *inferenceJournal) PrepareOperation(record providers.InferenceOperationJournalRecord) error {
 	op := record.Operation
 	op.ID = strings.TrimSpace(op.ID)
 	record.RequestHash = strings.TrimSpace(record.RequestHash)
-	if op.ID == "" || record.RequestHash == "" {
+	if op.ID == "" || !validInferenceRequestHash(record.RequestHash) {
 		return errors.New("prepare inference operation: operation id and request hash are required")
 	}
 	if op.PayloadVersion < 1 {
@@ -103,14 +193,14 @@ INSERT INTO inference_operations (
     id, runtime_id, workspace_scope, owner_id, kind, workload_profile,
     payload_version, request_hash, status, created_at, updated_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
-				op.ID, j.runtimeID, j.workspaceScope, j.ownerID,
+				op.ID, j.runtime.runtimeID, j.runtime.workspaceScope, j.ownerID,
 				string(op.Kind), string(op.WorkloadProfile), op.PayloadVersion,
 				record.RequestHash, at, at,
 			)
 			return err
 		case err != nil:
 			return err
-		case runtimeID != j.runtimeID || scope != j.workspaceScope || owner != j.ownerID ||
+		case runtimeID != j.runtime.runtimeID || scope != j.runtime.workspaceScope || owner != j.ownerID ||
 			kind != string(op.Kind) || profile != string(op.WorkloadProfile) ||
 			payloadVersion != op.PayloadVersion || requestHash != record.RequestHash:
 			return fmt.Errorf("operation %q metadata changed after preparation", op.ID)
@@ -126,18 +216,20 @@ func (j *inferenceJournal) PrepareAttempt(record providers.InferenceAttemptJourn
 	record.OperationID = strings.TrimSpace(record.OperationID)
 	record.AttemptID = strings.TrimSpace(record.AttemptID)
 	record.RequestHash = strings.TrimSpace(record.RequestHash)
-	if record.OperationID == "" || record.AttemptID == "" || record.RequestHash == "" || record.Ordinal < 1 {
+	if record.OperationID == "" || record.AttemptID == "" || !validInferenceRequestHash(record.RequestHash) || record.Ordinal < 1 {
 		return errors.New("prepare inference attempt: operation, attempt, ordinal, and request hash are required")
 	}
 	at := journalTime(record.At)
 	return j.write("prepare inference attempt", func(tx *sql.Tx) error {
-		var runtimeID, requestHash, status string
+		var runtimeID, scope, owner, requestHash, status string
 		if err := tx.QueryRow(`
-SELECT runtime_id, request_hash, status FROM inference_operations WHERE id = ?`, record.OperationID).
-			Scan(&runtimeID, &requestHash, &status); err != nil {
+SELECT runtime_id, workspace_scope, owner_id, request_hash, status
+FROM inference_operations WHERE id = ?`, record.OperationID).
+			Scan(&runtimeID, &scope, &owner, &requestHash, &status); err != nil {
 			return err
 		}
-		if runtimeID != j.runtimeID || requestHash != record.RequestHash || status != "active" {
+		if runtimeID != j.runtime.runtimeID || scope != j.runtime.workspaceScope || owner != j.ownerID ||
+			requestHash != record.RequestHash || status != "active" {
 			return fmt.Errorf("operation %q is not the active prepared operation", record.OperationID)
 		}
 		result, err := tx.Exec(`
@@ -174,6 +266,9 @@ func (j *inferenceJournal) MarkAttemptDispatching(operationID, attemptID string,
 	}
 	stamp := journalTime(at)
 	return j.write("mark inference attempt dispatching", func(tx *sql.Tx) error {
+		if err := j.assertOperationTx(tx, operationID, true); err != nil {
+			return err
+		}
 		result, err := tx.Exec(`
 UPDATE inference_attempts
 SET phase = CASE WHEN phase = 'prepared' THEN 'dispatching' ELSE phase END,
@@ -204,12 +299,41 @@ func (j *inferenceJournal) UpsertSubmission(record providers.InferenceSubmission
 	reported := journalUsage(record.ReportedUsage)
 	estimated := journalUsage(record.EstimatedUsage)
 	return j.write("upsert inference submission", func(tx *sql.Tx) error {
-		var operationID, attemptID string
-		var ordinal, attemptOrdinal int
+		if err := j.assertOperationTx(tx, record.OperationID, false); err != nil {
+			return err
+		}
+		var linkedOperation string
+		var linkedOrdinal int
+		if err := tx.QueryRow(`
+SELECT operation_id, ordinal FROM inference_attempts WHERE id = ?`, record.AttemptID).
+			Scan(&linkedOperation, &linkedOrdinal); err != nil {
+			return err
+		}
+		if linkedOperation != record.OperationID || linkedOrdinal != record.AttemptOrdinal {
+			return fmt.Errorf("attempt %q does not belong to operation %q", record.AttemptID, record.OperationID)
+		}
+		var operationID, attemptID, existingOutcome, existingFailure, existingCost string
+		var ordinal, attemptOrdinal, existingOutputBytes int
+		var existingReported, existingEstimated inferenceJournalUsage
+		var existingCompletedAt int64
 		err := tx.QueryRow(`
-SELECT operation_id, attempt_id, ordinal, attempt_ordinal
+SELECT operation_id, attempt_id, ordinal, attempt_ordinal,
+       outcome, failure_category, cost_state,
+       reported_input_tokens, reported_output_tokens, reported_cache_creation,
+       reported_cache_read, reported_cache_unknown, has_reported_usage,
+       estimated_input_tokens, estimated_output_tokens, estimated_cache_creation,
+       estimated_cache_read, estimated_cache_unknown, has_estimated_usage,
+       output_bytes, completed_at
 FROM inference_submissions WHERE id = ?`, record.ID).
-			Scan(&operationID, &attemptID, &ordinal, &attemptOrdinal)
+			Scan(
+				&operationID, &attemptID, &ordinal, &attemptOrdinal,
+				&existingOutcome, &existingFailure, &existingCost,
+				&existingReported.input, &existingReported.output, &existingReported.cacheCreation,
+				&existingReported.cacheRead, &existingReported.cacheUnknown, &existingReported.present,
+				&existingEstimated.input, &existingEstimated.output, &existingEstimated.cacheCreation,
+				&existingEstimated.cacheRead, &existingEstimated.cacheUnknown, &existingEstimated.present,
+				&existingOutputBytes, &existingCompletedAt,
+			)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			_, err = tx.Exec(`
@@ -240,6 +364,38 @@ INSERT INTO inference_submissions (
 			ordinal != record.Ordinal || attemptOrdinal != record.AttemptOrdinal:
 			return fmt.Errorf("submission %q metadata changed after preparation", record.ID)
 		default:
+			mergedOutcome := string(record.Outcome)
+			if existingOutcome != string(providers.InferenceSubmissionInFlight) {
+				if mergedOutcome != string(providers.InferenceSubmissionInFlight) && mergedOutcome != existingOutcome {
+					return fmt.Errorf("submission %q already completed as %s", record.ID, existingOutcome)
+				}
+				mergedOutcome = existingOutcome
+			}
+			mergedFailure := string(record.FailureCategory)
+			if existingFailure != "" {
+				mergedFailure = existingFailure
+			}
+			mergedCost := string(record.CostState)
+			mergedReported, mergedEstimated := reported, estimated
+			switch {
+			case inferenceCostRank(existingCost) > inferenceCostRank(mergedCost):
+				mergedCost = existingCost
+				mergedReported = existingReported
+				mergedEstimated = existingEstimated
+			case inferenceCostRank(existingCost) == inferenceCostRank(mergedCost):
+				mergedReported = mergeJournalUsage(existingReported, reported)
+				mergedEstimated = mergeJournalUsage(existingEstimated, estimated)
+			case existingEstimated.present != 0 && mergedEstimated.present == 0:
+				mergedEstimated = existingEstimated
+			}
+			mergedOutputBytes := record.OutputBytes
+			if existingOutputBytes > mergedOutputBytes {
+				mergedOutputBytes = existingOutputBytes
+			}
+			mergedCompletedAt := completedAt
+			if existingCompletedAt != 0 {
+				mergedCompletedAt = existingCompletedAt
+			}
 			_, err = tx.Exec(`
 UPDATE inference_submissions SET
     outcome = ?, failure_category = ?, cost_state = ?,
@@ -249,10 +405,10 @@ UPDATE inference_submissions SET
     estimated_cache_read = ?, estimated_cache_unknown = ?, has_estimated_usage = ?,
     output_bytes = ?, completed_at = ?
 WHERE id = ?`,
-				string(record.Outcome), string(record.FailureCategory), string(record.CostState),
-				reported.input, reported.output, reported.cacheCreation, reported.cacheRead, reported.cacheUnknown, reported.present,
-				estimated.input, estimated.output, estimated.cacheCreation, estimated.cacheRead, estimated.cacheUnknown, estimated.present,
-				record.OutputBytes, completedAt, record.ID,
+				mergedOutcome, mergedFailure, mergedCost,
+				mergedReported.input, mergedReported.output, mergedReported.cacheCreation, mergedReported.cacheRead, mergedReported.cacheUnknown, mergedReported.present,
+				mergedEstimated.input, mergedEstimated.output, mergedEstimated.cacheCreation, mergedEstimated.cacheRead, mergedEstimated.cacheUnknown, mergedEstimated.present,
+				mergedOutputBytes, mergedCompletedAt, record.ID,
 			)
 			if err != nil {
 				return err
@@ -280,6 +436,9 @@ func (j *inferenceJournal) MarkAttemptFirstEvent(operationID, attemptID, submiss
 	}
 	stamp := journalTime(at)
 	return j.write("mark inference first event", func(tx *sql.Tx) error {
+		if err := j.assertOperationTx(tx, operationID, true); err != nil {
+			return err
+		}
 		var count int
 		if err := tx.QueryRow(`
 SELECT COUNT(1) FROM inference_submissions
@@ -313,6 +472,9 @@ func (j *inferenceJournal) CompleteAttempt(record providers.InferenceAttemptTerm
 	}
 	stamp := journalTime(record.At)
 	return j.write("complete inference attempt", func(tx *sql.Tx) error {
+		if err := j.assertOperationTx(tx, record.OperationID, false); err != nil {
+			return err
+		}
 		return completeInferenceAttemptTx(tx, record.OperationID, record.AttemptID, record.Outcome, record.Failure, stamp)
 	})
 }
@@ -326,6 +488,9 @@ func (j *inferenceJournal) RecordRecovery(record providers.InferenceRecoveryJour
 	stamp := journalTime(record.At)
 	retryAt := optionalJournalTime(record.RetryAt)
 	return j.write("record inference recovery", func(tx *sql.Tx) error {
+		if err := j.assertOperationTx(tx, record.OperationID, true); err != nil {
+			return err
+		}
 		result, err := tx.Exec(`
 UPDATE inference_attempts SET recovery_action = ?, retry_at = ?
 WHERE id = ? AND operation_id = ? AND phase = 'terminal'`,
@@ -357,15 +522,36 @@ func (j *inferenceJournal) CompleteOperation(record providers.InferenceOperation
 	}
 	stamp := journalTime(record.At)
 	return j.write("complete inference operation", func(tx *sql.Tx) error {
+		if err := j.assertOperationTx(tx, record.OperationID, false); err != nil {
+			return err
+		}
 		return completeInferenceOperationTx(tx, record.OperationID, record.Outcome, "", record.Failure, stamp)
 	})
 }
 
+func (j *inferenceJournal) assertOperationTx(tx *sql.Tx, operationID string, requireActive bool) error {
+	var runtimeID, scope, owner, status string
+	if err := tx.QueryRow(`
+SELECT runtime_id, workspace_scope, owner_id, status
+FROM inference_operations WHERE id = ?`, operationID).
+		Scan(&runtimeID, &scope, &owner, &status); err != nil {
+		return err
+	}
+	if runtimeID != j.runtime.runtimeID || scope != j.runtime.workspaceScope || owner != j.ownerID {
+		return fmt.Errorf("operation %q is owned by another inference journal", operationID)
+	}
+	if requireActive && status != "active" {
+		return fmt.Errorf("operation %q is already terminal (%s)", operationID, status)
+	}
+	return nil
+}
+
 func (j *inferenceJournal) write(action string, fn func(*sql.Tx) error) error {
-	if j == nil || strings.TrimSpace(j.sessDir) == "" || strings.TrimSpace(j.runtimeID) == "" {
+	if j == nil || j.runtime == nil || strings.TrimSpace(j.runtime.sessDir) == "" || strings.TrimSpace(j.runtime.runtimeID) == "" {
 		return fmt.Errorf("%s: inference journal is not initialized", action)
 	}
-	db, err := openStore(j.sessDir)
+	j.runtime.startHeartbeat()
+	db, err := openStore(j.runtime.sessDir)
 	if err != nil {
 		return fmt.Errorf("%s: %w", action, err)
 	}
@@ -377,6 +563,11 @@ func (j *inferenceJournal) write(action string, fn func(*sql.Tx) error) error {
 		return fmt.Errorf("%s: begin: %w", action, err)
 	}
 	defer tx.Rollback()
+	if _, err := tx.Exec(`
+UPDATE inference_journal_runtimes SET heartbeat_at = ?
+WHERE id = ? AND closed_at = 0`, time.Now().UTC().UnixMilli(), j.runtime.runtimeID); err != nil {
+		return fmt.Errorf("%s: refresh runtime lease: %w", action, err)
+	}
 	if err := fn(tx); err != nil {
 		return fmt.Errorf("%s: %w", action, err)
 	}
@@ -387,12 +578,14 @@ func (j *inferenceJournal) write(action string, fn func(*sql.Tx) error) error {
 }
 
 type InferenceCrashRecovery struct {
-	OperationID string
-	AttemptID   string
-	Profile     providers.InferenceWorkloadProfile
-	PriorPhase  string
-	Outcome     providers.InferenceTerminalOutcome
-	Action      providers.RecoveryActionKind
+	OperationID   string
+	AttemptID     string
+	Profile       providers.InferenceWorkloadProfile
+	PriorPhase    string
+	PriorOutcome  string
+	PriorRecovery providers.RecoveryActionKind
+	Outcome       providers.InferenceTerminalOutcome
+	Action        providers.RecoveryActionKind
 }
 
 // ReconcileOrphans terminalizes active operations from an older runtime in
@@ -414,27 +607,41 @@ func (r *InferenceJournalRuntime) ReconcileOrphans(now time.Time) ([]InferenceCr
 	}
 	defer tx.Rollback()
 
+	cutoff := journalTime(now.Add(-inferenceJournalStaleAfter))
 	rows, err := tx.Query(`
 SELECT o.id, o.workload_profile,
-       COALESCE(a.id, ''), COALESCE(a.phase, '')
+       COALESCE(a.id, ''), COALESCE(a.phase, ''),
+       COALESCE(a.terminal_outcome, ''), COALESCE(a.recovery_action, ''),
+       rt.pid, rt.heartbeat_at, rt.closed_at
 FROM inference_operations o
+JOIN inference_journal_runtimes rt ON rt.id = o.runtime_id
 LEFT JOIN inference_attempts a
   ON a.operation_id = o.id
  AND a.ordinal = (SELECT MAX(last.ordinal) FROM inference_attempts last WHERE last.operation_id = o.id)
 WHERE o.workspace_scope = ? AND o.runtime_id <> ? AND o.status = 'active'
-ORDER BY o.created_at, o.id`, r.workspaceScope, r.runtimeID)
+  AND (rt.closed_at <> 0 OR rt.heartbeat_at < ?)
+ORDER BY o.created_at, o.id`, r.workspaceScope, r.runtimeID, cutoff)
 	if err != nil {
 		return nil, fmt.Errorf("reconcile inference journal: list: %w", err)
 	}
 	var recoveries []InferenceCrashRecovery
 	for rows.Next() {
 		var item InferenceCrashRecovery
-		var profile string
-		if err := rows.Scan(&item.OperationID, &profile, &item.AttemptID, &item.PriorPhase); err != nil {
+		var profile, priorRecovery string
+		var pid int
+		var heartbeatAt, closedAt int64
+		if err := rows.Scan(
+			&item.OperationID, &profile, &item.AttemptID, &item.PriorPhase,
+			&item.PriorOutcome, &priorRecovery, &pid, &heartbeatAt, &closedAt,
+		); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("reconcile inference journal: scan: %w", err)
 		}
+		if closedAt == 0 && inferenceRuntimeProcessAlive(pid) {
+			continue
+		}
 		item.Profile = providers.InferenceWorkloadProfile(profile)
+		item.PriorRecovery = providers.RecoveryActionKind(priorRecovery)
 		switch {
 		case item.Profile == providers.InferenceProfileBestEffort:
 			item.Outcome = providers.InferenceOutcomeAbandoned
@@ -442,6 +649,12 @@ ORDER BY o.created_at, o.id`, r.workspaceScope, r.runtimeID)
 		case item.PriorPhase == "" || item.PriorPhase == "prepared":
 			item.Outcome = providers.InferenceOutcomeInterrupted
 			item.Action = providers.RecoveryRescheduleSafe
+		case item.PriorPhase == "terminal" && recoveryCanCreateAnotherAttempt(item.PriorRecovery):
+			item.Outcome = providers.InferenceOutcomeInterrupted
+			item.Action = providers.RecoveryRescheduleSafe
+		case item.PriorPhase == "terminal":
+			item.Outcome = providers.InferenceOutcomeInterrupted
+			item.Action = providers.RecoveryStop
 		default:
 			item.Outcome = providers.InferenceOutcomeBlocked
 			item.Action = providers.RecoveryBlockAmbiguous
@@ -468,7 +681,7 @@ WHERE operation_id = ? AND outcome = ?`,
 			string(submissionOutcome), stamp, item.OperationID, string(providers.InferenceSubmissionInFlight)); err != nil {
 			return nil, fmt.Errorf("reconcile inference journal submissions %q: %w", item.OperationID, err)
 		}
-		if item.AttemptID != "" {
+		if item.AttemptID != "" && item.PriorPhase != "terminal" {
 			if err := completeInferenceAttemptTx(tx, item.OperationID, item.AttemptID, item.Outcome, providers.InferenceJournalFailure{}, stamp); err != nil {
 				return nil, fmt.Errorf("reconcile inference journal attempt %q: %w", item.AttemptID, err)
 			}
@@ -486,6 +699,17 @@ UPDATE inference_attempts SET recovery_action = ? WHERE id = ? AND operation_id 
 		return nil, fmt.Errorf("reconcile inference journal: commit: %w", err)
 	}
 	return recoveries, nil
+}
+
+func recoveryCanCreateAnotherAttempt(action providers.RecoveryActionKind) bool {
+	switch action {
+	case providers.RecoveryReplaySame, providers.RecoveryWaitThenReplay,
+		providers.RecoveryTransformPayload, providers.RecoveryRefreshAuth,
+		providers.RecoverySwitchTransport, providers.RecoveryRescheduleSafe:
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *InferenceJournalRuntime) Prune(now time.Time) (int64, error) {
@@ -599,6 +823,41 @@ func journalUsage(usage *providers.TokenUsage) inferenceJournalUsage {
 	}
 }
 
+func inferenceCostRank(state string) int {
+	switch providers.InferenceCostState(state) {
+	case providers.InferenceCostKnown:
+		return 3
+	case providers.InferenceCostEstimated:
+		return 2
+	default:
+		return 1
+	}
+}
+
+func mergeJournalUsage(left, right inferenceJournalUsage) inferenceJournalUsage {
+	if left.present == 0 {
+		return right
+	}
+	if right.present == 0 {
+		return left
+	}
+	return inferenceJournalUsage{
+		input:         maxInt(left.input, right.input),
+		output:        maxInt(left.output, right.output),
+		cacheCreation: maxInt(left.cacheCreation, right.cacheCreation),
+		cacheRead:     maxInt(left.cacheRead, right.cacheRead),
+		cacheUnknown:  maxInt(left.cacheUnknown, right.cacheUnknown),
+		present:       1,
+	}
+}
+
+func maxInt(left, right int) int {
+	if left > right {
+		return left
+	}
+	return right
+}
+
 func journalTime(at time.Time) int64 {
 	if at.IsZero() {
 		at = time.Now().UTC()
@@ -619,6 +878,19 @@ func journalText(value string, maxBytes int) string {
 		value = value[:maxBytes]
 	}
 	return value
+}
+
+func validInferenceRequestHash(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != 64 {
+		return false
+	}
+	for _, ch := range value {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func newInferenceRuntimeID() string {

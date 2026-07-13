@@ -956,6 +956,18 @@ func migrateSchema(db *sql.DB) error {
 			at         INTEGER NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, seq)`,
+		// inference_journal_runtimes is the cross-process liveness lease used to
+		// distinguish a crashed writer from another live app-server or CLI.
+		`CREATE TABLE IF NOT EXISTS inference_journal_runtimes (
+			id                 TEXT PRIMARY KEY,
+			workspace_scope    TEXT NOT NULL,
+			pid                INTEGER NOT NULL,
+			started_at         INTEGER NOT NULL,
+			heartbeat_at       INTEGER NOT NULL,
+			closed_at          INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_inference_journal_runtimes_scope
+		 ON inference_journal_runtimes(workspace_scope, heartbeat_at, closed_at)`,
 		// inference_operations / attempts / submissions form the metadata-only
 		// write-ahead journal for provider requests. They intentionally store a
 		// SHA-256 request identity instead of prompt or wire payload content.
@@ -980,6 +992,7 @@ func migrateSchema(db *sql.DB) error {
 			created_at         INTEGER NOT NULL,
 			updated_at         INTEGER NOT NULL,
 			terminal_at        INTEGER NOT NULL DEFAULT 0
+			,FOREIGN KEY(runtime_id) REFERENCES inference_journal_runtimes(id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_inference_operations_recovery
 		 ON inference_operations(workspace_scope, status, runtime_id, updated_at)`,
@@ -1006,7 +1019,8 @@ func migrateSchema(db *sql.DB) error {
 			first_event_at     INTEGER NOT NULL DEFAULT 0,
 			terminal_at        INTEGER NOT NULL DEFAULT 0,
 			FOREIGN KEY(operation_id) REFERENCES inference_operations(id) ON DELETE CASCADE,
-			UNIQUE(operation_id, ordinal)
+			UNIQUE(operation_id, ordinal),
+			UNIQUE(id, operation_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_inference_attempts_operation
 		 ON inference_attempts(operation_id, ordinal)`,
@@ -1040,11 +1054,22 @@ func migrateSchema(db *sql.DB) error {
 			started_at                 INTEGER NOT NULL,
 			completed_at               INTEGER NOT NULL DEFAULT 0,
 			FOREIGN KEY(operation_id) REFERENCES inference_operations(id) ON DELETE CASCADE,
-			FOREIGN KEY(attempt_id) REFERENCES inference_attempts(id) ON DELETE CASCADE,
+			FOREIGN KEY(attempt_id, operation_id) REFERENCES inference_attempts(id, operation_id) ON DELETE CASCADE,
 			UNIQUE(operation_id, ordinal)
 		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_inference_attempts_id_operation
+		 ON inference_attempts(id, operation_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_inference_submissions_attempt
 		 ON inference_submissions(attempt_id, ordinal)`,
+		`CREATE TRIGGER IF NOT EXISTS trg_inference_submission_attempt_operation_insert
+		 BEFORE INSERT ON inference_submissions
+		 WHEN NOT EXISTS (
+			SELECT 1 FROM inference_attempts a
+			WHERE a.id = NEW.attempt_id AND a.operation_id = NEW.operation_id
+		 )
+		 BEGIN
+			SELECT RAISE(ABORT, 'inference submission attempt/operation mismatch');
+		 END`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
@@ -1199,6 +1224,9 @@ func migrateSchema(db *sql.DB) error {
 		return err
 	}
 	if err := addColumnIfMissing(db, "task_events", "attempt_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "inference_journal_runtimes", "pid", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	if _, err := db.Exec(`
