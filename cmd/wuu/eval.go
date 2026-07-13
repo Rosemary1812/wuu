@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/evalharness"
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
@@ -25,6 +26,7 @@ import (
 	sessionid "github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/sessiontrace"
 	"github.com/blueberrycongee/wuu/internal/statepath"
+	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
@@ -328,6 +330,33 @@ type evalTaskRunConfig struct {
 	KeepWorkdir   bool
 }
 
+// waitForSubAgentQuiescence blocks until every spawned sub-agent reaches a
+// terminal lifecycle state, so task verification observes finished child work
+// instead of racing it. Bounded by ctx (the per-task timeout).
+func waitForSubAgentQuiescence(ctx context.Context, control *agentcontrol.AgentControl) error {
+	if control == nil {
+		return nil
+	}
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		active := 0
+		for _, sa := range control.List() {
+			if !subagent.IsTerminal(sa.Status) {
+				active++
+			}
+		}
+		if active == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%d sub-agent(s) not terminal: %w", active, ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
 func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	started := time.Now()
 	result := evalharness.Result{
@@ -461,6 +490,12 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 	history = append(history, userMessage)
 
 	runResult, runErr := rt.StreamRunner.RunWithCallback(ctx, history, nil)
+	// Background sub-agents spawned during the turn outlive the main agent's
+	// final answer. Verification must observe their terminal state, not race
+	// against it: wait (bounded by the task ctx) until every child settles.
+	if waitErr := waitForSubAgentQuiescence(ctx, rt.AgentControl); waitErr != nil && runErr == nil {
+		runErr = fmt.Errorf("sub-agents still running at verification: %w", waitErr)
+	}
 	result.InputTokens = runResult.InputTokens
 	result.OutputTokens = runResult.OutputTokens
 	result.CacheCreationTokens = runResult.CacheCreationTokens
