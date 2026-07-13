@@ -700,17 +700,41 @@ const TurnHoverPreview = memo(function TurnHoverPreview({
     if (!node) return;
     const bar = node.closest(".conversation-turn-rail-bar");
     if (!(bar instanceof HTMLElement)) return;
-    const barRect = bar.getBoundingClientRect();
-    // CSS anchors the card's bottom 8px above the bar
-    // (bottom: calc(100% + 8px)). Cap the card's max-height so the
-    // top of the card has 16px of breathing room from the viewport
-    // top in addition to that 8px CSS gap, so it never feels pressed
-    // against the window edge.
-    const max = Math.max(
-      80,
-      Math.min(window.innerHeight - 16, barRect.top - 24)
-    );
-    node.style.maxHeight = `${max}px`;
+
+    const titlebar =
+      node.closest(".conversation-pane")?.querySelector<HTMLElement>(":scope > .titlebar") ??
+      document.querySelector<HTMLElement>(".titlebar");
+    const updateMaxHeight = (): void => {
+      const previewGap = 8;
+      const topGutter = 8;
+      const safeTop = titlebar
+        ? titlebar.getBoundingClientRect().bottom + topGutter
+        : 16;
+      const max = Math.max(
+        0,
+        Math.min(
+          window.innerHeight - safeTop,
+          bar.getBoundingClientRect().top - previewGap - safeTop,
+        ),
+      );
+      node.style.maxHeight = `${Math.floor(max)}px`;
+    };
+
+    updateMaxHeight();
+    window.addEventListener("resize", updateMaxHeight);
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(updateMaxHeight);
+    resizeObserver?.observe(bar);
+    if (titlebar) {
+      resizeObserver?.observe(titlebar);
+    }
+
+    return () => {
+      window.removeEventListener("resize", updateMaxHeight);
+      resizeObserver?.disconnect();
+    };
   }, [turn.id]);
 
   const firstUserText = firstUserMessageText(turn);

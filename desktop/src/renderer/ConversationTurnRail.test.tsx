@@ -197,6 +197,46 @@ describe("ConversationTurnRail", () => {
     });
   });
 
+  it("keeps the hover preview below the titlebar", () => {
+    const titlebar = document.createElement("header");
+    titlebar.className = "titlebar";
+    document.body.appendChild(titlebar);
+    stubRect(titlebar, 0, 94);
+
+    try {
+      renderRail({
+        turns: [turn("turn-1", "first query")],
+        onSelectQueryHistory: () => {},
+      });
+
+      const rail = container?.querySelector<HTMLElement>(".conversation-turn-rail");
+      const bar = container?.querySelector<HTMLElement>(".conversation-turn-rail-bar");
+      expect(rail).toBeTruthy();
+      expect(bar).toBeTruthy();
+      stubRect(bar!, 500, 5);
+
+      act(() => {
+        rail?.dispatchEvent(
+          new MouseEvent("mousemove", {
+            bubbles: true,
+            clientY: 502,
+          }),
+        );
+      });
+
+      const preview = container?.querySelector<HTMLElement>(
+        ".conversation-turn-rail-preview",
+      );
+      expect(preview?.style.maxHeight).toBe("390px");
+
+      stubRect(bar!, 400, 5);
+      act(() => window.dispatchEvent(new Event("resize")));
+      expect(preview?.style.maxHeight).toBe("290px");
+    } finally {
+      titlebar.remove();
+    }
+  });
+
   it("does not cancel pointerdown before a normal bar click can fire", () => {
     const scrollNode = document.createElement("div");
     renderRail({
