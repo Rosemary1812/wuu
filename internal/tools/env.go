@@ -210,8 +210,8 @@ type Env struct {
 	SessionID  string
 	SessionDir string // absolute session artifact path for result budgeting
 	// ToolResultProjectionMode selects stable tool-result projection behavior
-	// ("off"/"shadow"/"active"); empty means off. The WUU_TOOL_RESULT_PROJECTION
-	// environment variable overrides it for experimentation.
+	// ("off"/"shadow"/"active"); empty resolves to active (on by default). The
+	// WUU_TOOL_RESULT_PROJECTION environment variable overrides it.
 	ToolResultProjectionMode string
 	GoalRuntime              *goalruntime.Runtime
 	AgentID                  string

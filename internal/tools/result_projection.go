@@ -46,8 +46,8 @@ const (
 //     A/B measurement, but the model still sees the generic-budgeted result.
 //   - active: an applicable projection replaces the result the model sees.
 //
-// The default is off, so wiring the finalizer in changes no model-visible bytes
-// until an operator opts in.
+// Projection is on by default (an unset value resolves to active); operators opt
+// out with "off" or into measurement-only "shadow".
 type projectionMode string
 
 const (
@@ -61,18 +61,21 @@ const (
 const projectionModeEnvVar = "WUU_TOOL_RESULT_PROJECTION"
 
 // resolveProjectionMode resolves the effective mode. An explicit environment
-// override wins; an unset or unrecognized value falls back to off.
+// override wins. Projection is ON by default: an unset value resolves to active,
+// so eligible built-in results are bounded unless an operator opts out with
+// "off" or into measurement-only "shadow".
 func resolveProjectionMode(configured string) projectionMode {
+	raw := strings.TrimSpace(configured)
 	if v := strings.TrimSpace(os.Getenv(projectionModeEnvVar)); v != "" {
-		configured = v
+		raw = v
 	}
-	switch strings.ToLower(strings.TrimSpace(configured)) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "off", "disable", "disabled", "false", "0":
+		return projectionModeOff
 	case "shadow":
 		return projectionModeShadow
-	case "active", "on", "true", "1":
-		return projectionModeActive
 	default:
-		return projectionModeOff
+		return projectionModeActive
 	}
 }
 
@@ -155,9 +158,8 @@ type projectorContext struct {
 // deterministic: identical input yields identical output.
 type toolProjector func(rawText string, pc projectorContext) (projectedText string, om projectionOmission, ok bool)
 
-// toolProjectors is the per-tool registry. Populated in Phase 2; an empty
-// registry means finalizeBuiltInToolResult is a pure passthrough, so wiring it
-// in before projectors exist changes no model-visible bytes.
+// toolProjectors is the per-tool registry, populated by result_projectors.go.
+// A tool with no registered projector falls open to the full result.
 var toolProjectors = map[string]toolProjector{}
 
 // toolResultProjectionMode resolves the effective projection mode for this
