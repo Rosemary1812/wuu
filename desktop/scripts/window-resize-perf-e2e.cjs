@@ -76,6 +76,8 @@ async function run() {
     1000
   );
   await delay(120);
+  win.setSize(1020, 790);
+  await delay(220);
   await evaluate(win, () => {
     window.__wuuWindowResizePerfProbe = {
       turnScansDuringResize: 0,
@@ -167,10 +169,13 @@ async function run() {
     const sample = (ts) => {
       const samples = window.__wuuWindowResizePerfSamples;
       const scroll = document.querySelector(".scroll-region");
+      const shell = document.querySelector(".app-shell");
       samples.push({
         dt: previousTs === undefined ? 0 : ts - previousTs,
         resizing: document.documentElement.classList.contains("window-resizing"),
         autoFollow: scroll instanceof HTMLElement && scroll.style.overflowAnchor === "none",
+        shellTransitionProperty: shell instanceof HTMLElement ? getComputedStyle(shell).transitionProperty : "",
+        sidebarCollapsed: shell?.classList.contains("sidebar-collapsed") ?? false,
         scrollTop: scroll?.scrollTop ?? 0,
         width: window.innerWidth
       });
@@ -183,9 +188,9 @@ async function run() {
   });
 
   for (let index = 0; index < 96; index += 1) {
-    const growing = index < 48;
-    const offset = growing ? index * 5 : (96 - index) * 5;
-    win.setSize(1180 + offset, 760 + Math.floor(offset / 8));
+    const shrinking = index < 48;
+    const offset = shrinking ? (48 - index) * 5 : (index - 48) * 5;
+    win.setSize(780 + offset, 760 + Math.floor(offset / 8));
     await delay(8);
   }
   await delay(260);
@@ -209,11 +214,13 @@ async function run() {
   const p95FrameMs = sorted[Math.floor(sorted.length * 0.95)] ?? 0;
   const resizingSamples = samples.filter((sample) => sample.resizing);
   const autoFollowResizeSamples = resizingSamples.filter((sample) => sample.autoFollow);
+  const narrowResizeSamples = resizingSamples.filter((sample) => sample.width < 880);
   const widths = samples.map((sample) => sample.width);
   const summary = {
     samples: samples.length,
     resizingSamples: resizingSamples.length,
     autoFollowResizeSamples: autoFollowResizeSamples.length,
+    narrowResizeSamples: narrowResizeSamples.length,
     maxFrameMs: Math.round(maxFrameMs),
     p95FrameMs: Math.round(p95FrameMs),
     minWidth: Math.min(...widths),
@@ -232,6 +239,14 @@ async function run() {
     summary.autoFollowResizeSamples,
     summary.resizingSamples,
     `Resize performance probe must stay in the auto-follow scenario it is intended to verify. Summary=${JSON.stringify(summary)}`
+  );
+  assert.ok(
+    narrowResizeSamples.length > 0 && narrowResizeSamples.every((sample) => sample.sidebarCollapsed),
+    `Narrow resize samples should use the collapsed sidebar layout. Summary=${JSON.stringify(summary)}`
+  );
+  assert.ok(
+    narrowResizeSamples.every((sample) => sample.shellTransitionProperty === "none"),
+    `Sidebar auto-collapse must not lag behind live window resize through a grid transition. Summary=${JSON.stringify(summary)}`
   );
   assert.ok(summary.maxWidth - summary.minWidth >= 160, `Window width should change during probe. Summary=${JSON.stringify(summary)}`);
   assert.ok(summary.p95FrameMs <= 50, `Window resize p95 frame time should stay below 50ms. Summary=${JSON.stringify(summary)}`);

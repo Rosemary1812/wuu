@@ -19,9 +19,9 @@ describe("resize drag over embedded frames", () => {
     );
   });
 
-  it("keeps the sidebar auto-collapse grid transition enabled during window resize", () => {
-    expect(baseCss).toMatch(
-      /\.window-resizing\s+\.app-shell\.sidebar-animating\s*\{[\s\S]*?transition:\s*grid-template-columns\s+var\(--sidebar-motion-duration,\s*340ms\)\s+var\(--sidebar-motion-ease\)\s*!important;/,
+  it("does not let sidebar auto-collapse lag behind a live window resize", () => {
+    expect(baseCss).not.toMatch(
+      /\.window-resizing\s+\.app-shell\.sidebar-animating\s*\{/,
     );
   });
 });
