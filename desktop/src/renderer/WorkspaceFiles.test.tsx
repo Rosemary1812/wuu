@@ -218,6 +218,20 @@ async function clickMenuItem(text: string): Promise<void> {
 }
 
 describe("WorkspaceFileTree", () => {
+  it("gives the library search field equal horizontal space on both sides", async () => {
+    await render(
+      <WorkspaceFileTree activeContext={activeContext} open onOpenFile={() => {}} />,
+    );
+    await settleDirectoryLoads();
+
+    const unsafeStyle = treeShadowRoot().querySelector<HTMLStyleElement>(
+      "style[data-file-tree-unsafe-css]",
+    );
+    expect(unsafeStyle?.textContent).toMatch(
+      /\[data-file-tree-search-container\]\s*\{[^}]*box-sizing:\s*border-box;[^}]*width:\s*100%;[^}]*margin-inline:\s*0;[^}]*padding-inline:\s*8px;/s,
+    );
+  });
+
   it("expands and scrolls to the selected workspace file path", async () => {
     await render(
       <WorkspaceFileTree

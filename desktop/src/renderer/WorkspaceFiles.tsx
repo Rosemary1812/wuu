@@ -45,7 +45,10 @@ const WORKSPACE_TREE_CSS = `
   }
 
   [data-file-tree-search-container] {
-    margin-inline: 5px;
+    box-sizing: border-box;
+    width: 100%;
+    margin-inline: 0;
+    padding-inline: 8px;
   }
 `;
 
