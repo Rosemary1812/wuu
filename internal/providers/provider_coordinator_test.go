@@ -331,3 +331,37 @@ func TestProviderCoordinatorReservesForegroundCapacity(t *testing.T) {
 	}
 	second.Release()
 }
+
+func TestProviderCoordinatorUsesAttemptWorkloadProfile(t *testing.T) {
+	coordinator := NewProviderCoordinator(ProviderCoordinatorConfig{MaxInFlight: 1})
+	scope := NewProviderScope("https://api.example.test", "key", "")
+	held, err := coordinator.Acquire(context.Background(), scope, ProviderPriorityInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	background := NewInferenceExecution(NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileBackgroundAgent)).BeginAttempt()
+	interactive := NewInferenceExecution(NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive)).BeginAttempt()
+	order := make(chan string, 2)
+	acquire := func(label string, attempt InferenceAttempt) {
+		lease, acquireErr := coordinator.AcquireForAttempt(context.Background(), scope, attempt)
+		if acquireErr != nil {
+			order <- "error:" + label
+			return
+		}
+		order <- label
+		lease.Release()
+	}
+	go acquire("background", background)
+	go acquire("interactive", interactive)
+	waitForProviderCoordinator(t, func() bool {
+		return coordinator.Snapshot(scope).Waiting == 2
+	}, "profile-derived waiters to queue")
+	held.Release()
+	if got := receiveProviderCoordinatorResult(t, order); got != "interactive" {
+		t.Fatalf("first admitted profile = %q", got)
+	}
+	if got := receiveProviderCoordinatorResult(t, order); got != "background" {
+		t.Fatalf("second admitted profile = %q", got)
+	}
+}

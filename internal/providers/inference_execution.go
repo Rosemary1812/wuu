@@ -126,6 +126,16 @@ func (a InferenceAttempt) Valid() bool {
 	return a.execution != nil && strings.TrimSpace(a.ID) != "" && a.Ordinal > 0
 }
 
+// Operation returns the immutable logical-operation metadata associated with
+// this attempt. Invalid attempts return the zero value so scheduling callers
+// can safely fall back to the interactive profile.
+func (a InferenceAttempt) Operation() InferenceOperation {
+	if !a.Valid() {
+		return InferenceOperation{}
+	}
+	return a.execution.Operation()
+}
+
 // RecordSubmission marks the physical send boundary immediately before the
 // provider transport writes the inference request.
 func (a InferenceAttempt) RecordSubmission(meta InferenceSubmissionMeta) InferenceSubmission {

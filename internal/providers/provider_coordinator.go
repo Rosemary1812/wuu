@@ -200,6 +200,12 @@ func (l *ProviderLease) Fail(failure NormalizedFailure) {
 	l.finish(&failure, false)
 }
 
+// FailError normalizes a provider or transport error, records its shared
+// cooldown/circuit effect, and releases the admission slot.
+func (l *ProviderLease) FailError(err error) {
+	l.Fail(NormalizeFailure(err))
+}
+
 func (l *ProviderLease) finish(failure *NormalizedFailure, success bool) {
 	if l == nil || l.coordinator == nil {
 		return
@@ -268,6 +274,12 @@ func (c *ProviderCoordinator) Acquire(ctx context.Context, scope ProviderScope, 
 		}
 		return nil, ctx.Err()
 	}
+}
+
+// AcquireForAttempt admits one physical provider submission using the
+// workload profile attached to its logical inference attempt.
+func (c *ProviderCoordinator) AcquireForAttempt(ctx context.Context, scope ProviderScope, attempt InferenceAttempt) (*ProviderLease, error) {
+	return c.Acquire(ctx, scope, ProviderPriorityForProfile(attempt.Operation().WorkloadProfile))
 }
 
 func (c *ProviderCoordinator) observeFailureLocked(state *providerScopeState, failure NormalizedFailure, now time.Time) {

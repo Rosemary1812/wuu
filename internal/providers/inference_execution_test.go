@@ -37,3 +37,14 @@ func TestEnsureInferenceAttemptPreservesOuterAttempt(t *testing.T) {
 		t.Fatalf("attempt changed across provider boundary: %+v -> %+v", req.Attempt, got.Attempt)
 	}
 }
+
+func TestInferenceAttemptExposesOperationProfile(t *testing.T) {
+	op := NewInferenceOperation(InferenceOperationTitle, InferenceProfileBestEffort)
+	attempt := NewInferenceExecution(op).BeginAttempt()
+	if got := attempt.Operation(); got.ID != op.ID || got.WorkloadProfile != InferenceProfileBestEffort {
+		t.Fatalf("operation = %+v", got)
+	}
+	if got := (InferenceAttempt{}).Operation(); got != (InferenceOperation{}) {
+		t.Fatalf("invalid attempt operation = %+v", got)
+	}
+}
