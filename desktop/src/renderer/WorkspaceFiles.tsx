@@ -1,5 +1,5 @@
 import { preparePresortedFileTreeInput } from "@pierre/trees";
-import { FileTree, useFileTree, useFileTreeSelection } from "@pierre/trees/react";
+import { FileTree, useFileTree } from "@pierre/trees/react";
 import { AlertCircle, FileText, FolderOpen, FolderX } from "lucide-react";
 import { type CSSProperties, Suspense, lazy, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -148,6 +148,10 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
 }): JSX.Element {
   const paths = useMemo(() => Object.values(directories).flatMap((directory) => directory.entries.map((entry) => entry.path)), [directories]);
   const preparedInput = useMemo(() => preparePresortedFileTreeInput(paths), [paths]);
+  const selectedFilePathRef = useRef(selectedFilePath);
+  const onOpenFileRef = useRef(onOpenFile);
+  const onLoadDirectoryRef = useRef(onLoadDirectory);
+  const syncingSelectionRef = useRef(false);
   const { model } = useFileTree({
     flattenEmptyDirectories: false,
     initialExpansion: "closed",
@@ -159,12 +163,14 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
     search: true,
     searchBlurBehavior: "retain",
     stickyFolders: false,
-    unsafeCSS: WORKSPACE_TREE_CSS
+    unsafeCSS: WORKSPACE_TREE_CSS,
+    onSelectionChange: (selectedPaths) => {
+      if (syncingSelectionRef.current) return;
+      const path = selectedPaths[0];
+      if (!path || path.endsWith("/") || path === selectedFilePathRef.current) return;
+      onOpenFileRef.current(path);
+    }
   });
-  const selectedPaths = useFileTreeSelection(model);
-  const selectedFilePathRef = useRef(selectedFilePath);
-  const onOpenFileRef = useRef(onOpenFile);
-  const onLoadDirectoryRef = useRef(onLoadDirectory);
 
   useEffect(() => { onOpenFileRef.current = onOpenFile; }, [onOpenFile]);
   useEffect(() => { onLoadDirectoryRef.current = onLoadDirectory; }, [onLoadDirectory]);
@@ -173,15 +179,7 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
     if (addedPaths.length > 0) {
       model.batch(addedPaths.map((path) => ({ type: "add", path })));
     }
-    if (selectedFilePath && model.getItem(selectedFilePath)) {
-      for (const parentPath of parentDirectoryPathsForFile(selectedFilePath)) {
-        const parent = model.getItem(`${parentPath}/`);
-        if (parent && "expand" in parent) parent.expand();
-      }
-      model.getItem(selectedFilePath)?.select();
-      model.scrollToPath(selectedFilePath, { focus: false, offset: "nearest" });
-    }
-  }, [model, paths, selectedFilePath]);
+  }, [model, paths]);
   useEffect(() => model.subscribe(() => {
     for (const path of model.getSelectedPaths()) {
       const item = model.getItem(path);
@@ -201,14 +199,19 @@ const WorkspaceFileTreeView = memo(function WorkspaceFileTreeView({ directories,
       const parent = model.getItem(`${parentPath}/`);
       if (parent && "expand" in parent) parent.expand();
     }
-    model.getItem(selectedFilePath)?.select();
+    const selectedItem = model.getItem(selectedFilePath);
+    if (!selectedItem) return;
+    syncingSelectionRef.current = true;
+    try {
+      for (const path of model.getSelectedPaths()) {
+        if (path !== selectedFilePath) model.getItem(path)?.deselect();
+      }
+      selectedItem.select();
+    } finally {
+      syncingSelectionRef.current = false;
+    }
     model.scrollToPath(selectedFilePath, { focus: false, offset: "nearest" });
-  }, [model, selectedFilePath]);
-  useEffect(() => {
-    const path = selectedPaths[0];
-    if (!path || path.endsWith("/") || path === selectedFilePathRef.current) return;
-    onOpenFileRef.current(path);
-  }, [selectedPaths]);
+  }, [model, paths, selectedFilePath]);
 
   return (
     <div className="workspace-file-tree-frame">

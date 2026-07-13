@@ -251,6 +251,54 @@ describe("WorkspaceFileTree", () => {
     expect(selected?.getAttribute("data-item-path")).toBe("src/components/Button.tsx");
   });
 
+  it("does not reopen the previous file when an external tab changes the tree selection", async () => {
+    const onOpenFile = vi.fn();
+    await render(
+      <WorkspaceFileTree
+        activeContext={activeContext}
+        open
+        selectedFilePath="/repo/README.md"
+        onOpenFile={onOpenFile}
+      />,
+    );
+    await settleDirectoryLoads();
+    onOpenFile.mockClear();
+
+    await render(
+      <WorkspaceFileTree
+        activeContext={activeContext}
+        open
+        selectedFilePath="/repo/src/index.ts"
+        onOpenFile={onOpenFile}
+      />,
+    );
+    await settleDirectoryLoads();
+
+    expect(onOpenFile).not.toHaveBeenCalled();
+    expect(treeShadowRoot().querySelector("[aria-selected='true']")?.getAttribute("data-item-path"))
+      .toBe("src/index.ts");
+  });
+
+  it("opens a file when the user changes the tree selection", async () => {
+    const onOpenFile = vi.fn();
+    await render(
+      <WorkspaceFileTree
+        activeContext={activeContext}
+        open
+        onOpenFile={onOpenFile}
+      />,
+    );
+    await settleDirectoryLoads();
+
+    await act(async () => {
+      rowButtonByTitle("README.md").click();
+      await Promise.resolve();
+    });
+
+    expect(onOpenFile).toHaveBeenCalledTimes(1);
+    expect(onOpenFile).toHaveBeenCalledWith("README.md");
+  });
+
   it("keeps parent directories expanded while nested directories load", async () => {
     await render(
       <WorkspaceFileTree activeContext={activeContext} open onOpenFile={() => {}} />,
