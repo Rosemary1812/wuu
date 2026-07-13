@@ -697,6 +697,9 @@ func (e *InferenceExecution) Complete(outcome InferenceTerminalOutcome, failure 
 		}
 	}
 	e.terminal = true
+	if outcome == InferenceOutcomeSucceeded && e.workflow != nil {
+		e.workflow.spend.NoteOperationSuccess()
+	}
 	if e.ownsWorkflow {
 		if err := CompleteInferenceWorkflow(e.workflow, e.journal, outcome); err != nil {
 			e.journalErr = err

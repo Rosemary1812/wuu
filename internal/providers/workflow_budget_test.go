@@ -243,3 +243,52 @@ func TestWorkflowBudgetValidatesParentWithinSameWorkflow(t *testing.T) {
 		t.Fatalf("child operations = %d", got)
 	}
 }
+
+func TestWorkflowBudgetReplayAllowanceResetsOnOperationSuccess(t *testing.T) {
+	workflow := testInferenceWorkflow(WorkflowBudgetSpec{
+		MaxSamePayloadReplays: LimitedBudget(1),
+	})
+	ctx := WithInferenceWorkflow(context.Background(), workflow)
+
+	// Operation 1: one transient retry (spends the whole replay allowance),
+	// then completes successfully — forward progress.
+	first, err := EnsureInferenceExecutionContext(ctx, ChatRequest{
+		Operation: NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive),
+	}, InferenceOperationAgentRound, InferenceProfileInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.Execution.BeginAttemptChecked(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.Execution.BeginAttemptChecked(); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Execution.Complete(InferenceOutcomeSucceeded, NormalizedFailure{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Operation 2 in the same workflow: a later transient retry must be
+	// admitted again — scattered recoveries with progress in between are not
+	// a retry storm.
+	second, err := EnsureInferenceExecutionContext(ctx, ChatRequest{
+		Operation: NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive),
+	}, InferenceOperationAgentRound, InferenceProfileInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := second.Execution.BeginAttemptChecked(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := second.Execution.BeginAttemptChecked(); err != nil {
+		t.Fatalf("replay after successful progress must be admitted, got %v", err)
+	}
+
+	// Without success in between, the storm gate still holds: a third
+	// attempt of the second operation exceeds the (already respent) budget.
+	_, err = second.Execution.BeginAttemptChecked()
+	var exceeded *WorkflowBudgetExceededError
+	if !errors.As(err, &exceeded) || exceeded.Dimension != WorkflowBudgetSamePayloadReplays {
+		t.Fatalf("consecutive replays without progress must still trip the budget, got %v", err)
+	}
+}

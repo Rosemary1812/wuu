@@ -550,6 +550,20 @@ func (b *WorkflowBudget) AdmitRecoveryAttempt(
 	return nil
 }
 
+// NoteOperationSuccess resets the same-payload replay spend. The replay
+// budget exists to stop retry storms — consecutive replays with no forward
+// progress. A successfully completed operation is forward progress, so
+// transient recoveries scattered across a long workflow must not accumulate
+// into a terminal budget failure late in the session.
+func (b *WorkflowBudget) NoteOperationSuccess() {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.snapshot.SamePayloadReplays = 0
+}
+
 func (b *WorkflowBudget) Snapshot() WorkflowBudgetSnapshot {
 	if b == nil {
 		return WorkflowBudgetSnapshot{}
