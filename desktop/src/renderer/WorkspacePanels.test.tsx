@@ -373,7 +373,7 @@ describe("WorkspaceRightPanel", () => {
     ).map((editor) => editor.dataset.resourceId);
     expect(resourceIDs).toEqual([primary.id]);
 
-    act(() => {
+    await act(async () => {
       root?.render(
         <WorkspaceRightPanel
           {...baseProps()}
@@ -383,6 +383,7 @@ describe("WorkspaceRightPanel", () => {
           workspaceContext={worktree.context}
         />,
       );
+      await Promise.resolve();
     });
     resourceIDs = Array.from(
       container?.querySelectorAll<HTMLElement>(".workspace-monaco-editor") ?? [],
