@@ -2,6 +2,7 @@ package providers
 
 import (
 	"fmt"
+	"hash/fnv"
 	"strings"
 )
 
@@ -114,20 +115,36 @@ func scrubClaudeToolCallID(id string) string {
 	}, id)
 }
 
+// scrubMistralToolCallID maps an arbitrary tool-call ID onto Mistral's
+// required 9-alphanumeric form. An ID that is already valid passes through;
+// everything else is hashed rather than prefix-truncated, because prefix
+// truncation collapses IDs sharing their first nine alphanumerics — e.g.
+// Moonshot-style "functions.name:0" and "functions.name:1" both truncated to
+// "functions" — into duplicates that fail history validation on every retry,
+// permanently fail-closing the conversation on Mistral models.
 func scrubMistralToolCallID(id string) string {
-	var b strings.Builder
+	if len(id) == 9 && isMistralToolCallID(id) {
+		return id
+	}
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(id))
+	sum := h.Sum64()
+	const digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+	var b [9]byte
+	for i := len(b) - 1; i >= 0; i-- {
+		b[i] = digits[sum%36]
+		sum /= 36
+	}
+	return string(b[:])
+}
+
+func isMistralToolCallID(id string) bool {
 	for _, r := range id {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-			if b.Len() >= 9 {
-				break
-			}
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
+			return false
 		}
 	}
-	for b.Len() < 9 {
-		b.WriteByte('0')
-	}
-	return b.String()
+	return true
 }
 
 func insertMistralToolUserSeparator(msgs []ChatMessage) []ChatMessage {

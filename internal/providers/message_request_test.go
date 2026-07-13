@@ -82,10 +82,38 @@ func TestPrepareMessagesForModelRequestScrubsMistralIDsAndSeparatesToolThenUser(
 	if err != nil {
 		t.Fatalf("PrepareMessagesForModelRequest: %v", err)
 	}
-	if got[1].ToolCalls[0].ID != "call12345" || got[2].ToolCallID != "call12345" {
-		t.Fatalf("tool IDs not scrubbed: %+v", got)
+	scrubbed := got[1].ToolCalls[0].ID
+	if len(scrubbed) != 9 || !isMistralToolCallID(scrubbed) {
+		t.Fatalf("scrubbed ID %q is not 9 alphanumerics", scrubbed)
+	}
+	if got[2].ToolCallID != scrubbed {
+		t.Fatalf("tool result ID %q does not match call ID %q", got[2].ToolCallID, scrubbed)
 	}
 	if len(got) != 5 || got[3].Role != "assistant" || got[3].Content != "Done." || got[4].Role != "user" {
 		t.Fatalf("expected assistant separator before user, got %+v", got)
+	}
+}
+
+func TestScrubMistralToolCallIDAvoidsPrefixCollisions(t *testing.T) {
+	// Moonshot/Kimi-style IDs share their first nine alphanumerics; prefix
+	// truncation collapsed them into duplicates that failed tool-call history
+	// validation on every retry.
+	a := scrubMistralToolCallID("functions.read_file:0")
+	b := scrubMistralToolCallID("functions.read_file:1")
+	if a == b {
+		t.Fatalf("distinct IDs collapsed to %q", a)
+	}
+	for _, id := range []string{a, b} {
+		if len(id) != 9 || !isMistralToolCallID(id) {
+			t.Fatalf("scrubbed ID %q is not 9 alphanumerics", id)
+		}
+	}
+	// Deterministic: the same history scrubs to the same IDs on every request.
+	if scrubMistralToolCallID("functions.read_file:0") != a {
+		t.Fatal("scrub is not deterministic")
+	}
+	// Already-valid IDs pass through untouched.
+	if scrubMistralToolCallID("abc123XYZ") != "abc123XYZ" {
+		t.Fatal("valid 9-char ID should pass through")
 	}
 }
