@@ -369,7 +369,6 @@ describe("WorkspaceRightPanel", () => {
     );
     await act(async () => Promise.resolve());
     act(() => {
-      fileResource(fileA.id)?.querySelector<HTMLButtonElement>(".mock-editor-edit")?.click();
       fileResource(fileA.id)?.querySelector<HTMLButtonElement>(".mock-editor-scroll")?.click();
     });
 
@@ -405,7 +404,7 @@ describe("WorkspaceRightPanel", () => {
       );
     });
     const restoredEditor = fileResource(fileA.id)?.querySelector(".workspace-monaco-editor");
-    expect(restoredEditor?.getAttribute("data-text")).toBe("edited src/a.ts");
+    expect(restoredEditor?.getAttribute("data-text")).toBe("source src/a.ts");
     expect(restoredEditor?.getAttribute("data-view-scroll")).toBe("42");
   });
 
@@ -460,10 +459,10 @@ describe("WorkspaceRightPanel", () => {
     expect(resourceIDs).toEqual([worktree.id]);
   });
 
-  it("marks the filename tab dirty and confirms before discarding it", async () => {
+  it("closes a readonly file without dirty-state confirmation", async () => {
     const onCloseTab = vi.fn();
     const onDirtyFileTabsChange = vi.fn();
-    const confirmDiscard = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const confirmDiscard = vi.spyOn(window, "confirm");
     const fileTab = workspaceFileViewTab({
       context: {
         kind: "project",
@@ -485,23 +484,14 @@ describe("WorkspaceRightPanel", () => {
       />,
     );
     await act(async () => Promise.resolve());
-    act(() => {
-      fileResource(fileTab.id)?.querySelector<HTMLButtonElement>(".mock-editor-edit")?.click();
-    });
-    expect(onDirtyFileTabsChange).toHaveBeenLastCalledWith(true);
-    expect(container?.querySelector(".workspace-tool-tab.active.dirty")?.textContent).toContain("dirty.ts");
-    expect(container?.querySelector(".workspace-tab-dirty-indicator")).not.toBeNull();
+    expect(onDirtyFileTabsChange).toHaveBeenLastCalledWith(false);
+    expect(container?.querySelector(".workspace-tool-tab.active.dirty")).toBeNull();
+    expect(container?.querySelector(".workspace-tab-dirty-indicator")).toBeNull();
     act(() => {
       container?.querySelector<HTMLButtonElement>(".workspace-tool-tab-close")?.click();
     });
 
-    expect(confirmDiscard).toHaveBeenCalledTimes(1);
-    expect(onCloseTab).not.toHaveBeenCalled();
-
-    confirmDiscard.mockReturnValue(true);
-    act(() => {
-      container?.querySelector<HTMLButtonElement>(".workspace-tool-tab-close")?.click();
-    });
+    expect(confirmDiscard).not.toHaveBeenCalled();
     expect(onCloseTab).toHaveBeenCalledWith(fileTab.id);
   });
 

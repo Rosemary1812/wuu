@@ -12,7 +12,6 @@ import {
   FolderOpen,
   FolderX,
   ScrollText,
-  Save,
   Terminal,
   type LucideIcon
 } from "lucide-react";
@@ -42,7 +41,6 @@ type DirectoryLoadState = {
 };
 
 type DirectoryLoadMap = Record<string, DirectoryLoadState>;
-type MarkdownMode = "reading" | "source";
 
 export type WorkspaceFileDirtyState = {
   root?: string;
@@ -782,17 +780,9 @@ export function WorkspaceFilePreview({
 }): JSX.Element {
   const [file, setFile] = useState<WorkspaceFileReadResult | undefined>(undefined);
   const [draftText, setDraftText] = useState("");
-  const [baseText, setBaseText] = useState("");
-  const [baseMtimeMs, setBaseMtimeMs] = useState<number | undefined>(undefined);
-  const [baseSha256, setBaseSha256] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "conflict" | "error">("idle");
-  const [saveError, setSaveError] = useState<string | undefined>(undefined);
-  const [markdownMode, setMarkdownMode] = useState<MarkdownMode>("reading");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const editorViewStateRef = useRef<WorkspaceMonacoViewState | null>(null);
-  const editRevisionRef = useRef(0);
   const selectedWorkspaceFilePath = useMemo(
     () => normalizeSelectedWorkspaceFilePath(selectedFilePath, activeContext?.cwd),
     [activeContext?.cwd, selectedFilePath]
@@ -802,13 +792,6 @@ export function WorkspaceFilePreview({
     if (!selectedWorkspaceFilePath) {
       setFile(undefined);
       setDraftText("");
-      setBaseText("");
-      setBaseMtimeMs(undefined);
-      setBaseSha256("");
-      setSaving(false);
-      setSaveStatus("idle");
-      setSaveError(undefined);
-      setMarkdownMode("reading");
       setError(undefined);
       setLoading(false);
       return;
@@ -818,13 +801,6 @@ export function WorkspaceFilePreview({
     editorViewStateRef.current = null;
     setFile(undefined);
     setDraftText("");
-    setBaseText("");
-    setBaseMtimeMs(undefined);
-    setBaseSha256("");
-    setSaving(false);
-    setSaveStatus("idle");
-    setSaveError(undefined);
-    setMarkdownMode("reading");
     setLoading(true);
     setError(undefined);
     void window.wuu
@@ -833,9 +809,6 @@ export function WorkspaceFilePreview({
         if (!cancelled) {
           setFile(result);
           setDraftText(result.text ?? "");
-          setBaseText(result.text ?? "");
-          setBaseMtimeMs(result.mtime_ms);
-          setBaseSha256(result.sha256);
         }
       })
       .catch((nextError) => {
@@ -855,17 +828,15 @@ export function WorkspaceFilePreview({
   }, [activeContext?.cwd, selectedWorkspaceFilePath]);
 
   const isMarkdown = Boolean(file && isMarkdownPath(file.path));
-  const readOnly = Boolean(file?.binary || file?.truncated || file?.text === undefined);
-  const dirty = draftText !== baseText;
   const dirtyStatePath = file?.path ?? selectedWorkspaceFilePath;
 
   useEffect(() => {
     onDirtyChange?.({
       root: activeContext?.cwd,
       path: dirtyStatePath,
-      dirty,
+      dirty: false,
     });
-  }, [activeContext?.cwd, dirty, dirtyStatePath, onDirtyChange]);
+  }, [activeContext?.cwd, dirtyStatePath, onDirtyChange]);
 
   useEffect(() => {
     return () => {
@@ -876,59 +847,6 @@ export function WorkspaceFilePreview({
       });
     };
   }, [activeContext?.cwd, dirtyStatePath, onDirtyChange]);
-
-  const handleEditorChange = useCallback((nextText: string) => {
-    editRevisionRef.current += 1;
-    setDraftText(nextText);
-    setSaveStatus("idle");
-    setSaveError(undefined);
-  }, []);
-
-  const handleSave = useCallback(() => {
-    if (!file || readOnly || !dirty || saving || baseMtimeMs === undefined || !baseSha256) {
-      return;
-    }
-
-    const submittedEditRevision = editRevisionRef.current;
-    setSaving(true);
-    setSaveError(undefined);
-    void window.wuu
-      .writeWorkspaceFile(
-        {
-          path: file.path,
-          text: draftText,
-          base_mtime_ms: baseMtimeMs,
-          base_sha256: baseSha256,
-        },
-        activeContext?.cwd,
-      )
-      .then((result) => {
-        const nextBaseText = result.file.text ?? "";
-        setFile(result.file);
-        setBaseText(nextBaseText);
-        setBaseMtimeMs(result.file.mtime_ms);
-        setBaseSha256(result.file.sha256);
-        if (result.status === "saved") {
-          if (editRevisionRef.current === submittedEditRevision) {
-            setDraftText(nextBaseText);
-            setSaveStatus("saved");
-          } else {
-            setSaveStatus("idle");
-          }
-          setSaveError(undefined);
-          return;
-        }
-        setSaveStatus("conflict");
-        setSaveError("文件已在外部修改。请检查当前编辑内容后再次保存。");
-      })
-      .catch((nextError) => {
-        setSaveStatus("error");
-        setSaveError(desktopApiErrorMessage(nextError, "保存失败"));
-      })
-      .finally(() => {
-        setSaving(false);
-      });
-  }, [activeContext?.cwd, baseMtimeMs, baseSha256, dirty, draftText, file, readOnly, saving]);
 
   if (!activeContext) {
     return (
@@ -985,15 +903,7 @@ export function WorkspaceFilePreview({
 
   if (file.renderable_url) {
     return (
-      <article className="workspace-file-preview">
-        <div className="workspace-file-editor-toolbar">
-          <div className="workspace-file-editor-left">
-            <div className="workspace-file-editor-status">
-              <span className="workspace-file-editor-dot readonly" aria-hidden="true" />
-              <span>只读</span>
-            </div>
-          </div>
-        </div>
+      <article className="workspace-file-preview readonly">
         <div className="workspace-file-image-preview">
           <img src={file.renderable_url} alt={file.path} />
         </div>
@@ -1011,67 +921,10 @@ export function WorkspaceFilePreview({
     );
   }
 
-  const statusLabel = readOnly
-    ? "只读"
-    : saving
-      ? "保存中"
-      : dirty
-        ? "已修改"
-        : saveStatus === "saved"
-          ? "已保存"
-          : "未修改";
-  const statusTone = readOnly
-    ? "readonly"
-    : saveStatus === "conflict" || saveStatus === "error"
-      ? "error"
-      : dirty
-        ? "dirty"
-        : "clean";
-  const editorModeClass = isMarkdown ? `markdown-${markdownMode}` : "code";
-
   return (
-    <article className="workspace-file-preview">
-      <div className="workspace-file-editor-toolbar">
-        <div className="workspace-file-editor-left">
-          <div className="workspace-file-editor-status">
-            <span className={`workspace-file-editor-dot ${statusTone}`} aria-hidden="true" />
-            <span>{statusLabel}</span>
-            {file.truncated ? <span className="workspace-file-editor-hint">文件较大，已截断</span> : null}
-            {saveError ? (
-              <span className="workspace-file-editor-error" role="alert">
-                {saveError}
-              </span>
-            ) : null}
-          </div>
-          {isMarkdown ? (
-            <div className="workspace-markdown-mode-switch" role="tablist" aria-label="Markdown 模式">
-              {(["reading", "source"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  className={markdownMode === mode ? "selected" : ""}
-                  aria-selected={markdownMode === mode}
-                  role="tab"
-                  onClick={() => setMarkdownMode(mode)}
-                >
-                  {markdownModeLabel(mode)}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        <button
-          type="button"
-          className="workspace-file-save-button"
-          disabled={readOnly || saving || !dirty}
-          onClick={handleSave}
-        >
-          <Save className="icon" />
-          <span>保存</span>
-        </button>
-      </div>
-      <div className={`workspace-file-editor-scroll ${editorModeClass}`}>
-        {isMarkdown && markdownMode === "reading" ? (
+    <article className="workspace-file-preview readonly">
+      <div className={`workspace-file-editor-scroll ${isMarkdown ? "markdown-reading" : "code"}`}>
+        {isMarkdown ? (
           <div className="workspace-markdown-reading">
             <RichContent text={draftText} cwd={activeContext.cwd} allowRawHtml />
           </div>
@@ -1082,9 +935,7 @@ export function WorkspaceFilePreview({
               path={file.path}
               resourceID={editorResourceID ?? `${activeContext.cwd}:${file.path}`}
               text={draftText}
-              readOnly={readOnly}
-              onChange={handleEditorChange}
-              onSave={handleSave}
+              readOnly
               onViewStateChange={(viewState) => {
                 editorViewStateRef.current = viewState;
               }}
@@ -1098,11 +949,4 @@ export function WorkspaceFilePreview({
 
 function isMarkdownPath(path: string): boolean {
   return /\.mdx?$/i.test(path);
-}
-
-function markdownModeLabel(mode: MarkdownMode): string {
-  if (mode === "reading") {
-    return "阅读";
-  }
-  return "源码";
 }

@@ -152,7 +152,7 @@ export function WorkspaceMonacoEditor({
 
   return (
     <div
-      aria-label={`${path} 文件编辑器`}
+      aria-label={`${path} ${readOnly ? "文件查看器" : "文件编辑器"}`}
       className="workspace-monaco-editor"
       data-language={language}
       data-path={path}

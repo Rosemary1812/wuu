@@ -5,7 +5,6 @@ import type {
   RuntimeContext,
   WorkspaceDirectoryListResult,
   WorkspaceFileReadResult,
-  WorkspaceFileSaveResult,
 } from "../shared/protocol";
 import { WorkspaceFilePreview, WorkspaceFileTree } from "./WorkspaceFiles";
 
@@ -173,19 +172,6 @@ async function click(selector: string): Promise<void> {
   });
 }
 
-async function clickButtonByText(text: string): Promise<void> {
-  const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (candidate) => candidate.textContent?.trim() === text,
-  );
-  if (!button) {
-    throw new Error(`missing button ${text}`);
-  }
-  await act(async () => {
-    button.click();
-    await Promise.resolve();
-  });
-}
-
 // Helpers for the file-tree context-menu tests below. Right-click events
 // reach the row's onContextMenu handler, which sets React state; menu
 // listeners attach via setTimeout(0) inside useEffect, so tests must flush
@@ -245,17 +231,6 @@ async function clickMenuItem(text: string): Promise<void> {
     item.click();
     await Promise.resolve();
   });
-}
-
-function deferred<T>(): {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-} {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
 }
 
 describe("WorkspaceFileTree", () => {
@@ -385,175 +360,8 @@ describe("WorkspaceFileTree", () => {
     expect(content?.innerHTML).not.toContain("<tag>");
   });
 
-  it("marks an editable file dirty when the Monaco text changes", async () => {
-    await render(
-      <WorkspaceFilePreview
-        activeContext={activeContext}
-        selectedFilePath="/repo/src/index.ts"
-        onOpenRightPanel={() => {}}
-      />,
-    );
-
-    await settleDirectoryLoads();
-    await click(".mock-editor-edit");
-
-    expect(container.textContent).toContain("已修改");
-    expect(container.querySelector<HTMLButtonElement>(".workspace-file-save-button")?.disabled).toBe(false);
-  });
-
-  it("saves dirty Monaco content with the latest base metadata and clears the dirty state", async () => {
-    writeWorkspaceFile
-      .mockResolvedValueOnce({
-        status: "saved",
-        file: workspaceFile({
-          text: "edited code\n",
-          mtime_ms: 2000,
-          sha256: "b".repeat(64),
-        }),
-      })
-      .mockResolvedValueOnce({
-        status: "saved",
-        file: workspaceFile({
-          text: "second edit\n",
-          mtime_ms: 3000,
-          sha256: "c".repeat(64),
-        }),
-      });
-
-    await render(
-      <WorkspaceFilePreview
-        activeContext={activeContext}
-        selectedFilePath="/repo/src/index.ts"
-        onOpenRightPanel={() => {}}
-      />,
-    );
-
-    await settleDirectoryLoads();
-    await click(".mock-editor-edit");
-    await click(".mock-editor-save");
-
-    expect(writeWorkspaceFile).toHaveBeenNthCalledWith(
-      1,
-      {
-        path: "src/index.ts",
-        text: "edited code\n",
-        base_mtime_ms: 1000,
-        base_sha256: "a".repeat(64),
-      },
-      "/repo",
-    );
-    expect(container.textContent).toContain("已保存");
-    expect(container.querySelector<HTMLButtonElement>(".workspace-file-save-button")?.disabled).toBe(true);
-
-    await click(".mock-editor-edit-second");
-    await click(".mock-editor-save");
-
-    expect(writeWorkspaceFile).toHaveBeenNthCalledWith(
-      2,
-      {
-        path: "src/index.ts",
-        text: "second edit\n",
-        base_mtime_ms: 2000,
-        base_sha256: "b".repeat(64),
-      },
-      "/repo",
-    );
-  });
-
-  it("preserves edits made while an earlier save is still in flight", async () => {
-    const firstSave = deferred<WorkspaceFileSaveResult>();
-    writeWorkspaceFile
-      .mockReturnValueOnce(firstSave.promise)
-      .mockResolvedValueOnce({
-        status: "saved",
-        file: workspaceFile({
-          text: "second edit\n",
-          mtime_ms: 3000,
-          sha256: "c".repeat(64),
-        }),
-      });
-
-    await render(
-      <WorkspaceFilePreview
-        activeContext={activeContext}
-        selectedFilePath="/repo/src/index.ts"
-        onOpenRightPanel={() => {}}
-      />,
-    );
-
-    await settleDirectoryLoads();
-    await click(".mock-editor-edit");
-    await click(".mock-editor-save");
-    await click(".mock-editor-edit-second");
-
-    await act(async () => {
-      firstSave.resolve({
-        status: "saved",
-        file: workspaceFile({
-          text: "edited code\n",
-          mtime_ms: 2000,
-          sha256: "b".repeat(64),
-        }),
-      });
-      await firstSave.promise;
-    });
-
-    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.text).toBe("second edit\n");
-    expect(container.textContent).toContain("已修改");
-    expect(container.querySelector<HTMLButtonElement>(".workspace-file-save-button")?.disabled).toBe(false);
-
-    await click(".mock-editor-save");
-
-    expect(writeWorkspaceFile).toHaveBeenNthCalledWith(
-      2,
-      {
-        path: "src/index.ts",
-        text: "second edit\n",
-        base_mtime_ms: 2000,
-        base_sha256: "b".repeat(64),
-      },
-      "/repo",
-    );
-  });
-
-  it("keeps dirty editor text visible and reports a conflict when the file changed on disk", async () => {
-    writeWorkspaceFile.mockResolvedValueOnce({
-      status: "conflict",
-      file: workspaceFile({
-        text: "external edit\n",
-        mtime_ms: 2000,
-        sha256: "d".repeat(64),
-      }),
-    });
-
-    await render(
-      <WorkspaceFilePreview
-        activeContext={activeContext}
-        selectedFilePath="/repo/src/index.ts"
-        onOpenRightPanel={() => {}}
-      />,
-    );
-
-    await settleDirectoryLoads();
-    await click(".mock-editor-edit");
-    await click(".mock-editor-save");
-
-    expect(container.textContent).toContain("文件已在外部修改");
-    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.text).toBe("edited code\n");
-    expect(container.querySelector<HTMLButtonElement>(".workspace-file-save-button")?.disabled).toBe(false);
-  });
-
-  it("reports the active file dirty state to the shell", async () => {
+  it("keeps text files readonly without exposing edit or save controls", async () => {
     const onDirtyChange = vi.fn();
-    writeWorkspaceFile.mockResolvedValueOnce({
-      status: "saved",
-      file: workspaceFile({
-        text: "edited code\n",
-        mtime_ms: 2000,
-        sha256: "b".repeat(64),
-      }),
-    });
-
     await render(
       <WorkspaceFilePreview
         activeContext={activeContext}
@@ -564,23 +372,10 @@ describe("WorkspaceFileTree", () => {
     );
 
     await settleDirectoryLoads();
-
-    expect(onDirtyChange).toHaveBeenLastCalledWith({
-      root: "/repo",
-      path: "src/index.ts",
-      dirty: false,
-    });
-
-    await click(".mock-editor-edit");
-
-    expect(onDirtyChange).toHaveBeenLastCalledWith({
-      root: "/repo",
-      path: "src/index.ts",
-      dirty: true,
-    });
-
-    await click(".mock-editor-save");
-
+    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.readonly).toBe("true");
+    expect(container.querySelector(".workspace-file-editor-toolbar")).toBeNull();
+    expect(container.querySelector(".workspace-file-save-button")).toBeNull();
+    expect(writeWorkspaceFile).not.toHaveBeenCalled();
     expect(onDirtyChange).toHaveBeenLastCalledWith({
       root: "/repo",
       path: "src/index.ts",
@@ -606,10 +401,8 @@ describe("WorkspaceFileTree", () => {
 
     await settleDirectoryLoads();
 
-    expect(container.textContent).toContain("只读");
-    expect(container.textContent).toContain("文件较大，已截断");
     expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.readonly).toBe("true");
-    expect(container.querySelector<HTMLButtonElement>(".workspace-file-save-button")?.disabled).toBe(true);
+    expect(container.querySelector(".workspace-file-editor-toolbar")).toBeNull();
   });
 
   it("keeps binary files out of the editor surface", async () => {
@@ -677,93 +470,11 @@ describe("WorkspaceFileTree", () => {
 
     await settleDirectoryLoads();
 
-    expect(container.textContent).toContain("阅读");
-    expect(container.textContent).not.toContain("编辑");
-    expect(container.textContent).toContain("源码");
     expect(container.querySelector(".workspace-markdown-reading")).not.toBeNull();
     expect(container.querySelector(".workspace-markdown-reading .rich-heading")?.textContent).toContain("Project Notes");
     expect(container.querySelector(".workspace-monaco-editor")).toBeNull();
-  });
-
-  it("switches Markdown files between reading and Monaco source modes", async () => {
-    readWorkspaceFile.mockResolvedValueOnce(workspaceFile({
-      path: "README.md",
-      absolute_path: "/repo/README.md",
-      text: "# Project Notes\n",
-    }));
-
-    await render(
-      <WorkspaceFilePreview
-        activeContext={activeContext}
-        selectedFilePath="/repo/README.md"
-        onOpenRightPanel={() => {}}
-      />,
-    );
-
-    await settleDirectoryLoads();
-    expect(container.querySelector(".workspace-markdown-reading")).not.toBeNull();
-    expect(container.querySelector(".workspace-monaco-editor")).toBeNull();
-
-    await clickButtonByText("源码");
-
-    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.path).toBe("README.md");
-    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.text).toBe("# Project Notes\n");
-    expect(container.querySelector(".workspace-markdown-reading")).toBeNull();
-
-    await clickButtonByText("阅读");
-    expect(container.querySelector(".workspace-markdown-reading")).not.toBeNull();
-    expect(container.querySelector(".workspace-monaco-editor")).toBeNull();
-  });
-
-  it("shares dirty Markdown content from Monaco source into reading view and save", async () => {
-    readWorkspaceFile.mockResolvedValueOnce(workspaceFile({
-      path: "README.md",
-      absolute_path: "/repo/README.md",
-      text: "# Project Notes\n",
-    }));
-    writeWorkspaceFile.mockResolvedValueOnce({
-      status: "saved",
-      file: workspaceFile({
-        path: "README.md",
-        absolute_path: "/repo/README.md",
-        text: "# Edited notes\n",
-        mtime_ms: 2000,
-        sha256: "e".repeat(64),
-      }),
-    });
-
-    await render(
-      <WorkspaceFilePreview
-        activeContext={activeContext}
-        selectedFilePath="/repo/README.md"
-        onOpenRightPanel={() => {}}
-      />,
-    );
-
-    await settleDirectoryLoads();
-    await clickButtonByText("源码");
-    await click(".mock-editor-edit");
-
-    expect(container.textContent).toContain("已修改");
-
-    await clickButtonByText("阅读");
-    expect(container.querySelector(".workspace-markdown-reading")?.textContent).toContain("edited code");
-
-    await clickButtonByText("源码");
-    expect(container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.text).toBe("edited code\n");
-
-    await click(".mock-editor-save");
-
-    expect(writeWorkspaceFile).toHaveBeenCalledWith(
-      {
-        path: "README.md",
-        text: "edited code\n",
-        base_mtime_ms: 1000,
-        base_sha256: "a".repeat(64),
-      },
-      "/repo",
-    );
-    expect(container.textContent).toContain("已保存");
+    expect(container.querySelector(".workspace-file-editor-toolbar")).toBeNull();
+    expect(writeWorkspaceFile).not.toHaveBeenCalled();
   });
 
   // Right-click context menu on file-tree rows. Lives inside WorkspaceFileTree

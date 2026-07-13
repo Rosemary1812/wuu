@@ -73,19 +73,14 @@ describe("workspace right panel chrome", () => {
   });
 });
 
-describe("workspace file preview toolbar", () => {
-  it("keeps the editor toolbar compact so the content area dominates", () => {
-    // The toolbar hosts the dirty-state indicator, the markdown mode
-    // switch, and the save button. Earlier padding pushed the chrome to
-    // ~42px even for plain text files, which dwarfed the actual preview.
-    const toolbar = cssRuleBody(".workspace-file-editor-toolbar");
-    expect(toolbar).toMatch(/padding:\s*3px\s+10px;/);
-    expect(toolbar).toMatch(/gap:\s*10px;/);
-
-    // Save button and markdown mode switch should share one height so
-    // their baselines line up without per-side vertical padding games.
-    expect(cssRuleBody(".workspace-file-save-button")).toMatch(/height:\s*24px;/);
-    expect(cssRuleBody(".workspace-markdown-mode-switch button")).toMatch(/height:\s*24px;/);
+describe("workspace readonly file preview", () => {
+  it("removes editing chrome and gives the content the full available height", () => {
+    expect(workspaceCss).not.toContain(".workspace-file-editor-toolbar");
+    expect(workspaceCss).not.toContain(".workspace-file-save-button");
+    expect(workspaceCss).not.toContain(".workspace-markdown-mode-switch");
+    expect(cssRuleBody(".workspace-file-preview.readonly")).toMatch(
+      /grid-template-rows:\s*minmax\(0, 1fr\);/,
+    );
   });
 });
 
