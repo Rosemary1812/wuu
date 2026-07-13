@@ -168,6 +168,7 @@ export function Composer({
   onCreateProject,
   onOpenProject,
   onStartNewThread,
+  onOpenSideThread,
   onOpenWorkspaceTool,
   onOpenContextComposition = () => {},
   onCompactContext = () => {},
@@ -246,6 +247,9 @@ export function Composer({
   onCreateProject: () => void;
   onOpenProject: () => void;
   onStartNewThread: () => void;
+  // 打开当前主对话的侧聊（/side 指令）。App 内部按 main thread 维
+  // 度记录展开状态，重复执行只是切换焦点，不会新建第二个侧聊。
+  onOpenSideThread?: () => void;
   onOpenWorkspaceTool: (view: WorkspacePanelView) => void;
   onOpenContextComposition?: () => void;
   onCompactContext?: () => void;
@@ -640,6 +644,9 @@ export function Composer({
     switch (command.action) {
       case "new-thread":
         onStartNewThread();
+        break;
+      case "open-side-thread":
+        onOpenSideThread?.();
         break;
       case "open-review":
         onOpenWorkspaceTool("review");

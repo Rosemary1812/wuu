@@ -396,6 +396,29 @@ const api: WuuDesktopApi = {
   // `event.returnValue` (the parity test enforces both sides).
   popOutInit: () =>
     ipcRenderer.sendSync("wuu:pop-out-init") as PopOutInitResult,
+  // Side thread (侧聊) IPC. Keyed by main_thread_id because the renderer
+  // never holds a side_thread_id of its own until after openSideThread
+  // returns a non-null summary. The main process resolves the binding
+  // both ways. open/get/send/interrupt are async; the streamed
+  // assistant reply reuses the existing wuu:server-event bus via
+  // onSideThreadEvent so the renderer doesn't need a parallel channel.
+  openSideThread: (mainThreadId: string) =>
+    ipcRenderer.invoke("wuu:side-thread-open", mainThreadId),
+  getSideThreadHistory: (mainThreadId: string) =>
+    ipcRenderer.invoke("wuu:side-thread-history", mainThreadId),
+  sendSideThreadMessage: (params) =>
+    ipcRenderer.invoke("wuu:side-thread-send", params),
+  interruptSideThread: (mainThreadId: string) =>
+    ipcRenderer.invoke("wuu:side-thread-interrupt", mainThreadId),
+  onSideThreadEvent: (handler) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: Parameters<typeof handler>[0],
+    ) => handler(payload);
+    ipcRenderer.on("wuu:side-thread-event", listener);
+    return () =>
+      ipcRenderer.removeListener("wuu:side-thread-event", listener);
+  },
 };
 
 (api as WuuDesktopApi & { setActiveCUAThread: (threadID?: string) => void }).setActiveCUAThread =
