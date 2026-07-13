@@ -750,7 +750,7 @@ func (s *Server) drainResidentAgent(participantID string) {
 	if threadRuntime != nil && threadRuntime.Toolkit != nil {
 		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeechForTurn(
 			participantID, residentSpeechHopsByThread(envs), residentSpeechEngagedThreads(envs),
-			s.dispatchedNodesForTurn(participantID, envs)))
+			s.dispatchedNodesForTurn(participantID, envs), residentSpeechReplySubthreads(envs)))
 		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
 		threadRuntime.Toolkit.SetTaskManager(s.residentTaskManager(participantID))
 		s.applyEnvelopeBatchCWD(th, threadRuntime, envs)
@@ -993,6 +993,30 @@ func residentSpeechEngagedThreads(envs []MessageEnvelope) map[string]bool {
 		}
 	}
 	return engaged
+}
+
+// residentSpeechReplySubthreads returns the unambiguous reply/task Thread for
+// each parent group represented in this turn. Main-stream backlog does not
+// cancel a task wake: once a cth envelope is present, public speech aimed at
+// that parent belongs to the cth. Two different cth ids for one parent remain
+// ambiguous and therefore get no automatic rewrite.
+func residentSpeechReplySubthreads(envs []MessageEnvelope) map[string]string {
+	replies := make(map[string]string)
+	ambiguous := make(map[string]bool)
+	for _, env := range envs {
+		threadID := strings.TrimSpace(env.SourceThreadID)
+		subthreadID := strings.TrimSpace(env.SourceSubthreadID)
+		if threadID == "" || subthreadID == "" || ambiguous[threadID] {
+			continue
+		}
+		if existing := replies[threadID]; existing != "" && existing != subthreadID {
+			delete(replies, threadID)
+			ambiguous[threadID] = true
+			continue
+		}
+		replies[threadID] = subthreadID
+	}
+	return replies
 }
 
 func (s *Server) mentionedMembersByName(source *threadState, text string) map[string]bool {

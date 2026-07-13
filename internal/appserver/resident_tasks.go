@@ -67,6 +67,14 @@ func (m *residentTaskManager) OpenThread(ctx context.Context, threadID string, a
 	if err != nil {
 		return tools.TaskView{}, fmt.Errorf("open_thread: %w", err)
 	}
+	// The tool result exposes both ids, but a model can still reuse the parent
+	// group id from its incoming_message when it posts the convergence note in
+	// this same turn. Bind subsequent speech to the Thread mechanically.
+	if current, ok := m.server.residentTurnSpeech.Load(m.participantID); ok {
+		if limiter, ok := current.(*residentSpeechLimiter); ok {
+			limiter.preferReplySubthread(threadID, thread.ID)
+		}
+	}
 	m.server.notifySubthreadUpdated(threadID, thread.ID)
 	return m.taskView(thread), nil
 }

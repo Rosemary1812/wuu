@@ -62,6 +62,10 @@ type residentSpeechLimiter struct {
 	// LATER turn (a piece_done downstream, a need_upstream upstream, a set_plan
 	// re-dispatch) is never mistaken for one this turn ran.
 	dispatchedNodes map[string]map[string]string // taskID -> pieceID -> attemptID
+	// replySubthreadByThread keeps this turn's public speech inside the
+	// reply/task Thread that woke it. It is mutable because open_thread can
+	// establish the target during the same model turn.
+	replySubthreadByThread map[string]string
 }
 
 // markSpoke records that the resident published a post this turn (any kind), so
@@ -94,8 +98,34 @@ func (l *residentSpeechLimiter) dispatchedNodesSnapshot() map[string]map[string]
 	return l.dispatchedNodes
 }
 
+func (l *residentSpeechLimiter) preferReplySubthread(threadID, subthreadID string) {
+	if l == nil {
+		return
+	}
+	threadID = strings.TrimSpace(threadID)
+	subthreadID = strings.TrimSpace(subthreadID)
+	if threadID == "" || subthreadID == "" {
+		return
+	}
+	l.mu.Lock()
+	if l.replySubthreadByThread == nil {
+		l.replySubthreadByThread = make(map[string]string)
+	}
+	l.replySubthreadByThread[threadID] = subthreadID
+	l.mu.Unlock()
+}
+
+func (l *residentSpeechLimiter) preferredReplySubthread(threadID string) string {
+	if l == nil {
+		return ""
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.replySubthreadByThread[strings.TrimSpace(threadID)]
+}
+
 func (s *Server) residentParticipantSpeech(participantID string) tools.ParticipantSpeech {
-	return s.residentParticipantSpeechForTurn(participantID, nil, nil, nil)
+	return s.residentParticipantSpeechForTurn(participantID, nil, nil, nil, nil)
 }
 
 // lockThreadPost acquires the per-thread post-serialization mutex and returns
@@ -112,7 +142,7 @@ func (s *Server) lockThreadPost(threadID string) func() {
 	return mu.Unlock
 }
 
-func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThread map[string]int, engagedThreads map[string]bool, dispatchedNodes map[string]map[string]string) tools.ParticipantSpeech {
+func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThread map[string]int, engagedThreads map[string]bool, dispatchedNodes map[string]map[string]string, replySubthreadByThread map[string]string) tools.ParticipantSpeech {
 	hops := make(map[string]int, len(hopByThread))
 	for threadID, hop := range hopByThread {
 		threadID = strings.TrimSpace(threadID)
@@ -126,7 +156,18 @@ func (s *Server) residentParticipantSpeechForTurn(participantID string, hopByThr
 			engaged[threadID] = true
 		}
 	}
-	limiter := &residentSpeechLimiter{dispatchedNodes: dispatchedNodes}
+	replySubthreads := make(map[string]string, len(replySubthreadByThread))
+	for threadID, subthreadID := range replySubthreadByThread {
+		threadID = strings.TrimSpace(threadID)
+		subthreadID = strings.TrimSpace(subthreadID)
+		if threadID != "" && subthreadID != "" {
+			replySubthreads[threadID] = subthreadID
+		}
+	}
+	limiter := &residentSpeechLimiter{
+		dispatchedNodes:        dispatchedNodes,
+		replySubthreadByThread: replySubthreads,
+	}
 	pid := strings.TrimSpace(participantID)
 	if s != nil && pid != "" {
 		// Stash this turn's limiter so afterResidentTurn can tell whether the
@@ -167,7 +208,11 @@ func (r residentParticipantSpeech) PostMessage(ctx context.Context, kind, text, 
 	if text == "" {
 		return tools.PostedMessage{}, errors.New("post_message: text is required")
 	}
-	targetThreadID, subthreadID, err := r.resolveTargetThread(strings.TrimSpace(targetThreadID))
+	targetThreadID = strings.TrimSpace(targetThreadID)
+	if subthreadID := r.limiter.preferredReplySubthread(targetThreadID); subthreadID != "" {
+		targetThreadID = subthreadID
+	}
+	targetThreadID, subthreadID, err := r.resolveTargetThread(targetThreadID)
 	if err != nil {
 		return tools.PostedMessage{}, err
 	}

@@ -66,6 +66,28 @@ func TestAgentOpenThreadOnHumanMessageMakesCallerOwner(t *testing.T) {
 	}
 }
 
+func TestAgentOpenThreadKeepsSameTurnPostInsideThread(t *testing.T) {
+	srv, groupID, ada, _ := newTaskWakeFixture(t)
+	seq, err := session.AppendHistoryRecordReturningSeq(srv.rt.SessionDir, groupID, session.HistoryRecord{
+		Role: "user", Content: "请先讨论清楚", At: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	speech := srv.residentParticipantSpeechForTurn(ada, nil, map[string]bool{groupID: true}, nil, nil)
+	opened, err := srv.residentTaskManager(ada).OpenThread(context.Background(), groupID, seq, "收敛方案")
+	if err != nil {
+		t.Fatal(err)
+	}
+	posted, err := speech.PostMessage(context.Background(), "brief", "建议按这个方向收敛。", groupID, seq, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if posted.ThreadID != opened.ID {
+		t.Fatalf("same-turn post landed in %q, want opened Thread %q", posted.ThreadID, opened.ID)
+	}
+}
+
 func TestAgentCannotCreateStandaloneThreadOrTask(t *testing.T) {
 	srv, groupID, ada, _ := newTaskWakeFixture(t)
 	if _, err := srv.residentTaskManager(ada).OpenThread(context.Background(), groupID, 0, "standalone"); err == nil || !strings.Contains(err.Error(), "anchor_seq is required") {

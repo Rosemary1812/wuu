@@ -231,6 +231,62 @@ func TestResidentPostMessageToSubthreadFoldsIntoReplyThread(t *testing.T) {
 	}
 }
 
+func TestResidentTaskTurnRewritesParentPostIntoTaskThread(t *testing.T) {
+	srv, rt := newResidentSpeechTestServer(t)
+	participantID := saveNamedParticipant(t, srv.rt, "IrisTask", "reviewer", "")
+	groupID := startGroupThreadForTest(t, srv)
+	if err := session.AddThreadMember(srv.rt.SessionDir, groupID, participantID); err != nil {
+		t.Fatalf("AddThreadMember: %v", err)
+	}
+	cth := createStoredOpenThreadForTest(t, srv, groupID, participantID, "seq-task", 7)
+
+	envs := []MessageEnvelope{{
+		SourceThreadID:    groupID,
+		SourceSubthreadID: cth.ID,
+		SenderKind:        "system",
+		SenderName:        "task plan",
+		Text:              "Continue the assigned task.",
+	}}
+	speech := srv.residentParticipantSpeechForTurn(
+		participantID,
+		residentSpeechHopsByThread(envs),
+		residentSpeechEngagedThreads(envs),
+		nil,
+		residentSpeechReplySubthreads(envs),
+	)
+	posted, err := speech.PostMessage(context.Background(), "update", "Targeted progress.", groupID, 0, false)
+	if err != nil {
+		t.Fatalf("post task update through parent id: %v", err)
+	}
+	if posted.ThreadID != cth.ID {
+		t.Fatalf("posted thread_id = %q, want task thread %q", posted.ThreadID, cth.ID)
+	}
+
+	history, err := session.LoadHistoryRecords(rt.sessionDir, groupID, false)
+	if err != nil {
+		t.Fatalf("LoadHistoryRecords: %v", err)
+	}
+	for _, record := range history {
+		if record.Role == "participant" && record.Content == "Targeted progress." {
+			if record.ThreadID != cth.ID {
+				t.Fatalf("task update leaked to main stream: %+v", record)
+			}
+			return
+		}
+	}
+	t.Fatal("task update was not persisted")
+}
+
+func TestResidentSpeechReplySubthreadsRejectsAmbiguousParent(t *testing.T) {
+	got := residentSpeechReplySubthreads([]MessageEnvelope{
+		{SourceThreadID: "group-1", SourceSubthreadID: "cth-a"},
+		{SourceThreadID: "group-1", SourceSubthreadID: "cth-b"},
+	})
+	if _, ok := got["group-1"]; ok {
+		t.Fatalf("ambiguous reply target should not be inferred: %+v", got)
+	}
+}
+
 func TestResidentPostMessageToSubthreadRejectsNonMember(t *testing.T) {
 	srv, _ := newResidentSpeechTestServer(t)
 	participantID := saveNamedParticipant(t, srv.rt, "Jules", "reviewer", "")
