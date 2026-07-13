@@ -33,6 +33,26 @@ function cssRule(selector: string): string {
   return matches.at(-1)?.[1] ?? "";
 }
 
+/**
+ * Find the rule body for `selector` even when it appears inside a
+ * comma-separated selector list (not just at the start of a line).
+ * Returns the body of the LAST matching rule so it reflects cascade
+ * overrides — same semantics as `cssRule`.
+ */
+function cssRuleContaining(selector: string): string {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const matches = Array.from(
+    conversationShellCSS.matchAll(
+      new RegExp(
+        `(?:^|,\\s*)${escapedSelector}\\s*(?:,|\\{)([\\s\\S]*?)\\n\\}`,
+        "gm",
+      ),
+    ),
+  );
+  expect(matches).not.toHaveLength(0);
+  return matches.at(-1)?.[1] ?? "";
+}
+
 beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -389,7 +409,7 @@ describe("SessionTabStrip layout styles", () => {
     expect(titlebarRule).toContain(
       "grid-template-columns: minmax(0, 1fr) max-content;",
     );
-    expect(titlebarRule).toContain("column-gap: 16px;");
+    expect(titlebarRule).toContain("column-gap: 10px;");
     expect(titleBlockRule).toContain("display: grid;");
     expect(titleBlockRule).toContain(
       "grid-template-columns: max-content minmax(0, 1fr);",
@@ -435,26 +455,36 @@ describe("SessionTabStrip layout styles", () => {
     // over the flakiness-fix margin from commit 4e69bef7; if titlebar
     // click reliability regresses we can revisit.
     //
-    // The "new conversation" `+` is intentionally excluded from this
-    // inset group — it must read as the same visual element as the
-    // workspace right-panel "select tool" `+`, which paints a full
-    // 30×30 background. Mixing the two would make the two `+`
-    // controls look like different buttons even though they share
-    // `.workspace-panel-add`. See the override rule below.
+    // The four top toolbar buttons (info panel toggle, task board,
+    // right panel toggle, "+" new conversation) are intentionally
+    // excluded from this inset group — they form one visual cluster
+    // at the top of the conversation area and must share a uniform
+    // 30×30 background so the visible-edge gap between any two of
+    // them is the same. The "+" additionally matches the workspace
+    // right-panel "select tool" `+` (sharing `.workspace-panel-add`).
+    // See the override rule below.
     for (const selector of [
       ".titlebar .sidebar-toggle-button",
       ".settings-titlebar .sidebar-toggle-button",
-      ".titlebar .side-panel-toggle-button",
-      ".titlebar .environment-toggle-button",
-      ".titlebar .task-board-button",
     ]) {
       expect(conversationShellCSS).toContain(selector);
     }
-    // The new-conversation `+` opts out of the titlebar inset
-    // treatment so it matches the right-panel `+` visually.
-    const newThreadRule = cssRule(".workspace-panel-add.session-tab-new");
-    expect(newThreadRule).toMatch(/padding:\s*0;/);
-    expect(newThreadRule).toMatch(/background-clip:\s*border-box;/);
+    // The four top toolbar buttons opt out of the titlebar inset
+    // treatment so they paint a uniform 30×30 background and read as
+    // one cluster with the same visible-edge gap between any pair.
+    for (const selector of [
+      ".titlebar .task-board-button",
+      ".titlebar .environment-toggle-button",
+      ".titlebar .side-panel-toggle-button",
+      ".workspace-panel-add.session-tab-new",
+    ]) {
+      const rule = cssRuleContaining(selector);
+      expect(rule).toMatch(/padding:\s*0;/);
+      expect(rule).toMatch(/background-clip:\s*border-box;/);
+    }
+    // The `.titlebar` column-gap matches `.title-actions { gap: 10px }`
+    // so the "+" and the first title-action toggle button sit on the
+    // same 10px hit-area grid as the other top toolbar buttons.
   });
 
   it("keeps drag internals inside the tab list column", () => {

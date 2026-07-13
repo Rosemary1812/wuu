@@ -216,7 +216,7 @@
   min-width: 0;
   grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
-  column-gap: 16px;
+  column-gap: 10px;
   overflow: hidden;
   border-bottom: 1px solid var(--surface-3);
   padding: 0 24px;
@@ -540,13 +540,18 @@
   background-clip: content-box;
 }
 
-/* The "new conversation" `+` button shares styling with the workspace
- * right-panel "select tool" `+` (both use `.workspace-panel-add`) so
- * the two `+` controls read as the same visual element in different
- * surfaces. We intentionally do NOT include `.session-tab-new` in the
- * titlebar inset group above — that group paints a 26×26 inner
- * background inside a 30×30 hit area, which makes this `+` look
- * smaller than the right-panel version. */
+/* The four top toolbar buttons (task board, info panel toggle, right
+ * panel toggle, "+" new conversation) form one visual cluster at
+ * the top of the conversation area. They share a uniform 30×30
+ * hit-area and 30×30 background — no titlebar inset — so the visible
+ * spacing between any two of them is the same. The other titlebar
+ * buttons (sidebar-toggle etc.) keep the inset because they sit in a
+ * different cluster on the left. The "+" shares `.workspace-panel-add`
+ * with the right-panel "select tool" `+`, which keeps the two `+`
+ * controls visually identical across surfaces. */
+.titlebar .task-board-button,
+.titlebar .environment-toggle-button,
+.titlebar .side-panel-toggle-button,
 .workspace-panel-add.session-tab-new {
   padding: 0;
   background-clip: border-box;
