@@ -533,12 +533,23 @@
 .settings-titlebar .sidebar-toggle-button,
 .titlebar .side-panel-toggle-button,
 .titlebar .environment-toggle-button,
-.titlebar .task-board-button,
-.titlebar .session-tab-new {
+.titlebar .task-board-button {
   width: 30px;
   height: 30px;
   padding: 2px;
   background-clip: content-box;
+}
+
+/* The "new conversation" `+` button shares styling with the workspace
+ * right-panel "select tool" `+` (both use `.workspace-panel-add`) so
+ * the two `+` controls read as the same visual element in different
+ * surfaces. We intentionally do NOT include `.session-tab-new` in the
+ * titlebar inset group above — that group paints a 26×26 inner
+ * background inside a 30×30 hit area, which makes this `+` look
+ * smaller than the right-panel version. */
+.workspace-panel-add.session-tab-new {
+  padding: 0;
+  background-clip: border-box;
 }
 
 .icon-button:hover {
