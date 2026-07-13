@@ -292,3 +292,42 @@ func TestWorkflowBudgetReplayAllowanceResetsOnOperationSuccess(t *testing.T) {
 		t.Fatalf("consecutive replays without progress must still trip the budget, got %v", err)
 	}
 }
+
+func TestWorkflowBudgetReplayAllowanceResetsOnAttemptSuccess(t *testing.T) {
+	workflow := testInferenceWorkflow(WorkflowBudgetSpec{
+		MaxSamePayloadReplays: LimitedBudget(1),
+	})
+	ctx := WithInferenceWorkflow(context.Background(), workflow)
+
+	op, err := EnsureInferenceExecutionContext(ctx, ChatRequest{
+		Operation: NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive),
+	}, InferenceOperationAgentRound, InferenceProfileInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := op.Execution.BeginAttemptChecked(); err != nil {
+		t.Fatal(err)
+	}
+	retry, err := op.Execution.BeginAttemptChecked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The retried attempt eventually succeeds — the streaming path completes
+	// the ATTEMPT, not the operation. That alone must reset the replay spend.
+	if err := retry.Complete(InferenceOutcomeSucceeded, NormalizedFailure{}); err != nil {
+		t.Fatal(err)
+	}
+
+	next, err := EnsureInferenceExecutionContext(ctx, ChatRequest{
+		Operation: NewInferenceOperation(InferenceOperationAgentRound, InferenceProfileInteractive),
+	}, InferenceOperationAgentRound, InferenceProfileInteractive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := next.Execution.BeginAttemptChecked(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := next.Execution.BeginAttemptChecked(); err != nil {
+		t.Fatalf("replay after attempt-level success must be admitted, got %v", err)
+	}
+}
