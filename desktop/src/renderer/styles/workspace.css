@@ -161,7 +161,7 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
   background: var(--paper);
 }
@@ -225,6 +225,110 @@
   font-size: 12px;
   line-height: 1.55;
   padding: 12px 0 32px;
+}
+
+.turn-artifact-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--surface-2);
+  padding: 8px 14px 8px 16px;
+}
+
+.turn-artifact-view-tabs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.turn-artifact-view-tabs button {
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--ink-muted);
+  padding: 5px 9px;
+  font: inherit;
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.turn-artifact-view-tabs button:hover,
+.turn-artifact-view-tabs button.selected {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.turn-artifact-statuses {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+}
+
+.turn-artifact-statuses span + span::before {
+  content: "·";
+  margin-right: 8px;
+}
+
+.turn-file-diff-body.is-reading,
+.turn-file-diff-body.is-current {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  padding: 0;
+}
+
+.turn-artifact-markdown {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 28px 32px 56px;
+}
+
+.turn-artifact-source {
+  min-height: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 16px 20px 40px;
+  color: var(--ink);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.turn-artifact-image {
+  display: grid;
+  min-height: 100%;
+  box-sizing: border-box;
+  place-items: center;
+  padding: 24px;
+}
+
+.turn-artifact-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.turn-artifact-empty {
+  display: flex;
+  min-height: 240px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--ink-muted);
+  font-family: inherit;
+  font-size: var(--font-sm);
+  text-align: center;
 }
 
 .turn-file-diff-body .tool-diff-hunk {

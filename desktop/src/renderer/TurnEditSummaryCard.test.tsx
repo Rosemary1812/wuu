@@ -52,6 +52,10 @@ function buildApplyPatchItem(): ThreadItem {
     type: "tool_call",
     name: "apply_patch",
     status: "completed",
+    arguments: JSON.stringify({
+      patchText:
+        "*** Begin Patch\n*** Update File: src/a.ts\n@@\n-old\n+new\n*** Add File: src/b.ts\n+first\n+second\n+third\n*** End Patch",
+    }),
     result: JSON.stringify({
       changed_files: ["src/a.ts", "src/b.ts"],
       risk_summary: {
@@ -139,7 +143,7 @@ describe("TurnEditSummaryCard", () => {
       items: [buildEditItem("/tmp/.zshrc", 4, 1)],
     };
     mount(<TurnEditSummaryCard turn={turn} />);
-    expect(container?.textContent).toContain("已编辑 1 个文件");
+    expect(container?.textContent).toContain("本轮产出 1 项");
     expect(container?.textContent).toContain(".zshrc");
     expect(container?.textContent).toContain("+4");
     expect(container?.textContent).toContain("-1");
@@ -169,7 +173,7 @@ describe("TurnEditSummaryCard", () => {
       ],
     };
     mount(<TurnEditSummaryCard turn={turn} />);
-    expect(container?.textContent).toContain("已编辑 2 个文件");
+    expect(container?.textContent).toContain("本轮产出 2 项");
     expect(container?.textContent).toContain("a.txt");
     expect(container?.textContent).toContain("b.txt");
   });
@@ -184,7 +188,7 @@ describe("TurnEditSummaryCard", () => {
 
     mount(<TurnEditSummaryCard turn={turn} />);
 
-    expect(container?.textContent).toContain("已编辑 2 个文件");
+    expect(container?.textContent).toContain("本轮产出 2 项");
     expect(container?.textContent).toContain("a.ts");
     expect(container?.textContent).toContain("b.ts");
     expect(container?.textContent).toContain("+1");
@@ -192,7 +196,7 @@ describe("TurnEditSummaryCard", () => {
     expect(container?.textContent).toContain("+3");
   });
 
-  it("shows the matching apply_patch file diff on hover", () => {
+  it("keeps the output row stable instead of opening a hover diff", () => {
     vi.useFakeTimers();
     const turn: Turn = {
       id: "turn-1",
@@ -210,9 +214,7 @@ describe("TurnEditSummaryCard", () => {
       vi.advanceTimersByTime(300);
     });
 
-    expect(document.body.querySelector(".tool-diff-preview-card")).toBeTruthy();
-    expect(document.body.textContent).toContain("src/a.ts");
-    expect(document.body.textContent).toContain("export const value = true;");
+    expect(document.body.querySelector(".tool-diff-preview-card")).toBeFalsy();
   });
 
   it("opens the selected file diff when a file row is clicked", () => {
@@ -250,14 +252,42 @@ describe("TurnEditSummaryCard", () => {
     );
   });
 
+  it("restores an added apply_patch file as a turn snapshot", () => {
+    const onOpenFileDiff = vi.fn();
+    const turn: Turn = {
+      id: "turn-1",
+      status: "completed",
+      items_view: "full",
+      items: [buildApplyPatchItem()],
+    };
+    mount(<TurnEditSummaryCard turn={turn} onOpenFileDiff={onOpenFileDiff} />);
+
+    act(() => {
+      container?.querySelectorAll<HTMLButtonElement>(".turn-edit-summary-row")[1]?.click();
+    });
+
+    expect(onOpenFileDiff).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "src/b.ts",
+        action: "create",
+        snapshotText: "first\nsecond\nthird\n",
+      }),
+    );
+  });
+
   it("renders newly-created files from write_file", () => {
     const writeFileItem: ThreadItem = {
       id: "item-new",
       type: "tool_call",
       name: "write_file",
       status: "completed",
+      arguments: JSON.stringify({
+        path: "/tmp/new.txt",
+        content: "# Draft\n\nBody\n",
+      }),
       result: JSON.stringify({
         path: "/tmp/new.txt",
+        new_file_sha: "sha256:abc123",
         diff: { new_file: true, lines: 7 },
       }),
     };
@@ -267,10 +297,30 @@ describe("TurnEditSummaryCard", () => {
       items_view: "full",
       items: [writeFileItem],
     };
-    mount(<TurnEditSummaryCard turn={turn} />);
-    expect(container?.textContent).toContain("已编辑 1 个文件");
+    const onOpenFileDiff = vi.fn();
+    mount(
+      <TurnEditSummaryCard
+        turn={turn}
+        cwd="/tmp"
+        onOpenFileDiff={onOpenFileDiff}
+      />,
+    );
+    expect(container?.textContent).toContain("本轮产出 1 项");
     expect(container?.textContent).toContain("new.txt");
+    expect(container?.textContent).toContain("新建");
     expect(container?.textContent).toContain("+7");
+    act(() => {
+      container?.querySelector<HTMLButtonElement>(".turn-edit-summary-row")?.click();
+    });
+    expect(onOpenFileDiff).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/tmp/new.txt",
+        cwd: "/tmp",
+        action: "create",
+        snapshotText: "# Draft\n\nBody\n",
+        afterSha: "sha256:abc123",
+      }),
+    );
   });
 
   it("hides files beyond the visible limit", () => {
@@ -283,7 +333,7 @@ describe("TurnEditSummaryCard", () => {
       ),
     };
     mount(<TurnEditSummaryCard turn={turn} />);
-    expect(container?.textContent).toContain("已编辑 7 个文件");
+    expect(container?.textContent).toContain("本轮产出 7 项");
     expect(container?.querySelectorAll(".turn-edit-summary-row")).toHaveLength(3);
     expect(container?.textContent).toContain("还有 4 个文件");
     expect(container?.textContent).toContain("再显示 3 个");

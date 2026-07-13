@@ -152,13 +152,11 @@ export function TurnView({
           onOpenSubthread={onOpenSubthread}
         />
       ) : null}
-      {isLatestTurn ? (
-        <TurnEditSummaryCard
-          turn={turn}
-          cwd={cwd}
-          onOpenFileDiff={onOpenFileDiff}
-        />
-      ) : null}
+      <TurnEditSummaryCard
+        turn={turn}
+        cwd={cwd}
+        onOpenFileDiff={onOpenFileDiff}
+      />
       {isLatestTurn && turn.status === "in_progress" && streamStatus?.liveProgress ? (
         <StreamReconnectNotice text={streamStatus.text} />
       ) : null}

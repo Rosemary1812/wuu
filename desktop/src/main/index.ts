@@ -861,8 +861,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("wuu:git-changes", (event) =>
     gitServiceForEvent(event).changes(),
   );
-  ipcMain.handle("wuu:git-file-diff", (event, path: string) =>
-    gitServiceForEvent(event).fileDiff(path),
+  ipcMain.handle("wuu:git-file-diff", (event, path: string, root?: string) =>
+    gitServiceForEvent(event).fileDiff(path, root),
   );
   ipcMain.handle("wuu:git-checkout-branch", (event, branch: string) =>
     gitServiceForEvent(event).checkoutBranch(branch),

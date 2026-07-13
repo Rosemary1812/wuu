@@ -60,8 +60,8 @@ export function workspaceToolViewTab(kind: WorkspacePanelView): WorkspaceToolVie
   return { kind, id: kind };
 }
 
-export function workspaceDiffViewTabID(threadID: string, path: string): string {
-  return `diff:${threadID}:${encodeURIComponent(path)}`;
+export function workspaceDiffViewTabID(threadID: string, path: string, artifactID?: string): string {
+  return `diff:${threadID}:${artifactID ? `${encodeURIComponent(artifactID)}:` : ""}${encodeURIComponent(path)}`;
 }
 
 export function workspaceDiffViewTab({
@@ -75,7 +75,7 @@ export function workspaceDiffViewTab({
 }): WorkspaceDiffViewTab {
   return {
     kind: "diff",
-    id: workspaceDiffViewTabID(threadID, path),
+    id: workspaceDiffViewTabID(threadID, path, selection.artifactID),
     threadID,
     path,
     title: workspaceFileBasename(path),

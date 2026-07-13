@@ -95,6 +95,27 @@ describe("TurnView", () => {
     expect(turn?.dataset.turnStatus).toBe("in_progress");
   });
 
+  it("keeps completed turn outputs visible after the turn is no longer latest", () => {
+    const view = render(
+      makeTurn("completed", [
+        {
+          id: "write-1",
+          type: "tool_call",
+          name: "write_file",
+          status: "completed",
+          arguments: JSON.stringify({ path: "notes/brief.md", content: "# Brief\n" }),
+          result: JSON.stringify({
+            path: "notes/brief.md",
+            diff: { new_file: true, lines: 1 },
+          }),
+        },
+      ]),
+    );
+
+    expect(view.textContent).toContain("本轮产出 1 项");
+    expect(view.textContent).toContain("brief.md");
+  });
+
   it("buffers structural process changes briefly while keeping the current text visible", () => {
     vi.useFakeTimers();
     const view = render(

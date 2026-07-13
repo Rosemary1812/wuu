@@ -99,8 +99,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:project-select-none", fresh, cwd),
   gitStatus: () => ipcRenderer.invoke("wuu:git-status"),
   listGitChanges: () => ipcRenderer.invoke("wuu:git-changes"),
-  readGitFileDiff: (path: string) =>
-    ipcRenderer.invoke("wuu:git-file-diff", path),
+  readGitFileDiff: (path: string, root?: string) =>
+    ipcRenderer.invoke("wuu:git-file-diff", path, root),
   checkoutGitBranch: (branch: string) =>
     ipcRenderer.invoke("wuu:git-checkout-branch", branch),
   createCheckoutGitBranch: (branch: string) =>

@@ -82,4 +82,69 @@ describe("TurnFileDiffPanel", () => {
 
     expect(container?.querySelector(".turn-file-diff-panel")).toBeFalsy();
   });
+
+  it("opens a new Markdown artifact in reading mode and shows workspace status", async () => {
+    const previousWuu = window.wuu;
+    window.wuu = {
+      ...previousWuu,
+      readWorkspaceFile: vi.fn().mockResolvedValue({
+        root: "/repo",
+        path: "docs/brief.md",
+        absolute_path: "/repo/docs/brief.md",
+        size_bytes: 16,
+        mtime_ms: 1,
+        sha256: "abc123",
+        binary: false,
+        truncated: false,
+        text: "# Brief\n\nBody\n",
+      }),
+      readGitFileDiff: vi.fn().mockResolvedValue({
+        is_repo: true,
+        path: "docs/brief.md",
+        status: "ignored",
+        additions: 3,
+        deletions: 0,
+        patch: "",
+        truncated: false,
+      }),
+    };
+
+    mount(
+      <TurnFileDiffPanel
+        selection={{
+          path: "docs/brief.md",
+          cwd: "/repo",
+          action: "create",
+          additions: 3,
+          deletions: 0,
+          newFile: true,
+          snapshotText: "# Brief\n\nBody\n",
+          afterSha: "sha256:abc123",
+        }}
+        onClose={() => {}}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container?.textContent).toContain("本轮产出");
+    expect(container?.textContent).toContain("Brief");
+    expect(container?.textContent).toContain("当前文件与本轮产出一致");
+    expect(container?.textContent).toContain("Git：已忽略，不会提交");
+    expect(window.wuu.readWorkspaceFile).toHaveBeenCalledWith(
+      "docs/brief.md",
+      "/repo",
+    );
+    expect(window.wuu.readGitFileDiff).toHaveBeenCalledWith(
+      "docs/brief.md",
+      "/repo",
+    );
+    expect(
+      container?.querySelector('[role="tab"][aria-selected="true"]')?.textContent,
+    ).toBe("阅读");
+
+    window.wuu = previousWuu;
+  });
 });

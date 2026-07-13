@@ -34,8 +34,9 @@ export class GitService {
     return gitChangesResult(this.getRuntimeContext());
   }
 
-  fileDiff(path: string): GitFileDiffResult {
-    return gitFileDiffResult(this.getRuntimeContext(), path);
+  fileDiff(path: string, root?: string): GitFileDiffResult {
+    const context = this.getRuntimeContext();
+    return gitFileDiffResult(root ? { ...context, cwd: root } : context, path);
   }
 
   checkoutBranch(branch: string): GitStatusResult {

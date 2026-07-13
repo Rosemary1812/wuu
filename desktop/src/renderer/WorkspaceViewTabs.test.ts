@@ -63,6 +63,21 @@ describe("workspaceDiffViewTab", () => {
     expect(tab.title).toBe("App.tsx");
     expect(tab.kind).toBe("diff");
   });
+
+  it("keeps outputs for the same file from separate turns in separate tabs", () => {
+    const first = workspaceDiffViewTab({
+      threadID: "thread-1",
+      path: "notes/brief.md",
+      selection: makeSelection("notes/brief.md", { artifactID: "item-1" }),
+    });
+    const second = workspaceDiffViewTab({
+      threadID: "thread-1",
+      path: "notes/brief.md",
+      selection: makeSelection("notes/brief.md", { artifactID: "item-2" }),
+    });
+
+    expect(first.id).not.toBe(second.id);
+  });
 });
 
 describe("workspaceFileViewTab", () => {

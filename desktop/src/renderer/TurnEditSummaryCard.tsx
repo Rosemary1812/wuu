@@ -2,7 +2,6 @@ import { useState } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import {
   extractToolDiffPreview,
-  ToolDiffPreview,
   type ToolDiffPreviewFileDiff,
 } from "./ToolDiffPreview";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
@@ -14,6 +13,9 @@ type FileEdit = {
   additions: number;
   deletions: number;
   newFile: boolean;
+  action: "create" | "update" | "delete" | "rename";
+  snapshotText?: string;
+  afterSha?: string;
 };
 
 function parseJSON(value: string | undefined): unknown {
@@ -112,6 +114,53 @@ function filePathFromPatchFile(file: Record<string, unknown>): string | undefine
   return stringValue(file, "move_path") ?? stringValue(file, "path");
 }
 
+function artifactAction(
+  value: string | undefined,
+  newFile: boolean,
+): FileEdit["action"] {
+  if (newFile || value === "add" || value === "create") return "create";
+  if (value === "delete") return "delete";
+  if (value === "move" || value === "rename") return "rename";
+  return "update";
+}
+
+function normalizedArtifactPath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function addedFileTextFromPatch(patchText: string, path: string): string | undefined {
+  const lines = patchText.replace(/\r\n?/g, "\n").split("\n");
+  const wanted = normalizedArtifactPath(path);
+  for (let index = 0; index < lines.length; index++) {
+    const match = /^\*\*\* Add File: (.+)$/.exec(lines[index]);
+    if (!match || normalizedArtifactPath(match[1].trim()) !== wanted) continue;
+    const content: string[] = [];
+    for (index += 1; index < lines.length; index++) {
+      if (lines[index].startsWith("*** ")) break;
+      if (!lines[index].startsWith("+")) return undefined;
+      content.push(lines[index].slice(1));
+    }
+    return content.length > 0 ? `${content.join("\n")}\n` : "";
+  }
+  return undefined;
+}
+
+function artifactSnapshotText(item: ThreadItem, path: string): string | undefined {
+  const args = parseJSON(item.arguments);
+  if (!isRecord(args)) return undefined;
+  if (item.name === "write_file") {
+    return stringValue(args, "content");
+  }
+  if (item.name === "apply_patch") {
+    const patchText =
+      stringValue(args, "patchText") ??
+      stringValue(args, "patch_text") ??
+      stringValue(args, "patch");
+    return patchText ? addedFileTextFromPatch(patchText, path) : undefined;
+  }
+  return undefined;
+}
+
 function extractPatchFileEdits(
   item: ThreadItem,
   result: Record<string, unknown>,
@@ -126,13 +175,17 @@ function extractPatchFileEdits(
       ? extractToolDiffPreview(diffRecord, path)
       : undefined;
     const stats = diffRecord ? summarizeDiff(diffRecord) : { additions: 0, deletions: 0 };
+    const newFile = diffRecord?.new_file === true || file.action === "add";
     edits.push({
       path,
       item,
       diff,
       additions: stats.additions,
       deletions: stats.deletions,
-      newFile: diffRecord?.new_file === true || file.action === "add",
+      newFile,
+      action: artifactAction(stringValue(file, "action"), newFile),
+      snapshotText: newFile ? artifactSnapshotText(item, path) : undefined,
+      afterSha: stringValue(file, "new_file_sha"),
     });
   }
   return edits;
@@ -177,6 +230,9 @@ function extractFileEdits(item: ThreadItem): FileEdit[] {
       additions: newFileLines,
       deletions: 0,
       newFile,
+      action: "create",
+      snapshotText: artifactSnapshotText(item, path),
+      afterSha: stringValue(result, "new_file_sha"),
     }];
   }
 
@@ -189,6 +245,9 @@ function extractFileEdits(item: ThreadItem): FileEdit[] {
     additions: diffStats.additions,
     deletions: diffStats.deletions,
     newFile,
+    action: artifactAction(stringValue(result, "action"), newFile),
+    snapshotText: artifactSnapshotText(item, path),
+    afterSha: stringValue(result, "new_file_sha"),
   }];
 }
 
@@ -220,9 +279,12 @@ function aggregateFileEdits(edits: FileEdit[]): FileEdit[] {
     if (existing) {
       existing.additions += edit.additions;
       existing.deletions += edit.deletions;
-      // Prefer the latest item for hover preview.
+      // Keep the latest operation as the source of the stable artifact view.
       existing.item = edit.item;
       existing.diff = edit.diff;
+      existing.snapshotText = edit.snapshotText ?? existing.snapshotText;
+      existing.afterSha = edit.afterSha ?? existing.afterSha;
+      if (existing.action !== "create") existing.action = edit.action;
     } else {
       byPath.set(edit.path, { ...edit });
     }
@@ -262,16 +324,27 @@ export function TurnEditSummaryCard({
     <div className="turn-edit-summary-card">
       <div className="turn-edit-summary-header">
         <span className="turn-edit-summary-title">
-          {edits.length === 1 ? "已编辑 1 个文件" : `已编辑 ${edits.length} 个文件`}
+          {edits.length === 1 ? "本轮产出 1 项" : `本轮产出 ${edits.length} 项`}
         </span>
       </div>
       <div className="turn-edit-summary-list">
         {visibleEdits.map((edit) => {
-          const canOpenDiff = Boolean(edit.diff && onOpenFileDiff);
+          const canOpenDiff = Boolean(onOpenFileDiff);
           const rowContent = (
             <>
-              <span className="turn-edit-summary-name" title={edit.path}>
-                {fileDisplayName(edit.path)}
+              <span className="turn-edit-summary-file">
+                <span className={`turn-edit-summary-action is-${edit.action}`}>
+                  {edit.action === "create"
+                    ? "新建"
+                    : edit.action === "delete"
+                      ? "删除"
+                      : edit.action === "rename"
+                        ? "重命名"
+                        : "修改"}
+                </span>
+                <span className="turn-edit-summary-name" title={edit.path}>
+                  {fileDisplayName(edit.path)}
+                </span>
               </span>
               <span className="turn-edit-summary-stats">
                 {edit.additions > 0 ? (
@@ -284,22 +357,25 @@ export function TurnEditSummaryCard({
             </>
           );
           return (
-            <ToolDiffPreview diff={edit.diff} item={edit.item} key={edit.path}>
+            <div key={edit.path}>
               {canOpenDiff ? (
                 <button
                   className="turn-edit-summary-row is-clickable"
                   type="button"
-                  aria-label={`在右侧查看 ${edit.path} 的 diff`}
+                  aria-label={`在右侧查看 ${edit.path} 的本轮产出`}
                   onClick={() =>
-                    edit.diff
-                      ? onOpenFileDiff?.({
-                          path: edit.path,
-                          diff: edit.diff,
-                          additions: edit.additions,
-                          deletions: edit.deletions,
-                          newFile: edit.newFile,
-                        })
-                      : undefined
+                    onOpenFileDiff?.({
+                      artifactID: edit.item.id,
+                      path: edit.path,
+                      cwd,
+                      action: edit.action,
+                      diff: edit.diff,
+                      snapshotText: edit.snapshotText,
+                      afterSha: edit.afterSha,
+                      additions: edit.additions,
+                      deletions: edit.deletions,
+                      newFile: edit.newFile,
+                    })
                   }
                 >
                   {rowContent}
@@ -307,7 +383,7 @@ export function TurnEditSummaryCard({
               ) : (
                 <div className="turn-edit-summary-row">{rowContent}</div>
               )}
-            </ToolDiffPreview>
+            </div>
           );
         })}
         {hiddenCount > 0 ? (
