@@ -42,18 +42,20 @@ func NewResponsesWebSocketCacheWithTTL(ttl time.Duration) *ResponsesWebSocketCac
 }
 
 type responsesWebSocketSession struct {
-	id           string
-	cache        *ResponsesWebSocketCache
-	mu           sync.Mutex
-	conn         *websocket.Conn
-	wsURL        string
-	generation   uint64
-	busy         bool
-	active       chan responsesWebSocketReadEvent
-	activeErr    error
-	continuation *responsesWebSocketContinuation
-	fallback     responsesWebSocketFallbackState
-	idleTimer    *time.Timer
+	id            string
+	cache         *ResponsesWebSocketCache
+	mu            sync.Mutex
+	conn          *websocket.Conn
+	wsURL         string
+	generation    uint64
+	busy          bool
+	active        chan responsesWebSocketReadEvent
+	activeDone    chan struct{}
+	activeCtxDone <-chan struct{}
+	activeErr     error
+	continuation  *responsesWebSocketContinuation
+	fallback      responsesWebSocketFallbackState
+	idleTimer     *time.Timer
 }
 
 type responsesWebSocketContinuation struct {
@@ -181,6 +183,8 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 	readCh := make(chan responsesWebSocketReadEvent, 64)
 	session.busy = true
 	session.active = readCh
+	session.activeDone = make(chan struct{})
+	session.activeCtxDone = ctx.Done()
 	session.activeErr = nil
 	mode := "stream"
 	if strings.TrimSpace(requestPayload.SubmissionReason) != "" {
@@ -261,14 +265,15 @@ func (c *Client) responsesWebSocketReadPump(session *responsesWebSocketSession, 
 			return
 		}
 		target := session.active
+		targetDone := session.activeDone
+		targetCtxDone := session.activeCtxDone
 		if err != nil {
+			if target != nil {
+				session.activeErr = err
+			}
 			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "read_error")
 			session.mu.Unlock()
 			if target != nil {
-				select {
-				case target <- responsesWebSocketReadEvent{err: err}:
-				default:
-				}
 				close(target)
 			}
 			return
@@ -287,14 +292,23 @@ func (c *Client) responsesWebSocketReadPump(session *responsesWebSocketSession, 
 
 		select {
 		case target <- frame:
-		default:
+		case <-targetDone:
+			// The request completed or was released while the reader was
+			// waiting. The next read observes either the next active request or
+			// the connection shutdown.
+			continue
+		case <-targetCtxDone:
 			session.mu.Lock()
-			if session.active == target && session.conn == conn && session.generation == generation {
-				session.activeErr = &providers.LocalBackpressureError{Component: "responses websocket reader"}
-				c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "read_backpressure")
-				close(target)
+			active := session.active == target && session.conn == conn && session.generation == generation
+			if active {
+				session.activeErr = context.Canceled
+				c.responsesWebSocketAbortConnectionLocked(session)
 			}
 			session.mu.Unlock()
+			if !active {
+				continue
+			}
+			close(target)
 			return
 		}
 	}
@@ -325,7 +339,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 		case <-ctx.Done():
 			session.mu.Lock()
 			c.responsesWebSocketReleaseLocked(session, readCh)
-			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "request_canceled")
+			c.responsesWebSocketAbortConnectionLocked(session)
 			session.mu.Unlock()
 			lease.FailError(ctx.Err())
 			ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
@@ -345,7 +359,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			if ctx.Err() != nil {
 				session.mu.Lock()
 				c.responsesWebSocketReleaseLocked(session, readCh)
-				c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "request_canceled")
+				c.responsesWebSocketAbortConnectionLocked(session)
 				session.mu.Unlock()
 				lease.FailError(ctx.Err())
 				ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
@@ -673,7 +687,12 @@ func responsesWebSocketFallbackReason(err error) string {
 
 func (c *Client) responsesWebSocketReleaseLocked(session *responsesWebSocketSession, readCh chan responsesWebSocketReadEvent) {
 	if session.active == readCh {
+		if session.activeDone != nil {
+			close(session.activeDone)
+		}
 		session.active = nil
+		session.activeDone = nil
+		session.activeCtxDone = nil
 	}
 	session.busy = false
 }
@@ -727,7 +746,29 @@ func (c *Client) responsesWebSocketInvalidateConnectionLocked(session *responses
 	}
 	session.conn = nil
 	session.wsURL = ""
+	if session.activeDone != nil {
+		close(session.activeDone)
+	}
 	session.active = nil
+	session.activeDone = nil
+	session.activeCtxDone = nil
+	session.continuation = nil
+	session.generation++
+}
+
+func (c *Client) responsesWebSocketAbortConnectionLocked(session *responsesWebSocketSession) {
+	c.responsesWebSocketCancelIdleTimerLocked(session)
+	if session.conn != nil {
+		_ = session.conn.CloseNow()
+	}
+	session.conn = nil
+	session.wsURL = ""
+	if session.activeDone != nil {
+		close(session.activeDone)
+	}
+	session.active = nil
+	session.activeDone = nil
+	session.activeCtxDone = nil
 	session.continuation = nil
 	session.generation++
 }

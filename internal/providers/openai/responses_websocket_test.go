@@ -1423,6 +1423,139 @@ func TestResponsesStreamChatWebSocket_SwitchesToSSEOnConnectionLimit(t *testing.
 	}
 }
 
+func TestResponsesStreamChatWebSocket_WaitsForSlowConsumerWithoutDroppingFrames(t *testing.T) {
+	const deltaCount = 256
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		requests := make(chan map[string]any, 1)
+		readWSRequest(t, ctx, conn, requests)
+		for i := 0; i < deltaCount; i++ {
+			writeWSEvent(t, ctx, conn, `{"type":"response.output_text.delta","delta":"x","item_id":"msg_1"}`)
+		}
+		writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_slow","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":256}}}`)
+	}))
+	defer server.Close()
+
+	store := false
+	client, err := New(ClientConfig{
+		BaseURL:                 server.URL,
+		WireAPI:                 "responses",
+		APIKey:                  "test-key",
+		ResponsesStore:          &store,
+		ResponsesTransport:      providers.StreamTransportWebSocket,
+		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	stream, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		CacheHint: &providers.CacheHint{PromptCacheKey: "thread-slow-consumer"},
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+
+	// Let both bounded stages fill before consuming. A full queue must apply
+	// transport backpressure instead of turning local scheduling into a stream
+	// failure.
+	time.Sleep(100 * time.Millisecond)
+	var deltas int
+	var sawDone bool
+	for event := range stream {
+		switch event.Type {
+		case providers.EventContentDelta:
+			if event.Content != "" {
+				deltas++
+			}
+		case providers.EventDone:
+			sawDone = true
+		case providers.EventError:
+			t.Fatalf("slow consumer failed stream: %v", event.Error)
+		}
+	}
+	if deltas != deltaCount || !sawDone {
+		t.Fatalf("stream deltas/done = %d/%v, want %d/true", deltas, sawDone, deltaCount)
+	}
+}
+
+func TestResponsesStreamChatWebSocket_CancelUnblocksSaturatedReader(t *testing.T) {
+	serverDone := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(serverDone)
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		requests := make(chan map[string]any, 1)
+		readWSRequest(t, ctx, conn, requests)
+		frame := []byte(`{"type":"response.output_text.delta","delta":"x","item_id":"msg_1"}`)
+		for {
+			if err := conn.Write(ctx, websocket.MessageText, frame); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	store := false
+	client, err := New(ClientConfig{
+		BaseURL:                 server.URL,
+		WireAPI:                 "responses",
+		APIKey:                  "test-key",
+		ResponsesStore:          &store,
+		ResponsesTransport:      providers.StreamTransportWebSocket,
+		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	stream, err := client.StreamChat(ctx, providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		CacheHint: &providers.CacheHint{PromptCacheKey: "thread-cancel-saturated"},
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	drained := make(chan struct{})
+	go func() {
+		for range stream {
+		}
+		close(drained)
+	}()
+	select {
+	case <-drained:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancel did not close the saturated stream")
+	}
+	select {
+	case <-serverDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancel did not close the saturated websocket")
+	}
+}
+
 func TestResponsesStreamChatWebSocket_PersistsSSEFallbackAfterConnectionLimit(t *testing.T) {
 	requests := make(chan map[string]any, 3)
 	sseRequests := make(chan map[string]any, 2)
