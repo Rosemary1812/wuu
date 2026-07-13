@@ -573,7 +573,10 @@ func (m *Manager) Stop(id string) (*Process, error) {
 	_ = syscall.Kill(-pgid, syscall.SIGTERM)
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		cur, _ := m.load(id)
+		cur, err := m.load(id)
+		if err != nil {
+			return nil, err
+		}
 		if cur.Status == StatusStopped || cur.Status == StatusFailed {
 			return cur, nil
 		}
@@ -581,7 +584,10 @@ func (m *Manager) Stop(id string) (*Process, error) {
 	}
 	_ = syscall.Kill(-pgid, syscall.SIGKILL)
 	time.Sleep(100 * time.Millisecond)
-	cur, _ := m.load(id)
+	cur, err := m.load(id)
+	if err != nil {
+		return nil, err
+	}
 	return cur, nil
 }
 
