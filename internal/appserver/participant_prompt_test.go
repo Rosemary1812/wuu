@@ -93,7 +93,11 @@ func TestResidentParticipantSystemPromptCarriesConvergedDMIntoGroup(t *testing.T
 		"A common path starts in your DM: investigate with the user, then bring in a",
 		"@ each teammate who should start now",
 		"adding them does not assign work or wake them immediately",
-		"open a Thread from that kickoff and converge only remaining",
+		"open a Thread from YOUR OWN handoff kickoff and converge only",
+		"Teammate replies are\nevidence inside that Thread",
+		"choosing the anchor is an ownership decision",
+		"do not ask a\nroutine 'should I open/promote it?' question",
+		"answer the\nDM with at most one pointer/status line",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("resident prompt missing DM-to-group handoff contract %q:\n%s", want, got)
