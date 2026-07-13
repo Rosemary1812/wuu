@@ -4,12 +4,13 @@ Tagged releases are published by `.github/workflows/release.yml`.
 
 ## Trigger
 
-1. Update `VERSION` and `desktop/package.json` to the release version.
+1. Update `VERSION`, `desktop/package.json`, and `npm/package.json` to the
+   release version.
 2. Commit the version change.
 3. Create and push a matching tag, for example `v0.1.0`.
 
-The workflow refuses to release if the tag, root `VERSION`, and desktop package
-version do not match.
+The workflow refuses to release if the tag, root `VERSION`, desktop package,
+and npm package versions do not match.
 
 Before tagging, `go mod tidy -diff` must succeed without output. CI runs the
 same read-only check; release tooling consumes committed module manifests and
@@ -17,8 +18,8 @@ does not update `go.mod` or `go.sum`.
 
 ## GitHub Secrets
 
-The current release workflow only publishes the macOS Electron desktop preview
-package to GitHub Releases. It requires:
+The current release workflow publishes Go CLI archives and the macOS Electron
+desktop preview package to the same GitHub Release. It requires:
 
 - `GITHUB_TOKEN` (provided by GitHub Actions)
 
@@ -60,15 +61,18 @@ Do not ask users to run this for builds from untrusted sources.
 
 ## Output
 
-The macOS desktop job builds and verifies the unsigned arm64 desktop preview
-app before publishing the GitHub Release. If the desktop job fails, the GitHub
-Release is not created.
+The CLI job builds macOS and Linux archives with GoReleaser, verifies their
+checksums and runs the Linux amd64 binary. The macOS desktop job builds and
+verifies the unsigned arm64 desktop preview app. The GitHub Release is created
+only after both jobs succeed.
 
 The workflow verifies that the packaged core version is clean and that the DMG
 and ZIP are structurally valid.
 
 The final GitHub Release contains:
 
+- `wuu_<version>_<os>_<arch>.tar.gz` for macOS and Linux on amd64 and arm64
+- `checksums.txt`
 - `wuu-<version>-mac-arm64.dmg`
 - `wuu-<version>-mac-arm64.zip`
 - matching `.blockmap` files

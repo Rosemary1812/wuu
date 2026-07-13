@@ -36,7 +36,7 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 
 ## News
 
-- **First desktop package** — the first packaged release is a macOS Electron app on GitHub Releases. CLI installs remain source-based for now.
+- **CLI and desktop packages** — tagged GitHub Releases include verified CLI archives for macOS/Linux and an unsigned macOS Electron preview.
 - **2026-07-10** Tagged **v0.1.0** — the first packaged desktop milestone: unsigned macOS Electron preview builds on GitHub Releases, plus open-source governance in place. See the [CHANGELOG](CHANGELOG.md) for details.
 
 ## Why wuu
@@ -54,7 +54,7 @@ On a real frontend bug in this repository, every run started from the exact same
 ## Install
 
 > [!IMPORTANT]
-> wuu is pre-1.0. The first packaged release is the macOS Electron desktop app on GitHub Releases. CLI installs remain source-based for now. macOS desktop DMG/ZIP assets are currently unsigned preview builds, so macOS may block them until you remove quarantine for a trusted download.
+> wuu is pre-1.0. Tagged GitHub Releases include CLI archives and an unsigned macOS Electron desktop preview. macOS may block the desktop app until you remove quarantine for a trusted download.
 
 Pick **one** install method:
 
@@ -74,6 +74,12 @@ xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.a
 
 ```bash
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest
+```
+
+Or install the latest verified release archive:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh | sh
 ```
 
 Verify the install:

@@ -1,10 +1,17 @@
 {
   "name": "@blueberrycongee/wuu",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "GUI-first AI coding agent backend and CLI tools",
   "license": "MIT",
   "bin": {
     "wuu": "bin/wuu"
+  },
+  "files": [
+    "bin/wuu",
+    "install.js"
+  ],
+  "engines": {
+    "node": ">=22 <23"
   },
   "scripts": {
     "postinstall": "node install.js"

@@ -6,9 +6,66 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  cli:
+    name: CLI archives
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check release version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          core_version="$(cat VERSION)"
+          desktop_version="$(node -p "require('./desktop/package.json').version")"
+          npm_version="$(node -p "require('./npm/package.json').version")"
+          for version in "$core_version" "$desktop_version" "$npm_version"; do
+            if [ "$version" != "$tag_version" ]; then
+              echo "::error::release versions must all match tag ${GITHUB_REF_NAME} (VERSION=${core_version}, desktop=${desktop_version}, npm=${npm_version})"
+              exit 1
+            fi
+          done
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --skip=publish
+
+      - name: Verify CLI archives
+        run: |
+          cd dist
+          sha256sum --check checksums.txt
+          for archive in wuu_*.tar.gz; do
+            test "$(tar -tzf "$archive")" = "wuu"
+          done
+          mkdir smoke
+          tar -xzf "wuu_${GITHUB_REF_NAME#v}_linux_amd64.tar.gz" -C smoke
+          version_output="$(smoke/wuu --version)"
+          echo "$version_output"
+          echo "$version_output" | grep -F "${GITHUB_REF_NAME}"
+          if echo "$version_output" | grep -q dirty; then
+            echo "::error::CLI archive was built from a dirty worktree."
+            exit 1
+          fi
+
+      - name: Upload CLI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli
+          path: |
+            dist/*.tar.gz
+            dist/checksums.txt
+          if-no-files-found: error
+
   desktop-macos:
     name: Desktop macOS
     runs-on: macos-15
@@ -93,8 +150,12 @@ jobs:
 
   release:
     name: GitHub Release
-    needs: desktop-macos
+    needs:
+      - cli
+      - desktop-macos
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -105,14 +166,27 @@ jobs:
           name: desktop-macos-arm64
           path: desktop-release
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: cli
+          path: cli-release
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cat > release-notes.md <<'EOF'
-          # wuu macOS desktop preview
+          # wuu ${GITHUB_REF_NAME}
 
-          This release contains unsigned macOS arm64 preview builds:
+          This release contains command-line archives for macOS and Linux on
+          amd64 and arm64, plus an unsigned macOS arm64 desktop preview.
+
+          CLI archives:
+
+          - `wuu_<version>_<os>_<arch>.tar.gz`
+          - `checksums.txt`
+
+          Desktop preview:
 
           - `wuu-<version>-mac-arm64.dmg`
           - `wuu-<version>-mac-arm64.zip`
@@ -126,7 +200,7 @@ jobs:
 
           EOF
 
-          gh release create "$GITHUB_REF_NAME" desktop-release/* \
+          gh release create "$GITHUB_REF_NAME" cli-release/* desktop-release/* \
             --verify-tag \
             --title "wuu ${GITHUB_REF_NAME}" \
             --notes-file release-notes.md

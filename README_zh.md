@@ -36,7 +36,7 @@
 
 ## 动态
 
-- **第一版桌面安装包** —— 第一版打包发布会在 GitHub Releases 提供 macOS Electron 应用；CLI 目前仍以源码安装为主。
+- **CLI 和桌面安装包** —— 带标签的 GitHub Release 同时提供经过校验的 macOS/Linux CLI 压缩包和未签名的 macOS Electron 预览版。
 - **2026-07-10** 发布 **v0.1.0** —— 第一个打包桌面端里程碑：GitHub Releases 提供未签名 macOS Electron 预览包，同时开源治理文件就位。详见 [CHANGELOG](CHANGELOG.md)。
 
 ## 为什么选 wuu
@@ -54,7 +54,7 @@
 ## 安装
 
 > [!IMPORTANT]
-> wuu 还未到 1.0。第一版打包发布是 GitHub Releases 上的 macOS Electron 桌面应用；CLI 目前仍以源码安装为主。macOS 桌面端 DMG/ZIP 目前仍是未签名预览包，macOS 可能会拦截，确认信任下载来源后需要手动移除 quarantine 标记。
+> wuu 还未到 1.0。带标签的 GitHub Release 同时包含 CLI 压缩包和未签名的 macOS Electron 桌面预览版。macOS 可能会拦截桌面应用，确认信任下载来源后需要手动移除 quarantine 标记。
 
 选择**一种**安装方式：
 
@@ -73,6 +73,12 @@ xattr -dr com.apple.quarantine /Applications/wuu.app && open /Applications/wuu.a
 
 ```bash
 go install github.com/blueberrycongee/wuu/cmd/wuu@latest
+```
+
+也可以安装最新、带校验的 Release 压缩包：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/blueberrycongee/wuu/main/install.sh | sh
 ```
 
 验证安装：

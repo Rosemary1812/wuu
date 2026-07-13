@@ -89,7 +89,7 @@ rm -rf "$TMPDIR"
 
 echo ""
 echo "wuu v${VERSION} installed to ${INSTALL_DIR}/wuu"
-echo "Use the desktop GUI for interactive work, or run 'wuu run \"...\"' for one-shot CLI tasks."
+echo "Use the desktop GUI for interactive work, or run 'wuu exec \"...\"' for one-shot CLI tasks."
 
 # Check if INSTALL_DIR is in PATH.
 case ":$PATH:" in
