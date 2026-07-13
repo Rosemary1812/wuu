@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -136,9 +137,10 @@ func runActionSequence(ctx context.Context, controller Controller, opts Options,
 // desktop app and a one-shot exec process. Group posts from agents deliberately
 // wake idle readers only after the room has been quiet for 30 seconds; keeping
 // the server alive here lets those real timers and resident turns run while
-// their notifications continue to stream as JSONL. The caller chooses the
-// observation window explicitly so scripts pay only for the product behavior
-// they intend to inspect.
+// their notifications continue to stream as JSONL. The caller chooses either
+// a fixed observation window or a bounded until-idle window. The latter reads
+// the same thread, child-agent, and Task state the desktop renders, and fails
+// instead of silently shutting down work that is still active at the deadline.
 func runObserveCollaborationAction(ctx context.Context, controller Controller, opts Options, action GroupAction, vars map[string]string) (map[string]any, error) {
 	params := substituteVars(action.Params, vars)
 	rawDuration := stringParam(params, "duration")
@@ -152,6 +154,26 @@ func runObserveCollaborationAction(ctx context.Context, controller Controller, o
 	if duration > 30*time.Minute {
 		return nil, errors.New("observe_collaboration duration must not exceed 30m")
 	}
+	untilIdle := boolParam(params, "until_idle")
+	if !untilIdle {
+		return observeCollaborationForDuration(ctx, controller, opts, duration)
+	}
+	threadID := stringParam(params, "thread_id")
+	rawSettle := stringParam(params, "settle_for")
+	if rawSettle == "" {
+		return nil, errors.New("observe_collaboration until_idle requires params.settle_for")
+	}
+	settleFor, err := time.ParseDuration(rawSettle)
+	if err != nil || settleFor <= 0 {
+		return nil, fmt.Errorf("observe_collaboration settle_for %q must be a positive Go duration", rawSettle)
+	}
+	if settleFor >= duration {
+		return nil, errors.New("observe_collaboration settle_for must be shorter than duration")
+	}
+	return observeCollaborationUntilIdle(ctx, controller, opts, threadID, duration, settleFor)
+}
+
+func observeCollaborationForDuration(ctx context.Context, controller Controller, opts Options, duration time.Duration) (map[string]any, error) {
 
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
@@ -192,6 +214,168 @@ func runObserveCollaborationAction(ctx context.Context, controller Controller, o
 			}
 		}
 	}
+}
+
+type collaborationActivity struct {
+	activeAgents int
+	activeTasks  int
+}
+
+func observeCollaborationUntilIdle(ctx context.Context, controller Controller, opts Options, threadID string, duration, settleFor time.Duration) (map[string]any, error) {
+	started := time.Now()
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	pollEvery := settleFor / 4
+	if pollEvery < 10*time.Millisecond {
+		pollEvery = 10 * time.Millisecond
+	}
+	if pollEvery > 500*time.Millisecond {
+		pollEvery = 500 * time.Millisecond
+	}
+	poll := time.NewTicker(pollEvery)
+	defer poll.Stop()
+	notifications := controller.Notifications()
+	participantMessages := 0
+	agentUpdates := 0
+	state := runState{status: "observing"}
+	activity, err := inspectCollaborationActivity(ctx, controller, threadID)
+	if err != nil {
+		return nil, err
+	}
+	idleSince := time.Time{}
+	if activity.activeAgents == 0 && activity.activeTasks == 0 {
+		idleSince = time.Now()
+	}
+	result := func(status string) map[string]any {
+		return map[string]any{
+			"status":               status,
+			"duration_ms":          time.Since(started).Milliseconds(),
+			"participant_messages": participantMessages,
+			"agent_updates":        agentUpdates,
+			"active_agents":        activity.activeAgents,
+			"active_tasks":         activity.activeTasks,
+		}
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timer.C:
+			activity, err = inspectCollaborationActivity(ctx, controller, threadID)
+			if err != nil {
+				return nil, err
+			}
+			scope := "workspace collaboration"
+			if threadID != "" {
+				scope = fmt.Sprintf("collaboration %q", threadID)
+			}
+			return nil, fmt.Errorf("%s is still active after %s (active_agents=%d active_tasks=%d)",
+				scope, duration, activity.activeAgents, activity.activeTasks)
+		case notification, ok := <-notifications:
+			if !ok {
+				return nil, errors.New("app-server notification stream closed while observing collaboration")
+			}
+			if notification.Method == appserver.NotificationItemCompleted {
+				var item appserver.ItemCompletedNotification
+				if err := decodeNotification(notification, &item); err != nil {
+					return nil, err
+				}
+				if item.Item.Type == appserver.ThreadItemParticipantMsg {
+					participantMessages++
+				}
+			}
+			if notification.Method == appserver.NotificationAgentUpdated {
+				agentUpdates++
+			}
+			if _, err := handleNotification(opts, notification, &state); err != nil {
+				return nil, err
+			}
+			if notificationBelongsToThread(notification, threadID) {
+				idleSince = time.Time{}
+			}
+		case <-poll.C:
+			activity, err = inspectCollaborationActivity(ctx, controller, threadID)
+			if err != nil {
+				return nil, err
+			}
+			if activity.activeAgents > 0 || activity.activeTasks > 0 {
+				idleSince = time.Time{}
+				continue
+			}
+			if idleSince.IsZero() {
+				idleSince = time.Now()
+				continue
+			}
+			if time.Since(idleSince) >= settleFor {
+				return result("quiescent"), nil
+			}
+		}
+	}
+}
+
+func inspectCollaborationActivity(ctx context.Context, controller Controller, threadID string) (collaborationActivity, error) {
+	var listed appserver.ThreadListResult
+	if err := controller.Call(ctx, appserver.MethodThreadList, appserver.ThreadListParams{}, &listed); err != nil {
+		return collaborationActivity{}, fmt.Errorf("inspect collaboration thread: %w", err)
+	}
+	found := threadID == ""
+	activity := collaborationActivity{}
+	observedThreads := make([]string, 0, 1)
+	for _, thread := range listed.Threads {
+		id := strings.TrimSpace(thread.ID)
+		if threadID != "" && id != threadID {
+			continue
+		}
+		if threadID == "" && !thread.Group {
+			continue
+		}
+		found = true
+		observedThreads = append(observedThreads, id)
+		for _, agent := range thread.ChildAgents {
+			switch strings.TrimSpace(agent.Status) {
+			case "pending", "queued", "running":
+				activity.activeAgents++
+			}
+		}
+		if threadID != "" {
+			break
+		}
+	}
+	if !found {
+		return collaborationActivity{}, fmt.Errorf("observe_collaboration target thread %q was not found", threadID)
+	}
+	for _, observedThreadID := range observedThreads {
+		var subs appserver.ThreadListSubResult
+		if err := controller.Call(ctx, appserver.MethodThreadListSub, appserver.ThreadListSubParams{ThreadID: observedThreadID}, &subs); err != nil {
+			return collaborationActivity{}, fmt.Errorf("inspect collaboration tasks: %w", err)
+		}
+		for _, sub := range subs.Subthreads {
+			if strings.TrimSpace(sub.Status) != "task" {
+				continue
+			}
+			switch strings.TrimSpace(sub.ExecState) {
+			case "blocked", "needs_human", "completed", "failed":
+				continue
+			default:
+				activity.activeTasks++
+			}
+		}
+	}
+	return activity, nil
+}
+
+func notificationBelongsToThread(notification Notification, threadID string) bool {
+	if threadID == "" {
+		return true
+	}
+	var params struct {
+		ThreadID string `json:"thread_id"`
+	}
+	if err := json.Unmarshal(notification.Params, &params); err != nil {
+		return true
+	}
+	got := strings.TrimSpace(params.ThreadID)
+	return got == "" || got == threadID
 }
 
 // runUserTurnAction exercises the same turn/start path used by the desktop
@@ -613,6 +797,20 @@ func stringParam(params map[string]any, key string) string {
 	}
 	value, _ := params[key].(string)
 	return strings.TrimSpace(value)
+}
+
+func boolParam(params map[string]any, key string) bool {
+	if params == nil {
+		return false
+	}
+	switch value := params[key].(type) {
+	case bool:
+		return value
+	case string:
+		return strings.EqualFold(strings.TrimSpace(value), "true")
+	default:
+		return false
+	}
 }
 
 func emitActionStarted(opts Options, index int, action string) {

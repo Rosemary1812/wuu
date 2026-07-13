@@ -365,6 +365,18 @@ Actions split by how they reach the app server:
   exec process would otherwise exit first. For example,
   `{ "action": "observe_collaboration", "params": { "duration": "75s" } }`
   observes two quiet-room windows without changing collaboration behavior.
+  For end-to-end Task runs, add `until_idle` and an explicit quiet window:
+  `{ "action": "observe_collaboration", "params": {
+  "duration": "10m", "until_idle": true, "settle_for": "35s",
+  "thread_id": "$group" } }`. `thread_id` is optional: omit it when a DM agent
+  creates the group internally and exec must discover every group opened in
+  the local app-server. Here `duration` is a hard upper bound. The
+  action returns early with `status: "quiescent"` only after the target has no
+  pending/running named agents or active Tasks for the whole `settle_for`
+  window. If the deadline arrives first, the action fails instead of reporting
+  success and shutting down an in-flight local app server. A quiet window over
+  30 seconds also covers the product's delayed idle-reader wake; scripts that
+  mention every collaborator directly can use a shorter explicit window.
 
 Notes for scripting named turns:
 

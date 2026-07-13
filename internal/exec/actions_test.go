@@ -235,6 +235,115 @@ func TestObserveCollaborationRequiresExplicitDuration(t *testing.T) {
 	}
 }
 
+func TestObserveCollaborationUntilIdleReturnsAfterTargetSettles(t *testing.T) {
+	controller := newFakeController()
+	controller.callResults = map[string]json.RawMessage{
+		appserver.MethodThreadList:    json.RawMessage(`{"threads":[{"id":"group-1","child_agents":[{"id":"worker-1","status":"completed"}]}]}`),
+		appserver.MethodThreadListSub: json.RawMessage(`{"subthreads":[{"id":"cth-1","status":"resolved","exec_state":"completed"}]}`),
+	}
+	var stdout bytes.Buffer
+
+	err := Run(context.Background(), Options{
+		JSON:       true,
+		Stdout:     &stdout,
+		Controller: controller,
+		Actions: []GroupAction{{
+			Action: "observe_collaboration",
+			Params: map[string]any{
+				"duration":   "1s",
+				"until_idle": true,
+				"settle_for": "20ms",
+				"thread_id":  "group-1",
+			},
+			Expect: map[string]any{
+				"status":        "quiescent",
+				"active_agents": float64(0),
+				"active_tasks":  float64(0),
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v\n%s", err, stdout.String())
+	}
+	if !calledMethod(controller.calls, appserver.MethodThreadList) || !calledMethod(controller.calls, appserver.MethodThreadListSub) {
+		t.Fatalf("observation did not inspect live collaboration state: %+v", controller.calls)
+	}
+}
+
+func TestObserveCollaborationUntilIdleFailsInsteadOfStoppingActiveWork(t *testing.T) {
+	controller := newFakeController()
+	controller.callResults = map[string]json.RawMessage{
+		appserver.MethodThreadList:    json.RawMessage(`{"threads":[{"id":"group-1","child_agents":[{"id":"worker-1","status":"running"}]}]}`),
+		appserver.MethodThreadListSub: json.RawMessage(`{"subthreads":[{"id":"cth-1","status":"task","exec_state":"executing"}]}`),
+	}
+
+	err := Run(context.Background(), Options{
+		Controller: controller,
+		Actions: []GroupAction{{
+			Action: "observe_collaboration",
+			Params: map[string]any{
+				"duration":   "30ms",
+				"until_idle": true,
+				"settle_for": "5ms",
+				"thread_id":  "group-1",
+			},
+		}},
+	})
+	if ExitCode(err) != ExitTurnFailed || !strings.Contains(err.Error(), "still active") {
+		t.Fatalf("err = %v (exit %d), want active collaboration failure", err, ExitCode(err))
+	}
+}
+
+func TestObserveCollaborationUntilIdleRequiresSettleWindow(t *testing.T) {
+	err := Run(context.Background(), Options{
+		Controller: newFakeController(),
+		Actions: []GroupAction{{
+			Action: "observe_collaboration",
+			Params: map[string]any{"duration": "1s", "until_idle": true, "thread_id": "group-1"},
+		}},
+	})
+	if ExitCode(err) != ExitTurnFailed || !strings.Contains(err.Error(), "settle_for") {
+		t.Fatalf("err = %v (exit %d), want settle_for validation", err, ExitCode(err))
+	}
+}
+
+func TestObserveCollaborationUntilIdleCanDiscoverGroupCreatedInsideDM(t *testing.T) {
+	controller := newFakeController()
+	controller.callResults = map[string]json.RawMessage{
+		appserver.MethodThreadList:    json.RawMessage(`{"threads":[{"id":"dm-1","group":false},{"id":"group-from-dm","group":true,"child_agents":[{"id":"worker-1","status":"completed"}]}]}`),
+		appserver.MethodThreadListSub: json.RawMessage(`{"subthreads":[{"id":"cth-1","status":"resolved","exec_state":"completed"}]}`),
+	}
+
+	err := Run(context.Background(), Options{
+		Controller: controller,
+		Actions: []GroupAction{{
+			Action: "observe_collaboration",
+			Params: map[string]any{"duration": "1s", "until_idle": true, "settle_for": "20ms"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, call := range controller.calls {
+		if call.method != appserver.MethodThreadListSub {
+			continue
+		}
+		params := decodeCallParams(t, call.params)
+		if params["thread_id"] != "group-from-dm" {
+			t.Fatalf("global observation inspected wrong thread: %+v", params)
+		}
+	}
+}
+
+func calledMethod(calls []recordedCall, method string) bool {
+	for _, call := range calls {
+		if call.method == method {
+			return true
+		}
+	}
+	return false
+}
+
 // A failed per-step expectation aborts the sequence with a tool-failed exit and
 // emits an action_failed event.
 func TestRunActionSequenceExpectMismatchFails(t *testing.T) {
