@@ -91,6 +91,11 @@ func ApplyToolResultProjections(messages []ChatMessage) []ChatMessage {
 				images = append(images, projected.ObservationImages...)
 				files = append(files, projected.ObservationFiles...)
 			}
+			if strings.TrimSpace(msg.Content) == "" {
+				// Older persisted tool messages may not have rich result data.
+				// Keep those histories valid for providers that require output.
+				msg.Content = emptyToolResultText
+			}
 			out = append(out, msg)
 			index++
 		}

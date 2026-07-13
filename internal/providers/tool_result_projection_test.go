@@ -44,6 +44,20 @@ func TestProjectToolResultProvidesTextForEmptySuccess(t *testing.T) {
 	}
 }
 
+func TestPrepareMessagesProvidesTextForLegacyEmptyToolMessage(t *testing.T) {
+	prepared, err := PrepareMessagesForModelRequest("gpt-5", []ChatMessage{
+		{Role: "user", Content: "act"},
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "call-1", Name: "computer"}}},
+		{Role: "tool", ToolCallID: "call-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareMessagesForModelRequest: %v", err)
+	}
+	if prepared[2].Content != emptyToolResultText {
+		t.Fatalf("legacy empty tool content = %q, want %q", prepared[2].Content, emptyToolResultText)
+	}
+}
+
 func TestPrepareMessagesPlacesObservationsAfterContiguousToolResults(t *testing.T) {
 	imageResult := toolresult.Result{Content: []toolresult.ContentPart{{Type: "image", Data: "aW1hZ2U=", MIMEType: "image/png"}}}
 	fileResult := toolresult.Result{Content: []toolresult.ContentPart{{Type: "file", Data: "ZmlsZQ==", MIMEType: "application/pdf", Name: "report.pdf"}}}
