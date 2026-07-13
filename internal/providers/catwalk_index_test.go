@@ -14,9 +14,9 @@ func TestBuildCatwalkIndex_SkipsEmptyAndZero(t *testing.T) {
 			Name: "test",
 			Models: []catwalk.Model{
 				{ID: "good-model", ContextWindow: 200_000},
-				{ID: "", ContextWindow: 100_000},        // empty id
-				{ID: "no-window", ContextWindow: 0},     // zero window
-				{ID: "negative", ContextWindow: -1},     // negative
+				{ID: "", ContextWindow: 100_000},    // empty id
+				{ID: "no-window", ContextWindow: 0}, // zero window
+				{ID: "negative", ContextWindow: -1}, // negative
 			},
 		},
 	})

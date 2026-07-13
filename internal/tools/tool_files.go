@@ -1183,10 +1183,10 @@ func (t *EditFileTool) ValidateInput(argsJSON string) error {
 
 func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, error) {
 	var args struct {
-		Path           string `json:"path"`
-		OldText        string `json:"old_text"`
-		NewText        string `json:"new_text"`
-		ReplaceAll     bool   `json:"replace_all"`
+		Path       string `json:"path"`
+		OldText    string `json:"old_text"`
+		NewText    string `json:"new_text"`
+		ReplaceAll bool   `json:"replace_all"`
 	}
 	if err := decodeArgs(argsJSON, &args); err != nil {
 		return "", err

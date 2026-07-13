@@ -104,14 +104,15 @@ func parseOrientationFromTIFF(tiff []byte) uint16 {
 // model API honors it.
 //
 // Values 1-8 follow the EXIF spec:
-//   1 = normal                          (identity)
-//   2 = flip horizontal                 (mirror left-right)
-//   3 = rotate 180                      (identity, but inverted)
-//   4 = flip vertical                   (mirror top-bottom)
-//   5 = transpose                       (mirror along main diagonal: width/height swap)
-//   6 = rotate 90 CW                    (width/height swap; most common for phone photos)
-//   7 = transverse                      (mirror along anti-diagonal: width/height swap)
-//   8 = rotate 270 CW (a.k.a. 90 CCW)   (width/height swap)
+//
+//	1 = normal                          (identity)
+//	2 = flip horizontal                 (mirror left-right)
+//	3 = rotate 180                      (identity, but inverted)
+//	4 = flip vertical                   (mirror top-bottom)
+//	5 = transpose                       (mirror along main diagonal: width/height swap)
+//	6 = rotate 90 CW                    (width/height swap; most common for phone photos)
+//	7 = transverse                      (mirror along anti-diagonal: width/height swap)
+//	8 = rotate 270 CW (a.k.a. 90 CCW)   (width/height swap)
 //
 // Values outside 1..8 are treated as identity. The returned image has its
 // origin at (0, 0) regardless of the source's bounds.

@@ -1511,8 +1511,8 @@ func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	if rt.StreamRunner.APIModel != "gpt-5.5" {
 		t.Fatalf("runtime APIModel not updated: %q", rt.StreamRunner.APIModel)
 	}
-	if !strings.Contains(rt.StreamRunner.SystemPrompt, "Provider/model: fake-provider/gpt-5.5") ||
-		!strings.Contains(rt.StreamRunner.SystemPrompt, "same product regardless of provider, model family, or BYOK backend") ||
+	if !strings.Contains(rt.StreamRunner.SystemPrompt, "[Tool surface: openai_gpt]") ||
+		!strings.Contains(rt.StreamRunner.SystemPrompt, "editing primitive is apply_patch") ||
 		strings.Contains(rt.StreamRunner.SystemPrompt, "fake-model") {
 		t.Fatalf("runtime system prompt not rebuilt for model profile:\n%s", rt.StreamRunner.SystemPrompt)
 	}
@@ -1532,7 +1532,8 @@ func TestServerConfigModelUpdateReconfiguresEditTools(t *testing.T) {
 	}
 	if len(thread.History) < 2 ||
 		thread.History[0].Role != "system" ||
-		!strings.Contains(thread.History[0].Content, "Provider/model: fake-provider/gpt-5.5") ||
+		!strings.Contains(thread.History[0].Content, "[Tool surface: openai_gpt]") ||
+		!strings.Contains(thread.History[0].Content, "editing primitive is apply_patch") ||
 		strings.Contains(thread.History[0].Content, "old fake-model system prompt") {
 		t.Fatalf("idle thread system prompt not replaced: %+v", thread.History)
 	}

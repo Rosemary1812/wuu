@@ -108,11 +108,11 @@ type Error struct {
 type ErrorKind int
 
 const (
-	KindUnknown ErrorKind = iota
-	KindDecode            // format recognized but decode failed (corrupt/truncated)
-	KindUnsupportedFormat // HEIC, AVIF, TIFF, animated GIF, anything we cannot forward
-	KindEncode            // re-encoding failed (rare)
-	KindTooLarge          // input bytes exceed the sanity guard
+	KindUnknown           ErrorKind = iota
+	KindDecode                      // format recognized but decode failed (corrupt/truncated)
+	KindUnsupportedFormat           // HEIC, AVIF, TIFF, animated GIF, anything we cannot forward
+	KindEncode                      // re-encoding failed (rare)
+	KindTooLarge                    // input bytes exceed the sanity guard
 )
 
 func (e *Error) Error() string {
@@ -390,9 +390,9 @@ func scaleToFit(width, height, maxDim uint32) (uint32, uint32) {
 		return width, height
 	}
 	if width >= height {
-		return maxDim, max1(uint32(uint64(height)*uint64(maxDim) / uint64(width)))
+		return maxDim, max1(uint32(uint64(height) * uint64(maxDim) / uint64(width)))
 	}
-	return max1(uint32(uint64(width)*uint64(maxDim) / uint64(height))), maxDim
+	return max1(uint32(uint64(width) * uint64(maxDim) / uint64(height))), maxDim
 }
 
 // patchBasedDimensions matches the math Codex uses to honor OpenAI's patch

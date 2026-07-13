@@ -42,14 +42,14 @@ func NewLocalAppServerController(ctx context.Context, opts Options) (Controller,
 		configLoadMode = runtime.ConfigLoadProject
 	}
 	rt, err := runtime.NewSession(runtime.Options{
-		RootDir:       rootDir,
-		HomeDir:       homeDir,
-		ConfigPath:    configPath,
+		RootDir:        rootDir,
+		HomeDir:        homeDir,
+		ConfigPath:     configPath,
 		ConfigLoadMode: configLoadMode,
-		Config:        cfg,
-		ProviderName:  opts.Provider,
-		ModelOverride: opts.Model,
-		NoTools:       opts.NoTools,
+		Config:         cfg,
+		ProviderName:   opts.Provider,
+		ModelOverride:  opts.Model,
+		NoTools:        opts.NoTools,
 	})
 	if err != nil {
 		return nil, err

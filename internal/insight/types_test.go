@@ -19,7 +19,7 @@ import (
 // input_tokens_include_cache_read.
 func TestModelUsage_NormalizedInclusiveInputPreservesHitRate(t *testing.T) {
 	const (
-		freshInput = 19_600  // real prompt tokens this round
+		freshInput = 19_600 // real prompt tokens this round
 		cacheRead  = 113_000
 		output     = 2_000
 	)

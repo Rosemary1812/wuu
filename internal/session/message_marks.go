@@ -128,7 +128,7 @@ DO UPDATE SET status = excluded.status, payload = excluded.payload, thread_id = 
 }
 
 // MarkMessageSeen records/advances a read receipt for one (message, agent).
-// threadTag is the reply subthread the seen message belongs to ('' for main
+// threadTag is the reply subthread the seen message belongs to (” for main
 // stream, cth-* for a reply subthread), so per-cth read cursors stay separable
 // from the main-stream cursor.
 func MarkMessageSeen(sessDir, sessionID string, seq int, participantID, status, threadTag string, at time.Time) error {
@@ -166,7 +166,7 @@ func SetMessageReaction(sessDir, sessionID string, seq int, participantID, react
 // ListMessageMarks returns every mark in a thread (both seen and reaction
 // rows), ordered by message then time. The caller aggregates for display.
 // ThreadReadWatermark is the durable read cursor for one participant in the
-// MAIN stream of one thread: the highest main-stream (thread_id = '') message
+// MAIN stream of one thread: the highest main-stream (thread_id = ”) message
 // seq they have a seen receipt for. It is the single source of truth for "how
 // far has this agent read this thread's main stream", shared by the held-draft
 // freshness check (has the main stream moved past what I read) and pull-style
@@ -180,7 +180,7 @@ func ThreadReadWatermark(sessDir, sessionID, participantID string) (int, error) 
 
 // ThreadReadWatermarkScoped is the durable read cursor for one participant
 // within a single scope of a thread: the highest seq of a seen message whose
-// thread_id tag equals threadTag ('' = main stream, cth-* = one reply
+// thread_id tag equals threadTag (” = main stream, cth-* = one reply
 // subthread). It gives every reply subthread its own cursor sharing the
 // parent's seq space: a cth read advances only the cth's watermark, a main read
 // only the main watermark, so the two never interfere. Returns 0 when the
@@ -213,7 +213,7 @@ WHERE session_id = ? AND participant_id = ? AND kind = ? AND thread_id = ?`,
 // MarkMessageMention records that message `seq` in a thread @-addressed
 // `participantID`. Written by routing at delivery time so the pull inbox can
 // rebuild the addressed flag. threadTag is the scope the mention was routed in
-// ('' for main stream, cth-* for a reply subthread), carried on the row for the
+// (” for main stream, cth-* for a reply subthread), carried on the row for the
 // same reason seen marks carry it. Idempotent (upsert).
 func MarkMessageMention(sessDir, sessionID string, seq int, participantID, threadTag string, at time.Time) error {
 	return UpsertMessageMark(sessDir, MessageMark{

@@ -50,12 +50,12 @@ func makeJPEGWithExif(t *testing.T, orientation uint16) []byte {
 	//   12 bytes for the Orientation entry
 	//   4 bytes next-IFD offset (=0)
 	tiff := []byte{
-		'I', 'I',             // byte order
-		0x2A, 0x00,           // TIFF magic
+		'I', 'I', // byte order
+		0x2A, 0x00, // TIFF magic
 		0x08, 0x00, 0x00, 0x00, // IFD0 offset (relative to TIFF start)
-		0x01, 0x00,           // numEntries
-		0x12, 0x01,           // tag 0x0112 = Orientation
-		0x03, 0x00,           // type SHORT
+		0x01, 0x00, // numEntries
+		0x12, 0x01, // tag 0x0112 = Orientation
+		0x03, 0x00, // type SHORT
 		0x01, 0x00, 0x00, 0x00, // count 1
 		byte(orientation), byte(orientation >> 8), 0x00, 0x00, // value
 		0x00, 0x00, 0x00, 0x00, // next IFD = none
@@ -145,7 +145,7 @@ func makeLabeledImage(w, h int) *image.RGBA {
 		for x := 0; x < w; x++ {
 			// R = (y*W + x + 1); never zero so we can tell it from
 			// zeroed-out pixels at a glance.
-			img.SetRGBA(x, y, color.RGBA{R: uint8(y*w+x+1), A: 255})
+			img.SetRGBA(x, y, color.RGBA{R: uint8(y*w + x + 1), A: 255})
 		}
 	}
 	return img

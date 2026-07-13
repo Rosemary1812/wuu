@@ -21,4 +21,3 @@ func TestNewIDPrefix(t *testing.T) {
 		t.Errorf("NewID() = %q, want prt- prefix and length 20", id)
 	}
 }
-

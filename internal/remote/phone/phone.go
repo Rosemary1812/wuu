@@ -174,22 +174,22 @@ type Client struct {
 	reconnectMin time.Duration
 	reconnectMax time.Duration
 
-	mu          sync.Mutex
-	ws          *websocket.Conn
-	channel     *secure.Channel
-	pendingHS   *secure.Handshake
-	attached    bool
-	contID      string
-	lastRecv    uint64
-	ackDirty    bool
-	proto       *exec.ProtocolClient
-	protoFeed   *io.PipeWriter
-	state       *HostState
-	waiters     []chan struct{}
-	stateCh     chan HostState
-	attachCh    chan AttachEvent
-	writeMu     sync.Mutex
-	runCtx      context.Context
+	mu        sync.Mutex
+	ws        *websocket.Conn
+	channel   *secure.Channel
+	pendingHS *secure.Handshake
+	attached  bool
+	contID    string
+	lastRecv  uint64
+	ackDirty  bool
+	proto     *exec.ProtocolClient
+	protoFeed *io.PipeWriter
+	state     *HostState
+	waiters   []chan struct{}
+	stateCh   chan HostState
+	attachCh  chan AttachEvent
+	writeMu   sync.Mutex
+	runCtx    context.Context
 }
 
 func NewClient(creds *Credentials, opts Options) (*Client, error) {

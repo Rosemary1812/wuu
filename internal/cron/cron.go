@@ -36,11 +36,11 @@ func ParseCronExpression(input string) (CronExpression, error) {
 }
 
 var fieldBounds = [5]struct{ min, max int }{
-	{0, 59},  // minute
-	{0, 23},  // hour
-	{1, 31},  // day of month
-	{1, 12},  // month
-	{0, 7},   // day of week (7 = Sunday, mapped to 0)
+	{0, 59}, // minute
+	{0, 23}, // hour
+	{1, 31}, // day of month
+	{1, 12}, // month
+	{0, 7},  // day of week (7 = Sunday, mapped to 0)
 }
 
 func isValidCronField(field string, position int) bool {
