@@ -243,7 +243,10 @@ func (c *Client) responsesWebSocketConnectionLocked(ctx context.Context, session
 		headers.Set(k, v)
 	}
 	headers.Set("OpenAI-Beta", CodexWebSocketBetaTag)
-	conn, err := (CodexWebSocketDialer{ConnectTimeout: c.streamConfig.ConnectTimeout}).dialCodexWebSocket(ctx, wsURL, headers)
+	conn, err := (CodexWebSocketDialer{
+		ConnectTimeout: c.streamConfig.ConnectTimeout,
+		HTTPClient:     newStreamingHTTPClient(c.httpClient, c.streamConfig),
+	}).dialCodexWebSocket(ctx, wsURL, headers)
 	if err != nil {
 		return nil, 0, false, err
 	}
@@ -336,6 +339,22 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 	var responseID string
 	var responseItems []responsesInputItem
 
+	// Idle watchdog, matching the SSE readers: the pump reads the connection
+	// with no deadline, so a half-open connection (NAT expiry, silently killed
+	// cached connection) would otherwise hang this request forever. The timer
+	// also bounds the wait for the first frame after a write that landed in a
+	// dead connection's kernel buffer. Firing is routed through the regular
+	// frame.err path, which closes the connection (unblocking the pump) and
+	// falls back to SSE before the first provider event.
+	idleTimeout := c.streamConfig.IdleTimeout
+	var idleC <-chan time.Time
+	var idleTimer *time.Timer
+	if idleTimeout > 0 {
+		idleTimer = time.NewTimer(idleTimeout)
+		defer idleTimer.Stop()
+		idleC = idleTimer.C
+	}
+
 	for {
 		var frame responsesWebSocketReadEvent
 		var ok bool
@@ -349,6 +368,18 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			emit.Send(providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()})
 			return
 		case frame, ok = <-readCh:
+			if idleTimer != nil {
+				if !idleTimer.Stop() {
+					select {
+					case <-idleTimer.C:
+					default:
+					}
+				}
+				idleTimer.Reset(idleTimeout)
+			}
+		case <-idleC:
+			frame.err = fmt.Errorf("websocket stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)
+			ok = true
 		}
 		if !ok && frame.err == nil {
 			session.mu.Lock()

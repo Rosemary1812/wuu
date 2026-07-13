@@ -1907,3 +1907,84 @@ func drainStreamProviderStates(ch <-chan providers.StreamEvent) ([]providers.Pro
 	}
 	return states, nil
 }
+
+func TestResponsesStreamChatWebSocket_IdleWatchdogAbortsSilentStream(t *testing.T) {
+	connClosed := make(chan struct{})
+	testDone := make(chan struct{})
+	defer close(testDone)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		defer close(connClosed)
+		defer conn.Close(websocket.StatusNormalClosure, "")
+
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		readWSRequest(t, ctx, conn, make(chan map[string]any, 1))
+		writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}`)
+		// Go silent: never send another frame, never close. The client-side
+		// idle watchdog must abort; without it this stream hangs forever.
+		select {
+		case <-ctx.Done():
+		case <-testDone:
+		}
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{
+		BaseURL:            server.URL,
+		WireAPI:            "responses",
+		APIKey:             "test-key",
+		ResponsesTransport: providers.StreamTransportWebSocket,
+		StreamConfig:       &providers.StreamTransportConfig{IdleTimeout: 150 * time.Millisecond},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:     "gpt-test",
+		Messages:  []providers.ChatMessage{{Role: "user", Content: "hello"}},
+		CacheHint: &providers.CacheHint{PromptCacheKey: "thread-idle-watchdog"},
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+
+	type outcome struct {
+		events []providers.StreamEvent
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		var events []providers.StreamEvent
+		for ev := range ch {
+			events = append(events, ev)
+		}
+		done <- outcome{events: events}
+	}()
+
+	select {
+	case result := <-done:
+		if len(result.events) == 0 {
+			t.Fatal("no events received")
+		}
+		final := result.events[len(result.events)-1]
+		if final.Type != providers.EventError || final.Error == nil {
+			t.Fatalf("final event = %+v, want EventError from idle watchdog", final)
+		}
+		if !strings.Contains(final.Error.Error(), "idle timeout") {
+			t.Fatalf("error = %v, want websocket idle timeout", final.Error)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("websocket stream hung on a silent connection despite idle watchdog")
+	}
+
+	select {
+	case <-connClosed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("dead connection was not closed after watchdog fired")
+	}
+}

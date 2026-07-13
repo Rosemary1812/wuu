@@ -48,6 +48,11 @@ type CodexWebSocketDialer struct {
 	// ConnectTimeout bounds dial + TLS + upgrade handshake. Zero defers
 	// to the caller's context deadline only.
 	ConnectTimeout time.Duration
+	// HTTPClient performs the upgrade handshake, so the connection honors the
+	// configured proxy, custom CA, and other transport settings instead of
+	// silently dialing through http.DefaultClient. Nil falls back to the
+	// library default.
+	HTTPClient *http.Client
 }
 
 // Opens a Responses-over-WebSocket connection using the standard upgrade
@@ -86,6 +91,7 @@ func (d CodexWebSocketDialer) dialCodexWebSocket(
 
 	conn, resp, err := websocket.Dial(dialCtx, wsURL, &websocket.DialOptions{
 		HTTPHeader: headers,
+		HTTPClient: d.HTTPClient,
 	})
 	if err != nil {
 		if resp != nil {
