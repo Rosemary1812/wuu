@@ -579,3 +579,26 @@ func jsonString(value string) string {
 	data, _ := json.Marshal(value)
 	return string(data)
 }
+
+func TestCodexProviderScopeSurvivesTokenRefresh(t *testing.T) {
+	first := codexProviderScope("https://chatgpt.com/backend-api/codex", credentials{
+		accessToken: "old-secret-token",
+		accountID:   "account-1",
+	})
+	refreshed := codexProviderScope("https://chatgpt.com/backend-api/codex", credentials{
+		accessToken: "new-secret-token",
+		accountID:   "account-1",
+	})
+	other := codexProviderScope("https://chatgpt.com/backend-api/codex", credentials{
+		accessToken: "other-secret-token",
+		accountID:   "account-2",
+	})
+	if first != refreshed || first == other {
+		t.Fatalf("scopes = %q / %q / %q", first, refreshed, other)
+	}
+	for _, secret := range []string{"old-secret-token", "new-secret-token", "account-1"} {
+		if strings.Contains(string(first), secret) {
+			t.Fatalf("scope leaked %q: %q", secret, first)
+		}
+	}
+}

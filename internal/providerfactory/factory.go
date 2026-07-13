@@ -233,6 +233,7 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 				RetryConfig:           retry,
 				StreamConfig:          providerStreamTransportConfig(provider),
 				StreamTransport:       providerStreamTransportMode(provider),
+				Coordinator:           sharedProviderCoordinator,
 				ReuseCodexCredentials: provider.ReuseCodexCredentials,
 			})
 			if newErr != nil {

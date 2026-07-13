@@ -30,6 +30,7 @@ type ClientConfig struct {
 	RetryConfig           *providers.RetryConfig
 	StreamConfig          *providers.StreamTransportConfig
 	StreamTransport       providers.StreamTransportMode
+	Coordinator           *providers.ProviderCoordinator
 	ReuseCodexCredentials bool
 }
 
@@ -43,6 +44,7 @@ type Client struct {
 	retryConfig     *providers.RetryConfig
 	streamConfig    *providers.StreamTransportConfig
 	streamTransport providers.StreamTransportMode
+	coordinator     *providers.ProviderCoordinator
 	wsCache         *openai.ResponsesWebSocketCache
 }
 
@@ -80,6 +82,7 @@ func New(cfg ClientConfig) (*Client, error) {
 		retryConfig:     cfg.RetryConfig,
 		streamConfig:    cfg.StreamConfig,
 		streamTransport: streamTransport,
+		coordinator:     cfg.Coordinator,
 		wsCache:         openai.NewResponsesWebSocketCache(),
 	}, nil
 }
@@ -208,6 +211,7 @@ func (c *Client) openAIClient(ctx context.Context, forceRefresh bool) (*openai.C
 		}
 	}
 	store := false
+	providerScope := codexProviderScope(c.baseURL, creds)
 	client, err := openai.New(openai.ClientConfig{
 		BaseURL:                 c.baseURL,
 		WireAPI:                 "responses",
@@ -219,11 +223,23 @@ func (c *Client) openAIClient(ctx context.Context, forceRefresh bool) (*openai.C
 		ResponsesStore:          &store,
 		ResponsesTransport:      c.streamTransport,
 		ResponsesWebSocketCache: c.wsCache,
+		Coordinator:             c.coordinator,
+		ProviderScope:           providerScope,
 	})
 	if err != nil {
 		return nil, credentials{}, err
 	}
 	return client, creds, nil
+}
+
+func codexProviderScope(baseURL string, creds credentials) providers.ProviderScope {
+	// Account ID survives access-token refresh, so prefer it as the private
+	// identity. Explicit opaque tokens without an account claim still get an
+	// isolated scope through their keyed credential fingerprint.
+	if accountID := strings.TrimSpace(creds.accountID); accountID != "" {
+		return providers.NewProviderScope(baseURL, "", accountID)
+	}
+	return providers.NewProviderScope(baseURL, creds.accessToken, "")
 }
 
 func parseModels(data []byte) ([]ModelInfo, error) {

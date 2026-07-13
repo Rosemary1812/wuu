@@ -118,25 +118,33 @@ func (c *Client) responsesStreamChatWebSocketAttempt(ctx context.Context, payloa
 	if err != nil {
 		return nil, err
 	}
+	// Admission may wait on a shared cooldown. Do it before taking the
+	// session mutex so one rate-limited account cannot freeze connection
+	// cleanup, fallback state, or another session's cancellation.
+	lease, err := c.coordinator.AcquireForAttempt(ctx, c.providerScope, payload.Attempt)
+	if err != nil {
+		return nil, err
+	}
 	session := c.responsesWSCache.session(sessionID)
 	session.mu.Lock()
 	c.responsesWebSocketCancelIdleTimerLocked(session)
 	if session.fallback.active {
 		reason := session.fallback.reason
 		session.mu.Unlock()
+		lease.Release()
 		return nil, newResponsesWebSocketFallbackError(reason, nil)
 	}
 	if session.busy {
 		session.mu.Unlock()
 		transient := &responsesWebSocketSession{id: sessionID}
 		transient.mu.Lock()
-		return c.responsesStreamChatWebSocketWithSessionLocked(ctx, transient, session, wsURL, payload, transport, false, allowConnectionLimitRetry)
+		return c.responsesStreamChatWebSocketWithSessionLocked(ctx, transient, session, wsURL, payload, transport, false, allowConnectionLimitRetry, lease)
 	}
 
-	return c.responsesStreamChatWebSocketWithSessionLocked(ctx, session, session, wsURL, payload, transport, true, allowConnectionLimitRetry)
+	return c.responsesStreamChatWebSocketWithSessionLocked(ctx, session, session, wsURL, payload, transport, true, allowConnectionLimitRetry, lease)
 }
 
-func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Context, session, fallbackSession *responsesWebSocketSession, wsURL string, payload responsesRequest, transport providers.StreamTransportMode, cacheConnection bool, allowConnectionLimitRetry bool) (<-chan providers.StreamEvent, error) {
+func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Context, session, fallbackSession *responsesWebSocketSession, wsURL string, payload responsesRequest, transport providers.StreamTransportMode, cacheConnection bool, allowConnectionLimitRetry bool, lease *providers.ProviderLease) (<-chan providers.StreamEvent, error) {
 	conn, generation, reused, err := c.responsesWebSocketConnectionLocked(ctx, session, wsURL, payload.ExtraHeaders)
 	if err != nil {
 		if cacheConnection {
@@ -146,7 +154,11 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 		if !cacheConnection {
 			c.responsesWebSocketMarkFallback(fallbackSession, "websocket_setup_failed")
 		}
-		return nil, newResponsesWebSocketFallbackError("websocket_setup_failed", err)
+		fallbackErr := newResponsesWebSocketFallbackError("websocket_setup_failed", err)
+		// This transport attempt is being replaced by SSE. Do not open the
+		// account-level circuit for a WebSocket-only compatibility failure.
+		lease.Release()
+		return nil, fallbackErr
 	}
 
 	fullPayload := payload
@@ -160,6 +172,7 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 	body, err := marshalResponsesWebSocketCreate(requestPayload)
 	if err != nil {
 		session.mu.Unlock()
+		lease.FailError(err)
 		return nil, err
 	}
 	readCh := make(chan responsesWebSocketReadEvent, 64)
@@ -188,7 +201,9 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 		if !cacheConnection {
 			c.responsesWebSocketMarkFallback(fallbackSession, "websocket_write_failed")
 		}
-		return nil, newResponsesWebSocketFallbackError("websocket_write_failed", err)
+		fallbackErr := newResponsesWebSocketFallbackError("websocket_write_failed", err)
+		lease.Release()
+		return nil, fallbackErr
 	}
 	state := responsesWebSocketProviderState(fullPayload, requestPayload, transport, responsesWebSocketRequestMeta{
 		connectionReused: reused,
@@ -196,7 +211,7 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 	session.mu.Unlock()
 
 	ch := make(chan providers.StreamEvent, 64)
-	go c.readResponsesWebSocket(ctx, session, fallbackSession, generation, readCh, fullPayload, requestPayload, transport, useCachedContext, cacheConnection, allowConnectionLimitRetry, state, ch)
+	go c.readResponsesWebSocket(ctx, session, fallbackSession, generation, readCh, fullPayload, requestPayload, transport, useCachedContext, cacheConnection, allowConnectionLimitRetry, lease, state, ch)
 	return ch, nil
 }
 
@@ -277,8 +292,9 @@ func (c *Client) responsesWebSocketReadPump(session *responsesWebSocketSession, 
 	}
 }
 
-func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSession *responsesWebSocketSession, generation uint64, readCh chan responsesWebSocketReadEvent, fullPayload, requestPayload responsesRequest, transport providers.StreamTransportMode, useCachedContext bool, cacheConnection bool, allowConnectionLimitRetry bool, state *providers.ProviderStateSummary, ch chan<- providers.StreamEvent) {
+func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSession *responsesWebSocketSession, generation uint64, readCh chan responsesWebSocketReadEvent, fullPayload, requestPayload responsesRequest, transport providers.StreamTransportMode, useCachedContext bool, cacheConnection bool, allowConnectionLimitRetry bool, lease *providers.ProviderLease, state *providers.ProviderStateSummary, ch chan<- providers.StreamEvent) {
 	defer close(ch)
+	defer lease.Release()
 
 	ch <- providers.StreamEvent{
 		Type:          providers.EventProviderState,
@@ -303,6 +319,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			c.responsesWebSocketReleaseLocked(session, readCh)
 			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "request_canceled")
 			session.mu.Unlock()
+			lease.FailError(ctx.Err())
 			ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
 			return
 		case frame, ok = <-readCh:
@@ -322,6 +339,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 				c.responsesWebSocketReleaseLocked(session, readCh)
 				c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "request_canceled")
 				session.mu.Unlock()
+				lease.FailError(ctx.Err())
 				ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
 				return
 			}
@@ -329,6 +347,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 				session.mu.Lock()
 				c.responsesWebSocketReleaseLocked(session, readCh)
 				session.mu.Unlock()
+				lease.FailError(frame.err)
 				ch <- providers.StreamEvent{Type: providers.EventError, Error: frame.err}
 				return
 			}
@@ -346,6 +365,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 				if !cacheConnection {
 					c.responsesWebSocketMarkFallback(fallbackSession, reason)
 				}
+				lease.Release()
 				c.forwardResponsesSSEFallback(ctx, fullPayload, transport, reason, ch)
 				return
 			}
@@ -360,13 +380,18 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			if !cacheConnection {
 				c.responsesWebSocketMarkFallback(fallbackSession, "stream_error_after_provider_event")
 			}
+			streamErr := providers.NewIncompleteStreamError(fmt.Sprintf("websocket stream closed after provider event: %v", frame.err))
+			// The session is pinned to SSE for the next engine attempt. Keep the
+			// replay decision and billable ambiguity in the attempt outcome, but
+			// do not let a WS-only disconnect open the cross-transport circuit.
+			lease.Release()
 			ch <- providers.StreamEvent{
 				Type:          providers.EventProviderState,
 				ProviderState: responsesWebSocketTransportFailureState(state, "stream_error_after_provider_event"),
 			}
 			ch <- providers.StreamEvent{
 				Type:  providers.EventError,
-				Error: providers.NewIncompleteStreamError(fmt.Sprintf("websocket stream closed after provider event: %v", frame.err)),
+				Error: streamErr,
 			}
 			return
 		}
@@ -380,10 +405,15 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			c.responsesWebSocketReleaseLocked(session, readCh)
 			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "parse_error")
 			session.mu.Unlock()
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: fmt.Errorf("parse websocket event: %w", err)}
+			err = fmt.Errorf("parse websocket event: %w", err)
+			lease.FailError(err)
+			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 			return
 		}
 		if responsesWebSocketConnectionLimitReached(event) && !sawProviderEvent {
+			// Connection capacity is transport-specific. The retry/fallback owns
+			// a new lease, while account-wide rate limits remain shared.
+			lease.Release()
 			if allowConnectionLimitRetry {
 				session.mu.Lock()
 				c.responsesWebSocketReleaseLocked(session, readCh)
@@ -495,6 +525,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 				c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusNormalClosure, "done")
 			}
 			session.mu.Unlock()
+			lease.Succeed()
 			ch <- providers.StreamEvent{
 				Type:         providers.EventDone,
 				Usage:        usage,
@@ -510,10 +541,14 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "response_failed")
 			session.mu.Unlock()
 			if event.Response != nil && event.Response.Error != nil {
-				ch <- providers.StreamEvent{Type: providers.EventError, Error: event.Response.Error.asError()}
+				err := event.Response.Error.asError()
+				lease.FailError(err)
+				ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 				return
 			}
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: errors.New("response failed")}
+			err := errors.New("response failed")
+			lease.FailError(err)
+			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 			return
 
 		case "error":
@@ -522,10 +557,14 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 			c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "response_error")
 			session.mu.Unlock()
 			if event.Error != nil {
-				ch <- providers.StreamEvent{Type: providers.EventError, Error: event.Error.asError()}
+				err := event.Error.asError()
+				lease.FailError(err)
+				ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 				return
 			}
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: errors.New("response websocket error")}
+			err := errors.New("response websocket error")
+			lease.FailError(err)
+			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 			return
 		}
 	}
