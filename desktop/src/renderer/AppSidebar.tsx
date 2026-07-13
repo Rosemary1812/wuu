@@ -65,6 +65,7 @@ import { SidebarSection, SidebarSectionDragHandleContext } from "./SidebarSectio
 import { ThreadContextMenu } from "./ThreadContextMenu";
 import { SidebarNameDialog } from "./SidebarNameDialog";
 import { NewParticipantDialog } from "./NewParticipantDialog";
+import { ENABLE_COLLABORATION } from "./FeatureFlags";
 
 /**
  * Stable section identity keys for the new sidebar tree.
@@ -102,13 +103,16 @@ const SIDEBAR_SECTION_ORDER_KEY = "wuu.desktop.sidebarSectionOrder";
 export function reconcileSidebarSectionOrder(
   stored: string[] | undefined,
   projectIDs: string[],
+  collaborationEnabled = ENABLE_COLLABORATION,
 ): string[] {
   const knownIDs = new Set<string>([
     SCRATCH_PSEUDO_PROJECT_ID,
-    SIDEBAR_SECTION_AGENTS,
-    SIDEBAR_SECTION_GROUP,
     ...projectIDs,
   ]);
+  if (collaborationEnabled) {
+    knownIDs.add(SIDEBAR_SECTION_AGENTS);
+    knownIDs.add(SIDEBAR_SECTION_GROUP);
+  }
   const out: string[] = [];
   if (Array.isArray(stored)) {
     for (const key of stored) {
@@ -135,18 +139,22 @@ export function reconcileSidebarSectionOrder(
       out.splice(anchor + 1, 0, SCRATCH_PSEUDO_PROJECT_ID);
     }
   }
-  if (!out.includes(SIDEBAR_SECTION_AGENTS)) {
-    out.unshift(SIDEBAR_SECTION_AGENTS);
+  if (collaborationEnabled) {
+    if (!out.includes(SIDEBAR_SECTION_AGENTS)) {
+      out.unshift(SIDEBAR_SECTION_AGENTS);
+    }
+    if (!out.includes(SIDEBAR_SECTION_GROUP)) {
+      // Migration for orders persisted before 群聊 joined the reorderable
+      // list: seed it at the head, matching its previous fixed spot right
+      // below 置顶. A stored GROUP position is preserved above.
+      out.unshift(SIDEBAR_SECTION_GROUP);
+    }
   }
-  if (!out.includes(SIDEBAR_SECTION_GROUP)) {
-    // Migration for orders persisted before 群聊 joined the reorderable
-    // list: seed it at the head, matching its previous fixed spot right
-    // below 置顶. A stored GROUP position is preserved above.
-    out.unshift(SIDEBAR_SECTION_GROUP);
-  }
-  const collaboration = out.filter(
-    (id) => id === SIDEBAR_SECTION_GROUP || id === SIDEBAR_SECTION_AGENTS,
-  );
+  const collaboration = collaborationEnabled
+    ? out.filter(
+        (id) => id === SIDEBAR_SECTION_GROUP || id === SIDEBAR_SECTION_AGENTS,
+      )
+    : [];
   const workspaces = out.filter(
     (id) => id !== SIDEBAR_SECTION_GROUP && id !== SIDEBAR_SECTION_AGENTS,
   );
@@ -539,20 +547,25 @@ export function AppSidebar({
     SIDEBAR_SECTION_PINNED,
   );
   const functionalGroups = ([
+    ...(ENABLE_COLLABORATION
+      ? [
+          {
+            id: "collaboration" as const,
+            label: "协作",
+            sectionIDs: sectionOrder.filter(
+              (id) =>
+                id === SIDEBAR_SECTION_GROUP || id === SIDEBAR_SECTION_AGENTS,
+            ),
+          },
+        ]
+      : []),
     {
-      id: "collaboration",
-      label: "协作",
-      sectionIDs: sectionOrder.filter(
-        (id) =>
-          id === SIDEBAR_SECTION_GROUP || id === SIDEBAR_SECTION_AGENTS,
-      ),
-    },
-    {
-      id: "workspace",
+      id: "workspace" as const,
       label: "工作区",
       sectionIDs: sectionOrder.filter(
         (id) =>
-          id !== SIDEBAR_SECTION_GROUP && id !== SIDEBAR_SECTION_AGENTS,
+          !ENABLE_COLLABORATION ||
+          (id !== SIDEBAR_SECTION_GROUP && id !== SIDEBAR_SECTION_AGENTS),
       ),
     },
   ] satisfies Array<{

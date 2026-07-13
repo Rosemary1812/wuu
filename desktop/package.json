@@ -11,6 +11,7 @@
   "main": "out/main/index.js",
   "scripts": {
     "dev": "node scripts/dev.cjs",
+    "dev:collaboration": "VITE_ENABLE_COLLABORATION=true npm run dev",
     "dev:direct": "WUU_ENABLE_CUA_MAC=1 node scripts/build-cua-mac.cjs && WUU_ENABLE_CUA_MAC=1 electron-vite dev",
     "build:cua-mac": "node scripts/build-cua-mac.cjs",
     "build:core": "node scripts/build-core.cjs",
@@ -20,7 +21,7 @@
     "release:desktop": "npm run dist:mac",
     "test": "npm run typecheck && npm run test:dev-launcher && npm run test:unit && npm run test:perf && npm run test:cua-mac",
     "test:dev-launcher": "node scripts/test-dev-launcher.cjs",
-    "test:unit": "vitest run --exclude=src/renderer/StreamingMarkdown.perf.test.tsx",
+    "test:unit": "VITE_ENABLE_COLLABORATION=true vitest run --exclude=src/renderer/StreamingMarkdown.perf.test.tsx",
     "test:perf": "vitest run src/renderer/StreamingMarkdown.perf.test.tsx --maxWorkers=1 --minWorkers=1",
     "test:cua-mac": "node scripts/test-cua-mac.cjs",
     "test:watch": "vitest --exclude=src/renderer/StreamingMarkdown.perf.test.tsx",

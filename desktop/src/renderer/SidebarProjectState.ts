@@ -24,6 +24,7 @@ import {
   SIDEBAR_SECTION_GROUP,
   SIDEBAR_SECTION_PINNED,
 } from "./AppSidebar";
+import { ENABLE_COLLABORATION } from "./FeatureFlags";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
 const SIDEBAR_COLLAPSED_SECTION_IDS_KEY =
@@ -193,6 +194,7 @@ export function useSidebarProjectState({
       reconcileSidebarSectionOrder(
         storedSidebarSectionOrder(),
         [],
+        ENABLE_COLLABORATION,
       ),
   );
   const loadingProjectThreadIDsRef = useRef(new Set<string>());
@@ -225,7 +227,11 @@ export function useSidebarProjectState({
   useEffect(() => {
     const validProjectIDs = projects.map((project) => project.id);
     setSidebarSectionOrder((current) =>
-      reconcileSidebarSectionOrder(current, validProjectIDs),
+      reconcileSidebarSectionOrder(
+        current,
+        validProjectIDs,
+        ENABLE_COLLABORATION,
+      ),
     );
   }, [projects]);
 
@@ -234,10 +240,12 @@ export function useSidebarProjectState({
     const validSectionIDs = new Set([
       ...validProjectIDs,
       SIDEBAR_SECTION_PINNED,
-      SIDEBAR_SECTION_AGENTS,
-      SIDEBAR_SECTION_GROUP,
       SCRATCH_PSEUDO_PROJECT_ID,
     ]);
+    if (ENABLE_COLLABORATION) {
+      validSectionIDs.add(SIDEBAR_SECTION_AGENTS);
+      validSectionIDs.add(SIDEBAR_SECTION_GROUP);
+    }
     setCollapsedSidebarSectionIDs((current) =>
       removeMissingIDs(current, validSectionIDs),
     );

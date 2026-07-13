@@ -217,6 +217,16 @@ function renderSidebar(options: RenderOptions): void {
 }
 
 describe("reconcileSidebarSectionOrder", () => {
+  it("removes collaboration sections while the feature is disabled", () => {
+    expect(
+      reconcileSidebarSectionOrder(
+        [SIDEBAR_SECTION_GROUP, SIDEBAR_SECTION_AGENTS, "project-1"],
+        ["project-1"],
+        false,
+      ),
+    ).toEqual([SCRATCH_PSEUDO_PROJECT_ID, "project-1"]);
+  });
+
   it("returns the default order when no stored order is present", () => {
     expect(
       reconcileSidebarSectionOrder(undefined, ["project-1", "project-2"]),
