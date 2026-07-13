@@ -63,6 +63,8 @@ func TestFinalize_UnderBudgetIsStableIdentity(t *testing.T) {
 }
 
 func TestFinalize_OverBudgetNoProjectorFailsOpen(t *testing.T) {
+	// Remove grep's real projector to exercise the no-projector branch.
+	withoutProjector(t, "grep")
 	big := toolresult.FromText(overBudgetText())
 	got, d := finalizeBuiltInToolResult("", "grep", "c1", big, 0)
 	if !d.Eligible || d.Reason != reasonNoProjector || d.Applied {
@@ -71,6 +73,18 @@ func TestFinalize_OverBudgetNoProjectorFailsOpen(t *testing.T) {
 	if got.TextProjection() != big.TextProjection() {
 		t.Fatalf("missing projector must preserve the full result")
 	}
+}
+
+// withoutProjector removes a registered projector for the test and restores it.
+func withoutProjector(t *testing.T, tool string) {
+	t.Helper()
+	prev, had := toolProjectors[tool]
+	delete(toolProjectors, tool)
+	t.Cleanup(func() {
+		if had {
+			toolProjectors[tool] = prev
+		}
+	})
 }
 
 func TestFinalize_NonTextOnlyNotEligible(t *testing.T) {
