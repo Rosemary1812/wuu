@@ -1,4 +1,12 @@
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   closestCenter,
   DndContext,
@@ -40,6 +48,42 @@ const WORKSPACE_TOOL_ITEMS: Array<{
   { id: "terminal", title: "终端", subtitle: "运行 shell 命令" },
   { id: "browser", title: "浏览器", subtitle: "在右侧栏里调试前端" }
 ];
+
+export const WORKSPACE_FILE_TREE_DEFAULT_WIDTH = 320;
+export const WORKSPACE_FILE_TREE_MIN_WIDTH = 180;
+export const WORKSPACE_FILE_TREE_MAX_WIDTH = 480;
+export const WORKSPACE_FILE_CONTENT_MIN_WIDTH = 240;
+const WORKSPACE_FILE_TREE_WIDTH_STEP = 24;
+const WORKSPACE_FILE_TREE_WIDTH_KEY = "wuu.desktop.fileTreeWidth";
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+export function clampWorkspaceFileTreeWidth(
+  width: number,
+  panelWidth = Number.POSITIVE_INFINITY,
+): number {
+  if (!Number.isFinite(panelWidth) || panelWidth <= 0) {
+    return clamp(width, WORKSPACE_FILE_TREE_MIN_WIDTH, WORKSPACE_FILE_TREE_MAX_WIDTH);
+  }
+  const maxForPanel = Math.max(
+    WORKSPACE_FILE_TREE_MIN_WIDTH,
+    Math.min(WORKSPACE_FILE_TREE_MAX_WIDTH, panelWidth - WORKSPACE_FILE_CONTENT_MIN_WIDTH),
+  );
+  return clamp(width, WORKSPACE_FILE_TREE_MIN_WIDTH, maxForPanel);
+}
+
+function initialWorkspaceFileTreeWidth(): number {
+  if (typeof window === "undefined") {
+    return WORKSPACE_FILE_TREE_DEFAULT_WIDTH;
+  }
+  const stored = Number(window.localStorage.getItem(WORKSPACE_FILE_TREE_WIDTH_KEY));
+  if (!Number.isFinite(stored) || stored <= 0) {
+    return WORKSPACE_FILE_TREE_DEFAULT_WIDTH;
+  }
+  return clampWorkspaceFileTreeWidth(stored);
+}
 
 export function WorkspaceRightPanel({
   open,
@@ -112,6 +156,10 @@ export function WorkspaceRightPanel({
   const [dirtyFileTabIDs, setDirtyFileTabIDs] = useState<Set<string>>(() => new Set());
   const [draggingTabID, setDraggingTabID] = useState<string | undefined>(undefined);
   const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>(undefined);
+  const [fileTreeWidth, setFileTreeWidth] = useState(initialWorkspaceFileTreeWidth);
+  const [resizingFileSplit, setResizingFileSplit] = useState(false);
+  const fileSplitRef = useRef<HTMLDivElement>(null);
+  const fileSplitResizeRef = useRef<{ startX: number; startTreeWidth: number } | null>(null);
   const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const draggingTab = draggingTabID ? tabs.find((tab) => tab.id === draggingTabID) : undefined;
   const addButtonRef = useRef<HTMLButtonElement>(null);
@@ -124,6 +172,82 @@ export function WorkspaceRightPanel({
   useEffect(() => {
     onDirtyFileTabsChange?.(dirtyFileTabIDs.size > 0);
   }, [dirtyFileTabIDs, onDirtyFileTabsChange]);
+
+  useEffect(() => {
+    window.localStorage.setItem(WORKSPACE_FILE_TREE_WIDTH_KEY, String(fileTreeWidth));
+  }, [fileTreeWidth]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("resizing-workspace-file-split", resizingFileSplit);
+    if (!resizingFileSplit) {
+      return () => root.classList.remove("resizing-workspace-file-split");
+    }
+
+    function handlePointerMove(event: PointerEvent): void {
+      const session = fileSplitResizeRef.current;
+      if (!session) {
+        return;
+      }
+      const panelWidth = fileSplitRef.current?.getBoundingClientRect().width;
+      setFileTreeWidth(
+        clampWorkspaceFileTreeWidth(
+          session.startTreeWidth - (event.clientX - session.startX),
+          panelWidth,
+        ),
+      );
+    }
+
+    function finishResize(): void {
+      fileSplitResizeRef.current = null;
+      setResizingFileSplit(false);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", finishResize);
+    window.addEventListener("pointercancel", finishResize);
+    return () => {
+      root.classList.remove("resizing-workspace-file-split");
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishResize);
+      window.removeEventListener("pointercancel", finishResize);
+    };
+  }, [resizingFileSplit]);
+
+  function resizeFileTreeBy(delta: number): void {
+    const panelWidth = fileSplitRef.current?.getBoundingClientRect().width;
+    setFileTreeWidth((current) => clampWorkspaceFileTreeWidth(current + delta, panelWidth));
+  }
+
+  function startFileSplitResize(event: ReactPointerEvent<HTMLDivElement>): void {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    fileSplitResizeRef.current = { startX: event.clientX, startTreeWidth: fileTreeWidth };
+    setResizingFileSplit(true);
+  }
+
+  function handleFileSplitKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      resizeFileTreeBy(WORKSPACE_FILE_TREE_WIDTH_STEP);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      resizeFileTreeBy(-WORKSPACE_FILE_TREE_WIDTH_STEP);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      resizeFileTreeBy(WORKSPACE_FILE_TREE_MAX_WIDTH);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      resizeFileTreeBy(-WORKSPACE_FILE_TREE_MAX_WIDTH);
+    }
+  }
+
+  function resetFileTreeWidth(): void {
+    const panelWidth = fileSplitRef.current?.getBoundingClientRect().width;
+    setFileTreeWidth(clampWorkspaceFileTreeWidth(WORKSPACE_FILE_TREE_DEFAULT_WIDTH, panelWidth));
+  }
 
   function startTabDrag(event: DragStartEvent): void {
     setDraggingTabID(String(event.active.id));
@@ -300,8 +424,10 @@ export function WorkspaceRightPanel({
         <>
           <div className={`workspace-panel-body${activeTab ? "" : " picker"}`}>
             <div
-              className="workspace-files-split"
+              className={`workspace-files-split${resizingFileSplit ? " resizing" : ""}`}
               hidden={activeTab?.kind !== "files" && activeTab?.kind !== "file"}
+              ref={fileSplitRef}
+              style={{ "--workspace-file-tree-width": `${fileTreeWidth}px` } as CSSProperties}
             >
               <section className="workspace-files-content" aria-label="文件内容">
                 <div className="workspace-files-content-body">
@@ -322,6 +448,19 @@ export function WorkspaceRightPanel({
                   ) : null}
                 </div>
               </section>
+              <div
+                className="workspace-files-resizer"
+                role="separator"
+                aria-label="调整文件内容和文件树宽度"
+                aria-orientation="vertical"
+                aria-valuemin={WORKSPACE_FILE_TREE_MIN_WIDTH}
+                aria-valuemax={WORKSPACE_FILE_TREE_MAX_WIDTH}
+                aria-valuenow={Math.round(fileTreeWidth)}
+                tabIndex={0}
+                onPointerDown={startFileSplitResize}
+                onDoubleClick={resetFileTreeWidth}
+                onKeyDown={handleFileSplitKeyDown}
+              />
               <section className="workspace-files-tree" aria-label="文件树">
                 <WorkspaceFileTree
                   activeContext={workspaceContext}

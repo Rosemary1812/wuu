@@ -174,8 +174,14 @@ describe("workspace file preview layout", () => {
   it("lays out file content first and the file tree as the right column", () => {
     const split = cssRuleBody(".workspace-files-split");
     expect(split).toMatch(/display:\s*grid;/);
-    expect(split).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) minmax\(180px, 34%\);/);
-    expect(workspaceCss).toMatch(/\.workspace-files-tree\s*\{[\s\S]*?border-left:/);
+    expect(split).toMatch(
+      /grid-template-columns:\s*minmax\(0, 1fr\) 8px minmax\(180px, var\(--workspace-file-tree-width, 320px\)\);/,
+    );
+    expect(cssRuleBody(".workspace-files-resizer")).toMatch(/cursor:\s*col-resize;/);
+    expect(cssRuleBody(".workspace-files-resizer::before")).toMatch(/width:\s*1px;/);
+    expect(cssRuleBody(".workspace-files-tree .workspace-file-search")).toMatch(
+      /width:\s*calc\(100% - 10px\);/,
+    );
     expect(workspaceCss).not.toContain(".workspace-files-content-header");
     expect(cssRuleBody(".workspace-files-content-body")).toMatch(/height:\s*100%;/);
   });

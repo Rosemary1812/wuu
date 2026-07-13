@@ -1,7 +1,13 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { WorkspaceRightPanel } from "./WorkspacePanels";
+import {
+  clampWorkspaceFileTreeWidth,
+  WORKSPACE_FILE_TREE_DEFAULT_WIDTH,
+  WORKSPACE_FILE_TREE_MAX_WIDTH,
+  WORKSPACE_FILE_TREE_MIN_WIDTH,
+  WorkspaceRightPanel,
+} from "./WorkspacePanels";
 import type { RuntimeContext } from "../shared/protocol";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import {
@@ -61,6 +67,7 @@ let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
 beforeEach(() => {
+  window.localStorage.clear();
   Object.defineProperty(window, "wuu", {
     configurable: true,
     value: {
@@ -118,6 +125,7 @@ function fileResource(tabID: string): HTMLElement | undefined {
 
 afterEach(() => {
   unmount();
+  document.documentElement.classList.remove("resizing-workspace-file-split");
 });
 
 function makeSelection(path: string): TurnFileDiffSelection {
@@ -274,6 +282,70 @@ describe("WorkspaceRightPanel", () => {
     expect(content).not.toBeNull();
     expect(tree).not.toBeNull();
     expect(content!.compareDocumentPosition(tree!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("resizes and persists the right-side file tree", async () => {
+    const context: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/repo/project",
+    };
+    const fileTab = workspaceFileViewTab({ context, path: "src/App.tsx" });
+    mount(
+      <WorkspaceRightPanel
+        {...baseProps()}
+        tabs={[fileTab]}
+        activeTabID={fileTab.id}
+        activeFileTabID={fileTab.id}
+        workspaceContext={context}
+      />,
+    );
+    await act(async () => Promise.resolve());
+
+    const split = container!.querySelector<HTMLElement>(".workspace-files-split")!;
+    const separator = split.querySelector<HTMLElement>(".workspace-files-resizer")!;
+    Object.defineProperty(split, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ width: 1000 }),
+    });
+
+    expect(separator.getAttribute("role")).toBe("separator");
+    expect(separator.getAttribute("aria-valuemin")).toBe(String(WORKSPACE_FILE_TREE_MIN_WIDTH));
+    expect(separator.getAttribute("aria-valuemax")).toBe(String(WORKSPACE_FILE_TREE_MAX_WIDTH));
+    expect(split.style.getPropertyValue("--workspace-file-tree-width")).toBe(
+      `${WORKSPACE_FILE_TREE_DEFAULT_WIDTH}px`,
+    );
+
+    act(() => {
+      separator.dispatchEvent(
+        new MouseEvent("pointerdown", { bubbles: true, button: 0, clientX: 680 }),
+      );
+    });
+    expect(document.documentElement.classList.contains("resizing-workspace-file-split")).toBe(true);
+    act(() => {
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 600 }));
+      window.dispatchEvent(new MouseEvent("pointerup"));
+    });
+    expect(split.style.getPropertyValue("--workspace-file-tree-width")).toBe("400px");
+    expect(window.localStorage.getItem("wuu.desktop.fileTreeWidth")).toBe("400");
+
+    act(() => {
+      separator.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowLeft" }));
+    });
+    expect(split.style.getPropertyValue("--workspace-file-tree-width")).toBe("424px");
+
+    act(() => {
+      separator.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    });
+    expect(split.style.getPropertyValue("--workspace-file-tree-width")).toBe(
+      `${WORKSPACE_FILE_TREE_DEFAULT_WIDTH}px`,
+    );
+  });
+
+  it("clamps the tree width so the file content keeps usable space", () => {
+    expect(clampWorkspaceFileTreeWidth(100)).toBe(WORKSPACE_FILE_TREE_MIN_WIDTH);
+    expect(clampWorkspaceFileTreeWidth(900)).toBe(WORKSPACE_FILE_TREE_MAX_WIDTH);
+    expect(clampWorkspaceFileTreeWidth(480, 600)).toBe(360);
   });
 
   it("keeps inactive file state without retaining inactive Monaco editors", async () => {
