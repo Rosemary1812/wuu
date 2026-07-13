@@ -29,6 +29,12 @@ vi.mock("./WorkspaceMonacoEditor", () => ({
   ),
 }));
 
+vi.mock("./JumpToLatestPill", () => ({
+  JumpToLatestPill: (): JSX.Element => (
+    <div data-testid="jump-to-latest-probe" />
+  ),
+}));
+
 import { App } from "./App";
 
 let container: HTMLDivElement;
@@ -223,6 +229,9 @@ describe("workspace file tabs", () => {
     expect(container.querySelector(".session-tab.active")?.textContent).toContain(
       "artifact conversation",
     );
+    expect(
+      container.querySelector('[data-testid="jump-to-latest-probe"]'),
+    ).not.toBeNull();
 
     await act(async () => {
       fileLink?.click();
@@ -251,6 +260,9 @@ describe("workspace file tabs", () => {
     expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(true);
     expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(true);
     expect(container.querySelector(".workspace-right-panel")?.hasAttribute("inert")).toBe(false);
+    expect(
+      container.querySelector('[data-testid="jump-to-latest-probe"]'),
+    ).toBeNull();
     expect(document.activeElement).toBe(
       container.querySelector(".workspace-tool-tab.active .workspace-tool-tab-main"),
     );

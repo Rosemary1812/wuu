@@ -1781,7 +1781,8 @@ export function App(): JSX.Element {
     !emptyConversation &&
     !splitConversation &&
     !showingSkillsCatalog &&
-    !showingTaskBoard;
+    !showingTaskBoard &&
+    !rightPanelGlobalized;
 
   useEffect(() => {
     // Diff tabs are scoped to the thread whose turn they came from: they
