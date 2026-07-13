@@ -1922,26 +1922,47 @@ type StreamEventPayload struct {
 }
 
 type StreamLifecyclePayload struct {
-	Phase           string `json:"phase"`
-	OperationID     string `json:"operation_id,omitempty"`
-	OperationKind   string `json:"operation_kind,omitempty"`
-	WorkloadProfile string `json:"workload_profile,omitempty"`
-	PayloadVersion  int    `json:"payload_version,omitempty"`
-	AttemptID       string `json:"attempt_id,omitempty"`
-	Attempt         int    `json:"attempt,omitempty"`
-	MaxAttempts     int    `json:"max_attempts,omitempty"`
-	SubmissionID    string `json:"submission_id,omitempty"`
-	SubmissionCount int    `json:"submission_count,omitempty"`
-	RetryCount      int    `json:"retry_count,omitempty"`
-	MaxRetries      int    `json:"max_retries,omitempty"`
-	RetryInMS       int64  `json:"retry_in_ms,omitempty"`
-	ElapsedMS       int64  `json:"elapsed_ms,omitempty"`
-	Reason          string `json:"reason,omitempty"`
-	FailureCategory string `json:"failure_category,omitempty"`
-	RecoveryAction  string `json:"recovery_action,omitempty"`
-	BudgetDimension string `json:"budget_dimension,omitempty"`
-	ReplayReason    string `json:"replay_reason,omitempty"`
-	ResetPartial    bool   `json:"reset_partial,omitempty"`
+	Phase           string                   `json:"phase"`
+	OperationID     string                   `json:"operation_id,omitempty"`
+	OperationKind   string                   `json:"operation_kind,omitempty"`
+	WorkloadProfile string                   `json:"workload_profile,omitempty"`
+	PayloadVersion  int                      `json:"payload_version,omitempty"`
+	AttemptID       string                   `json:"attempt_id,omitempty"`
+	Attempt         int                      `json:"attempt,omitempty"`
+	MaxAttempts     int                      `json:"max_attempts,omitempty"`
+	SubmissionID    string                   `json:"submission_id,omitempty"`
+	SubmissionCount int                      `json:"submission_count,omitempty"`
+	RetryCount      int                      `json:"retry_count,omitempty"`
+	MaxRetries      int                      `json:"max_retries,omitempty"`
+	RetryInMS       int64                    `json:"retry_in_ms,omitempty"`
+	ElapsedMS       int64                    `json:"elapsed_ms,omitempty"`
+	Reason          string                   `json:"reason,omitempty"`
+	FailureCategory string                   `json:"failure_category,omitempty"`
+	RecoveryAction  string                   `json:"recovery_action,omitempty"`
+	BudgetDimension string                   `json:"budget_dimension,omitempty"`
+	ReplayReason    string                   `json:"replay_reason,omitempty"`
+	ResetPartial    bool                     `json:"reset_partial,omitempty"`
+	Workflow        *WorkflowSnapshotPayload `json:"workflow,omitempty"`
+}
+
+type WorkflowSnapshotPayload struct {
+	ID                         string `json:"id"`
+	Operations                 uint64 `json:"operations"`
+	Attempts                   uint64 `json:"attempts"`
+	Submissions                uint64 `json:"submissions"`
+	SamePayloadReplays         uint64 `json:"same_payload_replays"`
+	TransportSwitches          uint64 `json:"transport_switches"`
+	CredentialRefreshes        uint64 `json:"credential_refreshes"`
+	PayloadTransforms          uint64 `json:"payload_transforms"`
+	ChildOperations            uint64 `json:"child_operations"`
+	RecoveryWaitMS             uint64 `json:"recovery_wait_ms"`
+	KnownSubmissions           uint64 `json:"known_submissions"`
+	EstimatedSubmissions       uint64 `json:"estimated_submissions"`
+	UnknownBillableSubmissions uint64 `json:"unknown_billable_submissions"`
+	KnownInputTokens           int    `json:"known_input_tokens"`
+	KnownOutputTokens          int    `json:"known_output_tokens"`
+	EstimatedInputTokens       int    `json:"estimated_input_tokens"`
+	EstimatedOutputTokens      int    `json:"estimated_output_tokens"`
 }
 
 // SettingsUsageRange selects which time window the settings/usage RPC

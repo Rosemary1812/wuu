@@ -722,7 +722,7 @@ func sanitizeStreamLifecycle(lifecycle *providers.StreamLifecycle) *StreamLifecy
 	if lifecycle == nil {
 		return nil
 	}
-	return &StreamLifecyclePayload{
+	payload := &StreamLifecyclePayload{
 		Phase:           string(lifecycle.Phase),
 		OperationID:     lifecycle.OperationID,
 		OperationKind:   string(lifecycle.OperationKind),
@@ -744,6 +744,27 @@ func sanitizeStreamLifecycle(lifecycle *providers.StreamLifecycle) *StreamLifecy
 		ReplayReason:    lifecycle.ReplayReason,
 		ResetPartial:    lifecycle.ResetPartial,
 	}
+	if lifecycle.Workflow.WorkflowID != "" {
+		workflow := lifecycle.Workflow
+		payload.Workflow = &WorkflowSnapshotPayload{
+			ID: workflow.WorkflowID, Operations: workflow.Operations,
+			Attempts: workflow.Attempts, Submissions: workflow.Submissions,
+			SamePayloadReplays:         workflow.SamePayloadReplays,
+			TransportSwitches:          workflow.TransportSwitches,
+			CredentialRefreshes:        workflow.CredentialRefreshes,
+			PayloadTransforms:          workflow.PayloadTransforms,
+			ChildOperations:            workflow.ChildOperations,
+			RecoveryWaitMS:             workflow.RecoveryWaitMillis,
+			KnownSubmissions:           workflow.KnownSubmissions,
+			EstimatedSubmissions:       workflow.EstimatedSubmissions,
+			UnknownBillableSubmissions: workflow.UnknownBillableSubmissions,
+			KnownInputTokens:           workflow.KnownUsage.InputTokens,
+			KnownOutputTokens:          workflow.KnownUsage.OutputTokens,
+			EstimatedInputTokens:       workflow.EstimatedUsage.InputTokens,
+			EstimatedOutputTokens:      workflow.EstimatedUsage.OutputTokens,
+		}
+	}
+	return payload
 }
 
 func durationMilliseconds(duration time.Duration) int64 {

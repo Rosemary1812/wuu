@@ -33,6 +33,12 @@ func TestSanitizeStreamEventIncludesLifecycle(t *testing.T) {
 			BudgetDimension: "same_payload_replays",
 			ReplayReason:    "invocation_running",
 			ResetPartial:    true,
+			Workflow: providers.WorkflowBudgetSnapshot{
+				WorkflowID: "iwf-test", Operations: 3, Attempts: 5, Submissions: 5,
+				SamePayloadReplays: 2, TransportSwitches: 1, RecoveryWaitMillis: 1500,
+				KnownSubmissions: 3, EstimatedSubmissions: 1, UnknownBillableSubmissions: 1,
+				KnownUsage: providers.TokenUsage{InputTokens: 120, OutputTokens: 30},
+			},
 		},
 	})
 
@@ -57,7 +63,13 @@ func TestSanitizeStreamEventIncludesLifecycle(t *testing.T) {
 		got.Lifecycle.FailureCategory != "transport" ||
 		got.Lifecycle.RecoveryAction != "replay_same" ||
 		got.Lifecycle.BudgetDimension != "same_payload_replays" ||
-		got.Lifecycle.ReplayReason != "invocation_running" {
+		got.Lifecycle.ReplayReason != "invocation_running" ||
+		got.Lifecycle.Workflow == nil ||
+		got.Lifecycle.Workflow.ID != "iwf-test" ||
+		got.Lifecycle.Workflow.Operations != 3 ||
+		got.Lifecycle.Workflow.Attempts != 5 ||
+		got.Lifecycle.Workflow.UnknownBillableSubmissions != 1 ||
+		got.Lifecycle.Workflow.KnownInputTokens != 120 {
 		t.Fatalf("unexpected lifecycle payload: %+v", got.Lifecycle)
 	}
 
@@ -66,7 +78,7 @@ func TestSanitizeStreamEventIncludesLifecycle(t *testing.T) {
 		t.Fatalf("marshal stream event: %v", err)
 	}
 	wire := string(raw)
-	if !strings.Contains(wire, `"retry_in_ms":1500`) || !strings.Contains(wire, `"max_attempts":4`) || !strings.Contains(wire, `"attempt_id":"iop-test-a2"`) || !strings.Contains(wire, `"submission_id":"iop-test-s2"`) || !strings.Contains(wire, `"failure_category":"transport"`) {
+	if !strings.Contains(wire, `"retry_in_ms":1500`) || !strings.Contains(wire, `"max_attempts":4`) || !strings.Contains(wire, `"attempt_id":"iop-test-a2"`) || !strings.Contains(wire, `"submission_id":"iop-test-s2"`) || !strings.Contains(wire, `"failure_category":"transport"`) || !strings.Contains(wire, `"unknown_billable_submissions":1`) {
 		t.Fatalf("expected snake_case lifecycle wire payload, got %s", wire)
 	}
 	if strings.Contains(wire, "RetryIn") {

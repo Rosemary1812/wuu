@@ -372,6 +372,7 @@ func (r *ReliableStreamClient) sendLifecycle(
 		RetryIn:         retryIn,
 		Elapsed:         time.Since(startedAt),
 		ResetPartial:    resetPartial,
+		Workflow:        snapshot.Workflow,
 	}
 	if reason != nil {
 		lifecycle.Reason = StreamErrorSummary(reason)

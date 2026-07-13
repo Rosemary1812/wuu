@@ -27,6 +27,7 @@ import {
 import { streamFieldValue } from "./ThreadItemText";
 import {
   isRecord,
+  numberValue,
   readableToolName,
   recordValue,
   stringValue,
@@ -687,7 +688,9 @@ function debugNotificationMethodLabel(method: string): string {
 }
 
 function streamEventDebugDetail(payload: JsonRecord | undefined): string {
-  const eventType = stringValue(payload, "type") ?? "event";
+	const eventType = stringValue(payload, "type") ?? "event";
+	const lifecycle = recordValue(payload, "lifecycle");
+	const workflow = recordValue(lifecycle, "workflow");
   const toolCall = recordValue(payload, "tool_call");
   const toolName = stringValue(toolCall, "name");
   const stopReason = stringValue(payload, "stop_reason");
@@ -698,10 +701,31 @@ function streamEventDebugDetail(payload: JsonRecord | undefined): string {
   if (toolName) {
     return readableToolName(toolName);
   }
-  if (stopReason) {
-    return `stop_reason=${stopReason}`;
-  }
-  return eventType;
+	if (stopReason) {
+		return `stop_reason=${stopReason}`;
+	}
+	if (lifecycle) {
+		const phase = stringValue(lifecycle, "phase") ?? "unknown";
+		const attempt = numberValue(lifecycle, "attempt") ?? 0;
+		const maxAttempts = numberValue(lifecycle, "max_attempts") ?? 0;
+		if (!workflow) {
+			return `${phase} · attempt ${attempt}/${maxAttempts}`;
+		}
+		const operations = numberValue(workflow, "operations") ?? 0;
+		const attempts = numberValue(workflow, "attempts") ?? 0;
+		const submissions = numberValue(workflow, "submissions") ?? 0;
+		const recoveries =
+			(numberValue(workflow, "same_payload_replays") ?? 0) +
+			(numberValue(workflow, "transport_switches") ?? 0) +
+			(numberValue(workflow, "credential_refreshes") ?? 0) +
+			(numberValue(workflow, "payload_transforms") ?? 0);
+		const waitMS = numberValue(workflow, "recovery_wait_ms") ?? 0;
+		const known = numberValue(workflow, "known_submissions") ?? 0;
+		const estimated = numberValue(workflow, "estimated_submissions") ?? 0;
+		const unknown = numberValue(workflow, "unknown_billable_submissions") ?? 0;
+		return `${phase} · attempt ${attempt}/${maxAttempts} · workflow op=${operations} att=${attempts} sub=${submissions} recovery=${recoveries} wait=${waitMS}ms cost=${known}/${estimated}/${unknown}`;
+	}
+	return eventType;
 }
 
 function streamEventTone(eventType: string): RunDebugEventTone {

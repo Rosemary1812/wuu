@@ -448,6 +448,7 @@ type StreamLifecycle struct {
 	RecoveryAction  string
 	BudgetDimension string
 	ReplayReason    string
+	Workflow        WorkflowBudgetSnapshot
 	// ResetPartial tells aggregators that events from the previous attempt
 	// must be superseded before any replacement output is accepted.
 	ResetPartial bool
