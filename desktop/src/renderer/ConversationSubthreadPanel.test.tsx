@@ -389,6 +389,50 @@ describe("ConversationSubthreadPanel", () => {
     expect(container.querySelector('button[aria-label="标记已解决"]')).toBeNull();
   });
 
+  it("wires the jump-to-latest pill into anchored mode while the composer is mounted", () => {
+    const container = mount(
+      createElement(ConversationSubthreadPanel, {
+        threadID: "group-1",
+        subthread: subthreadWith(),
+        onClose: () => {},
+        onResolve: () => {},
+        composer: createElement("div", { className: "test-composer-slot" }),
+      }),
+    );
+    const body = container.querySelector<HTMLElement>(
+      ".conversation-subthread-body",
+    )!;
+    Object.defineProperties(body, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, writable: true, value: 0 },
+    });
+    act(() => {
+      body.dispatchEvent(new Event("scroll"));
+    });
+
+    expect(container.querySelector(".jump-to-latest-pill")).toBeNull();
+    expect(
+      document.body.querySelector(".jump-to-latest-pill-anchored"),
+    ).not.toBeNull();
+  });
+
+  it("passes no anchor to the jump-to-latest pill once the thread is resolved", () => {
+    // Mirror of the previous test for the resolved branch: the composer slot
+    // is gone, so the pill receives a null bottomAnchor and renders nothing.
+    const container = mount(
+      createElement(ConversationSubthreadPanel, {
+        threadID: "group-1",
+        subthread: subthreadWith({ status: "resolved" }),
+        onClose: () => {},
+        onResolve: () => {},
+        composer: createElement("div", { className: "test-composer-slot" }),
+      }),
+    );
+    expect(container.querySelector(".conversation-subthread-composer")).toBeNull();
+    expect(container.querySelector(".jump-to-latest-pill")).toBeNull();
+  });
+
   it("hides technical task trace unless debug controls expose it", () => {
     const task = subthreadWith({
       status: "task",

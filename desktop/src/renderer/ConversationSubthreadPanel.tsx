@@ -220,6 +220,10 @@ export function ConversationSubthreadPanel({
   // task/reply thread gets the same jump-to-latest pill as the main stream,
   // scoped to this panel's scroll (issue #5 Fix 2).
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
+  // A callback ref triggers the render that gives JumpToLatestPill its live
+  // composer anchor; reading ref.current during the first render would stay null.
+  const [composerAnchorNode, setComposerAnchorNode] =
+    useState<HTMLDivElement | null>(null);
   // The progress layer (plan §T11): the plan node board is prop-driven (from
   // subthread.plan), but the "轨迹" trace timeline is lazy — it fetches the
   // task's events only when the human expands it, and resets whenever the panel
@@ -533,10 +537,18 @@ export function ConversationSubthreadPanel({
             onReact={onReact}
           />
         )}
-        <JumpToLatestPill containerRef={bodyScrollRef} />
+        <JumpToLatestPill
+          containerRef={bodyScrollRef}
+          bottomAnchor={composerAnchorNode}
+        />
       </div>
       {subthread && !resolved && composer ? (
-        <div className="conversation-subthread-composer">{composer}</div>
+        <div
+          className="conversation-subthread-composer"
+          ref={setComposerAnchorNode}
+        >
+          {composer}
+        </div>
       ) : null}
     </aside>
   );
