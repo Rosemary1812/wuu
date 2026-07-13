@@ -71,37 +71,6 @@ func (e *ReplayBlockedError) Unwrap() error {
 	return e.Cause
 }
 
-// PartialStreamError wraps a retry trigger after one or more events from the
-// failed attempt were already handed to the caller. Consumers that maintain
-// local accumulated state can use ForwardedEvents to discard any stale events
-// that race with their retry hook.
-type PartialStreamError struct {
-	Err             error
-	ForwardedEvents int
-}
-
-func (e *PartialStreamError) Error() string {
-	if e == nil || e.Err == nil {
-		return "partial stream failed"
-	}
-	return e.Err.Error()
-}
-
-func (e *PartialStreamError) Unwrap() error {
-	if e == nil {
-		return nil
-	}
-	return e.Err
-}
-
-func ForwardedEventsBeforeRetry(err error) int {
-	var partial *PartialStreamError
-	if errors.As(err, &partial) && partial != nil {
-		return partial.ForwardedEvents
-	}
-	return 0
-}
-
 // NewReliableStreamClient constructs a ReliableStreamClient.
 // cfg is normalized before use. onRetry may be nil.
 func NewReliableStreamClient(inner StreamClient, cfg RetryConfig, onRetry StreamRetryHook, options ...ReliableStreamOption) *ReliableStreamClient {
@@ -198,9 +167,6 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 			if journalErr := attempt.ObserveStreamEvent(StreamEvent{Type: EventError, Error: err}); journalErr != nil {
 				err = journalErr
 			}
-		}
-		if forwardedEvents > 0 {
-			err = &PartialStreamError{Err: err, ForwardedEvents: forwardedEvents}
 		}
 		failure := NormalizeFailure(err)
 		plan := PlanRecovery(failure)

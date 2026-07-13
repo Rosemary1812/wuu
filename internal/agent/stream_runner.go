@@ -1123,18 +1123,6 @@ func (s *streamStep) runReliableStream(
 					}
 				}
 
-			case providers.EventReconnect:
-				if event.Error != nil {
-					resetPartialOutput()
-					for k := range pendingTools {
-						delete(pendingTools, k)
-					}
-					if onAttemptStart != nil {
-						onAttemptStart()
-					}
-					continue
-				}
-
 			case providers.EventError:
 				if event.Error != nil {
 					streamErr = event.Error

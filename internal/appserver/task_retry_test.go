@@ -46,6 +46,20 @@ func synthFailedTurn(category, message string) Turn {
 	return Turn{Status: TurnStatusFailed, Error: &TurnError{Category: category, Message: message}}
 }
 
+// taskRetryOnlyProviderError keeps this suite focused on the durable task
+// attempt budget. The underlying 503 still classifies as a provider failure at
+// the turn boundary, while the explicit recovery hint prevents the inference
+// layer from consuming its own retry budget first.
+type taskRetryOnlyProviderError struct {
+	err error
+}
+
+func (e taskRetryOnlyProviderError) Error() string { return e.err.Error() }
+func (e taskRetryOnlyProviderError) Unwrap() error { return e.err }
+func (taskRetryOnlyProviderError) InferenceRecoveryAction() providers.RecoveryActionKind {
+	return providers.RecoveryStop
+}
+
 func loadPiece(t *testing.T, srv *Server, taskID, pieceID string) session.TaskPiece {
 	t.Helper()
 	th, err := session.FindConversationThreadByID(srv.rt.SessionDir, taskID)
@@ -246,7 +260,10 @@ func TestHardFailureFailsNodeWithoutSpendingBudget(t *testing.T) {
 // task, records node_failed, and wakes the lead — no synthesized turn.
 func TestBudgetExhaustionThroughRealFailedTurns(t *testing.T) {
 	client := &fakeClient{
-		err:      &providers.HTTPError{StatusCode: 503, Body: "Service Unavailable"},
+		err: taskRetryOnlyProviderError{err: &providers.HTTPError{
+			StatusCode: 503,
+			Body:       "Service Unavailable",
+		}},
 		response: providersResponse(""),
 	}
 	rt := newTestRuntime(t, client)
@@ -271,9 +288,9 @@ func TestBudgetExhaustionThroughRealFailedTurns(t *testing.T) {
 		t.Fatalf("SetPlan: %v", err)
 	}
 
-	// Every dispatched turn hits the 503 (a network-category failure). The node
-	// is retried until its default budget of 3 attempts is spent, then failed
-	// and the task blocked.
+	// Every dispatched turn hits a provider-category 503 whose inference-level
+	// recovery is deliberately stopped by the fixture above. The task layer
+	// retries until its own budget of 3 attempts is spent, then blocks the task.
 	p := waitForPieceState(t, srv, task.ID, "p1", session.TaskPieceFailed, 3)
 	if strings.TrimSpace(p.FailureReason) == "" {
 		t.Fatal("a failed node should carry the runtime failure reason")
