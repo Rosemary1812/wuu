@@ -90,6 +90,8 @@ type ClientConfig struct {
 	HTTPClient              *http.Client
 	RetryConfig             *providers.RetryConfig
 	StreamConfig            *providers.StreamTransportConfig
+	Coordinator             *providers.ProviderCoordinator
+	ProviderScope           providers.ProviderScope
 	ResponsesStore          *bool
 	ResponsesTransport      providers.StreamTransportMode
 	ResponsesWebSocketCache *ResponsesWebSocketCache
@@ -106,6 +108,8 @@ type Client struct {
 	promptCacheKeyFormat promptCacheKeyFormat
 	reasoningFormat      reasoningEffortFormat
 	streamConfig         providers.StreamTransportConfig
+	coordinator          *providers.ProviderCoordinator
+	providerScope        providers.ProviderScope
 	responsesStore       *bool
 	responsesTransport   providers.StreamTransportMode
 	responsesWSCache     *ResponsesWebSocketCache
@@ -141,6 +145,10 @@ func New(cfg ClientConfig) (*Client, error) {
 	if cfg.ResponsesWebSocketCache == nil && responsesTransportUsesWebSocket(responsesTransport) {
 		cfg.ResponsesWebSocketCache = NewResponsesWebSocketCache()
 	}
+	providerScope := cfg.ProviderScope
+	if providerScope == "" && cfg.Coordinator != nil {
+		providerScope = providers.NewProviderScope(cfg.BaseURL, cfg.APIKey, openAIOrganization(cfg.Headers))
+	}
 
 	return &Client{
 		baseURL:              strings.TrimRight(cfg.BaseURL, "/"),
@@ -152,10 +160,21 @@ func New(cfg ClientConfig) (*Client, error) {
 		promptCacheKeyFormat: detectPromptCacheKeyFormat(cfg.BaseURL, cfg.Headers),
 		reasoningFormat:      detectReasoningEffortFormat(cfg.BaseURL),
 		streamConfig:         streamTransportConfig(cfg.StreamConfig),
+		coordinator:          cfg.Coordinator,
+		providerScope:        providerScope,
 		responsesStore:       cfg.ResponsesStore,
 		responsesTransport:   responsesTransport,
 		responsesWSCache:     cfg.ResponsesWebSocketCache,
 	}, nil
+}
+
+func openAIOrganization(headers map[string]string) string {
+	for key, value := range headers {
+		if strings.EqualFold(key, "OpenAI-Organization") {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 // Chat performs one chat-completions round.
@@ -228,15 +247,18 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 		return providers.ChatResponse{}, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpResp, err := c.doChatCompletionsRequest(ctx, c.httpClient, body, false, req.Attempt)
+	httpResp, lease, err := c.doChatCompletionsRequest(ctx, c.httpClient, body, false, req.Attempt)
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
 	defer httpResp.Body.Close()
+	defer lease.Release()
 
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return providers.ChatResponse{}, fmt.Errorf("read response body: %w", err)
+		err = fmt.Errorf("read response body: %w", err)
+		failOpenAIResponseLease(lease, httpResp, err)
+		return providers.ChatResponse{}, err
 	}
 
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
@@ -245,27 +267,34 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 			snippet = snippet[:400]
 		}
 		body := fmt.Sprintf("%s: %s", httpResp.Status, snippet)
-		return providers.ChatResponse{}, &providers.HTTPError{
+		err := &providers.HTTPError{
 			ProviderFamily:  "openai",
 			StatusCode:      httpResp.StatusCode,
 			Body:            body,
 			RetryAfter:      providers.ParseRetryAfter(httpResp),
 			ContextOverflow: providers.DetectContextOverflow(body),
 		}
+		lease.FailError(err)
+		return providers.ChatResponse{}, err
 	}
 
 	var parsed chatCompletionsResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return providers.ChatResponse{}, fmt.Errorf("parse response JSON: %w", err)
+		err = fmt.Errorf("parse response JSON: %w", err)
+		lease.FailError(err)
+		return providers.ChatResponse{}, err
 	}
 	if len(parsed.Choices) == 0 {
-		return providers.ChatResponse{}, errors.New("provider returned no choices")
+		err := errors.New("provider returned no choices")
+		lease.FailError(err)
+		return providers.ChatResponse{}, err
 	}
 
 	choice := parsed.Choices[0]
 	message := choice.Message
 	content, err := parseContent(message.Content)
 	if err != nil {
+		lease.FailError(err)
 		return providers.ChatResponse{}, err
 	}
 
@@ -291,6 +320,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	}
 	resp.FinishReason = providers.NormalizeFinishReason(resp.StopReason, resp.Truncated, len(calls) > 0)
 	resp.Usage = parsed.Usage.asTokenUsage()
+	lease.Succeed()
 	return resp, nil
 }
 
@@ -369,13 +399,13 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	// Use the single-attempt request — ReliableStreamClient handles retries
 	// with proper UI feedback at the caller layer.
 	streamClient := newStreamingHTTPClient(c.httpClient, c.streamConfig)
-	resp, err := c.doSingleChatCompletionsRequest(ctx, streamClient, body, true, req.Attempt)
+	resp, lease, err := c.doSingleChatCompletionsRequest(ctx, streamClient, body, true, req.Attempt)
 	if err != nil {
 		return nil, err
 	}
 
 	ch := make(chan providers.StreamEvent, 64)
-	go c.readSSE(resp, ch)
+	go c.readSSE(resp, lease, ch)
 	return ch, nil
 }
 
@@ -386,10 +416,10 @@ func (c *Client) doSingleChatCompletionsRequest(
 	body []byte,
 	acceptStream bool,
 	attempt providers.InferenceAttempt,
-) (*http.Response, error) {
+) (*http.Response, *providers.ProviderLease, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
+		return nil, nil, fmt.Errorf("build request: %w", err)
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -404,6 +434,10 @@ func (c *Client) doSingleChatCompletionsRequest(
 	if acceptStream {
 		mode = "stream"
 	}
+	lease, err := c.coordinator.AcquireForAttempt(ctx, c.providerScope, attempt)
+	if err != nil {
+		return nil, nil, err
+	}
 	attempt.RecordSubmission(providers.InferenceSubmissionMeta{
 		Provider:  "openai",
 		Protocol:  "chat_completions",
@@ -412,21 +446,25 @@ func (c *Client) doSingleChatCompletionsRequest(
 	})
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		err = fmt.Errorf("request failed: %w", err)
+		lease.FailError(err)
+		return nil, nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 400))
 		_ = resp.Body.Close()
 		body := fmt.Sprintf("%s: %s", resp.Status, string(snippet))
-		return nil, &providers.HTTPError{
+		err := &providers.HTTPError{
 			ProviderFamily:  "openai",
 			StatusCode:      resp.StatusCode,
 			Body:            body,
 			RetryAfter:      providers.ParseRetryAfter(resp),
 			ContextOverflow: providers.DetectContextOverflow(body),
 		}
+		lease.FailError(err)
+		return nil, nil, err
 	}
-	return resp, nil
+	return resp, lease, nil
 }
 
 // doChatCompletionsRequest sends an HTTP request with automatic retries.
@@ -437,25 +475,38 @@ func (c *Client) doChatCompletionsRequest(
 	body []byte,
 	acceptStream bool,
 	attempt providers.InferenceAttempt,
-) (*http.Response, error) {
+) (*http.Response, *providers.ProviderLease, error) {
 	var httpResp *http.Response
+	var responseLease *providers.ProviderLease
 	err := providers.WithRetry(ctx, c.retryConfig, func() error {
-		resp, err := c.doSingleChatCompletionsRequest(ctx, httpClient, body, acceptStream, attempt)
+		resp, lease, err := c.doSingleChatCompletionsRequest(ctx, httpClient, body, acceptStream, attempt)
 		if err != nil {
 			return err
 		}
 		httpResp = resp
+		responseLease = lease
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return httpResp, nil
+	return httpResp, responseLease, nil
 }
 
-func (c *Client) readSSE(resp *http.Response, ch chan<- providers.StreamEvent) {
+func failOpenAIResponseLease(lease *providers.ProviderLease, resp *http.Response, err error) {
+	if resp != nil && resp.Request != nil {
+		if ctxErr := resp.Request.Context().Err(); ctxErr != nil {
+			lease.FailError(ctxErr)
+			return
+		}
+	}
+	lease.FailError(err)
+}
+
+func (c *Client) readSSE(resp *http.Response, lease *providers.ProviderLease, ch chan<- providers.StreamEvent) {
 	defer close(ch)
 	defer resp.Body.Close()
+	defer lease.Release()
 
 	// Idle watchdog: if no chunk arrives within streamIdleTimeout(),
 	// close the body to abort the scanner. Wrap the surfaced error in
@@ -518,6 +569,7 @@ func (c *Client) readSSE(resp *http.Response, ch chan<- providers.StreamEvent) {
 			}
 			emitToolEnds()
 			truncated := lastFinishReason == "length"
+			lease.Succeed()
 			ch <- providers.StreamEvent{
 				Type:         providers.EventDone,
 				Usage:        lastUsage,
@@ -531,7 +583,9 @@ func (c *Client) readSSE(resp *http.Response, ch chan<- providers.StreamEvent) {
 		var chunk chatCompletionsChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			providers.DebugLogf("SSE parse error: %v, data: %s", err, data)
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: fmt.Errorf("parse chunk: %w", err)}
+			err = fmt.Errorf("parse chunk: %w", err)
+			failOpenAIResponseLease(lease, resp, err)
+			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 			return
 		}
 
@@ -628,27 +682,35 @@ func (c *Client) readSSE(resp *http.Response, ch chan<- providers.StreamEvent) {
 
 	if err := scanner.Err(); err != nil {
 		if idleFired.Load() {
+			err := fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)
+			failOpenAIResponseLease(lease, resp, err)
 			ch <- providers.StreamEvent{
 				Type:  providers.EventError,
-				Error: fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded),
+				Error: err,
 			}
 			return
 		}
-		ch <- providers.StreamEvent{Type: providers.EventError, Error: fmt.Errorf("read stream: %w", err)}
+		err = fmt.Errorf("read stream: %w", err)
+		failOpenAIResponseLease(lease, resp, err)
+		ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 		return
 	}
 	// Scanner ended cleanly (e.g. body closed) but we never saw [DONE].
 	// If the idle watchdog fired, surface it as a retryable timeout.
 	if idleFired.Load() {
+		err := fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)
+		failOpenAIResponseLease(lease, resp, err)
 		ch <- providers.StreamEvent{
 			Type:  providers.EventError,
-			Error: fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded),
+			Error: err,
 		}
 		return
 	}
+	err := providers.NewIncompleteStreamError("stream closed before [DONE]")
+	failOpenAIResponseLease(lease, resp, err)
 	ch <- providers.StreamEvent{
 		Type:  providers.EventError,
-		Error: providers.NewIncompleteStreamError("stream closed before [DONE]"),
+		Error: err,
 	}
 }
 

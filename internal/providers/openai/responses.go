@@ -28,25 +28,38 @@ func (c *Client) responsesChat(ctx context.Context, req providers.ChatRequest) (
 		return providers.ChatResponse{}, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpResp, err := c.doResponsesRequest(ctx, c.httpClient, body, false, payload.ExtraHeaders, payload.Attempt, payload.SubmissionReason)
+	httpResp, lease, err := c.doResponsesRequest(ctx, c.httpClient, body, false, payload.ExtraHeaders, payload.Attempt, payload.SubmissionReason)
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
 	defer httpResp.Body.Close()
+	defer lease.Release()
 
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return providers.ChatResponse{}, fmt.Errorf("read response body: %w", err)
+		err = fmt.Errorf("read response body: %w", err)
+		failOpenAIResponseLease(lease, httpResp, err)
+		return providers.ChatResponse{}, err
 	}
 
 	var parsed responsesResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return providers.ChatResponse{}, fmt.Errorf("parse response JSON: %w", err)
+		err = fmt.Errorf("parse response JSON: %w", err)
+		lease.FailError(err)
+		return providers.ChatResponse{}, err
 	}
 	if parsed.Error != nil {
-		return providers.ChatResponse{}, parsed.Error.asError()
+		err := parsed.Error.asError()
+		lease.FailError(err)
+		return providers.ChatResponse{}, err
 	}
-	return parsed.asChatResponse(req.Model)
+	response, err := parsed.asChatResponse(req.Model)
+	if err != nil {
+		lease.FailError(err)
+		return providers.ChatResponse{}, err
+	}
+	lease.Succeed()
+	return response, nil
 }
 
 func (c *Client) responsesStreamChat(ctx context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
@@ -76,13 +89,13 @@ func (c *Client) responsesStreamChatSSE(ctx context.Context, payload responsesRe
 	}
 
 	streamClient := newStreamingHTTPClient(c.httpClient, c.streamConfig)
-	resp, err := c.doSingleResponsesRequest(ctx, streamClient, body, true, payload.ExtraHeaders, payload.Attempt, payload.SubmissionReason)
+	resp, lease, err := c.doSingleResponsesRequest(ctx, streamClient, body, true, payload.ExtraHeaders, payload.Attempt, payload.SubmissionReason)
 	if err != nil {
 		return nil, err
 	}
 
 	ch := make(chan providers.StreamEvent, 64)
-	go c.readResponsesSSE(resp, ch, state)
+	go c.readResponsesSSE(resp, lease, ch, state)
 	return ch, nil
 }
 
@@ -615,10 +628,10 @@ func (c *Client) doSingleResponsesRequest(
 	extraHeaders map[string]string,
 	attempt providers.InferenceAttempt,
 	submissionReason string,
-) (*http.Response, error) {
+) (*http.Response, *providers.ProviderLease, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/responses", bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
+		return nil, nil, fmt.Errorf("build request: %w", err)
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -639,6 +652,10 @@ func (c *Client) doSingleResponsesRequest(
 	if strings.TrimSpace(submissionReason) != "" {
 		mode = "fallback"
 	}
+	lease, err := c.coordinator.AcquireForAttempt(ctx, c.providerScope, attempt)
+	if err != nil {
+		return nil, nil, err
+	}
 	attempt.RecordSubmission(providers.InferenceSubmissionMeta{
 		Provider:  "openai",
 		Protocol:  "responses",
@@ -648,21 +665,25 @@ func (c *Client) doSingleResponsesRequest(
 	})
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		err = fmt.Errorf("request failed: %w", err)
+		lease.FailError(err)
+		return nil, nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 400))
 		_ = resp.Body.Close()
 		body := fmt.Sprintf("%s: %s", resp.Status, string(snippet))
-		return nil, &providers.HTTPError{
+		err := &providers.HTTPError{
 			ProviderFamily:  "openai",
 			StatusCode:      resp.StatusCode,
 			Body:            body,
 			RetryAfter:      providers.ParseRetryAfter(resp),
 			ContextOverflow: providers.DetectContextOverflow(body),
 		}
+		lease.FailError(err)
+		return nil, nil, err
 	}
-	return resp, nil
+	return resp, lease, nil
 }
 
 func (c *Client) doResponsesRequest(
@@ -673,25 +694,28 @@ func (c *Client) doResponsesRequest(
 	extraHeaders map[string]string,
 	attempt providers.InferenceAttempt,
 	submissionReason string,
-) (*http.Response, error) {
+) (*http.Response, *providers.ProviderLease, error) {
 	var httpResp *http.Response
+	var responseLease *providers.ProviderLease
 	err := providers.WithRetry(ctx, c.retryConfig, func() error {
-		resp, err := c.doSingleResponsesRequest(ctx, httpClient, body, acceptStream, extraHeaders, attempt, submissionReason)
+		resp, lease, err := c.doSingleResponsesRequest(ctx, httpClient, body, acceptStream, extraHeaders, attempt, submissionReason)
 		if err != nil {
 			return err
 		}
 		httpResp = resp
+		responseLease = lease
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return httpResp, nil
+	return httpResp, responseLease, nil
 }
 
-func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.StreamEvent, state *providers.ProviderStateSummary) {
+func (c *Client) readResponsesSSE(resp *http.Response, lease *providers.ProviderLease, ch chan<- providers.StreamEvent, state *providers.ProviderStateSummary) {
 	defer close(ch)
 	defer resp.Body.Close()
+	defer lease.Release()
 
 	if state != nil {
 		ch <- providers.StreamEvent{
@@ -730,6 +754,7 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
 			pending.emitEnds(ch)
+			lease.Succeed()
 			ch <- providers.StreamEvent{Type: providers.EventDone}
 			return
 		}
@@ -737,7 +762,9 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 		var event responsesStreamEvent
 		if err := json.Unmarshal([]byte(data), &event); err != nil {
 			providers.DebugLogfWire("Responses SSE parse error: %v, data: %s", err, data)
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: fmt.Errorf("parse chunk: %w", err)}
+			err = fmt.Errorf("parse chunk: %w", err)
+			failOpenAIResponseLease(lease, resp, err)
+			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 			return
 		}
 
@@ -802,6 +829,7 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 		case "response.completed", "response.done", "response.incomplete":
 			pending.emitEnds(ch)
 			usage, stopReason, finishReason, truncated := responsesDoneMetadata(event.Response, sawToolCall)
+			lease.Succeed()
 			ch <- providers.StreamEvent{
 				Type:         providers.EventDone,
 				Usage:        usage,
@@ -813,43 +841,59 @@ func (c *Client) readResponsesSSE(resp *http.Response, ch chan<- providers.Strea
 
 		case "response.failed":
 			if event.Response != nil && event.Response.Error != nil {
-				ch <- providers.StreamEvent{Type: providers.EventError, Error: event.Response.Error.asError()}
+				err := event.Response.Error.asError()
+				lease.FailError(err)
+				ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 				return
 			}
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: errors.New("response failed")}
+			err := errors.New("response failed")
+			lease.FailError(err)
+			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 			return
 
 		case "error":
 			if event.Error != nil {
-				ch <- providers.StreamEvent{Type: providers.EventError, Error: event.Error.asError()}
+				err := event.Error.asError()
+				lease.FailError(err)
+				ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 				return
 			}
-			ch <- providers.StreamEvent{Type: providers.EventError, Error: errors.New("response stream error")}
+			err := errors.New("response stream error")
+			lease.FailError(err)
+			ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 			return
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		if idleFired.Load() {
+			err := fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)
+			failOpenAIResponseLease(lease, resp, err)
 			ch <- providers.StreamEvent{
 				Type:  providers.EventError,
-				Error: fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded),
+				Error: err,
 			}
 			return
 		}
-		ch <- providers.StreamEvent{Type: providers.EventError, Error: fmt.Errorf("read stream: %w", err)}
+		err = fmt.Errorf("read stream: %w", err)
+		failOpenAIResponseLease(lease, resp, err)
+		ch <- providers.StreamEvent{Type: providers.EventError, Error: err}
 		return
 	}
 	if idleFired.Load() {
+		err := fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded)
+		failOpenAIResponseLease(lease, resp, err)
 		ch <- providers.StreamEvent{
 			Type:  providers.EventError,
-			Error: fmt.Errorf("stream idle timeout after %s: %w", idleTimeout, context.DeadlineExceeded),
+			Error: err,
 		}
 		return
 	}
+	err := providers.NewIncompleteStreamError("stream closed before response.completed")
+	failOpenAIResponseLease(lease, resp, err)
 	ch <- providers.StreamEvent{
 		Type:  providers.EventError,
-		Error: providers.NewIncompleteStreamError("stream closed before response.completed"),
+		Error: err,
 	}
 }
 

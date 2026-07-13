@@ -15,6 +15,11 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers/openai"
 )
 
+// sharedProviderCoordinator coordinates every inference client built by this
+// process, regardless of whether the caller is a foreground turn, sub-agent,
+// title generator, or compaction job.
+var sharedProviderCoordinator = providers.NewProviderCoordinator(providers.DefaultProviderCoordinatorConfig())
+
 // BuildClient constructs a provider client from config using the provider
 // default retry policy. providerName is the key under which this provider lives
 // in the config map; it's needed so resolveAPIKey can fall back to the global
@@ -247,6 +252,7 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 			RetryConfig:        retry,
 			StreamConfig:       providerStreamTransportConfig(provider),
 			ResponsesTransport: providerStreamTransportMode(provider),
+			Coordinator:        sharedProviderCoordinator,
 		})
 		if newErr != nil {
 			return nil, newErr
