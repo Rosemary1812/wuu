@@ -86,7 +86,7 @@ function renderSidebar({
   onImportParticipants = () => {},
   onExportParticipants = () => {},
   onSelectParticipant = () => {},
-  onCreateParticipant = async () => null as never,
+  onSaveParticipant = async () => null as never,
   onStartNewThread = () => {},
 }: {
   projectMenuOpen?: boolean;
@@ -97,7 +97,7 @@ function renderSidebar({
   onImportParticipants?: (file: File) => void;
   onExportParticipants?: () => void;
   onSelectParticipant?: (participant: ParticipantProfile) => void;
-  onCreateParticipant?: (
+  onSaveParticipant?: (
     params: ParticipantSaveParams,
   ) => Promise<ParticipantProfile>;
   onStartNewThread?: () => void;
@@ -153,8 +153,7 @@ function renderSidebar({
         onOpenChipGallery={() => {}}
         onSelectThread={() => {}}
         onSelectParticipant={onSelectParticipant}
-        onEditParticipant={() => {}}
-        onCreateParticipant={onCreateParticipant}
+        onSaveParticipant={onSaveParticipant}
         onImportParticipants={onImportParticipants}
         onExportParticipants={onExportParticipants}
         onTogglePinned={onTogglePinned}
@@ -417,19 +416,80 @@ describe("AppSidebar participant roster", () => {
     expect(statusByName.get("Bare Agent")).toBe("online");
   });
 
+  it("saves an existing agent from the floating editor with its id", async () => {
+    const saved: ParticipantSaveParams[] = [];
+    const existing: ParticipantProfile = {
+      id: "p-edit",
+      kind: "named",
+      name: "Old Name",
+      role: "reviewer",
+      tagline: "Check changes",
+      model: "",
+    };
+    renderSidebar({
+      participants: [existing],
+      onSaveParticipant: async (params) => {
+        saved.push(params);
+        return { ...existing, ...params };
+      },
+    });
+
+    const row = container.querySelector<HTMLButtonElement>(
+      ".participant-roster-row",
+    );
+    act(() => {
+      row?.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          clientX: 80,
+          clientY: 200,
+        }),
+      );
+    });
+    const editItem = document.body.querySelector<HTMLButtonElement>(
+      ".thread-row-context-menu-item",
+    );
+    act(() => {
+      editItem?.click();
+    });
+
+    const dialog = document.body.querySelector(".new-participant-dialog");
+    const nameInput = dialog?.querySelector<HTMLInputElement>(
+      'input[data-field="name"]',
+    );
+    expect(nameInput?.value).toBe("Old Name");
+    setControlledInputValue(nameInput!, "Updated Name");
+
+    await act(async () => {
+      dialog
+        ?.querySelector<HTMLButtonElement>('button[type="submit"]')
+        ?.click();
+      await Promise.resolve();
+    });
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({
+      id: "p-edit",
+      name: "Updated Name",
+      role: "reviewer",
+      tagline: "Check changes",
+    });
+    expect(document.body.querySelector(".new-participant-dialog")).toBeNull();
+  });
+
   it("renders the empty-state CTA when there are no participants", async () => {
     // The empty-state row opens the NewParticipantDialog — a self-contained
     // popup that collects every field (name + role + tagline + model +
-    // avatar) and calls onCreateParticipant with full save params. The
+    // avatar) and calls onSaveParticipant with full save params. The
     // test asserts:
     //   1. clicking the row reveals the floating dialog
     //   2. filling the name field enables submit
     //   3. submitting the dialog forwards the trimmed name to
-    //      onCreateParticipant and closes (awaited — the dialog only
+    //      onSaveParticipant and closes (awaited — the dialog only
     //      closes once the parent's save promise resolves)
     const created: ParticipantSaveParams[] = [];
     renderSidebar({
-      onCreateParticipant: async (params) => {
+      onSaveParticipant: async (params) => {
         created.push(params);
         // The dialog treats any truthy return as a successful save and
         // closes itself. Return a minimal saved-profile stub.

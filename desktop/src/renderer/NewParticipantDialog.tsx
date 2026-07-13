@@ -33,10 +33,12 @@ type NewParticipantForm = {
   model: string;
   // avatarImage is the data URL chosen in this session, if any.
   avatarImage?: string;
+  clearAvatarImage: boolean;
 };
 
 export interface NewParticipantDialogProps {
   open: boolean;
+  participant?: ParticipantProfile;
   providers?: ProviderSummary[];
   onSubmit: (
     params: ParticipantSaveParams,
@@ -61,16 +63,13 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 /**
- * Self-contained floating dialog for creating a new agent. Replaces the
- * two-step flow (SidebarNameDialog → ParticipantProfilePanel) so the user
- * can fill in every field here in one shot. After a successful save the
- * dialog closes and the right-side profile panel does NOT open.
- *
- * The edit-mode ParticipantProfilePanel stays in place for editing
- * existing agents via the right-click menu.
+ * Self-contained floating dialog for creating or editing an agent. Both
+ * sidebar flows share this surface so profile edits never reopen the legacy
+ * right-side ParticipantProfilePanel.
  */
 export function NewParticipantDialog({
   open,
+  participant,
   providers,
   onSubmit,
   onCreated,
@@ -82,6 +81,7 @@ export function NewParticipantDialog({
     tagline: "",
     model: "",
     avatarImage: undefined,
+    clearAvatarImage: false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -91,21 +91,24 @@ export function NewParticipantDialog({
   // results that resolve late (matches ParticipantProfilePanel).
   const avatarReadTokenRef = useRef(0);
 
-  // Reset state when the dialog opens (or after a successful save closes it).
+  const editing = Boolean(participant);
+
+  // Reset state when the dialog opens or switches to another participant.
   useEffect(() => {
     if (open) {
       setForm({
-        name: "",
-        role: "reviewer",
-        tagline: "",
-        model: "",
+        name: participant?.name ?? "",
+        role: participant?.role ?? "reviewer",
+        tagline: participant?.tagline ?? "",
+        model: participant?.model ?? "",
         avatarImage: undefined,
+        clearAvatarImage: false,
       });
       setSaving(false);
       setError(undefined);
       setAvatarError(undefined);
     }
-  }, [open]);
+  }, [open, participant]);
 
   useEffect(() => {
     if (!open) {
@@ -199,7 +202,11 @@ export function NewParticipantDialog({
         return;
       }
       setAvatarError(undefined);
-      setForm((current) => ({ ...current, avatarImage: dataUrl }));
+      setForm((current) => ({
+        ...current,
+        avatarImage: dataUrl,
+        clearAvatarImage: false,
+      }));
     } catch {
       if (token !== avatarReadTokenRef.current) {
         return;
@@ -214,7 +221,11 @@ export function NewParticipantDialog({
 
   function clearAvatarImage(): void {
     setAvatarError(undefined);
-    setForm((current) => ({ ...current, avatarImage: undefined }));
+    setForm((current) => ({
+      ...current,
+      avatarImage: undefined,
+      clearAvatarImage: Boolean(participant?.avatar_image),
+    }));
   }
 
   function handleOverlayPointerDown(event: MouseEvent<HTMLDivElement>): void {
@@ -231,6 +242,7 @@ export function NewParticipantDialog({
       return;
     }
     const params: ParticipantSaveParams = {
+      id: participant?.id,
       name: form.name.trim(),
       role: form.role.trim(),
       tagline: form.tagline.trim(),
@@ -239,16 +251,17 @@ export function NewParticipantDialog({
     if (form.avatarImage) {
       params.avatar_image = form.avatarImage;
     }
+    if (form.clearAvatarImage) {
+      params.clear_avatar_image = true;
+    }
     setSaving(true);
     setError(undefined);
     try {
       const result = await onSubmit(params);
       // Dialog closes itself so the parent state machine stays in charge of
-      // routing (no right-side panel for "new" agents). The parent hands back
-      // the saved participant via onCreated so we can close on the parent
-      // signal rather than guessing the next state.
-      const saved: ParticipantProfile | undefined =
-        result ?? undefined;
+      // routing. The parent hands back the saved participant via onCreated so
+      // we close on the parent signal rather than guessing the next state.
+      const saved: ParticipantProfile | undefined = result ?? undefined;
       if (saved) {
         onCreated(saved);
       }
@@ -286,10 +299,12 @@ export function NewParticipantDialog({
             id="new-participant-dialog-title"
             className="new-participant-title"
           >
-            新建 Agent
+            {editing ? "编辑 Agent" : "新建 Agent"}
           </h2>
           <p className="new-participant-subtitle">
-            在这里填完所有信息，保存后即可在右侧 Agent 列表里看到 Ta。
+            {editing
+              ? "更新 Ta 的身份与运行配置。"
+              : "在这里填完所有信息，保存后即可在 Agent 列表里看到 Ta。"}
           </p>
         </div>
 
@@ -308,10 +323,11 @@ export function NewParticipantDialog({
               title="上传头像"
               onClick={triggerAvatarPicker}
             >
-              {form.avatarImage ? (
+              {form.avatarImage ||
+              (participant?.avatar_image && !form.clearAvatarImage) ? (
                 <img
                   className="new-participant-avatar-image"
-                  src={form.avatarImage}
+                  src={form.avatarImage ?? participant?.avatar_image}
                   alt="头像"
                 />
               ) : (
@@ -339,7 +355,8 @@ export function NewParticipantDialog({
                 <ImagePlus aria-hidden="true" />
                 <span>上传图片</span>
               </button>
-              {form.avatarImage ? (
+              {form.avatarImage ||
+              (participant?.avatar_image && !form.clearAvatarImage) ? (
                 <button
                   type="button"
                   className="new-participant-text-action danger"
@@ -363,7 +380,9 @@ export function NewParticipantDialog({
               data-field="name"
               value={form.name}
               autoFocus
-              onChange={(event) => updateField("name", event.currentTarget.value)}
+              onChange={(event) =>
+                updateField("name", event.currentTarget.value)
+              }
               placeholder="例如 Noel"
               onFocus={(event) => event.currentTarget.select()}
             />
@@ -416,7 +435,15 @@ export function NewParticipantDialog({
             ) : (
               <Save aria-hidden="true" />
             )}
-            <span>{saving ? "创建中…" : "创建"}</span>
+            <span>
+              {saving
+                ? editing
+                  ? "保存中…"
+                  : "创建中…"
+                : editing
+                  ? "保存"
+                  : "创建"}
+            </span>
           </button>
         </div>
       </form>

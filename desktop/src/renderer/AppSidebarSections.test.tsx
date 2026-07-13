@@ -110,7 +110,6 @@ interface RenderOptions {
   dmThreadByParticipantID?: Map<string, ThreadSummary>;
   
   onSelectParticipant?: (participant: ParticipantProfile) => void;
-  onEditParticipant?: (participant: ParticipantProfile) => void;
   onTogglePinned?: (thread: ThreadSummary) => void;
   onArchiveThread?: (thread: ThreadSummary) => void;
   onCreateGroupThread?: (title: string) => void;
@@ -136,7 +135,6 @@ function renderSidebar(options: RenderOptions): void {
     dmThreadByParticipantID = new Map<string, ThreadSummary>(),
     
     onSelectParticipant = () => {},
-    onEditParticipant = () => {},
     onTogglePinned = () => {},
     onArchiveThread = () => {},
     onCreateGroupThread = () => {},
@@ -188,8 +186,7 @@ function renderSidebar(options: RenderOptions): void {
         onSelectThread={onSelectThread}
         onSelectParticipant={onSelectParticipant}
         onCreateGroupThread={onCreateGroupThread}
-        onEditParticipant={onEditParticipant}
-        onCreateParticipant={async () =>
+        onSaveParticipant={async () =>
           ({
             id: "",
             kind: "named",
@@ -466,20 +463,16 @@ describe("AppSidebar sections", () => {
     expect(sidebarCSS).toMatch(/\[data-project-icon-kind="pinned"\][\s\S]*?\.project-row\.expanded/);
   });
 
-  it("agent row click fires onSelectParticipant (DM open path), not profile", () => {
+  it("agent row click fires onSelectParticipant (DM open path)", () => {
     const participants: ParticipantProfile[] = [
       { id: "p-1", kind: "named", name: "Alpha", role: "writer" },
     ];
     let selected: ParticipantProfile | undefined;
-    let edited: ParticipantProfile | undefined;
     renderSidebar({
       sectionOrder: [SIDEBAR_SECTION_AGENTS],
       participants,
       onSelectParticipant: (participant) => {
         selected = participant;
-      },
-      onEditParticipant: (participant) => {
-        edited = participant;
       },
     });
 
@@ -491,21 +484,15 @@ describe("AppSidebar sections", () => {
       main?.click();
     });
     expect(selected?.id).toBe("p-1");
-    // Profile editing is now exclusive to the right-click context menu.
-    expect(edited).toBeUndefined();
   });
 
-  it("right-clicking an agent row shows the context menu with 编辑设定", () => {
+  it("right-clicking an agent row opens the prefilled floating editor", () => {
     const participants: ParticipantProfile[] = [
       { id: "p-1", kind: "named", name: "Alpha", role: "writer" },
     ];
-    let edited: ParticipantProfile | undefined;
     renderSidebar({
       sectionOrder: [SIDEBAR_SECTION_AGENTS],
       participants,
-      onEditParticipant: (participant) => {
-        edited = participant;
-      },
     });
 
     const row = container.querySelector<HTMLButtonElement>(
@@ -530,7 +517,13 @@ describe("AppSidebar sections", () => {
     act(() => {
       items?.[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(edited?.id).toBe("p-1");
+    const dialog = document.body.querySelector(".new-participant-dialog");
+    expect(dialog?.getAttribute("role")).toBe("dialog");
+    expect(dialog?.querySelector("h2")?.textContent).toBe("编辑 Agent");
+    expect(
+      dialog?.querySelector<HTMLInputElement>('input[data-field="name"]')
+        ?.value,
+    ).toBe("Alpha");
   });
 
   it("pins DM via the context menu when a DM thread exists", () => {
@@ -928,8 +921,7 @@ describe("AppSidebar drag-to-reorder wiring (T7)", () => {
             onOpenChipGallery: () => {},
             onSelectThread: () => {},
             onSelectParticipant: () => {},
-            onEditParticipant: () => {},
-            onCreateParticipant: async () =>
+            onSaveParticipant: async () =>
           ({
             id: "",
             kind: "named",

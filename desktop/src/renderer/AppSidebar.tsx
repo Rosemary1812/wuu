@@ -339,8 +339,7 @@ export function AppSidebar({
   onOpenChipGallery,
   onSelectThread,
   onSelectParticipant,
-  onEditParticipant,
-  onCreateParticipant,
+  onSaveParticipant,
   onCreateGroupThread,
   onTogglePinned,
   onArchiveThread,
@@ -415,20 +414,14 @@ export function AppSidebar({
   onSelectThread: (id: string) => void;
   // Fires when the user clicks an agent row. The current product flow
   // routes this to opening (or creating) the DM conversation with that
-  // named participant; profile editing lives behind the right-click menu
-  // (see onEditParticipant).
+  // named participant; profile editing lives in the local floating dialog.
   onSelectParticipant: (participant: ParticipantProfile) => void;
-  // Fires when the user picks the "编辑设定" entry in the agent row's
-  // right-click menu. Opens the profile editing side panel.
-  onEditParticipant: (participant: ParticipantProfile) => void;
   // Fires when the user clicks the Agents section's + button (or the
-  // empty-list "添加 Agent" row) and submits the NewParticipantDialog.
-  // App.tsx saves the new agent via window.wuu.saveParticipant, refreshes
-  // the participants list, returns the saved participant, and does NOT
-  // open the right-side profile panel (the new-agent flow is fully
-  // handled inside the dialog). Optional so test harnesses can render
-  // the sidebar without wiring participant creation.
-  onCreateParticipant?: (params: ParticipantSaveParams) => Promise<ParticipantProfile>;
+  // Saves create and edit submissions from NewParticipantDialog. App.tsx
+  // upserts the returned participant without opening the right-side profile
+  // panel. Optional so test harnesses can render the sidebar without wiring
+  // participant persistence.
+  onSaveParticipant?: (params: ParticipantSaveParams) => Promise<ParticipantProfile>;
   // Provider summaries from the runtime, used to populate the model
   // SelectMenu in the NewParticipantDialog. Optional so the dialog can
   // still render with just the "跟随全局" fallback.
@@ -472,14 +465,11 @@ export function AppSidebar({
   // commit handler.
   const [creatingGroupThread, setCreatingGroupThread] = useState(false);
   const [groupNameDraft, setGroupNameDraft] = useState("");
-  // Floating create-agent dialog for the Agents section. The + button and
-  // the empty-list "添加 Agent" row both open the NewParticipantDialog,
-  // which is fully self-contained: it collects every field (name, role,
-  // tagline, model, avatar) and saves directly via the parent's
-  // `onParticipantCreated` callback. The right-side ParticipantProfilePanel
-  // stays in place only for editing existing agents via the right-click
-  // menu (onEditParticipant).
+  // Floating agent dialog shared by create and edit. The + button starts an
+  // empty form; the row context menu seeds the same form from the participant.
   const [creatingParticipant, setCreatingParticipant] = useState(false);
+  const [editingParticipant, setEditingParticipant] =
+    useState<ParticipantProfile>();
   // Right-click menu on an individual agent row. The menu hosts the
   // profile-editing entry plus a pin/unpin DM affordance that drives off
   // the latest DM thread for that participant. The roster header's own
@@ -873,7 +863,7 @@ export function AppSidebar({
                     {
                       label: "编辑设定",
                       onSelect: () =>
-                        onEditParticipant(rosterContextMenu.participant),
+                        setEditingParticipant(rosterContextMenu.participant),
                     },
                     {
                       label: (() => {
@@ -1163,18 +1153,19 @@ export function AppSidebar({
         cancelLabel="取消"
       />
       <NewParticipantDialog
-        open={creatingParticipant}
+        open={creatingParticipant || Boolean(editingParticipant)}
+        participant={editingParticipant}
         providers={providers}
         onSubmit={async (params) => {
           // The dialog owns its own saving/error UI; the sidebar is just the
-          // messenger. App.tsx's onCreateParticipant handler is responsible
+          // messenger. App.tsx's onSaveParticipant handler is responsible
           // for calling saveParticipant, updating the participants list, and
           // returning the saved participant so the dialog can close on
           // success. Errors thrown here surface inline inside the dialog.
-          if (!onCreateParticipant) {
-            throw new Error("onCreateParticipant handler is not wired");
+          if (!onSaveParticipant) {
+            throw new Error("onSaveParticipant handler is not wired");
           }
-          return onCreateParticipant(params);
+          return onSaveParticipant(params);
         }}
         onCreated={() => {
           // No-op: closing is driven by the dialog itself on success. Kept
@@ -1183,6 +1174,7 @@ export function AppSidebar({
         }}
         onClose={() => {
           setCreatingParticipant(false);
+          setEditingParticipant(undefined);
         }}
       />
     </aside>

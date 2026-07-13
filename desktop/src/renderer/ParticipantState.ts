@@ -46,7 +46,7 @@ export type ParticipantStateController = {
   >;
   refreshParticipants: () => Promise<ParticipantProfile[]>;
   openParticipantProfile: (participant: ParticipantProfile) => void;
-  handleNewParticipantCreate: (
+  handleParticipantDialogSave: (
     params: ParticipantSaveParams,
   ) => Promise<ParticipantProfile>;
   handleParticipantSave: (params: ParticipantSaveParams) => void;
@@ -140,7 +140,7 @@ export function useParticipantState({
     });
   }
 
-  async function handleNewParticipantCreate(
+  async function handleParticipantDialogSave(
     params: ParticipantSaveParams,
   ): Promise<ParticipantProfile> {
     const result = await window.wuu.saveParticipant(params);
@@ -339,7 +339,7 @@ export function useParticipantState({
     setParticipantPanel,
     refreshParticipants,
     openParticipantProfile,
-    handleNewParticipantCreate,
+    handleParticipantDialogSave,
     handleParticipantSave,
     handleParticipantFeedback,
     handleParticipantRetire,

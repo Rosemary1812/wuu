@@ -659,7 +659,7 @@ export function App(): JSX.Element {
     setParticipantPanel,
     refreshParticipants,
     openParticipantProfile: openParticipantProfilePanel,
-    handleNewParticipantCreate,
+    handleParticipantDialogSave,
     handleParticipantSave,
     handleParticipantFeedback,
     handleParticipantRetire,
@@ -3911,8 +3911,7 @@ export function App(): JSX.Element {
               revealConversationFromFocusedWorkspace();
               void openParticipantDM(participant);
             }}
-            onEditParticipant={openParticipantProfile}
-            onCreateParticipant={handleNewParticipantCreate}
+            onSaveParticipant={handleParticipantDialogSave}
             providers={state.initialized?.providers}
             onCreateGroupThread={(title) => {
               revealConversationFromFocusedWorkspace();
