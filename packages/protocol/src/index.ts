@@ -1072,6 +1072,132 @@ export type ThreadForkResult = {
   worktree?: WorktreeInfo;
 };
 
+// ============================================================================
+// Side Thread (侧聊)
+//
+// A side thread is bound to a main thread and shares its context but does
+// not pollute the main conversation. It exists only inside the session tab
+// that owns its main thread; it never appears in the global session list
+// and cannot be detached into a new tab. V1 ships exactly one side thread
+// per main thread.
+// ============================================================================
+
+// Lifecycle state of a side thread. `detached` captures the case where the
+// main thread was deleted and the side thread has become inaccessible;
+// it is distinct from the agent-side terminal states.
+export type SideThreadStatus =
+  | "idle"
+  | "running"
+  | "completed"
+  | "failed"
+  | "interrupted"
+  | "detached";
+
+// One side thread attached to a main thread. The lifetime is bound to
+// the main thread: deleting the main thread removes its side thread.
+// `side_thread_id` is also a real `Thread` id in the app-server (so the
+// side thread reuses the same turn pipeline), but the side thread is
+// hidden from the global session list.
+export type SideThreadSummary = {
+  side_thread_id: string;
+  main_thread_id: string;
+  status: SideThreadStatus;
+  // Lightweight roll-up so the side-panel header can show
+  // "主任务执行中 / 已完成 / 已停止" without loading the full main thread.
+  main_task_summary?: {
+    running: boolean;
+    last_user_message?: string;
+  };
+  created_at: string;
+  updated_at: string;
+};
+
+// One message in the side thread's history. The side thread keeps its own
+// independent message history — it does NOT append to the main thread.
+// V1 carries plain text plus the same attachment shape as ThreadEditDraft.
+export type SideThreadMessage = {
+  id: string;
+  side_thread_id: string;
+  role: "user" | "assistant";
+  text: string;
+  images?: InputImage[];
+  files?: InputFile[];
+  // Assistant turns mirror the agent's response. We expose a small
+  // subset so the side panel can render streaming output in V1; the
+  // full Turn shape can be added later without breaking callers.
+  status?: "streaming" | "completed" | "failed" | "interrupted";
+  error_message?: string;
+  created_at: string;
+};
+
+// Opening a side thread is lazy: if no side thread exists for this main
+// thread yet, `openSideThread` returns `summary: null` and the side panel
+// renders an empty state. The actual agent thread is only created the
+// first time the user sends a message in the side panel.
+export type SideThreadOpenResult = {
+  summary: SideThreadSummary | null;
+};
+
+export type SideThreadHistoryResult = {
+  summary: SideThreadSummary;
+  messages: SideThreadMessage[];
+};
+
+export type SideThreadSendParams = {
+  main_thread_id: string;
+  // The user's prompt. Empty prompts are rejected by the IPC layer.
+  prompt: string;
+  images?: InputImage[];
+  files?: InputFile[];
+};
+
+export type SideThreadSendResult = {
+  // Echoes the message id assigned to the user's prompt. The assistant's
+  // streaming reply is delivered through the standard ServerEvent
+  // channel (tagged with side_thread_id), so the renderer appends it
+  // without waiting for the IPC round-trip.
+  user_message_id: string;
+  summary: SideThreadSummary;
+};
+
+// Streamed lifecycle and content events for one side thread. The main
+// process emits these on the same `wuu:server-event` bus as the main
+// thread, tagged with `side_thread_id` so the renderer can route them
+// without inventing a parallel IPC channel. V1 keeps the shape small:
+// status changes for the whole side thread, plus text deltas and a
+// final assistant message. Tool activity is collapsed into the same
+// delta stream so the side panel stays readable.
+export type SideThreadEvent =
+  | {
+      type: "status";
+      side_thread_id: string;
+      main_thread_id: string;
+      status: SideThreadStatus;
+      main_task_summary?: SideThreadSummary["main_task_summary"];
+    }
+  | {
+      type: "delta";
+      side_thread_id: string;
+      main_thread_id: string;
+      // id of the assistant message being streamed; matches the
+      // SideThreadMessage.id once the message is finalized.
+      message_id: string;
+      text_delta: string;
+    }
+  | {
+      type: "message";
+      side_thread_id: string;
+      main_thread_id: string;
+      message: SideThreadMessage;
+    }
+  | {
+      type: "error";
+      side_thread_id: string;
+      main_thread_id: string;
+      message_id: string;
+      error_message: string;
+    };
+
 export type ThreadContextCompositionResult = {
   thread_id: string;
   available: boolean;
@@ -2236,6 +2362,36 @@ export type WuuDesktopApi = {
    * routed by that window identity.
    */
   popOutInit: () => PopOutInitResult;
+  // Side thread (侧聊) IPC. The side thread is bound to a main thread,
+  // shares its runtime context, and reuses the same turn pipeline, but
+  // its history never appears in the main thread or in the global
+  // session list. The renderer manages open/close state locally;
+  // "open" is lazy — no side thread exists on disk until the first
+  // message is sent.
+  //
+  // All five methods are keyed by `main_thread_id` (not side_thread_id)
+  // because the renderer never holds a side_thread_id of its own until
+  // after `openSideThread` returns a non-null summary. The main process
+  // resolves the binding both ways.
+  openSideThread: (
+    mainThreadId: string,
+  ) => Promise<SideThreadOpenResult>;
+  getSideThreadHistory: (
+    mainThreadId: string,
+  ) => Promise<SideThreadHistoryResult | null>;
+  sendSideThreadMessage: (
+    params: SideThreadSendParams,
+  ) => Promise<SideThreadSendResult>;
+  interruptSideThread: (
+    mainThreadId: string,
+  ) => Promise<{ ok: boolean }>;
+  // Streamed assistant output for a side thread. The main process
+  // re-uses the existing `wuu:server-event` channel and tags each
+  // event with `side_thread_id` so the renderer can route it to the
+  // correct side panel without inventing a new IPC bus.
+  onSideThreadEvent: (
+    handler: (event: SideThreadEvent) => void,
+  ) => () => void;
 };
 
 /**
