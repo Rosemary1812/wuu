@@ -24,7 +24,7 @@ const maxConsecutiveProactiveCompactFailures = 3
 
 // StreamRunner manages one multi-step coding turn with streaming.
 // It is a thin wrapper around RunToolLoop that supplies a streamStep
-// adapter (Step → providers.StreamClient.StreamChat with reconnect),
+// adapter (Step → providers.StreamClient.StreamChat with recovery),
 // so the actual loop logic — step counting, finish handling,
 // context-overflow auto-compact — comes from the same code as Runner.
 type StreamRunner struct {
@@ -149,10 +149,6 @@ type StreamRunner struct {
 	// round and nested compaction owned by this runner.
 	InferenceJournal providers.InferenceJournal
 
-	// ReconnectConfig controls stream reconnect behavior.
-	// Zero value disables reconnect. Normalized on first use.
-	ReconnectConfig providers.RetryConfig
-
 	usageMu           sync.Mutex
 	conversationUsage *UsageTracker
 	trackedHistoryLen int
@@ -236,7 +232,6 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	step := &streamStep{
 		client:                  r.Client,
 		onEvent:                 effectiveOnEvent,
-		retryCfg:                providers.NormalizeRetryConfig(r.ReconnectConfig),
 		tools:                   r.Tools,
 		enableStreamingToolExec: r.StreamingToolExecution,
 	}
@@ -676,15 +671,13 @@ func systemPromptSectionSummaries(sections []SystemPromptSectionInfo) []provider
 	return out
 }
 
-// streamStep adapts providers.StreamClient (with reconnect) to the
+// streamStep adapts providers.StreamClient (with recovery) to the
 // transport-agnostic Step interface. One Execute call opens an SSE
-// stream, consumes it to completion (with mid-attempt reconnect on
-// early disconnects), accumulates the assistant content + tool calls
-// + usage, and returns a normalized StepResult.
+// stream and consumes it to completion. Recoverable failures create distinct
+// execution attempts under the request operation's workload profile.
 type streamStep struct {
-	client   providers.StreamClient
-	onEvent  StreamCallback
-	retryCfg providers.RetryConfig
+	client  providers.StreamClient
+	onEvent StreamCallback
 	// Streaming tool execution: when set, read-only tools start
 	// executing as soon as their arguments are fully received,
 	// overlapping with continued model output.
@@ -943,7 +936,7 @@ func (s *streamStep) runReliableStream(
 	onAttemptStart func(),
 	replayGuard providers.StreamReplayGuard,
 ) error {
-	cfg := s.retryCfg
+	cfg := providers.RetryConfigForProfile(req.Operation.WorkloadProfile)
 	onEvent := s.onEvent
 
 	resetPartialOutput := func() {
@@ -1002,11 +995,11 @@ func (s *streamStep) runReliableStream(
 			return ctx.Err()
 		}
 
-		// A broken attempt may have accumulated partial tool calls that
+		// A failed attempt may have accumulated partial tool calls that
 		// never received a matching EventToolUseEnd. Those incomplete
 		// JSON arguments would leak into the final StepResult and later
 		// cause mapMessage to fail when the message is replayed as
-		// history. Clear the map on every fresh HTTP attempt.
+		// history. Clear the map before starting a fresh provider attempt.
 		for k := range pendingTools {
 			delete(pendingTools, k)
 		}

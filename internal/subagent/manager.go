@@ -381,7 +381,6 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 		InferenceOperationKind:   providers.InferenceOperationAgentRound,
 		InferenceWorkloadProfile: providers.InferenceProfileBackgroundAgent,
 		InferenceJournal:         defaults.journal,
-		ReconnectConfig:          providers.RetryConfigForProfile(providers.InferenceProfileBackgroundAgent),
 		OnUsage:                  onUsage,
 		OnTokenUsage:             onTokenUsage,
 	}

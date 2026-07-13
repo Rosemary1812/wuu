@@ -507,7 +507,6 @@ func NewSession(opts Options) (*Session, error) {
 		AfterTurn:                   afterTurn,
 		InferenceOperationKind:      providers.InferenceOperationAgentRound,
 		InferenceWorkloadProfile:    providers.InferenceProfileInteractive,
-		ReconnectConfig:             providers.RetryConfigForProfile(providers.InferenceProfileInteractive),
 		InferenceJournal:            workspaceJournal,
 	}
 
@@ -1067,7 +1066,6 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		InferenceOperationKind:      base.InferenceOperationKind,
 		InferenceWorkloadProfile:    base.InferenceWorkloadProfile,
 		InferenceJournal:            base.InferenceJournal,
-		ReconnectConfig:             base.ReconnectConfig,
 	}
 }
 
