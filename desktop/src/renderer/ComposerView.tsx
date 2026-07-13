@@ -299,6 +299,7 @@ export function Composer({
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const composerShellRef = useRef<HTMLDivElement>(null);
   const composerFrameRef = useRef<HTMLDivElement>(null);
   const collapsedComposerFrameHeightRef = useRef<number | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
@@ -468,6 +469,47 @@ export function Composer({
     }
     list.scrollTop = list.scrollHeight;
   }, [activeCollapsedPromptBlocks.length]);
+
+  useLayoutEffect(() => {
+    const shell = composerShellRef.current;
+    if (!shell || !slashMenuOpen) {
+      shell?.style.removeProperty("--slash-command-available-height");
+      return;
+    }
+
+    const updateAvailableHeight = (): void => {
+      const menuGap = variant === "hero" ? 10 : 8;
+      const titlebar =
+        shell.closest(".conversation-pane")?.querySelector<HTMLElement>(":scope > .titlebar") ??
+        document.querySelector<HTMLElement>(".titlebar");
+      const menuTopGutter = 8;
+      const safeTop = (titlebar?.getBoundingClientRect().bottom ?? 0) + menuTopGutter;
+      const availableHeight = Math.max(
+        0,
+        Math.floor(shell.getBoundingClientRect().top - menuGap - safeTop)
+      );
+      shell.style.setProperty("--slash-command-available-height", `${availableHeight}px`);
+    };
+
+    updateAvailableHeight();
+    window.addEventListener("resize", updateAvailableHeight);
+    const resizeObserver = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(updateAvailableHeight);
+    resizeObserver?.observe(shell);
+    const titlebar =
+      shell.closest(".conversation-pane")?.querySelector<HTMLElement>(":scope > .titlebar") ??
+      document.querySelector<HTMLElement>(".titlebar");
+    if (titlebar) {
+      resizeObserver?.observe(titlebar);
+    }
+
+    return () => {
+      window.removeEventListener("resize", updateAvailableHeight);
+      resizeObserver?.disconnect();
+      shell.style.removeProperty("--slash-command-available-height");
+    };
+  }, [slashMenuOpen, variant]);
 
   function focusComposerSoon(): void {
     window.requestAnimationFrame(() => textareaRef.current?.focus());
@@ -750,7 +792,7 @@ export function Composer({
 
   const content = (
     <div className={`composer-stack${isComposerExpanded ? " is-expanded" : ""}`}>
-      <div className="composer-shell">
+      <div className="composer-shell" ref={composerShellRef}>
         {slashMenuOpen ? (
           <div className="slash-command-menu" id={slashMenuID} role="listbox" aria-label="斜杠命令">
             {visibleSlashCommands.length > 0 ? (

@@ -627,6 +627,54 @@ describe("Composer send control", () => {
     expect(frame?.contains(slashMenu)).toBe(false);
   });
 
+  it("resizes the slash command menu with its composer and available viewport height", () => {
+    let shellTop = 320;
+    const titlebar = document.createElement("header");
+    titlebar.className = "titlebar";
+    document.body.appendChild(titlebar);
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const isShell = this.classList.contains("composer-shell");
+        const top = isShell ? shellTop : 0;
+        const bottom = this.classList.contains("titlebar") ? 64 : top;
+        return {
+          bottom,
+          height: 0,
+          left: 0,
+          right: 0,
+          top,
+          width: 0,
+          x: 0,
+          y: top,
+          toJSON: () => ({}),
+        };
+      });
+
+    try {
+      renderComposer({
+        variant: "dock",
+        prompt: "/",
+      });
+
+      const shell = container.querySelector<HTMLElement>(".composer-shell");
+      expect(shell?.style.getPropertyValue("--slash-command-available-height")).toBe("240px");
+
+      shellTop = 220;
+      act(() => window.dispatchEvent(new Event("resize")));
+      expect(shell?.style.getPropertyValue("--slash-command-available-height")).toBe("140px");
+
+      shellTop = 70;
+      act(() => window.dispatchEvent(new Event("resize")));
+      expect(shell?.style.getPropertyValue("--slash-command-available-height")).toBe("0px");
+      expect(composerCSS).toMatch(/\.slash-command-menu\s*{[^}]*width:\s*100%;/s);
+      expect(composerCSS).toContain("var(--slash-command-available-height");
+    } finally {
+      rectSpy.mockRestore();
+      titlebar.remove();
+    }
+  });
+
   it("shows the hero project selector inside the composer toolbar", () => {
     renderComposer({
       variant: "hero",

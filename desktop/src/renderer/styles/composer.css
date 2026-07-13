@@ -1372,8 +1372,11 @@
   z-index: 35;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  width: min(520px, 100%);
-  max-height: min(360px, calc(100vh - 190px));
+  width: 100%;
+  max-height: min(
+    480px,
+    var(--slash-command-available-height, calc(100dvh - 190px))
+  );
   overflow: hidden;
   border: 1px solid var(--ink-overlay-12);
   border-radius: var(--radius-lg);
