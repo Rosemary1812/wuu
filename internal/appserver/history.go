@@ -57,6 +57,7 @@ type persistedMessage struct {
 	ToolCalls           []persistedToolCall                `json:"tool_calls,omitempty"`
 	DiscoveredTools     []providers.LoadableToolDefinition `json:"discovered_tools,omitempty"`
 	ToolCallID          string                             `json:"tool_call_id,omitempty"`
+	ToolInvocationID    string                             `json:"tool_invocation_id,omitempty"`
 	ToolResultKind      string                             `json:"tool_result_kind,omitempty"`
 	FinishReason        string                             `json:"finish_reason,omitempty"`
 	StopReason          string                             `json:"stop_reason,omitempty"`
@@ -146,6 +147,7 @@ func loadChatMessages(sessDir, id string) ([]providers.ChatMessage, error) {
 			ReasoningContent:  rec.ReasoningContent,
 			ReasoningBlocks:   append([]providers.ReasoningBlock(nil), rec.ReasoningBlocks...),
 			ToolCallID:        rec.ToolCallID,
+			ToolInvocationID:  rec.ToolInvocationID,
 			ToolResultKind:    providers.NormalizeToolCallKind(rec.ToolResultKind),
 			FinishReason:      providers.FinishReason(strings.TrimSpace(rec.FinishReason)),
 			StopReason:        strings.ToLower(strings.TrimSpace(rec.StopReason)),
@@ -288,6 +290,7 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 		ReasoningBlocks:   append([]providers.ReasoningBlock(nil), msg.ReasoningBlocks...),
 		DiscoveredTools:   providers.CloneLoadableToolDefinitions(msg.DiscoveredTools),
 		ToolCallID:        msg.ToolCallID,
+		ToolInvocationID:  msg.ToolInvocationID,
 		ToolResultKind:    string(msg.ToolResultKind),
 		FinishReason:      string(msg.FinishReason),
 		StopReason:        strings.ToLower(strings.TrimSpace(msg.StopReason)),
@@ -388,6 +391,7 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 		ToolCalls:           mustJSON(rec.ToolCalls),
 		DiscoveredTools:     mustJSON(rec.DiscoveredTools),
 		ToolCallID:          rec.ToolCallID,
+		ToolInvocationID:    rec.ToolInvocationID,
 		ToolResultKind:      rec.ToolResultKind,
 		FinishReason:        rec.FinishReason,
 		StopReason:          rec.StopReason,
@@ -427,6 +431,7 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 		Steered:             rec.Steered,
 		ReasoningContent:    rec.ReasoningContent,
 		ToolCallID:          rec.ToolCallID,
+		ToolInvocationID:    rec.ToolInvocationID,
 		ToolResultKind:      rec.ToolResultKind,
 		FinishReason:        rec.FinishReason,
 		StopReason:          rec.StopReason,

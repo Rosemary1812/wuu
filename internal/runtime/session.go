@@ -44,6 +44,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
+	"github.com/blueberrycongee/wuu/internal/toolledger"
 	"github.com/blueberrycongee/wuu/internal/tools"
 	"github.com/blueberrycongee/wuu/internal/workspaces"
 )
@@ -1002,6 +1003,11 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 	}
 
 	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
+	toolLedger, err := toolledger.New(s.SessionDir, id)
+	if err != nil {
+		return nil, fmt.Errorf("open tool ledger: %w", err)
+	}
+	runner.ToolLedger = toolLedger
 	runner.SystemPrompt, runner.SystemPromptSections = systemPromptForThreadRoot(runner.SystemPrompt, runner.SystemPromptSections, threadRoot, s.SessionDate)
 	if s.MemdirEnabled {
 		runner.SystemPrompt, runner.SystemPromptSections = systemPromptWithFreshMemdirIndex(runner.SystemPrompt, runner.SystemPromptSections, wuuHome)
@@ -1036,6 +1042,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 	return &agent.StreamRunner{
 		Client:                      base.Client,
 		Tools:                       toolExecutor,
+		ToolLedger:                  base.ToolLedger,
 		Model:                       base.Model,
 		APIModel:                    base.APIModel,
 		SystemPrompt:                base.SystemPrompt,

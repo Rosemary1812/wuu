@@ -1050,6 +1050,84 @@ func TestSQLiteDatabaseIsCreated(t *testing.T) {
 	}
 }
 
+func TestAppendHistoryProjectsSettledToolInvocationAtomically(t *testing.T) {
+	dir := t.TempDir()
+	sess, err := CreateWithMetadata(dir, "thread-tool-projection", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().UnixMilli()
+	if _, err := db.Exec(`
+INSERT INTO tool_batches (id, owner_id, operation_id, step_index, status, created_at, updated_at, terminal_at)
+VALUES ('batch-1', ?, 'operation-1', 1, 'settled', ?, ?, ?)`, sess.ID, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO tool_invocations (
+  id, batch_id, provider_call_id, tool_name, arguments_json, replay_policy, state,
+  result_json, prepared_at, running_at, settled_at
+) VALUES ('invocation-1', 'batch-1', 'call-1', 'read_file', '{}', 'at_most_once', 'succeeded', '{}', ?, ?, ?)`, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := AppendHistoryRecord(dir, sess.ID, HistoryRecord{
+		Role: "tool", ToolCallID: "call-1", ToolInvocationID: "invocation-1", Content: "done",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	db, err = openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var projectedAt int64
+	var batchState string
+	if err := db.QueryRow(`SELECT projected_at FROM tool_invocations WHERE id = 'invocation-1'`).Scan(&projectedAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT status FROM tool_batches WHERE id = 'batch-1'`).Scan(&batchState); err != nil {
+		t.Fatal(err)
+	}
+	if projectedAt == 0 || batchState != "projected" {
+		t.Fatalf("projection state = %d/%q", projectedAt, batchState)
+	}
+	records, err := LoadHistoryRecords(dir, sess.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || records[0].ToolInvocationID != "invocation-1" {
+		t.Fatalf("history records = %+v", records)
+	}
+}
+
+func TestAppendHistoryRollsBackUnknownToolProjection(t *testing.T) {
+	dir := t.TempDir()
+	sess, err := CreateWithMetadata(dir, "thread-tool-rollback", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = AppendHistoryRecord(dir, sess.ID, HistoryRecord{
+		Role: "tool", ToolCallID: "call-missing", ToolInvocationID: "invocation-missing", Content: "missing",
+	})
+	if err == nil {
+		t.Fatal("unknown tool invocation was projected")
+	}
+	records, loadErr := LoadHistoryRecords(dir, sess.ID, false)
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if len(records) != 0 {
+		t.Fatalf("history append was not rolled back: %+v", records)
+	}
+}
+
 func setSessionUpdatedAt(t *testing.T, dir, id string, at time.Time) {
 	t.Helper()
 	if _, err := updateMetadata(dir, id, false, func(s *Session) {

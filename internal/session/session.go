@@ -106,6 +106,7 @@ type HistoryRecord struct {
 	ToolCalls         json.RawMessage `json:"tool_calls,omitempty"`
 	DiscoveredTools   json.RawMessage `json:"discovered_tools,omitempty"`
 	ToolCallID        string          `json:"tool_call_id,omitempty"`
+	ToolInvocationID  string          `json:"tool_invocation_id,omitempty"`
 	ToolResultKind    string          `json:"tool_result_kind,omitempty"`
 	FinishReason      string          `json:"finish_reason,omitempty"`
 	StopReason        string          `json:"stop_reason,omitempty"`
@@ -801,6 +802,7 @@ func migrateSchema(db *sql.DB) error {
 			tool_calls_json TEXT NOT NULL DEFAULT '',
 			discovered_tools_json TEXT NOT NULL DEFAULT '',
 			tool_call_id TEXT NOT NULL DEFAULT '',
+			tool_invocation_id TEXT NOT NULL DEFAULT '',
 			tool_result_kind TEXT NOT NULL DEFAULT '',
 			name TEXT NOT NULL DEFAULT '',
 			at TEXT,
@@ -1230,6 +1232,9 @@ WHERE workflow_id = ''`); err != nil {
 		return err
 	}
 	if err := addColumnIfMissing(db, "session_messages", "tool_result_kind", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(db, "session_messages", "tool_invocation_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if err := addColumnIfMissing(db, "session_messages", "discovered_tools_json", "TEXT NOT NULL DEFAULT ''"); err != nil {
@@ -2018,16 +2023,49 @@ func insertHistoryRecordTx(tx *sql.Tx, id string, seq int, rec HistoryRecord) er
 			INSERT INTO session_messages (
 				session_id, seq, role, content, display_content, phase, provider_item_id, provider_item_model, client_id, hidden, steered, reasoning_content,
 				reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
-				tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, context_tokens, cache_creation_tokens, cache_read_tokens,
+				tool_call_id, tool_invocation_id, tool_result_kind, name, at, input_tokens, output_tokens, context_tokens, cache_creation_tokens, cache_read_tokens,
 				provider, model, participant_id, post_kind, thread_id, basis_seq, envelope_meta, focus_meta
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, seq, strings.ToLower(strings.TrimSpace(rec.Role)), rec.Content, rec.DisplayContent, strings.TrimSpace(rec.Phase), strings.TrimSpace(rec.ProviderItemID), strings.TrimSpace(rec.ProviderItemModel), rec.ClientID, boolInt(rec.Hidden), boolInt(rec.Steered), rec.ReasoningContent,
 		rawJSONText(rec.ReasoningBlocks), rawJSONText(rec.Images), rawJSONText(rec.Files), rawJSONText(rec.ToolCalls), rawJSONText(rec.DiscoveredTools),
-		rec.ToolCallID, rec.ToolResultKind, rec.Name, nullableValueTimeText(rec.At), rec.InputTokens, rec.OutputTokens, rec.ContextTokens, rec.CacheCreationTokens, rec.CacheReadTokens,
+		rec.ToolCallID, rec.ToolInvocationID, rec.ToolResultKind, rec.Name, nullableValueTimeText(rec.At), rec.InputTokens, rec.OutputTokens, rec.ContextTokens, rec.CacheCreationTokens, rec.CacheReadTokens,
 		strings.TrimSpace(rec.Provider), strings.TrimSpace(rec.Model), strings.TrimSpace(rec.ParticipantID), strings.TrimSpace(rec.PostKind), strings.TrimSpace(rec.ThreadID), rec.BasisSeq, rawJSONText(rec.EnvelopeMeta), rawJSONText(rec.FocusMeta),
 	)
 	if err != nil {
 		return fmt.Errorf("insert history record: %w", err)
+	}
+	if err := projectToolInvocationTx(tx, id, rec.ToolInvocationID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func projectToolInvocationTx(tx *sql.Tx, ownerID, invocationID string) error {
+	invocationID = strings.TrimSpace(invocationID)
+	if invocationID == "" {
+		return nil
+	}
+	now := time.Now().UTC().UnixMilli()
+	result, err := tx.Exec(`
+UPDATE tool_invocations SET projected_at = MAX(projected_at, ?)
+WHERE id = ? AND state IN ('succeeded', 'failed')
+  AND batch_id IN (SELECT id FROM tool_batches WHERE owner_id = ?)`, now, invocationID, ownerID)
+	if err != nil {
+		return fmt.Errorf("project tool invocation: %w", err)
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return fmt.Errorf("tool invocation %q is not settled for owner %q", invocationID, ownerID)
+	}
+	_, err = tx.Exec(`
+UPDATE tool_batches SET status = 'projected', updated_at = ?, terminal_at = MAX(terminal_at, ?)
+WHERE owner_id = ? AND status = 'settled'
+  AND id = (SELECT batch_id FROM tool_invocations WHERE id = ?)
+  AND NOT EXISTS (
+    SELECT 1 FROM tool_invocations
+    WHERE batch_id = tool_batches.id AND state IN ('succeeded', 'failed') AND projected_at = 0
+  )`, now, now, ownerID, invocationID)
+	if err != nil {
+		return fmt.Errorf("project tool batch: %w", err)
 	}
 	return nil
 }
@@ -2037,7 +2075,7 @@ func loadHistoryRecordsDB(db *sql.DB, id string, includeMeta bool) ([]HistoryRec
 		SELECT seq, role, content, display_content, phase, client_id, hidden, steered, reasoning_content,
 	       provider_item_id, provider_item_model,
 		       reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
-	       tool_call_id, tool_result_kind, name, at, input_tokens, output_tokens, context_tokens, cache_creation_tokens, cache_read_tokens,
+	       tool_call_id, tool_invocation_id, tool_result_kind, name, at, input_tokens, output_tokens, context_tokens, cache_creation_tokens, cache_read_tokens,
 	       provider, model, participant_id, post_kind, thread_id, basis_seq, envelope_meta, focus_meta
 	FROM session_messages
 WHERE session_id = ?`
@@ -2064,7 +2102,7 @@ WHERE session_id = ?`
 			&rec.Role, &rec.Content, &rec.DisplayContent, &rec.Phase, &rec.ClientID, &hidden, &steered, &rec.ReasoningContent,
 			&rec.ProviderItemID, &rec.ProviderItemModel,
 			&reasoningBlocks, &images, &files, &toolCalls, &discoveredTools,
-			&rec.ToolCallID, &rec.ToolResultKind, &rec.Name, &at, &rec.InputTokens, &rec.OutputTokens, &rec.ContextTokens, &rec.CacheCreationTokens, &rec.CacheReadTokens,
+			&rec.ToolCallID, &rec.ToolInvocationID, &rec.ToolResultKind, &rec.Name, &at, &rec.InputTokens, &rec.OutputTokens, &rec.ContextTokens, &rec.CacheCreationTokens, &rec.CacheReadTokens,
 			&rec.Provider, &rec.Model, &rec.ParticipantID, &rec.PostKind, &rec.ThreadID, &rec.BasisSeq, &envelopeMeta, &focusMeta,
 		); err != nil {
 			return nil, fmt.Errorf("scan session history: %w", err)
