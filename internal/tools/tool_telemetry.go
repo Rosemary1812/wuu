@@ -31,36 +31,37 @@ const (
 // ToolExecutionRecord captures benchmark-oriented facts about one tool
 // execution. It deliberately excludes arguments and output content.
 type ToolExecutionRecord struct {
-	Name                       string           `json:"name"`
-	StepIndex                  *int             `json:"step_index,omitempty"`
-	CallID                     string           `json:"call_id,omitempty"`
-	ArgumentsSHA256            string           `json:"arguments_sha256,omitempty"`
-	ResultAction               string           `json:"result_action,omitempty"`
-	Kind                       ToolKind         `json:"kind"`
-	Exposure                   ToolExposure     `json:"exposure"`
-	Risk                       ToolRisk         `json:"risk"`
-	ClassificationReason       string           `json:"classification_reason,omitempty"`
-	PolicyAction               ToolPolicyAction `json:"policy_action"`
-	PolicyReason               string           `json:"policy_reason,omitempty"`
-	ReadOnly                   bool             `json:"read_only"`
-	ConcurrencySafe            bool             `json:"concurrency_safe"`
-	StartedAt                  time.Time        `json:"started_at"`
-	DurationMS                 int64            `json:"duration_ms"`
-	RevisionBefore             string           `json:"revision_before,omitempty"`
-	RevisionAfter              string           `json:"revision_after,omitempty"`
-	Success                    bool             `json:"success"`
-	Error                      string           `json:"error,omitempty"`
-	ErrorKind                  string           `json:"error_kind,omitempty"`
-	RawOutputBytes             int              `json:"raw_output_bytes"`
-	ReturnedOutputBytes        int              `json:"returned_output_bytes"`
-	ResultBudgeted             bool             `json:"result_budgeted"`
-	ResultRef                  string           `json:"result_ref,omitempty"`
-	ArtifactRefs               []string         `json:"artifact_refs,omitempty"`
-	LoadedDeferredTools        []string         `json:"loaded_deferred_tools,omitempty"`
-	NewlyLoadedDeferredTools   []string         `json:"newly_loaded_deferred_tools,omitempty"`
-	AlreadyLoadedDeferredTools []string         `json:"already_loaded_deferred_tools,omitempty"`
-	ToolSurfaceChanged         bool             `json:"tool_surface_changed,omitempty"`
-	PatchRiskSummary           *ToolPatchRisk   `json:"patch_risk_summary,omitempty"`
+	Name                       string                 `json:"name"`
+	StepIndex                  *int                   `json:"step_index,omitempty"`
+	CallID                     string                 `json:"call_id,omitempty"`
+	ArgumentsSHA256            string                 `json:"arguments_sha256,omitempty"`
+	ResultAction               string                 `json:"result_action,omitempty"`
+	Kind                       ToolKind               `json:"kind"`
+	Exposure                   ToolExposure           `json:"exposure"`
+	Risk                       ToolRisk               `json:"risk"`
+	ClassificationReason       string                 `json:"classification_reason,omitempty"`
+	PolicyAction               ToolPolicyAction       `json:"policy_action"`
+	PolicyReason               string                 `json:"policy_reason,omitempty"`
+	ReadOnly                   bool                   `json:"read_only"`
+	ConcurrencySafe            bool                   `json:"concurrency_safe"`
+	StartedAt                  time.Time              `json:"started_at"`
+	DurationMS                 int64                  `json:"duration_ms"`
+	RevisionBefore             string                 `json:"revision_before,omitempty"`
+	RevisionAfter              string                 `json:"revision_after,omitempty"`
+	Success                    bool                   `json:"success"`
+	Error                      string                 `json:"error,omitempty"`
+	ErrorKind                  string                 `json:"error_kind,omitempty"`
+	RawOutputBytes             int                    `json:"raw_output_bytes"`
+	ReturnedOutputBytes        int                    `json:"returned_output_bytes"`
+	ResultBudgeted             bool                   `json:"result_budgeted"`
+	ResultRef                  string                 `json:"result_ref,omitempty"`
+	ArtifactRefs               []string               `json:"artifact_refs,omitempty"`
+	LoadedDeferredTools        []string               `json:"loaded_deferred_tools,omitempty"`
+	NewlyLoadedDeferredTools   []string               `json:"newly_loaded_deferred_tools,omitempty"`
+	AlreadyLoadedDeferredTools []string               `json:"already_loaded_deferred_tools,omitempty"`
+	ToolSurfaceChanged         bool                   `json:"tool_surface_changed,omitempty"`
+	PatchRiskSummary           *ToolPatchRisk         `json:"patch_risk_summary,omitempty"`
+	Projection                 *ProjectionDiagnostics `json:"projection,omitempty"`
 }
 
 type ToolPatchRisk struct {
@@ -119,12 +120,12 @@ func (t *Toolkit) executeKnownToolResultWithRepeatPolicy(ctx context.Context, ca
 	decision := ToolPolicyDecision{Action: ToolPolicyAllow, Reason: "workspace boundary"}
 
 	if err := validateToolArgumentsJSON(call.Arguments); err != nil {
-		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err)
+		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err, nil)
 		return toolresult.Result{}, err
 	}
 	if validator, ok := tool.(InputValidatingTool); ok {
 		if err := validator.ValidateInput(call.Arguments); err != nil {
-			t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err)
+			t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err, nil)
 			return toolresult.Result{}, err
 		}
 	}
@@ -132,7 +133,7 @@ func (t *Toolkit) executeKnownToolResultWithRepeatPolicy(ctx context.Context, ca
 	if err := t.boundary.Check(info, call); err != nil {
 		decision.Action = ToolPolicyDeny
 		decision.Reason = "workspace boundary"
-		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err)
+		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err, nil)
 		return toolresult.Result{}, err
 	}
 
@@ -144,7 +145,7 @@ func (t *Toolkit) executeKnownToolResultWithRepeatPolicy(ctx context.Context, ca
 			PriorRepeats:    priorRepeats,
 			MaxPriorRepeats: repeatedToolInputPriorLimit,
 		}
-		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err)
+		t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionBefore, "", "", "", false, err, nil)
 		return toolresult.Result{}, err
 	}
 
@@ -176,17 +177,37 @@ func (t *Toolkit) executeKnownToolResultWithRepeatPolicy(ctx context.Context, ca
 	returnedProjection := rawProjection
 	resultRef := ""
 	resultBudgeted := false
+	var projectionDiag *ProjectionDiagnostics
 	if err == nil {
 		t.recordDiscoveredToolsForCall(call, t.activateToolBundlesAfterSuccess(call.Name))
 		if result.IsTextOnly() {
-			returnedProjection, resultRef, resultBudgeted = MaybePersistResultWithRef(t.env.SessionDir, call.Name, call.ID, rawProjection, defaultResultBudget)
-			returned = toolresult.FromText(returnedProjection)
-			returned.IsError = result.IsError
+			// Tool-specific stable projection runs once here, before the result
+			// is stored, so the model sees identical bytes on the first and every
+			// later request. It falls back to the generic result budget when
+			// disabled, in shadow mode, ineligible, or when a projector declines.
+			mode := t.env.toolResultProjectionMode()
+			applied := false
+			if mode != projectionModeOff && builtInProjectionAllowlist[call.Name] {
+				stable, diag := finalizeBuiltInToolResult(t.env.SessionDir, call.Name, call.ID, result, defaultProjectionTokenBudget)
+				projectionDiag = &diag
+				if mode == projectionModeActive && diag.Applied {
+					returned = stable
+					returnedProjection = stable.TextProjection()
+					resultRef = diag.ArtifactRef
+					resultBudgeted = true
+					applied = true
+				}
+			}
+			if !applied {
+				returnedProjection, resultRef, resultBudgeted = MaybePersistResultWithRef(t.env.SessionDir, call.Name, call.ID, rawProjection, defaultResultBudget)
+				returned = toolresult.FromText(returnedProjection)
+				returned.IsError = result.IsError
+			}
 		}
 	}
 
 	revisionAfter := workspaceRevision(ctx, t.env.RootDir)
-	t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionAfter, rawProjection, returnedProjection, resultRef, resultBudgeted, err)
+	t.recordToolExecution(ctx, call, info, decision, startedAt, revisionBefore, revisionAfter, rawProjection, returnedProjection, resultRef, resultBudgeted, err, projectionDiag)
 
 	return returned, err
 }
@@ -295,6 +316,7 @@ func (t *Toolkit) recordToolExecution(
 	resultRef string,
 	resultBudgeted bool,
 	err error,
+	projection *ProjectionDiagnostics,
 ) {
 	artifactRefs := extractToolArtifactRefs(result, resultRef)
 	loadedDeferredTools, newlyLoadedDeferredTools, alreadyLoadedDeferredTools, toolSurfaceChanged := extractToolSearchLoadMetadata(call.Name, result)
@@ -332,6 +354,7 @@ func (t *Toolkit) recordToolExecution(
 		AlreadyLoadedDeferredTools: alreadyLoadedDeferredTools,
 		ToolSurfaceChanged:         toolSurfaceChanged,
 		PatchRiskSummary:           extractToolPatchRisk(call.Name, result),
+		Projection:                 projection,
 	}
 	if err != nil {
 		record.Error = err.Error()

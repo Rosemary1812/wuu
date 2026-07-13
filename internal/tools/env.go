@@ -207,11 +207,15 @@ type Env struct {
 
 	// Optional dependencies — nil means the feature is unavailable.
 	// Tools check for nil and return a clear error rather than panic.
-	SessionID   string
-	SessionDir  string // absolute session artifact path for result budgeting
-	GoalRuntime *goalruntime.Runtime
-	AgentID     string
-	AgentPath   string
+	SessionID  string
+	SessionDir string // absolute session artifact path for result budgeting
+	// ToolResultProjectionMode selects stable tool-result projection behavior
+	// ("off"/"shadow"/"active"); empty means off. The WUU_TOOL_RESULT_PROJECTION
+	// environment variable overrides it for experimentation.
+	ToolResultProjectionMode string
+	GoalRuntime              *goalruntime.Runtime
+	AgentID                  string
+	AgentPath                string
 	// ParticipantID is set for conversation-native named-agent runtimes.
 	// It lets participant tools act under the stable participant identity
 	// without changing the thread/root agent identity used by other tools.

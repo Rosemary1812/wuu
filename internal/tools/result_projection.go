@@ -3,6 +3,7 @@ package tools
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"os"
 	"strings"
 
 	"github.com/blueberrycongee/wuu/internal/contextbudget"
@@ -38,6 +39,43 @@ const (
 	projectorVersion = "1"
 )
 
+// projectionMode selects how the stable projection participates in a run.
+//
+//   - off:    no projection is computed; the generic result budget applies.
+//   - shadow: the projection and its diagnostics are computed and recorded for
+//     A/B measurement, but the model still sees the generic-budgeted result.
+//   - active: an applicable projection replaces the result the model sees.
+//
+// The default is off, so wiring the finalizer in changes no model-visible bytes
+// until an operator opts in.
+type projectionMode string
+
+const (
+	projectionModeOff    projectionMode = "off"
+	projectionModeShadow projectionMode = "shadow"
+	projectionModeActive projectionMode = "active"
+)
+
+// projectionModeEnvVar overrides the configured mode for experimentation
+// without threading config, mirroring other WUU_* runtime toggles.
+const projectionModeEnvVar = "WUU_TOOL_RESULT_PROJECTION"
+
+// resolveProjectionMode resolves the effective mode. An explicit environment
+// override wins; an unset or unrecognized value falls back to off.
+func resolveProjectionMode(configured string) projectionMode {
+	if v := strings.TrimSpace(os.Getenv(projectionModeEnvVar)); v != "" {
+		configured = v
+	}
+	switch strings.ToLower(strings.TrimSpace(configured)) {
+	case "shadow":
+		return projectionModeShadow
+	case "active", "on", "true", "1":
+		return projectionModeActive
+	default:
+		return projectionModeOff
+	}
+}
+
 // builtInProjectionAllowlist is the exact set of built-in tool names eligible
 // for tool-specific projection.
 //
@@ -60,11 +98,11 @@ var builtInProjectionAllowlist = map[string]bool{
 type projectionReason string
 
 const (
-	reasonNotEligible projectionReason = "not_eligible"   // not on the allowlist, or not text-only
-	reasonUnderBudget projectionReason = "under_budget"   // eligible but already within budget (identity)
-	reasonNoProjector projectionReason = "no_projector"   // eligible + over budget but no projector registered
-	reasonProjected   projectionReason = "projected"      // tool-specific projection applied
-	reasonFailOpen    projectionReason = "fail_open"      // projector/artifact failed; full result preserved
+	reasonNotEligible projectionReason = "not_eligible" // not on the allowlist, or not text-only
+	reasonUnderBudget projectionReason = "under_budget" // eligible but already within budget (identity)
+	reasonNoProjector projectionReason = "no_projector" // eligible + over budget but no projector registered
+	reasonProjected   projectionReason = "projected"    // tool-specific projection applied
+	reasonFailOpen    projectionReason = "fail_open"    // projector/artifact failed; full result preserved
 )
 
 // ProjectionDiagnostics captures non-content facts about one projection
@@ -121,6 +159,15 @@ type toolProjector func(rawText string, pc projectorContext) (projectedText stri
 // registry means finalizeBuiltInToolResult is a pure passthrough, so wiring it
 // in before projectors exist changes no model-visible bytes.
 var toolProjectors = map[string]toolProjector{}
+
+// toolResultProjectionMode resolves the effective projection mode for this
+// environment, honoring the runtime override.
+func (e *Env) toolResultProjectionMode() projectionMode {
+	if e == nil {
+		return resolveProjectionMode("")
+	}
+	return resolveProjectionMode(e.ToolResultProjectionMode)
+}
 
 // estimateResultTokens returns the deterministic estimated-token cost of a
 // result's model-visible text using the shared context budget estimator.
