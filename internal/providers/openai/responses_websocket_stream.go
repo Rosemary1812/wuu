@@ -51,6 +51,7 @@ type responsesWebSocketSession struct {
 	generation   uint64
 	busy         bool
 	active       chan responsesWebSocketReadEvent
+	activeErr    error
 	continuation *responsesWebSocketContinuation
 	fallback     responsesWebSocketFallbackState
 	idleTimer    *time.Timer
@@ -164,6 +165,7 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 	readCh := make(chan responsesWebSocketReadEvent, 64)
 	session.busy = true
 	session.active = readCh
+	session.activeErr = nil
 	mode := "stream"
 	if strings.TrimSpace(requestPayload.SubmissionReason) != "" {
 		mode = "fallback"
@@ -265,6 +267,7 @@ func (c *Client) responsesWebSocketReadPump(session *responsesWebSocketSession, 
 		default:
 			session.mu.Lock()
 			if session.active == target && session.conn == conn && session.generation == generation {
+				session.activeErr = &providers.LocalBackpressureError{Component: "responses websocket reader"}
 				c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "read_backpressure")
 				close(target)
 			}
@@ -305,7 +308,13 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 		case frame, ok = <-readCh:
 		}
 		if !ok && frame.err == nil {
-			frame.err = providers.NewIncompleteStreamError("websocket stream closed before response.completed")
+			session.mu.Lock()
+			frame.err = session.activeErr
+			session.activeErr = nil
+			session.mu.Unlock()
+			if frame.err == nil {
+				frame.err = providers.NewIncompleteStreamError("websocket stream closed before response.completed")
+			}
 		}
 		if frame.err != nil {
 			if ctx.Err() != nil {
@@ -314,6 +323,13 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 				c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusInternalError, "request_canceled")
 				session.mu.Unlock()
 				ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
+				return
+			}
+			if providers.NormalizeFailure(frame.err).Category == providers.FailureLocalBackpressure {
+				session.mu.Lock()
+				c.responsesWebSocketReleaseLocked(session, readCh)
+				session.mu.Unlock()
+				ch <- providers.StreamEvent{Type: providers.EventError, Error: frame.err}
 				return
 			}
 			if !sawProviderEvent {

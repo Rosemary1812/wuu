@@ -655,6 +655,7 @@ func (c *Client) doSingleResponsesRequest(
 		_ = resp.Body.Close()
 		body := fmt.Sprintf("%s: %s", resp.Status, string(snippet))
 		return nil, &providers.HTTPError{
+			ProviderFamily:  "openai",
 			StatusCode:      resp.StatusCode,
 			Body:            body,
 			RetryAfter:      providers.ParseRetryAfter(resp),
@@ -1459,7 +1460,9 @@ func (e *responsesError) asError() error {
 		code = strings.TrimSpace(e.Type)
 	}
 	if code != "" || e.Message != "" {
-		return providers.NewProviderStreamError(code, e.Message)
+		err := providers.NewProviderStreamError(code, e.Message)
+		err.ProviderFamily = "openai"
+		return err
 	}
 	if e.Type != "" {
 		return fmt.Errorf("response error: %s", e.Type)

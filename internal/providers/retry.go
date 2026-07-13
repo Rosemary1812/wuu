@@ -50,9 +50,12 @@ func DefaultRetryConfig() RetryConfig {
 
 // HTTPError wraps an HTTP status code error.
 type HTTPError struct {
-	StatusCode int
-	Body       string
-	RetryAfter time.Duration // parsed from Retry-After header, if present
+	ProviderFamily  string
+	ProviderCode    string
+	StatusCode      int
+	Body            string
+	RetryAfter      time.Duration // parsed from Retry-After header, if present
+	AuthRefreshable bool
 	// ContextOverflow is true when the body indicates the prompt
 	// exceeded the model's context window. Callers can use this
 	// to trigger an auto-compact rather than a plain retry.
@@ -66,6 +69,7 @@ func (e *HTTPError) Error() string {
 // StreamError wraps a terminal provider-stream failure that arrived inside
 // the live event stream rather than as an HTTP status code.
 type StreamError struct {
+	ProviderFamily  string
 	Message         string
 	Code            string
 	Retryable       bool
@@ -143,6 +147,14 @@ func StreamErrorSummary(err error) string {
 	if err == nil {
 		return ""
 	}
+	var replayBlocked *ReplayBlockedError
+	if errors.As(err, &replayBlocked) {
+		return "Automatic replay blocked to avoid duplicate tool execution"
+	}
+	var backpressure *LocalBackpressureError
+	if errors.As(err, &backpressure) {
+		return "Local stream consumer could not keep up"
+	}
 	if isEmptyAnswerMessage(err.Error()) {
 		return "Model returned empty response"
 	}
@@ -155,11 +167,15 @@ func StreamErrorSummary(err error) string {
 
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {
-		switch httpErr.StatusCode {
-		case 429, 529:
+		if httpErr.StatusCode == 529 {
 			return "Provider is overloaded"
-		case 500, 502, 503:
+		}
+		if httpErr.StatusCode >= 500 && httpErr.StatusCode <= 599 {
 			return "Provider request failed"
+		}
+		switch httpErr.StatusCode {
+		case 429:
+			return "Provider is overloaded"
 		}
 	}
 
@@ -221,6 +237,10 @@ func StreamErrorDisplay(err error) string {
 		return "The connection dropped while streaming the reply."
 	case "Model returned empty response":
 		return "The model returned an empty response. This is usually a provider compatibility issue — try again or rephrase your prompt."
+	case "Automatic replay blocked to avoid duplicate tool execution":
+		return "The connection ended after a tool started. Wuu stopped automatic replay to avoid running the tool twice."
+	case "Local stream consumer could not keep up":
+		return "Wuu could not process provider events fast enough, so it stopped instead of generating the response again."
 	default:
 		return StreamErrorSummary(err)
 	}
@@ -244,8 +264,6 @@ func DetectContextOverflow(body string) bool {
 		strings.Contains(msg, "model_context_window_exceeded") ||
 		strings.Contains(msg, "prompt is too long") ||
 		strings.Contains(msg, "input is too long") ||
-		strings.Contains(msg, "request too large") ||
-		strings.Contains(msg, "request buffer limit") ||
 		strings.Contains(msg, "too many tokens")
 }
 
@@ -327,46 +345,7 @@ func ContextOverflowGap(err error) OverflowTokenGap {
 
 // IsRetryable returns true if the error is worth retrying.
 func IsRetryable(err error) bool {
-	if err == nil {
-		return false
-	}
-	var replayBlocked *ReplayBlockedError
-	if errors.As(err, &replayBlocked) {
-		return false
-	}
-	var streamErr *StreamError
-	if errors.As(err, &streamErr) {
-		if streamErr.ContextOverflow || streamErr.Auth {
-			return false
-		}
-		if isTerminalUsageLimit(streamErr.Code, streamErr.Message) {
-			return false
-		}
-		return streamErr.Retryable
-	}
-	var httpErr *HTTPError
-	if errors.As(err, &httpErr) {
-		// Context-overflow needs compaction, not a blind retry.
-		if httpErr.ContextOverflow {
-			return false
-		}
-		if httpErr.StatusCode == 429 && isTerminalUsageLimit("", httpErr.Body) {
-			return false
-		}
-		switch httpErr.StatusCode {
-		case 429, 529: // rate limit, overloaded
-			return true
-		case 500, 502, 503: // server errors
-			return true
-		case 401, 403: // auth errors - not retryable
-			return false
-		}
-	}
-	// Network errors are retryable
-	if isNetworkError(err) {
-		return true
-	}
-	return false
+	return PlanRecovery(NormalizeFailure(err)).Retryable()
 }
 
 // IsAuthError returns true if the error is an authentication failure.

@@ -246,6 +246,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 		}
 		body := fmt.Sprintf("%s: %s", httpResp.Status, snippet)
 		return providers.ChatResponse{}, &providers.HTTPError{
+			ProviderFamily:  "openai",
 			StatusCode:      httpResp.StatusCode,
 			Body:            body,
 			RetryAfter:      providers.ParseRetryAfter(httpResp),
@@ -418,6 +419,7 @@ func (c *Client) doSingleChatCompletionsRequest(
 		_ = resp.Body.Close()
 		body := fmt.Sprintf("%s: %s", resp.Status, string(snippet))
 		return nil, &providers.HTTPError{
+			ProviderFamily:  "openai",
 			StatusCode:      resp.StatusCode,
 			Body:            body,
 			RetryAfter:      providers.ParseRetryAfter(resp),

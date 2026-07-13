@@ -173,6 +173,33 @@ func TestReliableStreamClientRetriesConnectFailure(t *testing.T) {
 	}
 }
 
+func TestReliableStreamClientRetriesTypedGatewayFailures(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "gateway timeout", err: &HTTPError{ProviderFamily: "openai", StatusCode: 504, Body: "gateway timeout"}},
+		{name: "openai compatible route miss", err: &HTTPError{ProviderFamily: "openai", StatusCode: 404, Body: `{"error":"temporary route miss"}`}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			inner := &reliableStreamMockClient{attempts: []reliableStreamAttempt{
+				{err: test.err},
+				{events: []StreamEvent{{Type: EventContentDelta, Content: "recovered"}, {Type: EventDone}}},
+			}}
+			client := NewReliableStreamClient(inner, reliableTestRetryConfig(2), nil)
+			ch, err := client.StreamChat(context.Background(), ChatRequest{})
+			if err != nil {
+				t.Fatalf("StreamChat: %v", err)
+			}
+			events := nonLifecycleEvents(collectReliableEvents(t, ch))
+			if inner.callCount != 2 || len(events) != 2 || events[0].Content != "recovered" {
+				t.Fatalf("attempts/events = %d/%+v", inner.callCount, events)
+			}
+		})
+	}
+}
+
 func TestReliableStreamClientEmitsFinalErrorAfterMaxRetries(t *testing.T) {
 	retryErr := NewIncompleteStreamError("temporary drop")
 	inner := &reliableStreamMockClient{attempts: []reliableStreamAttempt{
@@ -231,6 +258,22 @@ func TestReliableStreamClientDoesNotRetryNonRetryableError(t *testing.T) {
 	}
 	if retries != 0 || inner.callCount != 1 {
 		t.Fatalf("retries=%d attempts=%d, want 0/1", retries, inner.callCount)
+	}
+}
+
+func TestReliableStreamClientDoesNotReplayLocalBackpressure(t *testing.T) {
+	inner := &reliableStreamMockClient{attempts: []reliableStreamAttempt{
+		{events: []StreamEvent{{Type: EventError, Error: &LocalBackpressureError{Component: "test reader"}}}},
+		{events: []StreamEvent{{Type: EventDone}}},
+	}}
+	client := NewReliableStreamClient(inner, reliableTestRetryConfig(3), nil)
+	ch, err := client.StreamChat(context.Background(), ChatRequest{})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+	events := nonLifecycleEvents(collectReliableEvents(t, ch))
+	if inner.callCount != 1 || len(events) != 1 || events[0].Type != EventError {
+		t.Fatalf("attempts/events = %d/%+v, want local failure without replay", inner.callCount, events)
 	}
 }
 

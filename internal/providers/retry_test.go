@@ -78,10 +78,22 @@ func TestIsRetryable_AuthError(t *testing.T) {
 }
 
 func TestIsRetryable_HTTPServerErrors(t *testing.T) {
-	for _, code := range []int{429, 500, 502, 503, 529} {
+	for _, code := range []int{429, 500, 502, 503, 504, 529} {
 		if !IsRetryable(&HTTPError{StatusCode: code, Body: "error"}) {
 			t.Fatalf("expected HTTP %d to be retryable", code)
 		}
+	}
+}
+
+func TestIsRetryable_OpenAICompatible404UsesTypedSemantics(t *testing.T) {
+	if !IsRetryable(&HTTPError{ProviderFamily: "openai", StatusCode: 404, Body: `{"error":"temporary route miss"}`}) {
+		t.Fatal("expected unknown OpenAI-compatible 404 to receive bounded outer retry")
+	}
+	if IsRetryable(&HTTPError{ProviderFamily: "openai", StatusCode: 404, Body: `{"code":"model_not_found"}`}) {
+		t.Fatal("expected definitive model_not_found to stop")
+	}
+	if IsRetryable(&HTTPError{ProviderFamily: "anthropic", StatusCode: 404, Body: "not found"}) {
+		t.Fatal("expected non-OpenAI 404 to stop")
 	}
 }
 
@@ -149,10 +161,10 @@ func TestDetectContextOverflow_OpenAIResponsesMessage(t *testing.T) {
 	}
 }
 
-func TestDetectContextOverflow_RequestBufferLimit(t *testing.T) {
+func TestDetectContextOverflow_DoesNotGuessFromGatewayBufferLimit(t *testing.T) {
 	msg := "HTTP 507: 507 Insufficient Storage: exceeded request buffer limit while retrying upstream"
-	if !DetectContextOverflow(msg) {
-		t.Fatal("expected request buffer limit to be detected as context overflow")
+	if DetectContextOverflow(msg) {
+		t.Fatal("gateway byte-buffer limits must not trigger lossy context compaction")
 	}
 }
 

@@ -210,6 +210,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 		}
 		body := fmt.Sprintf("%s: %s", httpResp.Status, snippet)
 		return providers.ChatResponse{}, &providers.HTTPError{
+			ProviderFamily:  "anthropic",
 			StatusCode:      httpResp.StatusCode,
 			Body:            body,
 			RetryAfter:      providers.ParseRetryAfter(httpResp),
@@ -984,6 +985,7 @@ func (c *Client) doSingleMessagesRequest(
 		_ = resp.Body.Close()
 		body := fmt.Sprintf("%s: %s", resp.Status, string(snippet))
 		return nil, &providers.HTTPError{
+			ProviderFamily:  "anthropic",
 			StatusCode:      resp.StatusCode,
 			Body:            body,
 			RetryAfter:      providers.ParseRetryAfter(resp),
@@ -1231,15 +1233,19 @@ func (c *Client) handleSSEEvent(
 		var p anthropicErrorPayload
 		if err := json.Unmarshal([]byte(raw.Data), &p); err == nil {
 			providers.DebugLogf("readSSEStream: error code=%s msg=%s", p.Error.Code, p.Error.Message)
+			streamErr := providers.NewProviderStreamError(p.Error.Code, p.Error.Message)
+			streamErr.ProviderFamily = "anthropic"
 			ch <- providers.StreamEvent{
 				Type:  providers.EventError,
-				Error: providers.NewProviderStreamError(p.Error.Code, p.Error.Message),
+				Error: streamErr,
 			}
 			return
 		}
+		streamErr := providers.NewProviderStreamError("", raw.Data)
+		streamErr.ProviderFamily = "anthropic"
 		ch <- providers.StreamEvent{
 			Type:  providers.EventError,
-			Error: providers.NewProviderStreamError("", raw.Data),
+			Error: streamErr,
 		}
 	}
 }
