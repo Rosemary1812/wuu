@@ -112,15 +112,17 @@ describe("workspace markdown reading prose", () => {
     expect(h3).toMatch(/font-size:\s*17px;/);
   });
 
-  it("colors inline links with the accent and underlines only on hover", () => {
+  it("uses the message-stream link palette and underlines only on hover", () => {
     // GitHub-style README links: a row of shields.io badges is dense
     // enough that always-underlined anchors look like a wall of strikethrough.
     const link = cssRuleBody(".workspace-markdown-reading .rich-link.rich-web-link");
-    expect(link).toMatch(/color:\s*var\(--wuu-accent\);/);
+    expect(link).toMatch(/color:\s*var\(--rich-link-color\);/);
     expect(link).toMatch(/text-decoration:\s*none;/);
-    expect(
-      cssRuleBody(".workspace-markdown-reading .rich-link.rich-web-link:hover"),
-    ).toMatch(/text-decoration:\s*underline;/);
+    const hoveredLink = cssRuleBody(
+      ".workspace-markdown-reading .rich-link.rich-web-link:hover",
+    );
+    expect(hoveredLink).toMatch(/color:\s*var\(--rich-link-hover-color\);/);
+    expect(hoveredLink).toMatch(/text-decoration:\s*underline;/);
   });
 
   it("frames code blocks, tables, and blockquotes so they read as artifacts", () => {
