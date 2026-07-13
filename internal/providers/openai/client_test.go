@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 func TestChat_SendsRequestAndParsesToolCall(t *testing.T) {
@@ -2053,6 +2054,39 @@ func TestResponsesRequest_ReplaysReasoningBlocks(t *testing.T) {
 	}
 	if input[2].(map[string]any)["type"] != "function_call" {
 		t.Fatalf("expected function call after reasoning item, got %#v", input[2])
+	}
+}
+
+func TestResponsesRequest_EmitsOutputForEmptyToolResult(t *testing.T) {
+	client := &Client{}
+	payload, err := client.buildResponsesRequest(providers.ChatRequest{
+		Model: "gpt-test",
+		Messages: []providers.ChatMessage{
+			{Role: "user", Content: "act"},
+			{Role: "assistant", ToolCalls: []providers.ToolCall{{
+				ID: "call_1", Name: "computer", Arguments: `{"action":"press_key"}`,
+			}}},
+			{Role: "tool", ToolCallID: "call_1", ToolResult: &toolresult.Result{}},
+		},
+	}, false)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	body, err := marshalResponsesRequest(payload)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	input := decoded["input"].([]any)
+	output, ok := input[2].(map[string]any)
+	if !ok || output["type"] != "function_call_output" {
+		t.Fatalf("unexpected tool result input: %#v", input)
+	}
+	if output["output"] != "Tool completed without a textual result." {
+		t.Fatalf("empty tool result output = %#v", output["output"])
 	}
 }
 

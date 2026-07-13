@@ -15,6 +15,8 @@ type ProjectedToolResult struct {
 	ObservationFiles  []InputFile
 }
 
+const emptyToolResultText = "Tool completed without a textual result."
+
 func ProjectToolResult(result toolresult.Result) ProjectedToolResult {
 	projected := ProjectedToolResult{}
 	textParts := make([]string, 0, len(result.Content)+1)
@@ -59,6 +61,11 @@ func ProjectToolResult(result toolresult.Result) ProjectedToolResult {
 	}
 	if projected.ToolText == "" && result.IsError {
 		projected.ToolText = "Tool execution failed without a textual error message."
+	}
+	if projected.ToolText == "" {
+		// Tool-result output is required by model protocols even when a tool
+		// intentionally has no user-facing text to return.
+		projected.ToolText = emptyToolResultText
 	}
 	return projected
 }

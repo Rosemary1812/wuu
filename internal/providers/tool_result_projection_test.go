@@ -37,6 +37,13 @@ func TestProjectToolResultPreservesOrderAndHidesPrivateMetadata(t *testing.T) {
 	}
 }
 
+func TestProjectToolResultProvidesTextForEmptySuccess(t *testing.T) {
+	projected := ProjectToolResult(toolresult.Result{})
+	if projected.ToolText != emptyToolResultText {
+		t.Fatalf("empty result projection = %q, want %q", projected.ToolText, emptyToolResultText)
+	}
+}
+
 func TestPrepareMessagesPlacesObservationsAfterContiguousToolResults(t *testing.T) {
 	imageResult := toolresult.Result{Content: []toolresult.ContentPart{{Type: "image", Data: "aW1hZ2U=", MIMEType: "image/png"}}}
 	fileResult := toolresult.Result{Content: []toolresult.ContentPart{{Type: "file", Data: "ZmlsZQ==", MIMEType: "application/pdf", Name: "report.pdf"}}}
