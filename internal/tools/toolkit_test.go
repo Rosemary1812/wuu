@@ -166,12 +166,16 @@ func TestToolkit_WriteAndReadFile(t *testing.T) {
 	}
 	var writeCreated struct {
 		WorkspaceRevision string `json:"workspace_revision"`
+		NewFileSHA        string `json:"new_file_sha"`
 	}
 	if err := json.Unmarshal([]byte(writeResp), &writeCreated); err != nil {
 		t.Fatalf("parse write response: %v", err)
 	}
 	if !strings.HasPrefix(writeCreated.WorkspaceRevision, "fs:worktree:") {
 		t.Fatalf("write_file response missing filesystem workspace revision: %+v", writeCreated)
+	}
+	if writeCreated.NewFileSHA != formatFileSHA(sha256Hex([]byte("hello"))) {
+		t.Fatalf("write_file response missing new content hash: %+v", writeCreated)
 	}
 
 	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
@@ -859,6 +863,8 @@ func TestToolkit_EditFileRequiresPriorRead(t *testing.T) {
 	}
 	var parsed struct {
 		WorkspaceRevision string   `json:"workspace_revision"`
+		OldFileSHA        string   `json:"old_file_sha"`
+		NewFileSHA        string   `json:"new_file_sha"`
 		Suggestions       []string `json:"next_suggestions"`
 	}
 	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
@@ -866,6 +872,9 @@ func TestToolkit_EditFileRequiresPriorRead(t *testing.T) {
 	}
 	if !strings.HasPrefix(parsed.WorkspaceRevision, "fs:worktree:") {
 		t.Fatalf("edit_file response missing filesystem workspace revision: %+v", parsed)
+	}
+	if parsed.OldFileSHA != formatFileSHA(sha256Hex([]byte("alpha\n"))) || parsed.NewFileSHA != formatFileSHA(sha256Hex([]byte("bravo\n"))) {
+		t.Fatalf("edit_file response missing before/after content hashes: %+v", parsed)
 	}
 	if len(parsed.Suggestions) == 0 || !strings.Contains(strings.Join(parsed.Suggestions, " "), "command execution") {
 		t.Fatalf("edit_file response missing validation suggestion: %+v", parsed.Suggestions)

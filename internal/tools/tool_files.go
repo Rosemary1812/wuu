@@ -864,11 +864,13 @@ func (t *WriteFileTool) Execute(ctx context.Context, argsJSON string) (string, e
 		"action":             "create",
 		"path":               t.env.NormalizeDisplayPathExec(ctx, resolved),
 		"written_bytes":      len(args.Content),
+		"new_file_sha":       formatFileSHA(sha256Hex([]byte(args.Content))),
 		"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 	}
 
 	if fileExists {
 		result["action"] = "overwrite"
+		result["old_file_sha"] = formatFileSHA(sha256Hex(oldContent))
 		result["diff"] = writeFileDiffResult(oldContent, args.Content)
 	} else {
 		lineCount := strings.Count(args.Content, "\n")
@@ -1269,6 +1271,8 @@ func (t *EditFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	result := map[string]any{
 		"action":             "edit",
 		"path":               t.env.NormalizeDisplayPathExec(ctx, resolved),
+		"old_file_sha":       formatFileSHA(oldSHA),
+		"new_file_sha":       formatFileSHA(sha256Hex([]byte(newContent))),
 		"workspace_revision": workspaceRevision(ctx, t.env.RevisionRoot(ctx)),
 		"diff":               diff,
 		"next_suggestions":   []string{"run targeted validation with command execution if that capability is exposed, otherwise inspect the resulting diff before finishing"},
