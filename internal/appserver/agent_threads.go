@@ -441,7 +441,6 @@ func (s *Server) completeLiveAgentThread(rootThreadID string, control *agentcont
 			Category:   string(structured.Category),
 			Provider:   structured.Provider,
 			StatusCode: structured.StatusCode,
-			Action:     structured.Action,
 			Turn:       turn,
 		})
 		return

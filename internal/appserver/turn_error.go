@@ -13,9 +13,9 @@ import (
 const responseCompletedMissingCode = "stream_closed_before_response.completed"
 
 // BuildTurnError inspects the raw error from a failed turn and produces a
-// structured TurnError the front-end can render directly. Mirrors
-// opencode's retryable() pattern: typed-error matching first, JSON body
-// parse as a second pass, message-substring matching as the final
+// structured diagnostic facts a shell can map to a read-only event.
+// Uses typed-error matching first, JSON body parse as a second pass,
+// and message-substring matching as the final
 // fallback so we never lose information for an unrecognized provider.
 //
 // The function is best-effort: every field is optional and the caller
@@ -83,11 +83,6 @@ func BuildTurnError(err error, provider string) TurnError {
 	if out.Code == "" {
 		out.Code = extractCodeFromMessage(message)
 	}
-
-	// 5. Action: the front-end renders this as a button beneath the
-	// chip. Empty when the category does not have a meaningful next
-	// step (cancelled) or when the message does not call for one.
-	out.Action = buildAction(out.Category, out.Code, message)
 
 	return out
 }
@@ -424,141 +419,6 @@ func extractCodeFromMessage(message string) string {
 		return ""
 	}
 	return inner
-}
-
-// buildAction picks the user-facing next-step button for the chip. The
-// action is the authoritative source — the front-end does not
-// re-derive it. The front-end can decide whether to render the action
-// as a button below the chip, in a kebab menu, or anywhere else.
-func buildAction(category string, code, message string) *TurnErrorAction {
-	switch category {
-	case "cancelled":
-		return nil
-	case "auth":
-		return &TurnErrorAction{
-			Reason:  "reauth",
-			Title:   "Provider 凭据或权限不足",
-			Message: "请在 Settings → Providers 检查当前 Provider 的 API 密钥和权限。",
-			Label:   "查看 Provider 设置",
-		}
-	case "provider":
-		return buildProviderAction(code, message)
-	case "network":
-		return &TurnErrorAction{
-			Reason:  "retry",
-			Title:   "网络问题",
-			Message: "无法完成这次请求。可以稍后再发，或检查网络连接。",
-			Label:   "稍后重试",
-		}
-	case "tool":
-		return &TurnErrorAction{
-			Reason:  "view_debug",
-			Title:   "工具调用失败",
-			Message: "某个工具没有完成。原始错误已留在调试信息中。",
-			Label:   "复制调试信息",
-		}
-	case "local":
-		return &TurnErrorAction{
-			Reason:  "open_settings",
-			Title:   "本地操作失败",
-			Message: "无法完成本地文件、命令或权限相关操作。",
-			Label:   "查看权限设置",
-		}
-	case "internal":
-		return &TurnErrorAction{
-			Reason:  "copy_debug",
-			Title:   "wuu 内部错误",
-			Message: "没有完成这次请求。调试信息可用于排查。",
-			Label:   "复制调试信息",
-		}
-	}
-	return nil
-}
-
-// buildProviderAction specializes the action for the most common
-// provider-side sub-cases. The chip's visible title is the specific
-// code (e.g. "insufficient_quota"); the action's title is the
-// user-facing summary.
-func buildProviderAction(code, message string) *TurnErrorAction {
-	lower := strings.ToLower(code + " " + message)
-	if isResponseCompletedMissingMessage(lower) {
-		return &TurnErrorAction{
-			Reason:  "view_debug",
-			Title:   "部分回答未完成",
-			Message: "Provider WS 流在 response.completed 前断开；这次回答可能不完整。",
-			Label:   "复制调试信息",
-		}
-	}
-	if isRateLimitPattern(lower) {
-		return &TurnErrorAction{
-			Reason:  "wait",
-			Title:   "Provider 限流或配额用尽",
-			Message: "Provider 限流或配额已用完。稍后重试，或检查 Provider 账户的额度。",
-			Label:   "稍后重试",
-		}
-	}
-	if isOverloadPattern(lower) {
-		return &TurnErrorAction{
-			Reason:  "wait",
-			Title:   "Provider 繁忙",
-			Message: "Provider 当前过载，稍后重试。",
-			Label:   "稍后重试",
-		}
-	}
-	if isContextOverflowPattern(lower) {
-		return &TurnErrorAction{
-			Reason:  "compact",
-			Title:   "上下文超出窗口",
-			Message: "请求超出当前模型的上下文窗口。压缩上下文后重试。",
-			Label:   "压缩上下文",
-		}
-	}
-	return &TurnErrorAction{
-		Reason:  "view_debug",
-		Title:   "模型没有完成请求",
-		Message: "可能是上下文超出窗口、限流或上游中断。",
-		Label:   "复制调试信息",
-	}
-}
-
-func isRateLimitPattern(lower string) bool {
-	return strings.Contains(lower, "rate limit") ||
-		strings.Contains(lower, "rate_limit") ||
-		strings.Contains(lower, "too many requests") ||
-		strings.Contains(lower, "throttling") ||
-		strings.Contains(lower, "insufficient_quota") ||
-		strings.Contains(lower, "quota exceeded") ||
-		strings.Contains(lower, "usage_limit") ||
-		// Gemini uses "RESOURCE_EXHAUSTED" alongside its numeric code;
-		// semantically it is a quota/rate-limit signal (the resource
-		// the user paid for is gone) and the chip should suggest
-		// waiting or upgrading rather than retrying blindly.
-		strings.Contains(lower, "resource_exhausted") ||
-		strings.Contains(lower, "resource has been exhausted") ||
-		strings.Contains(lower, "访问量过大") ||
-		strings.Contains(lower, "稍后再试") ||
-		strings.Contains(lower, "freeusagelimit") ||
-		strings.Contains(lower, "gousagelimit")
-}
-
-func isOverloadPattern(lower string) bool {
-	return strings.Contains(lower, "overloaded") ||
-		strings.Contains(lower, "overloaded_error") ||
-		strings.Contains(lower, "temporarily unavailable") ||
-		strings.Contains(lower, "529")
-}
-
-func isContextOverflowPattern(lower string) bool {
-	return strings.Contains(lower, "context_length_exceeded") ||
-		strings.Contains(lower, "context window") ||
-		strings.Contains(lower, "maximum context length") ||
-		strings.Contains(lower, "prompt is too long") ||
-		strings.Contains(lower, "request_too_large") ||
-		strings.Contains(lower, "request too large") ||
-		strings.Contains(lower, "request buffer limit") ||
-		strings.Contains(lower, "input is too long") ||
-		strings.Contains(lower, "model_context_window_exceeded") ||
-		strings.Contains(lower, "too many tokens")
 }
 
 func isResponseCompletedMissingMessage(lower string) bool {

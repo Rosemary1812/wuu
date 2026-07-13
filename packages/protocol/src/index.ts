@@ -1355,9 +1355,8 @@ export type Turn = {
   status: TurnStatus;
   // Structured turn-end error populated by the Go core's BuildTurnError.
   // Older clients that only read `message` still work because every new
-  // field is optional; the front-end prefers `code` and `category` for
-  // the visible chip and uses `action` to drive the recommended
-  // next-step button. Mirrors internal/appserver/protocol.go::TurnError.
+  // field is optional; shells use these diagnostic facts to derive a
+  // concise read-only system event. Mirrors internal/appserver/protocol.go::TurnError.
   error?: TurnError;
   started_at?: string | null;
   completed_at?: string | null;
@@ -1380,16 +1379,14 @@ export type TurnError = {
   category?: TurnErrorCategory;
   provider?: string;
   status_code?: number;
-  action?: TurnErrorAction;
 };
 
 // Canonical error category taxonomy shared with the Go core. The values
 // are the same strings BuildTurnError emits from
 // internal/appserver/turn_error.go::TurnErrorCategory. The Go side has
 // 7 categories that match the front-end's existing UserFacingErrorCategory
-// 1:1; the front-end keeps its own internal vocabulary for legacy
-// reasons and translates from these wire values when the action
-// surfaces in the chip.
+// 1:1; shells translate these diagnostic values into their own
+// user-facing system-event vocabulary.
 export type TurnErrorCategory =
   | "cancelled"
   | "network"
@@ -1398,19 +1395,6 @@ export type TurnErrorCategory =
   | "tool"
   | "local"
   | "internal";
-
-// Structured next-step the Go core wants the user to see. Mirrors
-// opencode's Retryable.action shape. The `reason` is a stable enum
-// suitable for telemetry; `title` / `message` / `label` are the
-// user-facing strings; `link` is an optional URL or in-app focus hint
-// the front-end can route to.
-export type TurnErrorAction = {
-  reason: string;
-  title: string;
-  message: string;
-  label: string;
-  link?: string;
-};
 
 export type TurnErrorNotification = {
   thread_id: string;
@@ -1421,12 +1405,11 @@ export type TurnErrorNotification = {
   error: string;
   // Flattened copy of the structured fields so listeners that only
   // watch the notification (and not the embedded `turn`) still get the
-  // chip-ready values. Matches TurnErrorNotification in Go.
+  // diagnostic values. Matches TurnErrorNotification in Go.
   code?: string;
   category?: TurnErrorCategory;
   provider?: string;
   status_code?: number;
-  action?: TurnErrorAction;
   turn: Turn;
 };
 

@@ -1,12 +1,35 @@
 package appserver
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
+
+func TestBuildTurnError_SerializesFactsWithoutActions(t *testing.T) {
+	err := &providers.HTTPError{
+		StatusCode: 404,
+		Body:       `{"error":{"code":"internal_error","message":"resource not found"}}`,
+	}
+	out := BuildTurnError(err, "compatible")
+
+	encoded, marshalErr := json.Marshal(out)
+	if marshalErr != nil {
+		t.Fatalf("marshal turn error: %v", marshalErr)
+	}
+	wire := string(encoded)
+	if strings.Contains(wire, `"action"`) {
+		t.Fatalf("turn error must contain diagnostic facts only, got %s", wire)
+	}
+	for _, fact := range []string{`"code":"internal_error"`, `"provider":"compatible"`, `"status_code":404`} {
+		if !strings.Contains(wire, fact) {
+			t.Errorf("turn error lost diagnostic fact %s: %s", fact, wire)
+		}
+	}
+}
 
 // TestBuildTurnError_Nil covers the no-error path. BuildTurnError
 // must not panic on nil and must still surface the provider so the
@@ -19,15 +42,11 @@ func TestBuildTurnError_Nil(t *testing.T) {
 	if out.Provider != "openai" {
 		t.Errorf("expected provider=openai, got %q", out.Provider)
 	}
-	if out.Action != nil {
-		t.Errorf("expected nil action on nil error, got %+v", out.Action)
-	}
 }
 
 // TestBuildTurnError_HTTP401_Auth covers the OpenAI "invalid API key"
 // path: HTTP 401 with no parseable code in the body, classified as
-// auth with a reauth action that points the user at the Provider
-// settings page.
+// auth while retaining the provider and HTTP status facts.
 func TestBuildTurnError_HTTP401_Auth(t *testing.T) {
 	err := &providers.HTTPError{
 		StatusCode: 401,
@@ -43,17 +62,11 @@ func TestBuildTurnError_HTTP401_Auth(t *testing.T) {
 	if out.Provider != "openai" {
 		t.Errorf("expected provider=openai, got %q", out.Provider)
 	}
-	if out.Action == nil || out.Action.Reason != "reauth" {
-		t.Errorf("expected reauth action, got %+v", out.Action)
-	}
-	if out.Action != nil && out.Action.Label == "" {
-		t.Errorf("reauth action must have a non-empty label")
-	}
 }
 
 // TestBuildTurnError_HTTP429_OpenAIQuota covers the OpenAI
 // insufficient_quota path: HTTP 429 with code=insufficient_quota
-// in the body, classified as provider with a "wait" action.
+// in the body and classified as provider.
 func TestBuildTurnError_HTTP429_OpenAIQuota(t *testing.T) {
 	err := &providers.HTTPError{
 		StatusCode: 429,
@@ -65,9 +78,6 @@ func TestBuildTurnError_HTTP429_OpenAIQuota(t *testing.T) {
 	}
 	if out.Code != "insufficient_quota" {
 		t.Errorf("expected code=insufficient_quota, got %q", out.Code)
-	}
-	if out.Action == nil || out.Action.Reason != "wait" {
-		t.Errorf("expected wait action, got %+v", out.Action)
 	}
 }
 
@@ -112,17 +122,13 @@ func TestBuildTurnError_HTTP429PrefixedProviderBodies(t *testing.T) {
 			if out.Code != tt.want {
 				t.Fatalf("expected code=%q, got %q", tt.want, out.Code)
 			}
-			if out.Action == nil || out.Action.Reason != "wait" {
-				t.Fatalf("expected wait action, got %+v", out.Action)
-			}
 		})
 	}
 }
 
 // TestBuildTurnError_HTTPContextOverflow covers the typed context
 // overflow path: the HTTPError has ContextOverflow=true so the
-// category is provider and the action is "compact" regardless of
-// the HTTP status code.
+// category is provider regardless of the HTTP status code.
 func TestBuildTurnError_HTTPContextOverflow(t *testing.T) {
 	err := &providers.HTTPError{
 		StatusCode:      400,
@@ -135,9 +141,6 @@ func TestBuildTurnError_HTTPContextOverflow(t *testing.T) {
 	}
 	if out.Code != "context_length_exceeded" {
 		t.Errorf("expected code=context_length_exceeded, got %q", out.Code)
-	}
-	if out.Action == nil || out.Action.Reason != "compact" {
-		t.Errorf("expected compact action, got %+v", out.Action)
 	}
 }
 
@@ -185,9 +188,6 @@ func TestBuildTurnError_StreamProviderQuotaCodes(t *testing.T) {
 			if out.Code != tt.code {
 				t.Fatalf("expected code=%q, got %q", tt.code, out.Code)
 			}
-			if out.Action == nil || out.Action.Reason != "wait" {
-				t.Fatalf("expected wait action, got %+v", out.Action)
-			}
 		})
 	}
 }
@@ -210,8 +210,7 @@ func TestBuildTurnError_StreamAuth(t *testing.T) {
 }
 
 // TestBuildTurnError_StreamContextOverflow covers typed
-// StreamError.ContextOverflow — the chip should still surface the
-// compact action.
+// StreamError.ContextOverflow — the diagnostic category stays provider.
 func TestBuildTurnError_StreamContextOverflow(t *testing.T) {
 	err := &providers.StreamError{
 		Code:            "context_length_exceeded",
@@ -221,9 +220,6 @@ func TestBuildTurnError_StreamContextOverflow(t *testing.T) {
 	out := BuildTurnError(err, "openai")
 	if out.Category != string("provider") {
 		t.Errorf("expected category=provider, got %q", out.Category)
-	}
-	if out.Action == nil || out.Action.Reason != "compact" {
-		t.Errorf("expected compact action, got %+v", out.Action)
 	}
 }
 
@@ -239,12 +235,6 @@ func TestBuildTurnError_ResponseCompletedMissing(t *testing.T) {
 	}
 	if out.Code != "stream_closed_before_response.completed" {
 		t.Errorf("expected stream_closed_before_response.completed code, got %q", out.Code)
-	}
-	if out.Action == nil || out.Action.Reason != "view_debug" {
-		t.Fatalf("expected view_debug action, got %+v", out.Action)
-	}
-	if !strings.Contains(out.Action.Message, "response.completed") {
-		t.Errorf("expected action detail to mention response.completed, got %q", out.Action.Message)
 	}
 }
 
@@ -262,36 +252,26 @@ func TestBuildTurnError_OverloadedAnthropic(t *testing.T) {
 	if out.Category != string("provider") {
 		t.Errorf("expected category=provider, got %q", out.Category)
 	}
-	if out.Action == nil || out.Action.Reason != "wait" {
-		t.Errorf("expected wait action for overload, got %+v", out.Action)
-	}
 }
 
 // TestBuildTurnError_Cancellation covers the user-stop path. A plain
-// "context canceled" error has no action because the user already
-// knows they stopped the request.
+// "context canceled" error remains a cancellation fact.
 func TestBuildTurnError_Cancellation(t *testing.T) {
 	err := errors.New("context canceled")
 	out := BuildTurnError(err, "openai")
 	if out.Category != string("cancelled") {
 		t.Errorf("expected category=cancelled, got %q", out.Category)
 	}
-	if out.Action != nil {
-		t.Errorf("expected nil action for cancellation, got %+v", out.Action)
-	}
 }
 
 // TestBuildTurnError_InternalFallback covers the unrecognized-error
 // path. The message has no category-specific token so the classifier
-// falls back to "internal" with a copy_debug action.
+// falls back to "internal".
 func TestBuildTurnError_InternalFallback(t *testing.T) {
 	err := errors.New("panic: nil pointer dereference")
 	out := BuildTurnError(err, "")
 	if out.Category != string("internal") {
 		t.Errorf("expected category=internal, got %q", out.Category)
-	}
-	if out.Action == nil || out.Action.Reason != "copy_debug" {
-		t.Errorf("expected copy_debug action, got %+v", out.Action)
 	}
 }
 
@@ -308,9 +288,6 @@ func TestBuildTurnError_MaxStepsExceededDoesNotExposeLimitAsCode(t *testing.T) {
 	if out.Code != "" {
 		t.Errorf("expected no code for local max-step limit, got %q", out.Code)
 	}
-	if out.Action == nil || out.Action.Reason != "copy_debug" {
-		t.Errorf("expected copy_debug action, got %+v", out.Action)
-	}
 }
 
 // TestBuildTurnError_LocalPermissionDenied covers the local
@@ -322,21 +299,15 @@ func TestBuildTurnError_LocalPermissionDenied(t *testing.T) {
 	if out.Category != string("local") {
 		t.Errorf("expected category=local, got %q", out.Category)
 	}
-	if out.Action == nil || out.Action.Reason != "open_settings" {
-		t.Errorf("expected open_settings action, got %+v", out.Action)
-	}
 }
 
 // TestBuildTurnError_HTTPNetwork5xx covers a 503 with no parseable
-// body. The category is network and the action is "retry".
+// body. The category is network.
 func TestBuildTurnError_HTTPNetwork5xx(t *testing.T) {
 	err := &providers.HTTPError{StatusCode: 503, Body: "Service Unavailable"}
 	out := BuildTurnError(err, "openai")
 	if out.Category != string("network") {
 		t.Errorf("expected category=network, got %q", out.Category)
-	}
-	if out.Action == nil || out.Action.Reason != "retry" {
-		t.Errorf("expected retry action, got %+v", out.Action)
 	}
 }
 
@@ -353,9 +324,6 @@ func TestBuildTurnError_GeminiResourceExhausted(t *testing.T) {
 	if out.Code != "RESOURCE_EXHAUSTED" {
 		t.Errorf("expected code=RESOURCE_EXHAUSTED, got %q", out.Code)
 	}
-	if out.Action == nil || out.Action.Reason != "wait" {
-		t.Errorf("expected wait action, got %+v", out.Action)
-	}
 }
 
 // TestBuildTurnError_AnthropicRequestTooLarge covers the
@@ -370,9 +338,7 @@ func TestBuildTurnError_AnthropicRequestTooLarge(t *testing.T) {
 	if out.Code != "request_too_large" {
 		t.Errorf("expected code=request_too_large, got %q", out.Code)
 	}
-	// request_too_large is a context-overflow shape; the action
-	// should suggest compact.
-	if out.Action == nil || out.Action.Reason != "compact" {
-		t.Errorf("expected compact action for request_too_large, got %+v", out.Action)
+	if out.Category != "provider" {
+		t.Errorf("expected category=provider, got %q", out.Category)
 	}
 }

@@ -1448,7 +1448,6 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			Category:   string(structured.Category),
 			Provider:   structured.Provider,
 			StatusCode: structured.StatusCode,
-			Action:     structured.Action,
 			Turn:       turn,
 		})
 	} else {

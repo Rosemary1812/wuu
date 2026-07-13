@@ -1512,28 +1512,14 @@ type TurnErrorNotification struct {
 	Error    string `json:"error"`
 	// Structured error fields surface the Go core's typed classification
 	// (StreamError, HTTPError, ClassifyError) directly to the front-end so
-	// the chip can show provider-specific codes and the renderer can drive
-	// a structured next-step action. Empty fields fall back to the legacy
+	// the shell can show a concise user-facing status while retaining
+	// diagnostic facts. Empty fields fall back to the legacy
 	// `error` string for older clients.
-	Code       string           `json:"code,omitempty"`
-	Category   string           `json:"category,omitempty"`
-	Provider   string           `json:"provider,omitempty"`
-	StatusCode int              `json:"status_code,omitempty"`
-	Action     *TurnErrorAction `json:"action,omitempty"`
-	Turn       Turn             `json:"turn"`
-}
-
-// TurnErrorAction is the structured next-step the front-end can render as
-// a button beneath a turn-end notice. It mirrors opencode's Retryable.action
-// shape (reason, provider, title, message, label, link) and is the
-// authoritative source for the recommended action — the front-end does
-// not re-derive it from the error message.
-type TurnErrorAction struct {
-	Reason  string `json:"reason"`
-	Title   string `json:"title"`
-	Message string `json:"message"`
-	Label   string `json:"label"`
-	Link    string `json:"link,omitempty"`
+	Code       string `json:"code,omitempty"`
+	Category   string `json:"category,omitempty"`
+	Provider   string `json:"provider,omitempty"`
+	StatusCode int    `json:"status_code,omitempty"`
+	Turn       Turn   `json:"turn"`
 }
 
 type TurnUsageNotification struct {
@@ -1748,13 +1734,12 @@ type TurnError struct {
 	// Structured error fields, filled in by BuildTurnError from the typed
 	// error (HTTPError, StreamError) and the agentcontrol.ClassifyError
 	// classifier. The front-end prefers these over the raw `message` for
-	// the visible chip text; the message still rides along for the
-	// hover tooltip and the "copy debug info" payload.
-	Code       string           `json:"code,omitempty"`
-	Category   string           `json:"category,omitempty"`
-	Provider   string           `json:"provider,omitempty"`
-	StatusCode int              `json:"status_code,omitempty"`
-	Action     *TurnErrorAction `json:"action,omitempty"`
+	// the visible system-event text; the message and machine code remain
+	// diagnostic facts rather than UI actions.
+	Code       string `json:"code,omitempty"`
+	Category   string `json:"category,omitempty"`
+	Provider   string `json:"provider,omitempty"`
+	StatusCode int    `json:"status_code,omitempty"`
 }
 
 type ThreadItemType string
