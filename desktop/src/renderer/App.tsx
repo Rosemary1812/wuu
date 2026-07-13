@@ -4199,6 +4199,7 @@ export function App(): JSX.Element {
           resolveParticipantName={resolveParticipantName}
           busyParticipantIDs={busyParticipantIDs}
           chatReaderCount={chatReaderCount}
+          debugControlsVisible={debugControlsVisible}
           clampedThreadPanelWidth={clampedThreadPanelWidth}
           onThreadPanelResizeStart={startThreadPanelResize}
           onThreadPanelReset={resetThreadPanelWidth}

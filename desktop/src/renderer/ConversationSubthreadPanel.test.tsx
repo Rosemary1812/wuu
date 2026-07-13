@@ -389,6 +389,33 @@ describe("ConversationSubthreadPanel", () => {
     expect(container.querySelector('button[aria-label="标记已解决"]')).toBeNull();
   });
 
+  it("hides technical task trace unless debug controls expose it", () => {
+    const task = subthreadWith({
+      status: "task",
+      task: { id: "cth-1", status: "running", subthread_id: "cth-1" },
+    });
+    const normal = mount(
+      createElement(ConversationSubthreadPanel, {
+        threadID: "group-1",
+        subthread: task,
+        onClose: () => {},
+        onResolve: () => {},
+      }),
+    );
+    expect(normal.querySelector(".conversation-subthread-trace")).toBeNull();
+
+    const debug = mount(
+      createElement(ConversationSubthreadPanel, {
+        threadID: "group-1",
+        subthread: task,
+        onClose: () => {},
+        onResolve: () => {},
+        showTechnicalTrace: true,
+      }),
+    );
+    expect(debug.querySelector(".conversation-subthread-trace")).not.toBeNull();
+  });
+
   it("does not let a late trace response from Thread A overwrite Thread B", async () => {
     const traceA = deferred<{ events: Array<{ seq: number; kind: string; summary: string; at: string }> }>();
     const taskEvents = vi
@@ -421,6 +448,7 @@ describe("ConversationSubthreadPanel", () => {
       threadID: "group-1",
       onClose: () => {},
       onResolve: () => {},
+      showTechnicalTrace: true,
     };
     const view = mountRerenderable(
       createElement(ConversationSubthreadPanel, { ...props, subthread: taskA }),

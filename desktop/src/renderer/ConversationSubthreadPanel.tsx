@@ -39,8 +39,8 @@ import { JumpToLatestPill } from "./JumpToLatestPill";
  *
  * Once escalated it also renders the PROGRESS LAYER (plan §T11): a compact node
  * board (one row per plan piece with its assignee, a Status-derived state badge,
- * and a relative activity/progress hint) plus a collapsible "轨迹" timeline that
- * lazy-loads the task's trace on expand.
+ * and a relative activity/progress hint). Raw execution trace is development
+ * diagnostics and only appears when the shared debug-controls switch is on.
  */
 
 // Compact relative-time label ("刚刚" / "N秒前" / "N分钟前" / "N小时前" / "N天前")
@@ -164,6 +164,7 @@ export function ConversationSubthreadPanel({
   resolveParticipantName,
   busyParticipantIDs,
   readerCount,
+  showTechnicalTrace = false,
 }: {
   /** Parent group thread id — cth messages carry their seq in this thread's
    *  history, so read receipts / reactions resolve against it. */
@@ -190,6 +191,8 @@ export function ConversationSubthreadPanel({
   resolveParticipantName?: (id: string) => string;
   busyParticipantIDs?: ReadonlySet<string>;
   readerCount?: number;
+  /** Exposes raw task events for development diagnostics only. */
+  showTechnicalTrace?: boolean;
 }): JSX.Element {
   const turns = subthread?.turns ?? [];
   const resolved = subthread?.status === "resolved";
@@ -451,7 +454,7 @@ export function ConversationSubthreadPanel({
             })}
           </section>
         ) : null}
-        {subthread && alreadyTask ? (
+        {subthread && alreadyTask && showTechnicalTrace ? (
           <section className="conversation-subthread-trace">
             <button
               type="button"

@@ -661,6 +661,7 @@ export type ConversationSidePanelsProps = {
     typeof ConversationSubthreadPanel
   >["busyParticipantIDs"];
   chatReaderCount: number;
+  debugControlsVisible: boolean;
   clampedThreadPanelWidth: number;
   onThreadPanelResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onThreadPanelReset: () => void;
@@ -717,6 +718,7 @@ export function ConversationSidePanels({
   resolveParticipantName,
   busyParticipantIDs,
   chatReaderCount,
+  debugControlsVisible,
   clampedThreadPanelWidth,
   onThreadPanelResizeStart,
   onThreadPanelReset,
@@ -819,6 +821,7 @@ export function ConversationSidePanels({
               chatReaderCount,
             )
           }
+          showTechnicalTrace={debugControlsVisible}
         />
       ) : null}
       {openSubthreadPanel ? (
