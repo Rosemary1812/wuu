@@ -21,6 +21,8 @@ func TestSanitizeStreamEventIncludesLifecycle(t *testing.T) {
 			AttemptID:       "iop-test-a2",
 			Attempt:         2,
 			MaxAttempts:     4,
+			SubmissionID:    "iop-test-s2",
+			SubmissionCount: 2,
 			RetryCount:      1,
 			MaxRetries:      3,
 			RetryIn:         1500 * time.Millisecond,
@@ -40,6 +42,8 @@ func TestSanitizeStreamEventIncludesLifecycle(t *testing.T) {
 		got.Lifecycle.AttemptID != "iop-test-a2" ||
 		got.Lifecycle.Attempt != 2 ||
 		got.Lifecycle.MaxAttempts != 4 ||
+		got.Lifecycle.SubmissionID != "iop-test-s2" ||
+		got.Lifecycle.SubmissionCount != 2 ||
 		got.Lifecycle.RetryCount != 1 ||
 		got.Lifecycle.MaxRetries != 3 ||
 		got.Lifecycle.RetryInMS != 1500 ||
@@ -54,7 +58,7 @@ func TestSanitizeStreamEventIncludesLifecycle(t *testing.T) {
 		t.Fatalf("marshal stream event: %v", err)
 	}
 	wire := string(raw)
-	if !strings.Contains(wire, `"retry_in_ms":1500`) || !strings.Contains(wire, `"max_attempts":4`) || !strings.Contains(wire, `"attempt_id":"iop-test-a2"`) {
+	if !strings.Contains(wire, `"retry_in_ms":1500`) || !strings.Contains(wire, `"max_attempts":4`) || !strings.Contains(wire, `"attempt_id":"iop-test-a2"`) || !strings.Contains(wire, `"submission_id":"iop-test-s2"`) {
 		t.Fatalf("expected snake_case lifecycle wire payload, got %s", wire)
 	}
 	if strings.Contains(wire, "RetryIn") {

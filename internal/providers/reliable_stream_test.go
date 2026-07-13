@@ -22,7 +22,7 @@ func (m *reliableStreamMockClient) Chat(context.Context, ChatRequest) (ChatRespo
 	return ChatResponse{}, nil
 }
 
-func (m *reliableStreamMockClient) StreamChat(context.Context, ChatRequest) (<-chan StreamEvent, error) {
+func (m *reliableStreamMockClient) StreamChat(_ context.Context, req ChatRequest) (<-chan StreamEvent, error) {
 	idx := m.callCount
 	m.callCount++
 	if idx >= len(m.attempts) {
@@ -31,6 +31,9 @@ func (m *reliableStreamMockClient) StreamChat(context.Context, ChatRequest) (<-c
 	attempt := m.attempts[idx]
 	if attempt.err != nil {
 		return nil, attempt.err
+	}
+	if req.Attempt.Valid() {
+		req.Attempt.RecordSubmission(InferenceSubmissionMeta{Provider: "test", Protocol: "mock", Transport: "memory", Mode: "stream"})
 	}
 	ch := make(chan StreamEvent, len(attempt.events))
 	for _, ev := range attempt.events {
@@ -104,6 +107,9 @@ func TestReliableStreamClientSingleSuccess(t *testing.T) {
 	}
 	if lifecycle[0].Attempt != 1 || lifecycle[0].MaxAttempts != 4 {
 		t.Fatalf("initial attempt = %+v, want 1/4", lifecycle[0])
+	}
+	if lifecycle[1].SubmissionCount != 1 || lifecycle[1].SubmissionID == "" {
+		t.Fatalf("connected lifecycle missing submission: %+v", lifecycle[1])
 	}
 	if inner.callCount != 1 {
 		t.Fatalf("attempts = %d, want 1", inner.callCount)

@@ -689,6 +689,7 @@ type streamStep struct {
 }
 
 func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (StepResult, error) {
+	req = providers.EnsureInferenceExecution(req, providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
 	var (
 		contentBuf        strings.Builder
 		thinkingBuf       strings.Builder
@@ -776,7 +777,8 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 				Content: "Empty stream response — trying non-streaming fallback...",
 			})
 		}
-		resp, err := s.client.Chat(ctx, req)
+		fallbackReq := providers.BeginInferenceAttempt(req, req.Operation.Kind, req.Operation.WorkloadProfile)
+		resp, err := s.client.Chat(ctx, fallbackReq)
 		if err != nil {
 			return StepResult{}, fmt.Errorf("non-streaming fallback failed: %w", err)
 		}

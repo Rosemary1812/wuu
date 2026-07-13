@@ -87,6 +87,7 @@ func New(cfg ClientConfig) (*Client, error) {
 // Chat performs one non-streaming Responses API call.
 func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
 	req = codexRequest(req)
+	req = providers.EnsureInferenceAttempt(req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
 	client, creds, err := c.openAIClient(ctx, false)
 	if err != nil {
 		return providers.ChatResponse{}, err
@@ -105,6 +106,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 // StreamChat opens a streaming Responses API call.
 func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
 	req = codexRequest(req)
+	req = providers.EnsureInferenceAttempt(req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
 	client, creds, err := c.openAIClient(ctx, false)
 	if err != nil {
 		return nil, err

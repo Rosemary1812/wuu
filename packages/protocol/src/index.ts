@@ -1456,6 +1456,8 @@ export type StreamLifecyclePayload = {
   attempt_id?: string;
   attempt?: number;
   max_attempts?: number;
+  submission_id?: string;
+  submission_count?: number;
   retry_count?: number;
   max_retries?: number;
   retry_in_ms?: number;

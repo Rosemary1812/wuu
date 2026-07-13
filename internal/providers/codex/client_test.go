@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -274,6 +275,72 @@ func TestClientRefreshesStoredWuuCodexOAuth(t *testing.T) {
 	}
 	if state.AccessToken != fresh || state.RefreshToken != "refresh-new" {
 		t.Fatalf("unexpected stored tokens: %#v", state)
+	}
+}
+
+func TestClientRecordsAuthRefreshReplayAsSecondSubmission(t *testing.T) {
+	home := t.TempDir()
+	stale := fakeJWT(t, time.Now().Add(time.Hour), "acct_old")
+	fresh := fakeJWT(t, time.Now().Add(2*time.Hour), "acct_new")
+	store, err := authstorage.ForHome(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set("openai-codex", authstorage.Credentials{
+		Type: "oauth", AccessToken: stale, RefreshToken: "refresh-old", AuthMode: "chatgpt", Source: "test",
+	}); err != nil {
+		t.Fatalf("store credentials: %v", err)
+	}
+
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		if got := r.Form.Get("refresh_token"); got != "refresh-old" {
+			t.Fatalf("refresh_token = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":` + jsonString(fresh) + `,"refresh_token":"refresh-new"}`))
+	}))
+	defer tokenServer.Close()
+	t.Setenv("CODEX_REFRESH_TOKEN_URL_OVERRIDE", tokenServer.URL)
+
+	var apiCalls atomic.Int32
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := apiCalls.Add(1)
+		if call == 1 {
+			if got := r.Header.Get("Authorization"); got != "Bearer "+stale {
+				t.Fatalf("first Authorization = %q", got)
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":{"message":"expired token"}}`))
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+fresh {
+			t.Fatalf("refreshed Authorization = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"recovered"}]}]}`))
+	}))
+	defer apiServer.Close()
+
+	client, err := New(ClientConfig{BaseURL: apiServer.URL, Home: home, HTTPClient: apiServer.Client()})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	req := providers.EnsureInferenceExecution(providers.ChatRequest{
+		Model: "gpt-5-codex", Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+	}, providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	resp, err := client.Chat(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if resp.Content != "recovered" || apiCalls.Load() != 2 {
+		t.Fatalf("response/calls = %q/%d", resp.Content, apiCalls.Load())
+	}
+	ledger := req.Execution.Snapshot()
+	if ledger.Attempts != 1 || len(ledger.Submissions) != 2 {
+		t.Fatalf("inference ledger = %+v, want one attempt and two auth submissions", ledger)
 	}
 }
 

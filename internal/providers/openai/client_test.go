@@ -939,12 +939,13 @@ func TestChat_RetriesTransientServerError(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	resp, err := client.Chat(context.Background(), providers.ChatRequest{
+	req := providers.EnsureInferenceExecution(providers.ChatRequest{
 		Model: "gpt-test",
 		Messages: []providers.ChatMessage{
 			{Role: "user", Content: "hello"},
 		},
-	})
+	}, providers.InferenceOperationAgentRound, providers.InferenceProfileBackgroundAgent)
+	resp, err := client.Chat(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -953,6 +954,15 @@ func TestChat_RetriesTransientServerError(t *testing.T) {
 	}
 	if got := attempts.Load(); got != 2 {
 		t.Fatalf("expected 2 attempts, got %d", got)
+	}
+	ledger := req.Execution.Snapshot()
+	if ledger.Attempts != 1 || len(ledger.Submissions) != 2 {
+		t.Fatalf("inference ledger = %+v, want one execution attempt and two physical submissions", ledger)
+	}
+	for _, submission := range ledger.Submissions {
+		if submission.Protocol != "chat_completions" || submission.Transport != "http" || submission.Mode != "unary" {
+			t.Fatalf("unexpected submission: %+v", submission)
+		}
 	}
 }
 

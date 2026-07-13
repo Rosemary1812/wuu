@@ -164,6 +164,17 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 	readCh := make(chan responsesWebSocketReadEvent, 64)
 	session.busy = true
 	session.active = readCh
+	mode := "stream"
+	if strings.TrimSpace(requestPayload.SubmissionReason) != "" {
+		mode = "fallback"
+	}
+	requestPayload.Attempt.RecordSubmission(providers.InferenceSubmissionMeta{
+		Provider:  "openai",
+		Protocol:  "responses",
+		Transport: "websocket",
+		Mode:      mode,
+		Reason:    requestPayload.SubmissionReason,
+	})
 	if err := conn.Write(ctx, websocket.MessageText, body); err != nil {
 		c.responsesWebSocketReleaseLocked(session, readCh)
 		if cacheConnection {
@@ -505,6 +516,7 @@ func (c *Client) readResponsesWebSocket(ctx context.Context, session, fallbackSe
 }
 
 func (c *Client) forwardResponsesWebSocketRetry(ctx context.Context, payload responsesRequest, transport providers.StreamTransportMode, ch chan<- providers.StreamEvent) {
+	payload.SubmissionReason = responsesWebSocketConnectionLimitRetryTag
 	retryCh, err := c.responsesStreamChatWebSocketAttempt(ctx, payload, transport, false)
 	if err != nil {
 		c.forwardResponsesSSEFallback(ctx, payload, transport, responsesWebSocketFallbackReason(err), ch)
@@ -516,6 +528,7 @@ func (c *Client) forwardResponsesWebSocketRetry(ctx context.Context, payload res
 }
 
 func (c *Client) forwardResponsesSSEFallback(ctx context.Context, payload responsesRequest, transport providers.StreamTransportMode, reason string, ch chan<- providers.StreamEvent) {
+	payload.SubmissionReason = reason
 	sseCh, err := c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, transport, reason))
 	if err != nil {
 		ch <- providers.StreamEvent{Type: providers.EventError, Error: err}

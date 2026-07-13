@@ -302,6 +302,10 @@ type ChatRequest struct {
 	// attempts and transport fallbacks. Provider clients must not send it on
 	// the wire.
 	Operation InferenceOperation
+	// Execution and Attempt are process-local retry bookkeeping. They are
+	// shared across copied requests and must never be serialized to providers.
+	Execution *InferenceExecution
+	Attempt   InferenceAttempt
 	// StepIndex is agent-loop metadata for correlating request-shape,
 	// provider-state, and usage telemetry. Provider clients must not send it
 	// on the wire.
@@ -430,6 +434,8 @@ type StreamLifecycle struct {
 	AttemptID       string
 	Attempt         int
 	MaxAttempts     int
+	SubmissionID    string
+	SubmissionCount int
 	RetryCount      int
 	MaxRetries      int
 	RetryIn         time.Duration

@@ -28,7 +28,7 @@ func (c *Client) responsesChat(ctx context.Context, req providers.ChatRequest) (
 		return providers.ChatResponse{}, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpResp, err := c.doResponsesRequest(ctx, c.httpClient, body, false, payload.ExtraHeaders)
+	httpResp, err := c.doResponsesRequest(ctx, c.httpClient, body, false, payload.ExtraHeaders, payload.Attempt, payload.SubmissionReason)
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
@@ -61,7 +61,9 @@ func (c *Client) responsesStreamChat(ctx context.Context, req providers.ChatRequ
 			return ch, nil
 		}
 		providers.DebugLogf("Responses websocket unavailable before stream start, falling back to SSE: %v", err)
-		return c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, c.responsesTransport, responsesWebSocketFallbackReason(err)))
+		reason := responsesWebSocketFallbackReason(err)
+		payload.SubmissionReason = reason
+		return c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, c.responsesTransport, reason))
 	}
 
 	return c.responsesStreamChatSSE(ctx, payload, responsesSSEProviderState(payload, c.responsesTransport, ""))
@@ -74,7 +76,7 @@ func (c *Client) responsesStreamChatSSE(ctx context.Context, payload responsesRe
 	}
 
 	streamClient := newStreamingHTTPClient(c.httpClient, c.streamConfig)
-	resp, err := c.doSingleResponsesRequest(ctx, streamClient, body, true, payload.ExtraHeaders)
+	resp, err := c.doSingleResponsesRequest(ctx, streamClient, body, true, payload.ExtraHeaders, payload.Attempt, payload.SubmissionReason)
 	if err != nil {
 		return nil, err
 	}
@@ -142,6 +144,7 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 		MaxOutputTokens: req.MaxTokens,
 		Stream:          stream,
 		Options:         provideroptions.Clone(req.ProviderOptions),
+		Attempt:         req.Attempt,
 	}
 	if c.responsesStore != nil {
 		payload.Store = c.responsesStore
@@ -610,6 +613,8 @@ func (c *Client) doSingleResponsesRequest(
 	body []byte,
 	acceptStream bool,
 	extraHeaders map[string]string,
+	attempt providers.InferenceAttempt,
+	submissionReason string,
 ) (*http.Response, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/responses", bytes.NewReader(body))
 	if err != nil {
@@ -627,6 +632,20 @@ func (c *Client) doSingleResponsesRequest(
 		httpReq.Header.Set(k, v)
 	}
 
+	mode := "unary"
+	if acceptStream {
+		mode = "stream"
+	}
+	if strings.TrimSpace(submissionReason) != "" {
+		mode = "fallback"
+	}
+	attempt.RecordSubmission(providers.InferenceSubmissionMeta{
+		Provider:  "openai",
+		Protocol:  "responses",
+		Transport: "http",
+		Mode:      mode,
+		Reason:    submissionReason,
+	})
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
@@ -651,10 +670,12 @@ func (c *Client) doResponsesRequest(
 	body []byte,
 	acceptStream bool,
 	extraHeaders map[string]string,
+	attempt providers.InferenceAttempt,
+	submissionReason string,
 ) (*http.Response, error) {
 	var httpResp *http.Response
 	err := providers.WithRetry(ctx, c.retryConfig, func() error {
-		resp, err := c.doSingleResponsesRequest(ctx, httpClient, body, acceptStream, extraHeaders)
+		resp, err := c.doSingleResponsesRequest(ctx, httpClient, body, acceptStream, extraHeaders, attempt, submissionReason)
 		if err != nil {
 			return err
 		}
@@ -1099,8 +1120,10 @@ type responsesRequest struct {
 	Include []string `json:"include,omitempty"`
 	// ParallelToolCalls lets the backend issue concurrent tool calls when
 	// the model emits multiple in one turn.
-	ParallelToolCalls *bool          `json:"parallel_tool_calls,omitempty"`
-	Options           map[string]any `json:"-"`
+	ParallelToolCalls *bool                      `json:"parallel_tool_calls,omitempty"`
+	Options           map[string]any             `json:"-"`
+	Attempt           providers.InferenceAttempt `json:"-"`
+	SubmissionReason  string                     `json:"-"`
 	// ExtraHeaders carries per-request HTTP headers derived from runtime state
 	// (e.g. session-id / x-client-request-id sourced from the prompt cache
 	// key). They are not serialized into the request body; the caller is

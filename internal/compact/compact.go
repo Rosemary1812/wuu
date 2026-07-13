@@ -329,6 +329,7 @@ func summarizeCompact(ctx context.Context, client providers.Client, req provider
 
 func streamCompactSummary(ctx context.Context, client providers.StreamClient, req providers.ChatRequest) (providers.ChatResponse, error) {
 	req.Operation = providers.EnsureInferenceOperation(req.Operation, providers.InferenceOperationCompaction, providers.InferenceProfileContinuationCritical)
+	req = providers.EnsureInferenceExecution(req, providers.InferenceOperationCompaction, providers.InferenceProfileContinuationCritical)
 	reliableClient := providers.NewReliableStreamClient(client, providers.StreamRetryConfigForProfile(providers.InferenceProfileContinuationCritical), nil)
 	ch, err := reliableClient.StreamChat(ctx, req)
 	if err != nil {
@@ -402,7 +403,8 @@ func recoverCompactStream(ctx context.Context, client providers.Client, req prov
 	if !isIncompleteCompactStream(streamErr) {
 		return providers.ChatResponse{}, false, nil
 	}
-	resp, err := client.Chat(ctx, req)
+	fallbackReq := providers.BeginInferenceAttempt(req, req.Operation.Kind, req.Operation.WorkloadProfile)
+	resp, err := client.Chat(ctx, fallbackReq)
 	if err != nil {
 		return providers.ChatResponse{}, true, fmt.Errorf("compact summary stream incomplete and chat fallback failed: %w", err)
 	}

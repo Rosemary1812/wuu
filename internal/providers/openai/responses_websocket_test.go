@@ -1370,11 +1370,12 @@ func TestResponsesStreamChatWebSocket_RetriesConnectionLimitBeforeFallback(t *te
 		t.Fatalf("New: %v", err)
 	}
 
-	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+	req := providers.EnsureInferenceExecution(providers.ChatRequest{
 		Model:     "gpt-test",
 		Messages:  []providers.ChatMessage{{Role: "user", Content: "hello"}},
 		CacheHint: &providers.CacheHint{PromptCacheKey: "thread-connection-limit"},
-	})
+	}, providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	ch, err := client.StreamChat(context.Background(), req)
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
@@ -1404,6 +1405,13 @@ func TestResponsesStreamChatWebSocket_RetriesConnectionLimitBeforeFallback(t *te
 	}
 	if _, exists := secondReq["previous_response_id"]; exists {
 		t.Fatalf("retry request must be full payload: %#v", secondReq)
+	}
+	ledger := req.Execution.Snapshot()
+	if ledger.Attempts != 1 || len(ledger.Submissions) != 2 {
+		t.Fatalf("inference ledger = %+v, want one adapter attempt and two websocket submissions", ledger)
+	}
+	if ledger.Submissions[0].Transport != "websocket" || ledger.Submissions[1].Reason != responsesWebSocketConnectionLimitRetryTag {
+		t.Fatalf("unexpected websocket retry submissions: %+v", ledger.Submissions)
 	}
 }
 
@@ -1460,11 +1468,12 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterConnectionLimitRetry(t 
 	}
 
 	cache := &providers.CacheHint{PromptCacheKey: "thread-connection-limit-fallback"}
-	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+	req := providers.EnsureInferenceExecution(providers.ChatRequest{
 		Model:     "gpt-test",
 		Messages:  []providers.ChatMessage{{Role: "user", Content: "hello"}},
 		CacheHint: cache,
-	})
+	}, providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	ch, err := client.StreamChat(context.Background(), req)
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
@@ -1490,6 +1499,13 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterConnectionLimitRetry(t 
 	firstFallbackReq := <-sseRequests
 	if _, exists := firstFallbackReq["previous_response_id"]; exists {
 		t.Fatalf("SSE fallback must send full payload: %#v", firstFallbackReq)
+	}
+	ledger := req.Execution.Snapshot()
+	if ledger.Attempts != 1 || len(ledger.Submissions) != 3 {
+		t.Fatalf("inference ledger = %+v, want two websocket submissions plus SSE fallback", ledger)
+	}
+	if ledger.Submissions[2].Transport != "http" || ledger.Submissions[2].Mode != "fallback" || ledger.Submissions[2].Reason != responsesWebSocketConnectionLimitCode {
+		t.Fatalf("unexpected SSE fallback submission: %+v", ledger.Submissions[2])
 	}
 
 	laterCh, err := client.StreamChat(context.Background(), providers.ChatRequest{

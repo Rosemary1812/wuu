@@ -30,6 +30,9 @@ type mockStreamClient struct {
 
 func (m *mockStreamClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
 	m.requests = append(m.requests, req)
+	if req.Attempt.Valid() {
+		req.Attempt.RecordSubmission(providers.InferenceSubmissionMeta{Provider: "test", Protocol: "mock", Transport: "memory", Mode: "unary"})
+	}
 	idx := m.chatCallCount
 	m.chatCallCount++
 	if idx < len(m.chatErrs) && m.chatErrs[idx] != nil {
@@ -49,6 +52,9 @@ func (m *mockStreamClient) StreamChat(_ context.Context, req providers.ChatReque
 		if idx < len(m.chatErrs) && m.chatErrs[idx] != nil {
 			return nil, m.chatErrs[idx]
 		}
+		if req.Attempt.Valid() {
+			req.Attempt.RecordSubmission(providers.InferenceSubmissionMeta{Provider: "test", Protocol: "mock", Transport: "memory", Mode: "stream"})
+		}
 		ch := make(chan providers.StreamEvent, 2)
 		if idx < len(m.chatResponses) {
 			ch <- providers.StreamEvent{Type: providers.EventContentDelta, Content: m.chatResponses[idx].Content}
@@ -67,12 +73,18 @@ func (m *mockStreamClient) StreamChat(_ context.Context, req providers.ChatReque
 		if attempt.err != nil {
 			return nil, attempt.err
 		}
+		if req.Attempt.Valid() {
+			req.Attempt.RecordSubmission(providers.InferenceSubmissionMeta{Provider: "test", Protocol: "mock", Transport: "memory", Mode: "stream"})
+		}
 		ch := make(chan providers.StreamEvent, len(attempt.events))
 		for _, e := range attempt.events {
 			ch <- e
 		}
 		close(ch)
 		return ch, nil
+	}
+	if req.Attempt.Valid() {
+		req.Attempt.RecordSubmission(providers.InferenceSubmissionMeta{Provider: "test", Protocol: "mock", Transport: "memory", Mode: "stream"})
 	}
 	ch := make(chan providers.StreamEvent, len(m.events))
 	for _, e := range m.events {
@@ -1577,6 +1589,13 @@ func TestStreamRunner_NonStreamingFallbackOnEmptyStream(t *testing.T) {
 	}
 	if client.chatCallCount != 1 {
 		t.Fatalf("expected 1 Chat() call, got %d", client.chatCallCount)
+	}
+	if len(client.requests) != 2 || client.requests[0].Execution == nil || client.requests[0].Execution != client.requests[1].Execution {
+		t.Fatalf("stream and unary fallback did not share one execution: %+v", client.requests)
+	}
+	ledger := client.requests[0].Execution.Snapshot()
+	if ledger.Attempts != 2 || len(ledger.Submissions) != 2 || ledger.Submissions[0].Mode != "stream" || ledger.Submissions[1].Mode != "unary" {
+		t.Fatalf("fallback ledger = %+v", ledger)
 	}
 }
 

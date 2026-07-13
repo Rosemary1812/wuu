@@ -1930,6 +1930,8 @@ type StreamLifecyclePayload struct {
 	AttemptID       string `json:"attempt_id,omitempty"`
 	Attempt         int    `json:"attempt,omitempty"`
 	MaxAttempts     int    `json:"max_attempts,omitempty"`
+	SubmissionID    string `json:"submission_id,omitempty"`
+	SubmissionCount int    `json:"submission_count,omitempty"`
 	RetryCount      int    `json:"retry_count,omitempty"`
 	MaxRetries      int    `json:"max_retries,omitempty"`
 	RetryInMS       int64  `json:"retry_in_ms,omitempty"`

@@ -655,6 +655,8 @@ func sanitizeStreamLifecycle(lifecycle *providers.StreamLifecycle) *StreamLifecy
 		AttemptID:       lifecycle.AttemptID,
 		Attempt:         lifecycle.Attempt,
 		MaxAttempts:     lifecycle.MaxAttempts,
+		SubmissionID:    lifecycle.SubmissionID,
+		SubmissionCount: lifecycle.SubmissionCount,
 		RetryCount:      lifecycle.RetryCount,
 		MaxRetries:      lifecycle.MaxRetries,
 		RetryInMS:       durationMilliseconds(lifecycle.RetryIn),

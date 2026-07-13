@@ -359,6 +359,7 @@ func streamTitleText(ctx context.Context, client providers.StreamClient, req pro
 // sequence (replace / message events reset the buffer).
 func streamTitleTextWithDeltas(ctx context.Context, client providers.StreamClient, req providers.ChatRequest) (string, []string, error) {
 	req.Operation = providers.EnsureInferenceOperation(req.Operation, providers.InferenceOperationTitle, providers.InferenceProfileBestEffort)
+	req = providers.EnsureInferenceExecution(req, providers.InferenceOperationTitle, providers.InferenceProfileBestEffort)
 	reliableClient := providers.NewReliableStreamClient(client, providers.StreamRetryConfigForProfile(providers.InferenceProfileBestEffort), nil)
 	events, err := reliableClient.StreamChat(ctx, req)
 	if err != nil {

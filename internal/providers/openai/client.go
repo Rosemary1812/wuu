@@ -169,6 +169,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	if err := providers.ValidateToolDefinitionsForProvider(openAIToolSurfaceValidationTarget(req.Model), req.Tools); err != nil {
 		return providers.ChatResponse{}, err
 	}
+	req = providers.EnsureInferenceAttempt(req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
 	if c.wireAPI == wireAPIResponses {
 		return c.responsesChat(ctx, req)
 	}
@@ -227,7 +228,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 		return providers.ChatResponse{}, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpResp, err := c.doChatCompletionsRequest(ctx, c.httpClient, body, false)
+	httpResp, err := c.doChatCompletionsRequest(ctx, c.httpClient, body, false, req.Attempt)
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
@@ -303,6 +304,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	if err := providers.ValidateToolDefinitionsForProvider(openAIToolSurfaceValidationTarget(req.Model), req.Tools); err != nil {
 		return nil, err
 	}
+	req = providers.EnsureInferenceAttempt(req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
 	if c.wireAPI == wireAPIResponses {
 		return c.responsesStreamChat(ctx, req)
 	}
@@ -366,7 +368,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	// Use the single-attempt request — ReliableStreamClient handles retries
 	// with proper UI feedback at the caller layer.
 	streamClient := newStreamingHTTPClient(c.httpClient, c.streamConfig)
-	resp, err := c.doSingleChatCompletionsRequest(ctx, streamClient, body, true)
+	resp, err := c.doSingleChatCompletionsRequest(ctx, streamClient, body, true, req.Attempt)
 	if err != nil {
 		return nil, err
 	}
@@ -382,6 +384,7 @@ func (c *Client) doSingleChatCompletionsRequest(
 	httpClient *http.Client,
 	body []byte,
 	acceptStream bool,
+	attempt providers.InferenceAttempt,
 ) (*http.Response, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
@@ -396,6 +399,16 @@ func (c *Client) doSingleChatCompletionsRequest(
 		httpReq.Header.Set(k, v)
 	}
 
+	mode := "unary"
+	if acceptStream {
+		mode = "stream"
+	}
+	attempt.RecordSubmission(providers.InferenceSubmissionMeta{
+		Provider:  "openai",
+		Protocol:  "chat_completions",
+		Transport: "http",
+		Mode:      mode,
+	})
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
@@ -421,10 +434,11 @@ func (c *Client) doChatCompletionsRequest(
 	httpClient *http.Client,
 	body []byte,
 	acceptStream bool,
+	attempt providers.InferenceAttempt,
 ) (*http.Response, error) {
 	var httpResp *http.Response
 	err := providers.WithRetry(ctx, c.retryConfig, func() error {
-		resp, err := c.doSingleChatCompletionsRequest(ctx, httpClient, body, acceptStream)
+		resp, err := c.doSingleChatCompletionsRequest(ctx, httpClient, body, acceptStream, attempt)
 		if err != nil {
 			return err
 		}

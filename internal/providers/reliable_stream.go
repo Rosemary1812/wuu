@@ -139,25 +139,27 @@ func (r *ReliableStreamClient) StreamChat(ctx context.Context, req ChatRequest) 
 
 func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out chan<- StreamEvent) {
 	defer close(out)
-	operation := EnsureInferenceOperation(req.Operation, InferenceOperationAuxiliary, InferenceProfileInteractive)
-	req.Operation = operation
+	req = EnsureInferenceExecution(req, InferenceOperationAuxiliary, InferenceProfileInteractive)
+	operation := req.Operation
 	startedAt := time.Now()
-	maxAttempts := r.cfg.MaxRetries + 1
-	attempt := 1
+	maxAttempts := req.Execution.Snapshot().Attempts + r.cfg.MaxRetries + 1
+	retriesUsed := 0
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		if !r.sendLifecycle(ctx, out, operation, StreamPhaseConnecting, attempt, maxAttempts, nil, 0, false, startedAt) {
+		attemptReq := BeginInferenceAttempt(req, operation.Kind, operation.WorkloadProfile)
+		attempt := attemptReq.Attempt
+		if !r.sendLifecycle(ctx, out, attemptReq.Execution, operation, StreamPhaseConnecting, attempt.ID, attempt.Ordinal, maxAttempts, retriesUsed, nil, 0, false, startedAt) {
 			return
 		}
 
-		ch, err := r.inner.StreamChat(ctx, req)
+		ch, err := r.inner.StreamChat(ctx, attemptReq)
 		forwardedEvents := 0
 		var finalizedToolCalls []ToolCall
 		if err == nil {
 			var sawDone bool
-			err, sawDone, forwardedEvents, finalizedToolCalls = r.forwardAttempt(ctx, ch, out, operation, attempt, maxAttempts, startedAt)
+			err, sawDone, forwardedEvents, finalizedToolCalls = r.forwardAttempt(ctx, ch, out, attemptReq.Execution, operation, attempt, maxAttempts, retriesUsed, startedAt)
 			if ctx.Err() != nil {
 				return
 			}
@@ -171,11 +173,11 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 		if forwardedEvents > 0 {
 			err = &PartialStreamError{Err: err, ForwardedEvents: forwardedEvents}
 		}
-		canRetry := r.retry(ctx, attempt-1, err)
+		canRetry := r.retry(ctx, retriesUsed, err)
 		if canRetry && r.replayGuard != nil {
 			if guardErr := r.replayGuard(StreamRetryContext{
 				Operation:          operation,
-				Attempt:            attempt,
+				Attempt:            attempt.Ordinal,
 				ForwardedEvents:    forwardedEvents,
 				FinalizedToolCalls: append([]ToolCall(nil), finalizedToolCalls...),
 				Err:                err,
@@ -185,26 +187,25 @@ func (r *ReliableStreamClient) run(ctx context.Context, req ChatRequest, out cha
 			}
 		}
 		if !canRetry {
-			if !r.sendLifecycle(ctx, out, operation, StreamPhaseFailed, attempt, maxAttempts, err, 0, false, startedAt) {
+			if !r.sendLifecycle(ctx, out, attemptReq.Execution, operation, StreamPhaseFailed, attempt.ID, attempt.Ordinal, maxAttempts, retriesUsed, err, 0, false, startedAt) {
 				return
 			}
 			r.send(ctx, out, StreamEvent{Type: EventError, Error: err})
 			return
 		}
 
-		delay := backoffDelay(attempt-1, r.cfg.InitialDelay, r.cfg.MaxDelay, err)
-		retryCount := attempt
-		nextAttempt := attempt + 1
-		if !r.sendLifecycle(ctx, out, operation, StreamPhaseReconnecting, nextAttempt, maxAttempts, err, delay, forwardedEvents > 0, startedAt) {
+		delay := backoffDelay(retriesUsed, r.cfg.InitialDelay, r.cfg.MaxDelay, err)
+		retriesUsed++
+		nextAttemptOrdinal := attempt.Ordinal + 1
+		if !r.sendLifecycle(ctx, out, attemptReq.Execution, operation, StreamPhaseReconnecting, operation.AttemptID(nextAttemptOrdinal), nextAttemptOrdinal, maxAttempts, retriesUsed, err, delay, forwardedEvents > 0, startedAt) {
 			return
 		}
 		if r.onRetry != nil {
-			r.onRetry(retryCount, r.cfg.MaxRetries, err, delay)
+			r.onRetry(retriesUsed, r.cfg.MaxRetries, err, delay)
 		}
 		if waitWithContext(ctx, delay) != nil {
 			return
 		}
-		attempt = nextAttempt
 	}
 }
 
@@ -212,9 +213,11 @@ func (r *ReliableStreamClient) forwardAttempt(
 	ctx context.Context,
 	ch <-chan StreamEvent,
 	out chan<- StreamEvent,
+	execution *InferenceExecution,
 	operation InferenceOperation,
-	attempt int,
+	attempt InferenceAttempt,
 	maxAttempts int,
+	retryCount int,
 	startedAt time.Time,
 ) (error, bool, int, []ToolCall) {
 	var streamErr error
@@ -224,7 +227,7 @@ func (r *ReliableStreamClient) forwardAttempt(
 	connected := false
 	for ev := range ch {
 		if !connected {
-			if !r.sendLifecycle(ctx, out, operation, StreamPhaseConnected, attempt, maxAttempts, nil, 0, false, startedAt) {
+			if !r.sendLifecycle(ctx, out, execution, operation, StreamPhaseConnected, attempt.ID, attempt.Ordinal, maxAttempts, retryCount, nil, 0, false, startedAt) {
 				return streamErr, sawDone, forwardedEvents, finalizedToolCalls
 			}
 			connected = true
@@ -254,25 +257,35 @@ func (r *ReliableStreamClient) forwardAttempt(
 func (r *ReliableStreamClient) sendLifecycle(
 	ctx context.Context,
 	out chan<- StreamEvent,
+	execution *InferenceExecution,
 	operation InferenceOperation,
 	phase StreamLifecyclePhase,
+	attemptID string,
 	attempt int,
 	maxAttempts int,
+	retryCount int,
 	reason error,
 	retryIn time.Duration,
 	resetPartial bool,
 	startedAt time.Time,
 ) bool {
+	snapshot := execution.Snapshot()
+	lastSubmissionID := ""
+	if n := len(snapshot.Submissions); n > 0 {
+		lastSubmissionID = snapshot.Submissions[n-1].ID
+	}
 	lifecycle := &StreamLifecycle{
 		Phase:           phase,
 		OperationID:     operation.ID,
 		OperationKind:   operation.Kind,
 		WorkloadProfile: operation.WorkloadProfile,
 		PayloadVersion:  operation.PayloadVersion,
-		AttemptID:       operation.AttemptID(attempt),
+		AttemptID:       attemptID,
 		Attempt:         attempt,
 		MaxAttempts:     maxAttempts,
-		RetryCount:      attempt - 1,
+		SubmissionID:    lastSubmissionID,
+		SubmissionCount: len(snapshot.Submissions),
+		RetryCount:      retryCount,
 		MaxRetries:      r.cfg.MaxRetries,
 		RetryIn:         retryIn,
 		Elapsed:         time.Since(startedAt),

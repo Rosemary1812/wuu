@@ -180,6 +180,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	if err := providers.ValidateToolDefinitionsForProvider(anthropicToolSurfaceValidationTarget(req.Model), req.Tools); err != nil {
 		return providers.ChatResponse{}, err
 	}
+	req = providers.EnsureInferenceAttempt(req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
 
 	maxTok := resolveMaxTokens(req.MaxTokens, c.maxTokens, req.Model)
 	payload, err := c.buildAnthropicRequest(req, maxTok, false)
@@ -192,7 +193,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 		return providers.ChatResponse{}, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpResp, err := c.doMessagesRequest(ctx, c.httpClient, body, payload.Betas)
+	httpResp, err := c.doMessagesRequest(ctx, c.httpClient, body, payload.Betas, req.Attempt, "unary")
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
@@ -286,6 +287,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	if err := providers.ValidateToolDefinitionsForProvider(anthropicToolSurfaceValidationTarget(req.Model), req.Tools); err != nil {
 		return nil, err
 	}
+	req = providers.EnsureInferenceAttempt(req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
 
 	maxTok := resolveMaxTokens(req.MaxTokens, c.maxTokens, req.Model)
 	payload, err := c.buildAnthropicRequest(req, maxTok, true)
@@ -308,7 +310,7 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 		_ = os.WriteFile(dumpPath, body, 0o644)
 		providers.DebugLogf("StreamChat: dumped request body to %s", dumpPath)
 	}
-	resp, err := c.doSingleMessagesRequest(ctx, sseClient, body, payload.Betas)
+	resp, err := c.doSingleMessagesRequest(ctx, sseClient, body, payload.Betas, req.Attempt, "stream")
 	if err != nil {
 		providers.DebugLogf("StreamChat: error: %v", err)
 		return nil, err
@@ -927,6 +929,8 @@ func (c *Client) doSingleMessagesRequest(
 	httpClient *http.Client,
 	body []byte,
 	extraBetas []string,
+	attempt providers.InferenceAttempt,
+	mode string,
 ) (*http.Response, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/messages", bytes.NewReader(body))
 	if err != nil {
@@ -965,6 +969,12 @@ func (c *Client) doSingleMessagesRequest(
 	}
 	httpReq.Header.Set("anthropic-beta", strings.Join(betas, ","))
 
+	attempt.RecordSubmission(providers.InferenceSubmissionMeta{
+		Provider:  "anthropic",
+		Protocol:  "messages",
+		Transport: "http",
+		Mode:      mode,
+	})
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
@@ -990,10 +1000,12 @@ func (c *Client) doMessagesRequest(
 	httpClient *http.Client,
 	body []byte,
 	extraBetas []string,
+	attempt providers.InferenceAttempt,
+	mode string,
 ) (*http.Response, error) {
 	var httpResp *http.Response
 	err := providers.WithRetry(ctx, c.retryConfig, func() error {
-		resp, err := c.doSingleMessagesRequest(ctx, httpClient, body, extraBetas)
+		resp, err := c.doSingleMessagesRequest(ctx, httpClient, body, extraBetas, attempt, mode)
 		if err != nil {
 			return err
 		}
