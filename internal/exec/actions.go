@@ -44,6 +44,7 @@ type actionMethodEntry struct {
 // an open method passthrough) keeps the exec surface scoped and cache-stable.
 var actionMethodTable = map[string]actionMethodEntry{
 	"create_group":        {kind: actionRPC, method: appserver.MethodThreadStart, inject: map[string]any{"group": true}},
+	"create_dm":           {kind: actionRPC, method: appserver.MethodThreadStart},
 	"add_group_member":    {kind: actionRPC, method: appserver.MethodThreadMembersAdd},
 	"remove_group_member": {kind: actionRPC, method: appserver.MethodThreadMembersRemove},
 	"save_participant":    {kind: actionRPC, method: appserver.MethodParticipantSave},

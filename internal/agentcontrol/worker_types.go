@@ -206,9 +206,19 @@ var alwaysBlockedTools = map[string]struct{}{
 	"close_agent":  {},
 }
 
+var participantSpeechTools = map[string]struct{}{
+	"post_message":       {},
+	"react":              {},
+	"manage_participant": {},
+	"manage_task":        {},
+}
+
 // FilterToolsForWorker returns the subset of fullList that this worker
-// type is allowed to call.
-func FilterToolsForWorker(wt WorkerType, fullList []string) []string {
+// type is allowed to call. participantSpeech is an internal capability for
+// conversation-native named-agent runs; ordinary subagents never receive the
+// chat and task coordination tools even when their worker type otherwise has
+// an unrestricted tool list.
+func FilterToolsForWorker(wt WorkerType, fullList []string, participantSpeech bool) []string {
 	out := make([]string, 0, len(fullList))
 	allowSet := map[string]struct{}{}
 	for _, t := range wt.AllowedTools {
@@ -225,7 +235,10 @@ func FilterToolsForWorker(wt WorkerType, fullList []string) []string {
 		if _, denied := denySet[name]; denied {
 			continue
 		}
-		if (name == "post_message" || name == "manage_participant") && len(wt.AllowedTools) == 0 {
+		if _, conversationNative := participantSpeechTools[name]; conversationNative {
+			if participantSpeech {
+				out = append(out, name)
+			}
 			continue
 		}
 		if len(wt.AllowedTools) == 0 {

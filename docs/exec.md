@@ -344,7 +344,7 @@ JSON
 Actions split by how they reach the app server:
 
 - Directly-callable RPCs (`action` maps to an existing app-server method):
-  `create_group`, `add_group_member`, `remove_group_member`,
+  `create_group`, `create_dm`, `add_group_member`, `remove_group_member`,
   `save_participant`, `list_participants`, `retire_participant`, `open_reply`,
   `list_replies`, `resolve_reply`, `escalate_task`,
   `post_subthread`.
@@ -356,6 +356,11 @@ Actions split by how they reach the app server:
   turn actually invokes is decided by the agent, not by the action name.
 
 Notes for scripting named turns:
+
+- `create_dm` takes `dm_participant_id` and returns the same idempotent
+  `thread/start` result used by the desktop when opening a named agent's DM.
+  Save `thread.id`, then pass it to a `participant_turn` action to exercise the
+  real resident DM path in the same script.
 
 - A named agent runs one task at a time. Running two turns as the SAME
   participant back to back is supported — exec briefly waits out the prior run's

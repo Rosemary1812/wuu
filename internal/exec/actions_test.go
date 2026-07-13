@@ -99,6 +99,35 @@ func TestRunActionSequenceDrivesRPCsWithVarThreading(t *testing.T) {
 	}
 }
 
+func TestRunActionSequenceCreatesDMThroughThreadStart(t *testing.T) {
+	controller := newFakeController()
+	controller.callResults = map[string]json.RawMessage{
+		"thread/start": json.RawMessage(`{"thread":{"id":"dm-1","dm_participant_id":"prt-ada"}}`),
+	}
+
+	err := Run(context.Background(), Options{
+		Controller: controller,
+		Actions: []GroupAction{{
+			Action: "create_dm",
+			Params: map[string]any{"dm_participant_id": "prt-ada"},
+			Expect: map[string]any{"thread.dm_participant_id": "prt-ada"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(controller.calls) != 1 || controller.calls[0].method != "thread/start" {
+		t.Fatalf("calls = %+v, want one thread/start", controller.calls)
+	}
+	params := decodeCallParams(t, controller.calls[0].params)
+	if params["dm_participant_id"] != "prt-ada" {
+		t.Fatalf("create_dm participant lost: %+v", params)
+	}
+	if _, ok := params["group"]; ok {
+		t.Fatalf("create_dm must not inject group:true: %+v", params)
+	}
+}
+
 // A failed per-step expectation aborts the sequence with a tool-failed exit and
 // emits an action_failed event.
 func TestRunActionSequenceExpectMismatchFails(t *testing.T) {

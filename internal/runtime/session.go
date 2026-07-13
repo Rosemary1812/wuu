@@ -440,11 +440,12 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
 				wkit.SetNativeDeferredToolDiscovery(workerNativeDeferredDiscovery)
 				wkit.SetAgentIdentity(meta.ID, meta.Path)
-				applyWorkerToolFilter(wkit, wt)
+				participantSpeech := agentControl != nil && agentControl.ParticipantSpeechEnabled(meta.ID)
+				applyWorkerToolFilter(wkit, wt, participantSpeech)
 				// Group management is resident-only; spawned runs never
 				// receive the backend.
 				wkit.SetGroupManager(nil)
-				if agentControl != nil && agentControl.ParticipantSpeechEnabled(meta.ID) {
+				if participantSpeech {
 					wkit.SetParticipantSpeechEnabled(true)
 					// Participant task runs share the resident file scope:
 					// worker home + registered workspaces + system temp.
@@ -953,11 +954,12 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					workerKit.SetExperimentalDeferredToolBundles(s.ExperimentalDeferredBundles)
 					workerKit.SetNativeDeferredToolDiscovery(workerNativeDeferredDiscovery)
 					workerKit.SetAgentIdentity(meta.ID, meta.Path)
-					applyWorkerToolFilter(workerKit, wt)
+					participantSpeech := control != nil && control.ParticipantSpeechEnabled(meta.ID)
+					applyWorkerToolFilter(workerKit, wt, participantSpeech)
 					// Group management is resident-only; spawned runs (task
 					// runs and ordinary subagents) never receive the backend.
 					workerKit.SetGroupManager(nil)
-					if control != nil && control.ParticipantSpeechEnabled(meta.ID) {
+					if participantSpeech {
 						workerKit.SetParticipantSpeechEnabled(true)
 						// Participant task runs share the resident file scope:
 						// worker home + registered workspaces + system temp
@@ -1192,13 +1194,13 @@ func chainAfterTurn(hooks ...func(context.Context, *agent.StreamRunner, []provid
 	}
 }
 
-func applyWorkerToolFilter(kit *tools.Toolkit, wt agentcontrol.WorkerType) {
+func applyWorkerToolFilter(kit *tools.Toolkit, wt agentcontrol.WorkerType, participantSpeech bool) {
 	if kit == nil {
 		return
 	}
 	fullNames := kit.SurfaceToolNames()
 
-	allowed := agentcontrol.FilterToolsForWorker(wt, fullNames)
+	allowed := agentcontrol.FilterToolsForWorker(wt, fullNames, participantSpeech)
 	allowedSet := make(map[string]struct{}, len(allowed))
 	for _, name := range allowed {
 		allowedSet[name] = struct{}{}

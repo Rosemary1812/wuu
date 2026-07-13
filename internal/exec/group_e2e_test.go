@@ -40,12 +40,15 @@ func (w *groupScriptWorker) Chat(_ context.Context, req providers.ChatRequest) (
 	var instruction string
 	for _, m := range req.Messages {
 		if strings.Contains(m.Content, "POST_GROUP") ||
+			strings.Contains(m.Content, "POST_DM") ||
 			strings.Contains(m.Content, "POST_REPLY") ||
 			strings.Contains(m.Content, "FORK") {
 			instruction = m.Content
 		}
 	}
 	switch {
+	case strings.Contains(instruction, "POST_DM"):
+		return toolCallResponse("post_message", `{"kind":"result","text":"I found the DM issue."}`), nil
 	case strings.Contains(instruction, "POST_GROUP"):
 		target := tokenAfter(instruction, "POST_GROUP")
 		return toolCallResponse("post_message", fmt.Sprintf(
@@ -60,6 +63,99 @@ func (w *groupScriptWorker) Chat(_ context.Context, req providers.ChatRequest) (
 			`{"action":"fork","name":%q}`, name)), nil
 	}
 	return providers.ChatResponse{Content: "Nothing to do."}, nil
+}
+
+type dmScriptWorker struct {
+	mu     sync.Mutex
+	posted bool
+	defs   [][]string
+}
+
+func (w *dmScriptWorker) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	names := make([]string, 0, len(req.Tools))
+	for _, definition := range req.Tools {
+		names = append(names, definition.Name)
+	}
+	w.defs = append(w.defs, names)
+	if w.posted {
+		return providers.ChatResponse{Content: "Done."}, nil
+	}
+	for _, definition := range req.Tools {
+		if definition.Name == "post_message" {
+			w.posted = true
+			return toolCallResponse("post_message", `{"kind":"result","text":"I found the DM issue."}`), nil
+		}
+	}
+	return providers.ChatResponse{Content: "Ada"}, nil
+}
+
+func TestExecDMEndToEndRegression(t *testing.T) {
+	worker := &dmScriptWorker{}
+	rt := newExecForkTestRuntime(t, providers.AdaptStreamClient(worker))
+	t.Cleanup(func() {
+		waitForTreeQuiesce(rt.RootDir)
+		waitForTreeQuiesce(rt.WuuHome)
+	})
+	ada := seedGroupMember(t, rt, "ada")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	controller := newLocalControllerForRuntime(ctx, rt)
+
+	var stdout bytes.Buffer
+	err := Run(ctx, Options{
+		JSON:       true,
+		Stdout:     &stdout,
+		Controller: controller,
+		Actions: []GroupAction{
+			{
+				Action: "create_dm",
+				Params: map[string]any{"dm_participant_id": ada.ID},
+				SaveAs: map[string]string{"dm": "thread.id"},
+				Expect: map[string]any{"thread.dm_participant_id": ada.ID},
+			},
+			{Action: "participant_turn", As: ada.ID, Params: map[string]any{
+				"thread_id": "$dm",
+				"task_name": "ada_dm_reply",
+				"prompt":    "Answer the user in your DM. POST_DM",
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v\n%s", err, stdout.String())
+	}
+
+	events := parseJSONLines(t, stdout.String())
+	dmID := actionResultPath(t, events, "create_dm", "thread", "id")
+	saved, ok, err := session.Find(rt.SessionDir, dmID)
+	if err != nil {
+		t.Fatalf("find DM session: %v", err)
+	}
+	if !ok {
+		t.Fatalf("DM session %q was not persisted", dmID)
+	}
+	if saved.DMParticipantID != ada.ID {
+		t.Fatalf("DM participant = %q, want %q", saved.DMParticipantID, ada.ID)
+	}
+
+	history, err := session.LoadHistoryRecords(rt.SessionDir, dmID, false)
+	if err != nil {
+		t.Fatalf("load DM history: %v", err)
+	}
+	var sawDMReply bool
+	for _, record := range history {
+		if strings.TrimSpace(record.Content) == "I found the DM issue." && strings.TrimSpace(record.ParticipantID) == ada.ID {
+			sawDMReply = true
+		}
+	}
+	if !sawDMReply {
+		t.Fatalf("named DM reply not persisted: %+v; provider defs: %+v", historyContents(history), worker.defs)
+	}
+	if got := countToolCompleted(events, "post_message"); got != 1 {
+		t.Fatalf("post_message tool calls = %d, want 1\n%s", got, stdout.String())
+	}
 }
 
 func toolCallResponse(name, args string) providers.ChatResponse {

@@ -2585,7 +2585,7 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 		t.Fatalf("agent type: %v", err)
 	}
 
-	applyWorkerToolFilter(kit, wt)
+	applyWorkerToolFilter(kit, wt, false)
 
 	defs := map[string]bool{}
 	for _, def := range kit.Definitions() {
@@ -2596,7 +2596,7 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 			t.Fatalf("subagent toolkit should keep %s", allowed)
 		}
 	}
-	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "post_message", "manage_participant"} {
+	for _, blocked := range []string{"spawn_agent", "send_message", "followup_task", "await_agents", "close_agent", "list_agents", "post_message", "react", "manage_participant", "manage_task"} {
 		if defs[blocked] {
 			t.Fatalf("subagent toolkit should hide recursive control tool %s", blocked)
 		}
@@ -2615,20 +2615,13 @@ func TestApplyWorkerToolFilter_AllowsAuthorizedParticipantSpeech(t *testing.T) {
 		t.Fatalf("agent type: %v", err)
 	}
 
-	applyWorkerToolFilter(kit, wt)
-	if defs := toolDefinitionNamesForRuntimeTest(kit.Definitions()); defs["post_message"] {
-		t.Fatalf("ordinary worker toolkit should hide post_message before speech authorization; defs=%v", defs)
-	}
-	if defs := toolDefinitionNamesForRuntimeTest(kit.Definitions()); defs["manage_participant"] {
-		t.Fatalf("ordinary worker toolkit should hide manage_participant before speech authorization; defs=%v", defs)
-	}
-
 	kit.SetParticipantSpeechEnabled(true)
-	if defs := toolDefinitionNamesForRuntimeTest(kit.Definitions()); !defs["post_message"] {
-		t.Fatalf("authorized participant worker toolkit should expose post_message after role filtering; defs=%v", defs)
-	}
-	if defs := toolDefinitionNamesForRuntimeTest(kit.Definitions()); !defs["manage_participant"] {
-		t.Fatalf("authorized participant worker toolkit should expose manage_participant after role filtering; defs=%v", defs)
+	applyWorkerToolFilter(kit, wt, true)
+	defs := toolDefinitionNamesForRuntimeTest(kit.Definitions())
+	for _, name := range []string{"post_message", "react", "manage_participant", "manage_task"} {
+		if !defs[name] {
+			t.Fatalf("authorized participant worker toolkit should expose %s after role filtering; defs=%v", name, defs)
+		}
 	}
 }
 
@@ -2652,7 +2645,7 @@ func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.
 		AllowedTools: []string{"read_file", "grep", "glob", "bash", "inception", "agent_report"},
 	}
 
-	applyWorkerToolFilter(kit, wt)
+	applyWorkerToolFilter(kit, wt, false)
 
 	defs := map[string]bool{}
 	for _, def := range kit.Definitions() {
