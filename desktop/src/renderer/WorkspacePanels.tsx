@@ -191,7 +191,12 @@ export function WorkspaceRightPanel({
             disabled={!open}
             onClick={onOpenSidebar}
           >
-            <PanelLeftOpen className="icon" />
+            <PanelLeftOpen
+              className="icon-lg"
+              size={18}
+              strokeWidth={1.67}
+              viewBox="2 2 20 20"
+            />
           </button>
         ) : null}
         <DndContext

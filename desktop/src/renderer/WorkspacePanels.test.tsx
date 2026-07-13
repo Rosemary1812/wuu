@@ -175,6 +175,11 @@ describe("WorkspaceRightPanel", () => {
       '[aria-label="打开导航侧栏"]',
     );
     expect(navigation).not.toBeNull();
+    const navigationIcon = navigation?.querySelector("svg");
+    expect(navigationIcon?.getAttribute("width")).toBe("18");
+    expect(navigationIcon?.getAttribute("height")).toBe("18");
+    expect(navigationIcon?.getAttribute("viewBox")).toBe("2 2 20 20");
+    expect(navigationIcon?.getAttribute("stroke-width")).toBe("1.67");
     act(() => navigation?.click());
     expect(onOpenSidebar).toHaveBeenCalledTimes(1);
 
