@@ -471,7 +471,7 @@ func isProviderOverloaded(code, message string) bool {
 func isTemporaryProviderFailure(code, message string) bool {
 	code = strings.ToLower(strings.TrimSpace(code))
 	switch code {
-	case "500", "502", "503", "internal_error", "server_error":
+	case "500", "502", "503", "internal_error", "server_error", "api_error":
 		return true
 	}
 	msg := strings.ToLower(strings.TrimSpace(message))

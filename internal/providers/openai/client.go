@@ -537,6 +537,9 @@ func (c *Client) readSSE(ctx context.Context, resp *http.Response, lease *provid
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
+	// Match the Responses SSE reader: one oversized data: line must not turn
+	// into a non-retryable bufio.ErrTooLong failure.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		resetIdle()
 		line := scanner.Text()

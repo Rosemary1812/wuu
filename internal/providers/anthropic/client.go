@@ -1077,6 +1077,10 @@ func (c *Client) readSSEStream(ctx context.Context, resp *http.Response, lease *
 	)
 
 	scanner := bufio.NewScanner(resp.Body)
+	// The default 64KiB token cap turns one long data: line (large tool-arg
+	// deltas, batched frames from compatible endpoints) into a non-retryable
+	// bufio.ErrTooLong that a replay would deterministically hit again.
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		resetIdle()
 		line := scanner.Text()
@@ -1294,8 +1298,17 @@ func (c *Client) handleSSEEvent(
 		providers.DebugLogfWire("readSSEStream: error event: %s", raw.Data)
 		var p anthropicErrorPayload
 		if err := json.Unmarshal([]byte(raw.Data), &p); err == nil {
-			providers.DebugLogf("readSSEStream: error code=%s msg=%s", p.Error.Code, p.Error.Message)
-			streamErr := providers.NewProviderStreamError(p.Error.Code, p.Error.Message)
+			// Native Anthropic carries the machine-readable class in
+			// error.type ("overloaded_error", "api_error", ...); compatible
+			// endpoints such as MiniMax use error.code instead. Feed whichever
+			// is present into classification so a retryable in-stream failure
+			// is not demoted to message-substring matching.
+			code := strings.TrimSpace(p.Error.Type)
+			if code == "" {
+				code = strings.TrimSpace(p.Error.Code)
+			}
+			providers.DebugLogf("readSSEStream: error type=%s code=%s msg=%s", p.Error.Type, p.Error.Code, p.Error.Message)
+			streamErr := providers.NewProviderStreamError(code, p.Error.Message)
 			streamErr.ProviderFamily = "anthropic"
 			lease.FailError(streamErr)
 			emit.Send(providers.StreamEvent{
@@ -1686,6 +1699,10 @@ type sseRawEvent struct {
 
 type anthropicErrorPayload struct {
 	Error struct {
+		// Type is the native Anthropic error class (e.g. "overloaded_error");
+		// Code is the numeric class used by compatible endpoints (e.g.
+		// MiniMax's "1305"). Native streams leave Code empty and vice versa.
+		Type    string `json:"type"`
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"error"`

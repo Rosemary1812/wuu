@@ -2002,6 +2002,49 @@ func TestStreamChat_ErrorEventSurfacesProviderError(t *testing.T) {
 	}
 }
 
+func TestStreamChat_NativeErrorTypeClassifiesRetryable(t *testing.T) {
+	// Native Anthropic error events carry error.type, not error.code. An
+	// api_error with an atypical message must still classify as retryable
+	// from the type alone, not fall to message-substring matching.
+	ssePayload := "event: error\n" +
+		"data: {\"type\":\"error\",\"error\":{\"type\":\"api_error\",\"message\":\"Something went sideways\"}}\n\n"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(ssePayload))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{BaseURL: server.URL, APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:    "claude-test",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+
+	var events []providers.StreamEvent
+	for ev := range ch {
+		events = append(events, ev)
+	}
+	if len(events) != 1 || events[0].Type != providers.EventError {
+		t.Fatalf("expected a single error event, got %+v", events)
+	}
+	if events[0].Error == nil || !providers.IsRetryable(events[0].Error) {
+		t.Fatalf("native api_error must classify retryable, got %v", events[0].Error)
+	}
+	var streamErr *providers.StreamError
+	if !errors.As(events[0].Error, &streamErr) || streamErr.Code != "api_error" {
+		t.Fatalf("expected StreamError with code=api_error, got %v", events[0].Error)
+	}
+}
+
 func TestStreamChat_MissingMessageStopYieldsIncompleteError(t *testing.T) {
 	ssePayload := "event: message_start\n" +
 		"data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":10}}}\n\n" +
