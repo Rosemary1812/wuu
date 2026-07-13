@@ -37,11 +37,7 @@ func BuildClientWithRetry(provider config.ProviderConfig, providerName string, r
 // attempt, this gives the worker substantially more headroom to ride out
 // transient rate limits and upstream blips: 6 retries, 2s to 60s backoff.
 func SubAgentRetryConfig() providers.RetryConfig {
-	return providers.RetryConfig{
-		MaxRetries:   6,
-		InitialDelay: 2 * time.Second,
-		MaxDelay:     60 * time.Second,
-	}
+	return providers.ProviderRequestRetryConfigForProfile(providers.InferenceProfileBackgroundAgent)
 }
 
 // BuildStreamClient constructs a streaming-capable provider client using the

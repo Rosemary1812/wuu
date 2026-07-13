@@ -373,7 +373,7 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 		ProviderOptions:          provideroptions.Clone(defaults.options),
 		InferenceOperationKind:   providers.InferenceOperationAgentRound,
 		InferenceWorkloadProfile: providers.InferenceProfileBackgroundAgent,
-		ReconnectConfig:          providers.RetryConfig{MaxRetries: 5},
+		ReconnectConfig:          providers.StreamRetryConfigForProfile(providers.InferenceProfileBackgroundAgent),
 		OnUsage:                  onUsage,
 		OnTokenUsage:             onTokenUsage,
 	}

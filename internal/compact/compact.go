@@ -329,7 +329,7 @@ func summarizeCompact(ctx context.Context, client providers.Client, req provider
 
 func streamCompactSummary(ctx context.Context, client providers.StreamClient, req providers.ChatRequest) (providers.ChatResponse, error) {
 	req.Operation = providers.EnsureInferenceOperation(req.Operation, providers.InferenceOperationCompaction, providers.InferenceProfileContinuationCritical)
-	reliableClient := providers.NewReliableStreamClient(client, providers.RetryConfig{MaxRetries: 3}, nil)
+	reliableClient := providers.NewReliableStreamClient(client, providers.StreamRetryConfigForProfile(providers.InferenceProfileContinuationCritical), nil)
 	ch, err := reliableClient.StreamChat(ctx, req)
 	if err != nil {
 		return providers.ChatResponse{}, err

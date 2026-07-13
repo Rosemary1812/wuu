@@ -495,7 +495,7 @@ func NewSession(opts Options) (*Session, error) {
 		AfterTurn:                   afterTurn,
 		InferenceOperationKind:      providers.InferenceOperationAgentRound,
 		InferenceWorkloadProfile:    providers.InferenceProfileInteractive,
-		ReconnectConfig:             providers.RetryConfig{MaxRetries: 5},
+		ReconnectConfig:             providers.StreamRetryConfigForProfile(providers.InferenceProfileInteractive),
 	}
 
 	configLoadMode := opts.ConfigLoadMode
