@@ -14,6 +14,36 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
+type managerTestJournal struct{}
+
+func (*managerTestJournal) PrepareOperation(providers.InferenceOperationJournalRecord) error {
+	return nil
+}
+func (*managerTestJournal) PrepareAttempt(providers.InferenceAttemptJournalRecord) error { return nil }
+func (*managerTestJournal) MarkAttemptDispatching(string, string, time.Time) error       { return nil }
+func (*managerTestJournal) UpsertSubmission(providers.InferenceSubmissionJournalRecord) error {
+	return nil
+}
+func (*managerTestJournal) MarkAttemptFirstEvent(string, string, string, time.Time) error { return nil }
+func (*managerTestJournal) CompleteAttempt(providers.InferenceAttemptTerminalRecord) error {
+	return nil
+}
+func (*managerTestJournal) RecordRecovery(providers.InferenceRecoveryJournalRecord) error { return nil }
+func (*managerTestJournal) CompleteOperation(providers.InferenceOperationTerminalRecord) error {
+	return nil
+}
+
+func TestManagerUpdateDefaultsPreservesInferenceJournal(t *testing.T) {
+	journal := &managerTestJournal{}
+	manager := NewManagerWithOptions(&fakeClient{}, "model", ManagerOptions{InferenceJournal: journal})
+
+	manager.UpdateDefaults(nil, "updated-model", ManagerOptions{})
+
+	if got := manager.defaultsSnapshot().journal; got != journal {
+		t.Fatalf("journal after defaults update = %T %p, want original %p", got, got, journal)
+	}
+}
+
 // fakeClient is a tiny providers.StreamClient stub for tests. It
 // returns the canned response on every Chat / StreamChat call and
 // stashes the most recent request payload so tests can assert what

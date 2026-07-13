@@ -14,6 +14,63 @@ import (
 	"github.com/blueberrycongee/wuu/internal/sessionmemory"
 )
 
+type dreamRecordingJournal struct {
+	operations chan providers.InferenceOperation
+}
+
+func (j *dreamRecordingJournal) PrepareOperation(record providers.InferenceOperationJournalRecord) error {
+	select {
+	case j.operations <- record.Operation:
+	default:
+	}
+	return nil
+}
+func (*dreamRecordingJournal) PrepareAttempt(providers.InferenceAttemptJournalRecord) error {
+	return nil
+}
+func (*dreamRecordingJournal) MarkAttemptDispatching(string, string, time.Time) error { return nil }
+func (*dreamRecordingJournal) UpsertSubmission(providers.InferenceSubmissionJournalRecord) error {
+	return nil
+}
+func (*dreamRecordingJournal) MarkAttemptFirstEvent(string, string, string, time.Time) error {
+	return nil
+}
+func (*dreamRecordingJournal) CompleteAttempt(providers.InferenceAttemptTerminalRecord) error {
+	return nil
+}
+func (*dreamRecordingJournal) RecordRecovery(providers.InferenceRecoveryJournalRecord) error {
+	return nil
+}
+func (*dreamRecordingJournal) CompleteOperation(providers.InferenceOperationTerminalRecord) error {
+	return nil
+}
+
+func TestSessionDreamScheduler_BackgroundRunKeepsInferenceJournal(t *testing.T) {
+	root := t.TempDir()
+	workspaceState := t.TempDir()
+	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
+	journal := &dreamRecordingJournal{operations: make(chan providers.InferenceOperation, 1)}
+	runner := &agent.StreamRunner{
+		Client: providers.AdaptStreamClient(&profileMemoryReviewFakeClient{
+			responses: []providers.ChatResponse{{Content: "Nothing to dream."}},
+		}),
+		Model:            "test-model",
+		InferenceJournal: journal,
+	}
+
+	scheduler.AfterTurn(context.Background(), runner, makeProfileMemoryReviewHistory(1), agent.LoopResult{Content: "done"})
+
+	select {
+	case operation := <-journal.operations:
+		if operation.Kind != providers.InferenceOperationMemory || operation.WorkloadProfile != providers.InferenceProfileBestEffort {
+			t.Fatalf("dream operation = %+v, want memory/best_effort", operation)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("background dream did not prepare an inference operation in the runner journal")
+	}
+}
+
 func TestSessionDreamScheduler_ShouldStartRespectsInterval(t *testing.T) {
 	root := t.TempDir()
 	workspaceState := t.TempDir()
@@ -220,6 +277,11 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 	}
 	if len(client.requests) != 2 {
 		t.Fatalf("chat calls = %d, want 2", len(client.requests))
+	}
+	for index, req := range client.requests {
+		if req.Operation.Kind != providers.InferenceOperationMemory || req.Operation.WorkloadProfile != providers.InferenceProfileBestEffort {
+			t.Fatalf("dream request %d operation = %+v, want memory/best_effort", index+1, req.Operation)
+		}
 	}
 	toolNames := make(map[string]bool)
 	for _, def := range client.requests[0].Tools {

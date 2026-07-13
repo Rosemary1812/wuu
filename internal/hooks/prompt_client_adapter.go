@@ -14,13 +14,14 @@ import (
 // defaultModel is the agent's configured model name; it is used when a
 // hook entry leaves its own `model` field empty. Pass an empty string
 // to fall back to the provider's own default on each call.
-func NewProviderModelClient(client providers.Client, defaultModel string) PromptModelClient {
-	return &providerModelClientAdapter{client: client, defaultModel: defaultModel}
+func NewProviderModelClient(client providers.Client, defaultModel string, defaultJournal providers.InferenceJournal) PromptModelClient {
+	return &providerModelClientAdapter{client: client, defaultModel: defaultModel, defaultJournal: defaultJournal}
 }
 
 type providerModelClientAdapter struct {
-	client       providers.Client
-	defaultModel string
+	client         providers.Client
+	defaultModel   string
+	defaultJournal providers.InferenceJournal
 }
 
 func (a *providerModelClientAdapter) ChatJSON(ctx context.Context, model, system, user string) (string, error) {
@@ -37,10 +38,13 @@ func (a *providerModelClientAdapter) ChatJSON(ctx context.Context, model, system
 	if resolvedModel == "" {
 		resolvedModel = a.defaultModel
 	}
-	resp, err := a.client.Chat(ctx, providers.ChatRequest{
+	if providers.InferenceJournalFromContext(ctx) == nil {
+		ctx = providers.WithInferenceJournal(ctx, a.defaultJournal)
+	}
+	resp, err := providers.ExecuteChat(ctx, a.client, providers.ChatRequest{
 		Model:    resolvedModel,
 		Messages: messages,
-	})
+	}, providers.InferenceOperationHookPrompt, providers.InferenceProfileContinuationCritical)
 	if err != nil {
 		return "", err
 	}

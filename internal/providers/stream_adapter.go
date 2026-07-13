@@ -21,6 +21,10 @@ type adaptedStreamClient struct {
 	client Client
 }
 
+func (a adaptedStreamClient) PrepareInferenceRequest(ctx context.Context, req ChatRequest) (ChatRequest, error) {
+	return prepareInferenceRequest(ctx, a.client, req)
+}
+
 func (a adaptedStreamClient) Chat(ctx context.Context, req ChatRequest) (ChatResponse, error) {
 	return a.client.Chat(ctx, req)
 }

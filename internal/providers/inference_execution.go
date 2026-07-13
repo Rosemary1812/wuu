@@ -1,6 +1,8 @@
 package providers
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -41,8 +43,7 @@ const (
 )
 
 // InferenceSubmission is one physical request that may have crossed the wire
-// boundary. Multiple submissions under one attempt expose legacy adapter
-// retries and protocol fallbacks until those paths are moved into the engine.
+// boundary. An attempt owns at most one submission.
 type InferenceSubmission struct {
 	ID              string
 	Ordinal         int
@@ -231,6 +232,11 @@ type InferenceExecution struct {
 	nextAttempt    int
 	nextSubmission int
 	submissions    []InferenceSubmission
+	journal        InferenceJournal
+	requestHash    string
+	journalErr     error
+	firstEvents    map[string]bool
+	terminal       bool
 }
 
 // InferenceAttempt identifies one ExecuteOnce call. The execution pointer is
@@ -248,10 +254,9 @@ func NewInferenceExecution(operation InferenceOperation) *InferenceExecution {
 	return &InferenceExecution{operation: operation}
 }
 
-// EnsureInferenceExecution attaches a ledger while preserving caller-supplied
-// operation identity. Existing executions win when the request only omitted
-// the duplicate Operation value.
-func EnsureInferenceExecution(req ChatRequest, fallbackKind InferenceOperationKind, fallbackProfile InferenceWorkloadProfile) ChatRequest {
+// ensureInferenceExecution attaches the process-local ledger while preserving
+// caller-supplied operation identity.
+func ensureInferenceExecution(req ChatRequest, fallbackKind InferenceOperationKind, fallbackProfile InferenceWorkloadProfile) ChatRequest {
 	if req.Execution != nil && strings.TrimSpace(req.Operation.ID) == "" {
 		req.Operation = req.Execution.Operation()
 	}
@@ -262,22 +267,77 @@ func EnsureInferenceExecution(req ChatRequest, fallbackKind InferenceOperationKi
 	return req
 }
 
-// EnsureInferenceAttempt preserves an existing outer-engine attempt or starts
-// one for a direct unary/provider call that bypassed the stream engine.
-func EnsureInferenceAttempt(req ChatRequest, fallbackKind InferenceOperationKind, fallbackProfile InferenceWorkloadProfile) ChatRequest {
-	req = EnsureInferenceExecution(req, fallbackKind, fallbackProfile)
-	if !req.Attempt.Valid() {
-		req.Attempt = req.Execution.BeginAttempt()
-	}
-	return req
+// EnsureInferenceExecutionContext attaches the process-local execution
+// identity. Durable request hashing is intentionally deferred until an attempt
+// is prepared, after provider-specific request normalization has completed.
+func EnsureInferenceExecutionContext(ctx context.Context, req ChatRequest, fallbackKind InferenceOperationKind, fallbackProfile InferenceWorkloadProfile) (ChatRequest, error) {
+	req = ensureInferenceExecution(req, fallbackKind, fallbackProfile)
+	return req, nil
 }
 
-// BeginInferenceAttempt always allocates the next operation attempt. Recovery
-// code uses it before switching mode or reissuing a request.
-func BeginInferenceAttempt(req ChatRequest, fallbackKind InferenceOperationKind, fallbackProfile InferenceWorkloadProfile) ChatRequest {
-	req = EnsureInferenceExecution(req, fallbackKind, fallbackProfile)
-	req.Attempt = req.Execution.BeginAttempt()
-	return req
+func bindInferenceJournalContext(ctx context.Context, req ChatRequest) (ChatRequest, error) {
+	journal := InferenceJournalFromContext(ctx)
+	if journal == nil {
+		return req, nil
+	}
+	requestHash, err := InferenceRequestHash(req)
+	if err != nil {
+		return req, err
+	}
+	if err := req.Execution.bindJournal(journal, requestHash); err != nil {
+		return req, err
+	}
+	return req, nil
+}
+
+func EnsureInferenceAttemptContext(ctx context.Context, req ChatRequest, fallbackKind InferenceOperationKind, fallbackProfile InferenceWorkloadProfile) (ChatRequest, error) {
+	if err := inferenceContextError(ctx); err != nil {
+		return req, err
+	}
+	var err error
+	req, err = EnsureInferenceExecutionContext(ctx, req, fallbackKind, fallbackProfile)
+	if err != nil {
+		return req, err
+	}
+	req, err = bindInferenceJournalContext(ctx, req)
+	if err != nil {
+		return req, err
+	}
+	if err := inferenceContextError(ctx); err != nil {
+		return req, err
+	}
+	if req.Attempt.Valid() {
+		return req, req.Attempt.JournalError()
+	}
+	req.Attempt, err = req.Execution.BeginAttemptChecked()
+	return req, err
+}
+
+func BeginInferenceAttemptContext(ctx context.Context, req ChatRequest, fallbackKind InferenceOperationKind, fallbackProfile InferenceWorkloadProfile) (ChatRequest, error) {
+	if err := inferenceContextError(ctx); err != nil {
+		return req, err
+	}
+	var err error
+	req, err = EnsureInferenceExecutionContext(ctx, req, fallbackKind, fallbackProfile)
+	if err != nil {
+		return req, err
+	}
+	req, err = bindInferenceJournalContext(ctx, req)
+	if err != nil {
+		return req, err
+	}
+	if err := inferenceContextError(ctx); err != nil {
+		return req, err
+	}
+	req.Attempt, err = req.Execution.BeginAttemptChecked()
+	return req, err
+}
+
+func inferenceContextError(ctx context.Context) error {
+	if ctx == nil {
+		return nil
+	}
+	return ctx.Err()
 }
 
 func (e *InferenceExecution) Operation() InferenceOperation {
@@ -290,17 +350,42 @@ func (e *InferenceExecution) Operation() InferenceOperation {
 }
 
 func (e *InferenceExecution) BeginAttempt() InferenceAttempt {
+	attempt, _ := e.BeginAttemptChecked()
+	return attempt
+}
+
+func (e *InferenceExecution) BeginAttemptChecked() (InferenceAttempt, error) {
 	if e == nil {
 		panic("providers: begin inference attempt on nil execution")
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.terminal {
+		return InferenceAttempt{}, errors.New("inference operation is already terminal")
+	}
+	if e.journalErr != nil {
+		return InferenceAttempt{}, e.journalErr
+	}
 	e.nextAttempt++
-	return InferenceAttempt{
+	attempt := InferenceAttempt{
 		ID:        e.operation.AttemptID(e.nextAttempt),
 		Ordinal:   e.nextAttempt,
 		execution: e,
 	}
+	if e.journal != nil {
+		if err := e.journal.PrepareAttempt(InferenceAttemptJournalRecord{
+			OperationID: e.operation.ID,
+			AttemptID:   attempt.ID,
+			Ordinal:     attempt.Ordinal,
+			RequestHash: e.requestHash,
+			At:          time.Now().UTC(),
+		}); err != nil {
+			e.nextAttempt--
+			e.journalErr = err
+			return InferenceAttempt{}, err
+		}
+	}
+	return attempt, nil
 }
 
 func (a InferenceAttempt) Valid() bool {
@@ -319,13 +404,41 @@ func (a InferenceAttempt) Operation() InferenceOperation {
 
 // RecordSubmission marks the physical send boundary immediately before the
 // provider transport writes the inference request.
-func (a InferenceAttempt) RecordSubmission(meta InferenceSubmissionMeta) InferenceSubmission {
+func (a InferenceAttempt) MarkDispatching() error {
 	if !a.Valid() {
-		panic("providers: record submission without a valid inference attempt")
+		return errors.New("mark dispatching without a valid inference attempt")
 	}
 	e := a.execution
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.journalErr != nil {
+		return e.journalErr
+	}
+	if e.journal == nil {
+		return nil
+	}
+	if err := e.journal.MarkAttemptDispatching(e.operation.ID, a.ID, time.Now().UTC()); err != nil {
+		e.journalErr = err
+		return err
+	}
+	return nil
+}
+
+func (a InferenceAttempt) RecordSubmission(meta InferenceSubmissionMeta) (InferenceSubmission, error) {
+	if !a.Valid() {
+		return InferenceSubmission{}, errors.New("record submission without a valid inference attempt")
+	}
+	e := a.execution
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.journalErr != nil {
+		return InferenceSubmission{}, e.journalErr
+	}
+	for _, existing := range e.submissions {
+		if existing.AttemptID == a.ID {
+			return InferenceSubmission{}, fmt.Errorf("attempt %q already owns submission %q", a.ID, existing.ID)
+		}
+	}
 	e.nextSubmission++
 	submission := InferenceSubmission{
 		ID:             fmt.Sprintf("%s-s%d", e.operation.ID, e.nextSubmission),
@@ -342,20 +455,30 @@ func (a InferenceAttempt) RecordSubmission(meta InferenceSubmissionMeta) Inferen
 		CostState:      InferenceCostUnknownBillable,
 		execution:      e,
 	}
+	if e.journal != nil {
+		if err := e.journal.UpsertSubmission(journalSubmission(e.operation.ID, submission)); err != nil {
+			e.nextSubmission--
+			e.journalErr = err
+			return InferenceSubmission{}, err
+		}
+	}
 	e.submissions = append(e.submissions, submission)
-	return submission
+	return submission, nil
 }
 
 // ObserveStreamEvent attributes provider-neutral stream evidence to the most
 // recent physical submission in this attempt. Protocol adapters may also
 // update an exact submission handle; both paths are idempotent at terminal.
-func (a InferenceAttempt) ObserveStreamEvent(event StreamEvent) {
+func (a InferenceAttempt) ObserveStreamEvent(event StreamEvent) error {
 	if !a.Valid() {
-		return
+		return nil
 	}
 	submission, ok := a.latestSubmission()
 	if !ok {
-		return
+		return a.JournalError()
+	}
+	if isProviderResponseEvidence(event.Type) {
+		a.markFirstEvent(submission.ID)
 	}
 	switch event.Type {
 	case EventContentDelta, EventThinkingDelta, EventToolUseDelta:
@@ -371,6 +494,171 @@ func (a InferenceAttempt) ObserveStreamEvent(event StreamEvent) {
 		}
 		submission.CompleteFailure(NormalizeFailure(err))
 	}
+	return a.JournalError()
+}
+
+func (a InferenceAttempt) markFirstEvent(submissionID string) {
+	e := a.execution
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.journal == nil || e.journalErr != nil {
+		return
+	}
+	if e.firstEvents == nil {
+		e.firstEvents = make(map[string]bool)
+	}
+	if e.firstEvents[a.ID] {
+		return
+	}
+	if err := e.journal.MarkAttemptFirstEvent(e.operation.ID, a.ID, submissionID, time.Now().UTC()); err != nil {
+		e.journalErr = err
+		return
+	}
+	e.firstEvents[a.ID] = true
+}
+
+func isProviderResponseEvidence(eventType StreamEventType) bool {
+	switch eventType {
+	case EventContentDelta, EventContentReplace, EventThinkingDelta, EventThinkingReplace,
+		EventThinkingDone, EventToolUseStart, EventToolUseDelta, EventToolUseEnd,
+		EventUsage, EventMessage, EventDone:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a InferenceAttempt) JournalError() error {
+	if !a.Valid() {
+		return nil
+	}
+	e := a.execution
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.journalErr
+}
+
+func (a InferenceAttempt) Complete(outcome InferenceTerminalOutcome, failure NormalizedFailure) error {
+	if !a.Valid() {
+		return errors.New("complete without a valid inference attempt")
+	}
+	e := a.execution
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.journalErr != nil {
+		return e.journalErr
+	}
+	if e.journal == nil {
+		return nil
+	}
+	if err := e.journal.CompleteAttempt(InferenceAttemptTerminalRecord{
+		OperationID: e.operation.ID,
+		AttemptID:   a.ID,
+		Outcome:     outcome,
+		Failure:     DurableInferenceFailure(failure),
+		At:          time.Now().UTC(),
+	}); err != nil {
+		e.journalErr = err
+		return err
+	}
+	return nil
+}
+
+func (a InferenceAttempt) RecordRecovery(plan RecoveryPlan, retryAt time.Time) error {
+	if !a.Valid() {
+		return errors.New("record recovery without a valid inference attempt")
+	}
+	e := a.execution
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.journalErr != nil {
+		return e.journalErr
+	}
+	if e.journal == nil {
+		return nil
+	}
+	if err := e.journal.RecordRecovery(InferenceRecoveryJournalRecord{
+		OperationID: e.operation.ID,
+		AttemptID:   a.ID,
+		Action:      plan.Action,
+		RetryAt:     retryAt,
+		At:          time.Now().UTC(),
+	}); err != nil {
+		e.journalErr = err
+		return err
+	}
+	return nil
+}
+
+func (e *InferenceExecution) Complete(outcome InferenceTerminalOutcome, failure NormalizedFailure) error {
+	if e == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.terminal {
+		return e.journalErr
+	}
+	if e.journalErr != nil {
+		return e.journalErr
+	}
+	if e.journal != nil {
+		if err := e.journal.CompleteOperation(InferenceOperationTerminalRecord{
+			OperationID: e.operation.ID,
+			Outcome:     outcome,
+			Failure:     DurableInferenceFailure(failure),
+			At:          time.Now().UTC(),
+		}); err != nil {
+			e.journalErr = err
+			return err
+		}
+	}
+	e.terminal = true
+	return nil
+}
+
+func (e *InferenceExecution) LatestAttempt() InferenceAttempt {
+	if e == nil {
+		return InferenceAttempt{}
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.nextAttempt < 1 {
+		return InferenceAttempt{}
+	}
+	return InferenceAttempt{
+		ID:        e.operation.AttemptID(e.nextAttempt),
+		Ordinal:   e.nextAttempt,
+		execution: e,
+	}
+}
+
+func (e *InferenceExecution) bindJournal(journal InferenceJournal, requestHash string) error {
+	if e == nil || journal == nil {
+		return nil
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.journalErr != nil {
+		return e.journalErr
+	}
+	if e.journal != nil {
+		if e.requestHash != requestHash {
+			return errors.New("inference request changed without a new operation or payload version")
+		}
+		return nil
+	}
+	if err := journal.PrepareOperation(InferenceOperationJournalRecord{
+		Operation:   e.operation,
+		RequestHash: requestHash,
+		At:          time.Now().UTC(),
+	}); err != nil {
+		e.journalErr = err
+		return err
+	}
+	e.journal = journal
+	e.requestHash = requestHash
+	return nil
 }
 
 func (a InferenceAttempt) latestSubmission() (InferenceSubmission, bool) {
@@ -423,12 +711,48 @@ func (e *InferenceExecution) updateSubmission(id string, update func(*InferenceS
 		return
 	}
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	for index := range e.submissions {
 		if e.submissions[index].ID == id {
 			update(&e.submissions[index])
+			submission := snapshotSubmission(e.submissions[index])
+			journal := e.journal
+			operationID := e.operation.ID
+			e.mu.Unlock()
+			if journal != nil {
+				if err := journal.UpsertSubmission(journalSubmission(operationID, submission)); err != nil {
+					e.mu.Lock()
+					if e.journalErr == nil {
+						e.journalErr = err
+					}
+					e.mu.Unlock()
+				}
+			}
 			return
 		}
+	}
+	e.mu.Unlock()
+}
+
+func journalSubmission(operationID string, submission InferenceSubmission) InferenceSubmissionJournalRecord {
+	return InferenceSubmissionJournalRecord{
+		OperationID:     operationID,
+		AttemptID:       submission.AttemptID,
+		ID:              submission.ID,
+		Ordinal:         submission.Ordinal,
+		AttemptOrdinal:  submission.AttemptOrdinal,
+		Provider:        submission.Provider,
+		Protocol:        submission.Protocol,
+		Transport:       submission.Transport,
+		Mode:            submission.Mode,
+		Reason:          submission.Reason,
+		StartedAt:       submission.StartedAt,
+		CompletedAt:     submission.CompletedAt,
+		Outcome:         submission.Outcome,
+		FailureCategory: submission.FailureCategory,
+		CostState:       submission.CostState,
+		ReportedUsage:   submission.ReportedUsage,
+		EstimatedUsage:  submission.EstimatedUsage,
+		OutputBytes:     submission.OutputBytes,
 	}
 }
 

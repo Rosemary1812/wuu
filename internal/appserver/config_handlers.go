@@ -909,8 +909,7 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		s.rt.TitleClient = titleClient
 	}
 	if s.rt.Toolkit != nil && (!roleSelections.Worker.Inherited || connectionChanged || modelHeadersChanged || resolvedName != previousRuntimeProvider) {
-		workerRetry := providerfactory.SubAgentRetryConfig()
-		workerClient, workerErr := providerfactory.BuildStreamClientWithRetry(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider, &workerRetry)
+		workerClient, workerErr := providerfactory.BuildStreamClient(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider)
 		if workerErr != nil {
 			return s.writeResponse(req.ID, nil, fmt.Errorf("build worker client: %w", workerErr))
 		}

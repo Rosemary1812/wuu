@@ -222,7 +222,7 @@ func (l *ProviderLease) FallbackError(err error) {
 // RecordSubmission binds the single physical wire submission owned by this
 // lease. A second bind is a programming error: it would recreate a hidden
 // multi-send attempt.
-func (l *ProviderLease) RecordSubmission(attempt InferenceAttempt, meta InferenceSubmissionMeta) InferenceSubmission {
+func (l *ProviderLease) RecordSubmission(attempt InferenceAttempt, meta InferenceSubmissionMeta) (InferenceSubmission, error) {
 	if l == nil {
 		panic("providers: record submission on nil provider lease")
 	}
@@ -231,8 +231,15 @@ func (l *ProviderLease) RecordSubmission(attempt InferenceAttempt, meta Inferenc
 	if l.submission.Valid() {
 		panic("providers: provider lease already owns a submission")
 	}
-	l.submission = attempt.RecordSubmission(meta)
-	return l.submission
+	if err := attempt.MarkDispatching(); err != nil {
+		return InferenceSubmission{}, err
+	}
+	submission, err := attempt.RecordSubmission(meta)
+	if err != nil {
+		return InferenceSubmission{}, err
+	}
+	l.submission = submission
+	return l.submission, nil
 }
 
 func (l *ProviderLease) ObserveOutput(content string) {

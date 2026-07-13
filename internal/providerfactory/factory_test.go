@@ -341,37 +341,6 @@ func TestResolveAPIKey_AuthStoreFallback(t *testing.T) {
 	}
 }
 
-func TestBuildClientWithRetry_AppliesCustomConfig(t *testing.T) {
-	t.Setenv("TEST_WUU_KEY", "abc")
-
-	rc := SubAgentRetryConfig()
-	if rc.MaxRetries != 6 {
-		t.Fatalf("SubAgentRetryConfig MaxRetries = %d, want 6", rc.MaxRetries)
-	}
-	if rc.MaxDelay < rc.InitialDelay {
-		t.Fatalf("SubAgentRetryConfig MaxDelay (%v) < InitialDelay (%v)", rc.MaxDelay, rc.InitialDelay)
-	}
-
-	// We can't introspect the underlying client's RetryConfig from the
-	// public providers.Client interface, but we can at least verify
-	// the constructor accepts the override and returns successfully.
-	// Smoke test for both supported provider families.
-	for _, ptype := range []string{"openai-compatible", "anthropic"} {
-		client, err := BuildClientWithRetry(config.ProviderConfig{
-			Type:      ptype,
-			BaseURL:   "https://example.com/v1",
-			APIKeyEnv: "TEST_WUU_KEY",
-			Model:     "test",
-		}, "test", &rc)
-		if err != nil {
-			t.Fatalf("BuildClientWithRetry(%s) returned error: %v", ptype, err)
-		}
-		if client == nil {
-			t.Fatalf("BuildClientWithRetry(%s) returned nil client", ptype)
-		}
-	}
-}
-
 func TestBuildClient_MissingAPIKey(t *testing.T) {
 	_ = os.Unsetenv("MISSING_WUU_KEY")
 

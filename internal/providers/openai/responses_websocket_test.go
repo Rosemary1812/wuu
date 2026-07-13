@@ -320,7 +320,8 @@ func TestResponsesStreamChatWebSocket_UsesPreviousResponseIDDelta(t *testing.T) 
 		t.Fatalf("unexpected first provider state: %+v", firstStates)
 	}
 
-	ch, err = client.StreamChat(context.Background(), providers.ChatRequest{
+	reliable := providers.NewReliableStreamClient(client, providers.RetryConfig{MaxRetries: 1, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond}, nil)
+	ch, err = reliable.StreamChat(context.Background(), providers.ChatRequest{
 		Model: "gpt-test",
 		Messages: []providers.ChatMessage{
 			{Role: "user", Content: "read README"},
@@ -1142,7 +1143,8 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterTransportCloseBeforeFir
 		},
 		{Role: "user", Content: "second"},
 	}
-	ch, err = client.StreamChat(context.Background(), providers.ChatRequest{
+	reliable := providers.NewReliableStreamClient(client, providers.RetryConfig{MaxRetries: 1, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond}, nil)
+	ch, err = reliable.StreamChat(context.Background(), providers.ChatRequest{
 		Model:     "gpt-test",
 		Messages:  followUp,
 		CacheHint: cache,
@@ -1154,7 +1156,7 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterTransportCloseBeforeFir
 	if err != nil {
 		t.Fatalf("second stream should fall back to SSE: %v", err)
 	}
-	if len(secondStates) != 2 {
+	if len(secondStates) != 3 {
 		t.Fatalf("second stream should report websocket attempt and SSE fallback, got %+v", secondStates)
 	}
 	if secondStates[0].Transport != "websocket" ||
@@ -1165,18 +1167,21 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterTransportCloseBeforeFir
 		secondStates[0].DeltaInputItems != 1 {
 		t.Fatalf("unexpected websocket attempt state: %+v", secondStates[0])
 	}
-	if secondStates[1].Transport != "http" ||
-		secondStates[1].ReplayMode != "full_request" ||
-		secondStates[1].PreviousResponseIDUsed ||
-		secondStates[1].Diagnostic != "provider_transport_failure" ||
-		secondStates[1].TransportFailurePhase != "before_message_stream_start" ||
-		secondStates[1].FallbackTransport != "http" ||
-		secondStates[1].EventsEmitted ||
-		!secondStates[1].FallbackActive ||
-		secondStates[1].FallbackReason != "websocket_failed_before_first_event" ||
-		secondStates[1].InputItems != 3 ||
-		secondStates[1].FullInputItems != 3 {
-		t.Fatalf("unexpected SSE fallback state: %+v", secondStates[1])
+	if secondStates[1].Transport != "websocket" || secondStates[1].Diagnostic != "provider_transport_failure" {
+		t.Fatalf("unexpected websocket failure state: %+v", secondStates[1])
+	}
+	if secondStates[2].Transport != "http" ||
+		secondStates[2].ReplayMode != "full_request" ||
+		secondStates[2].PreviousResponseIDUsed ||
+		secondStates[2].Diagnostic != "provider_transport_failure" ||
+		secondStates[2].TransportFailurePhase != "before_message_stream_start" ||
+		secondStates[2].FallbackTransport != "http" ||
+		secondStates[2].EventsEmitted ||
+		!secondStates[2].FallbackActive ||
+		secondStates[2].FallbackReason != "websocket_failed_before_first_event" ||
+		secondStates[2].InputItems != 3 ||
+		secondStates[2].FullInputItems != 3 {
+		t.Fatalf("unexpected SSE fallback state: %+v", secondStates[2])
 	}
 
 	<-wsRequests
@@ -1316,7 +1321,7 @@ func TestResponsesStreamChatWebSocket_BusySessionUsesTransientWebSocket(t *testi
 	}
 }
 
-func TestResponsesStreamChatWebSocket_RetriesConnectionLimitBeforeFallback(t *testing.T) {
+func TestResponsesStreamChatWebSocket_SwitchesToSSEOnConnectionLimit(t *testing.T) {
 	requests := make(chan map[string]any, 2)
 	sseRequests := make(chan map[string]any, 1)
 	var connections atomic.Int32
@@ -1347,10 +1352,6 @@ func TestResponsesStreamChatWebSocket_RetriesConnectionLimitBeforeFallback(t *te
 		switch connections.Add(1) {
 		case 1:
 			writeWSEvent(t, ctx, conn, `{"type":"error","error":{"code":"websocket_connection_limit_reached","message":"try again"}}`)
-		case 2:
-			writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_2","status":"in_progress"}}`)
-			writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_2","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"ok"}]},"output_index":0}`)
-			writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_2","status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":1}}}`)
 		default:
 			t.Errorf("unexpected extra websocket connection")
 		}
@@ -1370,52 +1371,57 @@ func TestResponsesStreamChatWebSocket_RetriesConnectionLimitBeforeFallback(t *te
 		t.Fatalf("New: %v", err)
 	}
 
-	req := providers.EnsureInferenceExecution(providers.ChatRequest{
+	req, err := providers.EnsureInferenceExecutionContext(context.Background(), providers.ChatRequest{
 		Model:     "gpt-test",
 		Messages:  []providers.ChatMessage{{Role: "user", Content: "hello"}},
 		CacheHint: &providers.CacheHint{PromptCacheKey: "thread-connection-limit"},
 	}, providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
-	ch, err := client.StreamChat(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reliable := providers.NewReliableStreamClient(client, providers.RetryConfig{MaxRetries: 2, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond}, nil)
+	ch, err := reliable.StreamChat(context.Background(), req)
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
 	states, err := drainStreamProviderStates(ch)
 	if err != nil {
-		t.Fatalf("stream should retry websocket connection limit: %v", err)
+		t.Fatalf("stream should switch transport after websocket connection limit: %v", err)
 	}
-	if got := connections.Load(); got != 2 {
-		t.Fatalf("websocket connections = %d, want 2", got)
+	if got := connections.Load(); got != 1 {
+		t.Fatalf("websocket connections = %d, want 1", got)
 	}
-	if len(states) != 2 ||
+	if len(states) != 3 ||
 		states[0].Transport != "websocket" ||
 		states[1].Transport != "websocket" ||
-		states[1].ReplayMode != "full_request" ||
-		states[1].FallbackActive {
-		t.Fatalf("unexpected provider states after retry: %+v", states)
+		states[1].Diagnostic != "provider_transport_failure" ||
+		states[2].Transport != "http" ||
+		!states[2].FallbackActive ||
+		states[2].FallbackReason != responsesWebSocketConnectionLimitCode {
+		t.Fatalf("unexpected provider states after transport switch: %+v", states)
 	}
 	select {
 	case body := <-sseRequests:
-		t.Fatalf("connection limit should retry websocket before SSE fallback, got request %#v", body)
+		if _, exists := body["previous_response_id"]; exists {
+			t.Fatalf("SSE fallback must send full payload: %#v", body)
+		}
 	default:
+		t.Fatal("expected SSE fallback request")
 	}
 	firstReq := <-requests
-	secondReq := <-requests
 	if _, exists := firstReq["previous_response_id"]; exists {
 		t.Fatalf("first request must be full payload: %#v", firstReq)
 	}
-	if _, exists := secondReq["previous_response_id"]; exists {
-		t.Fatalf("retry request must be full payload: %#v", secondReq)
-	}
 	ledger := req.Execution.Snapshot()
-	if ledger.Attempts != 1 || len(ledger.Submissions) != 2 {
-		t.Fatalf("inference ledger = %+v, want one adapter attempt and two websocket submissions", ledger)
+	if ledger.Attempts != 2 || len(ledger.Submissions) != 2 {
+		t.Fatalf("inference ledger = %+v, want two attempts and two submissions", ledger)
 	}
-	if ledger.Submissions[0].Transport != "websocket" || ledger.Submissions[1].Reason != responsesWebSocketConnectionLimitRetryTag {
-		t.Fatalf("unexpected websocket retry submissions: %+v", ledger.Submissions)
+	if ledger.Submissions[0].Transport != "websocket" || ledger.Submissions[1].Transport != "http" || ledger.Submissions[1].Reason != responsesWebSocketConnectionLimitCode {
+		t.Fatalf("unexpected transport switch submissions: %+v", ledger.Submissions)
 	}
 }
 
-func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterConnectionLimitRetry(t *testing.T) {
+func TestResponsesStreamChatWebSocket_PersistsSSEFallbackAfterConnectionLimit(t *testing.T) {
 	requests := make(chan map[string]any, 3)
 	sseRequests := make(chan map[string]any, 2)
 	var connections atomic.Int32
@@ -1446,7 +1452,7 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterConnectionLimitRetry(t 
 		defer cancel()
 		readWSRequest(t, ctx, conn, requests)
 		switch connections.Add(1) {
-		case 1, 2:
+		case 1:
 			writeWSEvent(t, ctx, conn, `{"type":"error","error":{"code":"websocket_connection_limit_reached","message":"try again"}}`)
 		default:
 			t.Errorf("unexpected extra websocket connection")
@@ -1468,25 +1474,30 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterConnectionLimitRetry(t 
 	}
 
 	cache := &providers.CacheHint{PromptCacheKey: "thread-connection-limit-fallback"}
-	req := providers.EnsureInferenceExecution(providers.ChatRequest{
+	req, err := providers.EnsureInferenceExecutionContext(context.Background(), providers.ChatRequest{
 		Model:     "gpt-test",
 		Messages:  []providers.ChatMessage{{Role: "user", Content: "hello"}},
 		CacheHint: cache,
 	}, providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
-	ch, err := client.StreamChat(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reliable := providers.NewReliableStreamClient(client, providers.RetryConfig{MaxRetries: 2, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond}, nil)
+	ch, err := reliable.StreamChat(context.Background(), req)
 	if err != nil {
 		t.Fatalf("StreamChat: %v", err)
 	}
 	states, err := drainStreamProviderStates(ch)
 	if err != nil {
-		t.Fatalf("stream should fall back to SSE after websocket retry: %v", err)
+		t.Fatalf("stream should fall back to SSE after websocket limit: %v", err)
 	}
-	if got := connections.Load(); got != 2 {
-		t.Fatalf("websocket connections = %d, want 2", got)
+	if got := connections.Load(); got != 1 {
+		t.Fatalf("websocket connections = %d, want 1", got)
 	}
 	if len(states) != 3 ||
 		states[0].Transport != "websocket" ||
 		states[1].Transport != "websocket" ||
+		states[1].Diagnostic != "provider_transport_failure" ||
 		states[2].Transport != "http" ||
 		states[2].Diagnostic != "provider_transport_failure" ||
 		states[2].TransportFailurePhase != "before_message_stream_start" ||
@@ -1501,11 +1512,11 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterConnectionLimitRetry(t 
 		t.Fatalf("SSE fallback must send full payload: %#v", firstFallbackReq)
 	}
 	ledger := req.Execution.Snapshot()
-	if ledger.Attempts != 1 || len(ledger.Submissions) != 3 {
-		t.Fatalf("inference ledger = %+v, want two websocket submissions plus SSE fallback", ledger)
+	if ledger.Attempts != 2 || len(ledger.Submissions) != 2 {
+		t.Fatalf("inference ledger = %+v, want websocket plus SSE on separate attempts", ledger)
 	}
-	if ledger.Submissions[2].Transport != "http" || ledger.Submissions[2].Mode != "fallback" || ledger.Submissions[2].Reason != responsesWebSocketConnectionLimitCode {
-		t.Fatalf("unexpected SSE fallback submission: %+v", ledger.Submissions[2])
+	if ledger.Submissions[1].Transport != "http" || ledger.Submissions[1].Mode != "fallback" || ledger.Submissions[1].Reason != responsesWebSocketConnectionLimitCode {
+		t.Fatalf("unexpected SSE fallback submission: %+v", ledger.Submissions[1])
 	}
 
 	laterCh, err := client.StreamChat(context.Background(), providers.ChatRequest{
@@ -1520,7 +1531,7 @@ func TestResponsesStreamChatWebSocket_FallsBackToSSEAfterConnectionLimitRetry(t 
 	if err != nil {
 		t.Fatalf("later stream should stay on SSE: %v", err)
 	}
-	if got := connections.Load(); got != 2 {
+	if got := connections.Load(); got != 1 {
 		t.Fatalf("later stream should not open websocket, got %d connections", got)
 	}
 	if len(laterStates) != 1 ||

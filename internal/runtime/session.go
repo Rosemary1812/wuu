@@ -141,6 +141,7 @@ type Session struct {
 	CronScheduler               *cron.Scheduler
 	CronLock                    *cron.Lock
 	ReadinessIssues             []ReadinessIssue
+	InferenceJournalRuntime     *session.InferenceJournalRuntime
 }
 
 type ReadinessIssue struct {
@@ -190,6 +191,18 @@ func NewSession(opts Options) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace state directory: %w", err)
 	}
+	sessionDir := statepath.SessionsDir(wuuHome)
+	journalRuntime, err := session.NewInferenceJournalRuntime(sessionDir, inferenceJournalWorkspaceScope(workspaceID, rootDir))
+	if err != nil {
+		return nil, fmt.Errorf("initialize inference journal: %w", err)
+	}
+	journalOwned := true
+	defer func() {
+		if journalOwned {
+			_ = journalRuntime.Close()
+		}
+	}()
+	workspaceJournal := journalRuntime.ForOwner("workspace-runtime")
 	profileMemoryEnabled := cfg.Agent.ProfileMemoryEnabled()
 	userSystemPrompt := cfg.Agent.UserSystemPrompt()
 	permissions := config.ResolveAgentPermissions(cfg.Agent)
@@ -240,7 +253,7 @@ func NewSession(opts Options) (*Session, error) {
 
 	discoveredPlugins := discoverPlugins(rootDir, wuuHome)
 	pluginHost := startPluginHost(discoveredPlugins, rootDir, wuuHome)
-	hookDispatcher := buildHookDispatcher(cfg, discoveredPlugins, providers.Client(client), toolModeModel)
+	hookDispatcher := buildHookDispatcher(cfg, discoveredPlugins, providers.Client(client), toolModeModel, workspaceJournal)
 	discoveredSkills := discoverSkills(rootDir, opts.HomeDir, wuuHome, discoveredPlugins)
 	discoveredAgentTemplates := discoverAgentTemplates(rootDir, opts.HomeDir)
 
@@ -358,7 +371,6 @@ func NewSession(opts Options) (*Session, error) {
 		cfg.Agent.MaxContextTokens,
 	)
 	if toolkit != nil {
-		workerRetry := providerfactory.SubAgentRetryConfig()
 		workerToolProviderName := roleSelections.Worker.RuleProvider
 		workerToolModeModel := roleSelections.Worker.APIModel
 		_, workerToolSearchEnabled, workerNativeDeferredDiscovery := resolveToolLoadingForProvider(cfg.Agent, roleSelections.Worker.RuleProviderConfig, workerToolModeModel, roleSelections.Worker.ProviderOptions)
@@ -373,7 +385,7 @@ func NewSession(opts Options) (*Session, error) {
 		workerToolSurface.DeferredToolCatalog = workerDeferredCatalog
 		workerBaseSystemPrompt := buildBaseSystemPromptContent(rootDir, sessionDate, config.WorkerSystemPrompt(), userSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, memoryFiles, memdirWorkerTeaching, memdirIndex, discoveredSkills)
 		var werr error
-		workerClient, werr = providerfactory.BuildStreamClientWithRetry(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider, &workerRetry)
+		workerClient, werr = providerfactory.BuildStreamClient(roleSelections.Worker.RuleProviderConfig, roleSelections.Worker.Provider)
 		if werr != nil {
 			if providerfactory.IsCredentialError(werr) {
 				workerClient = &providers.UnavailableClient{Reason: werr.Error()}
@@ -441,6 +453,7 @@ func NewSession(opts Options) (*Session, error) {
 			},
 			ParticipantStore: sessionParticipantStore{sessDir: statepath.SessionsDir(wuuHome)},
 			MaxParallel:      5,
+			InferenceJournal: workspaceJournal,
 		})
 		if cerr == nil {
 			agentControl = c
@@ -449,7 +462,6 @@ func NewSession(opts Options) (*Session, error) {
 		}
 	}
 
-	sessionDir := statepath.SessionsDir(wuuHome)
 	modelBudget := ResolveModelBudget(
 		providerCfg.Model,
 		ruleProviderCfg,
@@ -495,7 +507,8 @@ func NewSession(opts Options) (*Session, error) {
 		AfterTurn:                   afterTurn,
 		InferenceOperationKind:      providers.InferenceOperationAgentRound,
 		InferenceWorkloadProfile:    providers.InferenceProfileInteractive,
-		ReconnectConfig:             providers.StreamRetryConfigForProfile(providers.InferenceProfileInteractive),
+		ReconnectConfig:             providers.RetryConfigForProfile(providers.InferenceProfileInteractive),
+		InferenceJournal:            workspaceJournal,
 	}
 
 	configLoadMode := opts.ConfigLoadMode
@@ -506,7 +519,7 @@ func NewSession(opts Options) (*Session, error) {
 		configLoadMode = ConfigLoadFile
 	}
 
-	return &Session{
+	runtimeSession := &Session{
 		ProviderName:                resolvedName,
 		Model:                       providerCfg.Model,
 		RootDir:                     rootDir,
@@ -550,7 +563,26 @@ func NewSession(opts Options) (*Session, error) {
 		ExperimentalDeferredBundles: experimentalDeferredBundles,
 		DeferredToolCatalogPrompt:   deferredToolCatalogPrompt,
 		ReadinessIssues:             readinessIssues,
-	}, nil
+		InferenceJournalRuntime:     journalRuntime,
+	}
+	journalOwned = false
+	return runtimeSession, nil
+}
+
+func inferenceJournalWorkspaceScope(workspaceID, rootDir string) string {
+	if id := strings.TrimSpace(workspaceID); id != "" {
+		return "workspace-id:" + id
+	}
+	root := cleanRuntimeRoot(rootDir)
+	sum := sha256.Sum256([]byte(root))
+	return "workspace-path:" + hex.EncodeToString(sum[:16])
+}
+
+func (s *Session) InferenceJournalForOwner(ownerID string) providers.InferenceJournal {
+	if s == nil || s.InferenceJournalRuntime == nil {
+		return nil
+	}
+	return s.InferenceJournalRuntime.ForOwner(ownerID)
 }
 
 // LoadEffectiveConfig reloads the same source model that created the session.
@@ -938,6 +970,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 				},
 				ParticipantStore: sessionParticipantStore{sessDir: statepath.SessionsDir(wuuHome)},
 				MaxParallel:      5,
+				InferenceJournal: s.InferenceJournalForOwner(id),
 			})
 			agentControl = control
 		}
@@ -975,6 +1008,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		runner.SystemPrompt, runner.SystemPromptSections = systemPromptWithFreshMemdirIndex(runner.SystemPrompt, runner.SystemPromptSections, wuuHome)
 	}
 	runner.PromptCacheKey = strings.TrimSpace(id)
+	runner.InferenceJournal = s.InferenceJournalForOwner(id)
 	runner.BeforeRequestContext = RuntimeContextInjector(agentControl, agentthread.RootPath, toolkitContextBlockProvider(kit))
 	runner.BeforeRequest = pluginRequestInterceptor(s.PluginHost, s.ProviderName, id, threadRoot)
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
@@ -1032,6 +1066,7 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		PromptCacheKey:              base.PromptCacheKey,
 		InferenceOperationKind:      base.InferenceOperationKind,
 		InferenceWorkloadProfile:    base.InferenceWorkloadProfile,
+		InferenceJournal:            base.InferenceJournal,
 		ReconnectConfig:             base.ReconnectConfig,
 	}
 }
@@ -1207,6 +1242,11 @@ func (s *Session) Cleanup() (process.CleanupResult, error) {
 	if s == nil {
 		return process.CleanupResult{}, nil
 	}
+	var cleanupErr error
+	if s.InferenceJournalRuntime != nil {
+		cleanupErr = s.InferenceJournalRuntime.Close()
+		s.InferenceJournalRuntime = nil
+	}
 	if s.CronScheduler != nil {
 		s.CronScheduler.Stop()
 		s.CronScheduler = nil
@@ -1225,9 +1265,10 @@ func (s *Session) Cleanup() (process.CleanupResult, error) {
 		s.PluginHost = nil
 	}
 	if s.ProcessManager == nil {
-		return process.CleanupResult{}, nil
+		return process.CleanupResult{}, cleanupErr
 	}
-	return s.ProcessManager.CleanupSessionWithResult()
+	result, err := s.ProcessManager.CleanupSessionWithResult()
+	return result, errors.Join(cleanupErr, err)
 }
 
 func ResolveModelBudget(model string, provider config.ProviderConfig, agentOverride int) modelbudget.Budget {
@@ -1306,7 +1347,7 @@ func setupCatwalk(cfg config.Config) {
 	}
 }
 
-func buildHookDispatcher(cfg config.Config, plugins []pluginpkg.Plugin, client providers.Client, defaultModel string) *hooks.Dispatcher {
+func buildHookDispatcher(cfg config.Config, plugins []pluginpkg.Plugin, client providers.Client, defaultModel string, defaultJournal providers.InferenceJournal) *hooks.Dispatcher {
 	hookEntries := make(map[hooks.Event][]hooks.HookConfig)
 	for evName, entries := range cfg.Hooks {
 		ev := hooks.Event(evName)
@@ -1343,7 +1384,7 @@ func buildHookDispatcher(cfg config.Config, plugins []pluginpkg.Plugin, client p
 		// nil client and the hook silently passes through. Pass the
 		// configured tool-mode model as the default; individual hook
 		// entries can still override via their own `model` field.
-		hookRegistry.SetModelClient(hooks.NewProviderModelClient(client, defaultModel))
+		hookRegistry.SetModelClient(hooks.NewProviderModelClient(client, defaultModel, defaultJournal))
 	}
 	return hooks.NewDispatcher(hookRegistry)
 }

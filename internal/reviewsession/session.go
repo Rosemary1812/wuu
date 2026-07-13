@@ -41,16 +41,17 @@ type Boundary struct {
 }
 
 type Config struct {
-	Client          providers.Client
-	Model           string
-	Role            string
-	ParentSessionID string
-	ParentTurnID    string
-	Timeout         time.Duration
-	MaxTokens       int
-	Effort          string
-	ProviderOptions map[string]any
-	Boundary        Boundary
+	Client           providers.Client
+	Model            string
+	Role             string
+	ParentSessionID  string
+	ParentTurnID     string
+	Timeout          time.Duration
+	MaxTokens        int
+	Effort           string
+	ProviderOptions  map[string]any
+	Boundary         Boundary
+	InferenceJournal providers.InferenceJournal
 }
 
 type ForkOptions struct {
@@ -64,16 +65,17 @@ type ForkOptions struct {
 }
 
 type Session struct {
-	client          providers.Client
-	model           string
-	role            string
-	parentSessionID string
-	parentTurnID    string
-	timeout         time.Duration
-	maxTokens       int
-	effort          string
-	providerOptions map[string]any
-	boundary        Boundary
+	client           providers.Client
+	model            string
+	role             string
+	parentSessionID  string
+	parentTurnID     string
+	timeout          time.Duration
+	maxTokens        int
+	effort           string
+	providerOptions  map[string]any
+	boundary         Boundary
+	inferenceJournal providers.InferenceJournal
 }
 
 type Request struct {
@@ -125,16 +127,17 @@ func New(cfg Config) (*Session, error) {
 		maxTokens = DefaultMaxTokens
 	}
 	return &Session{
-		client:          cfg.Client,
-		model:           model,
-		role:            strings.TrimSpace(cfg.Role),
-		parentSessionID: strings.TrimSpace(cfg.ParentSessionID),
-		parentTurnID:    strings.TrimSpace(cfg.ParentTurnID),
-		timeout:         timeout,
-		maxTokens:       maxTokens,
-		effort:          strings.TrimSpace(cfg.Effort),
-		providerOptions: modelvariant.CloneOptions(cfg.ProviderOptions),
-		boundary:        boundary,
+		client:           cfg.Client,
+		model:            model,
+		role:             strings.TrimSpace(cfg.Role),
+		parentSessionID:  strings.TrimSpace(cfg.ParentSessionID),
+		parentTurnID:     strings.TrimSpace(cfg.ParentTurnID),
+		timeout:          timeout,
+		maxTokens:        maxTokens,
+		effort:           strings.TrimSpace(cfg.Effort),
+		providerOptions:  modelvariant.CloneOptions(cfg.ProviderOptions),
+		boundary:         boundary,
+		inferenceJournal: cfg.InferenceJournal,
 	}, nil
 }
 
@@ -238,6 +241,7 @@ func (s *Session) Run(ctx context.Context, req Request) (result Result) {
 	var cancel context.CancelFunc
 	callCtx, cancel = context.WithTimeout(callCtx, timeout)
 	defer cancel()
+	callCtx = providers.WithInferenceJournal(callCtx, s.inferenceJournal)
 
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {
@@ -261,13 +265,13 @@ func (s *Session) Run(ctx context.Context, req Request) (result Result) {
 		ProviderOptions: options,
 	})
 
-	resp, err := s.client.Chat(callCtx, providers.ChatRequest{
+	resp, err := providers.ExecuteChat(callCtx, s.client, providers.ChatRequest{
 		Model:           s.model,
 		Messages:        messages,
 		MaxTokens:       maxTokens,
 		Effort:          effort,
 		ProviderOptions: options,
-	})
+	}, providers.InferenceOperationReview, providers.InferenceProfileBackgroundAgent)
 	if err != nil {
 		switch {
 		case errors.Is(err, context.DeadlineExceeded):

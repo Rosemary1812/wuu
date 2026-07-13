@@ -67,7 +67,6 @@ type ClientConfig struct {
 	Headers       map[string]string
 	HTTPClient    *http.Client
 	MaxTokens     int
-	RetryConfig   *providers.RetryConfig
 	StreamConfig  *providers.StreamTransportConfig
 	Coordinator   *providers.ProviderCoordinator
 	ProviderScope providers.ProviderScope
@@ -125,7 +124,6 @@ type Client struct {
 	headers                         map[string]string
 	httpClient                      *http.Client
 	maxTokens                       int
-	retryConfig                     providers.RetryConfig
 	streamConfig                    providers.StreamTransportConfig
 	coordinator                     *providers.ProviderCoordinator
 	providerScope                   providers.ProviderScope
@@ -147,11 +145,6 @@ func New(cfg ClientConfig) (*Client, error) {
 	}
 	maxTokens := cfg.MaxTokens
 	// When 0, resolveMaxTokens falls back to model-aware defaults.
-	rc := providers.DefaultRetryConfig()
-	if cfg.RetryConfig != nil {
-		rc = *cfg.RetryConfig
-	}
-	rc = providers.NormalizeRetryConfig(rc)
 	providerScope := cfg.ProviderScope
 	if providerScope == "" && cfg.Coordinator != nil {
 		credential := cfg.APIKey
@@ -168,7 +161,6 @@ func New(cfg ClientConfig) (*Client, error) {
 		headers:                         cloneHeaders(cfg.Headers),
 		httpClient:                      hc,
 		maxTokens:                       maxTokens,
-		retryConfig:                     rc,
 		streamConfig:                    streamTransportConfig(cfg.StreamConfig),
 		coordinator:                     cfg.Coordinator,
 		providerScope:                   providerScope,
@@ -194,7 +186,11 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	if err := providers.ValidateToolDefinitionsForProvider(anthropicToolSurfaceValidationTarget(req.Model), req.Tools); err != nil {
 		return providers.ChatResponse{}, err
 	}
-	req = providers.EnsureInferenceAttempt(req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
+	var err error
+	req, err = providers.EnsureInferenceAttemptContext(ctx, req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
+	if err != nil {
+		return providers.ChatResponse{}, err
+	}
 
 	maxTok := resolveMaxTokens(req.MaxTokens, c.maxTokens, req.Model)
 	payload, err := c.buildAnthropicRequest(req, maxTok, false)
@@ -207,7 +203,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 		return providers.ChatResponse{}, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpResp, lease, err := c.doMessagesRequest(ctx, c.httpClient, body, payload.Betas, req.Attempt, "unary")
+	httpResp, lease, err := c.doSingleMessagesRequest(ctx, c.httpClient, body, payload.Betas, req.Attempt, "unary")
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
@@ -314,7 +310,11 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	if err := providers.ValidateToolDefinitionsForProvider(anthropicToolSurfaceValidationTarget(req.Model), req.Tools); err != nil {
 		return nil, err
 	}
-	req = providers.EnsureInferenceAttempt(req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
+	var err error
+	req, err = providers.EnsureInferenceAttemptContext(ctx, req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
+	if err != nil {
+		return nil, err
+	}
 
 	maxTok := resolveMaxTokens(req.MaxTokens, c.maxTokens, req.Model)
 	payload, err := c.buildAnthropicRequest(req, maxTok, true)
@@ -948,9 +948,8 @@ func ephemeralCacheControl(ttl string) *anthropicCacheControl {
 	return cc
 }
 
-// doSingleMessagesRequest sends one HTTP request to the messages endpoint
-// without any retry logic. Callers that need retries should wrap this with
-// providers.WithRetry.
+// doSingleMessagesRequest is the protocol driver's only wire-send boundary.
+// Recovery belongs to providers.ExecuteChat or ReliableStreamClient.
 func (c *Client) doSingleMessagesRequest(
 	ctx context.Context,
 	httpClient *http.Client,
@@ -1000,12 +999,15 @@ func (c *Client) doSingleMessagesRequest(
 	if err != nil {
 		return nil, nil, err
 	}
-	lease.RecordSubmission(attempt, providers.InferenceSubmissionMeta{
+	if _, err := lease.RecordSubmission(attempt, providers.InferenceSubmissionMeta{
 		Provider:  "anthropic",
 		Protocol:  "messages",
 		Transport: "http",
 		Mode:      mode,
-	})
+	}); err != nil {
+		lease.Release()
+		return nil, nil, fmt.Errorf("journal messages submission: %w", err)
+	}
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		err = fmt.Errorf("request failed: %w", err)
@@ -1027,33 +1029,6 @@ func (c *Client) doSingleMessagesRequest(
 		return nil, nil, err
 	}
 	return resp, lease, nil
-}
-
-// doMessagesRequest sends an HTTP request with automatic retries.
-// Used by the non-streaming Chat path.
-func (c *Client) doMessagesRequest(
-	ctx context.Context,
-	httpClient *http.Client,
-	body []byte,
-	extraBetas []string,
-	attempt providers.InferenceAttempt,
-	mode string,
-) (*http.Response, *providers.ProviderLease, error) {
-	var httpResp *http.Response
-	var responseLease *providers.ProviderLease
-	err := providers.WithRetry(ctx, c.retryConfig, func() error {
-		resp, lease, err := c.doSingleMessagesRequest(ctx, httpClient, body, extraBetas, attempt, mode)
-		if err != nil {
-			return err
-		}
-		httpResp = resp
-		responseLease = lease
-		return nil
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return httpResp, responseLease, nil
 }
 
 func failAnthropicResponseLease(lease *providers.ProviderLease, resp *http.Response, err error) {

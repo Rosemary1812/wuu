@@ -20,36 +20,23 @@ import (
 // title generator, or compaction job.
 var sharedProviderCoordinator = providers.NewProviderCoordinator(providers.DefaultProviderCoordinatorConfig())
 
-// BuildClient constructs a provider client from config using the provider
-// default retry policy. providerName is the key under which this provider lives
+// BuildClient constructs a single-submission protocol client. providerName is
+// the key under which this provider lives
 // in the config map; it's needed so resolveAPIKey can fall back to the global
 // auth store.
 func BuildClient(provider config.ProviderConfig, providerName string) (providers.Client, error) {
-	return BuildClientWithRetry(provider, providerName, nil)
-}
-
-// BuildClientWithRetry is like BuildClient but lets the caller pin a
-// specific HTTP retry policy. Use this for long-running consumers
-// (e.g. sub-agents that may run for many minutes and should be more
-// tolerant of transient 429 / 5xx than the interactive main agent).
-// Pass nil to use the provider client's built-in default.
-func BuildClientWithRetry(provider config.ProviderConfig, providerName string, retry *providers.RetryConfig) (providers.Client, error) {
-	return buildClientWithRetry(provider, providerName, retry)
-}
-
-// SubAgentRetryConfig returns the more aggressive HTTP retry policy
-// recommended for long-running sub-agent runs. Compared to the default single
-// attempt, this gives the worker substantially more headroom to ride out
-// transient rate limits and upstream blips: 6 retries, 2s to 60s backoff.
-func SubAgentRetryConfig() providers.RetryConfig {
-	return providers.ProviderRequestRetryConfigForProfile(providers.InferenceProfileBackgroundAgent)
+	return buildClient(provider, providerName)
 }
 
 // BuildStreamClient constructs a streaming-capable provider client using the
 // provider default retry policy. providerName is the config map key; see
 // BuildClient for why this matters for the global auth-store fallback.
 func BuildStreamClient(provider config.ProviderConfig, providerName string) (providers.StreamClient, error) {
-	return BuildStreamClientWithRetry(provider, providerName, nil)
+	client, err := buildClient(provider, providerName)
+	if err != nil {
+		return nil, err
+	}
+	return providers.AdaptStreamClient(client), nil
 }
 
 func BuildRuntimeStreamClient(provider config.ProviderConfig, providerName string) (providers.StreamClient, error) {
@@ -71,19 +58,6 @@ func IsCredentialError(err error) bool {
 	return strings.Contains(message, "no api key found") ||
 		strings.Contains(message, "no codex oauth credentials") ||
 		strings.Contains(message, "no wuu codex oauth credentials")
-}
-
-// BuildStreamClientWithRetry is like BuildStreamClient but lets the
-// caller pin a specific HTTP retry policy. Use this for long-running
-// stream consumers (e.g. sub-agents that may run for many minutes and
-// should be more tolerant of transient 429 / 5xx than the interactive
-// main agent). Pass nil to use the provider client's built-in default.
-func BuildStreamClientWithRetry(provider config.ProviderConfig, providerName string, retry *providers.RetryConfig) (providers.StreamClient, error) {
-	client, err := buildClientWithRetry(provider, providerName, retry)
-	if err != nil {
-		return nil, err
-	}
-	return providers.AdaptStreamClient(client), nil
 }
 
 // SupportsNativeToolDiscoveryByDefault reports whether auto mode should use
@@ -213,7 +187,7 @@ func isFirstPartyOpenAIResponsesBaseURL(raw string) bool {
 		u == "https://chatgpt.com/backend-api/codex"
 }
 
-func buildClientWithRetry(provider config.ProviderConfig, providerName string, retry *providers.RetryConfig) (providers.Client, error) {
+func buildClient(provider config.ProviderConfig, providerName string) (providers.Client, error) {
 	profile, err := resolveProviderProfile(provider)
 	if err != nil {
 		return nil, err
@@ -230,7 +204,6 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 				BaseURL:               provider.BaseURL,
 				APIKey:                resolveExplicitAPIKey(provider),
 				Headers:               provider.Headers,
-				RetryConfig:           retry,
 				StreamConfig:          providerStreamTransportConfig(provider),
 				StreamTransport:       providerStreamTransportMode(provider),
 				Coordinator:           sharedProviderCoordinator,
@@ -250,7 +223,6 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 			WireAPI:            openAIWireConfig(profile.Wire),
 			APIKey:             apiKey,
 			Headers:            provider.Headers,
-			RetryConfig:        retry,
 			StreamConfig:       providerStreamTransportConfig(provider),
 			ResponsesTransport: providerStreamTransportMode(provider),
 			Coordinator:        sharedProviderCoordinator,
@@ -270,7 +242,6 @@ func buildClientWithRetry(provider config.ProviderConfig, providerName string, r
 			APIKey:                          apiKey,
 			AuthToken:                       authToken,
 			Headers:                         provider.Headers,
-			RetryConfig:                     retry,
 			StreamConfig:                    providerStreamTransportConfig(provider),
 			Coordinator:                     sharedProviderCoordinator,
 			CacheCreationInputTokensOmitted: provider.CacheCreationInputTokensOmitted,

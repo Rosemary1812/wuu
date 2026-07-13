@@ -28,7 +28,7 @@ func (c *Client) responsesChat(ctx context.Context, req providers.ChatRequest) (
 		return providers.ChatResponse{}, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpResp, lease, err := c.doResponsesRequest(ctx, c.httpClient, body, false, payload.ExtraHeaders, payload.Attempt, payload.SubmissionReason)
+	httpResp, lease, err := c.doSingleResponsesRequest(ctx, c.httpClient, body, false, payload.ExtraHeaders, payload.Attempt, payload.SubmissionReason)
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
@@ -69,9 +69,13 @@ func (c *Client) responsesStreamChat(ctx context.Context, req providers.ChatRequ
 	}
 
 	if responsesTransportUsesWebSocket(c.responsesTransport) {
+		submissionsBefore := len(payload.Attempt.SubmissionSnapshot())
 		ch, err := c.responsesStreamChatWebSocket(ctx, payload, c.responsesTransport)
 		if err == nil {
 			return ch, nil
+		}
+		if len(payload.Attempt.SubmissionSnapshot()) > submissionsBefore {
+			return nil, err
 		}
 		providers.DebugLogf("Responses websocket unavailable before stream start, falling back to SSE: %v", err)
 		reason := responsesWebSocketFallbackReason(err)
@@ -656,13 +660,16 @@ func (c *Client) doSingleResponsesRequest(
 	if err != nil {
 		return nil, nil, err
 	}
-	lease.RecordSubmission(attempt, providers.InferenceSubmissionMeta{
+	if _, err := lease.RecordSubmission(attempt, providers.InferenceSubmissionMeta{
 		Provider:  "openai",
 		Protocol:  "responses",
 		Transport: "http",
 		Mode:      mode,
 		Reason:    submissionReason,
-	})
+	}); err != nil {
+		lease.Release()
+		return nil, nil, fmt.Errorf("journal responses submission: %w", err)
+	}
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		err = fmt.Errorf("request failed: %w", err)
@@ -684,32 +691,6 @@ func (c *Client) doSingleResponsesRequest(
 		return nil, nil, err
 	}
 	return resp, lease, nil
-}
-
-func (c *Client) doResponsesRequest(
-	ctx context.Context,
-	httpClient *http.Client,
-	body []byte,
-	acceptStream bool,
-	extraHeaders map[string]string,
-	attempt providers.InferenceAttempt,
-	submissionReason string,
-) (*http.Response, *providers.ProviderLease, error) {
-	var httpResp *http.Response
-	var responseLease *providers.ProviderLease
-	err := providers.WithRetry(ctx, c.retryConfig, func() error {
-		resp, lease, err := c.doSingleResponsesRequest(ctx, httpClient, body, acceptStream, extraHeaders, attempt, submissionReason)
-		if err != nil {
-			return err
-		}
-		httpResp = resp
-		responseLease = lease
-		return nil
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return httpResp, responseLease, nil
 }
 
 func (c *Client) readResponsesSSE(resp *http.Response, lease *providers.ProviderLease, ch chan<- providers.StreamEvent, state *providers.ProviderStateSummary) {

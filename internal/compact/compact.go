@@ -49,7 +49,6 @@ var recallableTools = map[string]bool{
 const maxCompactOutputChars = 80_000
 const (
 	compactSummaryMaxTokens       = 4096
-	compactPartialMinOutputChars  = 200
 	compactSummaryInputMaxTokens  = 80_000
 	compactSummaryInputMinTokens  = 4_000
 	compactSummaryInputFraction   = 0.5
@@ -321,19 +320,20 @@ func compactSummaryRequest(model, prompt string) providers.ChatRequest {
 }
 
 func summarizeCompact(ctx context.Context, client providers.Client, req providers.ChatRequest) (providers.ChatResponse, error) {
-	if streamClient, ok := client.(providers.StreamClient); ok {
-		return streamCompactSummary(ctx, streamClient, req)
-	}
-	return client.Chat(ctx, req)
+	return streamCompactSummary(ctx, providers.AdaptStreamClient(client), req)
 }
 
 func streamCompactSummary(ctx context.Context, client providers.StreamClient, req providers.ChatRequest) (providers.ChatResponse, error) {
 	req.Operation = providers.EnsureInferenceOperation(req.Operation, providers.InferenceOperationCompaction, providers.InferenceProfileContinuationCritical)
-	req = providers.EnsureInferenceExecution(req, providers.InferenceOperationCompaction, providers.InferenceProfileContinuationCritical)
-	reliableClient := providers.NewReliableStreamClient(client, providers.StreamRetryConfigForProfile(providers.InferenceProfileContinuationCritical), nil)
-	ch, err := reliableClient.StreamChat(ctx, req)
+	var err error
+	req, err = providers.EnsureInferenceExecutionContext(ctx, req, providers.InferenceOperationCompaction, providers.InferenceProfileContinuationCritical)
 	if err != nil {
 		return providers.ChatResponse{}, err
+	}
+	reliableClient := providers.NewReliableStreamClient(client, providers.RetryConfigForProfile(providers.InferenceProfileContinuationCritical), nil)
+	ch, err := reliableClient.StreamChat(ctx, req)
+	if err != nil {
+		return providers.ChatResponse{}, finishCompactFailure(req.Execution, err)
 	}
 
 	var content strings.Builder
@@ -357,12 +357,13 @@ func streamCompactSummary(ctx context.Context, client providers.StreamClient, re
 			}
 		case providers.EventError:
 			if event.Error != nil {
-				if resp, ok, ferr := recoverCompactStream(ctx, client, req, content.String(), event.Error); ok {
+				if resp, ok, ferr := recoverCompactStream(ctx, client, req, event.Error); ok {
 					return resp, ferr
 				}
-				return providers.ChatResponse{}, event.Error
+				return providers.ChatResponse{}, finishCompactFailure(req.Execution, event.Error)
 			}
-			return providers.ChatResponse{}, fmt.Errorf("compact summary stream error")
+			err := errors.New("compact summary stream error")
+			return providers.ChatResponse{}, finishCompactFailure(req.Execution, err)
 		case providers.EventDone:
 			done = true
 			if event.Usage != nil {
@@ -373,42 +374,95 @@ func streamCompactSummary(ctx context.Context, client providers.StreamClient, re
 			truncated = event.Truncated
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return providers.ChatResponse{}, finishCompactFailure(req.Execution, err)
+	}
 	if !done {
 		err := providers.NewIncompleteStreamError("compact summary stream closed before done")
-		if resp, ok, ferr := recoverCompactStream(ctx, client, req, content.String(), err); ok {
+		if resp, ok, ferr := recoverCompactStream(ctx, client, req, err); ok {
 			return resp, ferr
 		}
-		return providers.ChatResponse{}, err
+		return providers.ChatResponse{}, finishCompactFailure(req.Execution, err)
 	}
 	if finishReason == "" {
 		finishReason = providers.NormalizeFinishReason(stopReason, truncated, false)
 	}
-	return providers.ChatResponse{
+	resp := providers.ChatResponse{
 		Content:      content.String(),
 		Usage:        usage,
 		FinishReason: finishReason,
 		StopReason:   stopReason,
 		Truncated:    truncated,
-	}, nil
+	}
+	if err := validateCompactResponse(resp); err != nil {
+		return providers.ChatResponse{}, finishCompactFailure(req.Execution, err)
+	}
+	if err := req.Execution.Complete(providers.InferenceOutcomeSucceeded, providers.NormalizedFailure{}); err != nil {
+		return providers.ChatResponse{}, err
+	}
+	return resp, nil
 }
 
-func recoverCompactStream(ctx context.Context, client providers.Client, req providers.ChatRequest, partial string, streamErr error) (providers.ChatResponse, bool, error) {
-	if partial = strings.TrimSpace(partial); len(partial) >= compactPartialMinOutputChars {
-		return providers.ChatResponse{
-			Content:      partial,
-			FinishReason: providers.FinishReasonLength,
-			Truncated:    true,
-		}, true, nil
+func recoverCompactStream(ctx context.Context, client providers.Client, req providers.ChatRequest, streamErr error) (providers.ChatResponse, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return providers.ChatResponse{}, true, finishCompactFailure(req.Execution, err)
 	}
 	if !isIncompleteCompactStream(streamErr) {
 		return providers.ChatResponse{}, false, nil
 	}
-	fallbackReq := providers.BeginInferenceAttempt(req, req.Operation.Kind, req.Operation.WorkloadProfile)
-	resp, err := client.Chat(ctx, fallbackReq)
+	priorAttempt := req.Execution.LatestAttempt()
+	if err := priorAttempt.RecordRecovery(providers.RecoveryPlan{
+		Action: providers.RecoverySwitchTransport,
+		Reason: "compaction stream incomplete",
+	}, time.Time{}); err != nil {
+		wrapped := fmt.Errorf("record compact fallback: %w", err)
+		return providers.ChatResponse{}, true, finishCompactFailure(req.Execution, wrapped)
+	}
+	resp, executed, err := providers.ExecuteChatAttempt(ctx, client, req, req.Operation.Kind, req.Operation.WorkloadProfile)
 	if err != nil {
-		return providers.ChatResponse{}, true, fmt.Errorf("compact summary stream incomplete and chat fallback failed: %w", err)
+		execution := executed.Execution
+		if execution == nil {
+			execution = req.Execution
+		}
+		wrapped := fmt.Errorf("compact summary stream incomplete and chat fallback failed: %w", err)
+		return providers.ChatResponse{}, true, finishCompactFailure(execution, wrapped)
+	}
+	if err := validateCompactResponse(resp); err != nil {
+		return providers.ChatResponse{}, true, finishCompactFailure(executed.Execution, err)
+	}
+	if err := executed.Execution.Complete(providers.InferenceOutcomeSucceeded, providers.NormalizedFailure{}); err != nil {
+		return providers.ChatResponse{}, true, err
 	}
 	return resp, true, nil
+}
+
+func finishCompactFailure(execution *providers.InferenceExecution, err error) error {
+	if err == nil || execution == nil {
+		return err
+	}
+	failure := providers.NormalizeFailure(err)
+	outcome := providers.InferenceOutcomeFailed
+	if failure.Category == providers.FailureCanceled || failure.Category == providers.FailureDeadline {
+		outcome = providers.InferenceOutcomeCanceled
+	}
+	if journalErr := execution.Complete(outcome, failure); journalErr != nil {
+		return errors.Join(err, journalErr)
+	}
+	return err
+}
+
+func validateCompactResponse(resp providers.ChatResponse) error {
+	if strings.TrimSpace(resp.Content) == "" {
+		return errors.New("compact summary was empty")
+	}
+	finish := resp.FinishReason
+	if finish == "" {
+		finish = providers.NormalizeFinishReason(resp.StopReason, resp.Truncated, len(resp.ToolCalls) > 0)
+	}
+	if resp.Truncated || finish == providers.FinishReasonLength {
+		return errors.New("compact summary reached the output limit before completion")
+	}
+	return nil
 }
 
 func isIncompleteCompactStream(err error) bool {

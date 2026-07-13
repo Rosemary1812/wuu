@@ -141,9 +141,12 @@ func (s *Server) runMemoryOverviewAgent(scope, dir string) (string, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), memoryOverviewTimeout)
 	defer cancel()
+	ctx = providers.WithInferenceJournal(ctx, s.rt.InferenceJournalForOwner("memory-overview"))
 	cfg.Tools = executor
 	cfg.Model = model
 	cfg.MaxSteps = memoryOverviewMaxSteps
+	cfg.InferenceOperationKind = providers.InferenceOperationMemory
+	cfg.InferenceWorkloadProfile = providers.InferenceProfileBestEffort
 	result, err := agent.RunToolLoop(ctx, messages, cfg, memoryPanelStep{client: client})
 	if err != nil {
 		return "", fmt.Errorf("memory overview agent: %w", err)
@@ -279,9 +282,12 @@ func (s *Server) runMemoryChatAgent(scope, targetDir, userDir string, roots []st
 
 	ctx, cancel := context.WithTimeout(context.Background(), memoryChatTimeout)
 	defer cancel()
+	ctx = providers.WithInferenceJournal(ctx, s.rt.InferenceJournalForOwner("memory-manager"))
 	cfg.Tools = executor
 	cfg.Model = model
 	cfg.MaxSteps = memoryChatMaxSteps
+	cfg.InferenceOperationKind = providers.InferenceOperationMemory
+	cfg.InferenceWorkloadProfile = providers.InferenceProfileInteractive
 	result, err := agent.RunToolLoop(ctx, messages, cfg, memoryPanelStep{client: client})
 	if err != nil {
 		return "", fmt.Errorf("memory manager agent: %w", err)
@@ -323,7 +329,7 @@ type memoryPanelStep struct {
 }
 
 func (s memoryPanelStep) Execute(ctx context.Context, req providers.ChatRequest) (agent.StepResult, error) {
-	resp, err := s.client.Chat(ctx, req)
+	resp, err := providers.ExecuteChat(ctx, s.client, req, providers.InferenceOperationMemory, providers.InferenceProfileInteractive)
 	if err != nil {
 		return agent.StepResult{}, err
 	}

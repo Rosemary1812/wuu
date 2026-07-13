@@ -372,38 +372,6 @@ func IsContextWindowError(err error) bool {
 		strings.Contains(msg, "max_tokens")
 }
 
-// WithRetry executes fn with exponential backoff retry.
-func WithRetry(ctx context.Context, cfg RetryConfig, fn func() error) error {
-	var lastErr error
-	for attempt := 0; attempt <= cfg.MaxRetries; attempt++ {
-		// Bail early if the caller's context is already done.
-		if ctx.Err() != nil {
-			if lastErr != nil {
-				return lastErr
-			}
-			return ctx.Err()
-		}
-		lastErr = fn()
-		if lastErr == nil {
-			return nil
-		}
-		if !IsRetryable(lastErr) {
-			return lastErr
-		}
-		if attempt == cfg.MaxRetries {
-			break
-		}
-
-		delay := backoffDelay(attempt, cfg.InitialDelay, cfg.MaxDelay, lastErr)
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(delay):
-		}
-	}
-	return lastErr
-}
-
 func backoffDelay(attempt int, initial, maxDelay time.Duration, err error) time.Duration {
 	// Check for Retry-After header
 	var httpErr *HTTPError

@@ -136,12 +136,14 @@ func (s *profileMemoryReviewScheduler) run(ctx context.Context, job profileMemor
 	}
 	executor := newProfileMemoryOnlyExecutor(s.provider, s.memoryCharLimit, s.userCharLimit)
 	_, err := agent.RunToolLoop(ctx, messages, agent.LoopConfig{
-		Tools:           executor,
-		Model:           job.model,
-		Temperature:     job.temperature,
-		MaxSteps:        profileMemoryReviewMaxSteps,
-		Effort:          job.effort,
-		ProviderOptions: provideroptions.Clone(job.providerOptions),
+		Tools:                    executor,
+		Model:                    job.model,
+		InferenceOperationKind:   providers.InferenceOperationMemory,
+		InferenceWorkloadProfile: providers.InferenceProfileBestEffort,
+		Temperature:              job.temperature,
+		MaxSteps:                 profileMemoryReviewMaxSteps,
+		Effort:                   job.effort,
+		ProviderOptions:          provideroptions.Clone(job.providerOptions),
 	}, profileMemoryReviewStep{client: job.client})
 	return err
 }
@@ -151,7 +153,7 @@ type profileMemoryReviewStep struct {
 }
 
 func (s profileMemoryReviewStep) Execute(ctx context.Context, req providers.ChatRequest) (agent.StepResult, error) {
-	resp, err := s.client.Chat(ctx, req)
+	resp, err := providers.ExecuteChat(ctx, s.client, req, providers.InferenceOperationMemory, providers.InferenceProfileBestEffort)
 	if err != nil {
 		return agent.StepResult{}, err
 	}

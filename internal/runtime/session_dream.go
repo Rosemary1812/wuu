@@ -85,10 +85,12 @@ func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.Str
 		history:            cloneChatMessages(history),
 		now:                time.Now().UTC(),
 	}
+	journal := runner.InferenceJournal
 	go func() {
 		defer s.finish()
 		defer lock.Release()
-		dreamCtx, cancel := context.WithTimeout(context.Background(), sessionDreamTimeout)
+		dreamCtx := providers.WithInferenceJournal(context.Background(), journal)
+		dreamCtx, cancel := context.WithTimeout(dreamCtx, sessionDreamTimeout)
 		defer cancel()
 		_ = s.run(dreamCtx, job)
 	}()
@@ -187,12 +189,14 @@ func (s *sessionDreamScheduler) run(ctx context.Context, job sessionDreamJob) er
 	}
 	executor := newSessionDreamExecutor(job.rootDir, job.workspaceStateDir, job.sessionArtifactDir)
 	_, err := agent.RunToolLoop(ctx, messages, agent.LoopConfig{
-		Tools:           executor,
-		Model:           job.model,
-		Temperature:     job.temperature,
-		MaxSteps:        sessionDreamMaxSteps,
-		Effort:          job.effort,
-		ProviderOptions: provideroptions.Clone(job.providerOptions),
+		Tools:                    executor,
+		Model:                    job.model,
+		InferenceOperationKind:   providers.InferenceOperationMemory,
+		InferenceWorkloadProfile: providers.InferenceProfileBestEffort,
+		Temperature:              job.temperature,
+		MaxSteps:                 sessionDreamMaxSteps,
+		Effort:                   job.effort,
+		ProviderOptions:          provideroptions.Clone(job.providerOptions),
 	}, profileMemoryReviewStep{client: job.client})
 	if err != nil {
 		_ = sessionmemory.RecordDreamFailed(job.workspaceStateDir, time.Now().UTC(), err)

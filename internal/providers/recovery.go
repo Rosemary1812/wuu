@@ -59,6 +59,7 @@ type NormalizedFailure struct {
 	ContextOverflow          bool
 	AuthRefreshable          bool
 	ClassificationConfidence ClassificationConfidence
+	SuggestedRecovery        RecoveryActionKind
 	RawBody                  string
 	Cause                    error
 }
@@ -87,6 +88,35 @@ type RecoveryPlan struct {
 	Reason     string
 }
 
+type InferenceRecoveryHint interface {
+	InferenceRecoveryAction() RecoveryActionKind
+}
+
+type RefreshableAuthError struct {
+	Err error
+}
+
+func (e *RefreshableAuthError) Error() string {
+	if e == nil || e.Err == nil {
+		return "authentication failed; credential refresh is available"
+	}
+	return e.Err.Error()
+}
+
+func (e *RefreshableAuthError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func MarkAuthRefreshable(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &RefreshableAuthError{Err: err}
+}
+
 // LocalBackpressureError identifies consumer-side overload. Replaying the
 // provider request would increase local pressure and duplicate billable work.
 type LocalBackpressureError struct {
@@ -102,6 +132,15 @@ func (e *LocalBackpressureError) Error() string {
 }
 
 func NormalizeFailure(err error) NormalizedFailure {
+	failure := normalizeFailure(err)
+	var hint InferenceRecoveryHint
+	if errors.As(err, &hint) {
+		failure.SuggestedRecovery = hint.InferenceRecoveryAction()
+	}
+	return failure
+}
+
+func normalizeFailure(err error) NormalizedFailure {
 	failure := NormalizedFailure{
 		Origin:                   FailureOriginProtocol,
 		Category:                 FailureUnknown,
@@ -109,6 +148,13 @@ func NormalizeFailure(err error) NormalizedFailure {
 		Cause:                    err,
 	}
 	if err == nil {
+		return failure
+	}
+	var refreshable *RefreshableAuthError
+	if errors.As(err, &refreshable) {
+		failure = NormalizeFailure(refreshable.Err)
+		failure.AuthRefreshable = true
+		failure.Cause = err
 		return failure
 	}
 
@@ -216,6 +262,9 @@ func NormalizeFailure(err error) NormalizedFailure {
 }
 
 func PlanRecovery(failure NormalizedFailure) RecoveryPlan {
+	if failure.SuggestedRecovery != "" {
+		return RecoveryPlan{Action: failure.SuggestedRecovery, RetryAfter: failure.RetryAfter, Reason: "protocol recovery hint"}
+	}
 	switch failure.Category {
 	case FailureRateLimit:
 		return RecoveryPlan{Action: RecoveryWaitThenReplay, RetryAfter: failure.RetryAfter, Reason: "temporary provider rate limit"}
@@ -245,7 +294,12 @@ func PlanRecovery(failure NormalizedFailure) RecoveryPlan {
 }
 
 func (p RecoveryPlan) Retryable() bool {
-	return p.Action == RecoveryReplaySame || p.Action == RecoveryWaitThenReplay
+	switch p.Action {
+	case RecoveryReplaySame, RecoveryWaitThenReplay, RecoverySwitchTransport, RecoveryRefreshAuth:
+		return true
+	default:
+		return false
+	}
 }
 
 func isTerminalOpenAINotFound(code, body string) bool {

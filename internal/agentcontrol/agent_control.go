@@ -189,6 +189,7 @@ type Config struct {
 	// participant IDs are still generated in-memory but not persisted.
 	ParticipantStore ParticipantStore
 	MaxParallel      int
+	InferenceJournal providers.InferenceJournal
 }
 
 // New constructs an AgentControl. Worktree isolation is only available
@@ -225,6 +226,7 @@ func New(cfg Config) (*AgentControl, error) {
 		CompactThresholdPct:     cfg.DefaultCompactThresholdPct,
 		CompactKeepRecentTokens: cfg.DefaultCompactKeepRecentTokens,
 		DisableAutoCompact:      cfg.DefaultDisableAutoCompact,
+		InferenceJournal:        cfg.InferenceJournal,
 	})
 	threadRegistry := agentthread.NewRegistry()
 

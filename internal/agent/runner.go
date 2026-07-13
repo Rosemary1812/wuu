@@ -99,6 +99,7 @@ type Runner struct {
 	// NativeDeferredToolDiscovery lets provider adapters use native
 	// deferred-tool declarations for tools marked DeferLoading.
 	NativeDeferredToolDiscovery bool
+	InferenceJournal            providers.InferenceJournal
 }
 
 // RunResult is the structured outcome of a Runner.RunWithUsage call.
@@ -135,6 +136,7 @@ func (r *Runner) RunWithUsage(ctx context.Context, prompt string, onUsage func(i
 	if strings.TrimSpace(prompt) == "" {
 		return RunResult{}, errors.New("prompt is required")
 	}
+	ctx = providers.WithInferenceJournal(ctx, r.InferenceJournal)
 
 	// Build the initial conversation: optional system prompt + the
 	// user's request. The shared loop takes it from there.

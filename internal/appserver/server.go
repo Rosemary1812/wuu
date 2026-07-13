@@ -209,8 +209,11 @@ type Server struct {
 	// while the notebook's MEMORY.md mtime is unchanged (memory-redesign
 	// §8.1); memory/chat drops the affected entries after a successful
 	// manager run.
-	memoryOverviewMu    sync.Mutex
-	memoryOverviewCache map[string]memoryOverviewCacheEntry
+	memoryOverviewMu             sync.Mutex
+	memoryOverviewCache          map[string]memoryOverviewCacheEntry
+	inferenceMaintenanceStop     chan struct{}
+	inferenceMaintenanceDone     chan struct{}
+	inferenceMaintenanceStopOnce sync.Once
 }
 
 func New(rt *runtime.Session, out io.Writer) *Server {
@@ -241,6 +244,7 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		participantBusy:              make(map[string]participantBusyEntry),
 		codexModelCache:              make(map[string]map[string]config.ProviderModelConfig),
 		memoryOverviewCache:          make(map[string]memoryOverviewCacheEntry),
+		inferenceMaintenanceStop:     make(chan struct{}),
 	}
 	if store != nil && rt != nil && rt.Toolkit != nil {
 		if manager := rt.Toolkit.MCPManager(); manager != nil {
@@ -278,6 +282,7 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 	// without kicking the resident or starting any turn — boot must not
 	// burn tokens for the previous process's unfinished work.
 	s.settleOnBoot()
+	s.startInferenceJournalMaintenance()
 	return s
 }
 
@@ -322,7 +327,7 @@ func (s *Server) settleOnBoot() {
 	attempts, err := session.SettleActiveTaskAttempts(s.rt.SessionDir, now)
 	if err != nil {
 		providers.DebugLogf("settleOnBoot pass3 (task attempts): %v", err)
-		return
+		attempts = nil
 	}
 	for _, attempt := range attempts {
 		task, loadErr := session.FindConversationThreadByID(s.rt.SessionDir, attempt.TaskID)
@@ -337,6 +342,70 @@ func (s *Server) settleOnBoot() {
 	if len(attempts) > 0 {
 		providers.DebugLogf("settleOnBoot pass3: %d task attempt(s) interrupted", len(attempts))
 	}
+	if s.rt.InferenceJournalRuntime != nil {
+		recoveries, recoverErr := s.rt.InferenceJournalRuntime.ReconcileOrphans(now)
+		if recoverErr != nil {
+			providers.DebugLogf("settleOnBoot pass4 (inference journal): %v", recoverErr)
+		} else if len(recoveries) > 0 {
+			var safe, blocked, abandoned int
+			for _, recovery := range recoveries {
+				switch recovery.Action {
+				case providers.RecoveryRescheduleSafe:
+					safe++
+				case providers.RecoveryBlockAmbiguous:
+					blocked++
+				default:
+					abandoned++
+				}
+			}
+			providers.DebugLogf("settleOnBoot pass4: inference operations recovered (safe=%d blocked=%d abandoned=%d)", safe, blocked, abandoned)
+		}
+		if pruned, pruneErr := s.rt.InferenceJournalRuntime.Prune(now); pruneErr != nil {
+			providers.DebugLogf("settleOnBoot pass5 (inference journal retention): %v", pruneErr)
+		} else if pruned > 0 {
+			providers.DebugLogf("settleOnBoot pass5: pruned %d old inference operation(s)", pruned)
+		}
+	}
+}
+
+func (s *Server) startInferenceJournalMaintenance() {
+	if s == nil || s.rt == nil || s.rt.InferenceJournalRuntime == nil {
+		return
+	}
+	journalRuntime := s.rt.InferenceJournalRuntime
+	s.inferenceMaintenanceDone = make(chan struct{})
+	go func() {
+		defer close(s.inferenceMaintenanceDone)
+		ticker := time.NewTicker(session.InferenceJournalRecoveryInterval())
+		defer ticker.Stop()
+		for {
+			select {
+			case now := <-ticker.C:
+				recoveries, err := journalRuntime.ReconcileOrphans(now.UTC())
+				if err != nil {
+					providers.DebugLogf("inference journal maintenance: %v", err)
+					continue
+				}
+				if len(recoveries) > 0 {
+					providers.DebugLogf("inference journal maintenance: recovered %d orphan operation(s)", len(recoveries))
+				}
+			case <-s.inferenceMaintenanceStop:
+				return
+			}
+		}
+	}()
+}
+
+func (s *Server) stopInferenceJournalMaintenance() {
+	if s == nil || s.inferenceMaintenanceStop == nil {
+		return
+	}
+	s.inferenceMaintenanceStopOnce.Do(func() {
+		close(s.inferenceMaintenanceStop)
+	})
+	if s.inferenceMaintenanceDone != nil {
+		<-s.inferenceMaintenanceDone
+	}
 }
 
 func RunStdio(ctx context.Context, rt *runtime.Session, in io.Reader, out io.Writer) error {
@@ -344,6 +413,7 @@ func RunStdio(ctx context.Context, rt *runtime.Session, in io.Reader, out io.Wri
 		return errors.New("runtime session is required")
 	}
 	s := New(rt, out)
+	defer s.stopInferenceJournalMaintenance()
 	return runStdioScanner(ctx, s, in)
 }
 
@@ -501,6 +571,12 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 	case MethodShutdown:
 		if err := s.writeResponse(req.ID, OKResult{OK: true}, nil); err != nil {
 			return err
+		}
+		s.stopInferenceJournalMaintenance()
+		if s.rt != nil && s.rt.InferenceJournalRuntime != nil {
+			if err := s.rt.InferenceJournalRuntime.Close(); err != nil {
+				providers.DebugLogf("close inference journal runtime: %v", err)
+			}
 		}
 		return errShutdown
 	case MethodSettingsUsage:

@@ -145,7 +145,8 @@ func extractHelpMeJournalChunk(ctx context.Context, client providers.Client, mod
 
 func helpMeJournalRequest(model, prompt string) providers.ChatRequest {
 	return providers.ChatRequest{
-		Model: model,
+		Model:     model,
+		Operation: providers.NewInferenceOperation(providers.InferenceOperationReview, providers.InferenceProfileContinuationCritical),
 		Messages: []providers.ChatMessage{
 			{Role: "system", Content: helpMeJournalSystemPrompt},
 			{Role: "user", Content: prompt},

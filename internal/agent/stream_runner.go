@@ -145,6 +145,9 @@ type StreamRunner struct {
 	// agent defaults.
 	InferenceOperationKind   providers.InferenceOperationKind
 	InferenceWorkloadProfile providers.InferenceWorkloadProfile
+	// InferenceJournal is the durable write-ahead sink shared by every model
+	// round and nested compaction owned by this runner.
+	InferenceJournal providers.InferenceJournal
 
 	// ReconnectConfig controls stream reconnect behavior.
 	// Zero value disables reconnect. Normalized on first use.
@@ -210,6 +213,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	if strings.TrimSpace(r.Model) == "" {
 		return LoopResult{}, errors.New("model is required")
 	}
+	ctx = providers.WithInferenceJournal(ctx, r.InferenceJournal)
 	requestModel := strings.TrimSpace(r.APIModel)
 	if requestModel == "" {
 		requestModel = r.Model
@@ -689,7 +693,11 @@ type streamStep struct {
 }
 
 func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (StepResult, error) {
-	req = providers.EnsureInferenceExecution(req, providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	var err error
+	req, err = providers.EnsureInferenceExecutionContext(ctx, req, providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	if err != nil {
+		return StepResult{}, err
+	}
 	var (
 		contentBuf        strings.Builder
 		thinkingBuf       strings.Builder
@@ -745,6 +753,14 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 			toolRuntime.Cancel()
 		}
 		s.onEvent = origOnEvent // restore
+		failure := providers.NormalizeFailure(err)
+		outcome := providers.InferenceOutcomeFailed
+		if failure.Category == providers.FailureCanceled || failure.Category == providers.FailureDeadline {
+			outcome = providers.InferenceOutcomeCanceled
+		}
+		if journalErr := req.Execution.Complete(outcome, failure); journalErr != nil {
+			return StepResult{}, errors.Join(fmt.Errorf("stream request failed: %w", err), fmt.Errorf("complete failed inference operation: %w", journalErr))
+		}
 		return StepResult{}, fmt.Errorf("stream request failed: %w", err)
 	}
 	s.onEvent = origOnEvent // restore
@@ -777,8 +793,14 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 				Content: "Empty stream response — trying non-streaming fallback...",
 			})
 		}
-		fallbackReq := providers.BeginInferenceAttempt(req, req.Operation.Kind, req.Operation.WorkloadProfile)
-		resp, err := s.client.Chat(ctx, fallbackReq)
+		completedAttempt := req.Execution.LatestAttempt()
+		if err := completedAttempt.RecordRecovery(providers.RecoveryPlan{
+			Action: providers.RecoverySwitchTransport,
+			Reason: "empty streaming response",
+		}, time.Time{}); err != nil {
+			return StepResult{}, fmt.Errorf("record non-streaming fallback: %w", err)
+		}
+		resp, err := providers.ExecuteChat(ctx, s.client, req, req.Operation.Kind, req.Operation.WorkloadProfile)
 		if err != nil {
 			return StepResult{}, fmt.Errorf("non-streaming fallback failed: %w", err)
 		}
@@ -819,6 +841,9 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 	if len(toolCalls) == 0 && toolRuntime != nil {
 		toolRuntime.Cancel()
 		toolRuntime = nil
+	}
+	if err := req.Execution.Complete(providers.InferenceOutcomeSucceeded, providers.NormalizedFailure{}); err != nil {
+		return StepResult{}, fmt.Errorf("complete inference operation: %w", err)
 	}
 
 	return StepResult{

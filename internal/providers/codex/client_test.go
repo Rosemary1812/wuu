@@ -18,6 +18,23 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
+type codexJournal struct{}
+
+func (codexJournal) PrepareOperation(providers.InferenceOperationJournalRecord) error { return nil }
+func (codexJournal) PrepareAttempt(providers.InferenceAttemptJournalRecord) error     { return nil }
+func (codexJournal) MarkAttemptDispatching(string, string, time.Time) error           { return nil }
+func (codexJournal) UpsertSubmission(providers.InferenceSubmissionJournalRecord) error {
+	return nil
+}
+func (codexJournal) MarkAttemptFirstEvent(string, string, string, time.Time) error { return nil }
+func (codexJournal) CompleteAttempt(providers.InferenceAttemptTerminalRecord) error {
+	return nil
+}
+func (codexJournal) RecordRecovery(providers.InferenceRecoveryJournalRecord) error { return nil }
+func (codexJournal) CompleteOperation(providers.InferenceOperationTerminalRecord) error {
+	return nil
+}
+
 func TestClientDoesNotUseCodexCLIAuthUnlessEnabled(t *testing.T) {
 	home := t.TempDir()
 	codexHome := t.TempDir()
@@ -111,7 +128,8 @@ func TestClientUsesCodexCLIAuthReadOnlyWhenEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	resp, err := client.Chat(context.Background(), providers.ChatRequest{
+	ctx := providers.WithInferenceJournal(context.Background(), codexJournal{})
+	resp, err := providers.ExecuteChat(ctx, client, providers.ChatRequest{
 		Model:       "gpt-5-codex",
 		Temperature: 0.2,
 		MaxTokens:   321,
@@ -122,7 +140,7 @@ func TestClientUsesCodexCLIAuthReadOnlyWhenEnabled(t *testing.T) {
 			{Role: "system", Content: "sys"},
 			{Role: "user", Content: "hello"},
 		},
-	})
+	}, providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -135,6 +153,62 @@ func TestClientUsesCodexCLIAuthReadOnlyWhenEnabled(t *testing.T) {
 	}
 	if _, err := store.Get("openai-codex"); err == nil {
 		t.Fatal("Codex CLI read-only fallback should not write wuu auth state")
+	}
+}
+
+func TestClientStreamNormalizesRequestBeforeJournalHash(t *testing.T) {
+	token := fakeJWT(t, time.Now().Add(time.Hour), "acct_stream_journal")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("event: response.output_text.delta\n" +
+			"data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n" +
+			"event: response.completed\n" +
+			"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"))
+	}))
+	defer server.Close()
+
+	client, err := New(ClientConfig{
+		BaseURL:         server.URL,
+		APIKey:          token,
+		HTTPClient:      server.Client(),
+		StreamTransport: providers.StreamTransportSSE,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := providers.WithInferenceJournal(context.Background(), codexJournal{})
+	req, err := providers.EnsureInferenceExecutionContext(ctx, providers.ChatRequest{
+		Model:       "gpt-5-codex",
+		Temperature: 0.7,
+		MaxTokens:   123,
+		ProviderOptions: map[string]any{
+			"maxOutputTokens": 456,
+		},
+		Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
+	}, providers.InferenceOperationTitle, providers.InferenceProfileBestEffort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reliable := providers.NewReliableStreamClient(client, providers.DefaultRetryConfig(), nil)
+	events, err := reliable.StreamChat(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var content string
+	var done bool
+	for event := range events {
+		if event.Type == providers.EventError {
+			t.Fatalf("stream error: %v", event.Error)
+		}
+		if event.Type == providers.EventContentDelta {
+			content += event.Content
+		}
+		if event.Type == providers.EventDone {
+			done = true
+		}
+	}
+	if content != "ok" || !done {
+		t.Fatalf("stream content/done = %q/%t", content, done)
 	}
 }
 
@@ -328,10 +402,13 @@ func TestClientRecordsAuthRefreshReplayAsSecondSubmission(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	req := providers.EnsureInferenceExecution(providers.ChatRequest{
+	req, err := providers.EnsureInferenceExecutionContext(context.Background(), providers.ChatRequest{
 		Model: "gpt-5-codex", Messages: []providers.ChatMessage{{Role: "user", Content: "hello"}},
 	}, providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
-	resp, err := client.Chat(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := providers.ExecuteChat(context.Background(), client, req, providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
@@ -339,8 +416,8 @@ func TestClientRecordsAuthRefreshReplayAsSecondSubmission(t *testing.T) {
 		t.Fatalf("response/calls = %q/%d", resp.Content, apiCalls.Load())
 	}
 	ledger := req.Execution.Snapshot()
-	if ledger.Attempts != 1 || len(ledger.Submissions) != 2 {
-		t.Fatalf("inference ledger = %+v, want one attempt and two auth submissions", ledger)
+	if ledger.Attempts != 2 || len(ledger.Submissions) != 2 {
+		t.Fatalf("inference ledger = %+v, want two attempts and two auth submissions", ledger)
 	}
 }
 

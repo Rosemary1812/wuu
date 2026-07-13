@@ -27,7 +27,6 @@ type ClientConfig struct {
 	Headers               map[string]string
 	Home                  string
 	HTTPClient            *http.Client
-	RetryConfig           *providers.RetryConfig
 	StreamConfig          *providers.StreamTransportConfig
 	StreamTransport       providers.StreamTransportMode
 	Coordinator           *providers.ProviderCoordinator
@@ -41,7 +40,6 @@ type Client struct {
 	auth            *OAuthSource
 	headers         map[string]string
 	httpClient      *http.Client
-	retryConfig     *providers.RetryConfig
 	streamConfig    *providers.StreamTransportConfig
 	streamTransport providers.StreamTransportMode
 	coordinator     *providers.ProviderCoordinator
@@ -79,7 +77,6 @@ func New(cfg ClientConfig) (*Client, error) {
 		auth:            NewOAuthSource(OAuthConfig{BaseURL: baseURL, APIKey: cfg.APIKey, Home: home, HTTPClient: cfg.HTTPClient, ReuseCodexCredentials: cfg.ReuseCodexCredentials}),
 		headers:         cloneHeaders(cfg.Headers),
 		httpClient:      cfg.HTTPClient,
-		retryConfig:     cfg.RetryConfig,
 		streamConfig:    cfg.StreamConfig,
 		streamTransport: streamTransport,
 		coordinator:     cfg.Coordinator,
@@ -89,40 +86,78 @@ func New(cfg ClientConfig) (*Client, error) {
 
 // Chat performs one non-streaming Responses API call.
 func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
-	req = codexRequest(req)
-	req = providers.EnsureInferenceAttempt(req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
+	var err error
+	req, err = c.PrepareInferenceRequest(ctx, req)
+	if err != nil {
+		return providers.ChatResponse{}, err
+	}
+	req, err = providers.EnsureInferenceAttemptContext(ctx, req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
+	if err != nil {
+		return providers.ChatResponse{}, err
+	}
 	client, creds, err := c.openAIClient(ctx, false)
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
 	resp, err := client.Chat(ctx, req)
-	if err == nil || !providers.IsAuthError(err) || !creds.refreshable {
-		return resp, err
+	if err != nil && providers.IsAuthError(err) && creds.refreshable {
+		err = providers.MarkAuthRefreshable(err)
 	}
-	client, _, refreshErr := c.openAIClient(ctx, true)
-	if refreshErr != nil {
-		return providers.ChatResponse{}, fmt.Errorf("refresh Codex OAuth credentials after auth failure: %w", refreshErr)
-	}
-	return client.Chat(ctx, req)
+	return resp, err
 }
 
 // StreamChat opens a streaming Responses API call.
 func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
-	req = codexRequest(req)
-	req = providers.EnsureInferenceAttempt(req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
+	var err error
+	req, err = c.PrepareInferenceRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	req, err = providers.EnsureInferenceAttemptContext(ctx, req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
+	if err != nil {
+		return nil, err
+	}
 	client, creds, err := c.openAIClient(ctx, false)
 	if err != nil {
 		return nil, err
 	}
 	ch, err := client.StreamChat(ctx, req)
-	if err == nil || !providers.IsAuthError(err) || !creds.refreshable {
+	if err != nil && providers.IsAuthError(err) && creds.refreshable {
+		err = providers.MarkAuthRefreshable(err)
+	}
+	if err != nil || !creds.refreshable {
 		return ch, err
 	}
-	client, _, refreshErr := c.openAIClient(ctx, true)
-	if refreshErr != nil {
-		return nil, fmt.Errorf("refresh Codex OAuth credentials after auth failure: %w", refreshErr)
+	out := make(chan providers.StreamEvent, 64)
+	go func() {
+		defer close(out)
+		for event := range ch {
+			if event.Type == providers.EventError && providers.IsAuthError(event.Error) {
+				event.Error = providers.MarkAuthRefreshable(event.Error)
+			}
+			select {
+			case out <- event:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
+}
+
+func (c *Client) PrepareInferenceRequest(_ context.Context, req providers.ChatRequest) (providers.ChatRequest, error) {
+	return codexRequest(req), nil
+}
+
+func (c *Client) ApplyInferenceRecovery(ctx context.Context, plan providers.RecoveryPlan) error {
+	if plan.Action != providers.RecoveryRefreshAuth {
+		return fmt.Errorf("Codex client cannot apply recovery action %q", plan.Action)
 	}
-	return client.StreamChat(ctx, req)
+	_, _, err := c.openAIClient(ctx, true)
+	if err != nil {
+		return fmt.Errorf("refresh Codex OAuth credentials: %w", err)
+	}
+	return nil
 }
 
 // Models fetches the live model catalog for the current Codex OAuth account.
@@ -218,7 +253,6 @@ func (c *Client) openAIClient(ctx context.Context, forceRefresh bool) (*openai.C
 		APIKey:                  creds.accessToken,
 		Headers:                 headers,
 		HTTPClient:              c.httpClient,
-		RetryConfig:             c.retryConfig,
 		StreamConfig:            c.streamConfig,
 		ResponsesStore:          &store,
 		ResponsesTransport:      c.streamTransport,

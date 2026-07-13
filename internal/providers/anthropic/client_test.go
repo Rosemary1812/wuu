@@ -1676,27 +1676,24 @@ func TestChat_RetriesTransientServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rc := providers.RetryConfig{
-		MaxRetries:   2,
-		InitialDelay: time.Millisecond,
-		MaxDelay:     2 * time.Millisecond,
-	}
 	client, err := New(ClientConfig{
-		BaseURL:     server.URL,
-		APIKey:      "test-key",
-		RetryConfig: &rc,
+		BaseURL: server.URL,
+		APIKey:  "test-key",
 	})
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
 
-	req := providers.EnsureInferenceExecution(providers.ChatRequest{
+	req, err := providers.EnsureInferenceExecutionContext(context.Background(), providers.ChatRequest{
 		Model: "claude-test",
 		Messages: []providers.ChatMessage{
 			{Role: "user", Content: "hi"},
 		},
 	}, providers.InferenceOperationAgentRound, providers.InferenceProfileBackgroundAgent)
-	resp, err := client.Chat(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := providers.ExecuteChat(context.Background(), client, req, providers.InferenceOperationAgentRound, providers.InferenceProfileBackgroundAgent)
 	if err != nil {
 		t.Fatalf("chat error: %v", err)
 	}
@@ -1707,7 +1704,7 @@ func TestChat_RetriesTransientServerError(t *testing.T) {
 		t.Fatalf("expected 2 attempts, got %d", got)
 	}
 	ledger := req.Execution.Snapshot()
-	if ledger.Attempts != 1 || len(ledger.Submissions) != 2 {
+	if ledger.Attempts != 2 || len(ledger.Submissions) != 2 {
 		t.Fatalf("inference ledger = %+v, want one execution attempt and two physical submissions", ledger)
 	}
 	for _, submission := range ledger.Submissions {
@@ -1726,15 +1723,9 @@ func TestChat_DoesNotRetryAuthError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	rc := providers.RetryConfig{
-		MaxRetries:   2,
-		InitialDelay: time.Millisecond,
-		MaxDelay:     2 * time.Millisecond,
-	}
 	client, err := New(ClientConfig{
-		BaseURL:     server.URL,
-		APIKey:      "test-key",
-		RetryConfig: &rc,
+		BaseURL: server.URL,
+		APIKey:  "test-key",
 	})
 	if err != nil {
 		t.Fatalf("new client: %v", err)

@@ -112,6 +112,26 @@ func (c *chunkRecordingCompactClient) Chat(_ context.Context, req providers.Chat
 type partialStreamCompactClient struct {
 	events      []providers.StreamEvent
 	lastRequest providers.ChatRequest
+	chatCalls   int
+}
+
+type cancelingStreamCompactClient struct {
+	cancel      context.CancelFunc
+	streamCalls int
+	chatCalls   int
+}
+
+func (c *cancelingStreamCompactClient) Chat(ctx context.Context, _ providers.ChatRequest) (providers.ChatResponse, error) {
+	c.chatCalls++
+	return providers.ChatResponse{}, ctx.Err()
+}
+
+func (c *cancelingStreamCompactClient) StreamChat(_ context.Context, _ providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	c.streamCalls++
+	ch := make(chan providers.StreamEvent)
+	c.cancel()
+	close(ch)
+	return ch, nil
 }
 
 type retryingStreamCompactClient struct {
@@ -144,6 +164,7 @@ func (c *retryingStreamCompactClient) StreamChat(_ context.Context, req provider
 
 func (p *partialStreamCompactClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
 	p.lastRequest = req
+	p.chatCalls++
 	return providers.ChatResponse{Content: "fallback summary"}, nil
 }
 
@@ -354,7 +375,7 @@ func TestCompact_SetsSummaryOutputControls(t *testing.T) {
 	}
 }
 
-func TestCompact_UsesPartialStreamSummaryWhenDoneIsMissing(t *testing.T) {
+func TestCompact_DiscardsPartialStreamSummaryBeforeFallback(t *testing.T) {
 	partial := strings.Repeat("usable compact summary detail ", 12)
 	messages := []providers.ChatMessage{
 		{Role: "user", Content: "first"},
@@ -366,6 +387,7 @@ func TestCompact_UsesPartialStreamSummaryWhenDoneIsMissing(t *testing.T) {
 	}
 	client := &partialStreamCompactClient{events: []providers.StreamEvent{
 		{Type: providers.EventContentDelta, Content: partial},
+		{Type: providers.EventError, Error: &providers.StreamError{Message: "stream closed before done"}},
 	}}
 
 	result, err := Compact(context.Background(), messages, client, "gpt-5.5")
@@ -375,8 +397,35 @@ func TestCompact_UsesPartialStreamSummaryWhenDoneIsMissing(t *testing.T) {
 	if len(result) == 0 || !IsConversationSummaryContent(result[0].Content) {
 		t.Fatalf("expected compacted summary first, got %#v", result)
 	}
-	if !strings.Contains(result[0].Content, strings.TrimSpace(partial)) {
-		t.Fatalf("expected partial summary to be used, got %q", result[0].Content)
+	if strings.Contains(result[0].Content, strings.TrimSpace(partial)) || !strings.Contains(result[0].Content, "fallback summary") {
+		t.Fatalf("partial summary was not superseded by fallback: %q", result[0].Content)
+	}
+	if client.chatCalls != 1 {
+		t.Fatalf("chat fallback calls = %d, want 1", client.chatCalls)
+	}
+}
+
+func TestStreamCompactSummary_CancelDoesNotStartFallbackAttempt(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	client := &cancelingStreamCompactClient{cancel: cancel}
+	execution := providers.NewInferenceExecution(providers.NewInferenceOperation(
+		providers.InferenceOperationCompaction,
+		providers.InferenceProfileContinuationCritical,
+	))
+
+	_, err := streamCompactSummary(ctx, client, providers.ChatRequest{
+		Model:     "test",
+		Operation: execution.Operation(),
+		Execution: execution,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("streamCompactSummary error = %v, want context canceled", err)
+	}
+	if client.streamCalls != 1 || client.chatCalls != 0 {
+		t.Fatalf("provider calls = stream %d chat %d, want 1/0", client.streamCalls, client.chatCalls)
+	}
+	if attempts := execution.Snapshot().Attempts; attempts != 1 {
+		t.Fatalf("attempts = %d, want cancellation to stop after the active stream attempt", attempts)
 	}
 }
 

@@ -260,6 +260,7 @@ func (s *Server) generateThreadTitleCore(threadID string, history []providers.Ch
 
 	ctx, cancel := context.WithTimeout(context.Background(), titleGenerationTimeout)
 	defer cancel()
+	ctx = providers.WithInferenceJournal(ctx, s.rt.InferenceJournalForOwner(threadID))
 
 	// We use a small adapter over streamTitleText so we can capture per-delta
 	// deltas for the probe / regenerate-title result. streamTitleText itself
@@ -359,11 +360,15 @@ func streamTitleText(ctx context.Context, client providers.StreamClient, req pro
 // sequence (replace / message events reset the buffer).
 func streamTitleTextWithDeltas(ctx context.Context, client providers.StreamClient, req providers.ChatRequest) (string, []string, error) {
 	req.Operation = providers.EnsureInferenceOperation(req.Operation, providers.InferenceOperationTitle, providers.InferenceProfileBestEffort)
-	req = providers.EnsureInferenceExecution(req, providers.InferenceOperationTitle, providers.InferenceProfileBestEffort)
-	reliableClient := providers.NewReliableStreamClient(client, providers.StreamRetryConfigForProfile(providers.InferenceProfileBestEffort), nil)
-	events, err := reliableClient.StreamChat(ctx, req)
+	var err error
+	req, err = providers.EnsureInferenceExecutionContext(ctx, req, providers.InferenceOperationTitle, providers.InferenceProfileBestEffort)
 	if err != nil {
 		return "", nil, err
+	}
+	reliableClient := providers.NewReliableStreamClient(client, providers.RetryConfigForProfile(providers.InferenceProfileBestEffort), nil)
+	events, err := reliableClient.StreamChat(ctx, req)
+	if err != nil {
+		return "", nil, finishTitleFailure(req.Execution, err)
 	}
 	var b strings.Builder
 	var deltas []string
@@ -391,13 +396,36 @@ func streamTitleTextWithDeltas(ctx context.Context, client providers.StreamClien
 			}
 		case providers.EventError:
 			if ev.Error != nil {
-				return b.String(), deltas, ev.Error
+				return b.String(), deltas, finishTitleFailure(req.Execution, ev.Error)
 			}
+			err := errors.New("title stream error")
+			return b.String(), deltas, finishTitleFailure(req.Execution, err)
 		case providers.EventDone:
 			// keep draining to let the producer close cleanly
 		}
 	}
-	return b.String(), deltas, ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return b.String(), deltas, finishTitleFailure(req.Execution, err)
+	}
+	if err := req.Execution.Complete(providers.InferenceOutcomeSucceeded, providers.NormalizedFailure{}); err != nil {
+		return b.String(), deltas, err
+	}
+	return b.String(), deltas, nil
+}
+
+func finishTitleFailure(execution *providers.InferenceExecution, err error) error {
+	if err == nil || execution == nil {
+		return err
+	}
+	failure := providers.NormalizeFailure(err)
+	outcome := providers.InferenceOutcomeFailed
+	if failure.Category == providers.FailureCanceled || failure.Category == providers.FailureDeadline {
+		outcome = providers.InferenceOutcomeCanceled
+	}
+	if journalErr := execution.Complete(outcome, failure); journalErr != nil {
+		return errors.Join(err, journalErr)
+	}
+	return err
 }
 
 // handleThreadRegenerateTitle is the JSON-RPC entry point for "rerun the

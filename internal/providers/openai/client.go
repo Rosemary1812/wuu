@@ -88,7 +88,6 @@ type ClientConfig struct {
 	APIKey                  string
 	Headers                 map[string]string
 	HTTPClient              *http.Client
-	RetryConfig             *providers.RetryConfig
 	StreamConfig            *providers.StreamTransportConfig
 	Coordinator             *providers.ProviderCoordinator
 	ProviderScope           providers.ProviderScope
@@ -104,7 +103,6 @@ type Client struct {
 	apiKey               string
 	headers              map[string]string
 	httpClient           *http.Client
-	retryConfig          providers.RetryConfig
 	promptCacheKeyFormat promptCacheKeyFormat
 	reasoningFormat      reasoningEffortFormat
 	streamConfig         providers.StreamTransportConfig
@@ -128,11 +126,6 @@ func New(cfg ClientConfig) (*Client, error) {
 	if hc == nil {
 		hc = &http.Client{Timeout: defaultTimeout}
 	}
-	rc := providers.DefaultRetryConfig()
-	if cfg.RetryConfig != nil {
-		rc = *cfg.RetryConfig
-	}
-	rc = providers.NormalizeRetryConfig(rc)
 	wireAPI, err := normalizeWireAPI(cfg.WireAPI)
 	if err != nil {
 		return nil, err
@@ -156,7 +149,6 @@ func New(cfg ClientConfig) (*Client, error) {
 		apiKey:               cfg.APIKey,
 		headers:              cloneHeaders(cfg.Headers),
 		httpClient:           hc,
-		retryConfig:          rc,
 		promptCacheKeyFormat: detectPromptCacheKeyFormat(cfg.BaseURL, cfg.Headers),
 		reasoningFormat:      detectReasoningEffortFormat(cfg.BaseURL),
 		streamConfig:         streamTransportConfig(cfg.StreamConfig),
@@ -188,7 +180,11 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 	if err := providers.ValidateToolDefinitionsForProvider(openAIToolSurfaceValidationTarget(req.Model), req.Tools); err != nil {
 		return providers.ChatResponse{}, err
 	}
-	req = providers.EnsureInferenceAttempt(req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
+	var err error
+	req, err = providers.EnsureInferenceAttemptContext(ctx, req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
+	if err != nil {
+		return providers.ChatResponse{}, err
+	}
 	if c.wireAPI == wireAPIResponses {
 		return c.responsesChat(ctx, req)
 	}
@@ -247,7 +243,7 @@ func (c *Client) Chat(ctx context.Context, req providers.ChatRequest) (providers
 		return providers.ChatResponse{}, fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpResp, lease, err := c.doChatCompletionsRequest(ctx, c.httpClient, body, false, req.Attempt)
+	httpResp, lease, err := c.doSingleChatCompletionsRequest(ctx, c.httpClient, body, false, req.Attempt)
 	if err != nil {
 		return providers.ChatResponse{}, err
 	}
@@ -335,7 +331,11 @@ func (c *Client) StreamChat(ctx context.Context, req providers.ChatRequest) (<-c
 	if err := providers.ValidateToolDefinitionsForProvider(openAIToolSurfaceValidationTarget(req.Model), req.Tools); err != nil {
 		return nil, err
 	}
-	req = providers.EnsureInferenceAttempt(req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
+	var err error
+	req, err = providers.EnsureInferenceAttemptContext(ctx, req, providers.InferenceOperationAuxiliary, providers.InferenceProfileInteractive)
+	if err != nil {
+		return nil, err
+	}
 	if c.wireAPI == wireAPIResponses {
 		return c.responsesStreamChat(ctx, req)
 	}
@@ -438,12 +438,15 @@ func (c *Client) doSingleChatCompletionsRequest(
 	if err != nil {
 		return nil, nil, err
 	}
-	lease.RecordSubmission(attempt, providers.InferenceSubmissionMeta{
+	if _, err := lease.RecordSubmission(attempt, providers.InferenceSubmissionMeta{
 		Provider:  "openai",
 		Protocol:  "chat_completions",
 		Transport: "http",
 		Mode:      mode,
-	})
+	}); err != nil {
+		lease.Release()
+		return nil, nil, fmt.Errorf("journal chat completion submission: %w", err)
+	}
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		err = fmt.Errorf("request failed: %w", err)
@@ -465,32 +468,6 @@ func (c *Client) doSingleChatCompletionsRequest(
 		return nil, nil, err
 	}
 	return resp, lease, nil
-}
-
-// doChatCompletionsRequest sends an HTTP request with automatic retries.
-// Used by the non-streaming Chat path.
-func (c *Client) doChatCompletionsRequest(
-	ctx context.Context,
-	httpClient *http.Client,
-	body []byte,
-	acceptStream bool,
-	attempt providers.InferenceAttempt,
-) (*http.Response, *providers.ProviderLease, error) {
-	var httpResp *http.Response
-	var responseLease *providers.ProviderLease
-	err := providers.WithRetry(ctx, c.retryConfig, func() error {
-		resp, lease, err := c.doSingleChatCompletionsRequest(ctx, httpClient, body, acceptStream, attempt)
-		if err != nil {
-			return err
-		}
-		httpResp = resp
-		responseLease = lease
-		return nil
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return httpResp, responseLease, nil
 }
 
 func failOpenAIResponseLease(lease *providers.ProviderLease, resp *http.Response, err error) {

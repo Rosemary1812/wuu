@@ -252,20 +252,3 @@ func TestIsRetryable_StringFallback(t *testing.T) {
 		}
 	}
 }
-
-func TestWithRetry_BailsOnCancelledContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel immediately
-
-	calls := 0
-	err := WithRetry(ctx, RetryConfig{MaxRetries: 3, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond}, func() error {
-		calls++
-		return errors.New("should not be called")
-	})
-	if calls != 0 {
-		t.Fatalf("expected 0 fn calls on cancelled ctx, got %d", calls)
-	}
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context.Canceled error, got %v", err)
-	}
-}

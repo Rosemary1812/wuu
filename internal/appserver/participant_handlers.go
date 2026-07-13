@@ -89,8 +89,7 @@ func resolveParticipantModelOverride(rt *runtimeSessionReference, participantNam
 	if !found {
 		return "", nil, fmt.Errorf("participant %q pins model %q but provider %q is not configured", participantName, rawPin, providerName)
 	}
-	retryCfg := providerfactory.SubAgentRetryConfig()
-	client, buildErr := providerfactory.BuildStreamClientWithRetry(providerCfg, providerName, &retryCfg)
+	client, buildErr := providerfactory.BuildStreamClient(providerCfg, providerName)
 	if buildErr != nil {
 		return "", nil, fmt.Errorf("participant %q pins model %q but provider %q failed to build: %w", participantName, rawPin, providerName, buildErr)
 	}

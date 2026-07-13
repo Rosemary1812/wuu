@@ -31,6 +31,7 @@ type Manager struct {
 	defaultCompactPct      float64
 	defaultKeepRecent      int
 	defaultDisableCompact  bool
+	defaultJournal         providers.InferenceJournal
 
 	mu        sync.Mutex
 	agents    map[string]*SubAgent
@@ -49,6 +50,9 @@ type ManagerOptions struct {
 	Temperature             float64
 	CompactKeepRecentTokens int
 	DisableAutoCompact      bool
+	// InferenceJournal is an infrastructure dependency fixed at manager
+	// construction. UpdateDefaults intentionally does not replace it.
+	InferenceJournal providers.InferenceJournal
 }
 
 type managerDefaults struct {
@@ -64,6 +68,7 @@ type managerDefaults struct {
 	temperature    float64
 	keepRecent     int
 	disableCompact bool
+	journal        providers.InferenceJournal
 }
 
 type toolContextBlockProvider interface {
@@ -92,6 +97,7 @@ func NewManagerWithOptions(client providers.StreamClient, defaultModel string, o
 		defaultCompactPct:      opts.CompactThresholdPct,
 		defaultKeepRecent:      opts.CompactKeepRecentTokens,
 		defaultDisableCompact:  opts.DisableAutoCompact,
+		defaultJournal:         opts.InferenceJournal,
 		agents:                 make(map[string]*SubAgent),
 	}
 }
@@ -138,6 +144,7 @@ func (m *Manager) defaultsSnapshot() managerDefaults {
 		compactPct:     m.defaultCompactPct,
 		keepRecent:     m.defaultKeepRecent,
 		disableCompact: m.defaultDisableCompact,
+		journal:        m.defaultJournal,
 	}
 }
 
@@ -373,7 +380,8 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 		ProviderOptions:          provideroptions.Clone(defaults.options),
 		InferenceOperationKind:   providers.InferenceOperationAgentRound,
 		InferenceWorkloadProfile: providers.InferenceProfileBackgroundAgent,
-		ReconnectConfig:          providers.StreamRetryConfigForProfile(providers.InferenceProfileBackgroundAgent),
+		InferenceJournal:         defaults.journal,
+		ReconnectConfig:          providers.RetryConfigForProfile(providers.InferenceProfileBackgroundAgent),
 		OnUsage:                  onUsage,
 		OnTokenUsage:             onTokenUsage,
 	}
