@@ -94,11 +94,16 @@ func ProviderPriorityForProfile(profile InferenceWorkloadProfile) ProviderPriori
 }
 
 type ProviderCoordinatorConfig struct {
-	MaxInFlight               int
-	ReservedInteractiveSlots  int
-	CircuitFailureThreshold   int
-	CircuitOpenDuration       time.Duration
-	DefaultRateLimitDelay     time.Duration
+	MaxInFlight              int
+	ReservedInteractiveSlots int
+	CircuitFailureThreshold  int
+	CircuitOpenDuration      time.Duration
+	DefaultRateLimitDelay    time.Duration
+	// MaxRateLimitCooldown caps the shared scope cooldown taken from a
+	// provider Retry-After header. An absurd value (a proxy replying
+	// Retry-After: 86400) would otherwise freeze every request in the scope
+	// for that long with no recourse but a restart.
+	MaxRateLimitCooldown      time.Duration
 	PriorityAgingInterval     time.Duration
 	RecoveryAdmissionInterval time.Duration
 }
@@ -113,6 +118,7 @@ func DefaultProviderCoordinatorConfig() ProviderCoordinatorConfig {
 		CircuitFailureThreshold:   5,
 		CircuitOpenDuration:       30 * time.Second,
 		DefaultRateLimitDelay:     2 * time.Second,
+		MaxRateLimitCooldown:      5 * time.Minute,
 		PriorityAgingInterval:     10 * time.Second,
 		RecoveryAdmissionInterval: 250 * time.Millisecond,
 	}
@@ -139,6 +145,9 @@ func normalizeProviderCoordinatorConfig(cfg ProviderCoordinatorConfig) ProviderC
 	}
 	if cfg.DefaultRateLimitDelay <= 0 {
 		cfg.DefaultRateLimitDelay = defaults.DefaultRateLimitDelay
+	}
+	if cfg.MaxRateLimitCooldown <= 0 {
+		cfg.MaxRateLimitCooldown = defaults.MaxRateLimitCooldown
 	}
 	if cfg.PriorityAgingInterval <= 0 {
 		cfg.PriorityAgingInterval = defaults.PriorityAgingInterval
@@ -365,6 +374,9 @@ func (c *ProviderCoordinator) observeFailureLocked(state *providerScopeState, fa
 		delay := failure.RetryAfter
 		if delay <= 0 {
 			delay = c.cfg.DefaultRateLimitDelay
+		}
+		if delay > c.cfg.MaxRateLimitCooldown {
+			delay = c.cfg.MaxRateLimitCooldown
 		}
 		if until := now.Add(delay); until.After(state.cooldownUntil) {
 			state.cooldownUntil = until
