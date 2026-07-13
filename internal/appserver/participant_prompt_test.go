@@ -98,6 +98,11 @@ func TestResidentParticipantSystemPromptCarriesConvergedDMIntoGroup(t *testing.T
 		"choosing the anchor is an ownership decision",
 		"do not ask a\nroutine 'should I open/promote it?' question",
 		"answer the\nDM with at most one pointer/status line",
+		"the current authorization boundary",
+		"Never let a DM-to-group handoff silently\nbroaden what the user authorized",
+		"Promotion changes tracking state, NEVER authorization or product scope",
+		"investigate-only\nmeans research or a proposal, never code changes",
+		"Prefer a few outcome-shaped pieces",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("resident prompt missing DM-to-group handoff contract %q:\n%s", want, got)

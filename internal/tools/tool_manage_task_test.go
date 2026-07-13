@@ -73,6 +73,12 @@ func TestManageTaskDefinitionExposesOnlyGroupThreadWorkflow(t *testing.T) {
 			t.Fatalf("manage_task still exposes removed property %q", removedProperty)
 		}
 	}
+	plan := properties["plan"].(map[string]any)
+	items := plan["items"].(map[string]any)
+	required := items["required"].([]string)
+	if !containsString(required, "prompt") {
+		t.Fatalf("set_plan piece schema must require prompt so scope limits reach workers: %v", required)
+	}
 }
 
 func TestManageTaskRejectsRemovedActionsAndStandaloneOpen(t *testing.T) {
@@ -88,5 +94,8 @@ func TestManageTaskRejectsRemovedActionsAndStandaloneOpen(t *testing.T) {
 	}
 	if _, err := tool.Execute(context.Background(), `{"action":"open_thread","thread_id":"group"}`); err == nil || !strings.Contains(err.Error(), "anchor_seq is required") {
 		t.Fatalf("standalone open_thread error = %v", err)
+	}
+	if _, err := tool.Execute(context.Background(), `{"action":"set_plan","subthread_id":"cth-1","plan":[{"id":"p1","title":"inspect only","assignee":"prt-mia"}]}`); err == nil || !strings.Contains(err.Error(), "preserves the authorized outcome and scope limits") {
+		t.Fatalf("set_plan without worker scope prompt error = %v", err)
 	}
 }

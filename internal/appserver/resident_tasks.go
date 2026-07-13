@@ -1449,7 +1449,7 @@ func (s *Server) wakePlanLeadForPlanning(task session.ConversationThread) {
 	s.recordTaskEventFor(task, "", session.TaskEventLeadInvoked, lead,
 		"lead woken to plan", "")
 	text := fmt.Sprintf(
-		"You lead task %q. Orchestrate it now with manage_task action=set_plan subthread_id=%q and pieces {id, title, assignee, prompt, depends_on}. Each prompt must let its assignee start without asking. Assign only other named agents: a lead coordinates, observes, revises, and concludes; it never executes a piece itself.",
+		"You lead task %q. Orchestrate it now with manage_task action=set_plan subthread_id=%q and pieces {id, title, assignee, prompt, depends_on}. Promotion does not broaden authorization: preserve every scope limit from the DM, anchor, and Thread in each worker prompt (investigate-only never becomes implementation). Use the smallest outcome-shaped graph that completes exactly what the user authorized; do not invent architecture or extra phase ceremony. Each prompt must let its assignee start without asking. Assign only other named agents: a lead coordinates, observes, revises, and concludes; it never executes a piece itself.",
 		firstNonEmpty(strings.TrimSpace(task.Title), "untitled"), task.ID,
 	)
 	s.deliverEnvelopeToMembers([]string{lead}, MessageEnvelope{

@@ -93,6 +93,11 @@ func TestHumanEscalateEntersPlanningAndWakesLead(t *testing.T) {
 	if !strings.Contains(joined, "prompt") {
 		t.Fatalf("planning directive should teach the per-piece prompt field:\n%s", joined)
 	}
+	for _, want := range []string{"Promotion does not broaden authorization", "investigate-only never becomes implementation", "smallest outcome-shaped graph"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("planning directive should preserve task authorization %q:\n%s", want, joined)
+		}
+	}
 
 	// Proof of no approval gate: the lead can declare the plan right now and
 	// the engine dispatches without any further human RPC.

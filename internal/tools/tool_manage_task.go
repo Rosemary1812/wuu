@@ -26,7 +26,7 @@ func (t *ManageTaskTool) Name() string { return "manage_task" }
 func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "manage_task",
-		Description: "Manage the Group -> Thread -> Task workflow. open_thread anchors convergence to a real group message; promote is owner-only and makes that owner immutable lead. set_plan declares the initial worker graph once. The lead adapts it with add_piece, revise_piece, reassign_piece, retry_piece, cancel_piece, and resume without replacing completed work or attempt history. conclude is lead-only after all live nodes finish. Workers use piece_done, need_human, and need_upstream. DMs, standalone Tasks, claims, and lead reassignment do not exist.",
+		Description: "Manage the Group -> Thread -> Task workflow. open_thread anchors convergence to a real group message; promote is owner-only and makes that owner immutable lead, but never broadens the user's authorization or scope. set_plan declares the smallest worker graph that produces exactly the authorized outcome; every worker prompt must preserve explicit limits such as investigate-only or no code changes. The lead adapts it with add_piece, revise_piece, reassign_piece, retry_piece, cancel_piece, and resume without replacing completed work or attempt history. conclude is lead-only after all live nodes finish. Workers use piece_done, need_human, and need_upstream. DMs, standalone Tasks, claims, and lead reassignment do not exist.",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,
@@ -62,7 +62,7 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 				},
 				"plan": map[string]any{
 					"type":        "array",
-					"description": "With set_plan: the team work breakdown. Each item is a piece {id, title, assignee, prompt, depends_on}. id is a short label unique within the plan (e.g. \"p1\"); assignee is a teammate's participant id (prefer existing members); prompt is the briefing the assignee is woken with — write it so they can start without asking; depends_on lists the piece ids that must finish before this one starts — each must be a piece listed EARLIER in the plan (omit or [] for a piece that can start immediately), which keeps dependency cycles impossible by construction. Declare the whole plan at once; the engine dispatches every piece with no unmet dependency and @-wakes the rest as their dependencies complete.",
+					"description": "With set_plan: the smallest outcome-shaped team work breakdown that stays within the user's authorization. Promotion never turns investigate-only into implementation. Each item is a piece {id, title, assignee, prompt, depends_on}. id is a short label unique within the plan (e.g. \"p1\"); assignee is a teammate's participant id (prefer existing members); prompt is the concise briefing the assignee is woken with and must repeat relevant scope limits; depends_on lists the piece ids that must finish before this one starts — each must be a piece listed EARLIER in the plan (omit or [] for a piece that can start immediately), which keeps dependency cycles impossible by construction. Declare the whole plan at once; the engine dispatches every piece with no unmet dependency and @-wakes the rest as their dependencies complete.",
 					"items": map[string]any{
 						"type":                 "object",
 						"additionalProperties": false,
@@ -76,7 +76,7 @@ func (t *ManageTaskTool) Definition() providers.ToolDefinition {
 							},
 							"depends_on": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 						},
-						"required": []string{"id", "title", "assignee"},
+						"required": []string{"id", "title", "assignee", "prompt"},
 					},
 				},
 				"piece_id": map[string]any{
@@ -239,6 +239,11 @@ func (t *ManageTaskTool) Execute(ctx context.Context, args string) (string, erro
 		}
 		if len(params.Plan) == 0 {
 			return "", errors.New("set_plan: plan is required (one or more pieces)")
+		}
+		for _, piece := range params.Plan {
+			if strings.TrimSpace(piece.Prompt) == "" {
+				return "", fmt.Errorf("set_plan: piece %q needs a concise prompt that preserves the authorized outcome and scope limits", strings.TrimSpace(piece.ID))
+			}
 		}
 		view, err := manager.SetPlan(ctx, params.SubthreadID, params.Plan)
 		if err != nil {
