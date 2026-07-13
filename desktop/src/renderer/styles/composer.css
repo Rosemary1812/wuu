@@ -117,6 +117,234 @@
   pointer-events: none;
 }
 
+.composer-ultra-button {
+  position: absolute;
+  top: -11px;
+  left: 18px;
+  z-index: 5;
+  width: 44px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  isolation: isolate;
+}
+
+.composer-ultra-notch {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 24px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--surface-4);
+  opacity: 0.7;
+  transition:
+    background 220ms ease,
+    box-shadow 220ms ease,
+    opacity 180ms ease,
+    transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    left 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.composer-ultra-notch::after {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 2px;
+  height: 2px;
+  background: var(--paper);
+  content: "";
+  opacity: 0.82;
+  transform: translateX(-1px);
+}
+
+.composer-ultra-button:hover .composer-ultra-notch,
+.composer-ultra-button:focus-visible .composer-ultra-notch {
+  left: 6px;
+  width: 32px;
+  background: var(--ink-overlay-36);
+  opacity: 1;
+}
+
+.composer-ultra-button:focus-visible {
+  outline: 2px solid var(--ink-overlay-18);
+  outline-offset: 0;
+  border-radius: 999px;
+}
+
+.composer-ultra-button.is-active .composer-ultra-notch {
+  left: 7px;
+  width: 30px;
+  animation: composer-ultra-notch-engage 360ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+  background: linear-gradient(90deg, #6eeaf4, #7277ff 55%, #b96ce6);
+  box-shadow: 0 0 6px rgba(104, 99, 244, 0.38);
+  opacity: 0.9;
+}
+
+.composer-ultra-button.is-active .composer-ultra-notch::after {
+  opacity: 0;
+}
+
+.composer-ultra-impact {
+  position: absolute;
+  top: 7px;
+  left: 18px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d9fbff;
+  box-shadow:
+    0 0 7px 2px rgba(94, 231, 241, 0.8),
+    0 0 16px 5px rgba(112, 103, 255, 0.45);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.composer-ultra-button.is-active .composer-ultra-impact {
+  animation: composer-ultra-impact 460ms 120ms ease-out both;
+}
+
+.composer-ultra-energy {
+  position: absolute;
+  inset: -5px;
+  z-index: 4;
+  overflow: hidden;
+  border-radius: calc(var(--session-composer-radius, var(--radius-sm)) + 5px);
+  pointer-events: none;
+}
+
+.composer-ultra-energy::before {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  left: 26px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #dffcff 12%, #6de8f5 35%, #796cff 68%, transparent);
+  box-shadow:
+    0 0 5px rgba(94, 231, 241, 0.9),
+    0 0 13px rgba(112, 103, 255, 0.6);
+  content: "";
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.composer-ultra-energy::after {
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgba(114, 103, 255, 0.8);
+  border-radius: var(--session-composer-radius, var(--radius-sm));
+  box-shadow:
+    inset 0 0 9px rgba(94, 231, 241, 0.18),
+    0 0 13px rgba(112, 103, 255, 0.32);
+  content: "";
+  opacity: 0;
+}
+
+.composer-ultra-energy.turning-on::before {
+  animation: composer-ultra-edge-cut 520ms 280ms cubic-bezier(0.18, 0.72, 0.2, 1) both;
+}
+
+.composer-ultra-energy.turning-on::after {
+  animation: composer-ultra-frame-shock 650ms 420ms ease-out both;
+}
+
+.composer-ultra-energy.turning-off::before {
+  animation: composer-ultra-edge-cut 420ms ease-out reverse both;
+  transform-origin: right center;
+}
+
+.composer-frame::before {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(112deg, #6eeaf4 0%, #6f75ff 45%, #bf63ed 78%, #6eeaf4 100%);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 420ms ease;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.composer-frame.is-ultra {
+  box-shadow:
+    var(--composer-frame-shadow),
+    0 0 20px rgba(99, 89, 238, 0.18),
+    0 0 42px rgba(94, 231, 241, 0.06);
+  transition: box-shadow 440ms 260ms ease;
+}
+
+.composer-frame.is-ultra::before {
+  opacity: 0.9;
+  transition-delay: 300ms;
+}
+
+@keyframes composer-ultra-notch-engage {
+  0% {
+    transform: scaleX(1.08);
+  }
+  48% {
+    transform: scaleX(0.76);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes composer-ultra-impact {
+  0%, 35% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  48% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+@keyframes composer-ultra-edge-cut {
+  0% {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  16% {
+    opacity: 1;
+  }
+  76% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes composer-ultra-frame-shock {
+  0% {
+    opacity: 0;
+    transform: scale(0.997);
+  }
+  24% {
+    opacity: 0.86;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.004);
+  }
+}
+
 .hero-composer-wrap .composer-frame {
   border-radius: var(--session-composer-radius, var(--radius-sm));
   background: var(--paper);
@@ -217,6 +445,23 @@
   .composer textarea,
   .composer-expand-button {
     transition: none;
+  }
+
+  .composer-ultra-button,
+  .composer-ultra-notch,
+  .composer-frame::before {
+    transition: none;
+  }
+
+  .composer-ultra-button.is-active .composer-ultra-notch {
+    animation: none;
+    transform: none;
+  }
+
+  .composer-ultra-button.is-active .composer-ultra-impact,
+  .composer-ultra-energy::before,
+  .composer-ultra-energy::after {
+    animation: none;
   }
 }
 

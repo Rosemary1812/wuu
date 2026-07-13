@@ -306,6 +306,8 @@ export function Composer({
   const collapsedPromptListRef = useRef<HTMLDivElement>(null);
   const collapsedPromptBlockIDRef = useRef(0);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
+  const [ultraEnabled, setUltraEnabled] = useState(false);
+  const [ultraAnimationCycle, setUltraAnimationCycle] = useState(0);
   const [collapsedPromptBlocks, setCollapsedPromptBlocks] = useState<CollapsedComposerPromptBlock[]>([]);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashDismissedValue, setSlashDismissedValue] = useState("");
@@ -891,7 +893,31 @@ export function Composer({
             </div>
           </div>
         ) : null}
-        <div className="composer-frame" ref={composerFrameRef}>
+        <button
+          className={`composer-ultra-button${ultraEnabled ? " is-active" : ""}`}
+          type="button"
+          aria-label={ultraEnabled ? "关闭 Ultra 视觉效果" : "开启 Ultra 视觉效果"}
+          aria-pressed={ultraEnabled}
+          title={ultraEnabled ? "关闭 Ultra" : "开启 Ultra"}
+          onClick={() => {
+            setUltraEnabled((enabled) => !enabled);
+            setUltraAnimationCycle((cycle) => cycle + 1);
+          }}
+        >
+          <span className="composer-ultra-notch" aria-hidden="true" />
+          <span className="composer-ultra-impact" aria-hidden="true" />
+        </button>
+        {ultraAnimationCycle > 0 ? (
+          <span
+            className={`composer-ultra-energy${ultraEnabled ? " turning-on" : " turning-off"}`}
+            key={ultraAnimationCycle}
+            aria-hidden="true"
+          />
+        ) : null}
+        <div
+          className={`composer-frame${ultraEnabled ? " is-ultra" : ""}`}
+          ref={composerFrameRef}
+        >
           <ComposerGoalStrip
             summary={goalSummary ?? null}
             disabled={readOnly}

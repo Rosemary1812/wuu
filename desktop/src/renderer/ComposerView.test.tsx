@@ -610,6 +610,35 @@ describe("Composer send control", () => {
     expect(frame?.querySelector(".composer-context-bar")).toBeNull();
   });
 
+  it("toggles the front-end-only Ultra treatment without changing the draft", () => {
+    const setPrompt = vi.fn();
+    renderComposer({
+      variant: "dock",
+      prompt: "keep this draft",
+      setPrompt,
+    });
+
+    const button = container.querySelector<HTMLButtonElement>(".composer-ultra-button");
+    const frame = container.querySelector(".composer-frame");
+
+    expect(button?.querySelector(".composer-ultra-notch")).not.toBeNull();
+    expect(button?.getAttribute("aria-pressed")).toBe("false");
+    expect(frame?.classList.contains("is-ultra")).toBe(false);
+
+    act(() => button?.click());
+
+    expect(button?.getAttribute("aria-pressed")).toBe("true");
+    expect(frame?.classList.contains("is-ultra")).toBe(true);
+    expect(container.querySelector(".composer-ultra-energy.turning-on")).not.toBeNull();
+    expect(setPrompt).not.toHaveBeenCalled();
+
+    act(() => button?.click());
+
+    expect(button?.getAttribute("aria-pressed")).toBe("false");
+    expect(frame?.classList.contains("is-ultra")).toBe(false);
+    expect(container.querySelector(".composer-ultra-energy.turning-off")).not.toBeNull();
+  });
+
   it("keeps the slash command menu outside the clipped visual frame", () => {
     renderComposer({
       variant: "dock",
