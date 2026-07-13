@@ -1,6 +1,9 @@
 # Security Policy
 
-This document explains how to report security vulnerabilities in wuu.
+This document explains which versions receive fixes and how to report security
+vulnerabilities in wuu. For the product's file, command, network, model,
+credential, and remote-control trust boundaries, read the
+[Security Model](docs/security-model.md).
 
 ## Supported versions
 
@@ -41,11 +44,14 @@ In scope:
 - Tool execution sandboxing and command escaping
 - Renderer / main process IPC in the desktop shell
 - Network requests, TLS, and proxy handling
+- Project instructions, skills, hooks, MCP servers, and remote-control pairing
 
 Out of scope:
 
 - Issues in third-party model providers (report upstream)
-- Issues that only reproduce with `--dangerously-skip-permissions` or other
-  explicitly opt-in unsafe behavior
-- Local CLI behavior around the user's own API keys (key hygiene is the
-  user's responsibility)
+- Expected access that is clearly documented for `unconfined` mode
+- A model following an instruction that the user explicitly trusted, unless it
+  crosses the documented workspace or credential boundary
+
+Security reports are still welcome when the documented boundary is unclear or
+the product exposes more data or authority than the UI or documentation says.

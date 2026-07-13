@@ -33,6 +33,7 @@
 | 接入模型提供商（Anthropic、OpenAI 兼容、本地） | [模型提供商](#模型提供商) |
 | 理解或嵌入 Go 核心 | [架构](#架构) 和 [`app-server` 协议](docs/app-server-protocol.md) |
 | 参与贡献 | [贡献指南](CONTRIBUTING.md) |
+| 了解安全和信任边界 | [安全模型](docs/security-model.md) |
 
 ## 动态
 
@@ -245,7 +246,7 @@ export ANTHROPIC_API_KEY="..."
 - 解析流式输出：[JSONL 事件](docs/jsonl-events.md)
 - 将核心嵌入新的 Shell：[`app-server` 协议](docs/app-server-protocol.md)
 - 消费 Claude Code 兼容的流式输出：[cc-stream-json](docs/compat/cc-stream-json.md)
-- 了解配置模型与迁移设计：[配置模型（中文）](docs/configuration-model-zh.md)
+- 了解配置加载和自动化入口：[`wuu exec`](docs/exec.md)
 - 搭建开发环境：[贡献指南](CONTRIBUTING.md)
 
 ## 参与贡献

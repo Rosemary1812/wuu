@@ -50,6 +50,8 @@ thirdparty/
 !/docs/exec.md
 !/docs/app-server-protocol.md
 !/docs/jsonl-events.md
+!/docs/development.md
+!/docs/security-model.md
 !/docs/compat/
 !/docs/plans/
 /docs/plans/*

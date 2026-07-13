@@ -33,6 +33,7 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 | Connect a provider (Anthropic, OpenAI-compatible, local) | [Providers](#providers) |
 | Understand or embed the Go core | [Architecture](#architecture) and the [`app-server` protocol](docs/app-server-protocol.md) |
 | Contribute | [Contributing](CONTRIBUTING.md) |
+| Review the security and trust boundaries | [Security model](docs/security-model.md) |
 
 ## News
 

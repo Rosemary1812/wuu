@@ -83,8 +83,7 @@ JSON
 stdin. `files` and `images` behave like repeated `--file` and `--image` flags.
 The object can also set `provider`, `model`, `effort`, `variant`,
 `permission_mode`, `config`, `profile`, `ignore_user_config`,
-`strict_config`, `env`, `allow_tools`, `deny_tools`, `approval_handler`,
-`approval_socket`, `approve`, `approvals`, `max_turns`,
+`strict_config`, `env`, `allow_tools`, `deny_tools`, `max_turns`,
 `output_schema`, `no_tools`, `timeout`, and `output_last_message`.
 
 ## Resume
@@ -158,7 +157,7 @@ See [jsonl-events.md](jsonl-events.md) for the event contract.
 - `0`: completed successfully.
 - `1`: agent turn failed.
 - `2`: CLI arguments, config, or input validation failed.
-- `3`: permission denied or non-interactive approval could not be obtained.
+- `3`: permission denied by the workspace boundary or tool policy.
 - `4`: timeout.
 - `5`: interrupted.
 - `6`: app-server protocol error.
@@ -185,10 +184,6 @@ Current implemented flags:
 --env KEY=VALUE
 --allow-tool <name>
 --deny-tool <name>
---approval-handler <command>
---approval-socket <path>
---approve <approval-key>
---approvals <auto|strict|prompt>
 --file <path>
 --image <path>
 --no-tools
@@ -249,83 +244,21 @@ On a native `mcp_servers` name clash the native entry wins; `disabled` wins over
 They affect only the current exec run and do not write back to configuration.
 A tool cannot be both allowed and denied in the same run.
 
-`--approval-handler <command>` lets automation respond to app-server approval
-requests. Wuu sends one JSON object to the command on stdin:
+## Permission modes
 
-```json
-{
-  "id": "server-1",
-  "method": "tool/approval/request",
-  "params": {
-    "id": "approval-id",
-    "tool_name": "write_file",
-    "risk": "high",
-    "arguments_preview": "..."
-  }
-}
-```
+`wuu exec` makes allow-or-deny decisions without an interactive approval step:
 
-The command must write a JSON approval response to stdout:
+- `standard` (default) confines file reach to registered workspace roots and
+  permits mutations inside them;
+- `read_only` keeps the same file reach and denies mutations;
+- `unconfined` removes Wuu's path confinement and permits mutations.
 
-```json
-{"decision":"approved","reason":"policy allowed this run"}
-```
-
-It may also return a JSON-RPC-like object with a `result` field containing the
-same response shape.
-
-`--approval-socket <path>` uses the same request and response JSON over a Unix
-socket, one newline-delimited object per approval request. `--approval-handler`
-and `--approval-socket` are mutually exclusive.
-
-## Approvals
-
-**By default a delegated exec run just flows.** exec is built for callers —
-usually other agents — that hand over a task and expect the repo toolchain to
-run unattended. `--approvals` picks the mode:
-
-- `auto` (the default): exec resolves `approval_policy` to `never`.
-  Ask-classified actions such as unclassified shell commands (`go vet`,
-  `make test`, project scripts) execute without a round-trip, the same way
-  `full_access` resolves them. This does not loosen the hard limits:
-  destructive commands stay denied by the command policy, and the tool
-  layer's always-on protections (unsafe git, sensitive paths, env dumps,
-  package/network mutation) never turn off. Per-tool `require_approval`
-  rules in config still generate requests, answered by `--approve` grants or
-  denied with a grant recipe.
-- `strict`: keep `approval_policy: on_request`. Requests nothing answers are
-  denied with a grant recipe — the fail-closed mode for CI or untrusted
-  configurations.
-- `prompt`: keep `on_request` and ask the human on the controlling terminal:
-  `[y]es once / [a]lways this session / [N]o`. Without a terminal the flag
-  warns on stderr and requests are denied.
-
-Providing `--approval-handler <command>` or `--approval-socket <path>` also
-keeps `on_request`, with automation answering each request. A configured
-`auto_review` reviewer (the LLM guardian) keeps its review flow too; an
-explicit `--approvals auto` overrides it. Note that a bare
-`approval_policy: "on_request"` in the config file cannot opt into strictness
-for exec runs — config loading fills that field from the permission-mode
-preset, so exec cannot tell it apart from a derived default; use
-`--approvals strict` (or input-json `"approvals": "strict"`).
-
-In a review flow, `--approve <key>` (repeatable) pre-grants exactly the named
-calls, matched by the stable `approval_key` (`<tool>:<arguments-sha256>` over
-the call's binding fields, so a rephrased retry of the same command still
-matches). Denied runs exit with status `permission_denied` and the final
-`result` event carries `blocked_approvals:
-[{approval_key, tool_name, arguments_preview, reason}]`, so a strict-mode
-caller can decide and rerun:
-
-```bash
-wuu exec --json --approvals strict "run go vet and fix what it reports"
-# → result: status "permission_denied" + blocked_approvals with the key
-
-wuu exec resume --last --approvals strict --approve bash:2fd4e1c6... "vet is approved, continue"
-```
-
-Broad alternatives remain `--allow-tool <name>` (allow a whole tool for the
-run) and `--permission-mode full_access`.
+The mode is an in-process tool boundary, not an operating-system sandbox.
+Permitted child processes keep Wuu's OS identity, inherited environment, and
+network stack. `--allow-tool` and `--deny-tool` change the one-run tool surface;
+they do not expand the path boundary or disable hard tool guards. See the
+[security model](security-model.md) before unattended or untrusted-repository
+use.
 
 ## Session Inspection
 
@@ -441,14 +374,8 @@ with no live API.
 
 ## Safety
 
-`wuu exec` runs through the normal Wuu permission model. The safety floor for
-unattended runs is the layer that cannot be approved away: destructive
-commands are denied by the command policy, and the tool hard protections
-(unsafe git, sensitive paths, env dumps, package/network mutation) are always
-on. Above that floor, unattended runs default to flowing —
-`--approvals auto` resolves `approval_policy` to `never` — so delegation
-works without a babysitter. When a caller opts into a review flow
-(`--approvals strict`, `--approvals prompt`, a handler, a socket, or an
-`auto_review` reviewer), requests that nothing answers fail closed with a
-grant recipe, and every decision is recorded as `approval_requested` /
-`approval_resolved` events.
+`wuu exec` runs through the same workspace boundary and tool guards as the
+desktop app. Unsafe Git operations, common secret reads and environment dumps,
+and other high-risk command patterns receive hard checks. Common credential
+patterns are redacted from tool output. These controls are defense in depth,
+not OS isolation and not a guarantee that every secret format is recognized.
