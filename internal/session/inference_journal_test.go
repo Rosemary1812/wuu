@@ -1,10 +1,15 @@
 package session
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"sync"
 	"testing"
@@ -432,6 +437,73 @@ FROM inference_workflows WHERE id = ?`, workflowID).Scan(&used, &known, &unknown
 	}
 }
 
+func TestInferenceJournalHardUsageBudgetRequiresSettledCost(t *testing.T) {
+	dir := t.TempDir()
+	runtime, err := NewInferenceJournalRuntime(dir, "workspace-hard-usage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
+	journal := runtime.ForOwner("thread-hard-usage")
+	workflowID := "iwf-hard-usage"
+	spec := providers.WorkflowBudgetSpec{
+		MaxUsageTokens:                providers.LimitedBudget(100),
+		MaxUnknownBillableSubmissions: providers.LimitedBudget(1),
+	}
+	now := time.Now().UTC()
+	first := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	firstHash := testInferenceHash("hard-usage-first")
+	if err := journal.PrepareOperation(budgetedInferenceOperationRecord(first, workflowID, spec, firstHash, now)); err != nil {
+		t.Fatal(err)
+	}
+	firstAttempt := first.AttemptID(1)
+	if err := journal.PrepareAttempt(providers.InferenceAttemptJournalRecord{
+		OperationID: first.ID, WorkflowID: workflowID, AttemptID: firstAttempt,
+		Ordinal: 1, RequestHash: firstHash, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	submission := providers.InferenceSubmissionJournalRecord{
+		OperationID: first.ID, AttemptID: firstAttempt, ID: first.ID + "-s1",
+		Ordinal: 1, AttemptOrdinal: 1, Outcome: providers.InferenceSubmissionInFlight,
+		CostState: providers.InferenceCostUnknownBillable, StartedAt: now,
+	}
+	if err := journal.UpsertSubmission(submission); err != nil {
+		t.Fatal(err)
+	}
+
+	second := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	secondHash := testInferenceHash("hard-usage-second")
+	err = journal.PrepareOperation(budgetedInferenceOperationRecord(second, workflowID, spec, secondHash, now))
+	var indeterminate *providers.WorkflowCostIndeterminateError
+	if !errors.As(err, &indeterminate) || indeterminate.UnknownBillableSubmissions != 1 {
+		t.Fatalf("unknown usage admission error = %v, want one indeterminate submission", err)
+	}
+
+	submission.CostState = providers.InferenceCostKnown
+	submission.ReportedUsage = &providers.TokenUsage{InputTokens: 80, OutputTokens: 40}
+	if err := journal.UpsertSubmission(submission); err != nil {
+		t.Fatal(err)
+	}
+	err = journal.PrepareOperation(budgetedInferenceOperationRecord(second, workflowID, spec, secondHash, now))
+	requireWorkflowBudgetDimension(t, err, providers.WorkflowBudgetUsageTokens)
+
+	db, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var operations, known, unknown, tokens int
+	if err := db.QueryRow(`
+SELECT used_operations, known_submissions, unknown_billable, known_usage_tokens
+FROM inference_workflows WHERE id = ?`, workflowID).Scan(&operations, &known, &unknown, &tokens); err != nil {
+		t.Fatal(err)
+	}
+	if operations != 1 || known != 1 || unknown != 0 || tokens != 120 {
+		t.Fatalf("hard usage counters = operations=%d known=%d unknown=%d tokens=%d", operations, known, unknown, tokens)
+	}
+}
+
 func TestInferenceJournalConcurrentLastSubmissionAdmission(t *testing.T) {
 	dir := t.TempDir()
 	runtime, err := NewInferenceJournalRuntime(dir, "workspace-concurrent-budget")
@@ -490,6 +562,172 @@ func TestInferenceJournalConcurrentLastSubmissionAdmission(t *testing.T) {
 	}
 	if succeeded != 1 {
 		t.Fatalf("successful submissions = %d, want 1", succeeded)
+	}
+}
+
+type inferenceJournalProcessCandidate struct {
+	Action      string `json:"action"`
+	SessDir     string `json:"sess_dir"`
+	Scope       string `json:"scope"`
+	RuntimeID   string `json:"runtime_id"`
+	OwnerID     string `json:"owner_id"`
+	WorkflowID  string `json:"workflow_id"`
+	OperationID string `json:"operation_id"`
+	AttemptID   string `json:"attempt_id"`
+	RequestHash string `json:"request_hash"`
+	GatePath    string `json:"gate_path"`
+	ResultPath  string `json:"result_path"`
+}
+
+func TestInferenceJournalCrossProcessLastBudgetAdmission(t *testing.T) {
+	for _, action := range []string{"attempt", "submission"} {
+		t.Run(action, func(t *testing.T) {
+			dir := t.TempDir()
+			scope := "workspace-cross-process-" + action
+			runtime, err := NewInferenceJournalRuntime(dir, scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = runtime.Close() })
+			ownerID := "thread-cross-process"
+			journal := runtime.ForOwner(ownerID)
+			workflowID := "iwf-cross-process-" + action
+			spec := providers.WorkflowBudgetSpec{}
+			if action == "attempt" {
+				spec.MaxAttempts = providers.LimitedBudget(1)
+			} else {
+				spec.MaxSubmissions = providers.LimitedBudget(1)
+			}
+			now := time.Now().UTC()
+			gatePath := filepath.Join(dir, "start-"+action)
+			candidates := make([]inferenceJournalProcessCandidate, 2)
+			for i := range candidates {
+				op := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+				hash := testInferenceHash(action + string(rune('a'+i)))
+				if err := journal.PrepareOperation(budgetedInferenceOperationRecord(op, workflowID, spec, hash, now)); err != nil {
+					t.Fatal(err)
+				}
+				attemptID := op.AttemptID(1)
+				if action == "submission" {
+					if err := journal.PrepareAttempt(providers.InferenceAttemptJournalRecord{
+						OperationID: op.ID, WorkflowID: workflowID, AttemptID: attemptID,
+						Ordinal: 1, RequestHash: hash, At: now,
+					}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				candidates[i] = inferenceJournalProcessCandidate{
+					Action: action, SessDir: dir, Scope: scope, RuntimeID: runtime.RuntimeID(),
+					OwnerID: ownerID, WorkflowID: workflowID, OperationID: op.ID,
+					AttemptID: attemptID, RequestHash: hash, GatePath: gatePath,
+					ResultPath: filepath.Join(dir, action+"-result-"+string(rune('0'+i))),
+				}
+			}
+
+			type process struct {
+				cmd    *exec.Cmd
+				output bytes.Buffer
+			}
+			processes := make([]process, len(candidates))
+			for i, candidate := range candidates {
+				payload, err := json.Marshal(candidate)
+				if err != nil {
+					t.Fatal(err)
+				}
+				processes[i].cmd = exec.Command(os.Args[0], "-test.run=^TestInferenceJournalCrossProcessBudgetWorker$")
+				processes[i].cmd.Env = append(os.Environ(), "WUU_INFERENCE_JOURNAL_PROCESS_CANDIDATE="+string(payload))
+				processes[i].cmd.Stdout = &processes[i].output
+				processes[i].cmd.Stderr = &processes[i].output
+				if err := processes[i].cmd.Start(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(gatePath, []byte("start"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for i := range processes {
+				if err := processes[i].cmd.Wait(); err != nil {
+					t.Fatalf("worker %d: %v\n%s", i, err, processes[i].output.String())
+				}
+			}
+
+			succeeded := 0
+			wantDimension := providers.WorkflowBudgetAttempts
+			if action == "submission" {
+				wantDimension = providers.WorkflowBudgetSubmissions
+			}
+			for _, candidate := range candidates {
+				result, err := os.ReadFile(candidate.ResultPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(result) == "ok" {
+					succeeded++
+					continue
+				}
+				if string(result) != "budget:"+string(wantDimension) {
+					t.Fatalf("worker result = %q, want budget:%s", result, wantDimension)
+				}
+			}
+			if succeeded != 1 {
+				t.Fatalf("successful %s admissions = %d, want 1", action, succeeded)
+			}
+		})
+	}
+}
+
+func TestInferenceJournalCrossProcessBudgetWorker(t *testing.T) {
+	raw := os.Getenv("WUU_INFERENCE_JOURNAL_PROCESS_CANDIDATE")
+	if raw == "" {
+		t.Skip("subprocess helper")
+	}
+	var candidate inferenceJournalProcessCandidate
+	if err := json.Unmarshal([]byte(raw), &candidate); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Stat(candidate.GatePath); err == nil {
+			break
+		} else if !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for process race gate")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	runtime := &InferenceJournalRuntime{
+		sessDir: candidate.SessDir, workspaceScope: candidate.Scope, runtimeID: candidate.RuntimeID,
+	}
+	runtime.heartbeatOnce.Do(func() {})
+	journal := &inferenceJournal{runtime: runtime, ownerID: candidate.OwnerID}
+	var err error
+	switch candidate.Action {
+	case "attempt":
+		err = journal.PrepareAttempt(providers.InferenceAttemptJournalRecord{
+			OperationID: candidate.OperationID, WorkflowID: candidate.WorkflowID,
+			AttemptID: candidate.AttemptID, Ordinal: 1, RequestHash: candidate.RequestHash,
+		})
+	case "submission":
+		err = journal.UpsertSubmission(providers.InferenceSubmissionJournalRecord{
+			OperationID: candidate.OperationID, AttemptID: candidate.AttemptID,
+			ID: candidate.OperationID + "-s1", Ordinal: 1, AttemptOrdinal: 1,
+			Outcome: providers.InferenceSubmissionInFlight, CostState: providers.InferenceCostUnknownBillable,
+		})
+	default:
+		t.Fatalf("unknown action %q", candidate.Action)
+	}
+	result := "ok"
+	if err != nil {
+		var exceeded *providers.WorkflowBudgetExceededError
+		if !errors.As(err, &exceeded) {
+			t.Fatalf("unexpected admission error: %v", err)
+		}
+		result = "budget:" + string(exceeded.Dimension)
+	}
+	if err := os.WriteFile(candidate.ResultPath, []byte(result), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -760,6 +998,213 @@ func TestInferenceJournalRejectsMetadataMutation(t *testing.T) {
 	first.RequestHash = testInferenceHash("first")
 	if err := otherOwner.PrepareOperation(first); err == nil {
 		t.Fatal("expected changed owner to be rejected")
+	}
+}
+
+func TestInferenceJournalEnforcesOperationParentConstraints(t *testing.T) {
+	runtime, err := NewInferenceJournalRuntime(t.TempDir(), "workspace-parent-constraints")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runtime.Close() })
+	journal := runtime.ForOwner("thread-parent-constraints")
+	now := time.Now().UTC()
+	workflowID := "iwf-parent-constraints"
+	parent := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	if err := journal.PrepareOperation(budgetedInferenceOperationRecord(
+		parent, workflowID, providers.WorkflowBudgetSpec{}, testInferenceHash("parent"), now,
+	)); err != nil {
+		t.Fatal(err)
+	}
+
+	missing := providers.NewInferenceOperation(providers.InferenceOperationCompaction, providers.InferenceProfileInteractive)
+	missing.ParentOperationID = "iop-missing"
+	if err := journal.PrepareOperation(budgetedInferenceOperationRecord(
+		missing, workflowID, providers.WorkflowBudgetSpec{}, testInferenceHash("missing-parent"), now,
+	)); err == nil {
+		t.Fatal("operation with missing parent was prepared")
+	}
+
+	self := providers.NewInferenceOperation(providers.InferenceOperationCompaction, providers.InferenceProfileInteractive)
+	self.ParentOperationID = self.ID
+	if err := journal.PrepareOperation(budgetedInferenceOperationRecord(
+		self, workflowID, providers.WorkflowBudgetSpec{}, testInferenceHash("self-parent"), now,
+	)); err == nil {
+		t.Fatal("self-parent operation was prepared")
+	}
+
+	otherWorkflowParent := providers.NewInferenceOperation(providers.InferenceOperationAgentRound, providers.InferenceProfileInteractive)
+	if err := journal.PrepareOperation(budgetedInferenceOperationRecord(
+		otherWorkflowParent, "iwf-other-parent", providers.WorkflowBudgetSpec{}, testInferenceHash("other-parent"), now,
+	)); err != nil {
+		t.Fatal(err)
+	}
+	crossWorkflow := providers.NewInferenceOperation(providers.InferenceOperationCompaction, providers.InferenceProfileInteractive)
+	crossWorkflow.ParentOperationID = otherWorkflowParent.ID
+	if err := journal.PrepareOperation(budgetedInferenceOperationRecord(
+		crossWorkflow, workflowID, providers.WorkflowBudgetSpec{}, testInferenceHash("cross-parent"), now,
+	)); err == nil {
+		t.Fatal("cross-workflow parent was accepted")
+	}
+
+	child := providers.NewInferenceOperation(providers.InferenceOperationCompaction, providers.InferenceProfileInteractive)
+	child.ParentOperationID = parent.ID
+	childRecord := budgetedInferenceOperationRecord(
+		child, workflowID, providers.WorkflowBudgetSpec{}, testInferenceHash("valid-child"), now,
+	)
+	if err := journal.PrepareOperation(childRecord); err != nil {
+		t.Fatal(err)
+	}
+	childRecord.Operation.ParentOperationID = ""
+	if err := journal.PrepareOperation(childRecord); err == nil {
+		t.Fatal("prepared operation parent metadata was changed")
+	}
+}
+
+func TestInferenceJournalMigratesLegacyOperationsIntoWorkflows(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", sqliteDSN(DBPath(dir)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacySchema := []string{
+		`CREATE TABLE inference_journal_runtimes (
+			id TEXT PRIMARY KEY, workspace_scope TEXT NOT NULL, pid INTEGER NOT NULL,
+			started_at INTEGER NOT NULL, heartbeat_at INTEGER NOT NULL, closed_at INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE TABLE inference_operations (
+			id TEXT PRIMARY KEY, runtime_id TEXT NOT NULL, workspace_scope TEXT NOT NULL,
+			owner_id TEXT NOT NULL, kind TEXT NOT NULL, workload_profile TEXT NOT NULL,
+			payload_version INTEGER NOT NULL, request_hash TEXT NOT NULL, status TEXT NOT NULL,
+			terminal_outcome TEXT NOT NULL DEFAULT '', recovery_action TEXT NOT NULL DEFAULT '',
+			failure_origin TEXT NOT NULL DEFAULT '', failure_category TEXT NOT NULL DEFAULT '',
+			provider_family TEXT NOT NULL DEFAULT '', provider_code TEXT NOT NULL DEFAULT '',
+			http_status INTEGER NOT NULL DEFAULT 0, confidence TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, terminal_at INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE TABLE inference_attempts (
+			id TEXT PRIMARY KEY, operation_id TEXT NOT NULL, ordinal INTEGER NOT NULL,
+			request_hash TEXT NOT NULL, phase TEXT NOT NULL, terminal_outcome TEXT NOT NULL DEFAULT '',
+			recovery_action TEXT NOT NULL DEFAULT '', retry_at INTEGER NOT NULL DEFAULT 0,
+			failure_origin TEXT NOT NULL DEFAULT '', failure_category TEXT NOT NULL DEFAULT '',
+			provider_family TEXT NOT NULL DEFAULT '', provider_code TEXT NOT NULL DEFAULT '',
+			http_status INTEGER NOT NULL DEFAULT 0, confidence TEXT NOT NULL DEFAULT '',
+			prepared_at INTEGER NOT NULL, dispatching_at INTEGER NOT NULL DEFAULT 0,
+			sent_at INTEGER NOT NULL DEFAULT 0, first_event_at INTEGER NOT NULL DEFAULT 0,
+			terminal_at INTEGER NOT NULL DEFAULT 0, UNIQUE(operation_id, ordinal), UNIQUE(id, operation_id)
+		)`,
+		`CREATE TABLE inference_submissions (
+			id TEXT PRIMARY KEY, operation_id TEXT NOT NULL, attempt_id TEXT NOT NULL,
+			ordinal INTEGER NOT NULL, attempt_ordinal INTEGER NOT NULL,
+			provider TEXT NOT NULL DEFAULT '', protocol TEXT NOT NULL DEFAULT '',
+			transport TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '',
+			outcome TEXT NOT NULL, failure_category TEXT NOT NULL DEFAULT '', cost_state TEXT NOT NULL,
+			reported_input_tokens INTEGER NOT NULL DEFAULT 0, reported_output_tokens INTEGER NOT NULL DEFAULT 0,
+			reported_cache_creation INTEGER NOT NULL DEFAULT 0, reported_cache_read INTEGER NOT NULL DEFAULT 0,
+			reported_cache_unknown INTEGER NOT NULL DEFAULT 0, has_reported_usage INTEGER NOT NULL DEFAULT 0,
+			estimated_input_tokens INTEGER NOT NULL DEFAULT 0, estimated_output_tokens INTEGER NOT NULL DEFAULT 0,
+			estimated_cache_creation INTEGER NOT NULL DEFAULT 0, estimated_cache_read INTEGER NOT NULL DEFAULT 0,
+			estimated_cache_unknown INTEGER NOT NULL DEFAULT 0, has_estimated_usage INTEGER NOT NULL DEFAULT 0,
+			output_bytes INTEGER NOT NULL DEFAULT 0, started_at INTEGER NOT NULL, completed_at INTEGER NOT NULL DEFAULT 0,
+			UNIQUE(operation_id, ordinal)
+		)`,
+	}
+	for _, statement := range legacySchema {
+		if _, err := db.Exec(statement); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
+	}
+	now := time.Now().UTC().UnixMilli()
+	hash := testInferenceHash("legacy")
+	if _, err := db.Exec(`INSERT INTO inference_journal_runtimes VALUES ('runtime-legacy', 'workspace-legacy', 1, ?, ?, 0)`, now, now); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO inference_operations (
+    id, runtime_id, workspace_scope, owner_id, kind, workload_profile,
+    payload_version, request_hash, status, terminal_outcome, created_at, updated_at, terminal_at
+) VALUES ('operation-legacy', 'runtime-legacy', 'workspace-legacy', 'thread-legacy',
+          'agent_round', 'interactive', 1, ?, 'failed', 'failed', ?, ?, ?)`, hash, now, now, now); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	for ordinal := 1; ordinal <= 2; ordinal++ {
+		if _, err := db.Exec(`
+INSERT INTO inference_attempts (id, operation_id, ordinal, request_hash, phase, prepared_at)
+VALUES (?, 'operation-legacy', ?, ?, 'terminal', ?)`, "attempt-legacy-"+string(rune('0'+ordinal)), ordinal, hash, now); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
+	}
+	legacySubmissions := []struct {
+		id, cost  string
+		reported  [4]int
+		estimated [4]int
+	}{
+		{id: "submission-known", cost: "known", reported: [4]int{10, 5, 2, 3}},
+		{id: "submission-estimated", cost: "estimated", estimated: [4]int{7, 3, 0, 0}},
+		{id: "submission-unknown", cost: "unknown_but_billable"},
+	}
+	for ordinal, submission := range legacySubmissions {
+		if _, err := db.Exec(`
+INSERT INTO inference_submissions (
+    id, operation_id, attempt_id, ordinal, attempt_ordinal, outcome, cost_state,
+    reported_input_tokens, reported_output_tokens, reported_cache_creation, reported_cache_read, has_reported_usage,
+    estimated_input_tokens, estimated_output_tokens, estimated_cache_creation, estimated_cache_read, has_estimated_usage,
+    started_at
+) VALUES (?, 'operation-legacy', 'attempt-legacy-1', ?, 1, 'failed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			submission.id, ordinal+1, submission.cost,
+			submission.reported[0], submission.reported[1], submission.reported[2], submission.reported[3], submission.cost == "known",
+			submission.estimated[0], submission.estimated[1], submission.estimated[2], submission.estimated[3], submission.cost == "estimated", now,
+		); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	for pass := 0; pass < 2; pass++ {
+		migrated, err := openStore(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var workflowID string
+		var attemptLimit int
+		if err := migrated.QueryRow(`SELECT workflow_id, attempt_limit FROM inference_operations WHERE id = 'operation-legacy'`).
+			Scan(&workflowID, &attemptLimit); err != nil {
+			migrated.Close()
+			t.Fatal(err)
+		}
+		if workflowID != "iwf-legacy-operation-legacy" || attemptLimit != 2 {
+			migrated.Close()
+			t.Fatalf("legacy operation = workflow %q attempt limit %d", workflowID, attemptLimit)
+		}
+		var operations, attempts, submissions, replays, known, estimated, unknown, knownTokens, estimatedTokens int
+		var status string
+		if err := migrated.QueryRow(`
+SELECT used_operations, used_attempts, used_submissions, used_replays,
+       known_submissions, estimated_submissions, unknown_billable,
+       known_usage_tokens, estimated_usage_tokens, status
+FROM inference_workflows WHERE id = ?`, workflowID).Scan(
+			&operations, &attempts, &submissions, &replays, &known, &estimated, &unknown,
+			&knownTokens, &estimatedTokens, &status,
+		); err != nil {
+			migrated.Close()
+			t.Fatal(err)
+		}
+		if operations != 1 || attempts != 2 || submissions != 3 || replays != 1 ||
+			known != 1 || estimated != 1 || unknown != 1 || knownTokens != 20 || estimatedTokens != 10 || status != "failed" {
+			migrated.Close()
+			t.Fatalf("legacy workflow counters = %d/%d/%d/%d cost=%d/%d/%d tokens=%d/%d status=%q",
+				operations, attempts, submissions, replays, known, estimated, unknown, knownTokens, estimatedTokens, status)
+		}
+		if err := migrated.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
