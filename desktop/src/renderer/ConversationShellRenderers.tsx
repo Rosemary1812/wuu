@@ -25,7 +25,9 @@ import type {
 import {
   chatReaderCountForThread,
   emptyComposerDraft,
+  isGroupThread,
   queryTextsForThread,
+  threadForTab,
   turnStreamStatusForThread,
   type AppState,
   type ComposerDraftState,
@@ -473,6 +475,18 @@ export function ConversationTitleActions({
   rightPanelOpen,
   onToggleRightPanel,
 }: ConversationTitleActionsProps): JSX.Element {
+  const reserveTaskBoardSlot =
+    activeThreadIsGroup ||
+    state.sessionTabs.some((tab) => {
+      if (tab.kind === "board") {
+        return true;
+      }
+      return (
+        tab.kind === "thread" &&
+        isGroupThread(threadForTab(state, tab.threadID) ?? {})
+      );
+    });
+
   return (
     <div className="title-actions">
       {debugControlsVisible && enableLaunchPreview ? (
@@ -541,16 +555,20 @@ export function ConversationTitleActions({
       <ChipGalleryPanel open={chipGalleryOpen} onClose={onCloseChipGallery} />
       {poppedOutMode ? null : (
         <>
-          {activeThreadIsGroup && activeThread ? (
-            <button
-              className="icon-button task-board-button"
-              type="button"
-              aria-label="打开任务看板"
-              title="任务看板"
-              onClick={() => onOpenTaskBoard(activeThread)}
-            >
-              <ListChecks className="icon-lg" size={18} viewBox="2 2 20 20" />
-            </button>
+          {reserveTaskBoardSlot ? (
+            <div className="task-board-action-slot">
+              {activeThreadIsGroup && activeThread ? (
+                <button
+                  className="icon-button task-board-button"
+                  type="button"
+                  aria-label="打开任务看板"
+                  title="任务看板"
+                  onClick={() => onOpenTaskBoard(activeThread)}
+                >
+                  <ListChecks className="icon-lg" size={18} viewBox="2 2 20 20" />
+                </button>
+              ) : null}
+            </div>
           ) : null}
           <button
             ref={environmentToggleRef}

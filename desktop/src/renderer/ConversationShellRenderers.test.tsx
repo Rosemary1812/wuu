@@ -1,8 +1,12 @@
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Thread } from "../shared/protocol";
-import { emptyComposerDraft, initialState } from "./AppState";
+import type { RuntimeContext, Thread } from "../shared/protocol";
+import {
+  createThreadSessionTab,
+  emptyComposerDraft,
+  initialState,
+} from "./AppState";
 
 vi.mock("./ConversationSplitPane", () => ({
   ConversationSplitPane: ({
@@ -156,5 +160,79 @@ describe("ConversationTitleActions icon sizing", () => {
     expect(infoIcon?.getAttribute("width")).toBe("18");
     expect(infoIcon?.getAttribute("height")).toBe("18");
     expect(infoIcon?.getAttribute("viewBox")).toBe("0 0 24 24");
+  });
+
+  it("keeps the task-board action slot stable while switching tab kinds", () => {
+    const context: RuntimeContext = { kind: "no_project", cwd: "/repo" };
+    const groupThread = { ...thread("group", "/repo"), group: true };
+    const normalThread = thread("normal", "/repo");
+    const state = {
+      ...initialState,
+      activeContext: context,
+      thread: normalThread,
+      threads: [groupThread, normalThread],
+      sessionTabs: [
+        createThreadSessionTab(groupThread, context),
+        createThreadSessionTab(normalThread, context),
+      ],
+    };
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const renderActions = (
+      activeThread: Thread,
+      activeThreadIsGroup: boolean,
+    ): void => {
+      act(() => {
+        root?.render(
+          <ConversationTitleActions
+            state={state}
+            debugControlsVisible={false}
+            enableLaunchPreview={false}
+            previewingLaunch={false}
+            onPinLaunchPreview={() => {}}
+            enablePlanPanelDebug={false}
+            onSeedPlanPanelDebug={() => {}}
+            conversationGridVisible={false}
+            onToggleConversationGrid={() => {}}
+            enableRunDebugPanel={false}
+            runDebugRef={createRef<HTMLDivElement>()}
+            runDebugOpen={false}
+            onToggleRunDebug={() => {}}
+            runDebugPhase={{ label: "", detail: "", tone: "idle" }}
+            runDebugEvents={[]}
+            queuedMessages={[]}
+            guideMessages={[]}
+            composerImages={[]}
+            composerFiles={[]}
+            runDebugCopied={false}
+            onCopyRunDebug={() => {}}
+            onCloseRunDebug={() => {}}
+            chipGalleryOpen={false}
+            onCloseChipGallery={() => {}}
+            poppedOutMode={false}
+            activeThread={activeThread}
+            onOpenTaskBoard={() => {}}
+            environmentToggleRef={createRef<HTMLButtonElement>()}
+            environmentPanelVisible={false}
+            activeThreadIsGroup={activeThreadIsGroup}
+            onToggleEnvironmentPanel={() => {}}
+            rightPanelOpen={false}
+            onToggleRightPanel={() => {}}
+          />,
+        );
+      });
+    };
+
+    renderActions(normalThread, false);
+    const inactiveSlot = container.querySelector(".task-board-action-slot");
+    expect(inactiveSlot).toBeTruthy();
+    expect(inactiveSlot?.querySelector(".task-board-button")).toBeNull();
+
+    renderActions(groupThread, true);
+    const activeSlot = container.querySelector(".task-board-action-slot");
+    expect(activeSlot).toBe(inactiveSlot);
+    expect(activeSlot?.querySelector(".task-board-button")).toBeTruthy();
   });
 });

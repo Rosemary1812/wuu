@@ -246,6 +246,14 @@
   min-width: max-content;
 }
 
+.task-board-action-slot {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+}
+
 .title-block h1 {
   min-width: 0;
   max-width: 100%;
