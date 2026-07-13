@@ -247,7 +247,6 @@ describe("WorkspaceRightPanel", () => {
       project_id: "project-1",
       cwd: "/repo/project",
     };
-    const filesTab = workspaceToolViewTab("files");
     const fileTab = workspaceFileViewTab({
       context,
       path: "src/App.tsx",
@@ -256,8 +255,8 @@ describe("WorkspaceRightPanel", () => {
     mount(
       <WorkspaceRightPanel
         {...baseProps()}
-        tabs={[filesTab, fileTab]}
-        activeTabID={filesTab.id}
+        tabs={[fileTab]}
+        activeTabID={fileTab.id}
         activeFileTabID={fileTab.id}
         workspaceContext={context}
       />,
@@ -266,8 +265,9 @@ describe("WorkspaceRightPanel", () => {
 
     const panel = container?.querySelector<HTMLElement>(".workspace-right-panel.detail.files");
     expect(panel).toBeTruthy();
-    expect(panel?.querySelector(".workspace-tool-tab.active")?.textContent).toContain("文件");
-    expect(panel?.querySelector(".workspace-files-content-header")?.textContent).toContain("App.tsx");
+    expect(panel?.querySelector(".workspace-tool-tab.active")?.textContent).toContain("App.tsx");
+    expect(panel?.querySelector(".workspace-tool-tab-main")?.getAttribute("title")).toBe("src/App.tsx");
+    expect(panel?.querySelector(".workspace-files-content-header")).toBeNull();
     expect(panel?.querySelector(".workspace-file-resource.active .workspace-file-preview")).toBeTruthy();
     const content = panel?.querySelector(".workspace-files-content");
     const tree = panel?.querySelector(".workspace-files-tree");
@@ -284,14 +284,13 @@ describe("WorkspaceRightPanel", () => {
     };
     const fileA = workspaceFileViewTab({ context, path: "src/a.ts" });
     const fileB = workspaceFileViewTab({ context, path: "src/b.ts" });
-    const filesTab = workspaceToolViewTab("files");
-    const tabs: WorkspaceViewTab[] = [filesTab, fileA, fileB];
+    const tabs: WorkspaceViewTab[] = [fileA, fileB];
 
     mount(
       <WorkspaceRightPanel
         {...baseProps()}
         tabs={tabs}
-        activeTabID={filesTab.id}
+        activeTabID={fileA.id}
         activeFileTabID={fileA.id}
         workspaceContext={context}
       />,
@@ -307,7 +306,7 @@ describe("WorkspaceRightPanel", () => {
         <WorkspaceRightPanel
           {...baseProps()}
           tabs={tabs}
-          activeTabID={filesTab.id}
+          activeTabID={fileB.id}
           activeFileTabID={fileB.id}
           workspaceContext={context}
         />,
@@ -327,7 +326,7 @@ describe("WorkspaceRightPanel", () => {
         <WorkspaceRightPanel
           {...baseProps()}
           tabs={tabs}
-          activeTabID={filesTab.id}
+          activeTabID={fileA.id}
           activeFileTabID={fileA.id}
           workspaceContext={context}
         />,
@@ -355,13 +354,11 @@ describe("WorkspaceRightPanel", () => {
       },
       path: "src/App.tsx",
     });
-    const filesTab = workspaceToolViewTab("files");
-
     mount(
       <WorkspaceRightPanel
         {...baseProps()}
-        tabs={[filesTab, primary, worktree]}
-        activeTabID={filesTab.id}
+        tabs={[primary, worktree]}
+        activeTabID={primary.id}
         activeFileTabID={primary.id}
         workspaceContext={primary.context}
       />,
@@ -377,8 +374,8 @@ describe("WorkspaceRightPanel", () => {
       root?.render(
         <WorkspaceRightPanel
           {...baseProps()}
-          tabs={[filesTab, primary, worktree]}
-          activeTabID={filesTab.id}
+          tabs={[primary, worktree]}
+          activeTabID={worktree.id}
           activeFileTabID={worktree.id}
           workspaceContext={worktree.context}
         />,
@@ -391,11 +388,10 @@ describe("WorkspaceRightPanel", () => {
     expect(resourceIDs).toEqual([worktree.id]);
   });
 
-  it("shows a dirty marker on Files without treating tool close as discarding the retained resource", async () => {
+  it("marks the filename tab dirty and confirms before discarding it", async () => {
     const onCloseTab = vi.fn();
     const onDirtyFileTabsChange = vi.fn();
-    const confirmDiscard = vi.spyOn(window, "confirm");
-    const filesTab = workspaceToolViewTab("files");
+    const confirmDiscard = vi.spyOn(window, "confirm").mockReturnValue(false);
     const fileTab = workspaceFileViewTab({
       context: {
         kind: "project",
@@ -408,8 +404,8 @@ describe("WorkspaceRightPanel", () => {
     mount(
       <WorkspaceRightPanel
         {...baseProps()}
-        tabs={[filesTab, fileTab]}
-        activeTabID={filesTab.id}
+        tabs={[fileTab]}
+        activeTabID={fileTab.id}
         activeFileTabID={fileTab.id}
         workspaceContext={fileTab.context}
         onCloseTab={onCloseTab}
@@ -421,14 +417,20 @@ describe("WorkspaceRightPanel", () => {
       fileResource(fileTab.id)?.querySelector<HTMLButtonElement>(".mock-editor-edit")?.click();
     });
     expect(onDirtyFileTabsChange).toHaveBeenLastCalledWith(true);
-    expect(container?.querySelector(".workspace-tool-tab.active.dirty")?.textContent).toContain("文件");
+    expect(container?.querySelector(".workspace-tool-tab.active.dirty")?.textContent).toContain("dirty.ts");
     expect(container?.querySelector(".workspace-tab-dirty-indicator")).not.toBeNull();
     act(() => {
       container?.querySelector<HTMLButtonElement>(".workspace-tool-tab-close")?.click();
     });
 
-    expect(confirmDiscard).not.toHaveBeenCalled();
-    expect(onCloseTab).toHaveBeenCalledWith(filesTab.id);
+    expect(confirmDiscard).toHaveBeenCalledTimes(1);
+    expect(onCloseTab).not.toHaveBeenCalled();
+
+    confirmDiscard.mockReturnValue(true);
+    act(() => {
+      container?.querySelector<HTMLButtonElement>(".workspace-tool-tab-close")?.click();
+    });
+    expect(onCloseTab).toHaveBeenCalledWith(fileTab.id);
   });
 
   it("renders a diff tab as a unified, closable right panel tab (folded into the tab strip)", () => {

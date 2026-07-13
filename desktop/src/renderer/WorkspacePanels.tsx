@@ -107,10 +107,7 @@ export function WorkspaceRightPanel({
 }): JSX.Element {
   const activeTab = activeTabID ? tabs.find((tab) => tab.id === activeTabID) : undefined;
   const fileTabs = tabs.filter((tab): tab is WorkspaceFileViewTab => tab.kind === "file");
-  const visibleTabs = tabs.filter((tab) => tab.kind !== "file");
-  const activeFileTab = activeFileTabID
-    ? fileTabs.find((tab) => tab.id === activeFileTabID)
-    : undefined;
+  const visibleTabs = tabs;
   const showingPicker = !activeTab;
   const [dirtyFileTabIDs, setDirtyFileTabIDs] = useState<Set<string>>(() => new Set());
   const [draggingTabID, setDraggingTabID] = useState<string | undefined>(undefined);
@@ -188,7 +185,7 @@ export function WorkspaceRightPanel({
 
   return (
     <aside
-      className={`workspace-right-panel${activeTab ? " detail" : " tools"}${activeTab?.kind === "review" ? " review" : ""}${activeTab?.kind === "diff" ? " diff" : ""}${activeTab?.kind === "files" ? " files" : ""}`}
+      className={`workspace-right-panel${activeTab ? " detail" : " tools"}${activeTab?.kind === "review" ? " review" : ""}${activeTab?.kind === "diff" ? " diff" : ""}${activeTab?.kind === "files" || activeTab?.kind === "file" ? " files" : ""}`}
       aria-hidden={!open}
       inert={!open}
     >
@@ -233,7 +230,7 @@ export function WorkspaceRightPanel({
                     key={tab.id}
                     tab={tab}
                     active={active}
-                    dirty={tab.kind === "files" && dirtyFileTabIDs.size > 0}
+                    dirty={tab.kind === "file" && dirtyFileTabIDs.has(tab.id)}
                     open={open}
                     reorderable={visibleTabs.length > 1}
                     onSelect={() => onSelectTab(tab.id)}
@@ -302,22 +299,21 @@ export function WorkspaceRightPanel({
       {present || fileTabs.length > 0 ? (
         <>
           <div className={`workspace-panel-body${activeTab ? "" : " picker"}`}>
-            <div className="workspace-files-split" hidden={activeTab?.kind !== "files"}>
+            <div
+              className="workspace-files-split"
+              hidden={activeTab?.kind !== "files" && activeTab?.kind !== "file"}
+            >
               <section className="workspace-files-content" aria-label="文件内容">
-                <div className="workspace-files-content-header">
-                  <strong>{activeFileTab?.title ?? "文件内容"}</strong>
-                  {activeFileTab ? <span title={activeFileTab.path}>{activeFileTab.path}</span> : null}
-                </div>
                 <div className="workspace-files-content-body">
                   {fileTabs.map((tab) => (
                     <WorkspaceFileResource
-                      active={open && activeTab?.kind === "files" && tab.id === activeFileTabID}
+                      active={open && activeTab?.kind === "file" && tab.id === activeFileTabID}
                       key={tab.id}
                       onDirtyChange={updateFileDirtyState}
                       tab={tab}
                     />
                   ))}
-                  {!activeFileTab ? (
+                  {activeTab?.kind === "files" ? (
                     <WorkspacePanelEmpty
                       title="选择文件"
                       description="从右侧文件树中选择要查看的文件。"
@@ -329,7 +325,7 @@ export function WorkspaceRightPanel({
               <section className="workspace-files-tree" aria-label="文件树">
                 <WorkspaceFileTree
                   activeContext={workspaceContext}
-                  open={open && activeTab?.kind === "files"}
+                  open={open && (activeTab?.kind === "files" || activeTab?.kind === "file")}
                   selectedFilePath={selectedFilePath}
                   onOpenFile={onOpenFile}
                 />
@@ -342,7 +338,7 @@ export function WorkspaceRightPanel({
                 selection={activeTab.selection}
                 onClose={() => onCloseTab(activeTab.id)}
               />
-            ) : activeTab.kind === "files" ? null : activeTab.kind === "review" ? (
+            ) : activeTab.kind === "files" || activeTab.kind === "file" ? null : activeTab.kind === "review" ? (
               <WorkspaceReviewPanel gitStatus={gitStatus} />
             ) : activeTab.kind === "terminal" ? (
               <WorkspaceTerminalPanel activeContext={workspaceContext} />

@@ -135,7 +135,7 @@ describe("workspaceFileBasename", () => {
 });
 
 describe("openViewTab", () => {
-  it("dedupes the same file resource and keeps it inside the focused Files tool", () => {
+  it("dedupes and focuses a file tab by filename resource", () => {
     const fileTab = workspaceFileViewTab({
       context: projectContext,
       path: "README.md",
@@ -147,19 +147,19 @@ describe("openViewTab", () => {
       workspaceFileViewTab({ context: projectContext, path: "README.md" }),
     );
 
-    expect(state.tabs.map((tab) => tab.id)).toEqual(["files", fileTab.id, "terminal"]);
-    expect(state.activeTabID).toBe("files");
+    expect(state.tabs.map((tab) => tab.id)).toEqual([fileTab.id, "terminal"]);
+    expect(state.activeTabID).toBe(fileTab.id);
     expect(state.activeFileTabID).toBe(fileTab.id);
   });
 
-  it("keeps opened file resources while switching the file shown inside Files", () => {
+  it("keeps several file tabs open and focuses the selected file", () => {
     const first = workspaceFileViewTab({ context: projectContext, path: "src/a.ts" });
     const second = workspaceFileViewTab({ context: projectContext, path: "src/b.ts" });
     let state = openViewTab(initialWorkspaceViewTabsState, first);
     state = openViewTab(state, second);
 
-    expect(state.tabs.map((tab) => tab.id)).toEqual(["files", first.id, second.id]);
-    expect(state.activeTabID).toBe("files");
+    expect(state.tabs.map((tab) => tab.id)).toEqual([first.id, second.id]);
+    expect(state.activeTabID).toBe(second.id);
     expect(state.activeFileTabID).toBe(second.id);
   });
 
@@ -221,6 +221,19 @@ describe("openViewTab", () => {
 });
 
 describe("closeViewTab", () => {
+  it("restores the Files browser after closing the final file tab", () => {
+    const file = workspaceFileViewTab({ context: projectContext, path: "src/App.tsx" });
+    let state = openViewTab(initialWorkspaceViewTabsState, workspaceToolViewTab("files"));
+    state = openViewTab(state, file);
+
+    expect(state.tabs.map((tab) => tab.id)).toEqual([file.id]);
+    state = closeViewTab(state, file.id);
+
+    expect(state.tabs.map((tab) => tab.id)).toEqual(["files"]);
+    expect(state.activeTabID).toBe("files");
+    expect(state.activeFileTabID).toBeUndefined();
+  });
+
   it("closing the active tab restores the previously active tab", () => {
     let state = openViewTab(initialWorkspaceViewTabsState, workspaceToolViewTab("files"));
     state = openViewTab(

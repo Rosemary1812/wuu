@@ -245,10 +245,8 @@ describe("workspace file tabs", () => {
     expect(container.querySelector(".rich-file-link")).not.toBeNull();
     expect(
       container.querySelector(".workspace-right-panel .workspace-tool-tab.active")?.textContent,
-    ).toContain("文件");
-    expect(
-      container.querySelector(".workspace-right-panel .workspace-files-content-header")?.textContent,
     ).toContain("README.md");
+    expect(container.querySelector(".workspace-right-panel .workspace-files-content-header")).toBeNull();
     expect(container.querySelector(".workspace-right-panel .workspace-files-tree")).not.toBeNull();
     const rightFilePreview = container.querySelector(
       ".workspace-right-panel .workspace-file-resource.active .workspace-file-preview",

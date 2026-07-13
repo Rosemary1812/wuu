@@ -176,6 +176,8 @@ describe("workspace file preview layout", () => {
     expect(split).toMatch(/display:\s*grid;/);
     expect(split).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) minmax\(180px, 34%\);/);
     expect(workspaceCss).toMatch(/\.workspace-files-tree\s*\{[\s\S]*?border-left:/);
+    expect(workspaceCss).not.toContain(".workspace-files-content-header");
+    expect(cssRuleBody(".workspace-files-content-body")).toMatch(/height:\s*100%;/);
   });
 
   it("adds a restrained syntax palette for highlighted code tokens", () => {
