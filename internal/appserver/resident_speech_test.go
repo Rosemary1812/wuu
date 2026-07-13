@@ -293,20 +293,18 @@ func TestResidentPostMessageLimitsPerThreadPerTurn(t *testing.T) {
 	}
 
 	kit := residentToolkitForTest(t, srv, dmID)
-	for i := 1; i <= 2; i++ {
-		if _, err := kit.Execute(context.Background(), providers.ToolCall{
-			Name:      "post_message",
-			Arguments: fmt.Sprintf(`{"kind":"update","text":"update %d","thread_id":%q}`, i, groupID),
-		}); err != nil {
-			t.Fatalf("post_message %d: %v", i, err)
-		}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "post_message",
+		Arguments: fmt.Sprintf(`{"kind":"brief","text":"one useful update","thread_id":%q}`, groupID),
+	}); err != nil {
+		t.Fatalf("first post_message: %v", err)
 	}
 	_, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "post_message",
-		Arguments: fmt.Sprintf(`{"kind":"update","text":"update 3","thread_id":%q}`, groupID),
+		Arguments: fmt.Sprintf(`{"kind":"brief","text":"a redundant follow-up","thread_id":%q}`, groupID),
 	})
-	if err == nil || !strings.Contains(err.Error(), "already posted 2 messages") {
-		t.Fatalf("third post_message should hit per-thread turn limit, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "already posted to thread") {
+		t.Fatalf("second post_message should hit per-thread turn limit, got %v", err)
 	}
 }
 

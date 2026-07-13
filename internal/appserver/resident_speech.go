@@ -439,7 +439,7 @@ func (r residentParticipantSpeech) reservePost(targetThreadID string) error {
 	if r.limiter == nil {
 		return nil
 	}
-	const maxPostsPerThread = 2
+	const maxPostsPerThread = 1
 	targetThreadID = strings.TrimSpace(targetThreadID)
 	if targetThreadID == "" {
 		return errors.New("post_message: thread_id is required")
@@ -450,7 +450,7 @@ func (r residentParticipantSpeech) reservePost(targetThreadID string) error {
 		r.limiter.postsByThread = make(map[string]int)
 	}
 	if r.limiter.postsByThread[targetThreadID] >= maxPostsPerThread {
-		return fmt.Errorf("post_message: participant %q already posted %d messages to thread %q this turn", strings.TrimSpace(r.participantID), maxPostsPerThread, targetThreadID)
+		return fmt.Errorf("post_message: participant %q already posted to thread %q this turn; continue with non-message coordination tools or wait for the next turn", strings.TrimSpace(r.participantID), targetThreadID)
 	}
 	r.limiter.postsByThread[targetThreadID]++
 	return nil
