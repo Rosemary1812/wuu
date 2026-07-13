@@ -14,6 +14,9 @@ func TestResolveStreamTransportConfig_Defaults(t *testing.T) {
 	if cfg.ConnectTimeout != 15*time.Second {
 		t.Fatalf("expected 15s connect timeout, got %s", cfg.ConnectTimeout)
 	}
+	if cfg.HeaderTimeout != 120*time.Second {
+		t.Fatalf("expected 120s header timeout, got %s", cfg.HeaderTimeout)
+	}
 	if cfg.IdleTimeout != 300*time.Second {
 		t.Fatalf("expected 300s idle timeout, got %s", cfg.IdleTimeout)
 	}
@@ -73,13 +76,37 @@ func TestBuildStreamingHTTPClient_SetsConnectStageDeadlines(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *http.Transport, got %T", streamClient.Transport)
 	}
-	if transport.ResponseHeaderTimeout != cfg.ConnectTimeout {
-		t.Fatalf("expected response header timeout %s, got %s", cfg.ConnectTimeout, transport.ResponseHeaderTimeout)
+	// Header wait is decoupled from the connect stage: unset HeaderTimeout
+	// falls back to the loose default instead of inheriting ConnectTimeout,
+	// which guillotined large-context requests whose prefill pushed first
+	// headers past the dial deadline.
+	if transport.ResponseHeaderTimeout != defaultStreamHeaderTimeout {
+		t.Fatalf("expected response header timeout %s, got %s", defaultStreamHeaderTimeout, transport.ResponseHeaderTimeout)
 	}
 	if transport.TLSHandshakeTimeout != cfg.ConnectTimeout {
 		t.Fatalf("expected TLS handshake timeout %s, got %s", cfg.ConnectTimeout, transport.TLSHandshakeTimeout)
 	}
 	if transport.DialContext == nil {
 		t.Fatal("expected DialContext to be configured")
+	}
+}
+
+func TestBuildStreamingHTTPClient_SeparatesHeaderDeadline(t *testing.T) {
+	base := &http.Client{Transport: http.DefaultTransport}
+	cfg := StreamTransportConfig{
+		ConnectTimeout: 1 * time.Second,
+		HeaderTimeout:  90 * time.Second,
+	}
+
+	streamClient := BuildStreamingHTTPClient(base, cfg)
+	transport, ok := streamClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", streamClient.Transport)
+	}
+	if transport.ResponseHeaderTimeout != 90*time.Second {
+		t.Fatalf("expected 90s response header timeout, got %s", transport.ResponseHeaderTimeout)
+	}
+	if transport.TLSHandshakeTimeout != 1*time.Second {
+		t.Fatalf("expected 1s TLS handshake timeout, got %s", transport.TLSHandshakeTimeout)
 	}
 }

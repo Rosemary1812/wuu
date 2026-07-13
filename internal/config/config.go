@@ -191,9 +191,14 @@ type ProviderConfig struct {
 	// Codex CLI auth store (CODEX_HOME/auth.json or ~/.codex/auth.json) as a
 	// read-only fallback when wuu does not have its own OAuth session.
 	ReuseCodexCredentials bool `json:"reuse_codex_credentials,omitempty"`
-	// StreamConnectTimeoutMS bounds dial/TLS/response-header wait for one
-	// streaming connection attempt. It does not cap the whole turn.
+	// StreamConnectTimeoutMS bounds dial and TLS handshake for one streaming
+	// connection attempt. It does not cap the whole turn.
 	StreamConnectTimeoutMS int `json:"stream_connect_timeout_ms,omitempty"`
+	// StreamHeaderTimeoutMS bounds the wait from request sent to first
+	// response headers, which includes server-side queueing and prompt
+	// prefill. Large-context requests need a far looser deadline here than
+	// the connect stage.
+	StreamHeaderTimeoutMS int `json:"stream_header_timeout_ms,omitempty"`
 	// StreamIdleTimeoutMS bounds silence after the streaming response has
 	// started. It does not affect the initial connect stage.
 	StreamIdleTimeoutMS int `json:"stream_idle_timeout_ms,omitempty"`
@@ -703,6 +708,9 @@ func (c Config) Validate() error {
 		}
 		if provider.StreamConnectTimeoutMS < 0 {
 			return fmt.Errorf("providers.%s.stream_connect_timeout_ms cannot be negative", name)
+		}
+		if provider.StreamHeaderTimeoutMS < 0 {
+			return fmt.Errorf("providers.%s.stream_header_timeout_ms cannot be negative", name)
 		}
 		if provider.StreamIdleTimeoutMS < 0 {
 			return fmt.Errorf("providers.%s.stream_idle_timeout_ms cannot be negative", name)

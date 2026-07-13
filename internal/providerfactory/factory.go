@@ -261,6 +261,9 @@ func providerStreamTransportConfig(provider config.ProviderConfig) *providers.St
 	if provider.StreamConnectTimeoutMS > 0 {
 		cfg.ConnectTimeout = time.Duration(provider.StreamConnectTimeoutMS) * time.Millisecond
 	}
+	if provider.StreamHeaderTimeoutMS > 0 {
+		cfg.HeaderTimeout = time.Duration(provider.StreamHeaderTimeoutMS) * time.Millisecond
+	}
 	if provider.StreamIdleTimeoutMS > 0 {
 		cfg.IdleTimeout = time.Duration(provider.StreamIdleTimeoutMS) * time.Millisecond
 	}
