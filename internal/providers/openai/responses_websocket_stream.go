@@ -170,20 +170,49 @@ func (c *Client) responsesStreamChatWebSocketAttempt(ctx context.Context, payloa
 }
 
 func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Context, session, fallbackSession *responsesWebSocketSession, wsURL string, payload responsesRequest, transport providers.StreamTransportMode, cacheConnection bool, lease *providers.ProviderLease) (<-chan providers.StreamEvent, error) {
-	conn, generation, reused, err := c.responsesWebSocketConnectionLocked(ctx, session, wsURL, payload.ExtraHeaders)
-	if err != nil {
-		if cacheConnection {
-			c.responsesWebSocketActivateFallbackLocked(session, "websocket_setup_failed")
+	// Reserve the session before dropping the lock for network IO. busy=true
+	// diverts concurrent same-session requests to transient connections and
+	// keeps idle expiry away; holding session.mu across a dial or a write
+	// would instead block every one of those waiters (each already holding a
+	// coordinator lease) for as long as the network stalls.
+	session.busy = true
+	reused := session.conn != nil && session.wsURL == wsURL
+	var conn *websocket.Conn
+	var generation uint64
+	if reused {
+		conn = session.conn
+		generation = session.generation
+	} else if session.conn != nil {
+		c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusNormalClosure, "reconnect")
+	}
+	session.mu.Unlock()
+
+	if !reused {
+		newConn, dialErr := c.responsesWebSocketDial(ctx, wsURL, payload.ExtraHeaders)
+		session.mu.Lock()
+		if dialErr != nil {
+			session.busy = false
+			if cacheConnection {
+				c.responsesWebSocketActivateFallbackLocked(session, "websocket_setup_failed")
+			}
+			session.mu.Unlock()
+			if !cacheConnection {
+				c.responsesWebSocketMarkFallback(fallbackSession, "websocket_setup_failed")
+			}
+			fallbackErr := newResponsesWebSocketFallbackError("websocket_setup_failed", dialErr)
+			// This transport attempt is being replaced by SSE. Do not open the
+			// account-level circuit for a WebSocket-only compatibility failure.
+			lease.Release()
+			return nil, fallbackErr
 		}
-		session.mu.Unlock()
-		if !cacheConnection {
-			c.responsesWebSocketMarkFallback(fallbackSession, "websocket_setup_failed")
-		}
-		fallbackErr := newResponsesWebSocketFallbackError("websocket_setup_failed", err)
-		// This transport attempt is being replaced by SSE. Do not open the
-		// account-level circuit for a WebSocket-only compatibility failure.
-		lease.Release()
-		return nil, fallbackErr
+		session.conn = newConn
+		session.wsURL = wsURL
+		session.generation++
+		conn = newConn
+		generation = session.generation
+		go c.responsesWebSocketReadPump(session, newConn, generation)
+	} else {
+		session.mu.Lock()
 	}
 
 	fullPayload := payload
@@ -196,16 +225,18 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 		session.id, strings.TrimSpace(requestPayload.PreviousResponseID) != "", len(requestPayload.Input), len(fullPayload.Input))
 	body, err := marshalResponsesWebSocketCreate(requestPayload)
 	if err != nil {
+		session.busy = false
 		session.mu.Unlock()
 		lease.FailError(err)
 		return nil, err
 	}
 	readCh := make(chan responsesWebSocketReadEvent, 64)
-	session.busy = true
 	session.active = readCh
 	session.activeDone = make(chan struct{})
 	session.activeCtxDone = ctx.Done()
 	session.activeErr = nil
+	session.mu.Unlock()
+
 	mode := "stream"
 	if strings.TrimSpace(requestPayload.SubmissionReason) != "" {
 		mode = "fallback"
@@ -218,12 +249,17 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 		Reason:       requestPayload.SubmissionReason,
 		RequestBytes: len(body),
 	}); err != nil {
+		session.mu.Lock()
 		c.responsesWebSocketReleaseLocked(session, readCh)
 		session.mu.Unlock()
 		lease.Release()
 		return nil, fmt.Errorf("journal websocket submission: %w", err)
 	}
+	// The write happens unlocked: the pump's generation guard and the active
+	// channel installed above already route any early frames correctly, and a
+	// zero-window peer must not wedge the whole session.
 	if err := conn.Write(ctx, websocket.MessageText, body); err != nil {
+		session.mu.Lock()
 		c.responsesWebSocketReleaseLocked(session, readCh)
 		if cacheConnection {
 			c.responsesWebSocketActivateFallbackLocked(session, "websocket_write_failed")
@@ -241,20 +277,13 @@ func (c *Client) responsesStreamChatWebSocketWithSessionLocked(ctx context.Conte
 	state := responsesWebSocketProviderState(fullPayload, requestPayload, transport, responsesWebSocketRequestMeta{
 		connectionReused: reused,
 	})
-	session.mu.Unlock()
 
 	ch := make(chan providers.StreamEvent, 64)
 	go c.readResponsesWebSocket(ctx, session, fallbackSession, generation, readCh, fullPayload, requestPayload, transport, useCachedContext, cacheConnection, lease, state, ch)
 	return ch, nil
 }
 
-func (c *Client) responsesWebSocketConnectionLocked(ctx context.Context, session *responsesWebSocketSession, wsURL string, extraHeaders map[string]string) (*websocket.Conn, uint64, bool, error) {
-	if session.conn != nil && session.wsURL == wsURL {
-		return session.conn, session.generation, true, nil
-	}
-	if session.conn != nil {
-		c.responsesWebSocketInvalidateConnectionLocked(session, websocket.StatusNormalClosure, "reconnect")
-	}
+func (c *Client) responsesWebSocketDial(ctx context.Context, wsURL string, extraHeaders map[string]string) (*websocket.Conn, error) {
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+c.apiKey)
 	for k, v := range c.headers {
@@ -264,19 +293,10 @@ func (c *Client) responsesWebSocketConnectionLocked(ctx context.Context, session
 		headers.Set(k, v)
 	}
 	headers.Set("OpenAI-Beta", CodexWebSocketBetaTag)
-	conn, err := (CodexWebSocketDialer{
+	return (CodexWebSocketDialer{
 		ConnectTimeout: c.streamConfig.ConnectTimeout,
 		HTTPClient:     newStreamingHTTPClient(c.httpClient, c.streamConfig),
 	}).dialCodexWebSocket(ctx, wsURL, headers)
-	if err != nil {
-		return nil, 0, false, err
-	}
-	session.conn = conn
-	session.wsURL = wsURL
-	session.generation++
-	generation := session.generation
-	go c.responsesWebSocketReadPump(session, conn, generation)
-	return conn, generation, false, nil
 }
 
 func (c *Client) responsesWebSocketReadPump(session *responsesWebSocketSession, conn *websocket.Conn, generation uint64) {
