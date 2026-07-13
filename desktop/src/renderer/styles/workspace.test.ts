@@ -156,17 +156,46 @@ describe("workspace file preview layout", () => {
     expect(cssRuleBody(".workspace-file-preview")).toMatch(/height:\s*100%;/);
     expect(cssRuleBody(".workspace-file-preview")).toMatch(/min-height:\s*0;/);
     expect(cssRuleBody(".workspace-file-editor-scroll")).toMatch(/overflow:\s*hidden;/);
+    expect(cssRuleBody(".workspace-file-editor-scroll.markdown-reading")).not.toMatch(
+      /scrollbar-gutter:/,
+    );
     expect(cssRuleBody(".workspace-monaco-editor")).toMatch(/height:\s*100%;/);
+  });
+
+  it("makes Monaco use the renderer-wide scrollbar palette", () => {
+    const slider = cssRuleBody(
+      ".workspace-monaco-editor .monaco-scrollable-element > .scrollbar > .slider",
+    );
+    const visibleSlider = cssRuleBody(
+      ".workspace-monaco-editor:hover .monaco-scrollable-element > .scrollbar > .slider",
+    );
+    const hoveredSlider = cssRuleBody(
+      ".workspace-monaco-editor .monaco-scrollable-element > .scrollbar > .slider:hover",
+    );
+    const activeSlider = cssRuleBody(
+      ".workspace-monaco-editor .monaco-scrollable-element > .scrollbar > .slider.active",
+    );
+
+    expect(slider).toMatch(/background:\s*transparent;/);
+    expect(slider).toMatch(/border-radius:\s*var\(--scrollbar-radius\);/);
+    expect(visibleSlider).toMatch(/background:\s*var\(--scrollbar-thumb\);/);
+    expect(hoveredSlider).toMatch(/background:\s*var\(--scrollbar-thumb-hover\);/);
+    expect(activeSlider).toMatch(/background:\s*var\(--scrollbar-thumb-active\);/);
   });
 
   it("lays out file content first and the file tree as the right column", () => {
     const split = cssRuleBody(".workspace-files-split");
     expect(split).toMatch(/display:\s*grid;/);
     expect(split).toMatch(
-      /grid-template-columns:\s*minmax\(0, 1fr\) 8px minmax\(180px, var\(--workspace-file-tree-width, 320px\)\);/,
+      /grid-template-columns:\s*minmax\(0, 1fr\) minmax\(180px, var\(--workspace-file-tree-width, 320px\)\);/,
     );
-    expect(cssRuleBody(".workspace-files-resizer")).toMatch(/cursor:\s*col-resize;/);
-    expect(cssRuleBody(".workspace-files-resizer::before")).toMatch(/width:\s*1px;/);
+    const resizer = cssRuleBody(".workspace-files-resizer");
+    expect(resizer).toMatch(/grid-column:\s*2;/);
+    expect(resizer).toMatch(/justify-self:\s*start;/);
+    expect(resizer).toMatch(/cursor:\s*col-resize;/);
+    const resizerRule = cssRuleBody(".workspace-files-resizer::before");
+    expect(resizerRule).toMatch(/inset:\s*0 auto 0 0;/);
+    expect(resizerRule).toMatch(/width:\s*1px;/);
     expect(workspaceCss).not.toContain(".workspace-files-content-header");
     expect(cssRuleBody(".workspace-files-content-body")).toMatch(/height:\s*100%;/);
   });

@@ -640,7 +640,7 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: minmax(0, 1fr) 8px minmax(180px, var(--workspace-file-tree-width, 320px));
+  grid-template-columns: minmax(0, 1fr) minmax(180px, var(--workspace-file-tree-width, 320px));
   overflow: hidden;
 }
 
@@ -657,6 +657,8 @@
 
 .workspace-files-content {
   position: relative;
+  grid-column: 1;
+  grid-row: 1;
 }
 
 .workspace-files-content-body {
@@ -675,6 +677,9 @@
 .workspace-files-resizer {
   position: relative;
   z-index: 2;
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: start;
   width: 8px;
   min-height: 0;
   cursor: col-resize;
@@ -684,11 +689,10 @@
 
 .workspace-files-resizer::before {
   position: absolute;
-  inset: 0 auto 0 50%;
+  inset: 0 auto 0 0;
   width: 1px;
   background: var(--surface-2);
   content: "";
-  transform: translateX(-50%);
   transition:
     background 120ms ease,
     box-shadow 120ms ease;
@@ -708,6 +712,8 @@ html.resizing-workspace-file-split * {
 }
 
 .workspace-files-tree {
+  grid-column: 2;
+  grid-row: 1;
   padding: 10px 0 10px 10px;
 }
 
@@ -2042,6 +2048,30 @@ html.resizing-workspace-file-split * {
 
 .workspace-markdown-reading div[align="right"] {
   text-align: right;
+}
+
+/* Monaco draws its own scrollbars instead of using the browser's native
+   pseudo-elements, so mirror the renderer-wide scrollbar tokens here. */
+.workspace-monaco-editor .monaco-scrollable-element > .scrollbar {
+  background: var(--scrollbar-track-bg);
+}
+
+.workspace-monaco-editor .monaco-scrollable-element > .scrollbar > .slider {
+  border-radius: var(--scrollbar-radius);
+  background: transparent;
+  transition: background-color 160ms ease;
+}
+
+.workspace-monaco-editor:hover .monaco-scrollable-element > .scrollbar > .slider {
+  background: var(--scrollbar-thumb);
+}
+
+.workspace-monaco-editor .monaco-scrollable-element > .scrollbar > .slider:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+.workspace-monaco-editor .monaco-scrollable-element > .scrollbar > .slider.active {
+  background: var(--scrollbar-thumb-active);
 }
 
 .workspace-monaco-editor {

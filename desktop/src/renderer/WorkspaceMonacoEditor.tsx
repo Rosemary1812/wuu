@@ -75,6 +75,7 @@ export function WorkspaceMonacoEditor({
       return undefined;
     }
 
+    const scrollbarSize = workspaceScrollbarSize(host);
     const model = monaco.editor.createModel(
       text,
       language,
@@ -94,6 +95,11 @@ export function WorkspaceMonacoEditor({
       scrollBeyondLastLine: false,
       scrollbar: {
         alwaysConsumeMouseWheel: false,
+        horizontalScrollbarSize: scrollbarSize,
+        horizontalSliderSize: Math.max(4, scrollbarSize - 2),
+        useShadows: false,
+        verticalScrollbarSize: scrollbarSize,
+        verticalSliderSize: Math.max(4, scrollbarSize - 2),
       },
       tabSize: 2,
       theme: "wuu-workspace",
@@ -160,6 +166,15 @@ export function WorkspaceMonacoEditor({
       ref={hostRef}
     />
   );
+}
+
+function workspaceScrollbarSize(host: HTMLElement): number {
+  const configuredSize = Number.parseFloat(
+    window.getComputedStyle(host).getPropertyValue("--scrollbar-width"),
+  );
+  return Number.isFinite(configuredSize) && configuredSize > 0
+    ? configuredSize
+    : 10;
 }
 
 export function workspaceMonacoModelURI(resourceID: string): monaco.Uri {
