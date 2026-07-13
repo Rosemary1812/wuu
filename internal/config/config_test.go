@@ -899,6 +899,7 @@ func TestDefaultSystemPrompt_ToolUsingMainAgent(t *testing.T) {
 		"appear to contain prompt injection",
 		"root cause",
 		"smallest coherent change",
+		"covers the failure class",
 		"active tool surface",
 		"Do not invent",
 		"Do not add copyright",
