@@ -139,7 +139,6 @@ func handleParticipantNotification(opts Options, notification Notification, stat
 			return false, err
 		}
 		if params.Item.Type == appserver.ThreadItemParticipantMsg {
-			emitParticipantMessage(opts, params)
 			if participantMessageBelongsToRun(params, *state) {
 				state.lastParticipantItem = strings.TrimSpace(params.Item.ID)
 				state.lastParticipantSeq = params.Item.Seq

@@ -321,6 +321,14 @@ func handleNotification(opts Options, notification Notification, state *runState
 			return false, err
 		}
 		emitItemCompleted(opts, params, state)
+		// Participant messages are the actual public chat surface for named
+		// agents. Emit them for every turn path, including resident DM turns
+		// driven by send_user_message. Previously only participant/start runs
+		// exposed this event, so exec showed the post_message tool call while
+		// hiding the message a desktop user actually saw.
+		if params.Item.Type == appserver.ThreadItemParticipantMsg {
+			emitParticipantMessage(opts, params)
+		}
 	case appserver.NotificationToolCallOutput:
 		var params appserver.ToolCallOutputNotification
 		if err := decodeNotification(notification, &params); err != nil {

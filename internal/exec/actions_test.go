@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
+	"github.com/blueberrycongee/wuu/internal/participant"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
@@ -130,13 +131,32 @@ func TestRunActionSequenceCreatesDMThroughThreadStart(t *testing.T) {
 }
 
 func TestRunActionSequenceSendsDesktopEquivalentUserTurn(t *testing.T) {
-	controller := newFakeController(notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{
-		ThreadID: "dm-1",
-		Turn:     appserver.Turn{ID: "turn-1", Status: appserver.TurnStatusCompleted},
-		Content:  "DM reply",
-	}))
+	controller := newFakeController(
+		notification(appserver.NotificationItemCompleted, appserver.ItemCompletedNotification{
+			ThreadID: "dm-1",
+			TurnID:   "turn-1",
+			Item: appserver.ThreadItem{
+				ID:       "participant-message-1",
+				Type:     appserver.ThreadItemParticipantMsg,
+				PostKind: "result",
+				Text:     "Public DM reply",
+				Participant: &participant.Summary{
+					ID:   "prt-ada",
+					Name: "Ada",
+				},
+			},
+		}),
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{
+			ThreadID: "dm-1",
+			Turn:     appserver.Turn{ID: "turn-1", Status: appserver.TurnStatusCompleted},
+			Content:  "DM reply",
+		}),
+	)
+	var stdout bytes.Buffer
 
 	err := Run(context.Background(), Options{
+		JSON:       true,
+		Stdout:     &stdout,
 		Controller: controller,
 		Actions: []GroupAction{{
 			Action: "send_user_message",
@@ -149,6 +169,11 @@ func TestRunActionSequenceSendsDesktopEquivalentUserTurn(t *testing.T) {
 	}
 	if controller.startedTurnThread != "dm-1" || controller.startedPrompt != "please investigate" {
 		t.Fatalf("turn/start = thread %q prompt %q", controller.startedTurnThread, controller.startedPrompt)
+	}
+	events := parseJSONLines(t, stdout.String())
+	message := firstEventOfType(t, events, "participant_message")
+	if message["thread_id"] != "dm-1" || message["participant_id"] != "prt-ada" || message["text"] != "Public DM reply" {
+		t.Fatalf("unexpected public DM event: %+v", message)
 	}
 }
 
