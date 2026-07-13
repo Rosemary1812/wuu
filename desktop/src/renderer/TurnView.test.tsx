@@ -60,7 +60,6 @@ function render(turn: Turn): HTMLDivElement {
       <TurnView
         turn={turn}
         onStreamFrame={() => {}}
-        onNoticeAction={() => {}}
       />,
     );
   });
@@ -73,7 +72,6 @@ function rerender(turn: Turn): void {
       <TurnView
         turn={turn}
         onStreamFrame={() => {}}
-        onNoticeAction={() => {}}
       />,
     );
   });
@@ -183,9 +181,9 @@ describe("TurnView", () => {
 
     expect(view.textContent).toContain("partial progress");
     expect(view.querySelectorAll(".turn-notice")).toHaveLength(1);
-    // The chip title now surfaces the wrapped provider error code so a
-    // screenshot carries enough signal to triage whose problem it is.
-    expect(view.textContent?.match(/previous_response_not_found/g)).toHaveLength(1);
+    expect(view.textContent).toContain("网络异常");
+    expect(view.textContent).not.toContain("previous_response_not_found");
+    expect(view.querySelectorAll(".turn-notice button, .turn-notice a")).toHaveLength(0);
   });
 
   it("renders a single warning chip when a completed turn has commentary but no final answer", () => {

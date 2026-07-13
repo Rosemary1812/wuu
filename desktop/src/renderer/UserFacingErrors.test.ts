@@ -14,8 +14,7 @@ describe("userFacingErrorForMessage", () => {
     );
 
     expect(display.category).toBe("provider");
-    // The chip title translates the known identifier into Chinese; only
-    // codes we can't map stay English (rendered muted next to the title).
+    // Known diagnostic identifiers are translated into one user-facing label.
     expect(display.title).toBe("上下文超出窗口");
   });
 
@@ -32,13 +31,6 @@ describe("userFacingErrorForMessage", () => {
     const display = userFacingErrorForMessage("401 unauthorized", "turn");
     expect(display.category).toBe("auth");
     expect(display.title).toBe("401 未授权");
-    // The action label is Provider-specific, not the generic "查看设置".
-    const settingsAction = display.recommendedActions.find(
-      (a) => a.kind === "openSettings",
-    );
-    expect(settingsAction?.label).toBe("查看 Provider 设置");
-    expect(settingsAction?.payload).toEqual({ focus: "providers" });
-    // The detail (hover tooltip) points the user to the Provider settings.
     expect(display.detail).toContain("Provider");
   });
 
@@ -56,9 +48,6 @@ describe("userFacingErrorForMessage", () => {
 
     expect(display.category).toBe("provider");
     expect(display.title).toBe("回答未完整返回");
-    // The synthesized stream identifier survives as the muted code so a
-    // screenshot still carries the triage signal.
-    expect(display.code).toBe("stream_closed_before_response.completed");
     expect(display.detail).toContain("response.completed");
     expect(display.detail).toContain("这次回答可能不完整");
   });
@@ -77,78 +66,25 @@ describe("userFacingErrorForMessage", () => {
     expect(display.title).toBe("wuu 内部错误");
   });
 
-  describe("recommendedActions", () => {
-    it("network error offers only currently wired debug action", () => {
-      const display = userFacingErrorForMessage(
-        "connection reset by peer",
-        "turn",
-      );
-      const kinds = display.recommendedActions.map((a) => a.kind);
-      expect(kinds).toEqual(["copyDebug"]);
-    });
-
-    it("auth error offers settings because reconnect is not wired yet", () => {
-      const display = userFacingErrorForMessage("401 unauthorized", "turn");
-      const settingsAction = display.recommendedActions.find(
-        (a) => a.kind === "openSettings",
-      );
-      expect(settingsAction).toBeDefined();
-      expect(settingsAction?.variant).toBe("primary");
-      expect(settingsAction?.payload).toEqual({ focus: "providers" });
-    });
-
-    it("provider context overflow offers only currently wired debug action", () => {
-      const raw = "context_length_exceeded: too many tokens";
-      const display = userFacingErrorForMessage(
-        raw,
-        "turn",
-      );
-      const kinds = display.recommendedActions.map((a) => a.kind);
-      expect(kinds).toEqual(["copyDebug"]);
-      expect(display.recommendedActions[0]?.payload).toMatchObject({
-        category: "provider",
-        context: "turn",
-        message: raw,
-      });
-    });
-
-    it("internal error offers only currently wired debug action", () => {
-      const display = userFacingErrorForMessage("panic: nil pointer", "turn");
-      const kinds = display.recommendedActions.map((a) => a.kind);
-      expect(kinds).toEqual(["copyDebug"]);
-    });
-
-    it("cancelled error has no action until retry is wired", () => {
-      const display = userFacingErrorForMessage("context canceled", "turn");
-      expect(display.recommendedActions).toHaveLength(0);
-    });
-
-    it("every action has a non-empty label", () => {
-      // Guard against silent regressions: an action with no label
-      // would render as an empty <button> in the UI.
-      const cases = [
-        "connection refused",
-        "401 unauthorized",
-        "context_length_exceeded",
-        "tool failed",
-        "permission denied: file",
-        "panic: runtime error",
-      ];
-      for (const message of cases) {
-        const display = userFacingErrorForMessage(message, "turn");
-        for (const action of display.recommendedActions) {
-          expect(action.label.length, `action ${action.kind} missing label`).toBeGreaterThan(0);
-        }
-      }
-    });
-  });
-
   describe("structured TurnError input from the Go core", () => {
-    it("keeps an untranslatable structured `code` as the muted code next to the Chinese title", () => {
-      // The Go core extracts a specific code from the body (e.g.
-      // "insufficient_quota") and ships it as the `code` field. The
-      // front-end shows a Chinese category title and keeps the raw
-      // identifier as the muted code so triage signal survives.
+    it("models a 404 as one read-only user-facing message", () => {
+      const display = userFacingErrorForMessage(
+        {
+          message: 'HTTP 404: {"error":{"code":"internal_error","message":"resource not found"}}',
+          code: "internal_error",
+          category: "internal",
+          provider: "compatible",
+          status_code: 404,
+        },
+        "turn",
+      );
+
+      expect(display.title).toBe("404 资源不存在");
+      expect(display).not.toHaveProperty("code");
+      expect(display).not.toHaveProperty("recommendedActions");
+    });
+
+    it("keeps an untranslatable structured code out of the visible model", () => {
       const display = userFacingErrorForMessage(
         {
           message: "some raw provider body",
@@ -158,7 +94,7 @@ describe("userFacingErrorForMessage", () => {
         "turn",
       );
       expect(display.title).toBe("模型服务异常");
-      expect(display.code).toBe("insufficient_quota");
+      expect(display).not.toHaveProperty("code");
       expect(display.category).toBe("provider");
     });
 
@@ -176,113 +112,7 @@ describe("userFacingErrorForMessage", () => {
       expect(display.title).toBe("429 触发限流");
     });
 
-    it("maps the 'reauth' action reason to the openSettings / focus=providers kind", () => {
-      const display = userFacingErrorForMessage(
-        {
-          message: "401 unauthorized",
-          code: "401 unauthorized",
-          category: "auth",
-          action: {
-            reason: "reauth",
-            title: "Provider 凭据或权限不足",
-            message: "请检查 API 密钥",
-            label: "查看 Provider 设置",
-          },
-        },
-        "turn",
-      );
-      expect(display.title).toBe("401 未授权");
-      // The structured code repeats the status number already in the
-      // title, so it is dropped instead of rendered twice.
-      expect(display.code).toBeUndefined();
-      expect(display.category).toBe("auth");
-      expect(display.tone).toBe("auth");
-      expect(display.detail).toBe("请检查 API 密钥");
-      expect(display.recommendedActions).toHaveLength(1);
-      expect(display.recommendedActions[0].kind).toBe("openSettings");
-      expect(display.recommendedActions[0].payload).toEqual({
-        focus: "providers",
-      });
-    });
-
-    it("maps the 'compact' action reason to the compactContext kind", () => {
-      const display = userFacingErrorForMessage(
-        {
-          message: "input too long",
-          code: "context_length_exceeded",
-          category: "provider",
-          action: {
-            reason: "compact",
-            title: "上下文超出窗口",
-            message: "压缩后重试",
-            label: "压缩上下文",
-          },
-        },
-        "turn",
-      );
-      expect(display.recommendedActions[0].kind).toBe("compactContext");
-    });
-
-    it("maps the 'wait' and 'retry' action reasons to the retry kind", () => {
-      const wait = userFacingErrorForMessage(
-        {
-          message: "rate limit",
-          code: "rate_limit_error",
-          category: "provider",
-          action: {
-            reason: "wait",
-            title: "Provider 限流",
-            message: "稍后重试",
-            label: "稍后重试",
-          },
-        },
-        "turn",
-      );
-      const retry = userFacingErrorForMessage(
-        {
-          message: "timeout",
-          category: "network",
-          action: {
-            reason: "retry",
-            title: "重试",
-            message: "",
-            label: "重试",
-          },
-        },
-        "turn",
-      );
-      expect(wait.recommendedActions[0].kind).toBe("retry");
-      expect(retry.recommendedActions[0].kind).toBe("retry");
-    });
-
-    it("maps the 'view_debug' and 'copy_debug' action reasons to copyDebug with structured payload", () => {
-      const display = userFacingErrorForMessage(
-        {
-          message: "raw error body",
-          code: "internal_error",
-          category: "internal",
-          provider: "openai",
-          status_code: 500,
-          action: {
-            reason: "copy_debug",
-            title: "wuu 内部错误",
-            message: "调试信息",
-            label: "复制调试信息",
-          },
-        },
-        "turn",
-      );
-      expect(display.recommendedActions[0].kind).toBe("copyDebug");
-      expect(display.recommendedActions[0].payload).toMatchObject({
-        category: "internal",
-        context: "turn",
-        code: "internal_error",
-        provider: "openai",
-        status_code: 500,
-      });
-    });
-
-    it("uses the structured partial-stream code and detail from the Go core", () => {
+    it("uses structured partial-stream facts without exposing the code", () => {
       const display = userFacingErrorForMessage(
         {
           message:
@@ -290,56 +120,14 @@ describe("userFacingErrorForMessage", () => {
           code: "stream_closed_before_response.completed",
           category: "provider",
           provider: "openai-codex",
-          action: {
-            reason: "view_debug",
-            title: "部分回答未完成",
-            message:
-              "Provider WS 流在 response.completed 前断开；这次回答可能不完整。",
-            label: "复制调试信息",
-          },
         },
         "turn",
       );
 
       expect(display.title).toBe("回答未完整返回");
-      expect(display.code).toBe("stream_closed_before_response.completed");
+      expect(display).not.toHaveProperty("code");
       expect(display.category).toBe("provider");
       expect(display.detail).toContain("这次回答可能不完整");
-      expect(display.recommendedActions[0].kind).toBe("copyDebug");
-      expect(display.recommendedActions[0].payload).toMatchObject({
-        category: "provider",
-        provider: "openai-codex",
-        code: "stream_closed_before_response.completed",
-      });
-    });
-
-    it("falls back to category-driven actions when no structured action is provided", () => {
-      // Auth without an action still opens Provider settings.
-      const auth = userFacingErrorForMessage(
-        { message: "401 unauthorized", category: "auth" },
-        "turn",
-      );
-      expect(auth.recommendedActions[0].kind).toBe("openSettings");
-      expect(auth.recommendedActions[0].payload).toEqual({
-        focus: "providers",
-      });
-      // Internal without an action gets the copyDebug fallback.
-      const internal = userFacingErrorForMessage(
-        { message: "panic", category: "internal" },
-        "turn",
-      );
-      expect(internal.recommendedActions[0].kind).toBe("copyDebug");
-    });
-
-    it("drops the action list for cancelled and forwards the structured detail", () => {
-      const display = userFacingErrorForMessage(
-        {
-          message: "context canceled",
-          category: "cancelled",
-        },
-        "turn",
-      );
-      expect(display.recommendedActions).toHaveLength(0);
     });
 
     it("falls back to the string classifier when the structured input omits `category`", () => {
@@ -355,7 +143,7 @@ describe("userFacingErrorForMessage", () => {
       );
       expect(display.category).toBe("provider");
       expect(display.title).toBe("上下文超出窗口");
-      expect(display.code).toBe("context_length_exceeded");
+      expect(display).not.toHaveProperty("code");
     });
   });
 });
@@ -397,7 +185,6 @@ describe("TurnEvents", () => {
       throw new Error("expected notice event");
     }
     expect(event.notice.title).toBe("回答未完整返回");
-    expect(event.notice.code).toBe("stream_closed_before_response.completed");
     expect(event.notice.detail).toContain("这次回答可能不完整");
     expect(event.notice.detail.match(/已保留已生成内容/g)).toHaveLength(1);
   });
@@ -440,12 +227,11 @@ describe("TurnEvents", () => {
     }
     expect(event.notice.title).toBe("无最终回答");
     expect(event.notice.tone).toBe("warning");
-    expect(event.notice.recommendedActions).toEqual([]);
   });
 });
 
 describe("userFacingErrorForMissingReply", () => {
-  it("returns a warning-toned display with the soft 'no final answer' copy and no actions", () => {
+  it("returns a warning-toned display with soft no-final-answer copy", () => {
     const display = userFacingErrorForMissingReply();
     // Soft yellow warning — visually distinct from error (red) and
     // auth (brown) chips. Signals "this turn ended without a final
@@ -454,8 +240,5 @@ describe("userFacingErrorForMissingReply", () => {
     expect(display.tone).toBe("warning");
     expect(display.title).toBe("无最终回答");
     expect(display.detail).toBe("这轮只保留了过程记录，没有生成最终回答。");
-    // No action — the user cannot do anything useful here except send
-    // a follow-up message, which the composer already supports.
-    expect(display.recommendedActions).toEqual([]);
   });
 });

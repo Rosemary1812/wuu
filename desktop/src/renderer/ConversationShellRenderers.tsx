@@ -57,7 +57,6 @@ import { RunDebugPanel } from "./RunDebugPanel";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { ViewSwitchLoading } from "./LoadingViews";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
-import type { UserFacingErrorAction } from "./UserFacingErrors";
 
 type ComposerProps = ComponentProps<typeof Composer>;
 type RunDebugPanelProps = ComponentProps<typeof RunDebugPanel>;
@@ -215,7 +214,6 @@ export type ConversationSplitPaneRendererProps = {
     pane: ConversationPaneID,
   ) => void;
   onStreamFrame: () => void;
-  onNoticeAction: (action: UserFacingErrorAction) => void;
   onOpenFileDiff: (threadID: string, selection: TurnFileDiffSelection) => void;
 };
 
@@ -244,7 +242,6 @@ export function ConversationSplitPaneRenderer({
   onCancelEditMessage,
   onSubmitEditMessage,
   onStreamFrame,
-  onNoticeAction,
   onOpenFileDiff,
 }: ConversationSplitPaneRendererProps): JSX.Element {
   return (
@@ -296,7 +293,6 @@ export function ConversationSplitPaneRenderer({
         onSubmitEditMessage(thread, turnID, item, text, images, files, pane)
       }
       onStreamFrame={onStreamFrame}
-      onNoticeAction={onNoticeAction}
       onOpenFileDiff={(selection) => onOpenFileDiff(thread.id, selection)}
     />
   );

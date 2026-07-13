@@ -214,7 +214,6 @@ describe("ThreadItemView envelope routing", () => {
         item,
         streaming: false,
         onStreamFrame: () => {},
-        onNoticeAction: () => {},
       }),
     );
   }

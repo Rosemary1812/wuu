@@ -1,6 +1,44 @@
 import type { ThreadItemStatus } from "../shared/protocol";
 import type { TurnEventDisplay } from "./TurnEvents";
-import type { UserFacingErrorAction, UserFacingErrorDisplay } from "./UserFacingErrors";
+import type { UserFacingErrorDisplay, UserFacingErrorTone } from "./UserFacingErrors";
+
+export type SystemEventDisplay = {
+  label: string;
+  detail?: string;
+  tone?: UserFacingErrorTone;
+  state?: "settled" | "in_progress";
+};
+
+export function SystemEventNotice({
+  event,
+  className,
+}: {
+  event: SystemEventDisplay;
+  className?: string;
+}): JSX.Element {
+  const tone = event.tone ?? "neutral";
+  const inProgress = event.state === "in_progress";
+  const description = event.detail
+    ? `${event.label} — ${event.detail}`
+    : event.label;
+  return (
+    <aside
+      className={`turn-notice turn-event-notice ${tone}${inProgress ? " is-progress" : ""}${className ? ` ${className}` : ""}`}
+      role={tone === "error" || tone === "auth" ? "alert" : "status"}
+      aria-label={description}
+      aria-live={inProgress ? "polite" : undefined}
+      title={description}
+    >
+      <span className="turn-event-content">
+        <strong
+          className={`turn-event-title${inProgress ? " live-progress-chip" : ""}`}
+        >
+          {event.label}
+        </strong>
+      </span>
+    </aside>
+  );
+}
 
 export function SystemEventDivider({
   text,
@@ -9,88 +47,33 @@ export function SystemEventDivider({
   text: string;
   className?: string;
 }): JSX.Element {
-  return (
-    <aside
-      className={`turn-notice turn-event-notice${className ? ` ${className}` : ""}`}
-      role="status"
-      aria-label={text}
-    >
-      <span className="turn-event-content">
-        <strong className="turn-event-title">{text}</strong>
-      </span>
-    </aside>
-  );
+  return <SystemEventNotice event={{ label: text }} className={className} />;
 }
 
 export function TurnEventNotice({
   event,
-  onAction,
 }: {
   event: TurnEventDisplay;
-  onAction?: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   if (event.presentation === "context_compaction") {
     return <ContextCompactionNotice text={event.text} reason={event.reason} status={event.status} />;
   }
-  return <TurnNotice display={event.notice} onAction={onAction} />;
+  return <TurnNotice display={event.notice} />;
 }
 
 export function TurnNotice({
   display,
-  onAction,
 }: {
   display: UserFacingErrorDisplay;
-  /**
-   * Called when the user activates a recommended action. The data
-   * layer only declares what the action is; this callback decides
-   * what the action does. If omitted, the action renders as a button
-   * but does nothing — useful for first-render fallback only.
-   */
-  onAction?: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
-  const actions = display.recommendedActions;
-  // The inline notice is intentionally compact: the full explanation moves
-  // to the `title` attribute so it is available on hover without taking a
-  // second line, while recommended actions stay visible and clickable.
-  const label = display.code
-    ? `${display.title} (${display.code})`
-    : display.title;
-  const hoverText = display.detail ? `${label} — ${display.detail}` : label;
   return (
-    <aside
-      className={`turn-notice turn-event-notice ${display.tone}`}
-      role={
-        display.tone === "error" || display.tone === "auth" ? "alert" : "status"
-      }
-      aria-label={hoverText}
-      title={hoverText}
-    >
-      <span className="turn-event-content">
-        <strong className="turn-event-title">{display.title}</strong>
-        {display.code ? (
-          <span className="turn-event-code">{display.code}</span>
-        ) : null}
-        <span className="turn-event-detail">{display.detail}</span>
-        {actions.length > 0 ? (
-          <span className="turn-notice-actions">
-            {actions.map((action) => (
-              <button
-                key={action.kind}
-                type="button"
-                className={
-                  action.variant === "secondary"
-                    ? "turn-notice-action secondary"
-                    : "turn-notice-action"
-                }
-                onClick={onAction ? () => onAction(action) : undefined}
-              >
-                {action.label}
-              </button>
-            ))}
-          </span>
-        ) : null}
-      </span>
-    </aside>
+    <SystemEventNotice
+      event={{
+        label: display.title,
+        detail: display.detail,
+        tone: display.tone,
+      }}
+    />
   );
 }
 
@@ -100,15 +83,10 @@ export function StreamReconnectNotice({
   text: string;
 }): JSX.Element {
   return (
-    <aside
-      className="turn-notice turn-event-notice context-compaction-notice is-progress"
-      role="status"
-      aria-live="polite"
-    >
-      <span className="turn-event-content">
-        <strong className="turn-event-title live-progress-chip">{text}</strong>
-      </span>
-    </aside>
+    <SystemEventNotice
+      event={{ label: text, state: "in_progress" }}
+      className="context-compaction-notice"
+    />
   );
 }
 
@@ -129,37 +107,23 @@ export function ContextCompactionNotice({
   if (status === "in_progress") {
     const title = contextCompactionProgressTitle(text, reason);
     return (
-      <aside
-        className="turn-notice turn-event-notice context-compaction-notice is-progress"
-        role="status"
-        aria-live="polite"
-      >
-        <span className="turn-event-content">
-          <strong className="turn-event-title live-progress-chip">
-            {title}
-          </strong>
-        </span>
-      </aside>
+      <SystemEventNotice
+        event={{ label: title, state: "in_progress" }}
+        className="context-compaction-notice"
+      />
     );
   }
   const detail = contextCompactionDetail(text, reason, status);
   // The inline notice is a compact label. The full breakdown is moved to
   // the `title` attribute so it is available on hover without taking a
   // second visual line.
+  const label = contextCompactionTitle(text, reason, status);
+  const tone = label === "压缩失败" ? "error" : "neutral";
   return (
-    <aside
-      className="turn-notice turn-event-notice context-compaction-notice"
-      role="status"
-      aria-live="polite"
-      title={detail}
-    >
-      <span className="turn-event-content">
-        <strong className="turn-event-title">
-          {contextCompactionTitle(text, reason, status)}
-        </strong>
-        <span className="turn-event-detail">{detail}</span>
-      </span>
-    </aside>
+    <SystemEventNotice
+      event={{ label, detail, tone }}
+      className="context-compaction-notice"
+    />
   );
 }
 

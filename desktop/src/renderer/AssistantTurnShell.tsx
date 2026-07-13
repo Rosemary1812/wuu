@@ -32,7 +32,6 @@ import { ProcessSurface } from "./ProcessSurface";
 import { turnProgressContent } from "./TurnViewHelpers";
 import { collectTurnSources } from "./ToolActivityHelpers";
 import { TurnSourcesRow } from "./TurnSourcesRow";
-import type { UserFacingErrorAction } from "./UserFacingErrors";
 import {
   AUTO_FOLLOW_NESTED_SCROLL_ATTR,
   useAutoFollowScrollContainer,
@@ -51,7 +50,6 @@ export function AssistantTurnShell({
   onStreamFrame,
   onForkMessage,
   onCollapseComplete,
-  onNoticeAction,
 }: {
   turn: Turn;
   display: AssistantTurnDisplay;
@@ -64,7 +62,6 @@ export function AssistantTurnShell({
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
   onCollapseComplete?: () => void;
-  onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const processEntries = display.entries.filter(
     (entry) => entry.position === "process",
@@ -129,7 +126,6 @@ export function AssistantTurnShell({
     onStreamFrame,
     onForkMessage,
     onCollapseComplete,
-    onNoticeAction,
   };
 
   return (
@@ -184,7 +180,6 @@ function TurnProcessFold({
   onStreamFrame,
   onForkMessage,
   onCollapseComplete,
-  onNoticeAction,
 }: {
   turn: Turn;
   entries: TurnEntry[];
@@ -209,7 +204,6 @@ function TurnProcessFold({
    * jumping upward at turn-settle.
    */
   onCollapseComplete?: () => void;
-  onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(!collapseRequested);
   const handoffHandledRef = useRef(collapseRequested);
@@ -383,7 +377,6 @@ return (
                     latestAgentMessageID={latestAgentMessageID}
                     onStreamFrame={onStreamFrame}
                     onForkMessage={onForkMessage}
-                    onNoticeAction={onNoticeAction}
                   />
                 </div>
               ))}
@@ -422,7 +415,6 @@ function EntryRenderer({
   latestAgentMessageID,
   onStreamFrame,
   onForkMessage,
-  onNoticeAction,
 }: {
   entry: TurnEntry;
   activeGray?: boolean;
@@ -435,7 +427,6 @@ function EntryRenderer({
   latestAgentMessageID?: string;
   onStreamFrame: () => void;
   onForkMessage?: (turnID: string, itemID: string) => void;
-  onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element | null {
   const { item, kind, streaming } = entry;
   if (kind === "activity" || kind === "process_group") {
@@ -455,7 +446,6 @@ function EntryRenderer({
             onOpenSubthread={onOpenSubthread}
             streaming={isStreaming}
             onStreamFrame={onStreamFrame}
-            onNoticeAction={onNoticeAction}
           />
         )}
       />
@@ -480,7 +470,6 @@ function EntryRenderer({
         onOpenAgent={onOpenAgent}
         onOpenSubthread={onOpenSubthread}
         onStreamFrame={onStreamFrame}
-        onNoticeAction={onNoticeAction}
       />
     );
   }
@@ -499,7 +488,6 @@ function EntryRenderer({
         latestAgentMessageID={latestAgentMessageID}
         onStreamFrame={onStreamFrame}
         onForkMessage={onForkMessage}
-        onNoticeAction={onNoticeAction}
       />
     );
   }
@@ -515,13 +503,12 @@ function EntryRenderer({
         onOpenSubthread={onOpenSubthread}
         streaming={streaming}
         onStreamFrame={onStreamFrame}
-        onNoticeAction={onNoticeAction}
       />
     );
   }
   if (item.type === "context_compaction" || item.type === "error") {
     const event = turnEventForItem(item);
-    return event ? <TurnEventNotice event={event} onAction={onNoticeAction} /> : null;
+    return event ? <TurnEventNotice event={event} /> : null;
   }
   return null;
 }
@@ -537,7 +524,6 @@ function ReasoningFold({
   onOpenAgent,
   onOpenSubthread,
   onStreamFrame,
-  onNoticeAction,
 }: {
   item: ThreadItem;
   streaming: boolean;
@@ -549,7 +535,6 @@ function ReasoningFold({
   onOpenAgent?: (agentID: string) => void;
   onOpenSubthread?: (item: ThreadItem) => void;
   onStreamFrame: () => void;
-  onNoticeAction: (action: UserFacingErrorAction) => void;
 }): JSX.Element {
   const label = streaming ? "正在思考" : "查看思考过程";
   // Only the latest visible gray process label sweeps while the turn
@@ -624,7 +609,6 @@ function ReasoningFold({
               onOpenSubthread={onOpenSubthread}
               streaming={streaming}
               onStreamFrame={handleReasoningStreamFrame}
-              onNoticeAction={onNoticeAction}
             />
           </div>
         </div>

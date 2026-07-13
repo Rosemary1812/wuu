@@ -75,7 +75,6 @@ function render({
         actionableAgentMessageID={actionableAgentMessageID}
         latestAgentMessageID={latestAgentMessageID}
         onStreamFrame={() => {}}
-        onNoticeAction={() => {}}
         onOpenAgent={onOpenAgent}
         onOpenSubthread={onOpenSubthread}
       />,

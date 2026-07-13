@@ -87,7 +87,6 @@ describe("ConversationSplitPaneRenderer file routing", () => {
           onCancelEditMessage={() => {}}
           onSubmitEditMessage={() => {}}
           onStreamFrame={() => {}}
-          onNoticeAction={() => {}}
           onOpenFileDiff={() => {}}
         />,
       );

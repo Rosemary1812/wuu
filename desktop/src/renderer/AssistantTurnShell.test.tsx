@@ -211,7 +211,6 @@ function renderShell(
         onStreamFrame: () => {},
         onCollapseComplete: options.onCollapseComplete,
         onOpenAgent: options.onOpenAgent,
-        onNoticeAction: () => {},
       }),
     );
   });
@@ -240,7 +239,6 @@ function rerenderShell(
         onStreamFrame: () => {},
         onCollapseComplete: options.onCollapseComplete,
         onOpenAgent: options.onOpenAgent,
-        onNoticeAction: () => {},
       }),
     );
   });

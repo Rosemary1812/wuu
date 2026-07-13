@@ -16,8 +16,6 @@ import type {
   PermissionMode,
 } from "./ComposerTypes";
 import { isCodexProvider } from "./RuntimeHelpers";
-import type { SettingsPage } from "./SettingsView";
-import type { UserFacingErrorAction } from "./UserFacingErrors";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
 
@@ -32,10 +30,7 @@ export type RuntimeSettingsActionsDeps = {
   setBranchMenuOpen: (open: boolean) => void;
   setCodexRuntimeMenu: (update: SetStateAction<CodexRuntimeMenu>) => void;
   setSelectedPermissionMode: (mode: PermissionMode) => void;
-  setSettingsInitialPage: (page: SettingsPage) => void;
-  setSettingsOpen: (open: boolean) => void;
   clearThreadPendingComposerMessages: (threadID: string) => void;
-  writeClipboardText: (text: string) => Promise<void>;
 };
 
 export type RuntimeSettingsActions = {
@@ -67,16 +62,8 @@ export type RuntimeSettingsActions = {
   selectRuntimeEffort: (nextVariant: string) => Promise<void>;
   selectPermissionMode: (mode: PermissionMode) => Promise<void>;
   interrupt: () => Promise<void>;
-  handleNoticeAction: (action: UserFacingErrorAction) => void;
   interruptPane: (pane: ConversationPaneID) => Promise<void>;
 };
-
-function settingsPageFromNoticeFocus(focus: unknown): SettingsPage {
-  if (focus === "providers") {
-    return "providers";
-  }
-  return "general";
-}
 
 export function createRuntimeSettingsActions(
   deps: RuntimeSettingsActionsDeps,
@@ -412,48 +399,6 @@ export function createRuntimeSettingsActions(
     deps.clearThreadPendingComposerMessages(thread.id);
   }
 
-  function handleNoticeAction(action: UserFacingErrorAction): void {
-    switch (action.kind) {
-      case "openSettings": {
-        deps.setSettingsInitialPage(
-          settingsPageFromNoticeFocus(action.payload?.focus),
-        );
-        deps.setSettingsOpen(true);
-        return;
-      }
-      case "copyDebug": {
-        const current = deps.getAppState();
-        const thread = activeThreadForState(current);
-        const snapshot = JSON.stringify(
-          {
-            kind: "wuu-notice-debug",
-            notice: action.payload ?? {},
-            at: new Date().toISOString(),
-            status: current.status,
-            running: current.running,
-            thread_id: thread?.id,
-            provider: thread?.model_provider,
-            model: thread?.model,
-          },
-          null,
-          2,
-        );
-        void deps.writeClipboardText(snapshot).catch(() => {
-          /* clipboard unavailable - best-effort */
-        });
-        return;
-      }
-      case "retry":
-      case "switchModel":
-      case "compactContext":
-      case "reauth":
-      case "submitFeedback":
-        return;
-      default:
-        return;
-    }
-  }
-
   async function interruptPane(pane: ConversationPaneID): Promise<void> {
     const thread = threadForPane(deps.getAppState(), pane);
     if (!thread) {
@@ -474,7 +419,6 @@ export function createRuntimeSettingsActions(
     selectRuntimeEffort,
     selectPermissionMode,
     interrupt,
-    handleNoticeAction,
     interruptPane,
   };
 }

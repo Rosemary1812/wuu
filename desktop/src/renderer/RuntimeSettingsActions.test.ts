@@ -3,7 +3,6 @@ import type { InitializeResult, Thread } from "../shared/protocol";
 import { initialState, type AppState } from "./AppState";
 import type { CodexModelLoadState, CodexRuntimeMenu } from "./ComposerTypes";
 import { createRuntimeSettingsActions } from "./RuntimeSettingsActions";
-import type { SettingsPage } from "./SettingsView";
 
 const originalWuu = (window as unknown as { wuu?: unknown }).wuu;
 
@@ -165,10 +164,7 @@ function buildActions({
   let branchMenuOpen = true;
   let codexRuntimeMenu: CodexRuntimeMenu = null;
   let selectedPermissionMode: string | undefined;
-  let settingsInitialPage: SettingsPage = "general";
-  let settingsOpen = false;
   const clearThreadPendingComposerMessages = vi.fn();
-  const writeClipboardText = vi.fn().mockResolvedValue(undefined);
   const actions = createRuntimeSettingsActions({
     getAppState: () => appState,
     setAppState: (update) => {
@@ -195,14 +191,7 @@ function buildActions({
     setSelectedPermissionMode: (mode) => {
       selectedPermissionMode = mode;
     },
-    setSettingsInitialPage: (page) => {
-      settingsInitialPage = page;
-    },
-    setSettingsOpen: (open) => {
-      settingsOpen = open;
-    },
     clearThreadPendingComposerMessages,
-    writeClipboardText,
   });
   return {
     actions,
@@ -215,9 +204,7 @@ function buildActions({
       codexRuntimeMenu,
     }),
     getSelectedPermissionMode: () => selectedPermissionMode,
-    getSettings: () => ({ settingsInitialPage, settingsOpen }),
     clearThreadPendingComposerMessages,
-    writeClipboardText,
   };
 }
 
@@ -354,38 +341,6 @@ describe("createRuntimeSettingsActions", () => {
 
     expect(harness.getSelectedPermissionMode()).toBe("read_only");
     expect(harness.getRuntimeMenus().accessMenuOpen).toBe(false);
-  });
-
-  it("opens settings and copies notice debug payloads", () => {
-    installWuuApi();
-    const harness = buildActions();
-
-    harness.actions.handleNoticeAction({
-      kind: "openSettings",
-      label: "打开设置",
-      payload: { focus: "providers" },
-    });
-    expect(harness.getSettings()).toEqual({
-      settingsInitialPage: "providers",
-      settingsOpen: true,
-    });
-
-    harness.actions.handleNoticeAction({
-      kind: "copyDebug",
-      label: "复制调试信息",
-      payload: { code: "provider_error" },
-    });
-
-    const copied = JSON.parse(harness.writeClipboardText.mock.calls[0][0]);
-    expect(copied).toMatchObject({
-      kind: "wuu-notice-debug",
-      notice: { code: "provider_error" },
-      status: "loading",
-      thread_id: "thread-1",
-      provider: "codex",
-      model: "gpt-5",
-    });
-    expect(typeof copied.at).toBe("string");
   });
 
   it("interrupts active and pane-specific threads and clears queued messages", async () => {

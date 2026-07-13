@@ -119,8 +119,8 @@ describe("turns.css turn notice positioning", () => {
     expect(content).not.toMatch(/border-radius/);
     // Tone variants only recolor text; no tinted chip backgrounds.
     expect(cssRuleBody(".turn-notice.error .turn-event-content")).not.toMatch(/\bbackground\s*:/);
-    // The machine-code suffix stays in the neutral gray family.
-    expect(cssRuleBody(".turn-event-code")).toMatch(/color:\s*var\(--ink-muted\);/);
+    expect(turnsCss).not.toContain(".turn-event-code");
+    expect(turnsCss).not.toContain(".turn-notice-action");
   });
 
   it("keeps neutral lines aligned with turn rules and semantic lines in a faint matching hue", () => {

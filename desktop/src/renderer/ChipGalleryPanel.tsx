@@ -287,7 +287,6 @@ function cancelledEmpty(): UserFacingErrorDisplay {
     tone: "neutral",
     title: "已停止",
     detail: "这次请求已停止，没有生成回复内容。",
-    recommendedActions: [],
   };
 }
 
@@ -297,7 +296,6 @@ function cancelledWithOutput(): UserFacingErrorDisplay {
     tone: "neutral",
     title: "回复已中断",
     detail: "已保留已生成内容，可以继续发送消息。",
-    recommendedActions: [],
   };
 }
 
@@ -482,7 +480,6 @@ function ChipGalleryInContext(): JSX.Element {
               <TurnView
                 turn={entry.turn}
                 onStreamFrame={() => {}}
-                onNoticeAction={() => {}}
               />
             </div>
           </li>

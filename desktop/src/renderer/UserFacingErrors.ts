@@ -11,54 +11,11 @@ export type UserFacingErrorContext = "turn" | "tool" | "status";
 
 import type { TurnError } from "../shared/protocol";
 
-/**
- * Kinds map to renderer-side handlers. The data layer doesn't decide
- * what the action does — it just declares the intent. The UI layer
- * (TurnNotice / NoticeActions) maps each kind to a concrete handler.
- *
- * Keep this set small. Anything renderer-specific (a "Copy" button,
- * a "Submit feedback" link) belongs to a particular surface, not the
- * error model.
- */
-export type UserFacingErrorActionKind =
-  | "retry"
-  | "switchModel"
-  | "compactContext"
-  | "reauth"
-  | "openSettings"
-  | "copyDebug"
-  | "submitFeedback";
-
-export type UserFacingErrorAction = {
-  /** Stable identifier — used for analytics, tests, and keying. */
-  kind: UserFacingErrorActionKind;
-  /** Visible label. Short, sentence-case, no trailing punctuation. */
-  label: string;
-  /** Optional payload passed to the handler verbatim. */
-  payload?: Record<string, unknown>;
-  /** Secondary actions are visually de-emphasized in the notice. */
-  variant?: "primary" | "secondary";
-};
-
 export type UserFacingErrorDisplay = {
   category: UserFacingErrorCategory;
   tone: UserFacingErrorTone;
   title: string;
-  /**
-   * Raw machine identifier (provider error code, wrapped stream token,
-   * untranslated tool message) kept next to the Chinese title so a
-   * screenshot still carries the triage signal. Rendered muted — same
-   * neutral family as the divider lines, not the tone color.
-   */
-  code?: string;
   detail: string;
-  /**
-   * Concrete next-step the user can take. The renderer renders these
-   * as inline text links beneath the notice copy. Absence (empty
-   * array) is a valid signal that the user can't do anything useful
-   * right now — the notice stays as text-only.
-   */
-  recommendedActions: UserFacingErrorAction[];
 };
 
 export function rawErrorMessage(error: unknown, fallback = ""): string {
@@ -91,7 +48,6 @@ const HTTP_REASON_PHRASES: Record<string, string> = {
   "529": "上游过载",
 };
 
-const RESPONSE_COMPLETED_MISSING_CODE = "stream_closed_before_response.completed";
 const RESPONSE_COMPLETED_MISSING_TITLE = "回答未完整返回";
 
 function extractHttpCode(message: string): string | undefined {
@@ -114,20 +70,12 @@ function structuredStatusTitle(structured: TurnError | undefined): string | unde
 type SpecificDisplay = {
   /** Readable Chinese title, when the message maps to a known situation. */
   title?: string;
-  /**
-   * Raw machine identifier worth keeping next to the title (provider
-   * error code, untranslated tool message). Only set when the identifier
-   * itself carries triage signal that the Chinese title alone loses.
-   */
-  code?: string;
 };
 
 /**
- * Pull a specific situation out of the raw error so the chip is readable
- * at a glance. Known keywords map to a Chinese title; identifiers we can't
- * translate reliably (arbitrary provider codes, raw tool messages) are
- * surfaced through `code` instead, and the caller falls back to the
- * category-level title.
+ * Pull a specific situation out of the raw error so the system event is readable
+ * at a glance. Known keywords map to a Chinese title; identifiers we cannot
+ * translate remain diagnostic data and never become a second visible label.
  *
  * The list is intentionally short: anything renderer-specific belongs to
  * the turn notice, not the error model.
@@ -142,15 +90,14 @@ function extractSpecificDisplay(
       return {};
     case "network": {
       if (isResponseCompletedMissingMessage(lower)) {
-        return { title: RESPONSE_COMPLETED_MISSING_TITLE, code: RESPONSE_COMPLETED_MISSING_CODE };
+        return { title: RESPONSE_COMPLETED_MISSING_TITLE };
       }
       // OpenAI/Anthropic-style wrapped errors look like
       // "stream request failed: stream error (previous_response_not_found)".
       // The parenthesized token at the end of the message is the actual
-      // provider error code — an arbitrary identifier we can't translate,
-      // so it rides along as the muted code.
+      // provider error code. Unknown identifiers remain diagnostic-only.
       const wrapped = message.match(/\(([^()]+)\)\s*$/);
-      if (wrapped) return { code: wrapped[1] };
+      if (wrapped) return {};
       const code = extractHttpCode(message);
       if (code) return { title: httpTitle(code) };
       if (lower.includes("rate limit") || lower.includes("too many requests")) return { title: "触发限流" };
@@ -176,7 +123,7 @@ function extractSpecificDisplay(
     }
     case "provider": {
       if (isResponseCompletedMissingMessage(lower)) {
-        return { title: RESPONSE_COMPLETED_MISSING_TITLE, code: RESPONSE_COMPLETED_MISSING_CODE };
+        return { title: RESPONSE_COMPLETED_MISSING_TITLE };
       }
       if (
         lower.includes("context_length_exceeded") ||
@@ -200,10 +147,9 @@ function extractSpecificDisplay(
       if (!first) return {};
       const clipped = first.length > 60 ? `${first.slice(0, 57)}…` : first;
       // A tool error that is already Chinese reads fine as the title; an
-      // English one is an arbitrary message we can't translate, so it
-      // becomes the muted code next to the category title.
+      // arbitrary English message remains diagnostic-only.
       if (/[一-鿿]/.test(clipped)) return { title: clipped };
-      return { code: clipped };
+      return {};
     }
     case "local": {
       if (lower.includes("permission denied")) return { title: "权限不足" };
@@ -251,9 +197,8 @@ export function userFacingErrorForMessage(
   // Title: always a Chinese label — keyword extraction from the raw
   // message (or from the structured code, when the code itself is a
   // known identifier), then the HTTP status phrase, then the category
-  // default. The raw machine identifier is not lost: it rides along in
-  // `code` and renders muted next to the title, so a screenshot still
-  // carries enough info to triage.
+  // default. Raw machine identifiers remain on the structured error for
+  // diagnostics and never become a second visible label.
   const structuredCode = structured?.code?.trim() || undefined;
   const specific = extractSpecificDisplay(message, category);
   const specificFromCode = structuredCode
@@ -265,55 +210,29 @@ export function userFacingErrorForMessage(
     specificFromCode.title ||
     statusTitle ||
     defaultTitleForCategory(category);
-  const code = dedupedCode(structuredCode ?? specific.code, title);
-
-  // Detail (hover): prefer the action's longer user-facing message
-  // when the Go side provided one, fall back to the category's
-  // Chinese default.
+  // Detail is hover and accessibility copy, not a visible second line.
   const detail =
-    structured?.action?.message?.trim() ||
     specificDetailForMessage(message, category) ||
     defaultDetailForCategory(category);
-
-  // Actions: structured action's `reason` takes precedence, fall back
-  // to the category-driven default (e.g. the auth case gets
-  // openSettings, the tool/internal case gets copyDebug). When neither
-  // is useful (cancelled) the array is empty.
-  const recommendedActions = structured?.action
-    ? actionsFromStructuredAction(structured, category, message)
-    : defaultActionsForCategory(category, context, message);
 
   return {
     category,
     tone: toneForCategory(category),
     title,
-    code,
     detail,
-    recommendedActions,
   };
-}
-
-// A code that repeats what the title already says (same string, or an
-// HTTP-phrase code whose status number is already in the title) is noise
-// next to the Chinese label — drop it.
-function dedupedCode(code: string | undefined, title: string): string | undefined {
-  if (!code) return undefined;
-  if (title.includes(code)) return undefined;
-  const httpCode = extractHttpCode(code);
-  if (httpCode && title.includes(httpCode)) return undefined;
-  return code;
 }
 
 /**
  * Display for a turn that completed normally but never produced a
  * `final_answer` (only `commentary` items remain). Soft outcome-state
  * signal, not a failure — the model ran, it just talked instead of
- * answering. Routes through the same chip pipeline as cancelled /
+ * answering. Routes through the same system-event pipeline as cancelled /
  * failed turns so the user sees one consistent notice shape across
  * all "this turn ended in a non-answer state" outcomes.
  *
  * `category: "internal"` is a placeholder for the closed-union type;
- * tone / title / detail / actions are all set explicitly here so the
+ * tone / title / detail are all set explicitly here so the
  * category-driven defaults never fire.
  */
 export function userFacingErrorForMissingReply(): UserFacingErrorDisplay {
@@ -322,7 +241,6 @@ export function userFacingErrorForMissingReply(): UserFacingErrorDisplay {
     tone: "warning",
     title: "无最终回答",
     detail: "这轮只保留了过程记录，没有生成最终回答。",
-    recommendedActions: [],
   };
 }
 
@@ -391,143 +309,6 @@ function specificDetailForMessage(
     return "Provider WS 流在 response.completed 前断开；这次回答可能不完整。";
   }
   return undefined;
-}
-
-// defaultActionsForCategory is the category-driven fallback used when
-// the Go side did not send a structured action. Mirrors the previous
-// behavior: auth/local open settings; everything else (except
-// cancelled) gets a copy-debug fallback.
-function defaultActionsForCategory(
-  category: UserFacingErrorCategory,
-  context: UserFacingErrorContext,
-  message: string
-): UserFacingErrorAction[] {
-  switch (category) {
-    case "cancelled":
-      return [];
-    case "auth":
-      return [
-        {
-          kind: "openSettings",
-          label: "查看 Provider 设置",
-          variant: "primary",
-          payload: { focus: "providers" },
-        },
-      ];
-    case "local":
-      return [
-        {
-          kind: "openSettings",
-          label: "查看权限设置",
-          variant: "primary",
-          payload: { focus: "workspace" },
-        },
-      ];
-    case "network":
-    case "provider":
-    case "tool":
-    case "internal":
-      return [copyDebugAction(category, context, message)];
-  }
-}
-
-// actionsFromStructuredAction translates the Go side's stable
-// `reason` taxonomy into renderer-side UserFacingErrorActionKind
-// values. The reason values mirror opencode's opencode-ai/opencode
-// `RetryReason` enum (reauth, compact, wait, retry, view_debug, etc.)
-// — keeping the same vocabulary makes cross-tool telemetry easier.
-function actionsFromStructuredAction(
-  structured: TurnError,
-  category: UserFacingErrorCategory,
-  message: string
-): UserFacingErrorAction[] {
-  const action = structured.action;
-  if (!action) {
-    return [];
-  }
-  switch (action.reason) {
-    case "reauth":
-      return [
-        {
-          kind: "openSettings",
-          label: action.label || "查看 Provider 设置",
-          variant: "primary",
-          payload: { focus: "providers" },
-        },
-      ];
-    case "compact":
-      return [
-        {
-          kind: "compactContext",
-          label: action.label || "压缩上下文",
-          variant: "primary",
-        },
-      ];
-    case "wait":
-    case "retry":
-      return [
-        {
-          kind: "retry",
-          label: action.label || "稍后重试",
-          variant: "primary",
-        },
-      ];
-    case "view_debug":
-    case "copy_debug":
-      return [
-        {
-          kind: "copyDebug",
-          label: action.label || "复制调试信息",
-          variant: "secondary",
-          // Include the structured fields so the clipboard payload is
-          // useful for triage: "what provider, what code, what status".
-          payload: {
-            category,
-            context: "turn",
-            message: structured.message,
-            code: structured.code,
-            provider: structured.provider,
-            status_code: structured.status_code,
-          },
-        },
-      ];
-    case "open_settings":
-      return [
-        {
-          kind: "openSettings",
-          label: action.label || "查看权限设置",
-          variant: "primary",
-          payload: { focus: "workspace" },
-        },
-      ];
-    default:
-      return [];
-  }
-}
-
-function copyDebugAction(
-  category: UserFacingErrorCategory,
-  context: UserFacingErrorContext,
-  message: string,
-): UserFacingErrorAction {
-  return {
-    kind: "copyDebug",
-    label: "复制调试信息",
-    variant: "secondary",
-    payload: {
-      category,
-      context,
-      message: truncateDebugMessage(message),
-    },
-  };
-}
-
-function truncateDebugMessage(message: string): string {
-  const limit = 12_000;
-  if (message.length <= limit) {
-    return message;
-  }
-  return `${message.slice(0, limit)}…`;
 }
 
 function classifyUserFacingError(message: string, context: UserFacingErrorContext): UserFacingErrorCategory {
@@ -654,11 +435,10 @@ function isLocalOperationError(message: string): boolean {
 
 export function statusMessageForError(error: unknown, fallback: string): string {
   // The composer status row renders a single-line label between two
-  // dividers, so we return the classified title, with the machine code
-  // appended when one exists so the row keeps its triage signal. The
-  // full detail is still rendered by the inline turn notice.
+  // dividers, so return the same single user-facing label as the inline
+  // turn event. Machine identifiers remain diagnostic-only.
   const display = userFacingErrorForMessage(rawErrorMessage(error, fallback), "status");
-  return display.code ? `${display.title} (${display.code})` : display.title;
+  return display.title;
 }
 
 // Keyword lists mirror the title vocabulary produced above (specific

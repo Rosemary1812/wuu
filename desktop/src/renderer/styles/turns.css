@@ -3418,46 +3418,6 @@ pre {
                                                                      
                                                                
                                          
-.turn-notice-actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  column-gap: 14px;
-  row-gap: 4px;
-  margin-top: 6px;
-  font-size: var(--font-ui);
-  line-height: 1.4;
-}
-
-.turn-notice-action {
-  color: var(--ink);
-  text-decoration: none;
-  border-bottom: 1px solid var(--surface-4);
-  padding-bottom: 1px;
-  cursor: pointer;
-  background: transparent;
-  border-top: 0;
-  border-right: 0;
-  border-left: 0;
-  font: inherit;
-  font-size: var(--font-ui);
-  line-height: 1.4;
-  padding: 0 0 1px;
-}
-
-.turn-notice-action:hover {
-  border-bottom-color: var(--ink);
-}
-
-.turn-notice-action.secondary {
-  color: var(--ink-tertiary);
-  border-bottom-color: transparent;
-}
-
-.turn-notice-action.secondary:hover {
-  color: var(--ink);
-  border-bottom-color: var(--surface-4);
-}
-
 .turn-notice {
   --turn-event-line-color: var(--wuu-hairline);
   display: flex;
@@ -3480,13 +3440,6 @@ pre {
   min-width: 24px;
   height: 1px;
   background: var(--turn-event-line-color);
-}
-
-.turn-event-detail {
-  /* The inline notice is a compact chip. The full explanation lives in
-     the `title` attribute for hover, while recovery actions remain
-     visible and clickable. */
-  display: none;
 }
 
 .turn-event-content {
@@ -3513,51 +3466,6 @@ pre {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
-}
-
-.turn-event-code {
-  /* Machine identifier next to the Chinese title. Stays in the same
-     neutral gray family as the divider lines regardless of tone — only
-     the title carries the tone color. The higher flex-shrink makes the
-     code give up space (truncate) before the title does. */
-  flex: 0 3 auto;
-  min-width: 0;
-  margin-left: 8px;
-  color: var(--ink-muted);
-  font-weight: 400;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.turn-event-content .turn-notice-actions {
-  display: inline-flex;
-  flex: 0 0 auto;
-  margin-top: 0;
-  margin-left: 10px;
-  column-gap: 8px;
-  row-gap: 0;
-  font-size: inherit;
-  line-height: inherit;
-}
-
-.turn-event-content .turn-notice-action {
-  color: inherit;
-  opacity: 0.8;
-  border-bottom-color: color-mix(in srgb, currentColor 34%, transparent);
-  font-size: inherit;
-  line-height: inherit;
-}
-
-.turn-event-content .turn-notice-action:hover {
-  opacity: 1;
-  border-bottom-color: currentColor;
-}
-
-.turn-event-detail {
-  color: color-mix(in srgb, currentColor 72%, var(--ink) 28%);
-  font-size: var(--font-ui);
-  line-height: 1.45;
 }
 
 /* Tone-aware event colors. Semantic lines share the text hue at hairline

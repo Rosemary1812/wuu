@@ -45,7 +45,6 @@ import {
 import { userMessageAnchorID } from "./TurnViewHelpers";
 import {
   userFacingErrorForMessage,
-  type UserFacingErrorAction,
 } from "./UserFacingErrors";
 
 export function ThreadItemView({
@@ -65,7 +64,6 @@ export function ThreadItemView({
   editSubmitting,
   onCancelEditMessage,
   onSubmitEditMessage,
-  onNoticeAction,
   onOpenAgent,
   onOpenSubthread,
 }: {
@@ -91,7 +89,6 @@ export function ThreadItemView({
     images: InputImage[],
     files: InputFile[],
   ) => void;
-  onNoticeAction: (action: UserFacingErrorAction) => void;
   onOpenAgent?: (agentID: string) => void;
   onOpenSubthread?: (item: ThreadItem) => void;
 }): JSX.Element | null {
@@ -315,10 +312,7 @@ export function ThreadItemView({
       );
     case "error":
       return (
-        <TurnNotice
-          display={userFacingErrorForMessage(item.error, "turn")}
-          onAction={onNoticeAction}
-        />
+        <TurnNotice display={userFacingErrorForMessage(item.error, "turn")} />
       );
     default:
       return null;

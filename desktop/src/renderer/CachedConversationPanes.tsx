@@ -35,7 +35,6 @@ import {
 } from "./TurnView";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 import type { HistoryMessageEditState } from "./ConversationHistoryActions";
-import type { UserFacingErrorAction } from "./UserFacingErrors";
 
 const CONVERSATION_GRID_COLUMNS = 12;
 
@@ -73,7 +72,6 @@ export type CachedConversationPanesProps = {
     images: InputImage[],
     files: InputFile[],
   ) => void;
-  onNoticeAction: (action: UserFacingErrorAction) => void;
   onOpenFileDiff: (thread: Thread, selection: TurnFileDiffSelection) => void;
   turnStreamStatus: Record<string, TurnStreamStatus>;
   busyParticipantIDs: ReadonlySet<string>;
@@ -107,7 +105,6 @@ export const CachedConversationPanes = memo(function CachedConversationPanes({
   onEditMessage,
   onCancelEditMessage,
   onSubmitEditMessage,
-  onNoticeAction,
   onOpenFileDiff,
   turnStreamStatus,
   busyParticipantIDs,
@@ -286,7 +283,6 @@ export const CachedConversationPanes = memo(function CachedConversationPanes({
                           files,
                         )
                       }
-                      onNoticeAction={onNoticeAction}
                       onOpenFileDiff={(selection) =>
                         onOpenFileDiff(thread, selection)
                       }

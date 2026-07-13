@@ -46,7 +46,7 @@ export function turnEventForTurn(
   hasMissingReply: boolean = false,
 ): TurnEventDisplay | undefined {
   // Soft outcome: turn completed but only produced commentary, no
-  // `final_answer`. Rendered as a warning chip (not an error) and
+  // `final_answer`. Rendered as a warning system event (not an error) and
   // checked first so a completed turn with commentary but no answer
   // does not get re-routed to the cancelled / failed branches below.
   // The flag is computed by the caller from `AssistantTurnDisplay`,
@@ -70,8 +70,8 @@ export function turnEventForTurn(
       : isCancellationMessage((rawMessage ?? "").toLowerCase())
         ? userFacingErrorForMessage(rawMessage, "turn")
         // For a failed turn, prefer the structured `turn.error` populated
-        // by the Go core's BuildTurnError so the chip surfaces the
-        // provider-specific code and the recommended next-step action.
+        // by the Go core's BuildTurnError so the renderer can derive one
+        // accurate user-facing label while keeping diagnostics internal.
         // The legacy string fallback in userFacingErrorForMessage still
         // works for older app-servers that only send the message.
         : turn.status === "failed"

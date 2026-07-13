@@ -74,7 +74,6 @@ function renderPane(
     onEditMessage: () => {},
     onCancelEditMessage: () => {},
     onSubmitEditMessage: () => {},
-    onNoticeAction: () => {},
     onOpenFileDiff: () => {},
     turnStreamStatus: {},
     busyParticipantIDs: new Set(),

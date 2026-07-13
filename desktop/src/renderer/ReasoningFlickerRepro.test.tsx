@@ -105,7 +105,6 @@ function renderShell(turn: Turn) {
         turn,
         display,
         onStreamFrame: () => {},
-        onNoticeAction: () => {},
       }),
     );
   });
@@ -167,7 +166,6 @@ async function step(
         turn,
         display,
         onStreamFrame: () => {},
-        onNoticeAction: () => {},
       }),
     );
   });

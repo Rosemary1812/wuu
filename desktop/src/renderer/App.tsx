@@ -231,7 +231,6 @@ import {
   rawErrorMessage,
   statusMessageForError,
   statusToneClass,
-  type UserFacingErrorAction,
 } from "./UserFacingErrors";
 import {
   latestAgentMessageItemID,
@@ -1880,11 +1879,6 @@ export function App(): JSX.Element {
       );
     },
   );
-  const handleCachedPaneNoticeAction = useStableCallback(
-    (action: UserFacingErrorAction) => {
-      handleNoticeAction(action);
-    },
-  );
   // Stable identities for every remaining CachedConversationPanes
   // callback prop. The component is React.memo'd; a single freshly
   // created arrow prop defeats the bailout and re-renders the full
@@ -2843,7 +2837,6 @@ export function App(): JSX.Element {
     selectRuntimeEffort,
     selectPermissionMode,
     interrupt,
-    handleNoticeAction,
     interruptPane,
   } = createRuntimeSettingsActions({
     getAppState: () => appStateRef.current,
@@ -2856,10 +2849,7 @@ export function App(): JSX.Element {
     setBranchMenuOpen,
     setCodexRuntimeMenu,
     setSelectedPermissionMode,
-    setSettingsInitialPage,
-    setSettingsOpen,
     clearThreadPendingComposerMessages,
-    writeClipboardText: (text) => navigator.clipboard.writeText(text),
   });
 
   const {
@@ -4277,7 +4267,6 @@ export function App(): JSX.Element {
                       )
                     }
                     onStreamFrame={scheduleStreamScroll}
-                    onNoticeAction={handleNoticeAction}
                     onOpenFileDiff={openTurnFileDiffPanel}
                   />
                 ) : emptyConversation ? (
@@ -4317,7 +4306,6 @@ export function App(): JSX.Element {
                 onEditMessage={handleCachedPaneEditMessage}
                 onCancelEditMessage={handleCachedPaneCancelEditMessage}
                 onSubmitEditMessage={handleCachedPaneSubmitEditMessage}
-                onNoticeAction={handleCachedPaneNoticeAction}
                 busyParticipantIDs={busyParticipantIDs}
                 activeThreadMarks={activeThreadMarks}
                 resolveParticipantName={resolveParticipantName}

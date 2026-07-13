@@ -112,8 +112,7 @@ func categoryFromHTTPError(httpErr *providers.HTTPError) string {
 	}
 	// 413 Payload Too Large is almost always a context-overflow
 	// signal for chat-completions endpoints. Treat it as
-	// provider-side so the chip surfaces the code and the
-	// recommended action (compact or wait) matches the situation.
+	// provider-side so shells can describe the situation accurately.
 	if httpErr.StatusCode == 413 {
 		return "provider"
 	}

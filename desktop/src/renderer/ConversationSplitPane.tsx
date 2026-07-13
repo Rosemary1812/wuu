@@ -16,7 +16,6 @@ import { ConversationTurnList } from "./ConversationTurnList";
 import { threadDisplayTitle } from "./ThreadTitles";
 import { TurnView, latestAgentMessageItemID } from "./TurnView";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
-import type { UserFacingErrorAction } from "./UserFacingErrors";
 
 export function ConversationSplitPane({
   pane,
@@ -47,7 +46,6 @@ export function ConversationSplitPane({
   onCancelEditMessage,
   onSubmitEditMessage,
   onStreamFrame,
-  onNoticeAction,
   onOpenFileDiff,
 }: {
   pane: ConversationPaneID;
@@ -84,7 +82,6 @@ export function ConversationSplitPane({
     files: InputFile[],
   ) => void;
   onStreamFrame: () => void;
-  onNoticeAction: (action: UserFacingErrorAction) => void;
   onOpenFileDiff?: (selection: TurnFileDiffSelection) => void;
 }): JSX.Element {
   const paneTurns = thread.turns ?? [];
@@ -160,7 +157,6 @@ export function ConversationSplitPane({
                           onSubmitEditMessage(turnID, item, text, images, files)
                       : undefined
                   }
-                  onNoticeAction={onNoticeAction}
                   onOpenFileDiff={onOpenFileDiff}
                   streamStatus={
                     paneTurns[paneTurns.length - 1]?.id === turn.id

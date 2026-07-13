@@ -107,13 +107,12 @@ describe("ContextCompactionNotice", () => {
     const aside = host.querySelector("aside.turn-notice.context-compaction-notice");
     expect(aside).not.toBeNull();
     expect(aside?.classList.contains("is-progress")).toBe(false);
-    expect(aside?.getAttribute("aria-live")).toBe("polite");
+    expect(aside?.getAttribute("aria-live")).toBeNull();
 
     const title = host.querySelector(".turn-event-title");
     expect(title?.textContent).toBe("上下文已压缩");
 
-    const detail = host.querySelector(".turn-event-detail");
-    expect(detail?.textContent).toContain("18 条消息整理为 5 条");
+    expect(aside?.getAttribute("title")).toContain("18 条消息整理为 5 条");
     expect(host.querySelector(".turn-notice-icon")).toBeNull();
   });
 
@@ -129,7 +128,7 @@ describe("ContextCompactionNotice", () => {
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
       "压缩成功",
     );
-    expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
+    expect(host.querySelector("aside")?.getAttribute("title")).toContain(
       "18 条消息整理为 5 条",
     );
   });
@@ -146,7 +145,7 @@ describe("ContextCompactionNotice", () => {
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
       "压缩失败",
     );
-    expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
+    expect(host.querySelector("aside")?.getAttribute("title")).toContain(
       "当前对话仍保留原上下文",
     );
   });
@@ -185,7 +184,7 @@ describe("ContextCompactionNotice", () => {
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
       "已压缩上下文（Inception）",
     );
-    expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
+    expect(host.querySelector("aside")?.getAttribute("title")).toContain(
       "续接摘要",
     );
   });
@@ -202,7 +201,7 @@ describe("ContextCompactionNotice", () => {
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
       "已合并求助结果",
     );
-    expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
+    expect(host.querySelector("aside")?.getAttribute("title")).toContain(
       "HelpMe 恢复结果",
     );
   });
@@ -220,7 +219,7 @@ describe("ContextCompactionNotice", () => {
     expect(host.querySelector(".turn-event-title")?.textContent).toBe(
       "压缩失败",
     );
-    expect(host.querySelector(".turn-event-detail")?.textContent).toContain(
+    expect(host.querySelector("aside")?.getAttribute("title")).toContain(
       "当前对话仍保留原上下文",
     );
     expect(host.textContent).not.toContain("上下文已压缩");
@@ -243,18 +242,14 @@ describe("TurnNotice compact chip", () => {
     expect(aside?.getAttribute("title")).toContain(display.detail);
     expect(aside?.getAttribute("aria-label")).toContain(display.title);
     expect(aside?.getAttribute("aria-label")).toContain(display.detail);
-    // Detail stays in the DOM for the hover text path, and actions remain
-    // clickable so the recovery path is not lost.
-    expect(host.querySelector(".turn-event-detail")?.textContent).toBe(display.detail);
-    expect(host.querySelector(".turn-notice-actions")).not.toBeNull();
+    expect(host.querySelectorAll("button, a")).toHaveLength(0);
+    expect(host.querySelectorAll(".turn-event-title")).toHaveLength(1);
   });
 
-  it("does not render the actions row when the display has no recommended actions", () => {
+  it("renders cancellation as a read-only event", () => {
     const display = userFacingErrorForMessage("context canceled", "turn");
-    const host = mount(
-      <TurnNotice display={{ ...display, recommendedActions: [] }} />,
-    );
-    expect(host.querySelector(".turn-notice-actions")).toBeNull();
+    const host = mount(<TurnNotice display={display} />);
+    expect(host.querySelectorAll("button, a")).toHaveLength(0);
     // The host still carries the hover text and title element.
     const aside = host.querySelector("aside.turn-event-notice");
     expect(aside?.getAttribute("title")).toContain(display.title);

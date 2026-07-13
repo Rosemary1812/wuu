@@ -22,7 +22,6 @@ import {
   turnAnchorID,
   turnHasAssistantOutput,
 } from "./TurnViewHelpers";
-import type { UserFacingErrorAction } from "./UserFacingErrors";
 
 export { latestAgentMessageItemID, scrollToUserMessage };
 
@@ -40,7 +39,6 @@ export function TurnView({
   onCancelEditMessage,
   onSubmitEditMessage,
   onCollapseComplete,
-  onNoticeAction,
   onOpenFileDiff,
   streamStatus,
   isLatestTurn,
@@ -64,7 +62,6 @@ export function TurnView({
     files: InputFile[],
   ) => void;
   onCollapseComplete?: () => void;
-  onNoticeAction: (action: UserFacingErrorAction) => void;
   onOpenFileDiff?: (selection: TurnFileDiffSelection) => void;
   streamStatus?: TurnStreamStatus;
   isLatestTurn?: boolean;
@@ -104,7 +101,6 @@ export function TurnView({
         }
         onCancelEditMessage={onCancelEditMessage}
         onSubmitEditMessage={onSubmitEditMessage}
-        onNoticeAction={onNoticeAction}
         onOpenAgent={onOpenAgent}
         onOpenSubthread={onOpenSubthread}
       />
@@ -152,7 +148,6 @@ export function TurnView({
           onStreamFrame={onStreamFrame}
           onForkMessage={onForkMessage}
           onCollapseComplete={onCollapseComplete}
-          onNoticeAction={onNoticeAction}
           onOpenAgent={onOpenAgent}
           onOpenSubthread={onOpenSubthread}
         />
@@ -167,7 +162,7 @@ export function TurnView({
       {isLatestTurn && turn.status === "in_progress" && streamStatus?.liveProgress ? (
         <StreamReconnectNotice text={streamStatus.text} />
       ) : null}
-      {event ? <TurnEventNotice event={event} onAction={onNoticeAction} /> : null}
+      {event ? <TurnEventNotice event={event} /> : null}
     </section>
   );
 }
