@@ -760,33 +760,50 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		providerItemModel string
 	)
 
-	var toolRuntime *TurnToolRuntime
-	if s.tools != nil && (s.enableStreamingToolExec || s.toolLedger != nil) {
-		toolRuntime = NewTurnToolRuntime(ToolRuntimeConfig{
+	// The runtime is swapped on stream retries while the reliable-stream
+	// goroutine keeps calling the observer/guard closures, so every access
+	// goes through the mutex-guarded accessors.
+	var (
+		toolRuntimeMu sync.Mutex
+		toolRuntime   *TurnToolRuntime
+	)
+	newToolRuntime := func() *TurnToolRuntime {
+		return NewTurnToolRuntime(ToolRuntimeConfig{
 			Executor: s.tools, Ledger: s.toolLedger, OperationID: req.Operation.ID, StepIndex: req.StepIndex,
+			RunContext: ctx,
 		})
+	}
+	currentToolRuntime := func() *TurnToolRuntime {
+		toolRuntimeMu.Lock()
+		defer toolRuntimeMu.Unlock()
+		return toolRuntime
+	}
+	if s.tools != nil && (s.enableStreamingToolExec || s.toolLedger != nil) {
+		toolRuntime = newToolRuntime()
 	}
 
 	observeEvent := func(eventCtx context.Context, ev providers.StreamEvent) error {
-		if toolRuntime == nil || !s.enableStreamingToolExec {
+		rt := currentToolRuntime()
+		if rt == nil || !s.enableStreamingToolExec {
 			return nil
 		}
-		return toolRuntime.ObserveStreamEvent(eventCtx, ev)
+		return rt.ObserveStreamEvent(eventCtx, ev)
 	}
 
 	resetRuntime := func() {
+		toolRuntimeMu.Lock()
+		defer toolRuntimeMu.Unlock()
 		if toolRuntime != nil {
 			toolRuntime.Cancel()
-			toolRuntime = NewTurnToolRuntime(ToolRuntimeConfig{
-				Executor: s.tools, Ledger: s.toolLedger, OperationID: req.Operation.ID, StepIndex: req.StepIndex,
-			})
+			toolRuntime = newToolRuntime()
 		}
 	}
 	replayGuard := func(_ providers.StreamRetryContext) error {
-		if toolRuntime == nil {
+		rt := currentToolRuntime()
+		if rt == nil {
 			return nil
 		}
-		decision, err := toolRuntime.ReplayDecision(ctx)
+		decision, err := rt.ReplayDecision(ctx)
 		if err != nil {
 			return err
 		}
@@ -794,9 +811,9 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 			return &toolledger.ReplayBlockedError{Decision: decision}
 		}
 		if decision.SupersedePartial {
-			toolRuntime.mu.Lock()
-			batchID := toolRuntime.batchID
-			toolRuntime.mu.Unlock()
+			rt.mu.Lock()
+			batchID := rt.batchID
+			rt.mu.Unlock()
 			if err := s.toolLedger.SupersedePreparedBatch(ctx, batchID); err != nil {
 				return err
 			}
@@ -804,8 +821,8 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		return nil
 	}
 	if err := s.runReliableStream(ctx, req, &contentBuf, &thinkingBuf, &reasoningBlocks, pendingTools, &messagePhase, &providerItemID, &providerItemModel, &usage, &stopReason, &finishReason, &truncated, resetRuntime, replayGuard, observeEvent); err != nil {
-		if toolRuntime != nil {
-			toolRuntime.Cancel()
+		if rt := currentToolRuntime(); rt != nil {
+			rt.Cancel()
 		}
 		failure := providers.NormalizeFailure(err)
 		outcome := providers.InferenceOutcomeFailed
@@ -835,8 +852,8 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 	// A terminal length/max_tokens reason is a completed model response, not a
 	// broken stream, even when the visible text is empty.
 	if strings.TrimSpace(contentBuf.String()) == "" && len(toolCalls) == 0 && strings.TrimSpace(stopReason) == "" && finishReason == "" && !truncated {
-		if toolRuntime != nil {
-			toolRuntime.Cancel()
+		if rt := currentToolRuntime(); rt != nil {
+			rt.Cancel()
 		}
 		providers.DebugLogf("stream returned empty content with stop_reason=%q, attempting non-streaming fallback", stopReason)
 		if s.onEvent != nil {
@@ -892,9 +909,10 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 			Truncated:         resp.Truncated,
 		}, nil
 	}
-	if len(toolCalls) == 0 && toolRuntime != nil {
-		toolRuntime.Cancel()
-		toolRuntime = nil
+	finalToolRuntime := currentToolRuntime()
+	if len(toolCalls) == 0 && finalToolRuntime != nil {
+		finalToolRuntime.Cancel()
+		finalToolRuntime = nil
 	}
 	if err := req.Execution.Complete(providers.InferenceOutcomeSucceeded, providers.NormalizedFailure{}); err != nil {
 		return StepResult{}, fmt.Errorf("complete inference operation: %w", err)
@@ -912,7 +930,7 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		FinishReason:      finishReason,
 		StopReason:        stopReason,
 		Truncated:         truncated,
-		ToolRuntime:       toolRuntime,
+		ToolRuntime:       finalToolRuntime,
 	}, nil
 }
 

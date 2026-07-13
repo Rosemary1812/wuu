@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1700,6 +1701,87 @@ func TestStreamRunner_NoFallbackOnEmptyLengthFinish(t *testing.T) {
 	}
 	if client.chatCallCount != 0 {
 		t.Fatalf("expected 0 Chat() calls (no fallback), got %d", client.chatCallCount)
+	}
+}
+
+type slowStreamedRuntimeTools struct {
+	mu       sync.Mutex
+	calls    []providers.ToolCall
+	canceled bool
+}
+
+func (f *slowStreamedRuntimeTools) Definitions() []providers.ToolDefinition {
+	return []providers.ToolDefinition{{Name: "read_file"}}
+}
+
+func (f *slowStreamedRuntimeTools) ToolMetadata(_ providers.ToolCall) (ToolMetadata, bool) {
+	return ToolMetadata{ReadOnly: true, ConcurrencySafe: true}, true
+}
+
+func (f *slowStreamedRuntimeTools) Execute(ctx context.Context, call providers.ToolCall) (string, error) {
+	f.mu.Lock()
+	f.calls = append(f.calls, call)
+	f.mu.Unlock()
+	select {
+	case <-time.After(150 * time.Millisecond):
+		return `{"ok":"` + call.ID + `"}`, nil
+	case <-ctx.Done():
+		f.mu.Lock()
+		f.canceled = true
+		f.mu.Unlock()
+		return "", ctx.Err()
+	}
+}
+
+func (f *slowStreamedRuntimeTools) wasCanceled() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.canceled
+}
+
+// A tool that starts during streaming and is still running when the stream
+// completes must survive into the final batch: the stream attempt context
+// ends with the stream, but the tool belongs to the turn.
+func TestStreamRunner_StreamStartedToolSurvivesStreamCompletion(t *testing.T) {
+	client := &mockStreamClient{attempts: []mockStreamAttempt{
+		{events: []providers.StreamEvent{
+			{Type: providers.EventToolUseStart, ToolCall: &providers.ToolCall{ID: "call-slow", Name: "read_file"}},
+			{Type: providers.EventToolUseEnd, ToolCall: &providers.ToolCall{ID: "call-slow", Name: "read_file", Arguments: `{"path":"main.go"}`}},
+			{Type: providers.EventDone, StopReason: "tool_use"},
+		}},
+		{events: []providers.StreamEvent{
+			{Type: providers.EventContentDelta, Content: "done"},
+			{Type: providers.EventDone, StopReason: "stop"},
+		}},
+	}}
+	tools := &slowStreamedRuntimeTools{}
+	runner := &StreamRunner{
+		Client:                 client,
+		Model:                  "test",
+		Tools:                  tools,
+		StreamingToolExecution: true,
+	}
+	result, err := runner.Run(context.Background(), "hello")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "done" {
+		t.Fatalf("expected final content, got %q", result)
+	}
+	if tools.wasCanceled() {
+		t.Fatal("stream-started tool was canceled by stream completion")
+	}
+	if len(client.requests) < 2 {
+		t.Fatalf("expected a second model request, got %d", len(client.requests))
+	}
+	var toolMsg string
+	for _, msg := range client.requests[1].Messages {
+		if msg.Role == "tool" && msg.ToolCallID == "call-slow" {
+			toolMsg = msg.Content
+		}
+	}
+	if !strings.Contains(toolMsg, `"ok"`) {
+		t.Fatalf("tool result lost to stream completion: %q", toolMsg)
 	}
 }
 

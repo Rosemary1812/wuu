@@ -47,6 +47,7 @@ type TurnToolRuntime struct {
 	executor    ToolExecutor
 	ledger      *toolledger.Ledger
 	operationID string
+	runContext  context.Context
 	sem         chan struct{}
 
 	mu       sync.Mutex
@@ -66,6 +67,13 @@ type ToolRuntimeConfig struct {
 	Ledger      *toolledger.Ledger
 	OperationID string
 	StepIndex   int
+	// RunContext is the turn-scoped base context for tool execution. Streaming
+	// observation happens under the stream attempt's context, which is canceled
+	// as soon as the stream closes — even on success — while a stream-started
+	// tool must keep running into the final batch. When set, tool executions
+	// derive from RunContext and stop only through explicit Cancel or turn
+	// cancellation; when nil, executions derive from the observation context.
+	RunContext context.Context
 }
 
 func (r *TurnToolRuntime) SetResultCallback(callback func(providers.ToolCall, toolresult.Result)) {
@@ -82,6 +90,7 @@ func NewTurnToolRuntime(config ToolRuntimeConfig) *TurnToolRuntime {
 		executor:    config.Executor,
 		ledger:      config.Ledger,
 		operationID: strings.TrimSpace(config.OperationID),
+		runContext:  config.RunContext,
 		sem:         make(chan struct{}, maxToolConcurrency),
 		byID:        map[string]*toolRun{},
 	}
@@ -269,7 +278,11 @@ func (r *TurnToolRuntime) startRunLocked(ctx context.Context, run *toolRun, stre
 		}
 	}
 	run.state = toolRunRunning
-	runCtx, cancel := context.WithCancel(ctx)
+	base := ctx
+	if r.runContext != nil {
+		base = r.runContext
+	}
+	runCtx, cancel := context.WithCancel(base)
 	if r.stepIndex != nil {
 		runCtx = toolctx.WithStepIndex(runCtx, *r.stepIndex)
 	}
