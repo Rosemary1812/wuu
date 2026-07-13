@@ -277,7 +277,7 @@ export function SessionTabStrip({
         disabled={!canStartNewThread}
         onClick={onNewThread}
       >
-        <Plus className="icon-lg" size={18} viewBox="3 3 18 18" />
+        <Plus className="icon-lg" />
       </button>
       {tabContextMenu ? (
         <ThreadContextMenu
@@ -397,12 +397,7 @@ function SortableSessionTab({
           onClose();
         }}
       >
-        <X
-          className="icon-lg"
-          size={18}
-          strokeWidth={1.5}
-          viewBox="3 3 18 18"
-        />
+        <X className="icon-xs" />
       </button>
     </div>
   );
@@ -439,12 +434,7 @@ function SessionTabDragPreview({
         ) : null}
       </div>
       <div className="session-tab-close" aria-hidden="true">
-        <X
-          className="icon-lg"
-          size={18}
-          strokeWidth={1.5}
-          viewBox="3 3 18 18"
-        />
+        <X className="icon-xs" />
       </div>
     </div>
   );
