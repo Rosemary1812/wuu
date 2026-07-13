@@ -158,7 +158,16 @@ func (t *Toolkit) executeActivityBoundToolResult(ctx context.Context, call provi
 		PreviewURI: session.Preview,
 	}
 	if callErr == nil && cuaActionIsDeliveryOnly(call.Arguments) {
-		return toolresult.Result{}, nil
+		// Input delivery is intentionally not treated as proof that the app
+		// accepted the action. Keep the model-facing result non-empty, though:
+		// provider protocols require every tool call to have a result payload.
+		result.Content = []toolresult.ContentPart{{
+			Type: toolresult.ContentTypeText,
+			Text: "Input delivered. Call observe when the outcome matters.",
+		}}
+		result.StructuredContent = nil
+		result.Meta = nil
+		return result, nil
 	}
 	return result, callErr
 }

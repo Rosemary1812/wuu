@@ -291,7 +291,7 @@ func TestExecuteActivityBoundToolCreatesRefAndHonorsTakeover(t *testing.T) {
 	}
 }
 
-func TestCUAInputActionPublishesActivityButReturnsNoInferredState(t *testing.T) {
+func TestCUAInputActionPublishesActivityButReturnsNeutralReceipt(t *testing.T) {
 	registry := activity.NewRegistry()
 	tool := &activityTestTool{structuredContent: json.RawMessage(`{
 		"status":"verified_visual",
@@ -312,8 +312,14 @@ func TestCUAInputActionPublishesActivityButReturnsNoInferredState(t *testing.T) 
 	if err != nil {
 		t.Fatalf("execute click: %v", err)
 	}
-	if projection := result.JSONProjection(); projection != `{}` {
-		t.Fatalf("input action leaked inferred state to model: %s", projection)
+	if got := result.TextProjection(); got != "Input delivered. Call observe when the outcome matters." {
+		t.Fatalf("input action receipt = %q", got)
+	}
+	if len(result.StructuredContent) != 0 || len(result.Meta) != 0 {
+		t.Fatalf("input action leaked inferred state to model: %+v", result)
+	}
+	if result.Activity == nil || result.Activity.Kind != string(activity.KindCUA) {
+		t.Fatalf("activity reference missing: %+v", result.Activity)
 	}
 	sessions := registry.List("thread-1")
 	if len(sessions) != 1 || sessions[0].Interaction == nil || sessions[0].Interaction.X != 0.25 || sessions[0].State != activity.StateBackgroundControlled {
