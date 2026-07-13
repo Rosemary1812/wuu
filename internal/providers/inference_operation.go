@@ -40,10 +40,15 @@ const (
 // auxiliary model job. Retries retain the ID; a payload mutation increments
 // PayloadVersion.
 type InferenceOperation struct {
-	ID              string
-	Kind            InferenceOperationKind
-	WorkloadProfile InferenceWorkloadProfile
-	PayloadVersion  int
+	ID                string
+	WorkflowID        string
+	ParentOperationID string
+	Kind              InferenceOperationKind
+	WorkloadProfile   InferenceWorkloadProfile
+	PayloadVersion    int
+	// AttemptLimit is frozen with the operation so later configuration changes
+	// cannot expand an in-flight operation's local recovery allowance.
+	AttemptLimit int
 }
 
 // NewInferenceOperation creates a normalized operation with a stable random
@@ -73,6 +78,9 @@ func EnsureInferenceOperation(op InferenceOperation, fallbackKind InferenceOpera
 	}
 	if op.PayloadVersion < 1 {
 		op.PayloadVersion = 1
+	}
+	if op.AttemptLimit < 1 {
+		op.AttemptLimit = NormalizeRetryConfig(RetryConfigForProfile(op.WorkloadProfile)).MaxRetries + 1
 	}
 	return op
 }

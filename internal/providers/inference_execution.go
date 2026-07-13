@@ -179,6 +179,7 @@ type InferenceExecutionSnapshot struct {
 	Operation   InferenceOperation
 	Attempts    int
 	Submissions []InferenceSubmission
+	Workflow    WorkflowBudgetSnapshot
 }
 
 type InferenceCostSummary struct {
@@ -229,6 +230,7 @@ type InferenceExecution struct {
 	mu sync.Mutex
 
 	operation      InferenceOperation
+	workflow       *InferenceWorkflow
 	nextAttempt    int
 	nextSubmission int
 	submissions    []InferenceSubmission
@@ -250,29 +252,77 @@ type InferenceAttempt struct {
 }
 
 func NewInferenceExecution(operation InferenceOperation) *InferenceExecution {
+	execution, err := newInferenceExecution(operation, nil)
+	if err != nil {
+		panic(fmt.Sprintf("providers: create inference execution: %v", err))
+	}
+	return execution
+}
+
+func newInferenceExecution(operation InferenceOperation, workflow *InferenceWorkflow) (*InferenceExecution, error) {
 	operation = EnsureInferenceOperation(operation, InferenceOperationAuxiliary, InferenceProfileInteractive)
-	return &InferenceExecution{operation: operation}
+	if workflow == nil {
+		if strings.TrimSpace(operation.WorkflowID) != "" {
+			workflow = newInferenceWorkflowWithIdentity(
+				operation.WorkflowID,
+				operation.WorkloadProfile,
+				WorkflowBudgetSpecForProfile(operation.WorkloadProfile),
+				time.Time{},
+			)
+		} else {
+			workflow = NewInferenceWorkflow(operation.WorkloadProfile)
+		}
+	}
+	if workflow.spend == nil {
+		workflow.spend = newWorkflowBudget(workflow.ID, workflow.Budget)
+	}
+	if strings.TrimSpace(operation.WorkflowID) == "" {
+		operation.WorkflowID = workflow.ID
+	}
+	if operation.WorkflowID != workflow.ID {
+		return nil, fmt.Errorf("operation %q belongs to workflow %q, not %q", operation.ID, operation.WorkflowID, workflow.ID)
+	}
+	if err := workflow.spend.AdmitOperation(operation); err != nil {
+		return nil, err
+	}
+	return &InferenceExecution{operation: operation, workflow: workflow}, nil
 }
 
 // ensureInferenceExecution attaches the process-local ledger while preserving
 // caller-supplied operation identity.
-func ensureInferenceExecution(req ChatRequest, fallbackKind InferenceOperationKind, fallbackProfile InferenceWorkloadProfile) ChatRequest {
+func ensureInferenceExecution(ctx context.Context, req ChatRequest, fallbackKind InferenceOperationKind, fallbackProfile InferenceWorkloadProfile) (ChatRequest, error) {
 	if req.Execution != nil && strings.TrimSpace(req.Operation.ID) == "" {
 		req.Operation = req.Execution.Operation()
 	}
 	req.Operation = EnsureInferenceOperation(req.Operation, fallbackKind, fallbackProfile)
-	if req.Execution == nil || req.Execution.Operation().ID != req.Operation.ID {
-		req.Execution = NewInferenceExecution(req.Operation)
+	if req.Execution != nil && req.Execution.Operation().ID == req.Operation.ID {
+		existing := req.Execution.Operation()
+		if req.Operation != existing {
+			return req, errors.New("inference operation metadata changed after execution creation")
+		}
+		return req, nil
 	}
-	return req
+	workflow := InferenceWorkflowFromContext(ctx)
+	if strings.TrimSpace(req.Operation.WorkflowID) == "" && workflow != nil {
+		req.Operation.WorkflowID = workflow.ID
+	}
+	if strings.TrimSpace(req.Operation.ParentOperationID) == "" {
+		req.Operation.ParentOperationID = inferenceParentOperationFromContext(ctx)
+	}
+	execution, err := newInferenceExecution(req.Operation, workflow)
+	if err != nil {
+		return req, err
+	}
+	req.Execution = execution
+	req.Operation = execution.Operation()
+	return req, nil
 }
 
 // EnsureInferenceExecutionContext attaches the process-local execution
 // identity. Durable request hashing is intentionally deferred until an attempt
 // is prepared, after provider-specific request normalization has completed.
 func EnsureInferenceExecutionContext(ctx context.Context, req ChatRequest, fallbackKind InferenceOperationKind, fallbackProfile InferenceWorkloadProfile) (ChatRequest, error) {
-	req = ensureInferenceExecution(req, fallbackKind, fallbackProfile)
-	return req, nil
+	return ensureInferenceExecution(ctx, req, fallbackKind, fallbackProfile)
 }
 
 func bindInferenceJournalContext(ctx context.Context, req ChatRequest) (ChatRequest, error) {
@@ -366,22 +416,31 @@ func (e *InferenceExecution) BeginAttemptChecked() (InferenceAttempt, error) {
 	if e.journalErr != nil {
 		return InferenceAttempt{}, e.journalErr
 	}
-	e.nextAttempt++
+	nextOrdinal := e.nextAttempt + 1
 	attempt := InferenceAttempt{
-		ID:        e.operation.AttemptID(e.nextAttempt),
-		Ordinal:   e.nextAttempt,
+		ID:        e.operation.AttemptID(nextOrdinal),
+		Ordinal:   nextOrdinal,
 		execution: e,
 	}
+	if e.workflow != nil && e.workflow.spend != nil {
+		if err := e.workflow.spend.AdmitAttempt(e.operation, attempt.ID, attempt.Ordinal); err != nil {
+			return InferenceAttempt{}, err
+		}
+	}
+	e.nextAttempt = nextOrdinal
 	if e.journal != nil {
 		if err := e.journal.PrepareAttempt(InferenceAttemptJournalRecord{
 			OperationID: e.operation.ID,
+			WorkflowID:  e.operation.WorkflowID,
 			AttemptID:   attempt.ID,
 			Ordinal:     attempt.Ordinal,
 			RequestHash: e.requestHash,
 			At:          time.Now().UTC(),
 		}); err != nil {
 			e.nextAttempt--
-			e.journalErr = err
+			if !IsWorkflowBudgetError(err) {
+				e.journalErr = err
+			}
 			return InferenceAttempt{}, err
 		}
 	}
@@ -439,10 +498,10 @@ func (a InferenceAttempt) RecordSubmission(meta InferenceSubmissionMeta) (Infere
 			return InferenceSubmission{}, fmt.Errorf("attempt %q already owns submission %q", a.ID, existing.ID)
 		}
 	}
-	e.nextSubmission++
+	nextOrdinal := e.nextSubmission + 1
 	submission := InferenceSubmission{
-		ID:             fmt.Sprintf("%s-s%d", e.operation.ID, e.nextSubmission),
-		Ordinal:        e.nextSubmission,
+		ID:             fmt.Sprintf("%s-s%d", e.operation.ID, nextOrdinal),
+		Ordinal:        nextOrdinal,
 		AttemptID:      a.ID,
 		AttemptOrdinal: a.Ordinal,
 		Provider:       strings.TrimSpace(meta.Provider),
@@ -455,10 +514,18 @@ func (a InferenceAttempt) RecordSubmission(meta InferenceSubmissionMeta) (Infere
 		CostState:      InferenceCostUnknownBillable,
 		execution:      e,
 	}
+	if e.workflow != nil && e.workflow.spend != nil {
+		if err := e.workflow.spend.AdmitSubmission(submission.ID); err != nil {
+			return InferenceSubmission{}, err
+		}
+	}
+	e.nextSubmission = nextOrdinal
 	if e.journal != nil {
 		if err := e.journal.UpsertSubmission(journalSubmission(e.operation.ID, submission)); err != nil {
 			e.nextSubmission--
-			e.journalErr = err
+			if !IsWorkflowBudgetError(err) {
+				e.journalErr = err
+			}
 			return InferenceSubmission{}, err
 		}
 	}
@@ -574,6 +641,11 @@ func (a InferenceAttempt) RecordRecovery(plan RecoveryPlan, retryAt time.Time) e
 	if e.journalErr != nil {
 		return e.journalErr
 	}
+	if e.workflow != nil && e.workflow.spend != nil {
+		if err := e.workflow.spend.ReserveRecovery(a.ID, plan, retryAt); err != nil {
+			return err
+		}
+	}
 	if e.journal == nil {
 		return nil
 	}
@@ -584,7 +656,9 @@ func (a InferenceAttempt) RecordRecovery(plan RecoveryPlan, retryAt time.Time) e
 		RetryAt:     retryAt,
 		At:          time.Now().UTC(),
 	}); err != nil {
-		e.journalErr = err
+		if !IsWorkflowBudgetError(err) {
+			e.journalErr = err
+		}
 		return err
 	}
 	return nil
@@ -649,7 +723,13 @@ func (e *InferenceExecution) bindJournal(journal InferenceJournal, requestHash s
 		return nil
 	}
 	if err := journal.PrepareOperation(InferenceOperationJournalRecord{
-		Operation:   e.operation,
+		Operation: e.operation,
+		Workflow: InferenceWorkflowJournalRecord{
+			ID:        e.workflow.ID,
+			Profile:   e.workflow.Profile,
+			Budget:    e.workflow.Budget,
+			StartedAt: e.workflow.StartedAt,
+		},
 		RequestHash: requestHash,
 		At:          time.Now().UTC(),
 	}); err != nil {
@@ -703,6 +783,12 @@ func (e *InferenceExecution) Snapshot() InferenceExecutionSnapshot {
 		Operation:   e.operation,
 		Attempts:    e.nextAttempt,
 		Submissions: submissions,
+		Workflow: func() WorkflowBudgetSnapshot {
+			if e.workflow == nil {
+				return WorkflowBudgetSnapshot{}
+			}
+			return e.workflow.SpendSnapshot()
+		}(),
 	}
 }
 
@@ -715,9 +801,13 @@ func (e *InferenceExecution) updateSubmission(id string, update func(*InferenceS
 		if e.submissions[index].ID == id {
 			update(&e.submissions[index])
 			submission := snapshotSubmission(e.submissions[index])
+			workflow := e.workflow
 			journal := e.journal
 			operationID := e.operation.ID
 			e.mu.Unlock()
+			if workflow != nil && workflow.spend != nil {
+				workflow.spend.SettleSubmission(submission)
+			}
 			if journal != nil {
 				if err := journal.UpsertSubmission(journalSubmission(operationID, submission)); err != nil {
 					e.mu.Lock()

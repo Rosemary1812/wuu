@@ -25,12 +25,21 @@ type InferenceJournal interface {
 
 type InferenceOperationJournalRecord struct {
 	Operation   InferenceOperation
+	Workflow    InferenceWorkflowJournalRecord
 	RequestHash string
 	At          time.Time
 }
 
+type InferenceWorkflowJournalRecord struct {
+	ID        string
+	Profile   InferenceWorkloadProfile
+	Budget    WorkflowBudgetSpec
+	StartedAt time.Time
+}
+
 type InferenceAttemptJournalRecord struct {
 	OperationID string
+	WorkflowID  string
 	AttemptID   string
 	Ordinal     int
 	RequestHash string

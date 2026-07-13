@@ -35,6 +35,8 @@ const (
 	FailureInvalidRequest    FailureCategory = "invalid_request"
 	FailureLocalBackpressure FailureCategory = "local_backpressure"
 	FailureReplayUnsafe      FailureCategory = "replay_unsafe"
+	FailureBudgetExceeded    FailureCategory = "workflow_budget_exceeded"
+	FailureCostIndeterminate FailureCategory = "workflow_cost_indeterminate"
 	FailureUnknown           FailureCategory = "unknown"
 )
 
@@ -165,6 +167,20 @@ func normalizeFailure(err error) NormalizedFailure {
 		failure.ClassificationConfidence = ConfidenceHigh
 		return failure
 	}
+	var budgetExceeded *WorkflowBudgetExceededError
+	if errors.As(err, &budgetExceeded) {
+		failure.Origin = FailureOriginLocal
+		failure.Category = FailureBudgetExceeded
+		failure.ClassificationConfidence = ConfidenceHigh
+		return failure
+	}
+	var costIndeterminate *WorkflowCostIndeterminateError
+	if errors.As(err, &costIndeterminate) {
+		failure.Origin = FailureOriginLocal
+		failure.Category = FailureCostIndeterminate
+		failure.ClassificationConfidence = ConfidenceHigh
+		return failure
+	}
 	var backpressure *LocalBackpressureError
 	if errors.As(err, &backpressure) {
 		failure.Origin = FailureOriginLocal
@@ -286,7 +302,8 @@ func PlanRecovery(failure NormalizedFailure) RecoveryPlan {
 		return RecoveryPlan{Action: RecoveryStop, Reason: "authentication failed"}
 	case FailureReplayUnsafe:
 		return RecoveryPlan{Action: RecoveryBlockUnsafe, Reason: "replay safety fence"}
-	case FailureCanceled, FailureQuota, FailureRequestTooLarge, FailureInvalidRequest, FailureLocalBackpressure, FailureUnknown:
+	case FailureCanceled, FailureQuota, FailureRequestTooLarge, FailureInvalidRequest, FailureLocalBackpressure,
+		FailureBudgetExceeded, FailureCostIndeterminate, FailureUnknown:
 		return RecoveryPlan{Action: RecoveryStop, Reason: string(failure.Category)}
 	default:
 		return RecoveryPlan{Action: RecoveryStop, Reason: "unclassified failure"}

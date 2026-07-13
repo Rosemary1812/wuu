@@ -28,3 +28,25 @@ func RetryConfigForProfile(profile InferenceWorkloadProfile) RetryConfig {
 		return DefaultRetryConfig()
 	}
 }
+
+// WorkflowBudgetSpecForProfile centralizes the recovery spend shared across
+// all operations in one workflow. Planned agent rounds remain governed by the
+// agent loop; this budget specifically prevents retries and recovery children
+// from each minting a fresh allowance.
+func WorkflowBudgetSpecForProfile(profile InferenceWorkloadProfile) WorkflowBudgetSpec {
+	cfg := NormalizeRetryConfig(RetryConfigForProfile(profile))
+	replays := uint64(cfg.MaxRetries)
+	maxWait := uint64((time.Duration(cfg.MaxRetries) * cfg.MaxDelay) / time.Millisecond)
+	credentialRefreshes := uint64(0)
+	if cfg.MaxRetries > 0 {
+		credentialRefreshes = 1
+	}
+	return WorkflowBudgetSpec{
+		MaxSamePayloadReplays:         LimitedBudget(replays),
+		MaxTransportSwitches:          LimitedBudget(replays),
+		MaxCredentialRefreshes:        LimitedBudget(credentialRefreshes),
+		MaxPayloadTransforms:          LimitedBudget(replays),
+		MaxRecoveryWaitMillis:         LimitedBudget(maxWait),
+		MaxUnknownBillableSubmissions: LimitedBudget(uint64(cfg.MaxRetries + 1)),
+	}
+}
