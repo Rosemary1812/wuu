@@ -111,14 +111,23 @@ export function Modal({
     onClose?.();
   }
 
-  function stopBubble(
-    event: ReactMouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>,
-  ): void {
+  function stopClickBubble(event: ReactMouseEvent<HTMLElement>): void {
     // Clicks inside the panel must not reach the backdrop, otherwise
     // backdrop dismissal fires when the user is interacting with the
     // dialog body (selections, copy, button presses that don't stop
     // propagation themselves).
     event.stopPropagation();
+  }
+
+  function handlePanelKeyDown(event: ReactKeyboardEvent<HTMLElement>): void {
+    // Keep dialog keystrokes away from app-level shortcuts, but handle Escape
+    // before stopping propagation so a focused input can still dismiss.
+    event.stopPropagation();
+    if (event.key !== "Escape" || !dismissible) {
+      return;
+    }
+    event.preventDefault();
+    onClose?.();
   }
 
   const panelClass = ["environment-dialog", panelClassName]
@@ -169,8 +178,8 @@ export function Modal({
           role="dialog"
           aria-modal="true"
           aria-label={ariaLabel}
-          onClick={stopBubble}
-          onKeyDown={stopBubble}
+          onClick={stopClickBubble}
+          onKeyDown={handlePanelKeyDown}
           onSubmit={(event) => {
             event.preventDefault();
             onSubmit?.(event);
@@ -185,8 +194,8 @@ export function Modal({
           role="dialog"
           aria-modal="true"
           aria-label={ariaLabel}
-          onClick={stopBubble}
-          onKeyDown={stopBubble}
+          onClick={stopClickBubble}
+          onKeyDown={handlePanelKeyDown}
         >
           {panelBody}
         </div>

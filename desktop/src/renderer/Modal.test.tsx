@@ -149,6 +149,38 @@ describe("Modal", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("invokes onClose when Escape bubbles from a focused input", () => {
+    const onClose = vi.fn();
+    mount(
+      createElement(Modal, {
+        ariaLabel: "close focused input via Esc",
+        icon: createElement("span", null, "i"),
+        title: "t",
+        onClose,
+        children: createElement("input", {
+          type: "text",
+          "data-testid": "focused-input",
+        }),
+      }),
+    );
+
+    const input = document.querySelector<HTMLInputElement>(
+      '[data-testid="focused-input"]',
+    );
+    expect(document.activeElement).toBe(input);
+    act(() => {
+      input?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it("invokes onClose when the backdrop itself is clicked", () => {
     const onClose = vi.fn();
     mount(
