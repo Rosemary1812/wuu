@@ -326,3 +326,20 @@ func (s *Server) interruptSideThread(mainID string) (*SideThreadInterruptResult,
 func generateSideMessageID() string {
 	return fmt.Sprintf("sm_%d", time.Now().UTC().UnixNano())
 }
+
+// cascadeSideThreadForMain removes the on-disk side thread bound to
+// mainID. Invoked from handleThreadDelete after the parent session
+// row has been dropped (design §8: "删除 Main Thread 时,同时删除
+// 其 Side Thread"). Best-effort by design — a failed delete only
+// leaves recoverable disk state behind, never resurrects the
+// session. No-op when the store is unconfigured or the record is
+// absent.
+func (s *Server) cascadeSideThreadForMain(mainID string) {
+	if s == nil || s.sideThreadStore == nil {
+		return
+	}
+	if strings.TrimSpace(mainID) == "" {
+		return
+	}
+	_ = s.sideThreadStore.Delete(mainID)
+}

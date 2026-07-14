@@ -283,6 +283,52 @@ func TestInterruptSideThreadNoOpWhenIdle(t *testing.T) {
 	}
 }
 
+func TestCascadeSideThreadForMainRemovesFile(t *testing.T) {
+	s := newSideThreadServer(t)
+	if _, err := s.sendSideThreadMessage("main_cascade", "seed"); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	exists, err := s.sideThreadStore.Exists("main_cascade")
+	if err != nil || !exists {
+		t.Fatalf("pre-cascade exists=%v err=%v", exists, err)
+	}
+	s.cascadeSideThreadForMain("main_cascade")
+	exists, err = s.sideThreadStore.Exists("main_cascade")
+	if err != nil {
+		t.Fatalf("post-cascade exists: %v", err)
+	}
+	if exists {
+		t.Fatal("side thread file must be removed after cascade")
+	}
+}
+
+func TestCascadeSideThreadForMainNoRecordIsNoOp(t *testing.T) {
+	s := newSideThreadServer(t)
+	// No side thread on disk for "ghost"; the cascade must not panic.
+	s.cascadeSideThreadForMain("ghost")
+}
+
+func TestCascadeSideThreadForMainNilStore(t *testing.T) {
+	s := &Server{}
+	// Nil store / nil server must be safe.
+	s.cascadeSideThreadForMain("anything")
+}
+
+func TestCascadeSideThreadForMainEmptyID(t *testing.T) {
+	s := newSideThreadServer(t)
+	if _, err := s.sendSideThreadMessage("main_empty_check", "seed"); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// Empty / whitespace ids are filtered.
+	s.cascadeSideThreadForMain("   ")
+	s.cascadeSideThreadForMain("")
+	// The real record must still exist.
+	exists, err := s.sideThreadStore.Exists("main_empty_check")
+	if err != nil || !exists {
+		t.Fatalf("post-empty-cascade exists=%v err=%v", exists, err)
+	}
+}
+
 func TestMainTaskSnapshotRunningFalse(t *testing.T) {
 	s := newSideThreadServer(t)
 	snap := s.mainTaskSnapshot("not_in_threads_map")
