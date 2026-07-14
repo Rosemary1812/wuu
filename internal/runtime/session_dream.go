@@ -27,6 +27,7 @@ type sessionDreamScheduler struct {
 	workspaceStateDir  string
 	sessionArtifactDir func() string
 	interval           time.Duration
+	reportError        func(error)
 
 	mu      sync.Mutex
 	running bool
@@ -42,6 +43,9 @@ func newSessionDreamScheduler(rootDir, workspaceStateDir string, sessionArtifact
 		workspaceStateDir:  workspaceStateDir,
 		sessionArtifactDir: sessionArtifactDir,
 		interval:           time.Duration(intervalDays) * 24 * time.Hour,
+		reportError: func(err error) {
+			providers.DebugLogf("session dream: %v", err)
+		},
 	}
 }
 
@@ -102,8 +106,34 @@ func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.Str
 		dreamCtx := providers.WithInferenceJournal(context.Background(), journal)
 		dreamCtx, cancel := context.WithTimeout(dreamCtx, sessionDreamTimeout)
 		defer cancel()
-		_ = s.run(dreamCtx, job)
+		if err := s.run(dreamCtx, job); err != nil && !isPureSessionDreamCancellation(err) && s.reportError != nil {
+			s.reportError(err)
+		}
 	}()
+}
+
+func isPureSessionDreamCancellation(err error) bool {
+	if err == nil {
+		return false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		children := joined.Unwrap()
+		if len(children) == 0 {
+			return false
+		}
+		for _, child := range children {
+			if !isPureSessionDreamCancellation(child) {
+				return false
+			}
+		}
+		return true
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		if child := wrapped.Unwrap(); child != nil {
+			return isPureSessionDreamCancellation(child)
+		}
+	}
+	return errors.Is(err, context.Canceled)
 }
 
 func (s *sessionDreamScheduler) shouldStart(history []providers.ChatMessage, result agent.LoopResult, now time.Time) bool {
@@ -208,7 +238,9 @@ func (s *sessionDreamScheduler) run(ctx context.Context, job sessionDreamJob) er
 		ProviderOptions:          provideroptions.Clone(job.providerOptions),
 	}, backgroundMemoryStep{client: job.client})
 	if err != nil {
-		_ = sessionmemory.RecordDreamFailed(job.workspaceStateDir, time.Now().UTC(), err)
+		if recordErr := sessionmemory.RecordDreamFailed(job.workspaceStateDir, time.Now().UTC(), err); recordErr != nil {
+			return errors.Join(err, fmt.Errorf("record dream failure: %w", recordErr))
+		}
 		return err
 	}
 	return sessionmemory.RecordDreamCompleted(job.workspaceStateDir, started)

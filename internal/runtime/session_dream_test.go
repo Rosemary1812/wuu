@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,12 +21,16 @@ type dreamRecordingJournal struct {
 }
 
 type sessionDreamFakeClient struct {
-	responses []providers.ChatResponse
-	errors    []error
-	requests  []providers.ChatRequest
+	responses  []providers.ChatResponse
+	errors     []error
+	requests   []providers.ChatRequest
+	beforeChat func()
 }
 
 func (c *sessionDreamFakeClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
+	if c.beforeChat != nil {
+		c.beforeChat()
+	}
 	c.requests = append(c.requests, req)
 	idx := len(c.requests) - 1
 	if idx < len(c.errors) && c.errors[idx] != nil {
@@ -152,6 +157,45 @@ func TestSessionDreamScheduler_BackgroundRunKeepsInferenceJournal(t *testing.T) 
 			t.Fatal("background dream did not finish after workflow completion")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestSessionDreamScheduler_BackgroundReportsRunFailure(t *testing.T) {
+	root := t.TempDir()
+	workspaceState := t.TempDir()
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string {
+		return filepath.Join(workspaceState, "sessions", "session-1")
+	}, 7)
+	reported := make(chan error, 1)
+	scheduler.reportError = func(err error) { reported <- err }
+	runner := &agent.StreamRunner{
+		Client: providers.AdaptStreamClient(&sessionDreamFakeClient{
+			errors: []error{errors.New("provider unavailable")},
+		}),
+		Model: "test-model",
+	}
+
+	scheduler.AfterTurn(context.Background(), runner, makeSessionDreamHistory(1), agent.LoopResult{Content: "done"})
+
+	select {
+	case err := <-reported:
+		if !strings.Contains(err.Error(), "provider unavailable") {
+			t.Fatalf("reported error = %v, want provider unavailable", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("background dream failure was not reported")
+	}
+}
+
+func TestIsPureSessionDreamCancellation(t *testing.T) {
+	if !isPureSessionDreamCancellation(fmt.Errorf("stop dream: %w", context.Canceled)) {
+		t.Fatal("wrapped context cancellation should be treated as a normal cancellation")
+	}
+	if isPureSessionDreamCancellation(context.DeadlineExceeded) {
+		t.Fatal("dream deadline should be reported as a failed attempt")
+	}
+	if isPureSessionDreamCancellation(errors.Join(context.Canceled, errors.New("persist failure state"))) {
+		t.Fatal("persistence failure joined to cancellation must still be reported")
 	}
 }
 
@@ -498,5 +542,41 @@ func TestSessionDream_RunRecordsFailureState(t *testing.T) {
 	}
 	if !state.LastStartedAt.Equal(started) {
 		t.Fatalf("LastStartedAt = %v, want %v", state.LastStartedAt, started)
+	}
+}
+
+func TestSessionDream_RunReturnsFailureStatePersistenceError(t *testing.T) {
+	root := t.TempDir()
+	workspaceState := t.TempDir()
+	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
+	providerErr := errors.New("provider unavailable")
+	statePath := sessionmemory.DreamStatePath(workspaceState)
+	client := &sessionDreamFakeClient{
+		errors: []error{providerErr},
+		beforeChat: func() {
+			if err := os.Remove(statePath); err != nil {
+				t.Fatalf("remove dream state: %v", err)
+			}
+			if err := os.Mkdir(statePath, 0o755); err != nil {
+				t.Fatalf("replace dream state with directory: %v", err)
+			}
+		},
+	}
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
+
+	err := scheduler.run(context.Background(), sessionDreamJob{
+		client:             client,
+		model:              "test-model",
+		rootDir:            root,
+		workspaceStateDir:  workspaceState,
+		sessionArtifactDir: sessionArtifact,
+		history:            makeSessionDreamHistory(1),
+	})
+
+	if !errors.Is(err, providerErr) {
+		t.Fatalf("run error = %v, want original provider error", err)
+	}
+	if !strings.Contains(err.Error(), "record dream failure") || !strings.Contains(err.Error(), "read dream state") {
+		t.Fatalf("run error = %v, want failure-state persistence error", err)
 	}
 }
