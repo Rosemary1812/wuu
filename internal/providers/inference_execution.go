@@ -330,8 +330,6 @@ func ensureInferenceExecution(ctx context.Context, req ChatRequest, fallbackKind
 	if strings.TrimSpace(req.Operation.ParentOperationID) == "" {
 		if lineage := inferenceOperationLineageFromContext(ctx); lineage != nil {
 			req.Operation.ParentOperationID = lineage.LastOperationID()
-		} else {
-			req.Operation.ParentOperationID = inferenceParentOperationFromContext(ctx)
 		}
 	}
 	execution, err := newInferenceExecution(req.Operation, workflow)

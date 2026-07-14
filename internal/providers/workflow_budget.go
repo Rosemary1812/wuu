@@ -141,7 +141,6 @@ func (w *InferenceWorkflow) SpendSnapshot() WorkflowBudgetSnapshot {
 }
 
 type workflowBudgetContextKey struct{}
-type inferenceParentOperationContextKey struct{}
 type inferenceOperationLineageContextKey struct{}
 
 // InferenceOperationLineage is a sequential parent cursor scoped to one
@@ -232,25 +231,6 @@ func InferenceWorkflowFromContext(ctx context.Context) *InferenceWorkflow {
 	}
 	workflow, _ := ctx.Value(workflowBudgetContextKey{}).(*InferenceWorkflow)
 	return workflow
-}
-
-func WithInferenceParentOperation(ctx context.Context, operationID string) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	operationID = strings.TrimSpace(operationID)
-	if operationID == "" {
-		return ctx
-	}
-	return context.WithValue(ctx, inferenceParentOperationContextKey{}, operationID)
-}
-
-func inferenceParentOperationFromContext(ctx context.Context) string {
-	if ctx == nil {
-		return ""
-	}
-	parent, _ := ctx.Value(inferenceParentOperationContextKey{}).(string)
-	return strings.TrimSpace(parent)
 }
 
 // BeginInferenceOperationLineage creates a sequential child-operation scope.

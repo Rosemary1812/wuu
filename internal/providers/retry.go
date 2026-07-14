@@ -8,7 +8,6 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -271,50 +270,6 @@ func isContextOverflowCode(code string) bool {
 	return strings.EqualFold(strings.TrimSpace(code), "context_length_exceeded")
 }
 
-// overflowTokenRe extracts (actual, limit) token counts from provider
-// error messages like "prompt is too long: 137500 tokens > 135000
-// maximum" or "This model's maximum context length is 128000 tokens.
-// However, your messages resulted in 145230 tokens."
-var overflowTokenRe = regexp.MustCompile(
-	`(\d[\d,]*)\s*tokens?\s*[>\.]\s*(\d[\d,]*)` +
-		`|maximum[^0-9]*(\d[\d,]*)[^0-9]*resulted[^0-9]*(\d[\d,]*)`,
-)
-
-// OverflowTokenGap describes the delta extracted from a context
-// overflow error. Zero values mean the gap could not be extracted.
-type OverflowTokenGap struct {
-	Actual int
-	Limit  int
-}
-
-// ParseOverflowTokens attempts to extract token counts from a context
-// overflow error body. Returns zero values if parsing fails —
-// callers should fall back to percentage-based compaction.
-func ParseOverflowTokens(body string) OverflowTokenGap {
-	m := overflowTokenRe.FindStringSubmatch(body)
-	if m == nil {
-		return OverflowTokenGap{}
-	}
-	var a, b int
-	if m[1] != "" && m[2] != "" {
-		a = parseTokenCount(m[1])
-		b = parseTokenCount(m[2])
-	} else if m[3] != "" && m[4] != "" {
-		b = parseTokenCount(m[3]) // limit
-		a = parseTokenCount(m[4]) // actual
-	}
-	if a > 0 && b > 0 {
-		return OverflowTokenGap{Actual: a, Limit: b}
-	}
-	return OverflowTokenGap{}
-}
-
-func parseTokenCount(s string) int {
-	s = strings.ReplaceAll(s, ",", "")
-	n, _ := strconv.Atoi(s)
-	return n
-}
-
 // IsContextOverflow returns true if err is an HTTPError flagged as
 // context overflow.
 func IsContextOverflow(err error) bool {
@@ -327,20 +282,6 @@ func IsContextOverflow(err error) bool {
 		return streamErr.ContextOverflow
 	}
 	return false
-}
-
-// ContextOverflowGap extracts the token gap from a context overflow
-// error, if available.
-func ContextOverflowGap(err error) OverflowTokenGap {
-	var httpErr *HTTPError
-	if errors.As(err, &httpErr) && httpErr.ContextOverflow {
-		return ParseOverflowTokens(httpErr.Body)
-	}
-	var streamErr *StreamError
-	if errors.As(err, &streamErr) && streamErr.ContextOverflow {
-		return ParseOverflowTokens(streamErr.Message)
-	}
-	return OverflowTokenGap{}
 }
 
 // IsRetryable returns true if the error is worth retrying.
@@ -359,17 +300,6 @@ func IsAuthError(err error) bool {
 		return streamErr.Auth
 	}
 	return false
-}
-
-// IsContextWindowError returns true if the error indicates context window exceeded.
-func IsContextWindowError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "context_length_exceeded") ||
-		strings.Contains(msg, "maximum context length") ||
-		strings.Contains(msg, "max_tokens")
 }
 
 func backoffDelay(attempt int, initial, maxDelay time.Duration, err error) time.Duration {

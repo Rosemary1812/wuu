@@ -70,10 +70,6 @@ func DiscoveredToolNamesFromMessages(messages []ChatMessage) map[string]struct{}
 	return LoadableToolNames(tools)
 }
 
-func AttachedDiscoveredToolNamesFromMessages(messages []ChatMessage) map[string]struct{} {
-	return LoadableToolNames(AttachedDiscoveredToolsFromMessages(messages))
-}
-
 func CompactedDiscoveredToolNamesFromMessages(messages []ChatMessage) map[string]struct{} {
 	return LoadableToolNames(CompactedDiscoveredToolsFromMessages(messages))
 }
