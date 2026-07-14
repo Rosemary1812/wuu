@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DesktopProject } from "../shared/protocol";
+import type { DesktopProject, RuntimeContext } from "../shared/protocol";
 
 const electronMock = vi.hoisted(() => ({
   userDataPath: "",
@@ -57,11 +57,15 @@ function project(id: string, name: string, path: string): DesktopProject {
   };
 }
 
-async function writeStore(path: string, projects: DesktopProject[]): Promise<void> {
+async function writeStore(
+  path: string,
+  projects: DesktopProject[],
+  activeContext?: RuntimeContext,
+): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(
     path,
-    `${JSON.stringify({ projects }, null, 2)}\n`,
+    `${JSON.stringify({ projects, active_context: activeContext }, null, 2)}\n`,
     "utf8",
   );
 }
@@ -234,5 +238,65 @@ describe("ProjectManager project store migration", () => {
     expect(await readFile(canonicalStorePath(), "utf8")).toBe(contents);
     expect(await readFile(legacyStorePath(), "utf8")).toBe(legacyContents);
     expect(await legacyArchiveNames()).toEqual([]);
+  });
+});
+
+describe("ProjectManager runtime context availability", () => {
+  it("keeps a temporarily unavailable active project selected without persisting scratch", async () => {
+    const projectPath = await createProjectDir("temporarily-offline");
+    const activeProject = project("project-1", "temporarily-offline", projectPath);
+    const activeContext: RuntimeContext = {
+      kind: "project",
+      project_id: activeProject.id,
+      cwd: projectPath,
+    };
+    await writeStore(canonicalStorePath(), [activeProject], activeContext);
+    await rm(projectPath, { recursive: true });
+    const persistedBefore = await readFile(canonicalStorePath(), "utf8");
+
+    const manager = new ProjectManager();
+    const listed = manager.list();
+
+    expect(listed.active_context).toEqual(activeContext);
+    expect(listed.active_project_id).toBe(activeProject.id);
+    expect(listed.projects[0]?.missing).toBe(true);
+    expect(listed.runtime_issue).toMatchObject({
+      code: "active_project_unavailable",
+      project_id: activeProject.id,
+      cwd: projectPath,
+    });
+    expect(listed.runtime_issue?.message).toContain(projectPath);
+    expect(() => manager.ensureRuntimeContext()).toThrow(
+      "工作区目录当前不可用",
+    );
+    expect(await readFile(canonicalStorePath(), "utf8")).toBe(persistedBefore);
+    expect(await pathExists(join(home, "scratch", "default"))).toBe(false);
+
+    await mkdir(projectPath, { recursive: true });
+    const restored = manager.list();
+    expect(restored.active_context).toEqual(activeContext);
+    expect(restored.runtime_issue).toBeUndefined();
+    expect(manager.ensureRuntimeContext()).toEqual(activeContext);
+  });
+
+  it("still moves to scratch after the user explicitly removes the active project", async () => {
+    const projectPath = await createProjectDir("removed-active");
+    const activeProject = project("project-1", "removed-active", projectPath);
+    const activeContext: RuntimeContext = {
+      kind: "project",
+      project_id: activeProject.id,
+      cwd: projectPath,
+    };
+    await writeStore(canonicalStorePath(), [activeProject], activeContext);
+
+    const listed = new ProjectManager().remove(activeProject.id);
+
+    expect(listed.projects).toEqual([]);
+    expect(listed.active_context?.kind).toBe("no_project");
+    expect(listed.runtime_issue).toBeUndefined();
+    const persisted = JSON.parse(
+      await readFile(canonicalStorePath(), "utf8"),
+    ) as { active_context?: RuntimeContext };
+    expect(persisted.active_context).toEqual(listed.active_context);
   });
 });

@@ -56,6 +56,52 @@ describe("runtime load helpers", () => {
     expect(initialize).not.toHaveBeenCalled();
   });
 
+  it("keeps an unavailable active project selected without starting its runtime", async () => {
+    const activeContext: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/tmp/offline-project",
+    };
+    const message =
+      "工作区目录当前不可用：/tmp/offline-project。请恢复该目录，或从工作区菜单选择“重新定位…”。";
+    const projectState: ProjectListResult = {
+      projects: [
+        {
+          id: "project-1",
+          name: "offline-project",
+          path: activeContext.cwd,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+          missing: true,
+        },
+      ],
+      active_context: activeContext,
+      active_project_id: "project-1",
+      runtime_issue: {
+        code: "active_project_unavailable",
+        message,
+        project_id: "project-1",
+        cwd: activeContext.cwd,
+      },
+    };
+    const initialize = vi.fn();
+    const listThreads = vi.fn();
+    const listArchivedThreads = vi.fn();
+    installWuuStub({ initialize, listThreads, listArchivedThreads });
+
+    const state = await loadRuntime(projectState);
+
+    expect(state.projects).toEqual(projectState.projects);
+    expect(state.activeContext).toEqual(activeContext);
+    expect(state.activeProjectId).toBe("project-1");
+    expect(state.initialized).toBeUndefined();
+    expect(state.status).toBe(message);
+    expect(state.threads).toEqual([]);
+    expect(initialize).not.toHaveBeenCalled();
+    expect(listThreads).not.toHaveBeenCalled();
+    expect(listArchivedThreads).not.toHaveBeenCalled();
+  });
+
   it("selects project and no-project contexts through the desktop API", async () => {
     const projectContext: RuntimeContext = {
       kind: "project",

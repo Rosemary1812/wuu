@@ -12,6 +12,7 @@ import { basename, join, resolve } from "node:path";
 import type {
   DesktopProject,
   ProjectListResult,
+  ProjectRuntimeIssue,
   RuntimeContext,
 } from "../shared/protocol";
 import { writeTextFileAtomicSync } from "./atomicFile";
@@ -30,18 +31,27 @@ export class ProjectManager {
 
   list(): ProjectListResult {
     this.load();
-    const context = this.ensureRuntimeContext();
+    const context = this.reconcileRuntimeContext();
+    const projects = this.store.projects.map((project) => ({
+      ...project,
+      missing: !isDirectory(project.path),
+    }));
+    const activeProject =
+      context.kind === "project"
+        ? projects.find((project) => project.id === context.project_id)
+        : undefined;
     return {
       // Annotate (without persisting) each project with whether its directory
       // still exists, so the sidebar can grey out and lock a workspace whose
       // folder was moved away or deleted.
-      projects: this.store.projects.map((project) => ({
-        ...project,
-        missing: !isDirectory(project.path),
-      })),
+      projects,
       active_context: context,
       active_project_id:
         context.kind === "project" ? context.project_id : undefined,
+      runtime_issue:
+        activeProject?.missing === true
+          ? activeProjectUnavailableIssue(activeProject)
+          : undefined,
     };
   }
 
@@ -52,12 +62,25 @@ export class ProjectManager {
   }
 
   ensureRuntimeContext(): RuntimeContext {
+    const context = this.reconcileRuntimeContext();
+    if (context.kind === "project") {
+      const project = this.store.projects.find(
+        (candidate) => candidate.id === context.project_id,
+      );
+      if (project && !isDirectory(project.path)) {
+        throw new Error(activeProjectUnavailableIssue(project).message);
+      }
+    }
+    return context;
+  }
+
+  private reconcileRuntimeContext(): RuntimeContext {
     const active = this.store.active_context;
     if (active?.kind === "project") {
       const project = this.store.projects.find(
         (candidate) => candidate.id === active.project_id,
       );
-      if (project && isDirectory(project.path)) {
+      if (project) {
         const context: RuntimeContext = {
           kind: "project",
           project_id: project.id,
@@ -445,6 +468,17 @@ function newProjectID(): string {
 
 function projectName(projectPath: string): string {
   return basename(projectPath) || projectPath;
+}
+
+function activeProjectUnavailableIssue(
+  project: Pick<DesktopProject, "id" | "path">,
+): ProjectRuntimeIssue {
+  return {
+    code: "active_project_unavailable",
+    message: `工作区目录当前不可用：${project.path}。请恢复该目录，或从工作区菜单选择“重新定位…”。`,
+    project_id: project.id,
+    cwd: project.path,
+  };
 }
 
 function isDirectory(projectPath: string): boolean {

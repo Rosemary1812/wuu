@@ -22,6 +22,9 @@ export async function loadRuntime(
   if (!projectState.active_context) {
     return emptyRuntimeState(projectState);
   }
+  if (projectState.runtime_issue?.code === "active_project_unavailable") {
+    return unavailableProjectRuntimeState(projectState);
+  }
   const resumeLatestThread = options.resumeLatestThread ?? true;
   const initialized = await window.wuu.initialize();
   const [listed, archived] = await Promise.all([
@@ -150,6 +153,18 @@ export function emptyRuntimeState(
     threads: [],
     running: false,
     status: "no-runtime",
+  };
+}
+
+function unavailableProjectRuntimeState(
+  projectState: ProjectListResult,
+): Partial<AppState> {
+  return {
+    ...emptyRuntimeState(projectState),
+    activeContext: projectState.active_context,
+    activeProjectId: activeProjectID(projectState.active_context),
+    status:
+      projectState.runtime_issue?.message ?? "当前工作区目录不可用，请恢复或重新定位该工作区。",
   };
 }
 

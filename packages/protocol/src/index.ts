@@ -474,11 +474,11 @@ export type DesktopProject = {
   path: string;
   created_at: string;
   updated_at: string;
-  // Derived (not persisted): true when the project's directory no longer
-  // exists on disk — it was moved away or deleted. The main process computes
-  // it fresh on every list(); the sidebar greys such a workspace out and
-  // disables its "新建会话" affordance so no new session can be created in a
-  // cwd that is gone.
+  // Derived (not persisted): true when the project's path cannot currently be
+  // accessed as a directory — for example because it was moved, deleted, or
+  // its volume is temporarily unavailable. The main process computes it fresh
+  // on every list(); the sidebar greys such a workspace out and disables its
+  // "新建会话" affordance.
   missing?: boolean;
 };
 
@@ -493,10 +493,21 @@ export type RuntimeContext =
       cwd: string;
     };
 
+export type ProjectRuntimeIssue = {
+  code: "active_project_unavailable";
+  message: string;
+  project_id: string;
+  cwd: string;
+};
+
 export type ProjectListResult = {
   projects: DesktopProject[];
   active_context?: RuntimeContext;
   active_project_id?: string;
+  // A selected project stays selected while its directory is temporarily
+  // unavailable. Runtime consumers must surface this issue instead of silently
+  // routing work to the no-project scratch workspace.
+  runtime_issue?: ProjectRuntimeIssue;
 };
 
 export type GitStatusResult = {
