@@ -319,10 +319,6 @@ export function App(): JSX.Element {
   const [popOutInit] = useState<PopOutInitResult | null>(() => readPopOutInit());
   const poppedOutMode = Boolean(popOutInit?.kind && popOutInit.context);
   const [state, setState] = useState<AppState>(initialState);
-  // Bumped each time the empty-state hint chip should refocus the hero
-  // composer. A counter (not a boolean) so re-clicking the same chip
-  // still fires the focus effect on the next render.
-  const [heroComposerFocusTick, setHeroComposerFocusTick] = useState(0);
   const [goalSummary, setGoalSummary] = useState<ComposerGoalSummary | null>(
     null
   );
@@ -1380,20 +1376,6 @@ export function App(): JSX.Element {
   useEffect(() => {
     void refreshGoalSummary();
   }, [refreshGoalSummary]);
-
-  useEffect(() => {
-    if (heroComposerFocusTick === 0) {
-      return;
-    }
-    // The hero composer only exists while the empty conversation view
-    // is on screen. Query inside the empty-home section so we never
-    // accidentally grab the dock composer's textarea.
-    const root = document.querySelector(".empty-home");
-    const textarea = root?.querySelector(".hero-composer-wrap textarea");
-    if (textarea instanceof HTMLTextAreaElement) {
-      textarea.focus();
-    }
-  }, [heroComposerFocusTick]);
 
   useEffect(() => {
     const off = window.wuu.onServerEvent((event) => {
