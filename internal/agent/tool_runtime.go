@@ -769,19 +769,6 @@ func resultPointer(result toolresult.Result) *toolresult.Result {
 	return &clone
 }
 
-func (r *TurnToolRuntime) executionContext(ctx context.Context) context.Context {
-	if r == nil {
-		return ctx
-	}
-	r.mu.Lock()
-	stepIndex := r.stepIndex
-	r.mu.Unlock()
-	if stepIndex == nil {
-		return ctx
-	}
-	return toolctx.WithStepIndex(ctx, *stepIndex)
-}
-
 func toolCanRunConcurrently(executor ToolExecutor, call providers.ToolCall) bool {
 	if executor == nil {
 		return false

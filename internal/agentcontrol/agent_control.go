@@ -1419,11 +1419,6 @@ func (c *AgentControl) agentIDForPath(currentPath string) string {
 	return ""
 }
 
-func (c *AgentControl) isMailboxNotificationFor(currentID string, n subagent.Notification) bool {
-	_, ok := c.agentNotificationSignal(currentID, n)
-	return ok
-}
-
 func (c *AgentControl) queuedMessageSignal(currentID string) (WaitAgentSignal, bool) {
 	if currentID == "" {
 		return WaitAgentSignal{}, false
@@ -2634,14 +2629,6 @@ func (c *AgentControl) isRootChildSnapshot(snap subagent.SubAgentSnapshot) bool 
 	return parentID == "" || parentID == c.sessionID || parentID == c.rootThreadID
 }
 
-func formatAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPath string) string {
-	return newAgentCompletionCommunication(snap, recipientPath).String()
-}
-
-func newAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPath string) agentthread.InterAgentCommunication {
-	return newAgentCompletionCommunicationWithMessage(snap, recipientPath, NewAgentMailboxMessage(snap))
-}
-
 func (c *AgentControl) newAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPath string) agentthread.InterAgentCommunication {
 	reportPath, artifacts := c.harnessReportForTask(snap.ID)
 	return newAgentCompletionCommunicationWithMessage(snap, recipientPath, c.agentMailboxMessageWithRefs(snap, reportPath, artifacts))
@@ -2713,10 +2700,6 @@ func newAgentCompletionCommunicationWithMessageAndTrigger(snap subagent.SubAgent
 	return agentthread.NewInterAgentCommunication(parseAgentPathOrRoot(snap.AgentPath), parseAgentPathOrRoot(recipientPath), content, triggerTurn)
 }
 
-func formatInterAgentCommunication(authorPath, recipientPath, content string, triggerTurn bool) string {
-	return newInterAgentCommunication(authorPath, recipientPath, content, triggerTurn).String()
-}
-
 func newInterAgentCommunication(authorPath, recipientPath, content string, triggerTurn bool) agentthread.InterAgentCommunication {
 	return agentthread.NewInterAgentCommunication(
 		parseAgentPathOrRoot(authorPath),
@@ -2765,10 +2748,6 @@ func isFinalAgentThreadStatus(status agentthread.Status) bool {
 	default:
 		return false
 	}
-}
-
-func (c *AgentControl) resolveAgentID(target string) string {
-	return c.resolveAgentIDFrom(agentthread.RootPath, target)
 }
 
 func (c *AgentControl) resolveAgentIDFrom(currentPath, target string) string {

@@ -167,20 +167,6 @@ func AvailableWorkerTypeNames() []string {
 	return out
 }
 
-// WorkerTypeHelp returns a compact role list suitable for model-facing prompts.
-func WorkerTypeHelp() string {
-	var b strings.Builder
-	for i, item := range AvailableWorkerTypes() {
-		if i > 0 {
-			b.WriteString("; ")
-		}
-		b.WriteString(item.Name)
-		b.WriteString(": ")
-		b.WriteString(item.Description)
-	}
-	return b.String()
-}
-
 // LookupWorkerType resolves a worker type name to its definition.
 func LookupWorkerType(name string) (WorkerType, error) {
 	if name == "" {
