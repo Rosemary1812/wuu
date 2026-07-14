@@ -1269,9 +1269,16 @@ func (c *localDebugAppServerClient) Shutdown(ctx context.Context) error {
 		_ = pipe.Close()
 	}
 	if c.done != nil {
-		runErr := <-c.done
-		if err == nil && runErr != nil && !errors.Is(runErr, io.ErrClosedPipe) {
-			err = runErr
+		select {
+		case runErr := <-c.done:
+			if err == nil && runErr != nil && !errors.Is(runErr, io.ErrClosedPipe) {
+				err = runErr
+			}
+		case <-ctx.Done():
+			// The run loop is still live, so cleaning up the shared runtime
+			// underneath it would race with in-flight turns; process teardown
+			// reclaims those resources instead.
+			return errors.Join(err, fmt.Errorf("app server run loop did not exit before shutdown deadline: %w", ctx.Err()))
 		}
 	}
 	// RunStdio performs a synchronous Server.Close. Runtime cleanup must run

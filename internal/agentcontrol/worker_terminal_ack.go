@@ -276,6 +276,7 @@ type workerNotificationOutcome uint8
 const (
 	workerNotificationSettled workerNotificationOutcome = iota
 	workerNotificationContinued
+	workerNotificationDeferred
 )
 
 func (c *AgentControl) finalizeWorkerTerminalWithAck(n subagent.Notification) workerTerminalCommitOutcome {
@@ -310,6 +311,12 @@ func (c *AgentControl) finalizeWorkerTerminalWithAck(n subagent.Notification) wo
 	// this observer resumes.
 	if notificationOutcome == workerNotificationContinued {
 		return workerTerminalContinued
+	}
+	// An undelivered nested result leaves the durable terminal record as the
+	// delivery authority: recovery replays it once the parent can claim, so
+	// none of the acknowledgement steps below may consume the record now.
+	if notificationOutcome == workerNotificationDeferred {
+		return workerTerminalDeferred
 	}
 	if c.hasWorkerTerminalFinalizers() {
 		if !c.retryWorkerTerminalStep(workerID, "external finalize", durable, func() error {

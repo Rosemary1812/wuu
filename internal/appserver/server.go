@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"path/filepath"
@@ -622,16 +623,32 @@ func (s *Server) Close() {
 	})
 }
 
+// ownedShutdownDrainTimeout bounds Close's wait for owned turns, workers, and
+// their terminal finalizers. A wedged execution then surfaces as a loud log
+// and a proceeding shutdown instead of a process that can never exit; durable
+// terminal records and execution leases keep the drained state recoverable.
+const ownedShutdownDrainTimeout = time.Minute
+
 func (s *Server) waitForOwnedShutdown(threads []*threadState, controls map[*agentcontrol.AgentControl]struct{}) {
 	if s == nil {
 		return
 	}
+	deadline := time.Now().Add(ownedShutdownDrainTimeout)
 	// Drain/title/side workers can still have admitted a turn immediately before
 	// Close marked the server closed. Wait for those launchers first, then for
 	// every turn/worker lease this Server owns to be released by its normal
 	// terminal path. External owners are deliberately absent from these local
 	// snapshots, so shutdown never waits for unrelated app-server processes.
-	s.backgroundWG.Wait()
+	background := make(chan struct{})
+	go func() {
+		s.backgroundWG.Wait()
+		close(background)
+	}()
+	select {
+	case <-background:
+	case <-time.After(ownedShutdownDrainTimeout):
+		log.Printf("wuu: shutdown drain timed out after %s: owned background goroutines still running", ownedShutdownDrainTimeout)
+	}
 	// A launcher already inside startBackground may have attached a thread
 	// runtime after the first shutdown snapshot. Once all launchers and turns
 	// have stopped, collect those late local controls and cancel their workers
@@ -646,6 +663,10 @@ func (s *Server) waitForOwnedShutdown(threads []*threadState, controls map[*agen
 		s.afterWorkerShutdownStopWavesForTest()
 	}
 	for shutdownExecutionActive(threads, controls) {
+		if !time.Now().Before(deadline) {
+			log.Printf("wuu: shutdown drain timed out after %s: releasing with owned executions still active", ownedShutdownDrainTimeout)
+			return
+		}
 		time.Sleep(10 * time.Millisecond)
 	}
 }

@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -783,6 +785,43 @@ func openStore(sessDir string) (*sql.DB, error) {
 // components that own independent tables, such as the durable tool ledger.
 func OpenStore(sessDir string) (*sql.DB, error) {
 	return openStore(sessDir)
+}
+
+// openStoreForScan opens the sessions database for a pure read-only scan.
+// Unlike openStore it never creates the directory, database file, or schema:
+// recovery scans run on their own cadence after arbitrary external cleanup,
+// and a reader that resurrects the store it is probing would fight that
+// cleanup forever. A missing store reports ok=false and means there is
+// nothing to scan.
+func openStoreForScan(sessDir string) (*sql.DB, bool, error) {
+	dbPath := DBPath(sessDir)
+	if _, err := os.Stat(dbPath); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("probe sessions database: %w", err)
+	}
+	db, err := sql.Open("sqlite", sqliteDSN(dbPath))
+	if err != nil {
+		return nil, false, fmt.Errorf("open sessions database: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	return db, true, nil
+}
+
+// storeTableExists reports whether a table is present without running the
+// schema migration, so scan paths can treat a store from before the table's
+// introduction as having no rows instead of creating the table.
+func storeTableExists(db *sql.DB, name string) (bool, error) {
+	var found string
+	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, name).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("probe table %q: %w", name, err)
+	}
+	return true, nil
 }
 
 func sqliteDSN(path string) string {
