@@ -16,6 +16,42 @@ export type DeepLink =
   | { kind: "thread"; threadId: string }
   | { kind: "home" };
 
+export interface DeepLinkGate {
+  receive(link: DeepLink | null): void;
+  completeStartup(hasCredentials: boolean): void;
+  markPaired(): void;
+}
+
+/** Holds a cold-start link until credential loading finishes. A link cannot
+ *  open a thread without a client, and the normal startup route must not
+ *  overwrite a valid link immediately after it opens. */
+export function createDeepLinkGate(
+  dispatch: (link: DeepLink) => void,
+): DeepLinkGate {
+  let credentialState: "loading" | "ready" | "missing" = "loading";
+  let pending: DeepLink | null = null;
+
+  return {
+    receive(link) {
+      if (!link) return;
+      if (credentialState === "ready") {
+        dispatch(link);
+      } else if (credentialState === "loading") {
+        pending = link;
+      }
+    },
+    completeStartup(hasCredentials) {
+      credentialState = hasCredentials ? "ready" : "missing";
+      const link = pending;
+      pending = null;
+      if (hasCredentials && link) dispatch(link);
+    },
+    markPaired() {
+      credentialState = "ready";
+    },
+  };
+}
+
 const SCHEME = "wuu";
 
 export function parseDeepLink(input: string | null | undefined): DeepLink | null {

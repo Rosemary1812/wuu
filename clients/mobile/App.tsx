@@ -3,13 +3,13 @@
 // outweigh the app. The controller is a module singleton; screens read the
 // store via useSyncExternalStore.
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Alert, BackHandler, Linking, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 
 import { WuuMobile } from "./src/lib/connection";
 import { deviceCredentialStore } from "./src/lib/credStore";
-import { parseDeepLink } from "./src/lib/deepLink";
+import { createDeepLinkGate, parseDeepLink } from "./src/lib/deepLink";
 import { getInitialNotificationResponse } from "./src/lib/push";
 import { threadDisplayTitle } from "./src/lib/threads";
 import { usePalette } from "./src/theme";
@@ -48,12 +48,23 @@ export default function App(): React.JSX.Element {
   const [route, setRoute] = useState<Route>({ name: "boot" });
   const [refreshing, setRefreshing] = useState(false);
   const snapshot = useSyncExternalStore(controller.store.subscribe, controller.store.getSnapshot);
+  const deepLinkGateRef = useRef<ReturnType<typeof createDeepLinkGate> | null>(null);
+  if (!deepLinkGateRef.current) {
+    deepLinkGateRef.current = createDeepLinkGate((link) => applyDeepLink(link, setRoute));
+  }
+  const deepLinkGate = deepLinkGateRef.current;
 
   useEffect(() => {
     void controller
       .startFromStoredCredentials()
-      .then((hadCredentials) => setRoute(hadCredentials ? { name: "chats" } : { name: "pair" }))
-      .catch(() => setRoute({ name: "pair" }));
+      .then((hadCredentials) => {
+        setRoute(hadCredentials ? { name: "chats" } : { name: "pair" });
+        deepLinkGate.completeStartup(hadCredentials);
+      })
+      .catch(() => {
+        setRoute({ name: "pair" });
+        deepLinkGate.completeStartup(false);
+      });
   }, []);
 
   // Deep-link wiring: cold start (initial URL or initial notification
@@ -62,22 +73,22 @@ export default function App(): React.JSX.Element {
   // credentials, so a freshly-installed user that taps a push gets routed
   // to pair instead of an empty thread.
   useEffect(() => {
-    controller.onDeepLink = (link) => applyDeepLink(link, setRoute);
+    controller.onDeepLink = (link) => deepLinkGate.receive(link);
     controller.startPushListeners();
     let cancelled = false;
     (async () => {
       const initialUrl = await Linking.getInitialURL().catch(() => null);
       if (cancelled) return;
-      applyDeepLink(parseDeepLink(initialUrl), setRoute);
+      deepLinkGate.receive(parseDeepLink(initialUrl));
       const initialPush = await getInitialNotificationResponse();
       if (cancelled || !initialPush) return;
       const data = initialPush.notification.request.content.data as { url?: unknown } | undefined;
       if (typeof data?.url === "string") {
-        applyDeepLink(parseDeepLink(data.url), setRoute);
+        deepLinkGate.receive(parseDeepLink(data.url));
       }
     })();
     const sub = Linking.addEventListener("url", (event) => {
-      applyDeepLink(parseDeepLink(event.url), setRoute);
+      deepLinkGate.receive(parseDeepLink(event.url));
     });
     return () => {
       cancelled = true;
@@ -125,7 +136,10 @@ export default function App(): React.JSX.Element {
             const creds = await controller.pairWithUri(uri, "手机");
             return creds.host_name ?? "";
           }}
-          onDone={() => setRoute({ name: "chats" })}
+          onDone={() => {
+            deepLinkGate.markPaired();
+            setRoute({ name: "chats" });
+          }}
         />
       ) : route.name === "chats" ? (
         <ChatsScreen
