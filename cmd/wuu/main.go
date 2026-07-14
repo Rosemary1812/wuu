@@ -1433,6 +1433,7 @@ type execCLIConfig struct {
 	outputLastMessage *string
 	inputJSON         *bool
 	maxTurns          *int
+	ultra             *bool
 	outputSchema      *string
 	participant       *string
 	thread            *string
@@ -1697,6 +1698,7 @@ func addExecFlags(fs *flag.FlagSet) execCLIConfig {
 		outputLastMessage: fs.String("output-last-message", "", "write final agent message to a file"),
 		inputJSON:         fs.Bool("input-json", false, "read machine input JSON from stdin"),
 		maxTurns:          fs.Int("max-turns", 0, "max agent turns"),
+		ultra:             fs.Bool("ultra", false, "enable proactive multi-agent delegation"),
 		outputSchema:      fs.String("output-schema", "", "JSON schema for structured final output"),
 		participant:       fs.String("participant", "", "run the turn as this named participant (id or name) with the group-chat tool surface"),
 		thread:            fs.String("thread", "", "run the participant turn inside this existing group/DM thread id"),
@@ -1781,6 +1783,7 @@ func execOptionsFromCLI(cfg execCLIConfig, prompt, resumeID string, resumeLast b
 		StrictConfig:      valueOfBoolFlag(cfg.strictConfig),
 		Env:               stringListValues(cfg.env),
 		MaxTurns:          valueOfIntFlag(cfg.maxTurns),
+		Ultra:             valueOfBoolFlag(cfg.ultra),
 		NoTools:           valueOfBoolFlag(cfg.noTools),
 		JSON:              valueOfBoolFlag(cfg.jsonOutput),
 		Ephemeral:         valueOfBoolFlag(cfg.ephemeral),

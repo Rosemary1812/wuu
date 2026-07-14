@@ -465,6 +465,22 @@ func TestExecOptionsFromCLIAcceptsMaxTurns(t *testing.T) {
 	}
 }
 
+func TestExecOptionsFromCLIAcceptsUltra(t *testing.T) {
+	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	cfg := addExecFlags(fs)
+	if err := fs.Parse([]string{"--ultra"}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	opts, err := execOptionsFromCLI(cfg, "hello", "", false, nil)
+	if err != nil {
+		t.Fatalf("execOptionsFromCLI: %v", err)
+	}
+	if !opts.Ultra {
+		t.Fatal("Ultra = false, want true")
+	}
+}
+
 func TestExecOptionsFromInputJSONAcceptsMaxTurns(t *testing.T) {
 	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)

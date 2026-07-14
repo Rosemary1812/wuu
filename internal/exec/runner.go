@@ -442,6 +442,8 @@ func emitSessionConfigured(opts Options, result appserver.InitializeResult) {
 			"model":            result.Model,
 			"effort":           result.Effort,
 			"variant":          result.Variant,
+			"ultra":            result.Ultra,
+			"max_parallel":     result.MaxParallel,
 			"workspace_root":   result.WorkspaceRoot,
 			"permissions":      result.Permissions,
 		})
