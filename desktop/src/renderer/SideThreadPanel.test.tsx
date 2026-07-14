@@ -103,11 +103,11 @@ function renderPanel(
 }
 
 describe("SideThreadPanel", () => {
-  it("shows main-task status without inferring it from side-thread status", () => {
+  it("only shows the main-task badge while the main task runs", () => {
     const unknown = renderPanel(
       makeEntry({ summary: makeSummary({ status: "running" }) }),
     );
-    expect(unknown.textContent).toContain("主任务状态未知");
+    expect(unknown.textContent).not.toContain("主任务");
 
     const live = renderPanel(
       makeEntry({
@@ -124,14 +124,12 @@ describe("SideThreadPanel", () => {
       }),
       { mainTaskRunning: false },
     );
-    expect(container.textContent).toContain("主任务未运行");
-    expect(container.textContent).not.toContain("主任务执行中");
+    expect(container.textContent).not.toContain("主任务");
   });
 
-  it("shows the empty guidance and fills the shared composer draft", () => {
+  it("fills the shared composer draft from a quick prompt", () => {
     const onChangeDraft = vi.fn();
     const container = renderPanel(makeEntry(), { onChangeDraft });
-    expect(container.textContent).toContain("这里的内容不会加入主对话");
 
     const prompt = Array.from(
       container.querySelectorAll<HTMLButtonElement>(
@@ -167,7 +165,7 @@ describe("SideThreadPanel", () => {
     expect(container.querySelector(".side-thread-panel__message")).toBeNull();
   });
 
-  it("uses the standard live-progress notice for a streaming reply", () => {
+  it("marks a streaming reply in progress without an extra notice", () => {
     const container = renderPanel(
       makeEntry({
         summary: makeSummary({ status: "running" }),
@@ -187,7 +185,7 @@ describe("SideThreadPanel", () => {
     expect(
       container.querySelector('.turn[data-turn-status="in_progress"]'),
     ).toBeTruthy();
-    expect(container.textContent).toContain("侧聊回复中");
+    expect(container.textContent).not.toContain("侧聊回复中");
   });
 
   it("renders the supplied canonical composer inside the panel", () => {

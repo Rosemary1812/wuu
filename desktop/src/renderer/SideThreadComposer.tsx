@@ -58,8 +58,8 @@ export function SideThreadComposer({
       running={running}
       runtimeControlsDisabled
       tokensPerSecond={0}
-      status={running ? "侧聊回复中" : disabledReason ?? ""}
-      statusLiveProgress={running}
+      status={disabledReason ?? ""}
+      statusLiveProgress={false}
       readOnly={readOnly}
       projects={[]}
       codexModels={EMPTY_MODEL_STATE}

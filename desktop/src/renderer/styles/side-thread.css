@@ -12,7 +12,6 @@
   border-left: 1px solid var(--hairline-strong);
   background: var(--paper);
   color: var(--ink);
-  user-select: none;
 }
 
 .side-thread-panel *,
@@ -49,9 +48,9 @@
   content: "";
   transform: translateX(-50%);
   transition:
-    background 120ms ease,
-    box-shadow 120ms ease,
-    opacity 120ms ease;
+    background var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out);
 }
 
 .side-thread-panel__resizer:hover::before,
@@ -132,9 +131,9 @@
   border-radius: var(--radius-control-sm, 6px);
   cursor: pointer;
   transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 
 .side-thread-panel__close:hover,
@@ -153,13 +152,10 @@
 }
 
 .side-thread-panel__conversation {
+  /* Vertical rhythm (row-gap) comes from the shared .conversation-width;
+     only the outer width and padding differ inside the panel. */
   max-width: none;
   padding: 4px 0 0;
-  row-gap: var(--wuu-grid-leading);
-}
-
-.side-thread-panel__conversation .turn {
-  margin-bottom: 18px;
 }
 
 .side-thread-panel__empty {
@@ -167,14 +163,6 @@
   flex-direction: column;
   gap: 16px;
   padding: 24px 12px;
-  user-select: text;
-}
-
-.side-thread-panel__empty-copy {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--ink-muted, var(--ink));
 }
 
 .side-thread-panel__quick-prompts {
@@ -199,9 +187,9 @@
   border-radius: 8px;
   cursor: pointer;
   transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 
 .side-thread-panel__quick-prompt:hover,
@@ -223,19 +211,19 @@
   color: var(--turn-warning-text, #b1271b);
   background: var(--surface-2, rgba(177, 39, 27, 0.05));
   border-top: 1px solid var(--surface-3, var(--hairline-soft));
-  user-select: text;
 }
 
 .side-thread-panel__composer-host {
   min-width: 0;
-  border-top: 1px solid var(--surface-3, var(--hairline-soft));
   --conversation-scrollbar-gutter: 0px;
   --session-composer-width: 100%;
   --session-outer-padding-inline: 12px;
 }
 
 .side-thread-panel__composer-host .composer-wrap {
-  padding: 12px;
+  /* Keep the shared block padding so the input sits level with the main
+     dock composer; only the horizontal inset is panel-specific. */
+  padding-inline: 12px;
 }
 
 .side-thread-panel__composer-host .composer-stack {
