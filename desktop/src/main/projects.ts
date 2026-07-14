@@ -6,15 +6,15 @@ import {
   readFileSync,
   renameSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import type {
   DesktopProject,
   ProjectListResult,
   RuntimeContext,
 } from "../shared/protocol";
+import { writeTextFileAtomicSync } from "./atomicFile";
 
 type ProjectStore = {
   projects: DesktopProject[];
@@ -416,8 +416,7 @@ function legacyProjectContext(
 }
 
 function writeProjectStoreFile(path: string, store: ProjectStore): void {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`);
+  writeTextFileAtomicSync(path, `${JSON.stringify(store, null, 2)}\n`);
 }
 
 function createNoProjectContext(): RuntimeContext {

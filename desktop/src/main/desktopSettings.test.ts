@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -47,6 +47,17 @@ describe("desktopSettings", () => {
     const nested = join(dir, "a", "b", "settings.json");
     writeDesktopSettings({ cli_auto_install: false }, nested);
     expect(JSON.parse(await readFile(nested, "utf8"))).toEqual({ cli_auto_install: false });
+  });
+
+  it("preserves existing file permissions", async () => {
+    await writeFile(file, "{}\n", { mode: 0o640 });
+    await chmod(file, 0o640);
+
+    writeDesktopSettings({ cli_auto_install: false }, file);
+
+    if (process.platform !== "win32") {
+      expect((await stat(file)).mode & 0o777).toBe(0o640);
+    }
   });
 
   it("falls back to defaults on corrupted or malformed files", async () => {

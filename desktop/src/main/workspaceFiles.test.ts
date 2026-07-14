@@ -5,10 +5,14 @@ import {
   it,
 } from "vitest";
 import {
+  chmodSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -246,6 +250,48 @@ describe("WorkspaceFileService file save", () => {
     expect(readFileSync(join(root, "settings.json"), "utf8")).toBe("{\"enabled\":false}\n");
     expect(result.file.sha256).not.toBe(base.sha256);
   });
+
+  it("preserves existing file permissions when saving", () => {
+    const root = createWorkspace();
+    writeWorkspaceFile(root, "script.sh", "echo old\n");
+    const path = join(root, "script.sh");
+    chmodSync(path, 0o750);
+    const service = createService(root);
+    const base = service.readFile("script.sh");
+
+    service.writeFile({
+      path: "script.sh",
+      text: "echo new\n",
+      base_sha256: base.sha256,
+      base_mtime_ms: base.mtime_ms,
+    });
+
+    if (process.platform !== "win32") {
+      expect(statSync(path).mode & 0o777).toBe(0o750);
+    }
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "saves through an in-workspace symlink without replacing the link",
+    () => {
+      const root = createWorkspace();
+      writeWorkspaceFile(root, "target.txt", "old\n");
+      symlinkSync("target.txt", join(root, "link.txt"));
+      const service = createService(root);
+      const base = service.readFile("link.txt");
+
+      const result = service.writeFile({
+        path: "link.txt",
+        text: "new\n",
+        base_sha256: base.sha256,
+        base_mtime_ms: base.mtime_ms,
+      });
+
+      expect(result.status).toBe("saved");
+      expect(lstatSync(join(root, "link.txt")).isSymbolicLink()).toBe(true);
+      expect(readFileSync(join(root, "target.txt"), "utf8")).toBe("new\n");
+    },
+  );
 
   it("reports a conflict without overwriting when the file changed after read", () => {
     const root = createWorkspace();

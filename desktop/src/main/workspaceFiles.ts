@@ -5,7 +5,6 @@ import {
   readSync,
   realpathSync,
   statSync,
-  writeFileSync,
   type Dirent,
 } from "node:fs";
 import { createHash } from "node:crypto";
@@ -24,6 +23,7 @@ import {
   isRenderableImageFile,
   renderableFileURL,
 } from "./renderableFileURLs";
+import { writeTextFileAtomicSync } from "./atomicFile";
 
 const FILE_TREE_MAX_PATHS = 4000;
 const FILE_PREVIEW_MAX_BYTES = 512 * 1024;
@@ -233,7 +233,12 @@ function writeWorkspaceFileResult(
     return { status: "conflict", file: current };
   }
 
-  writeFileSync(current.absolute_path, params.text, "utf8");
+  const realRoot = realpathSync(context.cwd);
+  const writePath = realpathSync(current.absolute_path);
+  if (!isPathInsideRoot(writePath, realRoot)) {
+    throw new Error("file is outside the current workspace");
+  }
+  writeTextFileAtomicSync(writePath, params.text);
   return {
     status: "saved",
     file: readWorkspaceFileResult(context, current.path),

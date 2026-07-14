@@ -1,6 +1,7 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { wuuHomePath } from "./projects";
+import { writeTextFileAtomicSync } from "./atomicFile";
 
 // Desktop-only settings that the Electron main process needs before the
 // renderer loads (e.g. whether to auto-install the wuu CLI symlink at
@@ -140,8 +141,10 @@ export function writeDesktopSettings(
   settings: DesktopSettings,
   filePath: string = desktopSettingsPath(),
 ): void {
-  mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, `${JSON.stringify(settings, null, 2)}\n`);
+  writeTextFileAtomicSync(
+    filePath,
+    `${JSON.stringify(settings, null, 2)}\n`,
+  );
 }
 
 export function getCliAutoInstallEnabled(filePath?: string): boolean {
