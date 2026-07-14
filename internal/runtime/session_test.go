@@ -213,8 +213,9 @@ func TestCronSchedulerRunsScheduledPrompt(t *testing.T) {
 
 	client := &sessionRecordingClient{}
 	rt := &Session{
-		RootDir:  root,
-		StateDir: stateDir,
+		RootDir:    root,
+		StateDir:   stateDir,
+		SessionDir: filepath.Join(stateDir, "sessions"),
 		StreamRunner: &agent.StreamRunner{
 			Client: client,
 			Model:  "test-model",

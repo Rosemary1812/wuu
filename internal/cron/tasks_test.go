@@ -103,6 +103,73 @@ func TestTaskStore_ConcurrentAddsPreserveEveryTask(t *testing.T) {
 	}
 }
 
+func TestTaskStore_ConcurrentClaimHasOneWinner(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tasks.json")
+	task := Task{
+		ID:        "claim-once",
+		Cron:      "* * * * *",
+		Prompt:    "one winner",
+		CreatedAt: time.Now().Add(-2 * time.Minute).UnixMilli(),
+	}
+	if err := NewTaskStore(path).Add(task); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	start := make(chan struct{})
+	results := make(chan bool, 2)
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			claimed, err := NewTaskStore(path).ClaimForDispatch(task, time.Now().UnixMilli())
+			results <- claimed
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+
+	winners := 0
+	for claimed := range results {
+		if claimed {
+			winners++
+		}
+	}
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("ClaimForDispatch: %v", err)
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("claim winners = %d, want 1", winners)
+	}
+	tasks, err := NewTaskStore(path).List()
+	if err != nil || len(tasks) != 0 {
+		t.Fatalf("one-shot after claim: tasks=%#v err=%v", tasks, err)
+	}
+}
+
+func TestTaskStoresRejectDuplicateIDs(t *testing.T) {
+	task := Task{ID: "duplicate", Cron: "* * * * *", Prompt: "first"}
+	stores := []interface{ Add(Task) error }{
+		NewTaskStore(filepath.Join(t.TempDir(), "tasks.json")),
+		NewSessionTaskStore(t.TempDir()),
+	}
+	for _, store := range stores {
+		if err := store.Add(task); err != nil {
+			t.Fatalf("first Add: %v", err)
+		}
+		if err := store.Add(task); err == nil {
+			t.Fatal("duplicate task ID was accepted")
+		}
+	}
+}
+
 func TestSessionTaskStore_CRUD(t *testing.T) {
 	store := NewSessionTaskStore(t.TempDir())
 
@@ -126,8 +193,12 @@ func TestSessionTaskStore_CRUD(t *testing.T) {
 		t.Fatalf("expected 1 task, got %d", len(list))
 	}
 
-	if err := store.UpdateLastFired([]string{"session-1"}, 123); err != nil {
-		t.Fatalf("UpdateLastFired error: %v", err)
+	claimed, err := store.ClaimForDispatch(task, 123)
+	if err != nil {
+		t.Fatalf("ClaimForDispatch error: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected recurring task claim")
 	}
 
 	list, err = store.List()

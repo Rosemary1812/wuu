@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,6 +133,11 @@ func (s *TaskStore) Add(task Task) error {
 		if len(tasks) >= MaxJobs {
 			return nil, fmt.Errorf("maximum number of scheduled tasks reached (%d)", MaxJobs)
 		}
+		for _, existing := range tasks {
+			if existing.ID == task.ID {
+				return nil, fmt.Errorf("scheduled task %q already exists", task.ID)
+			}
+		}
 		return append(tasks, task), nil
 	})
 }
@@ -152,19 +158,48 @@ func (s *TaskStore) Remove(ids ...string) error {
 	})
 }
 
-func (s *TaskStore) UpdateLastFired(ids []string, firedAt int64) error {
-	return s.update(func(tasks []Task) ([]Task, error) {
-		idSet := make(map[string]struct{}, len(ids))
-		for _, id := range ids {
-			idSet[id] = struct{}{}
+// ClaimForDispatch atomically consumes one due task occurrence if the stored
+// task still matches the scheduler snapshot. Recurring tasks advance their
+// LastFiredAt timestamp; one-shot tasks are removed. A successful claim is an
+// at-most-once dispatch attempt: callback failures do not roll it back.
+func (s *TaskStore) ClaimForDispatch(expected Task, firedAt int64) (bool, error) {
+	claimed := false
+	err := s.updateIfChanged(func(tasks []Task) ([]Task, bool, error) {
+		index, err := matchingTaskIndex(tasks, expected)
+		if err != nil || index < 0 {
+			return tasks, false, err
 		}
-		for i := range tasks {
-			if _, ok := idSet[tasks[i].ID]; ok {
-				tasks[i].LastFiredAt = firedAt
-			}
+		if expected.Recurring {
+			tasks[index].LastFiredAt = firedAt
+		} else {
+			tasks = append(tasks[:index], tasks[index+1:]...)
 		}
-		return tasks, nil
+		claimed = true
+		return tasks, true, nil
 	})
+	if err != nil {
+		return false, err
+	}
+	return claimed, nil
+}
+
+// RemoveIfUnchanged removes an expired task only if it still matches the
+// scheduler snapshot. A concurrent edit therefore cannot be discarded.
+func (s *TaskStore) RemoveIfUnchanged(expected Task) (bool, error) {
+	removed := false
+	err := s.updateIfChanged(func(tasks []Task) ([]Task, bool, error) {
+		index, err := matchingTaskIndex(tasks, expected)
+		if err != nil || index < 0 {
+			return tasks, false, err
+		}
+		tasks = append(tasks[:index], tasks[index+1:]...)
+		removed = true
+		return tasks, true, nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return removed, nil
 }
 
 // update serializes the read-modify-write transaction across app-server
@@ -172,6 +207,13 @@ func (s *TaskStore) UpdateLastFired(ids []string, firedAt int64) error {
 // could let a new caller lock a different inode while another caller is still
 // waiting on the old one.
 func (s *TaskStore) update(apply func([]Task) ([]Task, error)) error {
+	return s.updateIfChanged(func(tasks []Task) ([]Task, bool, error) {
+		next, err := apply(tasks)
+		return next, err == nil, err
+	})
+}
+
+func (s *TaskStore) updateIfChanged(apply func([]Task) ([]Task, bool, error)) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return err
 	}
@@ -189,9 +231,12 @@ func (s *TaskStore) update(apply func([]Task) ([]Task, error)) error {
 	if err != nil {
 		return err
 	}
-	next, err := apply(tasks)
+	next, changed, err := apply(tasks)
 	if err != nil {
 		return err
+	}
+	if !changed {
+		return nil
 	}
 	return s.save(next)
 }
@@ -213,6 +258,11 @@ func (s *SessionTaskStore) Add(task Task) error {
 	tasks := sessionTaskState.tasks[s.namespace]
 	if len(tasks) >= MaxJobs {
 		return fmt.Errorf("maximum number of scheduled tasks reached (%d)", MaxJobs)
+	}
+	for _, existing := range tasks {
+		if existing.ID == task.ID {
+			return fmt.Errorf("scheduled task %q already exists", task.ID)
+		}
 	}
 	tasks = append(tasks, task)
 	sessionTaskState.tasks[s.namespace] = tasks
@@ -243,27 +293,72 @@ func (s *SessionTaskStore) Remove(ids ...string) error {
 	return nil
 }
 
-func (s *SessionTaskStore) UpdateLastFired(ids []string, firedAt int64) error {
+func (s *SessionTaskStore) ClaimForDispatch(expected Task, firedAt int64) (bool, error) {
 	sessionTaskState.mu.Lock()
 	defer sessionTaskState.mu.Unlock()
 
-	idSet := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		idSet[id] = struct{}{}
+	tasks := sessionTaskState.tasks[s.namespace]
+	index, err := matchingTaskIndex(tasks, expected)
+	if err != nil || index < 0 {
+		return false, err
 	}
+	if expected.Recurring {
+		tasks[index].LastFiredAt = firedAt
+		sessionTaskState.tasks[s.namespace] = tasks
+	} else {
+		tasks = append(tasks[:index], tasks[index+1:]...)
+		storeSessionTasks(s.namespace, tasks)
+	}
+	return true, nil
+}
+
+func (s *SessionTaskStore) RemoveIfUnchanged(expected Task) (bool, error) {
+	sessionTaskState.mu.Lock()
+	defer sessionTaskState.mu.Unlock()
 
 	tasks := sessionTaskState.tasks[s.namespace]
-	for i := range tasks {
-		if _, ok := idSet[tasks[i].ID]; ok {
-			tasks[i].LastFiredAt = firedAt
-		}
+	index, err := matchingTaskIndex(tasks, expected)
+	if err != nil || index < 0 {
+		return false, err
 	}
+	tasks = append(tasks[:index], tasks[index+1:]...)
+	storeSessionTasks(s.namespace, tasks)
+	return true, nil
+}
+
+func storeSessionTasks(namespace string, tasks []Task) {
 	if len(tasks) == 0 {
-		delete(sessionTaskState.tasks, s.namespace)
-		return nil
+		delete(sessionTaskState.tasks, namespace)
+		return
 	}
-	sessionTaskState.tasks[s.namespace] = tasks
-	return nil
+	sessionTaskState.tasks[namespace] = tasks
+}
+
+func matchingTaskIndex(tasks []Task, expected Task) (int, error) {
+	index := -1
+	for i, task := range tasks {
+		if task.ID != expected.ID {
+			continue
+		}
+		if index >= 0 {
+			return -1, fmt.Errorf("duplicate scheduled task id %q", expected.ID)
+		}
+		index = i
+	}
+	if index < 0 || !sameTask(tasks[index], expected) {
+		return -1, nil
+	}
+	return index, nil
+}
+
+func sameTask(left, right Task) bool {
+	return left.ID == right.ID &&
+		left.Cron == right.Cron &&
+		left.Prompt == right.Prompt &&
+		maps.Equal(left.Metadata, right.Metadata) &&
+		left.CreatedAt == right.CreatedAt &&
+		left.LastFiredAt == right.LastFiredAt &&
+		left.Recurring == right.Recurring
 }
 
 func GenerateTaskID() string {

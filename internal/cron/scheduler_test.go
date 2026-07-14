@@ -1,8 +1,13 @@
 package cron
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,12 +18,13 @@ func TestScheduler_fireOneShot(t *testing.T) {
 
 	var fired atomic.Int32
 	done := make(chan struct{}, 1)
-	onFire := func(task Task) {
+	onFire := func(_ context.Context, task Task) error {
 		if task.Prompt == "" {
 			t.Fatal("expected fired task prompt")
 		}
 		fired.Add(1)
 		done <- struct{}{}
+		return nil
 	}
 
 	s := NewScheduler(SchedulerConfig{
@@ -64,9 +70,10 @@ func TestScheduler_recurringUpdatesLastFired(t *testing.T) {
 	done := make(chan struct{}, 1)
 	s := NewScheduler(SchedulerConfig{
 		Store: store,
-		OnFire: func(Task) {
+		OnFire: func(context.Context, Task) error {
 			fired.Add(1)
 			done <- struct{}{}
+			return nil
 		},
 		IsOwner: func() bool { return true },
 	})
@@ -131,9 +138,10 @@ func TestScheduler_sessionTasksFireWithoutOwnerLock(t *testing.T) {
 	s := NewScheduler(SchedulerConfig{
 		Store:        fileStore,
 		SessionStore: sessionStore,
-		OnFire: func(task Task) {
+		OnFire: func(_ context.Context, task Task) error {
 			fired = append(fired, task.Prompt)
 			done <- struct{}{}
+			return nil
 		},
 		IsOwner: func() bool { return false },
 	})
@@ -165,8 +173,9 @@ func TestScheduler_firesMetadataTasksThroughPromptCallback(t *testing.T) {
 	done := make(chan Task, 1)
 	s := NewScheduler(SchedulerConfig{
 		Store: store,
-		OnFire: func(task Task) {
+		OnFire: func(_ context.Context, task Task) error {
 			done <- task
+			return nil
 		},
 		IsOwner: func() bool { return true },
 	})
@@ -196,8 +205,8 @@ func TestScheduler_firesMetadataTasksThroughPromptCallback(t *testing.T) {
 
 // TestScheduler_StartCatchesUpMissedOneShots is the crash/closed-workspace
 // story for repair item #10: a one-shot task came due while no scheduler was
-// running. Start must fire it exactly once via the FindMissedOneShots
-// catch-up pass — without waiting for a tick — and remove it from the store.
+// running. Start must claim and dispatch one attempt via the catch-up pass —
+// without waiting for a tick — and remove it from the store.
 func TestScheduler_StartCatchesUpMissedOneShots(t *testing.T) {
 	fileStore := NewTaskStore(filepath.Join(t.TempDir(), "tasks.json"))
 	sessionStore := NewSessionTaskStore(t.TempDir())
@@ -237,8 +246,9 @@ func TestScheduler_StartCatchesUpMissedOneShots(t *testing.T) {
 	s := NewScheduler(SchedulerConfig{
 		Store:        fileStore,
 		SessionStore: sessionStore,
-		OnFire: func(task Task) {
+		OnFire: func(_ context.Context, task Task) error {
 			firedCh <- task.Prompt
+			return nil
 		},
 		IsOwner: func() bool { return true },
 	})
@@ -306,8 +316,11 @@ func TestScheduler_CatchUpRespectsOwnerLock(t *testing.T) {
 	s := NewScheduler(SchedulerConfig{
 		Store:        fileStore,
 		SessionStore: sessionStore,
-		OnFire:       func(task Task) { firedCh <- task.Prompt },
-		IsOwner:      func() bool { return false },
+		OnFire: func(_ context.Context, task Task) error {
+			firedCh <- task.Prompt
+			return nil
+		},
+		IsOwner: func() bool { return false },
 	})
 
 	s.catchUpMissedOneShots(time.Now())
@@ -330,4 +343,276 @@ func TestScheduler_CatchUpRespectsOwnerLock(t *testing.T) {
 // the given time, the shape one-shot scheduling uses.
 func missedCronFor(at time.Time) string {
 	return fmt.Sprintf("%d %d %d %d *", at.Minute(), at.Hour(), at.Day(), int(at.Month()))
+}
+
+func TestScheduler_claimsBeforeDispatch(t *testing.T) {
+	store := NewTaskStore(filepath.Join(t.TempDir(), "tasks.json"))
+	task := Task{
+		ID:        "claim-before-dispatch",
+		Cron:      "* * * * *",
+		Prompt:    "verify claim",
+		CreatedAt: time.Now().Add(-2 * time.Minute).UnixMilli(),
+	}
+	if err := store.Add(task); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	result := make(chan error, 1)
+	s := NewScheduler(SchedulerConfig{
+		Store:   store,
+		IsOwner: func() bool { return true },
+		OnFire: func(context.Context, Task) error {
+			tasks, err := store.List()
+			if err != nil {
+				result <- err
+				return nil
+			}
+			if len(tasks) != 0 {
+				result <- fmt.Errorf("one-shot still present during callback: %#v", tasks)
+				return nil
+			}
+			result <- nil
+			return nil
+		},
+	})
+	t.Cleanup(s.Stop)
+	s.check()
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestScheduler_claimFailureDoesNotDispatch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tasks.json")
+	store := NewTaskStore(path)
+	task := Task{
+		ID:        "blocked-claim",
+		Cron:      "* * * * *",
+		Prompt:    "must not run before persistence",
+		CreatedAt: time.Now().Add(-2 * time.Minute).UnixMilli(),
+	}
+	if err := store.Add(task); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := os.Remove(path + ".lock"); err != nil {
+		t.Fatalf("Remove lock sidecar: %v", err)
+	}
+	if err := os.Mkdir(path+".lock", 0o700); err != nil {
+		t.Fatalf("replace lock sidecar with directory: %v", err)
+	}
+
+	fired := make(chan struct{}, 1)
+	errorsCh := make(chan error, 2)
+	s := NewScheduler(SchedulerConfig{
+		Store:   store,
+		IsOwner: func() bool { return true },
+		OnFire: func(context.Context, Task) error {
+			fired <- struct{}{}
+			return nil
+		},
+		OnError: func(err error) { errorsCh <- err },
+	})
+	t.Cleanup(s.Stop)
+	s.check()
+
+	select {
+	case <-fired:
+		t.Fatal("callback ran despite failed durable claim")
+	case err := <-errorsCh:
+		if !strings.Contains(err.Error(), "claim scheduled task") {
+			t.Fatalf("unexpected scheduler error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("claim failure was not reported")
+	}
+	tasks, err := store.List()
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("task changed after failed claim: tasks=%#v err=%v", tasks, err)
+	}
+
+	if err := os.Remove(path + ".lock"); err != nil {
+		t.Fatalf("remove invalid lock directory: %v", err)
+	}
+	s.check()
+	select {
+	case <-fired:
+	case <-time.After(time.Second):
+		t.Fatal("task did not run after persistence recovered")
+	}
+}
+
+func TestScheduler_concurrentSchedulersDispatchOneAttempt(t *testing.T) {
+	store := NewTaskStore(filepath.Join(t.TempDir(), "tasks.json"))
+	if err := store.Add(Task{
+		ID:        "shared-task",
+		Cron:      "* * * * *",
+		Prompt:    "run once",
+		CreatedAt: time.Now().Add(-2 * time.Minute).UnixMilli(),
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	fired := make(chan struct{}, 2)
+	newScheduler := func() *Scheduler {
+		return NewScheduler(SchedulerConfig{
+			Store:   NewTaskStore(store.path),
+			IsOwner: func() bool { return true },
+			OnFire: func(context.Context, Task) error {
+				fired <- struct{}{}
+				return nil
+			},
+		})
+	}
+	first, second := newScheduler(), newScheduler()
+	t.Cleanup(first.Stop)
+	t.Cleanup(second.Stop)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); first.check() }()
+	go func() { defer wg.Done(); second.check() }()
+	wg.Wait()
+
+	select {
+	case <-fired:
+	case <-time.After(time.Second):
+		t.Fatal("expected one dispatch")
+	}
+	select {
+	case <-fired:
+		t.Fatal("same occurrence dispatched by both schedulers")
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
+func TestScheduler_callbackErrorConsumesOccurrence(t *testing.T) {
+	store := NewTaskStore(filepath.Join(t.TempDir(), "tasks.json"))
+	if err := store.Add(Task{
+		ID:        "failing-callback",
+		Cron:      "* * * * *",
+		Prompt:    "fail once",
+		CreatedAt: time.Now().Add(-2 * time.Minute).UnixMilli(),
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	var calls atomic.Int32
+	errorsCh := make(chan error, 1)
+	s := NewScheduler(SchedulerConfig{
+		Store:   store,
+		IsOwner: func() bool { return true },
+		OnFire: func(context.Context, Task) error {
+			calls.Add(1)
+			return errors.New("callback failed")
+		},
+		OnError: func(err error) { errorsCh <- err },
+	})
+	t.Cleanup(s.Stop)
+	s.check()
+	select {
+	case err := <-errorsCh:
+		if !strings.Contains(err.Error(), "callback failed") {
+			t.Fatalf("unexpected callback error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("callback failure was not reported")
+	}
+	s.check()
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("callback calls = %d, want one at-most-once attempt", got)
+	}
+}
+
+func TestScheduler_durableListFailureDoesNotBlockSessionTask(t *testing.T) {
+	dir := t.TempDir()
+	durablePath := filepath.Join(dir, "tasks.json")
+	if err := os.WriteFile(durablePath, []byte("not json"), 0o600); err != nil {
+		t.Fatalf("write corrupt durable store: %v", err)
+	}
+	sessionStore := NewSessionTaskStore(t.TempDir())
+	if err := sessionStore.Add(Task{
+		ID:        "session-task",
+		Cron:      "* * * * *",
+		Prompt:    "session survives",
+		CreatedAt: time.Now().Add(-2 * time.Minute).UnixMilli(),
+	}); err != nil {
+		t.Fatalf("session Add: %v", err)
+	}
+
+	fired := make(chan struct{}, 1)
+	errorsCh := make(chan error, 1)
+	s := NewScheduler(SchedulerConfig{
+		Store:        NewTaskStore(durablePath),
+		SessionStore: sessionStore,
+		IsOwner:      func() bool { return true },
+		OnFire: func(context.Context, Task) error {
+			fired <- struct{}{}
+			return nil
+		},
+		OnError: func(err error) { errorsCh <- err },
+	})
+	t.Cleanup(s.Stop)
+	s.check()
+	select {
+	case <-errorsCh:
+	case <-time.After(time.Second):
+		t.Fatal("durable list failure was not reported")
+	}
+	select {
+	case <-fired:
+	case <-time.After(time.Second):
+		t.Fatal("durable list failure blocked session task")
+	}
+}
+
+func TestScheduler_StopCancelsAndWaitsForCallbacks(t *testing.T) {
+	store := NewTaskStore(filepath.Join(t.TempDir(), "tasks.json"))
+	if err := store.Add(Task{
+		ID:        "blocking-callback",
+		Cron:      "* * * * *",
+		Prompt:    "wait for shutdown",
+		CreatedAt: time.Now().Add(-2 * time.Minute).UnixMilli(),
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	started := make(chan struct{})
+	cancelled := make(chan struct{})
+	release := make(chan struct{})
+	s := NewScheduler(SchedulerConfig{
+		Store:   store,
+		IsOwner: func() bool { return true },
+		OnFire: func(ctx context.Context, _ Task) error {
+			close(started)
+			<-ctx.Done()
+			close(cancelled)
+			<-release
+			return nil
+		},
+	})
+	s.check()
+	<-started
+
+	stopped := make(chan struct{})
+	go func() {
+		s.Stop()
+		close(stopped)
+	}()
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("Stop did not cancel callback context")
+	}
+	select {
+	case <-stopped:
+		t.Fatal("Stop returned while callback was still active")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Stop did not return after callback exited")
+	}
+	s.Stop()
 }

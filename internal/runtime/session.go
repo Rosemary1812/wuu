@@ -671,8 +671,11 @@ func (s *Session) StartCronScheduler() error {
 	scheduler := cron.NewScheduler(cron.SchedulerConfig{
 		Store:        cron.NewTaskStore(statepath.ScheduledTasksPath(stateDir)),
 		SessionStore: cron.NewSessionTaskStore(stateDir),
-		OnFire: func(task cron.Task) {
-			s.runScheduledPrompt(task)
+		OnFire: func(ctx context.Context, task cron.Task) error {
+			return s.runScheduledPrompt(ctx, task)
+		},
+		OnError: func(err error) {
+			providers.DebugLogf("cron scheduler: %v", err)
 		},
 		IsOwner: func() bool {
 			if ownsDurableTasks {
@@ -693,39 +696,55 @@ func (s *Session) StartCronScheduler() error {
 	return nil
 }
 
-func (s *Session) runScheduledPrompt(task cron.Task) {
+func (s *Session) runScheduledPrompt(ctx context.Context, task cron.Task) error {
 	prompt := strings.TrimSpace(task.Prompt)
-	if prompt == "" || s.StreamRunner == nil {
-		return
+	if prompt == "" {
+		return fmt.Errorf("scheduled prompt task %q has an empty prompt", task.ID)
 	}
-	goalStore := s.startScheduledGoal(task, prompt)
-	runner := s.StreamRunner
-	if threadRT, err := s.NewThreadRuntime(scheduledCronSessionID("cron-task", task.ID)); err == nil && threadRT.StreamRunner != nil {
-		runner = threadRT.StreamRunner
-	} else if err != nil {
-		providers.DebugLogf("cron prompt task %q using shared runner after thread runtime error: %v", task.ID, err)
+	goalStore := s.startScheduledGoal(ctx, task, prompt)
+	threadRT, err := s.NewThreadRuntime(scheduledCronSessionID("cron-task", task.ID))
+	if err != nil {
+		err = fmt.Errorf("create isolated runtime: %w", err)
+		s.recordScheduledFailure(goalStore, task.ID, err)
+		return err
 	}
-	if _, err := runner.Run(context.Background(), prompt); err != nil {
-		providers.DebugLogf("cron prompt task %q failed: %v", task.ID, err)
-		if goalStore != nil {
-			_, _ = goalStore.AddFailure(goalrunner.Failure{
-				Step:     goalrunner.StepExecution,
-				Kind:     "scheduled_task_failed",
-				Source:   "cron",
-				SourceID: task.ID,
-				Message:  err.Error(),
-			})
-		}
-		return
+	if threadRT.StreamRunner == nil {
+		err = errors.New("isolated runtime has no stream runner")
+		s.recordScheduledFailure(goalStore, task.ID, err)
+		return err
+	}
+	if threadRT.AgentControl != nil {
+		defer func() {
+			threadRT.AgentControl.StopAll()
+			threadRT.AgentControl.Close()
+		}()
+	}
+	if _, err := threadRT.StreamRunner.Run(ctx, prompt); err != nil {
+		s.recordScheduledFailure(goalStore, task.ID, err)
+		return err
 	}
 	if goalStore != nil {
 		_, _ = goalStore.MarkStepCompleted(goalrunner.StepExecution)
 		_, _ = goalStore.AddProgress(goalrunner.StepSummary, "Scheduled task execution completed.")
 		_, _ = goalStore.SetStatus(goalrunner.StatusCompleted, goalrunner.StepSummary, "scheduled task execution completed")
 	}
+	return nil
 }
 
-func (s *Session) startScheduledGoal(task cron.Task, prompt string) *goalrunner.Store {
+func (s *Session) recordScheduledFailure(goalStore *goalrunner.Store, taskID string, err error) {
+	if goalStore == nil || err == nil {
+		return
+	}
+	_, _ = goalStore.AddFailure(goalrunner.Failure{
+		Step:     goalrunner.StepExecution,
+		Kind:     "scheduled_task_failed",
+		Source:   "cron",
+		SourceID: taskID,
+		Message:  err.Error(),
+	})
+}
+
+func (s *Session) startScheduledGoal(ctx context.Context, task cron.Task, prompt string) *goalrunner.Store {
 	stateDir := strings.TrimSpace(s.StateDir)
 	if stateDir == "" {
 		return nil
@@ -739,7 +758,7 @@ func (s *Session) startScheduledGoal(task cron.Task, prompt string) *goalrunner.
 		"recurring": fmt.Sprintf("%t", task.Recurring),
 	}
 	runner := goalrunner.Runner{Store: store}
-	if _, err := runner.Init(context.Background(), goalrunner.Spec{
+	if _, err := runner.Init(ctx, goalrunner.Spec{
 		ID:            goalID,
 		Goal:          "Scheduled prompt task",
 		Task:          strings.TrimSpace(prompt),
@@ -1252,6 +1271,14 @@ func (s *Session) Cleanup() (process.CleanupResult, error) {
 		return process.CleanupResult{}, nil
 	}
 	var cleanupErr error
+	if s.CronScheduler != nil {
+		s.CronScheduler.Stop()
+		s.CronScheduler = nil
+	}
+	if s.CronLock != nil {
+		s.CronLock.Release()
+		s.CronLock = nil
+	}
 	if s.Toolkit != nil {
 		if manager := s.Toolkit.MCPManager(); manager != nil {
 			cleanupErr = errors.Join(cleanupErr, manager.Close())
@@ -1260,14 +1287,6 @@ func (s *Session) Cleanup() (process.CleanupResult, error) {
 	if s.InferenceJournalRuntime != nil {
 		cleanupErr = errors.Join(cleanupErr, s.InferenceJournalRuntime.Close())
 		s.InferenceJournalRuntime = nil
-	}
-	if s.CronScheduler != nil {
-		s.CronScheduler.Stop()
-		s.CronScheduler = nil
-	}
-	if s.CronLock != nil {
-		s.CronLock.Release()
-		s.CronLock = nil
 	}
 	if s.AgentControl != nil {
 		_ = s.AgentControl.CleanupSession()

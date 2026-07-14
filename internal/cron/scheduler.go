@@ -1,6 +1,8 @@
 package cron
 
 import (
+	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -8,244 +10,258 @@ import (
 type SchedulerConfig struct {
 	Store        *TaskStore
 	SessionStore *SessionTaskStore
-	OnFire       func(task Task)
+	OnFire       func(context.Context, Task) error
+	OnError      func(error)
 	IsOwner      func() bool
 	IsKilled     func() bool
 }
 
+type schedulerStore interface {
+	List() ([]Task, error)
+	ClaimForDispatch(Task, int64) (bool, error)
+	RemoveIfUnchanged(Task) (bool, error)
+}
+
 type Scheduler struct {
-	cfg      SchedulerConfig
-	ticker   *time.Ticker
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
-	inFlight map[string]struct{}
-	mu       sync.Mutex
+	cfg SchedulerConfig
+
+	callbackCtx     context.Context
+	cancelCallbacks context.CancelFunc
+	loopStop        chan struct{}
+	stopDone        chan struct{}
+
+	stateMu  sync.Mutex
+	started  bool
+	stopping bool
+
+	loopWG     sync.WaitGroup
+	callbackWG sync.WaitGroup
+	checkMu    sync.Mutex
+
+	inFlightMu sync.Mutex
+	inFlight   map[string]struct{}
 }
 
 func NewScheduler(cfg SchedulerConfig) *Scheduler {
 	if cfg.IsKilled == nil {
 		cfg.IsKilled = func() bool { return false }
 	}
+	callbackCtx, cancelCallbacks := context.WithCancel(context.Background())
 	return &Scheduler{
-		cfg:      cfg,
-		stopCh:   make(chan struct{}),
-		inFlight: make(map[string]struct{}),
+		cfg:             cfg,
+		callbackCtx:     callbackCtx,
+		cancelCallbacks: cancelCallbacks,
+		loopStop:        make(chan struct{}),
+		stopDone:        make(chan struct{}),
+		inFlight:        make(map[string]struct{}),
 	}
 }
 
-// Start launches the scheduler loop. Before the first tick it runs a
-// one-time catch-up pass for one-shot tasks whose fire time passed while no
-// scheduler was running (workspace closed, process dead): they fire exactly
-// once now instead of staying silently pending.
+// Start launches the scheduler loop. Before the first tick it catches up
+// one-shot tasks whose fire time passed while no scheduler was running.
 //
-// Missed-occurrence semantics, by design:
-//   - one-shot: caught up at startup via FindMissedOneShots, fired once,
-//     then removed like any normal one-shot fire;
-//   - recurring: no backfill. NextFireAt anchors at LastFiredAt (or
-//     CreatedAt), so every occurrence missed while no scheduler ran
-//     collapses into a single fire on the next due evaluation, and tasks
-//     past RecurringMaxAge are expired instead of fired.
+// Each occurrence is claimed in its store before its callback starts. The
+// scheduler therefore provides at-most-once attempts, not exactly-once
+// execution: a callback failure or a process crash after the claim is not
+// retried automatically.
 func (s *Scheduler) Start() {
-	s.catchUpMissedOneShots(time.Now())
-	s.ticker = time.NewTicker(time.Second)
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		for {
-			select {
-			case <-s.ticker.C:
-				if s.cfg.IsKilled() {
-					continue
-				}
-				s.check()
-			case <-s.stopCh:
-				return
-			}
-		}
-	}()
-}
-
-// catchUpMissedOneShots fires every one-shot task whose scheduled time
-// passed with no scheduler alive to see it. Fired tasks are removed from
-// their store synchronously before the ticker loop starts, so the regular
-// check pass can never double-fire them; the shared inFlight guard covers
-// the callback goroutines themselves.
-func (s *Scheduler) catchUpMissedOneShots(now time.Time) {
-	if s.cfg.IsKilled() {
+	s.stateMu.Lock()
+	if s.started || s.stopping {
+		s.stateMu.Unlock()
 		return
 	}
-	ownsDurableTasks := true
-	if s.cfg.IsOwner != nil {
-		ownsDurableTasks = s.cfg.IsOwner()
-	}
-	if ownsDurableTasks && s.cfg.Store != nil {
-		if tasks, err := s.cfg.Store.List(); err == nil {
-			if fired := s.fireMissedOneShots(FindMissedOneShots(tasks, now), false); len(fired) > 0 {
-				s.cfg.Store.Remove(fired...)
-			}
+	s.started = true
+	s.loopWG.Add(1)
+	s.stateMu.Unlock()
+
+	go s.run()
+}
+
+func (s *Scheduler) run() {
+	defer s.loopWG.Done()
+	s.catchUpMissedOneShots(time.Now())
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.check()
+		case <-s.loopStop:
+			return
 		}
+	}
+}
+
+// catchUpMissedOneShots uses the same claim path as regular ticks. Recurring
+// tasks are not backfilled; the first regular due evaluation collapses missed
+// occurrences into one attempt.
+func (s *Scheduler) catchUpMissedOneShots(now time.Time) {
+	s.checkMu.Lock()
+	defer s.checkMu.Unlock()
+	if s.shouldStopWork() {
+		return
+	}
+
+	if s.ownsDurableTasks() && s.cfg.Store != nil {
+		s.catchUpStore("durable", s.cfg.Store, false, now)
 	}
 	if s.cfg.SessionStore != nil {
-		if tasks, err := s.cfg.SessionStore.List(); err == nil {
-			if fired := s.fireMissedOneShots(FindMissedOneShots(tasks, now), true); len(fired) > 0 {
-				s.cfg.SessionStore.Remove(fired...)
-			}
-		}
+		s.catchUpStore("session", s.cfg.SessionStore, true, now)
 	}
 }
 
-// fireMissedOneShots dispatches the missed tasks through the normal OnFire
-// callback (one goroutine per task, guarded by inFlight) and returns the ids
-// it actually claimed so the caller can remove them from the store.
-func (s *Scheduler) fireMissedOneShots(missed []Task, sessionOnly bool) []string {
-	fired := make([]string, 0, len(missed))
-	for _, task := range missed {
-		taskKey := task.ID
-		if sessionOnly {
-			taskKey = "session:" + task.ID
-		}
-		s.mu.Lock()
-		if _, busy := s.inFlight[taskKey]; busy {
-			s.mu.Unlock()
-			continue
-		}
-		s.inFlight[taskKey] = struct{}{}
-		s.mu.Unlock()
-		fired = append(fired, task.ID)
-		go func(t Task, key string) {
-			defer func() {
-				s.mu.Lock()
-				delete(s.inFlight, key)
-				s.mu.Unlock()
-			}()
-			if s.cfg.OnFire != nil {
-				s.cfg.OnFire(t)
-			}
-		}(task, taskKey)
+func (s *Scheduler) catchUpStore(kind string, store schedulerStore, sessionOnly bool, now time.Time) {
+	tasks, err := store.List()
+	if err != nil {
+		s.reportError(fmt.Errorf("list %s scheduled tasks for catch-up: %w", kind, err))
+		return
 	}
-	return fired
+	for _, task := range FindMissedOneShots(tasks, now) {
+		if s.shouldStopWork() {
+			return
+		}
+		s.claimAndDispatch(store, task, sessionOnly, now)
+	}
 }
 
+// Stop is idempotent. It prevents new claims, stops the polling loop, cancels
+// active callbacks, and waits for them before returning. Callers may release
+// scheduler ownership only after Stop returns.
 func (s *Scheduler) Stop() {
-	if s.ticker != nil {
-		s.ticker.Stop()
+	s.stateMu.Lock()
+	if s.stopping {
+		done := s.stopDone
+		s.stateMu.Unlock()
+		<-done
+		return
 	}
-	close(s.stopCh)
-	s.wg.Wait()
+	s.stopping = true
+	started := s.started
+	close(s.loopStop)
+	s.stateMu.Unlock()
+
+	if started {
+		s.loopWG.Wait()
+	}
+	// Package tests call check directly. Joining the check lock also makes
+	// callbackWG.Wait safe from a concurrent Add outside the polling loop.
+	s.checkMu.Lock()
+	s.checkMu.Unlock()
+	s.cancelCallbacks()
+	s.callbackWG.Wait()
+
+	s.stateMu.Lock()
+	close(s.stopDone)
+	s.stateMu.Unlock()
 }
 
 func (s *Scheduler) check() {
+	s.checkMu.Lock()
+	defer s.checkMu.Unlock()
+	if s.shouldStopWork() {
+		return
+	}
+
 	now := time.Now()
-	ownsDurableTasks := true
-	if s.cfg.IsOwner != nil {
-		ownsDurableTasks = s.cfg.IsOwner()
+	if s.ownsDurableTasks() && s.cfg.Store != nil {
+		s.checkStore("durable", s.cfg.Store, false, now)
 	}
-
-	var durableTasks []Task
-	if ownsDurableTasks && s.cfg.Store != nil {
-		tasks, err := s.cfg.Store.List()
-		if err != nil {
-			return
-		}
-		durableTasks = tasks
-	}
-
-	var sessionTasks []Task
 	if s.cfg.SessionStore != nil {
-		tasks, err := s.cfg.SessionStore.List()
-		if err != nil {
-			return
-		}
-		sessionTasks = tasks
+		s.checkStore("session", s.cfg.SessionStore, true, now)
 	}
+}
 
-	var durableToUpdate []string
-	var durableToRemove []string
-	var sessionToUpdate []string
-	var sessionToRemove []string
-
-	process := func(task Task, sessionOnly bool) {
-		if s.cfg.IsKilled() {
+func (s *Scheduler) checkStore(kind string, store schedulerStore, sessionOnly bool, now time.Time) {
+	tasks, err := store.List()
+	if err != nil {
+		s.reportError(fmt.Errorf("list %s scheduled tasks: %w", kind, err))
+		return
+	}
+	for _, task := range tasks {
+		if s.shouldStopWork() {
 			return
 		}
-		taskKey := task.ID
-		if sessionOnly {
-			taskKey = "session:" + task.ID
-		}
-
-		s.mu.Lock()
-		if _, busy := s.inFlight[taskKey]; busy {
-			s.mu.Unlock()
-			return
-		}
-		s.mu.Unlock()
-
 		if task.Recurring && IsExpired(task, now.UnixMilli()) {
-			if sessionOnly {
-				sessionToRemove = append(sessionToRemove, task.ID)
-			} else {
-				durableToRemove = append(durableToRemove, task.ID)
+			if _, err := store.RemoveIfUnchanged(task); err != nil {
+				s.reportError(fmt.Errorf("remove expired %s scheduled task %q: %w", kind, task.ID, err))
 			}
-			return
+			continue
 		}
 
 		next, err := task.NextFireAt()
 		if err != nil {
-			return
+			s.reportError(fmt.Errorf("calculate next fire for %s scheduled task %q: %w", kind, task.ID, err))
+			continue
 		}
-
 		if now.Before(next) {
-			return
+			continue
 		}
+		s.claimAndDispatch(store, task, sessionOnly, now)
+	}
+}
 
-		s.mu.Lock()
-		s.inFlight[taskKey] = struct{}{}
-		s.mu.Unlock()
+func (s *Scheduler) claimAndDispatch(store schedulerStore, task Task, sessionOnly bool, firedAt time.Time) {
+	if s.cfg.OnFire == nil || s.shouldStopWork() {
+		return
+	}
+	key := task.ID
+	if sessionOnly {
+		key = "session:" + task.ID
+	}
 
-		go func(t Task, key string) {
-			defer func() {
-				s.mu.Lock()
-				delete(s.inFlight, key)
-				s.mu.Unlock()
-			}()
-			if s.cfg.OnFire != nil {
-				s.cfg.OnFire(t)
-			}
-		}(task, taskKey)
+	s.inFlightMu.Lock()
+	if _, busy := s.inFlight[key]; busy {
+		s.inFlightMu.Unlock()
+		return
+	}
+	s.inFlight[key] = struct{}{}
+	s.inFlightMu.Unlock()
 
-		if task.Recurring {
-			if sessionOnly {
-				sessionToUpdate = append(sessionToUpdate, task.ID)
-			} else {
-				durableToUpdate = append(durableToUpdate, task.ID)
-			}
-		} else {
-			if sessionOnly {
-				sessionToRemove = append(sessionToRemove, task.ID)
-			} else {
-				durableToRemove = append(durableToRemove, task.ID)
-			}
+	claimed, err := store.ClaimForDispatch(task, firedAt.UnixMilli())
+	if err != nil {
+		s.clearInFlight(key)
+		s.reportError(fmt.Errorf("claim scheduled task %q: %w", task.ID, err))
+		return
+	}
+	if !claimed {
+		s.clearInFlight(key)
+		return
+	}
+
+	s.callbackWG.Add(1)
+	go func() {
+		defer s.callbackWG.Done()
+		defer s.clearInFlight(key)
+		if err := s.cfg.OnFire(s.callbackCtx, task); err != nil {
+			s.reportError(fmt.Errorf("run scheduled task %q: %w", task.ID, err))
 		}
-	}
+	}()
+}
 
-	for _, task := range durableTasks {
-		process(task, false)
-	}
-	for _, task := range sessionTasks {
-		process(task, true)
-	}
+func (s *Scheduler) clearInFlight(key string) {
+	s.inFlightMu.Lock()
+	delete(s.inFlight, key)
+	s.inFlightMu.Unlock()
+}
 
-	if len(durableToUpdate) > 0 && s.cfg.Store != nil {
-		s.cfg.Store.UpdateLastFired(durableToUpdate, now.UnixMilli())
+func (s *Scheduler) ownsDurableTasks() bool {
+	return s.cfg.IsOwner == nil || s.cfg.IsOwner()
+}
+
+func (s *Scheduler) shouldStopWork() bool {
+	if s.cfg.IsKilled() {
+		return true
 	}
-	if len(durableToRemove) > 0 && s.cfg.Store != nil {
-		s.cfg.Store.Remove(durableToRemove...)
-	}
-	if len(sessionToUpdate) > 0 && s.cfg.SessionStore != nil {
-		s.cfg.SessionStore.UpdateLastFired(sessionToUpdate, now.UnixMilli())
-	}
-	if len(sessionToRemove) > 0 && s.cfg.SessionStore != nil {
-		s.cfg.SessionStore.Remove(sessionToRemove...)
+	s.stateMu.Lock()
+	stopping := s.stopping
+	s.stateMu.Unlock()
+	return stopping
+}
+
+func (s *Scheduler) reportError(err error) {
+	if err != nil && s.cfg.OnError != nil {
+		s.cfg.OnError(err)
 	}
 }
 
