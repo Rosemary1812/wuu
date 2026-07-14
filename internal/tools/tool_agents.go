@@ -783,7 +783,7 @@ func (t *SendAgentMessageTool) Execute(ctx context.Context, argsJSON string) (st
 		return "", errors.New("send_message: target is required")
 	}
 	if !args.TriggerTurn {
-		if err := t.env.AgentControl.SendMessageFrom(currentAgentPath(t.env), args.Target, args.Message); err != nil {
+		if err := t.env.AgentControl.SendMessageFrom(currentAgentPath(t.env), ctx, args.Target, args.Message); err != nil {
 			return "", err
 		}
 		return `{"action":"send_message","status":"sent"}`, nil
