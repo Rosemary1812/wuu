@@ -203,6 +203,29 @@ describe("SettingsView shell", () => {
     });
     expect(onToggleSidebar).toHaveBeenCalledTimes(1);
   });
+
+  it("starts each settings page at the top and replaces the content surface", () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    renderSettings({ initialized: baseInitialized(), initialPage: "providers" });
+
+    const scroll = container.querySelector<HTMLElement>(".settings-scroll")!;
+    const providersPage = container.querySelector<HTMLElement>(".settings-page")!;
+    scroll.scrollTop = 420;
+    const advancedButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".settings-nav-item"),
+    ).find((button) => button.textContent?.includes("高级"));
+
+    act(() => {
+      advancedButton?.click();
+    });
+
+    expect(scroll.scrollTop).toBe(0);
+    expect(container.querySelector(".settings-page")).not.toBe(providersPage);
+    expect(container.querySelector(".settings-page-title")?.textContent).toBe("高级");
+  });
 });
 
 describe("SettingsView provider configuration", () => {

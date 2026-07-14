@@ -171,6 +171,10 @@
   grid-column: 1;
 }
 
+.cached-conversation-pane[data-active="true"] > .conversation-width {
+  animation: content-swap-enter var(--content-swap-duration) var(--content-swap-easing) both;
+}
+
 .conversation-pane.subthread-panel-visible {
   grid-template-columns: minmax(0, 1fr) var(--thread-panel-width, 372px);
   /* Right-anchored floaters (jump-to-latest, …) stay left of the panel. */
@@ -200,6 +204,10 @@
 @media (prefers-reduced-motion: reduce) {
   .conversation-pane {
     transition: none;
+  }
+
+  .cached-conversation-pane[data-active="true"] > .conversation-width {
+    animation: none;
   }
 }
 

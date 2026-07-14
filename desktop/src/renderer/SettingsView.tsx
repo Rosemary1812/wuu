@@ -28,6 +28,7 @@ import {
   type ReactNode,
   type RefObject,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState
@@ -199,10 +200,17 @@ export function SettingsView({
   const [advancedError, setAdvancedError] = useState("");
   const [advancedSaved, setAdvancedSaved] = useState(false);
   const [copyState, setCopyState] = useState<CopyState>("idle");
+  const settingsScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setActivePage(initialPage ?? "providers");
   }, [initialPage]);
+
+  useLayoutEffect(() => {
+    if (settingsScrollRef.current) {
+      settingsScrollRef.current.scrollTop = 0;
+    }
+  }, [activePage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -645,8 +653,8 @@ export function SettingsView({
             <SidePanelToggleIcon side="left" open={!sidebarCollapsed} />
           </button>
         </div>
-        <div className="settings-scroll">
-          <div className="settings-page">
+        <div ref={settingsScrollRef} className="settings-scroll">
+          <div className="settings-page" key={activePage}>
             <header className="settings-page-header">
               <div>
                 <h1 className="settings-page-title">{pageMeta.title}</h1>

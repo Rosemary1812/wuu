@@ -134,6 +134,8 @@
   --menu-shadow: var(--shadow-pop);
   --menu-enter-duration: 140ms;
   --menu-enter-easing: cubic-bezier(0.16, 1, 0.3, 1);
+  --content-swap-duration: 160ms;
+  --content-swap-easing: cubic-bezier(0.16, 1, 0.3, 1);
   --search-enter-duration: 220ms;
   --search-exit-duration: 180ms;
   --search-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
@@ -192,6 +194,22 @@
   to {
     opacity: 1;
     transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+/* A short composited transition for replacing one already-loaded content
+ * surface with another. It is intentionally quieter than a panel entrance:
+ * the user's click already explains the destination, so motion only needs to
+ * preserve visual continuity. */
+@keyframes content-swap-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
   }
 }
 

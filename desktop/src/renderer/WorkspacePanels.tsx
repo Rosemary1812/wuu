@@ -470,30 +470,37 @@ export function WorkspaceRightPanel({
                 />
               </section>
             </div>
-            {!activeTab ? (
-              <WorkspaceToolPicker tabs={tabs} onSelectTool={onOpenTool} />
-            ) : activeTab.kind === "diff" ? (
-              <TurnFileDiffPanel
-                selection={activeTab.selection}
-                onClose={() => onCloseTab(activeTab.id)}
-              />
-            ) : activeTab.kind === "files" || activeTab.kind === "file" ? null : activeTab.kind === "review" ? (
-              <WorkspaceReviewPanel gitStatus={gitStatus} />
-            ) : activeTab.kind === "terminal" ? (
-              <WorkspaceTerminalPanel activeContext={workspaceContext} />
-            ) : activeTab.kind === "browser" ? (
-              <WorkspaceBrowserPanel
-                open={open}
-                activeContext={activeContext}
-                pendingBrowserURL={pendingBrowserURL}
-                onBrowserURLConsumed={onBrowserURLConsumed}
-                onCurrentURLChange={onBrowserURLChange}
-                activity={browserActivity}
-                onActivityTakeover={onBrowserActivityTakeover}
-                onActivityRelease={onBrowserActivityRelease}
-                onActivityStop={onBrowserActivityStop}
-              />
-            ) : null}
+            {activeTab?.kind === "files" || activeTab?.kind === "file" ? null : (
+              <div
+                className="workspace-panel-content-swap"
+                key={activeTab?.id ?? "picker"}
+              >
+                {!activeTab ? (
+                  <WorkspaceToolPicker tabs={tabs} onSelectTool={onOpenTool} />
+                ) : activeTab.kind === "diff" ? (
+                  <TurnFileDiffPanel
+                    selection={activeTab.selection}
+                    onClose={() => onCloseTab(activeTab.id)}
+                  />
+                ) : activeTab.kind === "review" ? (
+                  <WorkspaceReviewPanel gitStatus={gitStatus} />
+                ) : activeTab.kind === "terminal" ? (
+                  <WorkspaceTerminalPanel activeContext={workspaceContext} />
+                ) : activeTab.kind === "browser" ? (
+                  <WorkspaceBrowserPanel
+                    open={open}
+                    activeContext={activeContext}
+                    pendingBrowserURL={pendingBrowserURL}
+                    onBrowserURLConsumed={onBrowserURLConsumed}
+                    onCurrentURLChange={onBrowserURLChange}
+                    activity={browserActivity}
+                    onActivityTakeover={onBrowserActivityTakeover}
+                    onActivityRelease={onBrowserActivityRelease}
+                    onActivityStop={onBrowserActivityStop}
+                  />
+                ) : null}
+              </div>
+            )}
           </div>
         </>
       ) : null}
