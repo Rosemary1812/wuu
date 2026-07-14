@@ -302,7 +302,7 @@ func TestNewSessionUsesUserStateNotWorkspaceDotWuu(t *testing.T) {
 	}
 }
 
-func TestNewSessionRetiresMemoryToolsAndInjectsMemdir(t *testing.T) {
+func TestNewSessionInjectsMemdir(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
@@ -330,9 +330,6 @@ func TestNewSessionRetiresMemoryToolsAndInjectsMemdir(t *testing.T) {
 	if rt.Toolkit == nil {
 		t.Fatal("expected toolkit")
 	}
-	if rt.Toolkit.Memory() != nil || rt.Toolkit.WorkspaceMemory() != nil {
-		t.Fatal("memstore layers are retired and must not be mounted (memory-redesign §6)")
-	}
 	if rt.Toolkit.ActiveSurface().ProfileName == "" {
 		t.Fatal("expected runtime toolkit to install a model surface")
 	}
@@ -348,11 +345,6 @@ func TestNewSessionRetiresMemoryToolsAndInjectsMemdir(t *testing.T) {
 	if strings.Contains(rt.BaseSystemPrompt, "# Runtime Tool Policy") ||
 		strings.Contains(rt.BaseSystemPrompt, "permission_mode:") {
 		t.Fatalf("base system prompt should keep runtime authority state out of the stable prompt:\n%s", rt.BaseSystemPrompt)
-	}
-	for _, def := range rt.Toolkit.Definitions() {
-		if def.Name == "read_memory" || def.Name == "write_memory" {
-			t.Fatalf("retired memory tool %q must not appear on any tool surface", def.Name)
-		}
 	}
 }
 
@@ -878,11 +870,6 @@ func TestNewThreadRuntimeOrdinarySpawnIsMemoryless(t *testing.T) {
 	}
 
 	req := client.LastRequest()
-	for _, def := range req.Tools {
-		if def.Name == "read_memory" || def.Name == "write_memory" {
-			t.Fatalf("ordinary worker should not receive memory tool %q", def.Name)
-		}
-	}
 	if len(req.Messages) == 0 || strings.Contains(req.Messages[0].Content, "# Persistent Memory") {
 		t.Fatalf("ordinary worker should not receive persistent memory prompt: %+v", req.Messages)
 	}
@@ -1180,11 +1167,6 @@ func TestNewThreadRuntimeAgentProfileSpawnGetsReadOnlyUserMemory(t *testing.T) {
 	for _, def := range req.Tools {
 		toolNames[def.Name] = true
 	}
-	for _, name := range []string{"read_memory", "write_memory"} {
-		if toolNames[name] {
-			t.Fatalf("retired memory tool %s must not reach worker tool surfaces: %+v", name, req.Tools)
-		}
-	}
 	if toolNames["tool_search"] {
 		t.Fatalf("compatible profile worker should not expose tool_search in flat mode: %+v", req.Tools)
 	}
@@ -1192,9 +1174,8 @@ func TestNewThreadRuntimeAgentProfileSpawnGetsReadOnlyUserMemory(t *testing.T) {
 		t.Fatal("profile worker sent no messages")
 	}
 	systemPrompt := req.Messages[0].Content
-	// Workers receive the READ-ONLY user-notebook variant: the index content
-	// (here the store-rendered MEMORY.md) is injected, and the teaching
-	// forbids writing.
+	// Workers receive the read-only user-notebook variant: the MEMORY.md index
+	// is injected, and the teaching forbids writing.
 	for _, want := range []string{"# User memory (read-only)", "QA workflow checks visual regressions"} {
 		if !strings.Contains(systemPrompt, want) {
 			t.Fatalf("profile worker system prompt missing %q:\n%s", want, systemPrompt)

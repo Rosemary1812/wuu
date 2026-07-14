@@ -81,7 +81,7 @@ func isKnownSurfaceSkillTool(name string) bool {
 		"spawn_agent", "helpme", "send_message", "close_agent", "agent_report", "post_message",
 		"tool_search", "load_skill",
 		"web_fetch", "web_search",
-		"read_memory", "write_memory", "session_memory",
+		"session_memory",
 		"update_plan", "goal",
 		"cron",
 		"list_agent_profiles", "create_agent_profile":

@@ -311,10 +311,8 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetNativeDeferredToolDiscovery(nativeDeferredDiscovery)
 		kit.SetActivityRegistry(activityRegistry)
 		var fileScopeExtras []string
-		// The retired memstore layers (read_memory/write_memory) are no
-		// longer mounted (memory-redesign §6): memory is the file-directory
-		// notebook injected into the prompt and written with plain file tools
-		// inside the boundary roots below.
+		// User memory is a file-directory notebook injected into the prompt
+		// and written with ordinary file tools inside the boundary roots below.
 		if memdirEnabled {
 			fileScopeExtras = append(fileScopeExtras, memdir.UserMemdir(wuuHome))
 		}
@@ -476,9 +474,6 @@ func NewSession(opts Options) (*Session, error) {
 		dreamIntervalDays = 0
 	}
 	var afterTurnHooks []func(context.Context, *agent.StreamRunner, []providers.ChatMessage, agent.LoopResult)
-	// The background profile-memory reviewer is retired (memory-redesign §6):
-	// its distillation duty moves to the settings-panel curator agent and a
-	// future dream v2. The dream scheduler below stays untouched.
 	if toolkit != nil {
 		if dreamScheduler := newSessionDreamScheduler(rootDir, workspaceStateDir, func() string { return toolkit.SessionDir() }, dreamIntervalDays); dreamScheduler != nil {
 			afterTurnHooks = append(afterTurnHooks, dreamScheduler.AfterTurn)

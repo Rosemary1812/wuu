@@ -121,9 +121,6 @@ func (t *Toolkit) toolExposure(name string) ToolExposure {
 	if isAdvancedCommandToolHidden(name) {
 		return ToolExposureHidden
 	}
-	if isMemoryToolName(name) && !hasAnyMemory(t.env) {
-		return ToolExposureHidden
-	}
 	surface := t.activeCompiledSurface()
 	if surface.ProfileName != "" {
 		if !activeSurfaceAllowsKnownTool(surface, t.LookupTool(name)) {
@@ -221,7 +218,7 @@ func classifyToolKind(name string) ToolKind {
 		return ToolKindGit
 	case "web_search", "web_fetch":
 		return ToolKindWeb
-	case "read_memory", "write_memory", "session_memory":
+	case "session_memory":
 		return ToolKindMemory
 	case "thread_get":
 		return ToolKindSession

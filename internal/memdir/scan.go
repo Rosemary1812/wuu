@@ -6,12 +6,10 @@ import (
 	"strings"
 )
 
-// Injection-side security scan. Mirrors the scanMemoryContent pattern from
-// internal/tools/memory.go (the retiring write_memory tool): the same threat
-// regexes and invisible-character list, applied here on the READ side, when
-// notebook index content is about to be injected into a prompt. The write
-// side is ordinary file tools now, so the injection boundary is where the
-// scan must live.
+// Injection-side security scan. It preserves the threat patterns and
+// invisible-character checks from the retired indexed-memory tool, applying
+// them when notebook index content is about to enter a prompt. Writes now use
+// ordinary file tools, so prompt injection is the boundary that must scan.
 
 var indexThreatPatterns = []struct {
 	pattern *regexp.Regexp

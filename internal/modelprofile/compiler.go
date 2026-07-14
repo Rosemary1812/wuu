@@ -372,10 +372,8 @@ func addWorkerReportTool(b *surfaceBuilder) {
 
 func addMemoryTools(b *surfaceBuilder) {
 	b.addDeferred("session_memory", capability.CapabilityMemorySession)
-	// read_memory/write_memory retired with the memstore injection chain
-	// (memory-redesign §6): durable memory is a file directory written
-	// through the ordinary file tools, so no model surface carries the
-	// project-memory tool capability anymore.
+	// Durable notebook memory uses file tools; the retired indexed-memory
+	// tools are no longer registered or projected onto model surfaces.
 }
 
 func addSessionTools(b *surfaceBuilder) {

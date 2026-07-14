@@ -228,38 +228,3 @@ func TestProfileDirDefaultsEmptyName(t *testing.T) {
 		t.Fatalf("empty profile dir = %q, want default profile dir %q", got, want)
 	}
 }
-
-func TestWorkspaceMemoryDirDoesNotCollideWithDreamMemory(t *testing.T) {
-	stateDir := filepath.Join(t.TempDir(), "workspaces", "proj-abc123")
-
-	got := WorkspaceMemoryDir(stateDir)
-	want := filepath.Join(stateDir, "memory-store")
-	if got != want {
-		t.Fatalf("WorkspaceMemoryDir(%q) = %q, want %q", stateDir, got, want)
-	}
-	if got != WorkspaceMemoryDir(stateDir) {
-		t.Fatal("WorkspaceMemoryDir should be stable across calls")
-	}
-
-	// The per-workspace dream memory (internal/sessionmemory) owns the
-	// "memory" subdirectory and its files: memory/MEMORY.md,
-	// memory/dream_state.json, memory/dream.lock. The workspace memory store
-	// (a FileProvider writing entries.jsonl + MEMORY.md) must not share that
-	// namespace, or its MEMORY.md would clobber the dream project memory.
-	dreamMemoryDir := filepath.Join(stateDir, "memory")
-	if got == dreamMemoryDir {
-		t.Fatalf("workspace memory store dir %q collides with dream memory dir %q", got, dreamMemoryDir)
-	}
-	sep := string(filepath.Separator)
-	if strings.HasPrefix(got+sep, dreamMemoryDir+sep) {
-		t.Fatalf("workspace memory store dir %q is nested inside dream memory dir %q", got, dreamMemoryDir)
-	}
-	for _, dreamFile := range []string{"MEMORY.md", "dream_state.json", "dream.lock"} {
-		dreamPath := filepath.Join(dreamMemoryDir, dreamFile)
-		for _, storeFile := range []string{"MEMORY.md", "entries.jsonl"} {
-			if filepath.Join(got, storeFile) == dreamPath {
-				t.Fatalf("workspace store file %q collides with dream file %q", filepath.Join(got, storeFile), dreamPath)
-			}
-		}
-	}
-}

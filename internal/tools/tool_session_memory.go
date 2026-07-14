@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -33,6 +34,43 @@ var allowedSessionMemoryTargets = []string{
 	sessionmemory.TargetSummary,
 	sessionmemory.TargetCheckpoint,
 	sessionmemory.TargetNotes,
+}
+
+var sessionMemoryThreatPatterns = []struct {
+	pattern *regexp.Regexp
+	id      string
+}{
+	{regexp.MustCompile(`(?i)ignore\s+(previous|all|above|prior)\s+instructions`), "prompt_injection"},
+	{regexp.MustCompile(`(?i)you\s+are\s+now\s+`), "role_hijack"},
+	{regexp.MustCompile(`(?i)do\s+not\s+tell\s+the\s+user`), "deception_hide"},
+	{regexp.MustCompile(`(?i)system\s+prompt\s+override`), "sys_prompt_override"},
+	{regexp.MustCompile(`(?i)disregard\s+(your|all|any)\s+(instructions|rules|guidelines)`), "disregard_rules"},
+	{regexp.MustCompile(`(?i)act\s+as\s+(if|though)\s+you\s+(have\s+no|don'?t\s+have)\s+(restrictions|limits|rules)`), "bypass_restrictions"},
+	{regexp.MustCompile(`(?i)curl\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)`), "exfil_curl"},
+	{regexp.MustCompile(`(?i)wget\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)`), "exfil_wget"},
+	{regexp.MustCompile(`(?i)cat\s+[^\n]*(\.env|credentials|\.netrc|\.pgpass|\.npmrc|\.pypirc)`), "read_secrets"},
+	{regexp.MustCompile(`(?i)authorized_keys`), "ssh_backdoor"},
+	{regexp.MustCompile(`(?i)(\$HOME/\.ssh|~/\.ssh)`), "ssh_access"},
+	{regexp.MustCompile(`(?i)(\$HOME/\.wuu/\.env|~/\.wuu/\.env)`), "wuu_env"},
+}
+
+var sessionMemoryInvisibleChars = []rune{
+	'\u200b', '\u200c', '\u200d', '\u2060', '\ufeff',
+	'\u202a', '\u202b', '\u202c', '\u202d', '\u202e',
+}
+
+func scanSessionMemoryContent(content string) error {
+	for _, ch := range sessionMemoryInvisibleChars {
+		if strings.ContainsRune(content, ch) {
+			return fmt.Errorf("blocked: content contains invisible unicode character U+%04X", ch)
+		}
+	}
+	for _, threat := range sessionMemoryThreatPatterns {
+		if threat.pattern.MatchString(content) {
+			return fmt.Errorf("blocked: content matches threat pattern %q", threat.id)
+		}
+	}
+	return nil
 }
 
 type SessionMemoryTool struct {
@@ -184,7 +222,7 @@ func (t *SessionMemoryTool) Execute(ctx context.Context, args string) (string, e
 		if content == "" {
 			return "", fmt.Errorf("session_memory: content is required for append")
 		}
-		if err := scanMemoryContent(content); err != nil {
+		if err := scanSessionMemoryContent(content); err != nil {
 			return "", fmt.Errorf("session_memory: %w", err)
 		}
 		path, length, err := sessionmemory.AppendTarget(stateDir, sessionDir, target, content, a.Source, time.Now().UTC())
@@ -207,7 +245,7 @@ func (t *SessionMemoryTool) Execute(ctx context.Context, args string) (string, e
 		if content == "" {
 			return "", fmt.Errorf("session_memory: content is required for replace")
 		}
-		if err := scanMemoryContent(content); err != nil {
+		if err := scanSessionMemoryContent(content); err != nil {
 			return "", fmt.Errorf("session_memory: %w", err)
 		}
 		path, length, err := sessionmemory.ReplaceTarget(stateDir, sessionDir, target, content)

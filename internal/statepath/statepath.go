@@ -258,34 +258,6 @@ func ScheduledTasksLockPath(workspaceStateDir string) string {
 	return filepath.Join(workspaceStateDir, "scheduled_tasks.lock")
 }
 
-// GlobalMemoryDir returns the user-level, single global directory for the
-// LLM-writable durable memory. This directory is not scoped to a named
-// agent profile: every wuu session — default or named — shares the same
-// long-term store. This matches the Claude Code convention of one durable
-// memory document per user, with no profile-name dimension. (The former
-// ProfileMemoryDir helper for profile-scoped memory was removed as dead
-// code — no production caller ever existed.)
-func GlobalMemoryDir(wuuHome string) string {
-	return filepath.Join(wuuHome, "memory")
-}
-
-// WorkspaceMemoryDir returns the workspace-scoped directory for the
-// LLM-writable durable memory store — the "workspace" layer of the two-layer
-// long-term memory (the other layer being GlobalMemoryDir). Like GlobalMemoryDir
-// it is backed by a memstore.FileProvider, so the directory holds entries.jsonl
-// plus a human-facing MEMORY.md.
-//
-// The directory is deliberately "memory-store", a SIBLING of the "memory"
-// subdirectory owned by the per-workspace dream memory
-// (internal/sessionmemory). Dream memory occupies memory/MEMORY.md,
-// memory/dream_state.json, and memory/dream.lock inside the same workspace
-// state directory; rooting the FileProvider under memory/ would make its own
-// MEMORY.md collide with dream's project MEMORY.md. Keeping the two subsystems
-// in separate top-level namespaces guarantees zero path overlap.
-func WorkspaceMemoryDir(workspaceStateDir string) string {
-	return filepath.Join(workspaceStateDir, "memory-store")
-}
-
 func sanitizeSlug(input string) string {
 	var b strings.Builder
 	lastDash := false

@@ -22,9 +22,7 @@ const (
 
 	DefaultAgentName = "default"
 
-	DefaultMemoryCharLimit     = 2200
-	DefaultUserMemoryCharLimit = 1375
-	DefaultDreamIntervalDays   = 7
+	DefaultDreamIntervalDays = 7
 
 	defaultCodexSubscriptionBaseURL = "https://chatgpt.com/backend-api/codex"
 )
@@ -126,44 +124,19 @@ type MemoryConfig struct {
 	IncludeLegacyMemory *bool `json:"include_legacy_memory,omitempty"`
 	// Disable turns off durable memory discovery and user-notebook injection.
 	Disable bool `json:"disable,omitempty"`
-	// NudgeInterval controls how many successful user turns pass before
-	// the background memory reviewer checks whether durable facts should be
-	// saved. nil means the default interval; 0 disables the reviewer.
+	// NudgeInterval is retained for compatibility with configs written by the
+	// retired profile-memory reviewer. Current runtimes ignore it.
 	NudgeInterval *int `json:"nudge_interval,omitempty"`
-	// MemoryCharLimit caps target="memory" persistent entries by character
-	// count. Zero uses DefaultMemoryCharLimit.
+	// MemoryCharLimit is retained for compatibility with the retired indexed
+	// memory store. Current notebook memory does not apply this limit.
 	MemoryCharLimit int `json:"memory_char_limit,omitempty"`
-	// UserCharLimit caps target="user" persistent entries by character
-	// count. Zero uses DefaultUserMemoryCharLimit.
+	// UserCharLimit is retained for compatibility with the retired indexed
+	// memory store. Current notebook memory does not apply this limit.
 	UserCharLimit int `json:"user_char_limit,omitempty"`
 	// DreamIntervalDays controls how often the background dream pass
 	// consolidates recent session history into workspace memory. nil means
 	// the default interval; 0 disables the dream pass.
 	DreamIntervalDays *int `json:"dream_interval_days,omitempty"`
-}
-
-// ProfileMemoryNudgeInterval returns the configured background review
-// cadence. The default mirrors the memory-review cadence used by comparable
-// agent runtimes.
-func (m MemoryConfig) ProfileMemoryNudgeInterval() int {
-	if m.NudgeInterval == nil {
-		return 10
-	}
-	return *m.NudgeInterval
-}
-
-func (m MemoryConfig) ProfileMemoryCharLimit() int {
-	if m.MemoryCharLimit <= 0 {
-		return DefaultMemoryCharLimit
-	}
-	return m.MemoryCharLimit
-}
-
-func (m MemoryConfig) ProfileUserCharLimit() int {
-	if m.UserCharLimit <= 0 {
-		return DefaultUserMemoryCharLimit
-	}
-	return m.UserCharLimit
 }
 
 func (m MemoryConfig) DreamIntervalDaysValue() int {
@@ -858,8 +831,6 @@ func DefaultSystemPrompt() string {
 // worker surfaces and goal stays deferred behind tool_search — their
 // worker-facing guidance lives in the tool descriptions and the worker's
 // deferred-tool catalog, not in the orchestration map.
-// read_memory/write_memory are retired on every surface (memory-redesign
-// §6: durable memory is a file directory written with plain file tools).
 func WorkerSystemPrompt() string {
 	return prompts.System()
 }

@@ -18,7 +18,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
 	"github.com/blueberrycongee/wuu/internal/mcp"
-	"github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -170,11 +169,6 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 		Skills:                      t.env.Skills,
 		OnFileChanged:               t.env.OnFileChanged,
 		OnPlanUpdated:               t.env.OnPlanUpdated,
-		Memory:                      t.env.Memory,
-		WorkspaceMemory:             t.env.WorkspaceMemory,
-		DefaultMemoryWriteScope:     t.env.DefaultMemoryWriteScope,
-		MemoryCharLimit:             t.env.MemoryCharLimit,
-		UserMemoryCharLimit:         t.env.UserMemoryCharLimit,
 	}
 
 	clone := &Toolkit{
@@ -264,9 +258,6 @@ func (t *Toolkit) rebuildRegistry() {
 		// Deferred tool discovery
 		NewToolSearchTool(t),
 	}
-	// Memory tools stay in the internal registry, but Definitions hides them
-	// unless a memory provider is attached for this agent profile.
-	registered = append(registered, NewMemoryTools(e)...)
 	t.registry = NewRegistry(registered...)
 }
 
@@ -345,55 +336,6 @@ func (t *Toolkit) SetSkills(s []skills.Skill) {
 // Skills returns the currently registered skills (read-only).
 func (t *Toolkit) Skills() []skills.Skill {
 	return t.env.Skills
-}
-
-// SetMemory attaches the GLOBAL memory store provider (the cross-workspace
-// layer). Definitions exposes the memory tools while either the global or the
-// workspace layer is attached.
-func (t *Toolkit) SetMemory(p store.Provider) {
-	t.env.Memory = p
-}
-
-// SetWorkspaceMemory attaches the WORKSPACE memory store provider (the
-// project-scoped layer). Definitions exposes the memory tools while either the
-// global or the workspace layer is attached.
-func (t *Toolkit) SetWorkspaceMemory(p store.Provider) {
-	if t == nil || t.env == nil {
-		return
-	}
-	t.env.WorkspaceMemory = p
-}
-
-func (t *Toolkit) SetMemoryLimits(memoryLimit, userLimit int) {
-	if t == nil || t.env == nil {
-		return
-	}
-	t.env.MemoryCharLimit = memoryLimit
-	t.env.UserMemoryCharLimit = userLimit
-}
-
-func (t *Toolkit) MemoryLimits() (memoryLimit, userLimit int) {
-	if t == nil || t.env == nil {
-		return 0, 0
-	}
-	return t.env.MemoryCharLimit, t.env.UserMemoryCharLimit
-}
-
-// Memory returns the currently attached GLOBAL memory store provider, if any.
-func (t *Toolkit) Memory() store.Provider {
-	if t == nil || t.env == nil {
-		return nil
-	}
-	return t.env.Memory
-}
-
-// WorkspaceMemory returns the currently attached WORKSPACE memory store
-// provider, if any.
-func (t *Toolkit) WorkspaceMemory() store.Provider {
-	if t == nil || t.env == nil {
-		return nil
-	}
-	return t.env.WorkspaceMemory
 }
 
 // SetSessionID sets the current session ID.
@@ -575,9 +517,6 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 	tail := make([]providers.ToolDefinition, 0, len(subagentManagementTools))
 	nativeDeferred := t.nativeDeferredToolDiscoveryEnabled()
 	for _, d := range all {
-		if isMemoryToolName(d.Name) && !hasAnyMemory(t.env) {
-			continue
-		}
 		if t.isToolDisabled(d.Name) {
 			continue
 		}

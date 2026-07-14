@@ -1,10 +1,8 @@
 package runtime
 
-// The two-layer memstore injection (global + workspace read/write_memory)
-// retired with memory-redesign §6. These tests pin the retirement and the
-// invariants that replaced it: no memstore layer is mounted, no memory-store
-// directory is created, and the memdir prompt injection stays byte-identical
-// across rebuilds (the prompt-cache prefix stability requirement).
+// These tests cover the file-directory memory replacement: legacy memstore
+// directories stay unused, the disable switch controls prompt injection, and
+// startup migration preserves old on-disk memory.
 
 import (
 	"os"
@@ -31,14 +29,14 @@ func twoLayerTestConfig() config.Config {
 	}
 }
 
-func TestNewSessionDoesNotMountMemstoreLayers(t *testing.T) {
+func TestNewSessionDoesNotCreateLegacyWorkspaceMemoryStore(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()
 	wuuHome := filepath.Join(home, "state")
 	t.Setenv("WUU_HOME", wuuHome)
 	t.Setenv("TEST_WUU_KEY", "abc")
 
-	rt, err := NewSession(Options{
+	_, err := NewSession(Options{
 		RootDir:    root,
 		HomeDir:    home,
 		ConfigPath: filepath.Join(root, ".wuu.json"),
@@ -47,20 +45,12 @@ func TestNewSessionDoesNotMountMemstoreLayers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if rt.Toolkit.Memory() != nil || rt.Toolkit.WorkspaceMemory() != nil {
-		t.Fatal("memstore layers must not be mounted (memory-redesign §6)")
-	}
 	workspaceStateDir, err := statepath.WorkspaceDir(wuuHome, root)
 	if err != nil {
 		t.Fatalf("WorkspaceDir: %v", err)
 	}
-	if _, err := os.Stat(statepath.WorkspaceMemoryDir(workspaceStateDir)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(workspaceStateDir, "memory-store")); !os.IsNotExist(err) {
 		t.Fatalf("<ws-state>/memory-store must no longer be created (stat err = %v)", err)
-	}
-	for _, def := range rt.Toolkit.Definitions() {
-		if def.Name == "read_memory" || def.Name == "write_memory" {
-			t.Fatalf("retired memory tool %q must not be exposed", def.Name)
-		}
 	}
 }
 

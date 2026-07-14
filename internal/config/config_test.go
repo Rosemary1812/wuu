@@ -316,41 +316,20 @@ func TestConfig_ModelRolesRejectUnknownProvider(t *testing.T) {
 	}
 }
 
-func TestMemoryConfig_ProfileMemoryNudgeInterval(t *testing.T) {
-	var cfg MemoryConfig
-	if got := cfg.ProfileMemoryNudgeInterval(); got != 10 {
-		t.Fatalf("default nudge interval = %d, want 10", got)
+func TestMemoryConfigLegacyIndexedMemoryFieldsRemainLoadable(t *testing.T) {
+	cfg, err := decodeConfig([]byte(`{
+  "memory": {
+    "nudge_interval": 3,
+    "memory_char_limit": 2200,
+    "user_char_limit": 1375
+  }
+}`), "legacy-memory.json")
+	if err != nil {
+		t.Fatalf("decodeConfig: %v", err)
 	}
-
-	disabled := 0
-	cfg.NudgeInterval = &disabled
-	if got := cfg.ProfileMemoryNudgeInterval(); got != 0 {
-		t.Fatalf("disabled nudge interval = %d, want 0", got)
-	}
-
-	custom := 3
-	cfg.NudgeInterval = &custom
-	if got := cfg.ProfileMemoryNudgeInterval(); got != 3 {
-		t.Fatalf("custom nudge interval = %d, want 3", got)
-	}
-}
-
-func TestMemoryConfig_ProfileMemoryCharLimits(t *testing.T) {
-	var cfg MemoryConfig
-	if got := cfg.ProfileMemoryCharLimit(); got != DefaultMemoryCharLimit {
-		t.Fatalf("default memory char limit = %d, want %d", got, DefaultMemoryCharLimit)
-	}
-	if got := cfg.ProfileUserCharLimit(); got != DefaultUserMemoryCharLimit {
-		t.Fatalf("default user char limit = %d, want %d", got, DefaultUserMemoryCharLimit)
-	}
-
-	cfg.MemoryCharLimit = 12
-	cfg.UserCharLimit = 8
-	if got := cfg.ProfileMemoryCharLimit(); got != 12 {
-		t.Fatalf("custom memory char limit = %d, want 12", got)
-	}
-	if got := cfg.ProfileUserCharLimit(); got != 8 {
-		t.Fatalf("custom user char limit = %d, want 8", got)
+	if cfg.Memory.NudgeInterval == nil || *cfg.Memory.NudgeInterval != 3 ||
+		cfg.Memory.MemoryCharLimit != 2200 || cfg.Memory.UserCharLimit != 1375 {
+		t.Fatalf("legacy memory fields were not preserved: %+v", cfg.Memory)
 	}
 }
 

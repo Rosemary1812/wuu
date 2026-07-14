@@ -21,8 +21,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
-
-	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 )
 
 func mustWriteFile(t *testing.T, path, content string) {
@@ -5344,104 +5342,23 @@ func TestToolkit_GrepIncludeMatchesRelativePaths_Ripgrep(t *testing.T) {
 	}
 }
 
-func TestToolkit_MemoryTools_HiddenWithoutProvider(t *testing.T) {
+func TestToolkit_RetiredMemoryToolsAreNotRegistered(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 
-	names := map[string]bool{}
-	for _, d := range kit.Definitions() {
-		names[d.Name] = true
-	}
-	for _, want := range []string{"read_memory", "write_memory"} {
-		if names[want] {
-			t.Errorf("memory tool %q should be hidden without provider", want)
+	definitions := definitionNames(kit.Definitions())
+	for _, name := range []string{"read_memory", "write_memory"} {
+		if definitions[name] {
+			t.Fatalf("retired tool %q must not appear in Definitions", name)
 		}
-	}
-}
-
-func TestToolkit_MemoryTools_NoProviderReturnsError(t *testing.T) {
-	// Without a provider, every memory tool returns a Go error so the
-	// model observes the failure as a tool error rather than silently
-	// reading an empty list.
-	root := t.TempDir()
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "write_memory",
-		Arguments: `{"content":"a note"}`,
-	})
-	if err == nil {
-		t.Fatalf("expected error from write_memory without provider, got nil")
-	}
-	if !strings.Contains(err.Error(), "no Provider") {
-		t.Fatalf("expected no-provider error, got: %v", err)
-	}
-
-	_, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "read_memory",
-		Arguments: `{"limit":5}`,
-	})
-	if err == nil {
-		t.Fatalf("expected error from read_memory without provider, got nil")
-	}
-}
-
-func TestToolkit_MemoryTools_SetMemorySwapsProvider(t *testing.T) {
-	root := t.TempDir()
-	kit, err := New(root)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	// Attach a real FileProvider so the registry dispatches to a working
-	// backend that actually persists to disk.
-	memDir := t.TempDir()
-	provider, err := memstore.NewFileProvider(memDir)
-	if err != nil {
-		t.Fatalf("NewFileProvider: %v", err)
-	}
-	kit.SetMemory(provider)
-	names := definitionNames(kit.Definitions())
-	for _, want := range []string{"read_memory", "write_memory"} {
-		if !names[want] {
-			t.Fatalf("memory tool %q missing from Definitions() after attaching provider", want)
+		if _, ok := kit.ToolInfo(name); ok {
+			t.Fatalf("retired tool %q must not appear in the registry", name)
 		}
-	}
-
-	writeResp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "write_memory",
-		Arguments: `{"scope":"global","content":"prefer tabs over spaces","tags":["go","formatting"]}`,
-	})
-	if err != nil {
-		t.Fatalf("write_memory with provider: %v", err)
-	}
-	if !strings.Contains(writeResp, `"written":true`) {
-		t.Fatalf("unexpected write_memory response: %s", writeResp)
-	}
-
-	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "read_memory",
-		Arguments: `{"query":"tabs","limit":5}`,
-	})
-	if err != nil {
-		t.Fatalf("read_memory: %v", err)
-	}
-	if !strings.Contains(readResp, "prefer tabs over spaces") {
-		t.Fatalf("expected read to find the stored note, got: %s", readResp)
-	}
-
-	// Detaching returns the tools to the "no provider" error branch.
-	kit.SetMemory(nil)
-	if _, err = kit.Execute(context.Background(), providers.ToolCall{
-		Name:      "write_memory",
-		Arguments: `{"content":"a note"}`,
-	}); err == nil || !strings.Contains(err.Error(), "no Provider") {
-		t.Fatalf("expected no-provider error after detach, got: %v", err)
+		if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: name, Arguments: `{}`}); err == nil || !strings.Contains(err.Error(), "unknown tool") {
+			t.Fatalf("executing retired tool %q should fail as unknown, got %v", name, err)
+		}
 	}
 }

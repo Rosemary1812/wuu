@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/capability"
-	memstore "github.com/blueberrycongee/wuu/internal/memory/store"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
@@ -76,11 +75,6 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	provider, err := memstore.NewFileProvider(t.TempDir())
-	if err != nil {
-		t.Fatalf("NewFileProvider: %v", err)
-	}
-	kit.SetMemory(provider)
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 
 	defs := kit.Definitions()
@@ -1028,39 +1022,6 @@ func TestActiveProfileFlatToolSurfaceHidesToolSearchAndExposesDeferredTools(t *t
 	}
 }
 
-func TestActiveProfileHidesRetiredMemoryToolsEvenWithProvider(t *testing.T) {
-	// read_memory/write_memory retired with the memstore injection chain
-	// (memory-redesign §6): no model surface carries the project-memory
-	// capability, so the tools stay hidden even when a provider is attached.
-	kit, err := New(t.TempDir())
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
-	if containsProfileDef(kit.Definitions(), "read_memory") || containsProfileDef(kit.Definitions(), "write_memory") {
-		t.Fatal("memory tools should stay hidden without a provider")
-	}
-
-	provider, err := memstore.NewFileProvider(t.TempDir())
-	if err != nil {
-		t.Fatalf("NewFileProvider: %v", err)
-	}
-	kit.SetMemory(provider)
-	defs := kit.Definitions()
-	for _, want := range []string{"read_memory", "write_memory"} {
-		if containsProfileDef(defs, want) {
-			t.Fatalf("retired tool %s must not surface, got %v", want, sortedProfileDefNames(defs))
-		}
-		info, ok := kit.ToolInfo(want)
-		if !ok {
-			t.Fatalf("ToolInfo(%q) not found", want)
-		}
-		if info.Exposure != ToolExposureHidden {
-			t.Fatalf("%s exposure = %s, want %s", want, info.Exposure, ToolExposureHidden)
-		}
-	}
-}
-
 func TestSetActiveProfileClaudeExposesEditAndWriteHidesApplyPatch(t *testing.T) {
 	kit, err := New(t.TempDir())
 	if err != nil {
@@ -1197,11 +1158,6 @@ func TestDefinitionsFilterStaysWithinSurfaceAndAllowsDeferredTools(t *testing.T)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	provider, err := memstore.NewFileProvider(t.TempDir())
-	if err != nil {
-		t.Fatalf("NewFileProvider: %v", err)
-	}
-	kit.SetMemory(provider)
 	kit.SetActiveProfile(modelprofile.Resolve("anthropic", "claude-sonnet-4-5"), true)
 	loadedDeferred := map[string]struct{}{
 		"cron": {},
