@@ -10,6 +10,16 @@ import (
 	"github.com/blueberrycongee/wuu/internal/capability"
 )
 
+func writeSelfReferentialSymlink(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir symlink parent: %v", err)
+	}
+	if err := os.Symlink(filepath.Base(path), path); err != nil {
+		t.Skipf("self-referential symlinks are unavailable: %v", err)
+	}
+}
+
 func TestLoadFrom_UsesUserProviderAndProjectAgentSettings(t *testing.T) {
 	t.Setenv("WUU_HOME", "")
 	workdir := t.TempDir()
@@ -1433,6 +1443,44 @@ func TestLoadFrom_InvalidConfigIsNotNotFound(t *testing.T) {
 	if errors.Is(err, ErrConfigNotFound) {
 		t.Fatalf("invalid config wrongly classified as not-found: %v", err)
 	}
+}
+
+func TestLoadProjectConfig_OnlyFallsBackWhenPrimaryIsMissing(t *testing.T) {
+	t.Run("missing primary", func(t *testing.T) {
+		workdir := t.TempDir()
+		fallbackPath := filepath.Join(workdir, localFallbackConfig)
+		if err := os.WriteFile(fallbackPath, []byte(migrateTestConfigJSON), 0o644); err != nil {
+			t.Fatalf("write fallback config: %v", err)
+		}
+
+		_, loadedPath, err := LoadProjectConfig(workdir)
+		if err != nil {
+			t.Fatalf("LoadProjectConfig: %v", err)
+		}
+		if loadedPath != fallbackPath {
+			t.Fatalf("loaded path = %q, want fallback %q", loadedPath, fallbackPath)
+		}
+	})
+
+	t.Run("primary read error", func(t *testing.T) {
+		workdir := t.TempDir()
+		primaryPath := filepath.Join(workdir, localPrimaryConfig)
+		writeSelfReferentialSymlink(t, primaryPath)
+		if err := os.WriteFile(filepath.Join(workdir, localFallbackConfig), []byte(migrateTestConfigJSON), 0o644); err != nil {
+			t.Fatalf("write fallback config: %v", err)
+		}
+
+		_, _, err := LoadProjectConfig(workdir)
+		if err == nil {
+			t.Fatal("expected the primary config read error")
+		}
+		if errors.Is(err, ErrConfigNotFound) {
+			t.Fatalf("primary read error classified as not found: %v", err)
+		}
+		if !strings.Contains(err.Error(), primaryPath) {
+			t.Fatalf("error %q does not identify primary config %q", err, primaryPath)
+		}
+	})
 }
 
 func TestUpdateProviderModel(t *testing.T) {

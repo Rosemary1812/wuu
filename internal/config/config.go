@@ -395,8 +395,11 @@ func Load() (Config, string, error) {
 func LoadFrom(workdir, home string) (Config, string, error) {
 	migrateLegacyGlobalStore(home)
 	var userCandidates []string
-	newPath, pathErr := statepath.ConfigPath(home)
-	if pathErr == nil && newPath != "" {
+	newPath, err := statepath.ConfigPath(home)
+	if err != nil {
+		return Config{}, "", fmt.Errorf("resolve user config: %w", err)
+	}
+	if newPath != "" {
 		userCandidates = append(userCandidates, newPath)
 	}
 	if legacyPath := statepath.LegacyConfigPath(home); legacyPath != "" {
@@ -404,37 +407,35 @@ func LoadFrom(workdir, home string) (Config, string, error) {
 	}
 
 	for _, candidate := range userCandidates {
-		if _, err := os.Stat(candidate); err == nil {
-			cfg, readErr := readConfig(candidate)
-			if readErr != nil {
-				return Config{}, "", readErr
+		cfg, readErr := readConfig(candidate)
+		if readErr != nil {
+			if errors.Is(readErr, os.ErrNotExist) {
+				continue
 			}
-			layered, appliedLayers, layerErr := applyRestrictedProjectLayers(candidate, workdir, cfg)
-			if layerErr != nil {
-				return Config{}, "", layerErr
-			}
-			cfg = layered
-			// Read and translate Claude Code's project-level `.mcp.json`, if
-			// present. Approved servers (per the mcp_json trust section, now
-			// fully merged into cfg above) are merged into cfg.MCPServers. This
-			// is a no-op when the file is absent. workdir is the project root,
-			// the same directory used for the settings layers above.
-			applyMCPJsonServers(&cfg, workdir)
-			applyDefaults(&cfg)
-			if validateErr := cfg.Validate(); validateErr != nil {
-				return Config{}, "", validateErr
-			}
-			logSettingsLayerDebug(candidate, appliedLayers)
-			return cfg, candidate, nil
+			return Config{}, "", readErr
 		}
+		layered, appliedLayers, layerErr := applyRestrictedProjectLayers(candidate, workdir, cfg)
+		if layerErr != nil {
+			return Config{}, "", layerErr
+		}
+		cfg = layered
+		// Read and translate Claude Code's project-level `.mcp.json`, if
+		// present. Approved servers (per the mcp_json trust section, now
+		// fully merged into cfg above) are merged into cfg.MCPServers. This
+		// is a no-op when the file is absent. workdir is the project root,
+		// the same directory used for the settings layers above.
+		applyMCPJsonServers(&cfg, workdir)
+		applyDefaults(&cfg)
+		if validateErr := cfg.Validate(); validateErr != nil {
+			return Config{}, "", validateErr
+		}
+		logSettingsLayerDebug(candidate, appliedLayers)
+		return cfg, candidate, nil
 	}
 
 	configPath := "~/.wuu/config.json"
 	if strings.TrimSpace(newPath) != "" {
 		configPath = newPath
-	}
-	if len(userCandidates) == 0 && pathErr != nil {
-		return Config{}, "", fmt.Errorf("%w, resolve user config: %v", ErrConfigNotFound, pathErr)
 	}
 	return Config{}, "", fmt.Errorf("%w, run `wuu init` to create user config %s", ErrConfigNotFound, configPath)
 }
@@ -449,11 +450,11 @@ func LoadProjectConfig(workdir string) (Config, string, error) {
 		filepath.Join(workdir, localFallbackConfig),
 	}
 	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate); err != nil {
-			continue
-		}
 		cfg, err := readConfig(candidate)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
 			return Config{}, "", err
 		}
 		layered, appliedLayers, err := applyProjectSettingsLayers(candidate, workdir, cfg)

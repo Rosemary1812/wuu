@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -131,6 +132,28 @@ func TestLoadFrom_PrefersUnifiedOverLegacyConfig(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "new-model") {
 		t.Fatalf("unified config was overwritten by legacy migration:\n%s", string(data))
+	}
+}
+
+func TestLoadFrom_DoesNotFallBackToLegacyOnCanonicalReadError(t *testing.T) {
+	t.Setenv("WUU_HOME", "")
+	workdir := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	writeLegacyConfig(t, home, migrateTestConfigJSON)
+	canonicalPath := filepath.Join(home, ".wuu", "config.json")
+	writeSelfReferentialSymlink(t, canonicalPath)
+
+	_, _, err := LoadFrom(workdir, home)
+	if err == nil {
+		t.Fatal("expected the canonical config read error")
+	}
+	if errors.Is(err, ErrConfigNotFound) {
+		t.Fatalf("canonical read error classified as not found: %v", err)
+	}
+	if !strings.Contains(err.Error(), canonicalPath) {
+		t.Fatalf("error %q does not identify canonical config %q", err, canonicalPath)
 	}
 }
 

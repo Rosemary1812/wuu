@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -63,25 +64,29 @@ func projectSettingsLayers(projectRoot string) []settingsLayer {
 	}
 }
 
-func restrictedProjectLayers(projectRoot string) []settingsLayer {
+func restrictedProjectLayers(projectRoot string) ([]settingsLayer, error) {
 	var layers []settingsLayer
 	for _, name := range []string{localPrimaryConfig, localFallbackConfig} {
 		path := filepath.Join(projectRoot, name)
-		if _, err := os.Stat(path); err == nil {
-			layers = append(layers, settingsLayer{
-				path:                 path,
-				stripExtensionGrants: true,
-				protectUserSettings:  true,
-				label:                "project config",
-			})
-			break
+		if _, err := os.Stat(path); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("stat project config %s: %w", path, err)
 		}
+		layers = append(layers, settingsLayer{
+			path:                 path,
+			stripExtensionGrants: true,
+			protectUserSettings:  true,
+			label:                "project config",
+		})
+		break
 	}
 	for _, layer := range projectSettingsLayers(projectRoot) {
 		layer.protectUserSettings = true
 		layers = append(layers, layer)
 	}
-	return layers
+	return layers, nil
 }
 
 // applyProjectSettingsLayers deep-merges the project-scoped settings layers on
@@ -102,7 +107,11 @@ func applyProjectSettingsLayers(basePath, projectRoot string, base Config) (Conf
 // applyRestrictedProjectLayers overlays every project config source on a
 // user-owned base while preserving the user-only security boundary.
 func applyRestrictedProjectLayers(basePath, projectRoot string, base Config) (Config, []string, error) {
-	return applySettingsLayers(basePath, base, restrictedProjectLayers(projectRoot))
+	layers, err := restrictedProjectLayers(projectRoot)
+	if err != nil {
+		return Config{}, nil, err
+	}
+	return applySettingsLayers(basePath, base, layers)
 }
 
 func applySettingsLayers(basePath string, base Config, layers []settingsLayer) (Config, []string, error) {
@@ -113,12 +122,11 @@ func applySettingsLayers(basePath string, base Config, layers []settingsLayer) (
 
 	var pending []pendingLayer
 	for _, layer := range layers {
-		info, err := os.Stat(layer.path)
-		if err != nil || info.IsDir() {
-			continue // missing (or a directory) — treat as no layer
-		}
 		data, err := os.ReadFile(layer.path)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
 			return Config{}, nil, fmt.Errorf("read %s %s: %w", layer.label, layer.path, err)
 		}
 		if len(bytes.TrimSpace(data)) == 0 {

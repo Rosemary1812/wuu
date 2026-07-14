@@ -357,6 +357,62 @@ func TestLoadFrom_EmptyLayerIsNoOp(t *testing.T) {
 	}
 }
 
+func TestLoadFrom_ProjectConfigStatErrorIsNotIgnored(t *testing.T) {
+	home := isolatedHome(t)
+	workdir := t.TempDir()
+	writeBaseConfig(t, home, layerBaseConfigJSON)
+	projectPath := filepath.Join(workdir, localPrimaryConfig)
+	writeSelfReferentialSymlink(t, projectPath)
+
+	_, _, err := LoadFrom(workdir, home)
+	if err == nil {
+		t.Fatal("expected the project config stat error")
+	}
+	if !strings.Contains(err.Error(), projectPath) || !strings.Contains(err.Error(), "stat project config") {
+		t.Fatalf("error %q does not identify project config stat failure %q", err, projectPath)
+	}
+}
+
+func TestLoadFrom_SettingsLayerReadFailuresAreNotIgnored(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*testing.T, string)
+	}{
+		{
+			name: "stat error",
+			setup: func(t *testing.T, path string) {
+				writeSelfReferentialSymlink(t, path)
+			},
+		},
+		{
+			name: "directory",
+			setup: func(t *testing.T, path string) {
+				if err := os.MkdirAll(path, 0o755); err != nil {
+					t.Fatalf("mkdir settings layer path: %v", err)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := isolatedHome(t)
+			workdir := t.TempDir()
+			writeBaseConfig(t, home, layerBaseConfigJSON)
+			layerPath := filepath.Join(workdir, projectSettingsDir, sharedSettingsFile)
+			tt.setup(t, layerPath)
+
+			_, _, err := LoadFrom(workdir, home)
+			if err == nil {
+				t.Fatal("expected the settings layer read error")
+			}
+			if !strings.Contains(err.Error(), layerPath) || !strings.Contains(err.Error(), "read shared settings") {
+				t.Fatalf("error %q does not identify settings layer failure %q", err, layerPath)
+			}
+		})
+	}
+}
+
 // TestLoadFrom_SettingsLayerDebugLog verifies the applied layers are surfaced on
 // stderr when WUU_DEBUG is set, and stay quiet otherwise.
 func TestLoadFrom_SettingsLayerDebugLog(t *testing.T) {
