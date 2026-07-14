@@ -1,4 +1,5 @@
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readdir,
@@ -94,6 +95,32 @@ async function legacyArchiveNames(): Promise<string[]> {
   );
 }
 
+async function expectRejectedCanonicalStore(
+  contents: string,
+  expectedError: string,
+): Promise<void> {
+  const legacyPath = await createProjectDir("legacy");
+  await writeFile(canonicalStorePath(), contents, "utf8");
+  await writeStore(legacyStorePath(), [
+    project("legacy", "legacy", legacyPath),
+  ]);
+  const legacyContents = await readFile(legacyStorePath(), "utf8");
+
+  let loadError: unknown;
+  try {
+    new ProjectManager().load();
+  } catch (error) {
+    loadError = error;
+  }
+
+  expect(loadError).toBeInstanceOf(Error);
+  expect((loadError as Error).message).toContain(expectedError);
+  expect((loadError as Error).message).toContain(canonicalStorePath());
+  expect(await readFile(canonicalStorePath(), "utf8")).toBe(contents);
+  expect(await readFile(legacyStorePath(), "utf8")).toBe(legacyContents);
+  expect(await legacyArchiveNames()).toEqual([]);
+}
+
 describe("ProjectManager project store migration", () => {
   it("imports and archives the legacy project store when the canonical store is missing", async () => {
     const legacyPath = await createProjectDir("legacy");
@@ -149,5 +176,63 @@ describe("ProjectManager project store migration", () => {
       projects: DesktopProject[];
     };
     expect(saved.projects.map((item) => item.id)).toEqual(["keep"]);
+  });
+
+  it("preserves a corrupted canonical store instead of replacing it from legacy", async () => {
+    await expectRejectedCanonicalStore(
+      "{not json",
+      "failed to parse project store",
+    );
+  });
+
+  it.each([
+    ["a non-object root", "[]"],
+    ["a missing projects array", "{}"],
+    [
+      "an invalid project entry",
+      JSON.stringify({ projects: [{ id: "incomplete" }] }),
+    ],
+    [
+      "an invalid active context",
+      JSON.stringify({ projects: [], active_context: { kind: "no_project" } }),
+    ],
+  ])(
+    "rejects %s without replacing the canonical store",
+    async (_name, contents) => {
+      await expectRejectedCanonicalStore(contents, "invalid project store");
+    },
+  );
+
+  it.skipIf(
+    process.platform === "win32" ||
+      typeof process.getuid !== "function" ||
+      process.getuid() === 0,
+  )("surfaces canonical store permission errors without migrating legacy data", async () => {
+    const contents = `${JSON.stringify({ projects: [] }, null, 2)}\n`;
+    const legacyPath = await createProjectDir("legacy");
+    await writeFile(canonicalStorePath(), contents, "utf8");
+    await writeStore(legacyStorePath(), [
+      project("legacy", "legacy", legacyPath),
+    ]);
+    const legacyContents = await readFile(legacyStorePath(), "utf8");
+    await chmod(canonicalStorePath(), 0o000);
+
+    let loadError: unknown;
+    try {
+      new ProjectManager().load();
+    } catch (error) {
+      loadError = error;
+    } finally {
+      await chmod(canonicalStorePath(), 0o600);
+    }
+
+    expect(loadError).toBeInstanceOf(Error);
+    expect((loadError as Error).message).toContain(
+      "failed to read project store",
+    );
+    expect((loadError as Error).message).toContain(canonicalStorePath());
+    expect(await readFile(canonicalStorePath(), "utf8")).toBe(contents);
+    expect(await readFile(legacyStorePath(), "utf8")).toBe(legacyContents);
+    expect(await legacyArchiveNames()).toEqual([]);
   });
 });

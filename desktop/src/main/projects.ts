@@ -264,27 +264,104 @@ function legacyProjectStoreArchivePath(path: string): string {
 }
 
 function readProjectStoreFile(path: string): ProjectStore | undefined {
+  let contents: string;
   try {
-    const parsed = JSON.parse(
-      readFileSync(path, "utf8"),
-    ) as Partial<ProjectStore> & {
-      active_project_id?: unknown;
-    };
-    const projects = Array.isArray(parsed.projects)
-      ? parsed.projects.filter((project): project is DesktopProject =>
-          isDesktopProject(project),
-        )
-      : [];
-    const activeContext =
-      normalizeRuntimeContext(parsed.active_context, projects) ??
-      legacyProjectContext(parsed.active_project_id, projects);
-    return {
-      projects,
-      active_context: activeContext,
-    };
-  } catch {
-    return undefined;
+    contents = readFileSync(path, "utf8");
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return undefined;
+    }
+    throw projectStoreError(path, "read", error);
   }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents);
+  } catch (error) {
+    throw projectStoreError(path, "parse", error);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw invalidProjectStoreError(path, "expected an object");
+  }
+
+  const record = parsed as Record<string, unknown>;
+  if (!Array.isArray(record.projects)) {
+    throw invalidProjectStoreError(path, "projects must be an array");
+  }
+  const invalidProjectIndex = record.projects.findIndex(
+    (project) => !isDesktopProject(project),
+  );
+  if (invalidProjectIndex >= 0) {
+    throw invalidProjectStoreError(
+      path,
+      `projects[${invalidProjectIndex}] is invalid`,
+    );
+  }
+  if (
+    record.active_context !== undefined &&
+    !isRuntimeContext(record.active_context)
+  ) {
+    throw invalidProjectStoreError(path, "active_context is invalid");
+  }
+  if (
+    record.active_project_id !== undefined &&
+    typeof record.active_project_id !== "string"
+  ) {
+    throw invalidProjectStoreError(path, "active_project_id is invalid");
+  }
+
+  const projects = record.projects as DesktopProject[];
+  let activeContext: RuntimeContext | undefined;
+  try {
+    activeContext =
+      normalizeRuntimeContext(record.active_context, projects) ??
+      legacyProjectContext(record.active_project_id, projects);
+  } catch (error) {
+    throw projectStoreError(path, "load", error);
+  }
+  return {
+    projects,
+    active_context: activeContext,
+  };
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
+}
+
+function projectStoreError(
+  path: string,
+  operation: "read" | "parse" | "load",
+  cause: unknown,
+): Error {
+  const detail = cause instanceof Error ? cause.message : String(cause);
+  return new Error(
+    `failed to ${operation} project store at ${path}: ${detail}`,
+    { cause },
+  );
+}
+
+function invalidProjectStoreError(path: string, detail: string): Error {
+  return new Error(`invalid project store at ${path}: ${detail}`);
+}
+
+function isRuntimeContext(value: unknown): value is RuntimeContext {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const context = value as Record<string, unknown>;
+  if (context.kind === "project") {
+    return (
+      typeof context.project_id === "string" &&
+      typeof context.cwd === "string"
+    );
+  }
+  return context.kind === "no_project" && typeof context.cwd === "string";
 }
 
 function isDesktopProject(value: unknown): value is DesktopProject {
