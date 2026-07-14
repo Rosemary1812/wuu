@@ -2,8 +2,10 @@ package harness
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -246,5 +248,134 @@ func TestSubmitReportKindPrecedence(t *testing.T) {
 	reports, _ = store.ListReports()
 	if len(reports) != 1 || reports[0].Summary != "real handoff" {
 		t.Fatalf("late stand-in must not land or clobber, got %+v", reports)
+	}
+}
+
+func TestStoreConcurrentInstancesPreserveAllIndexes(t *testing.T) {
+	dir := t.TempDir()
+	stores := []*Store{NewStore(dir), NewStore(dir)}
+	const perStore = 12
+	start := make(chan struct{})
+	errs := make(chan error, len(stores))
+	var wg sync.WaitGroup
+	for storeIndex, store := range stores {
+		wg.Add(1)
+		go func(storeIndex int, store *Store) {
+			defer wg.Done()
+			<-start
+			for i := 0; i < perStore; i++ {
+				id := fmt.Sprintf("task-%d-%02d", storeIndex, i)
+				runID := id + "-run"
+				now := time.Date(2026, 7, 14, storeIndex, i, 0, 0, time.UTC)
+				if err := store.UpsertTask(Task{
+					ID:        id,
+					Path:      "/root/" + id,
+					Status:    TaskStatusRunning,
+					LastRunID: runID,
+					CreatedAt: now,
+					UpdatedAt: now,
+				}); err != nil {
+					errs <- fmt.Errorf("upsert task %s: %w", id, err)
+					return
+				}
+				if err := store.UpsertRun(AgentRun{
+					ID:        runID,
+					TaskID:    id,
+					Status:    TaskStatusRunning,
+					StartedAt: now,
+				}); err != nil {
+					errs <- fmt.Errorf("upsert run %s: %w", runID, err)
+					return
+				}
+				if err := store.AddArtifact(Artifact{
+					ID:        id + "-log",
+					TaskID:    id,
+					RunID:     runID,
+					Kind:      ArtifactLog,
+					Path:      filepath.Join("logs", id+".txt"),
+					CreatedAt: now,
+				}); err != nil {
+					errs <- fmt.Errorf("add artifact %s: %w", id, err)
+					return
+				}
+				if _, err := store.SubmitReport(Report{
+					ID:          id + "-report",
+					TaskID:      id,
+					RunID:       runID,
+					Kind:        ReportKindStructured,
+					Outcome:     "completed",
+					Summary:     id,
+					SubmittedAt: now,
+				}); err != nil {
+					errs <- fmt.Errorf("submit report %s: %w", id, err)
+					return
+				}
+				if err := store.UpsertQueueItem(QueueItem{
+					ID:      id + "-queue",
+					TaskID:  id,
+					Kind:    "agent_spawn",
+					Payload: json.RawMessage(`{"task":"queued"}`),
+				}); err != nil {
+					errs <- fmt.Errorf("upsert queue item %s: %w", id, err)
+					return
+				}
+			}
+		}(storeIndex, store)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+
+	want := len(stores) * perStore
+	store := NewStore(dir)
+	tasks, err := store.ListTasks()
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != want {
+		t.Fatalf("task count = %d, want %d", len(tasks), want)
+	}
+	for _, task := range tasks {
+		if task.ReportPath == "" || len(task.ArtifactPaths) != 2 {
+			t.Fatalf("task %s has incomplete report/artifact links: %+v", task.ID, task)
+		}
+	}
+	runs, err := store.ListRuns()
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if len(runs) != want {
+		t.Fatalf("run count = %d, want %d", len(runs), want)
+	}
+	artifacts, err := store.ListArtifacts()
+	if err != nil {
+		t.Fatalf("ListArtifacts: %v", err)
+	}
+	if len(artifacts) != 2*want {
+		t.Fatalf("artifact count = %d, want %d", len(artifacts), 2*want)
+	}
+	reports, err := store.ListReports()
+	if err != nil {
+		t.Fatalf("ListReports: %v", err)
+	}
+	if len(reports) != want {
+		t.Fatalf("report count = %d, want %d", len(reports), want)
+	}
+	queue, err := store.ListQueueItems()
+	if err != nil {
+		t.Fatalf("ListQueueItems: %v", err)
+	}
+	if len(queue) != want {
+		t.Fatalf("queue count = %d, want %d", len(queue), want)
+	}
+	events, err := store.ReadEvents()
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	if len(events) != 2*want {
+		t.Fatalf("event count = %d, want %d", len(events), 2*want)
 	}
 }

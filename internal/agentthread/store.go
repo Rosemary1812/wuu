@@ -3,6 +3,7 @@ package agentthread
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/storelock"
 )
 
 type Store struct {
@@ -32,8 +35,11 @@ func (s *Store) UpsertThread(meta Metadata) error {
 	if s == nil || s.dir == "" {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create thread store: %w", err)
 	}
@@ -72,8 +78,11 @@ func (s *Store) RecordStatus(meta Metadata) error {
 	if s == nil || s.dir == "" {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create thread store: %w", err)
 	}
@@ -103,8 +112,11 @@ func (s *Store) RecordEdgeStatus(meta Metadata) error {
 	if s == nil || s.dir == "" {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create thread store: %w", err)
 	}
@@ -134,8 +146,11 @@ func (s *Store) RecordCommunication(threadID string, communication InterAgentCom
 	if s == nil || s.dir == "" {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create thread store: %w", err)
 	}
@@ -155,8 +170,11 @@ func (s *Store) AppendEvent(event Event) error {
 	if s == nil || s.dir == "" {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create thread store: %w", err)
 	}
@@ -167,8 +185,11 @@ func (s *Store) ListThreads() ([]Metadata, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	return s.loadThreadsLocked()
 }
 
@@ -176,8 +197,103 @@ func (s *Store) ReadEvents() ([]Event, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
+	release, err := s.lockStore()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	return s.readEventsLocked()
+}
+
+// ClaimResultDelivery compares and appends a result claim while holding the
+// durable event-store lock. Exactly one process can claim an unconsumed result.
+func (s *Store) ClaimResultDelivery(event Event) (bool, string, error) {
+	if s == nil || s.dir == "" {
+		return false, "", nil
+	}
+	resultID := strings.TrimSpace(event.ResultID)
+	consumer := strings.TrimSpace(event.Consumer)
+	if resultID == "" {
+		return false, "", errors.New("result id is required")
+	}
+	if consumer == "" {
+		return false, "", errors.New("result consumer is required")
+	}
+	release, err := s.lockStore()
+	if err != nil {
+		return false, "", err
+	}
+	defer release()
+	events, err := s.readEventsLocked()
+	if err != nil {
+		return false, "", err
+	}
+	ready, consumedBy := resultDeliveryState(events, resultID)
+	if !ready {
+		return false, "", nil
+	}
+	if consumedBy != "" {
+		return false, consumedBy, nil
+	}
+	event.Type = EventResultClaim
+	event.ResultID = resultID
+	event.Consumer = consumer
+	if err := s.appendEventLocked(event); err != nil {
+		return false, "", err
+	}
+	return true, "", nil
+}
+
+// ReleaseResultDelivery compares and appends a result release while holding
+// the durable event-store lock. A stale or non-owner release is a no-op.
+func (s *Store) ReleaseResultDelivery(event Event) (bool, error) {
+	if s == nil || s.dir == "" {
+		return false, nil
+	}
+	resultID := strings.TrimSpace(event.ResultID)
+	consumer := strings.TrimSpace(event.Consumer)
+	if resultID == "" {
+		return false, errors.New("result id is required")
+	}
+	if consumer == "" {
+		return false, errors.New("result consumer is required")
+	}
+	release, err := s.lockStore()
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	events, err := s.readEventsLocked()
+	if err != nil {
+		return false, err
+	}
+	ready, consumedBy := resultDeliveryState(events, resultID)
+	if !ready || consumedBy != consumer {
+		return false, nil
+	}
+	event.Type = EventResultRelease
+	event.ResultID = resultID
+	event.Consumer = consumer
+	if err := s.appendEventLocked(event); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Store) lockStore() (func(), error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	durable, err := storelock.Acquire(s.dir)
+	if err != nil {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("acquire thread store lock: %w", err)
+	}
+	return func() {
+		_ = durable.Release()
+		s.mu.Unlock()
+	}, nil
+}
+
+func (s *Store) readEventsLocked() ([]Event, error) {
 	path := filepath.Join(s.dir, "events.jsonl")
 	file, err := os.Open(path)
 	if err != nil {
@@ -204,6 +320,27 @@ func (s *Store) ReadEvents() ([]Event, error) {
 		return nil, fmt.Errorf("scan thread events: %w", err)
 	}
 	return events, nil
+}
+
+func resultDeliveryState(events []Event, resultID string) (bool, string) {
+	ready := false
+	consumedBy := ""
+	for _, event := range events {
+		if strings.TrimSpace(event.ResultID) != resultID {
+			continue
+		}
+		switch event.Type {
+		case EventResultReady:
+			ready = true
+		case EventResultClaim:
+			consumedBy = strings.TrimSpace(event.Consumer)
+		case EventResultRelease:
+			if consumedBy == strings.TrimSpace(event.Consumer) {
+				consumedBy = ""
+			}
+		}
+	}
+	return ready, consumedBy
 }
 
 func (s *Store) loadThreadsLocked() ([]Metadata, error) {

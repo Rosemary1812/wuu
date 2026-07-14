@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/storelock"
 )
 
 type Store struct {
@@ -32,8 +34,11 @@ func (s *Store) UpsertTask(task Task) error {
 	if s == nil || s.dir == "" {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := s.ensureDirLocked(); err != nil {
 		return err
 	}
@@ -74,8 +79,11 @@ func (s *Store) UpdateTaskStatus(taskID string, status TaskStatus, completedAt t
 	if s == nil || s.dir == "" {
 		return Task{}, nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return Task{}, err
+	}
+	defer release()
 	if err := s.ensureDirLocked(); err != nil {
 		return Task{}, err
 	}
@@ -108,8 +116,11 @@ func (s *Store) UpsertRun(run AgentRun) error {
 	if s == nil || s.dir == "" {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := s.ensureDirLocked(); err != nil {
 		return err
 	}
@@ -144,8 +155,11 @@ func (s *Store) UpdateRunStatus(runID string, status TaskStatus, completedAt tim
 	if s == nil || s.dir == "" {
 		return AgentRun{}, nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return AgentRun{}, err
+	}
+	defer release()
 	if err := s.ensureDirLocked(); err != nil {
 		return AgentRun{}, err
 	}
@@ -176,8 +190,11 @@ func (s *Store) AddArtifact(artifact Artifact) error {
 	if s == nil || s.dir == "" {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := s.ensureDirLocked(); err != nil {
 		return err
 	}
@@ -244,8 +261,11 @@ func (s *Store) SubmitReport(report Report) (Report, error) {
 	if s == nil || s.dir == "" {
 		return report, nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return Report{}, err
+	}
+	defer release()
 	if err := s.ensureDirLocked(); err != nil {
 		return Report{}, err
 	}
@@ -396,8 +416,11 @@ func (s *Store) AppendEvent(event Event) error {
 	if s == nil || s.dir == "" {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := s.ensureDirLocked(); err != nil {
 		return err
 	}
@@ -408,8 +431,11 @@ func (s *Store) UpsertQueueItem(item QueueItem) error {
 	if s == nil || s.dir == "" {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := s.ensureDirLocked(); err != nil {
 		return err
 	}
@@ -449,8 +475,11 @@ func (s *Store) DeleteQueueItem(id string) error {
 	if s == nil || s.dir == "" {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := s.ensureDirLocked(); err != nil {
 		return err
 	}
@@ -472,8 +501,11 @@ func (s *Store) ListQueueItems() ([]QueueItem, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	return s.loadQueueLocked()
 }
 
@@ -481,8 +513,11 @@ func (s *Store) ListTasks() ([]Task, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	return s.loadTasksLocked()
 }
 
@@ -490,8 +525,11 @@ func (s *Store) ListRuns() ([]AgentRun, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	return s.loadRunsLocked()
 }
 
@@ -499,8 +537,11 @@ func (s *Store) ListArtifacts() ([]Artifact, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	return s.loadArtifactsLocked()
 }
 
@@ -508,8 +549,11 @@ func (s *Store) ListReports() ([]Report, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	return s.loadReportsLocked()
 }
 
@@ -530,8 +574,11 @@ func (s *Store) ReadEvents() ([]Event, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	path := filepath.Join(s.dir, "events.jsonl")
 	file, err := os.Open(path)
 	if err != nil {
@@ -558,6 +605,19 @@ func (s *Store) ReadEvents() ([]Event, error) {
 		return nil, fmt.Errorf("scan harness events: %w", err)
 	}
 	return events, nil
+}
+
+func (s *Store) lockStore() (func(), error) {
+	s.mu.Lock()
+	durable, err := storelock.Acquire(s.dir)
+	if err != nil {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("acquire harness store lock: %w", err)
+	}
+	return func() {
+		_ = durable.Release()
+		s.mu.Unlock()
+	}, nil
 }
 
 func (s *Store) ensureDirLocked() error {
