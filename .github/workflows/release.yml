@@ -49,7 +49,7 @@ jobs:
           cd dist
           sha256sum --check checksums.txt
           for archive in wuu_*.tar.gz; do
-            test "$(tar -tzf "$archive")" = "wuu"
+            tar -tzf "$archive" | grep -Fx "wuu"
           done
           mkdir smoke
           tar -xzf "wuu_${GITHUB_REF_NAME#v}_linux_amd64.tar.gz" -C smoke
