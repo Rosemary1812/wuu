@@ -19,6 +19,59 @@ type dreamRecordingJournal struct {
 	workflows  chan providers.InferenceWorkflowTerminalRecord
 }
 
+type sessionDreamFakeClient struct {
+	responses []providers.ChatResponse
+	errors    []error
+	requests  []providers.ChatRequest
+}
+
+func (c *sessionDreamFakeClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
+	c.requests = append(c.requests, req)
+	idx := len(c.requests) - 1
+	if idx < len(c.errors) && c.errors[idx] != nil {
+		return providers.ChatResponse{}, c.errors[idx]
+	}
+	if idx < len(c.responses) {
+		return c.responses[idx], nil
+	}
+	return providers.ChatResponse{Content: "Nothing to dream."}, nil
+}
+
+func makeSessionDreamHistory(userTurns int) []providers.ChatMessage {
+	history := make([]providers.ChatMessage, 0, userTurns*2)
+	for i := 0; i < userTurns; i++ {
+		history = append(history,
+			providers.ChatMessage{Role: "user", Content: "user turn"},
+			providers.ChatMessage{Role: "assistant", Content: "assistant turn"},
+		)
+	}
+	return history
+}
+
+func TestBuildSessionDreamMessagesSkipsToolProtocolAndSyntheticUserMessages(t *testing.T) {
+	messages := buildSessionDreamMessages([]providers.ChatMessage{
+		{Role: "system", Content: "old sys"},
+		{Role: "user", Content: "[Hook context for read_file]: extra"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file"}}},
+		{Role: "tool", Name: "read_file", ToolCallID: "call_1", Content: "file"},
+		{Role: "user", Content: "Remember release needs visual QA"},
+		{Role: "assistant", Content: "Noted."},
+	})
+
+	for _, msg := range messages {
+		if msg.Role == "tool" {
+			t.Fatalf("tool protocol message should not be included: %+v", messages)
+		}
+		if strings.Contains(msg.Content, "[Hook context") {
+			t.Fatalf("synthetic hook context leaked into dream: %+v", messages)
+		}
+	}
+	last := messages[len(messages)-1]
+	if last.Role != "user" || !strings.Contains(last.Content, "Nothing to dream") {
+		t.Fatalf("dream prompt missing: %+v", last)
+	}
+}
+
 func (j *dreamRecordingJournal) PrepareOperation(record providers.InferenceOperationJournalRecord) error {
 	select {
 	case j.operations <- record.Operation:
@@ -62,14 +115,14 @@ func TestSessionDreamScheduler_BackgroundRunKeepsInferenceJournal(t *testing.T) 
 		workflows:  make(chan providers.InferenceWorkflowTerminalRecord, 1),
 	}
 	runner := &agent.StreamRunner{
-		Client: providers.AdaptStreamClient(&profileMemoryReviewFakeClient{
+		Client: providers.AdaptStreamClient(&sessionDreamFakeClient{
 			responses: []providers.ChatResponse{{Content: "Nothing to dream."}},
 		}),
 		Model:            "test-model",
 		InferenceJournal: journal,
 	}
 
-	scheduler.AfterTurn(context.Background(), runner, makeProfileMemoryReviewHistory(1), agent.LoopResult{Content: "done"})
+	scheduler.AfterTurn(context.Background(), runner, makeSessionDreamHistory(1), agent.LoopResult{Content: "done"})
 
 	select {
 	case operation := <-journal.operations:
@@ -107,7 +160,7 @@ func TestSessionDreamScheduler_ShouldStartRespectsInterval(t *testing.T) {
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
 	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
-	history := makeProfileMemoryReviewHistory(1)
+	history := makeSessionDreamHistory(1)
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 
 	if !scheduler.shouldStart(history, agent.LoopResult{Content: "done"}, now) {
@@ -136,7 +189,7 @@ func TestSessionDreamScheduler_ShouldStartBacksOffRecentFailure(t *testing.T) {
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
 	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
-	history := makeProfileMemoryReviewHistory(1)
+	history := makeSessionDreamHistory(1)
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 
 	if err := sessionmemory.SaveDreamState(workspaceState, sessionmemory.DreamState{
@@ -171,7 +224,7 @@ func TestSessionDreamScheduler_ShouldStartReconcilesStaleRunningState(t *testing
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
 	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
-	history := makeProfileMemoryReviewHistory(1)
+	history := makeSessionDreamHistory(1)
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 
 	// Crashed mid-dream: started well past the stale window, never finished.
@@ -212,7 +265,7 @@ func TestSessionDreamScheduler_ShouldStartLeavesFreshRunningState(t *testing.T) 
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
 	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)
-	history := makeProfileMemoryReviewHistory(1)
+	history := makeSessionDreamHistory(1)
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 
 	if err := sessionmemory.SaveDreamState(workspaceState, sessionmemory.DreamState{
@@ -237,7 +290,7 @@ func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 	root := t.TempDir()
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
-	client := &profileMemoryReviewFakeClient{
+	client := &sessionDreamFakeClient{
 		responses: []providers.ChatResponse{
 			{
 				ToolCalls: []providers.ToolCall{{
@@ -375,7 +428,7 @@ func TestSessionDream_RunRecordsFailureState(t *testing.T) {
 	root := t.TempDir()
 	workspaceState := t.TempDir()
 	sessionArtifact := filepath.Join(workspaceState, "sessions", "session-1")
-	client := &profileMemoryReviewFakeClient{
+	client := &sessionDreamFakeClient{
 		errors: []error{errors.New("provider unavailable")},
 	}
 	scheduler := newSessionDreamScheduler(root, workspaceState, func() string { return sessionArtifact }, 7)

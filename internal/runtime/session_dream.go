@@ -82,7 +82,7 @@ func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.Str
 		rootDir:            s.rootDir,
 		workspaceStateDir:  s.workspaceStateDir,
 		sessionArtifactDir: sessionArtifactDir,
-		history:            cloneChatMessages(history),
+		history:            cloneMemoryReviewHistory(history),
 		now:                time.Now().UTC(),
 	}
 	journal := runner.InferenceJournal
@@ -97,7 +97,7 @@ func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.Str
 }
 
 func (s *sessionDreamScheduler) shouldStart(history []providers.ChatMessage, result agent.LoopResult, now time.Time) bool {
-	if strings.TrimSpace(result.Content) == "" || countProfileMemoryUserTurns(history) == 0 {
+	if strings.TrimSpace(result.Content) == "" || countMemoryReviewUserTurns(history) == 0 {
 		return false
 	}
 	if !s.tryStart() {
@@ -197,7 +197,7 @@ func (s *sessionDreamScheduler) run(ctx context.Context, job sessionDreamJob) er
 		MaxSteps:                 sessionDreamMaxSteps,
 		Effort:                   job.effort,
 		ProviderOptions:          provideroptions.Clone(job.providerOptions),
-	}, profileMemoryReviewStep{client: job.client})
+	}, backgroundMemoryStep{client: job.client})
 	if err != nil {
 		_ = sessionmemory.RecordDreamFailed(job.workspaceStateDir, time.Now().UTC(), err)
 		return err
@@ -275,7 +275,7 @@ func (e *sessionDreamExecutor) ToolMetadata(call providers.ToolCall) (agent.Tool
 func buildSessionDreamMessages(history []providers.ChatMessage) []providers.ChatMessage {
 	out := make([]providers.ChatMessage, 0, len(history)+2)
 	out = append(out, providers.ChatMessage{Role: "system", Content: sessionDreamSystemPrompt})
-	transcript := selectProfileMemoryReviewTranscript(history)
+	transcript := selectMemoryReviewTranscript(history)
 	if len(transcript) == 0 {
 		return nil
 	}
