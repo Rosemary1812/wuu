@@ -179,9 +179,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cat > release-notes.md <<'EOF'
-          # wuu ${GITHUB_REF_NAME}
-
+          printf '# wuu %s\n\n' "$GITHUB_REF_NAME" > release-notes.md
+          cat >> release-notes.md <<'EOF'
           This release contains command-line archives for macOS and Linux on
           amd64 and arm64, plus an unsigned macOS arm64 desktop preview.
 
