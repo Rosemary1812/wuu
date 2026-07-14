@@ -1,9 +1,9 @@
 // Package storelock serializes durable file-store transactions across
 // processes. Callers keep the returned lock for the complete write or
 // read-modify-write transaction, including every related index and event-log
-// mutation. Pure readers should not acquire it: the lock is exclusive with no
-// timeout, and Acquire creates the store directory and lock file on first
-// use, so stores whose writers replace files atomically serve reads directly.
+// mutation. Pure readers should not acquire it: the lock is exclusive, and
+// Acquire creates the store directory and lock file on first use, so stores
+// whose writers replace files atomically serve reads directly.
 package storelock
 
 import (
@@ -13,11 +13,24 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/securefs"
 )
 
 const fileName = ".store.lock"
+
+// Healthy transactions hold the lock for milliseconds; an owner that keeps it
+// past acquireTimeout is wedged, and waiting on it would wedge this process
+// too, so Acquire surfaces an error instead.
+const (
+	acquireTimeout    = time.Minute
+	acquireRetryDelay = 25 * time.Millisecond
+)
+
+// errLockHeld reports a lock currently owned elsewhere, distinguishing
+// contention from I/O failures in the acquire loop.
+var errLockHeld = errors.New("store lock is held by another owner")
 
 // Lock owns an exclusive operating-system advisory lock. The sidecar remains
 // in place after release so every contender continues locking the same inode.
@@ -26,21 +39,35 @@ type Lock struct {
 	file *os.File
 }
 
-// Acquire blocks until it exclusively owns the durable store rooted at dir.
+// Acquire blocks until it exclusively owns the durable store rooted at dir,
+// or fails after acquireTimeout when another owner holds the lock for longer
+// than any healthy transaction can.
 func Acquire(dir string) (*Lock, error) {
 	dir = strings.TrimSpace(dir)
 	if dir == "" {
 		return nil, errors.New("store directory is required")
 	}
-	file, err := securefs.OpenFile(filepath.Join(dir, fileName), os.O_CREATE|os.O_RDWR, securefs.FileMode)
+	path := filepath.Join(dir, fileName)
+	file, err := securefs.OpenFile(path, os.O_CREATE|os.O_RDWR, securefs.FileMode)
 	if err != nil {
 		return nil, fmt.Errorf("open store lock: %w", err)
 	}
-	if err := lockFile(file); err != nil {
-		_ = file.Close()
-		return nil, fmt.Errorf("lock store: %w", err)
+	deadline := time.Now().Add(acquireTimeout)
+	for {
+		err := tryLockFile(file)
+		if err == nil {
+			return &Lock{file: file}, nil
+		}
+		if !errors.Is(err, errLockHeld) {
+			_ = file.Close()
+			return nil, fmt.Errorf("lock store: %w", err)
+		}
+		if !time.Now().Before(deadline) {
+			_ = file.Close()
+			return nil, fmt.Errorf("lock store: %s held by another owner for over %s", path, acquireTimeout)
+		}
+		time.Sleep(acquireRetryDelay)
 	}
-	return &Lock{file: file}, nil
 }
 
 // Release relinquishes the lock. It is safe to call more than once.
