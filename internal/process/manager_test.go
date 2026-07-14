@@ -34,8 +34,46 @@ func TestStartListAndPersist(t *testing.T) {
 	if len(list) != 1 {
 		t.Fatalf("want 1 process, got %d", len(list))
 	}
-	if _, err := os.Stat(filepath.Join(runtimeDir, "processes", p.ID+".json")); err != nil {
+	info, err := os.Stat(filepath.Join(runtimeDir, "processes", p.ID+".json"))
+	if err != nil {
 		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("process record mode = %o, want 600", got)
+	}
+}
+
+func TestListRejectsCorruptProcessRecords(t *testing.T) {
+	root := t.TempDir()
+	runtimeDir := filepath.Join(root, "state", "runtime")
+	m, err := NewManager(root, runtimeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordPath := filepath.Join(runtimeDir, "processes", "proc-corrupt.json")
+	if err := os.WriteFile(recordPath, []byte(`{"id":`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := m.List(); err == nil || !strings.Contains(err.Error(), "decode process record") {
+		t.Fatalf("expected corrupt registry error, got %v", err)
+	}
+}
+
+func TestProcessRecordPathsRejectEscapingIDs(t *testing.T) {
+	root := t.TempDir()
+	m, err := NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, id := range []string{"../outside", `..\\outside`, ".", "..", ""} {
+		if _, err := m.load(id); err == nil || !strings.Contains(err.Error(), "invalid process id") {
+			t.Fatalf("load(%q) error = %v, want invalid process id", id, err)
+		}
+		if err := m.save(&Process{ID: id}); err == nil || !strings.Contains(err.Error(), "invalid process id") {
+			t.Fatalf("save(%q) error = %v, want invalid process id", id, err)
+		}
 	}
 }
 

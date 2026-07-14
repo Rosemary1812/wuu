@@ -20,6 +20,7 @@ import (
 
 	"github.com/creack/pty"
 
+	"github.com/blueberrycongee/wuu/internal/securefs"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
@@ -406,12 +407,18 @@ func (m *Manager) List() ([]Process, error) {
 	out := []Process{}
 	for _, f := range files {
 		b, err := os.ReadFile(f)
-		if err == nil {
-			var p Process
-			if json.Unmarshal(b, &p) == nil {
-				out = append(out, p)
-			}
+		if err != nil {
+			return nil, fmt.Errorf("read process record %q: %w", filepath.Base(f), err)
 		}
+		var p Process
+		if err := json.Unmarshal(b, &p); err != nil {
+			return nil, fmt.Errorf("decode process record %q: %w", filepath.Base(f), err)
+		}
+		wantID := strings.TrimSuffix(filepath.Base(f), filepath.Ext(f))
+		if p.ID != wantID {
+			return nil, fmt.Errorf("process record %q contains mismatched id %q", filepath.Base(f), p.ID)
+		}
+		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt.Before(out[j].StartedAt) })
 	return out, nil
@@ -727,7 +734,11 @@ func (m *Manager) publish(event Event) {
 }
 
 func (m *Manager) load(id string) (*Process, error) {
-	b, err := os.ReadFile(filepath.Join(m.registryDir, id+".json"))
+	path, err := processRecordPath(m.registryDir, id)
+	if err != nil {
+		return nil, err
+	}
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -735,13 +746,29 @@ func (m *Manager) load(id string) (*Process, error) {
 	if err := json.Unmarshal(b, &p); err != nil {
 		return nil, err
 	}
+	if p.ID != id {
+		return nil, fmt.Errorf("process record %q contains mismatched id %q", filepath.Base(path), p.ID)
+	}
 	return &p, nil
 }
+
 func (m *Manager) save(p *Process) error {
+	path, err := processRecordPath(m.registryDir, p.ID)
+	if err != nil {
+		return err
+	}
 	b, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(m.registryDir, p.ID+".json"), append(b, '\n'), 0o644)
+	return securefs.WriteFileAtomic(path, append(b, '\n'))
 }
+
+func processRecordPath(registryDir, id string) (string, error) {
+	if id == "" || id == "." || id == ".." || filepath.Base(id) != id || strings.ContainsAny(id, `/\`) {
+		return "", fmt.Errorf("invalid process id %q", id)
+	}
+	return filepath.Join(registryDir, id+".json"), nil
+}
+
 func randomHex(n int) string { b := make([]byte, n); _, _ = rand.Read(b); return hex.EncodeToString(b) }
