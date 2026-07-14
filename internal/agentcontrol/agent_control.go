@@ -4009,11 +4009,23 @@ func (c *AgentControl) isRootChildSnapshot(snap subagent.SubAgentSnapshot) bool 
 		return true
 	}
 	// The root agent's toolkit identity is not always the session id (an
-	// embedded toolkit may register the root as "root"). The agent path is
-	// authoritative: a direct child of the root path completes to the root
-	// thread and must never wait on a parent-worker delivery that cannot
-	// happen.
-	return parentPathForSnapshot(snap) == agentthread.RootPath
+	// embedded toolkit may register the root as "root"). When the named
+	// parent is not a worker or registered thread this control could ever
+	// deliver to, a direct child of the root path completes to the root
+	// thread instead of waiting forever on an impossible parent delivery.
+	// A resolvable parent keeps the nested pending-retry semantics.
+	if parentPathForSnapshot(snap) != agentthread.RootPath {
+		return false
+	}
+	if c.manager != nil && c.manager.Get(parentID) != nil {
+		return false
+	}
+	if c.threads != nil {
+		if _, ok := c.threads.Resolve(parentID); ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *AgentControl) newAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPath string) agentthread.InterAgentCommunication {
