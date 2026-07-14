@@ -518,6 +518,18 @@ export function Composer({
     window.requestAnimationFrame(() => textareaRef.current?.focus());
   }
 
+  function focusComposerAtEndSoon(): void {
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) {
+        return;
+      }
+      textarea.focus();
+      const end = textarea.value.length;
+      textarea.setSelectionRange(end, end);
+    });
+  }
+
   function toggleComposerExpansion(): void {
     if (readOnly) {
       return;
@@ -624,7 +636,7 @@ export function Composer({
     if (prompt.trim().length === 0) {
       setPrompt("/");
     }
-    focusComposerSoon();
+    focusComposerAtEndSoon();
   }
 
   function applySlashCommand(command: ComposerSlashCommand | undefined, draft: ComposerSlashDraft | undefined): void {
@@ -634,7 +646,7 @@ export function Composer({
     setSlashDismissedValue("");
     if (command.kind === "prompt" || command.kind === "skill") {
       setPrompt(composerSlashPrompt(command, draft?.args ?? ""));
-      focusComposerSoon();
+      focusComposerAtEndSoon();
       return;
     }
     setPrompt("");

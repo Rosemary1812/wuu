@@ -665,6 +665,22 @@ describe("Composer send control", () => {
     expect(frame?.contains(slashMenu)).toBe(false);
   });
 
+  it("places the caret after the slash inserted from the toolbar", async () => {
+    renderStatefulComposer({});
+
+    const slashButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="打开斜杠命令"]',
+    );
+    const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
+
+    act(() => slashButton?.click());
+    await act(async () => nextAnimationFrame());
+
+    expect(textarea?.value).toBe("/");
+    expect(textarea?.selectionStart).toBe(1);
+    expect(textarea?.selectionEnd).toBe(1);
+  });
+
   it("resizes the slash command menu with its composer and available viewport height", () => {
     let shellTop = 320;
     const titlebar = document.createElement("header");
