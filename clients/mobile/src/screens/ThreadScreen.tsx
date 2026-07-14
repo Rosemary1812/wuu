@@ -138,7 +138,7 @@ export function ThreadScreen({
         </View>
         {thread.group ? <MemberStack members={members} /> : null}
       </View>
-      <ConnectionBanner phase={snapshot.phase} />
+      <ConnectionBanner phase={snapshot.phase} syncError={snapshot.syncError} />
 
       <FlatList
         ref={listRef}

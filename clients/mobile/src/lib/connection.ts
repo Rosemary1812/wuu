@@ -111,11 +111,13 @@ export class WuuMobile {
     await this.client?.stop();
     this.client = null;
     this.store.resetServerState();
+    this.store.setSyncError(null);
     this.store.setPhase("idle");
   }
 
   private start(creds: Credentials): void {
     this.store.setHostName(creds.host_name ?? "");
+    this.store.setSyncError(null);
     this.store.setPhase("connecting");
     this.client = new RemoteClient(creds, {
       clientProfile: CLIENT_PROFILE_MOBILE_CHAT,
@@ -131,6 +133,7 @@ export class WuuMobile {
    *  wifi blip) must not flash the strip. If attach lands first, we cancel
    *  the timer and never set the phase. */
   private scheduleReconnecting(): void {
+    this.store.setSyncError(null);
     if (this.reconnectTimer) return;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -169,9 +172,9 @@ export class WuuMobile {
           console.warn("Push registration failed", error);
         });
       }
-    } catch {
-      // The link dropped mid-refresh; the reconnect loop will re-attach and
-      // land here again.
+      this.store.setSyncError(null);
+    } catch (error) {
+      this.store.setSyncError(error instanceof Error ? error.message : String(error));
     }
   }
 

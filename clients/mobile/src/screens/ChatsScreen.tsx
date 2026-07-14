@@ -69,7 +69,7 @@ export function ChatsScreen({
           {snapshot.hostName || "wuu"}
         </Text>
       </View>
-      <ConnectionBanner phase={snapshot.phase} />
+      <ConnectionBanner phase={snapshot.phase} syncError={snapshot.syncError} />
       <FlatList
         data={rows}
         keyExtractor={(row) => row.thread.id}

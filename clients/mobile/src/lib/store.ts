@@ -30,6 +30,7 @@ export type PendingSend = {
 
 export type AppSnapshot = {
   phase: ConnectionPhase;
+  syncError: string | null;
   hostName: string;
   threads: Thread[]; // chat threads only (DM + group), unsorted
   participants: ParticipantProfile[];
@@ -48,6 +49,7 @@ export class AppStore {
   private lastViewed: Record<string, string> = {};
   private pending: PendingSend[] = [];
   private phase: ConnectionPhase = "idle";
+  private syncError: string | null = null;
   private hostName = "";
   private activeThreadId: string | null = null;
   private listeners = new Set<Listener>();
@@ -69,6 +71,7 @@ export class AppStore {
     if (!this.snapshot) {
       this.snapshot = {
         phase: this.phase,
+        syncError: this.syncError,
         hostName: this.hostName,
         threads: [...this.threads.values()],
         participants: this.participants,
@@ -91,6 +94,12 @@ export class AppStore {
   setPhase(phase: ConnectionPhase): void {
     if (this.phase === phase) return;
     this.phase = phase;
+    this.bump();
+  }
+
+  setSyncError(message: string | null): void {
+    if (this.syncError === message) return;
+    this.syncError = message;
     this.bump();
   }
 

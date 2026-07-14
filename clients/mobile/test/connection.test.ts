@@ -20,6 +20,7 @@ const captured: {
   clientProfile?: string;
   started: number;
   calls: Array<{ method: string; params: unknown; attachTimeoutMs: number | undefined }>;
+  failMethod?: string;
 } = {
   onAttach: () => {},
   onDetach: () => {},
@@ -46,6 +47,7 @@ vi.mock("@wuu/remote-core", () => {
     }
     async call<T>(method: string, params?: unknown, attachTimeoutMs?: number): Promise<T> {
       captured.calls.push({ method, params, attachTimeoutMs });
+      if (method === captured.failMethod) throw new Error(`failed ${method}`);
       const result =
         method === "thread/list"
           ? { threads: [] }
@@ -117,6 +119,7 @@ describe("WuuMobile reconnect grace window", () => {
     captured.clientProfile = undefined;
     captured.started = 0;
     captured.calls = [];
+    captured.failMethod = undefined;
     vi.useFakeTimers();
   });
 
@@ -212,5 +215,19 @@ describe("WuuMobile reconnect grace window", () => {
       attachTimeoutMs: 20_000,
     });
     expect(controller.store.getSnapshot().phase).toBe("attached");
+  });
+
+  it("surfaces a refresh failure instead of silently claiming synchronized state", async () => {
+    const controller = bootController();
+    await vi.advanceTimersByTimeAsync(0);
+    captured.failMethod = "thread/list";
+
+    captured.onAttach({ session: "resumed", resumed: true });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(controller.store.getSnapshot()).toMatchObject({
+      phase: "attached",
+      syncError: "failed thread/list",
+    });
   });
 });

@@ -1,6 +1,6 @@
 // Connection-state strip under the header. Quiet by design: nothing renders
-// while attached; connecting/reconnecting shows a hairline strip with the
-// eyes sticker (the one sanctioned decoration for this state).
+// while attached and synchronized; connecting/reconnecting or a sync failure
+// shows a hairline strip with the eyes sticker.
 
 import { Image, StyleSheet, Text, View } from "react-native";
 
@@ -9,14 +9,26 @@ import { usePalette } from "../theme";
 
 import EYES from "../../assets/reactions/eyes.png";
 
-export function ConnectionBanner({ phase }: { phase: ConnectionPhase }): React.JSX.Element | null {
+export function ConnectionBanner({
+  phase,
+  syncError,
+}: {
+  phase: ConnectionPhase;
+  syncError: string | null;
+}): React.JSX.Element | null {
   const palette = usePalette();
-  if (phase === "attached" || phase === "idle") return null;
-  const label = phase === "connecting" ? "连接中…" : "重连中…";
+  if (!syncError && (phase === "attached" || phase === "idle")) return null;
+  const label = syncError
+    ? `同步失败：${syncError}`
+    : phase === "connecting"
+      ? "连接中…"
+      : "重连中…";
   return (
     <View style={[styles.strip, { backgroundColor: palette.overlay4, borderColor: palette.hairline }]}>
       <Image source={EYES} style={styles.sticker} resizeMode="contain" />
-      <Text style={[styles.label, { color: palette.inkMuted }]}>{label}</Text>
+      <Text style={[styles.label, { color: syncError ? palette.danger : palette.inkMuted }]}>
+        {label}
+      </Text>
     </View>
   );
 }
