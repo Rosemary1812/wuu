@@ -772,6 +772,7 @@ export function App(): JSX.Element {
   });
   const {
     pendingComposerMessagesByThread,
+    queuedMessageEditTarget,
     queuedMessageEditTargetRef,
     setQueuedMessageEditTargetNow,
     pendingComposerMessagesForThread: pendingComposerMessagesForActiveThread,
@@ -1113,7 +1114,12 @@ export function App(): JSX.Element {
   const activePendingComposerMessages = pendingComposerMessagesForActiveThread(
     activeThreadID,
   );
-  const queuedMessages = activePendingComposerMessages.queued;
+  const queuedMessages = activePendingComposerMessages.queued.filter(
+    (message) =>
+      !queuedMessageEditTarget ||
+      queuedMessageEditTarget.threadID !== activeThreadID ||
+      message.id !== queuedMessageEditTarget.queueID,
+  );
   const guideMessages = activePendingComposerMessages.guides;
   // Self-healing reconciliation for pending composer messages: once a queued
   // or guide send materializes as a real user_message turn item, drop it from

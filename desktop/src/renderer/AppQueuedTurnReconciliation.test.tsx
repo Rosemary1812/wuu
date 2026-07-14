@@ -26,6 +26,17 @@ vi.mock("./ComposerView", async (importOriginal) => {
         <button type="button" onClick={props.onSend}>
           send
         </button>
+        {props.queuedMessages[0] ? (
+          <button
+            type="button"
+            aria-label="edit-first-queued"
+            onClick={() =>
+              props.onEditQueuedMessage(props.queuedMessages[0].id)
+            }
+          >
+            edit queued
+          </button>
+        ) : null}
       </div>
     ),
   };
@@ -218,6 +229,46 @@ describe("queued turn reconciliation", () => {
     container.remove();
     Reflect.deleteProperty(globalThis, "ResizeObserver");
     delete (globalThis as { wuu?: WuuDesktopApi }).wuu;
+  });
+
+  it("hides a queued entry while its content is being edited", async () => {
+    const { queuedClientIDs } = installWuuApi();
+    await act(async () => {
+      root = createRoot(container);
+      root.render(<App />);
+    });
+    await flushAsync();
+
+    const textarea = composerProbe().querySelector("textarea");
+    const send = composerProbe().querySelector("button");
+    await act(async () => {
+      if (!textarea || !send) throw new Error("composer controls not rendered");
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(textarea, "queued follow-up");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      send.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushAsync();
+
+    expect(queuedClientIDs).toHaveLength(1);
+    expect(composerProbe().dataset.queuedIds).toBe(queuedClientIDs[0]);
+
+    const edit = composerProbe().querySelector<HTMLButtonElement>(
+      'button[aria-label="edit-first-queued"]',
+    );
+    await act(async () => {
+      if (!edit) throw new Error("queued edit control not rendered");
+      edit.click();
+    });
+    await flushAsync();
+
+    expect(composerProbe().dataset.queuedIds).toBe("");
+    expect(composerProbe().querySelector("textarea")?.value).toBe(
+      "queued follow-up",
+    );
   });
 
   it("removes an already materialized queue entry after a missed start notification", async () => {
