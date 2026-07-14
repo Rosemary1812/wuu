@@ -345,14 +345,6 @@ function ComposerQueueItem({
       <span className="composer-queue-index" aria-hidden="true">
         {position}
       </span>
-      {kind === "guide" ? (
-        <span
-          className="composer-queue-kind composer-input-header-label"
-          aria-hidden="true"
-        >
-          Guide
-        </span>
-      ) : null}
       <button
         type="button"
         className="composer-queue-preview"
