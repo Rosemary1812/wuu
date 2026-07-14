@@ -791,6 +791,9 @@ func TestHistoryRecordOperationsRequireExistingSession(t *testing.T) {
 	if err := RewriteHistoryRecords(dir, "missing-thread", []HistoryRecord{rec}); !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("RewriteHistoryRecords() error = %v, want ErrSessionNotFound", err)
 	}
+	if err := RewriteHistoryRecordsAtBaseline(dir, "missing-thread", []HistoryRecord{rec}, 0); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("RewriteHistoryRecordsAtBaseline() error = %v, want ErrSessionNotFound", err)
+	}
 	if _, err := LoadHistoryRecords(dir, "missing-thread", false); !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("LoadHistoryRecords() error = %v, want ErrSessionNotFound", err)
 	}

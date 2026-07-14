@@ -87,8 +87,9 @@ type WorktreeInfo struct {
 // responsible for provider-specific ChatMessage conversion.
 type HistoryRecord struct {
 	// Seq is the record's per-session sequence (session_messages.seq), its
-	// stable address within the thread. Output-only: populated by the load
-	// path, ignored on write (insertHistoryRecordTx assigns seq itself).
+	// stable address within the thread. Ordinary appends ignore it and allocate
+	// the next physical sequence. History checkpoints retain positive addresses
+	// and allocate a new physical sequence for records whose Seq is zero.
 	Seq               int             `json:"seq,omitempty"`
 	Role              string          `json:"role"`
 	Content           string          `json:"content"`
@@ -859,6 +860,16 @@ func migrateSchema(db *sql.DB) error {
 			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_session_messages_role ON session_messages(session_id, role, seq)`,
+		`CREATE TABLE IF NOT EXISTS session_history_checkpoints (
+			session_id      TEXT NOT NULL,
+			version         INTEGER NOT NULL,
+			kind            TEXT NOT NULL,
+			through_seq     INTEGER NOT NULL,
+			replacement_json TEXT NOT NULL,
+			created_at      TEXT NOT NULL,
+			PRIMARY KEY(session_id, version),
+			FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+		)`,
 		`CREATE TABLE IF NOT EXISTS conversation_threads (
 			id             TEXT PRIMARY KEY,
 			session_id     TEXT NOT NULL,
@@ -2095,15 +2106,16 @@ WHERE owner_id = ? AND status = 'settled'
 	return nil
 }
 
-func loadHistoryRecordsDB(db *sql.DB, id string, includeMeta bool) ([]HistoryRecord, error) {
-	query := `
-		SELECT seq, role, content, display_content, phase, client_id, hidden, steered, reasoning_content,
+const historyRecordsSelect = `
+	SELECT seq, role, content, display_content, phase, client_id, hidden, steered, reasoning_content,
 	       provider_item_id, provider_item_model,
-		       reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
+	       reasoning_blocks_json, images_json, files_json, tool_calls_json, discovered_tools_json,
 	       tool_call_id, tool_invocation_id, tool_result_kind, name, at, input_tokens, output_tokens, context_tokens, cache_creation_tokens, cache_read_tokens,
 	       provider, model, participant_id, post_kind, thread_id, basis_seq, envelope_meta, focus_meta
-	FROM session_messages
-WHERE session_id = ?`
+	FROM session_messages`
+
+func loadHistoryRecordsDB(db *sql.DB, id string, includeMeta bool) ([]HistoryRecord, error) {
+	query := historyRecordsSelect + ` WHERE session_id = ?`
 	args := []any{id}
 	if !includeMeta {
 		query += ` AND lower(role) <> 'meta'`
@@ -2114,6 +2126,10 @@ WHERE session_id = ?`
 	if err != nil {
 		return nil, fmt.Errorf("load session history: %w", err)
 	}
+	return scanHistoryRecords(rows)
+}
+
+func scanHistoryRecords(rows *sql.Rows) ([]HistoryRecord, error) {
 	defer rows.Close()
 
 	var records []HistoryRecord
