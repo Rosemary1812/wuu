@@ -3523,7 +3523,7 @@ func (c *AgentControl) consumeWorkerNotification(n subagent.Notification) (worke
 		delivered := c.deliverNestedResultToParent(deliveryCtx, n.Snapshot)
 		cancelDelivery()
 		if !delivered {
-			if c.isRootChildSnapshot(n.Snapshot) || isDirectRootChildPath(meta.Path) {
+			if c.isRootChildSnapshot(n.Snapshot) {
 				// Root results have no parent worker to claim them: the live
 				// session consumes them through Wait or the recorded
 				// communication, so the terminal settles now.
@@ -4014,14 +4014,6 @@ func (c *AgentControl) isRootChildSnapshot(snap subagent.SubAgentSnapshot) bool 
 	// thread and must never wait on a parent-worker delivery that cannot
 	// happen.
 	return parentPathForSnapshot(snap) == agentthread.RootPath
-}
-
-// isDirectRootChildPath reports whether a registered agent-thread path names a
-// direct child of the root thread, identifying root spawns whose parent
-// identity string is embedder-specific.
-func isDirectRootChildPath(path string) bool {
-	rest, ok := strings.CutPrefix(strings.TrimSpace(path), agentthread.RootPath+"/")
-	return ok && rest != "" && !strings.Contains(rest, "/")
 }
 
 func (c *AgentControl) newAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPath string) agentthread.InterAgentCommunication {
