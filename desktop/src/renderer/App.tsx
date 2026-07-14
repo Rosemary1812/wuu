@@ -216,6 +216,8 @@ import { TaskBoardView } from "./TaskBoardView";
 import { StreamingMarkdown } from "./StreamingMarkdown";
 import { runDebugPhaseForState } from "./RunDebugPanel";
 import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
+import { subscribeSideThreadOpenRequest, emitSideThreadOpenRequest } from "./SideThreadOpenBus";
+import { useSideThreadController } from "./SideThreadController";
 import { threadDisplayTitle } from "./ThreadTitles";
 import {
   isRecord,
@@ -889,6 +891,27 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
+  // Side thread (侧聊) controller — keyed by the active main thread
+  // id. The hook's default ipc reads window.wuu (wired in commit 5),
+  // so toggling the panel exercises open/getHistory through the
+  // main process bridge automatically. The activeContext gate keeps
+  // send disabled when no workspace is selected, matching the
+  // /side disabledReason in ComposerSlashCommands.
+  const sideThread = useSideThreadController({
+    activeThreadId: activeThreadID,
+    activeContext: state.activeContext,
+  });
+  // SideThreadOpenBus bridges the /side slash command (and any
+  // future hotkey/toolbar button) to the controller without
+  // rewriting the prop chain through SplitPaneComposer /
+  // ConversationSplitPane. The subscription's identity changes
+  // only when sideThread.toggle itself changes (it doesn't, the
+  // hook memoizes it), so the effect runs once per session.
+  useEffect(() => {
+    return subscribeSideThreadOpenRequest(() => {
+      sideThread.toggle();
+    });
+  }, [sideThread.toggle]);
   const activeTurn = activeTurnForThread(activeThread);
   useEffect(() => {
     const syncVisibleCUAThread = () => {
@@ -2537,6 +2560,7 @@ export function App(): JSX.Element {
         onCreateProject={() => void createBlankProject()}
         onOpenProject={() => void chooseProjectFolder()}
         onStartNewThread={() => void startNewThread()}
+        onOpenSideThread={() => emitSideThreadOpenRequest()}
         onOpenWorkspaceTool={openWorkspaceTool}
         onOpenContextComposition={openContextComposition}
         onCompactContext={() => void compactActiveThread()}
