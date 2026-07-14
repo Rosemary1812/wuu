@@ -263,6 +263,9 @@ func New(cfg Config) (*AgentControl, error) {
 	}
 	c.restoreAgentResultDeliveries()
 	c.registerRootThread()
+	if err := c.restoreQueuedSpawns(); err != nil {
+		return nil, fmt.Errorf("restore queued spawns: %w", err)
+	}
 	statusCh := make(chan subagent.Notification, 64)
 	mgr.Subscribe(statusCh)
 	c.statusCh = statusCh
@@ -272,7 +275,6 @@ func New(cfg Config) (*AgentControl, error) {
 		defer close(c.statusDone)
 		c.consumeWorkerStatus(statusCh)
 	}()
-	_ = c.restoreQueuedSpawns()
 	c.reconcileOrphanedHarnessTasks()
 	go c.maybeStartQueued(context.Background())
 	return c, nil

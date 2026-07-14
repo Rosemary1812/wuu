@@ -2,6 +2,7 @@ package agentcontrol
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -184,6 +185,40 @@ func TestNew_ReconcileSkipsRestorableQueuedTask(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	c.Close()
+}
+
+func TestNew_RestoreQueueFailureStopsBeforeOrphanReconcile(t *testing.T) {
+	dir := t.TempDir()
+	harnessDir := filepath.Join(dir, "harness")
+	startedAt := time.Now().Add(-time.Minute).UTC().Truncate(time.Second)
+	seedOrphanHarnessTask(t, harnessDir, "wk_queued", harness.TaskStatusQueued, startedAt)
+	if err := os.WriteFile(filepath.Join(harnessDir, "queue.json"), []byte("{"), 0o644); err != nil {
+		t.Fatalf("write corrupt queue: %v", err)
+	}
+
+	control, err := New(Config{
+		Client:        &fakeClient{},
+		DefaultModel:  "fake-model",
+		ParentRepo:    dir,
+		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
+		SessionID:     "sess-reconcile",
+		HistoryDir:    filepath.Join(dir, "workers"),
+		ThreadDir:     filepath.Join(dir, "threads"),
+		HarnessDir:    harnessDir,
+		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
+	})
+	if control != nil {
+		control.Close()
+		t.Fatal("New returned a control after queued-spawn restore failed")
+	}
+	if err == nil || !strings.Contains(err.Error(), "restore queued spawns") || !strings.Contains(err.Error(), "queue.json") {
+		t.Fatalf("New error = %v, want queued-spawn restore error", err)
+	}
+
+	task := loadHarnessTask(t, harnessDir, "wk_queued")
+	if task.Status != harness.TaskStatusQueued {
+		t.Fatalf("restore failure must not reconcile queued task as orphaned; status=%s", task.Status)
+	}
 }
 
 // TestNew_ReconcileMarksOrphanedQueuedTaskWithoutPayload asserts a queued
