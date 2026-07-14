@@ -3,6 +3,14 @@ import { resolve } from "node:path";
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// This suite documents the collaboration sidebar's behavior, so it runs with
+// the build-time gate on; the explicit `collaborationEnabled: false` cases
+// below still cover the gated default. Hoisted so the stub lands before
+// FeatureFlags evaluates ENABLE_COLLABORATION at module import.
+vi.hoisted(() => {
+  vi.stubEnv("VITE_ENABLE_COLLABORATION", "true");
+});
 import { Folder, FolderOpen } from "lucide-react";
 import { SECTION_COLLAPSE_MS, SidebarSection } from "./SidebarSection";
 import type { DesktopProject, InitializeResult, ParticipantProfile } from "../shared/protocol";

@@ -243,8 +243,12 @@ function ensureNodePtyHelperExecutable(): void {
   try {
     accessSync(helperPath, constants.X_OK);
   } catch {
-    const mode = existsSync(helperPath) ? statSync(helperPath).mode : 0o755;
-    chmodSync(helperPath, mode | 0o755);
+    if (!existsSync(helperPath)) {
+      // Linux builds node-pty from source: there is no prebuilds helper to
+      // repair, and pty.node resolves its own build-tree spawn-helper.
+      return;
+    }
+    chmodSync(helperPath, statSync(helperPath).mode | 0o755);
   }
 }
 
