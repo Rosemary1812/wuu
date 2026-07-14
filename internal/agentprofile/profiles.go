@@ -75,30 +75,6 @@ func List(wuuHome string) ([]Summary, error) {
 	return out, nil
 }
 
-func Load(wuuHome, name string) (Summary, bool, error) {
-	wuuHome = strings.TrimSpace(wuuHome)
-	if wuuHome == "" {
-		return Summary{}, false, fmt.Errorf("wuu home is required")
-	}
-	name = strings.TrimSpace(name)
-	if name == "" || strings.EqualFold(name, "default") {
-		return Summary{}, false, fmt.Errorf("profile name must be a non-default named agent")
-	}
-	dir, err := statepath.ProfileDir(wuuHome, name)
-	if err != nil {
-		return Summary{}, false, err
-	}
-	exists, err := profileDirExists(dir)
-	if err != nil || !exists {
-		return Summary{}, false, err
-	}
-	profile, _, err := Ensure(EnsureOptions{WuuHome: wuuHome, Name: name})
-	if err != nil {
-		return Summary{}, false, err
-	}
-	return profile, true, nil
-}
-
 func Ensure(opts EnsureOptions) (Summary, bool, error) {
 	wuuHome := strings.TrimSpace(opts.WuuHome)
 	if wuuHome == "" {
@@ -146,17 +122,6 @@ func Ensure(opts EnsureOptions) (Summary, bool, error) {
 		return Summary{}, false, err
 	}
 	return summaryFromMetadata(meta, dir), created, nil
-}
-
-func profileDirExists(dir string) (bool, error) {
-	info, err := os.Stat(dir)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return info.IsDir(), nil
 }
 
 func readProfileMetadata(path string) (profileMetadata, error) {
