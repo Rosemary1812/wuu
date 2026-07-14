@@ -332,12 +332,7 @@ describe("TurnEditSummaryCard", () => {
     );
     expect(container?.textContent).toContain("本轮产出 1 项");
     expect(container?.textContent).toContain("new.txt");
-    const createAction = container?.querySelector(
-      ".turn-edit-summary-action.is-create",
-    );
-    expect(createAction).toBeTruthy();
-    expect(createAction?.getAttribute("aria-label")).toBe("新建");
-    expect(createAction?.querySelector("svg")).toBeTruthy();
+    expect(container?.querySelector(".turn-edit-summary-action")).toBeFalsy();
     expect(container?.textContent).toContain("+7");
     act(() => {
       container?.querySelector<HTMLButtonElement>(".turn-edit-summary-row")?.click();

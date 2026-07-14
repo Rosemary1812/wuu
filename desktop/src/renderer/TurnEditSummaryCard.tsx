@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { ArrowLeftRight, FilePlus2, Pencil, Trash2 } from "lucide-react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import {
   extractToolDiffPreview,
@@ -336,13 +335,6 @@ export function TurnEditSummaryCard({
           const rowContent = (
             <>
               <span className="turn-edit-summary-file">
-                <span
-                  className={`turn-edit-summary-action is-${edit.action}`}
-                  role="img"
-                  aria-label={editActionLabel(edit.action)}
-                >
-                  <EditActionIcon action={edit.action} />
-                </span>
                 <span className="turn-edit-summary-name" title={edit.path}>
                   {fileDisplayName(edit.path)}
                 </span>
@@ -410,31 +402,4 @@ export function TurnEditSummaryCard({
       </div>
     </div>
   );
-}
-
-function editActionLabel(action: FileEdit["action"]): string {
-  switch (action) {
-    case "create":
-      return "新建";
-    case "delete":
-      return "删除";
-    case "rename":
-      return "重命名";
-    case "update":
-      return "修改";
-  }
-}
-
-function EditActionIcon({ action }: { action: FileEdit["action"] }): JSX.Element {
-  const cls = "icon icon-sm";
-  switch (action) {
-    case "create":
-      return <FilePlus2 className={cls} />;
-    case "delete":
-      return <Trash2 className={cls} />;
-    case "rename":
-      return <ArrowLeftRight className={cls} />;
-    case "update":
-      return <Pencil className={cls} />;
-  }
 }

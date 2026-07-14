@@ -4440,24 +4440,6 @@ pre {
   gap: 8px;
 }
 
-.turn-edit-summary-action {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-muted);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-semibold);
-}
-
-.turn-edit-summary-action.is-create {
-  color: var(--diff-insert-text-color);
-}
-
-.turn-edit-summary-action.is-delete {
-  color: var(--diff-delete-text-color);
-}
-
 .turn-edit-summary-name {
   flex: 1;
   min-width: 0;
