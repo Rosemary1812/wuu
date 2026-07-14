@@ -1268,7 +1268,7 @@ describe("Composer queue strip", () => {
       Array.from(header?.querySelectorAll(".composer-input-header-label") ?? []).map(
         (label) => label.textContent?.trim(),
       ),
-    ).toEqual(["Goal", "Queue"]);
+    ).toEqual(["Goal"]);
   });
 
   it("renders queued and guide messages in combined sequential order", () => {
@@ -1291,9 +1291,11 @@ describe("Composer queue strip", () => {
     expect(rows[0]?.dataset.position).toBe("1");
     expect(rows[0]?.classList.contains("guide")).toBe(true);
     expect(rows[0]?.querySelector(".composer-queue-index")?.textContent).toBe("1");
+    expect(rows[0]?.querySelector(".composer-queue-kind")?.textContent).toBe("Guide");
     expect(rows[1]?.dataset.position).toBe("2");
     expect(rows[1]?.classList.contains("queue")).toBe(true);
     expect(rows[1]?.querySelector(".composer-queue-index")?.textContent).toBe("2");
+    expect(rows[1]?.querySelector(".composer-queue-kind")).toBeNull();
     expect(rows[2]?.dataset.position).toBe("3");
     expect(rows[2]?.classList.contains("queue")).toBe(true);
     expect(rows[2]?.querySelector(".composer-queue-index")?.textContent).toBe("3");
