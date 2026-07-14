@@ -489,7 +489,13 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	sa.mu.Unlock()
 
 	if sa.historyPath != "" {
-		if persistErr := persistHistory(sa); persistErr == nil && sa.toolLedger != nil {
+		if persistErr := persistHistory(sa); persistErr != nil {
+			sa.mu.Lock()
+			sa.Status = StatusFailed
+			sa.Error = errors.Join(sa.Error, fmt.Errorf("persist final worker snapshot: %w", persistErr))
+			finalStatus = sa.Status
+			sa.mu.Unlock()
+		} else if sa.toolLedger != nil {
 			_ = sa.toolLedger.MarkProjected(context.WithoutCancel(ctx), toolInvocationIDs(nextHistory))
 		}
 	}

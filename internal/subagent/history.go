@@ -143,8 +143,8 @@ func MarkPersistedRunInterrupted(path, reason string, now time.Time) (bool, erro
 }
 
 // persistHistory writes the sub-agent's final state to its configured
-// HistoryPath. Errors are returned but typically ignored — persistence
-// is best-effort.
+// HistoryPath. Callers must surface errors because this snapshot is the
+// durable source used to resume a worker after restart.
 func persistHistory(sa *SubAgent) error {
 	if sa.historyPath == "" {
 		return nil

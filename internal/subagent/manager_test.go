@@ -617,6 +617,62 @@ func TestPersistHistory(t *testing.T) {
 	}
 }
 
+func TestPersistHistoryFailureMarksWorkerFailed(t *testing.T) {
+	// An existing directory is a deterministic unwritable file target on every
+	// supported platform; unlike chmod-based tests, it also fails when tests run
+	// with elevated filesystem permissions.
+	historyPath := t.TempDir()
+	client := &fakeClient{response: providers.ChatResponse{Content: "completed work"}}
+	mgr := NewManager(client, "fake-model")
+	notifications := make(chan Notification, 4)
+	mgr.Subscribe(notifications)
+
+	sa, err := mgr.Spawn(context.Background(), SpawnOptions{
+		Type:        "worker",
+		Description: "test persistence failure",
+		Prompt:      "do it",
+		Toolkit:     fakeToolkit{},
+		HistoryPath: historyPath,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	snap, err := mgr.Wait(context.Background(), sa.ID)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if snap.Status != StatusFailed {
+		t.Fatalf("status = %s, want failed", snap.Status)
+	}
+	if snap.Error == nil || !strings.Contains(snap.Error.Error(), "persist final worker snapshot") {
+		t.Fatalf("snapshot error = %v, want persistence failure", snap.Error)
+	}
+	if snap.Result != "completed work" {
+		t.Fatalf("result = %q, want completed worker output preserved", snap.Result)
+	}
+
+	for {
+		select {
+		case notification := <-notifications:
+			if notification.Status == StatusCompleted {
+				t.Fatalf("persistence failure emitted completed notification: %+v", notification)
+			}
+			if !IsTerminal(notification.Status) {
+				continue
+			}
+			if notification.Status != StatusFailed || notification.Snapshot.Status != StatusFailed {
+				t.Fatalf("terminal notification status mismatch: %+v", notification)
+			}
+			if notification.Snapshot.Error == nil || !strings.Contains(notification.Snapshot.Error.Error(), "persist final worker snapshot") {
+				t.Fatalf("terminal notification missing persistence error: %+v", notification)
+			}
+			return
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for persistence failure notification")
+		}
+	}
+}
+
 // TestPersistHistoryRecordsResumeFields verifies a persisted snapshot
 // carries every field needed to rebuild the runtime for a cross-restart
 // resume: identity, thread placement, working directory, and model pin.
