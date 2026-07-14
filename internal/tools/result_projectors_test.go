@@ -9,15 +9,6 @@ import (
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
-func mustMarshal(t *testing.T, v any) string {
-	t.Helper()
-	b, err := json.Marshal(v)
-	if err != nil {
-		t.Fatalf("marshal fixture: %v", err)
-	}
-	return string(b)
-}
-
 func parseOut(t *testing.T, s string) map[string]any {
 	t.Helper()
 	var m map[string]any

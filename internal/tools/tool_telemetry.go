@@ -447,19 +447,6 @@ func sanitizeShortToolValue(value string, limit int) string {
 	return strings.Trim(b.String(), "-._")
 }
 
-func appendUniqueString(values []string, value string) []string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return values
-	}
-	for _, existing := range values {
-		if existing == value {
-			return values
-		}
-	}
-	return append(values, value)
-}
-
 func extractToolErrorKind(message string) string {
 	const marker = "error_kind="
 	idx := strings.Index(message, marker)

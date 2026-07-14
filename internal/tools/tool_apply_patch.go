@@ -877,21 +877,6 @@ func writeApplyPatchJournalManifest(path string, manifest applyPatchJournalManif
 	return nil
 }
 
-func loadApplyPatchJournalManifest(path string) (applyPatchJournalManifest, error) {
-	var manifest applyPatchJournalManifest
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return manifest, fmt.Errorf("read patch journal manifest: %w", err)
-	}
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return manifest, fmt.Errorf("load patch journal manifest: %w", err)
-	}
-	if manifest.ManifestPath == "" {
-		manifest.ManifestPath = path
-	}
-	return manifest, nil
-}
-
 func (t *ApplyPatchTool) rejectSensitivePatchPath(absPath, action string) error {
 	return rejectSensitiveToolPath(t.env, "apply_patch", action, absPath)
 }

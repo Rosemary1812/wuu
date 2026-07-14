@@ -4,20 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/blueberrycongee/wuu/internal/capability"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 )
-
-// hasCapability reports whether the given capability appears in the
-// provided slice.
-func hasCapability(caps []capability.Capability, want capability.Capability) bool {
-	for _, c := range caps {
-		if c == want {
-			return true
-		}
-	}
-	return false
-}
 
 // TestAdvancedToolsHiddenFromModelSurfaces verifies that the
 // structured git tool — the one that Codex-style harnesses collapse

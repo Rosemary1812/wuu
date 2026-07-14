@@ -19,11 +19,6 @@ func mentionsTerminalOnlyPath(parts ...string) bool {
 		npxCommandMarkerRE.MatchString(text)
 }
 
-func activeSurfaceLacksTerminalExecution(env *Env) bool {
-	return env != nil &&
-		surfaceLacksTerminalExecution(env.ActiveSurface)
-}
-
 func surfaceLacksTerminalExecution(surface capability.Surface) bool {
 	return surface.ProfileName != "" &&
 		!surfaceHasVisibleCapability(surface, capability.CapabilityCommandBash)

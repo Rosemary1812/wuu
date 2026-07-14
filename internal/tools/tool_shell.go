@@ -255,10 +255,6 @@ func tailString(value string, maxBytes int) (string, bool) {
 	return stringutil.HeadTail(value, 0, maxBytes, ""), true
 }
 
-func shellCommandLooksReadOnly(command string) bool {
-	return classifyShellCommand(command).ReadOnly
-}
-
 func classifyShellCommand(command string) ToolClassification {
 	command = strings.TrimSpace(command)
 	if command == "" {
@@ -345,23 +341,6 @@ func shellCommandInvokesGit(command string) bool {
 		}
 	}
 	return false
-}
-
-func blockedShellGitCommandReason(command string) (string, bool) {
-	if !shellCommandInvokesGit(command) {
-		return "", false
-	}
-	classification, ok := classifyShellGitCommand(command)
-	if !ok {
-		return "unsupported git shell shape", true
-	}
-	if classification.Destructive {
-		return classification.Reason, true
-	}
-	if classification.Risk == ToolRiskHigh && classification.Reason == "unsupported git shell command" {
-		return classification.Reason, true
-	}
-	return "", false
 }
 
 func classifyShellGitCommand(command string) (ToolClassification, bool) {
@@ -1043,24 +1022,6 @@ func highRiskShellClassification(reason string, destructive bool) ToolClassifica
 	}
 }
 
-func shellCommandDumpsEnvironment(command string) bool {
-	for _, segment := range splitShellCommandSegments(command) {
-		fields := stripLeadingShellEnvAssignments(strings.Fields(strings.TrimSpace(segment)))
-		if shellFieldsDumpEnvironment(command, fields) {
-			return true
-		}
-		envFields := normalizeShellCommandFieldsPreservingEnv(fields)
-		if shellFieldsDumpEnvironment(command, envFields) {
-			return true
-		}
-		fields = normalizeShellCommandFields(fields)
-		if shellFieldsDumpEnvironment(command, fields) {
-			return true
-		}
-	}
-	return false
-}
-
 func shellFieldsDumpEnvironment(command string, fields []string) bool {
 	if len(fields) == 0 {
 		return false
@@ -1090,15 +1051,6 @@ func shellFieldsTouchSensitivePath(fields []string) bool {
 		}
 	}
 	return false
-}
-
-func shellCommandSensitivePathReason(command string) (string, bool) {
-	for _, field := range strings.Fields(command) {
-		if reason, ok := shellSensitivePathTokenReason(field); ok {
-			return reason, true
-		}
-	}
-	return "", false
 }
 
 func shellSensitivePathTokenReason(field string) (string, bool) {

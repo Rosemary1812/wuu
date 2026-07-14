@@ -437,10 +437,6 @@ func (t *Toolkit) SetBoundary(boundary WorkspaceBoundary) {
 	}
 }
 
-func (t *Toolkit) bypassToolHardProtections() bool {
-	return t != nil && t.env != nil && t.env.BypassToolHardProtections()
-}
-
 // AgentControl returns the attached agent control runtime, or nil.
 func (t *Toolkit) AgentControl() *agentcontrol.AgentControl {
 	return t.env.AgentControl

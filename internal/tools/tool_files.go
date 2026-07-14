@@ -992,12 +992,6 @@ func writeFilePathLooksGenerated(path string) bool {
 		strings.HasSuffix(base, ".min.js")
 }
 
-func normalizeFileSHA(value string) string {
-	value = strings.TrimSpace(value)
-	value = strings.TrimPrefix(value, "sha256:")
-	return strings.ToLower(value)
-}
-
 // ---------------------------------------------------------------------------
 // list_files
 // ---------------------------------------------------------------------------
@@ -1428,14 +1422,6 @@ func fileBaselineError(kind, message, toolName string) error {
 		fmt.Sprintf("Run read_file on the target file and retry %s.", toolName),
 		"Do not retry with stale file content; refresh evidence first.",
 	)
-}
-
-func displayFileSHA(value string) string {
-	normalized := normalizeFileSHA(value)
-	if normalized == "" {
-		return ""
-	}
-	return formatFileSHA(normalized)
 }
 
 func readEntryMatchesInfo(entry ReadFileEntry, info os.FileInfo) bool {
