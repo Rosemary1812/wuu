@@ -2,7 +2,9 @@ package sessionmemory
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -71,6 +73,93 @@ func TestAppendReplaceReadAndStatus(t *testing.T) {
 	}
 	if byTarget[TargetNotes].Exists {
 		t.Fatalf("notes should not exist yet: %+v", status)
+	}
+}
+
+func TestAppendTargetSerializesAcrossProcesses(t *testing.T) {
+	workspaceState := filepath.Join(t.TempDir(), "workspace-state")
+	const processCount = 12
+
+	type processResult struct {
+		marker string
+		output []byte
+		err    error
+	}
+	start := make(chan struct{})
+	results := make(chan processResult, processCount)
+	markers := make([]string, processCount)
+	for i := 0; i < processCount; i++ {
+		marker := fmt.Sprintf("[session-memory-marker-%02d]", i)
+		markers[i] = marker
+		go func() {
+			<-start
+			command := exec.Command(os.Args[0], "-test.run=^TestAppendTargetProcessHelper$")
+			command.Env = append(
+				os.Environ(),
+				"WUU_SESSION_MEMORY_APPEND_HELPER=1",
+				"WUU_SESSION_MEMORY_WORKSPACE="+workspaceState,
+				"WUU_SESSION_MEMORY_MARKER="+marker,
+			)
+			output, err := command.CombinedOutput()
+			results <- processResult{marker: marker, output: output, err: err}
+		}()
+	}
+	close(start)
+	for range processCount {
+		result := <-results
+		if result.err != nil {
+			t.Errorf("append %s: %v\n%s", result.marker, result.err, result.output)
+		}
+	}
+	if t.Failed() {
+		return
+	}
+
+	path, content, exists, err := ReadTarget(workspaceState, "", TargetProjectMemory)
+	if err != nil {
+		t.Fatalf("ReadTarget: %v", err)
+	}
+	if !exists {
+		t.Fatal("project memory was not written")
+	}
+	for _, marker := range markers {
+		if count := strings.Count(content, marker); count != 1 {
+			t.Fatalf("marker %s appears %d times, want exactly once\n%s", marker, count, content)
+		}
+	}
+
+	lockPath := path + ".lock"
+	before, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatalf("stat target lock: %v", err)
+	}
+	if _, _, err := ReplaceTarget(workspaceState, "", TargetProjectMemory, "# Project Memory\n\nReplacement"); err != nil {
+		t.Fatalf("ReplaceTarget: %v", err)
+	}
+	after, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatalf("stat target lock after replace: %v", err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("target lock sidecar inode changed across writes")
+	}
+}
+
+func TestAppendTargetProcessHelper(t *testing.T) {
+	if os.Getenv("WUU_SESSION_MEMORY_APPEND_HELPER") != "1" {
+		return
+	}
+	workspaceState := os.Getenv("WUU_SESSION_MEMORY_WORKSPACE")
+	marker := os.Getenv("WUU_SESSION_MEMORY_MARKER")
+	if _, _, err := AppendTarget(
+		workspaceState,
+		"",
+		TargetProjectMemory,
+		marker,
+		"concurrency-test",
+		time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC),
+	); err != nil {
+		t.Fatal(err)
 	}
 }
 

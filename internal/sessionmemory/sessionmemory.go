@@ -300,6 +300,12 @@ func AppendTarget(workspaceStateDir, sessionArtifactDir, target, content, source
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
+	release, err := acquireTargetLock(path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer release()
+
 	existing := ""
 	if data, readErr := os.ReadFile(path); readErr == nil {
 		existing = string(data)
@@ -328,6 +334,12 @@ func ReplaceTarget(workspaceStateDir, sessionArtifactDir, target, content string
 	if content == "" {
 		return "", 0, fmt.Errorf("%s content is required", target)
 	}
+	release, err := acquireTargetLock(path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer release()
+
 	if err := writeAtomic(path, []byte(content+"\n")); err != nil {
 		return "", 0, err
 	}
@@ -456,6 +468,21 @@ func trimDreamError(message string) string {
 		return message
 	}
 	return stringutil.HeadTail(message, dreamErrorMaxBytes/2, dreamErrorMaxBytes/2, "\n\n[trimmed dream error]\n\n")
+}
+
+// acquireTargetLock serializes the complete read-modify-write transaction
+// across app-server processes. The sidecar is intentionally kept after
+// unlock: removing it could let a new caller lock a different inode while a
+// previous caller is still waiting on the original one.
+func acquireTargetLock(path string) (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(path), defaultDirMode); err != nil {
+		return nil, fmt.Errorf("create memory dir: %w", err)
+	}
+	release, err := lockFile(path + ".lock")
+	if err != nil {
+		return nil, fmt.Errorf("lock memory target %s: %w", path, err)
+	}
+	return release, nil
 }
 
 func writeAtomic(path string, data []byte) error {
