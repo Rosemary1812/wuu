@@ -897,6 +897,58 @@ func TestNewThreadRuntimeOrdinarySpawnIsMemoryless(t *testing.T) {
 	}
 }
 
+func TestNewThreadRuntimePropagatesQueuedSpawnRestoreFailure(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer func() { _, _ = rt.Cleanup() }()
+	if rt.AgentControl != nil {
+		defer rt.AgentControl.Close()
+	}
+	rt.WorkerClient = &sessionRecordingClient{}
+
+	threadID := "thread-corrupt-queue"
+	harnessDir := filepath.Join(statepath.SessionArtifactDir(rt.StateDir, threadID), "harness")
+	if err := os.MkdirAll(harnessDir, 0o755); err != nil {
+		t.Fatalf("mkdir harness: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(harnessDir, "queue.json"), []byte("{"), 0o644); err != nil {
+		t.Fatalf("write corrupt queue: %v", err)
+	}
+
+	threadRuntime, err := rt.NewThreadRuntime(threadID)
+	if threadRuntime != nil {
+		if threadRuntime.AgentControl != nil {
+			threadRuntime.AgentControl.Close()
+		}
+		t.Fatal("NewThreadRuntime returned a runtime after queued-spawn restore failed")
+	}
+	if err == nil || !strings.Contains(err.Error(), "create thread agent control") || !strings.Contains(err.Error(), "restore queued spawns") {
+		t.Fatalf("NewThreadRuntime error = %v, want propagated queued-spawn restore error", err)
+	}
+}
+
 func TestNewThreadRuntimeWorkerDoesNotInheritParticipantSpeech(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

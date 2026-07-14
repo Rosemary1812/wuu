@@ -893,7 +893,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 				s.MemdirEnabled,
 				s.Skills,
 			)
-			control, _ = agentcontrol.New(agentcontrol.Config{
+			control, controlErr := agentcontrol.New(agentcontrol.Config{
 				Client:                         workerClient,
 				DefaultModel:                   workerModel,
 				DefaultEffort:                  s.ModelRoles.Worker.LegacyEffort,
@@ -973,6 +973,9 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					return toolledger.New(s.SessionDir, ownerID)
 				},
 			})
+			if controlErr != nil {
+				return nil, fmt.Errorf("create thread agent control: %w", controlErr)
+			}
 			agentControl = control
 		}
 
