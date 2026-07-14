@@ -126,7 +126,7 @@ func executeShellCommandInDir(ctx context.Context, env *Env, command string, tim
 
 	cmd := exec.CommandContext(runCtx, "bash", "-lc", command)
 	cmd.Dir = workDir
-	cmd.Env = mergeEnv(os.Environ(), nonInteractiveShellEnv())
+	cmd.Env = shellCommandEnv(os.Environ())
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -180,6 +180,22 @@ func executeShellCommandInDir(ctx context.Context, env *Env, command string, tim
 		redactedStdout:      redactedStdout,
 		redactedStderr:      redactedStderr,
 	}, nil
+}
+
+// shellCommandEnv keeps build-time Go runtime metadata out of workspace
+// commands. A wuu process launched by `go run` can inherit the selected
+// toolchain's GOROOT, while its login shell resolves a different go binary.
+// Let that binary select its own matching GOROOT instead of mixing toolchains.
+func shellCommandEnv(base []string) []string {
+	filtered := make([]string, 0, len(base))
+	for _, entry := range base {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok && strings.EqualFold(key, "GOROOT") {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return mergeEnv(filtered, nonInteractiveShellEnv())
 }
 
 func resolveShellWorkingDir(ctx context.Context, env *Env, cwd string) (string, error) {
