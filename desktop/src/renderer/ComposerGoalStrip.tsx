@@ -270,9 +270,6 @@ export function ComposerGoalStrip({
         <span className="composer-goal-strip-icon" aria-hidden="true">
           <Target className="icon-sm" />
         </span>
-        <span className="composer-goal-strip-label composer-input-header-label">
-          Goal
-        </span>
         <input
           ref={inputRef}
           className="composer-goal-strip-input"
@@ -325,9 +322,6 @@ export function ComposerGoalStrip({
     <div className="composer-goal-strip" role="status" aria-live="polite">
       <span className="composer-goal-strip-icon" aria-hidden="true">
         <Target className="icon-sm" />
-      </span>
-      <span className="composer-goal-strip-label composer-input-header-label">
-        Goal
       </span>
       <span className="composer-goal-strip-main">
         <span className="composer-goal-strip-text" title={displayText}>

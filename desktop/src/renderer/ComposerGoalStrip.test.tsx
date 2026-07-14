@@ -75,7 +75,7 @@ describe("ComposerGoalStrip", () => {
 
     const strip = container.querySelector(".composer-goal-strip");
     expect(strip).not.toBeNull();
-    expect(container.querySelector(".composer-goal-strip-label")?.textContent).toBe("Goal");
+    expect(container.querySelector(".composer-goal-strip-label")).toBeNull();
     expect(container.querySelector(".composer-goal-strip-text")?.textContent).toBe("first line");
     expect(container.querySelectorAll(".composer-goal-strip-action")).toHaveLength(2);
     expect(container.querySelector("button[aria-label=\"查看目标详情\"]")).not.toBeNull();

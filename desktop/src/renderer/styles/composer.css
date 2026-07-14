@@ -743,7 +743,7 @@
 .composer-goal-strip {
   position: relative;
   display: grid;
-  grid-template-columns: 18px 36px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 8px;
   row-gap: 2px;
@@ -765,13 +765,9 @@
   color: var(--ink-muted);
 }
 
-.composer-goal-strip-label {
-  color: var(--ink-muted);
-}
-
 .composer-goal-strip-main {
   display: flex;
-  grid-column: 3;
+  grid-column: 2;
   min-width: 0;
   align-items: center;
   gap: 8px;
@@ -794,7 +790,7 @@
 }
 
 .composer-goal-strip-input {
-  grid-column: 3;
+  grid-column: 2;
   width: 100%;
   min-width: 0;
   height: 28px;
@@ -812,7 +808,7 @@
 }
 
 .composer-goal-strip-actions {
-  grid-column: 4;
+  grid-column: 3;
   justify-self: end;
 }
 

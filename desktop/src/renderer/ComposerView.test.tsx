@@ -1264,11 +1264,7 @@ describe("Composer queue strip", () => {
     expect(
       actions.every((action) => action.classList.contains("composer-input-header-action")),
     ).toBe(true);
-    expect(
-      Array.from(header?.querySelectorAll(".composer-input-header-label") ?? []).map(
-        (label) => label.textContent?.trim(),
-      ),
-    ).toEqual(["Goal"]);
+    expect(header?.querySelector(".composer-input-header-label")).toBeNull();
   });
 
   it("renders queued and guide messages in combined sequential order", () => {
