@@ -490,6 +490,10 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleSideThreadOpen(req)
 	case MethodSideThreadGetHistory:
 		return s.handleSideThreadGetHistory(req)
+	case MethodSideThreadSend:
+		return s.handleSideThreadSendMessage(req)
+	case MethodSideThreadInterrupt:
+		return s.handleSideThreadInterrupt(req)
 	case MethodThreadList:
 		return s.handleThreadList(req)
 	case MethodThreadListArchived:

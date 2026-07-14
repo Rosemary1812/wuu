@@ -2,7 +2,9 @@ package appserver
 
 import (
 	"errors"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/sidethread"
 )
@@ -169,4 +171,158 @@ func (s *Server) mainTaskSnapshot(mainThreadID string) *MainTaskSnapshot {
 		}
 	}
 	return snap
+}
+
+// handleSideThreadSendMessage implements sideThread/sendMessage. It
+// lazily creates the on-disk side-thread record on the first send,
+// assigns a fresh side_thread_id, persists the user message, and
+// marks Status=running. The actual agent turn driver and the
+// SideThreadEvent broadcast are wired in a later commit; once they
+// land they will read this same record.
+func (s *Server) handleSideThreadSendMessage(req Request) error {
+	var params SideThreadSendParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	mainID := strings.TrimSpace(params.MainThreadID)
+	if mainID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("main_thread_id is required"))
+	}
+	prompt := strings.TrimSpace(params.Prompt)
+	if prompt == "" {
+		return s.writeResponse(req.ID, nil, errors.New("prompt is required"))
+	}
+	res, err := s.sendSideThreadMessage(mainID, prompt)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, res, nil)
+}
+
+// sendSideThreadMessage is the testable inner half of
+// handleSideThreadSendMessage. It performs the lazy-create +
+// append + status-flip, then re-reads the canonical record to
+// build the wire summary.
+func (s *Server) sendSideThreadMessage(mainID, prompt string) (*SideThreadSendResult, error) {
+	if strings.TrimSpace(mainID) == "" {
+		return nil, errors.New("main_thread_id is required")
+	}
+	if strings.TrimSpace(prompt) == "" {
+		return nil, errors.New("prompt is required")
+	}
+	if s.sideThreadStore == nil {
+		return nil, errors.New("side-thread feature unavailable")
+	}
+	userMsgID := generateSideMessageID()
+	now := time.Now().UTC()
+
+	mutateErr := s.sideThreadStore.Mutate(mainID, func(st *sidethread.SideThread) error {
+		if st.SideThreadID == "" {
+			sid, err := sidethread.NewSideThreadID()
+			if err != nil {
+				return err
+			}
+			st.SideThreadID = sid
+		}
+		st.Status = sidethread.StatusRunning
+		st.Messages = append(st.Messages, sidethread.Message{
+			ID:           userMsgID,
+			SideThreadID: st.SideThreadID,
+			Role:         sidethread.RoleUser,
+			Text:         prompt,
+			CreatedAt:    now,
+		})
+		return nil
+	})
+	if mutateErr == nil {
+		st, err := s.sideThreadStore.Load(mainID)
+		if err != nil {
+			return nil, err
+		}
+		return &SideThreadSendResult{
+			UserMessageID: userMsgID,
+			Summary:       *sideThreadWireSummary(st, s.mainTaskSnapshot(mainID)),
+		}, nil
+	}
+	if !errors.Is(mutateErr, sidethread.ErrNotFound) {
+		return nil, mutateErr
+	}
+	// First send for this main thread — materialize a fresh record.
+	sid, idErr := sidethread.NewSideThreadID()
+	if idErr != nil {
+		return nil, idErr
+	}
+	st := &sidethread.SideThread{
+		SideThreadID: sid,
+		MainThreadID: mainID,
+		Status:       sidethread.StatusRunning,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		Messages: []sidethread.Message{
+			{
+				ID:           userMsgID,
+				SideThreadID: sid,
+				Role:         sidethread.RoleUser,
+				Text:         prompt,
+				CreatedAt:    now,
+			},
+		},
+	}
+	if err := s.sideThreadStore.Save(st); err != nil {
+		return nil, err
+	}
+	return &SideThreadSendResult{
+		UserMessageID: userMsgID,
+		Summary:       *sideThreadWireSummary(st, s.mainTaskSnapshot(mainID)),
+	}, nil
+}
+
+// handleSideThreadInterrupt implements sideThread/interrupt. The
+// pure-state path is the only thing scoped here: flipping a
+// running side-thread's Status to StatusInterrupted. Any actual
+// agent turn driver in a later commit will observe the status and
+// cancel its in-flight request.
+func (s *Server) handleSideThreadInterrupt(req Request) error {
+	var params SideThreadInterruptParams
+	if err := decodeParams(req.Params, &params); err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	mainID := strings.TrimSpace(params.MainThreadID)
+	if mainID == "" {
+		return s.writeResponse(req.ID, nil, errors.New("main_thread_id is required"))
+	}
+	res, err := s.interruptSideThread(mainID)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	return s.writeResponse(req.ID, res, nil)
+}
+
+func (s *Server) interruptSideThread(mainID string) (*SideThreadInterruptResult, error) {
+	if s.sideThreadStore == nil {
+		return &SideThreadInterruptResult{Ok: false}, nil
+	}
+	if strings.TrimSpace(mainID) == "" {
+		return &SideThreadInterruptResult{Ok: false}, nil
+	}
+	mutateErr := s.sideThreadStore.Mutate(mainID, func(st *sidethread.SideThread) error {
+		if st.Status == sidethread.StatusRunning {
+			st.Status = sidethread.StatusInterrupted
+		}
+		return nil
+	})
+	if errors.Is(mutateErr, sidethread.ErrNotFound) {
+		return &SideThreadInterruptResult{Ok: false}, nil
+	}
+	if mutateErr != nil {
+		return nil, mutateErr
+	}
+	return &SideThreadInterruptResult{Ok: true}, nil
+}
+
+// generateSideMessageID produces a deterministic-enough id for V1.
+// Real cryptographically-strong entropy can replace this once the
+// renderer needs ids that survive across cold starts.
+func generateSideMessageID() string {
+	return fmt.Sprintf("sm_%d", time.Now().UTC().UnixNano())
 }

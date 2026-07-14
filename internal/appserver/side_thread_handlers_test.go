@@ -136,6 +136,153 @@ func TestGetSideThreadHistoryInvalidMainID(t *testing.T) {
 // is exercised end-to-end in server_test.go once the renderer side
 // lands.
 
+func TestSendSideThreadMessageLazyCreate(t *testing.T) {
+	s := newSideThreadServer(t)
+	res, err := s.sendSideThreadMessage("main_lazy", "进度如何?")
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if res.UserMessageID == "" {
+		t.Fatal("expected non-empty user_message_id")
+	}
+	if res.Summary.SideThreadID == "" {
+		t.Fatal("expected side_thread_id to be assigned on first send")
+	}
+}
+
+func TestSendSideThreadMessageAppendsUserMsg(t *testing.T) {
+	s := newSideThreadServer(t)
+	res, err := s.sendSideThreadMessage("main_first", "你好")
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	st, err := s.sideThreadStore.Load("main_first")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(st.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(st.Messages))
+	}
+	if st.Messages[0].Text != "你好" {
+		t.Fatalf("message text mismatch: %q", st.Messages[0].Text)
+	}
+	if st.Status != sidethread.StatusRunning {
+		t.Fatalf("status mismatch: %q", st.Status)
+	}
+	if res.Summary.SideThreadID != st.SideThreadID {
+		t.Fatalf("side_thread_id mismatch: wire %q vs store %q", res.Summary.SideThreadID, st.SideThreadID)
+	}
+}
+
+func TestSendSideThreadMessageMultipleTurns(t *testing.T) {
+	s := newSideThreadServer(t)
+	if _, err := s.sendSideThreadMessage("main_multi", "first"); err != nil {
+		t.Fatalf("first send: %v", err)
+	}
+	if _, err := s.sendSideThreadMessage("main_multi", "second"); err != nil {
+		t.Fatalf("second send: %v", err)
+	}
+	st, err := s.sideThreadStore.Load("main_multi")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(st.Messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(st.Messages))
+	}
+	if st.Messages[1].Text != "second" {
+		t.Fatalf("second message text mismatch: %q", st.Messages[1].Text)
+	}
+}
+
+func TestSendSideThreadMessageRejectsEmptyPrompt(t *testing.T) {
+	s := newSideThreadServer(t)
+	if _, err := s.sendSideThreadMessage("main_e", "   "); err == nil {
+		t.Fatal("expected error for empty prompt")
+	}
+}
+
+func TestSendSideThreadMessageRejectsEmptyMainID(t *testing.T) {
+	s := newSideThreadServer(t)
+	if _, err := s.sendSideThreadMessage("  ", "prompt"); err == nil {
+		t.Fatal("expected error for empty main_id")
+	}
+}
+
+func TestSendSideThreadMessageNoStore(t *testing.T) {
+	s := &Server{}
+	if _, err := s.sendSideThreadMessage("main", "prompt"); err == nil {
+		t.Fatal("expected error when store absent")
+	}
+}
+
+func TestInterruptSideThreadFlipsStatus(t *testing.T) {
+	s := newSideThreadServer(t)
+	if _, err := s.sendSideThreadMessage("main_int", "first"); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	res, err := s.interruptSideThread("main_int")
+	if err != nil {
+		t.Fatalf("interrupt: %v", err)
+	}
+	if !res.Ok {
+		t.Fatal("expected ok=true")
+	}
+	st, err := s.sideThreadStore.Load("main_int")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if st.Status != sidethread.StatusInterrupted {
+		t.Fatalf("status mismatch: got %q want %q", st.Status, sidethread.StatusInterrupted)
+	}
+}
+
+func TestInterruptSideThreadNoRecord(t *testing.T) {
+	s := newSideThreadServer(t)
+	res, err := s.interruptSideThread("ghost")
+	if err != nil {
+		t.Fatalf("interrupt: %v", err)
+	}
+	if res.Ok {
+		t.Fatal("expected ok=false for missing side thread")
+	}
+}
+
+func TestInterruptSideThreadNoStore(t *testing.T) {
+	s := &Server{}
+	res, err := s.interruptSideThread("anything")
+	if err != nil {
+		t.Fatalf("interrupt: %v", err)
+	}
+	if res.Ok {
+		t.Fatal("expected ok=false when store absent")
+	}
+}
+
+func TestInterruptSideThreadNoOpWhenIdle(t *testing.T) {
+	s := newSideThreadServer(t)
+	if _, err := s.sendSideThreadMessage("main_idle", "x"); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	// Manually flip to idle to simulate "turn finished before interrupt".
+	if err := s.sideThreadStore.Mutate("main_idle", func(st *sidethread.SideThread) error {
+		st.Status = sidethread.StatusCompleted
+		return nil
+	}); err != nil {
+		t.Fatalf("mutate: %v", err)
+	}
+	res, err := s.interruptSideThread("main_idle")
+	if err != nil {
+		t.Fatalf("interrupt: %v", err)
+	}
+	if !res.Ok {
+		t.Fatal("expected ok=true (no-op but reported ok)")
+	}
+	st, _ := s.sideThreadStore.Load("main_idle")
+	if st.Status != sidethread.StatusCompleted {
+		t.Fatalf("status must stay completed; got %q", st.Status)
+	}
+}
+
 func TestMainTaskSnapshotRunningFalse(t *testing.T) {
 	s := newSideThreadServer(t)
 	snap := s.mainTaskSnapshot("not_in_threads_map")

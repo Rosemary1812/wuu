@@ -48,6 +48,8 @@ const (
 	MethodThreadTaskEvents         = "thread/taskEvents"
 	MethodSideThreadOpen           = "sideThread/open"
 	MethodSideThreadGetHistory     = "sideThread/getHistory"
+	MethodSideThreadSend           = "sideThread/sendMessage"
+	MethodSideThreadInterrupt      = "sideThread/interrupt"
 	MethodThreadList               = "thread/list"
 	MethodThreadListArchived       = "thread/listArchived"
 	MethodThreadSearch             = "thread/search"
@@ -1049,6 +1051,26 @@ type SideThreadWireMessage struct {
 type SideThreadMainTaskSummary struct {
 	Running         bool   `json:"running"`
 	LastUserMessage string `json:"last_user_message,omitempty"`
+}
+
+type SideThreadSendParams struct {
+	MainThreadID string          `json:"main_thread_id"`
+	Prompt       string          `json:"prompt"`
+	Images       []TurnStartImage `json:"images,omitempty"`
+	Files        []TurnStartFile  `json:"files,omitempty"`
+}
+
+type SideThreadSendResult struct {
+	UserMessageID string                `json:"user_message_id"`
+	Summary       SideThreadWireSummary `json:"summary"`
+}
+
+type SideThreadInterruptParams struct {
+	MainThreadID string `json:"main_thread_id"`
+}
+
+type SideThreadInterruptResult struct {
+	Ok bool `json:"ok"`
 }
 
 type ParticipantStartParams struct {
