@@ -195,10 +195,7 @@ import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 import { ImagePreviewProvider } from "./ImagePreview";
 import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
 import { useComposerDraftState } from "./ComposerDraftState";
-import {
-  useComposerPendingState,
-  type QueuedMessageEditTarget,
-} from "./ComposerPendingState";
+import { useComposerPendingState } from "./ComposerPendingState";
 import { useSidebarDrawerState } from "./SidebarDrawerState";
 import {
   threadsForDesktopProject,
@@ -706,9 +703,6 @@ export function App(): JSX.Element {
   });
   const {
     pendingComposerMessagesByThread,
-    queuedMessageEditTarget,
-    queuedMessageEditTargetRef,
-    setQueuedMessageEditTargetNow,
     pendingComposerMessagesForThread: pendingComposerMessagesForActiveThread,
     updateThreadPendingComposerMessages,
     clearThreadPendingComposerMessages,
@@ -724,7 +718,25 @@ export function App(): JSX.Element {
   } = useComposerPendingState({
     getAppState: () => appStateRef.current,
     getPrimaryComposerDraft: currentPrimaryComposerDraft,
-    restorePrimaryComposerDraft,
+    restoreComposerDraftForThread: (threadID, draft) => {
+      if (activeThreadIDForState(appStateRef.current) === threadID) {
+        restorePrimaryComposerDraft(draft);
+        return;
+      }
+      setState((current) => ({
+        ...current,
+        sessionTabs: current.sessionTabs.map((tab) =>
+          tab.kind === "thread" && tab.threadID === threadID
+            ? {
+                ...tab,
+                prompt: draft.prompt,
+                images: draft.images.map((image) => ({ ...image })),
+                files: draft.files.map((file) => ({ ...file })),
+              }
+            : tab,
+        ),
+      }));
+    },
     setStatus: (status) =>
       setState((current) => ({
         ...current,
@@ -1032,12 +1044,7 @@ export function App(): JSX.Element {
   const activePendingComposerMessages = pendingComposerMessagesForActiveThread(
     activeThreadID,
   );
-  const queuedMessages = activePendingComposerMessages.queued.filter(
-    (message) =>
-      !queuedMessageEditTarget ||
-      queuedMessageEditTarget.threadID !== activeThreadID ||
-      message.id !== queuedMessageEditTarget.queueID,
-  );
+  const queuedMessages = activePendingComposerMessages.queued;
   const guideMessages = activePendingComposerMessages.guides;
   // Self-healing reconciliation for pending composer messages: once a queued
   // or guide send materializes as a real user_message turn item, drop it from
@@ -2960,11 +2967,6 @@ export function App(): JSX.Element {
     if (!message || !currentState.activeContext || !currentState.initialized) {
       return;
     }
-    const queuedEditTarget = queuedMessageEditTargetRef.current;
-    if (queuedEditTarget) {
-      await updateQueuedComposerMessage(message, queuedEditTarget);
-      return;
-    }
     setPrompt("");
     setComposerImages([]);
     setComposerFiles([]);
@@ -3140,72 +3142,6 @@ export function App(): JSX.Element {
           { running: false, status: errorMessage },
         ),
       );
-    }
-  }
-
-  async function updateQueuedComposerMessage(
-    message: QueuedComposerMessage,
-    target: QueuedMessageEditTarget,
-  ): Promise<boolean> {
-    const currentState = appStateRef.current;
-    const targetThread = threadForTab(currentState, target.threadID);
-    const text = message.text.trim();
-    const imageCount = message.images.length;
-    const files = inputFilesFromComposer(message.files);
-    if (
-      (!text && imageCount === 0 && files.length === 0) ||
-      !targetThread ||
-      targetThread.read_only ||
-      !currentState.activeContext ||
-      !currentState.initialized ||
-      viewSwitchPending
-    ) {
-      return false;
-    }
-    try {
-      const encodedImages = await awaitComposerImages(message.images);
-      const images = inputImagesFromComposer(encodedImages);
-      const result = await window.wuu.updateQueuedTurn(
-        target.threadID,
-        target.queueID,
-        text,
-        images,
-        files,
-      );
-      if (!result.ok) {
-        setQueuedMessageEditTargetNow(undefined);
-        setState((current) => ({
-          ...current,
-          status: "排队消息已开始处理，无法保存编辑",
-        }));
-        return false;
-      }
-      const updatedMessage: QueuedComposerMessage = {
-        ...message,
-        id: result.queued.id || target.queueID,
-        images: encodedImages,
-      };
-      updateThreadPendingComposerMessages(target.threadID, (previous) => ({
-        ...previous,
-        queued: previous.queued.map((queued) =>
-          queued.id === target.queueID ? updatedMessage : queued,
-        ),
-      }));
-      setQueuedMessageEditTargetNow(undefined);
-      setPrompt("");
-      setComposerImages([]);
-      setComposerFiles([]);
-      setState((current) => ({
-        ...current,
-        status: "已更新排队消息",
-      }));
-      return true;
-    } catch (error) {
-      setState((current) => ({
-        ...current,
-        status: error instanceof Error ? error.message : "保存排队编辑失败",
-      }));
-      return false;
     }
   }
 

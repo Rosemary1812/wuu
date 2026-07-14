@@ -1,8 +1,4 @@
-import {
-  useRef,
-  useState,
-  type MutableRefObject,
-} from "react";
+import { useRef, useState, type MutableRefObject } from "react";
 import type { ServerEvent, Thread } from "../shared/protocol";
 import {
   activeThreadIDForState,
@@ -30,29 +26,13 @@ import {
   type PendingComposerMessagesByThread,
   type ThreadPendingComposerMessages,
 } from "./ComposerPendingMessages";
-import {
-  isRecord,
-  recordValue,
-  stringValue,
-} from "./ToolActivity";
-
-export type QueuedMessageEditTarget = {
-  threadID: string;
-  queueID: string;
-};
+import { isRecord, recordValue, stringValue } from "./ToolActivity";
 
 export type ComposerPendingStateController = {
   pendingComposerMessagesByThread: PendingComposerMessagesByThread;
   pendingComposerMessagesByThreadRef: MutableRefObject<PendingComposerMessagesByThread>;
-  queuedMessageEditTarget: QueuedMessageEditTarget | undefined;
-  queuedMessageEditTargetRef: MutableRefObject<
-    QueuedMessageEditTarget | undefined
-  >;
   setPendingComposerMessagesByThreadNow: (
     messagesByThread: PendingComposerMessagesByThread,
-  ) => void;
-  setQueuedMessageEditTargetNow: (
-    target: QueuedMessageEditTarget | undefined,
   ) => void;
   pendingComposerMessagesForThread: (
     threadID: string | undefined,
@@ -77,8 +57,6 @@ export type ComposerPendingStateController = {
   ) => void;
   removeQueuedMessage: (id: string) => Promise<boolean>;
   removeGuideMessage: (id: string) => Promise<boolean>;
-  restorePendingComposerMessage: (message: QueuedComposerMessage) => void;
-  canRestorePendingComposerMessage: () => boolean;
   editQueuedMessage: (id: string) => Promise<void>;
   editGuideMessage: (id: string) => Promise<void>;
   guideQueuedMessage: (id: string) => Promise<void>;
@@ -88,7 +66,10 @@ export type ComposerPendingStateController = {
 type ComposerPendingStateOptions = {
   getAppState: () => AppState;
   getPrimaryComposerDraft: () => ComposerDraftState;
-  restorePrimaryComposerDraft: (draft: ComposerDraftState) => void;
+  restoreComposerDraftForThread: (
+    threadID: string,
+    draft: ComposerDraftState,
+  ) => void;
   setStatus: (status: string) => void;
   sendComposerMessageToThread: (
     message: QueuedComposerMessage,
@@ -99,16 +80,12 @@ type ComposerPendingStateOptions = {
 export function useComposerPendingState({
   getAppState,
   getPrimaryComposerDraft,
-  restorePrimaryComposerDraft,
+  restoreComposerDraftForThread,
   setStatus,
   sendComposerMessageToThread,
 }: ComposerPendingStateOptions): ComposerPendingStateController {
-  const [queuedMessageEditTarget, setQueuedMessageEditTarget] =
-    useState<QueuedMessageEditTarget | undefined>(undefined);
   const [pendingComposerMessagesByThread, setPendingComposerMessagesByThread] =
     useState<PendingComposerMessagesByThread>({});
-  const queuedMessageEditTargetRef =
-    useRef<QueuedMessageEditTarget | undefined>(undefined);
   const pendingComposerMessagesByThreadRef =
     useRef<PendingComposerMessagesByThread>({});
 
@@ -117,13 +94,6 @@ export function useComposerPendingState({
   ): void {
     pendingComposerMessagesByThreadRef.current = messagesByThread;
     setPendingComposerMessagesByThread(messagesByThread);
-  }
-
-  function setQueuedMessageEditTargetNow(
-    target: QueuedMessageEditTarget | undefined,
-  ): void {
-    queuedMessageEditTargetRef.current = target;
-    setQueuedMessageEditTarget(target);
   }
 
   function updateThreadPendingComposerMessages(
@@ -170,7 +140,9 @@ export function useComposerPendingState({
     );
   }
 
-  function syncPendingComposerMessagesFromServerEvent(event: ServerEvent): void {
+  function syncPendingComposerMessagesFromServerEvent(
+    event: ServerEvent,
+  ): void {
     if (event.kind !== "notification") {
       return;
     }
@@ -236,9 +208,6 @@ export function useComposerPendingState({
     );
     if (!target) {
       return false;
-    }
-    if (queuedMessageEditTargetRef.current?.queueID === id) {
-      setQueuedMessageEditTargetNow(undefined);
     }
     updateThreadPendingComposerMessages(target.threadID, (previous) => ({
       ...previous,
@@ -312,8 +281,11 @@ export function useComposerPendingState({
     }
   }
 
-  function restorePendingComposerMessage(message: QueuedComposerMessage): void {
-    restorePrimaryComposerDraft({
+  function restorePendingComposerMessage(
+    threadID: string,
+    message: QueuedComposerMessage,
+  ): void {
+    restoreComposerDraftForThread(threadID, {
       prompt: message.text,
       images: message.images.map((image) => ({ ...image })),
       files: message.files.map((file) => ({ ...file })),
@@ -338,12 +310,11 @@ export function useComposerPendingState({
     if (!target || !canRestorePendingComposerMessage()) {
       return;
     }
-    restorePendingComposerMessage(target.message);
-    setQueuedMessageEditTargetNow({
-      threadID: target.threadID,
-      queueID: target.message.id,
-    });
-    setStatus(`正在编辑第 ${target.index + 1} 条排队消息，发送后会保存到原位置`);
+    if (!(await removeQueuedMessage(id))) {
+      return;
+    }
+    restorePendingComposerMessage(target.threadID, target.message);
+    setStatus("已撤回排队消息，可编辑后重新发送");
   }
 
   async function editGuideMessage(id: string): Promise<void> {
@@ -356,9 +327,8 @@ export function useComposerPendingState({
     if (!target || !canRestorePendingComposerMessage()) {
       return;
     }
-    setQueuedMessageEditTargetNow(undefined);
     if (await removeGuideMessage(id)) {
-      restorePendingComposerMessage(target.message);
+      restorePendingComposerMessage(target.threadID, target.message);
     }
   }
 
@@ -378,11 +348,12 @@ export function useComposerPendingState({
       return;
     }
     if (!isThreadRunning(targetThread)) {
-      updateThreadPendingComposerMessages(target.threadID, (previous) => ({
-        ...previous,
-        queued: previous.queued.filter((message) => message.id !== id),
-      }));
-      void sendComposerMessageToThread(target.message, targetThread);
+      if (!(await removeQueuedMessage(id))) {
+        return;
+      }
+      if (!(await sendComposerMessageToThread(target.message, targetThread))) {
+        restorePendingComposerMessage(target.threadID, target.message);
+      }
       return;
     }
     const turnID = activeTurnIDForThread(targetThread);
@@ -421,10 +392,7 @@ export function useComposerPendingState({
   return {
     pendingComposerMessagesByThread,
     pendingComposerMessagesByThreadRef,
-    queuedMessageEditTarget,
-    queuedMessageEditTargetRef,
     setPendingComposerMessagesByThreadNow,
-    setQueuedMessageEditTargetNow,
     pendingComposerMessagesForThread: (threadID) =>
       pendingComposerMessagesForThread(
         pendingComposerMessagesByThread,
@@ -438,8 +406,6 @@ export function useComposerPendingState({
     enqueueComposerMessage,
     removeQueuedMessage,
     removeGuideMessage,
-    restorePendingComposerMessage,
-    canRestorePendingComposerMessage,
     editQueuedMessage,
     editGuideMessage,
     guideQueuedMessage,

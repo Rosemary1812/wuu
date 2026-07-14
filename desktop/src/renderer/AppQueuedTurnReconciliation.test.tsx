@@ -16,7 +16,9 @@ vi.mock("./ComposerView", async (importOriginal) => {
     Composer: (props: ComposerProps): JSX.Element => (
       <div
         data-testid="composer-probe"
-        data-queued-ids={props.queuedMessages.map((message) => message.id).join(",")}
+        data-queued-ids={props.queuedMessages
+          .map((message) => message.id)
+          .join(",")}
       >
         <textarea
           aria-label="composer-probe-input"
@@ -141,8 +143,12 @@ function installWindowStubs(): void {
   });
 }
 
-function installWuuApi(): { queuedClientIDs: string[] } {
+function installWuuApi(): {
+  queuedClientIDs: string[];
+  dequeuedClientIDs: string[];
+} {
   const queuedClientIDs: string[] = [];
+  const dequeuedClientIDs: string[] = [];
   const api = {
     listProjects: vi.fn().mockResolvedValue({
       projects: [],
@@ -156,19 +162,27 @@ function installWuuApi(): { queuedClientIDs: string[] } {
     listThreads: vi.fn().mockResolvedValue({ threads: [runningThread()] }),
     listArchivedThreads: vi.fn().mockResolvedValue({ threads: [] }),
     resumeThread: vi.fn().mockResolvedValue({ thread: runningThread() }),
-    queueTurn: vi.fn().mockImplementation(
-      (
-        _threadID: string,
-        _prompt: string,
-        _images: unknown[],
-        clientID: string,
-      ) => {
-        queuedClientIDs.push(clientID);
-        return Promise.resolve({
-          queued: { id: clientID, thread_id: threadID },
-        });
-      },
-    ),
+    queueTurn: vi
+      .fn()
+      .mockImplementation(
+        (
+          _threadID: string,
+          _prompt: string,
+          _images: unknown[],
+          clientID: string,
+        ) => {
+          queuedClientIDs.push(clientID);
+          return Promise.resolve({
+            queued: { id: clientID, thread_id: threadID },
+          });
+        },
+      ),
+    dequeueTurn: vi
+      .fn()
+      .mockImplementation((_threadID: string, clientID: string) => {
+        dequeuedClientIDs.push(clientID);
+        return Promise.resolve({ ok: true });
+      }),
     getActiveGoalSummary: vi.fn().mockResolvedValue(null),
     gitStatus: vi.fn().mockResolvedValue({
       is_repo: false,
@@ -192,7 +206,7 @@ function installWuuApi(): { queuedClientIDs: string[] } {
     configurable: true,
     value: api,
   });
-  return { queuedClientIDs };
+  return { queuedClientIDs, dequeuedClientIDs };
 }
 
 async function flushAsync(): Promise<void> {
@@ -231,8 +245,8 @@ describe("queued turn reconciliation", () => {
     delete (globalThis as { wuu?: WuuDesktopApi }).wuu;
   });
 
-  it("hides a queued entry while its content is being edited", async () => {
-    const { queuedClientIDs } = installWuuApi();
+  it("dequeues a message before restoring it for editing", async () => {
+    const { queuedClientIDs, dequeuedClientIDs } = installWuuApi();
     await act(async () => {
       root = createRoot(container);
       root.render(<App />);
@@ -266,6 +280,7 @@ describe("queued turn reconciliation", () => {
     await flushAsync();
 
     expect(composerProbe().dataset.queuedIds).toBe("");
+    expect(dequeuedClientIDs).toEqual([queuedClientIDs[0]]);
     expect(composerProbe().querySelector("textarea")?.value).toBe(
       "queued follow-up",
     );

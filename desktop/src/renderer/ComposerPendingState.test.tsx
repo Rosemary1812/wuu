@@ -65,8 +65,10 @@ async function renderComposerPendingState({
   get: () => ComposerPendingStateController;
   setStatus: ReturnType<typeof vi.fn>;
   restorePrimaryComposerDraft: ReturnType<typeof vi.fn>;
+  restoreComposerDraftForThread: ReturnType<typeof vi.fn>;
   sendComposerMessageToThread: ReturnType<typeof vi.fn>;
   setPrimaryDraft: (draft: ComposerDraftState) => void;
+  setAppState: (state: AppState) => void;
 }> {
   let latest: ComposerPendingStateController | undefined;
   let currentAppState = appState;
@@ -75,13 +77,17 @@ async function renderComposerPendingState({
   const restorePrimaryComposerDraft = vi.fn((draft: ComposerDraftState) => {
     currentPrimaryDraft = draft;
   });
+  const restoreComposerDraftForThread = vi.fn(
+    (_threadID: string, draft: ComposerDraftState) =>
+      restorePrimaryComposerDraft(draft),
+  );
   const sendComposerMessageToThread = vi.fn();
 
   function Probe() {
     latest = useComposerPendingState({
       getAppState: () => currentAppState,
       getPrimaryComposerDraft: () => currentPrimaryDraft,
-      restorePrimaryComposerDraft,
+      restoreComposerDraftForThread,
       setStatus,
       sendComposerMessageToThread,
     });
@@ -107,9 +113,13 @@ async function renderComposerPendingState({
     },
     setStatus,
     restorePrimaryComposerDraft,
+    restoreComposerDraftForThread,
     sendComposerMessageToThread,
     setPrimaryDraft: (draft) => {
       currentPrimaryDraft = draft;
+    },
+    setAppState: (state) => {
+      currentAppState = state;
     },
   };
 }
@@ -119,7 +129,9 @@ describe("useComposerPendingState", () => {
     const hook = await renderComposerPendingState();
 
     act(() => {
-      hook.get().enqueueComposerMessage("thread-a", message("queue-1", "First"));
+      hook
+        .get()
+        .enqueueComposerMessage("thread-a", message("queue-1", "First"));
     });
 
     expect(
@@ -131,11 +143,15 @@ describe("useComposerPendingState", () => {
     const hook = await renderComposerPendingState();
 
     act(() => {
-      hook.get().enqueueComposerMessage("thread-a", message("queue-1", "First"));
-      hook.get().updateThreadPendingComposerMessages("thread-a", (previous) => ({
-        ...previous,
-        guides: [message("guide-1", "Guide")],
-      }));
+      hook
+        .get()
+        .enqueueComposerMessage("thread-a", message("queue-1", "First"));
+      hook
+        .get()
+        .updateThreadPendingComposerMessages("thread-a", (previous) => ({
+          ...previous,
+          guides: [message("guide-1", "Guide")],
+        }));
       hook.get().syncPendingComposerMessagesFromServerEvent({
         kind: "notification",
         message: {
@@ -159,14 +175,20 @@ describe("useComposerPendingState", () => {
       } as ServerEvent);
     });
 
-    expect(hook.get().pendingComposerMessagesByThread["thread-a"]).toBeUndefined();
+    expect(
+      hook.get().pendingComposerMessagesByThread["thread-a"],
+    ).toBeUndefined();
   });
 
   it("restores a queued message into the primary composer for editing", async () => {
+    const dequeueTurn = vi.fn().mockResolvedValue({ ok: true });
+    installWuuStub({ dequeueTurn });
     const hook = await renderComposerPendingState();
 
     act(() => {
-      hook.get().enqueueComposerMessage("thread-a", message("queue-1", "Edit me"));
+      hook
+        .get()
+        .enqueueComposerMessage("thread-a", message("queue-1", "Edit me"));
     });
     await act(async () => {
       await hook.get().editQueuedMessage("queue-1");
@@ -177,12 +199,12 @@ describe("useComposerPendingState", () => {
       images: [],
       files: [],
     });
-    expect(hook.get().queuedMessageEditTarget).toEqual({
-      threadID: "thread-a",
-      queueID: "queue-1",
-    });
+    expect(dequeueTurn).toHaveBeenCalledWith("thread-a", "queue-1");
+    expect(
+      hook.get().pendingComposerMessagesByThread["thread-a"],
+    ).toBeUndefined();
     expect(hook.setStatus).toHaveBeenCalledWith(
-      "正在编辑第 1 条排队消息，发送后会保存到原位置",
+      "已撤回排队消息，可编辑后重新发送",
     );
   });
 
@@ -192,17 +214,126 @@ describe("useComposerPendingState", () => {
     });
 
     act(() => {
-      hook.get().enqueueComposerMessage("thread-a", message("queue-1", "Edit me"));
+      hook
+        .get()
+        .enqueueComposerMessage("thread-a", message("queue-1", "Edit me"));
     });
     await act(async () => {
       await hook.get().editQueuedMessage("queue-1");
     });
 
     expect(hook.restorePrimaryComposerDraft).not.toHaveBeenCalled();
-    expect(hook.get().queuedMessageEditTarget).toBeUndefined();
     expect(hook.setStatus).toHaveBeenCalledWith(
       "先发送或清空当前输入，再编辑排队消息",
     );
+  });
+
+  it("does not restore a queued message that already started", async () => {
+    installWuuStub({
+      dequeueTurn: vi.fn().mockResolvedValue({ ok: false }),
+    });
+    const hook = await renderComposerPendingState();
+
+    act(() => {
+      hook
+        .get()
+        .enqueueComposerMessage("thread-a", message("queue-1", "Too late"));
+    });
+    await act(async () => {
+      await hook.get().editQueuedMessage("queue-1");
+    });
+
+    expect(hook.restorePrimaryComposerDraft).not.toHaveBeenCalled();
+    expect(
+      hook.get().pendingComposerMessagesByThread["thread-a"],
+    ).toBeUndefined();
+    expect(hook.setStatus).toHaveBeenCalledWith("排队消息已被处理，无法取消");
+  });
+
+  it("restores an edited draft to its originating thread after a tab switch", async () => {
+    let finishDequeue: ((value: { ok: boolean }) => void) | undefined;
+    installWuuStub({
+      dequeueTurn: vi.fn().mockImplementation(
+        () =>
+          new Promise<{ ok: boolean }>((resolve) => {
+            finishDequeue = resolve;
+          }),
+      ),
+    });
+    const hook = await renderComposerPendingState();
+
+    act(() => {
+      hook
+        .get()
+        .enqueueComposerMessage("thread-a", message("queue-1", "Keep me"));
+    });
+    let editing: Promise<void> | undefined;
+    await act(async () => {
+      editing = hook.get().editQueuedMessage("queue-1");
+      await Promise.resolve();
+    });
+    hook.setAppState({
+      ...initialState,
+      thread: thread("thread-b"),
+      threads: [thread("thread-a"), thread("thread-b")],
+    });
+    await act(async () => {
+      finishDequeue?.({ ok: true });
+      await editing;
+    });
+
+    expect(hook.restoreComposerDraftForThread).toHaveBeenCalledWith(
+      "thread-a",
+      { prompt: "Keep me", images: [], files: [] },
+    );
+  });
+
+  it("dequeues before sending a queued message whose active turn ended", async () => {
+    const dequeueTurn = vi.fn().mockResolvedValue({ ok: true });
+    installWuuStub({ dequeueTurn });
+    const hook = await renderComposerPendingState();
+    hook.sendComposerMessageToThread.mockResolvedValue(true);
+
+    act(() => {
+      hook
+        .get()
+        .enqueueComposerMessage("thread-a", message("queue-1", "Send now"));
+    });
+    await act(async () => {
+      await hook.get().guideQueuedMessage("queue-1");
+    });
+
+    expect(dequeueTurn).toHaveBeenCalledWith("thread-a", "queue-1");
+    expect(hook.sendComposerMessageToThread).toHaveBeenCalledWith(
+      message("queue-1", "Send now"),
+      expect.objectContaining({ id: "thread-a" }),
+    );
+    expect(
+      hook.get().pendingComposerMessagesByThread["thread-a"],
+    ).toBeUndefined();
+  });
+
+  it("restores a dequeued message when immediate sending fails", async () => {
+    installWuuStub({
+      dequeueTurn: vi.fn().mockResolvedValue({ ok: true }),
+    });
+    const hook = await renderComposerPendingState();
+    hook.sendComposerMessageToThread.mockResolvedValue(false);
+
+    act(() => {
+      hook
+        .get()
+        .enqueueComposerMessage("thread-a", message("queue-1", "Retry me"));
+    });
+    await act(async () => {
+      await hook.get().guideQueuedMessage("queue-1");
+    });
+
+    expect(hook.restorePrimaryComposerDraft).toHaveBeenCalledWith({
+      prompt: "Retry me",
+      images: [],
+      files: [],
+    });
   });
 
   it("rolls back a queued message removal when dequeue fails", async () => {
@@ -212,8 +343,12 @@ describe("useComposerPendingState", () => {
     const hook = await renderComposerPendingState();
 
     act(() => {
-      hook.get().enqueueComposerMessage("thread-a", message("queue-1", "First"));
-      hook.get().enqueueComposerMessage("thread-a", message("queue-2", "Second"));
+      hook
+        .get()
+        .enqueueComposerMessage("thread-a", message("queue-1", "First"));
+      hook
+        .get()
+        .enqueueComposerMessage("thread-a", message("queue-2", "Second"));
     });
     let removed = true;
     await act(async () => {
@@ -222,9 +357,11 @@ describe("useComposerPendingState", () => {
 
     expect(removed).toBe(false);
     expect(
-      hook.get().pendingComposerMessagesByThread["thread-a"]?.queued.map(
-        (item) => item.id,
-      ),
+      hook
+        .get()
+        .pendingComposerMessagesByThread["thread-a"]?.queued.map(
+          (item) => item.id,
+        ),
     ).toEqual(["queue-1", "queue-2"]);
     expect(hook.setStatus).toHaveBeenCalledWith("network down");
   });
