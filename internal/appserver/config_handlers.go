@@ -53,6 +53,8 @@ func (s *Server) handleInitialize(req Request) error {
 		Model:              s.rt.Model,
 		Effort:             s.currentDisplayEffort(),
 		Variant:            s.currentVariant(),
+		Ultra:              s.rt.UltraMode(),
+		MaxParallel:        s.rt.MaxParallel(),
 		WorkspaceRoot:      s.rt.RootDir,
 		Permissions:        s.currentPermissionSummary(),
 		ExtensionTrust:     s.currentExtensionTrustSummary(),
@@ -75,6 +77,8 @@ func (s *Server) handleConfigRead(req Request) error {
 		Model:              s.rt.Model,
 		Effort:             s.currentDisplayEffort(),
 		Variant:            s.currentVariant(),
+		Ultra:              s.rt.UltraMode(),
+		MaxParallel:        s.rt.MaxParallel(),
 		ConfigPath:         s.rt.ConfigPath,
 		WorkspaceRoot:      s.rt.RootDir,
 		SessionDir:         s.rt.SessionDir,
@@ -674,6 +678,13 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 	if err := decodeParams(req.Params, &params); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+	if isUltraOnlyModelUpdate(params) {
+		if err := config.UpdateAgentUltraMode(s.rt.ConfigPath, params.Ultra); err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		s.rt.SetUltraMode(*params.Ultra)
+		return s.writeResponse(req.ID, s.currentConfigModelUpdateResult(), nil)
+	}
 	providerName := strings.TrimSpace(params.Provider)
 	if providerName == "" {
 		providerName = s.rt.ProviderName
@@ -861,12 +872,15 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		}
 	}
 	if creatingProvider {
-		err = config.CreateProviderRuntime(s.rt.ConfigPath, resolvedName, &providerTypeValue, model, params.BaseURL, apiKeyForConfig, authTokenForConfig, effortForConfig, variantForConfig, params.PermissionMode)
+		err = config.CreateProviderRuntime(s.rt.ConfigPath, resolvedName, &providerTypeValue, model, params.BaseURL, apiKeyForConfig, authTokenForConfig, effortForConfig, variantForConfig, params.PermissionMode, params.Ultra)
 	} else {
-		err = config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, authTokenForConfig, effortForConfig, variantForConfig, params.PermissionMode)
+		err = config.UpdateProviderRuntime(s.rt.ConfigPath, resolvedName, model, params.BaseURL, apiKeyForConfig, authTokenForConfig, effortForConfig, variantForConfig, params.PermissionMode, params.Ultra)
 	}
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
+	}
+	if params.Ultra != nil {
+		s.rt.SetUltraMode(*params.Ultra)
 	}
 
 	previousRuntimeProvider := s.rt.ProviderName
@@ -943,6 +957,8 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		Model:            model,
 		Effort:           effort,
 		Variant:          selection.Variant,
+		Ultra:            s.rt.UltraMode(),
+		MaxParallel:      s.rt.MaxParallel(),
 		Permissions:      s.currentPermissionSummary(),
 		ExtensionTrust:   s.currentExtensionTrustSummary(),
 		ModelProfile:     modelProfile,
@@ -951,6 +967,39 @@ func (s *Server) handleConfigModelUpdate(req Request) error {
 		Providers:        s.providerSummaries(),
 		AdvancedSettings: s.currentAdvancedSettingsSummary(),
 	}, nil)
+}
+
+func isUltraOnlyModelUpdate(params ConfigModelUpdateParams) bool {
+	return params.Ultra != nil &&
+		strings.TrimSpace(params.Provider) == "" &&
+		strings.TrimSpace(params.Model) == "" &&
+		params.Effort == nil &&
+		params.Variant == nil &&
+		params.PermissionMode == nil &&
+		params.BaseURL == nil &&
+		params.APIKey == nil &&
+		params.AuthToken == nil &&
+		params.Type == nil &&
+		!params.CreateProvider
+}
+
+func (s *Server) currentConfigModelUpdateResult() ConfigModelUpdateResult {
+	modelProfile, toolSurface := s.currentModelSurfaceSummaries()
+	return ConfigModelUpdateResult{
+		Provider:         s.rt.ProviderName,
+		Model:            s.rt.Model,
+		Effort:           s.currentDisplayEffort(),
+		Variant:          s.currentVariant(),
+		Ultra:            s.rt.UltraMode(),
+		MaxParallel:      s.rt.MaxParallel(),
+		Permissions:      s.currentPermissionSummary(),
+		ExtensionTrust:   s.currentExtensionTrustSummary(),
+		ModelProfile:     modelProfile,
+		ToolSurface:      toolSurface,
+		ModelRoles:       s.currentModelRoleSummaries(),
+		Providers:        s.providerSummaries(),
+		AdvancedSettings: s.currentAdvancedSettingsSummary(),
+	}
 }
 
 func (s *Server) handleConfigCodexModels(ctx context.Context, req Request) error {

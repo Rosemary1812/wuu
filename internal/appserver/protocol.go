@@ -198,6 +198,8 @@ type InitializeResult struct {
 	Model              string                     `json:"model"`
 	Effort             string                     `json:"effort,omitempty"`
 	Variant            string                     `json:"variant,omitempty"`
+	Ultra              bool                       `json:"ultra"`
+	MaxParallel        int                        `json:"max_parallel"`
 	WorkspaceRoot      string                     `json:"workspace_root"`
 	Permissions        PermissionSummary          `json:"permissions"`
 	ExtensionTrust     ExtensionTrustSummary      `json:"extension_trust"`
@@ -237,6 +239,8 @@ type ConfigReadResult struct {
 	Model              string                     `json:"model"`
 	Effort             string                     `json:"effort,omitempty"`
 	Variant            string                     `json:"variant,omitempty"`
+	Ultra              bool                       `json:"ultra"`
+	MaxParallel        int                        `json:"max_parallel"`
 	ConfigPath         string                     `json:"config_path"`
 	WorkspaceRoot      string                     `json:"workspace_root"`
 	SessionDir         string                     `json:"session_dir"`
@@ -397,6 +401,7 @@ type ConfigModelUpdateParams struct {
 	Model          string  `json:"model"`
 	Effort         *string `json:"effort,omitempty"`
 	Variant        *string `json:"variant,omitempty"`
+	Ultra          *bool   `json:"ultra,omitempty"`
 	PermissionMode *string `json:"permission_mode,omitempty"`
 	BaseURL        *string `json:"base_url,omitempty"`
 	APIKey         *string `json:"api_key,omitempty"`
@@ -414,6 +419,8 @@ type ConfigModelUpdateResult struct {
 	Model            string                  `json:"model"`
 	Effort           string                  `json:"effort,omitempty"`
 	Variant          string                  `json:"variant,omitempty"`
+	Ultra            bool                    `json:"ultra"`
+	MaxParallel      int                     `json:"max_parallel"`
 	Permissions      PermissionSummary       `json:"permissions"`
 	ExtensionTrust   ExtensionTrustSummary   `json:"extension_trust"`
 	ModelProfile     *ModelProfileSummary    `json:"model_profile,omitempty"`
