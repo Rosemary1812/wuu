@@ -313,12 +313,6 @@ func TestFinalSummaryReachesParentWakesNoTeammate(t *testing.T) {
 	waitForResidentDMHistoryContains(t, srv, andy, "Every piece of task")
 	waitForResidentQuiesce(t, srv)
 
-	// Snapshot every other member's inbox before the conclusion so we can prove
-	// the final summary wakes none of them.
-	beforeMia := pendingCount(t, srv, mia)
-	beforeHan := pendingCount(t, srv, han)
-	beforeVera := pendingCount(t, srv, vera)
-
 	const summary = "全部完成:两个模块已交付并通过验证"
 	if _, err := lead.ConcludeTask(context.Background(), task.ID, summary); err != nil {
 		t.Fatalf("ConcludeTask: %v", err)
@@ -331,14 +325,20 @@ func TestFinalSummaryReachesParentWakesNoTeammate(t *testing.T) {
 	if !hasTaskEvent(t, srv, task.ID, session.TaskEventTaskCompleted, "") {
 		t.Fatalf("expected a task_completed trace event")
 	}
-	if afterMia := pendingCount(t, srv, mia); afterMia != beforeMia {
-		t.Fatalf("conclusion woke Mia: pending %d -> %d", beforeMia, afterMia)
-	}
-	if afterHan := pendingCount(t, srv, han); afterHan != beforeHan {
-		t.Fatalf("conclusion woke Han: pending %d -> %d", beforeHan, afterHan)
-	}
-	if afterVera := pendingCount(t, srv, vera); afterVera != beforeVera {
-		t.Fatalf("conclusion woke Vera: pending %d -> %d", beforeVera, afterVera)
+	// The conclusion is ambient main-stream history: no teammate may receive
+	// a pushed envelope carrying it. Plan-dispatch wakes settled through the
+	// wake-intent journal can still land around this window, so the check is
+	// content-based rather than an inbox-count snapshot.
+	for _, member := range []struct{ id, name string }{{mia, "Mia"}, {han, "Han"}, {vera, "Vera"}} {
+		pending, err := session.PendingResidentEnvelopes(srv.rt.SessionDir, member.id, 0)
+		if err != nil {
+			t.Fatalf("PendingResidentEnvelopes %s: %v", member.name, err)
+		}
+		for _, env := range pending {
+			if strings.Contains(string(env.EnvelopeJSON), summary) {
+				t.Fatalf("conclusion woke %s with a pushed envelope: %s", member.name, string(env.EnvelopeJSON))
+			}
+		}
 	}
 	if thread, err := session.FindConversationThreadByID(srv.rt.SessionDir, task.ID); err != nil {
 		t.Fatalf("reload task: %v", err)
