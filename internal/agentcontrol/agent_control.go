@@ -3767,6 +3767,12 @@ type nestedResultDeliveryAttempt struct {
 	delivered bool
 }
 
+// nestedResultDeliveryWait bounds nested-result deliveries that run without a
+// caller context, so a wedged parent terminal transition fails visibly instead
+// of hanging its consumer; the unclaimed result-ready ledger entry survives
+// the timeout for the next delivery owner.
+const nestedResultDeliveryWait = 30 * time.Second
+
 func (c *AgentControl) deliverNestedResultToParent(ctx context.Context, snap subagent.SubAgentSnapshot) (delivered bool) {
 	if c == nil || c.isStopping() || c.manager == nil {
 		return false

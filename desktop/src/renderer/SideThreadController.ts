@@ -34,6 +34,7 @@ export type SideThreadController = {
   setDraft: (draft: string) => void;
   sendMessage: (prompt: string) => void;
   interrupt: () => void;
+  reset: () => void;
   startResize: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   sendDisabledReason?: string;
 };
@@ -55,6 +56,7 @@ export type SideThreadIPC = {
     params: SideThreadSendParams
   ) => Promise<SideThreadSendResult>;
   interruptSideThread: (mainThreadId: string) => Promise<{ ok: boolean }>;
+  resetSideThread: (mainThreadId: string) => Promise<{ ok: boolean }>;
   onSideThreadEvent: (
     handler: (envelope: SideThreadEventEnvelope) => void
   ) => () => void;
@@ -70,6 +72,7 @@ function defaultIPC(): SideThreadIPC | undefined {
     typeof candidate.getSideThreadHistory !== "function" ||
     typeof candidate.sendSideThreadMessage !== "function" ||
     typeof candidate.interruptSideThread !== "function" ||
+    typeof candidate.resetSideThread !== "function" ||
     typeof candidate.onSideThreadEvent !== "function"
   ) {
     return undefined;
@@ -466,6 +469,26 @@ export function useSideThreadController(
     });
   }, [activeThreadId, dispatch, ipcImpl]);
 
+  const reset = useCallback(() => {
+    if (!activeThreadId || !ipcImpl || effectiveDisabled) {
+      return;
+    }
+    // The server's reset broadcast also clears this entry; dispatching
+    // locally just avoids a visible round-trip delay.
+    void ipcImpl
+      .resetSideThread(activeThreadId)
+      .then(() => {
+        dispatch({ type: "reset", mainThreadId: activeThreadId });
+      })
+      .catch((error: unknown) => {
+        dispatch({
+          type: "setError",
+          mainThreadId: activeThreadId,
+          error: errorMessage(error)
+        });
+      });
+  }, [activeThreadId, dispatch, effectiveDisabled, ipcImpl]);
+
   const startResize = useCallback(
     (event: ReactPointerEvent<HTMLButtonElement>) => {
       if (event.button !== 0) {
@@ -517,6 +540,7 @@ export function useSideThreadController(
     setDraft,
     sendMessage,
     interrupt,
+    reset,
     startResize,
     sendDisabledReason:
       effectiveDisabled || !activeContext

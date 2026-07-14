@@ -53,7 +53,7 @@ func TestWorkerExecutionLeaseProtectsLiveRunAcrossAgentControls(t *testing.T) {
 	if contender.Manager().Get(spawned.AgentID) != nil {
 		t.Fatal("contender created a duplicate live executor")
 	}
-	if err := contender.SendMessage(spawned.AgentID, "must not resume concurrently"); !errors.Is(err, errWorkerExecutionBusy) {
+	if err := contender.SendMessage(context.Background(), spawned.AgentID, "must not resume concurrently"); !errors.Is(err, errWorkerExecutionBusy) {
 		t.Fatalf("cross-process follow-up error = %v, want worker ownership busy", err)
 	}
 	if request := contenderClient.LastRequest(); len(request.Messages) > 0 {

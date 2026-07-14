@@ -97,6 +97,7 @@ export type SideThreadAction =
     }
   | { type: "setStreaming"; mainThreadId: string; streaming: boolean }
   | { type: "setError"; mainThreadId: string; error: string | undefined }
+  | { type: "reset"; mainThreadId: string }
   | { type: "applyEvent"; event: SideThreadEvent }
   | { type: "setWidth"; width: number };
 
@@ -156,6 +157,8 @@ export function reduceSideThreadStore(
         ...entry,
         lastError: action.error
       }));
+    case "reset":
+      return updateEntry(store, action.mainThreadId, resetEntry);
     case "applyEvent":
       return applySideThreadEvent(store, action.event);
     case "setWidth":
@@ -251,6 +254,18 @@ function mergeMessages(
     }
   }
   return merged;
+}
+
+// A reset removes the durable record, so the summary and history restart from
+// scratch. Panel visibility and any unsent draft stay with the user.
+function resetEntry(entry: SideThreadEntryState): SideThreadEntryState {
+  return {
+    ...entry,
+    summary: null,
+    messages: [],
+    streaming: false,
+    lastError: undefined
+  };
 }
 
 function isTerminalMessage(message: SideThreadMessage): boolean {
@@ -379,6 +394,8 @@ function applySideThreadEvent(
         };
       });
     }
+    case "reset":
+      return updateEntry(store, mainThreadId, resetEntry);
     default:
       return store;
   }

@@ -35,9 +35,20 @@ func (c *AgentControl) lockWorkerTransition(workerID string) func() {
 	return transition.Unlock
 }
 
+// workerTerminalFollowupWait bounds how long a follow-up may wait for the
+// target worker's reliable terminal transition to settle. Callers without a
+// cancellable context would otherwise hang their turn forever behind a
+// terminal record that cannot be finalized.
+const workerTerminalFollowupWait = 30 * time.Second
+
 func (c *AgentControl) prepareWorkerFollowup(ctx context.Context, workerID string) (subagent.SubAgentSnapshot, bool, func(), error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	deadline := time.NewTimer(workerTerminalFollowupWait)
+	defer deadline.Stop()
+	deadlineErr := func() error {
+		return fmt.Errorf("worker %q terminal transition did not settle within %s", workerID, workerTerminalFollowupWait)
 	}
 	for {
 		if c.isStopping() {
@@ -56,6 +67,9 @@ func (c *AgentControl) prepareWorkerFollowup(ctx context.Context, workerID strin
 			timer := time.NewTimer(workerTerminalRetryDelay)
 			select {
 			case <-timer.C:
+			case <-deadline.C:
+				timer.Stop()
+				return subagent.SubAgentSnapshot{}, false, nil, deadlineErr()
 			case <-ctx.Done():
 				timer.Stop()
 				return subagent.SubAgentSnapshot{}, false, nil, ctx.Err()
@@ -97,6 +111,8 @@ func (c *AgentControl) prepareWorkerFollowup(ctx context.Context, workerID strin
 			select {
 			case <-released:
 				continue
+			case <-deadline.C:
+				return subagent.SubAgentSnapshot{}, false, nil, deadlineErr()
 			case <-ctx.Done():
 				return subagent.SubAgentSnapshot{}, false, nil, ctx.Err()
 			}

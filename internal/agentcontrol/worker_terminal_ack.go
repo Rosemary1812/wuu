@@ -251,8 +251,16 @@ func (c *AgentControl) retryWorkerTerminalStep(workerID, step string, allowDurab
 // prepareWorkerTerminal is the first phase installed on subagent.Manager. It
 // runs before the final worker snapshot is persisted, making this exact
 // terminal generation the crash-recovery authority for every later phase.
+// After YieldWorkerTerminalFinalizations a persist failure stops the manager's
+// prepare retries: the durable launch intent (queue payload) or startup task
+// reconciliation is then the restart recovery authority instead of a terminal
+// record this process can no longer write.
 func (c *AgentControl) prepareWorkerTerminal(n subagent.Notification) error {
-	return c.persistWorkerTerminalFinalization(n)
+	err := c.persistWorkerTerminalFinalization(n)
+	if err != nil && c.workerTerminalYieldRequested() {
+		return fmt.Errorf("%w: agent control yielded terminal finalizations: %v", subagent.ErrTerminalPrepareStopped, err)
+	}
+	return err
 }
 
 type workerTerminalCommitOutcome uint8

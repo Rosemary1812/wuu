@@ -579,13 +579,26 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	m.notify(sa, finalStatus)
 }
 
-const terminalPrepareRetryDelay = 10 * time.Millisecond
+// Terminal-prepare retries are bounded so a persistently failing observer
+// store cannot wedge the worker's terminal transition and the execution lease
+// it holds; on stop or exhaustion the transition proceeds and later phases
+// surface the missing prepared record.
+const (
+	terminalPrepareRetryDelay    = 10 * time.Millisecond
+	terminalPrepareRetryAttempts = 500
+)
+
+// ErrTerminalPrepareStopped is returned by a terminal-prepare observer whose
+// owner is shutting down and has handed recovery to its durable state; the
+// prepare retry loop stops immediately instead of waiting out its bound.
+var ErrTerminalPrepareStopped = errors.New("terminal prepare observer stopped")
 
 func (m *Manager) prepareTerminal(sa *SubAgent, status Status) {
 	if m == nil || sa == nil || !IsTerminal(status) {
 		return
 	}
-	for attempt := 1; ; attempt++ {
+	var lastErr error
+	for attempt := 1; attempt <= terminalPrepareRetryAttempts; attempt++ {
 		m.mu.Lock()
 		prepare := m.terminalPrepare
 		m.mu.Unlock()
@@ -593,13 +606,20 @@ func (m *Manager) prepareTerminal(sa *SubAgent, status Status) {
 			return
 		}
 		n := Notification{AgentID: sa.ID, Status: status, Snapshot: sa.Snapshot()}
-		if err := prepare(n); err == nil {
+		lastErr = prepare(n)
+		if lastErr == nil {
 			return
-		} else if attempt == 1 || attempt%10 == 0 {
-			providers.DebugLogf("subagent: prepare terminal intent for %s attempt %d: %v", sa.ID, attempt, err)
+		}
+		if errors.Is(lastErr, ErrTerminalPrepareStopped) {
+			providers.DebugLogf("subagent: terminal prepare for %s stopped: %v", sa.ID, lastErr)
+			return
+		}
+		if attempt == 1 || attempt%10 == 0 {
+			providers.DebugLogf("subagent: prepare terminal intent for %s attempt %d: %v", sa.ID, attempt, lastErr)
 		}
 		time.Sleep(terminalPrepareRetryDelay)
 	}
+	providers.DebugLogf("subagent: prepare terminal intent for %s abandoned after %d attempts: %v", sa.ID, terminalPrepareRetryAttempts, lastErr)
 }
 
 func toolInvocationIDs(messages []providers.ChatMessage) []string {

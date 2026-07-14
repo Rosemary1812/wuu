@@ -489,7 +489,10 @@ func (c *AgentControl) replayPendingNestedAgentCompletions() {
 		if c.isRootChildSnapshot(completion.Snapshot) {
 			continue
 		}
-		if !c.deliverNestedResultToParent(context.Background(), completion.Snapshot) {
+		replayCtx, cancelReplay := context.WithTimeout(context.Background(), nestedResultDeliveryWait)
+		delivered := c.deliverNestedResultToParent(replayCtx, completion.Snapshot)
+		cancelReplay()
+		if !delivered {
 			providers.DebugLogf("agentcontrol: pending nested completion %s remains queued for parent %s", completion.Snapshot.ID, completion.Snapshot.ParentID)
 		}
 	}

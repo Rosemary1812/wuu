@@ -1165,6 +1165,9 @@ app.whenReady().then(async () => {
     (event, params: SideThreadSendParams) =>
       appServerRequest<SideThreadSendResult>(event, "sideThread/sendMessage", params),
   );
+  ipcMain.handle("wuu:side-thread-reset", (event, mainThreadId: string) =>
+    appServerRequest<{ ok: boolean }>(event, "sideThread/reset", { main_thread_id: mainThreadId }),
+  );
   ipcMain.handle("wuu:side-thread-interrupt", (event, mainThreadId: string) =>
     appServerRequest<{ ok: boolean }>(event, "sideThread/interrupt", { main_thread_id: mainThreadId }),
   );

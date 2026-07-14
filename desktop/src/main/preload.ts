@@ -402,6 +402,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:side-thread-send", params),
   interruptSideThread: (mainThreadId: string) =>
     ipcRenderer.invoke("wuu:side-thread-interrupt", mainThreadId),
+  resetSideThread: (mainThreadId: string) =>
+    ipcRenderer.invoke("wuu:side-thread-reset", mainThreadId),
   onSideThreadEvent: (handler: (envelope: SideThreadEventEnvelope) => void) => {
     const listener = (
       _event: Electron.IpcRendererEvent,

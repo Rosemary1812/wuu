@@ -4,6 +4,7 @@ import type { InitializeResult, RuntimeContext, SkillSummary } from "../shared/p
 export type ComposerSlashCommandAction =
   | "new-thread"
   | "open-side-thread"
+  | "reset-side-thread"
   | "open-review"
   | "open-skills"
   | "open-files"
@@ -377,6 +378,24 @@ export function buildComposerSlashCommands({
     }
   ];
   return [...commands, ...buildSkillSlashCommands(skills, needsRuntime)];
+}
+
+// The side-chat composer exposes its own command surface instead of the main
+// list: side commands act on the side thread only.
+export function buildSideThreadSlashCommands(): ComposerSlashCommand[] {
+  return [
+    {
+      id: "side-reset",
+      name: "reset",
+      title: "重置侧聊",
+      description: "清空侧聊历史，下一条消息将基于主对话的最新进展",
+      tag: "侧聊",
+      kind: "action",
+      action: "reset-side-thread",
+      aliases: ["rebase"],
+      keywords: ["reset", "rebase", "clear", "清空", "重置", "变基"]
+    }
+  ];
 }
 
 export function runtimeFastModelTarget(initialized?: InitializeResult): ComposerFastModelTarget | undefined {

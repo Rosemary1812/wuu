@@ -1346,7 +1346,7 @@ func TestSpawn_RegistersNestedThreadPath(t *testing.T) {
 	if !ok || meta.ID != child.AgentID || meta.ParentID != parent.AgentID {
 		t.Fatalf("nested child did not resolve from parent path: %+v ok=%v", meta, ok)
 	}
-	if err := c.SendMessageFrom(parent.AgentPath, "child", "queued from parent"); err != nil {
+	if err := c.SendMessageFrom(parent.AgentPath, context.Background(), "child", "queued from parent"); err != nil {
 		t.Fatalf("SendMessageFrom parent path: %v", err)
 	}
 	updated, ok := c.threads.ResolveFrom(parent.AgentPath, "child")
@@ -1557,7 +1557,7 @@ func TestWaitForAgentNotificationFromAgentReturnsQueuedMessageSignal(t *testing.
 		}{signal: signal, err: err}
 	}()
 
-	if err := c.SendMessage(parent.AgentID, "queued update"); err != nil {
+	if err := c.SendMessage(context.Background(), parent.AgentID, "queued update"); err != nil {
 		t.Fatalf("send message: %v", err)
 	}
 
@@ -2083,7 +2083,7 @@ func TestSendMessage_QueuesWhileRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	slow.waitStarted(t)
-	if err := c.SendMessage(res.AgentID, "please also check logs"); err != nil {
+	if err := c.SendMessage(context.Background(), res.AgentID, "please also check logs"); err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
 	if got := c.Manager().PendingMessageCount(res.AgentID); got != 1 {
@@ -2120,10 +2120,10 @@ func TestSendMessage_ResolvesThreadPathAndTaskName(t *testing.T) {
 	if !strings.HasPrefix(res.AgentPath, "/root/") {
 		t.Fatalf("expected canonical path, got %q", res.AgentPath)
 	}
-	if err := c.SendMessage(res.AgentPath, "check env files too"); err != nil {
+	if err := c.SendMessage(context.Background(), res.AgentPath, "check env files too"); err != nil {
 		t.Fatalf("SendMessage by path: %v", err)
 	}
-	if err := c.SendMessage("review_config", "check defaults too"); err != nil {
+	if err := c.SendMessage(context.Background(), "review_config", "check defaults too"); err != nil {
 		t.Fatalf("SendMessage by task name: %v", err)
 	}
 	if updated, ok := c.Threads().Resolve(res.AgentID); !ok || updated.LastTaskMessage != "check defaults too" {
@@ -2315,7 +2315,7 @@ func TestSendMessageDoesNotRejectCancelledAgent(t *testing.T) {
 
 	// A cancelled run is resumable, so send_message must accept the message
 	// instead of rejecting it with "cannot receive messages".
-	if err := c.SendMessage(res.AgentID, "please pick this back up"); err != nil {
+	if err := c.SendMessage(context.Background(), res.AgentID, "please pick this back up"); err != nil {
 		t.Fatalf("SendMessage on cancelled agent should not be rejected: %v", err)
 	}
 	c.StopAll()
@@ -2354,7 +2354,7 @@ func TestSendMessage_RevivesCompletedWorker(t *testing.T) {
 		t.Fatalf("expected completed spawn, got %s", res.Status)
 	}
 
-	if err := c.SendMessage(res.AgentID, "recheck the logs"); err != nil {
+	if err := c.SendMessage(context.Background(), res.AgentID, "recheck the logs"); err != nil {
 		t.Fatalf("SendMessage revive: %v", err)
 	}
 	snap, err := c.Manager().Wait(context.Background(), res.AgentID)
@@ -2635,10 +2635,10 @@ func TestSendMessage_RejectsEmptyFields(t *testing.T) {
 		WorktreeRoot:  filepath.Join(dir, "wt"),
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 	})
-	if err := c.SendMessage("", "x"); err == nil {
+	if err := c.SendMessage(context.Background(), "", "x"); err == nil {
 		t.Fatal("expected target required error")
 	}
-	if err := c.SendMessage("worker-123", ""); err == nil {
+	if err := c.SendMessage(context.Background(), "worker-123", ""); err == nil {
 		t.Fatal("expected message required error")
 	}
 }
