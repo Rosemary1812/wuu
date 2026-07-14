@@ -376,8 +376,11 @@ func (m *Manager) finishWait(id string, cmd *exec.Cmd, err error) {
 	if rerr != nil {
 		return
 	}
-	if p.Status == StatusStopping {
+	alreadyTerminal := p.Status == StatusStopped || p.Status == StatusFailed
+	if p.Status == StatusStopping || p.Status == StatusStopped {
 		p.Status = StatusStopped
+	} else if p.Status == StatusFailed {
+		// Preserve an earlier failure recorded by the manager.
 	} else if err != nil {
 		p.Status = StatusFailed
 		p.LastError = err.Error()
@@ -390,6 +393,9 @@ func (m *Manager) finishWait(id string, cmd *exec.Cmd, err error) {
 	p.StoppedAt = time.Now()
 	p.UpdatedAt = time.Now()
 	_ = m.save(p)
+	if alreadyTerminal {
+		return
+	}
 	eventType := EventStopped
 	if p.Status == StatusFailed {
 		eventType = EventFailed
@@ -623,32 +629,81 @@ func (m *Manager) Stop(id string) (*Process, error) {
 	}
 	p.Status = StatusStopping
 	p.UpdatedAt = time.Now()
-	_ = m.save(p)
-	m.mu.Unlock()
-	pgid := p.PGID
-	if err := syscall.Kill(-pgid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
-		return p, fmt.Errorf("terminate process group %d: %w", pgid, err)
+	if err := m.save(p); err != nil {
+		m.mu.Unlock()
+		return p, fmt.Errorf("persist stopping process: %w", err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		cur, err := m.load(id)
+	m.mu.Unlock()
+	if err := syscall.Kill(-p.PGID, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return p, fmt.Errorf("terminate process group %d: %w", p.PGID, err)
+	}
+	cur, stopped, err := m.waitForStop(id, time.Now().Add(2*time.Second))
+	if err != nil || stopped {
+		return cur, err
+	}
+
+	running, err = processMatchesRecord(cur)
+	if err != nil {
+		return cur, err
+	}
+	if !running {
+		return m.reconcileStopped(id)
+	}
+	if err := syscall.Kill(-cur.PGID, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return cur, fmt.Errorf("kill process group %d: %w", cur.PGID, err)
+	}
+	cur, stopped, err = m.waitForStop(id, time.Now().Add(2*time.Second))
+	if err != nil {
+		return cur, err
+	}
+	if !stopped {
+		return cur, fmt.Errorf("process group %d did not stop after SIGKILL", cur.PGID)
+	}
+	return cur, nil
+}
+
+func (m *Manager) waitForStop(id string, deadline time.Time) (*Process, bool, error) {
+	for {
+		p, err := m.load(id)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		if cur.Status == StatusStopped || cur.Status == StatusFailed {
-			return cur, nil
+		if p.Status == StatusStopped || p.Status == StatusFailed {
+			return p, true, nil
+		}
+		if !processExists(p.PID) {
+			stopped, err := m.reconcileStopped(id)
+			return stopped, err == nil, err
+		}
+		if !time.Now().Before(deadline) {
+			return p, false, nil
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
-		return p, fmt.Errorf("kill process group %d: %w", pgid, err)
-	}
-	time.Sleep(100 * time.Millisecond)
-	cur, err := m.load(id)
+}
+
+func (m *Manager) reconcileStopped(id string) (*Process, error) {
+	m.mu.Lock()
+	p, err := m.load(id)
 	if err != nil {
+		m.mu.Unlock()
 		return nil, err
 	}
-	return cur, nil
+	if p.Status == StatusStopped || p.Status == StatusFailed {
+		m.mu.Unlock()
+		return p, nil
+	}
+	delete(m.handles, id)
+	p.Status = StatusStopped
+	p.StoppedAt = time.Now()
+	p.UpdatedAt = p.StoppedAt
+	if err := m.save(p); err != nil {
+		m.mu.Unlock()
+		return p, err
+	}
+	m.mu.Unlock()
+	m.publish(Event{Type: EventStopped, Process: *p})
+	return p, nil
 }
 
 func processMatchesRecord(p *Process) (bool, error) {

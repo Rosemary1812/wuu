@@ -2,6 +2,7 @@ package process
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -295,6 +296,77 @@ func TestStopReconcilesMissingProcess(t *testing.T) {
 	}
 	if got.Status != StatusStopped || got.StoppedAt.IsZero() {
 		t.Fatalf("missing process was not reconciled: %+v", got)
+	}
+}
+
+func TestStopReconcilesProcessStartedByAnotherManager(t *testing.T) {
+	root := t.TempDir()
+	m, err := NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := managedCommand("sleep 30", root)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pgid, err := syscall.Getpgid(cmd.Process.Pid)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	defer syscall.Kill(-pgid, syscall.SIGKILL)
+	started, err := readProcessStartTime(cmd.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := &Process{
+		ID:               "proc-external",
+		Status:           StatusRunning,
+		PID:              cmd.Process.Pid,
+		PGID:             pgid,
+		ProcessStartTime: started,
+		ExitCode:         -1,
+	}
+	if err := m.save(record); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := m.Stop(record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusStopped || got.StoppedAt.IsZero() {
+		t.Fatalf("external process was not reconciled: %+v", got)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("external process was not reaped")
+	}
+}
+
+func TestFinishWaitPreservesReconciledStoppedStatus(t *testing.T) {
+	root := t.TempDir()
+	m, err := NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := &Process{ID: "proc-reconciled", Status: StatusStopped}
+	if err := m.save(record); err != nil {
+		t.Fatal(err)
+	}
+
+	m.finishWait(record.ID, managedCommand("true", root), errors.New("signal: terminated"))
+	got, err := m.load(record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusStopped {
+		t.Fatalf("finishWait changed reconciled status to %s", got.Status)
 	}
 }
 
