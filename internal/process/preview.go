@@ -1,7 +1,6 @@
 package process
 
 import (
-	"fmt"
 	"net"
 	"net/url"
 	"regexp"
@@ -16,22 +15,6 @@ func PreviewURLsFromText(text string) []string {
 		return nil
 	}
 	return NormalizePreviewURLs(localhostURLPattern.FindAllString(text, -1))
-}
-
-func PreviewURLsFromPorts(ports []int) []string {
-	out := make([]string, 0, len(ports))
-	seen := make(map[int]struct{}, len(ports))
-	for _, port := range ports {
-		if port < 1 || port > 65535 {
-			continue
-		}
-		if _, ok := seen[port]; ok {
-			continue
-		}
-		seen[port] = struct{}{}
-		out = append(out, fmt.Sprintf("http://localhost:%d", port))
-	}
-	return out
 }
 
 func NormalizePreviewURLs(urls []string) []string {
