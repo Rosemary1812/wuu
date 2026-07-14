@@ -42,6 +42,7 @@ export type RuntimeSettingsActions = {
     variant?: string,
     permissionMode?: string,
   ) => Promise<void>;
+  updateUltraMode: (enabled: boolean) => Promise<void>;
   updateAdvancedSettings: (
     settings: RuntimeAdvancedSettingsUpdate,
   ) => Promise<void>;
@@ -169,6 +170,41 @@ export function createRuntimeSettingsActions(
           error instanceof Error
             ? error.message
             : "update runtime settings failed",
+      }));
+      throw error;
+    }
+  }
+
+  async function updateUltraMode(enabled: boolean): Promise<void> {
+    const state = deps.getAppState();
+    if (!state.initialized || deps.getViewContextSwitchPending()) {
+      return;
+    }
+    if (Boolean(state.initialized.ultra) === enabled) {
+      return;
+    }
+    try {
+      const updated = await window.wuu.updateUltraMode(enabled);
+      deps.setAppState((current) => {
+        if (!current.initialized) {
+          return current;
+        }
+        return {
+          ...current,
+          initialized: {
+            ...current.initialized,
+            ultra: updated.ultra,
+          },
+          status: current.status === "ready" ? current.status : "ready",
+        };
+      });
+    } catch (error) {
+      deps.setAppState((current) => ({
+        ...current,
+        status:
+          error instanceof Error
+            ? error.message
+            : "更新 Ultra 模式失败",
       }));
       throw error;
     }
@@ -410,6 +446,7 @@ export function createRuntimeSettingsActions(
 
   return {
     updateRuntimeSettings,
+    updateUltraMode,
     updateAdvancedSettings,
     updateGeneralSettings,
     removeProvider,

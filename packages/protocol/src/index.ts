@@ -55,6 +55,7 @@ export type InitializeResult = {
   model: string;
   effort?: string;
   variant?: string;
+  ultra?: boolean;
   workspace_root: string;
   permissions?: PermissionSummary;
   // model_profile + tool_surface summarise the per-model tool
@@ -188,6 +189,7 @@ export type ConfigModelUpdateResult = {
   model: string;
   effort?: string;
   variant?: string;
+  ultra: boolean;
   permissions?: PermissionSummary;
   // model_profile + tool_surface mirror the initialize result. The
   // runtime recomputes the surface when the model changes, so the
@@ -2088,6 +2090,7 @@ export type WuuDesktopApi = {
     variant?: string,
     permissionMode?: string
   ) => Promise<ConfigModelUpdateResult>;
+  updateUltraMode: (enabled: boolean) => Promise<ConfigModelUpdateResult>;
   removeProvider: (
     provider: string,
     options?: { fallbackProvider?: string; fallbackModel?: string }

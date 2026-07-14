@@ -2427,6 +2427,10 @@ export function App(): JSX.Element {
             : (!activeThreadReadOnly && activeThreadIsRunning) ||
               viewContextSwitchPending
         }
+        ultraEnabled={Boolean(state.initialized?.ultra)}
+        onToggleUltra={(enabled) => {
+          void updateUltraMode(enabled).catch(() => undefined);
+        }}
         runtimeControlsDisabled={
           (!activeThreadReadOnly && activeThreadIsRunning) ||
           viewContextSwitchPending
@@ -2836,6 +2840,7 @@ export function App(): JSX.Element {
 
   const {
     updateRuntimeSettings,
+    updateUltraMode,
     updateAdvancedSettings,
     updateGeneralSettings,
     removeProvider,
