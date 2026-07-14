@@ -197,7 +197,9 @@ export function Composer({
   onSelectChatFocus,
   groupMembers,
   onOpenGroupInfo,
-  hideRuntimeControls = false
+  hideRuntimeControls = false,
+  placeholder,
+  textOnly = false
 }: {
   variant?: ComposerVariant;
   containerRef?: Ref<HTMLElement>;
@@ -293,6 +295,13 @@ export function Composer({
   // token gauge / context meter / model picker are meaningless — only the
   // 附件/命令/盾牌 controls and the send button carry over.
   hideRuntimeControls?: boolean;
+  // A shared composer can be embedded in a conversation surface whose
+  // transport accepts text only. The editor, keyboard handling, expansion,
+  // context menu, and send/stop controls remain the canonical Composer; only
+  // unsupported attachment, slash-command, mention, and permission affordances
+  // are removed.
+  textOnly?: boolean;
+  placeholder?: string;
 }): JSX.Element {
   const statusText = composerStatusText(status);
   const statusIsLiveProgress = composerStatusIsLiveProgress(statusLiveProgress);
@@ -329,14 +338,14 @@ export function Composer({
   const visiblePromptValue = hasCollapsedPromptBlocks
     ? prompt.slice(collapsedPromptPrefix.length)
     : prompt;
-  const composerPlaceholder = readOnly
+  const composerPlaceholder = placeholder ?? (readOnly
     ? "子任务会话只读"
     : hasCollapsedPromptBlocks
       ? "要求后续变更"
       : hasAttachments
         ? "添加描述"
-        : "向 wuu 提问，或输入 / 选择命令";
-  const slashDraft = parseComposerSlashDraft(prompt);
+        : "向 wuu 提问，或输入 / 选择命令");
+  const slashDraft = textOnly ? undefined : parseComposerSlashDraft(prompt);
   const slashQuery = slashDraft?.query ?? "";
   const slashSkillContextKey = activeContext ? composerRuntimeContextKey(activeContext) : "";
   const slashSkillCountKey = initialized?.extension_trust?.main_session?.skills?.count ?? 0;
@@ -367,7 +376,7 @@ export function Composer({
   const slashMenuOpen = Boolean(!readOnly && slashDraft && slashDismissedValue !== prompt);
   const selectedSlashCommand = slashMenuOpen ? visibleSlashCommands[selectedSlashIndex] : undefined;
   const slashMenuID = `composer-slash-commands-${variant}`;
-  const mentionDraft = parseComposerMentionDraft(visiblePromptValue);
+  const mentionDraft = textOnly ? undefined : parseComposerMentionDraft(visiblePromptValue);
   const mentionQuery = mentionDraft?.query ?? "";
   const visibleMentionParticipants = useMemo(
     () => filterMentionParticipants(participants, mentionQuery),
@@ -402,7 +411,7 @@ export function Composer({
   }, [visibleMentionParticipants]);
 
   useEffect(() => {
-    if (!slashRuntimeReady || readOnly) {
+    if (!slashRuntimeReady || readOnly || textOnly) {
       setSlashSkills([]);
       return;
     }
@@ -424,7 +433,7 @@ export function Composer({
         }
       }
     }
-  }, [readOnly, slashRuntimeReady, slashSkillContextKey, slashSkillCountKey]);
+  }, [readOnly, slashRuntimeReady, slashSkillContextKey, slashSkillCountKey, textOnly]);
 
   useEffect(() => {
     if (readOnly) {
@@ -569,11 +578,13 @@ export function Composer({
     if (readOnly) {
       return;
     }
-    const pasted = clipboardAttachmentFiles(event);
-    if (pasted.length > 0) {
-      event.preventDefault();
-      onPasteAttachmentFiles(pasted);
-      return;
+    if (!textOnly) {
+      const pasted = clipboardAttachmentFiles(event);
+      if (pasted.length > 0) {
+        event.preventDefault();
+        onPasteAttachmentFiles(pasted);
+        return;
+      }
     }
 
     const pastedText = event.clipboardData?.getData("text/plain") ?? "";
@@ -976,22 +987,26 @@ export function Composer({
             </div>
           ) : null}
           <div className={`composer${hasCollapsedPromptBlocks ? " has-collapsed-prompt" : ""}`}>
-            <ComposerAttachmentStrip files={files} images={images} onRemoveFile={onRemoveFile} onRemoveImage={onRemoveImage} />
-            <input
-              ref={attachmentInputRef}
-              className="composer-file-input"
-              type="file"
-              accept="image/*,application/pdf"
-              multiple
-              tabIndex={-1}
-              onChange={(event) => {
-                const selected = Array.from(event.currentTarget.files ?? []);
-                event.currentTarget.value = "";
-                if (selected.length > 0) {
-                  onPasteAttachmentFiles(selected);
-                }
-              }}
-            />
+            {textOnly ? null : (
+              <>
+                <ComposerAttachmentStrip files={files} images={images} onRemoveFile={onRemoveFile} onRemoveImage={onRemoveImage} />
+                <input
+                  ref={attachmentInputRef}
+                  className="composer-file-input"
+                  type="file"
+                  accept="image/*,application/pdf"
+                  multiple
+                  tabIndex={-1}
+                  onChange={(event) => {
+                    const selected = Array.from(event.currentTarget.files ?? []);
+                    event.currentTarget.value = "";
+                    if (selected.length > 0) {
+                      onPasteAttachmentFiles(selected);
+                    }
+                  }}
+                />
+              </>
+            )}
             {hasCollapsedPromptBlocks ? (
               <div className="composer-collapsed-prompt-list" ref={collapsedPromptListRef} aria-label="折叠长文本">
                 {activeCollapsedPromptBlocks.map((block, index) => (
@@ -1107,57 +1122,61 @@ export function Composer({
                     ) : null}
                   </div>
                 ) : null}
-                <button
-                  className="composer-tool-button composer-attachment-button"
-                  type="button"
-                  aria-label="添加附件"
-                  title="添加附件"
-                  disabled={readOnly}
-                  onClick={() => attachmentInputRef.current?.click()}
-                >
-                  <Paperclip aria-hidden="true" />
-                </button>
-                <button
-                  className="composer-tool-button composer-slash-button"
-                  type="button"
-                  aria-label="打开斜杠命令"
-                  title="输入 / 打开命令"
-                  disabled={readOnly}
-                  onClick={revealSlashCommands}
-                >
-                  <Slash aria-hidden="true" />
-                </button>
-                <div className="permission-menu-anchor" ref={accessMenuRef}>
-                  <button
-                    className={`permission-chip tone-${permissionOption.chipTone}`}
-                    type="button"
-                    aria-haspopup="menu"
-                    aria-expanded={accessMenuOpen}
-                    aria-label={`权限模式：${permissionChipLabel}`}
-                    disabled={!initialized || readOnly || running}
-                    onClick={onToggleAccessMenu}
-                  >
-                    <permissionOption.icon aria-hidden="true" />
-                    <span>{permissionChipLabel}</span>
-                    <ChevronDown aria-hidden="true" />
-                  </button>
-                  {accessMenuOpen ? (
-                    <FloatingMenuPortal
-                      anchorRef={accessMenuRef}
-                      owner="composer-access"
-                      placement="above"
-                      align="left"
-                      offset={6}
-                      width={176}
+                {textOnly ? null : (
+                  <>
+                    <button
+                      className="composer-tool-button composer-attachment-button"
+                      type="button"
+                      aria-label="添加附件"
+                      title="添加附件"
+                      disabled={readOnly}
+                      onClick={() => attachmentInputRef.current?.click()}
                     >
-                      <AccessMenu
-                        permissions={initialized?.permissions}
+                      <Paperclip aria-hidden="true" />
+                    </button>
+                    <button
+                      className="composer-tool-button composer-slash-button"
+                      type="button"
+                      aria-label="打开斜杠命令"
+                      title="输入 / 打开命令"
+                      disabled={readOnly}
+                      onClick={revealSlashCommands}
+                    >
+                      <Slash aria-hidden="true" />
+                    </button>
+                    <div className="permission-menu-anchor" ref={accessMenuRef}>
+                      <button
+                        className={`permission-chip tone-${permissionOption.chipTone}`}
+                        type="button"
+                        aria-haspopup="menu"
+                        aria-expanded={accessMenuOpen}
+                        aria-label={`权限模式：${permissionChipLabel}`}
                         disabled={!initialized || readOnly || running}
-                        onSelect={onSelectPermissionMode}
-                      />
-                    </FloatingMenuPortal>
-                  ) : null}
-                </div>
+                        onClick={onToggleAccessMenu}
+                      >
+                        <permissionOption.icon aria-hidden="true" />
+                        <span>{permissionChipLabel}</span>
+                        <ChevronDown aria-hidden="true" />
+                      </button>
+                      {accessMenuOpen ? (
+                        <FloatingMenuPortal
+                          anchorRef={accessMenuRef}
+                          owner="composer-access"
+                          placement="above"
+                          align="left"
+                          offset={6}
+                          width={176}
+                        >
+                          <AccessMenu
+                            permissions={initialized?.permissions}
+                            disabled={!initialized || readOnly || running}
+                            onSelect={onSelectPermissionMode}
+                          />
+                        </FloatingMenuPortal>
+                      ) : null}
+                    </div>
+                  </>
+                )}
               </div>
               <div className="composer-bar-right">
                 {hideRuntimeControls ? null : groupMembers ? (

@@ -1,0 +1,112 @@
+import { useRef } from "react";
+import { Composer, type CodexModelLoadState } from "./ComposerView";
+
+const EMPTY_MODEL_STATE: CodexModelLoadState = {
+  loading: false,
+  error: "",
+  models: [],
+};
+
+const noop = () => {};
+
+export type SideThreadComposerProps = {
+  draft: string;
+  running: boolean;
+  disabledReason?: string;
+  queryHistorySessionID: string;
+  queryHistory: string[];
+  onChangeDraft: (draft: string) => void;
+  onSend: (prompt: string) => void;
+  onInterrupt: () => void;
+};
+
+// Side chat is another conversation surface, not another editor. Keep the
+// small amount of transport-specific glue here and render the same Composer
+// used by the main conversation.
+export function SideThreadComposer({
+  draft,
+  running,
+  disabledReason,
+  queryHistorySessionID,
+  queryHistory,
+  onChangeDraft,
+  onSend,
+  onInterrupt,
+}: SideThreadComposerProps): JSX.Element {
+  const runtimeRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const accessMenuRef = useRef<HTMLDivElement>(null);
+  const readOnly = running || Boolean(disabledReason);
+  // A side turn may be started by another window while this one has a local
+  // draft. Hide that draft while the shared composer is in stop mode, then
+  // restore it when the peer turn settles instead of offering a send action
+  // that the side-thread transport cannot accept.
+  const visibleDraft = running ? "" : draft;
+
+  return (
+    <Composer
+      variant="dock"
+      hideRuntimeControls
+      textOnly
+      placeholder="询问当前任务，不会加入主对话"
+      prompt={visibleDraft}
+      setPrompt={onChangeDraft}
+      files={[]}
+      images={[]}
+      queuedMessages={[]}
+      guideMessages={[]}
+      running={running}
+      runtimeControlsDisabled
+      tokensPerSecond={0}
+      status={running ? "侧聊回复中" : disabledReason ?? ""}
+      statusLiveProgress={running}
+      readOnly={readOnly}
+      projects={[]}
+      codexModels={EMPTY_MODEL_STATE}
+      codexRuntimeMenu={null}
+      codexRuntimeRef={runtimeRef}
+      menuOpen={false}
+      accessMenuOpen={false}
+      branchMenuOpen={false}
+      menuRef={menuRef}
+      accessMenuRef={accessMenuRef}
+      projectFilter=""
+      setProjectFilter={noop}
+      onToggleMenu={noop}
+      onToggleAccessMenu={noop}
+      onToggleBranchMenu={noop}
+      onToggleCodexRuntimeMenu={noop}
+      onSelectRuntimeModel={noop}
+      onSelectRuntimeEffort={noop}
+      onSelectPermissionMode={noop}
+      onOpenSettings={noop}
+      onOpenMemorySettings={noop}
+      onOpenSkillsCatalog={noop}
+      onSelectProject={noop}
+      onSelectNoProject={noop}
+      onSelectGitBranch={noop}
+      onCreateProject={noop}
+      onOpenProject={noop}
+      onStartNewThread={noop}
+      onOpenWorkspaceTool={noop}
+      onOpenInstructions={noop}
+      onPasteAttachmentFiles={noop}
+      onRemoveFile={noop}
+      onRemoveImage={noop}
+      onRemoveQueuedMessage={noop}
+      onRemoveGuideMessage={noop}
+      onGuideQueuedMessage={noop}
+      onEditQueuedMessage={noop}
+      onEditGuideMessage={noop}
+      onSend={() => {
+        const prompt = draft.trim();
+        if (!readOnly && prompt) {
+          onSend(prompt);
+        }
+      }}
+      onInterrupt={onInterrupt}
+      queryHistorySessionID={queryHistorySessionID}
+      queryHistory={queryHistory}
+    />
+  );
+}

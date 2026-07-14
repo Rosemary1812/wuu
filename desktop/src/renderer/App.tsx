@@ -65,6 +65,7 @@ import {
   SideThreadPanel,
   type SideThreadPanelHandle,
 } from "./SideThreadPanel";
+import { SideThreadComposer } from "./SideThreadComposer";
 import { useThreadMarkList } from "./useThreadMarks";
 import { useParticipantState } from "./ParticipantState";
 import { ConversationForkDialog } from "./ConversationForkDialog";
@@ -4121,12 +4122,27 @@ export function App(): JSX.Element {
             mainThreadId={activeThreadID}
             mainTaskRunning={isThreadRunning(activeThread)}
             width={sideThread.width}
+            cwd={activeThread?.cwd ?? state.activeContext?.cwd}
+            onOpenFile={openWorkspaceFile}
+            composer={
+              <SideThreadComposer
+                draft={sideThread.entry.draft}
+                running={sideThread.entry.streaming}
+                disabledReason={sideThread.sendDisabledReason}
+                queryHistorySessionID={
+                  sideThread.entry.summary?.side_thread_id ?? `side:${activeThreadID}`
+                }
+                queryHistory={sideThread.entry.messages
+                  .filter((message) => message.role === "user")
+                  .map((message) => message.text)}
+                onChangeDraft={sideThread.setDraft}
+                onSend={sideThread.sendMessage}
+                onInterrupt={sideThread.interrupt}
+              />
+            }
             onClose={sideThread.close}
             onResizeStart={sideThread.startResize}
-            onSend={sideThread.sendMessage}
-            onInterrupt={sideThread.interrupt}
             onChangeDraft={sideThread.setDraft}
-            sendDisabledReason={sideThread.sendDisabledReason}
           />
         ) : null}
 

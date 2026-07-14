@@ -3,29 +3,32 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
-  type ChangeEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
-  type UIEvent
+  type ReactNode,
+  type UIEvent,
 } from "react";
-import { PanelRightClose, Square } from "lucide-react";
-import type { SideThreadMessage, SideThreadSummary } from "../shared/protocol";
+import { PanelRightClose } from "lucide-react";
+import type { SideThreadSummary } from "../shared/protocol";
+import { ConversationTurnList } from "./ConversationTurnList";
+import { sideThreadMessagesToTurns } from "./SideThreadTurns";
 import {
   SIDE_THREAD_MAX_WIDTH,
   SIDE_THREAD_MIN_WIDTH,
-  type SideThreadEntryState
+  type SideThreadEntryState,
 } from "./SideThreadState";
+import { latestAgentMessageItemID, TurnView } from "./TurnView";
 
 const EMPTY_QUICK_PROMPTS = [
   { label: "现在做到哪了？", prompt: "现在做到哪了？" },
   { label: "解释刚才的错误", prompt: "解释刚才出现的错误或工具结果" },
-  { label: "当前方案有什么风险？", prompt: "当前方案可能存在哪些风险或后续影响？" }
+  { label: "当前方案有什么风险？", prompt: "当前方案可能存在哪些风险或后续影响？" },
 ];
 
 function mainTaskLabel(
   summary: SideThreadSummary | null,
-  liveRunning?: boolean
+  liveRunning?: boolean,
 ): string {
   const running = liveRunning ?? summary?.main_task_summary?.running;
   if (running === true) {
@@ -46,12 +49,12 @@ type SideThreadPanelProps = {
   mainThreadId: string;
   mainTaskRunning?: boolean;
   width: number;
+  composer: ReactNode;
+  cwd?: string;
   onClose: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
-  onSend: (prompt: string) => void;
-  onInterrupt: () => void;
   onChangeDraft: (draft: string) => void;
-  sendDisabledReason?: string;
+  onOpenFile?: (path: string) => void;
 };
 
 export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanelProps>(
@@ -61,26 +64,37 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
       mainThreadId,
       mainTaskRunning,
       width,
+      composer,
+      cwd,
       onClose,
       onResizeStart,
-      onSend,
-      onInterrupt,
       onChangeDraft,
-      sendDisabledReason
+      onOpenFile,
     },
-    ref
+    ref,
   ) {
-    const composerRef = useRef<HTMLTextAreaElement | null>(null);
+    const composerHostRef = useRef<HTMLDivElement | null>(null);
     const bodyRef = useRef<HTMLDivElement | null>(null);
     const autoFollowRef = useRef(true);
-
-    useImperativeHandle(
-      ref,
-      () => ({
-        focusComposer: () => composerRef.current?.focus()
-      }),
-      []
+    const turns = useMemo(
+      () => sideThreadMessagesToTurns(entry.messages),
+      [entry.messages],
     );
+    const latestTurn = turns.at(-1);
+    const latestMessageID = useMemo(
+      () => latestAgentMessageItemID(turns),
+      [turns],
+    );
+
+    const focusComposer = useCallback(() => {
+      const host = composerHostRef.current;
+      const textarea =
+        host?.querySelector<HTMLTextAreaElement>("textarea:not(:disabled)") ??
+        host?.querySelector<HTMLTextAreaElement>("textarea");
+      textarea?.focus();
+    }, []);
+
+    useImperativeHandle(ref, () => ({ focusComposer }), [focusComposer]);
 
     useEffect(() => {
       const body = bodyRef.current;
@@ -95,40 +109,15 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
         body.scrollHeight - body.scrollTop - body.clientHeight < 32;
     }, []);
 
-    const handleDraftChange = useCallback(
-      (event: ChangeEvent<HTMLTextAreaElement>) => {
-        onChangeDraft(event.target.value);
-      },
-      [onChangeDraft]
-    );
-
-    const submitComposer = useCallback(() => {
-      const text = entry.draft.trim();
-      if (!text || entry.streaming || sendDisabledReason) {
-        return;
-      }
-      onSend(text);
-    }, [entry.draft, entry.streaming, onSend, sendDisabledReason]);
-
-    const handleKeyDown = useCallback(
-      (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-        if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-          event.preventDefault();
-          submitComposer();
-        }
-      },
-      [submitComposer]
-    );
-
     const handleQuickPrompt = useCallback(
       (prompt: string) => {
         onChangeDraft(prompt);
-        composerRef.current?.focus();
+        window.requestAnimationFrame(focusComposer);
       },
-      [onChangeDraft]
+      [focusComposer, onChangeDraft],
     );
 
-    const isEmpty = entry.messages.length === 0;
+    const isEmpty = turns.length === 0;
 
     return (
       <aside
@@ -178,15 +167,31 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
         >
           {isEmpty ? (
             <SideThreadEmptyState
-              disabled={Boolean(sendDisabledReason) || entry.streaming}
+              disabled={entry.streaming}
               onQuickPrompt={handleQuickPrompt}
             />
           ) : (
-            <ol className="side-thread-panel__messages">
-              {entry.messages.map((message) => (
-                <SideThreadMessageItem key={message.id} message={message} />
-              ))}
-            </ol>
+            <div className="conversation-width session-flow side-thread-panel__conversation">
+              <ConversationTurnList
+                threadID={entry.summary?.side_thread_id ?? `side:${mainThreadId}`}
+                turns={turns}
+                renderTurn={(turn) => (
+                  <TurnView
+                    turn={turn}
+                    cwd={cwd}
+                    onOpenFile={onOpenFile}
+                    latestAgentMessageID={latestMessageID}
+                    onStreamFrame={() => {}}
+                    isLatestTurn={turn.id === latestTurn?.id}
+                    streamStatus={
+                      turn.id === latestTurn?.id && entry.streaming
+                        ? { text: "侧聊回复中", liveProgress: true }
+                        : undefined
+                    }
+                  />
+                )}
+              />
+            </div>
           )}
         </div>
 
@@ -196,50 +201,17 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
           </div>
         ) : null}
 
-        <footer className="side-thread-panel__composer">
-          <textarea
-            ref={composerRef}
-            className="side-thread-panel__textarea"
-            value={entry.draft}
-            onChange={handleDraftChange}
-            onKeyDown={handleKeyDown}
-            placeholder="询问当前任务，不会加入主对话"
-            rows={2}
-            disabled={Boolean(sendDisabledReason)}
-            data-testid="side-thread-textarea"
-          />
-          <div className="side-thread-panel__composer-actions">
-            {entry.streaming ? (
-              <button
-                type="button"
-                className="side-thread-panel__interrupt"
-                onClick={onInterrupt}
-                aria-label="停止侧聊"
-              >
-                <Square size={14} strokeWidth={2} />
-                <span>停止</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="side-thread-panel__send"
-                onClick={submitComposer}
-                disabled={Boolean(sendDisabledReason) || !entry.draft.trim()}
-                aria-label="发送侧聊消息"
-              >
-                发送
-              </button>
-            )}
-          </div>
-        </footer>
+        <div ref={composerHostRef} className="side-thread-panel__composer-host">
+          {composer}
+        </div>
       </aside>
     );
-  }
+  },
 );
 
 function SideThreadEmptyState({
   disabled,
-  onQuickPrompt
+  onQuickPrompt,
 }: {
   disabled: boolean;
   onQuickPrompt: (prompt: string) => void;
@@ -264,29 +236,5 @@ function SideThreadEmptyState({
         ))}
       </ul>
     </div>
-  );
-}
-
-function SideThreadMessageItem({ message }: { message: SideThreadMessage }) {
-  const isFailed = message.status === "failed";
-  return (
-    <li
-      className={`side-thread-panel__message side-thread-panel__message--${message.role}${
-        isFailed ? " side-thread-panel__message--failed" : ""
-      }`}
-      data-status={message.status ?? "completed"}
-    >
-      <div className="side-thread-panel__message-bubble">
-        {message.text || (
-          <span className="side-thread-panel__message-placeholder">…</span>
-        )}
-      </div>
-      {message.role === "assistant" && message.status === "streaming" ? (
-        <span className="side-thread-panel__streaming-dot" aria-hidden />
-      ) : null}
-      {isFailed && message.error_message ? (
-        <div className="side-thread-panel__message-error">{message.error_message}</div>
-      ) : null}
-    </li>
   );
 }

@@ -1,53 +1,32 @@
-/**
- * Tests for the SideThreadPanel — the right-column side chat panel bound
- * to a main thread. Uses the render-harness pattern that mirrors
- * ConversationSubthreadPanel.test.tsx and ChatThreadView.test.tsx, so we
- * don't pull in @testing-library/react (which isn't a dependency).
- */
-import { act, createElement } from "react";
-import { createRef } from "react";
+import { act, createElement, createRef, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   SideThreadMessage,
-  SideThreadSummary
+  SideThreadSummary,
 } from "../shared/protocol";
 import {
   SideThreadPanel,
-  type SideThreadPanelHandle
+  type SideThreadPanelHandle,
 } from "./SideThreadPanel";
 import type { SideThreadEntryState } from "./SideThreadState";
 
 let mountedRoots: Root[] = [];
 let mountedContainers: HTMLElement[] = [];
 
-function mount(element: React.ReactElement): {
-  container: HTMLElement;
-  rerender: (next: React.ReactElement) => void;
-} {
+function mount(element: React.ReactElement): HTMLElement {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
-  act(() => {
-    root.render(element);
-  });
+  act(() => root.render(element));
   mountedRoots.push(root);
   mountedContainers.push(container);
-  return {
-    container,
-    rerender: (next) => {
-      act(() => {
-        root.render(next);
-      });
-    }
-  };
+  return container;
 }
 
 afterEach(() => {
   for (const root of mountedRoots) {
-    act(() => {
-      root.unmount();
-    });
+    act(() => root.unmount());
   }
   for (const container of mountedContainers) {
     container.remove();
@@ -57,7 +36,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function makeSummary(overrides: Partial<SideThreadSummary> = {}): SideThreadSummary {
+function makeSummary(
+  overrides: Partial<SideThreadSummary> = {},
+): SideThreadSummary {
   return {
     side_thread_id: "side-1",
     main_thread_id: "main-1",
@@ -65,286 +46,193 @@ function makeSummary(overrides: Partial<SideThreadSummary> = {}): SideThreadSumm
     revision: 1,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
-    ...overrides
+    ...overrides,
   };
 }
 
-function makeEntry(overrides: Partial<SideThreadEntryState> = {}): SideThreadEntryState {
+function makeEntry(
+  overrides: Partial<SideThreadEntryState> = {},
+): SideThreadEntryState {
   return {
     open: true,
     summary: null,
     messages: [],
     draft: "",
     streaming: false,
-    ...overrides
+    ...overrides,
   };
 }
 
-function makeMessage(overrides: Partial<SideThreadMessage> = {}): SideThreadMessage {
+function makeMessage(
+  overrides: Partial<SideThreadMessage> = {},
+): SideThreadMessage {
   return {
     id: "m-1",
     side_thread_id: "side-1",
     role: "user",
     text: "现在做到哪了？",
     created_at: "2026-01-01T00:00:00.000Z",
-    ...overrides
+    ...overrides,
   };
 }
 
 function renderPanel(
   entry: SideThreadEntryState,
   callbacks: {
+    composer?: ReactNode;
     onClose?: () => void;
     onResizeStart?: (event: unknown) => void;
-    onSend?: (text: string) => void;
-    onInterrupt?: () => void;
     onChangeDraft?: (draft: string) => void;
-    sendDisabledReason?: string;
     mainTaskRunning?: boolean;
-  } = {}
-) {
+  } = {},
+): HTMLElement {
   return mount(
     createElement(SideThreadPanel, {
       entry,
       mainThreadId: "main-1",
       mainTaskRunning: callbacks.mainTaskRunning,
       width: 400,
+      composer:
+        callbacks.composer ??
+        createElement("textarea", { "aria-label": "side composer" }),
       onClose: callbacks.onClose ?? (() => {}),
       onResizeStart: callbacks.onResizeStart ?? (() => {}),
-      onSend: callbacks.onSend ?? (() => {}),
-      onInterrupt: callbacks.onInterrupt ?? (() => {}),
       onChangeDraft: callbacks.onChangeDraft ?? (() => {}),
-      sendDisabledReason: callbacks.sendDisabledReason
-    })
+    }),
   );
 }
 
 describe("SideThreadPanel", () => {
-  it("shows the main task as running only from main_task_summary", () => {
-    const { container } = renderPanel(
-      makeEntry({
-        summary: makeSummary({
-          status: "running",
-          main_task_summary: { running: true }
-        })
-      })
+  it("shows main-task status without inferring it from side-thread status", () => {
+    const unknown = renderPanel(
+      makeEntry({ summary: makeSummary({ status: "running" }) }),
     );
-    expect(container.textContent).toContain("侧聊");
-    expect(container.textContent).toContain("主任务执行中");
-  });
+    expect(unknown.textContent).toContain("主任务状态未知");
 
-  it("does not infer main-task state from the side-thread status", () => {
-    const { container } = renderPanel(
-      makeEntry({ summary: makeSummary({ status: "running" }) })
-    );
-    expect(container.textContent).toContain("主任务状态未知");
-    expect(container.textContent).not.toContain("主任务执行中");
-  });
-
-  it("shows a non-running main task without guessing a terminal outcome", () => {
-    const { container } = renderPanel(
+    const live = renderPanel(
       makeEntry({
-        summary: makeSummary({ main_task_summary: { running: false } })
-      })
-    );
-    expect(container.textContent).toContain("主任务未运行");
-  });
-
-  it("prefers the live main-task state over a stale side-thread snapshot", () => {
-    const { container } = renderPanel(
-      makeEntry({
-        summary: makeSummary({ main_task_summary: { running: true } })
+        summary: makeSummary({ main_task_summary: { running: true } }),
       }),
-      { mainTaskRunning: false }
+    );
+    expect(live.textContent).toContain("主任务执行中");
+  });
+
+  it("prefers live main-task state over a stale side snapshot", () => {
+    const container = renderPanel(
+      makeEntry({
+        summary: makeSummary({ main_task_summary: { running: true } }),
+      }),
+      { mainTaskRunning: false },
     );
     expect(container.textContent).toContain("主任务未运行");
     expect(container.textContent).not.toContain("主任务执行中");
   });
 
-  it("shows the empty state copy and quick prompts when no messages", () => {
-    const { container } = renderPanel(makeEntry());
-    expect(container.textContent).toContain(
-      "可以询问当前任务的进度和相关信息"
+  it("shows the empty guidance and fills the shared composer draft", () => {
+    const onChangeDraft = vi.fn();
+    const container = renderPanel(makeEntry(), { onChangeDraft });
+    expect(container.textContent).toContain("这里的内容不会加入主对话");
+
+    const prompt = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        ".side-thread-panel__quick-prompt",
+      ),
+    ).find((button) => button.textContent === "当前方案有什么风险？");
+    act(() => prompt?.click());
+    expect(onChangeDraft).toHaveBeenCalledWith(
+      "当前方案可能存在哪些风险或后续影响？",
     );
-    expect(container.textContent).toContain("现在做到哪了？");
-    expect(container.textContent).toContain("解释刚才的错误");
-    expect(container.textContent).toContain("当前方案有什么风险？");
   });
 
-  it("renders user and assistant messages with role classes", () => {
-    const { container } = renderPanel(
+  it("renders side history through the canonical turn and message flow", () => {
+    const container = renderPanel(
       makeEntry({
+        summary: makeSummary(),
         messages: [
-          makeMessage({ id: "m-1", role: "user", text: "进度？" }),
+          makeMessage({ id: "u-1", role: "user", text: "**进度？**" }),
           makeMessage({
-            id: "m-2",
+            id: "a-1",
             role: "assistant",
-            text: "正在修复 test/foo.ts",
-            status: "completed"
-          })
-        ]
-      })
+            text: "正在修复 `test/foo.ts`",
+            status: "completed",
+          }),
+        ],
+      }),
     );
-    const items = container.querySelectorAll(".side-thread-panel__message");
-    expect(items).toHaveLength(2);
-    const classes = Array.from(items).map((el) => el.className);
-    expect(classes[0]).toContain("side-thread-panel__message--user");
-    expect(classes[1]).toContain("side-thread-panel__message--assistant");
+
+    expect(container.querySelectorAll(".turn")).toHaveLength(1);
+    expect(container.querySelector(".user-message")).toBeTruthy();
+    expect(container.querySelector(".assistant-turn-shell")).toBeTruthy();
+    expect(container.textContent).toContain("正在修复");
+    expect(container.querySelector(".side-thread-panel__message")).toBeNull();
   });
 
-  it("renders a streaming dot while the assistant is streaming", () => {
-    const { container } = renderPanel(
+  it("uses the standard live-progress notice for a streaming reply", () => {
+    const container = renderPanel(
       makeEntry({
+        summary: makeSummary({ status: "running" }),
+        streaming: true,
         messages: [
+          makeMessage({ id: "u-1", role: "user" }),
           makeMessage({
-            id: "m-a",
+            id: "a-1",
             role: "assistant",
             text: "正在",
-            status: "streaming"
-          })
+            status: "streaming",
+          }),
         ],
-        streaming: true
-      })
+      }),
     );
+
     expect(
-      container.querySelector(".side-thread-panel__streaming-dot")
+      container.querySelector('.turn[data-turn-status="in_progress"]'),
     ).toBeTruthy();
+    expect(container.textContent).toContain("侧聊回复中");
   });
 
-  it("invokes onClose when the close button is clicked", () => {
-    const onClose = vi.fn();
-    const { container } = renderPanel(makeEntry(), { onClose });
-    const closeButton = container.querySelector(
-      ".side-thread-panel__close"
-    ) as HTMLButtonElement;
-    expect(closeButton).toBeTruthy();
-    act(() => {
-      closeButton.click();
+  it("renders the supplied canonical composer inside the panel", () => {
+    const container = renderPanel(makeEntry(), {
+      composer: createElement("div", { "data-testid": "shared-composer" }),
     });
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-testid="shared-composer"]')).toBeTruthy();
   });
 
-  it("sends the trimmed draft on Enter", () => {
-    const onSend = vi.fn();
-    const { container } = renderPanel(makeEntry({ draft: "hello" }), { onSend });
-    const textarea = container.querySelector(
-      ".side-thread-panel__textarea"
-    ) as HTMLTextAreaElement;
-    act(() => {
-      textarea.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Enter", bubbles: true })
-      );
-    });
-    expect(onSend).toHaveBeenCalledWith("hello");
-  });
-
-  it("does not send empty drafts", () => {
-    const onSend = vi.fn();
-    const { container } = renderPanel(makeEntry({ draft: "   " }), { onSend });
-    const textarea = container.querySelector(
-      ".side-thread-panel__textarea"
-    ) as HTMLTextAreaElement;
-    act(() => {
-      textarea.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Enter", bubbles: true })
-      );
-    });
-    expect(onSend).not.toHaveBeenCalled();
-  });
-
-  it("does not send another message while streaming", () => {
-    const onSend = vi.fn();
-    const { container } = renderPanel(
-      makeEntry({ draft: "second", streaming: true }),
-      { onSend }
-    );
-    const textarea = container.querySelector(
-      ".side-thread-panel__textarea"
-    ) as HTMLTextAreaElement;
-    act(() => {
-      textarea.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Enter", bubbles: true })
-      );
-    });
-    expect(onSend).not.toHaveBeenCalled();
-  });
-
-  it("disables send while sendDisabledReason is set", () => {
-    const { container } = renderPanel(makeEntry({ draft: "hello" }), {
-      sendDisabledReason: "正在连接"
-    });
-    const button = container.querySelector(
-      ".side-thread-panel__send"
-    ) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-  });
-
-  it("renders an error bar when lastError is present", () => {
-    const { container } = renderPanel(makeEntry({ lastError: "rate limited" }));
-    const alert = container.querySelector('[role="alert"]');
-    expect(alert?.textContent).toBe("rate limited");
-  });
-
-  it("exposes focusComposer through the imperative handle", () => {
+  it("exposes safe focus control for the embedded composer", () => {
     const ref = createRef<SideThreadPanelHandle>();
-    mount(
+    const container = mount(
       createElement(SideThreadPanel, {
         ref,
         entry: makeEntry(),
         mainThreadId: "main-1",
         width: 400,
+        composer: createElement("textarea", { "aria-label": "side composer" }),
         onClose: () => {},
         onResizeStart: () => {},
-        onSend: () => {},
-        onInterrupt: () => {},
-        onChangeDraft: () => {}
-      })
+        onChangeDraft: () => {},
+      }),
     );
-    expect(ref.current).not.toBeNull();
-    expect(typeof ref.current?.focusComposer).toBe("function");
-    // The imperative handle remains safe when jsdom has no real layout.
-    expect(() => ref.current?.focusComposer()).not.toThrow();
+    act(() => ref.current?.focusComposer());
+    expect(document.activeElement).toBe(container.querySelector("textarea"));
   });
 
-  it("fills the draft when a quick prompt is clicked", () => {
-    const onChangeDraft = vi.fn();
-    const { container } = renderPanel(makeEntry(), { onChangeDraft });
-    const buttons = container.querySelectorAll(
-      ".side-thread-panel__quick-prompt"
-    );
-    const target = Array.from(buttons).find(
-      (el) => el.textContent === "当前方案有什么风险？"
-    ) as HTMLButtonElement;
-    expect(target).toBeTruthy();
-    act(() => {
-      target.click();
+  it("keeps shell actions, errors, and resize semantics", () => {
+    const onClose = vi.fn();
+    const container = renderPanel(makeEntry({ lastError: "rate limited" }), {
+      onClose,
     });
-    expect(onChangeDraft).toHaveBeenCalledWith(
-      "当前方案可能存在哪些风险或后续影响？"
-    );
-  });
-
-  it("shows the interrupt button while streaming and calls onInterrupt", () => {
-    const onInterrupt = vi.fn();
-    const { container } = renderPanel(
-      makeEntry({ streaming: true }),
-      { onInterrupt }
-    );
-    const button = container.querySelector(
-      ".side-thread-panel__interrupt"
-    ) as HTMLButtonElement;
-    expect(button).toBeTruthy();
     act(() => {
-      button.click();
+      container.querySelector<HTMLButtonElement>(
+        ".side-thread-panel__close",
+      )?.click();
     });
-    expect(onInterrupt).toHaveBeenCalledTimes(1);
-  });
-
-  it("exposes the supplied width on the resize separator", () => {
-    const { container } = renderPanel(makeEntry());
-    const separator = container.querySelector(
-      ".side-thread-panel__resizer"
-    ) as HTMLElement;
-    expect(separator.getAttribute("aria-valuenow")).toBe("400");
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "rate limited",
+    );
+    expect(
+      container
+        .querySelector(".side-thread-panel__resizer")
+        ?.getAttribute("aria-valuenow"),
+    ).toBe("400");
   });
 });
