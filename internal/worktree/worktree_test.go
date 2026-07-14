@@ -1,6 +1,7 @@
 package worktree
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -84,6 +85,113 @@ func TestCreateAndCleanup(t *testing.T) {
 	}
 	if _, err := os.Stat(wt.Path); !os.IsNotExist(err) {
 		t.Fatalf("worktree should be removed, got: %v", err)
+	}
+}
+
+func TestCleanupReportsLockedRegistryEntryAfterFallback(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	m, err := NewManager(dir, filepath.Join(dir, ".wuu", "worktrees"))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	wt, err := m.Create("sess-locked", "worker-locked", "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() {
+		cmd := exec.Command("git", "worktree", "unlock", wt.Path)
+		cmd.Dir = dir
+		_ = cmd.Run()
+		_ = m.Cleanup(wt)
+	})
+
+	// A locked worktree makes `remove --force` fail. The existing fallback
+	// removes the directory manually, while `git worktree prune` deliberately
+	// keeps the locked registry entry and still exits successfully.
+	cmd := exec.Command("git", "worktree", "lock", "--reason", "cleanup-test", wt.Path)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("lock worktree: %v\n%s", err, out)
+	}
+
+	cleanupErr := m.Cleanup(wt)
+	if cleanupErr == nil {
+		t.Fatal("Cleanup succeeded while Git still retained the locked worktree")
+	}
+	if !strings.Contains(cleanupErr.Error(), "Git registry still contains") {
+		t.Fatalf("Cleanup error = %v, want registry inconsistency", cleanupErr)
+	}
+	if _, err := os.Lstat(wt.Path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("manual fallback should have removed the worktree path, got %v", err)
+	}
+	registered, err := m.worktreeRegistered(wt.Path)
+	if err != nil {
+		t.Fatalf("check worktree registry: %v", err)
+	}
+	if !registered {
+		t.Fatal("locked worktree registry entry unexpectedly disappeared")
+	}
+
+	cmd = exec.Command("git", "worktree", "unlock", wt.Path)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("unlock missing worktree entry: %v\n%s", err, out)
+	}
+	if err := m.Cleanup(wt); err != nil {
+		t.Fatalf("Cleanup after unlock: %v", err)
+	}
+	registered, err = m.worktreeRegistered(wt.Path)
+	if err != nil {
+		t.Fatalf("check final worktree registry: %v", err)
+	}
+	if registered {
+		t.Fatal("worktree registry entry remains after successful cleanup")
+	}
+}
+
+func TestCleanupPropagatesPruneFailure(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	m, err := NewManager(dir, filepath.Join(dir, ".wuu", "worktrees"))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	wt, err := m.Create("sess-prune", "worker-prune", "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	originalParent := m.parentRepo
+	t.Cleanup(func() {
+		m.parentRepo = originalParent
+		_ = m.Cleanup(wt)
+	})
+
+	// Make every Git cleanup command fail deterministically without relying on
+	// filesystem permissions. The manual disk fallback still succeeds, leaving
+	// the original repository's registry entry behind.
+	m.parentRepo = filepath.Join(dir, "missing-parent-repo")
+	cleanupErr := m.Cleanup(wt)
+	m.parentRepo = originalParent
+	if cleanupErr == nil {
+		t.Fatal("Cleanup swallowed git worktree prune failure")
+	}
+	if !strings.Contains(cleanupErr.Error(), "git worktree prune") {
+		t.Fatalf("Cleanup error = %v, want prune failure", cleanupErr)
+	}
+	if _, err := os.Lstat(wt.Path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("manual fallback should have removed the worktree path, got %v", err)
+	}
+	registered, err := m.worktreeRegistered(wt.Path)
+	if err != nil {
+		t.Fatalf("check worktree registry: %v", err)
+	}
+	if !registered {
+		t.Fatal("worktree registry entry unexpectedly disappeared after prune failure")
+	}
+
+	if err := m.Cleanup(wt); err != nil {
+		t.Fatalf("Cleanup after restoring parent repo: %v", err)
 	}
 }
 

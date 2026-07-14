@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -217,20 +218,34 @@ func (m *Manager) Cleanup(wt *Worktree) error {
 	if wt == nil || wt.Path == "" {
 		return nil
 	}
-	if _, err := os.Stat(wt.Path); errors.Is(err, os.ErrNotExist) {
-		// Already gone - still tell git to forget it.
-		_ = m.pruneFromGit(wt.Path)
-		return nil
+	if _, err := os.Lstat(wt.Path); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect worktree before cleanup: %w", err)
+		}
+		// The directory is already gone, but cleanup is not complete until Git
+		// has also forgotten the worktree.
+		return errors.Join(m.pruneFromGit(), m.verifyCleanup(wt.Path))
 	}
 	cmd := exec.Command("git", "worktree", "remove", "--force", wt.Path)
 	cmd.Dir = m.parentRepo
-	if out, err := cmd.CombinedOutput(); err != nil {
-		// Try a manual removal as a fallback (e.g., the worktree was
-		// already detached from git's metadata for some reason).
-		if rmErr := os.RemoveAll(wt.Path); rmErr != nil {
-			return fmt.Errorf("git worktree remove: %w\n%s\n(rmAll: %v)", err, out, rmErr)
-		}
-		_ = m.pruneFromGit(wt.Path)
+	out, removeErr := cmd.CombinedOutput()
+	if removeErr == nil {
+		return m.verifyCleanup(wt.Path)
+	}
+
+	// Try a manual removal as a fallback (e.g., the worktree was already
+	// detached from Git's metadata). This does not make cleanup successful on
+	// its own: prune and the final disk/registry consistency check must also
+	// succeed.
+	if rmErr := os.RemoveAll(wt.Path); rmErr != nil {
+		return fmt.Errorf("git worktree remove: %w\n%s\n(rmAll: %v)", removeErr, out, rmErr)
+	}
+	fallbackErr := errors.Join(m.pruneFromGit(), m.verifyCleanup(wt.Path))
+	if fallbackErr != nil {
+		return errors.Join(
+			fmt.Errorf("git worktree remove: %w\n%s", removeErr, out),
+			fallbackErr,
+		)
 	}
 	return nil
 }
@@ -505,13 +520,89 @@ func (m *Manager) List(sessionID string) ([]*Worktree, error) {
 	return out, nil
 }
 
-// pruneFromGit asks git to forget worktrees that no longer exist on disk.
-// Used as a best-effort cleanup; errors are silently swallowed because
-// pruning is non-critical.
-func (m *Manager) pruneFromGit(_ string) error {
+// pruneFromGit asks Git to forget worktrees that no longer exist on disk.
+func (m *Manager) pruneFromGit() error {
 	cmd := exec.Command("git", "worktree", "prune")
 	cmd.Dir = m.parentRepo
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	if detail := strings.TrimSpace(string(out)); detail != "" {
+		return fmt.Errorf("git worktree prune: %w: %s", err, detail)
+	}
+	return fmt.Errorf("git worktree prune: %w", err)
+}
+
+func (m *Manager) verifyCleanup(path string) error {
+	var consistencyErr error
+	if _, err := os.Lstat(path); err == nil {
+		consistencyErr = errors.Join(consistencyErr, fmt.Errorf("worktree cleanup incomplete: path still exists on disk: %s", path))
+	} else if !errors.Is(err, os.ErrNotExist) {
+		consistencyErr = errors.Join(consistencyErr, fmt.Errorf("verify worktree path removal: %w", err))
+	}
+	registered, err := m.worktreeRegistered(path)
+	if err != nil {
+		consistencyErr = errors.Join(consistencyErr, err)
+	} else if registered {
+		consistencyErr = errors.Join(consistencyErr, fmt.Errorf("worktree cleanup incomplete: Git registry still contains %s", path))
+	}
+	return consistencyErr
+}
+
+func (m *Manager) worktreeRegistered(path string) (bool, error) {
+	want, err := canonicalWorktreePath(path)
+	if err != nil {
+		return false, fmt.Errorf("resolve worktree path for registry check: %w", err)
+	}
+	cmd := exec.Command("git", "worktree", "list", "--porcelain", "-z")
+	cmd.Dir = m.parentRepo
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if detail := strings.TrimSpace(string(out)); detail != "" {
+			return false, fmt.Errorf("list Git worktrees: %w: %s", err, detail)
+		}
+		return false, fmt.Errorf("list Git worktrees: %w", err)
+	}
+	for _, field := range bytes.Split(out, []byte{0}) {
+		const prefix = "worktree "
+		if !bytes.HasPrefix(field, []byte(prefix)) {
+			continue
+		}
+		candidate, resolveErr := canonicalWorktreePath(string(field[len(prefix):]))
+		if resolveErr != nil {
+			return false, fmt.Errorf("resolve registered worktree path: %w", resolveErr)
+		}
+		if candidate == want || (runtime.GOOS == "windows" && strings.EqualFold(candidate, want)) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// canonicalWorktreePath resolves symlinks through the nearest existing
+// ancestor. The worktree itself is often already gone when this runs, while
+// parent aliases such as macOS /var -> /private/var still need normalization
+// to match Git's registry path.
+func canonicalWorktreePath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	cursor := filepath.Clean(abs)
+	suffix := make([]string, 0, 2)
+	for {
+		if resolved, resolveErr := filepath.EvalSymlinks(cursor); resolveErr == nil {
+			parts := append([]string{resolved}, suffix...)
+			return filepath.Clean(filepath.Join(parts...)), nil
+		}
+		parent := filepath.Dir(cursor)
+		if parent == cursor {
+			return filepath.Clean(abs), nil
+		}
+		suffix = append([]string{filepath.Base(cursor)}, suffix...)
+		cursor = parent
+	}
 }
 
 // ParentRepo returns the absolute path of the source git repository
