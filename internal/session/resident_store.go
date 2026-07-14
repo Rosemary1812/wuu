@@ -569,11 +569,17 @@ VALUES (?, ?, ?, ?)`, pending.ID, pending.ParticipantID, pending.ThreadID, pendi
 // order. A cold-boot owner discards them before settlement; non-boot peers use
 // them to recover a kick lost after compensation committed.
 func PendingResidentWakeIntents(sessDir string) ([]ResidentWakeIntent, error) {
-	db, err := openStore(sessDir)
+	db, ok, err := openStoreForScan(sessDir)
 	if err != nil {
 		return nil, err
 	}
+	if !ok {
+		return nil, nil
+	}
 	defer db.Close()
+	if ok, err := storeTableExists(db, "resident_wake_intents"); err != nil || !ok {
+		return nil, err
+	}
 	rows, err := db.Query(`
 SELECT id, participant_id, thread_id, created_at
 FROM resident_wake_intents
@@ -669,11 +675,17 @@ func DiscardResidentWakeIntents(sessDir string) (int, error) {
 // PendingResidentAdmissionCompensations returns the durable recovery journal
 // in creation order. It is exported for boot recovery and state assertions.
 func PendingResidentAdmissionCompensations(sessDir string) ([]ResidentAdmissionCompensation, error) {
-	db, err := openStore(sessDir)
+	db, ok, err := openStoreForScan(sessDir)
 	if err != nil {
 		return nil, err
 	}
+	if !ok {
+		return nil, nil
+	}
 	defer db.Close()
+	if ok, err := storeTableExists(db, "resident_admission_compensations"); err != nil || !ok {
+		return nil, err
+	}
 	rows, err := db.Query(`
 SELECT payload_json
 FROM resident_admission_compensations
