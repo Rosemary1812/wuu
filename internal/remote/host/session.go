@@ -137,7 +137,7 @@ func (s *deviceSession) onAppLine(app *appConn, line []byte) {
 		s.mu.Unlock()
 		return
 	}
-	hint := classifyPushHint(outLine)
+	hint, _ := classifyPushHint(outLine)
 	shouldPush := hint != "" && time.Since(s.lastPush) >= s.h.pushMinInterval
 	if shouldPush {
 		s.lastPush = time.Now()
@@ -189,23 +189,28 @@ func (a *appConn) observeLine(line []byte) bool {
 // classifyPushHint maps an outbound line that arrives while the phone is
 // away to a content-free push hint. Server requests (the app-server asking
 // its client something) mean the agent is blocked on input; turn completion
-// and errors mean attention is wanted but nothing is blocked.
-func classifyPushHint(line []byte) string {
+// and errors mean attention is wanted but nothing is blocked. Turn-bound
+// hints also carry the thread id so a pusher can deep-link to the thread;
+// needs_input is process-wide and returns no thread.
+func classifyPushHint(line []byte) (hint, threadID string) {
 	var probe struct {
 		ID     json.RawMessage `json:"id"`
 		Method string          `json:"method"`
+		Params struct {
+			ThreadID string `json:"thread_id"`
+		} `json:"params"`
 	}
 	if err := json.Unmarshal(line, &probe); err != nil {
-		return ""
+		return "", ""
 	}
 	if len(probe.ID) > 0 && probe.Method != "" {
-		return wire.PushNeedsInput
+		return wire.PushNeedsInput, ""
 	}
 	switch probe.Method {
 	case appserver.NotificationTurnCompleted, appserver.NotificationTurnError:
-		return wire.PushAgentDone
+		return wire.PushAgentDone, probe.Params.ThreadID
 	}
-	return ""
+	return "", ""
 }
 
 // setChannel installs a freshly handshaken channel. The phone still has to
