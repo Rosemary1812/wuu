@@ -81,7 +81,10 @@ type AgentControl struct {
 	// The turn owner snapshots the session setting here at turn start; root
 	// spawns inherit it, worker spawns inherit their parent worker's stored
 	// value instead, so an in-flight subtree never changes capability.
-	turnUltra     atomic.Bool
+	turnUltra atomic.Bool
+	// treeFrozen gates nested-result wakes between turn/interrupt's
+	// FreezeWorkerTree and the next user turn's ResolveFrozenWorkerTree.
+	treeFrozen    atomic.Bool
 	shutdownMu    sync.RWMutex
 	stopping      bool
 	spawnSlotMu   sync.Mutex
@@ -3853,6 +3856,12 @@ const nestedResultDeliveryWait = 30 * time.Second
 
 func (c *AgentControl) deliverNestedResultToParent(ctx context.Context, snap subagent.SubAgentSnapshot) (delivered bool) {
 	if c == nil || c.isStopping() || c.manager == nil {
+		return false
+	}
+	// A frozen tree must not wake parents: the result stays on the durable
+	// ledger and the next user turn's snapshot becomes its consumer
+	// (ResolveFrozenWorkerTree).
+	if c.treeFrozen.Load() {
 		return false
 	}
 	parentID := strings.TrimSpace(snap.ParentID)

@@ -118,3 +118,65 @@ func TestUltraTurnInjectsRootPolicyAndSnapshotsPerTurn(t *testing.T) {
 		t.Fatalf("non-ultra turn must not carry the ultra policy:\n%s", leaked.Content)
 	}
 }
+
+// After a turn/interrupt freeze, the next user turn lifts the freeze and its
+// request carries the whole-tree status snapshot as request-only context.
+func TestNextUserTurnFoldsFrozenWorkerTree(t *testing.T) {
+	client := &fakeClient{responses: []providers.ChatResponse{{Content: "resumed"}}}
+	rt := newTestRuntime(t, client)
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	th := srv.thread(threadID)
+	th.mu.Lock()
+	th.workerTreeFrozen = true
+	th.mu.Unlock()
+
+	payload := map[string]any{
+		"id":     "2",
+		"method": MethodTurnStart,
+		"params": TurnStartParams{ThreadID: threadID, Prompt: "continue after interrupt"},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal turn request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	waitForTurnCompletedCountForThread(t, out, threadID, 1)
+
+	th.mu.Lock()
+	stillFrozen := th.workerTreeFrozen
+	th.mu.Unlock()
+	if stillFrozen {
+		t.Fatal("user turn must lift the worker-tree freeze")
+	}
+
+	client.mu.Lock()
+	requests := append([]providers.ChatRequest(nil), client.requests...)
+	client.mu.Unlock()
+	if len(requests) != 1 {
+		t.Fatalf("expected one provider request, got %d", len(requests))
+	}
+	found := false
+	for _, msg := range requests[0].Messages {
+		if msg.Role == "user" && strings.Contains(msg.Content, "Frozen worker tree") {
+			if !msg.Hidden || !wuucontext.IsSystemReminder(msg.Name, msg.Content) {
+				t.Fatalf("freeze snapshot should be request-only hidden context: %+v", msg)
+			}
+			if !strings.Contains(msg.Content, "[TASK_STATE]") {
+				t.Fatalf("freeze snapshot should be a TASK_STATE block:\n%s", msg.Content)
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("request missing the frozen worker tree snapshot:\n%+v", requests[0].Messages)
+	}
+}

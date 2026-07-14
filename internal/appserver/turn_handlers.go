@@ -198,7 +198,11 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 				return err
 			}
 			threadRuntime, err = s.ensureThreadRuntimeAfterAdmission(admitted)
-			return err
+			if err != nil {
+				return err
+			}
+			s.foldFrozenWorkerTree(admitted, threadRuntime)
+			return nil
 		}},
 	)
 	if err != nil {
@@ -1181,14 +1185,149 @@ func (s *Server) handleTurnInterrupt(req Request) error {
 		return s.writeResponse(req.ID, nil, errors.New("thread has no running turn"))
 	}
 	th.pendingSteers = nil
+	th.workerTreeFrozen = true
+	control := threadAgentControlLocked(th)
 	th.mu.Unlock()
 	discardedQueueIDs := s.discardQueuedUserWork(threadID)
 	cancel()
+	// turn/interrupt means "freeze this work", not "leave background workers
+	// running": cancel the whole anonymous-worker tree, clear its queued
+	// spawns, and keep partial results as resumable state. The next
+	// user-initiated turn lifts the freeze with a whole-tree snapshot.
+	if control != nil {
+		control.FreezeWorkerTree()
+	}
 	if err := s.writeResponse(req.ID, OKResult{OK: true}, nil); err != nil {
 		return err
 	}
 	s.notifyQueuedTurnsDequeued(threadID, discardedQueueIDs)
 	return nil
+}
+
+// threadAgentControlLocked returns the thread's orchestration control.
+// Caller holds th.mu.
+func threadAgentControlLocked(th *threadState) *agentcontrol.AgentControl {
+	if th == nil || th.execRuntime == nil {
+		return nil
+	}
+	return th.execRuntime.AgentControl
+}
+
+// foldFrozenWorkerTree lifts a turn/interrupt freeze for this user turn: it
+// takes the held synthetic completion turns, settles the control's frozen
+// results, and stages the whole-tree snapshot as request-only context plus
+// the answered-marking result ids. Workers are not restarted; the root
+// resumes selected ones with send_message.
+func (s *Server) foldFrozenWorkerTree(th *threadState, threadRuntime *runtime.ThreadRuntime) {
+	if s == nil || th == nil {
+		return
+	}
+	th.mu.Lock()
+	frozen := th.workerTreeFrozen
+	th.workerTreeFrozen = false
+	control := threadAgentControlLocked(th)
+	th.mu.Unlock()
+	if !frozen {
+		return
+	}
+	if control == nil && threadRuntime != nil {
+		control = threadRuntime.AgentControl
+	}
+	pending := s.takePendingAgentCompletionTurns(th.ID)
+	var frozenResults []agentcontrol.FrozenWorkerResult
+	var workers []subagent.SubAgentSnapshot
+	if control != nil {
+		frozenResults = control.ResolveFrozenWorkerTree()
+		if manager := control.Manager(); manager != nil {
+			workers = manager.List()
+		}
+	}
+	resultIDs := make([]string, 0, len(pending))
+	for _, turn := range pending {
+		if id := strings.TrimSpace(turn.resultID); id != "" {
+			resultIDs = append(resultIDs, id)
+		}
+	}
+	block := frozenWorkerTreeBlock(pending, frozenResults, workers)
+	th.mu.Lock()
+	th.frozenTreeContext = agent.RequestOnlyContextBlocks([]wuucontext.Block{block})
+	th.frozenTreeResultIDs = resultIDs
+	th.mu.Unlock()
+}
+
+const frozenTreeResultTextLimit = 2000
+
+// frozenWorkerTreeBlock renders the whole-tree status snapshot the root
+// receives after an interrupt: completed results, cancelled workers' partial
+// results, and resume hints.
+func frozenWorkerTreeBlock(pending []agentCompletionTurn, frozen []agentcontrol.FrozenWorkerResult, workers []subagent.SubAgentSnapshot) wuucontext.Block {
+	var b strings.Builder
+	b.WriteString("The previous turn was interrupted and its whole anonymous-worker tree was frozen: running workers were cancelled with their partial results preserved, and queued spawns were cleared. Nothing restarts automatically. Review the tree status below; resume a specific worker with send_message when its work should continue.\n")
+	seen := map[string]struct{}{}
+	writeResult := func(id, task, status, result, errText string) {
+		if id == "" {
+			return
+		}
+		if _, dup := seen[id]; dup {
+			return
+		}
+		seen[id] = struct{}{}
+		b.WriteString("\n- ")
+		b.WriteString(id)
+		if task != "" {
+			b.WriteString(" (")
+			b.WriteString(task)
+			b.WriteString(")")
+		}
+		b.WriteString(": ")
+		b.WriteString(status)
+		if errText != "" {
+			b.WriteString(" — error: ")
+			b.WriteString(errText)
+		}
+		if result != "" {
+			if len(result) > frozenTreeResultTextLimit {
+				result = result[:frozenTreeResultTextLimit] + "… (truncated)"
+			}
+			b.WriteString("\n  result: ")
+			b.WriteString(result)
+		}
+		switch status {
+		case string(subagent.StatusCancelled), string(subagent.StatusInterrupted):
+			b.WriteString("\n  resumable: send_message to this worker continues from its preserved state")
+		}
+	}
+	for _, turn := range pending {
+		if turn.snapshot == nil {
+			continue
+		}
+		snap := turn.snapshot
+		errText := ""
+		if snap.Error != nil {
+			errText = snap.Error.Error()
+		}
+		writeResult(snap.ID, snap.TaskName, string(snap.Status), snap.Result, errText)
+	}
+	for _, fr := range frozen {
+		errText := ""
+		if fr.Snapshot.Error != nil {
+			errText = fr.Snapshot.Error.Error()
+		}
+		writeResult(fr.Snapshot.ID, fr.Snapshot.TaskName, string(fr.Snapshot.Status), fr.Snapshot.Result, errText)
+	}
+	for _, snap := range workers {
+		errText := ""
+		if snap.Error != nil {
+			errText = snap.Error.Error()
+		}
+		writeResult(snap.ID, snap.TaskName, string(snap.Status), snap.Result, errText)
+	}
+	return wuucontext.Block{
+		Kind:    wuucontext.BlockTaskState,
+		Title:   "Frozen worker tree",
+		Source:  "turn-interrupt",
+		Content: b.String(),
+	}
 }
 
 func (s *Server) runTurn(ctx context.Context, th *threadState, threadRuntime *runtime.ThreadRuntime, turnID string, turnRuntime turnRuntimeSnapshot, history []providers.ChatMessage) {
@@ -1260,11 +1399,17 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	}
 	residentParticipantID := ""
 	turnWorktreePath := ""
+	var frozenTreeContext []agent.ContextSegment
 	if th != nil {
 		th.mu.Lock()
 		residentParticipantID = strings.TrimSpace(th.DMParticipantID)
 		turnWorktreePath = strings.TrimSpace(th.WorktreePath)
+		frozenTreeContext = th.frozenTreeContext
+		th.frozenTreeContext = nil
 		th.mu.Unlock()
+	}
+	if len(frozenTreeContext) > 0 {
+		requestContext = append(append([]agent.ContextSegment(nil), requestContext...), frozenTreeContext...)
 	}
 	baseTurnTools := runner.Tools
 	baseForceInitialCompact := runner.ForceInitialCompact
@@ -2393,6 +2538,13 @@ func (s *Server) startThreadUserTurnWithAdmission(ctx context.Context, th *threa
 	turnRuntime.CompactOnly = snapshot.CompactOnly
 	turnRuntime.HistoryBaselineSeq = th.historyHeadSeq
 	turnRuntime.AgentCompletionResultIDs = append([]string(nil), snapshot.AgentCompletionResultIDs...)
+	// Completion results folded from a lifted tree freeze are answered by
+	// this user turn (foldFrozenWorkerTree staged them under the same lock
+	// discipline as the snapshot fields).
+	if len(th.frozenTreeResultIDs) > 0 {
+		turnRuntime.AgentCompletionResultIDs = append(turnRuntime.AgentCompletionResultIDs, th.frozenTreeResultIDs...)
+		th.frozenTreeResultIDs = nil
+	}
 	turnRuntime.Ultra = snapshot.Ultra
 	th.mu.Unlock()
 
@@ -2631,6 +2783,16 @@ func (s *Server) drainAgentCompletionTurns(threadID string) {
 		return
 	}
 	if threadIsRunning(th) {
+		s.clearAgentCompletionDrain(threadID)
+		return
+	}
+	// A frozen tree holds its pending completion turns: the next user turn
+	// consumes them as part of the whole-tree snapshot instead of synthetic
+	// turns waking a frozen orchestration (turn/interrupt tree freeze).
+	th.mu.Lock()
+	frozen := th.workerTreeFrozen
+	th.mu.Unlock()
+	if frozen {
 		s.clearAgentCompletionDrain(threadID)
 		return
 	}

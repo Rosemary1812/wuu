@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/activity"
+	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	"github.com/blueberrycongee/wuu/internal/config"
 	"github.com/blueberrycongee/wuu/internal/credentialstore"
@@ -96,6 +97,13 @@ type threadState struct {
 	// operation deliberately handed to boot recovery.
 	compensationDeferred bool
 	pendingSteers        []providers.ChatMessage
+	// Worker-tree freeze (turn/interrupt): while set, agent-completion drains
+	// hold their pending synthetic turns. The next user-initiated turn folds
+	// the whole-tree snapshot into its request (frozenTreeContext) and marks
+	// the held completion results answered (frozenTreeResultIDs).
+	workerTreeFrozen    bool
+	frozenTreeContext   []agent.ContextSegment
+	frozenTreeResultIDs []string
 
 	nextItemIndex         int
 	activeAgentItemID     string
