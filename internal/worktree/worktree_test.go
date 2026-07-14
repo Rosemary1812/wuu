@@ -6,7 +6,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // initRepo creates a minimal git repo at dir with one commit.
@@ -30,6 +32,42 @@ func initRepo(t *testing.T, dir string) {
 	}
 	run("add", ".")
 	run("commit", "-q", "-m", "init")
+}
+
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func commitFile(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "--", name)
+	runGit(t, dir, "commit", "-q", "-m", "test commit")
+	return runGit(t, dir, "rev-parse", "HEAD")
+}
+
+func mutatePrelaunchManifest(t *testing.T, path string, mutate func(*prelaunchManifest)) {
+	t.Helper()
+	manifest, exists, err := readPrelaunchManifest(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists {
+		t.Fatalf("prelaunch manifest does not exist: %s", path)
+	}
+	mutate(&manifest)
+	if err := writePrelaunchManifest(path, manifest); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestNewManager_NotGitRepo(t *testing.T) {
@@ -211,6 +249,262 @@ func TestCreate_DuplicateFails(t *testing.T) {
 	}
 }
 
+func TestOpenOrCreateReusesCrashedPrelaunchAndCleanupRemovesManifest(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	root := filepath.Join(t.TempDir(), "worktrees")
+	m, err := NewManager(dir, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := m.OpenOrCreate(OpenOrCreateOptions{SessionID: "sess", WorkerID: "worker", BaseRepo: dir})
+	if err != nil {
+		t.Fatalf("OpenOrCreate first launch: %v", err)
+	}
+	t.Cleanup(func() { _ = m.Cleanup(first) })
+	if _, err := os.Stat(first.ManifestPath); err != nil {
+		t.Fatalf("prelaunch manifest missing: %v", err)
+	}
+	originalHead := first.HEAD
+	newHead := commitFile(t, dir, "after-crash.txt", "new parent head\n")
+	if newHead == originalHead {
+		t.Fatal("parent HEAD did not advance")
+	}
+
+	restarted, err := NewManager(dir, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := restarted.OpenOrCreate(OpenOrCreateOptions{SessionID: "sess", WorkerID: "worker", BaseRepo: dir})
+	if err != nil {
+		t.Fatalf("OpenOrCreate after simulated crash: %v", err)
+	}
+	if reopened.Path != first.Path || reopened.HEAD != originalHead {
+		t.Fatalf("reopened worktree = %+v, want path %q at frozen HEAD %q", reopened, first.Path, originalHead)
+	}
+	if err := restarted.Cleanup(reopened); err != nil {
+		t.Fatalf("Cleanup reopened worktree: %v", err)
+	}
+	if _, err := os.Stat(reopened.ManifestPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Cleanup left prelaunch manifest: %v", err)
+	}
+}
+
+func TestOpenOrCreateCreatesMissingTargetFromManifestFrozenRevision(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	root := filepath.Join(t.TempDir(), "worktrees")
+	m, err := NewManager(dir, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := m.ResolveBase(dir, "")
+	if err != nil {
+		t.Fatalf("ResolveBase: %v", err)
+	}
+	target := filepath.Join(root, "sess", "worker")
+	manifestPath := m.prelaunchManifestPath("sess", "worker")
+	manifest := prelaunchManifest{
+		SchemaVersion: prelaunchManifestSchema,
+		SessionID:     "sess",
+		WorkerID:      "worker",
+		ParentRepo:    m.parentRepo,
+		Repository:    base.Repository,
+		BaseRepo:      base.Repo,
+		BaseRevision:  base.Revision,
+		TargetPath:    target,
+		CreatedAt:     time.Now().UTC(),
+	}
+	if err := writePrelaunchManifest(manifestPath, manifest); err != nil {
+		t.Fatalf("write simulated pre-create manifest: %v", err)
+	}
+	newHead := commitFile(t, dir, "advanced.txt", "advanced\n")
+	if newHead == base.Revision {
+		t.Fatal("parent HEAD did not advance")
+	}
+
+	wt, err := m.OpenOrCreate(OpenOrCreateOptions{SessionID: "sess", WorkerID: "worker", BaseRepo: dir})
+	if err != nil {
+		t.Fatalf("resume manifest-only prelaunch: %v", err)
+	}
+	t.Cleanup(func() { _ = m.Cleanup(wt) })
+	if wt.HEAD != base.Revision {
+		t.Fatalf("created HEAD = %q, want frozen %q", wt.HEAD, base.Revision)
+	}
+	if _, err := os.Stat(filepath.Join(wt.Path, "advanced.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("worktree unexpectedly used advanced parent HEAD: %v", err)
+	}
+}
+
+func TestOpenOrCreateRejectsIdentityAndGitMismatches(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, *Manager, *Worktree, *OpenOrCreateOptions)
+	}{
+		{
+			name: "session",
+			mutate: func(t *testing.T, _ *Manager, wt *Worktree, _ *OpenOrCreateOptions) {
+				mutatePrelaunchManifest(t, wt.ManifestPath, func(manifest *prelaunchManifest) { manifest.SessionID = "other-session" })
+			},
+		},
+		{
+			name: "worker",
+			mutate: func(t *testing.T, _ *Manager, wt *Worktree, _ *OpenOrCreateOptions) {
+				mutatePrelaunchManifest(t, wt.ManifestPath, func(manifest *prelaunchManifest) { manifest.WorkerID = "other-worker" })
+			},
+		},
+		{
+			name: "base repo",
+			mutate: func(t *testing.T, _ *Manager, _ *Worktree, opts *OpenOrCreateOptions) {
+				other := t.TempDir()
+				initRepo(t, other)
+				opts.BaseRepo = other
+			},
+		},
+		{
+			name: "base revision",
+			mutate: func(t *testing.T, m *Manager, _ *Worktree, opts *OpenOrCreateOptions) {
+				opts.BaseRevision = commitFile(t, m.parentRepo, "new-head.txt", "new head\n")
+			},
+		},
+		{
+			name: "target",
+			mutate: func(t *testing.T, _ *Manager, wt *Worktree, _ *OpenOrCreateOptions) {
+				mutatePrelaunchManifest(t, wt.ManifestPath, func(manifest *prelaunchManifest) { manifest.TargetPath += "-other" })
+			},
+		},
+		{
+			name: "HEAD",
+			mutate: func(t *testing.T, m *Manager, wt *Worktree, _ *OpenOrCreateOptions) {
+				newHead := commitFile(t, m.parentRepo, "head-mismatch.txt", "mismatch\n")
+				runGit(t, wt.Path, "checkout", "--detach", newHead)
+			},
+		},
+		{
+			name: "dirty target",
+			mutate: func(t *testing.T, _ *Manager, wt *Worktree, _ *OpenOrCreateOptions) {
+				if err := os.WriteFile(filepath.Join(wt.Path, "dirty.txt"), []byte("dirty"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			initRepo(t, dir)
+			m, err := NewManager(dir, filepath.Join(t.TempDir(), "worktrees"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			opts := OpenOrCreateOptions{SessionID: "sess", WorkerID: "worker", BaseRepo: dir}
+			wt, err := m.OpenOrCreate(opts)
+			if err != nil {
+				t.Fatalf("OpenOrCreate fixture: %v", err)
+			}
+			t.Cleanup(func() { _ = m.Cleanup(wt) })
+			test.mutate(t, m, wt, &opts)
+
+			if _, err := m.OpenOrCreate(opts); !errors.Is(err, ErrPrelaunchIdentityMismatch) {
+				t.Fatalf("OpenOrCreate mismatch error = %v, want ErrPrelaunchIdentityMismatch", err)
+			}
+		})
+	}
+}
+
+func TestOpenOrCreateRejectsMissingAndCorruptManifest(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*testing.T, string)
+	}{
+		{
+			name: "missing",
+			mutate: func(t *testing.T, path string) {
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "corrupt",
+			mutate: func(t *testing.T, path string) {
+				if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			initRepo(t, dir)
+			m, err := NewManager(dir, filepath.Join(t.TempDir(), "worktrees"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			opts := OpenOrCreateOptions{SessionID: "sess", WorkerID: "worker", BaseRepo: dir}
+			wt, err := m.OpenOrCreate(opts)
+			if err != nil {
+				t.Fatalf("OpenOrCreate fixture: %v", err)
+			}
+			t.Cleanup(func() { _ = m.Cleanup(wt) })
+			test.mutate(t, wt.ManifestPath)
+
+			if _, err := m.OpenOrCreate(opts); !errors.Is(err, ErrPrelaunchIdentityMismatch) {
+				t.Fatalf("OpenOrCreate manifest error = %v, want ErrPrelaunchIdentityMismatch", err)
+			}
+		})
+	}
+}
+
+func TestOpenOrCreateConcurrentSameIdentity(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	m, err := NewManager(dir, filepath.Join(t.TempDir(), "worktrees"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := OpenOrCreateOptions{SessionID: "sess", WorkerID: "worker", BaseRepo: dir}
+	const callers = 6
+	results := make(chan *Worktree, callers)
+	errs := make(chan error, callers)
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			wt, err := m.OpenOrCreate(opts)
+			results <- wt
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent OpenOrCreate: %v", err)
+		}
+	}
+	var first *Worktree
+	for wt := range results {
+		if first == nil {
+			first = wt
+			continue
+		}
+		if wt == nil || wt.Path != first.Path || wt.HEAD != first.HEAD {
+			t.Fatalf("concurrent worktrees differ: first=%+v current=%+v", first, wt)
+		}
+	}
+	if first == nil {
+		t.Fatal("no concurrent OpenOrCreate result")
+	}
+	if err := m.Cleanup(first); err != nil {
+		t.Fatalf("Cleanup: %v", err)
+	}
+}
+
 func TestCleanupSession(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
@@ -234,6 +528,44 @@ func TestCleanupSession(t *testing.T) {
 	list, _ = m.List("sess-X")
 	if len(list) != 0 {
 		t.Fatalf("expected 0 worktrees after cleanup, got %d", len(list))
+	}
+}
+
+func TestCleanupSessionRemovesManifestWithoutTarget(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	root := filepath.Join(t.TempDir(), "worktrees")
+	m, err := NewManager(dir, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := m.ResolveBase("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := m.prelaunchManifestPath("sess", "worker")
+	if err := writePrelaunchManifest(manifestPath, prelaunchManifest{
+		SchemaVersion: prelaunchManifestSchema,
+		SessionID:     "sess",
+		WorkerID:      "worker",
+		ParentRepo:    m.parentRepo,
+		Repository:    base.Repository,
+		BaseRepo:      base.Repo,
+		BaseRevision:  base.Revision,
+		TargetPath:    filepath.Join(root, "sess", "worker"),
+		CreatedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.CleanupSession("sess"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(manifestPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("manifest-only launch was not cleaned: %v", err)
+	}
+	if err := m.CleanupSession("../outside"); err == nil {
+		t.Fatal("CleanupSession accepted a path-traversing session ID")
 	}
 }
 

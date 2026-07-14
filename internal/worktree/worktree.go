@@ -28,10 +28,12 @@ import (
 
 // Worktree represents one isolated git worktree for a subagent.
 type Worktree struct {
-	Path      string // absolute path to the worktree directory
-	SessionID string // owning session
-	WorkerID  string // worker that owns it
-	HEAD      string // the commit it was created from (full sha)
+	Path         string // absolute path to the worktree directory
+	SessionID    string // owning session
+	WorkerID     string // worker that owns it
+	HEAD         string // the frozen commit it was created from (full sha)
+	BaseRepo     string // canonical repository/worktree used to resolve HEAD
+	ManifestPath string // durable prelaunch identity, when opened recoverably
 }
 
 // Lease records the durable identity and review state for a task worktree.
@@ -99,9 +101,16 @@ func NewManager(parentRepo, rootDir string) (*Manager, error) {
 	if !isGitRepo(abs) {
 		return nil, fmt.Errorf("not a git repository: %s (run 'git init' first)", abs)
 	}
+	if resolved, resolveErr := filepath.EvalSymlinks(abs); resolveErr == nil {
+		abs = resolved
+	}
+	rootAbs, err := filepath.Abs(rootDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve worktree root: %w", err)
+	}
 	return &Manager{
 		parentRepo: abs,
-		rootDir:    rootDir,
+		rootDir:    rootAbs,
 	}, nil
 }
 
@@ -155,6 +164,7 @@ func (m *Manager) Create(sessionID, workerID, baseRepo string) (*Worktree, error
 		SessionID: sessionID,
 		WorkerID:  workerID,
 		HEAD:      head,
+		BaseRepo:  source,
 	}, nil
 }
 
@@ -218,6 +228,15 @@ func (m *Manager) Cleanup(wt *Worktree) error {
 	if wt == nil || wt.Path == "" {
 		return nil
 	}
+	return m.withPrelaunchLock(func() error {
+		if err := m.cleanupWorktree(wt); err != nil {
+			return err
+		}
+		return m.removePrelaunchManifest(wt)
+	})
+}
+
+func (m *Manager) cleanupWorktree(wt *Worktree) error {
 	if _, err := os.Lstat(wt.Path); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("inspect worktree before cleanup: %w", err)
@@ -468,13 +487,18 @@ func (m *Manager) CleanupIfClean(wt *Worktree) (kept bool, err error) {
 
 // CleanupSession removes all worktrees belonging to a session.
 func (m *Manager) CleanupSession(sessionID string) error {
+	var err error
+	sessionID, err = validIdentityPart("sessionID", sessionID)
+	if err != nil {
+		return err
+	}
 	dir := filepath.Join(m.rootDir, sessionID)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
 		}
-		return err
+		entries = nil
 	}
 	var firstErr error
 	for _, e := range entries {
@@ -492,7 +516,16 @@ func (m *Manager) CleanupSession(sessionID string) error {
 	}
 	// Try to remove the now-empty session directory.
 	_ = os.Remove(dir)
-	return firstErr
+	if firstErr != nil {
+		return firstErr
+	}
+	return m.withPrelaunchLock(func() error {
+		manifestDir := filepath.Join(m.rootDir, prelaunchManifestDir, sessionID)
+		if err := os.RemoveAll(manifestDir); err != nil {
+			return fmt.Errorf("remove session worktree manifests: %w", err)
+		}
+		return nil
+	})
 }
 
 // List returns all worktrees currently on disk for the given session.
