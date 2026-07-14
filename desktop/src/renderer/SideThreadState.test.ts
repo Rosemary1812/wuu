@@ -263,6 +263,48 @@ describe("SideThreadState", () => {
     });
   });
 
+  describe("reset", () => {
+    it("clears history and summary but keeps the panel open with its draft", () => {
+      let store = createInitialSideThreadStore();
+      store = reduceSideThreadStore(store, { type: "open", mainThreadId: "main-1" });
+      store = reduceSideThreadStore(store, {
+        type: "setDraft",
+        mainThreadId: "main-1",
+        draft: "unsent"
+      });
+      store = reduceSideThreadStore(store, {
+        type: "mergeHistory",
+        mainThreadId: "main-1",
+        summary: summary({ status: "running" }),
+        messages: [message(), message({ id: "m-2", role: "assistant", text: "hi" })]
+      });
+      store = reduceSideThreadStore(store, { type: "reset", mainThreadId: "main-1" });
+      const entry = store.byThread["main-1"];
+      expect(entry?.messages).toEqual([]);
+      expect(entry?.summary).toBeNull();
+      expect(entry?.streaming).toBe(false);
+      expect(entry?.open).toBe(true);
+      expect(entry?.draft).toBe("unsent");
+    });
+
+    it("applies a peer reset event the same way", () => {
+      let store = createInitialSideThreadStore();
+      store = reduceSideThreadStore(store, {
+        type: "mergeHistory",
+        mainThreadId: "main-1",
+        summary: summary(),
+        messages: [message()]
+      });
+      store = reduceSideThreadStore(store, {
+        type: "applyEvent",
+        event: { type: "reset", side_thread_id: "side-1", main_thread_id: "main-1" }
+      });
+      const entry = store.byThread["main-1"];
+      expect(entry?.messages).toEqual([]);
+      expect(entry?.summary).toBeNull();
+    });
+  });
+
   describe("applyEvent", () => {
     it("status event updates streaming flag and summary status", () => {
       let store = createInitialSideThreadStore();

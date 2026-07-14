@@ -23,6 +23,7 @@ import {
   Paperclip,
   PieChart,
   Puzzle,
+  RotateCcw,
   ScrollText,
   Search,
   Send,
@@ -199,7 +200,9 @@ export function Composer({
   onOpenGroupInfo,
   hideRuntimeControls = false,
   placeholder,
-  textOnly = false
+  textOnly = false,
+  slashCommandsOverride,
+  onResetSideThread
 }: {
   variant?: ComposerVariant;
   containerRef?: Ref<HTMLElement>;
@@ -302,6 +305,13 @@ export function Composer({
   // are removed.
   textOnly?: boolean;
   placeholder?: string;
+  // Replaces the built-in main-conversation command list with a
+  // surface-specific one (e.g. the side chat's /reset). The menu, keyboard
+  // handling, and action dispatch stay the canonical Composer machinery, so
+  // providing an override re-enables slash input even in textOnly mode.
+  slashCommandsOverride?: ComposerSlashCommand[];
+  // Reset the side thread this composer is embedded in.
+  onResetSideThread?: () => void;
 }): JSX.Element {
   const statusText = composerStatusText(status);
   const statusIsLiveProgress = composerStatusIsLiveProgress(statusLiveProgress);
@@ -353,15 +363,17 @@ export function Composer({
       : hasAttachments
         ? "添加描述"
         : "向 wuu 提问，或输入 / 选择命令");
-  const slashDraft = textOnly ? undefined : parseComposerSlashDraft(prompt);
+  const slashDraft =
+    textOnly && !slashCommandsOverride ? undefined : parseComposerSlashDraft(prompt);
   const slashQuery = slashDraft?.query ?? "";
   const slashSkillContextKey = activeContext ? composerRuntimeContextKey(activeContext) : "";
   const slashSkillCountKey = initialized?.extension_trust?.main_session?.skills?.count ?? 0;
   const slashRuntimeReady = Boolean(activeContext && initialized);
-  const slashCommands = useMemo(
+  const builtinSlashCommands = useMemo(
     () => buildComposerSlashCommands({ activeContext, initialized, running, compactDisabledReason, sideThreadDisabledReason, skills: slashSkills }),
     [activeContext, compactDisabledReason, initialized, running, sideThreadDisabledReason, slashSkills]
   );
+  const slashCommands = slashCommandsOverride ?? builtinSlashCommands;
   const fastModelTarget = useMemo(() => runtimeFastModelTarget(initialized), [initialized]);
   const permissionMode = permissionModeFromSummary(initialized?.permissions);
   const permissionOption = permissionModeOption(permissionMode);
@@ -675,6 +687,9 @@ export function Composer({
         break;
       case "open-side-thread":
         onOpenSideThread?.();
+        break;
+      case "reset-side-thread":
+        onResetSideThread?.();
         break;
       case "open-review":
         onOpenWorkspaceTool("review");
@@ -1350,6 +1365,8 @@ function SlashCommandIcon({ command }: { command: ComposerSlashCommand }): JSX.E
       return <FolderOpen className="icon" />;
     case "no-project":
       return <FolderX className="icon" />;
+    case "reset-side-thread":
+      return <RotateCcw className="icon" />;
     case "context":
       return <PieChart className="icon" />;
     case "compact":

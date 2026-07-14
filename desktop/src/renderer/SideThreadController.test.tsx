@@ -61,6 +61,7 @@ function makeIPC(overrides: Partial<SideThreadIPC> = {}) {
       summary: summary({ status: "running" })
     })),
     interruptSideThread: vi.fn(async () => ({ ok: true })),
+    resetSideThread: vi.fn(async () => ({ ok: true })),
     onSideThreadEvent: vi.fn((handler) => {
       eventHandler = handler;
       return () => {

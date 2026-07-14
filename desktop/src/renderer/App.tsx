@@ -4195,6 +4195,7 @@ export function App(): JSX.Element {
                 onChangeDraft={sideThread.setDraft}
                 onSend={sideThread.sendMessage}
                 onInterrupt={sideThread.interrupt}
+                onReset={sideThread.reset}
               />
             }
             onClose={sideThread.close}

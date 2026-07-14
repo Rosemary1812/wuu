@@ -364,6 +364,64 @@ func TestInterruptSideThreadCancelsAndPersistsPartialReply(t *testing.T) {
 	}
 }
 
+func TestResetSideThreadClearsHistoryAndNotifies(t *testing.T) {
+	s, _, out := newSideThreadServer(t, nil)
+	createSideThreadMain(t, s, "main_reset")
+	if err := s.sideThreadStore.Save(&sidethread.SideThread{
+		SideThreadID: "side-reset",
+		MainThreadID: "main_reset",
+		Status:       sidethread.StatusCompleted,
+		Messages: []sidethread.Message{{
+			ID: "message-1", SideThreadID: "side-reset", Role: sidethread.RoleUser, Text: "进度?",
+		}},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	res, err := s.resetSideThread("main_reset")
+	if err != nil || !res.Ok {
+		t.Fatalf("resetSideThread: result=%+v err=%v", res, err)
+	}
+	if _, err := s.sideThreadStore.Load("main_reset"); !errors.Is(err, sidethread.ErrNotFound) {
+		t.Fatalf("record survived reset: %v", err)
+	}
+	output := out.String()
+	for _, want := range []string{`"method":"sideThread/event"`, `"type":"reset"`, `"side_thread_id":"side-reset"`} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("notification output missing %s:\n%s", want, output)
+		}
+	}
+	// A second reset finds nothing to clear and stays idempotent.
+	res, err = s.resetSideThread("main_reset")
+	if err != nil || !res.Ok {
+		t.Fatalf("reset of absent record: result=%+v err=%v", res, err)
+	}
+}
+
+func TestResetSideThreadCancelsRunningTurn(t *testing.T) {
+	client := &sideThreadTestClient{partial: "partial progress", started: make(chan struct{}), release: make(chan struct{})}
+	s, _, out := newSideThreadServer(t, client)
+	createSideThreadMain(t, s, "main_reset_running")
+	if _, err := s.sendSideThreadMessage("main_reset_running", "status?"); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	select {
+	case <-client.started:
+	case <-time.After(time.Second):
+		t.Fatal("provider request did not start")
+	}
+	waitForSideThreadDelta(t, out, "partial progress")
+	res, err := s.resetSideThread("main_reset_running")
+	if err != nil || !res.Ok {
+		t.Fatalf("resetSideThread: result=%+v err=%v", res, err)
+	}
+	s.backgroundWG.Wait()
+	// The interrupted turn's finish lands on the deleted record and must not
+	// resurrect it.
+	if _, err := s.sideThreadStore.Load("main_reset_running"); !errors.Is(err, sidethread.ErrNotFound) {
+		t.Fatalf("record resurrected after reset during run: %v", err)
+	}
+}
+
 func TestRemoteInterruptCancelsOwningSideThreadProcess(t *testing.T) {
 	client := &sideThreadTestClient{partial: "partial progress", started: make(chan struct{}), release: make(chan struct{})}
 	owner, rt, ownerOut := newSideThreadServer(t, client)

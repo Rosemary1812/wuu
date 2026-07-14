@@ -24,6 +24,7 @@ function renderComposer({
   onChangeDraft = () => {},
   onSend = () => {},
   onInterrupt = () => {},
+  onReset = () => {},
 }: {
   draft?: string;
   running?: boolean;
@@ -31,6 +32,7 @@ function renderComposer({
   onChangeDraft?: (draft: string) => void;
   onSend?: (prompt: string) => void;
   onInterrupt?: () => void;
+  onReset?: () => void;
 } = {}): void {
   act(() => {
     root = createRoot(container);
@@ -44,6 +46,7 @@ function renderComposer({
         onChangeDraft={onChangeDraft}
         onSend={onSend}
         onInterrupt={onInterrupt}
+        onReset={onReset}
       />,
     );
   });
@@ -71,6 +74,22 @@ describe("SideThreadComposer", () => {
     });
 
     expect(onSend).toHaveBeenCalledWith("status?");
+  });
+
+  it("offers only the side /reset slash command and dispatches it", () => {
+    const onReset = vi.fn();
+    const onSend = vi.fn();
+    renderComposer({ draft: "/reset", onReset, onSend });
+
+    const items = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".slash-command-item"),
+    );
+    expect(items.map((item) => item.textContent)).toHaveLength(1);
+    expect(items[0]?.textContent).toContain("/reset");
+
+    act(() => items[0]?.click());
+    expect(onReset).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
   });
 
   it("switches the shared composer to stop-only mode while running", () => {

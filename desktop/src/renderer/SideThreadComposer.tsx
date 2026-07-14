@@ -1,4 +1,5 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
+import { buildSideThreadSlashCommands } from "./ComposerSlashCommands";
 import { Composer, type CodexModelLoadState } from "./ComposerView";
 
 const EMPTY_MODEL_STATE: CodexModelLoadState = {
@@ -18,6 +19,7 @@ export type SideThreadComposerProps = {
   onChangeDraft: (draft: string) => void;
   onSend: (prompt: string) => void;
   onInterrupt: () => void;
+  onReset: () => void;
 };
 
 // Side chat is another conversation surface, not another editor. Keep the
@@ -32,10 +34,12 @@ export function SideThreadComposer({
   onChangeDraft,
   onSend,
   onInterrupt,
+  onReset,
 }: SideThreadComposerProps): JSX.Element {
   const runtimeRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const accessMenuRef = useRef<HTMLDivElement>(null);
+  const slashCommands = useMemo(() => buildSideThreadSlashCommands(), []);
   const readOnly = running || Boolean(disabledReason);
   // A side turn may be started by another window while this one has a local
   // draft. Hide that draft while the shared composer is in stop mode, then
@@ -105,6 +109,8 @@ export function SideThreadComposer({
         }
       }}
       onInterrupt={onInterrupt}
+      slashCommandsOverride={slashCommands}
+      onResetSideThread={onReset}
       queryHistorySessionID={queryHistorySessionID}
       queryHistory={queryHistory}
     />
