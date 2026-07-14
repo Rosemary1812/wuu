@@ -57,10 +57,6 @@ func ResolveForProvider(providerName string, provider config.ProviderConfig, mod
 	}
 }
 
-func DefaultVariant(provider config.ProviderConfig, model string) string {
-	return DefaultVariantForProvider("", provider, model)
-}
-
 func DefaultVariantForProvider(_ string, provider config.ProviderConfig, model string) string {
 	modelCfg, ok := provider.Models[strings.TrimSpace(model)]
 	if !ok {
@@ -102,10 +98,6 @@ func SummariesForProvider(providerName string, provider config.ProviderConfig, m
 		return variantsFromOptionMap(modelCfg.Variants)
 	}
 	return variantsFromOptionMap(inferredOptionsForProvider(providerName, provider, model))
-}
-
-func SupportedEfforts(provider config.ProviderConfig, model string, modelCfg config.ProviderModelConfig) []string {
-	return SupportedEffortsForProvider("", provider, model, modelCfg)
 }
 
 func SupportedEffortsForProvider(providerName string, provider config.ProviderConfig, model string, modelCfg config.ProviderModelConfig) []string {

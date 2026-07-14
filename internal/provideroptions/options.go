@@ -8,18 +8,6 @@ func CloneWithoutDisabled(input map[string]any) map[string]any {
 	return clone(input, true)
 }
 
-func Merge(base, override map[string]any) map[string]any {
-	out := Clone(base)
-	if len(override) == 0 {
-		return out
-	}
-	if out == nil {
-		out = make(map[string]any, len(override))
-	}
-	MergeInto(out, override)
-	return out
-}
-
 func MergeWithoutDisabled(base, override map[string]any) map[string]any {
 	out := CloneWithoutDisabled(base)
 	if len(override) == 0 {
@@ -30,10 +18,6 @@ func MergeWithoutDisabled(base, override map[string]any) map[string]any {
 	}
 	MergeIntoWithoutDisabled(out, override)
 	return out
-}
-
-func MergeInto(dst, src map[string]any) {
-	mergeInto(dst, src, false)
 }
 
 func MergeIntoWithoutDisabled(dst, src map[string]any) {

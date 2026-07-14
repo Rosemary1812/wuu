@@ -120,10 +120,6 @@ type Suitability struct {
 	Fallback bool `json:"fallback,omitempty"`
 }
 
-func OrderedRoles() []Role {
-	return append([]Role(nil), orderedRoles...)
-}
-
 func (s Set) Empty() bool {
 	return strings.TrimSpace(s.Main.Provider) == "" && strings.TrimSpace(s.Main.Model) == ""
 }
