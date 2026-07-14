@@ -46,6 +46,8 @@ const (
 	MethodThreadResolveSub         = "thread/resolveSub"
 	MethodThreadEscalateSub        = "thread/escalateSub"
 	MethodThreadTaskEvents         = "thread/taskEvents"
+	MethodSideThreadOpen           = "sideThread/open"
+	MethodSideThreadGetHistory     = "sideThread/getHistory"
 	MethodThreadList               = "thread/list"
 	MethodThreadListArchived       = "thread/listArchived"
 	MethodThreadSearch             = "thread/search"
@@ -1001,6 +1003,52 @@ type TaskEventView struct {
 
 type ThreadTaskEventsResult struct {
 	Events []TaskEventView `json:"events"`
+}
+
+// Side thread (侧聊) — bound 1:<=1 to a main thread, hidden from the
+// global session list. The five JSON-RPC methods mirror the renderer
+// IPC surface in packages/protocol/src/index.ts and are wired into
+// the dispatch table in server.go.
+
+type SideThreadOpenParams struct {
+	MainThreadID string `json:"main_thread_id"`
+}
+
+type SideThreadOpenResult struct {
+	Summary *SideThreadWireSummary `json:"summary"`
+}
+
+type SideThreadGetHistoryParams struct {
+	MainThreadID string `json:"main_thread_id"`
+}
+
+type SideThreadGetHistoryResult struct {
+	Summary  SideThreadWireSummary   `json:"summary"`
+	Messages []SideThreadWireMessage `json:"messages"`
+}
+
+type SideThreadWireSummary struct {
+	SideThreadID    string                     `json:"side_thread_id"`
+	MainThreadID    string                     `json:"main_thread_id"`
+	Status          string                     `json:"status"`
+	MainTaskSummary *SideThreadMainTaskSummary `json:"main_task_summary,omitempty"`
+	CreatedAt       time.Time                  `json:"created_at"`
+	UpdatedAt       time.Time                  `json:"updated_at"`
+}
+
+type SideThreadWireMessage struct {
+	ID           string    `json:"id"`
+	SideThreadID string    `json:"side_thread_id"`
+	Role         string    `json:"role"`
+	Text         string    `json:"text"`
+	Status       string    `json:"status,omitempty"`
+	ErrorMessage string    `json:"error_message,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type SideThreadMainTaskSummary struct {
+	Running         bool   `json:"running"`
+	LastUserMessage string `json:"last_user_message,omitempty"`
 }
 
 type ParticipantStartParams struct {

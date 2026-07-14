@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/sidethread"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
@@ -214,6 +216,11 @@ type Server struct {
 	inferenceMaintenanceStop     chan struct{}
 	inferenceMaintenanceDone     chan struct{}
 	inferenceMaintenanceStopOnce sync.Once
+
+	// sideThreadStore persists side threads (1:<=1 binding per main
+	// thread). Nil when SessionDir is unset; handleSideThreadOpen /
+	// handleSideThreadGetHistory treat nil as the "feature off" path.
+	sideThreadStore *sidethread.Store
 }
 
 func New(rt *runtime.Session, out io.Writer) *Server {
@@ -245,6 +252,9 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		codexModelCache:              make(map[string]map[string]config.ProviderModelConfig),
 		memoryOverviewCache:          make(map[string]memoryOverviewCacheEntry),
 		inferenceMaintenanceStop:     make(chan struct{}),
+	}
+	if rt != nil && strings.TrimSpace(rt.SessionDir) != "" {
+		s.sideThreadStore = sidethread.NewStore(filepath.Join(rt.SessionDir, "sidethreads"))
 	}
 	if store != nil && rt != nil && rt.Toolkit != nil {
 		if manager := rt.Toolkit.MCPManager(); manager != nil {
@@ -476,6 +486,10 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleThreadEscalateSub(req)
 	case MethodThreadTaskEvents:
 		return s.handleThreadTaskEvents(req)
+	case MethodSideThreadOpen:
+		return s.handleSideThreadOpen(req)
+	case MethodSideThreadGetHistory:
+		return s.handleSideThreadGetHistory(req)
 	case MethodThreadList:
 		return s.handleThreadList(req)
 	case MethodThreadListArchived:
