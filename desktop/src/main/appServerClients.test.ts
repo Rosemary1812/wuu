@@ -1,11 +1,76 @@
-import { describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { PassThrough } from "node:stream";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("electron", () => ({
+  app: {
+    getAppPath: () => process.cwd(),
+  },
+}));
+
 import {
   activityServerRequestRejection,
+  AppServerClient,
+  type AppServerClientEvent,
   appServerExitMessage,
   AppServerClientPool,
+  type AppServerSpawn,
   cuaMacHelperEnvironment,
   updateStoppedActivityIDs,
 } from "./appServerClients";
+
+class FakeAppServerChild extends EventEmitter {
+  readonly stdin = new PassThrough();
+  readonly stdout = new PassThrough();
+  readonly stderr = new PassThrough();
+  killed = false;
+
+  kill(): boolean {
+    this.killed = true;
+    return true;
+  }
+
+  asChildProcess(): ChildProcessWithoutNullStreams {
+    return this as unknown as ChildProcessWithoutNullStreams;
+  }
+}
+
+function makeClient(spawnAppServer: AppServerSpawn): {
+  client: AppServerClient;
+  events: AppServerClientEvent[];
+  stateChanges: () => number;
+} {
+  const events: AppServerClientEvent[] = [];
+  let stateChangeCount = 0;
+  const client = new AppServerClient(
+    tmpdir(),
+    "",
+    (_source, event) => events.push(event),
+    () => {
+      stateChangeCount += 1;
+    },
+    spawnAppServer,
+  );
+  return {
+    client,
+    events,
+    stateChanges: () => stateChangeCount,
+  };
+}
+
+function serverExitEvents(events: AppServerClientEvent[]): Extract<
+  AppServerClientEvent,
+  { kind: "server-exit" }
+>[] {
+  return events.filter(
+    (event): event is Extract<AppServerClientEvent, { kind: "server-exit" }> =>
+      event.kind === "server-exit",
+  );
+}
 
 describe("appServerExitMessage", () => {
   it("preserves stderr and the exit code", () => {
@@ -96,5 +161,111 @@ describe("AppServerClientPool Activity routing", () => {
         activity_id: "activity-1",
       }),
     ).rejects.toThrow("activity workspace is no longer connected");
+  });
+});
+
+describe("AppServerClient child lifecycle", () => {
+  it("finalizes a real ENOENT spawn error and its later close exactly once", async () => {
+    const missingBinary = join(tmpdir(), `wuu-missing-${randomUUID()}`);
+    let closePromise: Promise<void> | undefined;
+    const spawnMissing: AppServerSpawn = (_command, _args, options) => {
+      const child = spawn(missingBinary, [], options);
+      closePromise = new Promise((resolve) => {
+        child.once("close", () => resolve());
+      });
+      return child;
+    };
+    const { client, events, stateChanges } = makeClient(spawnMissing);
+
+    await expect(client.request("initialize")).rejects.toThrow(/ENOENT/);
+    await closePromise;
+
+    expect(serverExitEvents(events)).toHaveLength(1);
+    expect(serverExitEvents(events)[0]?.message).toMatch(/ENOENT/);
+    expect(stateChanges()).toBe(1);
+    expect(client.isBusy()).toBe(false);
+  });
+
+  it("routes a synchronous stdin write failure through finalization", async () => {
+    const child = new FakeAppServerChild();
+    child.stdin.write = (() => {
+      throw Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+    }) as typeof child.stdin.write;
+    const { client, events, stateChanges } = makeClient(
+      () => child.asChildProcess(),
+    );
+
+    await expect(client.request("initialize")).rejects.toThrow(
+      /stdin write failed: write EPIPE/,
+    );
+    child.emit("exit", 1, null);
+    child.emit("close", 1, null);
+
+    expect(serverExitEvents(events)).toHaveLength(1);
+    expect(stateChanges()).toBe(1);
+    expect(client.isBusy()).toBe(false);
+    expect(child.killed).toBe(true);
+  });
+
+  it("clears pending and running state on EPIPE without letting stale child events clear its replacement", async () => {
+    const first = new FakeAppServerChild();
+    const second = new FakeAppServerChild();
+    const children = [first, second];
+    let spawnIndex = 0;
+    const { client, events, stateChanges } = makeClient(() => {
+      const child = children[spawnIndex];
+      spawnIndex += 1;
+      if (!child) {
+        throw new Error("unexpected extra app-server spawn");
+      }
+      return child.asChildProcess();
+    });
+
+    const started = client.request("turn/start", { thread_id: "thread-1" });
+    first.stdout.write(
+      `${JSON.stringify({
+        id: "client-1",
+        result: { turn: { status: "in_progress" } },
+      })}\n`,
+    );
+    await expect(started).resolves.toEqual({
+      turn: { status: "in_progress" },
+    });
+    expect(client.isBusy()).toBe(true);
+
+    const pending = client.request("thread/list");
+    const pendingRejection = expect(pending).rejects.toThrow(
+      /stdin failed: write EPIPE/,
+    );
+    first.stdin.emit(
+      "error",
+      Object.assign(new Error("write EPIPE"), { code: "EPIPE" }),
+    );
+    await pendingRejection;
+    expect(client.isBusy()).toBe(false);
+    expect(serverExitEvents(events)).toHaveLength(1);
+    expect(first.killed).toBe(true);
+
+    const replacement = client.request("initialize");
+    expect(spawnIndex).toBe(2);
+    expect(client.isBusy()).toBe(true);
+    const changesBeforeStaleEvents = stateChanges();
+
+    first.stderr.write("late stderr from old child\n");
+    first.stdout.write(
+      `${JSON.stringify({ id: "client-3", result: { stale: true } })}\n`,
+    );
+    first.emit("exit", 1, null);
+    first.emit("close", 1, null);
+
+    expect(serverExitEvents(events)).toHaveLength(1);
+    expect(stateChanges()).toBe(changesBeforeStaleEvents);
+    expect(client.isBusy()).toBe(true);
+
+    second.stdout.write(
+      `${JSON.stringify({ id: "client-3", result: { ready: true } })}\n`,
+    );
+    await expect(replacement).resolves.toEqual({ ready: true });
+    expect(client.isBusy()).toBe(false);
   });
 });

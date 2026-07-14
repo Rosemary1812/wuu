@@ -18,6 +18,21 @@ import type {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAX_APP_SERVER_CLIENTS = 3;
 
+type AppServerSpawnOptions = {
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  stdio: ["pipe", "pipe", "pipe"];
+};
+
+export type AppServerSpawn = (
+  command: string,
+  args: readonly string[],
+  options: AppServerSpawnOptions,
+) => ChildProcessWithoutNullStreams;
+
+const defaultSpawnAppServer: AppServerSpawn = (command, args, options) =>
+  spawnChild(command, args, options);
+
 type PendingRequest = {
   method: string;
   params?: unknown;
@@ -25,7 +40,7 @@ type PendingRequest = {
   reject: (reason?: unknown) => void;
 };
 
-type AppServerClientEvent =
+export type AppServerClientEvent =
   | { kind: "notification"; message: AppServerNotification }
   | { kind: "server-request"; message: Required<AppServerRequest> }
   | { kind: "server-error"; message: string }
@@ -194,7 +209,7 @@ export class AppServerClientPool {
   }
 }
 
-class AppServerClient {
+export class AppServerClient {
   private child: ChildProcessWithoutNullStreams | null = null;
   private pending = new Map<string, PendingRequest>();
   private runningThreadIDs = new Set<string>();
@@ -217,6 +232,7 @@ class AppServerClient {
       event: AppServerClientEvent,
     ) => void,
     private readonly onStateChange: () => void,
+    private readonly spawnAppServer: AppServerSpawn = defaultSpawnAppServer,
   ) {}
 
   request<T>(method: string, params?: unknown): Promise<T> {
@@ -254,13 +270,14 @@ class AppServerClient {
   }
 
   shutdown(): void {
-    if (!this.child) {
+    const child = this.child;
+    if (!child) {
       return;
     }
     try {
       this.write({ id: "shutdown", method: "shutdown" });
     } catch {
-      this.child.kill();
+      child.kill();
     }
   }
 
@@ -286,8 +303,15 @@ class AppServerClient {
   }
 
   private ensureStarted(): void {
-    if (this.child && !this.child.killed) {
-      return;
+    if (this.child) {
+      if (!this.child.killed) {
+        return;
+      }
+      this.finalizeChild(
+        this.child,
+        null,
+        "wuu core process was terminated before it exited",
+      );
     }
     const sourceRoot = wuuSourceRoot();
     const resourcesPath = (process as { resourcesPath?: string }).resourcesPath;
@@ -307,7 +331,7 @@ class AppServerClient {
     if (this.workspaceId.trim() !== "") {
       appServerArgs.push("--workspace-id", this.workspaceId);
     }
-    this.child = spawnChild(command.command, appServerArgs, {
+    const child = this.spawnAppServer(command.command, appServerArgs, {
       cwd: command.cwd,
       env: cuaMacHelperEnvironment(
         process.env,
@@ -317,38 +341,135 @@ class AppServerClient {
       ),
       stdio: ["pipe", "pipe", "pipe"],
     });
+    this.child = child;
+    this.stdoutBuffer = "";
+    this.lastStderr = "";
 
-    this.child.stdout.setEncoding("utf8");
-    this.child.stdout.on("data", (chunk: string) => this.readStdout(chunk));
-    this.child.stderr.setEncoding("utf8");
-    this.child.stderr.on("data", (chunk: string) => {
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      if (this.child === child) {
+        this.readStdout(chunk);
+      }
+    });
+    child.stdout.on("error", (error) => {
+      this.finalizeChild(
+        child,
+        null,
+        appServerProcessError("stdout failed", error),
+        true,
+      );
+    });
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      if (this.child !== child) {
+        return;
+      }
       const message = chunk.trim();
       if (message) {
         this.lastStderr = `${this.lastStderr}\n${message}`.trim().slice(-4000);
         this.emit(this, { kind: "server-error", message });
       }
     });
-    this.child.on("exit", (code) => {
-      const message = appServerExitMessage(code, this.lastStderr);
-      for (const pending of this.pending.values()) {
-        pending.reject(new Error(message));
-      }
-      this.pending.clear();
-      this.runningThreadIDs.clear();
-      if (!this.disposing) {
-        this.emit(this, { kind: "server-exit", code, message });
-      }
-      this.onStateChange();
-      this.child = null;
-      this.lastStderr = "";
+    child.stderr.on("error", (error) => {
+      this.finalizeChild(
+        child,
+        null,
+        appServerProcessError("stderr failed", error),
+        true,
+      );
+    });
+    child.stdin.on("error", (error) => {
+      this.finalizeChild(
+        child,
+        null,
+        appServerProcessError("stdin failed", error),
+        true,
+      );
+    });
+    child.on("error", (error) => {
+      this.finalizeChild(
+        child,
+        null,
+        appServerProcessError("process failed", error),
+        true,
+      );
+    });
+    child.on("exit", (code) => {
+      this.finalizeChild(child, code);
+    });
+    child.on("close", (code) => {
+      this.finalizeChild(child, code);
     });
   }
 
   private write(payload: unknown): void {
-    if (!this.child) {
+    const child = this.child;
+    if (!child) {
       throw new Error("app-server is not running");
     }
-    this.child.stdin.write(`${JSON.stringify(payload)}\n`);
+    try {
+      child.stdin.write(`${JSON.stringify(payload)}\n`, (error) => {
+        if (error) {
+          this.finalizeChild(
+            child,
+            null,
+            appServerProcessError("stdin write failed", error),
+            true,
+          );
+        }
+      });
+    } catch (error) {
+      this.finalizeChild(
+        child,
+        null,
+        appServerProcessError("stdin write failed", error),
+        true,
+      );
+      throw error;
+    }
+  }
+
+  private finalizeChild(
+    child: ChildProcessWithoutNullStreams,
+    code: number | null,
+    failureDetail = "",
+    terminateChild = false,
+  ): void {
+    if (this.child !== child) {
+      return;
+    }
+
+    const detail = [this.lastStderr.trim(), failureDetail.trim()]
+      .filter(Boolean)
+      .join("\n");
+    const message = appServerExitMessage(code, detail);
+    const pending = [...this.pending.values()];
+
+    // Clear process-owned state before invoking callbacks. A rejection or
+    // renderer event may immediately start a replacement process; late
+    // error/exit/close events from this child must not touch that new child.
+    this.child = null;
+    this.stdoutBuffer = "";
+    this.lastStderr = "";
+    this.pending.clear();
+    this.runningThreadIDs.clear();
+
+    if (terminateChild && !child.killed) {
+      try {
+        child.kill();
+      } catch {
+        // The process may already be gone (for example ENOENT). Its state is
+        // still finalized locally, and late child events are identity-guarded.
+      }
+    }
+
+    for (const request of pending) {
+      request.reject(new Error(message));
+    }
+    if (!this.disposing) {
+      this.emit(this, { kind: "server-exit", code, message });
+    }
+    this.onStateChange();
   }
 
   private readStdout(chunk: string): void {
@@ -550,6 +671,11 @@ export function appServerExitMessage(
   const detail = stderr.trim();
   const prefix = `wuu core exited${code === null ? "" : ` (code ${code})`}`;
   return detail ? `${prefix}: ${detail}` : prefix;
+}
+
+function appServerProcessError(context: string, error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `${context}: ${message}`;
 }
 
 function wuuSourceRoot(): string | undefined {
