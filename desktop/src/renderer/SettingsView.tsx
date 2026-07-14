@@ -2490,7 +2490,15 @@ function formatHeatmapTitle(day: CacheHeatmapCell): string {
   if (!hasUsageDayData(day)) {
     return `${day.date}：暂无用量`;
   }
-  return `${day.date}：缓存命中 ${formatPercent(day.cache_hit_rate)}，读取 ${formatTokenCount(day.cache_read_tokens)}，写入 ${formatTokenCount(day.cache_creation_tokens)}`;
+  const consumption: string[] = [
+    `输入 ${formatTokenCount(day.input_tokens)}`,
+    `输出 ${formatTokenCount(day.output_tokens)}`,
+  ];
+  if (day.turns > 0) {
+    consumption.push(`${day.turns} 轮`);
+  }
+  const cache = `缓存命中 ${formatPercent(day.cache_hit_rate)} · 读取 ${formatTokenCount(day.cache_read_tokens)} · 写入 ${formatTokenCount(day.cache_creation_tokens)}`;
+  return `${day.date}\n${consumption.join(" · ")}\n${cache}`;
 }
 
 
