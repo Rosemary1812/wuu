@@ -143,10 +143,12 @@ func (t *CronTool) executeAdd(cronExpr, prompt string, recurring, durable bool) 
 	}
 
 	storeLabel := "session-only"
-	storeErr := sessionStore.Add(task)
+	var storeErr error
 	if args.Durable {
 		storeLabel = "durable"
 		storeErr = fileStore.Add(task)
+	} else {
+		storeErr = sessionStore.Add(task)
 	}
 	if storeErr != nil {
 		return "", fmt.Errorf("failed to save task: %w", storeErr)

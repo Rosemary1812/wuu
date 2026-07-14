@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,6 +69,39 @@ func TestScheduleCronTool_DurablePersistsToDisk(t *testing.T) {
 	}
 	if len(fileTasks) != 1 {
 		t.Fatalf("expected 1 durable task, got %d", len(fileTasks))
+	}
+	sessionTasks, err := cron.NewSessionTaskStore(stateDir).List()
+	if err != nil {
+		t.Fatalf("session store list: %v", err)
+	}
+	if len(sessionTasks) != 0 {
+		t.Fatalf("expected no session tasks, got %d", len(sessionTasks))
+	}
+}
+
+func TestScheduleCronTool_DurableWriteFailureDoesNotCreateSessionTask(t *testing.T) {
+	dir := t.TempDir()
+	stateDir := filepath.Join(dir, "state")
+	if err := os.MkdirAll(taskStorePath(stateDir)+".lock", 0o755); err != nil {
+		t.Fatalf("create invalid durable lock path: %v", err)
+	}
+	env := &Env{RootDir: dir, StateDir: stateDir}
+	tool := NewCronTool(env)
+
+	_, err := tool.Execute(context.Background(), `{"action":"add","cron":"*/5 * * * *","prompt":"check deploy","recurring":true,"durable":true}`)
+	if err == nil {
+		t.Fatal("expected durable write error")
+	}
+	if !strings.Contains(err.Error(), "failed to save task") {
+		t.Fatalf("expected durable write error, got %v", err)
+	}
+
+	sessionTasks, listErr := cron.NewSessionTaskStore(stateDir).List()
+	if listErr != nil {
+		t.Fatalf("session store list: %v", listErr)
+	}
+	if len(sessionTasks) != 0 {
+		t.Fatalf("expected no session tasks after durable write failure, got %d", len(sessionTasks))
 	}
 }
 
