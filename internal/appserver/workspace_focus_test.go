@@ -78,14 +78,33 @@ func startFocusTurn(t *testing.T, srv *Server, reqID, threadID, prompt string, f
 	if focus != nil {
 		params["focus_workspace"] = *focus
 	}
-	payload, err := json.Marshal(map[string]any{"id": reqID, "method": "turn/start", "params": params})
-	if err != nil {
-		t.Fatalf("marshal turn/start: %v", err)
+	// turn/completed is emitted after the finishing turn releases its
+	// execution lease, but a resident DM's durable settlement may hand the
+	// lease straight to a follow-up drain turn. A zero-gap successor (only
+	// tests send one) can therefore observe a short busy window; retry it
+	// instead of encoding the scheduler's interleaving into the assertion.
+	deadline := time.Now().Add(3 * time.Second)
+	attempt := 0
+	for {
+		attempt++
+		requestID := fmt.Sprintf("%s-a%d", reqID, attempt)
+		payload, err := json.Marshal(map[string]any{"id": requestID, "method": "turn/start", "params": params})
+		if err != nil {
+			t.Fatalf("marshal turn/start: %v", err)
+		}
+		if err := srv.handleLine(context.Background(), payload); err != nil {
+			t.Fatalf("turn/start: %v", err)
+		}
+		resp := responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), requestID)
+		if errPayload, ok := resp["error"].(map[string]any); ok {
+			message, _ := errPayload["message"].(string)
+			if strings.Contains(message, "already has a running turn") && time.Now().Before(deadline) {
+				time.Sleep(20 * time.Millisecond)
+				continue
+			}
+		}
+		return resp
 	}
-	if err := srv.handleLine(context.Background(), payload); err != nil {
-		t.Fatalf("turn/start: %v", err)
-	}
-	return responseByID(t, parseOutput(t, srv.out.(*lockedBuffer).String()), reqID)
 }
 
 func focusDeclarationRecords(t *testing.T, sessDir, threadID string) []session.HistoryRecord {
