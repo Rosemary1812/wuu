@@ -724,14 +724,3 @@ type ServerStatus struct {
 	ToolCount  int            `json:"tool_count"`
 	Error      string         `json:"error,omitempty"`
 }
-
-// PromptCacheStablePrefix returns the number of built-in tools that should
-// be kept before MCP tools in the tool list. This preserves prompt cache
-// stability: built-in tools form a stable prefix; MCP tools (which may
-// change across sessions) are appended so they don't invalidate cache
-// anchors inside the built-in block.
-func PromptCacheStablePrefix() int {
-	// wuu currently registers ~20 built-in tools. We return a generous
-	// upper bound so the toolkit can sort MCP tools after all built-ins.
-	return 50
-}

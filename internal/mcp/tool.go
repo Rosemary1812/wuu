@@ -147,14 +147,6 @@ func (t *MCPTool) metadata() (readOnly bool, concurrencySafe bool) {
 	return readOnly, concurrencySafe
 }
 
-func formatToolResult(result *CallToolResult) string {
-	mapped, err := mapCallToolResult(result)
-	if err != nil {
-		return "[invalid MCP tool result: " + err.Error() + "]"
-	}
-	return mapped.TextProjection()
-}
-
 func mapCallToolResult(result *CallToolResult) (toolresult.Result, error) {
 	if result == nil {
 		return toolresult.Result{}, fmt.Errorf("MCP tool result is nil")

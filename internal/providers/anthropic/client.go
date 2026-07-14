@@ -27,10 +27,6 @@ func streamIdleTimeout() time.Duration {
 	return streamTransportConfig(nil).IdleTimeout
 }
 
-func streamConnectTimeout() time.Duration {
-	return streamTransportConfig(nil).ConnectTimeout
-}
-
 const (
 	defaultTimeout          = 120 * time.Second
 	defaultAnthropicVersion = "2023-06-01"
@@ -692,20 +688,6 @@ func anthropicToolSearchOption(options map[string]any) (bool, bool) {
 		return enabled, true
 	}
 	return false, false
-}
-
-// SupportsNativeToolSearch reports whether this Anthropic-compatible endpoint
-// should receive Anthropic's native defer_loading/tool_reference flow when
-// tool_search is present in the request. Unknown compatible endpoints stay
-// disabled unless provider options explicitly opt in.
-func SupportsNativeToolSearch(baseURL, model string, options map[string]any) bool {
-	if !modelSupportsAnthropicToolReference(model) {
-		return false
-	}
-	if enabled, ok := anthropicToolSearchOption(options); ok {
-		return enabled
-	}
-	return isFirstPartyAnthropicBaseURL(baseURL)
 }
 
 func SupportsNativeToolSearchWhenExplicitlyEnabled(model string, options map[string]any) bool {

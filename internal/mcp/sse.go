@@ -26,15 +26,6 @@ type SSETransport struct {
 	closeErr  error
 }
 
-// NewSSETransport connects to an MCP SSE endpoint.
-func NewSSETransport(endpoint string) (*SSETransport, error) {
-	return newSSETransport(context.Background(), endpoint, nil)
-}
-
-func NewSSETransportWithHeaders(endpoint string, headers map[string]string) (*SSETransport, error) {
-	return newSSETransport(context.Background(), endpoint, headers)
-}
-
 func newSSETransport(ctx context.Context, endpoint string, headers map[string]string) (*SSETransport, error) {
 	client := newSSEHTTPClient()
 	transportCtx, cancel := context.WithCancel(context.Background())

@@ -1326,10 +1326,6 @@ func ResolveInputWindow(model string, provider config.ProviderConfig) int {
 
 const codexSubscriptionGPT5InputCap = modelbudget.CodexSubscriptionGPT5InputCap
 
-func codexSubscriptionInputCap(model, providerType string) int {
-	return modelbudget.CodexSubscriptionInputCap(model, providerType)
-}
-
 // RuntimeContextInjector returns volatile request-only runtime context injected
 // into model requests without appending it to live or durable history. Stable
 // session environment belongs in the system prompt, not here.
