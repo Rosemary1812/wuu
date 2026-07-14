@@ -88,7 +88,7 @@ function makeLogTail(path, destination) {
   };
 }
 
-function waitForElectron(token, timeoutMs = 10_000) {
+function waitForElectron(token, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     // The token is also passed as an Electron argument below, so avoid `ps e`.
