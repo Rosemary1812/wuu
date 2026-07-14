@@ -38,8 +38,12 @@ export function agentStatusLabel(status: string | undefined): string {
   switch (status) {
     case "pending":
       return "等待";
+    case "queued":
+      return "排队中";
     case "running":
       return "运行中";
+    case "waiting_children":
+      return "等待子任务";
     case "completed":
       return "完成";
     case "failed":

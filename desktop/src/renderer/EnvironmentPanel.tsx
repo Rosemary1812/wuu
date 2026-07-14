@@ -23,7 +23,7 @@ import type {
   WorkspaceFileReadResult
 } from "../shared/protocol";
 import { desktopApiErrorMessage, formatBytes } from "./WorkspaceReviewHelpers";
-import { sortChildAgents } from "./ThreadAgents";
+import { agentStatusLabel, sortChildAgents } from "./ThreadAgents";
 import { ParticipantChip } from "./ParticipantChip";
 import { type SubagentRowSummary } from "./EnvironmentSideStack";
 
@@ -347,12 +347,7 @@ function EnvironmentSubagents({
   );
 }
 
-/**
- * Local helpers. The full versions live in `ThreadAgents`, but importing
- * them would pull in extra surface area (and a transitive dependency on
- * `agentStatusTone`'s string union). The info panel only needs a stable
- * visual class and a label, so we adapt the agent summary inline.
- */
+/** Keep the panel-specific visual class stable across agent states. */
 function agentStatusToneToClass(status: string | undefined): string {
   switch (status) {
     case "running":
@@ -365,23 +360,6 @@ function agentStatusToneToClass(status: string | undefined): string {
       return "cancelled";
     default:
       return "pending";
-  }
-}
-
-function agentStatusLabel(status: string | undefined): string {
-  switch (status) {
-    case "pending":
-      return "等待";
-    case "running":
-      return "运行中";
-    case "completed":
-      return "完成";
-    case "failed":
-      return "失败";
-    case "cancelled":
-      return "已停止";
-    default:
-      return status?.trim() || "未知";
   }
 }
 
