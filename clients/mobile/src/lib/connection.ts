@@ -165,7 +165,9 @@ export class WuuMobile {
       // link is up, we have an end-to-end channel, and a fresh app-server
       // gives the host a clean place to store the device token.
       if (!resumed) {
-        void this.registerPush().catch(() => {});
+        void this.registerPush().catch((error: unknown) => {
+          console.warn("Push registration failed", error);
+        });
       }
     } catch {
       // The link dropped mid-refresh; the reconnect loop will re-attach and
@@ -305,16 +307,10 @@ export class WuuMobile {
   }
 
   private async sendPushRegister(bundle: PushTokenBundle): Promise<void> {
-    try {
-      await this.call<PushRegisterResult>("device/push_register", {
-        platform: bundle.platform,
-        expo_push_token: bundle.expoPushToken,
-        device_push_token: bundle.devicePushToken,
-      });
-    } catch {
-      // Older hosts may not implement the RPC; the device still has a
-      // valid token locally and a later host version will pick it up.
-    }
+    await this.call<PushRegisterResult>("device/push_register", {
+      token: bundle.token,
+      platform: bundle.platform,
+    });
   }
 
   /** Wires the OS push-token rollover + tap-response listeners. Called once
@@ -325,7 +321,9 @@ export class WuuMobile {
       // Only ship a fresh token when the link is up; a rollover during
       // disconnect is harmless because the host re-asks on every attach.
       if (this.store.getSnapshot().phase !== "attached") return;
-      void this.sendPushRegister(bundle).catch(() => {});
+      void this.sendPushRegister(bundle).catch((error: unknown) => {
+        console.warn("Push token refresh registration failed", error);
+      });
     });
     addNotificationResponseListener((response) => {
       const data = response.notification.request.content.data as { url?: unknown } | undefined;

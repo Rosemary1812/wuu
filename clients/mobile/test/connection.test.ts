@@ -19,10 +19,12 @@ const captured: {
   onDetach: () => void;
   clientProfile?: string;
   started: number;
+  calls: Array<{ method: string; params: unknown; attachTimeoutMs: number | undefined }>;
 } = {
   onAttach: () => {},
   onDetach: () => {},
   started: 0,
+  calls: [],
 };
 
 vi.mock("@wuu/remote-core", () => {
@@ -42,8 +44,17 @@ vi.mock("@wuu/remote-core", () => {
     start(): void {
       captured.started += 1;
     }
-    async call<T>(): Promise<T> {
-      return undefined as unknown as T;
+    async call<T>(method: string, params?: unknown, attachTimeoutMs?: number): Promise<T> {
+      captured.calls.push({ method, params, attachTimeoutMs });
+      const result =
+        method === "thread/list"
+          ? { threads: [] }
+          : method === "participant/list"
+            ? { participants: [] }
+            : method === "device/push_register"
+              ? { ok: true }
+              : {};
+      return result as T;
     }
     async stop(): Promise<void> {}
   }
@@ -66,6 +77,7 @@ vi.mock("expo-notifications", () => ({
   getLastNotificationResponseAsync: vi.fn().mockResolvedValue(null),
   AndroidImportance: { HIGH: 4 },
   PermissionStatus: { GRANTED: "granted", DENIED: "denied", UNDETERMINED: "undetermined" },
+  IosAuthorizationStatus: { NOT_DETERMINED: 0, DENIED: 1, AUTHORIZED: 2, PROVISIONAL: 3, EPHEMERAL: 4 },
 }));
 
 vi.mock("expo-constants", () => ({
@@ -86,6 +98,7 @@ vi.mock("expo-secure-store", () => ({
 // the mocked modules.
 import { WuuMobile } from "../src/lib/connection";
 import type { Credentials } from "@wuu/remote-core";
+import * as Notifications from "expo-notifications";
 
 function makeCreds(): Credentials {
   return {
@@ -103,6 +116,7 @@ describe("WuuMobile reconnect grace window", () => {
     captured.onDetach = () => {};
     captured.clientProfile = undefined;
     captured.started = 0;
+    captured.calls = [];
     vi.useFakeTimers();
   });
 
@@ -171,6 +185,32 @@ describe("WuuMobile reconnect grace window", () => {
     // Reattach a hair before the timer would have fired.
     captured.onAttach({ session: "s2", resumed: true });
     await vi.advanceTimersByTimeAsync(200);
+    expect(controller.store.getSnapshot().phase).toBe("attached");
+  });
+
+  it("registers the preferred push token using the app-server contract", async () => {
+    vi.mocked(Notifications.getPermissionsAsync).mockResolvedValueOnce({
+      status: "granted",
+      granted: true,
+      canAskAgain: true,
+      expires: "never",
+      ios: { status: 2 },
+    } as never);
+    vi.mocked(Notifications.getExpoPushTokenAsync).mockResolvedValueOnce({
+      data: "ExponentPushToken[fresh]",
+      type: "expo",
+    });
+    const controller = bootController();
+    await vi.advanceTimersByTimeAsync(0);
+
+    captured.onAttach({ session: "fresh", resumed: false });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(captured.calls).toContainEqual({
+      method: "device/push_register",
+      params: { token: "ExponentPushToken[fresh]", platform: "ios" },
+      attachTimeoutMs: 20_000,
+    });
     expect(controller.store.getSnapshot().phase).toBe("attached");
   });
 });
