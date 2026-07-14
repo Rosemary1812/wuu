@@ -122,7 +122,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 				},
 				"command": map[string]any{
 					"type":        "string",
-					"description": "Shell command to execute or start in the background. Must be non-interactive; never rely on editors, pagers, or terminal prompts.",
+					"description": "Shell command to execute or start in the background. Must be non-interactive; never rely on editors, pagers, or terminal prompts. Do not background with '&'; use action=start_background for long-lived processes.",
 				},
 				"timeout_seconds": map[string]any{
 					"type":        "integer",

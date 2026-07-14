@@ -394,11 +394,7 @@ const bashTerminalGuidance = `
 Command and process discipline:
 - Use bash for every terminal operation: tests, lint, type checks, builds, git operations, package manager commands, and arbitrary scripts. There is no separate test-runner, git, or background-process tool on this surface; do not invent one.
 - Bash is not a strong path sandbox. Use its configured working directory and do not use absolute paths to route around the workspace boundary.
-- For JavaScript projects, prefer package scripts such as npm test or npm run typecheck. If you only know the runner command such as npx vitest, still use bash and let the runtime boundary allow or deny the tool call.
-- Do not pipe verification commands through tail/head just to keep output short; bash already caps command output and preserves full logs when available.
-- For repository history work, inspect git status, git diff, git diff --cached when staged files exist, and recent git log before committing. Stage only intended files with explicit paths, unstage mistakes with explicit paths, create commits with explicit non-interactive messages (-m/--message or -F/--file), amend only when explicitly requested, and push only when the user explicitly requested a remote write.
-- Never use broad staging, sensitive credential paths, destructive git commands, force push, git config mutation, hook-skipping flags, or interactive/editor-driven git flows unless the user explicitly requested that exact action and the runtime permits it.
-- For long-lived dev servers, watchers, and background processes, use bash with an explicit timeout when you need bounded logs or readiness output. Do not background commands with "&".`
+- Never use broad staging, sensitive credential paths, destructive git commands, force push, git config mutation, hook-skipping flags, commit amends, or interactive/editor-driven git flows unless the user explicitly requested that exact action.`
 
 func addOpenAICodexPrompt(b *surfaceBuilder) {
 	b.surface.SystemFragment = strings.TrimSpace(`
