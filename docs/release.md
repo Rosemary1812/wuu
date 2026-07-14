@@ -9,12 +9,13 @@ Tagged releases are published by `.github/workflows/release.yml`.
 2. Commit the version change.
 3. Create and push a matching tag, for example `v0.1.0`.
 
-The workflow refuses to release if the tag, root `VERSION`, desktop package,
-and npm package versions do not match.
+The workflow refuses to release if the tag commit is not on `main`, or if the
+tag, root `VERSION`, desktop package, and npm package versions do not match.
 
-Before tagging, `go mod tidy -diff` must succeed without output. CI runs the
-same read-only check; release tooling consumes committed module manifests and
-does not update `go.mod` or `go.sum`.
+Before tagging, `make check-go test-go` must pass. The release workflow reruns
+those gates against the tagged commit before it builds any CLI archives.
+Release tooling consumes committed module manifests and does not update
+`go.mod` or `go.sum`.
 
 ## GitHub Secrets
 
@@ -61,8 +62,9 @@ Do not ask users to run this for builds from untrusted sources.
 
 ## Output
 
-The CLI job builds macOS and Linux archives with GoReleaser, verifies their
-checksums and runs the Linux amd64 binary. The macOS desktop job builds and
+The CLI job verifies that the tag commit belongs to `main`, checks and tests the
+Go core, builds macOS and Linux archives with GoReleaser, verifies their
+checksums, and runs the Linux amd64 binary. The macOS desktop job builds and
 verifies the unsigned arm64 desktop preview app. The GitHub Release is created
 only after both jobs succeed.
 
