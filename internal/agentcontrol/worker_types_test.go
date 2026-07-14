@@ -146,6 +146,27 @@ func TestFilterToolsForWorker_DisallowedToolsRespected(t *testing.T) {
 	}
 }
 
+func TestFilterToolsForWorker_UltraUnlocksOrchestrationButNotHelpme(t *testing.T) {
+	wt, err := LookupWorkerType(DefaultSubagentType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := []string{"read_file", "spawn_agent", "send_message", "close_agent", "helpme", "agent_report"}
+	filtered := FilterToolsForWorker(wt, full, false, true)
+	allowed := map[string]bool{}
+	for _, name := range filtered {
+		allowed[name] = true
+	}
+	for _, expected := range []string{"read_file", "spawn_agent", "send_message", "close_agent", "agent_report"} {
+		if !allowed[expected] {
+			t.Errorf("Ultra worker missing %s: %v", expected, filtered)
+		}
+	}
+	if allowed["helpme"] {
+		t.Errorf("Ultra worker must not receive helpme: %v", filtered)
+	}
+}
+
 func TestFilterToolsForWorker_AllowlistRespected(t *testing.T) {
 	wt := WorkerType{
 		Name:         "readonly",

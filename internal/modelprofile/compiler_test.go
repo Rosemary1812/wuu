@@ -654,4 +654,24 @@ func TestSurfaceKindOrchestrates(t *testing.T) {
 	if SurfaceWorker.orchestrates() {
 		t.Error("SurfaceWorker must not orchestrate")
 	}
+	if !SurfaceUltraWorker.orchestrates() {
+		t.Error("SurfaceUltraWorker must orchestrate")
+	}
+}
+
+func TestUltraWorkerSurfaceCombinesOrchestrationAndReportWithoutHelpme(t *testing.T) {
+	surface := DefaultCompiler{}.Compile(Resolve("openai", "gpt-5-codex"), SurfaceUltraWorker)
+	for _, name := range []string{"spawn_agent", "agent_report"} {
+		if _, ok := surface.Tools[name]; !ok {
+			t.Errorf("Ultra worker surface missing direct tool %s", name)
+		}
+	}
+	for _, name := range []string{"send_message", "close_agent"} {
+		if _, ok := surface.DeferredTools[name]; !ok {
+			t.Errorf("Ultra worker surface missing deferred tool %s", name)
+		}
+	}
+	if _, ok := surface.Tools["helpme"]; ok {
+		t.Error("Ultra worker surface must not expose helpme")
+	}
 }

@@ -43,17 +43,21 @@ const (
 )
 
 // SurfaceKind identifies which runtime role a tool surface is compiled for.
-// It is a closed set of three values so the compiler can key decisions off a
+// It is a closed set of four values so the compiler can key decisions off a
 // single dimension instead of an open pair of booleans (a worker that is also
-// "named" is not a valid combination). The existing main/worker orchestration
-// boundary is derived from it: main and named agents orchestrate, workers do
-// not.
+// "named" is not a valid combination). Ultra workers are kept distinct from
+// main agents because they combine task orchestration with the worker-only
+// agent_report handoff and never receive helpme.
 type SurfaceKind int
 
 const (
 	// SurfaceWorker is a pure executor subagent surface: no task
 	// orchestration or recovery tools, only the agent_report handoff.
 	SurfaceWorker SurfaceKind = iota
+	// SurfaceUltraWorker is an orchestrating subagent surface. It keeps the
+	// worker-only agent_report handoff, adds the task orchestration suite, and
+	// deliberately omits the main-agent-only helpme recovery tool.
+	SurfaceUltraWorker
 	// SurfaceMain is the ordinary project main-agent brain surface: it
 	// carries the task-orchestration suite plus helpme.
 	SurfaceMain
@@ -63,17 +67,24 @@ const (
 	SurfaceNamed
 )
 
-// orchestrates reports whether a surface kind gets the main-agent
-// orchestration boundary (task suite + helpme) rather than the pure-worker
-// surface. Main and named agents orchestrate; workers do not.
+// orchestrates reports whether a surface kind gets the task orchestration
+// suite. Main, named, and Ultra workers orchestrate; ordinary workers do not.
 func (k SurfaceKind) orchestrates() bool {
 	return k != SurfaceWorker
 }
 
+func (k SurfaceKind) isWorker() bool {
+	return k == SurfaceWorker || k == SurfaceUltraWorker
+}
+
+func (k SurfaceKind) includesHelpme() bool {
+	return k == SurfaceMain || k == SurfaceNamed
+}
+
 // Compiler compiles a model profile into a tool surface. Compile is given a
 // SurfaceKind so it can decide whether the surface should advertise, hide, or
-// omit main-agent-only orchestration and recovery tools (the spawn_agent
-// suite, helpme) and worker-only handoff tools such as agent_report. The
+// omit orchestration and recovery tools (the spawn_agent suite, helpme) and
+// worker-only handoff tools such as agent_report. The
 // surface is therefore consistent with the runtime boundary instead of being
 // filtered downstream. The named value remains distinct for resident/named
 // callers while compiling the same base surface as SurfaceMain.
@@ -90,8 +101,9 @@ type DefaultCompiler struct{}
 // controls the orchestration boundary: execution capability is equal on all
 // surfaces, but orchestration belongs to the brain (the session main agent and
 // resident named agents, which clone the main surface). Main and named
-// surfaces get the task-orchestration suite plus helpme; worker surfaces are
-// pure executors and keep only the agent_report handoff tool.
+// surfaces get the task-orchestration suite plus helpme; ordinary worker
+// surfaces are pure executors and keep only agent_report; Ultra workers get
+// task orchestration plus agent_report without helpme.
 func (DefaultCompiler) Compile(p Profile, kind SurfaceKind) capability.Surface {
 	key := ResolveProfileKey(p)
 	b := newBuilder(p, key)
@@ -108,8 +120,11 @@ func (DefaultCompiler) Compile(p Profile, kind SurfaceKind) capability.Surface {
 	addInceptionTool(b)
 	if kind.orchestrates() {
 		addTaskTools(b)
+	}
+	if kind.includesHelpme() {
 		addHelpmeTool(b)
-	} else {
+	}
+	if kind.isWorker() {
 		addWorkerReportTool(b)
 	}
 	b.sortCaps()
@@ -293,14 +308,10 @@ func addWebTools(b *surfaceBuilder) {
 	b.addVisible("web_fetch", capability.CapabilityWebFetch)
 }
 
-// addTaskTools registers the main-agent-only orchestration suite: spawn_agent
-// as a visible tool plus the deferred subagent management tools. It is called
-// from DefaultCompiler.Compile only when forMainAgent is true. Worker surfaces
-// omit the whole suite — workers are pure executors and never recurse; their
-// only task tool is the agent_report handoff added by addWorkerReportTool.
-// Resident named-agent brains reuse the main-agent surface, so they keep the
-// suite. Runtime defense-in-depth (alwaysBlockedTools in
-// internal/agentcontrol/worker_types.go) is unchanged.
+// addTaskTools registers the orchestration suite: spawn_agent as a visible
+// tool plus the deferred subagent management tools. Main, named, and Ultra
+// worker surfaces receive it; ordinary worker surfaces omit it. Runtime
+// defense-in-depth remains in internal/agentcontrol/worker_types.go.
 func addTaskTools(b *surfaceBuilder) {
 	b.addVisible("spawn_agent", capability.CapabilityTaskSpawn)
 	b.addDeferred("send_message", capability.CapabilityTaskCommunicate)
