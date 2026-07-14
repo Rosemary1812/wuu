@@ -1,26 +1,7 @@
 /// <reference path="../shared/jsx-compat.d.ts" />
 
 import {
-  ChevronRight,
-  Folder,
-  FolderX,
-  GitBranch,
-  Image as ImageIcon,
-  Laptop,
-  MoreHorizontal,
-  Pencil,
-  Pin,
-  Plus,
-  Send,
-  Trash2,
-  Wrench,
-  X,
-} from "lucide-react";
-import {
   type CSSProperties,
-  type RefObject,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -34,18 +15,15 @@ import type {
   ConversationSubthread,
   SubthreadUpdatedNotification,
   DesktopProject,
-  GitStatusResult,
   InitializeResult,
   InputFile,
   InputImage,
-  PlanUpdate,
   PopOutInitResult,
   PermissionSummary,
   RuntimeContext,
   ServerEvent,
   Thread,
   ThreadItem,
-  Turn,
 } from "../shared/protocol";
 import {
   awaitComposerImages,
@@ -53,13 +31,10 @@ import {
   createOptimisticCompactTurn,
   createOptimisticTurn,
   dropOptimisticTurn,
-  earlierStartedAt,
   failOptimisticCompactTurn,
   inputFilesFromComposer,
   inputImagesFromComposer,
   replaceOptimisticTurn,
-  type ComposerFile,
-  type ComposerImage,
   type QueuedComposerMessage,
 } from "./ComposerMessages";
 import {
@@ -75,7 +50,6 @@ import {
   type CodexModelLoadState,
   type CodexRuntimeMenu,
   type ComposerVariant,
-  type FloatingMenuOwner,
   type PermissionMode,
 } from "./ComposerView";
 import {
@@ -108,7 +82,6 @@ import {
   latestContextUsageForThread,
   activeTurnIDForThread,
   activeTurnTokenSpeedSnapshot,
-  applyLoadedRuntimeWithDraftCarry,
   flushPendingStreamingTokenSamples,
   recordPendingStreamingTokenSample,
   type PendingStreamingTokenSamples,
@@ -116,35 +89,26 @@ import {
   computeBusyParticipantIDs,
   chatFocusValueForThread,
   cloneSessionTabDraft,
-  composerDraftHasContent,
   composerSubmissionDetail,
   conversationPaneThreadsByID,
   createDraftSessionTab,
-  createThreadSessionTab,
   emptyComposerDraft,
-  ensureSessionTab,
-  fileNameFromPath,
   findDMThread,
   focusWorkspaceSendValue,
   handleStreamingNotification,
   initialSplitComposerDrafts,
   initialState,
   isAnyThreadRunning,
-  isDirectChildAgent,
   isDMThread,
   groupThreadSummaries,
   isGroupThread,
   isStateActiveThreadRunning,
-  isThread,
   isThreadRunning,
   isThreadUnread,
   latestPlanUpdateForThread,
-  mergeListedThreads,
   markThreadTurnsViewed,
   mentionedParticipantIDsFromText,
-  notificationTargetsActiveThread,
   overlayMemberBusy,
-  persistActiveSessionTabDraft,
   pinnedThreadSummaries,
   queryTextForUserItem,
   SCRATCH_PSEUDO_PROJECT_ID,
@@ -164,10 +128,7 @@ import {
   summarizeThreadsForSidebar,
   threadForTab,
   threadForPane,
-  threadFromRecord,
-  threadIDFromParams,
   threadSessionTabID,
-  turnFromRecord,
   turnStreamStatusForThread,
   updateThreadByID,
   upsertThread,
@@ -179,7 +140,6 @@ import {
   type ConversationPaneID,
   type SessionTab,
   type ThreadSummary,
-  type TurnStreamStatus,
 } from "./AppState";
 import {
   RIGHT_PANEL_MOTION_MS,
@@ -213,31 +173,15 @@ import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { JumpToLatestPill } from "./JumpToLatestPill";
 import { SkillsCatalog } from "./SkillsCatalog";
 import { TaskBoardView } from "./TaskBoardView";
-import { StreamingMarkdown } from "./StreamingMarkdown";
 import { runDebugPhaseForState } from "./RunDebugPanel";
 import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
 import { subscribeSideThreadOpenRequest, emitSideThreadOpenRequest } from "./SideThreadOpenBus";
 import { useSideThreadController } from "./SideThreadController";
-import { threadDisplayTitle } from "./ThreadTitles";
-import {
-  isRecord,
-  numberValue,
-} from "./ToolActivity";
-import {
-  mergeTurnItemsInOrder,
-  orderedTurnItems,
-  upsertTurnItemInOrder,
-} from "./TurnOrdering";
-import { sortChildAgents } from "./ThreadAgents";
 import {
   rawErrorMessage,
   statusMessageForError,
-  statusToneClass,
 } from "./UserFacingErrors";
-import {
-  latestAgentMessageItemID,
-  scrollToUserMessage,
-} from "./TurnView";
+import { scrollToUserMessage } from "./TurnView";
 import { ConversationTurnRail } from "./ConversationTurnRail";
 import {
   WorkspaceRightPanel,
@@ -321,11 +265,6 @@ const QUERY_HISTORY_RAIL_MAX_BARS = 20;
 // full TurnView DOM trees, making long sessions heavier after each tab switch.
 const CACHED_THREAD_PANE_LIMIT = 1;
 type EnvironmentDialog = "commit" | "pull-request" | null;
-type TurnProgressContent = {
-  label: string;
-  detail?: string;
-};
-
 const RENDERER_ENV = (
   import.meta as ImportMeta & {
     env?: { DEV?: boolean; VITE_ENABLE_RUN_DEBUG_PANEL?: string };
@@ -404,7 +343,6 @@ export function App(): JSX.Element {
     attachSubthreadComposerAttachmentFiles,
     removeSubthreadComposerImage,
     removeSubthreadComposerFile,
-    updateSplitComposerDraft,
     setSplitComposerPrompt,
     attachSplitComposerAttachmentFiles,
     removeSplitComposerImage,
@@ -548,8 +486,6 @@ export function App(): JSX.Element {
     workspaceViewTabs,
     workspaceActiveViewTabID,
     workspaceActiveFileTabID,
-    ensureWorkspaceToolTab,
-    activateWorkspaceTool,
     openWorkspaceTool,
     openWorkspaceDiffTab,
     openWorkspaceFileTab,
@@ -1267,7 +1203,6 @@ export function App(): JSX.Element {
   const {
     pendingBrowserURL,
     consumePendingBrowserURL,
-    openBrowserURL,
     rememberBrowserURLForActiveThread,
   } = useThreadBrowserPreview({
     activeThread,
@@ -1786,7 +1721,6 @@ export function App(): JSX.Element {
   });
   const emptyThreadTitle = greetingFor(currentHour, greetingContext);
   const turns = activeThread?.turns ?? [];
-  const latestAgentMessageID = latestAgentMessageItemID(turns);
   const activeContextCompositionEntries = activeThreadID
     ? contextCompositionEntries.filter((entry) => entry.threadID === activeThreadID)
     : [];
@@ -1862,12 +1796,10 @@ export function App(): JSX.Element {
     dockComposerNode,
     scheduleStreamScroll,
     handleConversationScroll,
-    scrollConversationToBottom,
     enableConversationAutoFollow,
     disableConversationAutoFollow,
     captureConversationScrollPosition,
     restoreConversationScrollPosition,
-    userScrolledAway
   } = useConversationScrollState({
     activeThreadID,
     activePane: state.activePane,
@@ -2686,7 +2618,6 @@ export function App(): JSX.Element {
 
   const {
     checkoutBranch,
-    refreshGitStatus,
     scheduleGitStatusRefresh,
     createAndCheckoutBranch,
     commitEnvironmentChanges,
@@ -2772,7 +2703,6 @@ export function App(): JSX.Element {
   }
 
   const {
-    openProject,
     selectProjectForNewThread,
     startNewThreadForProject,
     createBlankProject,
@@ -2801,7 +2731,6 @@ export function App(): JSX.Element {
     selectThread,
     selectProjectThread,
     activateThread,
-    selectProjectChildAgent,
     selectChildAgent,
   } = createThreadActivationActions({
     getAppState: () => appStateRef.current,
@@ -2924,7 +2853,6 @@ export function App(): JSX.Element {
     dismissInstructionFilesEntry,
     openInstructions,
     openContextComposition,
-    openParticipantProfile,
     openParticipantDM,
     createGroupThread,
     openTaskBoardTab,
