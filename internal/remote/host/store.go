@@ -18,6 +18,11 @@ type StoredDevice struct {
 	Pub     string    `json:"pub"` // base64url Ed25519 public key
 	Name    string    `json:"name,omitempty"`
 	AddedAt time.Time `json:"added_at"`
+	// Push registration, set by the phone after pairing. The token is opaque
+	// to the host; an empty token means push is not registered.
+	PushToken    string    `json:"push_token,omitempty"`
+	PushPlatform string    `json:"push_platform,omitempty"` // "ios" | "android"
+	PushSetAt    time.Time `json:"push_set_at,omitzero"`
 }
 
 type storeFile struct {
@@ -132,6 +137,44 @@ func (s *Store) RemoveDevice(pub string) error {
 	}
 	s.data.Devices = kept
 	return s.saveLocked()
+}
+
+// SetDevicePushToken records the push registration for a paired device.
+// An empty token unregisters push. Pub is the encoded (base64url) key as
+// listed by Devices; unknown devices are an error so a phone cannot park a
+// token on a pairing that no longer exists.
+func (s *Store) SetDevicePushToken(pub, token, platform string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.data.Devices {
+		if s.data.Devices[i].Pub != pub {
+			continue
+		}
+		if token == "" {
+			s.data.Devices[i].PushToken = ""
+			s.data.Devices[i].PushPlatform = ""
+			s.data.Devices[i].PushSetAt = time.Time{}
+		} else {
+			s.data.Devices[i].PushToken = token
+			s.data.Devices[i].PushPlatform = platform
+			s.data.Devices[i].PushSetAt = now.UTC()
+		}
+		return s.saveLocked()
+	}
+	return fmt.Errorf("device %s is not paired", pub)
+}
+
+// DevicePush returns the registered push token and platform for a device.
+// ok is false when the device is unknown or push is not registered.
+func (s *Store) DevicePush(pub string) (token, platform string, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, d := range s.data.Devices {
+		if d.Pub == pub && d.PushToken != "" {
+			return d.PushToken, d.PushPlatform, true
+		}
+	}
+	return "", "", false
 }
 
 // IsPaired reports whether a device public key belongs to a paired phone.

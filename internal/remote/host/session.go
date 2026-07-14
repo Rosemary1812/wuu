@@ -34,6 +34,47 @@ type deviceSession struct {
 	attached bool
 	app      *appConn
 	lastPush time.Time
+	// lastThreadPush throttles turn-bound push hints per thread so one busy
+	// thread cannot starve nudges for the others. Guarded by mu.
+	lastThreadPush map[string]time.Time
+}
+
+// pushThreadSlotCap bounds lastThreadPush. Once reached, entries older than
+// the push interval are pruned before a new slot is recorded.
+const pushThreadSlotCap = 256
+
+// tryConsumePushSlot reports whether a push hint may fire now and, if so,
+// consumes its throttle slot. Thread-bound hints throttle per
+// (device, thread); hints without a thread (needs_input) fall back to the
+// per-device window. Caller holds s.mu.
+func (s *deviceSession) tryConsumePushSlot(hint, threadID string) bool {
+	if hint == "" {
+		return false
+	}
+	interval := s.h.pushMinInterval
+	now := time.Now()
+	if threadID == "" {
+		if now.Sub(s.lastPush) < interval {
+			return false
+		}
+		s.lastPush = now
+		return true
+	}
+	if last, ok := s.lastThreadPush[threadID]; ok && now.Sub(last) < interval {
+		return false
+	}
+	if s.lastThreadPush == nil {
+		s.lastThreadPush = make(map[string]time.Time)
+	}
+	if len(s.lastThreadPush) >= pushThreadSlotCap {
+		for id, at := range s.lastThreadPush {
+			if now.Sub(at) >= interval {
+				delete(s.lastThreadPush, id)
+			}
+		}
+	}
+	s.lastThreadPush[threadID] = now
+	return true
 }
 
 // appConn is one in-process app-server instance (over pipes) bound to a
@@ -137,11 +178,8 @@ func (s *deviceSession) onAppLine(app *appConn, line []byte) {
 		s.mu.Unlock()
 		return
 	}
-	hint, _ := classifyPushHint(outLine)
-	shouldPush := hint != "" && time.Since(s.lastPush) >= s.h.pushMinInterval
-	if shouldPush {
-		s.lastPush = time.Now()
-	}
+	hint, pushThread := classifyPushHint(outLine)
+	shouldPush := s.tryConsumePushSlot(hint, pushThread)
 	s.mu.Unlock()
 	if shouldPush {
 		s.h.sendPush(s.devPub, hint)
