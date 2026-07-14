@@ -1,5 +1,39 @@
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+// @pierre/trees wraps user CSS in cascade layers. jsdom 25 cannot parse
+// @layer and reports a stylesheet error every time a real file tree mounts.
+// Unwrap only the library's explicitly marked unsafe style element so tests
+// keep exercising the real tree model and DOM without hiding unrelated CSS
+// parser failures.
+const nodeTextContentDescriptor = Object.getOwnPropertyDescriptor(
+  Node.prototype,
+  "textContent",
+);
+if (nodeTextContentDescriptor?.get && nodeTextContentDescriptor.set) {
+  const getNodeTextContent = nodeTextContentDescriptor.get;
+  const setNodeTextContent = nodeTextContentDescriptor.set;
+  Object.defineProperty(HTMLStyleElement.prototype, "textContent", {
+    configurable: true,
+    enumerable: nodeTextContentDescriptor.enumerable,
+    get: function getTextContent(this: HTMLStyleElement): string | null {
+      return getNodeTextContent.call(this);
+    },
+    set: function setTextContent(
+      this: HTMLStyleElement,
+      value: string | null,
+    ): void {
+      const layeredCSS =
+        typeof value === "string" &&
+        this.hasAttribute("data-file-tree-unsafe-css")
+          ? value.match(
+              /^@layer base, unsafe;\s*@layer unsafe\s*\{\s*([\s\S]*)\s*\}\s*$/,
+            )
+          : null;
+      setNodeTextContent.call(this, layeredCSS?.[1] ?? value);
+    },
+  });
+}
+
 if (typeof globalThis.matchMedia !== "function") {
   Object.defineProperty(globalThis, "matchMedia", {
     writable: true,
