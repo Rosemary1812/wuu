@@ -124,7 +124,7 @@ type MemoryConfig struct {
 	// auto-memory paths. It is off by default and intended for explicit
 	// migration, not normal request context.
 	IncludeLegacyMemory *bool `json:"include_legacy_memory,omitempty"`
-	// Disable turns off memory loading entirely.
+	// Disable turns off durable memory discovery and user-notebook injection.
 	Disable bool `json:"disable,omitempty"`
 	// NudgeInterval controls how many successful user turns pass before
 	// the background memory reviewer checks whether durable facts should be
@@ -282,9 +282,8 @@ type ProviderModelModalitiesConfig struct {
 
 // AgentConfig controls behavior of the local tool loop.
 type AgentConfig struct {
-	// Name identifies a durable agent profile. The default profile is a
-	// temporary session; non-default names opt into profile-scoped memory shared
-	// across workspaces.
+	// Name identifies the configured agent profile. Memory is global per user
+	// and is not scoped by this value.
 	Name             string `json:"name,omitempty"`
 	MaxSteps         int    `json:"max_steps"`
 	MaxContextTokens int    `json:"max_context_tokens"`
@@ -917,18 +916,6 @@ func (a AgentConfig) ProfileName() string {
 		return name
 	}
 	return DefaultAgentName
-}
-
-// ProfileMemoryEnabled reports whether the durable long-term memory store is
-// attached to a session. Memory is now a single global store under
-// statepath.GlobalMemoryDir(wuuHome) and is enabled for every session by
-// default, matching the Claude Code convention of one durable memory
-// document per user regardless of the agent profile name. The flag is kept
-// for downstream code that still wants to gate memory injection on a
-// feature toggle; the function returns true unconditionally until a
-// future config knob is introduced.
-func (a AgentConfig) ProfileMemoryEnabled() bool {
-	return true
 }
 
 func isCodexSubscriptionProvider(providerType string) bool {

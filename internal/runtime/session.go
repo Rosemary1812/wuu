@@ -204,7 +204,6 @@ func NewSession(opts Options) (*Session, error) {
 		}
 	}()
 	workspaceJournal := journalRuntime.ForOwner("workspace-runtime")
-	profileMemoryEnabled := cfg.Agent.ProfileMemoryEnabled()
 	userSystemPrompt := cfg.Agent.UserSystemPrompt()
 	permissions := config.ResolveAgentPermissions(cfg.Agent)
 
@@ -267,9 +266,9 @@ func NewSession(opts Options) (*Session, error) {
 	// File-directory memory (memory-redesign M1): the user notebook index is
 	// read once here — session creation is one of the two allowed
 	// prompt-prefix change points (contract §4) — and the teaching + index
-	// are injected into the base prompt below. Memory.Disable stays the
-	// escape hatch for a fully memoryless session.
-	memdirEnabled := profileMemoryEnabled && !cfg.Memory.Disable
+	// are injected into the base prompt below. Memory.Disable is the sole
+	// configuration gate for this durable, global per-user memory.
+	memdirEnabled := !cfg.Memory.Disable
 	var memdirTeaching, memdirWorkerTeaching, memdirIndex string
 	if memdirEnabled {
 		// One-time lazy migration of the retired memory surfaces
@@ -1798,7 +1797,7 @@ func (s *Session) ApplyGeneralConfig(cfg config.Config, homeDir string) string {
 	}
 	s.UserSystemPrompt = cfg.Agent.UserSystemPrompt()
 	s.Memory = discoverMemory(s.RootDir, homeDir, cfg.Memory)
-	s.MemdirEnabled = cfg.Agent.ProfileMemoryEnabled() && !cfg.Memory.Disable
+	s.MemdirEnabled = !cfg.Memory.Disable
 	s.DreamIntervalDays = cfg.Memory.DreamIntervalDaysValue()
 	if cfg.Memory.Disable {
 		s.DreamIntervalDays = 0
