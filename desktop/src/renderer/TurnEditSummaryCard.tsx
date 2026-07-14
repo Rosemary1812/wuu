@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ArrowLeftRight, FilePlus2, Pencil, Trash2 } from "lucide-react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import {
   extractToolDiffPreview,
@@ -335,20 +336,13 @@ export function TurnEditSummaryCard({
           const rowContent = (
             <>
               <span className="turn-edit-summary-file">
-                {/* Hide the "修改" badge for the common update case — the
-                    "本轮产出 N 项" header already says these are changes, so
-                    a per-row "修改" is redundant. Keep create/delete/rename
-                    where the word carries information the +/- stats can't
-                    convey (e.g. "重命名" looks like 0/0 in the stats). */}
-                {edit.action !== "update" ? (
-                  <span className={`turn-edit-summary-action is-${edit.action}`}>
-                    {edit.action === "create"
-                      ? "新建"
-                      : edit.action === "delete"
-                        ? "删除"
-                        : "重命名"}
-                  </span>
-                ) : null}
+                <span
+                  className={`turn-edit-summary-action is-${edit.action}`}
+                  role="img"
+                  aria-label={editActionLabel(edit.action)}
+                >
+                  <EditActionIcon action={edit.action} />
+                </span>
                 <span className="turn-edit-summary-name" title={edit.path}>
                   {fileDisplayName(edit.path)}
                 </span>
@@ -416,4 +410,31 @@ export function TurnEditSummaryCard({
       </div>
     </div>
   );
+}
+
+function editActionLabel(action: FileEdit["action"]): string {
+  switch (action) {
+    case "create":
+      return "新建";
+    case "delete":
+      return "删除";
+    case "rename":
+      return "重命名";
+    case "update":
+      return "修改";
+  }
+}
+
+function EditActionIcon({ action }: { action: FileEdit["action"] }): JSX.Element {
+  const cls = "icon icon-sm";
+  switch (action) {
+    case "create":
+      return <FilePlus2 className={cls} />;
+    case "delete":
+      return <Trash2 className={cls} />;
+    case "rename":
+      return <ArrowLeftRight className={cls} />;
+    case "update":
+      return <Pencil className={cls} />;
+  }
 }

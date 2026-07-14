@@ -4441,7 +4441,13 @@ pre {
 }
 
 .turn-edit-summary-action {
+  /* Inline-flex centers the lucide icon inside the small padding box;
+     without this the SVG sits on the text baseline and drifts a couple
+     of pixels below center now that the badge is icon-only. */
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius-xs);
   background: var(--surface-2);
   color: var(--ink-muted);
