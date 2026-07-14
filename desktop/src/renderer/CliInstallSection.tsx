@@ -134,17 +134,11 @@ export function CliInstallSection(): JSX.Element {
     <section className="settings-section" data-testid="settings-cli-install">
       <header className="settings-section-header">
         <h2 className="settings-section-title">命令行工具</h2>
-        <p className="settings-section-description">
-          wuu 命令会在启动时自动安装到 PATH（类似 VS Code 的 “安装 code 命令”）；这里可以查看状态或手动处理。
-        </p>
       </header>
       <div className="settings-card">
         <div className="settings-row">
           <div className="settings-row-label">
             <span className="settings-row-label-title">安装位置</span>
-            <span className="settings-row-label-description">
-              将当前 wuu 可执行文件软链接到该路径。
-            </span>
           </div>
           <span className="settings-row-control-value">{installPath}</span>
         </div>

@@ -53,7 +53,7 @@
  * window (`sidebarAnimating`) gates a grid-template-columns transition while
  * `--sidebar-width` flips between 0 and the open width. */
 .settings-shell.sidebar-animating {
-  transition: grid-template-columns var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease);
+  transition: grid-template-columns var(--sidebar-motion-duration) var(--sidebar-motion-ease);
 }
 
 /* Glass surface (border, background, box-shadow, backdrop-filter) and the
@@ -64,9 +64,9 @@
  * aside's material transition so collapse border fades match. */
 .settings-sidebar {
   transition:
-    border-color var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease),
-    background-color var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease),
-    box-shadow var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease);
+    border-color var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    background-color var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    box-shadow var(--sidebar-motion-duration) var(--sidebar-motion-ease);
 }
 
 /* Settings-only rhythm detail for the brand → back-button → nav stack (the
@@ -100,7 +100,7 @@
   font-weight: var(--weight-semibold);
   padding: 0 12px;
   text-align: left;
-  transition: background 140ms var(--menu-enter-easing), color 140ms var(--menu-enter-easing);
+  transition: background var(--motion-fast) var(--menu-enter-easing), color var(--motion-fast) var(--menu-enter-easing);
 }
 
 .settings-back-button:hover {
@@ -126,7 +126,7 @@
   font-weight: var(--weight-semibold);
   padding: 0 12px;
   text-align: left;
-  transition: background 140ms var(--menu-enter-easing), color 140ms var(--menu-enter-easing);
+  transition: background var(--motion-fast) var(--menu-enter-easing), color var(--motion-fast) var(--menu-enter-easing);
 }
 
 .settings-nav-item:hover {
@@ -211,7 +211,13 @@
   display: flex;
   min-height: 100%;
   --settings-page-max-width: 800px;
-  width: min(var(--settings-page-max-width), calc(100% - var(--wuu-grid-margin) * 2));
+  /* One spacing scale for the whole page: --settings-pad is the gap between
+   * the content and the frame (identical on all four sides), --settings-gap
+   * the gap between modules (page header included). Every spacing decision
+   * below derives from these two values — do not introduce a third. */
+  --settings-pad: clamp(24px, 4vw, 40px);
+  --settings-gap: 40px;
+  width: min(var(--settings-page-max-width), 100%);
   /* Grow to fill a tall viewport, but never shrink below content. The bare
    * `flex: 1` (flex-shrink: 1) let the page be squished to the scroll viewport
    * height even when its content was taller, which pushed its own padding-bottom
@@ -220,18 +226,16 @@
    * inside the scrollable area. */
   flex: 1 0 auto;
   flex-direction: column;
-  gap: 36px;
+  gap: var(--settings-gap);
   margin: 0 auto;
-  /* Bottom carries a deliberate scroll-past gap, a touch larger than the top.
-   * All three sides share the vw axis — the old `8vh` bottom scaled with window
-   * height instead, so a tall window opened an arbitrary chasm below the last
-   * section. */
-  padding: clamp(24px, 4vw, 40px) clamp(12px, 3vw, 24px) clamp(48px, 6vw, 64px);
+  padding: var(--settings-pad);
   animation: content-swap-enter var(--content-swap-duration) var(--content-swap-easing) both;
 }
 
 /* --- Page header --------------------------------------------------------- */
 
+/* The page title is the only heading-weight text on the page; sections
+ * below it are quiet labels. No page description — the title says it. */
 .settings-page-header {
   display: flex;
   align-items: flex-end;
@@ -242,64 +246,51 @@
 .settings-page-title {
   margin: 0;
   color: var(--ink-strong);
-  font-size: clamp(20px, 3vw, 24px);
+  font-size: 22px;
   font-weight: var(--weight-bold);
   letter-spacing: -0.01em;
   line-height: 1.2;
 }
 
-.settings-page-description {
-  margin: 6px 0 0;
-  max-width: 56ch;
-  color: var(--ink-muted);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
-  line-height: 1.5;
-}
-
 /* --- Section + card ------------------------------------------------------ */
 
+/* Sections separate by spacing and a small muted label, not by boxes —
+ * the page reads as one column of grouped rows. */
 .settings-section {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 
 .settings-section-header {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 0 4px;
 }
 
 .settings-section-title {
   margin: 0;
-  color: var(--ink-strong);
-  font-size: 15px;
-  font-weight: var(--weight-bold);
-  letter-spacing: -0.005em;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.05em;
   line-height: 1.3;
 }
 
 .settings-section-description {
   margin: 0;
+  max-width: 60ch;
   color: var(--ink-muted);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   line-height: 1.5;
 }
 
+/* A "card" is a flat row group: no frame, no shadow, no fill. Rows carry
+ * hairline separators; the section label above anchors the group. */
 .settings-card {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--radius-lg);
-  background: var(--paper);
-  /* The canvas (.settings-main) is now the same `--paper` white as the card,
-   * so the border + a medium lift shadow (not the barely-there --shadow-soft)
-   * are what separate the card from the page. */
-  box-shadow: var(--shadow-card);
-  overflow: hidden;
 }
 
 .settings-card .settings-row:last-child {
@@ -313,9 +304,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 56px;
+  min-height: 54px;
   border-bottom: 1px solid var(--hairline-soft);
-  padding: 10px 16px 10px 20px;
+  padding: 8px 0;
 }
 
 .settings-archive-row:last-child {
@@ -337,6 +328,36 @@
   flex: 0 0 auto;
 }
 
+.settings-archive-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.settings-archive-empty-icon {
+  width: 18px;
+  height: 18px;
+  margin-bottom: 6px;
+  color: var(--ink-faint);
+}
+
+.settings-archive-empty-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+}
+
+.settings-archive-empty-hint {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  line-height: 1.5;
+}
+
 /* --- Row -----------------------------------------------------------------
  * A row is a two-column grid: label area (title + description) on the left,
  * control area on the right. Both cells align to center vertically so a
@@ -349,8 +370,10 @@
   align-items: center;
   gap: 28px;
   border-bottom: 1px solid var(--hairline-soft);
-  padding: 16px 24px;
-  min-height: 64px;
+  /* No horizontal inset: rows are flush with the page column now that the
+   * enclosing card frame is gone. */
+  padding: 14px 0;
+  min-height: 58px;
 }
 
 .settings-row-label {
@@ -426,9 +449,9 @@
   font-weight: var(--weight-medium);
   padding: 0 12px;
   transition:
-    background 140ms var(--menu-enter-easing),
-    border-color 140ms var(--menu-enter-easing),
-    box-shadow 140ms var(--menu-enter-easing);
+    background var(--motion-fast) var(--menu-enter-easing),
+    border-color var(--motion-fast) var(--menu-enter-easing),
+    box-shadow var(--motion-fast) var(--menu-enter-easing);
 }
 
 .settings-input::placeholder {
@@ -524,9 +547,9 @@
   font-weight: var(--weight-semibold);
   padding: 0 14px;
   transition:
-    background 140ms var(--menu-enter-easing),
-    color 140ms var(--menu-enter-easing),
-    transform 140ms var(--menu-enter-easing);
+    background var(--motion-fast) var(--menu-enter-easing),
+    color var(--motion-fast) var(--menu-enter-easing),
+    transform var(--motion-fast) var(--menu-enter-easing);
 }
 
 .settings-button > span {
@@ -584,8 +607,8 @@
   border-radius: var(--radius-pill);
   background: var(--hairline-strong);
   transition:
-    background 160ms var(--menu-enter-easing),
-    box-shadow 160ms var(--menu-enter-easing);
+    background var(--motion-base) var(--menu-enter-easing),
+    box-shadow var(--motion-base) var(--menu-enter-easing);
 }
 
 .settings-switch[aria-checked="true"] {
@@ -610,7 +633,7 @@
   border-radius: var(--radius-pill);
   background: var(--paper);
   box-shadow: 0 1px 2px var(--ink-overlay-18);
-  transition: transform 160ms var(--menu-enter-easing);
+  transition: transform var(--motion-base) var(--menu-enter-easing);
 }
 
 .settings-switch[aria-checked="true"] .settings-switch-thumb {
@@ -643,30 +666,30 @@
   gap: 10px;
 }
 
+/* Provider tiles are the one intentional box on the page — they are a
+ * selectable grid, and selection needs an enclosure to point at. Hairline
+ * only; the active tile darkens its border instead of stacking chrome. */
 .settings-provider-button {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-height: 80px;
-  border-radius: var(--radius-sm);
-  background: var(--paper);
+  border-radius: var(--radius-md);
+  background: transparent;
   color: var(--ink);
   padding: 14px 16px;
   text-align: left;
-  /* Provider tiles sit directly on the (now white) canvas, not inside a card,
-   * so they need the same stronger border as `.settings-card` to stay legible. */
-  border: 1px solid var(--hairline-strong);
-  box-shadow: var(--shadow-soft);
+  border: 1px solid var(--hairline-soft);
   transition:
-    border-color 140ms var(--menu-enter-easing),
-    background 140ms var(--menu-enter-easing),
-    box-shadow 140ms var(--menu-enter-easing),
-    transform 140ms var(--menu-enter-easing);
+    border-color var(--motion-fast) var(--menu-enter-easing),
+    background var(--motion-fast) var(--menu-enter-easing),
+    box-shadow var(--motion-fast) var(--menu-enter-easing),
+    transform var(--motion-fast) var(--menu-enter-easing);
 }
 
 .settings-provider-button:hover:not(:disabled) {
   border-color: var(--ink-overlay-18);
-  background: var(--paper);
+  background: var(--ink-overlay-4);
 }
 
 .settings-provider-button:active:not(:disabled) {
@@ -675,7 +698,6 @@
 
 .settings-provider-button.active {
   border-color: var(--ink-strong);
-  background: var(--paper);
   box-shadow: inset 0 0 0 1px var(--ink-strong);
 }
 
@@ -730,10 +752,10 @@
   /* Always visible so the delete affordance is discoverable; hover/focus sharpens it. */
   opacity: 0.55;
   transition:
-    opacity 140ms var(--menu-enter-easing),
-    background 140ms var(--menu-enter-easing),
-    color 140ms var(--menu-enter-easing),
-    border-color 140ms var(--menu-enter-easing);
+    opacity var(--motion-fast) var(--menu-enter-easing),
+    background var(--motion-fast) var(--menu-enter-easing),
+    color var(--motion-fast) var(--menu-enter-easing),
+    border-color var(--motion-fast) var(--menu-enter-easing);
 }
 
 .settings-provider-card:hover .settings-provider-remove,
@@ -761,7 +783,7 @@
   justify-content: center;
   gap: 8px;
   min-height: 80px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--ink-soft);
   border: 1px dashed var(--ink-overlay-18);
@@ -771,10 +793,10 @@
   cursor: pointer;
   text-align: center;
   transition:
-    border-color 140ms var(--menu-enter-easing),
-    background 140ms var(--menu-enter-easing),
-    color 140ms var(--menu-enter-easing),
-    transform 140ms var(--menu-enter-easing);
+    border-color var(--motion-fast) var(--menu-enter-easing),
+    background var(--motion-fast) var(--menu-enter-easing),
+    color var(--motion-fast) var(--menu-enter-easing),
+    transform var(--motion-fast) var(--menu-enter-easing);
 }
 
 .settings-provider-add-card:hover:not(:disabled) {
@@ -867,15 +889,16 @@
   min-width: 112px;
 }
 
+/* Empty / loading states are quiet inline lines, left-aligned with the
+ * rows they stand in for — not centered boxes. */
 .settings-mcp-empty {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 88px;
+  min-height: 48px;
   color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
-  padding: 20px 24px;
+  padding: 8px 0;
 }
 
 .settings-extension-detail {
@@ -934,7 +957,8 @@
 .settings-usage-page {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  /* 与页面级模块间距同源，用量页内部的工具栏/热力图/表格之间不再另起一套值。 */
+  gap: var(--settings-gap, 40px);
 }
 
 .settings-usage-toolbar {
@@ -966,8 +990,8 @@
   font-weight: var(--weight-semibold);
   padding: 0 14px;
   transition:
-    background 140ms var(--menu-enter-easing),
-    color 140ms var(--menu-enter-easing);
+    background var(--motion-fast) var(--menu-enter-easing),
+    color var(--motion-fast) var(--menu-enter-easing);
 }
 
 .settings-usage-range-button:hover {
@@ -1019,25 +1043,28 @@
   overflow-y: visible;
 }
 
+/* Table title reads as a section label; cells are flush with the page
+ * column (no horizontal inset) now that the card frame is gone. */
 .settings-usage-table-title {
   margin: 0;
-  padding: 18px 24px 4px;
-  color: var(--ink);
-  font-size: var(--font-ui);
+  padding: 0 0 6px;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
+  letter-spacing: 0.05em;
   line-height: 1.35;
 }
 
 .settings-usage-table {
   width: 100%;
-  min-width: 720px;
+  min-width: 640px;
   border-collapse: collapse;
 }
 
 .settings-usage-table th,
 .settings-usage-table td {
   border-bottom: 1px solid var(--hairline-soft);
-  padding: 14px 24px;
+  padding: 13px 0 13px 24px;
   text-align: right;
   vertical-align: middle;
   font-size: var(--font-ui);
@@ -1058,6 +1085,7 @@
 .settings-usage-table th:first-child,
 .settings-usage-table td:first-child {
   text-align: left;
+  padding-left: 0;
 }
 
 .settings-usage-table td:first-child {
@@ -1109,8 +1137,8 @@
   align-items: center;
   gap: 18px;
   border-bottom: 1px solid var(--hairline-soft);
-  padding: 16px 24px;
-  min-height: 68px;
+  padding: 14px 0;
+  min-height: 60px;
 }
 
 .settings-usage-entry:last-child {
@@ -1149,15 +1177,12 @@
 
 /* --- Heatmap panel ------------------------------------------------------- */
 
+/* The heatmap sits flush on the page — the colored grid is its own shape
+ * and needs no frame around it. */
 .settings-heatmap-panel {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border: 1px solid var(--hairline-strong);
-  border-radius: var(--radius-lg);
-  background: var(--paper);
-  box-shadow: var(--shadow-card);
-  padding: 20px 24px 16px;
   overflow: hidden;
 }
 
@@ -1196,7 +1221,7 @@
   border-radius: 2px;
   background: var(--surface-3);
   cursor: default;
-  transition: opacity 100ms ease;
+  transition: opacity var(--motion-fast) var(--ease-out);
   min-width: 0;
   min-height: 0;
 }
@@ -1291,8 +1316,8 @@
   font-weight: var(--weight-semibold);
   padding: 0 14px;
   transition:
-    background 140ms var(--menu-enter-easing),
-    color 140ms var(--menu-enter-easing);
+    background var(--motion-fast) var(--menu-enter-easing),
+    color var(--motion-fast) var(--menu-enter-easing);
 }
 
 .settings-memory-tab:hover {
@@ -1323,7 +1348,7 @@
 }
 
 .settings-memory-card {
-  padding: 20px 24px;
+  padding: 2px 0;
 }
 
 .settings-memory-overview {
@@ -1338,7 +1363,7 @@
 .settings-memory-raw,
 .settings-memory-card .settings-empty,
 .settings-memory-chat-hint {
-  animation: settings-memory-fade-up 200ms var(--menu-enter-easing) both;
+  animation: settings-memory-fade-up var(--motion-base) var(--menu-enter-easing) both;
 }
 
 @keyframes settings-memory-fade-up {
@@ -1438,12 +1463,15 @@
   font-size: var(--font-sm);
 }
 
-/* chat 区 */
+/* chat 区：整页唯一保留边框的区域 —— 对话区需要一个可指认的容器，
+ * 用发丝线而不是阴影卡片。 */
 .settings-memory-chat-card {
   display: flex;
   flex-direction: column;
   padding: 16px 20px;
   gap: 12px;
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--radius-lg);
 }
 
 .settings-memory-chat-log {
@@ -1463,7 +1491,7 @@
   display: flex;
   min-width: 0;
   /* 新消息（用户气泡与回复槽位）挂载时轻微滑入。 */
-  animation: settings-memory-chat-in 180ms var(--menu-enter-easing) both;
+  animation: settings-memory-chat-in var(--motion-base) var(--menu-enter-easing) both;
 }
 
 @keyframes settings-memory-chat-in {
@@ -1509,13 +1537,7 @@
 }
 
 .settings-memory-spinner {
-  animation: settings-memory-spin 0.9s linear infinite;
-}
-
-@keyframes settings-memory-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  animation: wuu-spin var(--motion-spin) linear infinite;
 }
 
 .settings-memory-changes summary {
@@ -1538,7 +1560,7 @@
 /* details 展开时给清单一段高度过渡。max-height 上限按短清单估算；动画
  * 结束后回到自然高度，超长清单只是提前结束过渡，不影响最终布局。 */
 .settings-memory-changes[open] ul {
-  animation: settings-memory-changes-open 200ms var(--menu-enter-easing);
+  animation: settings-memory-changes-open var(--motion-base) var(--menu-enter-easing);
 }
 
 @keyframes settings-memory-changes-open {
@@ -1591,12 +1613,11 @@
 .settings-empty {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 88px;
+  min-height: 48px;
   color: var(--ink-muted);
   font-size: var(--font-ui);
   font-weight: var(--weight-medium);
-  padding: 20px 24px;
+  padding: 8px 0;
 }
 
 @media (max-width: 900px) {

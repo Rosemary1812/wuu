@@ -480,12 +480,13 @@ describe("SettingsView advanced settings", () => {
     expect(rootText()).toContain("当前服务上下文上限");
     expect(rootText()).toContain("来自当前通道输入上限");
     expect(rootText()).toContain("400,000");
-    expect(rootText()).toContain("Auto");
 
     const inputs = Array.from(container.querySelectorAll("input"));
     expect(inputs.length).toBeGreaterThanOrEqual(6);
     const [compactThreshold, compactKeepRecent, providerContextWindow, maxContextTokens, maxSteps, temperature] = inputs;
     expect((temperature as HTMLInputElement).value).toBe("");
+    // Auto 语义由占位符承载，不再出现在行描述文字里。
+    expect((temperature as HTMLInputElement).placeholder).toBe("Auto");
     await act(async () => {
       setInputValue(compactThreshold, "50");
       setInputValue(compactKeepRecent, "20000");
@@ -496,7 +497,7 @@ describe("SettingsView advanced settings", () => {
     });
 
     const submitButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("保存高级设置"),
+      button.textContent?.includes("保存"),
     ) as HTMLButtonElement | undefined;
     expect(submitButton?.disabled).toBe(false);
     await act(async () => {
@@ -540,7 +541,7 @@ describe("SettingsView advanced settings", () => {
     });
 
     const submitButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("保存高级设置"),
+      button.textContent?.includes("保存"),
     ) as HTMLButtonElement | undefined;
     await act(async () => {
       submitButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -614,7 +615,7 @@ describe("SettingsView general settings", () => {
     });
 
     const submitButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("保存常规设置"),
+      button.textContent?.includes("保存"),
     ) as HTMLButtonElement | undefined;
     expect(submitButton?.disabled).toBe(false);
     await act(async () => {
@@ -793,7 +794,8 @@ describe("SettingsView About section", () => {
     expect(text()).toContain("关于");
     expect(text()).toContain("v0.0.0-test");
     expect(text()).not.toContain("更新于");
-    expect(text()).toContain("复制版本信息");
+    // 版本与复制合并为一行；按钮语义在 aria-label 上，行内只显示「复制」。
+    expect(about?.querySelector('button[aria-label="复制版本信息"]')).not.toBeNull();
     const button = about?.querySelector("button.settings-button");
     expect(button?.textContent).toBe("复制");
     await act(async () => {

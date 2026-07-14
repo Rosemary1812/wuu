@@ -561,11 +561,7 @@ export function SettingsView({
       : ""
   }${sidebarAnimating ? " sidebar-animating" : ""}`;
 
-  const pageMeta = settingsPageMeta(
-    activePage,
-    showDebugControlsSetting,
-    debugControlsEnabled
-  );
+  const pageTitle = settingsPageTitle(activePage);
 
   return (
     <div ref={effectiveShellRef} className={shellClassName} style={shellStyle}>
@@ -656,10 +652,7 @@ export function SettingsView({
         <div ref={settingsScrollRef} className="settings-scroll">
           <div className="settings-page" key={activePage}>
             <header className="settings-page-header">
-              <div>
-                <h1 className="settings-page-title">{pageMeta.title}</h1>
-                <p className="settings-page-description">{pageMeta.description}</p>
-              </div>
+              <h1 className="settings-page-title">{pageTitle}</h1>
             </header>
   
             {activePage === "providers" ? (
@@ -841,23 +834,24 @@ function SettingsNavItem({
   );
 }
 
+// 小节只有一个安静的小标签；描述性文字一律省略——语义由行本身携带,
+// 只在个别行的 description 里保留单位、约束或禁用原因。
 function SettingsSection({
   title,
-  description,
   testID,
   children
 }: {
-  title: string;
-  description: string;
+  title?: string;
   testID?: string;
   children: ReactNode;
 }): JSX.Element {
   return (
     <section className="settings-section" {...(testID ? { "data-testid": testID } : {})}>
-      <header className="settings-section-header">
-        <h2 className="settings-section-title">{title}</h2>
-        <p className="settings-section-description">{description}</p>
-      </header>
+      {title ? (
+        <header className="settings-section-header">
+          <h2 className="settings-section-title">{title}</h2>
+        </header>
+      ) : null}
       {children}
     </section>
   );
@@ -960,11 +954,7 @@ function SettingsProvidersPage({
   const authFieldUsesToken = isAnthropicProviderType(addingProvider ? providerTypeDraft : selectedProvider?.type);
   const authFieldLabel = authFieldUsesToken ? "Auth token" : "API key";
   return (
-    <SettingsSection
-      title="模型服务"
-      description=""
-      testID="settings-providers"
-    >
+    <SettingsSection testID="settings-providers">
       {providers.length > 0 ? (
         <div className="settings-provider-overview" data-testid="settings-provider-overview">
           {providers.map((provider) => (
@@ -1036,10 +1026,7 @@ function SettingsProvidersPage({
         </button>
       ) : null}
       <form className="settings-card" onSubmit={onSubmit}>
-        <SettingsRow
-          title={addingProvider ? "新增服务" : "选择当前会话使用的服务"}
-          description={addingProvider ? "选择协议并填写连接信息;Base URL 和 API key 会保存到本地配置。" : "切换 service 不会丢失 Base URL 和 API key。"}
-        >
+        <SettingsRow title={addingProvider ? "新增服务" : "当前服务"}>
           <div className="settings-row-control-block">
             {addingProvider ? (
               <span className="settings-inline-flag">新的模型服务</span>
@@ -1079,10 +1066,7 @@ function SettingsProvidersPage({
           </div>
         </SettingsRow>
         {addingProvider ? (
-          <SettingsRow
-            title="服务类型"
-            description="选择协议,后续的请求会按这个协议走。"
-          >
+          <SettingsRow title="服务类型">
             <SelectMenu
               triggerClassName="settings-select-trigger"
               ariaLabel="服务类型"
@@ -1100,7 +1084,7 @@ function SettingsProvidersPage({
         {addingProvider ? (
           <SettingsRow
             title="服务标识"
-            description={providerNameTaken ? "这个名称已存在" : "写入配置的 provider 名称"}
+            description={providerNameTaken ? "这个名称已存在" : undefined}
           >
             <input
               className="settings-input"
@@ -1114,11 +1098,7 @@ function SettingsProvidersPage({
             <span className="settings-row-control-value">{selectedProvider.name}</span>
           </SettingsRow>
         ) : null}
-        <SettingsRow
-          title="模型名称"
-          description="发送给模型服务的 model 名称"
-          block
-        >
+        <SettingsRow title="模型名称" block>
           <input
             className="settings-input"
             value={modelDraft}
@@ -1128,13 +1108,7 @@ function SettingsProvidersPage({
         </SettingsRow>
         <SettingsRow
           title="思考强度"
-          description={
-            reasoningMode === "levels"
-              ? "当前模型支持的参数档位"
-              : reasoningMode === "toggle"
-                ? "可关闭思考"
-                : "当前模型不支持思考"
-          }
+          description={reasoningMode === "off" ? "当前模型不支持思考" : undefined}
           block
         >
           <SelectMenu
@@ -1151,7 +1125,7 @@ function SettingsProvidersPage({
         </SettingsRow>
         <SettingsRow
           title="Base URL"
-          description={connectionLocked ? "由 OpenAI OAuth 管理" : "模型服务的 API 地址"}
+          description={connectionLocked ? "由 OpenAI OAuth 管理" : undefined}
           block
         >
           <input
@@ -1162,21 +1136,7 @@ function SettingsProvidersPage({
             disabled={running || connectionLocked}
           />
         </SettingsRow>
-        <SettingsRow
-          title={authFieldLabel}
-          description={
-            connectionLocked
-              ? "由 OpenAI OAuth 管理"
-              : addingProvider
-                ? "保存时写入这个服务"
-                : selectedProvider?.api_key_configured
-                  ? "已配置，留空不修改"
-                  : authFieldUsesToken
-                    ? "用于 Bearer 鉴权"
-                    : "用于访问这个 Provider"
-          }
-          block
-        >
+        <SettingsRow title={authFieldLabel} block>
           <input
             className="settings-input"
             value={apiKeyDraft}
@@ -1259,11 +1219,7 @@ function SettingsAdvancedPage({
   onSubmit: (event: ReactFormEvent<HTMLFormElement>) => Promise<void>;
 }): JSX.Element {
   return (
-    <SettingsSection
-      title="高级"
-      description="调整上下文窗口、压缩策略与单轮运行上限。"
-      testID="settings-advanced"
-    >
+    <SettingsSection testID="settings-advanced">
       <form className="settings-card" onSubmit={onSubmit}>
         <SettingsRow
           title="自动压缩"
@@ -1283,7 +1239,7 @@ function SettingsAdvancedPage({
         </SettingsRow>
         <SettingsRow
           title="压缩触发阈值"
-          description="留空使用模型窗口；数值越小越早压缩"
+          description="占上下文窗口的百分比"
           block
         >
           <input
@@ -1297,7 +1253,7 @@ function SettingsAdvancedPage({
         </SettingsRow>
         <SettingsRow
           title="保留最近上下文"
-          description="留空使用默认 20,000 token"
+          description="压缩时保留的 token 数"
           block
         >
           <input
@@ -1311,7 +1267,7 @@ function SettingsAdvancedPage({
         </SettingsRow>
         <SettingsRow
           title="当前服务上下文上限"
-          description={`自定义模型或网关别名时使用；${providerContextWindowSource}${
+          description={`${providerContextWindowSource}${
             providerContextWindowCurrent ? `；当前 ${providerContextWindowCurrent} token` : ""
           }`}
           block
@@ -1352,11 +1308,7 @@ function SettingsAdvancedPage({
             disabled={running || !initialized}
           />
         </SettingsRow>
-        <SettingsRow
-          title="Temperature"
-          description="留空或 0 为 Auto；旧模型可填大于 0 到 2 的采样覆盖值"
-          block
-        >
+        <SettingsRow title="Temperature" description="0 到 2" block>
           <input
             className="settings-input"
             value={temperature}
@@ -1372,7 +1324,7 @@ function SettingsAdvancedPage({
             type="submit"
             disabled={running || !initialized}
           >
-            保存高级设置
+            保存
           </button>
         </SettingsRow>
       </form>
@@ -1542,20 +1494,12 @@ function SettingsGeneralPage({
 
   return (
     <>
-      <SettingsSection
-        title="外观"
-        description="选择界面主题。跟随系统会随操作系统的亮暗设置自动切换。"
-        testID="settings-appearance"
-      >
+      <SettingsSection title="外观" testID="settings-appearance">
         <SettingsCard>
-          <SettingsRow title="主题" description="立即生效，无需保存">
+          <SettingsRow title="主题">
             <ThemePreferenceControl />
           </SettingsRow>
-          <SettingsRow
-            title="消息流字号"
-            description="13–20 px，覆盖正文与聊天气泡"
-            block
-          >
+          <SettingsRow title="消息流字号" block>
             <MessageFlowFontSizeControl />
           </SettingsRow>
           <SettingsRow
@@ -1621,15 +1565,11 @@ function SettingsGeneralPage({
         </SettingsCard>
       </SettingsSection>
 
-      <SettingsSection
-        title="常规配置"
-        description="设置每次新会话都会继承的 Agent 行为。"
-        testID="settings-general"
-      >
+      <SettingsSection title="行为" testID="settings-general">
         <form className="settings-card" onSubmit={submitGeneral}>
           <SettingsRow
             title="附加系统提示"
-            description="追加到 Wuu 内置行为提示之后"
+            description="追加在内置提示之后"
             block
           >
             <textarea
@@ -1650,7 +1590,7 @@ function SettingsGeneralPage({
               type="submit"
               disabled={running || !initialized}
             >
-              保存常规设置
+              保存
             </button>
           </SettingsRow>
           <SettingsRow
@@ -1675,11 +1615,7 @@ function SettingsGeneralPage({
         </form>
       </SettingsSection>
 
-      <SettingsSection
-        title="MCP 服务器"
-        description="控制每个 MCP 服务器是否启用，并管理连接状态。"
-        testID="settings-mcp"
-      >
+      <SettingsSection title="MCP 服务器" testID="settings-mcp">
         <SettingsCard>
           {mcpLoading && mcpRowNames.length === 0 ? (
             <div className="settings-mcp-empty">加载中…</div>
@@ -1696,13 +1632,7 @@ function SettingsGeneralPage({
                 <SettingsRow
                   key={name}
                   title={name}
-                  description={
-                    server
-                      ? formatMCPServerMeta(server)
-                      : enabled
-                        ? "启动时允许连接这个 MCP 服务器"
-                        : "保持关闭，不加载这个 MCP 服务器"
-                  }
+                  description={server ? formatMCPServerMeta(server) : undefined}
                 >
                   {server ? (
                     <span className="settings-row-control-value">
@@ -1822,11 +1752,7 @@ function SettingsGeneralPage({
         </SettingsCard>
       </SettingsSection>
 
-      <SettingsSection
-        title="扩展与权限"
-        description="查看 Skill、Plugin、Hook 和 MCP 的来源与本机授权状态。"
-        testID="settings-extensions"
-      >
+      <SettingsSection title="扩展与权限" testID="settings-extensions">
         <SettingsCard>
           {extensionInventory.length > 0 ? (
             extensionInventory.map((record) => (
@@ -1867,10 +1793,7 @@ function SettingsGeneralPage({
       </SettingsSection>
 
       {showDebugControlsSetting ? (
-        <SettingsSection
-          title="开发"
-          description="控制开发时才需要的界面入口。"
-        >
+        <SettingsSection title="开发">
           <SettingsCard>
             <SettingsRow
               title="调试入口"
@@ -1892,11 +1815,7 @@ function SettingsGeneralPage({
       ) : null}
 
       {showDebugControlsSetting && debugControlsEnabled ? (
-        <SettingsSection
-          title="工具"
-          description="当前模型可调用的能力和文件编辑方式。"
-          testID="settings-tool-surface"
-        >
+        <SettingsSection title="工具" testID="settings-tool-surface">
           <SettingsCard>
             <SettingsRow
               title="Profile"
@@ -1927,28 +1846,16 @@ function SettingsGeneralPage({
         </SettingsSection>
       ) : null}
 
-      <SettingsSection
-        title="关于"
-        description="查看当前版本号，或复制版本信息用于反馈问题。"
-        testID="settings-about"
-      >
+      <SettingsSection title="关于" testID="settings-about">
         <SettingsCard>
-          <SettingsRow
-            title="版本"
-            description="桌面端当前构建版本"
-          >
+          <SettingsRow title="版本">
             <span className="settings-row-control-value">
               {desktopBuild ? versionLabel(desktopBuild.version) : "加载中…"}
             </span>
-          </SettingsRow>
-          <SettingsRow
-            title="复制版本信息"
-            description="反馈问题时附上这段文字。"
-            block
-          >
             <button
               className="settings-button"
               type="button"
+              aria-label="复制版本信息"
               onClick={() => void onCopyVersion()}
               disabled={!desktopBuild || copyState === "copying"}
             >
@@ -2221,49 +2128,22 @@ type AdvancedDraft = {
   temperature: string;
 };
 
-function settingsPageMeta(
-  page: SettingsPage,
-  showDebugControlsSetting: boolean,
-  debugControlsEnabled: boolean
-): { title: string; description: string } {
+function settingsPageTitle(page: SettingsPage): string {
   switch (page) {
     case "providers":
-      return {
-        title: "模型服务",
-        description: "配置 BYOK provider、模型和连接信息；切换不会丢失现有设置。"
-      };
+      return "模型服务";
     case "advanced":
-      return {
-        title: "高级",
-        description: "调整上下文窗口、压缩触发点和 Agent 单轮运行预算。"
-      };
+      return "高级";
     case "general":
-      return {
-        title: "常规",
-        description: showDebugControlsSetting && debugControlsEnabled
-          ? "查看可用工具、MCP 连接和当前版本。"
-          : "查看 MCP 连接和当前版本。"
-      };
+      return "常规";
     case "memory":
-      return {
-        title: "记忆",
-        description: "查看并修改 Wuu 记住的内容：你的偏好，以及每位同事的经验。"
-      };
+      return "记忆";
     case "usage":
-      return {
-        title: "用量",
-        description: ""
-      };
+      return "用量";
     case "remote":
-      return {
-        title: "远程",
-        description: "在手机上查看、驱动、批准这台电脑上的 agent。"
-      };
+      return "远程";
     case "archive":
-      return {
-        title: "归档",
-        description: "已归档的会话会从侧边栏隐藏，可随时恢复。"
-      };
+      return "归档";
   }
 }
 
