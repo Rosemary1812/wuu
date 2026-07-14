@@ -70,20 +70,6 @@ func String() string {
 	return Info().String()
 }
 
-// Short returns a compact version like "v0.1.0-dev (a4660f4)".
-func Short() string {
-	info := Info()
-	v := normalizeVersion(info.Version)
-	commit := info.Commit
-	if commit == "" {
-		commit = "none"
-	}
-	if info.Dirty && commit != "none" {
-		commit += "*"
-	}
-	return fmt.Sprintf("%s (%s)", v, commit)
-}
-
 // String returns a human-readable version string.
 func (b BuildInfo) String() string {
 	version := normalizeVersion(b.Version)

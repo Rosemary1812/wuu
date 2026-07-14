@@ -127,11 +127,6 @@ func SessionsDir(wuuHome string) string {
 	return filepath.Join(wuuHome, "sessions")
 }
 
-// UsageDataDir returns the user-level directory for usage reports and caches.
-func UsageDataDir(wuuHome string) string {
-	return filepath.Join(wuuHome, "usage-data")
-}
-
 // WorkspaceDirByID returns a stable user-level state directory for a workspace
 // identified by an opaque, location-independent ID (the desktop's stable
 // project id). Unlike WorkspaceDir it hashes the ID rather than the filesystem
