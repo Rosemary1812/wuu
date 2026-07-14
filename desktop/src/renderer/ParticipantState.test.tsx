@@ -60,18 +60,15 @@ async function renderParticipantState({
   get: () => ParticipantStateController;
   setInitialized: (next: boolean) => void;
   setStatus: ReturnType<typeof vi.fn>;
-  onOpenParticipantProfile: ReturnType<typeof vi.fn>;
 }> {
   let latest: ParticipantStateController | undefined;
   let currentInitialized = initialized;
   const setStatus = vi.fn();
-  const onOpenParticipantProfile = vi.fn();
 
   function Probe(): null {
     latest = useParticipantState({
       initialized: currentInitialized,
       setStatus,
-      onOpenParticipantProfile,
       archivedNoticeMs: 10,
     });
     return null;
@@ -98,7 +95,6 @@ async function renderParticipantState({
       currentInitialized = next;
     },
     setStatus,
-    onOpenParticipantProfile,
   };
 }
 
@@ -127,21 +123,6 @@ describe("useParticipantState", () => {
       "Fresh Alex",
     ]);
     expect(hook.get().participantPanel?.participant?.name).toBe("Fresh Alex");
-  });
-
-  it("opens the profile panel after running the host side-panel close callback", async () => {
-    const hook = await renderParticipantState();
-
-    act(() => {
-      hook.get().openParticipantProfile(participant());
-    });
-
-    expect(hook.onOpenParticipantProfile).toHaveBeenCalledTimes(1);
-    expect(hook.get().participantPanel).toMatchObject({
-      mode: "edit",
-      participant: { id: "participant-1" },
-      loading: false,
-    });
   });
 
   it("imports participant templates by updating matching names in place", async () => {

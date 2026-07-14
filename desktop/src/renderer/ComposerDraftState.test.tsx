@@ -184,10 +184,10 @@ describe("useComposerDraftState", () => {
 
     act(() => {
       hook.get().setSplitComposerPrompt("primary", "primary draft");
-      hook.get().updateSplitComposerDraft("secondary", (draft) => ({
-        ...draft,
-        prompt: "secondary draft",
-        files: [file],
+      hook.get().setSplitComposerPrompt("secondary", "secondary draft");
+      hook.get().setSplitComposerDrafts((drafts) => ({
+        ...drafts,
+        secondary: { ...drafts.secondary, files: [file] },
       }));
     });
 

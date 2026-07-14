@@ -24,7 +24,6 @@ export type EnvironmentActionsDeps = {
 
 export type EnvironmentActions = {
   checkoutBranch: (branch: string) => Promise<void>;
-  refreshGitStatus: () => Promise<void>;
   scheduleGitStatusRefresh: (delayMs: number) => void;
   createAndCheckoutBranch: (branch: string) => Promise<void>;
   commitEnvironmentChanges: (params: {
@@ -202,7 +201,6 @@ export function createEnvironmentActions(
 
   return {
     checkoutBranch,
-    refreshGitStatus,
     scheduleGitStatusRefresh,
     createAndCheckoutBranch,
     commitEnvironmentChanges,

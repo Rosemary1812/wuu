@@ -14,9 +14,8 @@
  *        scrollTop assignment);
  *     5. assert the resulting scroll position is still the bottom.
  *
- * If `userScrolledAway` ever flips to `true` or the scroll position
- * drifts above scrollHeight - clientHeight, the high-frequency stream
- * is racing itself and we need to fix it.
+ * If the scroll position drifts above scrollHeight - clientHeight, the
+ * high-frequency stream is racing itself and we need to fix it.
  */
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -109,7 +108,6 @@ function Probe({
   if (!showConversation) {
     return createElement("section", {
       "data-testid": "settings-placeholder",
-      "data-user-scrolled-away": handle.userScrolledAway ? "true" : "false",
     });
   }
   return createElement(
@@ -121,7 +119,6 @@ function Probe({
       },
       onScroll: () => handle.handleConversationScroll(),
       "data-testid": "scroll-container",
-      "data-user-scrolled-away": handle.userScrolledAway ? "true" : "false",
     },
     createElement("div", {
       ref: (node: HTMLDivElement | null) => {
@@ -375,10 +372,8 @@ describe("useConversationScrollState — high-frequency stream", () => {
       flushScheduledScroll();
 
       const bottom = layout.scrollHeight - layout.clientHeight;
-      // (5) The scroll position must still be at the bottom, and the
-      //     "Jump to latest" pill must NOT have appeared.
+      // (5) The scroll position must still be at the bottom.
       expect(layout.scrollTop).toBe(bottom);
-      expect(node!.dataset.userScrolledAway ?? "false").toBe("false");
     }
   });
 
@@ -397,7 +392,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     });
 
     expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
   });
 
   it("does not accept a stale programmatic bottom after content grows before the scroll event", () => {
@@ -417,7 +411,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     });
 
     expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
   });
 
   it("keeps one settle frame for content that grows after the first stream scroll", () => {
@@ -435,7 +428,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     });
 
     expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
   });
 
   it("re-anchors during the turn snapshot commit before the next animation frame", () => {
@@ -454,7 +446,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     rerenderTurns(makeLongTurnsSnapshot(1));
 
     expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
   });
 
   it("does not re-anchor a turn snapshot commit after the user scrolls away", () => {
@@ -470,13 +461,11 @@ describe("useConversationScrollState — high-frequency stream", () => {
       layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 120;
     });
     fireUserScroll();
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
 
     layout.scrollHeight += 96;
     rerenderTurns(makeLongTurnsSnapshot(1));
 
     expect(layout.scrollTop).toBe(2000 - 600 - 120);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
   it("disengages auto-follow when an upward scroll event leaves the bottom without preflight intent", () => {
@@ -495,7 +484,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     });
 
     expect(layout.scrollTop).toBe(2000 - 600 - 120);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
 
     act(() => {
       handle!.scheduleStreamScroll();
@@ -503,7 +491,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     flushScheduledScroll();
 
     expect(layout.scrollTop).toBe(2000 - 600 - 120);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
   it("disengages auto-follow on the first scroll after the conversation remounts with taller content", () => {
@@ -547,7 +534,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     });
 
     expect(layout.scrollTop).toBe(1700);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
 
     act(() => {
       handle!.scheduleStreamScroll();
@@ -555,7 +541,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     flushScheduledScroll();
 
     expect(layout.scrollTop).toBe(1700);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
   it("disengages scroll-only upward movement after remounting with a stale bottom baseline", () => {
@@ -599,7 +584,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     });
 
     expect(layout.scrollTop).toBe(1700);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
 
     act(() => {
       handle!.scheduleStreamScroll();
@@ -607,7 +591,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     flushScheduledScroll();
 
     expect(layout.scrollTop).toBe(1700);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
   it("disengages auto-follow the moment the user scrolls up — no 16px dead zone", () => {
@@ -627,22 +610,23 @@ describe("useConversationScrollState — high-frequency stream", () => {
       handle!.scheduleStreamScroll();
     });
     flushScheduledScroll();
-    expect(node!.dataset.userScrolledAway ?? "false").toBe("false");
-
-    // Wheel up 8px — well inside the old 16px band. The pill must
-    // show and auto-follow must drop.
+    // Wheel up 8px — well inside the old 16px band. Auto-follow must drop.
     act(() => {
       layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 8;
     });
     fireUserScroll();
-    expect(node!.dataset.userScrolledAway ?? "false").toBe("true");
 
-    // Wheel up another 9px (17px total). State stays away-from-latest.
+    // Wheel up another 9px (17px total). Follow remains disengaged.
     act(() => {
       layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 17;
     });
     fireUserScroll();
-    expect(node!.dataset.userScrolledAway ?? "false").toBe("true");
+
+    act(() => {
+      handle!.scheduleStreamScroll();
+    });
+    flushScheduledScroll();
+    expect(layout.scrollTop).toBe(2000 - 600 - 17);
   });
 
   it("keeps auto-follow disabled during smooth jump startup near the bottom", () => {
@@ -663,15 +647,12 @@ describe("useConversationScrollState — high-frequency stream", () => {
       layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 8;
       node!.dispatchEvent(new Event("scroll", { bubbles: false }));
     });
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
-
     act(() => {
       handle!.scheduleStreamScroll();
     });
     flushScheduledScroll();
 
     expect(layout.scrollTop).toBe(2000 - 600 - 8);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
   it("programmatic scroll-to-bottom keeps auto-follow engaged", () => {
@@ -688,11 +669,8 @@ describe("useConversationScrollState — high-frequency stream", () => {
       handle!.scheduleStreamScroll();
     });
     flushScheduledScroll();
-    expect(node!.dataset.userScrolledAway ?? "false").toBe("false");
-
     // 60 fast stream ticks, each one bumping scrollHeight and
-    // re-anchoring scrollTop = scrollHeight. None of them should
-    // ever flip userScrolledAway to true.
+    // re-anchoring scrollTop = scrollHeight.
     for (let tick = 0; tick < 60; tick += 1) {
       act(() => {
         layout!.scrollHeight += 8;
@@ -701,7 +679,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
       flushScheduledScroll();
       const bottom = layout.scrollHeight - layout.clientHeight;
       expect(layout.scrollTop).toBe(bottom);
-      expect(node!.dataset.userScrolledAway ?? "false").toBe("false");
     }
   });
 
@@ -714,7 +691,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
       layout!.scrollTop = layout!.scrollHeight - layout!.clientHeight - 80;
     });
     fireUserScroll();
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
 
     act(() => {
       layout!.scrollHeight += 200;
@@ -723,7 +699,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     flushScheduledScroll();
 
     expect(layout.scrollTop).toBe(2000 - 600 - 80);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
   it("does not treat nested reasoning scroll as leaving the conversation bottom", () => {
@@ -738,7 +713,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
       );
     });
     expect(layout.scrollTop).toBe(1400);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
 
     act(() => {
       layout!.scrollHeight += 80;
@@ -747,7 +721,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     flushScheduledScroll();
 
     expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
   });
 
   it("disengages auto-follow when a nested scroll chains upward into the conversation", () => {
@@ -765,7 +738,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     });
 
     expect(layout.scrollTop).toBe(1180);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
 
     act(() => {
       handle!.scheduleStreamScroll();
@@ -773,7 +745,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     flushScheduledScroll();
 
     expect(layout.scrollTop).toBe(1180);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
   it("keeps following when layout shrink clamps the viewport to the new bottom", () => {
@@ -790,7 +761,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
       layout!.scrollTop = 1100;
       node!.dispatchEvent(new Event("scroll", { bubbles: false }));
     });
-    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
 
     act(() => {
       layout!.scrollHeight += 120;
@@ -799,7 +769,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     flushScheduledScroll();
 
     expect(layout.scrollTop).toBe(layout.scrollHeight - layout.clientHeight);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
   });
 
   it("does not re-enable follow when layout shrink clamps an already-away viewport to the new bottom", () => {
@@ -812,7 +781,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
       layout!.scrollTop = 1200;
     });
     fireUserScroll();
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
 
     act(() => {
       // The process fold can collapse after final text settles. If the
@@ -825,7 +793,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     });
 
     expect(layout.scrollTop).toBe(1100);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
 
     act(() => {
       layout!.scrollHeight += 120;
@@ -834,7 +801,6 @@ describe("useConversationScrollState — high-frequency stream", () => {
     flushScheduledScroll();
 
     expect(layout.scrollTop).toBe(1100);
-    expect(node.dataset.userScrolledAway ?? "false").toBe("true");
   });
 
   it("keeps latest content continuously pinned during live window resize", () => {
@@ -873,9 +839,8 @@ describe("useConversationScrollState — high-frequency stream", () => {
     expect(layout.scrollTop).toBe(1600);
     act(() => flushAnimationFrames());
     expect(layout.scrollTop).toBe(2200 - 400);
-    // The user is still considered "following" — the pill stays hidden
-    // and the next stream tick would happily stick to the new bottom.
-    expect(node.dataset.userScrolledAway ?? "false").toBe("false");
+    // The user is still following, so the next stream tick sticks to the
+    // new bottom.
 
     // The drag ends: the resizing marker drops, the ResizeObserver
     // fires one more time. We commit the real scrollTop in a single

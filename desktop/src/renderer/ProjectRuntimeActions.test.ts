@@ -120,34 +120,6 @@ afterEach(() => {
 });
 
 describe("createProjectRuntimeActions", () => {
-  it("opens the active project as a fresh draft when a thread is visible", async () => {
-    const context = projectContext();
-    const source = thread();
-    const sourceTab = createThreadSessionTab(source, context);
-    const harness = buildActions({
-      initial: {
-        ...initialState,
-        activeContext: context,
-        activeProjectId: "project-1",
-        projects: [project()],
-        thread: source,
-        sessionTabs: [sourceTab],
-        activeSessionTabID: sourceTab.id,
-      },
-      draft: { prompt: "keep this draft", images: [], files: [] },
-    });
-
-    await harness.actions.openProject("project-1");
-
-    expect(harness.closeProjectMenus).toHaveBeenCalled();
-    expect(harness.clearPrimaryComposerDraft).toHaveBeenCalled();
-    expect(harness.getAppState().thread).toBeUndefined();
-    expect(harness.getAppState().activeSessionTabID).toBe("draft:test");
-    expect(sessionTabPrompt(harness.getAppState().sessionTabs, sourceTab.id)).toBe(
-      "keep this draft",
-    );
-  });
-
   it("preserves an unsent draft when the project workspace plus opens a session", async () => {
     const context = projectContext();
     const source = thread();

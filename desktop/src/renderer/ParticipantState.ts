@@ -33,7 +33,6 @@ type ParticipantTeamTemplate = {
 export type ParticipantStateOptions = {
   initialized: boolean;
   setStatus: (status: string) => void;
-  onOpenParticipantProfile?: () => void;
   archivedNoticeMs?: number;
 };
 
@@ -45,7 +44,6 @@ export type ParticipantStateController = {
     SetStateAction<ParticipantPanelState | undefined>
   >;
   refreshParticipants: () => Promise<ParticipantProfile[]>;
-  openParticipantProfile: (participant: ParticipantProfile) => void;
   handleParticipantDialogSave: (
     params: ParticipantSaveParams,
   ) => Promise<ParticipantProfile>;
@@ -101,7 +99,6 @@ function participantTemplateEntries(value: unknown): ParticipantSaveParams[] {
 export function useParticipantState({
   initialized,
   setStatus,
-  onOpenParticipantProfile,
   archivedNoticeMs = DEFAULT_PARTICIPANT_ARCHIVED_NOTICE_MS,
 }: ParticipantStateOptions): ParticipantStateController {
   const [participants, setParticipants] = useState<ParticipantProfile[]>([]);
@@ -130,15 +127,6 @@ export function useParticipantState({
     });
     return nextParticipants;
   }, [initialized]);
-
-  function openParticipantProfile(participant: ParticipantProfile): void {
-    onOpenParticipantProfile?.();
-    setParticipantPanel({
-      mode: "edit",
-      participant,
-      loading: false,
-    });
-  }
 
   async function handleParticipantDialogSave(
     params: ParticipantSaveParams,
@@ -338,7 +326,6 @@ export function useParticipantState({
     participantPanel,
     setParticipantPanel,
     refreshParticipants,
-    openParticipantProfile,
     handleParticipantDialogSave,
     handleParticipantSave,
     handleParticipantFeedback,

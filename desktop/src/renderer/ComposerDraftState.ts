@@ -41,10 +41,6 @@ export type ComposerDraftStateController = {
   attachSubthreadComposerAttachmentFiles: (files: File[]) => Promise<void>;
   removeSubthreadComposerImage: (id: string) => void;
   removeSubthreadComposerFile: (id: string) => void;
-  updateSplitComposerDraft: (
-    pane: ConversationPaneID,
-    update: (draft: ComposerDraftState) => ComposerDraftState,
-  ) => void;
   setSplitComposerPrompt: (pane: ConversationPaneID, value: string) => void;
   attachSplitComposerAttachmentFiles: (
     pane: ConversationPaneID,
@@ -296,7 +292,6 @@ export function useComposerDraftState({
     attachSubthreadComposerAttachmentFiles,
     removeSubthreadComposerImage,
     removeSubthreadComposerFile,
-    updateSplitComposerDraft,
     setSplitComposerPrompt,
     attachSplitComposerAttachmentFiles,
     removeSplitComposerImage,

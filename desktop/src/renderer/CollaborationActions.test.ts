@@ -151,11 +151,6 @@ function buildActions({
   const activateThread = vi.fn().mockResolvedValue(undefined);
   const selectThread = vi.fn().mockResolvedValue(undefined);
   const selectSessionTab = vi.fn().mockResolvedValue(undefined);
-  const closeConversationSearch = vi.fn();
-  const closeEnvironmentPanel = vi.fn();
-  const setOpenSubthreadPanel = vi.fn();
-  const setRightPanelOpenWithMotion = vi.fn();
-  const openParticipantProfilePanel = vi.fn();
   const scheduleStreamScroll = vi.fn();
   const openConversationSubthreadByID = vi.fn();
   const closeProjectMenus = vi.fn();
@@ -187,11 +182,6 @@ function buildActions({
     activateThread,
     selectThread,
     selectSessionTab,
-    closeConversationSearch,
-    closeEnvironmentPanel,
-    setOpenSubthreadPanel,
-    setRightPanelOpenWithMotion,
-    openParticipantProfilePanel,
     setContextCompositionEntries: (update) => {
       contextCompositionEntries =
         typeof update === "function"
@@ -236,11 +226,6 @@ function buildActions({
     activateThread,
     selectThread,
     selectSessionTab,
-    closeConversationSearch,
-    closeEnvironmentPanel,
-    setOpenSubthreadPanel,
-    setRightPanelOpenWithMotion,
-    openParticipantProfilePanel,
     scheduleStreamScroll,
     openingDMParticipantIDRef,
     openConversationSubthreadByID,
@@ -309,23 +294,13 @@ describe("createCollaborationActions", () => {
     expect(harness.scheduleStreamScroll).toHaveBeenCalledTimes(4);
   });
 
-  it("opens participant profile surfaces and memory settings", () => {
+  it("opens participant memory settings", () => {
     installWuuApi();
     const profile = participant();
     const harness = buildActions();
 
-    harness.actions.openParticipantProfile(profile);
     harness.actions.openMemorySettings(profile.id);
 
-    expect(harness.closeConversationSearch).toHaveBeenCalledWith({
-      immediate: true,
-    });
-    expect(harness.closeEnvironmentPanel).toHaveBeenCalledWith({
-      dismissed: true,
-    });
-    expect(harness.setOpenSubthreadPanel).toHaveBeenCalledWith(undefined);
-    expect(harness.setRightPanelOpenWithMotion).toHaveBeenCalledWith(false);
-    expect(harness.openParticipantProfilePanel).toHaveBeenCalledWith(profile);
     expect(harness.closeProjectMenus).toHaveBeenCalled();
     expect(harness.getSettings()).toEqual({
       settingsMemoryFocusID: "agent-1",

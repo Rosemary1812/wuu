@@ -39,7 +39,6 @@ export type ProjectRuntimeActionsDeps = {
 };
 
 export type ProjectRuntimeActions = {
-  openProject: (projectId: string) => Promise<void>;
   selectProjectForNewThread: (projectId: string) => Promise<void>;
   startNewThreadForProject: (projectId: string) => Promise<void>;
   createBlankProject: () => Promise<void>;
@@ -103,54 +102,6 @@ export function createProjectRuntimeActions(
         status: "ready",
       };
     });
-  }
-
-  async function openProject(projectId: string): Promise<void> {
-    const currentState = deps.getAppState();
-    if (
-      projectId === currentState.activeProjectId &&
-      currentState.activeContext?.kind === "project"
-    ) {
-      deps.closeProjectMenus();
-      
-      if (currentState.thread || currentState.secondaryThread) {
-        activateWorkspaceDraft(currentState.activeContext);
-      }
-      return;
-    }
-    const requestID = deps.beginViewSwitch("project", projectId);
-    deps.closeProjectMenus();
-    const outgoingDraft = deps.getPrimaryComposerDraft();
-    try {
-      const projectState = await window.wuu.selectProject(projectId);
-      const loadedState = await loadRuntime(projectState, {
-        resumeLatestThread: false,
-      });
-      if (!deps.finishViewSwitch(requestID)) {
-        return;
-      }
-      deps.restoreLoadedRuntimeComposerDraft(loadedState);
-      deps.setAppState((current) => {
-        const next = withLoadedRuntimeSessionTab(
-          persistActiveSessionTabDraft(current, outgoingDraft),
-          loadedState,
-        );
-        return {
-          ...next,
-          thread: undefined,
-          secondaryThread: undefined,
-          activePane: "primary",
-          allowThreadAutoActivation: false,
-          running: false,
-          status: "ready",
-        };
-      });
-    } catch (error) {
-      if (!deps.finishViewSwitch(requestID)) {
-        return;
-      }
-      setStatus(error instanceof Error ? error.message : "open project failed");
-    }
   }
 
   /**
@@ -570,7 +521,6 @@ export function createProjectRuntimeActions(
   }
 
   return {
-    openProject,
     selectProjectForNewThread,
     startNewThreadForProject,
     createBlankProject,

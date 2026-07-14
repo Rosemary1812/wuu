@@ -14,7 +14,6 @@ export function useThreadBrowserPreview({
 }): {
   pendingBrowserURL?: string;
   consumePendingBrowserURL: () => void;
-  openBrowserURL: (url: string) => void;
   rememberBrowserURLForActiveThread: (url: string) => void;
 } {
   const activeBrowserThreadIDRef = useRef<string | undefined>(undefined);
@@ -47,11 +46,6 @@ export function useThreadBrowserPreview({
 
   const consumePendingBrowserURL = useCallback((): void => {
     setPendingBrowserURL(undefined);
-  }, []);
-
-  const openBrowserURL = useCallback((url: string): void => {
-    onOpenBrowserRef.current();
-    setPendingBrowserURL(url);
   }, []);
 
   // Switching sessions restores that session's browser URL without forcing the
@@ -101,7 +95,6 @@ export function useThreadBrowserPreview({
   return {
     pendingBrowserURL,
     consumePendingBrowserURL,
-    openBrowserURL,
     rememberBrowserURLForActiveThread,
   };
 }

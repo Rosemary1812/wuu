@@ -26,7 +26,6 @@ import type { ComposerFile, ComposerImage } from "./ComposerMessages";
 import type { ContextCompositionEntry } from "./ContextCompositionCard";
 import type { InstructionFilesEntry } from "./InstructionFilesCard";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
-import type { CloseConversationSearchOptions } from "./ConversationSearchState";
 import type { SettingsPage } from "./SettingsView";
 
 type SetAppState = (update: SetStateAction<AppState>) => void;
@@ -47,13 +46,6 @@ export type CollaborationActionsDeps = {
   activateThread: (threadID: string) => Promise<void>;
   selectThread: (threadID: string) => Promise<void>;
   selectSessionTab: (tabID: string) => Promise<void>;
-  closeConversationSearch: (
-    options?: CloseConversationSearchOptions,
-  ) => void;
-  closeEnvironmentPanel: (options?: { dismissed?: boolean }) => void;
-  setOpenSubthreadPanel: (value: undefined) => void;
-  setRightPanelOpenWithMotion: (open: boolean) => void;
-  openParticipantProfilePanel: (participant: ParticipantProfile) => void;
   setContextCompositionEntries: Dispatch<
     SetStateAction<ContextCompositionEntry[]>
   >;
@@ -78,7 +70,6 @@ export type CollaborationActions = {
   dismissInstructionFilesEntry: (id: string) => void;
   openInstructions: () => void;
   openContextComposition: () => void;
-  openParticipantProfile: (participant: ParticipantProfile) => void;
   openParticipantDM: (participant: ParticipantProfile) => Promise<void>;
   createGroupThread: (title: string) => Promise<void>;
   openTaskBoardTab: (thread: Thread) => void;
@@ -235,14 +226,6 @@ export function createCollaborationActions(
         );
       }
     })();
-  }
-
-  function openParticipantProfile(participant: ParticipantProfile): void {
-    deps.closeConversationSearch({ immediate: true });
-    deps.closeEnvironmentPanel({ dismissed: true });
-    deps.setOpenSubthreadPanel(undefined);
-    deps.setRightPanelOpenWithMotion(false);
-    deps.openParticipantProfilePanel(participant);
   }
 
   async function openParticipantDM(
@@ -403,7 +386,6 @@ export function createCollaborationActions(
     dismissInstructionFilesEntry,
     openInstructions,
     openContextComposition,
-    openParticipantProfile,
     openParticipantDM,
     createGroupThread,
     openTaskBoardTab,
