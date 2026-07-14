@@ -1229,18 +1229,6 @@
   padding: 4px 0 2px;
 }
 
-.conversation-search-section {
-  display: grid;
-  gap: 2px;
-}
-
-.conversation-search-section-title {
-  color: var(--ink-muted);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-semibold);
-  padding: 7px 12px 4px;
-}
-
 .conversation-search-result {
   display: grid;
   min-height: 44px;

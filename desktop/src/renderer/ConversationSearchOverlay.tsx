@@ -10,7 +10,6 @@ import type {
   Turn,
 } from "../shared/protocol";
 import {
-  conversationSearchResultSections,
   conversationSearchStatusText,
   conversationSearchVisibleSnippet,
 } from "./ConversationSearchDisplay";
@@ -58,7 +57,6 @@ export function ConversationSearchOverlay({
     return null;
   }
 
-  const sections = conversationSearchResultSections(results, state.query);
   const status = conversationSearchStatusText({
     loading: state.loading,
     query: state.query,
@@ -118,72 +116,57 @@ export function ConversationSearchOverlay({
         ) : null}
         <div className="conversation-search-body">
           <div className="conversation-search-results">
-            {sections.map((section) => (
-              <section
-                className="conversation-search-section"
-                key={section.title}
-              >
-                <div className="conversation-search-section-title">
-                  {section.title}
-                </div>
-                {section.results.map((result, sectionIndex) => {
-                  const resultIndex = section.startIndex + sectionIndex;
-                  const thread = result.thread;
-                  const title = threadDisplayTitle(
-                    thread,
-                    threads,
-                    "未命名对话",
-                  );
-                  const active = thread.id === activeThreadID;
-                  const pending = pendingThreadID === thread.id;
-                  const selected = state.selectedIndex === resultIndex;
-                  const contextLabel = conversationSearchContextLabel(
-                    thread,
-                    projects,
-                  );
-                  const snippet = conversationSearchVisibleSnippet({
-                    query: state.query,
-                    snippet: result.snippet,
-                    title,
-                  });
-                  return (
-                    <button
-                      key={thread.id}
-                      className={`conversation-search-result${active ? " active" : ""}${pending ? " pending" : ""}${selected ? " selected" : ""}`}
-                      type="button"
-                      aria-current={active ? "page" : undefined}
-                      aria-selected={selected}
-                      onMouseEnter={() => onSelectIndex(resultIndex)}
-                      onClick={() => onSelectResult(result)}
-                    >
-                      <span className="conversation-search-result-main">
-                        <span className="conversation-search-result-title">
-                          {title}
-                        </span>
-                        {snippet ? (
-                          <span className="conversation-search-result-snippet">
-                            {snippet}
-                          </span>
-                        ) : null}
+            {results.map((result, resultIndex) => {
+              const thread = result.thread;
+              const title = threadDisplayTitle(thread, threads, "未命名对话");
+              const active = thread.id === activeThreadID;
+              const pending = pendingThreadID === thread.id;
+              const selected = state.selectedIndex === resultIndex;
+              const contextLabel = conversationSearchContextLabel(
+                thread,
+                projects,
+              );
+              const snippet = conversationSearchVisibleSnippet({
+                query: state.query,
+                snippet: result.snippet,
+                title,
+              });
+              return (
+                <button
+                  key={thread.id}
+                  className={`conversation-search-result${active ? " active" : ""}${pending ? " pending" : ""}${selected ? " selected" : ""}`}
+                  type="button"
+                  aria-current={active ? "page" : undefined}
+                  aria-selected={selected}
+                  onMouseEnter={() => onSelectIndex(resultIndex)}
+                  onClick={() => onSelectResult(result)}
+                >
+                  <span className="conversation-search-result-main">
+                    <span className="conversation-search-result-title">
+                      {title}
+                    </span>
+                    {snippet ? (
+                      <span className="conversation-search-result-snippet">
+                        {snippet}
                       </span>
-                      <span className="conversation-search-result-side">
-                        <span className="conversation-search-result-context">
-                          {contextLabel}
-                        </span>
-                        <span className="conversation-search-result-meta">
-                          {conversationSearchThreadMeta(thread)}
-                        </span>
-                        {resultIndex < 9 ? (
-                          <span className="conversation-search-result-shortcut">
-                            ⌘{resultIndex + 1}
-                          </span>
-                        ) : null}
+                    ) : null}
+                  </span>
+                  <span className="conversation-search-result-side">
+                    <span className="conversation-search-result-context">
+                      {contextLabel}
+                    </span>
+                    <span className="conversation-search-result-meta">
+                      {conversationSearchThreadMeta(thread)}
+                    </span>
+                    {resultIndex < 9 ? (
+                      <span className="conversation-search-result-shortcut">
+                        ⌘{resultIndex + 1}
                       </span>
-                    </button>
-                  );
-                })}
-              </section>
-            ))}
+                    ) : null}
+                  </span>
+                </button>
+              );
+            })}
             {results.length === 0 ? (
               <div className="conversation-search-empty">
                 {state.loading

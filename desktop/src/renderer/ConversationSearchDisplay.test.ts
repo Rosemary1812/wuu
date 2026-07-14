@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ThreadSearchResultItem } from "../shared/protocol";
 import {
-  conversationSearchResultSections,
   conversationSearchStatusText,
   conversationSearchVisibleSnippet,
 } from "./ConversationSearchDisplay";
@@ -22,30 +21,6 @@ function searchResult(id: string, pinned = false): ThreadSearchResultItem {
     },
   };
 }
-
-describe("conversationSearchResultSections", () => {
-  it("uses one recent section for pinned and unpinned conversations", () => {
-    const pinned = searchResult("pinned", true);
-    const unpinned = searchResult("unpinned");
-
-    expect(conversationSearchResultSections([pinned, unpinned], "")).toEqual([
-      { title: "最近会话", results: [pinned, unpinned], startIndex: 0 },
-    ]);
-  });
-
-  it("uses one result section when searching", () => {
-    const result = searchResult("match");
-
-    expect(conversationSearchResultSections([result], "permission")).toEqual([
-      { title: "搜索结果", results: [result], startIndex: 0 },
-    ]);
-  });
-
-  it("returns no sections for empty results", () => {
-    expect(conversationSearchResultSections([], "")).toEqual([]);
-    expect(conversationSearchResultSections([], "permission")).toEqual([]);
-  });
-});
 
 describe("conversationSearchStatusText", () => {
   it("prioritizes the loading state", () => {
