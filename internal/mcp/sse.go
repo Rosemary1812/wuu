@@ -29,7 +29,7 @@ func NewSSETransport(endpoint string) (*SSETransport, error) {
 }
 
 func NewSSETransportWithHeaders(endpoint string, headers map[string]string) (*SSETransport, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := newSSEHTTPClient()
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -58,6 +58,19 @@ func NewSSETransportWithHeaders(endpoint string, headers map[string]string) (*SS
 		reader:   bufio.NewReader(resp.Body),
 		resp:     resp,
 	}, nil
+}
+
+func newSSEHTTPClient() *http.Client {
+	tr, ok := http.DefaultTransport.(*http.Transport)
+	if ok {
+		tr = tr.Clone()
+	} else {
+		tr = &http.Transport{Proxy: http.ProxyFromEnvironment}
+	}
+	// Bound the connection handshake without imposing a lifetime on the SSE
+	// response body, which is expected to remain open indefinitely.
+	tr.ResponseHeaderTimeout = 30 * time.Second
+	return &http.Client{Transport: tr}
 }
 
 func (t *SSETransport) Send(ctx context.Context, req Request) error {

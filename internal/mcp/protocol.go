@@ -148,9 +148,10 @@ func nextRequestID() int64 {
 
 // inFlight tracks pending requests.
 type inFlight struct {
-	mu      sync.Mutex
-	pending map[int64]chan Response
-	closed  bool
+	mu            sync.Mutex
+	pending       map[int64]chan Response
+	closed        bool
+	closedMessage string
 }
 
 func newInFlight() *inFlight {
@@ -162,7 +163,11 @@ func (f *inFlight) register(id int64) <-chan Response {
 	defer f.mu.Unlock()
 	if f.closed {
 		ch := make(chan Response, 1)
-		ch <- Response{Error: &RPCError{Code: -32000, Message: "client closed"}}
+		message := f.closedMessage
+		if message == "" {
+			message = "client closed"
+		}
+		ch <- Response{Error: &RPCError{Code: -32000, Message: message}}
 		return ch
 	}
 	ch := make(chan Response, 1)
@@ -191,11 +196,29 @@ func (f *inFlight) drop(id int64) {
 }
 
 func (f *inFlight) closeAll() {
+	f.failAllMessage("client closed")
+}
+
+func (f *inFlight) failAll(err error) {
+	message := "client closed"
+	if err != nil {
+		message = err.Error()
+	}
+	f.failAllMessage(message)
+}
+
+func (f *inFlight) failAllMessage(message string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.closed = true
+	if !f.closed {
+		f.closed = true
+		f.closedMessage = message
+	}
+	if f.closedMessage == "" {
+		f.closedMessage = "client closed"
+	}
 	for id, ch := range f.pending {
-		ch <- Response{Error: &RPCError{Code: -32000, Message: "client closed"}}
+		ch <- Response{Error: &RPCError{Code: -32000, Message: f.closedMessage}}
 		delete(f.pending, id)
 	}
 }

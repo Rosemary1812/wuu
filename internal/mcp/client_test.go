@@ -78,7 +78,7 @@ func TestClientRefreshesToolsOnListChangedNotification(t *testing.T) {
 		transport: transport,
 		inFlight:  newInFlight(),
 	}
-	client.readLoop = newReadLoop(transport, client.inFlight, client.handleNotification, client.handleRequest)
+	client.readLoop = newReadLoop(transport, client.inFlight, client.handleNotification, client.handleRequest, client.handleReadLoopExit)
 	client.readLoop.Start()
 	t.Cleanup(func() { _ = client.Close() })
 
@@ -109,7 +109,7 @@ func TestReadLoopRejectsUnsupportedServerRequest(t *testing.T) {
 		transport: transport,
 		inFlight:  newInFlight(),
 	}
-	client.readLoop = newReadLoop(transport, client.inFlight, client.handleNotification, client.handleRequest)
+	client.readLoop = newReadLoop(transport, client.inFlight, client.handleNotification, client.handleRequest, client.handleReadLoopExit)
 	client.readLoop.Start()
 	t.Cleanup(func() { _ = client.Close() })
 
@@ -125,6 +125,54 @@ func TestReadLoopRejectsUnsupportedServerRequest(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("read loop did not reject server request")
+}
+
+func TestReadLoopTerminalErrorFailsPendingCallAndStops(t *testing.T) {
+	transport := newScriptedTransport()
+	client := &Client{
+		name:      "server",
+		transport: transport,
+		inFlight:  newInFlight(),
+	}
+	client.readLoop = newReadLoop(transport, client.inFlight, client.handleNotification, client.handleRequest, client.handleReadLoopExit)
+	client.readLoop.Start()
+
+	callErr := make(chan error, 1)
+	go func() {
+		_, err := client.CallTool(context.Background(), "slow", nil)
+		callErr <- err
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for !transport.sentMethod("tools/call") && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if !transport.sentMethod("tools/call") {
+		t.Fatal("tools/call was not sent")
+	}
+
+	if err := transport.Close(); err != nil {
+		t.Fatalf("close transport: %v", err)
+	}
+	select {
+	case err := <-callErr:
+		if err == nil || !strings.Contains(err.Error(), "mcp transport receive") {
+			t.Fatalf("CallTool error = %v, want terminal receive error", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("pending CallTool did not fail after transport termination")
+	}
+	select {
+	case <-client.readLoop.stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("read loop did not stop after transport termination")
+	}
+	if got := transport.receiveCount(); got != 1 {
+		t.Fatalf("Receive called %d times, want 1; read loop may be retrying a terminal error", got)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("close client after terminal error: %v", err)
+	}
 }
 
 func TestStdioEnvOverlay(t *testing.T) {
@@ -161,11 +209,12 @@ func TestManagerStatusIncludesConnectionFailures(t *testing.T) {
 }
 
 type scriptedTransport struct {
-	mu        sync.Mutex
-	listCalls int
-	inbox     chan Response
-	closed    chan struct{}
-	sent      []Request
+	mu           sync.Mutex
+	listCalls    int
+	receiveCalls int
+	inbox        chan Response
+	closed       chan struct{}
+	sent         []Request
 }
 
 func newScriptedTransport() *scriptedTransport {
@@ -197,6 +246,9 @@ func (t *scriptedTransport) Send(_ context.Context, req Request) error {
 }
 
 func (t *scriptedTransport) Receive(ctx context.Context) (Response, error) {
+	t.mu.Lock()
+	t.receiveCalls++
+	t.mu.Unlock()
 	select {
 	case <-ctx.Done():
 		return Response{}, ctx.Err()
@@ -229,4 +281,21 @@ func (t *scriptedTransport) sentResponse(id int64) (Request, bool) {
 		}
 	}
 	return Request{}, false
+}
+
+func (t *scriptedTransport) sentMethod(method string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, req := range t.sent {
+		if req.Method == method {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *scriptedTransport) receiveCount() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.receiveCalls
 }

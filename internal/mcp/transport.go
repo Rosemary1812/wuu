@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	"sync"
 )
 
 // Transport is the low-level JSON-RPC transport for MCP.
@@ -23,16 +23,19 @@ type readLoop struct {
 	inFlight  *inFlight
 	onNotify  func(method string, params json.RawMessage)
 	onRequest func(method string, params json.RawMessage) (json.RawMessage, *RPCError)
+	onExit    func(error)
 	stop      chan struct{}
 	stopped   chan struct{}
+	stopOnce  sync.Once
 }
 
-func newReadLoop(t Transport, f *inFlight, onNotify func(method string, params json.RawMessage), onRequest func(method string, params json.RawMessage) (json.RawMessage, *RPCError)) *readLoop {
+func newReadLoop(t Transport, f *inFlight, onNotify func(method string, params json.RawMessage), onRequest func(method string, params json.RawMessage) (json.RawMessage, *RPCError), onExit func(error)) *readLoop {
 	return &readLoop{
 		transport: t,
 		inFlight:  f,
 		onNotify:  onNotify,
 		onRequest: onRequest,
+		onExit:    onExit,
 		stop:      make(chan struct{}),
 		stopped:   make(chan struct{}),
 	}
@@ -43,7 +46,16 @@ func (r *readLoop) Start() {
 }
 
 func (r *readLoop) run() {
-	defer close(r.stopped)
+	var terminalErr error
+	defer func() {
+		if terminalErr != nil {
+			r.inFlight.failAll(terminalErr)
+		}
+		close(r.stopped)
+		if terminalErr != nil && r.onExit != nil {
+			r.onExit(terminalErr)
+		}
+	}()
 	for {
 		select {
 		case <-r.stop:
@@ -52,14 +64,12 @@ func (r *readLoop) run() {
 		}
 		resp, err := r.transport.Receive(context.Background())
 		if err != nil {
-			if err == io.EOF {
-				return
-			}
 			select {
 			case <-r.stop:
 				return
 			default:
-				continue
+				terminalErr = fmt.Errorf("mcp transport receive: %w", err)
+				return
 			}
 		}
 		// Notifications have no ID and carry a method.
@@ -99,8 +109,12 @@ func (r *readLoop) handleServerRequest(req Response) {
 }
 
 func (r *readLoop) Stop() {
-	close(r.stop)
+	r.signalStop()
 	<-r.stopped
+}
+
+func (r *readLoop) signalStop() {
+	r.stopOnce.Do(func() { close(r.stop) })
 }
 
 // call performs a synchronous JSON-RPC call over the transport.

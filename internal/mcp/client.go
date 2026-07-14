@@ -74,15 +74,20 @@ type ToolOverride struct {
 
 // Client is a connected MCP server session.
 type Client struct {
-	name           string
-	transport      Transport
-	inFlight       *inFlight
-	readLoop       *readLoop
-	mu             sync.RWMutex
-	tools          []Tool
-	overrides      map[string]ToolOverride
-	onToolsChanged func()
-	closed         bool
+	name                     string
+	transport                Transport
+	inFlight                 *inFlight
+	readLoop                 *readLoop
+	mu                       sync.RWMutex
+	tools                    []Tool
+	overrides                map[string]ToolOverride
+	onToolsChanged           func()
+	onConnectionClosed       func(error)
+	connectionErr            error
+	connectionClosedNotified bool
+	closed                   bool
+	closeOnce                sync.Once
+	closeErr                 error
 }
 
 // Connect establishes an MCP session with the given transport.
@@ -92,7 +97,7 @@ func Connect(name string, t Transport) (*Client, error) {
 		transport: t,
 		inFlight:  newInFlight(),
 	}
-	c.readLoop = newReadLoop(t, c.inFlight, c.handleNotification, c.handleRequest)
+	c.readLoop = newReadLoop(t, c.inFlight, c.handleNotification, c.handleRequest, c.handleReadLoopExit)
 	c.readLoop.Start()
 
 	// Initialize handshake.
@@ -254,6 +259,60 @@ func (c *Client) SetToolsChangedCallback(callback func()) {
 	c.mu.Unlock()
 }
 
+// SetConnectionClosedCallback registers a callback for an unexpected
+// transport termination. If the connection has already failed, the callback
+// is invoked immediately.
+func (c *Client) SetConnectionClosedCallback(callback func(error)) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.onConnectionClosed = callback
+	err := c.connectionErr
+	if callback != nil && err != nil && !c.connectionClosedNotified {
+		c.connectionClosedNotified = true
+	} else {
+		callback = nil
+	}
+	c.mu.Unlock()
+	if callback != nil {
+		callback(err)
+	}
+}
+
+// ConnectionError returns the terminal transport error, if the connection
+// ended unexpectedly.
+func (c *Client) ConnectionError() error {
+	if c == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.connectionErr
+}
+
+func (c *Client) handleReadLoopExit(err error) {
+	if err == nil {
+		return
+	}
+	c.mu.Lock()
+	if c.connectionErr == nil {
+		c.connectionErr = err
+	}
+	callback := c.onConnectionClosed
+	if callback != nil && !c.connectionClosedNotified {
+		c.connectionClosedNotified = true
+	} else {
+		callback = nil
+	}
+	connectionErr := c.connectionErr
+	c.mu.Unlock()
+	if callback != nil {
+		callback(connectionErr)
+	}
+	_ = c.Close()
+}
+
 func (c *Client) handleNotification(method string, _ json.RawMessage) {
 	switch method {
 	case "notifications/tools/list_changed", "tools/list_changed":
@@ -323,16 +382,14 @@ func (c *Client) CallTool(ctx context.Context, name string, arguments json.RawMe
 
 // Close shuts down the client.
 func (c *Client) Close() error {
-	c.mu.Lock()
-	c.closed = true
-	c.mu.Unlock()
-	stopped := make(chan struct{})
-	go func() {
+	c.closeOnce.Do(func() {
+		c.mu.Lock()
+		c.closed = true
+		c.mu.Unlock()
+		c.readLoop.signalStop()
+		c.closeErr = c.transport.Close()
 		c.readLoop.Stop()
-		close(stopped)
-	}()
-	closeErr := c.transport.Close()
-	<-stopped
-	c.inFlight.closeAll()
-	return closeErr
+		c.inFlight.closeAll()
+	})
+	return c.closeErr
 }

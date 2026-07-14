@@ -126,6 +126,9 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 		m.recordStatus(ServerStatus{Name: cfg.Name, State: classifyConnectError(err), AuthStatus: authStatusAfterConnectError(cfg, err), Connected: false, Error: err.Error()})
 		return err
 	}
+	client.SetConnectionClosedCallback(func(err error) {
+		m.clientConnectionFailed(cfg.Name, client, err)
+	})
 	// Eagerly discover tools so the toolkit can include them.
 	if _, derr := client.DiscoverTools(ctx); derr != nil {
 		_ = client.Close()
@@ -135,7 +138,19 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 	}
 	client.SetToolsChangedCallback(func() { m.catalogChanged(cfg.Name) })
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	if connectionErr := client.ConnectionError(); connectionErr != nil {
+		err := fmt.Errorf("mcp server %q connection closed: %w", cfg.Name, connectionErr)
+		m.statuses[cfg.Name] = ServerStatus{
+			Name:       cfg.Name,
+			State:      MCPServerStateFailed,
+			AuthStatus: connectedAuthStatus(cfg),
+			Connected:  false,
+			Error:      err.Error(),
+		}
+		m.mu.Unlock()
+		_ = client.Close()
+		return err
+	}
 	if old, ok := m.clients[cfg.Name]; ok {
 		_ = old.Close()
 	}
@@ -148,7 +163,33 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 		ToolCount:  len(client.Tools()),
 	}
 	m.generation++
+	m.mu.Unlock()
 	return nil
+}
+
+func (m *Manager) clientConnectionFailed(name string, client *Client, err error) {
+	if m == nil || client == nil || err == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.clients[name] != client {
+		return
+	}
+	delete(m.clients, name)
+	status := m.statuses[name]
+	authStatus := status.AuthStatus
+	if authStatus == "" {
+		authStatus = connectedAuthStatus(m.configs[name])
+	}
+	m.statuses[name] = ServerStatus{
+		Name:       name,
+		State:      MCPServerStateFailed,
+		AuthStatus: authStatus,
+		Connected:  false,
+		Error:      err.Error(),
+	}
+	m.generation++
 }
 
 func (m *Manager) StartOAuth(ctx context.Context, name string) (OAuthStartResult, error) {

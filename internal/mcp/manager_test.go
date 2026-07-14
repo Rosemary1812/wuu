@@ -2,8 +2,10 @@ package mcp
 
 import (
 	"context"
-	"github.com/blueberrycongee/wuu/internal/extensions"
 	"testing"
+	"time"
+
+	"github.com/blueberrycongee/wuu/internal/extensions"
 )
 
 func TestManagerConfigureRecordsConfiguredAndDisabledStatuses(t *testing.T) {
@@ -88,6 +90,42 @@ func TestManagerFailedConnectRecordsFailedState(t *testing.T) {
 	if status.Error == "" {
 		t.Fatalf("failed status should include error: %+v", status)
 	}
+}
+
+func TestManagerMarksUnexpectedClientFailure(t *testing.T) {
+	server := newLegacySSEServer(t)
+	manager := NewManager()
+	t.Cleanup(func() { _ = manager.Close() })
+
+	err := manager.Add(context.Background(), ServerConfig{
+		Name:      "legacy",
+		URL:       server.srv.URL + "/sse",
+		Transport: TransportSSE,
+	})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	initialGeneration := manager.Generation()
+	if len(manager.NativeTools()) != 1 {
+		t.Fatalf("NativeTools before failure = %+v", manager.NativeTools())
+	}
+
+	server.srv.CloseClientConnections()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		status := manager.Status()["legacy"]
+		if status.State == MCPServerStateFailed && !status.Connected && status.Error != "" {
+			if len(manager.NativeTools()) != 0 {
+				t.Fatalf("NativeTools retained tools from failed client: %+v", manager.NativeTools())
+			}
+			if manager.Generation() <= initialGeneration {
+				t.Fatalf("generation did not advance after failure: %d -> %d", initialGeneration, manager.Generation())
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("manager did not record unexpected client failure: %+v", manager.Status()["legacy"])
 }
 
 func TestClassifyConnectErrorDetectsNeedsAuth(t *testing.T) {
