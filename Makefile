@@ -12,6 +12,8 @@ LDFLAGS := -s -w \
 	-X github.com/blueberrycongee/wuu/internal/version.Version=$(VERSION) \
 	-X github.com/blueberrycongee/wuu/internal/version.Commit=$(COMMIT) \
 	-X github.com/blueberrycongee/wuu/internal/version.Date=$(DATE)
+GO_DIRS := cmd internal prompts
+GO_PACKAGES := ./cmd/... ./internal/... ./prompts/...
 
 setup:
 	npm ci --prefix desktop
@@ -26,9 +28,9 @@ check: check-go check-desktop check-clients
 
 check-go:
 	go mod tidy -diff
-	@test -z "$$(gofmt -l $$(find cmd internal -name '*.go' -type f))" || \
-		{ echo "Go files need formatting:"; gofmt -l $$(find cmd internal -name '*.go' -type f); exit 1; }
-	go vet ./...
+	@unformatted="$$(find $(GO_DIRS) -name '*.go' -type f -exec gofmt -l {} +)"; \
+		test -z "$$unformatted" || { echo "Go files need formatting:"; echo "$$unformatted"; exit 1; }
+	go vet $(GO_PACKAGES)
 
 check-desktop:
 	npm --prefix desktop run typecheck
@@ -41,7 +43,7 @@ check-clients:
 test: test-go test-desktop test-clients
 
 test-go:
-	go test ./... -count=1
+	go test $(GO_PACKAGES) -count=1
 
 test-desktop:
 	npm --prefix desktop test
@@ -73,7 +75,7 @@ install:
 	go install -ldflags "$(LDFLAGS)" ./cmd/wuu
 
 vet:
-	go vet ./...
+	go vet $(GO_PACKAGES)
 
 clean:
 	rm -rf bin/ dist/
