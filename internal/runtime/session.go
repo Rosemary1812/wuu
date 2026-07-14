@@ -1075,7 +1075,6 @@ func cloneStreamRunnerForThread(base *agent.StreamRunner, toolExecutor agent.Too
 		MaxSteps:                    base.MaxSteps,
 		Temperature:                 base.Temperature,
 		OnEvent:                     base.OnEvent,
-		Bus:                         base.Bus,
 		OnUsage:                     base.OnUsage,
 		OnTokenUsage:                base.OnTokenUsage,
 		ContextWindowOverride:       base.ContextWindowOverride,

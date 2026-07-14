@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/compact"
-	"github.com/blueberrycongee/wuu/internal/eventbus"
 	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
@@ -41,11 +40,6 @@ type StreamRunner struct {
 	MaxSteps             int
 	Temperature          float64
 	OnEvent              StreamCallback
-
-	// Bus, when non-nil, publishes all stream events to the event bus
-	// in addition to OnEvent. This decouples the core agent loop from
-	// UI consumers and enables headless / multi-client / remote use cases.
-	Bus *eventbus.Bus
 
 	// OnUsage, when non-nil, is invoked once per LLM round-trip with
 	// the per-call token counts reported by the provider. This mirrors
@@ -224,17 +218,7 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	history = append(history, recoveredToolMessages...)
 	runUsage, baseHistoryLen := r.prepareUsageTracker(history)
 
-	// Wrap the caller's callback so events also flow to the bus, if wired.
-	emitEvent := onEvent
-	if r.Bus != nil {
-		emitEvent = func(ev providers.StreamEvent) {
-			if onEvent != nil {
-				onEvent(ev)
-			}
-			r.Bus.Publish(eventbus.AdaptStreamEvent(ev))
-		}
-	}
-	effectiveOnEvent := filterInternalContextStreamEvents(emitEvent)
+	effectiveOnEvent := filterInternalContextStreamEvents(onEvent)
 
 	step := &streamStep{
 		client:                  r.Client,
