@@ -463,12 +463,3 @@ func evalTaskRequiresTool(task Task, name string) bool {
 	}
 	return false
 }
-
-func evalTaskForbidsTool(task Task, name string) bool {
-	for _, tool := range task.ForbiddenTools {
-		if tool == name {
-			return true
-		}
-	}
-	return false
-}

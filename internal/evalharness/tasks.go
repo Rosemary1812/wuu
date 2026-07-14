@@ -579,10 +579,6 @@ func failVerification(reason string, evidence ...VerificationEvidence) Verificat
 	return Verification{Passed: false, Reason: reason, Evidence: evidence}
 }
 
-func verificationEvidence(check string, passed bool, summary string) VerificationEvidence {
-	return VerificationEvidence{Check: check, Passed: passed, Summary: summary}
-}
-
 func verificationObserved(value string) string {
 	value = strings.TrimSpace(value)
 	if len(value) <= verificationObservedLimit {
