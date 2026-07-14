@@ -99,25 +99,12 @@ func EstimateTokens(text string) int {
 	return contextbudget.EstimateTokens(text)
 }
 
-// EstimateJSONTokens estimates tokens for JSON content. JSON is denser than
-// prose because single-character structural tokens ({, }, :, ,, ") each
-// consume one token.
-func EstimateJSONTokens(text string) int {
-	return contextbudget.EstimateJSONTokens(text)
-}
-
 // EstimateMessagesTokens estimates total tokens for a message list.
 // Counts content, reasoning, tool calls (name + arguments + envelope),
 // images, and per-message overhead. Slightly pessimistic so proactive
 // compact fires before the hard overflow.
 func EstimateMessagesTokens(messages []providers.ChatMessage) int {
 	return contextbudget.EstimateMessagesTokens(messages)
-}
-
-// EstimateImageTokens estimates the model-visible budget for an image. It is
-// deliberately based on visual patches, not on base64 transport bytes.
-func EstimateImageTokens(image providers.InputImage) int {
-	return contextbudget.EstimateImageTokens(image)
 }
 
 // ShouldCompact returns true if messages exceed the threshold.
@@ -642,10 +629,6 @@ func compactTailUsableWindow(model string, budget Budget) int {
 	return budget.ContextTokens
 }
 
-func compactUsableWindow(model string, window int) int {
-	return compactUsableInputWindow(model, Budget{ContextTokens: window})
-}
-
 func compactUsableInputWindow(model string, budget Budget) int {
 	window := budget.ContextTokens
 	if window <= 0 {
@@ -844,10 +827,6 @@ func stripHistoricalImages(messages []providers.ChatMessage) []providers.ChatMes
 		out[i].Files = nil
 	}
 	return out
-}
-
-func appendImageOmissionNote(content string, images []providers.InputImage) string {
-	return appendAttachmentOmissionNote(content, images, nil)
 }
 
 func appendAttachmentOmissionNote(content string, images []providers.InputImage, files []providers.InputFile) string {
