@@ -5,6 +5,15 @@ import type { Thread } from "../shared/protocol";
 import { CachedConversationPanes } from "./CachedConversationPanes";
 import { ImagePreviewProvider } from "./ImagePreview";
 
+const turnListRenders = vi.hoisted(() => new Map<string, number>());
+
+vi.mock("./ConversationTurnList", () => ({
+  ConversationTurnList: ({ threadID }: { threadID: string }): JSX.Element => {
+    turnListRenders.set(threadID, (turnListRenders.get(threadID) ?? 0) + 1);
+    return <div data-testid={`turn-list-${threadID}`} />;
+  },
+}));
+
 let roots: Root[] = [];
 
 afterEach(() => {
@@ -12,6 +21,7 @@ afterEach(() => {
     act(() => root.unmount());
   }
   roots = [];
+  turnListRenders.clear();
   document.body.innerHTML = "";
 });
 
@@ -127,5 +137,73 @@ describe("CachedConversationPanes Thread wiring", () => {
       "prt-a",
       undefined,
     );
+  });
+});
+
+describe("CachedConversationPanes session switching", () => {
+  it("does not re-render an unrelated hidden conversation", () => {
+    const threads = [
+      chatThread("thread-a", {}),
+      chatThread("thread-b", {}),
+      chatThread("thread-c", {}),
+    ];
+    const threadsByID = new Map(threads.map((thread) => [thread.id, thread]));
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
+    const stableProps = {
+      threadIDs: threads.map((thread) => thread.id),
+      threadsByID,
+      conversationGridVisible: false,
+      contextCompositionEntries: [],
+      instructionFilesEntries: [],
+      onStreamFrame: () => {},
+      onCollapseComplete: () => {},
+      onDismissContextComposition: () => {},
+      onDismissInstructions: () => {},
+      canEditThreadMessage: () => false,
+      onForkMessage: () => {},
+      onOpenAgent: () => {},
+      onOpenSubthread: () => {},
+      onReact: () => {},
+      onEditMessage: () => {},
+      onCancelEditMessage: () => {},
+      onSubmitEditMessage: () => {},
+      onOpenFileDiff: () => {},
+      turnStreamStatus: {},
+      busyParticipantIDs: new Set<string>(),
+      activeThreadMarks: [],
+      resolveParticipantName: (id: string) => id,
+      chatReaderCount: 0,
+      pendingChatMessagesByThread: {},
+    } satisfies Omit<
+      ComponentProps<typeof CachedConversationPanes>,
+      "activeThreadID"
+    >;
+
+    act(() => {
+      root.render(
+        <ImagePreviewProvider>
+          <CachedConversationPanes {...stableProps} activeThreadID="thread-a" />
+        </ImagePreviewProvider>,
+      );
+    });
+
+    expect(turnListRenders.get("thread-a")).toBe(1);
+    expect(turnListRenders.get("thread-b")).toBe(1);
+    expect(turnListRenders.get("thread-c")).toBe(1);
+
+    act(() => {
+      root.render(
+        <ImagePreviewProvider>
+          <CachedConversationPanes {...stableProps} activeThreadID="thread-b" />
+        </ImagePreviewProvider>,
+      );
+    });
+
+    expect(turnListRenders.get("thread-a")).toBe(2);
+    expect(turnListRenders.get("thread-b")).toBe(2);
+    expect(turnListRenders.get("thread-c")).toBe(1);
   });
 });
