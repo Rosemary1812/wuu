@@ -392,12 +392,8 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:pop-out-session", params),
   popOutClosed: (params) =>
     ipcRenderer.invoke("wuu:pop-out-closed", params),
-  // Side thread (侧聊) IPC. Keyed by main_thread_id because the renderer
-  // never holds a side_thread_id of its own until after openSideThread
-  // returns a non-null summary. The main process resolves the binding
-  // both ways. open/get/send/interrupt are async; the streamed
-  // assistant reply reuses the existing wuu:server-event bus via
-  // onSideThreadEvent so the renderer doesn't need a parallel channel.
+  // Requests are keyed by the owning main thread. The main process derives
+  // wuu:side-thread-event from app-server sideThread/event notifications.
   openSideThread: (mainThreadId: string) =>
     ipcRenderer.invoke("wuu:side-thread-open", mainThreadId),
   getSideThreadHistory: (mainThreadId: string) =>

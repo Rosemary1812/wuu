@@ -118,6 +118,7 @@ import {
 } from "./desktopSettings";
 import { GitService } from "./gitService";
 import { ProjectManager, wuuHomePath } from "./projects";
+import { sideThreadEventFromServerEvent } from "./sideThreadEvents";
 import {
   registerRenderableFileProtocol,
   registerRenderableFileScheme,
@@ -304,6 +305,10 @@ function workspaceFilesForEvent(event: IpcMainInvokeEvent): WorkspaceFileService
 
 function emitServerEvent(event: ServerEvent): void {
   cuaObservationCoordinator.handleServerEvent(event);
+  const sideThreadEvent = sideThreadEventFromServerEvent(event);
+  if (sideThreadEvent) {
+    broadcastToAll("wuu:side-thread-event", sideThreadEvent);
+  }
   broadcastToAll("wuu:server-event", event);
 }
 

@@ -11,7 +11,6 @@ import {
   createEmptySideThreadEntry,
   createInitialSideThreadStore,
   ensureSideThreadEntry,
-  getSideThreadEntry,
   reduceSideThreadStore
 } from "./SideThreadState";
 
@@ -19,7 +18,7 @@ function summary(overrides: Partial<SideThreadSummary> = {}): SideThreadSummary 
   return {
     side_thread_id: "side-1",
     main_thread_id: "main-1",
-    status: "idle",
+    status: "completed",
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
     ...overrides
@@ -42,7 +41,6 @@ describe("SideThreadState", () => {
     it("creates an empty store with default width", () => {
       const store = createInitialSideThreadStore();
       expect(store.byThread).toEqual({});
-      expect(store.sideIdToMain).toEqual({});
       expect(store.width).toBe(SIDE_THREAD_DEFAULT_WIDTH);
     });
 
@@ -74,23 +72,18 @@ describe("SideThreadState", () => {
     });
   });
 
-  describe("ensureSideThreadEntry / getSideThreadEntry", () => {
-    it("returns undefined for an unseen main thread", () => {
-      const store = createInitialSideThreadStore();
-      expect(getSideThreadEntry(store, "main-x")).toBeUndefined();
-    });
-
+  describe("ensureSideThreadEntry", () => {
     it("creates an empty entry on demand without mutating the original store", () => {
       const store = createInitialSideThreadStore();
       const { store: nextStore, entry } = ensureSideThreadEntry(store, "main-x");
       expect(entry).toEqual(createEmptySideThreadEntry());
       expect(nextStore).not.toBe(store);
-      expect(getSideThreadEntry(store, "main-x")).toBeUndefined();
-      expect(getSideThreadEntry(nextStore, "main-x")).toEqual(entry);
+      expect(store.byThread["main-x"]).toBeUndefined();
+      expect(nextStore.byThread["main-x"]).toEqual(entry);
     });
   });
 
-  describe("open / close / toggle", () => {
+  describe("open / close", () => {
     it("open creates the entry if missing and marks it open", () => {
       const store = createInitialSideThreadStore();
       const next = reduceSideThreadStore(store, {
@@ -108,22 +101,8 @@ describe("SideThreadState", () => {
         mainThreadId: "main-1"
       });
       expect(next.byThread["main-1"]?.open).toBe(false);
-      // closing preserves identity, history is not cleared
+      // Closing preserves identity and history.
       expect(next.byThread["main-1"]).toBeDefined();
-    });
-
-    it("toggle flips the open flag both ways", () => {
-      let store = createInitialSideThreadStore();
-      store = reduceSideThreadStore(store, {
-        type: "toggle",
-        mainThreadId: "main-1"
-      });
-      expect(store.byThread["main-1"]?.open).toBe(true);
-      store = reduceSideThreadStore(store, {
-        type: "toggle",
-        mainThreadId: "main-1"
-      });
-      expect(store.byThread["main-1"]?.open).toBe(false);
     });
   });
 
@@ -139,34 +118,15 @@ describe("SideThreadState", () => {
     });
   });
 
-  describe("setSummary", () => {
-    it("stores summary and populates sideIdToMain reverse index", () => {
+  describe("mergeSummary", () => {
+    it("stores the side-thread summary", () => {
       const store = createInitialSideThreadStore();
       const next = reduceSideThreadStore(store, {
-        type: "setSummary",
+        type: "mergeSummary",
         mainThreadId: "main-1",
         summary: summary()
       });
       expect(next.byThread["main-1"]?.summary).toEqual(summary());
-      expect(next.sideIdToMain["side-1"]).toBe("main-1");
-    });
-
-    it("clears summary while keeping the reverse index intact when null", () => {
-      let store = createInitialSideThreadStore();
-      store = reduceSideThreadStore(store, {
-        type: "setSummary",
-        mainThreadId: "main-1",
-        summary: summary()
-      });
-      const next = reduceSideThreadStore(store, {
-        type: "setSummary",
-        mainThreadId: "main-1",
-        summary: null
-      });
-      expect(next.byThread["main-1"]?.summary).toBeNull();
-      // null summary keeps the index so previously streamed events
-      // can still be routed back to this main thread.
-      expect(next.sideIdToMain["side-1"]).toBe("main-1");
     });
   });
 
@@ -205,6 +165,72 @@ describe("SideThreadState", () => {
       expect(next.byThread["main-1"]?.messages[0]?.status).toBe("completed");
       expect(next.byThread["main-1"]?.messages[0]?.text).toBe("draft");
     });
+
+    it("merges late history without overwriting local streaming messages", () => {
+      let store = createInitialSideThreadStore();
+      store = reduceSideThreadStore(store, {
+        type: "appendMessage",
+        mainThreadId: "main-1",
+        message: message({ id: "local-user", text: "new prompt" })
+      });
+      store = reduceSideThreadStore(store, {
+        type: "applyEvent",
+        event: {
+          type: "delta",
+          side_thread_id: "side-1",
+          main_thread_id: "main-1",
+          message_id: "assistant-new",
+          text_delta: "new answer"
+        }
+      });
+
+      const next = reduceSideThreadStore(store, {
+        type: "mergeHistory",
+        mainThreadId: "main-1",
+        summary: summary(),
+        messages: [message({ id: "persisted-user", text: "old prompt" })]
+      });
+
+      expect(next.byThread["main-1"]?.messages.map((item) => item.id)).toEqual([
+        "persisted-user",
+        "local-user",
+        "assistant-new"
+      ]);
+      expect(next.byThread["main-1"]?.messages.at(-1)?.text).toBe("new answer");
+    });
+
+    it("prefers a persisted terminal message over a local streaming copy", () => {
+      let store = createInitialSideThreadStore();
+      store = reduceSideThreadStore(store, {
+        type: "appendMessage",
+        mainThreadId: "main-1",
+        message: message({
+          id: "assistant-1",
+          role: "assistant",
+          text: "partial",
+          status: "streaming"
+        })
+      });
+
+      const next = reduceSideThreadStore(store, {
+        type: "mergeHistory",
+        mainThreadId: "main-1",
+        summary: summary({ status: "completed" }),
+        messages: [
+          message({
+            id: "assistant-1",
+            role: "assistant",
+            text: "complete answer",
+            status: "completed"
+          })
+        ]
+      });
+
+      expect(next.byThread["main-1"]?.messages[0]).toMatchObject({
+        text: "complete answer",
+        status: "completed"
+      });
+    });
   });
 
   describe("setStreaming / setError", () => {
@@ -239,7 +265,7 @@ describe("SideThreadState", () => {
     it("status event updates streaming flag and summary status", () => {
       let store = createInitialSideThreadStore();
       store = reduceSideThreadStore(store, {
-        type: "setSummary",
+        type: "mergeSummary",
         mainThreadId: "main-1",
         summary: summary()
       });
@@ -373,66 +399,5 @@ describe("SideThreadState", () => {
       expect(next.byThread["main-1"]?.lastError).toBe("rate limited");
       expect(next.byThread["main-1"]?.streaming).toBe(false);
     });
-
-    it("populates sideIdToMain from a delta event even before setSummary", () => {
-      const store = createInitialSideThreadStore();
-      const next = reduceSideThreadStore(store, {
-        type: "applyEvent",
-        event: {
-          type: "delta",
-          side_thread_id: "side-x",
-          main_thread_id: "main-x",
-          message_id: "m-1",
-          text_delta: "hi"
-        }
-      });
-      expect(next.sideIdToMain["side-x"]).toBe("main-x");
-    });
-  });
-
-  describe("dropThread", () => {
-    it("removes the entry and the reverse index entry", () => {
-      let store = createInitialSideThreadStore();
-      store = reduceSideThreadStore(store, {
-        type: "setSummary",
-        mainThreadId: "main-1",
-        summary: summary()
-      });
-      store = reduceSideThreadStore(store, {
-        type: "appendMessage",
-        mainThreadId: "main-1",
-        message: message()
-      });
-      const next = reduceSideThreadStore(store, {
-        type: "dropThread",
-        mainThreadId: "main-1"
-      });
-      expect(next.byThread["main-1"]).toBeUndefined();
-      expect(next.sideIdToMain["side-1"]).toBeUndefined();
-    });
-
-    it("is a no-op when the main thread has no side entry", () => {
-      const store = createInitialSideThreadStore();
-      const next = reduceSideThreadStore(store, {
-        type: "dropThread",
-        mainThreadId: "main-x"
-      });
-      expect(next).toBe(store);
-    });
-  });
-
-  it("drops the targeted entry through the reducer", () => {
-    let store = createInitialSideThreadStore();
-    store = reduceSideThreadStore(store, {
-      type: "setSummary",
-      mainThreadId: "main-1",
-      summary: summary()
-    });
-    const next = reduceSideThreadStore(store, {
-      type: "dropThread",
-      mainThreadId: "main-1"
-    });
-    expect(next.byThread["main-1"]).toBeUndefined();
-    expect(next.sideIdToMain["side-1"]).toBeUndefined();
   });
 });

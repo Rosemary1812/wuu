@@ -252,9 +252,7 @@ export function buildComposerSlashCommands({
       disabledReason: needsWorkspace ?? needsIdleThread
     },
     {
-      // 侧聊：依附主对话展开一条附属线程，可用于询问进度或当前
-      // 任务的细节，但内容不会进入主线历史。V1 只支持 `/side`
-      // 一个字面量，不接受参数或子命令。
+      // Side-thread messages remain outside the main conversation history.
       id: "side",
       name: "side",
       title: "打开当前对话的侧聊",
@@ -262,7 +260,7 @@ export function buildComposerSlashCommands({
       tag: "会话",
       kind: "action",
       action: "open-side-thread",
-      // 主 turn 执行期间仍可打开侧聊，所以这里不挂 needsIdleThread。
+      // Side chat remains available while the main turn is running.
       disabledReason: needsWorkspace
     },
     {

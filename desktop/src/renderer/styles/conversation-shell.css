@@ -181,9 +181,20 @@
   --conversation-visible-inset-right: var(--thread-panel-width, 372px);
 }
 
+.conversation-pane.side-thread-panel-visible {
+  grid-template-columns: minmax(0, 1fr) var(--side-thread-width, 400px);
+  --conversation-visible-inset-right: var(--side-thread-width, 400px);
+}
+
 .conversation-pane.environment-panel-reserved.subthread-panel-visible {
   --conversation-visible-inset-right: calc(
     var(--environment-panel-reserved-width) + var(--thread-panel-width, 372px)
+  );
+}
+
+.conversation-pane.environment-panel-reserved.side-thread-panel-visible {
+  --conversation-visible-inset-right: calc(
+    var(--environment-panel-reserved-width) + var(--side-thread-width, 400px)
   );
 }
 
@@ -194,9 +205,14 @@
   right: calc(var(--thread-panel-width, 372px) + var(--environment-panel-edge-gap));
 }
 
+.conversation-pane.side-thread-panel-visible .environment-side-stack {
+  right: calc(var(--side-thread-width, 400px) + var(--environment-panel-edge-gap));
+}
+
 /* Live drags mutate --thread-panel-width per frame; the squeeze must track
    the pointer 1:1, not lag through the open/close easing. */
 .resizing-thread-panel .conversation-pane,
+.resizing-side-thread .conversation-pane,
 .window-resizing .conversation-pane {
   transition: none;
 }

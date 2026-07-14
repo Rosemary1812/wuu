@@ -61,7 +61,7 @@ function makeSummary(overrides: Partial<SideThreadSummary> = {}): SideThreadSumm
   return {
     side_thread_id: "side-1",
     main_thread_id: "main-1",
-    status: "idle",
+    status: "completed",
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
     ...overrides
@@ -117,12 +117,34 @@ function renderPanel(
 }
 
 describe("SideThreadPanel", () => {
-  it("renders the title and main task status", () => {
+  it("shows the main task as running only from main_task_summary", () => {
     const { container } = renderPanel(
-      makeEntry({ summary: makeSummary({ status: "running" }) })
+      makeEntry({
+        summary: makeSummary({
+          status: "running",
+          main_task_summary: { running: true }
+        })
+      })
     );
     expect(container.textContent).toContain("侧聊");
     expect(container.textContent).toContain("主任务执行中");
+  });
+
+  it("does not infer main-task state from the side-thread status", () => {
+    const { container } = renderPanel(
+      makeEntry({ summary: makeSummary({ status: "running" }) })
+    );
+    expect(container.textContent).toContain("主任务状态未知");
+    expect(container.textContent).not.toContain("主任务执行中");
+  });
+
+  it("shows a non-running main task without guessing a terminal outcome", () => {
+    const { container } = renderPanel(
+      makeEntry({
+        summary: makeSummary({ main_task_summary: { running: false } })
+      })
+    );
+    expect(container.textContent).toContain("主任务未运行");
   });
 
   it("shows the empty state copy and quick prompts when no messages", () => {
@@ -216,6 +238,23 @@ describe("SideThreadPanel", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
+  it("does not send another message while streaming", () => {
+    const onSend = vi.fn();
+    const { container } = renderPanel(
+      makeEntry({ draft: "second", streaming: true }),
+      { onSend }
+    );
+    const textarea = container.querySelector(
+      ".side-thread-panel__textarea"
+    ) as HTMLTextAreaElement;
+    act(() => {
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true })
+      );
+    });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it("disables send while sendDisabledReason is set", () => {
     const { container } = renderPanel(makeEntry({ draft: "hello" }), {
       sendDisabledReason: "正在连接"
@@ -249,7 +288,7 @@ describe("SideThreadPanel", () => {
     );
     expect(ref.current).not.toBeNull();
     expect(typeof ref.current?.focusComposer).toBe("function");
-    // jsdom 不真正移动焦点，但我们要确认实现存在并不抛错。
+    // The imperative handle remains safe when jsdom has no real layout.
     expect(() => ref.current?.focusComposer()).not.toThrow();
   });
 
@@ -287,11 +326,11 @@ describe("SideThreadPanel", () => {
     expect(onInterrupt).toHaveBeenCalledTimes(1);
   });
 
-  it("uses the supplied width as the panel's inline width", () => {
+  it("exposes the supplied width on the resize separator", () => {
     const { container } = renderPanel(makeEntry());
-    const aside = container.querySelector(
-      ".side-thread-panel"
+    const separator = container.querySelector(
+      ".side-thread-panel__resizer"
     ) as HTMLElement;
-    expect(aside.style.width).toBe("400px");
+    expect(separator.getAttribute("aria-valuenow")).toBe("400");
   });
 });

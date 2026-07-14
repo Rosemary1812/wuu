@@ -1,25 +1,17 @@
-/* 侧聊（SideThread）面板样式。
- *
- * 视觉原则（与 desktop/DESIGN.md 一致）：
- * - 主对话始终是视觉主体，侧聊更窄、密度更高；
- * - 用 1px 发丝线与主对话分隔，不加阴影、不加圆角大块面；
- * - 颜色全部走 CSS 变量；不引入新的色板；
- * - 火苗签名时刻（accent / 用户气泡尾角 / mascot / selection）只在
- *   发送按钮 / 链接 / 用户气泡尾角三处复用一次，不另起炉灶。
- *
- * 布局：和 conversation-subthread-panel 共用「panel = 第二列」
- * 概念；视觉差异只来自宽度（默认 400px）+ 间距收敛。 */
+/* The side thread occupies the conversation pane's second grid column. */
 
 .side-thread-panel {
   position: relative;
   display: grid;
-  grid-template-rows: 44px minmax(0, 1fr) auto auto;
+  grid-column: 2;
+  grid-row: 1 / -1;
+  width: 100%;
+  grid-template-rows: 48px minmax(0, 1fr) auto auto;
   min-width: 0;
   min-height: 0;
   border-left: 1px solid var(--hairline-strong);
   background: var(--paper);
   color: var(--ink);
-  /* panel 自身禁止选中文本误入主对话；文本类元素单独放开。 */
   user-select: none;
 }
 
@@ -29,8 +21,7 @@
   box-sizing: border-box;
 }
 
-/* 拖拽分隔线 — 与 thread-panel-resizer / sidebar-resizer 同款 10px
- * 命中带、1px 视觉线，hover 时显形。位置贴在面板左边。 */
+/* Keep a wide hit target while rendering a one-pixel separator. */
 .side-thread-panel__resizer {
   position: absolute;
   top: 0;
@@ -64,7 +55,8 @@
 }
 
 .side-thread-panel__resizer:hover::before,
-.side-thread-panel__resizer:focus-visible::before {
+.side-thread-panel__resizer:focus-visible::before,
+.resizing-side-thread .side-thread-panel__resizer::before {
   background: var(--sidebar-resizer-hover-bg, rgba(31, 35, 40, 0.16));
   box-shadow: 0 0 0 1px var(--sidebar-resizer-hover-ring, rgba(31, 35, 40, 0.08));
 }
@@ -81,7 +73,6 @@
   }
 }
 
-/* 头部：左标题 + 状态 + 右收起按钮。 */
 .side-thread-panel__header {
   display: flex;
   align-items: center;
@@ -154,7 +145,6 @@
   outline: none;
 }
 
-/* 主体：消息滚动区。 */
 .side-thread-panel__body {
   position: relative;
   min-height: 0;
@@ -171,7 +161,6 @@
   list-style: none;
 }
 
-/* 单条消息。用户 / 助手左右分置；user 套用火苗小尾角识别时刻。 */
 .side-thread-panel__message {
   display: flex;
   flex-direction: column;
@@ -200,7 +189,6 @@
 }
 
 .side-thread-panel__message--user .side-thread-panel__message-bubble {
-  /* 火苗签名时刻 #3：用户气泡非对称小尾角。 */
   border-bottom-right-radius: 4px;
   background: var(--user-bubble-bg, var(--surface-2, rgba(31, 35, 40, 0.06)));
   color: var(--ink);
@@ -256,7 +244,6 @@
   }
 }
 
-/* 空状态。 */
 .side-thread-panel__empty {
   display: flex;
   flex-direction: column;
@@ -311,7 +298,6 @@
   cursor: not-allowed;
 }
 
-/* 错误条。 */
 .side-thread-panel__error {
   padding: 8px 12px;
   font-size: 12px;
@@ -322,7 +308,6 @@
   user-select: text;
 }
 
-/* 底部 composer。 */
 .side-thread-panel__composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -428,17 +413,4 @@
   .side-thread-panel__interrupt .spin {
     animation: none;
   }
-}
-
-/* visually-hidden 仅供 a11y / 测试钩子用，不渲染任何视觉内容。 */
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  border: 0;
-  clip: rect(0 0 0 0);
-  overflow: hidden;
-  white-space: nowrap;
 }

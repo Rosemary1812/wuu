@@ -1,65 +1,37 @@
-// 侧聊（SideThread）面板 — 依附主对话的第二列 UI。
-//
-// 视觉规范：
-// - 主对话永远是视觉主体，侧聊更窄、密度更高；
-// - 不抢主对话的火苗签名时刻，颜色、间距、字号都收敛到次级档位；
-// - 用发丝线与主对话分隔，不加阴影 / 不加圆角大块面；
-// - 第一版只展示必要信息：标题 / 主任务状态 / 收起按钮。
-//
-// 与 ChatThreadView 的差别：这里不复用主对话完整渲染管线（参与
-// 者/工具/计划层都隐藏），只渲染纯文本消息 + 流式增量 + 错误。
-// SideThread 是独立的 agent 线程，不能让主对话的 UI 元件误以为它
-// 属于主线程。
-
 import {
   forwardRef,
   useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
-  useState,
   type ChangeEvent,
   type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent
+  type PointerEvent as ReactPointerEvent,
+  type UIEvent
 } from "react";
-import { Loader2, PanelRightClose, Square } from "lucide-react";
-import type {
-  SideThreadMessage,
-  SideThreadSummary
-} from "../shared/protocol";
-import type { SideThreadEntryState } from "./SideThreadState";
+import { PanelRightClose, Square } from "lucide-react";
+import type { SideThreadMessage, SideThreadSummary } from "../shared/protocol";
+import {
+  SIDE_THREAD_MAX_WIDTH,
+  SIDE_THREAD_MIN_WIDTH,
+  type SideThreadEntryState
+} from "./SideThreadState";
 
-// 第一版空状态快捷问题。设计 §6 要求按普通侧聊消息发送，不形成
-// 单独的功能模式——这里只是预填 composer，然后让用户再点一次发送。
 const EMPTY_QUICK_PROMPTS = [
   { label: "现在做到哪了？", prompt: "现在做到哪了？" },
   { label: "解释刚才的错误", prompt: "解释刚才出现的错误或工具结果" },
   { label: "当前方案有什么风险？", prompt: "当前方案可能存在哪些风险或后续影响？" }
 ];
 
-function summaryMainTaskLabel(summary: SideThreadSummary | null): string {
+function mainTaskLabel(summary: SideThreadSummary | null): string {
   const running = summary?.main_task_summary?.running;
-  if (running) {
+  if (running === true) {
     return "主任务执行中";
   }
-  if (!summary) {
-    return "主任务就绪";
+  if (running === false) {
+    return "主任务未运行";
   }
-  switch (summary.status) {
-    case "running":
-      return "主任务执行中";
-    case "completed":
-      return "主任务已完成";
-    case "failed":
-      return "主任务失败";
-    case "interrupted":
-      return "主任务已停止";
-    case "idle":
-      return "主任务就绪";
-    default:
-      // `detached` 走默认兜底；这里不再承诺具体文案，由设计演进。
-      return "主任务运行中";
-  }
+  return "主任务状态未知";
 }
 
 export type SideThreadPanelHandle = {
@@ -75,8 +47,6 @@ type SideThreadPanelProps = {
   onSend: (prompt: string) => void;
   onInterrupt: () => void;
   onChangeDraft: (draft: string) => void;
-  // 真正的后端尚未完成时，可用一个 disabledReason 提示用户；主
-  // 进程 IPC handlers 到位之前先用这个标志禁用发送。
   sendDisabledReason?: string;
 };
 
@@ -96,46 +66,44 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
     ref
   ) {
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
-    const messagesEndRef = useRef<HTMLDivElement | null>(null);
-    const [pendingQuickPrompt, setPendingQuickPrompt] = useState<string | null>(null);
+    const bodyRef = useRef<HTMLDivElement | null>(null);
+    const autoFollowRef = useRef(true);
 
     useImperativeHandle(
       ref,
       () => ({
-        focusComposer: () => {
-          composerRef.current?.focus();
-        }
+        focusComposer: () => composerRef.current?.focus()
       }),
       []
     );
 
-    // 收到新消息或流式增量时自动滚到底。仅在用户没有手动上滚时
-    // 跟随——若滚动容器距离底部超过 32px，认为用户在回看历史。
     useEffect(() => {
-      const el = messagesEndRef.current;
-      if (!el) {
-        return;
-      }
-      const scroller = el.parentElement;
-      if (!scroller) {
-        return;
-      }
-      const distanceFromBottom =
-        scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-      if (distanceFromBottom < 32) {
-        scroller.scrollTop = scroller.scrollHeight;
+      const body = bodyRef.current;
+      if (body && autoFollowRef.current) {
+        body.scrollTop = body.scrollHeight;
       }
     }, [entry.messages, entry.streaming]);
+
+    const handleBodyScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+      const body = event.currentTarget;
+      autoFollowRef.current =
+        body.scrollHeight - body.scrollTop - body.clientHeight < 32;
+    }, []);
 
     const handleDraftChange = useCallback(
       (event: ChangeEvent<HTMLTextAreaElement>) => {
         onChangeDraft(event.target.value);
-        // 用户改动了 draft，清掉快捷问题的预填，避免再发送时把它
-        // 重复加进 composer。
-        setPendingQuickPrompt(null);
       },
       [onChangeDraft]
     );
+
+    const submitComposer = useCallback(() => {
+      const text = entry.draft.trim();
+      if (!text || entry.streaming || sendDisabledReason) {
+        return;
+      }
+      onSend(text);
+    }, [entry.draft, entry.streaming, onSend, sendDisabledReason]);
 
     const handleKeyDown = useCallback(
       (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -144,23 +112,11 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
           submitComposer();
         }
       },
-      // submitComposer 闭包依赖 entry.draft；用 ref 让 handler 永远
-      // 读到最新值。
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      [entry.draft, entry.streaming, sendDisabledReason]
+      [submitComposer]
     );
-
-    const submitComposer = useCallback(() => {
-      const text = entry.draft.trim();
-      if (!text || sendDisabledReason) {
-        return;
-      }
-      onSend(text);
-    }, [entry.draft, sendDisabledReason, onSend]);
 
     const handleQuickPrompt = useCallback(
       (prompt: string) => {
-        setPendingQuickPrompt(prompt);
         onChangeDraft(prompt);
         composerRef.current?.focus();
       },
@@ -168,12 +124,10 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
     );
 
     const isEmpty = entry.messages.length === 0;
-    const placeholder = "询问当前任务，不会加入主对话";
 
     return (
       <aside
         className="side-thread-panel"
-        style={{ width: `${width}px` }}
         data-main-thread-id={mainThreadId}
         data-streaming={entry.streaming ? "true" : "false"}
         aria-label="侧聊"
@@ -181,14 +135,22 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
         <button
           type="button"
           className="side-thread-panel__resizer"
+          role="separator"
           aria-label="调整侧聊宽度"
+          aria-orientation="vertical"
+          aria-valuemin={SIDE_THREAD_MIN_WIDTH}
+          aria-valuemax={SIDE_THREAD_MAX_WIDTH}
+          aria-valuenow={width}
           onPointerDown={onResizeStart}
         />
         <header className="side-thread-panel__header">
           <div className="side-thread-panel__heading">
             <span className="side-thread-panel__title">侧聊</span>
-            <span className="side-thread-panel__status" data-status={entry.summary?.status ?? "idle"}>
-              {summaryMainTaskLabel(entry.summary)}
+            <span
+              className="side-thread-panel__status"
+              data-status={entry.summary?.status ?? "idle"}
+            >
+              {mainTaskLabel(entry.summary)}
             </span>
           </div>
           <button
@@ -202,10 +164,16 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
           </button>
         </header>
 
-        <div className="side-thread-panel__body" role="log" aria-live="polite">
+        <div
+          ref={bodyRef}
+          className="side-thread-panel__body"
+          role="log"
+          aria-live="polite"
+          onScroll={handleBodyScroll}
+        >
           {isEmpty ? (
             <SideThreadEmptyState
-              disabledReason={sendDisabledReason}
+              disabled={Boolean(sendDisabledReason) || entry.streaming}
               onQuickPrompt={handleQuickPrompt}
             />
           ) : (
@@ -213,7 +181,6 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
               {entry.messages.map((message) => (
                 <SideThreadMessageItem key={message.id} message={message} />
               ))}
-              <div ref={messagesEndRef} />
             </ol>
           )}
         </div>
@@ -228,10 +195,10 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
           <textarea
             ref={composerRef}
             className="side-thread-panel__textarea"
-            value={entry.draft || pendingQuickPrompt || ""}
+            value={entry.draft}
             onChange={handleDraftChange}
             onKeyDown={handleKeyDown}
-            placeholder={placeholder}
+            placeholder="询问当前任务，不会加入主对话"
             rows={2}
             disabled={Boolean(sendDisabledReason)}
             data-testid="side-thread-textarea"
@@ -252,14 +219,10 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
                 type="button"
                 className="side-thread-panel__send"
                 onClick={submitComposer}
-                disabled={Boolean(sendDisabledReason) || !(entry.draft || pendingQuickPrompt || "").trim()}
+                disabled={Boolean(sendDisabledReason) || !entry.draft.trim()}
                 aria-label="发送侧聊消息"
               >
-                {entry.streaming ? (
-                  <Loader2 size={14} strokeWidth={2} className="spin" />
-                ) : (
-                  <span>发送</span>
-                )}
+                发送
               </button>
             )}
           </div>
@@ -269,15 +232,11 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
   }
 );
 
-// ============================================================================
-// 子组件
-// ============================================================================
-
 function SideThreadEmptyState({
-  disabledReason,
+  disabled,
   onQuickPrompt
 }: {
-  disabledReason?: string;
+  disabled: boolean;
   onQuickPrompt: (prompt: string) => void;
 }) {
   return (
@@ -292,7 +251,7 @@ function SideThreadEmptyState({
               type="button"
               className="side-thread-panel__quick-prompt"
               onClick={() => onQuickPrompt(item.prompt)}
-              disabled={Boolean(disabledReason)}
+              disabled={disabled}
             >
               {item.label}
             </button>
@@ -304,7 +263,6 @@ function SideThreadEmptyState({
 }
 
 function SideThreadMessageItem({ message }: { message: SideThreadMessage }) {
-  const isUser = message.role === "user";
   const isFailed = message.status === "failed";
   return (
     <li
@@ -314,28 +272,16 @@ function SideThreadMessageItem({ message }: { message: SideThreadMessage }) {
       data-status={message.status ?? "completed"}
     >
       <div className="side-thread-panel__message-bubble">
-        <MessageText text={message.text} />
+        {message.text || (
+          <span className="side-thread-panel__message-placeholder">…</span>
+        )}
       </div>
-      {!isUser && message.status === "streaming" ? (
+      {message.role === "assistant" && message.status === "streaming" ? (
         <span className="side-thread-panel__streaming-dot" aria-hidden />
       ) : null}
       {isFailed && message.error_message ? (
         <div className="side-thread-panel__message-error">{message.error_message}</div>
       ) : null}
-      {/* 标记 isUser 给测试/未来扩展使用；保留可读性。 */}
-      <span className="visually-hidden" data-role={message.role}>
-        {isUser ? "user" : "assistant"}
-      </span>
     </li>
   );
-}
-
-// 极简消息文本渲染：保留换行与空白，链接 / 代码块 / 列表留给后续
-// 接 ChatThreadView 渲染管线时再升级。第一版只回答"现在做到哪了"
-// 这类问题，纯文本已够用。
-function MessageText({ text }: { text: string }) {
-  if (!text) {
-    return <span className="side-thread-panel__message-placeholder">…</span>;
-  }
-  return <span>{text}</span>;
 }

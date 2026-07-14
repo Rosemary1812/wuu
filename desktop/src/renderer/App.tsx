@@ -61,6 +61,10 @@ import { ConversationSearchOverlay } from "./ConversationSearchOverlay";
 import { useConversationScrollState } from "./ConversationScrollState";
 import { useConversationSearch } from "./ConversationSearchState";
 import { useConversationSubthreadState } from "./ConversationSubthreadState";
+import {
+  SideThreadPanel,
+  type SideThreadPanelHandle,
+} from "./SideThreadPanel";
 import { useThreadMarkList } from "./useThreadMarks";
 import { useParticipantState } from "./ParticipantState";
 import { ConversationForkDialog } from "./ConversationForkDialog";
@@ -175,7 +179,6 @@ import { SkillsCatalog } from "./SkillsCatalog";
 import { TaskBoardView } from "./TaskBoardView";
 import { runDebugPhaseForState } from "./RunDebugPanel";
 import { useThreadBrowserPreview } from "./ThreadBrowserPreview";
-import { subscribeSideThreadOpenRequest, emitSideThreadOpenRequest } from "./SideThreadOpenBus";
 import { useSideThreadController } from "./SideThreadController";
 import {
   rawErrorMessage,
@@ -826,27 +829,11 @@ export function App(): JSX.Element {
       : undefined;
   const activeThread = activeThreadForState(state);
   const activeThreadID = activeThread?.id;
-  // Side thread (侧聊) controller — keyed by the active main thread
-  // id. The hook's default ipc reads window.wuu (wired in commit 5),
-  // so toggling the panel exercises open/getHistory through the
-  // main process bridge automatically. The activeContext gate keeps
-  // send disabled when no workspace is selected, matching the
-  // /side disabledReason in ComposerSlashCommands.
   const sideThread = useSideThreadController({
     activeThreadId: activeThreadID,
     activeContext: state.activeContext,
   });
-  // SideThreadOpenBus bridges the /side slash command (and any
-  // future hotkey/toolbar button) to the controller without
-  // rewriting the prop chain through SplitPaneComposer /
-  // ConversationSplitPane. The subscription's identity changes
-  // only when sideThread.toggle itself changes (it doesn't, the
-  // hook memoizes it), so the effect runs once per session.
-  useEffect(() => {
-    return subscribeSideThreadOpenRequest(() => {
-      sideThread.toggle();
-    });
-  }, [sideThread.toggle]);
+  const sideThreadPanelRef = useRef<SideThreadPanelHandle>(null);
   const activeTurn = activeTurnForThread(activeThread);
   useEffect(() => {
     const syncVisibleCUAThread = () => {
@@ -2200,13 +2187,15 @@ export function App(): JSX.Element {
     state.lastViewedTurnByThreadID,
     state.lastViewedMessageSeqByThreadID,
   ]);
+  const sideThreadPanelVisible = Boolean(activeThreadID && sideThread.entry?.open);
   const environmentPanelCanShow = Boolean(
     state.initialized &&
     !poppedOutMode &&
     !previewingLaunch &&
     !rightPanelOpen &&
     !openSubthreadPanel &&
-    !participantPanel,
+    !participantPanel &&
+    !sideThreadPanelVisible,
   );
   const environmentPanelTargetVisible =
     environmentPanelCanShow &&
@@ -2223,6 +2212,22 @@ export function App(): JSX.Element {
     state.initialized && !previewingLaunch && !poppedOutMode,
   );
   const sidebarVisible = !poppedOutMode;
+
+  useEffect(() => {
+    if (
+      sideThread.entry?.open &&
+      (environmentPanelOpen || openSubthreadPanel || participantPanel)
+    ) {
+      sideThread.close();
+    }
+  }, [
+    environmentPanelOpen,
+    openSubthreadPanel,
+    participantPanel,
+    sideThread.close,
+    sideThread.entry?.open,
+  ]);
+
   const shellClassName = `app-shell${poppedOutMode ? " popped-out-shell" : ""}${sidebarDrawerMode ? " sidebar-collapsed" : ""}${
     sidebarDrawerMode && sidebarDrawerPhase === "open" ? " sidebar-drawer-open" : ""
   }${
@@ -2243,6 +2248,7 @@ export function App(): JSX.Element {
     "--workspace-panel-motion-duration": `${RIGHT_PANEL_MOTION_MS}ms`,
     "--workspace-right-panel-width": `${clampedWorkspaceRightPanelWidth}px`,
     "--thread-panel-width": `${clampedThreadPanelWidth}px`,
+    "--side-thread-width": `${sideThread.width}px`,
     "--conversation-split-left": `${splitLeftPercent}%`,
     "--environment-panel-width": ENVIRONMENT_PANEL_WIDTH_CSS,
     "--environment-panel-reserved-width": "372px",
@@ -2363,6 +2369,23 @@ export function App(): JSX.Element {
     });
   }, [state.activeSessionTabID, state.thread, state.threads]);
 
+  function toggleSideThreadPanel(): void {
+    const opening = !sideThread.entry?.open;
+    if (opening) {
+      setEnvironmentPanelOpen(false);
+      setEnvironmentPanelDismissed(true);
+      setEnvironmentPanelMenu(null);
+      setOpenSubthreadPanel(undefined);
+      setParticipantPanel(undefined);
+    }
+    sideThread.toggle();
+    if (opening) {
+      window.requestAnimationFrame(() => {
+        sideThreadPanelRef.current?.focusComposer();
+      });
+    }
+  }
+
   function renderComposer(variant: ComposerVariant): JSX.Element {
     const tokenSpeed = activeTurnTokenSpeedSnapshot(
       state,
@@ -2482,7 +2505,7 @@ export function App(): JSX.Element {
         onCreateProject={() => void createBlankProject()}
         onOpenProject={() => void chooseProjectFolder()}
         onStartNewThread={() => void startNewThread()}
-        onOpenSideThread={() => emitSideThreadOpenRequest()}
+        onOpenSideThread={toggleSideThreadPanel}
         onOpenWorkspaceTool={openWorkspaceTool}
         onOpenContextComposition={openContextComposition}
         onCompactContext={() => void compactActiveThread()}
@@ -3967,6 +3990,8 @@ export function App(): JSX.Element {
         }${
           subthreadPanelVisible ? " subthread-panel-visible" : ""
         }${
+          sideThreadPanelVisible ? " side-thread-panel-visible" : ""
+        }${
           participantPanelVisible ? " participant-panel-visible" : ""
         }${sessionTabsVisible ? " session-tabs-visible" : ""}${
           conversationGridVisible ? " conversation-grid-visible" : ""
@@ -4151,6 +4176,21 @@ export function App(): JSX.Element {
           onRetireParticipant={handleParticipantRetire}
           viewContextSwitchPending={viewContextSwitchPending}
         />
+
+        {sideThreadPanelVisible && activeThreadID && sideThread.entry ? (
+          <SideThreadPanel
+            ref={sideThreadPanelRef}
+            entry={sideThread.entry}
+            mainThreadId={activeThreadID}
+            width={sideThread.width}
+            onClose={sideThread.close}
+            onResizeStart={sideThread.startResize}
+            onSend={sideThread.sendMessage}
+            onInterrupt={sideThread.interrupt}
+            onChangeDraft={sideThread.setDraft}
+            sendDisabledReason={sideThread.sendDisabledReason}
+          />
+        ) : null}
 
         {state.initialized && !previewingLaunch ? (
           <div
