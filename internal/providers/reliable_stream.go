@@ -111,14 +111,6 @@ func NewReliableStreamClient(inner StreamClient, onRetry StreamRetryHook, option
 	return client
 }
 
-// Chat delegates non-streaming calls to the wrapped client.
-func (r *ReliableStreamClient) Chat(ctx context.Context, req ChatRequest) (ChatResponse, error) {
-	if r == nil || r.inner == nil {
-		return ChatResponse{}, errors.New("stream client is required")
-	}
-	return r.inner.Chat(ctx, req)
-}
-
 // StreamChat opens one logical stream and reconnects the underlying transport
 // when the provider/client reports a retryable failure before EventDone.
 func (r *ReliableStreamClient) StreamChat(ctx context.Context, req ChatRequest) (<-chan StreamEvent, error) {
