@@ -459,13 +459,19 @@ func NewSession(opts Options) (*Session, error) {
 				wkit.SetProcessManager(processMgr)
 				wkit.SetSkills(discoveredSkills)
 				wkit.SetAgentControl(agentControl)
-				wkit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
+				participantSpeech := agentControl != nil && agentControl.ParticipantSpeechEnabled(meta.ID)
+				// Ultra workers compile the orchestrating worker surface;
+				// conversation-native participant runs keep their own surface.
+				if meta.Ultra && !participantSpeech {
+					wkit.ConfigureWorkerSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, true)
+				} else {
+					wkit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
+				}
 				wkit.SetToolSearchEnabled(workerToolSearchEnabled)
 				wkit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
 				wkit.SetNativeDeferredToolDiscovery(workerNativeDeferredDiscovery)
 				wkit.SetAgentIdentity(meta.ID, meta.Path)
-				participantSpeech := agentControl != nil && agentControl.ParticipantSpeechEnabled(meta.ID)
-				applyWorkerToolFilter(wkit, wt, participantSpeech)
+				applyWorkerToolFilter(wkit, wt, participantSpeech, meta.Ultra)
 				// Group management is resident-only; spawned runs never
 				// receive the backend.
 				wkit.SetGroupManager(nil)
@@ -1016,7 +1022,14 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					// the standard boundary roots, but not the user notebook
 					// extra.
 					workerKit.SetFileScopeRoots(workspaces.BoundaryRoots(workerRoot, wuuHome))
-					workerKit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
+					participantSpeech := control != nil && control.ParticipantSpeechEnabled(meta.ID)
+					// Ultra workers compile the orchestrating worker surface;
+					// conversation-native participant runs keep their own surface.
+					if meta.Ultra && !participantSpeech {
+						workerKit.ConfigureWorkerSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, true)
+					} else {
+						workerKit.ConfigureSurfaceForProviderModel(workerToolProviderName, workerToolModeModel, false)
+					}
 					workerStateDir := stateDir
 					if !sameRuntimeRoot(workerRoot, threadRoot) {
 						if home, err := statepath.Home(""); err == nil {
@@ -1035,8 +1048,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					workerKit.SetExperimentalDeferredToolBundles(s.ExperimentalDeferredBundles)
 					workerKit.SetNativeDeferredToolDiscovery(workerNativeDeferredDiscovery)
 					workerKit.SetAgentIdentity(meta.ID, meta.Path)
-					participantSpeech := control != nil && control.ParticipantSpeechEnabled(meta.ID)
-					applyWorkerToolFilter(workerKit, wt, participantSpeech)
+					applyWorkerToolFilter(workerKit, wt, participantSpeech, meta.Ultra)
 					// Group management is resident-only; spawned runs (task
 					// runs and ordinary subagents) never receive the backend.
 					workerKit.SetGroupManager(nil)
@@ -1250,13 +1262,13 @@ func chainAfterTurn(hooks ...func(context.Context, *agent.StreamRunner, []provid
 	}
 }
 
-func applyWorkerToolFilter(kit *tools.Toolkit, wt agentcontrol.WorkerType, participantSpeech bool) {
+func applyWorkerToolFilter(kit *tools.Toolkit, wt agentcontrol.WorkerType, participantSpeech, ultra bool) {
 	if kit == nil {
 		return
 	}
 	fullNames := kit.SurfaceToolNames()
 
-	allowed := agentcontrol.FilterToolsForWorker(wt, fullNames, participantSpeech)
+	allowed := agentcontrol.FilterToolsForWorker(wt, fullNames, participantSpeech, ultra)
 	allowedSet := make(map[string]struct{}, len(allowed))
 	for _, name := range allowed {
 		allowedSet[name] = struct{}{}

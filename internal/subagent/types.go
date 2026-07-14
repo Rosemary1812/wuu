@@ -108,6 +108,11 @@ type SpawnOptions struct {
 	// means the run honors only Model.
 	ModelPin string
 
+	// Ultra is the worker's inherited Ultra-mode value, snapshotted from
+	// its spawner. It is persisted with the run and stays fixed across the
+	// worker's lifetime, resumption, and descendants.
+	Ultra bool
+
 	// Client, when non-nil, replaces the stream client the runner
 	// would otherwise inherit from the manager defaults. Callers use
 	// it to honor a per-participant model pin that points at a
@@ -186,6 +191,7 @@ type SubAgent struct {
 	model           string
 	modelPin        string // raw participant pin, persisted for cross-restart resume
 	workerRoot      string // working directory, persisted so a resume can validate + reroot
+	ultra           bool   // inherited Ultra-mode value, fixed at spawn
 	toolkit         agent.ToolExecutor
 	historyPath     string
 	initialHistory  []providers.ChatMessage
@@ -249,6 +255,7 @@ type SubAgentSnapshot struct {
 	WorkerRoot          string
 	Model               string
 	ModelPin            string
+	Ultra               bool
 	Status              Status
 	StartedAt           time.Time
 	CompletedAt         time.Time

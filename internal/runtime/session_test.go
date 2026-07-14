@@ -3209,7 +3209,7 @@ func TestApplyWorkerToolFilter_HidesRecursiveAgentControls(t *testing.T) {
 		t.Fatalf("agent type: %v", err)
 	}
 
-	applyWorkerToolFilter(kit, wt, false)
+	applyWorkerToolFilter(kit, wt, false, false)
 
 	defs := map[string]bool{}
 	for _, def := range kit.Definitions() {
@@ -3240,7 +3240,7 @@ func TestApplyWorkerToolFilter_AllowsAuthorizedParticipantSpeech(t *testing.T) {
 	}
 
 	kit.SetParticipantSpeechEnabled(true)
-	applyWorkerToolFilter(kit, wt, true)
+	applyWorkerToolFilter(kit, wt, true, false)
 	defs := toolDefinitionNamesForRuntimeTest(kit.Definitions())
 	for _, name := range []string{"post_message", "react", "manage_participant", "manage_task"} {
 		if !defs[name] {
@@ -3269,7 +3269,7 @@ func TestApplyWorkerToolFilter_RestrictedWorkerKeepsBashFirstSurface(t *testing.
 		AllowedTools: []string{"read_file", "grep", "glob", "bash", "inception", "agent_report"},
 	}
 
-	applyWorkerToolFilter(kit, wt, false)
+	applyWorkerToolFilter(kit, wt, false, false)
 
 	defs := map[string]bool{}
 	for _, def := range kit.Definitions() {

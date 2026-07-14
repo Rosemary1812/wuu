@@ -111,6 +111,7 @@ func (r *Registry) RegisterSpawn(spec SpawnSpec) (Metadata, error) {
 		LastTaskMessage: strings.TrimSpace(spec.LastTaskMessage),
 		CWD:             strings.TrimSpace(spec.CWD),
 		Model:           strings.TrimSpace(spec.Model),
+		Ultra:           spec.Ultra,
 		Source: Source{
 			Kind:           sourceKind,
 			ParentThreadID: parentID,

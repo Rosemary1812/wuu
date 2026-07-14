@@ -37,6 +37,7 @@ type historyRecord struct {
 	CWD           string                  `json:"cwd,omitempty"`
 	Model         string                  `json:"model"`
 	ModelPin      string                  `json:"model_pin,omitempty"`
+	Ultra         bool                    `json:"ultra,omitempty"`
 	Prompt        string                  `json:"prompt"`
 	Result        string                  `json:"result,omitempty"`
 	Error         string                  `json:"error,omitempty"`
@@ -62,6 +63,7 @@ type PersistedRun struct {
 	CWD           string
 	Model         string
 	ModelPin      string
+	Ultra         bool
 	Prompt        string
 	Result        string
 	Error         string
@@ -96,6 +98,7 @@ func LoadPersistedRun(path string) (PersistedRun, error) {
 		CWD:           rec.CWD,
 		Model:         rec.Model,
 		ModelPin:      rec.ModelPin,
+		Ultra:         rec.Ultra,
 		Prompt:        rec.Prompt,
 		Result:        rec.Result,
 		Error:         rec.Error,
@@ -170,6 +173,7 @@ func persistHistory(sa *SubAgent) error {
 		CWD:           sa.workerRoot,
 		Model:         sa.model,
 		ModelPin:      sa.modelPin,
+		Ultra:         sa.ultra,
 		Prompt:        sa.prompt,
 		Result:        sa.Result,
 		Messages:      providers.CloneChatMessages(sa.history),

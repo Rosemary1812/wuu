@@ -36,20 +36,25 @@ type Source struct {
 }
 
 type Metadata struct {
-	ID              string    `json:"id"`
-	SessionID       string    `json:"session_id,omitempty"`
-	ParentID        string    `json:"parent_id,omitempty"`
-	Path            string    `json:"path"`
-	TaskName        string    `json:"task_name,omitempty"`
-	AgentProfile    string    `json:"agent_profile,omitempty"`
-	Role            string    `json:"role,omitempty"`
-	LastTaskMessage string    `json:"last_task_message,omitempty"`
-	CWD             string    `json:"cwd,omitempty"`
-	Model           string    `json:"model,omitempty"`
-	Source          Source    `json:"source"`
-	Status          Status    `json:"status"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              string `json:"id"`
+	SessionID       string `json:"session_id,omitempty"`
+	ParentID        string `json:"parent_id,omitempty"`
+	Path            string `json:"path"`
+	TaskName        string `json:"task_name,omitempty"`
+	AgentProfile    string `json:"agent_profile,omitempty"`
+	Role            string `json:"role,omitempty"`
+	LastTaskMessage string `json:"last_task_message,omitempty"`
+	CWD             string `json:"cwd,omitempty"`
+	Model           string `json:"model,omitempty"`
+	// Ultra is the worker's inherited Ultra-mode value, snapshotted from its
+	// spawner at spawn time. It stays fixed for the worker's whole lifetime
+	// (queued launch, restart restore, descendants) regardless of later
+	// session-level changes.
+	Ultra     bool      `json:"ultra,omitempty"`
+	Source    Source    `json:"source"`
+	Status    Status    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type SpawnSpec struct {
@@ -63,10 +68,13 @@ type SpawnSpec struct {
 	LastTaskMessage string
 	CWD             string
 	Model           string
-	SourceKind      SourceKind
-	ForkMode        string
-	Status          Status
-	Now             time.Time
+	// Ultra is the inherited Ultra-mode value for this worker (see
+	// Metadata.Ultra).
+	Ultra      bool
+	SourceKind SourceKind
+	ForkMode   string
+	Status     Status
+	Now        time.Time
 }
 
 type EventType string

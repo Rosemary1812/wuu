@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"crypto/rand"
@@ -76,6 +77,11 @@ type AgentControl struct {
 	defaultSys    string           // base system prompt prefix added to every worker
 	participants  ParticipantStore // optional; nil disables participant persistence
 	maxParallel   int
+	// turnUltra is the Ultra value of the currently admitted top-level turn.
+	// The turn owner snapshots the session setting here at turn start; root
+	// spawns inherit it, worker spawns inherit their parent worker's stored
+	// value instead, so an in-flight subtree never changes capability.
+	turnUltra     atomic.Bool
 	shutdownMu    sync.RWMutex
 	stopping      bool
 	spawnSlotMu   sync.Mutex
@@ -551,6 +557,51 @@ func (c *AgentControl) SessionID() string {
 // model-pin resolver (installed via SetModelPinClientResolver) consults
 // it to decide whether a queued spawn's pin targets the same provider
 // or a different one. Passing an empty string clears the binding.
+// SetTurnUltra snapshots the Ultra value for the top-level turn now being
+// admitted. The turn owner (app-server or exec) calls it at turn start with
+// the session setting for user turns, or with the completing worker's stored
+// value for synthetic completion turns, so an orchestration tree keeps the
+// capability it started with even when the session setting changes mid-run.
+func (c *AgentControl) SetTurnUltra(ultra bool) {
+	if c == nil {
+		return
+	}
+	c.turnUltra.Store(ultra)
+}
+
+// TurnUltra returns the admitted turn's effective Ultra value.
+func (c *AgentControl) TurnUltra() bool {
+	if c == nil {
+		return false
+	}
+	return c.turnUltra.Load()
+}
+
+// effectiveSpawnUltra resolves the Ultra value a new worker inherits: root
+// spawns take the admitted turn's snapshot; nested spawns take the parent
+// worker's stored value so descendants of an in-flight subtree keep the
+// capability the subtree started with.
+func (c *AgentControl) effectiveSpawnUltra(parentID string) bool {
+	if c == nil {
+		return false
+	}
+	parentID = strings.TrimSpace(parentID)
+	if parentID == "" || parentID == c.sessionID || parentID == c.rootThreadID {
+		return c.turnUltra.Load()
+	}
+	if c.manager != nil {
+		if parent := c.manager.Get(parentID); parent != nil {
+			return parent.Snapshot().Ultra
+		}
+	}
+	if c.threads != nil {
+		if meta, ok := c.threads.Resolve(parentID); ok {
+			return meta.Ultra
+		}
+	}
+	return c.turnUltra.Load()
+}
+
 func (c *AgentControl) SetWorkerProviderName(name string) {
 	if c == nil {
 		return
@@ -835,6 +886,9 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	if isolation == IsolationInplace && strings.TrimSpace(req.BaseRepo) != "" {
 		return nil, errors.New("base_repo is only supported with isolation=worktree")
 	}
+	// Snapshot the inherited Ultra value at admission so a queued spawn keeps
+	// the capability its spawner had, not whatever the session says at launch.
+	ultra := c.effectiveSpawnUltra(req.ParentID)
 
 	spawnSlot, admitted := c.tryReserveSpawnSlot()
 	if !admitted && req.Synchronous {
@@ -875,7 +929,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 		// Once the child thread becomes resolvable, StopFrom must either observe
 		// its queued payload or wait until that payload is durable.
 		c.queueDrainMu.Lock()
-		threadMeta, err := c.registerChildThreadWithStatus(workerID, taskName, agentProfile, wtype, req.Prompt, agentthread.SourceThreadSpawn, "", req.ParentID, req.ParentPath, agentthread.StatusPending)
+		threadMeta, err := c.registerChildThreadWithStatus(workerID, taskName, agentProfile, wtype, req.Prompt, agentthread.SourceThreadSpawn, "", req.ParentID, req.ParentPath, ultra, agentthread.StatusPending)
 		if err != nil {
 			c.queueDrainMu.Unlock()
 			releaseQueueAdmission()
@@ -966,7 +1020,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 
 	// 2. Register the child thread before launch so the visible worker
 	// ID, worktree ID, and thread path all point at the same task.
-	threadMeta, err := c.registerChildThread(workerID, taskName, agentProfile, wtype, req.Prompt, agentthread.SourceThreadSpawn, "", req.ParentID, req.ParentPath)
+	threadMeta, err := c.registerChildThread(workerID, taskName, agentProfile, wtype, req.Prompt, agentthread.SourceThreadSpawn, "", req.ParentID, req.ParentPath, ultra)
 	if err != nil {
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
@@ -1041,6 +1095,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 		WorkerRoot:    workerRoot,
 		Model:         strings.TrimSpace(req.ModelOverride),
 		ModelPin:      strings.TrimSpace(req.ModelPin),
+		Ultra:         threadMeta.Ultra,
 		Client:        req.ClientOverride,
 	})
 	if err != nil {
@@ -1242,6 +1297,9 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	if isolation == IsolationInplace && strings.TrimSpace(req.BaseRepo) != "" {
 		return nil, errors.New("base_repo is only supported with isolation=worktree")
 	}
+	// A fork inherits the forking agent's effective Ultra value, same as a
+	// fresh spawn (turn snapshot for the root, stored value for a worker).
+	ultra := c.effectiveSpawnUltra(req.ParentID)
 
 	spawnSlot, admitted := c.tryReserveSpawnSlot()
 	if !admitted {
@@ -1265,7 +1323,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		// Keep thread registration and durable queue publication indivisible
 		// from this process's drains and cancellation paths.
 		c.queueDrainMu.Lock()
-		threadMeta, err := c.registerChildThreadWithStatus(workerID, taskName, agentProfile, wt.Name, req.Prompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath, agentthread.StatusPending)
+		threadMeta, err := c.registerChildThreadWithStatus(workerID, taskName, agentProfile, wt.Name, req.Prompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath, ultra, agentthread.StatusPending)
 		if err != nil {
 			c.queueDrainMu.Unlock()
 			releaseQueueAdmission()
@@ -1350,7 +1408,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		forkPrompt = appendForkWorktreeReminder(forkPrompt, workerRoot, isolation)
 	}
 
-	threadMeta, err := c.registerChildThread(workerID, taskName, agentProfile, wt.Name, forkPrompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath)
+	threadMeta, err := c.registerChildThread(workerID, taskName, agentProfile, wt.Name, forkPrompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath, ultra)
 	if err != nil {
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
@@ -1409,6 +1467,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		Toolkit:        workerKit,
 		HistoryPath:    historyPath,
 		WorkerRoot:     workerRoot,
+		Ultra:          threadMeta.Ultra,
 		InitialHistory: initialHistory,
 	})
 	if err != nil {
@@ -1938,7 +1997,7 @@ func (c *AgentControl) workerSystemPrompt(rootDir string, wt WorkerType, meta ag
 			base = customBase
 		}
 	}
-	return composeWorkerSystemPrompt(base, wt, rootDir, isolation, false), nil
+	return composeWorkerSystemPrompt(base, wt, rootDir, isolation, meta.Ultra), nil
 }
 
 func withInitialSystemPrompt(history []providers.ChatMessage, systemPrompt string) []providers.ChatMessage {
@@ -1956,11 +2015,11 @@ func withInitialSystemPrompt(history []providers.ChatMessage, systemPrompt strin
 	return out
 }
 
-func (c *AgentControl) registerChildThread(id, taskName, agentProfile, role, message string, source agentthread.SourceKind, forkMode, parentID, parentPath string) (agentthread.Metadata, error) {
-	return c.registerChildThreadWithStatus(id, taskName, agentProfile, role, message, source, forkMode, parentID, parentPath, agentthread.StatusRunning)
+func (c *AgentControl) registerChildThread(id, taskName, agentProfile, role, message string, source agentthread.SourceKind, forkMode, parentID, parentPath string, ultra bool) (agentthread.Metadata, error) {
+	return c.registerChildThreadWithStatus(id, taskName, agentProfile, role, message, source, forkMode, parentID, parentPath, ultra, agentthread.StatusRunning)
 }
 
-func (c *AgentControl) registerChildThreadWithStatus(id, taskName, agentProfile, role, message string, source agentthread.SourceKind, forkMode, parentID, parentPath string, status agentthread.Status) (agentthread.Metadata, error) {
+func (c *AgentControl) registerChildThreadWithStatus(id, taskName, agentProfile, role, message string, source agentthread.SourceKind, forkMode, parentID, parentPath string, ultra bool, status agentthread.Status) (agentthread.Metadata, error) {
 	if c == nil || c.threads == nil {
 		return agentthread.Metadata{}, errors.New("thread registry is not configured")
 	}
@@ -1983,6 +2042,7 @@ func (c *AgentControl) registerChildThreadWithStatus(id, taskName, agentProfile,
 		Role:            role,
 		LastTaskMessage: message,
 		CWD:             c.parentRepo,
+		Ultra:           ultra,
 		SourceKind:      source,
 		ForkMode:        strings.TrimSpace(forkMode),
 		Status:          status,
@@ -2894,6 +2954,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 			InitialHistory: initialHistory,
 			Model:          modelOverride,
 			ModelPin:       prepared.ModelPin,
+			Ultra:          prepared.ThreadMeta.Ultra,
 			Client:         clientOverride,
 		})
 		// Manager.Spawn publishes the worker synchronously. Close turn admission
@@ -4397,6 +4458,7 @@ func rehydratedThreadMeta(run subagent.PersistedRun) agentthread.Metadata {
 		Role:         run.Type,
 		CWD:          run.CWD,
 		Model:        run.Model,
+		Ultra:        run.Ultra,
 		Status:       threadStatusFromSubAgent(run.Status),
 		CreatedAt:    created,
 		UpdatedAt:    time.Now().UTC(),
