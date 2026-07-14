@@ -1,8 +1,6 @@
 package context
 
 import (
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -24,7 +22,7 @@ func TestSnapshotIncludesOnlyLightweightRuntimeInfo(t *testing.T) {
 func TestCompileBlocksRendersTypedContext(t *testing.T) {
 	got := CompileBlocks([]Block{
 		{Kind: BlockProjectRules, Title: "Rules", Source: "AGENTS.md", Content: "Use gofmt.", TokenBudget: 200},
-		{Kind: BlockRecentDiff, Content: "   "},
+		{Kind: BlockActiveFiles, Content: "   "},
 		{Kind: BlockTestFailures, Content: "go test failed"},
 	})
 
@@ -41,7 +39,7 @@ func TestCompileBlocksRendersTypedContext(t *testing.T) {
 			t.Fatalf("compiled context missing %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "[RECENT_DIFF]") {
+	if strings.Contains(got, "[ACTIVE_FILES]") {
 		t.Fatalf("empty blocks should be skipped:\n%s", got)
 	}
 }
@@ -49,11 +47,11 @@ func TestCompileBlocksRendersTypedContext(t *testing.T) {
 func TestCompileBlocksEnforcesTokenBudget(t *testing.T) {
 	longContent := strings.Repeat("src/internal/really/long/path/to/file.go\n", 200)
 	got := CompileBlocks([]Block{
-		{Kind: BlockRepoMap, Title: "Repo map", Source: "runtime.repo_map", Content: longContent, TokenBudget: 40},
+		{Kind: BlockActiveFiles, Title: "Active files", Source: "runtime.active_files", Content: longContent, TokenBudget: 40},
 	})
 
 	for _, want := range []string{
-		"[REPO_MAP]",
+		"[ACTIVE_FILES]",
 		"token_budget: 40",
 		"truncated: block content exceeded token_budget 40;",
 	} {
@@ -66,75 +64,6 @@ func TestCompileBlocksEnforcesTokenBudget(t *testing.T) {
 	}
 	if strings.Count(got, "src/internal/really/long/path/to/file.go") >= 200 {
 		t.Fatalf("expected repeated paths to be truncated:\n%s", got)
-	}
-}
-
-func TestRepoMapBlockSummarizesWorkspace(t *testing.T) {
-	root := t.TempDir()
-	mustWriteContextTestFile(t, filepath.Join(root, "AGENTS.md"), "rules\n")
-	mustWriteContextTestFile(t, filepath.Join(root, "go.mod"), "module example.com/repo\n")
-	mustWriteContextTestFile(t, filepath.Join(root, "cmd/app/main.go"), "package main\n")
-	mustWriteContextTestFile(t, filepath.Join(root, "cmd/app/main_test.go"), "package main\n")
-	mustWriteContextTestFile(t, filepath.Join(root, "web/app.tsx"), "export const App = () => null\n")
-	mustWriteContextTestFile(t, filepath.Join(root, "web/app.test.tsx"), "test('app', () => {})\n")
-	mustWriteContextTestFile(t, filepath.Join(root, "node_modules/pkg/index.js"), "ignored\n")
-
-	summary, ok, err := BuildRepoMap(root, RepoMapOptions{MaxListedFiles: 10})
-	if err != nil {
-		t.Fatalf("BuildRepoMap: %v", err)
-	}
-	if !ok {
-		t.Fatal("expected repo map summary")
-	}
-	if summary.FilesScanned != 6 || summary.OmittedFiles != 0 {
-		t.Fatalf("unexpected repo map summary counts: %+v", summary)
-	}
-	if len(summary.TestMappings) != 2 || summary.TestMappings[0].Source != "cmd/app/main.go" || summary.TestMappings[0].Test != "cmd/app/main_test.go" {
-		t.Fatalf("unexpected repo map test mappings: %+v", summary.TestMappings)
-	}
-	if len(summary.RepresentativeFiles) == 0 || summary.RepresentativeFiles[0] != "AGENTS.md" {
-		t.Fatalf("unexpected representative files: %+v", summary.RepresentativeFiles)
-	}
-
-	block, ok := RepoMapBlock(root, RepoMapOptions{MaxListedFiles: 10})
-	if !ok {
-		t.Fatal("expected repo map block")
-	}
-	if block.Kind != BlockRepoMap || block.Source != "runtime.repo_map" {
-		t.Fatalf("unexpected repo map block metadata: %+v", block)
-	}
-	for _, want := range []string{
-		"files_scanned: 6",
-		"languages:",
-		"- go: 2",
-		"- typescript: 2",
-		"test_files:",
-		"- cmd/app/main_test.go",
-		"- web/app.test.tsx",
-		"test_mappings:",
-		"- cmd/app/main.go -> cmd/app/main_test.go",
-		"- web/app.tsx -> web/app.test.tsx",
-		"representative_files:",
-		"- AGENTS.md",
-		"- go.mod",
-		"- cmd/app/main.go",
-	} {
-		if !strings.Contains(block.Content, want) {
-			t.Fatalf("repo map missing %q:\n%s", want, block.Content)
-		}
-	}
-	if strings.Contains(block.Content, "node_modules") {
-		t.Fatalf("repo map should skip node_modules:\n%s", block.Content)
-	}
-}
-
-func mustWriteContextTestFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write %s: %v", path, err)
 	}
 }
 
@@ -165,10 +94,10 @@ func TestFormatSystemReminderUsesTypedEnvironmentBlock(t *testing.T) {
 
 func TestSystemReminderBlockMessageNameIsStableAndInternal(t *testing.T) {
 	block := Block{
-		Kind:    BlockRepoMap,
-		Title:   "Compact repository map",
-		Source:  "runtime.repo_map",
-		Content: "files_scanned: 3",
+		Kind:    BlockActiveFiles,
+		Title:   "Active files",
+		Source:  "runtime.active_files",
+		Content: "files:\n- go.mod",
 	}
 	name := SystemReminderBlockMessageName(block, 0)
 	if name == "" || len(name) > 64 {

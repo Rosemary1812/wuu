@@ -2230,11 +2230,11 @@ func TestRunToolLoop_RequestOnlyContextNotTrackedOnRequestError(t *testing.T) {
 
 func TestRunToolLoop_SplitHiddenContextSkipsUnchangedBlocks(t *testing.T) {
 	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
-	repoMap := wuucontext.Block{
-		Kind:    wuucontext.BlockRepoMap,
-		Title:   "Compact repository map",
-		Source:  "runtime.repo_map",
-		Content: "files_scanned: 2\nrepresentative_files:\n- go.mod",
+	activeFiles := wuucontext.Block{
+		Kind:    wuucontext.BlockActiveFiles,
+		Title:   "Active files",
+		Source:  "runtime.active_files",
+		Content: "files:\n- go.mod",
 	}
 	oldEnv := wuucontext.Block{
 		Kind:    wuucontext.BlockEnvironment,
@@ -2249,14 +2249,14 @@ func TestRunToolLoop_SplitHiddenContextSkipsUnchangedBlocks(t *testing.T) {
 		Model: "m",
 		BeforeRequestContext: func() []ContextSegment {
 			return RequestOnlyContextMessages([]providers.ChatMessage{
-				hiddenReminderForTest(repoMap, 0),
+				hiddenReminderForTest(activeFiles, 0),
 				hiddenReminderForTest(newEnv, 0),
 			})
 		},
 	}
 	history := []providers.ChatMessage{
 		userMsg("hi"),
-		hiddenReminderForTest(repoMap, 0),
+		hiddenReminderForTest(activeFiles, 0),
 		hiddenReminderForTest(oldEnv, 0),
 	}
 	res, err := RunToolLoop(context.Background(), history, cfg, step)
@@ -2265,8 +2265,8 @@ func TestRunToolLoop_SplitHiddenContextSkipsUnchangedBlocks(t *testing.T) {
 	}
 
 	request := step.calls[0].Messages
-	if got := countMessagesContaining(request, "[REPO_MAP]"); got != 1 {
-		t.Fatalf("unchanged repo map should not be re-appended, got %d repo map messages in %+v", got, request)
+	if got := countMessagesContaining(request, "[ACTIVE_FILES]"); got != 1 {
+		t.Fatalf("unchanged active-files block should not be re-appended, got %d active-files messages in %+v", got, request)
 	}
 	if got := countMessagesContaining(request, "Git status: clean"); got != 0 {
 		t.Fatalf("stale boundary environment block should be filtered before request, got %d in %+v", got, request)
@@ -2275,8 +2275,8 @@ func TestRunToolLoop_SplitHiddenContextSkipsUnchangedBlocks(t *testing.T) {
 		t.Fatalf("changed environment block should be appended once, got %d in %+v", got, request)
 	}
 	for _, msg := range res.NewMessages {
-		if strings.Contains(msg.Content, "[REPO_MAP]") {
-			t.Fatalf("unchanged repo map should not be returned as a new message: %+v", res.NewMessages)
+		if strings.Contains(msg.Content, "[ACTIVE_FILES]") {
+			t.Fatalf("unchanged active-files block should not be returned as a new message: %+v", res.NewMessages)
 		}
 	}
 }
@@ -2286,11 +2286,11 @@ func TestRunToolLoop_SplitHiddenContextDoesNotReappendStableBlocksBetweenToolSte
 		{ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md"}`}}},
 		{Content: "ok"},
 	}}
-	repoMap := wuucontext.Block{
-		Kind:    wuucontext.BlockRepoMap,
-		Title:   "Compact repository map",
-		Source:  "runtime.repo_map",
-		Content: "files_scanned: 2\nrepresentative_files:\n- go.mod",
+	activeFiles := wuucontext.Block{
+		Kind:    wuucontext.BlockActiveFiles,
+		Title:   "Active files",
+		Source:  "runtime.active_files",
+		Content: "files:\n- go.mod",
 	}
 	contextCalls := 0
 	var contexts []RequestContextInfo
@@ -2309,7 +2309,7 @@ func TestRunToolLoop_SplitHiddenContextDoesNotReappendStableBlocksBetweenToolSte
 				Content: fmt.Sprintf("# Environment\n- State: step %d", contextCalls),
 			}
 			return RequestOnlyContextMessages([]providers.ChatMessage{
-				hiddenReminderForTest(repoMap, 0),
+				hiddenReminderForTest(activeFiles, 0),
 				hiddenReminderForTest(env, 0),
 			})
 		},
@@ -2331,11 +2331,11 @@ func TestRunToolLoop_SplitHiddenContextDoesNotReappendStableBlocksBetweenToolSte
 	if len(contexts) != 2 {
 		t.Fatalf("expected two context observations, got %+v", contexts)
 	}
-	if !containsString(contexts[0].BlockKinds, string(wuucontext.BlockRepoMap)) {
-		t.Fatalf("first request should include repo map context: %+v", contexts[0])
+	if !containsString(contexts[0].BlockKinds, string(wuucontext.BlockActiveFiles)) {
+		t.Fatalf("first request should include active-files context: %+v", contexts[0])
 	}
-	if !containsString(contexts[1].BlockKinds, string(wuucontext.BlockRepoMap)) {
-		t.Fatalf("second request should include current request-only repo map context: %+v", contexts[1])
+	if !containsString(contexts[1].BlockKinds, string(wuucontext.BlockActiveFiles)) {
+		t.Fatalf("second request should include current request-only active-files context: %+v", contexts[1])
 	}
 	if !containsString(contexts[1].BlockKinds, string(wuucontext.BlockEnvironment)) {
 		t.Fatalf("second request should refresh changed environment: %+v", contexts[1])
