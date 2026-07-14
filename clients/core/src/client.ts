@@ -276,6 +276,12 @@ export interface RemoteClientOptions {
   onDetach?: () => void;
 }
 
+interface AttachWaiter {
+  resolve: () => void;
+  reject: (err: Error) => void;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
 /** Keeps one phone connected to its paired host. */
 export class RemoteClient {
   private readonly id: Identity;
@@ -299,7 +305,7 @@ export class RemoteClient {
   private ackDirty = false;
   private proto: ProtocolClient | null = null;
   private state: HostState | null = null;
-  private waiters: Array<() => void> = [];
+  private waiters: AttachWaiter[] = [];
   private stopped = true;
   private runPromise: Promise<void> | null = null;
   private wake: (() => void) | null = null;
@@ -332,12 +338,17 @@ export class RemoteClient {
 
   /** Stops the loop and tears down the connection. */
   async stop(): Promise<void> {
-    if (this.stopped) return;
+    this.rejectAttachWaiters(new Error("client stopped"));
+    if (this.stopped) {
+      this.closeProtocol("client stopped");
+      return;
+    }
     this.stopped = true;
     this.wake?.();
     this.sock?.close();
     await this.runPromise;
-    this.proto?.close("client stopped");
+    this.runPromise = null;
+    this.closeProtocol("client stopped");
   }
 
   private async run(): Promise<void> {
@@ -570,8 +581,12 @@ export class RemoteClient {
         idPrefix: "rc",
       });
     }
-    for (const w of this.waiters) w();
+    const waiters = this.waiters;
     this.waiters = [];
+    for (const waiter of waiters) {
+      clearTimeout(waiter.timer);
+      waiter.resolve();
+    }
     this.opts.onAttach?.({ session, resumed });
     this.logf(`remote client: attached (session=${session} resumed=${resumed})`);
   }
@@ -640,19 +655,30 @@ export class RemoteClient {
   waitAttached(timeoutMs?: number): Promise<void> {
     if (this.attached) return Promise.resolve();
     return new Promise((resolve, reject) => {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const waiter = () => {
-        clearTimeout(timer);
-        resolve();
-      };
+      const waiter: AttachWaiter = { resolve, reject };
       this.waiters.push(waiter);
       if (timeoutMs !== undefined) {
-        timer = setTimeout(() => {
+        waiter.timer = setTimeout(() => {
           this.waiters = this.waiters.filter((w) => w !== waiter);
           reject(new Error("attach timeout"));
         }, timeoutMs);
       }
     });
+  }
+
+  private rejectAttachWaiters(err: Error): void {
+    const waiters = this.waiters;
+    this.waiters = [];
+    for (const waiter of waiters) {
+      clearTimeout(waiter.timer);
+      waiter.reject(err);
+    }
+  }
+
+  private closeProtocol(reason: string): void {
+    const proto = this.proto;
+    this.proto = null;
+    proto?.close(reason);
   }
 
   /** The app-server protocol client for the current connection, or null
@@ -663,8 +689,8 @@ export class RemoteClient {
   }
 
   /** Convenience: waits for attach and issues one call. */
-  async call<T = unknown>(method: string, params?: unknown): Promise<T> {
-    await this.waitAttached();
+  async call<T = unknown>(method: string, params?: unknown, attachTimeoutMs?: number): Promise<T> {
+    await this.waitAttached(attachTimeoutMs);
     const proto = this.proto;
     if (!proto) throw new Error("not attached to host");
     return proto.call<T>(method, params);

@@ -173,24 +173,17 @@ export class WuuMobile {
     }
   }
 
-  /** RPC with a deadline: client.call waits for attach indefinitely, which
-   *  would leave UI affordances (pull-to-refresh, send) hanging forever when
-   *  the host is unreachable. */
+  /** Bounds the wait for an attached host. The timeout lives inside the core
+   *  client so an expired operation is removed before a later reconnect and
+   *  can never be sent after the UI has already reported failure. */
   private call<T>(method: string, params?: unknown, timeoutMs = 20_000): Promise<T> {
     const client = this.client;
     if (!client) return Promise.reject(new Error("未连接"));
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("连接超时,请检查电脑端是否在线")), timeoutMs);
-      client.call<T>(method, params).then(
-        (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-        (err: unknown) => {
-          clearTimeout(timer);
-          reject(err instanceof Error ? err : new Error(String(err)));
-        },
-      );
+    return client.call<T>(method, params, timeoutMs).catch((err: unknown) => {
+      if (err instanceof Error && err.message === "attach timeout") {
+        throw new Error("连接超时,请检查电脑端是否在线");
+      }
+      throw err instanceof Error ? err : new Error(String(err));
     });
   }
 

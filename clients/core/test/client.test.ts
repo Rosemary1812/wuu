@@ -313,6 +313,32 @@ describe("RemoteClient", () => {
     }
   });
 
+  it("does not send a call after its attach wait times out", async () => {
+    const fake = new FakeHost();
+    const { client } = makeClient(fake);
+
+    await expect(client.call("turn/start", { prompt: "too late" }, 5)).rejects.toThrow(/attach timeout/);
+
+    client.start();
+    try {
+      await client.waitAttached(3000);
+      expect(fake.uplinkEnvelopes).toEqual([]);
+    } finally {
+      await client.stop();
+    }
+  });
+
+  it("rejects attach waiters when stopped", async () => {
+    const fake = new FakeHost();
+    const { client } = makeClient(fake);
+    const waiting = client.waitAttached();
+    const rejected = expect(waiting).rejects.toThrow(/client stopped/);
+
+    await client.stop();
+
+    await rejected;
+  });
+
   it("sends an optional client profile with attach", async () => {
     const fake = new FakeHost();
     const { client } = makeClient(fake, { clientProfile: CLIENT_PROFILE_MOBILE_CHAT });
