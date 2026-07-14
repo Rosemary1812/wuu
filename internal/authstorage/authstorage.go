@@ -70,8 +70,6 @@ func NewHeadlessCredentialStore(home string) (credentialstore.Store, string, err
 	return credentialstore.NewFileStore(path), path, nil
 }
 
-func (s *Store) Path() string { return s.path }
-
 func emptyFile() File {
 	return File{Version: CurrentVersion, Providers: map[string]Credentials{}}
 }
@@ -101,17 +99,6 @@ func (s *Store) loadLocked() (File, error) {
 		file.Providers = map[string]Credentials{}
 	}
 	return file, nil
-}
-
-func (s *Store) Save(file File) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	release, err := lockFile(s.path + ".lock")
-	if err != nil {
-		return err
-	}
-	defer release()
-	return s.writeLocked(file)
 }
 
 func (s *Store) writeLocked(file File) error {
@@ -196,13 +183,4 @@ func (s *Store) DeleteProvider(providerID string) error {
 	}
 	delete(file.Providers, providerID)
 	return s.writeLocked(file)
-}
-
-func (s *Store) Delete() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := os.Remove(s.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("authstorage: delete %s: %w", s.path, err)
-	}
-	return nil
 }
