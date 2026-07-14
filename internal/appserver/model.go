@@ -1195,27 +1195,6 @@ func pendingCompactionsContainReason(items []ThreadItem, reason string) bool {
 	return false
 }
 
-func contextCompactionItemFromSystemMessage(msg providers.ChatMessage) (ThreadItem, bool) {
-	content := strings.TrimSpace(msg.Content)
-	switch {
-	case compact.IsConversationSummaryContent(content):
-		return ThreadItem{
-			Type:   ThreadItemContextCompaction,
-			Status: ThreadItemStatusCompleted,
-			Text:   "Compacted history",
-		}, true
-	case compact.IsHelpMeJointCompactContent(content):
-		return ThreadItem{
-			Type:   ThreadItemContextCompaction,
-			Status: ThreadItemStatusCompleted,
-			Text:   "HelpMe recovered and compacted history",
-			Reason: compact.HelpMeToolName,
-		}, true
-	default:
-		return ThreadItem{}, false
-	}
-}
-
 func chatMessageItem(id string, msg providers.ChatMessage) ThreadItem {
 	switch msg.Role {
 	case "user":
@@ -1434,10 +1413,6 @@ func allASCIIDigits(value string) bool {
 
 func isToolResultMessage(msg providers.ChatMessage) bool {
 	return msg.Role == "tool" || msg.ToolCallID != ""
-}
-
-func isInternalContextToolName(name string) bool {
-	return strings.EqualFold(strings.TrimSpace(name), compact.InceptionToolName)
 }
 
 func threadItemTypeForTool(name string) ThreadItemType {

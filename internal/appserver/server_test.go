@@ -8105,17 +8105,6 @@ func testStringSliceContains(values []string, want string) bool {
 	return false
 }
 
-func requestByMethod(t *testing.T, msgs []map[string]any, method string) map[string]any {
-	t.Helper()
-	for _, msg := range msgs {
-		if msg["method"] == method && msg["id"] != nil {
-			return msg
-		}
-	}
-	t.Fatalf("request %s not found in %+v", method, msgs)
-	return nil
-}
-
 func turnEventByType(t *testing.T, msgs []map[string]any, typ providers.StreamEventType) map[string]any {
 	t.Helper()
 	for _, msg := range msgs {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -207,10 +206,4 @@ func ifThen(cond bool, a, b string) string {
 		return a
 	}
 	return b
-}
-
-func sortDeltasByLen(d []string) []string {
-	out := append([]string(nil), d...)
-	sort.SliceStable(out, func(i, j int) bool { return len(out[i]) < len(out[j]) })
-	return out
 }
