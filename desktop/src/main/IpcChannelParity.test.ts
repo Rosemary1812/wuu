@@ -127,6 +127,21 @@ describe("IPC channel parity", () => {
     expect(handler).toContain("type: connection.type");
   });
 
+  it("forwards Ultra as a dedicated model update", () => {
+    const index = source("index.ts");
+    const handlerStart = index.indexOf('"wuu:config-ultra-update"');
+    const handlerEnd = index.indexOf(
+      '"wuu:config-advanced-update"',
+      handlerStart,
+    );
+    const handler = index.slice(handlerStart, handlerEnd);
+
+    expect(handler).toContain('"config/model/update"');
+    expect(handler).toContain("ultra: enabled");
+    expect(handler).not.toContain("provider,");
+    expect(handler).not.toContain("model,");
+  });
+
   it("forwards Thread owner and does not expose desktop lead override or completion", () => {
     const index = source("index.ts");
     const preload = source("preload.ts");

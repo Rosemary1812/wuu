@@ -36,6 +36,37 @@ import (
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
+func TestSessionUltraModeIsConcurrencySafe(t *testing.T) {
+	session := &Session{maxParallel: 3}
+	if session.UltraMode() {
+		t.Fatal("Ultra mode should default to false")
+	}
+	if session.MaxParallel() != 3 {
+		t.Fatalf("MaxParallel = %d, want 3", session.MaxParallel())
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		enabled := i%2 == 0
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			session.SetUltraMode(enabled)
+			_ = session.UltraMode()
+		}()
+	}
+	wg.Wait()
+	session.SetUltraMode(true)
+	if !session.UltraMode() {
+		t.Fatal("Ultra mode update was not visible")
+	}
+
+	var zero Session
+	if zero.MaxParallel() != config.DefaultAgentMaxParallel {
+		t.Fatalf("zero-value MaxParallel = %d, want %d", zero.MaxParallel(), config.DefaultAgentMaxParallel)
+	}
+}
+
 func TestSessionCleanupClosesMCPManager(t *testing.T) {
 	kit, err := tools.New(t.TempDir())
 	if err != nil {

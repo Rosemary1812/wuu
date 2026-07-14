@@ -52,6 +52,10 @@ shutdown
 
 It must not call `StreamRunner.RunWithCallback` directly for the target path.
 
+`wuu exec --ultra` is an explicit, non-persistent enable override for this
+lifecycle. In `--json` mode, the first `session_configured` JSONL event reports
+the effective `ultra` and `max_parallel` values returned by `initialize`.
+
 ## Core Methods
 
 This is the common subset the text entrypoint exercises end-to-end. The full
@@ -71,7 +75,18 @@ siblings like `config/read`, `config/model/update`, `config/general/update`,
 `initialize`
 
 Returns provider, model, workspace, tool policy, permission summary, extension
-trust summary, and protocol version.
+trust summary, protocol version, and the effective `ultra` and `max_parallel`
+values.
+
+`config/read`
+
+Returns the current runtime configuration summary. Its result includes
+`ultra` and `max_parallel`.
+
+`config/model/update`
+
+Updates the active provider/model settings. It also accepts an optional
+`ultra` field and returns the effective `ultra` and `max_parallel` values.
 
 `thread/start`
 
@@ -101,6 +116,80 @@ cleanup.
 `shutdown`
 
 Requests a clean app-server shutdown.
+
+## Ultra Mode Configuration
+
+Ultra mode is configured by `agent.ultra_mode`; it defaults to `false`.
+`agent.max_parallel` controls anonymous-worker execution capacity, uses `5`
+when omitted or set to zero, and is unchanged by Ultra mode. See the
+[configuration model](configuration-model-zh.md) for the persistent fields.
+
+The `ultra` member of `ConfigModelUpdateParams` is optional:
+
+```json
+{"id":"2","method":"config/model/update","params":{"ultra":true}}
+```
+
+An Ultra-only request is valid. A request may also combine `ultra` with a
+provider/model update; both changes are persisted by one atomic configuration
+write. Omitting `ultra` preserves the current mode. `InitializeResult`,
+`ConfigReadResult`, and `ConfigModelUpdateResult` all include these readback
+fields:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `ultra` | boolean | Current session-level Ultra setting. |
+| `max_parallel` | integer | Effective anonymous-worker execution capacity after applying the default. |
+
+### Turn boundary and inheritance
+
+Ultra is immutable within an admitted top-level turn. A user turn snapshots
+the session setting when it starts. Synthetic completion turns reuse the
+effective snapshot associated with the running turn whose worker result caused
+the completion; they do not switch an in-flight orchestration tree to a newer
+session value.
+
+Each worker snapshots its parent's effective value when spawned. That value is
+stored with the worker and remains fixed across its lifetime, follow-up
+resumption, queued execution, and descendants. Changing Ultra while a turn is
+running updates session configuration and shell state only. It affects the next
+user-initiated top-level turn, not the current turn or any already-spawned
+subtree.
+
+When Ultra is absent or `false`, no Ultra tool-policy block is injected and the
+default worker orchestration restrictions remain in place. Clients that omit
+the optional update field therefore keep pre-Ultra behavior.
+
+## Anonymous Worker Lifecycle States
+
+Anonymous-worker state is exposed through `Agent.status`, including in
+`agent/updated` notifications. In addition to the terminal states, clients must
+handle these non-terminal states:
+
+| Status | Meaning |
+| --- | --- |
+| `queued` | The spawn was accepted but is waiting for worker execution capacity. It consumes no `max_parallel` slot and starts automatically when capacity opens. |
+| `waiting_children` | The worker produced a final message while direct children are still non-terminal. Its result is held, it consumes no execution slot, and it resumes when child delivery arrives so it can integrate the results before one final parent delivery. |
+
+`waiting_children` is not a completed delivery. The worker becomes terminal
+only after no direct child remains live and no pending message remains to
+be integrated. Parent delivery remains exactly once.
+
+## Turn Interrupt and Tree Freeze
+
+`turn/interrupt` means "freeze this work", not "leave background workers
+running". It cancels the active root turn and its complete anonymous-worker
+tree, clears queued spawns in that tree, and preserves partial worker results
+as resumable state. Deliveries that arrive during the freeze are stored as
+pending messages and must not trigger worker follow-ups or synthetic completion
+turns.
+
+The next **user-initiated** turn on the thread clears the freeze. The root then
+receives the whole-tree status snapshot, including completed results and
+cancelled workers' partial results and resume hints. This does not automatically
+restart every worker; the root can resume selected workers with `send_message`.
+Natural turn completion still allows asynchronous workers to finish and wake
+their parent, while thread/session close remains the true termination path.
 
 ## Notifications Used By Text Clients
 
@@ -187,3 +276,8 @@ Persistent runs must create or update normal Wuu sessions so that:
 Changes to method names, notification names, field names, stdout/stderr
 behavior, or exit code meaning are product-level compatibility changes. Treat
 them as public API once automation depends on them.
+
+The Ultra additions are additive: `ConfigModelUpdateParams.ultra` is optional,
+and existing clients that omit it do not change the mode. The readback fields
+are additive result members; clients should continue to tolerate unknown result
+fields.

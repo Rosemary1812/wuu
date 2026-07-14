@@ -133,6 +133,7 @@ export function Composer({
   queuedMessages,
   guideMessages,
   running,
+  ultraEnabled = false,
   runtimeControlsDisabled = running,
   activeTurn,
   status,
@@ -179,6 +180,7 @@ export function Composer({
   onRemoveGuideMessage,
   onGuideQueuedMessage,
   onEditQueuedMessage,
+  onToggleUltra,
   onEditGuideMessage,
   onSend,
   onInterrupt,
@@ -213,6 +215,7 @@ export function Composer({
   queuedMessages: QueuedComposerMessage[];
   guideMessages: QueuedComposerMessage[];
   running: boolean;
+  ultraEnabled?: boolean;
   runtimeControlsDisabled?: boolean;
   activeTurn?: Pick<Turn, "model_provider" | "model">;
   status: string;
@@ -265,6 +268,7 @@ export function Composer({
   onRemoveGuideMessage: (id: string) => void;
   onGuideQueuedMessage: (id: string) => void;
   onEditQueuedMessage: (id: string) => void;
+  onToggleUltra?: (enabled: boolean) => void;
   onEditGuideMessage: (id: string) => void;
   onSend: () => void;
   onInterrupt: () => void;
@@ -334,13 +338,20 @@ export function Composer({
   const collapsedPromptListRef = useRef<HTMLDivElement>(null);
   const collapsedPromptBlockIDRef = useRef(0);
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
-  const [ultraEnabled, setUltraEnabled] = useState(false);
   const [ultraAnimationCycle, setUltraAnimationCycle] = useState(0);
+  const previousUltraEnabledRef = useRef(ultraEnabled);
   const [collapsedPromptBlocks, setCollapsedPromptBlocks] = useState<CollapsedComposerPromptBlock[]>([]);
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashDismissedValue, setSlashDismissedValue] = useState("");
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
   const [mentionDismissedValue, setMentionDismissedValue] = useState("");
+  useEffect(() => {
+    if (previousUltraEnabledRef.current === ultraEnabled) {
+      return;
+    }
+    previousUltraEnabledRef.current = ultraEnabled;
+    setUltraAnimationCycle((cycle) => cycle + 1);
+  }, [ultraEnabled]);
   const [slashSkills, setSlashSkills] = useState<SkillSummary[]>([]);
   const [composerContextMenu, setComposerContextMenu] = useState<{
     x: number;
@@ -943,26 +954,27 @@ export function Composer({
             </div>
           </div>
         ) : null}
-        <button
-          className={`composer-ultra-button${ultraEnabled ? " is-active" : ""}`}
-          type="button"
-          aria-label={ultraEnabled ? "关闭 Ultra 视觉效果" : "开启 Ultra 视觉效果"}
-          aria-pressed={ultraEnabled}
-          title={ultraEnabled ? "关闭 Ultra" : "开启 Ultra"}
-          onClick={() => {
-            setUltraEnabled((enabled) => !enabled);
-            setUltraAnimationCycle((cycle) => cycle + 1);
-          }}
-        >
-          <span className="composer-ultra-notch" aria-hidden="true" />
-          <span className="composer-ultra-impact" aria-hidden="true" />
-        </button>
-        {ultraAnimationCycle > 0 ? (
-          <span
-            className={`composer-ultra-energy${ultraEnabled ? " turning-on" : " turning-off"}`}
-            key={ultraAnimationCycle}
-            aria-hidden="true"
-          />
+        {onToggleUltra ? (
+          <>
+            <button
+              className={`composer-ultra-button${ultraEnabled ? " is-active" : ""}`}
+              type="button"
+              aria-label={ultraEnabled ? "关闭 Ultra 多 agent 模式" : "开启 Ultra 多 agent 模式"}
+              aria-pressed={ultraEnabled}
+              title={ultraEnabled ? "关闭 Ultra" : "开启 Ultra"}
+              onClick={() => onToggleUltra(!ultraEnabled)}
+            >
+              <span className="composer-ultra-notch" aria-hidden="true" />
+              <span className="composer-ultra-impact" aria-hidden="true" />
+            </button>
+            {ultraAnimationCycle > 0 ? (
+              <span
+                className={`composer-ultra-energy${ultraEnabled ? " turning-on" : " turning-off"}`}
+                key={ultraAnimationCycle}
+                aria-hidden="true"
+              />
+            ) : null}
+          </>
         ) : null}
         <div
           className={`composer-frame${ultraEnabled ? " is-ultra" : ""}`}

@@ -35,6 +35,7 @@ func TestLocalAppServerControllerInitializeAndResumeThread(t *testing.T) {
 	controller, err := NewLocalAppServerController(ctx, Options{
 		Workdir:    root,
 		ConfigPath: configPath,
+		Ultra:      true,
 	})
 	if err != nil {
 		t.Fatalf("NewLocalAppServerController: %v", err)
@@ -47,6 +48,9 @@ func TestLocalAppServerControllerInitializeAndResumeThread(t *testing.T) {
 	}
 	if init.WorkspaceRoot != root || init.Provider != "test" || init.Model != "gpt-test" {
 		t.Fatalf("unexpected initialize result: %+v", init)
+	}
+	if !init.Ultra || init.MaxParallel != config.DefaultAgentMaxParallel {
+		t.Fatalf("ultra override was not reflected by initialize: %+v", init)
 	}
 	thread, err := controller.StartThread(ctx, false)
 	if err != nil {
@@ -212,6 +216,25 @@ func TestApplyConfigOverridesNormalizesPermissionMode(t *testing.T) {
 		}
 		if got := cfg.Agent.PermissionMode; got != tc.want {
 			t.Fatalf("%s: PermissionMode = %q, want %q", name, got, tc.want)
+		}
+	}
+}
+
+func TestApplyConfigOverridesUltraOnlyEnables(t *testing.T) {
+	for name, tc := range map[string]struct {
+		configured bool
+		override   bool
+		want       bool
+	}{
+		"explicit enable": {configured: false, override: true, want: true},
+		"flag omitted":    {configured: true, override: false, want: true},
+	} {
+		cfg := config.Config{Agent: config.AgentConfig{UltraMode: tc.configured}}
+		if err := applyConfigOverrides(&cfg, Options{Ultra: tc.override}); err != nil {
+			t.Fatalf("%s: applyConfigOverrides: %v", name, err)
+		}
+		if cfg.Agent.UltraMode != tc.want {
+			t.Fatalf("%s: UltraMode = %t, want %t", name, cfg.Agent.UltraMode, tc.want)
 		}
 	}
 }

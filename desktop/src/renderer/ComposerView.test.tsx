@@ -85,6 +85,8 @@ function renderComposer(props: {
   variant?: ComposerVariant;
   prompt?: string;
   running?: boolean;
+  ultraEnabled?: boolean;
+  onToggleUltra?: (enabled: boolean) => void;
   queuedMessages?: QueuedComposerMessage[];
   guideMessages?: QueuedComposerMessage[];
   status?: string;
@@ -140,6 +142,8 @@ function renderComposer(props: {
           queuedMessages={props.queuedMessages ?? []}
           guideMessages={props.guideMessages ?? []}
           running={props.running ?? false}
+          ultraEnabled={props.ultraEnabled}
+          onToggleUltra={props.onToggleUltra}
           runtimeControlsDisabled={props.runtimeControlsDisabled}
           activeTurn={props.activeTurn}
           status={props.status ?? "ready"}
@@ -246,6 +250,7 @@ function renderSplitPaneComposer(props: {
 function renderStatefulComposer(props: {
   initialPrompt?: string;
   onSend?: (prompt: string) => void;
+  showUltraToggle?: boolean;
 }): void {
   const codexModels: CodexModelLoadState = {
     loading: false,
@@ -255,6 +260,7 @@ function renderStatefulComposer(props: {
 
   function Harness(): JSX.Element {
     const [prompt, setPrompt] = useState(props.initialPrompt ?? "");
+    const [ultraEnabled, setUltraEnabled] = useState(false);
     return (
       <ImagePreviewProvider>
         <Composer
@@ -265,6 +271,8 @@ function renderStatefulComposer(props: {
           queuedMessages={[]}
           guideMessages={[]}
           running={false}
+          ultraEnabled={ultraEnabled}
+          onToggleUltra={props.showUltraToggle ? setUltraEnabled : undefined}
           status="ready"
           readOnly={false}
           initialized={initialized()}
@@ -650,33 +658,59 @@ describe("Composer send control", () => {
     expect(frame?.querySelector(".composer-context-bar")).toBeNull();
   });
 
-  it("toggles the front-end-only Ultra treatment without changing the draft", () => {
-    const setPrompt = vi.fn();
-    renderComposer({
-      variant: "dock",
-      prompt: "keep this draft",
-      setPrompt,
+  it("renders controlled Ultra state and preserves the existing treatment", () => {
+    renderStatefulComposer({
+      initialPrompt: "keep this draft",
+      showUltraToggle: true,
     });
 
     const button = container.querySelector<HTMLButtonElement>(".composer-ultra-button");
     const frame = container.querySelector(".composer-frame");
 
     expect(button?.querySelector(".composer-ultra-notch")).not.toBeNull();
+    expect(button?.getAttribute("aria-label")).toBe("开启 Ultra 多 agent 模式");
     expect(button?.getAttribute("aria-pressed")).toBe("false");
     expect(frame?.classList.contains("is-ultra")).toBe(false);
 
     act(() => button?.click());
 
     expect(button?.getAttribute("aria-pressed")).toBe("true");
+    expect(button?.getAttribute("aria-label")).toBe("关闭 Ultra 多 agent 模式");
     expect(frame?.classList.contains("is-ultra")).toBe(true);
     expect(container.querySelector(".composer-ultra-energy.turning-on")).not.toBeNull();
-    expect(setPrompt).not.toHaveBeenCalled();
+    expect(
+      container.querySelector<HTMLTextAreaElement>("textarea")?.value,
+    ).toBe("keep this draft");
 
     act(() => button?.click());
 
     expect(button?.getAttribute("aria-pressed")).toBe("false");
     expect(frame?.classList.contains("is-ultra")).toBe(false);
     expect(container.querySelector(".composer-ultra-energy.turning-off")).not.toBeNull();
+  });
+
+  it("hides the global Ultra control when the host does not provide it", () => {
+    renderComposer({ variant: "dock" });
+
+    expect(container.querySelector(".composer-ultra-button")).toBeNull();
+  });
+
+  it("keeps the Ultra control available while a turn is running", () => {
+    const onToggleUltra = vi.fn();
+    renderComposer({
+      variant: "dock",
+      running: true,
+      ultraEnabled: false,
+      onToggleUltra,
+    });
+
+    const button = container.querySelector<HTMLButtonElement>(
+      ".composer-ultra-button",
+    );
+    expect(button?.disabled).toBe(false);
+
+    act(() => button?.click());
+    expect(onToggleUltra).toHaveBeenCalledWith(true);
   });
 
   it("keeps the slash command menu outside the clipped visual frame", () => {

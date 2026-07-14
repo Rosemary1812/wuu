@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"charm.land/catwalk/pkg/catwalk"
@@ -131,6 +132,8 @@ type Session struct {
 	SessionDate                 string
 	WuuHome                     string
 	Permissions                 config.ResolvedPermissions
+	ultraMode                   atomic.Bool
+	maxParallel                 int
 	CoordinatorPreamble         string
 	ExperimentalCoordinatorMode bool
 	ToolLoadingPreference       config.ToolLoadingMode
@@ -144,6 +147,28 @@ type Session struct {
 	CronLock                    *cron.Lock
 	ReadinessIssues             []ReadinessIssue
 	InferenceJournalRuntime     *session.InferenceJournalRuntime
+}
+
+// UltraMode returns the session-level delegation mode using an atomic read so
+// config updates can race safely with turn admission.
+func (s *Session) UltraMode() bool {
+	return s != nil && s.ultraMode.Load()
+}
+
+// SetUltraMode updates the session-level delegation mode. Individual turns
+// snapshot this value separately; this setter only changes future snapshots.
+func (s *Session) SetUltraMode(enabled bool) {
+	if s != nil {
+		s.ultraMode.Store(enabled)
+	}
+}
+
+// MaxParallel returns the worker concurrency configured for this session.
+func (s *Session) MaxParallel() int {
+	if s == nil || s.maxParallel <= 0 {
+		return config.DefaultAgentMaxParallel
+	}
+	return s.maxParallel
 }
 
 type ReadinessIssue struct {
@@ -453,7 +478,7 @@ func NewSession(opts Options) (*Session, error) {
 				return wkit, nil
 			},
 			ParticipantStore: sessionParticipantStore{sessDir: statepath.SessionsDir(wuuHome)},
-			MaxParallel:      5,
+			MaxParallel:      cfg.Agent.MaxParallelValue(),
 			InferenceJournal: workspaceJournal,
 			ToolLedgerFactory: func(ownerID string) (*toolledger.Ledger, error) {
 				return toolledger.New(sessionDir, ownerID)
@@ -554,6 +579,7 @@ func NewSession(opts Options) (*Session, error) {
 		SessionDate:                 sessionDate,
 		WuuHome:                     wuuHome,
 		Permissions:                 permissions,
+		maxParallel:                 cfg.Agent.MaxParallelValue(),
 		CoordinatorPreamble:         coordinatorPreamble,
 		ExperimentalCoordinatorMode: cfg.Agent.ExperimentalCoordinatorMode,
 		ToolLoadingPreference:       toolLoadingPreference,
@@ -569,6 +595,7 @@ func NewSession(opts Options) (*Session, error) {
 	// The legacy/root control remains dormant until SetSessionID binds its real
 	// artifact directories. Per-thread controls created by NewThreadRuntime are
 	// likewise started only after app-server installs their terminal finalizer.
+	runtimeSession.SetUltraMode(cfg.Agent.UltraMode)
 	journalOwned = false
 	return runtimeSession, nil
 }
@@ -1028,7 +1055,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					return workerKit, nil
 				},
 				ParticipantStore: sessionParticipantStore{sessDir: statepath.SessionsDir(wuuHome)},
-				MaxParallel:      5,
+				MaxParallel:      s.MaxParallel(),
 				InferenceJournal: s.InferenceJournalForOwner(id),
 				ToolLedgerFactory: func(ownerID string) (*toolledger.Ledger, error) {
 					return toolledger.New(s.SessionDir, ownerID)

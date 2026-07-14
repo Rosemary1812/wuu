@@ -28,6 +28,7 @@ function initialized(overrides: Partial<InitializeResult> = {}): InitializeResul
     model: "gpt-5",
     effort: "medium",
     variant: "medium",
+    ultra: false,
     workspace_root: "/tmp/project-1",
     permissions: { mode: "standard" },
     providers: [
@@ -72,6 +73,7 @@ function thread(id = "thread-1"): Thread {
 
 function installWuuApi(): {
   updateRuntimeSettings: ReturnType<typeof vi.fn>;
+  updateUltraMode: ReturnType<typeof vi.fn>;
   updateAdvancedSettings: ReturnType<typeof vi.fn>;
   updateGeneralSettings: ReturnType<typeof vi.fn>;
   removeProvider: ReturnType<typeof vi.fn>;
@@ -92,6 +94,11 @@ function installWuuApi(): {
         base_url: "https://new.example.test",
       },
     ],
+  });
+  const updateUltraMode = vi.fn().mockResolvedValue({
+    provider: "codex",
+    model: "gpt-5",
+    ultra: true,
   });
   const updateAdvancedSettings = vi.fn().mockResolvedValue({
     advanced_settings: {
@@ -126,6 +133,7 @@ function installWuuApi(): {
     configurable: true,
     value: {
       updateRuntimeSettings,
+      updateUltraMode,
       updateAdvancedSettings,
       updateGeneralSettings,
       removeProvider,
@@ -135,6 +143,7 @@ function installWuuApi(): {
   });
   return {
     updateRuntimeSettings,
+    updateUltraMode,
     updateAdvancedSettings,
     updateGeneralSettings,
     removeProvider,
@@ -269,6 +278,25 @@ describe("createRuntimeSettingsActions", () => {
     );
 
     expect(api.updateRuntimeSettings).not.toHaveBeenCalled();
+  });
+
+  it("commits Ultra state only after the app server confirms it", async () => {
+    const api = installWuuApi();
+    const harness = buildActions();
+
+    const enabling = harness.actions.updateUltraMode(true);
+    expect(harness.getAppState().initialized?.ultra).toBe(false);
+
+    await enabling;
+    expect(api.updateUltraMode).toHaveBeenCalledWith(true);
+    expect(harness.getAppState().initialized?.ultra).toBe(true);
+
+    api.updateUltraMode.mockRejectedValueOnce(new Error("ultra save failed"));
+    await expect(harness.actions.updateUltraMode(false)).rejects.toThrow(
+      "ultra save failed",
+    );
+    expect(harness.getAppState().initialized?.ultra).toBe(true);
+    expect(harness.getAppState().status).toBe("ultra save failed");
   });
 
   it("updates advanced and general settings unless a view switch is pending", async () => {

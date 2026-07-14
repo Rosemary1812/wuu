@@ -311,6 +311,7 @@ func (b *lockedBuffer) String() string {
 
 func TestServerInitializeAndConfigRead(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
+	rt.SetUltraMode(true)
 	out := &lockedBuffer{}
 	srv := New(rt, out)
 
@@ -336,10 +337,16 @@ func TestServerInitializeAndConfigRead(t *testing.T) {
 	if initResult.Model != "fake-model" || initResult.Provider != "fake-provider" {
 		t.Fatalf("unexpected initialize result: %+v", initResult)
 	}
+	if !initResult.Ultra || initResult.MaxParallel != config.DefaultAgentMaxParallel {
+		t.Fatalf("initialize missing Ultra runtime state: %+v", initResult)
+	}
 	configMsg := responseByID(t, msgs, "2")
 	configResult := remarshal[ConfigReadResult](t, configMsg["result"])
 	if configResult.ConfigPath == "" || configResult.SessionDir == "" {
 		t.Fatalf("expected config paths, got %+v", configResult)
+	}
+	if !configResult.Ultra || configResult.MaxParallel != config.DefaultAgentMaxParallel {
+		t.Fatalf("config/read missing Ultra runtime state: %+v", configResult)
 	}
 }
 
@@ -961,9 +968,9 @@ func TestServerConfigModelUpdate(t *testing.T) {
       "base_url": "https://example.test/v1",
       "model": "fake-model"
     }
-  }
+	  }
 }
-`), 0644); err != nil {
+`), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	out := &lockedBuffer{}
@@ -993,6 +1000,99 @@ func TestServerConfigModelUpdate(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"model": "new-model"`) {
 		t.Fatalf("config model was not persisted: %s", data)
+	}
+}
+
+func TestServerConfigModelUpdateSupportsUltraOnly(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  },
+  "agent": {
+    "max_parallel": 2
+  }
+}
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"ultra":true}}`)); err != nil {
+		t.Fatalf("Ultra-only update: %v", err)
+	}
+	result := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if !result.Ultra || result.Model != "fake-model" || result.Provider != "fake-provider" {
+		t.Fatalf("unexpected Ultra-only result: %+v", result)
+	}
+	if result.MaxParallel != config.DefaultAgentMaxParallel {
+		t.Fatalf("runtime max_parallel = %d, want %d", result.MaxParallel, config.DefaultAgentMaxParallel)
+	}
+	if !rt.UltraMode() || rt.Model != "fake-model" || rt.StreamRunner.Model != "fake-model" {
+		t.Fatalf("Ultra-only update changed unrelated runtime: ultra=%t runtime=%q runner=%q", rt.UltraMode(), rt.Model, rt.StreamRunner.Model)
+	}
+	cfg, _, err := config.LoadPath(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if !cfg.Agent.UltraMode || cfg.Agent.MaxParallel != 2 || cfg.Providers["fake-provider"].Model != "fake-model" {
+		t.Fatalf("Ultra-only update changed unrelated config: %+v", cfg)
+	}
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"2","method":"config/model/update","params":{"ultra":false}}`)); err != nil {
+		t.Fatalf("disable Ultra: %v", err)
+	}
+	result = remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "2")["result"])
+	if result.Ultra || rt.UltraMode() {
+		t.Fatalf("Ultra disable was not applied: result=%+v runtime=%t", result, rt.UltraMode())
+	}
+}
+
+func TestServerConfigModelUpdateCombinesUltraAndPreservesNil(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	if err := os.WriteFile(rt.ConfigPath, []byte(`{
+  "default_provider": "fake-provider",
+  "providers": {
+    "fake-provider": {
+      "type": "openai-compatible",
+      "base_url": "https://example.test/v1",
+      "model": "fake-model"
+    }
+  }
+}
+`), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"config/model/update","params":{"model":"new-model","ultra":true}}`)); err != nil {
+		t.Fatalf("combined update: %v", err)
+	}
+	first := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if !first.Ultra || first.Model != "new-model" || !rt.UltraMode() {
+		t.Fatalf("combined update missing state: result=%+v runtime=%t", first, rt.UltraMode())
+	}
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"2","method":"config/model/update","params":{"model":"next-model"}}`)); err != nil {
+		t.Fatalf("nil Ultra update: %v", err)
+	}
+	second := remarshal[ConfigModelUpdateResult](t, responseByID(t, parseOutput(t, out.String()), "2")["result"])
+	if !second.Ultra || second.Model != "next-model" || !rt.UltraMode() {
+		t.Fatalf("nil Ultra did not preserve mode: result=%+v runtime=%t", second, rt.UltraMode())
+	}
+	cfg, _, err := config.LoadPath(rt.ConfigPath)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if !cfg.Agent.UltraMode || cfg.Providers["fake-provider"].Model != "next-model" {
+		t.Fatalf("persisted combined update is inconsistent: %+v", cfg)
 	}
 }
 

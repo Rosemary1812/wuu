@@ -670,7 +670,7 @@ func TestLoadFrom_UserProviderUpdateDoesNotModifyProjectConfig(t *testing.T) {
 	if loadedPath != userPath {
 		t.Fatalf("writable config path = %q, want %q", loadedPath, userPath)
 	}
-	if err := UpdateProviderRuntime(loadedPath, "main", "saved-model", nil, nil, nil, nil, nil, nil); err != nil {
+	if err := UpdateProviderRuntime(loadedPath, "main", "saved-model", nil, nil, nil, nil, nil, nil, nil); err != nil {
 		t.Fatalf("UpdateProviderRuntime: %v", err)
 	}
 
