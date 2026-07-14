@@ -145,7 +145,7 @@ func TestBugReproCancelEmitsTurnInterrupted(t *testing.T) {
 		t.Fatalf("unexpected final turn event: %q", lastTurnEvent)
 	}
 
-	}
+}
 
 func writeMinimalConfig(path string) error {
 	content := `{

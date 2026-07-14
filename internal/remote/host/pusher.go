@@ -19,11 +19,11 @@ import (
 // is set when the hint comes from a turn/completed or turn/error notification
 // and lets the pusher deep-link directly to the relevant thread.
 type HostPushEvent struct {
-	Device   string    // device pub
-	Token    string    // push token (opaque to the host)
-	Platform string    // "ios" | "android"
-	Hint     string    // wire.PushAgentDone | wire.PushNeedsInput
-	ThreadID string    // optional, present for turn-bound hints
+	Device   string // device pub
+	Token    string // push token (opaque to the host)
+	Platform string // "ios" | "android"
+	Hint     string // wire.PushAgentDone | wire.PushNeedsInput
+	ThreadID string // optional, present for turn-bound hints
 	At       time.Time
 }
 
@@ -63,13 +63,13 @@ func shortPub(pub string) string {
 // at most one entry per call (the host's per-device throttle already
 // enforces the rate), so the response map is size one.
 type ExpoPushRequest struct {
-	To       string                  `json:"to"`        // Expo push token
-	Title    string                  `json:"title"`     // shown in the notification
-	Body     string                  `json:"body"`      // shown beneath the title
-	Sound    string                  `json:"sound,omitempty"`
-	Data     map[string]any          `json:"data,omitempty"` // free-form, e.g. {"thread_id": "..."}
-	Priority string                  `json:"priority,omitempty"`
-	TTL      *int                    `json:"ttl,omitempty"`
+	To       string         `json:"to"`    // Expo push token
+	Title    string         `json:"title"` // shown in the notification
+	Body     string         `json:"body"`  // shown beneath the title
+	Sound    string         `json:"sound,omitempty"`
+	Data     map[string]any `json:"data,omitempty"` // free-form, e.g. {"thread_id": "..."}
+	Priority string         `json:"priority,omitempty"`
+	TTL      *int           `json:"ttl,omitempty"`
 }
 
 // ExpoPushResponse is one entry of the Expo Push Service's reply. Status
