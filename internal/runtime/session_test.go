@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/cron"
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/hooks"
+	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memdir"
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	pluginpkg "github.com/blueberrycongee/wuu/internal/plugin"
@@ -29,6 +31,26 @@ import (
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
+
+func TestSessionCleanupClosesMCPManager(t *testing.T) {
+	kit, err := tools.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("tools.New: %v", err)
+	}
+	manager := mcp.NewManager()
+	manager.Configure(map[string]mcp.ServerConfig{
+		"docs": {Name: "docs", Command: "unused"},
+	})
+	kit.SetMCPManager(manager)
+	session := &Session{Toolkit: kit}
+
+	if _, err := session.Cleanup(); err != nil {
+		t.Fatalf("Cleanup: %v", err)
+	}
+	if err := manager.Connect(context.Background(), "docs"); !errors.Is(err, mcp.ErrManagerClosed) {
+		t.Fatalf("Connect after session cleanup error = %v, want ErrManagerClosed", err)
+	}
+}
 
 type sessionRecordingClient struct {
 	mu            sync.Mutex

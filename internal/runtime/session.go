@@ -1250,8 +1250,13 @@ func (s *Session) Cleanup() (process.CleanupResult, error) {
 		return process.CleanupResult{}, nil
 	}
 	var cleanupErr error
+	if s.Toolkit != nil {
+		if manager := s.Toolkit.MCPManager(); manager != nil {
+			cleanupErr = errors.Join(cleanupErr, manager.Close())
+		}
+	}
 	if s.InferenceJournalRuntime != nil {
-		cleanupErr = s.InferenceJournalRuntime.Close()
+		cleanupErr = errors.Join(cleanupErr, s.InferenceJournalRuntime.Close())
 		s.InferenceJournalRuntime = nil
 	}
 	if s.CronScheduler != nil {
