@@ -3481,6 +3481,15 @@ func (c *AgentControl) consumeWorkerNotification(n subagent.Notification) (worke
 	if n.Status == subagent.StatusCompleted && c.maybeNudgeReportClosing(n) {
 		return workerNotificationContinued, nil
 	}
+	// waiting_children: a parent that produced its final message while
+	// direct children are still live holds that result instead of delivering
+	// it. Deferred keeps the durable terminal record, so recovery re-drives
+	// the hold after a crash; in-process, each child's own delivery wakes
+	// the parent through Followup and the integrated completion re-enters
+	// here with no live children left.
+	if n.Status == subagent.StatusCompleted && c.parkWaitingChildren(n) {
+		return workerNotificationDeferred, nil
+	}
 	if isFinalSubAgentStatus(n.Status) {
 		if err := c.ensureTerminalHarnessProjection(n); err != nil {
 			return workerNotificationSettled, err
@@ -4003,6 +4012,50 @@ func (c *AgentControl) finishNestedResultDelivery(resultID string, attempt *nest
 	close(attempt.done)
 }
 
+// parkWaitingChildren holds a completed worker whose direct children are
+// still live. Returns false when there is nothing to wait for, so the
+// caller proceeds with normal terminal delivery.
+func (c *AgentControl) parkWaitingChildren(n subagent.Notification) bool {
+	if c == nil {
+		return false
+	}
+	workerID := firstNonEmptyString(strings.TrimSpace(n.AgentID), strings.TrimSpace(n.Snapshot.ID))
+	if workerID == "" || !c.hasLiveDirectChildren(workerID) {
+		return false
+	}
+	if c.manager != nil {
+		c.manager.MarkWaitingChildren(workerID)
+	}
+	if meta, ok := c.threads.UpdateStatus(workerID, agentthread.StatusWaitingChildren, time.Now().UTC()); ok {
+		if err := c.threadStore.RecordStatus(meta); err != nil {
+			providers.DebugLogf("agentcontrol: persist waiting_children thread status for %s: %v", workerID, err)
+		}
+	}
+	return true
+}
+
+// hasLiveDirectChildren reports whether any direct child of the worker is
+// still non-terminal on an open edge. waiting_children children count as
+// live: their own held results have not integrated yet.
+func (c *AgentControl) hasLiveDirectChildren(workerID string) bool {
+	if c == nil || c.threads == nil {
+		return false
+	}
+	for _, meta := range c.threads.List() {
+		if strings.TrimSpace(meta.ParentID) != workerID {
+			continue
+		}
+		if meta.Source.EdgeStatus == agentthread.EdgeClosed {
+			continue
+		}
+		switch meta.Status {
+		case agentthread.StatusPending, agentthread.StatusRunning, agentthread.StatusWaitingChildren:
+			return true
+		}
+	}
+	return false
+}
+
 func (c *AgentControl) isRootChildSnapshot(snap subagent.SubAgentSnapshot) bool {
 	parentID := strings.TrimSpace(snap.ParentID)
 	if parentID == "" || parentID == c.sessionID || parentID == c.rootThreadID {
@@ -4195,7 +4248,7 @@ func (c *AgentControl) rehydrateAgent(id string) (*subagent.SubAgent, error) {
 	if run.Version < subagent.ResumeSnapshotVersion {
 		return nil, fmt.Errorf("cannot resume agent %q: this snapshot predates resume support; re-spawn the task instead", id)
 	}
-	if !isFinalSubAgentStatus(run.Status) {
+	if !isFinalSubAgentStatus(run.Status) && run.Status != subagent.StatusWaitingChildren {
 		return nil, fmt.Errorf("cannot resume agent %q: snapshot status %q is not resumable", id, run.Status)
 	}
 	workerRoot := strings.TrimSpace(run.CWD)
@@ -4494,6 +4547,8 @@ func threadStatusFromSubAgent(status subagent.Status) agentthread.Status {
 		return agentthread.StatusPending
 	case subagent.StatusRunning:
 		return agentthread.StatusRunning
+	case subagent.StatusWaitingChildren:
+		return agentthread.StatusWaitingChildren
 	case subagent.StatusCompleted:
 		return agentthread.StatusCompleted
 	case subagent.StatusFailed:

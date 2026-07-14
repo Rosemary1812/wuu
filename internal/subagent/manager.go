@@ -970,9 +970,12 @@ func (m *Manager) Restore(opts RestoreOptions) (*SubAgent, error) {
 	// registered in a non-terminal state: a dead "running" entry would
 	// permanently pollute CountRunning (and with it every max-parallel
 	// gate). A snapshot that still claims to be live was written by a
-	// process that died mid-run — register it as interrupted.
+	// process that died mid-run — register it as interrupted. A parked
+	// waiting_children run is the exception: it had no live goroutine by
+	// design, so the parked state survives restart and child deliveries
+	// resume it normally.
 	status := run.Status
-	if !IsTerminal(status) {
+	if !IsTerminal(status) && status != StatusWaitingChildren {
 		status = StatusInterrupted
 	}
 	sa := &SubAgent{
@@ -1045,15 +1048,58 @@ func (m *Manager) Wait(ctx context.Context, id string) (SubAgentSnapshot, error)
 	if sa == nil {
 		return SubAgentSnapshot{}, fmt.Errorf("subagent %q not found", id)
 	}
-	sa.mu.Lock()
-	doneCh := sa.doneCh
-	sa.mu.Unlock()
-	select {
-	case <-doneCh:
-		return sa.Snapshot(), nil
-	case <-ctx.Done():
-		return sa.Snapshot(), ctx.Err()
+	// A waiting_children park closes the turn's doneCh without a terminal
+	// status: the run resumes on child delivery with a fresh doneCh. Poll
+	// across parks so a synchronous caller keeps waiting for the one final
+	// result instead of returning the held intermediate state.
+	waitPoll := time.NewTicker(50 * time.Millisecond)
+	defer waitPoll.Stop()
+	for {
+		sa.mu.Lock()
+		doneCh := sa.doneCh
+		sa.mu.Unlock()
+		select {
+		case <-doneCh:
+		case <-ctx.Done():
+			return sa.Snapshot(), ctx.Err()
+		}
+		snap := sa.Snapshot()
+		if snap.Status != StatusWaitingChildren {
+			return snap, nil
+		}
+		select {
+		case <-waitPoll.C:
+		case <-ctx.Done():
+			return sa.Snapshot(), ctx.Err()
+		}
 	}
+}
+
+// MarkWaitingChildren parks a completed run whose direct children are still
+// live: the held result stays on the snapshot, no goroutine runs, and a
+// child delivery resumes the run through Followup. Only a StatusCompleted
+// run parks; any other state is left untouched.
+func (m *Manager) MarkWaitingChildren(id string) (SubAgentSnapshot, bool) {
+	sa := m.Get(id)
+	if sa == nil {
+		return SubAgentSnapshot{}, false
+	}
+	sa.mu.Lock()
+	if sa.Status != StatusCompleted {
+		snap := snapshotLocked(sa)
+		sa.mu.Unlock()
+		return snap, false
+	}
+	sa.Status = StatusWaitingChildren
+	snap := snapshotLocked(sa)
+	sa.mu.Unlock()
+	if err := persistHistory(sa); err != nil {
+		// The park is advisory state over a durably completed run; a
+		// persist failure must not lose the run, so surface and continue.
+		providers.DebugLogf("subagent: persist waiting_children for %s: %v", id, err)
+	}
+	m.BroadcastSnapshot(sa)
+	return snap, true
 }
 
 // CountRunning returns the number of sub-agents currently in

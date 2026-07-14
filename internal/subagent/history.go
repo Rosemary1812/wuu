@@ -125,7 +125,10 @@ func MarkPersistedRunInterrupted(path, reason string, now time.Time) (bool, erro
 	if err := json.Unmarshal(data, &rec); err != nil {
 		return false, err
 	}
-	if IsTerminal(Status(rec.Status)) {
+	// waiting_children is non-terminal but has no live goroutine by design:
+	// the parked state must survive crash repair so child deliveries resume
+	// it instead of reconciliation stamping it interrupted.
+	if IsTerminal(Status(rec.Status)) || Status(rec.Status) == StatusWaitingChildren {
 		return false, nil
 	}
 	rec.Status = string(StatusInterrupted)

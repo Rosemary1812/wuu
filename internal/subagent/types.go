@@ -34,6 +34,13 @@ const (
 	// error of its own — only the reconciliation reason. Interrupted runs
 	// are resumable through Followup exactly like other terminal states.
 	StatusInterrupted Status = "interrupted"
+	// StatusWaitingChildren parks a run that produced its final message
+	// while direct children were still live. The result is held (not yet
+	// delivered to the parent), no goroutine runs and no execution slot is
+	// consumed; a child delivery resumes the run through Followup so it can
+	// integrate the results before one final parent delivery. Not terminal:
+	// the run becomes terminal only once no direct child remains live.
+	StatusWaitingChildren Status = "waiting_children"
 )
 
 // IsTerminal reports whether the status is a terminal lifecycle state — the

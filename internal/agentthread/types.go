@@ -10,6 +10,10 @@ const (
 	StatusCompleted Status = "completed"
 	StatusFailed    Status = "failed"
 	StatusCancelled Status = "cancelled"
+	// StatusWaitingChildren mirrors subagent.StatusWaitingChildren: the
+	// thread's run finished its final message but holds delivery while
+	// direct children are still live.
+	StatusWaitingChildren Status = "waiting_children"
 )
 
 type SourceKind string

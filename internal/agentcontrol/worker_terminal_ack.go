@@ -445,6 +445,14 @@ func (c *AgentControl) startPendingWorkerTerminalRecovery(rec workerTerminalFina
 		return
 	}
 	workerID := strings.TrimSpace(rec.AgentID)
+	// A parked waiting_children parent keeps its terminal record deferred on
+	// purpose: the wake path (child delivery -> Followup -> fresh terminal)
+	// owns re-driving it. Rescanning it every poll would just re-park.
+	if c.manager != nil {
+		if sa := c.manager.Get(workerID); sa != nil && sa.Snapshot().Status == subagent.StatusWaitingChildren {
+			return
+		}
+	}
 	c.workerTerminalRecoveryMu.Lock()
 	if c.workerTerminalRecovering == nil {
 		c.workerTerminalRecovering = make(map[string]struct{})
