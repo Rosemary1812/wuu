@@ -472,29 +472,42 @@ func (s *Store) UpsertQueueItem(item QueueItem) error {
 }
 
 func (s *Store) DeleteQueueItem(id string) error {
+	_, err := s.ClaimQueueItem(id)
+	return err
+}
+
+func (s *Store) ClaimQueueItem(id string) (bool, error) {
 	if s == nil || s.dir == "" {
-		return nil
+		return false, nil
 	}
 	release, err := s.lockStore()
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer release()
 	if err := s.ensureDirLocked(); err != nil {
-		return err
+		return false, err
 	}
 	items, err := s.loadQueueLocked()
 	if err != nil {
-		return err
+		return false, err
 	}
 	out := items[:0]
+	found := false
 	for _, item := range items {
 		if item.ID == id {
+			found = true
 			continue
 		}
 		out = append(out, item)
 	}
-	return writeJSONFile(filepath.Join(s.dir, "queue.json"), out)
+	if !found {
+		return false, nil
+	}
+	if err := writeJSONFile(filepath.Join(s.dir, "queue.json"), out); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *Store) ListQueueItems() ([]QueueItem, error) {

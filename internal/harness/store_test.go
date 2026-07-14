@@ -215,6 +215,61 @@ func TestStorePersistsQueueItems(t *testing.T) {
 	}
 }
 
+func TestStoreClaimQueueItemAcrossInstances(t *testing.T) {
+	dir := t.TempDir()
+	storeA := NewStore(dir)
+	storeB := NewStore(dir)
+	if err := storeA.UpsertQueueItem(QueueItem{
+		ID:     "queue-1",
+		TaskID: "worker-1",
+		Kind:   "agent_spawn",
+	}); err != nil {
+		t.Fatalf("UpsertQueueItem: %v", err)
+	}
+
+	start := make(chan struct{})
+	results := make(chan bool, 2)
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, store := range []*Store{storeA, storeB} {
+		wg.Add(1)
+		go func(store *Store) {
+			defer wg.Done()
+			<-start
+			claimed, err := store.ClaimQueueItem("queue-1")
+			if err != nil {
+				errs <- err
+				return
+			}
+			results <- claimed
+		}(store)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		t.Fatalf("ClaimQueueItem: %v", err)
+	}
+
+	claimed := 0
+	for result := range results {
+		if result {
+			claimed++
+		}
+	}
+	if claimed != 1 {
+		t.Fatalf("successful claims = %d, want 1", claimed)
+	}
+	items, err := storeA.ListQueueItems()
+	if err != nil {
+		t.Fatalf("ListQueueItems: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected queue empty, got %+v", items)
+	}
+}
+
 // TestSubmitReportKindPrecedence locks the stand-in rules: a synthesized
 // final_text report never lands when the task already has any report, and a
 // structured submission supersedes a previously recorded stand-in — so
