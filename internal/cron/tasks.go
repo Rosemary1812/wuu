@@ -97,7 +97,30 @@ func (s *TaskStore) save(tasks []Task) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, append(data, '\n'), 0o644)
+
+	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".scheduled-tasks-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(append(data, '\n')); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, s.path)
 }
 
 func (s *TaskStore) List() ([]Task, error) {
@@ -105,50 +128,72 @@ func (s *TaskStore) List() ([]Task, error) {
 }
 
 func (s *TaskStore) Add(task Task) error {
-	tasks, err := s.load()
-	if err != nil {
-		return err
-	}
-	if len(tasks) >= MaxJobs {
-		return fmt.Errorf("maximum number of scheduled tasks reached (%d)", MaxJobs)
-	}
-	tasks = append(tasks, task)
-	return s.save(tasks)
+	return s.update(func(tasks []Task) ([]Task, error) {
+		if len(tasks) >= MaxJobs {
+			return nil, fmt.Errorf("maximum number of scheduled tasks reached (%d)", MaxJobs)
+		}
+		return append(tasks, task), nil
+	})
 }
 
 func (s *TaskStore) Remove(ids ...string) error {
-	tasks, err := s.load()
-	if err != nil {
-		return err
-	}
-	idSet := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		idSet[id] = struct{}{}
-	}
-	filtered := make([]Task, 0, len(tasks))
-	for _, t := range tasks {
-		if _, ok := idSet[t.ID]; !ok {
-			filtered = append(filtered, t)
+	return s.update(func(tasks []Task) ([]Task, error) {
+		idSet := make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			idSet[id] = struct{}{}
 		}
-	}
-	return s.save(filtered)
+		filtered := make([]Task, 0, len(tasks))
+		for _, t := range tasks {
+			if _, ok := idSet[t.ID]; !ok {
+				filtered = append(filtered, t)
+			}
+		}
+		return filtered, nil
+	})
 }
 
 func (s *TaskStore) UpdateLastFired(ids []string, firedAt int64) error {
+	return s.update(func(tasks []Task) ([]Task, error) {
+		idSet := make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			idSet[id] = struct{}{}
+		}
+		for i := range tasks {
+			if _, ok := idSet[tasks[i].ID]; ok {
+				tasks[i].LastFiredAt = firedAt
+			}
+		}
+		return tasks, nil
+	})
+}
+
+// update serializes the read-modify-write transaction across app-server
+// processes. The lock file is intentionally kept after unlock: removing it
+// could let a new caller lock a different inode while another caller is still
+// waiting on the old one.
+func (s *TaskStore) update(apply func([]Task) ([]Task, error)) error {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+		return err
+	}
+	lock, err := os.OpenFile(s.path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := flockExclusive(lock); err != nil {
+		return err
+	}
+	defer flockUnlock(lock)
+
 	tasks, err := s.load()
 	if err != nil {
 		return err
 	}
-	idSet := make(map[string]struct{}, len(ids))
-	for _, id := range ids {
-		idSet[id] = struct{}{}
+	next, err := apply(tasks)
+	if err != nil {
+		return err
 	}
-	for i := range tasks {
-		if _, ok := idSet[tasks[i].ID]; ok {
-			tasks[i].LastFiredAt = firedAt
-		}
-	}
-	return s.save(tasks)
+	return s.save(next)
 }
 
 func (s *SessionTaskStore) List() ([]Task, error) {

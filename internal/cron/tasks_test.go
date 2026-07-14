@@ -3,6 +3,7 @@ package cron
 import (
 	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -52,6 +53,53 @@ func TestTaskStore_MaxJobs(t *testing.T) {
 	err := store.Add(Task{ID: "overflow", Cron: "* * * * *", Prompt: "x"})
 	if err == nil {
 		t.Fatal("expected error when exceeding max jobs")
+	}
+}
+
+func TestTaskStore_ConcurrentAddsPreserveEveryTask(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tasks.json")
+	const taskCount = 40
+
+	start := make(chan struct{})
+	errs := make(chan error, taskCount)
+	var wg sync.WaitGroup
+	for i := 0; i < taskCount; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			errs <- NewTaskStore(path).Add(Task{
+				ID:     fmt.Sprintf("task-%02d", i),
+				Cron:   "* * * * *",
+				Prompt: "concurrent task",
+			})
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent Add: %v", err)
+		}
+	}
+
+	tasks, err := NewTaskStore(path).List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(tasks) != taskCount {
+		t.Fatalf("stored tasks = %d, want %d", len(tasks), taskCount)
+	}
+	seen := make(map[string]bool, taskCount)
+	for _, task := range tasks {
+		seen[task.ID] = true
+	}
+	for i := 0; i < taskCount; i++ {
+		id := fmt.Sprintf("task-%02d", i)
+		if !seen[id] {
+			t.Fatalf("concurrent Add lost %s", id)
+		}
 	}
 }
 
