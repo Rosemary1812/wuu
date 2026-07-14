@@ -127,8 +127,8 @@
   padding: 12px 14px;
   text-align: left;
   transition:
-    background 120ms ease,
-    border-color 120ms ease;
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
 }
 
 .turn-collapsed-button:hover,
@@ -305,7 +305,7 @@
                                         
 .user-message-block.user-message-jump-flash > .user-message,
 .user-message-block.user-message-jump-flash > .user-message-edit {
-  animation: user-message-jump-flash 1.6s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: user-message-jump-flash 1.6s var(--ease-out);
 }
 
 @keyframes user-message-jump-flash {
@@ -385,8 +385,8 @@
   line-height: 1;
   padding: 0;
   transition:
-    background-color 120ms ease,
-    color 120ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 
 .user-message-expand-toggle:hover,
@@ -418,7 +418,7 @@
   border: 1px solid var(--hairline-soft);
   padding: 12px 16px 12px;
   color: var(--ink);
-  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  transition: background-color var(--motion-base) var(--ease-out), border-color var(--motion-base) var(--ease-out), box-shadow var(--motion-base) var(--ease-out);
 }
 
 .user-message-edit.user-message-edit-drop-active {
@@ -504,7 +504,7 @@
   background: transparent;
   color: var(--ink-muted);
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 
 .user-message-edit-attach-button:hover:not(:disabled) {
@@ -535,7 +535,7 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   line-height: 1;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+  transition: background-color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
 }
 
 .user-message-edit-button.secondary {
@@ -704,11 +704,11 @@
   pointer-events: none;
   transform: var(--message-copy-rest-transform);
   transition:
-    background-color 120ms ease,
-    box-shadow 120ms ease,
-    color 120ms ease,
-    opacity 120ms ease,
-    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .message-copy-button:hover,
@@ -850,7 +850,7 @@
   color: var(--ink);
   box-shadow: 0 2px 8px var(--ink-overlay-12);
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 
 .message-image-remove:hover,
@@ -892,375 +892,402 @@
   max-width: min(var(--conversation-split-message-max-width, 760px), 100%);
 }
 
-.context-composition-card {
-  width: 100%;
-  max-width: none;
-  margin: 2px 0 22px;
-}
-
-.conversation-split-width .context-composition-card {
-  width: 100%;
-}
-
-/* The card is a system artifact, not a primary message. Keep a hairline
- * border so it reads as a discrete surface inside the conversation flow,
- * but drop the gradient and the heavy shadow — the dual layered backgrounds
- * were making the card look like a sub-card stacked on the message. The
- * surface-1 background gives it a softer tint than the conversation paper
- * without competing with it. Padding and inner gap are intentionally
- * generous so the headline, bar, and category list have room to breathe. */
-.context-composition-card-inner {
-  display: grid;
-  gap: 18px;
-  overflow: hidden;
-  border: 1px solid var(--ink-overlay-12);
-  border-radius: 14px;
-  background: var(--surface-1);
-  padding: 18px 22px;
-}
-
-.context-composition-card .context-composition-header {
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.context-composition-card .context-composition-title-block {
-  flex: 1;
-  min-width: 0;
-}
-
-.context-composition-card .context-composition-header h2 {
-  font-size: 17px;
-  line-height: 1.25;
-}
-
-.context-composition-card .context-composition-header p {
-  margin-top: 4px;
-  font-size: var(--font-xs);
-  line-height: 1.5;
-  color: var(--ink-tertiary);
-}
-
-.context-composition-card .context-composition-runtime {
-  padding-top: 5px;
-  font-size: var(--font-xs);
-  color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.context-composition-card .context-composition-dismiss {
-  width: 30px;
-  height: 30px;
-  color: var(--ink-muted);
-}
-
-.context-composition-card .context-composition-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.context-composition-card .context-composition-headline {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.context-composition-card .context-composition-headline strong {
-  font-size: 22px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-
-.context-composition-card .context-composition-headline-unit {
-  font-size: var(--font-sm);
-  color: var(--ink-tertiary);
-}
-
-.context-composition-card .context-composition-headline-percent {
-  margin-left: auto;
-  font-size: var(--font-sm);
-  color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.context-composition-card .context-composition-summary-meta {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  font-size: var(--font-xs);
-  color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.context-composition-card .context-composition-bar {
-  /* Match the environment.css base height so the capacity gauge stays
-   * consistent wherever the context composition bar appears. The card
-   * version keeps the same 20px track height as the base; the explicit
-   * override is here so a future card-specific tweak (e.g. an extra side
-   * gutter for breathing room) does not have to reach across files to
-   * read the bar's geometry. */
-  height: 20px;
-}
-
-.context-composition-card .context-composition-section {
-  /* Extra breathing room between the "组成" header and the first row.
-   * Without the inner sub-card border, the header needs a bit more air
-   * to anchor the section. */
-  gap: 10px;
-}
-
-/* Category row: flex layout stays (label + tag + tokens + percent flow
- * inline), but the row claims left padding to host the swatch as an
- * absolutely positioned accent stripe. Padding top/bottom is intentionally
- * generous (7px) so the rows feel like distinct lines, not a packed table.
- * min-height keeps short rows (e.g. "本轮前缀 91 0%") from collapsing. */
-.context-composition-card .context-category-row {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 30px;
-  padding: 7px 0 7px 14px;
-}
-
-.context-composition-card .context-category-swatch {
-  /* The swatch is no longer a chip — it is a 2px vertical accent stripe
-   * anchored to the row's left edge. It uses zero horizontal text space,
-   * so the label can claim the full row width. top/bottom insets keep the
-   * stripe from kissing the row's edges. */
-  position: absolute;
-  left: 2px;
-  top: 9px;
-  bottom: 9px;
-  width: 2px;
-  border-radius: 1px;
-}
-
-.context-composition-card .context-category-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.context-composition-card .context-category-tag {
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--ink-overlay-6);
-  font-size: var(--font-xs);
-  color: var(--ink-muted);
-  flex-shrink: 0;
-  /* Pull the tag slightly toward the label so the chip reads as a
-   * qualifier of that label rather than a sibling at full flex gap. */
-  margin-left: -2px;
-}
-
-.context-composition-card .context-category-tokens {
-  min-width: 3.5em;
-  font-size: 14px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  flex-shrink: 0;
-}
-
-.context-composition-card .context-category-percent {
-  min-width: 2.5em;
-  font-size: var(--font-xs);
-  color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  flex-shrink: 0;
-}
-
-@media (max-width: 760px) {
-  .context-composition-card {
-    width: 100%;
-  }
-  /* Drop the percent column on narrow widths — the row is already carrying
-   * swatch, label, optional tag, and tokens, and the percent repeats the
-   * headline's ratio. Removing it lets the tokens number align to the
-   * right edge without the row needing to wrap. */
-  .context-category-percent {
-    display: none;
-  }
-}
-
-/* Instruction files card — mirrors the context-composition card surface so
- * the 指令文件 block reads as a discrete system artifact in the stream. */
+/*
+ * System artifact cards (/context, /instructions)
+ *
+ * One flat container per card: a single hairline frame on surface-1 with a
+ * single padded grid inside — no header strip, no sub-borders, no nested
+ * boxes. The content identifies the card (the gauge reads as /context, the
+ * file rows as /instructions), so chrome that would restate it is omitted
+ * on purpose: a semantic appears once, as a figure or as a word, never
+ * both. The dismiss control reveals on hover/focus like message actions,
+ * keeping the resting card free of controls. All of both cards' styling
+ * lives here; nothing is split across other files.
+ */
+.context-composition-card,
 .instruction-files-card {
   width: 100%;
   max-width: none;
   margin: 2px 0 22px;
 }
 
+.conversation-split-width .context-composition-card,
+.conversation-split-width .instruction-files-card {
+  width: 100%;
+}
+
+.context-composition-card-inner,
 .instruction-files-card-inner {
+  position: relative;
   display: grid;
-  gap: 16px;
-  overflow: hidden;
-  border: 1px solid var(--ink-overlay-12);
-  border-radius: 14px;
+  border: 1px solid var(--ink-overlay-8);
+  border-radius: var(--radius-lg);
   background: var(--surface-1);
-  padding: 18px 22px;
+  padding: 16px 18px;
 }
 
-.instruction-files-card .instruction-files-header {
+.context-composition-card-inner {
+  gap: 16px;
+}
+
+.instruction-files-card-inner {
+  gap: 14px;
+}
+
+.context-composition-dismiss,
+.instruction-files-dismiss {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  color: var(--ink-muted);
+  opacity: 0;
+  transition:
+    opacity var(--motion-base) var(--ease-out),
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.context-composition-card-inner:hover .context-composition-dismiss,
+.context-composition-card-inner:focus-within .context-composition-dismiss,
+.instruction-files-card-inner:hover .instruction-files-dismiss,
+.instruction-files-card-inner:focus-within .instruction-files-dismiss {
+  opacity: 1;
+}
+
+/* Loading / error / empty read as quiet inline notes, not boxed alerts —
+ * the card frame already carries the surface. */
+.context-composition-state,
+.instruction-files-state {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.instruction-files-card .instruction-files-title-block {
-  flex: 1;
-  min-width: 0;
-}
-
-.instruction-files-card .instruction-files-header h2 {
-  font-size: 17px;
-  line-height: 1.25;
-}
-
-.instruction-files-card .instruction-files-header p {
-  margin-top: 4px;
-  font-size: var(--font-xs);
-  line-height: 1.5;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  font-size: var(--font-sm);
   color: var(--ink-tertiary);
 }
 
-.instruction-files-card .instruction-files-count {
-  padding-top: 5px;
+.context-composition-state .icon,
+.instruction-files-state .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--ink-muted);
+}
+
+.context-composition-state.error,
+.instruction-files-state.error {
+  color: var(--danger, var(--instruction-files-error-fallback));
+}
+
+.context-composition-state.error .icon,
+.instruction-files-state.error .icon {
+  color: inherit;
+}
+
+/* --- /context: occupancy gauge --- */
+
+.context-composition-gauge {
+  display: grid;
+  gap: 10px;
+}
+
+.context-composition-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.context-composition-headline strong {
+  font-size: 24px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--ink-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The slash gets air on both sides and steps back in color so the two
+ * figures read as separate numbers at a glance. */
+.context-composition-headline-divider {
+  margin: 0 7px;
+  color: var(--ink-muted);
+  font-weight: var(--weight-medium);
+}
+
+.context-composition-headline-percent {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  color: var(--ink-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Slim segmented gauge: the track is free capacity, the flat tone segments
+ * are the fill. 2px notches keep category boundaries readable without
+ * per-segment chrome; the legend rows below carry the detail. min-width
+ * keeps a sliver-sized category visible instead of vanishing at 0px. */
+.context-composition-bar {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--ink-overlay-6);
+}
+
+.context-composition-segment {
+  flex: 0 0 auto;
+  height: 100%;
+  min-width: 2px;
+  background: var(--ink-overlay-18);
+}
+
+.context-composition-segment.tone-system,
+.context-category-row.tone-system .context-category-swatch {
+  background: var(--env-tone-system);
+}
+
+.context-composition-segment.tone-stable,
+.context-category-row.tone-stable .context-category-swatch {
+  background: var(--env-tone-stable);
+}
+
+.context-composition-segment.tone-turn,
+.context-category-row.tone-turn .context-category-swatch {
+  background: var(--env-tone-turn);
+}
+
+.context-composition-segment.tone-tail,
+.context-category-row.tone-tail .context-category-swatch {
+  background: var(--env-tone-tail);
+}
+
+.context-composition-segment.tone-dynamic,
+.context-category-row.tone-dynamic .context-category-swatch {
+  background: var(--env-tone-dynamic);
+}
+
+.context-composition-segment.tone-tools,
+.context-category-row.tone-tools .context-category-swatch {
+  background: var(--env-tone-tools);
+}
+
+.context-composition-segment.tone-deferred,
+.context-category-row.tone-deferred .context-category-swatch {
+  background: var(--env-tone-deferred);
+}
+
+.context-composition-summary-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.context-composition-meta-item {
+  font-size: var(--font-xs);
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.context-composition-meta-item strong {
+  font-weight: var(--weight-medium);
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.context-composition-runtime {
+  margin-left: auto;
   font-size: var(--font-xs);
   color: var(--ink-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.instruction-files-card .instruction-files-dismiss {
-  width: 30px;
-  height: 30px;
-  color: var(--ink-muted);
+/* --- /context: category legend --- */
+
+.context-category-list {
+  display: grid;
+  min-height: 0;
+  overflow-y: auto;
 }
 
-.instruction-files-card .instruction-files-state {
+.context-category-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: var(--font-xs);
-  color: var(--ink-tertiary);
+  gap: 10px;
+  min-height: 30px;
 }
 
-.instruction-files-card .instruction-files-state.error {
-  color: var(--danger, var(--instruction-files-error-fallback));
-}
-
-.instruction-files-card .instruction-files-groups {
-  display: grid;
-  gap: 16px;
-}
-
-.instruction-files-card .instruction-files-group-header {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.instruction-files-card .instruction-files-group-label {
-  font-size: var(--font-sm, 13px);
-  font-weight: 600;
-  color: var(--ink-secondary);
-}
-
-.instruction-files-card .instruction-files-group-hint {
-  font-size: var(--font-xs);
+.context-category-row.is-excluded .context-category-label,
+.context-category-row.is-excluded .context-category-tokens {
   color: var(--ink-muted);
 }
 
-.instruction-files-card .instruction-files-list {
-  display: grid;
-  gap: 6px;
+.context-category-row.is-excluded .context-category-swatch {
+  opacity: 0.45;
 }
 
-.instruction-files-card .instruction-file-row {
-  border: 1px solid var(--ink-overlay-08, var(--ink-overlay-12));
-  border-radius: 10px;
-  overflow: hidden;
+.context-category-swatch {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--ink-overlay-18);
 }
 
-.instruction-files-card .instruction-file-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 12px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  text-align: left;
-  color: var(--ink-primary);
-}
-
-.instruction-files-card .instruction-file-toggle:hover {
-  background: var(--ink-overlay-04, var(--surface-2, transparent));
-}
-
-.instruction-files-card .instruction-file-chevron,
-.instruction-files-card .instruction-file-icon {
-  flex-shrink: 0;
-  color: var(--ink-muted);
-}
-
-.instruction-files-card .instruction-file-name {
-  font-weight: 600;
-  font-size: var(--font-sm, 13px);
-  white-space: nowrap;
-}
-
-.instruction-files-card .instruction-file-path {
+.context-category-label {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  direction: rtl;
-  text-align: left;
-  font-size: var(--font-xs);
-  color: var(--ink-tertiary);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-medium);
+  color: var(--ink);
+}
+
+.context-category-tag {
+  flex-shrink: 0;
+  margin-left: -2px;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  background: var(--ink-overlay-6);
+  font-size: 10px;
+  font-weight: var(--weight-medium);
+  line-height: 16px;
+  color: var(--ink-muted);
+}
+
+.context-category-tokens {
+  flex-shrink: 0;
+  min-width: 3.5em;
+  text-align: right;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 
-.instruction-files-card .instruction-file-size {
+.context-category-percent {
+  flex-shrink: 0;
+  min-width: 2.8em;
+  text-align: right;
+  font-size: var(--font-xs);
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* --- /instructions: grouped file list --- */
+
+.instruction-files-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.instruction-files-group {
+  display: grid;
+  gap: 3px;
+}
+
+.instruction-files-group-label {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+}
+
+.instruction-files-list {
+  display: grid;
+}
+
+/* Rows are borderless; the hover/expanded tint is the only chrome. The
+ * negative margin lets the tint bleed past the text column so the row
+ * reads as a full-width control while the type stays on the card grid. */
+.instruction-file-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.instruction-file-toggle:hover,
+.instruction-file-row.expanded .instruction-file-toggle {
+  background: var(--ink-overlay-4);
+}
+
+.instruction-file-toggle:focus-visible {
+  outline: 0;
+  box-shadow: inset 0 0 0 2px var(--ink-overlay-18);
+}
+
+.instruction-file-chevron {
+  width: 13px;
+  height: 13px;
+  color: var(--ink-faint);
+  transition: transform var(--motion-base) var(--ease-out);
+}
+
+.instruction-file-row.expanded .instruction-file-chevron {
+  transform: rotate(90deg);
+}
+
+.instruction-file-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--ink-muted);
+}
+
+.instruction-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.instruction-file-size {
   flex-shrink: 0;
   font-size: var(--font-xs);
   color: var(--ink-muted);
   font-variant-numeric: tabular-nums;
 }
 
-.instruction-files-card .instruction-file-preview {
-  margin: 0;
-  padding: 12px 14px;
-  max-height: 320px;
+/* The preview is a soft inset block, not a bordered well; the left inset
+ * aligns it under the file name column (chevron 13px + row gap 9px). */
+.instruction-file-preview {
+  margin: 4px 0 6px 22px;
+  padding: 10px 12px;
+  max-height: 300px;
   overflow: auto;
-  border-top: 1px solid var(--ink-overlay-08, var(--ink-overlay-12));
-  background: var(--surface-2, var(--surface-1));
-  font-family: var(--font-mono, monospace);
+  border-radius: var(--radius-sm);
+  background: var(--ink-overlay-4);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: var(--font-xs);
-  line-height: 1.55;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--ink-secondary);
+  color: var(--ink-soft);
 }
 
 @media (max-width: 760px) {
-  .instruction-files-card {
-    width: 100%;
-  }
-  .instruction-files-card .instruction-file-path {
+  /* The percent column repeats the ratio the tokens column and headline
+   * already carry; it is the first thing to go at narrow widths. */
+  .context-category-percent {
     display: none;
   }
 }
@@ -1298,9 +1325,9 @@
   pointer-events: none;
   transform: translateY(-2px);
   transition:
-    color 120ms ease,
-    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 170ms cubic-bezier(0.16, 1, 0.3, 1);
+    color var(--motion-fast) var(--ease-out),
+    opacity var(--motion-base) var(--ease-out),
+    transform var(--motion-base) var(--ease-out);
 }
 
 .agent-block-with-action-slot:hover .agent-message-actions,
@@ -1331,9 +1358,9 @@
   position: relative;
   transform: none;
   transition:
-    background-color 160ms ease,
-    color 160ms ease,
-    transform 120ms ease;
+    background-color var(--motion-base) var(--ease-out),
+    color var(--motion-base) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .message-actions .message-action-button:hover,
@@ -1387,7 +1414,7 @@
 
 /* Transient bounce on the like icon right after a click. */
 .message-actions .message-action-button--like.is-pulsing .icon {
-  animation: message-action-like-bounce 520ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: message-action-like-bounce 520ms var(--ease-bounce);
 }
 
 /* Transient shake on the dislike icon right after a click. */
@@ -1407,7 +1434,7 @@
   padding: 2px 5px;
   border-radius: var(--radius-pill);
   box-shadow: var(--shadow-soft);
-  animation: message-action-burst-rise 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: message-action-burst-rise 700ms var(--ease-out) forwards;
 }
 
 .message-action-burst--like {
@@ -1561,7 +1588,7 @@
 
                                                                          
 .streaming-markdown[data-cursor-state="fading"] .stream-cursor {
-  transition: opacity 200ms ease-out;
+  transition: opacity var(--motion-base) var(--ease-out);
   opacity: 0;
 }
 
@@ -2250,12 +2277,12 @@
 }
 
 .process-text-motion-current.process-text-motion-enter {
-  animation: process-text-rise-in 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  animation: process-text-rise-in var(--motion-base) var(--ease-out) both;
 }
 
 .process-text-motion-exit {
   pointer-events: none;
-  animation: process-text-rise-out 140ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  animation: process-text-rise-out var(--motion-base) var(--ease-out) both;
 }
 
 /* Visible gray process labels sweep while the turn is running. We use
@@ -2363,7 +2390,7 @@
 }
 
 .process-surface-count.is-changing {
-  animation: process-surface-count-jump 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: process-surface-count-jump var(--motion-base) var(--ease-out);
 }
 
 .process-surface-row.is-live-gray,
@@ -2447,7 +2474,7 @@
   color: currentColor;
   opacity: 0.7;
   transform: rotate(0deg);
-  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform var(--motion-base) var(--ease-out);
 }
 
 .process-surface-fold[open] > .process-surface-row .process-surface-chevron {
@@ -2896,8 +2923,8 @@
   opacity: 0.5;
   pointer-events: auto;
   transition:
-    color 120ms ease,
-    opacity 120ms ease;
+    color var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out);
 }
 
 .rich-code-block:hover .rich-code-copy,
@@ -3000,7 +3027,7 @@
 
 .fork-worktree-chevron {
   color: var(--ink-muted);
-  transition: transform 160ms ease;
+  transition: transform var(--motion-base) var(--ease-out);
 }
 
 .fork-worktree-card[open] .fork-worktree-chevron {
@@ -3292,7 +3319,7 @@
   color: currentColor;
   opacity: 0.7;
   transform: rotate(0deg);
-  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform var(--motion-base) var(--ease-out);
 }
 
 .turn-reasoning-fold[open] > .turn-reasoning-summary .turn-reasoning-chevron {
@@ -3310,8 +3337,8 @@
   grid-template-rows: 0fr;
   opacity: 0;
   transition:
-    grid-template-rows 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 160ms cubic-bezier(0.16, 1, 0.3, 1);
+    grid-template-rows var(--motion-slow) var(--ease-out),
+    opacity var(--motion-base) var(--ease-out);
 }
 
 .turn-reasoning-fold[open] > .turn-reasoning-body {
@@ -3736,7 +3763,7 @@ pre {
   -webkit-backdrop-filter: blur(24px) saturate(1.18);
   backdrop-filter: blur(24px) saturate(1.18);
   box-shadow: 0 24px 64px color-mix(in srgb, var(--ink) 12%, transparent);
-  animation: wuu-launch-glass-enter 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: wuu-launch-glass-enter 620ms var(--ease-out) both;
 }
 
 .wuu-launch-glass::before {
@@ -3769,7 +3796,7 @@ pre {
   pointer-events: none;
   transform: translate3d(-120%, 0, 0) rotate(9deg);
   will-change: transform, opacity;
-  animation: wuu-launch-glass-sweep 3600ms cubic-bezier(0.16, 1, 0.3, 1) 480ms infinite;
+  animation: wuu-launch-glass-sweep 3600ms var(--ease-out) 480ms infinite;
 }
 
 .wuu-launch-carving {
@@ -3875,7 +3902,7 @@ pre {
   gap: 18px;
   margin-top: -56px;
   pointer-events: none;
-  animation: menu-enter 140ms var(--menu-enter-easing) both;
+  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
 }
 
 .view-switch-mark {
@@ -4416,7 +4443,7 @@ pre {
   padding: 8px 12px;
   cursor: default;
   text-align: left;
-  transition: background-color 120ms ease;
+  transition: background-color var(--motion-fast) var(--ease-out);
 }
 
 .turn-edit-summary-row:hover {
@@ -4547,7 +4574,7 @@ button.turn-sources-pill {
   font: inherit;
   color: inherit;
   cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  transition: background-color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 
 button.turn-sources-pill:hover,
@@ -4598,7 +4625,7 @@ button.turn-sources-pill:focus-visible {
   /* Dim the chrome so the favicon dominates; the icon is the
    * affordance, the button border is just legibility. */
   color: var(--ink-strong, var(--turn-source-icon-color-fallback));
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  transition: transform var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
 }
 
 .turn-source-icon + .turn-source-icon {

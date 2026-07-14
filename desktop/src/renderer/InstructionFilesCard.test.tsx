@@ -86,9 +86,15 @@ describe("InstructionFilesCard", () => {
     // Both scope groups render.
     expect(container.textContent).toContain("全局");
     expect(container.textContent).toContain("项目");
-    // Paths render for each file.
-    expect(container.textContent).toContain("/home/u/.config/wuu/AGENTS.md");
-    expect(container.textContent).toContain("/repo/AGENTS.md");
+    // The file name already identifies the file; the full path stays out of
+    // the row text and lives only in the row tooltip.
+    expect(container.textContent).not.toContain("/home/u/.config/wuu/AGENTS.md");
+    expect(container.textContent).not.toContain("/repo/AGENTS.md");
+    const toggles = Array.from(container.querySelectorAll(".instruction-file-toggle"));
+    expect(toggles.map((toggle) => toggle.getAttribute("title"))).toEqual([
+      "/home/u/.config/wuu/AGENTS.md",
+      "/repo/AGENTS.md",
+    ]);
     // Content is collapsed by default.
     expect(container.querySelector(".instruction-file-preview")).toBeNull();
 

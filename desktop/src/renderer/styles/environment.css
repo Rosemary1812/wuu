@@ -115,7 +115,7 @@
   transform: translate3d(28px, 0, 0) scale(0.986);
   animation-name: environment-panel-exit;
   animation-duration: var(--environment-panel-exit-duration);
-  animation-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  animation-timing-function: var(--ease-in);
 }
 
 .environment-panel-header {
@@ -457,14 +457,6 @@
   gap: 8px;
 }
 
-.environment-plan-explanation {
-  margin: 0;
-  color: var(--ink-muted);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
-  line-height: 1.35;
-}
-
 .environment-plan-list {
   display: grid;
   gap: 6px;
@@ -483,7 +475,7 @@
   font-size: var(--font-title);
   font-weight: var(--weight-semibold);
   line-height: 1.25;
-  animation: environment-plan-item-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: environment-plan-item-in var(--motion-base) var(--ease-out) both;
 }
 
 .environment-plan-item:nth-child(1) { animation-delay: 0ms; }
@@ -714,8 +706,8 @@
   box-shadow: inset 0 0 0 1px transparent;
   padding: 0;
   transition:
-    background 120ms ease,
-    box-shadow 120ms ease;
+    background var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
 .subagent-row.completed {
@@ -757,7 +749,7 @@
   cursor: pointer;
   color: inherit;
   font: inherit;
-  transition: padding-right 140ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: padding-right var(--motion-fast) var(--ease-out);
 }
 
 .subagent-row-main:focus-visible {
@@ -838,8 +830,8 @@
   pointer-events: none;
   transform: translate3d(4px, -50%, 0);
   transition:
-    opacity 120ms ease,
-    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .subagent-row:hover .subagent-row-actions,
@@ -1129,8 +1121,8 @@
   background: transparent;
   color: var(--env-search-clear-btn-text);
   transition:
-    opacity 160ms ease,
-    transform 180ms var(--search-motion-easing);
+    opacity var(--motion-base) var(--ease-out),
+    transform var(--motion-base) var(--search-motion-easing);
 }
 
 .conversation-search-clear:hover,
@@ -1185,7 +1177,7 @@
   border: 2px solid var(--env-search-spinner-border);
   border-top-color: var(--env-search-spinner-top-border);
   border-radius: var(--radius-pill);
-  animation: conversation-search-progress 760ms linear infinite;
+  animation: wuu-spin var(--motion-spin) linear infinite;
 }
 
 .conversation-search-status button {
@@ -1197,8 +1189,8 @@
   font-weight: var(--weight-semibold);
   padding: 5px 8px;
   transition:
-    opacity 160ms ease,
-    transform 180ms var(--search-motion-easing);
+    opacity var(--motion-base) var(--ease-out),
+    transform var(--motion-base) var(--search-motion-easing);
 }
 
 .conversation-search-status button:hover,
@@ -1217,7 +1209,7 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   padding: 8px 10px;
-  animation: menu-enter 180ms var(--search-motion-easing) both;
+  animation: menu-enter var(--motion-base) var(--search-motion-easing) both;
 }
 
 .conversation-search-results {
@@ -1242,8 +1234,8 @@
   padding: 7px 10px 7px 12px;
   text-align: left;
   transition:
-    opacity 160ms ease,
-    transform 180ms var(--search-motion-easing);
+    opacity var(--motion-base) var(--ease-out),
+    transform var(--motion-base) var(--search-motion-easing);
   will-change: opacity, transform;
 }
 
@@ -1348,7 +1340,7 @@
   color: var(--ink-muted);
   font-size: var(--font-body);
   font-weight: var(--weight-medium);
-  animation: menu-enter 180ms var(--search-motion-easing) both;
+  animation: menu-enter var(--motion-base) var(--search-motion-easing) both;
 }
 
 /* Two-pane body — result list on the left, preview pane on the right. The
@@ -1786,8 +1778,8 @@
   font-weight: var(--weight-semibold);
   padding: 7px 12px;
   transition:
-    opacity 160ms ease,
-    transform 180ms var(--search-motion-easing);
+    opacity var(--motion-base) var(--ease-out),
+    transform var(--motion-base) var(--search-motion-easing);
 }
 
 .sidebar-name-dialog-actions button:hover,
@@ -2048,8 +2040,8 @@
   font-weight: var(--weight-semibold);
   padding: 7px 12px;
   transition:
-    opacity 160ms ease,
-    transform 180ms var(--search-motion-easing);
+    opacity var(--motion-base) var(--ease-out),
+    transform var(--motion-base) var(--search-motion-easing);
 }
 
 .new-participant-actions button svg {
@@ -2082,13 +2074,7 @@
 }
 
 .new-participant-spinner {
-  animation: new-participant-spin 0.9s linear infinite;
-}
-
-@keyframes new-participant-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  animation: wuu-spin var(--motion-spin) linear infinite;
 }
 
 /* Fork-from-earlier picker. Reuses the .environment-dialog shell so the
@@ -2197,13 +2183,7 @@
   border-radius: 50%;
   margin-left: auto;
   align-self: center;
-  animation: fork-dialog-spin 720ms linear infinite;
-}
-
-@keyframes fork-dialog-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  animation: wuu-spin var(--motion-spin) linear infinite;
 }
 
 .fork-dialog-note {
@@ -2247,335 +2227,7 @@
   }
 }
 
-.context-composition-header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.context-composition-header h2 {
-  margin: 2px 0 0;
-  color: var(--ink);
-  font-size: 18px;
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0;
-  line-height: 1.2;
-}
-
-.context-composition-header p {
-  margin: 5px 0 0;
-  color: var(--ink-tertiary);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
-}
-
-.context-composition-state {
-  display: flex;
-  min-height: 46px;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid var(--ink-overlay-8);
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
-  color: var(--ink-muted);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-medium);
-  padding: 0 12px;
-}
-
-.context-composition-state.error {
-  border-color: var(--env-context-error-border);
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-
-.context-composition-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.context-composition-stat {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-  border: 1px solid var(--ink-overlay-8);
-  border-radius: var(--radius-md);
-  background: var(--surface-1);
-  padding: 7px 10px;
-}
-
-.context-composition-stat span,
-.context-composition-stat small {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink-tertiary);
-  font-size: 11px;
-  font-weight: var(--weight-semibold);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.context-composition-stat strong {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--ink);
-  font-size: 15px;
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0;
-  line-height: 1.15;
-  font-variant-numeric: tabular-nums;
-}
-
-/* The track owns the "available capacity" state. The JSX only paints
- * contributing spans, so any remaining width must be readable from the bar
- * background rather than from a nonexistent free segment. Earlier revisions
- * drew a repeating 1px vertical slot every 14px on the track — it read as a
- * faint ruler and fought the category fills. The current revision is a
- * quiet engraved gauge: a single soft sheen across the top, a thin dark
- * rim at the bottom, a hairline border that matches the card chrome, and a
- * barely-there outer elevation so the bar feels grounded on surface-1. */
-.context-composition-bar {
-  position: relative;
-  display: flex;
-  width: 100%;
-  height: 20px;
-  overflow: hidden;
-  border: 1px solid var(--ink-overlay-12);
-  border-radius: var(--radius-pill);
-  background-color: var(--env-context-bar-bg);
-  background-image: linear-gradient(
-    to bottom,
-    var(--sidebar-glass-highlight),
-    var(--env-context-bar-gradient-mid) 48%,
-    var(--env-context-bar-gradient-bottom)
-  );
-  box-shadow:
-    inset 0 1px 0 var(--env-context-bar-inset-top),
-    inset 0 -1px 0 var(--env-context-bar-inset-bottom),
-    0 1px 2px var(--env-context-bar-outer-shadow);
-}
-
-/* Filled segments: flat category tones, no per-segment bevel. The colored
- * block reads as one continuous liquid level rather than a row of stacked
- * tiles, while the color change at each boundary still carries the
- * category composition. Category distinction in the bar is intentionally
- * subtle — the row swatches below carry the primary visual signal. */
-.context-composition-segment {
-  position: relative;
-  z-index: 1;
-  flex: 0 0 auto;
-  min-width: 0;
-  height: 100%;
-}
-
-/* The last contributing segment marks the fill boundary. The 2px right-edge
- * accent is the fill line; the soft outer shadow leaks into the track so
- * 90%+ feels like real pressure and 100% reads as full (the track behind
- * disappears at that point, leaving only the colored fill and the pill). */
-.context-composition-segment:last-of-type {
-  box-shadow:
-    inset -2px 0 0 var(--env-context-segment-shadow-inset),
-    2px 0 5px -1px var(--env-context-segment-shadow-outer);
-}
-
-.context-composition-segment.tone-system,
-.context-category-row.tone-system .context-category-swatch {
-  background: var(--env-tone-system);
-}
-
-.context-composition-segment.tone-stable,
-.context-category-row.tone-stable .context-category-swatch {
-  background: var(--env-tone-stable);
-}
-
-.context-composition-segment.tone-turn,
-.context-category-row.tone-turn .context-category-swatch {
-  background: var(--env-tone-turn);
-}
-
-.context-composition-segment.tone-tail,
-.context-category-row.tone-tail .context-category-swatch {
-  background: var(--env-tone-tail);
-}
-
-.context-composition-segment.tone-dynamic,
-.context-category-row.tone-dynamic .context-category-swatch {
-  background: var(--env-tone-dynamic);
-}
-
-.context-composition-segment.tone-tools,
-.context-category-row.tone-tools .context-category-swatch {
-  background: var(--env-tone-tools);
-}
-
-.context-composition-segment.tone-deferred,
-.context-category-row.tone-deferred .context-category-swatch {
-  background: var(--env-tone-deferred);
-}
-
-.context-composition-section {
-  display: grid;
-  min-height: 0;
-  gap: 6px;
-}
-
-.context-composition-section h3,
-.context-detail-block h3 {
-  margin: 0;
-  color: var(--ink-muted);
-  font-size: 11px;
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-/* The list is no longer a sub-card inside the context card. Removing the
- * border, radius, and paper background lets the rows breathe against the
- * card's surface-1 background, so the only chrome is the row's own
- * vertical accent stripe (see turns.css). overflow-y stays so a long
- * list can still scroll within the card without overflowing it. */
-.context-category-list {
-  display: grid;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-/* Row layout lives in turns.css — that file's
- * `.context-composition-card .context-category-row` rule has higher
- * specificity and runs after this one in cascade order, so the old grid
- * template + border-bottom here were dead code. Removed to keep the
- * cascade clean and prevent a future reader from being misled by an
- * unused rule. */
-
-/* The swatch is a 2px-wide vertical accent stripe. Position/size and
- * the top/bottom insets that compute its height are set on the
- * card-specific override in turns.css; this base only fixes the
- * stripe's width and corner radius. */
-.context-category-swatch {
-  width: 2px;
-  border-radius: 1px;
-}
-
-.context-category-label,
-.context-category-values strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: var(--weight-semibold);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.context-category-values {
-  display: grid;
-  min-width: 70px;
-  justify-items: end;
-  gap: 1px;
-}
-
-.context-category-values span {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink-tertiary);
-  font-size: 11px;
-  font-weight: var(--weight-medium);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-.context-category-badges {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: end;
-  gap: 3px;
-}
-
-.context-category-badges span {
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
-  color: var(--ink-muted);
-  font-size: 10px;
-  font-weight: var(--weight-semibold);
-  line-height: 14px;
-  padding: 0 6px;
-  white-space: nowrap;
-}
-
-.context-composition-detail-grid {
-  display: grid;
-  min-height: 0;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  overflow-y: auto;
-  padding-right: 2px;
-}
-
-.context-detail-block {
-  display: grid;
-  align-content: start;
-  gap: 4px;
-  border: 1px solid var(--ink-overlay-6);
-  border-radius: var(--radius-md);
-  background: var(--surface-1);
-  padding: 8px 10px;
-}
-
-.context-detail-row {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--ink-tertiary);
-  font-size: var(--font-xs);
-}
-
-.context-detail-row span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.context-detail-row strong {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--ink);
-  font-weight: var(--weight-semibold);
-  text-align: right;
-}
-
-.context-detail-block p {
-  margin: 0;
-  color: var(--ink-tertiary);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-medium);
-}
-
-@media (max-width: 760px) {
-  .context-composition-stats,
-  .context-composition-detail-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  /* The category row layout is owned by turns.css (display: flex), so the
-   * old grid-template-columns override here was inert. The narrow-screen
-   * handling for the row now lives in turns.css's matching @media block,
-   * which hides the percent column instead of reshaping the grid. */
-
-  .context-category-badges {
-    grid-column: 2 / -1;
-    justify-content: start;
-  }
-}
-
-@media (max-width: 520px) {
-  .context-composition-stats,
-  .context-composition-detail-grid {
-    grid-template-columns: 1fr;
-  }
-}
+/* The /context and /instructions slash-command cards own all of their
+ * styling in turns.css (system artifact cards); the category tone
+ * variables (--env-tone-*) live in theme.css. Nothing card-related
+ * remains in this file. */

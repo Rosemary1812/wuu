@@ -55,11 +55,12 @@ describe("ContextCompositionCard", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text).toContain("103k / 512k");
-    expect(text).toContain("历史占用 / 上下文上限");
-    expect(text).toContain("历史余量 409k");
-    expect(text).toContain("最近请求 508k");
-    expect(text).toContain("最近请求组成");
+    // 语义只出现一次：占用/上限由数字与量表承载，不再有文字标签复述。
+    expect(text).toMatch(/103k\s*\/\s*512k/);
+    expect(text).not.toContain("历史占用");
+    expect(text).not.toContain("历史余量");
+    expect(text).not.toContain("最近请求");
+    expect(text).toContain("本轮前缀");
     expect(text).not.toContain("压缩线");
   });
 
@@ -133,7 +134,7 @@ describe("ContextCompositionCard", () => {
 
     const text = container.textContent ?? "";
     expect(text).toContain("缓存命中 113k"); // cache_read preserved, not zeroed
-    expect(text).toContain("最近请求 133k"); // prompt de-inflated
-    expect(text).toContain("88.0k / 1.0M"); // occupancy = retained history
+    expect(text).not.toContain("最近请求"); // prompt figure lives in the bar, not repeated as text
+    expect(text).toMatch(/88\.0k\s*\/\s*1\.0M/); // occupancy = retained history
   });
 });
