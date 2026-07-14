@@ -35,6 +35,9 @@ func (s *Server) handleThreadDelete(req Request) error {
 		if running {
 			return s.writeResponse(req.ID, nil, errors.New("cannot delete a running thread"))
 		}
+		if threadHasActiveAgents(th) {
+			return s.writeResponse(req.ID, nil, errors.New("cannot delete a thread with active agents"))
+		}
 	}
 	if err := s.rejectAllChannelMutation(id, "delete"); err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -44,6 +47,26 @@ func (s *Server) handleThreadDelete(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
+
+	// Remove the in-memory owner and stop its subscriptions before deleting
+	// runtime artifacts. Otherwise an idle thread leaves the AgentControl and
+	// app-server forwarding goroutines alive after its durable state is gone.
+	s.mu.Lock()
+	removed := s.threads[id]
+	delete(s.threads, id)
+	s.mu.Unlock()
+	if removed != nil {
+		removed.mu.Lock()
+		threadRuntime := removed.execRuntime
+		removed.mu.Unlock()
+		if threadRuntime != nil && threadRuntime.AgentControl != nil {
+			// The active-agent check and durable delete are not one lock scope.
+			// Cancel a worker that happened to start between them rather than
+			// leaving it attached to a thread whose durable owner is gone.
+			threadRuntime.AgentControl.StopAll()
+		}
+	}
+	releaseThreadRuntime(removed)
 
 	// Everything past this point is best-effort cleanup: the session row
 	// (and its cascaded history) is already gone, so a failing worktree or
@@ -64,13 +87,27 @@ func (s *Server) handleThreadDelete(req Request) error {
 		_ = os.RemoveAll(statepath.SessionArtifactDir(stateDir, id))
 	}
 
-	s.mu.Lock()
-	delete(s.threads, id)
-	s.mu.Unlock()
-
 	s.cascadeSideThreadForMain(id)
 
 	return s.writeResponse(req.ID, ThreadDeleteResult{ThreadID: id}, nil)
+}
+
+func threadHasActiveAgents(th *threadState) bool {
+	if th == nil {
+		return false
+	}
+	th.mu.Lock()
+	threadRuntime := th.execRuntime
+	th.mu.Unlock()
+	if threadRuntime == nil || threadRuntime.AgentControl == nil {
+		return false
+	}
+	for _, snapshot := range threadRuntime.AgentControl.List() {
+		if isRunningSubAgentStatus(snapshot.Status) {
+			return true
+		}
+	}
+	return false
 }
 
 func pathWithinRoot(path, root string) bool {

@@ -6,7 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/blueberrycongee/wuu/internal/agent"
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/agentthread"
+	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 )
@@ -105,6 +110,121 @@ func TestServerThreadDeleteRejectsRunningThread(t *testing.T) {
 	}
 	if _, ok, err := session.Find(rt.SessionDir, threadID); err != nil || !ok {
 		t.Fatalf("running thread must survive a rejected delete: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestServerThreadDeleteRejectsActiveBackgroundAgent(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+
+	workerClient := newBlockingStreamClient("done")
+	control, err := agentcontrol.New(agentcontrol.Config{
+		Client:       workerClient,
+		DefaultModel: "fake-model",
+		ParentRepo:   rt.RootDir,
+		WorktreeRoot: filepath.Join(rt.RootDir, ".wuu", "worktrees"),
+		SessionID:    threadID,
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return noopToolExecutor{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("agentcontrol.New: %v", err)
+	}
+	t.Cleanup(func() {
+		control.StopAll()
+		control.Close()
+	})
+
+	th := srv.thread(threadID)
+	if th == nil {
+		t.Fatalf("thread %q not registered", threadID)
+	}
+	th.mu.Lock()
+	th.execRuntime = &runtime.ThreadRuntime{AgentControl: control}
+	th.mu.Unlock()
+	if _, err := control.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:        agentcontrol.DefaultSubagentType,
+		TaskName:    "background_delete_guard",
+		Description: "keep running while delete is attempted",
+		Prompt:      "wait",
+	}); err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	select {
+	case <-workerClient.started:
+	case <-time.After(time.Second):
+		t.Fatal("background agent did not start")
+	}
+
+	deletePayload, err := json.Marshal(map[string]any{
+		"id":     "2",
+		"method": MethodThreadDelete,
+		"params": ThreadDeleteParams{ThreadID: threadID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.handleLine(context.Background(), deletePayload); err != nil {
+		t.Fatalf("thread/delete: %v", err)
+	}
+	resp := responseByID(t, parseOutput(t, out.String()), "2")
+	if resp["error"] == nil {
+		t.Fatalf("deleting a thread with an active background agent must fail, got %+v", resp)
+	}
+	if _, ok, err := session.Find(rt.SessionDir, threadID); err != nil || !ok {
+		t.Fatalf("thread with an active agent must survive a rejected delete: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestServerThreadDeleteStopsRuntimeSubscription(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	th := srv.thread(threadID)
+	if th == nil {
+		t.Fatalf("thread %q not registered", threadID)
+	}
+	sub := &threadRuntimeSubscription{done: make(chan struct{})}
+	th.mu.Lock()
+	th.execRuntime = &runtime.ThreadRuntime{}
+	th.runtimeSubscription = sub
+	th.mu.Unlock()
+
+	deletePayload, err := json.Marshal(map[string]any{
+		"id":     "2",
+		"method": MethodThreadDelete,
+		"params": ThreadDeleteParams{ThreadID: threadID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.handleLine(context.Background(), deletePayload); err != nil {
+		t.Fatalf("thread/delete: %v", err)
+	}
+	if resp := responseByID(t, parseOutput(t, out.String()), "2"); resp["error"] != nil {
+		t.Fatalf("thread/delete failed: %+v", resp["error"])
+	}
+	select {
+	case <-sub.done:
+	default:
+		t.Fatal("thread/delete left its runtime subscription running")
+	}
+	th.mu.Lock()
+	defer th.mu.Unlock()
+	if th.execRuntime != nil || th.runtimeSubscription != nil {
+		t.Fatalf("thread/delete retained runtime ownership: runtime=%p subscription=%p", th.execRuntime, th.runtimeSubscription)
 	}
 }
 
