@@ -371,6 +371,83 @@ func TestStoreDeletePreventsLateFinishFromRecreatingRecord(t *testing.T) {
 	}
 }
 
+func TestStoreDeleteStageRemainsReadableAndRollsBack(t *testing.T) {
+	store := newTempStore(t)
+	original := sampleSideThread("main_staged_rollback")
+	if err := store.Save(original); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	stage, err := store.BeginDelete(original.MainThreadID)
+	if err != nil {
+		t.Fatalf("BeginDelete: %v", err)
+	}
+	if loaded, err := store.Load(original.MainThreadID); err != nil || loaded.SideThreadID != original.SideThreadID {
+		t.Fatalf("staged record is not readable: loaded=%+v err=%v", loaded, err)
+	}
+	if exists, err := store.Exists(original.MainThreadID); err != nil || !exists {
+		t.Fatalf("staged record existence = %t, %v", exists, err)
+	}
+	if err := store.Mutate(original.MainThreadID, func(st *SideThread) error {
+		st.Messages[0].Text = "updated while staged"
+		return nil
+	}); err != nil {
+		t.Fatalf("Mutate staged record: %v", err)
+	}
+	if err := stage.Rollback(); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+	loaded, err := store.Load(original.MainThreadID)
+	if err != nil || loaded.Messages[0].Text != "updated while staged" {
+		t.Fatalf("rolled-back record = %+v, %v", loaded, err)
+	}
+	if _, err := os.Stat(filepath.Join(store.Dir(), ".deleting", original.MainThreadID+".json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("staged record survived rollback: %v", err)
+	}
+}
+
+func TestStoreDeleteStageCanResumeAndCommitAfterCrash(t *testing.T) {
+	store := newTempStore(t)
+	original := sampleSideThread("main_staged_commit")
+	if err := store.Save(original); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if _, err := store.BeginDelete(original.MainThreadID); err != nil {
+		t.Fatalf("BeginDelete: %v", err)
+	}
+	reopened := NewStore(store.Dir())
+	stage, err := reopened.BeginDelete(original.MainThreadID)
+	if err != nil {
+		t.Fatalf("resume BeginDelete: %v", err)
+	}
+	if err := stage.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if exists, err := reopened.Exists(original.MainThreadID); err != nil || exists {
+		t.Fatalf("committed delete existence = %t, %v", exists, err)
+	}
+	if err := stage.Commit(); err != nil {
+		t.Fatalf("idempotent Commit: %v", err)
+	}
+}
+
+func TestStoreRecoverRunningIncludesStagedDelete(t *testing.T) {
+	store := newTempStore(t)
+	if _, err := store.BeginTurn("main_staged_recover", "status?", "user", "assistant"); err != nil {
+		t.Fatalf("BeginTurn: %v", err)
+	}
+	if _, err := store.BeginDelete("main_staged_recover"); err != nil {
+		t.Fatalf("BeginDelete: %v", err)
+	}
+	recovered, err := NewStore(store.Dir()).RecoverRunning()
+	if err != nil || recovered != 1 {
+		t.Fatalf("RecoverRunning staged = %d, %v", recovered, err)
+	}
+	st, err := store.Load("main_staged_recover")
+	if err != nil || st.Status != StatusInterrupted {
+		t.Fatalf("recovered staged record = %+v, %v", st, err)
+	}
+}
+
 func TestStoreRecoverRunningMarksPlaceholderInterrupted(t *testing.T) {
 	store := newTempStore(t)
 	if _, err := store.BeginTurn("main_recover", "status?", "user", "assistant"); err != nil {
@@ -389,5 +466,55 @@ func TestStoreRecoverRunningMarksPlaceholderInterrupted(t *testing.T) {
 	}
 	if st.Status != StatusInterrupted || st.Messages[len(st.Messages)-1].Status != AssistantInterrupted {
 		t.Fatalf("running record was not settled: %+v", st)
+	}
+}
+
+func TestStoreRollbackTurnDeletesRecordCreatedByBeginTurn(t *testing.T) {
+	store := newTempStore(t)
+	if _, err := store.BeginTurn("main_rollback_new", "status?", "user", "assistant"); err != nil {
+		t.Fatalf("BeginTurn: %v", err)
+	}
+	if err := store.RollbackTurn("main_rollback_new", "user", "assistant"); err != nil {
+		t.Fatalf("RollbackTurn: %v", err)
+	}
+	if _, err := store.Load("main_rollback_new"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("rolled-back first turn left a record: %v", err)
+	}
+	// Rolling back an absent record is a no-op.
+	if err := store.RollbackTurn("main_rollback_new", "user", "assistant"); err != nil {
+		t.Fatalf("RollbackTurn missing: %v", err)
+	}
+}
+
+func TestStoreRollbackTurnRestoresPriorTerminalState(t *testing.T) {
+	store := newTempStore(t)
+	if _, err := store.BeginTurn("main_rollback_prior", "first?", "user-1", "assistant-1"); err != nil {
+		t.Fatalf("BeginTurn first: %v", err)
+	}
+	if _, _, err := store.FinishTurn("main_rollback_prior", "assistant-1", "done", StatusCompleted, ""); err != nil {
+		t.Fatalf("FinishTurn first: %v", err)
+	}
+	before, err := store.Load("main_rollback_prior")
+	if err != nil {
+		t.Fatalf("Load before: %v", err)
+	}
+	if _, err := store.BeginTurn("main_rollback_prior", "second?", "user-2", "assistant-2"); err != nil {
+		t.Fatalf("BeginTurn second: %v", err)
+	}
+	if err := store.RollbackTurn("main_rollback_prior", "user-2", "assistant-2"); err != nil {
+		t.Fatalf("RollbackTurn: %v", err)
+	}
+	after, err := store.Load("main_rollback_prior")
+	if err != nil {
+		t.Fatalf("Load after: %v", err)
+	}
+	if after.Status != StatusCompleted {
+		t.Fatalf("status=%q want %q", after.Status, StatusCompleted)
+	}
+	if len(after.Messages) != len(before.Messages) {
+		t.Fatalf("messages=%d want %d: %+v", len(after.Messages), len(before.Messages), after.Messages)
+	}
+	if after.Revision <= before.Revision {
+		t.Fatalf("rollback did not advance revision: before=%d after=%d", before.Revision, after.Revision)
 	}
 }

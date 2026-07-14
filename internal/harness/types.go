@@ -210,11 +210,25 @@ type Event struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// QueueItem stores the durable payload needed to start a queued task.
+type QueueItemState string
+
+const (
+	// QueueItemStateQueued is also represented by the empty value for backward
+	// compatibility with queue records written before state was explicit.
+	QueueItemStateQueued     QueueItemState = "queued"
+	QueueItemStateCancelling QueueItemState = "cancelling"
+	QueueItemStateFailing    QueueItemState = "failing"
+)
+
+// QueueItem stores the durable payload needed to start a queued task. A
+// cancelling item is a tombstone: recovery must compensate and settle it,
+// never launch it.
 type QueueItem struct {
 	ID        string          `json:"id"`
 	TaskID    string          `json:"task_id"`
 	Kind      string          `json:"kind"`
+	State     QueueItemState  `json:"state,omitempty"`
+	Error     string          `json:"error,omitempty"`
 	Payload   json.RawMessage `json:"payload"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`

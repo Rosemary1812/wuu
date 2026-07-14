@@ -246,6 +246,9 @@ type SubAgentSnapshot struct {
 	AgentPath           string
 	ParentID            string
 	Description         string
+	WorkerRoot          string
+	Model               string
+	ModelPin            string
 	Status              Status
 	StartedAt           time.Time
 	CompletedAt         time.Time

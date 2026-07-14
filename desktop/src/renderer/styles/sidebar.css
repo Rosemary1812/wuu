@@ -39,8 +39,6 @@
   --sidebar-thread-child-agent-completed-status: #68716c;
   --sidebar-thread-child-agent-cancelled-status: #94745f;
   --sidebar-settings-button-hover-ring: rgba(255, 255, 255, 0.42);
-  --sidebar-motion-ease: cubic-bezier(0.25, 1, 0.5, 1);
-  --workspace-panel-motion-ease: cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .app-shell {
@@ -56,11 +54,11 @@
 }
 
 .app-shell.sidebar-animating {
-  transition: grid-template-columns var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease);
+  transition: grid-template-columns var(--sidebar-motion-duration) var(--sidebar-motion-ease);
 }
 
 .app-shell.right-panel-animating {
-  transition: grid-template-columns var(--workspace-panel-motion-duration, 240ms) var(--workspace-panel-motion-ease);
+  transition: grid-template-columns var(--workspace-panel-motion-duration) var(--workspace-panel-motion-ease);
 }
 
 .app-shell.right-panel-open {
@@ -85,13 +83,56 @@
   padding-left: 86px;
 }
 
-/* Right-panel "globalized" focus mode: collapse sidebar + conversation so the
- * window is dedicated to the right panel content. Toggled from a button in
- * the right panel header. The 0/0/1fr columns match the existing 3-column
- * shell grid, so the right panel keeps its column-3 placement and the
- * default grid-template-columns transition animates the squeeze. */
-.app-shell.right-panel-globalized {
-  grid-template-columns: 0 0 minmax(0, 1fr);
+/* Right-panel "globalized" focus mode: the panel takes the stage as a
+ * full-window SHEET instead of squeezing the grid. The panel is promoted to
+ * position:fixed and laid out at its final full width from the first frame —
+ * nothing reflows mid-flight (the old grid interpolation rewrapped the
+ * conversation text and relaid the panel content on every frame). It emerges
+ * leftward from its dock slot on enter and parks back into it on exit, same
+ * directional language as the environment panel. The grid keeps the docked
+ * template, so the under-stage layout stays put and is simply revealed again
+ * when the sheet leaves. Phases come from App's sheet phase machine
+ * (data-sheet="parked" -> arming/exiting rest point, "open" -> covering).
+ * The transition declared on each state rule is the one used to REACH that
+ * state: enter timing lives on [data-sheet="open"], exit timing on "parked". */
+.app-shell .workspace-right-panel[data-sheet="arming"],
+.app-shell .workspace-right-panel[data-sheet="open"],
+.app-shell .workspace-right-panel[data-sheet="parked"] {
+  position: fixed;
+  inset: 0;
+  /* Above the docked sidebar (120), below the open sidebar drawer (140). */
+  z-index: 130;
+  grid-column: auto;
+  grid-row: auto;
+  border-left: none;
+  /* Elevation: the sheet is a layer over the workspace, not a column of it. */
+  box-shadow: -16px 0 40px var(--ink-overlay-12);
+}
+
+/* arming/docking are one-frame teleport states: they place the sheet without
+ * animating, so the enter transition has a start value and the demote back to
+ * the grid does not replay the panel's base transform transition. */
+.app-shell .workspace-right-panel[data-sheet="arming"],
+.app-shell .workspace-right-panel[data-sheet="docking"] {
+  transition: none;
+}
+
+.app-shell .workspace-right-panel[data-sheet="arming"],
+.app-shell .workspace-right-panel[data-sheet="parked"] {
+  transform: translate3d(
+    calc(100% - var(--workspace-right-panel-width, 360px)),
+    0,
+    0
+  ) scale(1);
+}
+
+.app-shell .workspace-right-panel[data-sheet="open"] {
+  transform: translate3d(0, 0, 0) scale(1);
+  transition: transform var(--sheet-enter-duration) var(--sheet-enter-easing);
+}
+
+.app-shell .workspace-right-panel[data-sheet="parked"] {
+  transition: transform var(--sheet-exit-duration) var(--sheet-exit-easing);
 }
 
 .app-shell.right-panel-globalized .conversation-pane {
@@ -167,17 +208,17 @@
   /* Section expand/collapse motion tokens, shared by the collapse body,
    * the header chevron, and the header icon cross-fade so all three land
    * together. */
-  --section-fold-ms: 260ms;
-  --section-fold-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --section-fold-fade-ms: 170ms;
+  --section-fold-ms: var(--motion-slow);
+  --section-fold-ease: var(--ease-out);
+  --section-fold-fade-ms: var(--motion-base);
   grid-row: 1 / 3;
   z-index: 120;
   overflow: visible;
   min-height: 0;
   transition:
-    border-color var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease),
-    background-color var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease),
-    box-shadow var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease);
+    border-color var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    background-color var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    box-shadow var(--sidebar-motion-duration) var(--sidebar-motion-ease);
 }
 
 /* While the rail column animates (or sits collapsed) the fixed-width
@@ -230,8 +271,8 @@
   transform-origin: left center;
   opacity: 1;
   transition:
-    opacity var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease),
-    transform var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease);
+    opacity var(--sidebar-motion-duration) var(--sidebar-motion-ease),
+    transform var(--sidebar-motion-duration) var(--sidebar-motion-ease);
   will-change: opacity, transform;
 }
 
@@ -336,7 +377,7 @@
 .sidebar-collapsed.sidebar-drawer-closing .sidebar,
 .sidebar-collapsed.sidebar-drawer-closing .settings-sidebar {
   opacity: 0;
-  transition: opacity var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease);
+  transition: opacity var(--sidebar-motion-duration) var(--sidebar-motion-ease);
 }
 
 .sidebar-resizer {
@@ -364,10 +405,10 @@
   content: "";
   transform: translateX(-50%);
   transition:
-    background 120ms ease,
-    box-shadow 120ms ease,
-    opacity 120ms ease,
-    transform 120ms ease;
+    background var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .sidebar-resizer:hover::before,
@@ -420,8 +461,8 @@
   opacity: 0;
   transform: translate3d(12px, 0, 0);
   transition:
-    opacity var(--workspace-panel-motion-duration, 240ms) var(--workspace-panel-motion-ease),
-    transform var(--workspace-panel-motion-duration, 240ms) var(--workspace-panel-motion-ease);
+    opacity var(--workspace-panel-motion-duration) var(--workspace-panel-motion-ease),
+    transform var(--workspace-panel-motion-duration) var(--workspace-panel-motion-ease);
   pointer-events: none;
   -webkit-app-region: no-drag;
 }
@@ -453,10 +494,10 @@
   content: "";
   transform: translateX(-50%);
   transition:
-    background 120ms ease,
-    box-shadow 120ms ease,
-    opacity 120ms ease,
-    transform 120ms ease;
+    background var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .workspace-right-panel-resizer:hover::before,
@@ -597,10 +638,10 @@
   padding: 0 var(--sidebar-row-pad-x);
   text-align: left;
   transition:
-    background-color 140ms ease,
-    box-shadow 140ms ease,
-    color 140ms ease,
-    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .nav-item {
@@ -717,9 +758,9 @@
   color: var(--ink-muted);
   cursor: pointer;
   transition:
-    background-color 120ms ease,
-    color 120ms ease,
-    transform 120ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .sidebar-functional-action:hover,
@@ -862,7 +903,7 @@
   transition:
     color var(--section-fold-ms) var(--section-fold-ease),
     transform var(--section-fold-ms) var(--section-fold-ease),
-    opacity 120ms ease-out;
+    opacity var(--motion-fast) var(--ease-out);
 }
 
 .project-group:hover > .project-row .project-row-chevron,
@@ -880,7 +921,7 @@
   grid-column: 1;
   justify-self: center;
   color: var(--ink-tertiary);
-  transition: color 140ms ease;
+  transition: color var(--motion-fast) var(--ease-out);
 }
 
 .project-row-icon {
@@ -899,14 +940,14 @@
 .project-row-icon-state {
   grid-area: 1 / 1;
   transition:
-    opacity var(--section-fold-fade-ms) ease-out,
+    opacity var(--section-fold-fade-ms) var(--ease-out),
     transform var(--section-fold-ms) var(--section-fold-ease);
   transform-origin: center;
 }
 
 .project-row.expanded .project-row-icon-state {
   transition:
-    opacity var(--section-fold-fade-ms) ease-out,
+    opacity var(--section-fold-fade-ms) var(--ease-out),
     transform var(--section-fold-ms) var(--section-fold-ease);
 }
 
@@ -967,7 +1008,7 @@
   border: 2px solid color-mix(in srgb, var(--sidebar-accent) 65%, transparent);
   border-top-color: var(--sidebar-project-loading-notch);
   border-radius: var(--radius-pill);
-  animation: session-loading-spin 1400ms linear infinite;
+  animation: wuu-spin var(--session-loading-spin-duration) linear infinite;
 }
 
 .project-row-unread {
@@ -979,8 +1020,8 @@
   background: var(--sidebar-session-status-unread-bg);
   pointer-events: none;
   transition:
-    opacity 120ms ease,
-    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .sidebar-row-icon-button {
@@ -996,9 +1037,9 @@
   --sidebar-row-icon-hover-bg: var(--sidebar-row-icon-hover-bg-default);
   --sidebar-row-icon-focus-shadow: none;
   transition:
-    background-color 120ms ease,
-    color 120ms ease,
-    transform 120ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .sidebar-row-icon-button:hover,
@@ -1026,10 +1067,10 @@
   --sidebar-row-icon-hover-bg: transparent;
   --sidebar-row-icon-focus-shadow: inset 0 0 0 2px var(--sidebar-nav-item-focus-shadow);
   transition:
-    background-color 120ms ease,
-    color 120ms ease,
-    opacity 120ms ease,
-    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 /* Descendant (not child) combinator: SidebarSection nests the button
@@ -1076,7 +1117,7 @@
   opacity: 1;
   transform: translate3d(0, 0, 0);
   transition:
-    opacity var(--section-fold-fade-ms) ease-out,
+    opacity var(--section-fold-fade-ms) var(--ease-out),
     transform var(--section-fold-ms) var(--section-fold-ease);
   will-change: opacity, transform;
 }
@@ -1145,8 +1186,8 @@
   text-align: left;
   white-space: nowrap;
   transition:
-    background-color 140ms ease,
-    color 140ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 
 .thread-list-more:hover,
@@ -1173,8 +1214,8 @@
   padding: 0 var(--sidebar-row-control-pad-x);
   white-space: nowrap;
   transition:
-    background-color 140ms ease,
-    color 140ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 
 .thread-list-collapse-btn:hover,
@@ -1212,9 +1253,9 @@
   content: "";
   transform: scale(var(--sidebar-session-status-scale));
   transition:
-    background-color 140ms ease,
-    box-shadow 140ms ease,
-    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .thread-row:hover::before {
@@ -1248,7 +1289,7 @@
     color-mix(in srgb, var(--sidebar-accent) 65%, transparent);
   border-top-color: var(--sidebar-thread-spinner-notch);
   border-radius: var(--radius-pill);
-  animation: session-loading-spin var(--session-loading-spin-duration) linear infinite;
+  animation: wuu-spin var(--session-loading-spin-duration) linear infinite;
 }
 
 .thread-row.has-unread::before {
@@ -1307,9 +1348,9 @@
   padding: 0 8px 0 2px;
   text-align: left;
   transition:
-    background-color 140ms ease,
-    box-shadow 140ms ease,
-    color 140ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 
 .thread-child-agent-row:hover {
@@ -1403,7 +1444,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: padding-right 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: padding-right var(--motion-base) var(--ease-out);
 }
 
 /* When the row carries a fork icon, reserve space at the right of the
@@ -1486,8 +1527,8 @@
   pointer-events: none;
   z-index: 1;
   transition:
-    opacity 120ms ease,
-    right 150ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity var(--motion-fast) var(--ease-out),
+    right var(--motion-base) var(--ease-out);
 }
 
 .thread-row:hover .thread-row-fork-icon,
@@ -1531,8 +1572,8 @@
   pointer-events: none;
   transform: translate3d(4px, -50%, 0);
   transition:
-    opacity 120ms ease,
-    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 /* When the row is hovered the action icons must read as clearly
@@ -1558,7 +1599,7 @@
  * name clear of the icons while they are visible (same 58px clearance
  * as .thread-row-main > .thread-row-title on hover). */
 .participant-roster-copy {
-  transition: padding-right 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: padding-right var(--motion-base) var(--ease-out);
 }
 
 .participant-roster-row:hover:has(.thread-row-actions) .participant-roster-copy,
@@ -1627,10 +1668,10 @@
   padding: 0 var(--sidebar-row-pad-x);
   text-align: left;
   transition:
-    background-color 140ms ease,
-    box-shadow 140ms ease,
-    color 140ms ease,
-    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .sidebar-settings-button > svg {
@@ -1742,8 +1783,8 @@
   pointer-events: none;
   transform: translate3d(4px, 0, 0);
   transition:
-    opacity 120ms ease,
-    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .pinned-thread-section:hover .sidebar-section-actions,
@@ -1793,8 +1834,8 @@
   font: inherit;
   cursor: pointer;
   transition:
-    background-color 140ms ease,
-    color 140ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 
 .sidebar-section-empty-note-action:hover {

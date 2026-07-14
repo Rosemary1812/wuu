@@ -34,11 +34,11 @@ func TestHelpMeRecoveryRegisterQueryAndOneShotApplied(t *testing.T) {
 	if _, ok := c.HelpMeRecoveryForHelper("helper-unknown"); ok {
 		t.Fatal("unknown helper must not resolve a recovery")
 	}
-	if c.MarkHelpMeRecoveryApplied("helper-unknown") {
+	if applied, err := c.MarkHelpMeRecoveryApplied("helper-unknown"); err != nil || applied {
 		t.Fatal("marking an unknown helper applied must return false")
 	}
 
-	c.RegisterHelpMeRecovery(HelpMeRecovery{
+	if err := c.RegisterHelpMeRecovery(HelpMeRecovery{
 		HelperID:   "helper-1",
 		ParentPath: "/root",
 		Brief: HelpMeRecoveryBrief{
@@ -47,7 +47,9 @@ func TestHelpMeRecoveryRegisterQueryAndOneShotApplied(t *testing.T) {
 			Reason:         "two failed auth attempts",
 			FailedAttempts: []string{"changed the router guard"},
 		},
-	})
+	}); err != nil {
+		t.Fatalf("register recovery: %v", err)
+	}
 
 	rec, ok := c.HelpMeRecoveryForHelper("helper-1")
 	if !ok {
@@ -63,10 +65,10 @@ func TestHelpMeRecoveryRegisterQueryAndOneShotApplied(t *testing.T) {
 		t.Fatal("register must stamp CreatedAt")
 	}
 
-	if !c.MarkHelpMeRecoveryApplied("helper-1") {
+	if applied, err := c.MarkHelpMeRecoveryApplied("helper-1"); err != nil || !applied {
 		t.Fatal("first apply must succeed")
 	}
-	if c.MarkHelpMeRecoveryApplied("helper-1") {
+	if applied, err := c.MarkHelpMeRecoveryApplied("helper-1"); err != nil || applied {
 		t.Fatal("second apply must fail: recovery is one-shot")
 	}
 	rec, ok = c.HelpMeRecoveryForHelper("helper-1")
@@ -80,11 +82,13 @@ func TestHelpMeRecoveryLazyLoadsAcrossInstances(t *testing.T) {
 	harnessDir := filepath.Join(dir, "session", "harness")
 
 	first := newHelpMeRecoveryControl(t, dir, harnessDir)
-	first.RegisterHelpMeRecovery(HelpMeRecovery{
+	if err := first.RegisterHelpMeRecovery(HelpMeRecovery{
 		HelperID:               "helper-restart",
 		ParentExecutionJournal: "### Paths taken\n- guard patch - ruled out",
 		Brief:                  HelpMeRecoveryBrief{OriginalGoal: "survive the restart", Ask: "keep the resolved goal"},
-	})
+	}); err != nil {
+		t.Fatalf("register recovery: %v", err)
+	}
 	path := filepath.Join(harnessDir, helpMeRecoveryDirName, "helper-restart.json")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("recovery snapshot not persisted: %v", err)
@@ -103,14 +107,14 @@ func TestHelpMeRecoveryLazyLoadsAcrossInstances(t *testing.T) {
 	if rec.ParentExecutionJournal != "### Paths taken\n- guard patch - ruled out" {
 		t.Fatalf("rehydrated recovery lost the parent journal: %+v", rec)
 	}
-	if !second.MarkHelpMeRecoveryApplied("helper-restart") {
+	if applied, err := second.MarkHelpMeRecoveryApplied("helper-restart"); err != nil || !applied {
 		t.Fatal("first apply after restart must succeed")
 	}
 
 	// The applied flag is persisted too: another restart still refuses a
 	// second application.
 	third := newHelpMeRecoveryControl(t, dir, harnessDir)
-	if third.MarkHelpMeRecoveryApplied("helper-restart") {
+	if applied, err := third.MarkHelpMeRecoveryApplied("helper-restart"); err != nil || applied {
 		t.Fatal("recovery must stay one-shot across restarts")
 	}
 	rec, ok = third.HelpMeRecoveryForHelper("helper-restart")

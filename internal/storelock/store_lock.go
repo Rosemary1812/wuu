@@ -1,6 +1,9 @@
 // Package storelock serializes durable file-store transactions across
-// processes. Callers keep the returned lock for the complete read or write
-// transaction, including every related index and event-log mutation.
+// processes. Callers keep the returned lock for the complete write or
+// read-modify-write transaction, including every related index and event-log
+// mutation. Pure readers should not acquire it: the lock is exclusive with no
+// timeout, and Acquire creates the store directory and lock file on first
+// use, so stores whose writers replace files atomically serve reads directly.
 package storelock
 
 import (

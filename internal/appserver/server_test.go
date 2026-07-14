@@ -6860,13 +6860,17 @@ func TestServerThreadCompactStartRunsCompactOnlyTurn(t *testing.T) {
 	if th == nil {
 		t.Fatal("expected loaded thread")
 	}
-	th.mu.Lock()
-	th.History = append(th.History,
+	compactHistory := []providers.ChatMessage{
 		providers.ChatMessage{Role: "user", Content: "old request"},
 		providers.ChatMessage{Role: "assistant", Content: "old answer"},
 		providers.ChatMessage{Role: "user", Content: "newer request"},
 		providers.ChatMessage{Role: "assistant", Content: "newer answer"},
-	)
+	}
+	if err := appendChatMessages(rt.SessionDir, threadID, compactHistory); err != nil {
+		t.Fatalf("persist compact history: %v", err)
+	}
+	th.mu.Lock()
+	th.History = append(th.History, compactHistory...)
 	th.mu.Unlock()
 
 	raw, err := json.Marshal(map[string]any{
@@ -6942,13 +6946,17 @@ func TestServerThreadCompactStartMarksFailedCompactItem(t *testing.T) {
 	if th == nil {
 		t.Fatal("expected loaded thread")
 	}
-	th.mu.Lock()
-	th.History = append(th.History,
+	compactHistory := []providers.ChatMessage{
 		providers.ChatMessage{Role: "user", Content: "old request"},
 		providers.ChatMessage{Role: "assistant", Content: "old answer"},
 		providers.ChatMessage{Role: "user", Content: "newer request"},
 		providers.ChatMessage{Role: "assistant", Content: "newer answer"},
-	)
+	}
+	if err := appendChatMessages(rt.SessionDir, threadID, compactHistory); err != nil {
+		t.Fatalf("persist compact history: %v", err)
+	}
+	th.mu.Lock()
+	th.History = append(th.History, compactHistory...)
 	th.mu.Unlock()
 
 	raw, err := json.Marshal(map[string]any{
@@ -6996,12 +7004,16 @@ func TestServerTurnStartSlashCompactRoutesToCompactOnlyTurn(t *testing.T) {
 	if th == nil {
 		t.Fatal("expected loaded thread")
 	}
-	th.mu.Lock()
-	th.History = append(th.History,
+	compactHistory := []providers.ChatMessage{
 		providers.ChatMessage{Role: "user", Content: "old request"},
 		providers.ChatMessage{Role: "assistant", Content: "old answer"},
 		providers.ChatMessage{Role: "user", Content: "newer request"},
-	)
+	}
+	if err := appendChatMessages(rt.SessionDir, threadID, compactHistory); err != nil {
+		t.Fatalf("persist compact history: %v", err)
+	}
+	th.mu.Lock()
+	th.History = append(th.History, compactHistory...)
 	th.mu.Unlock()
 
 	raw, err := json.Marshal(map[string]any{
@@ -7206,8 +7218,8 @@ func TestServerTurnStartReloadsPrunedPersistentThread(t *testing.T) {
 	}
 }
 
-func TestServerThreadResumeRepairsToolResultOrder(t *testing.T) {
-	rt := newTestRuntime(t, &fakeClient{})
+func TestServerThreadResumeRepairsToolResultOrderWithoutWriting(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{response: providers.ChatResponse{Content: "done"}})
 	sessionID := "20260523-000001-tools"
 	sess, err := session.CreateWithMetadata(rt.SessionDir, sessionID, rt.RootDir)
 	if err != nil {
@@ -7267,8 +7279,25 @@ func TestServerThreadResumeRepairsToolResultOrder(t *testing.T) {
 	for _, msg := range persisted {
 		roles = append(roles, msg.Role)
 	}
-	if got, want := strings.Join(roles, ","), "user,assistant,tool,user"; got != want {
-		t.Fatalf("unexpected persisted order: got %s want %s", got, want)
+	if got, want := strings.Join(roles, ","), "user,assistant,user,tool"; got != want {
+		t.Fatalf("read-only resume rewrote durable history: got %s want %s", got, want)
+	}
+
+	turnReq := fmt.Sprintf(`{"id":"2","method":"turn/start","params":{"thread_id":%q,"prompt":"continue"}}`, sessionID)
+	if err := srv.handleLine(context.Background(), []byte(turnReq)); err != nil {
+		t.Fatalf("turn/start: %v", err)
+	}
+	waitForMethod(t, out, NotificationTurnCompleted)
+	persisted, err = loadChatMessages(rt.SessionDir, sess.ID)
+	if err != nil {
+		t.Fatalf("load history after admission repair: %v", err)
+	}
+	roles = roles[:0]
+	for _, msg := range persisted {
+		roles = append(roles, msg.Role)
+	}
+	if got, want := strings.Join(roles, ","), "user,assistant,tool,user,user,assistant"; got != want {
+		t.Fatalf("turn admission did not persist repaired order: got %s want %s", got, want)
 	}
 }
 

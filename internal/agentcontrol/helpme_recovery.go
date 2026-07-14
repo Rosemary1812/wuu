@@ -2,12 +2,15 @@ package agentcontrol
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/securefs"
 )
 
 // helpMeRecoveryDirName is the session harness subdirectory holding one
@@ -55,28 +58,53 @@ type HelpMeRecovery struct {
 }
 
 // RegisterHelpMeRecovery records the resolved recovery state for a spawned
-// HelpMe helper. Persistence is best-effort: without a harness directory
-// the state stays in memory only, which is enough for the in-process
-// helpme -> await loop.
-func (c *AgentControl) RegisterHelpMeRecovery(rec HelpMeRecovery) {
+// HelpMe helper. A configured harness directory is committed atomically before
+// the recovery becomes visible in memory; ephemeral runtimes without one keep
+// the same in-process behavior.
+func (c *AgentControl) RegisterHelpMeRecovery(rec HelpMeRecovery) error {
 	if c == nil {
-		return
+		return errors.New("agent control is required")
 	}
 	rec.HelperID = strings.TrimSpace(rec.HelperID)
 	if rec.HelperID == "" {
-		return
+		return errors.New("helpme helper id is required")
 	}
 	rec.SchemaVersion = helpMeRecoverySchemaVersion
 	if rec.CreatedAt.IsZero() {
 		rec.CreatedAt = time.Now().UTC()
 	}
 	c.helpMeRecoveryMu.Lock()
+	defer c.helpMeRecoveryMu.Unlock()
+	if err := c.persistHelpMeRecovery(rec); err != nil {
+		return err
+	}
 	if c.helpMeRecoveries == nil {
 		c.helpMeRecoveries = make(map[string]HelpMeRecovery)
 	}
 	c.helpMeRecoveries[rec.HelperID] = rec
-	c.helpMeRecoveryMu.Unlock()
-	c.persistHelpMeRecovery(rec)
+	return nil
+}
+
+// RemoveHelpMeRecovery rolls back recovery state prepared for a worker that
+// never became runnable. Disk is removed before memory so a failed cleanup
+// remains visible and can be retried without creating split state.
+func (c *AgentControl) RemoveHelpMeRecovery(helperID string) error {
+	if c == nil {
+		return errors.New("agent control is required")
+	}
+	helperID = strings.TrimSpace(helperID)
+	if helperID == "" {
+		return errors.New("helpme helper id is required")
+	}
+	c.helpMeRecoveryMu.Lock()
+	defer c.helpMeRecoveryMu.Unlock()
+	if path := c.helpMeRecoveryPath(helperID); path != "" {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove helpme recovery %s: %w", helperID, err)
+		}
+	}
+	delete(c.helpMeRecoveries, helperID)
+	return nil
 }
 
 // HelpMeRecoveryForHelper returns the recovery state registered for a
@@ -117,31 +145,34 @@ func (c *AgentControl) HelpMeRecoveryForHelper(helperID string) (HelpMeRecovery,
 }
 
 // MarkHelpMeRecoveryApplied flips a helper's recovery to applied exactly
-// once. It returns false when the recovery is unknown or already applied,
-// which makes it usable as the one-shot gate for the history rewrite.
-func (c *AgentControl) MarkHelpMeRecoveryApplied(helperID string) bool {
+// once. The applied marker is written atomically before the in-memory state is
+// advanced, so callers can retry a failed durable commit without losing it.
+func (c *AgentControl) MarkHelpMeRecoveryApplied(helperID string) (bool, error) {
 	if c == nil {
-		return false
+		return false, errors.New("agent control is required")
 	}
 	helperID = strings.TrimSpace(helperID)
 	if helperID == "" {
-		return false
+		return false, errors.New("helpme helper id is required")
 	}
 	// Rehydrate from disk first so a post-restart await still applies once.
 	if _, ok := c.HelpMeRecoveryForHelper(helperID); !ok {
-		return false
+		return false, nil
 	}
 	c.helpMeRecoveryMu.Lock()
 	rec, ok := c.helpMeRecoveries[helperID]
 	if !ok || rec.Applied {
 		c.helpMeRecoveryMu.Unlock()
-		return false
+		return false, nil
 	}
 	rec.Applied = true
+	if err := c.persistHelpMeRecovery(rec); err != nil {
+		c.helpMeRecoveryMu.Unlock()
+		return false, err
+	}
 	c.helpMeRecoveries[helperID] = rec
 	c.helpMeRecoveryMu.Unlock()
-	c.persistHelpMeRecovery(rec)
-	return true
+	return true, nil
 }
 
 func (c *AgentControl) helpMeRecoveryPath(helperID string) string {
@@ -156,23 +187,19 @@ func (c *AgentControl) helpMeRecoveryPath(helperID string) string {
 	return filepath.Join(dir, helpMeRecoveryDirName, id+".json")
 }
 
-func (c *AgentControl) persistHelpMeRecovery(rec HelpMeRecovery) {
+func (c *AgentControl) persistHelpMeRecovery(rec HelpMeRecovery) error {
 	path := c.helpMeRecoveryPath(rec.HelperID)
 	if path == "" {
-		return
+		return nil
 	}
 	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
-		providers.DebugLogf("agentcontrol: encode helpme recovery %s: %v", rec.HelperID, err)
-		return
+		return fmt.Errorf("encode helpme recovery %s: %w", rec.HelperID, err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		providers.DebugLogf("agentcontrol: create helpme recovery dir: %v", err)
-		return
+	if err := securefs.WriteFileAtomic(path, data); err != nil {
+		return fmt.Errorf("write helpme recovery %s: %w", rec.HelperID, err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		providers.DebugLogf("agentcontrol: write helpme recovery %s: %v", rec.HelperID, err)
-	}
+	return nil
 }
 
 func (c *AgentControl) loadHelpMeRecovery(helperID string) (HelpMeRecovery, bool) {

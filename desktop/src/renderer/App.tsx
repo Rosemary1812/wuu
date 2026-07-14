@@ -156,6 +156,7 @@ import {
   useAppLayoutState,
 } from "./AppLayoutState";
 import { CommitChangesDialog, PullRequestDialog } from "./GitDialogs";
+import { motionDurationMs } from "./motion";
 import type { ContextCompositionEntry } from "./ContextCompositionCard";
 import type { InstructionFilesEntry } from "./InstructionFilesCard";
 import { DesignTokensPanel } from "./DesignTokensPanel";
@@ -253,7 +254,17 @@ function initializedForSelectedPermissionMode(
   };
 }
 
-const ENVIRONMENT_PANEL_MOTION_MS = 260;
+const ENVIRONMENT_PANEL_MOTION_MS = motionDurationMs(
+  "--environment-panel-motion-duration",
+  260,
+);
+const WORKSPACE_SHEET_EXIT_MS = motionDurationMs("--sheet-exit-duration", 220);
+// Globalized-sheet phases: docked (grid child) → arming (promoted to a
+// full-window fixed sheet, teleported over its dock slot for one frame) →
+// open (slid to cover the window) → exiting (sliding back to park) →
+// docking (teleported back into the grid for one frame, no transition) →
+// docked. Transitions retarget mid-flight, so rapid toggles stay continuous.
+type WorkspaceSheetPhase = "docked" | "arming" | "open" | "exiting" | "docking";
 const ENVIRONMENT_PANEL_WIDTH_PX = 328;
 const ENVIRONMENT_PANEL_WIDTH_CSS = `${ENVIRONMENT_PANEL_WIDTH_PX}px`;
 const WORKTREE_FORK_NON_GIT_REASON =
@@ -375,6 +386,7 @@ export function App(): JSX.Element {
     workspaceRightPanelDockableWithoutSidebar,
     setRightPanelOpenWithMotion,
     animateRightPanelLayout,
+    animateSidebarLayout,
     startSidebarResize,
     startRightPanelResize,
     handleRightPanelSeparatorKey,
@@ -403,6 +415,50 @@ export function App(): JSX.Element {
   const rightPanelGlobalized =
     rightPanelOpen &&
     (rightPanelManualGlobalized || rightPanelAutoGlobalized);
+  const [workspaceSheetPhase, setWorkspaceSheetPhase] =
+    useState<WorkspaceSheetPhase>(rightPanelGlobalized ? "open" : "docked");
+  useLayoutEffect(() => {
+    if (rightPanelGlobalized) {
+      if (workspaceSheetPhase === "open" || workspaceSheetPhase === "arming") {
+        return undefined;
+      }
+      setWorkspaceSheetPhase("arming");
+      return undefined;
+    }
+    if (workspaceSheetPhase === "docked") {
+      return undefined;
+    }
+    if (workspaceSheetPhase === "arming") {
+      // Interrupted before the slide even started: demote instantly.
+      setWorkspaceSheetPhase("docked");
+      return undefined;
+    }
+    if (workspaceSheetPhase === "docking") {
+      return undefined;
+    }
+    setWorkspaceSheetPhase("exiting");
+    const timer = window.setTimeout(
+      () => setWorkspaceSheetPhase("docking"),
+      WORKSPACE_SHEET_EXIT_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [rightPanelGlobalized, workspaceSheetPhase]);
+  useEffect(() => {
+    if (workspaceSheetPhase !== "arming" && workspaceSheetPhase !== "docking") {
+      return undefined;
+    }
+    // Double rAF: arming lets the parked transform commit before retargeting
+    // to open (so the enter transition has a start value); docking lets the
+    // grid snap commit transition-free before the data attribute clears.
+    const next = workspaceSheetPhase === "arming" ? "open" : "docked";
+    const from = workspaceSheetPhase;
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setWorkspaceSheetPhase((current) => (current === from ? next : current));
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [workspaceSheetPhase]);
   const sidebarDrawerMode = sidebarCollapsed || rightPanelGlobalized;
   const {
     sidebarDrawerPhase,
@@ -524,6 +580,9 @@ export function App(): JSX.Element {
   }, [rightPanelOpen]);
   const toggleWorkspacePanelGlobalized = useCallback((): void => {
     animateRightPanelLayout();
+    // The under-stage sidebar column collapses/restores while the sheet
+    // covers it; give that structural change its shared motion too.
+    animateSidebarLayout();
     if (!rightPanelGlobalized) {
       setRightPanelManualGlobalized(true);
       return;
@@ -538,6 +597,7 @@ export function App(): JSX.Element {
     }
   }, [
     animateRightPanelLayout,
+    animateSidebarLayout,
     rightPanelAutoGlobalized,
     rightPanelGlobalized,
     sidebarCollapsed,
@@ -2252,8 +2312,6 @@ export function App(): JSX.Element {
   const shellStyle = {
     "--sidebar-width": `${effectiveSidebarWidth}px`,
     "--sidebar-open-width": `${sidebarWidth}px`,
-    "--sidebar-motion-duration": `${SIDEBAR_MOTION_MS}ms`,
-    "--workspace-panel-motion-duration": `${RIGHT_PANEL_MOTION_MS}ms`,
     "--workspace-right-panel-width": `${clampedWorkspaceRightPanelWidth}px`,
     "--thread-panel-width": `${clampedThreadPanelWidth}px`,
     "--side-thread-width": `${sideThread.width}px`,
@@ -2261,7 +2319,6 @@ export function App(): JSX.Element {
     "--environment-panel-width": ENVIRONMENT_PANEL_WIDTH_CSS,
     "--environment-panel-reserved-width": "372px",
     "--environment-panel-edge-gap": "18px",
-    "--environment-panel-motion-duration": `${ENVIRONMENT_PANEL_MOTION_MS}ms`,
   } as CSSProperties;
   const pullRequestDisabledReason = pullRequestUnavailableReason(
     state.gitStatus,
@@ -4367,6 +4424,7 @@ export function App(): JSX.Element {
           onOpenFile={openWorkspaceFile}
           onClose={() => setRightPanelOpenWithMotion(false)}
           globalized={rightPanelGlobalized}
+          sheetPhase={workspaceSheetPhase}
           onToggleGlobalize={toggleWorkspacePanelGlobalized}
           onOpenSidebar={openSidebarDrawerNow}
           canExitGlobalized={

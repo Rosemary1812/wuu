@@ -132,16 +132,61 @@
   --menu-border: var(--ink-overlay-12);
   --menu-hover: #f2f3f0;
   --menu-shadow: var(--shadow-pop);
-  --menu-enter-duration: 140ms;
-  --menu-enter-easing: cubic-bezier(0.16, 1, 0.3, 1);
-  --content-swap-duration: 160ms;
-  --content-swap-easing: cubic-bezier(0.16, 1, 0.3, 1);
-  --search-enter-duration: 220ms;
-  --search-exit-duration: 180ms;
-  --search-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
-  --collapse-motion-duration: 400ms;
-  --collapse-chevron-duration: 140ms;
-  --collapse-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
+  /* --- Motion: primitives ------------------------------------------------
+   * The ONLY place raw motion values live. Everything else (semantic aliases
+   * below, component CSS, JS timeouts via motion.ts) derives from these.
+   * Ladder: fast = pointer feedback (hover/press/color) — never slower, this
+   * is where responsiveness lives; base = menus, popovers, content swaps;
+   * slow = structural moves (sidebar, panels, overlays); slower = large
+   * folds/reveals. The signature --ease-out front-loads its travel, so the
+   * longer tails read as calm rather than sluggish.
+   * prefers-reduced-motion zeroes the ladder globally (see media query after
+   * this :root block); token-driven motion needs no per-component handling. */
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 280ms;
+  --motion-slower: 440ms;
+  --motion-spin: 900ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* --- Motion: semantic aliases -------------------------------------------
+   * Components reference these (or the primitives directly). Add an alias
+   * only when several files must share one rhythm; otherwise use primitives. */
+  --menu-enter-duration: var(--motion-base);
+  --menu-enter-easing: var(--ease-out);
+  --content-swap-duration: var(--motion-base);
+  --content-swap-easing: var(--ease-out);
+  --search-enter-duration: var(--motion-slow);
+  --search-exit-duration: var(--motion-base);
+  --search-motion-easing: var(--ease-out);
+  --collapse-motion-duration: var(--motion-slower);
+  --collapse-chevron-duration: var(--motion-base);
+  --collapse-motion-easing: var(--ease-out);
+  /* Globalized-sheet pair: the workspace right panel "takes the stage" as a
+   * full-window sheet (sidebar.css [data-sheet] rules). Enter rides the
+   * ladder; exit is pinned shorter per enter-heavy/exit-light, mirroring the
+   * environment panel's 260/220 ratio. */
+  --sheet-enter-duration: var(--motion-slow);
+  --sheet-enter-easing: var(--ease-out);
+  --sheet-exit-duration: 220ms;
+  --sheet-exit-easing: var(--ease-in);
+  --sidebar-motion-duration: var(--motion-slow);
+  --sidebar-motion-ease: var(--ease-out);
+  --workspace-panel-motion-duration: var(--motion-slow);
+  --workspace-panel-motion-ease: var(--ease-out);
+  /* Reference animation (do not retune casually): the environment panel's
+   * paired enter/exit is the quality bar for panel motion — enter decelerates
+   * in from its direction, exit accelerates back out the same way, shorter
+   * and with a slight scale-down. Values are pinned, not ladder-derived. */
+  --environment-panel-motion-duration: 260ms;
+  --environment-panel-exit-duration: 220ms;
+  --environment-panel-motion-easing: cubic-bezier(0.2, 0, 0, 1);
+  --environment-flow-motion-duration: 280ms;
+  --environment-flow-motion-delay: 22ms;
+  /* Deliberate exception: session skeleton loading is an ambient state, its
+   * spinner breathes slower than the active-progress --motion-spin rhythm. */
   --session-loading-spin-duration: 1400ms;
   --conversation-turn-gap: 8px;
 --sidebar-glass-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 247, 245, 0.9));
@@ -177,6 +222,26 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* Reduced motion: collapse the whole ladder at the token layer so every
+ * token-driven transition/animation becomes instant. Spin rhythms stay
+ * non-zero — spinners communicate ongoing work, and a 0ms infinite
+ * animation would busy-loop. Hand-written keyframes with local durations
+ * still need their own prefers-reduced-motion block next to where they
+ * are defined. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 0ms;
+    --motion-slower: 0ms;
+    --environment-panel-motion-duration: 0ms;
+    --environment-panel-exit-duration: 0ms;
+    --environment-flow-motion-duration: 0ms;
+    --environment-flow-motion-delay: 0ms;
+    --sheet-exit-duration: 0ms;
+  }
 }
 
 /* Text selection stays stable instead of following the theme accent. */
@@ -257,7 +322,10 @@
   }
 }
 
-@keyframes conversation-search-progress {
+/* The one spinner keyframe. Pair with a duration token:
+ * active progress = var(--motion-spin), ambient session skeleton =
+ * var(--session-loading-spin-duration). Do not define new spin keyframes. */
+@keyframes wuu-spin {
   to {
     transform: rotate(360deg);
   }
@@ -296,12 +364,6 @@
   to {
     opacity: 1;
     transform: translateY(-50%) scaleY(1);
-  }
-}
-
-@keyframes session-loading-spin {
-  to {
-    transform: rotate(360deg);
   }
 }
 
@@ -410,6 +472,30 @@ code,
    pointer crosses the embedded browser mid-drag, the window stops receiving
    events and the right-panel resize freezes. Making frames transparent to
    pointer events for the duration of any resize keeps the drag alive. */
+/* Exception to the suppression above: when a live window resize crosses the
+ * auto-collapse threshold, the sidebar still plays the same shared collapse
+ * motion as a manual toggle (user-confirmed expectation, 2026-07: an earlier
+ * iteration suppressed this to keep the layout glued to the window edge, but
+ * a snapped-away sidebar reads as broken). Only the shell's grid transition
+ * is re-enabled, and only while .sidebar-animating is present (bounded by
+ * --sidebar-motion-duration), so the drag-performance budget of the blanket
+ * rule is unaffected. !important is needed to out-rank the suppression. */
+.window-resizing .app-shell.sidebar-animating {
+  transition: grid-template-columns var(--sidebar-motion-duration)
+    var(--sidebar-motion-ease) !important;
+}
+
+/* Same exception for the globalize sheet: auto-globalize triggered by a live
+ * window resize still slides (transform-only, composited — it does not touch
+ * the layout budget the blanket rule protects). */
+.window-resizing .workspace-right-panel[data-sheet="open"] {
+  transition: transform var(--sheet-enter-duration) var(--sheet-enter-easing) !important;
+}
+
+.window-resizing .workspace-right-panel[data-sheet="parked"] {
+  transition: transform var(--sheet-exit-duration) var(--sheet-exit-easing) !important;
+}
+
 .window-resizing webview,
 .window-resizing iframe {
   pointer-events: none;

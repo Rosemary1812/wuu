@@ -91,16 +91,13 @@ func (s *Server) residentThreadCandidateLocked(id string, th *threadState) (resi
 	}
 	th.mu.Lock()
 	defer th.mu.Unlock()
-	if th.running {
+	if residentThreadExecutionActiveLocked(th) {
 		return residentThreadCandidate{}, false
 	}
 	if th.Ephemeral {
 		return residentThreadCandidate{}, false
 	}
 	if !th.PersistHistory && !th.ReadOnly {
-		return residentThreadCandidate{}, false
-	}
-	if th.execRuntime != nil && th.execRuntime.AgentControl != nil && th.execRuntime.AgentControl.Manager() != nil && th.execRuntime.AgentControl.Manager().CountRunning() > 0 {
 		return residentThreadCandidate{}, false
 	}
 	return residentThreadCandidate{
@@ -157,7 +154,7 @@ func residentThreadStillIdle(th *threadState) bool {
 	}
 	th.mu.Lock()
 	defer th.mu.Unlock()
-	if th.running {
+	if residentThreadExecutionActiveLocked(th) {
 		return false
 	}
 	if th.Ephemeral {
@@ -166,8 +163,14 @@ func residentThreadStillIdle(th *threadState) bool {
 	if !th.PersistHistory && !th.ReadOnly {
 		return false
 	}
-	if th.execRuntime != nil && th.execRuntime.AgentControl != nil && th.execRuntime.AgentControl.Manager() != nil && th.execRuntime.AgentControl.Manager().CountRunning() > 0 {
-		return false
-	}
 	return true
+}
+
+func residentThreadExecutionActiveLocked(th *threadState) bool {
+	if th.running || th.executionLease != nil || th.admissionReserved {
+		return true
+	}
+	return th.execRuntime != nil &&
+		th.execRuntime.AgentControl != nil &&
+		th.execRuntime.AgentControl.HasOwnedWorkerExecutions()
 }

@@ -308,6 +308,14 @@ export function Composer({
   const className = `composer-wrap ${variant === "hero" ? "hero-composer-wrap" : "dock-composer-wrap"}`;
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
+  // The action button is a stop control ONLY while a turn runs AND the input
+  // is empty. The moment there is something to send, it flips back to a send
+  // button — because Enter already queues a draft mid-turn, so the button must
+  // match that (queuing "排队发送" rather than interrupting). This keeps the
+  // stop affordance for the common "watching a turn, empty input" case while
+  // never blocking a queued follow-up the user has clearly typed.
+  const showComposerStop = running && !hasDraft;
+  const composerSendLabel = running ? "排队发送" : "发送";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const composerShellRef = useRef<HTMLDivElement>(null);
   const composerFrameRef = useRef<HTMLDivElement>(null);
@@ -1232,14 +1240,14 @@ export function Composer({
                   </span>
                 ) : null}
                 <button
-                  className={`composer-action-button ${running ? "composer-stop-button" : "composer-send-button"}`}
+                  className={`composer-action-button ${showComposerStop ? "composer-stop-button" : "composer-send-button"}`}
                   type="button"
-                  onClick={running ? onInterrupt : submitComposer}
-                  aria-label={running ? "停止" : "发送"}
-                  title={running ? "停止" : "发送"}
-                  disabled={!running && (readOnly || !hasDraft)}
+                  onClick={showComposerStop ? onInterrupt : submitComposer}
+                  aria-label={showComposerStop ? "停止" : composerSendLabel}
+                  title={showComposerStop ? "停止" : composerSendLabel}
+                  disabled={!showComposerStop && (readOnly || !hasDraft)}
                 >
-                  {running ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
+                  {showComposerStop ? <Square aria-hidden="true" /> : <Send aria-hidden="true" />}
                 </button>
               </div>
             </div>

@@ -3,6 +3,7 @@ package appserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -22,6 +23,16 @@ func (s *Server) forwardAgentNotifications(threadID string, control *agentcontro
 		case n, ok := <-ch:
 			if !ok {
 				return
+			}
+			if subagent.IsTerminal(n.Status) {
+				// This is an idempotent fallback for controls that completed before
+				// the reliable terminal finalizer was attached. In the normal path
+				// AgentControl already ran the same finalizer synchronously while it
+				// still owned the cross-process worker execution lease.
+				if err := s.finalizeAgentTerminal(threadID, control, n); err != nil {
+					providers.DebugLogf("finalize terminal agent %s fallback: %v", n.AgentID, err)
+				}
+				continue
 			}
 			now := time.Now().UTC()
 			if n.Status == subagent.StatusRunning {
@@ -45,52 +56,136 @@ func (s *Server) forwardAgentNotifications(threadID string, control *agentcontro
 				ThreadID: threadID,
 				Agent:    s.agentFromSnapshot(control, n.Snapshot),
 			})
-			switch n.Status {
-			case subagent.StatusCompleted, subagent.StatusFailed, subagent.StatusCancelled:
-				s.completeLiveAgentThread(threadID, control, n.Snapshot, now)
-				if strings.TrimSpace(n.Snapshot.ParticipantID) != "" {
-					summary := participantRunSummary(n.Snapshot.Result, n.Snapshot.Description)
-					if n.Snapshot.Error != nil {
-						summary = participantRunSummary(n.Snapshot.Error.Error(), n.Snapshot.Description)
-					}
-					_ = session.CompleteParticipantRun(
-						s.rt.SessionDir,
-						n.Snapshot.ParticipantID,
-						n.Snapshot.ID,
-						string(n.Status),
-						summary,
-					)
-					// Decision-five concurrency lock: release the busy lock
-					// the run held and re-kick the chat inbox so any
-					// @-mention deferred while the agent was busy now drains
-					// — the "queue" half of queue-or-tell-busy.
-					pid := strings.TrimSpace(n.Snapshot.ParticipantID)
-					s.releaseParticipantBusy(pid, n.Snapshot.ID)
-					s.kickResidentAgent(pid)
-				}
-				if n.Status == subagent.StatusCompleted &&
-					control != nil &&
-					control.ParticipantSpeechEnabled(n.Snapshot.ID) &&
-					!control.ParticipantResponded(n.Snapshot.ID) {
-					_, _ = control.PostParticipantMessage(context.Background(), n.Snapshot.ID, "decline", "没有需要占用主对话的回应。", "")
-				}
-				if s.isRootAgentSnapshot(control, threadID, n.Snapshot) {
-					mailboxMessage := agentcontrol.NewAgentMailboxMessage(n.Snapshot)
-					if control != nil {
-						mailboxMessage = control.AgentMailboxMessage(n.Snapshot)
-					}
-					_ = s.writeNotification(NotificationAgentMailbox, AgentMailboxNotification{
-						ThreadID: threadID,
-						Message:  mailboxMessage,
-					})
-					if control != nil && !control.ParticipantSpeechEnabled(n.Snapshot.ID) {
-						resultID := control.AgentResultDeliveryID(n.Snapshot)
-						s.enqueueAgentCompletionTurn(threadID, n.Snapshot.ID, resultID, control.AgentCompletionChatMessage(n.Snapshot, agentthread.RootPath))
-					}
-				}
-			}
 		}
 	}
+}
+
+type agentTerminalFinalizationKey struct {
+	threadID    string
+	agentID     string
+	status      subagent.Status
+	completedAt int64
+}
+
+const (
+	participantRunCompletionMaxAttempts = 3
+	participantRunCompletionRetryDelay  = 10 * time.Millisecond
+)
+
+type participantRunCompleter func(sessDir, participantID, agentID, outcome, summary string) error
+
+func (s *Server) finalizeAgentTerminal(threadID string, control *agentcontrol.AgentControl, n subagent.Notification) error {
+	return s.finalizeAgentTerminalWithCompleter(threadID, control, n, session.CompleteParticipantRun)
+}
+
+func (s *Server) finalizeAgentTerminalWithCompleter(threadID string, control *agentcontrol.AgentControl, n subagent.Notification, complete participantRunCompleter) error {
+	if s == nil || !subagent.IsTerminal(n.Status) {
+		return nil
+	}
+	agentID := strings.TrimSpace(n.Snapshot.ID)
+	if agentID == "" {
+		agentID = strings.TrimSpace(n.AgentID)
+	}
+	key := agentTerminalFinalizationKey{
+		threadID:    strings.TrimSpace(threadID),
+		agentID:     agentID,
+		status:      n.Status,
+		completedAt: n.Snapshot.CompletedAt.UnixNano(),
+	}
+	s.agentTerminalFinalizationMu.Lock()
+	if s.agentTerminalFinalizations == nil {
+		s.agentTerminalFinalizations = make(map[agentTerminalFinalizationKey]struct{})
+	}
+	if _, finalized := s.agentTerminalFinalizations[key]; finalized {
+		s.agentTerminalFinalizationMu.Unlock()
+		return nil
+	}
+	s.agentTerminalFinalizationMu.Unlock()
+
+	participantID := strings.TrimSpace(n.Snapshot.ParticipantID)
+	if participantID != "" {
+		if agentID == "" {
+			return errors.New("complete participant run: agent id is required")
+		}
+		summary := participantRunSummary(n.Snapshot.Result, n.Snapshot.Description)
+		if n.Snapshot.Error != nil {
+			summary = participantRunSummary(n.Snapshot.Error.Error(), n.Snapshot.Description)
+		}
+		if s.rt == nil || strings.TrimSpace(s.rt.SessionDir) == "" {
+			return errors.New("complete participant run: session store is unavailable")
+		}
+		if complete == nil {
+			return errors.New("complete participant run: completer is unavailable")
+		}
+		var err error
+		for attempt := 1; attempt <= participantRunCompletionMaxAttempts; attempt++ {
+			err = complete(
+				s.rt.SessionDir,
+				participantID,
+				agentID,
+				string(n.Status),
+				summary,
+			)
+			if err == nil {
+				break
+			}
+			if attempt == participantRunCompletionMaxAttempts || s.closed.Load() {
+				return fmt.Errorf("complete participant run %s/%s after %d attempt(s): %w", participantID, agentID, attempt, err)
+			}
+			time.Sleep(participantRunCompletionRetryDelay)
+		}
+	}
+
+	// Commit the in-memory dedupe only after the durable core succeeds. Two
+	// concurrent replays may both issue the idempotent SQLite update, but only
+	// the winner below is allowed to publish terminal side effects.
+	s.agentTerminalFinalizationMu.Lock()
+	if _, finalized := s.agentTerminalFinalizations[key]; finalized {
+		s.agentTerminalFinalizationMu.Unlock()
+		return nil
+	}
+	s.agentTerminalFinalizations[key] = struct{}{}
+	s.agentTerminalFinalizationMu.Unlock()
+
+	closed := s.closed.Load()
+	if !closed {
+		now := time.Now().UTC()
+		_ = s.writeNotification(NotificationAgentUpdated, AgentUpdatedNotification{
+			ThreadID: threadID,
+			Agent:    s.agentFromSnapshot(control, n.Snapshot),
+		})
+		s.completeLiveAgentThread(threadID, control, n.Snapshot, now)
+	}
+	if participantID != "" {
+		// Release the run's participant reservation and re-kick chat only
+		// after the durable run record reflects the terminal outcome.
+		s.releaseParticipantBusy(participantID, agentID)
+		s.kickResidentAgent(participantID)
+	}
+	if closed {
+		return nil
+	}
+	if n.Status == subagent.StatusCompleted &&
+		control != nil &&
+		control.ParticipantSpeechEnabled(n.Snapshot.ID) &&
+		!control.ParticipantResponded(n.Snapshot.ID) {
+		_, _ = control.PostParticipantMessage(context.Background(), n.Snapshot.ID, "decline", "没有需要占用主对话的回应。", "")
+	}
+	if s.isRootAgentSnapshot(control, threadID, n.Snapshot) {
+		mailboxMessage := agentcontrol.NewAgentMailboxMessage(n.Snapshot)
+		if control != nil {
+			mailboxMessage = control.AgentMailboxMessage(n.Snapshot)
+		}
+		_ = s.writeNotification(NotificationAgentMailbox, AgentMailboxNotification{
+			ThreadID: threadID,
+			Message:  mailboxMessage,
+		})
+		if control != nil && !control.ParticipantSpeechEnabled(n.Snapshot.ID) {
+			resultID := control.AgentResultDeliveryID(n.Snapshot)
+			s.enqueueAgentCompletionTurn(threadID, n.Snapshot.ID, resultID, control.AgentCompletionChatMessage(n.Snapshot, agentthread.RootPath), &n.Snapshot)
+		}
+	}
+	return nil
 }
 
 func (s *Server) forwardAgentStreamNotifications(threadID string, control *agentcontrol.AgentControl, ch <-chan subagent.StreamNotification, done <-chan struct{}) {
@@ -204,6 +299,15 @@ func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.Par
 	if threadID == "" {
 		return errors.New("thread_id is required")
 	}
+	var lifecycleLease *session.ThreadLifecycleLease
+	if s != nil && s.rt != nil && strings.TrimSpace(s.rt.SessionDir) != "" {
+		var err error
+		lifecycleLease, err = s.acquireThreadLifecycleWriteLease(threadID)
+		if err != nil {
+			return err
+		}
+		defer releaseThreadLifecycleWriteLease(threadID, lifecycleLease)
+	}
 	now := msg.CreatedAt
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -246,6 +350,9 @@ func (s *Server) publishParticipantMessage(threadID string, msg agentcontrol.Par
 		if meta, ok, findErr := session.Find(s.rt.SessionDir, threadID); findErr == nil && ok {
 			_ = session.UpdateIndex(s.rt.SessionDir, threadID, meta.Entries, "")
 		}
+	}
+	if hook := s.afterLifecycleHistoryAppendForTest; hook != nil {
+		hook(threadID)
 	}
 	if subthreadID := strings.TrimSpace(rec.ThreadID); subthreadID != "" {
 		// Reply-subthread (cth-*) message: stored in the parent thread's history

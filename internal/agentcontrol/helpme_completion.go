@@ -8,20 +8,11 @@ import (
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
-// HelpMeCompletionRewrite builds the bounded HelpMe joint-compact history
-// rewrite for a just-completed helpme_recovery helper. It is the
-// completion-wakeup replacement for the old await_agents-tool delivery: the
-// subagent-completion path (forwardAgentNotifications -> drain) calls it when a
-// root child finishes, so the main agent's polluted context is replaced by the
-// recovery compact without any explicit blocking await.
-//
-// It is a one-shot: MarkHelpMeRecoveryApplied gates it so a helper is only ever
-// rewritten once. It returns nil for any agent that is not a completed
-// helpme_recovery helper with a structured report and an unapplied registered
-// recovery (the legacy trace-migration and trace-path reference from the old
-// await path are intentionally dropped — recovery state is always registered at
-// spawn time now).
-func (c *AgentControl) HelpMeCompletionRewrite(snap subagent.SubAgentSnapshot) *compact.HelpMeHistoryRewrite {
+// PrepareHelpMeCompletionRewrite builds a bounded HelpMe joint-compact rewrite
+// without consuming its one-shot recovery state. A caller that persists the
+// rewrite must call MarkHelpMeRecoveryApplied only after that persistence
+// succeeds; a failed write can then retry without losing the recovery.
+func (c *AgentControl) PrepareHelpMeCompletionRewrite(snap subagent.SubAgentSnapshot) *compact.HelpMeHistoryRewrite {
 	if c == nil {
 		return nil
 	}
@@ -85,12 +76,6 @@ func (c *AgentControl) HelpMeCompletionRewrite(snap subagent.SubAgentSnapshot) *
 		NextSteps:              report.NextSteps,
 		Artifacts:              report.Artifacts,
 	})
-	// Consume the recovery atomically: MarkHelpMeRecoveryApplied returns false
-	// when another path already applied it, dropping this rewrite instead of
-	// double-firing a wholesale history replacement.
-	if !c.MarkHelpMeRecoveryApplied(result.AgentID) {
-		return nil
-	}
 	return &compact.HelpMeHistoryRewrite{
 		Kind:         compact.HelpMeHistoryRewriteKind,
 		Content:      content,

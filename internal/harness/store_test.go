@@ -203,6 +203,18 @@ func TestStorePersistsQueueItems(t *testing.T) {
 	if len(items) != 1 || items[0].ID != "queue-1" || decoded["task"] != "queued" {
 		t.Fatalf("unexpected queue items: %+v", items)
 	}
+	exists, err := store.QueueItemExists("queue-1")
+	if err != nil || !exists {
+		t.Fatalf("QueueItemExists(queue-1) = %v, %v; want true, nil", exists, err)
+	}
+	marked, err := store.MarkQueueItemCancelling("queue-1")
+	if err != nil || !marked {
+		t.Fatalf("MarkQueueItemCancelling(queue-1) = %v, %v; want true, nil", marked, err)
+	}
+	item, found, err := store.GetQueueItem("queue-1")
+	if err != nil || !found || item.State != QueueItemStateCancelling {
+		t.Fatalf("GetQueueItem(queue-1) = %+v, %v, %v; want cancelling, true, nil", item, found, err)
+	}
 	if err := store.DeleteQueueItem("queue-1"); err != nil {
 		t.Fatalf("DeleteQueueItem: %v", err)
 	}
@@ -212,6 +224,10 @@ func TestStorePersistsQueueItems(t *testing.T) {
 	}
 	if len(items) != 0 {
 		t.Fatalf("expected queue empty, got %+v", items)
+	}
+	exists, err = store.QueueItemExists("queue-1")
+	if err != nil || exists {
+		t.Fatalf("QueueItemExists(queue-1) after delete = %v, %v; want false, nil", exists, err)
 	}
 }
 

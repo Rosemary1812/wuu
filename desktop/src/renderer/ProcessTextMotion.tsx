@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type JSX } from "react";
+import { motionDurationMs } from "./motion";
 
-const PROCESS_TEXT_EXIT_MS = 180;
+// Mirrors the process-text-rise-out duration in turns.css.
+const PROCESS_TEXT_EXIT_MS = motionDurationMs("--motion-base", 180);
 
 export function AnimatedProcessText({
   text,

@@ -35,6 +35,7 @@ import { WorkspaceReviewPanel } from "./WorkspaceReviewPanels";
 import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
 import type { WorkspaceFileViewTab, WorkspaceViewTab } from "./WorkspaceViewTabs";
 import { handleTabListKeyDown, useTabCloseFocusRestoration } from "./TabKeyboardNavigation";
+import { useStripEnterReady, useTabExitRetention } from "./TabMotion";
 
 export type WorkspacePanelView = "files" | "review" | "terminal" | "browser";
 
@@ -104,6 +105,7 @@ export function WorkspaceRightPanel({
   onOpenFile,
   onClose,
   globalized,
+  sheetPhase = "docked",
   onToggleGlobalize,
   onOpenSidebar,
   canExitGlobalized = true,
@@ -138,6 +140,9 @@ export function WorkspaceRightPanel({
   onOpenFile: (path: string) => void;
   onClose: () => void;
   globalized: boolean;
+  // Globalize-sheet phase from App's phase machine; drives the data-sheet
+  // attribute that promotes the panel to a full-window sheet in CSS.
+  sheetPhase?: "docked" | "arming" | "open" | "exiting" | "docking";
   onToggleGlobalize: () => void;
   onOpenSidebar?: () => void;
   canExitGlobalized?: boolean;
@@ -154,6 +159,8 @@ export function WorkspaceRightPanel({
   const visibleTabs = tabs;
   const showingPicker = !activeTab;
   const [dirtyFileTabIDs, setDirtyFileTabIDs] = useState<Set<string>>(() => new Set());
+  const enterReady = useStripEnterReady();
+  const tabEntries = useTabExitRetention(visibleTabs, (tab) => tab.id);
   const [draggingTabID, setDraggingTabID] = useState<string | undefined>(undefined);
   const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>(undefined);
   const [fileTreeWidth, setFileTreeWidth] = useState(initialWorkspaceFileTreeWidth);
@@ -346,6 +353,13 @@ export function WorkspaceRightPanel({
   return (
     <aside
       className={`workspace-right-panel${activeTab ? " detail" : " tools"}${activeTab?.kind === "review" ? " review" : ""}${activeTab?.kind === "diff" ? " diff" : ""}${activeTab?.kind === "files" || activeTab?.kind === "file" ? " files" : ""}`}
+      data-sheet={
+        sheetPhase === "exiting"
+          ? "parked"
+          : sheetPhase === "docked"
+            ? undefined
+            : sheetPhase
+      }
       aria-hidden={!open}
       inert={!open}
     >
@@ -381,9 +395,27 @@ export function WorkspaceRightPanel({
               className="workspace-panel-tabs"
               role="tablist"
               aria-label="产物与工具"
+              data-enter-ready={enterReady ? "" : undefined}
               onKeyDown={handleTabListKeyDown}
             >
-              {visibleTabs.map((tab) => {
+              {tabEntries.map((entry) => {
+                const tab = entry.tab;
+                if (entry.closing) {
+                  // Exit retention (TabMotion.ts): inert collapsing ghost so
+                  // the neighbours slide over instead of jumping.
+                  return (
+                    <div
+                      key={`closing-${tab.id}`}
+                      className="workspace-tool-tab closing"
+                      aria-hidden="true"
+                    >
+                      <span className="workspace-tool-tab-main">
+                        <WorkspaceViewTabIcon tab={tab} className="icon" />
+                        <span>{workspaceViewTabLabel(tab)}</span>
+                      </span>
+                    </div>
+                  );
+                }
                 const active = tab.id === activeTabID;
                 return (
                   <SortableWorkspaceViewTab
@@ -395,6 +427,7 @@ export function WorkspaceRightPanel({
                     reorderable={visibleTabs.length > 1}
                     onSelect={() => onSelectTab(tab.id)}
                     onClose={() => requestCloseTab(tab)}
+                    onDoubleClick={() => requestCloseTab(tab)}
                   />
                 );
               })}
@@ -583,7 +616,8 @@ function SortableWorkspaceViewTab({
   open,
   reorderable,
   onSelect,
-  onClose
+  onClose,
+  onDoubleClick
 }: {
   tab: WorkspaceViewTab;
   active: boolean;
@@ -592,6 +626,9 @@ function SortableWorkspaceViewTab({
   reorderable: boolean;
   onSelect: () => void;
   onClose: () => void;
+  // Parity with session tabs: double-click closes (through the dirty-file
+  // confirm guard upstream).
+  onDoubleClick: () => void;
 }): JSX.Element {
   const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, transition, isDragging } = useSortable({
     id: tab.id,
@@ -626,6 +663,7 @@ function SortableWorkspaceViewTab({
         title={tooltip}
         disabled={!open}
         onClick={onSelect}
+        onDoubleClick={onDoubleClick}
       >
         <WorkspaceViewTabIcon tab={tab} className="icon" />
         <span>{label}</span>

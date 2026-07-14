@@ -19,6 +19,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/modelprofile"
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/toolctx"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
@@ -4636,6 +4637,46 @@ func TestToolkit_HelpMeRequiresExplicitOptInAndCloneInheritsIt(t *testing.T) {
 	}
 	if _, ok := clone.env.ActiveSurface.Tools[helpMeToolName]; !ok {
 		t.Fatal("clone Env surface must inherit HelpMe opt-in")
+	}
+}
+
+// Regression: the resident/named-agent setters used to republish
+// env.ActiveSurface without the disabled-tools filter, resurrecting the gated
+// helpme tool for surface consumers (skill filtering) even though
+// Definitions() hid it and Execute() rejected it.
+func TestToolkit_ResidentSettersKeepDisabledHelpMeOffSurface(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetSkills([]skills.Skill{{
+		Name:         "recovery",
+		Description:  "Escalate a stuck task.",
+		WhenToUse:    "Use when the task is stuck.",
+		Content:      "Call the helpme tool.",
+		AllowedTools: []string{helpMeToolName},
+	}})
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
+	kit.SetParticipantSpeechEnabled(true)
+	kit.SetResidentParticipantEnabled(true)
+	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
+
+	if _, ok := kit.env.ActiveSurface.Tools[helpMeToolName]; ok {
+		t.Fatal("resident setters must not restore disabled HelpMe on the Env surface")
+	}
+	if containsProfileDef(kit.Definitions(), helpMeToolName) {
+		t.Fatal("HelpMe must stay hidden from definitions after resident setup")
+	}
+	for _, skill := range kit.env.VisibleSkills() {
+		if skill.Name == "recovery" {
+			t.Fatal("skills declaring the disabled HelpMe tool must be filtered out")
+		}
+	}
+
+	kit.SetHelpMeEnabled(true)
+	kit.SetResidentParticipantEnabled(true)
+	if _, ok := kit.env.ActiveSurface.Tools[helpMeToolName]; !ok {
+		t.Fatal("explicit opt-in must survive resident setter republish")
 	}
 }
 

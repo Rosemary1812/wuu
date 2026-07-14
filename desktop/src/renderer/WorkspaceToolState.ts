@@ -84,6 +84,30 @@ export function useWorkspaceToolState({
     setRightPanelOpenWithMotion(true);
   }
 
+  // When closing a tab drains the panel to empty, hide the right panel too.
+  // Otherwise the panel would fall back to the tool picker whenever the user
+  // dismisses their last diff / file / tool tab, which conflicts with the
+  // intent of "I'm just peeking — close it when I'm done".
+  function closeWorkspaceViewTab(id: string): void {
+    const willEmpty =
+      workspaceViewTabs.length === 1 && workspaceViewTabs[0]?.id === id;
+    closeTab(id);
+    if (willEmpty) {
+      setRightPanelOpenWithMotion(false);
+    }
+  }
+
+  function closeWorkspaceViewTabsWhere(
+    predicate: (tab: WorkspaceViewTab) => boolean,
+  ): void {
+    const willEmpty =
+      workspaceViewTabs.length > 0 && workspaceViewTabs.every(predicate);
+    closeTabsWhere(predicate);
+    if (willEmpty) {
+      setRightPanelOpenWithMotion(false);
+    }
+  }
+
   return {
     workspaceViewTabs,
     workspaceActiveViewTabID,
@@ -95,8 +119,8 @@ export function useWorkspaceToolState({
     openWorkspaceFileTab,
     showWorkspaceToolPicker,
     focusWorkspaceViewTab: focusTab,
-    closeWorkspaceViewTab: closeTab,
-    closeWorkspaceViewTabsWhere: closeTabsWhere,
+    closeWorkspaceViewTab,
+    closeWorkspaceViewTabsWhere,
     reorderWorkspaceViewTabs: reorderTabs,
     toggleRightPanel
   };

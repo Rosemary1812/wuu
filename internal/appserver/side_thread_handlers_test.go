@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -603,6 +604,53 @@ func TestSideThreadSendPreservesLongAcceptedPromptEndToEnd(t *testing.T) {
 	request := client.lastRequest(t)
 	if got := request.Messages[len(request.Messages)-1].Content; got != prompt {
 		t.Fatalf("provider prompt was truncated: %q", got)
+	}
+}
+
+func TestAbortAcceptedSideThreadRollsBackAndSurfacesCause(t *testing.T) {
+	s, _, _ := newSideThreadServer(t, nil)
+	createSideThreadMain(t, s, "main_abort")
+	if _, err := s.sideThreadStore.BeginTurn("main_abort", "status?", "user-1", "assistant-1"); err != nil {
+		t.Fatalf("BeginTurn: %v", err)
+	}
+
+	err := s.abortAcceptedSideThread("main_abort", "user-1", "assistant-1", errServerClosed)
+	if !errors.Is(err, errServerClosed) {
+		t.Fatalf("abort error = %v, want errServerClosed", err)
+	}
+	if _, loadErr := s.sideThreadStore.Load("main_abort"); !errors.Is(loadErr, sidethread.ErrNotFound) {
+		t.Fatalf("never-launched turn left a durable record: %v", loadErr)
+	}
+}
+
+func TestSideThreadPersistFailureSurfacesExplicitFailure(t *testing.T) {
+	client := &sideThreadTestClient{response: "completed answer", started: make(chan struct{}), release: make(chan struct{})}
+	s, rt, out := newSideThreadServer(t, client)
+	createSideThreadMain(t, s, "main_persist_failure")
+	if _, err := s.sendSideThreadMessage("main_persist_failure", "status?"); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	select {
+	case <-client.started:
+	case <-time.After(time.Second):
+		t.Fatal("provider request did not start")
+	}
+	// Corrupt the durable record so FinishTurn cannot commit the reply.
+	recordPath := filepath.Join(rt.SessionDir, "sidethreads", "main_persist_failure.json")
+	if err := os.WriteFile(recordPath, []byte("{corrupt"), 0o600); err != nil {
+		t.Fatalf("corrupt record: %v", err)
+	}
+	close(client.release)
+	s.backgroundWG.Wait()
+
+	output := out.String()
+	for _, want := range []string{`"type":"message"`, `"type":"error"`, `"status":"failed"`, "persist side thread reply", "completed answer"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("persist failure output missing %s:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, `"status":"interrupted"`) {
+		t.Fatalf("completed reply was settled as an interruption:\n%s", output)
 	}
 }
 

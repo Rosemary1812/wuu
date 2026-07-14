@@ -142,8 +142,8 @@
   transform: translate(0, -50%) scale(0.98);
   transform-origin: left center;
   transition:
-    opacity 120ms ease,
-    transform 120ms ease;
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .chat-avatar:hover .chat-avatar-status-card {
@@ -286,7 +286,7 @@
   font-weight: var(--weight-semibold);
   line-height: 1;
   padding: 0;
-  transition: color 120ms ease;
+  transition: color var(--motion-fast) var(--ease-out);
 }
 .chat-bubble-expand-toggle:hover,
 .chat-bubble-expand-toggle:focus-visible {
@@ -377,8 +377,8 @@
   visibility: hidden;
   transform: translateY(2px);
   transition:
-    opacity 0.12s ease,
-    transform 0.12s ease;
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
   pointer-events: none;
 }
 .chat-receipt-ring:hover .chat-receipt-tooltip,
@@ -410,7 +410,7 @@
    failed, so a ring that never completes reads as "someone crashed". */
 .chat-receipt-ring-done {
   stroke: var(--info);
-  transition: stroke-dasharray 0.3s ease;
+  transition: stroke-dasharray var(--motion-slow) var(--ease-out);
 }
 .chat-receipt-ring-failed {
   stroke: var(--warning);
@@ -541,8 +541,8 @@ button.chat-thread-summary:hover {
   pointer-events: none;
   transform: translateY(3px);
   transition:
-    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 170ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity var(--motion-base) var(--ease-out),
+    transform var(--motion-base) var(--ease-out);
 }
 /* Anchor to the bubble's "empty" side so short bubbles don't push the toolbar
    off toward the avatar / screen edge: participant bubbles (left-aligned)
@@ -581,9 +581,9 @@ button.chat-thread-summary:hover {
   color: var(--ink-muted);
   cursor: pointer;
   transition:
-    background-color 140ms ease,
-    color 140ms ease,
-    transform 120ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 .chat-bubble-toolbar button:hover,
 .chat-bubble-toolbar button:focus-visible {
@@ -669,8 +669,8 @@ button.chat-thread-summary:hover {
   display: block;
   -webkit-user-drag: none;
   transition:
-    filter 140ms ease,
-    transform 140ms ease;
+    filter var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 .chat-bubble-toolbar .chat-reaction-picker-option:hover img,
 .chat-bubble-toolbar .chat-reaction-picker-option:focus-visible img {

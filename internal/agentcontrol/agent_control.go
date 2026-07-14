@@ -76,15 +76,54 @@ type AgentControl struct {
 	defaultSys    string           // base system prompt prefix added to every worker
 	participants  ParticipantStore // optional; nil disables participant persistence
 	maxParallel   int
+	shutdownMu    sync.RWMutex
+	stopping      bool
+	spawnSlotMu   sync.Mutex
+	spawnSlots    int
+	queueStartMu  sync.Mutex
+	queueStarted  bool
+	queueStopped  bool
+	queueDrainMu  sync.Mutex
 	queueMu       sync.Mutex
 	queued        []preparedSpawn
+	queueRetryMu  sync.Mutex
+	queueRetrying bool
 	statusCh      chan subagent.Notification
 	statusStop    chan struct{}
 	statusDone    chan struct{}
 	closeOnce     sync.Once
 
+	workerTransitionMu                    sync.Mutex
+	workerTransitions                     map[string]*sync.Mutex
+	workerLeaseMu                         sync.Mutex
+	workerLeases                          map[string]*workerExecutionLease
+	workerTerminalFinalizerMu             sync.Mutex
+	workerTerminalFinalizers              map[uint64]*workerTerminalFinalizer
+	nextWorkerTerminalFinalizerID         uint64
+	workerTerminalRecoveryOnce            sync.Once
+	workerTerminalRecoveryMu              sync.Mutex
+	workerTerminalRecovering              map[string]struct{}
+	workerTerminalRecoveryWG              sync.WaitGroup
+	workerTerminalYieldOnce               sync.Once
+	workerTerminalYield                   chan struct{}
+	workerReleaseHookMu                   sync.Mutex
+	beforeWorkerTerminalTransitionForTest func(string)
+	beforeWorkerTerminalRecoveryForTest   func(string)
+	beforeWorkerExecutionReleaseForTest   func(string)
+	beforeQueuedManagerSpawnForTest       func(string)
+	afterReportClosingFollowupForTest     func(string)
+	beforeNestedResultFollowupForTest     func(string) error
+	nestedResultDeliveryWaitForTest       func(string)
+	queuedSpawnAckHookMu                  sync.Mutex
+	queuedSpawnAckForTest                 func(string) error
+	queuedSpawnMarkFailureForTest         func(string) error
+	queuedLaunchAckMu                     sync.Mutex
+	queuedLaunchAcks                      map[string]struct{}
+
 	resultDeliveriesMu sync.Mutex
 	resultDeliveries   map[string]agentResultDelivery
+	nestedDeliveryMu   sync.Mutex
+	nestedDeliveries   map[string]*nestedResultDeliveryAttempt
 
 	// reportNudgeMu guards reportNudged: run IDs that already received the
 	// single mechanical agent_report closing turn, so a requires_report
@@ -242,25 +281,31 @@ func New(cfg Config) (*AgentControl, error) {
 		harnessDir = filepath.Join(filepath.Dir(cfg.ThreadDir), "harness")
 	}
 	c := &AgentControl{
-		manager:      mgr,
-		worktrees:    wt,
-		parentRepo:   cfg.ParentRepo,
-		worktreeRoot: cfg.WorktreeRoot,
-		sessionID:    cfg.SessionID,
-		historyDir:   cfg.HistoryDir,
-		threadDir:    cfg.ThreadDir,
-		threads:      threadRegistry,
-		threadStore:  agentthread.NewStore(cfg.ThreadDir),
-		harnessDir:   harnessDir,
-		harnessStore: harness.NewStore(harnessDir),
-		failureSink:  cfg.FailureSink,
-		reportSink:   cfg.ReportSink,
-		workerFact:   cfg.WorkerFactory,
-		workerPrompt: cfg.WorkerPrompt,
-		defaultSys:   cfg.WorkerSysPrompt,
-		participants: cfg.ParticipantStore,
-		maxParallel:  maxP,
+		manager:                  mgr,
+		worktrees:                wt,
+		parentRepo:               cfg.ParentRepo,
+		worktreeRoot:             cfg.WorktreeRoot,
+		sessionID:                cfg.SessionID,
+		historyDir:               cfg.HistoryDir,
+		threadDir:                cfg.ThreadDir,
+		threads:                  threadRegistry,
+		threadStore:              agentthread.NewStore(cfg.ThreadDir),
+		harnessDir:               harnessDir,
+		harnessStore:             harness.NewStore(harnessDir),
+		failureSink:              cfg.FailureSink,
+		reportSink:               cfg.ReportSink,
+		workerFact:               cfg.WorkerFactory,
+		workerPrompt:             cfg.WorkerPrompt,
+		defaultSys:               cfg.WorkerSysPrompt,
+		participants:             cfg.ParticipantStore,
+		maxParallel:              maxP,
+		workerTransitions:        make(map[string]*sync.Mutex),
+		workerLeases:             make(map[string]*workerExecutionLease),
+		workerTerminalFinalizers: make(map[uint64]*workerTerminalFinalizer),
+		workerTerminalYield:      make(chan struct{}),
 	}
+	mgr.SetTerminalPrepareObserver(c.prepareWorkerTerminal)
+	mgr.SetTerminalObserver(c.consumeWorkerTerminal)
 	c.restoreAgentResultDeliveries()
 	c.registerRootThread()
 	if err := c.restoreQueuedSpawns(); err != nil {
@@ -276,7 +321,6 @@ func New(cfg Config) (*AgentControl, error) {
 		c.consumeWorkerStatus(statusCh)
 	}()
 	c.reconcileOrphanedHarnessTasks()
-	go c.maybeStartQueued(context.Background())
 	return c, nil
 }
 
@@ -302,6 +346,9 @@ func (c *AgentControl) Close() {
 		return
 	}
 	c.closeOnce.Do(func() {
+		c.queueStartMu.Lock()
+		c.queueStopped = true
+		c.queueStartMu.Unlock()
 		if c.manager != nil && c.statusCh != nil {
 			c.manager.Unsubscribe(c.statusCh)
 		}
@@ -312,6 +359,127 @@ func (c *AgentControl) Close() {
 			<-c.statusDone
 		}
 	})
+}
+
+var errAgentControlStopping = errors.New("agent control is shutting down")
+
+// BeginShutdown closes admission for every path that can start or extend a
+// worker turn. It synchronizes with the final Manager.Spawn/Followup call, so a
+// subsequent StopAll observes every turn admitted before shutdown and no turn
+// can appear behind it.
+func (c *AgentControl) BeginShutdown() {
+	if c == nil {
+		return
+	}
+	c.shutdownMu.Lock()
+	c.stopping = true
+	c.shutdownMu.Unlock()
+	c.queueStartMu.Lock()
+	c.queueStopped = true
+	c.queueStartMu.Unlock()
+}
+
+func (c *AgentControl) isStopping() bool {
+	if c == nil {
+		return true
+	}
+	c.shutdownMu.RLock()
+	stopping := c.stopping
+	c.shutdownMu.RUnlock()
+	return stopping
+}
+
+func (c *AgentControl) beginWorkerTurn() (func(), error) {
+	if c == nil {
+		return nil, errAgentControlStopping
+	}
+	c.shutdownMu.RLock()
+	if c.stopping {
+		c.shutdownMu.RUnlock()
+		return nil, errAgentControlStopping
+	}
+	return c.shutdownMu.RUnlock, nil
+}
+
+// StartQueuedWork enables durable queue drains after the runtime has installed
+// every dependency restored workers need, including model resolvers and
+// reliable terminal finalizers. It is idempotent; New deliberately leaves the
+// queue dormant so constructor callers cannot observe an incompletely wired
+// worker.
+func (c *AgentControl) StartQueuedWork() {
+	if c == nil {
+		return
+	}
+	if c.isStopping() {
+		return
+	}
+	c.queueStartMu.Lock()
+	if c.queueStarted || c.queueStopped {
+		c.queueStartMu.Unlock()
+		return
+	}
+	c.queueStarted = true
+	c.queueStartMu.Unlock()
+	go func() {
+		c.replayPendingNestedAgentCompletions()
+		c.maybeStartQueued(context.Background())
+	}()
+}
+
+func (c *AgentControl) queuedWorkEnabled() bool {
+	if c == nil || c.isStopping() {
+		return false
+	}
+	c.queueStartMu.Lock()
+	defer c.queueStartMu.Unlock()
+	return c.queueStarted && !c.queueStopped
+}
+
+// SetWorkerExecutionReleaseHookForTest installs a synchronization hook that
+// runs after terminal state is durable and immediately before the worker's
+// cross-process execution lease is released.
+func (c *AgentControl) SetWorkerExecutionReleaseHookForTest(hook func(string)) {
+	if c == nil {
+		return
+	}
+	c.workerReleaseHookMu.Lock()
+	c.beforeWorkerExecutionReleaseForTest = hook
+	c.workerReleaseHookMu.Unlock()
+}
+
+// SetWorkerTerminalTransitionHookForTest installs a synchronization hook at
+// the start of reliable terminal consumption. Tests use it to hold a terminal
+// generation across shutdown without weakening production ordering.
+func (c *AgentControl) SetWorkerTerminalTransitionHookForTest(hook func(string)) {
+	if c == nil {
+		return
+	}
+	c.workerReleaseHookMu.Lock()
+	c.beforeWorkerTerminalTransitionForTest = hook
+	c.workerReleaseHookMu.Unlock()
+}
+
+// SetReportClosingFollowupHookForTest installs a synchronization hook after
+// the requires_report closing turn is admitted but before the originating
+// completion returns its explicit continued outcome.
+func (c *AgentControl) SetReportClosingFollowupHookForTest(hook func(string)) {
+	if c == nil {
+		return
+	}
+	c.workerReleaseHookMu.Lock()
+	c.afterReportClosingFollowupForTest = hook
+	c.workerReleaseHookMu.Unlock()
+}
+
+// SetQueuedManagerSpawnHookForTest installs a synchronization hook immediately
+// before a claimed queued launch commits to Manager.Spawn.
+func (c *AgentControl) SetQueuedManagerSpawnHookForTest(hook func(string)) {
+	if c == nil {
+		return
+	}
+	c.workerReleaseHookMu.Lock()
+	c.beforeQueuedManagerSpawnForTest = hook
+	c.workerReleaseHookMu.Unlock()
 }
 
 // HarnessStore exposes the durable task graph store for tests and UI adapters.
@@ -331,9 +499,14 @@ func (c *AgentControl) Threads() *agentthread.Registry {
 	return c.threads
 }
 
-// SetSessionInfo updates the coordinator's session ID and history dir
-// after the session runtime has assigned them. Safe to call once at startup.
-func (c *AgentControl) SetSessionInfo(sessionID, historyDir string, threadDir ...string) {
+// SetSessionInfo updates the coordinator's session ID and history dir after the
+// session runtime has assigned them, then restores durable work from the bound
+// harness directory. Safe to call once at startup, before queue draining or
+// terminal recovery begins.
+func (c *AgentControl) SetSessionInfo(sessionID, historyDir string, threadDir ...string) error {
+	if c == nil {
+		return nil
+	}
 	c.sessionID = sessionID
 	c.historyDir = historyDir
 	if len(threadDir) > 0 && strings.TrimSpace(threadDir[0]) != "" {
@@ -347,11 +520,19 @@ func (c *AgentControl) SetSessionInfo(sessionID, historyDir string, threadDir ..
 	if c.threadDir != "" {
 		c.setHarnessDir(filepath.Join(filepath.Dir(c.threadDir), "harness"))
 	}
+	// The legacy/root control is constructed before a concrete session ID is
+	// available, so its initial harness path is empty. Restore only after the
+	// real artifact directory is bound; otherwise CLI callers silently miss
+	// queued launches persisted by an earlier process.
+	if err := c.restoreQueuedSpawns(); err != nil {
+		return fmt.Errorf("restore queued spawns: %w", err)
+	}
 	c.registerRootThread()
 	// The harness dir may only become known here; reconcile the durable
 	// task graph against the (possibly empty) set of live executors so
 	// crash-orphaned tasks stop reporting running forever.
 	c.reconcileOrphanedHarnessTasks()
+	return nil
 }
 
 func (c *AgentControl) setHarnessDir(dir string) {
@@ -446,6 +627,16 @@ func pinTargetsDifferentProvider(rawPin, workerProvider string) bool {
 	return pinProvider != workerProvider
 }
 
+// SpawnAdmissionRollback removes state prepared for a spawn that never became
+// runnable. AgentControl wraps it so the implementation runs at most once.
+type SpawnAdmissionRollback func() error
+
+// SpawnAdmissionPrepare durably prepares caller-owned state after the final
+// worker ID is allocated but before AgentControl creates any thread, harness,
+// queue, worktree, lease, or manager state. The returned rollback is retained
+// for queued spawns and runs if admission or launch later fails.
+type SpawnAdmissionPrepare func(workerID string) (SpawnAdmissionRollback, error)
+
 // SpawnRequest is the internal shape of a spawn_agent tool invocation
 // after argument validation.
 type SpawnRequest struct {
@@ -489,6 +680,10 @@ type SpawnRequest struct {
 	// and must not be exposed through the LLM-facing spawn_agent
 	// tool.
 	ModelPin string
+	// AdmissionPrepare is an internal-only transactional hook for state that
+	// must exist before the worker can become observable or runnable. It is not
+	// exposed through the LLM-facing spawn_agent tool.
+	AdmissionPrepare SpawnAdmissionPrepare
 }
 
 // SpawnResult is what the spawn_agent tool returns to the model.
@@ -524,6 +719,7 @@ type preparedSpawn struct {
 	Isolation        IsolationMode
 	SpeechCapability bool
 	BaseRepo         string
+	BaseRevision     string
 	IsFork           bool
 	ForkMode         string
 	ParentHistory    []providers.ChatMessage
@@ -542,6 +738,10 @@ type preparedSpawn struct {
 	// client or resolver error fails the spawn explicitly so a wrong
 	// provider is never used.
 	ModelPin string
+	// AdmissionRollback is process-local and intentionally omitted from the
+	// durable queue payload. Built-in durable admissions must provide their own
+	// restart cleanup when a restored queued launch fails.
+	AdmissionRollback SpawnAdmissionRollback
 }
 
 type queuedSpawnPayload struct {
@@ -554,6 +754,7 @@ type queuedSpawnPayload struct {
 	Isolation        string                  `json:"isolation"`
 	SpeechCapability bool                    `json:"speech_capability,omitempty"`
 	BaseRepo         string                  `json:"base_repo,omitempty"`
+	BaseRevision     string                  `json:"base_revision,omitempty"`
 	IsFork           bool                    `json:"is_fork,omitempty"`
 	ForkMode         string                  `json:"fork_mode,omitempty"`
 	ParentHistory    []providers.ChatMessage `json:"parent_history,omitempty"`
@@ -575,11 +776,41 @@ type queuedSpawnPayload struct {
 	ModelPin      string `json:"model_pin,omitempty"`
 }
 
+func prepareSpawnAdmission(prepare SpawnAdmissionPrepare, workerID string) (SpawnAdmissionRollback, error) {
+	if prepare == nil {
+		return nil, nil
+	}
+	rollback, err := prepare(workerID)
+	if err != nil {
+		return nil, err
+	}
+	if rollback == nil {
+		return nil, nil
+	}
+	var mu sync.Mutex
+	done := false
+	return func() error {
+		mu.Lock()
+		defer mu.Unlock()
+		if done {
+			return nil
+		}
+		if err := rollback(); err != nil {
+			return err
+		}
+		done = true
+		return nil
+	}, nil
+}
+
 // Spawn launches a sub-agent. In synchronous mode it waits until the child
 // finishes or the caller's context is cancelled; in async mode it returns
 // immediately with status "running" and the agent_id the orchestrator can join
 // later or receive via completion notification.
-func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResult, error) {
+func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult *SpawnResult, err error) {
+	if c.isStopping() {
+		return nil, errAgentControlStopping
+	}
 	if strings.TrimSpace(req.Prompt) == "" {
 		return nil, errors.New("prompt is required")
 	}
@@ -605,12 +836,49 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		return nil, errors.New("base_repo is only supported with isolation=worktree")
 	}
 
-	if c.manager.CountRunning() >= c.maxParallel {
-		if req.Synchronous {
-			return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or use async spawn so the task can queue.", c.maxParallel)
+	spawnSlot, admitted := c.tryReserveSpawnSlot()
+	if !admitted && req.Synchronous {
+		return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or use async spawn so the task can queue.", c.maxParallel)
+	}
+	if spawnSlot != nil {
+		defer spawnSlot.releaseAndKickQueued()
+	}
+	queuedBaseRepo := strings.TrimSpace(req.BaseRepo)
+	queuedBaseRevision := ""
+	if !admitted && isolation == IsolationWorktree {
+		resolved, resolveErr := c.resolveQueuedWorktreeBase(req.BaseRepo)
+		if resolveErr != nil {
+			return nil, resolveErr
 		}
+		queuedBaseRepo = resolved.Repo
+		queuedBaseRevision = resolved.Revision
+	}
+	admissionRollback, err := prepareSpawnAdmission(req.AdmissionPrepare, workerID)
+	if err != nil {
+		return nil, fmt.Errorf("prepare spawn admission: %w", err)
+	}
+	retainAdmission := false
+	defer func() {
+		if !retainAdmission {
+			if rollbackErr := c.rollbackSpawnAdmissionReliably(workerID, admissionRollback, c.isStopping); rollbackErr != nil {
+				providers.DebugLogf("agentcontrol: abandon spawn admission rollback %s: %v", workerID, rollbackErr)
+			}
+		}
+	}()
+
+	if !admitted {
+		releaseQueueAdmission, admissionErr := c.beginWorkerTurn()
+		if admissionErr != nil {
+			return nil, admissionErr
+		}
+		// Serialize registration and queue persistence with drains/cancellation.
+		// Once the child thread becomes resolvable, StopFrom must either observe
+		// its queued payload or wait until that payload is durable.
+		c.queueDrainMu.Lock()
 		threadMeta, err := c.registerChildThreadWithStatus(workerID, taskName, agentProfile, wtype, req.Prompt, agentthread.SourceThreadSpawn, "", req.ParentID, req.ParentPath, agentthread.StatusPending)
 		if err != nil {
+			c.queueDrainMu.Unlock()
+			releaseQueueAdmission()
 			return nil, err
 		}
 		participantID := strings.TrimSpace(req.ParticipantID)
@@ -618,25 +886,30 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 			participantID = c.newEphemeralParticipant(threadMeta.TaskName, wt).ID
 		}
 		prepared := preparedSpawn{
-			WorkerID:         workerID,
-			ParticipantID:    participantID,
-			WorkerType:       wt,
-			ThreadMeta:       threadMeta,
-			Description:      req.Description,
-			Prompt:           req.Prompt,
-			Isolation:        isolation,
-			SpeechCapability: req.SpeechCapability,
-			BaseRepo:         req.BaseRepo,
-			ModelOverride:    strings.TrimSpace(req.ModelOverride),
-			ClientOverride:   req.ClientOverride,
-			ModelPin:         strings.TrimSpace(req.ModelPin),
+			WorkerID:          workerID,
+			ParticipantID:     participantID,
+			WorkerType:        wt,
+			ThreadMeta:        threadMeta,
+			Description:       req.Description,
+			Prompt:            req.Prompt,
+			Isolation:         isolation,
+			SpeechCapability:  req.SpeechCapability,
+			BaseRepo:          queuedBaseRepo,
+			BaseRevision:      queuedBaseRevision,
+			ModelOverride:     strings.TrimSpace(req.ModelOverride),
+			ClientOverride:    req.ClientOverride,
+			ModelPin:          strings.TrimSpace(req.ModelPin),
+			AdmissionRollback: admissionRollback,
 		}
-		c.recordHarnessTaskQueued(threadMeta, wtype, req.Prompt, isolation, req.BaseRepo)
+		c.recordHarnessTaskQueued(threadMeta, wtype, req.Prompt, isolation, queuedBaseRepo)
 		if err := c.enqueuePreparedSpawn(prepared); err != nil {
-			c.recordHarnessTaskFailure(workerID, err)
+			c.settleSpawnLaunchFailure(workerID, err)
+			c.queueDrainMu.Unlock()
+			releaseQueueAdmission()
 			return nil, err
 		}
-		return &SpawnResult{
+		retainAdmission = true
+		queuedResult := &SpawnResult{
 			Action:        "spawn_agent",
 			AgentID:       workerID,
 			ParticipantID: participantID,
@@ -646,8 +919,30 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 			Status:        "queued",
 			Isolation:     string(isolation),
 			NextSteps:     spawnResultNextSteps("queued", false, string(isolation), threadMeta.Path),
-		}, nil
+		}
+		c.queueDrainMu.Unlock()
+		releaseQueueAdmission()
+		go c.maybeStartQueued(context.Background())
+		return queuedResult, nil
 	}
+	releaseDirectAdmission, admissionErr := c.beginWorkerTurn()
+	if admissionErr != nil {
+		return nil, admissionErr
+	}
+	defer func() {
+		if releaseDirectAdmission != nil {
+			releaseDirectAdmission()
+		}
+	}()
+	if _, err := c.acquireWorkerExecution(workerID); err != nil {
+		return nil, err
+	}
+	releaseLeaseOnReturn := true
+	defer func() {
+		if releaseLeaseOnReturn {
+			c.releaseWorkerExecution(workerID)
+		}
+	}()
 
 	// 1. Determine the worker's working directory.
 	//    - inplace: share the parent repo (no checkout cost)
@@ -693,13 +988,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 	// 3. Build worker's toolkit rooted at the chosen working directory.
 	workerKit, err := c.workerFact(workerRoot, wt, threadMeta)
 	if err != nil {
-		if failed, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, time.Now().UTC()); ok {
-			_ = c.threadStore.RecordStatus(failed)
-		}
-		c.recordHarnessTaskFailure(workerID, fmt.Errorf("worker toolkit: %w", err))
-		if closed, ok := c.threads.UpdateEdgeStatus(workerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
-			_ = c.threadStore.RecordEdgeStatus(closed)
-		}
+		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("worker toolkit: %w", err))
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
 		}
@@ -709,13 +998,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 	// 4. Compose system prompt: type-specific role + working dir + base prompt.
 	sys, err := c.workerSystemPrompt(workerRoot, wt, threadMeta, isolation)
 	if err != nil {
-		if failed, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, time.Now().UTC()); ok {
-			_ = c.threadStore.RecordStatus(failed)
-		}
-		c.recordHarnessTaskFailure(workerID, fmt.Errorf("worker system prompt: %w", err))
-		if closed, ok := c.threads.UpdateEdgeStatus(workerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
-			_ = c.threadStore.RecordEdgeStatus(closed)
-		}
+		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("worker system prompt: %w", err))
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
 		}
@@ -765,9 +1048,14 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
 		}
-		c.recordHarnessTaskFailure(workerID, fmt.Errorf("spawn: %w", err))
+		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("spawn: %w", err))
 		return nil, fmt.Errorf("spawn: %w", err)
 	}
+	releaseDirectAdmission()
+	releaseDirectAdmission = nil
+	spawnSlot.releaseAndKickQueued()
+	retainAdmission = true
+	releaseLeaseOnReturn = false
 	spawned := sa.Snapshot()
 
 	result := &SpawnResult{
@@ -803,7 +1091,10 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (*SpawnResul
 		return nil, fmt.Errorf("wait: %w", err)
 	}
 	result.Status = string(snap.Status)
-	resultID, claimed, consumedBy := c.claimAgentResultDelivery(snap, agentResultConsumerSpawnAgent)
+	resultID, claimed, consumedBy, claimErr := c.claimAgentResultDelivery(snap, agentResultConsumerSpawnAgent)
+	if claimErr != nil {
+		return nil, fmt.Errorf("persist synchronous agent result delivery: %w", claimErr)
+	}
 	result.ResultID = resultID
 	ref := c.AgentResultReference(snap)
 	result.Result = ref.Preview
@@ -925,6 +1216,9 @@ type ForkRequest struct {
 // in-flight spawn_agent
 // assistant turn before passing it through.
 func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory []providers.ChatMessage) (*SpawnResult, error) {
+	if c.isStopping() {
+		return nil, errAgentControlStopping
+	}
 	if strings.TrimSpace(req.Prompt) == "" {
 		return nil, errors.New("prompt is required")
 	}
@@ -949,12 +1243,32 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		return nil, errors.New("base_repo is only supported with isolation=worktree")
 	}
 
-	if c.manager.CountRunning() >= c.maxParallel {
+	spawnSlot, admitted := c.tryReserveSpawnSlot()
+	if !admitted {
 		if req.Synchronous {
 			return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or use async spawn so the task can queue.", c.maxParallel)
 		}
+		resolvedBaseRepo := strings.TrimSpace(req.BaseRepo)
+		resolvedBaseRevision := ""
+		if isolation == IsolationWorktree {
+			resolved, resolveErr := c.resolveQueuedWorktreeBase(req.BaseRepo)
+			if resolveErr != nil {
+				return nil, resolveErr
+			}
+			resolvedBaseRepo = resolved.Repo
+			resolvedBaseRevision = resolved.Revision
+		}
+		releaseQueueAdmission, admissionErr := c.beginWorkerTurn()
+		if admissionErr != nil {
+			return nil, admissionErr
+		}
+		// Keep thread registration and durable queue publication indivisible
+		// from this process's drains and cancellation paths.
+		c.queueDrainMu.Lock()
 		threadMeta, err := c.registerChildThreadWithStatus(workerID, taskName, agentProfile, wt.Name, req.Prompt, agentthread.SourceThreadSpawn, req.ForkMode, req.ParentID, req.ParentPath, agentthread.StatusPending)
 		if err != nil {
+			c.queueDrainMu.Unlock()
+			releaseQueueAdmission()
 			return nil, err
 		}
 		prt := c.newEphemeralParticipant(threadMeta.TaskName, wt)
@@ -966,17 +1280,20 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 			Description:   req.Description,
 			Prompt:        req.Prompt,
 			Isolation:     isolation,
-			BaseRepo:      req.BaseRepo,
+			BaseRepo:      resolvedBaseRepo,
+			BaseRevision:  resolvedBaseRevision,
 			IsFork:        true,
 			ForkMode:      req.ForkMode,
 			ParentHistory: providers.CloneChatMessages(parentHistory),
 		}
-		c.recordHarnessTaskQueued(threadMeta, wt.Name, req.Prompt, isolation, req.BaseRepo)
+		c.recordHarnessTaskQueued(threadMeta, wt.Name, req.Prompt, isolation, resolvedBaseRepo)
 		if err := c.enqueuePreparedSpawn(prepared); err != nil {
-			c.recordHarnessTaskFailure(workerID, err)
+			c.settleSpawnLaunchFailure(workerID, err)
+			c.queueDrainMu.Unlock()
+			releaseQueueAdmission()
 			return nil, err
 		}
-		return &SpawnResult{
+		result := &SpawnResult{
 			Action:       "spawn_agent",
 			AgentID:      workerID,
 			TaskName:     threadMeta.TaskName,
@@ -985,8 +1302,31 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 			Status:       "queued",
 			Isolation:    string(isolation),
 			NextSteps:    spawnResultNextSteps("queued", false, string(isolation), threadMeta.Path),
-		}, nil
+		}
+		c.queueDrainMu.Unlock()
+		releaseQueueAdmission()
+		go c.maybeStartQueued(context.Background())
+		return result, nil
 	}
+	defer spawnSlot.releaseAndKickQueued()
+	releaseDirectAdmission, admissionErr := c.beginWorkerTurn()
+	if admissionErr != nil {
+		return nil, admissionErr
+	}
+	defer func() {
+		if releaseDirectAdmission != nil {
+			releaseDirectAdmission()
+		}
+	}()
+	if _, err := c.acquireWorkerExecution(workerID); err != nil {
+		return nil, err
+	}
+	releaseLeaseOnReturn := true
+	defer func() {
+		if releaseLeaseOnReturn {
+			c.releaseWorkerExecution(workerID)
+		}
+	}()
 
 	var (
 		workerRoot  string
@@ -1025,13 +1365,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 
 	workerKit, err := c.workerFact(workerRoot, wt, threadMeta)
 	if err != nil {
-		if failed, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, time.Now().UTC()); ok {
-			_ = c.threadStore.RecordStatus(failed)
-		}
-		c.recordHarnessTaskFailure(workerID, fmt.Errorf("worker toolkit: %w", err))
-		if closed, ok := c.threads.UpdateEdgeStatus(workerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
-			_ = c.threadStore.RecordEdgeStatus(closed)
-		}
+		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("worker toolkit: %w", err))
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
 		}
@@ -1046,16 +1380,10 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	initialHistory := providers.CloneChatMessages(parentHistory)
 	sys, sysErr := c.workerSystemPrompt(workerRoot, wt, threadMeta, isolation)
 	if sysErr != nil {
-		if failed, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, time.Now().UTC()); ok {
-			_ = c.threadStore.RecordStatus(failed)
-		}
-		if closed, ok := c.threads.UpdateEdgeStatus(workerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
-			_ = c.threadStore.RecordEdgeStatus(closed)
-		}
+		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("worker system prompt: %w", sysErr))
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
 		}
-		c.recordHarnessTaskFailure(workerID, fmt.Errorf("worker system prompt: %w", sysErr))
 		return nil, fmt.Errorf("worker system prompt: %w", sysErr)
 	}
 	initialHistory = withInitialSystemPrompt(initialHistory, sys)
@@ -1087,9 +1415,13 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
 		}
-		c.recordHarnessTaskFailure(workerID, fmt.Errorf("spawn: %w", err))
+		c.settleSpawnLaunchFailure(workerID, fmt.Errorf("spawn: %w", err))
 		return nil, fmt.Errorf("spawn: %w", err)
 	}
+	releaseDirectAdmission()
+	releaseDirectAdmission = nil
+	spawnSlot.releaseAndKickQueued()
+	releaseLeaseOnReturn = false
 	spawned := sa.Snapshot()
 
 	result := &SpawnResult{
@@ -1141,24 +1473,28 @@ func (c *AgentControl) StopAll() {
 	if c == nil {
 		return
 	}
+	// Issue the cancellation wave before waiting on queue storage or admission
+	// compensation. A durable queue outage must not leave already-running
+	// workers consuming provider calls indefinitely.
+	c.manager.StopAll()
+	c.queueDrainMu.Lock()
+	defer c.queueDrainMu.Unlock()
 	c.queueMu.Lock()
 	queued := c.queued
 	c.queued = nil
 	c.queueMu.Unlock()
 	now := time.Now().UTC()
 	for _, prepared := range queued {
-		c.deleteQueuedSpawn(prepared.WorkerID)
-		if cancelled, ok := c.threads.UpdateStatus(prepared.WorkerID, agentthread.StatusCancelled, now); ok {
-			_ = c.threadStore.RecordStatus(cancelled)
+		cancelled, err := c.cancelQueuedSpawn(prepared, now)
+		if err != nil {
+			providers.DebugLogf("agentcontrol: cancel queued spawn %s: %v", prepared.WorkerID, err)
+			c.requeuePreparedSpawn(prepared)
+			continue
 		}
-		if closed, ok := c.threads.UpdateEdgeStatus(prepared.WorkerID, agentthread.EdgeClosed, now); ok {
-			_ = c.threadStore.RecordEdgeStatus(closed)
-		}
-		if c.harnessStore != nil {
-			_, _ = c.harnessStore.UpdateTaskStatus(prepared.WorkerID, harness.TaskStatusCancelled, now, 0, 0, "cancelled")
+		if !cancelled {
+			continue
 		}
 	}
-	c.manager.StopAll()
 }
 
 // Stop cancels a specific worker by ID, path, or task name. Returns false if not found.
@@ -1175,10 +1511,35 @@ func (c *AgentControl) StopFrom(currentPath, target string) bool {
 	if len(subtree) == 0 {
 		subtree = []agentthread.Metadata{meta}
 	}
+	targetIDs := make(map[string]struct{}, len(subtree))
+	for _, node := range subtree {
+		if node.Path != agentthread.RootPath {
+			targetIDs[node.ID] = struct{}{}
+		}
+	}
 	stopped := false
 	now := time.Now().UTC()
+	queuedHandled := make(map[string]bool)
+	c.queueDrainMu.Lock()
+	queued := c.takeQueuedSpawns(targetIDs)
+	for _, prepared := range queued {
+		cancelled, err := c.cancelQueuedSpawn(prepared, now)
+		if err != nil {
+			providers.DebugLogf("agentcontrol: cancel queued spawn %s: %v", prepared.WorkerID, err)
+			c.requeuePreparedSpawn(prepared)
+			queuedHandled[prepared.WorkerID] = true
+			continue
+		}
+		if !cancelled {
+			queuedHandled[prepared.WorkerID] = true
+			continue
+		}
+		queuedHandled[prepared.WorkerID] = true
+		stopped = true
+	}
+	c.queueDrainMu.Unlock()
 	for _, node := range subtree {
-		if node.Path == agentthread.RootPath {
+		if node.Path == agentthread.RootPath || queuedHandled[node.ID] {
 			continue
 		}
 		if c.manager.Stop(node.ID) {
@@ -1260,11 +1621,14 @@ func (c *AgentControl) queuedSnapshots() []subagent.SubAgentSnapshot {
 // SendMessage delivers a follow-up message to a specific sub-agent.
 // Messages are queued while the worker is running and injected as
 // user-role turns before the next model round.
-func (c *AgentControl) SendMessage(target, message string) error {
-	return c.SendMessageFrom(agentthread.RootPath, target, message)
+func (c *AgentControl) SendMessage(ctx context.Context, target, message string) error {
+	return c.SendMessageFrom(agentthread.RootPath, ctx, target, message)
 }
 
-func (c *AgentControl) SendMessageFrom(currentPath, target, message string) error {
+func (c *AgentControl) SendMessageFrom(currentPath string, ctx context.Context, target, message string) error {
+	if c.isStopping() {
+		return errAgentControlStopping
+	}
 	id := c.resolveAgentIDFrom(currentPath, target)
 	if id == "" {
 		return errors.New("target is required")
@@ -1273,18 +1637,16 @@ func (c *AgentControl) SendMessageFrom(currentPath, target, message string) erro
 	if msg == "" {
 		return errors.New("message is required")
 	}
-	sa := c.manager.Get(id)
-	if sa == nil {
-		rehydrated, err := c.rehydrateAgent(id)
-		if err != nil {
-			return err
-		}
-		if rehydrated == nil {
-			return c.missingAgentError(id)
-		}
-		sa = rehydrated
+	snap, newLease, unlockTransition, err := c.prepareWorkerFollowup(ctx, id)
+	if err != nil {
+		return err
 	}
-	snap := sa.Snapshot()
+	defer unlockTransition()
+	releaseNewLease := func() {
+		if newLease {
+			c.releaseWorkerExecution(id)
+		}
+	}
 	// Queue-or-resume, identical to followup_task: a running target keeps
 	// the message in its mailbox for its next model round without being
 	// interrupted, while a terminal target (completed, failed, cancelled)
@@ -1292,8 +1654,19 @@ func (c *AgentControl) SendMessageFrom(currentPath, target, message string) erro
 	// send_message carries trigger_turn=false so the child reads it as
 	// interim communication rather than a task hand-off.
 	communication := newInterAgentCommunication(currentPath, snap.AgentPath, msg, false)
-	if _, err := c.manager.Followup(context.Background(), id, communication.String()); err != nil {
+	releaseTurnAdmission, admissionErr := c.beginWorkerTurn()
+	if admissionErr != nil {
+		releaseNewLease()
+		return admissionErr
+	}
+	resumed, err := c.manager.Followup(ctx, id, communication.String())
+	releaseTurnAdmission()
+	if err != nil {
+		releaseNewLease()
 		return err
+	}
+	if isFinalSubAgentStatus(snap.Status) {
+		c.recordWorkerResumed(resumed)
 	}
 	_ = c.threadStore.RecordCommunication(id, communication)
 	if meta, ok := c.threads.UpdateLastTaskMessage(id, msg, time.Now().UTC()); ok {
@@ -1307,6 +1680,9 @@ func (c *AgentControl) FollowupTask(ctx context.Context, target, message string)
 }
 
 func (c *AgentControl) FollowupTaskFrom(currentPath string, ctx context.Context, target, message string) (subagent.SubAgentSnapshot, error) {
+	if c.isStopping() {
+		return subagent.SubAgentSnapshot{}, errAgentControlStopping
+	}
 	id := c.resolveAgentIDFrom(currentPath, target)
 	if id == "" {
 		return subagent.SubAgentSnapshot{}, errors.New("target is required")
@@ -1315,22 +1691,30 @@ func (c *AgentControl) FollowupTaskFrom(currentPath string, ctx context.Context,
 	if msg == "" {
 		return subagent.SubAgentSnapshot{}, errors.New("message is required")
 	}
-	sa := c.manager.Get(id)
-	if sa == nil {
-		rehydrated, err := c.rehydrateAgent(id)
-		if err != nil {
-			return subagent.SubAgentSnapshot{}, err
-		}
-		if rehydrated == nil {
-			return subagent.SubAgentSnapshot{}, c.missingAgentError(id)
-		}
-		sa = rehydrated
-	}
-	current := sa.Snapshot()
-	communication := newInterAgentCommunication(currentPath, current.AgentPath, msg, true)
-	snap, err := c.manager.Followup(ctx, id, communication.String())
+	current, newLease, unlockTransition, err := c.prepareWorkerFollowup(ctx, id)
 	if err != nil {
+		return subagent.SubAgentSnapshot{}, err
+	}
+	defer unlockTransition()
+	releaseNewLease := func() {
+		if newLease {
+			c.releaseWorkerExecution(id)
+		}
+	}
+	communication := newInterAgentCommunication(currentPath, current.AgentPath, msg, true)
+	releaseTurnAdmission, admissionErr := c.beginWorkerTurn()
+	if admissionErr != nil {
+		releaseNewLease()
+		return subagent.SubAgentSnapshot{}, admissionErr
+	}
+	snap, err := c.manager.Followup(ctx, id, communication.String())
+	releaseTurnAdmission()
+	if err != nil {
+		releaseNewLease()
 		return snap, err
+	}
+	if isFinalSubAgentStatus(current.Status) {
+		c.recordWorkerResumed(snap)
 	}
 	_ = c.threadStore.RecordCommunication(id, communication)
 	if meta, ok := c.threads.UpdateLastTaskMessage(id, msg, time.Now().UTC()); ok {
@@ -1774,31 +2158,130 @@ func (c *AgentControl) enqueuePreparedSpawn(prepared preparedSpawn) error {
 	return nil
 }
 
+type queuedSpawnStartOutcome uint8
+
+const (
+	queuedSpawnStartUnknown queuedSpawnStartOutcome = iota
+	queuedSpawnStarted
+	queuedSpawnWorkerBusy
+	queuedSpawnAlreadyClaimed
+	queuedSpawnTerminalPending
+	queuedSpawnRetryPending
+	queuedSpawnFailed
+	queuedSpawnCancelled
+)
+
 func (c *AgentControl) maybeStartQueued(ctx context.Context) {
-	if c == nil {
+	if c == nil || c.isStopping() || !c.queuedWorkEnabled() {
+		return
+	}
+	c.queueDrainMu.Lock()
+	defer c.queueDrainMu.Unlock()
+	if !c.queuedWorkEnabled() {
 		return
 	}
 	for {
-		if c.manager.CountRunning() >= c.maxParallel {
+		// Do not reserve scarce direct-spawn capacity for an empty drain. Queue
+		// publication uses queueDrainMu too, so this check cannot miss an item
+		// that should belong to the current drain.
+		if !c.hasQueuedSpawns() {
+			return
+		}
+		spawnSlot, admitted := c.tryReserveSpawnSlot()
+		if !admitted {
 			return
 		}
 		prepared, ok := c.popQueuedSpawn()
 		if !ok {
+			spawnSlot.release()
 			return
 		}
-		if err := c.startQueuedSpawn(ctx, prepared); err != nil {
-			c.recordHarnessTaskFailure(prepared.WorkerID, err)
-			c.deleteQueuedSpawn(prepared.WorkerID)
-			if failed, ok := c.threads.UpdateStatus(prepared.WorkerID, agentthread.StatusFailed, time.Now().UTC()); ok {
-				_ = c.threadStore.RecordStatus(failed)
-			}
-			if closed, ok := c.threads.UpdateEdgeStatus(prepared.WorkerID, agentthread.EdgeClosed, time.Now().UTC()); ok {
-				_ = c.threadStore.RecordEdgeStatus(closed)
+		outcome, err := func() (queuedSpawnStartOutcome, error) {
+			defer spawnSlot.release()
+			return c.startQueuedSpawn(ctx, prepared)
+		}()
+		switch outcome {
+		case queuedSpawnStarted, queuedSpawnAlreadyClaimed, queuedSpawnFailed, queuedSpawnCancelled:
+			if err != nil {
+				providers.DebugLogf("agentcontrol: queued spawn %s failed: %v", prepared.WorkerID, err)
 			}
 			continue
+		case queuedSpawnTerminalPending:
+			// The durable terminal record supersedes the stale launch intent.
+			// Drop this process's queue copy and wake terminal recovery after the
+			// launcher has released its execution lease; recovery owns queue ack.
+			c.scanPendingWorkerTerminals()
+			continue
+		case queuedSpawnWorkerBusy, queuedSpawnRetryPending:
+			if err != nil {
+				providers.DebugLogf("agentcontrol: queued spawn %s will retry: %v", prepared.WorkerID, err)
+			}
+			c.requeuePreparedSpawn(prepared)
+			c.scheduleQueuedSpawnRetry()
+			return
+		default:
+			// Preserve an item on an impossible/unknown launcher outcome. Dropping
+			// durable intent here would be less recoverable than a delayed retry.
+			providers.DebugLogf("agentcontrol: queued spawn %s returned unknown outcome %d: %v", prepared.WorkerID, outcome, err)
+			c.requeuePreparedSpawn(prepared)
+			c.scheduleQueuedSpawnRetry()
+			return
 		}
-		c.deleteQueuedSpawn(prepared.WorkerID)
 	}
+}
+
+func (c *AgentControl) requeuePreparedSpawn(prepared preparedSpawn) {
+	if c == nil {
+		return
+	}
+	c.queueMu.Lock()
+	c.queued = append(c.queued, prepared)
+	c.queueMu.Unlock()
+}
+
+const queuedSpawnLeaseRetryDelay = 200 * time.Millisecond
+
+func (c *AgentControl) scheduleQueuedSpawnRetry() {
+	if c == nil {
+		return
+	}
+	c.queueRetryMu.Lock()
+	if c.queueRetrying {
+		c.queueRetryMu.Unlock()
+		return
+	}
+	c.queueRetrying = true
+	stop := c.statusStop
+	c.queueRetryMu.Unlock()
+
+	go func() {
+		timer := time.NewTimer(queuedSpawnLeaseRetryDelay)
+		defer timer.Stop()
+		if stop == nil {
+			<-timer.C
+		} else {
+			select {
+			case <-timer.C:
+			case <-stop:
+				c.finishQueuedSpawnRetry()
+				return
+			}
+			select {
+			case <-stop:
+				c.finishQueuedSpawnRetry()
+				return
+			default:
+			}
+		}
+		c.finishQueuedSpawnRetry()
+		c.maybeStartQueued(context.Background())
+	}()
+}
+
+func (c *AgentControl) finishQueuedSpawnRetry() {
+	c.queueRetryMu.Lock()
+	c.queueRetrying = false
+	c.queueRetryMu.Unlock()
 }
 
 func (c *AgentControl) popQueuedSpawn() (preparedSpawn, bool) {
@@ -1813,11 +2296,259 @@ func (c *AgentControl) popQueuedSpawn() (preparedSpawn, bool) {
 	return prepared, true
 }
 
-func (c *AgentControl) deleteQueuedSpawn(workerID string) {
-	if c == nil || c.harnessStore == nil || c.harnessStore.Dir() == "" {
-		return
+func (c *AgentControl) ackQueuedSpawn(workerID string) (bool, error) {
+	if c == nil {
+		return false, nil
 	}
-	_ = c.harnessStore.DeleteQueueItem(workerID)
+	c.queuedSpawnAckHookMu.Lock()
+	hook := c.queuedSpawnAckForTest
+	c.queuedSpawnAckHookMu.Unlock()
+	if hook != nil {
+		if err := hook(workerID); err != nil {
+			return false, err
+		}
+	}
+	if c.harnessStore == nil || c.harnessStore.Dir() == "" {
+		return true, nil
+	}
+	return c.harnessStore.ClaimQueueItem(workerID)
+}
+
+func (c *AgentControl) beginQueuedLaunchAcknowledgement(workerID string) func() {
+	if c == nil {
+		return func() {}
+	}
+	workerID = strings.TrimSpace(workerID)
+	c.queuedLaunchAckMu.Lock()
+	if c.queuedLaunchAcks == nil {
+		c.queuedLaunchAcks = make(map[string]struct{})
+	}
+	c.queuedLaunchAcks[workerID] = struct{}{}
+	c.queuedLaunchAckMu.Unlock()
+	return func() {
+		c.queuedLaunchAckMu.Lock()
+		delete(c.queuedLaunchAcks, workerID)
+		c.queuedLaunchAckMu.Unlock()
+	}
+}
+
+func (c *AgentControl) queuedLaunchAcknowledgementPending(workerID string) bool {
+	if c == nil {
+		return false
+	}
+	c.queuedLaunchAckMu.Lock()
+	_, pending := c.queuedLaunchAcks[strings.TrimSpace(workerID)]
+	c.queuedLaunchAckMu.Unlock()
+	return pending
+}
+
+// Queue compensation retries are bounded: a persistently failing store must
+// surface an error and defer to durable restart recovery instead of spinning
+// while it holds queueDrainMu and the worker execution lease.
+const (
+	queuedSpawnAckRetryDelay      = 100 * time.Millisecond
+	queuedSpawnStoreRetryAttempts = 50
+)
+
+// errQueuedSpawnYielded reports that a bounded compensation loop stopped early
+// because durable state (queue tombstone or terminal record) owns recovery.
+var errQueuedSpawnYielded = errors.New("queued spawn compensation yielded to durable recovery")
+
+// retryQueuedSpawnStore retries op until it succeeds, canYield hands ownership
+// to durable recovery, or the attempt cap is reached. It returns nil only on
+// success; callers must surface the error and leave durable intent in place.
+func (c *AgentControl) retryQueuedSpawnStore(label, workerID string, canYield func() bool, op func() error) error {
+	var lastErr error
+	for attempt := 1; attempt <= queuedSpawnStoreRetryAttempts; attempt++ {
+		lastErr = op()
+		if lastErr == nil {
+			return nil
+		}
+		if attempt == 1 || attempt%10 == 0 {
+			providers.DebugLogf("agentcontrol: %s %s attempt %d: %v", label, workerID, attempt, lastErr)
+		}
+		if canYield != nil && canYield() {
+			providers.DebugLogf("agentcontrol: yield %s %s to durable recovery: %v", label, workerID, lastErr)
+			return fmt.Errorf("%s %s: %w", label, workerID, errQueuedSpawnYielded)
+		}
+		time.Sleep(queuedSpawnAckRetryDelay)
+	}
+	return fmt.Errorf("%s %s failed after %d attempts: %w", label, workerID, queuedSpawnStoreRetryAttempts, lastErr)
+}
+
+func (c *AgentControl) markQueuedSpawnFailureReliably(workerID string, cause error) (durable bool, err error) {
+	if c == nil || c.harnessStore == nil || c.harnessStore.Dir() == "" {
+		return false, nil
+	}
+	errText := "queued spawn launch failed"
+	if cause != nil && strings.TrimSpace(cause.Error()) != "" {
+		errText = cause.Error()
+	}
+	var marked bool
+	err = c.retryQueuedSpawnStore("mark queued spawn failing", workerID, c.isStopping, func() error {
+		c.queuedSpawnAckHookMu.Lock()
+		markHook := c.queuedSpawnMarkFailureForTest
+		c.queuedSpawnAckHookMu.Unlock()
+		if markHook != nil {
+			return markHook(workerID)
+		}
+		var markErr error
+		marked, markErr = c.harnessStore.MarkQueueItemFailing(workerID, errText)
+		return markErr
+	})
+	if err != nil {
+		return false, err
+	}
+	// Missing means the durable payload was already consumed. The worker
+	// execution lease makes that impossible for a conforming contender,
+	// but there is no recovery intent left to transition in either case.
+	return marked, nil
+}
+
+func (c *AgentControl) acknowledgeQueuedTerminalReliably(workerID, intent string, intentDurable bool) error {
+	return c.retryQueuedSpawnStore("acknowledge "+intent+" queued spawn", workerID, func() bool {
+		return intentDurable && c.isStopping()
+	}, func() error {
+		_, err := c.ackQueuedSpawn(workerID)
+		return err
+	})
+}
+
+// acknowledgeLaunchedQueuedSpawnReliably is the successful-launch handoff.
+// While the retained queue item is runnable the execution lease stays owned by
+// the launched worker, so a bounded retry cannot expose a double launch: on
+// exhaustion the terminal path or the next app-server consumes the item.
+// During shutdown, Manager.StopAll can make the worker terminal while this
+// loop owns the queue drain and lease-release barrier. Once both the live
+// manager snapshot and the durable terminal intent prove that generation has
+// stopped, it yields immediately: the retained queue item is superseded by the
+// terminal record, and restart recovery consumes both without launching again.
+func (c *AgentControl) acknowledgeLaunchedQueuedSpawnReliably(workerID string) error {
+	err := c.retryQueuedSpawnStore("acknowledge launched queued spawn", workerID, func() bool {
+		return c.queuedLaunchCanYieldToTerminalRecovery(workerID)
+	}, func() error {
+		_, ackErr := c.ackQueuedSpawn(workerID)
+		return ackErr
+	})
+	if errors.Is(err, errQueuedSpawnYielded) {
+		return nil
+	}
+	return err
+}
+
+func (c *AgentControl) queuedLaunchCanYieldToTerminalRecovery(workerID string) bool {
+	if c == nil || !c.isStopping() || c.manager == nil {
+		return false
+	}
+	worker := c.manager.Get(strings.TrimSpace(workerID))
+	if worker == nil || !subagent.IsTerminal(worker.Snapshot().Status) {
+		return false
+	}
+	pending, err := c.workerTerminalFinalizationPending(workerID)
+	return err == nil && pending
+}
+
+func (c *AgentControl) cancelQueuedSpawn(prepared preparedSpawn, now time.Time) (bool, error) {
+	if c == nil {
+		return false, nil
+	}
+	workerID := prepared.WorkerID
+	// Cancellation and launch use the same execution lease. This closes the
+	// cross-process window where cancellation could either consume the durable
+	// payload before rollback succeeds or race a launcher between settlement and
+	// acknowledgement.
+	acquired, err := c.acquireWorkerExecution(workerID)
+	if err != nil {
+		if errors.Is(err, errWorkerExecutionBusy) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !acquired {
+		return false, nil
+	}
+	defer c.releaseWorkerExecution(workerID)
+	cancellingDurable := false
+	if c.harnessStore != nil && c.harnessStore.Dir() != "" {
+		marked, err := c.harnessStore.MarkQueueItemCancelling(workerID)
+		if err != nil {
+			return false, fmt.Errorf("mark queued spawn cancelling: %w", err)
+		}
+		if !marked {
+			return false, nil
+		}
+		cancellingDurable = true
+	}
+	if rollbackErr := c.rollbackQueuedTerminalReliably(prepared, cancellingDurable); rollbackErr != nil {
+		// MarkQueueItemCancelling is the durable recovery authority. Leave that
+		// tombstone and the prepared admission intact so a fresh process can
+		// resume compensation instead of holding Close forever on an unavailable
+		// external store.
+		providers.DebugLogf("agentcontrol: cancel queued spawn %s left durable tombstone: %v", workerID, rollbackErr)
+		return true, nil
+	}
+	c.settleQueuedSpawnCancellation(prepared, now)
+	if ackErr := c.acknowledgeQueuedTerminalReliably(workerID, "cancellation", cancellingDurable); ackErr != nil {
+		providers.DebugLogf("agentcontrol: cancelled queued spawn %s left durable tombstone: %v", workerID, ackErr)
+	}
+	return true, nil
+}
+
+// takeQueuedSpawns removes matching local payloads. Callers hold queueDrainMu,
+// preserving the queueDrainMu -> queueMu order shared with queue drains.
+func (c *AgentControl) takeQueuedSpawns(workerIDs map[string]struct{}) []preparedSpawn {
+	if c == nil || len(workerIDs) == 0 {
+		return nil
+	}
+	c.queueMu.Lock()
+	defer c.queueMu.Unlock()
+	removed := make([]preparedSpawn, 0, len(workerIDs))
+	remaining := make([]preparedSpawn, 0, len(c.queued))
+	for _, prepared := range c.queued {
+		if _, ok := workerIDs[prepared.WorkerID]; ok {
+			removed = append(removed, prepared)
+			continue
+		}
+		remaining = append(remaining, prepared)
+	}
+	c.queued = remaining
+	return removed
+}
+
+func (c *AgentControl) settleQueuedSpawnCancellation(prepared preparedSpawn, now time.Time) {
+	if cancelled, ok := c.threads.UpdateStatus(prepared.WorkerID, agentthread.StatusCancelled, now); ok {
+		_ = c.threadStore.RecordStatus(cancelled)
+	}
+	if closed, ok := c.threads.UpdateEdgeStatus(prepared.WorkerID, agentthread.EdgeClosed, now); ok {
+		_ = c.threadStore.RecordEdgeStatus(closed)
+	}
+	if c.harnessStore != nil {
+		_, _ = c.harnessStore.UpdateTaskStatus(prepared.WorkerID, harness.TaskStatusCancelled, now, 0, 0, "cancelled")
+	}
+}
+
+func (c *AgentControl) rollbackQueuedTerminalReliably(prepared preparedSpawn, intentDurable bool) error {
+	return c.rollbackPreparedSpawnAdmission(prepared, func() bool {
+		return intentDurable && c.isStopping()
+	})
+}
+
+func (c *AgentControl) rollbackPreparedSpawnAdmission(prepared preparedSpawn, canYield func() bool) error {
+	rollback := prepared.AdmissionRollback
+	if rollback == nil && prepared.WorkerType.Name == HelpMeRecoveryWorkerType {
+		// Queue payloads survive the process-local hook closure. HelpMe recovery
+		// is the built-in durable admission today, so restart compensation can
+		// reconstruct rollback from the stable worker ID.
+		rollback = func() error { return c.RemoveHelpMeRecovery(prepared.WorkerID) }
+	}
+	return c.rollbackSpawnAdmissionReliably(prepared.WorkerID, rollback, canYield)
+}
+
+func (c *AgentControl) rollbackSpawnAdmissionReliably(workerID string, rollback SpawnAdmissionRollback, canYield func() bool) error {
+	if rollback == nil {
+		return nil
+	}
+	return c.retryQueuedSpawnStore("rollback spawn admission", workerID, canYield, rollback)
 }
 
 func queuedSpawnPayloadFromPrepared(prepared preparedSpawn) queuedSpawnPayload {
@@ -1831,6 +2562,7 @@ func queuedSpawnPayloadFromPrepared(prepared preparedSpawn) queuedSpawnPayload {
 		Isolation:        string(prepared.Isolation),
 		SpeechCapability: prepared.SpeechCapability,
 		BaseRepo:         prepared.BaseRepo,
+		BaseRevision:     prepared.BaseRevision,
 		IsFork:           prepared.IsFork,
 		ForkMode:         prepared.ForkMode,
 		ParentHistory:    providers.CloneChatMessages(prepared.ParentHistory),
@@ -1868,6 +2600,7 @@ func preparedSpawnFromQueuedPayload(payload queuedSpawnPayload) (preparedSpawn, 
 		Isolation:        isolation,
 		SpeechCapability: payload.SpeechCapability,
 		BaseRepo:         payload.BaseRepo,
+		BaseRevision:     payload.BaseRevision,
 		IsFork:           payload.IsFork,
 		ForkMode:         payload.ForkMode,
 		ParentHistory:    providers.CloneChatMessages(payload.ParentHistory),
@@ -1943,17 +2676,125 @@ func (c *AgentControl) resolveSpawnModelPin(label, modelOverride, rawPin string,
 	return resolvedModel, clientOverride, nil
 }
 
-func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSpawn) error {
+func (c *AgentControl) resolveQueuedWorktreeBase(baseRepo string) (worktree.ResolvedBase, error) {
+	if c.worktrees == nil {
+		return worktree.ResolvedBase{}, errors.New("isolation=worktree requires repository worktree support (this workspace does not support isolated worktrees)")
+	}
+	resolved, err := c.worktrees.ResolveBase(baseRepo, "")
+	if err != nil {
+		return worktree.ResolvedBase{}, fmt.Errorf("resolve queued worktree base: %w", err)
+	}
+	return resolved, nil
+}
+
+func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSpawn) (outcome queuedSpawnStartOutcome, returnErr error) {
+	acquired, err := c.acquireWorkerExecution(prepared.WorkerID)
+	if err != nil {
+		if errors.Is(err, errWorkerExecutionBusy) {
+			return queuedSpawnWorkerBusy, nil
+		}
+		return queuedSpawnRetryPending, err
+	}
+	if !acquired {
+		return queuedSpawnWorkerBusy, nil
+	}
+	releaseLeaseOnReturn := true
+	defer func() {
+		if releaseLeaseOnReturn {
+			c.releaseWorkerExecution(prepared.WorkerID)
+		}
+	}()
+	// Keep the durable payload until Manager.Spawn has published the running
+	// worker. The execution lease serializes this non-consuming check with other
+	// launchers and cancellation; a process crash anywhere in preparation leaves
+	// the payload available for the next app-server to recover.
+	if c.harnessStore != nil && c.harnessStore.Dir() != "" {
+		item, exists, err := c.harnessStore.GetQueueItem(prepared.WorkerID)
+		if err != nil {
+			return queuedSpawnRetryPending, fmt.Errorf("inspect queued spawn: %w", err)
+		}
+		if !exists {
+			return queuedSpawnAlreadyClaimed, nil
+		}
+		terminalPending, err := c.workerTerminalFinalizationPending(prepared.WorkerID)
+		if err != nil {
+			return queuedSpawnRetryPending, fmt.Errorf("inspect queued spawn terminal evidence: %w", err)
+		}
+		if terminalPending {
+			// Terminal evidence is a stronger fact than stale launch intent. Yield
+			// the execution lease so the terminal recovery scanner can finalize and
+			// consume this queue item; never start a second worker generation.
+			return queuedSpawnTerminalPending, nil
+		}
+		if item.State == harness.QueueItemStateCancelling {
+			// Cancellation intent became durable before its compensation. Never
+			// launch this payload: finish rollback and terminal settlement while
+			// still owning the same cross-process execution lease, then ack it.
+			if rollbackErr := c.rollbackQueuedTerminalReliably(prepared, true); rollbackErr != nil {
+				return queuedSpawnCancelled, rollbackErr
+			}
+			c.settleQueuedSpawnCancellation(prepared, time.Now().UTC())
+			if ackErr := c.acknowledgeQueuedTerminalReliably(prepared.WorkerID, "cancellation", true); ackErr != nil {
+				return queuedSpawnCancelled, ackErr
+			}
+			return queuedSpawnCancelled, nil
+		}
+		if item.State == harness.QueueItemStateFailing {
+			failure := errors.New(strings.TrimSpace(item.Error))
+			if strings.TrimSpace(item.Error) == "" {
+				failure = errors.New("queued spawn launch failed before restart")
+			}
+			if rollbackErr := c.rollbackQueuedTerminalReliably(prepared, true); rollbackErr != nil {
+				return queuedSpawnFailed, errors.Join(failure, rollbackErr)
+			}
+			c.settleSpawnLaunchFailure(prepared.WorkerID, failure)
+			if ackErr := c.acknowledgeQueuedTerminalReliably(prepared.WorkerID, "failure", true); ackErr != nil {
+				return queuedSpawnFailed, errors.Join(failure, ackErr)
+			}
+			return queuedSpawnFailed, failure
+		}
+	}
+	// From this point through launch failure settlement or successful queue
+	// acknowledgement, this process owns both the durable payload and the
+	// worker execution lease. Keep every terminal transition inside that lease
+	// so another app-server cannot observe the payload between release and ack.
+	defer func() {
+		if returnErr == nil || outcome == queuedSpawnStarted || outcome == queuedSpawnAlreadyClaimed || outcome == queuedSpawnRetryPending {
+			return
+		}
+		failingDurable, markErr := c.markQueuedSpawnFailureReliably(prepared.WorkerID, returnErr)
+		if markErr != nil {
+			// No terminal tombstone was committed. Preserve the original launch
+			// payload and let a future owner retry instead of hanging shutdown or
+			// compensating state that still has runnable intent.
+			outcome = queuedSpawnRetryPending
+			returnErr = errors.Join(returnErr, markErr)
+			return
+		}
+		outcome = queuedSpawnFailed
+		if rollbackErr := c.rollbackQueuedTerminalReliably(prepared, failingDurable); rollbackErr != nil {
+			returnErr = errors.Join(returnErr, rollbackErr)
+			return
+		}
+		c.settleSpawnLaunchFailure(prepared.WorkerID, returnErr)
+		if ackErr := c.acknowledgeQueuedTerminalReliably(prepared.WorkerID, "failure", failingDurable); ackErr != nil {
+			returnErr = errors.Join(returnErr, ackErr)
+		}
+	}()
 	workerRoot := c.parentRepo
 	var worktreeRef *worktree.Worktree
-	var err error
 	if prepared.Isolation == IsolationWorktree {
 		if c.worktrees == nil {
-			return errors.New("isolation=worktree requires repository worktree support (this workspace does not support isolated worktrees)")
+			return queuedSpawnStartUnknown, errors.New("isolation=worktree requires repository worktree support (this workspace does not support isolated worktrees)")
 		}
-		worktreeRef, err = c.worktrees.Create(c.sessionID, prepared.WorkerID, prepared.BaseRepo)
+		worktreeRef, err = c.worktrees.OpenOrCreate(worktree.OpenOrCreateOptions{
+			SessionID:    c.sessionID,
+			WorkerID:     prepared.WorkerID,
+			BaseRepo:     prepared.BaseRepo,
+			BaseRevision: prepared.BaseRevision,
+		})
 		if err != nil {
-			return fmt.Errorf("worktree create: %w", err)
+			return queuedSpawnStartUnknown, fmt.Errorf("worktree create: %w", err)
 		}
 		workerRoot = worktreeRef.Path
 	}
@@ -1969,7 +2810,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
 		}
-		return fmt.Errorf("worker toolkit: %w", err)
+		return queuedSpawnStartUnknown, fmt.Errorf("worker toolkit: %w", err)
 	}
 	prompt := prepared.Prompt
 	systemPrompt, err := c.workerSystemPrompt(workerRoot, prepared.WorkerType, prepared.ThreadMeta, prepared.Isolation)
@@ -1977,7 +2818,7 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
 		}
-		return fmt.Errorf("worker system prompt: %w", err)
+		return queuedSpawnStartUnknown, fmt.Errorf("worker system prompt: %w", err)
 	}
 	var initialHistory []providers.ChatMessage
 	if prepared.IsFork {
@@ -2005,7 +2846,10 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	// and route the request to the wrong provider.
 	modelOverride, clientOverride, err := c.resolveSpawnModelPin(fmt.Sprintf("queued spawn %s", prepared.WorkerID), prepared.ModelOverride, prepared.ModelPin, prepared.ClientOverride)
 	if err != nil {
-		return err
+		if worktreeRef != nil {
+			_ = c.worktrees.Cleanup(worktreeRef)
+		}
+		return queuedSpawnStartUnknown, err
 	}
 	// Same report-settlement window as the direct spawn path: mark before
 	// the queued run can start so await never consumes an unadjudicated
@@ -2013,33 +2857,77 @@ func (c *AgentControl) startQueuedSpawn(ctx context.Context, prepared preparedSp
 	if prepared.WorkerType.RequiresReport {
 		c.markReportSettlementPending(prepared.WorkerID)
 	}
-	_, err = c.manager.Spawn(context.WithoutCancel(ctx), subagent.SpawnOptions{
-		ID:             prepared.WorkerID,
-		ParticipantID:  participantID,
-		Type:           prepared.WorkerType.Name,
-		TaskName:       prepared.ThreadMeta.TaskName,
-		AgentProfile:   prepared.ThreadMeta.AgentProfile,
-		AgentPath:      prepared.ThreadMeta.Path,
-		ParentID:       prepared.ThreadMeta.ParentID,
-		Description:    prepared.Description,
-		Prompt:         prompt,
-		SystemPrompt:   systemPrompt,
-		Toolkit:        workerKit,
-		HistoryPath:    historyPath,
-		WorkerRoot:     workerRoot,
-		InitialHistory: initialHistory,
-		Model:          modelOverride,
-		ModelPin:       prepared.ModelPin,
-		Client:         clientOverride,
-	})
+	func() {
+		finishLaunchAcknowledgement := c.beginQueuedLaunchAcknowledgement(prepared.WorkerID)
+		defer finishLaunchAcknowledgement()
+		// A zero-latency worker can publish a terminal notification before
+		// Manager.Spawn returns. Hold its lease-release barrier until the durable
+		// payload is acknowledged, so another app-server cannot recover and run
+		// the same item in that handoff window.
+		unlockLeaseRelease := c.lockWorkerExecutionRelease(prepared.WorkerID)
+		defer unlockLeaseRelease()
+		c.workerReleaseHookMu.Lock()
+		beforeManagerSpawn := c.beforeQueuedManagerSpawnForTest
+		c.workerReleaseHookMu.Unlock()
+		if hook := beforeManagerSpawn; hook != nil {
+			hook(prepared.WorkerID)
+		}
+		releaseTurnAdmission, admissionErr := c.beginWorkerTurn()
+		if admissionErr != nil {
+			err = admissionErr
+			return
+		}
+		_, err = c.manager.Spawn(context.WithoutCancel(ctx), subagent.SpawnOptions{
+			ID:             prepared.WorkerID,
+			ParticipantID:  participantID,
+			Type:           prepared.WorkerType.Name,
+			TaskName:       prepared.ThreadMeta.TaskName,
+			AgentProfile:   prepared.ThreadMeta.AgentProfile,
+			AgentPath:      prepared.ThreadMeta.Path,
+			ParentID:       prepared.ThreadMeta.ParentID,
+			Description:    prepared.Description,
+			Prompt:         prompt,
+			SystemPrompt:   systemPrompt,
+			Toolkit:        workerKit,
+			HistoryPath:    historyPath,
+			WorkerRoot:     workerRoot,
+			InitialHistory: initialHistory,
+			Model:          modelOverride,
+			ModelPin:       prepared.ModelPin,
+			Client:         clientOverride,
+		})
+		// Manager.Spawn publishes the worker synchronously. Close turn admission
+		// before storage acknowledgement so BeginShutdown can acquire its writer
+		// lock, stop the published worker, and provide the durable terminal proof
+		// that lets an unavailable queue acknowledgement yield safely.
+		releaseTurnAdmission()
+		if err == nil {
+			if ackErr := c.acknowledgeLaunchedQueuedSpawnReliably(prepared.WorkerID); ackErr != nil {
+				// The worker is running and this process still owns its execution
+				// lease, so the stale runnable item cannot double-launch; the
+				// terminal path or the next app-server consumes it.
+				providers.DebugLogf("agentcontrol: queued spawn %s launched without queue acknowledgement: %v", prepared.WorkerID, ackErr)
+			}
+		}
+	}()
 	if err != nil {
 		c.clearReportSettlement(prepared.WorkerID)
+		if errors.Is(err, errAgentControlStopping) {
+			if worktreeRef != nil {
+				_ = c.worktrees.Cleanup(worktreeRef)
+			}
+			return queuedSpawnRetryPending, err
+		}
 		if worktreeRef != nil {
 			_ = c.worktrees.Cleanup(worktreeRef)
 		}
-		return fmt.Errorf("spawn: %w", err)
+		return queuedSpawnStartUnknown, fmt.Errorf("spawn: %w", err)
 	}
-	return nil
+	// Manager.Spawn inserts a StatusRunning entry synchronously. The reliable
+	// acknowledgement above completed while both the execution lease and its
+	// fast-terminal release barrier were held.
+	releaseLeaseOnReturn = false
+	return queuedSpawnStarted, nil
 }
 
 func (c *AgentControl) recordHarnessTaskFailure(taskID string, err error) {
@@ -2081,6 +2969,24 @@ func (c *AgentControl) recordHarnessTaskFailure(taskID string, err error) {
 		Message:   errText,
 		CreatedAt: now,
 	})
+}
+
+// settleSpawnLaunchFailure closes every durable lifecycle record created
+// before manager.Spawn. Without this compensation a launch error leaves the
+// child thread and parent edge permanently active even though no executor
+// exists, which in turn prevents the root thread from being deleted.
+func (c *AgentControl) settleSpawnLaunchFailure(workerID string, err error) {
+	if c == nil {
+		return
+	}
+	now := time.Now().UTC()
+	if failed, ok := c.threads.UpdateStatus(workerID, agentthread.StatusFailed, now); ok {
+		_ = c.threadStore.RecordStatus(failed)
+	}
+	c.recordHarnessTaskFailure(workerID, err)
+	if closed, ok := c.threads.UpdateEdgeStatus(workerID, agentthread.EdgeClosed, now); ok {
+		_ = c.threadStore.RecordEdgeStatus(closed)
+	}
 }
 
 func (c *AgentControl) recordHarnessStatus(n subagent.Notification) {
@@ -2434,25 +3340,76 @@ func (c *AgentControl) consumeWorkerStatus(ch <-chan subagent.Notification) {
 	for {
 		select {
 		case n := <-ch:
-			c.consumeWorkerNotification(n)
+			// Terminal bookkeeping is synchronous through the manager's reliable
+			// observer. Re-consuming the lossy copy can race a report-closing
+			// follow-up and incorrectly settle the original completion.
+			if isFinalSubAgentStatus(n.Status) {
+				continue
+			}
+			// Serialize active notifications with the reliable terminal observer.
+			// Otherwise a delayed running notification can pass the terminal guard,
+			// block on the harness store, and overwrite the terminal status after
+			// the observer has already persisted the report and released awaiters.
+			unlockTransition := c.lockWorkerTransition(n.AgentID)
+			if _, err := c.consumeWorkerNotification(n); err != nil {
+				providers.DebugLogf("agentcontrol: consume worker %s status %s: %v", n.AgentID, n.Status, err)
+			}
+			unlockTransition()
 		case <-c.statusStop:
 			return
 		}
 	}
 }
 
-func (c *AgentControl) consumeWorkerNotification(n subagent.Notification) {
+func (c *AgentControl) consumeWorkerTerminal(n subagent.Notification) error {
+	c.workerReleaseHookMu.Lock()
+	beforeTransition := c.beforeWorkerTerminalTransitionForTest
+	c.workerReleaseHookMu.Unlock()
+	if beforeTransition != nil {
+		beforeTransition(n.AgentID)
+	}
+	unlockTransition := c.lockWorkerTransition(n.AgentID)
+	defer unlockTransition()
+	if outcome := c.finalizeWorkerTerminalWithAck(n); outcome == workerTerminalContinued {
+		return nil
+	}
+	c.workerReleaseHookMu.Lock()
+	hook := c.beforeWorkerExecutionReleaseForTest
+	c.workerReleaseHookMu.Unlock()
+	if hook != nil {
+		hook(n.AgentID)
+	}
+	c.releaseWorkerExecution(n.AgentID)
+	c.cleanupRetiringWorkerTerminalFinalizers()
+	return nil
+}
+
+func (c *AgentControl) consumeWorkerNotification(n subagent.Notification) (workerNotificationOutcome, error) {
 	if c == nil || c.threads == nil {
-		return
+		return workerNotificationSettled, nil
 	}
 	status := threadStatusFromSubAgent(n.Status)
 	if current, ok := c.threads.Resolve(n.AgentID); ok {
 		if isActiveAgentThreadStatus(status) && isFinalAgentThreadStatus(current.Status) {
-			return
+			return workerNotificationSettled, nil
 		}
-		if isFinalAgentThreadStatus(status) && current.Status == status {
-			c.recordTerminalHarnessArtifacts(n)
-			return
+	} else if isFinalSubAgentStatus(n.Status) {
+		// A prepared terminal intent may be the only surviving authority after a
+		// crash before the thread registry/store observed the child. Rebuild the
+		// minimum metadata projection before replaying the terminal transaction.
+		meta := metadataFromSnapshot(n.Snapshot)
+		meta.SessionID = c.sessionID
+		if strings.TrimSpace(meta.ID) == "" {
+			meta.ID = strings.TrimSpace(n.AgentID)
+		}
+		if strings.TrimSpace(meta.Path) == "" {
+			meta.Path = agentthread.RootPath + "/" + meta.ID
+		}
+		if err := c.threads.Restore(meta); err != nil {
+			return workerNotificationSettled, fmt.Errorf("restore terminal worker thread: %w", err)
+		}
+		if err := c.threadStore.UpsertThread(meta); err != nil {
+			return workerNotificationSettled, fmt.Errorf("persist restored terminal worker thread: %w", err)
 		}
 	}
 	// A requires_report worker that completed without filing agent_report
@@ -2461,10 +3418,27 @@ func (c *AgentControl) consumeWorkerNotification(n subagent.Notification) {
 	// closing turn's own completion passes the dedupe guards above and
 	// flows through this consumer normally.
 	if n.Status == subagent.StatusCompleted && c.maybeNudgeReportClosing(n) {
-		return
+		return workerNotificationContinued, nil
+	}
+	if isFinalSubAgentStatus(n.Status) {
+		if err := c.ensureTerminalHarnessProjection(n); err != nil {
+			return workerNotificationSettled, err
+		}
 	}
 	c.recordHarnessStatus(n)
 	if isFinalSubAgentStatus(n.Status) {
+		task, ok := c.harnessTask(n.AgentID)
+		want := harnessStatusFromSubAgent(n.Status)
+		if c.harnessStore != nil && c.harnessStore.Dir() != "" && (!ok || task.Status != want) {
+			return workerNotificationSettled, fmt.Errorf("terminal harness task %s status = %q, want %q", n.AgentID, task.Status, want)
+		}
+		if n.Status == subagent.StatusCompleted && c.harnessStore != nil && c.harnessStore.Dir() != "" {
+			if _, ok, err := c.harnessStore.ReportForTask(n.AgentID); err != nil {
+				return workerNotificationSettled, fmt.Errorf("read terminal report: %w", err)
+			} else if !ok {
+				return workerNotificationSettled, fmt.Errorf("terminal report for %s was not persisted", n.AgentID)
+			}
+		}
 		// The terminal state (and, for completed runs, the structured or
 		// synthesized report) is durably recorded: settlement is decided,
 		// awaiting parents may consume this run now.
@@ -2472,16 +3446,198 @@ func (c *AgentControl) consumeWorkerNotification(n subagent.Notification) {
 	}
 	meta, ok := c.threads.UpdateStatus(n.AgentID, status, time.Now().UTC())
 	if !ok {
-		return
+		return workerNotificationSettled, fmt.Errorf("worker thread %s is not registered", n.AgentID)
 	}
-	_ = c.threadStore.RecordStatus(meta)
+	if err := c.threadStore.RecordStatus(meta); err != nil {
+		return workerNotificationSettled, fmt.Errorf("persist worker thread status: %w", err)
+	}
 	if isFinalSubAgentStatus(n.Status) {
-		c.ensureAgentResultDelivery(n.Snapshot)
-		if !c.deliverNestedResultToParent(context.Background(), n.Snapshot) && c.isRootChildSnapshot(n.Snapshot) {
-			_ = c.threadStore.RecordCommunication(c.rootThreadID, c.newAgentCompletionCommunication(n.Snapshot, agentthread.RootPath))
+		if err := c.commitDurablyAppliedNestedResults(n.AgentID); err != nil {
+			return workerNotificationSettled, fmt.Errorf("commit nested results applied by %s: %w", n.AgentID, err)
+		}
+		if _, err := c.ensureAgentResultDelivery(n.Snapshot); err != nil {
+			return workerNotificationSettled, fmt.Errorf("persist result-ready for %s: %w", n.AgentID, err)
+		}
+		deliveryCtx, cancelDelivery := context.WithTimeout(context.Background(), nestedResultDeliveryWait)
+		delivered := c.deliverNestedResultToParent(deliveryCtx, n.Snapshot)
+		cancelDelivery()
+		if !delivered {
+			if !c.isRootChildSnapshot(n.Snapshot) {
+				return workerNotificationSettled, fmt.Errorf("nested result %s remains pending for parent %s", n.AgentID, n.Snapshot.ParentID)
+			}
+			if err := c.threadStore.RecordCommunication(c.rootThreadID, c.newAgentCompletionCommunication(n.Snapshot, agentthread.RootPath)); err != nil {
+				return workerNotificationSettled, fmt.Errorf("persist root completion communication: %w", err)
+			}
 		}
 		go c.maybeStartQueued(context.Background())
 	}
+	return workerNotificationSettled, nil
+}
+
+// ensureTerminalHarnessProjection reconstructs task/run rows when a prepared
+// terminal intent is the only surviving run authority. Queue admission and
+// terminal preparation are durable before launch/snapshot publication, so a
+// crash may legitimately leave the terminal record and queue payload without
+// the later harness projection. Recovery must build that projection before it
+// can apply the terminal status; otherwise it retries forever on a missing row.
+func (c *AgentControl) ensureTerminalHarnessProjection(n subagent.Notification) error {
+	if c == nil || c.harnessStore == nil || c.harnessStore.Dir() == "" {
+		return nil
+	}
+	workerID := strings.TrimSpace(n.AgentID)
+	if workerID == "" {
+		workerID = strings.TrimSpace(n.Snapshot.ID)
+	}
+	meta, ok := c.threads.Resolve(workerID)
+	if !ok {
+		return fmt.Errorf("terminal worker thread %s is not registered", workerID)
+	}
+
+	role := strings.TrimSpace(n.Snapshot.Type)
+	intent := strings.TrimSpace(n.Snapshot.Description)
+	workerRoot := strings.TrimSpace(n.Snapshot.WorkerRoot)
+	baseRepo := ""
+	workspaceMode := harness.WorkspaceShared
+	if item, exists, err := c.harnessStore.GetQueueItem(workerID); err != nil {
+		return fmt.Errorf("read terminal worker queue projection: %w", err)
+	} else if exists {
+		var payload queuedSpawnPayload
+		if err := json.Unmarshal(item.Payload, &payload); err == nil {
+			role = firstNonEmptyString(role, payload.WorkerType)
+			intent = firstNonEmptyString(intent, payload.Prompt)
+			baseRepo = strings.TrimSpace(payload.BaseRepo)
+			if IsolationMode(payload.Isolation) == IsolationWorktree {
+				workspaceMode = harness.WorkspaceWorktree
+				if workerRoot == "" && strings.TrimSpace(c.worktreeRoot) != "" {
+					workerRoot = filepath.Join(c.worktreeRoot, c.sessionID, workerID)
+				}
+			}
+		}
+	}
+	if workerRoot == "" {
+		workerRoot = c.parentRepo
+	}
+	if role == "" {
+		role = meta.Role
+	}
+	if intent == "" {
+		intent = meta.LastTaskMessage
+	}
+
+	now := time.Now().UTC()
+	startedAt := n.Snapshot.StartedAt
+	if startedAt.IsZero() {
+		startedAt = now
+	}
+	runID := harnessRunID(workerID)
+	if _, exists := c.harnessTask(workerID); !exists {
+		task := harness.Task{
+			ID:         workerID,
+			SessionID:  c.sessionID,
+			ParentID:   meta.ParentID,
+			ParentPath: meta.Source.ParentPath,
+			Path:       meta.Path,
+			Name:       meta.TaskName,
+			Role:       role,
+			Intent:     intent,
+			Workspace: harness.WorkspaceLease{
+				Mode:      workspaceMode,
+				Root:      workerRoot,
+				BaseRepo:  baseRepo,
+				CreatedAt: startedAt,
+			},
+			Status:     harness.TaskStatusRunning,
+			LastRunID:  runID,
+			CardItemID: taskCardItemID(workerID),
+			CreatedAt:  startedAt,
+			UpdatedAt:  now,
+			StartedAt:  startedAt,
+		}
+		if err := c.harnessStore.UpsertTask(task); err != nil {
+			return fmt.Errorf("restore terminal harness task: %w", err)
+		}
+	}
+	runs, err := c.harnessStore.ListRuns()
+	if err != nil {
+		return fmt.Errorf("list terminal harness runs: %w", err)
+	}
+	for _, run := range runs {
+		if run.ID == runID {
+			return nil
+		}
+	}
+	if err := c.harnessStore.UpsertRun(harness.AgentRun{
+		ID:        runID,
+		TaskID:    workerID,
+		AgentID:   workerID,
+		Role:      role,
+		Model:     n.Snapshot.Model,
+		Status:    harness.TaskStatusRunning,
+		StartedAt: startedAt,
+	}); err != nil {
+		return fmt.Errorf("restore terminal harness run: %w", err)
+	}
+	return nil
+}
+
+func (c *AgentControl) recordWorkerResumed(snap subagent.SubAgentSnapshot) {
+	if c == nil {
+		return
+	}
+	switch snap.Status {
+	case subagent.StatusRunning, subagent.StatusPending, subagent.StatusQueued:
+	default:
+		return
+	}
+	if meta, ok := c.threads.Resolve(snap.ID); ok {
+		if workerType, err := LookupWorkerType(meta.Role); err == nil && workerType.RequiresReport {
+			c.markReportSettlementPending(snap.ID)
+		}
+	}
+	c.recordHarnessResume(snap)
+	if meta, ok := c.threads.UpdateStatus(snap.ID, agentthread.StatusRunning, time.Now().UTC()); ok {
+		_ = c.threadStore.RecordStatus(meta)
+	}
+}
+
+func (c *AgentControl) recordHarnessResume(snap subagent.SubAgentSnapshot) {
+	if c == nil || c.harnessStore == nil {
+		return
+	}
+	now := time.Now().UTC()
+	if task, ok := c.harnessTask(snap.ID); ok {
+		task.Status = harness.TaskStatusRunning
+		task.UpdatedAt = now
+		task.CompletedAt = time.Time{}
+		task.InputTokens = snap.InputTokens
+		task.OutputTokens = snap.OutputTokens
+		task.Error = ""
+		_ = c.harnessStore.UpsertTask(task)
+	}
+	runID := harnessRunID(snap.ID)
+	if runs, err := c.harnessStore.ListRuns(); err == nil {
+		for _, run := range runs {
+			if run.ID != runID {
+				continue
+			}
+			run.Status = harness.TaskStatusRunning
+			run.CompletedAt = time.Time{}
+			run.InputTokens = snap.InputTokens
+			run.OutputTokens = snap.OutputTokens
+			run.Error = ""
+			_ = c.harnessStore.UpsertRun(run)
+			break
+		}
+	}
+	_ = c.harnessStore.AppendEvent(harness.Event{
+		Type:      harness.EventTaskStatusChanged,
+		TaskID:    snap.ID,
+		RunID:     runID,
+		AgentID:   snap.ID,
+		Path:      snap.AgentPath,
+		Status:    string(harness.TaskStatusRunning),
+		CreatedAt: now,
+	})
 }
 
 // markReportSettlementPending records that a requires_report run owned by
@@ -2559,7 +3715,7 @@ const reportClosingNudge = "You completed the task without submitting your struc
 // already nudged and completes with a synthesized final_text report —
 // never a second nudge, never a lifecycle state.
 func (c *AgentControl) maybeNudgeReportClosing(n subagent.Notification) bool {
-	if c == nil || c.manager == nil || c.harnessStore == nil || c.threads == nil {
+	if c == nil || c.isStopping() || c.manager == nil || c.harnessStore == nil || c.threads == nil {
 		return false
 	}
 	meta, ok := c.threads.Resolve(n.AgentID)
@@ -2583,10 +3739,22 @@ func (c *AgentControl) maybeNudgeReportClosing(n subagent.Notification) bool {
 	}
 	c.reportNudged[n.AgentID] = struct{}{}
 	c.reportNudgeMu.Unlock()
-	if _, err := c.manager.FollowupForcingTool(context.Background(), n.AgentID, reportClosingNudge, "agent_report"); err != nil {
-		providers.DebugLogf("agentcontrol: report closing nudge for %s failed: %v", n.AgentID, err)
+	releaseTurnAdmission, admissionErr := c.beginWorkerTurn()
+	if admissionErr != nil {
+		return false
+	}
+	_, followupErr := c.manager.FollowupForcingTool(context.Background(), n.AgentID, reportClosingNudge, "agent_report")
+	releaseTurnAdmission()
+	if followupErr != nil {
+		providers.DebugLogf("agentcontrol: report closing nudge for %s failed: %v", n.AgentID, followupErr)
 		// The caller falls through to normal recording, which settles the run.
 		return false
+	}
+	c.workerReleaseHookMu.Lock()
+	afterFollowup := c.afterReportClosingFollowupForTest
+	c.workerReleaseHookMu.Unlock()
+	if afterFollowup != nil {
+		afterFollowup(n.AgentID)
 	}
 	// The closing turn is in flight; keep (re-assert) the settlement window
 	// until its own terminal notification is recorded.
@@ -2594,34 +3762,170 @@ func (c *AgentControl) maybeNudgeReportClosing(n subagent.Notification) bool {
 	return true
 }
 
-func (c *AgentControl) deliverNestedResultToParent(ctx context.Context, snap subagent.SubAgentSnapshot) bool {
-	if c == nil || c.manager == nil {
+type nestedResultDeliveryAttempt struct {
+	done      chan struct{}
+	delivered bool
+}
+
+func (c *AgentControl) deliverNestedResultToParent(ctx context.Context, snap subagent.SubAgentSnapshot) (delivered bool) {
+	if c == nil || c.isStopping() || c.manager == nil {
 		return false
 	}
 	parentID := strings.TrimSpace(snap.ParentID)
 	if parentID == "" || parentID == c.sessionID || parentID == c.rootThreadID {
 		return false
 	}
-	if c.manager.Get(parentID) == nil {
+	stableResultID := agentResultDeliveryID(snap)
+	if stableResultID == "" {
 		return false
 	}
-	resultID, claimed, _ := c.claimAgentResultDelivery(snap, agentResultConsumerNestedFollowup)
-	if !claimed {
+	attempt, owner, alreadyDelivered := c.beginNestedResultDelivery(ctx, stableResultID)
+	if alreadyDelivered {
 		return true
+	}
+	if !owner {
+		return false
+	}
+	defer func() {
+		c.finishNestedResultDelivery(stableResultID, attempt, delivered)
+	}()
+	resultID, claimed, consumedBy, claimErr := c.claimAgentResultDelivery(snap, agentResultConsumerNestedPending)
+	if claimErr != nil {
+		providers.DebugLogf("agentcontrol: reserve nested result %s for parent inbox: %v", snap.ID, claimErr)
+		return false
+	}
+	if resultID == "" {
+		return false
+	}
+	if !claimed && consumedBy != agentResultConsumerNestedPending {
+		// Another delivery path already committed the result. Match the old
+		// single-consumer behavior and do not send a second copy to the parent.
+		return consumedBy != ""
+	}
+	parentBefore, newParentLease, unlockTransition, leaseErr := c.prepareWorkerFollowup(ctx, parentID)
+	if leaseErr != nil {
+		providers.DebugLogf("agentcontrol: acquire parent worker %s for nested result: %v", parentID, leaseErr)
+		return false
+	}
+	defer unlockTransition()
+	releaseNewParentLease := func() {
+		if newParentLease {
+			c.releaseWorkerExecution(parentID)
+		}
+	}
+	applied, appliedErr := c.parentPersistedRunContainsResult(parentID, resultID)
+	if appliedErr != nil {
+		releaseNewParentLease()
+		providers.DebugLogf("agentcontrol: inspect parent %s durable inbox application: %v", parentID, appliedErr)
+		return false
+	}
+	if applied {
+		transitioned, currentConsumer, transitionErr := c.transitionAgentResultDeliveryConsumer(resultID, agentResultConsumerNestedPending, agentResultConsumerNestedFollowup)
+		releaseNewParentLease()
+		if transitionErr != nil {
+			providers.DebugLogf("agentcontrol: commit nested result %s after parent application: %v", snap.ID, transitionErr)
+			return false
+		}
+		return transitioned || currentConsumer == agentResultConsumerNestedFollowup
 	}
 	parentPath := parentPathForSnapshot(snap)
 	if meta, ok := c.threads.Resolve(parentID); ok && strings.TrimSpace(meta.Path) != "" {
 		parentPath = meta.Path
 	}
 	communication := c.newAgentCompletionCommunication(snap, parentPath)
-	_, err := c.manager.Followup(ctx, parentID, communication.String())
+	if _, err := c.threadStore.RecordResultCommunication(parentID, resultID, communication); err != nil {
+		releaseNewParentLease()
+		providers.DebugLogf("agentcontrol: persist nested result %s parent inbox: %v", snap.ID, err)
+		return false
+	}
+	c.workerReleaseHookMu.Lock()
+	beforeNestedFollowup := c.beforeNestedResultFollowupForTest
+	c.workerReleaseHookMu.Unlock()
+	if beforeNestedFollowup != nil {
+		if err := beforeNestedFollowup(resultID); err != nil {
+			releaseNewParentLease()
+			providers.DebugLogf("agentcontrol: nested result %s followup gate: %v", snap.ID, err)
+			return false
+		}
+	}
+	releaseTurnAdmission, admissionErr := c.beginWorkerTurn()
+	if admissionErr != nil {
+		releaseNewParentLease()
+		return false
+	}
+	resumed, err := c.manager.Followup(ctx, parentID, communication.String())
+	releaseTurnAdmission()
 	if err != nil {
-		c.ReleaseAgentResultDeliveryClaim(resultID, agentResultConsumerNestedFollowup)
+		releaseNewParentLease()
 	}
 	if err == nil {
-		_ = c.threadStore.RecordCommunication(parentID, communication)
+		if isFinalSubAgentStatus(parentBefore.Status) {
+			c.recordWorkerResumed(resumed)
+		}
 	}
 	return err == nil
+}
+
+func (c *AgentControl) beginNestedResultDelivery(ctx context.Context, resultID string) (*nestedResultDeliveryAttempt, bool, bool) {
+	if c == nil || strings.TrimSpace(resultID) == "" {
+		return nil, false, false
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	resultID = strings.TrimSpace(resultID)
+	for {
+		if c.isStopping() {
+			return nil, false, false
+		}
+		c.nestedDeliveryMu.Lock()
+		if c.nestedDeliveries == nil {
+			c.nestedDeliveries = make(map[string]*nestedResultDeliveryAttempt)
+		}
+		attempt := c.nestedDeliveries[resultID]
+		if attempt == nil {
+			attempt = &nestedResultDeliveryAttempt{done: make(chan struct{})}
+			c.nestedDeliveries[resultID] = attempt
+			c.nestedDeliveryMu.Unlock()
+			return attempt, true, false
+		}
+		if attempt.delivered {
+			c.nestedDeliveryMu.Unlock()
+			return attempt, false, true
+		}
+		done := attempt.done
+		c.nestedDeliveryMu.Unlock()
+		c.workerReleaseHookMu.Lock()
+		waitHook := c.nestedResultDeliveryWaitForTest
+		c.workerReleaseHookMu.Unlock()
+		if waitHook != nil {
+			waitHook(resultID)
+		}
+		select {
+		case <-done:
+			// Success remains in the map and is returned above. Failure removes
+			// the entry before closing done, so one waiter wins the next attempt.
+		case <-ctx.Done():
+			return nil, false, false
+		}
+	}
+}
+
+func (c *AgentControl) finishNestedResultDelivery(resultID string, attempt *nestedResultDeliveryAttempt, delivered bool) {
+	if c == nil || attempt == nil {
+		return
+	}
+	c.nestedDeliveryMu.Lock()
+	defer c.nestedDeliveryMu.Unlock()
+	resultID = strings.TrimSpace(resultID)
+	if c.nestedDeliveries[resultID] != attempt {
+		return
+	}
+	attempt.delivered = delivered
+	if !delivered {
+		delete(c.nestedDeliveries, resultID)
+	}
+	close(attempt.done)
 }
 
 func (c *AgentControl) isRootChildSnapshot(snap subagent.SubAgentSnapshot) bool {
@@ -2637,7 +3941,9 @@ func (c *AgentControl) newAgentCompletionCommunication(snap subagent.SubAgentSna
 // AgentCompletionChatMessage returns the user-role handoff that should resume
 // the recipient agent after a child agent finishes.
 func (c *AgentControl) AgentCompletionChatMessage(snap subagent.SubAgentSnapshot, recipientPath string) providers.ChatMessage {
-	c.ensureAgentResultDelivery(snap)
+	if _, err := c.ensureAgentResultDelivery(snap); err != nil {
+		providers.DebugLogf("agentcontrol: persist completion handoff result-ready for %s: %v", snap.ID, err)
+	}
 	reportPath, artifacts := c.harnessReportForTask(snap.ID)
 	communication := newAgentCompletionCommunicationWithMessageAndTrigger(
 		snap,
@@ -2853,10 +4159,15 @@ func (c *AgentControl) reconcileRehydratedHarnessStatus(snap subagent.SubAgentSn
 		return
 	}
 	task, ok := c.harnessTask(snap.ID)
-	if !ok || isTerminalHarnessStatus(task.Status) {
+	if !ok {
 		return
 	}
-	c.recordHarnessStatus(subagent.Notification{AgentID: snap.ID, Status: snap.Status, Snapshot: snap})
+	if !isTerminalHarnessStatus(task.Status) {
+		c.recordHarnessStatus(subagent.Notification{AgentID: snap.ID, Status: snap.Status, Snapshot: snap})
+	}
+	if _, err := c.ensureAgentResultDelivery(snap); err != nil {
+		providers.DebugLogf("agentcontrol: reconcile rehydrated result-ready for %s: %v", snap.ID, err)
+	}
 }
 
 // reconcileOrphanedHarnessTasks is the startup reconciliation sweep for the
@@ -2887,6 +4198,28 @@ func (c *AgentControl) reconcileOrphanedHarnessTasks() {
 	now := time.Now().UTC()
 	for _, task := range tasks {
 		if isTerminalHarnessStatus(task.Status) {
+			// The terminal harness record may have won the race with the
+			// result-ready event before the previous process exited. Rebuild
+			// that independently durable delivery intent on every startup.
+			var snap subagent.SubAgentSnapshot
+			found := false
+			if c.manager != nil {
+				if sa := c.manager.Get(task.ID); sa != nil {
+					snap = sa.Snapshot()
+					found = isFinalSubAgentStatus(snap.Status)
+				}
+			}
+			if !found && strings.TrimSpace(c.historyDir) != "" {
+				if run, loadErr := subagent.LoadPersistedRun(filepath.Join(c.historyDir, task.ID+".json")); loadErr == nil && isFinalSubAgentStatus(run.Status) {
+					snap = snapshotFromPersistedRun(run)
+					found = true
+				}
+			}
+			if found {
+				if _, readyErr := c.ensureAgentResultDelivery(snap); readyErr != nil {
+					providers.DebugLogf("agentcontrol: reconcile terminal result-ready for %s: %v", snap.ID, readyErr)
+				}
+			}
 			continue
 		}
 		if c.manager != nil {
@@ -2898,25 +4231,48 @@ func (c *AgentControl) reconcileOrphanedHarnessTasks() {
 				// Terminal run, non-terminal record: the terminal
 				// notification was never recorded. Replay it.
 				c.recordHarnessStatus(subagent.Notification{AgentID: snap.ID, Status: snap.Status, Snapshot: snap})
+				if _, err := c.ensureAgentResultDelivery(snap); err != nil {
+					providers.DebugLogf("agentcontrol: reconcile result-ready for %s: %v", snap.ID, err)
+				}
 				continue
 			}
 		}
 		if task.Status == harness.TaskStatusQueued && c.hasQueuedSpawn(task.ID) {
 			continue
 		}
-		if strings.TrimSpace(c.historyDir) != "" {
-			path := filepath.Join(c.historyDir, task.ID+".json")
-			if run, err := subagent.LoadPersistedRun(path); err == nil && isFinalSubAgentStatus(run.Status) {
-				// The worker actually finished — only the recording was
-				// lost. Settle the durable record on the snapshot's
-				// terminal truth (for completed runs this also synthesizes
-				// the final_text report the crash swallowed).
-				c.recordHarnessStatus(subagent.Notification{AgentID: task.ID, Status: run.Status, Snapshot: snapshotFromPersistedRun(run)})
-				continue
-			}
+		if c.workerExecutionOwned(task.ID) {
+			continue
 		}
-		c.markHarnessTaskInterrupted(task, now)
+		if err := c.reconcileUnownedHarnessTask(task, now); err != nil && !errors.Is(err, errWorkerExecutionBusy) {
+			providers.DebugLogf("agentcontrol: reconcile orphan %s: %v", task.ID, err)
+		}
 	}
+}
+
+func (c *AgentControl) reconcileUnownedHarnessTask(task harness.Task, now time.Time) error {
+	newLease, err := c.acquireWorkerExecution(task.ID)
+	if err != nil {
+		// A busy lease is positive evidence that another app-server still has
+		// a live executor. Its snapshot and harness rows must remain untouched.
+		return err
+	}
+	if newLease {
+		defer c.releaseWorkerExecution(task.ID)
+	}
+	if strings.TrimSpace(c.historyDir) != "" {
+		path := filepath.Join(c.historyDir, task.ID+".json")
+		if run, loadErr := subagent.LoadPersistedRun(path); loadErr == nil && isFinalSubAgentStatus(run.Status) {
+			// The worker finished and only terminal recording was lost.
+			snap := snapshotFromPersistedRun(run)
+			c.recordHarnessStatus(subagent.Notification{AgentID: task.ID, Status: run.Status, Snapshot: snap})
+			if _, readyErr := c.ensureAgentResultDelivery(snap); readyErr != nil {
+				return readyErr
+			}
+			return nil
+		}
+	}
+	c.markHarnessTaskInterrupted(task, now)
+	return nil
 }
 
 // snapshotFromPersistedRun projects a persisted run record onto the snapshot

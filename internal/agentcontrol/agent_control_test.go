@@ -215,6 +215,7 @@ func TestSpawn_SyncHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { stopAndCloseAgentControlForTest(t, c) })
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        DefaultSubagentType,
@@ -692,7 +693,7 @@ func TestRecordAgentReportPersistsStructuredHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(c.Close)
+	t.Cleanup(func() { stopAndCloseAgentControlForTest(t, c) })
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        DefaultSubagentType,
 		TaskName:    "structured_report",
@@ -1111,7 +1112,7 @@ func TestAwaitFromTimesOutWithRunningStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(c.Close)
+	t.Cleanup(func() { stopAndCloseAgentControlForTest(t, c) })
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:     DefaultSubagentType,
 		TaskName: "await_timeout",
@@ -1156,6 +1157,7 @@ func TestActiveTaskReminderListsIncompleteChildren(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { stopAndCloseAgentControlForTest(t, c) })
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:     DefaultSubagentType,
 		TaskName: "active_child",
@@ -1347,8 +1349,9 @@ func TestSpawn_RegistersNestedThreadPath(t *testing.T) {
 	if err := c.SendMessageFrom(parent.AgentPath, "child", "queued from parent"); err != nil {
 		t.Fatalf("SendMessageFrom parent path: %v", err)
 	}
-	if got := c.Manager().PendingMessageCount(child.AgentID); got != 1 {
-		t.Fatalf("expected child pending message, got %d", got)
+	updated, ok := c.threads.ResolveFrom(parent.AgentPath, "child")
+	if !ok || updated.LastTaskMessage != "queued from parent" {
+		t.Fatalf("nested message did not resolve to the child thread: %+v ok=%v", updated, ok)
 	}
 	c.StopAll()
 }
@@ -1801,6 +1804,8 @@ func TestSpawn_ConcurrencyCap(t *testing.T) {
 		WorkerFactory: func(string, WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) { return fakeToolkit{}, nil },
 		MaxParallel:   2,
 	})
+	t.Cleanup(func() { stopAndCloseAgentControlForTest(t, c) })
+	c.StartQueuedWork()
 
 	// Fire 2 async spawns to fill the cap.
 	var firstID string
@@ -1945,6 +1950,19 @@ func TestNewRestoresQueuedSpawnPayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { stopAndCloseAgentControlForTest(t, c) })
+
+	// Construction restores metadata but must not run it before the embedding
+	// runtime has attached its model resolver and reliable terminal consumer.
+	time.Sleep(2 * queuedSpawnAckRetryDelay)
+	if sa := c.Manager().Get(meta.ID); sa != nil {
+		t.Fatalf("restored queued task started during AgentControl construction: %+v", sa.Snapshot())
+	}
+	if exists, existsErr := c.HarnessStore().QueueItemExists(meta.ID); existsErr != nil || !exists {
+		t.Fatalf("restored queue before explicit start = %v, %v; want true, nil", exists, existsErr)
+	}
+	c.StartQueuedWork()
+	c.StartQueuedWork() // idempotent: one durable payload must produce one worker.
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		sa := c.Manager().Get(meta.ID)
@@ -2042,8 +2060,9 @@ func TestSendMessage_QueuesWhileRunning(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
 
-	// Keep worker running so we can enqueue a follow-up.
-	slow := &slowClient{}
+	// Keep worker inside its model request so the pending mailbox cannot drain
+	// before this test observes it.
+	slow := newBlockingClient()
 	c, err := New(Config{
 		Client:        slow,
 		DefaultModel:  "fake",
@@ -2055,6 +2074,7 @@ func TestSendMessage_QueuesWhileRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { stopAndCloseAgentControlForTest(t, c) })
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type: DefaultSubagentType, TaskName: "send_running", Description: "slow", Prompt: "p",
@@ -2062,6 +2082,7 @@ func TestSendMessage_QueuesWhileRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	slow.waitStarted(t)
 	if err := c.SendMessage(res.AgentID, "please also check logs"); err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
@@ -2069,7 +2090,6 @@ func TestSendMessage_QueuesWhileRunning(t *testing.T) {
 		t.Fatalf("expected pending queue size=1, got %d", got)
 	}
 
-	c.StopAll()
 }
 
 func TestSendMessage_ResolvesThreadPathAndTaskName(t *testing.T) {
@@ -2106,8 +2126,8 @@ func TestSendMessage_ResolvesThreadPathAndTaskName(t *testing.T) {
 	if err := c.SendMessage("review_config", "check defaults too"); err != nil {
 		t.Fatalf("SendMessage by task name: %v", err)
 	}
-	if got := c.Manager().PendingMessageCount(res.AgentID); got != 2 {
-		t.Fatalf("expected pending queue size=2, got %d", got)
+	if updated, ok := c.Threads().Resolve(res.AgentID); !ok || updated.LastTaskMessage != "check defaults too" {
+		t.Fatalf("task-name message did not resolve to the child thread: %+v ok=%v", updated, ok)
 	}
 
 	c.StopAll()
@@ -3153,6 +3173,29 @@ func TestRequiresReportWorkerGetsOneClosingNudge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { stopAndCloseAgentControlForTest(t, c) })
+	closingTerminalObserved := make(chan struct{})
+	var closingObservedOnce sync.Once
+	c.SetReportClosingFollowupHookForTest(func(workerID string) {
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			worker := c.Manager().Get(workerID)
+			if client.calls.count() >= 2 && worker != nil && isFinalSubAgentStatus(worker.Snapshot().Status) {
+				closingObservedOnce.Do(func() { close(closingTerminalObserved) })
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	})
+	var finalizerMu sync.Mutex
+	var finalized []subagent.Notification
+	unsubscribe := c.SubscribeWorkerTerminalFinalizer(func(notification subagent.Notification) error {
+		finalizerMu.Lock()
+		finalized = append(finalized, notification)
+		finalizerMu.Unlock()
+		return nil
+	})
+	defer unsubscribe()
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:        HelpMeRecoveryWorkerType,
@@ -3186,6 +3229,17 @@ func TestRequiresReportWorkerGetsOneClosingNudge(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 	if got := client.calls.count(); got != 2 {
 		t.Fatalf("expected exactly 2 model turns (initial + closing nudge), got %d", got)
+	}
+	select {
+	case <-closingTerminalObserved:
+	default:
+		t.Fatal("test did not force the closing generation terminal before the original observer resumed")
+	}
+	finalizerMu.Lock()
+	finalizedCount := len(finalized)
+	finalizerMu.Unlock()
+	if finalizedCount != 1 {
+		t.Fatalf("external terminal finalizer calls = %d, want only the closing generation", finalizedCount)
 	}
 
 	tasks, err := store.ListTasks()

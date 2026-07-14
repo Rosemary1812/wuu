@@ -5,8 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
+	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/agentthread"
+	"github.com/blueberrycongee/wuu/internal/harness"
+	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 	"github.com/blueberrycongee/wuu/internal/worktree"
@@ -43,7 +48,11 @@ func (s *Server) handleThreadDelete(req Request) error {
 	if err := s.rejectAllChannelMutation(id, "delete"); err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-
+	mutationLease, err := s.tryAcquireThreadMutationLease(id)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	defer releaseThreadMutationLease(id, mutationLease)
 	sideThreadLease, err := s.acquireSideThreadExecutionLease(id)
 	if errors.Is(err, errSideThreadExecutionBusy) {
 		return s.writeResponse(req.ID, nil, errors.New("cannot delete a thread while its side thread is running"))
@@ -53,21 +62,42 @@ func (s *Server) handleThreadDelete(req Request) error {
 	}
 	defer releaseSideThreadExecutionLease(id, sideThreadLease)
 
+	active, err := s.threadHasDurableActiveAgents(id)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, fmt.Errorf("inspect durable agents for thread %q: %w", id, err))
+	}
+	if active {
+		return s.writeResponse(req.ID, nil, errors.New("cannot delete a thread with active agents"))
+	}
+
+	// Execution ownership excludes model rewrites and child spawns. The
+	// independent short lifecycle lease then waits for any in-flight group or
+	// participant append-and-route write. Session deletion atomically removes
+	// pending envelopes sourced from this thread before this lease is released.
 	lifecycleLease, err := s.acquireThreadLifecycleWriteLease(id)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	defer releaseThreadLifecycleWriteLease(id, lifecycleLease)
-
-	if s.sideThreadStore != nil {
-		if err := s.sideThreadStore.Delete(id); err != nil {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("delete side thread for %q: %w", id, err))
-		}
-	}
-
-	deleted, err := session.Delete(s.rt.SessionDir, id)
+	// Stage the independent side-chat file before deleting the main SQLite row.
+	// The staged record remains readable and can be atomically restored if the
+	// main transaction fails, avoiding either partial data loss or an orphaned
+	// side conversation across process crashes.
+	sideDelete, err := s.sideThreadStore.BeginDelete(id)
 	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
+		releaseThreadLifecycleWriteLease(id, lifecycleLease)
+		return s.writeResponse(req.ID, nil, fmt.Errorf("delete side thread for %q (stage): %w", id, err))
+	}
+	deleted, err := s.deleteThreadSession(id)
+	if err != nil {
+		rollbackErr := sideDelete.Rollback()
+		releaseThreadLifecycleWriteLease(id, lifecycleLease)
+		return s.writeResponse(req.ID, nil, errors.Join(err, rollbackErr))
+	}
+	releaseThreadLifecycleWriteLease(id, lifecycleLease)
+	if err := sideDelete.Commit(); err != nil {
+		// The main row is already durably gone. A staged tombstone is harmless
+		// and remains eligible for a later idempotent cleanup attempt.
+		providers.DebugLogf("commit side thread delete for %q: %v", id, err)
 	}
 
 	// Remove the in-memory owner and stop its subscriptions before deleting
@@ -77,17 +107,6 @@ func (s *Server) handleThreadDelete(req Request) error {
 	removed := s.threads[id]
 	delete(s.threads, id)
 	s.mu.Unlock()
-	if removed != nil {
-		removed.mu.Lock()
-		threadRuntime := removed.execRuntime
-		removed.mu.Unlock()
-		if threadRuntime != nil && threadRuntime.AgentControl != nil {
-			// The active-agent check and durable delete are not one lock scope.
-			// Cancel a worker that happened to start between them rather than
-			// leaving it attached to a thread whose durable owner is gone.
-			threadRuntime.AgentControl.StopAll()
-		}
-	}
 	releaseThreadRuntime(removed)
 
 	// Everything past this point is best-effort cleanup: the session row
@@ -110,6 +129,89 @@ func (s *Server) handleThreadDelete(req Request) error {
 	}
 
 	return s.writeResponse(req.ID, ThreadDeleteResult{ThreadID: id}, nil)
+}
+
+func (s *Server) deleteThreadSession(threadID string) (session.Session, error) {
+	if s != nil && s.deleteSessionForTest != nil {
+		return s.deleteSessionForTest(threadID)
+	}
+	return session.Delete(s.rt.SessionDir, threadID)
+}
+
+// threadHasDurableActiveAgents checks the cross-process task state while the
+// caller owns the parent thread's mutation lease. The thread index covers
+// direct and nested workers; the harness task and queue indexes cover queued
+// work even if one of the redundant lifecycle writes was interrupted.
+func (s *Server) threadHasDurableActiveAgents(threadID string) (bool, error) {
+	stateDir, err := s.workspaceStateDir()
+	if err != nil {
+		return false, err
+	}
+	artifactDir := statepath.SessionArtifactDir(stateDir, threadID)
+	workerIDs := make(map[string]struct{})
+
+	threads, err := agentthread.NewStore(filepath.Join(artifactDir, "threads")).ListThreads()
+	if err != nil {
+		return false, err
+	}
+	for _, meta := range threads {
+		if meta.ID == threadID || meta.Source.Kind != agentthread.SourceThreadSpawn {
+			continue
+		}
+		workerIDs[meta.ID] = struct{}{}
+	}
+
+	harnessDir := filepath.Join(artifactDir, "harness")
+	terminalPending, err := agentcontrol.WorkerTerminalFinalizationsPending(harnessDir)
+	if err != nil {
+		return false, fmt.Errorf("inspect terminal agent ownership: %w", err)
+	}
+	if terminalPending {
+		return true, nil
+	}
+	harnessStore := harness.NewStore(harnessDir)
+	tasks, err := harnessStore.ListTasks()
+	if err != nil {
+		return false, err
+	}
+	for _, task := range tasks {
+		if task.ID == threadID {
+			continue
+		}
+		workerIDs[task.ID] = struct{}{}
+	}
+
+	queue, err := harnessStore.ListQueueItems()
+	if err != nil {
+		return false, err
+	}
+	for _, item := range queue {
+		if item.Kind == "agent_spawn" {
+			return true, nil
+		}
+	}
+	ids := make([]string, 0, len(workerIDs))
+	for workerID := range workerIDs {
+		if workerID = strings.TrimSpace(workerID); workerID != "" {
+			ids = append(ids, workerID)
+		}
+	}
+	sort.Strings(ids)
+	for _, workerID := range ids {
+		active, err := agentcontrol.WorkerExecutionActive(harnessDir, workerID)
+		if err != nil {
+			return false, fmt.Errorf("inspect worker %q execution lease: %w", workerID, err)
+		}
+		if active {
+			return true, nil
+		}
+	}
+	// Thread and harness status files are projections, not ownership. A process
+	// can die after writing pending/running and before it either launches or
+	// reconciles the worker. Once the parent mutation lease is held, only a
+	// durable queue item, terminal intent, or live OS execution lease may block
+	// deletion; stale projected status alone must not make a thread immortal.
+	return false, nil
 }
 
 func threadHasActiveAgents(th *threadState) bool {

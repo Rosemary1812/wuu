@@ -371,11 +371,42 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string): void {
 }
 
 describe("Composer send control", () => {
-  it("shows one stateful action button while a request is running", () => {
+  it("keeps a send (queue) button while running when the input has a draft", () => {
     const onInterrupt = vi.fn();
     const onSend = vi.fn();
     renderComposer({
       prompt: "queued follow-up",
+      running: true,
+      onInterrupt,
+      onSend,
+    });
+
+    // A draft typed mid-turn must stay sendable (queued), not be forced into a
+    // stop control — Enter already queues it, so the button must agree.
+    expect(
+      container.querySelectorAll(".composer-action-button.composer-stop-button"),
+    ).toHaveLength(0);
+    expect(container.querySelector("button[aria-label=\"停止\"]")).toBeNull();
+
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"排队发送\"]",
+    );
+    expect(sendButton).not.toBeNull();
+    expect(sendButton?.disabled).toBe(false);
+
+    act(() => {
+      sendButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onInterrupt).not.toHaveBeenCalled();
+  });
+
+  it("shows a stop button while running only when the input is empty", () => {
+    const onInterrupt = vi.fn();
+    const onSend = vi.fn();
+    renderComposer({
+      prompt: "",
       running: true,
       onInterrupt,
       onSend,

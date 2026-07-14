@@ -243,6 +243,25 @@ describe("useAppLayoutState responsive workspace presentation", () => {
     expect(latest!.workspaceRightPanelAutoGlobalized).toBe(false);
     expect(latest!.workspaceRightPanelDockableWithoutSidebar).toBe(true);
   });
+
+  it("keeps the panel docked when an open sidebar is the only space pressure", () => {
+    // A medium window (>= 760) where conversation + panel fit without the
+    // sidebar, but sidebar + conversation + panel do not. With the sidebar
+    // open, opening the panel must NOT auto-globalize it — all three dock and
+    // the conversation column absorbs the squeeze (the narrow-band fix). The
+    // sidebar starts open at the 1280px default (see beforeEach); resizing to
+    // 1000px (>= 900) does not auto-collapse it, so it stays docked. The old
+    // behavior (passing effectiveSidebarWidth) would have globalized here,
+    // since 1000 - ~254 sidebar < 760.
+    renderHookHarness();
+    act(() => {
+      setInnerWidth(1000);
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(latest!.sidebarCollapsed).toBe(false);
+    expect(latest!.workspaceRightPanelAutoGlobalized).toBe(false);
+    expect(latest!.workspaceRightPanelDockableWithoutSidebar).toBe(true);
+  });
 });
 
 describe("useAppLayoutState initial widths", () => {

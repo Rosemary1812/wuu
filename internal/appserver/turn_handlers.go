@@ -14,6 +14,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
+	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/config"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
@@ -45,15 +46,17 @@ type agentCompletionTurn struct {
 	agentID  string
 	resultID string
 	msg      providers.ChatMessage
+	snapshot *subagent.SubAgentSnapshot
 }
 
 type startedThreadTurn struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	turnID  string
-	turn    Turn
-	runtime turnRuntimeSnapshot
-	history []providers.ChatMessage
+	ctx        context.Context
+	cancel     context.CancelFunc
+	turnID     string
+	turn       Turn
+	runtime    turnRuntimeSnapshot
+	history    []providers.ChatMessage
+	admittedAt time.Time
 	// userMsgSeq is the persisted seq of this turn's user message (0 when not
 	// persisted). Carried so group/member routing can stamp it onto envelopes
 	// for read receipts and reactions.
@@ -68,6 +71,22 @@ const (
 	turnReadOnlyFail
 )
 
+type turnAdmissionHooks struct {
+	// afterLease runs without th.mu after the durable lease has been acquired
+	// and disk state refreshed. The lease remains attached to th, so helpers may
+	// take th.mu and perform admission-only side effects without racing another
+	// model turn.
+	afterLease func(*threadState, *providers.ChatMessage) error
+	// beforeUserAppendLocked may rewrite history while th.mu and the durable
+	// lease are held. Its commit callback runs only after the synthetic/user
+	// message has been durably appended.
+	beforeUserAppendLocked func(*threadState) (func() error, error)
+	// residentReadReceipts are committed in the same transaction as the
+	// resident user marker and push-envelope consumption. They are empty for
+	// ordinary user, queued, goal, and completion turns.
+	residentReadReceipts []session.MessageMark
+}
+
 type turnRuntimeSnapshot struct {
 	ProviderName       string
 	Model              string
@@ -81,6 +100,11 @@ type turnRuntimeSnapshot struct {
 	// CompactOnly stops after the forced compaction pass instead of sending a
 	// normal provider request. This is the control-plane /compact operation.
 	CompactOnly bool
+	// HistoryBaselineSeq is the last durable model-context record owned by
+	// this turn at admission. Whole-history rewrites preserve every record
+	// appended after it and order those concurrent posts after the model result.
+	HistoryBaselineSeq       int
+	AgentCompletionResultIDs []string
 }
 
 func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
@@ -116,7 +140,6 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	dmParticipantID := strings.TrimSpace(th.DMParticipantID)
 	isResidentDM := dmParticipantID != ""
 	isGroup := th.Group
-	turnRunning := th.running
 	th.mu.Unlock()
 	if isResidentDM {
 		// Retire cleanup protocol: a retired participant's DM history stays
@@ -134,30 +157,6 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	if isGroup {
 		return s.handleGroupTurnStart(req, th, params, images, files)
 	}
-	// Workspace focus is a chat-style thread property (2026-07-03-workspace-focus.md
-	// §3); the group branch applies the same idempotent-declare helper inside
-	// handleGroupTurnStart itself (it returned above). Work sessions ignore
-	// the field entirely. Applied before ensureThreadRuntime so the toolkit
-	// root reflects the new focus for this very turn; a busy thread fails
-	// fast so a rejected turn cannot leave an orphan focus declaration
-	// behind.
-	if isResidentDM && params.FocusWorkspace != nil {
-		if turnRunning {
-			return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", params.ThreadID))
-		}
-		if err := s.applyTurnWorkspaceFocus(th, params.FocusWorkspace); err != nil {
-			return s.writeResponse(req.ID, nil, err)
-		}
-	}
-	mentioned, err := s.prepareThreadMentions(th, params.Mentions)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	threadRuntime, err := s.ensureThreadRuntime(th)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-
 	userMsg, err := userMessageFromPrompt(params.Prompt, images, files, s.rt.ExperimentalHelpMe)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
@@ -165,35 +164,86 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 	snapshot := turnRuntimeSnapshot{}.withPermissions(permissions)
 	snapshot.PermissionExplicit = params.PermissionMode != nil
 	snapshot.ForceCompact = isManualCompactPrompt(params.Prompt)
-	startTurn := s.startThreadUserTurn
-	if isResidentDM {
-		startTurn = s.startResidentTurn
-	}
-	started, ok, err := startTurn(ctx, th, userMsg, snapshot, true, turnReadOnlyIgnore)
+	var mentioned map[string]bool
+	var threadRuntime *runtime.ThreadRuntime
+	started, ok, err := s.startThreadUserTurnWithAdmission(
+		ctx,
+		th,
+		userMsg,
+		snapshot,
+		true,
+		turnReadOnlyIgnore,
+		turnAdmissionHooks{afterLease: func(admitted *threadState, _ *providers.ChatMessage) error {
+			// Focus declarations, membership changes, and runtime construction are
+			// durable/model-visible side effects. A busy contender must perform
+			// none of them, so all three happen only after lease ownership and the
+			// full disk-state refresh.
+			if isResidentDM && params.FocusWorkspace != nil {
+				if err := s.applyTurnWorkspaceFocus(admitted, params.FocusWorkspace); err != nil {
+					return err
+				}
+			}
+			var err error
+			mentioned, err = s.prepareThreadMentions(admitted, params.Mentions)
+			if err != nil {
+				return err
+			}
+			threadRuntime, err = s.ensureThreadRuntimeAfterAdmission(admitted)
+			return err
+		}},
+	)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	if !ok {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", params.ThreadID))
 	}
+	launch, accepted := s.reserveBackground(func() {
+		s.runTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history)
+	})
+	if !accepted {
+		persistErr := s.abortStartedThreadTurnDurably(th, started, errServerClosed)
+		return s.writeResponse(req.ID, nil, errors.Join(errServerClosed, persistErr))
+	}
+	defer launch.Cancel()
 
 	if err := s.writeResponse(req.ID, TurnStartResult{Turn: started.turn}, nil); err != nil {
-		started.cancel()
-		return err
+		return errors.Join(err, s.abortStartedThreadTurnDurably(th, started, err))
 	}
 	if err := s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
 		ThreadID: params.ThreadID,
 		Turn:     started.turn,
 	}); err != nil {
-		started.cancel()
-		return err
+		return errors.Join(err, s.abortStartedThreadTurnDurably(th, started, err))
 	}
-
-	go s.runTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history)
+	launch.Commit()
 	if !isResidentDM {
 		s.routeUserMessageToResidents(th, userMsg, mentioned, started.userMsgSeq)
 	}
 	return nil
+}
+
+func (s *Server) ensureThreadRuntimeAfterAdmission(th *threadState) (*runtime.ThreadRuntime, error) {
+	threadRuntime, err := s.ensureThreadRuntime(th)
+	if err != nil || threadRuntime == nil {
+		return threadRuntime, err
+	}
+	th.mu.Lock()
+	history := cloneHistory(th.History)
+	threadID := th.ID
+	th.mu.Unlock()
+	if threadRuntime.Toolkit != nil {
+		if _, restoreErr := threadRuntime.Toolkit.RestorePlanFromHistory(history); restoreErr != nil {
+			providers.DebugLogf("restore update_plan for refreshed thread %q: %v", threadID, restoreErr)
+		}
+	}
+	if threadRuntime.StreamRunner != nil {
+		threadRuntime.StreamRunner.ResetConversationUsage(history)
+		if retained := s.latestRetainedContextTokens(threadID); retained > 0 {
+			threadRuntime.StreamRunner.SeedConversationUsageBaseline(retained, len(history))
+		}
+	}
+	return threadRuntime, nil
 }
 
 func (s *Server) handleThreadCompactStart(ctx context.Context, req Request) error {
@@ -236,11 +286,6 @@ func (s *Server) startThreadCompactTurn(ctx context.Context, req Request, th *th
 	if running {
 		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", threadID))
 	}
-	threadRuntime, err := s.ensureThreadRuntime(th)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-
 	turnID := session.NewID()
 	turnCtx, cancel := context.WithCancel(ctx)
 	now := time.Now().UTC()
@@ -261,28 +306,103 @@ func (s *Server) startThreadCompactTurn(ctx context.Context, req Request, th *th
 		cancel()
 		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", threadID))
 	}
+	acquired, err := s.tryAcquireThreadExecutionLeaseLocked(th)
+	if err != nil {
+		th.mu.Unlock()
+		cancel()
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if !acquired {
+		threadID = th.ID
+		th.mu.Unlock()
+		cancel()
+		return s.writeResponse(req.ID, nil, threadExecutionBusyError(threadID))
+	}
+	if err := s.refreshDurableThreadHistoryLocked(th); err != nil {
+		th.releaseThreadExecutionLeaseLocked()
+		th.mu.Unlock()
+		cancel()
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if th.ReadOnly {
+		th.releaseThreadExecutionLeaseLocked()
+		th.mu.Unlock()
+		cancel()
+		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
+	}
+	th.mu.Unlock()
+
+	// Runtime construction and restoration must use the durable snapshot read
+	// under this admission lease. A resumed app-server may otherwise compact
+	// stale history or reuse a toolkit rooted at metadata another owner changed.
+	threadRuntime, err := s.ensureThreadRuntimeAfterAdmission(th)
+	if err != nil {
+		th.mu.Lock()
+		th.releaseThreadExecutionLeaseLocked()
+		th.mu.Unlock()
+		cancel()
+		return s.writeResponse(req.ID, nil, err)
+	}
+
+	th.mu.Lock()
+	if th.ReadOnly {
+		th.releaseThreadExecutionLeaseLocked()
+		th.mu.Unlock()
+		cancel()
+		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
+	}
+	if th.Group {
+		th.releaseThreadExecutionLeaseLocked()
+		th.mu.Unlock()
+		cancel()
+		return s.writeResponse(req.ID, nil, errors.New("group threads do not support context compaction"))
+	}
+	if th.running {
+		threadID = th.ID
+		th.releaseThreadExecutionLeaseLocked()
+		th.mu.Unlock()
+		cancel()
+		return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", threadID))
+	}
 	history := cloneHistory(th.History)
 	th.cancel = cancel
 	turn := th.startCompactTurnLocked(turnID, displayMsg, now)
 	turnRuntime := turnRuntimeSnapshotLocked(th)
 	turnRuntime.ForceCompact = true
 	turnRuntime.CompactOnly = true
+	turnRuntime.HistoryBaselineSeq = th.historyHeadSeq
 	threadID = th.ID
 	th.mu.Unlock()
+	started := startedThreadTurn{
+		ctx:     turnCtx,
+		cancel:  cancel,
+		turnID:  turnID,
+		turn:    turn,
+		runtime: turnRuntime,
+		history: history,
+	}
+	launch, accepted := s.reserveBackground(func() {
+		s.runTurn(turnCtx, th, threadRuntime, turnID, turnRuntime, history)
+	})
+	if !accepted {
+		abortStartedThreadTurn(th, started, errServerClosed)
+		return s.writeResponse(req.ID, nil, errServerClosed)
+	}
+	defer launch.Cancel()
 
 	if err := s.writeResponse(req.ID, ThreadCompactStartResult{Turn: turn}, nil); err != nil {
-		cancel()
+		abortStartedThreadTurn(th, started, err)
 		return err
 	}
 	if err := s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
 		ThreadID: threadID,
 		Turn:     turn,
 	}); err != nil {
-		cancel()
+		abortStartedThreadTurn(th, started, err)
 		return err
 	}
 
-	go s.runTurn(turnCtx, th, threadRuntime, turnID, turnRuntime, history)
+	launch.Commit()
 	return nil
 }
 
@@ -532,9 +652,17 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 	th.mu.Lock()
 	existing := th.execRuntime
 	running := th.running
+	var detached detachedThreadRuntime
+	if existing != nil && th.pendingRuntimeReset && !running && !threadRuntimeHasOutstandingAgentWork(existing) {
+		detached = detachThreadRuntimeLocked(th)
+		existing = nil
+	}
 	history := cloneHistory(th.History)
 	rootDir := th.CWD
 	th.mu.Unlock()
+	if detached.runtime != nil || detached.subscription != nil {
+		releaseDetachedThreadRuntime(detached)
+	}
 	if existing != nil {
 		if !running {
 			if err := s.configureResidentThreadRuntime(th, existing); err != nil {
@@ -579,12 +707,40 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 		th.execRuntime = threadRuntime
 		th.runtimeSubscription = sub
 		th.mu.Unlock()
+		threadRuntime.AgentControl.StartWorkerTerminalRecovery()
+		// New only restores durable queue metadata. Start restored workers after
+		// this runtime has won installation, resident configuration is complete,
+		// and subscribeThreadRuntime has attached the model resolver and reliable
+		// terminal finalizer. A zero-latency worker can now safely resolve and
+		// finalize against the installed thread runtime.
+		threadRuntime.AgentControl.StartQueuedWork()
+		s.replayPendingAgentCompletions(th.ID, threadRuntime)
 		return threadRuntime, nil
 	}
 	existing = th.execRuntime
 	th.mu.Unlock()
 	releaseThreadRuntimeSubscription(threadRuntime, sub)
 	return existing, nil
+}
+
+func (s *Server) replayPendingAgentCompletions(threadID string, threadRuntime *runtime.ThreadRuntime) {
+	if s == nil || threadRuntime == nil || threadRuntime.AgentControl == nil {
+		return
+	}
+	pending, err := threadRuntime.AgentControl.PendingRootAgentCompletions()
+	if err != nil {
+		providers.DebugLogf("restore pending agent completions for thread %q: %v", threadID, err)
+		return
+	}
+	for _, completion := range pending {
+		s.enqueueAgentCompletionTurn(
+			threadID,
+			completion.Snapshot.ID,
+			completion.ResultID,
+			threadRuntime.AgentControl.AgentCompletionChatMessage(completion.Snapshot, agentthread.RootPath),
+			&completion.Snapshot,
+		)
+	}
 }
 
 func (s *Server) configureResidentThreadRuntime(th *threadState, threadRuntime *runtime.ThreadRuntime) error {
@@ -773,6 +929,9 @@ func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.
 		participantMessageCh: make(chan agentcontrol.ParticipantMessage, 64),
 		done:                 make(chan struct{}),
 	}
+	sub.terminalUnsubscribe = threadRuntime.AgentControl.SubscribeWorkerTerminalFinalizer(func(notification subagent.Notification) error {
+		return s.finalizeAgentTerminal(threadID, threadRuntime.AgentControl, notification)
+	})
 	threadRuntime.AgentControl.Subscribe(sub.statusCh)
 	sub.wg.Add(1)
 	go func() {
@@ -801,13 +960,49 @@ func releaseThreadRuntime(th *threadState) {
 		return
 	}
 	th.mu.Lock()
-	threadRuntime := th.execRuntime
-	sub := th.runtimeSubscription
+	detached := detachThreadRuntimeLocked(th)
+	th.mu.Unlock()
+	releaseDetachedThreadRuntime(detached)
+}
+
+type detachedThreadRuntime struct {
+	runtime      *runtime.ThreadRuntime
+	subscription *threadRuntimeSubscription
+}
+
+func detachThreadRuntimeLocked(th *threadState) detachedThreadRuntime {
+	if th == nil {
+		return detachedThreadRuntime{}
+	}
+	detached := detachedThreadRuntime{
+		runtime:      th.execRuntime,
+		subscription: th.runtimeSubscription,
+	}
 	th.execRuntime = nil
 	th.runtimeSubscription = nil
 	th.pendingRuntimeUpdate = nil
-	th.mu.Unlock()
-	releaseThreadRuntimeSubscription(threadRuntime, sub)
+	th.pendingRuntimeReset = false
+	return detached
+}
+
+func releaseDetachedThreadRuntime(detached detachedThreadRuntime) {
+	releaseThreadRuntimeSubscription(detached.runtime, detached.subscription)
+}
+
+func threadRuntimeHasOutstandingAgentWork(threadRuntime *runtime.ThreadRuntime) bool {
+	if threadRuntime == nil || threadRuntime.AgentControl == nil {
+		return false
+	}
+	control := threadRuntime.AgentControl
+	if control.HasOwnedWorkerExecutions() || control.HasPendingWorkerTerminalFinalizations() {
+		return true
+	}
+	for _, snapshot := range control.List() {
+		if !subagent.IsTerminal(snapshot.Status) {
+			return true
+		}
+	}
+	return false
 }
 
 func releaseThreadRuntimeSubscription(threadRuntime *runtime.ThreadRuntime, sub *threadRuntimeSubscription) {
@@ -815,6 +1010,9 @@ func releaseThreadRuntimeSubscription(threadRuntime *runtime.ThreadRuntime, sub 
 		threadRuntime.AgentControl.Unsubscribe(sub.statusCh)
 		threadRuntime.AgentControl.UnsubscribeStream(sub.streamCh)
 		threadRuntime.AgentControl.UnsubscribeParticipantMessages(sub.participantMessageCh)
+	}
+	if sub != nil && sub.terminalUnsubscribe != nil {
+		sub.terminalUnsubscribe()
 	}
 	if sub != nil {
 		sub.stop()
@@ -1332,6 +1530,10 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	restoreRunner()
 
 	now := time.Now().UTC()
+	completionAnswerReady := false
+	if err == nil && len(turnRuntime.AgentCompletionResultIDs) > 0 {
+		completionAnswerReady = markAgentCompletionAnswer(&res, turnRuntime.AgentCompletionResultIDs)
+	}
 	th.mu.Lock()
 	var historyErr error
 	var persistErr error
@@ -1358,7 +1560,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		if historyErr != nil {
 			persistErr = historyErr
 		} else {
-			persistErr = s.persistTurnResultLocked(th, res, rewriteHistory, turnRuntime.ProviderName, turnRuntime.Model)
+			persistErr = s.persistTurnResultLocked(th, res, rewriteHistory, turnRuntime.ProviderName, turnRuntime.Model, turnRuntime.HistoryBaselineSeq)
 		}
 	} else if res.HistoryRewritten && len(res.NewMessages) > 0 && th.PersistHistory {
 		th.History = cloneHistory(res.NewMessages)
@@ -1370,7 +1572,7 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		if historyErr != nil {
 			persistErr = historyErr
 		} else {
-			persistErr = s.persistTurnResultLocked(th, res, true, turnRuntime.ProviderName, turnRuntime.Model)
+			persistErr = s.persistTurnResultLocked(th, res, true, turnRuntime.ProviderName, turnRuntime.Model, turnRuntime.HistoryBaselineSeq)
 		}
 	} else {
 		if usageErr := appendTokenUsage(s.rt.SessionDir, th.ID, turnRuntime.ProviderName, turnRuntime.Model, providers.TokenUsage{
@@ -1460,9 +1662,50 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		s.prependQueuedUserTurns(th.ID, queuedTurnsFromSteers(unconsumedSteers))
 	}
 	s.applyPendingThreadRuntimeLocked(th)
-	// Publish this turn's terminal event before releasing the execution lease.
-	// Otherwise a queued successor can publish turn/started first, after which
-	// this event would incorrectly make clients mark the active thread idle.
+	completionClaimFailed := len(turnRuntime.AgentCompletionResultIDs) > 0
+	if err == nil && completionAnswerReady && persistErr == nil && threadRuntime != nil && threadRuntime.AgentControl != nil {
+		completionClaimFailed = false
+		for _, resultID := range turnRuntime.AgentCompletionResultIDs {
+			resultID = strings.TrimSpace(resultID)
+			if resultID == "" {
+				continue
+			}
+			claimed, consumedBy, claimErr := threadRuntime.AgentControl.ClaimAgentResultDeliveryID(resultID, "auto_completion")
+			if claimErr != nil {
+				completionClaimFailed = true
+				providers.DebugLogf("persist completed agent result claim %q for thread %q: %v", resultID, th.ID, claimErr)
+				continue
+			}
+			if !claimed && consumedBy == "" {
+				completionClaimFailed = true
+				providers.DebugLogf("completed agent result %q disappeared before claim for thread %q", resultID, th.ID)
+			}
+		}
+	}
+	residentTurn := strings.TrimSpace(residentParticipantID) != ""
+	if residentTurn {
+		// Receipts, task-attempt settlement, and fallback delivery are part of
+		// this turn's durable finalization. Keep the execution lease while they
+		// run so another process cannot admit the successor against a half-
+		// finalized resident turn. They may take th.mu, so do not hold it here.
+		th.mu.Unlock()
+		if s.beforeResidentTurnFinalizeForTest != nil {
+			s.beforeResidentTurnFinalizeForTest(th.ID)
+		}
+		s.afterResidentTurn(th, residentParticipantID, residentEnvelopes, turn, now)
+		th.mu.Lock()
+		th.releaseTurnExecutionLocked(turnID)
+		th.mu.Unlock()
+	} else {
+		th.releaseTurnExecutionLocked(turnID)
+		th.mu.Unlock()
+	}
+	// A terminal notification is the client-visible completion barrier. By the
+	// time it is published all durable resident settlement and runtime cleanup
+	// is finished, and the execution lease is available for the next request.
+	// Local queue drains are kicked only after this write, preserving terminal
+	// before successor ordering on this server without making an immediate user
+	// turn spuriously fail as busy.
 	if err != nil {
 		notify(NotificationTurnError, TurnErrorNotification{
 			ThreadID:   th.ID,
@@ -1490,18 +1733,22 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			TracePath:           tracePath,
 		})
 	}
-	th.releaseTurnExecutionLocked(turnID)
-	th.mu.Unlock()
+	if residentTurn {
+		s.kickResidentAgent(residentParticipantID)
+	}
+	if completionClaimFailed {
+		s.scheduleThreadExecutionLeaseRetry(func() {
+			s.replayPendingAgentCompletions(th.ID, threadRuntime)
+		})
+	}
 	if err != nil {
-		s.afterResidentTurn(th, residentParticipantID, residentEnvelopes, turn, now)
 		s.kickAgentCompletionDrain(th.ID)
 		s.kickQueuedTurnDrain(th.ID)
 		return
 	}
 	if !turnRuntime.CompactOnly {
-		go s.generateThreadTitle(th.ID, titleHistory)
+		_ = s.startBackground(func() { s.generateThreadTitle(th.ID, titleHistory) })
 	}
-	s.afterResidentTurn(th, residentParticipantID, residentEnvelopes, turn, now)
 	s.kickAgentCompletionDrain(th.ID)
 	s.kickQueuedTurnDrain(th.ID)
 	s.kickGoalContinuation(th.ID)
@@ -1690,7 +1937,7 @@ func attachUsageToLatestRequestContext(records []sessiontrace.RequestContextReco
 	record.CacheReadTokens = usage.CacheReadTokens
 }
 
-func (s *Server) enqueueAgentCompletionTurn(threadID, agentID, resultID string, msg providers.ChatMessage) {
+func (s *Server) enqueueAgentCompletionTurn(threadID, agentID, resultID string, msg providers.ChatMessage, snapshot *subagent.SubAgentSnapshot) {
 	if s == nil || s.closed.Load() {
 		return
 	}
@@ -1714,10 +1961,20 @@ func (s *Server) enqueueAgentCompletionTurn(threadID, agentID, resultID string, 
 	if s.pendingAgentCompletionTurns == nil {
 		s.pendingAgentCompletionTurns = make(map[string][]agentCompletionTurn)
 	}
+	resultID = strings.TrimSpace(resultID)
+	if resultID != "" {
+		for _, pending := range s.pendingAgentCompletionTurns[threadID] {
+			if strings.TrimSpace(pending.resultID) == resultID {
+				s.agentCompletionMu.Unlock()
+				return
+			}
+		}
+	}
 	s.pendingAgentCompletionTurns[threadID] = append(s.pendingAgentCompletionTurns[threadID], agentCompletionTurn{
 		agentID:  strings.TrimSpace(agentID),
-		resultID: strings.TrimSpace(resultID),
+		resultID: resultID,
 		msg:      msg,
+		snapshot: cloneSubAgentSnapshot(snapshot),
 	})
 	s.agentCompletionMu.Unlock()
 
@@ -1828,7 +2085,7 @@ func (s *Server) kickQueuedTurnDrain(threadID string) {
 	s.drainingQueuedTurns[threadID] = true
 	s.queuedTurnMu.Unlock()
 
-	go s.drainQueuedTurns(threadID)
+	_ = s.startBackground(func() { s.drainQueuedTurns(threadID) })
 }
 
 func (s *Server) drainQueuedTurns(threadID string) {
@@ -1857,25 +2114,33 @@ func (s *Server) drainQueuedTurns(threadID string) {
 		return
 	}
 	started, err := s.startQueuedTurn(context.Background(), threadID, entry)
-	if err != nil {
+	executionBusy := errors.Is(err, errThreadExecutionBusy)
+	if err != nil && !executionBusy {
 		providers.DebugLogf("start queued turn for thread %q: %v", threadID, err)
 	}
 	requeued := false
-	if !started && err == nil {
+	if !started && (err == nil || executionBusy) {
 		s.prependQueuedUserTurns(threadID, []queuedTurn{entry})
 		requeued = true
 	}
 	s.clearQueuedTurnDrain(threadID)
+	if requeued && executionBusy {
+		s.scheduleThreadExecutionLeaseRetry(func() { s.kickQueuedTurnDrain(threadID) })
+		return
+	}
 	if requeued || s.hasQueuedUserTurns(threadID) {
 		s.kickQueuedTurnDrain(threadID)
 	}
 }
 
-func (s *Server) startResidentTurn(ctx context.Context, th *threadState, userMsg providers.ChatMessage, snapshot turnRuntimeSnapshot, failIfRunning bool, readOnlyPolicy turnReadOnlyPolicy) (startedThreadTurn, bool, error) {
-	return s.startThreadUserTurn(ctx, th, userMsg, snapshot, failIfRunning, readOnlyPolicy)
+func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userMsg providers.ChatMessage, snapshot turnRuntimeSnapshot, failIfRunning bool, readOnlyPolicy turnReadOnlyPolicy) (startedThreadTurn, bool, error) {
+	return s.startThreadUserTurnWithAdmission(ctx, th, userMsg, snapshot, failIfRunning, readOnlyPolicy, turnAdmissionHooks{})
 }
 
-func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userMsg providers.ChatMessage, snapshot turnRuntimeSnapshot, failIfRunning bool, readOnlyPolicy turnReadOnlyPolicy) (startedThreadTurn, bool, error) {
+// startThreadUserTurnWithAdmission owns every durable pre-turn side effect.
+// It acquires the cross-process lease and refreshes disk state before running
+// hooks, then keeps ownership through the user append and turn lifecycle.
+func (s *Server) startThreadUserTurnWithAdmission(ctx context.Context, th *threadState, userMsg providers.ChatMessage, snapshot turnRuntimeSnapshot, failIfRunning bool, readOnlyPolicy turnReadOnlyPolicy, hooks turnAdmissionHooks) (startedThreadTurn, bool, error) {
 	if th == nil {
 		return startedThreadTurn{}, false, errors.New("thread is required")
 	}
@@ -1884,17 +2149,6 @@ func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userM
 	}
 	if strings.TrimSpace(userMsg.Role) == "" {
 		userMsg.Role = "user"
-	}
-	th.mu.Lock()
-	threadID := th.ID
-	threadCWD := th.CWD
-	th.mu.Unlock()
-	if s.rt != nil {
-		transformed, err := s.rt.TransformUserMessage(ctx, threadID, threadCWD, userMsg)
-		if err != nil {
-			return startedThreadTurn{}, false, fmt.Errorf("transform user message: %w", err)
-		}
-		userMsg = transformed
 	}
 	if !chatMessageHasUserPayload(userMsg) {
 		return startedThreadTurn{}, false, nil
@@ -1929,22 +2183,181 @@ func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userM
 			return startedThreadTurn{}, false, nil
 		}
 	}
-	var userMsgSeq int
-	if th.PersistHistory {
-		seq, err := appendChatMessage(s.rt.SessionDir, th.ID, userMsg)
+	acquired, err := s.tryAcquireThreadExecutionLeaseLocked(th)
+	if err != nil {
+		th.mu.Unlock()
+		cancel()
+		return startedThreadTurn{}, false, err
+	}
+	if !acquired {
+		threadID := th.ID
+		th.mu.Unlock()
+		cancel()
+		return startedThreadTurn{}, false, threadExecutionBusyError(threadID)
+	}
+	if err := s.refreshDurableThreadHistoryLocked(th); err != nil {
+		th.releaseThreadExecutionLeaseLocked()
+		th.mu.Unlock()
+		cancel()
+		return startedThreadTurn{}, false, err
+	}
+	if th.ReadOnly {
+		switch readOnlyPolicy {
+		case turnReadOnlyFail:
+			th.releaseThreadExecutionLeaseLocked()
+			th.mu.Unlock()
+			cancel()
+			return startedThreadTurn{}, false, errors.New("thread is read-only")
+		case turnReadOnlySkip:
+			th.releaseThreadExecutionLeaseLocked()
+			th.mu.Unlock()
+			cancel()
+			return startedThreadTurn{}, false, nil
+		}
+	}
+	th.mu.Unlock()
+
+	abortAdmission := func() {
+		th.mu.Lock()
+		th.releaseThreadExecutionLeaseLocked()
+		th.mu.Unlock()
+		cancel()
+	}
+	if hooks.afterLease != nil {
+		if err := hooks.afterLease(th, &userMsg); err != nil {
+			abortAdmission()
+			return startedThreadTurn{}, false, err
+		}
+	}
+
+	th.mu.Lock()
+	threadID := th.ID
+	threadCWD := th.CWD
+	th.mu.Unlock()
+	if s.rt != nil {
+		transformed, err := s.rt.TransformUserMessage(ctx, threadID, threadCWD, userMsg)
 		if err != nil {
+			abortAdmission()
+			return startedThreadTurn{}, false, fmt.Errorf("transform user message: %w", err)
+		}
+		userMsg = transformed
+	}
+	if !chatMessageHasUserPayload(userMsg) {
+		abortAdmission()
+		return startedThreadTurn{}, false, nil
+	}
+
+	th.mu.Lock()
+	if s.closed.Load() {
+		th.releaseThreadExecutionLeaseLocked()
+		th.mu.Unlock()
+		cancel()
+		return startedThreadTurn{}, false, errServerClosed
+	}
+	// running cannot become true while executionLease is our local admission
+	// reservation, but retain the guard so future non-turn writers fail closed.
+	if th.running {
+		th.releaseThreadExecutionLeaseLocked()
+		th.mu.Unlock()
+		cancel()
+		if failIfRunning {
+			return startedThreadTurn{}, false, fmt.Errorf("thread %q already has a running turn", th.ID)
+		}
+		return startedThreadTurn{}, false, nil
+	}
+	if th.ReadOnly {
+		switch readOnlyPolicy {
+		case turnReadOnlyFail:
+			th.releaseThreadExecutionLeaseLocked()
+			th.mu.Unlock()
+			cancel()
+			return startedThreadTurn{}, false, errors.New("thread is read-only")
+		case turnReadOnlySkip:
+			th.releaseThreadExecutionLeaseLocked()
+			th.mu.Unlock()
+			cancel()
+			return startedThreadTurn{}, false, nil
+		}
+	}
+	var commitAfterAppend func() error
+	if hooks.beforeUserAppendLocked != nil {
+		var err error
+		commitAfterAppend, err = hooks.beforeUserAppendLocked(th)
+		if err != nil {
+			th.releaseThreadExecutionLeaseLocked()
+			th.mu.Unlock()
+			cancel()
+			return startedThreadTurn{}, false, err
+		}
+	}
+	var userMsgSeq int
+	userAlreadyPersisted := false
+	if clientID := strings.TrimSpace(userMsg.ClientID); clientID != "" {
+		for _, existing := range th.History {
+			if strings.TrimSpace(existing.ClientID) == clientID {
+				userAlreadyPersisted = true
+				userMsgSeq = existing.Seq
+				break
+			}
+		}
+	}
+	if th.PersistHistory && userAlreadyPersisted && (len(userMsg.ConsumeResidentEnvelopeIDs) > 0 || len(hooks.residentReadReceipts) > 0) {
+		if err := session.CommitExistingResidentAdmission(s.rt.SessionDir, userMsg.ConsumeResidentEnvelopeIDs, hooks.residentReadReceipts, now); err != nil {
+			th.releaseThreadExecutionLeaseLocked()
+			th.mu.Unlock()
+			cancel()
+			return startedThreadTurn{}, false, err
+		}
+	}
+	if th.PersistHistory && !userAlreadyPersisted {
+		var seq int
+		var err error
+		if len(hooks.residentReadReceipts) > 0 {
+			seq, err = appendResidentAdmissionChatMessage(s.rt.SessionDir, th.ID, userMsg, hooks.residentReadReceipts, now)
+		} else {
+			seq, err = appendChatMessage(s.rt.SessionDir, th.ID, userMsg)
+		}
+		if err != nil {
+			th.releaseThreadExecutionLeaseLocked()
 			th.mu.Unlock()
 			cancel()
 			return startedThreadTurn{}, false, err
 		}
 		userMsgSeq = seq
+		th.historyHeadSeq = max(th.historyHeadSeq, seq)
 	}
 	userMsg.Seq = userMsgSeq
+	if commitAfterAppend != nil {
+		if err := commitAfterAppend(); err != nil {
+			th.releaseThreadExecutionLeaseLocked()
+			th.mu.Unlock()
+			cancel()
+			return startedThreadTurn{}, false, errors.Join(errRetryableTurnAdmission, err)
+		}
+	}
 	history := cloneHistory(th.History)
-	history = append(history, userMsg)
+	if !userAlreadyPersisted {
+		history = append(history, userMsg)
+	}
 	th.History = history
 	th.cancel = cancel
-	turn := th.startTurnLocked(turnID, userMsg, now)
+	var turn Turn
+	resumed := false
+	if userAlreadyPersisted {
+		turn, resumed = th.resumePersistedUserTurnLocked(userMsg.ClientID, now)
+	}
+	if !resumed {
+		if th.PersistHistory {
+			// Persisted turns are reconstructed from conversation order after a
+			// restart or cross-process refresh. Give the live turn that same stable
+			// ID now so item/turn references returned to clients remain valid after
+			// the next admission refresh.
+			turnID = fmt.Sprintf("%s-turn-%04d", th.ID, len(th.Turns)+1)
+		}
+		turn = th.startTurnLocked(turnID, userMsg, now)
+	} else {
+		turnID = turn.ID
+	}
 	turnRuntime := turnRuntimeSnapshotLocked(th)
 	if snapshot.hasPermissions() || snapshot.PermissionExplicit {
 		turnRuntime = turnRuntime.withPermissions(snapshot.permissions())
@@ -1952,6 +2365,8 @@ func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userM
 	}
 	turnRuntime.ForceCompact = snapshot.ForceCompact
 	turnRuntime.CompactOnly = snapshot.CompactOnly
+	turnRuntime.HistoryBaselineSeq = th.historyHeadSeq
+	turnRuntime.AgentCompletionResultIDs = append([]string(nil), snapshot.AgentCompletionResultIDs...)
 	th.mu.Unlock()
 
 	return startedThreadTurn{
@@ -1961,6 +2376,7 @@ func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userM
 		turn:       turn,
 		runtime:    turnRuntime,
 		history:    history,
+		admittedAt: now,
 		userMsgSeq: userMsgSeq,
 	}, true, nil
 }
@@ -1993,10 +2409,8 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 	if isGroup {
 		return false, errors.New("group threads do not support queued turns")
 	}
-	threadRuntime, err := s.ensureThreadRuntime(th)
-	if err != nil {
-		return false, err
-	}
+	var threadRuntime *runtime.ThreadRuntime
+	var err error
 	permissions := entry.snapshot.permissions()
 	if !entry.snapshot.hasPermissions() {
 		permissions, err = s.resolveTurnPermissions(nil)
@@ -2009,17 +2423,43 @@ func (s *Server) startQueuedTurn(ctx context.Context, threadID string, entry que
 	snapshot.PermissionExplicit = entry.snapshot.PermissionExplicit
 	snapshot.ForceCompact = entry.snapshot.ForceCompact
 	snapshot.CompactOnly = entry.snapshot.CompactOnly
-	started, ok, err := s.startThreadUserTurn(ctx, th, entry.msg, snapshot, false, turnReadOnlyFail)
+	started, ok, err := s.startThreadUserTurnWithAdmission(
+		ctx,
+		th,
+		entry.msg,
+		snapshot,
+		false,
+		turnReadOnlyFail,
+		turnAdmissionHooks{afterLease: func(admitted *threadState, _ *providers.ChatMessage) error {
+			var runtimeErr error
+			threadRuntime, runtimeErr = s.ensureThreadRuntimeAfterAdmission(admitted)
+			return runtimeErr
+		}},
+	)
 	if err != nil || !ok {
 		return ok, err
 	}
 
-	_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
+	if s.beforeQueuedTurnBackgroundForTest != nil {
+		s.beforeQueuedTurnBackgroundForTest()
+	}
+	launch, accepted := s.reserveBackground(func() {
+		s.runTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history)
+	})
+	if !accepted {
+		persistErr := s.abortStartedThreadTurnDurably(th, started, errServerClosed)
+		return false, errors.Join(errServerClosed, persistErr)
+	}
+	defer launch.Cancel()
+
+	if err := s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
 		ThreadID: threadID,
 		Turn:     started.turn,
 		QueueID:  entry.id,
-	})
-	go s.runTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history)
+	}); err != nil {
+		return false, errors.Join(err, s.abortStartedThreadTurnDurably(th, started, err))
+	}
+	launch.Commit()
 	return true, nil
 }
 
@@ -2145,7 +2585,7 @@ func (s *Server) kickAgentCompletionDrain(threadID string) {
 	s.drainingAgentCompletionTurns[threadID] = true
 	s.agentCompletionMu.Unlock()
 
-	go s.drainAgentCompletionTurns(threadID)
+	_ = s.startBackground(func() { s.drainAgentCompletionTurns(threadID) })
 }
 
 func (s *Server) drainAgentCompletionTurns(threadID string) {
@@ -2169,66 +2609,90 @@ func (s *Server) drainAgentCompletionTurns(threadID string) {
 	}
 
 	pending := s.takePendingAgentCompletionTurns(threadID)
-	pending, claimed := s.claimAgentCompletionTurns(threadID, pending)
 	if len(pending) == 0 {
 		s.clearAgentCompletionDrain(threadID)
 		return
 	}
+	// One durable result id per synthetic wakeup gives retries a stable
+	// idempotency key independent of process-local batching boundaries.
+	current := pending[:1]
+	if len(pending) > 1 {
+		s.prependPendingAgentCompletionTurns(threadID, pending[1:])
+	}
 
-	// Relocated from the deleted await_agents tool: when a completing child is
-	// a HelpMe recovery helper, replace the parent's polluted context with the
-	// bounded joint compact before the completion wakeup runs, so recovery no
-	// longer depends on an explicit blocking await.
-	s.applyHelpMeCompletionRewrite(threadID, th, pending)
-
-	started, err := s.startSyntheticTurn(context.Background(), threadID, combineAgentCompletionMessages(pending))
-	if err != nil {
+	started, err := s.startSyntheticTurn(context.Background(), threadID, combineAgentCompletionMessages(current), current)
+	executionBusy := errors.Is(err, errThreadExecutionBusy)
+	retryableAdmission := errors.Is(err, errRetryableTurnAdmission)
+	if err != nil && !executionBusy {
 		providers.DebugLogf("start agent completion turn for thread %q: %v", threadID, err)
 	}
 	requeued := false
-	if !started && err == nil {
-		s.releaseAgentCompletionClaims(threadID, claimed)
-		s.prependPendingAgentCompletionTurns(threadID, pending)
+	if !started && (err == nil || executionBusy || retryableAdmission) {
+		s.prependPendingAgentCompletionTurns(threadID, current)
 		requeued = true
-	} else if !started || err != nil {
-		s.releaseAgentCompletionClaims(threadID, claimed)
 	}
 	s.clearAgentCompletionDrain(threadID)
 	if requeued {
+		if executionBusy || retryableAdmission {
+			s.scheduleThreadExecutionLeaseRetry(func() { s.kickAgentCompletionDrain(threadID) })
+			return
+		}
 		s.kickAgentCompletionDrain(threadID)
 	}
 }
 
-// applyHelpMeCompletionRewrite replaces the parent thread's history with the
-// bounded HelpMe joint compact when one of the draining completion turns
-// belongs to a finished helpme_recovery helper. It is the completion-wakeup
-// relocation of the history rewrite the deleted await_agents tool used to
-// carry. HelpMeCompletionRewrite is one-shot (it flips the recovery to applied
-// atomically), so at most one rewrite is applied per drain.
-func (s *Server) applyHelpMeCompletionRewrite(threadID string, th *threadState, pending []agentCompletionTurn) {
-	if th == nil {
-		return
+// applyHelpMeCompletionRewriteLocked replaces the parent history with the
+// bounded HelpMe joint compact. The synthetic-turn admission path calls it
+// with th.mu and the durable execution lease held, after refreshing history.
+// HelpMeCompletionRewrite is one-shot, so it must not run before ownership is
+// acquired or a losing app-server could consume and persist the rewrite.
+func (s *Server) prepareHelpMeCompletionRewriteLocked(threadID string, th *threadState, control *agentcontrol.AgentControl, pending []agentCompletionTurn) (func() error, error) {
+	if th == nil || control == nil {
+		return nil, nil
 	}
-	control := s.liveAgentControl(threadID)
-	if control == nil || control.Manager() == nil {
-		return
+	if control.Manager() == nil {
+		return nil, nil
 	}
 	for _, turn := range pending {
 		agentID := strings.TrimSpace(turn.agentID)
 		if agentID == "" {
 			continue
 		}
-		sa := control.Manager().Get(agentID)
-		if sa == nil {
+		var snapshot subagent.SubAgentSnapshot
+		if turn.snapshot != nil {
+			snapshot = *cloneSubAgentSnapshot(turn.snapshot)
+		} else if sa := control.Manager().Get(agentID); sa != nil {
+			snapshot = sa.Snapshot()
+		} else {
 			continue
 		}
-		rewrite := control.HelpMeCompletionRewrite(sa.Snapshot())
+		rewrite := control.PrepareHelpMeCompletionRewrite(snapshot)
 		if rewrite == nil {
 			continue
 		}
-		th.mu.Lock()
+		commit := func() error {
+			applied, err := control.MarkHelpMeRecoveryApplied(rewrite.AgentID)
+			if err != nil {
+				return fmt.Errorf("persist helpme recovery commit for %q: %w", rewrite.AgentID, err)
+			}
+			if !applied {
+				if recovery, ok := control.HelpMeRecoveryForHelper(rewrite.AgentID); ok && recovery.Applied {
+					return nil
+				}
+				return fmt.Errorf("helpme recovery %q was not available to commit", rewrite.AgentID)
+			}
+			return nil
+		}
+		for _, msg := range th.History {
+			if compact.IsHelpMeJointCompactContent(msg.Content) && msg.Content == rewrite.Content {
+				// A prior attempt committed the rewrite but failed before the
+				// wakeup append/Applied marker. Reuse the exact compact instead of
+				// nesting it into another summary.
+				return commit, nil
+			}
+		}
+		baselineSeq := th.historyHeadSeq
 		rewritten := compact.RewriteHistoryWithHelpMeCompact(th.History, rewrite.Content)
-		th.History = rewritten
 		persist := th.PersistHistory
 		providerName := th.ModelProvider
 		modelName := th.Model
@@ -2236,21 +2700,22 @@ func (s *Server) applyHelpMeCompletionRewrite(threadID string, th *threadState, 
 		if th.execRuntime != nil {
 			runner = th.execRuntime.StreamRunner
 		}
-		th.mu.Unlock()
+		if persist {
+			if err := s.rewriteChatHistoryUnderExecutionLease(s.rt.SessionDir, th.ID, rewritten, baselineSeq); err != nil {
+				return nil, errors.Join(
+					errRetryableTurnAdmission,
+					fmt.Errorf("persist helpme completion rewrite for thread %q: %w", threadID, err),
+				)
+			}
+		}
+		th.History = rewritten
 		// This compaction happens outside the loop, so it never runs the loop's
 		// own usage.Reset()+RecordPendingMessages. Invalidate the runner's shared
-		// cross-turn usage baseline explicitly from the compacted snapshot so the
-		// next turn (and any pre-turn EstimateCurrent read) reflects the reduced
-		// context instead of the pre-compaction value. Operate on the rewritten
-		// snapshot captured under the lock, not th.History, to avoid racing a
-		// concurrent reader.
+		// cross-turn usage baseline only after the durable rewrite succeeds.
 		if runner != nil {
 			runner.ResetConversationUsage(rewritten)
 		}
 		if persist {
-			if err := rewriteChatHistory(s.rt.SessionDir, th.ID, rewritten); err != nil {
-				providers.DebugLogf("apply helpme completion rewrite for thread %q: %v", threadID, err)
-			}
 			// Persist a fresh token_usage meta reflecting the compacted history so
 			// latestRetainedContextTokens drops immediately, without waiting for the
 			// next synthetic turn's response to land a smaller ContextTokens.
@@ -2259,11 +2724,15 @@ func (s *Server) applyHelpMeCompletionRewrite(threadID string, th *threadState, 
 				providers.DebugLogf("append helpme compaction token usage for thread %q: %v", threadID, err)
 			}
 		}
-		return
+		// The caller commits the one-shot only after the completion wakeup user
+		// message is durable. A failed append then leaves Applied=false and the
+		// idempotent rewrite can be retried safely.
+		return commit, nil
 	}
+	return nil, nil
 }
 
-func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMsg providers.ChatMessage) (bool, error) {
+func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMsg providers.ChatMessage, pending []agentCompletionTurn) (bool, error) {
 	threadID = strings.TrimSpace(threadID)
 	if threadID == "" {
 		return false, errors.New("thread_id is required")
@@ -2282,12 +2751,74 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 	if !canResumeAgentCompletionThread(th) {
 		return false, nil
 	}
-	threadRuntime, err := s.ensureThreadRuntime(th)
-	if err != nil {
-		return false, err
+	var threadRuntime *runtime.ThreadRuntime
+	pending = cloneAgentCompletionTurns(pending)
+	completionResultIDs := make([]string, 0, len(pending))
+	for _, turn := range pending {
+		if resultID := strings.TrimSpace(turn.resultID); resultID != "" {
+			completionResultIDs = append(completionResultIDs, resultID)
+		}
 	}
 
-	started, ok, err := s.startThreadUserTurn(ctx, th, userMsg, turnRuntimeSnapshot{}, false, turnReadOnlySkip)
+	started, ok, err := s.startThreadUserTurnWithAdmission(
+		ctx,
+		th,
+		userMsg,
+		turnRuntimeSnapshot{AgentCompletionResultIDs: completionResultIDs},
+		false,
+		turnReadOnlySkip,
+		turnAdmissionHooks{
+			afterLease: func(admitted *threadState, admittedMsg *providers.ChatMessage) error {
+				var err error
+				threadRuntime, err = s.ensureThreadRuntimeAfterAdmission(admitted)
+				if err != nil {
+					return err
+				}
+				for _, resultID := range completionResultIDs {
+					consumer, err := threadRuntime.AgentControl.AgentResultDeliveryConsumer(resultID)
+					if err != nil {
+						return errors.Join(errRetryableTurnAdmission, err)
+					}
+					if consumer != "" {
+						return errAgentCompletionAlreadyDelivered
+					}
+					if agentCompletionMarkerAnswered(admitted.History, resultID) {
+						claimed, consumedBy, err := threadRuntime.AgentControl.ClaimAgentResultDeliveryID(resultID, "auto_completion")
+						if err != nil {
+							return errors.Join(errRetryableTurnAdmission, err)
+						}
+						if !claimed && consumedBy == "" {
+							return errors.Join(errRetryableTurnAdmission, fmt.Errorf("agent result delivery %q is unavailable", resultID))
+						}
+						return errAgentCompletionAlreadyDelivered
+					}
+				}
+				*admittedMsg = combineAgentCompletionMessages(pending)
+				admittedMsg.ClientID = agentCompletionClientID(pending)
+				return nil
+			},
+			beforeUserAppendLocked: func(locked *threadState) (func() error, error) {
+				if threadRuntime == nil || threadRuntime.AgentControl == nil {
+					return nil, nil
+				}
+				helpMeCommit, err := s.prepareHelpMeCompletionRewriteLocked(threadID, locked, threadRuntime.AgentControl, pending)
+				if err != nil {
+					return nil, err
+				}
+				return func() error {
+					if helpMeCommit != nil {
+						if err := helpMeCommit(); err != nil {
+							return err
+						}
+					}
+					return nil
+				}, nil
+			},
+		},
+	)
+	if errors.Is(err, errAgentCompletionAlreadyDelivered) {
+		return true, nil
+	}
 	if err != nil || !ok {
 		return ok, err
 	}
@@ -2296,7 +2827,12 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 		ThreadID: threadID,
 		Turn:     started.turn,
 	})
-	go s.runTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history)
+	if !s.startBackground(func() {
+		s.runTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history)
+	}) {
+		abortStartedThreadTurn(th, started, errServerClosed)
+		return false, errServerClosed
+	}
 	return true, nil
 }
 
@@ -2371,6 +2907,18 @@ func (s *Server) kickGoalContinuation(threadID string) {
 	if threadID == "" {
 		return
 	}
+	// Most threads have no active goal. Read the dedicated goal store before
+	// starting a drain so ordinary resume/edit/fork traffic is never blocked by
+	// a speculative execution-lease acquisition. The admission path rechecks
+	// the goal under ownership, so this is only a side-effect-free fast reject.
+	goal, ok, err := s.currentRuntimeGoal(threadID)
+	if err != nil {
+		providers.DebugLogf("inspect goal continuation for thread %q: %v", threadID, err)
+		return
+	}
+	if !ok || !goal.CanAutoContinue() {
+		return
+	}
 
 	s.goalContinuationMu.Lock()
 	if s.closed.Load() {
@@ -2387,7 +2935,7 @@ func (s *Server) kickGoalContinuation(threadID string) {
 	s.drainingGoalContinuation[threadID] = true
 	s.goalContinuationMu.Unlock()
 
-	go s.drainGoalContinuation(threadID)
+	_ = s.startBackground(func() { s.drainGoalContinuation(threadID) })
 }
 
 func (s *Server) drainGoalContinuation(threadID string) {
@@ -2399,10 +2947,15 @@ func (s *Server) drainGoalContinuation(threadID string) {
 		return
 	}
 	started, err := s.startGoalContinuationTurn(context.Background(), threadID)
-	if err != nil {
+	executionBusy := errors.Is(err, errThreadExecutionBusy)
+	if err != nil && !executionBusy {
 		providers.DebugLogf("start goal continuation turn for thread %q: %v", threadID, err)
 	}
 	s.clearGoalContinuationDrain(threadID)
+	if executionBusy {
+		s.scheduleThreadExecutionLeaseRetry(func() { s.kickGoalContinuation(threadID) })
+		return
+	}
 	if started {
 		return
 	}
@@ -2423,32 +2976,6 @@ func (s *Server) startGoalContinuationTurn(ctx context.Context, threadID string)
 	if th == nil {
 		return false, fmt.Errorf("thread %q not found", threadID)
 	}
-	threadRuntime, err := s.ensureThreadRuntime(th)
-	if err != nil {
-		return false, err
-	}
-	if threadRuntime == nil || threadRuntime.GoalRuntime == nil {
-		return false, nil
-	}
-
-	input := s.goalContinuationInput(th, threadID)
-	decision, err := threadRuntime.GoalRuntime.DecideContinuation(input)
-	if err != nil {
-		return false, err
-	}
-	if !decision.Allowed {
-		return false, nil
-	}
-	goal, err := threadRuntime.GoalRuntime.CurrentGoal()
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	if !goal.CanAutoContinue() {
-		return false, nil
-	}
 
 	turnID := session.NewID()
 	turnCtx, cancel := context.WithCancel(ctx)
@@ -2465,17 +2992,107 @@ func (s *Server) startGoalContinuationTurn(ctx context.Context, threadID string)
 		cancel()
 		return false, nil
 	}
+	acquired, err := s.tryAcquireThreadExecutionLeaseLocked(th)
+	if err != nil {
+		th.mu.Unlock()
+		cancel()
+		return false, err
+	}
+	if !acquired {
+		th.mu.Unlock()
+		cancel()
+		return false, threadExecutionBusyError(threadID)
+	}
+	if err := s.refreshDurableThreadHistoryLocked(th); err != nil {
+		th.releaseThreadExecutionLeaseLocked()
+		th.mu.Unlock()
+		cancel()
+		return false, err
+	}
+	th.mu.Unlock()
+
+	releaseAdmission := func() {
+		th.mu.Lock()
+		th.releaseThreadExecutionLeaseLocked()
+		th.mu.Unlock()
+		cancel()
+	}
+
+	// Construct and restore the runtime only from the snapshot protected by the
+	// execution lease. In particular, plan state, usage, CWD, and model settings
+	// must not come from the stale resident copy that lost the prior admission.
+	threadRuntime, err := s.ensureThreadRuntimeAfterAdmission(th)
+	if err != nil {
+		releaseAdmission()
+		return false, err
+	}
+	if threadRuntime == nil || threadRuntime.GoalRuntime == nil {
+		releaseAdmission()
+		return false, nil
+	}
+
+	// The goal and all queue gates may have changed while another app-server
+	// owned the thread. Evaluate them only after acquiring ownership.
+	decision, err := threadRuntime.GoalRuntime.DecideContinuation(s.goalContinuationInput(th, threadID))
+	if err != nil {
+		releaseAdmission()
+		return false, err
+	}
+	if !decision.Allowed {
+		releaseAdmission()
+		return false, nil
+	}
+	goal, err := threadRuntime.GoalRuntime.CurrentGoal()
+	if errors.Is(err, os.ErrNotExist) {
+		releaseAdmission()
+		return false, nil
+	}
+	if err != nil {
+		releaseAdmission()
+		return false, err
+	}
+	if !goal.CanAutoContinue() {
+		releaseAdmission()
+		return false, nil
+	}
+
+	th.mu.Lock()
+	if s.closed.Load() {
+		th.releaseThreadExecutionLeaseLocked()
+		th.mu.Unlock()
+		cancel()
+		return false, errServerClosed
+	}
+	if th.running || th.ReadOnly || s.hasQueuedUserWork(threadID) || s.hasQueuedAgentCompletionWork(threadID) {
+		th.releaseThreadExecutionLeaseLocked()
+		th.mu.Unlock()
+		cancel()
+		return false, nil
+	}
 	history := cloneHistory(th.History)
 	th.cancel = cancel
 	turn := th.startInternalTurnLocked(turnID, now)
 	turnRuntime := turnRuntimeSnapshotLocked(th)
+	turnRuntime.HistoryBaselineSeq = th.historyHeadSeq
 	th.mu.Unlock()
 
 	_ = s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
 		ThreadID: threadID,
 		Turn:     turn,
 	})
-	go s.runTurnWithRequestContext(turnCtx, th, threadRuntime, turnID, turnRuntime, history, goalContinuationContextSegments(goal), nil)
+	if !s.startBackground(func() {
+		s.runTurnWithRequestContext(turnCtx, th, threadRuntime, turnID, turnRuntime, history, goalContinuationContextSegments(goal), nil)
+	}) {
+		abortStartedThreadTurn(th, startedThreadTurn{
+			ctx:     turnCtx,
+			cancel:  cancel,
+			turnID:  turnID,
+			turn:    turn,
+			runtime: turnRuntime,
+			history: history,
+		}, errServerClosed)
+		return false, errServerClosed
+	}
 	return true, nil
 }
 
@@ -2572,6 +3189,143 @@ func combineAgentCompletionMessages(turns []agentCompletionTurn) providers.ChatM
 	}
 }
 
+const (
+	agentCompletionClientIDPrefix       = "wuu-agent-completion:"
+	agentCompletionAnswerClientIDPrefix = "wuu-agent-completion-answer:"
+)
+
+func agentCompletionClientID(turns []agentCompletionTurn) string {
+	ids := make([]string, 0, len(turns))
+	seen := make(map[string]bool, len(turns))
+	for _, turn := range turns {
+		id := strings.TrimSpace(turn.resultID)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return ""
+	}
+	sort.Strings(ids)
+	return agentCompletionClientIDPrefix + strings.Join(ids, ",")
+}
+
+func agentCompletionResultIDs(clientID string) []string {
+	clientID = strings.TrimSpace(clientID)
+	if !strings.HasPrefix(clientID, agentCompletionClientIDPrefix) {
+		return nil
+	}
+	raw := strings.TrimPrefix(clientID, agentCompletionClientIDPrefix)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if id := strings.TrimSpace(part); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func agentCompletionAnswerResultIDs(clientID string) []string {
+	clientID = strings.TrimSpace(clientID)
+	if !strings.HasPrefix(clientID, agentCompletionAnswerClientIDPrefix) {
+		return nil
+	}
+	return splitAgentCompletionResultIDs(strings.TrimPrefix(clientID, agentCompletionAnswerClientIDPrefix))
+}
+
+func splitAgentCompletionResultIDs(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if id := strings.TrimSpace(part); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// markAgentCompletionAnswer stamps the successful final assistant row with a
+// durable outcome marker. A streamed partial assistant from a cancelled or
+// failed turn never receives this marker, so restart recovery cannot mistake
+// visible partial text for a completed consumption of the child result.
+func markAgentCompletionAnswer(res *agent.LoopResult, resultIDs []string) bool {
+	if res == nil || len(resultIDs) == 0 || len(res.NewMessages) == 0 {
+		return false
+	}
+	clean := make([]string, 0, len(resultIDs))
+	seen := make(map[string]bool, len(resultIDs))
+	for _, resultID := range resultIDs {
+		resultID = strings.TrimSpace(resultID)
+		if resultID == "" || seen[resultID] {
+			continue
+		}
+		seen[resultID] = true
+		clean = append(clean, resultID)
+	}
+	if len(clean) == 0 {
+		return false
+	}
+	sort.Strings(clean)
+	markerIndex := -1
+	for i, msg := range res.NewMessages {
+		for _, markerID := range agentCompletionResultIDs(msg.ClientID) {
+			if seen[markerID] {
+				markerIndex = i
+				break
+			}
+		}
+	}
+	for i := len(res.NewMessages) - 1; i > markerIndex; i-- {
+		msg := &res.NewMessages[i]
+		if !strings.EqualFold(strings.TrimSpace(msg.Role), "assistant") || strings.TrimSpace(msg.Content) == "" {
+			continue
+		}
+		msg.ClientID = agentCompletionAnswerClientIDPrefix + strings.Join(clean, ",")
+		return true
+	}
+	return false
+}
+
+func agentCompletionMarkerAnswered(history []providers.ChatMessage, resultID string) bool {
+	resultID = strings.TrimSpace(resultID)
+	if resultID == "" {
+		return false
+	}
+	marker := -1
+	for i, msg := range history {
+		for _, id := range agentCompletionResultIDs(msg.ClientID) {
+			if id == resultID {
+				marker = i
+				break
+			}
+		}
+	}
+	if marker < 0 {
+		return false
+	}
+	for _, msg := range history[marker+1:] {
+		for _, answeredID := range agentCompletionAnswerResultIDs(msg.ClientID) {
+			if answeredID == resultID {
+				return true
+			}
+		}
+		if strings.EqualFold(strings.TrimSpace(msg.Role), "user") &&
+			!msg.Hidden && !msg.Steered && len(msg.FocusMeta) == 0 && !compact.IsInternalContextMessage(msg) {
+			return false
+		}
+	}
+	return false
+}
+
 func cloneAgentCompletionTurns(turns []agentCompletionTurn) []agentCompletionTurn {
 	if len(turns) == 0 {
 		return nil
@@ -2587,60 +3341,18 @@ func cloneAgentCompletionTurns(turns []agentCompletionTurn) []agentCompletionTur
 			agentID:  turn.agentID,
 			resultID: turn.resultID,
 			msg:      msgs[i],
+			snapshot: cloneSubAgentSnapshot(turn.snapshot),
 		})
 	}
 	return out
 }
 
-func (s *Server) claimAgentCompletionTurns(threadID string, turns []agentCompletionTurn) ([]agentCompletionTurn, []agentCompletionTurn) {
-	if len(turns) == 0 {
-		return nil, nil
+func cloneSubAgentSnapshot(snapshot *subagent.SubAgentSnapshot) *subagent.SubAgentSnapshot {
+	if snapshot == nil {
+		return nil
 	}
-	th := s.thread(threadID)
-	if th == nil {
-		return turns, nil
-	}
-	th.mu.Lock()
-	threadRuntime := th.execRuntime
-	th.mu.Unlock()
-	if threadRuntime == nil || threadRuntime.AgentControl == nil {
-		return turns, nil
-	}
-	out := turns[:0]
-	claimed := make([]agentCompletionTurn, 0, len(turns))
-	for _, turn := range turns {
-		if strings.TrimSpace(turn.resultID) != "" {
-			ok, _ := threadRuntime.AgentControl.ClaimAgentResultDeliveryID(turn.resultID, "auto_completion")
-			if !ok {
-				continue
-			}
-			claimed = append(claimed, turn)
-		}
-		out = append(out, turn)
-	}
-	return out, claimed
-}
-
-func (s *Server) releaseAgentCompletionClaims(threadID string, turns []agentCompletionTurn) {
-	if len(turns) == 0 {
-		return
-	}
-	th := s.thread(threadID)
-	if th == nil {
-		return
-	}
-	th.mu.Lock()
-	threadRuntime := th.execRuntime
-	th.mu.Unlock()
-	if threadRuntime == nil || threadRuntime.AgentControl == nil {
-		return
-	}
-	for _, turn := range turns {
-		if strings.TrimSpace(turn.resultID) == "" {
-			continue
-		}
-		threadRuntime.AgentControl.ReleaseAgentResultDeliveryClaim(turn.resultID, "auto_completion")
-	}
+	clone := *snapshot
+	return &clone
 }
 
 func queuedTurnSummary(threadID string, entry queuedTurn) QueuedTurn {
@@ -2689,13 +3401,30 @@ func queuedTurnsFromSteers(msgs []providers.ChatMessage) []queuedTurn {
 	return out
 }
 
-func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, rewriteHistory bool, providerName, model string) error {
+func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, rewriteHistory bool, providerName, model string, historyBaselineSeq int) error {
 	if !th.PersistHistory {
 		return nil
 	}
+	indexHistory := th.History
 	if rewriteHistory {
-		if err := rewriteChatHistory(s.rt.SessionDir, th.ID, th.History); err != nil {
+		if err := rewriteChatHistoryAtBaseline(s.rt.SessionDir, th.ID, th.History, historyBaselineSeq); err != nil {
 			return err
+		}
+		// The transaction may have merged participant/meta tail records that
+		// arrived while the model ran. Count the committed history rather than
+		// overwriting the session index from the turn's pre-merge snapshot.
+		if committedRecords, committedHeadSeq, err := loadProviderPersistedMessages(s.rt.SessionDir, th.ID, false); err != nil {
+			return err
+		} else {
+			committed := chatMessagesFromPersistedMessages(committedRecords)
+			indexHistory = committed
+			th.History = cloneHistory(committed)
+			th.historyHeadSeq = committedHeadSeq
+		}
+		if display, err := loadPersistedMessages(s.rt.SessionDir, th.ID, false); err != nil {
+			return err
+		} else {
+			mergeConcurrentParticipantTailIntoTurnsLocked(th, display, historyBaselineSeq, time.Now().UTC(), s.resolveParticipantSummary)
 		}
 	} else {
 		if err := appendChatMessages(s.rt.SessionDir, th.ID, res.NewMessages); err != nil {
@@ -2710,7 +3439,33 @@ func (s *Server) persistTurnResultLocked(th *threadState, res agent.LoopResult, 
 	}, res.ContextTokens); err != nil {
 		return err
 	}
-	return session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(th.History), threadPreview(th.History))
+	return session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(indexHistory), threadPreview(indexHistory))
+}
+
+func mergeConcurrentParticipantTailIntoTurnsLocked(th *threadState, records []persistedMessage, baselineSeq int, now time.Time, resolve participantSummaryResolver) {
+	if th == nil || th.currentTurn == "" {
+		return
+	}
+	existingSeq := make(map[int]bool)
+	turn := th.ensureTurnLocked(th.currentTurn, now)
+	for _, item := range turn.Items {
+		if item.Seq > 0 {
+			existingSeq[item.Seq] = true
+		}
+	}
+	th.nextItemIndex = max(th.nextItemIndex, maxTurnItemIndex(turn))
+	changed := false
+	for _, rec := range records {
+		if rec.Seq <= baselineSeq || rec.Seq <= 0 || existingSeq[rec.Seq] || strings.TrimSpace(rec.ThreadID) != "" || !isParticipantPersistedMessage(rec) {
+			continue
+		}
+		turn.Items = append(turn.Items, participantMessageItem(th.nextItemIDLocked(turn.ID), rec, resolve))
+		existingSeq[rec.Seq] = true
+		changed = true
+	}
+	if changed {
+		th.replaceTurnLocked(turn)
+	}
 }
 
 // handleSettingsUsage returns the aggregated token usage snapshot for

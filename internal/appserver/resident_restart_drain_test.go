@@ -121,25 +121,17 @@ func TestResidentInboxExpiredOnRestart(t *testing.T) {
 		t.Fatalf("pre-settle: expected %d pending envelopes, got %d", N, len(pre))
 	}
 
+	// Close the old process before constructing its replacement. A second live
+	// server is a concurrent client, not a restart, and must not settle the
+	// first server's in-flight state.
+	srv.Close()
+
 	// Trigger pivot: a fresh Server via New() runs settleOnBoot at end.
-	// Same rt → same SessionDir → same SQLite store, simulating "restart".
+	// Same rt → same SessionDir → same SQLite store after the old server
+	// released its presence lease.
 	out := &lockedBuffer{}
 	srv2 := New(rt, out)
 	t.Cleanup(func() { waitForResidentQuiesce(t, srv2) })
-
-	// Wait for settle to complete (synchronous in current implementation,
-	// poll defensively in case a future change moves it to a goroutine).
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		post, err := session.PendingResidentEnvelopes(rt.SessionDir, participantID, 0)
-		if err != nil {
-			t.Fatalf("post-settle poll: %v", err)
-		}
-		if len(post) == 0 {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
 
 	// Assertion B: unprocessed envelopes → expired_at set (PendingResidentEnvelopes
 	// returns 0 because the query now also filters expired_at IS NULL).

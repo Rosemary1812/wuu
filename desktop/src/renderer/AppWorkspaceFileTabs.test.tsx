@@ -328,7 +328,13 @@ describe("workspace file tabs", () => {
     expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(false);
   });
 
-  it("turns pinned navigation into a drawer when that makes workspace docking safe", async () => {
+  it("keeps all three columns docked when an open sidebar is the only space pressure", async () => {
+    // 1000px window (>= 900, so the sidebar stays docked, not auto-collapsed).
+    // Conversation + panel fit without the sidebar, but adding the docked
+    // sidebar tips the layout over the focus threshold. The panel must NOT
+    // auto-globalize as a side effect of the sidebar being open — instead all
+    // three stay docked and the conversation column absorbs the squeeze. Only a
+    // manual toggle globalizes here.
     setInnerWidth(1000);
     await act(async () => {
       root = createRoot(container);
@@ -342,18 +348,12 @@ describe("workspace file tabs", () => {
     await flushAsync();
 
     const shell = container.querySelector<HTMLElement>(".app-shell");
-    expect(shell?.classList.contains("right-panel-globalized")).toBe(true);
-    expect(shell?.classList.contains("sidebar-collapsed")).toBe(true);
-
-    const restore = container.querySelector<HTMLButtonElement>(
-      '[aria-label="退出全面板"]',
-    );
-    expect(restore?.disabled).toBe(false);
-    await act(async () => restore?.click());
-    await flushAsync();
-
-    expect(shell?.classList.contains("right-panel-globalized")).toBe(false);
     expect(shell?.classList.contains("right-panel-open")).toBe(true);
-    expect(shell?.classList.contains("sidebar-collapsed")).toBe(true);
+    expect(shell?.classList.contains("right-panel-globalized")).toBe(false);
+    // The sidebar stays a real docked column, not a drawer overlay.
+    expect(shell?.classList.contains("sidebar-collapsed")).toBe(false);
+    expect(
+      container.querySelector(".conversation-pane")?.hasAttribute("inert"),
+    ).toBe(false);
   });
 });

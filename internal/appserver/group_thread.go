@@ -161,7 +161,17 @@ func (s *Server) createGroupThreadState(id, title string, now time.Time) (*threa
 func (s *Server) handleGroupTurnStart(req Request, th *threadState, params TurnStartParams, images []providers.InputImage, files []providers.InputFile) error {
 	th.mu.Lock()
 	turnRunning := th.running
+	persistHistory := th.PersistHistory
 	th.mu.Unlock()
+	var lifecycleLease *session.ThreadLifecycleLease
+	if persistHistory {
+		var err error
+		lifecycleLease, err = s.acquireThreadLifecycleWriteLease(th.ID)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		defer releaseThreadLifecycleWriteLease(th.ID, lifecycleLease)
+	}
 	if params.FocusWorkspace != nil {
 		if turnRunning {
 			return s.writeResponse(req.ID, nil, fmt.Errorf("thread %q already has a running turn", th.ID))
@@ -211,6 +221,9 @@ func (s *Server) handleGroupTurnStart(req Request, th *threadState, params TurnS
 	th.History = history
 	turn := th.appendUserMessageTurnLocked(session.NewID(), userMsg, now)
 	th.mu.Unlock()
+	if hook := s.afterLifecycleHistoryAppendForTest; hook != nil {
+		hook(th.ID)
+	}
 
 	if err := s.writeResponse(req.ID, TurnStartResult{Turn: turn}, nil); err != nil {
 		return err

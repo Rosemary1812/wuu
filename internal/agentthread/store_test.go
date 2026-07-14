@@ -103,6 +103,41 @@ func TestStoreRecordsInterAgentCommunication(t *testing.T) {
 	}
 }
 
+func TestStoreResultCommunicationAndConsumerTransitionAreIdempotent(t *testing.T) {
+	store := NewStore(t.TempDir())
+	communication := NewInterAgentCommunication(AgentPath("/root/child"), AgentPath("/root/parent"), "child done", false)
+	for i := 0; i < 2; i++ {
+		if _, err := store.RecordResultCommunication("parent", "result-1", communication); err != nil {
+			t.Fatalf("RecordResultCommunication %d: %v", i, err)
+		}
+	}
+	if err := store.AppendEvent(Event{Type: EventResultReady, ResultID: "result-1"}); err != nil {
+		t.Fatalf("append result ready: %v", err)
+	}
+	if claimed, consumedBy, err := store.ClaimResultDelivery(Event{ResultID: "result-1", Consumer: "nested_followup_pending"}); err != nil || !claimed || consumedBy != "" {
+		t.Fatalf("pending claim = %t, %q, %v", claimed, consumedBy, err)
+	}
+	if transitioned, consumedBy, err := store.TransitionResultDelivery(Event{ResultID: "result-1", Consumer: "nested_followup"}, "nested_followup_pending"); err != nil || !transitioned || consumedBy != "nested_followup" {
+		t.Fatalf("consumer transition = %t, %q, %v", transitioned, consumedBy, err)
+	}
+	if transitioned, consumedBy, err := store.TransitionResultDelivery(Event{ResultID: "result-1", Consumer: "unexpected"}, "nested_followup_pending"); err != nil || transitioned || consumedBy != "nested_followup" {
+		t.Fatalf("repeated consumer transition = %t, %q, %v", transitioned, consumedBy, err)
+	}
+	events, err := store.ReadEvents()
+	if err != nil {
+		t.Fatalf("ReadEvents: %v", err)
+	}
+	messageCount := 0
+	for _, event := range events {
+		if event.Type == EventMessage && event.ResultID == "result-1" {
+			messageCount++
+		}
+	}
+	if messageCount != 1 {
+		t.Fatalf("durable parent inbox messages = %d, want 1", messageCount)
+	}
+}
+
 func TestStoreConcurrentInstancesPreserveThreadUpdates(t *testing.T) {
 	dir := t.TempDir()
 	stores := []*Store{NewStore(dir), NewStore(dir)}

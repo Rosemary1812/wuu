@@ -1192,6 +1192,13 @@ export type SideThreadEvent =
       revision: number;
       message_id: string;
       error_message: string;
+    }
+  | {
+      // The side thread was reset: its record is gone and the panel starts
+      // over. The next send rebases onto the latest main history.
+      type: "reset";
+      side_thread_id: string;
+      main_thread_id: string;
     };
 
 // Electron broadcasts app-server notifications to every window. Keep the
@@ -2377,6 +2384,11 @@ export type WuuDesktopApi = {
     params: SideThreadSendParams,
   ) => Promise<SideThreadSendResult>;
   interruptSideThread?: (
+    mainThreadId: string,
+  ) => Promise<{ ok: boolean }>;
+  // Clears the side-thread history so the next message starts from the
+  // latest main-conversation state.
+  resetSideThread?: (
     mainThreadId: string,
   ) => Promise<{ ok: boolean }>;
   // Streamed side-thread output forwarded by the Electron main process.

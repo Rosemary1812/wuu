@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/appserver"
 	"github.com/blueberrycongee/wuu/internal/config"
@@ -147,24 +148,42 @@ func (c *localAppServerController) Interrupt(ctx context.Context, threadID strin
 	return c.client.Call(ctx, appserver.MethodTurnInterrupt, appserver.TurnInterruptParams{ThreadID: threadID}, &result)
 }
 
+// shutdownFallbackTimeout bounds Shutdown when the caller's context carries
+// no deadline, so a wedged turn can never hang shutdown forever.
+const shutdownFallbackTimeout = 10 * time.Second
+
 func (c *localAppServerController) Shutdown(ctx context.Context) error {
 	if c.cancel != nil {
 		defer c.cancel()
+	}
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, shutdownFallbackTimeout)
+		defer cancel()
 	}
 	var result appserver.OKResult
 	err := c.client.Call(ctx, appserver.MethodShutdown, nil, &result)
 	for _, pipe := range c.pipes {
 		_ = pipe.Close()
 	}
+	if c.done != nil {
+		select {
+		case runErr := <-c.done:
+			if err == nil && runErr != nil && !errors.Is(runErr, io.ErrClosedPipe) {
+				err = runErr
+			}
+		case <-ctx.Done():
+			// The run loop has not finished draining its turns and worker
+			// finalizers; closing the shared runtime under it would race, so
+			// surface the timeout instead of cleaning up.
+			return errors.Join(err, fmt.Errorf("app server run loop did not exit before shutdown deadline: %w", ctx.Err()))
+		}
+	}
+	// RunStdio synchronously drains app-server-owned turns and worker
+	// finalizers. Only then is it safe to close the shared runtime resources
+	// those terminal paths still use.
 	if c.rt != nil {
 		_, _ = c.rt.Cleanup()
-	}
-	select {
-	case runErr := <-c.done:
-		if err == nil && runErr != nil && !errors.Is(runErr, io.ErrClosedPipe) {
-			err = runErr
-		}
-	default:
 	}
 	return err
 }

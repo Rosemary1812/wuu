@@ -23,7 +23,7 @@
   background: var(--image-preview-overlay-bg);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  animation: image-preview-fade-in 0.16s ease-out;
+  animation: image-preview-fade-in var(--motion-base) var(--ease-out);
 }
 
 @keyframes image-preview-fade-in {
@@ -78,7 +78,7 @@
   background: transparent;
   color: inherit;
   cursor: pointer;
-  transition: background-color 0.12s ease;
+  transition: background-color var(--motion-fast) var(--ease-out);
 }
 
 .image-preview-toolbar-button:hover:not(:disabled) {
@@ -123,7 +123,7 @@
   max-width: 92vw;
   max-height: 88vh;
   transform-origin: center center;
-  transition: opacity 0.16s ease;
+  transition: opacity var(--motion-base) var(--ease-out);
   opacity: 0;
   will-change: transform;
   -webkit-user-drag: none;

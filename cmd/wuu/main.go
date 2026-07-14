@@ -1268,15 +1268,17 @@ func (c *localDebugAppServerClient) Shutdown(ctx context.Context) error {
 	for _, pipe := range c.pipes {
 		_ = pipe.Close()
 	}
-	if c.rt != nil {
-		_, _ = c.rt.Cleanup()
-	}
-	select {
-	case runErr := <-c.done:
+	if c.done != nil {
+		runErr := <-c.done
 		if err == nil && runErr != nil && !errors.Is(runErr, io.ErrClosedPipe) {
 			err = runErr
 		}
-	default:
+	}
+	// RunStdio performs a synchronous Server.Close. Runtime cleanup must run
+	// afterwards because active turns and worker terminal finalizers still use
+	// session-scoped stores, MCP clients, and process ownership while closing.
+	if c.rt != nil {
+		_, _ = c.rt.Cleanup()
 	}
 	return err
 }

@@ -62,6 +62,7 @@ func reconcileTestControl(t *testing.T, dir string, client providers.StreamClien
 	if err != nil {
 		t.Fatalf("agentcontrol.New: %v", err)
 	}
+	c.StartQueuedWork()
 	t.Cleanup(c.Close)
 	return c
 }

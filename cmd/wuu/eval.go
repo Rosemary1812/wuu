@@ -411,7 +411,12 @@ func runEvalTask(cfg evalTaskRunConfig) evalharness.Result {
 		return result
 	}
 	evalSessionID := "eval-" + cfg.Task.ID + "-" + sessionid.NewID()
-	rt.SetSessionID(evalSessionID)
+	if err := rt.SetSessionID(evalSessionID); err != nil {
+		_, _ = rt.Cleanup()
+		result.Error = err.Error()
+		result.DurationMS = time.Since(started).Milliseconds()
+		return result
+	}
 	defer func() {
 		_, _ = rt.Cleanup()
 	}()

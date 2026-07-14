@@ -42,8 +42,34 @@ describe("globalized right panel chrome", () => {
     const body = cssRule(".app-shell.right-panel-animating");
 
     expect(body).toMatch(/grid-template-columns/);
-    expect(body).toMatch(/var\(--workspace-panel-motion-duration,\s*240ms\)/);
+    expect(body).toMatch(/var\(--workspace-panel-motion-duration\)/);
     expect(body).toMatch(/var\(--workspace-panel-motion-ease\)/);
+
+    // Globalize no longer squeezes the grid (that rewrapped the conversation
+    // and relaid the panel content on every frame). The panel is promoted to
+    // a full-window fixed sheet, laid out at final width from the first
+    // frame, sliding transform-only between its dock slot and the window.
+    expect(sidebarCSS).not.toMatch(
+      /\.app-shell\.right-panel-globalized\s*\{[^}]*grid-template-columns/,
+    );
+    // Enter timing lives on the open state, exit timing on parked; the
+    // arming/docking teleport states are transition-free; the sheet parks
+    // exactly over its dock slot (translate by 100% - dock width).
+    expect(sidebarCSS).toMatch(
+      /\[data-sheet="open"\]\s*\{[^}]*transition:\s*transform\s+var\(--sheet-enter-duration\)\s+var\(--sheet-enter-easing\)/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\[data-sheet="parked"\]\s*\{[^}]*transition:\s*transform\s+var\(--sheet-exit-duration\)\s+var\(--sheet-exit-easing\)/,
+    );
+    expect(sidebarCSS).toMatch(
+      /calc\(100% - var\(--workspace-right-panel-width, 360px\)\)/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\[data-sheet="arming"\],\s*\n\.app-shell \.workspace-right-panel\[data-sheet="docking"\]\s*\{\s*\n\s*transition:\s*none;/,
+    );
+    expect(sidebarCSS).toMatch(
+      /\[data-sheet="parked"\]\s*\{\s*\n\s*position:\s*fixed;\s*\n\s*inset:\s*0;/,
+    );
   });
 
   it("keeps the sidebar available as a drawer over the focused workspace", () => {

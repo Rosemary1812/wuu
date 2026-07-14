@@ -11,6 +11,7 @@ import (
 
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/harness"
+	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
@@ -103,7 +104,11 @@ func (c *AgentControl) claimAwaitedAgentResults(results []AwaitAgentResult) {
 		if resultID == "" {
 			continue
 		}
-		claimed, consumedBy := c.ClaimAgentResultDeliveryID(resultID, agentResultConsumerAwaitAgents)
+		claimed, consumedBy, claimErr := c.ClaimAgentResultDeliveryID(resultID, agentResultConsumerAwaitAgents)
+		if claimErr != nil {
+			providers.DebugLogf("agentcontrol: persist await result claim for %s: %v", resultID, claimErr)
+			continue
+		}
 		if claimed {
 			continue
 		}
@@ -356,8 +361,10 @@ func (c *AgentControl) awaitResultForTarget(target awaitTarget) AwaitAgentResult
 
 	if snap := c.snapshotByID(meta.ID); snap != nil {
 		out = awaitResultFromSnapshot(*snap)
-		if delivery := c.ensureAgentResultDelivery(*snap); delivery.ResultID != "" {
+		if delivery, err := c.ensureAgentResultDelivery(*snap); err == nil && delivery.ResultID != "" {
 			out.ResultID = delivery.ResultID
+		} else if err != nil {
+			providers.DebugLogf("agentcontrol: persist result-ready for %s: %v", snap.ID, err)
 		}
 		ref := c.AgentResultReference(*snap)
 		out.Result = ref.Preview
@@ -417,6 +424,8 @@ func metadataFromSnapshot(snap subagent.SubAgentSnapshot) agentthread.Metadata {
 		AgentProfile: snap.AgentProfile,
 		Role:         snap.Type,
 		ParentID:     snap.ParentID,
+		CWD:          snap.WorkerRoot,
+		Model:        snap.Model,
 		Status:       threadStatusFromSubAgent(snap.Status),
 	}
 }

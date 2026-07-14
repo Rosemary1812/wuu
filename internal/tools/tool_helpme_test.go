@@ -211,8 +211,28 @@ func newHelpMeTestControlWithClient(t *testing.T, dir, sessionDir string, client
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(c.Close)
+	t.Cleanup(func() { stopAndCloseHelpMeTestControl(t, c) })
 	return c
+}
+
+func stopAndCloseHelpMeTestControl(t *testing.T, c *agentcontrol.AgentControl) {
+	t.Helper()
+	c.StopAll()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for {
+		for _, snap := range c.Manager().List() {
+			if _, err := c.Manager().Wait(ctx, snap.ID); err != nil {
+				t.Errorf("wait for helpme worker %s during cleanup: %v", snap.ID, err)
+				c.Close()
+				return
+			}
+		}
+		if c.Manager().CountRunning() == 0 {
+			c.Close()
+			return
+		}
+	}
 }
 
 func executeHelpMe(t *testing.T, env *Env, argsJSON string) helpMeResponse {
@@ -398,7 +418,7 @@ func TestHelpMeExecuteExtractsAndAppliesParentJournal(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RecordAgentReport: %v", err)
 	}
-	rewrite := c.HelpMeCompletionRewrite(helperSnapshot(t, c, response.AgentID))
+	rewrite := c.PrepareHelpMeCompletionRewrite(helperSnapshot(t, c, response.AgentID))
 	if rewrite == nil {
 		t.Fatalf("completion rewrite must be built for a finished helpme helper")
 	}
@@ -494,10 +514,9 @@ func TestHelpMeExecuteSurvivesTraceWriteFailure(t *testing.T) {
 
 // TestHelpMeCompletionRewriteIsOneShot drives the full product path: helpme
 // spawns a helpme_recovery worker, the helper completes with a structured
-// report, the first HelpMeCompletionRewrite (fired on the subagent-completion
-// wakeup path that replaced the await_agents tool) returns the joint-compact
-// history rewrite built from the registered recovery brief, and a second call
-// never rewrites again.
+// report, PrepareHelpMeCompletionRewrite builds the joint-compact without
+// consuming it, and MarkHelpMeRecoveryApplied commits the one-shot after the
+// caller's durable write succeeds.
 func TestHelpMeCompletionRewriteIsOneShot(t *testing.T) {
 	dir := t.TempDir()
 	sessionDir := filepath.Join(dir, "session")
@@ -521,7 +540,7 @@ func TestHelpMeCompletionRewriteIsOneShot(t *testing.T) {
 	}
 
 	snap := helperSnapshot(t, c, response.AgentID)
-	first := c.HelpMeCompletionRewrite(snap)
+	first := c.PrepareHelpMeCompletionRewrite(snap)
 	if first == nil {
 		t.Fatalf("first completion rewrite must be built for a finished helpme helper")
 	}
@@ -537,8 +556,17 @@ func TestHelpMeCompletionRewriteIsOneShot(t *testing.T) {
 		t.Fatalf("rewrite lost the helper report summary:\n%s", first.Content)
 	}
 
-	if second := c.HelpMeCompletionRewrite(snap); second != nil {
+	if rec, ok := c.HelpMeRecoveryForHelper(response.AgentID); !ok || rec.Applied {
+		t.Fatalf("prepare must not consume recovery, got %+v ok=%v", rec, ok)
+	}
+	if applied, err := c.MarkHelpMeRecoveryApplied(first.AgentID); err != nil || !applied {
+		t.Fatal("first durable commit must mark recovery applied")
+	}
+	if second := c.PrepareHelpMeCompletionRewrite(snap); second != nil {
 		t.Fatalf("second completion rewrite must not fire again:\n%s", second.Content)
+	}
+	if applied, err := c.MarkHelpMeRecoveryApplied(first.AgentID); err != nil || applied {
+		t.Fatal("second durable commit must be rejected")
 	}
 	// And the recovery is now consumed for good.
 	rec, ok := c.HelpMeRecoveryForHelper(response.AgentID)
@@ -560,7 +588,7 @@ func TestHelpMeCompletionRewriteSkipsUnregisteredHelper(t *testing.T) {
 		AgentPath: "/root/plain_worker_1",
 		Status:    subagent.StatusCompleted,
 	}
-	if rewrite := c.HelpMeCompletionRewrite(snap); rewrite != nil {
+	if rewrite := c.PrepareHelpMeCompletionRewrite(snap); rewrite != nil {
 		t.Fatalf("non-helpme completion must not rewrite history:\n%s", rewrite.Content)
 	}
 }

@@ -187,7 +187,8 @@ describe("AppSidebar layout", () => {
     expect(sidebarCSS).toMatch(
       /\.sidebar-collapsed\.sidebar-drawer-open \.sidebar,[\s\S]*background:\s*var\(--sidebar-drawer-bg\);/,
     );
-    expect(sidebarCSS).toContain("--sidebar-motion-ease: cubic-bezier(0.25, 1, 0.5, 1)");
+    // The ease itself now lives in base.css as a shared motion token;
+    // sidebar.css only consumes it.
     expect(sidebarCSS).toContain("var(--sidebar-motion-ease)");
     expect(sidebarCSS).toContain(
       ".sidebar-collapsed.sidebar-drawer-open .sidebar",

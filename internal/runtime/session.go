@@ -566,6 +566,9 @@ func NewSession(opts Options) (*Session, error) {
 		ReadinessIssues:             readinessIssues,
 		InferenceJournalRuntime:     journalRuntime,
 	}
+	// The legacy/root control remains dormant until SetSessionID binds its real
+	// artifact directories. Per-thread controls created by NewThreadRuntime are
+	// likewise started only after app-server installs their terminal finalizer.
 	journalOwned = false
 	return runtimeSession, nil
 }
@@ -718,9 +721,15 @@ func (s *Session) runScheduledPrompt(ctx context.Context, task cron.Task) error 
 	}
 	if threadRT.AgentControl != nil {
 		defer func() {
-			threadRT.AgentControl.StopAll()
-			threadRT.AgentControl.Close()
+			if shutdownErr := shutdownAndCleanupAgentControl(threadRT.AgentControl); shutdownErr != nil {
+				providers.DebugLogf("scheduled runtime shutdown: %v", shutdownErr)
+			}
 		}()
+		// Scheduled runtimes do not pass through app-server's runtime
+		// installation path. Their worker dependencies are complete once
+		// NewThreadRuntime returns, so enable queued work explicitly here.
+		threadRT.AgentControl.StartWorkerTerminalRecovery()
+		threadRT.AgentControl.StartQueuedWork()
 	}
 	if _, err := threadRT.StreamRunner.Run(ctx, prompt); err != nil {
 		s.recordScheduledFailure(goalStore, task.ID, err)
@@ -878,9 +887,10 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		threadProcessManager = manager
 	}
 
-	// Prepare every fallible thread-local dependency before AgentControl.
-	// AgentControl starts restored queued work as soon as it is created, so a
-	// later constructor error would otherwise orphan its consumers or workers.
+	// Prepare every fallible thread-local dependency before AgentControl. The
+	// control restores queue metadata here but remains dormant until app-server
+	// installs its model resolver and reliable terminal finalizer, then calls
+	// StartQueuedWork.
 	if s.Toolkit != nil {
 		var err error
 		kit, err = s.Toolkit.CloneForRoot(threadRoot)
@@ -1236,37 +1246,73 @@ func applyWorkerToolFilter(kit *tools.Toolkit, wt agentcontrol.WorkerType, parti
 
 // SetSessionID binds user-level runtime artifact paths after the UI has
 // created or resumed a session. Conversation logs live in SessionDir.
-func (s *Session) SetSessionID(id string) {
+func (s *Session) SetSessionID(id string) error {
 	if s == nil || strings.TrimSpace(id) == "" {
-		return
+		return nil
 	}
+	id = strings.TrimSpace(id)
 	if s.StreamRunner != nil {
-		s.StreamRunner.PromptCacheKey = strings.TrimSpace(id)
+		s.StreamRunner.PromptCacheKey = id
 	}
+	stateDir := strings.TrimSpace(s.StateDir)
+	if stateDir == "" {
+		if home, err := statepath.Home(""); err == nil {
+			if dir, err := resolveWorkspaceStateDir(home, s.WorkspaceID, s.RootDir); err == nil {
+				stateDir = dir
+			}
+		}
+	}
+	if stateDir == "" {
+		return errors.New("workspace state directory is required to bind session")
+	}
+	artifactDir := statepath.SessionArtifactDir(stateDir, id)
 	if s.Toolkit != nil {
 		s.Toolkit.SetSessionID(id)
 		s.Toolkit.SetAgentIdentity(id, agentthread.RootPath)
-		stateDir := strings.TrimSpace(s.StateDir)
-		if stateDir == "" {
-			if home, err := statepath.Home(""); err == nil {
-				if dir, err := resolveWorkspaceStateDir(home, s.WorkspaceID, s.RootDir); err == nil {
-					stateDir = dir
-				}
-			}
-		}
-		if stateDir == "" {
-			return
-		}
-		artifactDir := statepath.SessionArtifactDir(stateDir, id)
 		s.Toolkit.SetSessionDir(artifactDir)
-		if s.AgentControl != nil {
-			s.AgentControl.SetSessionInfo(
-				id,
-				filepath.Join(artifactDir, "workers"),
-				filepath.Join(artifactDir, "threads"),
-			)
-		}
 	}
+	if s.AgentControl != nil {
+		if err := s.AgentControl.SetSessionInfo(
+			id,
+			filepath.Join(artifactDir, "workers"),
+			filepath.Join(artifactDir, "threads"),
+		); err != nil {
+			return err
+		}
+		s.AgentControl.StartWorkerTerminalRecovery()
+		s.AgentControl.StartQueuedWork()
+	}
+	return nil
+}
+
+// ownedWorkerExecutionDrainTimeout bounds how long session cleanup waits for
+// worker execution leases to release. A wedged worker must not stall the MCP,
+// inference-journal, and process-manager cleanup that follows.
+const ownedWorkerExecutionDrainTimeout = 5 * time.Second
+
+func shutdownAndCleanupAgentControl(control *agentcontrol.AgentControl) error {
+	if control == nil {
+		return nil
+	}
+	control.BeginShutdown()
+	control.StopAll()
+	control.YieldWorkerTerminalFinalizations()
+	deadline := time.Now().Add(ownedWorkerExecutionDrainTimeout)
+	for control.HasOwnedWorkerExecutions() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if remaining := control.OwnedWorkerExecutionCount(); remaining > 0 {
+		providers.DebugLogf("session cleanup: %d worker execution lease(s) still owned after %s; proceeding with cleanup", remaining, ownedWorkerExecutionDrainTimeout)
+	}
+	pending, pendingErr := control.PendingWorkerTerminalFinalizations()
+	control.Close()
+	if pendingErr != nil {
+		return fmt.Errorf("inspect pending worker terminal finalizations; preserving session worktrees: %w", pendingErr)
+	}
+	if pending {
+		return errors.New("worker terminal finalizations remain pending; preserving session worktrees for recovery")
+	}
+	return control.CleanupSession()
 }
 
 // Cleanup stops session-scoped background work owned by the runtime.
@@ -1283,6 +1329,13 @@ func (s *Session) Cleanup() (process.CleanupResult, error) {
 		s.CronLock.Release()
 		s.CronLock = nil
 	}
+	if s.AgentControl != nil {
+		// Terminal intents are the durable recovery authority. Yield local retry
+		// loops, wait for physical execution leases to release, and only remove
+		// worktrees when no unacknowledged terminal record remains.
+		cleanupErr = errors.Join(cleanupErr, shutdownAndCleanupAgentControl(s.AgentControl))
+		s.AgentControl = nil
+	}
 	if s.Toolkit != nil {
 		if manager := s.Toolkit.MCPManager(); manager != nil {
 			cleanupErr = errors.Join(cleanupErr, manager.Close())
@@ -1291,9 +1344,6 @@ func (s *Session) Cleanup() (process.CleanupResult, error) {
 	if s.InferenceJournalRuntime != nil {
 		cleanupErr = errors.Join(cleanupErr, s.InferenceJournalRuntime.Close())
 		s.InferenceJournalRuntime = nil
-	}
-	if s.AgentControl != nil {
-		_ = s.AgentControl.CleanupSession()
 	}
 	if s.PluginHost != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

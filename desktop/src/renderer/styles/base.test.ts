@@ -19,9 +19,14 @@ describe("resize drag over embedded frames", () => {
     );
   });
 
-  it("does not let sidebar auto-collapse lag behind a live window resize", () => {
-    expect(baseCss).not.toMatch(
-      /\.window-resizing\s+\.app-shell\.sidebar-animating\s*\{/,
+  it("keeps the shared collapse motion when auto-collapse fires mid-resize", () => {
+    // Auto-collapse only ever happens during a window resize, and the blanket
+    // .window-resizing suppression would swallow its transition entirely — the
+    // sidebar would snap away. Reusing the shared sidebar motion here is a
+    // deliberate reversal of an earlier "stay glued to the window edge" rule:
+    // grid columns always sum to 100%, so nothing overflows mid-transition.
+    expect(baseCss).toMatch(
+      /\.window-resizing\s+\.app-shell\.sidebar-animating\s*\{[\s\S]*?grid-template-columns\s+var\(--sidebar-motion-duration\)[\s\S]*?var\(--sidebar-motion-ease\)\s*!important/,
     );
   });
 });

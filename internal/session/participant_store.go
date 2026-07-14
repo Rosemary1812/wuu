@@ -67,6 +67,8 @@ ON CONFLICT(id) DO UPDATE SET
 	return nil
 }
 
+// UpsertParticipantRun records live-run metadata without allowing a late
+// pending/queued/running write to downgrade an already terminal run.
 func UpsertParticipantRun(sessDir string, run ParticipantRun) error {
 	run.ParticipantID = strings.TrimSpace(run.ParticipantID)
 	if run.ParticipantID == "" {
@@ -106,9 +108,24 @@ ON CONFLICT(id) DO UPDATE SET
 	agent_id = excluded.agent_id,
 	task_id = excluded.task_id,
 	session_id = excluded.session_id,
-	summary = excluded.summary,
-	outcome = excluded.outcome,
-	updated_at = excluded.updated_at`,
+	summary = CASE
+		WHEN participant_runs.outcome NOT IN ('', 'pending', 'queued', 'running')
+		 AND excluded.outcome IN ('', 'pending', 'queued', 'running')
+		THEN participant_runs.summary
+		ELSE excluded.summary
+	END,
+	outcome = CASE
+		WHEN participant_runs.outcome NOT IN ('', 'pending', 'queued', 'running')
+		 AND excluded.outcome IN ('', 'pending', 'queued', 'running')
+		THEN participant_runs.outcome
+		ELSE excluded.outcome
+	END,
+	updated_at = CASE
+		WHEN participant_runs.outcome NOT IN ('', 'pending', 'queued', 'running')
+		 AND excluded.outcome IN ('', 'pending', 'queued', 'running')
+		THEN participant_runs.updated_at
+		ELSE excluded.updated_at
+	END`,
 		run.ID, run.ParticipantID, strings.TrimSpace(run.AgentID),
 		strings.TrimSpace(run.TaskID), strings.TrimSpace(run.SessionID),
 		strings.TrimSpace(run.Summary), strings.TrimSpace(run.Outcome),
@@ -120,11 +137,17 @@ ON CONFLICT(id) DO UPDATE SET
 	return nil
 }
 
+// CompleteParticipantRun atomically records a terminal outcome. It updates
+// legacy rows whose ID differs from agentID, and inserts an auditable terminal
+// row when a workflow-dispatched participant had no prior running record.
 func CompleteParticipantRun(sessDir, participantID, agentID, outcome, summary string) error {
 	participantID = strings.TrimSpace(participantID)
 	agentID = strings.TrimSpace(agentID)
-	if participantID == "" || agentID == "" {
-		return nil
+	if participantID == "" {
+		return errors.New("participant_id is required")
+	}
+	if agentID == "" {
+		return errors.New("agent_id is required")
 	}
 	db, err := openStore(sessDir)
 	if err != nil {
@@ -136,7 +159,12 @@ func CompleteParticipantRun(sessDir, participantID, agentID, outcome, summary st
 	defer storeWriteMu.Unlock()
 
 	now := time.Now().UTC()
-	_, err = db.Exec(`
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin participant run completion: %w", err)
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`
 UPDATE participant_runs
 SET outcome = ?, summary = CASE WHEN ? <> '' THEN ? ELSE summary END, updated_at = ?
 WHERE participant_id = ? AND agent_id = ?`,
@@ -145,6 +173,25 @@ WHERE participant_id = ? AND agent_id = ?`,
 	)
 	if err != nil {
 		return fmt.Errorf("complete participant run: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("complete participant run rows affected: %w", err)
+	}
+	if rows == 0 {
+		if _, err := tx.Exec(`
+INSERT INTO participant_runs (
+	id, participant_id, agent_id, task_id, session_id, summary, outcome,
+	created_at, updated_at
+) VALUES (?, ?, ?, '', '', ?, ?, ?, ?)`,
+			agentID, participantID, agentID, strings.TrimSpace(summary), strings.TrimSpace(outcome),
+			timeText(now), timeText(now),
+		); err != nil {
+			return fmt.Errorf("insert completed participant run: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit participant run completion: %w", err)
 	}
 	return nil
 }

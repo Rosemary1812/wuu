@@ -28,6 +28,7 @@ func newThreadState(id string, history []providers.ChatMessage, rtProvider, mode
 	return &threadState{
 		ID:             id,
 		History:        cloneHistory(history),
+		historyHeadSeq: maxHistorySeq(history),
 		CreatedAt:      now,
 		UpdatedAt:      now,
 		LastAccessedAt: now,
@@ -111,6 +112,52 @@ func (th *threadState) startTurnLocked(turnID string, userMsg providers.ChatMess
 	}
 	th.Turns = append(th.Turns, turn)
 	return turn
+}
+
+// resumePersistedUserTurnLocked reopens the display turn for an idempotent
+// synthetic user record that was durably appended before a process crashed.
+// It avoids appending a second user bubble while allowing the provider work to
+// resume under a fresh execution lease.
+func (th *threadState) resumePersistedUserTurnLocked(clientID string, now time.Time) (Turn, bool) {
+	clientID = strings.TrimSpace(clientID)
+	if th == nil || clientID == "" {
+		return Turn{}, false
+	}
+	for i := len(th.Turns) - 1; i >= 0; i-- {
+		turn := th.Turns[i]
+		found := false
+		for _, item := range turn.Items {
+			if strings.TrimSpace(item.SourceID) == clientID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+		turn.Status = TurnStatusInProgress
+		turn.CompletedAt = nil
+		turn.Error = nil
+		turn.ModelProvider = th.ModelProvider
+		turn.Model = th.Model
+		if turn.StartedAt == nil {
+			turn.StartedAt = &now
+		}
+		th.Turns[i] = turn
+		th.currentTurn = turn.ID
+		th.currentTurnKind = TurnKindUser
+		th.running = true
+		th.runningProviderName = th.ModelProvider
+		th.runningModel = th.Model
+		th.UpdatedAt = now
+		th.pendingSteers = nil
+		th.nextItemIndex = maxTurnItemIndex(turn)
+		th.activeAgentItemID = ""
+		th.activeReasoningItemID = ""
+		th.toolItems = make(map[string]string)
+		return turn, true
+	}
+	return Turn{}, false
 }
 
 func (th *threadState) appendUserMessageTurnLocked(turnID string, userMsg providers.ChatMessage, now time.Time) Turn {
@@ -296,6 +343,7 @@ func (th *threadState) releaseTurnExecutionLocked(turnID string) {
 	if th.currentTurn != turnID {
 		return
 	}
+	th.releaseThreadExecutionLeaseLocked()
 	th.running = false
 	th.currentTurn = ""
 	th.currentTurnKind = ""
@@ -1077,6 +1125,28 @@ func turnsFromPersistedHistoryInScope(threadID, subthreadID string, history []pe
 				startSyntheticTurn()
 			}
 			appendItem(participantMessageItem(nextItemID(current.ID), rec, resolve))
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(rec.Role), "meta") {
+			if current != nil && rec.Content == turnTerminalHistoryRecord && (strings.TrimSpace(rec.ClientID) == "" || rec.ClientID == current.ID) {
+				at := rec.At
+				if at.IsZero() {
+					at = now
+				}
+				message := strings.TrimSpace(rec.DisplayContent)
+				if message == "" {
+					message = "turn start aborted"
+				}
+				current.Status = TurnStatusFailed
+				current.Error = &TurnError{Message: message}
+				current.CompletedAt = &at
+				appendItem(ThreadItem{
+					ID:     nextItemID(current.ID),
+					Type:   ThreadItemError,
+					Status: ThreadItemStatusFailed,
+					Error:  message,
+				})
+			}
 			continue
 		}
 		msg := chatMessageFromPersistedMessage(rec)

@@ -1,0 +1,234 @@
+package appserver
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/session"
+)
+
+var errThreadExecutionBusy = errors.New("thread execution is owned by another app-server")
+var errRetryableTurnAdmission = errors.New("turn admission can be retried")
+var errAgentCompletionAlreadyDelivered = errors.New("agent completion is already delivered")
+
+// Background queues should make progress promptly after the owner exits
+// without hot-spinning against the lease while it is live.
+const threadExecutionLeaseRetryDelay = 200 * time.Millisecond
+
+func (s *Server) tryAcquireThreadExecutionLeaseLocked(th *threadState) (bool, error) {
+	if th == nil {
+		return false, errors.New("thread is required")
+	}
+	if th.admissionReserved || th.executionLease != nil {
+		// The same server may be between durable admission and startTurnLocked,
+		// where running is intentionally still false but the lease is already a
+		// local reservation. Treat it exactly like an external owner.
+		return false, nil
+	}
+	th.admissionReserved = true
+	if !th.PersistHistory {
+		return true, nil
+	}
+	if s == nil || s.rt == nil || strings.TrimSpace(s.rt.SessionDir) == "" {
+		th.admissionReserved = false
+		return false, errors.New("session directory is required for durable thread execution")
+	}
+	lease, acquired, err := session.TryAcquireThreadExecutionLease(s.rt.SessionDir, th.ID)
+	if err != nil {
+		th.admissionReserved = false
+		return false, fmt.Errorf("acquire execution lease for thread %q: %w", th.ID, err)
+	}
+	if !acquired {
+		th.admissionReserved = false
+		return false, nil
+	}
+	th.executionLease = lease
+	return true, nil
+}
+
+func (s *Server) refreshDurableThreadHistoryLocked(th *threadState) error {
+	if th == nil || !th.PersistHistory {
+		return nil
+	}
+	if th.executionLease != nil {
+		if _, err := session.RecoverResidentAdmissionCompensationsForThread(s.rt.SessionDir, th.ID); err != nil {
+			return fmt.Errorf("recover pending resident admission for thread %q: %w", th.ID, err)
+		}
+	}
+	loaded, err := s.loadPersistedThreadSnapshot(th.ID)
+	if err != nil {
+		return fmt.Errorf("refresh durable state for thread %q: %w", th.ID, err)
+	}
+	if loaded.repairNeeded {
+		if err := s.rewriteChatHistoryUnderExecutionLease(s.rt.SessionDir, th.ID, loaded.repairedHistory, loaded.baselineSeq); err != nil {
+			return fmt.Errorf("persist repaired history for thread %q: %w", th.ID, err)
+		}
+		// Re-read display rows after the rewrite so Turns and provider history
+		// are rebuilt from the same committed snapshot.
+		loaded, err = s.loadPersistedThreadSnapshot(th.ID)
+		if err != nil {
+			return fmt.Errorf("reload repaired state for thread %q: %w", th.ID, err)
+		}
+	}
+	// Durable state is authoritative once execution ownership is ours. A
+	// different app-server may have completed turns, changed focus, compacted,
+	// or edited the thread since this process loaded its resident snapshot.
+	applySessionMetadata(th, loaded.metadata)
+	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, th.CWD)
+	th.History = cloneHistory(loaded.history)
+	th.historyHeadSeq = loaded.baselineSeq
+	th.Turns = turnsFromPersistedHistory(th.ID, loaded.displayHistory, time.Now().UTC(), s.resolveParticipantSummary)
+	th.Turns = applyTokenUsageMetasToTurns(th.Turns, loaded.tokenMetas)
+	th.currentTurn = ""
+	th.currentTurnKind = ""
+	th.nextItemIndex = 0
+	th.activeAgentItemID = ""
+	th.activeReasoningItemID = ""
+	th.toolItems = make(map[string]string)
+	if loaded.dmRetired {
+		th.ReadOnly = true
+	}
+	return nil
+}
+
+func threadExecutionBusyError(threadID string) error {
+	return fmt.Errorf("thread %q already has a running turn in another app-server: %w", threadID, errThreadExecutionBusy)
+}
+
+// tryAcquireThreadMutationLease serializes destructive durable mutations with
+// model turns without attaching the lease to currentTurn. Callers must release
+// the returned lease after the mutation is fully committed.
+func (s *Server) tryAcquireThreadMutationLease(threadID string) (*session.ThreadExecutionLease, error) {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return nil, errors.New("thread id is required")
+	}
+	if s == nil || s.rt == nil || strings.TrimSpace(s.rt.SessionDir) == "" {
+		return nil, errors.New("session directory is required for durable thread mutation")
+	}
+	lease, acquired, err := session.TryAcquireThreadExecutionLease(s.rt.SessionDir, threadID)
+	if err != nil {
+		return nil, fmt.Errorf("acquire mutation lease for thread %q: %w", threadID, err)
+	}
+	if !acquired {
+		return nil, threadExecutionBusyError(threadID)
+	}
+	if _, err := session.RecoverResidentAdmissionCompensationsForThread(s.rt.SessionDir, threadID); err != nil {
+		releaseThreadMutationLease(threadID, lease)
+		return nil, fmt.Errorf("recover pending resident admission before mutating thread %q: %w", threadID, err)
+	}
+	return lease, nil
+}
+
+func releaseThreadMutationLease(threadID string, lease *session.ThreadExecutionLease) {
+	if lease == nil {
+		return
+	}
+	if err := lease.Release(); err != nil {
+		providers.DebugLogf("release mutation lease for thread %q: %v", threadID, err)
+	}
+}
+
+func (s *Server) rewriteChatHistoryUnderExecutionLease(sessDir, threadID string, history []providers.ChatMessage, baselineSeq int) error {
+	if s != nil && s.rewriteChatHistoryForTest != nil {
+		return s.rewriteChatHistoryForTest(sessDir, threadID, history)
+	}
+	return rewriteChatHistoryAtBaseline(sessDir, threadID, history, baselineSeq)
+}
+
+func (s *Server) scheduleThreadExecutionLeaseRetry(retry func()) {
+	if s == nil || retry == nil || s.closed.Load() {
+		return
+	}
+	time.AfterFunc(threadExecutionLeaseRetryDelay, func() {
+		if !s.closed.Load() {
+			retry()
+		}
+	})
+}
+
+func (th *threadState) releaseThreadExecutionLeaseLocked() {
+	if th == nil {
+		return
+	}
+	th.admissionReserved = false
+	th.compensationDeferred = false
+	if th.executionLease == nil {
+		return
+	}
+	lease := th.executionLease
+	th.executionLease = nil
+	if err := lease.Release(); err != nil {
+		providers.DebugLogf("release execution lease for thread %q: %v", th.ID, err)
+	}
+}
+
+// handoffResidentCompensationToJournalLocked hands a journaled prelaunch
+// rollback to the next Server during shutdown. Unlike abortStartedThreadTurn it
+// does not publish a terminal turn or schedule more work. The durable journal
+// remains the barrier until either a live peer or boot recovery resolves it.
+func (th *threadState) handoffResidentCompensationToJournalLocked(turnID string) error {
+	if th == nil || th.currentTurn != turnID {
+		return nil
+	}
+	th.admissionReserved = false
+	lease := th.executionLease
+	th.executionLease = nil
+	th.compensationDeferred = true
+	if lease == nil {
+		return nil
+	}
+	return lease.Release()
+}
+
+// abortStartedThreadTurn rolls back the in-memory execution state when a turn
+// was admitted but its goroutine was never launched. Cancellation alone is not
+// enough because no runner exists to observe it and release the durable lease.
+func abortStartedThreadTurn(th *threadState, started startedThreadTurn, cause error) {
+	if started.cancel != nil {
+		started.cancel()
+	}
+	if th == nil || strings.TrimSpace(started.turnID) == "" {
+		return
+	}
+	if cause == nil {
+		cause = errors.New("turn start aborted")
+	}
+	th.mu.Lock()
+	defer th.mu.Unlock()
+	if th.currentTurn != started.turnID {
+		return
+	}
+	th.completeTurnLocked(started.turnID, TurnStatusFailed, cause, time.Now().UTC(), "", "", false)
+}
+
+const turnTerminalHistoryRecord = "turn_terminal"
+
+// abortStartedThreadTurnDurably records a terminal projection for an ordinary
+// user message that was already appended before its runner could be launched.
+// Meta records are excluded from provider history but let restart projection
+// distinguish a failed prelaunch from a completed user-only turn.
+func (s *Server) abortStartedThreadTurnDurably(th *threadState, started startedThreadTurn, cause error) error {
+	if cause == nil {
+		cause = errors.New("turn start aborted")
+	}
+	var persistErr error
+	if s != nil && s.rt != nil && th != nil && th.PersistHistory && started.userMsgSeq > 0 {
+		persistErr = session.AppendHistoryRecord(s.rt.SessionDir, th.ID, session.HistoryRecord{
+			Role:           "meta",
+			Content:        turnTerminalHistoryRecord,
+			DisplayContent: cause.Error(),
+			ClientID:       started.turnID,
+			StopReason:     string(TurnStatusFailed),
+			At:             time.Now().UTC(),
+		})
+	}
+	abortStartedThreadTurn(th, started, cause)
+	if persistErr != nil {
+		return fmt.Errorf("persist aborted turn %q: %w", started.turnID, persistErr)
+	}
+	return nil
+}

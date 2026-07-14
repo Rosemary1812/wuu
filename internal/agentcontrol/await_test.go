@@ -203,7 +203,7 @@ func TestNoTargetAwaitDoesNotRejoinDeliveredCompletedWithoutReport(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(c.Close)
+	t.Cleanup(func() { stopAndCloseAgentControlForTest(t, c) })
 
 	res, err := c.Spawn(context.Background(), SpawnRequest{
 		Type:     DefaultSubagentType,

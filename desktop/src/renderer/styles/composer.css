@@ -3,7 +3,6 @@
      Light-theme values; the dark theme overrides these in base.css theme blocks. */
   --composer-frame-shadow: 0 8px 24px rgba(20, 24, 28, 0.06);
   --composer-frame-hero-shadow: 0 14px 36px rgba(20, 24, 28, 0.07);
-  --composer-expand-button-bg: rgba(255, 255, 255, 0.72);
   --composer-image-attachment-button-shadow: 0 2px 8px rgba(20, 24, 28, 0.12);
   --composer-file-attachment-button-hover-bg: #eceee9;
   --composer-goal-strip-danger-hover-bg: rgba(220, 80, 80, 0.12);
@@ -370,32 +369,32 @@
 .composer-expand-button {
   position: absolute;
   top: 8px;
-  right: 8px;
-  width: 24px;
-  height: 24px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
   z-index: 3;
   display: grid;
   place-items: center;
   padding: 0;
   border: 0;
   /*
-   * Corner-tab styling: the button sits against the composer-frame's
-   * top-right rounded corner. A subtle paper-tone background (`rgba
-   * (255,255,255,0.72)`) gives the button visible mass against the
-   * composer surface so users can find the expand affordance without
-   * having to chase a faint icon around the corner, while still
-   * staying discreet enough to not compete with the input text.
-   * `--radius-sm` mirrors the composer-frame's `border-radius`, so
-   * the two corners read as a single shape.
+   * Quiet icon button, unified with the goal / 排队消息 row actions
+   * (.composer-input-header-action): transparent by default, revealing an
+   * --ink-overlay-8 hover fill, 28x28 with a 14px glyph. Right-aligned to
+   * the header rows' inline padding (right:14px) and matched in size so the
+   * expand affordance stacks into the same right-edge control column as the
+   * row actions above it — instead of floating as its own smaller,
+   * always-filled corner tab. The textarea reserves a 44px right gutter
+   * (52px in hero) so the transparent glyph never overlaps input text.
    */
   color: var(--ink-muted);
   border-radius: var(--radius-sm);
-  background: var(--composer-expand-button-bg);
+  background: transparent;
   opacity: 1;
   transition:
-    color 140ms ease,
-    background-color 140ms ease,
-    transform 140ms ease;
+    color var(--motion-fast) var(--ease-out),
+    background-color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .composer-expand-button::before {
@@ -662,7 +661,7 @@
   color: var(--ink);
   font-size: 13.5px;
   line-height: 1.5;
-  transition: background-color 120ms ease;
+  transition: background-color var(--motion-fast) var(--ease-out);
 }
 
 .composer-queue-row + .composer-queue-row {
@@ -701,7 +700,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: text;
-  transition: background-color 120ms ease;
+  transition: background-color var(--motion-fast) var(--ease-out);
 }
 
 .composer-queue-preview:hover {
@@ -905,16 +904,7 @@
 }
 
 .composer-goal-strip-spin {
-  animation: composer-goal-strip-spin 1s linear infinite;
-}
-
-@keyframes composer-goal-strip-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  animation: wuu-spin var(--motion-spin) linear infinite;
 }
 
 .composer-goal-edit-dialog {
@@ -1359,8 +1349,8 @@
   padding: 0 8px;
   white-space: nowrap;
   transition:
-    background-color 140ms ease,
-    color 140ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 
 .group-members-capsule:hover,
@@ -1503,10 +1493,23 @@
   place-items: center;
   border-radius: var(--radius-pill);
   transition:
-    background-color 0.16s ease,
-    color 0.16s ease,
-    opacity 0.16s ease,
-    box-shadow 0.16s ease;
+    background-color var(--motion-base) var(--ease-out),
+    color var(--motion-base) var(--ease-out),
+    opacity var(--motion-base) var(--ease-out),
+    box-shadow var(--motion-base) var(--ease-out);
+}
+
+/*
+ * Primary-action sizing: the send / stop button is the commit control, so
+ * it steps up to 36x36 — a deliberate 4px larger than the 32x32 utility
+ * buttons (回形针 / 斜杠 / 权限) beside it — to carry a clear primary
+ * hierarchy instead of reading as just another toolbar icon. Send and stop
+ * share the size so toggling running-state never shifts the bar.
+ */
+.composer-send-button,
+.composer-stop-button {
+  width: 36px;
+  height: 36px;
 }
 
 .composer-send-button {
@@ -1515,9 +1518,26 @@
 }
 
 .composer-send-button svg {
-  width: var(--icon-size);
-  height: var(--icon-size);
-  stroke-width: 2.25;
+  width: 18px;
+  height: 18px;
+  stroke-width: 2;
+  /*
+   * Point the paper plane straight up. lucide Send is drawn flying to the
+   * upper-right (NE); a -45deg turn about its center makes it ascend
+   * vertically, which reads as a cleaner "发送 / 向上" than the default
+   * diagonal tilt. transform-origin:center is required — SVG defaults the
+   * origin to 0 0, which would swing the glyph out of the button.
+   *
+   * The plane's ink is not centered in its 24x24 viewBox: the arrowhead's
+   * area centroid sits at ~(13.8, 10.2). After the -45deg rotation that
+   * centroid lands ~2.56 viewBox units directly above the box center — so
+   * without correction the plane floats high in the round button. The
+   * translateY(1.9px) (== 2.56 * 18/24 render scale) drops the centroid
+   * back onto the button's center. translateY runs after the rotate here,
+   * so it nudges in screen space (straight down), not along the tilt.
+   */
+  transform: translateY(1.9px) rotate(-45deg);
+  transform-origin: center;
 }
 
 .composer-send-button:hover {
@@ -1578,8 +1598,8 @@
   padding: 0 8px;
   cursor: pointer;
   transition:
-    background-color 120ms var(--menu-enter-easing),
-    color 120ms var(--menu-enter-easing);
+    background-color var(--motion-fast) var(--menu-enter-easing),
+    color var(--motion-fast) var(--menu-enter-easing);
 }
 
 .hero-project-pill:hover,

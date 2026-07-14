@@ -11,10 +11,12 @@ import {
   useState,
 } from "react";
 import { SectionRowIcon } from "./ThreadSidebar";
+import { motionDurationMs } from "./motion";
 
-// Mirrors --section-fold-ms in sidebar.css. The body stays mounted while
-// collapsing so the exit motion can finish before React removes the rows.
-export const SECTION_COLLAPSE_MS = 260;
+// Mirrors --section-fold-ms in sidebar.css (= var(--motion-slow)). The body
+// stays mounted while collapsing so the exit motion can finish before React
+// removes the rows.
+export const SECTION_COLLAPSE_MS = motionDurationMs("--motion-slow", 280);
 
 type CollapsePhase = "open" | "opening" | "closing";
 

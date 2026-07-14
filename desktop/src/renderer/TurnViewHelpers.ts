@@ -6,6 +6,7 @@ import {
 } from "./message-flow-display";
 import { debugStreamFieldLength, latestDebugItem } from "./RunDebugPanel";
 import { streamFieldValue } from "./ThreadItemText";
+import { prefersReducedMotion } from "./motion";
 
 type TurnProgressContent = {
   label: string;
@@ -291,12 +292,9 @@ function scrollAnchorIntoContainer(
   if (Math.abs(targetTop - container.scrollTop) < 2) {
     return;
   }
-  const prefersReducedMotion =
-    typeof window !== "undefined" &&
-    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
   container.scrollTo({
     top: targetTop,
-    behavior: prefersReducedMotion ? "auto" : "smooth",
+    behavior: prefersReducedMotion() ? "auto" : "smooth",
   });
 }
 

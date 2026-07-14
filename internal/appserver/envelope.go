@@ -72,13 +72,24 @@ func (e MessageEnvelope) Prompt() string {
 	if nodeID := strings.TrimSpace(e.TaskNodeID); nodeID != "" {
 		attrs += fmt.Sprintf(" task_node_id=%q", nodeID)
 	}
-	// seq is the message's stable address; the model passes it to the react
-	// tool to stamp a reaction on this exact message. Omitted when unknown.
-	if e.SourceSeq > 0 {
-		attrs += fmt.Sprintf(" seq=%q", strconv.Itoa(e.SourceSeq))
-	}
 	if ws := envelopeWorkspaceAttr(e.Workspace); ws != "" {
 		attrs += fmt.Sprintf(" workspace=%q", ws)
+	}
+	// envelope_id is machine correlation, not conversational context: it is
+	// the same id envelopeMetaJSON records in the row's EnvelopeMeta, and the
+	// only key syncIncomingMessageSourceSeqs uses to anchor a seq rewrite to a
+	// tag this renderer produced. Literal "<incoming_message" text pasted into
+	// a message body never carries it, so such text is never rewritten.
+	if id := strings.TrimSpace(e.ID); id != "" {
+		attrs += fmt.Sprintf(" envelope_id=%q", id)
+	}
+	// seq is the message's stable address; the model passes it to the react
+	// tool to stamp a reaction on this exact message. Omitted when unknown.
+	// Rendered last so setIncomingMessageSeqAttribute — which strips the old
+	// value and re-appends at the tag end — reproduces this exact layout and
+	// an in-step resync stays byte-for-byte stable.
+	if e.SourceSeq > 0 {
+		attrs += fmt.Sprintf(" seq=%q", strconv.Itoa(e.SourceSeq))
 	}
 	return fmt.Sprintf(
 		"<incoming_message %s>\n%s\n</incoming_message>",

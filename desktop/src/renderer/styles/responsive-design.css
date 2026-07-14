@@ -320,9 +320,9 @@
   cursor: pointer;
   box-shadow: 0 2px 8px var(--responsive-design-toggle-shadow);
   transition:
-    background 120ms ease,
-    transform 120ms ease,
-    box-shadow 120ms ease;
+    background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
 .design-tokens-toggle:hover,
@@ -503,7 +503,7 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 120ms ease;
+  transition: background var(--motion-fast) var(--ease-out);
 }
 
 .design-tokens-reset:hover,

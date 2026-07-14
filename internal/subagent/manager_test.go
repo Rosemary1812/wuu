@@ -3,6 +3,7 @@ package subagent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,6 +65,36 @@ type fakeClient struct {
 	calls       atomic.Int32
 	delay       time.Duration
 	lastRequest atomic.Pointer[providers.ChatRequest]
+}
+
+type terminalBoundaryClient struct {
+	calls        atomic.Int32
+	firstStarted chan struct{}
+	releaseFirst chan struct{}
+	secondSeen   chan providers.ChatRequest
+}
+
+func (c *terminalBoundaryClient) Chat(context.Context, providers.ChatRequest) (providers.ChatResponse, error) {
+	return providers.ChatResponse{}, errors.New("unexpected non-streaming request")
+}
+
+func (c *terminalBoundaryClient) StreamChat(ctx context.Context, req providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	call := c.calls.Add(1)
+	if call == 1 {
+		close(c.firstStarted)
+		select {
+		case <-c.releaseFirst:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	} else if call == 2 {
+		c.secondSeen <- req
+	}
+	events := make(chan providers.StreamEvent, 2)
+	events <- providers.StreamEvent{Type: providers.EventContentDelta, Content: fmt.Sprintf("turn %d done", call)}
+	events <- providers.StreamEvent{Type: providers.EventDone}
+	close(events)
+	return events, nil
 }
 
 func visibleMessagesForTest(msgs []providers.ChatMessage) []providers.ChatMessage {
@@ -617,6 +648,56 @@ func TestPersistHistory(t *testing.T) {
 	}
 }
 
+func TestTerminalPrepareRunsBeforeFinalSnapshotPersistence(t *testing.T) {
+	dir := t.TempDir()
+	historyPath := filepath.Join(dir, "workers", "worker.json")
+	client := &fakeClient{response: providers.ChatResponse{Content: "done"}}
+	mgr := NewManager(client, "fake-model")
+
+	prepareEntered := make(chan Notification, 1)
+	releasePrepare := make(chan struct{})
+	mgr.SetTerminalPrepareObserver(func(notification Notification) error {
+		prepareEntered <- notification
+		<-releasePrepare
+		return nil
+	})
+
+	sa, err := mgr.Spawn(context.Background(), SpawnOptions{
+		ID:          "worker-terminal-prepare",
+		Type:        "worker",
+		Prompt:      "finish",
+		Toolkit:     fakeToolkit{},
+		HistoryPath: historyPath,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+
+	select {
+	case notification := <-prepareEntered:
+		if notification.Status != StatusCompleted || notification.Snapshot.Result != "done" {
+			t.Fatalf("prepared notification = %+v", notification)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("terminal prepare observer was not called")
+	}
+	if _, err := os.Stat(historyPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("final snapshot became visible before terminal intent: %v", err)
+	}
+
+	close(releasePrepare)
+	if _, err := mgr.Wait(context.Background(), sa.ID); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	run, err := LoadPersistedRun(historyPath)
+	if err != nil {
+		t.Fatalf("LoadPersistedRun: %v", err)
+	}
+	if run.Status != StatusCompleted || run.Result != "done" {
+		t.Fatalf("persisted run = %+v", run)
+	}
+}
+
 func TestPersistHistoryFailureMarksWorkerFailed(t *testing.T) {
 	// An existing directory is a deterministic unwritable file target on every
 	// supported platform; unlike chmod-based tests, it also fails when tests run
@@ -1164,6 +1245,60 @@ func TestQueueMessageTrimAndDrainToUserMessages(t *testing.T) {
 	}
 	if got := sa.pendingCount(); got != 0 {
 		t.Fatalf("expected queue drained, pending=%d", got)
+	}
+}
+
+func TestFollowupAtTerminalBoundaryContinuesInsteadOfStrandingMessage(t *testing.T) {
+	client := &terminalBoundaryClient{
+		firstStarted: make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+		secondSeen:   make(chan providers.ChatRequest, 1),
+	}
+	manager := NewManager(client, "boundary-model")
+	agent, err := manager.Spawn(context.Background(), SpawnOptions{
+		ID:       "terminal-boundary-worker",
+		Type:     "worker",
+		TaskName: "terminal_boundary",
+		Prompt:   "finish one step",
+		Toolkit:  fakeToolkit{},
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	select {
+	case <-client.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first request did not start")
+	}
+	if _, err := manager.Followup(context.Background(), agent.ID, "late boundary message"); err != nil {
+		t.Fatalf("Followup: %v", err)
+	}
+	close(client.releaseFirst)
+
+	select {
+	case req := <-client.secondSeen:
+		found := false
+		for _, message := range req.Messages {
+			if message.Role == "user" && message.Content == "late boundary message" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("continuation request omitted late boundary message: %+v", req.Messages)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("late boundary message did not start a continuation turn")
+	}
+	snapshot, err := manager.Wait(context.Background(), agent.ID)
+	if err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+	if snapshot.Status != StatusCompleted || snapshot.Result != "turn 2 done" {
+		t.Fatalf("terminal snapshot = %+v, want completed continuation", snapshot)
+	}
+	if got := agent.pendingCount(); got != 0 {
+		t.Fatalf("terminal worker retained %d pending messages", got)
 	}
 }
 

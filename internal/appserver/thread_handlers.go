@@ -377,65 +377,100 @@ func (s *Server) loadPersistedThreadState(id string, now time.Time) (*threadStat
 	if id == "" {
 		return nil, errors.New("thread_id is required")
 	}
-	metadata, ok, err := session.Find(s.rt.SessionDir, id)
+	loaded, err := s.loadPersistedThreadSnapshot(id)
 	if err != nil {
 		return nil, err
 	}
-	if !ok {
-		return nil, session.ErrSessionNotFound
-	}
-	history, err := loadChatMessages(s.rt.SessionDir, id)
-	if err != nil {
-		return nil, err
-	}
-	repaired, err := providers.RepairAndValidateToolCallHistory(history)
-	if err != nil {
-		return nil, err
-	}
-	if !reflect.DeepEqual(repaired, history) {
-		if err := rewriteChatHistory(s.rt.SessionDir, id, repaired); err != nil {
-			return nil, err
-		}
-	}
-	systemPrompt := s.rt.StreamRunner.SystemPrompt
-	dmRetired := false
-	if participantID := strings.TrimSpace(metadata.DMParticipantID); participantID != "" {
-		p, err := session.GetParticipant(s.rt.SessionDir, participantID)
-		if err != nil {
-			return nil, err
-		}
-		dmRetired = p.RetiredAt != nil
-		systemPrompt, err = s.residentPromptForParticipant(p)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if strings.TrimSpace(metadata.DMParticipantID) != "" {
-		history = ensureResidentSystemPrompt(repaired, systemPrompt)
-	} else {
-		history = ensureBaseSystemPrompt(repaired, systemPrompt)
-	}
-	threadCWD := firstNonEmpty(metadata.CWD, s.rt.RootDir)
-	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, threadCWD, true, now)
-	displayHistory, err := loadPersistedMessages(s.rt.SessionDir, id, false)
-	if err != nil {
-		return nil, err
-	}
-	th.Turns = turnsFromPersistedHistory(id, displayHistory, now, s.resolveParticipantSummary)
-	if metas, err := loadMetaMessages(s.rt.SessionDir, id); err != nil {
-		return nil, err
-	} else {
-		th.Turns = applyTokenUsageMetasToTurns(th.Turns, metas)
-	}
+	threadCWD := firstNonEmpty(loaded.metadata.CWD, s.rt.RootDir)
+	th := newThreadState(id, loaded.history, s.rt.ProviderName, s.rt.Model, threadCWD, true, now)
+	th.historyHeadSeq = loaded.baselineSeq
+	th.Turns = turnsFromPersistedHistory(id, loaded.displayHistory, now, s.resolveParticipantSummary)
+	th.Turns = applyTokenUsageMetasToTurns(th.Turns, loaded.tokenMetas)
 	th.WorkspaceKind = workspaceKindForCWD(s.rt.WuuHome, threadCWD)
-	applySessionMetadata(th, metadata)
+	applySessionMetadata(th, loaded.metadata)
 	// Retire cleanup protocol: a retired participant's DM is frozen
 	// read-only. ReadOnly is not persisted per-session, so the freeze is
 	// derived from the participant row every time the thread loads.
-	if dmRetired {
+	if loaded.dmRetired {
 		th.ReadOnly = true
 	}
 	return th, nil
+}
+
+type persistedThreadSnapshot struct {
+	metadata        session.Session
+	history         []providers.ChatMessage
+	repairedHistory []providers.ChatMessage
+	repairNeeded    bool
+	baselineSeq     int
+	displayHistory  []persistedMessage
+	tokenMetas      []persistedMessage
+	dmRetired       bool
+}
+
+// loadPersistedThreadSnapshot is deliberately read-only. Loading or resuming a
+// thread may race with the app-server that currently owns its execution lease,
+// so even a deterministic history repair must not be written back here. The
+// lease admission paths persist repairNeeded under exclusive ownership.
+func (s *Server) loadPersistedThreadSnapshot(id string) (persistedThreadSnapshot, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return persistedThreadSnapshot{}, errors.New("thread_id is required")
+	}
+	metadata, ok, err := session.Find(s.rt.SessionDir, id)
+	if err != nil {
+		return persistedThreadSnapshot{}, err
+	}
+	if !ok {
+		return persistedThreadSnapshot{}, session.ErrSessionNotFound
+	}
+	displayHistory, historyHeadSeq, err := loadProviderPersistedMessages(s.rt.SessionDir, id, true)
+	if err != nil {
+		return persistedThreadSnapshot{}, err
+	}
+	providerHistory := make([]persistedMessage, 0, len(displayHistory))
+	for _, rec := range displayHistory {
+		if strings.EqualFold(strings.TrimSpace(rec.Role), "meta") {
+			continue
+		}
+		providerHistory = append(providerHistory, rec)
+	}
+	history := chatMessagesFromPersistedMessages(providerHistory)
+	repaired, err := providers.RepairAndValidateToolCallHistory(history)
+	if err != nil {
+		return persistedThreadSnapshot{}, err
+	}
+	tokenMetas, err := loadMetaMessages(s.rt.SessionDir, id)
+	if err != nil {
+		return persistedThreadSnapshot{}, err
+	}
+	loaded := persistedThreadSnapshot{
+		metadata:        metadata,
+		repairedHistory: repaired,
+		repairNeeded:    !reflect.DeepEqual(repaired, history),
+		baselineSeq:     historyHeadSeq,
+		displayHistory:  displayHistory,
+		tokenMetas:      tokenMetas,
+	}
+	systemPrompt := s.rt.StreamRunner.SystemPrompt
+	dmParticipantID := strings.TrimSpace(metadata.DMParticipantID)
+	if dmParticipantID != "" {
+		p, err := session.GetParticipant(s.rt.SessionDir, dmParticipantID)
+		if err != nil {
+			return persistedThreadSnapshot{}, err
+		}
+		loaded.dmRetired = p.RetiredAt != nil
+		systemPrompt, err = s.residentPromptForParticipant(p)
+		if err != nil {
+			return persistedThreadSnapshot{}, err
+		}
+		loaded.history = ensureResidentSystemPrompt(repaired, systemPrompt)
+		return loaded, nil
+	}
+	// The active runtime prompt is configuration, not conversation data. Use it
+	// in memory without rewriting the thread during a read-only load.
+	loaded.history = replaceBaseSystemPrompt(repaired, systemPrompt)
+	return loaded, nil
 }
 
 type forkSourceThread struct {
@@ -582,25 +617,56 @@ func (s *Server) handleThreadEditMessage(req Request) error {
 		th.mu.Unlock()
 		return s.writeResponse(req.ID, nil, errors.New("thread is running"))
 	}
-	current := th.snapshotLocked()
-	nextHistory, draft, err := editHistoryBeforeUserMessage(th.History, th.ID, current.Turns, params.TurnID, params.ItemID)
-	if err != nil {
-		th.mu.Unlock()
-		return s.writeResponse(req.ID, nil, err)
-	}
+	var mutationLease *session.ThreadExecutionLease
 	if th.PersistHistory {
-		if err := rewriteChatHistory(s.rt.SessionDir, th.ID, nextHistory); err != nil {
+		mutationLease, err = s.tryAcquireThreadMutationLease(th.ID)
+		if err != nil {
 			th.mu.Unlock()
 			return s.writeResponse(req.ID, nil, err)
 		}
-		if err := session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(nextHistory), threadPreview(nextHistory)); err != nil {
+		if err := s.refreshDurableThreadHistoryLocked(th); err != nil {
+			releaseThreadMutationLease(th.ID, mutationLease)
+			th.mu.Unlock()
+			return s.writeResponse(req.ID, nil, err)
+		}
+		if th.ReadOnly {
+			releaseThreadMutationLease(th.ID, mutationLease)
+			th.mu.Unlock()
+			return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
+		}
+	}
+	current := th.snapshotLocked()
+	historyBaselineSeq := th.historyHeadSeq
+	nextHistory, draft, err := editHistoryBeforeUserMessage(th.History, th.ID, current.Turns, params.TurnID, params.ItemID)
+	if err != nil {
+		releaseThreadMutationLease(th.ID, mutationLease)
+		th.mu.Unlock()
+		return s.writeResponse(req.ID, nil, err)
+	}
+	committedHistory := nextHistory
+	if th.PersistHistory {
+		if err := rewriteChatHistoryAtBaseline(s.rt.SessionDir, th.ID, nextHistory, historyBaselineSeq); err != nil {
+			releaseThreadMutationLease(th.ID, mutationLease)
+			th.mu.Unlock()
+			return s.writeResponse(req.ID, nil, err)
+		}
+		committedRecords, committedHeadSeq, loadErr := loadProviderPersistedMessages(s.rt.SessionDir, th.ID, false)
+		if loadErr != nil {
+			releaseThreadMutationLease(th.ID, mutationLease)
+			th.mu.Unlock()
+			return s.writeResponse(req.ID, nil, loadErr)
+		}
+		committedHistory = chatMessagesFromPersistedMessages(committedRecords)
+		th.historyHeadSeq = committedHeadSeq
+		if err := session.UpdateIndex(s.rt.SessionDir, th.ID, persistableMessageCount(committedHistory), threadPreview(committedHistory)); err != nil {
+			releaseThreadMutationLease(th.ID, mutationLease)
 			th.mu.Unlock()
 			return s.writeResponse(req.ID, nil, err)
 		}
 	}
 	now := time.Now().UTC()
-	th.History = nextHistory
-	th.Turns = turnsFromHistory(th.ID, nextHistory, now)
+	th.History = committedHistory
+	th.Turns = turnsFromHistory(th.ID, committedHistory, now)
 	th.UpdatedAt = now
 	th.currentTurn = ""
 	th.nextItemIndex = 0
@@ -608,6 +674,7 @@ func (s *Server) handleThreadEditMessage(req Request) error {
 	th.activeReasoningItemID = ""
 	th.toolItems = make(map[string]string)
 	thread := th.snapshotLocked()
+	releaseThreadMutationLease(th.ID, mutationLease)
 	th.mu.Unlock()
 
 	if err := s.writeResponse(req.ID, ThreadEditMessageResult{Thread: thread, Draft: draft}, nil); err != nil {
@@ -642,12 +709,9 @@ func (s *Server) loadForkSourceThread(id string, now time.Time) (forkSourceThrea
 	if err != nil {
 		return forkSourceThread{}, err
 	}
-	if !reflect.DeepEqual(repaired, history) {
-		if err := rewriteChatHistory(s.rt.SessionDir, id, repaired); err != nil {
-			return forkSourceThread{}, err
-		}
-	}
-	history = ensureBaseSystemPrompt(repaired, s.rt.StreamRunner.SystemPrompt)
+	// Forking reads the source snapshot but never mutates it. Any repair is
+	// persisted only by an execution/mutation admission that owns the source.
+	history = replaceBaseSystemPrompt(repaired, s.rt.StreamRunner.SystemPrompt)
 	th := newThreadState(id, history, s.rt.ProviderName, s.rt.Model, s.rt.RootDir, true, now)
 	if metas, err := loadMetaMessages(s.rt.SessionDir, id); err != nil {
 		return forkSourceThread{}, err
@@ -853,14 +917,25 @@ func (s *Server) handleThreadArchive(req Request) error {
 			return s.writeResponse(req.ID, nil, err)
 		}
 	}
+	var mutationLease *session.ThreadExecutionLease
+	if params.Archived {
+		var leaseErr error
+		mutationLease, leaseErr = s.tryAcquireThreadMutationLease(id)
+		if leaseErr != nil {
+			return s.writeResponse(req.ID, nil, leaseErr)
+		}
+	}
 	metadata, err := session.UpdateArchived(s.rt.SessionDir, id, params.Archived)
 	if err != nil {
+		releaseThreadMutationLease(id, mutationLease)
 		return s.writeResponse(req.ID, nil, err)
 	}
 	thread, err := s.threadAfterMetadataUpdate(metadata)
 	if err != nil {
+		releaseThreadMutationLease(id, mutationLease)
 		return s.writeResponse(req.ID, nil, err)
 	}
+	releaseThreadMutationLease(id, mutationLease)
 	return s.writeResponse(req.ID, ThreadArchiveResult{Thread: thread}, nil)
 }
 

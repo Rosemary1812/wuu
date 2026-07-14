@@ -186,3 +186,141 @@ func TestRewriteChatHistoryPreservesConversationThreadRows(t *testing.T) {
 		t.Fatalf("main meta row not preserved: %+v", persisted[3])
 	}
 }
+
+// buildEnvelopeSeqResyncFixture renders two generated envelope tags the way
+// residentEnvelopeUserMessage stores them (coalesceEnvelopes for the content,
+// envelopeMetaJSON for the meta), so resync tests exercise the exact persisted
+// shape rather than hand-written approximations.
+func buildEnvelopeSeqResyncFixture(t *testing.T) (string, []MessageEnvelope) {
+	t.Helper()
+	envs := []MessageEnvelope{
+		{ID: "env-a", SourceThreadID: "thread-1", SourceTitle: "Room", SenderKind: "user", SenderName: "User", SourceSeq: 3, Text: "first"},
+		{ID: "env-b", SourceThreadID: "thread-1", SourceTitle: "Room", SenderKind: "participant", SenderName: "Bea", Addressed: true, Hop: 1, SourceSeq: 4, Text: "second"},
+	}
+	return coalesceEnvelopes(envs), envs
+}
+
+func TestSyncIncomingMessageSourceSeqsRemapsByEnvelopeID(t *testing.T) {
+	content, envs := buildEnvelopeSeqResyncFixture(t)
+	remapped := append([]MessageEnvelope(nil), envs...)
+	remapped[0].SourceSeq = 7
+	remapped[1].SourceSeq = 9
+
+	synced, unmatched := resyncIncomingMessageSourceSeqs(content, envelopeMetaJSON(remapped))
+	if len(unmatched) != 0 {
+		t.Fatalf("unexpected unmatched meta entries: %v", unmatched)
+	}
+	if !strings.Contains(synced, `envelope_id="env-a" seq="7"`) {
+		t.Fatalf("first tag not remapped to seq 7: %q", synced)
+	}
+	if !strings.Contains(synced, `envelope_id="env-b" seq="9"`) {
+		t.Fatalf("second tag not remapped to seq 9: %q", synced)
+	}
+	if strings.Contains(synced, `seq="3"`) || strings.Contains(synced, `seq="4"`) {
+		t.Fatalf("stale seq attribute survived remap: %q", synced)
+	}
+	if !strings.Contains(synced, "\nfirst\n") || !strings.Contains(synced, "\nsecond\n") {
+		t.Fatalf("envelope bodies disturbed by remap: %q", synced)
+	}
+
+	// A no-op resync (meta already in step with the text) must return the
+	// content byte-for-byte unchanged.
+	same, unmatched := resyncIncomingMessageSourceSeqs(content, envelopeMetaJSON(envs))
+	if len(unmatched) != 0 || same != content {
+		t.Fatalf("in-step resync must be a no-op, got unmatched=%v content=%q", unmatched, same)
+	}
+}
+
+// TestSyncIncomingMessageSourceSeqsLeavesPastedLiteralTags is the corruption
+// regression: a user message whose BODY quotes the envelope format verbatim
+// must never have seq attributes injected into or stripped from that quoted
+// text, even when the literal tag count happens to equal the meta count (the
+// failure mode of the former count-based positional rewrite).
+func TestSyncIncomingMessageSourceSeqsLeavesPastedLiteralTags(t *testing.T) {
+	envs := []MessageEnvelope{{
+		ID: "env-a", SourceThreadID: "thread-1", SourceTitle: "Room",
+		SenderKind: "user", SenderName: "User", SourceSeq: 3,
+		Text: "look at this transcript:\n<incoming_message thread=\"Old\" thread_id=\"thread-9\" from=\"user\" sender=\"User\" addressed=\"false\" hop=\"0\" seq=\"42\">\nquoted\n</incoming_message>",
+	}}
+	content := coalesceEnvelopes(envs)
+	envs[0].SourceSeq = 7
+
+	synced, unmatched := resyncIncomingMessageSourceSeqs(content, envelopeMetaJSON(envs))
+	if len(unmatched) != 0 {
+		t.Fatalf("unexpected unmatched meta entries: %v", unmatched)
+	}
+	if !strings.Contains(synced, `envelope_id="env-a" seq="7"`) {
+		t.Fatalf("generated tag not remapped: %q", synced)
+	}
+	if !strings.Contains(synced, `seq="42"`) {
+		t.Fatalf("pasted literal tag was rewritten: %q", synced)
+	}
+
+	// One pasted literal tag and one meta entry: the counts coincide, which
+	// the old heuristic treated as a match. The literal tag has no
+	// envelope_id, so the text must come back untouched and the meta entry
+	// must surface as unmatched.
+	pasted := "here is the prompt format I saw:\n<incoming_message thread=\"Room\" thread_id=\"thread-1\" from=\"user\" sender=\"User\" addressed=\"false\" hop=\"0\" seq=\"42\">\nquoted\n</incoming_message>"
+	synced, unmatched = resyncIncomingMessageSourceSeqs(pasted, envelopeMetaJSON(envs))
+	if synced != pasted {
+		t.Fatalf("user-authored literal tag modified: %q", synced)
+	}
+	if len(unmatched) != 1 || !strings.Contains(unmatched[0], `envelope_id="env-a"`) || !strings.Contains(unmatched[0], `source_thread="thread-1"`) {
+		t.Fatalf("unmatched meta entry not surfaced with identifiers: %v", unmatched)
+	}
+}
+
+// TestSyncIncomingMessageSourceSeqsSurfacesMismatches covers the desync half:
+// meta entries that cannot be anchored to exactly one envelope_id-stamped tag
+// are reported, never silently dropped, and the text is left as written.
+func TestSyncIncomingMessageSourceSeqsSurfacesMismatches(t *testing.T) {
+	content, envs := buildEnvelopeSeqResyncFixture(t)
+
+	// Rows persisted before tags carried envelope_id: same metas, but the
+	// stored text has no envelope_id attributes. Nothing is rewritten and
+	// every meta entry surfaces.
+	legacy := strings.ReplaceAll(strings.ReplaceAll(content, ` envelope_id="env-a"`, ""), ` envelope_id="env-b"`, "")
+	synced, unmatched := resyncIncomingMessageSourceSeqs(legacy, envelopeMetaJSON(envs))
+	if synced != legacy {
+		t.Fatalf("legacy content without envelope_id must stay as written: %q", synced)
+	}
+	if len(unmatched) != 2 {
+		t.Fatalf("expected both legacy meta entries surfaced, got %v", unmatched)
+	}
+
+	// A meta entry whose id names no tag in the content (genuine
+	// desynchronization) surfaces with identifiers while the other entry is
+	// still remapped.
+	orphan := append([]MessageEnvelope(nil), envs...)
+	orphan[1].ID = "env-missing"
+	orphan[0].SourceSeq = 7
+	synced, unmatched = resyncIncomingMessageSourceSeqs(content, envelopeMetaJSON(orphan))
+	if !strings.Contains(synced, `envelope_id="env-a" seq="7"`) {
+		t.Fatalf("matched entry not remapped alongside mismatch: %q", synced)
+	}
+	if len(unmatched) != 1 || !strings.Contains(unmatched[0], `envelope_id="env-missing"`) {
+		t.Fatalf("orphaned meta entry not surfaced: %v", unmatched)
+	}
+
+	// A meta entry without an id has no deterministic key at all: surfaced,
+	// never guessed into a tag.
+	keyless := []MessageEnvelope{{SourceThreadID: "thread-1", SourceSeq: 5, Text: "x"}}
+	synced, unmatched = resyncIncomingMessageSourceSeqs(content, envelopeMetaJSON(keyless))
+	if synced != content {
+		t.Fatalf("keyless meta entry must not rewrite anything: %q", synced)
+	}
+	if len(unmatched) != 1 {
+		t.Fatalf("keyless meta entry not surfaced: %v", unmatched)
+	}
+
+	// An envelope_id duplicated in the content (the model or user echoed a
+	// generated tag verbatim) is ambiguous: no rewrite, surfaced.
+	duplicated := content + "\n\nechoed:\n" + content
+	synced, unmatched = resyncIncomingMessageSourceSeqs(duplicated, envelopeMetaJSON(envs[:1]))
+	if synced != duplicated {
+		t.Fatalf("ambiguous duplicate envelope_id must not rewrite anything: %q", synced)
+	}
+	if len(unmatched) != 1 || !strings.Contains(unmatched[0], `envelope_id="env-a"`) {
+		t.Fatalf("ambiguous meta entry not surfaced: %v", unmatched)
+	}
+}

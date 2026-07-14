@@ -2,7 +2,12 @@ package appserver
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
 	"math/rand"
 	"regexp"
 	"sort"
@@ -29,11 +34,23 @@ func (s *Server) recordEnvelopeReadReceipts(participantID string, envs []Message
 	if s == nil || s.rt == nil {
 		return
 	}
+	marks := residentEnvelopeReadReceiptMarks(participantID, envs, status, at)
+	for _, mark := range marks {
+		if err := session.UpsertMessageMark(s.rt.SessionDir, mark); err != nil {
+			providers.DebugLogf("record read receipt (%s) for %q on %s#%d: %v", status, mark.ParticipantID, mark.SessionID, mark.Seq, err)
+			continue
+		}
+		s.notifyMessageSeen(mark.SessionID, mark.Seq, mark.ParticipantID, status)
+	}
+}
+
+func residentEnvelopeReadReceiptMarks(participantID string, envs []MessageEnvelope, status string, at time.Time) []session.MessageMark {
 	participantID = strings.TrimSpace(participantID)
 	if participantID == "" {
-		return
+		return nil
 	}
 	done := make(map[string]bool, len(envs))
+	marks := make([]session.MessageMark, 0, len(envs))
 	for _, env := range envs {
 		threadID := strings.TrimSpace(env.SourceThreadID)
 		if threadID == "" || env.SourceSeq <= 0 {
@@ -44,14 +61,25 @@ func (s *Server) recordEnvelopeReadReceipts(participantID string, envs []Message
 			continue
 		}
 		done[key] = true
-		// Tag the receipt with the source scope (the cth for reply-subthread
-		// traffic, '' for main stream) so a cth read advances only the cth's
-		// read cursor, never the main-stream one (T3 per-cth cursor).
-		if err := session.MarkMessageSeen(s.rt.SessionDir, threadID, env.SourceSeq, participantID, status, strings.TrimSpace(env.SourceSubthreadID), at); err != nil {
-			providers.DebugLogf("record read receipt (%s) for %q on %s#%d: %v", status, participantID, threadID, env.SourceSeq, err)
-			continue
-		}
-		s.notifyMessageSeen(threadID, env.SourceSeq, participantID, status)
+		marks = append(marks, session.MessageMark{
+			SessionID:     threadID,
+			Seq:           env.SourceSeq,
+			ParticipantID: participantID,
+			Kind:          session.MessageMarkKindSeen,
+			Status:        status,
+			ThreadID:      strings.TrimSpace(env.SourceSubthreadID),
+			At:            at,
+		})
+	}
+	return marks
+}
+
+func (s *Server) notifyEnvelopeReadReceipts(marks []session.MessageMark) {
+	if s == nil {
+		return
+	}
+	for _, mark := range marks {
+		s.notifyMessageSeen(mark.SessionID, mark.Seq, mark.ParticipantID, mark.Status)
 	}
 }
 
@@ -631,7 +659,43 @@ func (s *Server) kickResidentAgent(participantID string) {
 	if !s.beginResidentDrain(participantID) {
 		return
 	}
-	go s.drainResidentAgent(participantID)
+	if !s.startBackground(func() { s.drainResidentAgent(participantID) }) {
+		s.finishResidentDrain(participantID)
+	}
+}
+
+func (s *Server) pendingResidentWakeIntents(participantID, threadID string) []session.ResidentWakeIntent {
+	if s == nil || s.rt == nil {
+		return nil
+	}
+	participantID = strings.TrimSpace(participantID)
+	threadID = strings.TrimSpace(threadID)
+	pending, err := session.PendingResidentWakeIntents(s.rt.SessionDir)
+	if err != nil {
+		providers.DebugLogf("load resident wake intents for %q: %v", participantID, err)
+		return nil
+	}
+	filtered := make([]session.ResidentWakeIntent, 0, len(pending))
+	for _, item := range pending {
+		if item.ParticipantID != participantID || (threadID != "" && item.ThreadID != threadID) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+func (s *Server) acknowledgeResidentWakeIntents(pending []session.ResidentWakeIntent) {
+	if s == nil || s.rt == nil || len(pending) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(pending))
+	for _, item := range pending {
+		ids = append(ids, item.ID)
+	}
+	if _, err := session.AcknowledgeResidentWakeIntents(s.rt.SessionDir, ids); err != nil {
+		providers.DebugLogf("acknowledge resident wake intents %v: %v", ids, err)
+	}
 }
 
 func (s *Server) beginResidentDrain(participantID string) bool {
@@ -647,6 +711,10 @@ func (s *Server) beginResidentDrain(participantID string) bool {
 		s.drainingResidentAgent = make(map[string]bool)
 	}
 	if s.drainingResidentAgent[participantID] {
+		if s.pendingResidentDrain == nil {
+			s.pendingResidentDrain = make(map[string]bool)
+		}
+		s.pendingResidentDrain[participantID] = true
 		return false
 	}
 	s.drainingResidentAgent[participantID] = true
@@ -655,8 +723,13 @@ func (s *Server) beginResidentDrain(participantID string) bool {
 
 func (s *Server) finishResidentDrain(participantID string) {
 	s.residentDrainMu.Lock()
-	defer s.residentDrainMu.Unlock()
+	retry := s.pendingResidentDrain[participantID] && !s.closed.Load()
+	delete(s.pendingResidentDrain, participantID)
 	delete(s.drainingResidentAgent, participantID)
+	s.residentDrainMu.Unlock()
+	if retry {
+		s.kickResidentAgent(participantID)
+	}
 }
 
 // residentDraining reports whether a chat drain is currently in flight for a
@@ -685,6 +758,7 @@ func (s *Server) drainResidentAgent(participantID string) {
 	// stale kick must not resurrect a DM runtime for it.
 	if s.participantRetired(participantID) {
 		providers.DebugLogf("skip resident drain for retired participant %q", participantID)
+		s.acknowledgeResidentWakeIntents(s.pendingResidentWakeIntents(participantID, ""))
 		return
 	}
 	th, err := s.ensureResidentDMThread(participantID)
@@ -698,6 +772,24 @@ func (s *Server) drainResidentAgent(participantID string) {
 	if running {
 		return
 	}
+	// Probe execution ownership before reading the inbox. A closing peer may
+	// have handed a failed prelaunch admission to the durable compensation
+	// journal: that admission temporarily hides its push envelope and advances
+	// its pull receipt, so reading first would incorrectly conclude there is no
+	// work and never reach the recovery barrier. The mutation lease resolves any
+	// journaled admission, then the ordinary turn admission reacquires ownership
+	// after the recovered inbox has been rebuilt.
+	recoveryLease, err := s.tryAcquireThreadMutationLease(th.ID)
+	if err != nil {
+		if errors.Is(err, errThreadExecutionBusy) {
+			s.scheduleThreadExecutionLeaseRetry(func() { s.kickResidentAgent(participantID) })
+			return
+		}
+		providers.DebugLogf("recover resident admission before draining %q: %v", participantID, err)
+		return
+	}
+	releaseThreadMutationLease(th.ID, recoveryLease)
+	wakeIntents := s.pendingResidentWakeIntents(participantID, th.ID)
 	// Decision-five concurrency lock: a named agent busy executing a
 	// task run does not drain its chat inbox concurrently. The
 	// envelopes stay pending and are re-kicked when the run completes
@@ -748,53 +840,92 @@ func (s *Server) drainResidentAgent(participantID string) {
 	}
 	envs = append(envs, inbox...)
 	if len(envs) == 0 {
+		s.acknowledgeResidentWakeIntents(wakeIntents)
 		return
 	}
 	// One chronological batch: pull (older backlog) and push (the message that
 	// woke the agent) are interleaved by arrival time so the model reads them in
 	// order rather than pull-then-push.
 	sort.SliceStable(envs, func(i, j int) bool { return envs[i].CreatedAt.Before(envs[j].CreatedAt) })
-	threadRuntime, err := s.ensureThreadRuntime(th)
-	if err != nil {
-		providers.DebugLogf("ensure resident runtime for %q: %v", participantID, err)
-		return
-	}
-	if threadRuntime != nil && threadRuntime.Toolkit != nil {
-		threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeechForTurn(
-			participantID, residentSpeechHopsByThread(envs), residentSpeechEngagedThreads(envs),
-			s.dispatchedNodesForTurn(participantID, envs), residentSpeechReplySubthreads(envs)))
-		threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
-		threadRuntime.Toolkit.SetTaskManager(s.residentTaskManager(participantID))
-		s.applyEnvelopeBatchCWD(th, threadRuntime, envs)
-	}
+	var threadRuntime *runtime.ThreadRuntime
 	userMsg := residentEnvelopeUserMessage(envs, ids)
-	started, ok, err := s.startResidentTurn(context.Background(), th, userMsg, turnRuntimeSnapshot{}, false, turnReadOnlyIgnore)
+	// Stamp every receipt with one admission identity. Compensation matches the
+	// exact timestamp, so it can restore this batch to unread without deleting a
+	// receipt that another process has since completed or refreshed.
+	admissionMarks := residentEnvelopeReadReceiptMarks(participantID, envs, session.SeenStatusInProgress, time.Now().UTC())
+	started, ok, err := s.startThreadUserTurnWithAdmission(
+		context.Background(), th, userMsg, turnRuntimeSnapshot{}, false, turnReadOnlyIgnore,
+		turnAdmissionHooks{afterLease: func(admitted *threadState, _ *providers.ChatMessage) error {
+			// Runtime construction and all per-turn tool configuration must use
+			// the history/CWD refreshed under this turn's durable lease.
+			var runtimeErr error
+			threadRuntime, runtimeErr = s.ensureThreadRuntimeAfterAdmission(admitted)
+			if runtimeErr != nil {
+				return runtimeErr
+			}
+			if threadRuntime != nil && threadRuntime.Toolkit != nil {
+				threadRuntime.Toolkit.SetParticipantSpeech(s.residentParticipantSpeechForTurn(
+					participantID, residentSpeechHopsByThread(envs), residentSpeechEngagedThreads(envs),
+					s.dispatchedNodesForTurn(participantID, envs), residentSpeechReplySubthreads(envs)))
+				threadRuntime.Toolkit.SetGroupManager(s.residentGroupManager(participantID))
+				threadRuntime.Toolkit.SetTaskManager(s.residentTaskManager(participantID))
+				s.applyEnvelopeBatchCWD(admitted, threadRuntime, envs)
+			}
+			return nil
+		}, residentReadReceipts: admissionMarks},
+	)
 	if err != nil {
+		if errors.Is(err, errThreadExecutionBusy) {
+			s.scheduleThreadExecutionLeaseRetry(func() { s.kickResidentAgent(participantID) })
+			return
+		}
 		providers.DebugLogf("start resident envelope turn for %q: %v", participantID, err)
 		return
 	}
 	if !ok {
 		return
 	}
-	for _, dispatch := range planAttemptDispatches(envs) {
-		if _, err := session.StartTaskAttempt(s.rt.SessionDir, dispatch.AttemptID, time.Now().UTC()); err != nil {
-			started.cancel()
-			providers.DebugLogf("start durable task attempt %q for resident %q: %v", dispatch.AttemptID, participantID, err)
+	dispatches := planAttemptDispatches(envs)
+	attemptIDs := make([]string, 0, len(dispatches))
+	attemptStartedAt := make(map[string]time.Time, len(dispatches))
+	for _, dispatch := range dispatches {
+		attempt, err := session.StartTaskAttempt(s.rt.SessionDir, dispatch.AttemptID, time.Now().UTC())
+		if err != nil {
+			compensateErr := s.compensateStartedResidentTurn(th, started, participantID, ids, attemptIDs, attemptStartedAt, admissionMarks, err)
+			providers.DebugLogf("start durable task attempt %q for resident %q: %v", dispatch.AttemptID, participantID, errors.Join(err, compensateErr))
 			return
 		}
+		attemptIDs = append(attemptIDs, attempt.ID)
+		attemptStartedAt[attempt.ID] = attempt.StartedAt
 	}
-	// The turn is now consuming this batch: mark each source message
-	// in_progress for this resident. Turn outcome (completed/failed) is
-	// recorded later in afterResidentTurn.
-	s.recordEnvelopeReadReceipts(participantID, envs, session.SeenStatusInProgress, time.Now().UTC())
 	if err := s.writeNotification(NotificationTurnStarted, TurnStartedNotification{
 		ThreadID: th.ID,
 		Turn:     started.turn,
 	}); err != nil {
-		started.cancel()
+		if compensateErr := s.compensateStartedResidentTurn(th, started, participantID, ids, attemptIDs, attemptStartedAt, admissionMarks, err); compensateErr != nil {
+			providers.DebugLogf("compensate resident notification failure for %q: %v", participantID, compensateErr)
+		}
 		return
 	}
-	go s.runResidentEnvelopeTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history, envs)
+	launchReady := make(chan struct{})
+	if !s.startBackground(func() {
+		<-launchReady
+		s.runResidentEnvelopeTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history, envs)
+	}) {
+		if compensateErr := s.compensateStartedResidentTurn(th, started, participantID, ids, attemptIDs, attemptStartedAt, admissionMarks, errServerClosed); compensateErr != nil {
+			providers.DebugLogf("compensate rejected resident launch for %q: %v", participantID, compensateErr)
+		}
+		return
+	}
+	// Background ownership is registered before the durable wake is consumed.
+	// If acknowledgement fails, the intent remains and a later probe safely
+	// observes the active thread lease instead of launching a duplicate turn.
+	s.acknowledgeResidentWakeIntents(wakeIntents)
+	// The marker, push consumption, and in-progress receipts committed in one
+	// transaction during admission. Publish the already-durable receipt state
+	// before releasing the runner so completion cannot overtake in-progress.
+	s.notifyEnvelopeReadReceipts(admissionMarks)
+	close(launchReady)
 }
 
 // pullResidentChatEnvelopes is the pull half of delivery: instead of chat being
@@ -873,6 +1004,128 @@ func (s *Server) runResidentEnvelopeTurn(ctx context.Context, th *threadState, t
 	s.runTurnWithRequestContext(ctx, th, threadRuntime, turnID, turnRuntime, history, nil, envs)
 }
 
+// residentCompensationPersistMaxAttempts bounds the compensation journal
+// write. waitBeforeResidentCompensationRetry sleeps a fixed
+// threadExecutionLeaseRetryDelay per attempt, so the cap doubles as a
+// deadline (~5s): long enough to ride out store lock contention, short
+// enough that a store broken for good (disk full, IO error) cannot pin
+// this goroutine — and Server.Close, which waits on it — forever.
+const residentCompensationPersistMaxAttempts = 25
+
+// compensateStartedResidentTurn restores durable admission side effects when a
+// resident turn cannot launch. The stable ClientID on the persisted user row
+// lets the next drain reuse that marker instead of adding a duplicate message.
+func (s *Server) compensateStartedResidentTurn(th *threadState, started startedThreadTurn, participantID string, consumedEnvelopeIDs, attemptIDs []string, attemptStartedAt map[string]time.Time, admissionMarks []session.MessageMark, cause error) error {
+	if s == nil || s.rt == nil || th == nil {
+		return errors.New("resident admission compensation requires server, runtime, and thread")
+	}
+	participantID = strings.TrimSpace(participantID)
+	pending := session.ResidentAdmissionCompensation{
+		ID:                 th.ID + "#" + started.turnID,
+		ParticipantID:      participantID,
+		ThreadID:           th.ID,
+		AttemptIDs:         append([]string(nil), attemptIDs...),
+		AttemptStartedAt:   cloneResidentAdmissionTimes(attemptStartedAt),
+		EnvelopeIDs:        append([]string(nil), consumedEnvelopeIDs...),
+		EnvelopeConsumedAt: started.admittedAt,
+		Marks:              append([]session.MessageMark(nil), admissionMarks...),
+		CreatedAt:          started.admittedAt,
+	}
+
+	// Persist the handoff before the first rollback attempt. Once this succeeds,
+	// an app-server that exits during retry can safely leave the exact admission
+	// identity for the next thread-lease owner or boot owner to recover.
+	persistAttempt := 0
+	for {
+		persistAttempt++
+		err := session.SaveResidentAdmissionCompensation(s.rt.SessionDir, pending)
+		if err == nil {
+			break
+		}
+		providers.DebugLogf("persist resident admission compensation %q (attempt %d): %v", pending.ID, persistAttempt, err)
+		if s.closed.Load() || persistAttempt >= residentCompensationPersistMaxAttempts {
+			// Nothing durable records this rollback yet, so neither the live-peer
+			// watcher nor boot recovery can see it; only cold-boot settlement will
+			// expire the stranded receipts. Surface the full admission identity
+			// for manual reconciliation, then terminalize the never-launched turn
+			// so the execution lease is released instead of blocking Close on
+			// this goroutine forever. Unlike the resolve escape below there is no
+			// journal to hand off, so the turn is genuinely dead: recording it as
+			// failed is the honest state, not a spurious failure a later recovery
+			// would contradict.
+			log.Printf("wuu: resident admission compensation %q was not journaled after %d attempt(s) (participant %q, thread %q, attempt ids %v, envelope ids %v, receipt marks %v): %v",
+				pending.ID, persistAttempt, pending.ParticipantID, pending.ThreadID, pending.AttemptIDs, pending.EnvelopeIDs, residentAdmissionMarkKeys(pending.Marks), err)
+			abortStartedThreadTurn(th, started, cause)
+			return fmt.Errorf("persist resident admission compensation %q abandoned after %d attempt(s): %w", pending.ID, persistAttempt, err)
+		}
+		s.waitBeforeResidentCompensationRetry("persist", persistAttempt, err)
+	}
+
+	resolveAttempt := 0
+	for {
+		resolveAttempt++
+		err := s.resolveResidentAdmissionCompensation(pending)
+		if err == nil {
+			abortStartedThreadTurn(th, started, cause)
+			s.scheduleThreadExecutionLeaseRetry(func() { s.kickResidentAgent(participantID) })
+			return nil
+		}
+		providers.DebugLogf("resolve resident admission compensation %q (attempt %d): %v", pending.ID, resolveAttempt, err)
+		if s.closed.Load() {
+			// The durable intent is now the recovery authority. Release only the
+			// OS ownership barrier so another Server in this same process can boot
+			// and resolve it; do not terminalize the turn or start another drain.
+			if started.cancel != nil {
+				started.cancel()
+			}
+			th.mu.Lock()
+			releaseErr := th.handoffResidentCompensationToJournalLocked(started.turnID)
+			th.mu.Unlock()
+			return errors.Join(
+				fmt.Errorf("resident admission compensation %q deferred to durable recovery: %w", pending.ID, err),
+				releaseErr,
+			)
+		}
+		s.waitBeforeResidentCompensationRetry("resolve", resolveAttempt, err)
+	}
+}
+
+// residentAdmissionMarkKeys renders receipt marks as thread#seq identifiers so
+// a reconciliation log names the exact rows left at in_progress.
+func residentAdmissionMarkKeys(marks []session.MessageMark) []string {
+	keys := make([]string, 0, len(marks))
+	for _, mark := range marks {
+		keys = append(keys, mark.SessionID+"#"+strconv.Itoa(mark.Seq))
+	}
+	return keys
+}
+
+func cloneResidentAdmissionTimes(values map[string]time.Time) map[string]time.Time {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]time.Time, len(values))
+	for id, at := range values {
+		cloned[id] = at
+	}
+	return cloned
+}
+
+func (s *Server) resolveResidentAdmissionCompensation(pending session.ResidentAdmissionCompensation) error {
+	if s.resolveResidentCompensationForTest != nil {
+		return s.resolveResidentCompensationForTest(pending)
+	}
+	return session.ResolveResidentAdmissionCompensation(s.rt.SessionDir, pending)
+}
+
+func (s *Server) waitBeforeResidentCompensationRetry(phase string, attempt int, err error) {
+	if s.beforeResidentCompensationRetryForTest != nil {
+		s.beforeResidentCompensationRetryForTest(phase, attempt, err)
+		return
+	}
+	time.Sleep(threadExecutionLeaseRetryDelay)
+}
+
 // applyEnvelopeBatchCWD sets an envelope-drain turn's tool execution root
 // from the workspace focus the incoming batch carries
 // (2026-07-03-workspace-focus.md "carry source-thread workspace focus on
@@ -930,9 +1183,34 @@ func residentEnvelopeUserMessage(envs []MessageEnvelope, consumedIDs []string) p
 		Role:                       "user",
 		Content:                    coalesceEnvelopes(envs),
 		DisplayContent:             residentEnvelopeDisplayContent(envs),
+		ClientID:                   residentEnvelopeClientID(envs, consumedIDs),
 		EnvelopeMeta:               envelopeMetaJSON(envs),
 		ConsumeResidentEnvelopeIDs: append([]string(nil), consumedIDs...),
 	}
+}
+
+func residentEnvelopeClientID(envs []MessageEnvelope, consumedIDs []string) string {
+	parts := make([]string, 0, len(envs)+len(consumedIDs))
+	for _, env := range envs {
+		if env.SourceSeq > 0 && strings.TrimSpace(env.SourceThreadID) != "" {
+			parts = append(parts, strings.Join([]string{
+				strings.TrimSpace(env.SourceThreadID),
+				strings.TrimSpace(env.SourceSubthreadID),
+				strconv.Itoa(env.SourceSeq),
+				strings.TrimSpace(env.TaskAttemptID),
+			}, "#"))
+			continue
+		}
+		parts = append(parts, "envelope#"+strings.TrimSpace(env.ID))
+	}
+	for _, id := range consumedIDs {
+		parts = append(parts, "inbox#"+strings.TrimSpace(id))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return "resident-envelope:" + hex.EncodeToString(sum[:12])
 }
 
 // residentEnvelopeDisplayContent is the UI-facing text of an envelope user
@@ -1124,7 +1402,6 @@ func (s *Server) afterResidentTurn(th *threadState, participantID string, envs [
 	// move the node/task out of the completing snapshot). No-op unless this batch
 	// was a plan dispatch.
 	s.autoCompleteTaskNodesAfterTurn(participantID, envs, turn, askedQuestion, dispatched)
-	s.kickResidentAgent(participantID)
 }
 
 // fallbackDMReplyFromFinalAnswer keeps replies alive with models that ignore

@@ -59,8 +59,8 @@
      shrinks toward 0 as the fill grows. The 420ms easing mirrors the
      token-speed gauge so the two meters settle at the same cadence. */
   transition:
-    stroke-dashoffset 420ms cubic-bezier(0.16, 1, 0.3, 1),
-    stroke 420ms cubic-bezier(0.16, 1, 0.3, 1);
+    stroke-dashoffset 420ms var(--ease-out),
+    stroke 420ms var(--ease-out);
   will-change: stroke-dashoffset;
 }
 

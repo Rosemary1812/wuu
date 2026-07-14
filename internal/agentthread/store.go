@@ -43,7 +43,7 @@ func (s *Store) UpsertThread(meta Metadata) error {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create thread store: %w", err)
 	}
-	threads, err := s.loadThreadsLocked()
+	threads, err := s.loadThreads()
 	if err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func (s *Store) RecordStatus(meta Metadata) error {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create thread store: %w", err)
 	}
-	threads, err := s.loadThreadsLocked()
+	threads, err := s.loadThreads()
 	if err != nil {
 		return err
 	}
@@ -120,7 +120,7 @@ func (s *Store) RecordEdgeStatus(meta Metadata) error {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create thread store: %w", err)
 	}
-	threads, err := s.loadThreadsLocked()
+	threads, err := s.loadThreads()
 	if err != nil {
 		return err
 	}
@@ -166,6 +166,48 @@ func (s *Store) RecordCommunication(threadID string, communication InterAgentCom
 	})
 }
 
+// RecordResultCommunication durably installs one idempotent parent inbox item
+// for a terminal child result. Replays may call it repeatedly, but the stable
+// result ID ensures the parent event log contains only one pending delivery.
+func (s *Store) RecordResultCommunication(threadID, resultID string, communication InterAgentCommunication) (bool, error) {
+	if s == nil || s.dir == "" {
+		return true, nil
+	}
+	threadID = strings.TrimSpace(threadID)
+	resultID = strings.TrimSpace(resultID)
+	if resultID == "" {
+		return false, errors.New("result id is required")
+	}
+	release, err := s.lockStore()
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		return false, fmt.Errorf("create thread store: %w", err)
+	}
+	events, err := s.loadEvents()
+	if err != nil {
+		return false, err
+	}
+	for _, event := range events {
+		if event.Type == EventMessage && strings.TrimSpace(event.ThreadID) == threadID && strings.TrimSpace(event.ResultID) == resultID {
+			return false, nil
+		}
+	}
+	return true, s.appendEventLocked(Event{
+		Type:          EventMessage,
+		ThreadID:      threadID,
+		ResultID:      resultID,
+		Path:          string(communication.Recipient),
+		AuthorPath:    string(communication.Author),
+		RecipientPath: string(communication.Recipient),
+		Message:       communication.Content,
+		TriggerTurn:   communication.TriggerTurn,
+		CreatedAt:     time.Now().UTC(),
+	})
+}
+
 func (s *Store) AppendEvent(event Event) error {
 	if s == nil || s.dir == "" {
 		return nil
@@ -185,24 +227,14 @@ func (s *Store) ListThreads() ([]Metadata, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	release, err := s.lockStore()
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	return s.loadThreadsLocked()
+	return s.loadThreads()
 }
 
 func (s *Store) ReadEvents() ([]Event, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	release, err := s.lockStore()
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	return s.readEventsLocked()
+	return s.loadEvents()
 }
 
 // ClaimResultDelivery compares and appends a result claim while holding the
@@ -224,7 +256,7 @@ func (s *Store) ClaimResultDelivery(event Event) (bool, string, error) {
 		return false, "", err
 	}
 	defer release()
-	events, err := s.readEventsLocked()
+	events, err := s.loadEvents()
 	if err != nil {
 		return false, "", err
 	}
@@ -242,6 +274,45 @@ func (s *Store) ClaimResultDelivery(event Event) (bool, string, error) {
 		return false, "", err
 	}
 	return true, "", nil
+}
+
+// TransitionResultDelivery atomically advances a two-phase consumer claim.
+// It is used by durable inbox delivery: pending reserves the result, and the
+// applied consumer is recorded only after the recipient's terminal history
+// proves that the inbox message reached a completed turn.
+func (s *Store) TransitionResultDelivery(event Event, fromConsumer string) (bool, string, error) {
+	if s == nil || s.dir == "" {
+		return false, "", nil
+	}
+	resultID := strings.TrimSpace(event.ResultID)
+	fromConsumer = strings.TrimSpace(fromConsumer)
+	consumer := strings.TrimSpace(event.Consumer)
+	if resultID == "" {
+		return false, "", errors.New("result id is required")
+	}
+	if fromConsumer == "" || consumer == "" {
+		return false, "", errors.New("result consumers are required")
+	}
+	release, err := s.lockStore()
+	if err != nil {
+		return false, "", err
+	}
+	defer release()
+	events, err := s.loadEvents()
+	if err != nil {
+		return false, "", err
+	}
+	ready, consumedBy := resultDeliveryState(events, resultID)
+	if !ready || consumedBy != fromConsumer {
+		return false, consumedBy, nil
+	}
+	event.Type = EventResultClaim
+	event.ResultID = resultID
+	event.Consumer = consumer
+	if err := s.appendEventLocked(event); err != nil {
+		return false, consumedBy, err
+	}
+	return true, consumer, nil
 }
 
 // ReleaseResultDelivery compares and appends a result release while holding
@@ -263,7 +334,7 @@ func (s *Store) ReleaseResultDelivery(event Event) (bool, error) {
 		return false, err
 	}
 	defer release()
-	events, err := s.readEventsLocked()
+	events, err := s.loadEvents()
 	if err != nil {
 		return false, err
 	}
@@ -280,6 +351,13 @@ func (s *Store) ReleaseResultDelivery(event Event) (bool, error) {
 	return true, nil
 }
 
+// lockStore serializes durable read-modify-write transactions, in-process and
+// across processes. Pure read methods must not take it: the thread index is
+// replaced via atomic rename and the event log is append-only with a scanner
+// that skips an incomplete tail line, so direct reads always observe a
+// complete snapshot. Reads also must not block on s.mu, because a writer
+// waiting on the cross-process lock holds s.mu for the whole wait and would
+// stall every read behind a wedged transaction in another process.
 func (s *Store) lockStore() (func(), error) {
 	s.mu.Lock()
 	durable, err := storelock.Acquire(s.dir)
@@ -293,7 +371,11 @@ func (s *Store) lockStore() (func(), error) {
 	}, nil
 }
 
-func (s *Store) readEventsLocked() ([]Event, error) {
+// loadEvents reads the append-only event log. It is safe without the store
+// lock because appends land whole lines and the scanner skips an incomplete
+// tail; transactional methods call it under lockStore for read-modify-write
+// atomicity.
+func (s *Store) loadEvents() ([]Event, error) {
 	path := filepath.Join(s.dir, "events.jsonl")
 	file, err := os.Open(path)
 	if err != nil {
@@ -343,7 +425,10 @@ func resultDeliveryState(events []Event, resultID string) (bool, string) {
 	return ready, consumedBy
 }
 
-func (s *Store) loadThreadsLocked() ([]Metadata, error) {
+// loadThreads reads the thread index. It is safe without the store lock
+// because writers replace the index atomically; write transactions call it
+// under lockStore for read-modify-write atomicity.
+func (s *Store) loadThreads() ([]Metadata, error) {
 	path := filepath.Join(s.dir, "threads.json")
 	data, err := os.ReadFile(path)
 	if err != nil {

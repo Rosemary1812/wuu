@@ -33,10 +33,14 @@ var (
 )
 
 type threadState struct {
-	ID               string
-	ParentID         string
-	AgentPath        string
-	History          []providers.ChatMessage
+	ID        string
+	ParentID  string
+	AgentPath string
+	History   []providers.ChatMessage
+	// historyHeadSeq is the physical append-only session_messages head that
+	// History was reconstructed through. It must not be derived from the
+	// logical messages: a checkpoint may retain no records or only old seqs.
+	historyHeadSeq   int
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	LastAccessedAt   time.Time
@@ -74,6 +78,7 @@ type threadState struct {
 
 	execRuntime          *runtime.ThreadRuntime
 	pendingRuntimeUpdate *threadRuntimeUpdate
+	pendingRuntimeReset  bool
 	runtimeSubscription  *threadRuntimeSubscription
 
 	mu                  sync.Mutex
@@ -83,7 +88,13 @@ type threadState struct {
 	runningProviderName string
 	runningModel        string
 	cancel              context.CancelFunc
-	pendingSteers       []providers.ChatMessage
+	executionLease      *session.ThreadExecutionLease
+	admissionReserved   bool
+	// compensationDeferred means shutdown left a durable resident admission
+	// rollback journal for the next Server. Close must not wait forever for an
+	// operation deliberately handed to boot recovery.
+	compensationDeferred bool
+	pendingSteers        []providers.ChatMessage
 
 	nextItemIndex         int
 	activeAgentItemID     string
@@ -96,6 +107,7 @@ type threadRuntimeSubscription struct {
 	statusCh             chan subagent.Notification
 	streamCh             chan subagent.StreamNotification
 	participantMessageCh chan agentcontrol.ParticipantMessage
+	terminalUnsubscribe  func()
 	done                 chan struct{}
 	wg                   sync.WaitGroup
 	once                 sync.Once
@@ -119,6 +131,25 @@ type threadRuntimeUpdate struct {
 	SystemPrompt     string
 }
 
+type backgroundLaunch struct {
+	decision chan bool
+	once     sync.Once
+}
+
+func (l *backgroundLaunch) Commit() {
+	if l == nil {
+		return
+	}
+	l.once.Do(func() { l.decision <- true })
+}
+
+func (l *backgroundLaunch) Cancel() {
+	if l == nil {
+		return
+	}
+	l.once.Do(func() { l.decision <- false })
+}
+
 type Server struct {
 	rt      *runtime.Session
 	out     io.Writer
@@ -133,6 +164,9 @@ type Server struct {
 	mu      sync.Mutex
 	threads map[string]*threadState
 
+	agentTerminalFinalizationMu sync.Mutex
+	agentTerminalFinalizations  map[agentTerminalFinalizationKey]struct{}
+
 	agentCompletionMu            sync.Mutex
 	pendingAgentCompletionTurns  map[string][]agentCompletionTurn
 	drainingAgentCompletionTurns map[string]bool
@@ -146,13 +180,22 @@ type Server struct {
 
 	residentDrainMu       sync.Mutex
 	drainingResidentAgent map[string]bool
+	pendingResidentDrain  map[string]bool
 
-	idleUnreadWakeMu           sync.Mutex
-	idleUnreadWakeTimers       map[string]*time.Timer
-	idleUnreadWakeWaveByThread map[string]int
-	idleUnreadWakeLastSpeaker  map[string]string
-	idleUnreadWakeDelayForTest func(wave int) time.Duration
-	idleUnreadWakeRand         *rand.Rand
+	idleUnreadWakeMu                       sync.Mutex
+	idleUnreadWakeTimers                   map[string]*time.Timer
+	idleUnreadWakeWaveByThread             map[string]int
+	idleUnreadWakeLastSpeaker              map[string]string
+	idleUnreadWakeDelayForTest             func(wave int) time.Duration
+	idleUnreadWakeRand                     *rand.Rand
+	rewriteChatHistoryForTest              func(string, string, []providers.ChatMessage) error
+	beforeResidentTurnFinalizeForTest      func(threadID string)
+	afterLifecycleHistoryAppendForTest     func(threadID string)
+	resolveResidentCompensationForTest     func(session.ResidentAdmissionCompensation) error
+	deleteSessionForTest                   func(string) (session.Session, error)
+	beforeResidentCompensationRetryForTest func(phase string, attempt int, err error)
+	afterWorkerShutdownStopWavesForTest    func()
+	beforeQueuedTurnBackgroundForTest      func()
 
 	// residentTurnSpeech maps a participant id to its current turn's speech
 	// limiter, so afterResidentTurn can tell whether the resident already spoke
@@ -218,9 +261,12 @@ type Server struct {
 	activityUnsubscribe          func()
 	backgroundMu                 sync.Mutex
 	backgroundWG                 sync.WaitGroup
-	backgroundCount              atomic.Int64
+	residentCompensationOnce     sync.Once
+	residentCompensationDone     chan struct{}
 	closeOnce                    sync.Once
 	closed                       atomic.Bool
+	presenceLease                *session.AppServerPresenceLease
+	startupErr                   error
 
 	// sideThreadStore persists side threads (1:<=1 binding per main
 	// thread). Nil when SessionDir is unset; handleSideThreadOpen /
@@ -250,6 +296,7 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		drainingQueuedTurns:          make(map[string]bool),
 		drainingGoalContinuation:     make(map[string]bool),
 		drainingResidentAgent:        make(map[string]bool),
+		pendingResidentDrain:         make(map[string]bool),
 		idleUnreadWakeTimers:         make(map[string]*time.Timer),
 		idleUnreadWakeWaveByThread:   make(map[string]int),
 		idleUnreadWakeLastSpeaker:    make(map[string]string),
@@ -260,9 +307,50 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		inferenceMaintenanceStop:     make(chan struct{}),
 		sideTurns:                    make(map[string]*sideThreadTurn),
 	}
+	bootOwner := false
+	if rt != nil && strings.TrimSpace(rt.SessionDir) != "" {
+		lease, first, err := session.AcquireAppServerPresence(rt.SessionDir)
+		if err != nil {
+			s.startupErr = fmt.Errorf("acquire app-server presence: %w", err)
+			return s
+		}
+		s.presenceLease = lease
+		bootOwner = first
+	}
 	if rt != nil && strings.TrimSpace(rt.SessionDir) != "" {
 		s.sideThreadStore = sidethread.NewStore(filepath.Join(rt.SessionDir, "sidethreads"))
 	}
+	if bootOwner {
+		// Only the first live app-server owns crash recovery. A second server
+		// sharing SessionDir must not expire the first server's live resident
+		// admission, task attempt, or inference operation.
+		if err := session.MigrateResidentInboxExpiredAt(rt.SessionDir); err != nil {
+			providers.DebugLogf("resident_inbox expired_at migration: %v", err)
+		}
+		recovered, err := session.RecoverResidentAdmissionCompensations(rt.SessionDir)
+		if err != nil {
+			s.startupErr = fmt.Errorf("recover resident admission compensation: %w", err)
+			return s
+		}
+		if recovered > 0 {
+			providers.DebugLogf("recovered %d resident admission compensation(s)", recovered)
+		}
+		if _, err := session.DiscardResidentWakeIntents(rt.SessionDir); err != nil {
+			s.startupErr = fmt.Errorf("settle resident wake intents: %w", err)
+			return s
+		}
+		s.recoverSideThreadsOnBoot()
+		s.settleOnBoot()
+	}
+	if s.presenceLease != nil {
+		if err := s.presenceLease.FinalizeStartup(); err != nil {
+			// Retain the startup/exclusive lock until Close. Blocking a peer is
+			// safer than letting it misclassify this live server as crashed.
+			s.startupErr = fmt.Errorf("finalize app-server presence: %w", err)
+			return s
+		}
+	}
+	s.startResidentCompensationRecovery()
 	if store != nil && rt != nil && rt.Toolkit != nil {
 		if manager := rt.Toolkit.MCPManager(); manager != nil {
 			manager.SetOAuthManager(mcp.NewOAuthManager(store, httpClient))
@@ -282,23 +370,6 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 			logDefaultParticipantSeedError(s.ensureDefaultParticipant())
 		}
 	}
-	// Production-schema migration (issue #3 pivot): pre-existing
-	// databases from before the pivot don't have the `expired_at`
-	// column (CREATE TABLE IF NOT EXISTS is a no-op for existing
-	// tables). One-shot ALTER closes that gap; idempotent for
-	// newDBs (the migration helper itself swallows "duplicate
-	// column" as success). Settle then runs against the
-	// now-up-to-date schema.
-	if err := session.MigrateResidentInboxExpiredAt(s.rt.SessionDir); err != nil {
-		providers.DebugLogf("resident_inbox expired_at migration: %v", err)
-	}
-	// Boot-time settle (issue #3 pivot, user spec: "重启不替过去补课",
-	// "不起任何回合、不烧一个 token"). A previous process may have left
-	// envelopes pending in the resident inbox or read receipts in_progress
-	// when it died. settleOnBoot flips both to terminal expired states
-	// without kicking the resident or starting any turn — boot must not
-	// burn tokens for the previous process's unfinished work.
-	s.settleOnBoot()
 	s.startInferenceJournalMaintenance()
 	return s
 }
@@ -435,20 +506,36 @@ func (s *Server) startBackground(work func()) bool {
 		return false
 	}
 	s.backgroundWG.Add(1)
-	s.backgroundCount.Add(1)
 	s.backgroundMu.Unlock()
 	go func() {
-		defer func() {
-			s.backgroundCount.Add(-1)
-			s.backgroundWG.Done()
-		}()
+		defer s.backgroundWG.Done()
 		work()
 	}()
 	return true
 }
 
-// Close stops background work owned by this app-server connection. The shared
-// runtime.Session remains owned by the caller and is cleaned up separately.
+// reserveBackground registers shutdown ownership before a caller publishes a
+// started turn. The work remains gated until Commit; Cancel releases the owned
+// goroutine without running it. Callers should defer Cancel immediately.
+func (s *Server) reserveBackground(work func()) (*backgroundLaunch, bool) {
+	if work == nil {
+		return nil, false
+	}
+	launch := &backgroundLaunch{decision: make(chan bool, 1)}
+	if !s.startBackground(func() {
+		if <-launch.decision {
+			work()
+		}
+	}) {
+		return nil, false
+	}
+	return launch, true
+}
+
+// Close synchronously stops work owned by this app-server connection. It does
+// not return until locally admitted turns, workers, and their durable terminal
+// finalizers have released execution ownership. The shared runtime.Session
+// remains owned by the caller and may be cleaned up after Close returns.
 func (s *Server) Close() {
 	if s == nil {
 		return
@@ -457,9 +544,43 @@ func (s *Server) Close() {
 		s.closed.Store(true)
 		s.cancelSideThreads()
 		// Synchronize with startBackground so no new owned goroutine can be
-		// added after shutdown begins.
+		// added after the shutdown waiter begins.
 		s.backgroundMu.Lock()
 		s.backgroundMu.Unlock()
+
+		s.mu.Lock()
+		threads := make([]*threadState, 0, len(s.threads))
+		for _, th := range s.threads {
+			if th != nil {
+				threads = append(threads, th)
+			}
+		}
+		clear(s.threads)
+		s.mu.Unlock()
+
+		// Close worker-turn admission before the first cancellation wave. BeginShutdown
+		// synchronizes with any Manager.Spawn/Followup already at its commit point,
+		// so StopAll cannot miss a worker that appears immediately behind it.
+		controls := make(map[*agentcontrol.AgentControl]struct{})
+		collectThreadAgentControls(threads, controls)
+		for control := range controls {
+			control.BeginShutdown()
+		}
+		// Cancellation is asynchronous, so issue it to all threads first instead
+		// of serializing shutdown behind one provider.
+		for _, th := range threads {
+			th.mu.Lock()
+			cancel := th.cancel
+			th.mu.Unlock()
+			if cancel != nil {
+				cancel()
+			}
+		}
+		for control := range controls {
+			control.StopAll()
+			control.YieldWorkerTerminalFinalizations()
+		}
+
 		s.stopInferenceJournalMaintenance()
 		if s.activityUnsubscribe != nil {
 			s.activityUnsubscribe()
@@ -490,37 +611,88 @@ func (s *Server) Close() {
 		s.goalContinuationMu.Unlock()
 		s.residentDrainMu.Lock()
 		clear(s.drainingResidentAgent)
+		clear(s.pendingResidentDrain)
 		s.residentDrainMu.Unlock()
 
-		s.mu.Lock()
-		threads := make([]*threadState, 0, len(s.threads))
-		for _, th := range s.threads {
-			if th != nil {
-				threads = append(threads, th)
-			}
-		}
-		clear(s.threads)
-		s.mu.Unlock()
-
-		// Cancel every root turn and child run before detaching notification
-		// subscriptions. Cancellation is asynchronous, so issue it to all threads
-		// first instead of serializing shutdown behind one provider.
-		for _, th := range threads {
-			th.mu.Lock()
-			cancel := th.cancel
-			threadRuntime := th.execRuntime
-			th.mu.Unlock()
-			if cancel != nil {
-				cancel()
-			}
-			if threadRuntime != nil && threadRuntime.AgentControl != nil {
-				threadRuntime.AgentControl.StopAll()
-			}
-		}
+		s.waitForOwnedShutdown(threads, controls)
 		for _, th := range threads {
 			releaseThreadRuntime(th)
 		}
+		s.releasePresence()
 	})
+}
+
+func (s *Server) waitForOwnedShutdown(threads []*threadState, controls map[*agentcontrol.AgentControl]struct{}) {
+	if s == nil {
+		return
+	}
+	// Drain/title/side workers can still have admitted a turn immediately before
+	// Close marked the server closed. Wait for those launchers first, then for
+	// every turn/worker lease this Server owns to be released by its normal
+	// terminal path. External owners are deliberately absent from these local
+	// snapshots, so shutdown never waits for unrelated app-server processes.
+	s.backgroundWG.Wait()
+	// A launcher already inside startBackground may have attached a thread
+	// runtime after the first shutdown snapshot. Once all launchers and turns
+	// have stopped, collect those late local controls and cancel their workers
+	// before waiting for the final execution leases.
+	collectThreadAgentControls(threads, controls)
+	for control := range controls {
+		control.BeginShutdown()
+		control.StopAll()
+		control.YieldWorkerTerminalFinalizations()
+	}
+	if s.afterWorkerShutdownStopWavesForTest != nil {
+		s.afterWorkerShutdownStopWavesForTest()
+	}
+	for shutdownExecutionActive(threads, controls) {
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func collectThreadAgentControls(threads []*threadState, controls map[*agentcontrol.AgentControl]struct{}) {
+	for _, th := range threads {
+		if th == nil {
+			continue
+		}
+		th.mu.Lock()
+		threadRuntime := th.execRuntime
+		th.mu.Unlock()
+		if threadRuntime != nil && threadRuntime.AgentControl != nil {
+			controls[threadRuntime.AgentControl] = struct{}{}
+		}
+	}
+}
+
+func (s *Server) releasePresence() {
+	if s == nil || s.presenceLease == nil {
+		return
+	}
+	lease := s.presenceLease
+	s.presenceLease = nil
+	if err := lease.Release(); err != nil {
+		providers.DebugLogf("release app-server presence: %v", err)
+	}
+}
+
+func shutdownExecutionActive(threads []*threadState, controls map[*agentcontrol.AgentControl]struct{}) bool {
+	for _, th := range threads {
+		if th == nil {
+			continue
+		}
+		th.mu.Lock()
+		owned := th.executionLease != nil || th.admissionReserved
+		th.mu.Unlock()
+		if owned {
+			return true
+		}
+	}
+	for control := range controls {
+		if control != nil && control.HasOwnedWorkerExecutions() {
+			return true
+		}
+	}
+	return false
 }
 
 func RunStdio(ctx context.Context, rt *runtime.Session, in io.Reader, out io.Writer) error {
@@ -529,10 +701,19 @@ func RunStdio(ctx context.Context, rt *runtime.Session, in io.Reader, out io.Wri
 	}
 	s := New(rt, out)
 	defer s.Close()
+	if s.startupErr != nil {
+		return s.startupErr
+	}
 	return runStdioScanner(ctx, s, in)
 }
 
 func (s *Server) handleLine(ctx context.Context, raw []byte) error {
+	if s == nil {
+		return errors.New("app-server is required")
+	}
+	if s.startupErr != nil {
+		return s.startupErr
+	}
 	var req Request
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return s.writeResponse(nil, nil, fmt.Errorf("parse request: %w", err))
@@ -596,6 +777,8 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		return s.handleSideThreadSendMessage(req)
 	case MethodSideThreadInterrupt:
 		return s.handleSideThreadInterrupt(req)
+	case MethodSideThreadReset:
+		return s.handleSideThreadReset(req)
 	case MethodThreadList:
 		return s.handleThreadList(req)
 	case MethodThreadListArchived:

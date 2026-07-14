@@ -30,6 +30,15 @@ type Store struct {
 	mu  sync.Mutex
 }
 
+// DeleteStage is a reversible side-thread deletion prepared under the store
+// lock. The staged file remains readable through Store until Commit removes it,
+// so a crash or a failed main-thread transaction cannot hide conversation data.
+type DeleteStage struct {
+	store  *Store
+	key    string
+	exists bool
+}
+
 // NewStore returns a Store rooted at dir. The directory is created
 // lazily on the first write, so Load / Exists can probe an absent side
 // thread without leaving artifacts behind.
@@ -55,8 +64,7 @@ func (s *Store) Load(mainThreadID string) (*SideThread, error) {
 	if key == "" {
 		return nil, ErrNotFound
 	}
-	path := s.pathFor(key)
-	data, err := os.ReadFile(path)
+	data, err := s.readRecord(key)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrNotFound
@@ -79,14 +87,17 @@ func (s *Store) Exists(mainThreadID string) (bool, error) {
 	if key == "" {
 		return false, nil
 	}
-	_, err := os.Stat(s.pathFor(key))
-	if err == nil {
+	if _, err := os.Stat(s.pathFor(key)); err == nil {
 		return true, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
 	}
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
+	if _, err := os.Stat(s.stagedPathFor(key)); err == nil {
+		return true, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
 	}
-	return false, err
+	return false, nil
 }
 
 // Save persists st atomically. The directory is created on demand and
@@ -107,7 +118,10 @@ func (s *Store) Save(st *SideThread) error {
 		return err
 	}
 	defer release()
-	path := s.pathFor(key)
+	path, err := s.activePathFor(key)
+	if err != nil {
+		return err
+	}
 	previousRevision := uint64(0)
 	if data, readErr := os.ReadFile(path); readErr == nil {
 		var previous SideThread
@@ -151,7 +165,10 @@ func (s *Store) mutateRecord(mainThreadID string, fn func(*SideThread) error) (*
 		return nil, err
 	}
 	defer release()
-	path := s.pathFor(key)
+	path, err := s.activePathFor(key)
+	if err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -209,7 +226,10 @@ func (s *Store) BeginTurnWithSideThreadID(mainThreadID, sideThreadID, prompt, us
 	}
 	defer release()
 
-	path := s.pathFor(key)
+	path, err := s.activePathFor(key)
+	if err != nil {
+		return nil, err
+	}
 	var st SideThread
 	data, err := os.ReadFile(path)
 	switch {
@@ -268,6 +288,63 @@ func (s *Store) BeginTurnWithSideThreadID(mainThreadID, sideThreadID, prompt, us
 		return nil, err
 	}
 	return cloneSideThread(&st), nil
+}
+
+// RollbackTurn removes an accepted turn whose execution never started, so the
+// durable record matches the failure the caller reports. A record created by
+// that turn's BeginTurn is deleted outright; an older record keeps the
+// terminal status of its most recent assistant reply.
+func (s *Store) RollbackTurn(mainThreadID, userMessageID, assistantMessageID string) error {
+	if s == nil || s.dir == "" {
+		return nil
+	}
+	key := normalizeKey(mainThreadID)
+	if key == "" {
+		return nil
+	}
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
+	path, err := s.activePathFor(key)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read side thread %s: %w", key, err)
+	}
+	var st SideThread
+	if err := json.Unmarshal(data, &st); err != nil {
+		return fmt.Errorf("decode side thread %s: %w", key, err)
+	}
+	kept := make([]Message, 0, len(st.Messages))
+	removed := false
+	for _, message := range st.Messages {
+		if message.ID == userMessageID || message.ID == assistantMessageID {
+			removed = true
+			continue
+		}
+		kept = append(kept, message)
+	}
+	if !removed {
+		return nil
+	}
+	if len(kept) == 0 {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("delete side thread %s: %w", key, err)
+		}
+		return nil
+	}
+	st.Messages = kept
+	st.Status = threadStatusForMessages(kept)
+	st.UpdatedAt = time.Now().UTC()
+	st.Revision++
+	return writeSideThread(path, &st)
 }
 
 // FinishTurn commits the terminal assistant message. An interrupt already
@@ -345,30 +422,39 @@ func (s *Store) RecoverRunning() (int, error) {
 		return 0, err
 	}
 	defer release()
-	entries, err := os.ReadDir(s.dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, fmt.Errorf("read side thread dir: %w", err)
+	paths := make(map[string]string)
+	for _, dir := range []string{s.dir, filepath.Join(s.dir, ".deleting")} {
+		entries, err := os.ReadDir(dir)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return 0, fmt.Errorf("read side thread dir: %w", err)
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+				continue
+			}
+			key := strings.TrimSuffix(entry.Name(), ".json")
+			if previous, exists := paths[key]; exists {
+				return 0, fmt.Errorf("side thread %s has both live and staged records (%s, %s)", key, previous, filepath.Join(dir, entry.Name()))
+			}
+			paths[key] = filepath.Join(dir, entry.Name())
+		}
 	}
 	var (
 		recovered int
 		errs      []error
 	)
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-		path := filepath.Join(s.dir, entry.Name())
+	for key, path := range paths {
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
-			errs = append(errs, fmt.Errorf("read side thread %s: %w", entry.Name(), readErr))
+			errs = append(errs, fmt.Errorf("read side thread %s: %w", key, readErr))
 			continue
 		}
 		var st SideThread
 		if decodeErr := json.Unmarshal(data, &st); decodeErr != nil {
-			errs = append(errs, fmt.Errorf("decode side thread %s: %w", entry.Name(), decodeErr))
+			errs = append(errs, fmt.Errorf("decode side thread %s: %w", key, decodeErr))
 			continue
 		}
 		if st.Status != StatusRunning {
@@ -402,9 +488,106 @@ func (s *Store) Delete(mainThreadID string) error {
 		return err
 	}
 	defer release()
-	err = os.Remove(s.pathFor(key))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("delete side thread %s: %w", key, err)
+	var errs []error
+	for _, path := range []string{s.pathFor(key), s.stagedPathFor(key)} {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			errs = append(errs, fmt.Errorf("delete side thread %s: %w", key, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// BeginDelete atomically moves a side thread to a deterministic staged path.
+// Repeating it after a crash reuses the same stage. Call Rollback if the main
+// session delete fails, or Commit after the main delete commits.
+func (s *Store) BeginDelete(mainThreadID string) (*DeleteStage, error) {
+	if s == nil || s.dir == "" {
+		return &DeleteStage{}, nil
+	}
+	key := normalizeKey(mainThreadID)
+	if key == "" {
+		return &DeleteStage{}, nil
+	}
+	release, err := s.lockStore()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	live := s.pathFor(key)
+	staged := s.stagedPathFor(key)
+	liveExists, err := regularFileExists(live)
+	if err != nil {
+		return nil, err
+	}
+	stagedExists, err := regularFileExists(staged)
+	if err != nil {
+		return nil, err
+	}
+	if liveExists && stagedExists {
+		return nil, fmt.Errorf("side thread %s has both live and staged delete records", key)
+	}
+	if liveExists {
+		if err := os.MkdirAll(filepath.Dir(staged), 0o700); err != nil {
+			return nil, fmt.Errorf("create side thread delete stage: %w", err)
+		}
+		if err := os.Rename(live, staged); err != nil {
+			return nil, fmt.Errorf("stage side thread %s delete: %w", key, err)
+		}
+		stagedExists = true
+	}
+	return &DeleteStage{store: s, key: key, exists: stagedExists}, nil
+}
+
+// Rollback restores a staged side thread after the main session delete fails.
+func (d *DeleteStage) Rollback() error {
+	if d == nil || !d.exists || d.store == nil || d.key == "" {
+		return nil
+	}
+	release, err := d.store.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
+	live := d.store.pathFor(d.key)
+	staged := d.store.stagedPathFor(d.key)
+	liveExists, err := regularFileExists(live)
+	if err != nil {
+		return err
+	}
+	stagedExists, err := regularFileExists(staged)
+	if err != nil {
+		return err
+	}
+	if liveExists && !stagedExists {
+		return nil
+	}
+	if liveExists || !stagedExists {
+		return fmt.Errorf("cannot roll back side thread %s delete: inconsistent staged state", d.key)
+	}
+	if err := os.Rename(staged, live); err != nil {
+		return fmt.Errorf("roll back side thread %s delete: %w", d.key, err)
+	}
+	return nil
+}
+
+// Commit permanently removes a staged side thread after the main session row
+// is gone. It is idempotent so artifact cleanup can safely retry it.
+func (d *DeleteStage) Commit() error {
+	if d == nil || !d.exists || d.store == nil || d.key == "" {
+		return nil
+	}
+	release, err := d.store.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
+	if live, err := regularFileExists(d.store.pathFor(d.key)); err != nil {
+		return err
+	} else if live {
+		return fmt.Errorf("cannot commit side thread %s delete while a live record exists", d.key)
+	}
+	if err := os.Remove(d.store.stagedPathFor(d.key)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("commit side thread %s delete: %w", d.key, err)
 	}
 	return nil
 }
@@ -440,6 +623,25 @@ func settleInterrupted(st *SideThread) {
 			st.Messages[i].Status = AssistantInterrupted
 		}
 	}
+}
+
+// threadStatusForMessages restores the thread status implied by the most
+// recent assistant reply. A leftover streaming placeholder maps to
+// interrupted, mirroring settleInterrupted.
+func threadStatusForMessages(messages []Message) Status {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != RoleAssistant {
+			continue
+		}
+		switch messages[i].Status {
+		case AssistantCompleted:
+			return StatusCompleted
+		case AssistantFailed:
+			return StatusFailed
+		}
+		return StatusInterrupted
+	}
+	return StatusInterrupted
 }
 
 func assistantStatusForThreadStatus(status Status) (AssistantMessageStatus, error) {
@@ -479,6 +681,62 @@ func (s *Store) lockStore() (func(), error) {
 
 func (s *Store) pathFor(mainThreadID string) string {
 	return filepath.Join(s.dir, mainThreadID+".json")
+}
+
+func (s *Store) stagedPathFor(mainThreadID string) string {
+	return filepath.Join(s.dir, ".deleting", mainThreadID+".json")
+}
+
+func (s *Store) readRecord(key string) ([]byte, error) {
+	live, liveErr := os.ReadFile(s.pathFor(key))
+	staged, stagedErr := os.ReadFile(s.stagedPathFor(key))
+	if liveErr == nil && stagedErr == nil {
+		return nil, fmt.Errorf("side thread %s has both live and staged delete records", key)
+	}
+	if liveErr == nil {
+		return live, nil
+	}
+	if stagedErr == nil {
+		return staged, nil
+	}
+	if !errors.Is(liveErr, os.ErrNotExist) {
+		return nil, liveErr
+	}
+	return nil, stagedErr
+}
+
+func (s *Store) activePathFor(key string) (string, error) {
+	live := s.pathFor(key)
+	staged := s.stagedPathFor(key)
+	liveExists, err := regularFileExists(live)
+	if err != nil {
+		return "", err
+	}
+	stagedExists, err := regularFileExists(staged)
+	if err != nil {
+		return "", err
+	}
+	if liveExists && stagedExists {
+		return "", fmt.Errorf("side thread %s has both live and staged delete records", key)
+	}
+	if stagedExists {
+		return staged, nil
+	}
+	return live, nil
+}
+
+func regularFileExists(path string) (bool, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.Mode().IsRegular() {
+		return false, fmt.Errorf("side thread record is not a regular file: %s", path)
+	}
+	return true, nil
 }
 
 func normalizeKey(mainThreadID string) string {

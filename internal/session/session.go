@@ -504,6 +504,16 @@ func Delete(sessDir, id string) (Session, error) {
 	if !ok {
 		return Session{}, fmt.Errorf("%w: %q", ErrSessionNotFound, id)
 	}
+	var pendingCompensations int
+	if err := tx.QueryRow(`SELECT COUNT(1) FROM resident_admission_compensations WHERE thread_id = ?`, id).Scan(&pendingCompensations); err != nil {
+		return Session{}, fmt.Errorf("inspect pending resident admission compensation: %w", err)
+	}
+	if pendingCompensations > 0 {
+		return Session{}, fmt.Errorf("session %q has pending resident admission compensation", id)
+	}
+	if err := deletePendingResidentEnvelopesFromSourceThreadTx(tx, id); err != nil {
+		return Session{}, fmt.Errorf("clean pending resident envelopes for deleted session: %w", err)
+	}
 	if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
 		return Session{}, fmt.Errorf("delete session: %w", err)
 	}
@@ -950,6 +960,33 @@ func migrateSchema(db *sql.DB) error {
 			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_resident_inbox_pending ON resident_inbox(participant_id, created_at) WHERE consumed_at IS NULL AND expired_at IS NULL`,
+		// resident_admission_compensations is a short-lived recovery journal for
+		// resident turns that committed admission state but failed before their
+		// model runner launched. The rollback and journal deletion happen in one
+		// transaction, so a crash either leaves a replayable intent or a fully
+		// compensated admission.
+		`CREATE TABLE IF NOT EXISTS resident_admission_compensations (
+			id           TEXT PRIMARY KEY,
+			thread_id    TEXT NOT NULL,
+			payload_json TEXT NOT NULL,
+			created_at   INTEGER NOT NULL
+		)`,
+		// resident_wake_intents is the durable handoff from a resolved admission
+		// rollback to a live app-server. The rollback transaction restores the
+		// inbox/read state and publishes this wake atomically; a resident drain
+		// acknowledges it only after launch ownership is registered (or after it
+		// proves there is no work). Cold-boot settlement discards these intents so
+		// reopening the desktop never spends tokens replaying work from downtime.
+		`CREATE TABLE IF NOT EXISTS resident_wake_intents (
+			id             TEXT PRIMARY KEY,
+			participant_id TEXT NOT NULL,
+			thread_id      TEXT NOT NULL,
+			created_at     INTEGER NOT NULL,
+			FOREIGN KEY(participant_id) REFERENCES participants(id) ON DELETE CASCADE,
+			FOREIGN KEY(thread_id) REFERENCES sessions(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_resident_wake_intents_participant
+			ON resident_wake_intents(participant_id, created_at, id)`,
 		// message_marks backs read receipts + message reactions
 		// (2026-07-04-read-receipts-and-reactions.md §4): one row per
 		// (message, participant, kind). kind='seen' carries a lifecycle
@@ -1410,6 +1447,13 @@ WHERE workflow_id = ''`); err != nil {
 	}
 	if err := addColumnIfMissing(db, "inference_journal_runtimes", "pid", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
+	}
+	if err := addColumnIfMissing(db, "resident_admission_compensations", "thread_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_resident_admission_compensations_thread
+		ON resident_admission_compensations(thread_id, created_at, id)`); err != nil {
+		return fmt.Errorf("migrate resident admission compensation index: %w", err)
 	}
 	if _, err := db.Exec(`
 UPDATE conversation_threads

@@ -20,9 +20,32 @@ func TestMessageEnvelopePromptRendersCompactAttributes(t *testing.T) {
 	}
 
 	got := env.Prompt()
-	want := "<incoming_message thread=\"Design \\\"Room\\\"\" thread_id=\"thread-1\" from=\"user\" sender=\"Ada \\\"A\\\"\" addressed=\"true\" hop=\"1\">\nplease review\n\nthis\n</incoming_message>"
+	want := "<incoming_message thread=\"Design \\\"Room\\\"\" thread_id=\"thread-1\" from=\"user\" sender=\"Ada \\\"A\\\"\" addressed=\"true\" hop=\"1\" envelope_id=\"env-1\">\nplease review\n\nthis\n</incoming_message>"
 	if got != want {
 		t.Fatalf("Prompt() = %q, want %q", got, want)
+	}
+}
+
+// TestMessageEnvelopePromptEnvelopeIDAttribute pins the deterministic anchor
+// for load-time seq resync: every generated tag carries the envelope's id, and
+// an envelope without an id emits no envelope_id attribute at all (so a
+// missing anchor is visible as a resync mismatch, never guessed around).
+func TestMessageEnvelopePromptEnvelopeIDAttribute(t *testing.T) {
+	env := MessageEnvelope{
+		ID:             "env-7",
+		SourceThreadID: "thread-1",
+		SourceTitle:    "Room",
+		SenderKind:     "user",
+		SenderName:     "User",
+		Text:           "hi",
+	}
+	if got := env.Prompt(); !strings.Contains(got, `envelope_id="env-7"`) {
+		t.Fatalf("Prompt() = %q, want it to carry envelope_id", got)
+	}
+
+	env.ID = ""
+	if got := env.Prompt(); strings.Contains(got, "envelope_id=") {
+		t.Fatalf("Prompt() without ID = %q, must not carry envelope_id", got)
 	}
 }
 

@@ -31,6 +31,74 @@ func TestParticipantCRUD(t *testing.T) {
 	}
 }
 
+func TestCompleteParticipantRunUpsertsMonotonicTerminalState(t *testing.T) {
+	dir := t.TempDir()
+	participantID := participant.NewID()
+	if err := UpsertParticipant(dir, participant.Participant{
+		ID: participantID, Kind: participant.KindNamed, Name: "Run owner",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	const agentID = "agt-workflow-dispatched"
+	// Workflow-dispatched named agents do not necessarily pass through the
+	// participant/start handler that records the initial running row. Terminal
+	// completion must still create an auditable durable run.
+	if err := CompleteParticipantRun(dir, participantID, agentID, "completed", "done"); err != nil {
+		t.Fatal(err)
+	}
+	// A participant/start write can race behind an extremely fast worker. It may
+	// fill in task/session metadata, but it must never downgrade the terminal row.
+	if err := UpsertParticipantRun(dir, ParticipantRun{
+		ID: agentID, ParticipantID: participantID, AgentID: agentID,
+		TaskID: "task-late", SessionID: "session-late",
+		Outcome: "running", Summary: "working",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Replaying the same terminal write is safe. App-server finalization may
+	// retry after losing the response to a committed SQLite transaction.
+	if err := CompleteParticipantRun(dir, participantID, agentID, "completed", "done"); err != nil {
+		t.Fatalf("replay terminal completion: %v", err)
+	}
+	runs, err := ListParticipantRuns(dir, participantID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 || runs[0].ID != agentID || runs[0].Outcome != "completed" || runs[0].Summary != "done" ||
+		runs[0].TaskID != "task-late" || runs[0].SessionID != "session-late" {
+		t.Fatalf("completed participant run = %+v", runs)
+	}
+
+	// Existing stores may use an ID distinct from agent_id. Completion updates
+	// that row in place instead of assuming the newer ID convention.
+	if err := UpsertParticipantRun(dir, ParticipantRun{
+		ID: "run-custom-id", ParticipantID: participantID, AgentID: "agt-custom-id",
+		Outcome: "running", Summary: "custom running",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := CompleteParticipantRun(dir, participantID, "agt-custom-id", "failed", "custom failed"); err != nil {
+		t.Fatal(err)
+	}
+	runs, err = ListParticipantRuns(dir, participantID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("participant runs = %+v, want 2", runs)
+	}
+	var custom ParticipantRun
+	for _, run := range runs {
+		if run.AgentID == "agt-custom-id" {
+			custom = run
+		}
+	}
+	if custom.ID != "run-custom-id" || custom.Outcome != "failed" || custom.Summary != "custom failed" {
+		t.Fatalf("custom-id participant run = %+v", custom)
+	}
+}
+
 // TestParticipantForkedFromRoundTrip proves the decision-six分身 marker
 // (ForkedFrom, the母体's participant id) persists through the store.
 func TestParticipantForkedFromRoundTrip(t *testing.T) {

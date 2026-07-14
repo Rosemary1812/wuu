@@ -12,9 +12,16 @@ import {
   LAYOUT_MOTION_CLASS,
   WINDOW_RESIZING_CLASS,
 } from "./WindowResizeState";
+import { motionDurationMs } from "./motion";
 
-export const SIDEBAR_MOTION_MS = 240;
-export const RIGHT_PANEL_MOTION_MS = 240;
+export const SIDEBAR_MOTION_MS = motionDurationMs(
+  "--sidebar-motion-duration",
+  280,
+);
+export const RIGHT_PANEL_MOTION_MS = motionDurationMs(
+  "--workspace-panel-motion-duration",
+  280,
+);
 export const SIDEBAR_DEFAULT_WIDTH = 326;
 export const SIDEBAR_MIN_WIDTH = 200;
 export const SIDEBAR_MAX_WIDTH = 520;
@@ -383,6 +390,7 @@ export function useAppLayoutState({
   workspaceRightPanelDockableWithoutSidebar: boolean;
   setRightPanelOpenWithMotion: (open: boolean) => void;
   animateRightPanelLayout: () => void;
+  animateSidebarLayout: () => void;
   startSidebarResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
   startRightPanelResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
   handleRightPanelSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
@@ -421,14 +429,25 @@ export function useAppLayoutState({
   const rightPanelMotionTimerRef = useRef<number | undefined>(undefined);
   const sidebarWidth = clampSidebarWidthForWindow(sidebarPreferredWidth, windowWidth);
   const effectiveSidebarWidth = sidebarCollapsed ? 0 : sidebarWidth;
+  // Auto-globalize the open right panel only when the window is too narrow to
+  // dock conversation + panel even with the sidebar fully collapsed — i.e. we
+  // measure the space WITHOUT the sidebar's width. Opening the sidebar no
+  // longer shoves an already-docked panel into fullscreen focus: in the medium
+  // band all three columns stay docked and the conversation column
+  // (minmax(0,1fr)) absorbs the squeeze, dipping below its preferred safe
+  // width. This keeps an explicit "open the sidebar" from silently globalizing
+  // the right panel. The narrow floor (windowWidth < 760) still globalizes,
+  // since conversation + panel cannot both fit there regardless of the sidebar.
+  // (Previously this passed effectiveSidebarWidth, so opening the sidebar could
+  // tip the layout over the threshold and auto-globalize the panel.)
   const workspaceRightPanelAutoGlobalized = workspacePanelNeedsFocus(
-    windowWidth,
-    effectiveSidebarWidth,
-  );
-  const workspaceRightPanelDockableWithoutSidebar = !workspacePanelNeedsFocus(
     windowWidth,
     0,
   );
+  // Complement of the above by construction: if the panel can't dock without
+  // the sidebar it auto-globalizes, and vice versa.
+  const workspaceRightPanelDockableWithoutSidebar =
+    !workspaceRightPanelAutoGlobalized;
   const clampedWorkspaceRightPanelWidth = clampWorkspaceRightPanelWidth(
     workspaceRightPanelWidth,
     effectiveSidebarWidth
@@ -1030,6 +1049,7 @@ export function useAppLayoutState({
     workspaceRightPanelDockableWithoutSidebar,
     setRightPanelOpenWithMotion,
     animateRightPanelLayout: startRightPanelMotion,
+    animateSidebarLayout: startSidebarMotion,
     startSidebarResize,
     startRightPanelResize,
     handleRightPanelSeparatorKey,

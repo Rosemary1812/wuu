@@ -195,7 +195,9 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 			clone.disabledTools[name] = struct{}{}
 		}
 	}
-	clone.env.ActiveSurface = clone.ActiveSurface()
+	clone.activeProfileMu.Lock()
+	clone.publishActiveSurfaceLocked()
+	clone.activeProfileMu.Unlock()
 	// Deferred tool loads are model-visible, per-conversation state created by
 	// tool_search. A cloned toolkit must not inherit them unless the clone's
 	// own model context has seen the loadable schema.
@@ -298,8 +300,10 @@ func (t *Toolkit) SetToolSearchEnabled(enabled bool) {
 	t.exposureMu.Unlock()
 	if t.env != nil {
 		t.env.ToolSearchEnabled = enabled
-		t.env.ActiveSurface = t.ActiveSurface()
 	}
+	t.activeProfileMu.Lock()
+	t.publishActiveSurfaceLocked()
+	t.activeProfileMu.Unlock()
 }
 
 func (t *Toolkit) ToolSearchEnabled() bool {
@@ -490,9 +494,9 @@ func (t *Toolkit) SetHelpMeEnabled(enabled bool) {
 	} else {
 		t.DisableTools(helpMeToolName)
 	}
-	if t.env != nil {
-		t.env.ActiveSurface = t.ActiveSurface()
-	}
+	t.activeProfileMu.Lock()
+	t.publishActiveSurfaceLocked()
+	t.activeProfileMu.Unlock()
 }
 
 func (t *Toolkit) isToolDisabled(name string) bool {
@@ -620,7 +624,7 @@ func (t *Toolkit) SetParticipantSpeechEnabled(enabled bool) {
 		delete(t.activeSurface.Tools, "manage_participant")
 		delete(t.activeSurface.Tools, "manage_task")
 	}
-	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
+	t.publishActiveSurfaceLocked()
 }
 
 func (t *Toolkit) SetParticipantSpeech(speech ParticipantSpeech) {
@@ -721,7 +725,7 @@ func (t *Toolkit) SetResidentParticipantEnabled(enabled bool) {
 	} else {
 		delete(t.activeSurface.Tools, "fetch_thread_messages")
 	}
-	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
+	t.publishActiveSurfaceLocked()
 }
 
 func enableParticipantSpeechSurface(surface *capability.Surface) {
@@ -817,7 +821,7 @@ func (t *Toolkit) SetActiveProfile(p modelprofile.Profile, forMainAgent bool) {
 	t.activeProfile = p
 	if (p == modelprofile.Profile{}) {
 		t.activeSurface = capability.Surface{}
-		t.env.ActiveSurface = capability.Surface{}
+		t.publishActiveSurfaceLocked()
 		return
 	}
 	// Derive the compile SurfaceKind from the public forMainAgent flag plus
@@ -842,7 +846,7 @@ func (t *Toolkit) SetActiveProfile(p modelprofile.Profile, forMainAgent bool) {
 	if t.env != nil && t.env.ResidentParticipantEnabled {
 		enableResidentParticipantSurface(&t.activeSurface)
 	}
-	t.env.ActiveSurface = t.surfaceForToolLoadingMode(t.activeSurface)
+	t.publishActiveSurfaceLocked()
 }
 
 // ActiveProfile returns the currently installed model profile, or the
@@ -864,7 +868,28 @@ func (t *Toolkit) ActiveSurface() capability.Surface {
 	}
 	t.activeProfileMu.RLock()
 	defer t.activeProfileMu.RUnlock()
+	return t.exposedSurfaceLocked()
+}
+
+// exposedSurfaceLocked returns a defensive copy of the active surface as the
+// model actually sees it: the compiled surface projected for the current
+// tool-loading mode with disabled tools removed. Callers must hold
+// activeProfileMu (read or write).
+func (t *Toolkit) exposedSurfaceLocked() capability.Surface {
 	return t.withDisabledToolsRemoved(cloneSurface(t.surfaceForToolLoadingMode(t.activeSurface)))
+}
+
+// publishActiveSurfaceLocked is the single write path for env.ActiveSurface.
+// Routing every update through it guarantees that surface consumers outside
+// the toolkit (skill filtering, prompt assembly, surface snapshots) never see
+// tools that Definitions() hides and Execute() rejects — e.g. the gated
+// helpme tool while it is disabled. Callers must hold activeProfileMu for
+// writing.
+func (t *Toolkit) publishActiveSurfaceLocked() {
+	if t.env == nil {
+		return
+	}
+	t.env.ActiveSurface = t.exposedSurfaceLocked()
 }
 
 // activeCompiledSurface is the internal helper Definitions() uses

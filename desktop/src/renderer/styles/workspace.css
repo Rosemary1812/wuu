@@ -108,9 +108,9 @@
   transform-origin: right center;
   will-change: opacity, transform;
   transition:
-    border-color var(--workspace-panel-motion-duration, 240ms) var(--workspace-panel-motion-ease),
-    opacity var(--workspace-panel-motion-duration, 240ms) var(--workspace-panel-motion-ease),
-    transform var(--workspace-panel-motion-duration, 240ms) var(--workspace-panel-motion-ease);
+    border-color var(--workspace-panel-motion-duration) var(--workspace-panel-motion-ease),
+    opacity var(--workspace-panel-motion-duration) var(--workspace-panel-motion-ease),
+    transform var(--workspace-panel-motion-duration) var(--workspace-panel-motion-ease);
   pointer-events: none;
 }
 
@@ -444,7 +444,11 @@
   min-width: 52px;
   max-width: 200px;
   height: 32px;
-  flex: 0 1 auto;
+  /* Uniform widths, matching the session strip. Also load-bearing for drag
+   * reorder: horizontalListSortingStrategy assumes equal-size items, and the
+   * old content-width tabs (flex: 0 1 auto) made mid-drag sibling offsets
+   * wrong — overlap/jitter while dragging, then a jump on drop. */
+  flex: 1 1 0%;
   align-items: center;
   border: 0;
   border-radius: var(--radius-xs);
@@ -457,9 +461,35 @@
    * `.workspace-panel-tabbar button` no-drag override so click to select /
    * close still works. */
   transition:
-    background-color 140ms ease,
-    color 140ms ease,
-    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    max-width var(--motion-base) var(--ease-out),
+    min-width var(--motion-base) var(--ease-out),
+    opacity var(--motion-base) var(--ease-out);
+}
+
+/* Tab enter/exit — same recipe as the session strip (conversation-shell.css):
+ * the max-width cap interpolates (flex-grow reads as a jump when tabs sit at
+ * their cap), closed tabs collapse for one fast beat as inert ghosts
+ * (TabMotion.ts) so neighbours slide instead of jump. */
+@starting-style {
+  .workspace-panel-tabs[data-enter-ready] .workspace-tool-tab:not(.closing) {
+    max-width: 0;
+    min-width: 0;
+    opacity: 0;
+  }
+}
+
+.workspace-tool-tab.closing {
+  max-width: 0;
+  min-width: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    max-width var(--motion-fast) var(--ease-in),
+    min-width var(--motion-fast) var(--ease-in),
+    opacity var(--motion-fast) var(--ease-in);
 }
 
 .workspace-tool-tab.can-reorder {
@@ -508,7 +538,7 @@
   background: var(--wuu-accent);
   pointer-events: none;
   opacity: 0;
-  transition: opacity 140ms ease;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 .workspace-tool-tab.active::after {
@@ -570,9 +600,9 @@
   margin-right: 2px;
   opacity: 0;
   transition:
-    background-color 120ms ease,
-    color 120ms ease,
-    opacity 120ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out);
 }
 
 .workspace-tool-tab:hover,
@@ -714,8 +744,8 @@
   background: var(--surface-2);
   content: "";
   transition:
-    background 120ms ease,
-    box-shadow 120ms ease;
+    background var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
 .workspace-files-resizer:hover::before,
@@ -827,9 +857,9 @@ html.resizing-workspace-file-split * {
   opacity: 0;
   transform: translateY(14px);
   transition:
-    border-color 180ms ease,
-    opacity 160ms ease,
-    transform 180ms cubic-bezier(0.2, 0, 0, 1);
+    border-color var(--motion-base) var(--ease-out),
+    opacity var(--motion-base) var(--ease-out),
+    transform var(--motion-base) var(--ease-out);
   pointer-events: none;
 }
 
@@ -960,7 +990,7 @@ html.resizing-workspace-file-split * {
     0 12px 32px var(--ink-overlay-8),
     0 2px 6px var(--ink-overlay-6);
   font-family: var(--font-ui, var(--font-body));
-  animation: workspace-tree-context-menu-in 0.1s ease-out;
+  animation: workspace-tree-context-menu-in var(--motion-fast) var(--ease-out);
 }
 
 .workspace-tree-context-menu-item {
@@ -1162,7 +1192,7 @@ html.resizing-workspace-file-split * {
   background: var(--paper);
   border: 1px solid var(--browser-url-border);
   color: var(--ink-soft);
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition: border-color var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
 }
 
 .workspace-browser-url-form:focus-within {
@@ -1575,8 +1605,8 @@ html.resizing-workspace-file-split * {
   border-radius: 18px;
   padding: 12px 14px;
   transition:
-    background 160ms ease,
-    transform 160ms ease;
+    background var(--motion-base) var(--ease-out),
+    transform var(--motion-base) var(--ease-out);
 }
 
 .skill-row:hover {
@@ -2081,7 +2111,7 @@ html.resizing-workspace-file-split * {
 .workspace-monaco-editor .monaco-scrollable-element > .scrollbar > .slider {
   border-radius: var(--scrollbar-radius);
   background: transparent;
-  transition: background-color 160ms ease;
+  transition: background-color var(--motion-base) var(--ease-out);
 }
 
 .workspace-monaco-editor:hover .monaco-scrollable-element > .scrollbar > .slider {
@@ -2612,7 +2642,7 @@ html.resizing-workspace-file-split * {
 }
 
 .workspace-diff-tree-chevron {
-  transition: transform 140ms ease;
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 
 .workspace-diff-tree-row[aria-expanded="true"] .workspace-diff-tree-chevron {
@@ -2716,8 +2746,8 @@ html.resizing-workspace-file-split * {
   content: "";
   transform: translateX(-50%);
   transition:
-    background-color 120ms ease,
-    box-shadow 120ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
 .workspace-review-resizer:hover::before,
@@ -3145,8 +3175,8 @@ html.resizing-workspace-file-split * {
   content: "";
   transform: translateX(-50%);
   transition:
-    background 120ms ease,
-    box-shadow 120ms ease;
+    background var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
 .conversation-split-resizer:hover::before,

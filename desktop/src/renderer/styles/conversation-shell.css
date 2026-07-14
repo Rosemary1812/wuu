@@ -57,11 +57,6 @@
   --environment-panel-reserved-width: 372px;
   --environment-panel-width: 328px;
   --environment-panel-edge-gap: 18px;
-  --environment-panel-motion-duration: 260ms;
-  --environment-panel-exit-duration: 220ms;
-  --environment-panel-motion-easing: cubic-bezier(0.2, 0, 0, 1);
-  --environment-flow-motion-duration: 280ms;
-  --environment-flow-motion-delay: 22ms;
   /*
    * Thread (reply) panel width is deliberately NOT declared here. It is owned by
    * useAppLayoutState and written to `.app-shell` — statically via shellStyle and
@@ -162,7 +157,7 @@
   overflow: hidden;
   background: var(--paper);
   margin-right: 0;
-  transition: grid-template-columns var(--environment-panel-motion-duration, 260ms) var(--environment-panel-motion-easing, cubic-bezier(0.2, 0, 0, 1));
+  transition: grid-template-columns var(--environment-panel-motion-duration) var(--environment-panel-motion-easing);
 }
 
 /* Conversation content flows in column 1; only the thread panel (and its
@@ -244,7 +239,7 @@
   overflow: hidden;
   border-bottom: 1px solid var(--surface-3);
   padding: 0 24px;
-  transition: padding-left var(--sidebar-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
+  transition: padding-left var(--sidebar-motion-duration) var(--sidebar-motion-ease);
   -webkit-app-region: drag;
 }
 
@@ -328,10 +323,40 @@
   color: var(--ink-tertiary);
   overflow: hidden;
   transition:
-    background-color 140ms ease,
-    color 140ms ease,
-    transform 140ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    max-width var(--motion-base) var(--ease-out),
+    min-width var(--motion-base) var(--ease-out),
+    opacity var(--motion-base) var(--ease-out);
   -webkit-app-region: no-drag;
+}
+
+/* Tab enter: a newcomer grows out of zero width. The width cap (max-width)
+ * is what interpolates — NOT flex-grow: when tabs sit at their max-width
+ * (few tabs, wide strip) flexbox hands the shrinking tab all residual space
+ * regardless of its grow factor, so a grow transition reads as a one-frame
+ * jump. Gated on data-enter-ready (set one frame after the strip mounts) so
+ * a cold start renders its initial tabs at rest instead of N entrances. */
+@starting-style {
+  .session-tab-scroll[data-enter-ready] .session-tab:not(.closing) {
+    max-width: 0;
+    min-width: 0;
+    opacity: 0;
+  }
+}
+
+/* Tab exit: TabMotion.ts keeps the closed tab mounted for one fast beat as
+ * an inert ghost while it collapses and the neighbours slide over. */
+.session-tab.closing {
+  max-width: 0;
+  min-width: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    max-width var(--motion-fast) var(--ease-in),
+    min-width var(--motion-fast) var(--ease-in),
+    opacity var(--motion-fast) var(--ease-in);
 }
 
 .session-tab.can-reorder {
@@ -417,7 +442,7 @@
   border-radius: var(--radius-pill);
   background: var(--shell-session-tab-status-default);
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
                                                                          
@@ -446,7 +471,7 @@
   border-top-color: var(--shell-session-tab-status-running-notch);
   box-sizing: border-box;
   opacity: 1;
-  animation: session-loading-spin var(--session-loading-spin-duration) linear infinite;
+  animation: wuu-spin var(--session-loading-spin-duration) linear infinite;
 }
 
 .session-tab.pending-switch .session-tab-status,
@@ -508,9 +533,9 @@
   margin-right: 2px;
   opacity: 0;
   transition:
-    background-color 120ms ease,
-    color 120ms ease,
-    opacity 120ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out);
 }
 
 .session-tab:hover .session-tab-close,
@@ -632,7 +657,7 @@
 .side-panel-toggle-pane {
   fill: currentColor;
   opacity: 0.18;
-  transition: opacity 160ms cubic-bezier(0.2, 0, 0, 1);
+  transition: opacity var(--motion-base) var(--ease-out);
 }
 
 .side-panel-toggle-icon[data-open="true"] .side-panel-toggle-pane {
@@ -966,7 +991,7 @@
   margin-inline: auto;
   transform: translateY(0);
   z-index: 20;
-  animation: jump-to-latest-enter 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: jump-to-latest-enter var(--motion-base) var(--ease-out) both;
   pointer-events: none;
   -webkit-app-region: no-drag;
 }
@@ -1006,9 +1031,9 @@
   -webkit-app-region: no-drag;
 
   transition:
-    background-color 140ms ease,
-    border-color 140ms ease,
-    box-shadow 140ms ease;
+    background-color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
 /*
@@ -1124,9 +1149,9 @@
   opacity: 0;
   overflow: hidden;
   transition:
-    max-height 160ms ease,
-    max-width 160ms ease,
-    opacity 120ms ease;
+    max-height var(--motion-base) var(--ease-out),
+    max-width var(--motion-base) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out);
 }
 
 .jump-to-latest-progress:hover .jump-to-latest-progress-detail,
@@ -1220,9 +1245,9 @@
   user-select: none;
   -webkit-user-select: none;
   transition:
-    width 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
-    height 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
-    background-color 180ms ease;
+    width var(--motion-slow) var(--ease-bounce),
+    height var(--motion-slow) var(--ease-bounce),
+    background-color var(--motion-base) var(--ease-out);
 }
 
 /* Expand the click / pointer hit area without changing the visual
@@ -1299,8 +1324,8 @@
   opacity: 0;
   transform: translate3d(-6px, 0, 0) scale(0.985);
   transition:
-    opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity var(--motion-slow) var(--ease-out),
+    transform var(--motion-slow) var(--ease-out);
 }
 
 /* The user's question sits above the agent's answer. Muted color and

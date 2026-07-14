@@ -39,6 +39,15 @@ type Manager struct {
 	agents    map[string]*SubAgent
 	listeners []chan<- Notification
 	streams   []chan<- StreamNotification
+	// terminalObserver runs synchronously after the final snapshot is
+	// persisted and before lossy status subscribers are notified. The
+	// coordinator uses it for durable terminal bookkeeping that must complete
+	// before another process can take ownership of the worker.
+	terminalObserver func(Notification) error
+	// terminalPrepare runs before a final worker snapshot is persisted. A
+	// coordinator that needs crash recovery uses it to durably record the exact
+	// terminal generation that the snapshot is about to publish.
+	terminalPrepare func(Notification) error
 }
 
 type ManagerOptions struct {
@@ -205,6 +214,33 @@ func (m *Manager) Unsubscribe(ch chan<- Notification) {
 	}
 }
 
+// SetTerminalObserver installs the reliable terminal-state consumer. A nil
+// error acknowledges the transition; an error leaves it unacknowledged and is
+// never converted into a best-effort status event. Status subscribers remain
+// UI/event streams and receive the terminal notification only after the
+// observer acknowledges it.
+func (m *Manager) SetTerminalObserver(observer func(Notification) error) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.terminalObserver = observer
+	m.mu.Unlock()
+}
+
+// SetTerminalPrepareObserver installs the first phase of reliable terminal
+// publication. The hook is retried until it acknowledges the exact terminal
+// generation; no final worker snapshot is persisted before that happens. A
+// plain Manager with no hook preserves the original behavior.
+func (m *Manager) SetTerminalPrepareObserver(prepare func(Notification) error) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.terminalPrepare = prepare
+	m.mu.Unlock()
+}
+
 // SubscribeStream registers a channel that receives every stream event emitted
 // by sub-agent turns. The receiver must keep draining the channel; stream
 // notifications are not dropped because dropping deltas would corrupt the
@@ -318,7 +354,12 @@ func (m *Manager) Spawn(ctx context.Context, opts SpawnOptions) (*SubAgent, erro
 
 // runTurn executes one turn for a sub-agent in a goroutine.
 func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *SubAgent, maxSteps int, history []providers.ChatMessage, doneCh chan struct{}, defaults managerDefaults) {
-	defer close(doneCh)
+	ownsDone := true
+	defer func() {
+		if ownsDone {
+			close(doneCh)
+		}
+	}()
 	defer cancel()
 	defer func() {
 		if r := recover(); r != nil {
@@ -327,6 +368,10 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 			sa.Error = fmt.Errorf("worker panic: %v", r)
 			sa.CompletedAt = time.Now()
 			sa.mu.Unlock()
+			m.prepareTerminal(sa, StatusFailed)
+			if sa.historyPath != "" {
+				_ = persistHistory(sa)
+			}
 			m.notify(sa, StatusFailed)
 		}
 	}()
@@ -462,6 +507,31 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	}
 
 	sa.mu.Lock()
+	// Close the last-step mailbox gap atomically with the terminal transition.
+	// A follow-up that wins this lock first is drained into an immediate
+	// continuation; one that arrives after Status becomes terminal starts the
+	// normal resumed turn. No successful Followup can remain parked in memory
+	// with no future BeforeStep to consume it.
+	if ctx.Err() == nil && len(sa.pendingMessages) > 0 {
+		continuationHistory := append(providers.CloneChatMessages(nextHistory), sa.popPendingUserMessagesLocked()...)
+		lifetime := sa.maxLifetime
+		continuationCtx, continuationCancel := context.WithCancel(context.WithoutCancel(ctx))
+		if lifetime > 0 {
+			continuationCtx, continuationCancel = context.WithTimeout(context.WithoutCancel(ctx), lifetime)
+		}
+		sa.history = providers.CloneChatMessages(continuationHistory)
+		sa.Status = StatusRunning
+		sa.CompletedAt = time.Time{}
+		sa.Error = nil
+		sa.Result = ""
+		sa.Activity = ""
+		sa.ActivityAt = time.Time{}
+		sa.cancelFunc = continuationCancel
+		sa.mu.Unlock()
+		ownsDone = false
+		go m.runTurn(continuationCtx, continuationCancel, sa, maxSteps, continuationHistory, doneCh, defaults)
+		return
+	}
 	sa.history = nextHistory
 	sa.CompletedAt = time.Now()
 	if err != nil {
@@ -487,6 +557,7 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 	}
 	finalStatus := sa.Status
 	sa.mu.Unlock()
+	m.prepareTerminal(sa, finalStatus)
 
 	if sa.historyPath != "" {
 		if persistErr := persistHistory(sa); persistErr != nil {
@@ -495,12 +566,40 @@ func (m *Manager) runTurn(ctx context.Context, cancel context.CancelFunc, sa *Su
 			sa.Error = errors.Join(sa.Error, fmt.Errorf("persist final worker snapshot: %w", persistErr))
 			finalStatus = sa.Status
 			sa.mu.Unlock()
+			// The failed persistence changes the terminal generation. Prepare that
+			// exact failure before a best-effort second snapshot write or terminal
+			// observer can expose it.
+			m.prepareTerminal(sa, finalStatus)
+			_ = persistHistory(sa)
 		} else if sa.toolLedger != nil {
 			_ = sa.toolLedger.MarkProjected(context.WithoutCancel(ctx), toolInvocationIDs(nextHistory))
 		}
 	}
 
 	m.notify(sa, finalStatus)
+}
+
+const terminalPrepareRetryDelay = 10 * time.Millisecond
+
+func (m *Manager) prepareTerminal(sa *SubAgent, status Status) {
+	if m == nil || sa == nil || !IsTerminal(status) {
+		return
+	}
+	for attempt := 1; ; attempt++ {
+		m.mu.Lock()
+		prepare := m.terminalPrepare
+		m.mu.Unlock()
+		if prepare == nil {
+			return
+		}
+		n := Notification{AgentID: sa.ID, Status: status, Snapshot: sa.Snapshot()}
+		if err := prepare(n); err == nil {
+			return
+		} else if attempt == 1 || attempt%10 == 0 {
+			providers.DebugLogf("subagent: prepare terminal intent for %s attempt %d: %v", sa.ID, attempt, err)
+		}
+		time.Sleep(terminalPrepareRetryDelay)
+	}
 }
 
 func toolInvocationIDs(messages []providers.ChatMessage) []string {
@@ -572,16 +671,23 @@ func (m *Manager) runFinalSummaryNudge(ctx context.Context, runner *agent.Stream
 }
 
 // notify pushes a notification to all listeners. Drops on full channels.
-func (m *Manager) notify(sa *SubAgent, status Status) {
-	m.notifySnapshot(sa, status, sa.Snapshot())
+func (m *Manager) notify(sa *SubAgent, status Status) error {
+	return m.notifySnapshot(sa, status, sa.Snapshot())
 }
 
-func (m *Manager) notifySnapshot(sa *SubAgent, status Status, snap SubAgentSnapshot) {
+func (m *Manager) notifySnapshot(sa *SubAgent, status Status, snap SubAgentSnapshot) error {
 	n := Notification{AgentID: sa.ID, Status: status, Snapshot: snap}
 
 	m.mu.Lock()
 	listeners := append([]chan<- Notification(nil), m.listeners...)
+	terminalObserver := m.terminalObserver
 	m.mu.Unlock()
+
+	if IsTerminal(status) && terminalObserver != nil {
+		if err := terminalObserver(n); err != nil {
+			return err
+		}
+	}
 
 	for _, ch := range listeners {
 		select {
@@ -589,6 +695,7 @@ func (m *Manager) notifySnapshot(sa *SubAgent, status Status, snap SubAgentSnaps
 		default:
 		}
 	}
+	return nil
 }
 
 // BroadcastSnapshot publishes the agent's current usage/state without
@@ -991,6 +1098,10 @@ func (s *SubAgent) takeForceToolNextTurn() string {
 func (s *SubAgent) popPendingUserMessages() []providers.ChatMessage {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.popPendingUserMessagesLocked()
+}
+
+func (s *SubAgent) popPendingUserMessagesLocked() []providers.ChatMessage {
 	if len(s.pendingMessages) == 0 {
 		return nil
 	}
@@ -1099,6 +1210,9 @@ func snapshotLocked(s *SubAgent) SubAgentSnapshot {
 		AgentPath:           s.AgentPath,
 		ParentID:            s.ParentID,
 		Description:         s.Description,
+		WorkerRoot:          s.workerRoot,
+		Model:               s.model,
+		ModelPin:            s.modelPin,
 		Status:              s.Status,
 		StartedAt:           s.StartedAt,
 		CompletedAt:         s.CompletedAt,

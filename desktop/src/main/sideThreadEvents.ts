@@ -11,7 +11,8 @@ const SIDE_THREAD_EVENT_TYPES = new Set<SideThreadEvent["type"]>([
   "status",
   "delta",
   "message",
-  "error"
+  "error",
+  "reset"
 ]);
 
 export function sideThreadEventFromServerEvent(
@@ -52,6 +53,8 @@ export function sideThreadEventFromServerEvent(
         typeof params.error_message === "string"
         ? { workdir: event.workdir, event: params as SideThreadEvent }
         : undefined;
+    case "reset":
+      return { workdir: event.workdir, event: params as SideThreadEvent };
   }
 }
 

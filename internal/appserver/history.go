@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -112,11 +113,14 @@ func loadChatMessages(sessDir, id string) ([]providers.ChatMessage, error) {
 	if strings.TrimSpace(sessDir) == "" || strings.TrimSpace(id) == "" {
 		return nil, nil
 	}
-	records, err := loadPersistedMessages(sessDir, id, false)
+	records, _, err := loadProviderPersistedMessages(sessDir, id, false)
 	if err != nil {
 		return nil, err
 	}
+	return chatMessagesFromPersistedMessages(records), nil
+}
 
+func chatMessagesFromPersistedMessages(records []persistedMessage) []providers.ChatMessage {
 	var messages []providers.ChatMessage
 	for _, rec := range records {
 		if strings.TrimSpace(rec.ThreadID) != "" {
@@ -159,6 +163,7 @@ func loadChatMessages(sessDir, id string) ([]providers.ChatMessage, error) {
 			EnvelopeMeta:      append(json.RawMessage(nil), rec.EnvelopeMeta...),
 			FocusMeta:         append(json.RawMessage(nil), rec.FocusMeta...),
 		}
+		msg.Content = syncIncomingMessageSourceSeqs(msg.Content, msg.EnvelopeMeta, rec.Seq)
 		for _, image := range rec.Images {
 			if strings.TrimSpace(image.Data) == "" {
 				continue
@@ -193,7 +198,250 @@ func loadChatMessages(sessDir, id string) ([]providers.ChatMessage, error) {
 		}
 		messages = append(messages, msg)
 	}
-	return messages, nil
+	return messages
+}
+
+type stringSpan struct {
+	start int
+	end   int
+}
+
+// syncIncomingMessageSourceSeqs keeps the model-facing prompt in step with
+// EnvelopeMeta after a source thread history rewrite remaps durable seqs. The
+// session layer updates structured metadata; rebuilding only this attribute at
+// load time keeps storage independent of the appserver's prompt format.
+//
+// Rewrites anchor exclusively on the envelope_id attribute that
+// MessageEnvelope.Prompt stamps on every generated <incoming_message> tag and
+// that envelopeMetaJSON records for the same envelope. Tag position and tag
+// count are never consulted, so literal "<incoming_message" text inside a
+// message body (it carries no envelope_id) is never rewritten. Every meta
+// entry that cannot be anchored to exactly one tag is left as written and
+// reported through the debug log rather than silently skipped. rowSeq is the
+// persisted row's own seq, carried only to identify the row in that report.
+func syncIncomingMessageSourceSeqs(content string, rawMeta json.RawMessage, rowSeq int) string {
+	synced, unmatched := resyncIncomingMessageSourceSeqs(content, rawMeta)
+	if len(unmatched) > 0 {
+		providers.DebugLogf(
+			"ERROR: envelope seq resync: row seq %d: no unique envelope_id-stamped <incoming_message> tag for %s; leaving that stored text as written (rows persisted before tags carried envelope_id land here and are never rewritten)",
+			rowSeq, strings.Join(unmatched, "; "),
+		)
+	}
+	return synced
+}
+
+// resyncIncomingMessageSourceSeqs applies the EnvelopeMeta-driven seq rewrite
+// and returns, for every meta entry it could not anchor to exactly one
+// envelope_id-stamped tag, an identifier string for the caller to surface.
+// Split from syncIncomingMessageSourceSeqs so the mismatch reporting is
+// directly testable.
+func resyncIncomingMessageSourceSeqs(content string, rawMeta json.RawMessage) (string, []string) {
+	if strings.TrimSpace(content) == "" || len(rawMeta) == 0 {
+		return content, nil
+	}
+	var metas []envelopeMetaRecord
+	if err := json.Unmarshal(rawMeta, &metas); err != nil || len(metas) == 0 {
+		return content, nil
+	}
+	spans := incomingMessageOpeningTagSpans(content)
+	spanIndexByEnvelopeID := make(map[string]int, len(spans))
+	duplicated := make(map[string]bool)
+	for i, span := range spans {
+		// A tag without an envelope_id was not produced by
+		// MessageEnvelope.Prompt for this row — user-pasted literal text, or a
+		// row persisted before tags carried the id. Never a rewrite target. An
+		// id appearing on more than one tag (a pasted copy of a generated tag)
+		// is ambiguous and disqualifies that id entirely.
+		id, ok := incomingMessageAttributeValue(content[span.start:span.end], "envelope_id")
+		if !ok || strings.TrimSpace(id) == "" {
+			continue
+		}
+		if _, seen := spanIndexByEnvelopeID[id]; seen {
+			duplicated[id] = true
+			continue
+		}
+		spanIndexByEnvelopeID[id] = i
+	}
+	seqBySpanIndex := make(map[int]int, len(metas))
+	var unmatched []string
+	for _, meta := range metas {
+		id := strings.TrimSpace(meta.ID)
+		spanIndex, found := spanIndexByEnvelopeID[id]
+		if id == "" || !found || duplicated[id] {
+			unmatched = append(unmatched, fmt.Sprintf("envelope_id=%q source_thread=%q source_seq=%d", meta.ID, meta.SourceThreadID, meta.SourceSeq))
+			continue
+		}
+		if _, claimed := seqBySpanIndex[spanIndex]; claimed {
+			// Two meta entries naming the same envelope id: the tag cannot
+			// serve both, so the later entry is a mismatch, not a rewrite.
+			unmatched = append(unmatched, fmt.Sprintf("envelope_id=%q source_thread=%q source_seq=%d", meta.ID, meta.SourceThreadID, meta.SourceSeq))
+			continue
+		}
+		seqBySpanIndex[spanIndex] = meta.SourceSeq
+	}
+	// Apply back-to-front so earlier span offsets stay valid while later tags
+	// are rewritten in place.
+	for i := len(spans) - 1; i >= 0; i-- {
+		seq, ok := seqBySpanIndex[i]
+		if !ok {
+			continue
+		}
+		span := spans[i]
+		tag := content[span.start:span.end]
+		updated := setIncomingMessageSeqAttribute(tag, seq)
+		if updated != tag {
+			content = content[:span.start] + updated + content[span.end:]
+		}
+	}
+	return content, unmatched
+}
+
+func incomingMessageOpeningTagSpans(content string) []stringSpan {
+	const prefix = "<incoming_message"
+	var spans []stringSpan
+	for searchFrom := 0; searchFrom < len(content); {
+		rel := strings.Index(content[searchFrom:], prefix)
+		if rel < 0 {
+			break
+		}
+		start := searchFrom + rel
+		inQuote := false
+		escaped := false
+		foundEnd := false
+		for i := start + len(prefix); i < len(content); i++ {
+			ch := content[i]
+			if inQuote {
+				switch {
+				case escaped:
+					escaped = false
+				case ch == '\\':
+					escaped = true
+				case ch == '"':
+					inQuote = false
+				}
+				continue
+			}
+			switch ch {
+			case '"':
+				inQuote = true
+			case '>':
+				spans = append(spans, stringSpan{start: start, end: i + 1})
+				searchFrom = i + 1
+				foundEnd = true
+			}
+			if foundEnd {
+				break
+			}
+		}
+		if !foundEnd {
+			break
+		}
+	}
+	return spans
+}
+
+func setIncomingMessageSeqAttribute(tag string, seq int) string {
+	const prefix = "<incoming_message"
+	if !strings.HasPrefix(tag, prefix) || !strings.HasSuffix(tag, ">") {
+		return tag
+	}
+	start, end, found := incomingMessageAttributeSpan(tag, "seq")
+	withoutSeq := tag
+	if found {
+		withoutSeq = tag[:start] + tag[end:]
+	}
+	if seq <= 0 {
+		return withoutSeq
+	}
+	return withoutSeq[:len(withoutSeq)-1] + ` seq="` + strconv.Itoa(seq) + `">`
+}
+
+// incomingMessageAttributeValue returns the decoded value of one attribute on
+// an <incoming_message ...> opening tag. MessageEnvelope.Prompt renders values
+// with %q, so a quoted value decodes via strconv.Unquote; an unquoted value is
+// returned verbatim. Reports false when the attribute is absent or its quoting
+// does not decode.
+func incomingMessageAttributeValue(tag, wanted string) (string, bool) {
+	start, end, found := incomingMessageAttributeSpan(tag, wanted)
+	if !found {
+		return "", false
+	}
+	chunk := tag[start:end]
+	eq := strings.IndexByte(chunk, '=')
+	if eq < 0 {
+		return "", false
+	}
+	value := strings.TrimLeft(chunk[eq+1:], " \t\r\n")
+	if strings.HasPrefix(value, `"`) {
+		decoded, err := strconv.Unquote(value)
+		if err != nil {
+			return "", false
+		}
+		return decoded, true
+	}
+	return value, true
+}
+
+func incomingMessageAttributeSpan(tag, wanted string) (int, int, bool) {
+	const prefix = "<incoming_message"
+	for i := len(prefix); i < len(tag)-1; {
+		spaceStart := i
+		for i < len(tag)-1 && isTagSpace(tag[i]) {
+			i++
+		}
+		if i >= len(tag)-1 {
+			break
+		}
+		keyStart := i
+		for i < len(tag)-1 && !isTagSpace(tag[i]) && tag[i] != '=' && tag[i] != '>' {
+			i++
+		}
+		key := tag[keyStart:i]
+		for i < len(tag)-1 && isTagSpace(tag[i]) {
+			i++
+		}
+		if i >= len(tag)-1 || tag[i] != '=' {
+			for i < len(tag)-1 && !isTagSpace(tag[i]) {
+				i++
+			}
+			continue
+		}
+		i++
+		for i < len(tag)-1 && isTagSpace(tag[i]) {
+			i++
+		}
+		if i < len(tag)-1 && tag[i] == '"' {
+			i++
+			escaped := false
+			for i < len(tag)-1 {
+				ch := tag[i]
+				i++
+				if escaped {
+					escaped = false
+					continue
+				}
+				if ch == '\\' {
+					escaped = true
+					continue
+				}
+				if ch == '"' {
+					break
+				}
+			}
+		} else {
+			for i < len(tag)-1 && !isTagSpace(tag[i]) && tag[i] != '>' {
+				i++
+			}
+		}
+		if key == wanted {
+			return spaceStart, i, true
+		}
+	}
+	return 0, 0, false
+}
+
+func isTagSpace(ch byte) bool {
+	return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r'
 }
 
 func loadAgentHistory(path string) (persistedAgentHistory, error) {
@@ -224,6 +472,24 @@ func appendChatMessage(sessDir, id string, msg providers.ChatMessage) (int, erro
 		return sessionstore.AppendHistoryRecordAndConsumeResidentEnvelopes(sessDir, id, historyRecordFromPersistedMessage(rec), msg.ConsumeResidentEnvelopeIDs, rec.At)
 	}
 	return sessionstore.AppendHistoryRecordReturningSeq(sessDir, id, historyRecordFromPersistedMessage(rec))
+}
+
+func appendResidentAdmissionChatMessage(sessDir, id string, msg providers.ChatMessage, marks []sessionstore.MessageMark, admittedAt time.Time) (int, error) {
+	if strings.TrimSpace(sessDir) == "" || strings.TrimSpace(id) == "" || !shouldPersistMessage(msg) {
+		return 0, nil
+	}
+	rec := persistedMessageFromChatMessage(msg)
+	if !admittedAt.IsZero() {
+		rec.At = admittedAt.UTC()
+	}
+	return sessionstore.AppendHistoryRecordAndCommitResidentAdmission(
+		sessDir,
+		id,
+		historyRecordFromPersistedMessage(rec),
+		msg.ConsumeResidentEnvelopeIDs,
+		marks,
+		rec.At,
+	)
 }
 
 func appendChatMessages(sessDir, id string, msgs []providers.ChatMessage) error {
@@ -263,6 +529,42 @@ func rewriteChatHistory(sessDir, id string, msgs []providers.ChatMessage) error 
 		records = append(records, historyRecordFromPersistedMessage(rec))
 	}
 	return sessionstore.RewriteHistoryRecords(sessDir, id, records)
+}
+
+// rewriteChatHistoryAtBaseline replaces the model-visible history while
+// preserving records appended after baselineSeq and non-provider meta/subthread
+// rows in one store transaction. This is the turn-finalization path: resident
+// participant posts may legitimately arrive while the model is running and
+// must land after the model result rather than be deleted by compaction.
+func rewriteChatHistoryAtBaseline(sessDir, id string, msgs []providers.ChatMessage, baselineSeq int) error {
+	if strings.TrimSpace(sessDir) == "" || strings.TrimSpace(id) == "" {
+		return nil
+	}
+	records := make([]sessionstore.HistoryRecord, 0, len(msgs))
+	for _, msg := range msgs {
+		// Preserve the old Seq on this participant projection. The session
+		// transaction substitutes the original row at that address so BasisSeq,
+		// attachments, timestamps, and annotations survive without duplication.
+		if rec, ok := participantPersistedMessageFromModelContext(msg); ok {
+			records = append(records, historyRecordFromPersistedMessage(rec))
+			continue
+		}
+		if !shouldPersistMessage(msg) {
+			continue
+		}
+		records = append(records, historyRecordFromPersistedMessage(persistedMessageFromChatMessage(msg)))
+	}
+	return sessionstore.RewriteHistoryRecordsAtBaseline(sessDir, id, records, baselineSeq)
+}
+
+func maxHistorySeq(msgs []providers.ChatMessage) int {
+	maxSeq := 0
+	for _, msg := range msgs {
+		if msg.Seq > maxSeq {
+			maxSeq = msg.Seq
+		}
+	}
+	return maxSeq
 }
 
 // appendTokenUsage persists one cumulative token usage snapshot to the session
@@ -387,8 +689,32 @@ func loadPersistedMessages(sessDir, id string, includeMeta bool) ([]persistedMes
 	return out, nil
 }
 
+// loadProviderPersistedMessages returns the current logical provider history
+// together with the physical message head it was reconstructed from. Raw
+// session_messages remain append-only; checkpoints replace the provider-visible
+// prefix without deleting or renumbering those physical rows.
+func loadProviderPersistedMessages(sessDir, id string, includeMeta bool) ([]persistedMessage, int, error) {
+	snapshot, err := sessionstore.LoadProviderHistorySnapshot(sessDir, id)
+	if err != nil {
+		return nil, 0, fmt.Errorf("load provider history: %w", err)
+	}
+	out := make([]persistedMessage, 0, len(snapshot.Records))
+	for _, rec := range snapshot.Records {
+		if !includeMeta && strings.EqualFold(strings.TrimSpace(rec.Role), "meta") {
+			continue
+		}
+		msg, err := persistedMessageFromHistoryRecord(rec)
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, msg)
+	}
+	return out, snapshot.HeadSeq, nil
+}
+
 func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.HistoryRecord {
 	return sessionstore.HistoryRecord{
+		Seq:                 rec.Seq,
 		Role:                rec.Role,
 		Content:             rec.Content,
 		DisplayContent:      rec.DisplayContent,
@@ -670,6 +996,12 @@ func replaceBaseSystemPrompt(history []providers.ChatMessage, prompt string) []p
 		return []providers.ChatMessage{{Role: "system", Content: prompt}}
 	}
 	if strings.EqualFold(out[0].Role, "system") {
+		// A compact summary is durable conversation state, not the ephemeral
+		// runtime prompt. Sessions whose persisted history starts at a compact
+		// boundary need the current base prompt inserted before that summary.
+		if compact.IsConversationSummaryContent(out[0].Content) {
+			return append([]providers.ChatMessage{{Role: "system", Content: prompt}}, out...)
+		}
 		if out[0].Content == prompt {
 			return history
 		}

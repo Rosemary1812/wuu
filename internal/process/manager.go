@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -595,6 +597,12 @@ func (m *Manager) Stop(id string) (*Process, error) {
 	}
 	running, err := processMatchesRecord(p)
 	if err != nil {
+		if errors.Is(err, errNoRecordedIdentity) {
+			// The record predates persisted process identities, so the live
+			// process can never be verified against it. Never signal the pid;
+			// retire the record so reconciliation does not retry it forever.
+			return m.retireUnverifiableRecordLocked(id, p, err)
+		}
 		m.mu.Unlock()
 		return p, err
 	}
@@ -690,6 +698,31 @@ func (m *Manager) reconcileStopped(id string) (*Process, error) {
 	return p, nil
 }
 
+// retireUnverifiableRecordLocked ends management of a record whose process can
+// never be verified. No signal is sent to the recorded pid; the record itself
+// is marked failed and terminal so reconciliation does not retry it forever.
+// The caller must hold m.mu; the lock is released before publishing.
+func (m *Manager) retireUnverifiableRecordLocked(id string, p *Process, cause error) (*Process, error) {
+	delete(m.handles, id)
+	p.Status = StatusFailed
+	p.LastError = fmt.Sprintf("record retired without signaling: %v", cause)
+	p.StoppedAt = time.Now()
+	p.UpdatedAt = p.StoppedAt
+	if err := m.save(p); err != nil {
+		m.mu.Unlock()
+		return p, err
+	}
+	m.mu.Unlock()
+	log.Printf("wuu: process %s has no recorded identity; retired its record without signaling pid %d", id, p.PID)
+	m.publish(Event{Type: EventFailed, Process: *p})
+	return p, nil
+}
+
+// errNoRecordedIdentity marks records that predate persisted process
+// identities. A live process can never be verified against such a record, so
+// the record must never be signaled; Stop retires it instead.
+var errNoRecordedIdentity = errors.New("no recorded identity")
+
 func processMatchesRecord(p *Process) (bool, error) {
 	if p.PID <= 1 || !processExists(p.PID) {
 		return false, nil
@@ -697,7 +730,11 @@ func processMatchesRecord(p *Process) (bool, error) {
 	if p.PGID <= 1 {
 		return false, fmt.Errorf("process %q has unsafe process group %d", p.ID, p.PGID)
 	}
-	currentIdentity, currentStartedAt, precision, err := readProcessIdentity(p.PID)
+	storedIdentity := strings.TrimSpace(p.ProcessStartTime)
+	if storedIdentity == "" {
+		return false, fmt.Errorf("process %q has %w; refusing to signal pid %d", p.ID, errNoRecordedIdentity, p.PID)
+	}
+	currentIdentity, _, _, err := readProcessIdentity(p.PID)
 	if err != nil {
 		if !processExists(p.PID) {
 			return false, nil
@@ -714,61 +751,50 @@ func processMatchesRecord(p *Process) (bool, error) {
 	if currentPGID != p.PGID {
 		return false, fmt.Errorf("process %q group changed from %d to %d; refusing to signal it", p.ID, p.PGID, currentPGID)
 	}
-	storedIdentity := strings.TrimSpace(p.ProcessStartTime)
 	if storedIdentity == currentIdentity {
 		return true, nil
 	}
-	if storedIdentity == "" {
-		if !legacyRecordStartMatches(p, currentStartedAt, precision) {
-			return false, fmt.Errorf("process %q identity cannot be verified from its legacy record; refusing to signal pid %d", p.ID, p.PID)
+	if isLegacyStartTimeIdentity(storedIdentity) {
+		currentStart, err := readLegacyProcessStartTime(p.PID)
+		if err != nil {
+			if !processExists(p.PID) {
+				return false, nil
+			}
+			return false, fmt.Errorf("verify process %q identity: %w", p.ID, err)
 		}
-		p.ProcessStartTime = currentIdentity
-		return true, nil
-	}
-	if legacyProcessStartMatches(storedIdentity, currentStartedAt, precision) {
-		p.ProcessStartTime = currentIdentity
-		return true, nil
+		if currentStart == storedIdentity {
+			p.ProcessStartTime = currentIdentity
+			return true, nil
+		}
 	}
 	return false, fmt.Errorf("process %q identity changed; refusing to signal reused pid %d", p.ID, p.PID)
 }
 
-// Legacy records captured StartedAt immediately before persisting the initial
-// record and launching the child. Keep the compatibility window narrow enough
-// that a later process reusing the same PID cannot inherit the record.
-const legacyProcessLaunchTolerance = 5 * time.Second
+// legacyStartTimeLayout is the exact format older releases persisted: the
+// verbatim output of "ps -o lstart=".
+const legacyStartTimeLayout = "Mon Jan _2 15:04:05 2006"
 
-func legacyRecordStartMatches(p *Process, currentStartedAt time.Time, precision time.Duration) bool {
-	if p == nil || p.StartedAt.IsZero() || currentStartedAt.IsZero() {
-		return false
-	}
-	if precision < 0 {
-		precision = -precision
-	}
-	earliest := p.StartedAt.Add(-precision)
-	latest := p.StartedAt.Add(legacyProcessLaunchTolerance)
-	if p.UpdatedAt.After(p.StartedAt) && p.UpdatedAt.Before(latest) {
-		latest = p.UpdatedAt
-	}
-	latest = latest.Add(precision)
-	return !currentStartedAt.Before(earliest) && !currentStartedAt.After(latest)
+func isLegacyStartTimeIdentity(identity string) bool {
+	_, err := time.ParseInLocation(legacyStartTimeLayout, identity, time.Local)
+	return err == nil
 }
 
-func legacyProcessStartMatches(recorded string, currentStartedAt time.Time, precision time.Duration) bool {
-	if currentStartedAt.IsZero() {
-		return false
+// readLegacyProcessStartTime reads the start time in the format older releases
+// recorded. Legacy records are verified only by exact string comparison; any
+// difference means the pid cannot be proven to belong to the record.
+func readLegacyProcessStartTime(pid int) (string, error) {
+	if pid <= 1 {
+		return "", fmt.Errorf("invalid process id %d", pid)
 	}
-	const layout = "Mon Jan _2 15:04:05 2006"
-	recordedAt, err := time.ParseInLocation(layout, strings.TrimSpace(recorded), time.Local)
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "lstart=").Output()
 	if err != nil {
-		return false
+		return "", fmt.Errorf("read start time for process %d: %w", pid, err)
 	}
-	if precision < 0 {
-		precision = -precision
+	started := strings.TrimSpace(string(out))
+	if started == "" {
+		return "", fmt.Errorf("process %d has no start time", pid)
 	}
-	currentEarliest := currentStartedAt.Add(-precision)
-	currentLatest := currentStartedAt.Add(precision)
-	recordedLatest := recordedAt.Add(time.Second)
-	return currentEarliest.Before(recordedLatest) && !currentLatest.Before(recordedAt)
+	return started, nil
 }
 
 func processExists(pid int) bool {

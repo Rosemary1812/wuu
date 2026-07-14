@@ -33,6 +33,7 @@ import {
 } from "./ComposerPendingMessages";
 import { ThreadContextMenu, type ThreadContextMenuItem } from "./ThreadContextMenu";
 import { handleTabListKeyDown, useTabCloseFocusRestoration } from "./TabKeyboardNavigation";
+import { useStripEnterReady, useTabExitRetention } from "./TabMotion";
 
 const POP_OUT_DRAG_DISTANCE_PX = 54;
 
@@ -75,6 +76,11 @@ export function SessionTabStrip({
   );
   const [draggingTabID, setDraggingTabID] = useState<string | undefined>();
   const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>();
+  const enterReady = useStripEnterReady();
+  const sessionTabEntries = useTabExitRetention(
+    state.sessionTabs,
+    (tab) => tab.id,
+  );
   const [tabContextMenu, setTabContextMenu] = useState<
     { tabID: string; x: number; y: number } | undefined
   >();
@@ -159,9 +165,29 @@ export function SessionTabStrip({
               className="session-tab-scroll"
               role="tablist"
               aria-label="对话"
+              data-enter-ready={enterReady ? "" : undefined}
               onKeyDown={handleTabListKeyDown}
             >
-              {state.sessionTabs.map((tab) => {
+              {sessionTabEntries.map((entry) => {
+                const tab = entry.tab;
+                if (entry.closing) {
+                  // Exit retention (TabMotion.ts): render an inert collapsing
+                  // ghost so the neighbours slide over instead of jumping.
+                  return (
+                    <div
+                      key={`closing-${tab.id}`}
+                      className="session-tab closing"
+                      aria-hidden="true"
+                    >
+                      <span className="session-tab-main">
+                        <span className="session-tab-status" aria-hidden="true" />
+                        <span className="session-tab-title">
+                          {sessionTabLabel(tab, state)}
+                        </span>
+                      </span>
+                    </div>
+                  );
+                }
                 const active = tab.id === state.activeSessionTabID;
                 const tabThread =
                   tab.kind === "thread"

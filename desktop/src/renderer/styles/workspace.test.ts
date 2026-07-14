@@ -36,7 +36,9 @@ describe("workspace right panel chrome", () => {
     // in/out when the active tab changes instead of popping.
     expect(indicator).toMatch(/background:\s*var\(--wuu-accent\);/);
     expect(indicator).toMatch(/opacity:\s*0;/);
-    expect(indicator).toMatch(/transition:\s*opacity\s+140ms\s+ease;/);
+    expect(indicator).toMatch(
+      /transition:\s*opacity\s+var\(--motion-fast\)\s+var\(--ease-out\);/,
+    );
     expect(activeEdge).toMatch(/opacity:\s*1;/);
     expect(spacer).toMatch(/flex:\s*0\s+0\s+2px;/);
   });

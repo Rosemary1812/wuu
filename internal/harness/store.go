@@ -42,7 +42,7 @@ func (s *Store) UpsertTask(task Task) error {
 	if err := s.ensureDirLocked(); err != nil {
 		return err
 	}
-	tasks, err := s.loadTasksLocked()
+	tasks, err := s.loadTasks()
 	if err != nil {
 		return err
 	}
@@ -87,7 +87,7 @@ func (s *Store) UpdateTaskStatus(taskID string, status TaskStatus, completedAt t
 	if err := s.ensureDirLocked(); err != nil {
 		return Task{}, err
 	}
-	tasks, err := s.loadTasksLocked()
+	tasks, err := s.loadTasks()
 	if err != nil {
 		return Task{}, err
 	}
@@ -124,7 +124,7 @@ func (s *Store) UpsertRun(run AgentRun) error {
 	if err := s.ensureDirLocked(); err != nil {
 		return err
 	}
-	runs, err := s.loadRunsLocked()
+	runs, err := s.loadRuns()
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func (s *Store) UpdateRunStatus(runID string, status TaskStatus, completedAt tim
 	if err := s.ensureDirLocked(); err != nil {
 		return AgentRun{}, err
 	}
-	runs, err := s.loadRunsLocked()
+	runs, err := s.loadRuns()
 	if err != nil {
 		return AgentRun{}, err
 	}
@@ -198,7 +198,7 @@ func (s *Store) AddArtifact(artifact Artifact) error {
 	if err := s.ensureDirLocked(); err != nil {
 		return err
 	}
-	artifacts, err := s.loadArtifactsLocked()
+	artifacts, err := s.loadArtifacts()
 	if err != nil {
 		return err
 	}
@@ -228,7 +228,7 @@ func (s *Store) AddArtifact(artifact Artifact) error {
 	if err := writeJSONFile(filepath.Join(s.dir, "artifacts.json"), artifacts); err != nil {
 		return err
 	}
-	tasks, err := s.loadTasksLocked()
+	tasks, err := s.loadTasks()
 	if err != nil {
 		return err
 	}
@@ -279,7 +279,7 @@ func (s *Store) SubmitReport(report Report) (Report, error) {
 	if report.ReportPath == "" {
 		report.ReportPath = filepath.Join(s.dir, "reports", report.TaskID+".md")
 	}
-	reports, err := s.loadReportsLocked()
+	reports, err := s.loadReports()
 	if err != nil {
 		return Report{}, err
 	}
@@ -345,7 +345,7 @@ func (s *Store) SubmitReport(report Report) (Report, error) {
 		Summary:   report.Summary,
 		CreatedAt: report.SubmittedAt,
 	}
-	artifacts, err := s.loadArtifactsLocked()
+	artifacts, err := s.loadArtifacts()
 	if err != nil {
 		return Report{}, err
 	}
@@ -379,7 +379,7 @@ func (s *Store) SubmitReport(report Report) (Report, error) {
 	if err := writeJSONFile(filepath.Join(s.dir, "artifacts.json"), artifacts); err != nil {
 		return Report{}, err
 	}
-	tasks, err := s.loadTasksLocked()
+	tasks, err := s.loadTasks()
 	if err != nil {
 		return Report{}, err
 	}
@@ -439,7 +439,7 @@ func (s *Store) UpsertQueueItem(item QueueItem) error {
 	if err := s.ensureDirLocked(); err != nil {
 		return err
 	}
-	items, err := s.loadQueueLocked()
+	items, err := s.loadQueue()
 	if err != nil {
 		return err
 	}
@@ -488,7 +488,7 @@ func (s *Store) ClaimQueueItem(id string) (bool, error) {
 	if err := s.ensureDirLocked(); err != nil {
 		return false, err
 	}
-	items, err := s.loadQueueLocked()
+	items, err := s.loadQueue()
 	if err != nil {
 		return false, err
 	}
@@ -510,64 +510,110 @@ func (s *Store) ClaimQueueItem(id string) (bool, error) {
 	return true, nil
 }
 
+// MarkQueueItemCancelling durably converts launch intent into a cancellation
+// tombstone. Recovery must finish compensation and settlement for such an
+// item instead of executing its payload.
+func (s *Store) MarkQueueItemCancelling(id string) (bool, error) {
+	return s.markQueueItemState(id, QueueItemStateCancelling, "")
+}
+
+// MarkQueueItemFailing durably records a launch failure before compensation.
+// Recovery must settle this terminal intent instead of launching the payload.
+func (s *Store) MarkQueueItemFailing(id, errText string) (bool, error) {
+	return s.markQueueItemState(id, QueueItemStateFailing, errText)
+}
+
+func (s *Store) markQueueItemState(id string, state QueueItemState, errText string) (bool, error) {
+	if s == nil || s.dir == "" {
+		return true, nil
+	}
+	release, err := s.lockStore()
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	if err := s.ensureDirLocked(); err != nil {
+		return false, err
+	}
+	items, err := s.loadQueue()
+	if err != nil {
+		return false, err
+	}
+	for i := range items {
+		if items[i].ID != id {
+			continue
+		}
+		if items[i].State == state && items[i].Error == strings.TrimSpace(errText) {
+			return true, nil
+		}
+		items[i].State = state
+		items[i].Error = strings.TrimSpace(errText)
+		items[i].UpdatedAt = time.Now().UTC()
+		if err := writeJSONFile(filepath.Join(s.dir, "queue.json"), items); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// GetQueueItem reads a durable queue item without consuming it.
+func (s *Store) GetQueueItem(id string) (QueueItem, bool, error) {
+	if s == nil || s.dir == "" {
+		return QueueItem{}, false, nil
+	}
+	items, err := s.loadQueue()
+	if err != nil {
+		return QueueItem{}, false, err
+	}
+	for _, item := range items {
+		if item.ID == id {
+			return item, true, nil
+		}
+	}
+	return QueueItem{}, false, nil
+}
+
+// QueueItemExists checks whether a durable queue payload or cancellation
+// tombstone is present without consuming it.
+func (s *Store) QueueItemExists(id string) (bool, error) {
+	_, exists, err := s.GetQueueItem(id)
+	return exists, err
+}
+
 func (s *Store) ListQueueItems() ([]QueueItem, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	release, err := s.lockStore()
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	return s.loadQueueLocked()
+	return s.loadQueue()
 }
 
 func (s *Store) ListTasks() ([]Task, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	release, err := s.lockStore()
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	return s.loadTasksLocked()
+	return s.loadTasks()
 }
 
 func (s *Store) ListRuns() ([]AgentRun, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	release, err := s.lockStore()
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	return s.loadRunsLocked()
+	return s.loadRuns()
 }
 
 func (s *Store) ListArtifacts() ([]Artifact, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	release, err := s.lockStore()
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	return s.loadArtifactsLocked()
+	return s.loadArtifacts()
 }
 
 func (s *Store) ListReports() ([]Report, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	release, err := s.lockStore()
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	return s.loadReportsLocked()
+	return s.loadReports()
 }
 
 func (s *Store) ReportForTask(taskID string) (Report, bool, error) {
@@ -587,11 +633,6 @@ func (s *Store) ReadEvents() ([]Event, error) {
 	if s == nil || s.dir == "" {
 		return nil, nil
 	}
-	release, err := s.lockStore()
-	if err != nil {
-		return nil, err
-	}
-	defer release()
 	path := filepath.Join(s.dir, "events.jsonl")
 	file, err := os.Open(path)
 	if err != nil {
@@ -620,6 +661,13 @@ func (s *Store) ReadEvents() ([]Event, error) {
 	return events, nil
 }
 
+// lockStore serializes durable read-modify-write transactions, in-process and
+// across processes. Pure read methods must not take it: every JSON index is
+// replaced via atomic rename and the event log is append-only with a scanner
+// that skips an incomplete tail line, so direct reads always observe a
+// complete snapshot. Reads also must not block on s.mu, because a writer
+// waiting on the cross-process lock holds s.mu for the whole wait and would
+// stall every read behind a wedged transaction in another process.
 func (s *Store) lockStore() (func(), error) {
 	s.mu.Lock()
 	durable, err := storelock.Acquire(s.dir)
@@ -640,7 +688,10 @@ func (s *Store) ensureDirLocked() error {
 	return nil
 }
 
-func (s *Store) loadTasksLocked() ([]Task, error) {
+// The load helpers read one index file each. They are safe without the store
+// lock because writers replace each index atomically; write transactions call
+// them under lockStore for read-modify-write atomicity.
+func (s *Store) loadTasks() ([]Task, error) {
 	var out []Task
 	if err := readJSONFile(filepath.Join(s.dir, "tasks.json"), &out); err != nil {
 		return nil, err
@@ -651,7 +702,7 @@ func (s *Store) loadTasksLocked() ([]Task, error) {
 	return out, nil
 }
 
-func (s *Store) loadRunsLocked() ([]AgentRun, error) {
+func (s *Store) loadRuns() ([]AgentRun, error) {
 	var out []AgentRun
 	if err := readJSONFile(filepath.Join(s.dir, "runs.json"), &out); err != nil {
 		return nil, err
@@ -662,7 +713,7 @@ func (s *Store) loadRunsLocked() ([]AgentRun, error) {
 	return out, nil
 }
 
-func (s *Store) loadArtifactsLocked() ([]Artifact, error) {
+func (s *Store) loadArtifacts() ([]Artifact, error) {
 	var out []Artifact
 	if err := readJSONFile(filepath.Join(s.dir, "artifacts.json"), &out); err != nil {
 		return nil, err
@@ -670,7 +721,7 @@ func (s *Store) loadArtifactsLocked() ([]Artifact, error) {
 	return out, nil
 }
 
-func (s *Store) loadReportsLocked() ([]Report, error) {
+func (s *Store) loadReports() ([]Report, error) {
 	var out []Report
 	if err := readJSONFile(filepath.Join(s.dir, "reports.json"), &out); err != nil {
 		return nil, err
@@ -681,7 +732,7 @@ func (s *Store) loadReportsLocked() ([]Report, error) {
 	return out, nil
 }
 
-func (s *Store) loadQueueLocked() ([]QueueItem, error) {
+func (s *Store) loadQueue() ([]QueueItem, error) {
 	var out []QueueItem
 	if err := readJSONFile(filepath.Join(s.dir, "queue.json"), &out); err != nil {
 		return nil, err

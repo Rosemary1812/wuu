@@ -1166,7 +1166,7 @@ func (s *Server) resetThreadRuntimesForGeneralSettings(systemPrompt string) {
 	if s == nil || s.rt == nil {
 		return
 	}
-	var release []*threadState
+	var releases []detachedThreadRuntime
 	s.mu.Lock()
 	for _, th := range s.threads {
 		th.mu.Lock()
@@ -1178,14 +1178,25 @@ func (s *Server) resetThreadRuntimesForGeneralSettings(systemPrompt string) {
 				}
 			}
 		}
-		if th.execRuntime != nil {
-			release = append(release, th)
+		if th.execRuntime == nil {
+			th.pendingRuntimeReset = false
+			th.mu.Unlock()
+			continue
+		}
+		// A running root turn may still spawn workers, and already-started
+		// workers need this runtime's terminal finalizer and notification
+		// forwarding. Keep the runtime installed until no live work depends on
+		// it; the next admission consumes the reset before rebuilding.
+		if th.running || threadRuntimeHasOutstandingAgentWork(th.execRuntime) {
+			th.pendingRuntimeReset = true
+		} else {
+			releases = append(releases, detachThreadRuntimeLocked(th))
 		}
 		th.mu.Unlock()
 	}
 	s.mu.Unlock()
-	for _, th := range release {
-		releaseThreadRuntime(th)
+	for _, detached := range releases {
+		releaseDetachedThreadRuntime(detached)
 	}
 }
 

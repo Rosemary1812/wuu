@@ -50,6 +50,7 @@ const (
 	MethodSideThreadGetHistory     = "sideThread/getHistory"
 	MethodSideThreadSend           = "sideThread/sendMessage"
 	MethodSideThreadInterrupt      = "sideThread/interrupt"
+	MethodSideThreadReset          = "sideThread/reset"
 	MethodThreadList               = "thread/list"
 	MethodThreadListArchived       = "thread/listArchived"
 	MethodThreadSearch             = "thread/search"
@@ -1063,6 +1064,14 @@ type SideThreadInterruptParams struct {
 }
 
 type SideThreadInterruptResult struct {
+	Ok bool `json:"ok"`
+}
+
+type SideThreadResetParams struct {
+	MainThreadID string `json:"main_thread_id"`
+}
+
+type SideThreadResetResult struct {
 	Ok bool `json:"ok"`
 }
 

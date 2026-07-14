@@ -89,8 +89,33 @@ func pinAgentControl(t *testing.T, dir string, defaultClient providers.StreamCli
 	if err != nil {
 		t.Fatalf("agentcontrol.New: %v", err)
 	}
-	t.Cleanup(c.Close)
+	t.Cleanup(func() { stopAndCloseAgentControlForTest(t, c) })
 	return c
+}
+
+func stopAndCloseAgentControlForTest(t *testing.T, control *AgentControl) {
+	t.Helper()
+	if control == nil {
+		return
+	}
+	control.BeginShutdown()
+	control.StopAll()
+	control.YieldWorkerTerminalFinalizations()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, snap := range control.Manager().List() {
+		if _, err := control.Manager().Wait(ctx, snap.ID); err != nil {
+			t.Errorf("wait for worker %s during cleanup: %v", snap.ID, err)
+		}
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for control.HasOwnedWorkerExecutions() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if control.HasOwnedWorkerExecutions() {
+		t.Errorf("worker execution leases remain owned during cleanup: %d", control.OwnedWorkerExecutionCount())
+	}
+	control.Close()
 }
 
 // pinThreadMeta builds a queued-spawn thread metadata blob for the given
@@ -178,7 +203,8 @@ func TestQueuedSpawnRestore_CrossProviderPinRebuildsClient(t *testing.T) {
 	if err := c.restoreQueuedSpawns(); err != nil {
 		t.Fatalf("restoreQueuedSpawns: %v", err)
 	}
-	// Drain queue via maybeStartQueued.
+	// Drain only after the resolver has been installed.
+	c.StartQueuedWork()
 	c.maybeStartQueued(context.Background())
 
 	if resolveCalls != 1 {
@@ -221,6 +247,7 @@ func TestQueuedSpawnRestore_BareModelPinKeepsModelOverride(t *testing.T) {
 	if err := c.restoreQueuedSpawns(); err != nil {
 		t.Fatalf("restoreQueuedSpawns: %v", err)
 	}
+	c.StartQueuedWork()
 	c.maybeStartQueued(context.Background())
 
 	if resolveCalls != 1 {
@@ -253,6 +280,7 @@ func TestQueuedSpawnRestore_ResolverFailureFailsExplicitly(t *testing.T) {
 	if err := c.restoreQueuedSpawns(); err != nil {
 		t.Fatalf("restoreQueuedSpawns: %v", err)
 	}
+	c.StartQueuedWork()
 	c.maybeStartQueued(context.Background())
 
 	if req, ok := defaultClient.LastRequest(); ok {
@@ -309,6 +337,7 @@ func TestQueuedSpawnRestore_NoResolverStillValidatesCrossProvider(t *testing.T) 
 	if err := c.restoreQueuedSpawns(); err != nil {
 		t.Fatalf("restoreQueuedSpawns: %v", err)
 	}
+	c.StartQueuedWork()
 	c.maybeStartQueued(context.Background())
 
 	if _, ok := defaultClient.LastRequest(); ok {
@@ -352,6 +381,7 @@ func TestQueuedSpawnRestore_NoResolverBareModelPinStillWorks(t *testing.T) {
 	if err := c.restoreQueuedSpawns(); err != nil {
 		t.Fatalf("restoreQueuedSpawns: %v", err)
 	}
+	c.StartQueuedWork()
 	c.maybeStartQueued(context.Background())
 
 	if req, ok := defaultClient.WaitRequest(time.Second); !ok {
@@ -381,6 +411,7 @@ func TestQueuedSpawnRestore_ResolverReturnsNilClientForCrossProvider(t *testing.
 	if err := c.restoreQueuedSpawns(); err != nil {
 		t.Fatalf("restoreQueuedSpawns: %v", err)
 	}
+	c.StartQueuedWork()
 	c.maybeStartQueued(context.Background())
 
 	if _, ok := defaultClient.LastRequest(); ok {
@@ -416,6 +447,7 @@ func TestQueuedSpawnRestore_ResolverErrorMatchesSpec(t *testing.T) {
 	if err := c.restoreQueuedSpawns(); err != nil {
 		t.Fatalf("restoreQueuedSpawns: %v", err)
 	}
+	c.StartQueuedWork()
 	c.maybeStartQueued(context.Background())
 
 	if _, ok := defaultClient.LastRequest(); ok {

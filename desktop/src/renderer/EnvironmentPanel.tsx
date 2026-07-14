@@ -406,7 +406,6 @@ function EnvironmentPlanSection({ planUpdate }: { planUpdate: PlanUpdate }): JSX
   return (
     <section className="environment-plan-section" aria-label="任务进度">
       <div className="environment-plan-scroll">
-        {planUpdate.explanation ? <p className="environment-plan-explanation">{planUpdate.explanation}</p> : null}
         <ol className="environment-plan-list">
           {planUpdate.plan.map((item, index) => (
             <li className={`environment-plan-item ${item.status}`} key={`${index}-${item.step}`}>

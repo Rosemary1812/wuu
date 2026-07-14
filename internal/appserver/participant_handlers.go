@@ -146,13 +146,7 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	threadRuntime, err := s.ensureThreadRuntime(th)
-	if err != nil {
-		return s.writeResponse(req.ID, nil, err)
-	}
-	if threadRuntime == nil || threadRuntime.AgentControl == nil {
-		return s.writeResponse(req.ID, nil, errors.New("participant/start requires agent control"))
-	}
+	var threadRuntime *runtime.ThreadRuntime
 
 	participantID := strings.TrimSpace(params.ParticipantID)
 	subagentType := strings.TrimSpace(params.SubagentType)
@@ -210,6 +204,38 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 	}
 	if taskName == "" {
 		taskName = deriveParticipantTaskName(description, prompt, subagentType)
+	}
+
+	// A participant spawn becomes durable child work for this root thread. Hold
+	// the same mutation lease used by delete until Spawn has recorded the child,
+	// so delete observes either no child before the spawn or the active child
+	// after it, never an in-between state. RecordUserMessage shares the lease
+	// because it is model-visible history and must not interleave with a turn
+	// compaction/rewrite.
+	var mutationLease *session.ThreadExecutionLease
+	if th.PersistHistory {
+		mutationLease, err = s.tryAcquireThreadMutationLease(th.ID)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
+		defer releaseThreadMutationLease(th.ID, mutationLease)
+		th.mu.Lock()
+		if th.running || th.executionLease != nil {
+			th.mu.Unlock()
+			return s.writeResponse(req.ID, nil, threadExecutionBusyError(th.ID))
+		}
+		if err := s.refreshDurableThreadHistoryLocked(th); err != nil {
+			th.mu.Unlock()
+			return s.writeResponse(req.ID, nil, err)
+		}
+		th.mu.Unlock()
+	}
+	threadRuntime, err = s.ensureThreadRuntimeAfterAdmission(th)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	if threadRuntime == nil || threadRuntime.AgentControl == nil {
+		return s.writeResponse(req.ID, nil, errors.New("participant/start requires agent control"))
 	}
 
 	if params.RecordUserMessage {

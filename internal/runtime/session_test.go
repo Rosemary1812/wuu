@@ -2,8 +2,10 @@ package runtime
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,6 +32,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/skills"
 	"github.com/blueberrycongee/wuu/internal/statepath"
+	"github.com/blueberrycongee/wuu/internal/subagent"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
@@ -53,10 +56,416 @@ func TestSessionCleanupClosesMCPManager(t *testing.T) {
 	}
 }
 
+func TestSessionCleanupPreservesWorktreesWhileTerminalFinalizationIsPending(t *testing.T) {
+	control, worktreePath := newRuntimeCleanupWorktree(t, "pending-terminal-cleanup")
+	// The control's harness path is stable under the repository state root used
+	// by newRuntimeCleanupWorktree. Derive it from the worker's session ID via
+	// its durable store so this assertion covers the real cleanup boundary.
+	storeDir := control.HarnessStore().Dir()
+	if err := os.MkdirAll(filepath.Join(storeDir, "terminal-finalizations"), 0o755); err != nil {
+		t.Fatalf("mkdir terminal finalizations: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(storeDir, "terminal-finalizations", "malformed-but-owned.json"), []byte("{"), 0o600); err != nil {
+		t.Fatalf("write pending terminal finalization: %v", err)
+	}
+
+	rt := &Session{AgentControl: control}
+	if _, err := rt.Cleanup(); err == nil || !strings.Contains(err.Error(), "preserving session worktrees") {
+		t.Fatalf("Cleanup error = %v, want pending-terminal diagnostic", err)
+	}
+	if _, err := os.Stat(worktreePath); err != nil {
+		t.Fatalf("pending terminal cleanup removed replay worktree: %v", err)
+	}
+}
+
+func TestSessionCleanupRemovesWorktreesWithoutPendingTerminalFinalization(t *testing.T) {
+	control, worktreePath := newRuntimeCleanupWorktree(t, "settled-terminal-cleanup")
+	rt := &Session{AgentControl: control}
+	if _, err := rt.Cleanup(); err != nil {
+		t.Fatalf("Cleanup: %v", err)
+	}
+	if _, err := os.Stat(worktreePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("settled cleanup retained worktree: %v", err)
+	}
+}
+
+func newRuntimeCleanupWorktree(t *testing.T, sessionID string) (*agentcontrol.AgentControl, string) {
+	t.Helper()
+	root := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	runGit("init")
+	runGit("config", "user.email", "runtime-test@example.com")
+	runGit("config", "user.name", "Runtime Test")
+	writeSessionTestFile(t, filepath.Join(root, "README.md"), "runtime cleanup test\n")
+	runGit("add", "README.md")
+	runGit("commit", "-m", "initial")
+
+	stateRoot := filepath.Join(t.TempDir(), "state")
+	artifactDir := filepath.Join(stateRoot, "sessions", sessionID)
+	control, err := agentcontrol.New(agentcontrol.Config{
+		Client:       &sessionRecordingClient{},
+		DefaultModel: "runtime-cleanup-test",
+		ParentRepo:   root,
+		WorktreeRoot: filepath.Join(stateRoot, "worktrees"),
+		SessionID:    sessionID,
+		HistoryDir:   filepath.Join(artifactDir, "workers"),
+		ThreadDir:    filepath.Join(artifactDir, "threads"),
+		HarnessDir:   filepath.Join(artifactDir, "harness"),
+		WorkerFactory: func(string, agentcontrol.WorkerType, agentthread.Metadata) (agent.ToolExecutor, error) {
+			return sideThreadRuntimeTools{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("agentcontrol.New: %v", err)
+	}
+	t.Cleanup(func() {
+		control.BeginShutdown()
+		control.StopAll()
+		control.YieldWorkerTerminalFinalizations()
+		control.Close()
+		_ = control.CleanupSession()
+	})
+	spawned, err := control.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:        agentcontrol.DefaultSubagentType,
+		TaskName:    "cleanup_worktree",
+		Prompt:      "finish immediately",
+		Isolation:   string(agentcontrol.IsolationWorktree),
+		Synchronous: true,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	if spawned.WorktreePath == "" {
+		t.Fatal("worktree spawn returned no path")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for control.HasOwnedWorkerExecutions() && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if control.HasOwnedWorkerExecutions() {
+		t.Fatal("completed worker retained its execution lease")
+	}
+	return control, spawned.WorktreePath
+}
+
 type sessionRecordingClient struct {
 	mu            sync.Mutex
 	last          providers.ChatRequest
 	streamBatches [][]providers.StreamEvent
+}
+
+type sessionQueueBlockingClient struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (c *sessionQueueBlockingClient) Chat(ctx context.Context, _ providers.ChatRequest) (providers.ChatResponse, error) {
+	select {
+	case c.started <- struct{}{}:
+	default:
+	}
+	select {
+	case <-c.release:
+		return providers.ChatResponse{Content: "done"}, nil
+	case <-ctx.Done():
+		return providers.ChatResponse{}, ctx.Err()
+	}
+}
+
+func (c *sessionQueueBlockingClient) StreamChat(ctx context.Context, _ providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	select {
+	case c.started <- struct{}{}:
+	default:
+	}
+	events := make(chan providers.StreamEvent, 2)
+	go func() {
+		defer close(events)
+		select {
+		case <-c.release:
+			events <- providers.StreamEvent{Type: providers.EventContentDelta, Content: "done"}
+			events <- providers.StreamEvent{Type: providers.EventDone}
+		case <-ctx.Done():
+			events <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
+		}
+	}()
+	return events, nil
+}
+
+func TestNewSessionStartsLegacyAgentControlQueue(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	client := &sessionQueueBlockingClient{started: make(chan struct{}, 8), release: make(chan struct{})}
+	t.Cleanup(func() {
+		_, _ = rt.Cleanup()
+	})
+	if rt.AgentControl == nil {
+		t.Fatal("NewSession did not build the legacy AgentControl")
+	}
+	rt.AgentControl.UpdateWorkerDefaults(client, "gpt-test", subagent.ManagerOptions{})
+	if err := rt.SetSessionID("legacy-queue-session"); err != nil {
+		t.Fatalf("SetSessionID: %v", err)
+	}
+
+	var firstWorkerID string
+	for i := 0; i < 5; i++ {
+		result, spawnErr := rt.AgentControl.Spawn(context.Background(), agentcontrol.SpawnRequest{
+			Type:     agentcontrol.DefaultSubagentType,
+			TaskName: "legacy_queue_" + string(rune('a'+i)),
+			Prompt:   "hold root runtime capacity",
+		})
+		if spawnErr != nil {
+			t.Fatalf("spawn root worker %d: %v", i, spawnErr)
+		}
+		if i == 0 {
+			firstWorkerID = result.AgentID
+		}
+		select {
+		case <-client.started:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("root worker %d did not start", i)
+		}
+	}
+	queued, err := rt.AgentControl.Spawn(context.Background(), agentcontrol.SpawnRequest{
+		Type:     agentcontrol.DefaultSubagentType,
+		TaskName: "legacy_queue_waiter",
+		Prompt:   "run when root capacity frees",
+	})
+	if err != nil {
+		t.Fatalf("queue root worker: %v", err)
+	}
+	if queued.Status != string(subagent.StatusQueued) {
+		t.Fatalf("root queued worker status = %q, want queued", queued.Status)
+	}
+	if !rt.AgentControl.Stop(firstWorkerID) {
+		t.Fatalf("stop root worker %s", firstWorkerID)
+	}
+	select {
+	case <-client.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("legacy root AgentControl did not drain its queue")
+	}
+	if _, err := rt.Cleanup(); err != nil {
+		t.Fatalf("Cleanup: %v", err)
+	}
+	if rt.AgentControl != nil {
+		t.Fatal("Cleanup retained the legacy AgentControl")
+	}
+}
+
+func TestSetSessionIDRestoresLegacyQueueAndTerminalRecovery(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	client := &sessionQueueBlockingClient{started: make(chan struct{}, 2), release: make(chan struct{})}
+	rt.AgentControl.UpdateWorkerDefaults(client, "gpt-test", subagent.ManagerOptions{})
+	t.Cleanup(func() {
+		close(client.release)
+		_, _ = rt.Cleanup()
+	})
+
+	const (
+		sessionID        = "legacy-restored-session"
+		queuedWorkerID   = "legacy-restored-queued-worker"
+		terminalWorkerID = "legacy-restored-terminal-worker"
+	)
+	artifactDir := statepath.SessionArtifactDir(rt.StateDir, sessionID)
+	harnessDir := filepath.Join(artifactDir, "harness")
+	now := time.Now().UTC()
+	meta := agentthread.Metadata{
+		ID:        queuedWorkerID,
+		SessionID: sessionID,
+		ParentID:  sessionID,
+		Path:      agentthread.RootPath + "/restored_queue",
+		TaskName:  "restored_queue",
+		Role:      agentcontrol.DefaultSubagentType,
+		Status:    agentthread.StatusPending,
+		Source: agentthread.Source{
+			Kind:           agentthread.SourceThreadSpawn,
+			ParentThreadID: sessionID,
+			ParentPath:     agentthread.RootPath,
+			Depth:          2,
+			EdgeStatus:     agentthread.EdgeOpen,
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	payload, err := json.Marshal(map[string]any{
+		"worker_id":   queuedWorkerID,
+		"worker_type": agentcontrol.DefaultSubagentType,
+		"thread_meta": meta,
+		"prompt":      "resume after the real session path is bound",
+		"isolation":   "inplace",
+	})
+	if err != nil {
+		t.Fatalf("marshal queue payload: %v", err)
+	}
+	if err := harness.NewStore(harnessDir).UpsertQueueItem(harness.QueueItem{
+		ID:        queuedWorkerID,
+		TaskID:    queuedWorkerID,
+		Kind:      "agent_spawn",
+		Payload:   payload,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("persist queue payload: %v", err)
+	}
+	terminalPath := writeRuntimeTerminalFinalization(t, harnessDir, terminalWorkerID)
+	finalized := make(chan subagent.Notification, 1)
+	unsubscribe := rt.AgentControl.SubscribeWorkerTerminalFinalizer(func(n subagent.Notification) error {
+		if n.AgentID == terminalWorkerID {
+			finalized <- n
+		}
+		return nil
+	})
+	defer unsubscribe()
+
+	select {
+	case <-client.started:
+		t.Fatal("legacy queue started before the real session was bound")
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := rt.SetSessionID(sessionID); err != nil {
+		t.Fatalf("SetSessionID: %v", err)
+	}
+	select {
+	case <-client.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("bound legacy runtime did not start its restored queue")
+	}
+	select {
+	case notification := <-finalized:
+		if notification.AgentID != terminalWorkerID || notification.Status != subagent.StatusCompleted {
+			t.Fatalf("recovered terminal notification = %+v", notification)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("bound legacy runtime did not recover its terminal intent")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		_, statErr := os.Stat(terminalPath)
+		if errors.Is(statErr, os.ErrNotExist) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("terminal intent was not acknowledged: %v", statErr)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestSetSessionIDReturnsQueueRestoreFailure(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+	rt, err := NewSession(Options{
+		RootDir: root,
+		HomeDir: home,
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {Type: "openai-compatible", BaseURL: "https://example.test/v1", APIKeyEnv: "TEST_WUU_KEY", Model: "gpt-test"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	t.Cleanup(func() { _, _ = rt.Cleanup() })
+	harnessDir := filepath.Join(statepath.SessionArtifactDir(rt.StateDir, "corrupt-legacy-queue"), "harness")
+	if err := os.MkdirAll(harnessDir, 0o755); err != nil {
+		t.Fatalf("mkdir harness: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(harnessDir, "queue.json"), []byte("{"), 0o600); err != nil {
+		t.Fatalf("write corrupt queue: %v", err)
+	}
+	if err := rt.SetSessionID("corrupt-legacy-queue"); err == nil || !strings.Contains(err.Error(), "restore queued spawns") {
+		t.Fatalf("SetSessionID error = %v, want queue restore failure", err)
+	}
+}
+
+func writeRuntimeTerminalFinalization(t *testing.T, harnessDir, workerID string) string {
+	t.Helper()
+	now := time.Now().UTC()
+	record := map[string]any{
+		"schema_version": "wuu/worker-terminal-finalization/v1",
+		"agent_id":       workerID,
+		"status":         subagent.StatusCompleted,
+		"snapshot": map[string]any{
+			"id":           workerID,
+			"task_name":    "recovered_terminal",
+			"agent_path":   agentthread.RootPath + "/recovered_terminal",
+			"parent_id":    "legacy-restored-session",
+			"status":       subagent.StatusCompleted,
+			"started_at":   now.Add(-time.Second),
+			"completed_at": now,
+			"result":       "recovered result",
+		},
+		"created_at": now,
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatalf("marshal terminal finalization: %v", err)
+	}
+	digest := sha256.Sum256([]byte(workerID))
+	path := filepath.Join(harnessDir, "terminal-finalizations", fmt.Sprintf("%x.json", digest[:]))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir terminal finalizations: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write terminal finalization: %v", err)
+	}
+	return path
 }
 
 func (c *sessionRecordingClient) Chat(_ context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {

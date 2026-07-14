@@ -290,25 +290,7 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 		Constraints:            trimStringSlice(args.Constraints),
 		Evidence:               trimStringSlice(args.Evidence),
 	})
-
-	result, err := t.env.AgentControl.Spawn(ctx, agentcontrol.SpawnRequest{
-		Type:        agentcontrol.HelpMeRecoveryWorkerType,
-		TaskName:    deriveAgentTaskName("helpme_recovery"),
-		Description: "HelpMe recovery",
-		Prompt:      prompt,
-		ParentID:    strings.TrimSpace(t.env.AgentID),
-		ParentPath:  currentAgentPath(t.env),
-		Synchronous: false,
-	})
-	if err != nil {
-		return "", err
-	}
-	// Register the RESOLVED brief (args first, history fallback, placeholder
-	// last) as first-class recovery state, keyed by the helper. The await
-	// side rebuilds the joint compact from it instead of re-parsing trace
-	// files, so the real user goal survives into the rewrite.
-	t.env.AgentControl.RegisterHelpMeRecovery(agentcontrol.HelpMeRecovery{
-		HelperID:               result.AgentID,
+	recovery := agentcontrol.HelpMeRecovery{
 		ParentPath:             currentAgentPath(t.env),
 		ParentExecutionJournal: journal,
 		Brief: agentcontrol.HelpMeRecoveryBrief{
@@ -320,7 +302,30 @@ func (t *HelpMeTool) Execute(ctx context.Context, argsJSON string) (string, erro
 			FailedAttempts:       trimStringSlice(args.FailedAttempts),
 			Evidence:             trimStringSlice(args.Evidence),
 		},
+	}
+
+	result, err := t.env.AgentControl.Spawn(ctx, agentcontrol.SpawnRequest{
+		Type:        agentcontrol.HelpMeRecoveryWorkerType,
+		TaskName:    deriveAgentTaskName("helpme_recovery"),
+		Description: "HelpMe recovery",
+		Prompt:      prompt,
+		ParentID:    strings.TrimSpace(t.env.AgentID),
+		ParentPath:  currentAgentPath(t.env),
+		Synchronous: false,
+		AdmissionPrepare: func(workerID string) (agentcontrol.SpawnAdmissionRollback, error) {
+			prepared := recovery
+			prepared.HelperID = workerID
+			if err := t.env.AgentControl.RegisterHelpMeRecovery(prepared); err != nil {
+				return nil, fmt.Errorf("persist helpme recovery: %w", err)
+			}
+			return func() error {
+				return t.env.AgentControl.RemoveHelpMeRecovery(workerID)
+			}, nil
+		},
 	})
+	if err != nil {
+		return "", err
+	}
 
 	response := helpMeResponse{
 		Action:    "helpme",

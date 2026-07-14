@@ -14,8 +14,12 @@ import {
   sameRuntimeContext,
   type AppState,
 } from "./AppState";
+import { motionDurationMs, prefersReducedMotion } from "./motion";
 
-const CONVERSATION_SEARCH_EXIT_MS = 180;
+const CONVERSATION_SEARCH_EXIT_MS = motionDurationMs(
+  "--search-exit-duration",
+  180,
+);
 const CONVERSATION_SEARCH_RESULT_LIMIT = 40;
 const CONVERSATION_SEARCH_PREVIEW_LIMIT = 4;
 
@@ -409,6 +413,3 @@ function currentSelectedSearchThreadID(state: ConversationSearchState): string {
   return state.results[idx]?.thread.id ?? "";
 }
 
-function prefersReducedMotion(): boolean {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}

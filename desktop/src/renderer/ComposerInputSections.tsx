@@ -125,6 +125,11 @@ export function SplitPaneComposer({
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const hasAttachments = images.length > 0 || files.length > 0;
   const hasDraft = prompt.trim().length > 0 || hasAttachments;
+  // Match the dock composer: the button is a stop control only while running
+  // with an empty input. Once there is a draft, it flips to send (queuing
+  // mid-turn) so a typed follow-up is never blocked by the stop state.
+  const showStop = running && !hasDraft;
+  const sendLabel = running ? "排队发送" : "发送";
   const statusText = composerStatusText(status);
   const statusIsLiveProgress = composerStatusIsLiveProgress(statusLiveProgress);
   const { resetQueryHistoryNavigation, handleQueryHistoryKeyDown } = useComposerQueryHistory({
@@ -223,7 +228,7 @@ export function SplitPaneComposer({
           ) : (
             <span />
           )}
-          {running ? (
+          {showStop ? (
             <button
               className="composer-action-button composer-stop-button"
               type="button"
@@ -238,7 +243,8 @@ export function SplitPaneComposer({
               className="composer-action-button composer-send-button"
               type="button"
               onClick={submitComposer}
-              aria-label="发送"
+              aria-label={sendLabel}
+              title={sendLabel}
               disabled={readOnly || !hasDraft}
             >
               <Send aria-hidden="true" />

@@ -42,10 +42,10 @@
   content: "";
   transform: translateX(-50%);
   transition:
-    background 120ms ease,
-    box-shadow 120ms ease,
-    opacity 120ms ease,
-    transform 120ms ease;
+    background var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .thread-panel-resizer:hover::before,
@@ -231,7 +231,7 @@
 .conversation-subthread-state svg {
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
-  animation: conversation-subthread-spin 900ms linear infinite;
+  animation: wuu-spin var(--motion-spin) linear infinite;
 }
 
 .conversation-subthread-state.error {
@@ -383,7 +383,7 @@
 .conversation-subthread-trace-toggle svg {
   width: var(--icon-size-sm);
   height: var(--icon-size-sm);
-  transition: transform 120ms ease;
+  transition: transform var(--motion-fast) var(--ease-out);
 }
 
 .conversation-subthread-trace-toggle svg.is-open {
@@ -447,8 +447,3 @@
   }
 }
 
-@keyframes conversation-subthread-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
