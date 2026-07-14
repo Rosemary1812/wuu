@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -56,6 +57,7 @@ type Process struct {
 	Status            Status    `json:"status"`
 	PID               int       `json:"pid"`
 	PGID              int       `json:"pgid"`
+	ProcessStartTime  string    `json:"process_start_time,omitempty"`
 	TTY               bool      `json:"tty,omitempty"`
 	LogPath           string    `json:"log_path"`
 	Command           string    `json:"command"`
@@ -249,6 +251,23 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 	} else {
 		p.PGID = p.PID
 	}
+	p.ProcessStartTime, err = readProcessStartTime(p.PID)
+	if err != nil {
+		if p.PGID > 1 {
+			_ = syscall.Kill(-p.PGID, syscall.SIGKILL)
+		}
+		if stdin != nil {
+			_ = stdin.Close()
+		}
+		_ = cmd.Wait()
+		_ = logf.Close()
+		p.Status = StatusFailed
+		p.LastError = err.Error()
+		p.UpdatedAt = time.Now()
+		_ = m.save(p)
+		m.publish(Event{Type: EventFailed, Process: *p})
+		return p, fmt.Errorf("record process identity: %w", err)
+	}
 	p.Status = StatusRunning
 	p.UpdatedAt = time.Now()
 	_ = m.save(p)
@@ -312,6 +331,21 @@ func managedCommand(command, cwd string) *exec.Cmd {
 	cmd.Dir = cwd
 	cmd.Env = os.Environ()
 	return cmd
+}
+
+func readProcessStartTime(pid int) (string, error) {
+	if pid <= 1 {
+		return "", fmt.Errorf("invalid process id %d", pid)
+	}
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "lstart=").Output()
+	if err != nil {
+		return "", fmt.Errorf("read start time for process %d: %w", pid, err)
+	}
+	started := strings.TrimSpace(string(out))
+	if started == "" {
+		return "", fmt.Errorf("process %d has no start time", pid)
+	}
+	return started, nil
 }
 
 func (m *Manager) wait(id string, cmd *exec.Cmd, logf *os.File) {
@@ -562,15 +596,32 @@ func (m *Manager) Stop(id string) (*Process, error) {
 		m.mu.Unlock()
 		return p, nil
 	}
+	running, err := processMatchesRecord(p)
+	if err != nil {
+		m.mu.Unlock()
+		return p, err
+	}
+	if !running {
+		delete(m.handles, id)
+		p.Status = StatusStopped
+		p.StoppedAt = time.Now()
+		p.UpdatedAt = p.StoppedAt
+		if err := m.save(p); err != nil {
+			m.mu.Unlock()
+			return p, err
+		}
+		m.mu.Unlock()
+		m.publish(Event{Type: EventStopped, Process: *p})
+		return p, nil
+	}
 	p.Status = StatusStopping
 	p.UpdatedAt = time.Now()
 	_ = m.save(p)
 	m.mu.Unlock()
 	pgid := p.PGID
-	if pgid == 0 {
-		pgid = p.PID
+	if err := syscall.Kill(-pgid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return p, fmt.Errorf("terminate process group %d: %w", pgid, err)
 	}
-	_ = syscall.Kill(-pgid, syscall.SIGTERM)
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		cur, err := m.load(id)
@@ -582,13 +633,53 @@ func (m *Manager) Stop(id string) (*Process, error) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	_ = syscall.Kill(-pgid, syscall.SIGKILL)
+	if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return p, fmt.Errorf("kill process group %d: %w", pgid, err)
+	}
 	time.Sleep(100 * time.Millisecond)
 	cur, err := m.load(id)
 	if err != nil {
 		return nil, err
 	}
 	return cur, nil
+}
+
+func processMatchesRecord(p *Process) (bool, error) {
+	if p.PID <= 1 || p.PGID <= 1 {
+		return false, fmt.Errorf("process %q has unsafe pid/pgid %d/%d", p.ID, p.PID, p.PGID)
+	}
+	if strings.TrimSpace(p.ProcessStartTime) == "" {
+		return false, fmt.Errorf("process %q has no recorded start time; refusing to signal pid %d", p.ID, p.PID)
+	}
+	currentStart, err := readProcessStartTime(p.PID)
+	if err != nil {
+		if !processExists(p.PID) {
+			return false, nil
+		}
+		return false, fmt.Errorf("verify process %q identity: %w", p.ID, err)
+	}
+	if currentStart != p.ProcessStartTime {
+		return false, fmt.Errorf("process %q identity changed; refusing to signal reused pid %d", p.ID, p.PID)
+	}
+	currentPGID, err := syscall.Getpgid(p.PID)
+	if err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return false, nil
+		}
+		return false, fmt.Errorf("verify process %q group: %w", p.ID, err)
+	}
+	if currentPGID != p.PGID {
+		return false, fmt.Errorf("process %q group changed from %d to %d; refusing to signal it", p.ID, p.PGID, currentPGID)
+	}
+	return true, nil
+}
+
+func processExists(pid int) bool {
+	if pid <= 1 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 func (m *Manager) CleanupSession() error {

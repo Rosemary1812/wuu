@@ -24,6 +24,9 @@ func TestStartListAndPersist(t *testing.T) {
 	if p.OwnerKind != OwnerMainAgent || p.Lifecycle != LifecycleManaged || p.Status != StatusRunning {
 		t.Fatalf("unexpected process: %+v", p)
 	}
+	if p.ProcessStartTime == "" {
+		t.Fatal("started process is missing its persisted identity")
+	}
 	list, err := m.List()
 	if err != nil {
 		t.Fatal(err)
@@ -198,6 +201,62 @@ func TestStopStopsProcessGroup(t *testing.T) {
 		if err := proc.Signal(syscall.Signal(0)); err == nil {
 			t.Fatal("process still alive after stop")
 		}
+	}
+}
+
+func TestStopRefusesReusedProcessID(t *testing.T) {
+	root := t.TempDir()
+	m, err := NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pgid, err := syscall.Getpgid(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := &Process{
+		ID:               "proc-stale",
+		Status:           StatusRunning,
+		PID:              os.Getpid(),
+		PGID:             pgid,
+		ProcessStartTime: "a different process start time",
+	}
+	if err := m.save(record); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := m.Stop(record.ID)
+	if err == nil || !strings.Contains(err.Error(), "identity changed") {
+		t.Fatalf("expected reused-pid rejection, got process=%+v err=%v", got, err)
+	}
+	if got.Status != StatusRunning {
+		t.Fatalf("rejected stop changed status to %s", got.Status)
+	}
+}
+
+func TestStopReconcilesMissingProcess(t *testing.T) {
+	root := t.TempDir()
+	m, err := NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := &Process{
+		ID:               "proc-missing",
+		Status:           StatusRunning,
+		PID:              99999999,
+		PGID:             99999999,
+		ProcessStartTime: "no longer running",
+	}
+	if err := m.save(record); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := m.Stop(record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != StatusStopped || got.StoppedAt.IsZero() {
+		t.Fatalf("missing process was not reconciled: %+v", got)
 	}
 }
 
