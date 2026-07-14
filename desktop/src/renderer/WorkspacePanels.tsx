@@ -157,6 +157,7 @@ export function WorkspaceRightPanel({
   const [draggingTabID, setDraggingTabID] = useState<string | undefined>(undefined);
   const [draggingTabWidth, setDraggingTabWidth] = useState<number | undefined>(undefined);
   const [fileTreeWidth, setFileTreeWidth] = useState(initialWorkspaceFileTreeWidth);
+  const fileTreePreferredWidthRef = useRef(fileTreeWidth);
   const [resizingFileSplit, setResizingFileSplit] = useState(false);
   const fileSplitRef = useRef<HTMLDivElement>(null);
   const fileSplitResizeRef = useRef<{ startX: number; startTreeWidth: number } | null>(null);
@@ -174,8 +175,38 @@ export function WorkspaceRightPanel({
   }, [dirtyFileTabIDs, onDirtyFileTabsChange]);
 
   useEffect(() => {
-    window.localStorage.setItem(WORKSPACE_FILE_TREE_WIDTH_KEY, String(fileTreeWidth));
-  }, [fileTreeWidth]);
+    window.localStorage.setItem(
+      WORKSPACE_FILE_TREE_WIDTH_KEY,
+      String(fileTreePreferredWidthRef.current),
+    );
+  }, []);
+
+  useEffect(() => {
+    const split = fileSplitRef.current;
+    if (!split || typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+    const splitElement = split;
+
+    function fitFileTreeToPanel(): void {
+      const panelWidth = splitElement.getBoundingClientRect().width;
+      if (panelWidth <= 0) {
+        return;
+      }
+      setFileTreeWidth((current) => {
+        const next = clampWorkspaceFileTreeWidth(
+          fileTreePreferredWidthRef.current,
+          panelWidth,
+        );
+        return next === current ? current : next;
+      });
+    }
+
+    const observer = new ResizeObserver(fitFileTreeToPanel);
+    observer.observe(splitElement);
+    fitFileTreeToPanel();
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -190,11 +221,9 @@ export function WorkspaceRightPanel({
         return;
       }
       const panelWidth = fileSplitRef.current?.getBoundingClientRect().width;
-      setFileTreeWidth(
-        clampWorkspaceFileTreeWidth(
-          session.startTreeWidth - (event.clientX - session.startX),
-          panelWidth,
-        ),
+      setPreferredFileTreeWidth(
+        session.startTreeWidth - (event.clientX - session.startX),
+        panelWidth,
       );
     }
 
@@ -216,7 +245,14 @@ export function WorkspaceRightPanel({
 
   function resizeFileTreeBy(delta: number): void {
     const panelWidth = fileSplitRef.current?.getBoundingClientRect().width;
-    setFileTreeWidth((current) => clampWorkspaceFileTreeWidth(current + delta, panelWidth));
+    setPreferredFileTreeWidth(fileTreeWidth + delta, panelWidth);
+  }
+
+  function setPreferredFileTreeWidth(width: number, panelWidth?: number): void {
+    const preferredWidth = clampWorkspaceFileTreeWidth(width);
+    fileTreePreferredWidthRef.current = preferredWidth;
+    window.localStorage.setItem(WORKSPACE_FILE_TREE_WIDTH_KEY, String(preferredWidth));
+    setFileTreeWidth(clampWorkspaceFileTreeWidth(preferredWidth, panelWidth));
   }
 
   function startFileSplitResize(event: ReactPointerEvent<HTMLDivElement>): void {
@@ -246,7 +282,7 @@ export function WorkspaceRightPanel({
 
   function resetFileTreeWidth(): void {
     const panelWidth = fileSplitRef.current?.getBoundingClientRect().width;
-    setFileTreeWidth(clampWorkspaceFileTreeWidth(WORKSPACE_FILE_TREE_DEFAULT_WIDTH, panelWidth));
+    setPreferredFileTreeWidth(WORKSPACE_FILE_TREE_DEFAULT_WIDTH, panelWidth);
   }
 
   function startTabDrag(event: DragStartEvent): void {

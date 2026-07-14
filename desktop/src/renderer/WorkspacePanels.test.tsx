@@ -348,6 +348,60 @@ describe("WorkspaceRightPanel", () => {
     expect(clampWorkspaceFileTreeWidth(480, 600)).toBe(360);
   });
 
+  it("temporarily shrinks the file tree when the panel gets narrow", async () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    let resizeCallback: ResizeObserverCallback | undefined;
+    class MockResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        resizeCallback = callback;
+      }
+      observe(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+
+    try {
+      window.localStorage.setItem("wuu.desktop.fileTreeWidth", "320");
+      const context: RuntimeContext = {
+        kind: "project",
+        project_id: "project-1",
+        cwd: "/repo/project",
+      };
+      const fileTab = workspaceFileViewTab({ context, path: "src/App.tsx" });
+      mount(
+        <WorkspaceRightPanel
+          {...baseProps()}
+          tabs={[fileTab]}
+          activeTabID={fileTab.id}
+          activeFileTabID={fileTab.id}
+          workspaceContext={context}
+        />,
+      );
+      await act(async () => Promise.resolve());
+
+      const split = container!.querySelector<HTMLElement>(".workspace-files-split")!;
+      let panelWidth = 420;
+      Object.defineProperty(split, "getBoundingClientRect", {
+        configurable: true,
+        value: () => ({ width: panelWidth }),
+      });
+
+      act(() => resizeCallback?.([], {} as ResizeObserver));
+      expect(split.style.getPropertyValue("--workspace-file-tree-width")).toBe("180px");
+      expect(window.localStorage.getItem("wuu.desktop.fileTreeWidth")).toBe("320");
+
+      panelWidth = 600;
+      act(() => resizeCallback?.([], {} as ResizeObserver));
+      expect(split.style.getPropertyValue("--workspace-file-tree-width")).toBe("320px");
+    } finally {
+      if (originalResizeObserver) {
+        globalThis.ResizeObserver = originalResizeObserver;
+      } else {
+        Reflect.deleteProperty(globalThis, "ResizeObserver");
+      }
+    }
+  });
+
   it("keeps inactive file state without retaining inactive Monaco editors", async () => {
     const context: RuntimeContext = {
       kind: "project",
