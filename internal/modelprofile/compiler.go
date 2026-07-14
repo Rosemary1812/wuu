@@ -134,16 +134,13 @@ func ResolveProfileKey(p Profile) ProfileKey {
 }
 
 // surfaceBuilder is a helper that incrementally builds a Surface.
-// It enforces the rule that every tool name lives in exactly one
-// exposure bucket: direct, deferred, or hidden. A broad capability
-// can appear in more than one bucket when different tools under that
-// capability have different lifecycles, such as worker agent_report
-// being direct while other agent management tools stay deferred.
+// It enforces the rule that every model-visible tool name lives in either the
+// direct or deferred exposure bucket. A broad capability can appear in both
+// buckets when different tools under it have different lifecycles.
 type surfaceBuilder struct {
 	surface  capability.Surface
 	visible  map[capability.Capability]struct{}
 	deferred map[capability.Capability]struct{}
-	hidden   map[capability.Capability]struct{}
 }
 
 func newSurfaceFor(p Profile, key ProfileKey) capability.Surface {
@@ -162,7 +159,6 @@ func newBuilder(p Profile, key ProfileKey) *surfaceBuilder {
 		surface:  newSurfaceFor(p, key),
 		visible:  map[capability.Capability]struct{}{},
 		deferred: map[capability.Capability]struct{}{},
-		hidden:   map[capability.Capability]struct{}{},
 	}
 }
 
@@ -195,41 +191,6 @@ func (b *surfaceBuilder) addDeferredCapability(c capability.Capability) {
 	b.surface.DeferredCapabilities = append(b.surface.DeferredCapabilities, c)
 }
 
-// addHidden registers a profile companion tool that is intentionally
-// not model-visible under this surface.
-func (b *surfaceBuilder) addHidden(tool string, c capability.Capability) {
-	b.surface.HiddenTools[tool] = c
-	if _, ok := b.hidden[c]; ok {
-		return
-	}
-	if _, ok := b.visible[c]; ok {
-		return
-	}
-	if _, ok := b.deferred[c]; ok {
-		return
-	}
-	b.hidden[c] = struct{}{}
-	b.surface.HiddenCapabilities = append(b.surface.HiddenCapabilities, c)
-}
-
-// skipHidden records that a capability exists on this surface but
-// the runtime does not currently implement a tool for it. Used to
-// keep the hidden capability list aligned with the visible one
-// when a future revision will add the implementation back.
-func (b *surfaceBuilder) skipHidden(c capability.Capability) {
-	if _, ok := b.hidden[c]; ok {
-		return
-	}
-	if _, ok := b.visible[c]; ok {
-		return
-	}
-	if _, ok := b.deferred[c]; ok {
-		return
-	}
-	b.hidden[c] = struct{}{}
-	b.surface.HiddenCapabilities = append(b.surface.HiddenCapabilities, c)
-}
-
 // sortCaps sorts the capability slices for deterministic output.
 func (b *surfaceBuilder) sortCaps() {
 	sort.SliceStable(b.surface.Capabilities, func(i, j int) bool {
@@ -237,9 +198,6 @@ func (b *surfaceBuilder) sortCaps() {
 	})
 	sort.SliceStable(b.surface.DeferredCapabilities, func(i, j int) bool {
 		return string(b.surface.DeferredCapabilities[i]) < string(b.surface.DeferredCapabilities[j])
-	})
-	sort.SliceStable(b.surface.HiddenCapabilities, func(i, j int) bool {
-		return string(b.surface.HiddenCapabilities[i]) < string(b.surface.HiddenCapabilities[j])
 	})
 }
 
