@@ -12,6 +12,7 @@ import (
 
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
 	"github.com/blueberrycongee/wuu/internal/goalruntime"
+	"github.com/blueberrycongee/wuu/internal/session"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
@@ -89,6 +90,43 @@ func TestGoalActiveSummaryPrefersThreadRuntimeGoal(t *testing.T) {
 	}
 	if !result.Summary.CanPause || result.Summary.CanResume {
 		t.Fatalf("unexpected runtime controls: %+v", result.Summary)
+	}
+}
+
+func TestGoalLookupDoesNotConstructThreadRuntime(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+	sess, err := session.CreateWithMetadata(rt.SessionDir, "thread-goal-read", rt.RootDir)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	goalRuntime := goalruntime.NewRuntime(goalruntime.NewStore(statepath.ThreadGoalRuntimePath(rt.StateDir, sess.ID)))
+	if _, err := goalRuntime.Create(goalruntime.Spec{
+		ThreadID:  sess.ID,
+		GoalID:    "read-only-goal",
+		Objective: "inspect without runtime side effects",
+	}); err != nil {
+		t.Fatalf("create goal: %v", err)
+	}
+
+	srv := New(rt, &lockedBuffer{})
+	t.Cleanup(srv.Close)
+	th, err := srv.ensureResidentThread(sess.ID)
+	if err != nil {
+		t.Fatalf("load thread: %v", err)
+	}
+	goal, ok, err := srv.currentRuntimeGoal(sess.ID)
+	if err != nil {
+		t.Fatalf("lookup goal: %v", err)
+	}
+	if !ok || goal.GoalID != "read-only-goal" {
+		t.Fatalf("lookup goal = (%+v, %t), want read-only-goal", goal, ok)
+	}
+	th.mu.Lock()
+	threadRuntime := th.execRuntime
+	th.mu.Unlock()
+	if threadRuntime != nil {
+		t.Fatal("read-only goal lookup constructed a thread runtime")
 	}
 }
 

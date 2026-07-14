@@ -243,10 +243,9 @@ func (s *Server) goalRuntimeForThread(threadID string) (*goalruntime.Runtime, bo
 		return nil, false, err
 	}
 	if th := s.thread(threadID); th != nil {
-		threadRuntime, err := s.ensureThreadRuntime(th)
-		if err != nil {
-			return nil, false, err
-		}
+		th.mu.Lock()
+		threadRuntime := th.execRuntime
+		th.mu.Unlock()
 		if threadRuntime != nil && threadRuntime.GoalRuntime != nil {
 			return threadRuntime.GoalRuntime, true, nil
 		}
