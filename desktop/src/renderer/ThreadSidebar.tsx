@@ -369,8 +369,6 @@ function ThreadList({
   onArchive,
   onDelete,
   onRename,
-  
-  onSidebarThreadHover,
   onShowMore,
   onCollapse
 }: {
@@ -388,11 +386,6 @@ function ThreadList({
   onArchive: (thread: ThreadSummary) => void;
   onDelete: (thread: ThreadSummary) => void;
   onRename?: (thread: ThreadSummary, title: string) => void;
-  
-  // Forwarded so ThreadRows can report which row is currently hovered; the
-  // conversation pane owns the preview render so the card lives in the
-  // message stream, not the sidebar DOM.
-  onSidebarThreadHover?: (threadID: string | undefined) => void;
   onShowMore: () => void;
   onCollapse: () => void;
 }): JSX.Element {
@@ -548,8 +541,6 @@ function ThreadRows({
   onArchive,
   onDelete,
   onRename,
-  
-  onSidebarThreadHover,
 }: {
   threads: ThreadSummary[];
   activeID?: string;
@@ -564,12 +555,6 @@ function ThreadRows({
   onArchive: (thread: ThreadSummary) => void;
   onDelete: (thread: ThreadSummary) => void;
   onRename?: (thread: ThreadSummary, title: string) => void;
-  
-  // Fires when a row is hovered/unhovered so the conversation pane can
-  // render a "what did this thread actually do" preview without the card
-  // living inside the sidebar DOM (which would put it on top of the left
-  // panel rather than in the message stream).
-  onSidebarThreadHover?: (threadID: string | undefined) => void;
 }): JSX.Element {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; thread: ThreadSummary } | null>(null);
   const [renameDialog, setRenameDialog] = useState<{

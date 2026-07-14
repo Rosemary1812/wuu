@@ -211,12 +211,12 @@ function gitFileDiffResult(
   };
 
   if (change.status === "untracked") {
-    return gitNewFileDiffResult(root, absolutePath, change);
+    return gitNewFileDiffResult(absolutePath, change);
   }
 
   if (change.status === "unknown" && gitPathIgnored(root, relativePath)) {
     const stats = untrackedGitFileStats(root, relativePath);
-    return gitNewFileDiffResult(root, absolutePath, {
+    return gitNewFileDiffResult(absolutePath, {
       ...change,
       status: "ignored",
       additions: stats.additions,
@@ -613,7 +613,6 @@ function untrackedGitFileStats(
 }
 
 function gitNewFileDiffResult(
-  root: string,
   absolutePath: string,
   change: GitChangeFile,
 ): GitFileDiffResult {

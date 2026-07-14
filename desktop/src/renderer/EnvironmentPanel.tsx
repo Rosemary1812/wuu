@@ -33,7 +33,6 @@ export type EnvironmentPanelMotionState = "open" | "closing";
 export function EnvironmentPanel({
   panelRef,
   motionState,
-  initialized,
   gitStatus,
   planUpdate,
   activeMenu,

@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   GitStatusResult,
-  InputFile,
-  InputImage,
   RuntimeContext,
   Thread,
   ThreadItem,
@@ -14,8 +12,6 @@ import {
   initialState,
   threadSessionTabID,
   type AppState,
-  type ComposerDraftState,
-  type ConversationPaneID,
 } from "./AppState";
 import type { ComposerFile, ComposerImage, QueuedComposerMessage } from "./ComposerMessages";
 import {

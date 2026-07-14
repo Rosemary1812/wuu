@@ -1,26 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ThreadSearchResultItem } from "../shared/protocol";
 import {
   conversationSearchStatusText,
   conversationSearchVisibleSnippet,
 } from "./ConversationSearchDisplay";
-
-function searchResult(id: string, pinned = false): ThreadSearchResultItem {
-  return {
-    thread: {
-      id,
-      preview: id,
-      model_provider: "openai",
-      model: "gpt-5",
-      cwd: "/tmp/wuu",
-      status: "idle",
-      pinned,
-      created_at: "2026-01-01T00:00:00.000Z",
-      updated_at: "2026-01-01T00:00:00.000Z",
-      turns: [],
-    },
-  };
-}
 
 describe("conversationSearchStatusText", () => {
   it("prioritizes the loading state", () => {

@@ -144,17 +144,6 @@ async function settleDirectoryLoads(): Promise<void> {
   }
 }
 
-async function click(selector: string): Promise<void> {
-  const element = container.querySelector<HTMLButtonElement>(selector);
-  if (!element) {
-    throw new Error(`missing button ${selector}`);
-  }
-  await act(async () => {
-    element.click();
-    await Promise.resolve();
-  });
-}
-
 // Helpers for the file-tree context-menu tests below. Right-click events
 // reach the row's onContextMenu handler, which sets React state; menu
 // listeners attach via setTimeout(0) inside useEffect, so tests must flush

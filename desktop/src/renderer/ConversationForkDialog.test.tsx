@@ -9,7 +9,7 @@
  * manual review of the new `.fork-dialog*` CSS block — see
  * `styles/environment.css`.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, createElement, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ConversationForkDialog } from "./ConversationForkDialog";

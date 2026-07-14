@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   CodexPetHint,
-  CodexPetSize,
   CodexPetsSnapshot,
 } from "../shared/protocol";
 import {

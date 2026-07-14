@@ -11,7 +11,7 @@
  * - clicks inside the panel do not bubble to the backdrop
  * - default focus moves into the panel body, skipping the X button
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, createElement, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Modal } from "./Modal";

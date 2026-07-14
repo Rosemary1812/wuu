@@ -9,7 +9,6 @@ import {
   createDraftSessionTab,
   createThreadSessionTab,
   ensureSessionTab,
-  initialSplitComposerDrafts,
   isThreadRunning,
   threadSessionTabID,
   upsertThread,

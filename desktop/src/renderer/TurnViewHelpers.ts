@@ -1,4 +1,4 @@
-import type { Thread, ThreadItem, Turn } from "../shared/protocol";
+import type { Thread, Turn } from "../shared/protocol";
 import { isAgentHandoffItem } from "./AgentHandoff";
 import {
   messageFlowFinalTextIndex,

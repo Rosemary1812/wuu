@@ -22,8 +22,6 @@ import type {
 } from "../shared/protocol";
 import {
   SIDE_THREAD_DEFAULT_WIDTH,
-  SIDE_THREAD_MAX_WIDTH,
-  SIDE_THREAD_MIN_WIDTH,
   clampSideThreadWidth,
   createInitialSideThreadStore,
   reduceSideThreadStore,
@@ -118,7 +116,6 @@ export function useSideThreadController(
   const [store, setStore] = useState<SideThreadStoreState>(() =>
     createInitialSideThreadStore(SIDE_THREAD_DEFAULT_WIDTH)
   );
-  const [resizing, setResizing] = useState(false);
   // 总是从 store 取最新值；ref 只用于逃逸回调里访问最新 store。
   const storeRef = useRef(store);
   storeRef.current = store;
@@ -324,7 +321,6 @@ export function useSideThreadController(
       event.preventDefault();
       const startX = event.clientX;
       const startWidth = storeRef.current.width;
-      setResizing(true);
       const target = event.currentTarget;
       target.setPointerCapture?.(event.pointerId);
 
@@ -335,7 +331,6 @@ export function useSideThreadController(
         setStore((prev) => ({ ...prev, width: next }));
       };
       const handleUp = () => {
-        setResizing(false);
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleUp);
         window.removeEventListener("pointercancel", handleUp);

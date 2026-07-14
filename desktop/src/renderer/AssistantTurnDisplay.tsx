@@ -304,7 +304,7 @@ function latestInProgressProcessPreview(
   turn: Turn,
 ): TurnProcessPreview | undefined {
   for (let index = turn.items.length - 1; index >= 0; index--) {
-    const preview = processPreviewForItem(turn, turn.items[index]);
+    const preview = processPreviewForItem(turn.items[index]);
     if (preview) {
       return preview;
     }
@@ -313,7 +313,6 @@ function latestInProgressProcessPreview(
 }
 
 function processPreviewForItem(
-  turn: Turn,
   item: ThreadItem,
 ): TurnProcessPreview | undefined {
   if (item.type === "agent_message") {

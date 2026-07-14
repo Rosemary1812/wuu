@@ -21,7 +21,6 @@ import {
   upsertThread,
   type AppState,
   type ComposerDraftState,
-  type SessionTab,
 } from "./AppState";
 import type { ComposerFile, ComposerImage } from "./ComposerMessages";
 import type { ContextCompositionEntry } from "./ContextCompositionCard";

@@ -6,7 +6,6 @@ import {
   cloneSessionTabDraft,
   composerDraftHasContent,
   draftSessionTabForContext,
-  emptyComposerDraft,
   ensureSessionTab,
   isAnyThreadRunning,
   persistActiveSessionTabDraft,

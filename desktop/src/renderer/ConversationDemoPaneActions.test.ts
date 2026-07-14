@@ -6,8 +6,6 @@ import {
   initialState,
   threadSessionTabID,
   type AppState,
-  type ComposerDraftState,
-  type ConversationPaneID,
 } from "./AppState";
 import { createConversationDemoPaneActions } from "./ConversationDemoPaneActions";
 import type { ComposerFile, ComposerImage } from "./ComposerMessages";

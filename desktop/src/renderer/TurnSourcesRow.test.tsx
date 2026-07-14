@@ -15,7 +15,7 @@
  *   - onError swaps the favicon for a first-letter avatar
  *   - accessible name + tooltip carry the full URL (not just host)
  */
-import { act, createElement } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TurnSource } from "./ToolActivityHelpers";

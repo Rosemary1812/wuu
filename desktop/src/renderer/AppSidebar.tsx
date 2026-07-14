@@ -82,8 +82,6 @@ export const SIDEBAR_SECTION_PINNED = "__wuu_pinned__";
 export const SIDEBAR_SECTION_AGENTS = "__wuu_agents__";
 export const SIDEBAR_SECTION_GROUP = "__wuu_group__";
 
-const SIDEBAR_SECTION_ORDER_KEY = "wuu.desktop.sidebarSectionOrder";
-
 /**
  * Reconcile the persisted sidebar section order against the current
  * project list. Pure function so it is directly testable.

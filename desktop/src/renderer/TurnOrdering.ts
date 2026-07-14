@@ -1,11 +1,5 @@
 import type { ThreadItem, Turn } from "../shared/protocol";
 
-type IndexedThreadItem = {
-  item: ThreadItem;
-  index: number;
-  order: number | undefined;
-};
-
 export function orderedTurnItems(items: ThreadItem[]): ThreadItem[] {
   const indexed = items.map((item, index) => ({
     item,

@@ -10,7 +10,6 @@ import {
 import type {
   ConversationSubthread,
   TaskEventView,
-  TaskPieceView,
   ThreadItem,
 } from "../shared/protocol";
 import { ChatThreadViewContainer } from "./ChatThreadViewContainer";

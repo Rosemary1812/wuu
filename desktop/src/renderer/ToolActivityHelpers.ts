@@ -968,7 +968,6 @@ function readableCommandLabel(
 ): string {
   const args = parseJSONRecord(item.arguments);
   const result = parseJSONRecord(item.result);
-  const name = (item.name ?? "").trim();
   const command =
     stringValue(result, "command") ?? stringValue(args, "command") ?? "";
   const action = stringValue(result, "action") ?? stringValue(args, "action") ?? "";

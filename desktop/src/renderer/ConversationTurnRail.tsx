@@ -18,14 +18,8 @@ import {
   isWindowResizing,
 } from "./WindowResizeState";
 
-// Rail geometry. The macOS Dock magnification model drives the numbers:
-// a default bar is short, the hovered bar grows by ~3x, and the two
-// neighbours grow by ~1.5x. The spring easing is applied via CSS
-// (cubic-bezier with slight overshoot) so React stays out of the
-// animation loop.
-const RAIL_BAR_DEFAULT_WIDTH = 18;
-const RAIL_BAR_ADJACENT_WIDTH = 22;
-const RAIL_BAR_HOVERED_WIDTH = 40;
+// Keep vertical capacity calculations aligned with the CSS bar height and gap.
+// Width magnification and easing remain CSS-only concerns.
 const RAIL_BAR_HEIGHT_PX = 3;
 const RAIL_BAR_GAP_PX = 6;
 const RAIL_VERTICAL_SAFE_MARGIN_PX = 24;

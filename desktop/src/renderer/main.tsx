@@ -1,4 +1,3 @@
-import React from "react";
 import ReactDOM from "react-dom/client";
 import { MESSAGE_FLOW_FONT_SIZE_RANGE } from "../shared/protocol";
 import { App } from "./App";

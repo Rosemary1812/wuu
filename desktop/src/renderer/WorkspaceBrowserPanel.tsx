@@ -28,14 +28,6 @@ type WebviewElement = Electron.WebviewTag;
 
 type BrowserStatus = "idle" | "loading" | "error";
 
-function isWebviewElement(node: unknown): node is WebviewElement {
-  return (
-    typeof node === "object" &&
-    node !== null &&
-    (node as { tagName?: string }).tagName === "WEBVIEW"
-  );
-}
-
 function extractHostname(value: string): string | undefined {
   const match = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/([^/?#]+)/.exec(value);
   return match?.[1];

@@ -15,8 +15,6 @@ import {
   clipboardAttachmentFiles,
   composerFileFromFile,
   composerImageFromFile,
-  inputFilesFromComposer,
-  inputImagesFromComposer,
   isSupportedComposerAttachment
 } from "./ComposerMessages";
 import { EnvelopeNotice } from "./EnvelopeNotice";

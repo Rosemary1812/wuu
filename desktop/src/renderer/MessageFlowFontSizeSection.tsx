@@ -134,7 +134,7 @@ export function MessageFlowFontSizeControl(): JSX.Element {
         aria-label="消息流字号预览"
         data-testid="settings-message-flow-font-size-preview"
       >
-        {PREVIEW_SAMPLES.map((text, index) => (
+        {PREVIEW_SAMPLES.map((text) => (
           <p
             className="message-flow-preview-paragraph"
             key={text}
