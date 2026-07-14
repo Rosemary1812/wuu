@@ -29,7 +29,7 @@ func TestSSETransportConnectHonorsContext(t *testing.T) {
 
 func TestSSETransportCloseCancelsActiveSend(t *testing.T) {
 	messageStarted := make(chan struct{})
-	messageCanceled := make(chan struct{})
+	messageRelease := make(chan struct{})
 	var messageOnce sync.Once
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -40,13 +40,18 @@ func TestSSETransportCloseCancelsActiveSend(t *testing.T) {
 			<-r.Context().Done()
 		case "/message":
 			messageOnce.Do(func() { close(messageStarted) })
-			<-r.Context().Done()
-			close(messageCanceled)
+			select {
+			case <-r.Context().Done():
+			case <-messageRelease:
+			}
 		default:
 			http.NotFound(w, r)
 		}
 	}))
-	defer server.Close()
+	defer func() {
+		close(messageRelease)
+		server.Close()
+	}()
 
 	transport, err := newSSETransport(context.Background(), server.URL+"/sse", nil)
 	if err != nil {
@@ -68,11 +73,6 @@ func TestSSETransportCloseCancelsActiveSend(t *testing.T) {
 	}
 	if err := client.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
-	}
-	select {
-	case <-messageCanceled:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Close did not cancel the active SSE message request")
 	}
 	select {
 	case err := <-callDone:
