@@ -6,7 +6,7 @@ import (
 )
 
 func TestRenderLightweightSlashCommandPrompt(t *testing.T) {
-	content, display, ok := renderLightweightSlashCommandPrompt("/debug login failure")
+	content, display, ok := renderLightweightSlashCommandPrompt("/debug login failure", false)
 	if !ok {
 		t.Fatal("expected /debug to render")
 	}
@@ -24,7 +24,7 @@ func TestRenderLightweightSlashCommandPrompt(t *testing.T) {
 }
 
 func TestRenderHelpMeSlashCommandPrompt(t *testing.T) {
-	content, display, ok := renderLightweightSlashCommandPrompt("/helpme still not fixed after three tries")
+	content, display, ok := renderLightweightSlashCommandPrompt("/helpme still not fixed after three tries", true)
 	if !ok {
 		t.Fatal("expected /helpme to render")
 	}
@@ -44,8 +44,31 @@ func TestRenderHelpMeSlashCommandPrompt(t *testing.T) {
 	}
 }
 
+func TestRenderHelpMeSlashCommandPromptRequiresFeatureFlag(t *testing.T) {
+	prompt := "/helpme still not fixed"
+	content, display, ok := renderLightweightSlashCommandPrompt(prompt, false)
+	if ok || display != "" || content != prompt {
+		t.Fatalf("disabled HelpMe slash command must stay raw, got content=%q display=%q ok=%v", content, display, ok)
+	}
+}
+
+func TestUserMessageFromPromptRejectsDisabledHelpMeAliases(t *testing.T) {
+	for _, prompt := range []string{"/helpme still stuck", "/rescue", "/handoff try again"} {
+		if _, err := userMessageFromPrompt(prompt, nil, nil, false); err == nil || !strings.Contains(err.Error(), "experimental_helpme") {
+			t.Errorf("userMessageFromPrompt(%q) error = %v, want feature-disabled error", prompt, err)
+		}
+	}
+	msg, err := userMessageFromPrompt("/unknown keep this literal", nil, nil, false)
+	if err != nil {
+		t.Fatalf("unknown slash command must remain ordinary input: %v", err)
+	}
+	if msg.Content != "/unknown keep this literal" || msg.DisplayContent != "" {
+		t.Fatalf("unknown slash command changed unexpectedly: %+v", msg)
+	}
+}
+
 func TestRenderCommitSlashCommandPromptIsSurfaceNeutral(t *testing.T) {
-	content, _, ok := renderLightweightSlashCommandPrompt("/commit polish summary")
+	content, _, ok := renderLightweightSlashCommandPrompt("/commit polish summary", false)
 	if !ok {
 		t.Fatal("expected /commit to render")
 	}
@@ -62,7 +85,7 @@ func TestRenderCommitSlashCommandPromptIsSurfaceNeutral(t *testing.T) {
 }
 
 func TestRenderLightweightSlashCommandPromptLeavesCompactRaw(t *testing.T) {
-	content, display, ok := renderLightweightSlashCommandPrompt("/compact")
+	content, display, ok := renderLightweightSlashCommandPrompt("/compact", false)
 	if ok || display != "" || content != "/compact" {
 		t.Fatalf("compact slash should not render as prompt, got content=%q display=%q ok=%v", content, display, ok)
 	}
@@ -91,14 +114,14 @@ func TestIsManualCompactPrompt(t *testing.T) {
 }
 
 func TestRenderLightweightSlashCommandPromptKeepsSkillSlashRaw(t *testing.T) {
-	content, display, ok := renderLightweightSlashCommandPrompt("/slides quarterly roadmap")
+	content, display, ok := renderLightweightSlashCommandPrompt("/slides quarterly roadmap", false)
 	if ok || display != "" || content != "/slides quarterly roadmap" {
 		t.Fatalf("skill slash should remain raw, got content=%q display=%q ok=%v", content, display, ok)
 	}
 }
 
 func TestRenderLightweightSlashCommandPromptIgnoresEscapedSlash(t *testing.T) {
-	content, display, ok := renderLightweightSlashCommandPrompt("//debug login failure")
+	content, display, ok := renderLightweightSlashCommandPrompt("//debug login failure", false)
 	if ok || display != "" || content != "//debug login failure" {
 		t.Fatalf("escaped slash should remain raw, got content=%q display=%q ok=%v", content, display, ok)
 	}

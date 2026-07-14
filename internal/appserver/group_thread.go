@@ -175,7 +175,10 @@ func (s *Server) handleGroupTurnStart(req Request, th *threadState, params TurnS
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	userMsg := userMessageFromPrompt(params.Prompt, images, files)
+	userMsg, err := userMessageFromPrompt(params.Prompt, images, files, s.rt.ExperimentalHelpMe)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
 	if strings.TrimSpace(userMsg.Role) == "" {
 		userMsg.Role = "user"
 	}

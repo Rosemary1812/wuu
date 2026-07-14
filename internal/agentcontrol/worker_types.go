@@ -143,10 +143,16 @@ Rules:
 // issues one closing turn pinned to agent_report.
 const reportClosingRule = "- Close with agent_report: your structured handoff is required and will be requested at close if missing.\n"
 
-// AvailableWorkerTypes returns all built-in worker roles sorted by name.
+// AvailableWorkerTypes returns user-selectable built-in worker roles sorted by
+// name. Internal worker types remain available to trusted runtime paths through
+// LookupWorkerType but are not advertised to models or accepted by public
+// orchestration tools.
 func AvailableWorkerTypes() []WorkerType {
 	keys := make([]string, 0, len(builtinWorkerTypes))
 	for key := range builtinWorkerTypes {
+		if key == HelpMeRecoveryWorkerType {
+			continue
+		}
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
@@ -155,6 +161,20 @@ func AvailableWorkerTypes() []WorkerType {
 		out = append(out, builtinWorkerTypes[key])
 	}
 	return out
+}
+
+// LookupPublicWorkerType resolves only worker types exposed through
+// spawn_agent. HelpMe recovery is an internal implementation detail launched
+// by the gated helpme tool.
+func LookupPublicWorkerType(name string) (WorkerType, error) {
+	wt, err := LookupWorkerType(name)
+	if err != nil {
+		return WorkerType{}, err
+	}
+	if wt.Name == HelpMeRecoveryWorkerType {
+		return WorkerType{}, fmt.Errorf("worker type %q is internal (available: %s)", name, strings.Join(AvailableWorkerTypeNames(), ", "))
+	}
+	return wt, nil
 }
 
 // AvailableWorkerTypeNames returns all built-in worker role names sorted by name.
@@ -174,12 +194,7 @@ func LookupWorkerType(name string) (WorkerType, error) {
 	}
 	wt, ok := builtinWorkerTypes[name]
 	if !ok {
-		keys := make([]string, 0, len(builtinWorkerTypes))
-		for k := range builtinWorkerTypes {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		return WorkerType{}, fmt.Errorf("unknown worker type %q (available: %s)", name, strings.Join(keys, ", "))
+		return WorkerType{}, fmt.Errorf("unknown worker type %q (available: %s)", name, strings.Join(AvailableWorkerTypeNames(), ", "))
 	}
 	return wt, nil
 }

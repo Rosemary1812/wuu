@@ -213,7 +213,10 @@ func (s *Server) handleParticipantStart(ctx context.Context, req Request) error 
 	}
 
 	if params.RecordUserMessage {
-		userMsg := userMessageFromPrompt(displayPrompt, nil, nil)
+		userMsg, err := userMessageFromPrompt(displayPrompt, nil, nil, s.rt.ExperimentalHelpMe)
+		if err != nil {
+			return s.writeResponse(req.ID, nil, err)
+		}
 		now := time.Now().UTC()
 		th.mu.Lock()
 		if th.ReadOnly {

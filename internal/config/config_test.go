@@ -129,6 +129,9 @@ func TestLoadFrom_Defaults(t *testing.T) {
 	if cfg.Agent.ExperimentalDeferredToolBundles {
 		t.Fatal("expected native deferred bundle activation to be experimental and off by default")
 	}
+	if cfg.Agent.ExperimentalHelpMe {
+		t.Fatal("expected HelpMe to be experimental and off by default")
+	}
 	if cfg.Agent.ProfileName() != DefaultAgentName {
 		t.Fatalf("expected default agent name %q, got %q", DefaultAgentName, cfg.Agent.ProfileName())
 	}
@@ -1233,6 +1236,35 @@ func TestConfig_ExperimentalCoordinatorMode(t *testing.T) {
 	}
 	if !cfg.Agent.ExperimentalCoordinatorMode {
 		t.Fatal("expected ExperimentalCoordinatorMode=true")
+	}
+}
+
+func TestConfig_ExperimentalHelpMe(t *testing.T) {
+	workdir := t.TempDir()
+	configPath := filepath.Join(workdir, ".wuu.json")
+	jsonData := `{
+  "default_provider": "main",
+  "providers": {
+    "main": {
+      "type": "openai-compatible",
+      "base_url": "https://x",
+      "api_key": "k",
+      "model": "test"
+    }
+  },
+  "agent": {
+    "experimental_helpme": true
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(jsonData), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := LoadProjectConfig(workdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Agent.ExperimentalHelpMe {
+		t.Fatal("expected ExperimentalHelpMe=true")
 	}
 }
 

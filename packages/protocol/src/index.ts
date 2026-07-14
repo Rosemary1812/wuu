@@ -73,6 +73,11 @@ export type InitializeResult = {
   providers?: ProviderSummary[];
   advanced_settings?: AdvancedSettingsSummary;
   general_settings?: GeneralSettingsSummary;
+  features?: FeatureFlags;
+};
+
+export type FeatureFlags = {
+  helpme: boolean;
 };
 
 export type RuntimeIssue = {

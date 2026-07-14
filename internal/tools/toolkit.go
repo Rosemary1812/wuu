@@ -28,6 +28,7 @@ import (
 )
 
 const (
+	helpMeToolName             = "helpme"
 	defaultShellTimeoutSeconds = 300
 	maxShellTimeoutSeconds     = 3600
 	defaultMaxFileBytes        = 256 * 1024
@@ -111,6 +112,7 @@ func New(rootDir string) (*Toolkit, error) {
 	}
 	t := &Toolkit{
 		env:               env,
+		disabledTools:     map[string]struct{}{helpMeToolName: {}},
 		toolSearchEnabled: true,
 		boundary:          StandardBoundary(),
 	}
@@ -187,13 +189,13 @@ func (t *Toolkit) CloneForRoot(rootDir string) (*Toolkit, error) {
 	clone.activeProfile = t.activeProfile
 	clone.activeSurface = cloneSurface(t.activeSurface)
 	t.activeProfileMu.RUnlock()
-	clone.env.ActiveSurface = cloneSurface(clone.activeSurface)
 	if len(t.disabledTools) > 0 {
 		clone.disabledTools = make(map[string]struct{}, len(t.disabledTools))
 		for name := range t.disabledTools {
 			clone.disabledTools[name] = struct{}{}
 		}
 	}
+	clone.env.ActiveSurface = clone.ActiveSurface()
 	// Deferred tool loads are model-visible, per-conversation state created by
 	// tool_search. A cloned toolkit must not inherit them unless the clone's
 	// own model context has seen the loadable schema.
@@ -474,6 +476,22 @@ func (t *Toolkit) EnableTools(names ...string) {
 			continue
 		}
 		delete(t.disabledTools, n)
+	}
+}
+
+// SetHelpMeEnabled controls the experimental HelpMe recovery entrypoint. New
+// toolkits keep it disabled; runtime configuration must opt in explicitly.
+func (t *Toolkit) SetHelpMeEnabled(enabled bool) {
+	if t == nil {
+		return
+	}
+	if enabled {
+		t.EnableTools(helpMeToolName)
+	} else {
+		t.DisableTools(helpMeToolName)
+	}
+	if t.env != nil {
+		t.env.ActiveSurface = t.ActiveSurface()
 	}
 }
 
@@ -846,7 +864,7 @@ func (t *Toolkit) ActiveSurface() capability.Surface {
 	}
 	t.activeProfileMu.RLock()
 	defer t.activeProfileMu.RUnlock()
-	return cloneSurface(t.surfaceForToolLoadingMode(t.activeSurface))
+	return t.withDisabledToolsRemoved(cloneSurface(t.surfaceForToolLoadingMode(t.activeSurface)))
 }
 
 // activeCompiledSurface is the internal helper Definitions() uses
@@ -859,7 +877,20 @@ func (t *Toolkit) activeCompiledSurface() capability.Surface {
 	}
 	t.activeProfileMu.RLock()
 	defer t.activeProfileMu.RUnlock()
-	return t.surfaceForToolLoadingMode(t.activeSurface)
+	return t.withDisabledToolsRemoved(t.surfaceForToolLoadingMode(t.activeSurface))
+}
+
+func (t *Toolkit) withDisabledToolsRemoved(surface capability.Surface) capability.Surface {
+	if len(t.disabledTools) == 0 || surface.ProfileName == "" {
+		return surface
+	}
+	out := cloneSurface(surface)
+	for name := range t.disabledTools {
+		delete(out.Tools, name)
+		delete(out.DeferredTools, name)
+		delete(out.HiddenTools, name)
+	}
+	return out
 }
 
 func (t *Toolkit) surfaceForToolLoadingMode(surface capability.Surface) capability.Surface {

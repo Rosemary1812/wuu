@@ -573,6 +573,12 @@ func TestServerInitializeExposesModelSurfaceSummary(t *testing.T) {
 	if result.ToolSurface.ToolCapabilityMap["bash"] != "command.bash" {
 		t.Fatalf("tool surface missing bash capability: %+v", result.ToolSurface.ToolCapabilityMap)
 	}
+	if result.Features.HelpMe {
+		t.Fatal("HelpMe feature must be off by default")
+	}
+	if _, ok := result.ToolSurface.ToolCapabilityMap["helpme"]; ok {
+		t.Fatalf("disabled HelpMe leaked into tool surface: %+v", result.ToolSurface.ToolCapabilityMap)
+	}
 
 	configResult := remarshal[ConfigReadResult](t, responseByID(t, msgs, "2")["result"])
 	if configResult.ModelProfile == nil || configResult.ModelProfile.ProfileName != "openai_codex" {
@@ -580,6 +586,33 @@ func TestServerInitializeExposesModelSurfaceSummary(t *testing.T) {
 	}
 	if configResult.ToolSurface == nil || configResult.ToolSurface.ToolCapabilityMap["bash"] != "command.bash" {
 		t.Fatalf("config/read missing tool surface summary: %+v", configResult.ToolSurface)
+	}
+}
+
+func TestServerInitializeExposesEnabledHelpMeFeature(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.ProviderName = "openai"
+	rt.Model = "gpt-5-codex"
+	rt.ExperimentalHelpMe = true
+	kit, err := tools.New(rt.RootDir)
+	if err != nil {
+		t.Fatalf("New toolkit: %v", err)
+	}
+	kit.ConfigureSurfaceForProviderModel(rt.ProviderName, rt.Model, true)
+	kit.SetHelpMeEnabled(true)
+	rt.Toolkit = kit
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	result := remarshal[InitializeResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"])
+	if !result.Features.HelpMe {
+		t.Fatal("initialize result did not expose enabled HelpMe feature")
+	}
+	if result.ToolSurface == nil || result.ToolSurface.ToolCapabilityMap["helpme"] != "task.spawn" {
+		t.Fatalf("enabled HelpMe missing from tool surface: %+v", result.ToolSurface)
 	}
 }
 

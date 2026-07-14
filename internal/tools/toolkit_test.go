@@ -1728,6 +1728,9 @@ func TestToolkit_AgentTeamTelemetryRecordsResultActions(t *testing.T) {
 	if def, ok := profileDefByName(kit.Definitions(), "send_message"); !ok || !def.DeferLoading {
 		t.Fatalf("send_message should be declared as native-deferred before spawn_agent succeeds, got %v", sortedProfileDefNames(kit.Definitions()))
 	}
+	if _, err := NewSpawnAgentTool(kit.env).Execute(context.Background(), `{"name":"hidden_recovery","description":"Hidden recovery","prompt":"Run internal recovery.","subagent_type":"helpme_recovery"}`); err == nil || !strings.Contains(err.Error(), "internal") {
+		t.Fatalf("spawn_agent internal HelpMe worker error = %v, want internal-type rejection", err)
+	}
 
 	spawnCall := providers.ToolCall{
 		ID:        "spawn_1",
@@ -1829,6 +1832,7 @@ func TestToolkit_HelpMeDiscoversSubagentManagementTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	kit.SetHelpMeEnabled(true)
 	sessionDir := filepath.Join(root, ".wuu-state", "sessions", "helpme-session")
 	control, err := agentcontrol.New(agentcontrol.Config{
 		Client:       &toolkitFakeClient{content: "helper done"},
@@ -4344,12 +4348,14 @@ func TestToolkit_SpawnAgentDescriptionIncludesDelegationDecisionRules(t *testing
 			"subagent_type",
 			"fork the current conversation",
 			"general-purpose",
-			"helpme",
 			"verify relevant evidence",
 		} {
 			if !strings.Contains(d.Description, want) {
 				t.Fatalf("spawn_agent description missing decision guidance %q: %q", want, d.Description)
 			}
+		}
+		if strings.Contains(strings.ToLower(d.Description), "helpme") {
+			t.Fatalf("spawn_agent description leaked disabled HelpMe guidance: %q", d.Description)
 		}
 		props, _ := d.InputSchema["properties"].(map[string]any)
 		for field, wants := range map[string][]string{
@@ -4585,6 +4591,51 @@ func TestToolkit_DisableTools_HidesDefinitionsAndBlocksExecute(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("expected disabled error, got: %v", err)
+	}
+}
+
+func TestToolkit_HelpMeRequiresExplicitOptInAndCloneInheritsIt(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.ConfigureSurfaceForProviderModel("openai", "gpt-5-codex", true)
+	if containsProfileDef(kit.Definitions(), helpMeToolName) {
+		t.Fatal("HelpMe must be hidden by default")
+	}
+	if _, ok := kit.ActiveSurface().Tools[helpMeToolName]; ok {
+		t.Fatal("HelpMe must be absent from the effective surface by default")
+	}
+	if _, err := kit.Execute(context.Background(), providers.ToolCall{Name: helpMeToolName, Arguments: `{}`}); err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("default HelpMe execution error = %v, want disabled", err)
+	}
+	defaultClone, err := kit.CloneForRoot("")
+	if err != nil {
+		t.Fatalf("CloneForRoot default: %v", err)
+	}
+	if containsProfileDef(defaultClone.Definitions(), helpMeToolName) {
+		t.Fatal("toolkit clone must inherit the default HelpMe-disabled state")
+	}
+	if _, ok := defaultClone.env.ActiveSurface.Tools[helpMeToolName]; ok {
+		t.Fatal("clone Env surface must match the default HelpMe-disabled state")
+	}
+
+	kit.SetHelpMeEnabled(true)
+	if !containsProfileDef(kit.Definitions(), helpMeToolName) {
+		t.Fatal("explicit opt-in must expose HelpMe")
+	}
+	if _, ok := kit.ActiveSurface().Tools[helpMeToolName]; !ok {
+		t.Fatal("explicit opt-in must restore HelpMe to the effective surface")
+	}
+	clone, err := kit.CloneForRoot("")
+	if err != nil {
+		t.Fatalf("CloneForRoot: %v", err)
+	}
+	if !containsProfileDef(clone.Definitions(), helpMeToolName) {
+		t.Fatal("toolkit clone must inherit HelpMe opt-in")
+	}
+	if _, ok := clone.env.ActiveSurface.Tools[helpMeToolName]; !ok {
+		t.Fatal("clone Env surface must inherit HelpMe opt-in")
 	}
 }
 

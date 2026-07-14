@@ -7,7 +7,7 @@ import {
 } from "./ComposerSlashCommands";
 import type { InitializeResult, SkillSummary } from "../shared/protocol";
 
-function initialized(model: string, models: string[]): InitializeResult {
+function initialized(model: string, models: string[], helpMe = false): InitializeResult {
   return {
     protocol_version: "1",
     workspace_root: "/repo",
@@ -15,6 +15,7 @@ function initialized(model: string, models: string[]): InitializeResult {
     model,
     effort: "",
     variant: "",
+    features: { helpme: helpMe },
     providers: [
       {
         name: "openai",
@@ -175,7 +176,7 @@ describe("composer slash commands", () => {
   it("keeps task slash commands as command text", () => {
     const commands = buildComposerSlashCommands({
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
-      initialized: initialized("gpt-5.5", ["gpt-5.5"]),
+      initialized: initialized("gpt-5.5", ["gpt-5.5"], true),
       running: false
     });
 
@@ -191,5 +192,23 @@ describe("composer slash commands", () => {
     expect(composerSlashPrompt(helpme!, "still stuck")).toBe("/helpme still stuck");
     expect(composerSlashPrompt(commit!, "")).toBe("/commit ");
     expect(composerSlashPrompt(pr!, "draft")).toBe("/pr draft");
+  });
+
+  it("hides /helpme unless the runtime feature is enabled", () => {
+    const activeContext = { kind: "project", project_id: "repo", cwd: "/repo" } as const;
+    const disabled = buildComposerSlashCommands({
+      activeContext,
+      initialized: initialized("gpt-5.5", ["gpt-5.5"]),
+      running: false
+    });
+    const enabled = buildComposerSlashCommands({
+      activeContext,
+      initialized: initialized("gpt-5.5", ["gpt-5.5"], true),
+      running: false
+    });
+
+    expect(filterComposerSlashCommands(disabled, "helpme")).toEqual([]);
+    expect(filterComposerSlashCommands(disabled, "rescue")).toEqual([]);
+    expect(filterComposerSlashCommands(enabled, "helpme").map((command) => command.name)).toEqual(["helpme"]);
   });
 });

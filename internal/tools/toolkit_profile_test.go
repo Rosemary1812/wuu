@@ -75,6 +75,7 @@ func TestActiveProfileKeepsLowFrequencyToolsDeferred(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	kit.SetHelpMeEnabled(true)
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 
 	defs := kit.Definitions()
@@ -752,6 +753,7 @@ func TestActiveProfileExposesSpawnAgentAndDefersManagementTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	kit.SetHelpMeEnabled(true)
 	kit.SetActiveProfile(modelprofile.Resolve("openai", "gpt-5-codex"), true)
 	registered := kit.registry.All()
 	registered = append(registered, &stubTool{
@@ -941,6 +943,7 @@ func TestActiveProfileExposesTaskEntrypointsDirectly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	kit.SetHelpMeEnabled(true)
 	kit.SetActiveProfile(modelprofile.Resolve("compatible", "generic-coder"), true)
 
 	var found *providers.ToolDefinition

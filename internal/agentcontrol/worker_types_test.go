@@ -55,7 +55,7 @@ func TestLookupWorkerType_RemovedTypesRejected(t *testing.T) {
 }
 
 func TestBuiltinWorkerTypes_ExactRoster(t *testing.T) {
-	want := []string{DefaultSubagentType, HelpMeRecoveryWorkerType, "worker"}
+	want := []string{DefaultSubagentType, "worker"}
 	got := AvailableWorkerTypeNames()
 	if len(got) != len(want) {
 		t.Fatalf("built-in roster must stay minimal, got %v", got)
@@ -63,6 +63,20 @@ func TestBuiltinWorkerTypes_ExactRoster(t *testing.T) {
 	for _, name := range want {
 		if !containsString(got, name) {
 			t.Fatalf("built-in roster missing %q: %v", name, got)
+		}
+	}
+}
+
+func TestHelpMeRecoveryWorkerTypeIsInternal(t *testing.T) {
+	if _, err := LookupWorkerType(HelpMeRecoveryWorkerType); err != nil {
+		t.Fatalf("internal lookup must keep HelpMe recovery available: %v", err)
+	}
+	if _, err := LookupPublicWorkerType(HelpMeRecoveryWorkerType); err == nil {
+		t.Fatal("public lookup must reject HelpMe recovery")
+	}
+	for _, name := range AvailableWorkerTypeNames() {
+		if name == HelpMeRecoveryWorkerType {
+			t.Fatalf("public roster exposed internal HelpMe recovery: %v", AvailableWorkerTypeNames())
 		}
 	}
 }

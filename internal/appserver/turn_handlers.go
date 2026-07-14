@@ -158,7 +158,10 @@ func (s *Server) handleTurnStart(ctx context.Context, req Request) error {
 		return s.writeResponse(req.ID, nil, err)
 	}
 
-	userMsg := userMessageFromPrompt(params.Prompt, images, files)
+	userMsg, err := userMessageFromPrompt(params.Prompt, images, files, s.rt.ExperimentalHelpMe)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
 	snapshot := turnRuntimeSnapshot{}.withPermissions(permissions)
 	snapshot.PermissionExplicit = params.PermissionMode != nil
 	snapshot.ForceCompact = isManualCompactPrompt(params.Prompt)
@@ -333,7 +336,10 @@ func (s *Server) handleTurnQueue(req Request) error {
 	if queueID == "" {
 		queueID = session.NewID()
 	}
-	msg := userMessageFromPrompt(params.Prompt, images, files)
+	msg, err := userMessageFromPrompt(params.Prompt, images, files, s.rt.ExperimentalHelpMe)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
 	msg.ClientID = queueID
 	entry := queuedTurn{id: queueID, msg: msg, snapshot: turnRuntimeSnapshot{}.withPermissions(permissions)}
 	entry.snapshot.PermissionExplicit = params.PermissionMode != nil
@@ -384,7 +390,10 @@ func (s *Server) handleTurnUpdateQueued(req Request) error {
 		return s.writeResponse(req.ID, nil, errors.New("thread is read-only"))
 	}
 
-	msg := userMessageFromPrompt(params.Prompt, images, files)
+	msg, err := userMessageFromPrompt(params.Prompt, images, files, s.rt.ExperimentalHelpMe)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
 	updated, ok := s.replaceQueuedUserTurn(params.ThreadID, params.QueueID, msg)
 	result := TurnUpdateQueuedResult{OK: ok}
 	if ok {
@@ -471,7 +480,11 @@ func (s *Server) handleTurnSteer(req Request) error {
 		return s.writeResponse(req.ID, nil, errors.New("cannot steer a compact turn"))
 	}
 	turnID := th.currentTurn
-	steerMsg := userMessageFromPrompt(params.Prompt, images, files)
+	steerMsg, err := userMessageFromPrompt(params.Prompt, images, files, s.rt.ExperimentalHelpMe)
+	if err != nil {
+		th.mu.Unlock()
+		return s.writeResponse(req.ID, nil, err)
+	}
 	steerMsg.ClientID = clientID
 	steerMsg.Steered = true
 	removedQueued := s.removeQueuedUserTurn(params.ThreadID, clientID)
@@ -874,8 +887,11 @@ func normalizeTurnStartFiles(files []TurnStartFile) ([]providers.InputFile, erro
 	return out, nil
 }
 
-func userMessageFromPrompt(prompt string, images []providers.InputImage, files []providers.InputFile) providers.ChatMessage {
-	content, display, ok := renderLightweightSlashCommandPrompt(prompt)
+func userMessageFromPrompt(prompt string, images []providers.InputImage, files []providers.InputFile, helpMeEnabled bool) (providers.ChatMessage, error) {
+	if disabledExperimentalSlashCommand(prompt, helpMeEnabled) {
+		return providers.ChatMessage{}, errors.New("HelpMe is disabled; set agent.experimental_helpme to true to enable it")
+	}
+	content, display, ok := renderLightweightSlashCommandPrompt(prompt, helpMeEnabled)
 	msg := providers.ChatMessage{
 		Role:    "user",
 		Content: content,
@@ -885,7 +901,7 @@ func userMessageFromPrompt(prompt string, images []providers.InputImage, files [
 	if ok {
 		msg.DisplayContent = display
 	}
-	return msg
+	return msg, nil
 }
 
 func normalizeImagePayload(mediaType, data string) (string, string, error) {

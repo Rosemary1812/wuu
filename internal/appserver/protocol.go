@@ -207,6 +207,11 @@ type InitializeResult struct {
 	Providers          []ProviderSummary          `json:"providers,omitempty"`
 	AdvancedSettings   AdvancedSettingsSummary    `json:"advanced_settings"`
 	GeneralSettings    GeneralSettingsSummary     `json:"general_settings"`
+	Features           FeatureFlags               `json:"features"`
+}
+
+type FeatureFlags struct {
+	HelpMe bool `json:"helpme"`
 }
 
 type RuntimeIssue struct {

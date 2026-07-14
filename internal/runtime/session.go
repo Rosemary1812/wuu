@@ -138,6 +138,7 @@ type Session struct {
 	ToolSearchEnabled           bool
 	NativeDeferredToolDiscovery bool
 	ExperimentalDeferredBundles bool
+	ExperimentalHelpMe          bool
 	DeferredToolCatalogPrompt   string
 	CronScheduler               *cron.Scheduler
 	CronLock                    *cron.Lock
@@ -306,6 +307,7 @@ func NewSession(opts Options) (*Session, error) {
 		kit.SetSkills(discoveredSkills)
 		ConfigureToolkitPermissions(kit, permissions)
 		kit.ConfigureSurfaceForProviderModel(ruleProviderName, toolModeModel, true)
+		kit.SetHelpMeEnabled(cfg.Agent.ExperimentalHelpMe)
 		kit.SetToolSearchEnabled(toolSearchEnabled)
 		kit.SetExperimentalDeferredToolBundles(experimentalDeferredBundles)
 		kit.SetNativeDeferredToolDiscovery(nativeDeferredDiscovery)
@@ -559,6 +561,7 @@ func NewSession(opts Options) (*Session, error) {
 		ToolSearchEnabled:           toolSearchEnabled,
 		NativeDeferredToolDiscovery: nativeDeferredDiscovery,
 		ExperimentalDeferredBundles: experimentalDeferredBundles,
+		ExperimentalHelpMe:          cfg.Agent.ExperimentalHelpMe,
 		DeferredToolCatalogPrompt:   deferredToolCatalogPrompt,
 		ReadinessIssues:             readinessIssues,
 		InferenceJournalRuntime:     journalRuntime,

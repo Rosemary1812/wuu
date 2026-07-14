@@ -39,7 +39,6 @@ func (t *SpawnAgentTool) Definition() providers.ToolDefinition {
 		Description: "Delegate a bounded task when separate context or parallel work materially improves the result. " +
 			"Keep work local when the next step is tightly coupled or simpler to do directly. " +
 			"Set subagent_type for a fresh worker; omit it to fork the current conversation, and use general-purpose for unspecialized fresh work. " +
-			"Use helpme instead for repeated-failure or polluted-context recovery. " +
 			"Treat the child's final message as a deliverable and verify relevant evidence before relying on it.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -151,7 +150,7 @@ func (t *SpawnAgentTool) Execute(ctx context.Context, argsJSON string) (string, 
 		}
 		return string(out), nil
 	}
-	wt, err := agentcontrol.LookupWorkerType(subagentType)
+	wt, err := agentcontrol.LookupPublicWorkerType(subagentType)
 	if err != nil {
 		return "", err
 	}

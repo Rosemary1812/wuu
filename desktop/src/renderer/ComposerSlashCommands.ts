@@ -87,6 +87,21 @@ export function buildComposerSlashCommands({
   const needsWorkspace = activeContext ? undefined : "先选择工作区";
   const needsIdleThread = running ? "当前任务运行中" : undefined;
   const fastTarget = runtimeFastModelTarget(initialized);
+  const helpMeCommands: ComposerSlashCommand[] = initialized?.features?.helpme
+    ? [
+        {
+          id: "helpme",
+          name: "helpme",
+          title: "HelpMe 求助",
+          description: "让 fresh 子 agent 重新理解，并自动压缩上下文",
+          tag: "Agent",
+          kind: "prompt",
+          aliases: ["rescue", "handoff"],
+          keywords: ["stuck", "retry", "rescue", "求助", "卡住", "魂穿", "交接"],
+          disabledReason: needsRuntime
+        }
+      ]
+    : [];
   const commands: ComposerSlashCommand[] = [
     {
       id: "review",
@@ -121,17 +136,7 @@ export function buildComposerSlashCommands({
       keywords: ["bug", "issue", "修复", "改掉", "问题"],
       disabledReason: needsRuntime
     },
-    {
-      id: "helpme",
-      name: "helpme",
-      title: "HelpMe 求助",
-      description: "让 fresh 子 agent 重新理解，并自动压缩上下文",
-      tag: "Agent",
-      kind: "prompt",
-      aliases: ["rescue", "handoff"],
-      keywords: ["stuck", "retry", "rescue", "求助", "卡住", "魂穿", "交接"],
-      disabledReason: needsRuntime
-    },
+    ...helpMeCommands,
     {
       id: "test",
       name: "test",
