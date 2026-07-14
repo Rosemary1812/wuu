@@ -142,6 +142,7 @@ export function Composer({
   activeContext,
   activeProject,
   compactDisabledReason,
+  sideThreadDisabledReason,
   codexModels,
   codexRuntimeMenu,
   codexRuntimeRef,
@@ -218,6 +219,7 @@ export function Composer({
   activeContext?: RuntimeContext;
   activeProject?: DesktopProject;
   compactDisabledReason?: string;
+  sideThreadDisabledReason?: string;
   codexModels: CodexModelLoadState;
   codexRuntimeMenu: CodexRuntimeMenu;
   codexRuntimeRef: RefObject<HTMLDivElement | null>;
@@ -243,7 +245,7 @@ export function Composer({
   onCreateProject: () => void;
   onOpenProject: () => void;
   onStartNewThread: () => void;
-  // Toggle the side thread attached to the active main conversation.
+  // Open or focus the side thread attached to the active main conversation.
   onOpenSideThread?: () => void;
   onOpenWorkspaceTool: (view: WorkspacePanelView) => void;
   onOpenContextComposition?: () => void;
@@ -340,8 +342,8 @@ export function Composer({
   const slashSkillCountKey = initialized?.extension_trust?.main_session?.skills?.count ?? 0;
   const slashRuntimeReady = Boolean(activeContext && initialized);
   const slashCommands = useMemo(
-    () => buildComposerSlashCommands({ activeContext, initialized, running, compactDisabledReason, skills: slashSkills }),
-    [activeContext, compactDisabledReason, initialized, running, slashSkills]
+    () => buildComposerSlashCommands({ activeContext, initialized, running, compactDisabledReason, sideThreadDisabledReason, skills: slashSkills }),
+    [activeContext, compactDisabledReason, initialized, running, sideThreadDisabledReason, slashSkills]
   );
   const fastModelTarget = useMemo(() => runtimeFastModelTarget(initialized), [initialized]);
   const permissionMode = permissionModeFromSummary(initialized?.permissions);

@@ -2369,21 +2369,21 @@ export function App(): JSX.Element {
     });
   }, [state.activeSessionTabID, state.thread, state.threads]);
 
-  function toggleSideThreadPanel(): void {
-    const opening = !sideThread.entry?.open;
-    if (opening) {
+  function openSideThreadPanel(): void {
+    if (!activeThreadID) {
+      return;
+    }
+    if (!sideThread.entry?.open) {
       setEnvironmentPanelOpen(false);
       setEnvironmentPanelDismissed(true);
       setEnvironmentPanelMenu(null);
       setOpenSubthreadPanel(undefined);
       setParticipantPanel(undefined);
+      sideThread.open();
     }
-    sideThread.toggle();
-    if (opening) {
-      window.requestAnimationFrame(() => {
-        sideThreadPanelRef.current?.focusComposer();
-      });
-    }
+    window.requestAnimationFrame(() => {
+      sideThreadPanelRef.current?.focusComposer();
+    });
   }
 
   function renderComposer(variant: ComposerVariant): JSX.Element {
@@ -2454,6 +2454,7 @@ export function App(): JSX.Element {
               ? "群聊暂不支持上下文压缩"
               : undefined
         }
+        sideThreadDisabledReason={!activeThread ? "先发送一条消息" : undefined}
         codexModels={codexModels}
         codexRuntimeMenu={codexRuntimeMenu}
         codexRuntimeRef={codexRuntimeRef}
@@ -2505,7 +2506,7 @@ export function App(): JSX.Element {
         onCreateProject={() => void createBlankProject()}
         onOpenProject={() => void chooseProjectFolder()}
         onStartNewThread={() => void startNewThread()}
-        onOpenSideThread={toggleSideThreadPanel}
+        onOpenSideThread={openSideThreadPanel}
         onOpenWorkspaceTool={openWorkspaceTool}
         onOpenContextComposition={openContextComposition}
         onCompactContext={() => void compactActiveThread()}

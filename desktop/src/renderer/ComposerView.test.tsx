@@ -96,6 +96,8 @@ function renderComposer(props: {
   onInterrupt?: () => void;
   onSend?: () => void;
   onOpenContextComposition?: () => void;
+  onOpenSideThread?: () => void;
+  sideThreadDisabledReason?: string;
   onRemoveQueuedMessage?: (id: string) => void;
   onRemoveGuideMessage?: (id: string) => void;
   onGuideQueuedMessage?: (id: string) => void;
@@ -147,6 +149,7 @@ function renderComposer(props: {
           projects={props.projects ?? []}
           activeContext={props.activeContext}
           activeProject={props.activeProject}
+          sideThreadDisabledReason={props.sideThreadDisabledReason}
           codexModels={codexModels}
           codexRuntimeMenu={null}
           codexRuntimeRef={createRef<HTMLDivElement>()}
@@ -172,6 +175,7 @@ function renderComposer(props: {
           onCreateProject={() => {}}
           onOpenProject={() => {}}
           onStartNewThread={() => {}}
+          onOpenSideThread={props.onOpenSideThread}
           onOpenWorkspaceTool={() => {}}
           onOpenContextComposition={props.onOpenContextComposition ?? (() => {})}
           onPasteAttachmentFiles={() => {}}
@@ -1046,6 +1050,47 @@ describe("Composer send control", () => {
 
     expect(onOpenContextComposition).toHaveBeenCalledTimes(1);
     expect(onSend).not.toHaveBeenCalled();
+    expect(setPrompt).toHaveBeenCalledWith("");
+  });
+
+  it("keeps /side disabled on a draft without a persisted thread", () => {
+    const setPrompt = vi.fn();
+    const onOpenSideThread = vi.fn();
+    renderComposer({
+      prompt: "/side",
+      setPrompt,
+      onOpenSideThread,
+      sideThreadDisabledReason: "先发送一条消息",
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+    });
+
+    const side = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".slash-command-item"),
+    ).find((button) => button.textContent?.includes("/side"));
+    expect(side?.disabled).toBe(true);
+    expect(side?.textContent).toContain("先发送一条消息");
+
+    act(() => side?.click());
+    expect(onOpenSideThread).not.toHaveBeenCalled();
+    expect(setPrompt).not.toHaveBeenCalled();
+  });
+
+  it("runs /side as an open action for a persisted thread", () => {
+    const setPrompt = vi.fn();
+    const onOpenSideThread = vi.fn();
+    renderComposer({
+      prompt: "/side",
+      setPrompt,
+      onOpenSideThread,
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+    });
+
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="发送"]',
+    );
+    act(() => sendButton?.click());
+
+    expect(onOpenSideThread).toHaveBeenCalledTimes(1);
     expect(setPrompt).toHaveBeenCalledWith("");
   });
 });

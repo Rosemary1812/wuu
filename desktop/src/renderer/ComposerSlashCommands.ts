@@ -75,12 +75,14 @@ export function buildComposerSlashCommands({
   initialized,
   running,
   compactDisabledReason,
+  sideThreadDisabledReason,
   skills = []
 }: {
   activeContext?: RuntimeContext;
   initialized?: InitializeResult;
   running: boolean;
   compactDisabledReason?: string;
+  sideThreadDisabledReason?: string;
   skills?: SkillSummary[];
 }): ComposerSlashCommand[] {
   const needsRuntime = activeContext && initialized ? undefined : "先选择工作区";
@@ -261,7 +263,7 @@ export function buildComposerSlashCommands({
       kind: "action",
       action: "open-side-thread",
       // Side chat remains available while the main turn is running.
-      disabledReason: needsWorkspace
+      disabledReason: needsWorkspace ?? sideThreadDisabledReason
     },
     {
       id: "compact",

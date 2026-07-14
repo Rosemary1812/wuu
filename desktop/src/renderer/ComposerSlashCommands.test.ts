@@ -146,6 +146,19 @@ describe("composer slash commands", () => {
     expect(compact?.disabledReason).toBeUndefined();
   });
 
+  it("disables /side until the draft has a persisted thread", () => {
+    const commands = buildComposerSlashCommands({
+      activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
+      initialized: initialized("gpt-5.5", ["gpt-5.5"]),
+      running: false,
+      sideThreadDisabledReason: "先发送一条消息"
+    });
+
+    const side = filterComposerSlashCommands(commands, "side")[0];
+    expect(side?.action).toBe("open-side-thread");
+    expect(side?.disabledReason).toBe("先发送一条消息");
+  });
+
   it("can disable /compact for surfaces without a compactable model context", () => {
     const commands = buildComposerSlashCommands({
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
