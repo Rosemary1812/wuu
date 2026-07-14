@@ -1356,8 +1356,9 @@ func TestSpawn_RegistersNestedThreadPath(t *testing.T) {
 func TestNestedResultRoutesToParentAgent(t *testing.T) {
 	dir := t.TempDir()
 	initRepo(t, dir)
+	client := newBlockingClient()
 	c, err := New(Config{
-		Client:        &slowClient{},
+		Client:        client,
 		DefaultModel:  "fake-model",
 		ParentRepo:    dir,
 		WorktreeRoot:  filepath.Join(dir, ".wuu", "worktrees"),
@@ -1375,6 +1376,9 @@ func TestNestedResultRoutesToParentAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parent spawn: %v", err)
 	}
+	defer c.StopAll()
+	client.waitStarted(t)
+
 	delivered := c.deliverNestedResultToParent(context.Background(), subagent.SubAgentSnapshot{
 		ID:          "child-1",
 		ParentID:    parent.AgentID,
@@ -1388,10 +1392,20 @@ func TestNestedResultRoutesToParentAgent(t *testing.T) {
 	if !delivered {
 		t.Fatal("expected nested result to route to parent")
 	}
-	if got := c.Manager().PendingMessageCount(parent.AgentID); got != 1 {
-		t.Fatalf("expected parent pending mailbox message, got %d", got)
+	queued, ok := c.Manager().NextPendingMessage(parent.AgentID)
+	if !ok {
+		t.Fatal("expected parent to receive nested result")
 	}
-	c.StopAll()
+	var communication agentthread.InterAgentCommunication
+	if err := json.Unmarshal([]byte(queued), &communication); err != nil {
+		t.Fatalf("nested result is not an inter-agent communication: %v\n%s", err, queued)
+	}
+	if communication.Author != agentthread.AgentPath(parent.AgentPath+"/child") || communication.Recipient != agentthread.AgentPath(parent.AgentPath) {
+		t.Fatalf("nested result routed to wrong agents: %+v", communication)
+	}
+	if communication.TriggerTurn || !strings.Contains(communication.Content, "child done") {
+		t.Fatalf("unexpected nested result payload: %+v", communication)
+	}
 }
 
 func TestStopClosesAgentSubtree(t *testing.T) {
