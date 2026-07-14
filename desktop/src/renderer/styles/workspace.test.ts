@@ -269,9 +269,11 @@ describe("workspace review diff layout", () => {
 
     // Active row must NOT share the hover background — otherwise the user
     // can't tell which file's diff is currently being shown in the diff pane.
-    expect(activeRow).not.toMatch(/background:\s*var\(--surface-3\)/);
+    // Both rows use --surface-* tints so the file tree and review tree read
+    // as the same component family; active keeps its accent fill.
+    expect(activeRow).not.toMatch(/background:\s*var\(--surface-2\)/);
     expect(activeRow).toMatch(/color-mix\(in srgb,\s*var\(--wuu-accent\)/);
-    expect(hoverRow).toMatch(/background:\s*var\(--surface-3\)/);
+    expect(hoverRow).toMatch(/background:\s*var\(--surface-2\)/);
 
     // The file icon and stat count in the active row should pick up the
     // accent so the row reads as "currently diffed" at a glance.

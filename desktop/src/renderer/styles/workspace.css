@@ -2557,7 +2557,11 @@ html.resizing-workspace-file-split * {
 .workspace-diff-tree-row {
   display: grid;
   min-width: 0;
-  min-height: 32px;
+  /* Row height + font size mirror the file tree (pierre/trees, itemHeight
+     24 + --trees-font-size-override: --font-sm) so the two trees read as
+     the same component family. Active keeps its accent fill (see below) so
+     "selected diff" is still distinguishable from "hover". */
+  min-height: 24px;
   /* Tightened chevron / icon columns (was 18px 18px) so the file name has
      more room before the stat badge. Together with the narrower tree
      indentation spacer below this stops common file names from getting
@@ -2568,15 +2572,13 @@ html.resizing-workspace-file-split * {
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink);
-  font-size: var(--font-ui);
-  padding-top: 4px;
+  font-size: var(--font-sm);
   padding-right: 8px;
-  padding-bottom: 4px;
   text-align: left;
 }
 
 .workspace-diff-tree-row:hover {
-  background: var(--surface-3);
+  background: var(--surface-2);
 }
 
 .workspace-diff-tree-row.active {
@@ -2631,10 +2633,9 @@ html.resizing-workspace-file-split * {
 }
 
 .workspace-diff-tree-spacer {
-  /* Per-level horizontal indent for nested directories (was 18px). Combined
-     with the narrower chevron / icon columns above, a 4-deep path saves
-     ~30px of leading whitespace so longer file names don't get cut off
-     inside the 280px review tree pane. */
+  /* Spacer that mirrors the chevron column so the file icon lines up
+     under the folder icon in directory rows. The per-level indent step
+     lives in WorkspaceReviewPanels.tsx. */
   width: 12px;
 }
 

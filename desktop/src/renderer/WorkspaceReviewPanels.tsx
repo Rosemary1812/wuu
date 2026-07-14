@@ -761,7 +761,10 @@ function GitChangeTreeNodeView({
   onSelectFile: (path: string) => void;
   onTogglePath: (path: string) => void;
 }): JSX.Element {
-  const indentation = { paddingLeft: `${10 + depth * 18}px` } as CSSProperties;
+  // Per-level indent (12px) matches the file tree's visual density so the
+  // two trees read as the same component family. Root gets a 10px base
+  // so the chevron has breathing room from the tree's left edge.
+  const indentation = { paddingLeft: `${10 + depth * 12}px` } as CSSProperties;
   if (node.kind === "directory") {
     const expanded = forceExpanded || expandedPaths.has(node.path);
     return (
