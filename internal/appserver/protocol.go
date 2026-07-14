@@ -160,18 +160,6 @@ type Request struct {
 	Params json.RawMessage `json:"params,omitempty"`
 }
 
-type ServerRequest struct {
-	ID     json.RawMessage `json:"id"`
-	Method string          `json:"method"`
-	Params any             `json:"params,omitempty"`
-}
-
-type ClientResponse struct {
-	ID     json.RawMessage `json:"id,omitempty"`
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  *ResponseError  `json:"error,omitempty"`
-}
-
 type Response struct {
 	ID     json.RawMessage `json:"id,omitempty"`
 	Result any             `json:"result,omitempty"`

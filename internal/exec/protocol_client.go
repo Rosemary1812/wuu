@@ -18,19 +18,6 @@ type Notification struct {
 	Params json.RawMessage
 }
 
-type ServerRequest struct {
-	ID     json.RawMessage `json:"id"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params,omitempty"`
-}
-
-type ServerRequestResult struct {
-	Result any
-	Error  *appserver.ResponseError
-}
-
-type ServerRequestHandler func(context.Context, ServerRequest) ServerRequestResult
-
 type protocolResponse struct {
 	result json.RawMessage
 	err    *appserver.ResponseError
@@ -45,34 +32,23 @@ type protocolEnvelope struct {
 }
 
 type ProtocolClient struct {
-	in             io.Reader
-	out            io.Writer
-	writeMu        sync.Mutex
-	mu             sync.Mutex
-	nextID         int64
-	pending        map[string]chan protocolResponse
-	notifications  chan Notification
-	readDone       chan error
-	ctx            context.Context
-	requestHandler ServerRequestHandler
+	in            io.Reader
+	out           io.Writer
+	writeMu       sync.Mutex
+	mu            sync.Mutex
+	nextID        int64
+	pending       map[string]chan protocolResponse
+	notifications chan Notification
+	readDone      chan error
 }
 
 func NewProtocolClient(in io.Reader, out io.Writer) *ProtocolClient {
-	return NewProtocolClientWithServerRequestHandler(context.Background(), in, out, nil)
-}
-
-func NewProtocolClientWithServerRequestHandler(ctx context.Context, in io.Reader, out io.Writer, handler ServerRequestHandler) *ProtocolClient {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	c := &ProtocolClient{
-		in:             in,
-		out:            out,
-		pending:        make(map[string]chan protocolResponse),
-		notifications:  make(chan Notification, 256),
-		readDone:       make(chan error, 1),
-		ctx:            ctx,
-		requestHandler: handler,
+		in:            in,
+		out:           out,
+		pending:       make(map[string]chan protocolResponse),
+		notifications: make(chan Notification, 256),
+		readDone:      make(chan error, 1),
 	}
 	go c.readLoop()
 	return c
@@ -148,8 +124,11 @@ func (c *ProtocolClient) readLoop() {
 			break
 		}
 		if strings.TrimSpace(msg.Method) != "" && len(msg.ID) > 0 {
-			c.handleServerRequest(msg)
-			continue
+			readErr = fmt.Errorf(
+				"unexpected app-server request %q",
+				strings.TrimSpace(msg.Method),
+			)
+			break
 		}
 		if strings.TrimSpace(msg.Method) != "" {
 			c.notifications <- Notification{Method: msg.Method, Params: msg.Params}
@@ -173,49 +152,6 @@ func (c *ProtocolClient) readLoop() {
 	close(c.notifications)
 	c.readDone <- readErr
 	close(c.readDone)
-}
-
-func (c *ProtocolClient) handleServerRequest(msg protocolEnvelope) {
-	req := ServerRequest{ID: msg.ID, Method: strings.TrimSpace(msg.Method), Params: msg.Params}
-	result := ServerRequestResult{
-		Error: &appserver.ResponseError{
-			Code:    "non_interactive_unavailable",
-			Message: fmt.Sprintf("non-interactive exec cannot handle app-server request %q", req.Method),
-		},
-	}
-	if c.requestHandler != nil {
-		result = c.requestHandler(c.ctx, req)
-	}
-	_ = c.writeJSON(protocolEnvelope{
-		ID:     msg.ID,
-		Result: marshalServerRequestResult(result.Result),
-		Error:  result.Error,
-	})
-}
-
-func (c *ProtocolClient) emitSyntheticNotification(method string, params any) {
-	data, err := json.Marshal(params)
-	if err != nil {
-		return
-	}
-	select {
-	case c.notifications <- Notification{Method: method, Params: data}:
-	default:
-	}
-}
-
-func marshalServerRequestResult(result any) json.RawMessage {
-	if result == nil {
-		return nil
-	}
-	if raw, ok := result.(json.RawMessage); ok {
-		return raw
-	}
-	data, err := json.Marshal(result)
-	if err != nil {
-		return nil
-	}
-	return data
 }
 
 func (c *ProtocolClient) writeJSON(v any) error {

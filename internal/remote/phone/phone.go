@@ -486,11 +486,7 @@ func (c *Client) handleAttachedLocked(msg wire.E2EMsg) {
 		c.lastRecv = 0
 		feedR, feedW := io.Pipe()
 		c.protoFeed = feedW
-		ctx := c.runCtx
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		c.proto = exec.NewProtocolClientWithServerRequestHandler(ctx, feedR, &protoWriter{c: c}, nil)
+		c.proto = exec.NewProtocolClient(feedR, &protoWriter{c: c})
 	}
 	for _, w := range c.waiters {
 		close(w)

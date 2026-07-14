@@ -67,7 +67,7 @@ func newLocalControllerForRuntime(ctx context.Context, rt *runtime.Session) *loc
 	serverCtx, cancel := context.WithCancel(ctx)
 	controller := &localAppServerController{
 		rt:     rt,
-		client: NewProtocolClientWithServerRequestHandler(serverCtx, serverOutR, serverInW, nil),
+		client: NewProtocolClient(serverOutR, serverInW),
 		cancel: cancel,
 		done:   make(chan error, 1),
 		pipes:  []io.Closer{serverInR, serverInW, serverOutR, serverOutW},
