@@ -98,6 +98,9 @@ func (m *residentGroupManager) CreateGroup(ctx context.Context, title string) (s
 		return "", err
 	}
 	th = m.server.addResidentThread(th)
+	if th == nil {
+		return "", errServerClosed
+	}
 	if err := session.AddThreadMember(m.server.rt.SessionDir, th.ID, participantID); err != nil {
 		return "", fmt.Errorf("create_group: join created group: %w", err)
 	}

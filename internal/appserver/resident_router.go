@@ -184,7 +184,7 @@ func (s *Server) idleUnreadCandidates(threadID, lastSpeakerID string) []idleUnre
 }
 
 func (s *Server) scheduleIdleUnreadWake(threadID, lastSpeakerID string) {
-	if s == nil {
+	if s == nil || s.closed.Load() {
 		return
 	}
 	threadID = strings.TrimSpace(threadID)
@@ -194,6 +194,9 @@ func (s *Server) scheduleIdleUnreadWake(threadID, lastSpeakerID string) {
 	}
 	s.idleUnreadWakeMu.Lock()
 	defer s.idleUnreadWakeMu.Unlock()
+	if s.closed.Load() {
+		return
+	}
 	if s.idleUnreadWakeTimers == nil {
 		s.idleUnreadWakeTimers = make(map[string]*time.Timer)
 	}
@@ -232,7 +235,7 @@ func (s *Server) resetIdleUnreadWake(threadID string) {
 }
 
 func (s *Server) runIdleUnreadWake(threadID string) {
-	if s == nil {
+	if s == nil || s.closed.Load() {
 		return
 	}
 	threadID = strings.TrimSpace(threadID)
@@ -622,7 +625,7 @@ func (s *Server) mentionSubthreadMembers(parentThreadID, subthreadID, text strin
 
 func (s *Server) kickResidentAgent(participantID string) {
 	participantID = strings.TrimSpace(participantID)
-	if s == nil || participantID == "" {
+	if s == nil || s.closed.Load() || participantID == "" {
 		return
 	}
 	if !s.beginResidentDrain(participantID) {
@@ -632,8 +635,14 @@ func (s *Server) kickResidentAgent(participantID string) {
 }
 
 func (s *Server) beginResidentDrain(participantID string) bool {
+	if s == nil || s.closed.Load() {
+		return false
+	}
 	s.residentDrainMu.Lock()
 	defer s.residentDrainMu.Unlock()
+	if s.closed.Load() {
+		return false
+	}
 	if s.drainingResidentAgent == nil {
 		s.drainingResidentAgent = make(map[string]bool)
 	}
@@ -664,8 +673,11 @@ func (s *Server) residentDraining(participantID string) bool {
 }
 
 func (s *Server) drainResidentAgent(participantID string) {
+	if s == nil {
+		return
+	}
 	defer s.finishResidentDrain(participantID)
-	if s == nil || s.rt == nil {
+	if s.closed.Load() || s.rt == nil {
 		return
 	}
 	// A retired resident never drains again: its pending envelopes were

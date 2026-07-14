@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/activity"
@@ -26,7 +27,10 @@ import (
 	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
-var errShutdown = errors.New("app-server shutdown requested")
+var (
+	errServerClosed = errors.New("app-server is closed")
+	errShutdown     = errors.New("app-server shutdown requested")
+)
 
 type threadState struct {
 	ID               string
@@ -211,6 +215,9 @@ type Server struct {
 	inferenceMaintenanceStop     chan struct{}
 	inferenceMaintenanceDone     chan struct{}
 	inferenceMaintenanceStopOnce sync.Once
+	activityUnsubscribe          func()
+	closeOnce                    sync.Once
+	closed                       atomic.Bool
 
 	// sideThreadStore persists side threads (1:<=1 binding per main
 	// thread). Nil when SessionDir is unset; handleSideThreadOpen /
@@ -256,7 +263,7 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		}
 	}
 	if rt != nil && rt.ActivityRegistry != nil {
-		rt.ActivityRegistry.Subscribe(func(event activity.Event) {
+		s.activityUnsubscribe = rt.ActivityRegistry.Subscribe(func(event activity.Event) {
 			s.notifyActivityEvent(event)
 		})
 	}
@@ -412,12 +419,83 @@ func (s *Server) stopInferenceJournalMaintenance() {
 	}
 }
 
+// Close stops background work owned by this app-server connection. The shared
+// runtime.Session remains owned by the caller and is cleaned up separately.
+func (s *Server) Close() {
+	if s == nil {
+		return
+	}
+	s.closeOnce.Do(func() {
+		s.closed.Store(true)
+		s.stopInferenceJournalMaintenance()
+		if s.activityUnsubscribe != nil {
+			s.activityUnsubscribe()
+			s.activityUnsubscribe = nil
+		}
+
+		s.idleUnreadWakeMu.Lock()
+		for threadID, timer := range s.idleUnreadWakeTimers {
+			if timer != nil {
+				timer.Stop()
+			}
+			delete(s.idleUnreadWakeTimers, threadID)
+		}
+		clear(s.idleUnreadWakeWaveByThread)
+		clear(s.idleUnreadWakeLastSpeaker)
+		s.idleUnreadWakeMu.Unlock()
+
+		s.queuedTurnMu.Lock()
+		clear(s.pendingQueuedTurns)
+		clear(s.drainingQueuedTurns)
+		s.queuedTurnMu.Unlock()
+		s.agentCompletionMu.Lock()
+		clear(s.pendingAgentCompletionTurns)
+		clear(s.drainingAgentCompletionTurns)
+		s.agentCompletionMu.Unlock()
+		s.goalContinuationMu.Lock()
+		clear(s.drainingGoalContinuation)
+		s.goalContinuationMu.Unlock()
+		s.residentDrainMu.Lock()
+		clear(s.drainingResidentAgent)
+		s.residentDrainMu.Unlock()
+
+		s.mu.Lock()
+		threads := make([]*threadState, 0, len(s.threads))
+		for _, th := range s.threads {
+			if th != nil {
+				threads = append(threads, th)
+			}
+		}
+		clear(s.threads)
+		s.mu.Unlock()
+
+		// Cancel every root turn and child run before detaching notification
+		// subscriptions. Cancellation is asynchronous, so issue it to all threads
+		// first instead of serializing shutdown behind one provider.
+		for _, th := range threads {
+			th.mu.Lock()
+			cancel := th.cancel
+			threadRuntime := th.execRuntime
+			th.mu.Unlock()
+			if cancel != nil {
+				cancel()
+			}
+			if threadRuntime != nil && threadRuntime.AgentControl != nil {
+				threadRuntime.AgentControl.StopAll()
+			}
+		}
+		for _, th := range threads {
+			releaseThreadRuntime(th)
+		}
+	})
+}
+
 func RunStdio(ctx context.Context, rt *runtime.Session, in io.Reader, out io.Writer) error {
 	if rt == nil {
 		return errors.New("runtime session is required")
 	}
 	s := New(rt, out)
-	defer s.stopInferenceJournalMaintenance()
+	defer s.Close()
 	return runStdioScanner(ctx, s, in)
 }
 
@@ -581,12 +659,7 @@ func (s *Server) handleLine(ctx context.Context, raw []byte) error {
 		if err := s.writeResponse(req.ID, OKResult{OK: true}, nil); err != nil {
 			return err
 		}
-		s.stopInferenceJournalMaintenance()
-		if s.rt != nil && s.rt.InferenceJournalRuntime != nil {
-			if err := s.rt.InferenceJournalRuntime.Close(); err != nil {
-				providers.DebugLogf("close inference journal runtime: %v", err)
-			}
-		}
+		s.Close()
 		return errShutdown
 	case MethodSettingsUsage:
 		return s.handleSettingsUsage(req)

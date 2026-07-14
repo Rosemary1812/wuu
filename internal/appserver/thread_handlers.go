@@ -243,6 +243,9 @@ func (s *Server) handleThreadResume(req Request) error {
 		return s.writeThreadResumeResult(req, thread)
 	}
 	th = s.addResidentThread(th)
+	if th == nil {
+		return s.writeResponse(req.ID, nil, errServerClosed)
+	}
 
 	th.mu.Lock()
 	thread := th.snapshotLocked()
@@ -272,6 +275,9 @@ func (s *Server) writeThreadResumeResult(req Request, thread Thread) error {
 }
 
 func (s *Server) ensureResidentThread(id string) (*threadState, error) {
+	if s == nil || s.closed.Load() {
+		return nil, errServerClosed
+	}
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil, errors.New("thread_id is required")
@@ -284,11 +290,17 @@ func (s *Server) ensureResidentThread(id string) (*threadState, error) {
 		return nil, err
 	}
 	th = s.addResidentThread(th)
+	if th == nil {
+		return nil, errServerClosed
+	}
 	s.pruneResidentThreads(id)
 	return th, nil
 }
 
 func (s *Server) ensureResidentDMThread(participantID string) (*threadState, error) {
+	if s == nil || s.closed.Load() {
+		return nil, errServerClosed
+	}
 	participantID = strings.TrimSpace(participantID)
 	if participantID == "" {
 		return nil, errors.New("participant_id is required")
@@ -337,16 +349,22 @@ func (s *Server) ensureResidentDMThread(participantID string) (*threadState, err
 		return nil, err
 	}
 	th = s.addResidentThread(th)
+	if th == nil {
+		return nil, errServerClosed
+	}
 	s.pruneResidentThreads(th.ID)
 	return th, nil
 }
 
 func (s *Server) addResidentThread(th *threadState) *threadState {
-	if th == nil {
+	if s == nil || th == nil {
 		return nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed.Load() {
+		return nil
+	}
 	if existing := s.threads[th.ID]; existing != nil {
 		return existing
 	}

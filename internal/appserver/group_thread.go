@@ -99,6 +99,9 @@ func (s *Server) ensureAllChannel() (string, error) {
 		}
 	}
 	th = s.addResidentThread(th)
+	if th == nil {
+		return "", errServerClosed
+	}
 
 	th.mu.Lock()
 	thread := th.snapshotLocked()

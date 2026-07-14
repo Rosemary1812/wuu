@@ -513,6 +513,9 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 	if th == nil {
 		return nil, errors.New("thread is required")
 	}
+	if s == nil || s.closed.Load() {
+		return nil, errServerClosed
+	}
 	th.mu.Lock()
 	existing := th.execRuntime
 	running := th.running
@@ -554,6 +557,11 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 		return nil, err
 	}
 	th.mu.Lock()
+	if s.closed.Load() {
+		th.mu.Unlock()
+		releaseThreadRuntimeSubscription(threadRuntime, sub)
+		return nil, errServerClosed
+	}
 	if th.execRuntime == nil {
 		th.execRuntime = threadRuntime
 		th.runtimeSubscription = sub
@@ -1667,6 +1675,9 @@ func attachUsageToLatestRequestContext(records []sessiontrace.RequestContextReco
 }
 
 func (s *Server) enqueueAgentCompletionTurn(threadID, agentID, resultID string, msg providers.ChatMessage) {
+	if s == nil || s.closed.Load() {
+		return
+	}
 	threadID = strings.TrimSpace(threadID)
 	if threadID == "" || !chatMessageHasUserPayload(msg) {
 		return
@@ -1680,6 +1691,10 @@ func (s *Server) enqueueAgentCompletionTurn(threadID, agentID, resultID string, 
 	}
 
 	s.agentCompletionMu.Lock()
+	if s.closed.Load() {
+		s.agentCompletionMu.Unlock()
+		return
+	}
 	if s.pendingAgentCompletionTurns == nil {
 		s.pendingAgentCompletionTurns = make(map[string][]agentCompletionTurn)
 	}
@@ -1694,6 +1709,9 @@ func (s *Server) enqueueAgentCompletionTurn(threadID, agentID, resultID string, 
 }
 
 func (s *Server) enqueueQueuedUserTurn(threadID string, entry queuedTurn) {
+	if s == nil || s.closed.Load() {
+		return
+	}
 	threadID = strings.TrimSpace(threadID)
 	entry.id = strings.TrimSpace(entry.id)
 	if threadID == "" || entry.id == "" || !chatMessageHasUserPayload(entry.msg) {
@@ -1706,6 +1724,10 @@ func (s *Server) enqueueQueuedUserTurn(threadID string, entry queuedTurn) {
 	entry.msg.Steered = false
 
 	s.queuedTurnMu.Lock()
+	if s.closed.Load() {
+		s.queuedTurnMu.Unlock()
+		return
+	}
 	if s.pendingQueuedTurns == nil {
 		s.pendingQueuedTurns = make(map[string][]queuedTurn)
 	}
@@ -1767,12 +1789,19 @@ func (s *Server) replaceQueuedUserTurn(threadID, queueID string, msg providers.C
 }
 
 func (s *Server) kickQueuedTurnDrain(threadID string) {
+	if s == nil || s.closed.Load() {
+		return
+	}
 	threadID = strings.TrimSpace(threadID)
 	if threadID == "" {
 		return
 	}
 
 	s.queuedTurnMu.Lock()
+	if s.closed.Load() {
+		s.queuedTurnMu.Unlock()
+		return
+	}
 	if len(s.pendingQueuedTurns[threadID]) == 0 || s.drainingQueuedTurns[threadID] {
 		s.queuedTurnMu.Unlock()
 		return
@@ -1787,6 +1816,14 @@ func (s *Server) kickQueuedTurnDrain(threadID string) {
 }
 
 func (s *Server) drainQueuedTurns(threadID string) {
+	if s == nil {
+		return
+	}
+	if s.closed.Load() {
+		s.discardQueuedUserTurns(threadID)
+		s.clearQueuedTurnDrain(threadID)
+		return
+	}
 	th := s.thread(threadID)
 	if th == nil {
 		s.discardQueuedUserTurns(threadID)
@@ -1826,6 +1863,9 @@ func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userM
 	if th == nil {
 		return startedThreadTurn{}, false, errors.New("thread is required")
 	}
+	if s == nil || s.closed.Load() {
+		return startedThreadTurn{}, false, errServerClosed
+	}
 	if strings.TrimSpace(userMsg.Role) == "" {
 		userMsg.Role = "user"
 	}
@@ -1848,6 +1888,11 @@ func (s *Server) startThreadUserTurn(ctx context.Context, th *threadState, userM
 	now := time.Now().UTC()
 
 	th.mu.Lock()
+	if s.closed.Load() {
+		th.mu.Unlock()
+		cancel()
+		return startedThreadTurn{}, false, errServerClosed
+	}
 	if th.running {
 		th.mu.Unlock()
 		cancel()
@@ -1985,6 +2030,9 @@ func (s *Server) prependQueuedUserTurns(threadID string, entries []queuedTurn) {
 	}
 	s.queuedTurnMu.Lock()
 	defer s.queuedTurnMu.Unlock()
+	if s.closed.Load() {
+		return
+	}
 	if s.pendingQueuedTurns == nil {
 		s.pendingQueuedTurns = make(map[string][]queuedTurn)
 	}
@@ -2058,12 +2106,19 @@ func (s *Server) clearQueuedTurnDrain(threadID string) {
 }
 
 func (s *Server) kickAgentCompletionDrain(threadID string) {
+	if s == nil || s.closed.Load() {
+		return
+	}
 	threadID = strings.TrimSpace(threadID)
 	if threadID == "" {
 		return
 	}
 
 	s.agentCompletionMu.Lock()
+	if s.closed.Load() {
+		s.agentCompletionMu.Unlock()
+		return
+	}
 	if len(s.pendingAgentCompletionTurns[threadID]) == 0 || s.drainingAgentCompletionTurns[threadID] {
 		s.agentCompletionMu.Unlock()
 		return
@@ -2078,6 +2133,14 @@ func (s *Server) kickAgentCompletionDrain(threadID string) {
 }
 
 func (s *Server) drainAgentCompletionTurns(threadID string) {
+	if s == nil {
+		return
+	}
+	if s.closed.Load() {
+		s.discardPendingAgentCompletionTurns(threadID)
+		s.clearAgentCompletionDrain(threadID)
+		return
+	}
 	th := s.thread(threadID)
 	if th == nil || !canResumeAgentCompletionThread(th) {
 		s.discardPendingAgentCompletionTurns(threadID)
@@ -2242,6 +2305,9 @@ func threadIsRunning(th *threadState) bool {
 func (s *Server) takePendingAgentCompletionTurns(threadID string) []agentCompletionTurn {
 	s.agentCompletionMu.Lock()
 	defer s.agentCompletionMu.Unlock()
+	if s.closed.Load() {
+		return nil
+	}
 	pending := cloneAgentCompletionTurns(s.pendingAgentCompletionTurns[threadID])
 	delete(s.pendingAgentCompletionTurns, threadID)
 	return pending
@@ -2253,6 +2319,9 @@ func (s *Server) prependPendingAgentCompletionTurns(threadID string, turns []age
 	}
 	s.agentCompletionMu.Lock()
 	defer s.agentCompletionMu.Unlock()
+	if s.closed.Load() {
+		return
+	}
 	if s.pendingAgentCompletionTurns == nil {
 		s.pendingAgentCompletionTurns = make(map[string][]agentCompletionTurn)
 	}
@@ -2279,12 +2348,19 @@ func (s *Server) hasQueuedAgentCompletionWork(threadID string) bool {
 }
 
 func (s *Server) kickGoalContinuation(threadID string) {
+	if s == nil || s.closed.Load() {
+		return
+	}
 	threadID = strings.TrimSpace(threadID)
 	if threadID == "" {
 		return
 	}
 
 	s.goalContinuationMu.Lock()
+	if s.closed.Load() {
+		s.goalContinuationMu.Unlock()
+		return
+	}
 	if s.drainingGoalContinuation[threadID] {
 		s.goalContinuationMu.Unlock()
 		return
@@ -2299,6 +2375,13 @@ func (s *Server) kickGoalContinuation(threadID string) {
 }
 
 func (s *Server) drainGoalContinuation(threadID string) {
+	if s == nil {
+		return
+	}
+	if s.closed.Load() {
+		s.clearGoalContinuationDrain(threadID)
+		return
+	}
 	started, err := s.startGoalContinuationTurn(context.Background(), threadID)
 	if err != nil {
 		providers.DebugLogf("start goal continuation turn for thread %q: %v", threadID, err)
