@@ -404,19 +404,30 @@ describe("Composer send control", () => {
       onClearGoal,
     });
 
-    const editButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"编辑目标\"]",
+    const actionButton = container.querySelector<HTMLButtonElement>(
+      "button[aria-label=\"目标操作\"]",
     );
-    const pauseButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"暂停目标\"]",
-    );
-    const clearButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"清除目标\"]",
-    );
+    expect(actionButton?.disabled).toBe(false);
 
+    const openGoalMenu = (): void => {
+      act(() => {
+        container
+          .querySelector<HTMLButtonElement>("button[aria-label=\"目标操作\"]")
+          ?.dispatchEvent(
+            new MouseEvent("click", { bubbles: true, cancelable: true }),
+          );
+      });
+    };
+    const goalMenuItem = (label: string): HTMLButtonElement | undefined =>
+      Array.from(
+        document.querySelectorAll<HTMLButtonElement>("button[role=\"menuitem\"]"),
+      ).find((button) => button.textContent === label);
+
+    openGoalMenu();
+    const editButton = goalMenuItem("编辑目标");
+    expect(goalMenuItem("暂停目标")?.disabled).toBe(false);
     expect(editButton?.disabled).toBe(false);
-    expect(pauseButton?.disabled).toBe(false);
-    expect(clearButton?.disabled).toBe(false);
+    expect(goalMenuItem("清除目标")?.disabled).toBe(false);
 
     act(() => {
       editButton?.dispatchEvent(
@@ -433,9 +444,8 @@ describe("Composer send control", () => {
         );
     });
 
-    const resumedPauseButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"暂停目标\"]",
-    );
+    openGoalMenu();
+    const resumedPauseButton = goalMenuItem("暂停目标");
     await act(async () => {
       resumedPauseButton?.dispatchEvent(
         new MouseEvent("click", { bubbles: true, cancelable: true }),
@@ -444,20 +454,15 @@ describe("Composer send control", () => {
     });
     expect(onPauseGoal).toHaveBeenCalledTimes(1);
 
-    const resumedClearButton = container.querySelector<HTMLButtonElement>(
-      "button[aria-label=\"清除目标\"]",
-    );
+    openGoalMenu();
+    const resumedClearButton = goalMenuItem("清除目标");
     act(() => {
       resumedClearButton?.dispatchEvent(
         new MouseEvent("click", { bubbles: true, cancelable: true }),
       );
     });
     await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>(
-          "button[aria-label=\"再次点击确认清除目标\"]",
-        )
-        ?.dispatchEvent(
+      goalMenuItem("再次点击确认清除")?.dispatchEvent(
           new MouseEvent("click", { bubbles: true, cancelable: true }),
         );
       await Promise.resolve();
