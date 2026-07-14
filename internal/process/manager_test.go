@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -41,6 +42,40 @@ func TestStartListAndPersist(t *testing.T) {
 	}
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Fatalf("process record mode = %o, want 600", got)
+	}
+}
+
+func TestStartDoesNotRequirePSBinary(t *testing.T) {
+	root := t.TempDir()
+	runtimeDir := filepath.Join(root, "state", "runtime")
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bashPath, err := exec.LookPath("bash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(bashPath, filepath.Join(binDir, "bash")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	m, err := NewManager(root, runtimeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := m.Start(context.Background(), StartOptions{
+		Command:   "read -r _",
+		OwnerKind: OwnerMainAgent,
+		OwnerID:   "main",
+		Lifecycle: LifecycleManaged,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Stop(p.ID); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -319,7 +354,7 @@ func TestStopReconcilesProcessStartedByAnotherManager(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	defer syscall.Kill(-pgid, syscall.SIGKILL)
-	started, err := readProcessStartTime(cmd.Process.Pid)
+	started, _, _, err := readProcessIdentity(cmd.Process.Pid)
 	if err != nil {
 		t.Fatal(err)
 	}
