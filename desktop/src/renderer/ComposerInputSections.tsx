@@ -345,6 +345,12 @@ function ComposerQueueItem({
       <span className="composer-queue-index" aria-hidden="true">
         {position}
       </span>
+      <span
+        className="composer-queue-kind composer-input-header-label"
+        aria-hidden="true"
+      >
+        {kind === "guide" ? "Guide" : "Queue"}
+      </span>
       <button
         type="button"
         className="composer-queue-preview"
@@ -354,10 +360,10 @@ function ComposerQueueItem({
       >
         {queuedMessagePreview(message)}
       </button>
-      <div className="composer-queue-actions">
+      <div className="composer-queue-actions composer-input-header-actions">
         <button
           type="button"
-          className="composer-queue-action edit"
+          className="composer-queue-action composer-input-header-action edit"
           aria-label={`${kind === "guide" ? "编辑引导" : "编辑排队消息"} ${position}`}
           title="编辑"
           onClick={onEdit}
@@ -367,7 +373,7 @@ function ComposerQueueItem({
         {kind === "guide" ? (
           <button
             type="button"
-            className="composer-queue-action"
+            className="composer-queue-action composer-input-header-action"
             aria-label={`取消引导 ${position}`}
             title="取消引导"
             onClick={onRemove}
@@ -377,7 +383,7 @@ function ComposerQueueItem({
         ) : onGuide ? (
           <button
             type="button"
-            className="composer-queue-action"
+            className="composer-queue-action composer-input-header-action"
             aria-label={`转为引导 ${position}`}
             title="转为引导"
             onClick={onGuide}
@@ -387,7 +393,7 @@ function ComposerQueueItem({
         ) : null}
         <button
           type="button"
-          className="composer-queue-action danger"
+          className="composer-queue-action composer-input-header-action danger"
           aria-label={`移除排队消息 ${position}`}
           title="移除"
           onClick={onRemove}

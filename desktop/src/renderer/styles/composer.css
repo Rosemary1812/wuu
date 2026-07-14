@@ -587,25 +587,78 @@
   color: var(--ink);
 }
 
-                                                                             
-                                                                             
-                                                                        
+.composer-input-header {
+  --composer-input-header-inline-padding: 14px;
+  --composer-input-header-row-height: 36px;
+  --composer-input-header-action-size: 28px;
+  border-bottom: 1px solid var(--ink-overlay-6);
+}
+
+.composer-input-header > * + * {
+  border-top: 1px solid var(--ink-overlay-6);
+}
+
+.composer-input-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 1px;
+}
+
+.composer-input-header-label {
+  width: 36px;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  text-overflow: clip;
+  text-transform: uppercase;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.composer-input-header-action {
+  display: grid;
+  width: var(--composer-input-header-action-size, 28px);
+  height: var(--composer-input-header-action-size, 28px);
+  flex: 0 0 var(--composer-input-header-action-size, 28px);
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.composer-input-header-action:hover:not(:disabled) {
+  background: var(--ink-overlay-8);
+  color: var(--ink);
+}
+
+.composer-input-header-action:focus-visible {
+  outline: 2px solid var(--ink-overlay-18);
+  outline-offset: 1px;
+}
+
 .composer-queue-list {
   display: flex;
   flex-direction: column;
   margin: 0;
-  padding: 6px 8px 0;
+  padding: 0;
   list-style: none;
-  border-bottom: 1px solid var(--ink-overlay-6);
 }
 
 .composer-queue-row {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 18px 36px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
-  padding: 4px 6px;
+  min-height: var(--composer-input-header-row-height, 36px);
+  padding: 4px var(--composer-input-header-inline-padding, 14px);
   color: var(--ink);
   font-size: 13.5px;
   line-height: 1.5;
@@ -636,6 +689,10 @@
   user-select: none;
 }
 
+.composer-queue-kind {
+  color: var(--ink-faint);
+}
+
 .composer-queue-preview {
   min-width: 0;
   overflow: hidden;
@@ -662,27 +719,7 @@
 }
 
 .composer-queue-actions {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  flex: 0 0 auto;
-}
-
-.composer-queue-action {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--ink-muted);
-  cursor: pointer;
-}
-
-.composer-queue-action:hover {
-  background: var(--ink-overlay-8);
-  color: var(--ink);
+  justify-self: end;
 }
 
 .composer-queue-action.edit:hover {
@@ -691,11 +728,6 @@
 
 .composer-queue-action.danger:hover {
   color: var(--danger);
-}
-
-.composer-queue-action:focus-visible {
-  outline: 2px solid var(--ink-overlay-18);
-  outline-offset: 1px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -707,14 +739,13 @@
 .composer-goal-strip {
   position: relative;
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-columns: 18px 36px minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 7px;
+  column-gap: 8px;
   row-gap: 2px;
-  min-height: 36px;
-  padding: 4px 10px 4px 12px;
+  min-height: var(--composer-input-header-row-height, 36px);
+  padding: 4px var(--composer-input-header-inline-padding, 14px);
   margin: 0;
-  border-bottom: 1px solid var(--ink-overlay-6);
   background: transparent;
   color: var(--ink);
   font-size: 13.5px;
@@ -723,6 +754,8 @@
 
 .composer-goal-strip-icon {
   display: grid;
+  width: 18px;
+  height: 18px;
   flex: 0 0 auto;
   place-items: center;
   color: var(--ink-muted);
@@ -730,12 +763,6 @@
 
 .composer-goal-strip-label {
   color: var(--ink-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0;
-  line-height: 1;
-  text-transform: uppercase;
-  user-select: none;
 }
 
 .composer-goal-strip-main {
@@ -781,41 +808,13 @@
 }
 
 .composer-goal-strip-actions {
-  display: flex;
   grid-column: 4;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 1px;
+  justify-self: end;
 }
 
 .composer-goal-strip-control-anchor {
   position: relative;
   display: inline-flex;
-}
-
-.composer-goal-strip-action {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--ink-muted);
-  font: inherit;
-  cursor: pointer;
-}
-
-.composer-goal-strip-action:hover:not(:disabled) {
-  background: var(--ink-overlay-8);
-  color: var(--ink);
-}
-
-.composer-goal-strip-action:focus-visible {
-  outline: 2px solid var(--ink-overlay-18);
-  outline-offset: 1px;
 }
 
 .composer-goal-strip-action:disabled {

@@ -1240,6 +1240,37 @@ function foldedPromptButton(title: string): HTMLButtonElement | undefined {
 }
 
 describe("Composer queue strip", () => {
+  it("groups goal and queued messages in one aligned input header", () => {
+    renderComposer({
+      running: true,
+      goalSummary: activeGoalSummary(),
+      queuedMessages: [
+        { id: "queue-1", text: "排队消息", images: [], files: [] },
+      ],
+    });
+
+    const header = container.querySelector(".composer-input-header");
+    const goal = container.querySelector(".composer-goal-strip");
+    const queue = container.querySelector(".composer-queue-list");
+    const actions = Array.from(
+      container.querySelectorAll(".composer-goal-strip-action, .composer-queue-action"),
+    );
+
+    expect(header).not.toBeNull();
+    expect(header?.children).toHaveLength(2);
+    expect(header?.contains(goal ?? null)).toBe(true);
+    expect(header?.contains(queue ?? null)).toBe(true);
+    expect(actions.length).toBeGreaterThan(0);
+    expect(
+      actions.every((action) => action.classList.contains("composer-input-header-action")),
+    ).toBe(true);
+    expect(
+      Array.from(header?.querySelectorAll(".composer-input-header-label") ?? []).map(
+        (label) => label.textContent?.trim(),
+      ),
+    ).toEqual(["Goal", "Queue"]);
+  });
+
   it("renders queued and guide messages in combined sequential order", () => {
     renderComposer({
       running: true,

@@ -268,9 +268,11 @@ export function ComposerGoalStrip({
         aria-label="编辑当前目标"
       >
         <span className="composer-goal-strip-icon" aria-hidden="true">
-          <Target className="icon" />
+          <Target className="icon-sm" />
         </span>
-        <span className="composer-goal-strip-label">Goal</span>
+        <span className="composer-goal-strip-label composer-input-header-label">
+          Goal
+        </span>
         <input
           ref={inputRef}
           className="composer-goal-strip-input"
@@ -281,9 +283,9 @@ export function ComposerGoalStrip({
           onKeyDown={handleEditKeyDown}
           aria-label="目标文本"
         />
-        <div className="composer-goal-strip-actions">
+        <div className="composer-goal-strip-actions composer-input-header-actions">
           <button
-            className="composer-goal-strip-action"
+            className="composer-goal-strip-action composer-input-header-action"
             type="button"
             aria-label="保存目标"
             title="保存"
@@ -300,7 +302,7 @@ export function ComposerGoalStrip({
             )}
           </button>
           <button
-            className="composer-goal-strip-action"
+            className="composer-goal-strip-action composer-input-header-action"
             type="button"
             aria-label="取消编辑"
             title="取消编辑"
@@ -322,9 +324,11 @@ export function ComposerGoalStrip({
   return (
     <div className="composer-goal-strip" role="status" aria-live="polite">
       <span className="composer-goal-strip-icon" aria-hidden="true">
-        <Target className="icon" />
+        <Target className="icon-sm" />
       </span>
-      <span className="composer-goal-strip-label">Goal</span>
+      <span className="composer-goal-strip-label composer-input-header-label">
+        Goal
+      </span>
       <span className="composer-goal-strip-main">
         <span className="composer-goal-strip-text" title={displayText}>
           {displayText}
@@ -333,7 +337,10 @@ export function ComposerGoalStrip({
           <span className="composer-goal-strip-state">{visibleStatus}</span>
         ) : null}
       </span>
-      <div ref={controlsRef} className="composer-goal-strip-actions">
+      <div
+        ref={controlsRef}
+        className="composer-goal-strip-actions composer-input-header-actions"
+      >
         <span
           ref={infoAnchorRef}
           className="composer-goal-strip-control-anchor"
@@ -344,7 +351,7 @@ export function ComposerGoalStrip({
           onMouseLeave={scheduleInfoClose}
         >
           <button
-            className="composer-goal-strip-action"
+            className="composer-goal-strip-action composer-input-header-action"
             type="button"
             aria-label="查看目标详情"
             aria-expanded={infoOpen}
@@ -390,7 +397,7 @@ export function ComposerGoalStrip({
         </span>
         <span ref={actionsAnchorRef} className="composer-goal-strip-control-anchor">
           <button
-            className="composer-goal-strip-action"
+            className="composer-goal-strip-action composer-input-header-action"
             type="button"
             aria-label="目标操作"
             aria-expanded={actionsOpen}

@@ -925,43 +925,47 @@ export function Composer({
           className={`composer-frame${ultraEnabled ? " is-ultra" : ""}`}
           ref={composerFrameRef}
         >
-          <ComposerGoalStrip
-            summary={goalSummary ?? null}
-            disabled={readOnly}
-            onEdit={(nextText) => {
-              if (onEditGoal) {
-                return onEditGoal(nextText);
-              }
-              return undefined;
-            }}
-            onPause={() => {
-              if (onPauseGoal) {
-                return onPauseGoal();
-              }
-              return undefined;
-            }}
-            onResume={() => {
-              if (onResumeGoal) {
-                return onResumeGoal();
-              }
-              return undefined;
-            }}
-            onClear={() => {
-              if (onClearGoal) {
-                return onClearGoal();
-              }
-              return undefined;
-            }}
-          />
-          <ComposerQueueStrip
-            guideMessages={guideMessages}
-            queuedMessages={queuedMessages}
-            onRemoveGuideMessage={onRemoveGuideMessage}
-            onRemoveQueuedMessage={onRemoveQueuedMessage}
-            onGuideQueuedMessage={onGuideQueuedMessage}
-            onEditGuideMessage={onEditGuideMessage}
-            onEditQueuedMessage={onEditQueuedMessage}
-          />
+          {goalSummary || guideMessages.length > 0 || queuedMessages.length > 0 ? (
+            <div className="composer-input-header">
+              <ComposerGoalStrip
+                summary={goalSummary ?? null}
+                disabled={readOnly}
+                onEdit={(nextText) => {
+                  if (onEditGoal) {
+                    return onEditGoal(nextText);
+                  }
+                  return undefined;
+                }}
+                onPause={() => {
+                  if (onPauseGoal) {
+                    return onPauseGoal();
+                  }
+                  return undefined;
+                }}
+                onResume={() => {
+                  if (onResumeGoal) {
+                    return onResumeGoal();
+                  }
+                  return undefined;
+                }}
+                onClear={() => {
+                  if (onClearGoal) {
+                    return onClearGoal();
+                  }
+                  return undefined;
+                }}
+              />
+              <ComposerQueueStrip
+                guideMessages={guideMessages}
+                queuedMessages={queuedMessages}
+                onRemoveGuideMessage={onRemoveGuideMessage}
+                onRemoveQueuedMessage={onRemoveQueuedMessage}
+                onGuideQueuedMessage={onGuideQueuedMessage}
+                onEditGuideMessage={onEditGuideMessage}
+                onEditQueuedMessage={onEditQueuedMessage}
+              />
+            </div>
+          ) : null}
           <div className={`composer${hasCollapsedPromptBlocks ? " has-collapsed-prompt" : ""}`}>
             <ComposerAttachmentStrip files={files} images={images} onRemoveFile={onRemoveFile} onRemoveImage={onRemoveImage} />
             <input
