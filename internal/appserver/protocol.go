@@ -1053,8 +1053,8 @@ type SideThreadMainTaskSummary struct {
 }
 
 type SideThreadSendParams struct {
-	MainThreadID string          `json:"main_thread_id"`
-	Prompt       string          `json:"prompt"`
+	MainThreadID string           `json:"main_thread_id"`
+	Prompt       string           `json:"prompt"`
 	Images       []TurnStartImage `json:"images,omitempty"`
 	Files        []TurnStartFile  `json:"files,omitempty"`
 }
