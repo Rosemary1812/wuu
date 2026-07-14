@@ -1,6 +1,6 @@
 {
   "name": "@blueberrycongee/wuu-desktop",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Desktop app for the Wuu AI coding agent",
   "author": "Andy wu <lpageo@163.com>",
   "private": true,
