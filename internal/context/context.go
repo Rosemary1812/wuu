@@ -79,10 +79,6 @@ type Block struct {
 	TokenBudget int
 }
 
-type Compiler struct {
-	Blocks []Block
-}
-
 // Snapshot captures the current environment state. Safe to call from
 // any goroutine. Keep this snapshot lightweight: volatile repository state is
 // available through tools when the task needs it, but default request context
@@ -92,10 +88,6 @@ func Snapshot(cwd string) EnvInfo {
 		CWD:  cwd,
 		Date: time.Now().Format("2006-01-02"),
 	}
-}
-
-func (c Compiler) Compile() string {
-	return CompileBlocks(c.Blocks)
 }
 
 func CompileBlocks(blocks []Block) string {
