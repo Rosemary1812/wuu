@@ -199,10 +199,15 @@ func LookupWorkerType(name string) (WorkerType, error) {
 	return wt, nil
 }
 
-// alwaysBlockedTools is the set of tools that async sub-agents can never use.
+// alwaysBlockedTools is the set of tools that no anonymous worker may use.
+// Ultra unlocks recursive orchestration, but helpme remains a root-only
+// recovery mechanism.
 var alwaysBlockedTools = map[string]struct{}{
+	"helpme": {},
+}
+
+var defaultWorkerBlockedTools = map[string]struct{}{
 	"spawn_agent":  {},
-	"helpme":       {},
 	"send_message": {},
 	"close_agent":  {},
 }
@@ -218,8 +223,10 @@ var participantSpeechTools = map[string]struct{}{
 // type is allowed to call. participantSpeech is an internal capability for
 // conversation-native named-agent runs; ordinary subagents never receive the
 // chat and task coordination tools even when their worker type otherwise has
-// an unrestricted tool list.
-func FilterToolsForWorker(wt WorkerType, fullList []string, participantSpeech bool) []string {
+// an unrestricted tool list. ultraMode is optional so existing default-mode
+// callers retain byte-for-byte behavior without supplying a new argument.
+func FilterToolsForWorker(wt WorkerType, fullList []string, participantSpeech bool, ultraMode ...bool) []string {
+	ultra := len(ultraMode) > 0 && ultraMode[0]
 	out := make([]string, 0, len(fullList))
 	allowSet := map[string]struct{}{}
 	for _, t := range wt.AllowedTools {
@@ -232,6 +239,11 @@ func FilterToolsForWorker(wt WorkerType, fullList []string, participantSpeech bo
 	for _, name := range fullList {
 		if _, blocked := alwaysBlockedTools[name]; blocked {
 			continue
+		}
+		if !ultra {
+			if _, blocked := defaultWorkerBlockedTools[name]; blocked {
+				continue
+			}
 		}
 		if _, denied := denySet[name]; denied {
 			continue

@@ -94,7 +94,7 @@ func TestComposeWorkerSystemPrompt_ContainsWorkerOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LookupWorkerType(general-purpose): %v", err)
 	}
-	got := composeWorkerSystemPrompt("You are wuu, a pragmatic CLI coding assistant.", wt, "/tmp/repo", IsolationInplace)
+	got := composeWorkerSystemPrompt("You are wuu, a pragmatic CLI coding assistant.", wt, "/tmp/repo", IsolationInplace, false)
 	if !strings.Contains(got, "Worker override:") {
 		t.Fatalf("worker system prompt missing override marker: %q", got)
 	}
@@ -109,12 +109,28 @@ func TestComposeWorkerSystemPrompt_ContainsWorkerOverride(t *testing.T) {
 	}
 }
 
+func TestComposeWorkerSystemPrompt_UltraPromisesRecursiveTools(t *testing.T) {
+	wt, err := LookupWorkerType(DefaultSubagentType)
+	if err != nil {
+		t.Fatalf("LookupWorkerType(general-purpose): %v", err)
+	}
+	got := composeWorkerSystemPrompt("", wt, "/tmp/repo", IsolationInplace, true)
+	for _, want := range []string{"spawn_agent", "send_message", "close_agent", "arrive automatically - do not poll"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Ultra worker system prompt missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "cannot spawn or manage other agents") {
+		t.Fatalf("Ultra worker system prompt retained default delegation ban:\n%s", got)
+	}
+}
+
 func TestComposeWorkerSystemPrompt_IsCapabilityNeutralForTerminalWork(t *testing.T) {
 	wt, err := LookupWorkerType(DefaultSubagentType)
 	if err != nil {
 		t.Fatalf("LookupWorkerType(general-purpose): %v", err)
 	}
-	got := composeWorkerSystemPrompt("", wt, "/tmp/repo", IsolationInplace)
+	got := composeWorkerSystemPrompt("", wt, "/tmp/repo", IsolationInplace, false)
 	for _, want := range []string{
 		"Treat command execution as non-interactive",
 		"active tool surface exposes it",

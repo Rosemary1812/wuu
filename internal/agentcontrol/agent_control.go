@@ -1554,7 +1554,7 @@ func (c *AgentControl) workerSystemPrompt(rootDir string, wt WorkerType, meta ag
 			base = customBase
 		}
 	}
-	return composeWorkerSystemPrompt(base, wt, rootDir, isolation), nil
+	return composeWorkerSystemPrompt(base, wt, rootDir, isolation, false), nil
 }
 
 func withInitialSystemPrompt(history []providers.ChatMessage, systemPrompt string) []providers.ChatMessage {
@@ -3195,7 +3195,7 @@ func appendForkWorktreeReminder(prompt, workerRoot string, isolation IsolationMo
 // of the working directory and isolation mode, then appends the base
 // prompt (typically the main agent's project memory and skills, not
 // the optional coordinator-mode instructions).
-func composeWorkerSystemPrompt(base string, wt WorkerType, workerRoot string, isolation IsolationMode) string {
+func composeWorkerSystemPrompt(base string, wt WorkerType, workerRoot string, isolation IsolationMode, ultraMode bool) string {
 	var b strings.Builder
 	b.WriteString(wt.SystemPrompt)
 	b.WriteString("\n\n")
@@ -3228,7 +3228,13 @@ func composeWorkerSystemPrompt(base string, wt WorkerType, workerRoot string, is
 		b.WriteString("read-only operations are safe, but any file you modify is visible to the orchestrator and other workers immediately. ")
 	}
 	b.WriteString("All file paths in your tools resolve relative to this directory. ")
-	b.WriteString("You cannot spawn or manage other agents from this worker. If the task seems to require additional delegation, report that need in your final handoff so the parent can decide and coordinate.\n")
+	if ultraMode {
+		b.WriteString("\n\n")
+		b.WriteString(UltraWorkerPolicy())
+		b.WriteString("\n")
+	} else {
+		b.WriteString("You cannot spawn or manage other agents from this worker. If the task seems to require additional delegation, report that need in your final handoff so the parent can decide and coordinate.\n")
+	}
 	if base != "" {
 		b.WriteString("\n---\n\n")
 		b.WriteString(base)

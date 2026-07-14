@@ -803,6 +803,17 @@ func (t *Toolkit) SurfaceToolNames() []string {
 // same boundary is enforced at runtime by worker tool filtering and
 // tool-specific path checks.
 func (t *Toolkit) SetActiveProfile(p modelprofile.Profile, forMainAgent bool) {
+	kind := modelprofile.SurfaceWorker
+	if forMainAgent {
+		kind = modelprofile.SurfaceMain
+	}
+	if t != nil && t.env != nil && t.env.ResidentParticipantEnabled {
+		kind = modelprofile.SurfaceNamed
+	}
+	t.setActiveProfileForSurface(p, kind)
+}
+
+func (t *Toolkit) setActiveProfileForSurface(p modelprofile.Profile, kind modelprofile.SurfaceKind) {
 	if t == nil {
 		return
 	}
@@ -819,21 +830,6 @@ func (t *Toolkit) SetActiveProfile(p modelprofile.Profile, forMainAgent bool) {
 		t.activeSurface = capability.Surface{}
 		t.env.ActiveSurface = capability.Surface{}
 		return
-	}
-	// Derive the compile SurfaceKind from the public forMainAgent flag plus
-	// the runtime named-identity signal so callers keep the simple two-value
-	// boolean while the compiler gains the worker/main/named dimension. A
-	// resident/named agent turn (env.ResidentParticipantEnabled) resolves to
-	// SurfaceNamed; other orchestrating agents to SurfaceMain; workers to
-	// SurfaceWorker. Today SurfaceNamed compiles the same tools as SurfaceMain,
-	// so this is behavior-neutral; the distinction exists for later
-	// named-only capability work.
-	kind := modelprofile.SurfaceWorker
-	if forMainAgent {
-		kind = modelprofile.SurfaceMain
-	}
-	if t.env != nil && t.env.ResidentParticipantEnabled {
-		kind = modelprofile.SurfaceNamed
 	}
 	t.activeSurface = modelprofile.DefaultCompiler{}.Compile(p, kind)
 	if t.env != nil && t.env.ParticipantSpeechEnabled {

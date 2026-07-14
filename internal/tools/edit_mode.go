@@ -44,6 +44,17 @@ func (t *Toolkit) ConfigureSurfaceForProviderModel(providerName, model string, f
 	t.SetActiveProfile(modelprofile.Resolve(providerName, model), forMainAgent)
 }
 
+// ConfigureWorkerSurfaceForProviderModel installs either the ordinary worker
+// surface or the Ultra worker surface. Both keep agent_report; only the Ultra
+// surface receives task orchestration, and neither receives helpme.
+func (t *Toolkit) ConfigureWorkerSurfaceForProviderModel(providerName, model string, ultraMode bool) {
+	kind := modelprofile.SurfaceWorker
+	if ultraMode {
+		kind = modelprofile.SurfaceUltraWorker
+	}
+	t.setActiveProfileForSurface(modelprofile.Resolve(providerName, model), kind)
+}
+
 func (t *Toolkit) SetEditToolMode(mode EditToolMode) {
 	switch mode {
 	case EditToolModePatch:
