@@ -3936,7 +3936,15 @@ func (c *AgentControl) finishNestedResultDelivery(resultID string, attempt *nest
 
 func (c *AgentControl) isRootChildSnapshot(snap subagent.SubAgentSnapshot) bool {
 	parentID := strings.TrimSpace(snap.ParentID)
-	return parentID == "" || parentID == c.sessionID || parentID == c.rootThreadID
+	if parentID == "" || parentID == c.sessionID || parentID == c.rootThreadID {
+		return true
+	}
+	// The root agent's toolkit identity is not always the session id (an
+	// embedded toolkit may register the root as "root"). The agent path is
+	// authoritative: a direct child of the root path completes to the root
+	// thread and must never wait on a parent-worker delivery that cannot
+	// happen.
+	return parentPathForSnapshot(snap) == agentthread.RootPath
 }
 
 func (c *AgentControl) newAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPath string) agentthread.InterAgentCommunication {
