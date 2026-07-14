@@ -84,6 +84,10 @@ import type {
   PopOutSessionParams,
   WorkspaceFileSaveParams,
   CodexPetHint,
+  SideThreadOpenResult,
+  SideThreadHistoryResult,
+  SideThreadSendParams,
+  SideThreadSendResult,
 } from "../shared/protocol";
 import { AppServerClientPool } from "./appServerClients";
 import {
@@ -1131,6 +1135,20 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("wuu:activity-stop", (event, threadId: string, activityId: string) =>
     appServerRequest<ActivityActionResult>(event, "activity/stop", { thread_id: threadId, activity_id: activityId }),
+  );
+  ipcMain.handle("wuu:side-thread-open", (event, mainThreadId: string) =>
+    appServerRequest<SideThreadOpenResult>(event, "sideThread/open", { main_thread_id: mainThreadId }),
+  );
+  ipcMain.handle("wuu:side-thread-history", (event, mainThreadId: string) =>
+    appServerRequest<SideThreadHistoryResult>(event, "sideThread/getHistory", { main_thread_id: mainThreadId }),
+  );
+  ipcMain.handle(
+    "wuu:side-thread-send",
+    (event, params: SideThreadSendParams) =>
+      appServerRequest<SideThreadSendResult>(event, "sideThread/sendMessage", params),
+  );
+  ipcMain.handle("wuu:side-thread-interrupt", (event, mainThreadId: string) =>
+    appServerRequest<{ ok: boolean }>(event, "sideThread/interrupt", { main_thread_id: mainThreadId }),
   );
   ipcMain.handle(
     "wuu:thread-start",

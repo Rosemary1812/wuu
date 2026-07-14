@@ -6,6 +6,8 @@ import {
   type RemoteControlEvent,
   type ServerEvent,
   type SettingsUsageRange,
+  type SideThreadEvent,
+  type SideThreadSendParams,
   type ThreadStartParams,
   type ThemePreference,
   type WindowResizeState,
@@ -390,6 +392,29 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:pop-out-session", params),
   popOutClosed: (params) =>
     ipcRenderer.invoke("wuu:pop-out-closed", params),
+  // Side thread (侧聊) IPC. Keyed by main_thread_id because the renderer
+  // never holds a side_thread_id of its own until after openSideThread
+  // returns a non-null summary. The main process resolves the binding
+  // both ways. open/get/send/interrupt are async; the streamed
+  // assistant reply reuses the existing wuu:server-event bus via
+  // onSideThreadEvent so the renderer doesn't need a parallel channel.
+  openSideThread: (mainThreadId: string) =>
+    ipcRenderer.invoke("wuu:side-thread-open", mainThreadId),
+  getSideThreadHistory: (mainThreadId: string) =>
+    ipcRenderer.invoke("wuu:side-thread-history", mainThreadId),
+  sendSideThreadMessage: (params: SideThreadSendParams) =>
+    ipcRenderer.invoke("wuu:side-thread-send", params),
+  interruptSideThread: (mainThreadId: string) =>
+    ipcRenderer.invoke("wuu:side-thread-interrupt", mainThreadId),
+  onSideThreadEvent: (handler: (event: SideThreadEvent) => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: Parameters<typeof handler>[0],
+    ) => handler(payload);
+    ipcRenderer.on("wuu:side-thread-event", listener);
+    return () =>
+      ipcRenderer.removeListener("wuu:side-thread-event", listener);
+  },
   // Sync bootstrap for popped-out windows. This returns window-owned
   // identity only; thread data loads through the normal async IPC path.
   // SendSync must be paired with an ipcMain.on handler that sets
