@@ -1859,9 +1859,9 @@ export type SettingsUsageResponse = {
 };
 
 // ComposerGoalSummary is the composer-banner view of the current thread goal.
-// The backend owns runtime status, control availability, and progress text so
-// the renderer can stay a thin control surface instead of rebuilding goal
-// orchestration state.
+// The backend owns runtime status, control availability, and active-only usage
+// so the renderer can stay a thin control surface instead of rebuilding goal
+// orchestration state or deriving wall-clock execution time.
 export type ComposerGoalSummary = {
   id: string;
   thread_id?: string;

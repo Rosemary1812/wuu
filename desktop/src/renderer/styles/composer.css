@@ -705,8 +705,9 @@
 }
 
 .composer-goal-strip {
+  position: relative;
   display: grid;
-  grid-template-columns: auto auto auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 7px;
   row-gap: 2px;
@@ -714,14 +715,10 @@
   padding: 4px 10px 4px 12px;
   margin: 0;
   border-bottom: 1px solid var(--ink-overlay-6);
+  background: transparent;
+  color: var(--ink);
   font-size: 13.5px;
   line-height: 1.5;
-  color: var(--ink);
-  background: transparent;
-}
-
-.composer-goal-strip.confirming-clear {
-  background: var(--ink-overlay-6);
 }
 
 .composer-goal-strip-icon {
@@ -741,47 +738,32 @@
   user-select: none;
 }
 
-.composer-goal-strip-elapsed {
-  flex: 0 0 auto;
-  grid-column: 3;
-  justify-self: start;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--ink-overlay-4);
-  color: var(--ink-muted);
-  font-size: 11px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
-  line-height: 1.4;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  user-select: none;
-}
-
 .composer-goal-strip-main {
-  display: grid;
-  grid-column: 4;
+  display: flex;
+  grid-column: 3;
   min-width: 0;
-  row-gap: 1px;
+  align-items: center;
+  gap: 8px;
 }
 
-.composer-goal-strip-text,
-.composer-goal-strip-detail {
+.composer-goal-strip-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.composer-goal-strip-detail {
+.composer-goal-strip-state {
+  flex: 0 0 auto;
   color: var(--ink-muted);
-  font-size: 11.5px;
-  line-height: 1.2;
+  font-size: 11px;
+  font-weight: var(--weight-medium);
+  line-height: var(--line-ui);
+  white-space: nowrap;
 }
 
 .composer-goal-strip-input {
-  grid-column: 4;
+  grid-column: 3;
   width: 100%;
   min-width: 0;
   height: 28px;
@@ -800,10 +782,15 @@
 
 .composer-goal-strip-actions {
   display: flex;
-  grid-column: 5;
+  grid-column: 4;
   flex: 0 0 auto;
   align-items: center;
   gap: 1px;
+}
+
+.composer-goal-strip-control-anchor {
+  position: relative;
+  display: inline-flex;
 }
 
 .composer-goal-strip-action {
@@ -813,9 +800,9 @@
   flex: 0 0 28px;
   place-items: center;
   padding: 0;
-  background: transparent;
   border: 0;
   border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--ink-muted);
   font: inherit;
   cursor: pointer;
@@ -836,13 +823,110 @@
   cursor: not-allowed;
 }
 
-.composer-goal-strip-action.danger {
+.composer-goal-strip-info,
+.composer-goal-strip-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 8;
+  border: 1px solid var(--menu-border);
+  border-radius: var(--menu-radius);
+  background: var(--menu-bg);
+  box-shadow: var(--menu-shadow);
+  backdrop-filter: blur(16px);
+  animation: menu-enter var(--menu-enter-duration) var(--menu-enter-easing) both;
+}
+
+.floating-menu-layer > .composer-goal-strip-info,
+.floating-menu-layer > .composer-goal-strip-menu {
+  position: static;
+  inset: auto;
+  max-width: calc(100vw - 16px);
+}
+
+.composer-goal-strip-info {
+  width: min(280px, calc(100vw - 40px));
+  padding: 12px;
+  color: var(--ink);
+}
+
+.composer-goal-strip-info-title {
+  margin-bottom: 9px;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  line-height: var(--line-ui);
+}
+
+.composer-goal-strip-info-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.composer-goal-strip-info-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  font-size: var(--font-sm);
+  line-height: var(--line-meta);
+}
+
+.composer-goal-strip-info-row dt {
   color: var(--ink-muted);
 }
 
-.composer-goal-strip-action.danger:hover:not(:disabled) {
-  background: var(--composer-goal-strip-danger-hover-bg);
+.composer-goal-strip-info-row dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.composer-goal-strip-info-note {
+  margin: 10px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--ink-overlay-6);
+  color: var(--ink-muted);
+  font-size: var(--font-xs);
+  line-height: var(--line-meta);
+}
+
+.composer-goal-strip-menu {
+  display: grid;
+  width: 168px;
+  padding: 5px;
+}
+
+.composer-goal-strip-menu-item {
+  display: grid;
+  width: 100%;
+  min-height: 32px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-goal-strip-menu-item:hover,
+.composer-goal-strip-menu-item:focus-visible {
+  background: var(--ink-overlay-8);
+  outline: none;
+}
+
+.composer-goal-strip-menu-item.danger {
   color: var(--danger);
+}
+
+.composer-goal-strip-menu-item.danger:hover,
+.composer-goal-strip-menu-item.danger:focus-visible {
+  background: var(--composer-goal-strip-danger-hover-bg);
 }
 
 .composer-goal-strip-error {

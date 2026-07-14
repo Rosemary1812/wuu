@@ -15,12 +15,11 @@ import (
 
 // handleGoalActiveSummary returns the lightweight composer-banner view of
 // the most recently updated non-terminal goal. The renderer only needs id,
-// text (single-line), status, step, started_at, updated_at — full goal
-// state (tasks, approvals, workflow phases) is intentionally omitted so the
-// renderer cannot rebuild the deleted right-side Goal panel from this
-// surface. started_at feeds the composer banner's elapsed-time counter and
-// must come from the canonical goal creation timestamp so the timer survives
-// a desktop reload.
+// text (single-line), status, usage, and timestamps — full goal state (tasks,
+// approvals, workflow phases) is intentionally omitted so the renderer cannot
+// rebuild the deleted right-side Goal panel from this surface. The timestamps
+// are metadata; time_used_seconds is the effective execution time shown by the
+// desktop because active usage accounting excludes paused and blocked goals.
 func (s *Server) handleGoalActiveSummary(req Request) error {
 	var params GoalActiveSummaryParams
 	if len(req.Params) > 0 {

@@ -582,11 +582,10 @@ type AgentTemplateListResult struct {
 // re-checking status.
 // Text is the first line of goal.Goal. The renderer owns visual ellipsis
 // so editing a long first line never persists a server-side truncation.
-// StartedAt is the canonical goal creation timestamp; the renderer uses
-// it as the baseline for an elapsed-time counter so the timer survives a
-// desktop reload instead of restarting from "first time the renderer saw
-// the goal". It intentionally omits task / step / approvals to keep the
-// composer surface quiet.
+// StartedAt and UpdatedAt remain available as goal metadata. TimeUsedSeconds
+// is the effective execution time and excludes time spent paused or blocked.
+// The summary intentionally omits task / step / approvals to keep the composer
+// surface quiet.
 type GoalActiveSummary struct {
 	ID                      string `json:"id"`
 	ThreadID                string `json:"thread_id,omitempty"`

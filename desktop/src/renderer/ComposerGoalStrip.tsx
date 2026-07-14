@@ -1,27 +1,33 @@
 import {
   Check,
+  Info,
   Loader2,
+  MoreHorizontal,
   Pause,
   Pencil,
   Play,
   Target,
   Trash2,
-  X
+  X,
+  type LucideIcon,
 } from "lucide-react";
 import {
   type KeyboardEvent,
   useEffect,
-  useMemo,
   useRef,
-  useState
+  useState,
 } from "react";
 import type { ComposerGoalSummary } from "../shared/protocol";
+import {
+  FloatingMenuPortal,
+  isInsideFloatingMenu,
+} from "./ComposerFloatingMenu";
 
 const ACTION_CONFIRM_WINDOW_MS = 3000;
-const ELAPSED_TICK_MS = 1000;
 
 type GoalBusyAction = "edit" | "pause" | "resume" | "clear";
 type ConfirmableGoalAction = "clear";
+type GoalInfoRow = { label: string; value: string };
 
 export function ComposerGoalStrip({
   summary,
@@ -29,7 +35,7 @@ export function ComposerGoalStrip({
   onEdit,
   onPause,
   onResume,
-  onClear
+  onClear,
 }: {
   summary: ComposerGoalSummary | null;
   disabled?: boolean;
@@ -44,32 +50,17 @@ export function ComposerGoalStrip({
     useState<ConfirmableGoalAction | null>(null);
   const [busy, setBusy] = useState<GoalBusyAction | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState<number>(() => Date.now());
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const controlsRef = useRef<HTMLDivElement | null>(null);
+  const infoAnchorRef = useRef<HTMLSpanElement | null>(null);
+  const actionsAnchorRef = useRef<HTMLSpanElement | null>(null);
+  const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const startedAtMs = useMemo(
-    () => parseStartedAt(summary?.started_at),
-    [summary?.started_at],
-  );
-
   useEffect(() => {
-    if (startedAtMs == null) {
-      return;
-    }
-    setNow(Date.now());
-    const intervalID = setInterval(() => {
-      setNow(Date.now());
-    }, ELAPSED_TICK_MS);
-    return () => {
-      clearInterval(intervalID);
-    };
-  }, [startedAtMs]);
-
-  useEffect(() => {
-    if (!editing) {
-      return;
-    }
+    if (!editing) return;
     setDraft(summary?.text ?? "");
     requestAnimationFrame(() => {
       const node = inputRef.current;
@@ -86,38 +77,88 @@ export function ComposerGoalStrip({
     setConfirmingAction(null);
     setBusy(null);
     setError(null);
+    setInfoOpen(false);
+    setActionsOpen(false);
     clearConfirmTimer();
   }, [summary?.id]);
+
+  useEffect(() => {
+    if (!infoOpen && !actionsOpen) return;
+
+    function handlePointerDown(event: PointerEvent): void {
+      const target = event.target;
+      if (target instanceof Node && controlsRef.current?.contains(target)) {
+        return;
+      }
+      if (target instanceof Node && isInsideFloatingMenu(target, "composer-goal")) {
+        return;
+      }
+      closePopovers();
+    }
+
+    function handleKeyDown(event: globalThis.KeyboardEvent): void {
+      if (event.key === "Escape") closePopovers();
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [actionsOpen, infoOpen]);
 
   useEffect(() => {
     return () => {
       if (confirmTimerRef.current) {
         clearTimeout(confirmTimerRef.current);
       }
+      if (infoCloseTimerRef.current) {
+        clearTimeout(infoCloseTimerRef.current);
+      }
     };
   }, []);
 
-  if (!summary) {
-    return null;
-  }
+  if (!summary) return null;
+
   const activeSummary = summary;
   const displayText = goalStripDisplayText(summary.text);
-  const detailText = goalStripDetailText(summary);
-  const elapsedElement = renderElapsed(startedAtMs, now);
+  const visibleStatus = goalVisibleStatusText(summary);
+  const infoRows = goalInfoRows(summary);
   const canPause = summary.can_pause === true;
   const canResume = summary.can_resume === true;
   const canClear = summary.can_clear === true;
 
   function clearConfirmTimer(): void {
-    if (confirmTimerRef.current) {
-      clearTimeout(confirmTimerRef.current);
-      confirmTimerRef.current = null;
-    }
+    if (!confirmTimerRef.current) return;
+    clearTimeout(confirmTimerRef.current);
+    confirmTimerRef.current = null;
+  }
+
+  function clearInfoCloseTimer(): void {
+    if (!infoCloseTimerRef.current) return;
+    clearTimeout(infoCloseTimerRef.current);
+    infoCloseTimerRef.current = null;
+  }
+
+  function scheduleInfoClose(): void {
+    clearInfoCloseTimer();
+    infoCloseTimerRef.current = setTimeout(() => {
+      setInfoOpen(false);
+      infoCloseTimerRef.current = null;
+    }, 100);
   }
 
   function resetConfirmation(): void {
     setConfirmingAction(null);
     clearConfirmTimer();
+  }
+
+  function closePopovers(): void {
+    clearInfoCloseTimer();
+    setInfoOpen(false);
+    setActionsOpen(false);
+    resetConfirmation();
   }
 
   function startConfirmation(action: ConfirmableGoalAction): void {
@@ -132,7 +173,7 @@ export function ComposerGoalStrip({
   function handleStartEdit(): void {
     if (disabled || busy) return;
     setError(null);
-    resetConfirmation();
+    closePopovers();
     setEditing(true);
   }
 
@@ -143,10 +184,12 @@ export function ComposerGoalStrip({
   }
 
   function handlePauseGoal(): void {
+    setActionsOpen(false);
     runAction("pause", onPause, "暂停目标失败");
   }
 
   function handleResumeGoal(): void {
+    setActionsOpen(false);
     runAction("resume", onResume, "继续目标失败");
   }
 
@@ -158,6 +201,7 @@ export function ComposerGoalStrip({
       return;
     }
     resetConfirmation();
+    setActionsOpen(false);
     runAction(action, onClear, "清除目标失败");
   }
 
@@ -227,7 +271,6 @@ export function ComposerGoalStrip({
           <Target className="icon" />
         </span>
         <span className="composer-goal-strip-label">Goal</span>
-        {elapsedElement}
         <input
           ref={inputRef}
           className="composer-goal-strip-input"
@@ -277,104 +320,141 @@ export function ComposerGoalStrip({
   }
 
   return (
-    <div
-      className={
-        `composer-goal-strip${
-          confirmingAction ? ` confirming-${confirmingAction}` : ""
-        }`
-      }
-      role="status"
-      aria-live="polite"
-    >
+    <div className="composer-goal-strip" role="status" aria-live="polite">
       <span className="composer-goal-strip-icon" aria-hidden="true">
         <Target className="icon" />
       </span>
       <span className="composer-goal-strip-label">Goal</span>
-      {elapsedElement}
       <span className="composer-goal-strip-main">
         <span className="composer-goal-strip-text" title={displayText}>
           {displayText}
         </span>
-        {detailText ? (
-          <span className="composer-goal-strip-detail" title={detailText}>
-            {detailText}
-          </span>
+        {visibleStatus ? (
+          <span className="composer-goal-strip-state">{visibleStatus}</span>
         ) : null}
       </span>
-      <div className="composer-goal-strip-actions">
-        {canPause ? (
-          <button
-            className="composer-goal-strip-action"
-            type="button"
-            aria-label="暂停目标"
-            title="暂停目标"
-            disabled={disabled || busy !== null}
-            onClick={handlePauseGoal}
-          >
-            {busy === "pause" ? (
-              <Loader2
-                className="icon-sm composer-goal-strip-spin"
-                aria-hidden="true"
-              />
-            ) : (
-              <Pause className="icon-sm" aria-hidden="true" />
-            )}
-          </button>
-        ) : null}
-        {canResume ? (
-          <button
-            className="composer-goal-strip-action"
-            type="button"
-            aria-label="继续目标"
-            title="继续目标"
-            disabled={disabled || busy !== null}
-            onClick={handleResumeGoal}
-          >
-            {busy === "resume" ? (
-              <Loader2
-                className="icon-sm composer-goal-strip-spin"
-                aria-hidden="true"
-              />
-            ) : (
-              <Play className="icon-sm" aria-hidden="true" />
-            )}
-          </button>
-        ) : null}
-        <button
-          className="composer-goal-strip-action"
-          type="button"
-          aria-label="编辑目标"
-          title="编辑目标"
-          disabled={disabled || busy !== null}
-          onClick={handleStartEdit}
+      <div ref={controlsRef} className="composer-goal-strip-actions">
+        <span
+          ref={infoAnchorRef}
+          className="composer-goal-strip-control-anchor"
+          onMouseEnter={() => {
+            clearInfoCloseTimer();
+            setInfoOpen(true);
+          }}
+          onMouseLeave={scheduleInfoClose}
         >
-          <Pencil className="icon-sm" aria-hidden="true" />
-        </button>
-        {canClear ? (
           <button
-            className={
-              `composer-goal-strip-action${
-                confirmingAction === "clear" ? " danger" : ""
-              }`
-            }
+            className="composer-goal-strip-action"
             type="button"
-            aria-label={
-              confirmingAction === "clear" ? "再次点击确认清除目标" : "清除目标"
-            }
-            title={confirmingAction === "clear" ? "再次点击确认" : "清除目标"}
-            disabled={disabled || busy !== null}
-            onClick={() => handleConfirmableGoalAction("clear")}
+            aria-label="查看目标详情"
+            aria-expanded={infoOpen}
+            title="目标详情"
+            onClick={() => {
+              clearInfoCloseTimer();
+              setActionsOpen(false);
+              setInfoOpen((current) => !current);
+            }}
           >
-            {busy === "clear" ? (
+            <Info className="icon-sm" aria-hidden="true" />
+          </button>
+          {infoOpen ? (
+            <FloatingMenuPortal
+              anchorRef={infoAnchorRef}
+              owner="composer-goal"
+              placement="above"
+              align="right"
+              offset={6}
+              width={280}
+            >
+              <div
+                className="composer-goal-strip-info"
+                role="tooltip"
+                onMouseEnter={clearInfoCloseTimer}
+                onMouseLeave={scheduleInfoClose}
+              >
+                <div className="composer-goal-strip-info-title">目标详情</div>
+                <dl className="composer-goal-strip-info-list">
+                  {infoRows.map((row) => (
+                    <div key={row.label} className="composer-goal-strip-info-row">
+                      <dt>{row.label}</dt>
+                      <dd>{row.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="composer-goal-strip-info-note">
+                  有效运行时间只统计实际执行，不含暂停或阻塞。
+                </p>
+              </div>
+            </FloatingMenuPortal>
+          ) : null}
+        </span>
+        <span ref={actionsAnchorRef} className="composer-goal-strip-control-anchor">
+          <button
+            className="composer-goal-strip-action"
+            type="button"
+            aria-label="目标操作"
+            aria-expanded={actionsOpen}
+            title="目标操作"
+            disabled={disabled || busy !== null}
+            onClick={() => {
+              setInfoOpen(false);
+              setActionsOpen((current) => !current);
+            }}
+          >
+            {busy ? (
               <Loader2
                 className="icon-sm composer-goal-strip-spin"
                 aria-hidden="true"
               />
             ) : (
-              <Trash2 className="icon-sm" aria-hidden="true" />
+              <MoreHorizontal className="icon-sm" aria-hidden="true" />
             )}
           </button>
-        ) : null}
+          {actionsOpen ? (
+            <FloatingMenuPortal
+              anchorRef={actionsAnchorRef}
+              owner="composer-goal"
+              placement="above"
+              align="right"
+              offset={6}
+              width={168}
+            >
+              <div className="composer-goal-strip-menu" role="menu">
+                {canPause ? (
+                  <GoalMenuButton
+                    icon={Pause}
+                    label="暂停目标"
+                    onClick={handlePauseGoal}
+                  />
+                ) : null}
+                {canResume ? (
+                  <GoalMenuButton
+                    icon={Play}
+                    label="继续目标"
+                    onClick={handleResumeGoal}
+                  />
+                ) : null}
+                <GoalMenuButton
+                  icon={Pencil}
+                  label="编辑目标"
+                  onClick={handleStartEdit}
+                />
+                {canClear ? (
+                  <GoalMenuButton
+                    danger={confirmingAction === "clear"}
+                    icon={Trash2}
+                    label={
+                      confirmingAction === "clear"
+                        ? "再次点击确认清除"
+                        : "清除目标"
+                    }
+                    onClick={() => handleConfirmableGoalAction("clear")}
+                  />
+                ) : null}
+              </div>
+            </FloatingMenuPortal>
+          ) : null}
+        </span>
       </div>
       {error ? (
         <span className="composer-goal-strip-error" role="alert">
@@ -385,61 +465,88 @@ export function ComposerGoalStrip({
   );
 }
 
+function GoalMenuButton({
+  icon: Icon,
+  label,
+  danger = false,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  danger?: boolean;
+  onClick: () => void;
+}): JSX.Element {
+  return (
+    <button
+      className={`composer-goal-strip-menu-item${danger ? " danger" : ""}`}
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+    >
+      <Icon className="icon-sm" aria-hidden="true" />
+      <span>{label}</span>
+    </button>
+  );
+}
+
 function goalStripDisplayText(text: string): string {
   const firstLine = text.trim().split(/\r?\n/, 1)[0]?.trim() ?? "";
   return firstLine || "（无目标文本）";
 }
 
-function goalStripDetailText(summary: ComposerGoalSummary): string {
-  const parts = [
-    goalStatusText(summary),
-    goalProgressText(summary),
-    goalUsageText(summary),
-  ].filter((part) => part.length > 0);
-  return parts.join(" | ");
+function goalStatusKey(summary: ComposerGoalSummary): string {
+  return (summary.status || "").trim().toLowerCase();
+}
+
+function goalVisibleStatusText(summary: ComposerGoalSummary): string {
+  const status = goalStatusKey(summary);
+  if (status === "paused") return "已暂停";
+  if (status === "blocked") return "已阻塞";
+  return "";
 }
 
 function goalStatusText(summary: ComposerGoalSummary): string {
-  const raw = (summary.stop_reason || summary.status || "")
-    .trim()
-    .toLowerCase();
+  const raw = goalStatusKey(summary);
   switch (raw) {
     case "":
     case "active":
     case "running":
-      return "";
+      return "运行中";
     case "paused":
       return "已暂停";
     case "blocked":
       return "已阻塞";
-    case "needs_human":
-      return "等待人工";
     default:
-      return raw;
+      return "状态未知";
   }
 }
 
-function goalProgressText(summary: ComposerGoalSummary): string {
-  const blocker = summary.blocker?.trim() ?? "";
-  if (blocker) {
-    const turns = summary.blocker_consecutive_turns ?? 0;
-    return turns > 1 ? `${blocker} (${turns} 次)` : blocker;
-  }
-  return summary.recent_progress?.trim() ?? "";
-}
-
-function goalUsageText(summary: ComposerGoalSummary): string {
-  const parts: string[] = [];
+function goalInfoRows(summary: ComposerGoalSummary): GoalInfoRow[] {
+  const rows: GoalInfoRow[] = [
+    { label: "状态", value: goalStatusText(summary) },
+    {
+      label: "有效运行",
+      value: formatGoalDuration(summary.time_used_seconds ?? 0),
+    },
+  ];
   if ((summary.goal_turns ?? 0) > 0) {
-    parts.push(`${summary.goal_turns} 轮`);
+    rows.push({ label: "回合", value: `${summary.goal_turns} 轮` });
   }
   if ((summary.tokens_used ?? 0) > 0) {
-    parts.push(`${formatCompactNumber(summary.tokens_used ?? 0)} tokens`);
+    rows.push({
+      label: "Tokens",
+      value: formatCompactNumber(summary.tokens_used ?? 0),
+    });
   }
-  if ((summary.time_used_seconds ?? 0) > 0) {
-    parts.push(formatGoalDuration(summary.time_used_seconds ?? 0));
+  const blocker = summary.blocker?.trim() ?? "";
+  if (blocker) {
+    rows.push({ label: "阻塞原因", value: blocker });
   }
-  return parts.join(" / ");
+  const progress = summary.recent_progress?.trim() ?? "";
+  if (progress) {
+    rows.push({ label: "最近进展", value: progress });
+  }
+  return rows;
 }
 
 function formatCompactNumber(value: number): string {
@@ -458,63 +565,4 @@ function formatGoalDuration(totalSeconds: number): string {
     return `${minutes} 分 ${remainingSeconds} 秒`;
   }
   return `${remainingSeconds} 秒`;
-}
-
-// parseStartedAt converts the backend's RFC3339 timestamp into epoch ms.
-// Returns null when the value is missing or unparseable so the timer chip
-// stays hidden instead of showing "00:00" for goals that pre-date the
-// started_at field.
-function parseStartedAt(value: string | undefined): number | null {
-  if (!value) return null;
-  const ms = Date.parse(value);
-  return Number.isFinite(ms) ? ms : null;
-}
-
-// formatElapsed renders a positive-up elapsed counter. Under one hour it
-// uses mm:ss; one hour or more switches to h:mm:ss without zero padding
-// the hour so a 12-hour run reads "12:34:56" rather than "012:34:56".
-function formatElapsed(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  if (hours > 0) {
-    return `${hours}:${pad(minutes)}:${pad(seconds)}`;
-  }
-  return `${pad(minutes)}:${pad(seconds)}`;
-}
-
-function renderElapsed(
-  startedAtMs: number | null,
-  now: number,
-): JSX.Element | null {
-  if (startedAtMs == null) return null;
-  const elapsedMs = Math.max(0, now - startedAtMs);
-  return (
-    <span
-      className="composer-goal-strip-elapsed"
-      title="目标运行时间"
-      aria-label={`目标已运行 ${formatElapsedA11y(elapsedMs)}`}
-    >
-      {formatElapsed(elapsedMs)}
-    </span>
-  );
-}
-
-// formatElapsedA11y renders the elapsed as a Chinese-language phrase for
-// screen readers so the tabular "01:05" form doesn't get announced as
-// zero-one colon zero-five.
-function formatElapsedA11y(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) {
-    return `${hours} 小时 ${minutes} 分 ${seconds} 秒`;
-  }
-  if (minutes > 0) {
-    return `${minutes} 分 ${seconds} 秒`;
-  }
-  return `${seconds} 秒`;
 }
