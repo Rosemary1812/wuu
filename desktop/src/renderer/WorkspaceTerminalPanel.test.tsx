@@ -1,8 +1,11 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RuntimeContext } from "../shared/protocol";
-import { WorkspaceTerminalPanel } from "./WorkspaceTerminalPanel";
+import type { RuntimeContext, TerminalSessionEvent } from "../shared/protocol";
+import {
+  appendPendingTerminalEvent,
+  WorkspaceTerminalPanel,
+} from "./WorkspaceTerminalPanel";
 
 // Stub xterm/the fit addon so mounting the real WorkspaceTerminalPanel
 // doesn't need an actual terminal renderer or ResizeObserver-driven
@@ -105,5 +108,32 @@ describe("WorkspaceTerminalPanel", () => {
 
     expect(startTerminalSession).not.toHaveBeenCalled();
     expect(container.textContent).toContain("没有项目");
+  });
+});
+
+describe("appendPendingTerminalEvent", () => {
+  it("bounds events and text buffered before terminal startup resolves", () => {
+    let events: TerminalSessionEvent[] = [];
+    for (let index = 0; index < 300; index += 1) {
+      events = appendPendingTerminalEvent(events, {
+        type: "data",
+        id: "term-1",
+        text: String(index),
+      });
+    }
+
+    expect(events).toHaveLength(256);
+    expect(events[0]).toMatchObject({ type: "data", text: "44" });
+
+    events = appendPendingTerminalEvent([], {
+      type: "data",
+      id: "term-1",
+      text: "x".repeat(600 * 1024),
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "data",
+      text: "x".repeat(512 * 1024),
+    });
   });
 });

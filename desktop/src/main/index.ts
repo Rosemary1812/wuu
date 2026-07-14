@@ -223,8 +223,7 @@ const codexPetWindowManager = new CodexPetWindowManager(
   },
 );
 const terminalSessionManager = new TerminalSessionManager(
-  () => projectManager.ensureRuntimeContext(),
-  (event) => emitTerminalEvent(event),
+  (windowID, event) => emitTerminalEvent(windowID, event),
 );
 
 async function showProjectDirectoryDialog(
@@ -317,11 +316,24 @@ function broadcastToAll(channel: string, payload: unknown): void {
   }
 }
 
-
 function emitTerminalEvent(
-  event: Parameters<TerminalSessionManager["emit"]>[0],
+  windowID: number,
+  event: Parameters<TerminalSessionManager["emit"]>[1],
 ): void {
-  broadcastToAll("wuu:terminal-event", event);
+  const window = windowRegistry.windowForID(windowID);
+  if (
+    !window ||
+    window.isDestroyed() ||
+    window.webContents.isDestroyed()
+  ) {
+    return;
+  }
+  window.webContents.send("wuu:terminal-event", event);
+}
+
+function unregisterWindow(windowID: number): void {
+  terminalSessionManager.stopForOwner(windowID);
+  windowRegistry.unregisterWindow(windowID);
 }
 
 // Remote-control host: one machine-global daemon serving paired phones,
@@ -495,9 +507,6 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
   });
   const windowID = win.webContents.id;
 
-  // Commit 7 will pass the actual workdir value when wiring same-workdir
-  // cascade; for now the popped-out window registers without workdir,
-  // which `sameWorkdirPopOutWindows(workdir)` already filters out.
   windowRegistry.registerWindow(win, "popped-out", {
     workdir: params.context.cwd,
     runtimeContext: params.context,
@@ -522,7 +531,7 @@ function createPopOutWindow(params: PopOutWindowParams): BrowserWindow {
     windowRegistry.setSubthreadWindow(params.subthreadID, windowID);
   }
   win.on("closed", () => {
-    windowRegistry.unregisterWindow(windowID);
+    unregisterWindow(windowID);
   });
 
   if (params.kind === "thread") {
@@ -605,7 +614,7 @@ function createWindow(): void {
     }
     windowResizeState = false;
     cuaObservationCoordinator.setActiveThread(undefined);
-    windowRegistry.unregisterWindow(windowID);
+    unregisterWindow(windowID);
     mainWindow = null;
   });
   loadRenderer(win);
@@ -744,7 +753,7 @@ app.whenReady().then(async () => {
         if (existing) {
           windowRegistry.clearSubthreadWindow(subthreadID);
           if (existingWindowID !== undefined) {
-            windowRegistry.unregisterWindow(existingWindowID);
+            unregisterWindow(existingWindowID);
           }
         }
         const win = createPopOutWindow({
@@ -774,7 +783,7 @@ app.whenReady().then(async () => {
       if (existing) {
         windowRegistry.clearThreadWindow(threadID);
         if (existingWindowID !== undefined) {
-          windowRegistry.unregisterWindow(existingWindowID);
+          unregisterWindow(existingWindowID);
         }
       }
       const win = createPopOutWindow({
@@ -904,18 +913,22 @@ app.whenReady().then(async () => {
   ipcMain.handle(
     "wuu:terminal-start",
     (event, params?: TerminalSessionStartParams) =>
-      terminalSessionManager.startInContext(runtimeContextForEvent(event), params),
+      terminalSessionManager.startInContext(
+        runtimeContextForEvent(event),
+        params,
+        event.sender.id,
+      ),
   );
-  ipcMain.handle("wuu:terminal-write", (_event, id: string, data: string) =>
-    terminalSessionManager.write(id, data),
+  ipcMain.handle("wuu:terminal-write", (event, id: string, data: string) =>
+    terminalSessionManager.write(id, data, event.sender.id),
   );
   ipcMain.handle(
     "wuu:terminal-resize",
-    (_event, id: string, cols: number, rows: number) =>
-      terminalSessionManager.resize(id, cols, rows),
+    (event, id: string, cols: number, rows: number) =>
+      terminalSessionManager.resize(id, cols, rows, event.sender.id),
   );
-  ipcMain.handle("wuu:terminal-stop", (_event, id: string) =>
-    terminalSessionManager.stop(id),
+  ipcMain.handle("wuu:terminal-stop", (event, id: string) =>
+    terminalSessionManager.stop(id, event.sender.id),
   );
   ipcMain.handle("wuu:project-choose-folder", async () => {
     const projectPath = await showProjectDirectoryDialog({

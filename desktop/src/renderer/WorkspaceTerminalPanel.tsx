@@ -8,8 +8,42 @@ import { WorkspacePanelEmpty } from "./WorkspaceFiles";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
 const WORKSPACE_TERMINAL_PENDING_EVENT_IDS = 12;
+const WORKSPACE_TERMINAL_PENDING_EVENTS_PER_ID = 256;
+const WORKSPACE_TERMINAL_PENDING_TEXT_PER_ID = 512 * 1024;
 
 type WorkspaceTerminalState = "starting" | "ready" | "exited" | "error";
+
+export function appendPendingTerminalEvent(
+  events: TerminalSessionEvent[],
+  event: TerminalSessionEvent,
+): TerminalSessionEvent[] {
+  const normalized =
+    event.type === "data" &&
+    event.text.length > WORKSPACE_TERMINAL_PENDING_TEXT_PER_ID
+      ? {
+          ...event,
+          text: event.text.slice(-WORKSPACE_TERMINAL_PENDING_TEXT_PER_ID),
+        }
+      : event;
+  const next = [...events, normalized];
+  let textLength = next.reduce(
+    (total, pending) =>
+      total + (pending.type === "data" ? pending.text.length : 0),
+    0,
+  );
+  while (
+    next.length > WORKSPACE_TERMINAL_PENDING_EVENTS_PER_ID ||
+    textLength > WORKSPACE_TERMINAL_PENDING_TEXT_PER_ID
+  ) {
+    const dataIndex = next.findIndex((pending) => pending.type === "data");
+    const removeIndex = dataIndex >= 0 ? dataIndex : 0;
+    const [removed] = next.splice(removeIndex, 1);
+    if (removed?.type === "data") {
+      textLength -= removed.text.length;
+    }
+  }
+  return next;
+}
 
 function formatTerminalDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -111,7 +145,10 @@ export function WorkspaceTerminalPanel({ activeContext }: { activeContext?: Runt
 
     function bufferTerminalEvent(event: TerminalSessionEvent): void {
       const events = pendingTerminalEventsRef.current.get(event.id) ?? [];
-      pendingTerminalEventsRef.current.set(event.id, [...events, event]);
+      pendingTerminalEventsRef.current.set(
+        event.id,
+        appendPendingTerminalEvent(events, event),
+      );
       while (pendingTerminalEventsRef.current.size > WORKSPACE_TERMINAL_PENDING_EVENT_IDS) {
         const firstID = pendingTerminalEventsRef.current.keys().next().value;
         if (!firstID) {

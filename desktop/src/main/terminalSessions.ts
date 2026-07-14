@@ -20,31 +20,28 @@ const requireFromMain = createRequire(import.meta.url);
 
 type TerminalSession = {
   id: string;
+  ownerWindowID: number;
   ptyProcess: pty.IPty;
   cwd: string;
   shell: string;
   startedAt: number;
 };
 
-type RuntimeContextProvider = () => RuntimeContext;
-type TerminalEventEmitter = (event: TerminalSessionEvent) => void;
+type TerminalEventEmitter = (
+  ownerWindowID: number,
+  event: TerminalSessionEvent,
+) => void;
 
 export class TerminalSessionManager {
   private nextSessionID = 1;
   private sessions = new Map<string, TerminalSession>();
 
-  constructor(
-    private readonly getRuntimeContext: RuntimeContextProvider,
-    readonly emit: TerminalEventEmitter,
-  ) {}
-
-  start(params: TerminalSessionStartParams = {}): TerminalSessionStartResult {
-    return this.startInContext(this.getRuntimeContext(), params);
-  }
+  constructor(readonly emit: TerminalEventEmitter) {}
 
   startInContext(
     context: RuntimeContext,
     params: TerminalSessionStartParams = {},
+    ownerWindowID: number,
   ): TerminalSessionStartResult {
     const cwd = resolveTerminalCwd(context, params);
     const id = `term-${this.nextSessionID++}`;
@@ -69,6 +66,7 @@ export class TerminalSessionManager {
 
     const entry: TerminalSession = {
       id,
+      ownerWindowID,
       ptyProcess,
       cwd,
       shell: shell.command,
@@ -76,10 +74,12 @@ export class TerminalSessionManager {
     };
     this.sessions.set(id, entry);
 
-    ptyProcess.onData((text) => this.emit({ type: "data", id, text }));
+    ptyProcess.onData((text) =>
+      this.emit(ownerWindowID, { type: "data", id, text }),
+    );
     ptyProcess.onExit((event) => {
       this.sessions.delete(id);
-      this.emit({
+      this.emit(ownerWindowID, {
         type: "exit",
         id,
         exit_code: event.exitCode,
@@ -97,9 +97,13 @@ export class TerminalSessionManager {
     };
   }
 
-  write(id: string, data: string): TerminalSessionActionResult {
+  write(
+    id: string,
+    data: string,
+    ownerWindowID: number,
+  ): TerminalSessionActionResult {
     const session = this.sessions.get(id);
-    if (!session) {
+    if (!session || session.ownerWindowID !== ownerWindowID) {
       return { ok: false };
     }
     session.ptyProcess.write(data);
@@ -110,9 +114,10 @@ export class TerminalSessionManager {
     id: string,
     cols: number,
     rows: number,
+    ownerWindowID: number,
   ): TerminalSessionActionResult {
     const session = this.sessions.get(id);
-    if (!session) {
+    if (!session || session.ownerWindowID !== ownerWindowID) {
       return { ok: false };
     }
     session.ptyProcess.resize(
@@ -122,9 +127,9 @@ export class TerminalSessionManager {
     return { ok: true };
   }
 
-  stop(id: string): TerminalSessionActionResult {
+  stop(id: string, ownerWindowID: number): TerminalSessionActionResult {
     const session = this.sessions.get(id);
-    if (!session) {
+    if (!session || session.ownerWindowID !== ownerWindowID) {
       return { ok: false };
     }
     this.terminate(session);
@@ -138,12 +143,20 @@ export class TerminalSessionManager {
     this.sessions.clear();
   }
 
+  stopForOwner(ownerWindowID: number): void {
+    for (const session of [...this.sessions.values()]) {
+      if (session.ownerWindowID === ownerWindowID) {
+        this.terminate(session);
+      }
+    }
+  }
+
   private terminate(session: TerminalSession): void {
     this.sessions.delete(session.id);
     try {
       session.ptyProcess.kill();
     } catch (error) {
-      this.emit({
+      this.emit(session.ownerWindowID, {
         type: "error",
         id: session.id,
         message:

@@ -49,6 +49,7 @@ describe("windowRegistry", () => {
     const registry: WindowRegistry = createWindowRegistry();
     expect(registry.mainWindow()).toBeNull();
     expect(registry.allWindows()).toEqual([]);
+    expect(registry.windowForID(1)).toBeNull();
     expect(registry.popOutWindowForThread("t1")).toBeNull();
     expect(registry.threadHostWindowID("t1")).toBeUndefined();
     expect(registry.activityWindow("activity-1")).toBeNull();
@@ -86,6 +87,7 @@ describe("windowRegistry", () => {
       registry.registerWindow(win, "main");
       expect(registry.mainWindow()).toBe(win);
       expect(registry.allWindows()).toEqual([win]);
+      expect(registry.windowForID(1)).toBe(win);
     });
 
     it("returns null from mainWindow() when only popped-out windows are registered", () => {
