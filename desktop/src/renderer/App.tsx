@@ -4182,6 +4182,7 @@ export function App(): JSX.Element {
             ref={sideThreadPanelRef}
             entry={sideThread.entry}
             mainThreadId={activeThreadID}
+            mainTaskRunning={isThreadRunning(activeThread)}
             width={sideThread.width}
             onClose={sideThread.close}
             onResizeStart={sideThread.startResize}

@@ -62,6 +62,7 @@ function makeSummary(overrides: Partial<SideThreadSummary> = {}): SideThreadSumm
     side_thread_id: "side-1",
     main_thread_id: "main-1",
     status: "completed",
+    revision: 1,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
     ...overrides
@@ -99,12 +100,14 @@ function renderPanel(
     onInterrupt?: () => void;
     onChangeDraft?: (draft: string) => void;
     sendDisabledReason?: string;
+    mainTaskRunning?: boolean;
   } = {}
 ) {
   return mount(
     createElement(SideThreadPanel, {
       entry,
       mainThreadId: "main-1",
+      mainTaskRunning: callbacks.mainTaskRunning,
       width: 400,
       onClose: callbacks.onClose ?? (() => {}),
       onResizeStart: callbacks.onResizeStart ?? (() => {}),
@@ -145,6 +148,17 @@ describe("SideThreadPanel", () => {
       })
     );
     expect(container.textContent).toContain("主任务未运行");
+  });
+
+  it("prefers the live main-task state over a stale side-thread snapshot", () => {
+    const { container } = renderPanel(
+      makeEntry({
+        summary: makeSummary({ main_task_summary: { running: true } })
+      }),
+      { mainTaskRunning: false }
+    );
+    expect(container.textContent).toContain("主任务未运行");
+    expect(container.textContent).not.toContain("主任务执行中");
   });
 
   it("shows the empty state copy and quick prompts when no messages", () => {

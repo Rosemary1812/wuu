@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   RuntimeContext,
   SideThreadEvent,
+  SideThreadEventEnvelope,
   SideThreadHistoryResult,
   SideThreadSendResult,
   SideThreadSummary
@@ -25,6 +26,7 @@ afterEach(() => {
   });
   roots = [];
   document.documentElement.classList.remove("resizing-side-thread");
+  vi.useRealTimers();
 });
 
 function summary(overrides: Partial<SideThreadSummary> = {}): SideThreadSummary {
@@ -32,6 +34,7 @@ function summary(overrides: Partial<SideThreadSummary> = {}): SideThreadSummary 
     side_thread_id: "side-1",
     main_thread_id: "main-1",
     status: "completed",
+    revision: 1,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
     ...overrides
@@ -49,7 +52,7 @@ function deferred<T>() {
 }
 
 function makeIPC(overrides: Partial<SideThreadIPC> = {}) {
-  let eventHandler: ((event: SideThreadEvent) => void) | undefined;
+  let eventHandler: ((envelope: SideThreadEventEnvelope) => void) | undefined;
   const ipc: SideThreadIPC = {
     openSideThread: vi.fn(async () => ({ summary: null })),
     getSideThreadHistory: vi.fn(async () => null),
@@ -70,19 +73,24 @@ function makeIPC(overrides: Partial<SideThreadIPC> = {}) {
   };
   return {
     ipc,
-    emit(event: SideThreadEvent) {
-      act(() => eventHandler?.(event));
+    emit(event: SideThreadEvent, workdir = "/repo") {
+      act(() => eventHandler?.({ workdir, event }));
     }
   };
 }
 
-function mountController(ipc: SideThreadIPC, initialThreadId = "main-1") {
+function mountController(
+  ipc: SideThreadIPC,
+  initialThreadId = "main-1",
+  initialContext = context
+) {
   let current: SideThreadController | undefined;
   let threadId = initialThreadId;
+  let runtimeContext = initialContext;
   function Probe() {
     current = useSideThreadController({
       activeThreadId: threadId,
-      activeContext: context,
+      activeContext: runtimeContext,
       ipc
     });
     return null;
@@ -94,8 +102,9 @@ function mountController(ipc: SideThreadIPC, initialThreadId = "main-1") {
   act(() => root.render(createElement(Probe)));
   return {
     get: () => current!,
-    rerender(nextThreadId: string) {
+    rerender(nextThreadId: string, nextContext = runtimeContext) {
       threadId = nextThreadId;
+      runtimeContext = nextContext;
       act(() => root.render(createElement(Probe)));
     }
   };
@@ -154,6 +163,7 @@ describe("useSideThreadController", () => {
     const openedSummary = summary();
     const sentSummary = summary({
       status: "running",
+      revision: 2,
       updated_at: "2026-01-01T00:00:02.000Z"
     });
     const { ipc, emit } = makeIPC({
@@ -170,6 +180,7 @@ describe("useSideThreadController", () => {
       type: "delta",
       side_thread_id: "side-1",
       main_thread_id: "main-1",
+      revision: 2,
       message_id: "assistant-new",
       text_delta: "new answer"
     });
@@ -251,6 +262,102 @@ describe("useSideThreadController", () => {
     hook.rerender("main-1");
     expect(hook.get().entry?.open).toBe(true);
     expect(hook.get().entry?.draft).toBe("draft-a");
+  });
+
+  it("ignores side-thread events from another workspace", () => {
+    const { ipc, emit } = makeIPC();
+    const hook = mountController(ipc);
+
+    emit(
+      {
+        type: "status",
+        side_thread_id: "side-1",
+        main_thread_id: "main-1",
+        summary: summary({ status: "running", revision: 2 })
+      },
+      "/other-repo"
+    );
+
+    expect(hook.get().entry?.summary).toBeNull();
+  });
+
+  it("refreshes an open side thread when its workspace becomes active again", async () => {
+    let currentSummary = summary();
+    let currentMessages: SideThreadHistoryResult["messages"] = [];
+    const { ipc } = makeIPC({
+      openSideThread: vi.fn(async () => ({ summary: currentSummary })),
+      getSideThreadHistory: vi.fn(async () => ({
+        summary: currentSummary,
+        messages: currentMessages
+      }))
+    });
+    const hook = mountController(ipc);
+
+    act(() => hook.get().open());
+    await flush();
+    hook.rerender("main-2", { kind: "no_project", cwd: "/other-repo" });
+
+    currentSummary = summary({
+      revision: 3,
+      updated_at: "2026-01-01T00:00:03.000Z"
+    });
+    currentMessages = [
+      {
+        id: "remote-user",
+        side_thread_id: "side-1",
+        role: "user",
+        text: "remote prompt",
+        created_at: "2026-01-01T00:00:02.000Z"
+      },
+      {
+        id: "remote-assistant",
+        side_thread_id: "side-1",
+        role: "assistant",
+        text: "remote answer",
+        status: "completed",
+        created_at: "2026-01-01T00:00:03.000Z"
+      }
+    ];
+
+    hook.rerender("main-1", context);
+    await flush();
+
+    expect(hook.get().entry?.summary?.revision).toBe(3);
+    expect(hook.get().entry?.messages.map((message) => message.id)).toEqual([
+      "remote-user",
+      "remote-assistant"
+    ]);
+  });
+
+  it("polls a running side thread until a missed terminal update is recovered", async () => {
+    vi.useFakeTimers();
+    let currentSummary = summary({ status: "running" });
+    const { ipc } = makeIPC({
+      openSideThread: vi.fn(async () => ({ summary: currentSummary })),
+      getSideThreadHistory: vi.fn(async () => ({
+        summary: currentSummary,
+        messages: []
+      }))
+    });
+    const hook = mountController(ipc);
+
+    act(() => hook.get().open());
+    await flush();
+    expect(hook.get().entry?.streaming).toBe(true);
+    currentSummary = summary({
+      status: "completed",
+      revision: 2,
+      updated_at: "2026-01-01T00:00:02.000Z"
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(2_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(hook.get().entry?.summary?.status).toBe("completed");
+    expect(hook.get().entry?.streaming).toBe(false);
   });
 
   it("forwards interrupt requests for the active main thread", () => {

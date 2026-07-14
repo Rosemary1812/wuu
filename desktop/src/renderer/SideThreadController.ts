@@ -1,14 +1,13 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent
 } from "react";
 import type {
   RuntimeContext,
-  SideThreadEvent,
+  SideThreadEventEnvelope,
   SideThreadHistoryResult,
   SideThreadOpenResult,
   SideThreadSendParams,
@@ -23,6 +22,8 @@ import {
   type SideThreadAction,
   type SideThreadStoreState
 } from "./SideThreadState";
+
+const SIDE_THREAD_RECOVERY_POLL_MS = 2_000;
 
 export type SideThreadController = {
   entry: SideThreadStoreState["byThread"][string] | undefined;
@@ -54,7 +55,9 @@ export type SideThreadIPC = {
     params: SideThreadSendParams
   ) => Promise<SideThreadSendResult>;
   interruptSideThread: (mainThreadId: string) => Promise<{ ok: boolean }>;
-  onSideThreadEvent: (handler: (event: SideThreadEvent) => void) => () => void;
+  onSideThreadEvent: (
+    handler: (envelope: SideThreadEventEnvelope) => void
+  ) => () => void;
 };
 
 function defaultIPC(): SideThreadIPC | undefined {
@@ -97,7 +100,15 @@ export function useSideThreadController(
   const openGenerationRef = useRef(new Map<string, number>());
   const pendingSendTasksRef = useRef(new Map<string, Promise<void>>());
   const resizeCleanupRef = useRef<(() => void) | undefined>(undefined);
+  const lastActiveRuntimeKeyRef = useRef<string | undefined>(undefined);
+  const activeRuntimeKey =
+    activeThreadId && activeContext?.cwd
+      ? `${activeContext.cwd}\0${activeThreadId}`
+      : undefined;
+  const activeRuntimeKeyRef = useRef(activeRuntimeKey);
+  activeRuntimeKeyRef.current = activeRuntimeKey;
   storeRef.current = store;
+  const entry = activeThreadId ? store.byThread[activeThreadId] : undefined;
 
   const dispatch = useCallback((action: SideThreadAction) => {
     setStore((previous) => reduceSideThreadStore(previous, action));
@@ -107,12 +118,18 @@ export function useSideThreadController(
     if (!ipcImpl) {
       return;
     }
-    return ipcImpl.onSideThreadEvent((event) => {
+    return ipcImpl.onSideThreadEvent((envelope) => {
+      if (envelope.workdir !== activeContext?.cwd) {
+        return;
+      }
       setStore((previous) =>
-        reduceSideThreadStore(previous, { type: "applyEvent", event })
+        reduceSideThreadStore(previous, {
+          type: "applyEvent",
+          event: envelope.event
+        })
       );
     });
-  }, [ipcImpl]);
+  }, [activeContext?.cwd, ipcImpl]);
 
   useEffect(() => {
     if (!activeThreadId) {
@@ -124,6 +141,119 @@ export function useSideThreadController(
   }, [activeThreadId]);
 
   useEffect(() => {
+    if (!activeThreadId || !activeRuntimeKey || !ipcImpl) {
+      lastActiveRuntimeKeyRef.current = activeRuntimeKey;
+      return;
+    }
+    if (lastActiveRuntimeKeyRef.current === activeRuntimeKey) {
+      return;
+    }
+    lastActiveRuntimeKeyRef.current = activeRuntimeKey;
+    if (!storeRef.current.byThread[activeThreadId]?.open) {
+      return;
+    }
+
+    let cancelled = false;
+    const generation = (openGenerationRef.current.get(activeRuntimeKey) ?? 0) + 1;
+    openGenerationRef.current.set(activeRuntimeKey, generation);
+    const isCurrentRequest = () =>
+      !cancelled &&
+      activeRuntimeKeyRef.current === activeRuntimeKey &&
+      openGenerationRef.current.get(activeRuntimeKey) === generation;
+
+    void (async () => {
+      try {
+        const opened = await ipcImpl.openSideThread(activeThreadId);
+        const openedSummary = opened.summary;
+        if (!isCurrentRequest() || !openedSummary) {
+          return;
+        }
+        setStore((previous) =>
+          reduceSideThreadStore(previous, {
+            type: "mergeSummary",
+            mainThreadId: activeThreadId,
+            summary: openedSummary
+          })
+        );
+
+        const history = await ipcImpl.getSideThreadHistory(activeThreadId);
+        if (!isCurrentRequest() || !history) {
+          return;
+        }
+        await pendingSendTasksRef.current.get(activeThreadId);
+        if (!isCurrentRequest()) {
+          return;
+        }
+        setStore((previous) =>
+          reduceSideThreadStore(previous, {
+            type: "mergeHistory",
+            mainThreadId: activeThreadId,
+            summary: history.summary,
+            messages: history.messages
+          })
+        );
+      } catch {
+        // Activation refresh is best-effort recovery. The explicit open/send
+        // paths surface actionable failures in the panel.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRuntimeKey, activeThreadId, ipcImpl]);
+
+  useEffect(() => {
+    if (
+      !activeThreadId ||
+      !activeRuntimeKey ||
+      !ipcImpl ||
+      !entry?.open ||
+      entry.summary?.status !== "running"
+    ) {
+      return;
+    }
+    let cancelled = false;
+    let requestInFlight = false;
+    const refresh = async () => {
+      if (
+        cancelled ||
+        requestInFlight ||
+        activeRuntimeKeyRef.current !== activeRuntimeKey
+      ) {
+        return;
+      }
+      requestInFlight = true;
+      try {
+        const history = await ipcImpl.getSideThreadHistory(activeThreadId);
+        if (
+          !cancelled &&
+          history &&
+          activeRuntimeKeyRef.current === activeRuntimeKey
+        ) {
+          setStore((previous) =>
+            reduceSideThreadStore(previous, {
+              type: "mergeHistory",
+              mainThreadId: activeThreadId,
+              summary: history.summary,
+              messages: history.messages
+            })
+          );
+        }
+      } catch {
+        // Notifications remain the primary path; polling only repairs missed
+        // terminal events and peer-process updates.
+      } finally {
+        requestInFlight = false;
+      }
+    };
+    const timer = window.setInterval(() => void refresh(), SIDE_THREAD_RECOVERY_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeRuntimeKey, activeThreadId, entry?.open, entry?.summary?.status, ipcImpl]);
+
+  useEffect(() => {
     return () => resizeCleanupRef.current?.();
   }, []);
 
@@ -133,14 +263,15 @@ export function useSideThreadController(
     }
     dispatch({ type: "open", mainThreadId: activeThreadId });
     dispatch({ type: "setError", mainThreadId: activeThreadId, error: undefined });
-    if (!ipcImpl || disabled) {
+    if (!ipcImpl || disabled || !activeContext || !activeRuntimeKey) {
       return;
     }
 
-    const generation = (openGenerationRef.current.get(activeThreadId) ?? 0) + 1;
-    openGenerationRef.current.set(activeThreadId, generation);
+    const generation = (openGenerationRef.current.get(activeRuntimeKey) ?? 0) + 1;
+    openGenerationRef.current.set(activeRuntimeKey, generation);
     const isCurrentRequest = () =>
-      openGenerationRef.current.get(activeThreadId) === generation;
+      activeRuntimeKeyRef.current === activeRuntimeKey &&
+      openGenerationRef.current.get(activeRuntimeKey) === generation;
 
     void (async () => {
       try {
@@ -183,7 +314,7 @@ export function useSideThreadController(
         }
       }
     })();
-  }, [activeThreadId, disabled, dispatch, ipcImpl]);
+  }, [activeContext, activeRuntimeKey, activeThreadId, disabled, dispatch, ipcImpl]);
 
   const close = useCallback(() => {
     if (activeThreadId) {
@@ -375,11 +506,6 @@ export function useSideThreadController(
       window.addEventListener("pointercancel", cleanup);
     },
     [dispatch]
-  );
-
-  const entry = useMemo(
-    () => (activeThreadId ? store.byThread[activeThreadId] : undefined),
-    [activeThreadId, store]
   );
 
   return {

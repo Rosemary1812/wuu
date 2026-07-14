@@ -1111,6 +1111,8 @@ export type SideThreadSummary = {
   side_thread_id: string;
   main_thread_id: string;
   status: SideThreadStatus;
+  // Monotonic durable version used to reject stale responses and events.
+  revision: number;
   // Lightweight state for the main-task status shown in the panel header.
   main_task_summary?: {
     running: boolean;
@@ -1126,8 +1128,6 @@ export type SideThreadMessage = {
   side_thread_id: string;
   role: "user" | "assistant";
   text: string;
-  images?: InputImage[];
-  files?: InputFile[];
   // Assistant messages expose only the fields required by the side panel.
   status?: "streaming" | "completed" | "failed" | "interrupted";
   error_message?: string;
@@ -1166,13 +1166,13 @@ export type SideThreadEvent =
       type: "status";
       side_thread_id: string;
       main_thread_id: string;
-      status: SideThreadStatus;
-      main_task_summary?: SideThreadSummary["main_task_summary"];
+      summary: SideThreadSummary;
     }
   | {
       type: "delta";
       side_thread_id: string;
       main_thread_id: string;
+      revision: number;
       // id of the assistant message being streamed; matches the
       // SideThreadMessage.id once the message is finalized.
       message_id: string;
@@ -1182,15 +1182,24 @@ export type SideThreadEvent =
       type: "message";
       side_thread_id: string;
       main_thread_id: string;
+      revision: number;
       message: SideThreadMessage;
     }
   | {
       type: "error";
       side_thread_id: string;
       main_thread_id: string;
+      revision: number;
       message_id: string;
       error_message: string;
     };
+
+// Electron broadcasts app-server notifications to every window. Keep the
+// source runtime attached so renderers can reject events from other workspaces.
+export type SideThreadEventEnvelope = {
+  workdir: string;
+  event: SideThreadEvent;
+};
 
 export type ThreadContextCompositionResult = {
   thread_id: string;
@@ -2372,7 +2381,7 @@ export type WuuDesktopApi = {
   ) => Promise<{ ok: boolean }>;
   // Streamed side-thread output forwarded by the Electron main process.
   onSideThreadEvent?: (
-    handler: (event: SideThreadEvent) => void,
+    handler: (envelope: SideThreadEventEnvelope) => void,
   ) => () => void;
 };
 

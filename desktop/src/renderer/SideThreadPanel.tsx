@@ -23,8 +23,11 @@ const EMPTY_QUICK_PROMPTS = [
   { label: "当前方案有什么风险？", prompt: "当前方案可能存在哪些风险或后续影响？" }
 ];
 
-function mainTaskLabel(summary: SideThreadSummary | null): string {
-  const running = summary?.main_task_summary?.running;
+function mainTaskLabel(
+  summary: SideThreadSummary | null,
+  liveRunning?: boolean
+): string {
+  const running = liveRunning ?? summary?.main_task_summary?.running;
   if (running === true) {
     return "主任务执行中";
   }
@@ -41,6 +44,7 @@ export type SideThreadPanelHandle = {
 type SideThreadPanelProps = {
   entry: SideThreadEntryState;
   mainThreadId: string;
+  mainTaskRunning?: boolean;
   width: number;
   onClose: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
@@ -55,6 +59,7 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
     {
       entry,
       mainThreadId,
+      mainTaskRunning,
       width,
       onClose,
       onResizeStart,
@@ -150,7 +155,7 @@ export const SideThreadPanel = forwardRef<SideThreadPanelHandle, SideThreadPanel
               className="side-thread-panel__status"
               data-status={entry.summary?.status ?? "idle"}
             >
-              {mainTaskLabel(entry.summary)}
+              {mainTaskLabel(entry.summary, mainTaskRunning)}
             </span>
           </div>
           <button

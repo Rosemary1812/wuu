@@ -6,7 +6,7 @@ import {
   type RemoteControlEvent,
   type ServerEvent,
   type SettingsUsageRange,
-  type SideThreadEvent,
+  type SideThreadEventEnvelope,
   type SideThreadSendParams,
   type ThreadStartParams,
   type ThemePreference,
@@ -402,7 +402,7 @@ const api: WuuDesktopApi = {
     ipcRenderer.invoke("wuu:side-thread-send", params),
   interruptSideThread: (mainThreadId: string) =>
     ipcRenderer.invoke("wuu:side-thread-interrupt", mainThreadId),
-  onSideThreadEvent: (handler: (event: SideThreadEvent) => void) => {
+  onSideThreadEvent: (handler: (envelope: SideThreadEventEnvelope) => void) => {
     const listener = (
       _event: Electron.IpcRendererEvent,
       payload: Parameters<typeof handler>[0],

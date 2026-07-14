@@ -1,4 +1,10 @@
-import type { ServerEvent, SideThreadEvent } from "../shared/protocol";
+import type {
+  ServerEvent,
+  SideThreadEvent,
+  SideThreadEventEnvelope,
+  SideThreadMessage,
+  SideThreadSummary
+} from "../shared/protocol";
 
 const SIDE_THREAD_EVENT_METHOD = "sideThread/event";
 const SIDE_THREAD_EVENT_TYPES = new Set<SideThreadEvent["type"]>([
@@ -10,7 +16,7 @@ const SIDE_THREAD_EVENT_TYPES = new Set<SideThreadEvent["type"]>([
 
 export function sideThreadEventFromServerEvent(
   event: ServerEvent
-): SideThreadEvent | undefined {
+): SideThreadEventEnvelope | undefined {
   if (
     event.kind !== "notification" ||
     event.message.method !== SIDE_THREAD_EVENT_METHOD
@@ -18,15 +24,98 @@ export function sideThreadEventFromServerEvent(
     return undefined;
   }
   const params = event.message.params;
-  if (
-    !isRecord(params) ||
-    !SIDE_THREAD_EVENT_TYPES.has(params.type as SideThreadEvent["type"]) ||
-    typeof params.side_thread_id !== "string" ||
-    typeof params.main_thread_id !== "string"
-  ) {
+  if (!hasEventBase(params)) {
     return undefined;
   }
-  return params as SideThreadEvent;
+  switch (params.type) {
+    case "status":
+      return isSideThreadSummary(params.summary) &&
+        params.summary.side_thread_id === params.side_thread_id &&
+        params.summary.main_thread_id === params.main_thread_id
+        ? { workdir: event.workdir, event: params as SideThreadEvent }
+        : undefined;
+    case "delta":
+      return isRevision(params.revision) &&
+        typeof params.message_id === "string" &&
+        typeof params.text_delta === "string"
+        ? { workdir: event.workdir, event: params as SideThreadEvent }
+        : undefined;
+    case "message":
+      return isRevision(params.revision) &&
+        isSideThreadMessage(params.message) &&
+        params.message.side_thread_id === params.side_thread_id
+        ? { workdir: event.workdir, event: params as SideThreadEvent }
+        : undefined;
+    case "error":
+      return isRevision(params.revision) &&
+        typeof params.message_id === "string" &&
+        typeof params.error_message === "string"
+        ? { workdir: event.workdir, event: params as SideThreadEvent }
+        : undefined;
+  }
+}
+
+function hasEventBase(value: unknown): value is Record<string, unknown> & {
+  type: SideThreadEvent["type"];
+  side_thread_id: string;
+  main_thread_id: string;
+} {
+  return (
+    isRecord(value) &&
+    SIDE_THREAD_EVENT_TYPES.has(value.type as SideThreadEvent["type"]) &&
+    typeof value.side_thread_id === "string" &&
+    typeof value.main_thread_id === "string"
+  );
+}
+
+function isSideThreadSummary(value: unknown): value is SideThreadSummary {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const mainTask = value.main_task_summary;
+  return (
+    typeof value.side_thread_id === "string" &&
+    typeof value.main_thread_id === "string" &&
+    isSideThreadStatus(value.status) &&
+    isRevision(value.revision) &&
+    typeof value.created_at === "string" &&
+    typeof value.updated_at === "string" &&
+    (mainTask === undefined ||
+      (isRecord(mainTask) &&
+        typeof mainTask.running === "boolean" &&
+        (mainTask.last_user_message === undefined ||
+          typeof mainTask.last_user_message === "string")))
+  );
+}
+
+function isSideThreadMessage(value: unknown): value is SideThreadMessage {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.side_thread_id === "string" &&
+    (value.role === "user" || value.role === "assistant") &&
+    typeof value.text === "string" &&
+    typeof value.created_at === "string" &&
+    (value.status === undefined ||
+      value.status === "streaming" ||
+      value.status === "completed" ||
+      value.status === "failed" ||
+      value.status === "interrupted") &&
+    (value.error_message === undefined || typeof value.error_message === "string")
+  );
+}
+
+function isSideThreadStatus(value: unknown): boolean {
+  return (
+    value === "running" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "interrupted"
+  );
+}
+
+function isRevision(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

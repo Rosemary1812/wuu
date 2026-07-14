@@ -19,6 +19,7 @@ function summary(overrides: Partial<SideThreadSummary> = {}): SideThreadSummary 
     side_thread_id: "side-1",
     main_thread_id: "main-1",
     status: "completed",
+    revision: 1,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
     ...overrides
@@ -179,6 +180,7 @@ describe("SideThreadState", () => {
           type: "delta",
           side_thread_id: "side-1",
           main_thread_id: "main-1",
+          revision: 2,
           message_id: "assistant-new",
           text_delta: "new answer"
         }
@@ -275,12 +277,103 @@ describe("SideThreadState", () => {
           type: "status",
           side_thread_id: "side-1",
           main_thread_id: "main-1",
-          status: "running"
+          summary: summary({ status: "running", revision: 2 })
         }
       });
       expect(next.byThread["main-1"]?.streaming).toBe(true);
       expect(next.byThread["main-1"]?.summary?.status).toBe("running");
       expect(next.byThread["main-1"]?.lastError).toBeUndefined();
+    });
+
+    it("keeps a terminal revision when an older running response resolves later", () => {
+      let store = createInitialSideThreadStore();
+      store = reduceSideThreadStore(store, {
+        type: "mergeSummary",
+        mainThreadId: "main-1",
+        summary: summary({ status: "running", revision: 1 })
+      });
+      store = reduceSideThreadStore(store, {
+        type: "applyEvent",
+        event: {
+          type: "status",
+          side_thread_id: "side-1",
+          main_thread_id: "main-1",
+          summary: summary({ status: "interrupted", revision: 2 })
+        }
+      });
+
+      const next = reduceSideThreadStore(store, {
+        type: "mergeSummary",
+        mainThreadId: "main-1",
+        summary: summary({
+          status: "running",
+          revision: 1,
+          updated_at: "2026-01-01T00:00:10.000Z"
+        })
+      });
+
+      expect(next.byThread["main-1"]?.summary?.status).toBe("interrupted");
+      expect(next.byThread["main-1"]?.summary?.revision).toBe(2);
+      expect(next.byThread["main-1"]?.streaming).toBe(false);
+    });
+
+    it("ignores deltas from a revision that is already terminal", () => {
+      let store = createInitialSideThreadStore();
+      store = reduceSideThreadStore(store, {
+        type: "mergeSummary",
+        mainThreadId: "main-1",
+        summary: summary({ status: "interrupted", revision: 2 })
+      });
+
+      const next = reduceSideThreadStore(store, {
+        type: "applyEvent",
+        event: {
+          type: "delta",
+          side_thread_id: "side-1",
+          main_thread_id: "main-1",
+          revision: 2,
+          message_id: "late-assistant",
+          text_delta: "late text"
+        }
+      });
+
+      expect(next.byThread["main-1"]?.messages).toEqual([]);
+      expect(next.byThread["main-1"]?.streaming).toBe(false);
+    });
+
+    it("settles a streaming assistant when a peer interrupts the revision", () => {
+      let store = createInitialSideThreadStore();
+      store = reduceSideThreadStore(store, {
+        type: "mergeSummary",
+        mainThreadId: "main-1",
+        summary: summary({ status: "running", revision: 1 })
+      });
+      store = reduceSideThreadStore(store, {
+        type: "appendMessage",
+        mainThreadId: "main-1",
+        message: message({
+          id: "assistant-running",
+          role: "assistant",
+          text: "partial",
+          status: "streaming"
+        })
+      });
+
+      const next = reduceSideThreadStore(store, {
+        type: "applyEvent",
+        event: {
+          type: "status",
+          side_thread_id: "side-1",
+          main_thread_id: "main-1",
+          summary: summary({ status: "interrupted", revision: 2 })
+        }
+      });
+
+      expect(next.byThread["main-1"]?.messages[0]).toMatchObject({
+        text: "partial",
+        status: "interrupted"
+      });
+      expect(next.byThread["main-1"]?.streaming).toBe(false);
     });
 
     it("delta event appends to an unknown message id and streams", () => {
@@ -291,6 +384,7 @@ describe("SideThreadState", () => {
           type: "delta",
           side_thread_id: "side-1",
           main_thread_id: "main-1",
+          revision: 1,
           message_id: "m-a",
           text_delta: "你好"
         }
@@ -314,6 +408,7 @@ describe("SideThreadState", () => {
           type: "delta",
           side_thread_id: "side-1",
           main_thread_id: "main-1",
+          revision: 1,
           message_id: "m-a",
           text_delta: "你好"
         }
@@ -324,6 +419,7 @@ describe("SideThreadState", () => {
           type: "delta",
           side_thread_id: "side-1",
           main_thread_id: "main-1",
+          revision: 1,
           message_id: "m-a",
           text_delta: "世界"
         }
@@ -341,6 +437,7 @@ describe("SideThreadState", () => {
           type: "delta",
           side_thread_id: "side-1",
           main_thread_id: "main-1",
+          revision: 1,
           message_id: "m-a",
           text_delta: "你好"
         }
@@ -351,6 +448,7 @@ describe("SideThreadState", () => {
           type: "message",
           side_thread_id: "side-1",
           main_thread_id: "main-1",
+          revision: 1,
           message: message({
             id: "m-a",
             role: "assistant",
@@ -376,6 +474,7 @@ describe("SideThreadState", () => {
           type: "delta",
           side_thread_id: "side-1",
           main_thread_id: "main-1",
+          revision: 1,
           message_id: "m-a",
           text_delta: "中"
         }
@@ -386,6 +485,7 @@ describe("SideThreadState", () => {
           type: "error",
           side_thread_id: "side-1",
           main_thread_id: "main-1",
+          revision: 1,
           message_id: "m-a",
           error_message: "rate limited"
         }
@@ -398,6 +498,39 @@ describe("SideThreadState", () => {
       });
       expect(next.byThread["main-1"]?.lastError).toBe("rate limited");
       expect(next.byThread["main-1"]?.streaming).toBe(false);
+    });
+
+    it("keeps the provider error when the failed status arrives last", () => {
+      let store = createInitialSideThreadStore();
+      store = reduceSideThreadStore(store, {
+        type: "mergeSummary",
+        mainThreadId: "main-1",
+        summary: summary({ status: "running", revision: 1 })
+      });
+      store = reduceSideThreadStore(store, {
+        type: "applyEvent",
+        event: {
+          type: "error",
+          side_thread_id: "side-1",
+          main_thread_id: "main-1",
+          revision: 2,
+          message_id: "m-a",
+          error_message: "rate limited"
+        }
+      });
+
+      const next = reduceSideThreadStore(store, {
+        type: "applyEvent",
+        event: {
+          type: "status",
+          side_thread_id: "side-1",
+          main_thread_id: "main-1",
+          summary: summary({ status: "failed", revision: 2 })
+        }
+      });
+
+      expect(next.byThread["main-1"]?.lastError).toBe("rate limited");
+      expect(next.byThread["main-1"]?.summary?.status).toBe("failed");
     });
   });
 });

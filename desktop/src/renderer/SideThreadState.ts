@@ -3,7 +3,6 @@
 import type {
   SideThreadEvent,
   SideThreadMessage,
-  SideThreadStatus,
   SideThreadSummary,
 } from "../shared/protocol";
 
@@ -198,9 +197,7 @@ function mergeHistorySnapshot(
       ...entry,
       summary: mergedSummary,
       messages: mergedMessages,
-      streaming:
-        mergedSummary.status === "running" ||
-        mergedMessages.some((message) => message.status === "streaming")
+      streaming: mergedSummary.status === "running"
     };
   });
 }
@@ -215,9 +212,7 @@ function mergeSummarySnapshot(
     return {
       ...entry,
       summary: mergedSummary,
-      streaming:
-        mergedSummary.status === "running" ||
-        entry.messages.some((message) => message.status === "streaming")
+      streaming: mergedSummary.status === "running"
     };
   });
 }
@@ -226,6 +221,9 @@ function newerSummary(
   current: SideThreadSummary | null,
   incoming: SideThreadSummary
 ): SideThreadSummary {
+  if (current && current.revision !== incoming.revision) {
+    return current.revision > incoming.revision ? current : incoming;
+  }
   return current && Date.parse(current.updated_at) > Date.parse(incoming.updated_at)
     ? current
     : incoming;
@@ -271,26 +269,44 @@ function applySideThreadEvent(
 
   switch (event.type) {
     case "status": {
-      const statusPatch: Partial<SideThreadEntryState> = {
-        streaming: isStreamingStatus(event.status),
-        summary: mergeSummaryStatus(
-          store.byThread[mainThreadId]?.summary ?? null,
-          event.status,
-          event.main_task_summary
-        )
-      };
-      return updateEntry(store, mainThreadId, (entry) => ({
-        ...entry,
-        ...statusPatch,
-        lastError: undefined
-      }));
+      return updateEntry(store, mainThreadId, (entry) => {
+        const summary = newerSummary(entry.summary, event.summary);
+        const terminalStatus: SideThreadMessage["status"] =
+          summary.status === "running" ? undefined : summary.status;
+        const messages =
+          terminalStatus === undefined
+            ? entry.messages
+            : entry.messages.map((message) =>
+                message.role === "assistant" && message.status === "streaming"
+                  ? { ...message, status: terminalStatus }
+                  : message
+              );
+        return {
+          ...entry,
+          summary,
+          messages,
+          streaming: summary.status === "running",
+          lastError: summary.status === "failed" ? entry.lastError : undefined
+        };
+      });
     }
     case "delta": {
       const ensured = ensureSideThreadEntry(store, mainThreadId);
       return updateEntry(ensured.store, mainThreadId, (entry) => {
+        if (
+          entry.summary &&
+          (event.revision < entry.summary.revision ||
+            (event.revision === entry.summary.revision &&
+              entry.summary.status !== "running"))
+        ) {
+          return entry;
+        }
         const existingIndex = entry.messages.findIndex(
           (m) => m.id === event.message_id
         );
+        if (existingIndex >= 0 && isTerminalMessage(entry.messages[existingIndex])) {
+          return entry;
+        }
         if (existingIndex < 0) {
           const fresh: SideThreadMessage = {
             id: event.message_id,
@@ -324,6 +340,9 @@ function applySideThreadEvent(
     case "message": {
       const ensured = ensureSideThreadEntry(store, mainThreadId);
       return updateEntry(ensured.store, mainThreadId, (entry) => {
+        if (entry.summary && event.revision < entry.summary.revision) {
+          return entry;
+        }
         const existingIndex = entry.messages.findIndex(
           (m) => m.id === event.message.id
         );
@@ -344,38 +363,23 @@ function applySideThreadEvent(
       });
     }
     case "error": {
-      return updateEntry(store, mainThreadId, (entry) => ({
-        ...entry,
-        streaming: false,
-        lastError: event.error_message,
-        messages: entry.messages.map((m) =>
-          m.id === event.message_id
-            ? { ...m, status: "failed", error_message: event.error_message }
-            : m
-        )
-      }));
+      return updateEntry(store, mainThreadId, (entry) => {
+        if (entry.summary && event.revision < entry.summary.revision) {
+          return entry;
+        }
+        return {
+          ...entry,
+          streaming: false,
+          lastError: event.error_message,
+          messages: entry.messages.map((m) =>
+            m.id === event.message_id
+              ? { ...m, status: "failed", error_message: event.error_message }
+              : m
+          )
+        };
+      });
     }
     default:
       return store;
   }
-}
-
-function isStreamingStatus(status: SideThreadStatus): boolean {
-  return status === "running";
-}
-
-function mergeSummaryStatus(
-  current: SideThreadSummary | null,
-  status: SideThreadStatus,
-  mainTaskSummary: SideThreadSummary["main_task_summary"] | undefined
-): SideThreadSummary | null {
-  if (!current) {
-    return null;
-  }
-  return {
-    ...current,
-    status,
-    main_task_summary: mainTaskSummary ?? current.main_task_summary,
-    updated_at: new Date().toISOString()
-  };
 }
