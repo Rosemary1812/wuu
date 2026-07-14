@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	sessionDreamTimeout        = 3 * time.Minute
-	sessionDreamLockStaleAfter = 2 * sessionDreamTimeout
-	sessionDreamFailureBackoff = time.Hour
-	sessionDreamMaxSteps       = 6
+	sessionDreamTimeout            = 3 * time.Minute
+	sessionDreamStateRecoveryAfter = 2 * sessionDreamTimeout
+	sessionDreamFailureBackoff     = time.Hour
+	sessionDreamMaxSteps           = 6
 )
 
 type sessionDreamScheduler struct {
@@ -46,16 +46,31 @@ func newSessionDreamScheduler(rootDir, workspaceStateDir string, sessionArtifact
 }
 
 func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.StreamRunner, history []providers.ChatMessage, result agent.LoopResult) {
-	if s == nil || runner == nil || !s.shouldStart(history, result, time.Now().UTC()) {
+	if s == nil || runner == nil || strings.TrimSpace(result.Content) == "" || countMemoryReviewUserTurns(history) == 0 {
 		return
 	}
-	if ctx != nil && ctx.Err() != nil {
+	// Lock before reading or repairing DreamState. A live owner may legitimately
+	// run longer than the state-recovery grace, and its state must not be marked
+	// interrupted by a contender that cannot acquire ownership.
+	lock, acquired, err := sessionmemory.TryAcquireDreamLock(s.workspaceStateDir)
+	if err != nil || !acquired {
+		return
+	}
+	if !s.shouldStart(history, result, time.Now().UTC()) {
+		_ = lock.Release()
+		return
+	}
+	releaseStart := func() {
 		s.finish()
+		_ = lock.Release()
+	}
+	if ctx != nil && ctx.Err() != nil {
+		releaseStart()
 		return
 	}
 	sessionArtifactDir := strings.TrimSpace(s.sessionArtifactDir())
 	if sessionArtifactDir == "" {
-		s.finish()
+		releaseStart()
 		return
 	}
 	client := runner.Client
@@ -64,12 +79,7 @@ func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.Str
 		model = strings.TrimSpace(runner.Model)
 	}
 	if client == nil || model == "" {
-		s.finish()
-		return
-	}
-	lock, acquired, err := sessionmemory.TryAcquireDreamLock(s.workspaceStateDir, sessionDreamLockStaleAfter, time.Now().UTC())
-	if err != nil || !acquired {
-		s.finish()
+		releaseStart()
 		return
 	}
 	job := sessionDreamJob{
@@ -87,8 +97,8 @@ func (s *sessionDreamScheduler) AfterTurn(ctx context.Context, runner *agent.Str
 	}
 	journal := runner.InferenceJournal
 	go func() {
-		defer s.finish()
 		defer lock.Release()
+		defer s.finish()
 		dreamCtx := providers.WithInferenceJournal(context.Background(), journal)
 		dreamCtx, cancel := context.WithTimeout(dreamCtx, sessionDreamTimeout)
 		defer cancel()
@@ -111,15 +121,14 @@ func (s *sessionDreamScheduler) shouldStart(history []providers.ChatMessage, res
 	// Crash self-heal (repair plan 2026-07-04 item #9): a dream that died
 	// with its process leaves LastStatus=running forever — the state file
 	// lies and, after an earlier completed dream, the interval gate would
-	// sit on the retry. A running state older than the dream lock's stale
-	// window (2× the dream timeout, so no live dream can still hold it) is
+	// sit on the retry. A running state older than the recovery grace is
 	// reconciled to failed and retried immediately, bypassing both the
 	// failure backoff and the interval gate: the interval had already
-	// elapsed when the interrupted dream was allowed to start. A running
-	// state still inside the stale window may belong to a live dream in
-	// another process, so back off and let the cross-process lock arbitrate.
+	// elapsed when the interrupted dream was allowed to start. Lock ownership
+	// is independent of this timestamp; the OS-backed lock below still rejects
+	// the retry if another process is actually running the dream.
 	if state.LastStatus == sessionmemory.DreamStatusRunning {
-		if !state.LastStartedAt.IsZero() && now.Sub(state.LastStartedAt) < sessionDreamLockStaleAfter {
+		if !state.LastStartedAt.IsZero() && now.Sub(state.LastStartedAt) < sessionDreamStateRecoveryAfter {
 			s.finish()
 			return false
 		}

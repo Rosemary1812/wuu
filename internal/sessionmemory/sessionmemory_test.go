@@ -1,6 +1,8 @@
 package sessionmemory
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -331,16 +333,15 @@ func TestDreamStateRecordsRunStatus(t *testing.T) {
 
 func TestDreamLockExcludesConcurrentRunsAndReleases(t *testing.T) {
 	workspaceState := t.TempDir()
-	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 
-	first, acquired, err := TryAcquireDreamLock(workspaceState, time.Hour, now)
+	first, acquired, err := TryAcquireDreamLock(workspaceState)
 	if err != nil {
 		t.Fatalf("TryAcquireDreamLock first: %v", err)
 	}
 	if !acquired || first == nil {
 		t.Fatal("expected first dream lock to be acquired")
 	}
-	second, acquired, err := TryAcquireDreamLock(workspaceState, time.Hour, now)
+	second, acquired, err := TryAcquireDreamLock(workspaceState)
 	if err != nil {
 		t.Fatalf("TryAcquireDreamLock second: %v", err)
 	}
@@ -350,7 +351,10 @@ func TestDreamLockExcludesConcurrentRunsAndReleases(t *testing.T) {
 	if err := first.Release(); err != nil {
 		t.Fatalf("Release first: %v", err)
 	}
-	third, acquired, err := TryAcquireDreamLock(workspaceState, time.Hour, now)
+	if err := first.Release(); err != nil {
+		t.Fatalf("second Release first: %v", err)
+	}
+	third, acquired, err := TryAcquireDreamLock(workspaceState)
 	if err != nil {
 		t.Fatalf("TryAcquireDreamLock third: %v", err)
 	}
@@ -362,35 +366,152 @@ func TestDreamLockExcludesConcurrentRunsAndReleases(t *testing.T) {
 	}
 }
 
-func TestDreamLockReclaimsStaleLock(t *testing.T) {
+func TestDreamLockDoesNotExpireLiveHolderOrReplaceSidecar(t *testing.T) {
 	workspaceState := t.TempDir()
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
-	first, acquired, err := TryAcquireDreamLock(workspaceState, time.Hour, now.Add(-2*time.Hour))
+	first, acquired, err := TryAcquireDreamLock(workspaceState)
 	if err != nil {
 		t.Fatalf("TryAcquireDreamLock first: %v", err)
 	}
 	if !acquired || first == nil {
 		t.Fatal("expected first dream lock to be acquired")
 	}
-	old := now.Add(-2 * time.Hour)
-	if err := os.Chtimes(DreamLockPath(workspaceState), old, old); err != nil {
+	lockPath := DreamLockPath(workspaceState)
+	before, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatalf("stat dream lock: %v", err)
+	}
+	old := now.Add(-24 * time.Hour)
+	if err := os.Chtimes(lockPath, old, old); err != nil {
 		t.Fatalf("Chtimes lock: %v", err)
 	}
 
-	second, acquired, err := TryAcquireDreamLock(workspaceState, time.Hour, now)
+	second, acquired, err := TryAcquireDreamLock(workspaceState)
 	if err != nil {
-		t.Fatalf("TryAcquireDreamLock stale: %v", err)
+		t.Fatalf("TryAcquireDreamLock contender: %v", err)
 	}
-	if !acquired || second == nil {
-		t.Fatal("expected stale dream lock to be reclaimed")
+	if acquired || second != nil {
+		t.Fatal("sidecar age must not revoke a live dream lock")
 	}
 	if err := first.Release(); err != nil {
-		t.Fatalf("stale holder release should be token-safe: %v", err)
+		t.Fatalf("Release first: %v", err)
 	}
-	if _, err := os.Stat(DreamLockPath(workspaceState)); err != nil {
-		t.Fatalf("new lock should remain after stale holder release: %v", err)
+	third, acquired, err := TryAcquireDreamLock(workspaceState)
+	if err != nil {
+		t.Fatalf("TryAcquireDreamLock after release: %v", err)
 	}
-	if err := second.Release(); err != nil {
-		t.Fatalf("Release second: %v", err)
+	if !acquired || third == nil {
+		t.Fatal("expected lock after release to be acquired")
+	}
+	after, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatalf("stat dream lock after reacquire: %v", err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("dream lock sidecar inode changed")
+	}
+	if err := third.Release(); err != nil {
+		t.Fatalf("Release third: %v", err)
+	}
+}
+
+func TestDreamLockReleasedWhenProcessExits(t *testing.T) {
+	workspaceState := t.TempDir()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestDreamLockProcessHelper$")
+	cmd.Env = append(
+		os.Environ(),
+		"WUU_DREAM_LOCK_HELPER=1",
+		"WUU_DREAM_LOCK_WORKSPACE="+workspaceState,
+	)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("StdoutPipe: %v", err)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start helper: %v", err)
+	}
+	t.Cleanup(func() {
+		if cmd.ProcessState == nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+	})
+
+	ready := make(chan error, 1)
+	go func() {
+		line, readErr := bufio.NewReader(stdout).ReadString('\n')
+		if readErr != nil {
+			ready <- fmt.Errorf("read helper readiness: %w", readErr)
+			return
+		}
+		if strings.TrimSpace(line) != "acquired" {
+			ready <- fmt.Errorf("unexpected helper output %q", line)
+			return
+		}
+		ready <- nil
+	}()
+
+	select {
+	case err := <-ready:
+		if err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			t.Fatalf("helper readiness: %v; stderr: %s", err, stderr.String())
+		}
+	case <-time.After(5 * time.Second):
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatalf("helper did not acquire lock; stderr: %s", stderr.String())
+	}
+
+	contender, acquired, err := TryAcquireDreamLock(workspaceState)
+	if err != nil {
+		t.Fatalf("TryAcquireDreamLock while helper is alive: %v", err)
+	}
+	if acquired || contender != nil {
+		if contender != nil {
+			_ = contender.Release()
+		}
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatal("expected helper process to retain dream lock while alive")
+	}
+
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatalf("kill helper: %v", err)
+	}
+	if err := cmd.Wait(); err == nil {
+		t.Fatal("expected killed helper to exit unsuccessfully")
+	}
+
+	lock, acquired, err := TryAcquireDreamLock(workspaceState)
+	if err != nil {
+		t.Fatalf("TryAcquireDreamLock after helper exit: %v", err)
+	}
+	if !acquired || lock == nil {
+		t.Fatal("expected lock to be released when helper process exited")
+	}
+	if err := lock.Release(); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+}
+
+func TestDreamLockProcessHelper(t *testing.T) {
+	if os.Getenv("WUU_DREAM_LOCK_HELPER") != "1" {
+		return
+	}
+	lock, acquired, err := TryAcquireDreamLock(os.Getenv("WUU_DREAM_LOCK_WORKSPACE"))
+	if err != nil {
+		t.Fatalf("TryAcquireDreamLock: %v", err)
+	}
+	if !acquired || lock == nil {
+		t.Fatal("expected helper to acquire dream lock")
+	}
+	defer lock.Release()
+	fmt.Println("acquired")
+	for {
+		time.Sleep(time.Hour)
 	}
 }

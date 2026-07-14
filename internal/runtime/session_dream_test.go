@@ -286,6 +286,42 @@ func TestSessionDreamScheduler_ShouldStartLeavesFreshRunningState(t *testing.T) 
 	}
 }
 
+func TestSessionDreamScheduler_LiveOwnerPreventsStaleStateRepair(t *testing.T) {
+	root := t.TempDir()
+	workspaceState := t.TempDir()
+	scheduler := newSessionDreamScheduler(root, workspaceState, func() string {
+		return filepath.Join(workspaceState, "sessions", "session-1")
+	}, 7)
+	now := time.Now().UTC()
+	want := sessionmemory.DreamState{
+		LastRunAt:     now.Add(-24 * time.Hour),
+		LastStartedAt: now.Add(-time.Hour),
+		LastStatus:    sessionmemory.DreamStatusRunning,
+	}
+	if err := sessionmemory.SaveDreamState(workspaceState, want); err != nil {
+		t.Fatalf("SaveDreamState: %v", err)
+	}
+	owner, acquired, err := sessionmemory.TryAcquireDreamLock(workspaceState)
+	if err != nil || !acquired {
+		t.Fatalf("TryAcquireDreamLock: acquired=%t err=%v", acquired, err)
+	}
+	defer owner.Release()
+
+	scheduler.AfterTurn(
+		context.Background(),
+		&agent.StreamRunner{},
+		makeSessionDreamHistory(1),
+		agent.LoopResult{Content: "done"},
+	)
+	got, err := sessionmemory.LoadDreamState(workspaceState)
+	if err != nil {
+		t.Fatalf("LoadDreamState: %v", err)
+	}
+	if got.LastStatus != want.LastStatus || !got.LastStartedAt.Equal(want.LastStartedAt) || got.LastError != "" {
+		t.Fatalf("live owner's state was rewritten: got=%+v want=%+v", got, want)
+	}
+}
+
 func TestSessionDream_RunWritesProjectMemoryWithAlignedToolSet(t *testing.T) {
 	root := t.TempDir()
 	workspaceState := t.TempDir()
