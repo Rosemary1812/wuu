@@ -817,9 +817,12 @@ func (s *Server) drainResidentAgent(participantID string) {
 			providers.DebugLogf("decode resident envelope %q for %q: %v", raw.ID, participantID, err)
 			continue
 		}
-		if strings.TrimSpace(env.ID) == "" {
-			env.ID = raw.ID
-		}
+		// The durable row id is consumption identity only: it rides ids /
+		// ConsumeResidentEnvelopeIDs and the ClientID "inbox#" parts. The
+		// prompt/meta id is minted per admission — like the pull half's — so
+		// an enqueue-chosen row id never leaks into the model-visible
+		// transcript.
+		env.ID = "env-" + session.NewID()
 		inbox = append(inbox, env)
 		ids = append(ids, raw.ID)
 		if env.SourceSeq > 0 && strings.TrimSpace(env.SourceThreadID) != "" {
@@ -1189,6 +1192,12 @@ func residentEnvelopeUserMessage(envs []MessageEnvelope, consumedIDs []string) p
 	}
 }
 
+// residentEnvelopeClientID hashes the batch's durable identity: source-seq
+// addresses for pulled messages and inbox row ids for pushed ones. Envelope
+// IDs are admission-scoped (minted per drain), so they must stay out of the
+// hash — a compensation retry could otherwise never find the persisted marker
+// again. A seq-less envelope reaches a batch only through the durable inbox,
+// so its "inbox#" part below already names it.
 func residentEnvelopeClientID(envs []MessageEnvelope, consumedIDs []string) string {
 	parts := make([]string, 0, len(envs)+len(consumedIDs))
 	for _, env := range envs {
@@ -1199,9 +1208,7 @@ func residentEnvelopeClientID(envs []MessageEnvelope, consumedIDs []string) stri
 				strconv.Itoa(env.SourceSeq),
 				strings.TrimSpace(env.TaskAttemptID),
 			}, "#"))
-			continue
 		}
-		parts = append(parts, "envelope#"+strings.TrimSpace(env.ID))
 	}
 	for _, id := range consumedIDs {
 		parts = append(parts, "inbox#"+strings.TrimSpace(id))

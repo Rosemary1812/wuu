@@ -544,17 +544,31 @@ func ResolveResidentAdmissionCompensation(sessDir string, pending ResidentAdmiss
 	); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`
+	// The wake intent references live participant and thread rows. When either
+	// is already gone (the mutation lease resolving this barrier may be the
+	// thread's own deletion, or the participant was removed), there is nobody
+	// left to wake: the rollback must still commit and clear the journal
+	// instead of failing on the intent's foreign keys.
+	var wakeable int
+	if err := tx.QueryRow(`
+SELECT EXISTS(SELECT 1 FROM participants WHERE id = ?)
+   AND EXISTS(SELECT 1 FROM sessions WHERE id = ?)`,
+		pending.ParticipantID, pending.ThreadID).Scan(&wakeable); err != nil {
+		return fmt.Errorf("check resident wake intent targets for %q: %w", pending.ID, err)
+	}
+	if wakeable == 1 {
+		if _, err := tx.Exec(`
 INSERT OR IGNORE INTO resident_wake_intents (id, participant_id, thread_id, created_at)
 VALUES (?, ?, ?, ?)`, pending.ID, pending.ParticipantID, pending.ThreadID, pending.CreatedAt.UnixMilli()); err != nil {
-		return fmt.Errorf("publish resident wake intent %q: %w", pending.ID, err)
-	}
-	var wakeParticipantID, wakeThreadID string
-	if err := tx.QueryRow(`SELECT participant_id, thread_id FROM resident_wake_intents WHERE id = ?`, pending.ID).Scan(&wakeParticipantID, &wakeThreadID); err != nil {
-		return fmt.Errorf("verify resident wake intent %q: %w", pending.ID, err)
-	}
-	if wakeParticipantID != pending.ParticipantID || wakeThreadID != pending.ThreadID {
-		return fmt.Errorf("resident wake intent %q conflicts with participant or thread identity", pending.ID)
+			return fmt.Errorf("publish resident wake intent %q: %w", pending.ID, err)
+		}
+		var wakeParticipantID, wakeThreadID string
+		if err := tx.QueryRow(`SELECT participant_id, thread_id FROM resident_wake_intents WHERE id = ?`, pending.ID).Scan(&wakeParticipantID, &wakeThreadID); err != nil {
+			return fmt.Errorf("verify resident wake intent %q: %w", pending.ID, err)
+		}
+		if wakeParticipantID != pending.ParticipantID || wakeThreadID != pending.ThreadID {
+			return fmt.Errorf("resident wake intent %q conflicts with participant or thread identity", pending.ID)
+		}
 	}
 	if _, err := tx.Exec(`DELETE FROM resident_admission_compensations WHERE id = ?`, pending.ID); err != nil {
 		return fmt.Errorf("delete resident admission compensation %q: %w", pending.ID, err)
