@@ -1163,6 +1163,7 @@ describe("AppState token usage", () => {
 describe("AppState stream cache lifecycle", () => {
   afterEach(() => {
     streamTextStore.clearItem("turn-1", "agent-1");
+    streamTextStore.clearItem("turn-1", "reasoning-1");
     streamTextStore.clearItem("turn-bg", "agent-bg");
   });
 
@@ -1226,6 +1227,41 @@ describe("AppState stream cache lifecycle", () => {
     );
 
     expect(streamTextStore.get(key)).toBe("fresh answer");
+  });
+
+  it("keeps accumulated reasoning when item/started carries a stale snapshot", () => {
+    const key = streamTextKey("turn-1", "reasoning-1", "text");
+    const state = {
+      ...initialState,
+      thread: threadWithUserTexts(["hi"]),
+    };
+    streamTextStore.set(key, "Let me think about that.");
+
+    for (const text of ["", "Let me think"]) {
+      const handling = handleStreamingNotification(
+        {
+          kind: "notification",
+          workdir: "/repo",
+          message: {
+            method: "item/started",
+            params: {
+              thread_id: "thread-1",
+              turn_id: "turn-1",
+              item: {
+                id: "reasoning-1",
+                type: "reasoning",
+                status: "in_progress",
+                text,
+              },
+            },
+          },
+        },
+        state,
+      );
+
+      expect(handling).toBe("state");
+      expect(streamTextStore.get(key)).toBe("Let me think about that.");
+    }
   });
 
   it("keeps stream deltas for a known background thread", () => {
