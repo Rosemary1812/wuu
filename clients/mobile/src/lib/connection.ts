@@ -178,15 +178,17 @@ export class WuuMobile {
     }
   }
 
-  /** Bounds the wait for an attached host. The timeout lives inside the core
-   *  client so an expired operation is removed before a later reconnect and
-   *  can never be sent after the UI has already reported failure. */
+  /** Bounds the full operation, including both attach and RPC response. The
+   *  core removes expired work so a late response cannot update stale UI. */
   private call<T>(method: string, params?: unknown, timeoutMs = 20_000): Promise<T> {
     const client = this.client;
     if (!client) return Promise.reject(new Error("未连接"));
     return client.call<T>(method, params, timeoutMs).catch((err: unknown) => {
       if (err instanceof Error && err.message === "attach timeout") {
         throw new Error("连接超时,请检查电脑端是否在线");
+      }
+      if (err instanceof Error && err.message.startsWith("rpc timeout:")) {
+        throw new Error("请求超时,请稍后重试");
       }
       throw err instanceof Error ? err : new Error(String(err));
     });

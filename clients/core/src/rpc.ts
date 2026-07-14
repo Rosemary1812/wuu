@@ -48,6 +48,7 @@ interface Pending {
   method: string;
   resolve: (v: unknown) => void;
   reject: (err: Error) => void;
+  timer?: ReturnType<typeof setTimeout>;
 }
 
 export class ProtocolClient {
@@ -60,20 +61,32 @@ export class ProtocolClient {
     private readonly opts: ProtocolClientOptions = {},
   ) {}
 
-  /** Sends one request and resolves with its result. */
-  call<T = unknown>(method: string, params?: unknown): Promise<T> {
+  /** Sends one request and resolves with its result. Timed-out requests are
+   *  removed so a late response cannot retain or settle stale UI work. */
+  call<T = unknown>(method: string, params?: unknown, timeoutMs?: number): Promise<T> {
     if (method.trim() === "") return Promise.reject(new Error("method is required"));
     if (this.closed) return Promise.reject(this.closed);
+    if (timeoutMs !== undefined && timeoutMs <= 0) {
+      return Promise.reject(new Error(`rpc timeout: ${method}`));
+    }
     this.nextId++;
     const id = `${this.opts.idPrefix ?? "rc"}-${this.nextId}`;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { method, resolve: resolve as (v: unknown) => void, reject });
+      const pending: Pending = { method, resolve: resolve as (v: unknown) => void, reject };
+      this.pending.set(id, pending);
+      if (timeoutMs !== undefined) {
+        pending.timer = setTimeout(() => {
+          if (!this.pending.delete(id)) return;
+          reject(new Error(`rpc timeout: ${method}`));
+        }, timeoutMs);
+      }
       const env: ProtocolEnvelope = { id, method };
       if (params !== undefined) env.params = params;
       try {
         this.writeLine(env);
       } catch (err) {
         this.pending.delete(id);
+        clearTimeout(pending.timer);
         reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
@@ -95,6 +108,7 @@ export class ProtocolClient {
     const pending = this.pending.get(String(env.id));
     if (!pending) return;
     this.pending.delete(String(env.id));
+    clearTimeout(pending.timer);
     if (env.error) {
       pending.reject(new Error(env.error.message));
     } else {
@@ -132,6 +146,7 @@ export class ProtocolClient {
     if (this.closed) return;
     this.closed = new Error(reason ?? "app-server protocol closed");
     for (const [, pending] of this.pending) {
+      clearTimeout(pending.timer);
       pending.reject(new Error(`app-server protocol closed before ${pending.method} response`));
     }
     this.pending.clear();

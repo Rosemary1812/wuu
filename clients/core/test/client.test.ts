@@ -89,6 +89,7 @@ class FakeHost {
   attachProfiles: Array<string | undefined> = [];
   readonly sockets: FakeSocket[] = [];
   readonly uplinkEnvelopes: ProtocolEnvelope[] = [];
+  respondToCalls = true;
   handleCall: (env: ProtocolEnvelope) => unknown = (env) => ({ echo: env.method });
 
   readonly factory: WebSocketFactory = () => {
@@ -181,7 +182,7 @@ class FakeHost {
       case "rpc": {
         const env = msg.line as ProtocolEnvelope;
         this.uplinkEnvelopes.push(env);
-        if (env.method && env.id !== undefined) {
+        if (this.respondToCalls && env.method && env.id !== undefined) {
           this.sendLine({ id: env.id, result: this.handleCall(env) });
         }
         return;
@@ -323,6 +324,26 @@ describe("RemoteClient", () => {
     try {
       await client.waitAttached(3000);
       expect(fake.uplinkEnvelopes).toEqual([]);
+    } finally {
+      await client.stop();
+    }
+  });
+
+  it("applies the call timeout after attach when the host never responds", async () => {
+    const fake = new FakeHost();
+    const { client } = makeClient(fake);
+    client.start();
+    try {
+      await client.waitAttached(3000);
+      fake.respondToCalls = false;
+
+      await expect(client.call("thread/list", undefined, 20)).rejects.toThrow("rpc timeout: thread/list");
+      expect(fake.uplinkEnvelopes.map((env) => env.method)).toEqual(["thread/list"]);
+
+      fake.respondToCalls = true;
+      await expect(client.call<{ echo: string }>("participant/list", undefined, 3000)).resolves.toEqual({
+        echo: "participant/list",
+      });
     } finally {
       await client.stop();
     }

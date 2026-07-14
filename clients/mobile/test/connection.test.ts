@@ -19,8 +19,9 @@ const captured: {
   onDetach: () => void;
   clientProfile?: string;
   started: number;
-  calls: Array<{ method: string; params: unknown; attachTimeoutMs: number | undefined }>;
+  calls: Array<{ method: string; params: unknown; timeoutMs: number | undefined }>;
   failMethod?: string;
+  failMessage?: string;
 } = {
   onAttach: () => {},
   onDetach: () => {},
@@ -45,9 +46,9 @@ vi.mock("@wuu/remote-core", () => {
     start(): void {
       captured.started += 1;
     }
-    async call<T>(method: string, params?: unknown, attachTimeoutMs?: number): Promise<T> {
-      captured.calls.push({ method, params, attachTimeoutMs });
-      if (method === captured.failMethod) throw new Error(`failed ${method}`);
+    async call<T>(method: string, params?: unknown, timeoutMs?: number): Promise<T> {
+      captured.calls.push({ method, params, timeoutMs });
+      if (method === captured.failMethod) throw new Error(captured.failMessage ?? `failed ${method}`);
       const result =
         method === "thread/list"
           ? { threads: [] }
@@ -120,6 +121,7 @@ describe("WuuMobile reconnect grace window", () => {
     captured.started = 0;
     captured.calls = [];
     captured.failMethod = undefined;
+    captured.failMessage = undefined;
     vi.useFakeTimers();
   });
 
@@ -212,7 +214,7 @@ describe("WuuMobile reconnect grace window", () => {
     expect(captured.calls).toContainEqual({
       method: "device/push_register",
       params: { token: "ExponentPushToken[fresh]", platform: "ios" },
-      attachTimeoutMs: 20_000,
+      timeoutMs: 20_000,
     });
     expect(controller.store.getSnapshot().phase).toBe("attached");
   });
@@ -228,6 +230,20 @@ describe("WuuMobile reconnect grace window", () => {
     expect(controller.store.getSnapshot()).toMatchObject({
       phase: "attached",
       syncError: "failed thread/list",
+    });
+  });
+
+  it("turns an attached RPC deadline into a user-facing timeout", async () => {
+    const controller = bootController();
+    await vi.advanceTimersByTimeAsync(0);
+    captured.failMethod = "thread/list";
+    captured.failMessage = "rpc timeout: thread/list";
+
+    await expect(controller.refreshThreads()).rejects.toThrow("请求超时,请稍后重试");
+    expect(captured.calls.at(-1)).toEqual({
+      method: "thread/list",
+      params: undefined,
+      timeoutMs: 20_000,
     });
   });
 });

@@ -1,7 +1,7 @@
 // Focused ProtocolClient behavior: envelope classification, pending
 // rejection on close, and fail-closed server requests without a handler.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ProtocolClient, ProtocolEnvelope } from "../src/rpc.js";
 
@@ -12,6 +12,10 @@ function makeClient(opts: ConstructorParameters<typeof ProtocolClient>[1] = {}) 
 }
 
 describe("ProtocolClient", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("resolves calls by id and ignores unknown responses", async () => {
     const { client, written } = makeClient();
     const p1 = client.call("initialize");
@@ -75,5 +79,21 @@ describe("ProtocolClient", () => {
       throw new Error("not attached to host");
     });
     await expect(client.call("turn/start")).rejects.toThrow(/not attached/);
+  });
+
+  it("expires unanswered calls, removes them, and ignores late responses", async () => {
+    vi.useFakeTimers();
+    const { client, written } = makeClient();
+    const timedOut = client.call("thread/list", undefined, 20);
+    const rejected = expect(timedOut).rejects.toThrow("rpc timeout: thread/list");
+
+    await vi.advanceTimersByTimeAsync(20);
+    await rejected;
+
+    client.feed({ id: written[0].id, result: { stale: true } });
+    const next = client.call("participant/list", undefined, 20);
+    client.feed({ id: written[1].id, result: { participants: [] } });
+    await expect(next).resolves.toEqual({ participants: [] });
+    await vi.advanceTimersByTimeAsync(20);
   });
 });
