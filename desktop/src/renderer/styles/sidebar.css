@@ -55,7 +55,7 @@
 }
 
 .app-shell.sidebar-animating {
-  transition: grid-template-columns var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
+  transition: grid-template-columns var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease);
 }
 
 .app-shell.right-panel-animating {
@@ -174,9 +174,9 @@
   overflow: visible;
   min-height: 0;
   transition:
-    border-color var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
-    background-color var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
-    box-shadow var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
+    border-color var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease),
+    background-color var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease),
+    box-shadow var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease);
 }
 
 /* While the rail column animates (or sits collapsed) the fixed-width
@@ -229,8 +229,8 @@
   transform-origin: left center;
   opacity: 1;
   transition:
-    opacity var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
-    transform var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
+    opacity var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease),
+    transform var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease);
   will-change: opacity, transform;
 }
 
@@ -335,7 +335,7 @@
 .sidebar-collapsed.sidebar-drawer-closing .sidebar,
 .sidebar-collapsed.sidebar-drawer-closing .settings-sidebar {
   opacity: 0;
-  transition: opacity var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
+  transition: opacity var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease);
 }
 
 .sidebar-resizer {

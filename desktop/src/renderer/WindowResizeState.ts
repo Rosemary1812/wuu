@@ -1,11 +1,16 @@
 export const WINDOW_RESIZING_CLASS = "window-resizing";
+export const LAYOUT_MOTION_CLASS = "layout-motion-active";
 export const WINDOW_RESIZE_SETTLE_DELAY_MS = 160;
 
 export function isWindowResizing(): boolean {
   if (typeof document === "undefined") {
     return false;
   }
-  return document.documentElement.classList.contains(WINDOW_RESIZING_CLASS);
+  const root = document.documentElement;
+  return (
+    root.classList.contains(WINDOW_RESIZING_CLASS) ||
+    root.classList.contains(LAYOUT_MOTION_CLASS)
+  );
 }
 
 export type WindowResizeSettleScheduler = {

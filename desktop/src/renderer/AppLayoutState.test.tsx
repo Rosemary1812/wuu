@@ -12,7 +12,10 @@ import {
   clampSidebarWidthForWindow,
   useAppLayoutState
 } from "./AppLayoutState";
-import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
+import {
+  LAYOUT_MOTION_CLASS,
+  WINDOW_RESIZING_CLASS,
+} from "./WindowResizeState";
 
 interface Harness {
   sidebarWidth: ReturnType<typeof useAppLayoutState>["sidebarWidth"];
@@ -21,6 +24,7 @@ interface Harness {
     typeof useAppLayoutState
   >["workspaceRightPanelWidth"];
   rightPanelAnimating: ReturnType<typeof useAppLayoutState>["rightPanelAnimating"];
+  toggleSidebar: ReturnType<typeof useAppLayoutState>["toggleSidebar"];
   startSidebarResize: ReturnType<typeof useAppLayoutState>["startSidebarResize"];
   startRightPanelResize: ReturnType<typeof useAppLayoutState>["startRightPanelResize"];
   setRightPanelOpenWithMotion: ReturnType<
@@ -61,6 +65,7 @@ function renderHookHarness(): void {
       sidebarCollapsed: hook.sidebarCollapsed,
       workspaceRightPanelWidth: hook.workspaceRightPanelWidth,
       rightPanelAnimating: hook.rightPanelAnimating,
+      toggleSidebar: hook.toggleSidebar,
       startSidebarResize: hook.startSidebarResize,
       startRightPanelResize: hook.startRightPanelResize,
       setRightPanelOpenWithMotion: hook.setRightPanelOpenWithMotion,
@@ -92,12 +97,14 @@ beforeEach(() => {
   // code path only adds it during a drag, but other tests in the same file
   // could leave it behind).
   document.documentElement.classList.remove(WINDOW_RESIZING_CLASS);
+  document.documentElement.classList.remove(LAYOUT_MOTION_CLASS);
   latest = null;
 });
 
 afterEach(() => {
   setInnerWidth(originalInnerWidth);
   document.documentElement.classList.remove(WINDOW_RESIZING_CLASS);
+  document.documentElement.classList.remove(LAYOUT_MOTION_CLASS);
   act(() => {
     root?.unmount();
   });
@@ -160,9 +167,24 @@ describe("useAppLayoutState window-resizing class", () => {
     expect(latest!.rightPanelAnimating).toBe(false);
   });
 
+  it("marks structural panel motion as transient layout work", () => {
+    vi.useFakeTimers();
+    renderHookHarness();
+
+    act(() => {
+      latest!.toggleSidebar();
+    });
+    expect(document.documentElement.classList.contains(LAYOUT_MOTION_CLASS)).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(SIDEBAR_MOTION_MS);
+    });
+    expect(document.documentElement.classList.contains(LAYOUT_MOTION_CLASS)).toBe(false);
+  });
+
   it("paces sidebar layout motion as a drawer transition", () => {
-    expect(SIDEBAR_MOTION_MS).toBeGreaterThanOrEqual(320);
-    expect(SIDEBAR_MOTION_MS).toBeLessThanOrEqual(400);
+    expect(SIDEBAR_MOTION_MS).toBeGreaterThanOrEqual(200);
+    expect(SIDEBAR_MOTION_MS).toBeLessThanOrEqual(280);
   });
 
   it("does not add the class for non-primary-button pointerdowns on the sidebar", () => {

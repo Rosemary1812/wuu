@@ -138,7 +138,7 @@ function renderSettings(props: {
         sidebarCollapsed={false}
         sidebarAnimating={false}
         onToggleSidebar={props.onToggleSidebar ?? (() => {})}
-        sidebarMotionMs={340}
+        sidebarMotionMs={240}
         onBack={() => {}}
         onSave={props.onSave ?? (async () => {})}
         onRemoveProvider={props.onRemoveProvider ?? (async () => {})}

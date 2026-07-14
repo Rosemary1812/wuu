@@ -53,7 +53,7 @@
  * window (`sidebarAnimating`) gates a grid-template-columns transition while
  * `--sidebar-width` flips between 0 and the open width. */
 .settings-shell.sidebar-animating {
-  transition: grid-template-columns var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
+  transition: grid-template-columns var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease);
 }
 
 /* Glass surface (border, background, box-shadow, backdrop-filter) and the
@@ -64,9 +64,9 @@
  * aside's material transition so collapse border fades match. */
 .settings-sidebar {
   transition:
-    border-color var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
-    background-color var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease),
-    box-shadow var(--sidebar-motion-duration, 340ms) var(--sidebar-motion-ease);
+    border-color var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease),
+    background-color var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease),
+    box-shadow var(--sidebar-motion-duration, 240ms) var(--sidebar-motion-ease);
 }
 
 /* Settings-only rhythm detail for the brand → back-button → nav stack (the

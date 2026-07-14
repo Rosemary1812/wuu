@@ -8,9 +8,12 @@ import {
   useRef,
   useState
 } from "react";
-import { WINDOW_RESIZING_CLASS } from "./WindowResizeState";
+import {
+  LAYOUT_MOTION_CLASS,
+  WINDOW_RESIZING_CLASS,
+} from "./WindowResizeState";
 
-export const SIDEBAR_MOTION_MS = 340;
+export const SIDEBAR_MOTION_MS = 240;
 export const RIGHT_PANEL_MOTION_MS = 280;
 export const SIDEBAR_DEFAULT_WIDTH = 326;
 export const SIDEBAR_MIN_WIDTH = 200;
@@ -841,6 +844,22 @@ export function useAppLayoutState({
       root.classList.remove(WINDOW_RESIZING_CLASS);
     };
   }, [resizingSidebar, resizingRightPanel, resizingSplit, resizingThreadPanel]);
+
+  // Opening and closing structural panels changes the conversation viewport
+  // on every CSS frame just like a live resize. Mark only the geometry phase
+  // (without the window-resizing CSS that would cancel the transition) so
+  // scroll followers and ResizeObserver consumers defer their layout reads
+  // until the panel settles.
+  useEffect(() => {
+    if (!sidebarAnimating && !rightPanelAnimating) {
+      return undefined;
+    }
+    const root = document.documentElement;
+    root.classList.add(LAYOUT_MOTION_CLASS);
+    return () => {
+      root.classList.remove(LAYOUT_MOTION_CLASS);
+    };
+  }, [rightPanelAnimating, sidebarAnimating]);
 
   function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>): void {
     if (event.button !== 0) {
