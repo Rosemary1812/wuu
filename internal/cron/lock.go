@@ -1,92 +1,61 @@
 package cron
 
 import (
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
-	"time"
+	"sync"
 )
 
-type LockFile struct {
-	SessionID string `json:"sessionId"`
-	PID       int    `json:"pid"`
-	Acquired  int64  `json:"acquiredAt"`
-}
-
+// Lock owns durable cron scheduling while its file descriptor holds an
+// advisory lock. The lock file remains in place so every contender locks the
+// same inode.
 type Lock struct {
-	path      string
-	sessionID string
+	path string
+	mu   sync.Mutex
+	file *os.File
 }
 
-func NewLock(path, sessionID string) *Lock {
-	return &Lock{path: path, sessionID: sessionID}
+func NewLock(path string) *Lock {
+	return &Lock{path: path}
 }
 
 func (l *Lock) TryAcquire() (bool, error) {
-	body, _ := json.Marshal(LockFile{
-		SessionID: l.sessionID,
-		PID:       os.Getpid(),
-		Acquired:  time.Now().UnixMilli(),
-	})
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.file != nil {
+		return true, nil
+	}
 	if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
 		return false, err
 	}
 
-	f, err := os.OpenFile(l.path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-	if err == nil {
-		_, err = f.Write(body)
-		f.Close()
-		return err == nil, err
-	}
-	if !os.IsExist(err) {
+	file, err := os.OpenFile(l.path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
 		return false, err
 	}
-
-	existing, readErr := l.readLock()
-	if readErr != nil {
-		os.Remove(l.path)
-		return l.TryAcquire()
+	acquired, err := flockTryExclusive(file)
+	if err != nil {
+		_ = file.Close()
+		return false, err
 	}
-
-	if existing.SessionID == l.sessionID {
-		_ = os.WriteFile(l.path, body, 0o644)
-		return true, nil
-	}
-
-	if existing.PID > 0 && isProcessRunning(existing.PID) {
+	if !acquired {
+		_ = file.Close()
 		return false, nil
 	}
 
-	os.Remove(l.path)
-	return l.TryAcquire()
+	l.file = file
+	return true, nil
 }
 
 func (l *Lock) Release() {
-	existing, _ := l.readLock()
-	if existing != nil && existing.SessionID == l.sessionID {
-		os.Remove(l.path)
-	}
-}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
-func (l *Lock) readLock() (*LockFile, error) {
-	data, err := os.ReadFile(l.path)
-	if err != nil {
-		return nil, err
+	if l.file == nil {
+		return
 	}
-	var lf LockFile
-	if err := json.Unmarshal(data, &lf); err != nil {
-		return nil, err
-	}
-	return &lf, nil
-}
-
-func isProcessRunning(pid int) bool {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-	if err == nil && len(data) > 0 {
-		return true
-	}
-	err = syscall.Kill(pid, 0)
-	return err == nil
+	flockUnlock(l.file)
+	_ = l.file.Close()
+	l.file = nil
 }

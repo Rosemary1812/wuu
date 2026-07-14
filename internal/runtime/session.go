@@ -666,8 +666,7 @@ func (s *Session) StartCronScheduler() error {
 		return fmt.Errorf("workspace state directory is required for cron scheduler")
 	}
 
-	lockID := fmt.Sprintf("runtime-%d-%d", os.Getpid(), time.Now().UnixNano())
-	lock := cron.NewLock(statepath.ScheduledTasksLockPath(stateDir), lockID)
+	lock := cron.NewLock(statepath.ScheduledTasksLockPath(stateDir))
 	ownsDurableTasks := false
 	scheduler := cron.NewScheduler(cron.SchedulerConfig{
 		Store:        cron.NewTaskStore(statepath.ScheduledTasksPath(stateDir)),
