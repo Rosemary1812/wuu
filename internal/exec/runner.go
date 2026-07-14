@@ -556,15 +556,6 @@ func emitSubagentUpdated(opts Options, params appserver.AgentUpdatedNotification
 	emitJSON(opts, payload)
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 func emitTurnInterrupted(opts Options, state runState, reason string) {
 	emitJSON(opts, map[string]any{
 		"type":      "turn_interrupted",

@@ -1784,15 +1784,6 @@ func parseCLIJSONLines(t *testing.T, text string) []map[string]any {
 	return events
 }
 
-func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
-}
-
 func TestRunSessionShowReturnsCreatedSessionJSON(t *testing.T) {
 	wuuHome := filepath.Join(t.TempDir(), "wuu-home")
 	t.Setenv("WUU_HOME", wuuHome)
