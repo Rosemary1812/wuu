@@ -14,7 +14,7 @@ import {
 } from "./WindowResizeState";
 
 export const SIDEBAR_MOTION_MS = 240;
-export const RIGHT_PANEL_MOTION_MS = 280;
+export const RIGHT_PANEL_MOTION_MS = 240;
 export const SIDEBAR_DEFAULT_WIDTH = 326;
 export const SIDEBAR_MIN_WIDTH = 200;
 export const SIDEBAR_MAX_WIDTH = 520;
@@ -382,6 +382,7 @@ export function useAppLayoutState({
   workspaceRightPanelAutoGlobalized: boolean;
   workspaceRightPanelDockableWithoutSidebar: boolean;
   setRightPanelOpenWithMotion: (open: boolean) => void;
+  animateRightPanelLayout: () => void;
   startSidebarResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
   startRightPanelResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
   handleRightPanelSeparatorKey: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
@@ -1028,6 +1029,7 @@ export function useAppLayoutState({
     workspaceRightPanelAutoGlobalized,
     workspaceRightPanelDockableWithoutSidebar,
     setRightPanelOpenWithMotion,
+    animateRightPanelLayout: startRightPanelMotion,
     startSidebarResize,
     startRightPanelResize,
     handleRightPanelSeparatorKey,

@@ -36,6 +36,7 @@ vi.mock("./JumpToLatestPill", () => ({
 }));
 
 import { App } from "./App";
+import { RIGHT_PANEL_MOTION_MS } from "./AppLayoutState";
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -214,6 +215,7 @@ describe("workspace file tabs", () => {
     container.remove();
     Reflect.deleteProperty(globalThis, "ResizeObserver");
     delete (globalThis as { wuu?: WuuDesktopApi }).wuu;
+    vi.useRealTimers();
   });
 
   it("opens a document beside the active conversation instead of replacing it", async () => {
@@ -233,6 +235,7 @@ describe("workspace file tabs", () => {
       container.querySelector('[data-testid="jump-to-latest-probe"]'),
     ).not.toBeNull();
 
+    vi.useFakeTimers();
     await act(async () => {
       fileLink?.click();
     });
@@ -254,11 +257,18 @@ describe("workspace file tabs", () => {
     expect(rightFilePreview).not.toBeNull();
     expect(rightFilePreview?.textContent).toContain("Artifact");
 
+    act(() => {
+      vi.advanceTimersByTime(RIGHT_PANEL_MOTION_MS);
+    });
+    const shell = container.querySelector<HTMLElement>(".app-shell");
+    expect(shell?.classList.contains("right-panel-animating")).toBe(false);
+
     fileLink?.focus();
     const expand = container.querySelector<HTMLButtonElement>('[aria-label="展开为全面板"]');
     await act(async () => expand?.click());
     await flushAsync();
 
+    expect(shell?.classList.contains("right-panel-animating")).toBe(true);
     expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(true);
     expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(true);
     expect(container.querySelector(".workspace-right-panel")?.hasAttribute("inert")).toBe(false);
@@ -269,9 +279,15 @@ describe("workspace file tabs", () => {
       container.querySelector(".workspace-tool-tab.active .workspace-tool-tab-main"),
     );
 
+    act(() => {
+      vi.advanceTimersByTime(RIGHT_PANEL_MOTION_MS);
+    });
+    expect(shell?.classList.contains("right-panel-animating")).toBe(false);
+
     const exit = container.querySelector<HTMLButtonElement>('[aria-label="退出全面板"]');
     await act(async () => exit?.click());
     await flushAsync();
+    expect(shell?.classList.contains("right-panel-animating")).toBe(true);
     expect(container.querySelector(".conversation-pane")?.hasAttribute("inert")).toBe(false);
     expect(container.querySelector(".sidebar")?.hasAttribute("inert")).toBe(false);
     expect(document.activeElement).toBe(fileLink);

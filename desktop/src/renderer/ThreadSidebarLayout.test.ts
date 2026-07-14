@@ -38,6 +38,14 @@ describe("project sidebar row layout", () => {
 });
 
 describe("globalized right panel chrome", () => {
+  it("animates docked and full-panel layouts with the shared structural motion", () => {
+    const body = cssRule(".app-shell.right-panel-animating");
+
+    expect(body).toMatch(/grid-template-columns/);
+    expect(body).toMatch(/var\(--workspace-panel-motion-duration,\s*240ms\)/);
+    expect(body).toMatch(/var\(--workspace-panel-motion-ease\)/);
+  });
+
   it("keeps the sidebar available as a drawer over the focused workspace", () => {
     const conversation = cssRule(
       ".app-shell.right-panel-globalized .conversation-pane",

@@ -30,6 +30,9 @@ interface Harness {
   setRightPanelOpenWithMotion: ReturnType<
     typeof useAppLayoutState
   >["setRightPanelOpenWithMotion"];
+  animateRightPanelLayout: ReturnType<
+    typeof useAppLayoutState
+  >["animateRightPanelLayout"];
   workspaceRightPanelAutoGlobalized?: boolean;
   workspaceRightPanelDockableWithoutSidebar?: boolean;
 }
@@ -69,6 +72,7 @@ function renderHookHarness(): void {
       startSidebarResize: hook.startSidebarResize,
       startRightPanelResize: hook.startRightPanelResize,
       setRightPanelOpenWithMotion: hook.setRightPanelOpenWithMotion,
+      animateRightPanelLayout: hook.animateRightPanelLayout,
       workspaceRightPanelAutoGlobalized:
         responsiveHook.workspaceRightPanelAutoGlobalized,
       workspaceRightPanelDockableWithoutSidebar:
@@ -158,6 +162,21 @@ describe("useAppLayoutState window-resizing class", () => {
 
     act(() => {
       latest!.setRightPanelOpenWithMotion(true);
+    });
+    expect(latest!.rightPanelAnimating).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(RIGHT_PANEL_MOTION_MS);
+    });
+    expect(latest!.rightPanelAnimating).toBe(false);
+  });
+
+  it("animates right-panel layout mode changes without reopening the panel", () => {
+    vi.useFakeTimers();
+    renderHookHarness();
+
+    act(() => {
+      latest!.animateRightPanelLayout();
     });
     expect(latest!.rightPanelAnimating).toBe(true);
 

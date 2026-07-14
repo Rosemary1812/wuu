@@ -437,6 +437,7 @@ export function App(): JSX.Element {
     workspaceRightPanelAutoGlobalized,
     workspaceRightPanelDockableWithoutSidebar,
     setRightPanelOpenWithMotion,
+    animateRightPanelLayout,
     startSidebarResize,
     startRightPanelResize,
     handleRightPanelSeparatorKey,
@@ -587,6 +588,7 @@ export function App(): JSX.Element {
     }
   }, [rightPanelOpen]);
   const toggleWorkspacePanelGlobalized = useCallback((): void => {
+    animateRightPanelLayout();
     if (!rightPanelGlobalized) {
       setRightPanelManualGlobalized(true);
       return;
@@ -600,6 +602,7 @@ export function App(): JSX.Element {
       toggleSidebar();
     }
   }, [
+    animateRightPanelLayout,
     rightPanelAutoGlobalized,
     rightPanelGlobalized,
     sidebarCollapsed,

@@ -108,9 +108,9 @@
   transform-origin: right center;
   will-change: opacity, transform;
   transition:
-    border-color var(--workspace-panel-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1),
-    opacity var(--workspace-panel-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1),
-    transform var(--workspace-panel-motion-duration, 280ms) cubic-bezier(0.2, 0, 0, 1);
+    border-color var(--workspace-panel-motion-duration, 240ms) var(--workspace-panel-motion-ease),
+    opacity var(--workspace-panel-motion-duration, 240ms) var(--workspace-panel-motion-ease),
+    transform var(--workspace-panel-motion-duration, 240ms) var(--workspace-panel-motion-ease);
   pointer-events: none;
 }
 
