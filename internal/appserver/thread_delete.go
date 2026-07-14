@@ -68,6 +68,8 @@ func (s *Server) handleThreadDelete(req Request) error {
 	delete(s.threads, id)
 	s.mu.Unlock()
 
+	s.cascadeSideThreadForMain(id)
+
 	return s.writeResponse(req.ID, ThreadDeleteResult{ThreadID: id}, nil)
 }
 

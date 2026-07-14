@@ -611,7 +611,7 @@ function reduceNotification(
   switch (notification.method) {
     case "thread/started":
     case "thread/resumed": {
-      const thread = params?.thread as Thread | undefined;
+      const thread = threadFromRecord(recordValue(params, "thread"));
       if (!thread) {
         return state;
       }
@@ -651,7 +651,7 @@ function reduceNotification(
       };
     }
     case "thread/updated": {
-      const thread = params?.thread as Thread | undefined;
+      const thread = threadFromRecord(recordValue(params, "thread"));
       if (
         !thread ||
         (!threadMatchesActiveContext(thread, state.activeContext) &&
@@ -676,7 +676,7 @@ function reduceNotification(
       );
     }
     case "turn/started": {
-      const turn = params?.turn as Turn | undefined;
+      const turn = turnFromRecord(recordValue(params, "turn"));
       if (!turn) {
         return state;
       }
@@ -714,7 +714,7 @@ function reduceNotification(
       return applyDelta(state, params, "result");
     case "turn/completed":
     case "turn/error": {
-      const turn = params?.turn as Turn | undefined;
+      const turn = turnFromRecord(recordValue(params, "turn"));
       const threadID = threadIDFromParams(params);
       if (!turn) {
         return threadID === activeThreadIDForState(state)
@@ -3239,14 +3239,20 @@ function threadItemFromRecord(
 }
 
 function turnFromRecord(record: JsonRecord | undefined): Turn | undefined {
-  if (
-    !record ||
-    typeof record.id !== "string" ||
-    !Array.isArray(record.items)
-  ) {
+  if (!record || typeof record.id !== "string") {
     return undefined;
   }
-  return record as Turn;
+  const items = record.items;
+  if (items !== undefined && items !== null && !Array.isArray(items)) {
+    return undefined;
+  }
+  return {
+    ...record,
+    // Older cores emitted null before a turn's first item. Treat absent and
+    // null collections as empty at this untrusted protocol boundary so one
+    // malformed event cannot take down the conversation renderer.
+    items: Array.isArray(items) ? items : [],
+  } as Turn;
 }
 
 function threadFromRecord(record: JsonRecord | undefined): Thread | undefined {
@@ -3257,7 +3263,18 @@ function threadFromRecord(record: JsonRecord | undefined): Thread | undefined {
   ) {
     return undefined;
   }
-  return record as Thread;
+  const turns: Turn[] = [];
+  for (const value of record.turns) {
+    if (!isRecord(value)) {
+      return undefined;
+    }
+    const turn = turnFromRecord(value);
+    if (!turn) {
+      return undefined;
+    }
+    turns.push(turn);
+  }
+  return { ...record, turns } as Thread;
 }
 
 function agentFromRecord(record: JsonRecord | undefined): Agent | undefined {

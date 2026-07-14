@@ -1,6 +1,7 @@
 package appserver
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,57 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
+
+func TestEmptyTurnsKeepItemsAsAnArray(t *testing.T) {
+	now := time.Unix(0, 0).UTC()
+	tests := []struct {
+		name  string
+		start func(*threadState) Turn
+	}{
+		{
+			name: "internal turn",
+			start: func(th *threadState) Turn {
+				return th.startInternalTurnLocked("turn", now)
+			},
+		},
+		{
+			name: "agent turn",
+			start: func(th *threadState) Turn {
+				turn, _ := th.startAgentTurnLocked(now)
+				return turn
+			},
+		},
+		{
+			name: "ensured turn",
+			start: func(th *threadState) Turn {
+				return th.ensureTurnLocked("turn", now)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			turn := test.start(newThreadState("thread", nil, "provider", "model", "/repo", false, now))
+			if turn.Items == nil {
+				t.Fatal("empty turn items must be an initialized slice")
+			}
+		})
+	}
+}
+
+func TestTurnJSONEncodesNilItemsAsEmptyArray(t *testing.T) {
+	encoded, err := json.Marshal(Turn{ID: "turn"})
+	if err != nil {
+		t.Fatalf("marshal turn: %v", err)
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &payload); err != nil {
+		t.Fatalf("unmarshal turn JSON: %v", err)
+	}
+	if got := string(payload["items"]); got != "[]" {
+		t.Fatalf("items JSON = %s, want []", got)
+	}
+}
 
 func TestThreadStateRetainsExecutionLeaseUntilRelease(t *testing.T) {
 	now := time.Unix(0, 0).UTC()
