@@ -3462,11 +3462,19 @@ func (c *AgentControl) consumeWorkerNotification(n subagent.Notification) (worke
 		delivered := c.deliverNestedResultToParent(deliveryCtx, n.Snapshot)
 		cancelDelivery()
 		if !delivered {
-			if !c.isRootChildSnapshot(n.Snapshot) {
-				return workerNotificationSettled, fmt.Errorf("nested result %s remains pending for parent %s", n.AgentID, n.Snapshot.ParentID)
-			}
-			if err := c.threadStore.RecordCommunication(c.rootThreadID, c.newAgentCompletionCommunication(n.Snapshot, agentthread.RootPath)); err != nil {
-				return workerNotificationSettled, fmt.Errorf("persist root completion communication: %w", err)
+			if c.isRootChildSnapshot(n.Snapshot) || isDirectRootChildPath(meta.Path) {
+				// Root results have no parent worker to claim them: the live
+				// session consumes them through Wait or the recorded
+				// communication, so the terminal settles now.
+				if err := c.threadStore.RecordCommunication(c.rootThreadID, c.newAgentCompletionCommunication(n.Snapshot, agentthread.RootPath)); err != nil {
+					return workerNotificationSettled, fmt.Errorf("persist root completion communication: %w", err)
+				}
+			} else if workerID := firstNonEmptyString(strings.TrimSpace(n.AgentID), strings.TrimSpace(n.Snapshot.ID)); workerTerminalFinalizationPath(c.harnessDir, workerID) != "" {
+				// A busy parent (including one blocked in Wait on this very
+				// terminal transition) cannot claim yet. Defer: the durable
+				// terminal record and result-ready entry hand delivery to
+				// terminal recovery instead of this observer spinning on it.
+				return workerNotificationDeferred, nil
 			}
 		}
 		go c.maybeStartQueued(context.Background())
@@ -3937,6 +3945,14 @@ func (c *AgentControl) finishNestedResultDelivery(resultID string, attempt *nest
 func (c *AgentControl) isRootChildSnapshot(snap subagent.SubAgentSnapshot) bool {
 	parentID := strings.TrimSpace(snap.ParentID)
 	return parentID == "" || parentID == c.sessionID || parentID == c.rootThreadID
+}
+
+// isDirectRootChildPath reports whether a registered agent-thread path names a
+// direct child of the root thread, identifying root spawns whose parent
+// identity string is embedder-specific.
+func isDirectRootChildPath(path string) bool {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(path), agentthread.RootPath+"/")
+	return ok && rest != "" && !strings.Contains(rest, "/")
 }
 
 func (c *AgentControl) newAgentCompletionCommunication(snap subagent.SubAgentSnapshot, recipientPath string) agentthread.InterAgentCommunication {
