@@ -581,7 +581,8 @@ type AgentTemplateListResult struct {
 // Text is the first line of goal.Goal. The renderer owns visual ellipsis
 // so editing a long first line never persists a server-side truncation.
 // StartedAt and UpdatedAt remain available as goal metadata. TimeUsedSeconds
-// is the effective execution time and excludes time spent paused or blocked.
+// contains completed execution, while RunningSince identifies the current
+// in-flight slice; together they exclude time spent paused, blocked, or idle.
 // The summary intentionally omits task / step / approvals to keep the composer
 // surface quiet.
 type GoalActiveSummary struct {
@@ -592,6 +593,7 @@ type GoalActiveSummary struct {
 	Step                    string `json:"step,omitempty"`
 	StartedAt               string `json:"started_at,omitempty"`
 	UpdatedAt               string `json:"updated_at,omitempty"`
+	RunningSince            string `json:"running_since,omitempty"`
 	StopReason              string `json:"stop_reason,omitempty"`
 	RecentProgress          string `json:"recent_progress,omitempty"`
 	TokensUsed              int    `json:"tokens_used,omitempty"`

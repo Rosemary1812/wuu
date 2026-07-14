@@ -163,6 +163,7 @@ func (s *Server) runtimeGoalSummary(goal goalruntime.Goal, threadID string) (*Go
 		Status:                  string(goal.Status),
 		StartedAt:               started,
 		UpdatedAt:               updated,
+		RunningSince:            s.activeGoalRunningSince(goal, threadID),
 		StopReason:              runtimeGoalStopReason(goal.Status),
 		TokensUsed:              goal.TokensUsed,
 		TimeUsedSeconds:         goal.TimeUsedSeconds,
@@ -173,6 +174,41 @@ func (s *Server) runtimeGoalSummary(goal goalruntime.Goal, threadID string) (*Go
 		CanResume:               goal.Status == goalruntime.StatusPaused || goal.Status == goalruntime.StatusBlocked,
 		CanClear:                !goalruntime.IsTerminalStatus(goal.Status),
 	}, nil
+}
+
+// activeGoalRunningSince exposes only the currently executing slice of goal
+// time. Completed turns are already folded into TimeUsedSeconds; the renderer
+// adds this in-flight slice locally so the counter can advance without polling.
+func (s *Server) activeGoalRunningSince(goal goalruntime.Goal, threadID string) string {
+	if goal.Status != goalruntime.StatusActive {
+		return ""
+	}
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		threadID = strings.TrimSpace(goal.ThreadID)
+	}
+	th := s.thread(threadID)
+	if th == nil {
+		return ""
+	}
+
+	th.mu.Lock()
+	defer th.mu.Unlock()
+	if !th.running || th.currentTurn == "" {
+		return ""
+	}
+	for i := len(th.Turns) - 1; i >= 0; i-- {
+		turn := th.Turns[i]
+		if turn.ID != th.currentTurn || turn.Status != TurnStatusInProgress || turn.StartedAt == nil {
+			continue
+		}
+		runningSince := turn.StartedAt.UTC()
+		if goal.CreatedAt.After(runningSince) {
+			runningSince = goal.CreatedAt.UTC()
+		}
+		return runningSince.Format(time.RFC3339Nano)
+	}
+	return ""
 }
 
 func runtimeGoalStopReason(status goalruntime.Status) string {

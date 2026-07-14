@@ -855,15 +855,6 @@
   overflow-wrap: anywhere;
 }
 
-.composer-goal-strip-info-note {
-  margin: 10px 0 0;
-  padding-top: 9px;
-  border-top: 1px solid var(--ink-overlay-6);
-  color: var(--ink-muted);
-  font-size: var(--font-xs);
-  line-height: var(--line-meta);
-}
-
 .composer-goal-strip-menu {
   display: grid;
   width: 168px;

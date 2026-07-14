@@ -93,6 +93,51 @@ func TestGoalActiveSummaryPrefersThreadRuntimeGoal(t *testing.T) {
 	}
 }
 
+func TestGoalActiveSummaryIncludesCurrentTurnRunningSince(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"thread","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "thread")["result"]).Thread.ID
+	threadRuntime, err := srv.ensureThreadRuntime(srv.thread(threadID))
+	if err != nil {
+		t.Fatalf("ensureThreadRuntime: %v", err)
+	}
+	goal, err := threadRuntime.GoalRuntime.Create(goalruntime.Spec{
+		ThreadID:  threadID,
+		GoalID:    "running-goal",
+		Objective: "show live runtime",
+	})
+	if err != nil {
+		t.Fatalf("create goal: %v", err)
+	}
+
+	th := srv.thread(threadID)
+	th.mu.Lock()
+	th.startInternalTurnLocked("live-turn", goal.CreatedAt.Add(-time.Minute))
+	th.mu.Unlock()
+
+	raw := `{"id":"sum-live","method":"goal/active-summary","params":{"thread_id":` + quoteGoalHandlerJSON(threadID) + `}}`
+	if err := srv.handleLine(context.Background(), []byte(raw)); err != nil {
+		t.Fatalf("goal/active-summary: %v", err)
+	}
+	result := remarshal[GoalActiveSummaryResult](t, responseByID(t, parseOutput(t, out.String()), "sum-live")["result"])
+	if result.Summary == nil {
+		t.Fatal("expected active goal summary")
+	}
+	runningSince, err := time.Parse(time.RFC3339Nano, result.Summary.RunningSince)
+	if err != nil {
+		t.Fatalf("parse running_since %q: %v", result.Summary.RunningSince, err)
+	}
+	if !runningSince.Equal(goal.CreatedAt) {
+		t.Fatalf("running_since = %s, want goal creation %s", runningSince, goal.CreatedAt)
+	}
+}
+
 func TestGoalLookupDoesNotConstructThreadRuntime(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.StateDir = filepath.Join(rt.RootDir, ".wuu-state")

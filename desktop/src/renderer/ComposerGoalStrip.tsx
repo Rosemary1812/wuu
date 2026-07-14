@@ -52,6 +52,7 @@ export function ComposerGoalStrip({
   const [error, setError] = useState<string | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [, setElapsedTick] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const controlsRef = useRef<HTMLDivElement | null>(null);
   const infoAnchorRef = useRef<HTMLSpanElement | null>(null);
@@ -109,6 +110,14 @@ export function ComposerGoalStrip({
   }, [actionsOpen, infoOpen]);
 
   useEffect(() => {
+    if (!infoOpen || !summary?.running_since) return;
+    const timer = window.setInterval(() => {
+      setElapsedTick((tick) => tick + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [infoOpen, summary?.running_since]);
+
+  useEffect(() => {
     return () => {
       if (confirmTimerRef.current) {
         clearTimeout(confirmTimerRef.current);
@@ -124,7 +133,7 @@ export function ComposerGoalStrip({
   const activeSummary = summary;
   const displayText = goalStripDisplayText(summary.text);
   const visibleStatus = goalVisibleStatusText(summary);
-  const infoRows = goalInfoRows(summary);
+  const infoRows = goalInfoRows(summary, Date.now());
   const canPause = summary.can_pause === true;
   const canResume = summary.can_resume === true;
   const canClear = summary.can_clear === true;
@@ -320,10 +329,7 @@ export function ComposerGoalStrip({
                       </div>
                     ))}
                   </dl>
-                  <p className="composer-goal-strip-info-note">
-                    有效运行时间只统计实际执行，不含暂停或阻塞。
-                  </p>
-                </div>
+              </div>
               </FloatingMenuPortal>
             ) : null}
           </span>
@@ -521,12 +527,12 @@ function goalStatusText(summary: ComposerGoalSummary): string {
   }
 }
 
-function goalInfoRows(summary: ComposerGoalSummary): GoalInfoRow[] {
+function goalInfoRows(summary: ComposerGoalSummary, nowMS: number): GoalInfoRow[] {
   const rows: GoalInfoRow[] = [
     { label: "状态", value: goalStatusText(summary) },
     {
-      label: "有效运行",
-      value: formatGoalDuration(summary.time_used_seconds ?? 0),
+      label: "运行",
+      value: formatGoalDuration(goalRunningSeconds(summary, nowMS)),
     },
   ];
   if ((summary.goal_turns ?? 0) > 0) {
@@ -547,6 +553,15 @@ function goalInfoRows(summary: ComposerGoalSummary): GoalInfoRow[] {
     rows.push({ label: "最近进展", value: progress });
   }
   return rows;
+}
+
+function goalRunningSeconds(summary: ComposerGoalSummary, nowMS: number): number {
+  const completedSeconds = Math.max(0, summary.time_used_seconds ?? 0);
+  const runningSinceMS = Date.parse(summary.running_since ?? "");
+  if (!Number.isFinite(runningSinceMS) || nowMS <= runningSinceMS) {
+    return completedSeconds;
+  }
+  return completedSeconds + Math.floor((nowMS - runningSinceMS) / 1000);
 }
 
 function formatCompactNumber(value: number): string {

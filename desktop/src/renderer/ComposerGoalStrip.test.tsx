@@ -127,14 +127,12 @@ describe("ComposerGoalStrip", () => {
     ).map((row) => row.textContent);
     expect(rows).toEqual([
       "状态已阻塞",
-      "有效运行1 分 15 秒",
+      "运行1 分 15 秒",
       "回合2 轮",
       "Tokens1,250",
       "阻塞原因等待用户选择策略",
     ]);
-    expect(document.querySelector(".composer-goal-strip-info-note")?.textContent).toContain(
-      "不含暂停或阻塞",
-    );
+    expect(document.querySelector(".composer-goal-strip-info-note")).toBeNull();
   });
 
   it("opens goal details on hover", () => {
@@ -303,7 +301,30 @@ describe("ComposerGoalStrip", () => {
     });
 
     expect(document.querySelector(".composer-goal-strip-info")?.textContent).toContain(
-      "有效运行42 秒",
+      "运行42 秒",
     );
+  });
+
+  it("advances the current turn runtime from running_since", () => {
+    const now = Date.parse("2026-07-15T02:00:10Z");
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
+    renderStrip({
+      summary: {
+        ...goalSummary("Ship"),
+        time_used_seconds: 4,
+        running_since: "2026-07-15T02:00:03Z",
+      },
+    });
+
+    act(() => {
+      container
+        .querySelector<HTMLButtonElement>("button[aria-label=\"查看目标详情\"]")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(document.querySelector(".composer-goal-strip-info")?.textContent).toContain(
+      "运行11 秒",
+    );
+    nowSpy.mockRestore();
   });
 });

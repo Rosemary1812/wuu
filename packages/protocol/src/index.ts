@@ -1862,9 +1862,8 @@ export type SettingsUsageResponse = {
 };
 
 // ComposerGoalSummary is the composer-banner view of the current thread goal.
-// The backend owns runtime status, control availability, and active-only usage
-// so the renderer can stay a thin control surface instead of rebuilding goal
-// orchestration state or deriving wall-clock execution time.
+// The backend owns runtime status, control availability, completed usage, and
+// the current in-flight start time. The renderer only advances that live slice.
 export type ComposerGoalSummary = {
   id: string;
   thread_id?: string;
@@ -1873,6 +1872,7 @@ export type ComposerGoalSummary = {
   step?: string;
   started_at?: string;
   updated_at?: string;
+  running_since?: string;
   stop_reason?: string;
   recent_progress?: string;
   tokens_used?: number;
