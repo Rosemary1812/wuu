@@ -42,7 +42,7 @@ export type RemoteChildStream = {
 export type RemoteChild = {
   stdout: RemoteChildStream;
   stderr: RemoteChildStream;
-  on(event: "exit", listener: (code: number | null) => void): void;
+  on(event: "exit" | "close", listener: (code: number | null) => void): void;
   on(event: "error", listener: (err: Error) => void): void;
   kill(signal?: NodeJS.Signals): boolean;
 };
@@ -66,6 +66,8 @@ export class RemoteHostManager {
   private child: RemoteChild | null = null;
   private childWorkdir: string | null = null;
   private pairUri: string | null = null;
+  private hostExitPromise: Promise<void> | null = null;
+  private resolveHostExit: (() => void) | null = null;
 
   constructor(private readonly opts: RemoteHostManagerOptions = {}) {}
 
@@ -111,10 +113,16 @@ export class RemoteHostManager {
     this.child = child;
     this.childWorkdir = workdir;
     this.pairUri = null;
+    this.hostExitPromise = new Promise((resolve) => {
+      this.resolveHostExit = resolve;
+    });
 
     let buffer = "";
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
+      if (this.child !== child) {
+        return;
+      }
       buffer += chunk;
       for (;;) {
         const index = buffer.indexOf("\n");
@@ -130,21 +138,26 @@ export class RemoteHostManager {
     });
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
+      if (this.child !== child) {
+        return;
+      }
       const message = chunk.trim();
       if (message) {
         this.emit({ kind: "host-log", message });
       }
     });
     child.on("error", (err) => {
-      this.emit({ kind: "host-log", message: `remote host failed to start: ${err.message}` });
+      this.finalizeHostChild(
+        child,
+        null,
+        `remote host process error: ${err.message}`,
+      );
     });
     child.on("exit", (code) => {
-      if (this.child === child) {
-        this.child = null;
-        this.childWorkdir = null;
-        this.pairUri = null;
-      }
-      this.emit({ kind: "host-exit", code });
+      this.finalizeHostChild(child, code);
+    });
+    child.on("close", (code) => {
+      this.finalizeHostChild(child, code);
     });
   }
 
@@ -155,17 +168,26 @@ export class RemoteHostManager {
     if (!child) {
       return;
     }
-    this.child = null;
-    this.childWorkdir = null;
-    this.pairUri = null;
-    await new Promise<void>((resolve) => {
-      const killTimer = setTimeout(() => child.kill("SIGKILL"), this.opts.killGraceMs ?? 3000);
-      child.on("exit", () => {
-        clearTimeout(killTimer);
-        resolve();
-      });
-      child.kill("SIGTERM");
-    });
+    const exited = this.hostExitPromise;
+    if (!exited) {
+      this.finalizeHostChild(
+        child,
+        null,
+        "remote host lifecycle was not initialized",
+      );
+      return;
+    }
+
+    const forceKillTimer = setTimeout(() => {
+      this.signalHostChild(child, "SIGKILL", "remote host force-stop failed");
+    }, this.opts.killGraceMs ?? 3000);
+
+    try {
+      this.signalHostChild(child, "SIGTERM", "remote host stop failed");
+      await exited;
+    } finally {
+      clearTimeout(forceKillTimer);
+    }
   }
 
   isRunning(): boolean {
@@ -179,6 +201,55 @@ export class RemoteHostManager {
   /** The open pairing window's URI, or null when none is open. */
   currentPairUri(): string | null {
     return this.pairUri;
+  }
+
+  private finalizeHostChild(
+    child: RemoteChild,
+    code: number | null,
+    errorMessage = "",
+  ): void {
+    if (this.child !== child) {
+      return;
+    }
+
+    const resolveExit = this.resolveHostExit;
+    this.child = null;
+    this.childWorkdir = null;
+    this.pairUri = null;
+    this.hostExitPromise = null;
+    this.resolveHostExit = null;
+
+    // Resolve stopHost before notifying observers. A renderer callback can
+    // immediately start a replacement host; late events from this child are
+    // identity-guarded and cannot clear or mutate that replacement.
+    resolveExit?.();
+    if (errorMessage) {
+      this.emit({ kind: "host-log", message: errorMessage });
+    }
+    this.emit({ kind: "host-exit", code });
+  }
+
+  private signalHostChild(
+    child: RemoteChild,
+    signal: NodeJS.Signals,
+    failureContext: string,
+  ): void {
+    try {
+      if (child.kill(signal)) {
+        return;
+      }
+      this.finalizeHostChild(
+        child,
+        null,
+        `${failureContext}: signal was not sent`,
+      );
+    } catch (error) {
+      this.finalizeHostChild(
+        child,
+        null,
+        remoteHostProcessError(failureContext, error),
+      );
+    }
   }
 
   private handleHostLine(line: string): void {
@@ -258,4 +329,9 @@ export class RemoteHostManager {
   private spawnFn(): RemoteSpawn {
     return this.opts.spawn ?? (nodeSpawn as unknown as RemoteSpawn);
   }
+}
+
+function remoteHostProcessError(context: string, error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `${context}: ${message}`;
 }

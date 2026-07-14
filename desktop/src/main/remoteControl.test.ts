@@ -30,6 +30,7 @@ class FakeChild implements RemoteChild {
   signals: string[] = [];
   exitOnKill = true;
   private exitListeners: Array<(code: number | null) => void> = [];
+  private closeListeners: Array<(code: number | null) => void> = [];
   private errorListeners: Array<(err: Error) => void> = [];
   private exited = false;
 
@@ -38,9 +39,14 @@ class FakeChild implements RemoteChild {
     readonly args: string[],
   ) {}
 
-  on(event: "exit" | "error", listener: ((code: number | null) => void) | ((err: Error) => void)): void {
+  on(
+    event: "exit" | "close" | "error",
+    listener: ((code: number | null) => void) | ((err: Error) => void),
+  ): void {
     if (event === "exit") {
       this.exitListeners.push(listener as (code: number | null) => void);
+    } else if (event === "close") {
+      this.closeListeners.push(listener as (code: number | null) => void);
     } else {
       this.errorListeners.push(listener as (err: Error) => void);
     }
@@ -67,6 +73,12 @@ class FakeChild implements RemoteChild {
   fail(err: Error): void {
     for (const listener of this.errorListeners) {
       listener(err);
+    }
+  }
+
+  close(code: number | null): void {
+    for (const listener of this.closeListeners) {
+      listener(code);
     }
   }
 }
@@ -178,6 +190,74 @@ describe("RemoteHostManager host lifecycle", () => {
     expect(manager.currentPairUri()).toBeNull();
     const exit = events.find((e) => e.kind === "host-exit");
     expect(exit && exit.kind === "host-exit" ? exit.code : null).toBe(1);
+  });
+
+  it("clears host state once when spawn error is followed by close and exit", () => {
+    const { manager, children, events } = makeManager();
+    manager.startHost("/w", { pair: true });
+    const child = children[0];
+    child.stdout.push("wuu://pair?v=1&p=abc\n");
+
+    child.fail(
+      Object.assign(new Error("spawn wuu ENOENT"), { code: "ENOENT" }),
+    );
+    expect(manager.isRunning()).toBe(false);
+    expect(manager.runningWorkdir()).toBeNull();
+    expect(manager.currentPairUri()).toBeNull();
+
+    child.close(-2);
+    child.exit(null);
+
+    expect(events.filter((event) => event.kind === "host-exit")).toEqual([
+      { kind: "host-exit", code: null },
+    ]);
+    expect(
+      events.some(
+        (event) =>
+          event.kind === "host-log" && event.message.includes("ENOENT"),
+      ),
+    ).toBe(true);
+  });
+
+  it("lets stopHost complete from close when exit never arrives", async () => {
+    const { manager, children, events } = makeManager();
+    manager.startHost("/w");
+    const child = children[0];
+    child.exitOnKill = false;
+
+    const stopped = manager.stopHost();
+    child.close(0);
+    await stopped;
+
+    expect(child.signals).toContain("SIGTERM");
+    expect(manager.isRunning()).toBe(false);
+    expect(events.filter((event) => event.kind === "host-exit")).toEqual([
+      { kind: "host-exit", code: 0 },
+    ]);
+  });
+
+  it("ignores late output and lifecycle events from a replaced child", () => {
+    const { manager, children, events } = makeManager();
+    manager.startHost("/old", { pair: true });
+    const oldChild = children[0];
+    oldChild.fail(new Error("spawn old host ENOENT"));
+
+    manager.startHost("/new", { pair: true });
+    const newChild = children[1];
+    const eventCount = events.length;
+
+    oldChild.stdout.push("wuu://pair?v=1&p=stale\n");
+    oldChild.stderr.push("late stderr from old host\n");
+    oldChild.exit(1);
+    oldChild.close(1);
+
+    expect(events).toHaveLength(eventCount);
+    expect(manager.isRunning()).toBe(true);
+    expect(manager.runningWorkdir()).toBe("/new");
+    expect(manager.currentPairUri()).toBeNull();
+
+    newChild.stdout.push("wuu://pair?v=1&p=fresh\n");
+    expect(manager.currentPairUri()).toBe("wuu://pair?v=1&p=fresh");
   });
 
   it("startHost is idempotent while a host is running", () => {
