@@ -1876,27 +1876,15 @@ func addColumnIfMissing(db *sql.DB, table, column, definition string) error {
 }
 
 func insertSession(db *sql.DB, sess Session) error {
-	_, err := db.Exec(insertSessionSQL(""), sessionArgs(sess)...)
+	_, err := db.Exec(insertSessionSQL(), sessionArgs(sess)...)
 	if err != nil {
 		return fmt.Errorf("insert session: %w", err)
 	}
 	return nil
 }
 
-func insertSessionTx(tx *sql.Tx, sess Session, conflict string) error {
-	_, err := tx.Exec(insertSessionSQL(conflict), sessionArgs(sess)...)
-	if err != nil {
-		return fmt.Errorf("insert session: %w", err)
-	}
-	return nil
-}
-
-func insertSessionSQL(conflict string) string {
-	conflict = strings.TrimSpace(conflict)
-	if conflict != "" {
-		conflict = " " + conflict
-	}
-	return `INSERT` + conflict + ` INTO sessions (
+func insertSessionSQL() string {
+	return `INSERT INTO sessions (
 		id, created_at, updated_at, title, summary, entries, cwd,
 		forked_from_id, forked_from_turn_id, forked_from_item_id,
 		pinned_at, archived_at, worktree_path, worktree_base_head, worktree_base_repo,
