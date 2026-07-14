@@ -365,17 +365,6 @@ type GeneralSettingsUpdate struct {
 	MCPEnabledToggles  map[string]*bool // server name → enabled; nil = skip
 }
 
-// Load reads the user-owned config and applies project-scoped overrides that
-// cannot change provider connections, credential sources, or external memory
-// discovery. See LoadFrom for the precise source order.
-func Load() (Config, string, error) {
-	workdir, err := os.Getwd()
-	if err != nil {
-		return Config{}, "", fmt.Errorf("get cwd: %w", err)
-	}
-	return LoadFrom(workdir, os.Getenv("HOME"))
-}
-
 // LoadFrom reads config from deterministic directories (test-friendly).
 //
 // The user config is the trusted base: the unified ~/.wuu/config.json (or
@@ -471,20 +460,6 @@ func LoadProjectConfig(workdir string) (Config, string, error) {
 		return cfg, candidate, nil
 	}
 	return Config{}, "", fmt.Errorf("%w, pass --config or run `wuu init` to create a user config", ErrConfigNotFound)
-}
-
-func saveConfigFile(configPath string, cfg Config) error {
-	// MarshalIndent + newline mirrors the existing Update* save paths so
-	// the post-migration rewrite is byte-compatible with a config.json
-	// that the user might have hand-edited (two-space indent, trailing
-	// newline). Used only by the auth.json migration step in LoadFrom
-	// to clear inline credentials; the regular Update* paths continue
-	// to mutate the raw map and re-marshal through that path.
-	out, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal config: %w", err)
-	}
-	return securefs.WriteFileAtomic(configPath, append(out, '\n'))
 }
 
 func LoadPath(path string) (Config, string, error) {
@@ -946,12 +921,6 @@ func UpdateProviderModel(configPath, providerName, newModel string) error {
 // provider's model in the config file at configPath.
 func UpdateProviderSelection(configPath, providerName, newModel string) error {
 	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, nil, nil, nil, false, nil)
-}
-
-// UpdateProviderSelectionAndEffort changes the default provider, selected
-// provider's model, and global reasoning effort in the config file at configPath.
-func UpdateProviderSelectionAndEffort(configPath, providerName, newModel, effort string) error {
-	return updateProviderSelection(configPath, providerName, newModel, nil, nil, nil, &effort, nil, nil, false, nil)
 }
 
 // UpdateProviderRuntime changes the default provider and editable connection
