@@ -1,5 +1,4 @@
 import {
-  Check,
   Info,
   Loader2,
   MoreHorizontal,
@@ -8,7 +7,6 @@ import {
   Play,
   Target,
   Trash2,
-  X,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -17,11 +15,13 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import type { ComposerGoalSummary } from "../shared/protocol";
 import {
   FloatingMenuPortal,
   isInsideFloatingMenu,
 } from "./ComposerFloatingMenu";
+import { Modal } from "./Modal";
 
 const ACTION_CONFIRM_WINDOW_MS = 3000;
 
@@ -52,7 +52,7 @@ export function ComposerGoalStrip({
   const [error, setError] = useState<string | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const controlsRef = useRef<HTMLDivElement | null>(null);
   const infoAnchorRef = useRef<HTMLSpanElement | null>(null);
   const actionsAnchorRef = useRef<HTMLSpanElement | null>(null);
@@ -248,221 +248,220 @@ export function ComposerGoalStrip({
     }
   }
 
-  function handleEditKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
-    if (event.key === "Enter" && !event.shiftKey) {
+  function handleEditKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       void handleSubmitEdit();
-      return;
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      handleCancelEdit();
     }
   }
 
-  if (editing) {
-    return (
-      <div
-        className="composer-goal-strip editing"
-        role="group"
-        aria-label="编辑当前目标"
-      >
+  return (
+    <>
+      <div className="composer-goal-strip" role="status" aria-live="polite">
         <span className="composer-goal-strip-icon" aria-hidden="true">
           <Target className="icon-sm" />
         </span>
-        <input
-          ref={inputRef}
-          className="composer-goal-strip-input"
-          value={draft}
-          spellCheck={false}
-          disabled={busy === "edit"}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={handleEditKeyDown}
-          aria-label="目标文本"
-        />
-        <div className="composer-goal-strip-actions composer-input-header-actions">
-          <button
-            className="composer-goal-strip-action composer-input-header-action"
-            type="button"
-            aria-label="保存目标"
-            title="保存"
-            disabled={busy !== null}
-            onClick={() => void handleSubmitEdit()}
+        <span className="composer-goal-strip-main">
+          <span className="composer-goal-strip-text" title={displayText}>
+            {displayText}
+          </span>
+          {visibleStatus ? (
+            <span className="composer-goal-strip-state">{visibleStatus}</span>
+          ) : null}
+        </span>
+        <div
+          ref={controlsRef}
+          className="composer-goal-strip-actions composer-input-header-actions"
+        >
+          <span
+            ref={infoAnchorRef}
+            className="composer-goal-strip-control-anchor"
+            onMouseEnter={() => {
+              clearInfoCloseTimer();
+              setInfoOpen(true);
+            }}
+            onMouseLeave={scheduleInfoClose}
           >
-            {busy === "edit" ? (
-              <Loader2
-                className="icon-sm composer-goal-strip-spin"
-                aria-hidden="true"
-              />
-            ) : (
-              <Check className="icon-sm" aria-hidden="true" />
-            )}
-          </button>
-          <button
-            className="composer-goal-strip-action composer-input-header-action"
-            type="button"
-            aria-label="取消编辑"
-            title="取消编辑"
-            disabled={busy !== null}
-            onClick={handleCancelEdit}
-          >
-            <X className="icon-sm" aria-hidden="true" />
-          </button>
+            <button
+              className="composer-goal-strip-action composer-input-header-action"
+              type="button"
+              aria-label="查看目标详情"
+              aria-expanded={infoOpen}
+              title="目标详情"
+              onClick={() => {
+                clearInfoCloseTimer();
+                setActionsOpen(false);
+                setInfoOpen((current) => !current);
+              }}
+            >
+              <Info className="icon-sm" aria-hidden="true" />
+            </button>
+            {infoOpen ? (
+              <FloatingMenuPortal
+                anchorRef={infoAnchorRef}
+                owner="composer-goal"
+                placement="above"
+                align="right"
+                offset={6}
+                width={280}
+              >
+                <div
+                  className="composer-goal-strip-info"
+                  role="tooltip"
+                  onMouseEnter={clearInfoCloseTimer}
+                  onMouseLeave={scheduleInfoClose}
+                >
+                  <div className="composer-goal-strip-info-title">目标详情</div>
+                  <dl className="composer-goal-strip-info-list">
+                    {infoRows.map((row) => (
+                      <div key={row.label} className="composer-goal-strip-info-row">
+                        <dt>{row.label}</dt>
+                        <dd>{row.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <p className="composer-goal-strip-info-note">
+                    有效运行时间只统计实际执行，不含暂停或阻塞。
+                  </p>
+                </div>
+              </FloatingMenuPortal>
+            ) : null}
+          </span>
+          <span ref={actionsAnchorRef} className="composer-goal-strip-control-anchor">
+            <button
+              className="composer-goal-strip-action composer-input-header-action"
+              type="button"
+              aria-label="目标操作"
+              aria-expanded={actionsOpen}
+              title="目标操作"
+              disabled={disabled || busy !== null}
+              onClick={() => {
+                setInfoOpen(false);
+                setActionsOpen((current) => !current);
+              }}
+            >
+              {busy ? (
+                <Loader2
+                  className="icon-sm composer-goal-strip-spin"
+                  aria-hidden="true"
+                />
+              ) : (
+                <MoreHorizontal className="icon-sm" aria-hidden="true" />
+              )}
+            </button>
+            {actionsOpen ? (
+              <FloatingMenuPortal
+                anchorRef={actionsAnchorRef}
+                owner="composer-goal"
+                placement="above"
+                align="right"
+                offset={6}
+                width={168}
+              >
+                <div className="composer-goal-strip-menu" role="menu">
+                  {canPause ? (
+                    <GoalMenuButton
+                      icon={Pause}
+                      label="暂停目标"
+                      onClick={handlePauseGoal}
+                    />
+                  ) : null}
+                  {canResume ? (
+                    <GoalMenuButton
+                      icon={Play}
+                      label="继续目标"
+                      onClick={handleResumeGoal}
+                    />
+                  ) : null}
+                  <GoalMenuButton
+                    icon={Pencil}
+                    label="编辑目标"
+                    onClick={handleStartEdit}
+                  />
+                  {canClear ? (
+                    <GoalMenuButton
+                      danger={confirmingAction === "clear"}
+                      icon={Trash2}
+                      label={
+                        confirmingAction === "clear"
+                          ? "再次点击确认清除"
+                          : "清除目标"
+                      }
+                      onClick={() => handleConfirmableGoalAction("clear")}
+                    />
+                  ) : null}
+                </div>
+              </FloatingMenuPortal>
+            ) : null}
+          </span>
         </div>
-        {error ? (
+        {error && !editing ? (
           <span className="composer-goal-strip-error" role="alert">
             {error}
           </span>
         ) : null}
       </div>
-    );
-  }
-
-  return (
-    <div className="composer-goal-strip" role="status" aria-live="polite">
-      <span className="composer-goal-strip-icon" aria-hidden="true">
-        <Target className="icon-sm" />
-      </span>
-      <span className="composer-goal-strip-main">
-        <span className="composer-goal-strip-text" title={displayText}>
-          {displayText}
-        </span>
-        {visibleStatus ? (
-          <span className="composer-goal-strip-state">{visibleStatus}</span>
-        ) : null}
-      </span>
-      <div
-        ref={controlsRef}
-        className="composer-goal-strip-actions composer-input-header-actions"
-      >
-        <span
-          ref={infoAnchorRef}
-          className="composer-goal-strip-control-anchor"
-          onMouseEnter={() => {
-            clearInfoCloseTimer();
-            setInfoOpen(true);
-          }}
-          onMouseLeave={scheduleInfoClose}
-        >
-          <button
-            className="composer-goal-strip-action composer-input-header-action"
-            type="button"
-            aria-label="查看目标详情"
-            aria-expanded={infoOpen}
-            title="目标详情"
-            onClick={() => {
-              clearInfoCloseTimer();
-              setActionsOpen(false);
-              setInfoOpen((current) => !current);
-            }}
-          >
-            <Info className="icon-sm" aria-hidden="true" />
-          </button>
-          {infoOpen ? (
-            <FloatingMenuPortal
-              anchorRef={infoAnchorRef}
-              owner="composer-goal"
-              placement="above"
-              align="right"
-              offset={6}
-              width={280}
+      {editing
+        ? createPortal(
+            <Modal
+              ariaLabel="编辑目标"
+              icon={<Target className="icon-lg" />}
+              title="编辑目标"
+              onClose={handleCancelEdit}
+              closeDisabled={busy === "edit"}
+              panelClassName="composer-goal-edit-dialog"
+              asForm
+              onSubmit={() => void handleSubmitEdit()}
+              footer={
+                <>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={busy === "edit"}
+                    onClick={handleCancelEdit}
+                  >
+                    取消
+                  </button>
+                  <button
+                    className="primary-button composer-goal-edit-save"
+                    type="submit"
+                    disabled={busy === "edit"}
+                  >
+                    {busy === "edit" ? (
+                      <Loader2
+                        className="icon-sm composer-goal-strip-spin"
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                    <span>{busy === "edit" ? "保存中" : "保存"}</span>
+                  </button>
+                </>
+              }
             >
-              <div
-                className="composer-goal-strip-info"
-                role="tooltip"
-                onMouseEnter={clearInfoCloseTimer}
-                onMouseLeave={scheduleInfoClose}
-              >
-                <div className="composer-goal-strip-info-title">目标详情</div>
-                <dl className="composer-goal-strip-info-list">
-                  {infoRows.map((row) => (
-                    <div key={row.label} className="composer-goal-strip-info-row">
-                      <dt>{row.label}</dt>
-                      <dd>{row.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-                <p className="composer-goal-strip-info-note">
-                  有效运行时间只统计实际执行，不含暂停或阻塞。
-                </p>
-              </div>
-            </FloatingMenuPortal>
-          ) : null}
-        </span>
-        <span ref={actionsAnchorRef} className="composer-goal-strip-control-anchor">
-          <button
-            className="composer-goal-strip-action composer-input-header-action"
-            type="button"
-            aria-label="目标操作"
-            aria-expanded={actionsOpen}
-            title="目标操作"
-            disabled={disabled || busy !== null}
-            onClick={() => {
-              setInfoOpen(false);
-              setActionsOpen((current) => !current);
-            }}
-          >
-            {busy ? (
-              <Loader2
-                className="icon-sm composer-goal-strip-spin"
-                aria-hidden="true"
-              />
-            ) : (
-              <MoreHorizontal className="icon-sm" aria-hidden="true" />
-            )}
-          </button>
-          {actionsOpen ? (
-            <FloatingMenuPortal
-              anchorRef={actionsAnchorRef}
-              owner="composer-goal"
-              placement="above"
-              align="right"
-              offset={6}
-              width={168}
-            >
-              <div className="composer-goal-strip-menu" role="menu">
-                {canPause ? (
-                  <GoalMenuButton
-                    icon={Pause}
-                    label="暂停目标"
-                    onClick={handlePauseGoal}
-                  />
-                ) : null}
-                {canResume ? (
-                  <GoalMenuButton
-                    icon={Play}
-                    label="继续目标"
-                    onClick={handleResumeGoal}
-                  />
-                ) : null}
-                <GoalMenuButton
-                  icon={Pencil}
-                  label="编辑目标"
-                  onClick={handleStartEdit}
+              <label className="composer-goal-edit-field">
+                <span>目标内容</span>
+                <textarea
+                  ref={inputRef}
+                  className="composer-goal-edit-textarea"
+                  value={draft}
+                  spellCheck={false}
+                  disabled={busy === "edit"}
+                  rows={10}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={handleEditKeyDown}
+                  aria-label="目标内容"
                 />
-                {canClear ? (
-                  <GoalMenuButton
-                    danger={confirmingAction === "clear"}
-                    icon={Trash2}
-                    label={
-                      confirmingAction === "clear"
-                        ? "再次点击确认清除"
-                        : "清除目标"
-                    }
-                    onClick={() => handleConfirmableGoalAction("clear")}
-                  />
-                ) : null}
-              </div>
-            </FloatingMenuPortal>
-          ) : null}
-        </span>
-      </div>
-      {error ? (
-        <span className="composer-goal-strip-error" role="alert">
-          {error}
-        </span>
-      ) : null}
-    </div>
+              </label>
+              {error ? (
+                <div className="environment-dialog-error" role="alert">
+                  {error}
+                </div>
+              ) : null}
+            </Modal>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 

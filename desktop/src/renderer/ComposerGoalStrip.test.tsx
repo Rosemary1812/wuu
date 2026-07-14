@@ -53,9 +53,11 @@ function goalSummary(text = "Ship the composer goal strip"): ComposerGoalSummary
   };
 }
 
-function changeInput(input: HTMLInputElement, value: string): void {
+function changeInput(input: HTMLInputElement | HTMLTextAreaElement, value: string): void {
   const setter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
+    input instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype,
     "value",
   )?.set;
   setter?.call(input, value);
@@ -209,7 +211,7 @@ describe("ComposerGoalStrip", () => {
     expect(onResume).toHaveBeenCalledTimes(1);
   });
 
-  it("edits the goal inline and waits for save before leaving edit mode", async () => {
+  it("edits a multi-line goal in a dialog and waits for save before closing", async () => {
     const onEdit = vi.fn().mockResolvedValue(undefined);
     renderStrip({ summary: goalSummary("old goal"), onEdit });
 
@@ -225,23 +227,25 @@ describe("ComposerGoalStrip", () => {
       editButton?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     });
 
-    const input = container.querySelector<HTMLInputElement>(".composer-goal-strip-input");
-    expect(input).not.toBeNull();
+    const dialog = document.querySelector<HTMLElement>(".composer-goal-edit-dialog");
+    expect(dialog?.getAttribute("role")).toBe("dialog");
+    const input = dialog?.querySelector<HTMLTextAreaElement>(".composer-goal-edit-textarea");
+    expect(input?.value).toBe("old goal");
     act(() => {
       if (input) {
-        changeInput(input, "new goal");
+        changeInput(input, "new goal\nwith details");
       }
     });
 
     await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>("button[aria-label=\"保存目标\"]")
+      dialog
+        ?.querySelector<HTMLButtonElement>("button[type=\"submit\"]")
         ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
       await Promise.resolve();
     });
 
-    expect(onEdit).toHaveBeenCalledWith("new goal");
-    expect(container.querySelector(".composer-goal-strip-input")).toBeNull();
+    expect(onEdit).toHaveBeenCalledWith("new goal\nwith details");
+    expect(document.querySelector(".composer-goal-edit-dialog")).toBeNull();
   });
 
   it("requires a second click before clearing the active goal", async () => {

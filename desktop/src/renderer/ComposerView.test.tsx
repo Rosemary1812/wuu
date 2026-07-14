@@ -438,11 +438,11 @@ describe("Composer send control", () => {
         new MouseEvent("click", { bubbles: true, cancelable: true }),
       );
     });
-    expect(container.querySelector(".composer-goal-strip-input")).not.toBeNull();
+    expect(document.querySelector(".composer-goal-edit-dialog")).not.toBeNull();
 
     act(() => {
-      container
-        .querySelector<HTMLButtonElement>("button[aria-label=\"取消编辑\"]")
+      document
+        .querySelector<HTMLButtonElement>(".composer-goal-edit-dialog .secondary-button")
         ?.dispatchEvent(
           new MouseEvent("click", { bubbles: true, cancelable: true }),
         );

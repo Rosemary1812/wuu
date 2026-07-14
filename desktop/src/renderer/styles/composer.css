@@ -781,24 +781,6 @@
   white-space: nowrap;
 }
 
-.composer-goal-strip-input {
-  grid-column: 2;
-  width: 100%;
-  min-width: 0;
-  height: 28px;
-  padding: 0 7px;
-  border: 1px solid var(--surface-4);
-  border-radius: var(--radius-xs);
-  background: var(--surface-1);
-  color: inherit;
-  font: inherit;
-  outline: none;
-}
-
-.composer-goal-strip-input:focus {
-  border-color: var(--ink-overlay-18);
-}
-
 .composer-goal-strip-actions {
   grid-column: 3;
   justify-self: end;
@@ -942,6 +924,48 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+.composer-goal-edit-dialog {
+  --environment-dialog-max-width: 680px;
+  gap: 12px;
+}
+
+.composer-goal-edit-field {
+  display: grid;
+  gap: 7px;
+  color: var(--ink-tertiary);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.composer-goal-edit-textarea {
+  width: 100%;
+  min-height: 220px;
+  max-height: min(52dvh, 520px);
+  resize: vertical;
+  border: 1px solid var(--env-field-border);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--font-ui);
+  line-height: 1.55;
+  padding: 12px 14px;
+  outline: none;
+}
+
+.composer-goal-edit-textarea:focus {
+  border-color: var(--info);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--info) 18%, transparent);
+}
+
+.composer-goal-edit-save {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 76px;
 }
 
 @media (prefers-reduced-motion: reduce) {
