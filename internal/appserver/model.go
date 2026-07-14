@@ -173,6 +173,7 @@ func (th *threadState) startInternalTurnWithKindLocked(turnID string, kind TurnK
 		Kind:          kind,
 		ModelProvider: th.ModelProvider,
 		Model:         th.Model,
+		Items:         []ThreadItem{},
 		ItemsView:     TurnItemsViewFull,
 		Status:        TurnStatusInProgress,
 		StartedAt:     &now,
@@ -200,6 +201,7 @@ func (th *threadState) startAgentTurnLocked(now time.Time) (Turn, bool) {
 			ID:            turnID,
 			ModelProvider: th.ModelProvider,
 			Model:         th.Model,
+			Items:         []ThreadItem{},
 			ItemsView:     TurnItemsViewFull,
 			Status:        TurnStatusInProgress,
 			StartedAt:     &now,
@@ -904,6 +906,7 @@ func (th *threadState) ensureTurnLocked(turnID string, now time.Time) Turn {
 		ID:            turnID,
 		ModelProvider: th.ModelProvider,
 		Model:         th.Model,
+		Items:         []ThreadItem{},
 		ItemsView:     TurnItemsViewFull,
 		Status:        TurnStatusInProgress,
 		StartedAt:     &now,
@@ -1050,6 +1053,7 @@ func turnsFromPersistedHistoryInScope(threadID, subthreadID string, history []pe
 		toolItems = make(map[string]int)
 		turn := Turn{
 			ID:        turnID,
+			Items:     []ThreadItem{},
 			ItemsView: TurnItemsViewFull,
 			Status:    TurnStatusCompleted,
 		}
@@ -1099,6 +1103,7 @@ func turnsFromPersistedHistoryInScope(threadID, subthreadID string, history []pe
 			toolItems = make(map[string]int)
 			turn := Turn{
 				ID:        turnID,
+				Items:     []ThreadItem{},
 				ItemsView: TurnItemsViewFull,
 				Status:    TurnStatusCompleted,
 			}

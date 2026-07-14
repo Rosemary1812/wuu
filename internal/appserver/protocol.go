@@ -1799,6 +1799,19 @@ type Turn struct {
 	UsageModel          string        `json:"usage_model,omitempty"`
 }
 
+// MarshalJSON keeps the app-server contract stable: items is a required
+// collection in every Turn payload, including a turn that has not produced
+// its first item yet. A nil Go slice otherwise becomes JSON null, which is
+// not a valid value for the protocol's ThreadItem[] field.
+func (turn Turn) MarshalJSON() ([]byte, error) {
+	type wireTurn Turn
+	wire := wireTurn(turn)
+	if wire.Items == nil {
+		wire.Items = []ThreadItem{}
+	}
+	return json.Marshal(wire)
+}
+
 type TurnError struct {
 	Message string `json:"message"`
 	// Structured error fields, filled in by BuildTurnError from the typed

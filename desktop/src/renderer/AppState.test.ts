@@ -177,6 +177,78 @@ function threadWithUserTexts(texts: string[]): Thread {
   };
 }
 
+describe("AppState protocol normalization", () => {
+  it("keeps rendering when an older core starts an empty turn with null items", () => {
+    const thread = threadWithUserTexts(["continue"]);
+    const next = reduceServerEvent(
+      {
+        ...initialState,
+        activeContext: { kind: "no_project", cwd: "/repo" },
+        thread,
+        threads: [thread],
+      },
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "turn/started",
+          params: {
+            thread_id: thread.id,
+            turn: {
+              id: "turn-auto-continue",
+              items: null,
+              items_view: "full",
+              status: "in_progress",
+            },
+          },
+        },
+      },
+    );
+
+    expect(next.thread?.turns.at(-1)).toMatchObject({
+      id: "turn-auto-continue",
+      items: [],
+    });
+    expect(next.running).toBe(true);
+  });
+
+  it("normalizes null turn items inside a thread snapshot", () => {
+    const current = threadWithUserTexts(["continue"]);
+    const next = reduceServerEvent(
+      {
+        ...initialState,
+        activeContext: { kind: "no_project", cwd: "/repo" },
+        thread: current,
+        threads: [current],
+      },
+      {
+        kind: "notification",
+        workdir: "/repo",
+        message: {
+          method: "thread/updated",
+          params: {
+            thread: {
+              ...current,
+              turns: [
+                {
+                  id: "turn-auto-continue",
+                  items: null,
+                  items_view: "full",
+                  status: "in_progress",
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+
+    expect(next.thread?.turns).toEqual([
+      expect.objectContaining({ id: "turn-auto-continue", items: [] }),
+    ]);
+  });
+});
+
 function sessionTabPrompt(
   tabs: SessionTab[],
   tabID: string,
