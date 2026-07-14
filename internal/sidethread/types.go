@@ -7,15 +7,10 @@ import "time"
 type Status string
 
 const (
-	StatusIdle        Status = "idle"
 	StatusRunning     Status = "running"
 	StatusCompleted   Status = "completed"
 	StatusFailed      Status = "failed"
 	StatusInterrupted Status = "interrupted"
-	// StatusDetached marks a side thread whose main thread was deleted.
-	// The on-disk record is preserved so the renderer can briefly show
-	// the "inaccessible" state, but no further turns run.
-	StatusDetached Status = "detached"
 )
 
 type MessageRole string
@@ -58,30 +53,8 @@ type SideThread struct {
 	SideThreadID string    `json:"side_thread_id"`
 	MainThreadID string    `json:"main_thread_id"`
 	Status       Status    `json:"status"`
+	Revision     uint64    `json:"revision"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 	Messages     []Message `json:"messages"`
-}
-
-// Summary is the lightweight view of a side thread for IPC.
-type Summary struct {
-	SideThreadID string    `json:"side_thread_id"`
-	MainThreadID string    `json:"main_thread_id"`
-	Status       Status    `json:"status"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-}
-
-// Summary returns the lightweight view of st.
-func (st *SideThread) Summary() Summary {
-	if st == nil {
-		return Summary{}
-	}
-	return Summary{
-		SideThreadID: st.SideThreadID,
-		MainThreadID: st.MainThreadID,
-		Status:       st.Status,
-		CreatedAt:    st.CreatedAt,
-		UpdatedAt:    st.UpdatedAt,
-	}
 }

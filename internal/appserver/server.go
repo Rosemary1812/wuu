@@ -216,6 +216,9 @@ type Server struct {
 	inferenceMaintenanceDone     chan struct{}
 	inferenceMaintenanceStopOnce sync.Once
 	activityUnsubscribe          func()
+	backgroundMu                 sync.Mutex
+	backgroundWG                 sync.WaitGroup
+	backgroundCount              atomic.Int64
 	closeOnce                    sync.Once
 	closed                       atomic.Bool
 
@@ -223,6 +226,8 @@ type Server struct {
 	// thread). Nil when SessionDir is unset; handleSideThreadOpen /
 	// handleSideThreadGetHistory treat nil as the "feature off" path.
 	sideThreadStore *sidethread.Store
+	sideTurnMu      sync.Mutex
+	sideTurns       map[string]*sideThreadTurn
 }
 
 func New(rt *runtime.Session, out io.Writer) *Server {
@@ -253,6 +258,7 @@ func NewWithCredentialStore(rt *runtime.Session, out io.Writer, store credential
 		codexModelCache:              make(map[string]map[string]config.ProviderModelConfig),
 		memoryOverviewCache:          make(map[string]memoryOverviewCacheEntry),
 		inferenceMaintenanceStop:     make(chan struct{}),
+		sideTurns:                    make(map[string]*sideThreadTurn),
 	}
 	if rt != nil && strings.TrimSpace(rt.SessionDir) != "" {
 		s.sideThreadStore = sidethread.NewStore(filepath.Join(rt.SessionDir, "sidethreads"))
@@ -419,6 +425,28 @@ func (s *Server) stopInferenceJournalMaintenance() {
 	}
 }
 
+func (s *Server) startBackground(work func()) bool {
+	if s == nil || work == nil {
+		return false
+	}
+	s.backgroundMu.Lock()
+	if s.closed.Load() {
+		s.backgroundMu.Unlock()
+		return false
+	}
+	s.backgroundWG.Add(1)
+	s.backgroundCount.Add(1)
+	s.backgroundMu.Unlock()
+	go func() {
+		defer func() {
+			s.backgroundCount.Add(-1)
+			s.backgroundWG.Done()
+		}()
+		work()
+	}()
+	return true
+}
+
 // Close stops background work owned by this app-server connection. The shared
 // runtime.Session remains owned by the caller and is cleaned up separately.
 func (s *Server) Close() {
@@ -427,6 +455,11 @@ func (s *Server) Close() {
 	}
 	s.closeOnce.Do(func() {
 		s.closed.Store(true)
+		s.cancelSideThreads()
+		// Synchronize with startBackground so no new owned goroutine can be
+		// added after shutdown begins.
+		s.backgroundMu.Lock()
+		s.backgroundMu.Unlock()
 		s.stopInferenceJournalMaintenance()
 		if s.activityUnsubscribe != nil {
 			s.activityUnsubscribe()

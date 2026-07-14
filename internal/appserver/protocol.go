@@ -117,6 +117,7 @@ const (
 	NotificationTurnEvent              = "turn/event"
 	NotificationTurnError              = "turn/error"
 	NotificationTurnCompleted          = "turn/completed"
+	NotificationSideThreadEvent        = "sideThread/event"
 	NotificationActivityStarted        = "activity/started"
 	NotificationActivityUpdated        = "activity/updated"
 	NotificationActivityControlChanged = "activity/control_changed"
@@ -999,10 +1000,9 @@ type ThreadTaskEventsResult struct {
 	Events []TaskEventView `json:"events"`
 }
 
-// Side thread (侧聊) — bound 1:<=1 to a main thread, hidden from the
-// global session list. The five JSON-RPC methods mirror the renderer
-// IPC surface in packages/protocol/src/index.ts and are wired into
-// the dispatch table in server.go.
+// A side thread is bound at most once to a main thread and remains hidden from
+// the global session list. Its four JSON-RPC methods mirror the renderer IPC
+// surface in packages/protocol/src/index.ts and the dispatch table in server.go.
 
 type SideThreadOpenParams struct {
 	MainThreadID string `json:"main_thread_id"`
@@ -1025,6 +1025,7 @@ type SideThreadWireSummary struct {
 	SideThreadID    string                     `json:"side_thread_id"`
 	MainThreadID    string                     `json:"main_thread_id"`
 	Status          string                     `json:"status"`
+	Revision        uint64                     `json:"revision"`
 	MainTaskSummary *SideThreadMainTaskSummary `json:"main_task_summary,omitempty"`
 	CreatedAt       time.Time                  `json:"created_at"`
 	UpdatedAt       time.Time                  `json:"updated_at"`
@@ -1046,10 +1047,8 @@ type SideThreadMainTaskSummary struct {
 }
 
 type SideThreadSendParams struct {
-	MainThreadID string           `json:"main_thread_id"`
-	Prompt       string           `json:"prompt"`
-	Images       []TurnStartImage `json:"images,omitempty"`
-	Files        []TurnStartFile  `json:"files,omitempty"`
+	MainThreadID string `json:"main_thread_id"`
+	Prompt       string `json:"prompt"`
 }
 
 type SideThreadSendResult struct {
@@ -1063,6 +1062,20 @@ type SideThreadInterruptParams struct {
 
 type SideThreadInterruptResult struct {
 	Ok bool `json:"ok"`
+}
+
+// SideThreadEventNotification is the wire union consumed by the renderer.
+// Fields outside the selected Type are omitted.
+type SideThreadEventNotification struct {
+	Type         string                 `json:"type"`
+	SideThreadID string                 `json:"side_thread_id"`
+	MainThreadID string                 `json:"main_thread_id"`
+	Revision     uint64                 `json:"revision,omitempty"`
+	Summary      *SideThreadWireSummary `json:"summary,omitempty"`
+	MessageID    string                 `json:"message_id,omitempty"`
+	TextDelta    string                 `json:"text_delta,omitempty"`
+	Message      *SideThreadWireMessage `json:"message,omitempty"`
+	ErrorMessage string                 `json:"error_message,omitempty"`
 }
 
 type ParticipantStartParams struct {

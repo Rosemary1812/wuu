@@ -11,6 +11,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/securefs"
+	"github.com/blueberrycongee/wuu/internal/storelock"
 )
 
 // ErrNotFound is returned by Load / Mutate when no side thread exists
@@ -99,18 +102,29 @@ func (s *Store) Save(st *SideThread) error {
 	if key == "" {
 		return errors.New("sidethread.Store: main_thread_id is required")
 	}
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
+	path := s.pathFor(key)
+	previousRevision := uint64(0)
+	if data, readErr := os.ReadFile(path); readErr == nil {
+		var previous SideThread
+		if err := json.Unmarshal(data, &previous); err != nil {
+			return fmt.Errorf("decode side thread %s: %w", key, err)
+		}
+		previousRevision = previous.Revision
+	} else if !errors.Is(readErr, os.ErrNotExist) {
+		return fmt.Errorf("read side thread %s: %w", key, readErr)
+	}
 	now := time.Now().UTC()
 	if st.CreatedAt.IsZero() {
 		st.CreatedAt = now
 	}
 	st.UpdatedAt = now
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := os.MkdirAll(s.dir, 0o755); err != nil {
-		return fmt.Errorf("create side thread dir: %w", err)
-	}
-	if err := writeAtomic(s.pathFor(key), st); err != nil {
+	st.Revision = max(st.Revision, previousRevision) + 1
+	if err := writeSideThread(path, st); err != nil {
 		return err
 	}
 	return nil
@@ -120,40 +134,256 @@ func (s *Store) Save(st *SideThread) error {
 // copy is only updated if fn returns no error. ErrNotFound is
 // propagated when no side thread exists.
 func (s *Store) Mutate(mainThreadID string, fn func(*SideThread) error) error {
+	_, err := s.mutateRecord(mainThreadID, fn)
+	return err
+}
+
+func (s *Store) mutateRecord(mainThreadID string, fn func(*SideThread) error) (*SideThread, error) {
 	if s == nil || s.dir == "" {
-		return ErrNotFound
+		return nil, ErrNotFound
 	}
 	key := normalizeKey(mainThreadID)
 	if key == "" {
-		return ErrNotFound
+		return nil, ErrNotFound
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	release, err := s.lockStore()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	path := s.pathFor(key)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return ErrNotFound
+			return nil, ErrNotFound
 		}
-		return fmt.Errorf("read side thread %s: %w", key, err)
+		return nil, fmt.Errorf("read side thread %s: %w", key, err)
 	}
 	var st SideThread
 	if err := json.Unmarshal(data, &st); err != nil {
-		return fmt.Errorf("decode side thread %s: %w", key, err)
+		return nil, fmt.Errorf("decode side thread %s: %w", key, err)
 	}
 	if fn != nil {
 		if err := fn(&st); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	st.UpdatedAt = time.Now().UTC()
-	if err := os.MkdirAll(s.dir, 0o755); err != nil {
-		return fmt.Errorf("create side thread dir: %w", err)
+	st.Revision++
+	if err := writeSideThread(path, &st); err != nil {
+		return nil, err
 	}
-	if err := writeAtomic(path, &st); err != nil {
-		return err
+	return cloneSideThread(&st), nil
+}
+
+// BeginTurn atomically creates or updates the side thread and appends both the
+// user message and its assistant placeholder. Callers must hold the durable
+// side-thread execution lease before calling it. A persisted running state is
+// therefore stale and is settled before the new turn begins.
+func (s *Store) BeginTurn(mainThreadID, prompt, userMessageID, assistantMessageID string) (*SideThread, error) {
+	return s.BeginTurnWithSideThreadID(mainThreadID, "", prompt, userMessageID, assistantMessageID)
+}
+
+// BeginTurnWithSideThreadID is BeginTurn with a caller-provided id for a new
+// record. Existing records retain their durable id. This lets callers finish
+// all model/context validation before committing the first message.
+func (s *Store) BeginTurnWithSideThreadID(mainThreadID, sideThreadID, prompt, userMessageID, assistantMessageID string) (*SideThread, error) {
+	if s == nil || s.dir == "" {
+		return nil, errors.New("sidethread.Store: nil or unconfigured store")
 	}
-	return nil
+	key := normalizeKey(mainThreadID)
+	if key == "" {
+		return nil, errors.New("sidethread.Store: main_thread_id is required")
+	}
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return nil, errors.New("sidethread.Store: prompt is required")
+	}
+	if strings.TrimSpace(userMessageID) == "" || strings.TrimSpace(assistantMessageID) == "" {
+		return nil, errors.New("sidethread.Store: message ids are required")
+	}
+
+	release, err := s.lockStore()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	path := s.pathFor(key)
+	var st SideThread
+	data, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		if err := json.Unmarshal(data, &st); err != nil {
+			return nil, fmt.Errorf("decode side thread %s: %w", key, err)
+		}
+	case errors.Is(err, os.ErrNotExist):
+		sideThreadID = strings.TrimSpace(sideThreadID)
+		if sideThreadID == "" {
+			generatedID, idErr := NewSideThreadID()
+			if idErr != nil {
+				return nil, idErr
+			}
+			sideThreadID = generatedID
+		}
+		st = SideThread{SideThreadID: sideThreadID, MainThreadID: key}
+	default:
+		return nil, fmt.Errorf("read side thread %s: %w", key, err)
+	}
+	if strings.TrimSpace(st.SideThreadID) == "" {
+		st.SideThreadID = strings.TrimSpace(sideThreadID)
+		if st.SideThreadID == "" {
+			return nil, errors.New("sidethread.Store: side_thread_id is required")
+		}
+	}
+
+	if st.Status == StatusRunning {
+		settleInterrupted(&st)
+	}
+	now := time.Now().UTC()
+	if st.CreatedAt.IsZero() {
+		st.CreatedAt = now
+	}
+	st.MainThreadID = key
+	st.Status = StatusRunning
+	st.UpdatedAt = now
+	st.Revision++
+	st.Messages = append(st.Messages,
+		Message{
+			ID:           userMessageID,
+			SideThreadID: st.SideThreadID,
+			Role:         RoleUser,
+			Text:         prompt,
+			CreatedAt:    now,
+		},
+		Message{
+			ID:           assistantMessageID,
+			SideThreadID: st.SideThreadID,
+			Role:         RoleAssistant,
+			Status:       AssistantStreaming,
+			CreatedAt:    now,
+		},
+	)
+	if err := writeSideThread(path, &st); err != nil {
+		return nil, err
+	}
+	return cloneSideThread(&st), nil
+}
+
+// FinishTurn commits the terminal assistant message. An interrupt already
+// persisted by another app-server wins over a late successful provider reply.
+func (s *Store) FinishTurn(mainThreadID, assistantMessageID, text string, status Status, errorText string) (*SideThread, Message, error) {
+	var finished Message
+	st, err := s.mutateRecord(mainThreadID, func(st *SideThread) error {
+		persistedInterrupt := st.Status == StatusInterrupted
+		effectiveStatus := status
+		if persistedInterrupt {
+			effectiveStatus = StatusInterrupted
+		}
+		finalText := text
+		finalErrorText := errorText
+		if persistedInterrupt && status != StatusInterrupted {
+			// A peer interrupted before this owner observed the durable state.
+			// Discard the owner's late final payload; it was produced after the
+			// user-visible interrupt boundary.
+			finalText = ""
+		}
+		if effectiveStatus == StatusInterrupted {
+			finalErrorText = ""
+		}
+		assistantStatus, err := assistantStatusForThreadStatus(effectiveStatus)
+		if err != nil {
+			return err
+		}
+		for i := range st.Messages {
+			if st.Messages[i].ID != assistantMessageID || st.Messages[i].Role != RoleAssistant {
+				continue
+			}
+			st.Messages[i].Text = finalText
+			st.Messages[i].Status = assistantStatus
+			st.Messages[i].ErrorText = finalErrorText
+			finished = st.Messages[i]
+			st.Status = effectiveStatus
+			return nil
+		}
+		return fmt.Errorf("assistant message %q not found", assistantMessageID)
+	})
+	if err != nil {
+		return nil, Message{}, err
+	}
+	return st, finished, nil
+}
+
+// Interrupt marks the active assistant placeholder and side thread terminal.
+// It is safe to call from an app-server that does not own the provider request;
+// FinishTurn preserves this terminal state when the owner eventually returns.
+func (s *Store) Interrupt(mainThreadID string) (*SideThread, bool, error) {
+	changed := false
+	st, err := s.mutateRecord(mainThreadID, func(st *SideThread) error {
+		if st.Status != StatusRunning {
+			return nil
+		}
+		settleInterrupted(st)
+		changed = true
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return st, changed, nil
+}
+
+// RecoverRunning settles records left behind by a process exit. Callers must
+// run this only while owning workspace boot recovery, so a second live
+// app-server cannot interrupt the first one's provider request.
+func (s *Store) RecoverRunning() (int, error) {
+	if s == nil || s.dir == "" {
+		return 0, nil
+	}
+	release, err := s.lockStore()
+	if err != nil {
+		return 0, err
+	}
+	defer release()
+	entries, err := os.ReadDir(s.dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("read side thread dir: %w", err)
+	}
+	var (
+		recovered int
+		errs      []error
+	)
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(s.dir, entry.Name())
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			errs = append(errs, fmt.Errorf("read side thread %s: %w", entry.Name(), readErr))
+			continue
+		}
+		var st SideThread
+		if decodeErr := json.Unmarshal(data, &st); decodeErr != nil {
+			errs = append(errs, fmt.Errorf("decode side thread %s: %w", entry.Name(), decodeErr))
+			continue
+		}
+		if st.Status != StatusRunning {
+			continue
+		}
+		settleInterrupted(&st)
+		st.UpdatedAt = time.Now().UTC()
+		st.Revision++
+		if writeErr := writeSideThread(path, &st); writeErr != nil {
+			errs = append(errs, writeErr)
+			continue
+		}
+		recovered++
+	}
+	return recovered, errors.Join(errs...)
 }
 
 // Delete removes the side thread file for mainThreadID. It is a no-op
@@ -167,22 +397,16 @@ func (s *Store) Delete(mainThreadID string) error {
 	if key == "" {
 		return nil
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	err := os.Remove(s.pathFor(key))
+	release, err := s.lockStore()
+	if err != nil {
+		return err
+	}
+	defer release()
+	err = os.Remove(s.pathFor(key))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("delete side thread %s: %w", key, err)
 	}
 	return nil
-}
-
-// MarkDetached sets status to StatusDetached for mainThreadID. It is a
-// no-op if no side thread exists.
-func (s *Store) MarkDetached(mainThreadID string) error {
-	return s.Mutate(mainThreadID, func(st *SideThread) error {
-		st.Status = StatusDetached
-		return nil
-	})
 }
 
 // NewSideThreadID generates a fresh hex-encoded side thread id (16 hex
@@ -197,6 +421,62 @@ func NewSideThreadID() (string, error) {
 	return hex.EncodeToString(buf[:]), nil
 }
 
+// NewMessageID returns a durable side-thread message id.
+func NewMessageID() (string, error) {
+	id, err := NewSideThreadID()
+	if err != nil {
+		return "", err
+	}
+	return "sm_" + id, nil
+}
+
+func settleInterrupted(st *SideThread) {
+	if st == nil {
+		return
+	}
+	st.Status = StatusInterrupted
+	for i := range st.Messages {
+		if st.Messages[i].Role == RoleAssistant && st.Messages[i].Status == AssistantStreaming {
+			st.Messages[i].Status = AssistantInterrupted
+		}
+	}
+}
+
+func assistantStatusForThreadStatus(status Status) (AssistantMessageStatus, error) {
+	switch status {
+	case StatusCompleted:
+		return AssistantCompleted, nil
+	case StatusFailed:
+		return AssistantFailed, nil
+	case StatusInterrupted:
+		return AssistantInterrupted, nil
+	default:
+		return "", fmt.Errorf("side thread status %q is not terminal", status)
+	}
+}
+
+func cloneSideThread(st *SideThread) *SideThread {
+	if st == nil {
+		return nil
+	}
+	cloned := *st
+	cloned.Messages = append([]Message(nil), st.Messages...)
+	return &cloned
+}
+
+func (s *Store) lockStore() (func(), error) {
+	s.mu.Lock()
+	durable, err := storelock.Acquire(s.dir)
+	if err != nil {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("acquire side thread store lock: %w", err)
+	}
+	return func() {
+		_ = durable.Release()
+		s.mu.Unlock()
+	}, nil
+}
+
 func (s *Store) pathFor(mainThreadID string) string {
 	return filepath.Join(s.dir, mainThreadID+".json")
 }
@@ -209,34 +489,14 @@ func normalizeKey(mainThreadID string) string {
 	return trimmed
 }
 
-func writeAtomic(path string, st *SideThread) error {
+func writeSideThread(path string, st *SideThread) error {
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode side thread: %w", err)
 	}
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".sidethread.*.tmp")
-	if err != nil {
-		return fmt.Errorf("create side thread tmp: %w", err)
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return fmt.Errorf("write side thread tmp: %w", err)
-	}
-	if _, err := tmp.Write([]byte("\n")); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return fmt.Errorf("write side thread newline: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return fmt.Errorf("close side thread tmp: %w", err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		os.Remove(tmpName)
-		return fmt.Errorf("rename side thread file: %w", err)
+	data = append(data, '\n')
+	if err := securefs.WriteFileAtomic(path, data); err != nil {
+		return fmt.Errorf("write side thread: %w", err)
 	}
 	return nil
 }

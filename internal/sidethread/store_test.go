@@ -2,7 +2,11 @@ package sidethread
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,7 +23,7 @@ func sampleSideThread(mainID string) *SideThread {
 	return &SideThread{
 		SideThreadID: "st_abc123",
 		MainThreadID: mainID,
-		Status:       StatusIdle,
+		Status:       StatusCompleted,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 		Messages: []Message{
@@ -54,8 +58,8 @@ func TestStoreRoundtrip(t *testing.T) {
 	if len(loaded.Messages) != 1 || loaded.Messages[0].Text != "进度如何?" {
 		t.Fatalf("messages roundtrip mismatch: %+v", loaded.Messages)
 	}
-	if got := loaded.Summary(); got.SideThreadID != st.SideThreadID {
-		t.Fatalf("Summary().SideThreadID=%q", got.SideThreadID)
+	if loaded.Revision == 0 {
+		t.Fatal("persisted record is missing a revision")
 	}
 }
 
@@ -153,7 +157,7 @@ func TestStoreSavePopulatesTimestamps(t *testing.T) {
 	s := newTempStore(t)
 	st := &SideThread{
 		MainThreadID: "main_timestamps",
-		Status:       StatusIdle,
+		Status:       StatusCompleted,
 	}
 	if err := s.Save(st); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -188,20 +192,66 @@ func TestStoreConcurrentSaves(t *testing.T) {
 	}
 }
 
-func TestStoreMarkDetached(t *testing.T) {
+func TestStoreWritesPrivateFilesAtomically(t *testing.T) {
 	s := newTempStore(t)
-	if err := s.Save(sampleSideThread("main_1")); err != nil {
-		t.Fatalf("Save: %v", err)
+	initial := sampleSideThread("main_atomic")
+	initial.Messages[0].Text = strings.Repeat("a", 64*1024)
+	if err := s.Save(initial); err != nil {
+		t.Fatalf("Save initial: %v", err)
 	}
-	if err := s.MarkDetached("main_1"); err != nil {
-		t.Fatalf("MarkDetached: %v", err)
+
+	writer := NewStore(s.Dir())
+	reader := NewStore(s.Dir())
+	done := make(chan struct{})
+	writeErr := make(chan error, 1)
+	go func() {
+		defer close(done)
+		for i := 0; i < 40; i++ {
+			st := sampleSideThread("main_atomic")
+			st.Messages[0].Text = strings.Repeat(string(rune('a'+i%2)), 64*1024)
+			if err := writer.Save(st); err != nil {
+				writeErr <- err
+				return
+			}
+		}
+		writeErr <- nil
+	}()
+
+readLoop:
+	for {
+		loaded, err := reader.Load("main_atomic")
+		if err != nil {
+			t.Fatalf("concurrent Load observed an incomplete write: %v", err)
+		}
+		if len(loaded.Messages) != 1 || len(loaded.Messages[0].Text) != 64*1024 {
+			t.Fatalf("concurrent Load observed a partial record: messages=%d text_bytes=%d", len(loaded.Messages), len(loaded.Messages[0].Text))
+		}
+		select {
+		case <-done:
+			if err := <-writeErr; err != nil {
+				t.Fatalf("concurrent Save: %v", err)
+			}
+			break readLoop
+		default:
+		}
 	}
-	loaded, err := s.Load("main_1")
+
+	if runtime.GOOS == "windows" {
+		return
+	}
+	dirInfo, err := os.Stat(s.Dir())
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("stat store directory: %v", err)
 	}
-	if loaded.Status != StatusDetached {
-		t.Fatalf("status=%q want %q", loaded.Status, StatusDetached)
+	if got := dirInfo.Mode().Perm(); got != 0o700 {
+		t.Fatalf("store directory mode = %o, want 700", got)
+	}
+	fileInfo, err := os.Stat(filepath.Join(s.Dir(), "main_atomic.json"))
+	if err != nil {
+		t.Fatalf("stat side thread file: %v", err)
+	}
+	if got := fileInfo.Mode().Perm(); got != 0o600 {
+		t.Fatalf("side thread file mode = %o, want 600", got)
 	}
 }
 
@@ -219,5 +269,125 @@ func TestNewSideThreadID(t *testing.T) {
 	}
 	if len(a) != 16 || len(b) != 16 {
 		t.Fatalf("expected 16-char ids, got %q and %q", a, b)
+	}
+}
+
+func TestStoreTerminalOrderingAcrossInstances(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sidethreads")
+	owner := NewStore(dir)
+	peer := NewStore(dir)
+
+	t.Run("interrupt before finish wins and rejects late final text", func(t *testing.T) {
+		started, err := owner.BeginTurn("main_interrupt_first", "status?", "user-1", "assistant-1")
+		if err != nil {
+			t.Fatalf("BeginTurn: %v", err)
+		}
+		interrupted, changed, err := peer.Interrupt("main_interrupt_first")
+		if err != nil || !changed {
+			t.Fatalf("Interrupt: changed=%t err=%v", changed, err)
+		}
+		st, message, err := owner.FinishTurn("main_interrupt_first", "assistant-1", "late provider text", StatusCompleted, "late error")
+		if err != nil {
+			t.Fatalf("FinishTurn: %v", err)
+		}
+		if st.Status != StatusInterrupted || message.Status != AssistantInterrupted {
+			t.Fatalf("interrupt must win: thread=%q message=%q", st.Status, message.Status)
+		}
+		if message.Text != "" || message.ErrorText != "" {
+			t.Fatalf("late provider payload crossed interrupt boundary: %+v", message)
+		}
+		if !(started.Revision < interrupted.Revision && interrupted.Revision < st.Revision) {
+			t.Fatalf("revisions are not monotonic: start=%d interrupt=%d finish=%d", started.Revision, interrupted.Revision, st.Revision)
+		}
+	})
+
+	t.Run("finish before interrupt stays completed", func(t *testing.T) {
+		if _, err := owner.BeginTurn("main_finish_first", "status?", "user-2", "assistant-2"); err != nil {
+			t.Fatalf("BeginTurn: %v", err)
+		}
+		if _, _, err := owner.FinishTurn("main_finish_first", "assistant-2", "done", StatusCompleted, ""); err != nil {
+			t.Fatalf("FinishTurn: %v", err)
+		}
+		st, changed, err := peer.Interrupt("main_finish_first")
+		if err != nil {
+			t.Fatalf("Interrupt: %v", err)
+		}
+		if changed || st.Status != StatusCompleted {
+			t.Fatalf("late interrupt changed terminal result: changed=%t status=%q", changed, st.Status)
+		}
+	})
+}
+
+func TestStoreConcurrentMutationsAcrossInstancesDoNotLoseUpdates(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sidethreads")
+	first := NewStore(dir)
+	second := NewStore(dir)
+	if err := first.Save(sampleSideThread("main_cross_instance")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	for index, store := range []*Store{first, second} {
+		index, store := index, store
+		go func() {
+			<-start
+			errs <- store.Mutate("main_cross_instance", func(st *SideThread) error {
+				st.Messages = append(st.Messages, Message{ID: fmt.Sprintf("peer-%d", index), SideThreadID: st.SideThreadID, Role: RoleUser, Text: "peer"})
+				return nil
+			})
+		}()
+	}
+	close(start)
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatalf("Mutate: %v", err)
+		}
+	}
+	loaded, err := first.Load("main_cross_instance")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(loaded.Messages) != 3 {
+		t.Fatalf("cross-instance mutation lost an update: %+v", loaded.Messages)
+	}
+}
+
+func TestStoreDeletePreventsLateFinishFromRecreatingRecord(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sidethreads")
+	owner := NewStore(dir)
+	deleter := NewStore(dir)
+	if _, err := owner.BeginTurn("main_delete", "status?", "user", "assistant"); err != nil {
+		t.Fatalf("BeginTurn: %v", err)
+	}
+	if err := deleter.Delete("main_delete"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, _, err := owner.FinishTurn("main_delete", "assistant", "late", StatusCompleted, ""); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("late FinishTurn error = %v, want ErrNotFound", err)
+	}
+	if exists, err := owner.Exists("main_delete"); err != nil || exists {
+		t.Fatalf("deleted record was recreated: exists=%t err=%v", exists, err)
+	}
+}
+
+func TestStoreRecoverRunningMarksPlaceholderInterrupted(t *testing.T) {
+	store := newTempStore(t)
+	if _, err := store.BeginTurn("main_recover", "status?", "user", "assistant"); err != nil {
+		t.Fatalf("BeginTurn: %v", err)
+	}
+	recovered, err := store.RecoverRunning()
+	if err != nil {
+		t.Fatalf("RecoverRunning: %v", err)
+	}
+	if recovered != 1 {
+		t.Fatalf("recovered=%d want 1", recovered)
+	}
+	st, err := store.Load("main_recover")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if st.Status != StatusInterrupted || st.Messages[len(st.Messages)-1].Status != AssistantInterrupted {
+		t.Fatalf("running record was not settled: %+v", st)
 	}
 }

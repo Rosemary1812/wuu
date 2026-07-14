@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,27 @@ func (s *Server) handleThreadDelete(req Request) error {
 	}
 	if err := s.rejectAllChannelMutation(id, "delete"); err != nil {
 		return s.writeResponse(req.ID, nil, err)
+	}
+
+	sideThreadLease, err := s.acquireSideThreadExecutionLease(id)
+	if errors.Is(err, errSideThreadExecutionBusy) {
+		return s.writeResponse(req.ID, nil, errors.New("cannot delete a thread while its side thread is running"))
+	}
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	defer releaseSideThreadExecutionLease(id, sideThreadLease)
+
+	lifecycleLease, err := s.acquireThreadLifecycleWriteLease(id)
+	if err != nil {
+		return s.writeResponse(req.ID, nil, err)
+	}
+	defer releaseThreadLifecycleWriteLease(id, lifecycleLease)
+
+	if s.sideThreadStore != nil {
+		if err := s.sideThreadStore.Delete(id); err != nil {
+			return s.writeResponse(req.ID, nil, fmt.Errorf("delete side thread for %q: %w", id, err))
+		}
 	}
 
 	deleted, err := session.Delete(s.rt.SessionDir, id)
@@ -86,8 +108,6 @@ func (s *Server) handleThreadDelete(req Request) error {
 	if stateDirErr == nil {
 		_ = os.RemoveAll(statepath.SessionArtifactDir(stateDir, id))
 	}
-
-	s.cascadeSideThreadForMain(id)
 
 	return s.writeResponse(req.ID, ThreadDeleteResult{ThreadID: id}, nil)
 }

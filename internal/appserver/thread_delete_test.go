@@ -3,8 +3,10 @@ package appserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/agentthread"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/sidethread"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
@@ -110,6 +113,73 @@ func TestServerThreadDeleteRejectsRunningThread(t *testing.T) {
 	}
 	if _, ok, err := session.Find(rt.SessionDir, threadID); err != nil || !ok {
 		t.Fatalf("running thread must survive a rejected delete: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestServerThreadDeleteRejectsRunningSideThreadAndDoesNotRecreateIt(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	blocking := newBlockingStreamClient("side reply")
+	rt.StreamRunner.Client = blocking
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	t.Cleanup(srv.Close)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"side-delete-start","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "side-delete-start")["result"]).Thread.ID
+	if _, err := srv.sendSideThreadMessage(threadID, "status?"); err != nil {
+		t.Fatalf("side send: %v", err)
+	}
+	select {
+	case <-blocking.started:
+	case <-time.After(time.Second):
+		t.Fatal("side provider request did not start")
+	}
+
+	dispatchPayload(t, srv, "side-delete-busy", MethodThreadDelete, ThreadDeleteParams{ThreadID: threadID})
+	busy := responseByID(t, parseOutput(t, out.String()), "side-delete-busy")
+	if busy["error"] == nil || !strings.Contains(fmt.Sprint(busy["error"]), "side thread is running") {
+		t.Fatalf("delete did not report the running side thread: %+v", busy)
+	}
+	if _, ok, err := session.Find(rt.SessionDir, threadID); err != nil || !ok {
+		t.Fatalf("rejected delete removed main thread: ok=%t err=%v", ok, err)
+	}
+
+	close(blocking.release)
+	waitForSideThreadStatus(t, srv.sideThreadStore, threadID, sidethread.StatusCompleted)
+	dispatchPayload(t, srv, "side-delete-idle", MethodThreadDelete, ThreadDeleteParams{ThreadID: threadID})
+	idle := responseByID(t, parseOutput(t, out.String()), "side-delete-idle")
+	if idle["error"] != nil {
+		t.Fatalf("delete after side completion failed: %+v", idle["error"])
+	}
+	if exists, err := srv.sideThreadStore.Exists(threadID); err != nil || exists {
+		t.Fatalf("deleted side thread was recreated: exists=%t err=%v", exists, err)
+	}
+}
+
+func TestServerThreadDeletePreservesMainThreadWhenSideCleanupFails(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	t.Cleanup(srv.Close)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"side-cleanup-start","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
+	}
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "side-cleanup-start")["result"]).Thread.ID
+
+	invalidStoreDir := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(invalidStoreDir, []byte("blocked"), 0o600); err != nil {
+		t.Fatalf("seed invalid side store: %v", err)
+	}
+	srv.sideThreadStore = sidethread.NewStore(invalidStoreDir)
+	dispatchPayload(t, srv, "side-cleanup-delete", MethodThreadDelete, ThreadDeleteParams{ThreadID: threadID})
+	resp := responseByID(t, parseOutput(t, out.String()), "side-cleanup-delete")
+	if resp["error"] == nil || !strings.Contains(fmt.Sprint(resp["error"]), "delete side thread") {
+		t.Fatalf("side cleanup failure was not returned: %+v", resp)
+	}
+	if _, ok, err := session.Find(rt.SessionDir, threadID); err != nil || !ok {
+		t.Fatalf("failed side cleanup removed the main thread: ok=%t err=%v", ok, err)
 	}
 }
 
