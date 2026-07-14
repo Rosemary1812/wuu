@@ -15,23 +15,34 @@ import (
 
 // SSETransport communicates with an MCP server over Server-Sent Events.
 type SSETransport struct {
-	endpoint string
-	client   *http.Client
-	headers  map[string]string
-	mu       sync.Mutex
-	reader   *bufio.Reader
-	resp     *http.Response
+	endpoint  string
+	client    *http.Client
+	headers   map[string]string
+	reader    *bufio.Reader
+	resp      *http.Response
+	ctx       context.Context
+	cancel    context.CancelFunc
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // NewSSETransport connects to an MCP SSE endpoint.
 func NewSSETransport(endpoint string) (*SSETransport, error) {
-	return NewSSETransportWithHeaders(endpoint, nil)
+	return newSSETransport(context.Background(), endpoint, nil)
 }
 
 func NewSSETransportWithHeaders(endpoint string, headers map[string]string) (*SSETransport, error) {
+	return newSSETransport(context.Background(), endpoint, headers)
+}
+
+func newSSETransport(ctx context.Context, endpoint string, headers map[string]string) (*SSETransport, error) {
 	client := newSSEHTTPClient()
-	req, err := http.NewRequest("GET", endpoint, nil)
+	transportCtx, cancel := context.WithCancel(context.Background())
+	stopCallerCancel := context.AfterFunc(ctx, cancel)
+	req, err := http.NewRequestWithContext(transportCtx, "GET", endpoint, nil)
 	if err != nil {
+		stopCallerCancel()
+		cancel()
 		return nil, err
 	}
 	req.Header.Set("Accept", "text/event-stream")
@@ -45,11 +56,23 @@ func NewSSETransportWithHeaders(endpoint string, headers map[string]string) (*SS
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		stopCallerCancel()
+		cancel()
+		if contextErr := ctx.Err(); contextErr != nil {
+			return nil, fmt.Errorf("sse connect GET %s: %w", endpoint, contextErr)
+		}
 		return nil, fmt.Errorf("sse connect GET %s: %w", endpoint, err)
 	}
 	if resp.StatusCode != http.StatusOK {
+		stopCallerCancel()
+		cancel()
 		resp.Body.Close()
 		return nil, fmt.Errorf("sse connect GET %s: %s", endpoint, resp.Status)
+	}
+	if !stopCallerCancel() {
+		cancel()
+		resp.Body.Close()
+		return nil, fmt.Errorf("sse connect GET %s: %w", endpoint, ctx.Err())
 	}
 	return &SSETransport{
 		endpoint: endpoint,
@@ -57,6 +80,8 @@ func NewSSETransportWithHeaders(endpoint string, headers map[string]string) (*SS
 		headers:  cloneStringMap(headers),
 		reader:   bufio.NewReader(resp.Body),
 		resp:     resp,
+		ctx:      transportCtx,
+		cancel:   cancel,
 	}, nil
 }
 
@@ -81,7 +106,13 @@ func (t *SSETransport) Send(ctx context.Context, req Request) error {
 	}
 	// Derive message endpoint from SSE endpoint: replace /sse with /message.
 	msgURL := strings.TrimSuffix(t.endpoint, "/sse") + "/message"
-	hreq, err := http.NewRequestWithContext(ctx, "POST", msgURL, bytes.NewReader(body))
+	requestCtx, cancelRequest := context.WithCancel(t.ctx)
+	stopCallerCancel := context.AfterFunc(ctx, cancelRequest)
+	defer func() {
+		stopCallerCancel()
+		cancelRequest()
+	}()
+	hreq, err := http.NewRequestWithContext(requestCtx, "POST", msgURL, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -95,6 +126,9 @@ func (t *SSETransport) Send(ctx context.Context, req Request) error {
 	}
 	resp, err := t.client.Do(hreq)
 	if err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return contextErr
+		}
 		return err
 	}
 	defer resp.Body.Close()
@@ -141,8 +175,13 @@ func (t *SSETransport) Receive(ctx context.Context) (Response, error) {
 }
 
 func (t *SSETransport) Close() error {
-	if t.resp != nil {
-		return t.resp.Body.Close()
-	}
-	return nil
+	t.closeOnce.Do(func() {
+		if t.cancel != nil {
+			t.cancel()
+		}
+		if t.resp != nil {
+			t.closeErr = t.resp.Body.Close()
+		}
+	})
+	return t.closeErr
 }

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,13 +17,15 @@ import (
 // StdioTransport runs an MCP server as a subprocess and communicates over
 // stdin/stdout. This is the most common transport for local MCP servers.
 type StdioTransport struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout io.ReadCloser
-	stderr io.ReadCloser
-	mu     sync.Mutex
-	enc    *json.Encoder
-	dec    *json.Decoder
+	cmd       *exec.Cmd
+	stdin     io.WriteCloser
+	stdout    io.ReadCloser
+	stderr    io.ReadCloser
+	mu        sync.Mutex
+	enc       *json.Encoder
+	dec       *json.Decoder
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // NewStdioTransport starts command as an MCP stdio server.
@@ -41,20 +44,23 @@ func NewStdioTransportWithEnv(command string, args []string, env map[string]stri
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		_ = stdin.Close()
 		return nil, fmt.Errorf("stdout pipe: %w", err)
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
 		return nil, fmt.Errorf("stderr pipe: %w", err)
 	}
-	// Drain stderr so it does not corrupt the stdout protocol stream.
-	go func() {
-		// Best-effort drain; if logging isn't set up, discard.
-		io.Copy(io.Discard, stderr)
-	}()
 	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
+		_ = stderr.Close()
 		return nil, fmt.Errorf("start command: %w", err)
 	}
+	// Drain stderr so it cannot fill the child process pipe and block it.
+	go func() { _, _ = io.Copy(io.Discard, stderr) }()
 	t := &StdioTransport{
 		cmd:    cmd,
 		stdin:  stdin,
@@ -99,8 +105,14 @@ func mergeProcessEnv(base []string, overlay map[string]string) []string {
 }
 
 func (t *StdioTransport) Send(ctx context.Context, req Request) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return t.enc.Encode(req)
 }
 
@@ -125,14 +137,26 @@ func (t *StdioTransport) Receive(ctx context.Context) (Response, error) {
 }
 
 func (t *StdioTransport) Close() error {
-	// Graceful shutdown: close stdin, wait briefly, then kill.
-	_ = t.stdin.Close()
-	done := make(chan error, 1)
-	go func() { done <- t.cmd.Wait() }()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		_ = t.cmd.Process.Kill()
-	}
-	return nil
+	t.closeOnce.Do(func() {
+		// Graceful shutdown: close stdin, wait briefly, then kill and reap.
+		_ = t.stdin.Close()
+		defer func() {
+			_ = t.stdout.Close()
+			_ = t.stderr.Close()
+		}()
+		done := make(chan error, 1)
+		go func() { done <- t.cmd.Wait() }()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			if err := t.cmd.Process.Kill(); err != nil {
+				if !errors.Is(err, os.ErrProcessDone) {
+					t.closeErr = err
+					return
+				}
+			}
+			<-done
+		}
+	})
+	return t.closeErr
 }

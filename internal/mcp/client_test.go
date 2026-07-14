@@ -3,11 +3,48 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestConnectHonorsInitializationDeadlineAndClosesTransport(t *testing.T) {
+	transport := newScriptedTransport()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	client, err := Connect(ctx, "slow", transport)
+	if client != nil {
+		t.Fatal("Connect returned a client after the initialization deadline")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Connect error = %v, want context deadline exceeded", err)
+	}
+	select {
+	case <-transport.closed:
+	default:
+		t.Fatal("initialization timeout did not close the transport")
+	}
+}
+
+func TestConnectRollsBackWhenInitializedNotificationFails(t *testing.T) {
+	transport := newHandshakeTransport(errors.New("notification write failed"))
+
+	client, err := Connect(context.Background(), "broken", transport)
+	if client != nil {
+		t.Fatal("Connect returned a client after the initialized notification failed")
+	}
+	if err == nil || !strings.Contains(err.Error(), "initialized notification") {
+		t.Fatalf("Connect error = %v, want initialized notification failure", err)
+	}
+	select {
+	case <-transport.closed:
+	default:
+		t.Fatal("initialized notification failure did not close the transport")
+	}
+}
 
 func TestCallSendsCancelledNotificationOnContextCancel(t *testing.T) {
 	transport := newScriptedTransport()
@@ -215,6 +252,30 @@ type scriptedTransport struct {
 	inbox        chan Response
 	closed       chan struct{}
 	sent         []Request
+}
+
+type handshakeTransport struct {
+	*scriptedTransport
+	initializedErr error
+}
+
+func newHandshakeTransport(initializedErr error) *handshakeTransport {
+	return &handshakeTransport{scriptedTransport: newScriptedTransport(), initializedErr: initializedErr}
+}
+
+func (t *handshakeTransport) Send(ctx context.Context, req Request) error {
+	if req.Method == "initialize" {
+		t.mu.Lock()
+		t.sent = append(t.sent, req)
+		t.mu.Unlock()
+		result, _ := json.Marshal(InitializeResult{ProtocolVersion: PreferredProtocolVersion})
+		t.inbox <- Response{JSONRPC: "2.0", ID: req.ID, Result: result}
+		return nil
+	}
+	if req.Method == "notifications/initialized" {
+		return t.initializedErr
+	}
+	return t.scriptedTransport.Send(ctx, req)
 }
 
 func newScriptedTransport() *scriptedTransport {

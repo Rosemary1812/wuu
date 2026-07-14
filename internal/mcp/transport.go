@@ -119,6 +119,9 @@ func (r *readLoop) signalStop() {
 
 // call performs a synchronous JSON-RPC call over the transport.
 func call(ctx context.Context, t Transport, f *inFlight, method string, params any) (json.RawMessage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	var rawParams json.RawMessage
 	if params != nil {
 		b, err := json.Marshal(params)

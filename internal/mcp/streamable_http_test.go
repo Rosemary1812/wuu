@@ -65,7 +65,7 @@ func TestStreamableHTTPJSONResponseSessionAndVersionHeaders(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client, err := ConnectStreamableHTTP(ServerConfig{Name: "s", URL: srv.URL})
+	client, err := ConnectStreamableHTTP(context.Background(), ServerConfig{Name: "s", URL: srv.URL})
 	if err != nil {
 		t.Fatalf("ConnectStreamableHTTP: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestStreamableHTTPSSEStreamResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client, err := ConnectStreamableHTTP(ServerConfig{Name: "s", URL: srv.URL})
+	client, err := ConnectStreamableHTTP(context.Background(), ServerConfig{Name: "s", URL: srv.URL})
 	if err != nil {
 		t.Fatalf("ConnectStreamableHTTP: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestStreamableHTTPSessionExpiryReinitializesAndRetries(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client, err := ConnectStreamableHTTP(ServerConfig{Name: "s", URL: srv.URL})
+	client, err := ConnectStreamableHTTP(context.Background(), ServerConfig{Name: "s", URL: srv.URL})
 	if err != nil {
 		t.Fatalf("ConnectStreamableHTTP: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestStreamableHTTPDeleteOnClose(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client, err := ConnectStreamableHTTP(ServerConfig{Name: "s", URL: srv.URL})
+	client, err := ConnectStreamableHTTP(context.Background(), ServerConfig{Name: "s", URL: srv.URL})
 	if err != nil {
 		t.Fatalf("ConnectStreamableHTTP: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestStreamableHTTPServerNotificationsViaGETStream(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client, err := ConnectStreamableHTTP(ServerConfig{Name: "s", URL: srv.URL})
+	client, err := ConnectStreamableHTTP(context.Background(), ServerConfig{Name: "s", URL: srv.URL})
 	if err != nil {
 		t.Fatalf("ConnectStreamableHTTP: %v", err)
 	}
@@ -455,7 +455,7 @@ func (ls *legacySSEServer) counts() (posts, gets int) {
 // zero-breakage path for existing URL-only (pure SSE) configurations.
 func TestConnectRemoteAutoFallsBackToSSE(t *testing.T) {
 	ls := newLegacySSEServer(t)
-	client, err := ConnectRemote(ServerConfig{Name: "legacy", URL: ls.srv.URL + "/sse"})
+	client, err := ConnectRemote(context.Background(), ServerConfig{Name: "legacy", URL: ls.srv.URL + "/sse"})
 	if err != nil {
 		t.Fatalf("ConnectRemote should fall back to SSE: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestConnectRemoteAutoFallsBackToSSE(t *testing.T) {
 // (status, endpoint, and the no-fallback decision are all in the message).
 func TestConnectRemoteExplicitHTTPDoesNotFallBack(t *testing.T) {
 	ls := newLegacySSEServer(t)
-	_, err := ConnectRemote(ServerConfig{Name: "legacy", URL: ls.srv.URL + "/sse", Transport: "http"})
+	_, err := ConnectRemote(context.Background(), ServerConfig{Name: "legacy", URL: ls.srv.URL + "/sse", Transport: "http"})
 	if err == nil {
 		t.Fatal("explicit http transport against a legacy SSE server should fail")
 	}
@@ -500,7 +500,7 @@ func TestConnectRemoteExplicitHTTPDoesNotFallBack(t *testing.T) {
 // the pre-existing behavior exactly — no streamable HTTP probe at all.
 func TestConnectRemoteExplicitSSESkipsStreamableHTTP(t *testing.T) {
 	ls := newLegacySSEServer(t)
-	client, err := ConnectRemote(ServerConfig{Name: "legacy", URL: ls.srv.URL + "/sse", Transport: "sse"})
+	client, err := ConnectRemote(context.Background(), ServerConfig{Name: "legacy", URL: ls.srv.URL + "/sse", Transport: "sse"})
 	if err != nil {
 		t.Fatalf("ConnectRemote with explicit sse: %v", err)
 	}
@@ -545,7 +545,7 @@ func TestConnectRemoteStreamableHTTPPreferred(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client, err := ConnectRemote(ServerConfig{Name: "modern", URL: srv.URL})
+	client, err := ConnectRemote(context.Background(), ServerConfig{Name: "modern", URL: srv.URL})
 	if err != nil {
 		t.Fatalf("ConnectRemote: %v", err)
 	}
@@ -567,7 +567,7 @@ func TestConnectRemoteAutoNoFallbackOnNetworkError(t *testing.T) {
 	url := srv.URL
 	srv.Close() // now unreachable
 
-	_, err := ConnectRemote(ServerConfig{Name: "dead", URL: url})
+	_, err := ConnectRemote(context.Background(), ServerConfig{Name: "dead", URL: url})
 	if err == nil {
 		t.Fatal("expected connection error")
 	}
@@ -578,7 +578,7 @@ func TestConnectRemoteAutoNoFallbackOnNetworkError(t *testing.T) {
 
 // TestConnectRemoteRejectsUnknownTransport pins the config validation error.
 func TestConnectRemoteRejectsUnknownTransport(t *testing.T) {
-	_, err := ConnectRemote(ServerConfig{Name: "s", URL: "http://127.0.0.1:1", Transport: "websocket"})
+	_, err := ConnectRemote(context.Background(), ServerConfig{Name: "s", URL: "http://127.0.0.1:1", Transport: "websocket"})
 	if err == nil || !strings.Contains(err.Error(), `unsupported transport "websocket"`) {
 		t.Fatalf("expected unsupported transport error, got: %v", err)
 	}

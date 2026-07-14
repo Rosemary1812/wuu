@@ -21,9 +21,18 @@ type Manager struct {
 	statuses   map[string]ServerStatus
 	generation uint64
 	oauth      *OAuthManager
+	ctx        context.Context
+	cancel     context.CancelFunc
+	operations sync.WaitGroup
+	closed     bool
+	closeDone  chan struct{}
+	closeErr   error
 }
 
-var ErrOAuthRequired = errors.New("mcp OAuth authentication required")
+var (
+	ErrOAuthRequired = errors.New("mcp OAuth authentication required")
+	ErrManagerClosed = errors.New("mcp manager is closed")
+)
 
 type NativeTool struct {
 	Definition Tool
@@ -34,10 +43,14 @@ type NativeTool struct {
 
 // NewManager creates an empty MCP manager.
 func NewManager() *Manager {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
-		configs:  make(map[string]ServerConfig),
-		clients:  make(map[string]*Client),
-		statuses: make(map[string]ServerStatus),
+		configs:   make(map[string]ServerConfig),
+		clients:   make(map[string]*Client),
+		statuses:  make(map[string]ServerStatus),
+		ctx:       ctx,
+		cancel:    cancel,
+		closeDone: make(chan struct{}),
 	}
 }
 
@@ -46,6 +59,10 @@ func (m *Manager) SetOAuthManager(oauth *OAuthManager) {
 		return
 	}
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return
+	}
 	m.oauth = oauth
 	m.mu.Unlock()
 }
@@ -56,6 +73,9 @@ func (m *Manager) Configure(configs map[string]ServerConfig) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closed {
+		return
+	}
 	if m.configs == nil {
 		m.configs = make(map[string]ServerConfig)
 	}
@@ -89,6 +109,12 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 	if cfg.Name == "" {
 		return fmt.Errorf("mcp server name is required")
 	}
+	ctx, finish, err := m.beginConnection(ctx)
+	if err != nil {
+		return err
+	}
+	defer finish()
+
 	m.rememberConfig(cfg)
 	if !cfg.IsEnabled() {
 		m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateDisabled, AuthStatus: authStatusForConfig(cfg)})
@@ -103,6 +129,9 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 		}
 		token, tokenErr := oauth.AccessToken(ctx, cfg.Name)
 		if tokenErr != nil {
+			if m.isClosed() {
+				return ErrManagerClosed
+			}
 			m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateAuthRequired, AuthStatus: MCPAuthStatusNotLoggedIn, Error: tokenErr.Error()})
 			if errors.Is(tokenErr, credentialstore.ErrNotFound) {
 				return ErrOAuthRequired
@@ -116,13 +145,15 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 		cfg.Headers["Authorization"] = "Bearer " + token
 	}
 	var client *Client
-	var err error
 	if cfg.URL != "" {
-		client, err = ConnectRemote(cfg)
+		client, err = ConnectRemote(ctx, cfg)
 	} else {
-		client, err = ConnectStdio(cfg)
+		client, err = ConnectStdio(ctx, cfg)
 	}
 	if err != nil {
+		if m.isClosed() {
+			return ErrManagerClosed
+		}
 		m.recordStatus(ServerStatus{Name: cfg.Name, State: classifyConnectError(err), AuthStatus: authStatusAfterConnectError(cfg, err), Connected: false, Error: err.Error()})
 		return err
 	}
@@ -132,12 +163,20 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 	// Eagerly discover tools so the toolkit can include them.
 	if _, derr := client.DiscoverTools(ctx); derr != nil {
 		_ = client.Close()
+		if m.isClosed() {
+			return ErrManagerClosed
+		}
 		err := fmt.Errorf("discover tools for %q: %w", cfg.Name, derr)
 		m.recordStatus(ServerStatus{Name: cfg.Name, State: MCPServerStateFailed, AuthStatus: authStatusForConfig(cfg), Connected: false, Error: err.Error()})
 		return err
 	}
 	client.SetToolsChangedCallback(func() { m.catalogChanged(cfg.Name) })
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		_ = client.Close()
+		return ErrManagerClosed
+	}
 	if connectionErr := client.ConnectionError(); connectionErr != nil {
 		err := fmt.Errorf("mcp server %q connection closed: %w", cfg.Name, connectionErr)
 		m.statuses[cfg.Name] = ServerStatus{
@@ -151,9 +190,7 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 		_ = client.Close()
 		return err
 	}
-	if old, ok := m.clients[cfg.Name]; ok {
-		_ = old.Close()
-	}
+	old := m.clients[cfg.Name]
 	m.clients[cfg.Name] = client
 	m.statuses[cfg.Name] = ServerStatus{
 		Name:       cfg.Name,
@@ -164,7 +201,37 @@ func (m *Manager) Add(ctx context.Context, cfg ServerConfig) error {
 	}
 	m.generation++
 	m.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
 	return nil
+}
+
+func (m *Manager) beginConnection(parent context.Context) (context.Context, func(), error) {
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return nil, nil, ErrManagerClosed
+	}
+	lifecycle := m.ctx
+	m.operations.Add(1)
+	m.mu.Unlock()
+
+	bounded, cancelBounded := withDefaultConnectionTimeout(parent)
+	ctx, cancel := context.WithCancel(bounded)
+	stopLifecycleCancel := context.AfterFunc(lifecycle, cancel)
+	return ctx, func() {
+		stopLifecycleCancel()
+		cancel()
+		cancelBounded()
+		m.operations.Done()
+	}, nil
+}
+
+func (m *Manager) isClosed() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.closed
 }
 
 func (m *Manager) clientConnectionFailed(name string, client *Client, err error) {
@@ -172,8 +239,8 @@ func (m *Manager) clientConnectionFailed(name string, client *Client, err error)
 		return
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.clients[name] != client {
+		m.mu.Unlock()
 		return
 	}
 	delete(m.clients, name)
@@ -190,6 +257,10 @@ func (m *Manager) clientConnectionFailed(name string, client *Client, err error)
 		Error:      err.Error(),
 	}
 	m.generation++
+	m.operations.Add(1)
+	m.mu.Unlock()
+	defer m.operations.Done()
+	_ = client.Close()
 }
 
 func (m *Manager) StartOAuth(ctx context.Context, name string) (OAuthStartResult, error) {
@@ -304,7 +375,6 @@ func (m *Manager) Remove(name string) error {
 
 func (m *Manager) Disconnect(name string) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	c, ok := m.clients[name]
 	authStatus := authStatusForConfig(m.configs[name])
 	if current := m.statuses[name]; current.AuthStatus == MCPAuthStatusOAuth {
@@ -317,13 +387,18 @@ func (m *Manager) Disconnect(name string) error {
 				state = MCPServerStateDisabled
 			}
 			m.statuses[name] = ServerStatus{Name: name, State: state, AuthStatus: authStatus}
+			m.mu.Unlock()
 			return nil
 		}
+		m.mu.Unlock()
 		return fmt.Errorf("mcp server %q not found", name)
 	}
 	delete(m.clients, name)
 	m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateStopped, AuthStatus: authStatus}
 	m.generation++
+	m.operations.Add(1)
+	m.mu.Unlock()
+	defer m.operations.Done()
 	return c.Close()
 }
 
@@ -378,6 +453,9 @@ func (m *Manager) catalogChanged(name string) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closed {
+		return
+	}
 	m.generation++
 	if status, ok := m.statuses[name]; ok {
 		if client := m.clients[name]; client != nil {
@@ -440,12 +518,20 @@ func (m *Manager) Status() map[string]ServerStatus {
 // Close shuts down all connections.
 func (m *Manager) Close() error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	var firstErr error
+	if m.closed {
+		done := m.closeDone
+		m.mu.Unlock()
+		<-done
+		m.mu.RLock()
+		err := m.closeErr
+		m.mu.RUnlock()
+		return err
+	}
+	m.closed = true
+	cancel := m.cancel
+	clients := make([]*Client, 0, len(m.clients))
 	for _, c := range m.clients {
-		if err := c.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
+		clients = append(clients, c)
 	}
 	m.clients = make(map[string]*Client)
 	m.generation++
@@ -456,12 +542,29 @@ func (m *Manager) Close() error {
 		}
 		m.statuses[name] = ServerStatus{Name: name, State: MCPServerStateStopped, AuthStatus: authStatus}
 	}
+	m.mu.Unlock()
+
+	cancel()
+	var firstErr error
+	for _, c := range clients {
+		if err := c.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	m.operations.Wait()
+	m.mu.Lock()
+	m.closeErr = firstErr
+	close(m.closeDone)
+	m.mu.Unlock()
 	return firstErr
 }
 
 func (m *Manager) recordStatus(status ServerStatus) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closed {
+		return
+	}
 	if strings.TrimSpace(status.Name) == "" {
 		return
 	}
@@ -474,6 +577,9 @@ func (m *Manager) recordStatus(status ServerStatus) {
 func (m *Manager) rememberConfig(cfg ServerConfig) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closed {
+		return
+	}
 	if m.configs == nil {
 		m.configs = make(map[string]ServerConfig)
 	}
@@ -486,9 +592,11 @@ func (m *Manager) closeClient(name string) {
 	if c != nil {
 		delete(m.clients, name)
 		m.generation++
+		m.operations.Add(1)
 	}
 	m.mu.Unlock()
 	if c != nil {
+		defer m.operations.Done()
 		_ = c.Close()
 	}
 }

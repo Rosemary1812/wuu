@@ -2,11 +2,148 @@ package mcp
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/extensions"
 )
+
+func TestManagerCloseCancelsActiveConnectionAndPreventsLateRegistration(t *testing.T) {
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	var startedOnce sync.Once
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		startedOnce.Do(func() { close(requestStarted) })
+		<-releaseRequest
+	}))
+	defer server.Close()
+	defer close(releaseRequest)
+
+	manager := NewManager()
+	addDone := make(chan error, 1)
+	go func() {
+		addDone <- manager.Add(context.Background(), ServerConfig{Name: "slow", URL: server.URL})
+	}()
+
+	select {
+	case <-requestStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("MCP initialize request did not start")
+	}
+	if err := manager.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	select {
+	case err := <-addDone:
+		if !errors.Is(err, ErrManagerClosed) {
+			t.Fatalf("Add error = %v, want ErrManagerClosed", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close returned without the active Add finishing")
+	}
+
+	if got := manager.NativeTools(); len(got) != 0 {
+		t.Fatalf("closed manager retained tools: %+v", got)
+	}
+	status := manager.Status()["slow"]
+	if status.State != MCPServerStateStopped || status.Connected {
+		t.Fatalf("status after Close = %+v, want stopped", status)
+	}
+	if err := manager.Connect(context.Background(), "slow"); !errors.Is(err, ErrManagerClosed) {
+		t.Fatalf("Connect after Close error = %v, want ErrManagerClosed", err)
+	}
+}
+
+func TestManagerCloseWaitsForDetachedClientClose(t *testing.T) {
+	transport := newBlockingCloseTransport()
+	client := &Client{name: "docs", transport: transport, inFlight: newInFlight()}
+	client.readLoop = newReadLoop(transport, client.inFlight, client.handleNotification, client.handleRequest, client.handleReadLoopExit)
+	client.readLoop.Start()
+
+	manager := NewManager()
+	manager.mu.Lock()
+	manager.configs["docs"] = ServerConfig{Name: "docs", Command: "unused"}
+	manager.clients["docs"] = client
+	manager.statuses["docs"] = ServerStatus{Name: "docs", State: MCPServerStateConnected, Connected: true}
+	manager.mu.Unlock()
+
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(transport.release) }) }
+	t.Cleanup(release)
+	disconnectDone := make(chan error, 1)
+	go func() { disconnectDone <- manager.Disconnect("docs") }()
+	select {
+	case <-transport.closeStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Disconnect did not start closing the client")
+	}
+
+	managerCloseDone := make(chan error, 1)
+	go func() { managerCloseDone <- manager.Close() }()
+	select {
+	case err := <-managerCloseDone:
+		t.Fatalf("Manager.Close returned before detached client cleanup finished: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	release()
+	select {
+	case err := <-disconnectDone:
+		if err != nil {
+			t.Fatalf("Disconnect: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Disconnect did not finish after releasing transport Close")
+	}
+	select {
+	case err := <-managerCloseDone:
+		if err != nil {
+			t.Fatalf("Manager.Close: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Manager.Close did not finish after detached client cleanup")
+	}
+}
+
+type blockingCloseTransport struct {
+	closeStarted chan struct{}
+	release      chan struct{}
+	closed       chan struct{}
+	closeOnce    sync.Once
+}
+
+func newBlockingCloseTransport() *blockingCloseTransport {
+	return &blockingCloseTransport{
+		closeStarted: make(chan struct{}),
+		release:      make(chan struct{}),
+		closed:       make(chan struct{}),
+	}
+}
+
+func (t *blockingCloseTransport) Send(context.Context, Request) error { return nil }
+
+func (t *blockingCloseTransport) Receive(ctx context.Context) (Response, error) {
+	select {
+	case <-ctx.Done():
+		return Response{}, ctx.Err()
+	case <-t.closed:
+		return Response{}, io.EOF
+	}
+}
+
+func (t *blockingCloseTransport) Close() error {
+	t.closeOnce.Do(func() {
+		close(t.closeStarted)
+		<-t.release
+		close(t.closed)
+	})
+	return nil
+}
 
 func TestManagerConfigureRecordsConfiguredAndDisabledStatuses(t *testing.T) {
 	manager := NewManager()

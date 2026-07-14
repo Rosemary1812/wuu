@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/blueberrycongee/wuu/internal/capability"
 )
+
+const defaultConnectionTimeout = 30 * time.Second
 
 // ServerConfig describes one MCP server connection.
 type ServerConfig struct {
@@ -91,7 +94,10 @@ type Client struct {
 }
 
 // Connect establishes an MCP session with the given transport.
-func Connect(name string, t Transport) (*Client, error) {
+func Connect(ctx context.Context, name string, t Transport) (*Client, error) {
+	ctx, cancel := withDefaultConnectionTimeout(ctx)
+	defer cancel()
+
 	c := &Client{
 		name:      name,
 		transport: t,
@@ -104,7 +110,7 @@ func Connect(name string, t Transport) (*Client, error) {
 	params := InitializeParams{ProtocolVersion: PreferredProtocolVersion}
 	params.ClientInfo.Name = "wuu"
 	params.ClientInfo.Version = "0.1.0"
-	resultBytes, err := call(context.Background(), t, c.inFlight, "initialize", params)
+	resultBytes, err := call(ctx, t, c.inFlight, "initialize", params)
 	if err != nil {
 		c.Close()
 		return nil, fmt.Errorf("mcp initialize: %w", err)
@@ -119,14 +125,25 @@ func Connect(name string, t Transport) (*Client, error) {
 		return nil, fmt.Errorf("mcp initialize compatibility: %w", err)
 	}
 
-	// Send initialized notification.
-	_ = t.Send(context.Background(), Request{JSONRPC: "2.0", Method: "notifications/initialized"})
+	// A failed initialized notification leaves the server and client with
+	// different session state, so treat it as a failed handshake.
+	if err := t.Send(ctx, Request{JSONRPC: "2.0", Method: "notifications/initialized"}); err != nil {
+		_ = c.Close()
+		return nil, fmt.Errorf("mcp initialized notification: %w", err)
+	}
 
 	return c, nil
 }
 
+func withDefaultConnectionTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, defaultConnectionTimeout)
+}
+
 // ConnectStdio starts a local command as an MCP stdio server and connects.
-func ConnectStdio(cfg ServerConfig) (*Client, error) {
+func ConnectStdio(ctx context.Context, cfg ServerConfig) (*Client, error) {
 	cmd := cfg.Command
 	args := cfg.Args
 	if cmd == "" {
@@ -136,9 +153,8 @@ func ConnectStdio(cfg ServerConfig) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mcp server %q: %w", cfg.Name, err)
 	}
-	c, err := Connect(cfg.Name, t)
+	c, err := Connect(ctx, cfg.Name, t)
 	if err != nil {
-		_ = t.Close()
 		return nil, err
 	}
 	c.SetToolOverrides(cfg.ToolOverrides)
@@ -146,17 +162,19 @@ func ConnectStdio(cfg ServerConfig) (*Client, error) {
 }
 
 // ConnectSSE connects to a remote MCP server over SSE.
-func ConnectSSE(cfg ServerConfig) (*Client, error) {
+func ConnectSSE(ctx context.Context, cfg ServerConfig) (*Client, error) {
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("mcp server %q: url is required for sse transport", cfg.Name)
 	}
-	t, err := NewSSETransportWithHeaders(cfg.URL, cfg.Headers)
+	ctx, cancel := withDefaultConnectionTimeout(ctx)
+	defer cancel()
+
+	t, err := newSSETransport(ctx, cfg.URL, cfg.Headers)
 	if err != nil {
 		return nil, fmt.Errorf("mcp server %q: %w", cfg.Name, err)
 	}
-	c, err := Connect(cfg.Name, t)
+	c, err := Connect(ctx, cfg.Name, t)
 	if err != nil {
-		_ = t.Close()
 		return nil, fmt.Errorf("mcp server %q: SSE transport at %s: %w", cfg.Name, cfg.URL, err)
 	}
 	c.SetToolOverrides(cfg.ToolOverrides)
@@ -165,12 +183,12 @@ func ConnectSSE(cfg ServerConfig) (*Client, error) {
 
 // ConnectStreamableHTTP connects to a remote MCP server over the streamable
 // HTTP transport (MCP spec revision 2025-03-26+).
-func ConnectStreamableHTTP(cfg ServerConfig) (*Client, error) {
+func ConnectStreamableHTTP(ctx context.Context, cfg ServerConfig) (*Client, error) {
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("mcp server %q: url is required for streamable HTTP transport", cfg.Name)
 	}
 	t := NewStreamableHTTPTransport(cfg.URL, cfg.Headers)
-	c, err := Connect(cfg.Name, t)
+	c, err := Connect(ctx, cfg.Name, t)
 	if err != nil {
 		// Connect already closed the transport via c.Close().
 		return nil, fmt.Errorf("mcp server %q: streamable HTTP transport at %s: %w", cfg.Name, cfg.URL, err)
@@ -192,19 +210,22 @@ func ConnectStreamableHTTP(cfg ServerConfig) (*Client, error) {
 //     chapter ("Backwards Compatibility"), so existing SSE-only server
 //     configs keep working without changes. Network-level failures do not
 //     fall back — SSE against the same unreachable endpoint would fail too.
-func ConnectRemote(cfg ServerConfig) (*Client, error) {
+func ConnectRemote(ctx context.Context, cfg ServerConfig) (*Client, error) {
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("mcp server %q: url is required for a remote transport", cfg.Name)
 	}
+	ctx, cancel := withDefaultConnectionTimeout(ctx)
+	defer cancel()
+
 	transport, err := normalizeTransport(cfg.Transport)
 	if err != nil {
 		return nil, fmt.Errorf("mcp server %q: %w", cfg.Name, err)
 	}
 	switch transport {
 	case TransportSSE:
-		return ConnectSSE(cfg)
+		return ConnectSSE(ctx, cfg)
 	case TransportStreamableHTTP:
-		c, err := ConnectStreamableHTTP(cfg)
+		c, err := ConnectStreamableHTTP(ctx, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("%w (transport %q explicitly configured; not falling back to SSE)", err, strings.TrimSpace(cfg.Transport))
 		}
@@ -212,7 +233,7 @@ func ConnectRemote(cfg ServerConfig) (*Client, error) {
 	}
 	// Auto: streamable HTTP first, SSE fallback for "not a streamable HTTP
 	// endpoint" failures.
-	c, httpErr := ConnectStreamableHTTP(cfg)
+	c, httpErr := ConnectStreamableHTTP(ctx, cfg)
 	if httpErr == nil {
 		return c, nil
 	}
@@ -220,7 +241,7 @@ func ConnectRemote(cfg ServerConfig) (*Client, error) {
 	if !errors.As(httpErr, &serr) || !serr.fallbackToSSE() {
 		return nil, httpErr
 	}
-	c, sseErr := ConnectSSE(cfg)
+	c, sseErr := ConnectSSE(ctx, cfg)
 	if sseErr != nil {
 		return nil, fmt.Errorf("%v; SSE fallback also failed: %w", httpErr, sseErr)
 	}
