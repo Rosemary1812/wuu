@@ -47,6 +47,13 @@ const processList = [
 assert.equal(processIDForLaunchToken(processList, "token-1"), 42);
 assert.equal(processIDForLaunchToken(processList, "missing"), undefined);
 assert.equal(
+  processIDForLaunchToken(
+    "  43 /repo/desktop/build/dev-host/Wuu Dev.app/Contents/MacOS/Electron /repo/desktop --wuu-dev-launch-token=token-2",
+    "token-2",
+  ),
+  43,
+);
+assert.equal(
   helperPathForApp("/repo/desktop/build/dev-host/Wuu Dev.app"),
   "/repo/desktop/build/dev-host/Wuu Dev.app/Contents/Resources/bin/wuu-cua-mac",
 );

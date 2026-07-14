@@ -52,10 +52,12 @@ function launchEnvironment(
 }
 
 function processIDForLaunchToken(processList, token) {
+  const environmentMarker = `WUU_DEV_LAUNCH_TOKEN=${token}`;
+  const argumentMarker = `--wuu-dev-launch-token=${token}`;
   const line = processList
     .split("\n")
     .find((candidate) =>
-      candidate.includes(`WUU_DEV_LAUNCH_TOKEN=${token}`)
+      (candidate.includes(environmentMarker) || candidate.includes(argumentMarker))
       && candidate.includes("/Contents/MacOS/Electron"),
     );
   if (!line) return undefined;
@@ -89,12 +91,10 @@ function makeLogTail(path, destination) {
 function waitForElectron(token, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    // `e` prints each process's full environment (that is where the launch
-    // token lives), so with many processes the output easily exceeds Node's
-    // default 1 MB buffer and spawnSync throws ENOBUFS. Give it plenty of room.
-    const processes = execFileSync("ps", ["eww", "-axo", "pid=,command="], {
+    // The token is also passed as an Electron argument below, so avoid `ps e`.
+    // Reading every process environment is slow and can time out on busy hosts.
+    const processes = execFileSync("ps", ["-axo", "pid=,command="], {
       encoding: "utf8",
-      maxBuffer: 256 * 1024 * 1024,
     });
     const pid = processIDForLaunchToken(processes, token);
     if (pid) return pid;
@@ -126,6 +126,7 @@ function run() {
     args.push("--env", variable);
   }
   args.push("--args", ...normalizeElectronArguments(process.argv.slice(2)));
+  args.push(`--wuu-dev-launch-token=${token}`);
 
   const opened = spawnSync("open", args, { cwd: desktopRoot, stdio: "inherit" });
   if (opened.status !== 0) {
