@@ -2730,10 +2730,22 @@
   color: var(--ink);
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.92em;
-  padding: 2px 6px;
-  line-height: 1.45;
+  /*
+   * Inherit the parent line-height so the chip's line box matches the
+   * surrounding paragraph. The previous `line-height: 1.45` was applied
+   * to the chip's own 0.92em font, so when a long chip wrapped to its
+   * own line the line collapsed to ≈ 25.3px while the parent line sat
+   * at ≈ 25.6px; the 4px of vertical padding couldn't fill the gap and
+   * the gray pill visibly sat shorter than the text on the lines
+   * above and below. 1px of vertical padding fits inside the inherited
+   * line-height at the chip's reduced font size without growing the
+   * line box. `vertical-align: baseline` keeps the chip's text on the
+   * surrounding baseline now that we no longer nudge it with -0.1em.
+   */
+  line-height: inherit;
+  padding: 1px 6px;
   white-space: break-spaces;
-  vertical-align: -0.1em;
+  vertical-align: baseline;
 }
 
 /*
