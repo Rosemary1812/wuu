@@ -21,6 +21,7 @@ import (
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/cron"
 	goalrunner "github.com/blueberrycongee/wuu/internal/goal"
+	"github.com/blueberrycongee/wuu/internal/harness"
 	"github.com/blueberrycongee/wuu/internal/hooks"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/memdir"
@@ -947,6 +948,133 @@ func TestNewThreadRuntimePropagatesQueuedSpawnRestoreFailure(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "create thread agent control") || !strings.Contains(err.Error(), "restore queued spawns") {
 		t.Fatalf("NewThreadRuntime error = %v, want propagated queued-spawn restore error", err)
+	}
+}
+
+func TestNewThreadRuntimeToolLedgerFailureDoesNotTouchRestoredQueue(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("WUU_HOME", filepath.Join(home, "state"))
+	t.Setenv("TEST_WUU_KEY", "abc")
+
+	rt, err := NewSession(Options{
+		RootDir:    root,
+		HomeDir:    home,
+		ConfigPath: filepath.Join(root, ".wuu.json"),
+		Config: config.Config{
+			DefaultProvider: "test",
+			Providers: map[string]config.ProviderConfig{
+				"test": {
+					Type:      "openai-compatible",
+					BaseURL:   "https://example.test/v1",
+					APIKeyEnv: "TEST_WUU_KEY",
+					Model:     "gpt-test",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer func() {
+		if rt.AgentControl != nil {
+			rt.AgentControl.StopAll()
+			rt.AgentControl.Close()
+		}
+		_, _ = rt.Cleanup()
+	}()
+	rt.WorkerClient = &sessionRecordingClient{}
+
+	threadID := "thread-ledger-failure"
+	workerID := "worker-restored"
+	now := time.Now().UTC()
+	meta := agentthread.Metadata{
+		ID:        workerID,
+		SessionID: threadID,
+		ParentID:  threadID,
+		Path:      agentthread.RootPath + "/restored_task",
+		TaskName:  "restored_task",
+		Role:      agentcontrol.DefaultSubagentType,
+		Source: agentthread.Source{
+			Kind:           agentthread.SourceThreadSpawn,
+			ParentThreadID: threadID,
+			ParentPath:     agentthread.RootPath,
+			Depth:          2,
+			EdgeStatus:     agentthread.EdgeOpen,
+		},
+		Status:    agentthread.StatusPending,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	payload, err := json.Marshal(map[string]any{
+		"worker_id":   workerID,
+		"worker_type": agentcontrol.DefaultSubagentType,
+		"thread_meta": meta,
+		"prompt":      "resume queued task",
+		"isolation":   "inplace",
+	})
+	if err != nil {
+		t.Fatalf("marshal queued spawn: %v", err)
+	}
+	harnessDir := filepath.Join(statepath.SessionArtifactDir(rt.StateDir, threadID), "harness")
+	store := harness.NewStore(harnessDir)
+	if err := store.UpsertQueueItem(harness.QueueItem{
+		ID:        workerID,
+		TaskID:    workerID,
+		Kind:      "agent_spawn",
+		Payload:   payload,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("persist queued spawn: %v", err)
+	}
+	queuePath := filepath.Join(harnessDir, "queue.json")
+	queueBefore, err := os.ReadFile(queuePath)
+	if err != nil {
+		t.Fatalf("read queue before runtime creation: %v", err)
+	}
+
+	// Force the root ToolLedger preflight to fail. AgentControl must not be
+	// created, because its constructor immediately restores and starts queued
+	// workers.
+	rt.SessionDir = ""
+	threadRuntime, err := rt.NewThreadRuntime(threadID)
+	if threadRuntime != nil {
+		if threadRuntime.AgentControl != nil {
+			threadRuntime.AgentControl.StopAll()
+			threadRuntime.AgentControl.Close()
+		}
+		t.Fatal("NewThreadRuntime returned a runtime after tool ledger initialization failed")
+	}
+	if err == nil || !strings.Contains(err.Error(), "open tool ledger") {
+		t.Fatalf("NewThreadRuntime error = %v, want tool ledger initialization failure", err)
+	}
+
+	// The old ordering created AgentControl before opening the root ledger;
+	// its background queue starter would remove this item asynchronously.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		queueAfter, readErr := os.ReadFile(queuePath)
+		if readErr != nil {
+			t.Fatalf("read queue after runtime failure: %v", readErr)
+		}
+		if string(queueAfter) != string(queueBefore) {
+			t.Fatalf("restored queue changed after tool ledger failure\nbefore: %s\nafter:  %s", queueBefore, queueAfter)
+		}
+		if !time.Now().Before(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	items, err := store.ListQueueItems()
+	if err != nil {
+		t.Fatalf("list queue after runtime failure: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != workerID {
+		t.Fatalf("restored queue after tool ledger failure = %+v, want only %q", items, workerID)
+	}
+	if _, err := os.Stat(filepath.Join(statepath.SessionArtifactDir(rt.StateDir, threadID), "threads")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("AgentControl thread store exists after preflight failure: %v", err)
 	}
 }
 

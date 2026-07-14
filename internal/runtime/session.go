@@ -875,6 +875,39 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		threadProcessManager = manager
 	}
 
+	// Prepare every fallible thread-local dependency before AgentControl.
+	// AgentControl starts restored queued work as soon as it is created, so a
+	// later constructor error would otherwise orphan its consumers or workers.
+	if s.Toolkit != nil {
+		var err error
+		kit, err = s.Toolkit.CloneForRoot(threadRoot)
+		if err != nil {
+			return nil, err
+		}
+		kit.SetStateDir(stateDir)
+		kit.SetProcessManager(threadProcessManager)
+		kit.SetSkills(s.Skills)
+		ConfigureToolkitPermissions(kit, s.Permissions)
+		kit.SetSessionID(id)
+		kit.SetSessionDir(artifactDir)
+		kit.SetConversationSessionDir(s.SessionDir)
+		kit.SetGoalRuntime(goalRuntime)
+		kit.SetAgentIdentity(id, agentthread.RootPath)
+		fileScopeExtras := []string{artifactDir}
+		if s.MemdirEnabled {
+			fileScopeExtras = append(fileScopeExtras, memdir.UserMemdir(wuuHome))
+		}
+		// Rebase the file-scope whitelist on the thread root (the clone
+		// inherited the parent session's roots): thread root + registered
+		// workspaces + temp + artifact/memory extras.
+		kit.SetFileScopeRoots(workspaces.BoundaryRoots(kit.RootDir(), wuuHome, fileScopeExtras...))
+	}
+
+	toolLedger, err := toolledger.New(s.SessionDir, id)
+	if err != nil {
+		return nil, fmt.Errorf("open tool ledger: %w", err)
+	}
+
 	if s.Toolkit != nil {
 		workerClient := s.WorkerClient
 		if workerClient == nil {
@@ -893,7 +926,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 			workerToolSurface := compiledSurfaceForProviderModel(workerToolProviderName, workerToolModeModel)
 			// Fill the worker deferred-tool catalog like the session build
 			// path does (consistency-repair #13).
-			workerDeferredCatalog, catErr := workerDeferredToolCatalogPromptForToolkit(s.Toolkit, workerToolProviderName, workerToolModeModel, workerToolSearchEnabled, s.ExperimentalDeferredBundles)
+			workerDeferredCatalog, catErr := workerDeferredToolCatalogPromptForToolkit(kit, workerToolProviderName, workerToolModeModel, workerToolSearchEnabled, s.ExperimentalDeferredBundles)
 			if catErr != nil {
 				return nil, catErr
 			}
@@ -935,11 +968,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 					return buildWorkerBasePrompt(workerRoot, s.SessionDate, wuuHome, s.UserSystemPrompt, workerToolProviderName, workerToolModeModel, workerToolSurface, s.Memory, s.MemdirEnabled, s.Skills), nil
 				},
 				WorkerFactory: func(workerRoot string, wt agentcontrol.WorkerType, meta agentthread.Metadata) (agent.ToolExecutor, error) {
-					parentKit := kit
-					if parentKit == nil {
-						parentKit = s.Toolkit
-					}
-					workerKit, err := parentKit.CloneForRoot(workerRoot)
+					workerKit, err := kit.CloneForRoot(workerRoot)
 					if err != nil {
 						return nil, err
 					}
@@ -997,39 +1026,12 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 			}
 			agentControl = control
 		}
-
-		var err error
-		kit, err = s.Toolkit.CloneForRoot(threadRoot)
-		if err != nil {
-			return nil, err
-		}
-		kit.SetStateDir(stateDir)
-		kit.SetProcessManager(threadProcessManager)
-		kit.SetSkills(s.Skills)
 		kit.SetAgentControl(agentControl)
-		ConfigureToolkitPermissions(kit, s.Permissions)
-		kit.SetSessionID(id)
-		kit.SetSessionDir(artifactDir)
-		kit.SetConversationSessionDir(s.SessionDir)
-		kit.SetGoalRuntime(goalRuntime)
-		kit.SetAgentIdentity(id, agentthread.RootPath)
-		fileScopeExtras := []string{artifactDir}
-		if s.MemdirEnabled {
-			fileScopeExtras = append(fileScopeExtras, memdir.UserMemdir(wuuHome))
-		}
-		// Rebase the file-scope whitelist on the thread root (the clone
-		// inherited the parent session's roots): thread root + registered
-		// workspaces + temp + artifact/memory extras.
-		kit.SetFileScopeRoots(workspaces.BoundaryRoots(kit.RootDir(), wuuHome, fileScopeExtras...))
 		toolExecutor = hooks.NewHookedExecutor(kit, s.HookDispatcher, "", threadRoot)
 		toolExecutor = newPluginToolExecutor(toolExecutor, s.PluginHost, id, threadRoot)
 	}
 
 	runner := cloneStreamRunnerForThread(s.StreamRunner, toolExecutor)
-	toolLedger, err := toolledger.New(s.SessionDir, id)
-	if err != nil {
-		return nil, fmt.Errorf("open tool ledger: %w", err)
-	}
 	runner.ToolLedger = toolLedger
 	runner.SystemPrompt, runner.SystemPromptSections = systemPromptForThreadRoot(runner.SystemPrompt, runner.SystemPromptSections, threadRoot, s.SessionDate)
 	if s.MemdirEnabled {
