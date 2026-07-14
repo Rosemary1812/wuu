@@ -121,6 +121,7 @@ export function AssistantTurnShell({
     cwd,
     onOpenFile,
     onOpenAgent,
+    onOpenSubthread,
     actionableAgentMessageID,
     latestAgentMessageID,
     onStreamFrame,

@@ -173,6 +173,7 @@ type RenderOptions = {
   itemRenderer?: (item: ThreadItem, streaming: boolean) => JSX.Element;
   onCollapseComplete?: () => void;
   onOpenAgent?: (agentID: string) => void;
+  onOpenSubthread?: (item: ThreadItem) => void;
 };
 
 function defaultItemRenderer(
@@ -211,6 +212,7 @@ function renderShell(
         onStreamFrame: () => {},
         onCollapseComplete: options.onCollapseComplete,
         onOpenAgent: options.onOpenAgent,
+        onOpenSubthread: options.onOpenSubthread,
       }),
     );
   });
@@ -239,6 +241,7 @@ function rerenderShell(
         onStreamFrame: () => {},
         onCollapseComplete: options.onCollapseComplete,
         onOpenAgent: options.onOpenAgent,
+        onOpenSubthread: options.onOpenSubthread,
       }),
     );
   });
@@ -711,6 +714,35 @@ describe("AssistantTurnShell — process fold default state (rule 2 + rule 8)", 
     });
 
     expect(onOpenAgent).toHaveBeenCalledWith("agent-42");
+  });
+
+  it("opens task-card subthreads from the process fold", () => {
+    const onOpenSubthread = vi.fn();
+    const item: ThreadItem = {
+      id: "task-card-1",
+      type: "task_card",
+      status: "completed",
+      task: {
+        id: "task-1",
+        name: "Review authentication",
+        status: "running",
+        subthread_id: "cth-task-1",
+      },
+    };
+    const { container } = renderShell(makeTurn("completed", [item]), {
+      onOpenSubthread,
+    });
+
+    const openButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="查看过程"]',
+    );
+    expect(openButton).not.toBeNull();
+
+    act(() => {
+      openButton?.click();
+    });
+
+    expect(onOpenSubthread).toHaveBeenCalledWith(item);
   });
 });
 
