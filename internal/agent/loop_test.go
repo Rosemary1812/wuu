@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -2345,6 +2346,7 @@ func TestRunToolLoop_SplitHiddenContextDoesNotReappendStableBlocksBetweenToolSte
 func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 	step := &fakeStep{results: []StepResult{
 		{ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md"}`}}},
+		{ToolCalls: []providers.ToolCall{{ID: "call_2", Name: "grep", Arguments: `{"query":"cache"}`}}},
 		{Content: "ok"},
 	}}
 
@@ -2352,8 +2354,11 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 	cfg := LoopConfig{
 		Model: "m",
 		Tools: &fakeLoopTools{
-			defs:    []providers.ToolDefinition{{Name: "read_file"}},
-			results: map[string]string{"call_1": `{"content":"hello"}`},
+			defs: []providers.ToolDefinition{{Name: "read_file"}, {Name: "grep"}},
+			results: map[string]string{
+				"call_1": `{"content":"hello"}`,
+				"call_2": `{"matches":[]}`,
+			},
 		},
 		BeforeRequestContext: func() []ContextSegment {
 			contextCalls++
@@ -2374,8 +2379,8 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 	if res.Content != "ok" {
 		t.Fatalf("unexpected content %q", res.Content)
 	}
-	if len(step.calls) != 2 {
-		t.Fatalf("expected two provider calls, got %d", len(step.calls))
+	if len(step.calls) != 3 {
+		t.Fatalf("expected three provider calls, got %d", len(step.calls))
 	}
 	first := step.calls[0].Messages
 	if got := countMessagesContaining(first, "State: step 1"); got != 1 {
@@ -2386,11 +2391,21 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 	if err := providers.ValidateToolCallHistory(second); err != nil {
 		t.Fatalf("second request must keep provider-valid tool history: %v\n%+v", err, second)
 	}
-	if got := countMessagesContaining(second, "State: step 1"); got != 0 {
-		t.Fatalf("second request should not retain prior request-only context, got %d in %+v", got, second)
+	if len(second) < len(first) || !reflect.DeepEqual(first, second[:len(first)]) {
+		t.Fatalf("second request must extend the first request prefix:\nfirst=%+v\nsecond=%+v", first, second)
+	}
+	if got := countMessagesContaining(second, "State: step 1"); got != 1 {
+		t.Fatalf("second request should retain prior request-only context for cache continuity, got %d in %+v", got, second)
 	}
 	if got := countMessagesContaining(second, "State: step 2"); got != 1 {
 		t.Fatalf("second request should include latest request-only context once, got %d in %+v", got, second)
+	}
+	third := step.calls[2].Messages
+	if len(third) < len(second) || !reflect.DeepEqual(second, third[:len(second)]) {
+		t.Fatalf("third request must extend the second request prefix:\nsecond=%+v\nthird=%+v", second, third)
+	}
+	if got := countMessagesContaining(third, "State: step 3"); got != 1 {
+		t.Fatalf("third request should include latest request-only context once, got %d in %+v", got, third)
 	}
 	if got := countMessagesContaining(second, "[TASK]"); got != 0 {
 		t.Fatalf("single-directive tool loop should not synthesize task block, got %d in %+v", got, second)
@@ -2398,7 +2413,7 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 	if got := countMessagesContaining(second, "[CONSTRAINT_LEDGER]"); got != 0 {
 		t.Fatalf("single-directive tool loop should not synthesize constraint ledger, got %d in %+v", got, second)
 	}
-	if len(res.NewMessages) != 3 {
+	if len(res.NewMessages) != 5 {
 		t.Fatalf("expected only durable assistant/tool/final messages, got %+v", res.NewMessages)
 	}
 	for _, msg := range res.NewMessages {

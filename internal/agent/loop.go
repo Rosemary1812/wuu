@@ -92,6 +92,7 @@ func RunToolLoop(
 	// Transient context is request-only across runs, but append-only inside
 	// a run so provider continuation deltas can match prior request prefixes.
 	messages = filterTransientModelContextHistory(messages)
+	providerMessages := providers.CloneChatMessages(messages)
 	startLen := len(messages)
 
 	currentMaxTokens := cfg.DefaultMaxTokens // 0 = provider default
@@ -117,6 +118,9 @@ func RunToolLoop(
 		// run. It is consumed by the next provider request and never enters
 		// live or durable history.
 		postToolContextSegments []ContextSegment
+		// Request-only messages already sent in this run remain in the
+		// provider transcript so each tool round extends the prior request.
+		requestOnlyMessages []providers.ChatMessage
 		// Previous request's stable-prefix fingerprint for cache-break telemetry.
 		// Used to detect and log when model, tools, or system prompt changes
 		// between rounds, which would break cache reuse.
@@ -169,6 +173,8 @@ func RunToolLoop(
 				nextOperationParentID = compactOperationID
 			}
 			messages = compacted
+			providerMessages = providers.CloneChatMessages(compacted)
+			requestOnlyMessages = nil
 			historyRewritten = true
 			usage.Reset()
 			usage.RecordPendingMessages(messages)
@@ -203,6 +209,7 @@ func RunToolLoop(
 	tryProactiveCompact := func() { runCompactPass(CompactReasonProactive, false) }
 	appendMessage := func(msg providers.ChatMessage) {
 		messages = append(messages, msg)
+		providerMessages = append(providerMessages, providers.CloneChatMessage(msg))
 		if cfg.OnMessage != nil && !msg.Hidden {
 			cfg.OnMessage(msg)
 		}
@@ -240,6 +247,8 @@ func RunToolLoop(
 			}, nerr
 		} else if changed {
 			messages = repaired
+			providerMessages = providers.CloneChatMessages(repaired)
+			requestOnlyMessages = nil
 			historyRewritten = true
 			usage.Reset()
 			usage.RecordPendingMessages(messages)
@@ -258,11 +267,13 @@ func RunToolLoop(
 		// with compact placeholders in the request only. The live
 		// history retains full content for durability and future
 		// retrieval.
-		messagesForRequest := messages
+		messagesForRequest := providerMessages
 		if cfg.ToolPrune {
-			messagesForRequest = compact.PruneToolResults(messages)
+			messagesForRequest = compact.PruneToolResults(providerMessages)
 		}
 		assembly := assembleModelRequest(messagesForRequest, requestSegments)
+		requestOnlyMessages = append(requestOnlyMessages, assembly.RequestOnlyMessages...)
+		assembly.RequestOnlyMessages = providers.CloneChatMessages(requestOnlyMessages)
 		requestMessages := assembly.Messages
 		operation := providers.NewInferenceOperation(
 			cfg.InferenceOperationKind,
@@ -303,6 +314,7 @@ func RunToolLoop(
 		applyPromptCacheKeyOverride(&cacheHint, cfg.PromptCacheKey)
 		req.CacheHint = cacheHint
 		assembly.Messages = req.Messages
+		providerMessages = providers.CloneChatMessages(req.Messages)
 
 		// Cache-break telemetry: detect changes in stable-prefix components
 		// (model, tools, system prompt) that would break cache reuse. Section
@@ -346,6 +358,8 @@ func RunToolLoop(
 							nextOperationParentID = compactOperationID
 						}
 						messages = compacted
+						providerMessages = providers.CloneChatMessages(compacted)
+						requestOnlyMessages = nil
 						historyRewritten = true
 						usage.Reset()
 						usage.RecordPendingMessages(messages)
@@ -567,6 +581,8 @@ func RunToolLoop(
 					}
 				}
 				messages = rewritten
+				providerMessages = providers.CloneChatMessages(rewritten)
+				requestOnlyMessages = nil
 				historyRewritten = true
 				usage.Reset()
 				usage.RecordPendingMessages(messages)
