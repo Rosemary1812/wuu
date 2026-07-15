@@ -583,6 +583,17 @@ func (r *StreamRunner) storeRetainedRequestContext(state *RetainedRequestContext
 	r.retainedRequestContext = state
 }
 
+// HasPendingRetainedRequestContext reports whether the runner is holding
+// cross-turn request-context state to splice into the next run. It exists so
+// callers in other packages — notably app-server turn-entry tests — can assert
+// that the per-turn usage reseed does not discard prompt-cache continuity
+// state.
+func (r *StreamRunner) HasPendingRetainedRequestContext() bool {
+	r.retainedContextMu.Lock()
+	defer r.retainedContextMu.Unlock()
+	return r.retainedRequestContext != nil
+}
+
 // commitUsageTracker publishes a run-local usage snapshot as the new
 // shared baseline for future turns.
 func (r *StreamRunner) commitUsageTracker(tracker *UsageTracker, historyLen int) {
@@ -611,10 +622,14 @@ func (r *StreamRunner) commitUsageTracker(tracker *UsageTracker, historyLen int)
 // history makes EstimateCurrent reflect the compacted size immediately rather
 // than dropping to zero.
 func (r *StreamRunner) ResetConversationUsage(history []providers.ChatMessage) {
-	// An out-of-loop history rewrite also invalidates the retained
-	// request-context positions; the fingerprint would catch it, but
-	// clearing eagerly keeps the state's lifetime easy to reason about.
-	r.storeRetainedRequestContext(nil)
+	// Do NOT clear the retained request-context state here. This method runs
+	// on every turn entry (ensureThreadRuntimeAfterAdmission re-seeds usage
+	// from reconstructed history), not just on rewrites — wiping retained
+	// context here defeats cross-turn prompt-cache continuity on every turn.
+	// Genuine invalidation (compaction, rewrite, fork, external edit) is
+	// handled inside RunToolLoop by RetainedRequestContextState.validFor,
+	// which drops the state when the durable-history fingerprint no longer
+	// matches.
 	r.usageMu.Lock()
 	defer r.usageMu.Unlock()
 	if r.conversationUsage == nil {

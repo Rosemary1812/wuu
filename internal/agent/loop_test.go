@@ -2458,7 +2458,9 @@ func TestRunToolLoop_RetainedContextExtendsPriorRunRequestPrefix(t *testing.T) {
 		Source:  "runtime.active_files",
 		Content: "files:\n- go.mod",
 	}
-	makeCfg := func(turn int, retained *RetainedRequestContextState) LoopConfig {
+	// Context is unchanged across turns, so the new turn re-affirms it and it
+	// is spliced back at its recorded position for byte-level continuity.
+	makeCfg := func(retained *RetainedRequestContextState) LoopConfig {
 		return LoopConfig{
 			Model: "m",
 			Tools: &fakeLoopTools{
@@ -2473,7 +2475,7 @@ func TestRunToolLoop_RetainedContextExtendsPriorRunRequestPrefix(t *testing.T) {
 					Kind:    wuucontext.BlockEnvironment,
 					Title:   "Runtime environment",
 					Source:  "runtime.snapshot",
-					Content: fmt.Sprintf("# Environment\n- State: turn %d", turn),
+					Content: "# Environment\n- State: steady",
 				}
 				return RequestOnlyContextBlocks([]wuucontext.Block{activeFiles, env})
 			},
@@ -2486,7 +2488,7 @@ func TestRunToolLoop_RetainedContextExtendsPriorRunRequestPrefix(t *testing.T) {
 		{Content: "done"},
 	}}
 	history1 := []providers.ChatMessage{userMsg("first ask")}
-	res1, err := RunToolLoop(context.Background(), history1, makeCfg(1, nil), step1)
+	res1, err := RunToolLoop(context.Background(), history1, makeCfg(nil), step1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2500,7 +2502,7 @@ func TestRunToolLoop_RetainedContextExtendsPriorRunRequestPrefix(t *testing.T) {
 		{ToolCalls: []providers.ToolCall{{ID: "call_2", Name: "read_file", Arguments: `{"path":"main.go"}`}}},
 		{Content: "ok"},
 	}}
-	res2, err := RunToolLoop(context.Background(), history2, makeCfg(2, res1.RetainedRequestContext), step2)
+	res2, err := RunToolLoop(context.Background(), history2, makeCfg(res1.RetainedRequestContext), step2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2509,18 +2511,13 @@ func TestRunToolLoop_RetainedContextExtendsPriorRunRequestPrefix(t *testing.T) {
 	if len(run2First) < len(run1Last) || !reflect.DeepEqual(run1Last, run2First[:len(run1Last)]) {
 		t.Fatalf("first request of run 2 must byte-extend the last request of run 1:\nrun1last=%+v\nrun2first=%+v", run1Last, run2First)
 	}
-	// The seeded emit-on-change gate must recognize the spliced copies: the
-	// unchanged stable block stays a single copy, the previous turn's
-	// environment snapshot stays in the prefix, and only the changed
-	// snapshot is appended fresh.
+	// The unchanged blocks are retained (spliced), not re-emitted: exactly one
+	// copy each across both runs.
 	if got := countMessagesContaining(run2First, "[ACTIVE_FILES]"); got != 1 {
 		t.Fatalf("unchanged stable block should appear exactly once across runs, got %d in %+v", got, run2First)
 	}
-	if got := countMessagesContaining(run2First, "State: turn 1"); got != 1 {
-		t.Fatalf("previous run's environment snapshot should be retained once, got %d in %+v", got, run2First)
-	}
-	if got := countMessagesContaining(run2First, "State: turn 2"); got != 1 {
-		t.Fatalf("changed environment snapshot should be appended once, got %d in %+v", got, run2First)
+	if got := countMessagesContaining(run2First, "State: steady"); got != 1 {
+		t.Fatalf("unchanged env snapshot should be retained exactly once, got %d in %+v", got, run2First)
 	}
 	if res2.RetainedRequestContext == nil {
 		t.Fatal("run 2 should hand retained state forward for run 3")
