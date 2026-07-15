@@ -1445,7 +1445,13 @@ function sortThreadSummaries(threads: ThreadSummary[]): ThreadSummary[] {
     (thread): thread is ThreadSummary =>
       Boolean(thread && typeof thread.id === "string") &&
       !thread.archived &&
-      !thread.read_only,
+      !thread.read_only &&
+      // The sidebar lists root sessions of a project. A thread whose
+      // parent_id is set is a subagent (a worker spawned by another
+      // thread) — including ultra-mode siblings of the root. Those live
+      // under the parent thread's info panel ("子任务"), not in the
+      // sidebar navigation list, regardless of pin state.
+      !thread.parent_id,
   );
   const running = valid.filter(isThreadRunning);
   const settled = valid.filter((thread) => !isThreadRunning(thread));
