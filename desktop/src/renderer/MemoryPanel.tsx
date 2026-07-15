@@ -298,8 +298,49 @@ export function MemoryPanel({
   return (
     <ImagePreviewProvider>
       <div className="settings-memory" data-testid="settings-memory">
-        <div className="settings-memory-toolbar">
-          {collaborationEnabled ? (
+        <header className="settings-page-header settings-memory-header">
+          <h1 className="settings-page-title">记忆</h1>
+          <div className="settings-memory-actions">
+            <div className="settings-memory-raw-toggle">
+              <span className="settings-memory-raw-label">查看原文</span>
+              <button
+                className="settings-switch"
+                type="button"
+                role="switch"
+                aria-checked={rawOpen}
+                data-testid="memory-raw-toggle"
+                onClick={() => setRawOpen((open) => !open)}
+              >
+                <span className="settings-switch-thumb" aria-hidden="true" />
+                <span className="sr-only">
+                  {rawOpen ? "关闭原文视图" : "查看原文"}
+                </span>
+              </button>
+            </div>
+            <button
+              className="settings-button"
+              type="button"
+              data-testid="memory-refresh-overview"
+              disabled={
+                !notebookReady || rawOpen || overview.status === "loading"
+              }
+              onClick={() => refreshOverview(true)}
+            >
+              {overview.status === "loading" ? (
+                <Loader2
+                  className="icon settings-memory-spinner"
+                  aria-hidden="true"
+                />
+              ) : (
+                <RefreshCw className="icon" aria-hidden="true" />
+              )}
+              <span>{overview.status === "loading" ? "总结中…" : "重新总结"}</span>
+            </button>
+          </div>
+        </header>
+
+        {collaborationEnabled ? (
+          <div className="settings-memory-toolbar">
             <div
               className="settings-memory-tabs"
               role="tablist"
@@ -324,59 +365,22 @@ export function MemoryPanel({
                 同事
               </button>
             </div>
-          ) : null}
-          {collaborationEnabled &&
-          scope === "participant" &&
-          namedAgents.length > 0 ? (
-            <SelectMenu
-              className="settings-memory-agent-select"
-              triggerClassName="settings-select-trigger"
-              ariaLabel="选择同事"
-              dataTestid="memory-agent-select"
-              value={activeParticipantID}
-              onChange={(next) => setSelectedParticipantID(next)}
-              options={namedAgents.map((agent) => ({
-                value: agent.id,
-                label: agent.name,
-              }))}
-            />
-          ) : null}
-          <div className="settings-memory-raw-toggle">
-            <span className="settings-memory-raw-label">查看原文</span>
-            <button
-              className="settings-switch"
-              type="button"
-              role="switch"
-              aria-checked={rawOpen}
-              data-testid="memory-raw-toggle"
-              onClick={() => setRawOpen((open) => !open)}
-            >
-              <span className="settings-switch-thumb" aria-hidden="true" />
-              <span className="sr-only">
-                {rawOpen ? "关闭原文视图" : "查看原文"}
-              </span>
-            </button>
-          </div>
-          <button
-            className="settings-button"
-            type="button"
-            data-testid="memory-refresh-overview"
-            disabled={
-              !notebookReady || rawOpen || overview.status === "loading"
-            }
-            onClick={() => refreshOverview(true)}
-          >
-            {overview.status === "loading" ? (
-              <Loader2
-                className="icon settings-memory-spinner"
-                aria-hidden="true"
+            {scope === "participant" && namedAgents.length > 0 ? (
+              <SelectMenu
+                className="settings-memory-agent-select"
+                triggerClassName="settings-select-trigger"
+                ariaLabel="选择同事"
+                dataTestid="memory-agent-select"
+                value={activeParticipantID}
+                onChange={(next) => setSelectedParticipantID(next)}
+                options={namedAgents.map((agent) => ({
+                  value: agent.id,
+                  label: agent.name,
+                }))}
               />
-            ) : (
-              <RefreshCw className="icon" aria-hidden="true" />
-            )}
-            <span>{overview.status === "loading" ? "总结中…" : "重新总结"}</span>
-          </button>
-        </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {!notebookReady ? (
           <div className="settings-card">

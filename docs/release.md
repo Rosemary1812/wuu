@@ -4,13 +4,32 @@ Tagged releases are published by `.github/workflows/release.yml`.
 
 ## Trigger
 
-1. Update `VERSION`, `desktop/package.json`, and `npm/package.json` to the
-   release version.
-2. Commit the version change.
-3. Create and push a matching tag, for example `v0.1.0`.
+`VERSION` is the product version source. Do not edit package versions by hand.
 
-The workflow refuses to release if the tag commit is not on `main`, or if the
-tag, root `VERSION`, desktop package, and npm package versions do not match.
+1. Add user-visible changes under `CHANGELOG.md`'s `[Unreleased]` section.
+2. Run `make release-prepare RELEASE_VERSION=0.4.0`. The command validates the
+   version, updates `VERSION`, desktop/npm manifests and the desktop lockfile,
+   and moves the unreleased notes into a dated release section.
+3. Review the diff, run `make ci release-check`, and commit the release change.
+4. After the commit is on `main`, run `make tag-release` and push the annotated
+   tag printed by that command.
+
+The workflow refuses to release if the tag commit is not on `main`, if any
+generated version differs from the tag, or if the matching changelog section is
+missing or empty.
+
+## Version policy
+
+wuu uses Semantic Versioning while it is pre-1.0:
+
+- Patch (`0.x.Y`) releases contain compatible fixes and small UI improvements.
+- Minor (`0.X.0`) releases add features or change protocol, configuration,
+  stored data, or user-visible behavior in a compatibility-sensitive way.
+- Prereleases such as `0.4.0-rc.1` are used when packaged builds need broader
+  validation before becoming the current release.
+
+The private protocol, remote-core, and mobile packages remain at `0.0.0` until
+they have an independent public release contract.
 
 Before tagging, `make check-go test-go` must pass. The release workflow reruns
 those gates against the tagged commit before it builds any CLI archives.

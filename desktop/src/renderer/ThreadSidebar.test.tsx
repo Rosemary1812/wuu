@@ -817,6 +817,25 @@ describe("ProjectGroup remove workspace", () => {
     });
   }
 
+  it("shows loading instead of an empty state before project sessions hydrate", () => {
+    const project = makeProject("project-1", "wuu", "/repo/wuu");
+    act(() => {
+      root = createRoot(container);
+      root.render(
+        <ProjectGroup
+          {...baseProps}
+          project={project}
+          expandedSidebarSectionIDs={new Set([project.id])}
+          loadingProjectThreadIDs={new Set([project.id])}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("正在加载会话");
+    expect(container.textContent).not.toContain("还没有会话");
+    expect(container.querySelector(".project-row-loading")).not.toBeNull();
+  });
+
   it("opens a 移除工作区 menu on a real project row and reports the id", () => {
     const removed: string[] = [];
     act(() => {

@@ -163,15 +163,30 @@ export function RuntimePicker({
           owner="codex-runtime"
           placement={placement}
           align="right"
-          width={236}
+          width={208}
         >
           <RuntimeMainMenu
             selectedVariant={currentVariant}
             options={variantOptions}
             reasoningMode={reasoningMode}
             currentLabel={runtimeModelLabel(runtimeInitialized, currentProviderModel, currentCodexModel)}
-            onSelectEffort={onSelectEffort}
+            onOpenEffortMenu={() => onToggleMenu("effort")}
             onOpenModelMenu={() => onToggleMenu("model")}
+          />
+        </FloatingMenuPortal>
+      ) : null}
+      {openMenu === "effort" ? (
+        <FloatingMenuPortal
+          anchorRef={anchorRef}
+          owner="codex-runtime"
+          placement={placement}
+          align="right"
+          width={172}
+        >
+          <RuntimeEffortMenu
+            selectedVariant={currentVariant}
+            options={variantOptions}
+            onSelectEffort={onSelectEffort}
           />
         </FloatingMenuPortal>
       ) : null}
@@ -216,39 +231,55 @@ function RuntimeMainMenu({
   options,
   reasoningMode,
   currentLabel,
-  onSelectEffort,
+  onOpenEffortMenu,
   onOpenModelMenu
 }: {
   selectedVariant: string;
   options: string[];
   reasoningMode: "off" | "toggle" | "levels";
   currentLabel: string;
-  onSelectEffort: (variant: string) => void;
+  onOpenEffortMenu: () => void;
   onOpenModelMenu: () => void;
 }): JSX.Element {
+  const showEffort = reasoningMode === "levels" && options.length > 1;
   return (
     <div className="codex-runtime-menu codex-main-menu" role="menu">
-      <div className="codex-menu-label">思考强度</div>
-      {options.length > 1 ? (
-        options.map((variant) => {
-          const selected = variant === selectedVariant;
-          return (
-            <button key={variant || "auto"} role="menuitem" type="button" onClick={() => onSelectEffort(variant)}>
-              <span>{variantLabel(variant)}</span>
-              {selected ? <Check className="icon-lg" /> : null}
-            </button>
-          );
-        })
-      ) : (
-        <div className="composer-menu-empty">
-          {reasoningMode === "off" ? "当前模型不支持思考" : "当前模型没有可调思考强度"}
-        </div>
-      )}
-      <div className="codex-menu-separator" />
-      <button role="menuitem" type="button" onClick={onOpenModelMenu}>
-        <span>{currentLabel}</span>
+      <button className="codex-runtime-summary-row" role="menuitem" type="button" onClick={onOpenModelMenu}>
+        <span className="codex-runtime-summary-label">Model</span>
+        <span className="codex-runtime-summary-value">{currentLabel}</span>
         <ChevronRight className="codex-menu-chevron icon-lg" />
       </button>
+      {showEffort ? (
+        <button className="codex-runtime-summary-row" role="menuitem" type="button" onClick={onOpenEffortMenu}>
+          <span className="codex-runtime-summary-label">Effort</span>
+          <span className="codex-runtime-summary-value">{variantLabel(selectedVariant)}</span>
+          <ChevronRight className="codex-menu-chevron icon-lg" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function RuntimeEffortMenu({
+  selectedVariant,
+  options,
+  onSelectEffort
+}: {
+  selectedVariant: string;
+  options: string[];
+  onSelectEffort: (variant: string) => void;
+}): JSX.Element {
+  return (
+    <div className="codex-runtime-menu codex-effort-menu" role="menu">
+      {options.map((variant) => {
+        const selected = variant === selectedVariant;
+        return (
+          <button key={variant || "auto"} role="menuitem" type="button" onClick={() => onSelectEffort(variant)}>
+            <span>{variantLabel(variant)}</span>
+            {selected ? <Check className="icon-lg" /> : null}
+          </button>
+        );
+      })}
     </div>
   );
 }

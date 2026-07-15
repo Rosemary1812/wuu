@@ -180,29 +180,25 @@ func (t *Toolkit) executeKnownToolResultWithRepeatPolicy(ctx context.Context, ca
 	var projectionDiag *ProjectionDiagnostics
 	if err == nil {
 		t.recordDiscoveredToolsForCall(call, t.activateToolBundlesAfterSuccess(call.Name))
-		if result.IsTextOnly() {
-			// Tool-specific stable projection runs once here, before the result
-			// is stored, so the model sees identical bytes on the first and every
-			// later request. It falls back to the generic result budget when
-			// disabled, in shadow mode, ineligible, or when a projector declines.
-			mode := t.env.toolResultProjectionMode()
-			applied := false
-			if mode != projectionModeOff && builtInProjectionAllowlist[call.Name] {
-				stable, diag := finalizeBuiltInToolResult(t.env.SessionDir, call.Name, call.ID, result, defaultProjectionTokenBudget)
-				projectionDiag = &diag
-				if mode == projectionModeActive && diag.Applied {
-					returned = stable
-					returnedProjection = stable.TextProjection()
-					resultRef = diag.ArtifactRef
-					resultBudgeted = true
-					applied = true
-				}
+		// Tool-specific stable projection runs once here, before the result is
+		// stored. Results without an applicable projector still cross the generic
+		// settlement boundary, which now preserves rich media and metadata.
+		mode := t.env.toolResultProjectionMode()
+		applied := false
+		if result.IsTextOnly() && mode != projectionModeOff && builtInProjectionAllowlist[call.Name] {
+			stable, diag := finalizeBuiltInToolResult(t.env.SessionDir, call.Name, call.ID, result, defaultProjectionTokenBudget)
+			projectionDiag = &diag
+			if mode == projectionModeActive && diag.Applied {
+				returned = stable
+				returnedProjection = stable.TextProjection()
+				resultRef = diag.ArtifactRef
+				resultBudgeted = true
+				applied = true
 			}
-			if !applied {
-				returnedProjection, resultRef, resultBudgeted = MaybePersistResultWithRef(t.env.SessionDir, call.Name, call.ID, rawProjection, defaultResultBudget)
-				returned = toolresult.FromText(returnedProjection)
-				returned.IsError = result.IsError
-			}
+		}
+		if !applied {
+			returned, resultRef, resultBudgeted = finalizeGenericToolResult(t.env.SessionDir, call.ID, result, defaultResultBudget)
+			returnedProjection = returned.TextProjection()
 		}
 	}
 

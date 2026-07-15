@@ -1003,7 +1003,7 @@ func TestDefaultSystemPrompt_CommunicationStyle(t *testing.T) {
 	if !strings.Contains(prompt, "Lead with the user-visible outcome") {
 		t.Fatalf("default system prompt must teach concise final answers: %q", prompt)
 	}
-	if !strings.Contains(prompt, "Match structure to complexity") || !strings.Contains(prompt, "only when they improve scanning") {
+	if !strings.Contains(prompt, "Default to natural prose") || !strings.Contains(prompt, "genuinely complex answer easier to scan") || !strings.Contains(prompt, "do not split a short answer into sections") {
 		t.Fatalf("default system prompt must avoid mechanical formatting rules: %q", prompt)
 	}
 }

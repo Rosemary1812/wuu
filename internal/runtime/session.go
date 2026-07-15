@@ -1740,7 +1740,7 @@ func mcpActivityBindingsFromPlugins(plugins []pluginpkg.Plugin) map[string]tools
 			if name == "" {
 				continue
 			}
-			out["plugin."+pluginID+"."+name] = tools.MCPActivityBinding{Kind: kind, PluginID: pluginID}
+			out[PluginMCPServerName(pluginID, name)] = tools.MCPActivityBinding{Kind: kind, PluginID: pluginID}
 		}
 	}
 	if len(out) == 0 {
@@ -1757,7 +1757,7 @@ func mcpServersFromConfigAndPlugins(cfg config.Config, plugins []pluginpkg.Plugi
 			if name == "" {
 				continue
 			}
-			out["plugin."+item.ID+"."+name] = server
+			out[PluginMCPServerName(item.ID, name)] = server
 		}
 	}
 	for name, server := range cfg.MCPServers {
@@ -1765,9 +1765,28 @@ func mcpServersFromConfigAndPlugins(cfg config.Config, plugins []pluginpkg.Plugi
 		if name == "" {
 			continue
 		}
+		if IsPluginMCPServerName(name) {
+			pluginServer, ok := out[name]
+			if !ok {
+				continue
+			}
+			if server.Enabled != nil {
+				pluginServer.Enabled = server.Enabled
+			}
+			out[name] = pluginServer
+			continue
+		}
 		out[name] = server
 	}
 	return out
+}
+
+func PluginMCPServerName(pluginID, serverName string) string {
+	return "plugin." + strings.TrimSpace(pluginID) + "." + strings.TrimSpace(serverName)
+}
+
+func IsPluginMCPServerName(name string) bool {
+	return strings.HasPrefix(strings.TrimSpace(name), "plugin.")
 }
 
 func mcpToolOverrides(in map[string]config.MCPToolOverride) map[string]mcp.ToolOverride {

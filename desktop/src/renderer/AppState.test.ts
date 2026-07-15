@@ -311,6 +311,27 @@ describe("queryTextsForThread", () => {
 });
 
 describe("summarizeThreadsForSidebar", () => {
+  it("keeps project sidebar summaries limited to root sessions", () => {
+    const summaries = summarizeThreadsForSidebar([
+      {
+        ...threadWithUserTexts(["root task"]),
+        id: "root-thread",
+      },
+      {
+        ...threadWithUserTexts(["child task"]),
+        id: "child-thread",
+        parent_id: "root-thread",
+      },
+      {
+        ...threadWithUserTexts(["legacy child task"]),
+        id: "legacy-read-only-thread",
+        read_only: true,
+      },
+    ]);
+
+    expect(summaries.map((thread) => thread.id)).toEqual(["root-thread"]);
+  });
+
   it("keeps sidebar thread data free of turn item payloads", () => {
     const [summary] = summarizeThreadsForSidebar([
       threadWithUserTexts(["secret message body"]),

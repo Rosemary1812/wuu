@@ -38,6 +38,7 @@ const SIDEBAR_SECTION_ORDER_KEY = "wuu.desktop.sidebarSectionOrder";
 export type SidebarProjectStateController = {
   collapsedSidebarSectionIDs: Set<string>;
   expandedSidebarSectionIDs: Set<string>;
+  loadingProjectThreadIDs: ReadonlySet<string>;
   projectThreadsByProjectID: Record<string, Thread[]>;
   cachedScratchThreads: Thread[];
   sidebarSectionOrder: string[];
@@ -153,6 +154,17 @@ export function threadListsEquivalent(
   });
 }
 
+export function mergeSidebarThreadSnapshots(
+  cached: Thread[] | undefined,
+  incoming: Thread[],
+): Thread[] {
+  let merged = cached ?? [];
+  for (const thread of incoming) {
+    merged = upsertThread(merged, thread);
+  }
+  return sortThreads(merged);
+}
+
 export function threadsForDesktopProject(
   threads: Thread[],
   project: DesktopProject,
@@ -202,6 +214,19 @@ export function useSidebarProjectState({
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
   );
+  const loadingProjectThreadIDs = useMemo(() => {
+    const loading = new Set(loadingProjectThreadIDsRef.current);
+    for (const project of projects) {
+      if (
+        project.id !== activeProjectID &&
+        sessionTreeSectionExpanded(project.id, expandedSidebarSectionIDs) &&
+        !Object.prototype.hasOwnProperty.call(projectThreadsByProjectID, project.id)
+      ) {
+        loading.add(project.id);
+      }
+    }
+    return loading;
+  }, [activeProjectID, expandedSidebarSectionIDs, projectThreadsByProjectID, projects]);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -276,10 +301,14 @@ export function useSidebarProjectState({
     }
     const activeProjectThreads = threadsForDesktopProject(threads, activeProject);
     setProjectThreadsByProjectID((current) => {
-      if (threadListsEquivalent(current[activeProjectID], activeProjectThreads)) {
+      const merged = mergeSidebarThreadSnapshots(
+        current[activeProjectID],
+        activeProjectThreads,
+      );
+      if (threadListsEquivalent(current[activeProjectID], merged)) {
         return current;
       }
-      return { ...current, [activeProjectID]: activeProjectThreads };
+      return { ...current, [activeProjectID]: merged };
     });
   }, [activeContext?.kind, activeProjectID, projectsByID, threads]);
 
@@ -445,6 +474,7 @@ export function useSidebarProjectState({
   return {
     collapsedSidebarSectionIDs,
     expandedSidebarSectionIDs,
+    loadingProjectThreadIDs,
     projectThreadsByProjectID,
     cachedScratchThreads,
     sidebarSectionOrder,

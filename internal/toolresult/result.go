@@ -162,7 +162,11 @@ func (r Result) TextProjection() string {
 			parts = append(parts, fmt.Sprintf("[resource_link: %s (%s)]", label, strings.TrimSpace(part.URI)))
 		}
 	}
-	if len(bytes.TrimSpace(r.StructuredContent)) > 0 {
+	// Content is the producer-owned model projection. StructuredContent is
+	// retained for clients, hooks, and replay, but must not be appended when a
+	// content projection already exists or the same payload is counted twice.
+	// Structured-only results still need a textual model representation.
+	if len(r.Content) == 0 && len(bytes.TrimSpace(r.StructuredContent)) > 0 {
 		parts = append(parts, canonicalRawString(r.StructuredContent))
 	}
 	return strings.Join(parts, "\n")

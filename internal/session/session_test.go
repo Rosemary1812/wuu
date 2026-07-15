@@ -346,6 +346,29 @@ func TestHistoryRecordFocusMetaRoundTrip(t *testing.T) {
 	}
 }
 
+func TestHistoryRecordToolResultRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := CreateWithMetadata(dir, "thread-tool-result", "/tmp/project"); err != nil {
+		t.Fatal(err)
+	}
+	rich := json.RawMessage(`{"content":[{"type":"image","data":"aW1hZ2U=","mime_type":"image/png","name":"screen.png"}],"structured_content":{"caption":"result"},"meta":{"source":"mcp"}}`)
+	if err := AppendHistoryRecord(dir, "thread-tool-result", HistoryRecord{
+		Role:       "tool",
+		Content:    "[image: screen.png (image/png)]",
+		ToolCallID: "call-rich",
+		ToolResult: rich,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	history, err := LoadHistoryRecords(dir, "thread-tool-result", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || string(history[0].ToolResult) != string(rich) {
+		t.Fatalf("loaded tool result = %+v, want %s", history, rich)
+	}
+}
+
 func TestCreateForkWithMetadataPersistsSource(t *testing.T) {
 	dir := t.TempDir()
 	cwd := filepath.Join(t.TempDir(), "project")

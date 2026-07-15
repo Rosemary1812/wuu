@@ -23,6 +23,7 @@ afterEach(() => {
   mountedRoots = [];
   document.body.innerHTML = "";
   window.localStorage.clear();
+  Reflect.deleteProperty(window, "wuu");
   vi.restoreAllMocks();
 });
 
@@ -164,6 +165,62 @@ describe("useSidebarProjectState", () => {
     expect(
       hook.get().projectThreadsByProjectID.alpha?.map((item) => item.id),
     ).toEqual(["thread-alpha"]);
+  });
+
+  it("marks expanded project sessions as loading until their snapshot arrives", async () => {
+    const alpha = project("alpha", "/tmp/alpha");
+    window.localStorage.setItem(
+      "wuu.desktop.expandedSidebarSectionIDs",
+      JSON.stringify([alpha.id]),
+    );
+    let resolveThreads: ((value: { threads: Thread[] }) => void) | undefined;
+    Object.defineProperty(window, "wuu", {
+      configurable: true,
+      value: {
+        listThreads: vi.fn(
+          () =>
+            new Promise((resolve) => {
+              resolveThreads = resolve;
+            }),
+        ),
+      },
+    });
+
+    const hook = await renderSidebarProjectState({ projects: [alpha] });
+    expect(hook.get().loadingProjectThreadIDs.has(alpha.id)).toBe(true);
+
+    await act(async () => {
+      resolveThreads?.({ threads: [thread("thread-alpha", alpha.path)] });
+      await flushEffects();
+    });
+
+    expect(hook.get().loadingProjectThreadIDs.has(alpha.id)).toBe(false);
+    expect(hook.get().projectThreadsByProjectID.alpha?.map((item) => item.id)).toEqual([
+      "thread-alpha",
+    ]);
+  });
+
+  it("keeps cached sessions while an active project snapshot is incomplete", async () => {
+    const alpha = project("alpha", "/tmp/alpha");
+    const first = thread("thread-first", "/tmp/alpha");
+    const second = thread("thread-second", "/tmp/alpha");
+    const activeContext: RuntimeContext = {
+      kind: "project",
+      project_id: alpha.id,
+      cwd: alpha.path,
+    };
+    const hook = await renderSidebarProjectState({
+      projects: [alpha],
+      threads: [first, second],
+      activeContext,
+      activeProjectID: alpha.id,
+    });
+
+    await hook.rerender({ threads: [second] });
+
+    expect(
+      hook.get().projectThreadsByProjectID.alpha?.map((item) => item.id).sort(),
+    ).toEqual(["thread-first", "thread-second"]);
   });
 
   it("keeps scratch threads cached for the no-project context", async () => {

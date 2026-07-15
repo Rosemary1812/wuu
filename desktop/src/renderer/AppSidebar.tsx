@@ -331,6 +331,7 @@ export function AppSidebar({
   pendingProjectID,
   collapsedSidebarSectionIDs,
   expandedSidebarSectionIDs,
+  loadingProjectThreadIDs,
   projectThreadsByProjectID,
   projectMenuOpen,
   projectMenuRef,
@@ -401,6 +402,7 @@ export function AppSidebar({
   pendingProjectID?: string;
   collapsedSidebarSectionIDs: Set<string>;
   expandedSidebarSectionIDs: Set<string>;
+  loadingProjectThreadIDs?: ReadonlySet<string>;
   projectThreadsByProjectID: Record<string, ThreadSummary[]>;
   projectMenuOpen: boolean;
   projectMenuRef: RefObject<HTMLDivElement | null>;
@@ -1084,6 +1086,7 @@ export function AppSidebar({
                   activeID={state.activeProjectId}
                   pendingProjectID={pendingProjectID}
                   expandedSidebarSectionIDs={expandedSidebarSectionIDs}
+                  loadingProjectThreadIDs={loadingProjectThreadIDs}
                   threadsByProjectID={projectThreadsByProjectID}
                   activeThreadID={activeThreadID}
                   pendingThreadID={pendingThreadID}

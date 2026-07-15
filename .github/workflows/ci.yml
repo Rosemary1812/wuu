@@ -10,6 +10,19 @@ permissions:
   contents: read
 
 jobs:
+  repository-check:
+    name: Repository check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Check repository metadata
+        run: make repository-check
+
   go-check:
     name: Go check
     runs-on: ubuntu-latest

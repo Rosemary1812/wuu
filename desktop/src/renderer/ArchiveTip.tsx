@@ -1,22 +1,22 @@
 import { useEffect, useState } from "react";
-import { Archive, X } from "lucide-react";
+import { Archive, CircleAlert, X } from "lucide-react";
 
 const ARCHIVE_TIP_AUTO_DISMISS_MS = 6000;
 
 export type ArchiveTipProps = {
   threadTitle: string;
+  errorMessage?: string;
   onViewArchive: () => void;
   onDismiss: () => void;
 };
 
 /**
- * Lightweight toast shown after a session is archived. Renders above the
- * main shell, auto-dismisses after a few seconds, and exposes a single
- * "归档" link that jumps straight to the Settings → Archive page so the
- * user can restore the session later.
+ * Lightweight toast for an archive attempt. A successful archive links to the
+ * archive page; a rejected attempt explains why the session stayed visible.
  */
 export function ArchiveTip({
   threadTitle,
+  errorMessage,
   onViewArchive,
   onDismiss,
 }: ArchiveTipProps): JSX.Element {
@@ -34,16 +34,23 @@ export function ArchiveTip({
   }, [onDismiss]);
 
   const trimmedTitle = threadTitle.trim();
+  const failed = Boolean(errorMessage);
 
   return (
     <div
-      className={`archive-tip${leaving ? " leaving" : ""}`}
-      role="status"
-      aria-live="polite"
+      className={`archive-tip${failed ? " is-error" : ""}${leaving ? " leaving" : ""}`}
+      role={failed ? "alert" : "status"}
+      aria-live={failed ? "assertive" : "polite"}
     >
-      <Archive className="archive-tip-icon" aria-hidden="true" />
+      {failed ? (
+        <CircleAlert className="archive-tip-icon" aria-hidden="true" />
+      ) : (
+        <Archive className="archive-tip-icon" aria-hidden="true" />
+      )}
       <span className="archive-tip-message">
-        {trimmedTitle ? (
+        {errorMessage ? (
+          <span>{errorMessage}</span>
+        ) : trimmedTitle ? (
           <>
             <strong>{trimmedTitle}</strong>
             <span> 已归档</span>
@@ -52,13 +59,15 @@ export function ArchiveTip({
           <span>会话已归档</span>
         )}
       </span>
-      <button
-        type="button"
-        className="archive-tip-action"
-        onClick={onViewArchive}
-      >
-        查看归档
-      </button>
+      {failed ? null : (
+        <button
+          type="button"
+          className="archive-tip-action"
+          onClick={onViewArchive}
+        >
+          查看归档
+        </button>
+      )}
       <button
         type="button"
         className="archive-tip-dismiss"

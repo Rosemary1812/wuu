@@ -425,12 +425,12 @@ func (s *Server) loadPersistedThreadSnapshot(id string) (persistedThreadSnapshot
 	if !ok {
 		return persistedThreadSnapshot{}, session.ErrSessionNotFound
 	}
-	displayHistory, historyHeadSeq, err := loadProviderPersistedMessages(s.rt.SessionDir, id, true)
+	providerRecords, historyHeadSeq, err := loadProviderPersistedMessages(s.rt.SessionDir, id, true)
 	if err != nil {
 		return persistedThreadSnapshot{}, err
 	}
-	providerHistory := make([]persistedMessage, 0, len(displayHistory))
-	for _, rec := range displayHistory {
+	providerHistory := make([]persistedMessage, 0, len(providerRecords))
+	for _, rec := range providerRecords {
 		if strings.EqualFold(strings.TrimSpace(rec.Role), "meta") {
 			continue
 		}
@@ -441,6 +441,11 @@ func (s *Server) loadPersistedThreadSnapshot(id string) (persistedThreadSnapshot
 	if err != nil {
 		return persistedThreadSnapshot{}, err
 	}
+	displayHistory, err := loadPersistedMessages(s.rt.SessionDir, id, true)
+	if err != nil {
+		return persistedThreadSnapshot{}, err
+	}
+	displayHistory = displayHistoryAcrossProviderCheckpoint(displayHistory, providerRecords)
 	tokenMetas, err := loadMetaMessages(s.rt.SessionDir, id)
 	if err != nil {
 		return persistedThreadSnapshot{}, err

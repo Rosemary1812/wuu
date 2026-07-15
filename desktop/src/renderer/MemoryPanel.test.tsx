@@ -138,6 +138,20 @@ function unknownMethodError(method: string): Error {
 }
 
 describe("MemoryPanel overview", () => {
+  it("keeps the overview controls in the page title row", () => {
+    installMemoryStub({
+      getMemoryOverview: vi.fn().mockReturnValue(new Promise<MemoryOverviewResult>(() => {})),
+    });
+    mount();
+
+    const header = container.querySelector(".settings-memory-header");
+    expect(header?.querySelector(".settings-page-title")?.textContent).toBe("记忆");
+    expect(header?.querySelector("[data-testid=\"memory-raw-toggle\"]")).not.toBeNull();
+    expect(
+      header?.querySelector("[data-testid=\"memory-refresh-overview\"]"),
+    ).not.toBeNull();
+  });
+
   it("shows a skeleton while memory/overview is pending, then renders the essay", async () => {
     let resolveOverview: (value: MemoryOverviewResult) => void = () => {};
     const pending = new Promise<MemoryOverviewResult>((resolve) => {

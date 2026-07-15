@@ -46,12 +46,28 @@ export type ThreadMutationActions = {
     threadID: string,
     participantID: string,
   ) => Promise<void>;
-  archiveThread: (thread: ThreadSummary) => Promise<void>;
+  archiveThread: (thread: ThreadSummary) => Promise<ThreadArchiveOutcome>;
   unarchiveThread: (thread: Pick<ThreadSummary, "id">) => Promise<void>;
   deleteThread: (thread: ThreadSummary) => Promise<void>;
   toggleSubagentPinned: (agent: Agent) => Promise<void>;
   archiveSubagent: (agent: Agent) => Promise<void>;
 };
+
+export type ThreadArchiveOutcome =
+  | { ok: true }
+  | { ok: false; error: string };
+
+function archiveThreadFailureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (
+    message.includes("cannot archive a running thread") ||
+    message.includes("already has a running turn") ||
+    message.includes("execution is owned by another app-server")
+  ) {
+    return "会话仍在运行，结束后再归档";
+  }
+  return desktopApiErrorMessage(error, "归档会话失败");
+}
 
 function patchChildAgentInThread(
   thread: Thread | undefined,
@@ -252,14 +268,18 @@ export function createThreadMutationActions(
     }
   }
 
-  async function archiveThread(thread: ThreadSummary): Promise<void> {
+  async function archiveThread(thread: ThreadSummary): Promise<ThreadArchiveOutcome> {
     const currentState = deps.getAppState();
     const isLocalDemoThread = deps.localDemoThreadsRef.current.has(thread.id);
-    if (
-      !currentState.activeContext ||
-      (!isLocalDemoThread && isThreadRunning(thread))
-    ) {
-      return;
+    if (!currentState.activeContext) {
+      const error = "当前没有可用的工作区，无法归档";
+      setStatus(error);
+      return { ok: false, error };
+    }
+    if (!isLocalDemoThread && isThreadRunning(thread)) {
+      const error = "会话仍在运行，结束后再归档";
+      setStatus(error);
+      return { ok: false, error };
     }
     deps.clearThreadPendingComposerMessages(thread.id);
     const archivedActiveThread = thread.id === deps.getActiveThreadID();
@@ -278,7 +298,7 @@ export function createThreadMutationActions(
         );
         return archiveMarkThreadState(current, thread.id, true, nextTabs, fallbackDraft);
       });
-      return;
+      return { ok: true };
     }
     try {
       const result = await window.wuu.archiveThread(thread.id, true);
@@ -296,8 +316,11 @@ export function createThreadMutationActions(
           fallbackDraft,
         );
       });
+      return { ok: true };
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "archive thread failed");
+      const message = archiveThreadFailureMessage(error);
+      setStatus(message);
+      return { ok: false, error: message };
     }
   }
 

@@ -1,40 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  conversationSearchStatusText,
-  conversationSearchVisibleSnippet,
-} from "./ConversationSearchDisplay";
-
-describe("conversationSearchStatusText", () => {
-  it("prioritizes the loading state", () => {
-    expect(
-      conversationSearchStatusText({
-        loading: true,
-        query: "",
-        resultCount: 2,
-      }),
-    ).toBe("正在搜索");
-  });
-
-  it("shows result count while searching", () => {
-    expect(
-      conversationSearchStatusText({
-        loading: false,
-        query: "permission",
-        resultCount: 2,
-      }),
-    ).toBe("2 个结果");
-  });
-
-  it("shows conversation count in the recent list", () => {
-    expect(
-      conversationSearchStatusText({
-        loading: false,
-        query: "",
-        resultCount: 2,
-      }),
-    ).toBe("2 个会话");
-  });
-});
+import { conversationSearchVisibleSnippet } from "./ConversationSearchDisplay";
 
 describe("conversationSearchVisibleSnippet", () => {
   it("hides snippets in the recent conversation list", () => {

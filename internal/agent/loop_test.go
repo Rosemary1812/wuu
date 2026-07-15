@@ -2611,54 +2611,6 @@ func TestRunToolLoop_BeforeRequestTransformStaysRequestScoped(t *testing.T) {
 	}
 }
 
-func TestRunToolLoop_ToolPruneKeepsPlaceholdersStableAcrossRounds(t *testing.T) {
-	bigContent := strings.Repeat("x", 400_000)
-	history := []providers.ChatMessage{
-		userMsg("turn 1"),
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "old_call", Name: "read_file", Arguments: `{"path":"big.txt"}`}}},
-		{Role: "tool", Name: "read_file", ToolCallID: "old_call", Content: bigContent},
-		userMsg("turn 2"),
-		userMsg("run the check"),
-	}
-	step := &fakeStep{results: []StepResult{
-		{ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md"}`}}},
-		{Content: "ok"},
-	}}
-	cfg := LoopConfig{
-		Model:     "m",
-		ToolPrune: true,
-		Tools: &fakeLoopTools{
-			defs:    []providers.ToolDefinition{{Name: "read_file"}},
-			results: map[string]string{"call_1": `{"content":"hello"}`},
-		},
-	}
-
-	if _, err := RunToolLoop(context.Background(), history, cfg, step); err != nil {
-		t.Fatal(err)
-	}
-	if len(step.calls) != 2 {
-		t.Fatalf("expected two provider calls, got %d", len(step.calls))
-	}
-
-	placeholder := fmt.Sprintf("Original: %d characters", len(bigContent))
-	first := step.calls[0].Messages
-	second := step.calls[1].Messages
-	// Pruning must always summarize the original tool result, never a
-	// placeholder from an earlier round's request projection.
-	if got := countMessagesContaining(first, placeholder); got != 1 {
-		t.Fatalf("first request should prune the old tool result with correct metadata, got %d in %+v", got, first)
-	}
-	if got := countMessagesContaining(second, placeholder); got != 1 {
-		t.Fatalf("second request should re-prune deterministically with original metadata, got %d matches", got)
-	}
-	if got := countMessagesContaining(second, "Original: "); got != 1 {
-		t.Fatalf("second request should carry exactly one pruned placeholder, got %d", got)
-	}
-	if len(second) < len(first) || !reflect.DeepEqual(first, second[:len(first)]) {
-		t.Fatalf("pruned requests must stay prefix-stable across rounds:\nfirst=%+v\nsecond=%+v", first, second)
-	}
-}
-
 func TestRunToolLoop_FiltersStaleInternalContextWithoutTaskContract(t *testing.T) {
 	step := &fakeStep{results: []StepResult{{Content: "ok"}}}
 	reminder := wuucontext.FormatSystemReminderBlocks(wuucontext.Block{

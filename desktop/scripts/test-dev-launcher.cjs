@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const { readFileSync } = require("node:fs");
 const { resolve } = require("node:path");
 const packageJSON = require("../package.json");
 const {
@@ -40,6 +41,15 @@ assert.ok(environment.includes("WUU_ENABLE_CUA_MAC=1"));
 assert.ok(environment.includes("WUU_CUA_MAC_HELPER=/repo/desktop/build/bin/wuu-cua-mac"));
 assert.ok(environment.includes("WUU_CUA_MAC_PIP_HELPER=/repo/desktop/build/bin/wuu-cua-mac-pip"));
 
+const disabledEnvironment = launchEnvironment(
+  { ELECTRON_RENDERER_URL: "http://localhost:5173" },
+  "token-disabled",
+  "/repo",
+  "/repo/desktop/build/bin/wuu-cua-mac",
+  "/repo/desktop/build/bin/wuu-cua-mac-pip",
+);
+assert.ok(!disabledEnvironment.some((entry) => entry.startsWith("WUU_ENABLE_CUA_MAC=")));
+
 const processList = [
   "  41 /path/Electron Helper WUU_DEV_LAUNCH_TOKEN=token-1",
   "  42 /repo/desktop/build/dev-host/Wuu Dev.app/Contents/MacOS/Electron /repo/desktop WUU_DEV_LAUNCH_TOKEN=token-1",
@@ -68,7 +78,9 @@ assert.equal(
 assert.equal(sourceHashFromBuildInfo({}, () => "fallback"), "fallback");
 assert.match(packageJSON.scripts["pack:mac"], /CSC_IDENTITY_AUTO_DISCOVERY=false/);
 assert.match(packageJSON.scripts["dist:mac"], /CSC_IDENTITY_AUTO_DISCOVERY=false/);
-assert.match(packageJSON.scripts["dev:direct"], /WUU_ENABLE_CUA_MAC=1/);
+assert.equal(packageJSON.scripts["dev:direct"], "WUU_ENABLE_CUA_MAC=1 node scripts/dev.cjs");
+const devLauncherSource = readFileSync(resolve(__dirname, "dev.cjs"), "utf8");
+assert.doesNotMatch(devLauncherSource, /env\.WUU_ENABLE_CUA_MAC\s*=\s*["']1["']/);
 assert.equal(packageJSON.scripts["build:core"], "node scripts/build-core.cjs");
 assert.doesNotMatch(packageJSON.scripts["pack:mac"], /cua-mac/);
 assert.doesNotMatch(packageJSON.scripts["dist:mac"], /cua-mac/);

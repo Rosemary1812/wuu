@@ -14,10 +14,6 @@
   --env-search-input-placeholder: var(--ink-muted);
   --env-search-clear-btn-text: var(--ink-soft);
   --env-search-clear-btn-hover-bg: var(--surface-2);
-  --env-search-status-text: var(--ink-soft);
-  --env-search-spinner-border: var(--ink-overlay-12);
-  --env-search-spinner-top-border: var(--ink-overlay-18);
-  --env-search-status-btn-text: var(--ink-soft);
   --env-search-error-bg: #fff0ed;
   --env-search-error-text: #a74431;
   --env-search-result-text: var(--ink);
@@ -1033,7 +1029,8 @@
 }
 
 .conversation-search-dialog {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   /* Wider default — the dialog now hosts a two-pane layout (result list +
      preview pane). 60vw keeps it proportionate at common desktop widths
      (768px @ 1280, 864px @ 1440) and the 880px cap is generous enough for
@@ -1041,9 +1038,8 @@
      overrides this for phone-sized viewports. */
   width: clamp(640px, 60vw, 880px);
   max-height: min(680px, calc(100vh - 96px));
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 10px;
   overflow: hidden;
-  border: 1px solid var(--ink-overlay-8);
   border-radius: var(--radius-lg);
   background: var(--menu-bg);
   box-shadow:
@@ -1065,7 +1061,7 @@
   grid-template-columns: 24px minmax(0, 1fr) 28px;
   align-items: center;
   gap: 8px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   color: var(--env-search-input-text);
   padding: 0 10px 0 12px;
@@ -1123,58 +1119,6 @@
   -webkit-user-select: none;
 }
 
-.conversation-search-status {
-  display: flex;
-  min-height: 34px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--env-search-status-text);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
-  padding: 4px 12px 0;
-}
-
-.conversation-search-status-text {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 7px;
-}
-
-.conversation-search-status.loading .conversation-search-status-text::before {
-  content: "";
-  display: block;
-  width: 10px;
-  height: 10px;
-  flex: 0 0 auto;
-  border: 2px solid var(--env-search-spinner-border);
-  border-top-color: var(--env-search-spinner-top-border);
-  border-radius: var(--radius-pill);
-  animation: wuu-spin var(--motion-spin) linear infinite;
-}
-
-.conversation-search-status button {
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--env-search-status-btn-text);
-  cursor: pointer;
-  font-size: var(--font-sm);
-  font-weight: var(--weight-semibold);
-  padding: 5px 8px;
-  transition:
-    opacity var(--motion-base) var(--ease-out),
-    transform var(--motion-base) var(--search-motion-easing);
-}
-
-.conversation-search-status button:hover,
-.conversation-search-status button:focus-visible {
-  outline: 0;
-  background: var(--surface-2);
-  color: var(--ink);
-  transform: translate3d(0, -1px, 0);
-}
-
 .conversation-search-error {
   margin: 4px 8px;
   border-radius: var(--radius-sm);
@@ -1190,9 +1134,9 @@
   display: grid;
   min-height: 0;
   align-content: start;
-  gap: 8px;
+  gap: 4px;
   overflow-y: auto;
-  padding: 4px 0 2px;
+  padding: 0;
 }
 
 .conversation-search-result {
@@ -1201,7 +1145,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--env-search-result-text);
   cursor: pointer;
@@ -1323,23 +1267,21 @@
  * screen. */
 .conversation-search-body {
   display: grid;
+  flex: 1 1 auto;
   min-height: 0;
   grid-template-columns: minmax(280px, 1fr) minmax(0, 1.4fr);
-  gap: 8px;
+  gap: 16px;
 }
 
-/* Preview pane (right column). Reads as a slightly recessed panel so the
- * user's eye treats it as "inspect this candidate" rather than primary
- * content — the list stays the navigational surface. */
+/* Keep the preview in the same flat surface as the result list. Spacing,
+ * rather than another card outline, separates navigation from detail. */
 .conversation-search-preview {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   gap: 10px;
-  border-radius: var(--radius-md);
-  background: var(--surface-1);
-  padding: 12px 14px;
+  padding: 4px 6px 6px 0;
   overflow-y: auto;
 }
 
@@ -1404,9 +1346,6 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   line-height: 1.5;
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  padding: 8px 10px;
   word-break: break-word;
   /* Hard-cap the snippet to 3 lines via line-clamp so a long markdown
    * agent reply (the kind that easily blows past 30 lines once code

@@ -180,7 +180,8 @@ describe("createThreadMutationActions", () => {
       activeThreadID: base.id,
     });
 
-    await harness.actions.archiveThread(summary(base));
+    const outcome = await harness.actions.archiveThread(summary(base));
+    expect(outcome).toEqual({ ok: true });
     expect(api.archiveThread).toHaveBeenCalledWith(base.id, true);
     expect(harness.clearThreadPendingComposerMessages).toHaveBeenCalledWith(
       base.id,
@@ -189,6 +190,54 @@ describe("createThreadMutationActions", () => {
     expect(harness.resetSplitComposerDrafts).toHaveBeenCalled();
     expect(harness.getAppState().thread).toBeUndefined();
     expect(harness.getAppState().activeSessionTabID).toBe("draft:fallback");
+  });
+
+  it("reports a running thread instead of claiming it was archived", async () => {
+    const context = projectContext();
+    const base = { ...thread(), status: "in_progress" as const };
+    const api = installWuuApi(base);
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: context,
+        thread: base,
+        threads: [base],
+        status: "ready",
+      },
+    });
+
+    const outcome = await harness.actions.archiveThread(summary(base));
+
+    expect(outcome).toEqual({ ok: false, error: "会话仍在运行，结束后再归档" });
+    expect(api.archiveThread).not.toHaveBeenCalled();
+    expect(harness.getAppState().threads[0]?.archived).toBe(false);
+    expect(harness.getAppState().status).toBe("会话仍在运行，结束后再归档");
+  });
+
+  it("reports a remotely owned running turn without showing archive success", async () => {
+    const context = projectContext();
+    const base = thread();
+    const api = installWuuApi(base);
+    api.archiveThread.mockRejectedValueOnce(
+      new Error(
+        `thread "${base.id}" already has a running turn in another app-server: thread execution is owned by another app-server`,
+      ),
+    );
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: context,
+        thread: base,
+        threads: [base],
+        status: "ready",
+      },
+    });
+
+    const outcome = await harness.actions.archiveThread(summary(base));
+
+    expect(outcome).toEqual({ ok: false, error: "会话仍在运行，结束后再归档" });
+    expect(harness.getAppState().threads[0]?.archived).toBe(false);
+    expect(harness.getAppState().status).toBe("会话仍在运行，结束后再归档");
   });
 
   it("reuses a parked workspace draft when archiving the active thread", async () => {

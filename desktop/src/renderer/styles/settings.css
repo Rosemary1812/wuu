@@ -155,7 +155,7 @@
 .settings-titlebar {
   display: flex;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--surface-3);
   -webkit-app-region: drag;
 }
@@ -303,24 +303,142 @@
   border-bottom: 0;
 }
 
-/* Archive is an action list, not a settings form: one compact line gives the
- * session name and the only relevant action without exposing its local path. */
-.settings-archive-row {
+.settings-page-archive {
+  --settings-page-max-width: 1088px;
+}
+
+.settings-archive-page,
+.settings-archive-groups {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.settings-archive-page {
+  gap: 32px;
+}
+
+.settings-archive-groups {
+  gap: 34px;
+}
+
+.settings-archive-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 280px);
+  gap: 12px;
+}
+
+.settings-archive-search {
+  display: flex;
+  min-width: 0;
+  height: 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  color: var(--ink-faint);
+  transition:
+    border-color var(--motion-fast) var(--menu-enter-easing),
+    box-shadow var(--motion-fast) var(--menu-enter-easing);
+}
+
+.settings-archive-search:focus-within {
+  border-color: var(--hairline-strong);
+  box-shadow: 0 0 0 3px var(--ink-overlay-8);
+}
+
+.settings-archive-search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--font-ui);
+}
+
+.settings-archive-search input::placeholder {
+  color: var(--ink-faint);
+}
+
+.select-menu-trigger.settings-archive-filter-trigger {
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--paper);
+}
+
+.settings-archive-group {
+  min-width: 0;
+}
+
+.settings-archive-group-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 54px;
+  padding: 0 2px 12px;
+}
+
+.settings-archive-group-name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-strong);
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+}
+
+.settings-archive-group-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-archive-group-count {
+  flex: 0 0 auto;
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+}
+
+.settings-archive-list {
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: 0 16px;
+  background: var(--paper);
+}
+
+.settings-archive-row {
+  display: flex;
+  min-width: 0;
+  min-height: 68px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   border-bottom: 1px solid var(--hairline-soft);
-  padding: 8px 0;
+  padding: 10px 0;
 }
 
 .settings-archive-row:last-child {
   border-bottom: 0;
 }
 
-.settings-archive-title {
+.settings-archive-row-copy {
+  display: flex;
+  flex: 1 1 auto;
   min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-archive-title {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   color: var(--ink);
   font-size: var(--font-ui);
@@ -328,6 +446,13 @@
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.settings-archive-time {
+  color: var(--ink-muted);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  line-height: 1.35;
 }
 
 .settings-archive-restore {
@@ -339,7 +464,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
-  padding: 8px 0;
+  padding: 24px 0;
 }
 
 .settings-archive-empty-icon {
@@ -963,6 +1088,8 @@
 .settings-usage-page {
   display: flex;
   flex-direction: column;
+  container-name: settings-usage;
+  container-type: inline-size;
   /* 与页面级模块间距同源，用量页内部的工具栏/热力图/表格之间不再另起一套值。 */
   gap: var(--settings-gap, 40px);
 }
@@ -1045,8 +1172,8 @@
 /* --- Usage table --------------------------------------------------------- */
 
 .settings-usage-table-wrap {
-  overflow-x: auto;
-  overflow-y: visible;
+  min-width: 0;
+  overflow: visible;
 }
 
 /* Table title reads as a section label; cells are flush with the page
@@ -1063,8 +1190,9 @@
 
 .settings-usage-table {
   width: 100%;
-  min-width: 640px;
+  min-width: 0;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .settings-usage-table th,
@@ -1090,8 +1218,13 @@
 
 .settings-usage-table th:first-child,
 .settings-usage-table td:first-child {
+  width: 40%;
   text-align: left;
   padding-left: 0;
+}
+
+.settings-usage-table .settings-usage-num {
+  width: 20%;
 }
 
 .settings-usage-table td:first-child {
@@ -1104,6 +1237,11 @@
   color: var(--ink-muted);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
+}
+
+.settings-usage-table td:first-child strong,
+.settings-usage-table td:first-child small {
+  overflow-wrap: anywhere;
 }
 
 .settings-usage-rate {
@@ -1129,6 +1267,78 @@
 .settings-usage-rate.rate-1 {
   background: var(--warning-soft);
   color: var(--warning);
+}
+
+/* Keep the model table part of the page instead of turning it into a nested
+ * horizontal scroller. Once four columns stop reading comfortably, each row
+ * folds into a model heading followed by the three values. */
+@container settings-usage (max-width: 640px) {
+  .settings-usage-table {
+    display: block;
+    table-layout: auto;
+  }
+
+  .settings-usage-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .settings-usage-table tbody {
+    display: block;
+  }
+
+  .settings-usage-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px 16px;
+    border-bottom: 1px solid var(--hairline-soft);
+    padding: 14px 0;
+  }
+
+  .settings-usage-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .settings-usage-table tbody td,
+  .settings-usage-table tbody td:first-child,
+  .settings-usage-table .settings-usage-num {
+    display: flex;
+    width: auto;
+    min-width: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    border-bottom: 0;
+    padding: 0;
+    text-align: left;
+  }
+
+  .settings-usage-table tbody td:first-child {
+    grid-column: 1 / -1;
+    padding-bottom: 2px;
+  }
+
+  .settings-usage-table tbody td:nth-child(n + 2)::before {
+    color: var(--ink-muted);
+    font-size: var(--font-xs);
+    font-weight: var(--weight-semibold);
+  }
+
+  .settings-usage-table tbody td:nth-child(2)::before {
+    content: "输入";
+  }
+
+  .settings-usage-table tbody td:nth-child(3)::before {
+    content: "输出";
+  }
+
+  .settings-usage-table tbody td:nth-child(4)::before {
+    content: "命中率";
+  }
 }
 
 /* --- Usage entries (recent list) ---------------------------------------- */
@@ -1295,6 +1505,20 @@
   gap: 16px;
 }
 
+.settings-memory-header {
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.settings-memory-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
 .settings-memory-toolbar {
   display: flex;
   align-items: center;
@@ -1344,7 +1568,6 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
 }
 
 .settings-memory-raw-label {
@@ -1627,6 +1850,10 @@
 }
 
 @media (max-width: 900px) {
+  .settings-archive-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .settings-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
@@ -1637,7 +1864,7 @@
     justify-content: flex-start;
   }
 
-  .settings-page-header {
+  .settings-page-header:not(.settings-memory-header) {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;

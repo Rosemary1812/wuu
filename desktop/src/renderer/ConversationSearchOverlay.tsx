@@ -9,10 +9,7 @@ import type {
   ThreadSearchResultItem,
   Turn,
 } from "../shared/protocol";
-import {
-  conversationSearchStatusText,
-  conversationSearchVisibleSnippet,
-} from "./ConversationSearchDisplay";
+import { conversationSearchVisibleSnippet } from "./ConversationSearchDisplay";
 import type { ConversationSearchState } from "./ConversationSearchState";
 import {
   conversationSearchContextLabel,
@@ -30,7 +27,6 @@ export function ConversationSearchOverlay({
   dialogRef,
   inputRef,
   onClose,
-  onRefresh,
   onQueryChange,
   onClearQuery,
   onKeyDown,
@@ -46,7 +42,6 @@ export function ConversationSearchOverlay({
   dialogRef: RefObject<HTMLDivElement | null>;
   inputRef: RefObject<HTMLInputElement | null>;
   onClose: () => void;
-  onRefresh: () => void;
   onQueryChange: (query: string) => void;
   onClearQuery: () => void;
   onKeyDown: (event: ReactKeyboardEvent<HTMLInputElement>) => void;
@@ -56,12 +51,6 @@ export function ConversationSearchOverlay({
   if (!state.open && !state.closing) {
     return null;
   }
-
-  const status = conversationSearchStatusText({
-    loading: state.loading,
-    query: state.query,
-    resultCount: results.length,
-  });
 
   return (
     <div
@@ -102,14 +91,6 @@ export function ConversationSearchOverlay({
               ⌘P
             </kbd>
           )}
-        </div>
-        <div
-          className={`conversation-search-status${state.loading ? " loading" : ""}`}
-        >
-          <span className="conversation-search-status-text">{status}</span>
-          <button type="button" onClick={onRefresh}>
-            刷新
-          </button>
         </div>
         {state.error ? (
           <div className="conversation-search-error">{state.error}</div>

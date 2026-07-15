@@ -12,6 +12,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/compact"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	sessionstore "github.com/blueberrycongee/wuu/internal/session"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 type persistedToolCall struct {
@@ -60,6 +61,7 @@ type persistedMessage struct {
 	ToolCallID          string                             `json:"tool_call_id,omitempty"`
 	ToolInvocationID    string                             `json:"tool_invocation_id,omitempty"`
 	ToolResultKind      string                             `json:"tool_result_kind,omitempty"`
+	ToolResult          *toolresult.Result                 `json:"tool_result,omitempty"`
 	FinishReason        string                             `json:"finish_reason,omitempty"`
 	StopReason          string                             `json:"stop_reason,omitempty"`
 	Truncated           bool                               `json:"truncated,omitempty"`
@@ -153,6 +155,7 @@ func chatMessagesFromPersistedMessages(records []persistedMessage) []providers.C
 			ToolCallID:        rec.ToolCallID,
 			ToolInvocationID:  rec.ToolInvocationID,
 			ToolResultKind:    providers.NormalizeToolCallKind(rec.ToolResultKind),
+			ToolResult:        cloneToolResult(rec.ToolResult),
 			FinishReason:      providers.FinishReason(strings.TrimSpace(rec.FinishReason)),
 			StopReason:        strings.ToLower(strings.TrimSpace(rec.StopReason)),
 			Truncated:         rec.Truncated,
@@ -608,6 +611,7 @@ func persistedMessageFromChatMessage(msg providers.ChatMessage) persistedMessage
 		ToolCallID:        msg.ToolCallID,
 		ToolInvocationID:  msg.ToolInvocationID,
 		ToolResultKind:    string(msg.ToolResultKind),
+		ToolResult:        cloneToolResult(msg.ToolResult),
 		FinishReason:      string(msg.FinishReason),
 		StopReason:        strings.ToLower(strings.TrimSpace(msg.StopReason)),
 		Truncated:         msg.Truncated,
@@ -712,6 +716,41 @@ func loadProviderPersistedMessages(sessDir, id string, includeMeta bool) ([]pers
 	return out, snapshot.HeadSeq, nil
 }
 
+// displayHistoryAcrossProviderCheckpoint restores the user-visible transcript
+// that predates the current provider checkpoint without putting compacted tool
+// payloads and reasoning back on the wire. The provider snapshot remains the
+// source of truth from its earliest retained record onward.
+func displayHistoryAcrossProviderCheckpoint(raw, provider []persistedMessage) []persistedMessage {
+	firstRetainedSeq := 0
+	for _, rec := range provider {
+		if rec.Seq > 0 && (firstRetainedSeq == 0 || rec.Seq < firstRetainedSeq) {
+			firstRetainedSeq = rec.Seq
+		}
+	}
+	if firstRetainedSeq <= 1 {
+		return provider
+	}
+	display := make([]persistedMessage, 0, len(raw)+len(provider))
+	for _, rec := range raw {
+		if rec.Seq <= 0 || rec.Seq >= firstRetainedSeq {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(rec.Role)) {
+		case "tool":
+			continue
+		case "assistant":
+			rec.ToolCalls = nil
+			rec.ReasoningContent = ""
+			rec.ReasoningBlocks = nil
+			if strings.TrimSpace(rec.Content) == "" && strings.TrimSpace(rec.DisplayContent) == "" {
+				continue
+			}
+		}
+		display = append(display, rec)
+	}
+	return append(display, provider...)
+}
+
 func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.HistoryRecord {
 	return sessionstore.HistoryRecord{
 		Seq:                 rec.Seq,
@@ -733,6 +772,7 @@ func historyRecordFromPersistedMessage(rec persistedMessage) sessionstore.Histor
 		ToolCallID:          rec.ToolCallID,
 		ToolInvocationID:    rec.ToolInvocationID,
 		ToolResultKind:      rec.ToolResultKind,
+		ToolResult:          mustJSON(rec.ToolResult),
 		FinishReason:        rec.FinishReason,
 		StopReason:          rec.StopReason,
 		Truncated:           rec.Truncated,
@@ -804,6 +844,9 @@ func persistedMessageFromHistoryRecord(rec sessionstore.HistoryRecord) (persiste
 		return persistedMessage{}, err
 	}
 	if err := unmarshalRaw(rec.DiscoveredTools, &out.DiscoveredTools); err != nil {
+		return persistedMessage{}, err
+	}
+	if err := unmarshalRaw(rec.ToolResult, &out.ToolResult); err != nil {
 		return persistedMessage{}, err
 	}
 	out.DiscoveredTools = providers.CloneLoadableToolDefinitions(out.DiscoveredTools)

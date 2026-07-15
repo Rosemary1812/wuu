@@ -1251,6 +1251,7 @@ func TestNewSessionWiresPluginHooks(t *testing.T) {
 }
 
 func TestMCPServersFromConfigAndPluginsPrefixesPluginServers(t *testing.T) {
+	disabled := false
 	plugins := []pluginpkg.Plugin{{
 		Manifest: pluginpkg.Manifest{
 			ID: "docs",
@@ -1261,15 +1262,20 @@ func TestMCPServersFromConfigAndPluginsPrefixesPluginServers(t *testing.T) {
 	}}
 	cfg := config.Config{
 		MCPServers: map[string]config.MCPServerConfig{
-			"search": {Command: "user-docs"},
+			"search":                  {Command: "user-docs"},
+			"plugin.docs.search":      {Enabled: &disabled},
+			"plugin.cua-mac.computer": {},
 		},
 	}
 	servers := mcpServersFromConfigAndPlugins(cfg, plugins)
 	if servers["search"].Command != "user-docs" {
 		t.Fatalf("user MCP server changed: %+v", servers)
 	}
-	if servers["plugin.docs.search"].Command != "plugin-docs" {
+	if got := servers["plugin.docs.search"]; got.Command != "plugin-docs" || got.Enabled == nil || *got.Enabled {
 		t.Fatalf("plugin MCP server missing or unprefixed: %+v", servers)
+	}
+	if _, ok := servers["plugin.cua-mac.computer"]; ok {
+		t.Fatalf("inactive plugin MCP override must be ignored: %+v", servers)
 	}
 }
 

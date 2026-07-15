@@ -172,7 +172,16 @@ func (s *Server) currentGeneralSettingsSummary() GeneralSettingsSummary {
 	if cfg, _, err := s.rt.LoadEffectiveConfig(); err == nil {
 		summary.AppendSystemPrompt = cfg.Agent.AppendSystemPrompt
 		summary.MemoryDisabled = cfg.Memory.Disable
+		activePluginServers := make(map[string]bool)
+		for _, item := range s.rt.Plugins {
+			for name := range item.MCPServers {
+				activePluginServers[runtime.PluginMCPServerName(item.ID, name)] = true
+			}
+		}
 		for name, server := range cfg.MCPServers {
+			if runtime.IsPluginMCPServerName(name) && !activePluginServers[name] {
+				continue
+			}
 			if server.Enabled == nil || *server.Enabled {
 				summary.MCPServerEnabled[name] = true
 			} else {
@@ -338,6 +347,9 @@ func (s *Server) currentExtensionInventory() []ExtensionInventoryRecord {
 		mcpNames := sortedMapKeys(item.MCPServers)
 		for _, name := range mcpNames {
 			server := item.MCPServers[name]
+			if override, ok := cfg.MCPServers[runtime.PluginMCPServerName(item.ID, name)]; ok && override.Enabled != nil {
+				server.Enabled = override.Enabled
+			}
 			permissions := executablePermissions(item.RequestedPermissions, server.Command != "", server.URL != "", false)
 			subjectID := extensionSubjectID("mcp", "plugin", item.ID, name)
 			fingerprint, _ := extensions.Fingerprint(extensions.ExecutableSpec{
@@ -386,6 +398,9 @@ func (s *Server) currentExtensionInventory() []ExtensionInventoryRecord {
 	}
 
 	for _, name := range sortedMapKeys(cfg.MCPServers) {
+		if runtime.IsPluginMCPServerName(name) {
+			continue
+		}
 		server := cfg.MCPServers[name]
 		permissions := executablePermissions(nil, server.Command != "", server.URL != "", false)
 		subjectID := extensionSubjectID("mcp", "config", name)

@@ -12,6 +12,7 @@ export function useAssistantTurnPresentation(
   const turnIDRef = useRef(turnID);
   const presentedStructureRef = useRef(displayStructureSignature(display));
   const presentedContentRef = useRef(displayContentSignature(display));
+  const presentedStreamingRef = useRef(displayHasStreamingEntry(display));
   const pendingDisplayRef = useRef(display);
   const pendingStructureRef = useRef(presentedStructureRef.current);
   const pendingContentRef = useRef(presentedContentRef.current);
@@ -27,6 +28,7 @@ export function useAssistantTurnPresentation(
   const publish = (nextDisplay: AssistantTurnDisplay | undefined): void => {
     presentedStructureRef.current = displayStructureSignature(nextDisplay);
     presentedContentRef.current = displayContentSignature(nextDisplay);
+    presentedStreamingRef.current = displayHasStreamingEntry(nextDisplay);
     pendingDisplayRef.current = nextDisplay;
     pendingStructureRef.current = presentedStructureRef.current;
     pendingContentRef.current = presentedContentRef.current;
@@ -52,6 +54,16 @@ export function useAssistantTurnPresentation(
       return;
     }
 
+    // A completed stream is a presentation boundary, not transient structure.
+    // Publish its final snapshot before a queued turn can add the next user
+    // message below it. Keeping this transition in the stabilization window
+    // makes the new turn appear while the previous final text is still stale.
+    if (presentedStreamingRef.current && !displayHasStreamingEntry(display)) {
+      clearPending();
+      publish(display);
+      return;
+    }
+
     pendingDisplayRef.current = display;
     pendingStructureRef.current = nextStructure;
     pendingContentRef.current = nextContent;
@@ -62,6 +74,9 @@ export function useAssistantTurnPresentation(
       timerRef.current = undefined;
       presentedStructureRef.current = pendingStructureRef.current;
       presentedContentRef.current = pendingContentRef.current;
+      presentedStreamingRef.current = displayHasStreamingEntry(
+        pendingDisplayRef.current,
+      );
       setPresented(pendingDisplayRef.current);
     }, ASSISTANT_TURN_PRESENTATION_STABILIZE_MS);
   }, [display, turnID]);
@@ -71,6 +86,12 @@ export function useAssistantTurnPresentation(
   }, []);
 
   return presented;
+}
+
+function displayHasStreamingEntry(
+  display: AssistantTurnDisplay | undefined,
+): boolean {
+  return display?.entries.some((entry) => entry.streaming) ?? false;
 }
 
 function displayStructureSignature(

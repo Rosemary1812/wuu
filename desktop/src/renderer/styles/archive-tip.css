@@ -1,8 +1,8 @@
 /*
  * Archive tip toast.
  *
- * Renders the floating "已归档 · 查看归档" notice shown by App.tsx after a
- * session is archived. The container is a fixed-positioned pill anchored to
+ * Renders the floating archive result notice shown by App.tsx. The container
+ * is a fixed-positioned pill anchored to
  * the top of the viewport, centered horizontally, with a slide-down/fade-in
  * entrance and an upward fade for the `.leaving` dismissal class managed by
  * ArchiveTip.tsx. Keep it visually quiet — the toast must read as ephemeral
@@ -44,6 +44,10 @@
   width: 16px;
   height: 16px;
   color: var(--ink-soft, #5c6165);
+}
+
+.archive-tip.is-error .archive-tip-icon {
+  color: var(--danger, #d93025);
 }
 
 .archive-tip-message {

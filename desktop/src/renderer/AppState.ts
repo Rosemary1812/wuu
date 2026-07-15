@@ -1437,7 +1437,11 @@ function summarizeThreadForSidebar(thread: Thread): ThreadSummary {
 }
 
 function summarizeThreadsForSidebar(threads: Thread[]): ThreadSummary[] {
-  return threads.map(summarizeThreadForSidebar);
+  // Apply sidebar visibility at the shared Thread -> ThreadSummary boundary.
+  // Project buckets consume these summaries directly, so leaving filtering to
+  // their downstream sort path lets live subagent thread updates leak into the
+  // left rail even though pinned and scratch sections hide them correctly.
+  return sortThreadSummaries(threads.map(summarizeThreadForSidebar));
 }
 
 function sortThreadSummaries(threads: ThreadSummary[]): ThreadSummary[] {

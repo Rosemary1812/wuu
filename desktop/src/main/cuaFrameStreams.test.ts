@@ -1,10 +1,14 @@
+import type { ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { linkSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { PassThrough, Writable } from "node:stream";
+import { describe, expect, it, vi } from "vitest";
 import {
   CUA_PIP_FORCE_STOP_TIMEOUT_MS,
   CUALineDecoder,
+  CUANativePiP,
   cuaFrameHelperCandidates,
   isSameExecutableFile,
 } from "./cuaFrameStreams";
@@ -30,6 +34,42 @@ describe("CUALineDecoder", () => {
     expect(decoder.push('{"event":"geometry","x":20,"y":30,"width":520,"height":300}\n')).toEqual([
       { event: "geometry", x: 20, y: 30, width: 520, height: 300 },
     ]);
+  });
+});
+
+describe("CUANativePiP", () => {
+  it("turns an asynchronous EPIPE into a recoverable helper failure", async () => {
+    const pipeError = Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+    const stdin = new Writable({
+      write: (_chunk, _encoding, callback) => callback(pipeError),
+    });
+    const child = Object.assign(new EventEmitter(), {
+      stdin,
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      kill: vi.fn(() => true),
+      pid: 1234,
+    }) as unknown as ChildProcessWithoutNullStreams;
+    const onError = vi.fn();
+    const pip = new CUANativePiP(
+      "/tmp/wuu-cua-mac-pip",
+      "thread-id",
+      "Finder",
+      undefined,
+      undefined,
+      { x: 0, y: 0, width: 320, height: 240 },
+      vi.fn(),
+      onError,
+      (() => child) as unknown as typeof spawn,
+    );
+
+    pip.start();
+    pip.setVisible(true);
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledWith("write EPIPE"));
+
+    expect(pip.isLive()).toBe(false);
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 });
 

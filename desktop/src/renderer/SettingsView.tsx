@@ -4,11 +4,13 @@ import {
   BarChart3,
   Brain,
   Check,
+  Folder,
   KeyRound,
   Plug,
   PlugZap,
   Plus,
   RefreshCw,
+  Search,
   Settings,
   SlidersHorizontal,
   Smartphone,
@@ -60,6 +62,8 @@ export type ArchivedSessionView = {
   id: string;
   title?: string;
   updated_at: string;
+  archive_project_id?: string;
+  archive_project_name?: string;
 };
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 import { CliInstallSection } from "./CliInstallSection";
@@ -661,10 +665,15 @@ export function SettingsView({
           </button>
         </div>
         <div ref={settingsScrollRef} className="settings-scroll">
-          <div className="settings-page" key={activePage}>
-            <header className="settings-page-header">
-              <h1 className="settings-page-title">{pageTitle}</h1>
-            </header>
+          <div
+            className={`settings-page${activePage === "archive" ? " settings-page-archive" : ""}`}
+            key={activePage}
+          >
+            {activePage === "memory" ? null : (
+              <header className="settings-page-header">
+                <h1 className="settings-page-title">{pageTitle}</h1>
+              </header>
+            )}
   
             {activePage === "providers" ? (
               <SettingsProvidersPage
@@ -1892,43 +1901,154 @@ function SettingsArchivePage({
   archivedThreads: readonly ArchivedSessionView[];
   onUnarchive: (thread: ArchivedSessionView) => void;
 }): JSX.Element {
-  // 列表按 `updated_at` 倒序排，最近归档的会话排在最上面，跟侧边栏的"最新活动优先"心智一致。
-  const sortedThreads = [...archivedThreads].sort((a, b) =>
-    b.updated_at.localeCompare(a.updated_at),
+  const [query, setQuery] = useState("");
+  const [projectFilter, setProjectFilter] = useState("all");
+  const sortedThreads = useMemo(
+    () => [...archivedThreads].sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
+    [archivedThreads],
   );
+  const projectOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return sortedThreads.flatMap((thread) => {
+      const projectID = archiveProjectID(thread);
+      if (seen.has(projectID)) {
+        return [];
+      }
+      seen.add(projectID);
+      return [{ value: projectID, label: archiveProjectName(thread) }];
+    });
+  }, [sortedThreads]);
+  const groups = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    const grouped = new Map<
+      string,
+      { projectName: string; threads: ArchivedSessionView[] }
+    >();
+    for (const thread of sortedThreads) {
+      const projectID = archiveProjectID(thread);
+      const title = archiveThreadTitle(thread);
+      if (projectFilter !== "all" && projectID !== projectFilter) {
+        continue;
+      }
+      if (normalizedQuery && !title.toLocaleLowerCase().includes(normalizedQuery)) {
+        continue;
+      }
+      const group = grouped.get(projectID) ?? {
+        projectName: archiveProjectName(thread),
+        threads: [],
+      };
+      group.threads.push(thread);
+      grouped.set(projectID, group);
+    }
+    return Array.from(grouped, ([projectID, group]) => ({ projectID, ...group }));
+  }, [projectFilter, query, sortedThreads]);
+  const noMatches = sortedThreads.length > 0 && groups.length === 0;
+
   return (
-    <SettingsCard>
-      {sortedThreads.length === 0 ? (
+    <div className="settings-archive-page">
+      <div className="settings-archive-toolbar" role="search" aria-label="筛选归档会话">
+        <label className="settings-archive-search">
+          <Search className="icon" aria-hidden="true" />
+          <span className="sr-only">搜索归档会话</span>
+          <input
+            type="search"
+            value={query}
+            placeholder="搜索归档会话"
+            onChange={(event) => setQuery(event.currentTarget.value)}
+          />
+        </label>
+        <SelectMenu
+          className="settings-archive-project-filter"
+          triggerClassName="settings-archive-filter-trigger"
+          value={projectFilter}
+          onChange={setProjectFilter}
+          ariaLabel="按项目筛选"
+          options={[{ value: "all", label: "所有项目" }, ...projectOptions]}
+          flip
+        />
+      </div>
+      {sortedThreads.length === 0 || noMatches ? (
         <div className="settings-archive-empty" role="status">
           <Archive className="settings-archive-empty-icon" aria-hidden="true" />
-          <p className="settings-archive-empty-title">暂无已归档的会话</p>
-          <p className="settings-archive-empty-hint">
-            在侧边栏行末点击归档按钮后会出现在这里，随时可以恢复。
+          <p className="settings-archive-empty-title">
+            {noMatches ? "没有匹配的归档会话" : "暂无已归档的会话"}
           </p>
+          {noMatches ? null : (
+            <p className="settings-archive-empty-hint">
+              在侧边栏行末点击归档按钮后会出现在这里，随时可以恢复。
+            </p>
+          )}
         </div>
       ) : (
-        <div className="settings-archive-list" aria-label="已归档会话列表">
-          {sortedThreads.map((thread) => {
-            const title = (thread.title ?? "").trim() || "未命名会话";
-            return (
-              <div className="settings-archive-row" key={thread.id}>
-                <span className="settings-archive-title" title={title}>{title}</span>
-                <button
-                  type="button"
-                  className="settings-button settings-archive-restore"
-                  aria-label={`恢复 ${title}`}
-                  onClick={() => onUnarchive(thread)}
-                >
-                  <Archive className="icon-sm" aria-hidden="true" />
-                  恢复
-                </button>
+        <div className="settings-archive-groups" aria-label="已归档会话列表">
+          {groups.map((group) => (
+            <section className="settings-archive-group" key={group.projectID}>
+              <header className="settings-archive-group-header">
+                <div className="settings-archive-group-name">
+                  <Folder className="icon" aria-hidden="true" />
+                  <span>{group.projectName}</span>
+                </div>
+                <span className="settings-archive-group-count">
+                  {group.threads.length} 个会话
+                </span>
+              </header>
+              <div className="settings-archive-list">
+                {group.threads.map((thread) => {
+                  const title = archiveThreadTitle(thread);
+                  return (
+                    <div className="settings-archive-row" key={thread.id}>
+                      <div className="settings-archive-row-copy">
+                        <span className="settings-archive-title" title={title}>{title}</span>
+                        <time className="settings-archive-time" dateTime={thread.updated_at}>
+                          {formatArchiveTime(thread.updated_at)}
+                        </time>
+                      </div>
+                      <button
+                        type="button"
+                        className="settings-button settings-archive-restore"
+                        aria-label={`恢复 ${title}`}
+                        onClick={() => onUnarchive(thread)}
+                      >
+                        <Archive className="icon-sm" aria-hidden="true" />
+                        恢复
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </section>
+          ))}
         </div>
       )}
-    </SettingsCard>
+    </div>
   );
+}
+
+function archiveThreadTitle(thread: ArchivedSessionView): string {
+  return (thread.title ?? "").trim() || "未命名会话";
+}
+
+function archiveProjectID(thread: ArchivedSessionView): string {
+  return thread.archive_project_id?.trim() || "no-project";
+}
+
+function archiveProjectName(thread: ArchivedSessionView): string {
+  return thread.archive_project_name?.trim() || "无项目";
+}
+
+function formatArchiveTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
 /* -------------------------------------------------------------------------- */

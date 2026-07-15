@@ -1,4 +1,4 @@
-import { AlertTriangle, Bot, Check, Puzzle, RefreshCw, Search, Wrench } from "lucide-react";
+import { AlertTriangle, Bot, Puzzle, RefreshCw, Search, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type {
   AgentTemplateDiagnostic,
@@ -151,7 +151,6 @@ export function SkillsCatalog({
       <header className="skills-catalog-header">
         <div className="skills-catalog-title">
           <strong>技能</strong>
-          <span>查看任务技能、已安装插件和可复用的临时子代理模板</span>
         </div>
         <div className="skills-catalog-controls">
           <label className="skills-search">
@@ -183,8 +182,8 @@ export function SkillsCatalog({
       ) : null}
 
       <div className="skills-section-heading">
-        <strong>Installed</strong>
-        <span>{state.loading ? "加载中" : `${visibleSkills.length} / ${state.skills.length}`}</span>
+        <strong>Skills</strong>
+        <span>{catalogCount(state.loading, filter, visibleSkills.length, state.skills.length)}</span>
       </div>
 
       <div className="skills-list">
@@ -207,9 +206,8 @@ export function SkillsCatalog({
                   </span>
                 ) : null}
               </span>
-              <p>{skill.description || skill.when_to_use || "无描述"}</p>
+              {skill.description || skill.when_to_use ? <p>{skill.description || skill.when_to_use}</p> : null}
             </span>
-            <Check className="skill-row-check" aria-hidden="true" />
           </article>
         ))}
       </div>
@@ -218,7 +216,7 @@ export function SkillsCatalog({
         <>
           <div className="skills-section-heading">
             <strong>Plugins</strong>
-            <span>{state.loading ? "加载中" : `${visiblePlugins.length} / ${plugins.length}`}</span>
+            <span>{catalogCount(state.loading, filter, visiblePlugins.length, plugins.length)}</span>
           </div>
 
           <div className="skills-list">
@@ -236,9 +234,8 @@ export function SkillsCatalog({
                       </span>
                     ) : null}
                   </span>
-                  <p>{record.description || "无描述"}</p>
+                  {record.description ? <p>{record.description}</p> : null}
                 </span>
-                <Check className="skill-row-check" aria-hidden="true" />
               </article>
             ))}
           </div>
@@ -247,7 +244,7 @@ export function SkillsCatalog({
 
       <div className="skills-section-heading">
         <strong>Agent Templates</strong>
-        <span>{state.loading ? "加载中" : `${visibleAgentTemplates.length} / ${state.agentTemplates.length}`}</span>
+        <span>{catalogCount(state.loading, filter, visibleAgentTemplates.length, state.agentTemplates.length)}</span>
       </div>
 
       <div className="skills-list">
@@ -259,13 +256,9 @@ export function SkillsCatalog({
             <span className="skill-row-copy">
               <span className="skill-row-titlebar">
                 <h2>{template.name}</h2>
-                <span className="skill-row-tag" title="调用时创建临时子代理，不是常驻成员">
-                  临时子代理模板
-                </span>
               </span>
-              <p>{template.description || "无描述"}</p>
+              {template.description ? <p>{template.description}</p> : null}
             </span>
-            <Check className="skill-row-check" aria-hidden="true" />
           </article>
         ))}
       </div>
@@ -323,6 +316,13 @@ function sourceRank(source: string): number {
     default:
       return 3;
   }
+}
+
+function catalogCount(loading: boolean, filter: string, visible: number, total: number): string {
+  if (loading) {
+    return "加载中";
+  }
+  return filter.trim() ? `${visible} / ${total}` : `${total}`;
 }
 
 function runtimeContextKey(context: RuntimeContext): string {

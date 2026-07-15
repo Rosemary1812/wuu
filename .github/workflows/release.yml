@@ -34,17 +34,7 @@ jobs:
           fi
 
       - name: Check release version
-        run: |
-          tag_version="${GITHUB_REF_NAME#v}"
-          core_version="$(cat VERSION)"
-          desktop_version="$(node -p "require('./desktop/package.json').version")"
-          npm_version="$(node -p "require('./npm/package.json').version")"
-          for version in "$core_version" "$desktop_version" "$npm_version"; do
-            if [ "$version" != "$tag_version" ]; then
-              echo "::error::release versions must all match tag ${GITHUB_REF_NAME} (VERSION=${core_version}, desktop=${desktop_version}, npm=${npm_version})"
-              exit 1
-            fi
-          done
+        run: node scripts/release-version.mjs check "$GITHUB_REF_NAME"
 
       - name: Check and test Go core
         run: make check-go test-go
@@ -103,18 +93,7 @@ jobs:
           cache-dependency-path: desktop/package-lock.json
 
       - name: Check release version
-        run: |
-          tag_version="${GITHUB_REF_NAME#v}"
-          desktop_version="$(node -p "require('./package.json').version")"
-          core_version="$(cat ../VERSION)"
-          if [ "$desktop_version" != "$tag_version" ]; then
-            echo "::error::desktop/package.json version ${desktop_version} does not match tag ${GITHUB_REF_NAME}"
-            exit 1
-          fi
-          if [ "$core_version" != "$tag_version" ]; then
-            echo "::error::VERSION ${core_version} does not match tag ${GITHUB_REF_NAME}"
-            exit 1
-          fi
+        run: node ../scripts/release-version.mjs check "$GITHUB_REF_NAME"
 
       - name: Install
         run: npm ci
@@ -190,7 +169,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          printf '# wuu %s\n\n' "$GITHUB_REF_NAME" > release-notes.md
+          node scripts/release-version.mjs notes "$GITHUB_REF_NAME" > release-notes.md
+          printf '\n\n' >> release-notes.md
           cat >> release-notes.md <<'EOF'
           This release contains command-line archives for macOS and Linux on
           amd64 and arm64, plus an unsigned macOS arm64 desktop preview.

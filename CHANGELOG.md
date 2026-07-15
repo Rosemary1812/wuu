@@ -1,11 +1,48 @@
 # Changelog
 
-All notable changes to wuu will be documented in this file.
+This file starts the maintained release record. Earlier GitHub Releases may not
+have complete change notes.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project aims to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Versioning rules are documented in [the release guide](docs/release.md).
 
 ## [Unreleased]
+
+## [0.4.0] - 2026-07-15
+
+### Added
+
+- Large built-in tool results are settled once at execution time into bounded,
+  artifact-backed projections with an explicit recovery path to the complete
+  result.
+- Structured and rich tool results now keep bounded semantic indexes through
+  provider requests and checkpoint compaction, including stable content
+  identity and representative values.
+- Compacted media references preserve the media type, decoded size, SHA-256
+  identity, and image dimensions when available.
+
+### Changed
+
+- Request-time historical tool-output pruning has been removed. Context growth
+  is now handled by stable result projection followed by checkpoint compaction,
+  so ordinary tool-loop requests keep an append-only cacheable prefix.
+- Archived desktop sessions are grouped by project, and conversation search,
+  model menus, memory controls, and narrow usage tables use a quieter layout.
+- Release versions are synchronized from `VERSION`, validated in CI, and
+  published with the matching changelog section.
+- The npm wrapper installs the GitHub Release matching its own package version
+  instead of silently resolving the latest release.
+- Public evaluation claims now have a dedicated, CI-validated evidence format
+  under `evals/`; private and exploratory runs remain under ignored `bench/`.
+
+### Fixed
+
+- Rich tool results survive session persistence instead of losing structured
+  content or attachment metadata after a restart.
+- Compaction and provider projection preserve meaningful mixed structured
+  results without duplicating complete payloads into active model context.
+- Queued desktop turns no longer hide the preceding final reply, and sidebar
+  session loading no longer drops visible history after compaction.
 
 ## [0.1.0] - 2026-07-10
 

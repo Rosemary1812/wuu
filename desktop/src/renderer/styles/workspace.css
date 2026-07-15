@@ -33,10 +33,7 @@
   --browser-loading-dot-bg: #2f98ff;
   --skills-search-border: #dedfdb;
   --skills-search-bg: rgba(255, 255, 255, 0.64);
-  --skill-row-hover-bg: rgba(20, 22, 24, 0.035);
-  --skill-row-icon-bg: rgba(20, 22, 24, 0.045);
   --skill-row-icon-fg: #686d70;
-  --skill-row-check-icon: #a9abae;
   --hljs-keyword: #2f6ea5;
   --hljs-function: #7a4b9d;
   --hljs-string: #2f7d5c;
@@ -1491,36 +1488,27 @@ html.resizing-workspace-file-split * {
   display: grid;
   min-height: 100%;
   align-content: start;
-  gap: 24px;
-  padding: 32px clamp(28px, 5vw, 56px) 48px;
+  gap: 16px;
+  padding: 24px clamp(24px, 4vw, 48px) 40px;
 }
 
 .skills-catalog-header {
   display: grid;
   min-width: 0;
-  gap: 20px;
+  gap: 14px;
 }
 
 .skills-catalog-title {
   display: grid;
   min-width: 0;
-  gap: 10px;
   color: var(--ink);
 }
 
 .skills-catalog-title strong {
-  font-size: clamp(30px, 3vw, 40px);
-  font-weight: var(--weight-medium);
-  letter-spacing: -0.035em;
-  line-height: 1;
-}
-
-.skills-catalog-title span {
-  color: var(--ink-muted);
-  font-size: clamp(15px, 1.6vw, 18px);
+  font-size: var(--font-heading);
   font-weight: var(--weight-semibold);
-  letter-spacing: -0.02em;
-  line-height: 1.3;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
 }
 
 .skills-catalog-controls {
@@ -1534,20 +1522,20 @@ html.resizing-workspace-file-split * {
 .skills-search {
   display: flex;
   min-width: 0;
-  height: 42px;
+  height: 36px;
   flex: 1 1 auto;
   align-items: center;
   gap: 10px;
   border: 1px solid var(--skills-search-border);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--skills-search-bg);
   color: var(--ink-muted);
-  padding: 0 14px;
+  padding: 0 11px;
 }
 
 .skills-search svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .skills-search input {
@@ -1557,8 +1545,8 @@ html.resizing-workspace-file-split * {
   outline: 0;
   background: transparent;
   color: var(--ink);
-  font-size: 15px;
-  font-weight: var(--weight-semibold);
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
 }
 
 .skills-search input::placeholder {
@@ -1566,10 +1554,10 @@ html.resizing-workspace-file-split * {
 }
 
 .skills-refresh {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   flex: 0 0 auto;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
 }
 
 .skills-catalog-error {
@@ -1588,20 +1576,19 @@ html.resizing-workspace-file-split * {
   align-items: baseline;
   justify-content: space-between;
   gap: 14px;
-  border-bottom: 1px solid var(--surface-3);
-  padding-bottom: 16px;
+  padding-top: 8px;
 }
 
 .skills-section-heading strong {
   color: var(--ink);
-  font-size: 22px;
-  font-weight: var(--weight-medium);
-  letter-spacing: -0.035em;
+  font-size: var(--font-ui);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0;
 }
 
 .skills-section-heading span {
   color: var(--ink-muted);
-  font-size: var(--font-ui);
+  font-size: var(--font-meta);
   font-weight: var(--weight-medium);
 }
 
@@ -1610,44 +1597,30 @@ html.resizing-workspace-file-split * {
   width: min(100%, 960px);
   min-width: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 36px;
-  row-gap: 22px;
+  column-gap: 28px;
+  row-gap: 4px;
 }
 
 .skill-row {
   display: grid;
   min-width: 0;
-  grid-template-columns: 46px minmax(0, 1fr) auto;
+  grid-template-columns: 20px minmax(0, 1fr);
   align-items: center;
-  gap: 16px;
-  border-radius: 18px;
-  padding: 12px 14px;
-  transition:
-    background var(--motion-base) var(--ease-out),
-    transform var(--motion-base) var(--ease-out);
-}
-
-.skill-row:hover {
-  background: var(--skill-row-hover-bg);
-}
-
-.skill-row:active {
-  transform: scale(0.99);
+  gap: 10px;
+  padding: 8px 0;
 }
 
 .skill-row-icon {
   display: grid;
-  width: 46px;
-  height: 46px;
+  width: 20px;
+  height: 20px;
   place-items: center;
-  border-radius: 13px;
-  background: var(--skill-row-icon-bg);
   color: var(--skill-row-icon-fg);
 }
 
 .skill-row-icon svg {
-  width: 22px;
-  height: 22px;
+  width: 16px;
+  height: 16px;
 }
 
 .skill-row-copy {
@@ -1667,7 +1640,7 @@ html.resizing-workspace-file-split * {
   min-width: 0;
   overflow: hidden;
   color: var(--ink);
-  font-size: 16px;
+  font-size: var(--font-body);
   font-weight: var(--weight-semibold);
   letter-spacing: -0.02em;
   line-height: 1.25;
@@ -1695,20 +1668,13 @@ html.resizing-workspace-file-split * {
 .skill-row p {
   overflow: hidden;
   color: var(--ink-tertiary);
-  font-size: 14px;
+  font-size: var(--font-ui);
   font-weight: var(--weight-medium);
   letter-spacing: -0.01em;
   line-height: 1.35;
   margin: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.skill-row-check {
-  width: 18px;
-  height: 18px;
-  color: var(--skill-row-check-icon);
-  stroke-width: 2.2;
 }
 
 .skills-empty {
@@ -1737,8 +1703,8 @@ html.resizing-workspace-file-split * {
 
 @media (max-width: 720px) {
   .skills-catalog {
-    gap: 22px;
-    padding: 28px 20px 44px;
+    gap: 16px;
+    padding: 22px 20px 36px;
   }
 
   .skills-catalog-controls {
@@ -1746,43 +1712,42 @@ html.resizing-workspace-file-split * {
   }
 
   .skills-search {
-    height: 40px;
+    height: 36px;
   }
 
   .skills-refresh {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
   }
 
   .skills-list {
     width: 100%;
     grid-template-columns: 1fr;
-    row-gap: 18px;
+    row-gap: 4px;
   }
 
   .skill-row {
-    grid-template-columns: 42px minmax(0, 1fr) auto;
-    gap: 12px;
-    padding: 11px 10px;
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 10px;
+    padding: 8px 0;
   }
 
   .skill-row-icon {
-    width: 42px;
-    height: 42px;
-    border-radius: 12px;
-  }
-
-  .skill-row-icon svg {
     width: 20px;
     height: 20px;
   }
 
+  .skill-row-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
   .skill-row h2 {
-    font-size: 16px;
+    font-size: var(--font-body);
   }
 
   .skill-row p {
-    font-size: 14px;
+    font-size: var(--font-ui);
     white-space: normal;
   }
 }
@@ -2960,7 +2925,46 @@ html.resizing-workspace-file-split * {
 }
 
 .codex-main-menu {
-  width: 236px;
+  width: 208px;
+}
+
+.codex-main-menu,
+.codex-effort-menu {
+  gap: 0;
+  padding: 4px;
+}
+
+.codex-effort-menu {
+  width: 172px;
+}
+
+.codex-runtime-summary-row {
+  width: 100%;
+}
+
+.codex-runtime-summary-label {
+  flex: 0 0 auto;
+}
+
+.codex-runtime-summary-value {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--codex-menu-label-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codex-main-menu button,
+.codex-effort-menu button {
+  height: 30px;
+  gap: 6px;
+  padding: 0 7px;
+}
+
+.codex-main-menu .codex-menu-chevron {
+  width: 14px;
+  height: 14px;
 }
 
 .hero-composer-wrap .codex-runtime-menu {

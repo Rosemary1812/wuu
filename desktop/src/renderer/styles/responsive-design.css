@@ -256,14 +256,12 @@
   .conversation-search-overlay,
   .conversation-search-dialog,
   .conversation-search-result,
-  .conversation-search-clear,
-  .conversation-search-status button {
+  .conversation-search-clear {
     transition: none;
   }
 
   .conversation-search-overlay,
   .conversation-search-dialog,
-  .conversation-search-status.loading .conversation-search-status-text::before,
   .conversation-search-error,
   .conversation-search-empty {
     animation: none;
@@ -271,8 +269,6 @@
 
   .conversation-search-clear:hover,
   .conversation-search-clear:focus-visible,
-  .conversation-search-status button:hover,
-  .conversation-search-status button:focus-visible,
   .conversation-search-result:hover,
   .conversation-search-result.selected,
   .conversation-search-result:active,

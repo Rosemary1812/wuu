@@ -19,10 +19,10 @@ import (
 // rewritten retroactively. The full result stays recoverable through a session
 // artifact reference.
 //
-// This is intentionally distinct from the generic char-budget in
-// result_budget.go (MaybePersistResultWithRef): that path slices the raw JSON
-// envelope as an opaque string, which corrupts structured fields. A projector
-// understands its tool's envelope and drops whole records/lines instead.
+// Tool-specific projection is more precise than generic settlement: a
+// projector understands its tool's schema and can preserve whole records and
+// line boundaries. Generic settlement still archives the complete omitted
+// provider text and preserves rich media and structured metadata intact.
 
 const (
 	// defaultProjectionTokenBudget is the per-result estimated-token target

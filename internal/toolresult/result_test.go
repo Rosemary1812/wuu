@@ -21,7 +21,7 @@ func TestResultValidatesAndProjectsDeterministically(t *testing.T) {
 		t.Fatalf("Validate: %v", err)
 	}
 
-	wantText := "alpha\n[image: shot (image/png)]\n[resource_link: docs (https://example.test/docs)]\n{\"a\":1,\"b\":2}"
+	wantText := "alpha\n[image: shot (image/png)]\n[resource_link: docs (https://example.test/docs)]"
 	if got := result.TextProjection(); got != wantText {
 		t.Fatalf("TextProjection = %q, want %q", got, wantText)
 	}
@@ -31,6 +31,13 @@ func TestResultValidatesAndProjectsDeterministically(t *testing.T) {
 	}
 	if got := result.SizeBytes(); got != len(wantJSON) {
 		t.Fatalf("SizeBytes = %d, want %d", got, len(wantJSON))
+	}
+}
+
+func TestStructuredOnlyResultHasTextProjection(t *testing.T) {
+	result := Result{StructuredContent: json.RawMessage(`{"b":2,"a":1}`)}
+	if got, want := result.TextProjection(), `{"a":1,"b":2}`; got != want {
+		t.Fatalf("TextProjection = %q, want %q", got, want)
 	}
 }
 

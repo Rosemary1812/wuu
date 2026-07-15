@@ -540,6 +540,48 @@ func TestServerInitializeExposesExtensionInventoryWithoutSecrets(t *testing.T) {
 	}
 }
 
+func TestServerInitializeHidesInactivePluginMCPOverrides(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	t.Setenv("TEST_WUU_KEY", "test")
+	cfg := config.Config{
+		DefaultProvider: "fake",
+		Providers: map[string]config.ProviderConfig{
+			"fake": {Type: "openai-compatible", BaseURL: "https://example.test/v1", APIKeyEnv: "TEST_WUU_KEY", Model: "fake-model"},
+		},
+		MCPServers: map[string]config.MCPServerConfig{
+			"docs":                    {Command: "docs-server"},
+			"plugin.cua-mac.computer": {},
+		},
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rt.ConfigPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"1","method":"initialize"}`)); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[InitializeResult](t, responseByID(t, msgs, "1")["result"])
+	if _, ok := result.GeneralSettings.MCPServerEnabled["plugin.cua-mac.computer"]; ok {
+		t.Fatalf("inactive plugin MCP override leaked into general settings: %+v", result.GeneralSettings.MCPServerEnabled)
+	}
+	if !result.GeneralSettings.MCPServerEnabled["docs"] {
+		t.Fatalf("ordinary MCP server missing from general settings: %+v", result.GeneralSettings.MCPServerEnabled)
+	}
+	for _, record := range result.ExtensionInventory {
+		if record.Name == "plugin.cua-mac.computer" {
+			t.Fatalf("inactive plugin MCP override leaked into extension inventory: %+v", record)
+		}
+	}
+}
+
 func TestServerInitializeExposesModelSurfaceSummary(t *testing.T) {
 	rt := newTestRuntime(t, &fakeClient{})
 	rt.ProviderName = "openai"
@@ -6580,6 +6622,70 @@ func TestServerThreadResumeLoadsSessionHistory(t *testing.T) {
 	}
 }
 
+func TestServerThreadResumeDisplaysHistoryBeforeProviderCheckpoint(t *testing.T) {
+	rt := newTestRuntime(t, &fakeClient{})
+	sessionID := "20260523-000001-checkpoint-history"
+	if _, err := session.CreateWithMetadata(rt.SessionDir, sessionID, rt.RootDir); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	for _, rec := range []session.HistoryRecord{
+		{Role: "user", Content: "older question"},
+		{Role: "assistant", Content: "older answer"},
+		{Role: "user", Content: "recent question"},
+		{Role: "assistant", Content: "recent answer"},
+	} {
+		if err := session.AppendHistoryRecord(rt.SessionDir, sessionID, rec); err != nil {
+			t.Fatalf("append history: %v", err)
+		}
+	}
+	if _, err := session.StoreHistoryCheckpointAtBaseline(
+		rt.SessionDir,
+		sessionID,
+		session.HistoryCheckpointKindProviderRewrite,
+		[]session.HistoryRecord{
+			{Seq: 3, Role: "user", Content: "recent question"},
+			{Seq: 4, Role: "assistant", Content: "recent answer"},
+		},
+		4,
+	); err != nil {
+		t.Fatalf("store provider checkpoint: %v", err)
+	}
+
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+	payload := map[string]any{
+		"id":     "1",
+		"method": MethodThreadResume,
+		"params": ThreadResumeParams{SessionID: sessionID},
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal resume request: %v", err)
+	}
+	if err := srv.handleLine(context.Background(), raw); err != nil {
+		t.Fatalf("thread/resume: %v", err)
+	}
+
+	msgs := parseOutput(t, out.String())
+	result := remarshal[ThreadResumeResult](t, responseByID(t, msgs, "1")["result"])
+	if len(result.Thread.Turns) != 2 {
+		t.Fatalf("resume displayed %d turns, want complete two-turn transcript: %+v", len(result.Thread.Turns), result.Thread.Turns)
+	}
+	if got := result.Thread.Turns[0].Items[0].Text; got != "older question" {
+		t.Fatalf("first displayed question = %q, want older question", got)
+	}
+	resident := srv.thread(sessionID)
+	if resident == nil {
+		t.Fatal("expected resident thread")
+	}
+	resident.mu.Lock()
+	providerHistory := append([]providers.ChatMessage(nil), resident.History...)
+	resident.mu.Unlock()
+	if len(providerHistory) != 3 || providerHistory[1].Content != "recent question" {
+		t.Fatalf("provider history should stay checkpointed, got %+v", providerHistory)
+	}
+}
+
 func TestServerThreadResumeKicksActiveGoalContinuation(t *testing.T) {
 	var threadRuntime *runtime.ThreadRuntime
 	client := &fakeClient{
@@ -6944,11 +7050,25 @@ func TestServerCompactedTurnPersistsAndResumes(t *testing.T) {
 	}
 	resumeMsgs := parseOutput(t, out2.String())
 	result := remarshal[ThreadResumeResult](t, responseByID(t, resumeMsgs, "resume-2")["result"])
-	if result.Thread.ID != sess.ID || len(result.Thread.Turns) != 1 {
+	if result.Thread.ID != sess.ID || len(result.Thread.Turns) != 2 {
 		t.Fatalf("unexpected resumed compacted thread: %+v", result.Thread)
 	}
-	if len(result.Thread.Turns[0].Items) != 3 || result.Thread.Turns[0].Items[1].Type != ThreadItemContextCompaction {
-		t.Fatalf("expected resumed turn to include context compaction item: %+v", result.Thread.Turns[0])
+	if result.Thread.Turns[0].Items[0].Text != "debug the failing workbench request" {
+		t.Fatalf("expected compacted transcript to retain the older user request: %+v", result.Thread.Turns[0])
+	}
+	foundCompaction := false
+	for _, turn := range result.Thread.Turns {
+		for _, item := range turn.Items {
+			if item.Type == ThreadItemContextCompaction {
+				foundCompaction = true
+			}
+			if item.Type == ThreadItemToolCall {
+				t.Fatalf("compacted transcript restored an obsolete tool payload: %+v", turn)
+			}
+		}
+	}
+	if !foundCompaction {
+		t.Fatalf("expected resumed transcript to include a context compaction item: %+v", result.Thread.Turns)
 	}
 	th := resumedSrv.thread(sess.ID)
 	if th == nil {

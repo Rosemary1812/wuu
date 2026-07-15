@@ -1,6 +1,6 @@
 {
   "name": "@blueberrycongee/wuu",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "description": "GUI-first AI coding agent backend and CLI tools",
   "license": "MIT",
   "bin": {

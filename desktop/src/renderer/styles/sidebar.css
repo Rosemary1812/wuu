@@ -26,6 +26,7 @@
   --sidebar-dev-fixture-button-color: var(--ink-tertiary);
   --sidebar-nav-item-hover-ring: rgba(255, 255, 255, 0.42);
   --sidebar-nav-item-focus-shadow: var(--ink-overlay-18);
+  --sidebar-row-selected-bg: var(--ink-overlay-6);
   --sidebar-project-row-pending-bg: rgba(255, 255, 255, 0.24);
   --sidebar-project-loading-notch: rgba(95, 126, 104, 0.22);
   --sidebar-row-icon-hover-bg-default: var(--ink-overlay-6);
@@ -684,6 +685,20 @@
 .nav-item:active,
 .project-row:active {
   transform: translateX(1px) scale(0.992);
+}
+
+.thread-row.active,
+.participant-roster-row.active {
+  background: var(--sidebar-row-selected-bg);
+  color: var(--ink);
+  transform: none;
+}
+
+.thread-row.active:hover,
+.participant-roster-row.active:hover {
+  background: var(--sidebar-row-selected-bg);
+  box-shadow: none;
+  transform: none;
 }
 
 .nav-item:focus-visible,

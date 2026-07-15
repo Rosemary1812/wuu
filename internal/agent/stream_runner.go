@@ -274,7 +274,6 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		CompactKeepRecentTokens:  r.CompactKeepRecentTokens,
 		ForceInitialCompact:      r.ForceInitialCompact,
 		CompactOnly:              r.CompactOnly,
-		ToolPrune:                true,
 		BeforeStep:               beforeStep,
 		BeforeRequestContext:     r.BeforeRequestContext,
 		BeforeRequest:            r.BeforeRequest,

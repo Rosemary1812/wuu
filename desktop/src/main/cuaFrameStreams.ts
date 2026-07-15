@@ -50,6 +50,7 @@ export class CUANativePiP {
     private readonly initialBounds: Rectangle,
     private readonly onEvent: (event: CUANativePiPEvent) => void,
     private readonly onError: (message: string) => void,
+    private readonly spawnHelper: typeof spawn = spawn,
   ) {}
 
   start(): void {
@@ -63,7 +64,7 @@ export class CUANativePiP {
     };
     const decoder = new CUALineDecoder();
     const { x, y, width, height } = this.initialBounds;
-    const child = spawn(this.helper, [
+    const child = this.spawnHelper(this.helper, [
       "--native-pip",
       this.threadID,
       this.target,
@@ -93,6 +94,10 @@ export class CUANativePiP {
     child.stderr.on("data", (chunk: string) => {
       stderr = (stderr + chunk).slice(-4096);
       trace(`stderr ${chunk.trim()}`);
+    });
+    child.stdin.on("error", (error) => {
+      trace(`stdin error ${error.message}`);
+      this.handleInputFailure(child, error);
     });
     child.on("error", (error) => { trace(`error ${error.message}`); this.onError(error.message); });
     child.on("exit", (code, signal) => {
@@ -128,7 +133,7 @@ export class CUANativePiP {
       clearTimeout(forceStop);
       onStopped?.();
     });
-    if (!child.stdin.destroyed) {
+    if (!child.stdin.destroyed && !child.stdin.writableEnded) {
       child.stdin.end(`${JSON.stringify({ type: "close" })}\n`);
     } else {
       child.kill("SIGTERM");
@@ -138,8 +143,21 @@ export class CUANativePiP {
   isLive(): boolean { return this.child !== undefined; }
 
   private send(command: object): void {
-    if (!this.child || this.child.stdin.destroyed) return;
-    this.child.stdin.write(`${JSON.stringify(command)}\n`);
+    const child = this.child;
+    if (!child || !child.stdin.writable || child.stdin.destroyed || child.stdin.writableEnded) return;
+    child.stdin.write(`${JSON.stringify(command)}\n`, (error) => {
+      if (error) this.handleInputFailure(child, error);
+    });
+  }
+
+  private handleInputFailure(child: ChildProcessWithoutNullStreams, error: Error): void {
+    // A pipe can close between the writable-state check above and the actual
+    // write. Clear this exact helper before reporting the failure so the
+    // coordinator can replace it without sending another command to it.
+    if (this.child !== child) return;
+    this.child = undefined;
+    child.kill("SIGTERM");
+    this.onError(error.message);
   }
 }
 

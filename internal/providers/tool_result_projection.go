@@ -17,6 +17,11 @@ type ProjectedToolResult struct {
 
 const emptyToolResultText = "Tool completed without a textual result."
 
+const (
+	structuredResultIndexMaxKeys     = toolresult.StructuredContentIndexMaxKeys
+	structuredResultIndexMaxKeyRunes = toolresult.StructuredContentIndexMaxKeyRunes
+)
+
 func ProjectToolResult(result toolresult.Result) ProjectedToolResult {
 	projected := ProjectedToolResult{}
 	textParts := make([]string, 0, len(result.Content)+1)
@@ -52,8 +57,17 @@ func ProjectToolResult(result toolresult.Result) ProjectedToolResult {
 			textParts = append(textParts, fmt.Sprintf("[unsupported tool result content: %s]", part.Type))
 		}
 	}
+	// Rich content is the producer-owned model projection. Keep the complete
+	// structured payload on the durable ToolResult instead of duplicating it in
+	// full on the wire. A bounded semantic index preserves shape, identity, and
+	// representative scalar values. Structured-only tools receive the complete
+	// canonical JSON because they have no content projection of their own.
 	if len(bytes.TrimSpace(result.StructuredContent)) > 0 {
-		textParts = append(textParts, canonicalJSON(result.StructuredContent))
+		if len(result.Content) == 0 {
+			textParts = append(textParts, canonicalJSON(result.StructuredContent))
+		} else if index := structuredToolResultIndex(result.StructuredContent); index != "" {
+			textParts = append(textParts, index)
+		}
 	}
 	projected.ToolText = strings.Join(nonEmptyProjectionParts(textParts), "\n")
 	if projected.ToolText == "" && (len(projected.ObservationImages) > 0 || len(projected.ObservationFiles) > 0) {
@@ -68,6 +82,10 @@ func ProjectToolResult(result toolresult.Result) ProjectedToolResult {
 		projected.ToolText = emptyToolResultText
 	}
 	return projected
+}
+
+func structuredToolResultIndex(raw json.RawMessage) string {
+	return toolresult.StructuredContentIndexJSON(raw)
 }
 
 func ApplyToolResultProjections(messages []ChatMessage) []ChatMessage {

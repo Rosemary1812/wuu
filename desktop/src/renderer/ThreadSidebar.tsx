@@ -126,6 +126,7 @@ export function ProjectGroup({
   activeID,
   pendingProjectID,
   expandedSidebarSectionIDs,
+  loadingProjectThreadIDs,
   threadsByProjectID,
   activeThreadID,
   pendingThreadID,
@@ -149,6 +150,7 @@ export function ProjectGroup({
   activeID?: string;
   pendingProjectID?: string;
   expandedSidebarSectionIDs: ReadonlySet<string>;
+  loadingProjectThreadIDs?: ReadonlySet<string>;
   threadsByProjectID: Record<string, ThreadSummary[]>;
   activeThreadID?: string;
   pendingThreadID?: string;
@@ -194,6 +196,7 @@ export function ProjectGroup({
   }
 
   const pendingProject = pendingProjectID === project.id;
+  const loadingProjectThreads = loadingProjectThreadIDs?.has(project.id) ?? false;
   const isScratchPseudo = project.id === scratchPseudoProjectID;
   // A real workspace whose directory was moved away or deleted. Its "新建会话"
   // affordance is disabled so no session can be created in a cwd that is gone.
@@ -248,7 +251,7 @@ export function ProjectGroup({
         active={activeProject}
         pending={pendingProject}
         unread={projectHasUnread}
-        loading={pendingProject}
+        loading={pendingProject || loadingProjectThreads}
         onToggle={() => onToggleSidebarSectionCollapsed(project.id)}
         onContextMenu={
           isScratchPseudo || (!onRemoveProject && !onRelocateProject)
@@ -270,7 +273,7 @@ export function ProjectGroup({
             <MessageSquarePlus className="icon" />
           </button>
         }
-        emptyNote="还没有会话"
+        emptyNote={loadingProjectThreads ? "正在加载会话" : "还没有会话"}
       >
         {projectThreads.length === 0 ? null : (
           <ThreadList

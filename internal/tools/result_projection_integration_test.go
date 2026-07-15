@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -23,6 +25,28 @@ func (f fakeGrepTool) Definition() providers.ToolDefinition {
 func (f fakeGrepTool) Execute(context.Context, string) (string, error) { return f.text, nil }
 func (f fakeGrepTool) IsReadOnly() bool                                { return true }
 func (f fakeGrepTool) IsConcurrencySafe() bool                         { return true }
+
+type fakeRichMediaTool struct{ text string }
+
+func (f fakeRichMediaTool) Name() string { return "mcp_rich_media" }
+func (f fakeRichMediaTool) Definition() providers.ToolDefinition {
+	return providers.ToolDefinition{Name: f.Name()}
+}
+func (f fakeRichMediaTool) Execute(context.Context, string) (string, error) {
+	return f.text, nil
+}
+func (f fakeRichMediaTool) ExecuteResult(context.Context, string) (toolresult.Result, error) {
+	return toolresult.Result{
+		Content: []toolresult.ContentPart{
+			{Type: toolresult.ContentTypeText, Text: f.text},
+			{Type: toolresult.ContentTypeImage, Data: "aW1hZ2U=", MIMEType: "image/png", Name: "screen.png"},
+		},
+		StructuredContent: json.RawMessage(`{"caption":"structured metadata"}`),
+		Meta:              json.RawMessage(`{"source":"mcp"}`),
+	}, nil
+}
+func (f fakeRichMediaTool) IsReadOnly() bool        { return true }
+func (f fakeRichMediaTool) IsConcurrencySafe() bool { return true }
 
 func runFakeGrep(t *testing.T, mode string) (providers.ToolCall, string, []ToolExecutionRecord) {
 	t.Helper()
@@ -160,6 +184,53 @@ func TestActiveProjection_IsStableThroughWireProjection(t *testing.T) {
 	}
 	if got := estimateResultTokens(c1); got > defaultProjectionTokenBudget {
 		t.Fatalf("wire content exceeded budget: %d tokens", got)
+	}
+}
+
+func TestRichMediaSettlement_IsStableAndKeepsNativeObservation(t *testing.T) {
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.env.SessionDir = t.TempDir()
+	tool := fakeRichMediaTool{text: strings.Repeat("semantic evidence line\n", 3_000)}
+	call := providers.ToolCall{ID: "call-rich", Name: tool.Name(), Arguments: "{}"}
+	returned, err := kit.executeKnownToolResultWithRepeatPolicy(context.Background(), call, tool, true)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	record := recordFor(kit.ToolTelemetry(), call.ID)
+	if record == nil || !record.ResultBudgeted || record.ResultRef == "" {
+		t.Fatalf("rich result did not cross settlement boundary: %+v", record)
+	}
+	if len(returned.Content) != 2 || returned.Content[1].Type != toolresult.ContentTypeImage {
+		t.Fatalf("native media was not retained: %+v", returned.Content)
+	}
+	if !strings.Contains(returned.TextProjection(), record.ResultRef) || strings.Contains(returned.TextProjection(), "structured metadata") {
+		t.Fatalf("model projection lacks recovery index or leaks duplicate metadata: %.300q", returned.TextProjection())
+	}
+
+	messages := []providers.ChatMessage{
+		{Role: "user", Content: "inspect"},
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: call.ID, Name: call.Name}}},
+		{Role: "tool", Name: call.Name, ToolCallID: call.ID, Content: returned.TextProjection(), ToolResult: &returned},
+	}
+	first, err := providers.PrepareMessagesForModelRequest("gpt-5", messages)
+	if err != nil {
+		t.Fatalf("prepare#1: %v", err)
+	}
+	second, err := providers.PrepareMessagesForModelRequest("gpt-5", messages)
+	if err != nil {
+		t.Fatalf("prepare#2: %v", err)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Fatal("rich result request projection is not byte-stable")
+	}
+	if got := toolContent(first, call.ID); !strings.Contains(got, record.ResultRef) || !strings.Contains(got, "structured metadata") || strings.Contains(got, `"source":"mcp"`) {
+		t.Fatalf("wire tool text lacks bounded structured semantics or leaks private meta: %.500q", got)
+	}
+	if len(first) != 4 || len(first[3].Images) != 1 || first[3].Images[0].Data != "aW1hZ2U=" {
+		t.Fatalf("native image observation missing: %+v", first)
 	}
 }
 

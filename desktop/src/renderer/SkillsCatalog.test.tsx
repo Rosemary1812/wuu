@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 describe("SkillsCatalog", () => {
-  it("shows Claude agent templates as temporary subagent templates", async () => {
+  it("lists Claude agent templates without repeating the section label", async () => {
     const stub: Partial<WuuDesktopApi> = {
       listSkills: vi.fn().mockResolvedValue({ skills: [] }),
       listAgentTemplates: vi.fn().mockResolvedValue({
@@ -54,7 +54,8 @@ describe("SkillsCatalog", () => {
     });
 
     expect(container.textContent).toContain("reviewer");
-    expect(container.textContent).toContain("临时子代理模板");
+    expect(container.textContent).toContain("Agent Templates");
+    expect(container.textContent).not.toContain("临时子代理模板");
     expect(container.textContent).toContain("invalid frontmatter");
   });
 

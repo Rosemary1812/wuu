@@ -1080,7 +1080,7 @@ describe("SettingsView archive page", () => {
     });
   });
 
-  // ArchivedSessionView 的结构子集：渲染层只读 id/title?/updated_at。
+  // ArchivedSessionView 的结构子集：渲染层读取标题、时间和归档时所属项目。
   // 这里直接返回对象字面量，结构上兼容 SettingsView 里的 ArchivedSessionView，
   // 避免引入 ThreadSummary（它要求 turns/turn_count 等计算字段，测试场景下冗余）。
   function archivedThread(
@@ -1128,6 +1128,106 @@ describe("SettingsView archive page", () => {
     ).map((node) => node.textContent);
     // 较新的会话排在前面，跟侧边栏"最新活动优先"的心智一致
     expect(titles).toEqual(["新会话", "旧会话"]);
+  });
+
+  it("groups archived threads by project and shows per-project counts", () => {
+    renderSettings({
+      initialized: baseInitialized(),
+      initialPage: "archive",
+      archivedThreads: [
+        archivedThread("wuu-1", {
+          archive_project_id: "wuu",
+          archive_project_name: "wuu",
+        }),
+        archivedThread("wuu-2", {
+          archive_project_id: "wuu",
+          archive_project_name: "wuu",
+        }),
+        archivedThread("site-1", {
+          archive_project_id: "site",
+          archive_project_name: "网站",
+        }),
+      ],
+    });
+
+    const groups = container.querySelectorAll(".settings-archive-group");
+    expect(groups).toHaveLength(2);
+    expect(groups[0]?.textContent).toContain("wuu");
+    expect(groups[0]?.textContent).toContain("2 个会话");
+    expect(groups[1]?.textContent).toContain("网站");
+    expect(groups[1]?.textContent).toContain("1 个会话");
+  });
+
+  it("filters archived threads by project", () => {
+    renderSettings({
+      initialized: baseInitialized(),
+      initialPage: "archive",
+      archivedThreads: [
+        archivedThread("wuu-session", {
+          title: "wuu 会话",
+          archive_project_id: "wuu",
+          archive_project_name: "wuu",
+        }),
+        archivedThread("site-session", {
+          title: "网站会话",
+          archive_project_id: "site",
+          archive_project_name: "网站",
+        }),
+      ],
+    });
+
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[aria-label="按项目筛选"]',
+    );
+    act(() => {
+      trigger?.click();
+    });
+    const siteOption = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".select-menu-item"),
+    ).find((option) => option.textContent?.includes("网站"));
+    act(() => {
+      siteOption?.click();
+    });
+
+    expect(container.textContent).toContain("网站会话");
+    expect(container.textContent).not.toContain("wuu 会话");
+  });
+
+  it("filters archived threads by title", () => {
+    renderSettings({
+      initialized: baseInitialized(),
+      initialPage: "archive",
+      archivedThreads: [
+        archivedThread("docker", { title: "运行 Docker bench" }),
+        archivedThread("electron", { title: "排查 Electron 启动失败" }),
+      ],
+    });
+
+    const search = container.querySelector<HTMLInputElement>(
+      '.settings-archive-search input[type="search"]',
+    );
+    expect(search).not.toBeNull();
+    act(() => {
+      if (search) {
+        setInputValue(search, "Electron");
+      }
+    });
+
+    expect(container.textContent).toContain("排查 Electron 启动失败");
+    expect(container.textContent).not.toContain("运行 Docker bench");
+  });
+
+  it("keeps the full long title in a single ellipsized title element", () => {
+    const longTitle = "这是一个非常长的归档会话标题，需要在恢复按钮前截断并显示省略号";
+    renderSettings({
+      initialized: baseInitialized(),
+      initialPage: "archive",
+      archivedThreads: [archivedThread("long", { title: longTitle })],
+    });
+
+    const title = container.querySelector<HTMLElement>(".settings-archive-title");
+    expect(title?.textContent).toBe(longTitle);
+    expect(title?.getAttribute("title")).toBe(longTitle);
   });
 
   it("keeps archived rows compact and does not render their local paths", () => {

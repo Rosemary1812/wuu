@@ -2,6 +2,7 @@ package compact
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,35 +13,13 @@ import (
 	"github.com/blueberrycongee/wuu/internal/contextbudget"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 // Compact can be the only recovery path after a provider context overflow.
 // Large histories may require several summary requests, so the default must be
 // long enough for recovery while still bounding a stuck compaction.
 const defaultCompactTimeout = 20 * time.Minute
-const (
-	toolResultPruneProtectTokens = 40_000
-	toolResultPruneMinimumTokens = 20_000
-	// pruneProtectedTurns is the number of recent user-anchored turns
-	// whose tool results are never pruned by the standalone prune pass.
-	// Aligned with OpenCode V1's "if (turns < 2) continue" guard.
-	pruneProtectedTurns = 2
-)
-
-var protectedToolResults = map[string]bool{
-	"skill": true,
-}
-
-// recallableTools lists tools whose results are deterministic and can be
-// re-obtained by re-calling the tool. Pruned results for these tools
-// include a re-call hint in the placeholder so the model knows it can
-// retrieve the current content by re-running the tool.
-var recallableTools = map[string]bool{
-	"read_file":  true,
-	"grep":       true,
-	"glob":       true,
-	"list_files": true,
-}
 
 // maxCompactOutputChars caps the summarization output to approximately
 // 20K tokens (~4 chars per token).
@@ -179,7 +158,7 @@ func CompactWithBudget(ctx context.Context, messages []providers.ChatMessage, cl
 	ctx, cancel := withCompactTimeout(ctx)
 	defer cancel()
 
-	toSummarize := pruneOldToolResults(plan.conversation[:plan.keepStart])
+	toSummarize := plan.conversation[:plan.keepStart]
 	toKeep := plan.conversation[plan.keepStart:]
 
 	summary, err := summarizeCompactHistory(ctx, client, model, budget, toSummarize, plan.previousSummary)
@@ -846,7 +825,7 @@ func appendAttachmentOmissionNote(content string, images []providers.InputImage,
 		if mediaType == "" {
 			mediaType = "image"
 		}
-		fmt.Fprintf(&b, "[Image attachment omitted from compacted history: %s, %d base64 characters.]", mediaType, len(strings.TrimSpace(image.Data)))
+		fmt.Fprintf(&b, "[Image attachment omitted from compacted history: %s, %s.]", mediaType, compactMediaEvidence(image.Data, true))
 	}
 	for i, file := range files {
 		if len(images) > 0 || i > 0 {
@@ -860,134 +839,9 @@ func appendAttachmentOmissionNote(content string, images []providers.InputImage,
 		if name == "" {
 			name = "file"
 		}
-		fmt.Fprintf(&b, "[File attachment omitted from compacted history: %s, %s, %d base64 characters.]", mediaType, name, len(strings.TrimSpace(file.Data)))
+		fmt.Fprintf(&b, "[File attachment omitted from compacted history: %s, %s, %s.]", mediaType, name, compactMediaEvidence(file.Data, false))
 	}
 	return b.String()
-}
-
-func pruneOldToolResults(messages []providers.ChatMessage) []providers.ChatMessage {
-	if len(messages) == 0 {
-		return nil
-	}
-
-	total := 0
-	prunedTokens := 0
-	var indexes []int
-	for i := len(messages) - 1; i >= 0; i-- {
-		if !strings.EqualFold(messages[i].Role, "tool") {
-			continue
-		}
-		if protectedToolResults[strings.TrimSpace(messages[i].Name)] {
-			continue
-		}
-		size := EstimateTokens(messages[i].Content)
-		if size <= 0 {
-			continue
-		}
-		total += size
-		if total <= toolResultPruneProtectTokens {
-			continue
-		}
-		prunedTokens += size
-		indexes = append(indexes, i)
-	}
-	if prunedTokens <= toolResultPruneMinimumTokens {
-		return messages
-	}
-
-	pruned := make([]providers.ChatMessage, len(messages))
-	copy(pruned, messages)
-	for _, i := range indexes {
-		pruned[i].Content = summarizePrunedToolResult(pruned[i])
-	}
-
-	return pruned
-}
-
-// PruneToolResults is a standalone, non-LLM prune pass that truncates
-// old tool-result content to save context before a provider request.
-// It is non-destructive: the input slice is never modified, and a new
-// slice with pruned content is returned only when pruning actually
-// removes content; otherwise the original slice is returned as-is.
-//
-// Recent turns (the last pruneProtectedTurns user-anchored turns) are
-// always preserved. Beyond that, the most recent tool-result tokens up
-// to toolResultPruneProtectTokens are protected; older tool results are
-// replaced with a truncated placeholder. Pruning is skipped entirely
-// when the prunable amount is below toolResultPruneMinimumTokens.
-//
-// The original tool-result content remains in the live history slice
-// for session durability and future archive retrieval; only the request
-// projection is truncated.
-func PruneToolResults(messages []providers.ChatMessage) []providers.ChatMessage {
-	if len(messages) == 0 {
-		return nil
-	}
-
-	total := 0
-	prunedTokens := 0
-	turnsSeen := 0
-	var indexes []int
-	for i := len(messages) - 1; i >= 0; i-- {
-		// Count user messages as turn boundaries going backwards.
-		if isPruneUserTurnBoundary(messages[i]) {
-			turnsSeen++
-		}
-		// Skip tool results in the last pruneProtectedTurns turns.
-		if turnsSeen < pruneProtectedTurns {
-			continue
-		}
-		if !strings.EqualFold(messages[i].Role, "tool") {
-			continue
-		}
-		if protectedToolResults[strings.TrimSpace(messages[i].Name)] {
-			continue
-		}
-		size := EstimateTokens(messages[i].Content)
-		if size <= 0 {
-			continue
-		}
-		total += size
-		if total <= toolResultPruneProtectTokens {
-			continue
-		}
-		prunedTokens += size
-		indexes = append(indexes, i)
-	}
-	if prunedTokens <= toolResultPruneMinimumTokens {
-		return messages
-	}
-
-	pruned := make([]providers.ChatMessage, len(messages))
-	copy(pruned, messages)
-	for _, i := range indexes {
-		pruned[i].Content = summarizePrunedToolResult(pruned[i])
-	}
-	return pruned
-}
-
-func isPruneUserTurnBoundary(msg providers.ChatMessage) bool {
-	return strings.EqualFold(msg.Role, "user") && !msg.Hidden && !IsInternalContextMessage(msg)
-}
-
-func summarizePrunedToolResult(msg providers.ChatMessage) string {
-	name := strings.TrimSpace(msg.Name)
-	if name == "" {
-		name = "unknown tool"
-	}
-	label := toolCallLabel(msg.ToolCallID)
-	if recallableTools[name] {
-		return fmt.Sprintf("[Pruned %s result. Original: %d characters. Tool call ID: %s. Re-run %s to retrieve current content.]", name, len(msg.Content), label, name)
-	}
-	return fmt.Sprintf("[Pruned %s result. Original: %d characters. Tool call ID: %s. This output is from a completed operation and may not be reproducible.]", name, len(msg.Content), label)
-}
-
-func toolCallLabel(id string) string {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return "unknown"
-	}
-	return id
 }
 
 // compactInstructionPrompt is the framing wuu wraps every
@@ -1063,13 +917,29 @@ func buildSummaryPrompt(toSummarize []providers.ChatMessage, previousSummary str
 }
 
 func writeSummaryPromptMessage(b *strings.Builder, msg providers.ChatMessage) {
-	fmt.Fprintf(b, "[%s]: %s\n", msg.Role, truncate(msg.Content, compactPromptContentMaxChars))
+	content := msg.Content
+	if msg.ToolResult != nil && len(msg.ToolResult.Content) == 0 && len(strings.TrimSpace(string(msg.ToolResult.StructuredContent))) > compactPromptContentMaxChars {
+		content = "[Structured tool result omitted from summary body; see semantic index below.]"
+	}
+	fmt.Fprintf(b, "[%s]: %s\n", msg.Role, truncate(content, compactPromptContentMaxChars))
+	writeSummaryPromptToolResultIndex(b, msg.ToolResult)
 	for _, image := range msg.Images {
 		mediaType := strings.TrimSpace(image.MediaType)
 		if mediaType == "" {
 			mediaType = "image"
 		}
-		fmt.Fprintf(b, "  [image omitted: %s, %d base64 characters]\n", mediaType, len(strings.TrimSpace(image.Data)))
+		fmt.Fprintf(b, "  [image omitted: %s, %s]\n", mediaType, compactMediaEvidence(image.Data, true))
+	}
+	for _, file := range msg.Files {
+		mediaType := strings.TrimSpace(file.MediaType)
+		if mediaType == "" {
+			mediaType = "file"
+		}
+		name := strings.TrimSpace(file.Filename)
+		if name == "" {
+			name = "file"
+		}
+		fmt.Fprintf(b, "  [file omitted: %s, %s, %s]\n", mediaType, name, compactMediaEvidence(file.Data, false))
 	}
 	for _, tc := range msg.ToolCalls {
 		fmt.Fprintf(b, "  -> tool_call: %s(%s)\n", tc.Name, truncate(tc.Arguments, compactPromptToolArgsMaxChars))
@@ -1078,6 +948,57 @@ func writeSummaryPromptMessage(b *strings.Builder, msg providers.ChatMessage) {
 		fmt.Fprintf(b, "  (result for tool call %s)\n", msg.ToolCallID)
 	}
 	b.WriteString("\n")
+}
+
+func writeSummaryPromptToolResultIndex(b *strings.Builder, result *toolresult.Result) {
+	if result == nil {
+		return
+	}
+	writeSummaryPromptStructuredResultIndex(b, result.StructuredContent)
+	for _, part := range result.Content {
+		switch part.Type {
+		case toolresult.ContentTypeImage, toolresult.ContentTypeAudio, toolresult.ContentTypeFile:
+			name := strings.TrimSpace(part.Name)
+			if name == "" {
+				name = part.Type
+			}
+			mediaType := strings.TrimSpace(part.MIMEType)
+			if mediaType == "" {
+				mediaType = part.Type
+			}
+			if uri := strings.TrimSpace(part.URI); uri != "" {
+				fmt.Fprintf(b, "  [tool %s index: %s, %s, uri=%s]\n", part.Type, name, mediaType, truncate(uri, compactPromptToolArgsMaxChars))
+			} else {
+				fmt.Fprintf(b, "  [tool %s index: %s, %s, %s]\n", part.Type, name, mediaType, compactMediaEvidence(part.Data, part.Type == toolresult.ContentTypeImage))
+			}
+		case toolresult.ContentTypeResource:
+			name := strings.TrimSpace(part.Name)
+			if name == "" {
+				name = "resource"
+			}
+			fmt.Fprintf(b, "  [tool resource index: %s, %d JSON characters]\n", name, len(strings.TrimSpace(string(part.Resource))))
+		case toolresult.ContentTypeResourceLink:
+			name := strings.TrimSpace(part.Name)
+			if name == "" {
+				name = "resource"
+			}
+			fmt.Fprintf(b, "  [tool resource link: %s, uri=%s]\n", name, truncate(strings.TrimSpace(part.URI), compactPromptToolArgsMaxChars))
+		}
+	}
+	if result.Activity != nil {
+		fmt.Fprintf(b, "  [tool activity index: kind=%s, id=%s, state=%s, preview=%s]\n",
+			truncate(strings.TrimSpace(result.Activity.Kind), compactPromptToolArgsMaxChars),
+			truncate(strings.TrimSpace(result.Activity.ID), compactPromptToolArgsMaxChars),
+			truncate(strings.TrimSpace(result.Activity.State), compactPromptToolArgsMaxChars),
+			truncate(strings.TrimSpace(result.Activity.PreviewURI), compactPromptToolArgsMaxChars),
+		)
+	}
+}
+
+func writeSummaryPromptStructuredResultIndex(b *strings.Builder, raw json.RawMessage) {
+	if index := toolresult.StructuredContentIndexJSON(raw); index != "" {
+		fmt.Fprintf(b, "  [tool structured result index: %s]\n", index)
+	}
 }
 
 func truncate(s string, maxLen int) string {

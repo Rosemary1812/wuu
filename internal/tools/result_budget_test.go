@@ -1,112 +1,96 @@
 package tools
 
 import (
+	"encoding/json"
 	"os"
-	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
-func TestMaybePersistResult_UnderThreshold(t *testing.T) {
-	result := "short output"
-	got := MaybePersistResult("", "test_tool", "call-1", result, 100)
-	if got != result {
-		t.Errorf("expected passthrough, got %q", got)
-	}
-}
-
-func TestMaybePersistResult_OverThreshold_NoSessionDir(t *testing.T) {
-	result := strings.Repeat("x", 200)
-	got := MaybePersistResult("", "test_tool", "call-1", result, 100)
-	if !strings.Contains(got, "[truncated") {
-		t.Errorf("expected truncation fallback, got %q", got)
-	}
-	if len(got) > 200 {
-		t.Errorf("expected truncated output, got length %d", len(got))
-	}
-}
-
-func TestMaybePersistResult_OverThreshold_WithSessionDir(t *testing.T) {
+func TestFinalizeGenericToolResultBoundsTextAndPreservesRichMedia(t *testing.T) {
 	sessionDir := t.TempDir()
-	result := strings.Repeat("a", 200) + strings.Repeat("z", 200)
-
-	got := MaybePersistResult(sessionDir, "shell", "call-42", result, 100)
-
-	// Should contain the reference markers.
-	if !strings.Contains(got, "saved to disk") {
-		t.Fatalf("expected disk reference, got:\n%s", got)
+	text := strings.Repeat("head evidence\n", 600) + strings.Repeat("tail evidence\n", 600)
+	raw := toolresult.Result{
+		Content: []toolresult.ContentPart{
+			{Type: toolresult.ContentTypeText, Text: text},
+			{Type: toolresult.ContentTypeImage, Data: "aW1hZ2U=", MIMEType: "image/png", Name: "screen.png"},
+		},
+		StructuredContent: json.RawMessage(`{"caption":"screen","private_payload":"kept"}`),
+		Meta:              json.RawMessage(`{"source":"mcp"}`),
+		Activity:          &toolresult.ActivityRef{ID: "activity-1", Kind: "computer"},
 	}
-	if !strings.Contains(got, "read_file") {
-		t.Error("expected read_file instruction in reference")
-	}
 
-	// Verify file was written.
-	path := filepath.Join(sessionDir, "tool-results", "call-42.txt")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("expected persisted file at %s: %v", path, err)
+	got, ref, bounded := finalizeGenericToolResult(sessionDir, "call-rich", raw, 1_000)
+	if !bounded || ref == "" {
+		t.Fatalf("expected bounded rich result, bounded=%v ref=%q", bounded, ref)
 	}
-	if string(data) != result {
-		t.Error("persisted content doesn't match original")
+	if len(got.Content) != 2 || got.Content[0].Type != toolresult.ContentTypeText || !reflect.DeepEqual(got.Content[1], raw.Content[1]) {
+		t.Fatalf("rich content was not preserved: %+v", got.Content)
 	}
-}
-
-func TestMaybePersistResultWithRef_OverThreshold_WithSessionDir(t *testing.T) {
-	sessionDir := t.TempDir()
-	result := strings.Repeat("a", 200) + strings.Repeat("z", 200)
-
-	got, ref, budgeted := MaybePersistResultWithRef(sessionDir, "shell", "call-42", result, 100)
-
-	if !budgeted {
-		t.Fatal("expected budgeted result")
+	if !strings.Contains(got.Content[0].Text, ref) || !strings.Contains(got.Content[0].Text, "head evidence") || !strings.Contains(got.Content[0].Text, "tail evidence") {
+		t.Fatalf("bounded preview lost evidence or recovery index: %.300q", got.Content[0].Text)
 	}
-	if ref == "" {
-		t.Fatal("expected persisted result ref")
+	if string(got.StructuredContent) != string(raw.StructuredContent) || string(got.Meta) != string(raw.Meta) || got.Activity == nil || got.Activity.ID != raw.Activity.ID {
+		t.Fatalf("rich metadata changed: %+v", got)
 	}
-	if !strings.Contains(got, ref) {
-		t.Fatalf("returned reference should include result ref %q:\n%s", ref, got)
+	if strings.Contains(got.TextProjection(), "private_payload") {
+		t.Fatalf("structured metadata was duplicated into model text: %q", got.TextProjection())
 	}
 	data, err := os.ReadFile(ref)
 	if err != nil {
-		t.Fatalf("read persisted ref: %v", err)
+		t.Fatalf("read artifact: %v", err)
 	}
-	if string(data) != result {
-		t.Fatal("persisted content doesn't match original")
-	}
-}
-
-func TestMaybePersistResult_DefaultThreshold(t *testing.T) {
-	// Under default threshold (50K) should pass through.
-	result := strings.Repeat("x", 40_000)
-	got := MaybePersistResult("", "test", "c1", result, 0)
-	if got != result {
-		t.Error("expected passthrough for result under default threshold")
-	}
-
-	// Over default threshold should trigger persistence or truncation.
-	big := strings.Repeat("x", 60_000)
-	got = MaybePersistResult("", "test", "c2", big, 0)
-	if got == big {
-		t.Error("expected result to be modified when over default threshold")
+	if string(data) != raw.TextProjection() {
+		t.Fatal("artifact does not contain the exact original model-visible context")
 	}
 }
 
-func TestBuildReference_Preview(t *testing.T) {
-	content := strings.Repeat("H", 3000) + strings.Repeat("T", 2000)
-	ref := buildReference("/tmp/result.txt", content, len(content))
+func TestFinalizeGenericToolResultBoundsStructuredOnlyResult(t *testing.T) {
+	sessionDir := t.TempDir()
+	raw := toolresult.Result{
+		StructuredContent: json.RawMessage(`{"payload":"` + strings.Repeat("x", 4_000) + `"}`),
+		Meta:              json.RawMessage(`{"private":true}`),
+	}
 
-	if !strings.Contains(ref, "/tmp/result.txt") {
-		t.Error("reference should contain file path")
+	got, ref, bounded := finalizeGenericToolResult(sessionDir, "call-structured", raw, 1_000)
+	if !bounded || ref == "" || len(got.Content) != 1 || got.Content[0].Type != toolresult.ContentTypeText {
+		t.Fatalf("structured-only result was not bounded: bounded=%v ref=%q result=%+v", bounded, ref, got)
 	}
-	if !strings.Contains(ref, "5000 chars") {
-		t.Error("reference should contain size")
+	if !strings.Contains(got.TextProjection(), ref) || strings.Contains(got.TextProjection(), strings.Repeat("x", 2_000)) {
+		t.Fatalf("structured-only provider projection is not bounded: %.300q", got.TextProjection())
 	}
-	// Head preview should be present.
-	if !strings.Contains(ref, "first ~2000") {
-		t.Error("reference should contain head preview marker")
+	var index map[string]any
+	if err := json.Unmarshal([]byte(got.TextProjection()), &index); err != nil {
+		t.Fatalf("structured projection must remain valid JSON: %v", err)
 	}
-	// Tail preview should be present for large content.
-	if !strings.Contains(ref, "last ~1000") {
-		t.Error("reference should contain tail preview marker")
+	if index["kind"] != "archived_structured_tool_result" || index["shape"] != "object" {
+		t.Fatalf("structured projection lacks a meaningful index: %+v", index)
+	}
+	if string(got.StructuredContent) != string(raw.StructuredContent) || string(got.Meta) != string(raw.Meta) {
+		t.Fatal("structured-only metadata was not retained")
+	}
+}
+
+func TestFinalizeGenericToolResultUsesLineLimit(t *testing.T) {
+	raw := toolresult.FromText(strings.Repeat("x\n", defaultResultMaxLines+1))
+	got, ref, bounded := finalizeGenericToolResult(t.TempDir(), "call-lines", raw, defaultResultBudget)
+	if !bounded || ref == "" || got.TextProjection() == raw.TextProjection() {
+		t.Fatal("line-heavy result should cross the generic settlement boundary")
+	}
+}
+
+func TestFinalizeGenericToolResultFailsOpenWithoutArtifactStorage(t *testing.T) {
+	raw := toolresult.Result{
+		Content: []toolresult.ContentPart{
+			{Type: toolresult.ContentTypeText, Text: strings.Repeat("x", 2_000)},
+			{Type: toolresult.ContentTypeImage, Data: "aW1hZ2U=", MIMEType: "image/png"},
+		},
+	}
+	got, ref, bounded := finalizeGenericToolResult("", "call-no-store", raw, 1_000)
+	if bounded || ref != "" || got.JSONProjection() != raw.JSONProjection() {
+		t.Fatal("settlement without recoverable storage must fail open")
 	}
 }

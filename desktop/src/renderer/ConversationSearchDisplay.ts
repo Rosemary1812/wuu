@@ -1,21 +1,3 @@
-export function conversationSearchStatusText({
-  loading,
-  query,
-  resultCount,
-}: {
-  loading: boolean;
-  query: string;
-  resultCount: number;
-}): string {
-  if (loading) {
-    return "正在搜索";
-  }
-  if (query.trim()) {
-    return `${resultCount} 个结果`;
-  }
-  return `${resultCount} 个会话`;
-}
-
 export function conversationSearchVisibleSnippet({
   query,
   snippet,

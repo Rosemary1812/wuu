@@ -17,11 +17,15 @@
  * Real React via `react-dom/client` + `act`, no `@testing-library/react`
  * dependency — matches the TurnSourcesRow / AssistantTurnShell pattern.
  */
-import { act, createElement } from "react";
+import { act, createElement, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ThreadItem, Turn } from "../shared/protocol";
-import { PreviewTurnGroup } from "./ConversationSearchOverlay";
+import {
+  ConversationSearchOverlay,
+  PreviewTurnGroup,
+} from "./ConversationSearchOverlay";
+import type { ConversationSearchState } from "./ConversationSearchState";
 
 let mountedRoots: Root[] = [];
 
@@ -74,6 +78,53 @@ function rows(container: HTMLDivElement): HTMLElement[] {
     ),
   );
 }
+
+describe("ConversationSearchOverlay", () => {
+  it("places results directly below the search field without a status row", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const state: ConversationSearchState = {
+      open: true,
+      closing: false,
+      query: "",
+      loading: false,
+      error: "",
+      results: [],
+      selectedIndex: 0,
+      previewedThreadID: "",
+      previewedTurns: [],
+      previewLoading: false,
+      previewError: "",
+    };
+
+    act(() => {
+      root.render(
+        createElement(ConversationSearchOverlay, {
+          state,
+          results: [],
+          threads: [],
+          projects: [],
+          dialogRef: createRef<HTMLDivElement>(),
+          inputRef: createRef<HTMLInputElement>(),
+          onClose: () => {},
+          onQueryChange: () => {},
+          onClearQuery: () => {},
+          onKeyDown: () => {},
+          onSelectIndex: () => {},
+          onSelectResult: () => {},
+        }),
+      );
+    });
+    mountedRoots.push(root);
+
+    expect(container.querySelector(".conversation-search-status")).toBeNull();
+    expect(
+      container.querySelector(".conversation-search-input-wrap")?.nextElementSibling,
+    ).toBe(container.querySelector(".conversation-search-body"));
+    expect(container.textContent).not.toContain("刷新");
+  });
+});
 
 describe("PreviewTurnGroup", () => {
   it("renders only the user row when the agent has not replied yet", () => {

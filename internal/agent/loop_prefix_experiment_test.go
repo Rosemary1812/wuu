@@ -473,48 +473,7 @@ func latestMessageWithName(messages []providers.ChatMessage, name string) provid
 	return providers.ChatMessage{}
 }
 
-// Scenario 6: ToolPrune across a run boundary. Growing history can move old
-// tool results out of the protect window, so a divergence is allowed — but
-// only at tool-result positions that flipped to a pruned placeholder;
-// anything else is a regression.
-func TestPrefixExperiment_ToolPruneDivergesOnlyAtNewlyPrunedResults(t *testing.T) {
-	bigContent := strings.Repeat("x", 400_000)
-	sim := &sessionSim{t: t}
-	sim.history = []providers.ChatMessage{
-		userMsg("turn zero"),
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "old_call", Name: "read_file", Arguments: `{"path":"big.txt"}`}}},
-		{Role: "tool", Name: "read_file", ToolCallID: "old_call", Content: bigContent},
-	}
-	for turn := 1; turn <= 3; turn++ {
-		calls := [][]string{{"call_1"}, {"call_2"}, {"call_3"}}[turn-1]
-		sim.runTurn(fmt.Sprintf("ask %d", turn), &fakeStep{results: toolRoundSteps(calls...)}, func(cfg *LoopConfig) {
-			cfg.Tools = experimentTools()
-			cfg.ToolPrune = true
-		})
-	}
-	breaks := analyzePrefixChain(sim.requests)
-	for _, brk := range breaks {
-		next := sim.requests[brk.pair+1]
-		if brk.msgIndex < 0 || brk.msgIndex >= len(next) {
-			t.Fatalf("prune divergence out of range:\n%s", formatBreaks(sim.requests, breaks))
-		}
-		msg := next[brk.msgIndex]
-		if !strings.EqualFold(msg.Role, "tool") || !strings.Contains(msg.Content, "[Pruned") {
-			t.Fatalf("only newly-pruned tool results may diverge, got role=%s content=%.80q:\n%s",
-				msg.Role, msg.Content, formatBreaks(sim.requests, breaks))
-		}
-	}
-	// The placeholder metadata must always describe the original content.
-	for i, req := range sim.requests {
-		for _, msg := range req {
-			if strings.Contains(msg.Content, "[Pruned") && !strings.Contains(msg.Content, fmt.Sprintf("Original: %d characters", len(bigContent))) {
-				t.Fatalf("request %d carries a placeholder with corrupted metadata: %.120q", i, msg.Content)
-			}
-		}
-	}
-}
-
-// Scenario 7: legacy transient junk in the middle of incoming history breaks
+// Scenario 6: legacy transient junk in the middle of incoming history breaks
 // the retained-state fingerprint. The run must fall back to a fresh
 // transcript (single context copy), never fail or duplicate.
 func TestPrefixExperiment_MidHistoryEditFallsBackSafely(t *testing.T) {
@@ -556,33 +515,5 @@ func TestPrefixExperiment_MidHistoryEditFallsBackSafely(t *testing.T) {
 	turn2 := sim.requests[len(sim.requests)-2:]
 	if breaks := analyzePrefixChain(turn2); len(breaks) != 0 {
 		t.Fatalf("post-fallback rounds must chain:\n%s", formatBreaks(turn2, breaks))
-	}
-}
-
-// Scenario 8: compact.PruneToolResults determinism — pruning the same
-// logical transcript twice yields identical bytes (the loop depends on this
-// for prefix stability, since it re-prunes from originals each round).
-func TestPrefixExperiment_PruneIsDeterministicOverGrowingInput(t *testing.T) {
-	big := strings.Repeat("y", 300_000)
-	base := []providers.ChatMessage{
-		userMsg("t0"),
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c0", Name: "read_file", Arguments: `{}`}}},
-		{Role: "tool", Name: "read_file", ToolCallID: "c0", Content: big},
-		userMsg("t1"),
-		userMsg("t2"),
-	}
-	first := compact.PruneToolResults(base)
-	second := compact.PruneToolResults(base)
-	if !reflect.DeepEqual(first, second) {
-		t.Fatal("PruneToolResults must be deterministic for identical input")
-	}
-	grown := append(providers.CloneChatMessages(base),
-		providers.ChatMessage{Role: "assistant", Content: "more"},
-	)
-	regrown := compact.PruneToolResults(grown)
-	for i := range first {
-		if !reflect.DeepEqual(first[i], regrown[i]) {
-			t.Fatalf("pruned prefix must stay byte-stable as input grows (message %d changed)", i)
-		}
 	}
 }

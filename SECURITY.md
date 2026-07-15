@@ -7,13 +7,9 @@ credential, and remote-control trust boundaries, read the
 
 ## Supported versions
 
-Only the latest minor release line of wuu receives security fixes. Older
-versions are not patched.
-
-| Version | Supported          |
-|---------|--------------------|
-| latest  | :white_check_mark: |
-| older   | :x:                |
+wuu is pre-1.0 and does not currently promise a fixed support window for older
+versions. Security fixes are released on the current release line. Upgrade to
+the newest release before reporting an issue that may already be fixed.
 
 ## Reporting a vulnerability
 
@@ -32,9 +28,9 @@ Please include:
 - The affected version (`wuu --version`)
 - Any known mitigations or workarounds
 
-We will acknowledge new reports within 5 business days and aim to ship a
-fix or mitigation within 30 days for critical issues. We will coordinate
-disclosure timing with you and credit reporters who request it.
+Maintainers will coordinate disclosure timing with reporters and credit
+reporters who request it. No fixed response or remediation time is promised at
+the current project stage.
 
 ## Scope
 

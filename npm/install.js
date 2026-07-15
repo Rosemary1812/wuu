@@ -7,6 +7,7 @@ const os = require("os");
 const crypto = require("crypto");
 
 const REPO = "blueberrycongee/wuu";
+const PACKAGE_VERSION = require("./package.json").version;
 
 function getPlatform() {
   const p = process.platform;
@@ -32,6 +33,9 @@ function fetchJSON(url) {
           res.headers.location
         ) {
           return fetchJSON(res.headers.location).then(resolve, reject);
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`GET ${url} → ${res.statusCode}`));
         }
         let data = "";
         res.on("data", (chunk) => (data += chunk));
@@ -83,11 +87,12 @@ async function main() {
 
   console.log(`Installing wuu for ${platform}/${arch}...`);
 
-  // Get latest release.
+  // Install the binary that matches this package, not whichever release is
+  // newest when postinstall happens.
   const release = await fetchJSON(
-    `https://api.github.com/repos/${REPO}/releases/latest`,
+    `https://api.github.com/repos/${REPO}/releases/tags/v${PACKAGE_VERSION}`,
   );
-  const version = release.tag_name.replace(/^v/, "");
+  const version = PACKAGE_VERSION;
   const filename = `wuu_${version}_${platform}_${arch}.tar.gz`;
   const asset = release.assets.find((a) => a.name === filename);
   if (!asset) {

@@ -254,12 +254,6 @@ type LoopConfig struct {
 	// CompactOnly returns after the forced compact pass instead of sending a
 	// normal provider request. Used for control-plane /compact turns.
 	CompactOnly bool
-	// ToolPrune enables a lightweight, non-LLM tool-result prune pass that
-	// runs before each provider request. Old tool results beyond the protect
-	// threshold are replaced with compact placeholders in the request only;
-	// the live history retains full content. This delays the need for
-	// expensive LLM-summarized compaction.
-	ToolPrune bool
 	// RetainedRequestContext, when set, is the previous run's retained
 	// request-only context (LoopResult.RetainedRequestContext). If it still
 	// matches the incoming durable history it is spliced back into the

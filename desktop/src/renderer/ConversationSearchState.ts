@@ -78,7 +78,6 @@ export function useConversationSearch({
   conversationSearchInputRef: React.RefObject<HTMLInputElement | null>;
   toggleConversationSearch: () => void;
   closeConversationSearch: (options?: CloseConversationSearchOptions) => void;
-  refreshConversationSearchThreads: (query?: string) => Promise<void>;
   selectConversationSearchResult: (result: ThreadSearchResultItem) => void;
   handleConversationSearchKeyDown: (
     event: ReactKeyboardEvent<HTMLInputElement>,
@@ -398,7 +397,6 @@ export function useConversationSearch({
     conversationSearchInputRef,
     toggleConversationSearch,
     closeConversationSearch,
-    refreshConversationSearchThreads,
     selectConversationSearchResult,
     handleConversationSearchKeyDown,
     setConversationSearchQuery,

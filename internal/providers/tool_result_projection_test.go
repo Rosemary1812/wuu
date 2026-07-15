@@ -22,9 +22,17 @@ func TestProjectToolResultPreservesOrderAndHidesPrivateMetadata(t *testing.T) {
 		Activity:          &toolresult.ActivityRef{ID: "activity-1", Kind: "browser"},
 	}
 	projected := ProjectToolResult(result)
-	wantText := "first\n[resource_link: docs (https://example.test/docs)]\n[resource: embedded] {\"text\":\"body\",\"uri\":\"file:///tmp/a\"}\n{\"a\":1,\"b\":2}"
-	if projected.ToolText != wantText {
-		t.Fatalf("ToolText = %q, want %q", projected.ToolText, wantText)
+	parts := strings.Split(projected.ToolText, "\n")
+	if len(parts) != 4 || strings.Join(parts[:3], "\n") != "first\n[resource_link: docs (https://example.test/docs)]\n[resource: embedded] {\"text\":\"body\",\"uri\":\"file:///tmp/a\"}" {
+		t.Fatalf("ToolText prefix = %q", projected.ToolText)
+	}
+	var index map[string]any
+	if err := json.Unmarshal([]byte(parts[3]), &index); err != nil {
+		t.Fatalf("structured index is not JSON: %v", err)
+	}
+	preview, _ := index["value_preview"].(map[string]any)
+	if index["shape"] != "object" || len(index["sha256"].(string)) != 64 || preview["a"] != float64(1) || preview["b"] != float64(2) {
+		t.Fatalf("structured semantic index = %+v", index)
 	}
 	if len(projected.ObservationImages) != 1 || projected.ObservationImages[0].MediaType != "image/png" {
 		t.Fatalf("images = %+v", projected.ObservationImages)
@@ -34,6 +42,52 @@ func TestProjectToolResultPreservesOrderAndHidesPrivateMetadata(t *testing.T) {
 	}
 	if strings.Contains(projected.ToolText, "must-not-reach-model") || strings.Contains(projected.ToolText, "activity-1") {
 		t.Fatalf("private metadata leaked: %q", projected.ToolText)
+	}
+}
+
+func TestProjectToolResultUsesStructuredContentWhenNoContentExists(t *testing.T) {
+	projected := ProjectToolResult(toolresult.Result{StructuredContent: json.RawMessage(`{"b":2,"a":1}`)})
+	if got, want := projected.ToolText, `{"a":1,"b":2}`; got != want {
+		t.Fatalf("ToolText = %q, want %q", got, want)
+	}
+}
+
+func TestProjectToolResultBoundsMixedStructuredContentToSemanticIndex(t *testing.T) {
+	keys := make([]string, 0, structuredResultIndexMaxKeys+5)
+	structured := map[string]any{}
+	for index := 0; index < structuredResultIndexMaxKeys+5; index++ {
+		key := strings.Repeat("k", structuredResultIndexMaxKeyRunes+10) + string(rune('a'+index))
+		keys = append(keys, key)
+		structured[key] = strings.Repeat("private-value", 1_000)
+	}
+	raw, err := json.Marshal(structured)
+	if err != nil {
+		t.Fatalf("marshal structured content: %v", err)
+	}
+	projected := ProjectToolResult(toolresult.Result{
+		Content:           []toolresult.ContentPart{{Type: toolresult.ContentTypeText, Text: "human-readable summary"}},
+		StructuredContent: raw,
+	})
+	parts := strings.Split(projected.ToolText, "\n")
+	if len(parts) != 2 || parts[0] != "human-readable summary" {
+		t.Fatalf("mixed projection lost producer text: %.300q", projected.ToolText)
+	}
+	var index map[string]any
+	if err := json.Unmarshal([]byte(parts[1]), &index); err != nil {
+		t.Fatalf("structured index is not JSON: %v", err)
+	}
+	if index["kind"] != "structured_tool_result_index" || index["shape"] != "object" || index["key_count"] != float64(len(keys)) {
+		t.Fatalf("structured index lacks shape metadata: %+v", index)
+	}
+	if got := index["keys"].([]any); len(got) != structuredResultIndexMaxKeys {
+		t.Fatalf("visible keys = %d, want %d", len(got), structuredResultIndexMaxKeys)
+	}
+	preview, ok := index["value_preview"].(map[string]any)
+	if !ok || len(preview) == 0 || index["preview_truncated"] != true {
+		t.Fatalf("structured index lacks bounded value evidence: %+v", index)
+	}
+	if index["keys_omitted"] != float64(5) || strings.Contains(projected.ToolText, strings.Repeat("private-value", 1_000)) {
+		t.Fatalf("structured index leaked an unbounded value or lost omission count: %.300q", projected.ToolText)
 	}
 }
 

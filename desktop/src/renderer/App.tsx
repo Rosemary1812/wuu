@@ -131,6 +131,7 @@ import {
   setThreadForPane,
   sortThreads,
   summarizeThreadsForSidebar,
+  threadBelongsToProject,
   threadForTab,
   threadForPane,
   threadSessionTabID,
@@ -177,6 +178,7 @@ import type { ComposerGoalSummary } from "../shared/protocol";
 import { useSettingsRuntimeState } from "./SettingsRuntimeState";
 import { SidePanelToggleIcon } from "./SidePanelToggleIcon";
 import { JumpToLatestPill } from "./JumpToLatestPill";
+import { ENABLE_COLLABORATION } from "./FeatureFlags";
 import { SkillsCatalog } from "./SkillsCatalog";
 import { TaskBoardView } from "./TaskBoardView";
 import { runDebugPhaseForState } from "./RunDebugPanel";
@@ -200,6 +202,7 @@ import { useComposerDraftState } from "./ComposerDraftState";
 import { useComposerPendingState } from "./ComposerPendingState";
 import { useSidebarDrawerState } from "./SidebarDrawerState";
 import {
+  mergeSidebarThreadSnapshots,
   threadsForDesktopProject,
   useSidebarProjectState,
 } from "./SidebarProjectState";
@@ -479,6 +482,7 @@ export function App(): JSX.Element {
   const {
     collapsedSidebarSectionIDs,
     expandedSidebarSectionIDs,
+    loadingProjectThreadIDs,
     projectThreadsByProjectID,
     cachedScratchThreads,
     sidebarSectionOrder,
@@ -671,12 +675,13 @@ export function App(): JSX.Element {
       })),
   });
   // Archive is now a single-click action (the previous two-step "click again
-  // to confirm" pattern was too easy to misfire). The toast/notification lives
-  // in `archiveTip` below; the underlying IPC still goes through
+  // to confirm" pattern was too easy to misfire). Success and failure feedback
+  // lives in `archiveTip` below; the underlying IPC still goes through
   // `window.wuu.archiveThread(id, true)`.
   const [archiveTip, setArchiveTip] = useState<{
     threadID: string;
     threadTitle: string;
+    errorMessage?: string;
   } | null>(null);
   const dismissArchiveTip = useCallback(() => {
     setArchiveTip(null);
@@ -1199,7 +1204,6 @@ export function App(): JSX.Element {
     conversationSearchInputRef,
     toggleConversationSearch,
     closeConversationSearch,
-    refreshConversationSearchThreads,
     selectConversationSearchResult,
     handleConversationSearchKeyDown,
     setConversationSearchQuery,
@@ -2001,9 +2005,9 @@ export function App(): JSX.Element {
     }
     return {
       ...projectThreadsByProjectID,
-      [state.activeProjectId]: threadsForDesktopProject(
-        state.threads,
-        activeProject,
+      [state.activeProjectId]: mergeSidebarThreadSnapshots(
+        projectThreadsByProjectID[state.activeProjectId],
+        threadsForDesktopProject(state.threads, activeProject),
       ),
     };
   }, [
@@ -2485,10 +2489,16 @@ export function App(): JSX.Element {
             : (!activeThreadReadOnly && activeThreadIsRunning) ||
               viewContextSwitchPending
         }
-        ultraEnabled={Boolean(state.initialized?.ultra)}
-        onToggleUltra={(enabled) => {
-          void updateUltraMode(enabled).catch(() => undefined);
-        }}
+        ultraEnabled={
+          ENABLE_COLLABORATION && Boolean(state.initialized?.ultra)
+        }
+        onToggleUltra={
+          ENABLE_COLLABORATION
+            ? (enabled) => {
+                void updateUltraMode(enabled).catch(() => undefined);
+              }
+            : undefined
+        }
         runtimeControlsDisabled={
           (!activeThreadReadOnly && activeThreadIsRunning) ||
           viewContextSwitchPending
@@ -3782,6 +3792,7 @@ export function App(): JSX.Element {
   const archiveTipNode = archiveTip ? (
     <ArchiveTip
       threadTitle={archiveTip.threadTitle}
+      errorMessage={archiveTip.errorMessage}
       onViewArchive={() => {
         dismissArchiveTip();
         openArchiveSettings();
@@ -3837,7 +3848,18 @@ export function App(): JSX.Element {
           onDebugControlsChange={setDebugControlsEnabled}
           onSidebarResizeStart={startSidebarResize}
           onSidebarSeparatorKey={handleSidebarSeparatorKey}
-          archivedThreads={state.threads.filter((thread) => thread.archived)}
+          archivedThreads={state.threads
+            .filter((thread) => thread.archived)
+            .map((thread) => {
+              const project = state.projects.find((candidate) =>
+                threadBelongsToProject(thread, candidate),
+              );
+              return {
+                ...thread,
+                archive_project_id: project?.id ?? "",
+                archive_project_name: project?.name ?? "无项目",
+              };
+            })}
           onUnarchiveThread={(thread) => void unarchiveThread(thread)}
         />
       </>
@@ -3873,6 +3895,7 @@ export function App(): JSX.Element {
             pendingProjectID={visiblePendingProjectID}
             collapsedSidebarSectionIDs={collapsedSidebarSectionIDs}
             expandedSidebarSectionIDs={expandedSidebarSectionIDs}
+            loadingProjectThreadIDs={loadingProjectThreadIDs}
             projectThreadsByProjectID={sidebarThreadsByProjectID}
             projectMenuOpen={projectMenuOpen}
             projectMenuRef={projectMenuRef}
@@ -3909,8 +3932,13 @@ export function App(): JSX.Element {
             onTogglePinned={(thread) => void toggleThreadPinned(thread)}
             onArchiveThread={(thread) => {
               const archivedTitle = thread.title?.trim() || "该会话";
-              void archiveThread(thread);
-              setArchiveTip({ threadID: thread.id, threadTitle: archivedTitle });
+              void archiveThread(thread).then((outcome) => {
+                setArchiveTip({
+                  threadID: thread.id,
+                  threadTitle: archivedTitle,
+                  errorMessage: outcome.ok ? undefined : outcome.error,
+                });
+              });
             }}
             onDeleteThread={(thread) => void deleteThread(thread)}
             onRenameThread={(thread, title) => void renameThread(thread, title)}
@@ -3975,7 +4003,6 @@ export function App(): JSX.Element {
         dialogRef={conversationSearchRef}
         inputRef={conversationSearchInputRef}
         onClose={closeConversationSearch}
-        onRefresh={() => void refreshConversationSearchThreads()}
         onQueryChange={setConversationSearchQuery}
         onClearQuery={clearConversationSearchQuery}
         onKeyDown={handleConversationSearchKeyDown}

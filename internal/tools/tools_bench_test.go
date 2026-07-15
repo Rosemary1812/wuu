@@ -4,9 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
-	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 // BenchmarkReadFile measures read_file tool execution.
@@ -45,27 +46,25 @@ func BenchmarkGlob(b *testing.B) {
 // BenchmarkPersistResultSmall measures the no-op path (result below threshold).
 func BenchmarkPersistResultSmall(b *testing.B) {
 	sessionDir := b.TempDir()
-	call := providers.ToolCall{Name: "read_file", ID: "call_123", Arguments: `{"file_path": "go.mod"}`}
-	result := "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n"
+	result := toolresult.FromText("package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n")
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = MaybePersistResult(sessionDir, call.Name, call.ID, result, defaultResultBudget)
+		_, _, _ = finalizeGenericToolResult(sessionDir, "call_123", result, defaultResultBudget)
 	}
 }
 
 // BenchmarkPersistResultLarge measures the actual disk write path.
 func BenchmarkPersistResultLarge(b *testing.B) {
 	sessionDir := b.TempDir()
-	call := providers.ToolCall{Name: "read_file", ID: "call_123", Arguments: `{"file_path": "go.mod"}`}
 	// 60KB result, above the 50KB threshold
 	result := make([]byte, 60_000)
 	for i := range result {
 		result[i] = 'x'
 	}
-	resultStr := string(result)
+	resultValue := toolresult.FromText(string(result))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = MaybePersistResult(sessionDir, call.Name, call.ID+string(rune(i)), resultStr, defaultResultBudget)
+		_, _, _ = finalizeGenericToolResult(sessionDir, "call_"+strconv.Itoa(i), resultValue, defaultResultBudget)
 	}
 }
 

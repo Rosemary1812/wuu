@@ -14,6 +14,10 @@ function cssRule(selector: string): string {
 }
 
 describe("settings shell titlebar", () => {
+  it("aligns its sidebar toggle with the main conversation titlebar", () => {
+    expect(cssRule(".settings-titlebar")).toMatch(/padding:\s*0 24px;/);
+  });
+
   it("keeps its collapse toggle clear of the macOS traffic lights", () => {
     expect(cssRule(".settings-shell.sidebar-collapsed .settings-titlebar")).toMatch(
       /padding-left:\s*86px;/,

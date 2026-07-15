@@ -1,15 +1,15 @@
-.PHONY: setup dev check check-go check-desktop check-clients test test-go \
+.PHONY: setup dev check repository-check version-check eval-check check-go check-desktop check-clients test test-go \
 	test-desktop test-clients test-native build build-go build-desktop \
 	build-clients build-macos ci install vet clean release-check release-dry \
-	snapshot print-version tag-release check-release-versions
+	snapshot print-version tag-release version-check release-prepare
 
 VERSION_FILE := VERSION
 BASE_VERSION := $(shell cat $(VERSION_FILE) 2>/dev/null || echo "0.1.0")
-VERSION ?= v$(BASE_VERSION)-dev
+BUILD_VERSION ?= v$(BASE_VERSION)-dev
 COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 DATE    := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w \
-	-X github.com/blueberrycongee/wuu/internal/version.Version=$(VERSION) \
+	-X github.com/blueberrycongee/wuu/internal/version.Version=$(BUILD_VERSION) \
 	-X github.com/blueberrycongee/wuu/internal/version.Commit=$(COMMIT) \
 	-X github.com/blueberrycongee/wuu/internal/version.Date=$(DATE)
 GO_DIRS := cmd internal prompts
@@ -24,7 +24,13 @@ setup:
 dev:
 	cd desktop && npm run dev
 
-check: check-go check-desktop check-clients
+check: repository-check check-go check-desktop check-clients
+
+repository-check: version-check eval-check
+
+eval-check:
+	node scripts/check-evals.mjs --self-test
+	node scripts/check-evals.mjs
 
 check-go:
 	go mod tidy -diff
@@ -84,19 +90,16 @@ release-dry:
 	goreleaser check
 	goreleaser release --snapshot --clean --skip=publish
 
-release-check: check-release-versions
+release-check: version-check
 	goreleaser check
 	cd npm && npm pack --dry-run
 
-check-release-versions:
-	@core="$$(cat VERSION)"; \
-	 desktop="$$(node -p "require('./desktop/package.json').version")"; \
-	 npm_version="$$(node -p "require('./npm/package.json').version")"; \
-	 if [ "$$core" != "$$desktop" ] || [ "$$core" != "$$npm_version" ]; then \
-		echo "release versions differ: VERSION=$$core desktop=$$desktop npm=$$npm_version"; \
-		exit 1; \
-	 fi; \
-	 echo "release versions match: $$core"
+version-check:
+	node scripts/release-version.mjs check
+
+release-prepare:
+	@test -n "$(RELEASE_VERSION)" || { echo "usage: make release-prepare RELEASE_VERSION=0.4.0"; exit 1; }
+	node scripts/release-version.mjs prepare "$(RELEASE_VERSION)"
 
 snapshot:
 	goreleaser release --snapshot --clean
@@ -113,6 +116,7 @@ tag-release:
 		echo "tag v$(BASE_VERSION) already exists"; \
 		exit 1; \
 	fi
+	node scripts/release-version.mjs check "v$(BASE_VERSION)"
 	git tag -a "v$(BASE_VERSION)" -m "release v$(BASE_VERSION)"
 	@echo "created tag v$(BASE_VERSION)"
 	@echo "push with: git push origin v$(BASE_VERSION)"

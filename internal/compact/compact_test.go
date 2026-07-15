@@ -1,13 +1,21 @@
 package compact
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"image"
+	"image/png"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/toolresult"
 )
 
 func TestEstimateTokens_English(t *testing.T) {
@@ -951,38 +959,7 @@ func TestCompact_UsesInternalTimeout(t *testing.T) {
 	}
 }
 
-func TestCompact_PrunesOldLargeToolResultsBeforeSummary(t *testing.T) {
-	large := largePrunableToolOutput("x")
-	messages := []providers.ChatMessage{
-		{Role: "user", Content: "inspect logs"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c1", Name: "read_file", Arguments: `{"path":"build.log"}`}}},
-		{Role: "tool", Name: "read_file", ToolCallID: "c1", Content: large},
-		{Role: "assistant", Content: "I checked the log."},
-		{Role: "user", Content: "continue"},
-		{Role: "assistant", Content: "working"},
-		{Role: "user", Content: "status?"},
-		{Role: "assistant", Content: "done"},
-	}
-
-	client := &mockCompactClient{response: "summary"}
-	_, err := Compact(context.Background(), messages, client, "test")
-	if err != nil {
-		t.Fatalf("Compact: %v", err)
-	}
-
-	if len(client.lastRequest.Messages) < 2 || client.lastRequest.Messages[0].Role != "system" {
-		t.Fatalf("expected compact summary request to include system instructions, got %+v", client.lastRequest.Messages)
-	}
-	summaryInput := client.lastRequest.Messages[len(client.lastRequest.Messages)-1].Content
-	if strings.Contains(summaryInput, large) {
-		t.Fatal("expected old large tool result to be pruned from summary input")
-	}
-	if !strings.Contains(summaryInput, "[Pruned read_file result.") {
-		t.Fatalf("expected placeholder in summary input, got: %s", summaryInput)
-	}
-}
-
-func TestCompact_DoesNotPruneRecentTailToolResults(t *testing.T) {
+func TestCompact_KeepsRecentTailToolResults(t *testing.T) {
 	large := strings.Repeat("y", 2_000)
 	messages := []providers.ChatMessage{
 		{Role: "user", Content: "older question"},
@@ -1040,11 +1017,11 @@ func TestCompact_StripsHistoricalImagesFromKeptTail(t *testing.T) {
 	foundHistorical := false
 	foundLatest := false
 	for _, msg := range result {
-		switch msg.Content {
-		case "second screenshot\n\n[Image attachment omitted from compacted history: image/png, 1200 base64 characters.]":
+		switch {
+		case strings.HasPrefix(msg.Content, "second screenshot\n\n[Image attachment omitted from compacted history: image/png, 1200 base64 characters, 900 decoded bytes, sha256="):
 			historical = msg
 			foundHistorical = true
-		case "third screenshot":
+		case msg.Content == "third screenshot":
 			latest = msg
 			foundLatest = true
 		}
@@ -1085,11 +1062,11 @@ func TestCompact_StripsHistoricalFilesFromKeptTail(t *testing.T) {
 	foundHistorical := false
 	foundLatest := false
 	for _, msg := range result {
-		switch msg.Content {
-		case "second brief\n\n[File attachment omitted from compacted history: application/pdf, brief.pdf, 1400 base64 characters.]":
+		switch {
+		case strings.HasPrefix(msg.Content, "second brief\n\n[File attachment omitted from compacted history: application/pdf, brief.pdf, 1400 base64 characters, 1050 decoded bytes, sha256="):
 			historical = msg
 			foundHistorical = true
-		case "latest brief":
+		case msg.Content == "latest brief":
 			latest = msg
 			foundLatest = true
 		}
@@ -1117,191 +1094,95 @@ func TestBuildSummaryPromptMentionsImagesWithoutData(t *testing.T) {
 	if strings.Contains(prompt, imageData) {
 		t.Fatal("summary prompt must not include raw image data")
 	}
-	if !strings.Contains(prompt, "[image omitted: image/png, 80 base64 characters]") {
+	if !strings.Contains(prompt, "[image omitted: image/png, 80 base64 characters, 60 decoded bytes, sha256=") {
 		t.Fatalf("expected image omission note, got %q", prompt)
 	}
 }
 
-func TestPruneOldToolResults_PreservesToolCallPairing(t *testing.T) {
-	large := largePrunableToolOutput("z")
-	messages := []providers.ChatMessage{
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c1", Name: "grep", Arguments: `{"pattern":"TODO"}`}}},
-		{Role: "tool", Name: "grep", ToolCallID: "c1", Content: large},
-		{Role: "assistant", Content: "done"},
-	}
+func TestBuildSummaryPromptIndexesRichToolResultWithoutData(t *testing.T) {
+	imageData := strings.Repeat("i", 80)
+	fileData := strings.Repeat("f", 60)
+	prompt := buildSummaryPrompt([]providers.ChatMessage{{
+		Role:    "tool",
+		Content: strings.Repeat("long textual result ", 100),
+		ToolResult: &toolresult.Result{
+			Content: []toolresult.ContentPart{
+				{Type: toolresult.ContentTypeText, Text: "long textual result"},
+				{Type: toolresult.ContentTypeImage, Data: imageData, MIMEType: "image/png", Name: "screen.png"},
+				{Type: toolresult.ContentTypeAudio, URI: "https://example.test/audio.wav", MIMEType: "audio/wav", Name: "clip.wav"},
+				{Type: toolresult.ContentTypeFile, Data: fileData, MIMEType: "application/pdf", Name: "brief.pdf"},
+				{Type: toolresult.ContentTypeResource, Name: "record", Resource: json.RawMessage(`{"id":1}`)},
+			},
+			StructuredContent: json.RawMessage(`{"status":"ready"}`),
+			Meta:              json.RawMessage(`{"source":"mcp"}`),
+			Activity:          &toolresult.ActivityRef{ID: "activity-1", Kind: "computer", State: "ready", PreviewURI: "activity://preview"},
+		},
+	}}, "")
 
-	pruned := pruneOldToolResults(messages)
-	if len(pruned) != len(messages) {
-		t.Fatalf("expected message count to stay the same, got %d vs %d", len(pruned), len(messages))
+	if strings.Contains(prompt, imageData) || strings.Contains(prompt, fileData) || strings.Contains(prompt, `"source":"mcp"`) {
+		t.Fatal("summary prompt must not include raw rich payloads or private metadata")
 	}
-	if len(pruned[0].ToolCalls) != 1 || pruned[0].ToolCalls[0].ID != "c1" {
-		t.Fatalf("expected assistant tool call metadata preserved, got %+v", pruned[0].ToolCalls)
-	}
-	if pruned[1].Role != "tool" || pruned[1].ToolCallID != "c1" {
-		t.Fatalf("expected tool pairing preserved, got %+v", pruned[1])
-	}
-	if pruned[1].Content == "" || strings.Contains(pruned[1].Content, large) {
-		t.Fatalf("expected tool result content replaced with placeholder, got %q", pruned[1].Content)
+	for _, want := range []string{
+		"[tool image index: screen.png, image/png, 80 base64 characters, 60 decoded bytes, sha256=",
+		"[tool audio index: clip.wav, audio/wav, uri=https://example.test/audio.wav]",
+		"[tool file index: brief.pdf, application/pdf, 60 base64 characters, 45 decoded bytes, sha256=",
+		"[tool resource index: record, 8 JSON characters]",
+		"[tool activity index: kind=computer, id=activity-1, state=ready, preview=activity://preview]",
+		`"value_preview":{"status":"ready"}`,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("summary prompt lacks rich result index %q: %s", want, prompt)
+		}
 	}
 }
 
-func TestPruneOldToolResults_ProtectsSkillTool(t *testing.T) {
-	large := largePrunableToolOutput("s")
-	messages := []providers.ChatMessage{
-		{Role: "tool", Name: "skill", ToolCallID: "skill-call", Content: large},
+func TestBuildSummaryPromptIndexesImageIdentityAndDimensions(t *testing.T) {
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 2, 3))); err != nil {
+		t.Fatal(err)
 	}
+	data := base64.StdEncoding.EncodeToString(encoded.Bytes())
+	hash := sha256.Sum256(encoded.Bytes())
+	prompt := buildSummaryPrompt([]providers.ChatMessage{{
+		Role:   "user",
+		Images: []providers.InputImage{{MediaType: "image/png", Data: data}},
+	}}, "")
 
-	pruned := pruneOldToolResults(messages)
-	if pruned[0].Content != large {
-		t.Fatal("skill tool output should be protected from pruning")
+	want := fmt.Sprintf("sha256=%x, dimensions=2x3", hash)
+	if !strings.Contains(prompt, want) {
+		t.Fatalf("image identity missing from compact prompt: %s", prompt)
 	}
 }
 
-func largePrunableToolOutput(char string) string {
-	return strings.Repeat(char, (toolResultPruneProtectTokens+toolResultPruneMinimumTokens+1_000)*4)
-}
+func TestBuildSummaryPromptIndexesStructuredOnlyResultWithoutValues(t *testing.T) {
+	secret := strings.Repeat("s", 800)
+	prompt := buildSummaryPrompt([]providers.ChatMessage{{
+		Role:    "tool",
+		Content: `{"payload":"` + secret + `","rows":[1,2],"source":"db"}`,
+		ToolResult: &toolresult.Result{
+			StructuredContent: json.RawMessage(`{"payload":"` + secret + `","rows":[1,2],"source":"db"}`),
+		},
+	}}, "")
 
-func TestPruneToolResults_EmptyInput(t *testing.T) {
-	if got := PruneToolResults(nil); got != nil {
-		t.Fatalf("expected nil for empty input, got %v", got)
+	if strings.Contains(prompt, secret) {
+		t.Fatal("summary prompt must not include large structured values")
 	}
-}
-
-func TestPruneToolResults_TurnProtection(t *testing.T) {
-	large := largePrunableToolOutput("z")
-	messages := []providers.ChatMessage{
-		// Turn 1 (old, eligible for pruning)
-		{Role: "user", Content: "old question"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c1", Name: "bash", Arguments: "{}"}}},
-		{Role: "tool", Name: "bash", ToolCallID: "c1", Content: large},
-		// Turn 2 (within last 2 turns, protected)
-		{Role: "user", Content: "recent question"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c2", Name: "bash", Arguments: "{}"}}},
-		{Role: "tool", Name: "bash", ToolCallID: "c2", Content: large},
-		// Turn 3 (most recent, protected)
-		{Role: "user", Content: "latest question"},
-		{Role: "assistant", Content: "done"},
-	}
-
-	pruned := PruneToolResults(messages)
-
-	if pruned[2].Content == large {
-		t.Fatal("expected old tool result to be pruned")
-	}
-	if !strings.Contains(pruned[2].Content, "[Pruned bash result") {
-		t.Fatalf("expected pruned placeholder, got %q", pruned[2].Content)
-	}
-	if pruned[5].Content != large {
-		t.Fatal("expected recent tool result to be preserved (turn protection)")
+	if !strings.Contains(prompt, `"key_count":3`) || !strings.Contains(prompt, `"value_preview"`) || !strings.Contains(prompt, `"source":"db"`) {
+		t.Fatalf("summary prompt lacks structured result index: %s", prompt)
 	}
 }
 
-func TestPruneToolResults_DoesNotCountHiddenContextAnchorAsUserTurn(t *testing.T) {
-	large := largePrunableToolOutput("a")
-	messages := []providers.ChatMessage{
-		// Visible turn 1: old enough to prune.
-		{Role: "user", Content: "old question"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c1", Name: "bash", Arguments: "{}"}}},
-		{Role: "tool", Name: "bash", ToolCallID: "c1", Content: large},
-		{Role: "assistant", Content: "old answer"},
-		// Visible turn 2: should remain protected.
-		{Role: "user", Content: "recent question"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c2", Name: "bash", Arguments: "{}"}}},
-		{Role: "tool", Name: "bash", ToolCallID: "c2", Content: large},
-		{Role: "assistant", Content: "recent answer"},
-		// Visible turn 3: latest user request, followed by an internal anchor.
-		{Role: "user", Content: "latest question"},
-		BuildContextAnchorMessage(0),
-	}
+func TestBuildSummaryPromptIndexesMixedStructuredResultValues(t *testing.T) {
+	prompt := buildSummaryPrompt([]providers.ChatMessage{{
+		Role:    "tool",
+		Content: "operation completed",
+		ToolResult: &toolresult.Result{
+			Content:           []toolresult.ContentPart{{Type: toolresult.ContentTypeText, Text: "operation completed"}},
+			StructuredContent: json.RawMessage(`{"status":"ready","count":3}`),
+		},
+	}}, "")
 
-	pruned := PruneToolResults(messages)
-
-	if pruned[2].Content == large {
-		t.Fatal("expected old visible turn tool result to be pruned")
-	}
-	if pruned[6].Content != large {
-		t.Fatal("hidden context anchor must not consume a protected visible user turn")
-	}
-}
-
-func TestPruneToolResults_ProtectsSkillTool(t *testing.T) {
-	large := largePrunableToolOutput("s")
-	messages := []providers.ChatMessage{
-		{Role: "user", Content: "q1"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c1", Name: "skill", Arguments: "{}"}}},
-		{Role: "tool", Name: "skill", ToolCallID: "c1", Content: large},
-		{Role: "user", Content: "q2"},
-		{Role: "assistant", Content: "ok"},
-		{Role: "user", Content: "q3"},
-		{Role: "assistant", Content: "done"},
-	}
-
-	pruned := PruneToolResults(messages)
-	if pruned[2].Content != large {
-		t.Fatal("skill tool output should be protected from pruning")
-	}
-}
-
-func TestPruneToolResults_RecallableAndNonRecallablePlaceholders(t *testing.T) {
-	large := largePrunableToolOutput("x")
-	messages := []providers.ChatMessage{
-		// Old turn 1: read_file (recallable)
-		{Role: "user", Content: "q1"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "rf1", Name: "read_file", Arguments: "{}"}}},
-		{Role: "tool", Name: "read_file", ToolCallID: "rf1", Content: large},
-		// Old turn 2: bash (non-recallable)
-		{Role: "user", Content: "q2"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "bs1", Name: "bash", Arguments: "{}"}}},
-		{Role: "tool", Name: "bash", ToolCallID: "bs1", Content: large},
-		// Recent turns (protected)
-		{Role: "user", Content: "q3"},
-		{Role: "assistant", Content: "ok"},
-		{Role: "user", Content: "q4"},
-		{Role: "assistant", Content: "done"},
-	}
-
-	pruned := PruneToolResults(messages)
-
-	if !strings.Contains(pruned[2].Content, "Re-run read_file") {
-		t.Fatalf("expected recallable placeholder for read_file, got %q", pruned[2].Content)
-	}
-	if !strings.Contains(pruned[5].Content, "may not be reproducible") {
-		t.Fatalf("expected non-recallable placeholder for bash, got %q", pruned[5].Content)
-	}
-	// Non-destructive: originals unchanged.
-	if messages[2].Content != large {
-		t.Fatal("original read_file result should be unchanged (non-destructive)")
-	}
-	if messages[5].Content != large {
-		t.Fatal("original bash result should be unchanged (non-destructive)")
-	}
-}
-
-func TestPruneToolResults_BelowMinimumNotPruned(t *testing.T) {
-	// Recent old result (processed first going backwards) is under the 40K
-	// protect threshold; older result pushes total over 40K but the prunable
-	// amount is under the 20K minimum, so nothing is pruned.
-	recentOld := strings.Repeat("b", 150_000) // ~37.5K tokens, under 40K protect
-	farOld := strings.Repeat("a", 50_000)     // ~12.5K tokens, prunable < 20K minimum
-
-	messages := []providers.ChatMessage{
-		{Role: "user", Content: "q1"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c1", Name: "bash", Arguments: "{}"}}},
-		{Role: "tool", Name: "bash", ToolCallID: "c1", Content: farOld},
-		{Role: "user", Content: "q2"},
-		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "c2", Name: "bash", Arguments: "{}"}}},
-		{Role: "tool", Name: "bash", ToolCallID: "c2", Content: recentOld},
-		{Role: "user", Content: "q3"},
-		{Role: "assistant", Content: "ok"},
-		{Role: "user", Content: "q4"},
-		{Role: "assistant", Content: "done"},
-	}
-
-	pruned := PruneToolResults(messages)
-	if pruned[2].Content != farOld {
-		t.Fatal("tool result with prunable amount below minimum should not be pruned")
-	}
-	if pruned[5].Content != recentOld {
-		t.Fatal("tool result under protect threshold should not be pruned")
+	if !strings.Contains(prompt, `"value_preview":{"count":3,"status":"ready"}`) {
+		t.Fatalf("mixed structured values missing from summary index: %s", prompt)
 	}
 }

@@ -64,6 +64,16 @@ run.
   - `refactor(scope): ...` for refactors with no behavior change
 - Reference the relevant issue or design doc in the body when applicable
 
+### Versions and release notes
+
+- Add user-visible changes to the `[Unreleased]` section of `CHANGELOG.md`.
+- Do not edit product package versions by hand; `VERSION` is synchronized with
+  `make release-prepare RELEASE_VERSION=<version>`.
+- Compatible fixes use a patch release. Features and compatibility-sensitive
+  protocol, configuration, data, or behavior changes use a minor release while
+  wuu remains pre-1.0.
+- Only maintainers create release tags. See [the release guide](docs/release.md).
+
 ### Pull request process
 
 1. Branch from `main`; do not touch unrelated files in the same PR

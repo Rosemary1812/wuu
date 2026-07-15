@@ -103,8 +103,7 @@ func RunToolLoop(
 	messages = filterTransientModelContextHistory(messages)
 	// providerMessages is the provider-facing transcript: live history plus
 	// the request-only context messages already sent in this run. Each round
-	// extends it append-only — before tool-result pruning and before
-	// per-request transforms, which are both request-scoped — so every
+	// extends it append-only — before per-request compatibility transforms — so every
 	// request's messages extend the prior request's exact byte prefix and
 	// prompt caches stay warm. It re-bases only when history is rewritten.
 	providerMessages := providers.CloneChatMessages(messages)
@@ -349,7 +348,7 @@ func RunToolLoop(
 		requestSegments = append(requestSegments, RequestOnlyContextMessages(inactiveMessages)...)
 		assembly := assembleModelRequest(providerMessages, requestSegments)
 		// Retain this round's request-only context in the transcript before
-		// pruning and transforms run, so retention is never contaminated by
+		// compatibility transforms run, so retention is never contaminated by
 		// request-scoped rewrites.
 		providerMessages = assembly.Messages
 		for _, msg := range assembly.RequestOnlyMessages {
@@ -359,14 +358,7 @@ func RunToolLoop(
 				Message:      providers.CloneChatMessage(msg),
 			})
 		}
-		// Non-destructive tool-result prune: swap old tool results for
-		// compact placeholders in the request projection only. The transcript
-		// and live history keep full content, so pruning always summarizes
-		// originals — placeholders are never fed back into a later pass.
 		requestMessages := assembly.Messages
-		if cfg.ToolPrune {
-			requestMessages = compact.PruneToolResults(requestMessages)
-		}
 		operation := providers.NewInferenceOperation(
 			cfg.InferenceOperationKind,
 			cfg.InferenceWorkloadProfile,
@@ -409,8 +401,8 @@ func RunToolLoop(
 		cacheHint := buildCacheHint(req.Messages)
 		applyPromptCacheKeyOverride(&cacheHint, cfg.PromptCacheKey)
 		req.CacheHint = cacheHint
-		// Telemetry mirrors the exact outbound request (post-prune,
-		// post-transform); the retained transcript was already fixed above.
+		// Telemetry mirrors the exact outbound request after compatibility
+		// transforms; the retained transcript was already fixed above.
 		assembly.Messages = req.Messages
 
 		// Cache-break telemetry: detect changes in stable-prefix components

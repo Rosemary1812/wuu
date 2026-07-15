@@ -33,8 +33,9 @@ func TestSystemGuidesNaturalUserCenteredReplies(t *testing.T) {
 		"user's mental model",
 		"Skip ritual openings",
 		"Treat the user as an equal",
-		"short paragraph for simple work",
-		"only when they improve scanning",
+		"Default to natural prose",
+		"genuinely complex answer easier to scan",
+		"do not split a short answer into sections",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("System missing %q:\n%s", want, prompt)

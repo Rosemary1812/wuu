@@ -7,7 +7,7 @@ export type CodexModelLoadState = {
   models: CodexModelSummary[];
 };
 
-export type CodexRuntimeMenu = "main" | "model" | null;
+export type CodexRuntimeMenu = "main" | "model" | "effort" | null;
 export type ComposerVariant = "dock" | "hero";
 export type FloatingMenuOwner =
   | "composer-runtime"

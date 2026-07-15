@@ -37,6 +37,7 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 | Understand or embed the Go core | [Architecture](#architecture) and the [`app-server` protocol](docs/app-server-protocol.md) |
 | Contribute | [Contributing](CONTRIBUTING.md) |
 | Review the security and trust boundaries | [Security model](docs/security-model.md) |
+| Inspect reproducible public evaluations | [Public evaluations](evals/) |
 
 ## News
 
@@ -50,12 +51,6 @@ Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized 
 - **Orchestration built in** — subagents, durable goals, skills, persistent memory, and scheduled tasks are part of the runtime, not bolted on.
 - **Scriptable by design** — `wuu exec` streams JSONL, so CI jobs, review bots, and other agents can drive it programmatically.
 - **Sessions that persist** — resume previous turns, fork from a checkpoint, and keep context across sessions.
-
-## A Real-World Comparison
-
-On a real frontend bug in this repository, every run started from the exact same initial prompt — deliberately vague, with everything from locating the problem to fixing it left to the agents themselves. Three wuu group-chat agents running MiniMax-M3 autonomously worked out the problem and delivered a working fix for $2.66 in API cost; the same task took a single Claude Fable 5 agent about $200 to fix, while a Claude Opus 4.8 agent spent about $20 without landing a fix. Multi-agent collaboration got inexpensive models to the same result at roughly a seventy-fifth of the cost.
-
-Group chat is still immature and is currently feature-flagged off. In our internal benchmark on real code repositories, standard wuu sessions cost about half as much per successful fix as [pi](https://github.com/badlogic/pi-mono).
 
 ## Install
 

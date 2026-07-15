@@ -33,6 +33,20 @@ function makeCommentary(text: string): ThreadItem {
   };
 }
 
+function makeFinalAnswer(
+  text: string,
+  status: ThreadItem["status"] = "completed",
+): ThreadItem {
+  return {
+    id: "answer-1",
+    type: "agent_message",
+    status,
+    phase: "final_answer",
+    role: "assistant",
+    text,
+  };
+}
+
 function makeError(error: string): ThreadItem {
   return {
     id: "error-1",
@@ -144,6 +158,21 @@ describe("TurnView", () => {
       vi.advanceTimersByTime(1);
     });
     expect(view.textContent).toContain("查看思考过程");
+  });
+
+  it("publishes the completed final answer without the structural buffer delay", () => {
+    vi.useFakeTimers();
+    const view = render(
+      makeTurn("in_progress", [makeFinalAnswer("partial reply", "in_progress")]),
+    );
+
+    expect(view.textContent).toContain("partial reply");
+
+    rerender(
+      makeTurn("completed", [makeFinalAnswer("partial reply and final text")]),
+    );
+
+    expect(view.textContent).toContain("partial reply and final text");
   });
 
   it("coalesces repeated structural changes without extending the buffer forever", () => {

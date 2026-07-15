@@ -130,7 +130,7 @@ func TestToolkitExecuteResultPrefersRichToolAndKeepsTextAdapter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute text adapter: %v", err)
 	}
-	if !strings.Contains(text, "rich text") || !strings.Contains(text, "[image:") || !strings.Contains(text, `{"ok":true}`) {
+	if !strings.Contains(text, "rich text") || !strings.Contains(text, "[image:") || strings.Contains(text, `{"ok":true}`) {
 		t.Fatalf("text adapter projection = %q", text)
 	}
 	if rich.richCalls != 2 || rich.legacyCalls != 0 {
