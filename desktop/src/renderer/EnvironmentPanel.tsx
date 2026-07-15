@@ -165,13 +165,19 @@ export function EnvironmentPanel({
           <FolderPlus className="icon-lg" />
           <strong>变更</strong>
           <span className="environment-row-meta">
-            {gitStatus?.is_repo ? `${diff.files} 个文件` : "非 Git"}
-            {gitStatus?.is_repo && diff.files > 0 ? (
-              <span className="environment-diff">
-                <span className="additions">+{diff.additions.toLocaleString()}</span>
-                <span className="deletions">-{diff.deletions.toLocaleString()}</span>
-              </span>
-            ) : null}
+            {gitStatus?.is_repo
+              ? hasChanges
+                ? (
+                  <>
+                    {diff.files} 个文件
+                    <span className="environment-diff">
+                      <span className="additions">+{diff.additions.toLocaleString()}</span>
+                      <span className="deletions">-{diff.deletions.toLocaleString()}</span>
+                    </span>
+                  </>
+                )
+                : null
+              : "非 Git"}
           </span>
           {gitStatus?.is_repo ? <ChevronRight className="icon" /> : null}
         </button>
@@ -184,7 +190,6 @@ export function EnvironmentPanel({
         >
           <GitBranch className="icon-lg" />
           <strong>{branchLabel}</strong>
-          <span>{gitStatus?.dirty_count ? `未提交：${gitStatus.dirty_count} 个文件` : ""}</span>
           {gitStatus?.is_repo ? <ChevronRight className="icon" /> : null}
         </button>
 
@@ -196,7 +201,7 @@ export function EnvironmentPanel({
         >
           <CornerDownRight className="icon-lg" />
           <strong>提交</strong>
-          <span>{hasChanges ? "提交当前更改" : "工作区干净"}</span>
+          <span>{hasChanges ? "提交当前更改" : ""}</span>
         </button>
 
         <button
@@ -270,16 +275,12 @@ function EnvironmentSubagents({
     agents as unknown as Agent[],
   );
   return (
-    <section className="environment-subagent-section" aria-label="子任务">
-      <div className="environment-subagent-heading">
-        <span>
-          <CornerDownRight className="icon" />
-          子任务
-        </span>
-        <span>{ordered.length} 个任务</span>
-      </div>
-      <div className="environment-subagent-list">
-        {ordered.map((agent) => {
+    <div
+      role="group"
+      aria-label="子任务"
+      className="environment-subagent-group"
+    >
+      {ordered.map((agent) => {
           const archiveConfirming = archiveConfirmID === agent.id;
           const nestedTotal = agent.nested_count ?? 0;
           const nestedRunning = agent.nested_running_count ?? 0;
@@ -342,8 +343,7 @@ function EnvironmentSubagents({
             </div>
           );
         })}
-      </div>
-    </section>
+    </div>
   );
 }
 

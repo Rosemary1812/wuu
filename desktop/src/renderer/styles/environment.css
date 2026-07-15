@@ -609,31 +609,7 @@
   color: var(--env-deletions-text);
 }
 
-.environment-subagent-heading {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--ink-muted);
-  font-size: var(--font-ui);
-  font-weight: var(--weight-semibold);
-}
 
-.environment-subagent-heading span {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.environment-subagent-heading svg {
-  flex: 0 0 auto;
-  color: var(--ink-tertiary);
-}
 
                                                                       
                                                                      
@@ -678,33 +654,29 @@
 }
 
 /**
- * Subagent section in the info panel. Rows stay lighter than the
- * main sidebar thread rows because this panel is a status glance:
- * title, state, and optional nested count should keep stable scan axes
- * without turning each state into a separate badge.
+ * Subagent rows render in the panel body as direct siblings of the main
+ * `.environment-row` entries. The thin top divider replaces the previous
+ * visible "子任务 — N 个任务" heading: the rows themselves are enough.
+ * Each row mirrors the regular row geometry, with its own status pill on
+ * the right and hover-revealed pin / archive actions.
  */
-.environment-subagent-section {
+.environment-subagent-group {
   display: grid;
-  gap: 7px;
-  border-top: 1px solid var(--surface-3);
+  gap: 3px;
   margin-top: 6px;
-  padding: 9px 8px 0;
-}
-
-.environment-subagent-list {
-  display: grid;
-  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ink-overlay-6);
 }
 
 .subagent-row {
   position: relative;
   display: grid;
-  height: 32px;
   min-width: 0;
+  min-height: 30px;
   grid-template-columns: minmax(0, 1fr);
   align-items: center;
   border-radius: var(--radius-sm);
-  background: var(--ink-overlay-4);
+  background: transparent;
   box-shadow: inset 0 0 0 1px transparent;
   padding: 0;
   transition:
@@ -731,7 +703,7 @@
 .subagent-row:hover,
 .subagent-row:has(.subagent-row-action:focus-visible),
 .subagent-row:has(.subagent-row-main:focus-visible) {
-  background: var(--surface-3);
+  background: var(--surface-2);
   box-shadow: inset 0 0 0 1px var(--ink-overlay-8);
 }
 
