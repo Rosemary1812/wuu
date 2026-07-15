@@ -1,30 +1,32 @@
 /* Component color tokens for environment.css. Light-theme values; the dark theme
    overrides these in base.css theme blocks. */
 :root {
-  --env-plan-item-text: #676c70;
-  --env-plan-marker-border: #9aa0a3;
+  /* Plan + dialog text: aligned with the shared ink ladder so the search and
+   * dialog stay in the same neutral family as the rest of the chrome. */
+  --env-plan-item-text: var(--ink-soft);
+  --env-plan-marker-border: var(--ink-muted);
   --env-deletions-text: #c42020;
   --env-archive-confirm-bg: rgba(184, 79, 53, 0.1);
-  --env-create-branch-btn-bg: #efefec;
+  --env-create-branch-btn-bg: var(--surface-2);
   --env-modal-overlay-bg: rgba(38, 42, 46, 0.24);
   --env-search-overlay-bg: rgba(30, 34, 38, 0.22);
-  --env-search-input-text: #7c8380;
-  --env-search-input-placeholder: #909692;
-  --env-search-clear-btn-text: #7d8580;
-  --env-search-clear-btn-hover-bg: #e9ebe7;
-  --env-search-status-text: #878e8a;
-  --env-search-spinner-border: rgba(105, 115, 109, 0.22);
-  --env-search-spinner-top-border: rgba(105, 115, 109, 0.72);
-  --env-search-status-btn-text: #69736d;
+  --env-search-input-text: var(--ink-soft);
+  --env-search-input-placeholder: var(--ink-muted);
+  --env-search-clear-btn-text: var(--ink-soft);
+  --env-search-clear-btn-hover-bg: var(--surface-2);
+  --env-search-status-text: var(--ink-soft);
+  --env-search-spinner-border: var(--ink-overlay-12);
+  --env-search-spinner-top-border: var(--ink-overlay-18);
+  --env-search-status-btn-text: var(--ink-soft);
   --env-search-error-bg: #fff0ed;
   --env-search-error-text: #a74431;
-  --env-search-result-text: #262b2f;
-  --env-search-result-hover-bg: #f0f1ef;
-  --env-search-result-active-bg: #e9ece8;
-  --env-search-result-snippet-text: #747b77;
-  --env-search-result-shortcut-bg: #e7e8e5;
-  --env-search-result-shortcut-text: #707874;
-  --env-dialog-summary-text: #7f858a;
+  --env-search-result-text: var(--ink);
+  --env-search-result-hover-bg: var(--surface-2);
+  --env-search-result-active-bg: var(--surface-3);
+  --env-search-result-snippet-text: var(--ink-soft);
+  --env-search-result-shortcut-bg: var(--surface-3);
+  --env-search-result-shortcut-text: var(--ink-soft);
+  --env-dialog-summary-text: var(--ink-soft);
   --env-field-border: #e3e3df;
   --env-pr-result-bg: #f4f7f3;
   --env-pr-result-text: #26703c;

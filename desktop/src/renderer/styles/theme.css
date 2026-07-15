@@ -186,31 +186,36 @@
   --chat-user-message-bg: #2a2e33;
 
   /* environment.css */
-  --env-plan-item-text: #a2a8ad;
-  --env-plan-marker-border: #6d7378;
+  /* Plan + dialog text: aligned with the shared ink ladder so the search and
+     dialog stay in the same neutral family as the rest of the chrome.
+     Status colours and the env-tone-* series stay per-tone; only the
+     greens that crept into the structural neutrals collapse onto ink-soft
+     / ink-muted so they read as the same ink both light and dark. */
+  --env-plan-item-text: var(--ink-soft);
+  --env-plan-marker-border: var(--ink-muted);
   --env-deletions-text: #f0705f;
   --env-archive-confirm-bg: rgba(240, 112, 95, 0.15);
-  --env-create-branch-btn-bg: #2b2f34;
+  --env-create-branch-btn-bg: var(--surface-2);
   --env-modal-overlay-bg: rgba(0, 0, 0, 0.5);
   --env-search-overlay-bg: rgba(0, 0, 0, 0.5);
-  --env-search-input-text: #b7bdba;
-  --env-search-input-placeholder: #6d736f;
-  --env-search-clear-btn-text: #a8aeaa;
-  --env-search-clear-btn-hover-bg: #2b2f34;
-  --env-search-status-text: #8f9591;
-  --env-search-spinner-border: rgba(160, 170, 164, 0.22);
-  --env-search-spinner-top-border: rgba(160, 170, 164, 0.72);
-  --env-search-status-btn-text: #9aa49e;
+  --env-search-input-text: var(--ink-soft);
+  --env-search-input-placeholder: var(--ink-muted);
+  --env-search-clear-btn-text: var(--ink-soft);
+  --env-search-clear-btn-hover-bg: var(--surface-2);
+  --env-search-status-text: var(--ink-soft);
+  --env-search-spinner-border: var(--ink-overlay-12);
+  --env-search-spinner-top-border: rgba(228, 232, 235, 0.72);
+  --env-search-status-btn-text: var(--ink-soft);
   --env-search-error-bg: #341c18;
   --env-search-error-text: #f2a08f;
-  --env-search-result-text: #dde0e3;
-  --env-search-result-hover-bg: #24282c;
-  --env-search-result-active-bg: #2a2f33;
-  --env-search-result-snippet-text: #969c98;
-  --env-search-result-shortcut-bg: #2e3338;
-  --env-search-result-shortcut-text: #9aa09c;
-  --env-dialog-summary-text: #8f959a;
-  --env-field-border: #33383d;
+  --env-search-result-text: var(--ink);
+  --env-search-result-hover-bg: var(--surface-2);
+  --env-search-result-active-bg: var(--surface-3);
+  --env-search-result-snippet-text: var(--ink-soft);
+  --env-search-result-shortcut-bg: var(--surface-3);
+  --env-search-result-shortcut-text: var(--ink-soft);
+  --env-dialog-summary-text: var(--ink-soft);
+  --env-field-border: var(--hairline);
   --env-pr-result-bg: #17251c;
   --env-pr-result-text: #4cc38a;
   --env-context-error-border: rgba(240, 112, 95, 0.35);
@@ -252,7 +257,10 @@
   /* sidebar.css */
   /* macOS's `sidebar` vibrancy material can remain light even when the
      renderer is dark. Keep a little depth from the native material, but make
-     the dark surface dense enough that navigation text always has contrast. */
+     the dark surface dense enough that navigation text always has contrast.
+     After the 2026-07-15 neutral rewrite, glass shadows + the dev-fixture
+     text + the resizer overlay ride on the shared ink-overlay ladder; their
+     hue now follows --ink-* instead of carrying its own green or blue cast. */
   --sidebar-material-fill: rgba(16, 18, 21, 0.88);
   --sidebar-material-edge: rgba(255, 255, 255, 0.16);
   --sidebar-material-inner-edge: rgba(255, 255, 255, 0.055);
@@ -264,29 +272,29 @@
   --sidebar-glass-overlay-accent: rgba(209, 220, 211, 0.03);
   --sidebar-glass-overlay-highlight-strong: rgba(255, 255, 255, 0.05);
   --sidebar-drawer-bg: #1a1d20;
-  --sidebar-resizer-hover-bg: rgba(228, 232, 235, 0.2);
+  --sidebar-resizer-hover-bg: var(--ink-overlay-18);
   --sidebar-resizer-hover-ring: rgba(0, 0, 0, 0.4);
-  --sidebar-dev-fixture-nav-border: rgba(228, 232, 235, 0.1);
-  --sidebar-dev-fixture-button-color: #9aa39d;
+  --sidebar-dev-fixture-nav-border: var(--ink-overlay-12);
+  --sidebar-dev-fixture-button-color: var(--ink-tertiary);
   --sidebar-nav-item-hover-ring: rgba(255, 255, 255, 0.08);
-  --sidebar-nav-item-focus-shadow: rgba(228, 232, 235, 0.25);
+  --sidebar-nav-item-focus-shadow: var(--ink-overlay-18);
   --sidebar-project-row-pending-bg: rgba(255, 255, 255, 0.05);
   --sidebar-project-loading-notch: rgba(120, 160, 132, 0.3);
-  --sidebar-row-icon-hover-bg-default: rgba(228, 232, 235, 0.08);
+  --sidebar-row-icon-hover-bg-default: var(--ink-overlay-6);
   --sidebar-row-action-archive-confirm-bg: rgba(240, 112, 95, 0.15);
-  --sidebar-thread-list-button-hover-bg: rgba(228, 232, 235, 0.06);
-  --sidebar-thread-row-dot-default: rgba(228, 232, 235, 0.25);
-  --sidebar-thread-row-dot-hover: rgba(228, 232, 235, 0.55);
-  --sidebar-thread-row-dot-active: rgba(228, 232, 235, 0.5);
+  --sidebar-thread-list-button-hover-bg: var(--ink-overlay-6);
+  --sidebar-thread-row-dot-default: var(--ink-overlay-18);
+  --sidebar-thread-row-dot-hover: var(--ink-overlay-18);
+  --sidebar-thread-row-dot-active: var(--ink-overlay-18);
   --sidebar-thread-spinner-notch: rgba(120, 160, 132, 0.3);
-  --sidebar-thread-child-agent-separator: rgba(228, 232, 235, 0.12);
+  --sidebar-thread-child-agent-separator: var(--ink-overlay-12);
   --sidebar-thread-child-agent-hover-bg: rgba(120, 160, 132, 0.1);
   --sidebar-thread-child-agent-focus-shadow: rgba(120, 160, 132, 0.25);
   --sidebar-thread-child-agent-active-bg: rgba(120, 160, 132, 0.16);
   --sidebar-thread-child-agent-active-ring: rgba(120, 160, 132, 0.15);
   --sidebar-thread-child-agent-pending-bg: rgba(120, 160, 132, 0.1);
   --sidebar-thread-child-agent-branch-color: rgba(120, 160, 132, 0.5);
-  --sidebar-thread-child-agent-completed-status: #98a29c;
+  --sidebar-thread-child-agent-completed-status: var(--ink-tertiary);
   --sidebar-thread-child-agent-cancelled-status: #bd9a82;
   --sidebar-settings-button-hover-ring: rgba(255, 255, 255, 0.08);
 

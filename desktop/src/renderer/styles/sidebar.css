@@ -7,36 +7,45 @@
   --sidebar-material-edge: rgba(255, 255, 255, 0.34);
   --sidebar-material-inner-edge: rgba(255, 255, 255, 0.12);
   --sidebar-material-highlight: rgba(255, 255, 255, 0.16);
-  --sidebar-glass-shadow-ambient: rgba(32, 38, 34, 0.045);
-  --sidebar-glass-shadow-elevated: rgba(32, 38, 34, 0.18);
+  /* Sidebar shadows + structural overlays: pin to the same neutral hue as the
+   * ink overlays in base.css so the vignette, drawer backdrop, and resizer
+   * all read as one material instead of three slightly-different greys. */
+  --sidebar-glass-shadow-ambient: var(--ink-overlay-6);
+  --sidebar-glass-shadow-elevated: var(--ink-overlay-18);
   --sidebar-glass-overlay-bright: rgba(255, 255, 255, 0.72);
   --sidebar-glass-overlay-light: rgba(255, 255, 255, 0.14);
   --sidebar-glass-overlay-accent: rgba(209, 220, 211, 0.12);
   --sidebar-glass-overlay-highlight-strong: rgba(255, 255, 255, 0.44);
   --sidebar-drawer-bg: #ffffff;
-  --sidebar-resizer-hover-bg: rgba(45, 50, 54, 0.24);
+  --sidebar-resizer-hover-bg: var(--ink-overlay-18);
   --sidebar-resizer-hover-ring: rgba(255, 255, 255, 0.4);
-  --sidebar-dev-fixture-nav-border: rgba(68, 76, 70, 0.1);
-  --sidebar-dev-fixture-button-color: #666f69;
+  /* Dev fixtures: text + nav-border come from the shared ink ladder so they
+   * read as the same neutral as the rest of the chrome. Sage keeps living on
+   * the running-child-agent tokens below, where it carries meaning. */
+  --sidebar-dev-fixture-nav-border: var(--ink-overlay-12);
+  --sidebar-dev-fixture-button-color: var(--ink-tertiary);
   --sidebar-nav-item-hover-ring: rgba(255, 255, 255, 0.42);
-  --sidebar-nav-item-focus-shadow: rgba(17, 19, 21, 0.18);
+  --sidebar-nav-item-focus-shadow: var(--ink-overlay-18);
   --sidebar-project-row-pending-bg: rgba(255, 255, 255, 0.24);
   --sidebar-project-loading-notch: rgba(95, 126, 104, 0.22);
-  --sidebar-row-icon-hover-bg-default: rgba(17, 19, 21, 0.06);
+  --sidebar-row-icon-hover-bg-default: var(--ink-overlay-6);
   --sidebar-row-action-archive-confirm-bg: rgba(184, 79, 53, 0.1);
-  --sidebar-thread-list-button-hover-bg: rgba(17, 19, 21, 0.05);
-  --sidebar-thread-row-dot-default: rgba(17, 19, 21, 0.2);
-  --sidebar-thread-row-dot-hover: rgba(17, 19, 21, 0.48);
-  --sidebar-thread-row-dot-active: rgba(17, 19, 21, 0.42);
+  --sidebar-thread-list-button-hover-bg: var(--ink-overlay-4);
+  --sidebar-thread-row-dot-default: var(--ink-overlay-18);
+  --sidebar-thread-row-dot-hover: var(--ink-overlay-18);
+  --sidebar-thread-row-dot-active: var(--ink-overlay-18);
   --sidebar-thread-spinner-notch: rgba(95, 126, 104, 0.22);
-  --sidebar-thread-child-agent-separator: rgba(17, 19, 21, 0.1);
+  --sidebar-thread-child-agent-separator: var(--ink-overlay-8);
   --sidebar-thread-child-agent-hover-bg: rgba(95, 126, 104, 0.08);
   --sidebar-thread-child-agent-focus-shadow: rgba(95, 126, 104, 0.18);
   --sidebar-thread-child-agent-active-bg: rgba(95, 126, 104, 0.13);
   --sidebar-thread-child-agent-active-ring: rgba(95, 126, 104, 0.12);
   --sidebar-thread-child-agent-pending-bg: rgba(95, 126, 104, 0.08);
   --sidebar-thread-child-agent-branch-color: rgba(95, 126, 104, 0.42);
-  --sidebar-thread-child-agent-completed-status: #68716c;
+  /* Completed child-agent status used to be a green-leaning hue which read
+   * as a second forest tone against the sage highlights; route it through
+   * --ink-tertiary so the hierarchy stays the same neutral as the rest. */
+  --sidebar-thread-child-agent-completed-status: var(--ink-tertiary);
   --sidebar-thread-child-agent-cancelled-status: #94745f;
   --sidebar-settings-button-hover-ring: rgba(255, 255, 255, 0.42);
 }
