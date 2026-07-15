@@ -271,18 +271,6 @@ wuu 的设计深度借鉴并受益于以下项目。它们在智能体运行时�
 
 感谢这些项目背后的团队和社区，正是你们的实践与思考让 wuu 成为可能。
 
-## Star History
-
-<div align="center">
-  <a href="https://star-history.com/#blueberrycongee/wuu&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=blueberrycongee/wuu&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=blueberrycongee/wuu&type=Date" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=blueberrycongee/wuu&type=Date" />
-    </picture>
-  </a>
-</div>
-
 ## 许可证
 
 [MIT](LICENSE)

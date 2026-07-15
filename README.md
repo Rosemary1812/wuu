@@ -286,18 +286,6 @@ Wuu's design draws heavily from — and stands on the shoulders of — these pro
 
 Thank you to the teams and communities behind these projects for the inspiration and ideas that helped make wuu possible.
 
-## Star History
-
-<div align="center">
-  <a href="https://star-history.com/#blueberrycongee/wuu&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=blueberrycongee/wuu&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=blueberrycongee/wuu&type=Date" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=blueberrycongee/wuu&type=Date" />
-    </picture>
-  </a>
-</div>
-
 ## License
 
 [MIT](LICENSE)
