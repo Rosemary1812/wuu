@@ -83,14 +83,12 @@ function renderPanel(
     onClose?: () => void;
     onResizeStart?: (event: unknown) => void;
     onChangeDraft?: (draft: string) => void;
-    mainTaskRunning?: boolean;
   } = {},
 ): HTMLElement {
   return mount(
     createElement(SideThreadPanel, {
       entry,
       mainThreadId: "main-1",
-      mainTaskRunning: callbacks.mainTaskRunning,
       width: 400,
       composer:
         callbacks.composer ??
@@ -103,45 +101,6 @@ function renderPanel(
 }
 
 describe("SideThreadPanel", () => {
-  it("only shows the main-task badge while the main task runs", () => {
-    const unknown = renderPanel(
-      makeEntry({ summary: makeSummary({ status: "running" }) }),
-    );
-    expect(unknown.textContent).not.toContain("主任务");
-
-    const live = renderPanel(
-      makeEntry({
-        summary: makeSummary({ main_task_summary: { running: true } }),
-      }),
-    );
-    expect(live.textContent).toContain("主任务执行中");
-  });
-
-  it("prefers live main-task state over a stale side snapshot", () => {
-    const container = renderPanel(
-      makeEntry({
-        summary: makeSummary({ main_task_summary: { running: true } }),
-      }),
-      { mainTaskRunning: false },
-    );
-    expect(container.textContent).not.toContain("主任务");
-  });
-
-  it("fills the shared composer draft from a quick prompt", () => {
-    const onChangeDraft = vi.fn();
-    const container = renderPanel(makeEntry(), { onChangeDraft });
-
-    const prompt = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(
-        ".side-thread-panel__quick-prompt",
-      ),
-    ).find((button) => button.textContent === "当前方案有什么风险？");
-    act(() => prompt?.click());
-    expect(onChangeDraft).toHaveBeenCalledWith(
-      "当前方案可能存在哪些风险或后续影响？",
-    );
-  });
-
   it("renders side history through the canonical turn and message flow", () => {
     const container = renderPanel(
       makeEntry({

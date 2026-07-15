@@ -12,7 +12,6 @@
   --composer-send-button-disabled-text: rgba(255, 255, 255, 0.86);
   --composer-slash-menu-bg: rgba(255, 255, 255, 0.96);
   --composer-slash-menu-shadow: 0 14px 38px rgba(20, 24, 28, 0.08), 0 1px 4px rgba(20, 24, 28, 0.06);
-  --composer-slash-command-title: #202327;
   --composer-project-search-bg: #f8f8f6;
   --composer-project-search-placeholder: #9da1a4;
   --composer-project-menu-icon: #6b7176;
@@ -1805,19 +1804,9 @@
 .slash-command-label {
   display: flex;
   min-width: 0;
-  align-items: baseline;
-  gap: 9px;
+  align-items: center;
   overflow: hidden;
   white-space: nowrap;
-}
-
-.slash-command-name {
-  flex: none;
-  color: var(--composer-slash-command-title);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
-  letter-spacing: 0.01em;
 }
 
 .slash-command-title {
@@ -1837,81 +1826,12 @@
   white-space: nowrap;
 }
 
-.slash-command-footer {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 5px;
-  border-top: 1px solid var(--hairline);
-  padding: 7px 5px 3px;
-}
-
-.slash-command-footer-detail {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink-muted);
-  font-size: var(--font-sm);
-  line-height: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.slash-command-footer-args {
-  margin-right: 8px;
-  color: var(--ink-tertiary);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: var(--font-xs);
-}
-
-.slash-command-footer-keys {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  color: var(--ink-tertiary);
-  font-size: var(--font-xs);
-  line-height: 16px;
-}
-
-.slash-command-footer-keys span + kbd {
-  margin-left: 6px;
-}
-
-.slash-command-footer-keys kbd {
-  display: inline-grid;
-  min-width: 16px;
-  height: 16px;
-  place-items: center;
-  border: 1px solid var(--ink-overlay-12);
-  border-radius: 4px;
-  padding: 0 4px;
-  color: var(--ink-tertiary);
-  font-family: inherit;
-  font-size: 10px;
-  line-height: 1;
-}
-
 .slash-command-empty {
   color: var(--ink-muted);
   font-size: var(--font-ui);
   line-height: 18px;
   padding: 14px 12px 15px;
   text-align: center;
-}
-
-@container composer-shell (max-width: 520px) {
-  .slash-command-footer-keys {
-    gap: 2px;
-  }
-
-  .slash-command-footer-keys span {
-    display: none;
-  }
-
-  .slash-command-footer-keys span + kbd {
-    margin-left: 2px;
-  }
 }
 
 @container composer-shell (max-width: 460px) {
@@ -1923,21 +1843,6 @@
 
   .slash-command-icon {
     display: none;
-  }
-
-  .slash-command-label {
-    gap: 7px;
-  }
-}
-
-@container composer-shell (max-width: 360px) {
-  .slash-command-title,
-  .slash-command-footer-keys {
-    display: none;
-  }
-
-  .slash-command-footer {
-    padding-inline: 7px;
   }
 }
 

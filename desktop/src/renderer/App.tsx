@@ -4182,7 +4182,6 @@ export function App(): JSX.Element {
             ref={sideThreadPanelRef}
             entry={sideThread.entry}
             mainThreadId={activeThreadID}
-            mainTaskRunning={isThreadRunning(activeThread)}
             width={sideThread.width}
             cwd={activeThread?.cwd ?? state.activeContext?.cwd}
             onOpenFile={openWorkspaceFile}

@@ -867,6 +867,7 @@ export function Composer({
                     return (
                       <button
                         className={`slash-command-item${selected ? " selected" : ""}`}
+                        data-command-name={command.name}
                         id={optionID}
                         key={command.id}
                         role="option"
@@ -886,7 +887,6 @@ export function Composer({
                           <SlashCommandIcon command={command} />
                         </span>
                         <span className="slash-command-label">
-                          <span className="slash-command-name">/{command.name}</span>
                           <span className="slash-command-title">
                             {command.kind === "skill" ? command.description : command.title}
                           </span>
@@ -897,24 +897,6 @@ export function Composer({
                       </button>
                     );
                   })}
-                </div>
-                <div className="slash-command-footer" aria-hidden="true">
-                  <span className="slash-command-footer-detail">
-                    {selectedSlashCommand?.argumentHint ? (
-                      <code className="slash-command-footer-args">
-                        /{selectedSlashCommand.name} {selectedSlashCommand.argumentHint}
-                      </code>
-                    ) : null}
-                    {selectedSlashCommand
-                      ? selectedSlashCommand.disabledReason ?? selectedSlashCommand.description
-                      : ""}
-                  </span>
-                  <span className="slash-command-footer-keys">
-                    <kbd>↑↓</kbd>
-                    <span>选择</span>
-                    <kbd>↵</kbd>
-                    <span>运行</span>
-                  </span>
                 </div>
               </>
             ) : (

@@ -85,7 +85,7 @@ describe("SideThreadComposer", () => {
       container.querySelectorAll<HTMLButtonElement>(".slash-command-item"),
     );
     expect(items.map((item) => item.textContent)).toHaveLength(1);
-    expect(items[0]?.textContent).toContain("/reset");
+    expect(items[0]?.textContent).toContain("重置侧聊");
 
     act(() => items[0]?.click());
     expect(onReset).toHaveBeenCalledTimes(1);

@@ -794,29 +794,23 @@ describe("Composer send control", () => {
     }
   });
 
-  it("keeps essential slash command information longest as the composer narrows", () => {
+  it("keeps the slash command title visible at every composer width", () => {
     expect(composerCSS).toMatch(
       /\.composer-shell\s*{[^}]*container:\s*composer-shell\s*\/\s*inline-size;/s,
     );
 
-    const shortcutLabelCollapse = composerCSS.indexOf(
-      "@container composer-shell (max-width: 520px)",
-    );
     const iconCollapse = composerCSS.indexOf(
       "@container composer-shell (max-width: 460px)",
     );
-    const secondaryTitleCollapse = composerCSS.indexOf(
-      "@container composer-shell (max-width: 360px)",
-    );
 
-    expect(shortcutLabelCollapse).toBeGreaterThan(-1);
-    expect(iconCollapse).toBeGreaterThan(shortcutLabelCollapse);
-    expect(secondaryTitleCollapse).toBeGreaterThan(iconCollapse);
+    expect(iconCollapse).toBeGreaterThan(-1);
     expect(composerCSS).toMatch(
       /@container composer-shell \(max-width: 460px\)[\s\S]*?\.slash-command-icon\s*{[^}]*display:\s*none;/,
     );
-    expect(composerCSS).toMatch(
-      /@container composer-shell \(max-width: 360px\)[\s\S]*?\.slash-command-title,[\s\S]*?display:\s*none;/,
+    // No 360px breakpoint should hide the title, since the title is the only
+    // text in each row and hiding it would leave an empty menu.
+    expect(composerCSS).not.toMatch(
+      /@container composer-shell \(max-width: 360px\)/,
     );
   });
 
@@ -1014,9 +1008,9 @@ describe("Composer send control", () => {
       await Promise.resolve();
     });
 
-    const skillButton = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(".slash-command-item"),
-    ).find((button) => button.textContent?.includes("/slides"));
+    const skillButton = container.querySelector<HTMLButtonElement>(
+      '.slash-command-item[data-command-name="slides"]',
+    );
     expect(skillButton).not.toBeUndefined();
 
     act(() => {
@@ -1145,9 +1139,9 @@ describe("Composer send control", () => {
       activeContext: { kind: "project", project_id: "repo", cwd: "/repo" },
     });
 
-    const side = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(".slash-command-item"),
-    ).find((button) => button.textContent?.includes("/side"));
+    const side = container.querySelector<HTMLButtonElement>(
+      '.slash-command-item[data-command-name="side"]',
+    );
     expect(side?.disabled).toBe(true);
     expect(side?.textContent).toContain("先发送一条消息");
 
