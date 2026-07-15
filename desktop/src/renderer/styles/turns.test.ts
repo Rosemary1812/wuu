@@ -70,9 +70,10 @@ describe("turns.css streaming block wrappers", () => {
 });
 
 describe("turns.css rich links", () => {
-  it("tints inline message links with the brand accent, no underlines or icon backplates", () => {
+  it("uses an accessible light-theme blue with no underlines or icon backplates", () => {
     expect(cssRuleBody(".rich-link")).toMatch(/color:\s*var\(--rich-link-color\);/);
-    expect(turnsCss).toMatch(/--rich-link-color:\s*#60a5fa;/);
+    expect(turnsCss).toMatch(/--rich-link-color:\s*#0969da;/);
+    expect(turnsCss).toMatch(/--rich-link-hover-color:\s*#0550ae;/);
     expect(cssRuleBody(".rich-link")).toMatch(/text-decoration-line:\s*none;/);
     expect(cssRuleBody(".rich-link-favicon-frame")).not.toMatch(/\bbackground\s*:/);
     expect(cssRuleBody(".rich-link-favicon")).not.toMatch(/\bbackground\s*:/);
@@ -83,9 +84,11 @@ describe("turns.css rich links", () => {
       /\.rich-web-link,\s*\.rich-file-link\s*\{[\s\S]*?display:\s*inline;/,
     );
     expect(cssRuleBody(".rich-file-link")).toMatch(/appearance:\s*none;/);
+    expect(cssRuleBody(".rich-file-link")).toMatch(/color:\s*var\(--rich-link-color\);/);
     expect(cssRuleBody(".rich-file-link")).toMatch(/line-height:\s*inherit;/);
     expect(cssRuleBody(".rich-file-link")).toMatch(/background:\s*transparent;/);
     expect(cssRuleBody(".rich-file-link:active")).toMatch(/background:\s*transparent;/);
+    expect(cssRuleBody(".rich-file-link:hover")).toMatch(/color:\s*var\(--rich-link-hover-color\);/);
   });
 });
 
