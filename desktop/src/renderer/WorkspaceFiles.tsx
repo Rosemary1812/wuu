@@ -8,6 +8,7 @@ import type {
   WorkspaceFileReadResult,
   WorkspaceFileTreeEntry
 } from "../shared/protocol";
+import type { WorkspaceFileSelection } from "./LinkTargets";
 import { RichContent } from "./RichContent";
 import type { WorkspaceMonacoViewState } from "./WorkspaceMonacoEditor";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
@@ -462,14 +463,20 @@ export function WorkspaceFilePreview({
   activeContext,
   editorResourceID,
   selectedFilePath,
+  selection,
+  anchor,
   onOpenRightPanel,
+  onOpenFile,
   onDirtyChange
 }: {
   active?: boolean;
   activeContext?: RuntimeContext;
   editorResourceID?: string;
   selectedFilePath?: string;
+  selection?: WorkspaceFileSelection;
+  anchor?: string;
   onOpenRightPanel: () => void;
+  onOpenFile?: (path: string) => void;
   onDirtyChange?: (state: WorkspaceFileDirtyState) => void;
 }): JSX.Element {
   const [file, setFile] = useState<WorkspaceFileReadResult | undefined>(undefined);
@@ -477,6 +484,7 @@ export function WorkspaceFilePreview({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const editorViewStateRef = useRef<WorkspaceMonacoViewState | null>(null);
+  const markdownHostRef = useRef<HTMLDivElement>(null);
   const selectedWorkspaceFilePath = useMemo(
     () => normalizeSelectedWorkspaceFilePath(selectedFilePath, activeContext?.cwd),
     [activeContext?.cwd, selectedFilePath]
@@ -522,7 +530,17 @@ export function WorkspaceFilePreview({
   }, [activeContext?.cwd, selectedWorkspaceFilePath]);
 
   const isMarkdown = Boolean(file && isMarkdownPath(file.path));
+  const isMarkdownReadingMode = isMarkdown && !selection;
   const dirtyStatePath = file?.path ?? selectedWorkspaceFilePath;
+
+  useEffect(() => {
+    if (!isMarkdownReadingMode || !anchor) {
+      return;
+    }
+    const target = Array.from(markdownHostRef.current?.querySelectorAll<HTMLElement>("[id]") ?? [])
+      .find((element) => element.id === anchor);
+    target?.scrollIntoView({ block: "start" });
+  }, [anchor, draftText, isMarkdownReadingMode]);
 
   useEffect(() => {
     onDirtyChange?.({
@@ -617,10 +635,15 @@ export function WorkspaceFilePreview({
 
   return (
     <article className="workspace-file-preview readonly">
-      <div className={`workspace-file-editor-scroll ${isMarkdown ? "markdown-reading" : "code"}`}>
-        {isMarkdown ? (
-          <div className="workspace-markdown-reading">
-            <RichContent text={draftText} cwd={activeContext.cwd} allowRawHtml />
+      <div className={`workspace-file-editor-scroll ${isMarkdownReadingMode ? "markdown-reading" : "code"}`}>
+        {isMarkdownReadingMode ? (
+          <div className="workspace-markdown-reading" ref={markdownHostRef}>
+            <RichContent
+              text={draftText}
+              cwd={activeContext.cwd}
+              onOpenFile={onOpenFile}
+              allowRawHtml
+            />
           </div>
         ) : active ? (
           <Suspense fallback={null}>
@@ -628,6 +651,7 @@ export function WorkspaceFilePreview({
               initialViewState={editorViewStateRef.current}
               path={file.path}
               resourceID={editorResourceID ?? `${activeContext.cwd}:${file.path}`}
+              selection={selection}
               text={draftText}
               readOnly
               onViewStateChange={(viewState) => {

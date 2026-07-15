@@ -32,6 +32,7 @@ vi.mock("./WorkspaceMonacoEditor", () => ({
     onViewStateChange,
     path,
     resourceID,
+    selection,
     text,
     onChange,
   }: {
@@ -39,6 +40,7 @@ vi.mock("./WorkspaceMonacoEditor", () => ({
     onViewStateChange?: (state: { scrollTop: number }) => void;
     path: string;
     resourceID: string;
+    selection?: { startLineNumber: number; startColumn: number };
     text: string;
     onChange?: (value: string) => void;
   }) => (
@@ -46,6 +48,7 @@ vi.mock("./WorkspaceMonacoEditor", () => ({
       className="workspace-monaco-editor"
       data-path={path}
       data-resource-id={resourceID}
+      data-selection={selection ? `${selection.startLineNumber}:${selection.startColumn}` : ""}
       data-text={text}
       data-view-scroll={initialViewState?.scrollTop ?? 0}
     >
@@ -282,6 +285,45 @@ describe("WorkspaceRightPanel", () => {
     expect(content).not.toBeNull();
     expect(tree).not.toBeNull();
     expect(content!.compareDocumentPosition(tree!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("resolves links in Markdown previews relative to the document", async () => {
+    const context: RuntimeContext = {
+      kind: "project",
+      project_id: "project-1",
+      cwd: "/repo/project",
+    };
+    const fileTab = workspaceFileViewTab({ context, path: "docs/guide.md" });
+    const onOpenFile = vi.fn();
+    vi.mocked(window.wuu.readWorkspaceFile).mockResolvedValueOnce({
+      root: context.cwd,
+      path: "docs/guide.md",
+      absolute_path: "/repo/project/docs/guide.md",
+      size_bytes: 40,
+      mtime_ms: 1000,
+      sha256: "b".repeat(64),
+      binary: false,
+      truncated: false,
+      text: "[Open app](../src/App.tsx#L12)",
+    });
+
+    mount(
+      <WorkspaceRightPanel
+        {...baseProps()}
+        tabs={[fileTab]}
+        activeTabID={fileTab.id}
+        activeFileTabID={fileTab.id}
+        workspaceContext={context}
+        onOpenFile={onOpenFile}
+      />,
+    );
+    await act(async () => Promise.resolve());
+    await act(async () => Promise.resolve());
+
+    act(() => {
+      container?.querySelector<HTMLButtonElement>(".rich-file-link")?.click();
+    });
+    expect(onOpenFile).toHaveBeenCalledWith("src/App.tsx#L12");
   });
 
   it("resizes and persists the right-side file tree", async () => {

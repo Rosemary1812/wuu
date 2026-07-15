@@ -24,6 +24,11 @@ import { horizontalListSortingStrategy, SortableContext, useSortable } from "@dn
 import { CSS } from "@dnd-kit/utilities";
 import { FileDiff, FileText, FolderOpen, Globe, Maximize2, Minimize2, PanelLeftOpen, Plus, ShieldCheck, Terminal, X } from "lucide-react";
 import type { ActivitySession, GitStatusResult, RuntimeContext } from "../shared/protocol";
+import {
+  formatWorkspaceFileTarget,
+  parseWorkspaceFileTarget,
+  resolveWorkspaceFileTarget,
+} from "./LinkTargets";
 import { TurnFileDiffPanel } from "./TurnFileDiffPanel";
 import { WorkspaceBrowserPanel } from "./WorkspaceBrowserPanel";
 import {
@@ -517,6 +522,7 @@ export function WorkspaceRightPanel({
                       active={open && activeTab?.kind === "file" && tab.id === activeFileTabID}
                       key={tab.id}
                       onDirtyChange={updateFileDirtyState}
+                      onOpenFile={onOpenFile}
                       tab={tab}
                     />
                   ))}
@@ -592,16 +598,26 @@ export function WorkspaceRightPanel({
 function WorkspaceFileResource({
   active,
   onDirtyChange,
+  onOpenFile,
   tab,
 }: {
   active: boolean;
   onDirtyChange: (tabID: string, dirty: boolean) => void;
+  onOpenFile: (path: string) => void;
   tab: WorkspaceFileViewTab;
 }): JSX.Element {
   const handleDirtyChange = useCallback(
     (state: WorkspaceFileDirtyState) => onDirtyChange(tab.id, state.dirty),
     [onDirtyChange, tab.id],
   );
+  const handleOpenFile = useCallback((reference: string) => {
+    const target = parseWorkspaceFileTarget(reference);
+    onOpenFile(
+      target
+        ? formatWorkspaceFileTarget(resolveWorkspaceFileTarget(tab.path, target))
+        : reference,
+    );
+  }, [onOpenFile, tab.path]);
 
   return (
     <div
@@ -612,9 +628,12 @@ function WorkspaceFileResource({
       <WorkspaceFilePreview
         active={active}
         activeContext={tab.context}
+        anchor={tab.anchor}
         editorResourceID={tab.id}
+        selection={tab.selection}
         selectedFilePath={tab.path}
         onOpenRightPanel={() => {}}
+        onOpenFile={handleOpenFile}
         onDirtyChange={handleDirtyChange}
       />
     </div>

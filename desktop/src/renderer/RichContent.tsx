@@ -1,10 +1,15 @@
 import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { FileText, Github, Globe2, Mail } from "lucide-react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
 import type { WorkspaceFileReferenceResolveResult } from "../shared/protocol";
 import { useImagePreview } from "./ImagePreview";
+import {
+  formatWorkspaceFileTarget,
+  parseLinkTarget,
+  type WorkspaceFileLinkTarget,
+} from "./LinkTargets";
 import { MessageCopyButton } from "./MessageActions";
 
 type RichContentProps = {
@@ -184,7 +189,8 @@ function MarkdownContentView({
     <ReactMarkdown
       components={components}
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={allowRawHtml ? [rehypeRaw] : undefined}
+      rehypePlugins={allowRawHtml ? [rehypeRaw, rehypeHeadingIDs] : [rehypeHeadingIDs]}
+      urlTransform={richMarkdownUrlTransform}
     >
       {text}
     </ReactMarkdown>
@@ -385,72 +391,71 @@ function markdownComponents(
     // chat output stays scannable, but they also expose a level modifier so
     // the workspace file preview can render a proper document outline
     // (h1 → big title with underline; h2 → section heading; h3 → sub-head).
-    h1({ children }) {
+    h1({ children, id }) {
       return (
-        <p className="rich-heading rich-heading--h1">
+        <p className="rich-heading rich-heading--h1" id={id}>
           {renderMarkdownText(children, richTextOptions, "h1")}
         </p>
       );
     },
-    h2({ children }) {
+    h2({ children, id }) {
       return (
-        <p className="rich-heading rich-heading--h2">
+        <p className="rich-heading rich-heading--h2" id={id}>
           {renderMarkdownText(children, richTextOptions, "h2")}
         </p>
       );
     },
-    h3({ children }) {
+    h3({ children, id }) {
       return (
-        <p className="rich-heading rich-heading--h3">
+        <p className="rich-heading rich-heading--h3" id={id}>
           {renderMarkdownText(children, richTextOptions, "h3")}
         </p>
       );
     },
-    h4({ children }) {
+    h4({ children, id }) {
       return (
-        <p className="rich-heading rich-heading--h4">
+        <p className="rich-heading rich-heading--h4" id={id}>
           {renderMarkdownText(children, richTextOptions, "h4")}
         </p>
       );
     },
-    h5({ children }) {
+    h5({ children, id }) {
       return (
-        <p className="rich-heading rich-heading--h5">
+        <p className="rich-heading rich-heading--h5" id={id}>
           {renderMarkdownText(children, richTextOptions, "h5")}
         </p>
       );
     },
-    h6({ children }) {
+    h6({ children, id }) {
       return (
-        <p className="rich-heading rich-heading--h6">
+        <p className="rich-heading rich-heading--h6" id={id}>
           {renderMarkdownText(children, richTextOptions, "h6")}
         </p>
       );
     },
     a({ href, title, children }) {
       const inner = renderMarkdownText(children, plainTextOptions, "a");
-      const safeHref = safeMarkdownHref(href);
-      if (!safeHref) {
-        return <span>{inner}</span>;
-      }
-      // Markdown targets with a network-style scheme (http, https, mailto,
-      // ...) keep rendering as RichWebLink and open in the system browser.
-      // Targets without a scheme are workspace file references: render them
-      // as RichFileLink so the click hands the path to `onOpenFile`.
-      if (!/^[a-z][a-z0-9+.-]*:/i.test(safeHref)) {
+      const target = parseLinkTarget(href);
+      if (target.kind === "workspace-file") {
         if (!onOpenFile) {
           return <span>{inner}</span>;
         }
         return (
           <RichFileLink
-            key={`a-${safeHref}`}
+            key={`a-${formatWorkspaceFileTarget(target)}`}
             display={inner}
-            path={safeHref}
+            target={target}
             onOpenFile={onOpenFile}
           />
         );
       }
-      return <RichWebLink href={safeHref} title={title}>{inner}</RichWebLink>;
+      if (target.kind === "external") {
+        return <RichWebLink href={target.url} title={title}>{inner}</RichWebLink>;
+      }
+      if (target.kind === "anchor") {
+        return <RichAnchorLink id={target.id} title={title}>{inner}</RichAnchorLink>;
+      }
+      return <span>{inner}</span>;
     },
     img({ src, alt }) {
       if (!src) {
@@ -809,7 +814,7 @@ function RichResolvedFileReference({
   return (
     <RichFileLink
       display={display}
-      path={linkPath}
+      target={{ kind: "workspace-file", path: linkPath }}
       onOpenFile={onOpenFile}
     />
   );
@@ -910,19 +915,20 @@ export function __resetRichFileReferenceResolutionCacheForTests(): void {
 
 function RichFileLink({
   display,
-  path,
+  target,
   onOpenFile
 }: {
   display: ReactNode;
-  path: string;
+  target: WorkspaceFileLinkTarget;
   onOpenFile: (path: string) => void;
 }): JSX.Element {
+  const reference = formatWorkspaceFileTarget(target);
   return (
     <button
       type="button"
       className="rich-link rich-file-link"
-      title={`打开文件：${path}`}
-      onClick={() => onOpenFile(path)}
+      title={`打开文件：${reference}`}
+      onClick={() => onOpenFile(reference)}
     >
       <span className="rich-link-content">
         <span className="rich-link-icon" aria-hidden="true">
@@ -931,6 +937,33 @@ function RichFileLink({
         <span className="rich-link-label">{display}</span>
       </span>
     </button>
+  );
+}
+
+function RichAnchorLink({
+  id,
+  title,
+  children,
+}: {
+  id: string;
+  title?: string;
+  children: ReactNode;
+}): JSX.Element {
+  return (
+    <a
+      className="rich-link rich-anchor-link"
+      href={`#${encodeURIComponent(id)}`}
+      title={title}
+      onClick={(event) => {
+        event.preventDefault();
+        const root = event.currentTarget.closest(".rich-content");
+        const target = Array.from(root?.querySelectorAll<HTMLElement>("[id]") ?? [])
+          .find((element) => element.id === id);
+        target?.scrollIntoView({ block: "start" });
+      }}
+    >
+      <span className="rich-link-label">{children}</span>
+    </a>
   );
 }
 
@@ -1121,21 +1154,60 @@ function reactNodeText(node: ReactNode): string {
   return "";
 }
 
-function safeMarkdownHref(href: string | undefined): string | undefined {
-  const value = href?.trim();
-  if (!value) {
-    return undefined;
+const richMarkdownUrlTransform: UrlTransform = (url, key) => {
+  if (key === "href") {
+    return parseLinkTarget(url).kind === "invalid" ? "" : url;
   }
-  if (value.startsWith("#")) {
-    return value;
+  return defaultUrlTransform(url);
+};
+
+type MarkdownASTNode = {
+  type?: string;
+  tagName?: string;
+  value?: string;
+  properties?: Record<string, unknown>;
+  children?: MarkdownASTNode[];
+};
+
+function rehypeHeadingIDs() {
+  return (tree: MarkdownASTNode): void => {
+    const slugCounts = new Map<string, number>();
+    visitMarkdownAST(tree, (node) => {
+      if (!/^h[1-6]$/.test(node.tagName ?? "")) {
+        return;
+      }
+      const baseSlug = markdownHeadingSlug(markdownASTText(node));
+      if (!baseSlug) {
+        return;
+      }
+      const count = slugCounts.get(baseSlug) ?? 0;
+      slugCounts.set(baseSlug, count + 1);
+      node.properties = {
+        ...node.properties,
+        id: count === 0 ? baseSlug : `${baseSlug}-${count}`,
+      };
+    });
+  };
+}
+
+function visitMarkdownAST(node: MarkdownASTNode, visitor: (node: MarkdownASTNode) => void): void {
+  visitor(node);
+  node.children?.forEach((child) => visitMarkdownAST(child, visitor));
+}
+
+function markdownASTText(node: MarkdownASTNode): string {
+  if (node.type === "text") {
+    return node.value ?? "";
   }
-  // Block the well-known XSS-prone schemes explicitly. Everything else is
-  // forwarded to the `a` handler, which routes URL-scheme hrefs to
-  // RichWebLink and bare workspace paths to RichFileLink.
-  if (/^(?:javascript|data|vbscript):/i.test(value)) {
-    return undefined;
-  }
-  return value;
+  return node.children?.map(markdownASTText).join("") ?? "";
+}
+
+function markdownHeadingSlug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}\s_-]/gu, "")
+    .replace(/\s+/g, "-");
 }
 
 function RichImage({

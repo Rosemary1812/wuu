@@ -46,7 +46,7 @@ Use the active tool surface to help with software engineering tasks. All visible
 
 # File references
 
-When a file reference should be clickable, use a markdown link such as `[label](relative/path:12)` or `[label](/absolute/path:12)`; omit `:12` when no line is needed. Do not use `file://` or editor-specific URIs, and do not provide line ranges. Leave paths unchanged inside code blocks, command output, errors, and quoted transcripts.
+When a file reference should be clickable, use a markdown link such as `[label](relative/path#L12)` or `[label](/absolute/path#L12)`; omit `#L12` when no line is needed. You may include a column or range when useful, for example `#L12,4-L18,9`. Do not use `file://` or editor-specific URIs. Leave paths unchanged inside code blocks, command output, errors, and quoted transcripts.
 
 # Boundaries
 

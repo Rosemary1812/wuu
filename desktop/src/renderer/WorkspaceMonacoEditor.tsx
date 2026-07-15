@@ -5,6 +5,7 @@ import HtmlWorker from "monaco-editor/esm/vs/language/html/html.worker?worker";
 import JsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
 import TsWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
 import { useEffect, useMemo, useRef } from "react";
+import type { WorkspaceFileSelection } from "./LinkTargets";
 
 declare global {
   interface Window {
@@ -37,6 +38,7 @@ export function WorkspaceMonacoEditor({
   resourceID,
   text,
   initialViewState,
+  selection,
   readOnly = false,
   onChange,
   onSave,
@@ -46,6 +48,7 @@ export function WorkspaceMonacoEditor({
   resourceID: string;
   text: string;
   initialViewState?: WorkspaceMonacoViewState | null;
+  selection?: WorkspaceFileSelection;
   readOnly?: boolean;
   onChange?: (value: string) => void;
   onSave?: () => void;
@@ -159,6 +162,36 @@ export function WorkspaceMonacoEditor({
   useEffect(() => {
     editorRef.current?.updateOptions({ readOnly });
   }, [readOnly]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    const model = modelRef.current;
+    if (!editor || !model || !selection) {
+      return;
+    }
+    const start = model.validatePosition({
+      lineNumber: selection.startLineNumber,
+      column: selection.startColumn,
+    });
+    const end = model.validatePosition({
+      lineNumber: selection.endLineNumber ?? selection.startLineNumber,
+      column: selection.endColumn ?? selection.startColumn,
+    });
+    const editorSelection = new monaco.Selection(
+      start.lineNumber,
+      start.column,
+      end.lineNumber,
+      end.column,
+    );
+    editor.setSelection(editorSelection);
+    editor.revealRangeInCenter(editorSelection, monaco.editor.ScrollType.Immediate);
+    editor.focus();
+  }, [
+    selection?.endColumn,
+    selection?.endLineNumber,
+    selection?.startColumn,
+    selection?.startLineNumber,
+  ]);
 
   return (
     <div

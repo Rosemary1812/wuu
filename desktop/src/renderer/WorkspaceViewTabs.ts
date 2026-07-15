@@ -1,6 +1,11 @@
 import { useCallback, useState } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
 import type { RuntimeContext } from "../shared/protocol";
+import {
+  parseWorkspaceFileTarget,
+  type WorkspaceFileLinkTarget,
+  type WorkspaceFileSelection,
+} from "./LinkTargets";
 import type { WorkspacePanelView } from "./WorkspacePanels";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
 
@@ -29,6 +34,8 @@ export type WorkspaceFileViewTab = {
   context: RuntimeContext;
   path: string;
   title: string;
+  selection?: WorkspaceFileSelection;
+  anchor?: string;
 };
 
 export type WorkspaceViewTab = WorkspaceToolViewTab | WorkspaceDiffViewTab | WorkspaceFileViewTab;
@@ -81,7 +88,10 @@ export function workspaceDiffViewTab({
 }
 
 export function workspaceFileViewTabID(context: RuntimeContext, path: string): string {
-  const normalizedPath = normalizeWorkspaceFileTabPath(context, path);
+  const normalizedPath = normalizeWorkspaceFileTabPath(
+    context,
+    workspaceFileTarget(path).path,
+  );
   const contextKey =
     context.kind === "project"
       ? `project:${context.project_id}:${context.cwd}`
@@ -96,14 +106,21 @@ export function workspaceFileViewTab({
   context: RuntimeContext;
   path: string;
 }): WorkspaceFileViewTab {
-  const normalizedPath = normalizeWorkspaceFileTabPath(context, path);
+  const target = workspaceFileTarget(path);
+  const normalizedPath = normalizeWorkspaceFileTabPath(context, target.path);
   return {
     kind: "file",
     id: workspaceFileViewTabID(context, normalizedPath),
     context,
     path: normalizedPath,
     title: workspaceFileBasename(normalizedPath),
+    ...(target.selection ? { selection: target.selection } : {}),
+    ...(target.anchor ? { anchor: target.anchor } : {}),
   };
+}
+
+function workspaceFileTarget(path: string): WorkspaceFileLinkTarget {
+  return parseWorkspaceFileTarget(path) ?? { kind: "workspace-file", path };
 }
 
 export function normalizeWorkspaceFileTabPath(context: RuntimeContext, path: string): string {

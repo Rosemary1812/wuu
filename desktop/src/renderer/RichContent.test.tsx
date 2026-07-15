@@ -114,6 +114,46 @@ describe("RichContent code block", () => {
     expect(resolveWorkspaceFileReferenceMock).not.toHaveBeenCalled();
   });
 
+  it("opens line-suffixed file links with a canonical selection fragment", () => {
+    const openFile = vi.fn();
+    render(
+      <RichContent
+        text={"See [the parser](src/parser.ts:12:4-18:9)."}
+        cwd="/Users/zzzz/wuu"
+        onOpenFile={openFile}
+      />,
+    );
+
+    const link = container.querySelector<HTMLButtonElement>(".rich-file-link");
+    expect(link?.textContent).toContain("the parser");
+    act(() => link?.click());
+    expect(openFile).toHaveBeenCalledWith("src/parser.ts#L12,4-L18,9");
+  });
+
+  it("keeps same-document anchors inside the rendered Markdown", () => {
+    const openFile = vi.fn();
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    render(
+      <RichContent
+        text={"[Jump](#install-notes)\n\n## Install Notes"}
+        cwd="/Users/zzzz/wuu"
+        onOpenFile={openFile}
+      />,
+    );
+
+    const anchor = container.querySelector<HTMLAnchorElement>(".rich-anchor-link");
+    const heading = container.querySelector<HTMLElement>("#install-notes");
+    expect(anchor?.getAttribute("href")).toBe("#install-notes");
+    expect(heading?.textContent).toContain("Install Notes");
+    act(() => anchor?.click());
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(openFile).not.toHaveBeenCalled();
+  });
+
   it("does not auto-link bare workspace file paths in prose", () => {
     // Only `[label](path)` markdown links route to a file reference; bare
     // paths in prose stay plain text. A list like "see X, then Y, then Z"

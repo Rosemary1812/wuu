@@ -12,12 +12,14 @@ vi.mock("./WorkspaceMonacoEditor", () => ({
   WorkspaceMonacoEditor: ({
     path,
     text,
+    selection,
     readOnly,
     onChange,
     onSave,
   }: {
     path: string;
     text: string;
+    selection?: { startLineNumber: number; startColumn: number };
     readOnly?: boolean;
     onChange?: (value: string) => void;
     onSave?: () => void;
@@ -26,6 +28,7 @@ vi.mock("./WorkspaceMonacoEditor", () => ({
       className="workspace-monaco-editor"
       data-path={path}
       data-readonly={readOnly ? "true" : "false"}
+      data-selection={selection ? `${selection.startLineNumber}:${selection.startColumn}` : ""}
       data-text={text}
     >
       <pre>{text}</pre>
@@ -529,6 +532,30 @@ describe("WorkspaceFileTree", () => {
     expect(container.querySelector(".workspace-monaco-editor")).toBeNull();
     expect(container.querySelector(".workspace-file-editor-toolbar")).toBeNull();
     expect(writeWorkspaceFile).not.toHaveBeenCalled();
+  });
+
+  it("opens a line-targeted Markdown file in Monaco at the requested position", async () => {
+    readWorkspaceFile.mockResolvedValueOnce(workspaceFile({
+      path: "README.md",
+      absolute_path: "/repo/README.md",
+      text: "# Project Notes\n\n- review changes\n",
+    }));
+
+    await render(
+      <WorkspaceFilePreview
+        activeContext={activeContext}
+        selectedFilePath="/repo/README.md"
+        selection={{ startLineNumber: 3, startColumn: 1 }}
+        onOpenRightPanel={() => {}}
+      />,
+    );
+
+    await settleDirectoryLoads();
+
+    expect(container.querySelector(".workspace-markdown-reading")).toBeNull();
+    expect(
+      container.querySelector<HTMLElement>(".workspace-monaco-editor")?.dataset.selection,
+    ).toBe("3:1");
   });
 
   // Right-click context menu on file-tree rows. Lives inside WorkspaceFileTree

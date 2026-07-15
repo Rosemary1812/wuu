@@ -124,6 +124,37 @@ describe("workspaceFileViewTab", () => {
     expect(dotted).toEqual(relative);
     expect(absolute).toEqual(relative);
   });
+
+  it("keeps file identity separate from its requested editor selection", () => {
+    const first = workspaceFileViewTab({
+      context: projectContext,
+      path: "src/App.tsx:12:4-18:9",
+    });
+    const second = workspaceFileViewTab({
+      context: projectContext,
+      path: "src/App.tsx#L30",
+    });
+
+    expect(first.path).toBe("src/App.tsx");
+    expect(first.selection).toEqual({
+      startLineNumber: 12,
+      startColumn: 4,
+      endLineNumber: 18,
+      endColumn: 9,
+    });
+    expect(second.selection).toEqual({ startLineNumber: 30, startColumn: 1 });
+    expect(first.id).toBe(second.id);
+  });
+
+  it("keeps a cross-file Markdown anchor separate from the file path", () => {
+    const tab = workspaceFileViewTab({
+      context: projectContext,
+      path: "README.md#install-notes",
+    });
+
+    expect(tab.path).toBe("README.md");
+    expect(tab.anchor).toBe("install-notes");
+  });
 });
 
 describe("workspaceFileBasename", () => {
@@ -150,6 +181,21 @@ describe("openViewTab", () => {
     expect(state.tabs.map((tab) => tab.id)).toEqual([fileTab.id, "terminal"]);
     expect(state.activeTabID).toBe(fileTab.id);
     expect(state.activeFileTabID).toBe(fileTab.id);
+  });
+
+  it("updates the selection when the same file is reopened", () => {
+    let state = openViewTab(
+      initialWorkspaceViewTabsState,
+      workspaceFileViewTab({ context: projectContext, path: "src/App.tsx#L12" }),
+    );
+    state = openViewTab(
+      state,
+      workspaceFileViewTab({ context: projectContext, path: "src/App.tsx#L40" }),
+    );
+
+    expect(state.tabs).toHaveLength(1);
+    const tab = state.tabs[0];
+    expect(tab?.kind === "file" ? tab.selection?.startLineNumber : undefined).toBe(40);
   });
 
   it("keeps several file tabs open and focuses the selected file", () => {
