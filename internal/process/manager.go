@@ -55,26 +55,28 @@ const (
 )
 
 type Process struct {
-	Action            string    `json:"action,omitempty"`
-	ID                string    `json:"id"`
-	OwnerKind         OwnerKind `json:"owner_kind"`
-	OwnerID           string    `json:"owner_id"`
-	Lifecycle         Lifecycle `json:"lifecycle"`
-	Status            Status    `json:"status"`
-	PID               int       `json:"pid"`
-	PGID              int       `json:"pgid"`
-	ProcessStartTime  string    `json:"process_start_time,omitempty"`
-	TTY               bool      `json:"tty,omitempty"`
-	LogPath           string    `json:"log_path"`
-	Command           string    `json:"command"`
-	CWD               string    `json:"cwd"`
-	PreviewURLs       []string  `json:"preview_urls,omitempty"`
-	PrimaryPreviewURL string    `json:"primary_preview_url,omitempty"`
-	StartedAt         time.Time `json:"started_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
-	StoppedAt         time.Time `json:"stopped_at,omitempty"`
-	ExitCode          int       `json:"exit_code,omitempty"`
-	LastError         string    `json:"last_error,omitempty"`
+	Action                string     `json:"action,omitempty"`
+	ID                    string     `json:"id"`
+	OwnerKind             OwnerKind  `json:"owner_kind"`
+	OwnerID               string     `json:"owner_id"`
+	Lifecycle             Lifecycle  `json:"lifecycle"`
+	Status                Status     `json:"status"`
+	PID                   int        `json:"pid"`
+	PGID                  int        `json:"pgid"`
+	ProcessStartTime      string     `json:"process_start_time,omitempty"`
+	TTY                   bool       `json:"tty,omitempty"`
+	LogPath               string     `json:"log_path"`
+	Command               string     `json:"command"`
+	CWD                   string     `json:"cwd"`
+	PreviewURLs           []string   `json:"preview_urls,omitempty"`
+	PrimaryPreviewURL     string     `json:"primary_preview_url,omitempty"`
+	StartedAt             time.Time  `json:"started_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
+	StoppedAt             time.Time  `json:"stopped_at,omitempty"`
+	ExitCode              int        `json:"exit_code,omitempty"`
+	LastError             string     `json:"last_error,omitempty"`
+	TerminalCause         EventCause `json:"terminal_cause,omitempty"`
+	CompletionDeliveredAt time.Time  `json:"completion_delivered_at,omitempty"`
 }
 
 type StartOptions struct {
@@ -166,6 +168,9 @@ func NewManager(rootDir string, runtimeDirs ...string) (*Manager, error) {
 		return nil, err
 	}
 	if err := os.MkdirAll(m.logDir, 0o755); err != nil {
+		return nil, err
+	}
+	if err := m.resumePersistedManagedProcesses(); err != nil {
 		return nil, err
 	}
 	return m, nil
@@ -396,6 +401,8 @@ func (m *Manager) finishWait(id string, cmd *exec.Cmd, err error) {
 	if requestedStop {
 		cause = EventCauseRequestedStop
 	}
+	p.TerminalCause = cause
+	_ = m.save(p)
 	m.publish(Event{Type: eventType, Cause: cause, Process: *p})
 }
 
@@ -621,6 +628,7 @@ func (m *Manager) Stop(id string) (*Process, error) {
 		p.Status = StatusStopped
 		p.StoppedAt = time.Now()
 		p.UpdatedAt = p.StoppedAt
+		p.TerminalCause = EventCauseRequestedStop
 		if err := m.save(p); err != nil {
 			m.mu.Unlock()
 			return p, err
@@ -699,6 +707,7 @@ func (m *Manager) reconcileStopped(id string) (*Process, error) {
 	p.Status = StatusStopped
 	p.StoppedAt = time.Now()
 	p.UpdatedAt = p.StoppedAt
+	p.TerminalCause = EventCauseRequestedStop
 	if err := m.save(p); err != nil {
 		m.mu.Unlock()
 		return p, err
@@ -718,6 +727,7 @@ func (m *Manager) retireUnverifiableRecordLocked(id string, p *Process, cause er
 	p.LastError = fmt.Sprintf("record retired without signaling: %v", cause)
 	p.StoppedAt = time.Now()
 	p.UpdatedAt = p.StoppedAt
+	p.TerminalCause = EventCauseRequestedStop
 	if err := m.save(p); err != nil {
 		m.mu.Unlock()
 		return p, err
@@ -813,6 +823,141 @@ func processExists(pid int) bool {
 	}
 	err := syscall.Kill(pid, 0)
 	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
+const persistedProcessWatchInterval = 250 * time.Millisecond
+
+// resumePersistedManagedProcesses restores exit observation for managed
+// processes that outlived the manager which started them. PTY/stdin handles
+// cannot be reconstructed, but terminal state and completion delivery can.
+func (m *Manager) resumePersistedManagedProcesses() error {
+	processes, err := m.List()
+	if err != nil {
+		return err
+	}
+	for _, p := range processes {
+		if p.Lifecycle != LifecycleManaged || !isLiveStatus(p.Status) {
+			continue
+		}
+		matched, matchErr := processMatchesRecord(&p)
+		if matched && matchErr == nil {
+			go m.watchPersistedManagedProcess(p.ID)
+			continue
+		}
+		if _, err := m.settlePersistedManagedProcess(p.ID, matchErr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) watchPersistedManagedProcess(id string) {
+	ticker := time.NewTicker(persistedProcessWatchInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		m.mu.Lock()
+		p, err := m.load(id)
+		if err != nil || p.Lifecycle != LifecycleManaged || !isLiveStatus(p.Status) {
+			m.mu.Unlock()
+			return
+		}
+		matched, matchErr := processMatchesRecord(p)
+		m.mu.Unlock()
+		if matched && matchErr == nil {
+			continue
+		}
+		_, _ = m.settlePersistedManagedProcess(id, matchErr)
+		return
+	}
+}
+
+func (m *Manager) settlePersistedManagedProcess(id string, observationErr error) (*Process, error) {
+	m.mu.Lock()
+	p, err := m.load(id)
+	if err != nil {
+		m.mu.Unlock()
+		return nil, err
+	}
+	if !isLiveStatus(p.Status) {
+		m.mu.Unlock()
+		return p, nil
+	}
+	requestedStop := p.Status == StatusStopping
+	if observationErr != nil {
+		p.Status = StatusFailed
+		p.LastError = fmt.Sprintf("managed process could not be re-observed after restart: %v", observationErr)
+	} else {
+		p.Status = StatusStopped
+		p.LastError = "managed process exit observed after restart; exit code unavailable"
+	}
+	p.ExitCode = -1
+	p.StoppedAt = time.Now()
+	p.UpdatedAt = p.StoppedAt
+	p.TerminalCause = EventCauseNaturalExit
+	if requestedStop {
+		p.TerminalCause = EventCauseRequestedStop
+	}
+	if err := m.save(p); err != nil {
+		m.mu.Unlock()
+		return p, err
+	}
+	m.mu.Unlock()
+	eventType := EventStopped
+	if p.Status == StatusFailed {
+		eventType = EventFailed
+	}
+	m.publish(Event{Type: eventType, Cause: p.TerminalCause, Process: *p})
+	return p, nil
+}
+
+// PendingCompletions returns naturally exited processes whose model-facing
+// completion obligation has not yet been acknowledged.
+func (m *Manager) PendingCompletions() ([]Process, error) {
+	processes, err := m.List()
+	if err != nil {
+		return nil, err
+	}
+	pending := make([]Process, 0)
+	for _, p := range processes {
+		if p.TerminalCause == EventCauseNaturalExit &&
+			(p.Status == StatusStopped || p.Status == StatusFailed) &&
+			p.CompletionDeliveredAt.IsZero() {
+			pending = append(pending, p)
+		}
+	}
+	return pending, nil
+}
+
+func (m *Manager) CompletionPending(id string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, err := m.load(id)
+	if err != nil {
+		return false, err
+	}
+	return p.TerminalCause == EventCauseNaturalExit &&
+		(p.Status == StatusStopped || p.Status == StatusFailed) &&
+		p.CompletionDeliveredAt.IsZero(), nil
+}
+
+func (m *Manager) MarkCompletionDelivered(id string) (*Process, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, err := m.load(id)
+	if err != nil {
+		return nil, err
+	}
+	if p.TerminalCause != EventCauseNaturalExit || (p.Status != StatusStopped && p.Status != StatusFailed) {
+		return p, fmt.Errorf("process %q has no natural-exit completion to deliver", id)
+	}
+	if p.CompletionDeliveredAt.IsZero() {
+		p.CompletionDeliveredAt = time.Now().UTC()
+		p.UpdatedAt = p.CompletionDeliveredAt
+		if err := m.save(p); err != nil {
+			return p, err
+		}
+	}
+	return p, nil
 }
 
 func (m *Manager) CleanupSession() error {

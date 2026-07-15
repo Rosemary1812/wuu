@@ -806,6 +806,132 @@ func TestManagerUnsubscribeStopsLifecycleDelivery(t *testing.T) {
 	}
 }
 
+func TestNaturalExitCompletionPersistsUntilDelivered(t *testing.T) {
+	root := t.TempDir()
+	runtimeDir := filepath.Join(root, "state", "runtime")
+	m, err := NewManager(root, runtimeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := make(chan Event, 8)
+	m.Subscribe(events)
+	started, err := m.Start(context.Background(), StartOptions{
+		Command:   "printf 'done\\n'",
+		OwnerKind: OwnerMainAgent,
+		OwnerID:   "thread-1",
+		Lifecycle: LifecycleManaged,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForProcessEvent(t, events, started.ID, EventStopped, EventCauseNaturalExit)
+
+	restarted, err := NewManager(root, runtimeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := restarted.PendingCompletions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].ID != started.ID {
+		t.Fatalf("pending completions after restart = %+v, want %s", pending, started.ID)
+	}
+	if _, err := restarted.MarkCompletionDelivered(started.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := NewManager(root, runtimeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err = reopened.PendingCompletions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("delivered completion replayed after restart: %+v", pending)
+	}
+}
+
+func TestNewManagerReconcilesPersistedManagedProcessExit(t *testing.T) {
+	root := t.TempDir()
+	runtimeDir := filepath.Join(root, "state", "runtime")
+	seed, err := NewManager(root, runtimeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := managedCommand("sleep 0.4", root)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- cmd.Wait() }()
+	pgid, err := syscall.Getpgid(cmd.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, _, _, err := readProcessIdentity(cmd.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	record := &Process{
+		ID:               "proc-restart-watch",
+		OwnerKind:        OwnerMainAgent,
+		OwnerID:          "thread-restart",
+		Lifecycle:        LifecycleManaged,
+		Status:           StatusRunning,
+		PID:              cmd.Process.Pid,
+		PGID:             pgid,
+		ProcessStartTime: identity,
+		LogPath:          filepath.Join(seed.logDir, "proc-restart-watch.log"),
+		Command:          "sleep 0.4",
+		CWD:              root,
+		StartedAt:        now,
+		UpdatedAt:        now,
+		ExitCode:         -1,
+	}
+	if err := os.WriteFile(record.LogPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.save(record); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted, err := NewManager(root, runtimeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-waitDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("external managed process did not exit")
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		pending, err := restarted.PendingCompletions()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(pending) == 1 && pending[0].ID == record.ID {
+			if pending[0].TerminalCause != EventCauseNaturalExit || pending[0].ExitCode != -1 {
+				t.Fatalf("unexpected reconciled completion: %+v", pending[0])
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("persisted managed process exit was not reconciled: %+v", pending)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
 func waitForProcessEvent(t *testing.T, events <-chan Event, processID string, eventType EventType, cause EventCause) Event {
 	t.Helper()
 	deadline := time.After(5 * time.Second)
