@@ -1024,7 +1024,7 @@
   grid-column: 3;
   width: var(--sidebar-project-unread-size);
   height: var(--sidebar-project-unread-size);
-  justify-self: center;
+  justify-self: end;
   border-radius: var(--radius-pill);
   background: var(--sidebar-session-status-unread-bg);
   pointer-events: none;

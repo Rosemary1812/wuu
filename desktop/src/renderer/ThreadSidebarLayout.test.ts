@@ -21,7 +21,7 @@ describe("project sidebar row layout", () => {
     expect(projectRow).toMatch(/grid-template-columns:[\s\S]*var\(--sidebar-row-action-size\)/);
     expect(projectRow).toMatch(/padding-right:\s*var\(--sidebar-row-pad-x\)/);
 
-    expect(cssRule(".project-row-unread")).toMatch(/justify-self:\s*center/);
+    expect(cssRule(".project-row-unread")).toMatch(/justify-self:\s*end/);
     expect(cssRule(".project-row .project-row-loading")).toMatch(/justify-self:\s*center/);
     expect(cssRule(".project-row-new-thread")).toMatch(/right:\s*var\(--sidebar-row-pad-x,\s*8px\)/);
     expect(cssRule(".sidebar-row-icon-button")).toMatch(/width:\s*var\(--sidebar-row-action-size,\s*24px\)/);
