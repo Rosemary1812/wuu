@@ -1347,6 +1347,7 @@ app.whenReady().then(async () => {
     appServerRequest<MemoryOverviewResult>(event, "memory/overview", {
       scope: params.scope,
       ...(params.participant_id ? { participant_id: params.participant_id } : {}),
+      ...(params.force_refresh ? { force_refresh: true } : {}),
     }),
   );
   ipcMain.handle("wuu:memory-chat", (event, params: MemoryChatParams) =>

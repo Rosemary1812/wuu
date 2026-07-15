@@ -1,4 +1,4 @@
-import { Loader2, Send } from "lucide-react";
+import { Loader2, RefreshCw, Send } from "lucide-react";
 import {
   type FormEvent as ReactFormEvent,
   useEffect,
@@ -133,6 +133,7 @@ export function MemoryPanel({
   const [chatDraft, setChatDraft] = useState("");
   const [chatPending, setChatPending] = useState(false);
   const chatSeqRef = useRef(0);
+  const forceOverviewRefreshRef = useRef(false);
 
   // 只列在职 named agent；participant/list 本身不返回已退休的。
   const namedAgents = useMemo(
@@ -174,9 +175,14 @@ export function MemoryPanel({
       return;
     }
     let cancelled = false;
+    const forceRefresh = forceOverviewRefreshRef.current;
+    forceOverviewRefreshRef.current = false;
     setOverview({ status: "loading" });
     void window.wuu
-      .getMemoryOverview(memoryParams(scope, activeParticipantID))
+      .getMemoryOverview({
+        ...memoryParams(scope, activeParticipantID),
+        ...(forceRefresh ? { force_refresh: true } : {}),
+      })
       .then((result) => {
         if (!cancelled) {
           setOverview({ status: "ready", result });
@@ -196,6 +202,11 @@ export function MemoryPanel({
       cancelled = true;
     };
   }, [scope, activeParticipantID, notebookReady, refreshNonce]);
+
+  function refreshOverview(forceRefresh = false): void {
+    forceOverviewRefreshRef.current = forceRefresh;
+    setRefreshNonce((nonce) => nonce + 1);
+  }
 
   useEffect(() => {
     if (!rawOpen || !notebookReady) {
@@ -346,6 +357,25 @@ export function MemoryPanel({
               </span>
             </button>
           </div>
+          <button
+            className="settings-button"
+            type="button"
+            data-testid="memory-refresh-overview"
+            disabled={
+              !notebookReady || rawOpen || overview.status === "loading"
+            }
+            onClick={() => refreshOverview(true)}
+          >
+            {overview.status === "loading" ? (
+              <Loader2
+                className="icon settings-memory-spinner"
+                aria-hidden="true"
+              />
+            ) : (
+              <RefreshCw className="icon" aria-hidden="true" />
+            )}
+            <span>{overview.status === "loading" ? "总结中…" : "重新总结"}</span>
+          </button>
         </div>
 
         {!notebookReady ? (
@@ -362,7 +392,7 @@ export function MemoryPanel({
               ) : (
                 <MemoryOverviewView
                   overview={overview}
-                  onRetry={() => setRefreshNonce((nonce) => nonce + 1)}
+                  onRetry={() => refreshOverview(false)}
                 />
               )}
             </section>
@@ -449,7 +479,7 @@ function MemoryOverviewView({
       <RichContent text={result.essay_md} />
       <div className="settings-memory-meta">
         生成于 {timestampLabel(result.generated_at)}
-        {result.cached ? " · 缓存" : ""}
+        {result.cached ? " · 缓存" : ""} · 12 小时内自动复用
       </div>
     </div>
   );

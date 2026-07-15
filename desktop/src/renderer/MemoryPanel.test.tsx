@@ -197,6 +197,36 @@ describe("MemoryPanel overview", () => {
     expect(rootText()).toContain("boom");
     expect(findButton("重试")).not.toBeUndefined();
   });
+
+  it("forces a new inference only when the user clicks re-summarize", async () => {
+    const stub = installMemoryStub({
+      getMemoryOverview: vi
+        .fn()
+        .mockResolvedValueOnce(overviewFixture({ cached: true }))
+        .mockResolvedValueOnce(
+          overviewFixture({ essay_md: "## 当前关注\n\n新的总结。" }),
+        ),
+    });
+    mount();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(rootText()).toContain("12 小时内自动复用");
+    const refresh = findButton("重新总结");
+    expect(refresh?.disabled).toBe(false);
+    await act(async () => {
+      refresh?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(stub.getMemoryOverview).toHaveBeenCalledTimes(2);
+    expect(stub.getMemoryOverview).toHaveBeenLastCalledWith({
+      scope: "user",
+      force_refresh: true,
+    });
+    expect(rootText()).toContain("新的总结");
+  });
 });
 
 describe("MemoryPanel 同事 tab", () => {

@@ -934,6 +934,7 @@ export type MemoryScope = "user" | "participant";
 export type MemoryOverviewParams = {
   scope: MemoryScope;
   participant_id?: string;
+  force_refresh?: boolean;
 };
 
 // memory/overview result: the structured essay the overview agent generated
