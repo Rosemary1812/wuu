@@ -653,6 +653,42 @@ func TestToolkit_ReadFileBySymbolAndContext(t *testing.T) {
 	}
 }
 
+func TestToolkit_ReadFileNormalizesProviderFilledEmptySelectors(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "config.json"), []byte("one\ntwo\nthree\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "all-zero.json"), []byte("alpha\nbeta\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"config.json","offset":1,"limit":3,"range":{"start_line":1,"end_line":3},"symbol":{"name":"","kind":""},"context_lines":0}`,
+	})
+	if err != nil {
+		t.Fatalf("read_file with provider-filled selectors: %v", err)
+	}
+	if !strings.Contains(resp, "one") || !strings.Contains(resp, "three") {
+		t.Fatalf("normalized read omitted content: %s", resp)
+	}
+
+	resp, err = kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: `{"path":"all-zero.json","offset":0,"limit":0,"range":{"start_line":0,"end_line":0},"symbol":{"name":"","kind":""},"context_lines":0}`,
+	})
+	if err != nil {
+		t.Fatalf("read_file with all-zero provider selectors: %v", err)
+	}
+	if !strings.Contains(resp, "beta") {
+		t.Fatalf("whole-file normalized read omitted content: %s", resp)
+	}
+}
+
 func TestToolkit_ReadFileRejectsDirectory(t *testing.T) {
 	root := t.TempDir()
 	kit, err := New(root)

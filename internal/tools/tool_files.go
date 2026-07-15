@@ -30,7 +30,7 @@ func (t *ReadFileTool) IsConcurrencySafe() bool { return true }
 func (t *ReadFileTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name:        "read_file",
-		Description: "Read a workspace file with line numbers. Use offset/limit, range, symbol, and context_lines for focused reads. Results include workspace_revision, omitted ranges, and follow-up suggestions. Use list_files for directories.",
+		Description: "Read a workspace file with line numbers. For a focused read, choose exactly one selector: offset/limit, range, or symbol; omit unused selector objects. context_lines can expand the chosen selector. Results include workspace_revision, omitted ranges, and follow-up suggestions. Use list_files for directories.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -121,6 +121,23 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	}
 	if strings.TrimSpace(args.Path) == "" {
 		return "", errors.New("read_file requires path")
+	}
+	// Some provider-compatible decoders materialize every optional schema
+	// property with zero values. Treat those empty selector sentinels as absent
+	// while preserving errors for genuinely conflicting selections.
+	if args.Symbol != nil && strings.TrimSpace(args.Symbol.Name) == "" && strings.TrimSpace(args.Symbol.Kind) == "" {
+		args.Symbol = nil
+	}
+	if args.Range != nil && args.Range.StartLine == 0 && args.Range.EndLine == 0 {
+		args.Range = nil
+	}
+	if args.Limit != nil && *args.Limit == 0 {
+		args.Limit = nil
+	}
+	if args.Range != nil && args.Limit != nil && args.Offset == args.Range.StartLine &&
+		*args.Limit == args.Range.EndLine-args.Range.StartLine+1 {
+		args.Offset = 0
+		args.Limit = nil
 	}
 	contextLines := 0
 	if args.ContextLines != nil {
