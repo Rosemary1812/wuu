@@ -1945,16 +1945,25 @@ describe("Composer expand button", () => {
   it("uses anchored flex layouts so the bottom toolbar stays pinned when expanded", () => {
     expect(composerCSS).toContain(".composer-stack.is-expanded");
     expect(composerCSS).toContain("min-height: clamp(180px, 34vh, 320px)");
-    expect(composerCSS).toContain("--composer-collapsed-min-height: 96px");
+    expect(composerCSS).toContain("--composer-collapsed-min-height: 88px");
+    expect(composerCSS).toMatch(
+      /\.composer\s+textarea\s*\{[^}]*display:\s*block[^}]*height:\s*48px[^}]*min-height:\s*48px[^}]*padding:\s*16px\s+44px\s+8px\s+var\(--composer-text-start\)/,
+    );
+    expect(composerCSS).toMatch(
+      /\.hero-composer-wrap\s+\.composer\s+textarea\s*\{[^}]*height:\s*54px[^}]*min-height:\s*54px[^}]*padding:\s*22px\s+52px\s+8px\s+var\(--composer-text-start\)/,
+    );
+    expect(composerCSS).toMatch(
+      /\.composer-bar\s*\{[^}]*height:\s*40px[^}]*padding:\s*0\s+8px\s+4px\s+calc\(var\(--composer-text-start\)\s*-\s*var\(--composer-control-icon-inset\)\)/,
+    );
     expect(composerCSS).toContain("--composer-expanded-min-height: clamp(240px, 44vh, 420px)");
     expect(composerCSS).toMatch(
-      /\.hero-composer-wrap\s+\.composer-stack\s*\{[^}]*--composer-collapsed-min-height:\s*102px/,
+      /\.hero-composer-wrap\s+\.composer-stack\s*\{[^}]*--composer-collapsed-min-height:\s*94px/,
     );
     expect(composerCSS).toMatch(
       /\.dock-composer-wrap\s*\{[^}]*align-self:\s*end/,
     );
     expect(turnsCSS).toMatch(
-      /\.empty-home-inner\s*>\s*\.hero-composer-wrap\s*\{[^}]*height:\s*102px[^}]*align-items:\s*flex-end/,
+      /\.empty-home-inner\s*>\s*\.hero-composer-wrap\s*\{[^}]*height:\s*94px[^}]*align-items:\s*flex-end/,
     );
     expect(composerCSS).toMatch(
       /\.composer-frame\s*\{[^}]*contain:\s*layout paint/,

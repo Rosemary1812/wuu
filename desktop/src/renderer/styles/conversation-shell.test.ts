@@ -53,6 +53,15 @@ describe("conversation shell visible center", () => {
 });
 
 describe("conversation shell message typography tokens", () => {
+  it("owns the outer message-flow spacing landmarks at root", () => {
+    const root = cssRuleBody(":root");
+
+    expect(root).toMatch(/--conversation-flow-top-gap:\s*48px;/);
+    expect(root).toMatch(/--conversation-turn-boundary-gap:\s*32px;/);
+    expect(root).toMatch(/--conversation-turn-item-gap:\s*8px;/);
+    expect(root).toMatch(/--conversation-composer-clearance:\s*12px;/);
+  });
+
   it("keeps process typography on the Codex-style two-token scale", () => {
     // The body / process-font-size and process-font-weight aliases
     // intentionally stay in .conversation-pane — they reference the
@@ -73,6 +82,9 @@ describe("conversation shell message typography tokens", () => {
     expect(body).toMatch(/--conversation-process-answer-gap:\s*16px;/);
     expect(body).toMatch(/--conversation-answer-action-gap:\s*12px;/);
     expect(body).toMatch(/--conversation-answer-hover-action-gap:\s*6px;/);
+    expect(body).toMatch(/--conversation-activity-gap:\s*8px;/);
+    expect(body).not.toMatch(/--conversation-process-gap\s*:/);
+    expect(body).toMatch(/--conversation-composer-min-height:\s*88px;/);
   });
 
   it("owns the message-font-size default on :root so the user setting on <html> cascades", () => {

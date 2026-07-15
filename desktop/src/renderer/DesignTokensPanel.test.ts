@@ -25,6 +25,15 @@ describe("conversation design token registry", () => {
     expect(activeCssVars).toContain("--session-composer-radius");
   });
 
+  it("maps spacing controls to the live semantic landmarks", () => {
+    expect(activeCssVars).toContain("--conversation-process-detail-gap");
+    expect(activeCssVars).toContain("--conversation-turn-item-gap");
+    expect(activeCssVars).toContain("--conversation-turn-boundary-gap");
+    expect(activeCssVars).toContain("--conversation-flow-top-gap");
+    expect(activeCssVars).not.toContain("--conversation-process-gap");
+    expect(activeCssVars).not.toContain("--conversation-turn-gap");
+  });
+
   it("does not write legacy conversation layout variables", () => {
     const activeLegacyOverlap = activeCssVars.filter((cssVar) =>
       legacyCssVars.has(cssVar),

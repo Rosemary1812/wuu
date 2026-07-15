@@ -169,8 +169,13 @@ describe("turns.css message-flow typography", () => {
   });
 
   it("names every message-flow spacing landmark with a dedicated token", () => {
+    const turn = lastCssRuleBody(".turn");
+    expect(turn).toMatch(/gap:\s*var\(--conversation-turn-item-gap\);/);
+    expect(turn).toMatch(
+      /margin-bottom:\s*var\(--conversation-turn-boundary-gap\);/,
+    );
     expect(lastCssRuleBody(".turn > .assistant-turn-shell")).toMatch(
-      /margin-top:\s*calc\(\s*var\(--conversation-user-rule-gap\)\s*-\s*var\(--conversation-turn-gap\)\s*-\s*var\(--conversation-user-message-trailing-gap\)\s*\);/,
+      /margin-top:\s*calc\(\s*var\(--conversation-user-rule-gap\)\s*-\s*var\(--conversation-turn-item-gap\)\s*-\s*var\(--conversation-user-message-trailing-gap\)\s*\);/,
     );
     expect(lastCssRuleBody(".turn > .assistant-turn-shell")).toMatch(
       /padding-top:\s*var\(--conversation-rule-process-gap\);/,

@@ -112,8 +112,8 @@ export const CONVERSATION_DESIGN_TOKENS = [
   },
   {
     key: "process-gap",
-    cssVar: "--conversation-process-gap",
-    label: "Turn 内块间距",
+    cssVar: "--conversation-process-detail-gap",
+    label: "过程详情间距",
     min: 2,
     max: 32,
     step: 1,
@@ -132,13 +132,33 @@ export const CONVERSATION_DESIGN_TOKENS = [
   },
   {
     key: "turn-gap",
-    cssVar: "--conversation-turn-gap",
-    label: "Turn 间距",
+    cssVar: "--conversation-turn-item-gap",
+    label: "Turn 内相邻项间距",
     min: 0,
-    max: 48,
+    max: 24,
     step: 1,
     unit: "px",
     defaultValue: 8,
+  },
+  {
+    key: "turn-boundary-gap",
+    cssVar: "--conversation-turn-boundary-gap",
+    label: "Turn 之间间距",
+    min: 8,
+    max: 48,
+    step: 4,
+    unit: "px",
+    defaultValue: 32,
+  },
+  {
+    key: "flow-top-gap",
+    cssVar: "--conversation-flow-top-gap",
+    label: "首条消息顶部留白",
+    min: 24,
+    max: 96,
+    step: 4,
+    unit: "px",
+    defaultValue: 48,
   },
   {
     key: "flow-padding",
@@ -148,7 +168,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
     max: 96,
     step: 4,
     unit: "px",
-    defaultValue: 72,
+    defaultValue: 48,
   },
 ] as const satisfies readonly ConversationDesignToken[];
 
@@ -169,6 +189,8 @@ export const LEGACY_CONVERSATION_DESIGN_TOKEN_CSS_VARS = [
   "--conversation-dialog-width",
   "--conversation-dialog-radius",
   "--conversation-prose-line-height",
+  "--conversation-process-gap",
+  "--conversation-turn-gap",
 ] as const;
 
 export function conversationDesignTokenByKey(

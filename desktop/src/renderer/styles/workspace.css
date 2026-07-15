@@ -3069,12 +3069,13 @@ html.resizing-workspace-file-split * {
 }
 
 .conversation-width {
-  /* Outer width, horizontal padding, and 12-col grid come from .session-flow
-     (applied via className in JSX). View-specific rules stay here. */
+  /* Outer width, horizontal padding, and 12-col grid come from .session-flow.
+     Each flow item owns its semantic trailing boundary; the grid itself must
+     not add another anonymous row gap between turns. */
   contain: layout style;
   position: relative;
-  padding-block: 72px 32px;
-  row-gap: var(--wuu-grid-leading);
+  padding-block: var(--conversation-flow-top-gap) 32px;
+  row-gap: 0;
 }
 
 .conversation-width > * {
@@ -3090,7 +3091,9 @@ html.resizing-workspace-file-split * {
      (reserved dynamically) or leave a permanent strip of empty space below the
      last message (reserved constantly). The pill floats over the flow instead
      and may briefly overlap the last action row while it is showing. */
-  padding-bottom: calc(var(--dock-composer-height) + 12px);
+  padding-bottom: calc(
+    var(--dock-composer-height) + var(--conversation-composer-clearance)
+  );
 }
 
 .conversation-grid-guides {
@@ -3134,7 +3137,7 @@ html.resizing-workspace-file-split * {
 
 .conversation-grid-rows {
   position: absolute;
-  top: 72px;
+  top: var(--conversation-flow-top-gap);
   right: 0;
   bottom: 0;
   left: 0;
@@ -3299,6 +3302,7 @@ html.resizing-workspace-file-split * {
 
 .split-composer textarea {
   width: 100%;
+  height: 48px;
   min-height: 48px;
   max-height: 130px;
   resize: none;

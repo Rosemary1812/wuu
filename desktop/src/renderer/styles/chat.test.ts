@@ -16,6 +16,17 @@ function cssRuleBody(selector: string): string {
   return match[1];
 }
 
+describe("chat.css message-flow spacing", () => {
+  it("lets the shared flow inset own the first bubble top edge", () => {
+    const thread = cssRuleBody(".chat-thread");
+
+    expect(thread).toMatch(
+      /padding:\s*0\s+0\s+var\(--conversation-rule-process-gap,\s*16px\);/,
+    );
+    expect(thread).not.toMatch(/padding:\s*16px\s+0;/);
+  });
+});
+
 describe("chat.css avatar status", () => {
   it("keeps the status dot outside the clipped avatar face", () => {
     expect(cssRuleBody(".chat-avatar")).not.toMatch(/overflow:\s*hidden;/);

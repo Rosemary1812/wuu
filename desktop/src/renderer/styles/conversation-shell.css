@@ -51,6 +51,12 @@
     "Noto Sans SC", sans-serif;
   --conversation-message-font-size: 14px;
   --conversation-message-font-weight: 445;
+  /* Outer message-flow rhythm. Structural containers must consume these
+     landmarks instead of adding their own anonymous gaps on top. */
+  --conversation-flow-top-gap: 48px;
+  --conversation-turn-boundary-gap: 32px;
+  --conversation-turn-item-gap: 8px;
+  --conversation-composer-clearance: 12px;
 }
 
 .conversation-pane {
@@ -124,22 +130,19 @@
   --conversation-user-rule-gap: 24px;
   --conversation-user-message-trailing-gap: 8px;
   --conversation-rule-process-gap: 16px;
-  --conversation-process-gap: 16px;
   --conversation-process-detail-gap: 16px;
   --conversation-process-answer-gap: 16px;
   --conversation-answer-action-gap: 12px;
   --conversation-answer-hover-action-gap: 6px;
-  --conversation-activity-gap: 9px;
+  --conversation-activity-gap: 8px;
   --conversation-scrollbar-gutter: 12px;
   --conversation-visible-inset-left: 0px;
   --conversation-visible-inset-right: 0px;
   --dock-composer-height: 0px;
   /*
    * Min-height for both composer shells (main dock + thread footer).
-   * Locked at 88px so the stripped thread composer doesn't visually
-   * collapse shorter than the main dock — keeps "horizontal height
-   * alignment" intact per Carl's QA verification point about toolbar-row
-   * mismatch after stripping controls.
+   * A 48px textarea plus the compact 40px toolbar lands on this shared
+   * 88px baseline without either shell reserving hidden vertical space.
    */
   --conversation-composer-min-height: 88px;
   grid-column: 2;

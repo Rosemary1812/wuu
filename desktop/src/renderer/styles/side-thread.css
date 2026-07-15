@@ -151,9 +151,10 @@
   padding: 12px 12px 8px;
 }
 
-.side-thread-panel__conversation {
-  /* Vertical rhythm (row-gap) comes from the shared .conversation-width;
-     only the outer width and padding differ inside the panel. */
+.side-thread-panel__body .side-thread-panel__conversation {
+  /* Turns own their boundary spacing. Keep this selector more specific than
+     the generic .conversation-width rule loaded later so the compact panel
+     starts near its own header instead of inheriting the main 48px inset. */
   max-width: none;
   padding: 4px 0 0;
 }

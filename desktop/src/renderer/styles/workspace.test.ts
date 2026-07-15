@@ -18,6 +18,38 @@ function cssRuleBody(selector: string): string {
   return match[1];
 }
 
+describe("conversation message-flow rhythm", () => {
+  it("uses one explicit top landmark without adding a structural row gap", () => {
+    const flow = cssRuleBody(".conversation-width");
+
+    expect(flow).toMatch(
+      /padding-block:\s*var\(--conversation-flow-top-gap\)\s+32px;/,
+    );
+    expect(flow).toMatch(/row-gap:\s*0;/);
+    expect(flow).not.toMatch(/var\(--wuu-grid-leading\)/);
+  });
+
+  it("pins split composers to one visible input row instead of the browser default two", () => {
+    const textarea = cssRuleBody(".split-composer textarea");
+
+    expect(textarea).toMatch(/height:\s*48px;/);
+    expect(textarea).toMatch(/min-height:\s*48px;/);
+  });
+
+  it("keeps the composer clearance and debug baseline on the same landmarks", () => {
+    expect(
+      cssRuleBody(
+        ".scroll-region:not(.empty-scroll-region):not(.workspace-scroll-region) .conversation-width",
+      ),
+    ).toMatch(
+      /var\(--dock-composer-height\)\s*\+\s*var\(--conversation-composer-clearance\)/,
+    );
+    expect(cssRuleBody(".conversation-grid-rows")).toMatch(
+      /top:\s*var\(--conversation-flow-top-gap\);/,
+    );
+  });
+});
+
 describe("workspace right panel chrome", () => {
   it("uses a flat artifact rail that expands cleanly in full-panel mode", () => {
     const panel = cssRuleBody(".workspace-right-panel");

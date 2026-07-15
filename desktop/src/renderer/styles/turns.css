@@ -69,13 +69,14 @@
   contain-intrinsic-size: auto 260px;
   display: flex;
   flex-direction: column;
-  gap: var(--conversation-turn-gap);
+  gap: var(--conversation-turn-item-gap);
   font-family: var(--conversation-message-font-family);
   font-weight: var(--conversation-message-font-weight);
   /*
-   * Turn-to-turn separation is the single deliberate boundary value:
-   * 24px of clean white matching the 24px bubble→hairline inside the
-   * turn (1.0× instead of the old 2.2× overshoot). The hover action
+   * Turn-to-turn separation is the single deliberate boundary value.
+   * The outer conversation grid contributes zero row gap, so this 32px band
+   * is the complete visible boundary. It stays larger than the 24px
+   * bubble→hairline gap and contains the 6px + 24px hover action row. The hover action
    * bars paint INTO this band as overlays (see the containment note
    * below) instead of reserving in-flow ghost rows — the old
    * 28px + 32px invisible slot added up to a 60px dead zone that
@@ -83,14 +84,14 @@
    * below the 2.2× ratio means the boundary no longer beats every
    * within-turn gap; revisit if turns start blending together.
    */
-  margin-bottom: 24px;
+  margin-bottom: var(--conversation-turn-boundary-gap);
 }
 
 /*
  * content-visibility:auto implies paint containment, which clips any
  * descendant painted outside the turn's border box — exactly where the
  * hover action overlays go (user actions above the bubble, agent
- * actions below the answer, both inside the 24px boundary band). Lift
+ * actions below the answer, both inside the 32px boundary band). Lift
  * the containment precisely when those overlays can be visible: while
  * the turn is hovered or holds focus. Off-screen turns keep the
  * rendering shortcut.
@@ -208,7 +209,7 @@
   border-top: 1px solid var(--wuu-hairline);
   padding-top: var(--conversation-rule-process-gap);
   margin-top: calc(
-    var(--conversation-user-rule-gap) - var(--conversation-turn-gap) -
+    var(--conversation-user-rule-gap) - var(--conversation-turn-item-gap) -
       var(--conversation-user-message-trailing-gap)
   );
 }
@@ -1318,7 +1319,7 @@
 /*
  * Only the persistent bar (latest completed answer, always visible)
  * earns in-flow space. Every other answer shows its actions on hover
- * as an overlay hanging below the last line, inside the 24px turn
+ * as an overlay hanging below the last line, inside the 32px turn
  * boundary band — no reserved ghost row after every historical
  * answer. padding-top (not offset) keeps the hover chain unbroken
  * between the text and the row.
@@ -3650,7 +3651,7 @@ pre {
      grows upward from the original toolbar edge instead of pushing it down. */
   grid-column: 1 / -1;
   display: flex;
-  height: 102px;
+  height: 94px;
   align-items: flex-end;
   justify-content: center;
 }
