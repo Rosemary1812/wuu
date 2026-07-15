@@ -2167,7 +2167,7 @@ func TestRunToolLoop_TypedRequestOnlyBlocksStayOutOfDurableHistory(t *testing.T)
 	}
 }
 
-func TestRunToolLoop_RequestOnlyContextExcludedFromUsageBaseline(t *testing.T) {
+func TestRunToolLoop_RetainedRequestOnlyContextCountsInUsageBaseline(t *testing.T) {
 	requestOnly := []providers.ChatMessage{{
 		Role:    "user",
 		Content: strings.Repeat("dynamic context ", 40),
@@ -2190,9 +2190,11 @@ func TestRunToolLoop_RequestOnlyContextExcludedFromUsageBaseline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := 1025 - estimateMessages(requestOnly)
-	if got := tracker.LastResponseTotal(); got != want {
-		t.Fatalf("request-only context should not persist in usage baseline: got %d, want %d", got, want)
+	// Request-only context is retained in the provider transcript and re-sent
+	// on every later request of the run, so the compaction estimate must keep
+	// the provider-reported total intact instead of subtracting it.
+	if got := tracker.LastResponseTotal(); got != 1025 {
+		t.Fatalf("retained request-only context must count in usage baseline: got %d, want 1025", got)
 	}
 	if got := tracker.PendingDelta(); got != 0 {
 		t.Fatalf("request-only context should not remain pending, got %d", got)
@@ -2335,11 +2337,34 @@ func TestRunToolLoop_SplitHiddenContextDoesNotReappendStableBlocksBetweenToolSte
 	if !containsString(contexts[0].BlockKinds, string(wuucontext.BlockActiveFiles)) {
 		t.Fatalf("first request should include active-files context: %+v", contexts[0])
 	}
-	if !containsString(contexts[1].BlockKinds, string(wuucontext.BlockActiveFiles)) {
-		t.Fatalf("second request should include current request-only active-files context: %+v", contexts[1])
+	if containsString(contexts[1].BlockKinds, string(wuucontext.BlockActiveFiles)) {
+		t.Fatalf("unchanged active-files block should not be re-injected on the second round: %+v", contexts[1])
 	}
 	if !containsString(contexts[1].BlockKinds, string(wuucontext.BlockEnvironment)) {
 		t.Fatalf("second request should refresh changed environment: %+v", contexts[1])
+	}
+
+	first := step.calls[0].Messages
+	second := step.calls[1].Messages
+	if err := providers.ValidateToolCallHistory(second); err != nil {
+		t.Fatalf("second request must keep provider-valid tool history: %v\n%+v", err, second)
+	}
+	if len(second) < len(first) || !reflect.DeepEqual(first, second[:len(first)]) {
+		t.Fatalf("second request must extend the first request prefix:\nfirst=%+v\nsecond=%+v", first, second)
+	}
+	// The retained copy from round one is the only copy: an unchanged stable
+	// block must appear exactly once per request, not once per round.
+	if got := countMessagesContaining(first, "[ACTIVE_FILES]"); got != 1 {
+		t.Fatalf("first request should carry the active-files block once, got %d in %+v", got, first)
+	}
+	if got := countMessagesContaining(second, "[ACTIVE_FILES]"); got != 1 {
+		t.Fatalf("unchanged active-files block duplicated across rounds: got %d in %+v", got, second)
+	}
+	if got := countMessagesContaining(second, "State: step 1"); got != 1 {
+		t.Fatalf("second request should retain the first environment snapshot once, got %d in %+v", got, second)
+	}
+	if got := countMessagesContaining(second, "State: step 2"); got != 1 {
+		t.Fatalf("second request should append the changed environment snapshot once, got %d in %+v", got, second)
 	}
 }
 
@@ -2401,6 +2426,9 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 		t.Fatalf("second request should include latest request-only context once, got %d in %+v", got, second)
 	}
 	third := step.calls[2].Messages
+	if err := providers.ValidateToolCallHistory(third); err != nil {
+		t.Fatalf("third request must keep provider-valid tool history: %v\n%+v", err, third)
+	}
 	if len(third) < len(second) || !reflect.DeepEqual(second, third[:len(second)]) {
 		t.Fatalf("third request must extend the second request prefix:\nsecond=%+v\nthird=%+v", second, third)
 	}
@@ -2420,6 +2448,95 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 		if msg.Hidden {
 			t.Fatalf("request-only context should not be returned as durable history: %+v", res.NewMessages)
 		}
+	}
+}
+
+func TestRunToolLoop_BeforeRequestTransformStaysRequestScoped(t *testing.T) {
+	step := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md"}`}}},
+		{ToolCalls: []providers.ToolCall{{ID: "call_2", Name: "read_file", Arguments: `{"path":"main.go"}`}}},
+		{Content: "ok"},
+	}}
+	cfg := LoopConfig{
+		Model: "m",
+		Tools: &fakeLoopTools{
+			defs: []providers.ToolDefinition{{Name: "read_file"}},
+			results: map[string]string{
+				"call_1": `{"content":"hello"}`,
+				"call_2": `{"content":"world"}`,
+			},
+		},
+		BeforeRequest: func(_ context.Context, req *providers.ChatRequest) error {
+			req.Messages = append(req.Messages, providers.ChatMessage{
+				Role:    "user",
+				Content: "per-request plugin injection",
+				Hidden:  true,
+			})
+			return nil
+		},
+	}
+
+	if _, err := RunToolLoop(context.Background(), []providers.ChatMessage{userMsg("go")}, cfg, step); err != nil {
+		t.Fatal(err)
+	}
+	if len(step.calls) != 3 {
+		t.Fatalf("expected three provider calls, got %d", len(step.calls))
+	}
+	// The transform runs on an isolated per-request copy: its output must
+	// never be folded back into the transcript, or each round would compound
+	// the previous rounds' injections.
+	for i, call := range step.calls {
+		if got := countMessagesContaining(call.Messages, "per-request plugin injection"); got != 1 {
+			t.Fatalf("request %d should carry exactly one per-request injection, got %d in %+v", i+1, got, call.Messages)
+		}
+	}
+}
+
+func TestRunToolLoop_ToolPruneKeepsPlaceholdersStableAcrossRounds(t *testing.T) {
+	bigContent := strings.Repeat("x", 400_000)
+	history := []providers.ChatMessage{
+		userMsg("turn 1"),
+		{Role: "assistant", ToolCalls: []providers.ToolCall{{ID: "old_call", Name: "read_file", Arguments: `{"path":"big.txt"}`}}},
+		{Role: "tool", Name: "read_file", ToolCallID: "old_call", Content: bigContent},
+		userMsg("turn 2"),
+		userMsg("run the check"),
+	}
+	step := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md"}`}}},
+		{Content: "ok"},
+	}}
+	cfg := LoopConfig{
+		Model:     "m",
+		ToolPrune: true,
+		Tools: &fakeLoopTools{
+			defs:    []providers.ToolDefinition{{Name: "read_file"}},
+			results: map[string]string{"call_1": `{"content":"hello"}`},
+		},
+	}
+
+	if _, err := RunToolLoop(context.Background(), history, cfg, step); err != nil {
+		t.Fatal(err)
+	}
+	if len(step.calls) != 2 {
+		t.Fatalf("expected two provider calls, got %d", len(step.calls))
+	}
+
+	placeholder := fmt.Sprintf("Original: %d characters", len(bigContent))
+	first := step.calls[0].Messages
+	second := step.calls[1].Messages
+	// Pruning must always summarize the original tool result, never a
+	// placeholder from an earlier round's request projection.
+	if got := countMessagesContaining(first, placeholder); got != 1 {
+		t.Fatalf("first request should prune the old tool result with correct metadata, got %d in %+v", got, first)
+	}
+	if got := countMessagesContaining(second, placeholder); got != 1 {
+		t.Fatalf("second request should re-prune deterministically with original metadata, got %d matches", got)
+	}
+	if got := countMessagesContaining(second, "Original: "); got != 1 {
+		t.Fatalf("second request should carry exactly one pruned placeholder, got %d", got)
+	}
+	if len(second) < len(first) || !reflect.DeepEqual(first, second[:len(first)]) {
+		t.Fatalf("pruned requests must stay prefix-stable across rounds:\nfirst=%+v\nsecond=%+v", first, second)
 	}
 }
 
