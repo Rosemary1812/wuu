@@ -141,10 +141,10 @@
   --dock-composer-height: 0px;
   /*
    * Min-height for both composer shells (main dock + thread footer).
-   * A 56px textarea plus the compact 40px toolbar lands on this shared
-   * 96px baseline without either shell reserving hidden vertical space.
+   * A 60px textarea plus the compact 40px toolbar lands on this shared
+   * 100px baseline without either shell reserving hidden vertical space.
    */
-  --conversation-composer-min-height: 96px;
+  --conversation-composer-min-height: 100px;
   grid-column: 2;
   grid-row: 1;
   display: grid;

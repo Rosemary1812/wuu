@@ -32,8 +32,8 @@ describe("conversation message-flow rhythm", () => {
   it("pins split composers to one visible input row instead of the browser default two", () => {
     const textarea = cssRuleBody(".split-composer textarea");
 
-    expect(textarea).toMatch(/height:\s*56px;/);
-    expect(textarea).toMatch(/min-height:\s*56px;/);
+    expect(textarea).toMatch(/height:\s*60px;/);
+    expect(textarea).toMatch(/min-height:\s*60px;/);
   });
 
   it("keeps the composer clearance and debug baseline on the same landmarks", () => {
