@@ -1011,10 +1011,10 @@ func TestDefaultSystemPrompt_CommunicationStyle(t *testing.T) {
 func TestDefaultSystemPrompt_FinalAnswerReferences(t *testing.T) {
 	prompt := DefaultSystemPrompt()
 	for _, want := range []string{
-		"[label](relative/path:12)",
-		"[label](/absolute/path:12)",
+		"[label](relative/path#L12)",
+		"[label](/absolute/path#L12)",
+		"#L12,4-L18,9",
 		"Do not use `file://`",
-		"do not provide line ranges",
 		"If validation was incomplete",
 	} {
 		if !strings.Contains(prompt, want) {
