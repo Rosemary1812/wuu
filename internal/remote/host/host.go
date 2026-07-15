@@ -75,6 +75,9 @@ type Options struct {
 	ReconnectMax time.Duration
 	// PushMinInterval throttles per-device push hints. Zero means 30s.
 	PushMinInterval time.Duration
+	// Pusher delivers native push notifications to registered devices. Nil
+	// means ExpoPusher; tests use LogHostPusher to stay off the network.
+	Pusher HostPusher
 }
 
 type pairingState struct {
@@ -93,6 +96,7 @@ type Host struct {
 	reconnectMin    time.Duration
 	reconnectMax    time.Duration
 	pushMinInterval time.Duration
+	pusher          HostPusher
 
 	baseCtx context.Context
 
@@ -136,6 +140,10 @@ func New(opts Options) (*Host, error) {
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
+	pusher := opts.Pusher
+	if pusher == nil {
+		pusher = NewExpoPusher()
+	}
 	h := &Host{
 		rt:              opts.Runtime,
 		store:           opts.Store,
@@ -145,6 +153,7 @@ func New(opts Options) (*Host, error) {
 		reconnectMin:    opts.ReconnectMin,
 		reconnectMax:    opts.ReconnectMax,
 		pushMinInterval: opts.PushMinInterval,
+		pusher:          pusher,
 		sessions:        map[string]*deviceSession{},
 	}
 	if h.reconnectMin <= 0 {
@@ -529,12 +538,34 @@ func (h *Host) sendFrame(devPub string, payload []byte) error {
 	})
 }
 
-// sendPush asks the relay to nudge a device with a content-free hint.
-func (h *Host) sendPush(devPub, hint string) {
-	err := h.writeRelay(wire.RelayMsg{Type: wire.TypePush, To: devPub, Hint: hint})
+// sendPush nudges a device with a content-free hint, through both legs
+// independently: the relay (for relay-native transports) and, when the device
+// registered a push token, the host's own pusher — a relay outage must not
+// silence native notifications. threadID deep-links turn-bound hints.
+func (h *Host) sendPush(devPub, hint, threadID string) {
+	err := h.writeRelay(wire.RelayMsg{Type: wire.TypePush, To: devPub, Hint: hint, ThreadID: threadID})
 	if err == nil {
 		h.logf("remote host: push %s -> %s", hint, devPub[:min(12, len(devPub))])
 	}
+	token, platform, registered := h.store.DevicePush(devPub)
+	if !registered {
+		return
+	}
+	ev := HostPushEvent{
+		Device:   devPub,
+		Token:    token,
+		Platform: platform,
+		Hint:     hint,
+		ThreadID: threadID,
+		At:       time.Now().UTC(),
+	}
+	// The pusher owns its own HTTP timeout; run it off the session's write
+	// path so a slow provider cannot stall app-server output pumping.
+	go func() {
+		ctx, cancel := context.WithTimeout(h.baseCtx, 15*time.Second)
+		defer cancel()
+		h.pusher.Push(ctx, ev)
+	}()
 }
 
 func (h *Host) writeRelay(msg wire.RelayMsg) error {

@@ -182,7 +182,7 @@ func (s *deviceSession) onAppLine(app *appConn, line []byte) {
 	shouldPush := s.tryConsumePushSlot(hint, pushThread)
 	s.mu.Unlock()
 	if shouldPush {
-		s.h.sendPush(s.devPub, hint)
+		s.h.sendPush(s.devPub, hint, pushThread)
 	}
 }
 

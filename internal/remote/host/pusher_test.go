@@ -77,6 +77,11 @@ func TestExpoPusherSendsRequest(t *testing.T) {
 	if got.Data["hint"] != "agent_done" {
 		t.Errorf("data.hint: want agent_done, got %v", got.Data["hint"])
 	}
+	// The mobile tap handler only consumes data.url; without it a delivered
+	// notification cannot deep-link into the thread.
+	if got.Data["url"] != "wuu://thread/thread-42" {
+		t.Errorf("data.url: want wuu://thread/thread-42, got %v", got.Data["url"])
+	}
 }
 
 func TestExpoPusherSkipsNonExpoToken(t *testing.T) {

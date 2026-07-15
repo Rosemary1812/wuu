@@ -108,6 +108,9 @@ type RelayMsg struct {
 
 	// push
 	Hint string `json:"hint,omitempty"`
+	// ThreadID deep-links a turn-bound push hint to its thread; empty for
+	// process-wide hints (needs_input).
+	ThreadID string `json:"thread_id,omitempty"`
 
 	// errors
 	Code string `json:"code,omitempty"`

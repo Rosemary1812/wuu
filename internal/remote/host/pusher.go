@@ -155,12 +155,19 @@ func (p *ExpoPusher) Push(ctx context.Context, ev HostPushEvent) {
 	}
 
 	title, body := expoCopy(ev.Hint, ev.ThreadID)
+	data := map[string]any{"thread_id": ev.ThreadID, "hint": ev.Hint}
+	if ev.ThreadID != "" {
+		// The mobile tap handler consumes data.url as a wuu:// deep link
+		// (clients/mobile startPushListeners); thread_id stays alongside it
+		// for consumers that want the raw id.
+		data["url"] = "wuu://thread/" + ev.ThreadID
+	}
 	req := ExpoPushRequest{
 		To:       ev.Token,
 		Title:    title,
 		Body:     body,
 		Sound:    "default",
-		Data:     map[string]any{"thread_id": ev.ThreadID, "hint": ev.Hint},
+		Data:     data,
 		Priority: "high",
 	}
 	payload, err := json.Marshal([]ExpoPushRequest{req})
