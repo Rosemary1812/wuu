@@ -154,8 +154,10 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 	if err != nil {
 		return "", err
 	}
-	if reason, ok := sensitivePathReason(displayPath); ok && !managedArtifact && !t.env.BypassToolHardProtections() {
-		return "", fmt.Errorf("read_file refuses to read sensitive path %q (%s). Use a safer metadata command or ask the user for explicit secret handling", displayPath, reason)
+	if !managedArtifact {
+		if err := rejectSensitiveToolPath(t.env, "read_file", "read", resolved); err != nil {
+			return "", err
+		}
 	}
 	// Worktree-bound execution: rebase onto the checkout only after the
 	// sandbox and sensitive-path checks above accepted the workspace path.

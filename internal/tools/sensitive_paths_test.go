@@ -1,10 +1,14 @@
 package tools
 
 import (
+	"context"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
@@ -131,6 +135,35 @@ func TestResolvePath_AllowsAgentRuntimeInStandardMode(t *testing.T) {
 	}
 	if resolved != target {
 		t.Fatalf("resolved = %q, want %q", resolved, target)
+	}
+}
+
+func TestReadFile_AllowsAgentRuntimeInStandardMode(t *testing.T) {
+	wuuHome := filepath.Join(t.TempDir(), ".wuu")
+	t.Setenv("WUU_HOME", wuuHome)
+	target := filepath.Join(wuuHome, "memory", "MEMORY.md")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir memory: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("- [Preference](preference.md) — durable preference\n"), 0o600); err != nil {
+		t.Fatalf("write memory index: %v", err)
+	}
+
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetBoundary(StandardBoundary())
+
+	result, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: fmt.Sprintf(`{"path":%q}`, target),
+	})
+	if err != nil {
+		t.Fatalf("read_file should allow agent runtime metadata in standard mode: %v", err)
+	}
+	if !strings.Contains(result, "durable preference") {
+		t.Fatalf("read_file result missing memory content: %s", result)
 	}
 }
 
