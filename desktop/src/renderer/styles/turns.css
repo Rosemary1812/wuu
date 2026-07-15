@@ -4612,8 +4612,7 @@ button.turn-sources-pill:focus-visible {
 
 /* Avatar wrapper holds the favicon image (or the first-letter fallback
  * when the favicon 404s). It carries no chrome of its own — that
- * belongs to whichever parent wraps it (.turn-source-icon for the
- * multi-source stack, the pill itself for the single-source pill). */
+ * belongs to whichever icon frame wraps it. */
 .turn-source-avatar {
   display: inline-flex;
   align-items: center;
@@ -4625,7 +4624,8 @@ button.turn-sources-pill:focus-visible {
 /* Negative margin pulls adjacent icons into the overlap; the
  * explicit ring keeps each icon readable on the dark / noisy
  * surfaces where the pill can sit. */
-.turn-source-icon {
+.turn-source-icon,
+.turn-source-icon-frame {
   position: relative;
   width: 18px;
   height: 18px;
@@ -4637,11 +4637,14 @@ button.turn-sources-pill:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
   overflow: hidden;
   /* Dim the chrome so the favicon dominates; the icon is the
    * affordance, the button border is just legibility. */
   color: var(--ink-strong, var(--turn-source-icon-color-fallback));
+}
+
+.turn-source-icon {
+  cursor: pointer;
   transition: transform var(--motion-fast) var(--ease-out), box-shadow var(--motion-fast) var(--ease-out);
 }
 
@@ -4656,7 +4659,8 @@ button.turn-sources-pill:focus-visible {
   z-index: 1;
 }
 
-.turn-source-icon img {
+.turn-source-icon img,
+.turn-source-icon-frame img {
   width: 14px;
   height: 14px;
   display: block;

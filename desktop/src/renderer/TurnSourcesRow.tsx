@@ -80,7 +80,9 @@ export function TurnSourcesRow({
         title={tooltip}
         onClick={handleClick}
       >
-        <SourceAvatar source={source} />
+        <span className="turn-source-icon-frame">
+          <SourceAvatar source={source} />
+        </span>
         <span className="turn-sources-label">{label}</span>
       </button>
     );

@@ -141,9 +141,11 @@ describe("TurnSourcesRow", () => {
       "button.turn-sources-pill.turn-sources-pill-single",
     );
     expect(pillButton).not.toBeNull();
-    // No inner icon-button — nesting <button> in <button> would be
-    // invalid HTML and the click would still work but the visual
-    // affordance would be wrong.
+    const iconFrame = pillButton?.querySelector(".turn-source-icon-frame");
+    expect(iconFrame).not.toBeNull();
+    expect(iconFrame?.querySelector(".turn-source-avatar img")).not.toBeNull();
+    // The inert frame gives the favicon the same chrome as the multi-source
+    // stack without nesting an invalid button inside the pill button.
     expect(container.querySelector("button.turn-source-icon")).toBeNull();
     expect(pillButton?.getAttribute("aria-label")).toBe(
       "打开 Example article — https://example.com/article",
