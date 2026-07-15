@@ -2,6 +2,8 @@ package appserver
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/memdir"
 	"github.com/blueberrycongee/wuu/internal/provideroptions"
 	"github.com/blueberrycongee/wuu/internal/providers"
+	"github.com/blueberrycongee/wuu/internal/securefs"
 	"github.com/blueberrycongee/wuu/internal/tools"
 )
 
@@ -25,15 +28,16 @@ import (
 const (
 	memoryOverviewTimeout  = 90 * time.Second
 	memoryOverviewMaxSteps = 4
+	memoryOverviewTTL      = 12 * time.Hour
 	memoryChatTimeout      = 120 * time.Second
 	memoryChatMaxSteps     = 8
 )
 
-// memoryOverviewCacheEntry memoizes one generated overview essay. It stays
-// valid while the notebook's MEMORY.md mtime is unchanged (§8.1: 短文按
-// （笔记本, 索引 mtime）缓存，未变更时二次打开秒出).
+// memoryOverviewCacheEntry memoizes one generated overview essay. The result
+// remains the automatic view for 12 hours even if the notebook changes; users
+// can explicitly bypass the cooldown with force_refresh.
 type memoryOverviewCacheEntry struct {
-	sourceMtime time.Time
+	generatedAt time.Time
 	result      MemoryOverviewResult
 }
 
@@ -42,8 +46,8 @@ func memoryOverviewCacheKey(scope, participantID string) string {
 }
 
 // handleMemoryOverview serves the panel's essay view: one restricted
-// read-only agent pass over the real notebook, memoized per (scope,
-// participant, index mtime).
+// read-only agent pass over the real notebook, memoized for 12 hours unless
+// the user explicitly requests a fresh summary.
 func (s *Server) handleMemoryOverview(req Request) error {
 	var params MemoryOverviewParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -53,25 +57,20 @@ func (s *Server) handleMemoryOverview(req Request) error {
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
-	result, err := s.memoryOverview(params.Scope, strings.TrimSpace(params.ParticipantID), dir)
+	result, err := s.memoryOverview(params.Scope, strings.TrimSpace(params.ParticipantID), dir, params.ForceRefresh)
 	if err != nil {
 		return s.writeResponse(req.ID, nil, err)
 	}
 	return s.writeResponse(req.ID, result, nil)
 }
 
-func (s *Server) memoryOverview(scope, participantID, dir string) (MemoryOverviewResult, error) {
-	sourceMtime := memoryIndexMtime(dir)
+func (s *Server) memoryOverview(scope, participantID, dir string, forceRefresh bool) (MemoryOverviewResult, error) {
 	key := memoryOverviewCacheKey(scope, participantID)
-
-	s.memoryOverviewMu.Lock()
-	if entry, ok := s.memoryOverviewCache[key]; ok && entry.sourceMtime.Equal(sourceMtime) {
-		s.memoryOverviewMu.Unlock()
-		cached := entry.result
-		cached.Cached = true
-		return cached, nil
+	if !forceRefresh {
+		if cached, ok := s.freshMemoryOverview(key, scope, participantID, time.Now()); ok {
+			return cached, nil
+		}
 	}
-	s.memoryOverviewMu.Unlock()
 
 	if err := memdir.EnsureDir(dir); err != nil {
 		return MemoryOverviewResult{}, err
@@ -83,25 +82,86 @@ func (s *Server) memoryOverview(scope, participantID, dir string) (MemoryOvervie
 	result := MemoryOverviewResult{
 		EssayMD:     essay,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		SourceMtime: formatMemoryMtime(sourceMtime),
+		SourceMtime: formatMemoryMtime(memoryIndexMtime(dir)),
 		Cached:      false,
 	}
+	generatedAt, _ := time.Parse(time.RFC3339, result.GeneratedAt)
 	s.memoryOverviewMu.Lock()
 	if s.memoryOverviewCache == nil {
 		s.memoryOverviewCache = make(map[string]memoryOverviewCacheEntry)
 	}
-	s.memoryOverviewCache[key] = memoryOverviewCacheEntry{sourceMtime: sourceMtime, result: result}
+	s.memoryOverviewCache[key] = memoryOverviewCacheEntry{generatedAt: generatedAt, result: result}
 	s.memoryOverviewMu.Unlock()
+	if err := s.writeMemoryOverviewCache(scope, participantID, result); err != nil {
+		providers.DebugLogf("memory overview cache: %v", err)
+	}
 	return result, nil
 }
 
-// invalidateMemoryOverview drops the cached essay for one notebook, so the
-// next panel open regenerates even when the index mtime did not move (e.g.
-// a chat run that only touched topic files).
-func (s *Server) invalidateMemoryOverview(scope, participantID string) {
+func (s *Server) freshMemoryOverview(key, scope, participantID string, now time.Time) (MemoryOverviewResult, bool) {
 	s.memoryOverviewMu.Lock()
-	delete(s.memoryOverviewCache, memoryOverviewCacheKey(scope, participantID))
+	entry, ok := s.memoryOverviewCache[key]
 	s.memoryOverviewMu.Unlock()
+	if !ok {
+		var err error
+		entry, err = s.readMemoryOverviewCache(scope, participantID)
+		if err != nil {
+			providers.DebugLogf("memory overview cache: %v", err)
+			return MemoryOverviewResult{}, false
+		}
+		if entry.generatedAt.IsZero() {
+			return MemoryOverviewResult{}, false
+		}
+		s.memoryOverviewMu.Lock()
+		if s.memoryOverviewCache == nil {
+			s.memoryOverviewCache = make(map[string]memoryOverviewCacheEntry)
+		}
+		s.memoryOverviewCache[key] = entry
+		s.memoryOverviewMu.Unlock()
+	}
+	if entry.generatedAt.IsZero() || !now.Before(entry.generatedAt.Add(memoryOverviewTTL)) {
+		return MemoryOverviewResult{}, false
+	}
+	result := entry.result
+	result.Cached = true
+	return result, true
+}
+
+func (s *Server) memoryOverviewCachePath(scope, participantID string) string {
+	sum := sha256.Sum256([]byte(memoryOverviewCacheKey(scope, participantID)))
+	return filepath.Join(strings.TrimSpace(s.rt.WuuHome), "cache", "memory-overview", fmt.Sprintf("%x.json", sum[:]))
+}
+
+func (s *Server) readMemoryOverviewCache(scope, participantID string) (memoryOverviewCacheEntry, error) {
+	path := s.memoryOverviewCachePath(scope, participantID)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return memoryOverviewCacheEntry{}, nil
+		}
+		return memoryOverviewCacheEntry{}, fmt.Errorf("read %s: %w", path, err)
+	}
+	var result MemoryOverviewResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return memoryOverviewCacheEntry{}, fmt.Errorf("decode %s: %w", path, err)
+	}
+	generatedAt, err := time.Parse(time.RFC3339, result.GeneratedAt)
+	if err != nil || strings.TrimSpace(result.EssayMD) == "" {
+		return memoryOverviewCacheEntry{}, nil
+	}
+	return memoryOverviewCacheEntry{generatedAt: generatedAt, result: result}, nil
+}
+
+func (s *Server) writeMemoryOverviewCache(scope, participantID string, result MemoryOverviewResult) error {
+	raw, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("encode cache: %w", err)
+	}
+	path := s.memoryOverviewCachePath(scope, participantID)
+	if err := securefs.WriteFileAtomic(path, append(raw, '\n')); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
 }
 
 // memoryIndexMtime returns the notebook index's modification time; the zero
@@ -223,8 +283,8 @@ func memoryOverviewUserPrompt(indexContent string) string {
 // FileScopeRoots whitelist of the user notebook (plus, in participant
 // scope, that agent's identity notebook). changed_files is computed by
 // diffing (path → mtime,size) snapshots of the whitelisted notebooks taken
-// before and after the run; a successful run drops the affected overview
-// cache entries so the panel essay regenerates.
+// before and after the run. The overview keeps its 12-hour cache after a
+// write; the user can request an immediate fresh summary from the panel.
 func (s *Server) handleMemoryChat(req Request) error {
 	var params MemoryChatParams
 	if err := decodeParams(req.Params, &params); err != nil {
@@ -256,13 +316,6 @@ func (s *Server) handleMemoryChat(req Request) error {
 	}
 	changed := diffMemorySnapshots(before, snapshotMemoryRoots(roots), s.rt.WuuHome)
 
-	// The manager may have rewritten topic files without moving the index
-	// mtime, so mtime-keyed caching alone is not enough: drop every
-	// overview entry this run could have affected.
-	s.invalidateMemoryOverview(MemoryScopeUser, "")
-	if params.Scope == MemoryScopeParticipant {
-		s.invalidateMemoryOverview(MemoryScopeParticipant, strings.TrimSpace(params.ParticipantID))
-	}
 	return s.writeResponse(req.ID, MemoryChatResult{ReplyMD: reply, ChangedFiles: changed}, nil)
 }
 

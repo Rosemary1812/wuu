@@ -1370,12 +1370,12 @@ const (
 type MemoryOverviewParams struct {
 	Scope         string `json:"scope"`
 	ParticipantID string `json:"participant_id,omitempty"`
+	ForceRefresh  bool   `json:"force_refresh,omitempty"`
 }
 
 // MemoryOverviewResult carries the structured essay the overview agent
 // generated from the real notebook (one LLM pass). Cached indicates the
-// backend served its (scope, participant, index-mtime) cache instead of
-// regenerating.
+// backend served the notebook's 12-hour cache instead of regenerating.
 type MemoryOverviewResult struct {
 	EssayMD     string `json:"essay_md"`
 	GeneratedAt string `json:"generated_at"`

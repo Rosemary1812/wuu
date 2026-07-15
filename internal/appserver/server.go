@@ -261,10 +261,9 @@ type Server struct {
 	participantSummaryCache map[string]participant.Summary
 
 	// memoryOverviewCache memoizes the settings-panel overview essay per
-	// notebook, keyed by (scope, participant_id). An entry is served only
-	// while the notebook's MEMORY.md mtime is unchanged (memory-redesign
-	// §8.1); memory/chat drops the affected entries after a successful
-	// manager run.
+	// notebook, keyed by (scope, participant_id). Entries are also persisted
+	// under WuuHome so reopening the desktop does not immediately spend
+	// another inference; automatic refreshes are limited to once per 12 hours.
 	memoryOverviewMu             sync.Mutex
 	memoryOverviewCache          map[string]memoryOverviewCacheEntry
 	inferenceMaintenanceStop     chan struct{}

@@ -254,7 +254,7 @@ func requestMessagesContain(req providers.ChatRequest, needle string) bool {
 	return false
 }
 
-func TestMemoryOverviewGeneratesCachesAndRegeneratesOnIndexChange(t *testing.T) {
+func TestMemoryOverviewCachesForTwelveHoursAndSupportsForcedRefresh(t *testing.T) {
 	essay := "## 身份背景\n后端工程师。\n\n## 协作偏好\n喜欢简短回复。\n\n## 沟通风格\n直接。\n\n## 当前关注\n记忆系统重构。"
 	client := &fakeClient{response: providersResponse(essay)}
 	srv, home := newMemoryPanelServer(t, client)
@@ -303,7 +303,8 @@ func TestMemoryOverviewGeneratesCachesAndRegeneratesOnIndexChange(t *testing.T) 
 		t.Fatalf("cache hit must not call the model again, got %d calls", len(client.requests))
 	}
 
-	// Index mtime moves → the cache is stale and the essay regenerates.
+	// Index mtime moves during the 12-hour window → opening the panel still
+	// serves the cached essay and does not spend another inference.
 	if err := os.WriteFile(indexPath, []byte("- [新条目](new.md) — 新钩子\n"), 0o644); err != nil {
 		t.Fatalf("rewrite index: %v", err)
 	}
@@ -313,11 +314,46 @@ func TestMemoryOverviewGeneratesCachesAndRegeneratesOnIndexChange(t *testing.T) 
 	}
 	resp3 := callMemoryRPC(t, srv, "ov-3", MethodMemoryOverview, `{"scope":"user"}`)
 	result3 := remarshal[MemoryOverviewResult](t, resp3["result"])
-	if result3.Cached {
-		t.Fatalf("index change should invalidate the cache: %+v", result3)
+	if !result3.Cached || result3.EssayMD != essay {
+		t.Fatalf("index change inside the cooldown should keep the cache: %+v", result3)
+	}
+	if len(client.requests) != 1 {
+		t.Fatalf("cooldown cache must not call the model again, got %d calls", len(client.requests))
+	}
+
+	// The explicit panel action bypasses the automatic cooldown.
+	resp4 := callMemoryRPC(t, srv, "ov-4", MethodMemoryOverview, `{"scope":"user","force_refresh":true}`)
+	result4 := remarshal[MemoryOverviewResult](t, resp4["result"])
+	if result4.Cached {
+		t.Fatalf("forced refresh should generate a fresh overview: %+v", result4)
 	}
 	if len(client.requests) != 2 {
-		t.Fatalf("expected a second model call after index change, got %d", len(client.requests))
+		t.Fatalf("forced refresh should make a second model call, got %d", len(client.requests))
+	}
+}
+
+func TestMemoryOverviewCacheSurvivesServerRestart(t *testing.T) {
+	client := &fakeClient{response: providersResponse("持久化概览")}
+	srv, home := newMemoryPanelServer(t, client)
+	writeMemoryFile(t, memdir.UserMemdir(home), "MEMORY.md", "- [条目](topic.md) — 钩子\n")
+
+	first := remarshal[MemoryOverviewResult](t,
+		callMemoryRPC(t, srv, "persist-1", MethodMemoryOverview, `{"scope":"user"}`)["result"])
+	if first.Cached || len(client.requests) != 1 {
+		t.Fatalf("first overview should be generated: result=%+v calls=%d", first, len(client.requests))
+	}
+
+	restartedClient := &fakeClient{response: providersResponse("不应生成")}
+	restartedRuntime := newTestRuntime(t, restartedClient)
+	restarted := New(restartedRuntime, &lockedBuffer{})
+	restartedRuntime.WuuHome = home
+	second := remarshal[MemoryOverviewResult](t,
+		callMemoryRPC(t, restarted, "persist-2", MethodMemoryOverview, `{"scope":"user"}`)["result"])
+	if !second.Cached || second.EssayMD != first.EssayMD {
+		t.Fatalf("restart should reuse the persisted cache: %+v", second)
+	}
+	if len(restartedClient.requests) != 0 {
+		t.Fatalf("restart cache hit must not call the model, got %d calls", len(restartedClient.requests))
 	}
 }
 
@@ -509,7 +545,7 @@ func TestMemoryChatParticipantScopeRootsAndEscapeRejection(t *testing.T) {
 	}
 }
 
-func TestMemoryChatInvalidatesOverviewCache(t *testing.T) {
+func TestMemoryChatKeepsOverviewCacheUntilForcedRefresh(t *testing.T) {
 	client := &fakeClient{responses: []providers.ChatResponse{
 		providersResponse("第一版概览"),
 		providersResponse("没有需要修改的内容。"),
@@ -538,15 +574,23 @@ func TestMemoryChatInvalidatesOverviewCache(t *testing.T) {
 		t.Fatalf(`changed_files must be an empty JSON array when nothing changed: %+v`, rawChat["changed_files"])
 	}
 
-	// The chat run touched nothing (index mtime unchanged), yet the cache
-	// must have been invalidated: the next overview regenerates.
+	// A chat does not spend another overview inference automatically.
 	again := remarshal[MemoryOverviewResult](t,
 		callMemoryRPC(t, srv, "inv-3", MethodMemoryOverview, `{"scope":"user"}`)["result"])
-	if again.Cached || again.EssayMD != "第二版概览" {
-		t.Fatalf("overview after chat should regenerate: %+v", again)
+	if !again.Cached || again.EssayMD != "第一版概览" {
+		t.Fatalf("overview after chat should stay cached: %+v", again)
+	}
+	if len(client.requests) != 2 {
+		t.Fatalf("expected 2 model calls (overview, chat), got %d", len(client.requests))
+	}
+
+	fresh := remarshal[MemoryOverviewResult](t,
+		callMemoryRPC(t, srv, "inv-4", MethodMemoryOverview, `{"scope":"user","force_refresh":true}`)["result"])
+	if fresh.Cached || fresh.EssayMD != "第二版概览" {
+		t.Fatalf("forced overview after chat should regenerate: %+v", fresh)
 	}
 	if len(client.requests) != 3 {
-		t.Fatalf("expected 3 model calls (overview, chat, overview), got %d", len(client.requests))
+		t.Fatalf("expected 3 model calls after forced overview, got %d", len(client.requests))
 	}
 }
 
