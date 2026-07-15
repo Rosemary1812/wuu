@@ -701,7 +701,7 @@ func PendingResidentAdmissionCompensations(sessDir string) ([]ResidentAdmissionC
 		return nil, err
 	}
 	rows, err := db.Query(`
-SELECT payload_json
+SELECT id, payload_json
 FROM resident_admission_compensations
 ORDER BY created_at, id`)
 	if err != nil {
@@ -709,25 +709,76 @@ ORDER BY created_at, id`)
 	}
 	defer rows.Close()
 	var pending []ResidentAdmissionCompensation
+	var quarantine []quarantinedCompensation
 	for rows.Next() {
-		var payload string
-		if err := rows.Scan(&payload); err != nil {
+		var rowID, payload string
+		if err := rows.Scan(&rowID, &payload); err != nil {
 			return nil, fmt.Errorf("scan resident admission compensation: %w", err)
 		}
 		var item ResidentAdmissionCompensation
 		if err := json.Unmarshal([]byte(payload), &item); err != nil {
-			return nil, fmt.Errorf("decode resident admission compensation: %w", err)
+			quarantine = append(quarantine, quarantinedCompensation{ID: rowID, Payload: payload, Reason: fmt.Sprintf("decode: %v", err)})
+			continue
 		}
 		item, _, err = normalizeResidentAdmissionCompensation(item)
 		if err != nil {
-			return nil, fmt.Errorf("validate resident admission compensation: %w", err)
+			quarantine = append(quarantine, quarantinedCompensation{ID: rowID, Payload: payload, Reason: fmt.Sprintf("validate: %v", err)})
+			continue
 		}
 		pending = append(pending, item)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("scan resident admission compensations: %w", err)
 	}
+	if len(quarantine) > 0 {
+		// A single corrupt journal row must not wedge startup recovery and
+		// every thread's admission barrier behind it. Move it aside with its
+		// payload and reason preserved for manual repair, then keep going.
+		if err := quarantineResidentAdmissionCompensations(sessDir, quarantine); err != nil {
+			return nil, err
+		}
+	}
 	return pending, nil
+}
+
+type quarantinedCompensation struct {
+	ID      string
+	Payload string
+	Reason  string
+}
+
+func quarantineResidentAdmissionCompensations(sessDir string, items []quarantinedCompensation) error {
+	db, err := openStore(sessDir)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	storeWriteMu.Lock()
+	defer storeWriteMu.Unlock()
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin compensation quarantine: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS resident_admission_compensations_quarantine (
+		id             TEXT PRIMARY KEY,
+		payload_json   TEXT NOT NULL,
+		reason         TEXT NOT NULL,
+		quarantined_at INTEGER NOT NULL
+	)`); err != nil {
+		return fmt.Errorf("create compensation quarantine table: %w", err)
+	}
+	now := time.Now().UTC().UnixNano()
+	for _, item := range items {
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO resident_admission_compensations_quarantine (id, payload_json, reason, quarantined_at)
+VALUES (?, ?, ?, ?)`, item.ID, item.Payload, item.Reason, now); err != nil {
+			return fmt.Errorf("quarantine compensation %q: %w", item.ID, err)
+		}
+		if _, err := tx.Exec(`DELETE FROM resident_admission_compensations WHERE id = ?`, item.ID); err != nil {
+			return fmt.Errorf("remove quarantined compensation %q: %w", item.ID, err)
+		}
+	}
+	return tx.Commit()
 }
 
 // RecoverResidentAdmissionCompensations resolves intents left by a process
