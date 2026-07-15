@@ -96,6 +96,7 @@ function installMemoryStub(overrides: Partial<MemoryStub> = {}): MemoryStub {
 function mount(
   participants: ParticipantProfile[] = [],
   focusParticipantID?: string,
+  collaborationEnabled?: boolean,
 ): void {
   act(() => {
     root = createRoot(container);
@@ -103,6 +104,7 @@ function mount(
       <MemoryPanel
         participants={participants}
         focusParticipantID={focusParticipantID}
+        collaborationEnabled={collaborationEnabled}
       />,
     );
   });
@@ -198,9 +200,23 @@ describe("MemoryPanel overview", () => {
 });
 
 describe("MemoryPanel 同事 tab", () => {
+  it("hides coworker memory when collaboration is disabled", async () => {
+    const stub = installMemoryStub();
+    mount(participantsFixture(), "p-2", false);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(findButton("同事")).toBeUndefined();
+    expect(
+      container.querySelector("[data-testid=\"memory-agent-select\"]"),
+    ).toBeNull();
+    expect(stub.getMemoryOverview).toHaveBeenCalledWith({ scope: "user" });
+  });
+
   it("lists only named agents in the picker and requests the participant scope", async () => {
     const stub = installMemoryStub();
-    mount(participantsFixture());
+    mount(participantsFixture(), undefined, true);
     await act(async () => {
       await Promise.resolve();
     });
@@ -239,7 +255,7 @@ describe("MemoryPanel 同事 tab", () => {
 
   it("preselects the focused participant notebook when focusParticipantID is set", async () => {
     const stub = installMemoryStub();
-    mount(participantsFixture(), "p-2");
+    mount(participantsFixture(), "p-2", true);
     await act(async () => {
       await Promise.resolve();
     });
@@ -258,7 +274,7 @@ describe("MemoryPanel 同事 tab", () => {
 
   it("shows an empty state instead of a request when no named agent exists", async () => {
     const stub = installMemoryStub();
-    mount([]);
+    mount([], undefined, true);
     await act(async () => {
       await Promise.resolve();
     });

@@ -18,6 +18,7 @@ import type {
 import { ImagePreviewProvider } from "./ImagePreview";
 import { RichContent } from "./RichContent";
 import { SelectMenu } from "./SelectMenu";
+import { ENABLE_COLLABORATION } from "./FeatureFlags";
 
 // 设置 → 记忆 面板（docs/plans/2026-07-04-memory-redesign.md §8.1）。
 //
@@ -109,13 +110,15 @@ function timestampLabel(value?: string): string {
 export function MemoryPanel({
   participants,
   focusParticipantID,
+  collaborationEnabled = ENABLE_COLLABORATION,
 }: {
   participants: ParticipantProfile[];
   // 预选某位同事的笔记本（档案面板「在记忆面板中管理」跳转带过来）。
   focusParticipantID?: string;
+  collaborationEnabled?: boolean;
 }): JSX.Element {
   const [scope, setScope] = useState<MemoryScope>(
-    focusParticipantID ? "participant" : "user",
+    collaborationEnabled && focusParticipantID ? "participant" : "user",
   );
   const [selectedParticipantID, setSelectedParticipantID] = useState(
     focusParticipantID ?? "",
@@ -154,11 +157,17 @@ export function MemoryPanel({
   // 跳转焦点变化时切到对应同事的笔记本（初始值已在 useState 里消化，
   // 这里兜住同一面板实例被复用的情况）。
   useEffect(() => {
-    if (focusParticipantID) {
+    if (collaborationEnabled && focusParticipantID) {
       setScope("participant");
       setSelectedParticipantID(focusParticipantID);
     }
-  }, [focusParticipantID]);
+  }, [collaborationEnabled, focusParticipantID]);
+
+  useEffect(() => {
+    if (!collaborationEnabled && scope !== "user") {
+      setScope("user");
+    }
+  }, [collaborationEnabled, scope]);
 
   useEffect(() => {
     if (!notebookReady) {
@@ -279,31 +288,35 @@ export function MemoryPanel({
     <ImagePreviewProvider>
       <div className="settings-memory" data-testid="settings-memory">
         <div className="settings-memory-toolbar">
-          <div
-            className="settings-memory-tabs"
-            role="tablist"
-            aria-label="记忆笔记本"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={scope === "user"}
-              className={`settings-memory-tab${scope === "user" ? " active" : ""}`}
-              onClick={() => setScope("user")}
+          {collaborationEnabled ? (
+            <div
+              className="settings-memory-tabs"
+              role="tablist"
+              aria-label="记忆笔记本"
             >
-              我
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={scope === "participant"}
-              className={`settings-memory-tab${scope === "participant" ? " active" : ""}`}
-              onClick={() => setScope("participant")}
-            >
-              同事
-            </button>
-          </div>
-          {scope === "participant" && namedAgents.length > 0 ? (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={scope === "user"}
+                className={`settings-memory-tab${scope === "user" ? " active" : ""}`}
+                onClick={() => setScope("user")}
+              >
+                我
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={scope === "participant"}
+                className={`settings-memory-tab${scope === "participant" ? " active" : ""}`}
+                onClick={() => setScope("participant")}
+              >
+                同事
+              </button>
+            </div>
+          ) : null}
+          {collaborationEnabled &&
+          scope === "participant" &&
+          namedAgents.length > 0 ? (
             <SelectMenu
               className="settings-memory-agent-select"
               triggerClassName="settings-select-trigger"
