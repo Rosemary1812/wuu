@@ -114,8 +114,14 @@ func TestUltraTurnInjectsRootPolicyAndSnapshotsPerTurn(t *testing.T) {
 	if !policy.Hidden || !wuucontext.IsSystemReminder(policy.Name, policy.Content) {
 		t.Fatalf("ultra policy should be request-only hidden context: %+v", policy)
 	}
-	if leaked := ultraPolicy(requests[1]); leaked != nil {
-		t.Fatalf("non-ultra turn must not carry the ultra policy:\n%s", leaked.Content)
+	var latestPolicy *providers.ChatMessage
+	for i := range requests[1].Messages {
+		if requests[1].Messages[i].Name == policy.Name {
+			latestPolicy = &requests[1].Messages[i]
+		}
+	}
+	if latestPolicy == nil || !strings.Contains(latestPolicy.Content, "status: inactive") {
+		t.Fatalf("non-ultra turn must deactivate the retained Ultra policy, got %+v", latestPolicy)
 	}
 }
 

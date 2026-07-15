@@ -173,10 +173,10 @@ func TestPrefixExperiment_SteadySessionNeverDiverges(t *testing.T) {
 	}
 }
 
-// Scenario 2: within one run, the context snapshot changes on every round.
-// Changed snapshots append at the tail while prior copies stay in the prefix,
-// so the intra-run chain never breaks.
-func TestPrefixExperiment_PerRoundChangingContextNeverDivergesWithinRun(t *testing.T) {
+// Scenario 2: the context snapshot changes on every round and continues
+// changing in the next turn. Typed blocks are ordered updates, so prior
+// versions remain in the cache prefix while only the latest version applies.
+func TestPrefixExperiment_PerRoundChangingContextNeverDivergesAcrossTurns(t *testing.T) {
 	sim := &sessionSim{t: t}
 	contextCalls := 0
 	perRound := func() []ContextSegment {
@@ -188,12 +188,16 @@ func TestPrefixExperiment_PerRoundChangingContextNeverDivergesWithinRun(t *testi
 			Content: fmt.Sprintf("# Environment\n- State: step %d", contextCalls),
 		}})
 	}
-	sim.runTurn("ask 1", &fakeStep{results: toolRoundSteps("call_1", "call_2", "call_3")}, func(cfg *LoopConfig) {
+	sim.runTurn("ask 1", &fakeStep{results: toolRoundSteps("call_1", "call_2")}, func(cfg *LoopConfig) {
+		cfg.Tools = experimentTools()
+		cfg.BeforeRequestContext = perRound
+	})
+	sim.runTurn("ask 2", &fakeStep{results: toolRoundSteps("call_3")}, func(cfg *LoopConfig) {
 		cfg.Tools = experimentTools()
 		cfg.BeforeRequestContext = perRound
 	})
 	if breaks := analyzePrefixChain(sim.requests); len(breaks) != 0 {
-		t.Fatalf("per-round changing context must append within a run, not rewrite:\n%s", formatBreaks(sim.requests, breaks))
+		t.Fatalf("per-round changing typed context must append across turns:\n%s", formatBreaks(sim.requests, breaks))
 	}
 }
 
@@ -288,10 +292,9 @@ func TestPrefixExperiment_OverflowCompactBreaksOnceThenResumes(t *testing.T) {
 	}
 }
 
-// Scenario 5b: when request-only context CHANGES across a turn boundary, the
-// stale copy must not be retained (freshness), and continuity legitimately
-// breaks at the changed block. The new turn carries the fresh content and not
-// the old.
+// Scenario 5b: when typed request-only context changes across a turn boundary,
+// the old value stays only as a superseded update in the byte-stable prefix;
+// the latest update carries the fresh value.
 func TestPrefixExperiment_ChangedContextRefreshesAcrossTurns(t *testing.T) {
 	sim := &sessionSim{t: t}
 	makeCtx := func(state string) func() []ContextSegment {
@@ -320,19 +323,119 @@ func TestPrefixExperiment_ChangedContextRefreshesAcrossTurns(t *testing.T) {
 		cfg.Tools = experimentTools()
 		cfg.BeforeRequestContext = makeCtx("beta")
 	})
+	if breaks := analyzePrefixChain(sim.requests); len(breaks) != 0 {
+		t.Fatalf("changed typed context must supersede without breaking the prefix:\n%s", formatBreaks(sim.requests, breaks))
+	}
 	turn2 := sim.requests[len(sim.requests)-1]
-	// Fresh state present, stale state gone: no leakage of the prior turn's
-	// changed snapshot.
-	if got := countMessagesContaining(turn2, "State: alpha"); got != 0 {
-		t.Fatalf("stale changed context must not be retained across turns, found %d copies of 'alpha'", got)
+	if got := countMessagesContaining(turn2, "State: alpha"); got != 1 {
+		t.Fatalf("the prior update should remain once in the stable prefix, got %d", got)
 	}
 	if got := countMessagesContaining(turn2, "State: beta"); got != 1 {
 		t.Fatalf("fresh context must be present exactly once, got %d copies of 'beta'", got)
+	}
+	envName := wuucontext.SystemReminderBlockMessageName(wuucontext.Block{
+		Kind: wuucontext.BlockEnvironment, Title: "Runtime environment", Source: "runtime.snapshot",
+	}, 0)
+	latest := latestMessageWithName(turn2, envName)
+	if !strings.Contains(latest.Content, "status: active") || !strings.Contains(latest.Content, "State: beta") {
+		t.Fatalf("latest environment update must be active beta, got %+v", latest)
 	}
 	// The unchanged active-files block is still retained (single copy).
 	if got := countMessagesContaining(turn2, "[ACTIVE_FILES]"); got != 1 {
 		t.Fatalf("unchanged block should stay retained once, got %d", got)
 	}
+}
+
+func TestPrefixExperiment_DisappearingContextAppendsInactiveUpdate(t *testing.T) {
+	sim := &sessionSim{t: t}
+	block := wuucontext.Block{
+		Kind: wuucontext.BlockToolPolicy, Title: "Ultra mode", Source: "ultra", Content: "Ultra is enabled.",
+	}
+	sim.runTurn("ask 1", &fakeStep{results: toolRoundSteps("call_1")}, func(cfg *LoopConfig) {
+		cfg.Tools = experimentTools()
+		cfg.BeforeRequestContext = func() []ContextSegment { return RequestOnlyContextBlocks([]wuucontext.Block{block}) }
+	})
+	sim.runTurn("ask 2", &fakeStep{results: toolRoundSteps("call_2")}, func(cfg *LoopConfig) {
+		cfg.Tools = experimentTools()
+	})
+	if breaks := analyzePrefixChain(sim.requests); len(breaks) != 0 {
+		t.Fatalf("removing typed context must append an inactive update without breaking the prefix:\n%s", formatBreaks(sim.requests, breaks))
+	}
+	final := sim.requests[len(sim.requests)-1]
+	name := wuucontext.SystemReminderBlockMessageName(block, 0)
+	latest := latestMessageWithName(final, name)
+	if !isInactiveRequestContextMessage(latest) {
+		t.Fatalf("latest Ultra update must explicitly deactivate the prior policy, got %+v", latest)
+	}
+	if got := countMessagesContaining(final, "status: inactive"); got != 1 {
+		t.Fatalf("inactive update must be emitted once, got %d", got)
+	}
+}
+
+// Scenario 5c: Inception intentionally rewrites durable history. It should
+// cause exactly one explainable prefix break; ordinary tool rounds after the
+// rewrite and the next turn must resume strict append continuity.
+func TestPrefixExperiment_InceptionBreaksOnceThenResumesAcrossTurn(t *testing.T) {
+	sim := &sessionSim{t: t}
+	contextCalls := 0
+	dynamicContext := func() []ContextSegment {
+		contextCalls++
+		return RequestOnlyContextBlocks([]wuucontext.Block{{
+			Kind: wuucontext.BlockToolResultSummary, Title: "Tool state", Source: "tool_telemetry",
+			Content: fmt.Sprintf("tool snapshot %d", contextCalls),
+		}})
+	}
+	tools := &fakeLoopTools{
+		defs: []providers.ToolDefinition{{Name: "read_file"}, {Name: compact.InceptionToolName}},
+		results: map[string]string{
+			"call_1":      `{"content":"one"}`,
+			"call_2":      `{"content":"two"}`,
+			"call_3":      `{"content":"three"}`,
+			"call_4":      `{"content":"four"}`,
+			"inception_1": mustInceptionToolResult(t, 0, "Continue with ordinary tool verification."),
+		},
+	}
+	first := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{"path":"one"}`}}},
+		{ToolCalls: []providers.ToolCall{{ID: "inception_1", Name: compact.InceptionToolName, Arguments: `{"anchor_id":0,"summary":{"state":["continue"],"next_action":"verify"}}`}}},
+		{ToolCalls: []providers.ToolCall{{ID: "call_2", Name: "read_file", Arguments: `{"path":"two"}`}}},
+		{ToolCalls: []providers.ToolCall{{ID: "call_3", Name: "read_file", Arguments: `{"path":"three"}`}}},
+		{Content: "done after inception"},
+	}}
+	res := sim.runTurn("ask 1", first, func(cfg *LoopConfig) {
+		cfg.Tools = tools
+		cfg.BeforeRequestContext = dynamicContext
+		cfg.PostToolRewrite = compact.RewriteHistoryFromInternalToolMessagesWithContext
+	})
+	if !res.HistoryRewritten {
+		t.Fatal("expected Inception to rewrite history")
+	}
+	sim.runTurn("ask 2", &fakeStep{results: toolRoundSteps("call_4")}, func(cfg *LoopConfig) {
+		cfg.Tools = tools
+		cfg.BeforeRequestContext = dynamicContext
+		cfg.PostToolRewrite = compact.RewriteHistoryFromInternalToolMessagesWithContext
+	})
+	breaks := analyzePrefixChain(sim.requests)
+	if len(breaks) != 1 || breaks[0].pair != 1 {
+		t.Fatalf("Inception must cause exactly one break between its request and the rewritten continuation:\n%s", formatBreaks(sim.requests, breaks))
+	}
+	for i, request := range sim.requests {
+		if err := providers.ValidateToolCallHistory(request); err != nil {
+			t.Fatalf("request %d has invalid tool history: %v\n%+v", i, err, request)
+		}
+	}
+	if err := providers.ValidateToolCallHistory(sim.history); err != nil {
+		t.Fatalf("post-Inception durable history is invalid: %v\n%+v", err, sim.history)
+	}
+}
+
+func latestMessageWithName(messages []providers.ChatMessage, name string) providers.ChatMessage {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Name == name {
+			return messages[i]
+		}
+	}
+	return providers.ChatMessage{}
 }
 
 // Scenario 6: ToolPrune across a run boundary. Growing history can move old

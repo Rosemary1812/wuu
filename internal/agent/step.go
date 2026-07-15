@@ -385,9 +385,9 @@ type LoopResult struct {
 	OutputTokens        int
 	CacheCreationTokens int
 	CacheReadTokens     int
-	// ContextTokens is the post-run retained conversation estimate used by
-	// auto-compact. It excludes request-only context that was present only in
-	// the just-sent provider request.
+	// ContextTokens is the post-run provider-context estimate used by
+	// auto-compact. It includes retained request-only context because those
+	// messages remain in subsequent provider requests and occupy the window.
 	ContextTokens int
 	FinishReason  providers.FinishReason
 	StopReason    string

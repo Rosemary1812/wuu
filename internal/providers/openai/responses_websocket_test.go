@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -683,6 +684,85 @@ func TestResponsesStreamChatWebSocket_UsesPreviousResponseIDDeltaAfterFinalAnswe
 	secondInput := second["input"].([]any)
 	if len(secondInput) != 1 {
 		t.Fatalf("final-answer request should send only delta input, got %#v", secondInput)
+	}
+}
+
+func TestResponsesStreamChatWebSocket_RunnerKeepsDeltaAcrossTurnsWithChangingContext(t *testing.T) {
+	requests := make(chan map[string]any, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+		if err != nil {
+			t.Errorf("accept websocket: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		for i := 0; i < 2; i++ {
+			readWSRequest(t, ctx, conn, requests)
+			id := strconv.Itoa(i + 1)
+			writeWSEvent(t, ctx, conn, `{"type":"response.created","response":{"id":"resp_`+id+`","status":"in_progress"}}`)
+			writeWSEvent(t, ctx, conn, `{"type":"response.output_item.added","item":{"id":"msg_`+id+`","type":"message","role":"assistant","phase":"final_answer","status":"in_progress"},"output_index":0}`)
+			writeWSEvent(t, ctx, conn, `{"type":"response.output_text.delta","delta":"answer-`+id+`","item_id":"msg_`+id+`","output_index":0}`)
+			writeWSEvent(t, ctx, conn, `{"type":"response.output_item.done","item":{"id":"msg_`+id+`","type":"message","role":"assistant","phase":"final_answer","status":"completed","content":[{"type":"output_text","text":"answer-`+id+`"}]},"output_index":0}`)
+			writeWSEvent(t, ctx, conn, `{"type":"response.completed","response":{"id":"resp_`+id+`","status":"completed","output":[],"usage":{"input_tokens":10,"output_tokens":2}}}`)
+		}
+	}))
+	defer server.Close()
+
+	store := false
+	client, err := New(ClientConfig{
+		BaseURL: server.URL, WireAPI: "responses", APIKey: "test-key",
+		ResponsesStore: &store, ResponsesTransport: providers.StreamTransportAuto,
+		ResponsesWebSocketCache: NewResponsesWebSocketCache(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := "alpha"
+	runner := agent.StreamRunner{
+		Client: client, Model: "gpt-test", PromptCacheKey: "runner-cross-turn-context",
+		BeforeRequestContext: func() []agent.ContextSegment {
+			return agent.RequestOnlyContextBlocks([]wuucontext.Block{{
+				Kind: wuucontext.BlockToolResultSummary, Title: "Tool state", Source: "tool_telemetry", Content: "State: " + state,
+			}})
+		},
+	}
+	history1 := []providers.ChatMessage{{Role: "user", Content: "first ask"}}
+	res1, err := runner.RunWithCallback(context.Background(), history1, nil)
+	if err != nil {
+		t.Fatalf("turn 1: %v", err)
+	}
+	state = "beta"
+	history2 := append(append(providers.CloneChatMessages(history1), res1.NewMessages...), providers.ChatMessage{Role: "user", Content: "second ask"})
+	var states []providers.ProviderStateSummary
+	if _, err := runner.RunWithCallback(context.Background(), history2, func(event providers.StreamEvent) {
+		if event.Type == providers.EventProviderState && event.ProviderState != nil {
+			states = append(states, *event.ProviderState)
+		}
+	}); err != nil {
+		t.Fatalf("turn 2: %v", err)
+	}
+	if len(states) != 1 || !states[0].PreviousResponseIDUsed || states[0].ReplayMode != "previous_response_id" {
+		t.Fatalf("turn 2 did not use Responses delta continuation: %+v", states)
+	}
+	first := <-requests
+	if _, ok := first["previous_response_id"]; ok {
+		t.Fatalf("turn 1 unexpectedly used previous_response_id: %#v", first)
+	}
+	second := <-requests
+	if second["previous_response_id"] != "resp_1" {
+		t.Fatalf("turn 2 previous_response_id = %#v", second["previous_response_id"])
+	}
+	delta, err := json.Marshal(second["input"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(delta, []byte("State: beta")) || !bytes.Contains(delta, []byte("second ask")) {
+		t.Fatalf("turn 2 delta missing fresh context or user input: %s", delta)
+	}
+	if bytes.Contains(delta, []byte("State: alpha")) {
+		t.Fatalf("turn 2 delta re-sent superseded context: %s", delta)
 	}
 }
 

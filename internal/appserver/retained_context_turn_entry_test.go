@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/blueberrycongee/wuu/internal/agent"
@@ -56,9 +57,7 @@ func TestEnsureThreadRuntimeAfterAdmission_PreservesRetainedContext(t *testing.T
 	if err != nil {
 		t.Fatalf("turn 1: %v", err)
 	}
-	if !runner.HasPendingRetainedRequestContext() {
-		t.Fatal("turn 1 should leave retained request-context state on the runner")
-	}
+	turn1Last := client.requests[len(client.requests)-1].Messages
 
 	// Build the thread the way the server holds it between turns, with the
 	// persistent runtime carrying the same runner.
@@ -73,7 +72,12 @@ func TestEnsureThreadRuntimeAfterAdmission_PreservesRetainedContext(t *testing.T
 		t.Fatalf("ensureThreadRuntimeAfterAdmission: %v", err)
 	}
 
-	if !runner.HasPendingRetainedRequestContext() {
-		t.Fatal("turn-entry usage reseed must not discard retained request-context state")
+	history2 := append(cloneHistory(th.History), providers.ChatMessage{Role: "user", Content: "second ask"})
+	if _, err := runner.RunWithCallback(context.Background(), history2, nil); err != nil {
+		t.Fatalf("turn 2: %v", err)
+	}
+	turn2First := client.requests[len(client.requests)-1].Messages
+	if len(turn2First) < len(turn1Last) || !reflect.DeepEqual(turn1Last, turn2First[:len(turn1Last)]) {
+		t.Fatalf("app-server turn entry broke retained request prefix:\nturn1=%+v\nturn2=%+v", turn1Last, turn2First)
 	}
 }

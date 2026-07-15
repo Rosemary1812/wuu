@@ -2012,7 +2012,7 @@ func TestStreamRunner_ResetConversationUsageReflectsCompaction(t *testing.T) {
 	// Seed a large cross-turn baseline as if several big turns had landed.
 	big := NewUsageTracker()
 	big.RecordResponse(&providers.TokenUsage{InputTokens: 50000, OutputTokens: 2000})
-	r.commitUsageTracker(big, len(preCompact))
+	r.commitUsageTracker(big, preCompact)
 
 	pre, _ := r.prepareUsageTracker(preCompact)
 	if got := pre.EstimateCurrent(); got != 52000 {
@@ -2157,12 +2157,43 @@ func TestStreamRunner_ResetConversationUsagePreservesRetainedContext(t *testing.
 	}
 }
 
-// TestStreamRunner_CrossTurnContinuitySurvivesUsageReseed reproduces the real
+func TestStreamRunner_SynchronizeConversationUsagePreservesMatchingGroundTruth(t *testing.T) {
+	history := []providers.ChatMessage{userMsg("ask"), {Role: "assistant", Content: "answer"}}
+	runner := &StreamRunner{}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 50_000, OutputTokens: 2_000})
+	runner.commitUsageTracker(tracker, history)
+
+	runner.SynchronizeConversationUsage(history, 7_000)
+
+	got, tracked := runner.prepareUsageTracker(history)
+	if got.EstimateCurrent() != 52_000 || tracked != len(history) {
+		t.Fatalf("ordinary turn entry lost live usage ground truth: estimate=%d tracked=%d", got.EstimateCurrent(), tracked)
+	}
+}
+
+func TestStreamRunner_SynchronizeConversationUsageAdoptsExternalRewrite(t *testing.T) {
+	oldHistory := []providers.ChatMessage{userMsg("old"), {Role: "assistant", Content: "old answer"}}
+	newHistory := []providers.ChatMessage{userMsg("rewritten"), {Role: "assistant", Content: "new answer"}}
+	runner := &StreamRunner{}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 50_000, OutputTokens: 2_000})
+	runner.commitUsageTracker(tracker, oldHistory)
+
+	runner.SynchronizeConversationUsage(newHistory, 9_000)
+
+	got, tracked := runner.prepareUsageTracker(newHistory)
+	if got.EstimateCurrent() != 9_000 || tracked != len(newHistory) {
+		t.Fatalf("external rewrite did not adopt persisted usage: estimate=%d tracked=%d", got.EstimateCurrent(), tracked)
+	}
+}
+
+// TestStreamRunner_CrossTurnContinuitySurvivesUsageSynchronization reproduces the real
 // desktop path end to end: run a turn that emits request-only context, apply
-// the per-turn ResetConversationUsage reseed the app-server performs at turn
+// the per-turn usage synchronization the app-server performs at turn
 // entry, then run the next turn and assert its first provider request
 // byte-extends the previous turn's last request (prompt-cache continuity).
-func TestStreamRunner_CrossTurnContinuitySurvivesUsageReseed(t *testing.T) {
+func TestStreamRunner_CrossTurnContinuitySurvivesUsageSynchronization(t *testing.T) {
 	activeFiles := wuucontext.Block{
 		Kind:    wuucontext.BlockActiveFiles,
 		Title:   "Active files",
@@ -2213,8 +2244,8 @@ func TestStreamRunner_CrossTurnContinuitySurvivesUsageReseed(t *testing.T) {
 	// history + this turn's new durable messages + the new user prompt.
 	history2 := append(append(append([]providers.ChatMessage(nil), history1...), res1.NewMessages...), userMsg("second ask"))
 
-	// Simulate the per-turn app-server reseed that runs at turn entry.
-	runner.ResetConversationUsage(history2)
+	// Simulate the app-server synchronization that runs at turn entry.
+	runner.SynchronizeConversationUsage(history2, 0)
 
 	if _, err := runner.RunWithCallback(context.Background(), history2, nil); err != nil {
 		t.Fatalf("turn 2: %v", err)
@@ -2229,6 +2260,46 @@ func TestStreamRunner_CrossTurnContinuitySurvivesUsageReseed(t *testing.T) {
 	}
 	if got := countMessagesContaining(turn2First, "[ACTIVE_FILES]"); got != 1 {
 		t.Fatalf("retained request-only context should appear exactly once across turns, got %d in %+v", got, turn2First)
+	}
+}
+
+func TestStreamRunner_CanceledTurnRetainsPrefixForRetry(t *testing.T) {
+	block := wuucontext.Block{
+		Kind: wuucontext.BlockActiveFiles, Title: "Active files", Source: "read_file", Content: "files:\n- go.mod",
+	}
+	firstClient := &mockStreamClient{attempts: []mockStreamAttempt{{events: []providers.StreamEvent{
+		{Type: providers.EventContentDelta, Content: "turn one"}, {Type: providers.EventDone},
+	}}}}
+	runner := &StreamRunner{
+		Client: firstClient, Model: "m",
+		BeforeRequestContext: func() []ContextSegment { return RequestOnlyContextBlocks([]wuucontext.Block{block}) },
+	}
+	history1 := []providers.ChatMessage{userMsg("first ask")}
+	res1, err := runner.RunWithCallback(context.Background(), history1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	history2 := append(append(providers.CloneChatMessages(history1), res1.NewMessages...), userMsg("second ask"))
+
+	canceledClient := &mockStreamClient{attempts: []mockStreamAttempt{{err: context.Canceled}}}
+	runner.Client = canceledClient
+	if _, err := runner.RunWithCallback(context.Background(), history2, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled run error = %v", err)
+	}
+	if len(canceledClient.requests) != 1 {
+		t.Fatalf("canceled run requests = %d", len(canceledClient.requests))
+	}
+	canceledRequest := canceledClient.requests[0].Messages
+
+	retryClient := &mockStreamClient{attempts: []mockStreamAttempt{{events: []providers.StreamEvent{
+		{Type: providers.EventContentDelta, Content: "retried"}, {Type: providers.EventDone},
+	}}}}
+	runner.Client = retryClient
+	if _, err := runner.RunWithCallback(context.Background(), history2, nil); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if len(retryClient.requests) != 1 || !reflect.DeepEqual(canceledRequest, retryClient.requests[0].Messages) {
+		t.Fatalf("retry must reuse the canceled request prefix exactly:\ncanceled=%+v\nretry=%+v", canceledRequest, retryClient.requests)
 	}
 }
 

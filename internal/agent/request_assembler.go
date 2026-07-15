@@ -1,11 +1,14 @@
 package agent
 
 import (
+	"sort"
 	"strings"
 
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
+
+const requestContextUpdateMarker = "[CONTEXT_UPDATE]"
 
 // ContextSegmentLifecycle describes how long a context segment lives.
 type ContextSegmentLifecycle string
@@ -185,12 +188,43 @@ func projectRequestOnlyBlocks(blocks []wuucontext.Block) []requestOnlyBlockProje
 			message: providers.ChatMessage{
 				Role:    "user",
 				Name:    name,
-				Content: "<system-reminder>\n" + rendered + "\n</system-reminder>",
+				Content: activeRequestContextContent(name, rendered),
 				Hidden:  true,
 			},
 		})
 	}
 	return projections
+}
+
+func activeRequestContextContent(name, rendered string) string {
+	return "<system-reminder>\n" + requestContextUpdateMarker +
+		"\nkey: " + name +
+		"\nstatus: active" +
+		"\nrule: Only the latest context update with this key applies; it replaces earlier active or inactive updates.\n\n" +
+		rendered + "\n</system-reminder>"
+}
+
+func inactiveRequestContextMessage(name string) providers.ChatMessage {
+	return providers.ChatMessage{
+		Role:   "user",
+		Name:   name,
+		Hidden: true,
+		Content: "<system-reminder>\n" + requestContextUpdateMarker +
+			"\nkey: " + name +
+			"\nstatus: inactive" +
+			"\nrule: This context is no longer active. Ignore earlier active updates with this key.\n" +
+			"</system-reminder>",
+	}
+}
+
+func isSupersedableRequestContextMessage(msg providers.ChatMessage) bool {
+	return strings.HasPrefix(strings.TrimSpace(msg.Name), "wuu_ctx_")
+}
+
+func isInactiveRequestContextMessage(msg providers.ChatMessage) bool {
+	return isSupersedableRequestContextMessage(msg) &&
+		strings.Contains(msg.Content, requestContextUpdateMarker+"\nkey: ") &&
+		strings.Contains(msg.Content, "\nstatus: inactive\n")
 }
 
 func requestOnlyMessagesFromBlocks(blocks []wuucontext.Block) []providers.ChatMessage {
@@ -285,23 +319,60 @@ func requestContextContentByKey(segments []ContextSegment) map[string]string {
 	return out
 }
 
-// affirmedRetainedContext returns the subset of a previous run's retained
-// request-only context that the current run re-emits byte-identically. Only
-// these are safe to splice back for cross-run prompt-cache continuity:
-// retained context the new run changed or dropped (e.g. a toggled tool
-// policy, an edited goal, a refreshed snapshot) is excluded so stale per-turn
-// state never lingers into a later turn. The changed/fresh version, if any,
-// still flows through the normal emit-on-change gate.
-func affirmedRetainedContext(retained []RetainedContextMessage, currentSegments []ContextSegment) []RetainedContextMessage {
+// reconciledRetainedContext preserves typed runtime-context update streams and
+// re-affirms generic request-only messages byte-identically. Typed updates can
+// remain in the prefix because later active/inactive messages explicitly
+// supersede their earlier values.
+func reconciledRetainedContext(retained []RetainedContextMessage, currentSegments []ContextSegment) []RetainedContextMessage {
 	if len(retained) == 0 {
 		return nil
 	}
 	current := requestContextContentByKey(currentSegments)
 	out := make([]RetainedContextMessage, 0, len(retained))
 	for _, entry := range retained {
+		// Typed runtime blocks form an ordered update stream. Keeping every
+		// prior update preserves the previous request byte-for-byte; the latest
+		// active/inactive update determines current semantics. Generic request
+		// messages have no such contract and are retained only when re-affirmed
+		// byte-identically.
+		if isSupersedableRequestContextMessage(entry.Message) {
+			out = append(out, entry)
+			continue
+		}
 		if content, ok := current[requestContextMessageKey(entry.Message)]; ok && content == entry.Message.Content {
 			out = append(out, entry)
 		}
+	}
+	return out
+}
+
+// inactiveRequestContextMessages emits deterministic tombstones for typed
+// context blocks that were active in the retained transcript but are absent
+// from the current snapshot. This lets the request remain append-only without
+// leaving a removed policy or stale runtime fact active.
+func inactiveRequestContextMessages(currentSegments []ContextSegment, sent map[string]string) []providers.ChatMessage {
+	if len(sent) == 0 {
+		return nil
+	}
+	current := requestContextContentByKey(currentSegments)
+	keys := make([]string, 0)
+	for key, content := range sent {
+		if !strings.HasPrefix(key, "name:wuu_ctx_") {
+			continue
+		}
+		if _, ok := current[key]; ok {
+			continue
+		}
+		name := strings.TrimPrefix(key, "name:")
+		if isInactiveRequestContextMessage(providers.ChatMessage{Name: name, Content: content}) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	out := make([]providers.ChatMessage, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, inactiveRequestContextMessage(strings.TrimPrefix(key, "name:")))
 	}
 	return out
 }

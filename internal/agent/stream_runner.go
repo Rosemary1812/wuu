@@ -145,9 +145,10 @@ type StreamRunner struct {
 	// round and nested compaction owned by this runner.
 	InferenceJournal providers.InferenceJournal
 
-	usageMu           sync.Mutex
-	conversationUsage *UsageTracker
-	trackedHistoryLen int
+	usageMu            sync.Mutex
+	conversationUsage  *UsageTracker
+	trackedHistoryLen  int
+	trackedHistoryHash string
 
 	// retainedContextMu guards the cross-turn request-context state used for
 	// prompt-cache prefix continuity. The state is fingerprinted against the
@@ -405,14 +406,19 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 	}
 	res.NewMessages = filterDurableHistory(res.NewMessages)
 	if err != nil {
-		r.commitUsageTracker(runUsage, baseHistoryLen)
+		r.commitUsageTracker(runUsage, history[:baseHistoryLen])
 		return res, err
 	}
-	finalHistoryLen := baseHistoryLen + len(res.NewMessages)
-	if res.HistoryRewritten {
-		finalHistoryLen = len(res.NewMessages)
+	finalHistory := append(providers.CloneChatMessages(history[:baseHistoryLen]), res.NewMessages...)
+	if len(recoveredToolMessages) > 0 && !res.HistoryRewritten {
+		// Recovered results already belong to the input history used by the
+		// loop and were prepended to NewMessages only so callers persist them.
+		finalHistory = append(providers.CloneChatMessages(history[:baseHistoryLen]), res.NewMessages[len(recoveredToolMessages):]...)
 	}
-	r.commitUsageTracker(runUsage, finalHistoryLen)
+	if res.HistoryRewritten {
+		finalHistory = providers.CloneChatMessages(res.NewMessages)
+	}
+	r.commitUsageTracker(runUsage, finalHistory)
 	if r.AfterTurn != nil {
 		fullHistory := make([]providers.ChatMessage, 0, len(history)+len(res.NewMessages))
 		fullHistory = append(fullHistory, history...)
@@ -540,6 +546,7 @@ func (r *StreamRunner) prepareUsageTracker(history []providers.ChatMessage) (*Us
 
 	tracker := r.conversationUsage.Clone()
 	trackedLen := r.trackedHistoryLen
+	trackedHash := r.trackedHistoryHash
 	if trackedLen < 0 {
 		trackedLen = 0
 	}
@@ -550,6 +557,10 @@ func (r *StreamRunner) prepareUsageTracker(history []providers.ChatMessage) (*Us
 	// compaction can replace history with a summary that is byte-smaller but not
 	// necessarily message-count-smaller.
 	if trackedLen > len(history) {
+		tracker.Reset()
+		trackedLen = 0
+	}
+	if trackedLen > 0 && trackedHash != "" && hashMessagesForRequestShape(history[:trackedLen]) != trackedHash {
 		tracker.Reset()
 		trackedLen = 0
 	}
@@ -583,27 +594,17 @@ func (r *StreamRunner) storeRetainedRequestContext(state *RetainedRequestContext
 	r.retainedRequestContext = state
 }
 
-// HasPendingRetainedRequestContext reports whether the runner is holding
-// cross-turn request-context state to splice into the next run. It exists so
-// callers in other packages — notably app-server turn-entry tests — can assert
-// that the per-turn usage reseed does not discard prompt-cache continuity
-// state.
-func (r *StreamRunner) HasPendingRetainedRequestContext() bool {
-	r.retainedContextMu.Lock()
-	defer r.retainedContextMu.Unlock()
-	return r.retainedRequestContext != nil
-}
-
 // commitUsageTracker publishes a run-local usage snapshot as the new
 // shared baseline for future turns.
-func (r *StreamRunner) commitUsageTracker(tracker *UsageTracker, historyLen int) {
+func (r *StreamRunner) commitUsageTracker(tracker *UsageTracker, history []providers.ChatMessage) {
 	if tracker == nil {
 		return
 	}
 	r.usageMu.Lock()
 	defer r.usageMu.Unlock()
 	r.conversationUsage = tracker.Clone()
-	r.trackedHistoryLen = historyLen
+	r.trackedHistoryLen = len(history)
+	r.trackedHistoryHash = hashMessagesForRequestShape(history)
 }
 
 // ResetConversationUsage discards the persistent cross-turn usage baseline and
@@ -622,14 +623,9 @@ func (r *StreamRunner) commitUsageTracker(tracker *UsageTracker, historyLen int)
 // history makes EstimateCurrent reflect the compacted size immediately rather
 // than dropping to zero.
 func (r *StreamRunner) ResetConversationUsage(history []providers.ChatMessage) {
-	// Do NOT clear the retained request-context state here. This method runs
-	// on every turn entry (ensureThreadRuntimeAfterAdmission re-seeds usage
-	// from reconstructed history), not just on rewrites — wiping retained
-	// context here defeats cross-turn prompt-cache continuity on every turn.
-	// Genuine invalidation (compaction, rewrite, fork, external edit) is
-	// handled inside RunToolLoop by RetainedRequestContextState.validFor,
-	// which drops the state when the durable-history fingerprint no longer
-	// matches.
+	// Retained request context owns its own durable-history fingerprint and is
+	// deliberately not cleared here. A matching rewrite can reuse it; a real
+	// rewrite/fork/edit is rejected by RetainedRequestContextState.validFor.
 	r.usageMu.Lock()
 	defer r.usageMu.Unlock()
 	if r.conversationUsage == nil {
@@ -638,6 +634,37 @@ func (r *StreamRunner) ResetConversationUsage(history []providers.ChatMessage) {
 	r.conversationUsage.Reset()
 	r.conversationUsage.RecordPendingMessages(history)
 	r.trackedHistoryLen = len(history)
+	r.trackedHistoryHash = hashMessagesForRequestShape(history)
+}
+
+// SynchronizeConversationUsage reconciles a long-lived runner with the
+// durable history refreshed under the app-server execution lease. Ordinary
+// turn entry is a no-op and preserves live provider ground truth. If another
+// owner appended or rewrote history, the persisted total becomes the new
+// baseline; without one, the tracker falls back to a local estimate.
+func (r *StreamRunner) SynchronizeConversationUsage(history []providers.ChatMessage, persistedTotal int) {
+	if r == nil {
+		return
+	}
+	historyHash := hashMessagesForRequestShape(history)
+	r.usageMu.Lock()
+	defer r.usageMu.Unlock()
+	if r.conversationUsage == nil {
+		r.conversationUsage = NewUsageTracker()
+	}
+	if r.trackedHistoryLen == len(history) &&
+		(r.trackedHistoryHash == "" || r.trackedHistoryHash == historyHash) {
+		r.trackedHistoryHash = historyHash
+		return
+	}
+	r.conversationUsage.Reset()
+	if persistedTotal > 0 {
+		r.conversationUsage.SeedGroundTruth(persistedTotal)
+	} else {
+		r.conversationUsage.RecordPendingMessages(history)
+	}
+	r.trackedHistoryLen = len(history)
+	r.trackedHistoryHash = historyHash
 }
 
 // SeedConversationUsageBaseline primes the cross-turn usage baseline from a
@@ -660,6 +687,7 @@ func (r *StreamRunner) SeedConversationUsageBaseline(total, historyLen int) {
 	}
 	if r.conversationUsage.SeedGroundTruth(total) {
 		r.trackedHistoryLen = historyLen
+		r.trackedHistoryHash = ""
 	}
 }
 

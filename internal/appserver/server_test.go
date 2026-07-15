@@ -3142,6 +3142,7 @@ func TestServerCodexWebSocketReplayAcrossThreadTurns(t *testing.T) {
 	}
 	root := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
+	runtimeState := "alpha"
 	rt := &runtime.Session{
 		ProviderName: "openai-codex",
 		Model:        "gpt-5.5",
@@ -3168,6 +3169,15 @@ func TestServerCodexWebSocketReplayAcrossThreadTurns(t *testing.T) {
 		t.Fatalf("thread/start: %v", err)
 	}
 	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "1")["result"]).Thread.ID
+	threadRuntime, err := srv.ensureThreadRuntime(srv.thread(threadID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadRuntime.StreamRunner.BeforeRequestContext = func() []agent.ContextSegment {
+		return agent.RequestOnlyContextBlocks([]wuucontext.Block{{
+			Kind: wuucontext.BlockToolResultSummary, Title: "Tool state", Source: "tool_telemetry", Content: "State: " + runtimeState,
+		}})
+	}
 	startTurn := func(id, prompt string) {
 		t.Helper()
 		payload := map[string]any{
@@ -3186,6 +3196,7 @@ func TestServerCodexWebSocketReplayAcrossThreadTurns(t *testing.T) {
 
 	startTurn("2", "say first answer")
 	waitForTurnCompletedCountForThread(t, out, threadID, 1)
+	runtimeState = "beta"
 	startTurn("3", "say second answer")
 	msgs := waitForTurnCompletedCountForThread(t, out, threadID, 2)
 
@@ -3249,12 +3260,18 @@ func TestServerCodexWebSocketReplayAcrossThreadTurns(t *testing.T) {
 	if len(secondInput) == 0 {
 		t.Fatalf("second request missing delta input: %#v", secondRequest)
 	}
-	if len(secondInput) != 1 {
-		t.Fatalf("second request should not append default request-only context, got %#v", secondInput)
+	if len(secondInput) != 2 {
+		t.Fatalf("second request should send the changed runtime-context update and new user input, first=%#v second=%#v states=%+v", firstRequest, secondRequest, providerStates)
 	}
-	secondUser, ok := secondInput[0].(map[string]any)
-	if !ok || secondUser["role"] != "user" || secondUser["content"] != "say second answer" {
-		t.Fatalf("second request should start with the new user turn, got %#v", secondInput)
+	secondInputJSON, err := json.Marshal(secondInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(secondInputJSON, []byte("State: beta")) || !bytes.Contains(secondInputJSON, []byte("say second answer")) {
+		t.Fatalf("second request delta missing fresh context or user input: %s", secondInputJSON)
+	}
+	if bytes.Contains(secondInputJSON, []byte("State: alpha")) {
+		t.Fatalf("second request delta re-sent superseded context: %s", secondInputJSON)
 	}
 	secondInputText := fmt.Sprintf("%#v", secondInput)
 	for _, unwanted := range []string{"[TASK]", "[CONSTRAINT_LEDGER]"} {
@@ -3988,7 +4005,8 @@ func TestServerGoalContinuationSkipsQueuedUserWork(t *testing.T) {
 }
 
 func goalContinuationContentForTest(messages []providers.ChatMessage) string {
-	for _, msg := range messages {
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
 		if msg.Role == "user" && strings.Contains(msg.Content, "<goal_continuation>") {
 			return msg.Content
 		}

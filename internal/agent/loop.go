@@ -181,9 +181,10 @@ func RunToolLoop(
 	// run's last request. Stale state (history rewritten, forked, or edited
 	// since) fails the fingerprint and is silently dropped — one cache miss,
 	// never a correctness issue. The actual splice is deferred to the first
-	// round (see pendingRetainedContext) so it can be reconciled against this
-	// run's fresh context: only blocks the new turn re-emits byte-identically
-	// are spliced back; changed or dropped ones must not linger.
+	// round (see pendingRetainedContext) so generic messages can be reconciled
+	// against fresh context. Typed blocks are an ordered update stream: prior
+	// values stay in the prefix and a later active/inactive update supersedes
+	// them without leaking stale semantics.
 	var pendingRetainedContext []RetainedContextMessage
 	if state := cfg.RetainedRequestContext; state.validFor(messages) {
 		pendingRetainedContext = state.Messages
@@ -318,17 +319,14 @@ func RunToolLoop(
 		}
 		currentSegments := requestContextSegments(cfg.BeforeRequestContext)
 		// Cross-run continuity: on the first round, splice back only the
-		// previous run's retained request-only context that this run re-emits
-		// byte-identically, at its recorded positions. Changed or dropped
-		// context is left out (its fresh copy, if any, flows through the gate
-		// below), so a new turn's request byte-extends the prior turn's last
-		// request wherever nothing changed, without leaking stale per-turn
-		// state.
+		// previous run's retained request-only context at its recorded
+		// positions. Typed blocks retain their ordered update stream; generic
+		// messages are kept only when re-emitted byte-identically.
 		if len(pendingRetainedContext) > 0 {
-			affirmed := affirmedRetainedContext(pendingRetainedContext, currentSegments)
-			if len(affirmed) > 0 {
-				providerMessages = spliceRetainedContext(messages, affirmed)
-				for _, entry := range affirmed {
+			reconciled := reconciledRetainedContext(pendingRetainedContext, currentSegments)
+			if len(reconciled) > 0 {
+				providerMessages = spliceRetainedContext(messages, reconciled)
+				for _, entry := range reconciled {
 					retainedContext = append(retainedContext, entry)
 					sentRequestContext = recordSentRequestContext(sentRequestContext, []providers.ChatMessage{entry.Message})
 				}
@@ -345,16 +343,17 @@ func RunToolLoop(
 		// carries it succeeds so an overflow-compact retry does not drop it.
 		consumedPostToolSegments := postToolContextSegments
 		postToolContextSegments = nil
+		currentRequestSegments := append(append([]ContextSegment(nil), currentSegments...), consumedPostToolSegments...)
+		inactiveMessages := inactiveRequestContextMessages(currentRequestSegments, sentRequestContext)
 		requestSegments := append(newContextSegments, consumedPostToolSegments...)
+		requestSegments = append(requestSegments, RequestOnlyContextMessages(inactiveMessages)...)
 		assembly := assembleModelRequest(providerMessages, requestSegments)
 		// Retain this round's request-only context in the transcript before
 		// pruning and transforms run, so retention is never contaminated by
 		// request-scoped rewrites.
 		providerMessages = assembly.Messages
-		for _, segment := range newContextSegments {
-			sentRequestContext = recordSentRequestContext(sentRequestContext, segment.Messages)
-		}
 		for _, msg := range assembly.RequestOnlyMessages {
+			sentRequestContext = recordSentRequestContext(sentRequestContext, []providers.ChatMessage{msg})
 			retainedContext = append(retainedContext, RetainedContextMessage{
 				AfterDurable: len(messages),
 				Message:      providers.CloneChatMessage(msg),

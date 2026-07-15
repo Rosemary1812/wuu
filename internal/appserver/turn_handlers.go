@@ -254,10 +254,7 @@ func (s *Server) ensureThreadRuntimeAfterAdmission(th *threadState) (*runtime.Th
 		}
 	}
 	if threadRuntime.StreamRunner != nil {
-		threadRuntime.StreamRunner.ResetConversationUsage(history)
-		if retained := s.latestRetainedContextTokens(threadID); retained > 0 {
-			threadRuntime.StreamRunner.SeedConversationUsageBaseline(retained, len(history))
-		}
+		threadRuntime.StreamRunner.SynchronizeConversationUsage(history, s.latestRetainedContextTokens(threadID))
 	}
 	return threadRuntime, nil
 }
