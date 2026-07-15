@@ -837,8 +837,19 @@ func TestNaturalExitCompletionPersistsUntilDelivered(t *testing.T) {
 	if len(pending) != 1 || pending[0].ID != started.ID {
 		t.Fatalf("pending completions after restart = %+v, want %s", pending, started.ID)
 	}
-	if _, err := restarted.MarkCompletionDelivered(started.ID); err != nil {
+	delivered, err := restarted.MarkCompletionDelivered(started.ID, "test")
+	if err != nil {
 		t.Fatal(err)
+	}
+	if delivered.CompletionDeliveredAt.IsZero() || delivered.CompletionConsumedBy != "test" {
+		t.Fatalf("completion acknowledgement was not recorded: %+v", delivered)
+	}
+	delivered, err = restarted.MarkCompletionDelivered(started.ID, "duplicate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if delivered.CompletionConsumedBy != "test" {
+		t.Fatalf("duplicate acknowledgement changed the first consumer: %+v", delivered)
 	}
 
 	reopened, err := NewManager(root, runtimeDir)

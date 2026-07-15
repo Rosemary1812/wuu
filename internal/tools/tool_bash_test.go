@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	proc "github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
@@ -456,6 +457,90 @@ func TestBashBackgroundModeUsesManagedProcessBackend(t *testing.T) {
 	}
 	if !strings.Contains(stopResp, bashActionStopBackground) {
 		t.Fatalf("stop response should use bash background action: %s", stopResp)
+	}
+}
+
+func TestBashReadBackgroundConsumesCompletionWhenTerminalResultIsReturned(t *testing.T) {
+	root := t.TempDir()
+	kit, err := New(root)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	manager, err := proc.NewManager(root, filepath.Join(t.TempDir(), "runtime"))
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	kit.SetProcessManager(manager)
+
+	resp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"action":"start_background","command":"printf 'done\\n'","wait_ms":2000,"max_bytes":4096}`,
+	})
+	if err != nil {
+		t.Fatalf("start background: %v", err)
+	}
+	var started startProcessResponse
+	if err := json.Unmarshal([]byte(resp), &started); err != nil {
+		t.Fatalf("parse start background: %v\n%s", err, resp)
+	}
+	if !strings.Contains(started.InitialOutput, "done") {
+		t.Fatalf("initial process output was not returned: %+v", started)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		pending, pendingErr := manager.CompletionPending(started.ID)
+		if pendingErr != nil {
+			t.Fatal(pendingErr)
+		}
+		if pending {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("process did not reach a natural terminal state")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	readResp, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "bash",
+		Arguments: `{"action":"read_background","process_id":"` + started.ID + `","offset_bytes":0,"max_bytes":4096}`,
+	})
+	if err != nil {
+		t.Fatalf("read background: %v", err)
+	}
+	var read struct {
+		Output  string       `json:"output"`
+		Status  proc.Status  `json:"status"`
+		Process proc.Process `json:"process"`
+	}
+	if err := json.Unmarshal([]byte(readResp), &read); err != nil {
+		t.Fatalf("parse read background: %v\n%s", err, readResp)
+	}
+	if read.Status != proc.StatusStopped || read.Process.Status != proc.StatusStopped || !strings.Contains(read.Output, "done") {
+		t.Fatalf("terminal process result was not returned: %+v", read)
+	}
+	pending, err := manager.CompletionPending(started.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending {
+		t.Fatal("terminal result returned by bash should suppress a redundant model wakeup")
+	}
+	processes, err := manager.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored proc.Process
+	for _, candidate := range processes {
+		if candidate.ID == started.ID {
+			stored = candidate
+			break
+		}
+	}
+	if stored.ID == "" {
+		t.Fatalf("process %q not found", started.ID)
+	}
+	if stored.CompletionConsumedBy != "bash_result" {
+		t.Fatalf("completion consumer = %q, want bash_result", stored.CompletionConsumedBy)
 	}
 }
 

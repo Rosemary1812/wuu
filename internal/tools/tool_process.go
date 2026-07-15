@@ -66,3 +66,14 @@ func redactProcess(env *Env, p proc.Process) proc.Process {
 	p.LastError = env.RedactToolOutput(p.LastError)
 	return p
 }
+
+func markProcessCompletionObserved(m *proc.Manager, p proc.Process) proc.Process {
+	if m == nil || p.TerminalCause != proc.EventCauseNaturalExit ||
+		(p.Status != proc.StatusStopped && p.Status != proc.StatusFailed) {
+		return p
+	}
+	if updated, err := m.MarkCompletionDelivered(p.ID, "bash_result"); err == nil && updated != nil {
+		return *updated
+	}
+	return p
+}

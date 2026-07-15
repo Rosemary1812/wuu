@@ -404,7 +404,7 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 			if readErr != nil {
 				response.LastError = t.env.RedactToolOutput(readErr.Error())
 			} else {
-				process := snapshot.Process
+				process := markProcessCompletionObserved(m, snapshot.Process)
 				detectedPreviewURLs := proc.PreviewURLsFromText(snapshot.Output)
 				if len(detectedPreviewURLs) > 0 {
 					if updated, updateErr := m.UpdatePreview(p.ID, detectedPreviewURLs, detectedPreviewURLs[0]); updateErr == nil {
@@ -470,7 +470,7 @@ func (t *BashTool) executeReadBackground(ctx context.Context, args bashArgs) (st
 	if err != nil {
 		return "", err
 	}
-	process := snapshot.Process
+	process := markProcessCompletionObserved(m, snapshot.Process)
 	detectedPreviewURLs := proc.PreviewURLsFromText(snapshot.Output)
 	if len(detectedPreviewURLs) > 0 {
 		if updated, updateErr := m.UpdatePreview(args.ProcessID, detectedPreviewURLs, detectedPreviewURLs[0]); updateErr == nil {

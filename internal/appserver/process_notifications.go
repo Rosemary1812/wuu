@@ -3,8 +3,10 @@ package appserver
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strings"
 
+	"github.com/blueberrycongee/wuu/internal/agent"
 	"github.com/blueberrycongee/wuu/internal/agentcontrol"
 	wuucontext "github.com/blueberrycongee/wuu/internal/context"
 	"github.com/blueberrycongee/wuu/internal/process"
@@ -35,6 +37,13 @@ func (s *Server) forwardProcessNotifications(threadID string, control *agentcont
 		case event, ok := <-ch:
 			if !ok {
 				return
+			}
+			if manager != nil {
+				// The channel is only a low-latency hint. Pull every persisted
+				// obligation so a terminal event dropped behind a full channel is
+				// recovered when any retained event is consumed.
+				s.replayPendingProcessCompletions(threadID, control, manager)
+				continue
 			}
 			if event.Cause != process.EventCauseNaturalExit || !processEventBelongsToThread(threadID, control, event) {
 				continue
@@ -82,10 +91,166 @@ func processCompletionChatMessage(manager *process.Manager, event process.Event)
 	}
 	encoded, _ := json.Marshal(payload)
 	return providers.ChatMessage{
-		Role:    "user",
-		Name:    wuucontext.ProcessNotificationMessageName,
-		Content: "<process_notification>" + string(encoded) + "</process_notification>",
+		Role:     "user",
+		Name:     wuucontext.ProcessNotificationMessageName,
+		ClientID: processCompletionClientID([]string{event.Process.ID}),
+		Content:  "<process_notification>" + string(encoded) + "</process_notification>",
 	}
+}
+
+func (s *Server) replayPendingProcessCompletions(threadID string, control *agentcontrol.AgentControl, manager *process.Manager) {
+	if s == nil || manager == nil {
+		return
+	}
+	pending, err := manager.PendingCompletions()
+	if err != nil {
+		providers.DebugLogf("restore pending process completions for thread %q: %v", threadID, err)
+		return
+	}
+	for _, p := range pending {
+		event := process.Event{Type: process.EventStopped, Cause: process.EventCauseNaturalExit, Process: p}
+		if p.Status == process.StatusFailed {
+			event.Type = process.EventFailed
+		}
+		if processEventBelongsToThread(threadID, control, event) {
+			s.enqueueProcessCompletionTurn(threadID, p.ID, processCompletionChatMessage(manager, event))
+		}
+	}
+}
+
+func (s *Server) restorePendingProcessCompletionsOnThreadResume(threadID string) {
+	if s == nil || s.rt == nil || s.rt.ProcessManager == nil {
+		return
+	}
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return
+	}
+	pending, err := s.rt.ProcessManager.PendingCompletions()
+	if err != nil {
+		providers.DebugLogf("inspect pending process completions while resuming thread %q: %v", threadID, err)
+		return
+	}
+	needsRuntime := false
+	for _, p := range pending {
+		if (p.OwnerKind == process.OwnerMainAgent && strings.TrimSpace(p.OwnerID) == threadID) || p.OwnerKind == process.OwnerSubagent {
+			needsRuntime = true
+			break
+		}
+	}
+	if !needsRuntime {
+		return
+	}
+	th := s.thread(threadID)
+	if th == nil || !canResumeAgentCompletionThread(th) {
+		return
+	}
+	if _, err := s.ensureThreadRuntime(th); err != nil {
+		providers.DebugLogf("restore pending process completions for resumed thread %q: %v", threadID, err)
+	}
+}
+
+const (
+	processCompletionClientIDPrefix       = "wuu-process-completion:"
+	processCompletionAnswerClientIDPrefix = "wuu-process-completion-answer:"
+)
+
+func processCompletionClientID(processIDs []string) string {
+	ids := uniqueSortedCompletionIDs(processIDs)
+	if len(ids) == 0 {
+		return ""
+	}
+	return processCompletionClientIDPrefix + strings.Join(ids, ",")
+}
+
+func processCompletionIDs(clientID string) []string {
+	clientID = strings.TrimSpace(clientID)
+	if !strings.HasPrefix(clientID, processCompletionClientIDPrefix) {
+		return nil
+	}
+	return splitAgentCompletionResultIDs(strings.TrimPrefix(clientID, processCompletionClientIDPrefix))
+}
+
+func processCompletionAnswerIDs(clientID string) []string {
+	clientID = strings.TrimSpace(clientID)
+	if !strings.HasPrefix(clientID, processCompletionAnswerClientIDPrefix) {
+		return nil
+	}
+	return splitAgentCompletionResultIDs(strings.TrimPrefix(clientID, processCompletionAnswerClientIDPrefix))
+}
+
+func uniqueSortedCompletionIDs(ids []string) []string {
+	clean := make([]string, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		clean = append(clean, id)
+	}
+	sort.Strings(clean)
+	return clean
+}
+
+func markProcessCompletionAnswer(res *agent.LoopResult, processIDs []string) bool {
+	if res == nil || len(res.NewMessages) == 0 {
+		return false
+	}
+	ids := uniqueSortedCompletionIDs(processIDs)
+	if len(ids) == 0 {
+		return false
+	}
+	wanted := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		wanted[id] = true
+	}
+	markerIndex := -1
+	for i, msg := range res.NewMessages {
+		for _, id := range processCompletionIDs(msg.ClientID) {
+			if wanted[id] {
+				markerIndex = i
+				break
+			}
+		}
+	}
+	for i := len(res.NewMessages) - 1; i > markerIndex; i-- {
+		msg := &res.NewMessages[i]
+		if !strings.EqualFold(strings.TrimSpace(msg.Role), "assistant") || strings.TrimSpace(msg.Content) == "" {
+			continue
+		}
+		msg.ClientID = processCompletionAnswerClientIDPrefix + strings.Join(ids, ",")
+		return true
+	}
+	return false
+}
+
+func processCompletionMarkerAnswered(history []providers.ChatMessage, processID string) bool {
+	processID = strings.TrimSpace(processID)
+	if processID == "" {
+		return false
+	}
+	markerIndex := -1
+	for i, msg := range history {
+		for _, id := range processCompletionIDs(msg.ClientID) {
+			if id == processID {
+				markerIndex = i
+				break
+			}
+		}
+	}
+	if markerIndex < 0 {
+		return false
+	}
+	for _, msg := range history[markerIndex+1:] {
+		for _, id := range processCompletionAnswerIDs(msg.ClientID) {
+			if id == processID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Server) enqueueProcessCompletionTurn(threadID, processID string, msg providers.ChatMessage) {
@@ -108,14 +273,14 @@ func (s *Server) enqueueProcessCompletionTurn(threadID, processID string, msg pr
 		return
 	}
 	for _, pending := range s.pendingAgentCompletionTurns[threadID] {
-		if pending.snapshot == nil && pending.resultID == "" && pending.agentID == processID {
+		if pending.processID == processID {
 			s.agentCompletionMu.Unlock()
 			return
 		}
 	}
 	s.pendingAgentCompletionTurns[threadID] = append(s.pendingAgentCompletionTurns[threadID], agentCompletionTurn{
-		agentID: processID,
-		msg:     msg,
+		processID: processID,
+		msg:       msg,
 	})
 	s.agentCompletionMu.Unlock()
 

@@ -77,6 +77,7 @@ type Process struct {
 	LastError             string     `json:"last_error,omitempty"`
 	TerminalCause         EventCause `json:"terminal_cause,omitempty"`
 	CompletionDeliveredAt time.Time  `json:"completion_delivered_at,omitempty"`
+	CompletionConsumedBy  string     `json:"completion_consumed_by,omitempty"`
 }
 
 type StartOptions struct {
@@ -940,7 +941,7 @@ func (m *Manager) CompletionPending(id string) (bool, error) {
 		p.CompletionDeliveredAt.IsZero(), nil
 }
 
-func (m *Manager) MarkCompletionDelivered(id string) (*Process, error) {
+func (m *Manager) MarkCompletionDelivered(id, consumer string) (*Process, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	p, err := m.load(id)
@@ -952,6 +953,7 @@ func (m *Manager) MarkCompletionDelivered(id string) (*Process, error) {
 	}
 	if p.CompletionDeliveredAt.IsZero() {
 		p.CompletionDeliveredAt = time.Now().UTC()
+		p.CompletionConsumedBy = strings.TrimSpace(consumer)
 		p.UpdatedAt = p.CompletionDeliveredAt
 		if err := m.save(p); err != nil {
 			return p, err

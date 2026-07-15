@@ -44,10 +44,11 @@ type queuedTurn struct {
 }
 
 type agentCompletionTurn struct {
-	agentID  string
-	resultID string
-	msg      providers.ChatMessage
-	snapshot *subagent.SubAgentSnapshot
+	agentID   string
+	resultID  string
+	processID string
+	msg       providers.ChatMessage
+	snapshot  *subagent.SubAgentSnapshot
 }
 
 type startedThreadTurn struct {
@@ -106,6 +107,7 @@ type turnRuntimeSnapshot struct {
 	// appended after it and order those concurrent posts after the model result.
 	HistoryBaselineSeq       int
 	AgentCompletionResultIDs []string
+	ProcessCompletionIDs     []string
 	// Ultra is the turn's effective Ultra value. User turns snapshot the
 	// session setting at admission; synthetic completion turns reuse the
 	// completing worker's inherited value instead of re-reading a session
@@ -721,14 +723,17 @@ func (s *Server) ensureThreadRuntime(th *threadState) (*runtime.ThreadRuntime, e
 		th.execRuntime = threadRuntime
 		th.runtimeSubscription = sub
 		th.mu.Unlock()
-		threadRuntime.AgentControl.StartWorkerTerminalRecovery()
-		// New only restores durable queue metadata. Start restored workers after
-		// this runtime has won installation, resident configuration is complete,
-		// and subscribeThreadRuntime has attached the model resolver and reliable
-		// terminal finalizer. A zero-latency worker can now safely resolve and
-		// finalize against the installed thread runtime.
-		threadRuntime.AgentControl.StartQueuedWork()
-		s.replayPendingAgentCompletions(th.ID, threadRuntime)
+		if threadRuntime.AgentControl != nil {
+			threadRuntime.AgentControl.StartWorkerTerminalRecovery()
+			// New only restores durable queue metadata. Start restored workers after
+			// this runtime has won installation, resident configuration is complete,
+			// and subscribeThreadRuntime has attached the model resolver and reliable
+			// terminal finalizer. A zero-latency worker can now safely resolve and
+			// finalize against the installed thread runtime.
+			threadRuntime.AgentControl.StartQueuedWork()
+			s.replayPendingAgentCompletions(th.ID, threadRuntime)
+		}
+		s.replayPendingProcessCompletions(th.ID, threadRuntime.AgentControl, threadRuntime.ProcessManager)
 		return threadRuntime, nil
 	}
 	existing = th.execRuntime
@@ -1724,6 +1729,10 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	if err == nil && len(turnRuntime.AgentCompletionResultIDs) > 0 {
 		completionAnswerReady = markAgentCompletionAnswer(&res, turnRuntime.AgentCompletionResultIDs)
 	}
+	processCompletionAnswerReady := false
+	if err == nil && len(turnRuntime.ProcessCompletionIDs) > 0 {
+		processCompletionAnswerReady = markProcessCompletionAnswer(&res, turnRuntime.ProcessCompletionIDs)
+	}
 	th.mu.Lock()
 	var historyErr error
 	var persistErr error
@@ -1872,6 +1881,20 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 			}
 		}
 	}
+	processCompletionClaimFailed := len(turnRuntime.ProcessCompletionIDs) > 0
+	if err == nil && processCompletionAnswerReady && persistErr == nil && threadRuntime != nil && threadRuntime.ProcessManager != nil {
+		processCompletionClaimFailed = false
+		for _, processID := range turnRuntime.ProcessCompletionIDs {
+			processID = strings.TrimSpace(processID)
+			if processID == "" {
+				continue
+			}
+			if _, markErr := threadRuntime.ProcessManager.MarkCompletionDelivered(processID, "auto_completion"); markErr != nil {
+				processCompletionClaimFailed = true
+				providers.DebugLogf("persist completed process delivery %q for thread %q: %v", processID, th.ID, markErr)
+			}
+		}
+	}
 	residentTurn := strings.TrimSpace(residentParticipantID) != ""
 	if residentTurn {
 		// Receipts, task-attempt settlement, and fallback delivery are part of
@@ -1929,6 +1952,11 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	if completionClaimFailed {
 		s.scheduleThreadExecutionLeaseRetry(func() {
 			s.replayPendingAgentCompletions(th.ID, threadRuntime)
+		})
+	}
+	if processCompletionClaimFailed {
+		s.scheduleThreadExecutionLeaseRetry(func() {
+			s.replayPendingProcessCompletions(th.ID, threadRuntime.AgentControl, threadRuntime.ProcessManager)
 		})
 	}
 	if err != nil {
@@ -2557,6 +2585,7 @@ func (s *Server) startThreadUserTurnWithAdmission(ctx context.Context, th *threa
 	turnRuntime.CompactOnly = snapshot.CompactOnly
 	turnRuntime.HistoryBaselineSeq = th.historyHeadSeq
 	turnRuntime.AgentCompletionResultIDs = append([]string(nil), snapshot.AgentCompletionResultIDs...)
+	turnRuntime.ProcessCompletionIDs = append([]string(nil), snapshot.ProcessCompletionIDs...)
 	// Completion results folded from a lifted tree freeze are answered by
 	// this user turn (foldFrozenWorkerTree staged them under the same lock
 	// discipline as the snapshot fields).
@@ -2805,6 +2834,13 @@ func (s *Server) drainAgentCompletionTurns(threadID string) {
 		s.clearAgentCompletionDrain(threadID)
 		return
 	}
+	// User-authored work wins over automatic completion wakeups. The user turn
+	// will kick this drain again after it reaches a terminal state.
+	if s.hasQueuedUserWork(threadID) {
+		s.clearAgentCompletionDrain(threadID)
+		s.kickQueuedTurnDrain(threadID)
+		return
+	}
 	// A frozen tree holds its pending completion turns: the next user turn
 	// consumes them as part of the whole-tree snapshot instead of synthetic
 	// turns waking a frozen orchestration (turn/interrupt tree freeze).
@@ -2962,9 +2998,13 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 	var threadRuntime *runtime.ThreadRuntime
 	pending = cloneAgentCompletionTurns(pending)
 	completionResultIDs := make([]string, 0, len(pending))
+	processCompletionIDs := make([]string, 0, len(pending))
 	for _, turn := range pending {
 		if resultID := strings.TrimSpace(turn.resultID); resultID != "" {
 			completionResultIDs = append(completionResultIDs, resultID)
+		}
+		if processID := strings.TrimSpace(turn.processID); processID != "" {
+			processCompletionIDs = append(processCompletionIDs, processID)
 		}
 	}
 
@@ -2983,7 +3023,7 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 		ctx,
 		th,
 		userMsg,
-		turnRuntimeSnapshot{AgentCompletionResultIDs: completionResultIDs, Ultra: completionUltra},
+		turnRuntimeSnapshot{AgentCompletionResultIDs: completionResultIDs, ProcessCompletionIDs: processCompletionIDs, Ultra: completionUltra},
 		false,
 		turnReadOnlySkip,
 		turnAdmissionHooks{
@@ -3012,8 +3052,30 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 						return errAgentCompletionAlreadyDelivered
 					}
 				}
+				for _, processID := range processCompletionIDs {
+					if threadRuntime.ProcessManager == nil {
+						return errors.Join(errRetryableTurnAdmission, errors.New("process completion manager is unavailable"))
+					}
+					pending, err := threadRuntime.ProcessManager.CompletionPending(processID)
+					if err != nil {
+						return errors.Join(errRetryableTurnAdmission, err)
+					}
+					if !pending {
+						return errAgentCompletionAlreadyDelivered
+					}
+					if processCompletionMarkerAnswered(admitted.History, processID) {
+						if _, err := threadRuntime.ProcessManager.MarkCompletionDelivered(processID, "history_answer"); err != nil {
+							return errors.Join(errRetryableTurnAdmission, err)
+						}
+						return errAgentCompletionAlreadyDelivered
+					}
+				}
 				*admittedMsg = combineAgentCompletionMessages(pending)
-				admittedMsg.ClientID = agentCompletionClientID(pending)
+				if clientID := agentCompletionClientID(pending); clientID != "" {
+					admittedMsg.ClientID = clientID
+				} else if clientID := processCompletionClientID(processCompletionIDs); clientID != "" {
+					admittedMsg.ClientID = clientID
+				}
 				return nil
 			},
 			beforeUserAppendLocked: func(locked *threadState) (func() error, error) {
@@ -3562,10 +3624,11 @@ func cloneAgentCompletionTurns(turns []agentCompletionTurn) []agentCompletionTur
 	out := make([]agentCompletionTurn, 0, len(turns))
 	for i, turn := range turns {
 		out = append(out, agentCompletionTurn{
-			agentID:  turn.agentID,
-			resultID: turn.resultID,
-			msg:      msgs[i],
-			snapshot: cloneSubAgentSnapshot(turn.snapshot),
+			agentID:   turn.agentID,
+			resultID:  turn.resultID,
+			processID: turn.processID,
+			msg:       msgs[i],
+			snapshot:  cloneSubAgentSnapshot(turn.snapshot),
 		})
 	}
 	return out

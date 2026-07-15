@@ -268,6 +268,7 @@ func (s *Server) writeThreadResumeResult(req Request, thread Thread) error {
 		return err
 	}
 	if s.thread(thread.ID) != nil {
+		s.restorePendingProcessCompletionsOnThreadResume(thread.ID)
 		s.kickGoalContinuation(thread.ID)
 	}
 	s.pruneResidentThreads(thread.ID)
