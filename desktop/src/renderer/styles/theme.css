@@ -183,7 +183,7 @@
   --composer-menu-note-warning-strong: #e2a04a;
   --composer-context-meter-focus-outline: rgba(160, 168, 175, 0.55);
   --composer-context-meter-tooltip-divider: rgba(228, 232, 235, 0.1);
-  --chat-user-message-bg: #2a2e33;
+  --chat-user-message-bg: #26282b;
 
   /* environment.css */
   /* Plan + dialog text: aligned with the shared ink ladder so the search and

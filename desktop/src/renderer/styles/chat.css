@@ -1,7 +1,7 @@
 :root {
   /* Component color tokens for chat.css.
      Light-theme values; the dark theme overrides these in base.css theme blocks. */
-  --chat-user-message-bg: #e8e8e4;
+  --chat-user-message-bg: #F3F3F4;
 }
 
 /*
@@ -553,7 +553,7 @@ button.chat-thread-summary:hover {
 .chat-row--user .chat-bubble-toolbar {
   right: 6px;
   /* No backdrop-filter on user bubbles: the toolbar's 4px overlap into the
-     bubble lands on the solid `--chat-user-message-bg` (#e8e8e4 light /
+     bubble lands on the solid `--chat-user-message-bg` (#F3F3F4 light /
      #2a2e33 dark) and the blur against that solid colour reads as a
      "frosted edge" against the toolbar's own box-shadow. Drop the blur
      here for a clean float over the user bubble. The same toolbar still
