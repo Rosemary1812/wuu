@@ -63,6 +63,7 @@ export type ArchivedSessionView = {
 };
 import { normalizedVariantForProviderModel, providerModelReasoningMode, providerModelVariantOptions, variantLabel } from "./RuntimeHelpers";
 import { CliInstallSection } from "./CliInstallSection";
+import { ENABLE_REMOTE_CONTROL } from "./FeatureFlags";
 import { MemoryPanel } from "./MemoryPanel";
 import { MessageFlowFontSizeControl } from "./MessageFlowFontSizeSection";
 import { SettingsRemotePage } from "./SettingsRemotePage";
@@ -80,6 +81,11 @@ export type SettingsPage =
 type CopyState = "idle" | "copying" | "copied";
 
 const COPY_RESET_MS = 1500;
+
+function availableSettingsPage(page: SettingsPage | undefined): SettingsPage {
+  const next = page ?? "providers";
+  return next === "remote" && !ENABLE_REMOTE_CONTROL ? "providers" : next;
+}
 
 export function SettingsView({
   initialized,
@@ -185,7 +191,9 @@ export function SettingsView({
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [desktopBuild, setDesktopBuild] = useState<DesktopBuildInfo | undefined>();
-  const [activePage, setActivePage] = useState<SettingsPage>(initialPage ?? "providers");
+  const [activePage, setActivePage] = useState<SettingsPage>(() =>
+    availableSettingsPage(initialPage),
+  );
   const [mcpServers, setMCPServers] = useState<MCPServerStatus[]>([]);
   const [mcpLoading, setMCPLoading] = useState(false);
   const [mcpError, setMCPError] = useState("");
@@ -203,7 +211,7 @@ export function SettingsView({
   const settingsScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setActivePage(initialPage ?? "providers");
+    setActivePage(availableSettingsPage(initialPage));
   }, [initialPage]);
 
   useLayoutEffect(() => {
@@ -613,9 +621,11 @@ export function SettingsView({
             <SettingsNavItem icon={<BarChart3 className="icon-lg" />} active={activePage === "usage"} onClick={() => setActivePage("usage")}>
               用量
             </SettingsNavItem>
-            <SettingsNavItem icon={<Smartphone className="icon-lg" />} active={activePage === "remote"} onClick={() => setActivePage("remote")}>
-              远程
-            </SettingsNavItem>
+            {ENABLE_REMOTE_CONTROL ? (
+              <SettingsNavItem icon={<Smartphone className="icon-lg" />} active={activePage === "remote"} onClick={() => setActivePage("remote")}>
+                远程
+              </SettingsNavItem>
+            ) : null}
             <SettingsNavItem icon={<Archive className="icon-lg" />} active={activePage === "archive"} onClick={() => setActivePage("archive")}>
               归档
             </SettingsNavItem>
@@ -785,7 +795,7 @@ export function SettingsView({
                 participants={participants ?? []}
                 focusParticipantID={memoryFocusParticipantID}
               />
-            ) : activePage === "remote" ? (
+            ) : activePage === "remote" && ENABLE_REMOTE_CONTROL ? (
               <SettingsRemotePageContainer />
             ) : activePage === "archive" ? (
               <SettingsArchivePage

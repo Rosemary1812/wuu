@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "node scripts/dev.cjs",
     "dev:collaboration": "VITE_ENABLE_COLLABORATION=true npm run dev",
+    "dev:remote": "VITE_ENABLE_REMOTE_CONTROL=true npm run dev",
     "dev:direct": "WUU_ENABLE_CUA_MAC=1 node scripts/build-cua-mac.cjs && WUU_ENABLE_CUA_MAC=1 electron-vite dev",
     "build:cua-mac": "node scripts/build-cua-mac.cjs",
     "build:core": "node scripts/build-core.cjs",

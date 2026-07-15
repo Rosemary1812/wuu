@@ -161,6 +161,22 @@ function renderSettings(props: {
 }
 
 describe("SettingsView shell", () => {
+  it("hides remote control by default and redirects a remote initial page", () => {
+    installBuildInfoStub({
+      core: undefined,
+      desktop: { version: "0.0.0-test", date: "1970-01-01T00:00:00Z" },
+    });
+    renderSettings({ initialized: baseInitialized(), initialPage: "remote" });
+
+    const remoteButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".settings-nav-item"),
+    ).find((button) => button.textContent?.trim() === "远程");
+
+    expect(remoteButton).toBeUndefined();
+    expect(container.querySelector('[data-testid="settings-remote-page"]')).toBeNull();
+    expect(container.querySelector(".settings-page-title")?.textContent).toBe("模型服务");
+  });
+
   it("renders the brand placeholder at the top of the settings sidebar", () => {
     installBuildInfoStub({
       core: undefined,
