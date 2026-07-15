@@ -260,8 +260,12 @@ func TestPostParticipantMessagePublishesOncePerAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
-	defer close(client.release)
+	t.Cleanup(func() {
+		c.BeginShutdown()
+		c.StopAll()
+		c.YieldWorkerTerminalFinalizations()
+		c.Close()
+	})
 
 	events := make(chan ParticipantMessage, 1)
 	c.SubscribeParticipantMessages(events)

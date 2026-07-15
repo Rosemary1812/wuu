@@ -161,7 +161,7 @@ func TestResidentDMHonorsModelPinOnConfiguredProvider(t *testing.T) {
 	})
 	out := &lockedBuffer{}
 	srv := New(rt, out)
-	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	t.Cleanup(srv.Close)
 	participantID := saveNamedParticipant(t, rt, "andy", "reviewer", "alt-provider:pinned-model")
 	threadID := startDMThreadForPinTest(t, srv, out, participantID)
 
@@ -190,7 +190,7 @@ func TestResidentDMBareModelPinOverridesCurrentProviderModel(t *testing.T) {
 	rt := buildParticipantPinRuntime(t, providers.AdaptStreamClient(currentClient), "fake-provider", nil)
 	out := &lockedBuffer{}
 	srv := New(rt, out)
-	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	t.Cleanup(srv.Close)
 	participantID := saveNamedParticipant(t, rt, "andy", "reviewer", "bare-pinned-model")
 	threadID := startDMThreadForPinTest(t, srv, out, participantID)
 
@@ -212,7 +212,7 @@ func TestResidentDMModelPinRejectsUnconfiguredProvider(t *testing.T) {
 	rt := buildParticipantPinRuntime(t, providers.AdaptStreamClient(currentClient), "fake-provider", nil)
 	out := &lockedBuffer{}
 	srv := New(rt, out)
-	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	t.Cleanup(srv.Close)
 	participantID := saveNamedParticipant(t, rt, "andy", "reviewer", "missing-provider:some-model")
 	threadID := startDMThreadForPinTest(t, srv, out, participantID)
 
@@ -277,7 +277,7 @@ func TestResidentDMModelPinAppliesPinnedModelContextBudget(t *testing.T) {
 	})
 	out := &lockedBuffer{}
 	srv := New(rt, out)
-	t.Cleanup(func() { waitForResidentQuiesce(t, srv) })
+	t.Cleanup(srv.Close)
 
 	// Precondition: the global runner has no window, so any non-zero window on
 	// the thread runner can only come from the pinned model's resolved budget.

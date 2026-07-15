@@ -136,6 +136,7 @@ type Manager struct {
 type processHandle struct {
 	mu    sync.Mutex
 	stdin io.WriteCloser
+	done  chan struct{}
 }
 
 func NewManager(rootDir string, runtimeDirs ...string) (*Manager, error) {
@@ -296,12 +297,19 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 	p.Status = StatusRunning
 	p.UpdatedAt = time.Now()
 	_ = m.save(p)
-	m.handles[id] = &processHandle{stdin: stdin}
+	handle := &processHandle{stdin: stdin, done: make(chan struct{})}
+	m.handles[id] = handle
 	m.publish(Event{Type: EventStarted, Process: *p})
 	if opt.TTY {
-		go m.waitPTY(id, cmd, logf, ptyFile)
+		go func() {
+			defer close(handle.done)
+			m.waitPTY(id, cmd, logf, ptyFile)
+		}()
 	} else {
-		go m.wait(id, cmd, logf)
+		go func() {
+			defer close(handle.done)
+			m.wait(id, cmd, logf)
+		}()
 	}
 	return p, nil
 }
@@ -621,8 +629,10 @@ func (m *Manager) Stop(id string) (*Process, error) {
 		m.mu.Unlock()
 		return nil, err
 	}
+	handle := m.handles[id]
 	if p.Status == StatusStopped || p.Status == StatusFailed {
 		m.mu.Unlock()
+		waitForProcessMonitor(handle)
 		return p, nil
 	}
 	running, err := processMatchesRecord(p)
@@ -648,6 +658,7 @@ func (m *Manager) Stop(id string) (*Process, error) {
 		}
 		m.mu.Unlock()
 		m.publish(Event{Type: EventStopped, Cause: EventCauseRequestedStop, Process: *p})
+		waitForProcessMonitor(handle)
 		return p, nil
 	}
 	p.Status = StatusStopping
@@ -662,6 +673,9 @@ func (m *Manager) Stop(id string) (*Process, error) {
 	}
 	cur, stopped, err := m.waitForStop(id, time.Now().Add(2*time.Second))
 	if err != nil || stopped {
+		if stopped {
+			waitForProcessMonitor(handle)
+		}
 		return cur, err
 	}
 
@@ -670,7 +684,11 @@ func (m *Manager) Stop(id string) (*Process, error) {
 		return cur, err
 	}
 	if !running {
-		return m.reconcileStopped(id)
+		cur, err := m.reconcileStopped(id)
+		if err == nil {
+			waitForProcessMonitor(handle)
+		}
+		return cur, err
 	}
 	if err := syscall.Kill(-cur.PGID, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return cur, fmt.Errorf("kill process group %d: %w", cur.PGID, err)
@@ -682,7 +700,15 @@ func (m *Manager) Stop(id string) (*Process, error) {
 	if !stopped {
 		return cur, fmt.Errorf("process group %d did not stop after SIGKILL", cur.PGID)
 	}
+	waitForProcessMonitor(handle)
 	return cur, nil
+}
+
+func waitForProcessMonitor(handle *processHandle) {
+	if handle == nil || handle.done == nil {
+		return
+	}
+	<-handle.done
 }
 
 func (m *Manager) waitForStop(id string, deadline time.Time) (*Process, bool, error) {
