@@ -39,6 +39,15 @@ func IsEmptyAnswer(err error) bool {
 	return errors.As(err, &target)
 }
 
+// ToolSurfaceFreezer is implemented by tool executors whose provider-facing
+// definitions can change asynchronously (e.g. MCP catalog updates). RunToolLoop
+// freezes the surface for the duration of one run so req.Tools stays
+// byte-stable across rounds; deferred changes land after the run.
+type ToolSurfaceFreezer interface {
+	FreezeToolSurface()
+	UnfreezeToolSurface()
+}
+
 // RunToolLoop drives the shared multi-step tool-use loop both Runner
 // and StreamRunner depend on. It is transport-agnostic: callers
 // supply a Step that knows how to perform one model round-trip
@@ -92,7 +101,33 @@ func RunToolLoop(
 	// Transient context is request-only across runs, but append-only inside
 	// a run so provider continuation deltas can match prior request prefixes.
 	messages = filterTransientModelContextHistory(messages)
+	// providerMessages is the provider-facing transcript: live history plus
+	// the request-only context messages already sent in this run. Each round
+	// extends it append-only — before tool-result pruning and before
+	// per-request transforms, which are both request-scoped — so every
+	// request's messages extend the prior request's exact byte prefix and
+	// prompt caches stay warm. It re-bases only when history is rewritten.
+	providerMessages := providers.CloneChatMessages(messages)
 	startLen := len(messages)
+
+	// retainedContext tracks the transcript's request-only messages (position
+	// + content) for cross-run prompt-cache continuity. It seeds from the
+	// previous run's state below and is handed to the next run via
+	// LoopResult.RetainedRequestContext.
+	var retainedContext []RetainedContextMessage
+	defer func() {
+		loopResult.RetainedRequestContext = buildRetainedRequestContextState(retainedContext, messages)
+	}()
+
+	// Pin the provider-facing tool surface for the duration of the run so
+	// asynchronous catalog changes (e.g. MCP server events) cannot reshape
+	// req.Tools between rounds and invalidate the prompt-cache prefix
+	// mid-run. Model-initiated surface growth (deferred tool loads) is not
+	// affected.
+	if freezer, ok := cfg.Tools.(ToolSurfaceFreezer); ok && freezer != nil {
+		freezer.FreezeToolSurface()
+		defer freezer.UnfreezeToolSurface()
+	}
 
 	currentMaxTokens := cfg.DefaultMaxTokens // 0 = provider default
 
@@ -117,6 +152,13 @@ func RunToolLoop(
 		// run. It is consumed by the next provider request and never enters
 		// live or durable history.
 		postToolContextSegments []ContextSegment
+		// sentRequestContext gates request-only context re-emission: it maps
+		// each context message key to the content already retained in
+		// providerMessages. Producers re-emit their full snapshot every
+		// round; unchanged blocks are dropped at the gate so the transcript
+		// carries one copy per distinct snapshot instead of one copy per
+		// round. Retention itself lives in providerMessages.
+		sentRequestContext map[string]string
 		// Previous request's stable-prefix fingerprint for cache-break telemetry.
 		// Used to detect and log when model, tools, or system prompt changes
 		// between rounds, which would break cache reuse.
@@ -133,7 +175,35 @@ func RunToolLoop(
 		// the first provider request.
 		usage.RecordPendingMessages(messages)
 	}
+	// Cross-run continuity: splice the previous run's retained request-only
+	// context back into the transcript when the durable history still matches
+	// its fingerprint, so this run's first request byte-extends the previous
+	// run's last request. The sent-gate seeds from the same messages so an
+	// unchanged snapshot is not re-emitted this run. Stale state (history
+	// rewritten, forked, or edited since) fails the fingerprint and is
+	// silently dropped — one cache miss, never a correctness issue.
+	if state := cfg.RetainedRequestContext; state.validFor(messages) {
+		providerMessages = spliceRetainedContext(messages, state.Messages)
+		retainedContext = append(retainedContext, state.Messages...)
+		for _, retained := range state.Messages {
+			sentRequestContext = recordSentRequestContext(sentRequestContext, []providers.ChatMessage{retained.Message})
+		}
+	}
 	threshold := proactiveCompactThreshold(cfg)
+	// resetTranscript re-bases the live history and the provider transcript
+	// after a history rewrite (compaction, tool-call repair, post-tool
+	// rewrite). Every rewrite site must keep these fields in lockstep or the
+	// provider transcript silently diverges from live history; route new
+	// rewrite paths through here.
+	resetTranscript := func(rewritten []providers.ChatMessage) {
+		messages = rewritten
+		providerMessages = providers.CloneChatMessages(rewritten)
+		sentRequestContext = nil
+		retainedContext = nil
+		historyRewritten = true
+		usage.Reset()
+		usage.RecordPendingMessages(messages)
+	}
 	// runCompactPass executes one compact attempt. Non-forced passes are
 	// gated on the proactive fill-rate threshold and suppress further
 	// proactive attempts on failure/no-op; forced passes (user-requested
@@ -168,10 +238,7 @@ func RunToolLoop(
 			if compactOperationID := lineage.LastOperationID(); compactOperationID != "" && compactOperationID != lastAgentOperationID {
 				nextOperationParentID = compactOperationID
 			}
-			messages = compacted
-			historyRewritten = true
-			usage.Reset()
-			usage.RecordPendingMessages(messages)
+			resetTranscript(compacted)
 			emitCompactAttempt(cfg, CompactAttemptInfo{
 				Reason:         reason,
 				Status:         CompactAttemptSucceeded,
@@ -203,6 +270,7 @@ func RunToolLoop(
 	tryProactiveCompact := func() { runCompactPass(CompactReasonProactive, false) }
 	appendMessage := func(msg providers.ChatMessage) {
 		messages = append(messages, msg)
+		providerMessages = append(providerMessages, providers.CloneChatMessage(msg))
 		if cfg.OnMessage != nil && !msg.Hidden {
 			cfg.OnMessage(msg)
 		}
@@ -239,31 +307,46 @@ func RunToolLoop(
 				CacheReadTokens:     totalCacheRead,
 			}, nerr
 		} else if changed {
-			messages = repaired
-			historyRewritten = true
-			usage.Reset()
-			usage.RecordPendingMessages(messages)
+			resetTranscript(repaired)
 		}
 		if toolSurfaceSupports(cfg.Tools, compact.InceptionToolName) {
 			anchor := compact.BuildContextAnchorMessage(compact.NextContextAnchorID(messages))
 			appendMessage(anchor)
 			usage.RecordPendingMessages([]providers.ChatMessage{anchor})
 		}
-		requestSegments := requestContextSegments(cfg.BeforeRequestContext)
-		if len(postToolContextSegments) > 0 {
-			requestSegments = append(requestSegments, postToolContextSegments...)
-			postToolContextSegments = nil
+		// Emit-on-change: producers re-emit their full context snapshot every
+		// round; only blocks whose content the transcript does not already
+		// retain are appended. A changed block appends its new snapshot while
+		// the prior copy stays put inside the stable prefix.
+		newContextSegments := filterUnsentRequestContext(requestContextSegments(cfg.BeforeRequestContext), sentRequestContext)
+		// Post-tool context is one-shot new information and bypasses the
+		// emit-on-change gate. It stays re-queueable until the request that
+		// carries it succeeds so an overflow-compact retry does not drop it.
+		consumedPostToolSegments := postToolContextSegments
+		postToolContextSegments = nil
+		requestSegments := append(newContextSegments, consumedPostToolSegments...)
+		assembly := assembleModelRequest(providerMessages, requestSegments)
+		// Retain this round's request-only context in the transcript before
+		// pruning and transforms run, so retention is never contaminated by
+		// request-scoped rewrites.
+		providerMessages = assembly.Messages
+		for _, segment := range newContextSegments {
+			sentRequestContext = recordSentRequestContext(sentRequestContext, segment.Messages)
 		}
-		// Non-destructive tool-result prune: replace old tool results
-		// with compact placeholders in the request only. The live
-		// history retains full content for durability and future
-		// retrieval.
-		messagesForRequest := messages
-		if cfg.ToolPrune {
-			messagesForRequest = compact.PruneToolResults(messages)
+		for _, msg := range assembly.RequestOnlyMessages {
+			retainedContext = append(retainedContext, RetainedContextMessage{
+				AfterDurable: len(messages),
+				Message:      providers.CloneChatMessage(msg),
+			})
 		}
-		assembly := assembleModelRequest(messagesForRequest, requestSegments)
+		// Non-destructive tool-result prune: swap old tool results for
+		// compact placeholders in the request projection only. The transcript
+		// and live history keep full content, so pruning always summarizes
+		// originals — placeholders are never fed back into a later pass.
 		requestMessages := assembly.Messages
+		if cfg.ToolPrune {
+			requestMessages = compact.PruneToolResults(requestMessages)
+		}
 		operation := providers.NewInferenceOperation(
 			cfg.InferenceOperationKind,
 			cfg.InferenceWorkloadProfile,
@@ -290,6 +373,10 @@ func RunToolLoop(
 			req.ForceToolName = cfg.ForceToolFirstStep
 		}
 		if cfg.BeforeRequest != nil {
+			// Per-request transform: hand it an isolated deep copy so
+			// in-place edits stay request-scoped. Nothing a transform does
+			// reaches providerMessages or live history.
+			req.Messages = providers.CloneChatMessages(req.Messages)
 			forceBefore := strings.TrimSpace(req.ForceToolName)
 			forceAvailableBefore := requestHasTool(req.Tools, forceBefore)
 			if err := cfg.BeforeRequest(ctx, &req); err != nil {
@@ -302,6 +389,8 @@ func RunToolLoop(
 		cacheHint := buildCacheHint(req.Messages)
 		applyPromptCacheKeyOverride(&cacheHint, cfg.PromptCacheKey)
 		req.CacheHint = cacheHint
+		// Telemetry mirrors the exact outbound request (post-prune,
+		// post-transform); the retained transcript was already fixed above.
 		assembly.Messages = req.Messages
 
 		// Cache-break telemetry: detect changes in stable-prefix components
@@ -345,10 +434,11 @@ func RunToolLoop(
 						if compactOperationID := lineage.LastOperationID(); compactOperationID != "" && compactOperationID != req.Operation.ID {
 							nextOperationParentID = compactOperationID
 						}
-						messages = compacted
-						historyRewritten = true
-						usage.Reset()
-						usage.RecordPendingMessages(messages)
+						resetTranscript(compacted)
+						// The failed request consumed this round's post-tool
+						// context; re-queue it so the retried request still
+						// carries tool-produced notices.
+						postToolContextSegments = consumedPostToolSegments
 						emitCompactAttempt(cfg, CompactAttemptInfo{
 							Reason:         CompactReasonOverflow,
 							Status:         CompactAttemptSucceeded,
@@ -404,9 +494,11 @@ func RunToolLoop(
 			if cfg.OnTokenUsage != nil {
 				cfg.OnTokenUsage(*result.Usage)
 			}
-			// Fold the precise per-call usage into the tracker, excluding
-			// request-only context that will not persist into future history.
-			usage.RecordResponseExcludingMessages(result.Usage, assembly.RequestOnlyMessages)
+			// Fold the precise per-call usage into the tracker. Request-only
+			// context is retained and re-sent for the rest of the run, so it
+			// occupies the context window like any other message and must
+			// count toward the compaction estimate.
+			usage.RecordResponse(result.Usage)
 		}
 		if err := providers.ValidateAssistantToolCalls(result.ToolCalls); err != nil {
 			return LoopResult{
@@ -566,10 +658,7 @@ func RunToolLoop(
 						attempt.SummaryBytes = stats.SummaryBytes
 					}
 				}
-				messages = rewritten
-				historyRewritten = true
-				usage.Reset()
-				usage.RecordPendingMessages(messages)
+				resetTranscript(rewritten)
 				emitCompactAttempt(cfg, attempt)
 				if cfg.OnCompact != nil {
 					cfg.OnCompact(CompactInfo{

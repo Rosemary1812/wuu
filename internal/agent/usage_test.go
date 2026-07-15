@@ -76,28 +76,6 @@ func TestUsageTracker_ResponseResetsPendingDelta(t *testing.T) {
 	}
 }
 
-func TestUsageTracker_ResponseExcludesRequestOnlyMessages(t *testing.T) {
-	tr := NewUsageTracker()
-	requestOnly := []providers.ChatMessage{{
-		Role:    "user",
-		Content: strings.Repeat("z", 400),
-		Hidden:  true,
-	}}
-
-	tr.RecordResponseExcludingMessages(&providers.TokenUsage{
-		InputTokens:  1000,
-		OutputTokens: 50,
-	}, requestOnly)
-
-	want := 1050 - estimateMessages(requestOnly)
-	if got := tr.LastResponseTotal(); got != want {
-		t.Fatalf("expected request-only messages excluded from baseline: got %d, want %d", got, want)
-	}
-	if got := tr.PendingDelta(); got != 0 {
-		t.Fatalf("expected pending delta reset after response, got %d", got)
-	}
-}
-
 func TestUsageTracker_ToolCallEnvelopeCounted(t *testing.T) {
 	tr := NewUsageTracker()
 	withTool := providers.ChatMessage{

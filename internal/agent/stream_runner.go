@@ -149,6 +149,13 @@ type StreamRunner struct {
 	conversationUsage *UsageTracker
 	trackedHistoryLen int
 
+	// retainedContextMu guards the cross-turn request-context state used for
+	// prompt-cache prefix continuity. The state is fingerprinted against the
+	// durable history, so handing back stale state after an external history
+	// rewrite is safe — the loop drops it on mismatch.
+	retainedContextMu      sync.Mutex
+	retainedRequestContext *RetainedRequestContextState
+
 	compactMu                sync.Mutex
 	proactiveCompactFailures int
 
@@ -387,9 +394,11 @@ func (r *StreamRunner) RunWithCallback(ctx context.Context, history []providers.
 		ProviderOptions:             provideroptions.Clone(r.ProviderOptions),
 		NativeDeferredToolDiscovery: r.NativeDeferredToolDiscovery,
 		PromptCacheKey:              r.PromptCacheKey,
+		RetainedRequestContext:      r.takeRetainedRequestContext(),
 	}
 
 	res, err := RunToolLoop(ctx, history, cfg, step)
+	r.storeRetainedRequestContext(res.RetainedRequestContext)
 	res.ContextTokens = runUsage.EstimateCurrent()
 	if len(recoveredToolMessages) > 0 && !res.HistoryRewritten {
 		res.NewMessages = append(append([]providers.ChatMessage(nil), recoveredToolMessages...), res.NewMessages...)
@@ -555,6 +564,25 @@ func (r *StreamRunner) prepareUsageTracker(history []providers.ChatMessage) (*Us
 	return tracker, trackedLen
 }
 
+// takeRetainedRequestContext hands the stored cross-turn request-context
+// state to the next run and clears it, so a crashed or aborted run cannot
+// replay stale state twice.
+func (r *StreamRunner) takeRetainedRequestContext() *RetainedRequestContextState {
+	r.retainedContextMu.Lock()
+	defer r.retainedContextMu.Unlock()
+	state := r.retainedRequestContext
+	r.retainedRequestContext = nil
+	return state
+}
+
+// storeRetainedRequestContext publishes a run's retained request-context
+// state for the conversation's next run.
+func (r *StreamRunner) storeRetainedRequestContext(state *RetainedRequestContextState) {
+	r.retainedContextMu.Lock()
+	defer r.retainedContextMu.Unlock()
+	r.retainedRequestContext = state
+}
+
 // commitUsageTracker publishes a run-local usage snapshot as the new
 // shared baseline for future turns.
 func (r *StreamRunner) commitUsageTracker(tracker *UsageTracker, historyLen int) {
@@ -583,6 +611,10 @@ func (r *StreamRunner) commitUsageTracker(tracker *UsageTracker, historyLen int)
 // history makes EstimateCurrent reflect the compacted size immediately rather
 // than dropping to zero.
 func (r *StreamRunner) ResetConversationUsage(history []providers.ChatMessage) {
+	// An out-of-loop history rewrite also invalidates the retained
+	// request-context positions; the fingerprint would catch it, but
+	// clearing eagerly keeps the state's lifetime easy to reason about.
+	r.storeRetainedRequestContext(nil)
 	r.usageMu.Lock()
 	defer r.usageMu.Unlock()
 	if r.conversationUsage == nil {

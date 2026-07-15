@@ -156,12 +156,19 @@ func normalizeRequestOnlyMessages(messages []providers.ChatMessage) []providers.
 	return out
 }
 
-func requestOnlyMessagesFromBlocks(blocks []wuucontext.Block) []providers.ChatMessage {
+// requestOnlyBlockProjection pairs a typed context block with its provider
+// request message so callers can filter blocks and messages in lockstep.
+type requestOnlyBlockProjection struct {
+	block   wuucontext.Block
+	message providers.ChatMessage
+}
+
+func projectRequestOnlyBlocks(blocks []wuucontext.Block) []requestOnlyBlockProjection {
 	if len(blocks) == 0 {
 		return nil
 	}
 	counts := make(map[string]int, len(blocks))
-	messages := make([]providers.ChatMessage, 0, len(blocks))
+	projections := make([]requestOnlyBlockProjection, 0, len(blocks))
 	for _, block := range blocks {
 		rendered := wuucontext.CompileBlocks([]wuucontext.Block{block})
 		if strings.TrimSpace(rendered) == "" {
@@ -173,14 +180,99 @@ func requestOnlyMessagesFromBlocks(blocks []wuucontext.Block) []providers.ChatMe
 		if ordinal > 0 {
 			name = wuucontext.SystemReminderBlockMessageName(block, ordinal)
 		}
-		messages = append(messages, providers.ChatMessage{
-			Role:    "user",
-			Name:    name,
-			Content: "<system-reminder>\n" + rendered + "\n</system-reminder>",
-			Hidden:  true,
+		projections = append(projections, requestOnlyBlockProjection{
+			block: block,
+			message: providers.ChatMessage{
+				Role:    "user",
+				Name:    name,
+				Content: "<system-reminder>\n" + rendered + "\n</system-reminder>",
+				Hidden:  true,
+			},
 		})
 	}
+	return projections
+}
+
+func requestOnlyMessagesFromBlocks(blocks []wuucontext.Block) []providers.ChatMessage {
+	projections := projectRequestOnlyBlocks(blocks)
+	if len(projections) == 0 {
+		return nil
+	}
+	messages := make([]providers.ChatMessage, 0, len(projections))
+	for _, projection := range projections {
+		messages = append(messages, projection.message)
+	}
 	return messages
+}
+
+// requestContextMessageKey identifies a request-only context message for
+// emit-on-change gating. Named messages (system-reminder block projections)
+// key by name so a changed snapshot supersedes its prior copy; unnamed
+// messages key by content so identical injections collapse to one copy.
+func requestContextMessageKey(msg providers.ChatMessage) string {
+	if name := strings.TrimSpace(msg.Name); name != "" {
+		return "name:" + name
+	}
+	return "content:" + msg.Content
+}
+
+// filterUnsentRequestContext drops request-only context messages whose exact
+// content the provider transcript already retains. Changed blocks pass
+// through: the new snapshot appends after history while the prior copy stays
+// inside the stable prefix, keeping requests append-only.
+func filterUnsentRequestContext(segments []ContextSegment, sent map[string]string) []ContextSegment {
+	if len(segments) == 0 {
+		return nil
+	}
+	out := make([]ContextSegment, 0, len(segments))
+	for _, segment := range segments {
+		if len(segment.Blocks) > 0 {
+			projections := projectRequestOnlyBlocks(segment.Blocks)
+			blocks := make([]wuucontext.Block, 0, len(projections))
+			messages := make([]providers.ChatMessage, 0, len(projections))
+			for _, projection := range projections {
+				if sent[requestContextMessageKey(projection.message)] == projection.message.Content {
+					continue
+				}
+				blocks = append(blocks, projection.block)
+				messages = append(messages, projection.message)
+			}
+			if len(messages) == 0 {
+				continue
+			}
+			segment.Blocks = blocks
+			segment.Messages = messages
+			out = append(out, segment)
+			continue
+		}
+		messages := make([]providers.ChatMessage, 0, len(segment.Messages))
+		for _, msg := range normalizeRequestOnlyMessages(segment.Messages) {
+			if sent[requestContextMessageKey(msg)] == msg.Content {
+				continue
+			}
+			messages = append(messages, msg)
+		}
+		if len(messages) == 0 {
+			continue
+		}
+		segment.Messages = messages
+		out = append(out, segment)
+	}
+	return out
+}
+
+// recordSentRequestContext marks msgs as retained in the provider transcript.
+func recordSentRequestContext(sent map[string]string, msgs []providers.ChatMessage) map[string]string {
+	if len(msgs) == 0 {
+		return sent
+	}
+	if sent == nil {
+		sent = make(map[string]string, len(msgs))
+	}
+	for _, msg := range msgs {
+		sent[requestContextMessageKey(msg)] = msg.Content
+	}
+	return sent
 }
 
 func isRequestOnlyAfterHistorySegment(segment ContextSegment) bool {

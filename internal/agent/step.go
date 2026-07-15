@@ -260,6 +260,13 @@ type LoopConfig struct {
 	// the live history retains full content. This delays the need for
 	// expensive LLM-summarized compaction.
 	ToolPrune bool
+	// RetainedRequestContext, when set, is the previous run's retained
+	// request-only context (LoopResult.RetainedRequestContext). If it still
+	// matches the incoming durable history it is spliced back into the
+	// provider transcript so this run's first request byte-extends the
+	// previous run's last request for prompt-cache continuity. Invalid or
+	// stale state is ignored.
+	RetainedRequestContext *RetainedRequestContextState
 	// BeforeStep, when set, is called at the start of each model
 	// round. Any returned messages are appended to the live history
 	// before the next provider request is built. This is used by
@@ -365,6 +372,12 @@ type LoopResult struct {
 	// should replace stored history instead of append-only extending
 	// it when this is true.
 	HistoryRewritten bool
+	// RetainedRequestContext is the request-only context retained in this
+	// run's provider transcript, fingerprinted against the durable history
+	// the run ended with. Long-lived callers hand it back via
+	// LoopConfig.RetainedRequestContext on the next run of the same
+	// conversation for cross-run prompt-cache continuity.
+	RetainedRequestContext *RetainedRequestContextState
 	// InputTokens / OutputTokens are the cumulative usage across
 	// every round in this run, including compact requests. Zero when
 	// the provider doesn't report usage.

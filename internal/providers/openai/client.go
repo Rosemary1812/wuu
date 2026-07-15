@@ -900,10 +900,10 @@ func marshalChatCompletionsRequest(payload chatCompletionsRequest) ([]byte, erro
 		ReasoningEffort: payload.ReasoningEffort,
 		Reasoning:       payload.Reasoning,
 	}
-	if strings.TrimSpace(payload.AltCacheKey) == "" && len(payload.Options) == 0 {
-		return json.Marshal(base)
-	}
-
+	// Always serialize through the sorted-key map form. Splitting between
+	// struct-order (no options) and map-order (options present) bodies would
+	// flip the key order of the entire request whenever options appear or
+	// disappear, and automatic prefix caching matches raw bytes.
 	raw, err := json.Marshal(base)
 	if err != nil {
 		return nil, err
