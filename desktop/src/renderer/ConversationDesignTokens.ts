@@ -158,7 +158,7 @@ export const CONVERSATION_DESIGN_TOKENS = [
     max: 96,
     step: 4,
     unit: "px",
-    defaultValue: 48,
+    defaultValue: 36,
   },
   {
     key: "flow-padding",

@@ -3302,8 +3302,8 @@ html.resizing-workspace-file-split * {
 
 .split-composer textarea {
   width: 100%;
-  height: 48px;
-  min-height: 48px;
+  height: 56px;
+  min-height: 56px;
   max-height: 130px;
   resize: none;
   border: 0;

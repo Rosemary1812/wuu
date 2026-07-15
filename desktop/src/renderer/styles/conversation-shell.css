@@ -53,7 +53,7 @@
   --conversation-message-font-weight: 445;
   /* Outer message-flow rhythm. Structural containers must consume these
      landmarks instead of adding their own anonymous gaps on top. */
-  --conversation-flow-top-gap: 48px;
+  --conversation-flow-top-gap: 36px;
   --conversation-turn-boundary-gap: 32px;
   --conversation-turn-item-gap: 8px;
   --conversation-composer-clearance: 12px;
@@ -141,10 +141,10 @@
   --dock-composer-height: 0px;
   /*
    * Min-height for both composer shells (main dock + thread footer).
-   * A 48px textarea plus the compact 40px toolbar lands on this shared
-   * 88px baseline without either shell reserving hidden vertical space.
+   * A 56px textarea plus the compact 40px toolbar lands on this shared
+   * 96px baseline without either shell reserving hidden vertical space.
    */
-  --conversation-composer-min-height: 88px;
+  --conversation-composer-min-height: 96px;
   grid-column: 2;
   grid-row: 1;
   display: grid;
