@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   closestCenter,
   DndContext,
@@ -433,16 +434,27 @@ export function WorkspaceRightPanel({
               })}
             </div>
           </SortableContext>
-          <DragOverlay dropAnimation={{ duration: 150, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
-            {draggingTab ? (
-              <WorkspaceViewTabPreview
-                tab={draggingTab}
-                active={draggingTab.id === activeTabID}
-                dirty={dirtyFileTabIDs.has(draggingTab.id)}
-                width={draggingTabWidth}
-              />
-            ) : null}
-          </DragOverlay>
+          {/* Portaled to <body>: the overlay is position:fixed and dnd-kit
+            * places it in viewport coordinates, but .workspace-right-panel
+            * has transform/will-change/contain — any of which makes it the
+            * containing block for fixed descendants, so an in-panel overlay
+            * renders offset by the panel's own position ("drifts" the moment
+            * the drag starts). The session strip doesn't need this because
+            * no ancestor of it is transformed. React portals keep context,
+            * so DndContext still drives the overlay. */}
+          {createPortal(
+            <DragOverlay dropAnimation={{ duration: 150, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }}>
+              {draggingTab ? (
+                <WorkspaceViewTabPreview
+                  tab={draggingTab}
+                  active={draggingTab.id === activeTabID}
+                  dirty={dirtyFileTabIDs.has(draggingTab.id)}
+                  width={draggingTabWidth}
+                />
+              ) : null}
+            </DragOverlay>,
+            document.body,
+          )}
         </DndContext>
         <span className="workspace-panel-tabbar-spacer" />
         <button
