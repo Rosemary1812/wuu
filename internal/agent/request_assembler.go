@@ -261,6 +261,51 @@ func filterUnsentRequestContext(segments []ContextSegment, sent map[string]strin
 	return out
 }
 
+// requestContextContentByKey projects context segments to the request-only
+// messages they would emit and returns a key→content map. Used to reconcile a
+// previous run's retained context against the current run's fresh context.
+func requestContextContentByKey(segments []ContextSegment) map[string]string {
+	out := make(map[string]string)
+	for _, segment := range segments {
+		if !isRequestOnlyAfterHistorySegment(segment) {
+			continue
+		}
+		var messages []providers.ChatMessage
+		if len(segment.Blocks) > 0 {
+			for _, projection := range projectRequestOnlyBlocks(segment.Blocks) {
+				messages = append(messages, projection.message)
+			}
+		} else {
+			messages = normalizeRequestOnlyMessages(segment.Messages)
+		}
+		for _, msg := range messages {
+			out[requestContextMessageKey(msg)] = msg.Content
+		}
+	}
+	return out
+}
+
+// affirmedRetainedContext returns the subset of a previous run's retained
+// request-only context that the current run re-emits byte-identically. Only
+// these are safe to splice back for cross-run prompt-cache continuity:
+// retained context the new run changed or dropped (e.g. a toggled tool
+// policy, an edited goal, a refreshed snapshot) is excluded so stale per-turn
+// state never lingers into a later turn. The changed/fresh version, if any,
+// still flows through the normal emit-on-change gate.
+func affirmedRetainedContext(retained []RetainedContextMessage, currentSegments []ContextSegment) []RetainedContextMessage {
+	if len(retained) == 0 {
+		return nil
+	}
+	current := requestContextContentByKey(currentSegments)
+	out := make([]RetainedContextMessage, 0, len(retained))
+	for _, entry := range retained {
+		if content, ok := current[requestContextMessageKey(entry.Message)]; ok && content == entry.Message.Content {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
 // recordSentRequestContext marks msgs as retained in the provider transcript.
 func recordSentRequestContext(sent map[string]string, msgs []providers.ChatMessage) map[string]string {
 	if len(msgs) == 0 {

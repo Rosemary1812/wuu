@@ -122,7 +122,9 @@ func toolRoundSteps(callIDs ...string) []StepResult {
 	return append(steps, StepResult{Content: "ok"})
 }
 
-func stableAndTurnEnvContext(turn int) func() []ContextSegment {
+// stableContext returns request-only context whose content never changes, so
+// it is affirmed and retained across every turn boundary.
+func stableContext() func() []ContextSegment {
 	return func() []ContextSegment {
 		return RequestOnlyContextBlocks([]wuucontext.Block{
 			{
@@ -135,48 +137,46 @@ func stableAndTurnEnvContext(turn int) func() []ContextSegment {
 				Kind:    wuucontext.BlockEnvironment,
 				Title:   "Runtime environment",
 				Source:  "runtime.snapshot",
-				Content: fmt.Sprintf("# Environment\n- State: turn %d", turn),
+				Content: "# Environment\n- State: steady",
 			},
 		})
 	}
 }
 
-// Scenario 1: steady multi-turn session — stable block plus a per-turn
-// environment snapshot, several tool rounds per turn. Every request in the
-// session must byte-extend its predecessor: zero divergences allowed,
-// including across every run boundary.
+// Scenario 1: steady multi-turn session whose request-only context is
+// unchanged across turns. Because the new turn re-affirms it byte-identically,
+// it is spliced back at its recorded position: every request in the session —
+// across every turn boundary — byte-extends its predecessor.
 func TestPrefixExperiment_SteadySessionNeverDiverges(t *testing.T) {
 	sim := &sessionSim{t: t}
 	turnCalls := [][]string{{"call_1", "call_2"}, {"call_3"}, {"call_4", "call_5"}, {"call_6"}}
 	for turn := 1; turn <= 4; turn++ {
-		ctx := stableAndTurnEnvContext(turn)
 		sim.runTurn(fmt.Sprintf("ask %d", turn), &fakeStep{results: toolRoundSteps(turnCalls[turn-1]...)}, func(cfg *LoopConfig) {
 			cfg.Tools = experimentTools()
-			cfg.BeforeRequestContext = ctx
+			cfg.BeforeRequestContext = stableContext()
 		})
 	}
 	if len(sim.requests) != 10 {
 		t.Fatalf("expected 10 provider requests, got %d", len(sim.requests))
 	}
 	if breaks := analyzePrefixChain(sim.requests); len(breaks) != 0 {
-		t.Fatalf("steady session must keep an unbroken prefix chain:\n%s", formatBreaks(sim.requests, breaks))
+		t.Fatalf("steady session with unchanged context must keep an unbroken prefix chain:\n%s", formatBreaks(sim.requests, breaks))
 	}
-	// Cross-checks: the stable block exists exactly once in the final
-	// request; each turn's snapshot exactly once.
+	// The unchanged blocks are retained, not re-emitted: exactly one copy
+	// survives across the whole session.
 	final := sim.requests[len(sim.requests)-1]
 	if got := countMessagesContaining(final, "[ACTIVE_FILES]"); got != 1 {
 		t.Fatalf("stable block duplicated: %d copies in final request", got)
 	}
-	for turn := 1; turn <= 4; turn++ {
-		if got := countMessagesContaining(final, fmt.Sprintf("State: turn %d", turn)); got != 1 {
-			t.Fatalf("turn %d snapshot should appear exactly once in final request, got %d", turn, got)
-		}
+	if got := countMessagesContaining(final, "State: steady"); got != 1 {
+		t.Fatalf("stable env snapshot should appear exactly once, got %d", got)
 	}
 }
 
-// Scenario 2: context snapshot changes on every round (not just per turn).
-// Changed snapshots append at the tail, so the chain must still never break.
-func TestPrefixExperiment_PerRoundChangingContextNeverDiverges(t *testing.T) {
+// Scenario 2: within one run, the context snapshot changes on every round.
+// Changed snapshots append at the tail while prior copies stay in the prefix,
+// so the intra-run chain never breaks.
+func TestPrefixExperiment_PerRoundChangingContextNeverDivergesWithinRun(t *testing.T) {
 	sim := &sessionSim{t: t}
 	contextCalls := 0
 	perRound := func() []ContextSegment {
@@ -188,32 +188,24 @@ func TestPrefixExperiment_PerRoundChangingContextNeverDiverges(t *testing.T) {
 			Content: fmt.Sprintf("# Environment\n- State: step %d", contextCalls),
 		}})
 	}
-	sim.runTurn("ask 1", &fakeStep{results: toolRoundSteps("call_1", "call_2")}, func(cfg *LoopConfig) {
-		cfg.Tools = experimentTools()
-		cfg.BeforeRequestContext = perRound
-	})
-	sim.runTurn("ask 2", &fakeStep{results: toolRoundSteps("call_3")}, func(cfg *LoopConfig) {
+	sim.runTurn("ask 1", &fakeStep{results: toolRoundSteps("call_1", "call_2", "call_3")}, func(cfg *LoopConfig) {
 		cfg.Tools = experimentTools()
 		cfg.BeforeRequestContext = perRound
 	})
 	if breaks := analyzePrefixChain(sim.requests); len(breaks) != 0 {
-		t.Fatalf("per-round changing context must append, not rewrite:\n%s", formatBreaks(sim.requests, breaks))
+		t.Fatalf("per-round changing context must append within a run, not rewrite:\n%s", formatBreaks(sim.requests, breaks))
 	}
 }
 
 // Scenario 3: post-tool hook context (one-shot request-only segments emitted
-// by tool execution) must ride the transcript append-only, within and across
-// runs.
-func TestPrefixExperiment_PostToolHookContextNeverDiverges(t *testing.T) {
+// by tool execution) rides the transcript append-only within a run.
+func TestPrefixExperiment_PostToolHookContextNeverDivergesWithinRun(t *testing.T) {
 	sim := &sessionSim{t: t}
-	sim.runTurn("ask 1", &fakeStep{results: toolRoundSteps("call_1", "call_2")}, func(cfg *LoopConfig) {
-		cfg.Tools = &contextLoopTools{defs: []providers.ToolDefinition{{Name: "read_file"}}}
-	})
-	sim.runTurn("ask 2", &fakeStep{results: toolRoundSteps("call_3")}, func(cfg *LoopConfig) {
+	sim.runTurn("ask 1", &fakeStep{results: toolRoundSteps("call_1", "call_2", "call_3")}, func(cfg *LoopConfig) {
 		cfg.Tools = &contextLoopTools{defs: []providers.ToolDefinition{{Name: "read_file"}}}
 	})
 	if breaks := analyzePrefixChain(sim.requests); len(breaks) != 0 {
-		t.Fatalf("post-tool hook context must stay append-only:\n%s", formatBreaks(sim.requests, breaks))
+		t.Fatalf("post-tool hook context must stay append-only within a run:\n%s", formatBreaks(sim.requests, breaks))
 	}
 	final := sim.requests[len(sim.requests)-1]
 	if got := countMessagesContaining(final, "context for call_1"); got != 1 {
@@ -271,15 +263,16 @@ func TestPrefixExperiment_OverflowCompactBreaksOnceThenResumes(t *testing.T) {
 	}
 	sim.runTurn("ask 1", step, func(cfg *LoopConfig) {
 		cfg.Tools = experimentTools()
-		cfg.BeforeRequestContext = stableAndTurnEnvContext(1)
+		cfg.BeforeRequestContext = stableContext()
 		cfg.Compact = func(_ context.Context, msgs []providers.ChatMessage) ([]providers.ChatMessage, error) {
 			return []providers.ChatMessage{userMsg("summary of everything so far")}, nil
 		}
 	})
-	// Follow-up turn after the rewrite: must extend the rewritten transcript.
+	// Follow-up turn after the rewrite, unchanged context: must extend the
+	// rewritten transcript with no new break.
 	sim.runTurn("ask 2", &fakeStep{results: toolRoundSteps("call_3")}, func(cfg *LoopConfig) {
 		cfg.Tools = experimentTools()
-		cfg.BeforeRequestContext = stableAndTurnEnvContext(2)
+		cfg.BeforeRequestContext = stableContext()
 	})
 	breaks := analyzePrefixChain(sim.requests)
 	if len(breaks) != 1 {
@@ -292,6 +285,53 @@ func TestPrefixExperiment_OverflowCompactBreaksOnceThenResumes(t *testing.T) {
 	retry := sim.requests[2]
 	if got := countMessagesContaining(retry, "[ACTIVE_FILES]"); got != 1 {
 		t.Fatalf("retry after compaction should re-inject the stable block once, got %d", got)
+	}
+}
+
+// Scenario 5b: when request-only context CHANGES across a turn boundary, the
+// stale copy must not be retained (freshness), and continuity legitimately
+// breaks at the changed block. The new turn carries the fresh content and not
+// the old.
+func TestPrefixExperiment_ChangedContextRefreshesAcrossTurns(t *testing.T) {
+	sim := &sessionSim{t: t}
+	makeCtx := func(state string) func() []ContextSegment {
+		return func() []ContextSegment {
+			return RequestOnlyContextBlocks([]wuucontext.Block{
+				{
+					Kind:    wuucontext.BlockActiveFiles,
+					Title:   "Active files",
+					Source:  "runtime.active_files",
+					Content: "files:\n- go.mod",
+				},
+				{
+					Kind:    wuucontext.BlockEnvironment,
+					Title:   "Runtime environment",
+					Source:  "runtime.snapshot",
+					Content: "# Environment\n- State: " + state,
+				},
+			})
+		}
+	}
+	sim.runTurn("ask 1", &fakeStep{results: toolRoundSteps("call_1")}, func(cfg *LoopConfig) {
+		cfg.Tools = experimentTools()
+		cfg.BeforeRequestContext = makeCtx("alpha")
+	})
+	sim.runTurn("ask 2", &fakeStep{results: toolRoundSteps("call_2")}, func(cfg *LoopConfig) {
+		cfg.Tools = experimentTools()
+		cfg.BeforeRequestContext = makeCtx("beta")
+	})
+	turn2 := sim.requests[len(sim.requests)-1]
+	// Fresh state present, stale state gone: no leakage of the prior turn's
+	// changed snapshot.
+	if got := countMessagesContaining(turn2, "State: alpha"); got != 0 {
+		t.Fatalf("stale changed context must not be retained across turns, found %d copies of 'alpha'", got)
+	}
+	if got := countMessagesContaining(turn2, "State: beta"); got != 1 {
+		t.Fatalf("fresh context must be present exactly once, got %d copies of 'beta'", got)
+	}
+	// The unchanged active-files block is still retained (single copy).
+	if got := countMessagesContaining(turn2, "[ACTIVE_FILES]"); got != 1 {
+		t.Fatalf("unchanged block should stay retained once, got %d", got)
 	}
 }
 
@@ -343,7 +383,7 @@ func TestPrefixExperiment_MidHistoryEditFallsBackSafely(t *testing.T) {
 	sim := &sessionSim{t: t}
 	sim.runTurn("ask 1", &fakeStep{results: toolRoundSteps("call_1")}, func(cfg *LoopConfig) {
 		cfg.Tools = experimentTools()
-		cfg.BeforeRequestContext = stableAndTurnEnvContext(1)
+		cfg.BeforeRequestContext = stableContext()
 	})
 	// Simulate an external edit: strip the assistant tool round out of the
 	// durable history (e.g. a user deleted a message from the transcript).
@@ -367,7 +407,7 @@ func TestPrefixExperiment_MidHistoryEditFallsBackSafely(t *testing.T) {
 
 	sim.runTurn("ask 2", &fakeStep{results: toolRoundSteps("call_2")}, func(cfg *LoopConfig) {
 		cfg.Tools = experimentTools()
-		cfg.BeforeRequestContext = stableAndTurnEnvContext(2)
+		cfg.BeforeRequestContext = stableContext()
 	})
 	// Turn 2's requests must carry each block exactly once (fresh emission,
 	// no splice, no duplicates) and chain among themselves.

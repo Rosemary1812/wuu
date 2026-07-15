@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -2130,4 +2131,115 @@ func TestStreamRunner_PauseTurnContinuesTheTurn(t *testing.T) {
 	if client.callCount != 2 {
 		t.Fatalf("attempts = %d, want the paused turn to be resent once", client.callCount)
 	}
+}
+
+// TestStreamRunner_ResetConversationUsagePreservesRetainedContext guards the
+// exact regression where the desktop turn-entry path
+// (ensureThreadRuntimeAfterAdmission) re-seeds usage on every turn via
+// ResetConversationUsage. That reseed must not discard the cross-turn
+// request-context state, or prompt-cache continuity breaks on every turn.
+func TestStreamRunner_ResetConversationUsagePreservesRetainedContext(t *testing.T) {
+	runner := &StreamRunner{Client: &mockStreamClient{}, Model: "m"}
+	state := &RetainedRequestContextState{
+		Messages: []RetainedContextMessage{{
+			AfterDurable: 1,
+			Message:      providers.ChatMessage{Role: "user", Name: "reminder", Content: "ctx", Hidden: true},
+		}},
+		DurableLen:  1,
+		DurableHash: "hash",
+	}
+	runner.storeRetainedRequestContext(state)
+
+	runner.ResetConversationUsage([]providers.ChatMessage{userMsg("reconstructed history")})
+
+	if got := runner.takeRetainedRequestContext(); got != state {
+		t.Fatalf("ResetConversationUsage must not clear retained request context: got %v", got)
+	}
+}
+
+// TestStreamRunner_CrossTurnContinuitySurvivesUsageReseed reproduces the real
+// desktop path end to end: run a turn that emits request-only context, apply
+// the per-turn ResetConversationUsage reseed the app-server performs at turn
+// entry, then run the next turn and assert its first provider request
+// byte-extends the previous turn's last request (prompt-cache continuity).
+func TestStreamRunner_CrossTurnContinuitySurvivesUsageReseed(t *testing.T) {
+	activeFiles := wuucontext.Block{
+		Kind:    wuucontext.BlockActiveFiles,
+		Title:   "Active files",
+		Source:  "runtime.active_files",
+		Content: "files:\n- go.mod",
+	}
+	client := &mockStreamClient{
+		attempts: []mockStreamAttempt{
+			{events: []providers.StreamEvent{
+				{Type: providers.EventToolUseStart, ToolCall: &providers.ToolCall{ID: "call-read", Name: "read_file"}},
+				{Type: providers.EventToolUseEnd, ToolCall: &providers.ToolCall{ID: "call-read", Name: "read_file", Arguments: `{"path":"README.md"}`}},
+				{Type: providers.EventDone},
+			}},
+			{events: []providers.StreamEvent{
+				{Type: providers.EventContentDelta, Content: "done turn 1"},
+				{Type: providers.EventDone},
+			}},
+			{events: []providers.StreamEvent{
+				{Type: providers.EventContentDelta, Content: "done turn 2"},
+				{Type: providers.EventDone},
+			}},
+		},
+	}
+	runner := &StreamRunner{
+		Client: client,
+		Model:  "m",
+		Tools: &fakeLoopTools{
+			defs:    []providers.ToolDefinition{{Name: "read_file"}},
+			results: map[string]string{"call-read": `{"content":"hi"}`},
+		},
+		BeforeRequestContext: func() []ContextSegment {
+			return RequestOnlyContextBlocks([]wuucontext.Block{activeFiles})
+		},
+	}
+
+	history1 := []providers.ChatMessage{userMsg("first ask")}
+	res1, err := runner.RunWithCallback(context.Background(), history1, nil)
+	if err != nil {
+		t.Fatalf("turn 1: %v", err)
+	}
+	boundary := len(client.requests)
+	if boundary < 2 {
+		t.Fatalf("turn 1 should have made at least two requests, got %d", boundary)
+	}
+	turn1Last := client.requests[boundary-1].Messages
+
+	// Rebuild next-turn history the way the app-server does: prior durable
+	// history + this turn's new durable messages + the new user prompt.
+	history2 := append(append(append([]providers.ChatMessage(nil), history1...), res1.NewMessages...), userMsg("second ask"))
+
+	// Simulate the per-turn app-server reseed that runs at turn entry.
+	runner.ResetConversationUsage(history2)
+
+	if _, err := runner.RunWithCallback(context.Background(), history2, nil); err != nil {
+		t.Fatalf("turn 2: %v", err)
+	}
+	if len(client.requests) <= boundary {
+		t.Fatalf("turn 2 produced no request")
+	}
+	turn2First := client.requests[boundary].Messages
+
+	if len(turn2First) < len(turn1Last) || !equalChatMessages(turn1Last, turn2First[:len(turn1Last)]) {
+		t.Fatalf("turn 2 first request must byte-extend turn 1 last request:\nturn1Last=%+v\nturn2First=%+v", turn1Last, turn2First)
+	}
+	if got := countMessagesContaining(turn2First, "[ACTIVE_FILES]"); got != 1 {
+		t.Fatalf("retained request-only context should appear exactly once across turns, got %d in %+v", got, turn2First)
+	}
+}
+
+func equalChatMessages(a, b []providers.ChatMessage) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !reflect.DeepEqual(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
 }

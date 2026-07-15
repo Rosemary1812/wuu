@@ -178,16 +178,15 @@ func RunToolLoop(
 	// Cross-run continuity: splice the previous run's retained request-only
 	// context back into the transcript when the durable history still matches
 	// its fingerprint, so this run's first request byte-extends the previous
-	// run's last request. The sent-gate seeds from the same messages so an
-	// unchanged snapshot is not re-emitted this run. Stale state (history
-	// rewritten, forked, or edited since) fails the fingerprint and is
-	// silently dropped — one cache miss, never a correctness issue.
+	// run's last request. Stale state (history rewritten, forked, or edited
+	// since) fails the fingerprint and is silently dropped — one cache miss,
+	// never a correctness issue. The actual splice is deferred to the first
+	// round (see pendingRetainedContext) so it can be reconciled against this
+	// run's fresh context: only blocks the new turn re-emits byte-identically
+	// are spliced back; changed or dropped ones must not linger.
+	var pendingRetainedContext []RetainedContextMessage
 	if state := cfg.RetainedRequestContext; state.validFor(messages) {
-		providerMessages = spliceRetainedContext(messages, state.Messages)
-		retainedContext = append(retainedContext, state.Messages...)
-		for _, retained := range state.Messages {
-			sentRequestContext = recordSentRequestContext(sentRequestContext, []providers.ChatMessage{retained.Message})
-		}
+		pendingRetainedContext = state.Messages
 	}
 	threshold := proactiveCompactThreshold(cfg)
 	// resetTranscript re-bases the live history and the provider transcript
@@ -200,6 +199,9 @@ func RunToolLoop(
 		providerMessages = providers.CloneChatMessages(rewritten)
 		sentRequestContext = nil
 		retainedContext = nil
+		// A rewrite invalidates the previous run's retained positions; drop
+		// any not-yet-spliced carryover so it cannot land on new history.
+		pendingRetainedContext = nil
 		historyRewritten = true
 		usage.Reset()
 		usage.RecordPendingMessages(messages)
@@ -314,11 +316,30 @@ func RunToolLoop(
 			appendMessage(anchor)
 			usage.RecordPendingMessages([]providers.ChatMessage{anchor})
 		}
+		currentSegments := requestContextSegments(cfg.BeforeRequestContext)
+		// Cross-run continuity: on the first round, splice back only the
+		// previous run's retained request-only context that this run re-emits
+		// byte-identically, at its recorded positions. Changed or dropped
+		// context is left out (its fresh copy, if any, flows through the gate
+		// below), so a new turn's request byte-extends the prior turn's last
+		// request wherever nothing changed, without leaking stale per-turn
+		// state.
+		if len(pendingRetainedContext) > 0 {
+			affirmed := affirmedRetainedContext(pendingRetainedContext, currentSegments)
+			if len(affirmed) > 0 {
+				providerMessages = spliceRetainedContext(messages, affirmed)
+				for _, entry := range affirmed {
+					retainedContext = append(retainedContext, entry)
+					sentRequestContext = recordSentRequestContext(sentRequestContext, []providers.ChatMessage{entry.Message})
+				}
+			}
+			pendingRetainedContext = nil
+		}
 		// Emit-on-change: producers re-emit their full context snapshot every
 		// round; only blocks whose content the transcript does not already
 		// retain are appended. A changed block appends its new snapshot while
 		// the prior copy stays put inside the stable prefix.
-		newContextSegments := filterUnsentRequestContext(requestContextSegments(cfg.BeforeRequestContext), sentRequestContext)
+		newContextSegments := filterUnsentRequestContext(currentSegments, sentRequestContext)
 		// Post-tool context is one-shot new information and bypasses the
 		// emit-on-change gate. It stays re-queueable until the request that
 		// carries it succeeds so an overflow-compact retry does not drop it.
