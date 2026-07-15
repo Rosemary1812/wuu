@@ -719,6 +719,30 @@ func (c *Client) readSSE(ctx context.Context, resp *http.Response, lease *provid
 		})
 		return
 	}
+	// Some OpenAI-compatible endpoints close the SSE body immediately after
+	// an explicit terminal finish_reason instead of sending a trailing
+	// data: [DONE] sentinel. The finish reason is sufficient proof that the
+	// logical response completed; a clean EOF without one remains incomplete.
+	if lastFinishReason != "" {
+		if sawThinking && !thinkingDone {
+			if !emit.Send(providers.StreamEvent{Type: providers.EventThinkingDone}) {
+				return
+			}
+		}
+		if !emitToolEnds() {
+			return
+		}
+		truncated := lastFinishReason == "length"
+		lease.SucceedWithUsage(lastUsage)
+		emit.Send(providers.StreamEvent{
+			Type:         providers.EventDone,
+			Usage:        lastUsage,
+			StopReason:   lastFinishReason,
+			FinishReason: providers.NormalizeFinishReason(lastFinishReason, truncated, sawToolCall),
+			Truncated:    truncated,
+		})
+		return
+	}
 	err := providers.NewIncompleteStreamError("stream closed before [DONE]")
 	failOpenAIResponseLease(lease, resp, err)
 	emit.Send(providers.StreamEvent{
