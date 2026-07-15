@@ -223,6 +223,12 @@ export function FloatingMenuPortal({
       className={`floating-menu-layer floating-menu-${resolvedPlacement}`}
       data-floating-menu-owner={owner}
       style={style}
+      // The host app has a window-level pointerdown listener that closes
+      // menus when a click is outside their trigger.  Portal content is
+      // physically under document.body, so keep its pointerdown inside the
+      // floating layer; otherwise the host can unmount the menu before the
+      // button receives its click event.
+      onPointerDown={(event) => event.stopPropagation()}
     >
       {children}
     </div>,

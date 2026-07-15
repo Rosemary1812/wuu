@@ -543,7 +543,7 @@ export function ProjectPickerMenu({
         {filteredProjects.map((project) => {
           const selected = activeContext?.kind === "project" && activeContext.project_id === project.id;
           return (
-            <button key={project.id} role="menuitem" onClick={() => onSelectProject(project.id)}>
+            <button key={project.id} type="button" role="menuitem" onClick={() => onSelectProject(project.id)}>
               <Folder className="icon-lg" />
               <span>{project.name}</span>
               {selected ? <Check className="icon-lg" /> : null}
@@ -552,15 +552,15 @@ export function ProjectPickerMenu({
         })}
       </div>
       <div className="project-picker-divider" />
-      <button role="menuitem" onClick={onOpenProject}>
+      <button type="button" role="menuitem" onClick={onOpenProject}>
         <FolderOpen className="icon-lg" />
         <span>使用现有文件夹</span>
       </button>
-      <button role="menuitem" onClick={onCreateProject}>
+      <button type="button" role="menuitem" onClick={onCreateProject}>
         <FolderPlus className="icon-lg" />
         <span>新建空白项目</span>
       </button>
-      <button role="menuitem" onClick={onSelectNoProject}>
+      <button type="button" role="menuitem" onClick={onSelectNoProject}>
         <FolderX className="icon-lg" />
         <span>不使用项目</span>
         {activeContext?.kind === "no_project" ? <Check className="icon-lg" /> : null}
