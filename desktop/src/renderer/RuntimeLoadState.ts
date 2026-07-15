@@ -7,6 +7,8 @@ import {
   activeProjectID,
   createDraftSessionTab,
   createThreadSessionTab,
+  isDMThread,
+  isGroupThread,
   isThreadRunning,
   reconcileResumedThreadTurns,
   requireThread,
@@ -14,10 +16,14 @@ import {
   upsertThread,
   type AppState,
 } from "./AppState";
+import { ENABLE_COLLABORATION } from "./FeatureFlags";
 
 export async function loadRuntime(
   projectState: ProjectListResult,
-  options: { resumeLatestThread?: boolean } = {},
+  options: {
+    resumeLatestThread?: boolean;
+    collaborationEnabled?: boolean;
+  } = {},
 ): Promise<Partial<AppState>> {
   if (!projectState.active_context) {
     return emptyRuntimeState(projectState);
@@ -26,6 +32,8 @@ export async function loadRuntime(
     return unavailableProjectRuntimeState(projectState);
   }
   const resumeLatestThread = options.resumeLatestThread ?? true;
+  const collaborationEnabled =
+    options.collaborationEnabled ?? ENABLE_COLLABORATION;
   const initialized = await window.wuu.initialize();
   const [listed, archived] = await Promise.all([
     window.wuu.listThreads(),
@@ -41,7 +49,12 @@ export async function loadRuntime(
   // resurrect one into the composer. Resume the most recent live thread:
   // unpinned first (pinning marks a thread as parked, not as the place to
   // land), falling back to a pinned one when nothing else exists.
-  const liveThreads = listedThreads.filter((candidate) => !candidate.archived);
+  const liveThreads = listedThreads.filter(
+    (candidate) =>
+      !candidate.archived &&
+      (collaborationEnabled ||
+        (!isDMThread(candidate) && !isGroupThread(candidate))),
+  );
   const defaultThread = resumeLatestThread
     ? (liveThreads.find((candidate) => !candidate.pinned) ?? liveThreads[0])
     : undefined;
