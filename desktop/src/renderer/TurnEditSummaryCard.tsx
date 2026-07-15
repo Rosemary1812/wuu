@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ThreadItem, Turn } from "../shared/protocol";
 import {
   extractToolDiffPreview,
+  ToolDiffPreview,
   type ToolDiffPreviewFileDiff,
 } from "./ToolDiffPreview";
 import type { TurnFileDiffSelection } from "./TurnFileDiffTypes";
@@ -350,7 +351,11 @@ export function TurnEditSummaryCard({
             </>
           );
           return (
-            <div key={edit.path}>
+            <ToolDiffPreview
+              diff={edit.diff}
+              item={edit.item}
+              key={edit.path}
+            >
               {canOpenFile ? (
                 <button
                   className="turn-edit-summary-row is-clickable"
@@ -380,7 +385,7 @@ export function TurnEditSummaryCard({
               ) : (
                 <div className="turn-edit-summary-row">{rowContent}</div>
               )}
-            </div>
+            </ToolDiffPreview>
           );
         })}
         {hiddenCount > 0 ? (

@@ -196,7 +196,7 @@ describe("TurnEditSummaryCard", () => {
     expect(container?.textContent).toContain("+3");
   });
 
-  it("keeps the output row stable instead of opening a hover diff", () => {
+  it("shows a hover diff preview for file rows with diff data", () => {
     vi.useFakeTimers();
     const turn: Turn = {
       id: "turn-1",
@@ -214,7 +214,7 @@ describe("TurnEditSummaryCard", () => {
       vi.advanceTimersByTime(300);
     });
 
-    expect(document.body.querySelector(".tool-diff-preview-card")).toBeFalsy();
+    expect(document.body.querySelector(".tool-diff-preview-card")).toBeTruthy();
   });
 
   it("opens the selected file diff when a file row is clicked", () => {
