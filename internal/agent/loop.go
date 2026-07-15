@@ -39,6 +39,15 @@ func IsEmptyAnswer(err error) bool {
 	return errors.As(err, &target)
 }
 
+// ToolSurfaceFreezer is implemented by tool executors whose provider-facing
+// definitions can change asynchronously (e.g. MCP catalog updates). RunToolLoop
+// freezes the surface for the duration of one run so req.Tools stays
+// byte-stable across rounds; deferred changes land after the run.
+type ToolSurfaceFreezer interface {
+	FreezeToolSurface()
+	UnfreezeToolSurface()
+}
+
 // RunToolLoop drives the shared multi-step tool-use loop both Runner
 // and StreamRunner depend on. It is transport-agnostic: callers
 // supply a Step that knows how to perform one model round-trip
@@ -101,6 +110,25 @@ func RunToolLoop(
 	providerMessages := providers.CloneChatMessages(messages)
 	startLen := len(messages)
 
+	// retainedContext tracks the transcript's request-only messages (position
+	// + content) for cross-run prompt-cache continuity. It seeds from the
+	// previous run's state below and is handed to the next run via
+	// LoopResult.RetainedRequestContext.
+	var retainedContext []RetainedContextMessage
+	defer func() {
+		loopResult.RetainedRequestContext = buildRetainedRequestContextState(retainedContext, messages)
+	}()
+
+	// Pin the provider-facing tool surface for the duration of the run so
+	// asynchronous catalog changes (e.g. MCP server events) cannot reshape
+	// req.Tools between rounds and invalidate the prompt-cache prefix
+	// mid-run. Model-initiated surface growth (deferred tool loads) is not
+	// affected.
+	if freezer, ok := cfg.Tools.(ToolSurfaceFreezer); ok && freezer != nil {
+		freezer.FreezeToolSurface()
+		defer freezer.UnfreezeToolSurface()
+	}
+
 	currentMaxTokens := cfg.DefaultMaxTokens // 0 = provider default
 
 	var (
@@ -147,6 +175,20 @@ func RunToolLoop(
 		// the first provider request.
 		usage.RecordPendingMessages(messages)
 	}
+	// Cross-run continuity: splice the previous run's retained request-only
+	// context back into the transcript when the durable history still matches
+	// its fingerprint, so this run's first request byte-extends the previous
+	// run's last request. The sent-gate seeds from the same messages so an
+	// unchanged snapshot is not re-emitted this run. Stale state (history
+	// rewritten, forked, or edited since) fails the fingerprint and is
+	// silently dropped — one cache miss, never a correctness issue.
+	if state := cfg.RetainedRequestContext; state.validFor(messages) {
+		providerMessages = spliceRetainedContext(messages, state.Messages)
+		retainedContext = append(retainedContext, state.Messages...)
+		for _, retained := range state.Messages {
+			sentRequestContext = recordSentRequestContext(sentRequestContext, []providers.ChatMessage{retained.Message})
+		}
+	}
 	threshold := proactiveCompactThreshold(cfg)
 	// resetTranscript re-bases the live history and the provider transcript
 	// after a history rewrite (compaction, tool-call repair, post-tool
@@ -157,6 +199,7 @@ func RunToolLoop(
 		messages = rewritten
 		providerMessages = providers.CloneChatMessages(rewritten)
 		sentRequestContext = nil
+		retainedContext = nil
 		historyRewritten = true
 		usage.Reset()
 		usage.RecordPendingMessages(messages)
@@ -289,6 +332,12 @@ func RunToolLoop(
 		providerMessages = assembly.Messages
 		for _, segment := range newContextSegments {
 			sentRequestContext = recordSentRequestContext(sentRequestContext, segment.Messages)
+		}
+		for _, msg := range assembly.RequestOnlyMessages {
+			retainedContext = append(retainedContext, RetainedContextMessage{
+				AfterDurable: len(messages),
+				Message:      providers.CloneChatMessage(msg),
+			})
 		}
 		// Non-destructive tool-result prune: swap old tool results for
 		// compact placeholders in the request projection only. The transcript

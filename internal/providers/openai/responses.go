@@ -219,10 +219,9 @@ func (c *Client) buildResponsesRequest(req providers.ChatRequest, stream bool) (
 }
 
 func marshalResponsesRequest(payload responsesRequest) ([]byte, error) {
-	if len(payload.Options) == 0 {
-		return json.Marshal(payload)
-	}
-
+	// Always serialize through the sorted-key map form so the body's key
+	// order cannot flip between requests when options appear or disappear —
+	// automatic prefix caching matches raw bytes.
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err

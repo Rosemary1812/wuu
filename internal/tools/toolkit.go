@@ -67,8 +67,13 @@ type Toolkit struct {
 	mcpCatalogMu         sync.RWMutex
 	mcpCatalogGeneration uint64
 	mcpTools             []*mcp.MCPTool
-	activityRegistry     *activity.Registry
-	mcpActivityBindings  map[string]MCPActivityBinding
+	// surfaceFreezeDepth pins the MCP catalog snapshot while model runs are
+	// in flight (see FreezeToolSurface) so asynchronous server events cannot
+	// reshape the provider tool list between rounds of one run. Guarded by
+	// mcpCatalogMu.
+	surfaceFreezeDepth  int
+	activityRegistry    *activity.Registry
+	mcpActivityBindings map[string]MCPActivityBinding
 
 	// activeProfileMu guards activeProfile and activeSurface. Reads
 	// from Definitions() and Execute() take the RLock; SetActiveProfile
@@ -588,6 +593,35 @@ func (t *Toolkit) Definitions() []providers.ToolDefinition {
 // tool after any required progressive loading. Deferred tools return true here
 // even before tool_search loads their schema; Execute still enforces the
 // loaded-before-use rule.
+// FreezeToolSurface pins the MCP catalog snapshot so Definitions() keeps
+// returning the same provider tool list while a model run is in flight —
+// asynchronous server events (list_changed, connect, disconnect) would
+// otherwise reshape req.Tools between rounds and invalidate the prompt-cache
+// prefix for the whole request. Freezes nest; the deferred catalog change is
+// applied by the first Definitions() call after the last Unfreeze. Only
+// externally-driven changes are pinned — model-initiated deferred tool loads
+// still surface immediately.
+func (t *Toolkit) FreezeToolSurface() {
+	if t == nil {
+		return
+	}
+	t.mcpCatalogMu.Lock()
+	t.surfaceFreezeDepth++
+	t.mcpCatalogMu.Unlock()
+}
+
+// UnfreezeToolSurface releases one FreezeToolSurface pin.
+func (t *Toolkit) UnfreezeToolSurface() {
+	if t == nil {
+		return
+	}
+	t.mcpCatalogMu.Lock()
+	if t.surfaceFreezeDepth > 0 {
+		t.surfaceFreezeDepth--
+	}
+	t.mcpCatalogMu.Unlock()
+}
+
 func (t *Toolkit) SupportsTool(name string) bool {
 	name = strings.TrimSpace(name)
 	if t == nil || name == "" || t.isToolDisabled(name) {
@@ -1194,8 +1228,13 @@ func (t *Toolkit) refreshMCPToolSnapshot(force bool) {
 	generation := manager.Generation()
 	t.mcpCatalogMu.RLock()
 	current := t.mcpCatalogGeneration
+	frozen := t.surfaceFreezeDepth > 0
 	t.mcpCatalogMu.RUnlock()
-	if !force && current == generation {
+	// While the surface is frozen (a model run is in flight), asynchronous
+	// catalog generations are deliberately ignored: changing the tool list
+	// between rounds would invalidate the prompt-cache prefix mid-run. The
+	// pending generation is picked up on the first refresh after unfreeze.
+	if !force && (frozen || current == generation) {
 		return
 	}
 	native := manager.NativeTools()

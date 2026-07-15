@@ -2451,6 +2451,128 @@ func TestRunToolLoop_RefreshesHiddenModelContextBetweenToolSteps(t *testing.T) {
 	}
 }
 
+func TestRunToolLoop_RetainedContextExtendsPriorRunRequestPrefix(t *testing.T) {
+	activeFiles := wuucontext.Block{
+		Kind:    wuucontext.BlockActiveFiles,
+		Title:   "Active files",
+		Source:  "runtime.active_files",
+		Content: "files:\n- go.mod",
+	}
+	makeCfg := func(turn int, retained *RetainedRequestContextState) LoopConfig {
+		return LoopConfig{
+			Model: "m",
+			Tools: &fakeLoopTools{
+				defs: []providers.ToolDefinition{{Name: "read_file"}},
+				results: map[string]string{
+					"call_1": `{"content":"hello"}`,
+					"call_2": `{"content":"world"}`,
+				},
+			},
+			BeforeRequestContext: func() []ContextSegment {
+				env := wuucontext.Block{
+					Kind:    wuucontext.BlockEnvironment,
+					Title:   "Runtime environment",
+					Source:  "runtime.snapshot",
+					Content: fmt.Sprintf("# Environment\n- State: turn %d", turn),
+				}
+				return RequestOnlyContextBlocks([]wuucontext.Block{activeFiles, env})
+			},
+			RetainedRequestContext: retained,
+		}
+	}
+
+	step1 := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md"}`}}},
+		{Content: "done"},
+	}}
+	history1 := []providers.ChatMessage{userMsg("first ask")}
+	res1, err := RunToolLoop(context.Background(), history1, makeCfg(1, nil), step1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res1.RetainedRequestContext == nil {
+		t.Fatal("run with request-only context should return retained state for the next run")
+	}
+	run1Last := step1.calls[len(step1.calls)-1].Messages
+
+	history2 := append(append(append([]providers.ChatMessage(nil), history1...), res1.NewMessages...), userMsg("second ask"))
+	step2 := &fakeStep{results: []StepResult{
+		{ToolCalls: []providers.ToolCall{{ID: "call_2", Name: "read_file", Arguments: `{"path":"main.go"}`}}},
+		{Content: "ok"},
+	}}
+	res2, err := RunToolLoop(context.Background(), history2, makeCfg(2, res1.RetainedRequestContext), step2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run2First := step2.calls[0].Messages
+	if len(run2First) < len(run1Last) || !reflect.DeepEqual(run1Last, run2First[:len(run1Last)]) {
+		t.Fatalf("first request of run 2 must byte-extend the last request of run 1:\nrun1last=%+v\nrun2first=%+v", run1Last, run2First)
+	}
+	// The seeded emit-on-change gate must recognize the spliced copies: the
+	// unchanged stable block stays a single copy, the previous turn's
+	// environment snapshot stays in the prefix, and only the changed
+	// snapshot is appended fresh.
+	if got := countMessagesContaining(run2First, "[ACTIVE_FILES]"); got != 1 {
+		t.Fatalf("unchanged stable block should appear exactly once across runs, got %d in %+v", got, run2First)
+	}
+	if got := countMessagesContaining(run2First, "State: turn 1"); got != 1 {
+		t.Fatalf("previous run's environment snapshot should be retained once, got %d in %+v", got, run2First)
+	}
+	if got := countMessagesContaining(run2First, "State: turn 2"); got != 1 {
+		t.Fatalf("changed environment snapshot should be appended once, got %d in %+v", got, run2First)
+	}
+	if res2.RetainedRequestContext == nil {
+		t.Fatal("run 2 should hand retained state forward for run 3")
+	}
+}
+
+func TestRunToolLoop_StaleRetainedContextFallsBackToFreshTranscript(t *testing.T) {
+	block := wuucontext.Block{
+		Kind:    wuucontext.BlockEnvironment,
+		Title:   "Runtime environment",
+		Source:  "runtime.snapshot",
+		Content: "# Environment\n- State: turn 1",
+	}
+	cfg := LoopConfig{
+		Model: "m",
+		BeforeRequestContext: func() []ContextSegment {
+			return RequestOnlyContextBlocks([]wuucontext.Block{block})
+		},
+	}
+	step1 := &fakeStep{results: []StepResult{{Content: "done"}}}
+	history1 := []providers.ChatMessage{userMsg("first ask")}
+	res1, err := RunToolLoop(context.Background(), history1, cfg, step1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res1.RetainedRequestContext == nil {
+		t.Fatal("expected retained state from run 1")
+	}
+
+	// The durable history was rewritten between runs (edit, fork, external
+	// compaction) — the fingerprint no longer matches, so the state must be
+	// dropped and the run must inject fresh context without duplicates.
+	rewritten := []providers.ChatMessage{
+		userMsg("first ask (edited)"),
+		{Role: "assistant", Content: "done"},
+		userMsg("second ask"),
+	}
+	cfg2 := cfg
+	cfg2.RetainedRequestContext = res1.RetainedRequestContext
+	step2 := &fakeStep{results: []StepResult{{Content: "ok"}}}
+	if _, err := RunToolLoop(context.Background(), rewritten, cfg2, step2); err != nil {
+		t.Fatal(err)
+	}
+	request := step2.calls[0].Messages
+	if got := countMessagesContaining(request, "State: turn 1"); got != 1 {
+		t.Fatalf("stale retained state must be dropped and context injected fresh exactly once, got %d in %+v", got, request)
+	}
+	if got := countMessagesContaining(request, "first ask (edited)"); got != 1 {
+		t.Fatalf("rewritten history must be used as-is, got %d in %+v", got, request)
+	}
+}
+
 func TestRunToolLoop_BeforeRequestTransformStaysRequestScoped(t *testing.T) {
 	step := &fakeStep{results: []StepResult{
 		{ToolCalls: []providers.ToolCall{{ID: "call_1", Name: "read_file", Arguments: `{"path":"README.md"}`}}},
