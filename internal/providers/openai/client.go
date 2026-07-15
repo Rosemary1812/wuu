@@ -672,7 +672,8 @@ func (c *Client) readSSE(ctx context.Context, resp *http.Response, lease *provid
 				}) {
 					return
 				}
-			} else {
+			}
+			if tc.Function.Arguments != "" {
 				pt.args.WriteString(tc.Function.Arguments)
 				if !emit.Send(providers.StreamEvent{
 					Type:    providers.EventToolUseDelta,

@@ -1294,6 +1294,41 @@ func TestStreamChat_ExplicitFinishReasonAllowsCleanEOFWithoutDone(t *testing.T) 
 	}
 }
 
+func TestStreamChat_SingleChunkToolArgumentsSurviveCleanEOF(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"read_file\",\"arguments\":\"{\\\"path\\\":\\\"test.go\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n"))
+	}))
+	defer server.Close()
+
+	client, _ := New(ClientConfig{BaseURL: server.URL, APIKey: "k"})
+	ch, err := client.StreamChat(context.Background(), providers.ChatRequest{
+		Model:    "m",
+		Messages: []providers.ChatMessage{{Role: "user", Content: "read"}},
+	})
+	if err != nil {
+		t.Fatalf("StreamChat: %v", err)
+	}
+
+	var events []providers.StreamEvent
+	for ev := range ch {
+		events = append(events, ev)
+	}
+	var end *providers.ToolCall
+	for _, event := range events {
+		if event.Type == providers.EventToolUseEnd {
+			end = event.ToolCall
+		}
+	}
+	if end == nil || end.ID != "call_1" || end.Name != "read_file" || end.Arguments != `{"path":"test.go"}` {
+		t.Fatalf("single-chunk tool call was not reconstructed: events=%+v", events)
+	}
+	if events[len(events)-1].Type != providers.EventDone || events[len(events)-1].FinishReason != providers.FinishReasonToolCalls {
+		t.Fatalf("unexpected terminal event: %+v", events[len(events)-1])
+	}
+}
+
 func TestStreamChat_IdleWatchdogFires(t *testing.T) {
 	// Set a very short idle timeout for the test.
 	t.Setenv("WUU_STREAM_IDLE_TIMEOUT_MS", "100")
