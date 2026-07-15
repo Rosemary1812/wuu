@@ -29,6 +29,7 @@ type OwnerKind string
 type Lifecycle string
 type Status string
 type EventType string
+type EventCause string
 
 const (
 	EventStarted   EventType = "started"
@@ -36,6 +37,9 @@ const (
 	EventFailed    EventType = "failed"
 	EventStopped   EventType = "stopped"
 	EventCleanedUp EventType = "cleaned_up"
+
+	EventCauseNaturalExit   EventCause = "natural_exit"
+	EventCauseRequestedStop EventCause = "requested_stop"
 
 	OwnerMainAgent OwnerKind = "main_agent"
 	OwnerSubagent  OwnerKind = "subagent"
@@ -85,6 +89,7 @@ type StartOptions struct {
 
 type Event struct {
 	Type    EventType
+	Cause   EventCause
 	Process Process
 }
 
@@ -363,6 +368,7 @@ func (m *Manager) finishWait(id string, cmd *exec.Cmd, err error) {
 		return
 	}
 	alreadyTerminal := p.Status == StatusStopped || p.Status == StatusFailed
+	requestedStop := p.Status == StatusStopping || p.Status == StatusStopped
 	if p.Status == StatusStopping || p.Status == StatusStopped {
 		p.Status = StatusStopped
 	} else if p.Status == StatusFailed {
@@ -386,7 +392,11 @@ func (m *Manager) finishWait(id string, cmd *exec.Cmd, err error) {
 	if p.Status == StatusFailed {
 		eventType = EventFailed
 	}
-	m.publish(Event{Type: eventType, Process: *p})
+	cause := EventCauseNaturalExit
+	if requestedStop {
+		cause = EventCauseRequestedStop
+	}
+	m.publish(Event{Type: eventType, Cause: cause, Process: *p})
 }
 
 func (m *Manager) List() ([]Process, error) {
@@ -616,7 +626,7 @@ func (m *Manager) Stop(id string) (*Process, error) {
 			return p, err
 		}
 		m.mu.Unlock()
-		m.publish(Event{Type: EventStopped, Process: *p})
+		m.publish(Event{Type: EventStopped, Cause: EventCauseRequestedStop, Process: *p})
 		return p, nil
 	}
 	p.Status = StatusStopping
@@ -694,7 +704,7 @@ func (m *Manager) reconcileStopped(id string) (*Process, error) {
 		return p, err
 	}
 	m.mu.Unlock()
-	m.publish(Event{Type: EventStopped, Process: *p})
+	m.publish(Event{Type: EventStopped, Cause: EventCauseRequestedStop, Process: *p})
 	return p, nil
 }
 
@@ -714,7 +724,7 @@ func (m *Manager) retireUnverifiableRecordLocked(id string, p *Process, cause er
 	}
 	m.mu.Unlock()
 	log.Printf("wuu: process %s has no recorded identity; retired its record without signaling pid %d", id, p.PID)
-	m.publish(Event{Type: EventFailed, Process: *p})
+	m.publish(Event{Type: EventFailed, Cause: EventCauseRequestedStop, Process: *p})
 	return p, nil
 }
 
@@ -832,9 +842,27 @@ func (m *Manager) CleanupSessionWithResult() (CleanupResult, error) {
 }
 
 func (m *Manager) Subscribe(ch chan<- Event) {
+	if ch == nil {
+		return
+	}
 	m.subMu.Lock()
 	defer m.subMu.Unlock()
 	m.subscribers = append(m.subscribers, ch)
+}
+
+func (m *Manager) Unsubscribe(ch chan<- Event) {
+	if ch == nil {
+		return
+	}
+	m.subMu.Lock()
+	defer m.subMu.Unlock()
+	next := m.subscribers[:0]
+	for _, subscriber := range m.subscribers {
+		if subscriber != ch {
+			next = append(next, subscriber)
+		}
+	}
+	m.subscribers = next
 }
 
 func (m *Manager) publish(event Event) {

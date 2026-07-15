@@ -745,3 +745,78 @@ func TestManagerPublishesLifecycleEventsAndCleanupSkipsManaged(t *testing.T) {
 	}
 	_, _ = m.Stop(managedProc.ID)
 }
+
+func TestManagerDistinguishesNaturalExitFromRequestedStop(t *testing.T) {
+	root := t.TempDir()
+	m, err := NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := make(chan Event, 16)
+	m.Subscribe(events)
+
+	natural, err := m.Start(context.Background(), StartOptions{
+		Command:   "exit 0",
+		OwnerKind: OwnerMainAgent,
+		OwnerID:   "main",
+		Lifecycle: LifecycleManaged,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForProcessEvent(t, events, natural.ID, EventStopped, EventCauseNaturalExit)
+
+	stopped, err := m.Start(context.Background(), StartOptions{
+		Command:   "sleep 5",
+		OwnerKind: OwnerMainAgent,
+		OwnerID:   "main",
+		Lifecycle: LifecycleManaged,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Stop(stopped.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitForProcessEvent(t, events, stopped.ID, EventStopped, EventCauseRequestedStop)
+}
+
+func TestManagerUnsubscribeStopsLifecycleDelivery(t *testing.T) {
+	root := t.TempDir()
+	m, err := NewManager(root, filepath.Join(root, "state", "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := make(chan Event, 4)
+	m.Subscribe(events)
+	m.Unsubscribe(events)
+
+	if _, err := m.Start(context.Background(), StartOptions{
+		Command:   "exit 0",
+		OwnerKind: OwnerMainAgent,
+		OwnerID:   "main",
+		Lifecycle: LifecycleManaged,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-events:
+		t.Fatalf("received event after unsubscribe: %+v", event)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func waitForProcessEvent(t *testing.T, events <-chan Event, processID string, eventType EventType, cause EventCause) Event {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case event := <-events:
+			if event.Process.ID == processID && event.Type == eventType && event.Cause == cause {
+				return event
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for process %s event %s/%s", processID, eventType, cause)
+		}
+	}
+}
