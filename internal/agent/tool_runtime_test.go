@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -553,6 +554,48 @@ func TestTurnToolRuntimeDurablySettlesBeforeReturningResult(t *testing.T) {
 	}
 	if calls := tools.recordedCalls(); len(calls) != 1 {
 		t.Fatalf("tool executions = %+v", calls)
+	}
+}
+
+type historyAwareRuntimeTools struct{}
+
+func (historyAwareRuntimeTools) Definitions() []providers.ToolDefinition {
+	return []providers.ToolDefinition{{Name: "inception"}}
+}
+
+func (historyAwareRuntimeTools) Execute(ctx context.Context, _ providers.ToolCall) (string, error) {
+	if len(HistoryFromContext(ctx)) == 0 {
+		return "", errors.New("parent history is unavailable")
+	}
+	return "history available", nil
+}
+
+func (historyAwareRuntimeTools) ToolMetadata(_ providers.ToolCall) (ToolMetadata, bool) {
+	return ToolMetadata{ReadOnly: true, ConcurrencySafe: false}, true
+}
+
+func TestTurnToolRuntimeFinalOnlyToolUsesFinalHistoryContext(t *testing.T) {
+	call := providers.ToolCall{ID: "call-inception", Name: "inception", Arguments: `{"anchor_id":0}`}
+	runtime := NewTurnToolRuntime(ToolRuntimeConfig{
+		Executor:   historyAwareRuntimeTools{},
+		RunContext: context.Background(),
+	})
+	runtime.ObserveStreamEvent(context.Background(), providers.StreamEvent{
+		Type:     providers.EventToolUseStart,
+		ToolCall: &providers.ToolCall{ID: call.ID, Name: call.Name},
+	})
+	runtime.ObserveStreamEvent(context.Background(), providers.StreamEvent{
+		Type:     providers.EventToolUseEnd,
+		ToolCall: &call,
+	})
+
+	finalCtx := ContextWithHistory(context.Background(), []providers.ChatMessage{{Role: "user", Content: "parent"}})
+	msgs, err := runtime.ExecuteFinalCalls(finalCtx, []providers.ToolCall{call}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].Content != "history available" {
+		t.Fatalf("final-only tool did not receive final history context: %+v", msgs)
 	}
 }
 

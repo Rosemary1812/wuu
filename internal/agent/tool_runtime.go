@@ -279,7 +279,7 @@ func (r *TurnToolRuntime) startRunLocked(ctx context.Context, run *toolRun, stre
 	}
 	run.state = toolRunRunning
 	base := ctx
-	if r.runContext != nil {
+	if streamStarted && r.runContext != nil {
 		base = r.runContext
 	}
 	runCtx, cancel := context.WithCancel(base)
