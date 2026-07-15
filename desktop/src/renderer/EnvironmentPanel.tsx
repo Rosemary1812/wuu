@@ -26,6 +26,7 @@ import { desktopApiErrorMessage, formatBytes } from "./WorkspaceReviewHelpers";
 import { agentStatusLabel, sortChildAgents } from "./ThreadAgents";
 import { ParticipantChip } from "./ParticipantChip";
 import { type SubagentRowSummary } from "./EnvironmentSideStack";
+import { nicknameForSubagentID } from "./waterMarginNames";
 
 export type EnvironmentPanelMenu = "branch" | "file" | null;
 export type EnvironmentPanelMotionState = "open" | "closing";
@@ -307,8 +308,7 @@ function EnvironmentSubagents({
               >
                 <span className="subagent-row-title">
                   <ParticipantChip
-                    participant={agent.participant}
-                    fallbackType={agent.type}
+                    fallbackType=""
                     fallbackTaskName={agentLabelFromSummary(agent)}
                     size="sm"
                   />
@@ -364,20 +364,25 @@ function agentStatusToneToClass(status: string | undefined): string {
 }
 
 function agentLabelFromSummary(agent: SubagentRowSummary): string {
-  if (agent.participant?.name.trim()) return agent.participant.name.trim();
-  if (agent.task_name?.trim()) return agent.task_name.trim();
-  if (agent.description?.trim()) return agent.description.trim();
-  if (agent.agent_path) {
-    const pathParts = agent.agent_path.split("/").filter(Boolean);
-    const last = pathParts[pathParts.length - 1];
-    if (last) return last;
-  }
-  return agent.id;
+  return nicknameForSubagentID(agent.id).nickname;
 }
 
 function agentTooltipFromSummary(agent: SubagentRowSummary): string {
-  const path = agent.agent_path ? ` · ${agent.agent_path}` : "";
-  return `${agentLabelFromSummary(agent)} · ${agentStatusLabel(agent.status)}${path}`;
+  const { nickname, realName } = nicknameForSubagentID(agent.id);
+  const pieces: string[] = [nickname, realName, agentStatusLabel(agent.status)];
+  const type = agent.type?.trim();
+  if (type && type !== nickname) {
+    pieces.push(type);
+  }
+  const path = agent.agent_path?.trim();
+  if (path) {
+    pieces.push(path);
+  }
+  const task = agent.task_name?.trim() || agent.description?.trim();
+  if (task) {
+    pieces.push(task);
+  }
+  return pieces.join(" · ");
 }
 
 function EnvironmentPlanSection({ planUpdate }: { planUpdate: PlanUpdate }): JSX.Element {
