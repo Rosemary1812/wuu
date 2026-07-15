@@ -749,10 +749,19 @@ func shutdownExecutionActive(threads []*threadState, controls map[*agentcontrol.
 }
 
 func RunStdio(ctx context.Context, rt *runtime.Session, in io.Reader, out io.Writer) error {
+	return RunStdioForDevice(ctx, rt, in, out, nil)
+}
+
+// RunStdioForDevice runs the protocol loop for a remote device session,
+// binding the device/push_* methods to the transport's per-device registrar.
+// Local desktop sessions call RunStdio, which leaves the registrar nil so
+// those methods fail explicitly instead of parking tokens nowhere.
+func RunStdioForDevice(ctx context.Context, rt *runtime.Session, in io.Reader, out io.Writer, registrar PushRegistrar) error {
 	if rt == nil {
 		return errors.New("runtime session is required")
 	}
 	s := New(rt, out)
+	s.pushRegistrar = registrar
 	defer s.Close()
 	if s.startupErr != nil {
 		return s.startupErr

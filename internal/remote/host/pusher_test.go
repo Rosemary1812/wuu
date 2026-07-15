@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/appserver"
 )
 
 func TestExpoPusherSendsRequest(t *testing.T) {
@@ -155,5 +157,28 @@ func TestNewExpoPusherDefaults(t *testing.T) {
 	}
 	if p.HTTPClient.Timeout <= 0 {
 		t.Errorf("HTTPClient.Timeout: want > 0, got %v", p.HTTPClient.Timeout)
+	}
+}
+
+// The registrar is what binds device/push_register to the paired-device
+// record; without it every mobile registration failed as "remote-only" and
+// no token was ever stored.
+func TestDevicePushRegistrarRoundTrip(t *testing.T) {
+	store, pub := makeStore(t, "registrar-phone")
+	registrar := devicePushRegistrar{store: store, devPub: pub}
+	if err := registrar.RegisterDevicePush(appserver.DevicePushRegisterParams{
+		Token: "ExponentPushToken[reg]", Platform: "ios",
+	}); err != nil {
+		t.Fatalf("RegisterDevicePush: %v", err)
+	}
+	token, platform, ok := store.DevicePush(pub)
+	if !ok || token != "ExponentPushToken[reg]" || platform != "ios" {
+		t.Fatalf("DevicePush after register = %q/%q/%v", token, platform, ok)
+	}
+	if err := registrar.UnregisterDevicePush(appserver.DevicePushUnregisterParams{}); err != nil {
+		t.Fatalf("UnregisterDevicePush: %v", err)
+	}
+	if _, _, ok := store.DevicePush(pub); ok {
+		t.Fatal("DevicePush must be cleared after unregister")
 	}
 }

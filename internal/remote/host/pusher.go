@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/appserver"
 )
 
 // HostPushEvent is a content-free notification request: the host tells the
@@ -36,9 +38,27 @@ type HostPusher interface {
 	Push(ctx context.Context, ev HostPushEvent)
 }
 
-// LogHostPusher writes push events to the process log. It is the default
-// when no provider is configured, so the full chain stays observable end
-// to end.
+// devicePushRegistrar binds one paired device's app-server device/push_*
+// RPCs to the host store, keyed by the device pub the session authenticated
+// with. The app-server never sees the pub; this adapter is what makes the
+// registration land on the right paired-device record.
+type devicePushRegistrar struct {
+	store  *Store
+	devPub string
+}
+
+func (r devicePushRegistrar) RegisterDevicePush(params appserver.DevicePushRegisterParams) error {
+	return r.store.SetDevicePushToken(r.devPub, params.Token, params.Platform, time.Now().UTC())
+}
+
+func (r devicePushRegistrar) UnregisterDevicePush(appserver.DevicePushUnregisterParams) error {
+	return r.store.SetDevicePushToken(r.devPub, "", "", time.Now().UTC())
+}
+
+// LogHostPusher writes push events to the process log instead of delivering
+// them. Tests and embeddings that must not reach a push provider opt into it
+// explicitly; the host defaults to ExpoPusher so registered devices actually
+// get notified.
 type LogHostPusher struct {
 	Logf func(format string, args ...any)
 }

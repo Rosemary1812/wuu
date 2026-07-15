@@ -124,7 +124,7 @@ func (s *deviceSession) newAppConnLocked(profile string) *appConn {
 		running: map[string]wire.RunningTurn{},
 	}
 	go func() {
-		_ = appserver.RunStdio(ctx, s.h.rt, serverInR, serverOutW)
+		_ = appserver.RunStdioForDevice(ctx, s.h.rt, serverInR, serverOutW, devicePushRegistrar{store: s.h.store, devPub: s.devPub})
 		_ = serverOutW.Close()
 	}()
 	go s.pumpAppOutput(app, serverOutR)
