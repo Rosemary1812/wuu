@@ -301,6 +301,27 @@ export function useSidebarDrawerState({
     }
   }, [cancelSidebarDrawerOpen, resizingSidebar, sidebarCollapsed]);
 
+  // A native window resize changes the shell grid and the absolute drawer's
+  // containing block in the same frame. Do not carry a hover-open drawer
+  // across that geometry change: the pointer may still be at the edge, but
+  // the old open phase now describes stale layout. Re-entering the edge
+  // hover zone can open it again against the new bounds.
+  useEffect(() => {
+    function handleWindowResize(): void {
+      cancelSidebarDrawerOpen();
+      clearSidebarDrawerCloseTimer();
+      clearSidebarDrawerPointerLeaveTimer();
+      setSidebarDrawerPhase("closed");
+    }
+
+    window.addEventListener("resize", handleWindowResize);
+    return () => window.removeEventListener("resize", handleWindowResize);
+  }, [
+    cancelSidebarDrawerOpen,
+    clearSidebarDrawerCloseTimer,
+    clearSidebarDrawerPointerLeaveTimer,
+  ]);
+
   useEffect(() => {
     if (!sidebarCollapsed || sidebarDrawerPhase !== "open") {
       return undefined;

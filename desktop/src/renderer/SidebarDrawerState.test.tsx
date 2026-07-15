@@ -185,4 +185,19 @@ describe("useSidebarDrawerState", () => {
     });
     expect(hook.get().sidebarDrawerPhase).toBe("closed");
   });
+
+  it("closes a hover drawer when the native window is resized", async () => {
+    const hook = await renderSidebarDrawerState();
+
+    await act(async () => {
+      hook.get().openSidebarDrawerNow();
+    });
+    expect(hook.get().sidebarDrawerPhase).toBe("open");
+
+    await act(async () => {
+      window.dispatchEvent(new Event("resize"));
+    });
+
+    expect(hook.get().sidebarDrawerPhase).toBe("closed");
+  });
 });
