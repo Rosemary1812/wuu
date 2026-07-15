@@ -1,4 +1,4 @@
-import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { Children, cloneElement, isValidElement, memo, useEffect, useId, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { FileText, Github, Globe2, Mail } from "lucide-react";
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from "react-markdown";
 import rehypeRaw from "rehype-raw";
@@ -976,8 +976,24 @@ function RichWebLink({
   title?: string;
   children: ReactNode;
 }): JSX.Element {
+  const openLink = (event: ReactMouseEvent<HTMLAnchorElement>): void => {
+    if (event.button > 1) {
+      return;
+    }
+    event.preventDefault();
+    void window.wuu?.openExternal?.(href).catch((error) => {
+      console.error(`[rich-link] failed to open ${href}`, error);
+    });
+  };
   return (
-    <a className="rich-link rich-web-link" href={href} title={title} target="_blank" rel="noreferrer">
+    <a
+      className="rich-link rich-web-link"
+      href={href}
+      title={title}
+      rel="noopener noreferrer"
+      onAuxClick={openLink}
+      onClick={openLink}
+    >
       <span className="rich-link-content">
         <RichWebLinkIcon href={href} />
         <span className="rich-link-label">{children}</span>

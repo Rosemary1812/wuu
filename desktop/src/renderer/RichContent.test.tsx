@@ -9,6 +9,7 @@ let container: HTMLDivElement;
 let root: Root | null = null;
 let writeTextMock: ReturnType<typeof vi.fn>;
 let resolveWorkspaceFileReferenceMock: ReturnType<typeof vi.fn>;
+let openExternalMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   writeTextMock = vi.fn().mockResolvedValue(undefined);
@@ -23,9 +24,11 @@ beforeEach(() => {
     reference,
     status: "missing",
   }));
+  openExternalMock = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(window, "wuu", {
     configurable: true,
     value: {
+      openExternal: openExternalMock,
       resolveWorkspaceFileReference: resolveWorkspaceFileReferenceMock,
     },
   });
@@ -269,6 +272,10 @@ describe("RichContent code block", () => {
     expect(link).not.toBeNull();
     expect(link?.getAttribute("href")).toBe("https://github.com/blueberrycongee/wuu");
     expect(link?.querySelector(".rich-link-icon")).not.toBeNull();
+    expect(link?.hasAttribute("target")).toBe(false);
+
+    act(() => link?.click());
+    expect(openExternalMock).toHaveBeenCalledWith("https://github.com/blueberrycongee/wuu");
   });
 
   it("does not turn inline code file names into file links", () => {

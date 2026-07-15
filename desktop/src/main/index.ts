@@ -12,7 +12,7 @@ import {
 } from "electron";
 import { readdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { MESSAGE_FLOW_FONT_SIZE_RANGE } from "../shared/protocol";
 import type {
   ComposerGoalSummary,
@@ -117,6 +117,7 @@ import {
   type ThemePreference,
 } from "./desktopSettings";
 import { GitService } from "./gitService";
+import { openExternalURL, wireExternalNavigationGuards } from "./externalNavigation";
 import { ProjectManager, wuuHomePath } from "./projects";
 import { sideThreadEventFromServerEvent } from "./sideThreadEvents";
 import {
@@ -415,11 +416,23 @@ function loadRenderer(window: BrowserWindow): void {
     });
   }
 
-  if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
-    window.loadURL(process.env.ELECTRON_RENDERER_URL);
+  const devRendererURL = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined;
+  const rendererPath = join(__dirname, "../renderer/index.html");
+  const rendererURL = devRendererURL ?? pathToFileURL(rendererPath).toString();
+  wireExternalNavigationGuards(window, {
+    rendererURL,
+    openExternal: openExternalNavigation,
+  });
+
+  if (devRendererURL) {
+    window.loadURL(devRendererURL);
   } else {
-    window.loadFile(join(__dirname, "../renderer/index.html"));
+    window.loadFile(rendererPath);
   }
+}
+
+function openExternalNavigation(rawURL: unknown): Promise<boolean> {
+  return openExternalURL(rawURL, (url) => shell.openExternal(url));
 }
 
 function mainWindowMaterialOptions(): Pick<
@@ -983,16 +996,7 @@ app.whenReady().then(async () => {
     desktop: DESKTOP_BUILD_INFO,
   }));
   ipcMain.handle("wuu:open-external", async (_event, url: string) => {
-    // Hand the URL to the OS default browser. We only accept http(s) to
-    // avoid the renderer escalating arbitrary protocols (file://,
-    // custom-scheme deeplinks, etc.) through this channel. Anything
-    // non-conforming is silently dropped — the renderer is the
-    // producer of all URLs (collectTurnSources parses them from
-    // tool_call results), so a malformed value is a bug, not a user
-    // decision; failing silently keeps the assistant turn UI clean.
-    if (typeof url !== "string" || url.length === 0) return;
-    if (!/^https?:\/\//i.test(url)) return;
-    await shell.openExternal(url);
+    await openExternalNavigation(url);
   });
   ipcMain.handle("wuu:config-codex-models", (event, provider?: string) =>
     appServerRequest<ConfigCodexModelsResult>(event, "config/codex/models", {
