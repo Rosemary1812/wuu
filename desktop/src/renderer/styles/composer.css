@@ -1499,17 +1499,12 @@
     box-shadow var(--motion-base) var(--ease-out);
 }
 
-/*
- * Primary-action sizing: the send / stop button is the commit control, so
- * it steps up to 36x36 — a deliberate 4px larger than the 32x32 utility
- * buttons (回形针 / 斜杠 / 权限) beside it — to carry a clear primary
- * hierarchy instead of reading as just another toolbar icon. Send and stop
- * share the size so toggling running-state never shifts the bar.
- */
+/* Send and stop share the utility-button footprint so the primary action
+ * stays clear without overpowering the composer or shifting between states. */
 .composer-send-button,
 .composer-stop-button {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
 }
 
 .composer-send-button {
@@ -1518,8 +1513,8 @@
 }
 
 .composer-send-button svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   stroke-width: 2;
   /*
    * Point the paper plane straight up. lucide Send is drawn flying to the
@@ -1532,11 +1527,11 @@
    * area centroid sits at ~(13.8, 10.2). After the -45deg rotation that
    * centroid lands ~2.56 viewBox units directly above the box center — so
    * without correction the plane floats high in the round button. The
-   * translateY(1.9px) (== 2.56 * 18/24 render scale) drops the centroid
+   * translateY(1.7px) (== 2.56 * 16/24 render scale) drops the centroid
    * back onto the button's center. translateY runs after the rotate here,
    * so it nudges in screen space (straight down), not along the tilt.
    */
-  transform: translateY(1.9px) rotate(-45deg);
+  transform: translateY(1.7px) rotate(-45deg);
   transform-origin: center;
 }
 
