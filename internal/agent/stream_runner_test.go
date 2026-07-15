@@ -2188,6 +2188,22 @@ func TestStreamRunner_SynchronizeConversationUsageAdoptsExternalRewrite(t *testi
 	}
 }
 
+func TestStreamRunner_PrepareUsageTrackerResetsSameLengthRewrite(t *testing.T) {
+	original := []providers.ChatMessage{userMsg("old"), {Role: "assistant", Content: "old answer"}}
+	rewritten := []providers.ChatMessage{userMsg("new"), {Role: "assistant", Content: "new answer"}}
+	runner := &StreamRunner{}
+	tracker := NewUsageTracker()
+	tracker.RecordResponse(&providers.TokenUsage{InputTokens: 50_000, OutputTokens: 2_000})
+	runner.commitUsageTracker(tracker, original)
+
+	got, tracked := runner.prepareUsageTracker(rewritten)
+	want := NewUsageTracker()
+	want.RecordPendingMessages(rewritten)
+	if got.EstimateCurrent() != want.EstimateCurrent() || tracked != len(rewritten) {
+		t.Fatalf("same-length rewrite kept stale usage: estimate=%d want=%d tracked=%d", got.EstimateCurrent(), want.EstimateCurrent(), tracked)
+	}
+}
+
 // TestStreamRunner_CrossTurnContinuitySurvivesUsageSynchronization reproduces the real
 // desktop path end to end: run a turn that emits request-only context, apply
 // the per-turn usage synchronization the app-server performs at turn

@@ -372,6 +372,41 @@ func TestPrefixExperiment_DisappearingContextAppendsInactiveUpdate(t *testing.T)
 	}
 }
 
+func TestPrefixExperiment_ContextReactivatesAfterInactiveUpdate(t *testing.T) {
+	sim := &sessionSim{t: t}
+	block := wuucontext.Block{
+		Kind: wuucontext.BlockToolPolicy, Title: "Ultra mode", Source: "ultra", Content: "Ultra is enabled.",
+	}
+	withBlock := func() []ContextSegment {
+		return RequestOnlyContextBlocks([]wuucontext.Block{block})
+	}
+	sim.runTurn("ask 1", &fakeStep{results: toolRoundSteps("call_1")}, func(cfg *LoopConfig) {
+		cfg.Tools = experimentTools()
+		cfg.BeforeRequestContext = withBlock
+	})
+	sim.runTurn("ask 2", &fakeStep{results: toolRoundSteps("call_2")}, func(cfg *LoopConfig) {
+		cfg.Tools = experimentTools()
+	})
+	block.Content = "Ultra is enabled again."
+	sim.runTurn("ask 3", &fakeStep{results: toolRoundSteps("call_3")}, func(cfg *LoopConfig) {
+		cfg.Tools = experimentTools()
+		cfg.BeforeRequestContext = withBlock
+	})
+
+	if breaks := analyzePrefixChain(sim.requests); len(breaks) != 0 {
+		t.Fatalf("reactivating typed context must append without breaking the prefix:\n%s", formatBreaks(sim.requests, breaks))
+	}
+	final := sim.requests[len(sim.requests)-1]
+	name := wuucontext.SystemReminderBlockMessageName(block, 0)
+	latest := latestMessageWithName(final, name)
+	if !strings.Contains(latest.Content, "status: active") || !strings.Contains(latest.Content, "Ultra is enabled again.") {
+		t.Fatalf("latest Ultra update must reactivate the policy, got %+v", latest)
+	}
+	if got := countMessagesContaining(final, "status: inactive"); got != 1 {
+		t.Fatalf("reactivation must retain exactly one inactive transition, got %d", got)
+	}
+}
+
 // Scenario 5c: Inception intentionally rewrites durable history. It should
 // cause exactly one explainable prefix break; ordinary tool rounds after the
 // rewrite and the next turn must resume strict append continuity.
