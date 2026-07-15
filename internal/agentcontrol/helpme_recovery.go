@@ -120,27 +120,22 @@ func (c *AgentControl) HelpMeRecoveryForHelper(helperID string) (HelpMeRecovery,
 		return HelpMeRecovery{}, false
 	}
 	c.helpMeRecoveryMu.Lock()
+	defer c.helpMeRecoveryMu.Unlock()
 	rec, ok := c.helpMeRecoveries[helperID]
-	c.helpMeRecoveryMu.Unlock()
 	if ok {
 		return rec, true
 	}
+	// Keep the lazy load serialized with registration, marking, and removal.
+	// Otherwise a read that started before RemoveHelpMeRecovery deleted the
+	// durable snapshot could repopulate the in-memory cache after removal.
 	rec, ok = c.loadHelpMeRecovery(helperID)
 	if !ok {
 		return HelpMeRecovery{}, false
 	}
-	c.helpMeRecoveryMu.Lock()
-	if cached, exists := c.helpMeRecoveries[helperID]; exists {
-		// A concurrent register/mark beat the lazy load; the in-memory
-		// state is newer than the disk snapshot we just read.
-		rec = cached
-	} else {
-		if c.helpMeRecoveries == nil {
-			c.helpMeRecoveries = make(map[string]HelpMeRecovery)
-		}
-		c.helpMeRecoveries[helperID] = rec
+	if c.helpMeRecoveries == nil {
+		c.helpMeRecoveries = make(map[string]HelpMeRecovery)
 	}
-	c.helpMeRecoveryMu.Unlock()
+	c.helpMeRecoveries[helperID] = rec
 	return rec, true
 }
 
