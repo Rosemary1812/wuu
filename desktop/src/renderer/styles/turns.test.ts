@@ -200,6 +200,15 @@ describe("turns.css message-flow typography", () => {
     );
   });
 
+  it("reserves the historical action overlay before a turn output card", () => {
+    expect(turnsCss).toMatch(
+      /\.assistant-turn-shell:has\(\.agent-actions-overlay\)\s*\+\s*\.turn-edit-summary-card\s*\{[\s\S]*?margin-top:\s*calc\(\s*14px\s*\+\s*var\(--conversation-answer-hover-action-gap\)\s*\+\s*var\(--conversation-message-action-size\)\s*\);/,
+    );
+    expect(cssRuleBody(".message-actions")).toMatch(
+      /min-height:\s*var\(--conversation-message-action-size\);/,
+    );
+  });
+
   it("uses the activity rhythm when commentary introduces the next tool row", () => {
     expect(turnsCss).toMatch(
       /\.turn-process-entry-commentary\s*\+\s*\.turn-process-entry-activity,\s*\.turn-process-entry-commentary\s*\+\s*\.turn-process-entry-process_group\s*\{[\s\S]*?margin-top:\s*calc\(\s*var\(--conversation-activity-gap\)\s*-\s*var\(--conversation-process-detail-gap\)\s*\);/,

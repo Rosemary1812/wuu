@@ -134,6 +134,7 @@
   --conversation-process-answer-gap: 16px;
   --conversation-answer-action-gap: 12px;
   --conversation-answer-hover-action-gap: 6px;
+  --conversation-message-action-size: 24px;
   --conversation-activity-gap: 8px;
   --conversation-scrollbar-gutter: 12px;
   --conversation-visible-inset-left: 0px;
