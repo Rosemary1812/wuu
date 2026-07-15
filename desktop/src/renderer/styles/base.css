@@ -122,8 +122,8 @@
   --font-title: 15px;
   --font-heading: 18px;
   --font-display: 24px;
-  --weight-medium: 560;
-  --weight-semibold: 620;
+  --weight-medium: 500;
+  --weight-semibold: 600;
   --weight-bold: 700;
   --line-ui: 1.35;
   --line-body: 1.55;
@@ -567,14 +567,14 @@ button:disabled {
 }
 
 /*
- * Message-body emphasis is held at `--weight-medium` (560), one quiet
+ * Message-body emphasis is held at `--weight-medium` (500), one quiet
  * step above the 400 body — never the full 700 the browser default
  * would give. Two failed extremes bracket this value: 700 bold made
  * model output read as shouting (every other phrase punched a hole in
  * the paragraph), and the follow-up `font-weight: inherit` erased
  * emphasis entirely, which flattened long answers into an even gray
- * wall with no anchors to scan by. 560 keeps `**bold**` findable at a
- * glance while staying below headings (`.rich-heading`, 620) and out
+ * wall with no anchors to scan by. 500 keeps `**bold**` findable at a
+ * glance while staying below headings (`.rich-heading`, 600) and out
  * of the register that UI chrome uses for hierarchy.
  */
 .rich-content strong,

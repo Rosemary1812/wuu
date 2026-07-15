@@ -50,7 +50,7 @@
     "Microsoft YaHei UI", "Source Han Sans SC", "Noto Sans CJK SC",
     "Noto Sans SC", sans-serif;
   --conversation-message-font-size: 14px;
-  --conversation-message-font-weight: 445;
+  --conversation-message-font-weight: 400;
   /* Outer message-flow rhythm. Structural containers must consume these
      landmarks instead of adding their own anonymous gaps on top. */
   --conversation-flow-top-gap: 36px;
