@@ -23,6 +23,9 @@
 
 Beyond single-turn tasks, wuu can plan multi-step work, delegate to specialized subagents, apply task-specific skills, and remember context across sessions. Use the desktop app for interactive work, or reach for `wuu exec` from scripts, CI, and other agents.
 
+> [!WARNING]
+> **Project status:** The mobile app has not been released yet. wuu is still pre-1.0 and evolving quickly, so features, interfaces, and behavior may change between versions. If you need a stable, production-ready tool, please evaluate carefully before adopting it.
+
 ## Start Here
 
 | You want to... | Go to |
