@@ -865,6 +865,37 @@ func TestNaturalExitCompletionPersistsUntilDelivered(t *testing.T) {
 	}
 }
 
+func TestDetachedNaturalExitDoesNotCreateCompletionObligation(t *testing.T) {
+	root := t.TempDir()
+	m, err := NewManager(root, filepath.Join(root, "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := make(chan Event, 8)
+	m.Subscribe(events)
+	started, err := m.Start(context.Background(), StartOptions{
+		Command:        "exit 0",
+		OwnerKind:      OwnerMainAgent,
+		OwnerID:        "thread-detached",
+		Lifecycle:      LifecycleManaged,
+		CompletionMode: CompletionModeDetached,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForProcessEvent(t, events, started.ID, EventStopped, EventCauseNaturalExit)
+	pending, err := m.CompletionPending(started.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending {
+		t.Fatal("detached process created an automatic completion obligation")
+	}
+	if _, err := m.MarkCompletionDelivered(started.ID, "test"); err == nil {
+		t.Fatal("detached process completion should not be acknowledgeable")
+	}
+}
+
 func TestNewManagerReconcilesPersistedManagedProcessExit(t *testing.T) {
 	root := t.TempDir()
 	runtimeDir := filepath.Join(root, "state", "runtime")

@@ -15,21 +15,22 @@ import (
 )
 
 type runState struct {
-	threadID            string
-	turnID              string
-	participantID       string
-	finalMessage        string
-	tracePath           string
-	status              string
-	commandItems        map[string]appserver.ThreadItem
-	toolOutputs         map[string]string
-	seenSubagents       map[string]bool
-	permissionDenied    bool
-	permissionError     string
-	lastParticipantItem string
-	lastParticipantSeq  int
-	structuredResult    any
-	structuredResultSet bool
+	threadID                 string
+	turnID                   string
+	participantID            string
+	finalMessage             string
+	tracePath                string
+	status                   string
+	commandItems             map[string]appserver.ThreadItem
+	toolOutputs              map[string]string
+	seenSubagents            map[string]bool
+	permissionDenied         bool
+	permissionError          string
+	lastParticipantItem      string
+	lastParticipantSeq       int
+	structuredResult         any
+	structuredResultSet      bool
+	awaitingAutoContinuation bool
 }
 
 func Run(ctx context.Context, opts Options) error {
@@ -279,6 +280,21 @@ func waitForTurn(ctx context.Context, controller Controller, opts Options, state
 
 func handleNotification(opts Options, notification Notification, state *runState) (bool, error) {
 	switch notification.Method {
+	case appserver.NotificationTurnStarted:
+		var params appserver.TurnStartedNotification
+		if err := decodeNotification(notification, &params); err != nil {
+			return false, err
+		}
+		if state == nil || !state.awaitingAutoContinuation || (state.threadID != "" && params.ThreadID != state.threadID) {
+			return false, nil
+		}
+		state.turnID = params.Turn.ID
+		state.finalMessage = ""
+		state.status = "running"
+		state.commandItems = nil
+		state.toolOutputs = nil
+		state.awaitingAutoContinuation = false
+		emitTurnStarted(opts, params.ThreadID, params.Turn)
 	case appserver.NotificationAgentMessageDelta:
 		var params appserver.AgentMessageDeltaNotification
 		if err := decodeNotification(notification, &params); err != nil {
@@ -360,7 +376,7 @@ func handleNotification(opts Options, notification Notification, state *runState
 		if err := decodeNotification(notification, &params); err != nil {
 			return false, err
 		}
-		emitJSON(opts, map[string]any{"type": "turn_completed", "thread_id": params.ThreadID, "turn_id": params.Turn.ID, "input_tokens": params.InputTokens, "output_tokens": params.OutputTokens, "trace_path": params.TracePath})
+		emitJSON(opts, map[string]any{"type": "turn_completed", "thread_id": params.ThreadID, "turn_id": params.Turn.ID, "input_tokens": params.InputTokens, "output_tokens": params.OutputTokens, "trace_path": params.TracePath, "awaiting_auto_continuation": params.AwaitingAutoContinuation})
 		if !isCurrentTurn(state, params.ThreadID, params.Turn.ID) {
 			return false, nil
 		}
@@ -370,6 +386,12 @@ func handleNotification(opts Options, notification Notification, state *runState
 		state.threadID = params.ThreadID
 		state.turnID = params.Turn.ID
 		state.tracePath = params.TracePath
+		if params.AwaitingAutoContinuation {
+			state.status = "waiting_background"
+			state.awaitingAutoContinuation = true
+			state.turnID = ""
+			return false, nil
+		}
 		state.status = "completed"
 		return true, nil
 	case appserver.NotificationTurnError:

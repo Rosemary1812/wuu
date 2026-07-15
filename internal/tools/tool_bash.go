@@ -143,6 +143,11 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 					"enum":        []string{"session", "managed"},
 					"description": "Background process lifecycle. Defaults to session.",
 				},
+				"completion_mode": map[string]any{
+					"type":        "string",
+					"enum":        []string{"resume", "detached"},
+					"description": "What happens when the process exits. resume (default) starts another model turn and keeps wuu exec alive until that continuation finishes. Use detached only for long-lived services whose exit must not block or resume the current task.",
+				},
 				"tty": map[string]any{
 					"type":        "boolean",
 					"description": "Run action=start_background in a pseudo-terminal. Use for prompts, confirmations, and REPLs that require terminal input.",
@@ -206,6 +211,7 @@ type bashArgs struct {
 	OwnerKind      string `json:"owner_kind"`
 	OwnerID        string `json:"owner_id"`
 	Lifecycle      string `json:"lifecycle"`
+	CompletionMode string `json:"completion_mode"`
 	TTY            bool   `json:"tty"`
 	WaitMS         int    `json:"wait_ms"`
 	MaxBytes       int    `json:"max_bytes"`
@@ -384,12 +390,12 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 	if err != nil {
 		return "", err
 	}
-	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), TTY: args.TTY, AllowOutsideWorkspace: t.env.BypassToolHardProtections()})
+	p, startErr := m.Start(context.WithoutCancel(ctx), proc.StartOptions{Command: args.Command, CWD: args.CWD, OwnerKind: proc.OwnerKind(args.OwnerKind), OwnerID: args.OwnerID, Lifecycle: proc.Lifecycle(args.Lifecycle), CompletionMode: proc.CompletionMode(args.CompletionMode), TTY: args.TTY, AllowOutsideWorkspace: t.env.BypassToolHardProtections()})
 	response := startProcessResponse{}
 	if p != nil {
 		response.Process = redactProcess(t.env, *p)
 		response.Action = bashActionStartBackground
-		response.NextSuggestions = bashBackgroundNextSuggestions(args.WaitMS)
+		response.NextSuggestions = bashBackgroundNextSuggestions(args.WaitMS, args.CompletionMode)
 		if startErr == nil && args.WaitMS > 0 {
 			wait := time.Duration(args.WaitMS) * time.Millisecond
 			if wait > maxStartProcessInitialWait {
@@ -431,7 +437,10 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 	return out, nil
 }
 
-func bashBackgroundNextSuggestions(waitMS int) []string {
+func bashBackgroundNextSuggestions(waitMS int, completionMode string) []string {
+	if strings.TrimSpace(completionMode) == string(proc.CompletionModeDetached) {
+		return []string{"this process is detached and will not start another model turn when it exits", "use bash action=read_background only when you explicitly need readiness or later output"}
+	}
 	if waitMS <= 0 {
 		return []string{"continue independent work; if completion is the only remaining dependency, end this turn now and the natural exit will start a new turn automatically", "do not call list_background, read_background, or wait only to keep this turn open; use read_background only for readiness output while the process is still running"}
 	}

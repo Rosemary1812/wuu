@@ -118,6 +118,35 @@ func (s *Server) replayPendingProcessCompletions(threadID string, control *agent
 	}
 }
 
+func threadHasOutstandingProcessCompletion(threadID string, control *agentcontrol.AgentControl, manager *process.Manager) bool {
+	if manager == nil {
+		return false
+	}
+	processes, err := manager.List()
+	if err != nil {
+		providers.DebugLogf("inspect outstanding process completions for thread %q: %v", threadID, err)
+		return false
+	}
+	for _, p := range processes {
+		if p.CompletionMode == process.CompletionModeDetached {
+			continue
+		}
+		event := process.Event{Process: p}
+		if !processEventBelongsToThread(threadID, control, event) {
+			continue
+		}
+		switch p.Status {
+		case process.StatusStarting, process.StatusRunning, process.StatusStopping:
+			return true
+		case process.StatusStopped, process.StatusFailed:
+			if p.TerminalCause == process.EventCauseNaturalExit && p.CompletionDeliveredAt.IsZero() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *Server) restorePendingProcessCompletionsOnThreadResume(threadID string) {
 	if s == nil || s.rt == nil || s.rt.ProcessManager == nil {
 		return

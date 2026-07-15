@@ -192,6 +192,46 @@ func TestForwardProcessNotificationsPullsPersistedCompletionAfterMissedEvent(t *
 	server.backgroundWG.Wait()
 }
 
+func TestThreadHasOutstandingProcessCompletionIgnoresDetachedProcesses(t *testing.T) {
+	root := t.TempDir()
+	manager, err := process.NewManager(root, filepath.Join(root, "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadID := "thread-outstanding"
+	resumed, err := manager.Start(context.Background(), process.StartOptions{
+		Command:        "sleep 30",
+		OwnerKind:      process.OwnerMainAgent,
+		OwnerID:        threadID,
+		Lifecycle:      process.LifecycleManaged,
+		CompletionMode: process.CompletionModeResume,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detached, err := manager.Start(context.Background(), process.StartOptions{
+		Command:        "sleep 30",
+		OwnerKind:      process.OwnerMainAgent,
+		OwnerID:        "thread-detached",
+		Lifecycle:      process.LifecycleManaged,
+		CompletionMode: process.CompletionModeDetached,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = manager.Stop(resumed.ID)
+		_, _ = manager.Stop(detached.ID)
+	})
+
+	if !threadHasOutstandingProcessCompletion(threadID, nil, manager) {
+		t.Fatal("resume process should keep automatic continuation outstanding")
+	}
+	if threadHasOutstandingProcessCompletion("thread-detached", nil, manager) {
+		t.Fatal("detached process should not keep automatic continuation outstanding")
+	}
+}
+
 func TestProcessCompletionHistoryMarkerPreventsDuplicateModelTurn(t *testing.T) {
 	processID := "proc-history"
 	result := &agent.LoopResult{NewMessages: []providers.ChatMessage{

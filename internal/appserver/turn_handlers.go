@@ -1919,6 +1919,9 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 	// Local queue drains are kicked only after this write, preserving terminal
 	// before successor ordering on this server without making an immediate user
 	// turn spuriously fail as busy.
+	awaitingAutoContinuation := err == nil && threadRuntime != nil &&
+		(threadRuntimeHasOutstandingAgentWork(threadRuntime) ||
+			threadHasOutstandingProcessCompletion(th.ID, threadRuntime.AgentControl, threadRuntime.ProcessManager))
 	if err != nil {
 		notify(NotificationTurnError, TurnErrorNotification{
 			ThreadID:   th.ID,
@@ -1932,18 +1935,19 @@ func (s *Server) runTurnWithRequestContext(ctx context.Context, th *threadState,
 		})
 	} else {
 		notify(NotificationTurnCompleted, TurnCompletedNotification{
-			ThreadID:            th.ID,
-			Turn:                turn,
-			Content:             res.Content,
-			InputTokens:         res.InputTokens,
-			OutputTokens:        res.OutputTokens,
-			ContextTokens:       res.ContextTokens,
-			CacheCreationTokens: res.CacheCreationTokens,
-			CacheReadTokens:     res.CacheReadTokens,
-			FinishReason:        string(res.FinishReason),
-			StopReason:          res.StopReason,
-			Truncated:           res.Truncated,
-			TracePath:           tracePath,
+			ThreadID:                 th.ID,
+			Turn:                     turn,
+			Content:                  res.Content,
+			InputTokens:              res.InputTokens,
+			OutputTokens:             res.OutputTokens,
+			ContextTokens:            res.ContextTokens,
+			CacheCreationTokens:      res.CacheCreationTokens,
+			CacheReadTokens:          res.CacheReadTokens,
+			FinishReason:             string(res.FinishReason),
+			StopReason:               res.StopReason,
+			Truncated:                res.Truncated,
+			TracePath:                tracePath,
+			AwaitingAutoContinuation: awaitingAutoContinuation,
 		})
 	}
 	if residentTurn {

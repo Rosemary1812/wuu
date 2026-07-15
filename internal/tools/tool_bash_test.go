@@ -36,16 +36,24 @@ func TestBashDefinitionExplainsInteractiveBackgroundFlow(t *testing.T) {
 	if !ok || !strings.Contains(wait["description"].(string), "Do not use it to wait for natural completion") {
 		t.Fatalf("bash wait_ms description does not explain turn handoff: %+v", wait)
 	}
+	completionMode, ok := properties["completion_mode"].(map[string]any)
+	if !ok || !strings.Contains(completionMode["description"].(string), "long-lived services") {
+		t.Fatalf("bash completion_mode does not explain detached services: %+v", completionMode)
+	}
 }
 
 func TestBashBackgroundSuggestionsExplainTurnHandoff(t *testing.T) {
 	for _, waitMS := range []int{0, 500} {
-		suggestions := strings.Join(bashBackgroundNextSuggestions(waitMS), " ")
+		suggestions := strings.Join(bashBackgroundNextSuggestions(waitMS, ""), " ")
 		for _, want := range []string{"only remaining dependency", "end this turn", "start a new turn"} {
 			if !strings.Contains(suggestions, want) {
 				t.Fatalf("background suggestions for wait_ms=%d omitted %q: %s", waitMS, want, suggestions)
 			}
 		}
+	}
+	detached := strings.Join(bashBackgroundNextSuggestions(0, "detached"), " ")
+	if !strings.Contains(detached, "will not start another model turn") {
+		t.Fatalf("detached suggestions omitted non-resume behavior: %s", detached)
 	}
 }
 
@@ -489,7 +497,7 @@ func TestBashReadBackgroundConsumesCompletionWhenTerminalResultIsReturned(t *tes
 
 	resp, err := kit.Execute(context.Background(), providers.ToolCall{
 		Name:      "bash",
-		Arguments: `{"action":"start_background","command":"printf 'done\\n'","wait_ms":2000,"max_bytes":4096}`,
+		Arguments: `{"action":"start_background","command":"printf 'done\\n'; sleep 0.2","wait_ms":2000,"max_bytes":4096}`,
 	})
 	if err != nil {
 		t.Fatalf("start background: %v", err)

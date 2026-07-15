@@ -30,6 +30,7 @@ type Lifecycle string
 type Status string
 type EventType string
 type EventCause string
+type CompletionMode string
 
 const (
 	EventStarted   EventType = "started"
@@ -47,6 +48,9 @@ const (
 	LifecycleSession Lifecycle = "session"
 	LifecycleManaged Lifecycle = "managed"
 
+	CompletionModeResume   CompletionMode = "resume"
+	CompletionModeDetached CompletionMode = "detached"
+
 	StatusStarting Status = "starting"
 	StatusRunning  Status = "running"
 	StatusStopping Status = "stopping"
@@ -55,29 +59,30 @@ const (
 )
 
 type Process struct {
-	Action                string     `json:"action,omitempty"`
-	ID                    string     `json:"id"`
-	OwnerKind             OwnerKind  `json:"owner_kind"`
-	OwnerID               string     `json:"owner_id"`
-	Lifecycle             Lifecycle  `json:"lifecycle"`
-	Status                Status     `json:"status"`
-	PID                   int        `json:"pid"`
-	PGID                  int        `json:"pgid"`
-	ProcessStartTime      string     `json:"process_start_time,omitempty"`
-	TTY                   bool       `json:"tty,omitempty"`
-	LogPath               string     `json:"log_path"`
-	Command               string     `json:"command"`
-	CWD                   string     `json:"cwd"`
-	PreviewURLs           []string   `json:"preview_urls,omitempty"`
-	PrimaryPreviewURL     string     `json:"primary_preview_url,omitempty"`
-	StartedAt             time.Time  `json:"started_at"`
-	UpdatedAt             time.Time  `json:"updated_at"`
-	StoppedAt             time.Time  `json:"stopped_at,omitempty"`
-	ExitCode              int        `json:"exit_code,omitempty"`
-	LastError             string     `json:"last_error,omitempty"`
-	TerminalCause         EventCause `json:"terminal_cause,omitempty"`
-	CompletionDeliveredAt time.Time  `json:"completion_delivered_at,omitempty"`
-	CompletionConsumedBy  string     `json:"completion_consumed_by,omitempty"`
+	Action                string         `json:"action,omitempty"`
+	ID                    string         `json:"id"`
+	OwnerKind             OwnerKind      `json:"owner_kind"`
+	OwnerID               string         `json:"owner_id"`
+	Lifecycle             Lifecycle      `json:"lifecycle"`
+	CompletionMode        CompletionMode `json:"completion_mode,omitempty"`
+	Status                Status         `json:"status"`
+	PID                   int            `json:"pid"`
+	PGID                  int            `json:"pgid"`
+	ProcessStartTime      string         `json:"process_start_time,omitempty"`
+	TTY                   bool           `json:"tty,omitempty"`
+	LogPath               string         `json:"log_path"`
+	Command               string         `json:"command"`
+	CWD                   string         `json:"cwd"`
+	PreviewURLs           []string       `json:"preview_urls,omitempty"`
+	PrimaryPreviewURL     string         `json:"primary_preview_url,omitempty"`
+	StartedAt             time.Time      `json:"started_at"`
+	UpdatedAt             time.Time      `json:"updated_at"`
+	StoppedAt             time.Time      `json:"stopped_at,omitempty"`
+	ExitCode              int            `json:"exit_code,omitempty"`
+	LastError             string         `json:"last_error,omitempty"`
+	TerminalCause         EventCause     `json:"terminal_cause,omitempty"`
+	CompletionDeliveredAt time.Time      `json:"completion_delivered_at,omitempty"`
+	CompletionConsumedBy  string         `json:"completion_consumed_by,omitempty"`
 }
 
 type StartOptions struct {
@@ -86,6 +91,7 @@ type StartOptions struct {
 	OwnerKind             OwnerKind
 	OwnerID               string
 	Lifecycle             Lifecycle
+	CompletionMode        CompletionMode
 	TTY                   bool
 	AllowOutsideWorkspace bool
 }
@@ -190,12 +196,18 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 	if opt.Lifecycle != LifecycleSession && opt.Lifecycle != LifecycleManaged {
 		return nil, errors.New("lifecycle must be session or managed")
 	}
+	if opt.CompletionMode == "" {
+		opt.CompletionMode = CompletionModeResume
+	}
+	if opt.CompletionMode != CompletionModeResume && opt.CompletionMode != CompletionModeDetached {
+		return nil, errors.New("completion_mode must be resume or detached")
+	}
 	cwd, err := resolveStartCWD(m.rootDir, opt.CWD, opt.AllowOutsideWorkspace)
 	if err != nil {
 		return nil, err
 	}
 	id := "proc-" + randomHex(4)
-	p := &Process{ID: id, OwnerKind: opt.OwnerKind, OwnerID: opt.OwnerID, Lifecycle: opt.Lifecycle, Status: StatusStarting, Command: opt.Command, CWD: cwd, TTY: opt.TTY, LogPath: filepath.Join(m.logDir, id+".log"), StartedAt: time.Now(), UpdatedAt: time.Now(), ExitCode: -1}
+	p := &Process{ID: id, OwnerKind: opt.OwnerKind, OwnerID: opt.OwnerID, Lifecycle: opt.Lifecycle, CompletionMode: opt.CompletionMode, Status: StatusStarting, Command: opt.Command, CWD: cwd, TTY: opt.TTY, LogPath: filepath.Join(m.logDir, id+".log"), StartedAt: time.Now(), UpdatedAt: time.Now(), ExitCode: -1}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.save(p); err != nil {
@@ -920,7 +932,7 @@ func (m *Manager) PendingCompletions() ([]Process, error) {
 	}
 	pending := make([]Process, 0)
 	for _, p := range processes {
-		if p.TerminalCause == EventCauseNaturalExit &&
+		if p.CompletionMode != CompletionModeDetached && p.TerminalCause == EventCauseNaturalExit &&
 			(p.Status == StatusStopped || p.Status == StatusFailed) &&
 			p.CompletionDeliveredAt.IsZero() {
 			pending = append(pending, p)
@@ -936,7 +948,7 @@ func (m *Manager) CompletionPending(id string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return p.TerminalCause == EventCauseNaturalExit &&
+	return p.CompletionMode != CompletionModeDetached && p.TerminalCause == EventCauseNaturalExit &&
 		(p.Status == StatusStopped || p.Status == StatusFailed) &&
 		p.CompletionDeliveredAt.IsZero(), nil
 }
@@ -948,7 +960,7 @@ func (m *Manager) MarkCompletionDelivered(id, consumer string) (*Process, error)
 	if err != nil {
 		return nil, err
 	}
-	if p.TerminalCause != EventCauseNaturalExit || (p.Status != StatusStopped && p.Status != StatusFailed) {
+	if p.CompletionMode == CompletionModeDetached || p.TerminalCause != EventCauseNaturalExit || (p.Status != StatusStopped && p.Status != StatusFailed) {
 		return p, fmt.Errorf("process %q has no natural-exit completion to deliver", id)
 	}
 	if p.CompletionDeliveredAt.IsZero() {

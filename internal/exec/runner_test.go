@@ -193,6 +193,51 @@ func TestRunDefaultStdoutOnlyFinalMessage(t *testing.T) {
 	}
 }
 
+func TestRunWaitsForAutomaticContinuation(t *testing.T) {
+	controller := newFakeController(
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{
+			ThreadID:                 "thread-1",
+			Turn:                     appserver.Turn{ID: "turn-1"},
+			Content:                  "waiting for the background process",
+			AwaitingAutoContinuation: true,
+		}),
+		notification(appserver.NotificationTurnStarted, appserver.TurnStartedNotification{
+			ThreadID: "thread-1",
+			Turn:     appserver.Turn{ID: "turn-2"},
+		}),
+		notification(appserver.NotificationAgentMessageDelta, appserver.AgentMessageDeltaNotification{
+			ThreadID: "thread-1",
+			TurnID:   "turn-2",
+			Delta:    "continued",
+		}),
+		notification(appserver.NotificationTurnCompleted, appserver.TurnCompletedNotification{
+			ThreadID:  "thread-1",
+			Turn:      appserver.Turn{ID: "turn-2"},
+			Content:   "background work verified",
+			TracePath: "/trace-2.jsonl",
+		}),
+	)
+	var stdout, stderr bytes.Buffer
+
+	if err := Run(context.Background(), Options{
+		Prompt:     "run background work",
+		Stdout:     &stdout,
+		Stderr:     &stderr,
+		Controller: controller,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := stdout.String(); got != "background work verified\n" {
+		t.Fatalf("stdout = %q", got)
+	}
+	if strings.Contains(stdout.String(), "waiting for the background process") {
+		t.Fatalf("stdout exposed intermediate completion: %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "trace_path: /trace-2.jsonl") {
+		t.Fatalf("stderr missing continuation trace path: %q", stderr.String())
+	}
+}
+
 func TestRunJSONLEmitsStableEvents(t *testing.T) {
 	controller := newFakeController(
 		notification(appserver.NotificationTurnEvent, appserver.TurnEventNotification{
