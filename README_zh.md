@@ -55,6 +55,8 @@
 
 在本仓库的一个真实前端 bug 上，各方拿到的是完全一致的初始提示词——一份高度模糊化的描述，从定位问题到解决全部交由 agent 自主完成。三个运行 MiniMax-M3 的 wuu 群聊 agent 自主定位问题并交付了可用修复，API 费用 $2.66；同样的任务，单 agent 的 Claude Fable 5 修复花费约 $200，Claude Opus 4.8 花费约 $20 仍未修复。多智能体协作让便宜模型以约七十五分之一的成本拿到了同样的结果。
 
+群聊目前还不成熟，已通过功能开关暂时关闭。在真实代码仓库的内部 bench 中，wuu 普通 session 每次成功修复的成本约为 [pi](https://github.com/badlogic/pi-mono) 的一半。
+
 ## 安装
 
 > [!IMPORTANT]
