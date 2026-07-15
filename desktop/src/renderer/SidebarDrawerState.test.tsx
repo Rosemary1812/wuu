@@ -32,7 +32,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function renderSidebarDrawerState(): Promise<{
+async function renderSidebarDrawerState({
+  closeOnWindowResize = false,
+}: {
+  closeOnWindowResize?: boolean;
+} = {}): Promise<{
   get: () => SidebarDrawerStateController;
   sidebar: HTMLElement;
   hoverZone: HTMLElement;
@@ -49,6 +53,7 @@ async function renderSidebarDrawerState(): Promise<{
       resizingSidebar: false,
       activeSessionTabID: "session-a",
       motionMs: 120,
+      closeOnWindowResize,
     });
     latest = drawer;
     return (
@@ -187,7 +192,7 @@ describe("useSidebarDrawerState", () => {
   });
 
   it("closes a hover drawer when the native window is resized", async () => {
-    const hook = await renderSidebarDrawerState();
+    const hook = await renderSidebarDrawerState({ closeOnWindowResize: true });
 
     await act(async () => {
       hook.get().openSidebarDrawerNow();

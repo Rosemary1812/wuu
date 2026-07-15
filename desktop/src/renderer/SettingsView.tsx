@@ -557,7 +557,8 @@ export function SettingsView({
     sidebarCollapsed,
     resizingSidebar,
     activeSessionTabID: activeSessionTabID || activePage,
-    motionMs: sidebarMotionMs
+    motionMs: sidebarMotionMs,
+    closeOnWindowResize: true
   });
   const shellClassName = `settings-shell${resizingSidebar ? " resizing-sidebar" : ""}${
     sidebarCollapsed ? " sidebar-collapsed" : ""

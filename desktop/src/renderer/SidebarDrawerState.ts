@@ -37,6 +37,7 @@ export function useSidebarDrawerState({
   activeSessionTabID,
   motionMs,
   hoverOpenDelayMs = SIDEBAR_DRAWER_HOVER_OPEN_DELAY_MS,
+  closeOnWindowResize = false,
 }: {
   appShellRef: RefObject<HTMLDivElement | null>;
   sidebarCollapsed: boolean;
@@ -44,6 +45,7 @@ export function useSidebarDrawerState({
   activeSessionTabID: string;
   motionMs: number;
   hoverOpenDelayMs?: number;
+  closeOnWindowResize?: boolean;
 }): SidebarDrawerStateController {
   const [sidebarDrawerPhase, setSidebarDrawerPhase] =
     useState<SidebarDrawerPhase>("closed");
@@ -301,12 +303,13 @@ export function useSidebarDrawerState({
     }
   }, [cancelSidebarDrawerOpen, resizingSidebar, sidebarCollapsed]);
 
-  // A native window resize changes the shell grid and the absolute drawer's
-  // containing block in the same frame. Do not carry a hover-open drawer
-  // across that geometry change: the pointer may still be at the edge, but
-  // the old open phase now describes stale layout. Re-entering the edge
-  // hover zone can open it again against the new bounds.
+  // Shells that cannot preserve their drawer geometry across a native resize
+  // can opt into resetting it. The main conversation shell keeps its drawer
+  // stable during resize, while settings recomputes against the new bounds.
   useEffect(() => {
+    if (!closeOnWindowResize) {
+      return undefined;
+    }
     function handleWindowResize(): void {
       cancelSidebarDrawerOpen();
       clearSidebarDrawerCloseTimer();
@@ -318,6 +321,7 @@ export function useSidebarDrawerState({
     return () => window.removeEventListener("resize", handleWindowResize);
   }, [
     cancelSidebarDrawerOpen,
+    closeOnWindowResize,
     clearSidebarDrawerCloseTimer,
     clearSidebarDrawerPointerLeaveTimer,
   ]);
