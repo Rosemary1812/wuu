@@ -56,6 +56,9 @@ export type InitializeResult = {
   effort?: string;
   variant?: string;
   ultra?: boolean;
+  // Effective anonymous-worker execution capacity after applying the
+  // default (docs/app-server-protocol.md, Ultra Mode Configuration).
+  max_parallel?: number;
   workspace_root: string;
   permissions?: PermissionSummary;
   // model_profile + tool_surface summarise the per-model tool
@@ -190,6 +193,9 @@ export type ConfigModelUpdateResult = {
   effort?: string;
   variant?: string;
   ultra: boolean;
+  // Readback of the effective anonymous-worker capacity, mirroring
+  // InitializeResult.max_parallel.
+  max_parallel: number;
   permissions?: PermissionSummary;
   // model_profile + tool_surface mirror the initialize result. The
   // runtime recomputes the surface when the model changes, so the
