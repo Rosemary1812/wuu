@@ -105,6 +105,22 @@
   contain-intrinsic-size: none;
 }
 
+/*
+ * The last few turns fill the initial viewport when a conversation opens
+ * pinned to the bottom. Render them for real from the FIRST layout pass:
+ * if they carry the 260px estimate instead, the pre-paint scroll-to-bottom
+ * measures a wrong scrollHeight, their true heights resolve at first paint
+ * (overflow-anchor is disabled while auto-following, so the browser does
+ * not compensate), and the ResizeObserver re-pin lands one frame later —
+ * a visible vertical jolt right after opening a session. Turns further up
+ * keep the cheap estimate; they only resolve under a reading scroll, where
+ * the correction is imperceptible.
+ */
+.turn:nth-last-child(-n + 5 of .turn) {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+
 .turn-collapsed {
   content-visibility: visible;
   contain-intrinsic-size: none;

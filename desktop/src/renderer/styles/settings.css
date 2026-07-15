@@ -200,6 +200,12 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  /* Claim the scrollbar's column permanently (same treatment as the
+   * composer/environment scroll surfaces). Without it, switching pages
+   * remounts .settings-page, the scrollbar vanishes for a frame and comes
+   * back, and the margin:0-auto centered column shifts sideways twice —
+   * the text visibly "jitters" horizontally before settling. */
+  scrollbar-gutter: stable;
 }
 
 /* Content column. Settings is a focused single-column form, not a 12-col

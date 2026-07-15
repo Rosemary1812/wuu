@@ -170,6 +170,17 @@
   animation: content-swap-enter var(--content-swap-duration) var(--content-swap-easing) both;
 }
 
+/* The swap's 4px translate must NOT leak into scroll geometry: a transformed
+ * child extends the scroller's scrollable overflow, so the pre-paint
+ * scroll-to-bottom pins against a 4px phantom that then shrinks as the
+ * animation rises — the browser walks scrollTop down ~1px per frame while
+ * the transform walks the content up, and any dropped frame between the two
+ * shows as a visible vertical jolt right after opening a session. Clipping
+ * at the pane keeps the scroller's height honest for the whole entrance. */
+.cached-conversation-pane {
+  overflow: clip;
+}
+
 .conversation-pane.subthread-panel-visible {
   grid-template-columns: minmax(0, 1fr) var(--thread-panel-width, 372px);
   /* Right-anchored floaters (jump-to-latest, …) stay left of the panel. */
@@ -342,8 +353,27 @@
   .session-tab-scroll[data-enter-ready] .session-tab:not(.closing) {
     max-width: 0;
     min-width: 0;
+  }
+
+  .session-tab-scroll[data-enter-ready]
+    .session-tab:not(.closing)
+    .session-tab-main {
     opacity: 0;
   }
+}
+
+/* Two-stage entrance: the shell's width leads, the label joins late and
+ * lands on the same beat (60ms delay + --motion-fast = --motion-base, the
+ * shell's own duration — and the content-swap rhythm of the surface the tab
+ * opens). Keeping the text invisible while the tab is still narrow avoids
+ * the clipped-label ellipsis shuffle mid-growth. */
+.session-tab .session-tab-main {
+  transition: opacity var(--motion-fast) var(--ease-out) 60ms;
+}
+
+.session-tab.closing .session-tab-main {
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-in);
 }
 
 /* Tab exit: TabMotion.ts keeps the closed tab mounted for one fast beat as

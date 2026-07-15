@@ -477,8 +477,26 @@
   .workspace-panel-tabs[data-enter-ready] .workspace-tool-tab:not(.closing) {
     max-width: 0;
     min-width: 0;
+  }
+
+  .workspace-panel-tabs[data-enter-ready]
+    .workspace-tool-tab:not(.closing)
+    .workspace-tool-tab-main {
     opacity: 0;
   }
+}
+
+/* Two-stage entrance, same as the session strip: shell width leads, label
+ * joins late and lands on the shell's beat (60 + 120 = 180ms), which is also
+ * the panel body's content-swap rhythm — chrome and content arrive as one
+ * gesture. */
+.workspace-tool-tab .workspace-tool-tab-main {
+  transition: opacity var(--motion-fast) var(--ease-out) 60ms;
+}
+
+.workspace-tool-tab.closing .workspace-tool-tab-main {
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-in);
 }
 
 .workspace-tool-tab.closing {
