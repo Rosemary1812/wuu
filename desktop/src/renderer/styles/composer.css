@@ -369,7 +369,7 @@
 .composer-expand-button {
   position: absolute;
   top: 8px;
-  right: 14px;
+  right: 8px;
   width: 28px;
   height: 28px;
   z-index: 3;
@@ -381,7 +381,7 @@
    * Quiet icon button, unified with the goal / 排队消息 row actions
    * (.composer-input-header-action): transparent by default, revealing an
    * --ink-overlay-8 hover fill, 28x28 with a 14px glyph. Right-aligned to
-   * the header rows' inline padding (right:14px) and matched in size so the
+   * the header rows' inline padding (right:8px) and matched in size so the
    * expand affordance stacks into the same right-edge control column as the
    * row actions above it — instead of floating as its own smaller,
    * always-filled corner tab. The textarea reserves a 44px right gutter
@@ -587,7 +587,7 @@
 }
 
 .composer-input-header {
-  --composer-input-header-inline-padding: 14px;
+  --composer-input-header-inline-padding: 8px;
   --composer-input-header-row-height: 36px;
   --composer-input-header-action-size: 28px;
   border-bottom: 1px solid var(--ink-overlay-6);
@@ -657,7 +657,7 @@
   align-items: center;
   gap: 8px;
   min-height: var(--composer-input-header-row-height, 36px);
-  padding: 4px var(--composer-input-header-inline-padding, 14px);
+  padding: 4px var(--composer-input-header-inline-padding, 8px);
   color: var(--ink);
   font-size: 13.5px;
   line-height: 1.5;
@@ -739,7 +739,7 @@
   column-gap: 8px;
   row-gap: 2px;
   min-height: var(--composer-input-header-row-height, 36px);
-  padding: 4px var(--composer-input-header-inline-padding, 14px);
+  padding: 4px var(--composer-input-header-inline-padding, 8px);
   margin: 0;
   background: transparent;
   color: var(--ink);
@@ -964,7 +964,7 @@
   border: 0;
   outline: 0;
   background: transparent;
-  padding: 16px 44px 8px var(--composer-text-start);
+  padding: 10px 44px 8px var(--composer-text-start);
   color: var(--ink);
   font-size: var(--font-body);
   line-height: 24px;
@@ -973,7 +973,7 @@
 .hero-composer-wrap .composer textarea {
   height: 62px;
   min-height: 62px;
-  padding: 22px 52px 8px var(--composer-text-start);
+  padding: 16px 52px 8px var(--composer-text-start);
 }
 
 .composer-stack.is-expanded .composer textarea {

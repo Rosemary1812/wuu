@@ -1947,10 +1947,10 @@ describe("Composer expand button", () => {
     expect(composerCSS).toContain("min-height: clamp(180px, 34vh, 320px)");
     expect(composerCSS).toContain("--composer-collapsed-min-height: 96px");
     expect(composerCSS).toMatch(
-      /\.composer\s+textarea\s*\{[^}]*display:\s*block[^}]*height:\s*56px[^}]*min-height:\s*56px[^}]*padding:\s*16px\s+44px\s+8px\s+var\(--composer-text-start\)/,
+      /\.composer\s+textarea\s*\{[^}]*display:\s*block[^}]*height:\s*56px[^}]*min-height:\s*56px[^}]*padding:\s*10px\s+44px\s+8px\s+var\(--composer-text-start\)/,
     );
     expect(composerCSS).toMatch(
-      /\.hero-composer-wrap\s+\.composer\s+textarea\s*\{[^}]*height:\s*62px[^}]*min-height:\s*62px[^}]*padding:\s*22px\s+52px\s+8px\s+var\(--composer-text-start\)/,
+      /\.hero-composer-wrap\s+\.composer\s+textarea\s*\{[^}]*height:\s*62px[^}]*min-height:\s*62px[^}]*padding:\s*16px\s+52px\s+8px\s+var\(--composer-text-start\)/,
     );
     expect(composerCSS).toMatch(
       /\.composer-bar\s*\{[^}]*height:\s*40px[^}]*padding:\s*0\s+8px\s+4px\s+calc\(var\(--composer-text-start\)\s*-\s*var\(--composer-control-icon-inset\)\)/,
@@ -2104,5 +2104,38 @@ describe("Composer expand button", () => {
     expect(button?.disabled).toBe(true);
     expect(button?.getAttribute("title")).toBe("只读会话不可展开");
     expect(stack?.classList.contains("is-expanded")).toBe(false);
+  });
+
+  it("places the placeholder line on the same axis as the expand button", () => {
+    // Top padding 10px + line-height 24px / 2 = 22px visual center; the
+    // expand button is at top:8 height:28 → center 22px. They line up so
+    // the placeholder glyph sits next to the chevron, not high above it.
+    expect(composerCSS).toMatch(
+      /\.composer\s+textarea\s*\{[^}]*padding:\s*10px\s+44px\s+8px\s+var\(--composer-text-start\)/,
+    );
+    expect(composerCSS).toMatch(
+      /\.hero-composer-wrap\s+\.composer\s+textarea\s*\{[^}]*padding:\s*16px\s+52px\s+8px\s+var\(--composer-text-start\)/,
+    );
+  });
+
+  it("centers the expand button on the same vertical axis as the send button", () => {
+    // The send button is the rightmost 28x28 element in the bar; the expand
+    // button is positioned absolutely at right:8 width:28, so its right edge
+    // sits 8px from the frame's right edge — same gutter as the bar.
+    expect(composerCSS).toMatch(
+      /\.composer-expand-button\s*\{[^}]*right:\s*8px[^}]*width:\s*28px[^}]*height:\s*28px/,
+    );
+  });
+
+  it("moves the goal / steer / queue header actions in sync with the expand button", () => {
+    // The expand button intentionally mirrors the input-header row actions;
+    // when it shifts right by 6px the header row inline padding must follow
+    // so the right-edge control column stays aligned across rows.
+    expect(composerCSS).toMatch(
+      /--composer-input-header-inline-padding:\s*8px;/,
+    );
+    expect(composerCSS).not.toMatch(
+      /--composer-input-header-inline-padding:\s*14px;/,
+    );
   });
 });
