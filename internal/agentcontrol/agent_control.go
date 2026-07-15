@@ -84,23 +84,23 @@ type AgentControl struct {
 	turnUltra atomic.Bool
 	// treeFrozen gates nested-result wakes between turn/interrupt's
 	// FreezeWorkerTree and the next user turn's ResolveFrozenWorkerTree.
-	treeFrozen    atomic.Bool
-	shutdownMu    sync.RWMutex
-	stopping      bool
-	spawnSlotMu   sync.Mutex
-	spawnSlots    int
-	queueStartMu  sync.Mutex
-	queueStarted  bool
-	queueStopped  bool
-	queueDrainMu  sync.Mutex
-	queueMu       sync.Mutex
-	queued        []preparedSpawn
-	queueRetryMu  sync.Mutex
-	queueRetrying bool
-	statusCh      chan subagent.Notification
-	statusStop    chan struct{}
-	statusDone    chan struct{}
-	closeOnce     sync.Once
+	treeFrozen        atomic.Bool
+	shutdownMu        sync.RWMutex
+	stopping          bool
+	spawnSlotMu       sync.Mutex
+	spawnReservations map[*spawnSlotReservation]struct{}
+	queueStartMu      sync.Mutex
+	queueStarted      bool
+	queueStopped      bool
+	queueDrainMu      sync.Mutex
+	queueMu           sync.Mutex
+	queued            []preparedSpawn
+	queueRetryMu      sync.Mutex
+	queueRetrying     bool
+	statusCh          chan subagent.Notification
+	statusStop        chan struct{}
+	statusDone        chan struct{}
+	closeOnce         sync.Once
 
 	workerTransitionMu                    sync.Mutex
 	workerTransitions                     map[string]*sync.Mutex
@@ -893,7 +893,7 @@ func (c *AgentControl) Spawn(ctx context.Context, req SpawnRequest) (spawnResult
 	// the capability its spawner had, not whatever the session says at launch.
 	ultra := c.effectiveSpawnUltra(req.ParentID)
 
-	spawnSlot, admitted := c.tryReserveSpawnSlot()
+	spawnSlot, admitted := c.tryReserveSpawnSlot(workerID)
 	if !admitted && req.Synchronous {
 		return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or use async spawn so the task can queue.", c.maxParallel)
 	}
@@ -1304,7 +1304,7 @@ func (c *AgentControl) Fork(ctx context.Context, req ForkRequest, parentHistory 
 	// fresh spawn (turn snapshot for the root, stored value for a worker).
 	ultra := c.effectiveSpawnUltra(req.ParentID)
 
-	spawnSlot, admitted := c.tryReserveSpawnSlot()
+	spawnSlot, admitted := c.tryReserveSpawnSlot(workerID)
 	if !admitted {
 		if req.Synchronous {
 			return nil, fmt.Errorf("max parallel sub-agents reached (%d). Wait for one to complete or use async spawn so the task can queue.", c.maxParallel)
@@ -2250,7 +2250,7 @@ func (c *AgentControl) maybeStartQueued(ctx context.Context) {
 		if !c.hasQueuedSpawns() {
 			return
 		}
-		spawnSlot, admitted := c.tryReserveSpawnSlot()
+		spawnSlot, admitted := c.tryReserveSpawnSlot("")
 		if !admitted {
 			return
 		}
@@ -2259,6 +2259,7 @@ func (c *AgentControl) maybeStartQueued(ctx context.Context) {
 			spawnSlot.release()
 			return
 		}
+		spawnSlot.bindWorker(prepared.WorkerID)
 		outcome, err := func() (queuedSpawnStartOutcome, error) {
 			defer spawnSlot.release()
 			return c.startQueuedSpawn(ctx, prepared)

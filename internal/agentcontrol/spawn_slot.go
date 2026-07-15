@@ -2,7 +2,10 @@ package agentcontrol
 
 import (
 	"context"
+	"strings"
 	"sync"
+
+	"github.com/blueberrycongee/wuu/internal/subagent"
 )
 
 // spawnSlotReservation bridges the process-local preparation window before
@@ -12,21 +15,61 @@ import (
 // durable worker ID. Without this reservation, concurrent callers on one
 // control can all observe the same free slot and oversubscribe maxParallel.
 type spawnSlotReservation struct {
-	control *AgentControl
-	once    sync.Once
+	control  *AgentControl
+	workerID string
+	once     sync.Once
 }
 
-func (c *AgentControl) tryReserveSpawnSlot() (*spawnSlotReservation, bool) {
+func (c *AgentControl) tryReserveSpawnSlot(workerID string) (*spawnSlotReservation, bool) {
 	if c == nil || c.manager == nil {
 		return nil, false
 	}
 	c.spawnSlotMu.Lock()
 	defer c.spawnSlotMu.Unlock()
-	if c.manager.CountRunning()+c.spawnSlots >= c.maxParallel {
+
+	// A reservation covers only the preparation window before Manager.Spawn
+	// registers the worker. Build one manager snapshot so a registered worker
+	// and its not-yet-released reservation are never counted twice.
+	registered := make(map[string]subagent.Status)
+	running := 0
+	for _, snap := range c.manager.List() {
+		registered[snap.ID] = snap.Status
+		if snap.Status == subagent.StatusRunning {
+			running++
+		}
+	}
+	pending := 0
+	for reservation := range c.spawnReservations {
+		id := strings.TrimSpace(reservation.workerID)
+		if id == "" {
+			pending++
+			continue
+		}
+		if _, exists := registered[id]; !exists {
+			pending++
+		}
+	}
+	if running+pending >= c.maxParallel {
 		return nil, false
 	}
-	c.spawnSlots++
-	return &spawnSlotReservation{control: c}, true
+	reservation := &spawnSlotReservation{control: c, workerID: strings.TrimSpace(workerID)}
+	if c.spawnReservations == nil {
+		c.spawnReservations = make(map[*spawnSlotReservation]struct{})
+	}
+	c.spawnReservations[reservation] = struct{}{}
+	return reservation, true
+}
+
+func (r *spawnSlotReservation) bindWorker(workerID string) {
+	if r == nil || r.control == nil {
+		return
+	}
+	c := r.control
+	c.spawnSlotMu.Lock()
+	if _, active := c.spawnReservations[r]; active {
+		r.workerID = strings.TrimSpace(workerID)
+	}
+	c.spawnSlotMu.Unlock()
 }
 
 func (r *spawnSlotReservation) release() {
@@ -44,9 +87,7 @@ func (r *spawnSlotReservation) releaseWithQueueKick(kickQueued bool) {
 	r.once.Do(func() {
 		c := r.control
 		c.spawnSlotMu.Lock()
-		if c.spawnSlots > 0 {
-			c.spawnSlots--
-		}
+		delete(c.spawnReservations, r)
 		c.spawnSlotMu.Unlock()
 
 		// Direct preparation uses kickQueued because a very short worker can
