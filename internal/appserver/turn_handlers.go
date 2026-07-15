@@ -3030,8 +3030,13 @@ func (s *Server) startSyntheticTurn(ctx context.Context, threadID string, userMs
 	if !s.startBackground(func() {
 		s.runTurn(started.ctx, th, threadRuntime, started.turnID, started.runtime, started.history)
 	}) {
-		abortStartedThreadTurn(th, started, errServerClosed)
-		return false, errServerClosed
+		// The synthetic completion message was already appended durably at
+		// admission; a memory-only rollback would leave an orphan user
+		// message with no terminal meta after restart, and its completion
+		// result could be consumed twice. Record the terminal projection
+		// exactly like a rejected ordinary user turn.
+		persistErr := s.abortStartedThreadTurnDurably(th, started, errServerClosed)
+		return false, errors.Join(errServerClosed, persistErr)
 	}
 	return true, nil
 }
