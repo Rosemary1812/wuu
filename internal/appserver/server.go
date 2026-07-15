@@ -673,9 +673,33 @@ func (s *Server) waitForOwnedShutdown(threads []*threadState, controls map[*agen
 	for shutdownExecutionActive(threads, controls) {
 		if !time.Now().Before(deadline) {
 			log.Printf("wuu: shutdown drain timed out after %s: releasing with owned executions still active", ownedShutdownDrainTimeout)
+			forceReleaseAbandonedThreadExecutions(threads)
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// forceReleaseAbandonedThreadExecutions breaks the execution leases a timed-out
+// drain would otherwise abandon. In a process-exit shutdown the OS reclaims
+// the flocks anyway, but an embedded host (remote device sessions) keeps the
+// process alive: a stuck turn goroutine would hold its same-process lock
+// forever and every successor app-server would see the thread as busy.
+// Releasing the lease makes the durable state read exactly like a crashed
+// owner — the turn meta still says running, so the successor's normal
+// crash-recovery settles it. The stuck goroutine's own finalizer becomes a
+// no-op: releaseTurnExecutionLocked ignores a turn id that no longer matches.
+func forceReleaseAbandonedThreadExecutions(threads []*threadState) {
+	for _, th := range threads {
+		if th == nil {
+			continue
+		}
+		th.mu.Lock()
+		if th.executionLease != nil {
+			log.Printf("wuu: shutdown abandoning turn %q on thread %q: force-releasing its execution lease for successor recovery", th.currentTurn, th.ID)
+			th.releaseTurnExecutionLocked(th.currentTurn)
+		}
+		th.mu.Unlock()
 	}
 }
 
