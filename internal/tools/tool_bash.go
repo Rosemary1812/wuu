@@ -28,10 +28,7 @@ const (
 //
 // Implementation note: short-lived commands use executeShellCommandWithCWD,
 // verification commands get result enrichment as a post-processor,
-// and long-running commands use the managed process backend.
-// Package/network commands that are covered by the default command
-// policy reach approval before this executor runs; unrelated
-// package/network commands still fail closed.
+// and long-running or interactive commands use the managed process backend.
 type BashTool struct{ env *Env }
 
 func NewBashTool(env *Env) *BashTool { return &BashTool{env: env} }
@@ -110,8 +107,8 @@ func (t *BashTool) ValidateInput(argsJSON string) error {
 func (t *BashTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "bash",
-		Description: "Run non-interactive bash operations in the workspace. Use for terminal work: tests, lint, builds, git, package managers, scripts, docker, and managed background processes.\n\n" +
-			"Prefer dedicated file/search/edit tools for reading, searching, or changing files. Default action=run returns exit_code, duration_ms, workspace_revision, output tails, and full_log_ref when available; verification commands add verification metadata. Use start_background/list_background/read_background/write_background/stop_background for long-lived processes. cwd defaults to the workspace root. Shell state does not persist between run calls.",
+		Description: "Run bash operations in the workspace. Use for terminal work: tests, lint, builds, git, package managers, scripts, docker, and managed background processes.\n\n" +
+			"Prefer dedicated file/search/edit tools for reading, searching, or changing files. Default action=run is non-interactive and returns exit_code, duration_ms, workspace_revision, output tails, and full_log_ref when available; verification commands add verification metadata. For terminal prompts, confirmations, or REPLs, use action=start_background with tty=true, then action=write_background to send input and action=read_background to read output. Use the background actions for long-lived processes as well. cwd defaults to the workspace root. Shell state does not persist between run calls.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -122,7 +119,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 				},
 				"command": map[string]any{
 					"type":        "string",
-					"description": "Shell command to execute or start in the background. Must be non-interactive; never rely on editors, pagers, or terminal prompts. Do not background with '&'; use action=start_background for long-lived processes.",
+					"description": "Shell command to execute or start in the background. action=run must be non-interactive and must not rely on editors, pagers, or terminal prompts. For interactive commands, use action=start_background with tty=true. Do not background with '&'.",
 				},
 				"timeout_seconds": map[string]any{
 					"type":        "integer",
@@ -148,7 +145,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 				},
 				"tty": map[string]any{
 					"type":        "boolean",
-					"description": "Run the background command in a pseudo-terminal.",
+					"description": "Run action=start_background in a pseudo-terminal. Use for prompts, confirmations, and REPLs that require terminal input.",
 				},
 				"wait_ms": map[string]any{
 					"type":        "integer",

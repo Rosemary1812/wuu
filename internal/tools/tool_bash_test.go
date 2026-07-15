@@ -12,6 +12,27 @@ import (
 	"github.com/blueberrycongee/wuu/internal/providers"
 )
 
+func TestBashDefinitionExplainsInteractiveBackgroundFlow(t *testing.T) {
+	def := NewBashTool(&Env{}).Definition()
+	for _, want := range []string{"action=start_background", "tty=true", "action=write_background", "action=read_background"} {
+		if !strings.Contains(def.Description, want) {
+			t.Fatalf("bash description must teach %q interactive flow: %q", want, def.Description)
+		}
+	}
+	properties, ok := def.InputSchema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("bash properties schema has unexpected type: %T", def.InputSchema["properties"])
+	}
+	command, ok := properties["command"].(map[string]any)
+	if !ok {
+		t.Fatalf("bash command schema has unexpected type: %T", properties["command"])
+	}
+	commandDescription, _ := command["description"].(string)
+	if !strings.Contains(commandDescription, "action=run must be non-interactive") || !strings.Contains(commandDescription, "tty=true") {
+		t.Fatalf("bash command description does not distinguish run from interactive background use: %q", commandDescription)
+	}
+}
+
 func TestBashRunAddsVerificationSummaryAndRepeatGuard(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/bashverify\n\ngo 1.22\n")
