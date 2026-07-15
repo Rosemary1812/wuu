@@ -497,13 +497,26 @@ func TestQueuedSpawnCancellationTombstoneRecoversHelpMeRollbackWithoutLaunch(t *
 		client,
 		nil,
 	)
-	waitForQueuedSpawnConcurrencyTest(t, func() bool {
+	settled := false
+	deadline := time.Now().Add(queuedSpawnRecoveryTimeoutForTest)
+	for time.Now().Before(deadline) {
 		exists, existsErr := recovered.HarnessStore().QueueItemExists(workerID)
 		_, recoveryExists := recovered.HelpMeRecoveryForHelper(workerID)
 		meta, metaExists := recovered.Threads().Resolve(workerID)
-		return existsErr == nil && !exists && !recoveryExists && metaExists &&
-			meta.Status == agentthread.StatusCancelled && meta.Source.EdgeStatus == agentthread.EdgeClosed
-	}, "recovered cancellation tombstone to compensate and settle")
+		if existsErr == nil && !exists && !recoveryExists && metaExists &&
+			meta.Status == agentthread.StatusCancelled && meta.Source.EdgeStatus == agentthread.EdgeClosed {
+			settled = true
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !settled {
+		item, itemExists, itemErr := recovered.HarnessStore().GetQueueItem(workerID)
+		recovery, recoveryExists := recovered.HelpMeRecoveryForHelper(workerID)
+		meta, metaExists := recovered.Threads().Resolve(workerID)
+		t.Fatalf("timed out waiting for recovered cancellation tombstone to compensate and settle: item=%+v item_exists=%t item_err=%v recovery=%+v recovery_exists=%t meta=%+v meta_exists=%t queued=%d retry_pending=%t lease_owned=%t",
+			item, itemExists, itemErr, recovery, recoveryExists, meta, metaExists, queuedSpawnCountForTest(recovered), queuedSpawnRetryPendingForTest(recovered), recovered.workerExecutionOwned(workerID))
+	}
 	if got := client.calls.Load(); got != 0 {
 		t.Fatalf("cancelled HelpMe provider executions = %d, want 0", got)
 	}
@@ -548,7 +561,7 @@ func TestQueuedSpawnFailureTombstoneRecoversHelpMeRollbackWithoutLaunch(t *testi
 		client,
 		nil,
 	)
-	waitForQueuedSpawnConcurrencyTest(t, func() bool {
+	waitForQueuedSpawnRecoveryTest(t, func() bool {
 		exists, existsErr := recovered.HarnessStore().QueueItemExists(workerID)
 		_, recoveryExists := recovered.HelpMeRecoveryForHelper(workerID)
 		meta, metaExists := recovered.Threads().Resolve(workerID)
@@ -1444,7 +1457,19 @@ func queuedSpawnRetryPendingForTest(control *AgentControl) bool {
 
 func waitForQueuedSpawnConcurrencyTest(t *testing.T, condition func() bool, description string) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	waitForQueuedSpawnConcurrencyTestUntil(t, 3*time.Second, condition, description)
+}
+
+const queuedSpawnRecoveryTimeoutForTest = time.Duration(queuedSpawnStoreRetryAttempts)*queuedSpawnAckRetryDelay + 2*time.Second
+
+func waitForQueuedSpawnRecoveryTest(t *testing.T, condition func() bool, description string) {
+	t.Helper()
+	waitForQueuedSpawnConcurrencyTestUntil(t, queuedSpawnRecoveryTimeoutForTest, condition, description)
+}
+
+func waitForQueuedSpawnConcurrencyTestUntil(t *testing.T, timeout time.Duration, condition func() bool, description string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if condition() {
 			return
