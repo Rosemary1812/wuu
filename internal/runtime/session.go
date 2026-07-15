@@ -184,6 +184,7 @@ type ThreadRuntime struct {
 	StreamRunner      *agent.StreamRunner
 	Toolkit           *tools.Toolkit
 	AgentControl      *agentcontrol.AgentControl
+	ProcessManager    *process.Manager
 	GoalRuntime       *goalruntime.Runtime
 	ActivityRegistry  *activity.Registry
 	ModelBudget       modelbudget.Budget
@@ -1105,6 +1106,7 @@ func (s *Session) NewThreadRuntimeForRoot(sessionID, rootDir string) (*ThreadRun
 		StreamRunner:      runner,
 		Toolkit:           kit,
 		AgentControl:      agentControl,
+		ProcessManager:    threadProcessManager,
 		GoalRuntime:       goalRuntime,
 		ActivityRegistry:  s.ActivityRegistry,
 		ModelBudget:       s.ModelBudget,

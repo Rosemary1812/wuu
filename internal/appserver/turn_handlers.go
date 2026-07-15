@@ -26,6 +26,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/modelbudget"
 	"github.com/blueberrycongee/wuu/internal/modelcatalog"
 	"github.com/blueberrycongee/wuu/internal/participant"
+	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -916,10 +917,13 @@ func (s *Server) residentModelBudget(providerName, modelName string) (modelbudge
 }
 
 func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.ThreadRuntime) *threadRuntimeSubscription {
-	if threadRuntime == nil || threadRuntime.AgentControl == nil {
+	if threadRuntime == nil || (threadRuntime.AgentControl == nil && threadRuntime.ProcessManager == nil) {
 		return nil
 	}
-	threadRuntime.AgentControl.SetParticipantRoster(s.participantRosterForTool())
+	control := threadRuntime.AgentControl
+	if control != nil {
+		control.SetParticipantRoster(s.participantRosterForTool())
+	}
 	// Per-participant model pins persist the raw pin but not the stream
 	// client (StreamClient is not serializable). When a queued spawn
 	// restores after a process restart the AgentControl calls the
@@ -928,11 +932,11 @@ func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.
 	// request to the wrong provider. Capture workerProviderName in the
 	// closure so the resolver sees the same value the original spawn
 	// saw.
-	if s.rt != nil {
+	if s.rt != nil && control != nil {
 		workerProvider := workerProviderName(s.rt)
-		threadRuntime.AgentControl.SetWorkerProviderName(workerProvider)
+		control.SetWorkerProviderName(workerProvider)
 		ref := newRuntimeSessionReference(s.rt)
-		threadRuntime.AgentControl.SetModelPinClientResolver(func(rawPin string) (string, providers.StreamClient, error) {
+		control.SetModelPinClientResolver(func(rawPin string) (string, providers.StreamClient, error) {
 			return resolveParticipantModelOverride(ref, "queued-restore", rawPin, workerProvider)
 		})
 	}
@@ -940,31 +944,43 @@ func (s *Server) subscribeThreadRuntime(threadID string, threadRuntime *runtime.
 		statusCh:             make(chan subagent.Notification, 64),
 		streamCh:             make(chan subagent.StreamNotification, 256),
 		participantMessageCh: make(chan agentcontrol.ParticipantMessage, 64),
+		processCh:            make(chan process.Event, 64),
+		processManager:       threadRuntime.ProcessManager,
 		done:                 make(chan struct{}),
 	}
-	sub.terminalUnsubscribe = threadRuntime.AgentControl.SubscribeWorkerTerminalFinalizer(func(notification subagent.Notification) error {
-		return s.finalizeAgentTerminal(threadID, threadRuntime.AgentControl, notification)
-	})
-	threadRuntime.AgentControl.Subscribe(sub.statusCh)
-	sub.wg.Add(1)
-	go func() {
-		defer sub.wg.Done()
-		s.forwardAgentNotifications(threadID, threadRuntime.AgentControl, sub.statusCh, sub.done)
-	}()
+	if control != nil {
+		sub.terminalUnsubscribe = control.SubscribeWorkerTerminalFinalizer(func(notification subagent.Notification) error {
+			return s.finalizeAgentTerminal(threadID, control, notification)
+		})
+		control.Subscribe(sub.statusCh)
+		sub.wg.Add(1)
+		go func() {
+			defer sub.wg.Done()
+			s.forwardAgentNotifications(threadID, control, sub.statusCh, sub.done)
+		}()
 
-	threadRuntime.AgentControl.SubscribeStream(sub.streamCh)
-	sub.wg.Add(1)
-	go func() {
-		defer sub.wg.Done()
-		s.forwardAgentStreamNotifications(threadID, threadRuntime.AgentControl, sub.streamCh, sub.done)
-	}()
+		control.SubscribeStream(sub.streamCh)
+		sub.wg.Add(1)
+		go func() {
+			defer sub.wg.Done()
+			s.forwardAgentStreamNotifications(threadID, control, sub.streamCh, sub.done)
+		}()
 
-	threadRuntime.AgentControl.SubscribeParticipantMessages(sub.participantMessageCh)
-	sub.wg.Add(1)
-	go func() {
-		defer sub.wg.Done()
-		s.forwardParticipantMessages(threadID, threadRuntime.AgentControl, sub.participantMessageCh, sub.done)
-	}()
+		control.SubscribeParticipantMessages(sub.participantMessageCh)
+		sub.wg.Add(1)
+		go func() {
+			defer sub.wg.Done()
+			s.forwardParticipantMessages(threadID, control, sub.participantMessageCh, sub.done)
+		}()
+	}
+	if threadRuntime.ProcessManager != nil {
+		threadRuntime.ProcessManager.Subscribe(sub.processCh)
+		sub.wg.Add(1)
+		go func() {
+			defer sub.wg.Done()
+			s.forwardProcessNotifications(threadID, control, threadRuntime.ProcessManager, sub.processCh, sub.done)
+		}()
+	}
 	return sub
 }
 
@@ -1023,6 +1039,9 @@ func releaseThreadRuntimeSubscription(threadRuntime *runtime.ThreadRuntime, sub 
 		threadRuntime.AgentControl.Unsubscribe(sub.statusCh)
 		threadRuntime.AgentControl.UnsubscribeStream(sub.streamCh)
 		threadRuntime.AgentControl.UnsubscribeParticipantMessages(sub.participantMessageCh)
+	}
+	if sub != nil && sub.processManager != nil {
+		sub.processManager.Unsubscribe(sub.processCh)
 	}
 	if sub != nil && sub.terminalUnsubscribe != nil {
 		sub.terminalUnsubscribe()

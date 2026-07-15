@@ -3,7 +3,21 @@ package tools
 import (
 	"strings"
 	"testing"
+
+	wuucontext "github.com/blueberrycongee/wuu/internal/context"
+	"github.com/blueberrycongee/wuu/internal/providers"
 )
+
+func TestLatestUserGoalFromHistorySkipsProcessCompletion(t *testing.T) {
+	history := []providers.ChatMessage{
+		{Role: "user", Content: "build the project"},
+		{Role: "assistant", Content: "started it in the background"},
+		{Role: "user", Name: wuucontext.ProcessNotificationMessageName, Content: `<process_notification>{"process_id":"proc-1"}</process_notification>`},
+	}
+	if got := latestUserGoalFromHistory(history); got != "build the project" {
+		t.Fatalf("latest user goal = %q, want original user directive", got)
+	}
+}
 
 // TestSendMessageToolDescribesQueueOrResume locks the queue-or-resume contract
 // into the merged send_message description: a running target queues the message

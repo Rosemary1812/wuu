@@ -108,7 +108,7 @@ func (t *BashTool) Definition() providers.ToolDefinition {
 	return providers.ToolDefinition{
 		Name: "bash",
 		Description: "Run bash operations in the workspace. Use for terminal work: tests, lint, builds, git, package managers, scripts, docker, and managed background processes.\n\n" +
-			"Prefer dedicated file/search/edit tools for reading, searching, or changing files. Default action=run is non-interactive and returns exit_code, duration_ms, workspace_revision, output tails, and full_log_ref when available; verification commands add verification metadata. For terminal prompts, confirmations, or REPLs, use action=start_background with tty=true, then action=write_background to send input and action=read_background to read output. Use the background actions for long-lived processes as well. cwd defaults to the workspace root. Shell state does not persist between run calls.",
+			"Prefer dedicated file/search/edit tools for reading, searching, or changing files. Default action=run is non-interactive and returns exit_code, duration_ms, workspace_revision, output tails, and full_log_ref when available; verification commands add verification metadata. For terminal prompts, confirmations, or REPLs, use action=start_background with tty=true, then action=write_background to send input and action=read_background to read output. Use the background actions for long-lived processes as well. A naturally exiting background command automatically resumes you with its status and output tail; do not poll only to learn that it finished. Use read_background when you need readiness output before completion. cwd defaults to the workspace root. Shell state does not persist between run calls.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -433,9 +433,9 @@ func (t *BashTool) executeStartBackground(ctx context.Context, args bashArgs) (s
 
 func bashBackgroundNextSuggestions(waitMS int) []string {
 	if waitMS <= 0 {
-		return []string{"use bash action=read_background with offset_bytes=0 and wait_ms to wait for readiness"}
+		return []string{"continue other work; natural exit will resume you automatically", "use bash action=read_background with offset_bytes=0 and wait_ms only when readiness output is needed before completion"}
 	}
-	return []string{"pass initial_end_offset as offset_bytes to bash action=read_background for incremental logs"}
+	return []string{"continue other work; natural exit will resume you automatically", "when readiness needs more output, pass initial_end_offset as offset_bytes to bash action=read_background"}
 }
 
 func (t *BashTool) executeListBackground() (string, error) {

@@ -22,6 +22,7 @@ import (
 	"github.com/blueberrycongee/wuu/internal/credentialstore"
 	"github.com/blueberrycongee/wuu/internal/mcp"
 	"github.com/blueberrycongee/wuu/internal/participant"
+	"github.com/blueberrycongee/wuu/internal/process"
 	"github.com/blueberrycongee/wuu/internal/providers"
 	"github.com/blueberrycongee/wuu/internal/runtime"
 	"github.com/blueberrycongee/wuu/internal/session"
@@ -116,6 +117,8 @@ type threadRuntimeSubscription struct {
 	statusCh             chan subagent.Notification
 	streamCh             chan subagent.StreamNotification
 	participantMessageCh chan agentcontrol.ParticipantMessage
+	processCh            chan process.Event
+	processManager       *process.Manager
 	terminalUnsubscribe  func()
 	done                 chan struct{}
 	wg                   sync.WaitGroup

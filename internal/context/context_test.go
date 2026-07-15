@@ -152,6 +152,23 @@ func TestIsAgentNotificationDetectsNamedAndLegacyHandoffs(t *testing.T) {
 	}
 }
 
+func TestIsProcessNotificationDetectsInternalCompletion(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: ProcessNotificationMessageName, content: "anything", want: true},
+		{content: `<process_notification>{"process_id":"proc-1"}</process_notification>`, want: true},
+		{content: `<process_notification>{"process_id":"proc-1"}`, want: false},
+		{content: "ordinary user message", want: false},
+	} {
+		if got := IsProcessNotification(tc.name, tc.content); got != tc.want {
+			t.Fatalf("IsProcessNotification(%q, %q) = %v, want %v", tc.name, tc.content, got, tc.want)
+		}
+	}
+}
+
 func TestIsGoalContinuationDetectsInternalContinuation(t *testing.T) {
 	cases := []struct {
 		name    string

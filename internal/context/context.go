@@ -37,6 +37,11 @@ const TaskContractMessageName = "wuu_task_contract"
 // They are model-visible user-role messages, but they are not user intent.
 const AgentNotificationMessageName = "wuu_agent_notification"
 
+// ProcessNotificationMessageName marks internal background-process completion
+// notifications. They are model-visible user-role messages, but they are not
+// user intent.
+const ProcessNotificationMessageName = "wuu_process_notification"
+
 // GoalContinuationMessageName marks legacy hidden active-goal continuation
 // prompts. New app-server goal continuations use typed GOAL_CONTINUATION
 // request-only context blocks, but older persisted histories can still carry
@@ -335,6 +340,17 @@ func IsAgentNotification(name, content string) bool {
 		return false
 	}
 	return isSubagentNotificationContent(envelope.Content)
+}
+
+// IsProcessNotification reports whether the message is an internal
+// background-process completion rather than a durable user directive.
+func IsProcessNotification(name, content string) bool {
+	if strings.TrimSpace(name) == ProcessNotificationMessageName {
+		return true
+	}
+	trimmed := strings.TrimSpace(content)
+	return strings.HasPrefix(trimmed, "<process_notification>") &&
+		strings.HasSuffix(trimmed, "</process_notification>")
 }
 
 // IsGoalContinuation reports whether the message is an internal active-goal

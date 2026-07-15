@@ -638,7 +638,7 @@ func helpMeResultAgentPath(result *agentcontrol.SpawnResult) string {
 func latestUserGoalFromHistory(history []providers.ChatMessage) string {
 	for i := len(history) - 1; i >= 0; i-- {
 		msg := history[i]
-		if msg.Role != "user" || wuucontext.IsSystemReminder(msg.Name, msg.Content) || wuucontext.IsAgentNotification(msg.Name, msg.Content) {
+		if msg.Role != "user" || wuucontext.IsSystemReminder(msg.Name, msg.Content) || wuucontext.IsAgentNotification(msg.Name, msg.Content) || wuucontext.IsProcessNotification(msg.Name, msg.Content) {
 			continue
 		}
 		if content := strings.TrimSpace(msg.DisplayContent); content != "" {

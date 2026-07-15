@@ -14,7 +14,7 @@ import (
 
 func TestBashDefinitionExplainsInteractiveBackgroundFlow(t *testing.T) {
 	def := NewBashTool(&Env{}).Definition()
-	for _, want := range []string{"action=start_background", "tty=true", "action=write_background", "action=read_background"} {
+	for _, want := range []string{"action=start_background", "tty=true", "action=write_background", "action=read_background", "automatically resumes", "do not poll"} {
 		if !strings.Contains(def.Description, want) {
 			t.Fatalf("bash description must teach %q interactive flow: %q", want, def.Description)
 		}
