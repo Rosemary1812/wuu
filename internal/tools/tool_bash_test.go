@@ -15,7 +15,7 @@ import (
 
 func TestBashDefinitionExplainsInteractiveBackgroundFlow(t *testing.T) {
 	def := NewBashTool(&Env{}).Definition()
-	for _, want := range []string{"action=start_background", "tty=true", "action=write_background", "action=read_background", "automatically resumes", "do not poll"} {
+	for _, want := range []string{"action=start_background", "tty=true", "action=write_background", "action=read_background", "automatically starts a new turn", "end the current turn", "do not keep it open"} {
 		if !strings.Contains(def.Description, want) {
 			t.Fatalf("bash description must teach %q interactive flow: %q", want, def.Description)
 		}
@@ -31,6 +31,21 @@ func TestBashDefinitionExplainsInteractiveBackgroundFlow(t *testing.T) {
 	commandDescription, _ := command["description"].(string)
 	if !strings.Contains(commandDescription, "action=run must be non-interactive") || !strings.Contains(commandDescription, "tty=true") {
 		t.Fatalf("bash command description does not distinguish run from interactive background use: %q", commandDescription)
+	}
+	wait, ok := properties["wait_ms"].(map[string]any)
+	if !ok || !strings.Contains(wait["description"].(string), "Do not use it to wait for natural completion") {
+		t.Fatalf("bash wait_ms description does not explain turn handoff: %+v", wait)
+	}
+}
+
+func TestBashBackgroundSuggestionsExplainTurnHandoff(t *testing.T) {
+	for _, waitMS := range []int{0, 500} {
+		suggestions := strings.Join(bashBackgroundNextSuggestions(waitMS), " ")
+		for _, want := range []string{"only remaining dependency", "end this turn", "start a new turn"} {
+			if !strings.Contains(suggestions, want) {
+				t.Fatalf("background suggestions for wait_ms=%d omitted %q: %s", waitMS, want, suggestions)
+			}
+		}
 	}
 }
 

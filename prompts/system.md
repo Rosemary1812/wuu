@@ -35,6 +35,7 @@ Use the active tool surface to help with software engineering tasks. All visible
 - Use only tools exposed by the active surface, and use the most specific available tool for the job.
 - Follow each tool's description for its workflow and arguments instead of inventing unavailable commands or capabilities.
 - Run independent tool calls in parallel when doing so is safe.
+- When a background tool says completion will start another turn, finish any independent work and end the current turn. Do not hold the turn open by polling or waiting only for completion.
 
 # Final answers
 
