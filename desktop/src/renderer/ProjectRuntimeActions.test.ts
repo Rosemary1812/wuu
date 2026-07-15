@@ -382,4 +382,61 @@ describe("createProjectRuntimeActions", () => {
       "keep this draft",
     );
   });
+
+  it("lands on a scratch draft after removing the active workspace", async () => {
+    const sourceContext = projectContext();
+    const scratchContext = noProjectContext();
+    const source = thread();
+    const sourceTab = createThreadSessionTab(source, sourceContext);
+    const projectState = {
+      projects: [],
+      active_context: scratchContext,
+    } as ProjectListResult;
+    const loadRuntime = vi.fn().mockResolvedValue({
+      activeContext: scratchContext,
+      activeProjectId: undefined,
+      thread: undefined,
+      threads: [
+        {
+          ...thread("andy-dm"),
+          dm_participant_id: "participant-andy",
+          workspace_kind: "dm",
+        },
+      ],
+      status: "ready",
+    });
+    const removeProject = vi.fn().mockResolvedValue(projectState);
+    Object.defineProperty(window, "wuu", {
+      configurable: true,
+      value: { removeProject } as Partial<WuuDesktopApi>,
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    const harness = buildActions({
+      initial: {
+        ...initialState,
+        activeContext: sourceContext,
+        activeProjectId: "project-1",
+        projects: [project()],
+        thread: source,
+        sessionTabs: [sourceTab],
+        activeSessionTabID: sourceTab.id,
+      },
+      loadRuntime,
+    });
+
+    await harness.actions.removeProject("project-1");
+
+    expect(removeProject).toHaveBeenCalledWith("project-1");
+    expect(loadRuntime).toHaveBeenCalledWith(projectState, {
+      resumeLatestThread: false,
+    });
+    expect(harness.getAppState().thread).toBeUndefined();
+    const activeTab = harness.getAppState().sessionTabs.find(
+      (tab) => tab.id === harness.getAppState().activeSessionTabID,
+    );
+    expect(activeTab?.kind).toBe("draft");
+    expect(activeTab?.kind === "draft" ? activeTab.context : undefined).toEqual(
+      scratchContext,
+    );
+  });
 });

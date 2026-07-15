@@ -390,7 +390,9 @@ export function createProjectRuntimeActions(
         void offerRemovedProjectStateCleanup(removedProject);
         return;
       }
-      const loadedState = await loadRuntime(projectState);
+      const loadedState = await loadRuntime(projectState, {
+        resumeLatestThread: false,
+      });
       if (!deps.finishViewSwitch(requestID)) {
         return;
       }
