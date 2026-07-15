@@ -167,6 +167,38 @@ func TestReadFile_AllowsAgentRuntimeInStandardMode(t *testing.T) {
 	}
 }
 
+func TestReadFile_BlocksNonMemoryAgentRuntimeInStandardMode(t *testing.T) {
+	wuuHome := filepath.Join(t.TempDir(), ".wuu")
+	t.Setenv("WUU_HOME", wuuHome)
+	target := filepath.Join(wuuHome, "auth.json")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir runtime home: %v", err)
+	}
+	if err := os.WriteFile(target, []byte(`{"token":"secret-value"}`), 0o600); err != nil {
+		t.Fatalf("write auth file: %v", err)
+	}
+
+	kit, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kit.SetBoundary(StandardBoundary())
+
+	result, err := kit.Execute(context.Background(), providers.ToolCall{
+		Name:      "read_file",
+		Arguments: fmt.Sprintf(`{"path":%q}`, target),
+	})
+	if err == nil {
+		t.Fatal("read_file should reject non-memory agent runtime metadata")
+	}
+	if !strings.Contains(err.Error(), "wuu runtime state") {
+		t.Fatalf("expected runtime-state rejection, got: %v", err)
+	}
+	if strings.Contains(result, "secret-value") || strings.Contains(err.Error(), "secret-value") {
+		t.Fatalf("read_file leaked auth content: result=%q err=%v", result, err)
+	}
+}
+
 func TestResolvePath_BlocksAgentRuntimeInReadOnly(t *testing.T) {
 	target := runtimeHome(t) + "/memory/test.md"
 

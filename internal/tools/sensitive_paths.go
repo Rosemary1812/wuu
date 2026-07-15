@@ -69,6 +69,45 @@ func isAgentRuntimeMetadataPath(absPath string) bool {
 		strings.HasPrefix(normalized, runtimeDir+"/")
 }
 
+// isAgentMemoryNotebookPath reports whether an absolute path belongs to a
+// user or resident memory notebook. Unlike the broader runtime metadata
+// exemption, this excludes credentials, configuration, session artifacts,
+// and caches stored elsewhere under WUU_HOME.
+func isAgentMemoryNotebookPath(absPath string) bool {
+	if strings.TrimSpace(absPath) == "" {
+		return false
+	}
+	home, err := statepath.Home("")
+	if err != nil {
+		return false
+	}
+	if pathWithinRoot(filepath.Join(home, "memory"), absPath) {
+		return true
+	}
+
+	participantsDir := filepath.Join(home, "participants")
+	rel, err := filepath.Rel(participantsDir, absPath)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	return len(parts) >= 3 && strings.TrimSpace(parts[0]) != "" && parts[1] == "memory"
+}
+
+func rejectSensitiveReadPath(env *Env, toolName, absPath string) error {
+	if env.BypassToolHardProtections() {
+		return nil
+	}
+	if env.AllowMutations && isAgentMemoryNotebookPath(absPath) {
+		return nil
+	}
+	displayPath := env.NormalizeDisplayPath(absPath)
+	if reason, ok := sensitivePathReason(displayPath); ok {
+		return fmt.Errorf("%s refuses to read sensitive path %q (%s). Use a safer metadata command or ask the user for explicit secret handling", toolName, displayPath, reason)
+	}
+	return nil
+}
+
 func rejectSensitiveToolPath(env *Env, toolName, action, absPath string) error {
 	if env.BypassToolHardProtections() {
 		return nil

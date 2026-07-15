@@ -155,7 +155,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, argsJSON string) (string, er
 		return "", err
 	}
 	if !managedArtifact {
-		if err := rejectSensitiveToolPath(t.env, "read_file", "read", resolved); err != nil {
+		if err := rejectSensitiveReadPath(t.env, "read_file", resolved); err != nil {
 			return "", err
 		}
 	}
