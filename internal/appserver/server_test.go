@@ -198,6 +198,12 @@ type blockingStreamClient struct {
 	once    sync.Once
 }
 
+type partialBlockingStreamClient struct {
+	started chan struct{}
+	content string
+	once    sync.Once
+}
+
 type usageStreamClient struct {
 	events []providers.StreamEvent
 }
@@ -221,6 +227,34 @@ func newBlockingStreamClient(content string) *blockingStreamClient {
 		release: make(chan struct{}),
 		content: content,
 	}
+}
+
+func newPartialBlockingStreamClient(content string) *partialBlockingStreamClient {
+	return &partialBlockingStreamClient{
+		started: make(chan struct{}),
+		content: content,
+	}
+}
+
+func (c *partialBlockingStreamClient) Chat(ctx context.Context, _ providers.ChatRequest) (providers.ChatResponse, error) {
+	<-ctx.Done()
+	return providers.ChatResponse{}, ctx.Err()
+}
+
+func (c *partialBlockingStreamClient) StreamChat(ctx context.Context, _ providers.ChatRequest) (<-chan providers.StreamEvent, error) {
+	ch := make(chan providers.StreamEvent, 2)
+	go func() {
+		defer close(ch)
+		ch <- providers.StreamEvent{
+			Type:    providers.EventContentDelta,
+			Content: c.content,
+			Phase:   providers.MessagePhaseFinalAnswer,
+		}
+		c.once.Do(func() { close(c.started) })
+		<-ctx.Done()
+		ch <- providers.StreamEvent{Type: providers.EventError, Error: ctx.Err()}
+	}()
+	return ch, nil
 }
 
 func (c *blockingStreamClient) Chat(ctx context.Context, req providers.ChatRequest) (providers.ChatResponse, error) {
@@ -6484,28 +6518,36 @@ func TestServerFailedTurnPersistsPairedToolHistoryAndReloadsFailure(t *testing.T
 }
 
 func TestServerInterruptedPartialTurnReloadsInterrupted(t *testing.T) {
+	client := newPartialBlockingStreamClient("partial answer")
 	rt := newTestRuntime(t, &fakeClient{})
-	sess, err := session.CreateWithMetadata(rt.SessionDir, "20260716-000001-interrupted", rt.RootDir)
-	if err != nil {
-		t.Fatalf("create session: %v", err)
+	rt.StreamRunner.Client = client
+	out := &lockedBuffer{}
+	srv := New(rt, out)
+
+	if err := srv.handleLine(context.Background(), []byte(`{"id":"start","method":"thread/start"}`)); err != nil {
+		t.Fatalf("thread/start: %v", err)
 	}
-	if _, err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "user", Content: "inspect"}); err != nil {
-		t.Fatalf("append user: %v", err)
+	threadID := remarshal[ThreadStartResult](t, responseByID(t, parseOutput(t, out.String()), "start")["result"]).Thread.ID
+	startTurn := fmt.Sprintf(`{"id":"turn","method":"turn/start","params":{"thread_id":%q,"prompt":"inspect"}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(startTurn)); err != nil {
+		t.Fatalf("turn/start: %v", err)
 	}
-	if _, err := appendChatMessage(rt.SessionDir, sess.ID, providers.ChatMessage{Role: "assistant", Content: "partial answer"}); err != nil {
-		t.Fatalf("append partial assistant: %v", err)
+	<-client.started
+	deltaMessages := waitForMethod(t, out, NotificationAgentMessageDelta)
+	delta := remarshal[AgentMessageDeltaNotification](t, notificationByMethod(t, deltaMessages, NotificationAgentMessageDelta)["params"])
+	if delta.Delta != "partial answer" {
+		t.Fatalf("live partial delta = %q", delta.Delta)
 	}
 
-	srv := New(rt, &lockedBuffer{})
-	th := newThreadState(sess.ID, nil, rt.ProviderName, rt.Model, rt.RootDir, true, time.Now().UTC())
-	completedAt := time.Date(2026, 7, 16, 10, 30, 0, 0, time.UTC)
-	if err := srv.persistTurnTerminal(th, sess.ID+"-turn-0001", TurnKindUser, TurnStatusInterrupted, context.Canceled, completedAt); err != nil {
-		t.Fatalf("persist terminal turn: %v", err)
+	interrupt := fmt.Sprintf(`{"id":"interrupt","method":"turn/interrupt","params":{"thread_id":%q}}`, threadID)
+	if err := srv.handleLine(context.Background(), []byte(interrupt)); err != nil {
+		t.Fatalf("turn/interrupt: %v", err)
 	}
+	waitForMethod(t, out, NotificationTurnError)
 
 	reloadOut := &lockedBuffer{}
 	reloaded := New(rt, reloadOut)
-	resume := fmt.Sprintf(`{"id":"reload","method":"thread/resume","params":{"session_id":%q}}`, sess.ID)
+	resume := fmt.Sprintf(`{"id":"reload","method":"thread/resume","params":{"session_id":%q}}`, threadID)
 	if err := reloaded.handleLine(context.Background(), []byte(resume)); err != nil {
 		t.Fatalf("thread/resume: %v", err)
 	}
@@ -6514,7 +6556,7 @@ func TestServerInterruptedPartialTurnReloadsInterrupted(t *testing.T) {
 		t.Fatalf("reloaded turns = %+v, want one interrupted turn", result.Thread.Turns)
 	}
 	turn := result.Thread.Turns[0]
-	if turn.Status != TurnStatusInterrupted || turn.Error == nil || turn.Error.Message != context.Canceled.Error() || turn.CompletedAt == nil || !turn.CompletedAt.Equal(completedAt) {
+	if turn.Status != TurnStatusInterrupted || turn.Error == nil || !strings.Contains(turn.Error.Message, context.Canceled.Error()) || turn.CompletedAt == nil {
 		t.Fatalf("reloaded turn did not restore interruption: %+v", turn)
 	}
 	if len(turn.Items) < 3 || turn.Items[1].Type != ThreadItemAgentMessage || turn.Items[1].Text != "partial answer" || turn.Items[len(turn.Items)-1].Type != ThreadItemError {

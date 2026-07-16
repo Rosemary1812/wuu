@@ -37,10 +37,47 @@ func (f *fakeStep) Execute(_ context.Context, req providers.ChatRequest) (StepRe
 		err = f.errs[f.idx]
 	}
 	f.idx++
-	if err != nil {
-		return StepResult{}, err
+	return r, err
+}
+
+func TestRunToolLoopPreservesVisiblePartialAssistantOnStepError(t *testing.T) {
+	streamErr := errors.New("stream interrupted")
+	step := &fakeStep{
+		results: []StepResult{{
+			Content:           "partial answer",
+			Phase:             providers.MessagePhaseFinalAnswer,
+			ProviderItemID:    "incomplete-provider-item",
+			ProviderItemModel: "provider-model",
+			ReasoningContent:  "incomplete reasoning",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "incomplete-call",
+				Name:      "read_file",
+				Arguments: `{"path":"README.md"}`,
+			}},
+		}},
+		errs: []error{streamErr},
 	}
-	return r, nil
+
+	result, err := RunToolLoop(
+		context.Background(),
+		[]providers.ChatMessage{{Role: "user", Content: "hello"}},
+		LoopConfig{Model: "test-model"},
+		step,
+	)
+	if !errors.Is(err, streamErr) {
+		t.Fatalf("error = %v, want %v", err, streamErr)
+	}
+	visible := visibleMessagesForTest(result.NewMessages)
+	if len(visible) != 1 {
+		t.Fatalf("new messages = %+v, want one partial assistant message", result.NewMessages)
+	}
+	partial := visible[0]
+	if partial.Role != "assistant" || partial.Content != "partial answer" || partial.Phase != providers.MessagePhaseFinalAnswer {
+		t.Fatalf("partial assistant = %+v", partial)
+	}
+	if partial.ProviderItemID != "" || partial.ProviderItemModel != "" || partial.ReasoningContent != "" || len(partial.ToolCalls) != 0 {
+		t.Fatalf("partial assistant retained incomplete provider state: %+v", partial)
+	}
 }
 
 func TestRunToolLoopBeforeRequestTransformsProviderRequest(t *testing.T) {

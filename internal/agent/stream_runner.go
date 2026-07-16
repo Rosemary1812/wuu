@@ -899,10 +899,14 @@ func (s *streamStep) Execute(ctx context.Context, req providers.ChatRequest) (St
 		if failure.Category == providers.FailureCanceled || failure.Category == providers.FailureDeadline {
 			outcome = providers.InferenceOutcomeCanceled
 		}
-		if journalErr := req.Execution.Complete(outcome, failure); journalErr != nil {
-			return StepResult{}, errors.Join(fmt.Errorf("stream request failed: %w", err), fmt.Errorf("complete failed inference operation: %w", journalErr))
+		partial := StepResult{
+			Content: contentBuf.String(),
+			Phase:   messagePhase,
 		}
-		return StepResult{}, fmt.Errorf("stream request failed: %w", err)
+		if journalErr := req.Execution.Complete(outcome, failure); journalErr != nil {
+			return partial, errors.Join(fmt.Errorf("stream request failed: %w", err), fmt.Errorf("complete failed inference operation: %w", journalErr))
+		}
+		return partial, fmt.Errorf("stream request failed: %w", err)
 	}
 	// Build ordered tool calls list from the pending map.
 	toolCalls := make([]providers.ToolCall, 0, len(pendingTools))

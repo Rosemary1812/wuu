@@ -485,6 +485,17 @@ func RunToolLoop(
 					})
 				}
 			}
+			// A streaming step can fail after content deltas were already shown to
+			// the user. Keep that visible text in durable history, but deliberately
+			// drop provider-native identity, reasoning, and tool calls because the
+			// failed stream may have left those structures incomplete.
+			if strings.TrimSpace(result.Content) != "" {
+				appendMessage(providers.ChatMessage{
+					Role:    "assistant",
+					Content: result.Content,
+					Phase:   result.Phase,
+				})
+			}
 			return LoopResult{
 				NewMessages:         newMessagesForReturn(messages, startLen, historyRewritten),
 				HistoryRewritten:    historyRewritten,

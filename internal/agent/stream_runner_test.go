@@ -580,9 +580,17 @@ func TestStreamRunner_StreamError(t *testing.T) {
 	}
 
 	runner := StreamRunner{Client: client, Model: "m"}
-	_, err := runner.Run(context.Background(), "hi")
+	result, err := runner.RunWithCallback(
+		context.Background(),
+		[]providers.ChatMessage{{Role: "user", Content: "hi"}},
+		nil,
+	)
 	if err == nil {
 		t.Fatal("expected error from stream error event")
+	}
+	visible := visibleMessagesForTest(result.NewMessages)
+	if len(visible) != 1 || visible[0].Role != "assistant" || visible[0].Content != "partial" {
+		t.Fatalf("partial assistant output was not returned for persistence: %+v", result.NewMessages)
 	}
 }
 
