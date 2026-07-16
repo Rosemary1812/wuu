@@ -7,21 +7,40 @@ import {
 import {
   MESSAGE_FLOW_FONT_SIZE_RANGE,
   type MessageFlowFontSize,
+  type ThreadItem,
 } from "../shared/protocol";
-import { StreamingMarkdown } from "./StreamingMarkdown";
+import { ThreadItemView } from "./ThreadItemView";
 
-// Sample reply the Settings preview shows underneath the slider. It is
-// rendered through the exact pipeline the conversation pane uses
-// (.agent-block > .agent-text > StreamingMarkdown), so the slider
-// previews real message-flow typography instead of a look-alike
-// placeholder. Mixed CJK/Latin prose, inline code, and a short list
-// cover the shapes a typical agent reply takes.
-const PREVIEW_SAMPLE_MARKDOWN = [
-  "先看一下 README 的目录约定，再读一个相邻页面的 CSS——把改动控制在同一套既有规范里。",
-  "",
-  "- 改动只落在 `desktop/src/renderer`，不动 Go 核心",
-  "- 顺手跑一下单元测试，免得新代码悄悄破坏既有流程",
-].join("\n");
+// Mini conversation the Settings preview shows underneath the slider.
+// Both messages go through the same ThreadItemView pipeline the
+// conversation pane uses — user bubble, hairline divider, agent answer —
+// so the slider previews real message-flow typography instead of a
+// look-alike placeholder. The pair mirrors a typical exchange: a short
+// user request, then an agent reply with mixed CJK/Latin prose, inline
+// code, and a short list.
+const PREVIEW_TURN_ID = "settings-message-flow-preview-turn";
+
+const PREVIEW_USER_ITEM: ThreadItem = {
+  id: "settings-preview-user-message",
+  type: "user_message",
+  status: "completed",
+  text: "帮我把侧边栏的分组逻辑收敛到既有规范里，改完顺手跑一下测试。",
+};
+
+const PREVIEW_AGENT_ITEM: ThreadItem = {
+  id: "settings-preview-agent-message",
+  type: "agent_message",
+  status: "completed",
+  phase: "final_answer",
+  text: [
+    "先看一下 README 的目录约定，再读一个相邻页面的 CSS——把改动控制在同一套既有规范里。",
+    "",
+    "- 改动只落在 `desktop/src/renderer`，不动 Go 核心",
+    "- 顺手跑一下单元测试，免得新代码悄悄破坏既有流程",
+  ].join("\n"),
+};
+
+function noop(): void {}
 
 const { min, max, step, default: defaultSize } = MESSAGE_FLOW_FONT_SIZE_RANGE;
 
@@ -138,16 +157,26 @@ export function MessageFlowFontSizeControl(): JSX.Element {
         aria-label="消息流字号预览"
         data-testid="settings-message-flow-font-size-preview"
       >
-        <article className="agent-block">
-          <div className="agent-text">
-            <StreamingMarkdown
-              streamKey="settings-message-flow-font-size-preview"
-              initialText={PREVIEW_SAMPLE_MARKDOWN}
-              isLive={false}
-              phase="final_answer"
-            />
+        <section className="turn" data-turn-status="completed">
+          <ThreadItemView
+            turnID={PREVIEW_TURN_ID}
+            turnStatus="completed"
+            item={PREVIEW_USER_ITEM}
+            streaming={false}
+            onStreamFrame={noop}
+          />
+          <div className="assistant-turn-shell has-answer">
+            <div className="turn-answer-body">
+              <ThreadItemView
+                turnID={PREVIEW_TURN_ID}
+                turnStatus="completed"
+                item={PREVIEW_AGENT_ITEM}
+                streaming={false}
+                onStreamFrame={noop}
+              />
+            </div>
           </div>
-        </article>
+        </section>
       </div>
     </div>
   );
