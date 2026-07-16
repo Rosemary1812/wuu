@@ -7,21 +7,32 @@ import {
   WorkspaceTerminalPanel,
 } from "./WorkspaceTerminalPanel";
 
+const { terminalConstructorOptions, terminalInstances } = vi.hoisted(() => ({
+  terminalConstructorOptions: [] as Array<{ theme?: Record<string, string> }>,
+  terminalInstances: [] as Array<{ options: { theme?: Record<string, string> } }>,
+}));
+
 // Stub xterm/the fit addon so mounting the real WorkspaceTerminalPanel
 // doesn't need an actual terminal renderer or ResizeObserver-driven
 // layout — mirrors the pattern used by AppApprovalFlow.test.tsx.
 vi.mock("@xterm/xterm", () => ({
-  Terminal: vi.fn().mockImplementation(() => ({
-    loadAddon: vi.fn(),
-    open: vi.fn(),
-    focus: vi.fn(),
-    write: vi.fn(),
-    writeln: vi.fn(),
-    dispose: vi.fn(),
-    onData: vi.fn(() => ({ dispose: vi.fn() })),
-    cols: 80,
-    rows: 24,
-  })),
+  Terminal: vi.fn().mockImplementation((options: { theme?: Record<string, string> }) => {
+    terminalConstructorOptions.push(options);
+    const terminal = {
+      options: { theme: options.theme },
+      loadAddon: vi.fn(),
+      open: vi.fn(),
+      focus: vi.fn(),
+      write: vi.fn(),
+      writeln: vi.fn(),
+      dispose: vi.fn(),
+      onData: vi.fn(() => ({ dispose: vi.fn() })),
+      cols: 80,
+      rows: 24,
+    };
+    terminalInstances.push(terminal);
+    return terminal;
+  }),
 }));
 
 vi.mock("@xterm/addon-fit", () => ({
@@ -41,6 +52,9 @@ let root: Root | null = null;
 let startTerminalSession: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  document.documentElement.dataset.theme = "light";
+  terminalConstructorOptions.length = 0;
+  terminalInstances.length = 0;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -70,7 +84,8 @@ afterEach(() => {
   });
   root = null;
   container.remove();
-  vi.restoreAllMocks();
+  delete document.documentElement.dataset.theme;
+  vi.clearAllMocks();
 });
 
 async function render(element: JSX.Element): Promise<void> {
@@ -87,13 +102,13 @@ async function render(element: JSX.Element): Promise<void> {
 }
 
 describe("WorkspaceTerminalPanel", () => {
-  it("starts the pty session rooted at the workspace context's cwd (Bug 3: worktree-fork panel root)", async () => {
-    const worktreeContext: RuntimeContext = {
-      kind: "project",
-      project_id: "project-1",
-      cwd: "/worktrees/fork-1/project",
-    };
+  const worktreeContext: RuntimeContext = {
+    kind: "project",
+    project_id: "project-1",
+    cwd: "/worktrees/fork-1/project",
+  };
 
+  it("starts the pty session rooted at the workspace context's cwd (Bug 3: worktree-fork panel root)", async () => {
     await render(<WorkspaceTerminalPanel activeContext={worktreeContext} />);
 
     expect(startTerminalSession).toHaveBeenCalledWith(
@@ -108,6 +123,18 @@ describe("WorkspaceTerminalPanel", () => {
 
     expect(startTerminalSession).not.toHaveBeenCalled();
     expect(container.textContent).toContain("没有项目");
+  });
+
+  it("uses the applied theme and updates an open terminal when it changes", async () => {
+    await render(<WorkspaceTerminalPanel activeContext={worktreeContext} />);
+
+    expect(terminalConstructorOptions[0]?.theme?.background).toBe("#ffffff");
+
+    document.documentElement.dataset.theme = "dark";
+    await vi.waitFor(() => {
+      expect(terminalInstances[0]?.options.theme?.background).toBe("#1d2024");
+      expect(terminalInstances[0]?.options.theme?.foreground).toBe("#e4e6e8");
+    });
   });
 });
 

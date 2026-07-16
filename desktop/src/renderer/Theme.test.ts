@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applyThemePreference, resolveThemePreference } from "./Theme";
+import {
+  applyThemePreference,
+  currentAppliedTheme,
+  observeAppliedTheme,
+  resolveThemePreference,
+} from "./Theme";
 
 type MediaListener = (event: { matches: boolean }) => void;
 
@@ -84,5 +89,25 @@ describe("applyThemePreference", () => {
 
     media.fire(true);
     expect(document.documentElement.dataset.theme).toBe("light");
+  });
+});
+describe("observeAppliedTheme", () => {
+  it("reports concrete theme changes from the document attribute", async () => {
+    document.documentElement.dataset.theme = "light";
+    expect(currentAppliedTheme()).toBe("light");
+    const onChange = vi.fn();
+    const stop = observeAppliedTheme(onChange);
+
+    document.documentElement.dataset.theme = "dark";
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith("dark"));
+
+    document.documentElement.dataset.theme = "dark";
+    await Promise.resolve();
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    stop();
+    document.documentElement.dataset.theme = "light";
+    await Promise.resolve();
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 });

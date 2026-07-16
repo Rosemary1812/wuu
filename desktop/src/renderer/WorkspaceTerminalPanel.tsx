@@ -1,9 +1,10 @@
 import { FitAddon } from "@xterm/addon-fit";
-import { Terminal as XtermTerminal } from "@xterm/xterm";
+import { Terminal as XtermTerminal, type ITheme } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { Terminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { RuntimeContext, TerminalSessionEvent } from "../shared/protocol";
+import { currentAppliedTheme, observeAppliedTheme, type AppliedTheme } from "./Theme";
 import { WorkspacePanelEmpty } from "./WorkspaceFiles";
 import { desktopApiErrorMessage } from "./WorkspaceReviewHelpers";
 
@@ -12,6 +13,33 @@ const WORKSPACE_TERMINAL_PENDING_EVENTS_PER_ID = 256;
 const WORKSPACE_TERMINAL_PENDING_TEXT_PER_ID = 512 * 1024;
 
 type WorkspaceTerminalState = "starting" | "ready" | "exited" | "error";
+
+function workspaceTerminalTheme(theme: AppliedTheme): ITheme {
+  if (theme === "dark") {
+    return {
+      background: "#1d2024",
+      black: "#141618",
+      blue: "#58a6ff",
+      cursor: "#f2f3f4",
+      foreground: "#e4e6e8",
+      green: "#4cc38a",
+      red: "#f0705f",
+      selectionBackground: "#3a4046",
+      yellow: "#d9a84e",
+    };
+  }
+  return {
+    background: "#ffffff",
+    black: "#24292f",
+    blue: "#2f98ff",
+    cursor: "#202427",
+    foreground: "#1f2328",
+    green: "#1f9d46",
+    red: "#b42318",
+    selectionBackground: "#d7e9ff",
+    yellow: "#ffc21a",
+  };
+}
 
 export function appendPendingTerminalEvent(
   events: TerminalSessionEvent[],
@@ -95,23 +123,16 @@ export function WorkspaceTerminalPanel({ activeContext }: { activeContext?: Runt
       fontSize: 12,
       lineHeight: 1.45,
       scrollback: 5000,
-      theme: {
-        background: "#ffffff",
-        black: "#24292f",
-        blue: "#2f98ff",
-        cursor: "#202427",
-        foreground: "#1f2328",
-        green: "#1f9d46",
-        red: "#b42318",
-        selectionBackground: "#d7e9ff",
-        yellow: "#ffc21a"
-      }
+      theme: workspaceTerminalTheme(currentAppliedTheme()),
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(container);
     terminal.focus();
     terminalRef.current = terminal;
+    const stopObservingTheme = observeAppliedTheme((theme) => {
+      terminal.options.theme = workspaceTerminalTheme(theme);
+    });
 
     function fitAndResize(): void {
       if (disposed) {
@@ -231,6 +252,7 @@ export function WorkspaceTerminalPanel({ activeContext }: { activeContext?: Runt
         void window.wuu.stopTerminalSession(sessionID);
       }
       unsubscribeTerminal();
+      stopObservingTheme();
       dataDisposable.dispose();
       resizeObserver.disconnect();
       pendingTerminalEventsRef.current.clear();

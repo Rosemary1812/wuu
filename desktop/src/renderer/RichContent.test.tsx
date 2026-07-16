@@ -5,6 +5,20 @@ import type { WorkspaceFileReferenceResolveResult } from "../shared/protocol";
 import { ImagePreviewProvider } from "./ImagePreview";
 import { RichContent, __resetRichFileReferenceResolutionCacheForTests } from "./RichContent";
 
+const { mermaidInitialize, mermaidRender } = vi.hoisted(() => ({
+  mermaidInitialize: vi.fn(),
+  mermaidRender: vi.fn(async (id: string) => ({
+    svg: `<svg data-diagram-id="${id}"></svg>`,
+  })),
+}));
+
+vi.mock("mermaid", () => ({
+  default: {
+    initialize: mermaidInitialize,
+    render: mermaidRender,
+  },
+}));
+
 let container: HTMLDivElement;
 let root: Root | null = null;
 let writeTextMock: ReturnType<typeof vi.fn>;
@@ -12,6 +26,9 @@ let resolveWorkspaceFileReferenceMock: ReturnType<typeof vi.fn>;
 let openExternalMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  document.documentElement.dataset.theme = "light";
+  mermaidInitialize.mockClear();
+  mermaidRender.mockClear();
   writeTextMock = vi.fn().mockResolvedValue(undefined);
   // jsdom does not implement the clipboard API; inject a mock for the
   // success-path tests.
@@ -43,6 +60,7 @@ afterEach(() => {
   root = null;
   container.remove();
   delete (window as { wuu?: unknown }).wuu;
+  delete document.documentElement.dataset.theme;
   __resetRichFileReferenceResolutionCacheForTests();
 });
 
@@ -81,6 +99,43 @@ function resolvedFileReference(
 }
 
 describe("RichContent code block", () => {
+  it("rerenders Mermaid diagrams when the applied theme changes", async () => {
+    render(<RichContent text={"```mermaid\ngraph TD\nA --> B\n```"} />);
+
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(mermaidRender).toHaveBeenCalledTimes(1);
+      });
+    });
+    expect(mermaidInitialize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        themeVariables: expect.objectContaining({
+          background: "#ffffff",
+          primaryTextColor: "#202427",
+        }),
+      }),
+    );
+    expect(container.querySelector(".rich-mermaid svg")).not.toBeNull();
+
+    await act(async () => {
+      document.documentElement.dataset.theme = "dark";
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.waitFor(() => {
+        expect(mermaidRender).toHaveBeenCalledTimes(2);
+      });
+    });
+    expect(mermaidInitialize).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        themeVariables: expect.objectContaining({
+          background: "#1d2024",
+          primaryTextColor: "#e4e6e8",
+        }),
+      }),
+    );
+  });
+
   it("renders an explicit markdown-link file reference as a clickable workspace file link", () => {
     const openFile = vi.fn();
     render(

@@ -20,6 +20,8 @@ const DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
 
 let systemListenerCleanup: (() => void) | undefined;
 
+export type AppliedTheme = "light" | "dark";
+
 export function resolveThemePreference(
   preference: ThemePreference,
 ): "light" | "dark" {
@@ -34,6 +36,29 @@ export function resolveThemePreference(
 
 export function appliedTheme(): string | undefined {
   return document.documentElement.dataset.theme;
+}
+
+export function currentAppliedTheme(): AppliedTheme {
+  return appliedTheme() === "dark" ? "dark" : "light";
+}
+
+export function observeAppliedTheme(
+  onChange: (theme: AppliedTheme) => void,
+): () => void {
+  let current = currentAppliedTheme();
+  const observer = new MutationObserver(() => {
+    const next = currentAppliedTheme();
+    if (next === current) {
+      return;
+    }
+    current = next;
+    onChange(next);
+  });
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
+  return () => observer.disconnect();
 }
 
 /**
