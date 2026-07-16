@@ -24,7 +24,21 @@ const GIT_DIFF_PREVIEW_MAX_BYTES = 512 * 1024;
 const GIT_DIFF_COMMAND_MAX_BUFFER = 8 * 1024 * 1024;
 
 export class GitService {
-  constructor(private readonly getRuntimeContext: () => RuntimeContext) {}
+  constructor(
+    private readonly getRuntimeContext: () => RuntimeContext,
+    private readonly getRunningThreadCwds: () => string[] = () => [],
+  ) {}
+
+  worktreeRoot(cwd: string): string {
+    return gitWorktreeRoot(cwd);
+  }
+
+  actionBusy(): boolean {
+    return gitWorkingTreeBusy(
+      this.getRuntimeContext().cwd,
+      this.getRunningThreadCwds(),
+    );
+  }
 
   status(options: GitStatusOptions = {}): GitStatusResult {
     return gitStatusResult(this.getRuntimeContext(), options);
@@ -40,20 +54,79 @@ export class GitService {
   }
 
   checkoutBranch(branch: string): GitStatusResult {
-    return checkoutGitBranch(this.getRuntimeContext(), branch);
+    const context = this.getRuntimeContext();
+    this.assertMutationAllowed(context.cwd);
+    return checkoutGitBranch(context, branch);
   }
 
   createCheckoutBranch(branch: string): GitCreateBranchResult {
-    return createCheckoutGitBranch(this.getRuntimeContext(), branch);
+    const context = this.getRuntimeContext();
+    this.assertMutationAllowed(context.cwd);
+    return createCheckoutGitBranch(context, branch);
   }
 
   commit(params: GitCommitParams): GitCommitResult {
-    return commitGitChanges(this.getRuntimeContext(), params);
+    const context = this.getRuntimeContext();
+    this.assertMutationAllowed(context.cwd);
+    return commitGitChanges(context, params);
   }
 
   createPullRequest(params: GitPullRequestParams): GitPullRequestResult {
-    return createPullRequest(this.getRuntimeContext(), params);
+    const context = this.getRuntimeContext();
+    this.assertMutationAllowed(context.cwd);
+    return createPullRequest(context, params);
   }
+
+  private assertMutationAllowed(cwd: string): void {
+    if (gitWorkingTreeBusy(cwd, this.getRunningThreadCwds())) {
+      throw new Error(
+        "cannot run Git actions while a thread is running in this working tree",
+      );
+    }
+  }
+}
+
+export function gitWorktreeRoot(cwd: string): string {
+  if (cwd === "") {
+    throw new Error("working directory is required");
+  }
+  const root = gitRun(cwd, ["rev-parse", "--show-toplevel"]);
+  if (!root) {
+    throw new Error("failed to resolve Git working tree root");
+  }
+  return root;
+}
+
+export function gitWorkingTreeBusy(
+  cwd: string,
+  runningThreadCwds: readonly string[],
+): boolean {
+  let targetRoot: string;
+  try {
+    targetRoot = gitWorktreeRoot(cwd);
+  } catch {
+    return true;
+  }
+  if (runningThreadCwds.length === 0) {
+    return false;
+  }
+  for (const runningCwd of runningThreadCwds) {
+    try {
+      const runningRoot = gitWorktreeRoot(runningCwd);
+      if (sameGitWorktreeRoot(targetRoot, runningRoot)) {
+        return true;
+      }
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+
+function sameGitWorktreeRoot(left: string, right: string): boolean {
+  return process.platform === "win32"
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right;
 }
 
 type GitStatusOptions = {

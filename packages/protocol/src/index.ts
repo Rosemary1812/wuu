@@ -2029,6 +2029,7 @@ export type WuuDesktopApi = {
   gitStatus: () => Promise<GitStatusResult>;
   listGitChanges: () => Promise<GitChangesResult>;
   readGitFileDiff: (path: string, root?: string) => Promise<GitFileDiffResult>;
+  gitActionBusy?: () => Promise<boolean>;
   checkoutGitBranch: (branch: string) => Promise<GitStatusResult>;
   createCheckoutGitBranch: (branch: string) => Promise<GitCreateBranchResult>;
   commitGitChanges: (params: GitCommitParams) => Promise<GitCommitResult>;

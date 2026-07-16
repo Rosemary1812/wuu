@@ -308,7 +308,10 @@ function updateCodexPetSettings(update: CodexPetSettingsUpdate) {
 }
 
 function gitServiceForEvent(event: IpcMainInvokeEvent): GitService {
-  return new GitService(() => runtimeContextForEvent(event));
+  return new GitService(
+    () => runtimeContextForEvent(event),
+    () => appServerClientPool.runningThreadCwds(),
+  );
 }
 
 function workspaceFilesForEvent(event: IpcMainInvokeEvent): WorkspaceFileService {
@@ -990,6 +993,9 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("wuu:git-file-diff", (event, path: string, root?: string) =>
     gitServiceForEvent(event).fileDiff(path, root),
+  );
+  ipcMain.handle("wuu:git-action-busy", (event) =>
+    gitServiceForEvent(event).actionBusy(),
   );
   ipcMain.handle("wuu:git-checkout-branch", (event, branch: string) =>
     gitServiceForEvent(event).checkoutBranch(branch),

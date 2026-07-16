@@ -166,6 +166,76 @@ describe("AppServerClientPool Activity routing", () => {
 });
 
 describe("AppServerClient child lifecycle", () => {
+  it("tracks the cwd of running threads and clears it on completion", async () => {
+    const child = new FakeAppServerChild();
+    const { client } = makeClient(() => child.asChildProcess());
+    const listed = client.request("thread/list");
+    child.stdout.write(
+      `${JSON.stringify({
+        id: "client-1",
+        result: {
+          threads: [
+            {
+              id: "thread-1",
+              cwd: "/repo/.wuu/worktrees/thread-1",
+              status: "in_progress",
+            },
+          ],
+        },
+      })}\n`,
+    );
+    await listed;
+
+    expect(client.runningThreadCwds()).toEqual([
+      "/repo/.wuu/worktrees/thread-1",
+    ]);
+
+    child.stdout.write(
+      `${JSON.stringify({
+        method: "turn/completed",
+        params: { thread_id: "thread-1" },
+      })}\n`,
+    );
+    expect(client.runningThreadCwds()).toEqual([]);
+  });
+
+  it("retains an idle worktree cwd when its next turn starts", async () => {
+    const child = new FakeAppServerChild();
+    const { client } = makeClient(() => child.asChildProcess());
+    const listed = client.request("thread/list");
+    child.stdout.write(
+      `${JSON.stringify({
+        id: "client-1",
+        result: {
+          threads: [
+            {
+              id: "thread-1",
+              cwd: "/repo/.wuu/worktrees/thread-1",
+              status: "idle",
+            },
+          ],
+        },
+      })}\n`,
+    );
+    await listed;
+    expect(client.runningThreadCwds()).toEqual([]);
+
+    const started = client.request("turn/start", { thread_id: "thread-1" });
+    expect(client.runningThreadCwds()).toEqual([
+      "/repo/.wuu/worktrees/thread-1",
+    ]);
+    child.stdout.write(
+      `${JSON.stringify({
+        id: "client-2",
+        result: { turn: { status: "in_progress" } },
+      })}\n`,
+    );
+    await started;
+    expect(client.runningThreadCwds()).toEqual([
+      "/repo/.wuu/worktrees/thread-1",
+    ]);
+  });
+
   it("finalizes a real ENOENT spawn error and its later close exactly once", async () => {
     const missingBinary = join(tmpdir(), `wuu-missing-${randomUUID()}`);
     let closePromise: Promise<void> | undefined;
@@ -223,6 +293,7 @@ describe("AppServerClient child lifecycle", () => {
     });
 
     const started = client.request("turn/start", { thread_id: "thread-1" });
+    expect(client.runningThreadCwds()).toEqual([tmpdir()]);
     first.stdout.write(
       `${JSON.stringify({
         id: "client-1",

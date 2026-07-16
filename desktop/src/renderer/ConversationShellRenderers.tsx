@@ -627,7 +627,7 @@ export type ConversationSidePanelsProps = {
   environmentPanelMotionState: EnvironmentSideStackProps["motionState"];
   activePlanUpdate: EnvironmentSideStackProps["planUpdate"];
   environmentPanelMenu: EnvironmentSideStackProps["activeMenu"];
-  anyThreadIsRunning: boolean;
+  environmentGitBusy: boolean;
   pullRequestDisabledReason: string;
   onSetEnvironmentPanelMenu: EnvironmentSideStackProps["onSetActiveMenu"];
   onCloseEnvironmentPanel: () => void;
@@ -699,7 +699,7 @@ export function ConversationSidePanels({
   environmentPanelMotionState,
   activePlanUpdate,
   environmentPanelMenu,
-  anyThreadIsRunning,
+  environmentGitBusy,
   pullRequestDisabledReason,
   onSetEnvironmentPanelMenu,
   onCloseEnvironmentPanel,
@@ -756,7 +756,7 @@ export function ConversationSidePanels({
         motionState={environmentPanelMotionState}
         planUpdate={activePlanUpdate}
         activeMenu={environmentPanelMenu}
-        running={anyThreadIsRunning}
+        running={environmentGitBusy}
         pullRequestDisabledReason={pullRequestDisabledReason}
         onSetActiveMenu={onSetEnvironmentPanelMenu}
         onClose={onCloseEnvironmentPanel}

@@ -130,6 +130,7 @@ const api: WuuDesktopApi = {
   listGitChanges: () => ipcRenderer.invoke("wuu:git-changes"),
   readGitFileDiff: (path: string, root?: string) =>
     ipcRenderer.invoke("wuu:git-file-diff", path, root),
+  gitActionBusy: () => ipcRenderer.invoke("wuu:git-action-busy"),
   checkoutGitBranch: (branch: string) =>
     ipcRenderer.invoke("wuu:git-checkout-branch", branch),
   createCheckoutGitBranch: (branch: string) =>
