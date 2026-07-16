@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/shellpath"
 )
 
 // Hook is the interface for executable hooks. CommandHook is the initial
@@ -39,8 +41,12 @@ func (h *CommandHook) Execute(ctx context.Context, input *Input) (*Output, error
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, "sh", "-c", h.Command)
-	cmd.Env = os.Environ()
+	shell, err := shellpath.Sh()
+	if err != nil {
+		return nil, fmt.Errorf("resolve hook shell: %w", err)
+	}
+	cmd := exec.CommandContext(runCtx, shell.Path, shell.CommandArgs(h.Command)...)
+	cmd.Env = shellpath.CommandEnv(os.Environ())
 
 	inputJSON, err := json.Marshal(input)
 	if err != nil {

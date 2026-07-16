@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -1298,27 +1299,40 @@ func mergeEnv(base []string, overrides map[string]string) []string {
 	if len(overrides) == 0 {
 		return base
 	}
+	// Windows env names are case-insensitive (Path vs PATH); merging by
+	// exact key there would emit duplicates with undefined child behavior.
+	canon := func(key string) string {
+		if runtime.GOOS == "windows" {
+			return strings.ToUpper(key)
+		}
+		return key
+	}
 	merged := make(map[string]string, len(base)+len(overrides))
+	display := make(map[string]string, len(base)+len(overrides))
 	order := make([]string, 0, len(base)+len(overrides))
 	for _, entry := range base {
 		key, value, ok := strings.Cut(entry, "=")
 		if !ok {
 			continue
 		}
-		if _, exists := merged[key]; !exists {
-			order = append(order, key)
+		ck := canon(key)
+		if _, exists := merged[ck]; !exists {
+			order = append(order, ck)
+			display[ck] = key
 		}
-		merged[key] = value
+		merged[ck] = value
 	}
 	for key, value := range overrides {
-		if _, exists := merged[key]; !exists {
-			order = append(order, key)
+		ck := canon(key)
+		if _, exists := merged[ck]; !exists {
+			order = append(order, ck)
+			display[ck] = key
 		}
-		merged[key] = value
+		merged[ck] = value
 	}
 	out := make([]string, 0, len(order))
-	for _, key := range order {
-		out = append(out, key+"="+merged[key])
+	for _, ck := range order {
+		out = append(out, display[ck]+"="+merged[ck])
 	}
 	return out
 }

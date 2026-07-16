@@ -37,6 +37,10 @@ check-go:
 	@unformatted="$$(find $(GO_DIRS) -name '*.go' -type f -exec gofmt -l {} +)"; \
 		test -z "$$unformatted" || { echo "Go files need formatting:"; echo "$$unformatted"; exit 1; }
 	go vet $(GO_PACKAGES)
+	GOOS=windows go build $(GO_PACKAGES)
+	GOOS=windows go vet $(GO_PACKAGES)
+	GOOS=darwin go build $(GO_PACKAGES)
+	GOOS=darwin go vet $(GO_PACKAGES)
 
 check-desktop:
 	npm --prefix desktop run typecheck

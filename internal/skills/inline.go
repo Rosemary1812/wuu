@@ -3,11 +3,13 @@ package skills
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/blueberrycongee/wuu/internal/shellpath"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
 
@@ -21,7 +23,8 @@ type ProcessOptions struct {
 	SkillDir string
 	// SessionID is substituted into the legacy session placeholder.
 	SessionID string
-	// Shell to use for inline command execution. Defaults to "sh".
+	// Shell to use for inline command execution. Defaults to the
+	// platform command shell (sh on unix, Git Bash on Windows).
 	Shell string
 	// PerCmdTimeout caps each individual inline command. Defaults to 10s.
 	PerCmdTimeout time.Duration
@@ -84,8 +87,13 @@ func executeInlineCommands(ctx context.Context, body string, opts ProcessOptions
 	if opts.MaxOutputBytes <= 0 {
 		opts.MaxOutputBytes = 32 * 1024
 	}
+	shell := shellpath.Shell{Path: opts.Shell, Args: []string{"-c"}}
 	if opts.Shell == "" {
-		opts.Shell = "sh"
+		resolved, err := shellpath.Sh()
+		if err != nil {
+			return fmt.Sprintf("[error: %v]", err)
+		}
+		shell = resolved
 	}
 
 	run := func(cmd string) string {
@@ -95,7 +103,8 @@ func executeInlineCommands(ctx context.Context, body string, opts ProcessOptions
 		}
 		cctx, cancel := context.WithTimeout(ctx, opts.PerCmdTimeout)
 		defer cancel()
-		c := exec.CommandContext(cctx, opts.Shell, "-c", cmd)
+		c := exec.CommandContext(cctx, shell.Path, shell.CommandArgs(cmd)...)
+		c.Env = shellpath.CommandEnv(os.Environ())
 		if opts.SkillDir != "" {
 			c.Dir = opts.SkillDir
 		}

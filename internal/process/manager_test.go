@@ -1,3 +1,5 @@
+//go:build !windows
+
 package process
 
 import (
@@ -11,6 +13,15 @@ import (
 	"testing"
 	"time"
 )
+
+func mustManagedCommand(t *testing.T, command, cwd string) *exec.Cmd {
+	t.Helper()
+	cmd, err := managedCommand(command, cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cmd
+}
 
 func TestStartListAndPersist(t *testing.T) {
 	root := t.TempDir()
@@ -340,7 +351,7 @@ func TestStopReconcilesProcessStartedByAnotherManager(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := managedCommand("sleep 30", root)
+	cmd := mustManagedCommand(t, "sleep 30", root)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -395,7 +406,7 @@ func TestFinishWaitPreservesReconciledStoppedStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m.finishWait(record.ID, managedCommand("true", root), errors.New("signal: terminated"))
+	m.finishWait(record.ID, mustManagedCommand(t, "true", root), errors.New("signal: terminated"))
 	got, err := m.load(record.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -903,7 +914,7 @@ func TestNewManagerReconcilesPersistedManagedProcessExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := managedCommand("sleep 0.4", root)
+	cmd := mustManagedCommand(t, "sleep 0.4", root)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

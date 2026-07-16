@@ -8,10 +8,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 	"unicode"
 
+	"github.com/blueberrycongee/wuu/internal/shellpath"
 	"github.com/blueberrycongee/wuu/internal/stringutil"
 )
 
@@ -124,9 +126,14 @@ func executeShellCommandInDir(ctx context.Context, env *Env, command string, tim
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, "bash", "-lc", command)
+	shell, err := shellpath.LoginBash()
+	if err != nil {
+		return shellExecutionResult{}, err
+	}
+	command = shellpath.NormalizeBashCommand(command)
+	cmd := exec.CommandContext(runCtx, shell.Path, shell.CommandArgs(command)...)
 	cmd.Dir = workDir
-	cmd.Env = shellCommandEnv(os.Environ())
+	cmd.Env = shellpath.CommandEnv(shellCommandEnv(os.Environ()))
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -134,7 +141,7 @@ func executeShellCommandInDir(ctx context.Context, env *Env, command string, tim
 	cmd.Stderr = &stderr
 
 	startedAt := time.Now()
-	err := cmd.Run()
+	err = cmd.Run()
 	durationMS := time.Since(startedAt).Milliseconds()
 	exitCode := 0
 	if err != nil {
@@ -274,6 +281,9 @@ func classifyShellCommand(command string) ToolClassification {
 	}
 	if shellFieldsTouchSensitivePath(fields) {
 		return highRiskShellClassification("shell command may read secrets", false)
+	}
+	if shellCommandReferencesUNCPath(rawFields) {
+		return highRiskShellClassification("shell command references a network (UNC) path", false)
 	}
 	if shellCommandUsesUnsupportedWrapper(command) {
 		return highRiskShellClassification("unsupported shell wrapper command", false)
@@ -760,8 +770,18 @@ func shellCommandBaseName(name string) string {
 	if name == "" {
 		return ""
 	}
-	if strings.Contains(name, "/") {
-		return filepath.Base(name)
+	if strings.ContainsAny(name, `/\`) {
+		name = filepath.Base(filepath.FromSlash(name))
+		if idx := strings.LastIndexByte(name, '\\'); idx >= 0 {
+			name = name[idx+1:]
+		}
+	}
+	// A Windows executable extension never changes what the command is:
+	// rm.exe is rm for risk purposes on every platform.
+	for _, ext := range []string{".exe", ".cmd", ".bat", ".com"} {
+		if len(name) > len(ext) && strings.EqualFold(name[len(name)-len(ext):], ext) {
+			return name[:len(name)-len(ext)]
+		}
 	}
 	return name
 }
@@ -1053,6 +1073,27 @@ func shellFieldsTouchSensitivePath(fields []string) bool {
 	return false
 }
 
+// shellCommandReferencesUNCPath flags tokens addressing network (UNC)
+// paths on Windows, where both \\server\share and the MSYS //server/share
+// spelling reach the network stack; touching an attacker-controlled
+// server can leak NTLM credentials. Windows-only: double-slash tokens
+// are ordinary local paths elsewhere.
+func shellCommandReferencesUNCPath(fields []string) bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	for _, field := range fields {
+		token := shellPathToken(field)
+		if len(token) < 3 {
+			continue
+		}
+		if (strings.HasPrefix(token, `\\`) || strings.HasPrefix(token, "//")) && token[2] != '/' && token[2] != '\\' {
+			return true
+		}
+	}
+	return false
+}
+
 func shellSensitivePathTokenReason(field string) (string, bool) {
 	token := shellPathToken(field)
 	if token == "" || strings.HasPrefix(token, "-") {
@@ -1062,7 +1103,7 @@ func shellSensitivePathTokenReason(field string) (string, bool) {
 	switch {
 	case strings.Contains(lower, ".env"), strings.Contains(lower, ".netrc"), strings.Contains(lower, ".npmrc"), strings.Contains(lower, ".pypirc"), strings.Contains(lower, ".pgpass"):
 		return sensitivePathReason(token)
-	case strings.Contains(lower, "/") || strings.Contains(lower, "."):
+	case strings.Contains(lower, "/") || strings.Contains(lower, `\`) || strings.Contains(lower, "."):
 		return sensitivePathReason(token)
 	case lower == "secret" || lower == "secrets" || lower == "credential" || lower == "credentials" || lower == "private_key":
 		return sensitivePathReason(token)

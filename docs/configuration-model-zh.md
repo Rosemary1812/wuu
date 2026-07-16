@@ -114,3 +114,12 @@ spawn，因此不经过 spawn 排队闸门；整合开始时，实际运行数�
 `WUU_HOME` 可以整体移动用户配置、认证、会话、记忆和日志目录。例如设置
 `WUU_HOME=/data/wuu` 后，用户配置路径就是 `/data/wuu/config.json`；即使
 `HOME` 环境变量没有设置，这个路径仍然有效。
+
+## Windows 上的 shell
+
+bash 语法在所有平台上都是命令执行的契约。Windows 上 wuu 会解析
+Git Bash：优先读取 `WUU_GIT_BASH_PATH` 环境变量；否则依次探测标准
+安装位置（`%ProgramFiles%\Git`、`%ProgramFiles(x86)%\Git`、
+`%LOCALAPPDATA%\Programs\Git`），再从 PATH 上的 `git.exe` 反推
+`bash.exe`。全部失败时命令执行会报错并提示安装 Git for Windows。
+TTY 模式的后台进程在 Windows 上不可用，会自动退回管道模式。

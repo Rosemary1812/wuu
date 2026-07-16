@@ -1,3 +1,5 @@
+//go:build !windows
+
 package process
 
 import (
@@ -14,7 +16,7 @@ import (
 // tests can attach hand-written records to it.
 func startExternalProcessGroup(t *testing.T, root string) (*exec.Cmd, int, chan error) {
 	t.Helper()
-	cmd := managedCommand("sleep 30", root)
+	cmd := mustManagedCommand(t, "sleep 30", root)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)

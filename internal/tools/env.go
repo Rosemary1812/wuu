@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -619,14 +620,41 @@ func (e *Env) ResolvePath(input string) (string, error) {
 		evalResolved = ev
 	}
 
-	rel, err := filepath.Rel(evalRoot, evalResolved)
-	if err != nil {
-		return "", fmt.Errorf("path relation check: %w", err)
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if _, ok := relInsideRoot(evalRoot, evalResolved); !ok {
 		return "", fmt.Errorf("path %q escapes workspace", input)
 	}
 	return resolved, nil
+}
+
+// relInsideRoot reports whether path stays inside root, returning the
+// relative remainder when it does. Both inputs must already be absolute
+// and cleaned. Windows filesystems compare names case-insensitively, so
+// the containment decision folds case there while the returned remainder
+// keeps the caller's casing.
+func relInsideRoot(root, path string) (string, bool) {
+	cmpRoot, cmpPath := root, path
+	if runtime.GOOS == "windows" {
+		cmpRoot = strings.ToLower(cmpRoot)
+		cmpPath = strings.ToLower(cmpPath)
+	}
+	rel, err := filepath.Rel(cmpRoot, cmpPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	if rel == "." {
+		return ".", true
+	}
+	if cmpRoot == root && cmpPath == path {
+		return rel, true
+	}
+	// Case was folded for the decision; slice the remainder out of the
+	// original path so its casing survives. Inside-ness guarantees path
+	// extends root.
+	remainder := strings.TrimLeft(path[len(root):], string(filepath.Separator))
+	if remainder == "" {
+		return ".", true
+	}
+	return remainder, true
 }
 
 // ResolveReadPath resolves paths for read-only tools. In addition to ordinary
@@ -721,14 +749,11 @@ func pathWithinRoot(root, path string) bool {
 	evalPath := absPath
 	if ev, err := filepath.EvalSymlinks(evalPath); err == nil {
 		evalPath = ev
-	} else if rel, relErr := filepath.Rel(absRoot, absPath); relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	} else if rel, ok := relInsideRoot(absRoot, absPath); ok {
 		evalPath = filepath.Join(evalRoot, rel)
 	}
-	rel, err := filepath.Rel(evalRoot, evalPath)
-	if err != nil {
-		return false
-	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+	_, ok := relInsideRoot(evalRoot, evalPath)
+	return ok
 }
 
 // NormalizeDisplayPath returns a relative path for display.
@@ -876,14 +901,10 @@ func workspaceRelativePath(root, path string) (string, bool) {
 	evalPath := absPath
 	if ev, err := filepath.EvalSymlinks(evalPath); err == nil {
 		evalPath = ev
-	} else if rel, relErr := filepath.Rel(absRoot, absPath); relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	} else if rel, ok := relInsideRoot(absRoot, absPath); ok {
 		evalPath = filepath.Join(evalRoot, rel)
 	}
-	rel, err := filepath.Rel(evalRoot, evalPath)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", false
-	}
-	return rel, true
+	return relInsideRoot(evalRoot, evalPath)
 }
 
 // ProcessManager returns the process manager, creating a default one

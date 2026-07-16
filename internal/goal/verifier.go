@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/blueberrycongee/wuu/internal/shellpath"
 )
 
 const defaultCommandTimeout = 5 * time.Minute
@@ -97,12 +99,17 @@ func (v CommandVerifier) runCommand(ctx context.Context, check CommandCheck, now
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, "bash", "-lc", command)
+	shell, shellErr := shellpath.LoginBash()
+	if shellErr != nil {
+		result.Error = shellErr.Error()
+		return result
+	}
+	cmd := exec.CommandContext(runCtx, shell.Path, shell.CommandArgs(command)...)
 	cmd.Dir = strings.TrimSpace(check.WorkDir)
 	if cmd.Dir == "" {
 		cmd.Dir = strings.TrimSpace(v.WorkDir)
 	}
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(shellpath.CommandEnv(os.Environ()),
 		"EDITOR=true",
 		"GIT_EDITOR=true",
 		"GIT_PAGER=cat",

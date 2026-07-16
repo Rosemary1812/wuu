@@ -12,16 +12,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
-	"github.com/creack/pty"
-
 	"github.com/blueberrycongee/wuu/internal/securefs"
+	"github.com/blueberrycongee/wuu/internal/shellpath"
 	"github.com/blueberrycongee/wuu/internal/statepath"
 )
 
@@ -207,6 +206,13 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 	if err != nil {
 		return nil, err
 	}
+	if opt.TTY && !ptySupported() {
+		// Degrade to pipe mode rather than failing the start: tty is a
+		// fidelity feature, and platforms without pty support (Windows)
+		// still run the process fine. The record keeps TTY=false so
+		// readers see the mode that actually ran.
+		opt.TTY = false
+	}
 	id := "proc-" + randomHex(4)
 	p := &Process{ID: id, OwnerKind: opt.OwnerKind, OwnerID: opt.OwnerID, Lifecycle: opt.Lifecycle, CompletionMode: opt.CompletionMode, Status: StatusStarting, Command: opt.Command, CWD: cwd, TTY: opt.TTY, LogPath: filepath.Join(m.logDir, id+".log"), StartedAt: time.Now(), UpdatedAt: time.Now(), ExitCode: -1}
 	m.mu.Lock()
@@ -231,11 +237,20 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 		m.publish(Event{Type: EventFailed, Process: *p})
 		return p, err
 	}
-	cmd := managedCommand(opt.Command, cwd)
+	cmd, err := managedCommand(opt.Command, cwd)
+	if err != nil {
+		_ = logf.Close()
+		p.Status = StatusFailed
+		p.LastError = err.Error()
+		p.UpdatedAt = time.Now()
+		_ = m.save(p)
+		m.publish(Event{Type: EventFailed, Process: *p})
+		return p, err
+	}
 	var stdin io.WriteCloser
 	var ptyFile *os.File
 	if opt.TTY {
-		ptyFile, err = pty.StartWithAttrs(cmd, &pty.Winsize{Rows: 24, Cols: 80}, &syscall.SysProcAttr{Setsid: true, Setctty: true})
+		ptyFile, err = startPTYProcess(cmd)
 		if err != nil {
 			_ = logf.Close()
 			p.Status = StatusFailed
@@ -259,7 +274,7 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 		}
 		cmd.Stdout = logf
 		cmd.Stderr = logf
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		configureProcessGroup(cmd)
 		if err := cmd.Start(); err != nil {
 			_ = stdin.Close()
 			_ = logf.Close()
@@ -272,15 +287,11 @@ func (m *Manager) Start(ctx context.Context, opt StartOptions) (*Process, error)
 		}
 	}
 	p.PID = cmd.Process.Pid
-	if pgid, err := syscall.Getpgid(p.PID); err == nil {
-		p.PGID = pgid
-	} else {
-		p.PGID = p.PID
-	}
+	p.PGID = lookupProcessGroup(p.PID)
 	p.ProcessStartTime, _, _, err = readProcessIdentity(p.PID)
 	if err != nil {
 		if p.PGID > 1 {
-			_ = syscall.Kill(-p.PGID, syscall.SIGKILL)
+			_ = killProcessGroup(p.PGID)
 		}
 		if stdin != nil {
 			_ = stdin.Close()
@@ -349,7 +360,12 @@ func resolveStartCWD(rootDir, cwd string, allowOutsideWorkspace bool) (string, e
 	if allowOutsideWorkspace {
 		return evaluated, nil
 	}
-	rel, err := filepath.Rel(root, evaluated)
+	cmpRoot, cmpDir := root, evaluated
+	if runtime.GOOS == "windows" {
+		// Windows filesystems compare names case-insensitively.
+		cmpRoot, cmpDir = strings.ToLower(cmpRoot), strings.ToLower(cmpDir)
+	}
+	rel, err := filepath.Rel(cmpRoot, cmpDir)
 	if err != nil {
 		return "", fmt.Errorf("resolve working directory %q against workspace root %q: %w", evaluated, root, err)
 	}
@@ -359,11 +375,16 @@ func resolveStartCWD(rootDir, cwd string, allowOutsideWorkspace bool) (string, e
 	return evaluated, nil
 }
 
-func managedCommand(command, cwd string) *exec.Cmd {
-	cmd := exec.Command("bash", "-lc", command)
+func managedCommand(command, cwd string) (*exec.Cmd, error) {
+	shell, err := shellpath.LoginBash()
+	if err != nil {
+		return nil, err
+	}
+	command = shellpath.NormalizeBashCommand(command)
+	cmd := exec.Command(shell.Path, shell.CommandArgs(command)...)
 	cmd.Dir = cwd
-	cmd.Env = os.Environ()
-	return cmd
+	cmd.Env = shellpath.CommandEnv(os.Environ())
+	return cmd, nil
 }
 
 func (m *Manager) wait(id string, cmd *exec.Cmd, logf *os.File) {
@@ -668,7 +689,7 @@ func (m *Manager) Stop(id string) (*Process, error) {
 		return p, fmt.Errorf("persist stopping process: %w", err)
 	}
 	m.mu.Unlock()
-	if err := syscall.Kill(-p.PGID, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+	if err := terminateProcessGroup(p.PGID); err != nil {
 		return p, fmt.Errorf("terminate process group %d: %w", p.PGID, err)
 	}
 	cur, stopped, err := m.waitForStop(id, time.Now().Add(2*time.Second))
@@ -690,7 +711,7 @@ func (m *Manager) Stop(id string) (*Process, error) {
 		}
 		return cur, err
 	}
-	if err := syscall.Kill(-cur.PGID, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+	if err := killProcessGroup(cur.PGID); err != nil {
 		return cur, fmt.Errorf("kill process group %d: %w", cur.PGID, err)
 	}
 	cur, stopped, err = m.waitForStop(id, time.Now().Add(2*time.Second))
@@ -800,15 +821,12 @@ func processMatchesRecord(p *Process) (bool, error) {
 		}
 		return false, fmt.Errorf("verify process %q identity: %w", p.ID, err)
 	}
-	currentPGID, err := syscall.Getpgid(p.PID)
+	groupRunning, err := verifyProcessGroup(p.PID, p.PGID)
 	if err != nil {
-		if errors.Is(err, syscall.ESRCH) {
-			return false, nil
-		}
 		return false, fmt.Errorf("verify process %q group: %w", p.ID, err)
 	}
-	if currentPGID != p.PGID {
-		return false, fmt.Errorf("process %q group changed from %d to %d; refusing to signal it", p.ID, p.PGID, currentPGID)
+	if !groupRunning {
+		return false, nil
 	}
 	if storedIdentity == currentIdentity {
 		return true, nil
@@ -854,14 +872,6 @@ func readLegacyProcessStartTime(pid int) (string, error) {
 		return "", fmt.Errorf("process %d has no start time", pid)
 	}
 	return started, nil
-}
-
-func processExists(pid int) bool {
-	if pid <= 1 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 const persistedProcessWatchInterval = 250 * time.Millisecond
